@@ -158,7 +158,6 @@ describe('CreateAgentTeamWizard flow', () => {
     await advance(w, 2)
     const selected = {
       items: [{ credentialId: 'gh' }, { credentialId: 'gl', scope: 'git.example' }],
-      preferredCredentialId: 'gl',
     }
     w.findComponent(GitPicker).vm.$emit('update:modelValue', selected)
     w.findComponent(GitPicker).vm.$emit('validity', false)
@@ -212,7 +211,7 @@ describe('CreateAgentTeamWizard flow', () => {
     fillBasics(vm)
     await advance(w, 2)
     expect(mocks.listCredentials).not.toHaveBeenCalled()
-    const gitBindings = { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' }
+    const gitBindings = { items: [{ credentialId: 'git-team' }] }
     vm.draft.gitBindings = gitBindings
     vm.resourceManagerOpen = true
     await vm.refreshResources()
@@ -289,7 +288,6 @@ describe('CreateAgentTeamWizard flow', () => {
     await advance(w, 2)
     w.findComponent(GitPicker).vm.$emit('update:modelValue', {
       items: [{ credentialId: 'git-team' }],
-      preferredCredentialId: 'git-team',
     })
     await advance(w, 3)
     expect(vm.currentStep.id).toBe('review')
@@ -300,7 +298,7 @@ describe('CreateAgentTeamWizard flow', () => {
     expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).toMatchObject({
       pmName: '登月项目经理',
       modelConfigurationId: 'model-team',
-      gitBindings: { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' },
+      gitBindings: { items: [{ credentialId: 'git-team' }] },
       env: { GIT_REPOS: '${vars.repos}' },
     })
     for (const field of ['teamName', 'apiKey', 'acpBackend', 'gitCredentialType'])

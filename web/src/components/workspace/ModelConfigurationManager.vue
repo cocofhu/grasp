@@ -343,7 +343,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate })
         </template>
         <p v-if="error" role="alert" class="break-words text-xs text-err" data-testid="model-configuration-error">{{ error }}</p>
       </div>
-      <template #footer><AppButton variant="ghost" :disabled="saving" data-testid="model-configuration-back" @click="step > 1 ? step-- : (open = false)">{{ step > 1 ? c.back : c.cancel }}</AppButton><AppButton v-if="step < 3" variant="primary" :disabled="step === 1 ? !form.name.trim() : !sourceValid" data-testid="model-configuration-next" @click="step++">{{ c.next }}</AppButton><AppButton v-else variant="primary" :loading="saving" :disabled="!valid || saving" data-testid="model-configuration-save" @click="save">{{ c.save }}</AppButton></template>
+      <template #footer><AppButton variant="ghost" :icon="step > 1 ? undefined : 'close'" :disabled="saving" data-testid="model-configuration-back" @click="step > 1 ? step-- : (open = false)">{{ step > 1 ? c.back : c.cancel }}</AppButton><AppButton v-if="step < 3" variant="primary" icon="arrow-right" :disabled="step === 1 ? !form.name.trim() : !sourceValid" data-testid="model-configuration-next" @click="step++">{{ c.next }}</AppButton><AppButton v-else variant="primary" :loading="saving" :disabled="!valid || saving" data-testid="model-configuration-save" @click="save">{{ c.save }}</AppButton></template>
     </AppModal>
   </section>
 </template>

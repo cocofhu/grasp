@@ -19,7 +19,6 @@ import TeamBootstrapPanel from '@/components/agent/TeamBootstrapPanel.vue'
 import WorkspaceSharedAgentPanel from '@/components/workspace/WorkspaceSharedAgentPanel.vue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import { useAgentStudio } from '@/lib/agent/useAgentStudio'
-import { isProtectedOnboardingAgentName } from '@/lib/pm/onboardingWizard'
 
 const props = defineProps<{ embedded?: boolean }>()
 const route = useRoute()
@@ -74,8 +73,6 @@ const {
   promptCanSubmit,
   refreshPromptFeedback,
   confirmCfg,
-  showAgentManage,
-  manageFocusAgent,
   showUnsavedExport,
   exporting,
   showBundleSecrets,
@@ -101,12 +98,6 @@ const {
   confirmBatchRename,
   confirmBatchOverwrite,
   dirty,
-  agentNames,
-  manageSearch,
-  filteredManageNames,
-  manageSearchActive,
-  manageNameHighlight,
-  clearManageSearch,
   studioTabs,
   studioTabLabel,
   showToast,
@@ -119,7 +110,6 @@ const {
   leaveConfirmCancel,
   load,
   chooseAgentFromSheet,
-  openManageFromSheet,
   save,
   confirmSaveWithReason,
   showSaveReasonModal,
@@ -148,8 +138,6 @@ const {
   onTeamBootstrapSelectPm,
   onTeamBootstrapOpenPm,
   onTeamBootstrapDone,
-  openAgentManage,
-  closeAgentManage,
   openRenameAgent,
   confirmDeleteAgent,
   promptOk,
@@ -409,7 +397,8 @@ async function createStudioChatTest(
         :collapsed="agentListCollapsed"
         :hide-create-team="hideTeamCreate"
         @select="onSidebarSelect"
-        @open-manage="openAgentManage"
+        @rename="openRenameAgent"
+        @delete="confirmDeleteAgent"
         @import="triggerImport"
         @create-agent="openCreateAgent"
         @create-team="openCreateTeam"
@@ -708,92 +697,6 @@ async function createStudioChatTest(
     </div>
     </div>
 
-    <!-- Agent management (rename + hard delete) -->
-    <AppModal
-      :open="showAgentManage"
-      :title="t('pages.agentStudio.tree.manageTitle')"
-      :width="520"
-      @close="closeAgentManage"
-    >
-      <p class="mb-3 text-[12.5px] leading-relaxed text-txt2">{{ t('pages.agentStudio.tree.manageIntro') }}</p>
-      <div v-if="!agentNames.length" class="text-[13px] text-txt3">{{ t('pages.agentStudio.tree.manageEmpty') }}</div>
-      <template v-else>
-        <div class="relative mb-2">
-          <Icon name="search" :size="15" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-txt3" />
-          <input
-            v-model="manageSearch"
-            type="text"
-            autocomplete="off"
-            :placeholder="t('pages.agentStudio.tree.manageSearchPlaceholder')"
-            class="rounded-md w-full border border-line bg-base py-2 pl-8 pr-8 text-[13px] text-txt outline-none transition focus:border-accent"
-            data-test="manage-search"
-          />
-          <button
-            v-if="manageSearch"
-            type="button"
-            class="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-txt3 hover:bg-elevated hover:text-txt"
-            :aria-label="t('pages.agentStudio.tree.manageClearSearch')"
-            data-test="manage-search-clear"
-            @click="clearManageSearch"
-          >
-            <Icon name="close" :size="14" />
-          </button>
-        </div>
-        <p class="mb-2 text-[12px] tabular-nums text-txt3" data-test="manage-search-count">
-          {{
-            manageSearchActive
-              ? t('pages.agentStudio.tree.manageSearchCount', { matched: filteredManageNames.length, total: agentNames.length })
-              : t('pages.agentStudio.tree.manageTotalCount', { total: agentNames.length })
-          }}
-        </p>
-        <div v-if="manageSearchActive && !filteredManageNames.length" class="rounded-lg border border-dashed border-line px-4 py-8 text-center">
-          <Icon name="search" :size="20" class="mx-auto mb-2 text-txt3" />
-          <p class="text-[13px] font-medium text-txt">{{ t('pages.agentStudio.tree.manageNoMatchTitle') }}</p>
-          <p class="mt-1 text-[12px] text-txt3">{{ t('pages.agentStudio.tree.manageNoMatchDesc') }}</p>
-          <AppButton class="mt-3" size="sm" variant="outline" @click="clearManageSearch">
-            {{ t('pages.agentStudio.tree.manageClearSearch') }}
-          </AppButton>
-        </div>
-        <div v-else class="flex flex-col gap-0.5">
-        <div
-          v-for="name in filteredManageNames"
-          :key="name"
-          :data-manage-agent="name"
-          class="rounded-lg flex items-center gap-2 border px-2.5 py-2 transition"
-          :class="
-            manageFocusAgent === name
-              ? 'border-accent/40 bg-accent-dim shadow-[inset_0_0_0_1px_rgba(99,102,241,0.35)]'
-              : 'border-transparent hover:bg-elevated'
-          "
-        >
-          <Icon name="robot" :size="14" class="shrink-0 text-accent-2" />
-          <div class="min-w-0 flex-1">
-            <span class="block truncate text-[13px] text-txt">
-              <template v-if="manageNameHighlight(name).hit">
-                {{ manageNameHighlight(name).before }}<mark class="bg-warn/25 px-0 text-inherit">{{ manageNameHighlight(name).hit }}</mark>{{ manageNameHighlight(name).after }}
-              </template>
-              <template v-else>{{ name }}</template>
-            </span>
-            <span v-if="isProtectedOnboardingAgentName(name)" class="mt-0.5 block text-[11px] leading-4 text-txt3" data-testid="manage-agent-locked">
-              {{ t('pages.agentStudio.tree.lockedHint') }}
-            </span>
-          </div>
-          <div class="flex shrink-0 gap-1.5">
-            <AppButton size="sm" variant="outline" icon="edit" data-testid="manage-rename" :disabled="isProtectedOnboardingAgentName(name)" @click="openRenameAgent(name)">
-              {{ t('pages.agentStudio.tree.manageRename') }}
-            </AppButton>
-            <AppButton size="sm" variant="danger" icon="trash" data-testid="manage-delete" :disabled="isProtectedOnboardingAgentName(name)" @click="confirmDeleteAgent(name)">
-              {{ t('pages.agentStudio.dialogs.delete') }}
-            </AppButton>
-          </div>
-        </div>
-        </div>
-      </template>
-      <template #footer>
-        <AppButton size="sm" variant="ghost" @click="closeAgentManage">{{ t('common.buttons.close') }}</AppButton>
-      </template>
-    </AppModal>
-
     <!-- prompt modal (create / rename) -->
     <AppModal :open="!!promptCfg" :title="promptCfg?.title" :width="420" @close="promptCfg = null">
       <label class="mb-1 block text-[12px] text-txt2">{{ promptCfg?.label }}</label>
@@ -880,13 +783,6 @@ async function createStudioChatTest(
             >
               <Icon name="users" :size="14" />
             </button>
-            <AppButton
-              size="sm"
-              variant="outline"
-              data-test="sidebar-sheet-manage"
-              class="min-h-9 shrink-0"
-              @click="openManageFromSheet"
-            >{{ t('pages.agentStudio.tree.manage') }}</AppButton>
             <button
               type="button"
               data-test="sidebar-sheet-close"

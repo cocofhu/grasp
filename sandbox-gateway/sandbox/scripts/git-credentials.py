@@ -98,13 +98,11 @@ def catalog(directory):
         if record["kind"] != "ssh" and any(c in secret.read_text().strip() for c in "\r\n\0"):
             raise ValueError("invalid token")
         valid.append(dict(record, location=scope))
-    if records and sum(bool(record["preferred"]) for record in records) != 1:
-        raise ValueError("invalid preferred credential")
     return valid
 
 
 def choose(records, scheme, host, repo, ssh=False, kind=None, ssh_api=False):
-    """Exact repository > host > SSH global, preferred only breaks equal scopes."""
+    """Exact repository > host > SSH global. Equal scopes keep the earlier row."""
     repo = repo.strip("/")
     if repo.endswith(".git"):
         repo = repo[:-4]
@@ -122,8 +120,7 @@ def choose(records, scheme, host, repo, ssh=False, kind=None, ssh_api=False):
             continue
         if scoped_repo and scoped_repo != repo:
             continue
-        score = (2 if scoped_repo else 1 if scoped_host else 0,
-                 bool(record.get("preferred")), -order)
+        score = (2 if scoped_repo else 1 if scoped_host else 0, -order)
         candidates.append((score, record))
     return max(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
 
@@ -171,7 +168,7 @@ def cli_configs(directory, records, home):
                 grouped.setdefault(record["location"][1], []).append(record)
         lines = [] if kind == "github_https" else ["git_protocol: https", "api_protocol: https", "hosts:"]
         for host, entries in grouped.items():
-            entry = next((e for e in entries if e.get("preferred")), entries[0])
+            entry = entries[0]
             token = (directory / f'{entry["index"]}.secret').read_text().strip()
             indent = "" if kind == "github_https" else "  "
             lines.append(f"{indent}{json.dumps(host)}:")

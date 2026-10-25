@@ -27,7 +27,7 @@ describe('agentsClient request coverage', () => {
     await agentsClient.getAgent('agent / one')
     await agentsClient.bootstrapOnboarding({
       modelConfigurationId: 'model-team',
-      gitBindings: { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' },
+      gitBindings: { items: [{ credentialId: 'git-team' }] },
     })
     const teamBody = { prefix: 'Pay', pmName: 'PM', background: 'payments', modelConfigurationId: 'model-team' } as const
     await agentsClient.bootstrapAgentTeam(teamBody)
@@ -59,7 +59,7 @@ describe('agentsClient request coverage', () => {
     }))
     expect(fetchMock).toHaveBeenCalledWith('/api/workspace/bootstrap-onboarding', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ modelConfigurationId: 'model-team', gitBindings: { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' } }),
+      body: JSON.stringify({ modelConfigurationId: 'model-team', gitBindings: { items: [{ credentialId: 'git-team' }] } }),
     }))
     expect(fetchMock).toHaveBeenCalledWith('/api/agent-teams/bootstrap', expect.objectContaining({
       method: 'POST',

@@ -1271,6 +1271,12 @@ describe('AppSidebarNav', () => {
     }
     expectStatusIcon(rows[0], 'arc-spinner', 'nav-row-type-icon--accent', 'M12 3A9 9 0 1 1 3 12')
     expectStatusIcon(rows[1], 'breath-dot', 'nav-row-type-icon--accent', 'grasp-heart-ring')
+    expect(rows[1].get('[data-testid="nav-pending-type-icon"]').attributes('data-icon-motion')).toBe('busy')
+    expect(rows[1].get('.nav-breath-ping').attributes('vector-effect')).toBe('non-scaling-stroke')
+    expect(rows[1].findAll('svg')).toHaveLength(1)
+    expect(rows[0].find('.nav-breath-ping').exists()).toBe(false)
+    expect(rows[3].find('.nav-breath-ping').exists()).toBe(false)
+    expect(rows[5].find('.nav-breath-ping').exists()).toBe(false)
 
     expect(rows[2].attributes('data-motion')).toBeUndefined()
     expect(rows[2].findAll('svg')).toHaveLength(0)
@@ -1310,6 +1316,8 @@ describe('AppSidebarNav', () => {
     await nextTick()
     expect(rows[1].classes()).toContain('active')
     expectStatusIcon(rows[1], 'breath-dot', 'nav-row-type-icon--accent', 'grasp-heart-ring')
+    expect(rows[1].get('.nav-breath-ping').exists()).toBe(true)
+    expect(rows[0].find('.nav-breath-ping').exists()).toBe(false)
 
     wrapper.unmount()
     vi.useRealTimers()
@@ -2517,6 +2525,106 @@ describe('自动过程 grouping and flight', () => {
     expect(wrapper.get('[data-key="go"]').attributes('data-flight')).toBeUndefined()
     const headings = wrapper.findAll('[data-testid="nav-running-heading"], [data-testid="nav-auto-heading"]').map((el) => el.attributes('data-testid'))
     expect(headings).toEqual(['nav-running-heading', 'nav-auto-heading'])
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('pins the node name against the status icon for short, long and blank titles', async () => {
+    const longTitle = `Solo模式支持选择多个工作流并且标题会在侧栏里被省略${'再长一点'.repeat(4)}`
+    const longName = `需求澄清与实现交付测试评审${'节点'.repeat(8)}`
+    useAuth().setUser({ username: 'alice', expiresAt: '2099-01-01T00:00:00Z' })
+    localStorage.setItem(
+      'grasp.sidebarPendingPins.alice',
+      JSON.stringify([{ itemKey: 'short', pinnedAt: 10 }]),
+    )
+    apiMocks.listSoloSessions.mockResolvedValue({
+      sessions: [{
+        id: 'solo-1',
+        title: '单独会话',
+        agentName: '需求澄清',
+        status: 'running',
+        restarts: 0,
+        busy: false,
+        waiting: 0,
+        createdAt: 'T',
+        updatedAt: 'T',
+      }],
+      maxSandboxes: 1,
+    })
+    const wrapper = await show([
+      run('short', '看板这里不用显示这个', 'running', auto('impl', '实现')),
+      run('long', longTitle, 'running', auto('deliver', '交付')),
+      run('wide', '四字节点', 'running', auto('review', '测试评审')),
+      run('huge', '长节点名', 'running', auto('custom', longName)),
+      run('blank', '空白节点', 'running', auto('x', '   ')),
+      run('wait', '等人', 'waiting_human'),
+    ])
+
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    const nameRule = src.match(/\.nav-auto-node-name\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(nameRule).toMatch(/flex:\s*none/)
+    expect(nameRule).toMatch(/max-width:\s*42%/)
+    expect(nameRule).toMatch(/font-size:\s*11px/)
+    expect(nameRule).toMatch(/--c-txt3/)
+    expect(nameRule).toMatch(/font-weight:\s*400/)
+    expect(src).not.toContain('max-w-[62%]')
+
+    const named = (key: string) => wrapper.get(`[data-testid="nav-auto-rows"] [data-key="${key}"]`)
+    const assertNamed = (key: string, nodeName: string) => {
+      const row = named(key)
+      const title = row.get('.nav-row-title')
+      expect(title.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'truncate', 'text-start']))
+      expect(title.classes()).not.toContain('shrink')
+      expect(title.classes().some((name) => name.startsWith('max-w-'))).toBe(false)
+      const name = row.get('[data-testid="nav-auto-node-name"]')
+      expect(name.text()).toBe(nodeName)
+      expect(name.classes()).toEqual(expect.arrayContaining(['nav-auto-node-name', 'min-w-0', 'truncate']))
+      expect(name.classes()).not.toContain('flex-1')
+      expect(title.element.nextElementSibling).toBe(name.element)
+      const icon = row.get('[data-testid="nav-pending-type-icon"]')
+      expect(name.element.nextElementSibling).toBe(icon.element)
+      const flexFillers = [...row.element.children].filter((el) => el !== title.element && el.classList.contains('flex-1'))
+      expect(flexFillers).toEqual([])
+      expect(row.attributes('title')).toContain(nodeName)
+    }
+
+    const pinned = named('short')
+    expect(pinned.find('[data-testid="nav-pending-pin"]').exists()).toBe(true)
+    expect(pinned.get('[data-testid="nav-pending-pin"]').element.nextElementSibling).toBe(pinned.get('.nav-row-title').element)
+    assertNamed('short', '实现')
+    assertNamed('long', '交付')
+    expect(named('long').get('.nav-row-title').text()).toBe(longTitle)
+    assertNamed('wide', '测试评审')
+    assertNamed('huge', longName)
+
+    const blank = named('blank')
+    expect(blank.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    expect(blank.get('.nav-row-title').classes()).toContain('flex-1')
+    expect(blank.get('.nav-row-title').element.nextElementSibling).toBe(blank.get('[data-testid="nav-pending-type-icon"]').element)
+
+    const waiting = wrapper.get('[data-testid="nav-running-rows"] [data-key="wait"]')
+    expect(waiting.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    expect(waiting.get('.nav-row-title').element.nextElementSibling).toBe(waiting.get('[data-testid="nav-pending-type-icon"]').element)
+    const solo = wrapper.get('[data-testid="nav-running-rows"] [data-key="solo-1"]')
+    expect(solo.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    expect(solo.get('.nav-row-title').classes()).toContain('flex-1')
+
+    routeState.path = '/runs/short/live'
+    await nextTick()
+    expect(named('short').classes()).toContain('active')
+    assertNamed('short', '实现')
+
+    await named('long').trigger('keydown', { key: 'F2' })
+    await nextTick()
+    const editing = wrapper.get('[data-key="long"][data-editing="true"]')
+    expect(editing.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    const input = editing.get('[data-testid="nav-pending-rename-input"]')
+    expect(input.classes()).toContain('flex-1')
+    expect(input.element.nextElementSibling).toBe(editing.get('[data-testid="nav-pending-type-icon"]').element)
+
     wrapper.unmount()
     vi.useRealTimers()
   })

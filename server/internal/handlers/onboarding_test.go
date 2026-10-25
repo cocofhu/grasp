@@ -232,7 +232,7 @@ func TestBootstrapUsesGitCredentialReferences(t *testing.T) {
 	}
 	for _, name := range result.AgentIDs {
 		agent, _ := hn.h.Agents.Get(name)
-		if agent.GitBindings == nil || len(agent.GitBindings.Items) != 1 || agent.GitBindings.PreferredCredentialID != credential.ID {
+		if agent.GitBindings == nil || len(agent.GitBindings.Items) != 1 || agent.GitBindings.Items[0].CredentialID != credential.ID || agent.GitBindings.PreferredCredentialID != "" {
 			t.Fatalf("Agent %s lost Git reference", name)
 		}
 		if agent.Env["GITHUB_TOKEN"] != "" {

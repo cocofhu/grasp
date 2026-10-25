@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CredentialItem, ModelConfiguration, ModelConnection, ModelConnectionBody, ToolCapability } from '@/lib/api/api'
+import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 import ModelConfigurationManager from './ModelConfigurationManager.vue'
 
 const mocks = vi.hoisted(() => ({ configurations: vi.fn(), connections: vi.fn(), credentials: vi.fn(), capabilities: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), updateConnection: vi.fn(), success: vi.fn(), cliModels: vi.fn() }))
@@ -22,10 +23,11 @@ const capabilities: ToolCapability[] = [
 ]
 let services: ModelConnection[]
 
-function setup() {
+function setup(options: { hoverInk?: boolean } = {}) {
   return mount(ModelConfigurationManager, {
     global: {
       plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })],
+      ...(options.hoverInk ? { directives: { 'hover-ink': vHoverInk } } : {}),
       stubs: {
         Teleport: true, Icon: true,
         CliModelSelect: defineComponent({
@@ -405,5 +407,76 @@ describe('ModelConfigurationManager', () => {
     expect(row.text()).toContain('2 more auxiliary models')
     expect(row.text()).not.toContain('Primary model')
     wrapper.unmount()
+  })
+
+  it('keeps an empty name on step one and does not hover the disabled next button', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('hover: hover') && query.includes('pointer: fine'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+    const wrapper = setup({ hoverInk: true })
+    try {
+      await flushPromises()
+      await wrapper.get('[data-testid="model-configuration-add"]').trigger('click')
+      const next = wrapper.get('[data-testid="model-configuration-next"]')
+      const cancel = wrapper.get('[data-testid="model-configuration-back"]')
+      expect(next.attributes('disabled')).toBeDefined()
+      expect(next.classes()).toContain('text-white')
+      expect(next.classes()).toContain('bg-accent')
+      expect(next.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+      expect(next.findComponent({ name: 'Icon' }).props()).toMatchObject({ name: 'arrow-right', size: 16 })
+      expect(cancel.findComponent({ name: 'Icon' }).props()).toMatchObject({ name: 'close', size: 16 })
+      expect(cancel.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+      expect(cancel.classes().join(' ')).not.toMatch(/hover:bg-/)
+      expect(cancel.classes()).toContain('enabled:hover:text-txt')
+
+      next.element.dispatchEvent(new PointerEvent('pointerenter', { clientX: 8, clientY: 8, pointerType: 'mouse', bubbles: true }))
+      expect(next.element.classList.contains('is-hover-ink')).toBe(false)
+      expect(next.element.classList.contains('is-leave-ink')).toBe(false)
+      expect(next.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+      cancel.element.dispatchEvent(new PointerEvent('pointerenter', { clientX: 4, clientY: 4, pointerType: 'mouse', bubbles: true }))
+      expect(cancel.element.classList.contains('is-hover-ink')).toBe(false)
+      expect(cancel.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+
+      await next.trigger('click')
+      expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('1')
+      await wrapper.get('[data-testid="model-configuration-name"]').setValue('   ')
+      expect(wrapper.get('[data-testid="model-configuration-next"]').attributes('disabled')).toBeDefined()
+      await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+      expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('1')
+
+      await wrapper.get('[data-testid="model-configuration-name"]').setValue('Named model')
+      const ready = wrapper.get('[data-testid="model-configuration-next"]')
+      expect(ready.attributes('disabled')).toBeUndefined()
+      expect(ready.classes()).toContain('text-white')
+      const ink = ready.element.style.getPropertyValue('--hover-ink-color')
+      expect(ink).toBe('rgb(var(--c-accent-hover))')
+      expect(ink).not.toContain('--c-elevated')
+      Object.defineProperty(ready.element, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({ left: 0, top: 0, width: 96, height: 36, right: 96, bottom: 36, x: 0, y: 0, toJSON: () => ({}) }),
+      })
+      ready.element.dispatchEvent(new PointerEvent('pointerenter', { clientX: 10, clientY: 10, pointerType: 'mouse', bubbles: true }))
+      expect(ready.element.classList.contains('is-hover-ink')).toBe(true)
+      expect(ready.classes()).toContain('text-white')
+
+      await wrapper.get('[data-testid="model-configuration-name"]').setValue('  ')
+      const blocked = wrapper.get('[data-testid="model-configuration-next"]')
+      expect(blocked.attributes('disabled')).toBeDefined()
+      expect(blocked.element.classList.contains('is-hover-ink')).toBe(false)
+      expect(blocked.element.classList.contains('is-ink-suppressed')).toBe(true)
+      expect(blocked.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+      expect(blocked.element.style.getPropertyValue('--ink-d')).toBe('0px')
+      await blocked.trigger('click')
+      expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('1')
+    } finally {
+      wrapper.unmount()
+      vi.unstubAllGlobals()
+    }
   })
 })
