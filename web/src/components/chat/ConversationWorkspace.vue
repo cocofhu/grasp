@@ -60,6 +60,7 @@ const width = computed(() => {
 const ariaMax = computed(() => (measured.value ? maxWidth.value : props.panelWidth))
 const suppressChat = computed(() => props.panelEnabled && open.value && (compact.value || covered.value))
 const chatCovered = computed(() => covered.value && open.value && props.panelEnabled && !compact.value)
+const mastheadInert = computed(() => props.panelEnabled && open.value && compact.value)
 const runNameProvided = computed(() => props.runName !== undefined)
 const runNameLabel = computed(() => (props.runName ?? '').trim())
 const runNamePending = computed(() => runNameProvided.value && !runNameLabel.value)
@@ -153,6 +154,10 @@ function dismiss(forgetWidth: boolean) {
 }
 function close() { dismiss(false) }
 function hidePanel() { dismiss(true) }
+function toggleFromArtifactIcon() {
+  if (open.value) hidePanel()
+  else openAtDefault()
+}
 function openAtDefault() {
   covered.value = false
   preferredWidth.value = defaultOpenWidth()
@@ -309,6 +314,7 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
+defineExpose({ toggleFromArtifactIcon, openAtDefault, hidePanel, close })
 </script>
 
 <template>
@@ -332,7 +338,10 @@ onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
       </slot>
     </header>
     <div class="conversation-body">
-      <div ref="main" class="conversation-main" :inert="suppressChat ? true : undefined" :aria-hidden="suppressChat ? 'true' : undefined" data-testid="conversation-main"><slot /></div>
+      <div class="conversation-chat-column">
+        <div v-if="$slots.masthead" class="conversation-masthead" data-testid="conversation-masthead" :inert="mastheadInert ? true : undefined"><slot name="masthead" /></div>
+        <div ref="main" class="conversation-main" :inert="suppressChat ? true : undefined" :aria-hidden="suppressChat ? 'true' : undefined" data-testid="conversation-main"><slot /></div>
+      </div>
       <div v-if="panelEnabled && open && !compact" role="separator" tabindex="0" aria-orientation="vertical" aria-valuemin="0" :aria-valuemax="ariaMax" :aria-valuenow="width" :aria-label="t('pages.conversationWorkspace.resizePanel')" class="conversation-sash" data-testid="conversation-panel-sash" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @keydown="resizeByKey" />
       <aside v-if="panelEnabled" v-show="open" ref="panel" class="conversation-panel" :style="compact ? undefined : { width: width + 'px' }" :role="compact ? 'dialog' : 'complementary'" :aria-modal="compact && open ? 'true' : undefined" :aria-label="panelTitle" :data-drawer-mode="splitModes ? (mode || 'closed') : undefined" data-testid="conversation-artifact-panel" @keydown="onPanelKeydown">
         <!-- Split drawer: the toolbar toggles already name and close it, so desktop skips this row. -->
@@ -361,13 +370,17 @@ onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
 .conversation-mode-toggle:hover { background: rgb(var(--c-txt) / .04); color: rgb(var(--c-txt)); }
 .conversation-mode-toggle[aria-pressed="true"] { border-color: rgb(var(--c-line)); background: rgb(var(--c-base)); color: rgb(var(--c-txt)); }
 .conversation-body { display: flex; position: relative; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
+.conversation-chat-column { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
+.conversation-masthead { flex: none; min-width: 0; }
 .conversation-main { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .conversation-panel { display: flex; min-width: 0; min-height: 0; flex: none; flex-direction: column; overflow: hidden; border-left: 1px solid rgb(var(--c-line)); background: rgb(var(--c-surface)); animation: conversation-panel-reveal 160ms ease-out; }
 .conversation-panel-heading { display: flex; min-height: 44px; flex: none; align-items: center; gap: 8px; padding: 4px 10px 4px 16px; border-bottom: 1px solid rgb(var(--c-line) / .65); }
 .conversation-panel-content { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .conversation-sash { position: relative; width: 4px; flex: none; cursor: col-resize; touch-action: none; background: transparent; }
 .conversation-sash:hover, .conversation-sash:focus-visible, .is-resizing .conversation-sash, .is-covered .conversation-sash { background: rgb(var(--c-accent) / .4); outline: 0; }
+.is-covered .conversation-chat-column { flex: 0 0 0px; width: 0; overflow: visible; }
 .is-covered .conversation-main { flex: 0 0 0px; width: 0; overflow: hidden; visibility: hidden; }
+.is-covered .conversation-masthead { position: absolute; z-index: 25; top: 0; left: 4px; width: min(28rem, calc(100% - 3rem)); padding-inline: 8px 12px; background: rgb(var(--c-surface)); visibility: visible; pointer-events: auto; }
 .is-resizing { user-select: none; }
 .is-compact .conversation-panel { position: absolute; z-index: 20; inset: 0; width: 100%; border-left: 0; }
 .is-compact .conversation-panel-heading { padding-inline: 12px; }

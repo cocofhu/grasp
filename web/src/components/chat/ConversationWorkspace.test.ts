@@ -430,6 +430,67 @@ describe('ConversationWorkspace panel sash', () => {
     expect(w.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('true')
   })
 
+  it('keeps a masthead artifact button outside the covered chat and reopens at 440', async () => {
+    const state = { open: false }
+    wrapper = mount(ConversationWorkspace, {
+      attachTo: document.body,
+      props: {
+        scopeKey: 'assistant',
+        showToolbar: false,
+        open: state.open,
+        'onUpdate:open': (value: boolean) => { state.open = value; void wrapper?.setProps({ open: value }) },
+      },
+      slots: {
+        masthead: () => h('button', {
+          type: 'button',
+          'data-testid': 'pm-chat-artifacts',
+          onClick: () => (wrapper?.vm as { toggleFromArtifactIcon: () => void }).toggleFromArtifactIcon(),
+        }, '产物'),
+        default: '<textarea aria-label="消息">未发送的问题</textarea>',
+        panel: '<div>预览</div>',
+      },
+      global: { plugins: [i18n()] },
+    })
+    const w = wrapper
+    await setCanvas(1200)
+    const button = () => w.get('[data-testid="pm-chat-artifacts"]')
+    const main = () => w.get('[data-testid="conversation-main"]')
+    expect(main().element.contains(button().element)).toBe(false)
+    expect(w.get('[data-testid="conversation-masthead"]').element.contains(button().element)).toBe(true)
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    await dragTo(w, 700)
+    await w.get('[data-testid="conversation-panel-close"]').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('700')
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    await dragTo(w, 700)
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    await w.get('[data-testid="conversation-panel-sash"]').trigger('keydown', { key: 'End' })
+    expect(w.classes()).toContain('is-covered')
+    expect(main().attributes('inert')).toBeDefined()
+    expect(main().element.contains(button().element)).toBe(false)
+    expect(w.get('[data-testid="conversation-masthead"]').attributes('inert')).toBeUndefined()
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    expect(w.classes()).not.toContain('is-covered')
+    expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('未发送的问题')
+  })
+
   it('does not render a sash on a 600px canvas', async () => {
     const w = mountWorkspace(true)
     await setCanvas(600)
