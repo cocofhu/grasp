@@ -104,6 +104,7 @@ describe('ConfirmFlowDialog', () => {
     await nextTick()
     expect(wrapper.emitted('cancel')).toHaveLength(4)
     expect(wrapper.emitted('confirm')).toBeUndefined()
+    expect(wrapper.emitted('visual-close')).toBeUndefined()
     expect(document.body.querySelector('[data-testid="confirm-flow-dialog-done"]')).toBeNull()
     expect(document.body.textContent).not.toContain('已流转')
     wrapper.unmount()
@@ -193,13 +194,63 @@ describe('ConfirmFlowDialog', () => {
       expect(dialog.clientHeight).toBe(before.h)
       expect(document.body.textContent).toContain('已流转')
       expect(document.body.querySelector('[data-testid="confirm-flow-overlay"]')).toBeNull()
+      expect(wrapper.emitted('visual-close')).toBeUndefined()
+      expect(wrapper.emitted('confirm')).toHaveLength(1)
       const pending = vi.getTimerCount()
       expect(pending, `expected a hold timer, saw ${pending}`).toBeGreaterThan(0)
       await vi.advanceTimersByTimeAsync(1000)
       await nextTick()
       expect(dialogEl()).toBeFalsy()
+      expect(wrapper.emitted('visual-close')).toHaveLength(1)
     } finally {
       wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('emits visual close as soon as Escape or the close button dismisses the done window', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountDialog('zh-CN')
+    try {
+      await flushPromises()
+      const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
+      accept.click()
+      await wrapper.setProps({ open: false })
+      await nextTick()
+      expect(dialogEl()).toBeTruthy()
+      expect(wrapper.emitted('visual-close')).toBeUndefined()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await nextTick()
+      expect(wrapper.emitted('visual-close')).toHaveLength(1)
+      expect(wrapper.emitted('cancel')).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      await nextTick()
+      expect(dialogEl()).toBeFalsy()
+      expect(wrapper.emitted('visual-close')).toHaveLength(1)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+
+    vi.useFakeTimers()
+    const again = mountDialog('zh-CN')
+    try {
+      await flushPromises()
+      const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
+      accept.click()
+      await again.setProps({ open: false })
+      await nextTick()
+      const close = dialogEl()!.querySelector('button') as HTMLButtonElement
+      close.click()
+      await nextTick()
+      expect(again.emitted('visual-close')).toHaveLength(1)
+      expect(again.emitted('cancel')).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      await nextTick()
+      expect(dialogEl()).toBeFalsy()
+      expect(again.emitted('visual-close')).toHaveLength(1)
+    } finally {
+      again.unmount()
       vi.useRealTimers()
     }
   })

@@ -58,6 +58,7 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import { useGateApproval, type GateApprovalProps } from './useGateApproval'
+import { __resetSidebarHandoffForTests, isSidebarConfirmWindowHeld } from './sidebarHandoff'
 
 const gate = (over: Record<string, unknown> = {}): Gate =>
   ({
@@ -235,6 +236,33 @@ describe('useGateApproval actions', () => {
     expect(emit).toHaveBeenCalledWith('resolve', 'pass', expect.any(Object))
     expect(confirm).not.toHaveBeenCalled()
     app.unmount()
+  })
+
+  it('holds the sidebar when approve commits, and not when the dialog is dismissed or the action is stale', async () => {
+    __resetSidebarHandoffForTests()
+    const { approval, app, emit } = withApproval()
+    await flushPromises()
+    approval.choose('pass')
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+    approval.dismissConfirmFlow()
+    expect(emit).not.toHaveBeenCalled()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+
+    approval.choose('pass')
+    approval.resolved.value = 'busy'
+    approval.acceptConfirmFlow()
+    expect(emit).not.toHaveBeenCalled()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+
+    approval.resolved.value = null
+    approval.choose('pass')
+    approval.acceptConfirmFlow()
+    expect(emit).toHaveBeenCalledWith('resolve', 'pass', expect.any(Object))
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(true)
+    approval.releaseConfirmFlowWindow()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+    app.unmount()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
   })
 
   it('names unsaved edits, an unsent draft, or both in one dialog', async () => {
