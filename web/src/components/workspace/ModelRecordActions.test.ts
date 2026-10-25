@@ -54,33 +54,45 @@ describe('ModelRecordActions', () => {
   })
 
   it('supports keyboard navigation and restores focus when Escape closes the teleported menu', async () => {
-    const wrapper = setup()
-    const trigger = wrapper.get('[data-testid="model-connection-more-service"]')
-    expect(trigger.attributes('aria-label')).toContain('Team model service')
-    expect(trigger.attributes('aria-haspopup')).toBe('menu')
-    expect(trigger.attributes('aria-expanded')).toBe('false')
-    await trigger.trigger('keydown', { key: 'ArrowDown' })
-    await flushPromises()
-    const menu = document.querySelector<HTMLElement>('[role="menu"]')!
-    expect(menu.parentElement).toBe(document.body)
-    expect(menu.getAttribute('aria-label')).toBe('Team model service')
-    expect(trigger.attributes('aria-controls')).toBe(menu.id)
-    expect(trigger.attributes('aria-expanded')).toBe('true')
-    expect(menu.querySelectorAll('[role="menuitem"]')).toHaveLength(1)
-    expect(document.activeElement).toBe(deleteAction())
-    await pressKey('Escape')
-    expect(document.querySelector('[role="menu"]')).toBeNull()
-    expect(document.activeElement).toBe(trigger.element)
-    expect(trigger.attributes('aria-expanded')).toBe('false')
-    await trigger.trigger('keydown', { key: 'ArrowUp' })
-    await flushPromises()
-    expect(document.activeElement).toBe(deleteAction())
-    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
-    document.activeElement!.dispatchEvent(tab)
-    await flushPromises()
-    expect(tab.defaultPrevented).toBe(false)
-    expect(document.querySelector('[role="menu"]')).toBeNull()
-    expect(document.activeElement).toBe(trigger.element)
+    const visibilityAtFocus: string[] = []
+    const originalFocus = HTMLElement.prototype.focus
+    HTMLElement.prototype.focus = function (this: HTMLElement, ...args: Parameters<HTMLElement['focus']>) {
+      if (this.getAttribute('role') === 'menuitem') visibilityAtFocus.push(this.style.visibility)
+      return originalFocus.apply(this, args)
+    }
+    try {
+      const wrapper = setup()
+      const trigger = wrapper.get('[data-testid="model-connection-more-service"]')
+      expect(trigger.attributes('aria-label')).toContain('Team model service')
+      expect(trigger.attributes('aria-haspopup')).toBe('menu')
+      expect(trigger.attributes('aria-expanded')).toBe('false')
+      await trigger.trigger('keydown', { key: 'ArrowDown' })
+      await flushPromises()
+      expect(visibilityAtFocus.length).toBeGreaterThan(0)
+      expect(visibilityAtFocus.every((value) => value !== 'hidden')).toBe(true)
+      const menu = document.querySelector<HTMLElement>('[role="menu"]')!
+      expect(menu.parentElement).toBe(document.body)
+      expect(menu.getAttribute('aria-label')).toBe('Team model service')
+      expect(trigger.attributes('aria-controls')).toBe(menu.id)
+      expect(trigger.attributes('aria-expanded')).toBe('true')
+      expect(menu.querySelectorAll('[role="menuitem"]')).toHaveLength(1)
+      expect(document.activeElement).toBe(deleteAction())
+      await pressKey('Escape')
+      expect(document.querySelector('[role="menu"]')).toBeNull()
+      expect(document.activeElement).toBe(trigger.element)
+      expect(trigger.attributes('aria-expanded')).toBe('false')
+      await trigger.trigger('keydown', { key: 'ArrowUp' })
+      await flushPromises()
+      expect(document.activeElement).toBe(deleteAction())
+      const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+      document.activeElement!.dispatchEvent(tab)
+      await flushPromises()
+      expect(tab.defaultPrevented).toBe(false)
+      expect(document.querySelector('[role="menu"]')).toBeNull()
+      expect(document.activeElement).toBe(trigger.element)
+    } finally {
+      HTMLElement.prototype.focus = originalFocus
+    }
   })
 
   it('closes on an outside press and leaves presses inside the menu available for actions', async () => {
@@ -125,6 +137,31 @@ describe('ModelRecordActions', () => {
     await toggle.trigger('click')
     await flushPromises()
     expect(wrapper.emitted('toggle')).toEqual([[]])
+  })
+
+  it('can show only the more menu so an API account keeps its own fill and clear controls', async () => {
+    const wrapper = mount(ModelRecordActions, {
+      attachTo: document.body,
+      props: { name: '1', prefix: 'api-account', recordId: 'empty-api', showEdit: false, showToggle: false },
+      global: {
+        plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })],
+        stubs: { Icon: true },
+      },
+    })
+    wrappers.push(wrapper)
+    expect(wrapper.find('[data-testid="api-account-edit-empty-api"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="api-account-toggle-empty-api"]').exists()).toBe(false)
+    const trigger = wrapper.get('[data-testid="api-account-more-empty-api"]')
+    expect(trigger.attributes('aria-label')).toContain('1')
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(180, 20, 28, 28))
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    const remove = document.querySelector<HTMLButtonElement>('[data-testid="api-account-delete-empty-api"]')!
+    expect(remove.getAttribute('aria-label')).toBe('Delete · 1')
+    expect(document.activeElement).toBe(remove)
+    await pressKey('Escape')
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger.element)
   })
 
   it('keeps one record menu open and dismisses it when the list moves or the record unmounts', async () => {

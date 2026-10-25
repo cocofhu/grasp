@@ -704,7 +704,7 @@ describe('Agent creation default inheritance', () => {
     buttonByText('下一步').click(); await flushPromises()
     expect(document.body.querySelector('[data-testid="agent-inherit-model"]')!.getAttribute('aria-checked')).toBe('true')
     expect(buttonByText('下一步').disabled).toBe(true)
-    expect(document.body.textContent).toContain('请先在 Agent 默认配置中选择模型')
+    expect(document.body.textContent).toContain('请先在默认配置中选择模型')
     document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!.click(); await flushPromises()
     await chooseModel('cfg-cursor'); expect(buttonByText('下一步').disabled).toBe(false)
     wrapper.unmount()

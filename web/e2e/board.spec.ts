@@ -187,13 +187,19 @@ test.describe('工作区进度看板', () => {
     await expect(page.getByTestId('run-detail-page')).toHaveCount(0)
   })
 
-  test('额外列筛选失败状态，查看更多跳转运行列表', async ({ page }) => {
+  test('看板不提供附加状态列，查看更多跳转运行列表', async ({ page }) => {
     await gotoBoardHarness(page, { width: 1280, start: 'board' })
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 10_000 })
 
-    await page.getByTestId('board-filter-failed').click()
-    await expect(page.getByTestId('board-extra-columns')).toBeVisible()
-    await expect(page.getByText('看板需求-失败')).toBeVisible()
+    await expect(page.getByTestId('board-filter-queued')).toHaveCount(0)
+    await expect(page.getByTestId('board-filter-failed')).toHaveCount(0)
+    await expect(page.getByTestId('board-filter-cancelled')).toHaveCount(0)
+    await expect(page.getByTestId('board-search')).toHaveCount(0)
+    await expect(page.getByTestId('board-search-input')).toHaveCount(0)
+    await expect(page.getByTestId('board-extra-columns')).toHaveCount(0)
+    await expect(page.getByTestId('run-board-column')).toHaveCount(3)
+    await expect(page.getByText('同时显示')).toHaveCount(0)
+    await expect(page.getByText('看板需求-失败')).toHaveCount(0)
     await expect(page.getByText('看板需求-已完成')).toBeVisible()
 
     await page.getByTestId('board-view-more-completed').click()
@@ -327,7 +333,8 @@ test.describe('工作区进度看板', () => {
     expect(tops[0]).toBe(40)
     expect(tops[2]).toBe(120)
 
-    await page.getByTestId('board-search-input').fill('看板')
+    await expect(page.getByTestId('board-search-input')).toHaveCount(0)
+    await expect(page.getByPlaceholder('搜索当前任务')).toHaveCount(0)
     await page.getByTestId('board-segment-completed').click()
     await page.getByTestId('board-segment-all').click()
     const topsAfter = await page.evaluate(() => {
@@ -336,22 +343,8 @@ test.describe('工作区进度看板', () => {
     })
     expect(topsAfter[0]).toBe(40)
     expect(topsAfter[2]).toBe(120)
-
-    await page.getByTestId('board-search-input').fill('看板已完成-1')
-    await expect(page.getByTestId('run-board-column').nth(0).getByText('没有匹配的任务')).toBeVisible()
-    const topsWhileEmpty = await page.evaluate(() => {
-      const bodies = Array.from(document.querySelectorAll('[data-testid="run-board-column-body"]'))
-      return bodies.map((el) => (el as HTMLElement).scrollTop)
-    })
-    expect(topsWhileEmpty[2]).toBe(120)
-
-    await page.getByTestId('board-search-input').fill('')
-    const topsRestored = await page.evaluate(() => {
-      const bodies = Array.from(document.querySelectorAll('[data-testid="run-board-column-body"]'))
-      return bodies.map((el) => (el as HTMLElement).scrollTop)
-    })
-    expect(topsRestored[0]).toBe(40)
-    expect(topsRestored[2]).toBe(120)
+    await expect(page.getByTestId('run-board-column').nth(0).getByText('没有匹配的任务')).toHaveCount(0)
+    await expect(page.getByText('看板运行中-0')).toBeVisible()
 
     const viewMore = page.getByTestId('board-view-more-completed')
     await expect(viewMore).toBeVisible()

@@ -19,7 +19,7 @@
       "pickWorkflow": "请先选择一个工作流",
       "noWorkflowShort": "未选择工作流",
       "needText": "请先描述目标或附加文件",
-      "heroSubtitle": "先说清，再动手",
+      "heroSubtitle": "我们应该做些什么？",
       "send": "发送",
       "sendShortcut": "Ctrl/⌘ + Enter 发送",
       "missingRequired": "启动前还需填写必填项",
@@ -264,8 +264,6 @@
       "overview": "当前执行概览",
       "overviewRecent": "最近完成",
       "overviewRecords": "共 {n} 条执行记录",
-      "searchLabel": "搜索当前任务",
-      "searchPlaceholder": "搜索当前任务",
       "actionsLabel": "看板操作",
       "refresh": "刷新",
       "allRuns": "全部运行",
@@ -316,9 +314,6 @@
         "emptyModelCompHint": "暂无按模型构成",
         "emptyModelRankHint": "暂无模型排行"
       },
-      "filters": {
-        "label": "同时显示"
-      },
       "segments": {
         "label": "筛选任务状态",
         "all": "全部",
@@ -337,16 +332,13 @@
         "completedOnly": "仅 completed",
         "inProgress": "正在执行",
         "inReview": "需要处理",
-        "doneRecent": "最近 20 条",
-        "extraFilter": "附加状态"
+        "doneRecent": "最近 20 条"
       },
       "empty": {
         "active": "当前没有进行中的需求",
         "running": "没有运行中的需求",
         "waitingHuman": "没有等待人工的需求",
-        "completed": "暂无已完成需求",
-        "extra": "该状态下暂无运行",
-        "noMatch": "没有匹配的任务"
+        "completed": "暂无已完成需求"
       },
       "truncated": {
         "showingFirst100": "仅显示前 100 条，可前往运行列表查看全部"
@@ -1273,6 +1265,9 @@
         "clear": "清除",
         "saved": "凭据已保存",
         "cleared": "凭据已清除",
+        "accountDeleteConfirm": "删除 API 账号「{alias}」后，使用此 API 账号的模型配置会失效，绑定这些配置的 Agent 将无法运行。确认删除？",
+        "accountDeleted": "API 账号已删除",
+        "accountDeleteFailed": "删除 API 账号失败",
         "managedByAdapter": "由 {source} 专用设置管理，此处仅用于工作区范围查看。",
         "updatedAt": "最近更新：{time}"
       },
@@ -1884,7 +1879,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "侧栏与首页打字机共用，最多 40 个字符；留空回退 Grasp。",
         "homeSubtitle": "首页副标题",
-        "homeSubtitlePlaceholder": "先说清，再动手",
+        "homeSubtitlePlaceholder": "我们应该做些什么？",
         "homeSubtitleHint": "最多 80 个字符；留空回退当前语言包默认句。"
       },
       "groups": {
@@ -2108,7 +2103,7 @@
       "unsaved": "未保存",
       "saved": "已保存",
       "tabs": {
-        "files": "Agent 工作目录 ({n})",
+        "files": "工作目录 ({n})",
         "mcp": "MCP ({n})",
         "env": "环境变量 ({n})",
         "test": "对话测试",
@@ -2994,7 +2989,7 @@
         "selected": "已选 {n} 个",
         "manage": "管理仓库",
         "inherit": "沿用默认配置",
-        "inheritHint": "继承「Agent 默认配置」中选中的仓库权限",
+        "inheritHint": "继承「默认配置」中选中的仓库权限",
         "inheritedEmpty": "默认配置还没有选择仓库，当前不会注入任何仓库级凭据。",
         "loadFailed": "仓库列表加载失败",
         "retry": "重试",
