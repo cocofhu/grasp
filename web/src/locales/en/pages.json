@@ -1265,6 +1265,9 @@
         "clear": "Clear",
         "saved": "Credential saved",
         "cleared": "Credential cleared",
+        "accountDeleteConfirm": "After deleting API account \"{alias}\", model configurations using this API account will stop working, and Agents bound to those configurations will no longer run. Delete it?",
+        "accountDeleted": "API account deleted",
+        "accountDeleteFailed": "Could not delete the API account",
         "managedByAdapter": "Managed by the {source} settings and shown here for workspace visibility.",
         "updatedAt": "Last updated: {time}"
       },
