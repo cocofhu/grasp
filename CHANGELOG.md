@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Clearer token analytics:** usage structure now uses readable ranked rows with drill-down details. Model and workflow breakdowns share a full-width tabbed table with usage bars, and the busiest runs show eight rows by default with an option to expand; CSV exports still include the complete list.
+
 - **Workflow shared sandbox switch:** enable Shared sandbox in the workflow editor’s default settings and save. New runs use that selection directly; the separate platform-wide enable flag has been removed. Workflow settings now use consistent groups and switches, with searchable variable-type and Agent selectors.
 
 - **Simpler account and inheritance settings:** Credentials separates coding-tool authorizations under Agent CLI from model service API accounts, both with provider logos. Removed the separate connections list, add-connection entry and model catalog. New Agents inherit by default; Agent metadata collapses inherited settings into one card; switching inheritance off restores local choices. The card keeps its size, and save feedback transitions smoothly. Removed automatic credential slots and old-format inference; only explicitly created current credentials are listed and used.

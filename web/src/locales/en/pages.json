@@ -116,11 +116,20 @@
         "costRank": "Cost ranking",
         "costRankHint": "Estimated from configured prices",
         "weekHour": "Time-of-week",
-        "weekHourHint": "Weekday × hour (local time)",
-        "treemap": "Usage structure",
-        "treemapHint": "Workflows / Assistant / Studio → node types. Click for details."
+        "weekHourHint": "Weekday × hour (local time)"
+      },
+      "structure": {
+        "title": "Usage structure",
+        "hint": "Ranked by usage. Select a source or node type for details.",
+        "showMore": "Show all ({count})",
+        "showLess": "Show less",
+        "shareLabel": "Share"
       },
       "tables": {
+        "breakdown": "Usage details",
+        "modelsTab": "Models",
+        "workflowsTab": "Workflows",
+        "visibleRuns": "Showing {shown} of {total}",
         "runs": "Highest-usage runs",
         "colRun": "Run",
         "colModel": "Model",

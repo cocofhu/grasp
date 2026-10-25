@@ -20,7 +20,6 @@ import {
 import { fmtCompactTokenCount, fmtTokenCount } from '@/lib/run/tokenUsage'
 import type {
   GlobalTokenStats,
-  GlobalTokenStatsTreeNode,
   TokenStatsBucket,
 } from '@/lib/shared/types'
 import {
@@ -419,66 +418,6 @@ export function weekHourHeatmapOption(weekHour: number[][] | undefined, t: Trans
     yAxis: { type: 'category', data: days, inverse: true, splitArea: { show: true }, axisLabel: { fontSize: 10, color: tone.axisLabel } },
     visualMap: { min: 0, max, show: false, inRange: { color: [tone.heatLow, tone.heatHigh] } },
     series: [{ type: 'heatmap', data: flat, itemStyle: { borderRadius: 2, borderWidth: 1, borderColor: 'transparent' } }],
-  }
-}
-
-function treeDrill(node: GlobalTokenStatsTreeNode, parents: DrillTarget[], t: Translate): DrillTarget[] {
-  const step: DrillTarget | null =
-    node.kind === 'workflow'
-        ? node.key && !node.key.startsWith('_') ? { dim: 'workflow', key: node.key, name: node.name } : null
-        : node.kind === 'pm' || node.kind === 'studio'
-          ? { dim: 'source', key: node.kind, name: sourceLabel(t, node.kind) }
-          : node.kind === 'nodeType' && node.key !== 'unknown'
-            ? { dim: 'nodeType', key: node.key, name: node.name }
-            : null
-  return step ? [...parents, step] : parents
-}
-
-export function treemapOption(tree: GlobalTokenStatsTreeNode[] | undefined, currency: string | undefined, t: Translate) {
-  if (!tree?.length) return null
-  const convert = (node: GlobalTokenStatsTreeNode, parents: DrillTarget[], depth: number, idx: number): Record<string, unknown> => {
-    const drill = treeDrill(node, parents, t)
-    const name = node.kind === 'pm' || node.kind === 'studio' ? sourceLabel(t, node.kind) : node.name
-    return {
-      name,
-      value: node.value,
-      cost: node.cost || 0,
-      drill: drill.length ? drill : undefined,
-      itemStyle: depth === 0 ? { color: paletteColor(idx) } : undefined,
-      children: node.children?.map((c, i) => convert(c, drill, depth + 1, i)),
-    }
-  }
-  const tone = chartTone()
-  return {
-    tooltip: statsTooltip({
-      formatter: (p: { name: string; value: number; data: { cost?: number }; treePathInfo?: Array<{ name: string }> }) => {
-        const path = (p.treePathInfo || []).slice(1).map((x) => x.name).join(' / ') || p.name
-        const cost = p.data?.cost ? ` · ${fmtCost(p.data.cost, currency)}` : ''
-        return `${path}<br/>${fmtCompactTokenCount(p.value)}${cost}`
-      },
-    }),
-    series: [
-      {
-        type: 'treemap',
-        roam: false,
-        nodeClick: false,
-        left: 0,
-        right: 0,
-        top: 0,
-        bottom: 0,
-        breadcrumb: { show: false },
-        leafDepth: 2,
-        label: { show: true, fontSize: 11, formatter: (p: { name: string; value: number }) => `${p.name}\n${fmtCompactTokenCount(p.value)}` },
-        upperLabel: { show: true, height: 20, fontSize: 11, color: '#fff' },
-        itemStyle: { borderColor: tone.tooltipBg, borderWidth: 2, gapWidth: 2 },
-        levels: [
-          { itemStyle: { borderWidth: 0, gapWidth: 3 } },
-          { colorSaturation: [0.35, 0.6], itemStyle: { gapWidth: 2, borderColorSaturation: 0.6 } },
-          { colorSaturation: [0.3, 0.5], itemStyle: { gapWidth: 1, borderColorSaturation: 0.5 } },
-        ],
-        data: tree.map((n, i) => convert(n, [], 0, i)),
-      },
-    ],
   }
 }
 
