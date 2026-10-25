@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { __resetConfirmFlowWindowForTests, confirmFlowWindowVisible } from './confirmFlowWindow'
+import { sidebarRunGroup } from './sidebarRunRows'
 import {
   SIDEBAR_EARLY_AUTO_MS,
   SIDEBAR_FLIGHT_MS,
@@ -12,10 +14,12 @@ import {
   noteSidebarHandoffOutcome,
   noteSidebarRunStatus,
   readSidebarHandoff,
+  releaseHeldSidebarHandoffs,
   sidebarChainHandoff,
 } from './sidebarHandoff'
 
 afterEach(() => {
+  __resetConfirmFlowWindowForTests()
   __resetSidebarHandoffForTests()
 })
 
@@ -156,6 +160,36 @@ describe('sidebar handoff mark', () => {
 
     applySidebarEnter('run-2', { nodeId: 'gate', name: '审批', mode: 'manual' }, [{ id: 'gate', type: 'human_gate' }])
     expect(readSidebarHandoff('run-2', 1_000)).toBeNull()
+  })
+
+  it('does not move the row into 自动过程 until the confirm window has left', () => {
+    confirmFlowWindowVisible.value = true
+    armSidebarHandoff('run-1', 'clarify', 1_000, { nodeId: 'impl', name: '实现' })
+    const waiting = {
+      id: 'run-1',
+      currentNode: { id: 'clarify', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' },
+    } as never
+    const jumped = {
+      id: 'run-1',
+      currentNode: { id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' },
+    } as never
+    const held = readSidebarHandoff('run-1', 1_000)
+    expect(held?.held).toBe(true)
+    expect(sidebarRunGroup(waiting, held)).toBe('running')
+    expect(sidebarRunGroup(jumped, held)).toBe('running')
+    releaseHeldSidebarHandoffs()
+    const released = readSidebarHandoff('run-1', 1_000)
+    expect(released?.held).toBe(false)
+    expect(sidebarRunGroup(waiting, released)).toBe('auto')
+    expect(sidebarRunGroup(jumped, released)).toBe('auto')
+    expect(decideSidebarFlight({
+      previous: 'running',
+      next: 'auto',
+      handoffArmed: true,
+      confirmedAuto: true,
+      reducedMotion: false,
+      targetCollapsed: false,
+    }).type).toBe('fly-in')
   })
 
   it('ignores a replay of the node being confirmed, then settles on the next automatic node', () => {

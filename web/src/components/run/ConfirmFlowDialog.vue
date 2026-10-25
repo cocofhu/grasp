@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import { bindConfirmFlowWindow } from '@/lib/inbox/confirmFlowWindow'
 import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 
 const props = withDefaults(
@@ -26,6 +27,9 @@ const cancelBtn = ref<{ $el?: HTMLElement } | null>(null)
 const done = ref(false)
 const shown = ref(false)
 let hideTimer: ReturnType<typeof setTimeout> | undefined
+
+// Parents must wait until this window is gone, not until `open` flips false.
+bindConfirmFlowWindow(shown)
 
 const discardText = computed(() => {
   switch (props.discard) {

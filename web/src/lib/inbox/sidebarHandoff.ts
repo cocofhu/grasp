@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { confirmFlowWindowVisible, onConfirmFlowWindowHidden } from '@/lib/inbox/confirmFlowWindow'
 import { isPlumbingNode, isRunTerminal, type ChainNodeMeta } from '@/lib/inbox/runConversationChain'
 import type { SidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 
@@ -69,6 +70,8 @@ export interface SidebarHandoffMark {
   autoNodeId?: string
   autoNodeName?: string
   at: number
+  /** Window still covering the conversation; the row must not fly yet. */
+  held?: boolean
 }
 
 export interface SidebarEnterTarget {
@@ -114,9 +117,23 @@ export function armSidebarHandoff(
     autoNodeId: target?.nodeId || early?.nodeId,
     autoNodeName: target ? target.name : early?.name,
     at: now,
+    held: confirmFlowWindowVisible.value,
   })
   touch()
 }
+
+/** The confirm window has left. Rows armed during the hold may move and fly now. */
+export function releaseHeldSidebarHandoffs() {
+  let changed = false
+  for (const [runId, mark] of marks) {
+    if (!mark.held) continue
+    marks.set(runId, { ...mark, held: false })
+    changed = true
+  }
+  if (changed) touch()
+}
+
+onConfirmFlowWindowHidden(releaseHeldSidebarHandoffs)
 
 export function noteSidebarHandoffOutcome(
   runId: string,

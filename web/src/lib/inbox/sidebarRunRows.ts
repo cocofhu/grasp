@@ -29,6 +29,11 @@ export interface SidebarAutoClaim {
   confirmedAuto: boolean
   autoNodeId?: string
   autoNodeName?: string
+  /**
+   * Confirm window is still on screen. The row stays where it was so the
+   * fly into「自动过程」cannot start before the window leaves.
+   */
+  held?: boolean
 }
 
 /**
@@ -37,6 +42,12 @@ export interface SidebarAutoClaim {
  * different, non-automatic node.
  */
 export function sidebarRunGroup(run: Run | null | undefined, claim: SidebarAutoClaim | null | undefined): 'running' | 'auto' {
+  if (claim?.held) {
+    // Already inside「自动过程」on the node being confirmed: stay there.
+    // A snapshot that jumped to the next automatic node waits until release.
+    if (isAutoProcessRun(run) && run?.currentNode?.id && run.currentNode.id === claim.fromNodeId) return 'auto'
+    return 'running'
+  }
   if (isAutoProcessRun(run)) return 'auto'
   if (!claim?.confirmedAuto) return 'running'
   const node = run?.currentNode
