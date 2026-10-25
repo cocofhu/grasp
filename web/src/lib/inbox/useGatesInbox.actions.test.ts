@@ -152,7 +152,7 @@ vi.mock('@/lib/api/api', async () => {
 
 import * as recentRuns from '@/lib/run/recentRuns'
 import { TYPING_IDLE_MS, useGatesInbox } from './useGatesInbox'
-import { CLARIFY_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
+import { CLARIFY_CAPS, IMPLEMENT_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
 
 const gateItem = (id = 'run-gate', over: Record<string, unknown> = {}): InboxItem =>
   ({
@@ -617,6 +617,107 @@ describe('useGatesInbox actions', () => {
     expect(inbox.activeFollowTail.value).toBeNull()
     expect(inbox.followObserving.value).toBe(false)
     expect(inbox.clarifyComposerLocked.value).toBe(false)
+    app.unmount()
+  })
+
+  function graphRun(id: string, nodes: Run['nodes'], edges: Run['edges']) {
+    return contextRun(id, { nodes, edges } as Record<string, unknown>)
+  }
+
+  it('confirm while the chain is still on clarify follows the automatic successor, and a stale snapshot cannot put it back', async () => {
+    const nodes = [
+      { id: 'react', type: 'agent' as const, label: '需求澄清', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
+      { id: 'implement', type: 'agent' as const, label: '实现', caps: IMPLEMENT_CAPS, config: {}, position: { x: 0, y: 0 } },
+    ]
+    const edges = [{ id: 'e-impl', source: 'react', target: 'implement' }]
+    mocks.inboxContext.mockImplementation(async (runId: string) => ({ run: graphRun(runId, nodes, edges) }))
+    mocks.getRun.mockImplementation(async (runId: string) => graphRun(runId, nodes, edges))
+    let currentNode: Record<string, unknown> = {
+      id: 'react', name: '需求澄清', kind: 'clarify', mode: 'manual', state: 'waiting_human', iteration: 1,
+    }
+    mocks.runConversationChain.mockImplementation(async () => ({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode,
+      segments: [{ nodeId: 'react', iteration: 1, name: '需求澄清', kind: 'clarify', status: 'waiting_human', turns: [] }],
+    }))
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await flushPromises()
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'react' })
+    expect(inbox.activeHandoff.value).toMatchObject({ phase: 'done', target: '实现' })
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '实现', nodeId: 'implement' })
+    expect(inbox.activeFollowTail.value?.label ?? '').not.toContain('需求澄清')
+    expect(inbox.followObserving.value).toBe(true)
+    expect(inbox.clarifyComposerLocked.value).toBe(true)
+
+    const socket = [...MockWebSocket.instances].reverse().find((s) => s.url.includes('run-chat'))
+    expect(socket).toBeTruthy()
+    socket!.message({ type: 'node_enter', nodeId: 'implement', iteration: 1, name: '实现', mode: 'auto', kind: 'agent' })
+    await flushPromises()
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '实现', nodeId: 'implement' })
+    expect(inbox.activeHandoff.value?.target).toBe('实现')
+
+    currentNode = { id: 'review', name: '测试评审', kind: 'agent', mode: 'auto', state: 'running', iteration: 1 }
+    socket!.message({ type: 'status' })
+    await flushPromises()
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '测试评审', nodeId: 'review' })
+    expect(inbox.activeHandoff.value?.target).toBe('实现')
+    app.unmount()
+  })
+
+  it('a human successor still booting is named on the waiting row even while the chain is on the node just left', async () => {
+    const nodes = [
+      { id: 'react', type: 'agent' as const, label: '需求澄清', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
+      { id: 'accept', type: 'agent' as const, label: '验收测试', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
+    ]
+    const edges = [{ id: 'e-acc', source: 'react', target: 'accept' }]
+    mocks.inboxContext.mockImplementation(async (runId: string) => ({ run: graphRun(runId, nodes, edges) }))
+    mocks.getRun.mockImplementation(async (runId: string) => graphRun(runId, nodes, edges))
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode: { id: 'react', name: '需求澄清', kind: 'clarify', mode: 'manual', state: 'waiting_human', iteration: 1 },
+      segments: [{ nodeId: 'react', iteration: 1, name: '需求澄清', kind: 'clarify', status: 'waiting_human', turns: [] }],
+    })
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await flushPromises()
+    mocks.listGates.mockResolvedValue({
+      items: [gateItem(), clarifyItem('run-chat', { nodeId: 'accept', label: '验收测试', state: 'starting' })],
+      total: 2,
+    })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'react' })
+    expect(inbox.activeHandoff.value).toMatchObject({ phase: 'done', target: '验收测试' })
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'waiting', label: '验收测试', nodeId: 'accept' })
+    expect(inbox.activeFollowTail.value?.label ?? '').not.toContain('需求澄清')
+    expect(inbox.followObserving.value).toBe(false)
+    expect(inbox.clarifyComposerLocked.value).toBe(true)
+    app.unmount()
+  })
+
+  it('an unknown successor uses the unnamed waiting row instead of the node just left', async () => {
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode: { id: 'react', name: '需求澄清', kind: 'clarify', mode: 'manual', state: 'waiting_human', iteration: 1 },
+      segments: [{ nodeId: 'react', iteration: 1, name: '需求澄清', kind: 'clarify', status: 'waiting_human', turns: [] }],
+    })
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await flushPromises()
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.activeFollowTail.value?.kind).toBe('waiting')
+    expect(inbox.activeFollowTail.value?.label).toBeFalsy()
+    expect(inbox.activeFollowTail.value?.nodeId).toBeFalsy()
+    expect(inbox.followObserving.value).toBe(false)
     app.unmount()
   })
 

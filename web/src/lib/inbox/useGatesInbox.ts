@@ -47,7 +47,7 @@ import {
 } from '@/lib/inbox/inboxStartingCards'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { applyPreviewArtifactName, inboxStageRemoteKind, isAppPreviewRemoteNode } from '@/lib/run/reactArtifactPreview'
-import { findGraphNode } from '@/lib/shared/clarifyInteractive'
+import { findGraphNode, isClarifyNode } from '@/lib/shared/clarifyInteractive'
 import { createPendingAcpBuffer, pickAcpRails } from '@/lib/run/pendingAcpBuffer'
 import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
@@ -671,6 +671,62 @@ function tailFromChain(key: string, chain: RunChain): FollowTail {
   if (cur && cur.mode === 'auto') return { key, runId: chain.runId, kind: 'auto', label, nodeId, iteration, at }
   return { key, runId: chain.runId, kind: 'waiting', label, nodeId, iteration, at }
 }
+/**
+ * Chain still names the visit that was just confirmed. A later iteration of
+ * the same node has moved on and is not this snapshot.
+ */
+function chainStillOnDeparted(chain: RunChain, submitted: InboxItem): boolean {
+  const cur = chain.current
+  if (!cur?.id || cur.id !== submitted.nodeId) return false
+  const left = submitted.iteration
+  if (typeof cur.iteration === 'number' && typeof left === 'number' && cur.iteration > left) return false
+  return true
+}
+/**
+ * First outgoing edge, the same one the hand-off row names. A clarify node
+ * or a human gate is a person still starting; anything else runs on its own.
+ * No label → the unnamed「等待下一节点开始」row.
+ */
+function handoffSuccessor(runId: string, departedId: string): { id: string; label: string; human: boolean } | null {
+  const run = activeRun.value
+  if (!run || run.id !== runId) return null
+  const edge = (run.edges ?? []).find((e) => e.source === departedId)
+  if (!edge) return null
+  const node = (run.nodes ?? []).find((n) => n.id === edge.target)
+  const label = (node?.label || '').trim()
+  if (!node || !label) return null
+  return { id: node.id, label, human: node.type === 'human_gate' || isClarifyNode(node) }
+}
+function tailFromHandoffTarget(key: string, chain: RunChain, submitted: InboxItem): FollowTail {
+  const at = new Date().toISOString()
+  const next = handoffSuccessor(chain.runId, submitted.nodeId)
+  if (!next) return { key, runId: chain.runId, kind: 'waiting', at }
+  if (next.human) return { key, runId: chain.runId, kind: 'waiting', label: next.label, nodeId: next.id, at }
+  return { key, runId: chain.runId, kind: 'auto', label: next.label, nodeId: next.id, at }
+}
+/** Follow row already names a node after the one just confirmed. A stale chain must not put it back. */
+function followAlreadyAhead(key: string, submitted: InboxItem): FollowTail | null {
+  const kept = followTail.value
+  if (!kept || kept.key !== key || kept.kind === 'ended' || kept.kind === 'error') return null
+  if (!kept.nodeId || kept.nodeId === submitted.nodeId) return null
+  return kept
+}
+function resolveFollowTail(submitted: InboxItem, key: string, chain: RunChain): FollowTail {
+  if (isRunTerminal(chain.status)) return tailFromChain(key, chain)
+  if (!chainStillOnDeparted(chain, submitted)) return tailFromChain(key, chain)
+  return followAlreadyAhead(key, submitted) ?? tailFromHandoffTarget(key, chain, submitted)
+}
+/** Stale departed snapshot must not cancel an automatic successor the row already chose. */
+function noteFollowFromSnapshot(submitted: InboxItem, chain: RunChain, tail: FollowTail) {
+  if (isRunTerminal(chain.status) || !chainStillOnDeparted(chain, submitted)) {
+    syncSidebarHandoffFromChain(submitted.runId, chain)
+    return
+  }
+  if (tail.kind === 'auto') noteSidebarHandoffOutcome(submitted.runId, 'auto')
+  else if (tail.kind === 'waiting' && tail.nodeId && tail.nodeId !== submitted.nodeId) {
+    noteSidebarHandoffOutcome(submitted.runId, 'human')
+  }
+}
 /** Snapshot after 确认并流转: automatic confirms the fly; a person or a finished run cancels it. */
 function syncSidebarHandoffFromChain(runId: string, chain: RunChain) {
   if (isRunTerminal(chain.status)) {
@@ -723,8 +779,9 @@ async function followStep(submitted: InboxItem, submittedKey: string) {
     const prevIter = followTail.value?.iteration
     if (chain) {
       followFailures = 0
-      setFollowTail(tailFromChain(submittedKey, chain))
-      syncSidebarHandoffFromChain(submitted.runId, chain)
+      const tail = resolveFollowTail(submitted, submittedKey, chain)
+      setFollowTail(tail)
+      noteFollowFromSnapshot(submitted, chain, tail)
     } else if (++followFailures >= FOLLOW_ERROR_AFTER && followTail.value) {
       setFollowTail({ ...followTail.value, kind: 'error', at: new Date().toISOString() })
     }
@@ -768,10 +825,10 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
   const chain = await loadRunChain(submitted.runId)
   followFailures = chain ? 0 : 1
   const tail: FollowTail = chain
-    ? tailFromChain(submittedKey, chain)
+    ? resolveFollowTail(submitted, submittedKey, chain)
     : { key: submittedKey, runId: submitted.runId, kind: 'waiting', at: new Date().toISOString() }
   setFollowTail(tail)
-  if (chain) syncSidebarHandoffFromChain(submitted.runId, chain)
+  if (chain) noteFollowFromSnapshot(submitted, chain, tail)
   else if (tail.kind === 'ended') noteSidebarHandoffOutcome(submitted.runId, 'ended')
   if (tail.kind === 'auto') void fillFollowFromNodeEvents()
   if (tail.kind === 'ended') closeFollowWs()
