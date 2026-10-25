@@ -6,6 +6,7 @@ import Icon from '@/components/ui/Icon.vue'
 import { api } from '@/lib/api/api'
 import type { SoloEnvEntry, SoloEnvSource, SoloSession } from '@/lib/api/apiTypes'
 import { backendLabel, repoShort } from '@/lib/solo/soloPrefs'
+import { branchOfRepo, sessionRepos } from '@/lib/solo/sessionRepos'
 
 /** What the sandbox was started with. Values are never shown, only names and origin. */
 const props = defineProps<{ open: boolean; session: SoloSession }>()
@@ -45,18 +46,13 @@ const shown = computed(() =>
     .sort((a, b) => SOURCES.indexOf(a.source) - SOURCES.indexOf(b.source) || a.key.localeCompare(b.key)),
 )
 
-const project = computed(() => props.session.project)
+const repos = computed(() => sessionRepos(props.session))
 const facts = computed(() => {
   const rows: { label: string; value: string; mono?: boolean }[] = [
     { label: t('pages.solo.env.agent'), value: props.session.agentName },
     { label: t('pages.solo.env.backend'), value: backendLabel(props.session.backend) },
   ]
   if (props.session.model) rows.push({ label: t('pages.solo.env.model'), value: props.session.model, mono: true })
-  if (project.value) {
-    rows.push({ label: t('pages.solo.env.repo'), value: repoShort(project.value.repoUrl), mono: true })
-    rows.push({ label: t('pages.solo.env.branch'), value: props.session.branch || project.value.defaultBranch || t('pages.solo.env.remoteDefault'), mono: true })
-    rows.push({ label: t('pages.solo.env.access'), value: t(`pages.solo.access.${project.value.gitCredentialType || 'none'}`) })
-  }
   return rows
 })
 </script>
@@ -70,7 +66,21 @@ const facts = computed(() => {
           <dd :class="{ 'font-mono': f.mono }">{{ f.value }}</dd>
         </template>
       </dl>
-      <p v-if="project" class="text-[11.5px] text-txt3">{{ t('pages.solo.env.snapshotHint') }}</p>
+      <p v-if="!repos.length" class="text-[11.5px] text-txt3">{{ t('pages.solo.noProject') }}</p>
+      <section v-for="repo in repos" :key="`${repo.position}-${repo.projectId}`" class="solo-env__repo" :data-testid="`solo-env-repo-${repo.projectId || repo.position}`">
+        <h3 class="mb-2 text-[13px] font-medium text-txt">{{ repo.name }}</h3>
+        <dl class="solo-env__facts">
+          <dt>{{ t('pages.solo.env.repo') }}</dt>
+          <dd class="font-mono">{{ repoShort(repo.repoUrl) }}</dd>
+          <dt>{{ t('pages.solo.env.branch') }}</dt>
+          <dd class="font-mono">{{ branchOfRepo(repo, t('pages.solo.env.remoteDefault')) }}</dd>
+          <dt>{{ t('pages.solo.env.dir') }}</dt>
+          <dd class="font-mono">{{ repo.repoDirName }}</dd>
+          <dt>{{ t('pages.solo.env.access') }}</dt>
+          <dd>{{ t(`pages.solo.access.${repo.gitCredentialType || 'none'}`) }}</dd>
+        </dl>
+      </section>
+      <p v-if="repos.length" class="text-[11.5px] text-txt3">{{ t('pages.solo.env.snapshotHint') }}</p>
 
       <section>
         <div class="mb-2 flex items-center gap-2">
@@ -122,6 +132,11 @@ const facts = computed(() => {
   color: rgb(var(--c-txt));
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.solo-env__repo {
+  margin-top: 14px;
+  border-top: 1px solid rgb(var(--c-line) / 0.7);
+  padding-top: 12px;
 }
 .solo-env__chip {
   border: 1px solid rgb(var(--c-line));

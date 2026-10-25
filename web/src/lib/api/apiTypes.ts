@@ -661,15 +661,32 @@ export interface SoloSandboxInfo {
   createdAt?: string
 }
 
+/** One repository frozen into a Solo session at launch. */
+export interface SessionRepo {
+  position: number
+  projectId: string
+  name: string
+  repoUrl: string
+  repoDirName: string
+  branch?: string
+  gitCredentialType?: GitCredentialType | string
+  gitCredentialId?: string
+  sshHostsCredentialId?: string
+  env?: Record<string, string>
+  credentialBindings?: Record<string, string | null>
+}
+
 export interface SoloSession {
   id: string
   userId: string
   title: string
   agentName: string
   projectId?: string
-  /** Project config frozen when the session started. */
+  /** Project config frozen when a single-repo session started. */
   project?: Project
   branch?: string
+  /** Ordered repositories frozen at launch. Empty means an empty workspace. */
+  repos?: SessionRepo[]
   sandboxId?: number
   status: SoloStatus
   error?: string
@@ -692,10 +709,17 @@ export interface SoloSessionList {
   maxSandboxes: number
 }
 
+export interface SoloRepoChoice {
+  projectId: string
+  branch?: string
+}
+
 export interface SoloCreateBody {
   agentName: string
   projectId?: string
   branch?: string
+  /** Ordered selection. An empty list starts an empty workspace. */
+  repos?: SoloRepoChoice[]
   title?: string
   text?: string
   images?: ClarifyImage[]

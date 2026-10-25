@@ -230,6 +230,7 @@
     "solo": [
       "acpTurn.ts",
       "projectForm.ts",
+      "sessionRepos.ts",
       "soloErrors.ts",
       "soloPrefs.ts",
       "useSoloChat.ts",
@@ -260,7 +261,7 @@
     "pm": 7,
     "run": 66,
     "shared": 39,
-    "solo": 7,
+    "solo": 8,
     "workflow": 3,
     "workspace": 5
   }
