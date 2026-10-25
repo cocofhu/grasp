@@ -3,8 +3,7 @@ package sandbox
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,14 +11,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/ssh"
 )
 
 // The gateway control plane does not proxy data-plane traffic (exec, files,
 // terminal). approving reaches each sandbox directly over SSH (the universal
-// image runs sshd on :22). The manager injects a generated public key via the
-// SSH_KEY env at create time and authenticates with the matching private key,
-// so no password ever crosses the wire.
+// image runs sshd on :22). The manager injects one shared public key via the
+// SSH_KEY env at create time and authenticates with the matching private key.
+// When that key is refused, the dial retries with that sandbox's own token.
 
 // hostKeyCache stores TOFU host keys keyed by "host:port" for ephemeral sandboxes.
 type hostKeyCache struct {
@@ -53,14 +53,44 @@ func (c *hostKeyCache) set(addr string, key ssh.PublicKey) {
 }
 
 // sshCreds is the SSH connection material for one sandbox: its reachable
-// host:port plus the shared signer (and an optional password fallback).
+// host:port, the shared signer, and that sandbox's token as a password.
 type sshCreds struct {
 	host     string
 	port     int
 	signer   ssh.Signer
-	password string
+	authKey  string // authorized_keys line for the current signer
+	password string // this sandbox's token; empty skips password auth
 	user     string
 	hostKeys *hostKeyCache
+}
+
+// authObserver records the password passed into a data-plane dial. Tests only.
+var (
+	authObserverMu sync.Mutex
+	authObserver   func(string)
+)
+
+// SetDataPlaneAuthObserver installs a test hook invoked with the password
+// handed to a data-plane operation. The hook must not log that password.
+func SetDataPlaneAuthObserver(fn func(string)) func() {
+	authObserverMu.Lock()
+	prev := authObserver
+	authObserver = fn
+	authObserverMu.Unlock()
+	return func() {
+		authObserverMu.Lock()
+		authObserver = prev
+		authObserverMu.Unlock()
+	}
+}
+
+func (c sshCreds) noteAuth() {
+	authObserverMu.Lock()
+	fn := authObserver
+	authObserverMu.Unlock()
+	if fn != nil {
+		fn(c.password)
+	}
 }
 
 // execHook is a test seam for the sandbox data plane. When non-nil it answers
@@ -76,26 +106,6 @@ func SetExecHook(fn func(ctx context.Context, host string, port int, command str
 	prev := execHook
 	execHook = fn
 	return func() { execHook = prev }
-}
-
-// generateSSHKey mints an ephemeral ed25519 keypair for sandbox data-plane
-// access. It returns the signer (private half, used to authenticate) and the
-// authorized_keys line (public half, injected into the sandbox via SSH_KEY).
-func generateSSHKey() (ssh.Signer, string, error) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, "", fmt.Errorf("generate ed25519 key: %w", err)
-	}
-	signer, err := ssh.NewSignerFromKey(priv)
-	if err != nil {
-		return nil, "", fmt.Errorf("new signer: %w", err)
-	}
-	sshPub, err := ssh.NewPublicKey(pub)
-	if err != nil {
-		return nil, "", fmt.Errorf("new public key: %w", err)
-	}
-	authorized := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub)))
-	return signer, authorized, nil
 }
 
 func (c sshCreds) addrKey() string {
@@ -153,11 +163,98 @@ func (c sshCreds) clientConfig() *ssh.ClientConfig {
 	}
 }
 
-// dial opens an SSH client to the sandbox. Callers must Close it.
+// authorizeKeyShell appends the public key read from stdin to root's
+// authorized_keys. A line that is already present is left as-is.
+const authorizeKeyShell = `set -eu
+umask 077
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+f=/root/.ssh/authorized_keys
+touch "$f"
+chmod 600 "$f"
+IFS= read -r key || true
+[ -n "$key" ]
+grep -qxF -e "$key" "$f" && exit 0
+printf "%s\n" "$key" >> "$f"
+`
+
+// redactSSHText removes a sandbox token and any private-key PEM from a
+// dial error or log line. Short strings are left alone so ordinary SSH
+// wording is not rewritten.
+func redactSSHText(msg, secret string) string {
+	secret = strings.TrimSpace(secret)
+	if len(secret) >= 8 {
+		msg = strings.ReplaceAll(msg, secret, "[redacted]")
+	}
+	if strings.Contains(msg, "PRIVATE KEY") || strings.Contains(msg, "-----BEGIN ") {
+		return "ssh authentication failed"
+	}
+	return msg
+}
+
+func (c sshCreds) redactErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := redactSSHText(err.Error(), c.password)
+	if msg == err.Error() {
+		return err
+	}
+	return errors.New(msg)
+}
+
+func sshAuthFailed(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "unable to authenticate") || strings.Contains(msg, "no supported methods")
+}
+
+// dial opens an SSH client to the sandbox. Public key is tried first. When
+// that is refused and this sandbox has a token, the token is used as the root
+// password and the current public key is appended to authorized_keys.
+// Callers must Close the client. A failed append does not close it.
 func (c sshCreds) dial(ctx context.Context) (*ssh.Client, error) {
+	c.noteAuth()
 	if c.host == "" || c.port == 0 {
 		return nil, fmt.Errorf("ssh: sandbox has no reachable ssh endpoint")
 	}
+	if c.signer != nil {
+		keyOnly := c
+		keyOnly.password = ""
+		cli, err := keyOnly.dialOnce(ctx)
+		if err == nil {
+			return cli, nil
+		}
+		if strings.TrimSpace(c.password) == "" || !sshAuthFailed(err) {
+			return nil, c.redactErr(err)
+		}
+	}
+	if strings.TrimSpace(c.password) == "" {
+		cli, err := c.dialOnce(ctx)
+		if err != nil {
+			return nil, c.redactErr(err)
+		}
+		return cli, nil
+	}
+	pw := c
+	pw.signer = nil
+	cli, err := pw.dialOnce(ctx)
+	if err != nil {
+		return nil, c.redactErr(err)
+	}
+	if strings.TrimSpace(c.authKey) != "" {
+		if herr := c.authorizeCurrentKey(ctx, cli); herr != nil {
+			log.Warn().Str("addr", c.addrKey()).Msg("ssh authorized_keys update failed; session kept")
+		}
+	}
+	return cli, nil
+}
+
+// dialOnce opens one SSH connection with whatever auth methods clientConfig
+// currently includes. Callers must Close the client.
+func (c sshCreds) dialOnce(ctx context.Context) (*ssh.Client, error) {
 	addr := fmt.Sprintf("%s:%d", c.host, c.port)
 	d := net.Dialer{Timeout: 15 * time.Second}
 	conn, err := d.DialContext(ctx, "tcp", addr)
@@ -170,6 +267,40 @@ func (c sshCreds) dial(ctx context.Context) (*ssh.Client, error) {
 		return nil, fmt.Errorf("ssh handshake %s: %w", addr, err)
 	}
 	return ssh.NewClient(sshConn, chans, reqs), nil
+}
+
+// authorizeCurrentKey appends the current public key on an already
+// authenticated connection. Failure leaves the connection usable.
+func (c sshCreds) authorizeCurrentKey(ctx context.Context, cli *ssh.Client) error {
+	key := strings.TrimSpace(c.authKey)
+	if key == "" || cli == nil {
+		return nil
+	}
+	sess, err := cli.NewSession()
+	if err != nil {
+		return fmt.Errorf("append authorized key failed")
+	}
+	defer func() { _ = sess.Close() }()
+	sess.Stdin = strings.NewReader(key + "\n")
+	done := make(chan error, 1)
+	go func() {
+		done <- sess.Run("sh -c " + shellQuote(authorizeKeyShell))
+	}()
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("append authorized key failed")
+		}
+		return nil
+	case <-ctx.Done():
+		_ = sess.Close()
+		return fmt.Errorf("append authorized key failed")
+	case <-timer.C:
+		_ = sess.Close()
+		return fmt.Errorf("append authorized key failed")
+	}
 }
 
 // waitReady polls until sshd accepts an authenticated connection or maxWait
@@ -206,6 +337,7 @@ func (c sshCreds) run(ctx context.Context, timeout time.Duration, cmd safeCmd) (
 	if err != nil {
 		return nil, err
 	}
+	c.noteAuth()
 	if execHook != nil {
 		return execHook(ctx, c.host, c.port, command, nil)
 	}
@@ -253,6 +385,7 @@ func (c sshCreds) runInput(ctx context.Context, timeout time.Duration, cmd safeC
 	if err != nil {
 		return nil, err
 	}
+	c.noteAuth()
 	if execHook != nil {
 		return execHook(ctx, c.host, c.port, command, r)
 	}

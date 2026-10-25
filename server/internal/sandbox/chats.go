@@ -64,6 +64,10 @@ func DeleteChat(ctx context.Context, host string, port int, password, chatID str
 }
 
 func chatRequest(ctx context.Context, method, host string, port int, password, path string, body []byte) (*http.Response, error) {
+	return chatRequestTimeout(ctx, method, host, port, password, path, body, chatHTTPTimeout)
+}
+
+func chatRequestTimeout(ctx context.Context, method, host string, port int, password, path string, body []byte, timeout time.Duration) (*http.Response, error) {
 	if host == "" {
 		host = "127.0.0.1"
 	}
@@ -86,7 +90,10 @@ func chatRequest(ctx context.Context, method, host string, port int, password, p
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}
-	resp, err := (&http.Client{Timeout: chatHTTPTimeout}).Do(req)
+	if timeout <= 0 {
+		timeout = chatHTTPTimeout
+	}
+	resp, err := (&http.Client{Timeout: timeout}).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%s %s: %w", method, path, err)
 	}

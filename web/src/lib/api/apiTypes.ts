@@ -685,6 +685,16 @@ export interface SoloSession {
   /** Project config frozen when a single-repo session started. */
   project?: Project
   branch?: string
+  /** Opening model. Empty follows the Agent configuration's primary model. */
+  initialModelId?: string
+  /**
+   * Model later turns use. Empty means the primary model.
+   * Absent currentModelSet means an old session still follows initialModelId.
+   */
+  currentModelId?: string
+  currentModelSet?: boolean
+  /** Stable code set when a model switch is rolled back. */
+  modelNotice?: string
   /** Ordered repositories frozen at launch. Empty means an empty workspace. */
   repos?: SessionRepo[]
   sandboxId?: number
