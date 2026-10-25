@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
@@ -50,6 +50,11 @@ let shown = 0
 let ready = false
 let pendingFrom = 0
 let pendingAnimate = false
+let rollArmed = false
+let rollTimer = 0
+let detachRoll: (() => void) | null = null
+
+const ROLL_MS = 220
 
 function triggerButton(): HTMLButtonElement | null {
   const root = shellRef.value?.$el
@@ -69,18 +74,56 @@ function rollCell(text: string) {
   return span
 }
 
+function disarmRoll() {
+  rollArmed = false
+  if (rollTimer) {
+    window.clearTimeout(rollTimer)
+    rollTimer = 0
+  }
+  detachRoll?.()
+  detachRoll = null
+}
+
+/** Leave a single digit and drop the translate, so the button name matches the visible count. */
+function parkRoll(strip: HTMLElement, value: number) {
+  strip.style.transition = 'none'
+  strip.replaceChildren(rollCell(String(value)))
+  strip.style.transform = 'none'
+  void strip.offsetWidth
+  strip.style.transition = ''
+}
+
+function finishRoll(strip: HTMLElement, value: number) {
+  if (!rollArmed) return
+  disarmRoll()
+  if (stripEl.value !== strip || shown !== value) return
+  parkRoll(strip, value)
+}
+
+function armRoll(strip: HTMLElement, value: number) {
+  const onEnd = (event: TransitionEvent) => {
+    if (event.target !== strip || event.propertyName !== 'transform') return
+    finishRoll(strip, value)
+  }
+  strip.addEventListener('transitionend', onEnd)
+  detachRoll = () => strip.removeEventListener('transitionend', onEnd)
+  rollArmed = true
+  rollTimer = window.setTimeout(() => finishRoll(strip, value), ROLL_MS + 30)
+}
+
 /** +N rolls only the digit. Larger values enter from below; smaller ones from above. */
 function rollTo(next: number, animate: boolean) {
   const strip = stripEl.value
+  const midRoll = rollArmed
+  disarmRoll()
   if (next <= 0 || !strip) {
     shown = 0
     return
   }
+  if (midRoll && strip.childElementCount > 1) parkRoll(strip, shown)
   const motion = animate && !prefersReducedMotion() && shown !== next
   if (!motion) {
-    strip.style.transition = 'none'
-    strip.replaceChildren(rollCell(String(next)))
-    strip.style.transform = 'none'
+    parkRoll(strip, next)
     shown = next
     return
   }
@@ -96,6 +139,7 @@ function rollTo(next: number, animate: boolean) {
   shown = next
   void strip.offsetWidth
   strip.style.transition = ''
+  armRoll(strip, next)
   strip.style.transform = dir > 0 ? 'translateY(-50%)' : 'translateY(0)'
 }
 
@@ -139,6 +183,8 @@ onMounted(() => {
   rollTo(extra.value, false)
   ready = true
 })
+
+onBeforeUnmount(disarmRoll)
 
 function matches(project: Project, query: string) {
   return !query || project.name.toLowerCase().includes(query) || repoShort(project.repoUrl).toLowerCase().includes(query)

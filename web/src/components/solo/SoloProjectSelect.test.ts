@@ -9,7 +9,21 @@ import type { Project } from '@/lib/api/apiTypes'
 const projects = [
   { id: 'grasp', name: 'grasp', repoUrl: 'https://github.com/acme/grasp.git', defaultBranch: 'main', createdAt: '', updatedAt: '' },
   { id: 'web', name: 'webapp', repoUrl: 'https://github.com/acme/webapp.git', defaultBranch: 'develop', createdAt: '', updatedAt: '' },
+  { id: 'docs', name: 'docs', repoUrl: 'https://github.com/acme/docs.git', defaultBranch: 'main', createdAt: '', updatedAt: '' },
 ] as Project[]
+
+function triggerText(wrapper: ReturnType<typeof mountSelect>) {
+  return wrapper.get('[data-testid="solo-project-select-trigger"]').text()
+}
+
+async function untilTrigger(wrapper: ReturnType<typeof mountSelect>, expected: string) {
+  const start = Date.now()
+  while (Date.now() - start < 1000) {
+    if (triggerText(wrapper) === expected) return
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  expect(triggerText(wrapper)).toBe(expected)
+}
 
 function mountSelect(modelValue: string[] = []) {
   return mount(SoloProjectSelect, {
@@ -44,7 +58,8 @@ describe('SoloProjectSelect', () => {
     expect(document.body.querySelector('[data-testid="solo-project-select-panel"]')).toBeTruthy()
 
     await wrapper.setProps({ modelValue: ['grasp', 'web'] })
-    expect(wrapper.get('[data-testid="solo-project-select-trigger"]').text()).toContain('grasp +1')
+    await untilTrigger(wrapper, 'grasp +1')
+    expect(triggerText(wrapper)).toBe('grasp +1')
     expect(document.body.querySelector('[data-testid="solo-project-select-panel"]')).toBeTruthy()
     expect(wrapper.find('[data-testid="solo-branch-chip"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="solo-project-option-none"]').exists()).toBe(false)
@@ -55,6 +70,32 @@ describe('SoloProjectSelect', () => {
     await wrapper.setProps({ modelValue: [] })
     expect(wrapper.get('[data-testid="solo-project-select-trigger"]').text()).toContain('不绑定仓库')
     expect(wrapper.get('[data-testid="solo-project-select-trigger"]').text()).not.toContain('+')
+    wrapper.unmount()
+  })
+
+  it('keeps only the final digit after the count rolls up and back', async () => {
+    const wrapper = mountSelect(['grasp', 'web'])
+    await flushPromises()
+    expect(triggerText(wrapper)).toBe('grasp +1')
+
+    await wrapper.setProps({ modelValue: ['grasp', 'web', 'docs'] })
+    await flushPromises()
+    await untilTrigger(wrapper, 'grasp +2')
+    const up = wrapper.get('.solo-repo-roll-strip').element as HTMLElement
+    expect(up.childElementCount).toBe(1)
+    expect(up.textContent).toBe('2')
+    expect(up.style.transform).toBe('none')
+    expect(triggerText(wrapper)).toBe('grasp +2')
+
+    await wrapper.setProps({ modelValue: ['grasp', 'web'] })
+    await flushPromises()
+    await untilTrigger(wrapper, 'grasp +1')
+    const down = wrapper.get('.solo-repo-roll-strip').element as HTMLElement
+    expect(down.childElementCount).toBe(1)
+    expect(down.textContent).toBe('1')
+    expect(down.style.transform).toBe('none')
+    expect(triggerText(wrapper)).toBe('grasp +1')
+    expect(triggerText(wrapper)).not.toContain('+12')
     wrapper.unmount()
   })
 })
