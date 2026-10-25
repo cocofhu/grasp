@@ -140,7 +140,7 @@ const SCREENSHOT_SENTENCE =
 function anchors(html: string): { href: string; text: string }[] {
   return [...html.matchAll(/<a href="([^"]*)">([^<]*)<\/a>/g)].map((match) => ({
     href: match[1].replace(/&amp;/g, '&'),
-    text: match[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'),
+    text: match[2].replace(/&amp;/g, '&'),
   }))
 }
 
