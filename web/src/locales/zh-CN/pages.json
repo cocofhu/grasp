@@ -4546,7 +4546,8 @@
         "empty": "当前 Agent 还没有可用模型",
         "noMatch": "没有匹配的模型",
         "unavailable": "不可用",
-        "reset": "所选模型已不在配置中，已改回主模型"
+        "reset": "所选模型已不在配置中，已改回主模型",
+        "pending": "当前回复仍使用原来的模型，从下一条开始使用新模型。"
       },
       "agentSelect": {
         "placeholder": "选择 Agent",
@@ -4689,6 +4690,7 @@
         "agent_not_found": "Agent 不存在",
         "model_not_in_configuration": "所选模型不在该 Agent 的模型配置中",
         "model_unavailable": "所选模型已不可用",
+        "model_switch_failed": "切换模型失败，已改回原来的模型",
         "project_not_found": "仓库不存在",
         "name_required": "请填写仓库名称",
         "name_too_long": "仓库名称最长 80 个字",

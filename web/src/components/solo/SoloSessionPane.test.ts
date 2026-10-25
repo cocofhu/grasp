@@ -16,16 +16,32 @@ const box = vi.hoisted(() => ({
     projectId: string
     project?: { name?: string }
     repos: Array<{ position: number; projectId: string; name: string; repoUrl: string; repoDirName: string; branch: string }>
+    initialModelId?: string
+    currentModelId?: string
+    currentModelSet?: boolean
   }>,
   status: undefined as undefined | import('vue').Ref<string>,
   link: undefined as undefined | import('vue').Ref<string>,
+  currentModelId: undefined as undefined | import('vue').Ref<string>,
+  modelSwitchNotice: undefined as undefined | import('vue').Ref<string>,
+  actionError: undefined as undefined | import('vue').Ref<string>,
+  setCurrentModel: undefined as undefined | ReturnType<typeof vi.fn>,
 }))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
   RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }))
-vi.mock('@/lib/api/api', () => ({ api: { runArtifacts: vi.fn(async () => []), getSoloEnv: vi.fn(async () => []) } }))
+vi.mock('@/lib/api/api', () => ({
+  api: {
+    runArtifacts: vi.fn(async () => []),
+    getSoloEnv: vi.fn(async () => []),
+    listAgents: vi.fn(async () => []),
+    listModelConfigurations: vi.fn(async () => ({ items: [] })),
+    listModelConnections: vi.fn(async () => ({ items: [] })),
+    cliModels: vi.fn(async () => ({ models: [] })),
+  },
+}))
 vi.mock('@/lib/solo/useSoloSessions', () => ({ useSoloSessions: () => ({ upsert: vi.fn(), remove: vi.fn() }) }))
 vi.mock('@/lib/solo/useSoloChat', () => ({
   useSoloChat: () => ({
@@ -37,12 +53,15 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     link: box.link,
     loading: ref(false),
     loadError: ref(''),
-    actionError: ref(''),
+    actionError: box.actionError,
     status: box.status,
-    closed: ref(false),
-    canSend: computed(() => true),
+    closed: computed(() => box.status?.value === 'closed'),
+    canSend: computed(() => box.status?.value === 'starting' || box.status?.value === 'running'),
+    currentModelId: box.currentModelId,
+    modelSwitchNotice: box.modelSwitchNotice,
     load: vi.fn(),
     send: vi.fn(),
+    setCurrentModel: (...args: unknown[]) => box.setCurrentModel?.(...args),
     removeQueued: vi.fn(),
   }),
 }))
@@ -63,6 +82,10 @@ const sessionState = (box.session = ref({
 }))
 const statusState = (box.status = ref('running'))
 const linkState = (box.link = ref('open'))
+const currentModelId = (box.currentModelId = ref(''))
+const modelSwitchNotice = (box.modelSwitchNotice = ref(''))
+const actionError = (box.actionError = ref(''))
+const setCurrentModel = (box.setCurrentModel = vi.fn(async () => true))
 
 function mountPane(messages: object = {}) {
   return mount(SoloSessionPane, {
@@ -166,5 +189,70 @@ describe('SoloSessionPane', () => {
     }
     statusState.value = 'running'
     linkState.value = 'open'
+  })
+
+  it('places the model selector to the right of the attachment button', async () => {
+    turns.value = []
+    statusState.value = 'running'
+    currentModelId.value = ''
+    modelSwitchNotice.value = '当前回复仍使用原来的模型，从下一条开始使用新模型。'
+    const wrapper = mountPane(pages)
+    await flushPromises()
+
+    const toolbar = wrapper.get('.chat-toolbar')
+    const plus = toolbar.get('[aria-label="添加附件"]')
+    const select = toolbar.get('[data-testid="solo-model-select"]')
+    expect(plus.element.compareDocumentPosition(select.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.get('[data-testid="solo-model-switch-notice"]').text()).toContain('从下一条开始使用新模型')
+    expect(select.text()).toContain('当前 Agent 还没有可用模型')
+    expect(select.get('button').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+    modelSwitchNotice.value = ''
+  })
+
+  it('hides the selector on a closed session and disables it when sending is blocked', async () => {
+    turns.value = []
+    statusState.value = 'closed'
+    const closed = mountPane(pages)
+    await flushPromises()
+    expect(closed.find('[data-testid="solo-closed-bar"]').exists()).toBe(true)
+    expect(closed.find('[data-testid="solo-model-select"]').exists()).toBe(false)
+    closed.unmount()
+
+    statusState.value = 'error'
+    const errored = mountPane(pages)
+    await flushPromises()
+    const select = errored.get('[data-testid="solo-model-select"]')
+    expect(select.get('button').attributes('disabled')).toBeDefined()
+    errored.unmount()
+    statusState.value = 'running'
+  })
+
+  it('asks to fall back when the saved model is no longer available', async () => {
+    const { api } = await import('@/lib/api/api')
+    vi.mocked(api.listAgents).mockResolvedValueOnce([
+      { name: 'Coder', acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'c1' } },
+    ] as never)
+    vi.mocked(api.listModelConfigurations).mockResolvedValueOnce({
+      items: [{
+        id: 'c1',
+        name: 'cfg',
+        backend: 'cursor',
+        state: 'active',
+        revision: 1,
+        binding: { kind: 'platform', credentialId: 'k', modelId: 'primary', auxiliaryModelIds: ['gone'] },
+      }],
+    })
+    vi.mocked(api.cliModels).mockResolvedValue({ models: [{ id: 'primary', name: 'Primary', vendor: 'cursor' }] } as never)
+    currentModelId.value = 'gone'
+    setCurrentModel.mockClear()
+    setCurrentModel.mockResolvedValue(true)
+    actionError.value = ''
+    const wrapper = mountPane(pages)
+    await flushPromises()
+    expect(setCurrentModel).toHaveBeenCalledWith('')
+    expect(actionError.value).toContain('已改回主模型')
+    wrapper.unmount()
+    currentModelId.value = ''
   })
 })

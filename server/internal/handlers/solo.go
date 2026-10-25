@@ -190,6 +190,28 @@ func (h *Handlers) PatchSoloSession(c *gin.Context) {
 	c.JSON(http.StatusOK, row)
 }
 
+// SetSoloSessionModel handles POST /api/solo/sessions/:id/model.
+// An empty modelId selects the primary model. The sandbox is not switched here.
+func (h *Handlers) SetSoloSessionModel(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		ModelID string `json:"modelId"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	v, err := h.Solo.SetCurrentModel(c.Request.Context(), c.Param("id"), user, body.ModelID)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, v)
+}
+
 // DeleteSoloSession handles DELETE /api/solo/sessions/:id.
 func (h *Handlers) DeleteSoloSession(c *gin.Context) {
 	user, ok := h.soloReady(c)

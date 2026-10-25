@@ -7,13 +7,17 @@ import SoloPickerShell from './SoloPickerShell.vue'
 import type { ConfiguredModelChoice } from '@/lib/solo/configuredModels'
 
 const props = withDefaults(
-  defineProps<{ models: ConfiguredModelChoice[]; modelValue: string; disabled?: boolean }>(),
-  { disabled: false },
+  defineProps<{ models: ConfiguredModelChoice[]; modelValue: string; disabled?: boolean; emptyAsLabel?: boolean }>(),
+  { disabled: false, emptyAsLabel: false },
 )
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 const { t } = useI18n()
 
 const current = computed(() => props.models.find((model) => model.id === props.modelValue) ?? props.models[0] ?? null)
+const label = computed(() => {
+  if (!props.models.length && props.emptyAsLabel) return t('pages.solo.modelSelect.empty')
+  return current.value?.name || t('pages.solo.modelSelect.placeholder')
+})
 
 function groups(q: string) {
   const query = q.trim().toLowerCase()
@@ -35,7 +39,7 @@ function selected(model: ConfiguredModelChoice) {
 
 <template>
   <SoloPickerShell
-    :label="current?.name || t('pages.solo.modelSelect.placeholder')"
+    :label="label"
     :placeholder="!current"
     :disabled="disabled || !models.length"
     :search-placeholder="t('pages.solo.modelSelect.search')"

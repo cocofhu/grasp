@@ -54,6 +54,26 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 	return host, port, password, nil
 }
 
+// AlignChatModel makes the sandbox default chat use model. Empty follows the
+// primary model. A match does not restart the coding agent. A change calls
+// POST /api/model, which restarts that agent, so callers must wait until the
+// current turn has finished.
+func (s *SandboxService) AlignChatModel(ctx context.Context, id uint, model string) (bool, error) {
+	host, port, password, err := s.acpConnection(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	model = strings.TrimSpace(model)
+	selected, getErr := sandbox.GetChatModel(ctx, host, port, password)
+	if getErr == nil && selected == model {
+		return false, nil
+	}
+	if err := sandbox.SetChatModel(ctx, host, port, password, model); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // ACPUpstream returns the reachable "host:port" for the sandbox ACP bridge
 // (session endpoint). Aligns iframe reverse-proxy dialing with chat/events.
 func (s *SandboxService) ACPUpstream(ctx context.Context, id uint) (string, error) {

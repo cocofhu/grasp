@@ -4546,7 +4546,8 @@
         "empty": "This Agent has no available model",
         "noMatch": "No matching model",
         "unavailable": "Unavailable",
-        "reset": "That model is no longer in the configuration. The primary model is selected again."
+        "reset": "That model is no longer in the configuration. The primary model is selected again.",
+        "pending": "This reply still uses the previous model. The next message uses the new one."
       },
       "agentSelect": {
         "placeholder": "Choose Agent",
@@ -4689,6 +4690,7 @@
         "agent_not_found": "Agent not found",
         "model_not_in_configuration": "That model is not in this Agent's model configuration",
         "model_unavailable": "That model is no longer available",
+        "model_switch_failed": "The model could not be switched, so the previous model stays selected",
         "project_not_found": "Repository not found",
         "name_required": "Enter a repository name",
         "name_too_long": "Repository names are at most 80 characters",
