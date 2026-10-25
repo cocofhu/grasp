@@ -8,6 +8,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import enCommon from '@/locales/en/common.json'
+import enPages from '@/locales/en/pages.json'
 
 const authMocks = vi.hoisted(() => ({ isAdmin: true }))
 
@@ -73,11 +75,14 @@ const SETTINGS = {
   ],
 }
 
-function mountSettings() {
+function mountSettings(locale: 'zh-CN' | 'en' = 'zh-CN') {
   const i18n = createI18n({
     legacy: false,
-    locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages } },
+    locale,
+    messages: {
+      'zh-CN': { ...common, ...pages },
+      en: { ...enCommon, ...enPages },
+    },
   })
   const router = createRouter({
     history: createMemoryHistory(),
@@ -601,7 +606,7 @@ describe('SettingsView workspace information on the general page', () => {
     await w.get('#setting-max_concurrent_runs').setValue('8')
     await saveButton(w).trigger('click')
     await flushPromises()
-    expect(w.get('[role="alert"]').text()).toContain('平台参数')
+    expect(w.get('[role="alert"]').text()).toBe('平台参数保存失败：platform down')
     expect(w.get('[role="alert"]').text()).not.toContain('工作区信息保存失败')
     expect(workspaceState.workspace.value.name).toBe('Kept')
     expect(w.get('#setting-max_concurrent_runs').element).toHaveProperty('value', '8')
@@ -631,7 +636,7 @@ describe('SettingsView workspace information on the general page', () => {
     await w.get('#setting-max_concurrent_runs').setValue('8')
     await saveButton(w).trigger('click')
     await flushPromises()
-    expect(w.get('[role="alert"]').text()).toContain('工作区信息')
+    expect(w.get('[role="alert"]').text()).toBe('工作区信息保存失败：workspace down')
     expect(w.get('[role="alert"]').text()).not.toContain('平台参数保存失败')
     expect(w.get('#workspace-meta-name').element).toHaveProperty('value', 'Still editing')
     expect(w.get('#setting-max_concurrent_runs').element).toHaveProperty('value', '8')
@@ -641,6 +646,36 @@ describe('SettingsView workspace information on the general page', () => {
     await flushPromises()
     expect(apiMocks.updateWorkspace).toHaveBeenCalledTimes(2)
     expect(apiMocks.updateSettings).toHaveBeenCalledTimes(1)
+    w.unmount()
+  })
+
+  it('hides the saved status after clearing a display name that was just saved', async () => {
+    const w = mountSettings()
+    await flushPromises()
+    await w.get('[data-testid="workspace-meta-unknown-display"]').setValue('gpt-5')
+    await saveButton(w).trigger('click')
+    await flushPromises()
+    expect(apiMocks.updateWorkspace).toHaveBeenCalledTimes(1)
+    expect(w.get('[data-testid="settings-save-actions"]').text()).toContain('已保存')
+
+    await w.get('[data-testid="workspace-meta-unknown-display-clear"]').trigger('click')
+    expect(apiMocks.updateWorkspace).toHaveBeenCalledTimes(1)
+    expect(w.get('[data-testid="workspace-meta-unknown-display"]').element).toHaveProperty('value', '')
+    expect(w.get('[data-testid="settings-save-actions"]').text()).not.toContain('已保存')
+    expect(saveButton(w).attributes('disabled')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('joins an English failure reason with an ASCII colon', async () => {
+    apiMocks.updateSettings.mockRejectedValueOnce(new Error('platform down'))
+    const w = mountSettings('en')
+    await flushPromises()
+    await w.get('#workspace-meta-name').setValue('Kept')
+    await w.get('#setting-max_concurrent_runs').setValue('8')
+    await w.findAll('button').find((button) => button.text() === 'Save')!.trigger('click')
+    await flushPromises()
+    expect(w.get('[role="alert"]').text()).toBe('Platform settings failed to save: platform down')
+    expect(w.get('[role="alert"]').text()).not.toContain('：')
     w.unmount()
   })
 

@@ -278,6 +278,7 @@ function validateBeforeSave(): boolean {
 function clearUnknownModelDisplayName() {
   workspaceForm.unknownModelDisplayName = ''
   displayNameError.value = ''
+  savedAt.value = 0
 }
 
 function restoreSavedDrafts() {
@@ -347,8 +348,8 @@ async function save() {
     }
     if (epoch !== formEpoch) return
     const parts: string[] = []
-    if (workspaceFailure) parts.push(`${t('pages.settings.workspaceSaveFailed')}：${workspaceFailure}`)
-    if (platformFailure) parts.push(`${t('pages.settings.platformSaveFailed')}：${platformFailure}`)
+    if (workspaceFailure) parts.push(t('pages.settings.workspaceSaveFailed', { reason: workspaceFailure }))
+    if (platformFailure) parts.push(t('pages.settings.platformSaveFailed', { reason: platformFailure }))
     error.value = parts.join(' ')
     if (!error.value) savedAt.value = Date.now()
   } finally {
