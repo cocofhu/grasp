@@ -53,7 +53,7 @@ func TestGitBindingsResolveAllAndClearGlobalAuthentication(t *testing.T) {
 	env := map[string]string{"GITHUB_TOKEN": "unselected", "GITLAB_TOKEN": "unselected", "GH_TOKEN": "unselected", "GITLAB_URL": "https://old", "GIT_REPOS": "repo|https://github.com/a/b", "FEATURE": "keep"}
 	creds := map[string]string{"GIT_SSH_PRIVATE_KEY": "unselected", "GIT_SSH_KNOWN_HOSTS": "unselected", "GRASP_CURSOR_API_KEY": "keep-model"}
 	rows, err := ApplyGitBindings(env, creds, selection, selectedGitTestValue)
-	if err != nil || len(rows) != 4 || !rows[1].Preferred || rows[0].Preferred || rows[3].KnownHosts == "" || rows[3].Secret != "SSH\nPRIVATE KEY" {
+	if err != nil || len(rows) != 4 || rows[0].Preferred || rows[1].Preferred || rows[0].ID != "gh" || rows[1].ID != "gh2" || rows[3].KnownHosts == "" || rows[3].Secret != "SSH\nPRIVATE KEY" {
 		t.Fatalf("catalog = %+v, %v", rows, err)
 	}
 	for _, values := range []map[string]string{env, creds} {
@@ -83,8 +83,8 @@ func TestGitBindingsResolveAllAndClearGlobalAuthentication(t *testing.T) {
 	if _, err := ResolveGitBindings(gitSelection("gh"), nil); err == nil {
 		t.Fatal("missing resolver accepted")
 	}
-	if _, err := ResolveGitBindings(&models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: "gh"}}}, selectedGitTestValue); err == nil {
-		t.Fatal("missing preferred accepted")
+	if rows, err := ResolveGitBindings(&models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: "gh"}}}, selectedGitTestValue); err != nil || len(rows) != 1 || rows[0].ID != "gh" || rows[0].Preferred {
+		t.Fatalf("selection without a preferred credential = %+v, %v", rows, err)
 	}
 	for _, tc := range []struct{ id, scope, hosts string }{{"ssh", "https://host/repo", ""}, {"gh", "git@host:repo", ""}, {"ssh", "", "gone"}, {"ssh", "", "gh"}, {"gh", "", "hosts"}} {
 		selection := gitSelection(tc.id)
@@ -105,10 +105,10 @@ func TestGitBindingsScopeRouting(t *testing.T) {
 		{ID: "gl", Kind: "gitlab_https"}, {ID: "gl-exact", Kind: "gitlab_https", Scope: "https://gitlab.com/team/repo"},
 	}
 	for _, tc := range []struct{ repo, kind, want string }{
-		{"https://github.com/team/repo", "github_https", "exact"}, {"https://github.com/team/other", "github_https", "preferred"},
-		{"http://github.com/team/repo", "github_https", "preferred"}, {"https://git.example:8443/team/a", "github_https", "enterprise"},
+		{"https://github.com/team/repo", "github_https", "exact"}, {"https://github.com/team/other", "github_https", "first"},
+		{"http://github.com/team/repo", "github_https", "first"}, {"https://git.example:8443/team/a", "github_https", "enterprise"},
 		{"http://git.example:8443/team/a", "github_https", ""}, {"https://unknown/a", "github_https", ""}, {"", "ssh", ""},
-		{"git@git.example:team/repo.git", "ssh", "ssh-repo"}, {"ssh://git@other/team/repo", "ssh", "ssh-preferred"},
+		{"git@git.example:team/repo.git", "ssh", "ssh-repo"}, {"ssh://git@other/team/repo", "ssh", "ssh-first"},
 		{"https://gitlab.com/team/repo.git", "gitlab_https", "gl-exact"}, {"http://gitlab.com/team/repo.git", "gitlab_https", "gl"},
 	} {
 		got, ok := GitCredentialForRepo(rows, tc.repo, tc.kind)

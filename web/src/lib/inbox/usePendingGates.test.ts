@@ -487,7 +487,7 @@ describe('usePendingGates', () => {
 
   it('peek passes workflow and tag filters to listGates (plan g2.2)', async () => {
     const prev = window.location.search
-    window.history.replaceState({}, '', '/gates?wf=wf-1&tag=urgent')
+    window.history.replaceState({}, '', '/runs/run-1/nodes/clarify?wf=wf-1&tag=urgent')
     vi.mocked(api.listGates).mockClear()
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     const pg = usePendingGates()
@@ -505,7 +505,7 @@ describe('usePendingGates', () => {
 
   it('peek omits filter keys when the URL has none (plan g2.2 / g2.3)', async () => {
     const prev = window.location.search
-    window.history.replaceState({}, '', '/gates')
+    window.history.replaceState({}, '', '/runs/run-1/nodes/clarify')
     vi.mocked(api.listGates).mockClear()
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([], 0))
     await usePendingGates().peek()

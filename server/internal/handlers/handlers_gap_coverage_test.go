@@ -84,7 +84,7 @@ func TestListGatePrimaryArtifactsEmptyItems(t *testing.T) {
 		Graph: models.Graph{Nodes: []models.Node{{ID: "gate", Type: "human_gate"}}},
 	})
 	h.db.Create(&models.Gate{RunID: "run-gate-empty", NodeID: "gate", Iteration: 1, RequestedAt: now})
-	w := h.do(http.MethodGet, "/api/runs/run-gate-empty/gates/gate/primary-artifacts", nil)
+	w := h.do(http.MethodGet, "/api/runs/run-gate-empty/nodes/gate/primary-artifacts", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list primary: %d %s", w.Code, w.Body.String())
 	}
@@ -95,7 +95,7 @@ func TestListGatePrimaryArtifactsEmptyItems(t *testing.T) {
 
 func TestReactReplyBadBody(t *testing.T) {
 	h := newHarness(t)
-	w := h.do(http.MethodPost, "/api/runs/r1/react/n1/reply", "bad")
+	w := h.do(http.MethodPost, "/api/runs/r1/nodes/n1/reply", "bad")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("react bad body: %d", w.Code)
 	}
@@ -204,7 +204,7 @@ func TestNodeEventsEmptyNonPaginated(t *testing.T) {
 
 func TestResumeGateBadBody(t *testing.T) {
 	h := newHarness(t)
-	w := h.do(http.MethodPost, "/api/runs/r1/gates/g1/resume", "bad")
+	w := h.do(http.MethodPost, "/api/runs/r1/nodes/g1/decision", "bad")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("resume gate bad body: %d", w.Code)
 	}
@@ -212,7 +212,7 @@ func TestResumeGateBadBody(t *testing.T) {
 
 func TestSaveGateArtifactBadBody(t *testing.T) {
 	h := newHarness(t)
-	w := h.do(http.MethodPut, "/api/runs/r1/gates/g1/artifacts/x.json", "bad")
+	w := h.do(http.MethodPut, "/api/runs/r1/nodes/g1/artifacts/x.json", "bad")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("save gate artifact bad body: %d", w.Code)
 	}
@@ -259,7 +259,7 @@ func TestListGatesBareAndArtifactsPaged(t *testing.T) {
 	h.db.Create(&models.Gate{RunID: "run-gate-bare", NodeID: "gate", Title: "G", RequestedAt: now})
 	h.db.Create(&models.Artifact{ID: "art-page", RunID: "run-gate-bare", Name: "a.md", Kind: "markdown", CreatedAt: now})
 
-	if w := h.do(http.MethodGet, "/api/gates", nil); w.Code != http.StatusOK {
+	if w := h.do(http.MethodGet, "/api/pending-nodes", nil); w.Code != http.StatusOK {
 		t.Fatalf("bare gates: %d %s", w.Code, w.Body.String())
 	}
 	if w := h.do(http.MethodGet, "/api/artifacts?page=1&pageSize=5", nil); w.Code != http.StatusOK {
@@ -320,7 +320,7 @@ func TestResumeGateSuccess(t *testing.T) {
 		RunID: runID, NodeID: "gate", Iteration: 1, Title: "Review", RequestedAt: now,
 		Actions: []models.GateAction{{ID: "approve", Label: "OK"}},
 	})
-	w := h.do(http.MethodPost, "/api/runs/"+runID+"/gates/gate/resume", map[string]any{"action": "approve"})
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/gate/decision", map[string]any{"action": "approve"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("resume gate: %d %s", w.Code, w.Body.String())
 	}
@@ -339,7 +339,7 @@ func TestReactReplySuccess(t *testing.T) {
 		Messages: []models.ReactMessage{{Role: "agent", Text: "question?", At: now.Format(time.RFC3339)}},
 	})
 	h.db.Create(&models.StateRun{RunID: runID, NodeID: "react", Iteration: 1, Status: "waiting_human"})
-	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"text": "answer"})
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/react/reply", map[string]any{"text": "answer"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("react reply: %d %s", w.Code, w.Body.String())
 	}
@@ -361,7 +361,7 @@ func TestReactReplyRetryLast(t *testing.T) {
 		},
 	})
 	h.db.Create(&models.StateRun{RunID: runID, NodeID: "react", Iteration: 1, Status: "waiting_human"})
-	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"retryLast": true})
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/react/reply", map[string]any{"retryLast": true})
 	if w.Code != http.StatusOK {
 		t.Fatalf("retryLast: %d %s", w.Code, w.Body.String())
 	}
@@ -381,7 +381,7 @@ func TestReactReplyClarifyVisitEndedHTTP(t *testing.T) {
 	})
 	// Cancel finalizes the StateRun; clarifyVisitLive must refuse new turns.
 	h.db.Create(&models.StateRun{RunID: runID, NodeID: "react", Iteration: 1, Status: "cancelled"})
-	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/react/reply", map[string]any{
 		"text":        "answer",
 		"images":      []map[string]any{{"data": "QUJD", "mimeType": "image/png", "name": "a.png"}},
 		"annotations": []map[string]any{{"selector": "#x", "note": "改这里"}},
@@ -417,7 +417,7 @@ func TestReactReplyClarifyVisitEndedHTTP(t *testing.T) {
 	}
 
 	const cid = "5c9d1e7a-2f4b-4a6c-8e3d-1b7f9a2c6e54"
-	w2 := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"text": "again", "clientMessageId": cid})
+	w2 := h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/react/reply", map[string]any{"text": "again", "clientMessageId": cid})
 	b2 := parseJSON(t, w2)
 	if w2.Code != http.StatusConflict || b2["clientMessageId"] != cid {
 		t.Fatalf("409 must echo clientMessageId: %d %s", w2.Code, w2.Body.String())
@@ -425,7 +425,7 @@ func TestReactReplyClarifyVisitEndedHTTP(t *testing.T) {
 	if d2, _ := b2["dropped"].(map[string]any); d2 == nil || d2["text"] != "again" {
 		t.Fatalf("409 keeps dropped: %s", w2.Body.String())
 	}
-	w3 := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"text": "x", "clientMessageId": "not-a-uuid"})
+	w3 := h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/react/reply", map[string]any{"text": "x", "clientMessageId": "not-a-uuid"})
 	if w3.Code != http.StatusBadRequest {
 		t.Fatalf("invalid clientMessageId: %d %s", w3.Code, w3.Body.String())
 	}
@@ -443,7 +443,7 @@ func TestReactReplyRetryLastWithForceRejected(t *testing.T) {
 		RunID: runID, NodeID: "react", Iteration: 1, Done: false,
 		Messages: []models.ReactMessage{{Role: "human", Text: "x", At: now.Format(time.RFC3339)}},
 	})
-	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/react/reply", map[string]any{
 		"retryLast": true, "force": true,
 	})
 	if w.Code != http.StatusBadRequest {

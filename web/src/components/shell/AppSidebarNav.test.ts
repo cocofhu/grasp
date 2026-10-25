@@ -153,7 +153,7 @@ vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({
 
 import enNav from '@/locales/en/nav.json'
 import { endInboxCancelDeparture, inboxCancelDepartureRunId } from '@/lib/inbox/inboxCancelDeparture'
-import { __resetSidebarHandoffForTests, armSidebarHandoff, SIDEBAR_FLIGHT_MS } from '@/lib/inbox/sidebarHandoff'
+import { __resetSidebarHandoffForTests, applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, SIDEBAR_FLIGHT_MS } from '@/lib/inbox/sidebarHandoff'
 import { __resetSidebarSectionsForTests, toggleSection } from '@/lib/shared/sidebarSections'
 import { knownInboxProcessingLock } from '@/lib/inbox/inboxShareIntent'
 import { useAuth } from '@/lib/composables/useAuth'
@@ -278,7 +278,7 @@ describe('AppSidebarNav', () => {
       { type: 'clarify', runId: 'run-y', nodeId: 'clarify', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '另一个' },
     ]
     gateMocks.activeInboxKey.value = 'run-x:clarify'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     const wrapper = mountNav()
     await flushPromises()
     expect(apiMocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({ status: 'queued,running,waiting_human' }))
@@ -480,7 +480,7 @@ describe('AppSidebarNav', () => {
       { type: 'clarify', runId: 'run-s', nodeId: 'ap', label: '哦哦发哦佛啊', kind: 'clarify', state: 'starting', workflowName: 'w', runTitle: '哦哦发哦佛啊' },
     ]
     gateMocks.activeInboxKey.value = 'run-s:ap'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     await flushPromises()
     expect(wrapper.get('[data-key="run-s"]').classes()).toContain('active')
     expect(title()).toBe('启动服务 我来指定需求')
@@ -1082,12 +1082,12 @@ describe('AppSidebarNav', () => {
     expect(rows[0].classes()).not.toContain('active')
 
     gateMocks.activeInboxKey.value = 'run-1:g1'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     await nextTick()
     expect(rows[0].classes()).toContain('active')
 
     await rows[1].trigger('click')
-    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-2', node: 'c1' } })
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-2/nodes/c1' })
     expect(routerMocks.push).toHaveBeenCalledTimes(1)
 
     gateMocks.startFailedKeys.value = ['run-2:c1']
@@ -1157,7 +1157,7 @@ describe('AppSidebarNav', () => {
 
     expect(rows[0].classes()).not.toContain('active')
     gateMocks.activeInboxKey.value = 'run-1:g1'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     await nextTick()
     expect(rows[0].classes()).toContain('active')
     expectRowStart(rows[0], 'nav-pending-type-icon')
@@ -1172,7 +1172,7 @@ describe('AppSidebarNav', () => {
     }
 
     await rows[2].trigger('click')
-    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-3', node: 'long' } })
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-3/nodes/long' })
 
     style.remove()
     wrapper.unmount()
@@ -1194,7 +1194,7 @@ describe('AppSidebarNav', () => {
       { type: 'clarify', runId: 'run-1', nodeId: 'c1', label: '需求澄清', kind: 'clarify', state: 'starting', workflowName: 'w' },
     ]
     gateMocks.activeInboxKey.value = 'run-1:c1'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     const wrapper = mountNav()
     await flushPromises()
 
@@ -1271,6 +1271,12 @@ describe('AppSidebarNav', () => {
     }
     expectStatusIcon(rows[0], 'arc-spinner', 'nav-row-type-icon--accent', 'M12 3A9 9 0 1 1 3 12')
     expectStatusIcon(rows[1], 'breath-dot', 'nav-row-type-icon--accent', 'grasp-heart-ring')
+    expect(rows[1].get('[data-testid="nav-pending-type-icon"]').attributes('data-icon-motion')).toBe('busy')
+    expect(rows[1].get('.nav-breath-ping').attributes('vector-effect')).toBe('non-scaling-stroke')
+    expect(rows[1].findAll('svg')).toHaveLength(1)
+    expect(rows[0].find('.nav-breath-ping').exists()).toBe(false)
+    expect(rows[3].find('.nav-breath-ping').exists()).toBe(false)
+    expect(rows[5].find('.nav-breath-ping').exists()).toBe(false)
 
     expect(rows[2].attributes('data-motion')).toBeUndefined()
     expect(rows[2].findAll('svg')).toHaveLength(0)
@@ -1296,7 +1302,7 @@ describe('AppSidebarNav', () => {
     expect(rows[5].html()).not.toContain('M8 5h8')
 
     gateMocks.activeInboxKey.value = 'run-c:c'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     await nextTick()
     expect(rows[3].classes()).toContain('active')
     expectTypeIcon(rows[3], 'nav-row-type-icon--hold', 'M3.8 20a6.4')
@@ -1310,6 +1316,8 @@ describe('AppSidebarNav', () => {
     await nextTick()
     expect(rows[1].classes()).toContain('active')
     expectStatusIcon(rows[1], 'breath-dot', 'nav-row-type-icon--accent', 'grasp-heart-ring')
+    expect(rows[1].get('.nav-breath-ping').exists()).toBe(true)
+    expect(rows[0].find('.nav-breath-ping').exists()).toBe(false)
 
     wrapper.unmount()
     vi.useRealTimers()
@@ -1480,7 +1488,7 @@ describe('AppSidebarNav', () => {
     expect(rows[0].attributes('data-motion')).toBeUndefined()
     expect(rows[0].get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('arc-spinner')
     await rows[1].trigger('click')
-    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-2', node: 'clarify' } })
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-2/nodes/clarify' })
     expect(enNav.nav.pendingPin).toBe('Pin')
     expect(enNav.nav.pendingUnpin).toBe('Unpin')
     expect(enNav.nav.pendingRename).toBe('Rename')
@@ -1894,15 +1902,15 @@ describe('AppSidebarNav', () => {
 
     routerMocks.push.mockClear()
     await wrapper.get('[data-key="run-g"]').trigger('click')
-    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-g', node: 'g' } })
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-g/nodes/g' })
 
     openRow('run-g')
     await nextTick()
     ;(document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).click()
     await nextTick()
     expect(routerMocks.push).toHaveBeenLastCalledWith({
-      path: '/gates',
-      query: { run: 'run-g', node: 'g', share: '1' },
+      path: '/runs/run-g/nodes/g',
+      query: { share: '1' },
     })
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
 
@@ -2152,7 +2160,7 @@ describe('AppSidebarNav cancel run', () => {
   }
 
   it('opens the new-request page when cancelling the inbox conversation on screen', async () => {
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     routeState.query = { run: 'run-1', node: 'a' }
     gateMocks.displayedItems.value = [
       pendingClarify('run-1', 'a', '把登录做清楚'),
@@ -2187,7 +2195,7 @@ describe('AppSidebarNav cancel run', () => {
 
   it('treats a query-less inbox and an array run query as the open conversation', async () => {
     gateMocks.activeInboxKey.value = 'run-1:a'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     routeState.query = {}
     gateMocks.displayedItems.value = [pendingClarify('run-1', 'a', '把登录做清楚')]
     const wrapper = mountNav(true)
@@ -2208,7 +2216,7 @@ describe('AppSidebarNav cancel run', () => {
   })
 
   it('stays on the conversation and keeps the existing error when cancel fails', async () => {
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     routeState.query = { run: 'run-1', node: 'a' }
     gateMocks.displayedItems.value = [pendingClarify('run-1', 'a', '把登录做清楚')]
     const wrapper = mountNav(true)
@@ -2221,7 +2229,7 @@ describe('AppSidebarNav cancel run', () => {
     ;(document.querySelector('[data-testid="nav-pending-cancel-confirm"]') as HTMLButtonElement).click()
     await flushPromises()
     expect(routerMocks.push).not.toHaveBeenCalled()
-    expect(routeState.path).toBe('/gates')
+    expect(routeState.path).toBe('/runs/run-1/nodes/a')
     expect(routeState.query).toEqual({ run: 'run-1', node: 'a' })
     expect(document.querySelector('[data-testid="nav-pending-cancel-error"]')?.textContent).toContain('当前状态不可取消')
     expect(document.querySelector('[role="dialog"]')).toBeTruthy()
@@ -2244,7 +2252,7 @@ describe('AppSidebarNav cancel run', () => {
       { path: '/runs', query: {} },
       { path: '/runs/run-1', query: {} },
       { path: '/runs/run-1/live', query: { node: 'a' } },
-      { path: '/gates', query: { run: 'run-2', node: 'b' } },
+      { path: '/runs/run-2/nodes/b', query: {} },
     ]
     for (const page of pages) {
       routerMocks.push.mockClear()
@@ -2262,7 +2270,7 @@ describe('AppSidebarNav cancel run', () => {
   })
 
   it('holds the open conversation until the leave finishes, and does not navigate before success', async () => {
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     routeState.query = { run: 'run-1', node: 'a' }
     gateMocks.displayedItems.value = [
       pendingClarify('run-1', 'a', '把登录做清楚'),
@@ -2521,6 +2529,106 @@ describe('自动过程 grouping and flight', () => {
     vi.useRealTimers()
   })
 
+  it('pins the node name against the status icon for short, long and blank titles', async () => {
+    const longTitle = `Solo模式支持选择多个工作流并且标题会在侧栏里被省略${'再长一点'.repeat(4)}`
+    const longName = `需求澄清与实现交付测试评审${'节点'.repeat(8)}`
+    useAuth().setUser({ username: 'alice', expiresAt: '2099-01-01T00:00:00Z' })
+    localStorage.setItem(
+      'grasp.sidebarPendingPins.alice',
+      JSON.stringify([{ itemKey: 'short', pinnedAt: 10 }]),
+    )
+    apiMocks.listSoloSessions.mockResolvedValue({
+      sessions: [{
+        id: 'solo-1',
+        title: '单独会话',
+        agentName: '需求澄清',
+        status: 'running',
+        restarts: 0,
+        busy: false,
+        waiting: 0,
+        createdAt: 'T',
+        updatedAt: 'T',
+      }],
+      maxSandboxes: 1,
+    })
+    const wrapper = await show([
+      run('short', '看板这里不用显示这个', 'running', auto('impl', '实现')),
+      run('long', longTitle, 'running', auto('deliver', '交付')),
+      run('wide', '四字节点', 'running', auto('review', '测试评审')),
+      run('huge', '长节点名', 'running', auto('custom', longName)),
+      run('blank', '空白节点', 'running', auto('x', '   ')),
+      run('wait', '等人', 'waiting_human'),
+    ])
+
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    const nameRule = src.match(/\.nav-auto-node-name\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(nameRule).toMatch(/flex:\s*none/)
+    expect(nameRule).toMatch(/max-width:\s*42%/)
+    expect(nameRule).toMatch(/font-size:\s*11px/)
+    expect(nameRule).toMatch(/--c-txt3/)
+    expect(nameRule).toMatch(/font-weight:\s*400/)
+    expect(src).not.toContain('max-w-[62%]')
+
+    const named = (key: string) => wrapper.get(`[data-testid="nav-auto-rows"] [data-key="${key}"]`)
+    const assertNamed = (key: string, nodeName: string) => {
+      const row = named(key)
+      const title = row.get('.nav-row-title')
+      expect(title.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'truncate', 'text-start']))
+      expect(title.classes()).not.toContain('shrink')
+      expect(title.classes().some((name) => name.startsWith('max-w-'))).toBe(false)
+      const name = row.get('[data-testid="nav-auto-node-name"]')
+      expect(name.text()).toBe(nodeName)
+      expect(name.classes()).toEqual(expect.arrayContaining(['nav-auto-node-name', 'min-w-0', 'truncate']))
+      expect(name.classes()).not.toContain('flex-1')
+      expect(title.element.nextElementSibling).toBe(name.element)
+      const icon = row.get('[data-testid="nav-pending-type-icon"]')
+      expect(name.element.nextElementSibling).toBe(icon.element)
+      const flexFillers = [...row.element.children].filter((el) => el !== title.element && el.classList.contains('flex-1'))
+      expect(flexFillers).toEqual([])
+      expect(row.attributes('title')).toContain(nodeName)
+    }
+
+    const pinned = named('short')
+    expect(pinned.find('[data-testid="nav-pending-pin"]').exists()).toBe(true)
+    expect(pinned.get('[data-testid="nav-pending-pin"]').element.nextElementSibling).toBe(pinned.get('.nav-row-title').element)
+    assertNamed('short', '实现')
+    assertNamed('long', '交付')
+    expect(named('long').get('.nav-row-title').text()).toBe(longTitle)
+    assertNamed('wide', '测试评审')
+    assertNamed('huge', longName)
+
+    const blank = named('blank')
+    expect(blank.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    expect(blank.get('.nav-row-title').classes()).toContain('flex-1')
+    expect(blank.get('.nav-row-title').element.nextElementSibling).toBe(blank.get('[data-testid="nav-pending-type-icon"]').element)
+
+    const waiting = wrapper.get('[data-testid="nav-running-rows"] [data-key="wait"]')
+    expect(waiting.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    expect(waiting.get('.nav-row-title').element.nextElementSibling).toBe(waiting.get('[data-testid="nav-pending-type-icon"]').element)
+    const solo = wrapper.get('[data-testid="nav-running-rows"] [data-key="solo-1"]')
+    expect(solo.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    expect(solo.get('.nav-row-title').classes()).toContain('flex-1')
+
+    routeState.path = '/runs/short/live'
+    await nextTick()
+    expect(named('short').classes()).toContain('active')
+    assertNamed('short', '实现')
+
+    await named('long').trigger('keydown', { key: 'F2' })
+    await nextTick()
+    const editing = wrapper.get('[data-key="long"][data-editing="true"]')
+    expect(editing.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    const input = editing.get('[data-testid="nav-pending-rename-input"]')
+    expect(input.classes()).toContain('flex-1')
+    expect(input.element.nextElementSibling).toBe(editing.get('[data-testid="nav-pending-type-icon"]').element)
+
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('flies in only after this handoff is confirmed automatic', async () => {
     gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录')]
     const wrapper = mountNav(true)
@@ -2544,6 +2652,148 @@ describe('自动过程 grouping and flight', () => {
     expect(row.attributes('data-flight-landing')).toBe('row')
     expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('1')
     expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('moves into 自动过程 as soon as the click already knows the automatic node', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '把登录做清楚'), clarify('run-y', 'clarify', '等人')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('2')
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+
+    armSidebarHandoff('run-x', 'clarify', Date.now(), { nodeId: 'impl', name: '实现' })
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBe('in')
+    expect(wrapper.get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+    expect(wrapper.get('[data-key="run-x"]').text()).toContain('把登录做清楚')
+    expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-key="run-y"]').attributes('data-section')).toBe('running')
+    expect(wrapper.findAll('[data-testid="nav-pending-row"]')).toHaveLength(2)
+
+    noteSidebarHandoffOutcome('run-x', 'auto', { nodeId: 'test', name: '测试' })
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-testid="nav-auto-node-name"]').text()).toBe('测试')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBe('in')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('moves when the automatic enter arrives, before the run list changes', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    armSidebarHandoff('run-x', 'clarify')
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('running')
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+
+    noteSidebarHandoffOutcome('run-x', 'auto', { nodeId: 'impl', name: '实现' })
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('stays in 正在执行 when only the node being confirmed has entered', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'review', '把登录做清楚'), clarify('run-y', 'clarify', '等人')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const now = Date.now()
+    applySidebarEnter('run-x', { nodeId: 'review', name: '评审', mode: 'auto' }, [{ id: 'review', type: 'agent' }], now)
+    armSidebarHandoff('run-x', 'review', now, null)
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('running')
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('2')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('uses the graph target name when an earlier automatic enter is still remembered', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'review', '把登录做清楚')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const now = Date.now()
+    applySidebarEnter('run-x', { nodeId: 'impl', name: '实现', mode: 'auto' }, [{ id: 'impl', type: 'agent' }], now)
+    armSidebarHandoff('run-x', 'review', now, { nodeId: 'test', name: '测试' })
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-testid="nav-auto-node-name"]').text()).toBe('测试')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('returns to 正在执行 when the handoff fails, and leaves both groups when the run ends', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '等人')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    armSidebarHandoff('run-x', 'clarify', Date.now(), { nodeId: 'impl', name: '实现' })
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+
+    clearSidebarHandoff('run-x')
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('running')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBeUndefined()
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('2')
+
+    armSidebarHandoff('run-x', 'clarify', Date.now(), { nodeId: 'impl', name: '实现' })
+    await flushPromises()
+    noteSidebarRunStatus('run-x', 'completed')
+    await flushPromises()
+    expect(wrapper.find('[data-key="run-x"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-key="run-y"]').attributes('data-section')).toBe('running')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('places a known automatic handoff without flying when motion is reduced, including onto a folded heading', async () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('reduce'),
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent() { return false },
+      onchange: null,
+    })) as typeof window.matchMedia
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    armSidebarHandoff('run-x', 'clarify', Date.now(), { nodeId: 'impl', name: '实现' })
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBeUndefined()
+    expect(wrapper.get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+    window.matchMedia = original
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('flies a known automatic handoff onto the folded heading', async () => {
+    toggleSection('auto')
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '另一个')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    armSidebarHandoff('run-x', 'clarify', Date.now(), { nodeId: 'impl', name: '实现' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBe('in')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight-landing')).toBe('heading')
+    expect(wrapper.get('[data-testid="nav-auto-heading"]').attributes('data-flight-target')).toBe('true')
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -2854,7 +3104,7 @@ describe('自动过程 grouping and flight', () => {
     ])
     ;(document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).click()
     await nextTick()
-    expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/gates', query: { run: 'run-a', node: 'g', share: '1' } })
+    expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/runs/run-a/nodes/g', query: { share: '1' } })
 
     open('run-b')
     await nextTick()

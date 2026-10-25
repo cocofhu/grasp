@@ -70,7 +70,7 @@ async function mockApis(page: Page, capture: { runRequests: Request[] }) {
       return
     }
 
-    if (method === 'GET' && (path === '/api/gates' || path.endsWith('/api/gates'))) {
+    if (method === 'GET' && (path === '/api/pending-nodes' || path.endsWith('/api/pending-nodes'))) {
       const tag = url.searchParams.get('tag')
       const items = filterByTags(ALL_RUNS, tag).map((r) => ({
         runId: r.id,
@@ -220,22 +220,21 @@ test.describe('TagFilter UX acceptance', () => {
     })
   })
 
-  test('gates inbox: TagFilter entry', async ({ page }) => {
+  test('node conversation keeps the tag query and loads the inbox', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await openPage(page, 'page=gates')
-    await expect(page.getByTestId('tag-filter-trigger')).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByTestId('tag-filter-trigger')).toContainText('标签')
-    await page.screenshot({
-      path: '/tmp/tag-filter-screenshots/08-gates-closed.png',
-      fullPage: true,
+    const pendingTags: Array<string | null> = []
+    page.on('request', (req) => {
+      const url = new URL(req.url())
+      if (req.method() === 'GET' && url.pathname === '/api/pending-nodes') {
+        pendingTags.push(url.searchParams.get('tag'))
+      }
     })
-
-    await page.getByTestId('tag-filter-trigger').click()
-    await expect(page.getByTestId('tag-filter-input')).toBeVisible()
-    await page.getByTestId('tag-filter-suggestions').getByRole('button', { name: /hotfix/ }).click()
+    await openPage(page, 'page=gates&tag=hotfix')
+    await expect(page.getByTestId('gates-inbox-view')).toBeVisible({ timeout: 20_000 })
     await expect.poll(() => hashQuery(page).get('tag')).toBe('hotfix')
+    await expect.poll(() => pendingTags.includes('hotfix')).toBe(true)
     await page.screenshot({
-      path: '/tmp/tag-filter-screenshots/09-gates-selected.png',
+      path: '/tmp/tag-filter-screenshots/08-node-conversation-tag.png',
       fullPage: true,
     })
   })

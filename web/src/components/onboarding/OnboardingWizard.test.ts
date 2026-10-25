@@ -288,7 +288,6 @@ describe('OnboardingWizard', () => {
     await identity(w)
     const selected = {
       items: [{ credentialId: 'gh' }, { credentialId: 'gl', scope: 'git.example' }],
-      preferredCredentialId: 'gl',
     }
     w.findComponent(GitPicker).vm.$emit('update:modelValue', selected)
     await w.get('[data-testid="onboarding-repo-url"]').setValue('https://git.example/team/repo.git')
@@ -324,7 +323,6 @@ describe('OnboardingWizard', () => {
     await identity(w)
     w.findComponent(GitPicker).vm.$emit('update:modelValue', {
       items: [{ credentialId: 'gh' }],
-      preferredCredentialId: 'gh',
     })
     await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
     await w.get('[data-testid="onboarding-git-skip"]').trigger('click')

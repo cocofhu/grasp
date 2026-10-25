@@ -6,7 +6,7 @@ info:
     Minimal OpenAPI contract for platform list endpoints.
 
     **Pagination pattern (shared):** GET /api/artifacts, GET /api/runs,
-    GET /api/gates and GET /api/workspace/audit always return the paginated
+    GET /api/pending-nodes and GET /api/workspace/audit always return the paginated
     envelope `{ items, total, page, pageSize, hasMore }` as implemented in
     `internal/handlers/pagination.go` (`parsePagination`, `paginatedResponse`).
     Omitted `page` / `pageSize` default to `1` / `20`; `maxPageSize=100`;
@@ -55,7 +55,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /runs/{id}/gates/{nodeId}/primary-artifacts:
+  /runs/{id}/nodes/{nodeId}/primary-artifacts:
     get:
       operationId: listGatePrimaryArtifacts
       tags: [artifacts]
@@ -94,7 +94,7 @@ paths:
                         outputKey: { type: string }
         '400':
           description: Gate not pending / run not waiting_human
-  /runs/{id}/gates/{nodeId}/artifacts/{name}:
+  /runs/{id}/nodes/{nodeId}/artifacts/{name}:
     put:
       operationId: saveGateArtifact
       tags: [artifacts]
@@ -188,7 +188,7 @@ paths:
         populated from `runs.title` when non-empty. Empty results normalize
         `items` to `[]` (never JSON `null`).
 
-        Pagination validation matches `/api/runs` and `/api/gates`: invalid
+        Pagination validation matches `/api/runs` and `/api/pending-nodes`: invalid
         `page`/`pageSize` or `pageSize > 100` → HTTP 400.
       parameters:
         - $ref: '#/components/parameters/PageQuery'
@@ -532,7 +532,7 @@ components:
       type: object
       description: |
         Shared pagination envelope used by GET /api/artifacts, GET /api/runs,
-        GET /api/gates and GET /api/workspace/audit (see pagination.go).
+        GET /api/pending-nodes and GET /api/workspace/audit (see pagination.go).
       properties:
         total:
           type: integer

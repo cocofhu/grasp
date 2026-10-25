@@ -39,8 +39,8 @@ describe('recentRunMark uses the status primitives', () => {
 describe('recentRunTarget goes straight into the chat', () => {
   it('auto node → live stream; waiting/taken-over → inbox chat; else detail', () => {
     expect(recentRunTarget(run(cur('agent', 'running')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
-    expect(recentRunTarget(run(cur('takeover', 'waiting_human', 'manual'), 'waiting_human'))).toEqual({ path: '/gates', query: { run: 'r1', node: 'n1' } })
-    expect(recentRunTarget(run(cur('agent', 'running', 'manual')))).toEqual({ path: '/gates', query: { run: 'r1', node: 'n1' } })
+    expect(recentRunTarget(run(cur('takeover', 'waiting_human', 'manual'), 'waiting_human'))).toEqual({ path: '/runs/r1/nodes/n1' })
+    expect(recentRunTarget(run(cur('agent', 'running', 'manual')))).toEqual({ path: '/runs/r1/nodes/n1' })
     expect(recentRunTarget(run(undefined, 'completed'))).toBe('/runs/r1')
     // Just taken over, auto call still unwinding: keep the stream (the chat opens once it waits).
     expect(recentRunTarget(run(cur('takeover', 'stopping', 'manual')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
@@ -49,8 +49,8 @@ describe('recentRunTarget goes straight into the chat', () => {
     const r = run(undefined)
     expect(recentRunActive(r, { path: '/runs/r1', query: {} })).toBe(true)
     expect(recentRunActive(r, { path: '/runs/r1/live', query: {} })).toBe(true)
-    expect(recentRunActive(r, { path: '/gates', query: { run: 'r1' } })).toBe(true)
-    expect(recentRunActive(r, { path: '/gates', query: { run: 'r2' } })).toBe(false)
+    expect(recentRunActive(r, { path: '/runs/r1/nodes/n1', query: {} })).toBe(true)
+    expect(recentRunActive(r, { path: '/runs/r2/nodes/n1', query: {} })).toBe(false)
   })
 })
 

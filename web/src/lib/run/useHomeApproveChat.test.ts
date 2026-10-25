@@ -297,8 +297,7 @@ describe('useHomeApproveChat', () => {
     // The engine delivers the message once the approve node parks.
     expect(mocks.reactReply).not.toHaveBeenCalled()
     expect(mocks.push).toHaveBeenCalledWith({
-      path: '/gates',
-      query: { run: 'run-1', node: 'ap' },
+      path: '/runs/run-1/nodes/ap',
     })
   })
 
@@ -319,8 +318,7 @@ describe('useHomeApproveChat', () => {
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
     expect(mocks.push).toHaveBeenCalledWith({
-      path: '/gates',
-      query: { run: 'run-1', node: 'ap' },
+      path: '/runs/run-1/nodes/ap',
     })
   })
 
@@ -334,8 +332,7 @@ describe('useHomeApproveChat', () => {
     void chat.send()
     await flushPromises()
     expect(mocks.push).toHaveBeenCalledWith({
-      path: '/gates',
-      query: { run: 'run-1', node: 'ap' },
+      path: '/runs/run-1/nodes/ap',
     })
     expect(mocks.getRun).not.toHaveBeenCalled()
     expect(mocks.reactReply).not.toHaveBeenCalled()
@@ -351,8 +348,7 @@ describe('useHomeApproveChat', () => {
     await chat.send()
     await nextTick()
     expect(mocks.push).toHaveBeenCalledWith({
-      path: '/gates',
-      query: { run: 'run-1', node: 'ap' },
+      path: '/runs/run-1/nodes/ap',
     })
   })
 
@@ -386,8 +382,7 @@ describe('useHomeApproveChat', () => {
     resolveStart({ id: 'run-original-one', status: 'queued' })
     await sending
     expect(mocks.push).toHaveBeenLastCalledWith({
-      path: '/gates',
-      query: { run: 'run-original-one', node: 'ap' },
+      path: '/runs/run-original-one/nodes/ap',
     })
     expect(peekHomeApproveHandoff()).toEqual({
       runId: 'run-original-one', nodeId: 'ap', text: '工作流一原始需求', images: [image],
@@ -419,8 +414,7 @@ describe('useHomeApproveChat', () => {
     expect(chat.selected.value?.id).toBe('wf-lite')
     await chat.onLaunchStarted('run-launch-one')
     expect(mocks.push).toHaveBeenLastCalledWith({
-      path: '/gates',
-      query: { run: 'run-launch-one', node: 'ap' },
+      path: '/runs/run-launch-one/nodes/ap',
     })
     expect(peekHomeApproveHandoff()).toEqual({
       runId: 'run-launch-one', nodeId: 'ap', text: '由工作流一启动对话', images: [image],
@@ -455,8 +449,7 @@ describe('useHomeApproveChat', () => {
       publishedSnapshot: true,
     })
     expect(mocks.push).toHaveBeenCalledWith({
-      path: '/gates',
-      query: { run: 'run-1', node: 'ap' },
+      path: '/runs/run-1/nodes/ap',
     })
   })
 
@@ -808,8 +801,7 @@ describe('useHomeApproveChat', () => {
       publishedSnapshot: true,
     })
     expect(mocks.push).toHaveBeenCalledWith({
-      path: '/gates',
-      query: { run: 'run-1', node: 'ap' },
+      path: '/runs/run-1/nodes/ap',
     })
   })
 

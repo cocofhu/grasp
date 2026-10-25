@@ -495,9 +495,10 @@ describe('AgentCreateWizard 4-step IA', () => {
     await chooseSelect('git-credential-add', 's1')
     expect(document.body.querySelectorAll('[data-testid^="git-credential-row-"]')).toHaveLength(3)
     expect(document.body.textContent).not.toContain('GIT_REPOS')
+    expect(document.body.textContent).not.toContain('可添加多个已保存的授权，并设置首选。')
+    expect(document.body.textContent).not.toContain('所选授权均可在沙箱中使用。')
+    expect(document.body.textContent).not.toContain('首选')
     expect(document.body.querySelector('[data-test="git-choice-github_https"]')).toBeNull()
-    ;(document.body.querySelector('[data-testid="git-preferred-s1"]') as HTMLButtonElement).click()
-    await flushPromises()
     await chooseSelect('git-hosts-s1', 'h1')
     const scope = document.body.querySelector<HTMLInputElement>('[data-testid="git-scope-s1"]')!
     scope.value = 'git.example.test'; scope.dispatchEvent(new Event('input', { bubbles: true }))
@@ -506,7 +507,8 @@ describe('AgentCreateWizard 4-step IA', () => {
     await wrapper.vm.$nextTick()
 
     expect(document.body.textContent).toContain('团队模型')
-    expect(document.body.textContent).toContain('部署私钥 (首选)')
+    expect(document.body.textContent).toContain('部署私钥')
+    expect(document.body.textContent).not.toContain('首选')
     expect(document.body.textContent).not.toContain('API Key · 未配置')
     buttonByText('创建并进入 Studio').click()
     await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
@@ -514,7 +516,7 @@ describe('AgentCreateWizard 4-step IA', () => {
     expect(payload).not.toHaveProperty('aiCredentialId')
     expect(payload).toHaveProperty('modelBinding', { kind: 'configuration', configurationId: 'cfg-creds' })
     expect(payload).not.toHaveProperty('openCodeCredentialId')
-    expect(payload.gitBindings).toEqual({ items: [{ credentialId: 'g1' }, { credentialId: 'gl1' }, { credentialId: 's1', scope: 'git.example.test', sshHostsCredentialId: 'h1' }], preferredCredentialId: 's1' })
+    expect(payload.gitBindings).toEqual({ items: [{ credentialId: 'g1' }, { credentialId: 'gl1' }, { credentialId: 's1', scope: 'git.example.test', sshHostsCredentialId: 'h1' }] })
     expect(payload).not.toHaveProperty('gitCredentialType')
     expect(payload).not.toHaveProperty('gitCredentialId')
     expect(payload).not.toHaveProperty('sshHostsCredentialId')
@@ -659,7 +661,7 @@ describe('AgentCreateWizard reusable model configurations', () => {
 
 describe('Agent creation default inheritance', () => {
   async function openInheritedWizard(name: string) {
-    getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'cfg-codebuddy' }, gitBindings: { items: [{ credentialId: 'default-gh' }], preferredCredentialId: 'default-gh' }, files: [], mcp: [], env: {}, layout: {} })
+    getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'cfg-codebuddy' }, gitBindings: { items: [{ credentialId: 'default-gh' }] }, files: [], mcp: [], env: {}, layout: {} })
     listCredentials.mockResolvedValue({ items: [...defaultCredentials, { id: 'default-gh', name: 'Default GitHub', type: 'git', purpose: 'git', provider: 'github', host: 'https://github.com', configured: true }] })
     const wrapper = mountWizard(); await flushPromises(); fillName(name)
     buttonByText('下一步').click(); await flushPromises()
@@ -704,7 +706,7 @@ describe('Agent creation default inheritance', () => {
     buttonByText('下一步').click(); await flushPromises()
     expect(document.body.querySelector('[data-testid="agent-inherit-model"]')!.getAttribute('aria-checked')).toBe('true')
     expect(buttonByText('下一步').disabled).toBe(true)
-    expect(document.body.textContent).toContain('请先在 Agent 默认配置中选择模型')
+    expect(document.body.textContent).toContain('请先在默认配置中选择模型')
     document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!.click(); await flushPromises()
     await chooseModel('cfg-cursor'); expect(buttonByText('下一步').disabled).toBe(false)
     wrapper.unmount()

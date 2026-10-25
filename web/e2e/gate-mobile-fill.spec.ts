@@ -30,7 +30,10 @@ async function mockApi(page: Page, initialIssues: Array<Record<string, unknown>>
       }
       return
     }
-    if (url.pathname.endsWith('/react-revise') && request.method() === 'POST') {
+    if (
+      request.method() === 'POST' &&
+      (url.pathname.endsWith('/react-revise') || /\/nodes\/[^/]+\/reply$/.test(url.pathname))
+    ) {
       revisions.push(request.postDataJSON())
       await route.fulfill({ json: { status: 'queued', waiting: 1, producerNodeId: 'visual' } })
       return

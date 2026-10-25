@@ -67,7 +67,7 @@ vi.mock('@/lib/inbox/gateShareLink', async () => {
       queueRemove: mocks.queueRemove,
       queueReorder: mocks.queueReorder,
       liveSessions: mocks.liveSessions,
-      eventsWsUrl: () => 'ws://test/public/gate-approvals/events',
+      eventsWsUrl: () => 'ws://test/public/approvals/events',
     },
   }
 })
@@ -303,7 +303,7 @@ describe('PublicGateApprovalView workbench', () => {
     expect(human?.images).toHaveLength(1)
     expect(human?.images?.[0]?.name).toBe('shot.png')
     expect(human?.images?.[0]?.url).toBe(
-      `/public/gate-approvals/images/0?token=${encodeURIComponent(token)}&v=${getShareVisitorId()}`,
+      `/public/approvals/images/0?token=${encodeURIComponent(token)}&v=${getShareVisitorId()}`,
     )
     expect(human?.images?.[0]?.url).not.toContain('blob:')
     expect(human?.images?.[0]?.url).not.toContain('/api/blobs')
@@ -414,7 +414,8 @@ describe('PublicGateApprovalView workbench', () => {
     expect(nodes[1].text()).toContain('当前')
     expect(nodes[1].text()).toContain('等待人工')
     expect(w.get('[data-testid="stage-workflow-progress"]').text()).toBe('1 / 2 已完成')
-    expect(w.get('[data-testid="stage-workflow-index"]').text()).toBe('02 / 02')
+    expect(w.find('[data-testid="stage-workflow-index"]').exists()).toBe(false)
+    expect(w.get('[data-testid="stage-workflow"]').text()).not.toContain('02 / 02')
     expect(w.get('[data-testid="stage-workflow"]').text()).not.toContain('当前查看')
     expect(nodes[1].get('[data-testid="stage-workflow-mark"]').attributes('data-glyph')).toBe('user-hold')
     expect(nodes[1].get('[data-icon="user-hold"]').exists()).toBe(true)

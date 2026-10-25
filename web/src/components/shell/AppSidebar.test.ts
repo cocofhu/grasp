@@ -72,7 +72,7 @@ describe('AppSidebar', () => {
 
   it.each([
     ['/dashboard', '/dashboard'],
-    ['/gates/run-1', '/dashboard'],
+    ['/runs/run-1/nodes/clarify', '/dashboard'],
     ['/solo/abc', '/dashboard'],
     ['/board', '/board'],
     ['/workflows/wf-1', '/workflows'],

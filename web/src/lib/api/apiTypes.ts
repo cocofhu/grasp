@@ -222,8 +222,6 @@ export interface AgentGitBinding {
 
 export interface AgentGitBindings {
   items: AgentGitBinding[]
-  /** Required for a nonempty list and must refer to one of its items. */
-  preferredCredentialId?: string
 }
 
 export interface Agent {

@@ -16,6 +16,7 @@ import { isCompositeFilled, normalizeCompositeSubmit } from '@/lib/shared/compos
 import { MAX_RUN_TAGS, MAX_TAG_RUNES, validateRunTag } from '@/lib/run/runTags'
 import { runTitleFromDraft } from '@/lib/run/runTitle'
 import { setHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
+import { nodeConversationPath } from '@/lib/run/nodeConversation'
 import {
   type RunSandboxEnvEntry,
   validateRunSandboxEnvRows,
@@ -387,8 +388,7 @@ async function startRun() {
     if (ownMessage) {
       setHomeApproveHandoff({ runId: res.id, nodeId: '', text: ownText, images: ownImages })
       emit('close')
-      const query: Record<string, string> = { run: res.id }
-      void router?.push({ path: '/gates', query })
+      void router?.push({ path: nodeConversationPath(res.id) })
       return
     }
     phase.value = 'success'

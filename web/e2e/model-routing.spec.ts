@@ -315,18 +315,20 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
     await page.getByTestId('git-credential-add').locator('[data-test="app-select-trigger"]').click()
     await page.locator(`[data-test="app-select-option-${id}"]`).click()
   }
-  await page.getByTestId('git-preferred-github-team').click()
+  await expect(page.getByTestId('git-preferred-github-team')).toHaveCount(0)
+  await expect(page.getByText('可添加多个已保存的授权，并设置首选。')).toHaveCount(0)
+  await expect(page.getByText('所选授权均可在沙箱中使用。')).toHaveCount(0)
   await page.getByTestId('shared-agent-save').click()
   await expect.poll(() => state.sharedWrites.length).toBe(1)
   expect(state.sharedWrites[0]).toMatchObject({
     acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'team-codex' },
     layout: expect.objectContaining({ configRoot: '/root/.codex' }),
-    gitBindings: { items: [{ credentialId: 'gitlab-team' }, { credentialId: 'github-team' }], preferredCredentialId: 'github-team' },
+    gitBindings: { items: [{ credentialId: 'gitlab-team' }, { credentialId: 'github-team' }] },
   })
   await page.reload()
   await page.getByTestId('shared-agent-subtab-meta').click()
   await expect(page.getByTestId('model-binding-configuration-select')).toContainText('Team Codex default')
-  await expect(page.getByTestId('git-preferred-github-team')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('git-preferred-github-team')).toHaveCount(0)
   await captureRuntimeBindings(page, 'agent-default-model-git', testInfo)
 
   await page.goto('/agent-create-wizard.html')

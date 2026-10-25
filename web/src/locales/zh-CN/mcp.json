@@ -321,9 +321,9 @@
           "signature": "pm_list_runs(workflowId, limit?)",
           "desc": "列出近期 Run"
         },
-        "pm_list_pending_gates": {
-          "signature": "pm_list_pending_gates(limit?)",
-          "desc": "待审批门禁"
+        "pm_list_pending_nodes": {
+          "signature": "pm_list_pending_nodes(limit?)",
+          "desc": "待处理节点"
         },
         "pm_get_artifact": {
           "signature": "pm_get_artifact(artifactId? | runId+name, offset?, limit<=65536?)",
@@ -361,9 +361,9 @@
           "signature": "pm_start_run(workflowId, trigger?, inputs?, priority?, tags?)",
           "desc": "启动 Run"
         },
-        "pm_resume_gate": {
-          "signature": "pm_resume_gate(runId, nodeId, action, form?)",
-          "desc": "审批门禁"
+        "pm_decide_node": {
+          "signature": "pm_decide_node(runId, nodeId, action, form?)",
+          "desc": "决策人工门禁"
         },
         "pm_react_reply": {
           "signature": "pm_react_reply(runId, nodeId, text, force?, annotations?)",
@@ -379,7 +379,7 @@
       "name": "pm-agent-fs",
       "desc": "工作区助手专用 · 列出 Agent 并编辑其工作目录",
       "overview": "列出当前工作区的全部 Agent 成员（self 为当前助手，other 为其他成员），并对同工作区任意 Agent 的 host 侧 workspace/ 做 list/read/write/delete/mkdir/rename。不触及 Run 沙箱，不改 agent.json 元配置。",
-      "convention": "设置 → 助手设置中启用 pm-agent-fs（默认启用；若已保存专用 MCP 列表，需手动勾选）。变更在 Agent Studio「Agent 工作目录」刷新或重开后可见（非热更新）。注意：若 Studio 打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——Demo/使用时请刷新并避免并行脏写。",
+      "convention": "设置 → 助手设置中启用 pm-agent-fs（默认启用；若已保存专用 MCP 列表，需手动勾选）。变更在 Agent Studio「工作目录」刷新或重开后可见（非热更新）。注意：若 Studio 打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——Demo/使用时请刷新并避免并行脏写。",
       "tools": {
         "pm_list_workspace_agents": {
           "signature": "pm_list_workspace_agents()",
