@@ -2410,3 +2410,54 @@ describe('AgentStudio Agent 默认配置 — empty workspace, unsaved defaults, 
     expect(seen).toEqual(['/agents?view=defaults'])
   })
 })
+
+describe('Agent studio identity icon', () => {
+  it('edits the name-bar mark in the draft and writes it only on save', async () => {
+    mocks.listAgents.mockResolvedValue([{ ...agent(), icon: { iconId: 'book', color: 'black' } }])
+    const wrapper = await mountStudio()
+    await flushPromises()
+    const mark = () => wrapper.get('[data-test="agent-identity-mark"]')
+    expect(mark().find('svg').exists()).toBe(true)
+    expect(mocks.saveAgent).not.toHaveBeenCalled()
+
+    await mark().trigger('click')
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-test="agent-identity-color-blue"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-test="agent-identity-icon-plane"]')!.click()
+    await flushPromises()
+    expect(mocks.saveAgent).not.toHaveBeenCalled()
+    const save = () => wrapper.findAll('button').find((button) => button.text().trim() === '保存')
+    expect(save()).toBeTruthy()
+    await save()!.trigger('click')
+    await flushPromises()
+    expect(mocks.saveAgent).toHaveBeenCalledWith(expect.objectContaining({
+      icon: { iconId: 'plane', color: 'blue' },
+    }))
+
+    mocks.saveAgent.mockClear()
+    await mark().trigger('click')
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-test="agent-identity-clear"]')!.click()
+    await flushPromises()
+    expect(mark().text()).toContain('L')
+    await save()!.trigger('click')
+    await flushPromises()
+    expect(mocks.saveAgent).toHaveBeenCalled()
+    expect(mocks.saveAgent.mock.calls.at(-1)![0]).not.toHaveProperty('icon')
+    wrapper.unmount()
+  })
+
+  it('opens the same mark from the narrow name bar', async () => {
+    breakpointMocks.isMobile.value = true
+    mocks.listAgents.mockResolvedValue([agent()])
+    const wrapper = await mountStudio()
+    await flushPromises()
+    const mark = wrapper.get('[data-test="agent-identity-mark"]')
+    expect(mark.text()).toContain('L')
+    await mark.trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-test="agent-identity-picker"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="agent-identity-search"]')).toBeTruthy()
+    wrapper.unmount()
+  })
+})

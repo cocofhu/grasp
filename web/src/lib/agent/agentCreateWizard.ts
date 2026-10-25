@@ -1,4 +1,4 @@
-import type { Agent, AgentCapabilities, AgentFile, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
+import type { Agent, AgentCapabilities, AgentFile, AgentIcon, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
 import { cloneGitBindings } from './gitBindings'
 import { validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
 import { stripSecretKeysFromKV, stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
@@ -64,6 +64,8 @@ export type WizardDraft = {
   skills: WizardSkill[]
   commands: WizardCommand[]
   skipped: WizardSkipped
+  /** Null keeps the initial-letter mark. Not sent when absent. */
+  icon: AgentIcon | null
 }
 
 export type WizardStepDef = {
@@ -117,6 +119,7 @@ export function freshDraft(): WizardDraft {
     skills: [],
     commands: [],
     skipped: {},
+    icon: null,
   }
 }
 
@@ -263,6 +266,7 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
       configRoot: draft.configRoot.trim() || configRootFor(draft.acpBackend),
       workspaceDir: DEFAULT_WORKSPACE_DIR,
     },
+    ...(draft.icon ? { icon: { iconId: draft.icon.iconId, color: draft.icon.color } } : {}),
     ...(useTemplate ? {} : { capabilities: blankAgentCapabilities() }),
   }
 }
@@ -311,6 +315,12 @@ export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames 
   const templateDetail = hasRoleTemplate(draft) ? draft.templateId.trim() : 'blank'
   const items: ReviewSummaryItem[] = [
     { key: 'name', kind: 'ok', labelKey: 'pages.agentStudio.wizard.review.name', detail: name },
+    {
+      key: 'icon',
+      kind: draft.icon ? 'ok' : 'empty',
+      labelKey: draft.icon ? 'pages.agentStudio.wizard.review.icon' : 'pages.agentStudio.wizard.review.iconNone',
+      detail: draft.icon ? `${draft.icon.iconId} · ${draft.icon.color}` : undefined,
+    },
     {
       key: 'template',
       kind: 'ok',

@@ -30,6 +30,7 @@ type agentExportJSON struct {
 	Env                map[string]string         `json:"env,omitempty"`
 	Layout             *AgentLayout              `json:"layout,omitempty"`
 	Capabilities       *models.AgentCapabilities `json:"capabilities,omitempty"`
+	Icon               *AgentIcon                `json:"icon,omitempty"`
 	SchemaVersion      int                       `json:"schemaVersion"`
 	ExportedAt         string                    `json:"exportedAt"`
 }
@@ -70,6 +71,7 @@ func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) erro
 		Env:                a.Env,
 		Layout:             &layout,
 		Capabilities:       a.Capabilities,
+		Icon:               cloneAgentIcon(a.Icon),
 		SchemaVersion:      AgentExportSchemaVersion,
 		ExportedAt:         time.Now().UTC().Format(time.RFC3339),
 	}
@@ -182,7 +184,7 @@ func parseZipAgent(r io.ReaderAt, size int64, prefix string, maxFileBytes int) (
 				return agentExportJSON{}, nil, fmt.Errorf("无法读取 agent.json：%v", err)
 			}
 			if err := json.Unmarshal(b, &export); err != nil {
-				return agentExportJSON{}, nil, fmt.Errorf("agent.json 格式无效：%v", err)
+				return agentExportJSON{}, nil, fmt.Errorf("agent.json 格式无效：%w", err)
 			}
 			if export.SchemaVersion != AgentExportSchemaVersion {
 				return agentExportJSON{}, nil, fmt.Errorf("不支持的 schemaVersion：%d。当前仅支持 schemaVersion=%d。", export.SchemaVersion, AgentExportSchemaVersion)
@@ -265,6 +267,7 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 		Env:                export.Env,
 		Layout:             layout,
 		Capabilities:       export.Capabilities,
+		Icon:               cloneAgentIcon(export.Icon),
 	}
 	if mode == ImportZIPCreate && len(agent.MCP) == 0 {
 		agent.MCP = DefaultPlatformMCP()

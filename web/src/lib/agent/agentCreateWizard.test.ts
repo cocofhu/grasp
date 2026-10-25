@@ -65,6 +65,13 @@ describe('Agent creation data contract', () => {
   const summary = buildReviewSummary(d, { model: 'Team model', gitItems: { gh: 'GitHub team' } })
   expect(summary.find(row => row.key === 'apiKey')?.detail).toBe('Team model')
   expect(summary.find(row => row.key === 'git')?.detail).toBe('GitHub team')
+  expect(summary.find(row => row.key === 'icon')?.labelKey).toBe('pages.agentStudio.wizard.review.iconNone')
+  d.icon = { iconId: 'flask', color: 'purple' }
+  const withIcon = buildReviewSummary(d)
+  expect(withIcon.find(row => row.key === 'icon')).toMatchObject({ kind: 'ok', detail: 'flask · purple' })
+  expect(assembleCreatePayload(d).icon).toEqual({ iconId: 'flask', color: 'purple' })
+  d.icon = null
+  expect(assembleCreatePayload(d)).not.toHaveProperty('icon')
   d.env.push({ k: 'FEATURE', v: 'on' }, { k: '', v: '' })
   expect(envConfiguredCount(d)).toBe(1)
  })

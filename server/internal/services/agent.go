@@ -188,6 +188,9 @@ type Agent struct {
 	// Capabilities is what the Agent may do and must deliver when a workflow
 	// node runs it. Nil means the Agent cannot be used by workflow nodes.
 	Capabilities *models.AgentCapabilities `json:"capabilities,omitempty"`
+	// Icon is an optional linear identity mark. Nil means the Agent keeps the
+	// initial letter. Emoji is not stored.
+	Icon *AgentIcon `json:"icon,omitempty"`
 }
 
 // agentConfig is the on-disk shape of agent.json (working-dir files live under
@@ -203,6 +206,7 @@ type agentConfig struct {
 	Env                map[string]string         `json:"env,omitempty"`
 	Layout             *AgentLayout              `json:"layout,omitempty"`
 	Capabilities       *models.AgentCapabilities `json:"capabilities,omitempty"`
+	Icon               *AgentIcon                `json:"icon,omitempty"`
 }
 
 // DefaultPlatformMCP returns the platform's built-in MCP server (the run-scoped
@@ -268,6 +272,7 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		Env:                env,
 		Layout:             layout,
 		Capabilities:       cfg.Capabilities,
+		Icon:               cloneAgentIcon(cfg.Icon),
 	}, true
 }
 
@@ -415,6 +420,9 @@ func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 	if name == "" {
 		return agentWrite{}, fmt.Errorf("%w: invalid agent name", ErrInvalidAgent)
 	}
+	if err := ValidateAgentIcon(a.Icon); err != nil {
+		return agentWrite{}, err
+	}
 	if a.Capabilities != nil {
 		if err := nodereg.ValidateCapabilities(name, a.Capabilities); err != nil {
 			return agentWrite{}, fmt.Errorf("%w: %w", ErrInvalidAgent, err)
@@ -489,6 +497,7 @@ func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 		Env:                a.Env,
 		Layout:             &layout,
 		Capabilities:       a.Capabilities,
+		Icon:               cloneAgentIcon(a.Icon),
 	}
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
