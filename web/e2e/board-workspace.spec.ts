@@ -19,14 +19,17 @@ test('board starts with active work and keeps usage in its own page', async ({ p
   expect(paths).not.toContain('/api/stats/token')
 })
 
-test('board retains preview, optional columns and the full run list', async ({ page }) => {
+test('board retains preview and the full run list', async ({ page }) => {
   await page.goto('/workspace.html?view=/board')
   const board = page.getByTestId('board-view')
   await board.locator('.run-board-card').first().click()
   await expect(page.getByText('运行摘要', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '继续浏览' }).click()
-  await board.getByTestId('board-filter-failed').click()
-  await expect(board.getByTestId('run-board-column')).toHaveCount(4)
+  await expect(board.getByTestId('board-filter-queued')).toHaveCount(0)
+  await expect(board.getByTestId('board-filter-failed')).toHaveCount(0)
+  await expect(board.getByTestId('board-filter-cancelled')).toHaveCount(0)
+  await expect(board.getByTestId('board-search-input')).toHaveCount(0)
+  await expect(board.getByTestId('run-board-column')).toHaveCount(3)
   await board.getByTestId('board-all-runs').click()
   await expect(page.getByTestId('board-view')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '运行记录', exact: true })).toBeVisible()
