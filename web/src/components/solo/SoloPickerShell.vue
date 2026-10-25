@@ -137,7 +137,9 @@ defineExpose({ close, show })
       <slot name="trigger">
         <Icon v-if="icon" :name="icon" :size="14" class="solo-picker__glyph" />
       </slot>
-      <span class="solo-picker__label" :title="label">{{ label }}</span>
+      <slot name="label" :label="label">
+        <span class="solo-picker__label" :title="label">{{ label }}</span>
+      </slot>
       <Icon name="chevron-down" :size="12" class="solo-picker__chev" />
     </button>
     <Teleport to="body">
