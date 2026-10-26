@@ -1,4 +1,5 @@
 import type { CliCatalogModel, ConcreteModelBinding } from '@/lib/api/apiTypes'
+import { modelVendor } from '@/lib/agent/cliModelView'
 
 export interface ConfiguredModelChoice {
   id: string
@@ -8,6 +9,8 @@ export interface ConfiguredModelChoice {
   /** Use the coding-tool mark, including the automatic sparkle. */
   backend: boolean
   unavailable: boolean
+  /** Exact levels accepted by this model and its coding-tool adapter. */
+  efforts?: string[]
 }
 
 /**
@@ -16,15 +19,18 @@ export interface ConfiguredModelChoice {
  */
 export function configuredModelChoices(input: {
   binding?: ConcreteModelBinding | null
+  /** Saved configuration name labels the primary model; ids remain upstream ids. */
+  configurationName?: string
   backend: string
   cliModels?: CliCatalogModel[]
-  connectionModels?: { id: string; name?: string }[]
+  connectionModels?: { id: string; name?: string; reasoningEfforts?: string[]; capabilities?: { reasoning?: boolean } }[]
   providerId?: string
   catalogReady: boolean
 }): ConfiguredModelChoice[] {
   const binding = input.binding
   if (!binding) return []
   const primary = binding.modelId?.trim() || ''
+  const configurationName = input.configurationName?.trim() || ''
   const auxiliary = (binding.auxiliaryModelIds || []).map((id) => id.trim()).filter(Boolean)
   const ids = binding.kind === 'platform' ? [primary, ...auxiliary] : [primary, ...auxiliary].filter((id, index) => id || index > 0)
   const seen = new Set<string>()
@@ -33,21 +39,26 @@ export function configuredModelChoices(input: {
     if (seen.has(id)) continue
     seen.add(id)
     if (!id) {
-      choices.push({ id: '', name: '自动', hint: '交给编码工具选择', vendor: input.backend, backend: true, unavailable: false })
+      choices.push({ id: '', name: configurationName || '自动', hint: '交给编码工具选择', vendor: input.backend, backend: true, unavailable: false })
       continue
     }
     const cli = (input.cliModels || []).find((model) => model.id === id)
     const connection = (input.connectionModels || []).find((model) => model.id === id)
-    const name = cli?.name || connection?.name || id
-    const vendor = cli?.vendor || input.providerId || ''
+    const namedPrimary = id === primary && !!configurationName
+    const name = namedPrimary ? configurationName : cli?.name || connection?.name || id
+    const vendor = modelVendor(id, cli?.name || connection?.name, cli?.vendor || input.providerId || '')
     const known = !!cli || !!connection
+    const supportsEffort = input.backend === 'codex' || input.backend === 'deepseek_harness'
+    const declaredEfforts = connection?.reasoningEfforts?.length ? connection.reasoningEfforts : input.backend === 'codex' ? cli?.efforts : undefined
+    const efforts = supportsEffort && connection?.capabilities?.reasoning !== false ? [...new Set((declaredEfforts || []).map(value => value.trim()).filter(Boolean))] : []
     choices.push({
       id,
       name,
       hint: id,
-      vendor,
-      backend: false,
+      vendor: vendor || input.backend,
+      backend: !vendor,
       unavailable: input.catalogReady && !known,
+      efforts,
     })
   }
   return choices

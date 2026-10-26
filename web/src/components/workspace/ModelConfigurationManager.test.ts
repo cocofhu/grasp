@@ -5,10 +5,16 @@ import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CredentialItem, ModelConfiguration, ModelConnection, ModelConnectionBody, ToolCapability } from '@/lib/api/api'
 import { vHoverInk } from '@/lib/shared/hoverInkDirective'
+import { theme } from '@/lib/shared/theme'
+import openaiLogo from '@/assets/provider-logos/openai.svg'
+import kimiLogo from '@/assets/provider-logos/kimi.svg'
+import kimiDarkLogo from '@/assets/provider-logos/kimi-dark.svg'
+import zhipuLogo from '@/assets/provider-logos/zhipu.svg'
+import hunyuanLogo from '@/assets/provider-logos/hunyuan.svg'
 import ModelConfigurationManager from './ModelConfigurationManager.vue'
 
-const mocks = vi.hoisted(() => ({ configurations: vi.fn(), connections: vi.fn(), credentials: vi.fn(), capabilities: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), updateConnection: vi.fn(), success: vi.fn(), cliModels: vi.fn() }))
-vi.mock('@/lib/api/api', () => ({ api: { listModelConfigurations: mocks.configurations, listModelConnections: mocks.connections, listCredentials: mocks.credentials, listToolCapabilities: mocks.capabilities, createModelConfiguration: mocks.create, updateModelConfiguration: mocks.update, deleteModelConfiguration: mocks.remove, updateModelConnection: mocks.updateConnection } }))
+const mocks = vi.hoisted(() => ({ configurations: vi.fn(), connections: vi.fn(), connectionModels: vi.fn(), credentials: vi.fn(), capabilities: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), updateConnection: vi.fn(), success: vi.fn(), cliModels: vi.fn() }))
+vi.mock('@/lib/api/api', () => ({ api: { listModelConfigurations: mocks.configurations, listModelConnections: mocks.connections, listModelConnectionModels: mocks.connectionModels, listCredentials: mocks.credentials, listToolCapabilities: mocks.capabilities, createModelConfiguration: mocks.create, updateModelConfiguration: mocks.update, deleteModelConfiguration: mocks.remove, updateModelConnection: mocks.updateConnection } }))
 vi.mock('@/lib/agent/cliCatalog', () => ({ loadCliModels: (...args: unknown[]) => mocks.cliModels(...args) }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ success: mocks.success }) }))
 
@@ -23,8 +29,9 @@ const capabilities: ToolCapability[] = [
 ]
 let services: ModelConnection[]
 
-function setup(options: { hoverInk?: boolean } = {}) {
+function setup(options: { hoverInk?: boolean; inline?: boolean } = {}) {
   return mount(ModelConfigurationManager, {
+    props: { inline: options.inline },
     global: {
       plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })],
       ...(options.hoverInk ? { directives: { 'hover-ink': vHoverInk } } : {}),
@@ -73,6 +80,7 @@ beforeEach(() => {
   services = structuredClone([service])
   mocks.configurations.mockResolvedValue({ items: [] })
   mocks.connections.mockImplementation(async () => ({ items: structuredClone(services) }))
+  mocks.connectionModels.mockResolvedValue({ models: [] })
   mocks.credentials.mockResolvedValue({ items: [platformKey, modelKey] })
   mocks.capabilities.mockResolvedValue({ items: capabilities })
   mocks.create.mockImplementation(async (body: Record<string, unknown>) => ({ id: 'created', ...body, revision: 1 }))
@@ -128,6 +136,166 @@ describe('ModelConfigurationManager', () => {
     expect(mocks.updateConnection).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="model-configuration-form"]').exists()).toBe(false)
     expect(wrapper.emitted('changed')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it.each(['opencode', 'deepseek_harness'])('offers the official %s authorization alongside compatible API accounts', async (backend) => {
+    const officialKey: CredentialItem = { id: 'official-key', type: 'ai', name: 'Official tool account', purpose: 'tool_auth', toolId: backend, provider: backend, secretKind: 'api_key', configured: true }
+    const otherTool: CredentialItem = { ...officialKey, id: 'other-tool-key', name: 'Another tool account', toolId: backend === 'opencode' ? 'deepseek_harness' : 'opencode' }
+    mocks.credentials.mockResolvedValue({ items: [officialKey, otherTool, modelKey] })
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: backend, modes: ['platform', 'connection'], protocols: ['openai-chat-completions'], adapterState: 'existing' }] })
+    const wrapper = setup()
+    await openStepTwo(wrapper, backend)
+    const field = wrapper.get('[data-testid="model-configuration-credential-choice"]')
+    await field.get('[data-test="app-select-trigger"]').trigger('click')
+    expect(field.find('[data-test="app-select-option-platform:official-key"]').exists()).toBe(true)
+    expect(field.find('[data-test="app-select-option-connection:service"]').exists()).toBe(true)
+    expect(field.find('[data-test="app-select-option-platform:other-tool-key"]').exists()).toBe(false)
+    expect(field.find('[data-test="app-select-option-platform:model-key"]').exists()).toBe(false)
+    await field.get('[data-test="app-select-option-platform:official-key"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="platform-model"]').setValue('platform-model-v1')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.cliModels).toHaveBeenCalledWith(backend)
+    expect(mocks.create).toHaveBeenCalledWith({ name: 'Team configuration', backend, binding: { kind: 'platform', credentialId: officialKey.id, modelId: 'platform-model-v1' }, state: 'active' })
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    expect(mocks.connectionModels).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('loads API-account models at the model step and saves only the selected discovered models with their metadata', async () => {
+    const primary: ModelConnection['models'][number] = { id: 'vendor/Mixed.Case:primary', name: 'Provider primary', source: 'discovered', capabilities: { vision: true, reasoning: true }, input: ['text', 'image'], contextWindow: 256000, maxTokens: 16384, reasoningEfforts: ['low', 'high'] }
+    const auxiliary: ModelConnection['models'][number] = { id: 'vendor/auxiliary', name: 'Provider auxiliary', source: 'discovered', capabilities: { toolCalls: true } }
+    const unused: ModelConnection['models'][number] = { id: 'vendor/unselected', name: 'Do not import', source: 'discovered' }
+    const savedModel = { ...service.models[0]!, name: 'Saved model name' }
+    services = [{ ...service, models: [savedModel] }]
+    mocks.connectionModels.mockResolvedValue({ models: [primary, auxiliary, unused, { ...service.models[0]!, name: 'Discovered duplicate', maxTokens: 1 }] })
+    const wrapper = setup()
+    await openStepTwo(wrapper, 'opencode')
+    await chooseCredential(wrapper, `connection:${service.id}`)
+    expect(mocks.connectionModels).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await flushPromises()
+    expect(mocks.connectionModels).toHaveBeenCalledExactlyOnceWith(service.id)
+    const primaryField = wrapper.get('[data-testid="model-configuration-model-id"]')
+    expect(wrapper.getComponent('[data-testid="model-configuration-model-id"]').props('modelValue')).toBe('')
+    await primaryField.get('[data-test="app-select-trigger"]').trigger('click')
+    expect(primaryField.text()).toContain('Provider primary')
+    expect(primaryField.text()).not.toContain('Discovered duplicate')
+    await primaryField.get(`[data-test="app-select-option-${primary.id}"]`).trigger('click')
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    const auxiliaryField = wrapper.get('[data-testid="model-configuration-aux-select-0"]')
+    await auxiliaryField.get('[data-test="app-select-trigger"]').trigger('click')
+    await auxiliaryField.get(`[data-test="app-select-option-${auxiliary.id}"]`).trigger('click')
+    expect(wrapper.findAll('#configuration-model-catalog option').map((option) => option.attributes('value'))).toEqual(expect.arrayContaining([primary.id, auxiliary.id, unused.id]))
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updateConnection).toHaveBeenCalledWith(service.id, expect.objectContaining({ models: [savedModel, primary, auxiliary] }))
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ backend: 'opencode', binding: { kind: 'connection', connectionId: service.id, modelId: primary.id, auxiliaryModelIds: [auxiliary.id] } }))
+    expect(services[0]!.models.some((model) => model.id === unused.id)).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['api-error', 'network-error', 'malformed'])('keeps saved and manual models usable when discovery returns %s and supports refresh', async (failure) => {
+    if (failure === 'network-error') mocks.connectionModels.mockRejectedValueOnce(new Error('Provider unavailable'))
+    else mocks.connectionModels.mockResolvedValueOnce(failure === 'api-error' ? { models: [], error: 'Provider unavailable' } : { models: null })
+    mocks.configurations.mockResolvedValue({ items: [configuration] })
+    const wrapper = setup()
+    await flushPromises()
+    await wrapper.get('[data-testid="model-configuration-edit-saved"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="model-configuration-model-id"]').text()).toContain(service.models[0]!.id)
+    expect(wrapper.get('[data-testid="model-configuration-save"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="model-configuration-model-catalog"]').text()).not.toBe('')
+    await chooseModel(wrapper, 'manual/Exact.Model:custom', true)
+    mocks.connectionModels.mockResolvedValueOnce({ models: [{ id: 'vendor/recovered', name: 'Recovered provider model', source: 'discovered' }] })
+    await wrapper.get('[data-testid="model-configuration-refresh-models"]').trigger('click')
+    await flushPromises()
+    expect(mocks.connectionModels).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="model-configuration-model-id"]').text()).toContain('manual/Exact.Model:custom')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updateConnection).toHaveBeenCalledWith(service.id, expect.objectContaining({ models: [...service.models, { id: 'manual/Exact.Model:custom', source: 'manual' }] }))
+    expect(mocks.update).toHaveBeenCalledWith(configuration.id, expect.objectContaining({ binding: { kind: 'connection', connectionId: service.id, modelId: 'manual/Exact.Model:custom' } }))
+    wrapper.unmount()
+  })
+
+  it('shows each API model brand in its options and selected primary and auxiliary slots', async () => {
+    services = [{ ...service, providerId: 'tokenhub', models: [] }]
+    const initialKimiAsset = theme.value === 'dark' ? kimiDarkLogo : kimiLogo
+    const brands = [
+      { id: 'gpt-5.5', name: 'GPT 5.5', vendor: 'openai', asset: openaiLogo },
+      { id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro', vendor: 'kimi', asset: initialKimiAsset },
+      { id: 'glm-5.1', name: 'GLM 5.1', vendor: 'zhipu', asset: zhipuLogo },
+      { id: 'hy3-pro', name: 'HY 3 Pro', vendor: 'hunyuan', asset: hunyuanLogo },
+    ]
+    mocks.connectionModels.mockResolvedValue({ models: brands.map(({ id, name }) => ({ id, name, source: 'discovered' })) })
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    const field = wrapper.get('[data-testid="model-configuration-model-id"]')
+    await field.get('[data-test="app-select-trigger"]').trigger('click')
+    for (const brand of brands) {
+      const option = field.get(`[data-test="app-select-option-${brand.id}"]`)
+      expect(option.get(`[data-vendor-mark="${brand.vendor}"] img`).attributes('src')).toBe(brand.asset)
+    }
+    const previousTheme = theme.value
+    try {
+      theme.value = 'dark'
+      await flushPromises()
+      expect(field.get('[data-vendor-mark="openai"] img').classes()).toContain('invert')
+      expect(field.get('[data-vendor-mark="kimi"] img').attributes('src')).toBe(kimiDarkLogo)
+      expect(field.get('[data-vendor-mark="kimi"] img').classes()).not.toContain('invert')
+      for (const vendor of ['zhipu', 'hunyuan']) {
+        const mark = field.get(`[data-vendor-mark="${vendor}"]`)
+        expect(mark.classes()).toContain('vendor-mark--color')
+        expect(mark.get('img').classes()).not.toContain('invert')
+      }
+    } finally {
+      theme.value = previousTheme
+    }
+    await field.get('[data-test="app-select-option-gpt-5.5"]').trigger('click')
+    expect(field.get('[data-test="app-select-trigger"] [data-vendor-mark="openai"] img').attributes('src')).toBe(openaiLogo)
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    const auxiliary = wrapper.get('[data-testid="model-configuration-aux-select-0"]')
+    expect(auxiliary.get('[data-test="app-select-trigger"] [data-vendor-mark="kimi"] img').attributes('src')).toBe(initialKimiAsset)
+    await chooseModel(wrapper, 'glm-5.private', true)
+    expect(field.get('[data-test="app-select-trigger"] [data-vendor-mark="zhipu"] img').attributes('src')).toBe(zhipuLogo)
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    expect(mocks.create).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each(['switch', 'back', 'close'])('discards a delayed provider catalog after %s and loads the current model step', async (action) => {
+    const otherService = { ...structuredClone(service), id: 'other-service', name: 'Other API account' }
+    services.push(otherService)
+    let resolveStale!: (value: { models: ModelConnection['models'] }) => void
+    const pending = new Promise<{ models: ModelConnection['models'] }>((resolve) => { resolveStale = resolve })
+    mocks.connectionModels.mockReturnValueOnce(pending).mockResolvedValue({ models: [{ id: 'current/model', name: 'Current provider model', source: 'discovered' }] })
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    expect(mocks.connectionModels).toHaveBeenCalledTimes(1)
+    if (action === 'close') {
+      await wrapper.get('button[aria-label="Close"]').trigger('click')
+      await openConnectionModelStep(wrapper)
+    } else {
+      await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
+      if (action === 'switch') await chooseCredential(wrapper, `connection:${otherService.id}`)
+      await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    }
+    await flushPromises()
+    resolveStale({ models: [{ id: 'stale/model', name: 'Stale provider model', source: 'discovered' }] })
+    await flushPromises()
+    const field = wrapper.get('[data-testid="model-configuration-model-id"]')
+    await field.get('[data-test="app-select-trigger"]').trigger('click')
+    expect(field.text()).toContain('Current provider model')
+    expect(field.text()).not.toContain('Stale provider model')
+    expect(mocks.connectionModels.mock.calls.map(([id]) => id)).toEqual([service.id, action === 'switch' ? otherService.id : service.id])
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    expect(mocks.create).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -278,6 +446,33 @@ describe('ModelConfigurationManager', () => {
     await flushPromises()
     expect(mocks.update).toHaveBeenCalledWith(configuration.id, { name: 'Unsaved edited name', backend: configuration.backend, binding: configuration.binding, state: 'active' })
     expect(mocks.create).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps inline editing active throughout a delayed credential resume and post-save refresh', async () => {
+    const wrapper = setup({ inline: true })
+    await openStepTwo(wrapper)
+    await wrapper.get('[data-testid="model-configuration-add-credential"]').trigger('click')
+    let finishRefresh!: (value: { items: CredentialItem[] }) => void
+    mocks.credentials.mockImplementationOnce(() => new Promise((resolve) => { finishRefresh = resolve }))
+    const resume = wrapper.vm.resumeWithCredential(platformKey.id)
+    await flushPromises()
+    expect(wrapper.emitted('editing')).toEqual([[true]])
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    finishRefresh({ items: [platformKey] })
+    await resume
+    await flushPromises()
+    expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('2')
+    expect(wrapper.emitted('editing')).toEqual([[true]])
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    mocks.credentials.mockImplementationOnce(() => new Promise((resolve) => { finishRefresh = resolve }))
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('editing')).toEqual([[true]])
+    finishRefresh({ items: [platformKey] })
+    await flushPromises()
+    expect(wrapper.emitted('editing')).toEqual([[true], [false]])
+    expect(wrapper.emitted('saved')?.[0]?.[0]).toMatchObject({ id: 'created', name: 'Team configuration' })
     wrapper.unmount()
   })
 

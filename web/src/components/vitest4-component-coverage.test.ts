@@ -20,7 +20,16 @@ describe('component shallow mount coverage (vitest 4 remapping)', () => {
   beforeAll(() => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ items: [] }), { status: 200 })),
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+        const path = new URL(url, 'http://localhost').pathname
+        // These list clients return arrays directly; workspace model/credential
+        // clients use an items envelope. Keep setup mocks faithful to both.
+        const arrayList = ['/api/agents', '/api/projects', '/api/workflows', '/api/workflows/catalog', '/api/sandboxes'].includes(path)
+          || /^\/api\/solo\/sessions\/[^/]+\/(messages|env)$/.test(path)
+        const body = arrayList ? [] : path === '/api/solo/sessions' ? { sessions: [], maxSandboxes: 5 } : { items: [] }
+        return new Response(JSON.stringify(body), { status: 200 })
+      }),
     )
     vi.stubGlobal(
       'ResizeObserver',

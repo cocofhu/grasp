@@ -96,6 +96,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/workspace/model-connections", modelConnections.List)
 		api.POST("/workspace/model-connections", modelConnections.Create)
 		api.GET("/workspace/model-connections/:connectionId", modelConnections.Get)
+		api.GET("/workspace/model-connections/:connectionId/models", modelConnections.Models)
 		api.PUT("/workspace/model-connections/:connectionId", modelConnections.Update)
 		api.PATCH("/workspace/model-connections/:connectionId", modelConnections.Update)
 		api.DELETE("/workspace/model-connections/:connectionId", modelConnections.Delete)

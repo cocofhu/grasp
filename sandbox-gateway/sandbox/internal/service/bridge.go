@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"backend/internal/acp"
+	"backend/internal/agents"
 	"backend/internal/provider"
 
 	"github.com/gorilla/websocket"
@@ -86,6 +88,8 @@ type Bridge struct {
 
 	// 本会话选择的模型；空表示跟随 ChatManager 的默认模型（-model / ACP_BRIDGE_MODEL）。
 	model string
+	// reasoningEffort belongs to this chat; changing it never mutates process env.
+	reasoningEffort string
 
 	// 回合看门狗：连续 turnIdle 没有任何活动（输出事件、CPU、IO）或总时长超过 turnMax 即终止回合；0 表示不限。
 	turnIdle time.Duration
@@ -137,20 +141,21 @@ func NewBridge() *Bridge {
 	idle, max := turnLimitsFromEnv()
 	liveCPU, liveIO := livenessThresholdsFromEnv()
 	return &Bridge{
-		sampler:        procSampler{root: "/proc"},
-		livenessCPU:    liveCPU,
-		livenessIO:     liveIO,
-		livenessSample: livenessSampleEvery,
-		livenessBeat:   livenessHeartbeatEvery,
-		id:             DefaultChatID,
-		createdAt:      time.Now(),
-		permWait:       make(map[string]chan string),
-		clients:        make(map[*websocket.Conn]*wsClient),
-		autoPermission: true,
-		evLog:          eventLog{},
-		eventSubs:      make(map[int]func(json.RawMessage)),
-		turnIdle:       idle,
-		turnMax:        max,
+		sampler:         procSampler{root: "/proc"},
+		livenessCPU:     liveCPU,
+		livenessIO:      liveIO,
+		livenessSample:  livenessSampleEvery,
+		livenessBeat:    livenessHeartbeatEvery,
+		id:              DefaultChatID,
+		reasoningEffort: strings.TrimSpace(os.Getenv("ACP_BRIDGE_REASONING_EFFORT")),
+		createdAt:       time.Now(),
+		permWait:        make(map[string]chan string),
+		clients:         make(map[*websocket.Conn]*wsClient),
+		autoPermission:  true,
+		evLog:           eventLog{},
+		eventSubs:       make(map[int]func(json.RawMessage)),
+		turnIdle:        idle,
+		turnMax:         max,
 	}
 }
 
@@ -169,6 +174,43 @@ func (b *Bridge) Model() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.model
+}
+
+// ReasoningEffort is the exact effort selected for this chat. Empty uses the
+// tool default and must not fall back to an older process-level setting.
+func (b *Bridge) ReasoningEffort() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.reasoningEffort
+}
+
+// ReasoningOptions uses the current DSH session's real advertisement only for
+// that same model; changing models must use that target's declared metadata.
+func (b *Bridge) ReasoningOptions(model string) (string, []string) {
+	if modelReasoningDisabled(model) {
+		return "", []string{}
+	}
+	if agents.Current().Name() == provider.DeepSeekHarness && strings.TrimSpace(model) == b.EffectiveModel() {
+		session := b.Session()
+		if source, ok := session.(provider.ReasoningOptionSource); ok && strings.TrimSpace(session.Info().ModelID) == strings.TrimSpace(model) {
+			current, values := source.ReasoningOptions()
+			return current, append([]string{}, values...)
+		}
+	}
+	return "", append([]string{}, configuredReasoningOptions(model)...)
+}
+
+func (b *Bridge) ReasoningEffortSelectable(model, effort string) bool {
+	if effort == "" {
+		return true
+	}
+	_, values := b.ReasoningOptions(model)
+	for _, value := range values {
+		if effort == value {
+			return true
+		}
+	}
+	return false
 }
 
 // EffectiveModel 返回建连实际使用的模型：会话选择 → 默认模型 → 空（由 CLI 自选，即 auto）。

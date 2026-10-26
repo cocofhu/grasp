@@ -87,3 +87,31 @@ func TestBindingsAreExclusiveAndResolvedJSONHidesSecrets(t *testing.T) {
 		t.Fatal("resolved secret serialized")
 	}
 }
+
+func TestOfficialToolPlatformBindings(t *testing.T) {
+	for _, tool := range []string{"opencode", "deepseek_harness"} {
+		if err := ValidateBinding(tool, Binding{Kind: "platform", CredentialID: "official-key"}, nil); err != nil {
+			t.Fatalf("%s default: %v", tool, err)
+		}
+	}
+	for _, id := range []string{"opencode/claude-sonnet-5", "opencode/kimi-k3"} {
+		if err := ValidateBinding("opencode", Binding{Kind: "platform", CredentialID: "zen", ModelID: id}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"anthropic/claude-sonnet-5", "opencode-go/kimi-k3", "custom/model", "opencode/", "opencode/vendor/model", "claude-sonnet-5"} {
+		for _, auxiliary := range []bool{false, true} {
+			binding := Binding{Kind: "platform", CredentialID: "zen", ModelID: id}
+			if auxiliary {
+				binding.ModelID, binding.AuxiliaryModelIDs = "opencode/kimi-k3", []string{id}
+			}
+			if err := ValidateBinding("opencode", binding, nil); err == nil {
+				t.Fatalf("Zen key accepted another provider model %q (auxiliary=%v)", id, auxiliary)
+			}
+		}
+	}
+	connection := Connection{Protocol: ProtocolChat, Auth: Auth{Scheme: "bearer"}}
+	if err := ValidateBinding("opencode", Binding{Kind: "connection", ConnectionID: "generic", ModelID: "vendor/raw/model"}, &connection); err != nil {
+		t.Fatalf("generic connection model IDs changed: %v", err)
+	}
+}

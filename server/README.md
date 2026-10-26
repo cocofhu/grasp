@@ -16,7 +16,8 @@ Agent env、工作区共享 env、Run env 与平台 `sandbox.env` 中出现密�
 
 | 管理项 | UI 内容 | 注入/使用 |
 |---|---|---|
-| AI CLI/API（Cursor、Claude Code、CodeBuddy、Trae、OpenCode、Codex、DeepSeek Harness） | API Key/Token；OpenCode provider、base URL、model 为非敏感配置。Codex 只保存 ChatGPT 登录文件 | 新沙箱解析为 CLI 标准变量；Codex 写成 `{configRoot}/auth.json`，不注入环境变量 |
+| 编码工具厂商授权 | Cursor、Claude Code、CodeBuddy、Trae、OpenCode Zen、DeepSeek Harness 的官方 Key/Token；Codex 平台授权使用登录文件 | 保存为 `tool_auth`，只注入具名模型配置选中的授权；Codex 登录文件写入 `{configRoot}/auth.json` |
+| 模型 API 账号 | 通用模型服务的 Key、Base URL、协议与原始模型 ID | 保存为 `model_api`；通过具名模型配置选择兼容编码工具和连接，不与厂商授权混用 |
 | Git HTTPS | GitHub/GitLab Token、GitLab URL | 注入沙箱，由 startup 配置 `git`、`gh`/`glab` |
 | Git SSH | 私钥、known_hosts | 写入 `~/.ssh/id_rsa`、`~/.ssh/known_hosts`，不作为普通 env |
 | MCP / 自定义 | MCP Header/command env 或明确目标环境键；支持 `${credential:<id>}` | 仅展开到目标 MCP 或绑定键，不扩散到所有 Agent |
@@ -25,7 +26,7 @@ Agent env、工作区共享 env、Run env 与平台 `sandbox.env` 中出现密�
 只能来自工作区凭据的密钥键：`GRASP_CURSOR_API_KEY`、`GRASP_CLAUDE_API_KEY`、`GRASP_CODEBUDDY_API_KEY`、
 `GRASP_TRAE_API_KEY`、`GRASP_OPENCODE_API_KEY`、`GRASP_CODEX_AUTH_JSON`、`GRASP_DEEPSEEK_API_KEY`、`GITHUB_TOKEN`、`GITLAB_TOKEN`、`GIT_SSH_PRIVATE_KEY`、
 `GIT_SSH_KNOWN_HOSTS`，以及它们映射到的 CLI 变量 `CURSOR_API_KEY`、`ANTHROPIC_API_KEY`、`CODEBUDDY_API_KEY`、
-`TRAECLI_PERSONAL_ACCESS_TOKEN`、`OPENCODE_API_KEY`、`DEEPSEEK_API_KEY`，以及 dsh 别名 `ACP_DEEPSEEK_API_KEY`、`ACP_DEEPSEEK_HARNESS_API_KEY`。`GRASP_CODEX_AUTH_JSON` 只是登录文件槽位，不会映射成 CLI 环境变量。站点、厂商、模型、`GITLAB_URL` 等非敏感项仍可写在 Agent env。
+`TRAECLI_PERSONAL_ACCESS_TOKEN`、`OPENCODE_API_KEY`、`DEEPSEEK_API_KEY`，以及 dsh 别名 `ACP_DEEPSEEK_API_KEY`、`ACP_DEEPSEEK_HARNESS_API_KEY`。`GRASP_CODEX_AUTH_JSON` 只是登录文件槽位，不会映射成 CLI 环境变量。站点等非敏感项可写在 Agent env；模型、服务商与 API 地址通过具名模型配置管理，不能用 env 覆盖所选绑定。
 已配置值的凭据键不能被每次 Run 的临时 env 覆盖。平台注入的保留变量（`GRASP_ARTIFACT_*`、`GRASP_RUN_ID`、`GRASP_NODE_ID`、`GRASP_MEMORY_*`、`GRASP_CONTEXT_*`、`GRASP_SCHEDULER_*`、`GRASP_PM_*`、`CONFIG_ROOT`、`AGENT_PROVIDER`、沙箱密码）不能作为凭据键。部署密钥、数据库密码、Session/Gate/Artifact Token 等仍是平台配置或系统自动管理项，不进入工作区凭据页。
 
 ### 真实沙箱链路(多后端)
@@ -54,8 +55,10 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
 
 ## ACP 后端怎么用
 
-各后端的 Key 统一保存在**工作区凭据**中。Codex 保存的是 ChatGPT 登录文件，启动前写入沙箱 `auth.json`，不注入 CLI 环境变量。Agent Studio → Meta 选择 `acpBackend`，
-并可在 env 中填写站点、厂商、模型等非敏感选项。运行时把凭据键映射成 CLI 认的变量后注入工作流沙箱。
+各后端的 Key 统一保存在**工作区凭据**中，编码工具厂商授权与通用模型 API 账号分别保存。
+先在「模型」中保存编码工具、凭据和上游模型的具名配置，再让 Agent 绑定该配置或继承默认配置。
+下面的 CLI 环境变量仅说明运行时注入结果；站点等选项可由 Agent env 管理，模型路由以保存的配置为准。
+Codex 平台授权使用登录文件，启动前写入沙箱 `auth.json`。
 
 | acpBackend | 沙箱内 CLI | 默认 configRoot | 容器内鉴权变量 |
 |------------|------------|-----------------|----------------|
@@ -136,43 +139,44 @@ Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另�
 
 ### OpenCode
 
-1. Meta:`acpBackend = opencode`(沙箱镜像 `universal-sandbox`;CLI 为 `opencode run --format json`,经 ACP 桥包装)。
-2. 工作区凭据「OpenCode API Key」保存 Key(厂商 / API Base / model 为同一凭据的非敏感配置);也可在 Agent env 中配置非敏感项:
-   - `GRASP_OPENCODE_PROVIDER`:OpenCode 模型目录(models.dev)里的厂商 id(`openai` / `anthropic` / `deepseek` / `zai` / …);目录里没有的可以直接自己起一个名字(如 `tokenhub`),runtime 会按 OpenAI 兼容端点生成适配器,此时 `GRASP_OPENCODE_BASE_URL` 必填。`custom` 是这类自定义端点的默认名字,没有特殊含义
-   - 可选 `GRASP_OPENCODE_BASE_URL`(`custom` 必填)
-   - 可选 `GRASP_OPENCODE_MODEL_VISION=1`:为 models.dev 尚未收录的模型声明图片输入能力。未设置时保持文本模型，避免把图片误发给不支持视觉的端点
-   - `ACP_BRIDGE_MODEL`,格式 `provider/model`(如 `deepseek/deepseek-v4-pro`);只填模型 id 也认,缺的厂商前缀由 runtime 补上(已带前缀不会重复补)。模型 id 自身带斜杠的照原样填在前缀后面(聚合网关常见,如 `openrouter/anthropic/claude-sonnet-4-5`);目录里第一段恰好等于厂商名的模型要写满两段(OpenRouter 的 `openrouter/auto` → `openrouter/openrouter/auto`)。模型 id 必须是该端点真有的,否则 `opencode run` 直接以 exit 1 结束。补前缀发生在注入沙箱的 env 上,不只是 `opencode.json`:桥会把这个变量原样交给 `opencode run --model`,而命令行参数优先于配置文件,少了前缀就会路由到第一段同名的厂商
-3. 启动时若配置树里还没有用户自己的 `opencode.json`,runtime 可按厂商/Base/Model 生成一份:有 Key 时把 `apiKey` 写在该厂商名下(`{env:OPENCODE_API_KEY}`),因此目录里的任意厂商都能用,不依赖各家专属环境变量。
-   厂商是否在目录里,由同一份 models.dev 快照(`opencodecatalog`,也供 UI 的厂商/模型下拉用)判定:在目录里就保留 OpenCode 自己的 SDK 与模型表;不在目录里(或就是 `custom`)则补 `npm: @ai-sdk/openai-compatible` 并声明所填模型 id,所以自建/聚合网关直接用自己的名字即可。快照拉不到时保守处理——只有 `custom` 补适配器,避免凭猜测覆盖本来能用的厂商。
-4. 鉴权门认 `opencode.json` 或 `settings.json`;两者都没有时必须有 API key。厂商文档见 https://opencode.ai/docs/providers/
+1. 工作区凭据中的「OpenCode CLI」保存 OpenCode Zen 官方 Key，域为 `tool_auth` / `toolId=opencode`；第三方模型服务的 Key 保存在「API 账号」。
+2. 创建模型配置，选择 OpenCode CLI 和所需授权。官方模式的模型目录只列 `opencode/<model-id>`，空模型表示由工具选择默认项；主、辅助模型均不能跨到其他厂商。API 账号模式则使用所选连接的原始模型 ID。
+3. 官方模式只注入选中的 Key，并在隔离配置中启用原生 `opencode` provider，保留原生模型 SDK 与端点。旧全局、项目配置和账号不会覆盖路由；独立 data/state 目录保留会话历史。该模式要求 OpenCode >=1.4.1，不兼容的 CLI 会明确报错。
+4. API 账号模式继续按所选协议生成连接适配器，不复用厂商授权；模型 ID 中的 `/` 原样保留。厂商文档见 https://opencode.ai/docs/providers/
 
 ```json
 {
-  "acpBackend": "opencode",
-  "env": {
-    "GRASP_OPENCODE_PROVIDER": "deepseek",
-    "GRASP_OPENCODE_MODEL_VISION": "1",
-    "ACP_BRIDGE_MODEL": "deepseek/deepseek-v4-pro"
+  "name": "OpenCode 官方模型",
+  "backend": "opencode",
+  "binding": {
+    "kind": "platform",
+    "credentialId": "已保存的 OpenCode 厂商凭据 ID"
   }
 }
 ```
 
 ### Codex
 
-1. Meta:`acpBackend = codex`。没有站点选择，也不提供模型目录。
-2. 工作区凭据「Codex Login File」粘贴本机 `codex login` 产生的 `~/.codex/auth.json`。空白、以 `sk-` 开头的 API Key，以及标明 API Key 模式的 JSON 会被拒绝，并提示改用 OpenCode。
-3. 启动沙箱前把文件写到 `/root/.codex/auth.json`（`CODEX_HOME=/root/.codex`）。缺文件时 CLI 不会启动。不会注入 `OPENAI_API_KEY`。
-4. 一轮运行结束后，若沙箱里的 `auth.json` 与注入内容不同，加密写回同一条凭据。登录被拒绝或无法刷新时不写回，并提示重新粘贴登录文件。
+1. 在模型配置中选择 Codex，使用平台授权或兼容的 Responses API 账号，再让 Agent 绑定该配置。
+2. 平台授权在工作区凭据「Codex Login File」保存登录文件；通用 API Key 保存在「API 账号」，不能粘贴到登录文件字段。
+3. 平台模式启动前把登录文件写到配置目录的 `auth.json`，不注入 `OPENAI_API_KEY`；缺文件时拒绝启动。API 账号模式使用明确选择的连接与模型。
+4. 平台模式一轮结束后若登录文件更新，加密写回同一条凭据；登录被拒绝或无法刷新时不写回。
 
 ### DeepSeek Harness
 
 1. 在「用编码工具」路径选择 **DeepSeek Harness**，或设置 Agent 的 `acpBackend = deepseek_harness`，使用原生 `dsh` 执行。
-2. 工作区凭据「DeepSeek Harness API Key」保存官方 DeepSeek API Key；Agent 选择该凭据。运行时把 `GRASP_DEEPSEEK_API_KEY` 映射为 `DEEPSEEK_API_KEY`。`settings.json` 不能代替此凭据。
-3. 模型默认 `deepseek-flash`，可在模型选择器选择 `deepseek-v4-pro` 或在非敏感 env 中设置 `ACP_BRIDGE_MODEL`。沙箱通过 ACP `session/set_config_option` 应用模型，不向 `dsh` 传 `--model`。
+2. 工作区凭据「DeepSeek Harness」保存官方 DeepSeek Key，创建模型配置时选择该授权；运行时把 `GRASP_DEEPSEEK_API_KEY` 映射为 `DEEPSEEK_API_KEY`，固定使用官方原生路由。通用模型 Key 保存为 API 账号，并通过兼容连接模式使用。
+3. 官方模式默认 `deepseek-flash`，也可在模型配置中选择 `deepseek-v4-pro`。沙箱通过 ACP `session/set_config_option` 应用模型，不向 `dsh` 传 `--model`。
 4. `CONFIG_ROOT` 映射为 `DSH_HOME`。生成的 `AGENTS.md` 合并角色指令和显式 `alwaysApply: true` 的规则，保留条件规则原文件与完整 `skills/`；澄清节点仍裁剪完成标记规则。stdio/HTTP MCP 经 ACP 创建会话时传入。
 5. 沙箱镜像预装固定版本 `@deepseek-ai/dsh@0.2.1-rc.2`，需要 `IMAGE_LEVEL >= 2`。按服务端、沙箱镜像的顺序发布；已有旧镜像中的运行时热更新不会安装 dsh。
 
 dsh ACP 文本按已提交的消息块推送，`usage_update` 仅表示上下文占用，不计入输入/输出/缓存 token 统计。会话续接遵循现有 ACP bridge 生命周期：网络或服务端重连可复用仍存活的会话，bridge 重启后的自动会话恢复尚未接入。
+
+### 模型目录与 Solo 会话设置
+
+- `GET /api/workspace/model-connections/:connectionId/models` 使用该连接绑定的 API 账号读取模型目录，仅返回 ID、名称和明确提供的能力信息，不写入连接的模型列表。标准模型目录不可用时返回 `{ "models": [], "error": "..." }`，可重试或手动填写；只有保存配置时选中的模型会追加到账号。
+- 创建 Solo 会话时可传 `reasoningEffort`；`POST /api/solo/sessions/:id/model` 可单独提交 `modelId`、`reasoningEffort` 或同时提交。省略模型会保留当前模型，空强度表示默认。仅接受当前模型及适配器提供的档位，明确的 `reasoning:false` 优先。
+- 模型与强度设置在下一轮开始前共同应用；失败恢复已确认设置，不影响正在运行的一轮。旧运行时继续支持模型选择，但不接受其未公布的非默认强度设置。
 
 ### 速查:凭据键 → 容器变量
 

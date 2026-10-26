@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { kindOfItem, normalizeGitCredentialHost, defaultGitCredentialHost } from './credentialKinds'
+import { kindById, kindOfItem, normalizeGitCredentialHost, defaultGitCredentialHost } from './credentialKinds'
 describe('explicit credential domains', () => {
  it('classifies platform credentials only by purpose and tool ID', () => {
   expect(kindOfItem({ purpose: 'tool_auth', toolId: 'cursor', provider: 'custom', name: 'anything' })?.id).toBe('cursor')
   expect(kindOfItem({ purpose: 'model_api', provider: 'cursor', name: 'Cursor' })).toBeUndefined()
   expect(kindOfItem({ provider: 'cursor', envKey: 'GRASP_CURSOR_API_KEY' })).toBeUndefined()
+ })
+ it.each([
+  ['opencode', 'GRASP_OPENCODE_API_KEY'],
+  ['deepseek_harness', 'GRASP_DEEPSEEK_API_KEY'],
+ ])('classifies %s official keys independently of API accounts', (toolId, envKey) => {
+  expect(kindById(toolId)).toMatchObject({ id: toolId, provider: toolId, envKey, secret: 'apiKey' })
+  expect(kindOfItem({ purpose: 'tool_auth', toolId, secretKind: 'api_key' })?.id).toBe(toolId)
+  expect(kindOfItem({ purpose: 'model_api', toolId, provider: toolId })).toBeUndefined()
  })
  it('classifies Git tokens and SSH material without reading display aliases', () => {
   expect(kindOfItem({ purpose: 'git', provider: 'github' })?.id).toBe('github')

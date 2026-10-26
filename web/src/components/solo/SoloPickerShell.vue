@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 
 /**
@@ -18,9 +18,15 @@ const props = withDefaults(
     placeholder?: boolean
     invalid?: boolean
     multiple?: boolean
+    flat?: boolean
+    /** Compact model menus opt in without changing Agent/repository pickers. */
+    compact?: boolean
+    contentRole?: 'listbox' | 'group'
   }>(),
-  { icon: '', disabled: false, searchPlaceholder: '', testId: 'solo-picker', panelWidth: 340, placeholder: false, invalid: false, multiple: false },
+  { icon: '', disabled: false, searchPlaceholder: '', testId: 'solo-picker', panelWidth: 340, placeholder: false, invalid: false, multiple: false, flat: false, compact: false, contentRole: 'listbox' },
 )
+
+const emit = defineEmits<{ open: []; close: [] }>()
 
 const panelId = `solo-picker-${useId().replace(/:/g, '')}`
 const open = ref(false)
@@ -47,6 +53,7 @@ function place() {
 async function show() {
   if (props.disabled) return
   open.value = true
+  emit('open')
   query.value = ''
   await nextTick()
   place()
@@ -57,6 +64,7 @@ async function show() {
 function close(refocus = true) {
   if (!open.value) return
   open.value = false
+  emit('close')
   if (refocus) trigger.value?.focus()
 }
 
@@ -78,9 +86,11 @@ function focusOpt(i: number) {
 function onPanelKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     e.preventDefault()
+    e.stopPropagation()
     close()
     return
   }
+  if ((e.target as HTMLElement).matches('input[type="range"]')) return
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
   e.preventDefault()
   const list = opts()
@@ -105,6 +115,11 @@ function onReflow() {
   if (open.value) place()
 }
 
+watch(() => props.panelWidth, async () => {
+  await nextTick()
+  onReflow()
+})
+
 onMounted(() => {
   document.addEventListener('pointerdown', onDocPointer)
   window.addEventListener('resize', onReflow)
@@ -120,7 +135,7 @@ defineExpose({ close, show })
 </script>
 
 <template>
-  <div ref="root" class="solo-picker" :class="{ 'solo-picker--open': open }" :data-testid="testId">
+  <div ref="root" class="solo-picker" :class="{ 'solo-picker--open': open, 'solo-picker--flat': flat }" :data-testid="testId">
     <button
       ref="trigger"
       type="button"
@@ -148,10 +163,12 @@ defineExpose({ close, show })
         :id="panelId"
         ref="panel"
         class="solo-picker__panel"
+        :class="{ 'solo-picker__panel--compact': compact }"
         :style="panelStyle"
         :data-testid="`${testId}-panel`"
         @keydown="onPanelKeydown"
       >
+        <div v-if="$slots.header" class="solo-picker__heading"><slot name="header" /></div>
         <div v-if="searchPlaceholder" class="solo-picker__search-wrap">
           <Icon name="search" :size="14" class="solo-picker__search-icon" />
           <input
@@ -166,7 +183,7 @@ defineExpose({ close, show })
             @keydown.enter.prevent="onSearchEnter"
           />
         </div>
-        <div class="solo-picker__list scroll-area" role="listbox" :aria-multiselectable="multiple || undefined">
+        <div class="solo-picker__list scroll-area" :role="contentRole" :aria-multiselectable="multiple || undefined">
           <slot :query="query.trim().toLowerCase()" :close="close" />
         </div>
         <div v-if="$slots.footer" class="solo-picker__footer">
@@ -207,6 +224,9 @@ defineExpose({ close, show })
   border-color: rgb(var(--c-accent) / 0.3);
   background: rgb(var(--c-accent) / 0.045);
 }
+.solo-picker--flat .solo-picker__trigger,
+.solo-picker--flat .solo-picker__trigger:hover:not(:disabled),
+.solo-picker--flat.solo-picker--open .solo-picker__trigger { border-color: transparent; }
 .solo-picker__trigger:focus-visible {
   outline: 2px solid rgb(var(--c-accent) / 0.65);
   outline-offset: 3px;
@@ -253,10 +273,11 @@ defineExpose({ close, show })
   box-shadow: 0 16px 44px rgb(0 0 0 / 0.22), 0 3px 10px rgb(0 0 0 / 0.08);
   animation: solo-picker-in 0.16s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
-:global(html.light) .solo-picker__panel {
+:global(html.light .solo-picker__panel) {
   background: rgb(var(--c-surface));
   box-shadow: 0 16px 44px rgb(48 36 85 / 0.09), 0 3px 10px rgb(48 36 85 / 0.035);
 }
+.solo-picker__heading { flex-shrink: 0; }
 .solo-picker__search-wrap {
   position: relative;
   margin-bottom: 6px;
@@ -335,6 +356,47 @@ defineExpose({ close, show })
   color: rgb(var(--c-txt3));
   font-size: 12px;
   text-align: center;
+}
+.solo-picker__panel--compact {
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.06);
+}
+:global(html.light .solo-picker__panel--compact) {
+  box-shadow: 0 8px 24px rgb(24 24 27 / 0.10), 0 2px 5px rgb(24 24 27 / 0.035);
+}
+.solo-picker__panel--compact .solo-picker__list :deep([data-picker-opt]),
+.solo-picker__panel--compact .solo-picker__footer :deep([data-picker-opt]) {
+  min-height: 34px;
+  gap: 9px;
+  border-color: transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  line-height: 20px;
+}
+.solo-picker__panel--compact .solo-picker__list :deep([data-picker-opt][aria-selected='true']) {
+  border-color: transparent;
+  background: transparent;
+}
+.solo-picker__panel--compact .solo-picker__list :deep([data-picker-opt]:hover),
+.solo-picker__panel--compact .solo-picker__list :deep([data-picker-opt]:focus-visible),
+.solo-picker__panel--compact .solo-picker__footer :deep([data-picker-opt]:hover),
+.solo-picker__panel--compact .solo-picker__footer :deep([data-picker-opt]:focus-visible) {
+  background: rgb(var(--c-txt) / 0.035);
+}
+.solo-picker__panel--compact .solo-picker__list :deep([data-picker-opt]:focus-visible),
+.solo-picker__panel--compact .solo-picker__footer :deep([data-picker-opt]:focus-visible) {
+  outline: 1.5px solid rgb(var(--c-accent) / 0.45);
+  outline-offset: -2px;
+}
+.solo-picker__panel--compact .solo-picker__list :deep([data-picker-opt]:disabled) {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.solo-picker__panel--compact .solo-picker__footer {
+  margin-top: 5px;
+  padding-top: 5px;
 }
 @keyframes solo-picker-in {
   from {

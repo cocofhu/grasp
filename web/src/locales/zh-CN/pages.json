@@ -394,17 +394,18 @@
       "close": "关闭",
       "cta": "完成安装配置",
       "emptyTitle": "完成第一次安装",
-      "emptyDesc": "将配置模型后端、API Key 与 Git，创建需求澄清 / 实现 / 测试评审 / 交付四个 Agent，并发布「默认工作流」。不会自动开跑。",
+      "emptyDesc": "将配置模型后端、API Key 与 Git，创建需求澄清 / 实现 / 测试评审 / 交付四个 Agent，以及供 Solo 使用的空白 Agent，并发布「默认工作流」。不会自动开跑。",
       "emptyDescCreate": "将配置模型后端、API Key 与 Git，创建本工作区的四个 Agent（名称带工作区名前缀），并发布「默认工作流」。不会自动开跑。",
       "workflowName": "默认工作流",
       "steps": {
         "prefs": "偏好",
-        "model": "模型后端",
+        "model": "配置编码工具",
         "key": "API Key",
         "git": "Git",
         "team": "团队",
         "workflow": "工作流预览",
-        "done": "完成"
+        "done": "完成",
+        "credentials": "配置凭据"
       },
       "language": {
         "detected": "后续仍可在左下角随时切换语言。",
@@ -564,7 +565,8 @@
         "wfLabel": "工作流",
         "wfValue": "默认工作流（发布）",
         "inputSub": "填写需求",
-        "outputSub": "交付结果"
+        "outputSub": "交付结果",
+        "agentsWithSolo": "{n} 个 + Solo"
       },
       "success": {
         "title": "配置已生成",
@@ -592,15 +594,45 @@
       "stepOf": "第 {n} 步，共 {total} 步",
       "railDesc": {
         "prefs": "语言、主题与预览能力",
-        "model": "API Key 或编码工具",
+        "model": "编码工具、凭据与模型",
         "key": "填写模型与密钥",
         "git": "提交署名、仓库与凭据",
         "team": "确认要创建的 Agent",
         "workflow": "预览将要发布的默认工作流",
-        "done": "生成配置，开始第一次运行"
+        "done": "生成配置，开始第一次运行",
+        "credentials": "配置编码工具或 API 账号"
       },
       "prefsMeta": "界面语言与主题，以及 Agent 可用的预览能力。",
-      "prefsMetaCreate": "工作区名称，以及 Agent 可用的预览能力。"
+      "prefsMetaCreate": "工作区名称，以及 Agent 可用的预览能力。",
+      "ready": "已就绪",
+      "expandSetup": "开始配置",
+      "collapseSetup": "收起",
+      "modelSetup": {
+        "description": "使用上一步保存的凭据选择模型，也可以直接选择已有的模型配置。",
+        "selected": "团队默认模型",
+        "selectedHint": "四个 Agent 默认共用此模型，之后可单独调整。",
+        "title": "添加模型",
+        "hint": "选择编码工具与已保存的凭据，再选择模型。"
+      },
+      "gitSetup": {
+        "title": "添加 Git 凭据",
+        "hint": "在这里连接 GitHub、GitLab 或 SSH，保存后即可使用。"
+      },
+      "solo": {
+        "emptyShort": "空白 Agent · Solo 专用",
+        "description": "默认创建一个空白 Solo Agent，使用上面选择的模型与 Git 配置，供 Solo 对话使用。"
+      },
+      "toolSetup": {
+        "title": "配置编码工具",
+        "name": "配置名称",
+        "description": "先选择编码工具，再绑定已有凭据或就地新建，最后选择模型。",
+        "start": "继续配置",
+        "existing": "或使用已有配置"
+      },
+      "credentialsSetup": {
+        "description": "选择凭据类型并填写账号，保存后继续配置编码工具。",
+        "required": "请先配置至少一个可用的编码工具凭据或 API 账号。"
+      }
     },
     "tokenByModel": {
       "tipTitle": "用量提示",
@@ -1224,6 +1256,8 @@
         "showSecret": "显示",
         "hideSecret": "隐藏",
         "secretApiKey": "API Key",
+        "secretOpenCodeKey": "OpenCode 官方 Key",
+        "secretDeepSeekKey": "DeepSeek 官方 Key",
         "secretLoginFile": "登录文件",
         "secretPrivateKey": "私钥",
         "secretKnownHosts": "已知主机",
@@ -1239,7 +1273,7 @@
           "codebuddy": "CodeBuddy",
           "trae": "Trae",
           "codex": "Codex",
-          "opencode": "模型厂商 API Key",
+          "opencode": "OpenCode CLI",
           "github": "GitHub",
           "gitlab": "GitLab",
           "ssh_key": "SSH 私钥",
@@ -4570,7 +4604,24 @@
         "unavailable": "不可用",
         "reset": "所选模型已不在配置中，已改回主模型",
         "pending": "当前回复仍使用原来的模型，从下一条开始使用新模型。",
-        "catalogFailed": "模型目录没有加载出来，仍使用已选模型"
+        "catalogFailed": "模型目录没有加载出来，仍使用已选模型",
+        "reasoningEffort": "思考强度",
+        "effortAuto": "默认",
+        "effortReset": "恢复默认强度",
+        "backToModels": "返回模型选择",
+        "effortResetNotice": "所选思考强度已不可用，已恢复模型默认值。",
+        "effortPending": "当前回复保持原设置，从下一条开始使用新的思考强度。",
+        "effortLevels": {
+          "off": "关闭",
+          "none": "无",
+          "minimal": "最小",
+          "low": "低",
+          "medium": "中",
+          "high": "高",
+          "xhigh": "超高",
+          "max": "最高",
+          "ultra": "极致"
+        }
       },
       "agentSelect": {
         "placeholder": "选择 Agent",
@@ -4713,7 +4764,7 @@
         "agent_not_found": "Agent 不存在",
         "model_not_in_configuration": "所选模型不在该 Agent 的模型配置中",
         "model_unavailable": "所选模型已不可用",
-        "model_switch_failed": "切换模型失败，已改回原来的模型",
+        "model_switch_failed": "模型设置切换失败，已恢复原来的模型和思考强度。",
         "project_not_found": "仓库不存在",
         "name_required": "请填写仓库名称",
         "name_too_long": "仓库名称最长 80 个字",
@@ -4728,7 +4779,8 @@
         "env_key_invalid": "变量名格式不正确",
         "env_key_reserved": "包含平台保留的变量名",
         "env_key_sensitive": "包含敏感变量，请改用凭据绑定",
-        "binding_key_invalid": "凭据绑定的变量名不可用"
+        "binding_key_invalid": "凭据绑定的变量名不可用",
+        "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。"
       }
     },
     "projects": {

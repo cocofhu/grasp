@@ -11,7 +11,7 @@ import (
 )
 
 // BootstrapOnboarding handles POST /api/workspace/bootstrap-onboarding.
-// Binds saved models and Git authorizations, the chosen built-in template Agents, 默认工作流.
+// Binds saved models and Git authorizations to the built-in team and empty Solo Agent, then publishes 默认工作流.
 // It never starts a Run. Missing modelConfigurationId or an invalid team → 400 with no partial
 // resources created.
 func (h *Handlers) BootstrapOnboarding(c *gin.Context) {

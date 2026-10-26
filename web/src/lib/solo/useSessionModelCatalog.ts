@@ -40,6 +40,7 @@ export function useSessionModelCatalog(agentName: Ref<string>) {
   })
   const choices = computed(() => configuredModelChoices({
     binding: configuration.value?.binding,
+    configurationName: configuration.value?.name,
     backend: configuration.value?.backend || agent.value?.acpBackend || '',
     cliModels: cliModels.value,
     connectionModels: connection.value?.models,

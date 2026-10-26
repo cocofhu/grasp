@@ -1,18 +1,19 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { api, type CredentialItem, type ModelConnection, type ModelConnectionBody, type ModelProtocol } from '@/lib/api/api'
 import { isModelCredential, modelProviderPreset, MODEL_PROTOCOLS, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { useToast } from '@/lib/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'
-import AppModal from '@/components/ui/AppModal.vue'
+import CredentialEditorSurface from './CredentialEditorSurface.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import CredentialProviderLogo from './CredentialProviderLogo.vue'
 
-const props = defineProps<{ credentials: CredentialItem[] }>()
-const emit = defineEmits<{ changed: []; error: [message: string] }>()
+const props = defineProps<{ credentials: CredentialItem[]; inline?: boolean }>()
+const emit = defineEmits<{ changed: []; error: [message: string]; editing: [active: boolean] }>()
 const c = useRoutingCopy()
 const toast = useToast()
 const open = ref(false)
+watch(open, (active) => emit('editing', active))
 const loading = ref(false)
 const loaded = ref(false)
 const saving = ref(false)
@@ -92,7 +93,7 @@ defineExpose({ openForCredential })
 </script>
 
 <template>
-  <AppModal :open="open" :title="c.editService" :width="560" :close-on-esc="!saving" trap-focus :close-label="c.close" @close="close">
+  <CredentialEditorSurface :inline="inline" :open="open" :title="c.editService" :width="560" :close-on-esc="!saving" trap-focus :close-label="c.close" @close="close">
     <div class="mb-5 flex min-w-0 items-center gap-3" data-testid="api-account-identity">
       <CredentialProviderLogo :provider="account?.issuer || account?.provider" match="provider" />
       <span class="truncate text-[13px] font-medium text-txt">{{ account?.name }}</span>
@@ -107,5 +108,5 @@ defineExpose({ openForCredential })
     </form>
     <p v-if="error" role="alert" class="mt-3 break-words text-xs text-err">{{ error }} <AppButton v-if="!loaded" size="sm" variant="ghost" data-testid="api-account-address-retry" @click="loadAccount">{{ c.retry }}</AppButton></p>
     <template #footer><AppButton variant="ghost" :disabled="saving" @click="close">{{ c.cancel }}</AppButton><AppButton variant="primary" type="submit" form="api-account-address-form" :loading="saving" :disabled="!valid || loading || saving" data-testid="model-connection-save">{{ c.save }}</AppButton></template>
-  </AppModal>
+  </CredentialEditorSurface>
 </template>

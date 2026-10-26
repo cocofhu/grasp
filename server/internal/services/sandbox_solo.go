@@ -33,12 +33,13 @@ type SoloSandboxOpts struct {
 	// Repos is the frozen snapshot, in clone order. Empty starts an empty workspace.
 	Repos []models.SessionRepo
 	// Project and Branch remain for callers that still open a single repository.
-	Project        *models.Project
-	Branch         string
-	InitialModelID string
-	OnEnv          func(sources map[string]string)
-	OnReady        func(sandboxID uint)
-	OnFail         func(sandboxID uint, err error)
+	Project         *models.Project
+	Branch          string
+	InitialModelID  string
+	ReasoningEffort string
+	OnEnv           func(sources map[string]string)
+	OnReady         func(sandboxID uint)
+	OnFail          func(sandboxID uint, err error)
 }
 
 // MaxSoloSandboxes returns the resident Solo sandbox cap.
@@ -150,7 +151,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		}
 		return nil, err
 	}
-	extra := agentContainerExtra{Repos: repos, Resident: true, OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID)}
+	extra := agentContainerExtra{Repos: repos, Resident: true, OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort}
 	if len(snapshots) > 0 {
 		extra.Env, extra.Bindings = mergeSessionRepoConfig(snapshots)
 		extra.RepoCredentials = runtime.RepoCredentialsFor(projectsFromSessionRepos(snapshots), s.gitCredential)

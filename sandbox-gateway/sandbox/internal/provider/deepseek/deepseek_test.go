@@ -16,6 +16,7 @@ import (
 	"backend/internal/backend/common"
 	"backend/internal/provider"
 	"backend/internal/provider/modelconnection"
+	"gopkg.in/yaml.v3"
 )
 
 func TestMetadataAndAuthIsolation(t *testing.T) {
@@ -44,6 +45,17 @@ func TestMetadataAndAuthIsolation(t *testing.T) {
 	}
 }
 
+func TestOfficialAuthAliasesCannotHideMalformedCredentials(t *testing.T) {
+	for _, alias := range []string{"DEEPSEEK_API_KEY", "GRASP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY"} {
+		for _, value := range []string{"", " \t ", "synthetic\r", "synthetic\n", "synthetic\x00"} {
+			env := New().AuthEnv([]string{alias + "=" + value})
+			if _, err := modelconnection.Prepare(provider.DeepSeekHarness, env, "", t.TempDir()); err == nil {
+				t.Fatalf("malformed alias %s reached native launch", alias)
+			}
+		}
+	}
+}
+
 func TestModelResolutionUsesAdvertisedOpaqueValue(t *testing.T) {
 	value := `[ "deepseek-official", "deepseek-v4-pro" ]`
 	options := []acp.ConfigOption{{ID: "model", Groups: []acp.ConfigOptionGroup{{Options: []acp.ConfigOptionValue{
@@ -57,6 +69,46 @@ func TestModelResolutionUsesAdvertisedOpaqueValue(t *testing.T) {
 	}
 	if _, err := modelValue(options, "missing-model"); err == nil {
 		t.Fatal("unsupported model must fail")
+	}
+	for _, model := range []string{"deepseek-account/deepseek-v4-pro", `["deepseek-account","deepseek-v4-pro"]`} {
+		if _, err := modelValue(options, model); err == nil {
+			t.Fatal("official API-key route accepted an account or third-party provider")
+		}
+	}
+}
+
+func TestOfficialStartupOverlayPinsNativeCredentialRoutes(t *testing.T) {
+	var rows []struct {
+		ID       string         `yaml:"id"`
+		Disabled bool           `yaml:"disabled"`
+		Config   map[string]any `yaml:"config"`
+	}
+	if err := yaml.Unmarshal([]byte(startupPatch), &rows); err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]struct {
+		Disabled bool
+		Config   map[string]any
+	}{}
+	for _, row := range rows {
+		byID[row.ID] = struct {
+			Disabled bool
+			Config   map[string]any
+		}{row.Disabled, row.Config}
+	}
+	for _, id := range []string{"credentials", "authorization", "deepseek-account", "llm-deepseek-account", "llm-pi-ai", "settings", "config-editor"} {
+		if !byID[id].Disabled {
+			t.Errorf("saved account/config source still enabled: %s", id)
+		}
+	}
+	for id, endpoint := range map[string]string{"llm-deepseek": "https://api.deepseek.com/anthropic", "web-search-deepseek": "https://api.deepseek.com/anthropic/v1", "web-deepseek-api": "https://api.deepseek.com/v1/tools"} {
+		config := byID[id].Config
+		if config["apiKeyEnv"] != "DEEPSEEK_API_KEY" || config["baseURL"] != endpoint || len(config) != 2 {
+			t.Errorf("native official endpoint/credential not pinned for %s", id)
+		}
+	}
+	if byID["acp"].Config["provider"] != officialProvider {
+		t.Fatal("ACP default route must use the official API-key provider")
 	}
 }
 
@@ -278,6 +330,79 @@ func TestPermissionsAndCancelThenContinue(t *testing.T) {
 	}
 }
 
+func TestReasoningOptionRequiresAdvertisedCategoryAndOpaqueValue(t *testing.T) {
+	options := []acp.ConfigOption{{ID: "arbitrary-agent-option", Category: "thought_level", CurrentValue: "low", Groups: []acp.ConfigOptionGroup{{Options: []acp.ConfigOptionValue{{Value: "low"}, {Value: "high"}}}}}}
+	id, current, err := reasoningOption(options, "high")
+	if err != nil || id != "arbitrary-agent-option" || current != "low" {
+		t.Fatalf("did not retain advertised option id/value: %q %q %v", id, current, err)
+	}
+	if _, _, err := reasoningOption(options, "ultra"); err == nil {
+		t.Fatal("unadvertised effort accepted")
+	}
+	options[0].Category = "mode"
+	if _, _, err := reasoningOption(options, "high"); err == nil {
+		t.Fatal("a mode or model name must not imply thought-level support")
+	}
+}
+
+func TestOpenNegotiatesReasoningAfterModelAndRejectsUnconfirmedChoices(t *testing.T) {
+	for _, mode := range []string{"effort", "effort-error", "effort-unconfirmed", ""} {
+		t.Run(mode, func(t *testing.T) {
+			trace := setupDSH(t, mode)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			handshake, stop := context.WithTimeout(ctx, 5*time.Second)
+			defer stop()
+			sess, err := New().Open(ctx, handshake, provider.OpenOptions{Cwd: t.TempDir(), Model: "deepseek-v4-pro", ReasoningEffort: "high", ReasoningEffortSet: true}, nil, nil)
+			if mode != "effort" {
+				if err == nil {
+					if sess != nil {
+						_ = sess.Close()
+					}
+					t.Fatal("unavailable or rejected effort accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = sess.Close(); _, _ = sess.ExitInfo() }()
+			current, values := sess.(provider.ReasoningOptionSource).ReasoningOptions()
+			if current != "high" || !reflect.DeepEqual(values, []string{"low", "high"}) {
+				t.Fatalf("post-negotiation snapshot = %q %v", current, values)
+			}
+			values[0] = "mutated"
+			_, values = sess.(provider.ReasoningOptionSource).ReasoningOptions()
+			if values[0] != "low" {
+				t.Fatal("mutable capability snapshot exposed")
+			}
+			data, err := os.ReadFile(trace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var selections []string
+			for _, line := range strings.Split(string(data), "\n") {
+				var call struct {
+					Method string `json:"method"`
+					Params struct {
+						ConfigID string `json:"configId"`
+						Value    string `json:"value"`
+					} `json:"params"`
+				}
+				if json.Unmarshal([]byte(line), &call) == nil && call.Method == "session/set_config_option" {
+					selections = append(selections, call.Params.ConfigID)
+					if call.Params.ConfigID == "runtime-intensity" && call.Params.Value != "high" {
+						t.Fatalf("opaque effort changed: %q", call.Params.Value)
+					}
+				}
+			}
+			if !reflect.DeepEqual(selections, []string{"model", "runtime-intensity"}) {
+				t.Fatalf("effort must follow model negotiation using the advertised config ID: %v", selections)
+			}
+		})
+	}
+}
+
 // TestDSHProcess is a deterministic ACP peer exercised through the real
 // subprocess, handshake, request, notification, permission, and cancel paths.
 func TestDSHProcess(t *testing.T) {
@@ -304,7 +429,8 @@ func TestDSHProcess(t *testing.T) {
 		_ = json.Unmarshal([]byte(os.Getenv(modelconnection.EnvConfig)), &connection)
 		model = connection.Models[0].ID
 	}
-	options := func() []any {
+	effort := "low"
+	modelOptions := func() []any {
 		if connectionMode {
 			choices := make([]any, 0, len(connection.Models))
 			for _, m := range connection.Models {
@@ -324,6 +450,14 @@ func TestDSHProcess(t *testing.T) {
 				map[string]any{"value": `[ "deepseek-official", "deepseek-v4-pro" ]`, "name": "DeepSeek Pro"},
 			},
 		}}}}
+	}
+	options := func() []any {
+		out := modelOptions()
+		if strings.HasPrefix(os.Getenv("DSH_TEST_MODE"), "effort") {
+			out = append(out, map[string]any{"id": "runtime-intensity", "category": "thought_level", "currentValue": effort,
+				"options": []any{map[string]any{"value": "low", "name": "Low"}, map[string]any{"value": "high", "name": "High"}}})
+		}
+		return out
 	}
 	enc := json.NewEncoder(os.Stdout)
 	respond := func(id json.RawMessage, result any) {
@@ -361,9 +495,27 @@ func TestDSHProcess(t *testing.T) {
 			respond(req.ID, map[string]any{"sessionId": "fixture-session", "configOptions": options()})
 		case "session/set_config_option":
 			var params struct {
-				Value string `json:"value"`
+				ConfigID string `json:"configId"`
+				Value    string `json:"value"`
 			}
 			_ = json.Unmarshal(req.Params, &params)
+			if params.ConfigID == "runtime-intensity" {
+				if os.Getenv("DSH_TEST_MODE") == "effort-error" {
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32603, "message": "effort fixture failure"}})
+					continue
+				}
+				if params.Value != "high" {
+					os.Exit(4)
+				}
+				if os.Getenv("DSH_TEST_MODE") != "effort-unconfirmed" {
+					effort = params.Value
+				}
+				respond(req.ID, map[string]any{"configOptions": options()})
+				continue
+			}
+			if params.ConfigID != "model" {
+				os.Exit(4)
+			}
 			if connectionMode {
 				want, _ := json.Marshal([]string{connection.RouteID(), connection.SelectedModelID})
 				if params.Value != string(want) {

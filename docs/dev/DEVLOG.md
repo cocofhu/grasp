@@ -20,6 +20,62 @@
 
 ## 记录
 
+### 2026-10-26（修复 DeepSeek Harness 无密钥 CI 握手）
+
+- 日期：2026-10-26（Asia/Shanghai）
+- 范围：`sandbox-gateway/scripts/test-agent-connect.sh`。
+- 做了什么：未设置厂商密钥时，仅向 DeepSeek Harness 测试容器传入握手专用占位值；真实对话继续由调用环境中的 `DEEPSEEK_API_KEY` 决定，显式记录跳过原因。保留运行时对缺失及非法凭据的校验。
+- 为什么：PR #997 的 `sandbox-images` 在 Agent connection E2E 中失败；新增官方授权校验在启动 ACP 前要求密钥，而既有无密钥握手未注入测试值。`ci-required` 随之失败。
+- 如何验证：使用当前运行时包及现有 3.0.0 沙箱镜像，在独立容器中先复现相同错误；修复后无厂商密钥的六种工具连接套件通过，含 DeepSeek ACP 握手和 OpenCode mock 对话，并确认 DeepSeek 真实对话被跳过。沙箱 lint v2.12、vet、全量 Go 测试与覆盖率检查通过（核心 96.6%），规定 shell 语法、注入、Git、bootstrap、mock 与 preview smoke 通过；actionlint、error-level shellcheck、docs 构建和官方源高/严重漏洞审计通过。
+
+### 2026-10-26（后端模型配置与接口说明）
+
+- 日期：2026-10-26（Asia/Shanghai）
+- 范围：`server/README.md`。
+- 做了什么：补齐厂商授权与 API 账号的分域说明，更新 OpenCode、Codex 与 DeepSeek Harness 的具名配置用法，移除 OpenCode 旧 env 路由示例；记录只读模型目录接口与 Solo 模型/强度字段、下一轮应用及旧运行时边界。
+- 为什么：新增授权、模型目录与会话设置需要与后端使用说明一致，避免继续按照旧的混合凭据方式配置。
+- 如何验证：对照当前凭据域、配置解析器、HTTP 路由和 Solo 客户端合同逐项核对；模块测试、配置文档检查、docs 构建及官方源依赖审计通过。提交 PR 前，在最终代码版本重跑完整关键浏览器套件，240 项通过（8.5 分钟、零重试）；Web 全量单测 5,504 项、Lines 91.50%，lint/类型/构建及根门禁通过；Server/Sandbox 核心覆盖率分别为 90.4% / 96.6%。
+
+### 2026-10-26（Solo 模型菜单留白与主题修正）
+
+- 日期：2026-10-26（Asia/Shanghai）
+- 范围：`web/src/components/solo/{SoloModelSelect,SoloPickerShell}.vue`、`CHANGELOG.md`。
+- 做了什么：模型菜单收窄为 240px，使用更小圆角、轻阴影、清楚的行距与右侧选中勾，移除选项品牌图标描边；标题移到搜索框之前，选项悬停、键盘焦点与停用状态各自明确。修正浅色 CSS 的 `:global` 作用域，避免面板样式错误落到根元素；浅色面板使用白色背景。保留启动/会话按钮差异、强度面板和选择行为。
+- 为什么：灰底、偏重阴影和图标小框让模型菜单显得臃肿，浅色面板规则也未正确命中。
+- 如何验证：Vue SFC 样式编译确认浅色规则命中完整面板选择器；现有 Solo 浏览器用例通过（1 项，17.1 秒），核对明暗主题与手机截图、启动/会话边框差异、名称和原始请求值、强度键盘及重置。Web 全量 526 文件、5,504 项单测通过，Lines 91.50%；lint（0 errors、12 个既有 warnings）、类型检查、生产构建及内置品牌/Secure Context 断言通过。docs 构建、actionlint、error-level shellcheck 与 diff 检查通过。
+
+### 2026-10-26（Solo 启动与会话模型按钮样式）
+
+- 日期：2026-10-26（Asia/Shanghai）
+- 范围：`web/src/components/solo/{SoloModelSelect,SoloPickerShell,SoloSessionPane}.vue`、`web/e2e/model-routing.spec.ts`、`CHANGELOG.md`。
+- 做了什么：首页与创建 Solo 时保留模型按钮边框；进入会话后使用无框控件，并去掉触发按钮中品牌图标的描边。会话控件在悬停和打开菜单时也不出现边框，保留键盘焦点提示、品牌图标、名称和强度选择；其他选择器继续使用默认样式。
+- 为什么：启动配置需要明确的选择入口，会话输入栏则需要与参考图一致的轻量控件。
+- 如何验证：现有真实浏览器 Solo 用例通过（1 项，29.7 秒），比较首页与创建会话后的实际边框样式，并验证会话打开菜单时仍透明、品牌图标和强度键盘/重置操作、主/辅助模型原始请求值；核对手机截图。Web 全量 526 文件、5,504 项单测通过，Lines 91.51%；lint（0 errors、12 个既有 warnings）、类型检查、生产构建及品牌/Secure Context 断言通过。docs 构建、actionlint、error-level shellcheck 与 diff 检查通过。
+
+### 2026-10-26（厂商授权、API 模型目录与模型品牌图标）
+
+- 日期：2026-10-26（Asia/Shanghai）
+- 范围：`web/src/components/workspace/{WorkspaceCredentialsPanel,ModelConfigurationManager}.vue`、`web/src/components/{ui/AppSelect,agent/VendorMark}.vue`、`web/src/assets/provider-logos/{README.md,kimi.svg,kimi-dark.svg}`、`web/src/components/solo/{SoloModelSelect,SoloPickerShell}.vue`、`web/src/lib/{workspace,agent,api,solo}/`、中英文页面文案与相关单测、`web/e2e/{onboarding-wizard,model-routing,workspace-credentials}.spec.ts`、`server/internal/` 厂商授权及模型目录相关代码、`sandbox-gateway/sandbox/internal/` 厂商运行路由及相关测试、中英文快速开始与 `CHANGELOG.md`。
+- 做了什么：取消 OpenCode CLI、DeepSeek Harness 工具卡片到通用 API 账号的重定向，按 `tool_auth` 保存对应厂商 Key，凭据列表归入编码工具授权；通用模型 Key 及可编辑地址、协议继续放在 API 账号。两个编码工具同时保留厂商授权与显式 API 连接模式，补齐官方模型目录、授权注入及运行隔离；不迁移或改写已有 API 账号。API 连接新增只读模型目录接口，由服务端使用该账号密钥调用标准模型列表，保留路径前缀、协议认证、明确 metadata 和 Anthropic 分页，限制超时与响应规模并拒绝重定向；不返回密钥或原始错误内容。模型选择器合并发现目录和已保存模型，支持搜索、刷新与手动填写；目录加载不自动选择模型、不覆盖草稿，切换账号或关闭时丢弃迟到结果；保存只追加实际选择项及其 metadata，不写入整个目录。API 模型图标按原始 ID 优先、名称辅助识别品牌，GPT/Kimi/GLM/混元等使用现有本地 SVG，未知模型沿用账号服务商图标；彩色图标在暗色主题保留原色。图标识别仅影响显示，不参与凭据或请求路由。Kimi 使用官方品牌指南提供的 K 标 light/dark SVG。Solo 模型按钮恢复公共边框，主/辅助模型同样使用模型品牌图标并保留配置名称；弹出菜单改为紧凑名称列表，去除原始 ID 副行和大型选中卡片。思考强度改为当前档位、重置、小模型名返回和滑杆组成的窄卡片；唯一模型有明确强度档位时直接进入强度卡片，保留默认、键盘和实际 API 事件。
+- 为什么：工具卡片应配置对应厂商授权，通用 API 账号应有独立入口；模型应从服务商目录选择，聚合账号的统一图标也不足以区分模型品牌。Solo 需要在紧凑输入栏中清楚呈现名称和强度，减少重复信息和额外点击。
+- 如何验证：Node 24.22.0 下 Web 最终全量 526 文件、5,504 项单测通过，Lines 91.50%；ESLint（0 errors、12 个既有 warnings）、类型检查、生产构建及内置品牌/Secure Context 断言通过；完整关键浏览器套件 240 项通过（9.1 分钟、零重试）。定向回归覆盖厂商凭据创建与模型草稿续接、目录 metadata/失败/刷新/迟到响应、搜索后回车选择原始 ID、四种品牌及手填模型图标、Kimi 明暗 SVG、Solo 名称列表与单模型强度/重置/键盘。人工核对明暗、桌面/手机截图，无溢出。Server 最终 lint（0 issues）、vet、配置文档检查、全量 Go 与 runtime 专项通过，核心覆盖率 90.4%；Sandbox 最终 lint（0 issues）、vet、全量测试、覆盖率及规定 smoke 通过，核心覆盖率 96.6%。现有默认及历史 OpenCode 镜像的 CLI 1.18.30 在无网络、只读、无卷挂载环境完成 synthetic 隔离验证，稳定 data/state 保留会话，无需更新镜像。docs 构建、官方源高/严重漏洞审计、actionlint、error-level shellcheck 与 diff 检查通过；独立模拟预览更新并保留临时元数据，本次未访问真实模型服务或改写现有用户数据。
+
+### 2026-10-26（引导直接配置、Solo 显示名称与思考强度）
+
+- 日期：2026-10-26（Asia/Shanghai）
+- 范围：`web/src/components/{onboarding,workspace,solo}/`、`web/src/lib/{solo,api,pm}/`、中英文页面文案与快速开始、`web/e2e/{onboarding-wizard,model-routing}.spec.ts`、`server/internal/{handlers,models,modelrouting,runtime,sandbox,services}/`、`sandbox-gateway/sandbox/internal/{handler,provider,service}/` 及相关测试、`CHANGELOG.md`。
+- 做了什么：保留「配置凭据」步骤，凭据保存后直接进入「配置编码工具」，模型保存后直接进入 Git，不再展示配置完成后的管理列表；编码工具步骤直接展示现有三步配置表单，缺少凭据时仍可就地创建后恢复草稿。API 地址选项改用项目已有 `AppSwitch`，保留原窗口样式。Solo 主模型以具名配置名称显示，保留原始模型 ID；紧凑选择器提供受支持模型的思考强度、返回与重置，只有一个模型时也能选择强度。创建和会话 API 传递强度，运行时仅接受该模型及实际适配器公布的档位，修改在下一轮原子应用，失败恢复已确认设置；旧运行时保留模型切换兼容。无需更新沙箱镜像。
+- 为什么：首次配置应该连续完成表单；显示名称应与保存的配置一致，模型和强度必须区分显示与实际请求值，避免单模型配置失去强度入口。
+- 如何验证：引导与配置面板定向单测 97 项、Solo 定向单测 65 项、组合浏览器回归 9 项通过；后端 lint、vet、配置文档、全量及专项测试通过，核心覆盖率 90.4%；沙箱规定的 lint、vet、单测与 smoke 通过，核心覆盖率 96.6%。Node 24.22.0 下最终 Web 全量 525 文件、5,455 项单测通过，Lines 91.51%；lint（0 errors、12 个既有 warnings）、类型检查、生产构建（含品牌和 Secure Context 断言）、docs 构建、官方源高/严重漏洞审计、actionlint、error-level shellcheck 与 diff 检查通过。最终关键浏览器套件 236 项通过（8.9 分钟、零重试），包含最新引导与 Solo 显示名称、强度及请求值回归。
+
+### 2026-10-26（首次引导顺序、窗口内配置与默认 Solo Agent）
+
+- 日期：2026-10-26（Asia/Shanghai）
+- 范围：`server/internal/{services,handlers}/onboarding*`、`web/src/components/{onboarding,workspace}/` 及相关单测、`web/src/lib/{pm,solo}/`、`web/src/router/unknownRoutes.test.ts`、`web/src/components/vitest4-component-coverage.test.ts`、中英文页面文案、`web/e2e/onboarding-wizard.spec.ts`、中英文快速开始与 `CHANGELOG.md`。
+- 做了什么：保留原来的居中窗口、侧栏、配色与样式，在「偏好」后按「添加凭据 → 选择模型」的顺序配置；凭据为空时进入步骤即展示凭据类型选择，先保存编码工具授权或 API 账号，模型步骤仅使用已保存凭据，不再在模型向导里跳去创建凭据。两类表单与 Git 凭据均在当前步骤内展开，不叠加弹窗；新增模型和可用 Git 授权自动选中。移除编辑时底部提示文案，并隐藏空页脚及其分割线，编辑、保存和刷新期间保护草稿，保留资源重新校验、失败重试与焦点恢复；普通工作区凭据编辑保持既有行为。初始化另外创建空白 `Solo` Agent，使用所选模型与 Git 配置，不携带角色模板文件或能力；同名 Agent 重入保留，四个工作流角色与图结构不变。Solo 入口优先选择默认 Solo，保留有效的记忆选择，引导完成后刷新入口并丢弃旧加载结果。路由单测用空视图隔离页面渲染依赖，保留真实路由表与跳转断言，避免冷编译复杂页面挤占测试时限；覆盖率组件测试桩按真实 API 合同区分数组和分页对象，避免 Solo 默认选择遇到错误响应形状。
+- 为什么：先选模型再补凭据会打断配置顺序，层层打开弹窗也不便返回；明确先后步骤并复用原窗口，让用户按顺序就地完成初始化；Solo 提供独立的空白起点，避免必须借用工作流角色才能开始对话。
+- 如何验证：Node 24 下 Web 全量 524 文件、5,423 项单测通过，Lines 91.44%；最终完整 critical E2E 234 项通过（8.2 分钟、零重试），含 7 项引导回归，验证先凭据后模型、空态直接选类型、单一原窗口、默认 Solo、秘密遮罩与提交引用；另对先前受开发热更新影响的两组交互及引导执行 19 项定向回归，全部通过。前端 lint（0 errors、12 个既有 warnings）、类型检查、生产构建通过；Server lint v2.12、vet、配置文档检查、全量测试与 runtime 专项通过，核心覆盖率 90.3%，真实 HTTP 重启初始化契约通过。actionlint、error-level shellcheck、品牌与 diff 检查、docs 构建和官方源高/严重漏洞审计通过。核对 1280/390px 深色及 320px 浅色窗口，无嵌套弹窗，编辑时空页脚与底部分割线隐藏。独立预览在 5176 运行，使用模拟 API 和临时元数据，不连接现有后端或读取现有数据。
+
 ### 2026-10-26（澄清选择提交后卡住与重连续问恢复）
 
 - 日期：2026-10-26（Asia/Hong_Kong）

@@ -239,7 +239,8 @@ type agentContainerExtra struct {
 	// OnReady runs after the row is marked as running.
 	OnReady func()
 	// InitialChatModel selects only the sandbox's first chat. Empty follows the primary model.
-	InitialChatModel string
+	InitialChatModel           string
+	InitialChatReasoningEffort *string
 }
 
 // Env key provenance labels reported to the Solo environment panel.
@@ -451,6 +452,13 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	env["GIT_REPOS"] = sandbox.EncodeRepos(extra.Repos)
 	if initial := strings.TrimSpace(extra.InitialChatModel); initial != "" {
 		env[runtime.EnvInitialChatModel] = initial
+	}
+	if extra.InitialChatReasoningEffort != nil {
+		if effort := strings.TrimSpace(*extra.InitialChatReasoningEffort); effort != "" {
+			env[runtime.EnvACPBridgeReasoningEffort] = effort
+		} else {
+			delete(env, runtime.EnvACPBridgeReasoningEffort)
+		}
 	}
 	track.mark(env, EnvSourceSystem)
 	if extra.OnEnv != nil {

@@ -202,8 +202,11 @@ func TestOnboardingBootstrapIdempotent(t *testing.T) {
 	if r1.WorkflowID != r2.WorkflowID {
 		t.Fatalf("workflow id changed: %s vs %s", r1.WorkflowID, r2.WorkflowID)
 	}
-	if len(svc.Skills.List()) != len(services.OnboardingAgentNames) {
+	if len(svc.Skills.List()) != len(services.OnboardingAgentNames)+1 {
 		t.Fatalf("agents doubled: %d", len(svc.Skills.List()))
+	}
+	if r1.SoloAgentID != services.OnboardingSoloAgentName || r2.SoloAgentID != r1.SoloAgentID {
+		t.Fatalf("Solo identity changed: %q -> %q", r1.SoloAgentID, r2.SoloAgentID)
 	}
 	if n := len(svc.WF.List()); n != 1 {
 		t.Fatalf("workflows doubled: %d", n)
@@ -462,8 +465,8 @@ func TestOnboardingBootstrapKeepsExistingAndFillsMissing(t *testing.T) {
 	if _, ok := svc.Skills.Get("交付"); !ok {
 		t.Fatal("missing canonical name was not created")
 	}
-	if n := len(svc.Skills.List()); n != 4 {
-		t.Fatalf("agents = %d, want 4", n)
+	if n := len(svc.Skills.List()); n != 5 {
+		t.Fatalf("agents = %d, want four roles and Solo", n)
 	}
 }
 

@@ -22,13 +22,16 @@ func ModelsGET(chats *service.ChatManager) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		_, reasoningEfforts := bridge.ReasoningOptions(bridge.EffectiveModel())
 		c.JSON(http.StatusOK, gin.H{
-			"models":     models,
-			"configured": configured,
-			"current":    bridge.EffectiveModel(),
-			"selected":   bridge.Model(),
-			"default":    chats.DefaultModel(),
-			"fixed":      false,
+			"models":           models,
+			"configured":       configured,
+			"current":          bridge.EffectiveModel(),
+			"selected":         bridge.Model(),
+			"default":          chats.DefaultModel(),
+			"fixed":            false,
+			"reasoningEffort":  bridge.ReasoningEffort(),
+			"reasoningEfforts": reasoningEfforts,
 		})
 	}
 }
@@ -41,31 +44,47 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 			return
 		}
 		var body struct {
-			Model string `json:"model"`
+			Model           *string `json:"model"`
+			ReasoningEffort *string `json:"reasoningEffort"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 			return
 		}
-		model := strings.TrimSpace(body.Model)
+		model := bridge.Model()
+		if body.Model != nil {
+			model = strings.TrimSpace(*body.Model)
+		}
 		if !service.ModelSelectable(model) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "该模型不在当前配置中"})
 			return
 		}
-		prev := bridge.Model()
-		bridge.SetModel(model)
-		sess, err := bridge.RestartAgent()
+		effectiveModel := model
+		if effectiveModel == "" {
+			effectiveModel = chats.DefaultModel()
+		}
+		effort := bridge.ReasoningEffort()
+		if body.ReasoningEffort != nil {
+			effort = strings.TrimSpace(*body.ReasoningEffort)
+			if !bridge.ReasoningEffortSelectable(effectiveModel, effort) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "该模型不支持所选思考强度"})
+				return
+			}
+		} else if !bridge.ReasoningEffortSelectable(effectiveModel, effort) {
+			effort = ""
+		}
+		sess, err := bridge.SwitchModelSettings(model, effort)
 		if err != nil {
-			bridge.SetModel(prev)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		bridge.Broadcast(bridge.ConnectedPayload(sess))
 		bridge.BroadcastQueueState()
 		c.JSON(http.StatusOK, gin.H{
-			"model":     bridge.EffectiveModel(),
-			"selected":  bridge.Model(),
-			"sessionId": sess.SessionID(),
+			"model":           bridge.EffectiveModel(),
+			"selected":        bridge.Model(),
+			"sessionId":       sess.SessionID(),
+			"reasoningEffort": bridge.ReasoningEffort(),
 		})
 	}
 }

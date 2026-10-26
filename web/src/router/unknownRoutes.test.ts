@@ -5,6 +5,16 @@ import { createMemoryHistory } from 'vue-router'
 vi.mock('@/lib/shared/authGuard', () => ({ installAuthGuard: () => {} }))
 vi.mock('@/lib/shared/routePending', () => ({ installRoutePendingGuards: () => {} }))
 
+// These tests exercise the real route table, redirects and URL state. Stub view
+// rendering so navigating lazy routes does not compile their unrelated UI trees.
+vi.mock('@/views/LoginView.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/views/DashboardView.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/views/GatesInboxView.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/views/RunDetailView.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/views/RunLiveView.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/views/PublicGateApprovalView.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/views/SettingsView.vue', () => ({ default: { render: () => null } }))
+
 const { createAppRouter } = await import('./index')
 
 describe('unknown routes', () => {

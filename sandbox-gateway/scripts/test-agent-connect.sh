@@ -16,7 +16,8 @@
 #   未设置则只跳过这条真实对话，不跳过 opencode 的 mock 对话。
 #   trae 的 ACP 服务启动前必须登录：只有设置 TRAECLI_PERSONAL_ACCESS_TOKEN 时才做握手，
 #   否则只校验 `traecli acp serve --help`（仍能发现漏装）。
-#   deepseek_harness 始终校验 dsh 版本与 ACP 握手；设置 DEEPSEEK_API_KEY 后额外验证真实对话。
+#   deepseek_harness 始终校验 dsh 版本与 ACP 握手；未设置 DEEPSEEK_API_KEY 时仅向容器
+#   注入测试占位密钥，握手不发送模型请求。设置真实密钥后才额外验证真实对话。
 #   READY_TIMEOUT（默认 240s）/ CONNECT_TIMEOUT（默认 120s）/ CHAT_TIMEOUT（默认 240s）
 set -euo pipefail
 
@@ -148,8 +149,11 @@ check_provider() {
   if [ "$provider" = trae ] && [ -n "${TRAECLI_PERSONAL_ACCESS_TOKEN:-}" ]; then
     env+=(-e TRAECLI_PERSONAL_ACCESS_TOKEN)
   fi
-  if [ "$provider" = deepseek_harness ] && [ -n "${DEEPSEEK_API_KEY:-}" ]; then
-    env+=(-e DEEPSEEK_API_KEY)
+  if [ "$provider" = deepseek_harness ]; then
+    # Native authorization validates the key before launching ACP, even for a
+    # handshake. Keep the placeholder local to this container: the real-chat
+    # condition below must still read the caller's unmodified environment.
+    env+=(-e "DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-ci-e2e-handshake-only}")
   fi
   docker run -d --privileged --name "$name" "${RUNTIME_DOCKER_ARGS[@]}" "${env[@]}" \
     -p 127.0.0.1::8765 -p 127.0.0.1::8744 "$image" >/dev/null
@@ -213,6 +217,8 @@ check_provider() {
   if [ "$provider" = deepseek_harness ] && [ -n "${DEEPSEEK_API_KEY:-}" ]; then
     node "$ws_check" "ws://127.0.0.1:$api/ws" chat "$chat_timeout" \
       || die "provider=$provider: 真实对话失败"
+  elif [ "$provider" = deepseek_harness ]; then
+    log "provider=$provider: 未设置 DEEPSEEK_API_KEY，仅验证握手，跳过真实对话"
   fi
 
   if [ "$provider" = opencode ]; then

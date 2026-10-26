@@ -33,6 +33,19 @@ func (h *ModelConnectionHandlers) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
+func (h *ModelConnectionHandlers) Models(c *gin.Context) {
+	models, err := h.Service.DiscoverModels(c.Request.Context(), c.Param("connectionId"))
+	if errors.Is(err, services.ErrModelDiscovery) {
+		c.JSON(http.StatusOK, gin.H{"models": []modelrouting.Model{}, "error": err.Error()})
+		return
+	}
+	if err != nil {
+		writeModelConnectionErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"models": models})
+}
+
 func (h *ModelConnectionHandlers) Create(c *gin.Context) {
 	var input modelrouting.Connection
 	if err := c.ShouldBindJSON(&input); err != nil {

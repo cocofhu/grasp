@@ -6,13 +6,18 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"backend/internal/agents"
+	"backend/internal/provider"
 )
 
 const envConfiguredModels = "GRASP_CONFIGURED_MODELS"
 
 type configuredModelSpec struct {
-	ID     string `json:"id"`
-	Vendor string `json:"vendor,omitempty"`
+	ID                string   `json:"id"`
+	Vendor            string   `json:"vendor,omitempty"`
+	ReasoningEfforts  []string `json:"reasoningEfforts,omitempty"`
+	ReasoningDisabled bool     `json:"reasoningDisabled,omitempty"`
 }
 
 var (
@@ -83,6 +88,54 @@ func ModelSelectable(id string) bool {
 	return false
 }
 
+// ReasoningEffortSelectable accepts only capabilities supplied for the exact
+// configured model and handled by this runtime's concrete provider adapter.
+func ReasoningEffortSelectable(model, effort string) bool {
+	if effort == "" {
+		return true
+	}
+	for _, value := range configuredReasoningOptions(model) {
+		if effort == value {
+			return true
+		}
+	}
+	return false
+}
+
+func configuredReasoningOptions(model string) []string {
+	backend := agents.Current().Name()
+	if backend != provider.Codex && backend != provider.DeepSeekHarness {
+		return nil
+	}
+	spec, configured, err := parseConfiguredModels()
+	if err != nil || !configured {
+		return nil
+	}
+	for _, item := range spec {
+		if strings.TrimSpace(item.ID) != strings.TrimSpace(model) {
+			continue
+		}
+		if item.ReasoningDisabled {
+			return nil
+		}
+		return append([]string(nil), item.ReasoningEfforts...)
+	}
+	return nil
+}
+
+func modelReasoningDisabled(model string) bool {
+	spec, _, err := parseConfiguredModels()
+	if err != nil {
+		return true
+	}
+	for _, item := range spec {
+		if strings.TrimSpace(item.ID) == strings.TrimSpace(model) {
+			return item.ReasoningDisabled
+		}
+	}
+	return false
+}
+
 func parseConfiguredModels() ([]configuredModelSpec, bool, error) {
 	raw := strings.TrimSpace(os.Getenv(envConfiguredModels))
 	if raw == "" {
@@ -109,8 +162,11 @@ func projectConfiguredModels(spec []configuredModelSpec, catalog []AgentModel, c
 	for _, item := range spec {
 		id := strings.TrimSpace(item.ID)
 		vendor := strings.TrimSpace(item.Vendor)
+		if item.ReasoningDisabled {
+			item.ReasoningEfforts = nil
+		}
 		if id == "" {
-			out = append(out, AgentModel{Name: "自动", Vendor: vendor})
+			out = append(out, AgentModel{Name: "自动", Vendor: vendor, ReasoningEfforts: append([]string(nil), item.ReasoningEfforts...)})
 			continue
 		}
 		if known, ok := byID[id]; ok {
@@ -121,10 +177,10 @@ func projectConfiguredModels(spec []configuredModelSpec, catalog []AgentModel, c
 			if strings.TrimSpace(known.Vendor) != "" {
 				vendor = known.Vendor
 			}
-			out = append(out, AgentModel{ID: id, Name: name, Vendor: vendor})
+			out = append(out, AgentModel{ID: id, Name: name, Vendor: vendor, ReasoningEfforts: append([]string(nil), item.ReasoningEfforts...)})
 			continue
 		}
-		out = append(out, AgentModel{ID: id, Name: id, Vendor: vendor, Unavailable: catalogErr == nil})
+		out = append(out, AgentModel{ID: id, Name: id, Vendor: vendor, Unavailable: catalogErr == nil && len(catalog) > 0, ReasoningEfforts: append([]string(nil), item.ReasoningEfforts...)})
 	}
 	return out
 }

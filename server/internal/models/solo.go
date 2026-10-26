@@ -79,11 +79,15 @@ type SoloSession struct {
 	// explicit primary from an old row that never stored a current model.
 	CurrentModelID  string `json:"currentModelId,omitempty"`
 	CurrentModelSet bool   `json:"currentModelSet,omitempty"`
+	// CurrentReasoningEffort is a session choice, independent of the Agent's
+	// saved configuration. Empty selects the tool's default reasoning behavior.
+	CurrentReasoningEffort string `json:"reasoningEffort"`
 	// AppliedModelID is the model last given to the sandbox chat. It is not
 	// part of the API. AppliedModelSet false means the sandbox still has the
 	// opening model (or has not been aligned yet).
-	AppliedModelID  string `json:"-"`
-	AppliedModelSet bool   `json:"-"`
+	AppliedModelID         string `json:"-"`
+	AppliedModelSet        bool   `json:"-"`
+	AppliedReasoningEffort string `json:"-"`
 	// ModelNotice is a stable error code shown after a switch is rolled back.
 	ModelNotice string `json:"modelNotice,omitempty"`
 	// Repos is the ordered repository snapshot. Empty means an empty workspace

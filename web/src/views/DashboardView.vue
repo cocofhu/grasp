@@ -88,6 +88,7 @@ const soloAgentName = solo.agentName
 const soloProjectIds = solo.projectIds
 const soloBranches = solo.branches
 const soloInitialModelId = solo.initialModelId
+const soloReasoningEffort = solo.reasoningEffort
 const soloModelChoices = solo.modelChoices
 const soloLimitOpen = solo.limitOpen
 const projectDrawerOpen = ref(false)
@@ -843,6 +844,7 @@ onBeforeUnmount(() => {
                 />
                 <SoloModelSelect
                   v-model="soloInitialModelId"
+                  v-model:reasoning-effort="soloReasoningEffort"
                   :models="soloModelChoices"
                   :disabled="solo.creating.value"
                 />

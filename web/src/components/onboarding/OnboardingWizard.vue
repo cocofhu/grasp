@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import { api, type ModelBinding, type ModelConfiguration } from '@/lib/api/api'
+import { api, type CredentialItem, type ModelBinding, type ModelConfiguration } from '@/lib/api/api'
 import ModelBindingEditor from '@/components/agent/ModelBindingEditor.vue'
 import AgentGitCredentialPicker from '@/components/agent/AgentGitCredentialPicker.vue'
 import WorkspaceCredentialsPanel from '@/components/workspace/WorkspaceCredentialsPanel.vue'
-import AppModal from '@/components/ui/AppModal.vue'
-import { bindingProblem, useRoutingCopy } from '@/lib/agent/modelRouting'
+import { usableGitCredential } from '@/lib/agent/gitBindings'
+import { bindingProblem, credentialUsable, useRoutingCopy } from '@/lib/agent/modelRouting'
 import type { AgentTemplate } from '@/lib/api/apiTypes'
 import { getRegionPolicy } from '@/lib/shared/regionPolicy'
 import OnboardingTeamCard from './OnboardingTeamCard.vue'
@@ -21,6 +21,7 @@ import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
 import {
   ONBOARDING_STEPS,
+  ONBOARDING_SOLO_AGENT_NAME,
   applyDefaultTeamNames,
   assembleBootstrapBody,
   buildOnboardingWorkflowPreview,
@@ -69,9 +70,17 @@ const result = ref<OnboardingBootstrapResult | null>(null)
 const stepAnimKey = ref(0)
 const modelValid = ref(false)
 const gitValid = ref(true)
-const resourceManagerOpen = ref(false)
+const gitSetupOpen = ref(false)
+const resourceEditing = ref(false)
+const resourcesLoading = ref(false)
+const resourcesError = ref('')
+const body = ref<HTMLElement | null>(null)
+const stepHeading = ref<HTMLElement | null>(null)
+let resourceRequest = 0
 const resourcesVersion = ref(0)
 const models = ref<ModelConfiguration[]>([])
+const credentials = ref<CredentialItem[]>([])
+const credentialsReady = computed(() => credentials.value.some(item => ['model_api', 'tool_auth'].includes(item.purpose || '') && credentialUsable(item)))
 const c = useRoutingCopy()
 const templates = ref<AgentTemplate[]>([])
 const templatesState = ref<'loading' | 'ready' | 'error'>('loading')
@@ -96,31 +105,66 @@ const backendSummary = computed(() => selectedModel.value?.name || draft.value.m
 const gitCredLabel = computed(() => `${draft.value.gitBindings.items.length} ${t('pages.agentStudio.gitCredentials.title')}`)
 const modelBinding = computed<ModelBinding>({ get: () => ({ kind: 'configuration' as const, configurationId: draft.value.modelConfigurationId }), set: (value) => { draft.value.modelConfigurationId = value.configurationId; draft.value.region = regionPolicy.value?.defaultRegion || '' } })
 async function refreshResources() {
-  const returningFromManager = resourceManagerOpen.value
-  const configurationId = draft.value.modelConfigurationId
-  resourceManagerOpen.value = false
-  resourcesVersion.value++
-  if (returningFromManager) modelValid.value = false
+  const request = ++resourceRequest
+  resourcesLoading.value = true
+  resourcesError.value = ''
+  modelValid.value = false
   try {
-    models.value = (await api.listModelConfigurations()).items || []
-    if (returningFromManager && configurationId) {
-      const [keys, services, caps] = await Promise.all([api.listCredentials(), api.listModelConnections(), api.listToolCapabilities()])
-      if (draft.value.modelConfigurationId !== configurationId) return
+    const [configs, keys, services, caps] = await Promise.all([
+      api.listModelConfigurations(), api.listCredentials(), api.listModelConnections(), api.listToolCapabilities(),
+    ])
+    if (request !== resourceRequest || !props.open) return
+    models.value = configs.items || []
+    credentials.value = keys.items || []
+    const configurationId = draft.value.modelConfigurationId
+    if (configurationId) {
       const configuration = models.value.find(model => model.id === configurationId)
       modelValid.value = !bindingProblem({ kind: 'configuration', configurationId }, configuration?.backend || '', services.items || [], keys.items || [], caps.items || [], models.value)
-      if (!modelValid.value) { draft.value.step = 1; stepAnimKey.value++ }
+      if (!modelValid.value && draft.value.step > steps.findIndex(step => step.id === 'model')) goToStep('model')
     }
-  } catch {
-    models.value = []
-    if (returningFromManager) { modelValid.value = false; draft.value.step = 1; stepAnimKey.value++ }
+    resourcesVersion.value++
+  } catch (error) {
+    if (request !== resourceRequest || !props.open) return
+    resourcesError.value = String((error as Error).message || error)
+    modelValid.value = false
+    if (draft.value.modelConfigurationId && draft.value.step > steps.findIndex(step => step.id === 'model')) goToStep('model')
+  } finally {
+    if (request === resourceRequest) resourcesLoading.value = false
   }
 }
+function selectSavedModel(model: ModelConfiguration) {
+  models.value = [...models.value.filter(row => row.id !== model.id), model]
+  modelBinding.value = { kind: 'configuration', configurationId: model.id }
+  resourceEditing.value = false
+  if (props.open && currentStep.value.id === 'model') goToStep('git')
+  void refreshResources()
+}
+function completeCredentialStep(credential: CredentialItem) {
+  if (credentialUsable(credential) && ['model_api', 'tool_auth'].includes(credential.purpose || '')) {
+    credentials.value = [...credentials.value.filter(item => item.id !== credential.id), credential]
+    resourceEditing.value = false
+    goToStep('model')
+  }
+  void refreshResources()
+}
+function selectSavedGit(credential: CredentialItem) {
+  if (usableGitCredential(credential) && !draft.value.gitBindings.items.some(item => item.credentialId === credential.id)) {
+    draft.value.gitBindings.items.push({ credentialId: credential.id })
+  }
+  void refreshResources()
+}
+watch([activeIndex, () => props.open], async () => {
+  await nextTick()
+  if (!props.open) return
+  if (body.value) body.value.scrollTop = 0
+  stepHeading.value?.focus({ preventScroll: true })
+}, { immediate: true })
 const summaryItems = computed(() => [
   { id: 'backend', label: t('pages.onboarding.steps.model'), value: backendSummary.value, ok: true },
   { id: 'repo', label: t('pages.onboarding.repo.chip'), value: repoOk.value ? repoDirName.value : t('pages.onboarding.workflow.repoSkip'), ok: repoOk.value },
   { id: 'git-user', label: t('pages.onboarding.gitUser.chip'), value: draft.value.gitUserName, ok: true },
   { id: 'git-cred', label: t('pages.onboarding.workflow.gitCred'), value: gitOk.value ? gitCredLabel.value : t('pages.onboarding.workflow.gitSkip'), ok: gitOk.value },
-  { id: 'agents', label: 'Agent', value: t('pages.onboarding.workflow.agentsValue', { n: enabledTeam.value.length }), ok: true },
+  { id: 'agents', label: 'Agent', value: t('pages.onboarding.workflow.agentsWithSolo', { n: enabledTeam.value.length }), ok: true },
   { id: 'workflow', label: t('pages.onboarding.workflow.wfLabel'), value: t('pages.onboarding.workflow.wfValue'), ok: true, wide: true },
 ])
 const wizardTitle = computed(() => {
@@ -140,8 +184,8 @@ const reviewIncluded = computed(() => workflowPreview.value.nodes.some((n) => n.
 const enabledTeam = computed(() => draft.value.team.filter((m) => m.enabled))
 const modelPlaceholder = computed(() => selectedModel.value?.name || c.value.selectConfiguration)
 const successAgentNames = computed(() => {
-  if (result.value?.agentIds?.length) return result.value.agentIds
-  return enabledTeam.value.map((m) => m.name).filter(Boolean)
+  const team = result.value?.agentIds?.length ? result.value.agentIds : enabledTeam.value.map(member => member.name).filter(Boolean)
+  return [...new Set([...team, ...(result.value?.soloAgentId ? [result.value.soloAgentId] : [])])]
 })
 
 watch(defaultAgentNames, (names) => applyDefaultTeamNames(draft.value.team, names), { immediate: true })
@@ -149,7 +193,7 @@ watch(defaultAgentNames, (names) => applyDefaultTeamNames(draft.value.team, name
 watch(
   () => props.open,
   (open) => {
-    if (!open) return
+    if (!open) { resourceRequest++; return }
     const inheritAppLocale = false
     draft.value = freshOnboardingDraft({ inheritAppLocale })
     // Opening the wizard must not overwrite the user's saved locale with browser/OS.
@@ -163,6 +207,8 @@ watch(
     modelValid.value = false
     gitValid.value = true
     showTeamErrors.value = false
+    gitSetupOpen.value = false
+    resourceEditing.value = false
     leaving.value = false
     applyDefaultTeamNames(draft.value.team, defaultAgentNames.value)
     stepAnimKey.value++
@@ -190,7 +236,7 @@ function templateFor(id: OnboardingTemplateId): AgentTemplate | undefined {
 
 /** Closes for this view only; a reload re-opens it until the default workflow exists. */
 function closeWizard() {
-  if (creating.value) return
+  if (creating.value || resourceEditing.value) return
   emit('close')
 }
 
@@ -227,8 +273,14 @@ function toggleBrowserMcp() {
 
 function validatePrefs(): boolean { return true }
 
+function validateCredentials(): boolean {
+  if (!resourcesLoading.value && !resourcesError.value && credentialsReady.value) return true
+  toast.error(t('pages.onboarding.credentialsSetup.required'))
+  return false
+}
+
 function validateModel(): boolean {
-  if (modelValid.value && draft.value.modelConfigurationId) return true
+  if (!resourcesLoading.value && !resourcesError.value && modelValid.value && draft.value.modelConfigurationId) return true
   toast.error(c.value.selectConfiguration)
   return false
 }
@@ -258,15 +310,16 @@ function goToStep(id: OnboardingStepId) {
 }
 
 function goPrev() {
-  if (draft.value.step === 0 || creating.value || phase.value === 'success') return
+  if (draft.value.step === 0 || creating.value || resourceEditing.value || phase.value === 'success') return
   draft.value.step--
   stepAnimKey.value++
 }
 
 function goNext() {
-  if (creating.value) return
+  if (creating.value || resourceEditing.value) return
   const id = currentStep.value.id
   if (id === 'prefs' && !validatePrefs()) return
+  if (id === 'credentials' && !validateCredentials()) return
   if (id === 'model' && !validateModel()) return
   if (id === 'git' && !validateGit()) return
   if (id === 'team' && !validateTeam()) return
@@ -289,6 +342,7 @@ async function runBootstrap(body: ReturnType<typeof assembleBootstrapBody>) {
 async function submitBootstrap() {
   const checks: [OnboardingStepId, () => boolean][] = [
     ['prefs', validatePrefs],
+    ['credentials', validateCredentials],
     ['model', validateModel],
     ['git', validateGit],
     ['team', validateTeam],
@@ -348,7 +402,7 @@ function editWorkflow() {
     <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid="onboarding-wizard">
       <div class="onb-backdrop absolute inset-0" data-testid="onboarding-backdrop" @click="closeWizard" />
       <div class="onb-dialog relative z-10 flex w-full overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="onb-title">
-        <aside class="onb-rail flex w-[248px] shrink-0 flex-col" data-testid="onboarding-rail">
+        <aside class="onb-rail hidden w-[248px] shrink-0 flex-col md:flex" data-testid="onboarding-rail">
           <div class="px-6 pt-6">
             <div class="onb-brand grid h-10 w-10 place-items-center rounded-xl">
               <Icon name="sparkles" :size="20" />
@@ -395,7 +449,7 @@ function editWorkflow() {
             type="button"
             class="onb-close absolute right-4 top-4 z-10"
             :aria-label="t('pages.onboarding.close')"
-            :disabled="creating"
+            :disabled="creating || resourceEditing"
             data-testid="onboarding-close"
             @click="closeWizard"
           >
@@ -403,11 +457,11 @@ function editWorkflow() {
           </button>
 
           <template v-if="phase === 'success'">
-            <div class="min-h-0 flex-1 overflow-y-auto px-10 pb-8 pt-10" data-testid="onboarding-success">
+            <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-10 sm:px-10" data-testid="onboarding-success">
               <div class="onb-success-mark grid h-12 w-12 place-items-center rounded-full">
                 <Icon name="check" :size="24" />
               </div>
-              <h3 class="mt-5 text-[22px] font-semibold text-txt">
+              <h3 ref="stepHeading" tabindex="-1" class="mt-5 text-[22px] font-semibold text-txt outline-none">
                 {{ t('pages.onboarding.success.title') }}
               </h3>
               <p class="mt-1.5 max-w-[60ch] text-[13px] leading-6 text-txt2">
@@ -422,7 +476,7 @@ function editWorkflow() {
                   <ul class="mt-3 space-y-2" data-testid="onboarding-success-agents">
                     <li v-for="n in successAgentNames" :key="n" class="flex items-center gap-2.5 text-[13px] text-txt">
                       <span class="onb-avatar">{{ n.slice(0, 1) }}</span
-                      >{{ n }}
+                      ><span>{{ n }}<span v-if="n === result?.soloAgentId" class="ml-2 text-[11px] text-txt3">{{ t('pages.onboarding.solo.emptyShort') }}</span></span>
                     </li>
                     <li class="flex items-center gap-2.5 text-[13px] text-txt">
                       <span class="onb-avatar is-flow"><Icon name="workflow" :size="13" /></span
@@ -492,7 +546,7 @@ function editWorkflow() {
                 </button>
               </div>
             </div>
-            <footer class="onb-footer">
+            <footer class="onb-footer max-sm:flex-wrap max-sm:!px-3">
               <div class="flex-1" />
               <AppButton variant="ghost" data-testid="onboarding-success-close" @click="finish">
                 {{ t('pages.onboarding.close') }}
@@ -501,7 +555,7 @@ function editWorkflow() {
           </template>
 
           <template v-else>
-            <div class="min-h-0 flex-1 overflow-y-auto px-10 pb-8 pt-8" data-testid="onboarding-body">
+            <div ref="body" class="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-8 sm:px-10" data-testid="onboarding-body">
               <div :key="stepAnimKey">
                 <div class="text-[11.5px] font-medium text-accent-2">
                   {{
@@ -511,9 +565,10 @@ function editWorkflow() {
                     })
                   }}
                 </div>
-                <h3 class="mt-1.5 text-[22px] font-semibold leading-8 text-txt">
+                <h3 ref="stepHeading" tabindex="-1" class="mt-1.5 text-[22px] font-semibold leading-8 text-txt outline-none">
                   {{ t(currentStep.labelKey) }}
                 </h3>
+                <p v-if="resourcesError" role="alert" class="onb-note is-err mt-3">{{ resourcesError }} <AppButton size="sm" @click="refreshResources">{{ c.retry }}</AppButton></p>
 
                 <template v-if="currentStep.id === 'prefs'">
                   <p class="onb-lede">
@@ -605,12 +660,19 @@ function editWorkflow() {
                   </div>
                 </template>
 
+                <template v-else-if="currentStep.id === 'credentials'">
+                  <p class="onb-lede">{{ t('pages.onboarding.credentialsSetup.description') }}</p>
+                  <WorkspaceCredentialsPanel class="mt-6" inline scope="model" view="credentials" @credential-saved="completeCredentialStep" @editing="resourceEditing = $event" />
+                </template>
+
                 <template v-else-if="currentStep.id === 'model'">
-                  <section class="onb-card mt-6" data-testid="onboarding-section-model">
+                  <p class="onb-lede">{{ t('pages.onboarding.toolSetup.description') }}</p>
+                  <WorkspaceCredentialsPanel class="mt-6" inline scope="model" view="models" setup :configuration-id="draft.modelConfigurationId" @model-saved="selectSavedModel" @editing="resourceEditing = $event" />
+                  <section v-if="!resourceEditing && models.length" class="onb-card mt-4" data-testid="onboarding-section-model">
+                    <div class="onb-label">{{ t('pages.onboarding.toolSetup.existing') }}</div>
                     <ModelBindingEditor :key="resourcesVersion" v-model="modelBinding" @validity="modelValid = $event" />
-                    <AppButton size="sm" variant="ghost" icon="plus" class="mt-3" data-testid="onboarding-manage-models" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton>
-                    <div v-if="regionPolicy" class="onb-seg mt-4" role="radiogroup" :aria-label="t('pages.onboarding.acp.region')"><button v-for="option in regionPolicy.options" :key="option.id" type="button" role="radio" class="onb-seg-item" :aria-checked="draft.region === option.id" @click="selectRegion(option.id)">{{ t(option.labelKey) }}</button></div>
                   </section>
+                  <div v-if="regionPolicy && !resourceEditing" class="onb-seg mt-4" role="radiogroup" :aria-label="t('pages.onboarding.acp.region')"><button v-for="option in regionPolicy.options" :key="option.id" type="button" role="radio" class="onb-seg-item" :aria-checked="draft.region === option.id" @click="selectRegion(option.id)">{{ t(option.labelKey) }}</button></div>
                 </template>
 
                 <template v-else-if="currentStep.id === 'git'">
@@ -647,7 +709,7 @@ function editWorkflow() {
                       <div class="onb-sub flex-1">
                         {{ t('pages.onboarding.git.repoCredSection') }}
                       </div>
-                      <AppButton size="sm" variant="ghost" data-testid="onboarding-git-skip" @click="toggleGitSkipped">
+                      <AppButton size="sm" variant="ghost" :disabled="resourceEditing" data-testid="onboarding-git-skip" @click="toggleGitSkipped">
                         {{ draft.gitSkipped ? t('pages.onboarding.git.unskip') : t('pages.onboarding.git.skip') }}
                       </AppButton>
                     </div>
@@ -682,7 +744,19 @@ function editWorkflow() {
                       <p v-if="repoDirName" class="onb-hint" data-testid="onboarding-repo-hint">
                         {{ t('pages.onboarding.repo.cloneTo', { dir: repoDirName }) }}
                       </p>
-                      <div class="mt-4"><AgentGitCredentialPicker :key="resourcesVersion" v-model="draft.gitBindings" @validity="gitValid = $event" /><AppButton size="sm" variant="ghost" class="mt-3" data-testid="onboarding-manage-git" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton></div>
+                      <div class="mt-4">
+                        <AgentGitCredentialPicker :key="resourcesVersion" v-model="draft.gitBindings" hide-manage-link :disabled="resourceEditing" @validity="gitValid = $event" />
+                      </div>
+                      <div class="mt-5 border-t border-line pt-5">
+                        <div class="flex items-center justify-between gap-3">
+                          <div>
+                            <h2 class="onb-card-title">{{ t('pages.onboarding.gitSetup.title') }}</h2>
+                            <p class="onb-card-desc">{{ t('pages.onboarding.gitSetup.hint') }}</p>
+                          </div>
+                          <AppButton size="sm" variant="outline" :disabled="resourceEditing" :aria-expanded="gitSetupOpen" aria-controls="onboarding-git-setup" data-testid="onboarding-manage-git" @click="gitSetupOpen = !gitSetupOpen">{{ t(gitSetupOpen ? 'pages.onboarding.collapseSetup' : 'pages.onboarding.expandSetup') }}</AppButton>
+                        </div>
+                        <WorkspaceCredentialsPanel v-if="gitSetupOpen" id="onboarding-git-setup" class="mt-4" inline scope="git" @changed="refreshResources" @credential-saved="selectSavedGit" @editing="resourceEditing = $event" />
+                      </div>
                     </template>
                   </section>
                 </template>
@@ -724,6 +798,15 @@ function editWorkflow() {
                   <p class="onb-hint mt-3">
                     {{ t('pages.onboarding.team.foot') }}
                   </p>
+                  <section class="onb-card mt-4" data-testid="onboarding-solo-agent">
+                    <div class="flex items-start gap-3">
+                      <span class="onb-avatar shrink-0">S</span>
+                      <div>
+                        <div class="onb-card-title">{{ ONBOARDING_SOLO_AGENT_NAME }}</div>
+                        <p class="onb-card-desc">{{ t('pages.onboarding.solo.description') }}</p>
+                      </div>
+                    </div>
+                  </section>
                 </template>
 
                 <template v-else-if="currentStep.id === 'workflow'">
@@ -762,15 +845,15 @@ function editWorkflow() {
               </div>
             </div>
 
-            <footer class="onb-footer">
-              <AppButton variant="ghost" data-testid="onboarding-later" :disabled="creating" @click="closeWizard">
+            <footer v-show="!resourceEditing" class="onb-footer max-sm:flex-wrap max-sm:!px-3">
+              <AppButton v-show="!resourceEditing" variant="ghost" data-testid="onboarding-later" :disabled="creating || resourceEditing" @click="closeWizard">
                 {{ t('pages.onboarding.later') }}
               </AppButton>
               <div class="flex-1" />
-              <AppButton v-if="draft.step > 0" variant="outline" :disabled="creating" data-testid="onboarding-prev" @click="goPrev">
+              <AppButton v-if="draft.step > 0" v-show="!resourceEditing" variant="outline" :disabled="creating || resourceEditing" data-testid="onboarding-prev" @click="goPrev">
                 <Icon name="chevron-left" :size="14" />{{ t('pages.onboarding.prev') }}
               </AppButton>
-              <AppButton variant="primary" :disabled="creating" data-testid="onboarding-next" @click="goNext">
+              <AppButton v-show="!resourceEditing" variant="primary" :disabled="creating || resourceEditing || resourcesLoading" data-testid="onboarding-next" @click="goNext">
                 <Icon v-if="creating" name="spinner" :size="14" />
                 {{
                   creating
@@ -786,7 +869,6 @@ function editWorkflow() {
         </div>
       </div>
     </div>
-    <AppModal :open="resourceManagerOpen" :title="c.configureKeys" :width="1000" trap-focus close-on-esc @close="refreshResources"><div class="flex h-[70vh] min-h-0"><WorkspaceCredentialsPanel /></div></AppModal>
   </Teleport>
 </template>
 

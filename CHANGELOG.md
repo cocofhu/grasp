@@ -4,6 +4,18 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Coding-tool credentials:** OpenCode CLI and DeepSeek Harness now save their own vendor keys as coding-tool authorizations, alongside Cursor and CodeBuddy. General model service keys remain in API accounts. Both tools can use their vendor authorization or an explicitly selected API account when configuring a model.
+
+- **API account model selection:** model configuration reads the selected API account's model directory for searchable primary and auxiliary choices. Saved models stay available, failed reads can be retried, and original model IDs can still be entered manually. Only selected models are added to the account when saving.
+
+- **Model brand icons:** API model options and Solo selectors show their own brand marks, including GPT, Kimi, GLM and Hunyuan, even when accessed through one shared API account. Unknown models retain the account provider mark, and color logos remain readable in dark mode.
+
+- **Default Solo Agent:** first-time setup also creates an empty `Solo` Agent using the selected model and Git settings. Solo conversations select it by default when no valid saved choice exists; existing choices and an already customized Solo Agent are preserved.
+
+- **First-time setup:** the existing setup window guides users through credentials, coding-tool configuration and Git. Empty steps open their setup forms directly; saving credentials or a model advances to the next step without a completed-items list. Forms stay inside the current window, and API address settings use the shared switch component. Existing credentials and models can be reused, and edits stay protected while saving.
+
+- **Solo model controls:** startup selectors have a border, while active conversations use a borderless model control. Both show the saved configuration name and open a compact name-only model list with lighter shadows, small brand marks and a clear selected check. Light mode uses a white panel. Supported models offer their available reasoning levels in a small slider panel; a single-model configuration opens that panel directly. Session changes apply to the next turn, with rollback if the coding tool rejects the change.
+
 ## 3.0.0 — 2026-10-26
 
 - **Clarify conversation recovery:** delayed queue snapshots and old temporary replies no longer leave later questions read-only after submitting choices. Reconnecting after a completed turn restores the saved questions and releases the stale busy state without reloading the page.

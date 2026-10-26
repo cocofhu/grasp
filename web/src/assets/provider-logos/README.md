@@ -17,6 +17,10 @@ requests to an image host.
 - `xai.svg` is the xAI mark published from the brand source at
   [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:XAI-Logo.svg),
   whose file identifies x.ai as the source.
+- `kimi.svg` and `kimi-dark.svg` are the unmodified K-only marks from the
+  [official Kimi brand guide](https://moonshotai.github.io/Branding-Guide/),
+  at `scenarios/04-k-only/k-only-light.svg` and `k-only-dark.svg`. Use the
+  matching light/dark asset so the signature blue remains unchanged.
 - The following marks come from [Lobe Icons](https://github.com/lobehub/lobe-icons)
   at commit `7d7d0379f18b114a4009dc5cb85a7c375284f31b`. The SVGs are unmodified;
   their MIT notice is included in [LICENSE.lobe-icons](LICENSE.lobe-icons).
@@ -39,4 +43,4 @@ requests to an image host.
   only monochrome marks are inverted.
 
 The marks remain trademarks of their respective owners. They are shown only
-to identify the credential provider.
+to identify credential providers and model brands.

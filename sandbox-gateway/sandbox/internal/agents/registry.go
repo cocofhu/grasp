@@ -122,7 +122,7 @@ var registry = map[Name]provider.Provider{
 		WorkspaceFlag: "--dir",
 		ResumeFlag:    "--session",
 		ModelFlag:     "--model",
-		AuthEnvFn:     genericAuthEnv("OPENCODE_API_KEY", "ACP_OPENCODE_API_KEY"),
+		AuthEnvFn:     openCodeAuthEnv,
 	}),
 	provider.DevEco: opencodejson.New(opencodejson.Config{
 		AgentName:     provider.DevEco,
@@ -214,6 +214,20 @@ func genericAuthEnv(nativeVar string, aliases ...string) func(env []string) []st
 	return func(env []string) []string {
 		return common.SetIfEmpty(env, nativeVar, common.FirstNonEmptyEnv(keys...))
 	}
+}
+
+func openCodeAuthEnv(env []string) []string {
+	if common.GetEnvValue(env, "GRASP_OPENCODE_PROVIDER") != "opencode" {
+		return genericAuthEnv("OPENCODE_API_KEY", "GRASP_OPENCODE_API_KEY", "ACP_OPENCODE_API_KEY")(env)
+	}
+	// Preserve the selected value so the official adapter can reject malformed
+	// authorization before any config writes; trimming here would hide CR/LF.
+	for _, key := range []string{"OPENCODE_API_KEY", "GRASP_OPENCODE_API_KEY", "ACP_OPENCODE_API_KEY"} {
+		if value := common.GetEnvValue(env, key); value != "" {
+			return common.UpsertEnv(env, "OPENCODE_API_KEY", value)
+		}
+	}
+	return env
 }
 
 // FromEnv resolves the active provider name from AGENT_PROVIDER, defaulting to

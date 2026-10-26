@@ -135,7 +135,7 @@ func authSpecFor(b AcpBackend) authSpec {
 	case BackendTrae:
 		return authSpec{credKey: envauth.EnvTraeAPIKey, cliKey: EnvTraeCLIToken}
 	case BackendOpenCode:
-		return authSpec{}
+		return authSpec{credKey: envauth.EnvOpenCodeAPIKey, cliKey: "OPENCODE_API_KEY"}
 	case BackendDeepSeekHarness:
 		return authSpec{credKey: envauth.EnvDeepSeekAPIKey, cliKey: "DEEPSEEK_API_KEY"}
 	case BackendCodex:

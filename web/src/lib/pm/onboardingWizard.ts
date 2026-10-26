@@ -6,6 +6,9 @@ import { locale } from '@/lib/shared/locale'
 import { theme } from '@/lib/shared/theme'
 import { normalizeAgentName, validateAgentName } from '@/lib/agent/agentIO'
 
+/** Empty Agent created by first-install setup for Solo conversations. */
+export const ONBOARDING_SOLO_AGENT_NAME = 'Solo'
+
 /** The default workflow's name in every UI language (mirrors server onboardingLocales). */
 export const ONBOARDING_WORKFLOW_NAMES: readonly string[] = ['默认工作流', 'Default Workflow']
 
@@ -77,7 +80,7 @@ export function onboardingRoleNames(lang: AppLocale): string[] {
 
 export type OnboardingMode = 'firstInstall' | 'retry'
 
-export type OnboardingStepId = 'prefs' | 'model' | 'git' | 'team' | 'workflow' | 'done'
+export type OnboardingStepId = 'prefs' | 'credentials' | 'model' | 'git' | 'team' | 'workflow' | 'done'
 
 export type OnboardingStep = {
   id: OnboardingStepId
@@ -87,6 +90,7 @@ export type OnboardingStep = {
 /** Same steps in every mode, one topic per page; `done` is the success page after generating. */
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 'prefs', labelKey: 'pages.onboarding.steps.prefs' },
+  { id: 'credentials', labelKey: 'pages.onboarding.steps.credentials' },
   { id: 'model', labelKey: 'pages.onboarding.steps.model' },
   { id: 'git', labelKey: 'pages.onboarding.steps.git' },
   { id: 'team', labelKey: 'pages.onboarding.steps.team' },
@@ -243,6 +247,7 @@ export type OnboardingBootstrapBody = {
 
 export type OnboardingBootstrapResult = {
   agentIds: string[]
+  soloAgentId?: string
   workflowId: string
   published: boolean
 }

@@ -51,7 +51,7 @@ describe('onboardingWizard', () => {
   })
 
   it('has one topic per step and defaults language from the system', () => {
-    expect(ONBOARDING_STEPS.map((s) => s.id)).toEqual(['prefs', 'model', 'git', 'team', 'workflow', 'done'])
+    expect(ONBOARDING_STEPS.map((s) => s.id)).toEqual(['prefs', 'credentials', 'model', 'git', 'team', 'workflow', 'done'])
     vi.stubGlobal('navigator', { language: 'zh-CN' })
     expect(detectSystemLocale()).toBe('zh-CN')
     expect(freshOnboardingDraft().language).toBe('zh-CN')

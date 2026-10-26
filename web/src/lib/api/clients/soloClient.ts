@@ -37,8 +37,11 @@ export const soloClient = {
   restartSoloSession: (id: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}/restart`, { method: 'POST' }),
   /** Empty modelId selects the primary model. The sandbox changes on the next turn. */
-  setSoloSessionModel: (id: string, modelId: string) =>
-    req<SoloSession>(`/solo/sessions/${enc(id)}/model`, { method: 'POST', body: JSON.stringify({ modelId }) }),
+  setSoloSessionModel: (id: string, modelId: string, reasoningEffort?: string) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}/model`, { method: 'POST', body: JSON.stringify({ modelId, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }) }),
+  /** Omit modelId so changing effort preserves the selected model. */
+  setSoloSessionReasoningEffort: (id: string, reasoningEffort: string) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
   listSoloMessages: (id: string) => req<SoloMessage[]>(`/solo/sessions/${enc(id)}/messages`),
   getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),
   sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[] }) =>

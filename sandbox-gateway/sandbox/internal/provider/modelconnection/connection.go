@@ -72,6 +72,7 @@ type Prepared struct {
 	Connection *Connection
 	RouteID    string
 	DSHPatch   []byte
+	Platform   bool
 	Cleanup    func()
 }
 
@@ -105,6 +106,17 @@ func Prepare(name provider.Name, env []string, model, configRoot string) (Prepar
 	p := Prepared{Env: env, Model: model, Cleanup: func() {}}
 	raw := strings.TrimSpace(common.GetEnvValue(env, EnvConfig))
 	if raw == "" {
+		if name == provider.OpenCode && common.GetEnvValue(env, "GRASP_OPENCODE_PROVIDER") == "opencode" {
+			return prepareOpenCodePlatform(p, configRoot)
+		}
+		if name == provider.DeepSeekHarness {
+			key := common.GetEnvValue(env, "DEEPSEEK_API_KEY")
+			if strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00") {
+				return p, errors.New("DeepSeek Harness official authorization: selected API key is missing or invalid")
+			}
+			p.Env = cleanEnv(env)
+			p.Env = common.UpsertEnv(p.Env, "DEEPSEEK_API_KEY", key)
+		}
 		return p, nil
 	}
 	var c Connection
@@ -267,7 +279,7 @@ func cleanEnv(env []string) []string {
 			continue
 		}
 		switch key {
-		case "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_API_BASE", "OPENCODE_API_KEY", "OPENCODE_CONFIG", "OPENCODE_CONFIG_CONTENT", "CODEX_API_KEY", "ACP_CODEX_API_KEY", "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "GRASP_DEEPSEEK_API_KEY", "GRASP_CLAUDE_API_KEY", "GRASP_CODEBUDDY_API_KEY", "ACP_CLAUDE_API_KEY", "ACP_CODEBUDDY_API_KEY", "ACP_OPENCODE_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_CCR", "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE":
+		case "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_API_BASE", "OPENCODE_API_KEY", "OPENCODE_CONFIG", "OPENCODE_CONFIG_CONTENT", "OPENCODE_CONFIG_DIR", "OPENCODE_MODELS_PATH", "OPENCODE_MODELS_URL", "OPENCODE_CONSOLE_TOKEN", "CODEX_API_KEY", "ACP_CODEX_API_KEY", "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "DEEPSEEK_SEARCH_BASE_URL", "GRASP_DEEPSEEK_API_KEY", "GRASP_CLAUDE_API_KEY", "GRASP_CODEBUDDY_API_KEY", "ACP_CLAUDE_API_KEY", "ACP_CODEBUDDY_API_KEY", "ACP_OPENCODE_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_CCR", "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE":
 			continue
 		case "GRASP_CURSOR_API_KEY", "GRASP_TRAE_API_KEY", "GRASP_CODEX_AUTH_JSON", "CURSOR_API_KEY", "ACP_CURSOR_API_KEY", "TRAECLI_PERSONAL_ACCESS_TOKEN", "ACP_TRAE_API_KEY", "OPENROUTER_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "MOONSHOT_API_KEY", "DASHSCOPE_API_KEY", "XAI_API_KEY":
 			continue
