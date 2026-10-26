@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 3.0.0 — 2026-10-26
+
 - **Solo home selectors:** the Agent and repository selectors now use a flat transparent treatment in the composer toolbar, with a subtle hover/open tint instead of a raised gradient and glow.
 
 - **Agent files editor:** fewer columns. Markdown files open in a single editor with an Edit / Split / Preview switch in the toolbar (no minimap), and version history opens from a toolbar button instead of taking a column on the right.
@@ -200,6 +202,8 @@ All notable public-release changes are documented here.
   prompts now say not to register backends and to self-test on
   `127.0.0.1:<app port>`. Sandboxes on an older runtime bundle keep the old
   behavior until the bundle updates.
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:3.0.0`.
 
 ## 2.2.0 — 2026-10-15
 
