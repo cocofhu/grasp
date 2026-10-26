@@ -394,17 +394,18 @@
       "close": "Close",
       "cta": "Finish install setup",
       "emptyTitle": "Finish first-time setup",
-      "emptyDesc": "Configure the model backend, API key and Git, create the Clarify / Implement / Test & review / Deliver Agents, and publish the Default Workflow. Does not start a run.",
-      "emptyDescCreate": "Configure the model backend, API key and Git, create this workspace's four Agents (prefixed with the workspace name), and publish the Default Workflow. Does not start a run.",
+      "emptyDesc": "Configure the model backend, API key and Git, create the Clarify / Implement / Test & review / Deliver Agents plus an empty Solo Agent, and publish the Default Workflow. Does not start a run.",
+      "emptyDescCreate": "Configure the model backend, API key and Git, create this workspace's four Agents (prefixed with the workspace name), add an empty Solo Agent, and publish the Default Workflow. Does not start a run.",
       "workflowName": "Default Workflow",
       "steps": {
         "prefs": "Preferences",
-        "model": "Model backend",
+        "model": "Configure coding tool",
         "key": "API key",
         "git": "Git",
         "team": "Team",
         "workflow": "Workflow preview",
-        "done": "Done"
+        "done": "Done",
+        "credentials": "Configure credentials"
       },
       "language": {
         "detected": "You can switch languages later from the bottom-left corner.",
@@ -564,7 +565,8 @@
         "wfLabel": "Workflow",
         "wfValue": "Default Workflow (published)",
         "inputSub": "Your request",
-        "outputSub": "Delivery"
+        "outputSub": "Delivery",
+        "agentsWithSolo": "{n} + Solo"
       },
       "success": {
         "title": "Setup ready",
@@ -592,15 +594,45 @@
       "stepOf": "Step {n} of {total}",
       "railDesc": {
         "prefs": "Language, theme, previews",
-        "model": "API key or coding tool",
+        "model": "Coding tool, credential, and model",
         "key": "Model and key",
         "git": "Signature and repository",
         "team": "Agents to create",
         "workflow": "Default workflow to publish",
-        "done": "Generate and run once"
+        "done": "Generate and run once",
+        "credentials": "Connect a coding tool or API account"
       },
       "prefsMeta": "Interface language and theme, plus the preview abilities Agents get.",
-      "prefsMetaCreate": "Workspace name, plus the preview abilities Agents get."
+      "prefsMetaCreate": "Workspace name, plus the preview abilities Agents get.",
+      "ready": "Ready",
+      "expandSetup": "Set up",
+      "collapseSetup": "Collapse",
+      "modelSetup": {
+        "description": "Choose a model using the credentials saved in the previous step, or select an existing model configuration.",
+        "selected": "Default team model",
+        "selectedHint": "All four Agents use this model by default. You can customize each later.",
+        "title": "Add a model",
+        "hint": "Choose a coding tool and a saved credential, then select the model."
+      },
+      "gitSetup": {
+        "title": "Add Git credentials",
+        "hint": "Connect GitHub, GitLab, or SSH here. Saved credentials are ready to use."
+      },
+      "solo": {
+        "emptyShort": "Empty Agent for Solo",
+        "description": "An empty Solo Agent is created by default for Solo conversations, using the model and Git settings selected above."
+      },
+      "toolSetup": {
+        "title": "Configure coding tool",
+        "name": "Configuration name",
+        "description": "Choose a coding tool, connect an existing or new credential, then select a model.",
+        "start": "Continue setup",
+        "existing": "Or use a saved configuration"
+      },
+      "credentialsSetup": {
+        "description": "Choose a credential type and connect your account. Saving continues to coding-tool setup.",
+        "required": "Configure at least one usable coding-tool credential or API account first."
+      }
     },
     "tokenByModel": {
       "tipTitle": "Usage tip",
@@ -1224,6 +1256,8 @@
         "showSecret": "Show",
         "hideSecret": "Hide",
         "secretApiKey": "API Key",
+        "secretOpenCodeKey": "OpenCode key",
+        "secretDeepSeekKey": "DeepSeek key",
         "secretLoginFile": "Login file",
         "secretPrivateKey": "Private key",
         "secretKnownHosts": "Known hosts",
@@ -1239,7 +1273,7 @@
           "codebuddy": "CodeBuddy",
           "trae": "Trae",
           "codex": "Codex",
-          "opencode": "Model provider API key",
+          "opencode": "OpenCode CLI",
           "github": "GitHub",
           "gitlab": "GitLab",
           "ssh_key": "SSH private key",
@@ -4570,7 +4604,24 @@
         "unavailable": "Unavailable",
         "reset": "That model is no longer in the configuration. The primary model is selected again.",
         "pending": "This reply still uses the previous model. The next message uses the new one.",
-        "catalogFailed": "The model list did not load. The saved model stays selected."
+        "catalogFailed": "The model list did not load. The saved model stays selected.",
+        "reasoningEffort": "Reasoning effort",
+        "effortAuto": "Default",
+        "effortReset": "Reset reasoning effort",
+        "backToModels": "Back to models",
+        "effortResetNotice": "The selected reasoning effort is unavailable. Restored the model default.",
+        "effortPending": "The current reply keeps its settings. New reasoning effort applies from the next message.",
+        "effortLevels": {
+          "off": "Off",
+          "none": "None",
+          "minimal": "Minimal",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
+          "xhigh": "Extra high",
+          "max": "Max",
+          "ultra": "Ultra"
+        }
       },
       "agentSelect": {
         "placeholder": "Choose Agent",
@@ -4713,7 +4764,7 @@
         "agent_not_found": "Agent not found",
         "model_not_in_configuration": "That model is not in this Agent's model configuration",
         "model_unavailable": "That model is no longer available",
-        "model_switch_failed": "The model could not be switched, so the previous model stays selected",
+        "model_switch_failed": "Could not switch model settings. Restored the previous model and reasoning effort.",
         "project_not_found": "Repository not found",
         "name_required": "Enter a repository name",
         "name_too_long": "Repository names are at most 80 characters",
@@ -4728,7 +4779,8 @@
         "env_key_invalid": "Invalid variable name",
         "env_key_reserved": "Contains a variable name reserved by the platform",
         "env_key_sensitive": "Contains a sensitive variable; use a credential binding instead",
-        "binding_key_invalid": "The credential binding variable name is not allowed"
+        "binding_key_invalid": "The credential binding variable name is not allowed",
+        "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level."
       }
     },
     "projects": {

@@ -19,10 +19,15 @@ const box = vi.hoisted(() => ({
     initialModelId?: string
     currentModelId?: string
     currentModelSet?: boolean
+    reasoningEffort?: string
+    reasoningEfforts?: string[]
   }>,
   status: undefined as undefined | import('vue').Ref<string>,
   link: undefined as undefined | import('vue').Ref<string>,
   currentModelId: undefined as undefined | import('vue').Ref<string>,
+  currentReasoningEffort: undefined as undefined | import('vue').Ref<string>,
+  modelChangePending: undefined as undefined | import('vue').Ref<boolean>,
+  setCurrentReasoningEffort: undefined as undefined | ReturnType<typeof vi.fn>,
   modelSwitchNotice: undefined as undefined | import('vue').Ref<string>,
   actionError: undefined as undefined | import('vue').Ref<string>,
   setCurrentModel: undefined as undefined | ReturnType<typeof vi.fn>,
@@ -58,6 +63,9 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     closed: computed(() => box.status?.value === 'closed'),
     canSend: computed(() => box.status?.value === 'starting' || box.status?.value === 'running'),
     currentModelId: box.currentModelId,
+    currentReasoningEffort: box.currentReasoningEffort,
+    modelChangePending: box.modelChangePending,
+    setCurrentReasoningEffort: (...args: unknown[]) => box.setCurrentReasoningEffort?.(...args),
     modelSwitchNotice: box.modelSwitchNotice,
     load: vi.fn(),
     send: vi.fn(),
@@ -71,7 +79,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import { resetCliCatalog } from '@/lib/agent/cliCatalog'
 
 const turns = (box.turns = ref<SoloTurn[]>([]))
-const sessionState = (box.session = ref({
+const sessionState = (box.session = ref<NonNullable<typeof box.session>['value']>({
   id: 's1',
   title: 'Solo',
   agentName: 'Coder',
@@ -84,6 +92,9 @@ const sessionState = (box.session = ref({
 const statusState = (box.status = ref('running'))
 const linkState = (box.link = ref('open'))
 const currentModelId = (box.currentModelId = ref(''))
+const currentReasoningEffort = (box.currentReasoningEffort = ref(''))
+const modelChangePending = (box.modelChangePending = ref(false))
+const setCurrentReasoningEffort = (box.setCurrentReasoningEffort = vi.fn(async () => true))
 const modelSwitchNotice = (box.modelSwitchNotice = ref(''))
 const actionError = (box.actionError = ref(''))
 const setCurrentModel = (box.setCurrentModel = vi.fn(async () => true))
@@ -209,6 +220,66 @@ describe('SoloSessionPane', () => {
     expect(select.get('button').attributes('disabled')).toBeDefined()
     wrapper.unmount()
     modelSwitchNotice.value = ''
+  })
+
+  it('shows the saved model name and uses only the active session effort capabilities', async () => {
+    resetCliCatalog()
+    const { api } = await import('@/lib/api/api')
+    vi.mocked(api.listAgents).mockResolvedValueOnce([{ name: 'Coder', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' } }] as never)
+    vi.mocked(api.listModelConfigurations).mockResolvedValueOnce({ items: [{
+      id: 'kimi-config', name: 'Kimi', backend: 'deepseek_harness', state: 'active', revision: 1,
+      binding: { kind: 'connection', connectionId: 'kimi-service', modelId: 'kimi-k3.1-pro' },
+    }] })
+    vi.mocked(api.listModelConnections).mockResolvedValueOnce({ items: [{
+      id: 'kimi-service', name: 'TokenHub API', providerId: 'tokenhub', protocol: 'openai-chat-completions', baseUrl: 'https://api.example.test/v1', credentialId: 'key', auth: { scheme: 'bearer' }, state: 'active', revision: 1,
+      models: [{ id: 'kimi-k3.1-pro', source: 'manual', reasoningEfforts: ['low', 'high', 'ultra'] }],
+    }] })
+    currentModelId.value = ''
+    currentReasoningEffort.value = 'high'
+    modelChangePending.value = false
+    sessionState.value = { ...sessionState.value, reasoningEffort: 'high', reasoningEfforts: ['low', 'high'] }
+    setCurrentReasoningEffort.mockClear()
+    setCurrentModel.mockClear()
+    const wrapper = mountPane(pages)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).toContain('Kimi')
+    expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).not.toContain('kimi-k3.1-pro')
+    expect(wrapper.get('[data-testid="solo-model-select-trigger"] [data-vendor-mark="kimi"] img').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="solo-model-select-trigger"] [data-vendor-mark="deepseek_harness"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="solo-model-select-trigger"]').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-testid="solo-effort-panel"]')).not.toBeNull()
+    expect(document.activeElement).toBe(document.querySelector('[data-testid="solo-effort-slider"]'))
+    ;(document.querySelector('[data-testid="solo-effort-back"]') as HTMLButtonElement).click()
+    await flushPromises()
+    const modelOption = document.querySelector('[data-testid="solo-model-option-kimi-k3.1-pro"]')
+    expect(modelOption?.textContent).toContain('Kimi')
+    expect(modelOption?.textContent).not.toContain('kimi-k3.1-pro')
+    expect(modelOption?.querySelector('[data-vendor-mark="kimi"] img')).not.toBeNull()
+    ;(document.querySelector('[data-testid="solo-effort-open"]') as HTMLButtonElement).click()
+    await flushPromises()
+    const slider = document.querySelector<HTMLInputElement>('[data-testid="solo-effort-slider"]')!
+    expect(slider.max).toBe('2')
+    expect(slider.value).toBe('2')
+    expect(document.activeElement).toBe(slider)
+    slider.value = '1'
+    slider.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(setCurrentReasoningEffort).toHaveBeenCalledWith('low')
+    ;(document.querySelector('[data-testid="solo-effort-reset"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(setCurrentReasoningEffort).toHaveBeenLastCalledWith('')
+    expect(setCurrentModel).not.toHaveBeenCalled()
+    // A model write must not expose the previous model's levels on its target.
+    modelChangePending.value = true
+    await flushPromises()
+    expect(wrapper.find('[data-testid="solo-model-effort-label"]').exists()).toBe(false)
+    expect(document.querySelector('[data-testid="solo-effort-panel"]')).toBeNull()
+    wrapper.unmount()
+    sessionState.value = { ...sessionState.value, reasoningEffort: undefined, reasoningEfforts: undefined }
+    currentReasoningEffort.value = ''
+    modelChangePending.value = false
+    resetCliCatalog()
   })
 
   it('hides the selector on a closed session and disables it when sending is blocked', async () => {

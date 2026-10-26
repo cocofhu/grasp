@@ -9,6 +9,8 @@ const credentialItems = [
   { id: 'codebuddy-api', purpose: 'tool_auth', toolId: 'codebuddy', secretKind: 'api_key', issuer: 'codebuddy', enabled: true, type: 'ai', name: 'CodeBuddy', provider: 'codebuddy', envKey: 'GRASP_CODEBUDDY_API_KEY', configured: false },
   { id: 'trae-api', purpose: 'tool_auth', toolId: 'trae', secretKind: 'token', issuer: 'trae', enabled: true, type: 'ai', name: 'Trae', provider: 'trae', envKey: 'GRASP_TRAE_API_KEY', configured: false },
   { id: 'codex-login', purpose: 'tool_auth', toolId: 'codex', secretKind: 'login_file', issuer: 'codex', enabled: true, type: 'ai', name: codexAlias, provider: 'codex', envKey: 'GRASP_CODEX_AUTH_JSON', configured: false },
+  { id: 'opencode-official', purpose: 'tool_auth', toolId: 'opencode', secretKind: 'api_key', issuer: 'opencode', enabled: true, type: 'ai', name: 'OpenCode official account', provider: 'opencode', envKey: 'GRASP_OPENCODE_API_KEY', configured: true, masked: 'oc-…4321' },
+  { id: 'deepseek-official', purpose: 'tool_auth', toolId: 'deepseek_harness', secretKind: 'api_key', issuer: 'deepseek_harness', enabled: true, type: 'ai', name: 'DeepSeek official account', provider: 'deepseek_harness', envKey: 'GRASP_DEEPSEEK_API_KEY', configured: true, masked: 'ds-…8765' },
   { id: 'deepseek-api', purpose: 'model_api', issuer: 'deepseek', secretKind: 'api_key', type: 'ai', name: 'DeepSeek API', provider: 'deepseek', configured: false, enabled: true },
   { id: 'model-api', purpose: 'model_api', issuer: 'deepseek', secretKind: 'api_key', type: 'ai', name: 'DeepSeek model', provider: 'deepseek', configured: true, enabled: true, masked: 'model-…5678' },
   { id: 'github-token', purpose: 'git', issuer: 'github', secretKind: 'token', enabled: true, type: 'git', name: 'GitHub team', provider: 'github', envKey: 'GITHUB_TOKEN', configured: false },
@@ -123,8 +125,12 @@ test('credential lists separate Agent CLI and API accounts with provider icons a
   }
   await expect(accounts.getByRole('heading', { level: 3 })).toHaveText('API 账号')
   await expect(coding.getByRole('heading', { level: 3 })).toHaveText('Agent CLI')
-  await expect(coding.getByTestId('workspace-credential-row')).toHaveCount(5)
-  await expect(coding.locator('.credentials-section-count')).toHaveText('5')
+  await expect(coding.getByTestId('workspace-credential-row')).toHaveCount(7)
+  await expect(coding.locator('.credentials-section-count')).toHaveText('7')
+  await expect(coding).toContainText('OpenCode official account')
+  await expect(coding).toContainText('DeepSeek official account')
+  await expect(accounts).not.toContainText('OpenCode official account')
+  await expect(accounts).not.toContainText('DeepSeek official account')
   await expect(accounts.getByTestId('workspace-credential-row')).toHaveCount(2)
   await expect(accounts.locator('.credentials-section-count')).toHaveText('2')
   await expect(accounts.getByTestId('workspace-credential-row').filter({ hasText: 'DeepSeek model' })).toBeVisible()

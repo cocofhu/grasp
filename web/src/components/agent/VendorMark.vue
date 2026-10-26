@@ -8,9 +8,21 @@ import cursorLogo from '@/assets/provider-logos/cursor.svg'
 import deepseekLogo from '@/assets/provider-logos/deepseek.svg'
 import googleLogo from '@/assets/provider-logos/google.svg'
 import moonshotLogo from '@/assets/provider-logos/moonshot.svg'
+import kimiLogo from '@/assets/provider-logos/kimi.svg'
+import kimiDarkLogo from '@/assets/provider-logos/kimi-dark.svg'
 import openaiLogo from '@/assets/provider-logos/openai.svg'
+import opencodeLogo from '@/assets/provider-logos/opencode.svg'
 import traeLogo from '@/assets/provider-logos/trae.svg'
 import xaiLogo from '@/assets/provider-logos/xai.svg'
+import qwenLogo from '@/assets/provider-logos/qwen.svg'
+import doubaoLogo from '@/assets/provider-logos/doubao.svg'
+import siliconflowLogo from '@/assets/provider-logos/siliconflow.svg'
+import minimaxLogo from '@/assets/provider-logos/minimax.svg'
+import zhipuLogo from '@/assets/provider-logos/zhipu.svg'
+import zaiLogo from '@/assets/provider-logos/zai.svg'
+import hunyuanLogo from '@/assets/provider-logos/hunyuan.svg'
+import qianfanLogo from '@/assets/provider-logos/qianfan.svg'
+import openrouterLogo from '@/assets/provider-logos/openrouter.svg'
 import Icon from '@/components/ui/Icon.vue'
 import { monogramColor, vendorLabel, vendorLogoProvider } from '@/lib/agent/cliModelView'
 import { theme } from '@/lib/shared/theme'
@@ -34,23 +46,36 @@ const ASSETS: Record<string, string> = {
   claude: claudeLogo,
   claude_code: claudeLogo,
   openai: openaiLogo,
+  opencode: opencodeLogo,
   google: googleLogo,
   xai: xaiLogo,
   deepseek: deepseekLogo,
   deepseek_harness: deepseekLogo,
   moonshot: moonshotLogo,
+  kimi: kimiLogo,
   bytedance: bytedanceLogo,
   cursor: cursorLogo,
   codex: codexLogo,
   codebuddy: codebuddyLogo,
   trae: traeLogo,
+  qwen: qwenLogo,
+  doubao: doubaoLogo,
+  siliconflow: siliconflowLogo,
+  minimax: minimaxLogo,
+  zhipu: zhipuLogo,
+  zai: zaiLogo,
+  hunyuan: hunyuanLogo,
+  qianfan: qianfanLogo,
+  openrouter: openrouterLogo,
 }
 
 /** These marks ship with wide built-in padding and read tiny at icon sizes. */
 const PADDED = new Set(['openai', 'codex'])
+const COLOR_ASSETS = new Set(['qwen', 'doubao', 'siliconflow', 'minimax', 'zhipu', 'hunyuan', 'qianfan'])
 
 const assetKey = computed(() => (props.backend ? props.vendor : vendorLogoProvider(props.vendor)))
-const asset = computed(() => (props.unknown ? '' : ASSETS[assetKey.value] || ''))
+const asset = computed(() => props.unknown ? '' : assetKey.value === 'kimi' && theme.value === 'dark' ? kimiDarkLogo : ASSETS[assetKey.value] || '')
+const colorAsset = computed(() => COLOR_ASSETS.has(assetKey.value))
 const markPx = computed(() => Math.round(props.size * (PADDED.has(assetKey.value) ? 0.82 : 0.58)))
 const label = computed(() => (props.backend ? props.vendor : vendorLabel(props.vendor)))
 const initial = computed(() => label.value.charAt(0).toUpperCase() || '?')
@@ -61,6 +86,7 @@ const radius = computed(() => (props.size >= 28 ? 9 : props.size >= 20 ? 6 : 4))
 <template>
   <span
     class="vendor-mark relative inline-flex shrink-0 items-center justify-center border border-line bg-surface"
+    :class="{ 'vendor-mark--color': colorAsset && theme === 'dark' }"
     :style="{ width: `${size}px`, height: `${size}px`, borderRadius: `${radius}px` }"
     role="img"
     :aria-label="label"
@@ -73,7 +99,7 @@ const radius = computed(() => (props.size >= 28 ? 9 : props.size >= 20 ? 6 : 4))
       alt=""
       aria-hidden="true"
       class="object-contain"
-      :class="theme === 'dark' ? 'invert' : ''"
+      :class="theme === 'dark' && !colorAsset && assetKey !== 'kimi' ? 'invert' : ''"
       :style="{ width: `${markPx}px`, height: `${markPx}px` }"
     />
     <span
@@ -111,6 +137,14 @@ a:focus-visible .vendor-mark,
 [role="option"]:hover .vendor-mark {
   border-color: rgb(var(--c-accent) / .45);
   background-color: rgb(var(--c-elevated));
+}
+.vendor-mark--color,
+button:hover .vendor-mark--color,
+button:focus-visible .vendor-mark--color,
+a:hover .vendor-mark--color,
+a:focus-visible .vendor-mark--color,
+[role="option"]:hover .vendor-mark--color {
+  background-color: #fff;
 }
 @media (prefers-reduced-motion: reduce) {
   .vendor-mark { transition: none; }

@@ -78,6 +78,16 @@ func TestArgsReasoningEffort(t *testing.T) {
 	if got := strings.Join(c.Args(opts, "hi", ""), " "); strings.Contains(got, "model_reasoning_effort") {
 		t.Fatalf("auto effort leaked into argv: %s", got)
 	}
+	t.Setenv(envReasoningEffort, "high")
+	opts.ReasoningEffortSet = true
+	opts.ReasoningEffort = "ultra"
+	if got := strings.Join(c.Args(opts, "hi", ""), " "); !strings.Contains(got, "model_reasoning_effort=ultra") || strings.Contains(got, "model_reasoning_effort=high") {
+		t.Fatalf("chat effort did not override legacy process default: %s", got)
+	}
+	opts.ReasoningEffort = ""
+	if got := strings.Join(c.Args(opts, "hi", ""), " "); strings.Contains(got, "model_reasoning_effort") {
+		t.Fatalf("explicit tool-default reset fell back to legacy environment: %s", got)
+	}
 }
 
 func TestParseThreadEvents(t *testing.T) {
@@ -117,6 +127,26 @@ func TestParseThreadEvents(t *testing.T) {
 	fail := c.ParseLine([]byte(`{"type":"turn.failed","error":{"message":"failed to refresh token"}}`))
 	if fail.StopReason != "failed" || len(fail.Msgs) != 1 || fail.Msgs[0].Text != codexLoginRepaste {
 		t.Fatalf("fail=%+v", fail)
+	}
+}
+
+func TestSessionEffortOverridesCustomFlagWithoutChangingLegacyDefaultOrder(t *testing.T) {
+	t.Setenv(envReasoningEffort, "high")
+	var c codec
+	opts := provider.OpenOptions{ReasoningEffortSet: true, ReasoningEffort: "ultra", CustomArgs: []string{"-c", "model_reasoning_effort=low"}}
+	got := strings.Join(c.Args(opts, "hi", ""), " ")
+	if !strings.HasSuffix(got, "-c model_reasoning_effort=low -c model_reasoning_effort=ultra hi") {
+		t.Fatalf("custom flag overrode session choice: %s", got)
+	}
+	opts.ReasoningEffort = ""
+	got = strings.Join(c.Args(opts, "hi", ""), " ")
+	if !strings.HasSuffix(got, "-c model_reasoning_effort=low hi") || strings.Contains(got, "model_reasoning_effort=high") {
+		t.Fatalf("tool default reset changed custom defaults: %s", got)
+	}
+	opts.ReasoningEffortSet = false
+	got = strings.Join(c.Args(opts, "hi", ""), " ")
+	if !strings.HasSuffix(got, "-c model_reasoning_effort=high -c model_reasoning_effort=low hi") {
+		t.Fatalf("legacy default precedence changed: %s", got)
 	}
 }
 

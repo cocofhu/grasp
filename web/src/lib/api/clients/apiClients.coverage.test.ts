@@ -24,6 +24,16 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
     vi.unstubAllGlobals()
   })
 
+  it('reads an API-account model catalog by encoded connection ID without sending credentials or a body', async () => {
+    const result = { models: [{ id: 'provider/Exact.Model:latest', name: 'Provider model', source: 'discovered' }] }
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    expect(await workspaceClient.listModelConnectionModels('team/account name')).toEqual(result)
+    const [url, options] = vi.mocked(fetch).mock.calls[0]!
+    expect(String(url)).toBe('/api/workspace/model-connections/team%2Faccount%20name/models')
+    expect(options?.body).toBeUndefined()
+    expect(options?.method || 'GET').toBe('GET')
+  })
+
   it('workspaceClient builds audit/credential/draft URLs and issues req', async () => {
     await workspaceClient.getWorkspace()
     await workspaceClient.getWorkspace()

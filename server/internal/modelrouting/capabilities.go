@@ -32,9 +32,9 @@ func Capabilities() []Capability {
 		{ToolID: "trae", Modes: []string{"platform"}, Protocols: []string{}, Transport: "acp", VersionConstraint: "1.x", AdapterState: "existing", Verification: "not-run", Evidence: []Evidence{{Kind: "tool-documentation", URL: "https://docs.trae.cn/cli_agent-client-protocol"}}},
 		{ToolID: "claude_code", Modes: []string{"platform", "connection"}, Protocols: []string{ProtocolAnthropic}, Transport: "stream-json", VersionConstraint: "deployed CLI", AdapterState: "existing", Verification: "not-run", Evidence: []Evidence{{Kind: "tool-documentation", URL: "https://code.claude.com/docs/en/llm-gateway-connect"}}},
 		{ToolID: "codebuddy", Modes: []string{"platform", "connection"}, Protocols: []string{ProtocolChat}, Transport: "acp", VersionConstraint: "deployed CLI", AdapterState: "existing", Verification: "not-run", Evidence: []Evidence{{Kind: "tool-documentation", URL: "https://www.codebuddy.cn/docs/cli/models"}, {Kind: "tool-documentation", URL: "https://www.codebuddy.cn/docs/cli/env-vars"}, {Kind: "reviewed-client", URL: "https://www.npmjs.com/package/@tencent-ai/codebuddy-code/v/2.162.0"}}},
-		{ToolID: "opencode", Modes: []string{"connection"}, Protocols: all, Transport: "exec-json", VersionConstraint: "deployed CLI", AdapterState: "existing", Verification: "not-run", Evidence: []Evidence{{Kind: "tool-documentation", URL: "https://opencode.ai/docs/providers/#custom-provider"}}},
+		{ToolID: "opencode", Modes: []string{"platform", "connection"}, Protocols: all, Transport: "exec-json", VersionConstraint: "deployed CLI", AdapterState: "existing", Verification: "not-run", Evidence: []Evidence{{Kind: "tool-documentation", URL: "https://opencode.ai/docs/providers/#opencode-zen"}, {Kind: "tool-documentation", URL: "https://opencode.ai/docs/providers/#custom-provider"}}},
 		{ToolID: "codex", Modes: []string{"platform", "connection"}, Protocols: []string{ProtocolResponses}, Transport: "exec-json", VersionConstraint: "deployed CLI", AdapterState: "existing", Verification: "not-run", Evidence: []Evidence{{Kind: "tool-documentation", URL: "https://learn.chatgpt.com/docs/config-file/config-advanced"}}},
-		{ToolID: "deepseek_harness", Modes: []string{"connection"}, Protocols: all, Transport: "acp", VersionConstraint: "0.2.1-rc.2", AdapterState: "existing", Verification: "not-run", RouteProfiles: []string{"deepseek-native"}, Evidence: []Evidence{{Kind: "official-source", URL: "https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.1-rc.2/packages/llm/llm-pi-ai/README.md"}}},
+		{ToolID: "deepseek_harness", Modes: []string{"platform", "connection"}, Protocols: all, Transport: "acp", VersionConstraint: "0.2.1-rc.2", AdapterState: "existing", Verification: "not-run", RouteProfiles: []string{"deepseek-native"}, Evidence: []Evidence{{Kind: "official-source", URL: "https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.1-rc.2/packages/llm/llm-deepseek/src/config.ts"}, {Kind: "official-source", URL: "https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.1-rc.2/packages/llm/llm-pi-ai/README.md"}}},
 	}
 	for i := range capabilities {
 		if capabilities[i].ToolID == "cursor" || capabilities[i].ToolID == "codebuddy" {
@@ -47,6 +47,7 @@ func Capabilities() []Capability {
 		case "codebuddy":
 			capabilities[i].RoleNames = []string{"main", "fast", "reasoning", "subagent"}
 		case "opencode":
+			capabilities[i].VersionConstraint = ">=1.4.1 (platform mode)"
 			capabilities[i].RoleNames = []string{"main", "fast"}
 		case "codex", "deepseek_harness":
 			capabilities[i].RoleNames = []string{"main"}
@@ -93,6 +94,13 @@ func ValidateBinding(backend string, binding Binding, connection *Connection) er
 		}
 		if len(binding.ToolSettings.ModelRoles) != 0 {
 			return fmt.Errorf("platform role mappings are not supported")
+		}
+		if backend == "opencode" {
+			for _, id := range append([]string{binding.ModelID}, binding.AuxiliaryModelIDs...) {
+				if id != "" && (!strings.HasPrefix(id, "opencode/") || strings.TrimPrefix(id, "opencode/") == "" || strings.Contains(strings.TrimPrefix(id, "opencode/"), "/")) {
+					return fmt.Errorf("OpenCode platform models must belong to OpenCode Zen (opencode/model)")
+				}
+			}
 		}
 		return nil
 	}

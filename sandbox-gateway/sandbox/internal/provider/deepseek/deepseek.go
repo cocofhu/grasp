@@ -36,6 +36,26 @@ const startupPatch = `- id: acp
   disabled: true
 - id: deepseek-account
   disabled: true
+- id: llm-deepseek-account
+  disabled: true
+- id: llm-pi-ai
+  disabled: true
+- id: settings
+  disabled: true
+- id: config-editor
+  disabled: true
+- id: llm-deepseek
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+    baseURL: https://api.deepseek.com/anthropic
+- id: web-search-deepseek
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+    baseURL: https://api.deepseek.com/anthropic/v1
+- id: web-deepseek-api
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+    baseURL: https://api.deepseek.com/v1/tools
 `
 
 type Provider struct{}
@@ -58,7 +78,7 @@ func (*Provider) ListModels(context.Context) ([]provider.Model, error) {
 
 func (*Provider) AuthEnv(env []string) []string {
 	for _, key := range []string{"DEEPSEEK_API_KEY", "GRASP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY"} {
-		if value := strings.TrimSpace(common.GetEnvValue(env, key)); value != "" {
+		if value := common.GetEnvValue(env, key); value != "" {
 			env = common.UpsertEnv(env, "DEEPSEEK_API_KEY", value)
 			break
 		}
@@ -127,12 +147,72 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		cleanup()
 		return nil, err
 	}
-	sess := &session{Session: acpx.Wrap(panel), cleanup: cleanup, selectedRoute: route}
+	if effort := strings.TrimSpace(opts.ReasoningEffort); effort != "" {
+		configID, current, effortErr := reasoningOption(panel.ConfigOptions, effort)
+		if effortErr == nil && current != effort {
+			effortErr = panel.SetConfigOption(handshakeCtx, configID, effort)
+			if effortErr == nil {
+				_, confirmed, confirmErr := reasoningOption(panel.ConfigOptions, effort)
+				if confirmErr != nil || confirmed != effort {
+					effortErr = fmt.Errorf("dsh: reasoning effort selection was not confirmed by the agent")
+				}
+			}
+		}
+		if effortErr != nil {
+			_ = panel.Close()
+			cleanup()
+			return nil, effortErr
+		}
+	}
+	currentEffort, efforts := reasoningOptions(panel.ConfigOptions)
+	sess := &session{Session: acpx.Wrap(panel), cleanup: cleanup, selectedRoute: route, currentEffort: currentEffort, efforts: efforts}
 	go func() {
 		<-sess.Done()
 		cleanup()
 	}()
 	return sess, nil
+}
+
+func reasoningOptions(options []acp.ConfigOption) (string, []string) {
+	for _, option := range options {
+		if option.Category != "thought_level" || option.ID == "" {
+			continue
+		}
+		values := append([]acp.ConfigOptionValue(nil), option.Options...)
+		for _, group := range option.Groups {
+			values = append(values, group.Options...)
+		}
+		seen := map[string]bool{}
+		out := []string{}
+		for _, value := range values {
+			if value.Value != "" && !seen[value.Value] {
+				out = append(out, value.Value)
+				seen[value.Value] = true
+			}
+		}
+		return option.CurrentValue, out
+	}
+	return "", nil
+}
+
+// reasoningOption uses the exact thought-level option and opaque values
+// advertised after model negotiation. A model name never implies support.
+func reasoningOption(options []acp.ConfigOption, effort string) (id, current string, err error) {
+	for _, option := range options {
+		if option.Category != "thought_level" {
+			continue
+		}
+		values := append([]acp.ConfigOptionValue(nil), option.Options...)
+		for _, group := range option.Groups {
+			values = append(values, group.Options...)
+		}
+		for _, value := range values {
+			if value.Value == effort && option.ID != "" {
+				return option.ID, option.CurrentValue, nil
+			}
+		}
+	}
+	return "", "", fmt.Errorf("dsh: reasoning effort %q is not advertised by the selected model", effort)
 }
 
 // modelValue preserves the exact value advertised by ACP. Bare model IDs are
@@ -203,6 +283,14 @@ type session struct {
 	provider.Session
 	cleanup       func()
 	selectedRoute string
+	currentEffort string
+	efforts       []string
+}
+
+// ReasoningOptions reads the immutable post-handshake snapshot; it never races
+// with ACP notifications updating Panel.ConfigOptions during prompts.
+func (s *session) ReasoningOptions() (string, []string) {
+	return s.currentEffort, append([]string(nil), s.efforts...)
 }
 
 func (s *session) Info() provider.AgentInfo {

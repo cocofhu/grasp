@@ -91,6 +91,9 @@ func normalizeCredentialDomainInput(in *CredentialInput) error {
 		if in.ToolID == "codex" && in.SecretKind != "login_file" {
 			return ErrCredentialPurpose
 		}
+		if (in.ToolID == "opencode" || in.ToolID == "deepseek_harness") && in.SecretKind != "api_key" {
+			return ErrCredentialPurpose
+		}
 		if in.ToolID != "codex" && in.SecretKind != "api_key" && in.SecretKind != "token" {
 			return ErrCredentialPurpose
 		}

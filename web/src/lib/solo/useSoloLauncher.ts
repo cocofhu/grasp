@@ -10,6 +10,8 @@ import { soloPrefs } from './soloPrefs'
 import { isSoloLimitError, soloErrorText } from './soloErrors'
 import { soloCreateChoices } from './sessionRepos'
 import { useSoloSessions } from './useSoloSessions'
+import { ONBOARDING_SOLO_AGENT_NAME } from '@/lib/pm/onboardingWizard'
+import { firstInstallCompletedAt } from '@/lib/pm/firstInstall'
 
 /**
  * Agent / repository selection and session creation shared by the home
@@ -31,12 +33,15 @@ export function useSoloLauncher() {
   const projectIds = ref<string[]>(soloPrefs.lastProjects())
   const branches = ref<Record<string, string>>({})
   const initialModelId = ref('')
+  const reasoningEffort = ref('')
   const loading = ref(false)
   const creating = ref(false)
   const error = ref('')
   const limitOpen = ref(false)
   // Deep-link dialogs turn this off so a preselect does not overwrite the home page's ids.
   let persistProjects = true
+  let hasLoaded = false
+  let loadGeneration = 0
 
   const agent = computed(() => agents.value.find((a) => a.name === agentName.value) ?? null)
   const configuration = computed(() => {
@@ -50,6 +55,7 @@ export function useSoloLauncher() {
   })
   const modelChoices = computed(() => configuredModelChoices({
     binding: configuration.value?.binding,
+    configurationName: configuration.value?.name,
     backend: configuration.value?.backend || agent.value?.acpBackend || '',
     cliModels: cliModels.value,
     connectionModels: connection.value?.models,
@@ -59,7 +65,11 @@ export function useSoloLauncher() {
   const canStart = computed(() => !!agent.value && !creating.value)
 
   watch(agentName, (v) => soloPrefs.setLastAgent(v))
-  watch(agentName, () => { initialModelId.value = '' })
+  watch(agentName, () => { initialModelId.value = ''; reasoningEffort.value = '' })
+  watch([initialModelId, modelChoices], ([modelId, choices]) => {
+    const selected = modelId ? choices.find(choice => choice.id === modelId) : choices[0]
+    if (reasoningEffort.value && !selected?.efforts?.includes(reasoningEffort.value)) reasoningEffort.value = ''
+  })
   watch(modelChoices, (choices) => {
     const selected = initialModelId.value
     if (!selected) return
@@ -83,8 +93,13 @@ export function useSoloLauncher() {
     }
     branches.value = next
   })
+  watch(firstInstallCompletedAt, (completedAt) => {
+    if (completedAt && hasLoaded) void load()
+  })
 
   async function load() {
+    hasLoaded = true
+    const generation = ++loadGeneration
     loading.value = true
     try {
       const [a, p, configs, services] = await Promise.all([
@@ -94,15 +109,19 @@ export function useSoloLauncher() {
         api.listModelConnections().catch(() => ({ items: [] as ModelConnection[] })),
         store.refresh(),
       ])
+      if (generation !== loadGeneration) return
       agents.value = a
       projects.value = p
       configurations.value = configs.items
       connections.value = services.items
       if (agentName.value && !a.some((x) => x.name === agentName.value)) agentName.value = ''
-      if (!agentName.value && a.length === 1) agentName.value = a[0]!.name
+      if (!agentName.value) {
+        const defaultAgent = a.find((item) => item.name === ONBOARDING_SOLO_AGENT_NAME)
+        agentName.value = defaultAgent?.name || (a.length === 1 ? a[0]!.name : '')
+      }
       projectIds.value = projectIds.value.filter((id) => p.some((x) => x.id === id))
     } finally {
-      loading.value = false
+      if (generation === loadGeneration) loading.value = false
     }
   }
 
@@ -151,10 +170,17 @@ export function useSoloLauncher() {
         error.value = t('pages.solo.modelSelect.reset')
         return null
       }
+      const effective = initialModelId.value ? selected : modelChoices.value[0]
+      if (reasoningEffort.value && !effective?.efforts?.includes(reasoningEffort.value)) {
+        reasoningEffort.value = ''
+        error.value = t('pages.solo.modelSelect.effortResetNotice')
+        return null
+      }
       const s = await api.createSoloSession({
         agentName: agentName.value,
         repos: soloCreateChoices(projectIds.value, branches.value),
         ...(initialModelId.value ? { initialModelId: initialModelId.value } : {}),
+        ...(reasoningEffort.value ? { reasoningEffort: reasoningEffort.value } : {}),
         title: title.trim() || undefined,
         text: text.trim() || undefined,
         images: images.length ? images : undefined,
@@ -183,6 +209,7 @@ export function useSoloLauncher() {
     projectIds,
     branches,
     initialModelId,
+    reasoningEffort,
     modelChoices,
     agent,
     loading,

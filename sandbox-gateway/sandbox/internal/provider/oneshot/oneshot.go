@@ -183,7 +183,7 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 		return nil, fmt.Errorf("one-shot agent %q not found on PATH (sandbox image lacks this CLI; rebuild it with AGENT_PROVIDERS including %q): %w",
 			bin, p.c.AgentName(), err)
 	}
-	if prepared.Connection != nil {
+	if prepared.Platform || (prepared.Connection != nil && p.Name() != provider.OpenCode) {
 		if err := modelconnection.CheckVersion(procCtx, p.Name(), path, prepared.Env); err != nil {
 			prepared.Cleanup()
 			return nil, err

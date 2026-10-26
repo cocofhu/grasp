@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -11,6 +12,26 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
+
+func TestConfiguredModelsCarryExactEffortsWithoutExpandingModels(t *testing.T) {
+	no := false
+	resolved := modelrouting.Resolved{Backend: "deepseek_harness", Binding: modelrouting.Binding{ModelID: "kimi", AuxiliaryModelIDs: []string{"fixed"}}, Connection: &modelrouting.Connection{ProviderID: "moonshot", Models: []modelrouting.Model{{ID: "kimi", ReasoningEfforts: []string{"quiet", "deep"}}, {ID: "fixed", Capabilities: modelrouting.ModelCapabilities{Reasoning: &no}}, {ID: "not-selected", ReasoningEfforts: []string{"ultra"}}}}}
+	raw, err := configuredModelsJSON(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var items []struct {
+		ID                string   `json:"id"`
+		ReasoningEfforts  []string `json:"reasoningEfforts"`
+		ReasoningDisabled bool     `json:"reasoningDisabled"`
+	}
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].ID != "kimi" || strings.Join(items[0].ReasoningEfforts, ",") != "quiet,deep" || items[1].ID != "fixed" || len(items[1].ReasoningEfforts) != 0 || !items[1].ReasoningDisabled {
+		t.Fatalf("wrong model capabilities: %s", raw)
+	}
+}
 
 func TestApplyModelBindingKeepsSecretSeparateAndClearsPreviousSource(t *testing.T) {
 	env := map[string]string{"ANTHROPIC_API_KEY": "old", "OPENAI_BASE_URL": "old", "GITHUB_TOKEN": "git", "MCP_URL": "mcp", "CODEBUDDY_BIG_SLOW_MODEL": "old-model", "CLAUDE_CODE_USE_VERTEX": "1"}
@@ -56,6 +77,40 @@ func TestApplyModelBindingFailureDoesNotFallback(t *testing.T) {
 	}
 	if _, err := PrepareBoundAuth(BackendCodex, map[string]string{EnvModelConnection: "{}"}, ""); err == nil {
 		t.Fatal("connection without a key accepted")
+	}
+}
+
+func TestApplyOfficialToolBindingReplacesConnectionAndOtherToolCredentials(t *testing.T) {
+	for _, tool := range []string{"opencode", "deepseek_harness"} {
+		t.Run(tool, func(t *testing.T) {
+			env := map[string]string{
+				EnvModelConnection: "old-connection", EnvModelAPIKey: "old-generic-key",
+				envauth.EnvOpenCodeAPIKey: "old-zen-key", envauth.EnvDeepSeekAPIKey: "old-deepseek-key",
+				"OPENCODE_API_KEY": "old-zen-key", "DEEPSEEK_API_KEY": "old-deepseek-key",
+				"GRASP_OPENCODE_PROVIDER": "third-party", "GRASP_OPENCODE_BASE_URL": "https://example.test/v1", "GITHUB_TOKEN": "git-test-key",
+			}
+			ref := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "official"}
+			if err := ApplyModelBinding(env, tool, ref, func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+				return modelrouting.Resolved{Backend: tool, CredentialID: "selected", Secret: "selected-test-key", Binding: modelrouting.Binding{Kind: "platform", CredentialID: "selected"}}, nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			key := CredentialEnvKeyForBackend(tool)
+			if key == "" || env[key] != "selected-test-key" || env[EnvModelCredentialID] != "selected" || env[EnvModelConnection] != "" || env[EnvModelAPIKey] != "" || env["GRASP_OPENCODE_BASE_URL"] != "" || env["GITHUB_TOKEN"] != "git-test-key" {
+				t.Fatal("official selection did not replace the previous model route")
+			}
+			prepared, err := PrepareBoundAuth(AcpBackend(tool), env, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tool == "opencode" {
+				if prepared["OPENCODE_API_KEY"] != "selected-test-key" || prepared["GRASP_OPENCODE_PROVIDER"] != "opencode" || prepared["DEEPSEEK_API_KEY"] != "" || prepared[envauth.EnvDeepSeekAPIKey] != "" {
+					t.Fatal("Zen selection retained another provider")
+				}
+			} else if prepared["DEEPSEEK_API_KEY"] != "selected-test-key" || prepared["OPENCODE_API_KEY"] != "" || prepared["GRASP_OPENCODE_PROVIDER"] != "" || prepared[envauth.EnvOpenCodeAPIKey] != "" {
+				t.Fatal("DeepSeek selection retained another provider")
+			}
+		})
 	}
 }
 

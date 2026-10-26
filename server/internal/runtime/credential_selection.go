@@ -22,7 +22,7 @@ type GitCredentialValue struct {
 type GitCredentialFunc func(credentialID string) (GitCredentialValue, bool)
 
 // CredentialEnvKeyForBackend is the workspace-credential env key for a coding
-// backend. OpenCode is selected through its own resolver and returns empty.
+// backend. Every platform credential is bound to its selected coding tool.
 func CredentialEnvKeyForBackend(backend string) string {
 	switch AcpBackend(strings.TrimSpace(backend)) {
 	case BackendCursor:
@@ -35,6 +35,8 @@ func CredentialEnvKeyForBackend(backend string) string {
 		return envauth.EnvTraeAPIKey
 	case BackendCodex:
 		return envauth.EnvCodexAuthFile
+	case BackendOpenCode:
+		return envauth.EnvOpenCodeAPIKey
 	case BackendDeepSeekHarness:
 		return envauth.EnvDeepSeekAPIKey
 	default:

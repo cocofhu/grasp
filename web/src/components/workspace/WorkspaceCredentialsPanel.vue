@@ -2,7 +2,8 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, useId, watch, type CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
-import AppModal from '@/components/ui/AppModal.vue'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
+import CredentialEditorSurface from './CredentialEditorSurface.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import Icon from '@/components/ui/Icon.vue'
 import ModelConnectionEditor from './ModelConnectionEditor.vue'
@@ -11,7 +12,7 @@ import ModelConfigurationManager from './ModelConfigurationManager.vue'
 import ModelRecordActions from './ModelRecordActions.vue'
 import { isModelCredential, modelProviderPreset, MODEL_PROTOCOLS, useRoutingCopy } from '@/lib/agent/modelRouting'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
-import { api, type CredentialItem, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
+import { api, type CredentialItem, type ModelConfiguration, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
 import {
@@ -26,7 +27,8 @@ import {
 } from '@/lib/workspace/credentialKinds'
 
 
-
+const props = withDefaults(defineProps<{ inline?: boolean; scope?: 'all' | 'model' | 'git'; view?: 'credentials' | 'models'; setup?: boolean; configurationId?: string }>(), { inline: false, scope: 'all', setup: false, configurationId: '' })
+const emit = defineEmits<{ changed: []; credentialSaved: [credential: CredentialItem]; modelSaved: [configuration: ModelConfiguration]; editing: [active: boolean] }>()
 const { t } = useI18n()
 const toast = useToast()
 const routingCopy = useRoutingCopy()
@@ -81,11 +83,15 @@ async function addFromMenu(kind: 'credential' | 'model') {
   if (kind === 'credential') openCreate()
   else { activeTab.value = 'models'; await nextTick(); await modelConfigurationManager.value?.openCreate() }
 }
-const activeTab = ref<'credentials' | 'models'>('credentials')
+const activeTab = ref<'credentials' | 'models'>(props.view || (props.scope === 'model' ? 'models' : 'credentials'))
+watch(() => props.view, (view) => { if (view) activeTab.value = view })
+const setupStarting = ref(false)
+const modelEditorOpen = ref(false)
+const connectionEditorOpen = ref(false)
+const tabs = computed(() => props.scope === 'git' ? ['credentials'] as const : ['credentials', 'models'] as const)
 const serviceConnections = ref<ModelConnection[]>([])
 const connectionManager = ref<InstanceType<typeof ModelConnectionEditor> | null>(null)
 const modelConfigurationManager = ref<InstanceType<typeof ModelConfigurationManager> | null>(null)
-const createTool = ref<'' | 'opencode' | 'deepseek_harness'>('')
 const createConnectionAfter = ref(false)
 const modelCredentialBackend = ref('')
 const createIssuer = ref('deepseek')
@@ -107,8 +113,11 @@ const connectionReady = computed(() => {
   try { const url = new URL(connectionForm.baseUrl); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return false } catch { return false }
   return !!connectionName.value
 })
-const creationKinds = computed(() => modelCredentialBackend.value ? CREDENTIAL_KINDS.filter((kind) => kind.id === modelCredentialBackend.value) : CREDENTIAL_KINDS)
-const showModelKeyKind = computed(() => !['cursor', 'trae'].includes(modelCredentialBackend.value))
+const creationKinds = computed(() => CREDENTIAL_KINDS.filter((kind) => {
+  if (modelCredentialBackend.value) return kind.id === modelCredentialBackend.value
+  return props.scope === 'model' ? kind.type === 'ai' : props.scope === 'git' ? ['git', 'ssh'].includes(kind.type) : true
+}))
+const showModelKeyKind = computed(() => props.scope !== 'git' && !['cursor', 'trae'].includes(modelCredentialBackend.value))
 
 const loading = ref(true)
 const loadError = ref('')
@@ -120,6 +129,8 @@ const clearing = reactive<Record<string, boolean>>({})
 const removing = reactive<Record<string, boolean>>({})
 const showCreate = ref(false)
 const creating = ref(false)
+const editorActive = computed(() => setupStarting.value || showCreate.value || modelEditorOpen.value || connectionEditorOpen.value || Object.values(editing).some(Boolean))
+watch(editorActive, (active) => emit('editing', active))
 const createStep = ref<1 | 2 | 3>(1)
 const createKind = ref<CredentialKindId | 'model_api' | ''>('')
 const createAlias = ref('')
@@ -152,9 +163,9 @@ const credentialTypeKeys = {
   custom: 'pages.workspace.credentials.typeCustom',
 } as const
 const selectedKind = computed(() => (createKind.value ? kindById(createKind.value) : undefined))
+const createSecretLabel = computed(() => createKind.value === 'model_api' ? routingCopy.value.secret : selectedKind.value ? secretLabel(selectedKind.value.id) : t('pages.workspace.credentials.value'))
 const createHasHost = computed(() => selectedKind.value?.type === 'git')
 const createHostValid = computed(() => !createHasHost.value || !!normalizeGitCredentialHost(createHost.value))
-const selectedDisplayKind = computed(() => createTool.value ? kindById(createTool.value) : selectedKind.value)
 watch(createStep, async () => {
   await nextTick()
   if (!showCreate.value || !stepPane.value) return
@@ -162,15 +173,15 @@ watch(createStep, async () => {
   if (target === stepPane.value) target.tabIndex = -1
   target.focus({ preventScroll: true })
 })
-function kindLabel(id: CredentialKindId) { return id === 'opencode' ? 'OpenCode CLI' : t(`pages.workspace.credentials.kinds.${id}`) }
+function kindLabel(id: CredentialKindId) { return t(`pages.workspace.credentials.kinds.${id}`) }
 const secretReady = computed(() => Boolean(createKind.value && (savedCredential.value || createSecret.value.trim()) && (createKind.value !== 'model_api' || (createIssuer.value === 'custom' ? !!effectiveIssuer.value : /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(effectiveIssuer.value)))))
 
 const orderedItems = computed(() =>
-  items.value.filter((item) => !isWorkspaceOwned(item) || !!item.purpose).sort((a, b) => {
+  items.value.filter((item) => (!isWorkspaceOwned(item) || !!item.purpose) && (props.scope === 'model' ? ['model_api', 'tool_auth'].includes(item.purpose || '') : props.scope === 'git' ? ['git', 'ssh'].includes(item.purpose || '') : true)).sort((a, b) => {
     // Put the model API key first so the primary setup path is visible without
     // making users scan past Git/SSH slots.
-    const aModel = isOpenCodeModelCredential(a) ? 0 : 1
-    const bModel = isOpenCodeModelCredential(b) ? 0 : 1
+    const aModel = isModelCredential(a) ? 0 : 1
+    const bModel = isModelCredential(b) ? 0 : 1
     if (aModel !== bModel) return aModel - bModel
     const aName = (a.name || a.provider || a.id).toLocaleLowerCase()
     const bName = (b.name || b.provider || b.id).toLocaleLowerCase()
@@ -219,8 +230,6 @@ const credentialSections = computed(() => {
 function itemLabel(item: CredentialItem): string {
   return item.name || item.provider || item.id
 }
-
-function isOpenCodeModelCredential(item: CredentialItem): boolean { return isModelCredential(item) }
 
 function isCodexLogin(item: CredentialItem): boolean {
   return item.purpose === 'tool_auth' && item.toolId === 'codex' && item.secretKind === 'login_file'
@@ -325,7 +334,7 @@ function observePane() {
   if (typeof ResizeObserver === 'undefined' || !stepPane.value) return
   paneResizeObserver = new ResizeObserver(() => {
     if (!stepPane.value) return
-    // Keep the animated floor in sync when OpenCode fields / validation grow the pane.
+    // Keep the animated floor in sync when fields or validation grow the pane.
     const next = stepPane.value.offsetHeight
     if (next > 0) paneHeight.value = next
   })
@@ -333,13 +342,13 @@ function observePane() {
 }
 
 function openCreate() {
+  if (props.view === 'models' && !props.setup) return
   modelCredentialBackend.value = ''
   releaseStepLock()
   createStep.value = 1
   createConnectionAfter.value = false
   savedCredential.value = null
   savedConnection.value = null
-  createTool.value = ''
   createError.value = ''
   createIssuer.value = 'deepseek'
   customProviderLabel.value = ''
@@ -369,12 +378,9 @@ async function closeCreate() {
 
 function selectKind(id: CredentialKindId | 'model_api') {
   if (stepLock.value || creating.value || createStep.value !== 1) return
-  const tool = id === 'opencode' || id === 'deepseek_harness' ? id : ''
-  const kind = tool ? 'model_api' : id
-  if (createKind.value !== kind || createTool.value !== tool) { clearSecrets(); createHost.value = defaultGitCredentialHost(kind) }
-  createTool.value = tool
-  createKind.value = kind
-  createConnectionAfter.value = kind === 'model_api'
+  if (createKind.value !== id) { clearSecrets(); createHost.value = defaultGitCredentialHost(id) }
+  createKind.value = id
+  createConnectionAfter.value = id === 'model_api'
 }
 
 function selectIssuer(value: string) {
@@ -418,6 +424,8 @@ function secretLabel(kindId: CredentialKindId): string {
   if (kind.secret === 'loginFile') return t('pages.workspace.credentials.secretLoginFile')
   if (kind.id === 'ssh_key') return t('pages.workspace.credentials.secretPrivateKey')
   if (kind.id === 'ssh_hosts') return t('pages.workspace.credentials.secretKnownHosts')
+  if (kind.id === 'opencode') return t('pages.workspace.credentials.secretOpenCodeKey')
+  if (kind.id === 'deepseek_harness') return t('pages.workspace.credentials.secretDeepSeekKey')
   return t('pages.workspace.credentials.secretApiKey')
 }
 
@@ -468,11 +476,12 @@ async function create() {
   } finally {
     creating.value = false
   }
-  const tool = createTool.value
   const connection = savedConnection.value
   const resumeModel = !!modelCredentialBackend.value
   modelCredentialBackend.value = ''
   showCreate.value = false
+  if (savedCredential.value) emit('credentialSaved', savedCredential.value)
+  emit('changed')
   toast.success(t('pages.workspace.credentials.saved'))
   // The writes have completed. A later refresh/navigation failure must never
   // turn into another key or connection POST on retry.
@@ -481,10 +490,6 @@ async function create() {
     if (resumeModel) {
       await nextTick()
       await modelConfigurationManager.value?.resumeWithCredential(savedCredential.value?.id, connection?.id)
-    } else if (tool && connection) {
-      activeTab.value = 'models'
-      await nextTick()
-      await modelConfigurationManager.value?.openForTool(tool, connection.id)
     } else if (connection) {
       activeTab.value = 'credentials'
     }
@@ -506,6 +511,7 @@ async function load() {
   } finally {
     loading.value = false
   }
+  if (props.inline && props.view === 'credentials' && !loadError.value && !orderedItems.value.length && !editorActive.value) openCreate()
 }
 
 async function save(item: CredentialItem) {
@@ -528,6 +534,8 @@ async function save(item: CredentialItem) {
       enabled: item.enabled,
     })
     updateItems(saved)
+    emit('credentialSaved', saved)
+    emit('changed')
     toast.success(t('pages.workspace.credentials.saved'))
   } catch (e: unknown) {
     toast.error(String((e as { message?: string })?.message || e))
@@ -600,12 +608,30 @@ function manageModelCredentials(backend?: string) {
 }
 
 
-function retry() {
-  void load()
+async function configurationChanged() { await loadServiceConnections(); emit('changed') }
+async function openModelCreate() {
+  if (props.view === 'credentials') return
+  activeTab.value = 'models'
+  await nextTick()
+  await modelConfigurationManager.value?.openCreate()
+}
+defineExpose({ openCreate, openModelCreate })
+
+async function initialize() {
+  setupStarting.value = props.setup
+  try {
+    await load()
+    if (props.setup && !loadError.value) {
+      await nextTick()
+      await modelConfigurationManager.value?.openSetup(props.configurationId)
+    }
+  } finally { setupStarting.value = false }
 }
 
+function retry() { void initialize() }
+
 onMounted(() => {
-  void load()
+  void initialize()
   document.addEventListener('pointerdown', dismissAddMenu)
   document.addEventListener('keydown', escapeAddMenu)
   window.addEventListener('resize', hideAddMenu)
@@ -632,7 +658,8 @@ watch(showCreate, (open) => {
 
 <template>
   <div
-    class="flex min-h-0 flex-1 flex-col overflow-hidden"
+    class="flex min-h-0 flex-1 flex-col"
+    :class="inline ? 'credentials-inline' : 'overflow-hidden'"
     data-testid="workspace-credentials-panel"
   >
     <div v-if="loading" class="flex flex-1 items-center justify-center text-[13px] text-txt3">
@@ -644,15 +671,20 @@ watch(showCreate, (open) => {
       <AppButton size="sm" variant="outline" @click="retry">{{ t('common.buttons.retry') }}</AppButton>
     </div>
 
-    <div v-else class="credentials-scroll scroll-area min-h-0 flex-1 overflow-y-auto">
+    <div v-else v-show="!(inline && showCreate)" class="credentials-scroll min-h-0 flex-1" :class="inline ? '' : 'scroll-area overflow-y-auto'">
       <div class="credentials-content w-full">
-        <header class="credentials-header">
+        <header v-show="!setup && (!inline || !editorActive)" class="credentials-header">
           <div class="flex min-w-0 items-center gap-3.5">
             <div class="min-w-0">
-              <h2 class="m-0 text-[20px] font-semibold tracking-tight text-txt">{{ t('pages.workspace.credentials.title') }}</h2>
+              <h2 class="m-0 text-[20px] font-semibold tracking-tight text-txt">{{ view === 'credentials' ? routingCopy.credentials : scope === 'model' || view === 'models' ? routingCopy.modelsTab : scope === 'git' ? t('pages.workspace.credentials.sections.git') : t('pages.workspace.credentials.title') }}</h2>
             </div>
           </div>
+          <div v-if="inline || view" class="flex flex-wrap gap-2">
+            <AppButton v-if="scope !== 'git' && view !== 'credentials'" size="sm" variant="primary" icon="plus" data-testid="workspace-add-model" data-editor-trigger @click="openModelCreate">{{ t('pages.workspace.credentials.addModel') }}</AppButton>
+            <AppButton v-if="view !== 'models'" size="sm" :variant="scope === 'git' || view === 'credentials' ? 'primary' : 'outline'" icon="key" data-testid="workspace-add-credential" data-editor-trigger @click="openCreate">{{ t('pages.workspace.credentials.create') }}</AppButton>
+          </div>
           <AppButton
+            v-else
             ref="addTrigger"
             variant="primary"
             icon="plus"
@@ -670,8 +702,9 @@ watch(showCreate, (open) => {
         </header>
         <Teleport to="body"><div v-if="addMenuOpen" :id="addMenuId" ref="addMenu" role="menu" :aria-label="t('pages.workspace.credentials.add')" class="credentials-add-menu" :style="addMenuStyle" data-testid="workspace-add-menu" @keydown="addMenuKeydown"><button type="button" role="menuitem" tabindex="-1" data-testid="workspace-add-credential" @click="addFromMenu('credential')"><Icon name="key" :size="16" :interactive="false" />{{ t('pages.workspace.credentials.create') }}</button><button type="button" role="menuitem" tabindex="-1" data-testid="workspace-add-model" @click="addFromMenu('model')"><Icon name="sparkles" :size="16" :interactive="false" />{{ t('pages.workspace.credentials.addModel') }}</button></div></Teleport>
 
-        <nav class="mb-6 mt-5 flex flex-wrap gap-1 border-b border-line" role="tablist" :aria-label="routingCopy.credentials"><button v-for="tab in (['credentials', 'models'] as const)" :key="tab" type="button" role="tab" class="border-b-2 px-3 py-3 text-[13px] transition" :class="activeTab === tab ? 'border-accent font-semibold text-accent-2' : 'border-transparent text-txt3 hover:text-txt'" :aria-selected="activeTab === tab" :data-testid="`credentials-tab-${tab}`" @click="activeTab = tab">{{ tab === 'credentials' ? routingCopy.credentials : routingCopy.modelsTab }}</button></nav>
+        <nav v-if="!view" v-show="(!inline || !editorActive) && tabs.length > 1" class="mb-6 mt-5 flex flex-wrap gap-1 border-b border-line" role="tablist" :aria-label="routingCopy.credentials"><button v-for="tab in tabs" :key="tab" type="button" role="tab" class="border-b-2 px-3 py-3 text-[13px] transition" :class="activeTab === tab ? 'border-accent font-semibold text-accent-2' : 'border-transparent text-txt3 hover:text-txt'" :aria-selected="activeTab === tab" :data-testid="`credentials-tab-${tab}`" @click="activeTab = tab">{{ tab === 'credentials' ? routingCopy.credentials : routingCopy.modelsTab }}</button></nav>
         <div v-if="activeTab === 'credentials'">
+        <div v-show="!inline || !connectionEditorOpen">
         <div v-if="!orderedItems.length" class="credentials-empty">
           <Icon name="key" :size="28" class="mb-3 text-txt3" aria-hidden="true" />
           <p class="m-0 text-[13px] text-txt3">{{ t('pages.workspace.credentials.empty') }}</p>
@@ -760,7 +793,7 @@ watch(showCreate, (open) => {
                             >{{ t('pages.workspace.credentials.fillIn') }}</AppButton>
                           </template>
                           <AppButton
-                            v-if="isWorkspaceOwned(item) && item.configured"
+                            v-if="!inline && isWorkspaceOwned(item) && item.configured"
                             size="sm"
                             variant="ghost"
                             class="credential-clear"
@@ -772,7 +805,7 @@ watch(showCreate, (open) => {
                             @click="clear(item)"
                           ><Icon name="trash" :size="14" /></AppButton>
                           <ModelRecordActions
-                            v-if="canRemoveAccount(item)"
+                            v-if="!inline && canRemoveAccount(item)"
                             :name="itemLabel(item)"
                             prefix="api-account"
                             :record-id="item.id"
@@ -833,13 +866,15 @@ watch(showCreate, (open) => {
             </div>
           </section>
         </template>
-        <ModelConnectionEditor ref="connectionManager" :credentials="items" @changed="loadServiceConnections" @error="toast.error($event)" />
         </div>
-        <ModelConfigurationManager v-if="activeTab === 'models'" ref="modelConfigurationManager" hide-create-button @manage-credentials="manageModelCredentials" @changed="loadServiceConnections" />
+        <ModelConnectionEditor ref="connectionManager" :inline="inline" :credentials="items" @changed="configurationChanged" @editing="connectionEditorOpen = $event" @error="toast.error($event)" />
+        </div>
+        <ModelConfigurationManager v-if="activeTab === 'models'" ref="modelConfigurationManager" :inline="inline" :allow-credential-creation="setup || view !== 'models'" :setup="setup" hide-create-button @manage-credentials="manageModelCredentials" @changed="configurationChanged" @saved="emit('modelSaved', $event)" @editing="modelEditorOpen = $event" />
       </div>
     </div>
 
-    <AppModal
+    <CredentialEditorSurface
+      :inline="inline"
       :open="showCreate"
       :title="t('pages.workspace.credentials.createTitle')"
       :width="640"
@@ -873,27 +908,27 @@ watch(showCreate, (open) => {
           @enter="() => { void measurePane().then(observePane) }"
         >
           <div v-if="createStep === 1" key="kind" ref="stepPane" class="credential-step-pane">
-            <button v-if="showModelKeyKind" type="button" class="mt-3 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left" :class="createKind === 'model_api' && !createTool ? 'border-accent bg-accent-dim' : 'border-line'" autofocus data-testid="credential-kind-model_api" :aria-pressed="createKind === 'model_api' && !createTool" @click="selectKind('model_api')"><Icon name="key" :size="22" /><span><strong class="text-[13px] text-txt">{{ routingCopy.modelKeys }}</strong></span></button>
+            <button v-if="showModelKeyKind" type="button" class="mt-3 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left" :class="createKind === 'model_api' ? 'border-accent bg-accent-dim' : 'border-line'" autofocus data-testid="credential-kind-model_api" :aria-pressed="createKind === 'model_api'" @click="selectKind('model_api')"><Icon name="key" :size="22" /><span><strong class="text-[13px] text-txt">{{ routingCopy.modelKeys }}</strong></span></button>
             <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 v-for="kind in creationKinds"
                 :key="kind.id"
                 type="button"
                 class="flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-[border-color,background-color] duration-[160ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
-                :class="(createTool || createKind) === kind.id ? 'border-accent bg-accent-dim' : 'border-line bg-base hover:border-line-strong hover:bg-base/80'"
+                :class="createKind === kind.id ? 'border-accent bg-accent-dim' : 'border-line bg-base hover:border-line-strong hover:bg-base/80'"
                 :data-testid="`credential-kind-${kind.id}`"
-                :aria-pressed="(createTool || createKind) === kind.id"
+                :aria-pressed="createKind === kind.id"
                 @click="selectKind(kind.id)"
               >
-                <CredentialProviderLogo :provider="kind.logoProvider" :icon="kind.icon" match="provider" :selected="(createTool || createKind) === kind.id" />
+                <CredentialProviderLogo :provider="kind.logoProvider" :icon="kind.icon" match="provider" :selected="createKind === kind.id" />
                 <span class="min-w-0 truncate text-[13px] font-semibold text-txt">{{ kindLabel(kind.id) }}</span>
               </button>
             </div>
           </div>
           <div v-else-if="createStep === 2" key="secret" ref="stepPane" class="credential-step-pane space-y-4">
-            <div v-if="selectedDisplayKind" class="flex items-center gap-3 rounded-lg bg-elevated/60 p-3">
-              <CredentialProviderLogo :provider="selectedDisplayKind.logoProvider" :icon="selectedDisplayKind.icon" match="provider" />
-              <span class="text-[13px] font-medium text-txt">{{ kindLabel(selectedDisplayKind.id) }}</span>
+            <div v-if="selectedKind" class="flex items-center gap-3 rounded-lg bg-elevated/60 p-3">
+              <CredentialProviderLogo :provider="selectedKind.logoProvider" :icon="selectedKind.icon" match="provider" />
+              <span class="text-[13px] font-medium text-txt">{{ kindLabel(selectedKind.id) }}</span>
             </div>
             <label class="block">
               <span class="label">{{ t('pages.workspace.credentials.alias') }}</span>
@@ -920,7 +955,7 @@ watch(showCreate, (open) => {
             </template>
             <label class="block">
               <span class="label flex items-center justify-between gap-2">
-                <span>{{ createKind === 'model_api' ? routingCopy.secret : selectedKind ? secretLabel(selectedKind.id) : t('pages.workspace.credentials.value') }}</span>
+                <span>{{ createSecretLabel }}</span>
                 <button type="button" class="text-[11px] font-medium text-accent-2" data-testid="workspace-credential-secret-toggle" @click="revealSecret = !revealSecret">
                   {{ revealSecret ? t('pages.workspace.credentials.hideSecret') : t('pages.workspace.credentials.showSecret') }}
                 </button>
@@ -948,7 +983,7 @@ watch(showCreate, (open) => {
               />
             </label>
             <template v-if="createKind === 'model_api'">
-              <label v-if="!createTool && !modelCredentialBackend" class="flex items-center gap-2 text-xs font-medium text-txt2"><input v-model="createConnectionAfter" type="checkbox" data-testid="model-credential-create-connection" />{{ routingCopy.configureConnectionNow }}</label>
+              <label v-if="!modelCredentialBackend" :for="`${addMenuId}-connection`" class="flex items-center gap-2 text-xs font-medium text-txt2"><AppSwitch :id="`${addMenuId}-connection`" v-model="createConnectionAfter" :disabled="creating" :aria-label="routingCopy.configureConnectionNow" data-testid="model-credential-create-connection" />{{ routingCopy.configureConnectionNow }}</label>
               <div v-if="createConnectionAfter" class="space-y-3">
                 <label class="block"><span class="label">API Base URL</span><input v-model="connectionForm.baseUrl" type="url" class="input w-full font-mono" data-testid="model-credential-connection-base-url" placeholder="https://…" /></label>
                 <details data-testid="model-credential-connection-advanced" class="pt-1"><summary class="cursor-pointer text-xs text-txt3">{{ routingCopy.advancedSettings }}</summary><div class="mt-3 space-y-3">
@@ -960,7 +995,7 @@ watch(showCreate, (open) => {
               <p v-else class="m-0 text-xs leading-5 text-txt3">{{ routingCopy.keyOnlyHint }}</p>
             </template>
           </div>
-          <div v-else key="review" ref="stepPane" class="credential-step-pane space-y-4"><dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border border-line p-4 text-xs"><dt class="text-txt3">{{ routingCopy.credentials }}</dt><dd class="m-0 text-txt">{{ createKind === 'model_api' ? routingCopy.modelKeys : selectedKind ? t(`pages.workspace.credentials.kinds.${selectedKind.id}`) : '' }}</dd><dt class="text-txt3">{{ routingCopy.name }}</dt><dd class="m-0 break-words text-txt">{{ createAlias }}</dd><template v-if="createKind === 'model_api'"><dt class="text-txt3">{{ routingCopy.issuer }}</dt><dd class="m-0 break-words text-txt">{{ providerLabel }} · {{ effectiveIssuer }}</dd><template v-if="inlineConnection"><dt class="text-txt3">{{ routingCopy.connectionName }}</dt><dd class="m-0 break-words text-txt">{{ connectionName }}</dd><dt class="text-txt3">API Base URL</dt><dd class="m-0 break-all font-mono text-txt">{{ connectionForm.baseUrl }}</dd><dt class="text-txt3">{{ routingCopy.protocol }}</dt><dd class="m-0 break-all text-txt">{{ connectionForm.protocol }} · {{ connectionForm.scheme }}</dd></template></template><template v-if="createHasHost"><dt class="text-txt3">Host</dt><dd class="m-0 break-all font-mono text-txt" data-testid="workspace-credential-review-host">{{ createHost }}</dd></template><dt class="text-txt3">{{ routingCopy.secret }}</dt><dd class="m-0 font-mono text-txt">••••••••</dd></dl></div>
+          <div v-else key="review" ref="stepPane" class="credential-step-pane space-y-4"><dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border border-line p-4 text-xs"><dt class="text-txt3">{{ routingCopy.credentials }}</dt><dd class="m-0 text-txt">{{ createKind === 'model_api' ? routingCopy.modelKeys : selectedKind ? t(`pages.workspace.credentials.kinds.${selectedKind.id}`) : '' }}</dd><dt class="text-txt3">{{ routingCopy.name }}</dt><dd class="m-0 break-words text-txt">{{ createAlias }}</dd><template v-if="createKind === 'model_api'"><dt class="text-txt3">{{ routingCopy.issuer }}</dt><dd class="m-0 break-words text-txt">{{ providerLabel }} · {{ effectiveIssuer }}</dd><template v-if="inlineConnection"><dt class="text-txt3">{{ routingCopy.connectionName }}</dt><dd class="m-0 break-words text-txt">{{ connectionName }}</dd><dt class="text-txt3">API Base URL</dt><dd class="m-0 break-all font-mono text-txt">{{ connectionForm.baseUrl }}</dd><dt class="text-txt3">{{ routingCopy.protocol }}</dt><dd class="m-0 break-all text-txt">{{ connectionForm.protocol }} · {{ connectionForm.scheme }}</dd></template></template><template v-if="createHasHost"><dt class="text-txt3">Host</dt><dd class="m-0 break-all font-mono text-txt" data-testid="workspace-credential-review-host">{{ createHost }}</dd></template><dt class="text-txt3">{{ createSecretLabel }}</dt><dd class="m-0 font-mono text-txt">••••••••</dd></dl></div>
         </Transition>
         <p v-if="createError" role="alert" class="mb-0 mt-4 text-xs leading-5 text-err" :data-testid="savedCredential ? 'model-credential-partial-error' : 'credential-create-error'"><template v-if="savedCredential">{{ routingCopy.keySavedConnectionFailed }}<br /></template>{{ createError }}</p>
       </div>
@@ -996,11 +1031,18 @@ watch(showCreate, (open) => {
           {{ savedCredential && inlineConnection ? routingCopy.retryConnection : t('pages.workspace.credentials.create') }}
         </AppButton>
       </template>
-    </AppModal>
+    </CredentialEditorSurface>
   </div>
 </template>
 
 <style scoped>
+.credentials-inline .credentials-content { padding: 0; }
+.credentials-inline .credentials-header h2 { font-size: 15px; }
+.credentials-inline .credentials-header { margin-bottom: 16px; }
+.credentials-inline .credential-wizard-progress { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.credentials-inline .credential-wizard-progress li { min-width: 0; flex-wrap: wrap; }
+.credentials-inline .credential-wizard-progress .credential-step-connector { display: none; }
+.credentials-inline .credential-step-number { flex-shrink: 0; }
 .credentials-content {
   max-width: 1080px;
   margin: 0 auto;

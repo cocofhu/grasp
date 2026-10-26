@@ -582,6 +582,8 @@ export interface CliCatalogModel {
 
 export interface CliModelsResponse {
   models: CliCatalogModel[]
+  /** Catalog read failed; an empty list does not confirm saved models are missing. */
+  error?: string
 }
 
 export interface OpenCodeProvidersResponse {
@@ -701,6 +703,10 @@ export interface SoloSession {
    */
   currentModelId?: string
   currentModelSet?: boolean
+  /** Session reasoning effort; empty follows the coding tool's default. */
+  reasoningEffort?: string
+  /** Exact supported levels for the current model. Empty/absent means unsupported. */
+  reasoningEfforts?: string[]
   /** Stable code set when a model switch is rolled back. */
   modelNotice?: string
   /** Ordered repositories frozen at launch. Empty means an empty workspace. */
@@ -740,6 +746,7 @@ export interface SoloCreateBody {
   repos?: SoloRepoChoice[]
   /** Empty follows the Agent configuration's primary model. */
   initialModelId?: string
+  reasoningEffort?: string
   title?: string
   text?: string
   images?: ClarifyImage[]

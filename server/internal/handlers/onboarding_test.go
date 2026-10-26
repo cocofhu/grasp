@@ -230,7 +230,10 @@ func TestBootstrapUsesGitCredentialReferences(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range result.AgentIDs {
+	if result.SoloAgentID != services.OnboardingSoloAgentName {
+		t.Fatalf("missing default Solo Agent: %+v", result)
+	}
+	for _, name := range append(result.AgentIDs, result.SoloAgentID) {
 		agent, _ := hn.h.Agents.Get(name)
 		if agent.GitBindings == nil || len(agent.GitBindings.Items) != 1 || agent.GitBindings.Items[0].CredentialID != credential.ID || agent.GitBindings.PreferredCredentialID != "" {
 			t.Fatalf("Agent %s lost Git reference", name)

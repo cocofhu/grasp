@@ -131,6 +131,10 @@ func defaultCredentialEnvKey(in CredentialInput) string {
 			return envauth.EnvTraeAPIKey
 		case "codex":
 			return envauth.EnvCodexAuthFile
+		case "opencode":
+			return envauth.EnvOpenCodeAPIKey
+		case "deepseek_harness":
+			return envauth.EnvDeepSeekAPIKey
 		}
 	case "git":
 		switch p {

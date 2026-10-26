@@ -47,6 +47,12 @@ const GitPicker = {
   emits: ['update:modelValue', 'validity'],
   template: '<div class="git-picker-stub" />',
 }
+const ResourcesPanel = {
+  name: 'WorkspaceCredentialsPanel',
+  props: { inline: Boolean, scope: String, view: String, setup: Boolean, configurationId: String },
+  emits: ['changed', 'modelSaved', 'credentialSaved', 'editing'],
+  template: '<section class="resources-panel-stub" />',
+}
 const modelRows = [
   {
     id: 'model-main',
@@ -82,10 +88,10 @@ async function mountWizard(props: Record<string, unknown> = {}) {
       stubs: {
         Teleport: true,
         Icon: true,
-        AppButton: { template: '<button type="button" v-bind="$attrs"><slot /></button>' },
+        AppButton: { props: { disabled: Boolean }, template: '<button type="button" :disabled="disabled" v-bind="$attrs"><slot /></button>' },
         ModelBindingEditor: ModelPicker,
         AgentGitCredentialPicker: GitPicker,
-        WorkspaceCredentialsPanel: true,
+        WorkspaceCredentialsPanel: ResourcesPanel,
       },
     },
   })
@@ -110,6 +116,7 @@ async function identity(w: Wrapper) {
   await w.get('[data-testid="onboarding-git-user-email"]').setValue('ada@example.com')
 }
 async function toGit(w: Wrapper) {
+  await next(w)
   await next(w)
   await chooseModel(w)
   await next(w)
@@ -155,6 +162,7 @@ beforeEach(async () => {
   mocks.listAgentTeamTemplates.mockResolvedValue({ items: [] })
   mocks.bootstrapOnboarding.mockResolvedValue({
     agentIds: ['需求澄清', '实现', '测试评审', '交付'],
+    soloAgentId: 'Solo',
     workflowId: 'wf-1',
     published: true,
   })
@@ -164,19 +172,96 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('OnboardingWizard', () => {
-  it('shows preferences, model configuration, Git, team, workflow and success', async () => {
+  it('shows credentials before model configuration in one outer onboarding dialog', async () => {
     const w = await mountWizard()
     expect(activeStep(w)).toBe('onboarding-rail-prefs')
-    for (const id of ['prefs', 'model', 'git', 'team', 'workflow', 'done'])
+    for (const id of ['prefs', 'credentials', 'model', 'git', 'team', 'workflow', 'done'])
       expect(w.find(`[data-testid="onboarding-rail-${id}"]`).exists()).toBe(true)
     expect(w.find('[data-testid="onboarding-rail-key"]').exists()).toBe(false)
+    expect(w.findAll('[role="dialog"]')).toHaveLength(1)
+    expect(w.findAll('[aria-modal="true"]')).toHaveLength(1)
+    expect(w.find('[data-testid="onboarding-backdrop"]').exists()).toBe(true)
+    await next(w)
+    expect(activeStep(w)).toBe('onboarding-rail-credentials')
+    expect(w.getComponent(ResourcesPanel).props()).toMatchObject({ inline: true, scope: 'model', view: 'credentials' })
+    expect(w.findComponent(ModelPicker).exists()).toBe(false)
     await next(w)
     expect(w.findComponent(ModelPicker).exists()).toBe(true)
     expect(w.find('[data-testid="onboarding-api-key"]').exists()).toBe(false)
     w.unmount()
   })
+  it('requires a saved credential before model setup and selects a newly saved model', async () => {
+    mocks.listModelConfigurations.mockResolvedValue({ items: [] })
+    mocks.listCredentials.mockResolvedValue({ items: [] })
+    const w = await mountWizard()
+    await next(w)
+    const credentialPanel = w.getComponent(ResourcesPanel)
+    expect(credentialPanel.props()).toMatchObject({ inline: true, scope: 'model', view: 'credentials' })
+    expect(w.findAll('[role="dialog"]')).toHaveLength(1)
+    await next(w)
+    expect(activeStep(w)).toBe('onboarding-rail-credentials')
+    expect(w.findComponent(ModelPicker).exists()).toBe(false)
+    mocks.listCredentials.mockResolvedValue({ items: [{ id: 'model-key', purpose: 'model_api', configured: true }] })
+    w.getComponent(ResourcesPanel).vm.$emit('credentialSaved', { id: 'model-key', purpose: 'model_api', configured: true })
+    await flushPromises()
+    expect(activeStep(w)).toBe('onboarding-rail-model')
+    const modelPanel = w.getComponent(ResourcesPanel)
+    expect(modelPanel.props()).toMatchObject({ inline: true, scope: 'model', view: 'models', setup: true })
+    mocks.listModelConfigurations.mockResolvedValue({ items: modelRows })
+    modelPanel.vm.$emit('modelSaved', modelRows[0])
+    await flushPromises()
+    expect((w.vm as any).draft.modelConfigurationId).toBe('model-main')
+    expect(activeStep(w)).toBe('onboarding-rail-git')
+    w.unmount()
+  })
+  it.each([
+    { id: 'git-only', purpose: 'git', configured: true },
+    { id: 'disabled-key', purpose: 'model_api', configured: true, enabled: false },
+    { id: 'empty-key', purpose: 'tool_auth', configured: false },
+  ])('does not advance credentials setup with unusable or unrelated $id', async (credential) => {
+    mocks.listCredentials.mockResolvedValue({ items: [credential] })
+    const w = await mountWizard()
+    await next(w)
+    await next(w)
+    expect(activeStep(w)).toBe('onboarding-rail-credentials')
+    expect(w.findComponent(ModelPicker).exists()).toBe(false)
+    expect(mocks.bootstrapOnboarding).not.toHaveBeenCalled()
+    w.unmount()
+  })
+  it('keeps the outer step in place while an inline form is being edited', async () => {
+    mocks.listModelConfigurations.mockResolvedValue({ items: [] })
+    const w = await mountWizard()
+    await next(w)
+    const panel = w.getComponent(ResourcesPanel)
+    panel.vm.$emit('editing', true)
+    await flushPromises()
+    expect(w.get('[data-testid="onboarding-next"]').attributes('disabled')).toBeDefined()
+    expect(w.get('[data-testid="onboarding-prev"]').attributes('disabled')).toBeDefined()
+    w.getComponent(ResourcesPanel).vm.$emit('editing', false)
+    await flushPromises()
+    expect(w.get('[data-testid="onboarding-prev"]').attributes('disabled')).toBeUndefined()
+    w.unmount()
+  })
+  it('adds a new Git credential in place without losing the repository or author', async () => {
+    const w = await mountWizard()
+    await toGit(w)
+    await identity(w)
+    await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
+    await w.get('[data-testid="onboarding-manage-git"]').trigger('click')
+    const panel = w.getComponent(ResourcesPanel)
+    expect(panel.props()).toMatchObject({ inline: true, scope: 'git' })
+    expect(w.findAll('[role="dialog"]')).toHaveLength(1)
+    const credential = { id: 'new-git', purpose: 'git', provider: 'github', type: 'git', secretKind: 'token', configured: true, enabled: true }
+    panel.vm.$emit('credentialSaved', credential)
+    await flushPromises()
+    expect(w.findComponent(GitPicker).props('modelValue')).toEqual({ items: [{ credentialId: 'new-git' }] })
+    expect(w.get('[data-testid="onboarding-repo-url"]').element.value).toBe('https://github.com/team/repo.git')
+    expect(w.get('[data-testid="onboarding-git-user-name"]').element.value).toBe('Ada Lovelace')
+    w.unmount()
+  })
   it('blocks missing or invalid model configuration before Git', async () => {
     const w = await mountWizard()
+    await next(w)
     await next(w)
     await next(w)
     expect(activeStep(w)).toBe('onboarding-rail-model')
@@ -247,7 +332,7 @@ describe('OnboardingWizard', () => {
     const w = await mountWizard()
     await toGit(w)
     await identity(w)
-    expect(mocks.listCredentials).not.toHaveBeenCalled()
+    expect(mocks.listCredentials).toHaveBeenCalledTimes(1)
     await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
     await w.get('[data-testid="onboarding-manage-git"]').trigger('click')
     const vm = w.vm as any
@@ -258,9 +343,9 @@ describe('OnboardingWizard', () => {
     expect(vm.draft.modelConfigurationId).toBe('model-main')
     expect(w.get('[data-testid="onboarding-repo-url"]').element.value).toBe('https://github.com/team/repo.git')
     expect(w.get('[data-testid="onboarding-git-user-name"]').element.value).toBe('Ada Lovelace')
-    expect(mocks.listCredentials).toHaveBeenCalledTimes(1)
-    expect(mocks.listModelConnections).toHaveBeenCalledTimes(1)
-    expect(mocks.listToolCapabilities).toHaveBeenCalledTimes(1)
+    expect(mocks.listCredentials).toHaveBeenCalledTimes(2)
+    expect(mocks.listModelConnections).toHaveBeenCalledTimes(2)
+    expect(mocks.listToolCapabilities).toHaveBeenCalledTimes(2)
     await next(w)
     await next(w)
     await next(w)
@@ -353,6 +438,24 @@ describe('OnboardingWizard', () => {
       { templateId: 'test_review', name: '测试评审' },
       { templateId: 'deliver', name: '交付' },
     ])
+    w.unmount()
+  })
+  it('creates an empty Solo separately from the four workflow roles', async () => {
+    const w = await mountWizard()
+    await toTeam(w)
+    expect(w.get('[data-testid="onboarding-solo-agent"]').text()).toContain('Solo')
+    expect(w.findAll('[data-testid^="onboarding-team-card-"]')).toHaveLength(4)
+    await next(w)
+    expect(w.find('[data-testid="onboarding-preview-node-Solo"]').exists()).toBe(false)
+    expect(w.find('[data-testid="onboarding-preview-node-solo"]').exists()).toBe(false)
+    await next(w)
+    expect(mocks.bootstrapOnboarding.mock.calls[0][0].agents).toHaveLength(4)
+    expect(mocks.bootstrapOnboarding.mock.calls[0][0].agents.some((agent: { name: string }) => agent.name === 'Solo')).toBe(false)
+    const agents = w.get('[data-testid="onboarding-success-agents"]')
+    expect(agents.text()).toContain('Solo')
+    expect(agents.text()).toContain('pages.onboarding.solo.emptyShort')
+    expect(agents.findAll('li')).toHaveLength(6)
+    expect(w.emitted('completed')?.[0]?.[0]).toMatchObject({ soloAgentId: 'Solo', agentIds: ['需求澄清', '实现', '测试评审', '交付'] })
     w.unmount()
   })
   it('does not let a name edit leave the canonical team', async () => {

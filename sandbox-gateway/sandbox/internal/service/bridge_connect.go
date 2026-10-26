@@ -77,6 +77,7 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 		}
 	}
 	m["currentModel"] = curModel
+	m["reasoningEffort"] = b.ReasoningEffort()
 	m["chatId"] = b.id
 	// 协议已预留的可选 usage：仅当该会话上报用量时携带累计量，否则完全省略（帧不变）。
 	if p.ReportsUsage() {
@@ -235,11 +236,13 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 	}
 	autoPerm := auto != nil && *auto
 	sess, err := agents.Current().Open(ctx, handshakeCtx, provider.OpenOptions{
-		Cwd:            cwd,
-		FSRoot:         fsEff,
-		Model:          m,
-		McpServers:     mcp,
-		AutoPermission: autoPerm,
+		Cwd:                cwd,
+		FSRoot:             fsEff,
+		Model:              m,
+		ReasoningEffort:    b.ReasoningEffort(),
+		ReasoningEffortSet: true,
+		McpServers:         mcp,
+		AutoPermission:     autoPerm,
 	}, onEvent, perm)
 	if err != nil {
 		return nil, err
@@ -322,6 +325,28 @@ func (b *Bridge) broadcastAgentExitDebounced(msg string) {
 func (b *Bridge) RestartAgent() (provider.Session, error) {
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
+	return b.restartAgentLocked()
+}
+
+// SwitchModelSettings updates model and effort as one operation. A rejected
+// restart restores both choices, and concurrent changes cannot interleave.
+func (b *Bridge) SwitchModelSettings(model, effort string) (provider.Session, error) {
+	b.ensureMu.Lock()
+	defer b.ensureMu.Unlock()
+	b.mu.Lock()
+	previousModel, previousEffort := b.model, b.reasoningEffort
+	b.model, b.reasoningEffort = strings.TrimSpace(model), strings.TrimSpace(effort)
+	b.mu.Unlock()
+	session, err := b.restartAgentLocked()
+	if err != nil {
+		b.mu.Lock()
+		b.model, b.reasoningEffort = previousModel, previousEffort
+		b.mu.Unlock()
+	}
+	return session, err
+}
+
+func (b *Bridge) restartAgentLocked() (provider.Session, error) {
 
 	b.mu.Lock()
 	var cwd, fsRoot string

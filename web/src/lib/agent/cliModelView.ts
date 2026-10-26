@@ -17,6 +17,16 @@ const VENDOR_LABELS: Record<string, string> = {
   xai: 'xAI',
   deepseek: 'DeepSeek',
   moonshot: 'Moonshot',
+  kimi: 'Kimi',
+  hunyuan: 'Tencent Hunyuan',
+  qwen: 'Qwen',
+  minimax: 'MiniMax',
+  zhipu: 'Zhipu',
+  zai: 'Z.ai',
+  doubao: 'Doubao',
+  qianfan: 'Baidu Qianfan',
+  openrouter: 'OpenRouter',
+  siliconflow: 'SiliconFlow',
   tencent: 'Tencent',
   bytedance: 'ByteDance',
   cursor: 'Cursor',
@@ -30,6 +40,20 @@ const VENDOR_LOGOS: Record<string, string> = {
   xai: 'xai',
   deepseek: 'deepseek',
   moonshot: 'moonshot',
+  moonshotai: 'moonshot',
+  kimi: 'kimi',
+  hunyuan: 'hunyuan',
+  tencent: 'hunyuan',
+  qwen: 'qwen',
+  alibaba: 'qwen',
+  minimax: 'minimax',
+  zhipu: 'zhipu',
+  glm: 'zhipu',
+  zai: 'zai',
+  doubao: 'doubao',
+  qianfan: 'qianfan',
+  openrouter: 'openrouter',
+  siliconflow: 'siliconflow',
   bytedance: 'bytedance',
   cursor: 'cursor',
 }
@@ -44,7 +68,35 @@ export function vendorLabel(vendor: string): string {
 }
 
 export function vendorLogoProvider(vendor: string): string {
-  return VENDOR_LOGOS[vendor] || ''
+  return VENDOR_LOGOS[vendor.trim().toLowerCase()] || ''
+}
+
+const MODEL_BRANDS: [RegExp, string][] = [
+  [/^(?:gpt|chatgpt)(?:$|[-_.\s:])|^o[1-9]\d?(?:$|[-_.\s:])|^openai$/, 'openai'],
+  [/^kimi(?:$|[-_.\s:])/, 'kimi'],
+  [/^moonshot(?:ai)?(?:$|[-_.\s:])/, 'moonshot'],
+  [/^(?:chatglm|glm)(?:$|[-_.\s:\d])|^zhipu$/, 'zhipu'],
+  [/^hunyuan(?:$|[-_.\s:\d])|^hy(?:\d|[-_.\s:])/, 'hunyuan'],
+  [/^deepseek(?:$|[-_.\s:])/, 'deepseek'],
+  [/^(?:qwen|qvq)(?:$|[-_.\s:\d])/, 'qwen'],
+  [/^minimax(?:$|[-_.\s:])/, 'minimax'],
+  [/^claude(?:$|[-_.\s:])|^anthropic$/, 'anthropic'],
+  [/^gemini(?:$|[-_.\s:])|^google$/, 'google'],
+  [/^grok(?:$|[-_.\s:])|^xai$/, 'xai'],
+  [/^(?:doubao|seed|seedream)(?:$|[-_.\s:])|^bytedance$/, 'doubao'],
+  [/^(?:ernie|wenxin)(?:$|[-_.\s:])|^baidu$/, 'qianfan'],
+]
+
+/** Visual brand only: never use this inference to route requests or credentials. */
+export function modelVendor(modelId: string, modelName = '', fallbackVendor = ''): string {
+  for (const value of [modelId, modelName]) {
+    // The model family wins over an aggregator/provider prefix in a full ID.
+    for (const part of value.trim().toLowerCase().split('/').reverse()) {
+      const brand = MODEL_BRANDS.find(([pattern]) => pattern.test(part.trim()))
+      if (brand) return brand[1]
+    }
+  }
+  return fallbackVendor
 }
 
 export function formatContext(k?: number): string {

@@ -52,6 +52,9 @@ func ApplyModelBinding(env map[string]string, backend string, binding *modelrout
 		}
 		env[key] = resolved.Secret
 		env[EnvACPBridgeModel] = resolved.Binding.ModelID
+		if backend == string(BackendOpenCode) {
+			env["GRASP_OPENCODE_PROVIDER"] = "opencode"
+		}
 	case "connection":
 		if resolved.Connection == nil {
 			return fmt.Errorf("selected model connection is unavailable")
@@ -93,16 +96,30 @@ func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
 		vendor = resolved.Connection.ProviderID
 	}
 	type item struct {
-		ID     string `json:"id"`
-		Vendor string `json:"vendor,omitempty"`
+		ID                string   `json:"id"`
+		Vendor            string   `json:"vendor,omitempty"`
+		ReasoningEfforts  []string `json:"reasoningEfforts,omitempty"`
+		ReasoningDisabled bool     `json:"reasoningDisabled,omitempty"`
 	}
-	items := []item{{ID: strings.TrimSpace(resolved.Binding.ModelID), Vendor: vendor}}
+	modelItem := func(id string) item {
+		id = strings.TrimSpace(id)
+		value := item{ID: id, Vendor: vendor, ReasoningEfforts: modelrouting.ReasoningEfforts(resolved.Backend, id, resolved.Connection)}
+		if resolved.Connection != nil {
+			for _, model := range resolved.Connection.Models {
+				if model.ID == id && model.Capabilities.Reasoning != nil && !*model.Capabilities.Reasoning {
+					value.ReasoningDisabled = true
+				}
+			}
+		}
+		return value
+	}
+	items := []item{modelItem(resolved.Binding.ModelID)}
 	for _, id := range resolved.Binding.AuxiliaryModelIDs {
 		id = strings.TrimSpace(id)
 		if id == "" {
 			continue
 		}
-		items = append(items, item{ID: id, Vendor: vendor})
+		items = append(items, modelItem(id))
 	}
 	data, err := json.Marshal(items)
 	if err != nil {

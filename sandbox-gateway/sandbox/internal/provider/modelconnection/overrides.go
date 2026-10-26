@@ -13,7 +13,7 @@ import (
 // ValidateOptions prevents custom arguments or project model definitions from
 // silently selecting a service other than the Agent's resolved connection.
 func (p Prepared) ValidateOptions(tool provider.Name, opts provider.OpenOptions) error {
-	if p.Connection == nil {
+	if p.Connection == nil && !p.Platform {
 		return nil
 	}
 	for i, arg := range opts.CustomArgs {

@@ -193,20 +193,22 @@ func (h *Handlers) PatchSoloSession(c *gin.Context) {
 }
 
 // SetSoloSessionModel handles POST /api/solo/sessions/:id/model.
-// An empty modelId selects the primary model. The sandbox is not switched here.
+// Omitted settings stay unchanged. Explicit empty values restore the primary
+// model or tool-default effort; the sandbox applies them at the next turn.
 func (h *Handlers) SetSoloSessionModel(c *gin.Context) {
 	user, ok := h.soloReady(c)
 	if !ok {
 		return
 	}
 	var body struct {
-		ModelID string `json:"modelId"`
+		ModelID         *string `json:"modelId"`
+		ReasoningEffort *string `json:"reasoningEffort"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	v, err := h.Solo.SetCurrentModel(c.Request.Context(), c.Param("id"), user, body.ModelID)
+	v, err := h.Solo.SetCurrentModelSettings(c.Request.Context(), c.Param("id"), user, body.ModelID, body.ReasoningEffort)
 	if err != nil {
 		writeSoloErr(c, err)
 		return

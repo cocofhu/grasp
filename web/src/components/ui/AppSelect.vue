@@ -26,6 +26,8 @@ const props = withDefaults(
     searchPlaceholder?: string
     /** Lets the typed query be used verbatim, so the list stays a suggestion. */
     allowCustom?: boolean
+    /** A model directory can put known matches before the manually entered ID. */
+    customPosition?: 'first' | 'last'
     /** Says the options are still on their way, so "no matches" stays unsaid. */
     loading?: boolean
     /** sm matches compact 12px form rows; md matches .input sizing. */
@@ -38,6 +40,7 @@ const props = withDefaults(
     invalid: false,
     searchable: false,
     allowCustom: false,
+    customPosition: 'first',
     loading: false,
     size: 'md',
     variant: 'outline',
@@ -94,13 +97,12 @@ const customValue = computed(() => {
   return props.options.some((o) => o.value === q) ? '' : q
 })
 
-/** Rows the keyboard walks: the custom row, when present, sits first. */
-const rows = computed<{ value: string; label: string; hint: string; custom: boolean }[]>(() => [
-  ...(customValue.value
-    ? [{ value: customValue.value, label: customValue.value, hint: '', custom: true }]
-    : []),
-  ...filtered.value.map((o) => ({ value: o.value, label: o.label, hint: o.hint || '', custom: false })),
-])
+/** Keyboard navigation follows the visible row order. */
+const rows = computed<{ value: string; label: string; hint: string; custom: boolean }[]>(() => {
+  const custom = customValue.value ? [{ value: customValue.value, label: customValue.value, hint: '', custom: true }] : []
+  const options = filtered.value.map((o) => ({ value: o.value, label: o.label, hint: o.hint || '', custom: false }))
+  return props.customPosition === 'last' ? [...options, ...custom] : [...custom, ...options]
+})
 const activeDescendant = computed(() =>
   open.value && rows.value[activeIndex.value] ? optionId(activeIndex.value) : undefined,
 )

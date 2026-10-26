@@ -17,7 +17,8 @@ func TestCredentialPurposesAndRevisionLifecycle(t *testing.T) {
 		{Purpose: "model_api", EnvKey: "GLOBAL_KEY", Name: "Bad", Value: "s"},
 		{Purpose: "model_api", Metadata: map[string]any{"model": "x"}, Name: "Bad", Value: "s"},
 		{Purpose: "model_api", SecretKind: "login_file", Name: "Bad", Value: "s"},
-		{Purpose: "tool_auth", ToolID: "opencode", Name: "Bad", Value: "s"},
+		{Purpose: "tool_auth", ToolID: "opencode", SecretKind: "token", Name: "Bad", Value: "s"},
+		{Purpose: "tool_auth", ToolID: "deepseek_harness", SecretKind: "token", Name: "Bad", Value: "s"},
 		{Purpose: "tool_auth", ToolID: "unknown", Name: "Bad", Value: "s"},
 		{Purpose: "tool_auth", ToolID: "codex", SecretKind: "api_key", Name: "Bad", Value: "s"},
 		{Purpose: "tool_auth", ToolID: "cursor", SecretKind: "ssh_private_key", Name: "Bad", Value: "s"},
@@ -31,6 +32,8 @@ func TestCredentialPurposesAndRevisionLifecycle(t *testing.T) {
 	for _, input := range []CredentialInput{
 		{Purpose: "model_api", Issuer: "custom", SecretKind: "token", Name: "Custom key", Value: "s"},
 		{Purpose: "tool_auth", ToolID: "trae", Name: "Trae", Value: "s"},
+		{Purpose: "tool_auth", ToolID: "opencode", Name: "OpenCode Zen", Value: "s"},
+		{Purpose: "tool_auth", ToolID: "deepseek_harness", Name: "DeepSeek", Value: "s"},
 		{Purpose: "git", Provider: "github", Name: "Repository", Value: "s"},
 		{Purpose: "ssh", Name: "Private", Value: "s"},
 		{Purpose: "ssh", SecretKind: "ssh_known_hosts", Name: "Hosts", Value: "s"},

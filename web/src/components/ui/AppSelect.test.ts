@@ -467,6 +467,29 @@ describe('AppSelect', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    { customPosition: undefined, query: 'TokenHub', expected: 'TokenHub' },
+    { customPosition: 'last' as const, query: 'TokenHub', expected: 'TokenHub/Atlas.Pro:2026' },
+    { customPosition: 'last' as const, query: 'vendor/new-model', expected: 'vendor/new-model' },
+  ])('keyboard honors customPosition=$customPosition for query $query', async ({ customPosition, query, expected }) => {
+    const wrapper = mountSelect({ modelValue: '', searchable: true, allowCustom: true, customPosition, options: [{ value: 'TokenHub/Atlas.Pro:2026', label: 'TokenHub Atlas' }, { value: 'TokenHub/Atlas.Fast:2026', label: 'TokenHub Fast' }] }, true)
+    const trigger = wrapper.get('[data-test="app-select-trigger"]').element
+    press(trigger, 'Enter')
+    await flushPromises()
+    const input = document.querySelector('[data-test="app-select-search"]') as HTMLInputElement
+    input.value = query
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const options = [...document.querySelectorAll('[data-test="app-select-panel"] [role="option"]')]
+    expect(options[0]!.getAttribute('data-test')).toBe(expected === query ? 'app-select-custom' : `app-select-option-${expected}`)
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[0]!.id)
+    if (customPosition === 'last') expect(options.at(-1)!.getAttribute('data-test')).toBe('app-select-custom')
+    press(input, 'Enter')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[expected]])
+    wrapper.unmount()
+  })
+
   it('does not offer a custom row for a query that already is an option', async () => {
     const wrapper = mountSelect({ searchable: true, allowCustom: true })
     await wrapper.get('[data-test="app-select-trigger"]').trigger('click')

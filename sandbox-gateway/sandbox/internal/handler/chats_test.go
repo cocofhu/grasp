@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,6 +27,54 @@ func newChatsEngine(chats *service.ChatManager) *gin.Engine {
 	r.GET("/api/models", ModelsGET(chats))
 	r.POST("/api/model", ModelPOST(chats))
 	return r
+}
+
+func TestReasoningEffortOnlySwitchPreservesModelAndUsesAdvertisedOptions(t *testing.T) {
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("CONFIG_ROOT", t.TempDir())
+	t.Setenv("AGENT_PROVIDER", "codex")
+	t.Setenv("GRASP_MODEL_CONNECTION", "")
+	t.Setenv("ACP_BRIDGE_REASONING_EFFORT", "high")
+	t.Setenv("GRASP_CONFIGURED_MODELS", `[{"id":"primary","reasoningEfforts":["low","ultra"]},{"id":"other","reasoningEfforts":["low"]}]`)
+	chats := service.NewChatManager()
+	chats.SetDefaultModel("primary")
+	bridge := chats.Default()
+	bridge.SetModel("primary")
+	t.Cleanup(func() {
+		if session := bridge.Session(); session != nil {
+			_ = session.Close()
+		}
+	})
+	r := newChatsEngine(chats)
+	for _, step := range []struct{ body, model, effort string }{
+		{`{"reasoningEffort":"ultra"}`, "primary", "ultra"},
+		{`{"model":"other"}`, "other", ""},
+		{`{"reasoningEffort":"low"}`, "other", "low"},
+		{`{"reasoningEffort":""}`, "other", ""},
+	} {
+		response := do(t, r, http.MethodPost, "/api/model?chat=default", step.body)
+		if response.Code != http.StatusOK || bridge.Model() != step.model || bridge.ReasoningEffort() != step.effort {
+			t.Fatalf("switch %s: code=%d model=%q effort=%q body=%s", step.body, response.Code, bridge.Model(), bridge.ReasoningEffort(), response.Body)
+		}
+		var payload struct {
+			ReasoningEffort *string `json:"reasoningEffort"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || payload.ReasoningEffort == nil || *payload.ReasoningEffort != step.effort {
+			t.Fatalf("actual effort must be acknowledged, including empty reset: %+v %v", payload, err)
+		}
+	}
+	response := do(t, r, http.MethodPost, "/api/model", `{"reasoningEffort":"ultra"}`)
+	if response.Code != http.StatusBadRequest || bridge.Model() != "other" || bridge.ReasoningEffort() != "" {
+		t.Fatalf("unadvertised effort changed selection: %d %s", response.Code, response.Body)
+	}
+	response = do(t, r, http.MethodGet, "/api/models", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"reasoningEffort":""`) || !strings.Contains(response.Body.String(), `"reasoningEfforts":["low","ultra"]`) {
+		t.Fatalf("model capabilities missing: %d %s", response.Code, response.Body)
+	}
 }
 
 func do(t *testing.T, r http.Handler, method, path, body string) *httptest.ResponseRecorder {

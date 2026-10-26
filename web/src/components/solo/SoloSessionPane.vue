@@ -36,15 +36,21 @@ const { t, te, locale } = useI18n()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'))
-const { session, turns, queued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, modelSwitchNotice, setCurrentModel } = chat
+const { session, turns, queued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, modelSwitchNotice, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''))
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
 const modelCatalogBlocked = modelCatalog.blocked
 const shownModels = computed(() => {
-  if (modelChoices.value.length || !modelCatalogBlocked.value || !currentModelId.value) return modelChoices.value
-  const id = currentModelId.value
-  return [{ id, name: id, hint: id, vendor: '', backend: false, unavailable: false }]
+  let choices = modelChoices.value
+  if (!choices.length && modelCatalogBlocked.value && currentModelId.value) {
+    const id = currentModelId.value
+    choices = [{ id, name: id, hint: id, vendor: '', backend: false, unavailable: false }]
+  }
+  const row = session.value
+  if (!row || row.reasoningEffort === undefined) return choices
+  const selectedId = currentModelId.value || choices[0]?.id
+  return choices.map(choice => choice.id === selectedId ? { ...choice, efforts: modelChangePending.value ? [] : row.reasoningEfforts || [] } : choice)
 })
 let modelResetFor = ''
 watch([modelChoices, modelCatalog.configLoaded, modelCatalog.catalogConfirmed, currentModelId, canSend], async () => {
@@ -498,11 +504,14 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 </button>
                 <SoloModelSelect
                   class="min-w-0"
+                  flat
                   :model-value="currentModelId"
+                  :reasoning-effort="currentReasoningEffort"
                   :models="shownModels"
                   :disabled="!canSend || !modelCatalogReady"
                   :empty-as-label="modelCatalogReady && !modelChoices.length"
                   @update:model-value="setCurrentModel"
+                  @update:reasoning-effort="setCurrentReasoningEffort"
                 />
                 <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
               </div>

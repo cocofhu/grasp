@@ -62,10 +62,14 @@ type OpenOptions struct {
 	Cwd             string
 	FSRoot          string
 	Model           string
-	McpServers      json.RawMessage
-	ResumeSessionID string // one-shot resume pointer; empty for a fresh session
-	CustomArgs      []string
-	AutoPermission  bool
+	ReasoningEffort string
+	// ReasoningEffortSet distinguishes an explicit tool-default reset from
+	// callers that still follow the legacy process environment.
+	ReasoningEffortSet bool
+	McpServers         json.RawMessage
+	ResumeSessionID    string // one-shot resume pointer; empty for a fresh session
+	CustomArgs         []string
+	AutoPermission     bool
 }
 
 // Model is one entry of a provider's model catalog.
@@ -73,6 +77,12 @@ type Model struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	IsDefault bool   `json:"isDefault,omitempty"`
+}
+
+// ReasoningOptionSource is implemented only by sessions whose agent advertised
+// a separate thought-level selector. Values are opaque protocol values.
+type ReasoningOptionSource interface {
+	ReasoningOptions() (current string, values []string)
 }
 
 // Provider is the factory + metadata for one agent CLI. It creates Sessions and

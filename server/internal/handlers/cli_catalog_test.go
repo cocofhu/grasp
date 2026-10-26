@@ -36,8 +36,7 @@ func TestListCliBackendModels(t *testing.T) {
 	}
 }
 
-// OpenCode reads models.dev and unknown ids are typed by hand; both get an
-// empty list rather than an error.
+// An unconfigured OpenCode catalog and unknown tools keep the picker usable.
 func TestListCliBackendModelsUnlisted(t *testing.T) {
 	hn := newHarness(t)
 	enableAdmin(t)
@@ -50,5 +49,38 @@ func TestListCliBackendModelsUnlisted(t *testing.T) {
 		if body := w.Body.String(); body != `{"models":[]}` {
 			t.Fatalf("%s: body = %s", b, body)
 		}
+	}
+}
+
+func TestOpenCodePlatformModelsOnlyIncludeZenProvider(t *testing.T) {
+	hn := catalogHarness(t, `{
+ "opencode":{"models":{"kimi-k3":{"name":"Kimi K3"},"vendor/model":{"name":"Invalid namespace"}}},
+ "anthropic":{"models":{"claude-sonnet-5":{"name":"Claude Sonnet 5"}}},
+ "opencode-go":{"models":{"kimi-k3":{"name":"Go only"}}}
+}`, http.StatusOK)
+	w := hn.do(http.MethodGet, "/api/acp-backends/opencode/models", nil)
+	var got struct {
+		Models []struct{ ID, Name, Vendor string } `json:"models"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || len(got.Models) != 1 || got.Models[0].ID != "opencode/kimi-k3" || got.Models[0].Name != "Kimi K3" || got.Models[0].Vendor != "opencode" {
+		t.Fatalf("non-Zen model offered for official authorization: %s", w.Body.String())
+	}
+}
+
+func TestOpenCodePlatformModelsCatalogFailure(t *testing.T) {
+	hn := catalogHarness(t, "", http.StatusBadGateway)
+	w := hn.do(http.MethodGet, "/api/acp-backends/opencode/models", nil)
+	var got struct {
+		Models []any  `json:"models"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || got.Models == nil || len(got.Models) != 0 || got.Error == "" {
+		t.Fatalf("catalog failure removed model default fallback: %s", w.Body.String())
 	}
 }

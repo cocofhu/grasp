@@ -8,9 +8,10 @@ const caps = [
   { toolId: 'cursor', modes: ['platform'], protocols: [] },
   { toolId: 'codex', modes: ['platform', 'connection'], protocols: ['openai-responses'] },
   { toolId: 'codebuddy', modes: ['platform', 'connection'], protocols: ['openai-chat-completions'] },
-  { toolId: 'opencode', modes: ['connection'], protocols: ['openai-chat-completions', 'openai-responses', 'anthropic-messages'] },
+  { toolId: 'opencode', modes: ['platform', 'connection'], protocols: ['openai-chat-completions', 'openai-responses', 'anthropic-messages'] },
+  { toolId: 'deepseek_harness', modes: ['platform', 'connection'], protocols: ['openai-chat-completions', 'anthropic-messages'] },
 ].map((cap) => ({ ...cap, adapterState: 'existing', verification: 'not-run', evidence: [] }))
-type ConfigurationRow = { id: string; name: string; backend: string; binding: { kind: string; connectionId?: string; credentialId?: string; modelId?: string }; state: string; revision: number }
+type ConfigurationRow = { id: string; name: string; backend: string; binding: { kind: string; connectionId?: string; credentialId?: string; modelId?: string; auxiliaryModelIds?: string[] }; state: string; revision: number }
 const connection = (id: string, protocol: string, modelId: string) => ({ id, name: id, providerId: 'same-vendor', protocol, baseUrl: `https://${id}.example/v1`, credentialId: key.id, auth: { scheme: 'bearer' }, models: [{ id: modelId, name: modelId, source: 'manual' }], state: 'active', revision: 1 })
 
 async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]) {
@@ -22,6 +23,8 @@ async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]
   const agentWrites: Record<string, unknown>[] = []
   const configurations: ConfigurationRow[] = []
   const configurationWrites: Record<string, unknown>[] = []
+  const modelCatalogs: Record<string, { models: Record<string, unknown>[]; error?: string }> = {}
+  const modelCatalogReads: string[] = []
   const agents: Record<string, unknown>[] = []
   const shared: Record<string, unknown> = { files: [], mcp: [], env: {}, layout: {} }
   const sharedWrites: Record<string, unknown>[] = []
@@ -66,6 +69,11 @@ async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]
     }
     await route.fulfill({ json: rows[index] })
   })
+  await routeApi(page, '**/api/workspace/model-connections/*/models', async (route) => {
+    const id = decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-2) || '')
+    modelCatalogReads.push(id)
+    await route.fulfill({ json: modelCatalogs[id] || { models: [] } })
+  })
   await routeApi(page, '**/api/workspace/model-configurations', async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON()
@@ -104,7 +112,7 @@ async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]
     }
     await route.fulfill({ json: agents[index] })
   })
-  return { rows, keyWrites, connectionWrites, agentWrites, configurations, configurationWrites, agents, credentials, shared, sharedWrites }
+  return { rows, keyWrites, connectionWrites, agentWrites, configurations, configurationWrites, agents, credentials, shared, sharedWrites, modelCatalogs, modelCatalogReads }
 }
 
 async function openCredentials(page: Page) {
@@ -122,6 +130,13 @@ async function enterModel(page: Page, value: string) {
   const panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
   await panel.locator('[data-test="app-select-search"]').fill(value)
   await panel.locator('[data-test="app-select-custom"]').click()
+}
+
+async function settleVisualTransitions(page: Page) {
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    await Promise.allSettled(document.getAnimations().filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity).map((animation) => animation.finished))
+  })
 }
 
 async function chooseBoundConfiguration(page: Page, value: string) {
@@ -217,7 +232,7 @@ test('create credentials, then save a reusable tool-credential-model configurati
   await page.getByTestId('workspace-credential-create-alias').fill('Team gateway key')
   await page.getByTestId('model-credential-issuer').locator('[data-test="app-select-trigger"]').click()
   await page.getByRole('option', { name: 'OpenAI', exact: true }).click()
-  await page.getByTestId('model-credential-create-connection').check()
+  await expect(page.getByTestId('model-credential-create-connection')).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByTestId('model-credential-connection-base-url')).toHaveValue('https://api.openai.com/v1')
   await page.getByTestId('model-credential-issuer').locator('[data-test="app-select-trigger"]').click()
   await page.getByRole('option', { name: '自定义服务商', exact: true }).click()
@@ -394,52 +409,108 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   await captureRuntimeBindings(page, 'agent-inherit-model-git', testInfo)
 })
 
-test('OpenCode shortcut saves its provider credential, creates a model and binds an Agent to it', async ({ page }) => {
-  const state = await setup(page)
+test('API accounts offer the provider model catalog and persist only the chosen primary and auxiliary models', async ({ page }, testInfo) => {
+  const saved = connection('tokenhub-account', 'openai-chat-completions', 'saved/manual-model')
+  const primary = { id: 'gpt-5.5', name: 'TokenHub GPT 5.5', source: 'discovered', capabilities: { vision: true, reasoning: true }, input: ['text', 'image'], contextWindow: 256000, reasoningEfforts: ['low', 'high'] }
+  const auxiliary = { id: 'kimi-k3.1-pro', name: 'TokenHub Kimi', source: 'discovered' }
+  const unused = { id: 'glm-5.1', name: 'TokenHub GLM', source: 'discovered' }
+  const unusedHunyuan = { id: 'hy3-pro', name: 'TokenHub HY', source: 'discovered' }
+  const state = await setup(page, [saved])
+  state.modelCatalogs[saved.id] = { models: [primary, auxiliary, unused, unusedHunyuan] }
   await openCredentials(page)
-  await page.getByTestId('workspace-credential-create').click()
-  await page.getByTestId('workspace-add-credential').click()
-  await page.getByTestId('credential-kind-opencode').click()
-  await page.getByTestId('workspace-credential-create-next').click()
-  await page.getByTestId('workspace-credential-create-alias').fill('Team OpenCode API')
-  await page.getByTestId('model-credential-issuer').locator('[data-test="app-select-trigger"]').click()
-  await page.getByRole('option', { name: 'OpenAI', exact: true }).click()
-  await expect(page.getByTestId('model-credential-connection-base-url')).toHaveValue('https://api.openai.com/v1')
-  await page.getByTestId('workspace-credential-create-value').fill('test-opencode-provider-key')
-  await page.getByTestId('workspace-credential-review-next').click()
-  await expect(page.getByRole('dialog')).not.toContainText('test-opencode-provider-key')
-  await page.getByTestId('workspace-credential-create-submit').click()
-  await expect(page.getByTestId('credentials-tab-models')).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByTestId('model-configuration-backend-opencode')).toHaveAttribute('aria-checked', 'true')
-  expect(state.keyWrites).toHaveLength(1)
-  expect(state.keyWrites[0]).toMatchObject({ purpose: 'model_api', issuer: 'openai', secretKind: 'api_key' })
-  expect(state.keyWrites[0]).not.toHaveProperty('toolId')
-  expect(state.keyWrites[0]).not.toHaveProperty('envKey')
-  expect(state.connectionWrites[0]).toMatchObject({ credentialId: 'new-key', providerId: 'openai', protocol: 'openai-responses' })
-
-  await page.getByTestId('model-configuration-name').fill('Team OpenCode model')
+  await page.getByTestId('credentials-tab-models').click()
+  await addModelConfiguration(page)
+  await page.getByTestId('model-configuration-name').fill('Team provider model')
+  await page.getByTestId('model-configuration-backend-opencode').click()
   await page.getByTestId('model-configuration-next').click()
-  await expect(page.getByTestId('model-configuration-credential-choice').locator('[data-test="app-select-trigger"]')).toContainText('Team OpenCode API')
+  await chooseCredential(page, `connection:${saved.id}`)
+  expect(state.modelCatalogReads).toHaveLength(0)
   await page.getByTestId('model-configuration-next').click()
-  await enterModel(page, 'team/opencode/raw/model')
+  await expect.poll(() => state.modelCatalogReads).toEqual([saved.id])
+  const field = page.getByTestId('model-configuration-model-id')
+  await expect(field.locator('[data-test="app-select-trigger"]')).not.toContainText(primary.name)
+  await field.locator('[data-test="app-select-trigger"]').click()
+  let panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
+  await panel.locator('[data-test="app-select-search"]').fill('TokenHub')
+  await expect(panel.locator(`[data-test="app-select-option-${primary.id}"]`)).toContainText(primary.id)
+  for (const [id, vendor] of [[primary.id, 'openai'], [auxiliary.id, 'kimi'], [unused.id, 'zhipu'], [unusedHunyuan.id, 'hunyuan']]) {
+    const image = panel.locator(`[data-test="app-select-option-${id}"] [data-vendor-mark="${vendor}"] img`)
+    await expect(image).toBeVisible()
+    await expect.poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+  }
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('api-account-discovered-models.png'), fullPage: true, animations: 'disabled' })
+  await panel.locator('[data-test="app-select-search"]').press('Enter')
+  await expect(field.locator('[data-test="app-select-trigger"]')).toContainText(primary.name)
+  await expect(field.locator('[data-test="app-select-trigger"] [data-vendor-mark="openai"] img')).toBeVisible()
+  await page.getByTestId('model-configuration-add-model').click()
+  await page.getByTestId('model-configuration-aux-select-0').locator('[data-test="app-select-trigger"]').click()
+  panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
+  await panel.locator('[data-test="app-select-search"]').fill(auxiliary.name)
+  await panel.locator('[data-test="app-select-search"]').press('Enter')
+  await expect(page.getByTestId('model-configuration-aux-select-0')).toContainText(auxiliary.name)
+  await expect(page.getByTestId('model-configuration-aux-select-0').locator('[data-test="app-select-trigger"] [data-vendor-mark="kimi"] img')).toBeVisible()
+  expect(state.connectionWrites).toHaveLength(0)
   await page.getByTestId('model-configuration-save').click()
-  await expect(page.getByTestId('model-configuration-configured-model')).toContainText('Team OpenCode model')
-  expect(state.configurationWrites[0]).toMatchObject({ backend: 'opencode', binding: { kind: 'connection', connectionId: 'new-service', modelId: 'team/opencode/raw/model' } })
-
-  await page.goto('/agent-create-wizard.html')
-  await page.locator('#wiz-name-input').fill('opencode-bound-agent')
-  await page.getByRole('button', { name: /^下一步/ }).click()
-  await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
-  await chooseBoundConfiguration(page, 'configured-model')
-  await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByRole('button', { name: /^跳过/ }).click()
-  await page.getByRole('button', { name: /创建并进入 Studio/ }).click()
-  await expect.poll(() => state.agentWrites.length).toBe(1)
-  expect(state.agentWrites[0]).toMatchObject({ acpBackend: 'opencode', modelBinding: { kind: 'configuration', configurationId: 'configured-model' } })
-  expect(state.keyWrites).toHaveLength(1)
-  expect(state.connectionWrites).toHaveLength(2)
-  expect(state.configurationWrites).toHaveLength(1)
+  await expect(page.getByTestId('model-configuration-configured-model')).toContainText('Team provider model')
+  expect(state.configurationWrites).toEqual([expect.objectContaining({ backend: 'opencode', binding: { kind: 'connection', connectionId: saved.id, modelId: primary.id, auxiliaryModelIds: [auxiliary.id] } })])
+  expect(state.connectionWrites).toEqual([expect.objectContaining({ models: [...saved.models, primary, auxiliary] })])
+  expect(state.rows[0]!.models.some((model) => model.id === unused.id)).toBe(false)
+  expect(state.rows[0]!.models.some((model) => model.id === unusedHunyuan.id)).toBe(false)
+  expect(state.keyWrites).toHaveLength(0)
 })
+
+for (const backend of ['opencode', 'deepseek_harness']) {
+  test(`${backend} saves its official authorization and binds an Agent without an API connection`, async ({ page }) => {
+    const state = await setup(page)
+    await openCredentials(page)
+    await page.getByTestId('workspace-credential-create').click()
+    await page.getByTestId('workspace-add-credential').click()
+    await page.getByTestId(`credential-kind-${backend}`).click()
+    await page.getByTestId('workspace-credential-create-next').click()
+    await expect(page.getByTestId('model-credential-issuer')).toHaveCount(0)
+    await expect(page.getByTestId('model-credential-create-connection')).toHaveCount(0)
+    await expect(page.getByTestId('model-credential-connection-base-url')).toHaveCount(0)
+    await expect(page.getByTestId('workspace-credential-create-value')).toHaveAttribute('type', 'password')
+    await page.getByTestId('workspace-credential-create-alias').fill(`Team ${backend} official account`)
+    await page.getByTestId('workspace-credential-create-value').fill('test-official-tool-key')
+    await page.getByTestId('workspace-credential-review-next').click()
+    await expect(page.getByRole('dialog')).not.toContainText('test-official-tool-key')
+    await page.getByTestId('workspace-credential-create-submit').click()
+    await expect(page.getByTestId('credentials-tab-credentials')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId('model-configuration-form')).toHaveCount(0)
+    const saved = page.getByTestId('workspace-credential-section-coding').getByTestId('workspace-credential-row').filter({ hasText: `Team ${backend} official account` })
+    await expect(saved).toBeVisible()
+    await expect(page.getByTestId('workspace-credential-section-api')).not.toContainText(`Team ${backend} official account`)
+    expect(state.keyWrites).toEqual([{ type: 'ai', purpose: 'tool_auth', toolId: backend, provider: backend, secretKind: 'api_key', envKey: backend === 'opencode' ? 'GRASP_OPENCODE_API_KEY' : 'GRASP_DEEPSEEK_API_KEY', name: `Team ${backend} official account`, value: 'test-official-tool-key' }])
+    expect(state.connectionWrites).toHaveLength(0)
+
+    await page.getByTestId('credentials-tab-models').click()
+    await addModelConfiguration(page)
+    await page.getByTestId('model-configuration-name').fill(`Team ${backend} model`)
+    await page.getByTestId(`model-configuration-backend-${backend}`).click()
+    await page.getByTestId('model-configuration-next').click()
+    await chooseCredential(page, 'platform:new-key')
+    await page.getByTestId('model-configuration-next').click()
+    await page.getByTestId('model-configuration-save').click()
+    await expect(page.getByTestId('model-configuration-configured-model')).toContainText(`Team ${backend} model`)
+    expect(state.configurationWrites).toEqual([expect.objectContaining({ backend, binding: { kind: 'platform', credentialId: 'new-key' } })])
+
+    await page.goto('/agent-create-wizard.html')
+    await page.locator('#wiz-name-input').fill(`${backend}-bound-agent`)
+    await page.getByRole('button', { name: /^下一步/ }).click()
+    await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
+    await chooseBoundConfiguration(page, 'configured-model')
+    await page.getByRole('button', { name: /^下一步/ }).click()
+    await page.getByRole('button', { name: /^跳过/ }).click()
+    await page.getByRole('button', { name: /创建并进入 Studio/ }).click()
+    await expect.poll(() => state.agentWrites.length).toBe(1)
+    expect(state.agentWrites[0]).toMatchObject({ acpBackend: backend, modelBinding: { kind: 'configuration', configurationId: 'configured-model' } })
+    expect(state.keyWrites).toHaveLength(1)
+    expect(state.connectionWrites).toHaveLength(0)
+    expect(state.configurationWrites).toHaveLength(1)
+  })
+}
 
 test('model wizard preserves selections on Back and handles an incompatible tool in a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 })
@@ -490,7 +561,7 @@ test('model wizard preserves selections on Back and handles an incompatible tool
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
-for (const backend of ['cursor', 'opencode']) {
+for (const backend of ['cursor', 'opencode', 'deepseek_harness']) {
   test(`model wizard can cancel and create a missing ${backend} credential without losing its draft`, async ({ page }) => {
     const state = await setup(page)
     await openCredentials(page)
@@ -507,12 +578,8 @@ for (const backend of ['cursor', 'opencode']) {
     await expect(page.getByTestId('model-configuration-form')).toHaveAttribute('data-step', '2')
     await page.getByTestId('model-configuration-add-credential').click()
     await page.getByTestId('workspace-credential-create-alias').fill(`New ${backend} credential`)
-    if (backend === 'opencode') {
-      await page.getByTestId('model-credential-issuer').locator('[data-test="app-select-trigger"]').click()
-      await page.getByRole('option', { name: 'OpenAI', exact: true }).click()
-    } else {
-      await expect(page.getByTestId('model-credential-issuer')).toHaveCount(0)
-    }
+    await expect(page.getByTestId('model-credential-issuer')).toHaveCount(0)
+    await expect(page.getByTestId('model-credential-connection-base-url')).toHaveCount(0)
     await page.getByTestId('workspace-credential-create-value').fill('test-new-compatible-key')
     await page.getByTestId('workspace-credential-review-next').click()
     await page.getByTestId('workspace-credential-create-submit').click()
@@ -523,11 +590,135 @@ for (const backend of ['cursor', 'opencode']) {
     await expect(page.getByTestId(`model-configuration-backend-${backend}`)).toHaveAttribute('aria-checked', 'true')
     await page.getByTestId('model-configuration-next').click()
     await page.getByTestId('model-configuration-next').click()
-    if (backend === 'opencode') await enterModel(page, 'new/vendor/raw/model')
     await page.getByTestId('model-configuration-save').click()
     await expect(page.getByTestId('model-configuration-configured-model')).toContainText(`Keep ${backend} draft`)
     expect(state.keyWrites).toHaveLength(1)
-    expect(state.keyWrites[0]).toMatchObject(backend === 'cursor' ? { purpose: 'tool_auth', toolId: 'cursor' } : { purpose: 'model_api', issuer: 'openai' })
-    expect(state.configurationWrites[0]).toMatchObject({ backend, binding: backend === 'cursor' ? { kind: 'platform', credentialId: 'new-key' } : { kind: 'connection', connectionId: 'new-service', modelId: 'new/vendor/raw/model' } })
+    expect(state.keyWrites[0]).toMatchObject({ purpose: 'tool_auth', toolId: backend, provider: backend, secretKind: 'api_key' })
+    expect(state.connectionWrites).toHaveLength(0)
+    expect(state.configurationWrites[0]).toMatchObject({ backend, binding: { kind: 'platform', credentialId: 'new-key' } })
   })
 }
+
+
+test('Solo uses saved model names and sends exact model IDs and advertised effort values', async ({ page }, testInfo) => {
+  const primary = 'kimi-k3.1-pro'
+  const auxiliary = 'kimi-k2.5'
+  const service = {
+    ...connection('kimi-service', 'openai-chat-completions', primary),
+    models: [{ id: primary, name: 'Kimi upstream model', source: 'manual', reasoningEfforts: ['low', 'high'] }, { id: auxiliary, name: 'Kimi 2.5', source: 'manual' }],
+  }
+  const state = await setup(page, [service])
+  state.configurations.push({ id: 'kimi-config', name: 'Kimi', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: service.id, modelId: primary, auxiliaryModelIds: [auxiliary] }, state: 'active', revision: 1 })
+  state.agents.push({ name: 'Solo', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' }, gitBindings: { items: [] }, files: [], mcp: [], env: {}, layout: {} })
+  const session = { id: 'solo-named-model', title: 'A Solo task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-10-26T00:00:00Z', updatedAt: '2026-10-26T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialModelId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', reasoningEfforts: ['low', 'high'] }
+  let createBody: Record<string, unknown> | undefined
+  const modelWrites: Record<string, unknown>[] = []
+  await routeApi(page, '**/api/projects', route => route.fulfill({ json: [] }))
+  await routeApi(page, '**/api/solo/sessions**', async route => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname === '/api/solo/sessions') {
+      if (route.request().method() === 'POST') {
+        createBody = route.request().postDataJSON()
+        session.initialModelId = String(createBody?.initialModelId || '')
+        session.reasoningEffort = String(createBody?.reasoningEffort || '')
+        return route.fulfill({ json: session })
+      }
+      return route.fulfill({ json: { sessions: createBody ? [session] : [], maxSandboxes: 8 } })
+    }
+    if (pathname.endsWith('/messages') || pathname.endsWith('/env')) return route.fulfill({ json: [] })
+    if (pathname.endsWith('/model')) {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      modelWrites.push(body)
+      if (Object.hasOwn(body, 'modelId')) {
+        session.currentModelId = String(body.modelId || '')
+        session.currentModelSet = true
+        session.reasoningEfforts = session.currentModelId === auxiliary ? [] : ['low', 'high']
+        if (!session.reasoningEfforts.includes(session.reasoningEffort)) session.reasoningEffort = ''
+      }
+      if (Object.hasOwn(body, 'reasoningEffort')) session.reasoningEffort = String(body.reasoningEffort || '')
+      return route.fulfill({ json: session })
+    }
+    return route.fulfill({ json: session })
+  })
+  await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))
+  await page.addInitScript(() => localStorage.setItem('grasp.home.mode', 'solo'))
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('http://127.0.0.1:5174/workspace-config.html?view=/dashboard')
+  const trigger = page.getByTestId('solo-model-select-trigger')
+  const expectModelPill = async (framed = true) => {
+    await expect(trigger.locator('[data-vendor-mark="kimi"] img')).toBeVisible()
+    await expect(trigger.locator('[data-vendor-mark="deepseek_harness"]')).toHaveCount(0)
+    const border = await trigger.evaluate((node) => {
+      const style = getComputedStyle(node)
+      const opacity = style.borderTopColor.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/)
+      return { style: style.borderTopStyle, width: parseFloat(style.borderTopWidth), alpha: style.borderTopColor === 'transparent' ? 0 : opacity ? Number(opacity[1]) : 1 }
+    })
+    expect(border.style).not.toBe('none')
+    expect(border.width).toBeGreaterThan(0)
+    if (framed) expect(border.alpha).toBeGreaterThan(0)
+    else expect(border.alpha).toBe(0)
+  }
+  await expect(trigger).toContainText('Kimi')
+  await expect(trigger).not.toContainText(primary)
+  await expectModelPill()
+  await trigger.click()
+  await expect(page.getByTestId(`solo-model-option-${primary}`)).toContainText('Kimi')
+  await expect(page.getByTestId('solo-model-select-panel')).not.toContainText(primary)
+  await expect(page.getByTestId('solo-model-select-panel')).not.toContainText(auxiliary)
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-model-menu-home-light.png'), animations: 'disabled' })
+  await page.getByTestId('solo-effort-open').click()
+  const slider = page.getByTestId('solo-effort-slider')
+  await expect(slider).toHaveAttribute('max', '2')
+  await slider.press('End')
+  await expect(slider).toHaveValue('2')
+  await expect(page.getByTestId('solo-effort-option-ultra')).toHaveCount(0)
+  await expect(page.locator('button[data-testid^="solo-effort-option-"]')).toHaveCount(0)
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-model-effort-home.png'), animations: 'disabled' })
+  await page.keyboard.press('Escape')
+  await page.getByTestId('shell-theme-toggle').click()
+  await settleVisualTransitions(page)
+  await expectModelPill()
+  await trigger.click()
+  await expect(page.getByTestId('solo-model-select-panel')).not.toContainText(primary)
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-model-menu-home-dark.png'), animations: 'disabled' })
+  await page.getByTestId('solo-effort-open').click()
+  await expect(slider).toHaveValue('2')
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-model-effort-home-dark.png'), animations: 'disabled' })
+  await page.keyboard.press('Escape')
+  await page.getByTestId('shell-theme-toggle').click()
+  await settleVisualTransitions(page)
+  await page.getByTestId('home-composer-input').fill('Use the named model')
+  await page.getByTestId('home-composer-send').click()
+  await expect(page.getByTestId('solo-session-pane')).toBeVisible()
+  expect(createBody).toMatchObject({ agentName: 'Solo', reasoningEffort: 'high' })
+  expect(createBody).not.toHaveProperty('initialModelId')
+  await expect(trigger).toContainText('Kimi')
+  await expect(trigger).not.toContainText(primary)
+  await expectModelPill(false)
+  await trigger.click()
+  await expectModelPill(false)
+  await expect(page.getByTestId('solo-model-select-panel')).not.toContainText(primary)
+  await page.getByTestId('solo-effort-open').click()
+  await expect(page.getByTestId('solo-effort-slider')).toHaveValue('2')
+  await page.getByTestId('solo-effort-slider').press('Home')
+  await expect.poll(() => modelWrites.at(-1)).toEqual({ reasoningEffort: '' })
+  await page.getByTestId('solo-effort-slider').press('End')
+  await expect.poll(() => modelWrites.at(-1)).toEqual({ reasoningEffort: 'high' })
+  await page.getByTestId('solo-effort-reset').click()
+  await expect.poll(() => modelWrites.at(-1)).toEqual({ reasoningEffort: '' })
+  await page.setViewportSize({ width: 390, height: 900 })
+  const panel = await page.getByTestId('solo-model-select-panel').boundingBox()
+  expect(panel!.x).toBeGreaterThanOrEqual(0)
+  expect(panel!.x + panel!.width).toBeLessThanOrEqual(391)
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-model-effort-session-mobile.png'), animations: 'disabled' })
+  await page.getByTestId('solo-effort-back').click()
+  await page.getByTestId(`solo-model-option-${auxiliary}`).click()
+  await expect.poll(() => modelWrites.at(-1)?.modelId).toBe(auxiliary)
+  await expect(trigger).toContainText('Kimi 2.5')
+  await expect(page.getByTestId('solo-model-effort-label')).toHaveCount(0)
+})

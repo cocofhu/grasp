@@ -18,9 +18,11 @@ const mocks = vi.hoisted(() => ({
   providers: vi.fn(),
   models: vi.fn(),
   connections: vi.fn(),
+  connectionModels: vi.fn(),
   configurations: vi.fn(),
   capabilities: vi.fn(),
   createConnection: vi.fn(),
+  createConfiguration: vi.fn(),
   updateConnection: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
@@ -36,9 +38,11 @@ vi.mock('@/lib/api/api', () => ({
     openCodeProviders: mocks.providers,
     openCodeModels: mocks.models,
     listModelConnections: mocks.connections,
+    listModelConnectionModels: mocks.connectionModels,
     listModelConfigurations: mocks.configurations,
     listToolCapabilities: mocks.capabilities,
     createModelConnection: mocks.createConnection,
+    createModelConfiguration: mocks.createConfiguration,
     updateModelConnection: mocks.updateConnection,
   },
 }))
@@ -64,7 +68,7 @@ const config = {
 const serviceKey: CredentialItem = { id: 'model-key', type: 'ai', name: 'Shared model key', purpose: 'model_api', issuer: 'deepseek', configured: true, masked: 'sk-…9999' }
 const modelService: ModelConnection = { id: 'service', name: 'Team model service', providerId: 'deepseek', protocol: 'openai-chat-completions', baseUrl: 'https://models.example.test/v1', credentialId: serviceKey.id, auth: { scheme: 'bearer' }, models: [{ id: 'vendor/original/model', source: 'manual', input: ['text', 'image'], contextWindow: 128000, maxTokens: 8192 }], state: 'active', revision: 3 }
 
-function mountPanel(response: { items: CredentialItem[] } = config, locale: 'zh-CN' | 'en' = 'zh-CN') {
+function mountPanel(response: { items: CredentialItem[] } = config, locale: 'zh-CN' | 'en' = 'zh-CN', props: { inline?: boolean; scope?: 'all' | 'model' | 'git'; view?: 'credentials' | 'models'; setup?: boolean; configurationId?: string } = {}) {
   const i18n = createI18n({
     legacy: false,
     locale,
@@ -75,6 +79,7 @@ function mountPanel(response: { items: CredentialItem[] } = config, locale: 'zh-
   })
   mocks.get.mockResolvedValue(response)
   return mount(WorkspaceCredentialsPanel, {
+    props,
     global: { plugins: [i18n], stubs: { Icon: true, Teleport: true, RouterLink: { template: '<a><slot /></a>' } } },
   })
 }
@@ -133,10 +138,204 @@ describe('WorkspaceCredentialsPanel', () => {
     mocks.providers.mockResolvedValue({ providers: [{ id: 'openai', name: 'OpenAI' }] })
     mocks.models.mockResolvedValue({ models: [{ id: 'gpt-4o', name: 'GPT-4o' }] })
     mocks.connections.mockResolvedValue({ items: [] })
+    mocks.connectionModels.mockResolvedValue({ models: [] })
     mocks.configurations.mockResolvedValue({ items: [] })
     mocks.capabilities.mockResolvedValue({ items: [] })
+    mocks.createConfiguration.mockImplementation(async (body: Record<string, unknown>) => ({ id: 'configuration-created', ...body, revision: 1 }))
     mocks.createConnection.mockImplementation(async (body: Record<string, unknown>) => ({ id: 'connection-created', ...body, revision: 1 }))
     mocks.updateConnection.mockImplementation(async (id: string, body: Record<string, unknown>) => ({ id, ...body, revision: 4 }))
+  })
+
+  it('creates a Git credential inline, filters unrelated providers and reports the saved reference', async () => {
+    const wrapper = mountPanel(config, 'zh-CN', { inline: true, scope: 'git' })
+    document.body.appendChild(wrapper.element)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="workspace-add-model"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-credential-section-coding"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-credential-section-git"]').exists()).toBe(true)
+    const opener = wrapper.get('[data-testid="workspace-add-credential"]')
+    ;(opener.element as HTMLElement).focus()
+    await opener.trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="credential-inline-editor"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="credential-kind-model_api"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="credential-kind-cursor"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="credential-kind-ssh_key"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="credential-kind-github"]').trigger('click')
+    await wrapper.get('[data-testid="workspace-credential-create-next"]').trigger('click')
+    await finishStepTransition()
+    await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('My GitHub')
+    await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('private-test-token')
+    await reviewCredential(wrapper)
+    expect(wrapper.text()).not.toContain('private-test-token')
+    await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('credentialSaved')?.[0]?.[0]).toMatchObject({ id: 'cred-created', purpose: 'git', name: 'My GitHub' })
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+    expect(wrapper.emitted('editing')).toEqual([[true], [false]])
+    expect(document.activeElement).toBe(opener.element)
+    expect(wrapper.find('[data-testid="credential-inline-editor"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('starts coding-tool setup directly and resumes its draft after creating a credential inline', async () => {
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'cursor', modes: ['platform'], adapterState: 'existing' }] })
+    const wrapper = mountPanel({ items: [] }, 'en', { inline: true, scope: 'model', view: 'models', setup: true })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('1')
+    expect(wrapper.get('[data-testid="model-configuration-backend-cursor"]').isVisible()).toBe(true)
+    expect(wrapper.get('.credentials-header').attributes('style')).toContain('display: none')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="model-configuration-name"]').setValue('My coding tool')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-add-credential"]').trigger('click')
+    await flushPromises()
+    await finishStepTransition()
+    await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('My account')
+    await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('private-test-key')
+    await reviewCredential(wrapper)
+    mocks.get.mockResolvedValue({ items: [{ id: 'cred-created', name: 'My account', purpose: 'tool_auth', toolId: 'cursor', configured: true }] })
+    await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('2')
+    expect(wrapper.get('[data-testid="model-configuration-credential-choice"]').text()).toContain('My account')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.createConfiguration).toHaveBeenCalledWith(expect.objectContaining({ name: 'My coding tool', backend: 'cursor', binding: { kind: 'platform', credentialId: 'cred-created' } }))
+    expect(wrapper.emitted('modelSaved')?.[0]?.[0]).toMatchObject({ id: 'configuration-created', name: 'My coding tool' })
+    wrapper.unmount()
+  })
+
+  it.each(['opencode', 'deepseek_harness'])('saves the official %s credential inline without opening model setup', async (backend) => {
+    const wrapper = mountPanel({ items: [] }, 'zh-CN', { inline: true, scope: 'model', view: 'credentials' })
+    await flushPromises()
+    expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-add-model"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workspace-credential-create-form"]').attributes('data-credential-step')).toBe('1')
+    expect(wrapper.get('[data-testid="credential-kind-model_api"]').isVisible()).toBe(true)
+    await wrapper.get(`[data-testid="credential-kind-${backend}"]`).trigger('click')
+    await wrapper.get('[data-testid="workspace-credential-create-next"]').trigger('click')
+    await finishStepTransition()
+    expect(wrapper.find('[data-testid="model-credential-issuer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-credential-create-connection"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-credential-connection-base-url"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('My official key')
+    await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('private-test-key')
+    await reviewCredential(wrapper)
+    await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith({ type: 'ai', purpose: 'tool_auth', toolId: backend, provider: backend, secretKind: 'api_key', envKey: backend === 'opencode' ? 'GRASP_OPENCODE_API_KEY' : 'GRASP_DEEPSEEK_API_KEY', name: 'My official key', value: 'private-test-key' })
+    expect(mocks.createConnection).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="workspace-credential-row"]').text()).toContain('My official key')
+    expect(wrapper.find('[data-testid="model-configurations-manager"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-configuration-form"]').exists()).toBe(false)
+    expect(wrapper.emitted('editing')).toEqual([[true], [false]])
+    expect(mocks.createConfiguration).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps credential and model views separate and creates models from the saved credentials', async () => {
+    const wrapper = mountPanel(config, 'zh-CN', { inline: true, scope: 'model', view: 'credentials' })
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'cursor', adapterState: 'existing', modes: ['platform'] }] })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="workspace-add-model"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workspace-credential-row"]').text()).toContain('Cursor API key')
+    await wrapper.setProps({ view: 'models' })
+    await flushPromises()
+    expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-add-credential"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-configuration-manage-credentials"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="workspace-add-model"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="model-configuration-name"]').setValue('My saved-key model')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-configuration-add-credential"]').exists()).toBe(false)
+    await chooseSearchOption(wrapper, 'model-configuration-credential-choice', 'platform:cursor-api')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.createConfiguration).toHaveBeenCalledWith(expect.objectContaining({ name: 'My saved-key model', backend: 'cursor', binding: { kind: 'platform', credentialId: 'cursor-api' } }))
+    expect(mocks.create).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps a missing credential message in model-only view without opening credential creation', async () => {
+    const wrapper = mountPanel({ items: [] }, 'zh-CN', { inline: true, scope: 'model', view: 'models' })
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'cursor', adapterState: 'existing', modes: ['platform'] }] })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="workspace-add-credential"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-configuration-manage-credentials"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="workspace-add-model"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="model-configuration-name"]').setValue('Needs credentials')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-configuration-credentials-empty"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="model-configuration-next"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="model-configuration-add-credential"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('editing')).toEqual([[true], [false]])
+    wrapper.unmount()
+  })
+
+  it('keeps an inline model draft while creating its missing credential and selects the new key', async () => {
+    const wrapper = mountPanel({ items: [] }, 'zh-CN', { inline: true, scope: 'model' })
+    document.body.appendChild(wrapper.element)
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'cursor', adapterState: 'existing', modes: ['platform'] }] })
+    mocks.create.mockImplementation(async ({ value: _value, ...body }: Record<string, unknown>) => {
+      const key = { id: 'cred-created', type: 'ai', ...body, configured: true, masked: '••••' }
+      mocks.get.mockResolvedValue({ items: [key] })
+      return key
+    })
+    await flushPromises()
+    const opener = wrapper.get('[data-testid="workspace-add-model"]')
+    ;(opener.element as HTMLElement).focus()
+    await opener.trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="model-configuration-name"]').setValue('My first model')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-add-credential"]').trigger('click')
+    await finishStepTransition()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="credential-inline-editor"]')).toHaveLength(1)
+    await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('My Cursor')
+    await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('private-cursor-key')
+    await reviewCredential(wrapper)
+    await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('2')
+    expect(wrapper.get('[data-testid="model-configuration-credential-choice"]').text()).toContain('My Cursor')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="model-configuration-credential-choice"] [data-test="app-select-trigger"]').element)
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.createConfiguration).toHaveBeenCalledWith(expect.objectContaining({ name: 'My first model', backend: 'cursor', binding: { kind: 'platform', credentialId: 'cred-created' } }))
+    expect(wrapper.emitted('modelSaved')?.[0]?.[0]).toMatchObject({ id: 'configuration-created', name: 'My first model' })
+    expect(document.activeElement).toBe(opener.element)
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('edits a model service inline without exposing destructive account actions', async () => {
+    mocks.connections.mockResolvedValue({ items: [modelService] })
+    const wrapper = mountPanel({ items: [serviceKey] }, 'zh-CN', { inline: true, scope: 'model' })
+    await flushPromises()
+    await wrapper.get('[data-testid="credentials-tab-credentials"]').trigger('click')
+    await wrapper.get(`[data-testid="workspace-credential-edit-${serviceKey.id}"]`).trigger('click')
+    await wrapper.get('[data-testid="model-credential-edit-service-service"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-connection-form"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="api-account-more-model-key"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-credential-clear-model-key"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="model-connection-base-url"]').setValue('https://updated.example.test/v1')
+    await wrapper.get('[data-testid="model-connection-form"]').trigger('submit')
+    await flushPromises()
+    expect(mocks.updateConnection).toHaveBeenCalledWith(modelService.id, expect.objectContaining({ baseUrl: 'https://updated.example.test/v1' }))
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+    wrapper.unmount()
   })
 
   it('offers credential and model actions from the same header menu on both tabs', async () => {
@@ -487,7 +686,7 @@ describe('WorkspaceCredentialsPanel', () => {
     await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('DeepSeek team')
     wrapper.getComponent('[data-testid="model-credential-issuer"]').vm.$emit('update:modelValue', 'deepseek')
     await flushPromises()
-    await wrapper.get('[data-testid="model-credential-create-connection"]').setValue(false)
+    await wrapper.get('[data-testid="model-credential-create-connection"]').trigger('click')
     await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('dsh-example-key')
     await wrapper.get('[data-testid="workspace-credential-review-next"]').trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 220))
@@ -501,59 +700,48 @@ describe('WorkspaceCredentialsPanel', () => {
     wrapper.unmount()
   })
 
-  it.each(['opencode', 'deepseek_harness'])('uses the %s shortcut to save the real provider key and API service before opening model setup', async (backend) => {
-    const alias = `Team ${backend} API`
-    const storedKeys: CredentialItem[] = [...config.items]
-    const storedServices: ModelConnection[] = []
+  it.each(['opencode', 'deepseek_harness'])('keeps the official %s key separate from generic API accounts', async (backend) => {
+    const alias = `Team ${backend} account`
     const wrapper = mountPanel()
-    mocks.get.mockImplementation(async () => ({ items: [...storedKeys] }))
-    mocks.connections.mockImplementation(async () => ({ items: [...storedServices] }))
-    mocks.capabilities.mockResolvedValue({ items: [{ toolId: backend, modes: ['connection'], protocols: ['openai-responses'], adapterState: 'existing' }] })
-    mocks.create.mockImplementation(async ({ value: _value, ...body }: Record<string, unknown>) => {
-      const saved = { id: 'opencode-provider-key', ...body, configured: true, masked: '••••4242' } as CredentialItem
-      storedKeys.push(saved)
-      return saved
-    })
-    mocks.createConnection.mockImplementation(async (body: Record<string, unknown>) => {
-      const saved = { id: 'opencode-api-service', ...body, revision: 1 } as ModelConnection
-      storedServices.push(saved)
-      return saved
-    })
     await flushPromises()
     await openCredentialWizard(wrapper)
     await wrapper.get(`[data-testid="credential-kind-${backend}"]`).trigger('click')
     await wrapper.get('[data-testid="workspace-credential-create-next"]').trigger('click')
     await finishStepTransition()
+    expect(wrapper.find('[data-testid="model-credential-issuer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-credential-create-connection"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-credential-connection-base-url"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workspace-credential-create-value"]').attributes('type')).toBe('password')
+    expect(wrapper.text()).toContain(backend === 'opencode' ? 'OpenCode 官方 Key' : 'DeepSeek 官方 Key')
     await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue(alias)
-    wrapper.getComponent('[data-testid="model-credential-issuer"]').vm.$emit('update:modelValue', 'openai')
-    await flushPromises()
-    expect(wrapper.get('[data-testid="model-credential-connection-base-url"]').element).toHaveProperty('value', 'https://api.openai.com/v1')
-    await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('test-opencode-provider-key')
+    await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('test-official-key')
     await reviewCredential(wrapper)
     await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
     await flushPromises()
-    expect(mocks.create).toHaveBeenCalledWith({ purpose: 'model_api', issuer: 'openai', secretKind: 'api_key', name: alias, value: 'test-opencode-provider-key' })
-    expect(mocks.create.mock.calls[0]![0]).not.toHaveProperty('toolId')
-    expect(mocks.create.mock.calls[0]![0]).not.toHaveProperty('envKey')
-    expect(mocks.createConnection).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'openai', credentialId: 'opencode-provider-key', protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1', models: [] }))
-    expect(wrapper.get('[data-testid="credentials-tab-models"]').attributes('aria-selected')).toBe('true')
-    expect(wrapper.get(`[data-testid="model-configuration-backend-${backend}"]`).attributes('aria-checked')).toBe('true')
-    expect(wrapper.text()).not.toContain('test-opencode-provider-key')
+    expect(mocks.create).toHaveBeenCalledWith({ type: 'ai', purpose: 'tool_auth', toolId: backend, provider: backend, secretKind: 'api_key', envKey: backend === 'opencode' ? 'GRASP_OPENCODE_API_KEY' : 'GRASP_DEEPSEEK_API_KEY', name: alias, value: 'test-official-key' })
+    expect(mocks.createConnection).not.toHaveBeenCalled()
+    expect(mocks.createConfiguration).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="credentials-tab-credentials"]').attributes('aria-selected')).toBe('true')
+    const row = rowByAlias(wrapper, alias)
+    expect(row.element.closest('[data-testid="workspace-credential-section-coding"]')).not.toBeNull()
+    expect(wrapper.find('[data-testid="model-configuration-form"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('test-official-key')
     wrapper.unmount()
   })
 
-  it.each(['cursor', 'opencode'])('creates a compatible %s credential from the model wizard and returns to the same draft', async (backend) => {
+  it.each(['cursor', 'opencode', 'deepseek_harness'])('creates a compatible %s credential from the model wizard and returns to the same draft', async (backend) => {
     const storedKeys: CredentialItem[] = []
     const storedServices: ModelConnection[] = []
     const wrapper = mountPanel({ items: [] })
     mocks.get.mockImplementation(async () => ({ items: [...storedKeys] }))
     mocks.connections.mockImplementation(async () => ({ items: [...storedServices] }))
-    mocks.capabilities.mockResolvedValue({ items: [{ toolId: backend, modes: backend === 'cursor' ? ['platform'] : ['connection'], protocols: ['openai-responses'], adapterState: 'existing' }] })
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: backend, modes: backend === 'cursor' ? ['platform'] : ['platform', 'connection'], protocols: ['openai-responses'], adapterState: 'existing' }] })
     mocks.create.mockImplementation(async ({ value: _value, ...body }: Record<string, unknown>) => {
       const saved = { id: 'new-compatible-key', ...body, configured: true, masked: '••••4242' } as CredentialItem
       storedKeys.push(saved)
       return saved
     })
+    mocks.createConfiguration.mockImplementation(async (body: Record<string, unknown>) => ({ id: 'configuration-created', ...body, revision: 1 }))
     mocks.createConnection.mockImplementation(async (body: Record<string, unknown>) => {
       const saved = { id: 'new-compatible-service', ...body, revision: 1 } as ModelConnection
       storedServices.push(saved)
@@ -574,23 +762,19 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.get('[data-testid="credentials-tab-models"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.get('[data-testid="workspace-credential-create-form"]').attributes('data-credential-step')).toBe('2')
     await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('New compatible credential')
-    if (backend === 'opencode') {
-      wrapper.getComponent('[data-testid="model-credential-issuer"]').vm.$emit('update:modelValue', 'openai')
-      await flushPromises()
-    } else {
-      expect(wrapper.find('[data-testid="model-credential-issuer"]').exists()).toBe(false)
-    }
+    expect(wrapper.find('[data-testid="model-credential-issuer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-credential-connection-base-url"]').exists()).toBe(false)
     await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('test-compatible-credential')
     await reviewCredential(wrapper)
     await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="workspace-credential-create-form"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('2')
-    expect(wrapper.getComponent('[data-testid="model-configuration-credential-choice"]').props('modelValue')).toBe(backend === 'cursor' ? 'platform:new-compatible-key' : 'connection:new-compatible-service')
+    expect(wrapper.getComponent('[data-testid="model-configuration-credential-choice"]').props('modelValue')).toBe('platform:new-compatible-key')
     expect(mocks.create).toHaveBeenCalledTimes(1)
     expect(mocks.put).not.toHaveBeenCalled()
-    expect(mocks.create.mock.calls[0]![0]).toMatchObject(backend === 'cursor' ? { purpose: 'tool_auth', toolId: 'cursor' } : { purpose: 'model_api', issuer: 'openai' })
-    expect(mocks.createConnection).toHaveBeenCalledTimes(backend === 'cursor' ? 0 : 1)
+    expect(mocks.create.mock.calls[0]![0]).toMatchObject({ purpose: 'tool_auth', toolId: backend, provider: backend, secretKind: 'api_key' })
+    expect(mocks.createConnection).not.toHaveBeenCalled()
     await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
     expect(wrapper.get('[data-testid="model-configuration-name"]').element).toHaveProperty('value', 'Keep this model draft')
     expect(wrapper.get(`[data-testid="model-configuration-backend-${backend}"]`).attributes('aria-checked')).toBe('true')
@@ -603,7 +787,7 @@ describe('WorkspaceCredentialsPanel', () => {
     const issuer = wrapper.get('[data-testid="model-credential-issuer"]')
     await issuer.get('[data-test="app-select-trigger"]').trigger('click')
     expect(issuer.findAll('[role="option"]').map((option) => option.attributes('data-test'))).toEqual(expect.arrayContaining(['deepseek', 'anthropic', 'openai', 'moonshot', 'zai', 'custom'].map((id) => `app-select-option-${id}`)))
-    expect(wrapper.get('[data-testid="model-credential-create-connection"]').element).toHaveProperty('checked', true)
+    expect(wrapper.get('[data-testid="model-credential-create-connection"]').attributes('aria-checked')).toBe('true')
 
     await issuer.get('[data-test="app-select-option-anthropic"]').trigger('click')
     expect(wrapper.get('[data-testid="model-credential-connection-base-url"]').element).toHaveProperty('value', 'https://api.anthropic.com')
@@ -714,7 +898,7 @@ describe('WorkspaceCredentialsPanel', () => {
     await wrapper.get('[data-testid="workspace-credential-review-next"]').trigger('click')
     expect(wrapper.get('[data-testid="workspace-credential-create-form"]').attributes('data-credential-step')).toBe('2')
     expect(mocks.create).not.toHaveBeenCalled()
-    await wrapper.get('[data-testid="model-credential-create-connection"]').setValue(false)
+    await wrapper.get('[data-testid="model-credential-create-connection"]').trigger('click')
     await reviewCredential(wrapper)
     await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
     await flushPromises()

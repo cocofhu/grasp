@@ -11,7 +11,7 @@ export type CredentialKindId =
   | 'ssh_key'
   | 'ssh_hosts'
 
-export type CredentialSecretKind = 'apiKey' | 'loginFile' | 'multiline' | 'model'
+export type CredentialSecretKind = 'apiKey' | 'loginFile' | 'multiline'
 
 export type CredentialKind = {
   id: CredentialKindId
@@ -29,7 +29,7 @@ export const CREDENTIAL_KINDS: CredentialKind[] = [
   { id: 'codebuddy', type: 'ai', provider: 'codebuddy', envKey: 'GRASP_CODEBUDDY_API_KEY', secret: 'apiKey', logoProvider: 'codebuddy' },
   { id: 'trae', type: 'ai', provider: 'trae', envKey: 'GRASP_TRAE_API_KEY', secret: 'apiKey', logoProvider: 'trae' },
   { id: 'codex', type: 'ai', provider: 'codex', envKey: 'GRASP_CODEX_AUTH_JSON', secret: 'loginFile', logoProvider: 'codex' },
-  { id: 'opencode', type: 'ai', provider: 'opencode', envKey: 'GRASP_OPENCODE_API_KEY', secret: 'model', logoProvider: 'opencode' },
+  { id: 'opencode', type: 'ai', provider: 'opencode', envKey: 'GRASP_OPENCODE_API_KEY', secret: 'apiKey', logoProvider: 'opencode' },
   { id: 'deepseek_harness', type: 'ai', provider: 'deepseek_harness', envKey: 'GRASP_DEEPSEEK_API_KEY', secret: 'apiKey', logoProvider: 'deepseek' },
   { id: 'github', type: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', secret: 'apiKey', logoProvider: 'github' },
   { id: 'gitlab', type: 'git', provider: 'gitlab', envKey: 'GITLAB_TOKEN', secret: 'apiKey', logoProvider: 'gitlab' },
@@ -57,7 +57,7 @@ export function kindById(id: string): CredentialKind | undefined {
 }
 
 export function kindOfItem(item: KindItem): CredentialKind | undefined {
-  if (item.purpose === 'tool_auth') return CREDENTIAL_KINDS.find(kind => kind.type === 'ai' && kind.id === item.toolId && !['opencode', 'deepseek_harness'].includes(kind.id))
+  if (item.purpose === 'tool_auth') return CREDENTIAL_KINDS.find(kind => kind.type === 'ai' && kind.id === item.toolId)
   if (item.purpose === 'git') return CREDENTIAL_KINDS.find(kind => kind.type === 'git' && kind.provider === item.provider)
   if (item.purpose === 'ssh') {
     if (item.secretKind === 'ssh_private_key') return kindById('ssh_key')

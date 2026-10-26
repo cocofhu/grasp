@@ -66,13 +66,21 @@ func (codec) Args(opts provider.OpenOptions, prompt, resumeID string) []string {
 	if opts.Model != "" && opts.Model != "auto" {
 		args = append(args, "--model", opts.Model)
 	}
-	if effort := strings.TrimSpace(os.Getenv(envReasoningEffort)); effort != "" && effort != "auto" {
+	effort := strings.TrimSpace(opts.ReasoningEffort)
+	sessionEffort := opts.ReasoningEffortSet || effort != ""
+	if !opts.ReasoningEffortSet && effort == "" {
+		effort = strings.TrimSpace(os.Getenv(envReasoningEffort))
+	}
+	if !sessionEffort && effort != "" && effort != "auto" {
 		args = append(args, "-c", "model_reasoning_effort="+effort)
 	}
 	if opts.AutoPermission {
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}
 	args = append(args, opts.CustomArgs...)
+	if sessionEffort && effort != "" && effort != "auto" {
+		args = append(args, "-c", "model_reasoning_effort="+effort)
+	}
 	args = append(args, prompt)
 	return args
 }

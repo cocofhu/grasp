@@ -397,11 +397,16 @@ func (b *Bridge) ensureSelectableModel() {
 	if ModelSelectable(id) {
 		return
 	}
-	prev := id
-	b.SetModel("")
-	sess, err := b.RestartAgent()
+	effort := b.ReasoningEffort()
+	primary := ""
+	if b.mgr != nil {
+		primary = b.mgr.DefaultModel()
+	}
+	if !ReasoningEffortSelectable(primary, effort) {
+		effort = ""
+	}
+	sess, err := b.SwitchModelSettings("", effort)
 	if err != nil {
-		b.SetModel(prev)
 		log.Printf("acp-bridge: 当前模型已不可用，回到主模型失败: %v", err)
 		return
 	}

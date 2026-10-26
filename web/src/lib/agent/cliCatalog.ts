@@ -14,12 +14,13 @@ const failed = new Set<string>()
 
 export function loadCliModels(backend: string): Promise<CliCatalogModel[]> {
   const id = backend.trim().toLowerCase()
-  if (!id || id === 'opencode') return Promise.resolve([])
+  if (!id) return Promise.resolve([])
   const cached = once.get(id)
   if (cached) return cached
   const pending = Promise.resolve()
     .then(() => api.cliModels(id))
     .then((r) => {
+      if (r?.error) throw new Error(r.error)
       failed.delete(id)
       return r?.models || []
     })

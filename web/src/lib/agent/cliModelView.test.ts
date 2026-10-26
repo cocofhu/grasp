@@ -7,9 +7,11 @@ import {
   highlight,
   launchCommand,
   monogramColor,
+  modelVendor,
   searchScore,
   strengthKeys,
   vendorLabel,
+  vendorLogoProvider,
 } from './cliModelView'
 
 const list: CliCatalogModel[] = [
@@ -18,6 +20,47 @@ const list: CliCatalogModel[] = [
   { id: 'gpt-5-codex', name: 'GPT-5 Codex', vendor: 'openai', tags: ['reasoning'], context: 400 },
   { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', vendor: 'google', tags: ['vision'], context: 1000 },
 ]
+
+describe('model-brand icons for API accounts', () => {
+  it.each([
+    ['gpt-5.5', 'openai'],
+    ['ChatGPT-5', 'openai'],
+    ['o1-preview', 'openai'],
+    ['o3-mini', 'openai'],
+    ['TokenHub/Kimi-K3.1-Pro', 'kimi'],
+    ['openai/kimi-k3.1-pro', 'kimi'],
+    ['moonshot-v1', 'moonshot'],
+    ['glm-5.1', 'zhipu'],
+    ['ChatGLM-6B', 'zhipu'],
+    ['hy3-pro', 'hunyuan'],
+    ['hy-preview', 'hunyuan'],
+    ['hunyuan-turbo', 'hunyuan'],
+    ['deepseek-chat', 'deepseek'],
+    ['qwen3-max', 'qwen'],
+    ['qvq-72b-preview', 'qwen'],
+    ['minimax-m2.7', 'minimax'],
+    ['claude-sonnet-4-6', 'anthropic'],
+    ['gemini-3-pro', 'google'],
+    ['grok-4', 'xai'],
+    ['doubao-pro', 'doubao'],
+    ['seed-2.0', 'doubao'],
+    ['ernie-4.5', 'qianfan'],
+    ['wenxin-x1', 'qianfan'],
+  ])('identifies %s independently of its API-account provider', (id, vendor) => {
+    expect(modelVendor(id, '', 'tokenhub')).toBe(vendor)
+    expect(vendorLogoProvider(vendor)).not.toBe('')
+  })
+
+  it('uses the model name for opaque IDs, gives recognized IDs precedence and preserves unknown fallbacks', () => {
+    expect(modelVendor('ep-opaque-deployment', 'Kimi K3.1 Pro', 'tokenhub')).toBe('kimi')
+    expect(modelVendor('gpt-5.5', 'Kimi alias', 'tokenhub')).toBe('openai')
+    expect(modelVendor('enterprise/custom-model', 'Private model', 'tokenhub')).toBe('tokenhub')
+    expect(modelVendor('', '', '')).toBe('')
+    expect(vendorLogoProvider(' KIMI ')).toBe('kimi')
+    expect(vendorLogoProvider('GLM')).toBe('zhipu')
+    expect(vendorLogoProvider('Tencent')).toBe('hunyuan')
+  })
+})
 
 describe('buildView', () => {
   it('groups by vendor in first-seen order and features recommended models', () => {

@@ -19,6 +19,8 @@ const (
 	OnboardingWorkflowName = "默认工作流"
 	// OnboardingWorkflowNameEN is the first-install published workflow in English.
 	OnboardingWorkflowNameEN = "Default Workflow"
+	// OnboardingSoloAgentName is the empty Agent created for Solo sessions.
+	OnboardingSoloAgentName = "Solo"
 )
 
 var (
@@ -72,9 +74,10 @@ var OnboardingRequiredTemplateIDs = []string{"clarify", "implement", "test_revie
 
 // OnboardingBootstrapResult is returned after a successful (idempotent) bootstrap.
 type OnboardingBootstrapResult struct {
-	AgentIDs   []string `json:"agentIds"`
-	WorkflowID string   `json:"workflowId"`
-	Published  bool     `json:"published"`
+	AgentIDs    []string `json:"agentIds"`
+	SoloAgentID string   `json:"soloAgentId"`
+	WorkflowID  string   `json:"workflowId"`
+	Published   bool     `json:"published"`
 }
 
 // BaselineRepo is one repository injected into the embedded default workflow.
@@ -90,7 +93,7 @@ type CreateBaselineWorkflowRequest struct {
 	Repos []BaselineRepo `json:"repos"`
 }
 
-// OnboardingService configures built-in Agents and publishes 默认工作流.
+// OnboardingService configures the built-in team, an empty Solo Agent and 默认工作流.
 type OnboardingService struct {
 	Skills      *AgentService
 	SharedAgent *SharedAgentService
@@ -371,6 +374,24 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 		agentIDs = append(agentIDs, tmpl.Name)
 	}
 
+	if _, ok := s.Skills.Get(OnboardingSoloAgentName); !ok {
+		solo := Agent{
+			Name:         OnboardingSoloAgentName,
+			AcpBackend:   configuration.Backend,
+			ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID},
+			GitBindings:  gitBindings,
+			Env:          map[string]string{},
+			Layout: AgentLayout{
+				ConfigRoot:   DefaultConfigRootForBackend(configuration.Backend),
+				WorkspaceDir: DefaultWorkspaceDir,
+			},
+		}
+		applyOnboardingAgentRegion(solo.Env, configuration.Backend, region)
+		if err := s.Skills.Save(solo); err != nil {
+			return OnboardingBootstrapResult{}, fmt.Errorf("save Solo agent: %w", err)
+		}
+	}
+
 	applyOnboardingRepo(&envelope.Graph, req.RepoURL, req.RepoBranch)
 
 	wf, err := s.upsertDefaultWorkflow(envelope)
@@ -387,9 +408,10 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 	}
 
 	return OnboardingBootstrapResult{
-		AgentIDs:   agentIDs,
-		WorkflowID: published.ID,
-		Published:  published.Status() == models.WorkflowStatusPublished,
+		AgentIDs:    agentIDs,
+		SoloAgentID: OnboardingSoloAgentName,
+		WorkflowID:  published.ID,
+		Published:   published.Status() == models.WorkflowStatusPublished,
 	}, nil
 }
 

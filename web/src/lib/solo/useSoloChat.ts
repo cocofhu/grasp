@@ -63,6 +63,15 @@ export function useSoloChat(sessionId: Ref<string>) {
   let refetchSeq = 0
   let lastSeq = -1
   let resyncs = 0
+  let sessionGeneration = 0
+  let settingsEpoch = 0
+  let settingSequence = 0
+  let pendingSettings = 0
+  let pendingModels = 0
+  let settingsQueue: Promise<void> = Promise.resolve()
+  type ModelSettings = Pick<SoloSession, 'currentModelId' | 'currentModelSet' | 'modelNotice' | 'reasoningEffort' | 'reasoningEfforts'>
+  let confirmedSettings: ModelSettings | null = null
+  const modelChangePending = ref(false)
   const seenSeq = new Set<number>()
 
   const reconnect = createWsReconnectController({
@@ -81,13 +90,21 @@ export function useSoloChat(sessionId: Ref<string>) {
     if (row.currentModelSet) return row.currentModelId || ''
     return row.initialModelId || ''
   })
+  const currentReasoningEffort = computed(() => session.value?.reasoningEffort || '')
   const modelSwitchNotice = ref('')
   const activeTurn = computed(() => (activeId.value ? turns.value.find((x) => x.id === `live:${activeId.value}`) ?? null : null))
 
+  function modelSettings(row: SoloSession): ModelSettings {
+    return { currentModelId: row.currentModelId, currentModelSet: row.currentModelSet, modelNotice: row.modelNotice, reasoningEffort: row.reasoningEffort, reasoningEfforts: row.reasoningEfforts ? [...row.reasoningEfforts] : undefined }
+  }
+
   function setSession(v: SoloSession) {
     if (v.id !== sessionId.value) return
-    session.value = v
-    sessions.upsert(v)
+    const preserveSelection = pendingSettings > 0 && session.value
+    const next = preserveSelection ? { ...v, ...modelSettings(session.value!) } : v
+    session.value = next
+    if (!preserveSelection) confirmedSettings = modelSettings(v)
+    sessions.upsert(next)
     schedulePoll()
   }
 
@@ -118,9 +135,12 @@ export function useSoloChat(sessionId: Ref<string>) {
 
   async function refreshSession() {
     const id = sessionId.value
-    if (!id) return
+    if (!id || pendingSettings) return
+    const generation = sessionGeneration
+    const sequence = settingSequence
     try {
-      setSession(await api.getSoloSession(id))
+      const row = await api.getSoloSession(id)
+      if (generation === sessionGeneration && sequence === settingSequence) setSession(row)
     } catch {
       schedulePoll()
     }
@@ -330,15 +350,27 @@ export function useSoloChat(sessionId: Ref<string>) {
         patchSession({ busy: busy.value, waiting: queued.value.length })
         void refetchMessages()
         break
-      case 'model':
-        patchSession({
-          currentModelId: typeof frame.currentModelId === 'string' ? frame.currentModelId : '',
-          currentModelSet: true,
-          modelNotice: typeof frame.modelNotice === 'string' ? frame.modelNotice : '',
-        })
+      case 'model': {
+        // Ordinary acknowledgements can arrive before a newer queued choice.
+        // A runtime rollback is authoritative and invalidates older HTTP replies.
+        if (pendingSettings && !frame.modelNotice) break
+        if (frame.modelNotice) {
+          settingsEpoch++
+          settingSequence++
+          pendingSettings = 0
+          pendingModels = 0
+          modelChangePending.value = false
+        }
+        const patch: Partial<SoloSession> = { modelNotice: typeof frame.modelNotice === 'string' ? frame.modelNotice : '' }
+        if (typeof frame.currentModelId === 'string') { patch.currentModelId = frame.currentModelId; patch.currentModelSet = true }
+        if (typeof frame.reasoningEffort === 'string') patch.reasoningEffort = frame.reasoningEffort
+        if (Array.isArray(frame.reasoningEfforts)) patch.reasoningEfforts = frame.reasoningEfforts.filter((value: unknown): value is string => typeof value === 'string')
+        patchSession(patch)
+        if (session.value) confirmedSettings = modelSettings(session.value)
         modelSwitchNotice.value = ''
         if (frame.modelNotice) showModelNotice(String(frame.modelNotice), String(frame.error || ''))
         break
+      }
       case 'status': {
         const cur = session.value
         if (cur) {
@@ -402,6 +434,15 @@ export function useSoloChat(sessionId: Ref<string>) {
 
   async function load() {
     const id = sessionId.value
+    const generation = ++sessionGeneration
+    settingsEpoch++
+    settingSequence++
+    pendingSettings = 0
+    pendingModels = 0
+    confirmedSettings = null
+    modelChangePending.value = false
+    modelSwitchNotice.value = ''
+    settingsQueue = Promise.resolve()
     closeWs()
     reconnect.reset()
     turns.value = []
@@ -420,14 +461,14 @@ export function useSoloChat(sessionId: Ref<string>) {
     loading.value = true
     try {
       const v = await api.getSoloSession(id)
-      if (id !== sessionId.value) return
+      if (id !== sessionId.value || generation !== sessionGeneration || disposed) return
       setSession(v)
       if (v.modelNotice) showModelNotice(v.modelNotice)
       openWs()
     } catch (e: any) {
-      if (id === sessionId.value) loadError.value = String(e?.message || e)
+      if (id === sessionId.value && generation === sessionGeneration) loadError.value = String(e?.message || e)
     } finally {
-      if (id === sessionId.value) loading.value = false
+      if (id === sessionId.value && generation === sessionGeneration) loading.value = false
     }
   }
 
@@ -453,34 +494,62 @@ export function useSoloChat(sessionId: Ref<string>) {
     }
   }
 
-  async function setCurrentModel(modelId: string) {
+  async function saveModelSetting(kind: 'model' | 'effort', value: string): Promise<boolean> {
     const id = sessionId.value
     const cur = session.value
-    if (!id || !cur || !canSend.value) return false
-    const next = modelId.trim()
-    if (cur.currentModelSet && (cur.currentModelId || '') === next) return true
-    const prev = {
-      currentModelId: cur.currentModelId,
-      currentModelSet: cur.currentModelSet,
-      modelNotice: cur.modelNotice,
-    }
+    if (!id || !cur || !canSend.value || disposed) return false
+    const next = value.trim()
+    if (kind === 'model' ? cur.currentModelSet && (cur.currentModelId || '') === next : (cur.reasoningEffort || '') === next) return true
+    const generation = sessionGeneration
+    const epoch = settingsEpoch
+    const sequence = ++settingSequence
+    confirmedSettings ||= modelSettings(cur)
+    pendingSettings++
+    if (kind === 'model') { pendingModels++; modelChangePending.value = true }
     actionError.value = ''
     const deferNotice = busy.value
-    patchSession({ currentModelId: next, currentModelSet: true, modelNotice: '' })
-    modelSwitchNotice.value = deferNotice ? t('pages.solo.modelSelect.pending') : ''
-    try {
-      const v = await api.setSoloSessionModel(id, next)
-      if (id !== sessionId.value) return false
-      setSession(v)
-      if (!(deferNotice && busy.value)) modelSwitchNotice.value = ''
-      return true
-    } catch (e) {
-      patchSession(prev)
-      modelSwitchNotice.value = ''
-      actionError.value = soloErrorText(e, t, te, locale.value)
-      return false
-    }
+    patchSession(kind === 'model' ? { currentModelId: next, currentModelSet: true, reasoningEffort: '', reasoningEfforts: [], modelNotice: '' } : { reasoningEffort: next, modelNotice: '' })
+    modelSwitchNotice.value = deferNotice ? t(kind === 'model' ? 'pages.solo.modelSelect.pending' : 'pages.solo.modelSelect.effortPending') : ''
+    const isCurrentSession = () => !disposed && id === sessionId.value && generation === sessionGeneration && epoch === settingsEpoch
+    const latest = () => isCurrentSession() && sequence === settingSequence
+    const request = settingsQueue.then(async () => {
+      try {
+        if (!isCurrentSession()) return false
+        if (!canSend.value) {
+          if (latest() && confirmedSettings) { patchSession(confirmedSettings); modelSwitchNotice.value = '' }
+          return false
+        }
+        const row = kind === 'model' ? await api.setSoloSessionModel(id, next) : await api.setSoloSessionReasoningEffort(id, next)
+        if (!isCurrentSession() || row.id !== id) return false
+        confirmedSettings = modelSettings(row)
+        if (latest()) {
+          patchSession(modelSettings(row))
+          if (!(deferNotice && busy.value)) modelSwitchNotice.value = ''
+        }
+        return true
+      } catch (error) {
+        if (latest()) {
+          if (confirmedSettings) patchSession(confirmedSettings)
+          modelSwitchNotice.value = ''
+          actionError.value = soloErrorText(error, t, te, locale.value)
+        }
+        return false
+      } finally {
+        if (isCurrentSession()) {
+          pendingSettings = Math.max(0, pendingSettings - 1)
+          if (kind === 'model') pendingModels = Math.max(0, pendingModels - 1)
+          modelChangePending.value = pendingModels > 0
+        }
+      }
+    })
+    // Both controls share one queue, so an effort always follows earlier model
+    // changes and rapid slider updates reach the server in selection order.
+    settingsQueue = request.then(() => undefined)
+    return request
   }
+
+  function setCurrentModel(modelId: string) { return saveModelSetting('model', modelId) }
+  function setCurrentReasoningEffort(effort: string) { return saveModelSetting('effort', effort) }
 
   async function cancel() {
     const id = sessionId.value
@@ -557,10 +626,13 @@ export function useSoloChat(sessionId: Ref<string>) {
     closed,
     canSend,
     currentModelId,
+    currentReasoningEffort,
+    modelChangePending,
     modelSwitchNotice,
     load,
     send,
     setCurrentModel,
+    setCurrentReasoningEffort,
     cancel,
     removeQueued,
     close,
