@@ -4,7 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **Solo message delivery:** fixed a subscription race that could discard a sent message's opening frame when the queue snapshot shared its sequence number. The live transcript now keeps the message without requiring a refresh, while identical frame replays remain deduplicated.
+- **Solo message delivery:** fixed subscription races that could discard a sent message's opening frame when the queue snapshot shared its sequence number. Reconnects now resume after the last processed real frame rather than the latest snapshot, without mistaking legal replay gaps for lost frames; identical replays remain deduplicated, and the live transcript no longer requires a refresh.
 
 - **Coding-tool credentials:** OpenCode CLI and DeepSeek Harness now save their own vendor keys as coding-tool authorizations, alongside Cursor and CodeBuddy. General model service keys remain in API accounts. Both tools can use their vendor authorization or an explicitly selected API account when configuring a model.
 
