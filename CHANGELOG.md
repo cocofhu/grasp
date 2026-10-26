@@ -14,7 +14,9 @@ All notable public-release changes are documented here.
 
 - **First-time setup:** the existing setup window guides users through credentials, coding-tool configuration and Git. Empty steps open their setup forms directly; saving credentials or a model advances to the next step without a completed-items list. Forms stay inside the current window, and API address settings use the shared switch component. Existing credentials and models can be reused, and edits stay protected while saving.
 
-- **Solo model controls:** startup selectors have a border, while active conversations use a borderless model control. Both show the saved configuration name and open a compact name-only model list with lighter shadows, small brand marks and a clear selected check. Light mode uses a white panel. Supported models offer their available reasoning levels in a small slider panel; a single-model configuration opens that panel directly. Session changes apply to the next turn, with rollback if the coding tool rejects the change.
+- **Solo model controls:** startup selectors have a border, while active conversations use a borderless model control. Both show the actual model name and open a compact name-only model list with lighter shadows, small brand marks and a clear selected check. Light mode uses a white panel. Supported models offer their available reasoning levels in a small slider panel; a single-model configuration opens that panel directly. Session changes apply to the next turn, with rollback if the coding tool rejects the change.
+
+- **Model groups and model names:** workspace model management now uses “Model groups” and “New model group” (「模型组」/「新建模型组」), including the edit dialog and group-name field. Solo selectors show each concrete model's catalog name or upstream ID instead of a configuration or API service name such as TokenHub; automatic tool selection keeps its existing label.
 
 ## 3.0.0 — 2026-10-26
 

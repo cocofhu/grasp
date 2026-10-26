@@ -118,10 +118,10 @@ describe('useSoloLauncher', () => {
     expect(launcher.loading.value).toBe(false)
   })
 
-  it.each(['', 'kimi-k2.5'])('shows the saved Kimi name while starting with the upstream model choice "%s"', async (selected) => {
+  it.each(['', 'kimi-k2.5'])('shows real model names instead of the configuration alias while starting with the upstream model choice "%s"', async (selected) => {
     mocks.listAgents.mockResolvedValueOnce([{ name: 'Solo', acpBackend: 'opencode', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' } }] as never)
     mocks.listModelConfigurations.mockResolvedValueOnce({ items: [{
-      id: 'kimi-config', name: 'Kimi', backend: 'opencode', state: 'active', revision: 1,
+      id: 'kimi-config', name: 'TokenHub', backend: 'opencode', state: 'active', revision: 1,
       binding: { kind: 'connection', connectionId: 'kimi-service', modelId: 'kimi-k3.1-pro', auxiliaryModelIds: ['kimi-k2.5'] },
     }] } as never)
     mocks.listModelConnections.mockResolvedValueOnce({ items: [{
@@ -133,7 +133,7 @@ describe('useSoloLauncher', () => {
     await launcher.load()
     await flushPromises()
     expect(launcher.modelChoices.value.map(({ id, name }) => ({ id, name }))).toEqual([
-      { id: 'kimi-k3.1-pro', name: 'Kimi' },
+      { id: 'kimi-k3.1-pro', name: 'kimi-k3.1-pro' },
       { id: 'kimi-k2.5', name: 'Kimi 2.5' },
     ])
     expect(launcher.modelChoices.value.map(({ vendor, backend }) => ({ vendor, backend }))).toEqual([
@@ -145,12 +145,12 @@ describe('useSoloLauncher', () => {
     const body = mocks.createSoloSession.mock.calls.at(-1)?.[0] as { initialModelId?: string; agentName: string }
     expect(body.agentName).toBe('Solo')
     expect(body.initialModelId).toBe(selected || undefined)
-    expect(body.initialModelId).not.toBe('Kimi')
+    expect(body.initialModelId).not.toBe('TokenHub')
   })
   it('sends an advertised effort and clears it when switching to a model without effort support', async () => {
     mocks.listAgents.mockResolvedValueOnce([{ name: 'Solo', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' } }] as never)
     mocks.listModelConfigurations.mockResolvedValueOnce({ items: [{
-      id: 'kimi-config', name: 'Kimi', backend: 'deepseek_harness', state: 'active', revision: 1,
+      id: 'kimi-config', name: 'TokenHub', backend: 'deepseek_harness', state: 'active', revision: 1,
       binding: { kind: 'connection', connectionId: 'kimi-service', modelId: 'kimi-k3.1-pro', auxiliaryModelIds: ['kimi-k2.5'] },
     }] } as never)
     mocks.listModelConnections.mockResolvedValueOnce({ items: [{
@@ -161,7 +161,8 @@ describe('useSoloLauncher', () => {
     const launcher = mountLauncher()
     await launcher.load()
     await flushPromises()
-    expect(launcher.modelChoices.value[0]).toMatchObject({ id: 'kimi-k3.1-pro', name: 'Kimi', vendor: 'kimi', backend: false, efforts: ['low', 'high'] })
+    expect(launcher.modelChoices.value[0]).toMatchObject({ id: 'kimi-k3.1-pro', name: 'kimi-k3.1-pro', vendor: 'kimi', backend: false, efforts: ['low', 'high'] })
+    expect(launcher.modelChoices.value[0]?.name).not.toBe('TokenHub')
     launcher.reasoningEffort.value = 'high'
     await launcher.start('Use the selected effort')
     expect(mocks.createSoloSession).toHaveBeenLastCalledWith(expect.objectContaining({ agentName: 'Solo', reasoningEffort: 'high' }))

@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-26（模型组文案与真实模型名称）
+
+- 日期：2026-10-26（UTC）
+- 范围：`web/src/lib/solo/configuredModels.ts`、`web/src/lib/agent/modelRouting.ts`、中英文页面文案、相关前端测试、`CHANGELOG.md`。
+- 做了什么：Solo 的具体主模型和辅助模型统一使用 CLI 或服务商目录中的模型名称，目录未提供名称时回退原始模型 ID，不再用模型配置名（如 TokenHub）替代；自动平台主模型保留既有名称逻辑。工作区模型管理标签、新建/编辑窗口与名称字段统一为「模型组」，新增入口使用「新建模型组」，并同步英文文案。
+- 为什么：配置名或服务名不是模型名称，混用会让用户无法判断实际调用的模型；主模型与辅助模型组成的配置在管理入口应明确称为模型组。
+- 如何验证：5 个相关 Vitest 文件共 126 项测试及 1 项 Solo 真实浏览器回归通过，覆盖 TokenHub 别名不显示、真实模型名称、原始模型 ID 与推理强度提交、自动模式和新建模型组入口。Web 全量 526 个文件、5,504 项测试通过，Lines 91.49%；ESLint（0 errors、12 个既有 warnings）、Vue 类型检查、生产构建及 Secure Context/品牌断言通过。docs 构建与官方源高/严重漏洞审计、actionlint、error-level shellcheck 和 diff 检查通过。
+
 ### 2026-10-26（修复 DeepSeek Harness 无密钥 CI 握手）
 
 - 日期：2026-10-26（Asia/Shanghai）

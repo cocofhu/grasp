@@ -2,19 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { configuredModelChoices } from './configuredModels'
 
 describe('configuredModelChoices', () => {
-  it('uses the saved name for the primary model while preserving upstream IDs and auxiliary names', () => {
+  it('uses real model names instead of the configuration name while preserving upstream IDs', () => {
     const choices = configuredModelChoices({
       binding: { kind: 'connection', connectionId: 'kimi-account', modelId: 'kimi-k3.1-pro', auxiliaryModelIds: ['kimi-k2.5', 'kimi-k3.1-pro'] },
-      configurationName: '  Kimi  ',
+      configurationName: 'TokenHub',
       backend: 'opencode',
       connectionModels: [{ id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro' }, { id: 'kimi-k2.5', name: 'Kimi K2.5' }],
       providerId: 'moonshot',
       catalogReady: true,
     })
     expect(choices.map(({ id, name, hint, vendor, backend, unavailable }) => ({ id, name, hint, vendor, backend, unavailable }))).toEqual([
-      { id: 'kimi-k3.1-pro', name: 'Kimi', hint: 'kimi-k3.1-pro', vendor: 'kimi', backend: false, unavailable: false },
+      { id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro', hint: 'kimi-k3.1-pro', vendor: 'kimi', backend: false, unavailable: false },
       { id: 'kimi-k2.5', name: 'Kimi K2.5', hint: 'kimi-k2.5', vendor: 'kimi', backend: false, unavailable: false },
     ])
+    expect(JSON.stringify(choices)).not.toContain('TokenHub')
   })
 
   it('uses a saved name for an automatic platform primary without changing its empty ID', () => {
@@ -29,7 +30,7 @@ describe('configuredModelChoices', () => {
     expect(choices[1]).toMatchObject({ id: 'grok-4.7', name: 'Grok 4.7', vendor: 'xai', backend: false })
   })
 
-  it('identifies each configured model brand through an aggregator while keeping the saved primary name', () => {
+  it('identifies each configured model brand through an aggregator without using the configuration name', () => {
     const ids = ['kimi-k3.1-pro', 'GPT-5.5', 'glm-5.1', 'hy3-pro', 'ep-private-deployment'] as const
     const choices = configuredModelChoices({
       binding: { kind: 'connection', connectionId: 'tokenhub-account', modelId: ids[0], auxiliaryModelIds: ids.slice(1) },
@@ -52,11 +53,11 @@ describe('configuredModelChoices', () => {
       { id: ids[3], vendor: 'hunyuan', backend: false },
       { id: ids[4], vendor: 'kimi', backend: false },
     ])
-    expect(choices[0]).toMatchObject({ name: 'Kimi', hint: ids[0], unavailable: false })
+    expect(choices[0]).toMatchObject({ name: 'Kimi K3.1 Pro', hint: ids[0], unavailable: false })
     expect(choices[4]).toMatchObject({ name: 'Kimi Private Deployment', hint: ids[4] })
   })
 
-  it('uses a known model brand before a conflicting catalog vendor and saved alias', () => {
+  it('uses a known model brand before a conflicting catalog vendor and configuration alias', () => {
     const choices = configuredModelChoices({
       binding: { kind: 'platform', credentialId: 'codex-key', modelId: 'kimi-k3.1-pro' },
       configurationName: 'GPT team alias',
@@ -64,7 +65,7 @@ describe('configuredModelChoices', () => {
       cliModels: [{ id: 'kimi-k3.1-pro', name: 'GPT model alias', vendor: 'openai' }],
       catalogReady: true,
     })
-    expect(choices[0]).toMatchObject({ id: 'kimi-k3.1-pro', name: 'GPT team alias', vendor: 'kimi', backend: false })
+    expect(choices[0]).toMatchObject({ id: 'kimi-k3.1-pro', name: 'GPT model alias', vendor: 'kimi', backend: false })
   })
 
   it('keeps the coding-tool fallback for an unknown model without a model vendor', () => {
@@ -77,7 +78,7 @@ describe('configuredModelChoices', () => {
     expect(choices[0]).toMatchObject({ id: 'private/internal-model', vendor: 'deepseek_harness', backend: true, unavailable: false })
   })
 
-  it.each([undefined, '  '])('falls back to the catalog name when the saved name is %s', (configurationName) => {
+  it.each([undefined, '  '])('uses the catalog name when the configuration name is %s', (configurationName) => {
     const choices = configuredModelChoices({
       binding: { kind: 'connection', connectionId: 'kimi-account', modelId: 'kimi-k3.1-pro' },
       configurationName,
@@ -96,7 +97,7 @@ describe('configuredModelChoices', () => {
       connectionModels: [],
       catalogReady,
     })
-    expect(choices[0]).toMatchObject({ id: 'kimi-k3.1-pro', name: 'Kimi', hint: 'kimi-k3.1-pro', unavailable: catalogReady })
+    expect(choices[0]).toMatchObject({ id: 'kimi-k3.1-pro', name: 'kimi-k3.1-pro', hint: 'kimi-k3.1-pro', unavailable: catalogReady })
   })
 
   it('offers only the Codex effort levels advertised for each configured model', () => {
@@ -108,7 +109,7 @@ describe('configuredModelChoices', () => {
         { id: 'codex-fast', name: 'Fast', vendor: 'openai', efforts: ['minimal', 'medium'] },
       ],
     })
-    expect(choices[0]).toMatchObject({ name: 'Codex', id: 'codex-main', vendor: 'openai', backend: false, efforts: ['low', 'high'] })
+    expect(choices[0]).toMatchObject({ name: 'Main', id: 'codex-main', vendor: 'openai', backend: false, efforts: ['low', 'high'] })
     expect(choices[1]).toMatchObject({ name: 'Fast', id: 'codex-fast', efforts: ['minimal', 'medium'] })
     expect(choices[0]?.efforts).not.toContain('ultra')
   })
@@ -120,7 +121,7 @@ describe('configuredModelChoices', () => {
       connectionModels: [{ id: 'deepseek-pro', reasoningEfforts: [' low ', 'high', 'high'] }],
     })
     expect(choices).toHaveLength(1)
-    expect(choices[0]).toMatchObject({ name: 'DeepSeek', id: 'deepseek-pro', efforts: ['low', 'high'] })
+    expect(choices[0]).toMatchObject({ name: 'deepseek-pro', id: 'deepseek-pro', efforts: ['low', 'high'] })
   })
 
   it.each(['opencode', 'cursor'])('does not offer effort controls for an unsupported %s adapter', (backend) => {

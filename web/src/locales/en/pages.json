@@ -1243,7 +1243,7 @@
         "modelApiKeySubtitle": "Add, replace, or remove keys here. This list does not mark which Agent is using one, and only a mask is shown.",
         "empty": "This workspace has no managed credentials yet.",
         "add": "Add",
-        "addModel": "Add model",
+        "addModel": "New model group",
         "create": "Add credential",
         "createTitle": "Add workspace credential",
         "alias": "Alias",

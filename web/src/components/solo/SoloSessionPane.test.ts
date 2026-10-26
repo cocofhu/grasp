@@ -222,17 +222,17 @@ describe('SoloSessionPane', () => {
     modelSwitchNotice.value = ''
   })
 
-  it('shows the saved model name and uses only the active session effort capabilities', async () => {
+  it('shows the real model name instead of the configuration name and uses only the active session effort capabilities', async () => {
     resetCliCatalog()
     const { api } = await import('@/lib/api/api')
     vi.mocked(api.listAgents).mockResolvedValueOnce([{ name: 'Coder', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' } }] as never)
     vi.mocked(api.listModelConfigurations).mockResolvedValueOnce({ items: [{
-      id: 'kimi-config', name: 'Kimi', backend: 'deepseek_harness', state: 'active', revision: 1,
+      id: 'kimi-config', name: 'TokenHub', backend: 'deepseek_harness', state: 'active', revision: 1,
       binding: { kind: 'connection', connectionId: 'kimi-service', modelId: 'kimi-k3.1-pro' },
     }] })
     vi.mocked(api.listModelConnections).mockResolvedValueOnce({ items: [{
       id: 'kimi-service', name: 'TokenHub API', providerId: 'tokenhub', protocol: 'openai-chat-completions', baseUrl: 'https://api.example.test/v1', credentialId: 'key', auth: { scheme: 'bearer' }, state: 'active', revision: 1,
-      models: [{ id: 'kimi-k3.1-pro', source: 'manual', reasoningEfforts: ['low', 'high', 'ultra'] }],
+      models: [{ id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro', source: 'manual', reasoningEfforts: ['low', 'high', 'ultra'] }],
     }] })
     currentModelId.value = ''
     currentReasoningEffort.value = 'high'
@@ -242,7 +242,8 @@ describe('SoloSessionPane', () => {
     setCurrentModel.mockClear()
     const wrapper = mountPane(pages)
     await flushPromises()
-    expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).toContain('Kimi')
+    expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).toContain('Kimi K3.1 Pro')
+    expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).not.toContain('TokenHub')
     expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).not.toContain('kimi-k3.1-pro')
     expect(wrapper.get('[data-testid="solo-model-select-trigger"] [data-vendor-mark="kimi"] img').exists()).toBe(true)
     expect(wrapper.find('[data-testid="solo-model-select-trigger"] [data-vendor-mark="deepseek_harness"]').exists()).toBe(false)

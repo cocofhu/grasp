@@ -600,7 +600,7 @@ for (const backend of ['cursor', 'opencode', 'deepseek_harness']) {
 }
 
 
-test('Solo uses saved model names and sends exact model IDs and advertised effort values', async ({ page }, testInfo) => {
+test('Solo uses real model names and sends exact model IDs and advertised effort values', async ({ page }, testInfo) => {
   const primary = 'kimi-k3.1-pro'
   const auxiliary = 'kimi-k2.5'
   const service = {
@@ -608,7 +608,7 @@ test('Solo uses saved model names and sends exact model IDs and advertised effor
     models: [{ id: primary, name: 'Kimi upstream model', source: 'manual', reasoningEfforts: ['low', 'high'] }, { id: auxiliary, name: 'Kimi 2.5', source: 'manual' }],
   }
   const state = await setup(page, [service])
-  state.configurations.push({ id: 'kimi-config', name: 'Kimi', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: service.id, modelId: primary, auxiliaryModelIds: [auxiliary] }, state: 'active', revision: 1 })
+  state.configurations.push({ id: 'kimi-config', name: 'TokenHub', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: service.id, modelId: primary, auxiliaryModelIds: [auxiliary] }, state: 'active', revision: 1 })
   state.agents.push({ name: 'Solo', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' }, gitBindings: { items: [] }, files: [], mcp: [], env: {}, layout: {} })
   const session = { id: 'solo-named-model', title: 'A Solo task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-10-26T00:00:00Z', updatedAt: '2026-10-26T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialModelId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', reasoningEfforts: ['low', 'high'] }
   let createBody: Record<string, unknown> | undefined
@@ -658,11 +658,12 @@ test('Solo uses saved model names and sends exact model IDs and advertised effor
     if (framed) expect(border.alpha).toBeGreaterThan(0)
     else expect(border.alpha).toBe(0)
   }
-  await expect(trigger).toContainText('Kimi')
+  await expect(trigger).toContainText('Kimi upstream model')
+  await expect(trigger).not.toContainText('TokenHub')
   await expect(trigger).not.toContainText(primary)
   await expectModelPill()
   await trigger.click()
-  await expect(page.getByTestId(`solo-model-option-${primary}`)).toContainText('Kimi')
+  await expect(page.getByTestId(`solo-model-option-${primary}`)).toContainText('Kimi upstream model')
   await expect(page.getByTestId('solo-model-select-panel')).not.toContainText(primary)
   await expect(page.getByTestId('solo-model-select-panel')).not.toContainText(auxiliary)
   await settleVisualTransitions(page)
@@ -696,7 +697,8 @@ test('Solo uses saved model names and sends exact model IDs and advertised effor
   await expect(page.getByTestId('solo-session-pane')).toBeVisible()
   expect(createBody).toMatchObject({ agentName: 'Solo', reasoningEffort: 'high' })
   expect(createBody).not.toHaveProperty('initialModelId')
-  await expect(trigger).toContainText('Kimi')
+  await expect(trigger).toContainText('Kimi upstream model')
+  await expect(trigger).not.toContainText('TokenHub')
   await expect(trigger).not.toContainText(primary)
   await expectModelPill(false)
   await trigger.click()

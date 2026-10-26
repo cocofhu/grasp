@@ -19,7 +19,7 @@ export interface ConfiguredModelChoice {
  */
 export function configuredModelChoices(input: {
   binding?: ConcreteModelBinding | null
-  /** Saved configuration name labels the primary model; ids remain upstream ids. */
+  /** 自动平台主模型可使用配置名称；具体模型始终显示真实模型名称。 */
   configurationName?: string
   backend: string
   cliModels?: CliCatalogModel[]
@@ -44,8 +44,7 @@ export function configuredModelChoices(input: {
     }
     const cli = (input.cliModels || []).find((model) => model.id === id)
     const connection = (input.connectionModels || []).find((model) => model.id === id)
-    const namedPrimary = id === primary && !!configurationName
-    const name = namedPrimary ? configurationName : cli?.name || connection?.name || id
+    const name = cli?.name || connection?.name || id
     const vendor = modelVendor(id, cli?.name || connection?.name, cli?.vendor || input.providerId || '')
     const known = !!cli || !!connection
     const supportsEffort = input.backend === 'codex' || input.backend === 'deepseek_harness'
