@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-26（修复 DeepSeek Harness 无密钥 CI 握手）
+
+- 日期：2026-10-26（Asia/Shanghai）
+- 范围：`sandbox-gateway/scripts/test-agent-connect.sh`。
+- 做了什么：未设置厂商密钥时，仅向 DeepSeek Harness 测试容器传入握手专用占位值；真实对话继续由调用环境中的 `DEEPSEEK_API_KEY` 决定，显式记录跳过原因。保留运行时对缺失及非法凭据的校验。
+- 为什么：PR #997 的 `sandbox-images` 在 Agent connection E2E 中失败；新增官方授权校验在启动 ACP 前要求密钥，而既有无密钥握手未注入测试值。`ci-required` 随之失败。
+- 如何验证：使用当前运行时包及现有 3.0.0 沙箱镜像，在独立容器中先复现相同错误；修复后无厂商密钥的六种工具连接套件通过，含 DeepSeek ACP 握手和 OpenCode mock 对话，并确认 DeepSeek 真实对话被跳过。沙箱 lint v2.12、vet、全量 Go 测试与覆盖率检查通过（核心 96.6%），规定 shell 语法、注入、Git、bootstrap、mock 与 preview smoke 通过；actionlint、error-level shellcheck、docs 构建和官方源高/严重漏洞审计通过。
+
 ### 2026-10-26（后端模型配置与接口说明）
 
 - 日期：2026-10-26（Asia/Shanghai）
