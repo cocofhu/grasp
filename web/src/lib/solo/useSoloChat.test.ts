@@ -416,6 +416,24 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('replays turn_begin when the subscription snapshot has the same sequence', async () => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+
+    // 订阅快照复用最新真实事件的 seq，不能因此吞掉随后的真实回放开场帧。
+    const item = { id: 'q1', text: '刚发送的消息', images: [] }
+    ws.emit({ type: 'session', event: 'queue_state', seq: 7, busy: true, items: [], activeItem: item })
+    ws.emit({ type: 'session', event: 'turn_begin', seq: 7, item, userMsgId: 'q1' })
+    ws.emit({ type: 'session', event: 'turn_begin', seq: 7, item, userMsgId: 'q1' })
+
+    expect(chat.turns.value.map((turn) => turn.id)).toEqual(['u:q1', 'live:q1'])
+    expect(chat.turns.value[0]!.text).toBe('刚发送的消息')
+    app.unmount()
+  })
+
   it('reconnects after the socket closes and does not draw the same frame twice', async () => {
     vi.useFakeTimers()
     const { chat, app } = mountChat()
