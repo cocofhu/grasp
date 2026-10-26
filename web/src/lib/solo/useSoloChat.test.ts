@@ -434,6 +434,75 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('replays the opening frame when a disconnect follows its same-sequence snapshot', async () => {
+    vi.useFakeTimers()
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+
+    const item = { id: 'q1', text: '断线前发送的消息', images: [] }
+    ws.emit({ type: 'session', event: 'queue_state', seq: 7, busy: true, items: [], activeItem: item })
+    // 快照可以推进缺口检测高水位，但同 seq 开场未处理，不能进入重连确认游标。
+    ws.onclose?.()
+    await vi.advanceTimersByTimeAsync(1500)
+    const again = FakeSocket.all.at(-1)!
+    expect(again).not.toBe(ws)
+    expect(again.url).not.toContain('after=')
+    again.open()
+    await flushPromises()
+
+    // 与服务端一致：快照照常发送，回放只包含 seq > after 的真实帧。
+    const after = Number(new URL(again.url).searchParams.get('after') ?? -1)
+    again.emit({ type: 'session', event: 'queue_state', seq: 7, busy: true, items: [], activeItem: item })
+    if (7 > after) again.emit({ type: 'session', event: 'turn_begin', seq: 7, item, userMsgId: 'q1' })
+    again.emit({ ...acp('回复'), seq: 8 })
+
+    expect(chat.turns.value.map((turn) => turn.id)).toEqual(['u:q1', 'live:q1'])
+    expect(chat.turns.value[0]!.text).toBe('断线前发送的消息')
+    expect(chat.turns.value[1]!.text).toBe('回复')
+    vi.useRealTimers()
+    app.unmount()
+  })
+
+  it('resumes unacknowledged replay across legal KeepNone sequence holes', async () => {
+    vi.useFakeTimers()
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+
+    const item = { id: 'q1', text: '跨空洞恢复', images: [] }
+    ws.emit({ type: 'session', event: 'queue_state', seq: 5, busy: true, items: [], activeItem: item })
+    ws.emit({ type: 'session', event: 'turn_begin', seq: 2, item, userMsgId: 'q1' })
+    // seq 3 是不进入回放的 KeepNone 帧；确认游标只能到已处理的 seq 2。
+    ws.onclose?.()
+    await vi.advanceTimersByTimeAsync(1500)
+    const again = FakeSocket.all.at(-1)!
+    expect(again.url).toContain('after=2')
+    again.open()
+    await flushPromises()
+
+    const after = Number(new URL(again.url).searchParams.get('after') ?? -1)
+    again.emit({ type: 'session', event: 'queue_state', seq: 5, busy: true, items: [], activeItem: item })
+    const replay = [
+      { type: 'session', event: 'phase', seq: 4, phase: 'running' },
+      { ...acp('完整恢复'), seq: 5 },
+    ]
+    for (const frame of replay) {
+      if (frame.seq > after) again.emit(frame)
+    }
+
+    expect(chat.turns.value.map((turn) => turn.id)).toEqual(['u:q1', 'live:q1'])
+    expect(chat.turns.value[1]!.text).toBe('完整恢复')
+    expect(chat.phase.value).toBe('running')
+    expect(FakeSocket.all).toHaveLength(2)
+    vi.useRealTimers()
+    app.unmount()
+  })
+
   it('reconnects after the socket closes and does not draw the same frame twice', async () => {
     vi.useFakeTimers()
     const { chat, app } = mountChat()
@@ -452,6 +521,7 @@ describe('useSoloChat', () => {
     expect(again.url).toContain('after=2')
     again.open()
     await flushPromises()
+    again.emit({ type: 'session', event: 'queue_state', seq: 2, busy: true, items: [], activeItem: { id: 'q1', text: 'hi', images: [] } })
     again.emit({ ...acp('Hello'), seq: 2 })
     again.emit({ ...acp('!'), seq: 3 })
     expect(chat.turns.value.find((t) => t.id === 'live:q1')!.text).toBe('Hello!')
@@ -476,6 +546,8 @@ describe('useSoloChat', () => {
     expect(again.url).toContain('after=2')
     again.open()
     await flushPromises()
+    // 重连快照先到且只推高水位，不能把它自身当成需要重连的序号缺口。
+    again.emit({ type: 'session', event: 'queue_state', seq: 5, busy: true, items: [], activeItem: { id: 'q1', text: 'hi', images: [] } })
     again.emit({ ...acp('B'), seq: 3 })
     again.emit({ ...acp('C'), seq: 4 })
     again.emit({ ...acp('D'), seq: 5 })

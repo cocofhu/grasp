@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-27（PR #1000 同步 main 并解除文档冲突）
+
+- 日期：2026-10-27（Asia/Hong_Kong）
+- 范围：`CHANGELOG.md`、`docs/dev/DEVLOG.md` 与 `main` 的 Solo 重连修复合并。
+- 做了什么：合并 `main` 的 `7c17d340`；保留本 PR 的 ACP 恢复与 Solo 预览说明，同时保留 main 更新后的 Solo 消息投递说明和开发记录。两份 Solo 前端文件按 main 原样合入，原有后端与沙箱修复保持一致。
+- 为什么：原提交的远端 CI 已全部通过，main 新增 Solo 重连修复后，发布说明与日志的顶部插入产生冲突，需要保留双方内容并重新验证合并结果。
+- 如何验证：Solo 定向 22 项单测、ACP/service 与 server 预览/授权恢复定向 race 回归、docs 构建与官方源高/严重漏洞审计、actionlint、error-level shellcheck、品牌及 diff 检查通过；只读复核确认无丢失说明、无额外代码变更。推送后的远端 CI 以 PR 最新检查为准。
+
 ### 2026-10-27（ACP 通信失效恢复与 Solo 应用预览）
 
 - 日期：2026-10-27（Asia/Hong_Kong）
@@ -27,6 +35,14 @@
 - 做了什么：ACP 读取遇到非法 JSON 或 EOF 时原子关闭连接和待处理 RPC、终止对应子进程并安全回收，后续调用立即失败；会话可用性检查覆盖发送、队列和连接元数据，队列取出及回填与退出清理互斥，避免旧消息在清空后重新入队。退出监视先摘除失效会话，再回收进程，按会话代次隔离迟到通知；保留异常退出现场，重新连接沿用显式新建会话的历史清空合同。预览解析增加 Solo 专用当前会话与沙箱关联校验，兼容旧空节点记录，按真实 Agent 能力判断预览权限；MCP 持久化恢复同时支持 Solo token 和能力，拒绝关闭会话、旧沙箱代次及数据库异常。
 - 为什么：非协议输出会使 ACP 读取线程退出，但存活子进程阻塞旧退出监视，后续请求继续写入无人读取的连接。Solo 沙箱又被仅允许 `purpose=run` 的预览查询排除，并且服务重启后的授权恢复只查工作流运行表，导致误报沙箱未就绪或无法调用 MCP。
 - 如何验证：真实辅助子进程复现非法 stdout/EOF 后仍存活、RPC 与关闭并发、应答紧邻 EOF、延迟回收与重连隔离；定向 race 和 sandbox/server 全量 Go 测试通过。真实 MCP 调用经预览服务及 fake gateway 完成探测、注入、保活和持久化；fresh Host 覆盖 Solo 授权恢复与撤销、错误 token、数据库失败和工作流人工接管兼容。lint/vet、配置文档检查、RunAgent/React 专项、脚本 smoke、preview-inject smoke 通过；server 核心覆盖率 90.4%、sandbox 核心覆盖率 96.6%，docs build/audit、actionlint 与 error-level shellcheck 通过。同步最新 `main` 后重跑服务端与沙箱检查；旧 pump 叠加新增回归可复现失败，修复后 race 三轮通过。运行时包构建通过且两次产物字节一致；此次为运行时逻辑修复，无沙箱镜像或 IMAGE_LEVEL 改动。
+
+### 2026-10-26（修复 Solo 快照断线后的消息开场丢失）
+
+- 日期：2026-10-26（UTC）
+- 范围：`web/src/lib/solo/useSoloChat.ts`、`web/src/lib/solo/useSoloChat.test.ts`、`CHANGELOG.md`。
+- 做了什么：把订阅快照的缺口检测高水位与重连确认游标分开。每个连接的首个 `queue_state` 只更新高水位，真实帧处理后才推进 `ackedSeq`，重连从该确认位置继续回放；合法 `KeepNone` 序号空洞不再被误判为断流，重复真实帧仍按序号和事件类型去重。新增同序号快照后断线、跨合法序号空洞恢复两条跨连接回归，并让既有重连测试按真实顺序先接收快照。
+- 为什么：上一版仅按事件类型去重，若连接在快照后、同序号 `turn_begin` 前断开，快照已推进的重连游标会让服务端过滤掉尚未处理的开场，消息只能等历史接口恢复。简单忽略快照序号又会误报回放中合法存在的 `KeepNone` 空洞，因此需要分别记录高水位和已处理位置。
+- 如何验证：新增同序号断线用例在旧逻辑下稳定失败（错误请求 `after=7`）；修复后 Solo 定向 22 项通过，Web 全量 526 个文件、5,507 项测试通过，Lines 91.50%；Solo 真实浏览器用例 1 项通过。ESLint 0 errors（12 条既有 warnings）、Vue 类型检查、4GB Node 堆生产构建、Secure Context/品牌断言及 actionlint、error-level shellcheck 通过。
 
 ### 2026-10-26（模型组文案与真实模型名称）
 
