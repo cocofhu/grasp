@@ -2,6 +2,7 @@ package acp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,6 +30,7 @@ type Conn struct {
 
 	pendingMu sync.Mutex
 	pending   map[int64]chan json.RawMessage
+	closed    bool // guarded by pendingMu, together with readErr
 
 	// 当前进行中的 session/prompt 的 JSON-RPC id（用于 Stop → $/cancel_request）
 	promptMu       sync.Mutex
@@ -37,9 +39,12 @@ type Conn struct {
 	onNotification func(raw json.RawMessage) error
 	onRequest      func(ctx context.Context, method string, id json.RawMessage, raw json.RawMessage) error
 
-	readErr error
-	done    chan struct{}
-	once    sync.Once
+	readErr  error
+	done     chan struct{}
+	once     sync.Once
+	waitOnce sync.Once
+	waitErr  error
+	closeErr error
 
 	logMu  sync.RWMutex
 	logSID string // sessionId 或握手阶段的 handshake，日志统一 sid= 前缀
@@ -141,13 +146,15 @@ func (c *Conn) SetRequestHandler(fn func(ctx context.Context, method string, id 
 }
 
 func (c *Conn) readLoop() {
-	defer c.closeDone()
-	defer c.failAllPending()
+	var readErr error
+	defer func() { _ = c.shutdown(readErr) }()
 	for c.stdout.Scan() {
-		line := c.stdout.Bytes()
+		// Responses and requests outlive this iteration in other goroutines;
+		// Scanner reuses its buffer on the next Scan.
+		line := bytes.Clone(c.stdout.Bytes())
 		in, err := classifyInbound(line)
 		if err != nil {
-			c.readErr = err
+			readErr = err
 			log.Printf("acp %s: stdout 行解析失败（将结束读循环）: %v", c.logTag(), err)
 			return
 		}
@@ -194,27 +201,29 @@ func (c *Conn) readLoop() {
 			log.Printf("acp %s: 忽略无法分类的 JSON-RPC 行: %s", c.logTag(), preview)
 		}
 	}
-	if err := c.stdout.Err(); err != nil && c.readErr == nil {
-		c.readErr = err
+	if err := c.stdout.Err(); err != nil {
+		readErr = err
 		log.Printf("acp %s: stdout 读取错误: %v", c.logTag(), err)
 	}
 }
 
-func (c *Conn) closeDone() {
-	c.once.Do(func() { close(c.done) })
-}
-
 // Wait waits for the subprocess to exit after the connection is closed.
 func (c *Conn) Wait() error {
-	if c.cmd == nil {
-		return nil
-	}
-	return c.cmd.Wait()
+	c.waitOnce.Do(func() {
+		if c.cmd != nil {
+			c.waitErr = c.cmd.Wait()
+		}
+	})
+	return c.waitErr
 }
 
 func (c *Conn) Done() <-chan struct{} { return c.done }
 
-func (c *Conn) ReadErr() error { return c.readErr }
+func (c *Conn) ReadErr() error {
+	c.pendingMu.Lock()
+	defer c.pendingMu.Unlock()
+	return c.readErr
+}
 
 // Process returns the Agent subprocess handle, if started.
 func (c *Conn) Process() *os.Process {
@@ -225,17 +234,40 @@ func (c *Conn) Process() *os.Process {
 }
 
 func (c *Conn) Close() error {
-	c.closeDone()
-	var errs []error
-	if c.stdin != nil {
-		if err := c.stdin.Close(); err != nil {
-			errs = append(errs, err)
+	return c.shutdown(nil)
+}
+
+// shutdown invalidates the connection and pending calls atomically. A fatal
+// reader error is a transport failure even if the Agent is still alive: stop
+// that process before its owner waits for it, and unblock any stdin writer.
+func (c *Conn) shutdown(readErr error) error {
+	c.once.Do(func() {
+		c.pendingMu.Lock()
+		c.closed = true
+		c.readErr = readErr
+		close(c.done)
+		for _, ch := range c.pending {
+			close(ch)
 		}
+		c.pending = nil
+		c.pendingMu.Unlock()
+		if c.cmd != nil && c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
+		if c.stdin != nil {
+			c.closeErr = c.stdin.Close()
+		}
+	})
+	return c.closeErr
+}
+
+func (c *Conn) connectionError() error {
+	c.pendingMu.Lock()
+	defer c.pendingMu.Unlock()
+	if c.readErr != nil {
+		return fmt.Errorf("connection closed: %w", c.readErr)
 	}
-	if c.cmd != nil && c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
-	}
-	return errors.Join(errs...)
+	return errors.New("connection closed")
 }
 
 func (c *Conn) takePending(id int64) chan json.RawMessage {
@@ -246,16 +278,6 @@ func (c *Conn) takePending(id int64) chan json.RawMessage {
 		delete(c.pending, id)
 	}
 	return ch
-}
-
-// failAllPending closes stdout read side: unblock any in-flight Call waiting for a response.
-func (c *Conn) failAllPending() {
-	c.pendingMu.Lock()
-	defer c.pendingMu.Unlock()
-	for _, ch := range c.pending {
-		close(ch)
-	}
-	c.pending = make(map[int64]chan json.RawMessage)
 }
 
 // Call sends a JSON-RPC request and waits for the matching response object (full line).
@@ -288,6 +310,10 @@ func (c *Conn) Call(ctx context.Context, method string, params any) (json.RawMes
 	}
 	ch := make(chan json.RawMessage, 1)
 	c.pendingMu.Lock()
+	if c.closed {
+		c.pendingMu.Unlock()
+		return nil, c.connectionError()
+	}
 	c.pending[id] = ch
 	c.pendingMu.Unlock()
 
@@ -304,7 +330,7 @@ func (c *Conn) Call(ctx context.Context, method string, params any) (json.RawMes
 	case raw, ok := <-ch:
 		if !ok {
 			log.Printf("acp %s: Call 连接已关 method=%q id=%d", c.logTag(), method, id)
-			return nil, fmt.Errorf("connection closed")
+			return nil, c.connectionError()
 		}
 		var env struct {
 			Result json.RawMessage `json:"result"`
@@ -398,6 +424,11 @@ func (c *Conn) RespondError(id json.RawMessage, code int, message string) error 
 func (c *Conn) writeLine(b []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	select {
+	case <-c.done:
+		return c.connectionError()
+	default:
+	}
 	_, err := c.stdin.Write(append(b, '\n'))
 	if err != nil {
 		log.Printf("acp %s: stdin 写入失败: %v", c.logTag(), err)

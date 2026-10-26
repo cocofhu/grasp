@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -23,7 +24,11 @@ type PreviewService struct {
 	mgr     *sandbox.Manager
 	browser *browser.Service
 	leases  *SandboxService
+	agents  AgentGetter
 }
+
+// SetAgents wires the persisted Agent capabilities used by Solo previews.
+func (s *PreviewService) SetAgents(agents AgentGetter) { s.agents = agents }
 
 // SetSandboxLeases wires the sandbox service so set_preview can lease the
 // serving sandbox until the run ends.
@@ -149,14 +154,56 @@ func (s *PreviewService) ContainerIP(ctx context.Context, sandboxName string) (s
 
 // SandboxForRunNode returns the docker container name for a run/node sandbox.
 func (s *PreviewService) SandboxForRunNode(runID, nodeID string) (string, bool) {
+	if s.db == nil || runID == "" || nodeID == "" {
+		return "", false
+	}
 	row, err := runNodeSandboxRow(s.db, runID, nodeID)
 	if err != nil {
-		return "", false
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", false
+		}
+		var ok bool
+		row, ok = s.soloPreviewSandbox(runID, nodeID)
+		if !ok {
+			return "", false
+		}
 	}
 	if strings.TrimSpace(row.Name) == "" {
 		return "", false
 	}
 	return row.Name, true
+}
+
+// soloPreviewSandbox resolves only the current sandbox of a running Solo
+// session. Older rows have no NodeID; the MCP node has always been "solo".
+// Checking the session's SandboxID also rejects previous restart generations.
+func (s *PreviewService) soloPreviewSandbox(runID, nodeID string) (models.Sandbox, bool) {
+	var row models.Sandbox
+	if s.db == nil || runID == "" || nodeID != "solo" {
+		return row, false
+	}
+	err := s.db.Model(&models.Sandbox{}).
+		Joins("JOIN solo_sessions ON solo_sessions.sandbox_id = sandboxes.id AND solo_sessions.id = sandboxes.thread_id AND solo_sessions.agent_name = sandboxes.profile").
+		Where("sandboxes.run_id = ? AND sandboxes.purpose = ? AND sandboxes.node_id IN ? AND solo_sessions.status = ?",
+			runID, SandboxPurposeSolo, []string{"", "solo"}, models.SoloStatusRunning).
+		Order("sandboxes.updated_at desc").First(&row).Error
+	return row, err == nil && strings.TrimSpace(row.Name) != ""
+}
+
+// SoloMCPBinding resolves a running Solo session's current sandbox and Agent
+// capabilities, including after a server restart. A run ID alone never grants
+// access: both the current session binding and the persisted Agent must exist.
+// Nil capabilities preserve basic artifact access without granting node tools.
+func (s *PreviewService) SoloMCPBinding(runID string) (models.Sandbox, *models.AgentCapabilities, bool) {
+	row, ok := s.soloPreviewSandbox(runID, "solo")
+	if !ok || s.agents == nil {
+		return models.Sandbox{}, nil, false
+	}
+	agent, ok := s.agents.Get(row.Profile)
+	if !ok {
+		return models.Sandbox{}, nil, false
+	}
+	return row, agent.Capabilities.Clone(), true
 }
 
 // PreviewUpstream resolves the reachable base URL (http://host:hostPort) for an
@@ -181,11 +228,16 @@ func (s *PreviewService) DirectPreview(runID, nodeID string) bool {
 		return false
 	}
 	var run models.Run
-	if err := s.db.Select("graph").Where("id = ?", runID).First(&run).Error; err != nil {
+	err := s.db.Select("graph").Where("id = ?", runID).First(&run).Error
+	if err == nil {
+		n := run.Graph.FindNode(nodeID)
+		return n != nil && n.Caps.CanPreview()
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) || nodeID != "solo" {
 		return false
 	}
-	n := run.Graph.FindNode(nodeID)
-	return n != nil && n.Caps.CanPreview()
+	_, caps, ok := s.SoloMCPBinding(runID)
+	return ok && caps.CanPreview()
 }
 
 // EnsurePublishedPort asks the gateway to map port onto the K8s Service/LB
