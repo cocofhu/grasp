@@ -133,7 +133,7 @@ onMounted(load)
     <p v-if="error" class="mb-3 border-l-2 border-err/40 py-2 pl-3 text-[13px] text-err">{{ error }}</p>
 
     <div class="scroll-area min-h-0 flex-1 overflow-y-auto">
-      <div v-if="loading" class="py-10 text-center text-txt3"><Icon name="spinner" :size="16" class="inline animate-spin" /></div>
+      <div v-if="loading" class="py-10 text-center text-txt3"><Icon name="spinner" :size="16" class="inline" /></div>
       <EmptyState v-else-if="!projects.length" icon="git" :title="t('pages.projects.empty')" :desc="t('pages.projects.emptyHint')">
         <AppButton variant="primary" icon="plus" @click="openNew">{{ t('pages.projects.new') }}</AppButton>
       </EmptyState>

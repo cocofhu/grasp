@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -26,17 +27,15 @@ var (
 
 // TeamBootstrapRequest is the body for POST /api/agent-teams/bootstrap.
 type TeamBootstrapRequest struct {
-	Prefix       string            `json:"prefix"`
-	PMName       string            `json:"pmName"`
-	Background   string            `json:"background"`
-	AcpBackend   string            `json:"acpBackend"`
-	APIKey       string            `json:"apiKey,omitempty"`
-	CustomConfig string            `json:"customConfig,omitempty"`
-	Region       string            `json:"region,omitempty"`
-	GitURL       string            `json:"gitUrl,omitempty"`
-	GitCredType  string            `json:"gitCredentialType,omitempty"`
-	MCP          []MCPServer       `json:"mcp,omitempty"`
-	Env          map[string]string `json:"env,omitempty"`
+	Prefix               string              `json:"prefix"`
+	PMName               string              `json:"pmName"`
+	Background           string              `json:"background"`
+	ModelConfigurationID string              `json:"modelConfigurationId"`
+	GitBindings          *models.GitBindings `json:"gitBindings,omitempty"`
+	Region               string              `json:"region,omitempty"`
+	GitURL               string              `json:"gitUrl,omitempty"`
+	MCP                  []MCPServer         `json:"mcp,omitempty"`
+	Env                  map[string]string   `json:"env,omitempty"`
 }
 
 // TeamBootstrapEvent is one progress log line for the UI.
@@ -83,9 +82,7 @@ type TeamService struct {
 	Skills    *AgentService
 	Pm        *PmService
 	Sbx       TeamSandbox
-	// SharedAgent and Credentials receive the bootstrap API key (workspace
-	// credential) and backend region/provider env (shared Agent env).
-	SharedAgent *SharedAgentService
+	// Credentials resolves the selected model and Git authorization references.
 	Credentials *CredentialService
 
 	mu         sync.Mutex
@@ -185,18 +182,17 @@ func (s *TeamService) Retry(ctx context.Context, sessionID string) (TeamBootstra
 }
 
 type normalizedTeamReq struct {
-	WorkspaceName string
-	Prefix        string
-	PMName        string
-	Background    string
-	AcpBackend    string
-	APIKey        string
-	CustomConfig  string
-	Region        string
-	GitURL        string
-	GitCredType   string
-	MCP           []MCPServer
-	Env           map[string]string
+	WorkspaceName        string
+	Prefix               string
+	PMName               string
+	Background           string
+	AcpBackend           string
+	ModelConfigurationID string
+	GitBindings          *models.GitBindings
+	Region               string
+	GitURL               string
+	MCP                  []MCPServer
+	Env                  map[string]string
 }
 
 func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeamReq, error) {
@@ -222,9 +218,16 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 			return normalizedTeamReq{}, fmt.Errorf("%w: pmName: %v", ErrTeamValidation, err)
 		}
 	}
-	backend, err := ParseAcpBackend(req.AcpBackend)
+	configuration, err := s.Credentials.requireModelConfiguration(req.ModelConfigurationID)
 	if err != nil {
 		return normalizedTeamReq{}, fmt.Errorf("%w: %v", ErrTeamValidation, err)
+	}
+	bindings, err := models.NormalizeGitBindings(req.GitBindings)
+	if err != nil {
+		return normalizedTeamReq{}, err
+	}
+	if _, err := runtime.ResolveGitBindings(bindings, s.Credentials.ResolveGitValue); err != nil {
+		return normalizedTeamReq{}, err
 	}
 	mcp := req.MCP
 	if len(mcp) == 0 {
@@ -242,64 +245,18 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 		env["GIT_REPOS"] = "${vars.repos}"
 	}
 	return normalizedTeamReq{
-		WorkspaceName: workspace.Name,
-		Prefix:        prefix,
-		PMName:        pmName,
-		Background:    background,
-		AcpBackend:    backend,
-		APIKey:        strings.TrimSpace(req.APIKey),
-		CustomConfig:  strings.TrimSpace(req.CustomConfig),
-		Region:        strings.TrimSpace(req.Region),
-		GitURL:        strings.TrimSpace(req.GitURL),
-		GitCredType:   strings.TrimSpace(req.GitCredType),
-		MCP:           mcp,
-		Env:           env,
+		WorkspaceName:        workspace.Name,
+		Prefix:               prefix,
+		PMName:               pmName,
+		Background:           background,
+		AcpBackend:           configuration.Backend,
+		ModelConfigurationID: configuration.ID,
+		GitBindings:          bindings,
+		Region:               strings.TrimSpace(req.Region),
+		GitURL:               strings.TrimSpace(req.GitURL),
+		MCP:                  mcp,
+		Env:                  env,
 	}, nil
-}
-
-// writeWorkspaceAuth stores the bootstrap API key as a workspace credential and
-// the backend's non-secret env (region / OpenCode provider) in shared Agent env.
-func (s *TeamService) writeWorkspaceAuth(req normalizedTeamReq) error {
-	if req.APIKey == "" || req.CustomConfig != "" {
-		return nil
-	}
-	if s.SharedAgent == nil || s.Credentials == nil {
-		return fmt.Errorf("shared agent / credential service unavailable")
-	}
-	backend := NormalizeAcpBackend(req.AcpBackend)
-	if _, err := s.Credentials.SetByEnvKey(CredentialInput{
-		Type: "ai", Provider: backend, Name: aiCredentialName(backend),
-		EnvKey: primaryAuthEnvKey(backend), Value: req.APIKey,
-	}); err != nil {
-		return err
-	}
-	cfg := s.SharedAgent.Get()
-	if cfg.Env == nil {
-		cfg.Env = map[string]string{}
-	}
-	switch backend {
-	case AcpBackendCodeBuddy:
-		region := req.Region
-		if region == "" {
-			region = "public"
-		}
-		cfg.Env[runtime.EnvCodeBuddyRegion] = region
-	case AcpBackendTrae:
-		region := req.Region
-		if region == "" {
-			region = "intl"
-		}
-		cfg.Env[runtime.EnvTraeRegion] = region
-	case AcpBackendOpenCode:
-		cfg.Env[runtime.EnvOpenCodeProvider] = runtime.NormalizeOpenCodeProvider(req.Env[runtime.EnvOpenCodeProvider])
-		if v := strings.TrimSpace(req.Env[runtime.EnvOpenCodeBaseURL]); v != "" {
-			cfg.Env[runtime.EnvOpenCodeBaseURL] = v
-		}
-		if v := strings.TrimSpace(req.Env[runtime.EnvACPBridgeModel]); v != "" {
-			cfg.Env[runtime.EnvACPBridgeModel] = v
-		}
-	}
-	return s.SharedAgent.Save(cfg)
 }
 
 func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req normalizedTeamReq) {
@@ -313,12 +270,6 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 	if err != nil {
 		fail(err)
 		return
-	}
-	if len(s.Skills.List()) == 0 {
-		if err := s.writeWorkspaceAuth(req); err != nil {
-			fail(fmt.Errorf("write workspace auth: %w", err))
-			return
-		}
 	}
 	s.patchSession(sessionID, func(sess *TeamBootstrapSession) {
 		sess.Status = "running"
@@ -361,14 +312,13 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 		name := EngineerDisplayName(req.Prefix, role.RoleLabelZH)
 		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name)
 		created, err := s.CreateAgentFromTemplate(CreateFromTemplateArgs{
-			TemplateID:   role.ID,
-			Name:         name,
-			AcpBackend:   req.AcpBackend,
-			GitCredType:  req.GitCredType,
-			MCP:          req.MCP,
-			Env:          req.Env,
-			Region:       req.Region,
-			CustomConfig: req.CustomConfig,
+			TemplateID:           role.ID,
+			Name:                 name,
+			ModelConfigurationID: req.ModelConfigurationID,
+			GitBindings:          req.GitBindings,
+			MCP:                  req.MCP,
+			Env:                  req.Env,
+			Region:               req.Region,
 		})
 		if err != nil {
 			fail(err)
@@ -405,15 +355,14 @@ func (s *TeamService) runRetry(ctx context.Context, sessionID string, req normal
 		name := EngineerDisplayName(req.Prefix, role.RoleLabelZH)
 		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name)
 		created, err := s.CreateAgentFromTemplate(CreateFromTemplateArgs{
-			TemplateID:   role.ID,
-			Name:         name,
-			AcpBackend:   req.AcpBackend,
-			GitCredType:  req.GitCredType,
-			MCP:          req.MCP,
-			Env:          req.Env,
-			Region:       req.Region,
-			CustomConfig: req.CustomConfig,
-			SkipIfExists: true,
+			TemplateID:           role.ID,
+			Name:                 name,
+			ModelConfigurationID: req.ModelConfigurationID,
+			GitBindings:          req.GitBindings,
+			MCP:                  req.MCP,
+			Env:                  req.Env,
+			Region:               req.Region,
+			SkipIfExists:         true,
 		})
 		if err != nil {
 			fail(err)
@@ -555,15 +504,14 @@ func (s *TeamService) waitTeamSandboxReady(ctx context.Context, sessionID string
 
 // CreateFromTemplateArgs is used by MCP and bootstrap.
 type CreateFromTemplateArgs struct {
-	TemplateID   string
-	Name         string
-	AcpBackend   string
-	GitCredType  string
-	MCP          []MCPServer
-	Env          map[string]string
-	Region       string
-	CustomConfig string
-	SkipIfExists bool
+	TemplateID           string
+	Name                 string
+	ModelConfigurationID string
+	GitBindings          *models.GitBindings
+	MCP                  []MCPServer
+	Env                  map[string]string
+	Region               string
+	SkipIfExists         bool
 }
 
 // CreateAgentFromTemplate creates one engineer from an embedded template.
@@ -587,19 +535,25 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 		return Agent{}, err
 	}
 	tmpl.Name = name
-	backend := tmpl.AcpBackend
-	if strings.TrimSpace(args.AcpBackend) != "" {
-		if backend, err = ParseAcpBackend(args.AcpBackend); err != nil {
-			return Agent{}, fmt.Errorf("%w: %v", ErrTeamValidation, err)
-		}
+	configuration, err := s.Credentials.requireModelConfiguration(args.ModelConfigurationID)
+	if err != nil {
+		return Agent{}, err
 	}
+	backend := configuration.Backend
+	tmpl.InheritModel, tmpl.InheritGit = false, false
+	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}
+	bindings, err := models.NormalizeGitBindings(args.GitBindings)
+	if err != nil {
+		return Agent{}, err
+	}
+	if _, err := runtime.ResolveGitBindings(bindings, s.Credentials.ResolveGitValue); err != nil {
+		return Agent{}, err
+	}
+	tmpl.GitBindings = bindings
 	tmpl.AcpBackend = backend
 	tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
 		tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
-	}
-	if args.GitCredType != "" {
-		tmpl.GitCredentialType = args.GitCredType
 	}
 
 	// Merge env: template < request
@@ -622,9 +576,6 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 	} else if len(tmpl.MCP) == 0 {
 		tmpl.MCP = DefaultPlatformMCP()
 	}
-	if strings.TrimSpace(args.CustomConfig) != "" {
-		tmpl.Files = upsertAgentFile(tmpl.Files, agentAuthConfigFileName(backend), strings.TrimSpace(args.CustomConfig))
-	}
 
 	if err := s.Skills.Save(tmpl); err != nil {
 		return Agent{}, err
@@ -639,14 +590,14 @@ func (s *TeamService) buildPMAgent(req normalizedTeamReq) (Agent, error) {
 	}
 	tmpl.Name = req.PMName
 	backend := req.AcpBackend
+	tmpl.InheritModel, tmpl.InheritGit = false, false
 	tmpl.AcpBackend = backend
 	tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
 		tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
 	}
-	if req.GitCredType != "" {
-		tmpl.GitCredentialType = req.GitCredType
-	}
+	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: req.ModelConfigurationID}
+	tmpl.GitBindings = req.GitBindings
 
 	mergedEnv := map[string]string{}
 	for k, v := range tmpl.Env {
@@ -668,9 +619,6 @@ func (s *TeamService) buildPMAgent(req normalizedTeamReq) (Agent, error) {
 	}
 
 	tmpl.Files = upsertAgentFile(tmpl.Files, "rules/team-context.md", teamPMContextMarkdown(req))
-	if strings.TrimSpace(req.CustomConfig) != "" {
-		tmpl.Files = upsertAgentFile(tmpl.Files, agentAuthConfigFileName(backend), strings.TrimSpace(req.CustomConfig))
-	}
 	return tmpl, nil
 }
 

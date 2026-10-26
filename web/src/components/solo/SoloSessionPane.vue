@@ -12,8 +12,8 @@ import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import SoloStartupCard from './SoloStartupCard.vue'
-import SoloEnvPanel from './SoloEnvPanel.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
+import SoloModelSelect from './SoloModelSelect.vue'
 import { api } from '@/lib/api/api'
 import { agentHueVar, agentInitial } from '@/components/canvas/composables/agentAvatar'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
@@ -23,18 +23,45 @@ import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { partsOf } from '@/lib/solo/acpTurn'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
+import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { repoShort } from '@/lib/solo/soloPrefs'
+import { branchOfRepo, sessionRepos } from '@/lib/solo/sessionRepos'
 import { isSoloLimitError, soloErrorText } from '@/lib/solo/soloErrors'
 import type { Artifact } from '@/lib/shared/types'
 
 const props = defineProps<{ sessionId: string }>()
 const emit = defineEmits<{ (e: 'back'): void }>()
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'))
-const { session, turns, queued, busy, phase, link, loading, loadError, actionError, status, closed, canSend } = chat
+const { session, turns, queued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, modelSwitchNotice, setCurrentModel } = chat
+const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''))
+const modelChoices = modelCatalog.choices
+const modelCatalogReady = modelCatalog.ready
+const modelCatalogBlocked = modelCatalog.blocked
+const shownModels = computed(() => {
+  if (modelChoices.value.length || !modelCatalogBlocked.value || !currentModelId.value) return modelChoices.value
+  const id = currentModelId.value
+  return [{ id, name: id, hint: id, vendor: '', backend: false, unavailable: false }]
+})
+let modelResetFor = ''
+watch([modelChoices, modelCatalog.configLoaded, modelCatalog.catalogConfirmed, currentModelId, canSend], async () => {
+  if (!canSend.value) return
+  const id = currentModelId.value
+  if (!id || modelResetFor === id) return
+  // A failed directory read must not be stored as "back to the primary model".
+  const inConfig = modelCatalog.modelInConfiguration(id)
+  if (inConfig === null) return
+  if (inConfig && !modelCatalog.catalogConfirmed.value) return
+  const hit = modelChoices.value.find((choice) => choice.id === id)
+  if (inConfig && hit && !hit.unavailable) return
+  modelResetFor = id
+  const ok = await setCurrentModel('')
+  if (ok) actionError.value = t('pages.solo.modelSelect.reset')
+  else modelResetFor = ''
+})
 const attach = useImageAttachments()
 const fileInput = attach.fileInput
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
@@ -44,7 +71,6 @@ const composing = ref(false)
 const scroller = ref<HTMLElement | null>(null)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const followBottom = ref(true)
-const envOpen = ref(false)
 const confirmClose = ref(false)
 const confirmDelete = ref(false)
 const moreOpen = ref(false)
@@ -57,7 +83,22 @@ let artifactPoll: number | undefined
 watch(session, (s) => s && store.upsert(s))
 
 const title = computed(() => session.value?.title || t('pages.solo.untitled'))
-const project = computed(() => session.value?.project ?? null)
+const repos = computed(() => sessionRepos(session.value))
+const editTargets = computed(() => {
+  const seen = new Set<string>()
+  const out: { id: string; name: string }[] = []
+  for (const repo of repos.value) {
+    const id = repo.projectId?.trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push({ id, name: repo.name })
+  }
+  if (!out.length) {
+    const id = session.value?.projectId?.trim()
+    if (id) out.push({ id, name: session.value?.project?.name || '' })
+  }
+  return out
+})
 const sandboxId = computed(() => session.value?.sandboxId || session.value?.sandbox?.id || 0)
 const sandboxResource = computed(() => {
   const source = session.value?.sandbox
@@ -65,7 +106,6 @@ const sandboxResource = computed(() => {
   return id > 0 ? { id, hasCodeServer: source?.hasCodeServer } : null
 })
 const sandboxResourceLoading = computed(() => status.value === 'starting' && !sandboxResource.value)
-const branchLabel = computed(() => session.value?.branch || project.value?.defaultBranch || '')
 const showStartup = computed(() => status.value === 'starting' && !!session.value)
 
 function avatar(name: string) {
@@ -111,7 +151,6 @@ watch(
     followBottom.value = true
     input.value = ''
     attach.clearAttachments()
-    envOpen.value = false
     soloArtifacts.value = []
     scrollDown(true)
   },
@@ -204,7 +243,7 @@ async function doRestart() {
     if (isSoloLimitError(e)) {
       limitOpen.value = true
       void store.refresh()
-    } else actionError.value = soloErrorText(e, t, te)
+    } else actionError.value = soloErrorText(e, t, te, locale.value)
   } finally {
     restarting.value = false
   }
@@ -217,7 +256,7 @@ async function doDelete() {
     store.remove(props.sessionId)
     void router.push('/dashboard')
   } catch (e) {
-    actionError.value = soloErrorText(e, t, te)
+    actionError.value = soloErrorText(e, t, te, locale.value)
   }
 }
 
@@ -241,7 +280,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 <template>
   <div class="solo-pane flex min-h-0 min-w-0 flex-1 flex-col" data-testid="solo-session-pane">
     <div v-if="loading && !session" class="flex flex-1 items-center justify-center text-txt3">
-      <Icon name="spinner" :size="18" class="animate-spin" />
+      <Icon name="spinner" :size="18" />
     </div>
     <div v-else-if="loadError" class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
       <Icon name="alert" :size="22" class="text-err" />
@@ -270,7 +309,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 
       <template #sidebar>
       <div v-if="link === 'reconnecting'" class="solo-banner" role="status">
-        <Icon name="spinner" :size="12" class="animate-spin" />{{ t('pages.solo.link.reconnecting') }}
+        <Icon name="spinner" :size="12" />{{ t('pages.solo.link.reconnecting') }}
       </div>
 
       <!-- transcript -->
@@ -298,8 +337,15 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
               <RouterLink v-if="sandboxId" :to="`/sandboxes/${sandboxId}/console`" class="solo-error-link">
                 <Icon name="terminal" :size="14" />{{ t('pages.solo.errorCard.logs') }}
               </RouterLink>
-              <RouterLink v-if="session.projectId" :to="`/settings/projects?edit=${session.projectId}`" class="solo-error-link">
-                <Icon name="settings" :size="14" />{{ t('pages.solo.errorCard.edit') }}
+              <RouterLink
+                v-for="target in editTargets"
+                :key="target.id"
+                :to="`/settings/projects?edit=${target.id}`"
+                class="solo-error-link"
+                :data-testid="`solo-error-edit-${target.id}`"
+              >
+                <Icon name="settings" :size="14" />
+                {{ editTargets.length > 1 && target.name ? t('pages.solo.errorCard.editRepo', { name: target.name }) : t('pages.solo.errorCard.edit') }}
               </RouterLink>
             </div>
           </div>
@@ -307,7 +353,13 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <div v-if="!turns.length && status === 'running'" class="solo-empty">
             <span class="solo-empty__avatar" :style="avatar(session.agentName)">{{ agentInitial(session.agentName) }}</span>
             <p class="text-[13px] text-txt2">{{ t('pages.solo.chat.empty', { agent: session.agentName }) }}</p>
-            <p v-if="project" class="font-mono text-[11.5px] text-txt3">{{ repoShort(project.repoUrl) }}<template v-if="branchLabel"> @ {{ branchLabel }}</template></p>
+            <ul v-if="repos.length" class="solo-empty__repos" data-testid="solo-empty-repos">
+              <li v-for="repo in repos" :key="`${repo.position}-${repo.repoUrl}`">
+                {{ repoShort(repo.repoUrl) }} @ {{ branchOfRepo(repo, t('pages.solo.env.remoteDefault')) }}
+              </li>
+            </ul>
+            <p v-else class="text-[11.5px] text-txt3">{{ t('pages.solo.noProject') }}</p>
+            <p v-if="repos.length" class="max-w-[420px] text-center text-[11.5px] leading-relaxed text-txt3">{{ t('pages.solo.chat.reposFrozen') }}</p>
           </div>
 
           <template v-for="turn in turns" :key="turn.id">
@@ -356,7 +408,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 </div>
               </div>
               <div v-if="turn.streaming && !turn.steps.length" class="chat-meta flex items-center gap-1.5 py-1">
-                <Icon name="spinner" :size="13" class="animate-spin" />
+                <Icon name="spinner" :size="13" />
                 {{ phase === 'preparing' ? t('pages.solo.phase.preparing') : t('pages.solo.chat.generating') }}
               </div>
               <div v-if="turn.status === 'stopped' && !turn.streaming" class="chat-meta">{{ t('pages.solo.chat.stopped') }}</div>
@@ -399,6 +451,8 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div v-else class="solo-bottom shrink-0 py-3">
         <div class="solo-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
+          <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
+          <p v-if="modelSwitchNotice" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-switch-notice">{{ modelSwitchNotice }}</p>
           <p v-if="attach.notice.value" class="mb-2 text-[12px]" :class="attach.notice.value.kind === 'error' ? 'text-err' : 'text-ok'">{{ attach.notice.value.text }}</p>
           <div v-if="attach.attachments.value.length" class="mb-2 flex flex-wrap gap-1.5">
             <div v-for="(im, ii) in attach.attachments.value" :key="ii" class="relative">
@@ -416,7 +470,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <Icon name="artifact" :size="15" class="shrink-0 text-txt2" />
                 <span class="min-w-0 truncate text-[12px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
               </div>
-              <button type="button" class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-err text-white" @click="attach.removeAttachment(ii)">
+              <button type="button" class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full pending-attach-remove" @click="attach.removeAttachment(ii)">
                 <Icon name="close" :size="9" />
               </button>
             </div>
@@ -442,6 +496,14 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <button type="button" class="chat-action-button" :disabled="!canSend" :aria-label="t('pages.solo.chat.attach')" :title="t('pages.solo.chat.attach')" @click="fileInput?.click()">
                   <Icon name="plus" :size="18" />
                 </button>
+                <SoloModelSelect
+                  class="min-w-0"
+                  :model-value="currentModelId"
+                  :models="shownModels"
+                  :disabled="!canSend || !modelCatalogReady"
+                  :empty-as-label="modelCatalogReady && !modelChoices.length"
+                  @update:model-value="setCurrentModel"
+                />
                 <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
               </div>
               <div class="flex items-center gap-2">
@@ -473,8 +535,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         </div>
       </div>
 
-      <SoloEnvPanel :open="envOpen" :session="session" @close="envOpen = false" />
-
       <AppModal :open="confirmClose" :title="t('pages.solo.close.title')" :width="460" close-on-esc @close="confirmClose = false">
         <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-close-modal">
           <div class="flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">
@@ -483,7 +543,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           </div>
           <p v-if="busy">{{ t('pages.solo.close.busy') }}</p>
           <button
-            v-if="project && status === 'running'"
+            v-if="repos.length && status === 'running'"
             type="button"
             class="solo-push-hint"
             data-testid="solo-close-push"
@@ -524,58 +584,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 }
 .solo-workspace {
   background: rgb(var(--c-surface));
-}
-.solo-workspace :deep(.conversation-toolbar) {
-  height: 44px;
-  min-height: 44px;
-  max-height: 44px;
-}
-.solo-workspace :deep(.is-compact .conversation-mode-toggle) {
-  width: 32px;
-  height: 32px;
-}
-.solo-workspace :deep(.conversation-panel-heading) {
-  display: none;
-}
-.solo-workspace :deep(.is-compact .conversation-panel-heading) {
-  display: flex;
-}
-.solo-workspace .conversation-heading {
-  display: inline-flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-  color: rgb(var(--c-txt2));
-  font-size: 12px;
-  font-weight: 500;
-}
-.solo-workspace .conversation-mode-toggle {
-  display: inline-flex;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: rgb(var(--c-txt3));
-  background: transparent;
-  transition: background var(--dur-ui), color var(--dur-ui), border-color var(--dur-ui);
-}
-.solo-workspace .conversation-mode-toggle:hover {
-  color: rgb(var(--c-txt));
-  background: rgb(var(--c-txt) / .04);
-}
-.solo-workspace .conversation-mode-toggle[aria-pressed="true"] {
-  border-color: rgb(var(--c-line));
-  color: rgb(var(--c-txt));
-  background: rgb(var(--c-base));
-}
-.solo-workspace .conversation-mode-toggle:focus-visible {
-  outline: 2px solid rgb(var(--c-accent) / .5);
-  outline-offset: 2px;
 }
 .solo-column {
   width: 100%;
@@ -658,6 +666,18 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
   gap: 8px;
   padding: 48px 0 12px;
   text-align: center;
+}
+.solo-empty__repos {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: center;
+}
+.solo-empty__repos li {
+  margin-top: 4px;
+  color: rgb(var(--c-txt3));
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
 }
 .solo-empty__avatar {
   display: inline-flex;

@@ -10,7 +10,7 @@ import pages from '@/locales/zh-CN/pages.json'
 const mocks = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue') as typeof import('vue')
-  return { workspace: ref({ name: 'Workspace', description: '', variables: [] }), isMobile: ref(false), listWorkflows: vi.fn(), getWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), triggerImport: vi.fn(), error: vi.fn() }
+  return { workspace: ref({ name: 'Workspace', description: '', variables: [] }), isMobile: ref(false), listWorkflows: vi.fn(), listAgents: vi.fn(), getWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), triggerImport: vi.fn(), error: vi.fn() }
 })
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, ensureLoaded: async () => mocks.workspace.value }) }))
@@ -29,7 +29,8 @@ async function setup() {
   await flushPromises()
   return { wrapper, router }
 }
-beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); mocks.isMobile.value = false; mocks.listWorkflows.mockResolvedValue([head]); mocks.getWorkflow.mockResolvedValue(head) })
+const readyAgents = ['需求澄清', '实现', '测试评审', '交付'].map((name) => ({ name }))
+beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); mocks.isMobile.value = false; mocks.listWorkflows.mockResolvedValue([head]); mocks.listAgents.mockResolvedValue(readyAgents); mocks.getWorkflow.mockResolvedValue(head) })
 describe('workspace workflow management', () => {
   it('searches in the management page while preserving direct editing with a clean URL', async () => {
     const { wrapper, router } = await setup()
@@ -316,5 +317,27 @@ describe('workspace workflow management', () => {
     await flushPromises()
     expect(emptyRun.router.currentRoute.value.path).toBe('/workflows/new/edit')
     emptyRun.wrapper.unmount()
+  })
+
+  it('aligns catalog status copy with the notify name without changing other ghost selects', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const dir = dirname(fileURLToPath(import.meta.url))
+    const view = readFileSync(join(dir, 'WorkflowsView.vue'), 'utf8')
+    const select = readFileSync(join(dir, '../components/ui/AppSelect.vue'), 'utf8')
+    expect(select).toContain("variant === 'ghost' ? 'app-select-trigger--ghost px-2 text-txt2'")
+    expect(view).toContain('padding-inline-start: 0')
+    expect(view).toContain('.workflow-row:has(.workflow-notify-events) > .workflow-status-cell')
+    expect(view).toContain('vertical-align: top')
+    expect(view).toMatch(/\.workflow-status \{[^}]*font-size:\s*12px/)
+    expect(view).toContain('class="workflow-status-label"')
+    expect(view).not.toMatch(/padding-left:\s*0/)
+    const { wrapper } = await setup()
+    const row = wrapper.get('[data-workflow-id="wf-one"]')
+    expect(row.get('.workflow-status-label').text()).toBe('草稿')
+    expect(row.get('.workflow-status-dot').attributes('aria-hidden')).toBe('true')
+    expect(row.get('.workflow-notify-select .truncate').text()).toContain('跟随工作区')
+    wrapper.unmount()
   })
 })

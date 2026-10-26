@@ -6,11 +6,65 @@ All notable public-release changes are documented here.
 
 ## 3.0.0 — 2026-10-26
 
+- **Clarify conversation recovery:** delayed queue snapshots and old temporary replies no longer leave later questions read-only after submitting choices. Reconnecting after a completed turn restores the saved questions and releases the stale busy state without reloading the page.
+
+- **Clearer token analytics:** usage structure now uses readable ranked rows with drill-down details. Model and workflow breakdowns share a full-width tabbed table with usage bars, and the busiest runs show eight rows by default with an option to expand; CSV exports still include the complete list.
+
+- **Home default subtitle:** when the home subtitle is left blank, the line under the mascot and the settings placeholder now read 「我们应该做些什么？」 in Chinese and “What should we do?” in English. Saved subtitles stay as written.
+
+- **Workflow shared sandbox switch:** enable Shared sandbox in the workflow editor’s default settings and save. New runs use that selection directly; the separate platform-wide enable flag has been removed. Workflow settings now use consistent groups and switches, with searchable variable-type and Agent selectors.
+
+- **Simpler account and inheritance settings:** Credentials separates coding-tool authorizations under Agent CLI from model service API accounts, both with provider logos. Removed the separate connections list, add-connection entry and model catalog. New Agents inherit by default; Agent metadata collapses inherited settings into one card; switching inheritance off restores local choices. The card keeps its size, and save feedback transitions smoothly. Removed automatic credential slots and old-format inference; only explicitly created current credentials are listed and used.
+
+- **Credential hosts and Agent defaults:** GitHub and GitLab credentials now store their own Host, defaulting to the official service, instead of a separate GitLab URL credential. Coding-tool and Git credentials appear in their own sections. Agent defaults can select a named model and several Git authorizations; each Agent can independently inherit either selection. Selecting a model determines the coding CLI without a duplicate tool picker.
+
+- **Unified model bindings (breaking configuration change):** Agent creation, editing, onboarding, team creation and execution now use only a saved model configuration: coding tool + credential + upstream model. Removed legacy Agent credential slots, direct bindings and automatic migrations. Existing Agents must select a model configuration or explicitly inherit the configured default before execution. Missing or inactive references fail explicitly; changing a shared model configuration affects all referencing Agents.
+
+- **Sandbox binding validation:** long-lived sandboxes validate applied model and Git bindings before reuse or another chat turn; changed authorization requires reopening. Messages adapters preserve gateway prefixes and avoid duplicate API-version paths. CodeBuddy model connections support Chat Completions only.
+
+- **Conversation header alignment:** Solo sessions now use the same workspace frame as workflow conversations, aligning header spacing and resource/artifact controls. Mobile approval chats place their back and share buttons in the shared header, removing the repeated title and separate share row.
+
+- **Multiple Git credentials per Agent:** Agents can select several saved GitHub, GitLab and SSH credentials, mark a preferred identity and optionally scope accounts to a site or repository. Selected credentials are staged in the sandbox; workflow nodes apply their Agent's bindings and shared sandboxes replace credentials when nodes change. Missing or revoked selections stop execution without trying another account. Empty custom bindings grant no Git access when inheritance is disabled; inherited Agents use the selected default authorizations. Old single-slot bindings are removed.
+
+- **Explicit Agent model selection:** creating an Agent requires a valid selected or inherited model configuration. Turn inheritance off to choose a custom configuration; missing or unavailable configurations block progression and creation. Both Credentials and Models tabs now share one add menu for credentials and models.
+
+- **Agent configuration controls:** the create wizard combines coding tools and models on one page, followed by Git and review. Coding tools use a compact logo list with an integrated service-region selector across create and edit. Model, credential, connection, auxiliary-model and MCP dropdowns use the shared searchable picker, with explicit unavailable-reference states and keyboard navigation.
+
+- **Model setup wizard:** coding tools use logo cards, and one searchable credential picker automatically selects the matching authorization or service. OpenCode CLI and DeepSeek Harness shortcuts create reusable model API credentials. Creating a missing credential returns to the current model draft; back navigation preserves selections. Advanced API settings are collapsed, and dialogs support keyboard focus and narrow screens.
+
+- **Credentials and models UI:** simplified rows show a logo, name and short subtitle, with icon actions and model enable switches. Service details stay in the editor. Provider selection now supports search, logos and 15 presets, alongside custom services.
+
+- **Reusable model configurations:** create credentials first, then save a named combination of coding tool, credential and selected model in the Models tab. Agents bind these configurations by reference. API accounts store service addresses and keys; Added protocol adapters for Claude Code, CodeBuddy Chat Completions, OpenCode, Codex Responses and DeepSeek Harness; Cursor and Trae retain platform authorization. Missing or revoked references fail explicitly without falling back to another key.
+
+- **Workspace credentials:** credentials now appear in compact lists grouped by coding tools, model API keys, repositories and SSH. Status, masked values and actions stay together; adding a credential uses a three-step wizard with a visible step indicator. Configure provider presets or custom API bases and keys here, then combine a coding tool, credential and model in the separate Models tab.
+
+- **Icon motion and shapes:** functional icons across the app, sandbox chat and preview tools now share single-play hover and keyboard feedback, with reduced-motion support. Labels, logout, workflow, copy, delete and terminal glyphs are corrected; completed checks draw left to right without a dot. Only active loading states keep moving.
+
+- **Coding tool picker:** product icons now appear before tool names in Agent, team and first-time setup. The picker hides internal configuration paths.
+
+- **DeepSeek Harness backend:** choose DeepSeek Harness alongside the other coding tools, select Flash or Pro, and run agents with their instructions, skills and MCP tools through native dsh ACP. Authenticate with a dedicated DeepSeek API key. Requires the updated sandbox image with dsh installed.
+
+- **Settings navigation:** clicking the selected settings icon again returns to the previous workspace page, preserving its filters and URL fragment; a direct settings visit returns to Home.
+
+- **Sidebar consistency:** settings and workspace pages now use the same inset, rounded sidebar frame, keeping the left navigation icons and account avatar in the same positions when switching pages.
+
+- **Segmented tabs:** run status, usage filters, editor modes and other segmented controls now share the Home switch's smooth moving highlight. Run counts travel with the highlight and reuse the matching filter's count instead of briefly showing the previous tab's number.
+
+- **Home empty state:** removed the explanatory paragraph and view-all shortcut when no workflows are available on Home, keeping the create-workflow card without an empty spacer row.
+
+- **Home mode highlight:** Workflow and Solo now share one background highlight that slides and resizes with a soft spring easing. The previous option stays transparent, including during rapid switching; reduced-motion preferences are respected.
+
+- **Home mode switching:** switching between Workflow and Solo keeps the hero and mode switch anchored, and fades and slides the mode-specific controls and panels into place instead of shifting abruptly.
+
+- **Home workflow selector:** the inline workflow picker now uses the same flat, transparent treatment as the Solo selectors instead of appearing as a raised card.
+
+- **Workflow and Solo conversation headers:** Solo sessions now use the shared workflow conversation header sizing and compact drawer controls so both startup views have the same top bar.
+
 - **Solo home selectors:** the Agent and repository selectors now use a flat transparent treatment in the composer toolbar, with a subtle hover/open tint instead of a raised gradient and glow.
 
 - **Agent files editor:** fewer columns. Markdown files open in a single editor with an Edit / Split / Preview switch in the toolbar (no minimap), and version history opens from a toolbar button instead of taking a column on the right.
 
-- **Shared run sandbox (opt-in, off by default):** a workflow can run every node of a run in one sandbox, so the workspace, installed dependencies and uncommitted work carry over between nodes. Enable `shared_run_sandbox_enabled` in platform settings and set the workflow's `defaults.sandbox.mode` to `shared`. When the next node uses a different agent or different credentials, the sandbox's env and credentials are re-initialized before that node starts.
+- **Shared run sandbox (opt-in, off by default):** a workflow can run every node of a run in one sandbox, so the workspace, installed dependencies and uncommitted work carry over between nodes. Enable Shared sandbox in the workflow editor’s default settings (`defaults.sandbox.mode = shared`). When the next node uses a different agent or different credentials, the sandbox's env and credentials are re-initialized before that node starts.
 
 - **Loading skeletons:** the shimmer is now a soft neutral sheen with a pause between sweeps instead of a fast purple wave, blocks have rounded corners, and the skeleton fades in after a short delay so quick loads no longer flash it.
 

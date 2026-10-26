@@ -9,6 +9,7 @@ import type { ClarifyImage, ReactAnnotation, ReactQuestion } from '@/lib/shared/
 
 import { useClarifyChat } from './useClarifyChat'
 import { confirmFlowCeremonyKey, type ConfirmFlowCeremony } from './confirmFlowCeremony'
+import { __resetSidebarHandoffForTests, isSidebarConfirmWindowHeld } from './sidebarHandoff'
 
 const image = (name = 'shot.png', over: Partial<ClarifyImage> = {}): ClarifyImage => ({
   data: 'aGVsbG8=',
@@ -671,6 +672,103 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('keeps painting when the platform goes idle but the sandbox turn is still running', () => {
+    const { chat, app } = withChat()
+    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
+    chat.applyReviewFrame({
+      event: 'turn_begin',
+      nodeId: 'node-1',
+      item: { id: 'item-1', text: 'hello' },
+    })
+    expect(chat.applyAcpEvents([
+      { kind: 'message', text: '短回复' },
+    ])).toBe(true)
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      nodeId: 'node-1',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'q-d5d82a58-df0',
+    })
+    expect(chat.liveAgentIdx.value).toBeGreaterThanOrEqual(0)
+    expect(chat.thinking.value).toBe(true)
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.liveTurns.value.find((t) => t.role === 'agent')?.streaming).toBe(true)
+
+    expect(chat.applyAcpEvents([
+      { kind: 'thought', text: '还在核对边界' },
+      { kind: 'message', text: '短回复' },
+    ])).toBe(true)
+    expect(chat.applyAcpEvents([
+      { kind: 'thought', text: '还在核对边界' },
+      { kind: 'message', text: '短回复' },
+    ])).toBe(true)
+    const agents = chat.displayTurns.value.filter((t) => t.role === 'agent' && t.text === '短回复')
+    expect(agents).toHaveLength(1)
+    expect(agents[0]?.thought).toBe('还在核对边界')
+    expect(agents[0]?.streaming).toBe(true)
+    expect(chat.thinking.value).toBe(true)
+    expect(chat.showTurnCompleted(agents[0]!)).toBe(false)
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+
+    chat.applyAcpEvents([
+      { kind: 'thought', text: '还在核对边界，并补上后续步骤' },
+      { kind: 'message', text: '短回复' },
+    ])
+    expect(chat.displayTurns.value.filter((t) => (t.thought || '').includes('后续步骤'))).toHaveLength(1)
+    expect(chat.thinking.value).toBe(true)
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      nodeId: 'node-1',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    const settled = chat.displayTurns.value.find((t) => t.role === 'agent' && t.text === '短回复')
+    expect(settled?.streaming).toBe(false)
+    expect(chat.thinking.value).toBe(false)
+    expect(chat.showTurnCompleted(settled!)).toBe(true)
+    expect(chat.showSandboxOrphanBanner.value).toBe(false)
+    app.unmount()
+  })
+
+  it('paints a late thought after turn_done when the sandbox is still running', () => {
+    const { chat, app } = withChat()
+    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
+    chat.applyReviewFrame({
+      event: 'turn_begin',
+      nodeId: 'node-1',
+      item: { id: 'item-1', text: 'hello' },
+    })
+    chat.applyAcpEvents([{ kind: 'message', text: '短回复' }])
+    chat.applyReviewFrame({ event: 'turn_done', nodeId: 'node-1' })
+    expect(chat.liveAgentIdx.value).toBe(-1)
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      nodeId: 'node-1',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxDesynced: true,
+      sandboxRunningOpId: 'q-d5d82a58-df0',
+    })
+    expect(chat.applyAcpEvents([{ kind: 'thought', text: '失跟之后的思考' }, { kind: 'message', text: '短回复' }])).toBe(true)
+    const agent = chat.displayTurns.value.find((t) => t.role === 'agent')
+    expect(agent?.thought).toBe('失跟之后的思考')
+    expect(agent?.text).toBe('短回复')
+    expect(agent?.streaming).toBe(true)
+    expect(chat.thinking.value).toBe(true)
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.displayTurns.value.filter((t) => t.text === '短回复')).toHaveLength(1)
+    app.unmount()
+  })
+
   it('splits one user message into two agent rows when the turn continues', () => {
     const { chat, app } = withChat()
     chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
@@ -819,6 +917,182 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('paints thought, tools and body after the slot closes without forcing scroll', async () => {
+    const { chat, app, models } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '上一句', at: '2' },
+      ],
+    })
+    const el = scroller(20)
+    chat.scroller.value = el
+    chat.onScrollerScroll()
+    expect(chat.stickToBottom.value).toBe(false)
+    const ta = document.createElement('textarea')
+    ta.value = '未发送草稿'
+    document.body.append(ta)
+    ta.focus()
+    ta.setSelectionRange(2, 2)
+    chat.textareaRef.value = ta
+    models.draft.value = '未发送草稿'
+    models.attachments.value = [image()]
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    })
+    expect(chat.liveAgentIdx.value).toBe(-1)
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.applyAcpEvents([
+      { kind: 'thought', text: '还在想' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { kind: 'message', text: '新的正文' },
+    ])).toBe(true)
+    await flushPromises()
+
+    const agent = [...chat.liveTurns.value].reverse().find((t) => t.role === 'agent')
+    expect(agent?.thought).toBe('还在想')
+    expect(agent?.text).toBe('新的正文')
+    expect(agent?.streaming).toBe(true)
+    expect(agent?.tools).toEqual([{ title: 'read_file', status: 'completed' }])
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
+    expect(chat.liveAgentIdx.value).toBeGreaterThanOrEqual(0)
+    expect(chat.thinking.value).toBe(true)
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.stickToBottom.value).toBe(false)
+    expect(el.scrollTop).toBe(20)
+    expect(models.draft.value).toBe('未发送草稿')
+    expect(models.attachments.value).toHaveLength(1)
+    expect(ta.selectionStart).toBe(2)
+    expect(document.activeElement).toBe(ta)
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    expect(chat.showSandboxOrphanBanner.value).toBe(false)
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
+    ta.remove()
+    app.unmount()
+  })
+
+  it('drops the idle narrative once the bridge is idle and the refresh snapshot arrives', async () => {
+    const { chat, app, props, models } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '上一句', at: '2' },
+      ],
+    })
+    const el = scroller(0)
+    chat.scroller.value = el
+    chat.onScrollerScroll()
+    const ta = document.createElement('textarea')
+    ta.value = '未发送草稿'
+    document.body.append(ta)
+    ta.focus()
+    ta.setSelectionRange(2, 5)
+    chat.textareaRef.value = ta
+    models.draft.value = '未发送草稿'
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    })
+    expect(chat.applyAcpEvents([
+      { kind: 'thought', text: '还在想滚动条以外的事' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { kind: 'message', text: '新的正文已经写进当前对话' },
+    ])).toBe(true)
+    expect(chat.liveTurns.value.at(-1)?.streaming).toBe(true)
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
+
+    props.turns = [
+      { role: 'human', text: '继续', at: '1' },
+      { role: 'agent', text: '半截', at: '2' },
+    ]
+    await nextTick()
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(false)
+    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '半截'])
+
+    props.turns = [
+      { role: 'human', text: '继续', at: '1' },
+      { role: 'agent', text: '已落盘正文', at: '3' },
+    ]
+    await nextTick()
+    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘正文'])
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(false)
+    expect(chat.showSandboxOrphanBanner.value).toBe(false)
+    expect(el.scrollTop).toBe(0)
+    expect(models.draft.value).toBe('未发送草稿')
+    expect(ta.selectionStart).toBe(2)
+    expect(ta.selectionEnd).toBe(5)
+    expect(document.activeElement).toBe(ta)
+    ta.remove()
+    app.unmount()
+  })
+
+  it('replaces an idle narrative when the snapshot arrives after the bridge is already idle', async () => {
+    const { chat, app, props } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '上一句', at: '2' },
+      ],
+    })
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    })
+    chat.applyAcpEvents([
+      { kind: 'thought', text: '还在想' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { kind: 'message', text: '新的正文已经写进当前对话' },
+    ])
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
+
+    props.turns = [
+      { role: 'human', text: '继续', at: '1' },
+      { role: 'agent', text: '已落盘正文', at: '3' },
+    ]
+    await nextTick()
+    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘正文'])
+    expect(chat.liveTurns.value).toEqual([])
+    app.unmount()
+  })
+
   it('emits finish-abort when the host allows it', () => {
     const { chat, app, emit, props } = withChat({ confirmCanAbort: true })
     chat.finishAbort()
@@ -942,6 +1216,33 @@ describe('useClarifyChat actions', () => {
     review.chat.finishEarly()
     expect(review.emit).toHaveBeenCalledTimes(1)
     review.app.unmount()
+  })
+
+  it('holds the sidebar on confirm click and releases when the window leaves', () => {
+    __resetSidebarHandoffForTests()
+    const dismissed = withChat()
+    dismissed.chat.finishEarly()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+    dismissed.chat.dismissConfirmFlow()
+    expect(dismissed.emit).not.toHaveBeenCalled()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+    dismissed.app.unmount()
+
+    const accepted = withChat()
+    accepted.chat.finishEarly()
+    accepted.chat.acceptConfirmFlow()
+    expect(accepted.emit).toHaveBeenCalledWith('finish')
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(true)
+    accepted.chat.releaseConfirmFlowWindow()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+    accepted.app.unmount()
+
+    const leftMounted = withChat()
+    leftMounted.chat.finishEarly()
+    leftMounted.chat.acceptConfirmFlow()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(true)
+    leftMounted.app.unmount()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
   })
 
   it.each(['text', 'image', 'annotation'])('keeps an unsent %s when confirmation is requested', (kind) => {

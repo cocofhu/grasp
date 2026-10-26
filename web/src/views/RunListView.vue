@@ -11,6 +11,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
@@ -110,6 +111,16 @@ const statusFilterOpen = ref(false)
 const workflowFilterOpen = ref(false)
 const tagFilterOpen = ref(false)
 const { selectedTags } = useTagFilter()
+
+// Keep the count attached to its filters while the next list request is pending.
+const countsByFilter = ref<Record<string, number>>({})
+function countFilterKey(status: string, wf: string, tag: string) {
+  return JSON.stringify([status.split(',').filter(Boolean).sort(), wf, tag.split(',').filter(Boolean).sort()])
+}
+const selectedCount = computed(() => countsByFilter.value[countFilterKey(
+  selectedStatuses.value.join(','), selectedWf.value || '', selectedTags.value.join(','),
+)])
+const segmentCountText = computed(() => selectedCount.value ?? '…')
 
 /** Whole-list fade key when filters/page/sort change (g3.2; no per-row stagger). */
 const listFadeKey = computed(() =>
@@ -354,6 +365,8 @@ function listParams() {
 async function load({ showLoading = false }: { showLoading?: boolean } = {}) {
   const localSeq = ++requestSeq
   const isFirstLoad = !hasInitialLoaded
+  const params = listParams()
+  const countKey = countFilterKey(params.status || '', params.wf || '', params.tag || '')
 
   if (isFirstLoad) {
     initialLoading.value = true
@@ -363,8 +376,9 @@ async function load({ showLoading = false }: { showLoading?: boolean } = {}) {
   }
 
   try {
-    const data = await api.listRuns(listParams())
+    const data = await api.listRuns(params)
     if (localSeq === requestSeq) {
+      countsByFilter.value[countKey] = data.total
       if (!runsListUnchanged(data.items, data.total)) {
         runs.value = data.items
         total.value = data.total
@@ -494,26 +508,33 @@ onUnmounted(() => {
     </div>
 
     <div v-if="!isMobile" class="run-toolbar" data-testid="run-list-toolbar">
-      <div class="flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.runList.filterStatus')">
+      <SlidingTabs :value="selectedStatuses.join(',')" class="run-status-tabs flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.runList.filterStatus')">
+        <template #indicator>
+          <!-- Visible count rides the highlight, but above the button fill. -->
+          <span
+            class="chip pointer-events-none absolute right-3 top-1/2 h-5 min-w-[2em] -translate-y-1/2 justify-center py-0 font-normal leading-none tabular-nums"
+            data-testid="moving-run-count"
+          >{{ segmentCountText }}</span>
+        </template>
         <button
           v-for="seg in STATUS_SEGMENTS"
           :key="seg.id"
           type="button"
-          class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
-          :class="segActive(seg) ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+          class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-transparent px-3 py-1 text-[12px] leading-5 transition hover:bg-transparent focus:bg-transparent focus-visible:bg-transparent active:bg-transparent"
+          :class="segActive(seg) ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt2'"
           :aria-pressed="segActive(seg)"
           :data-testid="`run-seg-${seg.id}`"
           @click="selectedStatuses = seg.statuses"
         >
           <span data-testid="seg-label">{{ t(seg.labelKey) }}</span>
-          <!-- Same result count main's StatusFilter trigger shows, on the active segment. -->
+          <!-- Transparent copy: width and accessible name only. Not the visible glyph. -->
           <span
             v-if="segActive(seg)"
-            class="chip h-5 shrink-0 py-0 font-normal leading-none"
+            class="chip h-5 min-w-[2em] shrink-0 justify-center py-0 font-normal leading-none tabular-nums opacity-0"
             data-testid="seg-count"
-          >{{ total }}</span>
+          >{{ segmentCountText }}</span>
         </button>
-      </div>
+      </SlidingTabs>
       <div class="flex items-center gap-2">
         <WorkflowFilter v-model="selectedWf" v-model:open="workflowFilterOpen" :count="total" />
         <TagFilter v-model="selectedTags" v-model:open="tagFilterOpen" />
@@ -624,8 +645,7 @@ onUnmounted(() => {
               <div
                 v-if="showNodeLabel(r)"
                 :key="`${r.id}-${r.currentNodeLabel}`"
-                class="node-label-fade max-w-full truncate text-[11px]"
-                :class="r.status === 'waiting_human' ? 'text-warn' : 'text-txt3'"
+                class="node-label-fade max-w-full truncate text-[11px] text-txt3"
                 :title="r.currentNodeLabel!.length > 60 ? r.currentNodeLabel : undefined"
               >{{ truncateText(r.currentNodeLabel!, 60) }}</div>
             </div>
@@ -723,8 +743,8 @@ onUnmounted(() => {
               <span class="th-inner">
                 {{ t('pages.runList.colStart') }}
                 <span class="sort-icon" aria-hidden="true">
-                  <svg class="up" viewBox="0 0 10 10"><path fill="currentColor" d="M5 2 L9 7 H1 Z" /></svg>
-                  <svg class="down" viewBox="0 0 10 10"><path fill="currentColor" d="M5 8 L1 3 H9 Z" /></svg>
+                  <Icon name="sort-ascending" :size="10" :interactive="false" class="up" />
+                  <Icon name="sort-descending" :size="10" :interactive="false" class="down" />
                 </span>
               </span>
             </th>
@@ -788,8 +808,7 @@ onUnmounted(() => {
                   <div
                     v-if="showNodeLabel(r)"
                     :key="`${r.id}-${r.currentNodeLabel}`"
-                    class="node-label-fade mt-1 truncate text-[11px]"
-                    :class="r.status === 'waiting_human' ? 'text-warn' : 'text-txt3'"
+                    class="node-label-fade mt-1 truncate text-[11px] text-txt3"
                     :title="r.currentNodeLabel!"
                   >{{ r.currentNodeLabel }}</div>
                 </td>
@@ -900,6 +919,16 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* The white selection is the sliding highlight under these buttons. A filled
+   hover or focus background would paint the track color over it. */
+.run-status-tabs :deep(> button),
+.run-status-tabs :deep(> button:hover),
+.run-status-tabs :deep(> button:focus),
+.run-status-tabs :deep(> button:focus-visible),
+.run-status-tabs :deep(> button:active) {
+  background-color: transparent;
+  background-image: none;
+}
 /* No hover on touch screens: keep the row ⋯ visible (as NotificationsView does for its row action). */
 @media (hover: none) {
   .run-more { opacity: 1; }

@@ -297,7 +297,7 @@ const emptyHint = computed(() => {
     case 'running':
       return { icon: 'spinner', text: t('pages.liveLog.empty.running'), spin: true }
     case 'waiting_human':
-      return { icon: 'gate', text: t('pages.liveLog.empty.waitingHuman') }
+      return { icon: 'user-hold', text: t('pages.liveLog.empty.waitingHuman') }
     case 'failed':
       return { icon: 'alert', text: t('pages.liveLog.empty.failed') }
     case 'skipped':
@@ -439,7 +439,7 @@ watch(
         data-testid="rehydrate-loading"
         class="flex flex-col items-center justify-center gap-2.5 px-4 py-16 font-sans text-[12px] text-txt3"
       >
-        <Icon name="spinner" :size="22" class="animate-spin text-accent" />
+        <Icon name="spinner" :size="22" class="text-accent" />
         <div>{{ t('pages.liveLog.rehydrate.loading') }}</div>
       </div>
       <!-- True failure: zero events + REST failed — full-page error + manual retry -->
@@ -496,7 +496,7 @@ watch(
             class="flex w-full items-center gap-1.5 px-1.5 py-1 text-left hover:bg-elevated"
             @click="toggleCall(i)"
           >
-            <span :class="c.isError ? 'text-err' : 'text-ok'">{{ c.isError ? '✗' : '✓' }}</span>
+            <Icon :name="c.isError ? 'close' : 'check'" :size="12" :interactive="false" :class="c.isError ? 'text-err' : 'text-ok'" />
             <span class="font-semibold" :class="c.isError ? 'text-err' : 'text-info'">{{ c.tool }}</span>
             <span class="ml-auto truncate text-[10px] text-txt3">{{ c.args }}</span>
           </button>
@@ -512,7 +512,7 @@ watch(
           <span class="mr-1.5 rounded bg-base px-1 py-0.5 text-[9px] uppercase text-txt3">{{ meta(e).tag }}</span>
           <span class="whitespace-pre-wrap" :class="meta(e).cls">{{ e.title || e.text }}</span>
           <span v-if="e.status === 'running'" class="ml-1.5 text-warn">…</span>
-          <span v-else-if="e.status === 'completed'" class="ml-1.5 text-ok">✓</span>
+          <Icon v-else-if="e.status === 'completed'" name="check" :size="12" :interactive="false" class="ml-1.5 text-ok" />
         </div>
       </div>
       <!-- Boot-stage progress: running + empty timeline -->
@@ -536,7 +536,6 @@ watch(
               <Icon
                 :name="stageIcon(stage.state)"
                 :size="12"
-                :class="stage.state === 'active' ? 'animate-spin' : ''"
               />
             </div>
             <div
@@ -581,7 +580,7 @@ watch(
         v-else-if="!events.length && !(mcpCalls && mcpCalls.length)"
         class="flex flex-col items-center gap-2 px-1 py-10 text-center text-[12px] text-txt3"
       >
-        <Icon :name="emptyHint.icon" :size="20" :class="emptyHint.spin ? 'animate-spin text-accent' : 'text-txt3'" />
+        <Icon :name="emptyHint.icon" :size="20" :busy="!!emptyHint.spin" :class="emptyHint.spin ? 'text-accent' : 'text-txt3'" />
         {{ emptyHint.text }}
       </div>
       </template>
@@ -590,7 +589,7 @@ watch(
       v-if="live && !showRehydrateLoading && !showRehydrateError"
       class="flex shrink-0 items-center gap-2 border-t border-line px-4 py-2.5 pl-4 font-mono text-[12px] text-txt3"
     >
-      <span class="h-2 w-2 animate-pulseglow rounded-full" :class="busy ? 'bg-info' : 'bg-ok'" />
+      <Icon name="breath-dot" :size="12" :busy="busy" :interactive="false" :class="busy ? 'text-info' : 'text-ok'" />
       {{ busy ? t('pages.liveLog.receiving') : t('pages.liveLog.idleWaiting') }}
       <span
         v-if="busy && livenessText"

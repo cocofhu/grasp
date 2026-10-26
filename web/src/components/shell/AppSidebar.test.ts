@@ -72,7 +72,7 @@ describe('AppSidebar', () => {
 
   it.each([
     ['/dashboard', '/dashboard'],
-    ['/gates/run-1', '/dashboard'],
+    ['/runs/run-1/nodes/clarify', '/dashboard'],
     ['/solo/abc', '/dashboard'],
     ['/board', '/board'],
     ['/workflows/wf-1', '/workflows'],
@@ -123,12 +123,18 @@ describe('AppSidebar', () => {
     expect(sidebar.classes()).toContain('w-[360px]')
     expect(sidebar.classes()).toContain('is-settings')
     expect(sidebar.attributes('data-nav-mode')).toBe('settings')
-    expect(sidebar.attributes('data-floating')).toBe('false')
+    expect(sidebar.attributes('data-floating')).toBe('true')
     expect(wrapper.get('[data-testid="sidebar-settings-title"]').text()).toBe('设置')
     expect(wrapper.find('[data-testid="sidebar-brand-lockup"]').exists()).toBe(false)
     const rail = wrapper.get('[data-testid="sidebar-app-rail"]')
-    expect(rail.findAll('a.sidebar-app-rail__item').map((link) => link.attributes('href'))).toEqual(['/dashboard', '/board', '/workflows', '/stats', '/settings'])
-    expect(rail.findAll('[aria-current="page"]').map((link) => link.attributes('href'))).toEqual(['/settings'])
+    expect(rail.findAll('a.sidebar-app-rail__item').map((link) => link.attributes('href'))).toEqual(['/dashboard', '/board', '/workflows', '/stats', '/dashboard'])
+    const settingsToggle = rail.get('[data-testid="sidebar-settings-toggle"]')
+    expect(settingsToggle.attributes('href')).toBe('/dashboard')
+    expect(settingsToggle.attributes('aria-label')).toBe('返回工作区')
+    expect(settingsToggle.attributes('title')).toBe('返回工作区')
+    expect(settingsToggle.attributes('aria-current')).toBe('page')
+    expect(settingsToggle.classes()).toContain('is-active')
+    expect(rail.findAll('[aria-current="page"]')).toHaveLength(1)
     expect(wrapper.get('[data-testid="app-sidebar-card"]').classes()).toEqual(expect.arrayContaining(['w-[304px]', 'min-w-[304px]']))
     expect(wrapper.find('[data-testid="desktop-nav-hide"]').exists()).toBe(true)
     expect(wrapper.findAllComponents(SidebarAccountMenu)).toHaveLength(1)

@@ -41,12 +41,20 @@ var reprimeSkipEnv = map[string]bool{
 	"SSH_KEY":                true,
 }
 
+// Explicit bindings never inherit the legacy environment's Git identity.
+var gitCredentialEnv = map[string]bool{
+	"GITHUB_TOKEN": true, "GH_TOKEN": true, "GITHUB_ENTERPRISE_TOKEN": true, "GH_ENTERPRISE_TOKEN": true,
+	"GITLAB_TOKEN": true, "GLAB_TOKEN": true, "GITLAB_ACCESS_TOKEN": true, "GITHUB_URL": true, "GITLAB_URL": true,
+	"GIT_SSH_PRIVATE_KEY": true, "GIT_SSH_KNOWN_HOSTS": true,
+	"GIT_SSH_COMMAND": true, "GIT_SSH": true, "SSH_AUTH_SOCK": true,
+}
+
 // ReprimeEnvKeys lists the spec env names Reprime applies, so the caller can
 // hand them back as prevKeys on the next Reprime.
 func ReprimeEnvKeys(spec Spec) []string {
 	keys := make([]string, 0, len(spec.Env))
 	for k := range spec.Env {
-		if envNameRE.MatchString(k) && !reprimeSkipEnv[k] {
+		if envNameRE.MatchString(k) && !reprimeSkipEnv[k] && !(spec.GitBindingsConfigured && gitCredentialEnv[k]) {
 			keys = append(keys, k)
 		}
 	}
@@ -132,7 +140,7 @@ func packReprimeBundle(spec Spec, prevKeys []string) ([]byte, error) {
 			return nil, fmt.Errorf("pack config home: %w", err)
 		}
 	}
-	sshData, err := PackSSHInjectBundle(spec.SSHPrivateKey, spec.SSHKnownHosts, spec.RepoCredentials)
+	sshData, err := packGitInjectBundle(spec.SSHPrivateKey, spec.SSHKnownHosts, spec.RepoCredentials, spec.GitBindingsConfigured, spec.GitCredentials)
 	if err != nil {
 		return nil, fmt.Errorf("pack ssh bundle: %w", err)
 	}
@@ -225,6 +233,11 @@ func SpecFingerprint(spec Spec) string {
 	_, _ = fmt.Fprintf(h, "root\x00%s\x00ssh\x00%s\x00%s\x00", spec.ConfigRoot, spec.SSHPrivateKey, spec.SSHKnownHosts)
 	for _, r := range spec.RepoCredentials {
 		_, _ = fmt.Fprintf(h, "repo\x00%s\x00%s\x00%s\x00%s\x00", r.URL, r.Kind, r.Secret, r.KnownHosts)
+	}
+	_, _ = fmt.Fprintf(h, "git-configured\x00%t\x00", spec.GitBindingsConfigured)
+	for _, credential := range spec.GitCredentials {
+		_, _ = fmt.Fprintf(h, "git\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%t\x00",
+			credential.ID, credential.Name, credential.Kind, credential.Scope, credential.Secret, credential.KnownHosts, credential.Preferred)
 	}
 	if home := strings.TrimSpace(spec.ConfigHome); home != "" {
 		err := filepath.WalkDir(home, func(p string, d fs.DirEntry, walkErr error) error {

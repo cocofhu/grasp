@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import AgentEnvPanel from './AgentEnvPanel.vue'
-import AgentGitGuide from './AgentGitGuide.vue'
+import AgentGitCredentialPicker from './AgentGitCredentialPicker.vue'
 import AgentMcpPanel from './AgentMcpPanel.vue'
 import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 
@@ -32,7 +32,6 @@ const baseDraft: AgentStudioDraft = {
   mcp: [],
   files: [],
   capabilities: null,
-  gitCredentialType: undefined,
   acpBackend: 'codebuddy',
   layout: { configRoot: '/tmp/agent', workspaceDir: '/tmp/workspace' },
 }
@@ -54,10 +53,7 @@ describe('Agent Studio help buttons', () => {
     })
 
     expectOutlineHelpButton(wrapper, '[data-test="env-help-inject"]')
-    expectOutlineHelpButton(wrapper, '[data-test="env-help-acp"]')
 
-    const settingsLink = wrapper.get('[data-test="env-open-settings-file"]')
-    expect(settingsLink.classes().join(' ')).toMatch(/underline/)
   })
 
   it('MCP 顶栏帮助为描边按钮', () => {
@@ -74,10 +70,10 @@ describe('Agent Studio help buttons', () => {
   })
 
   it('Git 凭据卡帮助为描边按钮', () => {
-    const wrapper = mount(AgentGitGuide, {
+    const wrapper = mount(AgentGitCredentialPicker, {
       props: {
-        env: [],
-        upsertEnv: () => {},
+        modelValue: { items: [] },
+        items: [],
       },
       global: {
         plugins: [createI18nPlugin()],
@@ -85,6 +81,6 @@ describe('Agent Studio help buttons', () => {
       },
     })
 
-    expectOutlineHelpButton(wrapper, '[data-test="git-help-link"]')
+    expect(wrapper.get('[data-testid="git-credential-help"]').text()).toBe('Git 配置帮助')
   })
 })

@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => ({
   reactReply: vi.fn(),
   nodeEvents: vi.fn(),
   runArtifacts: vi.fn(),
+  // Inbox context has nodes but no edges; the view asks GET /runs/:id before it
+  // leaves the loading pane. This suite has no run record, same as a refused call.
+  getRun: vi.fn(async () => {
+    throw new Error('no run in this suite')
+  }),
   runEventsWsUrl: vi.fn((id: string) => `ws://test/runs/${id}/events`),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
@@ -33,6 +38,7 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       listGates: mocks.listGates,
       inboxContext: mocks.inboxContext,
+      getRun: mocks.getRun,
       resumeGate: mocks.resumeGate,
       reactReply: mocks.reactReply,
       nodeEvents: mocks.nodeEvents,
@@ -456,7 +462,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     wrapper.unmount()
   })
 
-  it('left-pending 404 converges without toast and without retry loop', async () => {
+  it('left-pending absence converges without toast and without retry loop', async () => {
     const a = gateItem('a')
     const b = gateItem('b')
     mocks.listGates.mockResolvedValue(paged([a, b]))
@@ -467,7 +473,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
         artifacts: [],
         nodeExecutions: {},
       })
-      .mockRejectedValueOnce(new Error('no pending inbox item'))
+      .mockResolvedValueOnce({ pending: false })
 
     const wrapper = mountInbox()
     await flushPromises()
@@ -795,7 +801,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
   })
 
   it('gate: irrelevant status/trace/react do not softRefresh; artifact_edit and turn_done do', async () => {
-    const a = gateItem('a')
+    const a = { ...gateItem('a'), reactUpstreamNodeId: 'producer-a' }
     mocks.listGates.mockResolvedValue(paged([a]))
 
     const wrapper = mountInbox()
@@ -817,11 +823,11 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBe(before + 1)
 
-    ws.emit('review', { event: 'turn_done' })
+    ws.emit('review', { event: 'turn_done', nodeId: 'producer-a' })
     await flushPromises()
     expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBe(before + 2)
 
-    ws.emit('review', { event: 'error' })
+    ws.emit('review', { event: 'error', nodeId: 'producer-a' })
     await flushPromises()
     expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBe(before + 3)
 
@@ -1837,7 +1843,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       images: [{ data: 'abc', mimeType: 'image/png', name: 'shot.png' }],
     })
     mocks.listGates.mockResolvedValue(paged([]))
-    mocks.inboxContext.mockRejectedValue(new Error('no pending inbox item'))
+    mocks.inboxContext.mockResolvedValue({ pending: false })
     const wrapper = mountInbox()
     await flushPromises()
     await nextTick()

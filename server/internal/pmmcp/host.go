@@ -590,7 +590,7 @@ func (h *Host) callWorkflowRead(name string, args map[string]any) (any, bool) {
 			rows = append(rows, row)
 		}
 		return map[string]any{"workflowId": wfID, "runs": rows, "count": len(rows)}, false
-	case "pm_list_pending_gates":
+	case "pm_list_pending_nodes":
 		if h.runs == nil {
 			return map[string]any{"error": "run service unavailable"}, true
 		}
@@ -806,7 +806,7 @@ func (h *Host) callWorkflowWrite(token, name string, args map[string]any) (any, 
 			Payload:      payload,
 		})
 		return map[string]any{"id": run.ID, "status": run.Status}, false
-	case "pm_resume_gate":
+	case "pm_decide_node":
 		if h.eng == nil {
 			return map[string]any{"error": "engine unavailable"}, true
 		}
@@ -965,7 +965,7 @@ func toolSchemas(mcpID string) []map[string]any {
 				"workflowId": map[string]any{"type": "string"},
 				"limit":      map[string]any{"type": "number"},
 			}),
-			platformmcp.Tool("pm_list_pending_gates", "列出工作区待审批的门禁/澄清项。", map[string]any{
+			platformmcp.Tool("pm_list_pending_nodes", "列出工作区待处理节点（门禁与澄清/复审）。", map[string]any{
 				"limit": map[string]any{"type": "number"},
 			}),
 			platformmcp.Tool("pm_get_artifact", "按 artifactId 或 runId+name 读取工作区产物全文片段；支持 offset/limit 分页并返回截断信息。", map[string]any{
@@ -1028,7 +1028,7 @@ func toolSchemas(mcpID string) []map[string]any {
 					},
 				},
 			}),
-			platformmcp.Tool("pm_resume_gate", "审批/推进某个待人工门禁。", map[string]any{
+			platformmcp.Tool("pm_decide_node", "对待处理人工门禁提交决策。", map[string]any{
 				"runId":  map[string]any{"type": "string"},
 				"nodeId": map[string]any{"type": "string"},
 				"action": map[string]any{"type": "string", "description": "如 approve|revise"},

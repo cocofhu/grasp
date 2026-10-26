@@ -1,3 +1,4 @@
+import {hydrateRuntimeIcons, installRuntimeIconMotion, runtimeIcon} from '../ui/icons.js';
 import {renderMermaidInLightboxMount} from '../core/md.js';
 import {apiPath, chatApiPath} from '../core/paths.js';
 import {queueStateHasPendingWork} from '../ui/queue_panel.js';
@@ -5,6 +6,11 @@ import {setHeaderConnLive} from '../ws/session.js';
 import {announceReady, bindEmbedTheme, isEmbedded} from './embed.js';
 import {TabManager} from './tab_manager.js';
 import {modelDisplayName, modelPickerItems} from './tab_state.js';
+
+hydrateRuntimeIcons(document);
+const iconTemplate = document.getElementById('chatPaneTpl');
+if (iconTemplate) hydrateRuntimeIcons(iconTemplate.content);
+installRuntimeIconMotion(document);
 
 const panesEl = document.getElementById('chatPanes');
 const paneTpl = /** @type {HTMLTemplateElement|null} */ (document.getElementById('chatPaneTpl'));
@@ -87,8 +93,41 @@ function bindSystemThemeListener() {
 /** 模型目录（同一 provider，各 Tab 共用）；当前模型按 Tab 记录 */
 let _allModels = [];
 let _modelListLoaded = false;
+/** 列表已被限制为配置内模型时，不再前置「默认」行。 */
+let _configuredModels = false;
 /** -model / ACP_BRIDGE_MODEL；空表示 auto */
 let _defaultModel = '';
+const modelLogo = document.getElementById('modelLogo');
+const VENDOR_LOGOS = {
+    anthropic: 'claude.svg', claude: 'claude.svg', openai: 'openai.svg', google: 'google.svg',
+    gemini: 'gemini.svg', xai: 'xai.svg', deepseek: 'deepseek.svg', moonshot: 'moonshot.svg',
+    bytedance: 'bytedance.svg', cursor: 'cursor.svg', codex: 'codex.svg', codebuddy: 'codebuddy.svg',
+    trae: 'trae.svg', qwen: 'qwen.svg', zai: 'zai.svg', zhipu: 'zhipu.svg', minimax: 'minimax.svg',
+    openrouter: 'openrouter.svg', siliconflow: 'siliconflow.svg', hunyuan: 'hunyuan.svg',
+    qianfan: 'qianfan.svg', doubao: 'doubao.svg', opencode: 'opencode.svg',
+};
+
+function fillModelLogo(el, model) {
+    if (!el) return;
+    el.replaceChildren();
+    if (!model) {
+        el.hidden = true;
+        return;
+    }
+    const file = VENDOR_LOGOS[String(model.vendor || '').toLowerCase()];
+    el.hidden = false;
+    if (file) {
+        const img = document.createElement('img');
+        img.alt = '';
+        img.src = apiPath('static/provider-logos/' + file);
+        el.appendChild(img);
+        return;
+    }
+    const fallback = document.createElement('span');
+    fallback.className = 'cc-model-logo-fallback';
+    fallback.textContent = String(model.name || model.vendor || '?').trim().charAt(0).toUpperCase() || '?';
+    el.appendChild(fallback);
+}
 
 const tabs = domOk
     ? new TabManager({
@@ -141,6 +180,10 @@ function updateModelLabel() {
     const tab = tabs?.active;
     if (!modelLabel || !tab) return;
     modelLabel.textContent = modelDisplayName(tab.currentModel, _allModels);
+    const shown = String(tab.currentModel || '');
+    const model = (_allModels || []).find((item) => (item.id || '') === (shown === 'auto' ? '' : shown))
+        || (_allModels || []).find((item) => !item.id);
+    fillModelLogo(modelLogo, model);
 }
 
 /** @type {Promise<void>|null} */
@@ -177,6 +220,7 @@ async function fetchModelList(tab) {
         }
         const data = await res.json();
         _allModels = data.models || [];
+        _configuredModels = !!data.configured;
         _defaultModel = data.default || '';
         tab.selectedModel = data.selected || '';
         if (data.current) tab.currentModel = data.current;
@@ -211,32 +255,45 @@ function renderModelList(filter) {
     const tab = tabs?.active;
     if (!modelList || !tab) return;
     const q = filter.toLowerCase().trim();
-    const items = modelPickerItems(_allModels, _defaultModel || tabs.defaultModel);
+    const items = modelPickerItems(_allModels, _defaultModel || tabs.defaultModel, _configuredModels);
     const filtered = q
         ? items.filter(m => m.followDefault || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
         : items;
     const frag = document.createDocumentFragment();
     for (const m of filtered) {
         const el = document.createElement('div');
-        const active = m.followDefault ? !tab.selectedModel : m.id === tab.selectedModel;
-        el.className = 'cc-model-item' + (active ? ' active' : '');
+        const active = _configuredModels
+            ? (tab.selectedModel ? m.id === tab.selectedModel : (m.id || '') === (_defaultModel || ''))
+            : (m.followDefault ? !tab.selectedModel : m.id === tab.selectedModel);
+        el.className = 'cc-model-item' + (active ? ' active' : '') + (m.unavailable ? ' is-unavailable' : '');
         el.dataset.id = m.id;
+        const logo = document.createElement('span');
+        logo.className = 'cc-model-logo';
+        fillModelLogo(logo, m);
+        logo.hidden = false;
+        el.appendChild(logo);
         const name = document.createElement('span');
         name.textContent = m.name;
         el.appendChild(name);
-        if (m.isDefault) {
+        if (!_configuredModels && m.isDefault) {
             const d = document.createElement('span');
             d.className = 'cc-model-item-default';
             d.textContent = 'default';
             el.appendChild(d);
         }
-        if (!m.followDefault && m.id !== m.name) {
+        if (!_configuredModels && !m.followDefault && m.id !== m.name) {
             const idEl = document.createElement('span');
             idEl.className = 'cc-model-item-id';
             idEl.textContent = m.id;
             el.appendChild(idEl);
         }
-        el.addEventListener('click', () => selectModel(m.id));
+        if (m.unavailable) {
+            const badge = document.createElement('span');
+            badge.className = 'cc-model-item-id';
+            badge.textContent = '不可用';
+            el.appendChild(badge);
+        }
+        if (!m.unavailable) el.addEventListener('click', () => selectModel(m.id));
         frag.appendChild(el);
     }
     modelList.innerHTML = '';
@@ -512,7 +569,7 @@ function renderAttachPreview() {
             fd.className = 'cc-attach-file';
             const icon = document.createElement('span');
             icon.className = 'cc-attach-file-icon';
-            icon.textContent = '📄';
+            icon.innerHTML = runtimeIcon('doc', 18);
             const name = document.createElement('span');
             name.className = 'cc-attach-file-name';
             name.textContent = entry.file.name;
@@ -523,7 +580,9 @@ function renderAttachPreview() {
         }
         const rm = document.createElement('button');
         rm.className = 'cc-attach-remove';
-        rm.textContent = '✕';
+        rm.type = 'button';
+        rm.innerHTML = runtimeIcon('close', 12);
+        rm.setAttribute('aria-label', '移除附件');
         rm.title = '移除';
         rm.onclick = () => removeFile(i);
         item.appendChild(rm);

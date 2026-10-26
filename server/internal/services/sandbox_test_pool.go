@@ -63,8 +63,12 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	if !ok {
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
-	// Merge SharedAgent so team bootstrap / Open paths inject shared SSH meta.
+	// Shared workspace files and ordinary defaults remain independent of authorization.
 	agent = s.effectiveAgent(agent)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	if err != nil {
+		return nil, err
+	}
 	// Reuse an existing test sandbox bound to the same agent when one is still
 	// alive, instead of spinning up a fresh container every time. The chat path
 	// (ensureConnected) transparently re-attaches if the live ACP connection was
@@ -74,6 +78,12 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	// in a fresh workspace, so always create a new sandbox for them.
 	if len(repos) == 0 {
 		if row := s.findReusable(ctx, profile); row != nil {
+			s.mu.Lock()
+			bindingErr := checkAppliedBindings(modelFingerprint, gitFingerprint, row, s.live[row.ID])
+			s.mu.Unlock()
+			if bindingErr != nil {
+				return nil, bindingErr
+			}
 			at := time.Now().Add(s.TTL())
 			s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{"destroy_at": &at, "updated_at": time.Now()})
 			row.DestroyAt = &at
@@ -93,6 +103,7 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	name := sandbox.NewContainerName()
 
 	row := &models.Sandbox{
+		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
 		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token,
 	}
@@ -112,6 +123,10 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 	if _, ok := s.skills.Get(profile); !ok {
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective)
+	if err != nil {
+		return nil, err
+	}
 	if maxN := s.MaxTestSandboxes(); s.activeCount() >= maxN {
 		return nil, fmt.Errorf("已达到测试沙箱上限(%d),请先清理空闲沙箱", maxN)
 	}
@@ -121,6 +136,7 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 	name := sandbox.NewContainerName()
 
 	row := &models.Sandbox{
+		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
 		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token,
 	}
@@ -195,61 +211,47 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 			env[k] = v
 		}
 	}
-	// Workspace credentials are the highest-priority source; apply after the
-	// Agent/template vars above so test sandboxes match workflow precedence.
-	var creds map[string]string
-	if s.credentials != nil {
-		creds = s.credentials()
-		overlayCredentialEnv(env, creds)
-	}
+	creds := map[string]string{}
 	backend, err := runtime.ParseBackend(agent.AcpBackend)
 	if err != nil {
 		fail(err)
 		return
 	}
-	if backend == runtime.BackendOpenCode && s.openCodeCredential != nil {
-		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(agent.OpenCodeCredentialID))
-	}
-	runtime.ApplyAgentCredentialChoice(env, creds, runtime.AgentCredentialChoice{
-		Backend:              string(backend),
-		GitCredentialType:    agent.GitCredentialType,
-		AiCredentialID:       agent.AiCredentialID,
-		GitCredentialID:      agent.GitCredentialID,
-		SshHostsCredentialID: agent.SshHostsCredentialID,
-	}, s.selectedCredential)
 	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
+	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.gitCredential)
+	if err != nil {
+		fail(err)
+		return
+	}
+	if err := runtime.ApplyModelBinding(env, string(backend), agent.ModelBinding, s.modelBinding); err != nil {
+		fail(err)
+		return
+	}
+	modelFingerprint := modelBindingFingerprint(agent, env)
 	workDir := s.skills.WorkDir(profile)
 	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.
-	merged, err := runtime.PrepareAuthEnv(backend, env, workDir, sharedWorkDir)
+	merged, err := runtime.PrepareBoundAuth(backend, env, workDir, sharedWorkDir)
 	if err != nil {
 		fail(err)
 		return
 	}
 	env = merged
-	ocDoc := runtime.OpenCodeConfigForEnvWithCatalog(
-		context.Background(), backend, env, s.openCodeCatalog,
-	)
-	if err := runtime.RequireOpenCodePlaceholderKey(ocDoc, env); err != nil {
-		fail(err)
-		return
-	}
-
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
 		BaseWorkDirSrc:       sharedWorkDir,
 		WorkDirSrc:           s.skills.WorkDir(profile),
 		IncludeArtifactStore: hasArtifactStoreSpec(specs),
 		MCP:                  specs,
 		OpenCode:             backend == runtime.BackendOpenCode,
+		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
-		OpenCodeConfig:       ocDoc,
 	})
 	if err != nil {
 		fail(fmt.Errorf("build cursor home: %w", err))
 		return
 	}
-	if err := runtime.InstallCodexLoginFile(backend, home, codexLogin); err != nil {
+	if err := runtime.InstallBoundCodexLoginFile(backend, home, codexLogin, env); err != nil {
 		_ = os.RemoveAll(home)
 		fail(err)
 		return
@@ -274,15 +276,15 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	env["GIT_REPOS"] = sandbox.EncodeRepos(repos)
 
 	spec := sandbox.Spec{
-		Name:         name,
-		Image:        resolveSandboxImage(string(backend)),
-		Env:          env,
-		ConfigHome:   home,
-		ConfigRoot:   configRoot,
-		WorkspaceDir: agent.Layout.WorkspaceDir,
+		GitBindingsConfigured: true,
+		GitCredentials:        gitCredentials,
+		Name:                  name,
+		Image:                 resolveSandboxImage(string(backend)),
+		Env:                   env,
+		ConfigHome:            home,
+		ConfigRoot:            configRoot,
+		WorkspaceDir:          agent.Layout.WorkspaceDir,
 	}
-	ApplySSHCredentialsToSpec(&spec, creds)
-	spec.RepoCredentials = s.repoCredentials(agent)
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -312,7 +314,9 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	// Name (the pre-allocated placeholder was only a correlation label) so all
 	// later control-plane calls (Status/Attach/Destroy) address the real id.
 	res := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-		"status": "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
+		"model_binding_fingerprint": modelFingerprint,
+		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
+		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
 		"code_server_port": sb.CodeServerPort, "error": "",
 		"destroy_at": &destroyAt, "updated_at": time.Now(),
 	})
@@ -329,9 +333,11 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	s.mu.Lock()
 	s.live[id] = &liveSandbox{
 		sb: sb, acp: acp, home: home,
-		codexAuthInjected:     codexLogin,
-		codexAuthCredentialID: runtime.CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, agent.AiCredentialID, agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
-		codexAuthPath:         codexLiveAuthPath(backend, configRoot),
+		modelBindingFingerprint: modelFingerprint,
+		gitBindingsFingerprint:  gitBindingsFingerprint(gitCredentials),
+		codexAuthInjected:       codexLogin,
+		codexAuthCredentialID:   runtime.ModelCredentialIDForWriteBack(env),
+		codexAuthPath:           codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()
 	log.Info().Str("name", sb.Name).Str("profile", profile).Uint("id", id).Msg("test sandbox opened")
@@ -435,6 +441,16 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	s.mu.Lock()
 	ls := s.live[id]
 	s.mu.Unlock()
+	agent, _ := s.skills.Get(row.Profile)
+	effective := s.effectiveAgent(agent)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := checkAppliedBindings(modelFingerprint, gitFingerprint, &row, ls); err != nil {
+		return nil, nil, err
+	}
+	agent = effective
 	if ls != nil && ls.acp != nil && ls.acp.IsConnected() {
 		return ls, &row, nil
 	}
@@ -448,7 +464,6 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	// Attach rebuilds the handle from the gateway record, which carries no env;
 	// restore the acp-bridge secret so ACP() can log in before dialing /ws.
 	sb.Password = row.Token
-	agent, _ := s.skills.Get(row.Profile)
 	// Attach can't recover the per-Agent workspace dir; restore it from the
 	// Agent's layout so the reconnected session matches the original.
 	if agent.Layout.WorkspaceDir != "" {
@@ -471,11 +486,21 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	// Rebuild + SSH-sync ConfigHome so remote pods missing mcp.json/rules
 	// (hostPath ignored by K8s gateway) heal on reconnect.
 	if s.mgr != nil {
+		deepSeekHarness := runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendDeepSeekHarness
+		sharedWorkDir := ""
+		if deepSeekHarness && s.shared != nil {
+			sharedWorkDir = s.shared.WorkDir()
+		}
 		if home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
+			BaseWorkDirSrc:       sharedWorkDir,
 			WorkDirSrc:           s.skills.WorkDir(row.Profile),
+			DeepSeekHarness:      deepSeekHarness,
 			IncludeArtifactStore: hasArtifactStoreSpec(specs),
 			MCP:                  specs,
 		}); err != nil {
+			if deepSeekHarness {
+				return nil, nil, fmt.Errorf("reconnect: rebuild DeepSeek Harness config home: %w", err)
+			}
 			log.Warn().Err(err).Uint("sandbox", id).Msg("reconnect: rebuild config home failed")
 		} else {
 			s.mgr.EnsureConfigHome(ctx, sb, home, sb.ConfigRoot)
@@ -502,10 +527,12 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	}
 	ls = &liveSandbox{
 		sb: sb, acp: acp,
-		codexAuthInjected:     injected,
-		codexAuthCredentialID: credentialID,
-		codexAuthPath:         codexLiveAuthPath(runtime.NormalizeBackend(agent.AcpBackend), agent.Layout.ConfigRoot),
-		codexAuthRejected:     rejected,
+		modelBindingFingerprint: modelFingerprint,
+		gitBindingsFingerprint:  gitFingerprint,
+		codexAuthInjected:       injected,
+		codexAuthCredentialID:   credentialID,
+		codexAuthPath:           codexLiveAuthPath(runtime.NormalizeBackend(agent.AcpBackend), agent.Layout.ConfigRoot),
+		codexAuthRejected:       rejected,
 	}
 	s.mu.Lock()
 	s.live[id] = ls

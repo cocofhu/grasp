@@ -61,7 +61,7 @@ func TestAgentSaveRejectsSecretEnvKeys(t *testing.T) {
 
 func TestSharedAgentSaveRejectsSecretEnvKeys(t *testing.T) {
 	svc := NewSharedAgentService(t.TempDir())
-	for _, k := range []string{EnvGitSSHKnownHosts, "GITLAB_TOKEN", "GRASP_CLAUDE_API_KEY"} {
+	for _, k := range []string{EnvGitSSHKnownHosts, "GITLAB_TOKEN", "GRASP_CLAUDE_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY"} {
 		err := svc.Save(SharedAgentConfig{Env: map[string]string{k: "h"}})
 		if !errors.Is(err, ErrSecretEnvKey) {
 			t.Fatalf("%s: err=%v", k, err)

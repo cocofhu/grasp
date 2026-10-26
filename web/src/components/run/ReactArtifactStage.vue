@@ -1034,6 +1034,7 @@ watch(
     try {
       const sbx = await api.getRunNodeSandbox(rid, nid)
       if (gen !== sandboxGen) return
+      // null is confirmed absence: leave the stage empty, do not open a desktop.
       sandboxView.value = sbx
     } catch (e) {
       if (gen !== sandboxGen || isAbortError(e)) return
@@ -1124,7 +1125,7 @@ onBeforeUnmount(() => {
         :class="
           showingGrid
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
         :aria-selected="showingGrid ? 'true' : 'false'"
         data-testid="react-artifact-tab-grid"
@@ -1140,7 +1141,7 @@ onBeforeUnmount(() => {
         :class="
           activePreviewName === name
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
       >
         <button
@@ -1182,7 +1183,7 @@ onBeforeUnmount(() => {
         :class="
           activeTab === id
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
       >
         <button
@@ -1213,7 +1214,7 @@ onBeforeUnmount(() => {
         :class="
           showingNovnc
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
       >
         <button
@@ -1245,7 +1246,7 @@ onBeforeUnmount(() => {
         :class="
           activeTab === id
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
       >
         <button
@@ -1273,7 +1274,7 @@ onBeforeUnmount(() => {
       <div
         v-if="showNewTab"
         class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
-        :class="showingGrid ? 'bg-elevated text-txt' : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'"
+        :class="showingGrid ? 'bg-elevated text-txt' : 'text-txt3 hover:text-txt2'"
       >
         <button
           type="button"

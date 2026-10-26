@@ -137,7 +137,8 @@ describe('ClarifyChat option preview window', () => {
     expect(scrollerPreviews(wrapper).map((el) => el.textContent)).toEqual([expect.stringContaining('preview-a')])
     expect(wrapper.findAll('[data-testid="clarify-demo-frame"]')).toHaveLength(1)
     expect(wrapper.find('[data-testid="clarify-inline-demos"]').find('.grid').exists()).toBe(false)
-    expect(wrapper.findAll('[data-testid="clarify-option-enlarge"]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-testid="clarify-option-enlarge"]')).toHaveLength(0)
+    expect(wrapper.get('[data-testid="clarify-option-btn"]').classes()).toContain('w-full')
     expect(wrapper.text()).toContain('纯文字')
     expect(wrapper.text()).toContain('空白')
 
@@ -158,17 +159,13 @@ describe('ClarifyChat option preview window', () => {
     expect(other.compareDocumentPosition(wall.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(wall.element.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(scroller.contains(wall.element)).toBe(true)
-    expect(wrapper.findAll('[data-testid="clarify-demo-enlarge"]')).toHaveLength(1)
-    for (const enlarge of [
-      ...wrapper.findAll('[data-testid="clarify-option-enlarge"]'),
-      ...wrapper.findAll('[data-testid="clarify-demo-enlarge"]'),
-    ]) {
-      expect(enlarge.text()).not.toContain('放大')
-      expect(enlarge.text()).not.toContain('Enlarge')
-      expect(enlarge.attributes('aria-label')).toBe('放大')
-      expect(enlarge.attributes('title')).toBe('放大')
-      expect(enlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
-    }
+    expect(wrapper.findAll('[data-testid="clarify-option-enlarge"]')).toHaveLength(0)
+    const enlarge = wrapper.get('[data-testid="clarify-demo-enlarge"]')
+    expect(enlarge.text()).not.toContain('放大')
+    expect(enlarge.text()).not.toContain('Enlarge')
+    expect(enlarge.attributes('aria-label')).toBe('放大')
+    expect(enlarge.attributes('title')).toBe('放大')
+    expect(enlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
     expect(dialog()).toBeNull()
 
     await wrapper.findAll('[data-testid="clarify-option-btn"]')[2]!.trigger('click')
@@ -176,6 +173,12 @@ describe('ClarifyChat option preview window', () => {
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 C'])
     expect(scrollerPreviews(wrapper).map((el) => el.textContent)).toEqual([expect.stringContaining('preview-c')])
     expect(wrapper.findAll('[data-testid="clarify-demo-frame"]')).toHaveLength(1)
+
+    await wrapper.findAll('[data-testid="clarify-option-btn"]')[2]!.trigger('click')
+    await flushPromises()
+    expect(selectedOptionLabels(wrapper)).toEqual([])
+    expect(wrapper.find('[data-testid="clarify-inline-demos"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="clarify-demo-enlarge"]').exists()).toBe(false)
 
     await wrapper.findAll('[data-testid="clarify-option-btn"]').find((btn) => btn.text().includes('纯文字'))!.trigger('click')
     await flushPromises()
@@ -249,7 +252,8 @@ describe('ClarifyChat option preview window', () => {
     await flushPromises()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
     expect(scrollerPreviews(wrapper).map((el) => el.textContent)).toEqual([expect.stringContaining('preview-a')])
-    expect(wrapper.findAll('[data-testid="clarify-option-enlarge"]')).toHaveLength(4)
+    expect(wrapper.findAll('[data-testid="clarify-option-enlarge"]')).toHaveLength(0)
+    expect(wrapper.findAll('[data-testid="clarify-demo-enlarge"]')).toHaveLength(1)
 
     await wrapper.findAll('[data-testid="clarify-option-btn"]')[3]!.trigger('click')
     await flushPromises()
@@ -279,20 +283,21 @@ describe('ClarifyChat option preview window', () => {
     wrapper.unmount()
   })
 
-  it('opens only the clicked frame outside the scroller and does not change the selection', async () => {
+  it('opens the selected preview outside the scroller and does not change the selection', async () => {
     const wrapper = mountChat([agent([threeUp])])
     await flushPromises()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+    expect(wrapper.findAll('[data-testid="clarify-option-enlarge"]')).toHaveLength(0)
 
-    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[2]!.trigger('click')
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
     expect(document.body.querySelectorAll('[role="dialog"]')).toHaveLength(1)
     expect(dialog()?.textContent).toContain('窗口放大查看')
-    expect(dialog()?.textContent).toContain('方案 C')
+    expect(dialog()?.textContent).toContain('方案 A')
     expect(wallPreviews()).toHaveLength(1)
-    expect(wallPreviews()[0]?.textContent).toContain('preview-c')
-    expect(wallPreviews()[0]?.textContent).not.toContain('preview-a')
+    expect(wallPreviews()[0]?.textContent).toContain('preview-a')
+    expect(wallPreviews()[0]?.textContent).not.toContain('preview-b')
     expect(wallPreviews()[0]?.getAttribute('data-enlargeable')).toBe('0')
     expect(document.body.querySelector('[data-testid="clarify-preview-pick"]')).toBeNull()
     expect(dialog()?.querySelector('[data-testid="clarify-demo-enlarge"]')).toBeNull()
@@ -303,12 +308,15 @@ describe('ClarifyChat option preview window', () => {
     expect(scrollerPreviews(wrapper).some((el) => el.textContent?.includes(CLARIFY_DEMO_ESCAPE))).toBe(false)
     expect(document.body.querySelector('.fixed.inset-0')).toBeNull()
 
-    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[1]!.trigger('click')
+    await wrapper.findAll('[data-testid="clarify-option-btn"]')[1]!.trigger('click')
+    await flushPromises()
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 B'])
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
     expect(document.body.querySelectorAll('[role="dialog"]')).toHaveLength(1)
     expect(wallPreviews()[0]?.textContent).toContain('preview-b')
-    expect(wallPreviews()[0]?.textContent).not.toContain('preview-c')
-    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+    expect(wallPreviews()[0]?.textContent).not.toContain('preview-a')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 B'])
     wrapper.unmount()
   })
 
@@ -374,7 +382,7 @@ describe('ClarifyChat option preview window', () => {
     expect(historyEnlarge.classes()).not.toContain('is-selected')
     expect(historyEnlarge.find('[data-icon="expand"]').exists()).toBe(false)
     expect(historyEnlarge.get('svg[viewBox="0 0 36 26"]').attributes('aria-hidden')).toBe('true')
-    const historyMark = historyEnlarge.get('svg[viewBox="0 0 16 16"]')
+    const historyMark = historyEnlarge.get('[data-icon="preview-expand"]')
     expect(historyMark.attributes('width')).toBe('14')
     expect(historyMark.attributes('height')).toBe('14')
     const pickedRow = history[0]!.get('[data-testid="clarify-option-enlarge"]')
@@ -384,10 +392,12 @@ describe('ClarifyChat option preview window', () => {
     expect(pickedRow.attributes('aria-label')).toContain('已选')
     expect(pickedRow.attributes('aria-label')).toContain('放大')
     expect(history[1]!.text()).not.toContain('已选')
-    const liveEnlarge = wrapper
+    const liveRowEnlarge = wrapper
       .findAll('[data-testid="clarify-option-enlarge"]')
       .find((btn) => !btn.element.closest('[data-testid="clarify-history-option"]'))
-    expect(liveEnlarge!.get('[data-icon="expand"]').attributes('width')).toBe('11')
+    expect(liveRowEnlarge).toBeUndefined()
+    const liveCard = wrapper.find('.clarify-request:not(.clarify-request--history)')
+    expect(liveCard.get('[data-testid="clarify-demo-enlarge"]').get('[data-icon="expand"]').attributes('width')).toBe('11')
     expect(inline[0]!.get('[data-testid="clarify-demo-enlarge"]').get('[data-icon="expand"]').attributes('width')).toBe('11')
     await historyEnlarge.trigger('click')
     await flushPromises()
@@ -412,9 +422,10 @@ describe('ClarifyChat option preview window', () => {
     const wrapper = mountChat([agent([fourUp, second])])
     await flushPromises()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
-    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[1]!.trigger('click')
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
     expect(dialog()).toBeTruthy()
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
 
     const next = wrapper.findAll('button').find((btn) => btn.text().includes('下一个'))
     await next!.trigger('click')
@@ -435,9 +446,10 @@ describe('ClarifyChat option preview window', () => {
     const wrapper = mountChat([agent([fourUp])])
     await flushPromises()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
-    await wrapper.find('[data-testid="clarify-option-enlarge"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
     expect(dialog()).toBeTruthy()
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
     const confirm = wrapper.findAll('button').find((btn) => btn.text().includes('确认选择'))
     await confirm!.trigger('click')
     await flushPromises()
@@ -447,6 +459,16 @@ describe('ClarifyChat option preview window', () => {
   })
 
   it('closes from the header and Escape without clearing the choice or adding a page mask', async () => {
+    function appendFrameWithSource(container: HTMLElement) {
+      const frame = document.createElement('iframe')
+      const source = new Window()
+      hosts.push(source)
+      // Happy DOM 21 disables iframe loading by default, leaving contentWindow
+      // null. Supply distinct Window identities without enabling network loads.
+      Object.defineProperty(frame, 'contentWindow', { configurable: true, get: () => source })
+      container.appendChild(frame)
+      return frame
+    }
     const wrapper = mountChat([agent([fourUp])])
     await flushPromises()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
@@ -468,9 +490,10 @@ describe('ClarifyChat option preview window', () => {
     vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(900)
 
     async function open() {
-      await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[1]!.trigger('click')
+      await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
       await flushPromises()
       expect(dialog()).toBeTruthy()
+      expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
     }
 
     await open()
@@ -495,8 +518,7 @@ describe('ClarifyChat option preview window', () => {
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
 
     await open()
-    const frame = document.createElement('iframe')
-    dialog()!.appendChild(frame)
+    const frame = appendFrameWithSource(dialog()!)
     window.dispatchEvent(
       new MessageEvent('message', { data: { type: CLARIFY_DEMO_ESCAPE }, source: frame.contentWindow }),
     )
@@ -505,10 +527,8 @@ describe('ClarifyChat option preview window', () => {
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
 
     await open()
-    const owned = document.createElement('iframe')
-    dialog()!.appendChild(owned)
-    const stranger = document.createElement('iframe')
-    document.body.appendChild(stranger)
+    const owned = appendFrameWithSource(dialog()!)
+    const stranger = appendFrameWithSource(document.body)
     window.dispatchEvent(
       new MessageEvent('message', { data: { type: CLARIFY_DEMO_ESCAPE }, source: stranger.contentWindow }),
     )
@@ -528,7 +548,8 @@ describe('ClarifyChat option preview window', () => {
     await flushPromises()
     mockViewport(1280, 900)
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
-    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[2]!.trigger('click')
+    expect(wrapper.find('[data-testid="clarify-option-enlarge"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
 
     const box = dialog()!
@@ -537,7 +558,7 @@ describe('ClarifyChat option preview window', () => {
     expect(box.style.width).toBe('720px')
     expect(box.style.height).toBe('560px')
     expect(box.textContent).toContain('窗口放大查看')
-    expect(box.textContent).toContain('方案 C')
+    expect(box.textContent).toContain('方案 A')
     expect(box.querySelector('[data-testid="clarify-demo-frame"]')?.className).toContain('clarify-demo-expanded')
     expect(box.querySelector('[data-testid="clarify-preview-wall"]')?.className).toContain('flex-1')
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
@@ -632,14 +653,17 @@ describe('ClarifyChat option preview window', () => {
       width: box.style.width,
       height: box.style.height,
     }
-    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[1]!.trigger('click')
+    await wrapper.findAll('[data-testid="clarify-option-btn"]')[1]!.trigger('click')
+    await flushPromises()
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 B'])
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
     expect(wallPreviews()[0]?.textContent).toContain('preview-b')
     expect(box.style.left).toBe(held.left)
     expect(box.style.top).toBe(held.top)
     expect(box.style.width).toBe(held.width)
     expect(box.style.height).toBe(held.height)
-    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 B'])
 
     mockViewport(1000, 700)
     window.dispatchEvent(new Event('resize'))
@@ -655,7 +679,7 @@ describe('ClarifyChat option preview window', () => {
     expect(dialog()).toBeNull()
 
     mockViewport(1280, 900)
-    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[2]!.trigger('click')
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
     const reopened = dialog()!
     expect(reopened.style.left).toBe('280px')
@@ -663,7 +687,8 @@ describe('ClarifyChat option preview window', () => {
     expect(reopened.style.width).toBe('720px')
     expect(reopened.style.height).toBe('560px')
     expect(reopened.textContent).toContain('窗口放大查看')
-    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+    expect(reopened.textContent).toContain('方案 B')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 B'])
     expect(scrollerPreviews(wrapper)).toHaveLength(1)
     wrapper.unmount()
   })
@@ -672,9 +697,10 @@ describe('ClarifyChat option preview window', () => {
     const wrapper = mountChat([agent([threeUp])])
     await flushPromises()
     mockViewport(1280, 900)
-    await wrapper.find('[data-testid="clarify-option-enlarge"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
     expect(dialog()?.style.width).toBe('720px')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
 
     mockViewport(390, 900)
     window.dispatchEvent(new Event('resize'))
@@ -696,8 +722,10 @@ describe('ClarifyChat option preview window', () => {
 
     const wrapper = mountChat([agent([fourUp])])
     await flushPromises()
-    await wrapper.find('[data-testid="clarify-option-enlarge"]').trigger('click')
+    expect(wrapper.find('[data-testid="clarify-option-enlarge"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
     const box = dialog()
     expect(box?.closest('.z-50')).toBeTruthy()
     expect(box?.closest('.fixed.inset-0')).toBeNull()
@@ -734,6 +762,8 @@ describe('ClarifyChat option preview window', () => {
     await wrapper.findAll('[data-testid="clarify-option-btn"]')[0]!.trigger('click')
     await flushPromises()
     expect(selectedOptionLabels(wrapper)).toEqual(['左'])
+    expect(wrapper.find('[data-testid="clarify-inline-demos"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="clarify-demo-enlarge"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -746,10 +776,12 @@ describe('ClarifyChat option preview window', () => {
     await flushPromises()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
     expect(scrollerPreviews(wrapper).map((el) => el.textContent)).toEqual([expect.stringContaining('preview-a')])
-    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[1]!.trigger('click')
+    expect(wrapper.find('[data-testid="clarify-option-enlarge"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()
     expect(open).toHaveBeenCalledTimes(1)
-    expect(open).toHaveBeenCalledWith('<p>preview-b</p>', '方案 B')
+    expect(open).toHaveBeenCalledWith('<p>preview-a</p>', '方案 A')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
     expect(dialog()).toBeNull()
     const scroller = wrapper.get('[data-testid="clarify-scroller"]').element
     expect(scroller.querySelector('[role="dialog"]')).toBeNull()

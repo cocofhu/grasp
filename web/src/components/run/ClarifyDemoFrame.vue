@@ -37,7 +37,7 @@ const { t } = useI18n()
         v-if="selected"
         class="shrink-0 whitespace-nowrap font-medium text-accent"
         data-testid="clarify-demo-selected"
-      >✓ {{ t('pages.clarify.demoSelected') }}</span>
+      ><Icon name="check" :size="11" :interactive="false" class="inline align-middle" /> {{ t('pages.clarify.demoSelected') }}</span>
       <button
         v-if="enlargeable"
         type="button"

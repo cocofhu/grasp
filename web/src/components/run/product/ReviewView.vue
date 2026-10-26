@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue'
 import { computed } from 'vue'
 import ArtifactReportDocument from './ArtifactReportDocument.vue'
 import { useI18n } from 'vue-i18n'
@@ -25,15 +26,15 @@ const props = defineProps<{ doc: ReviewDoc }>()
 const { t } = useI18n()
 
 const VERDICT: Record<string, { labelKey: string; cls: string; icon: string }> = {
-  approve: { labelKey: 'pages.product.review.verdictLabels.approve', cls: 'text-ok', icon: '✓' },
-  approve_with_comments: { labelKey: 'pages.product.review.verdictLabels.approve_with_comments', cls: 'text-info', icon: '✓' },
-  request_changes: { labelKey: 'pages.product.review.verdictLabels.request_changes', cls: 'text-warn', icon: '↻' },
-  reject: { labelKey: 'pages.product.review.verdictLabels.reject', cls: 'text-err', icon: '✕' },
+  approve: { labelKey: 'pages.product.review.verdictLabels.approve', cls: 'text-ok', icon: 'check' },
+  approve_with_comments: { labelKey: 'pages.product.review.verdictLabels.approve_with_comments', cls: 'text-info', icon: 'check' },
+  request_changes: { labelKey: 'pages.product.review.verdictLabels.request_changes', cls: 'text-warn', icon: 'refresh' },
+  reject: { labelKey: 'pages.product.review.verdictLabels.reject', cls: 'text-err', icon: 'close' },
 }
 const verdict = computed(() => {
   const v = VERDICT[props.doc.verdict || '']
   if (v) return { label: t(v.labelKey), cls: v.cls, icon: v.icon }
-  return { label: props.doc.verdict || '—', cls: 'text-txt2', icon: '?' }
+  return { label: props.doc.verdict || '—', cls: 'text-txt2', icon: 'help' }
 })
 
 const SEV: Record<string, { label: string; cls: string }> = {
@@ -51,7 +52,7 @@ function sev(s?: string) {
   <ArtifactReportDocument>
     <header class="mb-5" data-testid="review-conclusion">
       <p class="mb-1.5 text-[11px] text-txt3">{{ t('pages.product.review.verdict') }}</p>
-      <h2 class="report-title flex items-center gap-2"><span aria-hidden="true" class="text-base" :class="verdict.cls">{{ verdict.icon }}</span>{{ verdict.label }}</h2>
+      <h2 class="report-title flex items-center gap-2"><Icon :name="verdict.icon" :size="16" :interactive="false" :class="verdict.cls" />{{ verdict.label }}</h2>
     </header>
 
     <div v-if="doc.summary" class="report-summary group flex items-start gap-2">

@@ -56,6 +56,8 @@ const activeDirectUrl = computed(() =>
 )
 /** The node's sandbox: its desktop is the one VNC screen, ports are pages on it. */
 const sandboxId = ref<number | null>(null)
+/** creating/pulling keep the empty poll; absent and ready stop it. */
+const sandboxPhase = ref<'creating' | 'pulling' | 'ready' | 'absent' | null>(null)
 /** Port the desktop should show; only a chip change navigates. */
 const vncTargetPort = ref<number | null>(null)
 /** Something to show: the Agent's desktop, or registered previews. */
@@ -73,15 +75,41 @@ function syncActivePort() {
   else if (!vncPorts.value.some((p) => p.port === vncTargetPort.value)) vncTargetPort.value = null
 }
 
-async function loadSandbox() {
-  if (sandboxId.value != null) return
-  try {
-    const sbx = await api.getRunNodeSandbox(props.runId, props.nodeId)
-    const id = typeof sbx?.id === 'number' ? sbx.id : Number(sbx?.id) || null
-    sandboxId.value = id && id > 0 ? id : null
-  } catch {
-    // Keep polling while the node's sandbox is not up yet.
+function sandboxNumericId(id: unknown): number | null {
+  const n = typeof id === 'number' ? id : Number(id)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function applySandboxView(sbx: { id?: unknown; status?: unknown } | null) {
+  if (!sbx) {
+    sandboxId.value = null
+    sandboxPhase.value = 'absent'
+    return
   }
+  const status = String(sbx.status || '').toLowerCase()
+  const id = sandboxNumericId(sbx.id)
+  if (status === 'creating' || status === 'pulling') {
+    sandboxPhase.value = status
+    sandboxId.value = id
+    return
+  }
+  sandboxId.value = id
+  sandboxPhase.value = id ? 'ready' : 'absent'
+}
+
+async function loadSandbox(gen: number) {
+  if (
+    sandboxId.value != null &&
+    sandboxPhase.value !== 'creating' &&
+    sandboxPhase.value !== 'pulling'
+  ) {
+    return
+  }
+  const runId = props.runId
+  const nodeId = props.nodeId
+  const sbx = await api.getRunNodeSandbox(runId, nodeId)
+  if (gen !== portsGen || props.runId !== runId || props.nodeId !== nodeId) return
+  applySandboxView(sbx)
 }
 
 function onPick(payload: AppPreviewPickPayload) {
@@ -107,7 +135,7 @@ async function loadPorts(opts?: { silent?: boolean }) {
   try {
     const [r] = await Promise.all([
       api.nodePreviews(props.runId, props.nodeId, { signal: portsAbort.signal }),
-      loadSandbox(),
+      loadSandbox(gen),
     ])
     if (gen !== portsGen) return
     ports.value = r.ports || []
@@ -136,15 +164,6 @@ function retryLoadPorts() {
   return loadPorts()
 }
 
-watch(
-  () => [props.runId, props.nodeId],
-  () => {
-    sandboxId.value = null
-    void loadPorts()
-  },
-  { immediate: true },
-)
-
 const EMPTY_POLL_MS = 2500
 let emptyPoll: ReturnType<typeof setInterval> | null = null
 
@@ -155,13 +174,24 @@ function stopEmptyPoll() {
 }
 
 watch(
+  () => [props.runId, props.nodeId],
+  () => {
+    stopEmptyPoll()
+    sandboxId.value = null
+    sandboxPhase.value = null
+    void loadPorts()
+  },
+  { immediate: true },
+)
+
+watch(
   () => ({
-    empty: !ports.value.length || sandboxId.value == null,
+    provisioning: sandboxPhase.value === 'creating' || sandboxPhase.value === 'pulling',
     loading: loading.value,
     err: loadError.value,
   }),
-  ({ empty, loading: busy, err }) => {
-    if (empty && !busy && !err) {
+  ({ provisioning, loading: busy, err }) => {
+    if (provisioning && !busy && !err) {
       if (!emptyPoll) emptyPoll = setInterval(() => loadPorts({ silent: true }), EMPTY_POLL_MS)
       return
     }

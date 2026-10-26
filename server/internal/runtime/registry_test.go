@@ -36,7 +36,7 @@ func TestNewProviderRegistryBuildsAllBackends(t *testing.T) {
 	if reg.Name() != "registry" {
 		t.Fatalf("Name = %q, want registry", reg.Name())
 	}
-	for _, b := range []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex} {
+	for _, b := range []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex, BackendDeepSeekHarness} {
 		p, ok := reg.providers[b]
 		if !ok || p == nil {
 			t.Fatalf("missing provider for backend %q", b)
@@ -56,13 +56,14 @@ func TestNewProviderRegistryBuildsAllBackends(t *testing.T) {
 // an error, never a default.
 func TestProviderRegistryRouting(t *testing.T) {
 	root := t.TempDir()
-	writeProfileInto(t, root, "cur", `{"acpBackend":"cursor"}`)
-	writeProfileInto(t, root, "cc", `{"acpBackend":"claude_code"}`)
-	writeProfileInto(t, root, "cb", `{"acpBackend":"codebuddy"}`)
-	writeProfileInto(t, root, "tr", `{"acpBackend":"trae"}`)
-	writeProfileInto(t, root, "cx", `{"acpBackend":"codex"}`)
-	writeProfileInto(t, root, "weird", `{"acpBackend":"nope"}`)
-	writeProfileInto(t, root, "nobackend", `{"env":{"X":"y"}}`)
+	writeProfileInto(t, root, "cur", `{"inheritModel":false,"inheritGit":false,"acpBackend":"cursor"}`)
+	writeProfileInto(t, root, "cc", `{"inheritModel":false,"inheritGit":false,"acpBackend":"claude_code"}`)
+	writeProfileInto(t, root, "cb", `{"inheritModel":false,"inheritGit":false,"acpBackend":"codebuddy"}`)
+	writeProfileInto(t, root, "tr", `{"inheritModel":false,"inheritGit":false,"acpBackend":"trae"}`)
+	writeProfileInto(t, root, "cx", `{"inheritModel":false,"inheritGit":false,"acpBackend":"codex"}`)
+	writeProfileInto(t, root, "dsh", `{"inheritModel":false,"inheritGit":false,"acpBackend":"deepseek_harness"}`)
+	writeProfileInto(t, root, "weird", `{"inheritModel":false,"inheritGit":false,"acpBackend":"nope"}`)
+	writeProfileInto(t, root, "nobackend", `{"inheritModel":false,"inheritGit":false,"env":{"X":"y"}}`)
 	writeProfileInto(t, root, "broken", `{not-json`)
 
 	host := mcp.NewHost(newMemStore())
@@ -77,6 +78,7 @@ func TestProviderRegistryRouting(t *testing.T) {
 		{"cb", BackendCodeBuddy},
 		{"tr", BackendTrae},
 		{"cx", BackendCodex},
+		{"dsh", BackendDeepSeekHarness},
 		{"sub/cc", BackendClaudeCode}, // filepath.Base strips traversal → cc
 	}
 	for _, tc := range cases {
@@ -117,7 +119,7 @@ func TestProviderRegistryProviderForMissingBackend(t *testing.T) {
 	reg := NewProviderRegistry(host, Options{})
 	delete(reg.providers, BackendTrae)
 	root := t.TempDir()
-	writeProfileInto(t, root, "tr", `{"acpBackend":"trae"}`)
+	writeProfileInto(t, root, "tr", `{"inheritModel":false,"inheritGit":false,"acpBackend":"trae"}`)
 	reg.profilesRoot = root
 	if _, err := reg.providerFor(reqFor("tr")); err == nil {
 		t.Fatal("missing backend provider must error")

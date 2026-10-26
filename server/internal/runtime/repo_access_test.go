@@ -15,9 +15,13 @@ func TestRepoCredentialsFor(t *testing.T) {
 		"key":   {envauth.EnvGitSSHPrivateKey, "KEY"},
 		"hosts": {envauth.EnvGitSSHKnownHosts, "github.com ssh-ed25519 AAAA"},
 	}
-	resolve := func(id string) (string, string, bool) {
+	resolve := func(id string) (GitCredentialValue, bool) {
 		c, ok := creds[id]
-		return c[0], c[1], ok
+		host := "https://github.com"
+		if id == "gl" {
+			host = "https://gitlab.com"
+		}
+		return GitCredentialValue{EnvKey: c[0], Secret: c[1], Host: host}, ok
 	}
 	got := RepoCredentialsFor([]models.Project{
 		{RepoURL: "https://github.com/acme/app.git", GitCredentialType: "github_https", GitCredentialID: "gh"},
@@ -43,18 +47,5 @@ func TestRepoCredentialsFor(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("[%d] got %+v want %+v", i, got[i], want[i])
 		}
-	}
-}
-
-func TestOverlayAgentFileRepoIDs(t *testing.T) {
-	shared := SharedAgentView{RepoIDs: []string{"a", "b"}}
-	inherit := overlayAgentFile(shared, agentFile{}, nil)
-	if inherit.RepoIDs == nil || len(*inherit.RepoIDs) != 2 {
-		t.Fatalf("inherit = %v", inherit.RepoIDs)
-	}
-	none := []string{}
-	override := overlayAgentFile(shared, agentFile{RepoIDs: &none}, nil)
-	if override.RepoIDs == nil || len(*override.RepoIDs) != 0 {
-		t.Fatalf("explicit empty list must not inherit: %v", override.RepoIDs)
 	}
 }

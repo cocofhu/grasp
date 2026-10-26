@@ -412,6 +412,20 @@ describe('AppSelect', () => {
     wrapper.unmount()
   })
 
+  it('shows an optional empty message without making it a selectable value', async () => {
+    const wrapper = mountSelect({ modelValue: '', options: [], searchable: true })
+    await wrapper.get('[data-test="app-select-trigger"]').trigger('click')
+    expect(wrapper.get('[data-test="app-select-empty"]').text()).toBe(common.common.empty.noMatchingOptions)
+    await wrapper.setProps({ emptyText: 'No saved models for this tool.' })
+    expect(wrapper.get('[data-test="app-select-empty"]').text()).toBe('No saved models for this tool.')
+    expect(wrapper.find('[role="option"]').exists()).toBe(false)
+    await wrapper.get('[data-test="app-select-search"]').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await wrapper.setProps({ loading: true })
+    expect(wrapper.get('[data-test="app-select-loading"]').text()).toBe(common.common.search.loadingOptions)
+    wrapper.unmount()
+  })
+
   it('keyboard picks from the filtered list and space stays literal in search', async () => {
     const wrapper = mountSelect({ searchable: true })
     await wrapper.get('[data-test="app-select-trigger"]').trigger('click')

@@ -1,19 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import AgentGitGuide from '@/components/agent/AgentGitGuide.vue'
-import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
+import AgentRuntimeBindings from '@/components/agent/AgentRuntimeBindings.vue'
 import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
-import WizardApiKeyStepPanel from '@/components/agent/WizardApiKeyStepPanel.vue'
-import WizardAcpStartPathPanel from '@/components/agent/WizardAcpStartPathPanel.vue'
 import AgentTemplateSelect from '@/components/agent/AgentTemplateSelect.vue'
 import AgentCapabilitySummary from '@/components/agent/AgentCapabilitySummary.vue'
-import CliModelSelect from '@/components/agent/CliModelSelect.vue'
+import AgentIconPicker from '@/components/agent/AgentIconPicker.vue'
+import AgentIdentityGlyph from '@/components/agent/AgentIdentityGlyph.vue'
+import { identityTint } from '@/lib/agent/identityIcons'
 
-import { kvToRec, recToKV } from '@/lib/agent/agentCreateWizard'
-import { readCliModel, writeCliModel } from '@/lib/agent/cliModelEnv'
-import { gitKind } from '@/lib/workspace/credentialKinds'
 import { useAgentCreateWizard } from '@/lib/agent/useAgentCreateWizard'
 import type { AgentCreateWizardProps, AgentCreateWizardEmit } from '@/lib/agent/useAgentCreateWizard'
 
@@ -23,6 +19,8 @@ const emit = defineEmits<AgentCreateWizardEmit>()
 const {
   t,
   draft,
+  sharedConfig,
+  effectiveModel,
   nameError,
   creating,
   createError,
@@ -30,18 +28,10 @@ const {
   showAcpConfirm,
   envHelpOpen,
   stepAnimKey,
-  apiKeyInput,
   credentialItems,
-  customConfigError,
-  openCodeBaseError,
-  openCodeModelError,
   currentStep,
   progressPct,
   reviewItems,
-  currentRegionPolicy,
-  currentRegion,
-  authGuide,
-  authConfigured,
   showAuthReminder,
   headSub,
   templateOptions,
@@ -50,42 +40,28 @@ const {
   selectedTemplate,
   onTemplateSelect,
   close,
-  upsertEnv,
-  selectRegion,
-  markConfigured,
-  selectAcp,
-  selectStartPath,
   confirmAcpSwitch,
   cancelAcpSwitch,
-  syncApiKeyInput,
-  setAuthMode,
-  onCustomConfigInput,
-  onApiKeyInput,
-  onModelCredential,
-  onOpenCodeProvider,
-  onOpenCodeBaseURL,
-  onOpenCodeModel,
-  onOpenCodeVision,
-  onGitCredentialType,
-  onGitCredentialId,
-  onSshHostsCredentialId,
-  removeGitRepos,
   goPrev,
   goSkip,
   goNext,
-  submitCreate,
   chipClass,
   WIZARD_STEPS,
 } = useAgentCreateWizard(props, emit)
 
-const cliModel = computed(() => readCliModel(kvToRec(draft.value.env)))
-const gitAliasKind = computed(() => (draft.value.gitCredentialType ? gitKind(draft.value.gitCredentialType) : undefined))
-const gitReposEntry = computed(() => draft.value.env.find((entry) => entry.k === 'GIT_REPOS'))
-const modelCredentialId = computed(() =>
-  draft.value.acpBackend === 'opencode' ? draft.value.openCodeCredentialId || '' : draft.value.aiCredentialId || '',
-)
-function setCliModel(id: string) {
-  draft.value.env = recToKV(writeCliModel(kvToRec(draft.value.env), id))
+const gitSelectionValid = ref(true)
+const modelSelectionValid = ref(false)
+const canUseSelectedModel = computed(() => modelSelectionValid.value && effectiveModel.value?.kind === 'configuration' && !!effectiveModel.value.configurationId)
+function resetModelSelection() {
+  modelSelectionValid.value = false
+  draft.value.modelBinding = { kind: 'configuration', configurationId: '' }
+}
+watch(() => draft.value.gitBindings?.items.length, (count) => { if (!count) gitSelectionValid.value = true }, { immediate: true })
+watch(draft, resetModelSelection, { immediate: true })
+function proceed() {
+  if ((currentStep.value.id === 'acp' || currentStep.value.id === 'review') && !canUseSelectedModel.value) return
+  if ((currentStep.value.id === 'git' || currentStep.value.id === 'review') && !gitSelectionValid.value) return
+  goNext()
 }
 </script>
 
@@ -124,7 +100,7 @@ function setCliModel(id: string) {
         </div>
 
         <div class="flex min-h-0 flex-1">
-          <aside class="wiz-rail scroll-area w-[208px] shrink-0 overflow-y-auto border-r border-line bg-elevated px-3 pb-4 pt-5">
+          <aside class="wiz-rail scroll-area hidden sm:block w-[208px] shrink-0 overflow-y-auto border-r border-line bg-elevated px-3 pb-4 pt-5">
             <div class="mb-4 flex items-center gap-2 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-txt3">
               <span class="pulse-dot h-1.5 w-1.5 shrink-0 bg-accent" />
               {{ t('pages.agentStudio.wizard.railCap') }}
@@ -146,7 +122,7 @@ function setCliModel(id: string) {
           </aside>
 
           <div class="flex min-w-0 flex-1 flex-col">
-            <div class="scroll-area min-h-0 flex-1 overflow-y-auto px-8 py-7">
+            <div class="scroll-area min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-7">
               <div :key="stepAnimKey" class="step-pane">
                 <div class="sec-head">
                   <div class="sec-bar">
@@ -156,20 +132,23 @@ function setCliModel(id: string) {
 
                 <template v-if="currentStep.id === 'basics'">
                   <p class="sec-meta">{{ t('pages.agentStudio.wizard.basics.meta') }}</p>
-                  <label class="mb-4 block">
+                  <div class="mb-4">
                     <span class="mb-1.5 block text-[12px] font-medium text-txt2">
                       {{ t('pages.agentStudio.dialogs.createLabel') }}
                       <span class="text-err">*</span>
                     </span>
-                    <input
-                      id="wiz-name-input"
-                      v-model="draft.name"
-                      class="rounded-md w-full border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent"
-                      :placeholder="t('pages.agentStudio.dialogs.createPlaceholder')"
-                      @input="nameError = ''"
-                    />
+                    <div class="flex items-center gap-3">
+                      <AgentIconPicker v-model="draft.icon" :name="draft.name" size="lg" purpose="choose" />
+                      <input
+                        id="wiz-name-input"
+                        v-model="draft.name"
+                        class="rounded-md min-w-0 flex-1 border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent"
+                        :placeholder="t('pages.agentStudio.dialogs.createPlaceholder')"
+                        @input="nameError = ''"
+                      />
+                    </div>
                     <p v-if="nameError" class="mt-1.5 text-[12px] text-err">{{ nameError }}</p>
-                  </label>
+                  </div>
                   <!-- plan g1 — workflow-style template dropdown; name stays independent (g1.4) -->
                   <div class="mb-4 block max-w-[38rem]">
                     <span class="mb-1.5 block text-[12px] font-medium text-txt2">
@@ -210,121 +189,13 @@ function setCliModel(id: string) {
                 </template>
 
                 <template v-else-if="currentStep.id === 'acp'">
-                  <p class="sec-meta">{{ t('pages.agentStudio.wizard.acp.meta') }}</p>
-                  <WizardAcpStartPathPanel
-                    :start-path="draft.startPath"
-                    :acp-backend="draft.acpBackend"
-                    :config-root="draft.configRoot"
-                    :region-policy="currentRegionPolicy"
-                    :current-region="currentRegion"
-                    region-as-radios
-                    show-region-hints
-                    show-config-root
-                    test-id-prefix="agent-wizard"
-                    @select-start-path="selectStartPath"
-                    @select-backend="selectAcp"
-                    @select-region="selectRegion"
-                  />
-                  <div
-                    v-if="draft.acpBackend !== 'opencode'"
-                    class="mt-5 border-t border-dashed border-line pt-4"
-                    data-testid="agent-wizard-cli-model"
-                  >
-                    <div class="mb-1 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.cliModel.label') }}</div>
-                    <p class="mb-2 text-[11px] text-txt3">{{ t('pages.agentStudio.cliModel.wizardHint') }}</p>
-                    <CliModelSelect
-                      :key="draft.acpBackend"
-                      :model-value="cliModel"
-                      :backend="draft.acpBackend"
-                      variant="compact"
-                      @update:model-value="setCliModel"
-                    />
+                  <div class="tool-model-layout" data-testid="agent-tool-model-step">
+                    <AgentRuntimeBindings :draft="draft" section="model" inheritance :defaults="sharedConfig" :disabled="creating" @defaults-loaded="sharedConfig = $event" @model-validity="modelSelectionValid = $event" />
                   </div>
-                </template>
-
-                <template v-else-if="currentStep.id === 'apiKey'">
-                  <WizardApiKeyStepPanel
-                    pick-credential
-                    :acp-backend="draft.acpBackend"
-                    :config-root="draft.configRoot"
-                    :auth-mode="draft.authMode"
-                    :api-key-input="apiKeyInput"
-                    :custom-config-content="draft.customConfigContent"
-                    :custom-config-error="customConfigError"
-                    :auth-guide="authGuide"
-                    :env="kvToRec(draft.env)"
-                    :open-code-base-error="openCodeBaseError"
-                    :open-code-model-error="openCodeModelError"
-                    :credential-items="credentialItems"
-                    :selected-credential-id="modelCredentialId"
-                    @update:auth-mode="setAuthMode"
-                    @update:api-key-input="onApiKeyInput"
-                    @update:custom-config-content="onCustomConfigInput"
-                    @update:open-code-provider="onOpenCodeProvider"
-                    @update:open-code-base-url="onOpenCodeBaseURL"
-                    @update:open-code-model="onOpenCodeModel"
-                    @update:open-code-vision="onOpenCodeVision"
-                    @update:selected-credential-id="onModelCredential"
-                  />
                 </template>
 
                 <template v-else-if="currentStep.id === 'git'">
-                  <p class="sec-meta">{{ t('pages.agentStudio.wizard.git.meta') }}</p>
-                  <AgentGitGuide
-                    :env="draft.env"
-                    :upsert-env="
-                      (k, v) => {
-                        upsertEnv(k, v)
-                        markConfigured('git')
-                      }
-                    "
-                    :credential-type="draft.gitCredentialType"
-                    @update:credential-type="onGitCredentialType"
-                    @help="envHelpOpen = true"
-                  />
-                  <CredentialAliasPicker
-                    v-if="gitAliasKind"
-                    :kind="gitAliasKind.id"
-                    :items="credentialItems"
-                    :selected-id="draft.gitCredentialId"
-                    :empty-text="t('pages.agentStudio.wizard.git.emptySkip')"
-                    @update:selected-id="onGitCredentialId"
-                  />
-                  <CredentialAliasPicker
-                    v-if="draft.gitCredentialType === 'ssh'"
-                    kind="ssh_hosts"
-                    :items="credentialItems"
-                    :selected-id="draft.sshHostsCredentialId"
-                    :empty-text="t('pages.agentStudio.wizard.git.hostsEmpty')"
-                    @update:selected-id="onSshHostsCredentialId"
-                  />
-                  <div
-                    v-if="gitReposEntry"
-                    class="mt-3 flex items-center gap-1.5"
-                    data-test="wizard-git-repos"
-                  >
-                    <input
-                      :value="gitReposEntry.k"
-                      readonly
-                      aria-label="GIT_REPOS"
-                      class="w-1/3 min-w-0 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt"
-                    />
-                    <input
-                      :value="gitReposEntry.v"
-                      readonly
-                      aria-label="${vars.repos}"
-                      class="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt2"
-                    />
-                    <button
-                      type="button"
-                      class="text-txt3 hover:text-err"
-                      data-test="wizard-git-repos-remove"
-                      :aria-label="t('pages.agentStudio.dialogs.delete')"
-                      @click="removeGitRepos"
-                    >
-                      ×
-                    </button>
-                  </div>
+                  <AgentRuntimeBindings :draft="draft" section="git" inheritance :defaults="sharedConfig" :items="credentialItems" :disabled="creating" @defaults-loaded="sharedConfig = $event" @git-validity="gitSelectionValid = $event" @help="envHelpOpen = true" />
                 </template>
 
                 <template v-else-if="currentStep.id === 'review'">
@@ -335,9 +206,20 @@ function setCliModel(id: string) {
                       :key="item.key"
                       class="rounded-md inline-flex items-center gap-1 border px-2 py-1 text-[11px]"
                       :class="chipClass(item.kind)"
+                      :data-testid="item.key === 'icon' ? 'wizard-identity-review' : undefined"
                     >
+                      <span
+                        v-if="item.key === 'icon' && draft.icon"
+                        class="inline-grid h-4 w-4 place-items-center rounded"
+                        :style="identityTint(draft.icon.color) || undefined"
+                      >
+                        <AgentIdentityGlyph :icon-id="draft.icon.iconId" :size="12" />
+                      </span>
                       {{ t(item.labelKey) }}
-                      <template v-if="item.detail"> · {{ item.detail }}</template>
+                      <template v-if="item.key === 'icon' && draft.icon">
+                        · {{ t(`pages.agentStudio.identityIcon.colors.${draft.icon.color}`) }}
+                      </template>
+                      <template v-else-if="item.detail"> · {{ item.detail }}</template>
                     </span>
                   </div>
                   <div
@@ -352,7 +234,7 @@ function setCliModel(id: string) {
               </div>
             </div>
 
-            <div class="flex shrink-0 items-center justify-between gap-2 border-t border-line bg-surface px-5 py-3.5">
+            <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-line bg-surface px-5 py-3.5">
               <AppButton variant="ghost" :disabled="creating" @click="close">
                 {{ t('pages.agentStudio.dialogs.cancel') }}
               </AppButton>
@@ -360,10 +242,10 @@ function setCliModel(id: string) {
                 <AppButton variant="outline" :disabled="draft.step === 0 || creating" @click="goPrev">
                   {{ t('pages.agentStudio.wizard.prev') }}
                 </AppButton>
-                <AppButton v-if="currentStep.skip" variant="outline" :disabled="creating" @click="goSkip">
+                <AppButton v-if="currentStep.skip && currentStep.id !== 'acp'" variant="outline" :disabled="creating" @click="goSkip">
                   {{ t('pages.agentStudio.wizard.skip') }}
                 </AppButton>
-                <AppButton variant="primary" :disabled="creating" @click="goNext">
+                <AppButton variant="primary" :disabled="creating || ((currentStep.id === 'git' || currentStep.id === 'review') && !gitSelectionValid) || ((currentStep.id === 'acp' || currentStep.id === 'review') && !canUseSelectedModel)" @click="proceed">
                   {{
                     creating
                       ? t('pages.agentStudio.wizard.creating')
@@ -419,6 +301,11 @@ function setCliModel(id: string) {
 </template>
 
 <style scoped>
+.tool-model-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
 .wiz-head {
   background: linear-gradient(90deg, rgba(123, 97, 255, 0.12) 0%, transparent 42%), rgb(var(--c-surface));
 }

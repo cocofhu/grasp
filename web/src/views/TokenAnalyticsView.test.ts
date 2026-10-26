@@ -3,6 +3,7 @@ import { createI18n } from 'vue-i18n'
 import { mount, flushPromises } from '@vue/test-utils'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import TokenAnalyticsView from './TokenAnalyticsView.vue'
+import TokenUsageStructure from '@/components/token-analytics/TokenUsageStructure.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
@@ -522,7 +523,7 @@ describe('TokenAnalyticsView', () => {
     wrapper.unmount()
   })
 
-  it('renders weekday-hour heatmap and treemap when data is present', async () => {
+  it('renders the heatmap and opens a compound drill from the usage structure', async () => {
     const weekHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0))
     weekHour[0][9] = 120
     vi.mocked(api.getGlobalTokenStats).mockResolvedValueOnce({
@@ -530,18 +531,51 @@ describe('TokenAnalyticsView', () => {
       weekHour,
       tree: [{ key: 'w1', name: 'main', kind: 'workflow', value: 3000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 3000 }] }],
     })
+    vi.mocked(api.listTokenUsageEvents).mockResolvedValue({ total: 0, page: 1, pageSize: 20, currency: 'USD', items: [] })
+    const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n], stubs: { teleport: true } } })
+    await flushPromises()
+    expect(wrapper.findComponent(TokenUsageStructure).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="token-analytics-plot-weekhour"]').findComponent({ name: 'VChart' }).exists()).toBe(true)
+    await wrapper.get('[data-testid="token-structure-node"]').trigger('click')
+    await flushPromises()
+    expect(api.getGlobalTokenStats).toHaveBeenLastCalledWith(expect.objectContaining({ workflowId: 'w1', nodeType: 'agent' }), expect.anything())
+    expect(wrapper.get('[data-testid="token-drill-breadcrumb"]').text()).toContain('main')
+    expect(wrapper.get('[data-testid="token-drill-breadcrumb"]').text()).toContain('agent')
+    wrapper.unmount()
+  })
+
+  it('switches full-width detail tables and their CSV action together', async () => {
+    const wrapper = mount(TokenAnalyticsView, { attachTo: document.body, global: { plugins: [i18n] } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="token-analytics-models-table"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="token-analytics-workflows-table"]').isVisible()).toBe(false)
+    expect(wrapper.get('[data-testid="token-analytics-export-models"]').isVisible()).toBe(true)
+    await wrapper.get('[data-testid="token-analytics-detail-tab-workflows"]').trigger('click')
+    expect(wrapper.get('[data-testid="token-analytics-models-table"]').isVisible()).toBe(false)
+    expect(wrapper.get('[data-testid="token-analytics-workflows-table"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="token-analytics-export-models"]').isVisible()).toBe(false)
+    expect(wrapper.get('[data-testid="token-analytics-export-workflows"]').isVisible()).toBe(true)
+    await wrapper.get('[data-testid="token-analytics-detail-tab-models"]').trigger('click')
+    expect(wrapper.get('[data-testid="token-analytics-models-table"]').isVisible()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('previews eight runs, exports every run, and resets expansion when filters change', async () => {
+    const topRuns = Array.from({ length: 12 }, (_, index) => ({ ...sampleData.topRuns[0], runId: `r${index + 1}`, title: `Run ${index + 1}` }))
+    vi.mocked(api.getGlobalTokenStats).mockResolvedValue({ ...sampleData, topRuns })
     const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
     await flushPromises()
-    const charts = wrapper.findAllComponents({ name: 'VChart' })
-    const tree = charts.find((c) => (c.props('option') as { series?: { type?: string }[] }).series?.[0]?.type === 'treemap')
-    expect(tree).toBeTruthy()
-    const treeData = (tree!.props('option') as { series: Array<{ data: Array<{ drill: unknown; children: Array<{ drill: unknown }> }> }> }).series[0].data
-    expect(treeData[0].drill).toEqual([{ dim: 'workflow', key: 'w1', name: 'main' }])
-    expect(treeData[0].children[0].drill).toEqual([
-      { dim: 'workflow', key: 'w1', name: 'main' },
-      { dim: 'nodeType', key: 'agent', name: 'agent' },
-    ])
-    expect(wrapper.find('[data-testid="token-analytics-plot-weekhour"]').findComponent({ name: 'VChart' }).exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="token-analytics-run-row"]')).toHaveLength(8)
+    await wrapper.get('[data-testid="token-analytics-export-runs"]').trigger('click')
+    expect(downloadCsv).toHaveBeenLastCalledWith('token-usage-runs.csv', expect.stringContaining('Run 12'))
+    await wrapper.get('[data-testid="token-analytics-runs-toggle"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="token-analytics-run-row"]')).toHaveLength(12)
+    await wrapper.get('[data-testid="token-analytics-runs-toggle"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="token-analytics-run-row"]')).toHaveLength(8)
+    await wrapper.get('[data-testid="token-analytics-runs-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="token-analytics-window-7d"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="token-analytics-run-row"]')).toHaveLength(8)
     wrapper.unmount()
   })
 
@@ -810,9 +844,9 @@ describe('TokenAnalyticsView', () => {
     const labels = group.findAll('button').map((b) => b.text())
     // 自定义 is the last segment of the same control (one segmented style for every range).
     expect(labels).toEqual(['近 24 小时', '近 7 天', '近 30 天', '近 90 天', '全部历史', '自定义'])
-    expect(wrapper.find('[data-testid="token-analytics-window-all"]').classes()).toContain('bg-surface')
+    expect(wrapper.find('[data-testid="token-analytics-window-all"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('[data-testid="token-analytics-window-all"]').text()).toBe('全部历史')
-    expect(wrapper.find('[data-testid="token-analytics-window-30d"]').classes()).not.toContain('bg-surface')
+    expect(wrapper.find('[data-testid="token-analytics-window-30d"]').attributes('aria-pressed')).toBe('false')
     expect(api.getGlobalTokenStats).toHaveBeenCalledWith(
       expect.objectContaining({ window: 'all' }),
       expect.anything(),
@@ -826,7 +860,7 @@ describe('TokenAnalyticsView', () => {
     // Source stays a segmented control in the toolbar (same style as the time range).
     const sourceAll = wrapper.get('[data-testid="token-analytics-source-all"]')
     expect(sourceAll.text()).toBe('全部来源')
-    expect(sourceAll.classes()).toContain('bg-surface')
+    expect(sourceAll.attributes('aria-pressed')).toBe('true')
     // The five dimension filters live in the 筛选 popover, each labelled and defaulting to 全部.
     expect(wrapper.find('[data-testid="token-analytics-filters"]').exists()).toBe(false)
     await openFilterPopover(wrapper)
@@ -847,7 +881,7 @@ describe('TokenAnalyticsView', () => {
     const labels = group.findAll('button').map((b) => b.text())
     // 自定义 is the last segment of the same control (one segmented style for every range).
     expect(labels).toEqual(['近 24 小时', '近 7 天', '近 30 天', '近 90 天', '全部历史', '自定义'])
-    expect(wrapper.find('[data-testid="token-analytics-window-all"]').classes()).toContain('bg-surface')
+    expect(wrapper.find('[data-testid="token-analytics-window-all"]').attributes('aria-pressed')).toBe('true')
 
     vi.mocked(api.getGlobalTokenStats).mockClear()
     vi.mocked(api.getGlobalTokenStats).mockResolvedValue({
@@ -873,8 +907,19 @@ describe('TokenAnalyticsView', () => {
       expect.objectContaining({ window: '24h' }),
       expect.anything(),
     )
-    expect(wrapper.find('[data-testid="token-analytics-window-24h"]').classes()).toContain('bg-surface')
-    expect(wrapper.find('[data-testid="token-analytics-window-all"]').classes()).not.toContain('bg-surface')
+    expect(wrapper.find('[data-testid="token-analytics-window-24h"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="token-analytics-window-all"]').attributes('aria-pressed')).toBe('false')
+    const idleWindow = wrapper.get('[data-testid="token-analytics-window-7d"]')
+    expect(idleWindow.classes()).toEqual(expect.arrayContaining(['text-txt3', 'hover:text-txt2']))
+    expect(idleWindow.classes()).not.toContain('hover:text-txt')
+    const chosenWindow = wrapper.get('[data-testid="token-analytics-window-24h"]')
+    expect(chosenWindow.classes()).toContain('text-txt')
+    expect(chosenWindow.classes()).not.toContain('hover:text-txt')
+    expect(chosenWindow.classes()).not.toContain('hover:text-txt2')
+    const idleSource = wrapper.findAll('[data-testid^="token-analytics-source-"]').find((b) => b.attributes('aria-pressed') === 'false')
+    expect(idleSource).toBeTruthy()
+    expect(idleSource!.classes()).toContain('hover:text-txt2')
+    expect(idleSource!.classes()).not.toContain('hover:text-txt')
 
     vi.mocked(api.getGlobalTokenStats).mockClear()
     vi.mocked(api.getGlobalTokenStats).mockResolvedValue({ ...sampleData, window: '30d' })
@@ -1023,7 +1068,7 @@ describe('TokenAnalyticsView', () => {
       const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
       await flushPromises()
       const table = wrapper.get('[data-testid="token-analytics-workflows-table"]')
-      expect(table.text()).toContain(zh.workflowsTable)
+      expect(table.attributes('aria-label')).toBe(zh.workflowsTable)
       const heads = table.findAll('th').map((th) => th.text()).filter(Boolean)
       expect(heads[0]).toBe(zh.colWorkflow)
       const rows = table.findAll('[data-testid="token-analytics-workflow-row"]')

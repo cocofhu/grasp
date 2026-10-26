@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CodeEditor from '@/components/ui/CodeEditor.vue'
@@ -225,7 +226,7 @@ onBeforeUnmount(() => {
         class="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-txt2 hover:bg-elevated"
         @click="fmCollapsed = !fmCollapsed"
       >
-        <Icon
+        <Icon :interactive="false"
           name="chevron-down"
           :size="12"
           class="text-txt3 transition-transform"
@@ -295,11 +296,11 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- stack: edit / preview toggle -->
-    <div v-if="isStack" class="rounded-md overflow-hidden mx-2.5 mb-2.5 mt-2 flex shrink-0 border border-line" role="tablist">
+    <SlidingTabs v-if="isStack" :value="stackMode" indicator-class="bg-accent-dim shadow-[inset_0_-2px_0_var(--color-accent,#7B61FF)]" class="rounded-md overflow-hidden mx-2.5 mb-2.5 mt-2 flex shrink-0 border border-line bg-base" role="tablist">
       <button
         type="button"
         class="min-h-11 flex-1 text-[12px] transition"
-        :class="stackMode === 'edit' ? 'bg-accent-dim text-txt shadow-[inset_0_-2px_0_var(--color-accent,#7B61FF)]' : 'bg-base text-txt3'"
+        :class="stackMode === 'edit' ? 'text-txt' : 'text-txt3 hover:text-txt2'"
         role="tab"
         :aria-selected="stackMode === 'edit'"
         @click="stackMode = 'edit'"
@@ -309,14 +310,14 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="min-h-11 flex-1 text-[12px] transition"
-        :class="stackMode === 'preview' ? 'bg-accent-dim text-txt shadow-[inset_0_-2px_0_var(--color-accent,#7B61FF)]' : 'bg-base text-txt3'"
+        :class="stackMode === 'preview' ? 'text-txt' : 'text-txt3 hover:text-txt2'"
         role="tab"
         :aria-selected="stackMode === 'preview'"
         @click="stackMode = 'preview'"
       >
         {{ t('pages.markdownEditor.preview') }}
       </button>
-    </div>
+    </SlidingTabs>
 
     <!-- stack body: single-column editor or preview -->
     <div v-if="isStack" class="flex min-h-0 flex-1 flex-col">

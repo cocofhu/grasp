@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { ref } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -28,6 +31,9 @@ vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ error: mocks.e
 vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({ useWorkflowRunLaunch: () => ({ openLaunch: mocks.openLaunch }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ entries: mocks.entries, isFavorite: (id: string) => mocks.entries.value.some((item) => item.workflowId === id), toggleFavorite: mocks.toggleFavorite }) }))
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
+
+const shellDir = dirname(fileURLToPath(import.meta.url))
+const listSrc = readFileSync(join(shellDir, 'SidebarWorkspaceLists.vue'), 'utf8')
 import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 import { __resetSidebarSectionsForTests } from '@/lib/shared/sidebarSections'
 
@@ -63,7 +69,7 @@ beforeEach(() => {
 
 describe('sidebar workspace lists without a workflow directory', () => {
   it('shows recent runs and does not request or render the workflow directory', async () => {
-    const items = Array.from({ length: 8 }, (_, index) => ({ id: `r${index}`, title: `运行 ${index}`, workflowName: '工作流' }))
+    const items = Array.from({ length: 24 }, (_, index) => ({ id: `r${index}`, title: `运行 ${index}`, workflowName: '工作流' }))
     mocks.listRuns.mockResolvedValue({ items, total: items.length })
     const { wrapper } = await setup('/runs/r0')
     expectNoWorkflowDirectory(wrapper)
@@ -74,8 +80,10 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(headingIcon.classes()).toContain('grasp-status')
     expect(headingIcon.attributes('width')).toBe('14')
     const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
-    expect(rows).toHaveLength(6)
+    expect(rows).toHaveLength(20)
     expect(rows[0].text()).toBe('运行 0')
+    expect(rows[19].attributes('data-run-id')).toBe('r19')
+    expect(wrapper.find('[data-run-id="r20"]').exists()).toBe(false)
     expect(rows[0].attributes('href')).toBe('/runs/r0')
     expect(rows[0].classes()).toContain('is-active')
     expect(rows[0].attributes('aria-current')).toBe('page')
@@ -84,11 +92,33 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(rows[0].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(false)
     expect(wrapper.find('[data-icon="chat"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
-    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 6, status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })
+    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 20, status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })
     expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
     expect(mocks.getWorkflow).not.toHaveBeenCalled()
     expect(mocks.openLaunch).not.toHaveBeenCalled()
     expect(mocks.toggleFavorite).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('renders every finished run when fewer than twenty are returned', async () => {
+    const items = Array.from({ length: 8 }, (_, index) => ({ id: `r${index}`, title: `运行 ${index}`, workflowName: '工作流' }))
+    mocks.listRuns.mockResolvedValue({ items, total: items.length })
+    const { wrapper } = await setup()
+    const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
+    expect(rows).toHaveLength(items.length)
+    expect(rows.map((row) => row.attributes('data-run-id'))).toEqual(items.map((item) => item.id))
+    expect(wrapper.get('[data-testid="sidebar-recent"]').text()).not.toContain('还没有执行完的工作流')
+    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 20, status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })
+    wrapper.unmount()
+  })
+
+  it('renders all twenty finished runs when the page is exactly full', async () => {
+    const items = Array.from({ length: 20 }, (_, index) => ({ id: `r${index}`, title: `运行 ${index}`, workflowName: '工作流' }))
+    mocks.listRuns.mockResolvedValue({ items, total: items.length })
+    const { wrapper } = await setup()
+    const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
+    expect(rows).toHaveLength(20)
+    expect(rows[19].attributes('data-run-id')).toBe('r19')
     wrapper.unmount()
   })
 
@@ -145,5 +175,63 @@ describe('sidebar workspace lists without a workflow directory', () => {
     await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('click')
     expect(readArtifactPanelOpen()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('hovers the history title as one group and keeps the link and toggle clicks apart', async () => {
+    const { wrapper, router } = await setup('/dashboard')
+    const title = wrapper.get('[data-icon-motion-span="history-title"]')
+    const link = title.get('[data-testid="sidebar-recent-heading"]')
+    const toggle = title.get('[data-testid="sidebar-recent-toggle"]')
+    const body = wrapper.get('[data-testid="sidebar-recent-body"]')
+    expect(link.attributes('href')).toBe('/runs')
+    expect(link.classes()).toContain('grasp-status-host')
+    expect(link.element.contains(toggle.element)).toBe(false)
+    expect(title.element.contains(link.element)).toBe(true)
+    expect(title.element.contains(toggle.element)).toBe(true)
+    expect(toggle.element.tagName).toBe('BUTTON')
+    expect(toggle.attributes('type')).toBe('button')
+    expect(link.element.tabIndex).not.toBe(-1)
+    expect(toggle.element.tabIndex).not.toBe(-1)
+    expect(body.element.parentElement).not.toBe(title.element)
+
+    const style = listSrc.slice(listSrc.indexOf('<style scoped>'))
+    expect(style).toMatch(/\.workspace-list-heading\s*\{[^}]*font-size:\s*11\.5px/)
+    expect(style).toMatch(/\.workspace-list-heading\s*\{[^}]*font-weight:\s*600/)
+    expect(style).toMatch(/\.workspace-list-heading\s*\{[^}]*transition:\s*color 160ms ease/)
+    expect(style).toMatch(/\.workspace-list-heading:hover\s*\{[^}]*color:\s*rgb\(var\(--c-txt\)\)/)
+    expect(style).toMatch(/\.workspace-list-heading:hover \.workspace-list-chevron\s*\{[^}]*opacity:\s*1/)
+    expect(style).toMatch(/\.workspace-list-chevron\s*\{[^}]*opacity:\s*\.7/)
+    expect(style).not.toMatch(/\.workspace-list-toggle:hover/)
+    expect(style).not.toMatch(/\.workspace-list-heading > a:first-child:hover/)
+    expect(style).toMatch(/a:focus-visible,\s*button:focus-visible/)
+    expect(style).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition:\s*none/)
+
+    expect((body.element as HTMLElement).style.display).not.toBe('none')
+    await toggle.trigger('click')
+    expect(router.currentRoute.value.path).toBe('/dashboard')
+    expect(wrapper.emitted('navigate')).toBeFalsy()
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(toggle.get('.workspace-list-chevron').classes()).toContain('is-collapsed')
+    expect((body.element as HTMLElement).style.display).toBe('none')
+
+    await link.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('navigate')).toHaveLength(1)
+    expect(router.currentRoute.value.path).toBe('/runs')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect((body.element as HTMLElement).style.display).toBe('none')
+    wrapper.unmount()
+  })
+
+  it('uses the same history title in the desktop sidebar and the narrow drawer', () => {
+    const sidebar = readFileSync(join(shellDir, 'AppSidebar.vue'), 'utf8')
+    const shell = readFileSync(join(shellDir, 'AppShell.vue'), 'utf8')
+    const nav = readFileSync(join(shellDir, 'AppSidebarNav.vue'), 'utf8')
+    expect(sidebar).toMatch(/<AppSidebarNav[^>]*:workspace-lists="!isMobile"/)
+    expect(shell).toMatch(/data-testid="mobile-nav-drawer"[\s\S]*?<AppSidebarNav workspace-lists/)
+    expect(nav).toMatch(/<SidebarWorkspaceLists v-if="workspaceLists"/)
+    expect(listSrc).toContain('data-icon-motion-span="history-title"')
+    expect(listSrc).toContain('data-testid="sidebar-recent-heading"')
+    expect(listSrc).toContain('data-testid="sidebar-recent-toggle"')
   })
 })

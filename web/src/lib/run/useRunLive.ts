@@ -1,10 +1,14 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
+import { nodeConversationPath } from '@/lib/run/nodeConversation'
 import { notifyRecentActivity, recentCurrentNode, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
+import { applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarRunStatus } from '@/lib/inbox/sidebarHandoff'
+import { isPlumbingNode } from '@/lib/inbox/runConversationChain'
+import { resolveHandoffProcessAuto, sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 import { bootKey, markBootLive } from '@/lib/run/bootRecord'
 import {
   activeSegment,
@@ -34,8 +38,12 @@ const REFRESH_DEBOUNCE_MS = 400
 /** Why the page ended in place: the run waits at a gate, or the run itself ended. */
 export type LiveEndState = { kind: 'gate'; label: string } | { kind: 'run'; status: string }
 export type LiveMode = 'observe' | 'chat'
-/** Hand-off row after 确认并流转 on this page (same shape as ClarifyChat's). */
-export type LiveHandoff = { phase: 'pending' | 'done'; at: string; target?: string }
+/**
+ * Hand-off row after 确认并流转 on this page (same shape as ClarifyChat's).
+ * targetAuto is the boot-gate three-state: true automatic, false already not
+ * automatic, absent while the next process is still unknown.
+ */
+export type LiveHandoff = { phase: 'pending' | 'done'; at: string; target?: string; targetAuto?: boolean }
 
 /**
  * Live view of a run: read-only stream of an auto node (nodeEvents seed + run
@@ -51,6 +59,7 @@ export type LiveHandoff = { phase: 'pending' | 'done'; at: string; target?: stri
  */
 export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat: Ref<LiveChatSurface | null>) {
   const router = useRouter()
+  const route = useRoute()
   const toast = useToast()
   const { t } = useI18n()
 
@@ -120,7 +129,14 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
 
   function goToChat(node: string) {
     notifyRecentActivity()
-    leaveTo({ path: '/gates', query: { run: runId.value, node } })
+    const query: Record<string, string> = {}
+    for (const key of ['wf', 'tag'] as const) {
+      const raw = route.query[key]
+      const value = Array.isArray(raw) ? raw[0] : raw
+      if (typeof value === 'string' && value) query[key] = value
+    }
+    const path = nodeConversationPath(runId.value, node)
+    leaveTo(Object.keys(query).length ? { path, query } : { path })
   }
 
   /** The node on screen finished: stop streaming and stay on this page. */
@@ -351,6 +367,12 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if (m.busy === false) scheduleRefresh()
       return
     }
+    if (m.type === 'node_enter') {
+      const frame = m as { nodeId?: string; name?: string; mode?: string }
+      applySidebarEnter(runId.value, frame, run.value?.nodes)
+      settleLiveHandoffFromEnter(frame)
+      return
+    }
     if (m.type === 'node_takeover') {
       if (m.nodeId !== nodeId.value) return
       notifyRecentActivity()
@@ -372,6 +394,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       return
     }
     if (m.type === 'status' || m.type === 'trace' || m.type === 'review' || m.type === 'react') {
+      if (m.type === 'status') noteSidebarRunStatus(runId.value, (m as { status?: unknown }).status)
       notifyRecentActivity()
       scheduleRefresh()
     }
@@ -445,6 +468,40 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
   }
 
+  /** Graph three-state at click time. A later node_enter fills it in when this is null. */
+  function graphHandoffAuto(node: string): boolean | null {
+    const current = run.value?.currentNode
+    return resolveHandoffProcessAuto({
+      nodes: run.value?.nodes,
+      edges: run.value?.edges,
+      fromNodeId: node,
+      current: current?.id && current.id !== node ? current : null,
+    })
+  }
+
+  function assignLiveHandoff(phase: 'pending' | 'done', node: string) {
+    const kept = phase === 'done' ? handoff.value?.targetAuto : undefined
+    const auto = typeof kept === 'boolean' ? kept : graphHandoffAuto(node)
+    handoff.value = {
+      phase,
+      at: new Date().toISOString(),
+      ...(typeof auto === 'boolean' ? { targetAuto: auto } : {}),
+    }
+  }
+
+  /**
+   * The graph did not settle the next process. node_enter does:
+   * automatic → true, anything else that is a real node → false.
+   * Plumbing is not a destination. An unconfirmed mark stays unknown.
+   */
+  function settleLiveHandoffFromEnter(frame: { nodeId?: string; name?: string; mode?: string }) {
+    const h = handoff.value
+    if (!h || typeof h.targetAuto === 'boolean') return
+    if (!frame.nodeId || !frame.mode || frame.nodeId === nodeId.value) return
+    if (isPlumbingNode(run.value?.nodes, frame.nodeId)) return
+    handoff.value = { ...h, targetAuto: frame.mode === 'auto' }
+  }
+
   /** 确认并流转 in the continued chat: the page stays and follows the run in place. */
   async function confirm() {
     if (mode.value !== 'chat' || handoff.value) {
@@ -455,16 +512,18 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     const node = nodeId.value
     const iter = iteration.value
     confirmError.value = null
-    handoff.value = { phase: 'pending', at: new Date().toISOString() }
+    assignLiveHandoff('pending', node)
+    armSidebarHandoff(runId.value, node, Date.now(), sidebarAutoTarget(run.value?.nodes, run.value?.edges, node))
     try {
       const prompt = chatKind.value === 'review' ? t('pages.clarify.confirmFlowPrompt') : t('pages.runDetail.clarifyFinishPrompt')
       await api.reactReply(runId.value, node, prompt, [], true, [])
       if (nodeId.value !== node) return
-      handoff.value = { phase: 'done', at: new Date().toISOString() }
+      assignLiveHandoff('done', node)
       opened.value = [...opened.value.filter((k) => k !== `${node}:${iter}`), `${node}:${iter}`]
       notifyRecentActivity()
       void load()
     } catch (e) {
+      clearSidebarHandoff(runId.value)
       if (nodeId.value !== node) return
       handoff.value = null
       confirmError.value = e instanceof Error ? e.message : String(e)

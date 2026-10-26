@@ -1,8 +1,11 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { nextTick } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import commonEn from '@/locales/en/common.json'
@@ -11,7 +14,10 @@ import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 
-function mountDialog(locale: 'zh-CN' | 'en', props: { open?: boolean; discard?: ConfirmFlowDiscard } = {}) {
+function mountDialog(
+  locale: 'zh-CN' | 'en',
+  props: { open?: boolean; discard?: ConfirmFlowDiscard; onVisualClose?: () => void } = {},
+) {
   const i18n = createI18n({
     legacy: false,
     locale,
@@ -26,7 +32,10 @@ function mountDialog(locale: 'zh-CN' | 'en', props: { open?: boolean; discard?: 
       plugins: [i18n],
       directives: { 'hover-ink': vHoverInk },
       stubs: {
-        Icon: { template: '<span data-testid="icon-close" />' },
+        Icon: {
+          props: ['name', 'size'],
+          template: '<span class="icon-stub" :data-icon="name" :data-size="size" />',
+        },
         Transition: false,
       },
     },
@@ -36,6 +45,13 @@ function mountDialog(locale: 'zh-CN' | 'en', props: { open?: boolean; discard?: 
 
 function dialogEl() {
   return document.body.querySelector('[data-testid="confirm-flow-dialog-body"]')?.closest('[role="dialog"]') as HTMLElement | null
+}
+
+/** Leave completion is scheduled on animation frames; fake timers must run them. */
+async function flushOverlayLeave() {
+  await vi.advanceTimersByTimeAsync(400)
+  await nextTick()
+  await flushPromises()
 }
 
 describe('ConfirmFlowDialog', () => {
@@ -98,6 +114,9 @@ describe('ConfirmFlowDialog', () => {
     await nextTick()
     expect(wrapper.emitted('cancel')).toHaveLength(4)
     expect(wrapper.emitted('confirm')).toBeUndefined()
+    expect(wrapper.emitted('visual-close')).toBeUndefined()
+    expect(document.body.querySelector('[data-testid="confirm-flow-dialog-done"]')).toBeNull()
+    expect(document.body.textContent).not.toContain('已流转')
     wrapper.unmount()
   })
 
@@ -117,8 +136,150 @@ describe('ConfirmFlowDialog', () => {
     await flushPromises()
     const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
     accept.click()
+    accept.click()
     expect(wrapper.emitted('confirm')).toHaveLength(1)
     expect(wrapper.emitted('cancel')).toBeUndefined()
     wrapper.unmount()
+  })
+
+  it('puts a 16px close before 取消 and a 16px check before 确认流转', async () => {
+    const wrapper = mountDialog('zh-CN')
+    await flushPromises()
+    const cancel = document.body.querySelector('[data-testid="confirm-flow-dialog-cancel"]') as HTMLButtonElement
+    const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
+    const cancelIcon = cancel.querySelector('[data-icon="close"]')
+    const acceptIcon = accept.querySelector('[data-icon="check"]')
+    expect(cancelIcon).toBeTruthy()
+    expect(acceptIcon).toBeTruthy()
+    expect(cancelIcon?.getAttribute('data-size')).toBe('16')
+    expect(acceptIcon?.getAttribute('data-size')).toBe('16')
+    expect(cancel.className).toContain('gap-1.5')
+    expect(accept.className).toContain('gap-1.5')
+    expect(cancel.className).toContain('text-txt2')
+    expect(cancel.className).not.toContain('bg-accent')
+    expect(accept.className).toContain('bg-accent')
+    expect(accept.closest('.app-modal-footer')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('keeps the dialog size and shows 已流转 inside the original content area', async () => {
+    const wrapper = mountDialog('zh-CN')
+    await flushPromises()
+    const dialog = dialogEl()!
+    const before = { w: dialog.clientWidth, h: dialog.clientHeight }
+    const body = document.body.querySelector('[data-testid="confirm-flow-dialog-body"]') as HTMLElement
+    const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
+    accept.click()
+    await nextTick()
+    expect(dialog.isConnected).toBe(true)
+    expect(dialog.clientWidth).toBe(before.w)
+    expect(dialog.clientHeight).toBe(before.h)
+    expect(body.isConnected).toBe(true)
+    const done = document.body.querySelector('[data-testid="confirm-flow-dialog-done"]') as HTMLElement
+    expect(done).toBeTruthy()
+    expect(done.textContent).toContain('已流转')
+    const cover = done.closest('.app-modal-cover') as HTMLElement
+    expect(cover.contains(body)).toBe(false)
+    expect(cover.classList.contains('app-modal-cover')).toBe(true)
+    const modalSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../ui/AppModal.vue'), 'utf8')
+    expect(modalSrc).toMatch(/\.app-modal-cover\s*\{[^}]*position:\s*absolute/s)
+    expect(dialog.querySelector('[data-testid="confirm-flow-overlay"]')).toBeNull()
+    expect(wrapper.emitted('confirm')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('stays the same size after the parent closes, then leaves without a desk overlay', async () => {
+    vi.useFakeTimers()
+    const connectedAtEmit: boolean[] = []
+    const wrapper = mountDialog('zh-CN', {
+      onVisualClose: () => connectedAtEmit.push(!!dialogEl()?.isConnected),
+    })
+    try {
+      await flushPromises()
+      const dialog = dialogEl()!
+      const before = { w: dialog.clientWidth, h: dialog.clientHeight }
+      const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
+      accept.click()
+      await wrapper.setProps({ open: false })
+      await nextTick()
+      expect(dialog.isConnected).toBe(true)
+      expect(dialog.clientWidth).toBe(before.w)
+      expect(dialog.clientHeight).toBe(before.h)
+      expect(document.body.textContent).toContain('已流转')
+      expect(document.body.querySelector('[data-testid="confirm-flow-overlay"]')).toBeNull()
+      expect(wrapper.emitted('visual-close')).toBeUndefined()
+      expect(wrapper.emitted('confirm')).toHaveLength(1)
+      const pending = vi.getTimerCount()
+      expect(pending, `expected a hold timer, saw ${pending}`).toBeGreaterThan(0)
+      await vi.advanceTimersByTimeAsync(1200)
+      await nextTick()
+      expect(dialogEl()).toBeFalsy()
+      expect(wrapper.emitted('visual-close')).toHaveLength(1)
+      expect(connectedAtEmit).toEqual([false])
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('emits visual close only after the done window has left', async () => {
+    async function dismissDuringDone(dismiss: 'escape' | 'close' | 'backdrop') {
+      vi.useFakeTimers()
+      const connectedAtEmit: boolean[] = []
+      const wrapper = mountDialog('zh-CN', {
+        onVisualClose: () => connectedAtEmit.push(!!dialogEl()?.isConnected),
+      })
+      try {
+        await flushPromises()
+        const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
+        accept.click()
+        await wrapper.setProps({ open: false })
+        await nextTick()
+        expect(dialogEl()?.isConnected).toBe(true)
+        expect(wrapper.emitted('visual-close')).toBeUndefined()
+        if (dismiss === 'escape') {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        } else if (dismiss === 'close') {
+          ;(dialogEl()!.querySelector('button') as HTMLButtonElement).click()
+        } else {
+          ;(dialogEl()!.parentElement!.querySelector('.absolute') as HTMLElement).click()
+        }
+        await nextTick()
+        expect(wrapper.emitted('cancel')).toHaveLength(1)
+        expect(wrapper.emitted('visual-close')).toBeUndefined()
+        expect(dialogEl()?.isConnected).toBe(true)
+        await flushOverlayLeave()
+        expect(dialogEl()).toBeFalsy()
+        expect(wrapper.emitted('visual-close')).toHaveLength(1)
+        expect(connectedAtEmit).toEqual([false])
+        await vi.advanceTimersByTimeAsync(1000)
+        await nextTick()
+        expect(wrapper.emitted('visual-close')).toHaveLength(1)
+      } finally {
+        wrapper.unmount()
+        vi.useRealTimers()
+      }
+    }
+
+    await dismissDuringDone('escape')
+    await dismissDuringDone('close')
+    await dismissDuringDone('backdrop')
+  })
+
+  it('releases on unmount if the confirm window has not left yet', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountDialog('zh-CN')
+    try {
+      await flushPromises()
+      const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
+      accept.click()
+      await wrapper.setProps({ open: false })
+      await nextTick()
+      expect(wrapper.emitted('visual-close')).toBeUndefined()
+      wrapper.unmount()
+      expect(wrapper.emitted('visual-close')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

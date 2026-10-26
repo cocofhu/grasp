@@ -257,3 +257,274 @@ func TestExecuteRequeuesWhenHalted(t *testing.T) {
 		t.Errorf("halted driver must not start a node, got %d visits", n)
 	}
 }
+
+func resumeHandoffGraph() models.Graph {
+	return models.Graph{
+		Nodes: []models.Node{
+			{ID: "ask", Type: "agent", Caps: capsClarify, Label: "需求澄清", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "ask"}},
+			{ID: "impl", Type: "agent", Caps: capsPlain, Label: "实现", Config: map[string]any{"agent_profile": "dev-agent", "prompt": "impl"}},
+			{ID: "output", Type: "output"},
+		},
+		Edges: []models.Edge{
+			{ID: "e1", Source: "ask", Target: "impl"},
+			{ID: "e2", Source: "impl", Target: "output"},
+		},
+	}
+}
+
+func admissionNode(run models.Run) string {
+	if run.Checkpoints == nil {
+		return ""
+	}
+	cp := run.Checkpoints[admissionFromCheckpoint]
+	if cp == nil {
+		return ""
+	}
+	node, _ := cp["node"].(string)
+	return node
+}
+
+func loadRun(t *testing.T, db *gorm.DB, id string) models.Run {
+	t.Helper()
+	var run models.Run
+	if err := db.First(&run, "id = ?", id).Error; err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+// The transition and the resume position are one write. The run is not queued
+// while the driver that will enter the node is still in this process.
+func TestTransitionPersistsResumeTargetWithoutQueue(t *testing.T) {
+	e, db := bareEngine(t)
+	g := resumeHandoffGraph()
+	db.Create(&models.Run{ID: "r", WorkflowID: "w", Status: "waiting_human", Graph: g})
+	c, err := e.loadCtx("r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := e.routeSuccess(c, c.graph.FindNode("ask"), nodeOutcome{status: "completed"})
+	if next != "impl" {
+		t.Fatalf("next = %q, want impl", next)
+	}
+	run := loadRun(t, db, "r")
+	if run.Status != "waiting_human" {
+		t.Fatalf("status = %q, want waiting_human", run.Status)
+	}
+	if got := admissionNode(run); got != "impl" {
+		t.Fatalf("admission node = %q, want impl", got)
+	}
+	saw := false
+	for _, tr := range run.Trace {
+		if tr.Event == "transition" && tr.To == "impl" && tr.NodeID == "ask" {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatal("trace missing the transition to impl")
+	}
+
+	db.Create(&models.Run{ID: "end", WorkflowID: "w", Status: "running", Graph: models.Graph{
+		Nodes: []models.Node{{ID: "output", Type: "output"}},
+	}})
+	end, err := e.loadCtx("end")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next := e.routeSuccess(end, end.graph.FindNode("output"), nodeOutcome{status: "completed"}); next != "" {
+		t.Fatalf("terminal next = %q, want empty", next)
+	}
+	endRun := loadRun(t, db, "end")
+	if endRun.Status != "running" {
+		t.Fatalf("terminal status = %q, want running", endRun.Status)
+	}
+	if got := admissionNode(endRun); got != "" {
+		t.Fatalf("terminal admission node = %q, want empty", got)
+	}
+}
+
+// Waiting for a person, but the visit already finished and the trace names
+// the next node: queue that node. A running run in the same window is not
+// failed for lack of an in-flight visit.
+func TestReconcileContinuesUnstartedTransition(t *testing.T) {
+	e, db := bareEngine(t)
+	now := time.Now()
+	g := resumeHandoffGraph()
+	trace := []models.TraceEntry{
+		{NodeID: "ask", Event: "exit"},
+		{NodeID: "ask", Event: "transition", To: "impl"},
+	}
+	db.Create(&models.Run{ID: "paused", WorkflowID: "w", Status: "waiting_human", Graph: g, Trace: trace})
+	db.Create(&models.StateRun{RunID: "paused", NodeID: "ask", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: &now})
+	db.Create(&models.Run{ID: "running", WorkflowID: "w", Status: "running", Graph: g, Trace: trace})
+	db.Create(&models.StateRun{RunID: "running", NodeID: "ask", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: &now})
+
+	e.reconcileInterrupted()
+
+	for _, id := range []string{"paused", "running"} {
+		run := loadRun(t, db, id)
+		if run.Status != "queued" {
+			t.Errorf("%s status = %q, want queued", id, run.Status)
+		}
+		if got := admissionNode(run); got != "impl" {
+			t.Errorf("%s admission node = %q, want impl", id, got)
+		}
+	}
+	if e.ActiveDrivers() != 0 {
+		t.Errorf("reconciliation must queue, not start a driver; drivers=%d", e.ActiveDrivers())
+	}
+}
+
+// An older resume checkpoint must not hide a newer transition target.
+func TestReconcileTraceBeatsOlderResumeCheckpoint(t *testing.T) {
+	e, db := bareEngine(t)
+	now := time.Now()
+	g := resumeHandoffGraph()
+	db.Create(&models.Run{
+		ID: "stale", WorkflowID: "w", Status: "waiting_human", Graph: g,
+		Checkpoints: map[string]map[string]any{
+			admissionFromCheckpoint: {"node": "ask"},
+		},
+		Trace: []models.TraceEntry{
+			{NodeID: "ask", Event: "enter"},
+			{NodeID: "ask", Event: "exit"},
+			{NodeID: "ask", Event: "transition", To: "impl"},
+		},
+	})
+	db.Create(&models.StateRun{RunID: "stale", NodeID: "ask", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: &now})
+
+	e.reconcileInterrupted()
+
+	run := loadRun(t, db, "stale")
+	if run.Status != "queued" {
+		t.Fatalf("status = %q, want queued", run.Status)
+	}
+	if got := admissionNode(run); got != "impl" {
+		t.Fatalf("admission node = %q, want impl", got)
+	}
+}
+
+// The confirm marked the dialogue done and then the process died before a
+// target was written. Reopen the dialogue; do not replay the model wrap-up.
+func TestReconcileReopensConfirmWithoutTarget(t *testing.T) {
+	e, db := bareEngine(t)
+	now := time.Now()
+	g := resumeHandoffGraph()
+	msg := []models.ReactMessage{{Role: "human", Text: "确认并流转", At: now.Format(time.RFC3339)}}
+	db.Create(&models.Run{ID: "half", WorkflowID: "w", Status: "waiting_human", Graph: g})
+	db.Create(&models.StateRun{RunID: "half", NodeID: "ask", NodeType: "agent", Iteration: 1, Status: "waiting_human", StartedAt: &now})
+	db.Create(&models.ReactConversation{RunID: "half", NodeID: "ask", Iteration: 1, Done: true, Messages: msg})
+	db.Create(&models.Run{ID: "half-run", WorkflowID: "w", Status: "running", Graph: g})
+	db.Create(&models.StateRun{RunID: "half-run", NodeID: "ask", NodeType: "agent", Iteration: 1, Status: "waiting_human", StartedAt: &now})
+	db.Create(&models.ReactConversation{RunID: "half-run", NodeID: "ask", Iteration: 1, Done: true, Messages: msg})
+
+	e.reconcileInterrupted()
+
+	for _, id := range []string{"half", "half-run"} {
+		run := loadRun(t, db, id)
+		if run.Status != "waiting_human" {
+			t.Errorf("%s status = %q, want waiting_human", id, run.Status)
+		}
+		var conv models.ReactConversation
+		if err := db.Where("run_id = ?", id).First(&conv).Error; err != nil {
+			t.Fatal(err)
+		}
+		if conv.Done {
+			t.Errorf("%s conversation still done", id)
+		}
+		if len(conv.Messages) != 1 || conv.Messages[0].Text != "确认并流转" {
+			t.Errorf("%s messages = %+v", id, conv.Messages)
+		}
+		var sr models.StateRun
+		db.Where("run_id = ?", id).First(&sr)
+		if sr.Status != "waiting_human" {
+			t.Errorf("%s visit = %q, want waiting_human", id, sr.Status)
+		}
+	}
+	fp := e.provider.(*fakeProvider)
+	fp.mu.Lock()
+	n := fp.reactReplyCalls["ask"]
+	fp.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("startup replayed the model wrap-up %d times", n)
+	}
+}
+
+// A missing transition target fails the run and keeps the reason. A run that
+// never visited a node still fails.
+func TestReconcileMissingTransitionTargetFails(t *testing.T) {
+	e, db := bareEngine(t)
+	now := time.Now()
+	g := resumeHandoffGraph()
+	db.Create(&models.Run{
+		ID: "ghost", WorkflowID: "w", Status: "running", Graph: g,
+		Trace: []models.TraceEntry{{NodeID: "ask", Event: "transition", To: "missing"}},
+	})
+	db.Create(&models.StateRun{RunID: "ghost", NodeID: "ask", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: &now})
+	db.Create(&models.Run{ID: "nopos", WorkflowID: "w", Status: "running", Graph: g})
+
+	e.reconcileInterrupted()
+
+	if got := loadRun(t, db, "ghost").Status; got != "failed" {
+		t.Fatalf("ghost status = %q, want failed", got)
+	}
+	var v models.RunVariable
+	if err := db.Where("run_id = ? AND name = ?", "ghost", "last_error").First(&v).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := v.Value.(string); got == "" {
+		t.Fatalf("last_error = %#v, want a reason", v.Value)
+	}
+	if got := loadRun(t, db, "nopos").Status; got != "failed" {
+		t.Fatalf("nopos status = %q, want failed", got)
+	}
+}
+
+// Unfinished dialogues stay waiting. Queued resumes are admitted by the
+// dispatcher once. Terminal runs stay terminal.
+func TestReconcileLeavesStableRunsAlone(t *testing.T) {
+	e, db := bareEngine(t)
+	now := time.Now()
+	g := resumeHandoffGraph()
+	trace := []models.TraceEntry{{NodeID: "ask", Event: "transition", To: "impl"}}
+	db.Create(&models.Run{ID: "open", WorkflowID: "w", Status: "waiting_human", Graph: g})
+	db.Create(&models.StateRun{RunID: "open", NodeID: "ask", NodeType: "agent", Iteration: 1, Status: "waiting_human", StartedAt: &now})
+	db.Create(&models.ReactConversation{RunID: "open", NodeID: "ask", Iteration: 1, Done: false,
+		Messages: []models.ReactMessage{{Role: "human", Text: "还没确认"}}})
+	db.Create(&models.Run{
+		ID: "queued", WorkflowID: "w", Status: "queued", Graph: g, Trace: trace,
+		Checkpoints: map[string]map[string]any{admissionFromCheckpoint: {"node": "impl"}},
+	})
+	db.Create(&models.StateRun{RunID: "queued", NodeID: "ask", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: &now})
+	for _, st := range []string{"completed", "failed", "cancelled"} {
+		db.Create(&models.Run{ID: st, WorkflowID: "w", Status: st, Graph: g, Trace: trace})
+		db.Create(&models.StateRun{RunID: st, NodeID: "ask", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: &now})
+	}
+
+	e.reconcileInterrupted()
+
+	open := loadRun(t, db, "open")
+	if open.Status != "waiting_human" {
+		t.Fatalf("open status = %q, want waiting_human", open.Status)
+	}
+	var conv models.ReactConversation
+	db.Where("run_id = ?", "open").First(&conv)
+	if conv.Done {
+		t.Fatal("unfinished dialogue was closed")
+	}
+	queued := loadRun(t, db, "queued")
+	if queued.Status != "queued" {
+		t.Fatalf("queued status = %q", queued.Status)
+	}
+	if got := admissionNode(queued); got != "impl" {
+		t.Fatalf("queued admission = %q, want impl", got)
+	}
+	if e.ActiveDrivers() != 0 {
+		t.Fatalf("queued resume started a driver")
+	}
+	for _, st := range []string{"completed", "failed", "cancelled"} {
+		if got := loadRun(t, db, st).Status; got != st {
+			t.Errorf("%s status = %q", st, got)
+		}
+	}
+}

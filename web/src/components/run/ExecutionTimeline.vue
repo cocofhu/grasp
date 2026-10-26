@@ -219,7 +219,7 @@ const wallSec = computed(() => resolveRunWallSec(props.run, tickMs.value))
 const usageSummary = computed(() => summarizeTimelineUsage(items.value, wallSec.value))
 
 function iconOf(type: string) {
-  return NODE_DEFS[type as keyof typeof NODE_DEFS]?.icon || 'agent'
+  return NODE_DEFS[type as keyof typeof NODE_DEFS]?.icon || 'robot'
 }
 function isSelected(it: TimelineItem) {
   if (!props.interactive) return false
@@ -386,7 +386,7 @@ const DOT: Record<string, string> = {
                     >
                       <Icon name="terminal" :size="10" />
                       <TruncatedTextTooltip :text="m.tip" class="min-w-0 truncate">{{ m.tool }}</TruncatedTextTooltip>
-                      <span>{{ m.isError ? '✗' : '✓' }}</span>
+                      <Icon :name="m.isError ? 'close' : 'check'" :size="12" :interactive="false" />
                     </span>
                   </div>
                 </div>

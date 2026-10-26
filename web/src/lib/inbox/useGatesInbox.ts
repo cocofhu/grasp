@@ -20,7 +20,9 @@ import {
   applyInboxReplyingState,
   inboxSecondaryLine,
   isStartingInboxItem,
+  currentInboxStateEpoch,
   mergeInboxReplyingFromRemote,
+  noteInboxStatePatch,
 } from '@/lib/inbox/inboxDisplay'
 import {
   inboxComposerMode,
@@ -31,7 +33,7 @@ import {
   findInboxItemForHandoff,
   findInboxItemForQuery,
   inboxTripleKey,
-  isInboxLeftPendingError,
+  isInboxLeftPending,
   pickNextActiveAfterRemove,
 } from '@/lib/inbox/inboxActiveSelection'
 import {
@@ -45,7 +47,7 @@ import {
 } from '@/lib/inbox/inboxStartingCards'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { applyPreviewArtifactName, inboxStageRemoteKind, isAppPreviewRemoteNode } from '@/lib/run/reactArtifactPreview'
-import { findGraphNode } from '@/lib/shared/clarifyInteractive'
+import { findGraphNode, isClarifyNode } from '@/lib/shared/clarifyInteractive'
 import { createPendingAcpBuffer, pickAcpRails } from '@/lib/run/pendingAcpBuffer'
 import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
@@ -53,6 +55,7 @@ import {
   runBusySeedRetry,
 } from '@/lib/run/busySeedRetry'
 import { agentPartsFromEvents, sameParts } from '@/lib/run/acpTools'
+import { takeoverConflictRunStatus, takeoverErrorCode, takeoverRaceLost } from '@/lib/run/runLive'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { useToast } from '@/lib/composables/useToast'
@@ -65,6 +68,8 @@ import {
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
+import { applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, readSidebarHandoff, sidebarChainHandoff } from '@/lib/inbox/sidebarHandoff'
+import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 import { clipRunTitle, displayRunTitle } from '@/lib/run/runTitle'
 import {
   consumeHomeApproveHandoff,
@@ -114,6 +119,7 @@ const {
   setActiveInboxKey,
   patchItemReplying,
   syncDisplayedBaseline,
+  inboxRemoteObservedAt,
   clearVisibleMembership,
   hasPendingUpdate,
   lastPeekAt,
@@ -203,7 +209,16 @@ const confirmFlowDeskHold = ref(false)
  * the transcript — pending while reactReply(force) runs, done once it returns —
  * then the inbox moves on. Keyed by itemKey so a neighbour never inherits it.
  */
-const handoffState = ref<{ key: string; phase: 'pending' | 'done'; at: string; target: string } | null>(null)
+const handoffState = ref<{
+  key: string
+  phase: 'pending' | 'done'
+  at: string
+  target: string
+  /** Successor recorded with the row, so a stale chain can reuse it. */
+  targetId?: string
+  /** True when that successor runs on its own; false when a person is still starting. */
+  targetAuto?: boolean
+} | null>(null)
 const HANDOFF_HOLD_MS = 900
 const HANDOFF_HOLD_REDUCED_MS = 200
 function handoffHoldMs(): number {
@@ -211,17 +226,80 @@ function handoffHoldMs(): number {
   const reduce = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   return reduce ? HANDOFF_HOLD_REDUCED_MS : HANDOFF_HOLD_MS
 }
-/** Label of the node the confirmed one flows into (first outgoing edge), for the status row. */
-function nextNodeLabel(nodeId: string): string {
+/**
+ * Edges inbox-context omitted. The run graph is pinned at start, so one
+ * successful GET /runs/:id is enough; a miss is remembered so chain fallback
+ * stays the only 404 path.
+ */
+const graphEdgesByRun = new Map<string, NonNullable<Run['edges']>>()
+const graphEdgesMiss = new Set<string>()
+function humanFollowNode(node: NonNullable<Run['nodes']>[number]): boolean {
+  return node.type === 'human_gate' || isClarifyNode(node)
+}
+function edgeSuccessor(run: Run, sourceId: string): { id: string; label: string; human: boolean } | null {
+  const edge = (run.edges ?? []).find((e) => e.source === sourceId)
+  if (!edge) return null
+  const node = (run.nodes ?? []).find((n) => n.id === edge.target)
+  const label = (node?.label || '').trim()
+  if (!node || !label) return null
+  return { id: node.id, label, human: humanFollowNode(node) }
+}
+function applyCachedEdges(run: Run): Run {
+  if (run.edges?.length) return run
+  const cached = graphEdgesByRun.get(run.id)
+  if (!cached?.length) return run
+  return { ...run, edges: cached }
+}
+function mergeGraphNodes(current: Run['nodes'], incoming: Run['nodes']): Run['nodes'] {
+  if (!incoming?.length) return current
+  if (!current?.length) return incoming
+  const seen = new Set(current.map((n) => n.id))
+  const extra = incoming.filter((n) => n.id && !seen.has(n.id))
+  return extra.length ? [...current, ...extra] : current
+}
+async function ensureActiveGraphEdges(run: Run): Promise<Run> {
+  if (run.edges?.length) {
+    graphEdgesByRun.set(run.id, run.edges)
+    graphEdgesMiss.delete(run.id)
+    return run
+  }
+  const cached = applyCachedEdges(run)
+  if (cached.edges?.length) return cached
+  if (graphEdgesMiss.has(run.id)) return run
+  try {
+    const full = await api.getRun(run.id)
+    if (full?.edges?.length) {
+      graphEdgesByRun.set(run.id, full.edges)
+      return { ...run, edges: full.edges, nodes: mergeGraphNodes(run.nodes, full.nodes) }
+    }
+    graphEdgesMiss.add(run.id)
+  } catch {
+    /* a later follow can retry */
+  }
+  return run
+}
+async function attachActiveGraphEdges() {
   const run = activeRun.value
-  if (!run) return ''
-  // inbox-context carries nodes but not edges; the run chain knows the live node.
+  if (!run) return
+  const next = await ensureActiveGraphEdges(run)
+  if (next !== run && activeRun.value?.id === run.id) activeRun.value = next
+}
+/** Name, id, and mode of the node the confirmed one flows into, for the status row. */
+function nextHandoffTarget(nodeId: string): { target: string; targetId?: string; targetAuto?: boolean } {
+  const run = activeRun.value
+  if (!run) return { target: '' }
+  // Chain already moved: the live node is the hand-off target.
   const cur = runChains.value[run.id]?.current
-  if (cur && cur.id !== nodeId && cur.name) return cur.name
-  const edge = (run.edges ?? []).find((e) => e.source === nodeId)
-  if (!edge) return ''
-  const n = (run.nodes ?? []).find((x) => x.id === edge.target)
-  return (n?.label as string | undefined) || ''
+  if (cur && cur.id !== nodeId && cur.name) {
+    return {
+      target: cur.name,
+      targetId: cur.id,
+      ...(cur.mode === 'auto' ? { targetAuto: true } : cur.mode === 'manual' ? { targetAuto: false } : {}),
+    }
+  }
+  const next = edgeSuccessor(applyCachedEdges(run), nodeId)
+  if (!next) return { target: '' }
+  return { target: next.label, targetId: next.id, targetAuto: !next.human }
 }
 const activeHandoff = computed(() =>
   handoffState.value && active.value && handoffState.value.key === itemKey(active.value) ? handoffState.value : null,
@@ -318,6 +396,8 @@ type FollowProcessSegment = {
   endedAt?: string
 }
 const followTail = ref<FollowTail | null>(null)
+/** Stop on the auto-run bar was accepted; placeholder stays「正在停止…」until the chat opens. */
+const followStopping = ref(false)
 const followProcess = ref<FollowProcessSegment[]>([])
 let followTimer: ReturnType<typeof setTimeout> | null = null
 let followItem: InboxItem | null = null
@@ -380,7 +460,10 @@ function closeFollowWs() {
 function followWsLive(runId: string): boolean {
   return !!followWs && followWs.readyState === 1 && (followWs as WebSocket & { _runId?: string })._runId === runId
 }
-function openFollowWs(runId: string) {
+/** Graph captured when the handoff socket opens, so a later enter can skip plumbing after the inbox run is cleared. */
+let followGraphNodes: Parameters<typeof applySidebarEnter>[2]
+function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter>[2]) {
+  if (nodes) followGraphNodes = nodes
   if (followWsLive(runId)) return
   closeFollowWs()
   if (typeof WebSocket === 'undefined') return
@@ -408,6 +491,7 @@ function openFollowWs(runId: string) {
       name?: string
       kind?: string
       mode?: string
+      state?: 'stopping' | 'waiting_human'
       events?: AcpEvent[]
       busy?: boolean
       status?: string
@@ -418,7 +502,11 @@ function openFollowWs(runId: string) {
       return
     }
     if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
-    else if (m.type === 'status') kickFollow()
+    else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
+    else if (m.type === 'status') {
+      noteSidebarRunStatus(runId, (m as { status?: unknown }).status)
+      kickFollow()
+    }
     else if (m.type === 'acp') onFollowAcp(runId, m)
   }
   ws.onclose = () => {
@@ -442,8 +530,11 @@ function openFollowWs(runId: string) {
 function onFollowNodeEnter(runId: string, m: { nodeId?: string; iteration?: number; name?: string; kind?: string; mode?: string }) {
   const ft = followTail.value
   if (!ft) followSawNodeEnter = true
+  const nodes = followGraphNodes ?? activeRun.value?.nodes
+  const plumbing = !!m.nodeId && isPlumbingNode(nodes, m.nodeId)
+  applySidebarEnter(runId, m, nodes)
   if (!ft || ft.runId !== runId || ft.kind === 'ended' || !active.value || itemKey(active.value) !== ft.key) return
-  if (m.nodeId && !isPlumbingNode(activeRun.value?.nodes, m.nodeId)) {
+  if (m.nodeId && !plumbing) {
     const label =
       m.name || ((activeRun.value?.nodes ?? []).find((n) => n.id === m.nodeId)?.label as string | undefined) || m.nodeId
     setFollowTail({
@@ -560,6 +651,7 @@ function replayEarlyAcp(tail: FollowTail) {
   writeFollowParts(tail.nodeId, tail.iteration ?? hit.iteration ?? 1, tail.label || tail.nodeId, hit.events, tail.kind === 'auto')
 }
 function setFollowTail(next: FollowTail) {
+  if (next.kind !== 'auto') followStopping.value = false
   followTail.value = next
   if (next.kind === 'auto' && next.nodeId) ensureAutoSegment(next)
   else sealFollowProcess()
@@ -636,6 +728,7 @@ function stopFollow() {
   followSawNodeEnter = false
   followEarlyAcp = new Map()
   followSnapGen++
+  followStopping.value = false
   closeFollowWs()
 }
 function isFollowingActive(): boolean {
@@ -645,6 +738,8 @@ const activeFollowTail = computed(() =>
   followTail.value && active.value && followTail.value.key === itemKey(active.value) ? followTail.value : null,
 )
 const activeFollowProcess = computed(() => (activeFollowTail.value ? followProcess.value : []))
+/** Auto node on the followed conversation: the existing observe bar, not the done footer. */
+const followObserving = computed(() => activeFollowTail.value?.kind === 'auto')
 function tailFromChain(key: string, chain: RunChain): FollowTail {
   const at = new Date().toISOString()
   const cur = chain.current
@@ -654,6 +749,89 @@ function tailFromChain(key: string, chain: RunChain): FollowTail {
   if (isRunTerminal(chain.status)) return { key, runId: chain.runId, kind: 'ended', status: String(chain.status), at, nodeId, iteration, label }
   if (cur && cur.mode === 'auto') return { key, runId: chain.runId, kind: 'auto', label, nodeId, iteration, at }
   return { key, runId: chain.runId, kind: 'waiting', label, nodeId, iteration, at }
+}
+/**
+ * Chain still names the visit that was just confirmed. A later iteration of
+ * the same node has moved on and is not this snapshot.
+ */
+function chainStillOnDeparted(chain: RunChain, submitted: InboxItem): boolean {
+  const cur = chain.current
+  if (!cur?.id || cur.id !== submitted.nodeId) return false
+  const left = submitted.iteration
+  if (typeof cur.iteration === 'number' && typeof left === 'number' && cur.iteration > left) return false
+  return true
+}
+/**
+ * First outgoing edge, else the successor the hand-off row already named.
+ * A clarify node or a human gate is a person still starting; anything else
+ * runs on its own. No label → the unnamed「等待下一节点开始」row.
+ */
+function recordedHandoffSuccessor(run: Run, departedId: string): { id: string; label: string; human: boolean } | null {
+  const row = handoffState.value
+  const label = (row?.target || '').trim()
+  if (!row || !label) return null
+  if (row.targetId && row.targetId !== departedId) {
+    if (row.targetAuto === true) return { id: row.targetId, label, human: false }
+    if (row.targetAuto === false) return { id: row.targetId, label, human: true }
+    const node = (run.nodes ?? []).find((n) => n.id === row.targetId)
+    if (node) return { id: node.id, label: (node.label || label).trim() || label, human: humanFollowNode(node) }
+  }
+  const node = (run.nodes ?? []).find((n) => n.id !== departedId && (n.label || '').trim() === label)
+  if (!node) return null
+  return { id: node.id, label, human: humanFollowNode(node) }
+}
+function handoffSuccessor(runId: string, departedId: string): { id: string; label: string; human: boolean } | null {
+  const run = activeRun.value
+  if (!run || run.id !== runId) return null
+  const withEdges = applyCachedEdges(run)
+  if (withEdges !== run) activeRun.value = withEdges
+  // The row already named the successor. Edges fill in only when it has not.
+  return recordedHandoffSuccessor(withEdges, departedId) ?? edgeSuccessor(withEdges, departedId)
+}
+function fillEmptyHandoffTarget(key: string, tail: FollowTail, departedId: string) {
+  if (tail.kind !== 'auto' && tail.kind !== 'waiting') return
+  const label = (tail.label || '').trim()
+  if (!label || !tail.nodeId || tail.nodeId === departedId) return
+  const cur = handoffState.value
+  if (!cur || cur.key !== key || cur.target) return
+  handoffState.value = { ...cur, target: label, targetId: tail.nodeId, targetAuto: tail.kind === 'auto' }
+}
+function tailFromHandoffTarget(key: string, chain: RunChain, submitted: InboxItem): FollowTail {
+  const at = new Date().toISOString()
+  const next = handoffSuccessor(chain.runId, submitted.nodeId)
+  if (!next) return { key, runId: chain.runId, kind: 'waiting', at }
+  if (next.human) return { key, runId: chain.runId, kind: 'waiting', label: next.label, nodeId: next.id, at }
+  return { key, runId: chain.runId, kind: 'auto', label: next.label, nodeId: next.id, at }
+}
+/** Follow row already names a node after the one just confirmed. A stale chain must not put it back. */
+function followAlreadyAhead(key: string, submitted: InboxItem): FollowTail | null {
+  const kept = followTail.value
+  if (!kept || kept.key !== key || kept.kind === 'ended' || kept.kind === 'error') return null
+  if (!kept.nodeId || kept.nodeId === submitted.nodeId) return null
+  return kept
+}
+function resolveFollowTail(submitted: InboxItem, key: string, chain: RunChain): FollowTail {
+  if (isRunTerminal(chain.status)) return tailFromChain(key, chain)
+  if (!chainStillOnDeparted(chain, submitted)) return tailFromChain(key, chain)
+  return followAlreadyAhead(key, submitted) ?? tailFromHandoffTarget(key, chain, submitted)
+}
+/** Stale departed snapshot must not cancel an automatic successor the row already chose. */
+function noteFollowFromSnapshot(submitted: InboxItem, chain: RunChain, tail: FollowTail) {
+  if (isRunTerminal(chain.status) || !chainStillOnDeparted(chain, submitted)) {
+    syncSidebarHandoffFromChain(submitted.runId, chain)
+    return
+  }
+  if (tail.kind === 'auto') noteSidebarHandoffOutcome(submitted.runId, 'auto')
+  else if (tail.kind === 'waiting' && tail.nodeId && tail.nodeId !== submitted.nodeId) {
+    noteSidebarHandoffOutcome(submitted.runId, 'human')
+  }
+}
+/** Snapshot after 确认并流转: automatic confirms the fly; a person or a finished run cancels it. Plumbing does not. */
+function syncSidebarHandoffFromChain(runId: string, chain: RunChain) {
+  const mark = readSidebarHandoff(runId)
+  const decision = sidebarChainHandoff(chain, mark?.fromNodeId, followGraphNodes ?? activeRun.value?.nodes)
+  if (!decision) return
+  noteSidebarHandoffOutcome(runId, decision.outcome, decision.target)
 }
 /**
  * Same-run waiting node in the list → open it under the chain. A row still
@@ -666,6 +844,7 @@ async function continueInRun(submitted: InboxItem, submittedKey: string): Promis
     (k) => k.runId === submitted.runId && itemKey(k) !== submittedKey && !isStartingInboxItem(k),
   )
   if (!next) return false
+  noteSidebarHandoffOutcome(submitted.runId, 'human')
   await loadRunChain(submitted.runId)
   openedSegments.value = [...openedSegments.value, `${submitted.runId}:${submitted.nodeId}:${submitted.iteration ?? 1}`]
   if (handoffState.value?.key === submittedKey) handoffState.value = null
@@ -684,6 +863,7 @@ async function followStep(submitted: InboxItem, submittedKey: string) {
   if (!active.value || itemKey(active.value) !== submittedKey) return stopFollow()
   followInFlight = true
   try {
+    await attachActiveGraphEdges()
     const chain = await loadRunChain(submitted.runId)
     if (!followTail.value || followTail.value.key !== submittedKey) return
     try {
@@ -696,7 +876,10 @@ async function followStep(submitted: InboxItem, submittedKey: string) {
     const prevIter = followTail.value?.iteration
     if (chain) {
       followFailures = 0
-      setFollowTail(tailFromChain(submittedKey, chain))
+      const tail = resolveFollowTail(submitted, submittedKey, chain)
+      setFollowTail(tail)
+      fillEmptyHandoffTarget(submittedKey, tail, submitted.nodeId)
+      noteFollowFromSnapshot(submitted, chain, tail)
     } else if (++followFailures >= FOLLOW_ERROR_AFTER && followTail.value) {
       setFollowTail({ ...followTail.value, kind: 'error', at: new Date().toISOString() })
     }
@@ -737,12 +920,16 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
   followItem = submitted
   openFollowWs(submitted.runId)
   followSawNodeEnter = false
+  await attachActiveGraphEdges()
   const chain = await loadRunChain(submitted.runId)
   followFailures = chain ? 0 : 1
   const tail: FollowTail = chain
-    ? tailFromChain(submittedKey, chain)
+    ? resolveFollowTail(submitted, submittedKey, chain)
     : { key: submittedKey, runId: submitted.runId, kind: 'waiting', at: new Date().toISOString() }
   setFollowTail(tail)
+  if (chain) fillEmptyHandoffTarget(submittedKey, tail, submitted.nodeId)
+  if (chain) noteFollowFromSnapshot(submitted, chain, tail)
+  else if (tail.kind === 'ended') noteSidebarHandoffOutcome(submitted.runId, 'ended')
   if (tail.kind === 'auto') void fillFollowFromNodeEvents()
   if (tail.kind === 'ended') closeFollowWs()
   else if (followSawNodeEnter) {
@@ -751,6 +938,69 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
     kickFollow()
   } else scheduleFollow(submitted, submittedKey)
   return true
+}
+/**
+ * Takeover finished (or the node parked itself): open the same-run chat in
+ * place. The row may still be starting — then keep following until it parks.
+ */
+async function settleTakeoverChat(item: InboxItem, key: string) {
+  if (!followTail.value || followTail.value.key !== key || !active.value || itemKey(active.value) !== key) return
+  try {
+    await loadList()
+  } catch {
+    /* soft */
+  }
+  if (!followTail.value || followTail.value.key !== key) return
+  if (await continueInRun(item, key)) return
+  kickFollow()
+}
+/** WS node_takeover while the auto-run bar is up. Same contract as the live page, without leaving this chat. */
+function onFollowTakeover(runId: string, m: { nodeId?: string; state?: 'stopping' | 'waiting_human' }) {
+  const ft = followTail.value
+  const item = followItem
+  if (!ft || ft.runId !== runId || !item || !active.value || itemKey(active.value) !== ft.key) return
+  if (m.nodeId && ft.nodeId && m.nodeId !== ft.nodeId) return
+  notifyRecentActivity()
+  if (m.state === 'waiting_human') {
+    void settleTakeoverChat(item, ft.key)
+    return
+  }
+  if (m.state === 'stopping' && ft.kind === 'auto') followStopping.value = true
+}
+/**
+ * Stop on the followed auto node. One POST /takeover; a second click while
+ * stopping does not send again. Failure uses the live page's notices and
+ * drops「正在停止…」.
+ */
+async function takeoverFollow() {
+  const ft = activeFollowTail.value
+  const item = followItem
+  if (followStopping.value || !ft || ft.kind !== 'auto' || !ft.nodeId || !item) return
+  const key = ft.key
+  followStopping.value = true
+  notifyRecentActivity()
+  try {
+    const res = await api.takeoverNode(ft.runId, ft.nodeId, ft.iteration)
+    if (!followTail.value || followTail.value.key !== key) return
+    if (res.state === 'waiting_human') await settleTakeoverChat(item, key)
+  } catch (e) {
+    if (!followTail.value || followTail.value.key !== key) return
+    followStopping.value = false
+    const code = takeoverErrorCode(e)
+    if (code === 'run_not_running') {
+      const status = takeoverConflictRunStatus(e)
+      toast.error(t('pages.runLive.run_not_running', { status: status ? t(`common.status.${status}`, status) : '-' }))
+      kickFollow()
+      return
+    }
+    if (takeoverRaceLost(code)) {
+      toast.show(t(`pages.runLive.${code}`))
+      kickFollow()
+      return
+    }
+    const msg = code ? t(`pages.runLive.${code}`) : e instanceof Error ? e.message : String(e)
+    toast.error(code ? msg : t('pages.runLive.takeoverFailed', { msg }))
+  }
 }
 /** A confirmed conversation reopened by a reload: its transcript, the 已流转 row, then the run followed in place. */
 async function resumeHandedOff(run: Run, nodeId: string) {
@@ -767,12 +1017,14 @@ async function resumeHandedOff(run: Run, nodeId: string) {
   }
   const key = itemKey(item)
   listItems.value = listItems.value.filter((it) => itemKey(it) !== key)
+  if (run.edges?.length) graphEdgesByRun.set(run.id, run.edges)
   activeRun.value = run
   activeRunLoadError.value = false
   followItem = item
+  followStopping.value = false
   followTail.value = { key, runId: run.id, kind: 'waiting', at: new Date().toISOString() }
   active.value = item
-  handoffState.value = { key, phase: 'done', at: new Date().toISOString(), target: nextNodeLabel(nodeId) }
+  handoffState.value = { key, phase: 'done', at: new Date().toISOString(), ...nextHandoffTarget(nodeId) }
   await beginFollow(item, key)
 }
 watch(
@@ -1014,6 +1266,7 @@ async function refreshStartingSandboxPhase() {
   }
   try {
     const sb = await api.getRunNodeSandbox(runId, nodeId)
+    // null is confirmed absence. The starting poll above is already capped.
     startingSandboxPhase.value = sb?.status ? String(sb.status) : null
     observeBootSandbox(bootKey(runId, nodeId, active.value?.iteration), sb)
   } catch {
@@ -1057,11 +1310,20 @@ function restoreListItemLocally(it: InboxItem, prevList: InboxItem[]) {
   restoreItemLocally(it)
 }
 
+function conversationRoute(): { run: string; node: string } {
+  const params = (route.params ?? {}) as Record<string, unknown>
+  const run = queryText(params.runId)
+  const node = queryText(params.nodeId)
+  if (run || node) return { run, node }
+  return { run: queryText(route.query.run), node: queryText(route.query.node) }
+}
+
 function incomingTarget(): { runId: string; nodeId: string } | null {
   if (!incomingArmed.value) return null
+  const id = conversationRoute()
   return resolveIncomingApproval(
-    route.query.run,
-    route.query.node,
+    id.run,
+    id.node,
     peekHomeApproveHandoff() || homeSeed.value,
   )
 }
@@ -1266,7 +1528,10 @@ function patchVisibleCardBusy(runId: string, nodeId: string, busy: boolean) {
   const nextList = listItems.value.map((row) => {
     if (itemKey(row) !== key || row.type !== 'clarify') return row
     const patched = applyInboxReplyingState(row, busy)
-    if (patched !== row) listChanged = true
+    if (patched !== row) {
+      listChanged = true
+      noteInboxStatePatch(key)
+    }
     return patched
   })
   if (listChanged) listItems.value = nextList
@@ -1364,7 +1629,8 @@ function startStartingPoll() {
 }
 
 function selectFromQuery({ keepActive = false }: { keepActive?: boolean } = {}): boolean {
-  const hit = findInboxItemForQuery(listItems.value, route.query.run, route.query.node)
+  const id = conversationRoute()
+  const hit = findInboxItemForQuery(listItems.value, id.run, id.node)
   if (!hit) return false
   // Silent auto-apply reload with the same gate already selected: keep the
   // object. A fresh row for the same key would retrigger watch(active) →
@@ -1434,7 +1700,7 @@ function holdsCancelledConversation(): boolean {
   const departing = inboxCancelDepartureRunId()
   if (!departing) return false
   if (active.value?.runId === departing) return true
-  return queryText(route.query.run) === departing
+  return conversationRoute().run === departing
 }
 
 /**
@@ -1504,7 +1770,7 @@ function selectActiveAfterRemove(prevList: InboxItem[], removedKey: string) {
   if (isMobile.value && !listItems.value.length) mobileView.value = 'list'
 }
 
-/** Quietly converge when inbox-context 404 means the item left pending. */
+/** Quietly converge when inbox-context says the item left pending. */
 function handleLeftInboxContext(it: InboxItem) {
   if (isInboxCancelDeparture(it.runId) && holdsCancelledConversation()) return
   markProcessed(it)
@@ -1526,6 +1792,7 @@ async function loadList({
   showLoading = false,
   keepActive = false,
 }: { showLoading?: boolean; keepActive?: boolean } = {}) {
+  const snapshotEpoch = currentInboxStateEpoch()
   const gen = ++listLoadGeneration
   listLoadError.value = null
   if (showLoading) listLoading.value = true
@@ -1552,7 +1819,7 @@ async function loadList({
     // Independent loadList success path: repair invalid selection (no Run # - shell).
     if (!processingLock.value) ensureValidActive({ keepActive })
     // Align peek banner baseline with the visible list (plan g1.2 / g2.1).
-    syncDisplayedBaseline(listItems.value)
+    syncDisplayedBaseline(listItems.value, snapshotEpoch)
   } catch (err) {
     if (gen !== listLoadGeneration) return
     /* keep previous list on transient failure; surface error when nothing to show */
@@ -1832,7 +2099,12 @@ async function syncListAfterAutoApply() {
 // current page so badges follow sessionBusy without hanging the update banner.
 watch(remoteItems, (remote) => {
   if (!remote.length) return
-  const merged = mergeInboxReplyingFromRemote(listItems.value, remote, itemKey)
+  const merged = mergeInboxReplyingFromRemote(
+    listItems.value,
+    remote,
+    itemKey,
+    inboxRemoteObservedAt?.(),
+  )
   if (merged !== listItems.value) listItems.value = merged
 })
 
@@ -1925,6 +2197,8 @@ const pageControlByNode = ref<Record<string, PageControlState>>({})
 let dialogueRailsFilled = false
 /** True once a live WS ACP frame applied content (stops seed retry per f2). */
 let dialogueLiveIncremental = false
+/** Node whose sandbox is still writing after the platform queue went idle. */
+let orphanLiveNodeId = ''
 const busySeedRetry = createBusySeedRetryController()
 const activeRunWsReconnect = createWsReconnectController({
   connect: () => {
@@ -1946,6 +2220,9 @@ function isClarifySoftRefreshBlocked(): boolean {
 }
 
 function closeActiveRunWs() {
+  stopOrphanRealign()
+  orphanLiveNodeId = ''
+  stopOrphanLiveSeed()
   busySeedRetry.stop()
   activeRunWsReconnect.markIntentionalClose()
   activeRunWs?.close()
@@ -2093,16 +2370,25 @@ function restoreReactSessions(r: { reactSessions?: Run['reactSessions']; gate?: 
   if (!nodeId) return
   const sessions = r?.reactSessions ?? pendingSnapshotSessions
   if (!sessions) return
-  const snap = sessions[nodeId]
-  if (!snap || typeof snap !== 'object') return
+  // Finished FIFO sessions are removed from the server registry. An explicit
+  // snapshot without this producer is idle, including after a missed turn_done.
+  const snap = sessions[nodeId] ?? { busy: false, waiting: 0, items: [] }
+  if (typeof snap !== 'object') return
   clarifyLiveBusy.value = !!snap.busy
-  const frame = {
+  const frame: Record<string, unknown> = {
     event: 'queue_state',
     nodeId,
     waiting: snap.waiting ?? 0,
     items: snap.items ?? [],
     busy: !!snap.busy,
     activeItem: snap.activeItem,
+  }
+  // Only when the snapshot actually carried the bridge view. Omitting the
+  // keys keeps an older payload identical to a frame that never attached.
+  if (typeof snap.sandboxBusy === 'boolean' || typeof snap.sandboxDesynced === 'boolean') {
+    frame.sandboxBusy = !!snap.sandboxBusy
+    frame.sandboxDesynced = !!snap.sandboxDesynced
+    if (snap.sandboxRunningOpId) frame.sandboxRunningOpId = snap.sandboxRunningOpId
   }
   let delivered = false
   if (active.value?.type === 'gate' && gateApprovalRef.value?.applyReviewFrame) {
@@ -2149,16 +2435,23 @@ function applyOrBufferReviewFrame(m: Record<string, unknown>) {
  * Order: queue_state → seed nodeEvents → flush pendingAcpBuffer → live (g2.1).
  * Covers clarify and gate.
  */
-async function projectClarifySessionAfterLoad(r: Run) {
+async function projectClarifySessionAfterLoad(r: Run, isCurrent = () => true) {
   dialogueRailsFilled = false
   dialogueLiveIncremental = false
   await nextTick()
+  if (!isCurrent()) return
   restoreReactSessions(r)
   await nextTick()
+  if (!isCurrent()) return
   flushPendingReviewFrames()
   await nextTick()
+  if (!isCurrent()) return
   const nodeId = activeDialogueNodeId(r)
   const snap = nodeId ? r.reactSessions?.[nodeId] : null
+  if (snap?.busy || !(snap?.sandboxBusy || snap?.sandboxDesynced)) {
+    orphanLiveNodeId = ''
+    stopOrphanLiveSeed()
+  }
   if (nodeId && snap?.busy && active.value?.runId) {
     // First attempt immediately, then busy-guarded retry (g3).
     await seedClarifyAcpFromNodeEventsOnce(active.value.runId, nodeId)
@@ -2171,14 +2464,21 @@ async function projectClarifySessionAfterLoad(r: Run) {
     // Authority not busy (f3): queue_state already tore down empty placeholder.
     busySeedRetry.stop()
     flushPendingAcpFrames()
+    // Platform queue is idle, but the sandbox is still writing. Keep pulling
+    // the same live log a refresh would replay, and paint it on the open page.
+    if (nodeId && active.value?.runId && (snap?.sandboxBusy || snap?.sandboxDesynced)) {
+      orphanLiveNodeId = nodeId
+      await seedClarifyAcpFromNodeEventsOnce(active.value.runId, nodeId)
+      scheduleOrphanLiveSeed(active.value.runId, nodeId)
+    }
   }
 }
 
 /** Re-seed after WS reconnect / snapshot — same depth as hard refresh (g4.2). */
-async function reseedAfterWsReconnect(runId: string) {
+async function reseedAfterWsReconnect(runId: string, isCurrent = () => true) {
   if (!active.value || active.value.runId !== runId) return
   if (!activeRun.value) return
-  await projectClarifySessionAfterLoad(activeRun.value)
+  await projectClarifySessionAfterLoad(activeRun.value, isCurrent)
 }
 
 function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
@@ -2198,6 +2498,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
   }
   activeRunWsRunId = runId
   let socket: WebSocket
+  let dialogueRevision = 0
   try {
     socket = new WebSocket(api.runEventsWsUrl(runId))
     activeRunWs = socket
@@ -2210,9 +2511,6 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
   socket.onopen = () => {
     if (activeRunWs !== socket) return
     activeRunWsReconnect.markOpened()
-    if (opts?.fromReconnect) {
-      void reseedAfterWsReconnect(runId)
-    }
   }
   socket.onmessage = (ev) => {
     if (activeRunWs !== socket) return
@@ -2223,7 +2521,13 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       events?: any[]
       busy?: boolean
       waiting?: number
-      run?: { reactSessions?: Run['reactSessions'] }
+      sandboxBusy?: boolean
+      sandboxDesynced?: boolean
+      activeItem?: unknown
+      status?: string
+      iteration?: number
+      entry?: { nodeId?: string; event?: string; iteration?: number; detail?: string }
+      run?: { id?: string; reactSessions?: Run['reactSessions'] }
       previewArtifact?: string
       name?: string
     }
@@ -2244,16 +2548,36 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     }
     // WS connect snapshot may carry reactSessions before BroadcastReviewSessions.
     if (m.type === 'snapshot') {
-      const sessions = m.run?.reactSessions
+      // The full run DTO omits reactSessions after its last FIFO is removed.
+      // Only a matching full snapshot makes that omission authoritative idle.
+      const sessions = m.run?.reactSessions ?? (m.run?.id === runId ? {} : undefined)
       const dialogueActive =
         active.value &&
         (active.value.type === 'clarify' || active.value.type === 'gate') &&
         active.value.runId === runId
       if (sessions && dialogueActive) {
+        const revision = ++dialogueRevision
+        const activeKey = inboxTripleKey(active.value!)
+        const sameDialogue = () =>
+          activeRunWs === socket &&
+          !!active.value && inboxTripleKey(active.value) === activeKey
+        const isCurrent = () => sameDialogue() && dialogueRevision === revision
         if (activeRun.value) {
           activeRun.value = { ...activeRun.value, reactSessions: sessions }
           // Same depth as hard refresh: queue_state → seed → flush → live (g4.2).
-          void projectClarifySessionAfterLoad(activeRun.value)
+          void reseedAfterWsReconnect(runId, isCurrent).then(() => {
+            // A turn may have finished while disconnected. Reload its saved
+            // questions once the authoritative snapshot has released busy.
+            if (!sameDialogue() || !opts?.fromReconnect) return
+            const nodeId = activeDialogueNodeId()
+            const snap = nodeId ? sessions[nodeId] : undefined
+            if (
+              nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem &&
+              !clarifyLiveBusy.value && !isClarifySoftRefreshBlocked()
+            ) {
+              void softRefreshActiveRun()
+            }
+          })
         } else {
           pendingSnapshotSessions = sessions
         }
@@ -2261,10 +2585,17 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       return
     }
     if (m.type === 'review') {
+      const currentDialogue = m.nodeId === activeDialogueNodeId()
+      if (currentDialogue) dialogueRevision++
       // Sidebar「最近」has no channel of its own: relay turn boundaries.
-      if (m.event === 'turn_begin' || m.event === 'turn_done' || m.event === 'error') notifyRecentActivity()
-      if (m.event === 'turn_begin') clarifyLiveBusy.value = true
-      if (m.event === 'queue_state' && typeof m.busy === 'boolean') {
+      if (
+        m.event === 'turn_begin' ||
+        m.event === 'turn_done' ||
+        m.event === 'error' ||
+        m.event === 'queue_state'
+      ) notifyRecentActivity()
+      if (currentDialogue && m.event === 'turn_begin') clarifyLiveBusy.value = true
+      if (currentDialogue && m.event === 'queue_state' && typeof m.busy === 'boolean') {
         clarifyLiveBusy.value = !!m.busy
         if (!m.busy) busySeedRetry.stop()
       }
@@ -2282,10 +2613,29 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
         }
       }
       applyOrBufferReviewFrame(m as Record<string, unknown>)
-      if (m.event === 'turn_done' || m.event === 'error') {
+      if (currentDialogue && m.event === 'queue_state') {
+        if (queueStateIsOrphan(m)) {
+          const nid = typeof m.nodeId === 'string' && m.nodeId ? m.nodeId : activeDialogueNodeId(activeRun.value) || ''
+          if (nid) {
+            orphanLiveNodeId = nid
+            flushPendingAcpFrames()
+            void pullOrphanLive(runId, nid)
+          }
+        } else {
+          orphanLiveNodeId = ''
+          stopOrphanLiveSeed()
+        }
+      }
+      if (currentDialogue && (m.event === 'turn_done' || m.event === 'error')) {
         clarifyLiveBusy.value = false
         busySeedRetry.stop()
         if (active.value && active.value.runId === runId) void softRefreshActiveRun()
+      }
+      // Platform idle while the bridge is still busy: the terminal frame may
+      // never arrive. Re-read the same snapshot a refresh would, without
+      // remounting the composer.
+      if (active.value?.type === 'clarify' && active.value.runId === runId && queueStateIsOrphan(m)) {
+        void realignClarifyToRefresh()
       }
       return
     }
@@ -2295,6 +2645,15 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       // Tear-down / stop retry only from review queue_state idle / turn_done / error.
       applyOrBufferAcpFrame(m as { nodeId?: string; events?: AcpEvent[]; busy?: boolean })
       return
+    }
+    if (
+      m.type === 'node_enter' &&
+      active.value?.type === 'clarify' &&
+      active.value.runId === runId &&
+      activeRun.value &&
+      m.nodeId
+    ) {
+      patchActiveRunNodeStatus(m.nodeId, 'running', m.iteration)
     }
     if (m.type === 'node_takeover' || m.type === 'status') notifyRecentActivity()
     if (m.type === 'artifact_edit' || m.type === 'react' || m.type === 'trace' || m.type === 'status') {
@@ -2309,6 +2668,16 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
         void loadList()
         return
       }
+      // status/trace are noisy and must not softRefresh. Patch the open
+      // snapshot in place so the workflow list moves without clearing dialogue.
+      if (active.value?.type === 'clarify' && activeRun.value) {
+        if (m.type === 'status' && m.status) {
+          activeRun.value = { ...activeRun.value, status: m.status as Run['status'] }
+        } else if (m.type === 'trace' && m.entry?.nodeId) {
+          const st = nodeStatusFromTrace(m.entry)
+          if (st) patchActiveRunNodeStatus(m.entry.nodeId, st, m.entry.iteration)
+        }
+      }
       // status/trace are noisy (run transitions / appendTrace) and must not softRefresh
       // while reviewing — peek/list cover "left pending" awareness instead.
       if (m.type === 'status' || m.type === 'trace') return
@@ -2322,10 +2691,12 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       // softRefresh while busy so we do not wipe busy/queue/stream (g3.2 / review v4).
       // Soft-refresh semantics unchanged (g2.3).
       if (active.value.type === 'clarify') {
-        if (m.type === 'artifact_edit' || m.type === 'react') {
+        if (m.type === 'artifact_edit') {
+          // Cards only. A full context reload would replace the open transcript.
+          void patchActiveRunArtifacts(m)
+        } else if (m.type === 'react') {
           // Gate on live WS busy / sessionBusy — not stale reactSessions snapshot.
           if (!isClarifySoftRefreshBlocked()) void softRefreshActiveRun()
-          else if (m.type === 'artifact_edit') void patchActiveRunArtifacts(m)
         }
       }
     }
@@ -2336,6 +2707,172 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     activeRunWs = undefined
     activeRunWsRunId = ''
     activeRunWsReconnect.onClose()
+  }
+}
+
+const ORPHAN_REALIGN_MS = 2000
+const ORPHAN_LIVE_MS = 1500
+let orphanRealignTimer: ReturnType<typeof setTimeout> | null = null
+let orphanLiveTimer: ReturnType<typeof setTimeout> | null = null
+let realignInflight = false
+
+function stopOrphanRealign() {
+  if (orphanRealignTimer) clearTimeout(orphanRealignTimer)
+  orphanRealignTimer = null
+}
+
+function stopOrphanLiveSeed() {
+  if (orphanLiveTimer) clearTimeout(orphanLiveTimer)
+  orphanLiveTimer = null
+}
+
+function scheduleOrphanLiveSeed(runId: string, nodeId: string) {
+  if (orphanLiveTimer || orphanLiveNodeId !== nodeId) return
+  orphanLiveTimer = setTimeout(() => {
+    orphanLiveTimer = null
+    void pullOrphanLive(runId, nodeId)
+  }, ORPHAN_LIVE_MS)
+}
+
+/** Live sandbox log for a turn the platform is no longer tracking. */
+async function pullOrphanLive(runId: string, nodeId: string) {
+  if (orphanLiveNodeId !== nodeId) return
+  if (active.value?.type !== 'clarify' || active.value.runId !== runId) return
+  try {
+    await seedClarifyAcpFromNodeEventsOnce(runId, nodeId)
+  } catch {
+    /* the next tick tries again */
+  }
+  if (orphanLiveNodeId !== nodeId) return
+  if (active.value?.type !== 'clarify' || active.value.runId !== runId) return
+  scheduleOrphanLiveSeed(runId, nodeId)
+}
+
+function scheduleOrphanRealign() {
+  if (orphanRealignTimer) return
+  orphanRealignTimer = setTimeout(() => {
+    orphanRealignTimer = null
+    void realignClarifyToRefresh()
+  }, ORPHAN_REALIGN_MS)
+}
+
+function queueStateIsOrphan(m: {
+  event?: string
+  busy?: boolean
+  waiting?: number
+  activeItem?: unknown
+  sandboxBusy?: boolean
+  sandboxDesynced?: boolean
+}): boolean {
+  if (m.event !== 'queue_state') return false
+  if (m.busy === true) return false
+  if ((typeof m.waiting === 'number' ? m.waiting : 0) !== 0) return false
+  if (m.activeItem) return false
+  return m.sandboxBusy === true || m.sandboxDesynced === true
+}
+
+function nodeStatusFromTrace(entry: { event?: string; detail?: string }): Run['nodeRuns'][string]['status'] | null {
+  const detail = entry.detail || ''
+  const failed = /fail|失败/i.test(detail)
+  switch (entry.event) {
+    case 'enter':
+    case 'reattach':
+      return 'running'
+    case 'pause':
+      return 'waiting_human'
+    case 'resume':
+      return failed ? 'failed' : 'running'
+    case 'exit':
+      return failed ? 'failed' : 'completed'
+    default:
+      return null
+  }
+}
+
+function patchActiveRunNodeStatus(
+  nodeId: string,
+  status: Run['nodeRuns'][string]['status'],
+  iteration?: number,
+) {
+  const run = activeRun.value
+  if (!run || !nodeId) return
+  const prev = run.nodeRuns?.[nodeId]
+  const row = {
+    ...(prev || { nodeId, status }),
+    nodeId,
+    status,
+    ...(typeof iteration === 'number' && iteration > 0 ? { iteration } : {}),
+  }
+  const executions = { ...(run.nodeExecutions || {}) }
+  const hist = [...(executions[nodeId] || [])]
+  if (hist.length) hist[hist.length - 1] = { ...hist[hist.length - 1]!, ...row }
+  else hist.push(row)
+  executions[nodeId] = hist
+  activeRun.value = {
+    ...run,
+    nodeRuns: { ...(run.nodeRuns || {}), [nodeId]: row },
+    nodeExecutions: executions,
+  }
+}
+
+/**
+ * Lost terminal frame: load the same inbox snapshot a refresh would, project
+ * the bridge fact onto the banner, and leave the composer draft alone.
+ * While the bridge stays busy, try again so a later idle clears the banner
+ * even if no further queue_state arrives.
+ */
+async function realignClarifyToRefresh() {
+  if (active.value?.type !== 'clarify') return
+  if (realignInflight) return
+  if (!shouldFetchActiveInboxContext()) return
+  if (isClarifySoftRefreshBlocked()) {
+    scheduleOrphanRealign()
+    return
+  }
+  const target = active.value
+  const triple = inboxTripleKey(target)
+  const signal = acquireInboxContextSignal(triple)
+  if (!signal) {
+    scheduleOrphanRealign()
+    return
+  }
+  realignInflight = true
+  try {
+    const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
+    if (isProcessedTriple(target)) return
+    if (isInboxLeftPending(ctx)) {
+      if (isIncomingContextPending(target)) return
+      handleLeftInboxContext(target)
+      return
+    }
+    const next = adaptInboxContextToRun(ctx, target.runId)
+    activeRun.value = next
+    activeRunLoadError.value = false
+    const nodeId = activeDialogueNodeId(next)
+    const snap = nodeId ? next.reactSessions?.[nodeId] : undefined
+    if (snap) {
+      restoreReactSessions(next)
+    } else if (nodeId && reviewChatRef.value?.applyReviewFrame) {
+      reviewChatRef.value.applyReviewFrame({
+        event: 'queue_state',
+        nodeId,
+        waiting: 0,
+        items: [],
+        busy: false,
+        sandboxBusy: false,
+        sandboxDesynced: false,
+      })
+    }
+    if (snap?.sandboxBusy || snap?.sandboxDesynced) scheduleOrphanRealign()
+    else stopOrphanRealign()
+  } catch (e) {
+    if (isAbortError(e) || signal.aborted) return
+    scheduleOrphanRealign()
+  } finally {
+    realignInflight = false
+    releaseInboxContextSignal(triple, signal)
   }
 }
 
@@ -2364,8 +2901,17 @@ async function softRefreshActiveRun() {
     const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
     // Drop stale responses if active moved while in flight.
     if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
     if (isProcessedTriple(target)) return
-    activeRun.value = adaptInboxContextToRun(ctx, target.runId)
+    if (isInboxLeftPending(ctx)) {
+      if (isIncomingContextPending(target)) return
+      handleLeftInboxContext(target)
+      return
+    }
+    const adapted = await ensureActiveGraphEdges(adaptInboxContextToRun(ctx, target.runId))
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
+    activeRun.value = adapted
     activeRunLoadError.value = false
     // Soft refresh keeps chat mounted — only merge reactSessions onto run; do not
     // re-project live bubbles (would reset stream). Hard-load path restores below.
@@ -2373,7 +2919,6 @@ async function softRefreshActiveRun() {
     if (isAbortError(e) || signal.aborted) return
     if (isIncomingContextPending(target)) return
     if (
-      isInboxLeftPendingError(e) ||
       isProcessedTriple(target) ||
       !listItems.value.some((it) => itemKey(it) === itemKey(target))
     ) {
@@ -2417,8 +2962,21 @@ async function loadActiveRun(hard = true) {
   try {
     const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
     if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
     if (isProcessedTriple(target)) return
-    activeRun.value = adaptInboxContextToRun(ctx, target.runId)
+    if (isInboxLeftPending(ctx)) {
+      if (isFollowingActive()) return
+      if (isIncomingContextPending(target)) {
+        if (hard) activeRunLoadError.value = false
+        return
+      }
+      handleLeftInboxContext(target)
+      return
+    }
+    const adapted = await ensureActiveGraphEdges(adaptInboxContextToRun(ctx, target.runId))
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
+    activeRun.value = adapted
     activeRunLoadError.value = false
     // Context is in. Clear even when a same-key ghost was pending: the finally
     // below used to leave the flag set, so a gate past page 1 never mounted.
@@ -2434,7 +2992,6 @@ async function loadActiveRun(hard = true) {
       return
     }
     if (
-      isInboxLeftPendingError(e) ||
       isProcessedTriple(target) ||
       !listItems.value.some((it) => itemKey(it) === itemKey(target))
     ) {
@@ -2630,6 +3187,8 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
   const submittedItem = g
   const prevList = listItems.value.slice()
   const positive = action === 'pass' || action === 'approve'
+  const handoffNodes = activeRun.value?.nodes
+  const handoffEdges = activeRun.value?.edges
   // Leave pending at confirm click — do not wait for resume/network (plan g1.2).
   // Positive path: start page-level overlay on click (g1.1); do not await before leave.
   // Page-level host survives selectActiveAfterRemove / shell remount (g1.2).
@@ -2640,9 +3199,17 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
     activeRun.value = null
     activeRunLoadError.value = false
   }
+  if (positive) {
+    armSidebarHandoff(g.runId, g.nodeId, Date.now(), sidebarAutoTarget(handoffNodes, handoffEdges, g.nodeId, action))
+    openFollowWs(g.runId, handoffNodes)
+  }
   try {
     await api.resumeGate(g.runId, g.nodeId, action, form)
   } catch {
+    if (positive) {
+      clearSidebarHandoff(g.runId)
+      if (!followTail.value) closeFollowWs()
+    }
     confirmFlowDeskHold.value = false
     inboxConfirmFlow.reset()
     restoreListItemLocally(submittedItem, prevList)
@@ -2702,8 +3269,7 @@ function shareIntentPending(): boolean {
 }
 
 function activeMatchesShareQuery(it: InboxItem): boolean {
-  const run = queryText(route.query.run)
-  const node = queryText(route.query.node)
+  const { run, node } = conversationRoute()
   return !!run && !!node && it.runId === run && it.nodeId === node
 }
 
@@ -2730,7 +3296,8 @@ function clearShareIntent() {
 let settledShareKey = ''
 function shareIntentKey(): string {
   if (!shareIntentPending()) return ''
-  return `${queryText(route.query.run)}\0${queryText(route.query.node)}`
+  const { run, node } = conversationRoute()
+  return `${run}\0${node}`
 }
 
 function consumeShareIntent() {
@@ -2759,8 +3326,8 @@ watch(
     active.value ? itemKey(active.value) : '',
     active.value && isStartingInboxItem(active.value) ? 'starting' : '',
     incomingGhost.value ? itemKey(incomingGhost.value) : '',
-    route.query.run,
-    route.query.node,
+    conversationRoute().run,
+    conversationRoute().node,
     route.query[INBOX_SHARE_INTENT_QUERY],
     processingLock.value,
   ],
@@ -2825,9 +3392,16 @@ async function onClarifySend(
     beginProcessingIntent(it)
     // Click intent: the conversation stays and shows the inline hand-off row
     // (no full-desk overlay); the inbox leaves once the hand-off is done.
-    handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), target: nextNodeLabel(it.nodeId) }
+    handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), ...nextHandoffTarget(it.nodeId) }
+    // Move now only when the loaded graph has one automatic destination. No edges: wait for node_enter.
+    armSidebarHandoff(
+      it.runId,
+      it.nodeId,
+      Date.now(),
+      sidebarAutoTarget(activeRun.value?.nodes, activeRun.value?.edges, it.nodeId),
+    )
     // Socket first, then the POST: the next node's node_enter can arrive right after it.
-    openFollowWs(it.runId)
+    openFollowWs(it.runId, activeRun.value?.nodes)
   }
   // Always merge a staged pick when present (Approve may gain app preview mid-session).
   const mergedAnnotations =
@@ -2886,6 +3460,7 @@ async function onClarifySend(
       clarifyConfirmError.value = msg
       reviewChatRef.value?.releaseConfirmPending?.()
       if (handoffState.value?.key === submittedKey) handoffState.value = null
+      clearSidebarHandoff(submittedItem.runId)
       restoreListItemLocally(submittedItem, prevList!)
       rollbackProcessingIntent(submittedItem)
       // Reclaim for retry unless a newer neighbor confirm already owns the selection.
@@ -3045,7 +3620,10 @@ function onVisible() {
   if (document.visibilityState === 'visible') peek({ source: 'visibility' })
 }
 
-watch(() => [route.query.run, route.query.node], () => {
+watch(() => {
+  const id = conversationRoute()
+  return [id.run, id.node]
+}, () => {
   // Fresh navigation intent: re-arm so the new target can show a loading card.
   incomingArmed.value = true
   void waitForQueryItem()
@@ -3215,6 +3793,9 @@ function itemSecondary(it: InboxItem) {
     activeChainSegments,
     activeFollowTail,
     activeFollowProcess,
+    followObserving,
+    followStopping,
+    takeoverFollow,
     inboxConfirmFlow,
     inboxConfirmFlowPhase: inboxConfirmFlow.phase,
     inboxConfirmFlowReduce: inboxConfirmFlow.reduceMotion,

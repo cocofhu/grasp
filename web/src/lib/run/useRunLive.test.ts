@@ -85,7 +85,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(mocks.takeoverNode).toHaveBeenCalledTimes(1)
     FakeSocket.last!.send({ type: 'node_takeover', nodeId: 'impl', iteration: 1, mode: 'manual', state: 'waiting_human' })
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/gates?run=r1&node=impl')
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/nodes/impl')
     wrapper.unmount()
   })
 
@@ -94,7 +94,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     mocks.takeoverNode.mockResolvedValue({ runId: 'r1', nodeId: 'impl', iteration: 1, mode: 'manual', state: 'waiting_human', status: 'already_manual' })
     await live().takeover()
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/gates?run=r1&node=impl')
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/nodes/impl')
     wrapper.unmount()
   })
 
@@ -130,7 +130,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     mocks.getRun.mockResolvedValue(takenRun)
     await live().reload()
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/gates?run=r1&node=impl')
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/nodes/impl')
     wrapper.unmount()
   })
 
@@ -338,6 +338,51 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     wrapper.unmount()
   })
 
+  it('confirm passes automatic, not automatic, or unknown, and node_enter fills unknown', async () => {
+    const nodes = [
+      { id: 'accept', type: 'agent', label: '验收', caps: { interaction: 'clarify', tools: ['ask_question'] } },
+      { id: 'impl', type: 'agent', label: '实现', caps: { interaction: 'auto' } },
+      { id: 'gate', type: 'human_gate', label: '审批' },
+      { id: 'out', type: 'output', label: '输出' },
+    ]
+    const chat = {
+      id: 'r1',
+      status: 'waiting_human',
+      currentNode: cur('accept', 'clarify', 'manual', 'waiting_human'),
+      clarifyByNode: { accept: { nodeId: 'accept', iteration: 1, turns: [], done: false } },
+      nodes,
+    }
+    async function confirmWith(edges: unknown[]) {
+      mocks.getRun.mockResolvedValue(autoRun)
+      const { live, wrapper } = await setup()
+      mocks.getRun.mockResolvedValue({ ...chat, edges })
+      await live().reload()
+      await flushPromises()
+      await live().confirm()
+      await flushPromises()
+      return { live, wrapper }
+    }
+    const auto = await confirmWith([{ id: 'e1', source: 'accept', target: 'impl' }])
+    expect(auto.live().handoff.value).toMatchObject({ phase: 'done', targetAuto: true })
+    auto.wrapper.unmount()
+
+    const human = await confirmWith([{ id: 'e1', source: 'accept', target: 'gate' }])
+    expect(human.live().handoff.value).toMatchObject({ phase: 'done', targetAuto: false })
+    human.wrapper.unmount()
+
+    const unknown = await confirmWith([
+      { id: 'e1', source: 'accept', target: 'impl', when: 'vars.ready' },
+      { id: 'e2', source: 'accept', target: 'gate' },
+    ])
+    expect(unknown.live().handoff.value?.phase).toBe('done')
+    expect(unknown.live().handoff.value?.targetAuto).toBeUndefined()
+    FakeSocket.last!.send({ type: 'node_enter', nodeId: 'out', name: '输出', mode: 'auto' })
+    expect(unknown.live().handoff.value?.targetAuto).toBeUndefined()
+    FakeSocket.last!.send({ type: 'node_enter', nodeId: 'impl', name: '实现', mode: 'auto' })
+    expect(unknown.live().handoff.value?.targetAuto).toBe(true)
+    unknown.wrapper.unmount()
+  })
+
   it('a refresh after an in-place continue opens the node on screen, without re-routing', async () => {
     const { live, router, wrapper } = await setup()
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', currentNode: cur('test', 'agent', 'auto', 'running') })
@@ -401,7 +446,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(mocks.error).not.toHaveBeenCalled()
     FakeSocket.last!.send({ type: 'node_takeover', nodeId: 'impl', iteration: 1, mode: 'manual', state: 'waiting_human' })
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/gates?run=r1&node=impl')
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/nodes/impl')
     wrapper.unmount()
   })
 
@@ -426,7 +471,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     const before = mocks.getRun.mock.calls.length
     FakeSocket.last!.send({ type: 'snapshot', run: { ...takenRun, lastActivityAt: '2026-10-21T00:00:00Z' } })
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/gates?run=r1&node=impl')
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/nodes/impl')
     expect(mocks.getRun.mock.calls.length).toBe(before)
     wrapper.unmount()
   })
@@ -434,7 +479,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
   it('ignores nodeRuns: a stale running nodeRun with no currentNode is not observed as auto', async () => {
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('gate', 'gate', 'manual', 'waiting_human'), nodeRuns: { impl: { status: 'running', iteration: 1 } } })
     const { router, wrapper } = await setup()
-    expect(router.currentRoute.value.fullPath).toBe('/gates?run=r1&node=gate')
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/nodes/gate')
     wrapper.unmount()
   })
 })

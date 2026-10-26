@@ -65,12 +65,13 @@ done
 case "$OLD_CONFIG_ROOT" in
   "$HOME_DIR"/.?*) rm -rf "$OLD_CONFIG_ROOT" ;;
 esac
-rm -rf "$HOME_DIR/.git-credentials" "$HOME_DIR/.grasp/repo-credentials" \
-  "$HOME_DIR/.ssh/id_rsa" "$HOME_DIR/.ssh/grasp_repos_config" \
+rm -rf "$HOME_DIR/.git-credentials" "$HOME_DIR/.grasp/repo-credentials" "$HOME_DIR/.grasp/git-credentials" \
+  "$HOME_DIR/.ssh/id_rsa" "$HOME_DIR/.ssh/known_hosts" "$HOME_DIR/.ssh/grasp_repos_config" \
   "$HOME_DIR/.config/gh/hosts.yml" "$HOME_DIR/.config/glab-cli/config.yml"
 rm -f "$HOME_DIR"/.ssh/grasp-repo-*
 if [ -f "$HOME_DIR/.gitconfig" ]; then
   git config --global --remove-section credential 2>/dev/null || true
+  git config --global --unset-all core.sshCommand 2>/dev/null || true
   git config --global --get-regexp '^credential\..*\.helper$' 2>/dev/null | awk '{print $1}' | sort -u |
     while IFS= read -r k; do git config --global --unset-all "$k" 2>/dev/null || true; done
   git config --global --get-regexp '^url\..*grasp-repo-.*\.insteadof$' 2>/dev/null | awk '{print $1}' | sort -u |
@@ -103,6 +104,7 @@ case "$AGENT_PROVIDER" in
   claude_code|claude_code_acp) CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.claude} ;;
   codebuddy|codebuddy_acp)     CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.codebuddy} ;;
   opencode)                    CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.config/opencode} ;;
+  deepseek_harness)             CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.dsh} ;;
   *)                           CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.$AGENT_PROVIDER} ;;
 esac
 export AGENT_PROVIDER CONFIG_ROOT
@@ -123,7 +125,7 @@ fi
 FUNCS="repo_scheme repo_host url_host prepare_git_credentials_file glab_auth_login gh_auth_login
 setup_https_credentials setup_ssh_credentials setup_bare_gitlab_credentials setup_bare_github_credentials
 setup_repo_credentials configure_git_credentials repo_url_key repo_has_own_credential
-setup_repo_https_credential setup_repo_ssh_credential configure_repo_credentials repo_name_from_url
+setup_repo_https_credential setup_repo_ssh_credential configure_repo_credentials configure_git_catalog repo_name_from_url
 apply_ssh_file_inject"
 # shellcheck disable=SC2086
 defs="$(awk -v want="$(echo $FUNCS)" '
@@ -136,12 +138,17 @@ defs="$(awk -v want="$(echo $FUNCS)" '
   inside && /^}$/ { inside = 0 }
   END { for (k in keep) if (!(k in found)) { print "missing " k > "/dev/stderr"; exit 1 } }
 ' "$STARTUP")" || { echo "reprime: credential helpers missing from startup.sh" >&2; exit 1; }
+# startup's image home is fixed; the same definitions also support the isolated
+# re-prime home used by smoke tests and callers overriding GRASP_REPRIME_HOME.
+defs="${defs//\/root/\$HOME_DIR}"
 eval "$defs"
 # startup.sh's helpers read optional env without defaults.
 set +u
 REPO_CRED_DIR="$HOME_DIR/.grasp/repo-credentials"
 REPO_SSH_CONFIG="$HOME_DIR/.ssh/grasp_repos_config"
 _REPO_CRED_URLS=""
+_GIT_CATALOG_CONFIGURED=0
+GIT_CREDENTIAL_HOME="$HOME_DIR"
 GIT_REPOS="${GIT_REPOS:-}"
 GITLAB_TOKEN="${GITLAB_TOKEN:-}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
@@ -151,7 +158,10 @@ GIT_SSH_PRIVATE_KEY="${GIT_SSH_PRIVATE_KEY:-}"
 GIT_SSH_KNOWN_HOSTS="${GIT_SSH_KNOWN_HOSTS:-}"
 
 if [ -d "$STAGE/ssh" ]; then
-  apply_ssh_file_inject "$STAGE/ssh"
+  if [ ! -f "$STAGE/ssh/git/manifest.json" ]; then
+    apply_ssh_file_inject "$STAGE/ssh"
+  fi
+  configure_git_catalog "$STAGE/ssh/git" || { echo "reprime: git catalog failed" >&2; exit 1; }
   configure_repo_credentials "$STAGE/ssh/repos"
 fi
 configure_git_credentials || { echo "reprime: git credentials failed" >&2; exit 1; }

@@ -75,6 +75,7 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import { useRunDetail } from './useRunDetail'
+import { __resetSidebarHandoffForTests, readSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
 
 function stubNode(partial: Partial<WFNode> & Pick<WFNode, 'id' | 'type'>): WFNode {
   return { label: partial.id, position: { x: 0, y: 0 }, config: {}, ...partial }
@@ -245,6 +246,7 @@ describe('useRunDetail actions', () => {
   })
 
   afterEach(() => {
+    __resetSidebarHandoffForTests()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -272,6 +274,63 @@ describe('useRunDetail actions', () => {
     mocks.resumeGate.mockClear()
     await detail.onGateResolve('pass')
     expect(mocks.resumeGate).not.toHaveBeenCalled()
+
+    app.unmount()
+  })
+
+  it('arms the sidebar handoff before confirm returns and clears it when the request fails', async () => {
+    const { detail, app } = await withRunDetail()
+    detail.selectNode('n1')
+    await nextTick()
+
+    mocks.resumeGate.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+      return { status: 'ok' }
+    })
+    await detail.onGateResolve('pass', { note: 'ok' })
+    expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+
+    __resetSidebarHandoffForTests()
+    mocks.resumeGate.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+      throw new Error('field required')
+    })
+    await detail.onGateResolve('pass')
+    expect(readSidebarHandoff('run-1')).toBeNull()
+    expect(detail.gateError.value).toBe('field required')
+
+    mocks.resumeGate.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')).toBeNull()
+      return { status: 'ok' }
+    })
+    await detail.onGateResolve('reject')
+    expect(readSidebarHandoff('run-1')).toBeNull()
+
+    detail.selectNode('n1')
+    await nextTick()
+    __resetSidebarHandoffForTests()
+    mocks.reactReply.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+      return { status: 'queued' }
+    })
+    await detail.onClarifySend('done', [], [], true)
+    expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+
+    __resetSidebarHandoffForTests()
+    mocks.reactReply.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+      throw new Error('react already done')
+    })
+    await detail.onClarifySend('done', [], [], true)
+    expect(readSidebarHandoff('run-1')).toBeNull()
+
+    __resetSidebarHandoffForTests()
+    mocks.reactReply.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')).toBeNull()
+      return { status: 'queued' }
+    })
+    await detail.onClarifySend('hello')
+    expect(readSidebarHandoff('run-1')).toBeNull()
 
     app.unmount()
   })
@@ -420,6 +479,46 @@ describe('useRunDetail actions', () => {
     await detail.onClarifySend('again', [], [], true)
     expect(mocks.reactReply).not.toHaveBeenCalled()
     expect(releaseConfirmPending).toHaveBeenCalledTimes(1)
+    app.unmount()
+  })
+
+  it('confirm tells the chat whether the next process is automatic, not automatic, or still unknown', async () => {
+    const { detail, app } = await withRunDetail()
+    detail.selectNode('n1')
+    await nextTick()
+    await detail.onClarifySend('done', [], [], true)
+    expect(detail.clarifyFlowHandoff.value).toMatchObject({ phase: 'pending', targetAuto: true })
+
+    detail.run.value = {
+      ...detail.run.value,
+      nodes: [
+        stubNode({ id: 'n1', type: 'agent', caps: ASK_CAPS }),
+        stubNode({ id: 'gate', type: 'human_gate', label: '审批' }),
+      ],
+      edges: [{ id: 'e-gate', source: 'n1', target: 'gate' }],
+    } as Run
+    await detail.onClarifySend('done', [], [], true)
+    expect(detail.clarifyFlowHandoff.value).toMatchObject({ phase: 'pending', targetAuto: false })
+
+    detail.run.value = {
+      ...detail.run.value,
+      edges: [
+        { id: 'e-a', source: 'n1', target: 'n2', when: 'vars.ready' },
+        { id: 'e-b', source: 'n1', target: 'gate' },
+      ],
+    } as Run
+    await detail.onClarifySend('done', [], [], true)
+    expect(detail.clarifyFlowHandoff.value?.phase).toBe('pending')
+    expect(detail.clarifyFlowHandoff.value?.targetAuto).toBeUndefined()
+
+    const { noteSidebarHandoffOutcome } = await import('@/lib/inbox/sidebarHandoff')
+    noteSidebarHandoffOutcome('run-1', 'auto', { nodeId: 'n2', name: '实现' })
+    await nextTick()
+    expect(detail.clarifyFlowHandoff.value?.targetAuto).toBe(true)
+
+    mocks.reactReply.mockRejectedValueOnce(new Error('react already done'))
+    await detail.onClarifySend('done', [], [], true)
+    expect(detail.clarifyFlowHandoff.value).toBeNull()
     app.unmount()
   })
 

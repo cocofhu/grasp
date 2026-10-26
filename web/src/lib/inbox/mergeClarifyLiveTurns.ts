@@ -1,5 +1,6 @@
 import type { ClarifyTurn } from '@/lib/shared/types'
 import { isEmptyFailedAgent, isRetryableFailedAgent } from '@/lib/inbox/clarifyEmptyFail'
+import { sameParts, sameTools } from '@/lib/run/acpTools'
 
 /**
  * True when `persisted` already has a completed agent reply after the in-flight
@@ -68,6 +69,11 @@ export function mergePersistedAndLiveTurns(
   }
 
   if (liveHuman && persistedCompletedLiveHuman(persisted, liveHuman.text || '')) {
+    // The slot may already be closed while a longer snapshot is still arriving.
+    // Keep that longer snapshot. A shorter or different live must not cover
+    // the reply already on disk.
+    const fresher = replaceWithFresherLiveAgent(persisted, live)
+    if (fresher) return fresher
     return persisted
   }
 
@@ -103,4 +109,68 @@ export function mergePersistedAndLiveTurns(
   }
   if (matched === 0) return [...persisted, ...live]
   return [...persisted, ...live.slice(matched)]
+}
+
+/** True when live carries a strictly longer reply than the persisted agent. */
+function liveAgentRicher(persisted: ClarifyTurn, live: ClarifyTurn): boolean {
+  const pText = (persisted.text || '').trim()
+  const lText = (live.text || '').trim()
+  if (lText.length < pText.length) return false
+  if (lText.length > pText.length) return true
+  if (lText !== pText) return false
+  const pThought = (persisted.thought || '').trim()
+  const lThought = (live.thought || '').trim()
+  if (lThought.length > pThought.length) return true
+  if ((live.tools?.length || 0) > (persisted.tools?.length || 0)) return true
+  if ((live.parts?.length || 0) > (persisted.parts?.length || 0)) return true
+  return false
+}
+
+/**
+ * When the same human turn is already persisted, a longer live agent is the
+ * newer snapshot (slot closed, bridge still producing). A shorter or different
+ * live must not cover the reply already on disk. Returns null when live has
+ * nothing longer to show.
+ */
+function replaceWithFresherLiveAgent(persisted: ClarifyTurn[], live: ClarifyTurn[]): ClarifyTurn[] | null {
+  const liveHuman = live.find((t) => t.role === 'human')
+  const liveAgent = [...live].reverse().find((t) => t.role === 'agent')
+  if (!liveHuman || !liveAgent) return null
+  const text = (liveAgent.text || '').trim()
+  const thought = (liveAgent.thought || '').trim()
+  if (!text && !thought && !liveAgent.tools?.length && !liveAgent.parts?.length) return null
+  const want = (liveHuman.text || '').trim()
+  for (let i = persisted.length - 2; i >= 0; i--) {
+    const human = persisted[i]
+    const agent = persisted[i + 1]
+    if (!human || !agent) continue
+    if (human.role !== 'human' || (human.text || '').trim() !== want || agent.role !== 'agent') continue
+    if (persisted.slice(i + 2).some((t) => t.role === 'human')) return null
+    const same =
+      (agent.text || '').trim() === text &&
+      (agent.thought || '').trim() === thought &&
+      sameTools(agent.tools, liveAgent.tools) &&
+      sameParts(agent.parts, liveAgent.parts)
+    // Same body still in progress: keep one bubble and the running tail.
+    // A settled duplicate must not be drawn again.
+    if (same) {
+      if (!liveAgent.streaming) return null
+      const replaced: ClarifyTurn = { ...agent, streaming: true }
+      delete replaced.endedAt
+      return [...persisted.slice(0, i + 1), replaced]
+    }
+    if (!liveAgentRicher(agent, liveAgent)) return null
+    const replaced: ClarifyTurn = {
+      ...agent,
+      text: liveAgent.text || '',
+      thought: liveAgent.thought,
+      streaming: !!liveAgent.streaming,
+    }
+    if (liveAgent.tools?.length) replaced.tools = liveAgent.tools
+    else delete replaced.tools
+    if (liveAgent.parts?.length) replaced.parts = liveAgent.parts
+    else delete replaced.parts
+    return [...persisted.slice(0, i + 1), replaced]
+  }
+  return null
 }

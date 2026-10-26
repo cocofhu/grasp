@@ -44,13 +44,52 @@ describe('capabilities draft round-trip', () => {
 })
 
 describe('credential binding round-trip', () => {
+  it('defaults both inheritance choices to true and preserves explicit false choices', () => {
+    const defaults = toDraft(baseAgent)
+    expect(defaults).toMatchObject({ inheritModel: true, inheritGit: true })
+    expect(fromDraft(defaults)).toMatchObject({ inheritModel: true, inheritGit: true })
+    const local = toDraft({ ...baseAgent, inheritModel: false, inheritGit: false })
+    expect(local).toMatchObject({ inheritModel: false, inheritGit: false })
+    expect(fromDraft(local)).toMatchObject({ inheritModel: false, inheritGit: false })
+  })
+  it('omits an empty dormant model reference while inheriting and preserves a selected local model', () => {
+    const draft = toDraft({ ...baseAgent, inheritModel: true, modelBinding: { kind: 'configuration', configurationId: '' } })
+    expect(fromDraftRaw(draft)).not.toHaveProperty('modelBinding')
+    expect(fromDraft(draft)).not.toHaveProperty('modelBinding')
+    draft.modelBinding = { kind: 'configuration', configurationId: 'local-model' }
+    expect(fromDraft(draft).modelBinding).toEqual(draft.modelBinding)
+    expect(draft.modelBinding.configurationId).toBe('local-model')
+  })
+  it('serializes only custom environment credential bindings alongside named model and Git selections', () => {
+    const draft = toDraft({ ...baseAgent, modelBinding: { kind: 'configuration', configurationId: 'cfg' }, gitBindings: { items: [{ credentialId: 'git' }], preferredCredentialId: 'git' } as { items: { credentialId: string }[]; preferredCredentialId?: string }, credentialBindings: { OPENAI_API_KEY: 'model-key', GITHUB_TOKEN: 'git', SENTRY_TOKEN: 'custom' } })
+    expect(fromDraft(draft).credentialBindings).toEqual({ SENTRY_TOKEN: 'custom' })
+    expect(fromDraft(draft).modelBinding).toEqual({ kind: 'configuration', configurationId: 'cfg' })
+    expect(fromDraft(draft).gitBindings).toEqual({ items: [{ credentialId: 'git' }] })
+    expect(fromDraft(draft).gitBindings).not.toHaveProperty('preferredCredentialId')
+  })
   it('preserves explicit IDs, disabled keys and the distinction from inheritance', () => {
-    const bindings = { OPENAI_API_KEY: 'cred-1', ANTHROPIC_API_KEY: null }
+    const bindings = { SENTRY_TOKEN: 'cred-1', CUSTOM_TOKEN: null }
     const draft = toDraft({ ...baseAgent, credentialBindings: bindings })
     expect(fromDraft(draft).credentialBindings).toEqual(bindings)
-    draft.credentialBindings!.OPENAI_API_KEY = 'cred-2'
-    expect(bindings.OPENAI_API_KEY).toBe('cred-1')
-    expect(fromDraftRaw(draft).credentialBindings).toEqual({ OPENAI_API_KEY: 'cred-2', ANTHROPIC_API_KEY: null })
+    draft.credentialBindings!.SENTRY_TOKEN = 'cred-2'
+    expect(bindings.SENTRY_TOKEN).toBe('cred-1')
+    expect(fromDraftRaw(draft).credentialBindings).toEqual({ SENTRY_TOKEN: 'cred-2', CUSTOM_TOKEN: null })
     expect(fromDraft(toDraft(baseAgent))).not.toHaveProperty('credentialBindings')
+  })
+
+  it('round-trips an identity icon and treats a clear as dirty against the saved mark', () => {
+    const saved = { iconId: 'flask', color: 'purple' as const }
+    const draft = toDraft({ ...baseAgent, icon: saved })
+    expect(draft.icon).toEqual(saved)
+    draft.icon!.color = 'red'
+    expect(saved.color).toBe('purple')
+    expect(fromDraft(draft).icon).toEqual({ iconId: 'flask', color: 'red' })
+    const original = draftPayloadJson(toDraft({ ...baseAgent, icon: saved }))
+    expect(draftPayloadJson(draft)).not.toBe(original)
+    draft.icon = null
+    expect(fromDraft(draft)).not.toHaveProperty('icon')
+    expect(draftPayloadJson(draft)).not.toBe(original)
+    expect(fromDraft(toDraft(baseAgent))).not.toHaveProperty('icon')
+    expect(draftPayloadJson(toDraft(baseAgent))).toBe(draftPayloadJson({ ...toDraft(baseAgent), icon: null }))
   })
 })

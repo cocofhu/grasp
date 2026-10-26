@@ -5,17 +5,23 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
 func writeSoloErr(c *gin.Context, err error) {
 	var se *services.SoloError
 	if errors.As(err, &se) {
-		c.JSON(se.Status, gin.H{"error": se.Msg, "code": se.Code})
+		body := gin.H{"error": se.Msg, "code": se.Code}
+		if len(se.Params) > 0 {
+			body["params"] = se.Params
+		}
+		c.JSON(se.Status, body)
 		return
 	}
 	_ = c.Error(err)
@@ -186,6 +192,28 @@ func (h *Handlers) PatchSoloSession(c *gin.Context) {
 	c.JSON(http.StatusOK, row)
 }
 
+// SetSoloSessionModel handles POST /api/solo/sessions/:id/model.
+// An empty modelId selects the primary model. The sandbox is not switched here.
+func (h *Handlers) SetSoloSessionModel(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	var body struct {
+		ModelID string `json:"modelId"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	v, err := h.Solo.SetCurrentModel(c.Request.Context(), c.Param("id"), user, body.ModelID)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, v)
+}
+
 // DeleteSoloSession handles DELETE /api/solo/sessions/:id.
 func (h *Handlers) DeleteSoloSession(c *gin.Context) {
 	user, ok := h.soloReady(c)
@@ -338,6 +366,14 @@ func (h *Handlers) ReorderSoloQueue(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// Heartbeat so a half-open Solo socket (peer gone, TCP still open) is closed
+// and the page reconnects instead of sitting on a dead transcript.
+const (
+	soloWriteWait  = 5 * time.Second
+	soloPongWait   = 40 * time.Second
+	soloPingPeriod = 25 * time.Second
+)
+
 // SoloChat is the Solo session WebSocket. It only subscribes:
 //
 //	{"type":"session","event":"queue_state|turn_begin|phase|status|turn_done|error",…}
@@ -345,6 +381,8 @@ func (h *Handlers) ReorderSoloQueue(c *gin.Context) {
 //
 // Client frames: {"type":"cancel"}. Turns start via POST …/turns and keep
 // running when the socket drops. ?after=<seq> skips frames already seen.
+// A ping/pong heartbeat closes a half-open socket so the page reconnects
+// and replays from the last seq.
 func (h *Handlers) SoloChat(c *gin.Context) {
 	if h.Auth != nil {
 		if _, ok := h.Auth.RequireSession(c); !ok {
@@ -373,13 +411,31 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 	}
 	defer func() { _ = conn.Close() }()
 
+	_ = conn.SetReadDeadline(time.Now().Add(soloPongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(soloPongWait))
+	})
+
 	writeDone := make(chan struct{})
 	go func() {
 		defer close(writeDone)
-		for ev := range ch {
-			if err := conn.WriteJSON(ev.Frame()); err != nil {
-				_ = conn.Close()
-				return
+		ping := time.NewTicker(soloPingPeriod)
+		defer ping.Stop()
+		for {
+			select {
+			case ev, ok := <-ch:
+				if !ok {
+					return
+				}
+				if err := conn.WriteJSON(ev.Frame()); err != nil {
+					_ = conn.Close()
+					return
+				}
+			case <-ping.C:
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(soloWriteWait)); err != nil {
+					_ = conn.Close()
+					return
+				}
 			}
 		}
 	}()
@@ -389,6 +445,7 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 		if rerr != nil {
 			break
 		}
+		_ = conn.SetReadDeadline(time.Now().Add(soloPongWait))
 		var m struct {
 			Type string `json:"type"`
 		}

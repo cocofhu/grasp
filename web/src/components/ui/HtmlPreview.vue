@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { ref, watch, onMounted, onBeforeUnmount, computed, inject, nextTick, type ComputedRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { injectDemoScrollbarStyles } from '@/lib/shared/demoScrollbar'
@@ -812,22 +813,24 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
       :class="$slots['toolbar-actions'] ? 'gap-x-1 px-2.5' : 'gap-x-2 px-3'"
       data-testid="html-preview-toolbar"
     >
-      <div class="flex overflow-hidden rounded-md border border-line text-[11px]">
+      <SlidingTabs :value="device" indicator-class="bg-accent-dim/50" class="flex overflow-hidden rounded-md border border-line text-[11px]">
         <button
           class="flex items-center gap-1 px-2 py-1 transition-colors"
-          :class="device === 'desktop' ? 'bg-accent-dim/50 text-accent' : 'text-txt3 hover:text-txt'"
+          :class="device === 'desktop' ? 'text-accent' : 'text-txt3 hover:text-txt2'"
+          :data-active="device === 'desktop'"
           @click="device = 'desktop'"
         >
           <Icon name="monitor" :size="13" />{{ t('common.htmlPreview.desktop') }}
         </button>
         <button
           class="flex items-center gap-1 border-l border-line px-2 py-1 transition-colors"
-          :class="device === 'mobile' ? 'bg-accent-dim/50 text-accent' : 'text-txt3 hover:text-txt'"
+          :class="device === 'mobile' ? 'text-accent' : 'text-txt3 hover:text-txt2'"
+          :data-active="device === 'mobile'"
           @click="device = 'mobile'"
         >
           <Icon name="mobile" :size="13" />{{ t('common.htmlPreview.mobile') }}
         </button>
-      </div>
+      </SlidingTabs>
       <span v-if="!$slots['toolbar-actions']" class="text-[10px] text-txt3">{{ deviceHint }}</span>
       <button
         v-if="inspectable"

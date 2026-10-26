@@ -18,16 +18,22 @@ import (
 )
 
 // SoloError carries an HTTP status for Solo / project API failures.
+// Params are interpolation values for localized clients (names, keys).
 type SoloError struct {
 	Status int
 	Code   string
 	Msg    string
+	Params map[string]any
 }
 
 func (e *SoloError) Error() string { return e.Msg }
 
 func soloErr(status int, code, format string, args ...any) error {
 	return &SoloError{Status: status, Code: code, Msg: fmt.Sprintf(format, args...)}
+}
+
+func soloErrParams(status int, code, format string, params map[string]any, args ...any) error {
+	return &SoloError{Status: status, Code: code, Msg: fmt.Sprintf(format, args...), Params: params}
 }
 
 // ProjectInput is the create / update shape of a project.
@@ -63,7 +69,7 @@ var (
 	// soloReservedEnvKeys are written by the platform when the sandbox starts.
 	soloReservedEnvKeys = map[string]bool{
 		"GIT_REPOS": true, "GRASP_THREAD_ID": true, "CODEX_HOME": true,
-		"ACP_BRIDGE_MODEL": true,
+		"ACP_BRIDGE_MODEL": true, "GRASP_CONFIGURED_MODELS": true, "GRASP_INITIAL_CHAT_MODEL": true,
 	}
 )
 
@@ -265,12 +271,40 @@ func (s *ProjectService) Delete(id string) error {
 }
 
 // ActiveSessions lists sessions still holding a sandbox for the project.
+// A session counts when the id is its legacy project_id or any frozen repo.
 func (s *ProjectService) ActiveSessions(id string) ([]models.SoloSession, error) {
+	id = strings.TrimSpace(id)
 	var rows []models.SoloSession
-	err := s.db.Where("project_id = ? AND status IN ?", id,
-		[]string{models.SoloStatusStarting, models.SoloStatusRunning}).
+	err := s.db.Where("status IN ?", []string{models.SoloStatusStarting, models.SoloStatusRunning}).
 		Order("updated_at desc").Find(&rows).Error
-	return rows, err
+	if err != nil {
+		return nil, err
+	}
+	out := make([]models.SoloSession, 0)
+	for i := range rows {
+		if sessionUsesProject(&rows[i], id) {
+			out = append(out, rows[i])
+		}
+	}
+	return out, nil
+}
+
+func sessionUsesProject(row *models.SoloSession, id string) bool {
+	if id == "" {
+		return false
+	}
+	if row.ProjectID == id {
+		return true
+	}
+	if row.ProjectSnapshot != nil && row.ProjectSnapshot.ID == id {
+		return true
+	}
+	for _, repo := range row.Repos {
+		if repo.ProjectID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // Touch records that a project was used to start a session.

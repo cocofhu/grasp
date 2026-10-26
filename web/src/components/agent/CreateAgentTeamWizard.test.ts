@@ -12,7 +12,7 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      startTeamBootstrap: vi.fn(),
+      listModelConfigurations: vi.fn().mockResolvedValue({ items: [] }),
       getSharedAgentConfig: vi.fn().mockResolvedValue({ env: {}, files: [], mcp: [], layout: {} }),
     },
   }
@@ -32,13 +32,16 @@ describe('CreateAgentTeamWizard', () => {
         stubs: {
           Icon: true,
           AppButton: { template: '<button type="button" v-bind="$attrs"><slot /></button>' },
-          AgentGitGuide: true,
-          WizardApiKeyStepPanel: true,
+          AgentGitCredentialPicker: true,
+          ModelBindingEditor: true,
+          WorkspaceCredentialsPanel: true,
         },
       },
     })
     await flushPromises()
     expect(w.html().length).toBeGreaterThan(10)
+    ;(w.vm as any).close()
+    expect(w.emitted('close')).toHaveLength(1)
     w.unmount()
   })
 })

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { api, type BrandSettings, type DashboardStats, type SandboxView, type SettingItem } from '@/lib/api/api'
 import { useAuth } from '@/lib/composables/useAuth'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
 import { isIntegrationsQuery } from '@/data/settingsNav'
+import { normalizeUnknownModelDisplayNameInput } from '@/lib/run/tokenUsage'
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
 import IntegrationsPanel from '@/components/settings/IntegrationsPanel.vue'
@@ -16,6 +18,7 @@ import { setBrandSettings } from '@/lib/composables/useBrandSettings'
 const { t } = useI18n()
 const route = useRoute()
 const { user } = useAuth()
+const { workspace, loading: workspaceLoading, error: workspaceError, ensureLoaded } = useWorkspaceContext()
 
 const isAdmin = computed(() => !!user.value?.isAdmin)
 
@@ -81,6 +84,11 @@ const items = ref<SettingItem[]>([])
 const form = reactive<Record<string, number>>({})
 const brandForm = reactive<BrandSettings>({ product_name: '', home_subtitle: '' })
 const savedBrand = reactive<BrandSettings>({ product_name: '', home_subtitle: '' })
+const workspaceForm = reactive({ name: '', description: '', unknownModelDisplayName: '' })
+const workspaceSaved = reactive({ name: '', description: '', unknownModelDisplayName: '' })
+const nameError = ref('')
+const displayNameError = ref('')
+let formEpoch = 0
 const sandboxes = ref<SandboxView[]>([])
 const dashboard = ref<DashboardStats | null>(null)
 const loading = ref(true)
@@ -95,9 +103,14 @@ const settingsSeq = createListRequestSeq()
 const showRefreshProgress = computed(
   () => loading.value && hasInitialLoaded.value && items.value.length > 0,
 )
-const showSkeleton = computed(
-  () => loading.value && items.value.length === 0 && !loadFailed.value && !loadDenied.value,
+const workspaceUnavailable = computed(
+  () => !workspace.value && !workspaceLoading.value && !!workspaceError.value && !loadDenied.value,
 )
+const showSkeleton = computed(() => {
+  if (loadFailed.value || loadDenied.value || workspaceUnavailable.value) return false
+  if (loading.value && items.value.length === 0) return true
+  return !workspace.value
+})
 
 const showIntegrations = computed(() => isIntegrationsQuery(route.query.integrations))
 
@@ -118,6 +131,29 @@ function hydrateBrand(brand: BrandSettings) {
   savedBrand.product_name = brandForm.product_name
   savedBrand.home_subtitle = brandForm.home_subtitle
   setBrandSettings(brand)
+}
+
+function hydrateWorkspace(source: { name?: string; description?: string; unknownModelDisplayName?: string }) {
+  workspaceForm.name = source.name || ''
+  workspaceForm.description = source.description || ''
+  workspaceForm.unknownModelDisplayName = source.unknownModelDisplayName || ''
+  workspaceSaved.name = workspaceForm.name
+  workspaceSaved.description = workspaceForm.description
+  workspaceSaved.unknownModelDisplayName = workspaceForm.unknownModelDisplayName
+  nameError.value = ''
+  displayNameError.value = ''
+}
+
+function clearWorkspaceDraft() {
+  formEpoch++
+  workspaceForm.name = ''
+  workspaceForm.description = ''
+  workspaceForm.unknownModelDisplayName = ''
+  workspaceSaved.name = ''
+  workspaceSaved.description = ''
+  workspaceSaved.unknownModelDisplayName = ''
+  nameError.value = ''
+  displayNameError.value = ''
 }
 
 function aggregateUsage(list: SandboxView[]) {
@@ -192,51 +228,154 @@ async function pollSandboxes() {
   }
 }
 
-async function save() {
+function failureText(cause: unknown, fallback: string): string {
+  const message = cause instanceof Error ? cause.message : String((cause as { message?: string })?.message || cause || '')
+  return message && message !== '[object Object]' ? message : fallback
+}
+
+function platformPatch(): Record<string, number | string> {
+  const patch: Record<string, number | string> = {}
+  for (const it of items.value) {
+    if (it.locked) continue
+    const next = Number(form[it.key])
+    if (next !== it.value) patch[it.key] = next
+  }
+  if (
+    isAdmin.value &&
+    (brandForm.product_name !== savedBrand.product_name || brandForm.home_subtitle !== savedBrand.home_subtitle)
+  ) {
+    patch.brand_product_name = brandForm.product_name
+    patch.brand_home_subtitle = brandForm.home_subtitle
+  }
+  return patch
+}
+
+const workspaceDirty = computed(
+  () =>
+    workspaceForm.name !== workspaceSaved.name ||
+    workspaceForm.description !== workspaceSaved.description ||
+    workspaceForm.unknownModelDisplayName !== workspaceSaved.unknownModelDisplayName,
+)
+const platformDirty = computed(() => Object.keys(platformPatch()).length > 0)
+const dirty = computed(() => workspaceDirty.value || platformDirty.value)
+
+function validateBeforeSave(): boolean {
+  nameError.value = ''
+  displayNameError.value = ''
+  error.value = ''
+  if (!workspaceForm.name.trim()) nameError.value = t('pages.workspace.nameRequired')
+  if (normalizeUnknownModelDisplayNameInput(workspaceForm.unknownModelDisplayName).error) {
+    displayNameError.value = t('pages.workspace.unknownModelDisplayNameTooLong')
+  }
   const maxTest = itemOf('max_test_sandboxes')
   if (maxTest && !maxTest.locked) {
     const n = Number(form.max_test_sandboxes)
-    if (!Number.isFinite(n) || n < 1) {
-      error.value = t('pages.settings.minTestSandboxes')
-      return
-    }
+    if (!Number.isFinite(n) || n < 1) error.value = t('pages.settings.minTestSandboxes')
   }
+  return !nameError.value && !displayNameError.value && !error.value
+}
 
+function clearUnknownModelDisplayName() {
+  workspaceForm.unknownModelDisplayName = ''
+  displayNameError.value = ''
+  savedAt.value = 0
+}
+
+function restoreSavedDrafts() {
+  workspaceForm.name = workspaceSaved.name
+  workspaceForm.description = workspaceSaved.description
+  workspaceForm.unknownModelDisplayName = workspaceSaved.unknownModelDisplayName
+  nameError.value = ''
+  displayNameError.value = ''
+  for (const it of items.value) form[it.key] = it.value
+  brandForm.product_name = savedBrand.product_name
+  brandForm.home_subtitle = savedBrand.home_subtitle
+  error.value = ''
+  savedAt.value = 0
+}
+
+function resetDrafts() {
+  restoreSavedDrafts()
+  void loadSettings()
+}
+
+function retryLoad() {
+  void loadSettings()
+  void ensureLoaded()
+}
+
+async function save() {
+  if (!workspace.value || !validateBeforeSave()) {
+    savedAt.value = 0
+    return
+  }
+  const saveWorkspace = workspaceDirty.value
+  const savePlatform = platformDirty.value
+  if (!saveWorkspace && !savePlatform) return
+  const epoch = formEpoch
   saving.value = true
   error.value = ''
+  savedAt.value = 0
+  let workspaceFailure = ''
+  let platformFailure = ''
   try {
-    const patch: Record<string, number | string> = {}
-    for (const it of items.value) {
-      if (!it.locked) patch[it.key] = Number(form[it.key])
+    if (saveWorkspace) {
+      const normalized = normalizeUnknownModelDisplayNameInput(workspaceForm.unknownModelDisplayName)
+      try {
+        const saved = await api.updateWorkspace({
+          name: workspaceForm.name.trim(),
+          description: workspaceForm.description,
+          unknownModelDisplayName: normalized.value,
+        })
+        if (epoch === formEpoch) {
+          workspace.value = saved
+          hydrateWorkspace(saved)
+        }
+      } catch (cause) {
+        if (epoch === formEpoch) workspaceFailure = failureText(cause, t('pages.settings.saveFailed'))
+      }
     }
-    if (isAdmin.value) {
-      patch.brand_product_name = brandForm.product_name
-      patch.brand_home_subtitle = brandForm.home_subtitle
+    if (savePlatform && epoch === formEpoch) {
+      try {
+        const res = await api.updateSettings(platformPatch())
+        if (epoch === formEpoch) {
+          hydrate(res.items)
+          hydrateBrand(res.brand)
+        }
+      } catch (cause) {
+        if (epoch === formEpoch) platformFailure = failureText(cause, t('pages.settings.saveFailed'))
+      }
     }
-    const res = await api.updateSettings(patch)
-    hydrate(res.items)
-    hydrateBrand(res.brand)
-    savedAt.value = Date.now()
-  } catch (e: any) {
-    error.value = e?.message || t('pages.settings.saveFailed')
+    if (epoch !== formEpoch) return
+    const parts: string[] = []
+    if (workspaceFailure) parts.push(t('pages.settings.workspaceSaveFailed', { reason: workspaceFailure }))
+    if (platformFailure) parts.push(t('pages.settings.platformSaveFailed', { reason: platformFailure }))
+    error.value = parts.join(' ')
+    if (!error.value) savedAt.value = Date.now()
   } finally {
-    saving.value = false
+    if (epoch === formEpoch) saving.value = false
   }
 }
 
-const dirty = () =>
-  items.value.some((it) => !it.locked && Number(form[it.key]) !== it.value) ||
-  (isAdmin.value &&
-    (brandForm.product_name !== savedBrand.product_name ||
-      brandForm.home_subtitle !== savedBrand.home_subtitle))
+watch(workspace, (next, prev) => {
+  if (!next) {
+    clearWorkspaceDraft()
+    return
+  }
+  if (saving.value) return
+  if (prev && workspaceDirty.value) return
+  hydrateWorkspace(next)
+}, { immediate: true })
 
 onMounted(() => {
-  loadSettings()
-  pollSandboxes()
+  void loadSettings()
+  void ensureLoaded()
+  void pollSandboxes()
   poll = window.setInterval(pollSandboxes, 5000)
 })
 
 onBeforeUnmount(() => {
+  formEpoch++
   if (poll) clearInterval(poll)
 })
 </script>
@@ -296,18 +435,63 @@ onBeforeUnmount(() => {
         </div>
 
         <div
-          v-else-if="loadFailed"
+          v-else-if="loadFailed || workspaceUnavailable"
           role="status"
           data-testid="settings-failed"
           class="border-y border-line/60 py-10 text-center"
         >
           <h2 class="text-sm font-semibold text-txt">{{ t('common.asyncState.loadFailedTitle') }}</h2>
           <p class="mt-1 text-xs text-txt3">{{ t('common.asyncState.loadFailedDesc') }}</p>
-          <AppButton class="mt-4" variant="outline" data-testid="settings-retry" @click="loadSettings">{{ t('common.buttons.retry') }}</AppButton>
+          <AppButton class="mt-4" variant="outline" data-testid="settings-retry" @click="retryLoad">{{ t('common.buttons.retry') }}</AppButton>
         </div>
 
         <template v-else>
           <div :class="showRefreshProgress ? 'opacity-[0.55]' : ''">
+            <SettingsSection :title="t('pages.workspace.metaTitle')" :description="t('pages.workspace.metaHint')" data-testid="workspace-info-section">
+              <SettingsRow :label="t('pages.workspace.nameLabel')" for="workspace-meta-name">
+                <input
+                  id="workspace-meta-name"
+                  v-model="workspaceForm.name"
+                  class="input w-full sm:w-[340px] disabled:cursor-not-allowed disabled:opacity-55"
+                  autocomplete="off"
+                  :disabled="saving"
+                  @input="nameError = ''"
+                />
+                <template #details>
+                  <p v-if="nameError" class="m-0 text-xs text-err" data-testid="workspace-meta-name-error">{{ nameError }}</p>
+                </template>
+              </SettingsRow>
+              <SettingsRow :label="t('pages.workspace.descLabel')" for="workspace-meta-desc">
+                <textarea
+                  id="workspace-meta-desc"
+                  v-model="workspaceForm.description"
+                  rows="3"
+                  class="input min-h-[88px] w-full resize-y sm:w-[340px] disabled:cursor-not-allowed disabled:opacity-55"
+                  :placeholder="t('pages.workspace.metaDescPlaceholder')"
+                  :disabled="saving"
+                />
+              </SettingsRow>
+              <SettingsRow :label="t('pages.workspace.unknownModelDisplayNameLabel')" :description="t('pages.workspace.unknownModelDisplayNameHelp')" for="workspace-meta-unknown-display">
+                <div class="flex w-full flex-col items-end gap-2 sm:w-[340px]">
+                  <input
+                    id="workspace-meta-unknown-display"
+                    v-model="workspaceForm.unknownModelDisplayName"
+                    class="input disabled:cursor-not-allowed disabled:opacity-55"
+                    maxlength="80"
+                    autocomplete="off"
+                    data-testid="workspace-meta-unknown-display"
+                    :placeholder="t('pages.workspace.unknownModelDisplayNamePlaceholder')"
+                    :disabled="saving"
+                    @input="displayNameError = ''"
+                  />
+                  <AppButton variant="ghost" size="sm" data-testid="workspace-meta-unknown-display-clear" :disabled="saving" @click="clearUnknownModelDisplayName">{{ t('pages.workspace.unknownModelDisplayNameClear') }}</AppButton>
+                </div>
+                <template #details>
+                  <p v-if="displayNameError" class="m-0 text-xs text-err" data-testid="workspace-meta-unknown-display-error">{{ displayNameError }}</p>
+                </template>
+              </SettingsRow>
+            </SettingsSection>
+
             <SettingsSection :title="t('pages.settings.brand.title')" :description="t('pages.settings.brand.desc')" data-testid="brand-settings-group">
               <SettingsRow for="setting-brand-product-name" :label="t('pages.settings.brand.productName')" :description="t('pages.settings.brand.productNameHint')">
                 <input
@@ -389,13 +573,12 @@ onBeforeUnmount(() => {
             </SettingsSection>
           </div>
           <p class="mb-0 mt-6 text-xs leading-5 text-txt3">{{ t('pages.settings.priorityNote') }}</p>
+          <footer class="mt-7 flex flex-wrap items-center justify-end gap-2" data-testid="settings-save-actions">
+            <span v-if="savedAt" role="status" class="mr-auto text-xs text-ok">{{ t('pages.settings.saved') }}</span>
+            <AppButton class="min-h-11 sm:min-h-9" variant="ghost" size="md" icon="refresh" :disabled="loading || saving" @click="resetDrafts">{{ t('common.buttons.reset') }}</AppButton>
+            <AppButton class="min-h-11 sm:min-h-9" variant="primary" size="md" icon="check" :disabled="loading || saving || !dirty" @click="save">{{ saving ? t('common.buttons.saving') : t('common.buttons.save') }}</AppButton>
+          </footer>
         </template>
-
-        <footer class="mt-7 flex flex-wrap items-center justify-end gap-2" data-testid="settings-save-actions">
-          <span v-if="savedAt" role="status" class="mr-auto text-xs text-ok">{{ t('pages.settings.saved') }}</span>
-          <AppButton class="min-h-11 sm:min-h-9" variant="ghost" size="md" icon="refresh" :disabled="loading || saving" @click="loadSettings">{{ t('common.buttons.reset') }}</AppButton>
-          <AppButton class="min-h-11 sm:min-h-9" variant="primary" size="md" icon="check" :disabled="loading || saving || !dirty()" @click="save">{{ saving ? t('common.buttons.saving') : t('common.buttons.save') }}</AppButton>
-        </footer>
       </div>
     </Transition>
   </div>

@@ -33,7 +33,7 @@ export const settingsClient = {
     if (params?.wf) qs.set('wf', params.wf)
     if (params?.tag) qs.set('tag', params.tag)
     const q = qs.toString()
-    const path = q ? `/gates?${q}` : '/gates'
+    const path = q ? `/pending-nodes?${q}` : '/pending-nodes'
     const init = params?.signal ? { signal: params.signal } : undefined
     return req<PaginatedResponse<InboxItem>>(path, init)
   },

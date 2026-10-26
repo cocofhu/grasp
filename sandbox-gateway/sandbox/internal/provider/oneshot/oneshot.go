@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"backend/internal/provider"
+	"backend/internal/provider/modelconnection"
 )
 
 // MsgKind is the unified message taxonomy every codec maps its output into.
@@ -156,17 +157,37 @@ func (p *Provider) ArgsForTest(opts provider.OpenOptions, prompt, resumeID strin
 }
 
 func (p *Provider) ListModels(ctx context.Context) ([]provider.Model, error) {
+	if models, selected, err := modelconnection.Catalog(p.Name(), os.Environ()); selected {
+		return models, err
+	}
 	return p.c.Models(ctx)
 }
 
 // Open probes the CLI (fail-fast if missing) and returns a virtual session.
 func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 	onEvent func(json.RawMessage), _ provider.PermissionChooser) (provider.Session, error) {
+	prepared, err := modelconnection.Prepare(p.Name(), p.c.AuthEnv(os.Environ()), opts.Model, p.DefaultConfigRoot())
+	if err != nil {
+		return nil, err
+	}
+	if err := prepared.ValidateOptions(p.Name(), opts); err != nil {
+		prepared.Cleanup()
+		return nil, err
+	}
+	opts.Model = prepared.Model
+	opts.CustomArgs = append(append([]string(nil), opts.CustomArgs...), prepared.Args...)
 	bin := p.c.Bin()
 	path, err := exec.LookPath(bin)
 	if err != nil {
+		prepared.Cleanup()
 		return nil, fmt.Errorf("one-shot agent %q not found on PATH (sandbox image lacks this CLI; rebuild it with AGENT_PROVIDERS including %q): %w",
 			bin, p.c.AgentName(), err)
+	}
+	if prepared.Connection != nil {
+		if err := modelconnection.CheckVersion(procCtx, p.Name(), path, prepared.Env); err != nil {
+			prepared.Cleanup()
+			return nil, err
+		}
 	}
 	fsRoot := opts.FSRoot
 	if fsRoot == "" {
@@ -181,16 +202,21 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 		fsRoot:  fsRoot,
 		// Seed from the parent environment so the child keeps HOME/PATH/etc.
 		// (needed to locate the CLI's login/config), then normalize auth vars.
-		env:      p.c.AuthEnv(os.Environ()),
+		env:      prepared.Env,
+		cleanup:  prepared.Cleanup,
 		onEvent:  onEvent,
 		done:     make(chan struct{}),
 		cumUsage: map[string]provider.TokenUsage{},
 		bgGrace:  BackgroundGrace(),
 	}
+	if prepared.Connection != nil {
+		s.displayModel = prepared.Connection.SelectedModelID
+	}
 	s.sessionID = opts.ResumeSessionID
 	if s.sessionID == "" {
 		if init, ok := p.c.(SessionInitializer); ok {
 			if sid, ierr := init.InitSession(opts); ierr != nil {
+				prepared.Cleanup()
 				return nil, fmt.Errorf("one-shot agent %q session init: %w", bin, ierr)
 			} else if sid != "" {
 				s.sessionID = sid
@@ -204,14 +230,16 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 // engine is a one-shot provider.Session: it keeps session state across turns
 // and spawns the CLI anew for each Prompt.
 type engine struct {
-	c       Codec
-	binPath string
-	procCtx context.Context
-	opts    provider.OpenOptions
-	cwd     string
-	fsRoot  string
-	env     []string
-	onEvent func(json.RawMessage)
+	c            Codec
+	binPath      string
+	procCtx      context.Context
+	opts         provider.OpenOptions
+	cwd          string
+	fsRoot       string
+	env          []string
+	onEvent      func(json.RawMessage)
+	cleanup      func()
+	displayModel string
 
 	mu        sync.Mutex
 	sessionID string
@@ -241,11 +269,15 @@ func (e *engine) CWD() string    { return e.cwd }
 func (e *engine) FSRoot() string { return e.fsRoot }
 
 func (e *engine) Info() provider.AgentInfo {
+	model := e.opts.Model
+	if e.displayModel != "" {
+		model = e.displayModel
+	}
 	return provider.AgentInfo{
 		Name:      string(e.c.AgentName()),
 		Title:     string(e.c.AgentName()),
-		ModelID:   e.opts.Model,
-		ModelName: e.opts.Model,
+		ModelID:   model,
+		ModelName: model,
 	}
 }
 
@@ -691,6 +723,9 @@ func (e *engine) Cancel() error {
 func (e *engine) Close() error {
 	e.closeOnce.Do(func() {
 		_ = e.Cancel()
+		if e.cleanup != nil {
+			e.cleanup()
+		}
 		close(e.done)
 	})
 	return nil

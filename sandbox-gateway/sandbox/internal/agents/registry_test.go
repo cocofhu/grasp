@@ -11,7 +11,7 @@ var allNames = []provider.Name{
 	provider.Cursor, provider.ClaudeCode, provider.CodeBuddy, provider.Trae,
 	provider.Kiro, provider.Qoder, provider.Grok, provider.Kimi, provider.Hermes,
 	provider.Codex, provider.Gemini, provider.OpenCode,
-	provider.DevEco, provider.Copilot, provider.OpenClaw, provider.Antigravity, provider.Pi,
+	provider.DevEco, provider.Copilot, provider.OpenClaw, provider.Antigravity, provider.Pi, provider.DeepSeekHarness,
 }
 
 func TestEveryNameResolves(t *testing.T) {
@@ -40,6 +40,7 @@ func TestTransportSplit(t *testing.T) {
 		provider.Trae: true, provider.Kiro: true, provider.Qoder: true,
 		provider.Grok: true, provider.Kimi: true, provider.Hermes: true,
 		provider.CursorACP: true, provider.ClaudeCodeACP: true, provider.CodeBuddyACP: true,
+		provider.DeepSeekHarness: true,
 	}
 	for n, p := range registry {
 		want := provider.OneShot

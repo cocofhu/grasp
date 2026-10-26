@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -18,21 +19,20 @@ const AgentExportSchemaVersion = 1
 
 // agentExportJSON is the root agent.json inside an export ZIP.
 type agentExportJSON struct {
-	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
-	Name                 string                    `json:"name"`
-	GitCredentialType    string                    `json:"gitCredentialType,omitempty"`
-	OpenCodeCredentialID string                    `json:"openCodeCredentialId,omitempty"`
-	AiCredentialID       string                    `json:"aiCredentialId,omitempty"`
-	GitCredentialID      string                    `json:"gitCredentialId,omitempty"`
-	SshHostsCredentialID string                    `json:"sshHostsCredentialId,omitempty"`
-	RepoIDs              *[]string                 `json:"repoIds,omitempty"`
-	AcpBackend           string                    `json:"acpBackend,omitempty"`
-	MCP                  []MCPServer               `json:"mcp,omitempty"`
-	Env                  map[string]string         `json:"env,omitempty"`
-	Layout               *AgentLayout              `json:"layout,omitempty"`
-	Capabilities         *models.AgentCapabilities `json:"capabilities,omitempty"`
-	SchemaVersion        int                       `json:"schemaVersion"`
-	ExportedAt           string                    `json:"exportedAt"`
+	InheritModel       bool                      `json:"inheritModel"`
+	InheritGit         bool                      `json:"inheritGit"`
+	GitBindings        *models.GitBindings       `json:"gitBindings,omitempty"`
+	ModelBinding       *modelrouting.Binding     `json:"modelBinding,omitempty"`
+	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
+	Name               string                    `json:"name"`
+	AcpBackend         string                    `json:"acpBackend,omitempty"`
+	MCP                []MCPServer               `json:"mcp,omitempty"`
+	Env                map[string]string         `json:"env,omitempty"`
+	Layout             *AgentLayout              `json:"layout,omitempty"`
+	Capabilities       *models.AgentCapabilities `json:"capabilities,omitempty"`
+	Icon               *AgentIcon                `json:"icon,omitempty"`
+	SchemaVersion      int                       `json:"schemaVersion"`
+	ExportedAt         string                    `json:"exportedAt"`
 }
 
 // ExportZIP builds a portable ZIP for one agent from on-disk state.
@@ -61,21 +61,19 @@ func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) erro
 	}
 	layout := a.Layout.withDefaults()
 	export := agentExportJSON{
-		Name:                 name,
-		CredentialBindings:   a.CredentialBindings,
-		GitCredentialType:    a.GitCredentialType,
-		OpenCodeCredentialID: a.OpenCodeCredentialID,
-		AiCredentialID:       a.AiCredentialID,
-		GitCredentialID:      a.GitCredentialID,
-		SshHostsCredentialID: a.SshHostsCredentialID,
-		RepoIDs:              a.RepoIDs,
-		AcpBackend:           a.AcpBackend,
-		MCP:                  a.MCP,
-		Env:                  a.Env,
-		Layout:               &layout,
-		Capabilities:         a.Capabilities,
-		SchemaVersion:        AgentExportSchemaVersion,
-		ExportedAt:           time.Now().UTC().Format(time.RFC3339),
+		InheritModel: a.InheritModel, InheritGit: a.InheritGit,
+		GitBindings:        a.GitBindings,
+		Name:               name,
+		ModelBinding:       a.ModelBinding,
+		CredentialBindings: a.CredentialBindings,
+		AcpBackend:         a.AcpBackend,
+		MCP:                a.MCP,
+		Env:                a.Env,
+		Layout:             &layout,
+		Capabilities:       a.Capabilities,
+		Icon:               cloneAgentIcon(a.Icon),
+		SchemaVersion:      AgentExportSchemaVersion,
+		ExportedAt:         time.Now().UTC().Format(time.RFC3339),
 	}
 	meta, err := json.MarshalIndent(export, "", "  ")
 	if err != nil {
@@ -186,7 +184,7 @@ func parseZipAgent(r io.ReaderAt, size int64, prefix string, maxFileBytes int) (
 				return agentExportJSON{}, nil, fmt.Errorf("无法读取 agent.json：%v", err)
 			}
 			if err := json.Unmarshal(b, &export); err != nil {
-				return agentExportJSON{}, nil, fmt.Errorf("agent.json 格式无效：%v", err)
+				return agentExportJSON{}, nil, fmt.Errorf("agent.json 格式无效：%w", err)
 			}
 			if export.SchemaVersion != AgentExportSchemaVersion {
 				return agentExportJSON{}, nil, fmt.Errorf("不支持的 schemaVersion：%d。当前仅支持 schemaVersion=%d。", export.SchemaVersion, AgentExportSchemaVersion)
@@ -258,20 +256,18 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 	}
 
 	agent := Agent{
-		Name:                 targetName,
-		CredentialBindings:   export.CredentialBindings,
-		AcpBackend:           export.AcpBackend,
-		GitCredentialType:    export.GitCredentialType,
-		OpenCodeCredentialID: export.OpenCodeCredentialID,
-		AiCredentialID:       export.AiCredentialID,
-		GitCredentialID:      export.GitCredentialID,
-		SshHostsCredentialID: export.SshHostsCredentialID,
-		RepoIDs:              export.RepoIDs,
-		Files:                files,
-		MCP:                  export.MCP,
-		Env:                  export.Env,
-		Layout:               layout,
-		Capabilities:         export.Capabilities,
+		InheritModel: export.InheritModel, InheritGit: export.InheritGit,
+		Name:               targetName,
+		CredentialBindings: export.CredentialBindings,
+		AcpBackend:         export.AcpBackend,
+		GitBindings:        export.GitBindings,
+		ModelBinding:       export.ModelBinding,
+		Files:              files,
+		MCP:                export.MCP,
+		Env:                export.Env,
+		Layout:             layout,
+		Capabilities:       export.Capabilities,
+		Icon:               cloneAgentIcon(export.Icon),
 	}
 	if mode == ImportZIPCreate && len(agent.MCP) == 0 {
 		agent.MCP = DefaultPlatformMCP()

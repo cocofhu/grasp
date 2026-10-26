@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Run, RunCurrentNode } from '@/lib/shared/types'
 import {
   RECENT_RELAY_DEBOUNCE_MS,
   createRecentHold,
   notifyRecentActivity,
   onRecentActivity,
+  resetRecentActivityRelayForTests,
   recentRunActive,
   recentRunMark,
   recentRunTarget,
@@ -38,8 +39,8 @@ describe('recentRunMark uses the status primitives', () => {
 describe('recentRunTarget goes straight into the chat', () => {
   it('auto node → live stream; waiting/taken-over → inbox chat; else detail', () => {
     expect(recentRunTarget(run(cur('agent', 'running')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
-    expect(recentRunTarget(run(cur('takeover', 'waiting_human', 'manual'), 'waiting_human'))).toEqual({ path: '/gates', query: { run: 'r1', node: 'n1' } })
-    expect(recentRunTarget(run(cur('agent', 'running', 'manual')))).toEqual({ path: '/gates', query: { run: 'r1', node: 'n1' } })
+    expect(recentRunTarget(run(cur('takeover', 'waiting_human', 'manual'), 'waiting_human'))).toEqual({ path: '/runs/r1/nodes/n1' })
+    expect(recentRunTarget(run(cur('agent', 'running', 'manual')))).toEqual({ path: '/runs/r1/nodes/n1' })
     expect(recentRunTarget(run(undefined, 'completed'))).toBe('/runs/r1')
     // Just taken over, auto call still unwinding: keep the stream (the chat opens once it waits).
     expect(recentRunTarget(run(cur('takeover', 'stopping', 'manual')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
@@ -48,8 +49,8 @@ describe('recentRunTarget goes straight into the chat', () => {
     const r = run(undefined)
     expect(recentRunActive(r, { path: '/runs/r1', query: {} })).toBe(true)
     expect(recentRunActive(r, { path: '/runs/r1/live', query: {} })).toBe(true)
-    expect(recentRunActive(r, { path: '/gates', query: { run: 'r1' } })).toBe(true)
-    expect(recentRunActive(r, { path: '/gates', query: { run: 'r2' } })).toBe(false)
+    expect(recentRunActive(r, { path: '/runs/r1/nodes/n1', query: {} })).toBe(true)
+    expect(recentRunActive(r, { path: '/runs/r2/nodes/n1', query: {} })).toBe(false)
   })
 })
 
@@ -107,6 +108,12 @@ describe('createRecentHold', () => {
 })
 
 describe('local activity relay', () => {
+  beforeEach(() => { resetRecentActivityRelayForTests() })
+  afterEach(() => {
+    resetRecentActivityRelayForTests()
+    vi.useRealTimers()
+  })
+
   it('debounces bursts into one refresh', () => {
     vi.useFakeTimers()
     const fn = vi.fn()
@@ -118,6 +125,25 @@ describe('local activity relay', () => {
     notifyRecentActivity()
     vi.advanceTimersByTime(RECENT_RELAY_DEBOUNCE_MS)
     expect(fn).toHaveBeenCalledTimes(1)
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  it('reads the latest state when a second notice arrives inside the window', () => {
+    vi.useFakeTimers()
+    let state = 'busy'
+    const seen: string[] = []
+    const off = onRecentActivity(() => { seen.push(state) })
+    notifyRecentActivity()
+    vi.advanceTimersByTime(100)
+    state = 'idle'
+    notifyRecentActivity()
+    vi.advanceTimersByTime(RECENT_RELAY_DEBOUNCE_MS)
+    expect(seen.at(-1)).toBe('idle')
+    vi.advanceTimersByTime(RECENT_RELAY_DEBOUNCE_MS)
+    expect(seen).toEqual(['idle', 'idle'])
+    off()
+    vi.clearAllTimers()
     vi.useRealTimers()
   })
 })

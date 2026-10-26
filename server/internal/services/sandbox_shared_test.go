@@ -4,10 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cocofhu/grasp/internal/config"
-	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 func TestRunNodeSandboxRowSharedFallback(t *testing.T) {
@@ -50,31 +47,6 @@ func TestRunNodeSandboxRowSharedFallback(t *testing.T) {
 	}
 }
 
-func TestSettingsSharedRunSandboxKnob(t *testing.T) {
-	db, err := database.OpenSQLite(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.StoreConfig(&config.Config{})
-	svc := NewSettingsService(db, nil, nil)
-	defer sandbox.SetSharedRunEnabled(false)
-	if _, err := svc.Update(map[string]int{KeySharedRunSandbox: 1}); err != nil {
-		t.Fatal(err)
-	}
-	if !sandbox.SharedRunEnabled() {
-		t.Fatal("knob did not enable shared run sandboxes")
-	}
-	if _, err := svc.Update(map[string]int{KeySharedRunSandbox: 2}); err == nil {
-		t.Fatal("knob accepted 2")
-	}
-	if _, err := svc.Update(map[string]int{KeySharedRunSandbox: 0}); err != nil || sandbox.SharedRunEnabled() {
-		t.Fatalf("disable: err=%v enabled=%v", err, sandbox.SharedRunEnabled())
-	}
-	if boolInt(true) != 1 || boolInt(false) != 0 {
-		t.Fatal("boolInt")
-	}
-}
-
 func TestSaveRejectsUnknownSandboxMode(t *testing.T) {
 	s := NewWorkflowService(newTestDB(t))
 	wf := &models.WorkflowDef{ID: "wf-sbx", Name: "S", Graph: validGraph(),
@@ -89,5 +61,26 @@ func TestSaveRejectsUnknownSandboxMode(t *testing.T) {
 	got, _ := s.Get("wf-sbx")
 	if got.Defaults == nil || got.Defaults.Sandbox == nil || got.Defaults.Sandbox.Mode != models.SandboxModeShared {
 		t.Fatalf("defaults = %+v", got.Defaults)
+	}
+}
+
+func TestWorkflowSandboxModeTogglePersistsWithoutChangingGraph(t *testing.T) {
+	s := NewWorkflowService(newTestDB(t))
+	wf := &models.WorkflowDef{ID: "wf-toggle", Name: "Toggle", Graph: validGraph(),
+		Defaults: &models.WorkflowDefaults{InheritWorkspace: true,
+			Variables: []models.WorkspaceVariable{{Name: "REGION", Value: "east"}},
+			Sandbox:   &models.WorkflowSandboxPolicy{Mode: models.SandboxModeShared}}}
+	for _, mode := range []string{models.SandboxModeShared, models.SandboxModePerNode, models.SandboxModeShared} {
+		wf.Defaults.Sandbox.Mode = mode
+		if err := s.Save(wf); err != nil {
+			t.Fatal(err)
+		}
+		got, ok := s.Get(wf.ID)
+		if !ok || got.Defaults == nil || got.Defaults.Sandbox == nil || got.Defaults.Sandbox.Mode != mode {
+			t.Fatalf("mode %q did not survive save/reload: %+v", mode, got.Defaults)
+		}
+		if got.Version != 1 || !GraphsEqual(got.Graph, wf.Graph) || !got.Defaults.InheritWorkspace || len(got.Defaults.Variables) != 1 || got.Defaults.Variables[0].Value != "east" {
+			t.Fatalf("mode %q unexpectedly changed workflow: %+v", mode, got)
+		}
 	}
 }

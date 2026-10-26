@@ -198,6 +198,52 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
     touch.host.remove()
   })
 
+  it('collapses an open cover when hover ink becomes blocked, and reopens under the pointer', async () => {
+    const { host, app, btn, enabled } = mountButton()
+    await nextTick()
+    Object.defineProperty(btn, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        left: 0,
+        top: 0,
+        width: 120,
+        height: 36,
+        right: 120,
+        bottom: 36,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+    btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 8, clientY: 10, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(btn.classList.contains('is-hover-ink')).toBe(true)
+    expect(Number.parseFloat(btn.style.getPropertyValue('--ink-d'))).toBeGreaterThan(0)
+
+    enabled.value = false
+    await nextTick()
+    expect(btn.classList.contains('is-hover-ink')).toBe(false)
+    expect(btn.classList.contains('is-leave-ink')).toBe(false)
+    expect(btn.classList.contains('is-ink-suppressed')).toBe(true)
+    expect(btn.style.getPropertyValue('--ink-d')).toBe('0px')
+
+    btn.dispatchEvent(
+      new PointerEvent('pointerenter', { clientX: 8, clientY: 10, pointerType: 'mouse', bubbles: true }),
+    )
+    expect(btn.classList.contains('is-hover-ink')).toBe(false)
+
+    vi.spyOn(btn, 'matches').mockImplementation((sel) => sel === ':hover')
+    enabled.value = true
+    await nextTick()
+    expect(btn.classList.contains('is-ink-suppressed')).toBe(false)
+    expect(btn.classList.contains('is-hover-ink')).toBe(true)
+    expect(Number.parseFloat(btn.style.getPropertyValue('--ink-d'))).toBeGreaterThan(0)
+
+    app.unmount()
+    host.remove()
+  })
+
   it('isHoverInkBlocked reads disabled / aria-busy / binding', () => {
     const el = document.createElement('button')
     el.disabled = true
@@ -271,6 +317,7 @@ describe('vHoverInk directive (plan g1.2 / g1.3)', () => {
     // Host must use overflow:clip so a left-overflow ink circle cannot pull scrollLeft.
     expect(css).toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*clip/s)
     expect(css).not.toMatch(/\.hover-ink-host\s*\{[^}]*overflow:\s*hidden/s)
+    expect(css).toMatch(/\.hover-ink-host\.is-ink-suppressed\s*>\s*\.hover-ink\s*\{[^}]*visibility:\s*hidden/s)
     // Standalone base rule: ink stays out of flow even if the host class is wiped.
     expect(css).toMatch(/(?:^|\n)\.hover-ink\s*\{[^}]*position:\s*absolute/s)
     // plan g1.1: no negative-margin centering (that left-extends the layout box).

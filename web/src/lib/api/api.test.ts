@@ -326,8 +326,14 @@ describe('api req helpers', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500))
     await expect(api.getWorkspace()).rejects.toThrow('boom')
 
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }))
+    fetchMock.mockResolvedValueOnce(jsonResponse({ found: false }))
     await expect(api.getRunNodeSandbox('r', 'n')).resolves.toBeNull()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ found: false, id: 9 }))
+    await expect(api.getRunNodeSandbox('r', 'n')).resolves.toBeNull()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'missing sandbox' }, 404))
+    await expect(api.getRunNodeSandbox('r', 'n')).rejects.toThrow('missing sandbox')
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'nope' }, 500))
     await expect(api.getRunNodeSandbox('r', 'n')).rejects.toThrow('nope')

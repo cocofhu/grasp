@@ -38,6 +38,49 @@ type ConfigOptionGroup struct {
 	Options []ConfigOptionValue `json:"options"`
 }
 
+// UnmarshalJSON accepts both standard ACP grouped options (groups are members
+// of options) and older agents' separate groups field. Keep flat values and
+// groups separate internally so callers do not mistake a group for a value.
+func (o *ConfigOption) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ID           string              `json:"id"`
+		CurrentValue string              `json:"currentValue"`
+		Category     string              `json:"category"`
+		Options      []json.RawMessage   `json:"options"`
+		Groups       []ConfigOptionGroup `json:"groups"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	out := ConfigOption{ID: raw.ID, CurrentValue: raw.CurrentValue, Category: raw.Category, Groups: raw.Groups}
+	for _, entry := range raw.Options {
+		var group struct {
+			Group   string              `json:"group"`
+			ID      string              `json:"id"`
+			Name    string              `json:"name"`
+			Options []ConfigOptionValue `json:"options"`
+		}
+		if err := json.Unmarshal(entry, &group); err != nil {
+			return err
+		}
+		if group.Options != nil {
+			id := group.Group
+			if id == "" {
+				id = group.ID
+			}
+			out.Groups = append(out.Groups, ConfigOptionGroup{ID: id, Name: group.Name, Options: group.Options})
+			continue
+		}
+		var value ConfigOptionValue
+		if err := json.Unmarshal(entry, &value); err != nil {
+			return err
+		}
+		out.Options = append(out.Options, value)
+	}
+	*o = out
+	return nil
+}
+
 // Panel is an ACP client: one Agent subprocess and one ACP session.
 type Panel struct {
 	conn *Conn
@@ -67,7 +110,7 @@ type Panel struct {
 // procCtx 绑定 exec.CommandContext：必须在整段会话期间保持有效，Connect 返回后仍不得取消（否则会 SIGKILL 子进程）。
 // rpcCtx 仅用于握手阶段 Call 的超时/取消（例如 WithTimeout 子 context）。
 // mcpServersJSON should be a JSON array (or "null" / empty for none).
-// 模型通过 argv 由调用方组装传入，不再在此处切换。
+// Callers may select an advertised model after startup with SetConfigOption.
 func NewPanel(
 	procCtx context.Context,
 	rpcCtx context.Context,
@@ -230,6 +273,28 @@ func countOptions(opt ConfigOption) int {
 		n += len(g.Options)
 	}
 	return n
+}
+
+// SetConfigOption selects an advertised opaque value and synchronizes the
+// complete option state returned by the agent. The caller resolves model IDs
+// against the advertised catalog rather than manufacturing protocol values.
+func (p *Panel) SetConfigOption(ctx context.Context, configID, value string) error {
+	res, err := p.conn.Call(ctx, "session/set_config_option", map[string]any{
+		"sessionId": p.SessionID,
+		"configId":  configID,
+		"value":     value,
+	})
+	if err != nil {
+		return fmt.Errorf("session/set_config_option: %w", err)
+	}
+	var out struct {
+		ConfigOptions json.RawMessage `json:"configOptions"`
+	}
+	if err := json.Unmarshal(res, &out); err != nil {
+		return fmt.Errorf("session/set_config_option result: %w", err)
+	}
+	p.parseAndSyncConfigOptions(out.ConfigOptions)
+	return nil
 }
 
 func (p *Panel) emit(ev map[string]any) {

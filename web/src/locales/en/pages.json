@@ -19,7 +19,7 @@
       "pickWorkflow": "Select a workflow first",
       "noWorkflowShort": "No workflow",
       "needText": "Describe the goal or attach a file first",
-      "heroSubtitle": "Clarify first, then act",
+      "heroSubtitle": "What should we do?",
       "send": "Send",
       "sendShortcut": "Ctrl/⌘ + Enter to send",
       "missingRequired": "Fill required launch fields before starting",
@@ -116,11 +116,20 @@
         "costRank": "Cost ranking",
         "costRankHint": "Estimated from configured prices",
         "weekHour": "Time-of-week",
-        "weekHourHint": "Weekday × hour (local time)",
-        "treemap": "Usage structure",
-        "treemapHint": "Workflows / Assistant / Studio → node types. Click for details."
+        "weekHourHint": "Weekday × hour (local time)"
+      },
+      "structure": {
+        "title": "Usage structure",
+        "hint": "Ranked by usage. Select a source or node type for details.",
+        "showMore": "Show all ({count})",
+        "showLess": "Show less",
+        "shareLabel": "Share"
       },
       "tables": {
+        "breakdown": "Usage details",
+        "modelsTab": "Models",
+        "workflowsTab": "Workflows",
+        "visibleRuns": "Showing {shown} of {total}",
         "runs": "Highest-usage runs",
         "colRun": "Run",
         "colModel": "Model",
@@ -260,14 +269,13 @@
     "board": {
       "title": "Run board",
       "subtitle": "Follow active work and handle tasks waiting for human input.",
-      "toolbarHint": "Select a column heading to see all runs",
       "overview": "Current activity",
       "overviewRecent": "Recently completed",
+      "overviewRecords": "{n} execution records",
       "actionsLabel": "Board actions",
       "refresh": "Refresh",
       "allRuns": "All runs",
       "usage": "Usage",
-      "viewMoreCompleted": "View more in run list →",
       "loading": "Loading…",
       "loadFailed": "Failed to load board data. Please retry.",
       "retry": "Retry",
@@ -313,8 +321,12 @@
         "emptyModelCompHint": "No model composition yet",
         "emptyModelRankHint": "No model ranking yet"
       },
-      "filters": {
-        "label": "Also show"
+      "segments": {
+        "label": "Filter by status",
+        "all": "All",
+        "running": "Running",
+        "waitingHuman": "Waiting for human",
+        "completed": "Completed"
       },
       "columns": {
         "active": "In progress",
@@ -327,15 +339,13 @@
         "completedOnly": "completed only",
         "inProgress": "In progress",
         "inReview": "Needs attention",
-        "doneRecent": "Recent 20",
-        "extraFilter": "Additional status"
+        "doneRecent": "Recent 20"
       },
       "empty": {
         "active": "No in-progress requirements",
         "running": "No running requirements",
         "waitingHuman": "No requirements waiting for human",
-        "completed": "No completed requirements yet",
-        "extra": "No runs in this status"
+        "completed": "No completed requirements yet"
       },
       "truncated": {
         "showingFirst100": "Showing the first 100 — open the run list for the full set"
@@ -404,7 +414,7 @@
         "themeLight": "Light"
       },
       "acp": {
-        "meta": "Pick how to connect: a model vendor API key, or a coding tool account. The key is stored in this workspace and shared by all Agents.",
+        "meta": "Choose a general model API or a coding tool. Keys are stored in this workspace and shared by all Agents.",
         "region": "Region",
         "paths": {
           "apiKey": {
@@ -412,8 +422,8 @@
             "desc": "You already have a key from OpenAI, Anthropic, DeepSeek or another vendor. Pick any model, or connect your own compatible service."
           },
           "cli": {
-            "title": "Use a coding tool account",
-            "desc": "Use a Cursor, Claude Code, CodeBuddy, Trae, or Codex account. Codex takes a ChatGPT login file; the others use their account keys. You can specify a model, or leave the choice to the tool."
+            "title": "Use a coding tool",
+            "desc": "Use Cursor, Claude Code, CodeBuddy, Trae, Codex, or DeepSeek Harness (DSH). DSH takes a DeepSeek API key, Codex a ChatGPT login file, and the others their account keys. You can specify a model, or leave the choice to the tool."
           }
         },
         "cliLabel": "Choose a coding tool",
@@ -478,7 +488,7 @@
         "sshSavedToCredentials": "The SSH private key and trusted hosts will be saved to the workspace credentials."
       },
       "team": {
-        "meta": "Four Agents form the default workflow; rename them or pick a model.",
+        "meta": "Four Agents form the default workflow. Their names are locked; you can still pick a model for each.",
         "loading": "Loading template capabilities…",
         "loadError": "Could not load template capabilities. You can still create the default team.",
         "retry": "Retry",
@@ -495,7 +505,7 @@
         "modelLabel": "Model",
         "modelPlaceholder": "Empty = workspace default",
         "modelInherit": "Empty = {model}",
-        "foot": "Clarify and Implement are required. You can rename any Agent later on the Agents page.",
+        "foot": "All four are created. Names are locked and cannot be deleted or renamed on the Agents page.",
         "toastFixNames": "Fix the Agent names first",
         "nameIssues": {
           "required": "Enter a name",
@@ -620,7 +630,10 @@
         "namePlaceholder": "For example, Requirement alignment",
         "create": "Create",
         "creating": "Creating…",
-        "created": "Created workflow \"{name}\""
+        "created": "Created workflow \"{name}\"",
+        "agentsRequiredTitle": "Can't create a workflow yet",
+        "agentsRequired": "A new workflow needs these four Agents. Still missing: {missing}. Finish the guide first.",
+        "goOnboarding": "Finish the guide"
       },
       "tabRequirementDrafts": "Requirement drafts",
       "requirementDrafts": {
@@ -1154,8 +1167,9 @@
         "copySuccess": "Copied to clipboard",
         "copyFailed": "Copy failed"
       },
-      "metaTitle": "Basic information",
-      "metaHint": "Save after editing the name, description, or unknown-model display name; the header and stats update on success.",
+      "metaTitle": "Workspace information",
+      "metaHint": "Use Save at the bottom of the page after editing the name, description, or unknown-model display name. The header and usage views update after a successful save.",
+      "nameRequired": "Workspace name cannot be empty",
       "metaDescPlaceholder": "Briefly describe this workspace",
       "unknownModelDisplayNameLabel": "Unknown model display name",
       "unknownModelDisplayNamePlaceholder": "e.g. gpt-5; leave blank to keep the default",
@@ -1173,7 +1187,7 @@
       "varsEmptyTitle": "No workflow variables yet",
       "varsEmptyDesc": "Add a row to configure workspace-level defaults.",
       "sharedAgent": {
-        "extendHint": "Workspace Runs and Agent Studio Chat test extend this shared config first, then the chosen Agent overlays same-named keys (Agent wins).",
+        "extendHint": "Workspace Runs and Agent Studio Chat test overlay Agent settings on shared files, MCP and environment variables. Each Agent separately opts into model and Git defaults.",
         "discard": "Discard",
         "genericCredentialTitle": "Workspace default credential",
         "genericCredentialHint": "An Agent that already chose a credential uses its own. One that has not, and uses the same kind, uses this one.",
@@ -1181,21 +1195,34 @@
         "modelHint": "The workspace default model. Agents on the same CLI that have not picked a model use this one."
       },
       "credentials": {
+        "stepKind": "Choose type",
+        "stepDetails": "Add details",
+        "description": "Manage access to coding tools, model providers and repositories. Secret values stay masked.",
+        "noValue": "No credential added",
+        "sections": {
+          "coding": "Agent CLI",
+          "api": "API accounts",
+          "git": "Repositories",
+          "ssh": "SSH access",
+          "other": "Other credentials"
+        },
         "eyebrow": "SECURITY CREDENTIALS",
         "title": "Workspace credentials",
         "modelApiKeySubtitle": "Add, replace, or remove keys here. This list does not mark which Agent is using one, and only a mask is shown.",
         "empty": "This workspace has no managed credentials yet.",
+        "add": "Add",
+        "addModel": "Add model",
         "create": "Add credential",
         "createTitle": "Add workspace credential",
         "alias": "Alias",
-        "aliasPlaceholder": "Work account",
+        "aliasPlaceholder": "e.g. Shared team key",
+        "invalidHost": "Enter a host or HTTP(S) origin without a path.",
         "aliasRequired": "Enter an alias",
-        "aliasTaken": "This kind already has an alias “{alias}”. Use another one, for example a work account.",
+        "aliasTaken": "This kind already has an alias “{alias}”. Use a different name.",
         "next": "Next",
         "back": "Back",
         "showSecret": "Show",
         "hideSecret": "Hide",
-        "stepKindHint": "Choose a kind first. The next step asks for an alias and the secret.",
         "secretApiKey": "API Key",
         "secretLoginFile": "Login file",
         "secretPrivateKey": "Private key",
@@ -1216,7 +1243,8 @@
           "github": "GitHub",
           "gitlab": "GitLab",
           "ssh_key": "SSH private key",
-          "ssh_hosts": "SSH known hosts"
+          "ssh_hosts": "SSH known hosts",
+          "deepseek_harness": "DeepSeek Harness"
         },
         "summary": {
           "total": "Credential slots",
@@ -1245,6 +1273,9 @@
         "clear": "Clear",
         "saved": "Credential saved",
         "cleared": "Credential cleared",
+        "accountDeleteConfirm": "After deleting API account \"{alias}\", model configurations using this API account will stop working, and Agents bound to those configurations will no longer run. Delete it?",
+        "accountDeleted": "API account deleted",
+        "accountDeleteFailed": "Could not delete the API account",
         "managedByAdapter": "Managed by the {source} settings and shown here for workspace visibility.",
         "updatedAt": "Last updated: {time}"
       },
@@ -1839,8 +1870,10 @@
     },
     "settings": {
       "title": "General",
-      "subtitle": "Manage brand copy, run concurrency, and sandbox resources.",
+      "subtitle": "Manage workspace information, brand copy, run concurrency, and sandbox resources.",
       "saved": "Saved",
+      "workspaceSaveFailed": "Workspace information failed to save: {reason}",
+      "platformSaveFailed": "Platform settings failed to save: {reason}",
       "loadingTitle": "Loading…",
       "loadingDesc": "Loading platform settings…",
       "loadFailed": "Load failed",
@@ -1856,7 +1889,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "Shared by the sidebar and Home typewriter, up to 40 characters. Blank uses Grasp.",
         "homeSubtitle": "Home subtitle",
-        "homeSubtitlePlaceholder": "Clarify first, then act",
+        "homeSubtitlePlaceholder": "What should we do?",
         "homeSubtitleHint": "Up to 80 characters. Blank uses the current locale default."
       },
       "groups": {
@@ -2063,6 +2096,10 @@
       }
     },
     "agentStudio": {
+      "toolPicker": {
+        "title": "Coding tool",
+        "site": "Service region"
+      },
       "title": "Agent Studio",
       "errorPrefix": "Error:",
       "empty": "No agents yet. Use \"Create Agent team\" for a full roster, or \"New Agent\" for a single one.",
@@ -2108,8 +2145,11 @@
         "manageNoMatchDesc": "Try a different name keyword.",
         "manageClearSearch": "Clear search",
         "renameViaManage": "Rename (open management)",
-        "noSelection": "No agent selected. Pick one from the tree, or open Agent management.",
-        "metaRenameHint": "Rename this agent in Agent management. The identity name is not editable here."
+        "lockedHint": "Workflows need this Agent. It cannot be deleted or renamed.",
+        "contextRename": "Rename",
+        "contextDelete": "Delete",
+        "noSelection": "No agent selected. Pick one from the list.",
+        "metaRenameHint": "Right-click the agent in the list to rename it. The identity name is not editable here."
       },
       "explorer": {
         "title": "Explorer",
@@ -2404,7 +2444,7 @@
         "credentialCurrent": "In use",
         "credentialEmpty": "No model provider API key yet",
         "credentialName": "Alias",
-        "credentialNamePlaceholder": "Work account",
+        "credentialNamePlaceholder": "e.g. Shared team key",
         "credentialNameRequired": "Enter an alias",
         "credentialKey": "API Key",
         "credentialKeyRequired": "Enter an API key",
@@ -2640,8 +2680,8 @@
         },
         "steps": {
           "basics": "Basics",
-          "acp": "Agent",
-          "apiKey": "API Key",
+          "acp": "Tool & model",
+          "apiKey": "Model",
           "git": "Git",
           "env": "ENV",
           "mcp": "MCP",
@@ -2664,7 +2704,7 @@
           "templateHintPack": "Will apply {name}."
         },
         "acp": {
-          "meta": "Choose how to start: a model-vendor API key, or a coding-CLI vendor account. CodeBuddy and Trae also require a China or International site; International is the default.",
+          "meta": "Choose how to start: a model-vendor API key, or a coding tool. CodeBuddy and Trae also require a China or International site; International is the default.",
           "remapTitle": "Switch Backend?",
           "remapBody": "MCP / Skills / Commands / Rules may depend on the current paths. Switching remaps to the new configRoot; cancel keeps the current Backend."
         },
@@ -2690,7 +2730,8 @@
             "codebuddySite": "Keys are bound to a site; apply in the console that matches the site chosen in the Agent step.",
             "traeToken": "Official CLI login tokens must start with trae-lt- (Enterprise plan).",
             "opencode": "Starts with a model vendor API key; you can set the model and the service address.",
-            "codex": "Codex uses a ChatGPT login file, not an API key. To call OpenAI with an API key, use OpenCode. A run may update this file; do not share it with a Codex login that is still in use on your computer."
+            "codex": "Codex uses a ChatGPT login file, not an API key. To call OpenAI with an API key, use OpenCode. A run may update this file; do not share it with a Codex login that is still in use on your computer.",
+            "deepseek": "Use a DeepSeek platform API key. It is stored in workspace credentials; choose the model separately."
           },
           "paths": {
             "cursor": {
@@ -2723,6 +2764,11 @@
               "step2": "Copy the entire contents of ~/.codex/auth.json",
               "step3": "If the login lives only in the system keychain, switch to file storage, log in again, then copy that file",
               "step4": "Paste the file contents below"
+            },
+            "deepseek": {
+              "step1": "Sign in to the DeepSeek platform.",
+              "step2": "Create an API key on the API Keys page.",
+              "step3": "Copy the key below, or save it as a workspace credential."
             }
           },
           "links": {
@@ -2737,7 +2783,8 @@
             "codebuddyStaging": "Apply key (Staging)",
             "traeTokenDocs": "Trae CLI login-token docs",
             "opencodeProviders": "Supported vendors",
-            "codexAuth": "Codex login docs"
+            "codexAuth": "Codex login docs",
+            "deepseekKeys": "DeepSeek API Keys"
           },
           "customConfig": {
             "cardTitle": "Backend config file",
@@ -2795,7 +2842,31 @@
           "rulesDefault": "Rules · default will be written",
           "rulesCustom": "Rules · customized",
           "skills": "Skills",
-          "commands": "Commands"
+          "commands": "Commands",
+          "modelSource_inherit": "Inherit this tool’s workspace model source",
+          "modelSource_platform": "Tool platform authorization",
+          "defaultModel": "Tool default",
+          "modelSource_configuration": "Model configuration",
+          "modelSource_connection": "Model connection",
+          "icon": "Icon selected",
+          "iconNone": "No icon, use the initial"
+        }
+      },
+      "identityIcon": {
+        "search": "Search icons",
+        "clear": "Clear",
+        "empty": "No matching icons",
+        "choose": "Choose an icon",
+        "change": "Change or clear the icon",
+        "colors": {
+          "black": "Black",
+          "red": "Red",
+          "orange": "Orange",
+          "yellow": "Yellow",
+          "green": "Green",
+          "blue": "Blue",
+          "purple": "Purple",
+          "pink": "Pink"
         }
       },
       "data": {
@@ -2970,6 +3041,27 @@
           "gitlab_https": "GitLab HTTPS",
           "ssh": "SSH"
         }
+      },
+      "gitCredentials": {
+        "title": "Git access",
+        "add": "Add Git credential",
+        "empty": "No Git credentials added",
+        "noneAvailable": "No more Git credentials available",
+        "remove": "Remove",
+        "options": "Configure scope",
+        "scope": "Site or repository",
+        "scopePlaceholder": "e.g. git.example.com or a repository URL",
+        "scopeHint": "Leave empty for the provider’s default site. Repository URLs take precedence over site scopes.",
+        "scopeInvalid": "Use a valid host or repository URL that matches this credential’s host and protocol.",
+        "hosts": "SSH host verification",
+        "hostsNone": "No saved host verification",
+        "unavailable": "Credential unavailable. Remove it or restore it in Credentials.",
+        "inherited": "Using workspace defaults",
+        "legacy": "Using existing authorization",
+        "manage": "Manage credentials",
+        "help": "Git setup help",
+        "loading": "Loading credentials…",
+        "retry": "Retry"
       }
     },
     "runLaunch": {
@@ -3197,6 +3289,7 @@
       "confirmFlowDialogDiscardDraft": "The unsent draft will be discarded.",
       "confirmFlowDialogDiscardBoth": "Unsaved edits and the unsent draft will be discarded.",
       "confirmFlowDialogConfirm": "Confirm continuation",
+      "confirmFlowDialogDone": "Handed off",
       "sandboxBusy": "The sandbox still has an Agent turn running. Confirm would queue behind it — abort that turn, then confirm.",
       "abortAndConfirm": "Abort current turn and confirm",
       "sandboxOrphanBanner": "The sandbox still has a turn the platform is no longer tracking{op}, and the sandbox has not finished.",
@@ -3255,6 +3348,7 @@
       "workflowTab": "Workflow artifacts",
       "workflowHeading": "Workflow",
       "currentMark": "Current",
+      "progressCount": "{done} / {total} completed",
       "closeTab": "Close",
       "newTab": "New tab",
       "novncTab": "noVNC",
@@ -4350,6 +4444,17 @@
     },
     "workspaceDefaults": {
       "title": "Workflow defaults",
+      "sharedSandbox": "Shared sandbox",
+      "sharedSandboxHint": "Nodes in the same run share a sandbox and workspace when enabled.",
+      "variablesHint": "Variables on the canvas take precedence.",
+      "notifyTitle": "Run notifications",
+      "notifyHint": "Enable to customize; disable to inherit workspace settings.",
+      "gateTitle": "Automatic approval",
+      "gateHint": "Enable to customize; disable to inherit workspace settings.",
+      "eventsLabel": "Notify when",
+      "channelsLabel": "Notification channels",
+      "noChannels": "No channels available",
+      "mcpPacks": "Available MCPs",
       "hint": "Override shared defaults. Variables declared on the graph still take precedence. Saved settings apply to subsequent execution.",
       "variables": "Default variables",
       "inheritVariables": "Inherit workspace variables",
@@ -4456,6 +4561,17 @@
         "gitlab_https": "GitLab token",
         "ssh": "SSH key"
       },
+      "modelSelect": {
+        "label": "Model",
+        "placeholder": "Choose a model",
+        "search": "Search models",
+        "empty": "This Agent has no available model",
+        "noMatch": "No matching model",
+        "unavailable": "Unavailable",
+        "reset": "That model is no longer in the configuration. The primary model is selected again.",
+        "pending": "This reply still uses the previous model. The next message uses the new one.",
+        "catalogFailed": "The model list did not load. The saved model stays selected."
+      },
       "agentSelect": {
         "placeholder": "Choose Agent",
         "search": "Search Agent or CLI",
@@ -4528,7 +4644,8 @@
         "unknown": "The sandbox failed to start or was destroyed.",
         "retry": "Restart",
         "logs": "Open sandbox",
-        "edit": "Edit repository"
+        "edit": "Edit repository",
+        "editRepo": "Edit {name}"
       },
       "chat": {
         "placeholder": "Message {agent}. Enter to send, Shift+Enter for a new line",
@@ -4542,6 +4659,7 @@
         "generating": "Generating…",
         "waitingSandbox": "Runs once the sandbox is ready",
         "empty": "{agent} is ready. Start chatting.",
+        "reposFrozen": "These repositories were frozen at launch and cannot be added or removed in this session.",
         "imagesOnly": "(attachments)",
         "plan": "Plan"
       },
@@ -4573,7 +4691,8 @@
         "branch": "Branch",
         "access": "Access",
         "remoteDefault": "Remote default branch",
-        "snapshotHint": "Repository settings are frozen when the session starts. Restart the session to pick up later changes.",
+        "dir": "Directory",
+        "snapshotHint": "These repository settings were frozen at launch and cannot be added or removed in this session. Restarting still uses this snapshot. Later changes to repository settings are not applied here; start a new session to use them.",
         "vars": "Environment variables",
         "hint": "Only names and origins are shown, never values.",
         "all": "All",
@@ -4592,12 +4711,18 @@
         "session_error": "The sandbox is unavailable. Restart the session.",
         "content_required": "The message is empty",
         "agent_not_found": "Agent not found",
+        "model_not_in_configuration": "That model is not in this Agent's model configuration",
+        "model_unavailable": "That model is no longer available",
+        "model_switch_failed": "The model could not be switched, so the previous model stays selected",
         "project_not_found": "Repository not found",
         "name_required": "Enter a repository name",
         "name_too_long": "Repository names are at most 80 characters",
         "name_taken": "A repository with this name already exists",
         "repo_url_invalid": "Invalid repository URL",
         "branch_invalid": "Branch names cannot contain spaces, {'|'} or ,",
+        "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
+        "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
+        "env_key_conflict": "Variable {key} conflicts across repositories {repos}. Change it before starting.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
         "git_type_invalid": "Unsupported access mode",
         "env_key_invalid": "Invalid variable name",

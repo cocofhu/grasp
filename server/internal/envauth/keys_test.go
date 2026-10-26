@@ -5,7 +5,8 @@ import "testing"
 func TestIsPlatformAuthEnvKey(t *testing.T) {
 	for _, k := range []string{
 		"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "CODEBUDDY_API_KEY",
-		"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY",
+		"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "DEEPSEEK_API_KEY",
+		"ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
 	} {
 		if !IsPlatformAuthEnvKey(k) {
 			t.Fatalf("%s should be platform auth key", k)
@@ -27,7 +28,7 @@ func TestIsSecretEnvKey(t *testing.T) {
 			t.Fatalf("%s should be secret env key", k)
 		}
 	}
-	for _, k := range []string{"GIT_SSH_KNOWN_HOSTS", "GITHUB_TOKEN", "GRASP_TRAE_API_KEY", " CURSOR_API_KEY "} {
+	for _, k := range []string{"GIT_SSH_KNOWN_HOSTS", "GITHUB_TOKEN", "GRASP_TRAE_API_KEY", "GRASP_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY", " CURSOR_API_KEY "} {
 		if !IsSecretEnvKey(k) {
 			t.Fatalf("%s should be secret env key", k)
 		}
@@ -53,7 +54,7 @@ func TestOverlayEnv(t *testing.T) {
 }
 
 func TestStripSecretEnvKeys(t *testing.T) {
-	got := StripSecretEnvKeys(map[string]string{"GITHUB_TOKEN": "t", "CURSOR_API_KEY": "c", "FEATURE": "1"})
+	got := StripSecretEnvKeys(map[string]string{"GITHUB_TOKEN": "t", "CURSOR_API_KEY": "c", "ACP_DEEPSEEK_API_KEY": "dsh", "ACP_DEEPSEEK_HARNESS_API_KEY": "dsh-harness", "FEATURE": "1"})
 	if len(got) != 1 || got["FEATURE"] != "1" {
 		t.Fatalf("got %#v", got)
 	}

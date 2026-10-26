@@ -44,8 +44,8 @@ test('neighborAfterClose picks the right neighbour, then the left one', () => {
 
 test('modelDisplayName maps auto and catalog names', () => {
     const models = [{id: 'gpt-5', name: 'GPT-5'}];
-    assert.equal(modelDisplayName('', models), 'Auto');
-    assert.equal(modelDisplayName('auto', models), 'Auto');
+    assert.equal(modelDisplayName('', models), '自动');
+    assert.equal(modelDisplayName('auto', models), '自动');
     assert.equal(modelDisplayName('gpt-5', models), 'GPT-5');
     assert.equal(modelDisplayName('other', models), 'other');
 });
@@ -54,8 +54,17 @@ test('modelPickerItems leads with a follow-default entry', () => {
     const models = [{id: 'gpt-5', name: 'GPT-5'}, {id: 'sonnet'}];
     const items = modelPickerItems(models, '');
     assert.equal(items[0].id, '');
-    assert.equal(items[0].name, '默认（Auto）');
+    assert.equal(items[0].name, '默认（自动）');
     assert.equal(items[0].followDefault, true);
     assert.equal(items[2].name, 'sonnet');
     assert.equal(modelPickerItems(models, 'gpt-5')[0].name, '默认（GPT-5）');
+});
+
+test('configured modelPickerItems keeps order and hides role labels', () => {
+    const models = [{id: 'primary', name: 'Primary', vendor: 'cursor'}, {id: 'aux', name: 'Aux', vendor: 'xai', unavailable: true}];
+    const items = modelPickerItems(models, 'primary', true);
+    assert.deepEqual(items.map((item) => item.id), ['primary', 'aux']);
+    assert.equal(items[0].followDefault, undefined);
+    assert.equal(JSON.stringify(items).includes('主模型'), false);
+    assert.equal(JSON.stringify(items).includes('辅助模型'), false);
 });

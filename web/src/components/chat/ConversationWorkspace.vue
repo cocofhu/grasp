@@ -41,12 +41,26 @@ const resourceToggle = ref<HTMLButtonElement | null>(null)
 const artifactToggle = ref<HTMLButtonElement | null>(null)
 const pressedToggle = ref<'resources' | 'artifacts' | null>(null)
 const closeButton = ref<HTMLButtonElement | null>(null)
+const SASH_WIDTH = 4
+const SNAP_DISTANCE = 16
+const COVER_STORAGE = 'cover'
+
 const canvasWidth = ref(0)
 const preferredWidth = ref(props.panelWidth)
+const covered = ref(false)
 const dragging = ref(false)
-const compact = computed(() => canvasWidth.value > 0 && canvasWidth.value < 800)
-const maxWidth = computed(() => Math.max(280, Math.min(880, canvasWidth.value - 364)))
-const width = computed(() => Math.max(280, Math.min(maxWidth.value, preferredWidth.value)))
+const measured = computed(() => canvasWidth.value > 0)
+const compact = computed(() => measured.value && canvasWidth.value < 800)
+const maxWidth = computed(() => Math.max(0, Math.round(canvasWidth.value - SASH_WIDTH)))
+const width = computed(() => {
+  if (covered.value && measured.value) return maxWidth.value
+  const preferred = Number.isFinite(preferredWidth.value) && preferredWidth.value > 0 ? preferredWidth.value : props.panelWidth
+  return measured.value ? Math.min(maxWidth.value, preferred) : preferred
+})
+const ariaMax = computed(() => (measured.value ? maxWidth.value : props.panelWidth))
+const suppressChat = computed(() => props.panelEnabled && open.value && (compact.value || covered.value))
+const chatCovered = computed(() => covered.value && open.value && props.panelEnabled && !compact.value)
+const mastheadInert = computed(() => props.panelEnabled && open.value && compact.value)
 const runNameProvided = computed(() => props.runName !== undefined)
 const runNameLabel = computed(() => (props.runName ?? '').trim())
 const runNamePending = computed(() => runNameProvided.value && !runNameLabel.value)
@@ -82,12 +96,33 @@ let pointerWidth = 0
 function readWidth() {
   try {
     const raw = localStorage.getItem(props.storageKey)
+    if (raw === COVER_STORAGE) {
+      covered.value = true
+      preferredWidth.value = props.panelWidth
+      return
+    }
     const value = Number(raw)
-    preferredWidth.value = raw && Number.isFinite(value) && value >= 280 && value <= 880 ? value : props.panelWidth
-  } catch { preferredWidth.value = props.panelWidth }
+    covered.value = false
+    preferredWidth.value = raw && Number.isFinite(value) && value > SNAP_DISTANCE ? value : props.panelWidth
+  } catch {
+    covered.value = false
+    preferredWidth.value = props.panelWidth
+  }
 }
 function saveWidth() {
-  try { localStorage.setItem(props.storageKey, String(width.value)) } catch { /* private storage */ }
+  try {
+    if (covered.value) {
+      localStorage.setItem(props.storageKey, COVER_STORAGE)
+      return
+    }
+    const stored = width.value
+    if (!(stored > 0)) return
+    localStorage.setItem(props.storageKey, String(stored))
+  } catch { /* private storage */ }
+}
+function defaultOpenWidth() {
+  if (!measured.value) return props.panelWidth
+  return Math.min(props.panelWidth, maxWidth.value)
 }
 
 // Keep the same passage visible when opening a pane changes line wrapping.
@@ -107,16 +142,43 @@ function capturePassage(): (() => void) | undefined {
   }
 }
 function restorePassage(restore?: () => void) { void nextTick(() => restore?.()) }
-function close() {
+function dismiss(forgetWidth: boolean) {
+  if (forgetWidth || covered.value) {
+    covered.value = false
+    preferredWidth.value = defaultOpenWidth()
+    saveWidth()
+  }
+  dragging.value = false
   open.value = false
   if (props.splitModes) mode.value = null
+}
+function close() { dismiss(false) }
+function hidePanel() { dismiss(true) }
+function toggleFromArtifactIcon() {
+  if (open.value) hidePanel()
+  else openAtDefault()
+}
+function openAtDefault() {
+  covered.value = false
+  preferredWidth.value = defaultOpenWidth()
+  try {
+    const raw = localStorage.getItem(props.storageKey)
+    if (raw != null && raw !== String(width.value)) saveWidth()
+  } catch { /* private storage */ }
+  open.value = true
+}
+function togglePanel() {
+  if (open.value) close()
+  else openAtDefault()
 }
 function toggleMode(next: 'resources' | 'artifacts') {
   pressedToggle.value = next
   if (mode.value === next) close()
-  else {
+  else if (open.value) {
     mode.value = next
-    open.value = true
+  } else {
+    mode.value = next
+    openAtDefault()
   }
 }
 function onPanelKeydown(event: KeyboardEvent) {
@@ -141,10 +203,33 @@ function startResize(event: PointerEvent) {
   ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
   event.preventDefault()
 }
+function commitWidth(next: number) {
+  if (!Number.isFinite(next)) return
+  const rounded = Math.round(next)
+  if (!measured.value) {
+    if (rounded > SNAP_DISTANCE) {
+      covered.value = false
+      preferredWidth.value = rounded
+    }
+    return
+  }
+  const max = maxWidth.value
+  if (max - rounded <= SNAP_DISTANCE) {
+    covered.value = true
+    preferredWidth.value = max
+    return
+  }
+  if (rounded <= SNAP_DISTANCE) {
+    hidePanel()
+    return
+  }
+  covered.value = false
+  preferredWidth.value = Math.min(rounded, max)
+}
 function resize(event: PointerEvent) {
   if (!dragging.value) return
   const restore = capturePassage()
-  preferredWidth.value = Math.max(280, Math.min(maxWidth.value, pointerWidth + pointerStart - event.clientX))
+  commitWidth(pointerWidth + pointerStart - event.clientX)
   restorePassage(restore)
 }
 function endResize() {
@@ -152,13 +237,23 @@ function endResize() {
   dragging.value = false
   saveWidth()
 }
+function coverPanel() {
+  if (!measured.value) return
+  covered.value = true
+  preferredWidth.value = maxWidth.value
+}
 function resizeByKey(event: KeyboardEvent) {
-  const next = event.key === 'ArrowLeft' ? width.value + 24 : event.key === 'ArrowRight' ? width.value - 24 : event.key === 'Home' ? 280 : event.key === 'End' ? maxWidth.value : event.key === 'Enter' ? props.panelWidth : null
-  if (next === null) return
+  const key = event.key
+  if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Home' && key !== 'End' && key !== 'Enter') return
   event.preventDefault()
   const restore = capturePassage()
-  preferredWidth.value = Math.max(280, Math.min(maxWidth.value, next))
-  saveWidth()
+  if (key === 'Home') hidePanel()
+  else if (key === 'End') coverPanel()
+  else if (key === 'Enter') {
+    covered.value = false
+    preferredWidth.value = defaultOpenWidth()
+  } else commitWidth(key === 'ArrowLeft' ? width.value + 24 : width.value - 24)
+  if (open.value) saveWidth()
   restorePassage(restore)
 }
 watch(artifactPanelOpen, value => { unreadCount.value = runArtifactUnreadOnPanel(unreadCount.value, value) }, { flush: 'sync' })
@@ -205,8 +300,9 @@ watch(() => props.storageKey, readWidth)
 watch(() => props.panelEnabled, enabled => { if (!enabled) { open.value = false; unreadCount.value = 0 } })
 watch(compact, async value => { if (value && open.value) { await nextTick(); closeButton.value?.focus() } })
 onMounted(() => {
-  readWidth()
   canvasWidth.value = root.value?.clientWidth || window.innerWidth
+  readWidth()
+  if (covered.value && props.panelEnabled && !open.value) open.value = true
   if (typeof ResizeObserver !== 'undefined' && root.value) {
     observer = new ResizeObserver(([entry]) => {
       if (!entry || entry.contentRect.width === canvasWidth.value) return
@@ -218,12 +314,14 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
+defineExpose({ toggleFromArtifactIcon, openAtDefault, hidePanel, close })
 </script>
 
 <template>
-  <div ref="root" class="conversation-workspace chat-thread" :class="{ 'is-compact': compact, 'is-resizing': dragging }" data-testid="conversation-workspace" :data-panel-open="open && panelEnabled ? 'true' : 'false'">
+  <div ref="root" class="conversation-workspace chat-thread" :class="{ 'is-compact': compact, 'is-resizing': dragging, 'is-covered': chatCovered }" data-testid="conversation-workspace" :data-panel-open="open && panelEnabled ? 'true' : 'false'">
     <header v-if="showToolbar" class="conversation-toolbar">
       <slot name="toolbar">
+        <slot name="leading" />
         <span class="conversation-heading">
           <Icon name="chat" :size="15" class="shrink-0" aria-hidden="true" />
           <span v-if="runNamePending" class="conversation-title-skeleton" data-testid="conversation-title-skeleton" aria-hidden="true"><span /></span>
@@ -235,13 +333,16 @@ onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
             <button ref="resourceToggle" type="button" class="conversation-mode-toggle" data-testid="conversation-resource-toggle" :aria-pressed="mode === 'resources'" :aria-expanded="mode === 'resources'" :aria-label="mode === 'resources' ? t('pages.conversationWorkspace.closeResources') : t('pages.conversationWorkspace.openResources')" :title="t('pages.conversationWorkspace.resourceTip')" @click="toggleMode('resources')"><Icon name="stage-resources" :size="16" aria-hidden="true" /></button>
             <button ref="artifactToggle" type="button" class="conversation-mode-toggle" data-testid="conversation-panel-toggle" :aria-pressed="mode === 'artifacts'" :aria-expanded="mode === 'artifacts'" :aria-label="artifactToggleLabel" :title="t('pages.conversationWorkspace.artifacts')" @click="toggleMode('artifacts')"><ArtifactUnreadMark :count="unreadCount" :panel-open="artifactPanelOpen"><Icon name="doc" :size="16" aria-hidden="true" /></ArtifactUnreadMark></button>
           </div>
-          <button v-else-if="panelEnabled" ref="toggle" type="button" class="conversation-panel-toggle" data-testid="conversation-panel-toggle" :aria-expanded="open" :aria-label="artifactToggleLabel" @click="open = !open"><ArtifactUnreadMark :count="unreadCount" :panel-open="open"><Icon name="chat-artifacts" :size="16" aria-hidden="true" /></ArtifactUnreadMark>{{ t('pages.conversationWorkspace.artifacts') }}</button>
+          <button v-else-if="panelEnabled" ref="toggle" type="button" class="conversation-panel-toggle" data-testid="conversation-panel-toggle" :aria-expanded="open" :aria-label="artifactToggleLabel" @click="togglePanel"><ArtifactUnreadMark :count="unreadCount" :panel-open="open"><Icon name="chat-artifacts" :size="16" aria-hidden="true" /></ArtifactUnreadMark>{{ t('pages.conversationWorkspace.artifacts') }}</button>
         </div>
       </slot>
     </header>
     <div class="conversation-body">
-      <div ref="main" class="conversation-main" :inert="compact && open && panelEnabled ? true : undefined" :aria-hidden="compact && open && panelEnabled ? 'true' : undefined" data-testid="conversation-main"><slot /></div>
-      <div v-if="panelEnabled && open && !compact" role="separator" tabindex="0" aria-orientation="vertical" :aria-valuemin="280" :aria-valuemax="maxWidth" :aria-valuenow="width" :aria-label="t('pages.conversationWorkspace.resizePanel')" class="conversation-sash" data-testid="conversation-panel-sash" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @keydown="resizeByKey" />
+      <div class="conversation-chat-column">
+        <div v-if="$slots.masthead" class="conversation-masthead" data-testid="conversation-masthead" :inert="mastheadInert ? true : undefined"><slot name="masthead" /></div>
+        <div ref="main" class="conversation-main" :inert="suppressChat ? true : undefined" :aria-hidden="suppressChat ? 'true' : undefined" data-testid="conversation-main"><slot /></div>
+      </div>
+      <div v-if="panelEnabled && open && !compact" role="separator" tabindex="0" aria-orientation="vertical" aria-valuemin="0" :aria-valuemax="ariaMax" :aria-valuenow="width" :aria-label="t('pages.conversationWorkspace.resizePanel')" class="conversation-sash" data-testid="conversation-panel-sash" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @keydown="resizeByKey" />
       <aside v-if="panelEnabled" v-show="open" ref="panel" class="conversation-panel" :style="compact ? undefined : { width: width + 'px' }" :role="compact ? 'dialog' : 'complementary'" :aria-modal="compact && open ? 'true' : undefined" :aria-label="panelTitle" :data-drawer-mode="splitModes ? (mode || 'closed') : undefined" data-testid="conversation-artifact-panel" @keydown="onPanelKeydown">
         <!-- Split drawer: the toolbar toggles already name and close it, so desktop skips this row. -->
         <header v-if="!splitModes || compact" class="conversation-panel-heading">
@@ -269,12 +370,17 @@ onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
 .conversation-mode-toggle:hover { background: rgb(var(--c-txt) / .04); color: rgb(var(--c-txt)); }
 .conversation-mode-toggle[aria-pressed="true"] { border-color: rgb(var(--c-line)); background: rgb(var(--c-base)); color: rgb(var(--c-txt)); }
 .conversation-body { display: flex; position: relative; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
+.conversation-chat-column { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
+.conversation-masthead { flex: none; min-width: 0; }
 .conversation-main { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .conversation-panel { display: flex; min-width: 0; min-height: 0; flex: none; flex-direction: column; overflow: hidden; border-left: 1px solid rgb(var(--c-line)); background: rgb(var(--c-surface)); animation: conversation-panel-reveal 160ms ease-out; }
 .conversation-panel-heading { display: flex; min-height: 44px; flex: none; align-items: center; gap: 8px; padding: 4px 10px 4px 16px; border-bottom: 1px solid rgb(var(--c-line) / .65); }
 .conversation-panel-content { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .conversation-sash { position: relative; width: 4px; flex: none; cursor: col-resize; touch-action: none; background: transparent; }
-.conversation-sash:hover, .conversation-sash:focus-visible, .is-resizing .conversation-sash { background: rgb(var(--c-accent) / .4); outline: 0; }
+.conversation-sash:hover, .conversation-sash:focus-visible, .is-resizing .conversation-sash, .is-covered .conversation-sash { background: rgb(var(--c-accent) / .4); outline: 0; }
+.is-covered .conversation-chat-column { flex: 0 0 0px; width: 0; overflow: visible; }
+.is-covered .conversation-main { flex: 0 0 0px; width: 0; overflow: hidden; visibility: hidden; }
+.is-covered .conversation-masthead { position: absolute; z-index: 25; top: 0; left: 4px; width: min(28rem, calc(100% - 3rem)); padding-inline: 8px 12px; background: rgb(var(--c-surface)); visibility: visible; pointer-events: auto; }
 .is-resizing { user-select: none; }
 .is-compact .conversation-panel { position: absolute; z-index: 20; inset: 0; width: 100%; border-left: 0; }
 .is-compact .conversation-panel-heading { padding-inline: 12px; }

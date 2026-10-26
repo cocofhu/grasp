@@ -33,14 +33,14 @@ func TestCreateAgent_validationFailureWritesNothing(t *testing.T) {
 		name string
 		body map[string]any
 	}{
-		{"missing acpBackend", map[string]any{"name": "probe1", "files": []any{}}},
-		{"unknown acpBackend", map[string]any{"name": "probe2", "acpBackend": "nope", "files": []any{}}},
+		{"missing acpBackend", map[string]any{"inheritModel": false, "inheritGit": false, "name": "probe1", "files": []any{}}},
+		{"unknown acpBackend", map[string]any{"name": "probe2", "inheritModel": false, "inheritGit": false, "acpBackend": "nope", "files": []any{}}},
 		{"bad credential binding key", map[string]any{
-			"name": "probe3", "acpBackend": "cursor", "files": []any{},
+			"name": "probe3", "inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "files": []any{},
 			"credentialBindings": map[string]any{" padded": nil},
 		}},
 		{"secret env key", map[string]any{
-			"name": "probe4", "acpBackend": "cursor", "files": []any{},
+			"name": "probe4", "inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "files": []any{},
 			"env": map[string]any{"GITHUB_TOKEN": "x"},
 		}},
 	}
@@ -58,7 +58,7 @@ func TestCreateAgent_validationFailureWritesNothing(t *testing.T) {
 				t.Fatalf("%s directory left on disk after a rejected create", agent)
 			}
 			// The name stays free: a valid retry succeeds instead of 409.
-			if w := h.do("POST", "/api/agents", map[string]any{"name": agent, "acpBackend": "cursor", "files": []any{}}); w.Code != 201 {
+			if w := h.do("POST", "/api/agents", map[string]any{"name": agent, "inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "files": []any{}}); w.Code != 201 {
 				t.Fatalf("valid retry: want 201, got %d %s", w.Code, w.Body.String())
 			}
 		})
@@ -69,11 +69,11 @@ func TestCreateAgent_validationFailureWritesNothing(t *testing.T) {
 // 500s, and record no workspace revision.
 func TestSaveAgent_validationFailureIs400(t *testing.T) {
 	h := newHarness(t)
-	if w := h.do("POST", "/api/agents", map[string]any{"name": "probe5", "acpBackend": "cursor", "files": []any{}}); w.Code != 201 {
+	if w := h.do("POST", "/api/agents", map[string]any{"name": "probe5", "inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "files": []any{}}); w.Code != 201 {
 		t.Fatalf("seed: %d %s", w.Code, w.Body.String())
 	}
 	w := h.do("PUT", "/api/agents/probe5", map[string]any{
-		"acpBackend": "cursor", "files": []any{},
+		"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "files": []any{},
 		"credentialBindings": map[string]any{" padded": nil},
 	})
 	if w.Code != 400 {

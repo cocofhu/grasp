@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import { AGENT_SETTINGS_PATH } from '@/lib/agent/agentCreateWizard'
+import { AGENT_SETTINGS_REL_PATH as AGENT_SETTINGS_PATH } from '@/lib/agent/backendAuthGuide'
 import type { AgentStudioDraft, DraftFile } from '@/lib/agent/agentStudioDraft'
 import { useAgentFilesPanel } from './useAgentFilesPanel'
 

@@ -34,6 +34,7 @@ const {
   previewItems,
   remainingCount,
   unreadCount,
+  notificationMotionKey,
   hasUnreadFailed,
   badgeLabel,
   markAllRead,
@@ -218,7 +219,7 @@ defineExpose({
       <span v-if="layout === 'sidebar'" class="min-w-0 flex-1" aria-hidden="true" />
       <button
         type="button"
-        class="shell-theme-toggle flex items-center justify-center text-txt2 hover:bg-elevated hover:text-txt"
+        class="shell-theme-toggle flex items-center justify-center rounded-md text-txt2 transition hover:bg-elevated hover:text-txt focus-visible:bg-elevated focus-visible:text-txt motion-reduce:transition-none"
         :class="layout === 'sidebar' ? 'h-8 w-8' : 'h-9 w-9'"
         :title="themeTitle"
         data-testid="shell-theme-toggle"
@@ -230,14 +231,14 @@ defineExpose({
             :class="{ 'is-active': theme !== 'dark' }"
             data-testid="shell-theme-icon-moon"
           >
-            <Icon name="moon" :size="layout === 'sidebar' ? 16 : 18" />
+            <Icon name="moon" :interactive="theme !== 'dark'" :size="layout === 'sidebar' ? 16 : 18" />
           </span>
           <span
             class="shell-theme-icon shell-theme-icon-sun"
             :class="{ 'is-active': theme === 'dark' }"
             data-testid="shell-theme-icon-sun"
           >
-            <Icon name="sun" :size="layout === 'sidebar' ? 16 : 18" />
+            <Icon name="sun" :interactive="theme === 'dark'" :size="layout === 'sidebar' ? 16 : 18" />
           </span>
         </span>
       </button>
@@ -255,7 +256,7 @@ defineExpose({
           :aria-expanded="panelOpen ? 'true' : 'false'"
           @click.stop="togglePanel"
         >
-          <Icon name="bell" :size="layout === 'sidebar' ? 16 : 18" />
+          <Icon name="bell" :motion-key="notificationMotionKey" :size="layout === 'sidebar' ? 16 : 18" />
           <span
             v-if="badgeLabel"
             :key="badgeLabel"
@@ -420,6 +421,16 @@ defineExpose({
 .shell-theme-icon.is-active {
   opacity: 1;
   transform: rotate(0deg) scale(1);
+}
+
+/*
+ * Hover glyphs rotate the path, not this stack. theme-vt-capture already
+ * freezes the stack transform so snapshots stay upright; drop a mid-hover
+ * tilt in the same window so it is not baked into the 280ms cross-fade.
+ * Only the visible icon is interactive, so the hidden glyph never tilts.
+ */
+html.theme-vt-capture .shell-theme-icon :deep(.app-icon path) {
+  animation: none !important;
 }
 
 /* Same popover shell and rows as SidebarAccountMenu (surface, line, 12px, 7px rows). */

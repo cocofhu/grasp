@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { routeApi } from './helpers/apiRoute'
+import { readFile } from 'node:fs/promises'
 
 const MOCK_STATS = {
   window: '30d',
@@ -65,24 +65,42 @@ const MOCK_STATS = {
   },
 }
 
-async function openStatsPage(page: import('@playwright/test').Page) {
-  await routeApi(page, '**/api/stats/token**', async (route) => {
-    const url = new URL(route.request().url())
-    const w = url.searchParams.get('window') || '30d'
-    const bucketWidth = w === '24h' ? 'hour' : w === 'all' ? 'week' : 'day'
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ ...MOCK_STATS, window: w, bucketWidth }),
-    })
-  })
+async function openStatsPage(page: import('@playwright/test').Page, overrides: Record<string, unknown> = {}) {
   await page.goto('/token-analytics.html')
   await expect(page.getByTestId('shell-main-dashboard')).toBeVisible({ timeout: 15_000 })
+  // This harness stubs window.fetch, so network routes cannot replace its stats.
+  await page.evaluate((stats) => {
+    const harnessFetch = window.fetch
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.origin)
+      if (url.pathname !== '/api/stats/token') return harnessFetch(input, init)
+      const selectedWindow = url.searchParams.get('window') || 'all'
+      const bucketWidth = selectedWindow === '24h' ? 'hour' : selectedWindow === 'all' ? 'week' : 'day'
+      return new Response(JSON.stringify({ ...stats, window: selectedWindow, bucketWidth }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }, { ...MOCK_STATS, ...overrides })
   const statsLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '用量统计', exact: true })
   await statsLink.click()
   await expect(page.getByTestId('token-analytics-page')).toBeVisible({ timeout: 15_000 })
   await expect(statsLink).toHaveAttribute('aria-current', 'page')
   await expect(page.getByTestId('sidebar-settings-title')).toHaveCount(0)
+}
+
+const SKEWED_STATS = {
+  kpi: { ...MOCK_STATS.kpi, total: 1_000_000, workflowTotal: 981_000, studioTotal: 10_000, pmTotal: 9_000 },
+  filterOptions: {
+    ...MOCK_STATS.filterOptions,
+    workflows: [{ key: 'w-dominant', name: '默认工作流' }],
+    nodeTypes: [{ key: 'agent', name: 'agent' }],
+  },
+  tree: [
+    { key: 'w-dominant', name: '默认工作流', kind: 'workflow', value: 981_000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 981_000 }] },
+    { key: '_studio', name: 'Studio', kind: 'studio', value: 10_000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 10_000 }] },
+    { key: '_pm', name: 'PM', kind: 'pm', value: 9_000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 9_000 }] },
+  ],
 }
 
 test.describe('Global token analytics', () => {
@@ -176,5 +194,96 @@ test.describe('Global token analytics', () => {
     await page.getByTestId('token-analytics-filter-btn').click()
     await expect(page.getByTestId('token-analytics-filter-model').getByRole('combobox')).toHaveText('Model')
     expect(errors).toEqual([])
+  })
+
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    test(`skewed usage keeps small sources readable at ${viewport.width}px`, async ({ page }) => {
+      // Enter through the desktop app rail, then exercise the responsive stats view.
+      await page.setViewportSize({ width: 1440, height: viewport.height })
+      await openStatsPage(page, SKEWED_STATS)
+      await page.setViewportSize(viewport)
+      const structure = page.getByTestId('token-analytics-structure')
+      await structure.scrollIntoViewIfNeeded()
+      await expect(structure.getByTestId('token-structure-row')).toHaveCount(3)
+      for (const [key, name, total, share] of [
+        ['w-dominant', '默认工作流', '981K', '98.1%'],
+        ['_studio', 'Agent Studio', '10K', '1.0%'],
+        ['_pm', '工作区助手', '9K', '0.9%'],
+      ]) {
+        const row = structure.locator(`[data-testid="token-structure-row"][data-key="${key}"]`)
+        await expect(row.getByTestId('token-structure-source').getByText(name, { exact: true })).toBeVisible()
+        await expect(row.getByTestId('token-structure-total')).toHaveText(total)
+        await expect(row.getByTestId('token-structure-share')).toHaveText(share)
+        const rowBox = await row.boundingBox()
+        expect(rowBox!.width).toBeGreaterThan(200)
+        expect(rowBox!.height).toBeGreaterThan(40)
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1)
+      const structureBox = await structure.boundingBox()
+      expect(structureBox!.x).toBeGreaterThanOrEqual(0)
+      expect(structureBox!.x + structureBox!.width).toBeLessThanOrEqual(viewport.width + 1)
+    })
+  }
+
+  test('usage structure preserves workflow and node type drill scope', async ({ page }) => {
+    await openStatsPage(page, SKEWED_STATS)
+    const row = page.locator('[data-testid="token-structure-row"][data-key="w-dominant"]')
+    await row.getByTestId('token-structure-source').click()
+    await expect(page.getByTestId('token-drill-modal')).toBeVisible()
+    await expect(page.getByTestId('token-drill-crumb-0')).toHaveText('工作流：默认工作流')
+    await page.getByRole('button', { name: 'Close', exact: true }).click()
+    await expect(page.getByTestId('token-drill-modal')).toHaveCount(0)
+
+    await row.getByTestId('token-structure-node').click()
+    await expect(page.getByTestId('token-drill-crumb-0')).toHaveText('工作流：默认工作流')
+    await expect(page.getByTestId('token-drill-crumb-1')).toHaveText('节点类型：agent')
+    await page.getByTestId('token-drill-apply').click()
+    await expect(page.getByTestId('token-analytics-chip-workflowId')).toContainText('默认工作流')
+    await expect(page.getByTestId('token-analytics-chip-nodeType')).toContainText('agent')
+  })
+
+  test('detail tabs show one full-width table and preserve workflow drill', async ({ page }) => {
+    await openStatsPage(page)
+    const models = page.getByTestId('token-analytics-models-table')
+    const workflows = page.getByTestId('token-analytics-workflows-table')
+    await expect(models).toBeVisible()
+    await expect(workflows).not.toBeVisible()
+    await page.getByTestId('token-analytics-detail-tab-workflows').click()
+    await expect(workflows).toBeVisible()
+    await expect(models).not.toBeVisible()
+    await expect(workflows.getByTestId('token-analytics-workflow-row')).toHaveCount(2)
+    await workflows.getByTestId('token-analytics-workflow-detail').first().click()
+    await expect(page.getByTestId('token-drill-crumb-0')).toHaveText('工作流：wf')
+    await page.getByRole('button', { name: 'Close', exact: true }).click()
+    await page.getByTestId('token-analytics-detail-tab-models').click()
+    await expect(models).toBeVisible()
+    await expect(workflows).not.toBeVisible()
+  })
+
+  test('run list expands, exports every run while collapsed, and opens an expanded run', async ({ page }) => {
+    const topRuns = Array.from({ length: 12 }, (_, index) => ({
+      ...MOCK_STATS.topRuns[0], runId: `r${index + 1}`, title: `Run ${index + 1}`, total: 12_000 - index * 500,
+    }))
+    await openStatsPage(page, { topRuns })
+    const rows = page.getByTestId('token-analytics-run-row')
+    await expect(rows).toHaveCount(8)
+    await expect(page.getByRole('button', { name: 'Run 12', exact: true })).toHaveCount(0)
+
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByTestId('token-analytics-export-runs').click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toBe('token-usage-runs.csv')
+    const csv = await readFile((await download.path())!, 'utf8')
+    expect(csv.trim().split(/\r?\n/)).toHaveLength(13)
+    expect(csv).toContain('Run 12,r12,wf,Model')
+
+    const toggle = page.getByTestId('token-analytics-runs-toggle')
+    await toggle.click()
+    await expect(rows).toHaveCount(12)
+    await toggle.click()
+    await expect(rows).toHaveCount(8)
+    await toggle.click()
+    await page.getByRole('button', { name: 'Run 12', exact: true }).click()
+    await expect(page.getByTestId('run-detail-page')).toHaveText('run:r12')
   })
 })

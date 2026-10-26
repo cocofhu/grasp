@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
@@ -314,7 +315,8 @@ function goChannelSettings() {
         data-testid="notify-template-section"
       >
         <SettingsRow :label="t('pages.workspace.notify.templateEvent')">
-          <div
+          <SlidingTabs
+            :value="templateKind"
             class="flex gap-1 rounded-lg bg-elevated p-1"
             role="tablist"
             :aria-label="t('pages.workspace.notify.templateEvent')"
@@ -324,7 +326,7 @@ function goChannelSettings() {
               type="button"
               role="tab"
               class="flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] transition disabled:opacity-55"
-              :class="templateKind === 'waiting_human' ? 'bg-surface text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+              :class="templateKind === 'waiting_human' ? 'text-txt' : 'text-txt3 hover:text-txt2'"
               :aria-selected="templateKind === 'waiting_human'"
               :disabled="controlsDisabled"
               data-testid="notify-tpl-seg-waiting"
@@ -336,7 +338,7 @@ function goChannelSettings() {
               type="button"
               role="tab"
               class="flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] transition disabled:opacity-55"
-              :class="templateKind === 'failed' ? 'bg-surface text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+              :class="templateKind === 'failed' ? 'text-txt' : 'text-txt3 hover:text-txt2'"
               :aria-selected="templateKind === 'failed'"
               :disabled="controlsDisabled"
               data-testid="notify-tpl-seg-failed"
@@ -348,7 +350,7 @@ function goChannelSettings() {
               type="button"
               role="tab"
               class="flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] transition disabled:opacity-55"
-              :class="templateKind === 'completed' ? 'bg-surface text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+              :class="templateKind === 'completed' ? 'text-txt' : 'text-txt3 hover:text-txt2'"
               :aria-selected="templateKind === 'completed'"
               :disabled="controlsDisabled"
               data-testid="notify-tpl-seg-completed"
@@ -356,7 +358,7 @@ function goChannelSettings() {
             >
               {{ t('pages.workspace.notify.segCompleted') }}
             </button>
-          </div>
+          </SlidingTabs>
         </SettingsRow>
 
         <SettingsRow

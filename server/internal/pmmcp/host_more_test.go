@@ -247,7 +247,10 @@ func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
 	if strings.Contains(string(listRuns), "diffHighlights") {
 		t.Fatalf("pm_list_runs should not reuse compare payload: %s", listRuns)
 	}
-	okCall(MCPWorkflowRead, "pm_list_pending_gates", map[string]any{"limit": 5})
+	okCall(MCPWorkflowRead, "pm_list_pending_nodes", map[string]any{"limit": 5})
+	if st, resp := call(MCPWorkflowRead, "pm_list_pending_gates", map[string]any{"limit": 5}); st != 200 || !strings.Contains(string(resp), "unknown tool") {
+		t.Fatalf("retired pm_list_pending_gates: %d %s", st, resp)
+	}
 
 	// --- write surface: create → get_graph → update → publish → start ---
 	created := okCall(MCPWorkflowWrite, "pm_create_workflow", map[string]any{
@@ -309,10 +312,13 @@ func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
 	if err := rs.DB().Create(&models.Run{ID: "run-1", WorkflowID: wfDef.ID, Status: "waiting_human"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if st, resp := call(MCPWorkflowWrite, "pm_resume_gate", map[string]any{"runId": "run-1", "nodeId": "", "action": "approve"}); st != 200 || !strings.Contains(string(resp), "nodeId and action required") {
+	if st, resp := call(MCPWorkflowWrite, "pm_decide_node", map[string]any{"runId": "run-1", "nodeId": "", "action": "approve"}); st != 200 || !strings.Contains(string(resp), "nodeId and action required") {
 		t.Fatalf("empty nodeId should error: %d %s", st, resp)
 	}
-	okCall(MCPWorkflowWrite, "pm_resume_gate", map[string]any{"runId": "run-1", "nodeId": "gate-1", "action": "approve"})
+	okCall(MCPWorkflowWrite, "pm_decide_node", map[string]any{"runId": "run-1", "nodeId": "gate-1", "action": "approve"})
+	if st, resp := call(MCPWorkflowWrite, "pm_resume_gate", map[string]any{"runId": "run-1", "nodeId": "gate-1", "action": "approve"}); st != 200 || !strings.Contains(string(resp), "unknown tool") {
+		t.Fatalf("retired pm_resume_gate: %d %s", st, resp)
+	}
 	if eng.resumed.runID != "run-1" || eng.resumed.action != "approve" {
 		t.Fatalf("resume not forwarded: %+v", eng.resumed)
 	}

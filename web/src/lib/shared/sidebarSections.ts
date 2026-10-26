@@ -1,13 +1,20 @@
 import { ref } from 'vue'
 
-export type SidebarSection = 'running' | 'history'
+export type SidebarSection = 'running' | 'auto' | 'history'
+
+const KNOWN_SECTIONS = new Set<SidebarSection>(['running', 'auto', 'history'])
 
 export const STORAGE_KEY = 'grasp-sidebar-collapsed-sections'
 
+/** Drop names this build does not know, so an older preference file still opens. */
+export function parseStoredSections(raw: unknown): SidebarSection[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((s): s is SidebarSection => typeof s === 'string' && KNOWN_SECTIONS.has(s as SidebarSection))
+}
+
 function readStored(): SidebarSection[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-    return Array.isArray(raw) ? raw.filter((s): s is SidebarSection => s === 'running' || s === 'history') : []
+    return parseStoredSections(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'))
   } catch {
     return []
   }

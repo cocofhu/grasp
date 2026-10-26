@@ -18,6 +18,8 @@ const props = withDefaults(
     disabled?: boolean
     invalid?: boolean
     placeholder?: string
+    /** Overrides the empty menu message without adding a selectable option. */
+    emptyText?: string
     ariaLabel?: string
     /** Adds a filter box on top of the list; matches are highlighted. */
     searchable?: boolean
@@ -397,10 +399,11 @@ onBeforeUnmount(() => {
       @click="togglePanel"
       @keydown="onTriggerKeydown"
     >
+      <slot name="leading" :value="modelValue" />
       <span class="min-w-0 flex-1 truncate" :class="isPlaceholder ? 'text-txt3' : ''">
         {{ selectedLabel }}
       </span>
-      <Icon
+      <Icon :interactive="false"
         name="chevron-down"
         :size="14"
         class="app-select-chevron shrink-0 text-txt3"
@@ -465,6 +468,7 @@ onBeforeUnmount(() => {
               :data-test="row.custom ? 'app-select-custom' : `app-select-option-${row.value}`"
               @click.stop="choose(row.value)"
             >
+              <slot name="option-leading" :option="row" />
               <span v-if="row.custom" class="min-w-0 flex-1 truncate">
                 {{ t('common.search.useTypedValue', { value: row.value }) }}
               </span>
@@ -486,7 +490,7 @@ onBeforeUnmount(() => {
               class="px-2.5 py-4 text-center text-[12px] text-txt3"
               :data-test="loading ? 'app-select-loading' : 'app-select-empty'"
             >
-              {{ loading ? t('common.search.loadingOptions') : t('common.empty.noMatchingOptions') }}
+              {{ loading ? t('common.search.loadingOptions') : emptyText || t('common.empty.noMatchingOptions') }}
             </p>
           </div>
         </div>

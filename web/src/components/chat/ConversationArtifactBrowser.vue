@@ -100,7 +100,7 @@ onBeforeUnmount(() => { ++generation; ++selectionGeneration })
       <h3 class="text-sm font-medium text-txt">{{ t('pages.conversationWorkspace.chooseArtifact') }}</h3>
       <p class="max-w-xs text-xs leading-6 text-txt3">{{ t('pages.conversationWorkspace.chooseArtifactHint') }}</p>
     </div>
-    <div v-else-if="loading" class="flex flex-1 items-center justify-center gap-2 text-xs text-txt3" role="status" data-testid="conversation-artifact-loading"><Icon name="spinner" :size="16" class="animate-spin" />{{ t('pages.conversationWorkspace.loading') }}</div>
+    <div v-else-if="loading" class="flex flex-1 items-center justify-center gap-2 text-xs text-txt3" role="status" data-testid="conversation-artifact-loading"><Icon name="spinner" :size="16" />{{ t('pages.conversationWorkspace.loading') }}</div>
     <div v-else-if="failed" class="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center" role="status" data-testid="conversation-artifact-error">
       <p class="text-sm text-txt2">{{ t('common.asyncState.loadFailedTitle') }}</p>
       <AppButton size="sm" variant="outline" @click="loadTarget">{{ t('common.buttons.retry') }}</AppButton>

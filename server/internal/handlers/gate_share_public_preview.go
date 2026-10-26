@@ -100,9 +100,9 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 		"mode":      purpose,
 	}
 	if purpose == gateshare.PreviewPurposeVNC {
-		out["wsPath"] = "/public/gate-approvals/preview-vnc/ws"
+		out["wsPath"] = "/public/approvals/preview-vnc/ws"
 	} else {
-		out["iframePath"] = fmt.Sprintf("/public/gate-approvals/preview-api/%s/", ticket)
+		out["iframePath"] = fmt.Sprintf("/public/approvals/preview-api/%s/", ticket)
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -245,7 +245,7 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 		return
 	}
 
-	prefix := fmt.Sprintf("/public/gate-approvals/preview-api/%s/", ticket)
+	prefix := fmt.Sprintf("/public/approvals/preview-api/%s/", ticket)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = 100 * time.Millisecond
 	proxy.ModifyResponse = publicPreviewAPIModifyResponse(prefix)

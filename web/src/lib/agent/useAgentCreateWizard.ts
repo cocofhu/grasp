@@ -1,531 +1,87 @@
-/**
- * Agent create wizard UI orchestration (step machine in agentCreateWizard.ts).
- */
+/** Agent creation binds one saved model configuration and an explicit Git list. */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api, type Agent, type CredentialItem } from '@/lib/api/api'
-import {
-  ACP_BACKENDS,
-  CLI_BACKENDS,
-  START_PATH_OPTIONS,
-  WIZARD_STEPS,
-  applyAcpBackend,
-  applyWizardStartPath,
-  assembleCreatePayload,
-  buildReviewSummary,
-  freshDraft,
-  hasPathDeps,
-  hasRoleTemplate,
-  kvToRec,
-  parseCustomConfigJson,
-  stripAuthKeysFromEnv,
-  validateBasics,
-  type StartPath,
-  type WizardAuthMode,
-  type WizardBackendId,
-  type WizardDraft,
-  type WizardStepId,
-} from '@/lib/agent/agentCreateWizard'
-import { buildTemplateOptions } from '@/lib/agent/agentTemplateOptions'
-import type { AgentTemplateOption } from '@/components/agent/AgentTemplateSelect.vue'
-import type { AgentTemplate } from '@/lib/api/apiTypes'
-import { backendForStartPath } from '@/lib/shared/startPath'
-import { authGuideFor, defaultSettingsPlaceholder } from '@/lib/agent/backendAuthGuide'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
+import { api, type Agent, type AgentGitBindings, type AgentTemplate, type CredentialItem, type ModelConfiguration, type SharedAgentConfig } from '@/lib/api/api'
+import { ACP_BACKENDS, WIZARD_STEPS, applyAcpBackend, assembleCreatePayload, buildReviewSummary, freshDraft, hasPathDeps, hasRoleTemplate, kvToRec, validateBasics, type WizardBackendId, type WizardDraft, type WizardStepId } from './agentCreateWizard'
+import { buildTemplateOptions } from './agentTemplateOptions'
 import { getRegionPolicy, setRegion } from '@/lib/shared/regionPolicy'
-import { applyOpenCodeFields, type OpenCodeProviderId } from '@/lib/agent/openCodeProvider'
-
-export interface AgentCreateWizardProps {
-  open: boolean
-  existingNames: string[]
-}
-
-export type AgentCreateWizardEmit = {
-  (e: 'close'): void
-  (e: 'created', agent: Agent): void
-}
-
-
+import { setDraftGitBindings } from './gitBindings'
+import { useRoutingCopy } from './modelRouting'
+export interface AgentCreateWizardProps { open: boolean; existingNames: string[] }
+export type AgentCreateWizardEmit = { (e: 'close'): void; (e: 'created', agent: Agent): void }
 export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentCreateWizardEmit) {
-const { t, te } = useI18n()
-const draft = ref<WizardDraft>(freshDraft())
-
-const nameError = ref('')
-const creating = ref(false)
-const createError = ref('')
-const pendingAcp = ref<WizardBackendId | null>(null)
-const showAcpConfirm = ref(false)
-const envHelpOpen = ref(false)
-const stepAnimKey = ref(0)
-const apiKeyInput = ref('')
-const customConfigError = ref(false)
-const openCodeBaseError = ref(false)
-const openCodeModelError = ref(false)
-const customConfigDraft = ref('')
-const templateRows = ref<AgentTemplate[]>([])
-const credentialItems = ref<CredentialItem[]>([])
-const templateOptions = computed<AgentTemplateOption[]>(() => buildTemplateOptions(templateRows.value, t, te))
-
-const showDescField = computed(() => !hasRoleTemplate(draft.value))
-const selectedTemplate = computed(() => {
-  const id = (draft.value.templateId || 'blank').trim()
-  if (id === 'blank') return null
-  return templateOptions.value.find((o) => o.id === id) || null
-})
-const templateHint = computed(() => {
-  const id = (draft.value.templateId || 'blank').trim()
-  if (id === 'blank') return t('pages.agentStudio.wizard.basics.templateHintBlank')
-  const opt = selectedTemplate.value
-  return t('pages.agentStudio.wizard.basics.templateHintPack', { name: opt?.name || id })
-})
-
-async function loadTemplates() {
-  try {
-    const res = await api.listAgentTeamTemplates()
-    templateRows.value = res.items || []
-  } catch {
-    // Offline / API miss: blank stays usable.
-    templateRows.value = []
+  const { t, te } = useI18n()
+  const c = useRoutingCopy()
+  const draft = ref<WizardDraft>(freshDraft())
+  const nameError = ref(''); const creating = ref(false); const createError = ref('')
+  const pendingAcp = ref<WizardBackendId | null>(null); const showAcpConfirm = ref(false); const envHelpOpen = ref(false); const stepAnimKey = ref(0)
+  const templateRows = ref<AgentTemplate[]>([]); const credentialItems = ref<CredentialItem[]>([]); const modelConfigurations = ref<ModelConfiguration[]>([])
+  const sharedConfig = ref<SharedAgentConfig>()
+  const effectiveModel = computed(() => draft.value.inheritModel ? sharedConfig.value?.modelBinding : draft.value.modelBinding)
+  watch(() => draft.value.modelBinding?.configurationId, (id, previous) => {
+    if (id?.trim() && id !== previous) draft.value.inheritModel = false
+  }, { flush: 'sync' })
+  const templateOptions = computed(() => buildTemplateOptions(templateRows.value, t, te))
+  const selectedTemplate = computed(() => templateOptions.value.find((row) => row.id === draft.value.templateId) || null)
+  const showDescField = computed(() => !hasRoleTemplate(draft.value))
+  const templateHint = computed(() => hasRoleTemplate(draft.value) ? t('pages.agentStudio.wizard.basics.templateHintPack', { name: selectedTemplate.value?.name || draft.value.templateId }) : t('pages.agentStudio.wizard.basics.templateHintBlank'))
+  const currentStep = computed(() => WIZARD_STEPS[draft.value.step]!)
+  const progressPct = computed(() => ((draft.value.step + 1) / WIZARD_STEPS.length) * 100)
+  const currentRegionPolicy = computed(() => getRegionPolicy(draft.value.acpBackend))
+  const currentRegion = computed(() => draft.value.env.find((row) => row.k.trim() === currentRegionPolicy.value?.regionEnvKey)?.v || '')
+  const authConfigured = computed(() => !!effectiveModel.value?.configurationId)
+  const showAuthReminder = computed(() => !authConfigured.value)
+  const headSub = computed(() => t(`pages.agentStudio.wizard.head.${currentStep.value.id === 'review' ? 'review' : currentStep.value.id === 'basics' ? 'basics' : 'optional'}`))
+  function alias(id: string) { return credentialItems.value.find((row) => row.id === id)?.name || id }
+  const reviewItems = computed(() => {
+    const configuration = modelConfigurations.value.find((row) => row.id === effectiveModel.value?.configurationId)
+    const effectiveDraft = { ...draft.value, ...(draft.value.inheritModel ? { modelBinding: effectiveModel.value, acpBackend: ACP_BACKENDS.find((row) => row.id === configuration?.backend)?.id || draft.value.acpBackend } : {}), ...(draft.value.inheritGit ? { gitBindings: sharedConfig.value?.gitBindings || { items: [] } } : {}) }
+    return buildReviewSummary(effectiveDraft, { model: configuration?.name || effectiveModel.value?.configurationId, gitItems: Object.fromEntries((effectiveDraft.gitBindings?.items || []).map((row) => [row.credentialId, alias(row.credentialId)])) })
+  })
+  async function loadOptions() {
+    sharedConfig.value = undefined
+    const [templates, keys, models, defaults] = await Promise.allSettled([api.listAgentTeamTemplates(), api.listCredentials(), api.listModelConfigurations(), Promise.resolve().then(() => api.getSharedAgentConfig())])
+    templateRows.value = templates.status === 'fulfilled' ? templates.value.items || [] : []
+    credentialItems.value = keys.status === 'fulfilled' ? keys.value.items || [] : []
+    modelConfigurations.value = models.status === 'fulfilled' ? models.value.items || [] : []
+    if (defaults.status === 'fulfilled') sharedConfig.value = defaults.value
   }
-}
-
-async function loadCredentials() {
-  try {
-    const res = await api.listCredentials()
-    credentialItems.value = res?.items || []
-  } catch {
-    // A failed list is the same as having nothing to pick; the step can still be skipped.
-    credentialItems.value = []
+  onMounted(loadOptions)
+  watch(() => props.open, (open) => { if (open) { draft.value = freshDraft(); nameError.value = ''; createError.value = ''; creating.value = false; pendingAcp.value = null; showAcpConfirm.value = false; envHelpOpen.value = false; stepAnimKey.value++; void loadOptions(); void nextTick(() => document.getElementById('wiz-name-input')?.focus()) } })
+  function onTemplateSelect(id: string) { draft.value.templateId = id; if (hasRoleTemplate(draft.value)) draft.value.description = '' }
+  function close() { if (!creating.value) emit('close') }
+  function markConfigured(step: WizardStepId) { delete draft.value.skipped[step] }
+  function selectRegion(value: string) { draft.value.env = Object.entries(setRegion(kvToRec(draft.value.env), draft.value.acpBackend, value)).map(([k, v]) => ({ k, v })); markConfigured('acp') }
+  function selectAcp(id: WizardBackendId) {
+    if (id === draft.value.acpBackend) return
+    if (hasPathDeps(draft.value)) { pendingAcp.value = id; showAcpConfirm.value = true; return }
+    applyAcpBackend(draft.value, id); markConfigured('acp')
   }
-}
-
-onMounted(() => {
-  void loadTemplates()
-  void loadCredentials()
-})
-
-function onTemplateSelect(id: string) {
-  // plan g1.4 — template change must not rewrite draft.name
-  draft.value.templateId = id
-  if (hasRoleTemplate(draft.value)) {
-    draft.value.description = ''
+  function confirmAcpSwitch() { if (pendingAcp.value) applyAcpBackend(draft.value, pendingAcp.value); pendingAcp.value = null; showAcpConfirm.value = false; markConfigured('acp') }
+  function cancelAcpSwitch() { pendingAcp.value = null; showAcpConfirm.value = false }
+  function onGitBindings(value: AgentGitBindings) { draft.value.inheritGit = false; setDraftGitBindings(draft.value, value); markConfigured('git') }
+  function goPrev() { if (draft.value.step && !creating.value) { draft.value.step--; stepAnimKey.value++ } }
+  function goSkip() { if (currentStep.value.id !== 'git' || creating.value) return; draft.value.skipped.git = true; draft.value.inheritGit = false; setDraftGitBindings(draft.value, { items: [] }); draft.value.step++; stepAnimKey.value++ }
+  function validateName() {
+    const error = validateBasics(draft.value, props.existingNames)
+    nameError.value = error ? t(`pages.agentStudio.dialogs.${error === 'required' ? 'nameRequired' : error === 'invalid' ? 'nameInvalid' : 'nameExists'}`) : ''
+    return !error
   }
-}
-
-const currentStep = computed(() => WIZARD_STEPS[draft.value.step])
-const progressPct = computed(() => ((draft.value.step + 1) / WIZARD_STEPS.length) * 100)
-function credentialAlias(id?: string): string {
-  const trimmed = id?.trim() || ''
-  if (!trimmed) return ''
-  return credentialItems.value.find((item) => item.id === trimmed)?.name || trimmed
-}
-
-const reviewItems = computed(() =>
-  buildReviewSummary(draft.value, {
-    model: credentialAlias(
-      draft.value.acpBackend === 'opencode' ? draft.value.openCodeCredentialId : draft.value.aiCredentialId,
-    ),
-    git: credentialAlias(draft.value.gitCredentialId),
-    sshHosts: credentialAlias(draft.value.sshHostsCredentialId),
-  }),
-)
-const currentRegionPolicy = computed(() => getRegionPolicy(draft.value.acpBackend))
-const currentRegion = computed(() => {
-  const policy = currentRegionPolicy.value
-  if (!policy) return ''
-  return draft.value.env.find((item) => item.k.trim() === policy.regionEnvKey)?.v || ''
-})
-const authGuide = computed(() => authGuideFor(draft.value.acpBackend, currentRegion.value))
-const authConfigured = computed(() => {
-  if (draft.value.authMode === 'customConfig') {
-    const parsed = parseCustomConfigJson(draft.value.customConfigContent)
-    return parsed.ok && parsed.normalized !== ''
+  function validModel() {
+    const selected = modelConfigurations.value.find((row) => row.id === effectiveModel.value?.configurationId && row.state === 'active')
+    if (!selected) { createError.value = c.value.missingConfiguration; return false }
+    if (!draft.value.inheritModel && selected.backend !== draft.value.acpBackend) { createError.value = c.value.configurationBackendMismatch; return false }
+    createError.value = ''; return true
   }
-  const id = draft.value.acpBackend === 'opencode' ? draft.value.openCodeCredentialId : draft.value.aiCredentialId
-  return !!id?.trim()
-})
-const showAuthReminder = computed(() => !authConfigured.value)
-
-const primaryAuthKey = computed(() => authGuide.value.keys[0]?.key || '')
-
-const headSub = computed(() => {
-  const id = currentStep.value.id
-  if (id === 'review') return t('pages.agentStudio.wizard.head.review')
-  if (id === 'basics') return t('pages.agentStudio.wizard.head.basics')
-  return t('pages.agentStudio.wizard.head.optional')
-})
-
-watch(
-  () => props.open,
-  (open) => {
-    if (open) {
-      draft.value = freshDraft()
-      nameError.value = ''
-      createError.value = ''
-      creating.value = false
-      pendingAcp.value = null
-      showAcpConfirm.value = false
-      envHelpOpen.value = false
-      apiKeyInput.value = ''
-      customConfigError.value = false
-      customConfigDraft.value = ''
-      openCodeBaseError.value = false
-      openCodeModelError.value = false
-      stepAnimKey.value++
-      void loadTemplates()
-      void loadCredentials()
-      nextTick(() => {
-        document.getElementById('wiz-name-input')?.focus()
-      })
-    }
-  },
-)
-
-watch(
-  () => [draft.value.acpBackend, currentRegion.value] as const,
-  () => {
-    const key = primaryAuthKey.value
-    const row = draft.value.env.find((e) => e.k === key)
-    apiKeyInput.value = row?.v ?? ''
-  },
-)
-
-function close() {
-  if (creating.value) return
-  emit('close')
-}
-
-function upsertEnv(key: string, value: string) {
-  const row = draft.value.env.find((e) => e.k === key)
-  if (row) row.v = value
-  else draft.value.env.push({ k: key, v: value })
-}
-
-function selectRegion(region: string) {
-  const env = Object.fromEntries(
-    draft.value.env.filter((item) => item.k.trim()).map((item) => [item.k.trim(), item.v]),
-  )
-  draft.value.env = Object.entries(setRegion(env, draft.value.acpBackend, region)).map(
-    ([k, v]) => ({ k, v }),
-  )
-  markConfigured('acp')
-}
-
-function markConfigured(step: WizardStepId) {
-  delete draft.value.skipped[step]
-}
-
-function selectAcp(id: WizardBackendId) {
-  if (id === draft.value.acpBackend) return
-  if (hasPathDeps(draft.value)) {
-    pendingAcp.value = id
-    showAcpConfirm.value = true
-    return
+  async function submitCreate() {
+    if (!validateName()) { draft.value.step = 0; stepAnimKey.value++; return }
+    if (!validModel()) { draft.value.step = 1; stepAnimKey.value++; return }
+    creating.value = true; createError.value = ''
+    try { const created = await api.createAgent(assembleCreatePayload(draft.value)); emit('created', created); emit('close') }
+    catch (cause) { createError.value = String((cause as Error).message || cause) }
+    finally { creating.value = false }
   }
-  applyAcpBackend(draft.value, id)
-  markConfigured('acp')
-  syncApiKeyInput()
-}
-
-function selectStartPath(path: StartPath) {
-  if (path === draft.value.startPath) return
-  const nextId = backendForStartPath(path, draft.value.cliBackend)
-  if (nextId !== draft.value.acpBackend && hasPathDeps(draft.value)) {
-    pendingAcp.value = nextId
-    showAcpConfirm.value = true
-    return
-  }
-  applyWizardStartPath(draft.value, path)
-  markConfigured('acp')
-  syncApiKeyInput()
-}
-
-function confirmAcpSwitch() {
-  if (pendingAcp.value) {
-    applyAcpBackend(draft.value, pendingAcp.value)
-    markConfigured('acp')
-    syncApiKeyInput()
-  }
-  pendingAcp.value = null
-  showAcpConfirm.value = false
-}
-
-function cancelAcpSwitch() {
-  pendingAcp.value = null
-  showAcpConfirm.value = false
-}
-
-function syncApiKeyInput() {
-  const key = primaryAuthKey.value
-  const row = draft.value.env.find((e) => e.k === key)
-  apiKeyInput.value = row?.v ?? ''
-}
-
-function clearAuthKeys() {
-  draft.value.env = stripAuthKeysFromEnv(draft.value.env, draft.value.acpBackend)
-  apiKeyInput.value = ''
-}
-
-function clearModelCredentials() {
-  draft.value.aiCredentialId = ''
-  draft.value.openCodeCredentialId = ''
-}
-
-function onModelCredential(id: string) {
-  if (draft.value.acpBackend === 'opencode') {
-    draft.value.openCodeCredentialId = id
-    draft.value.aiCredentialId = ''
-  } else {
-    draft.value.aiCredentialId = id
-    draft.value.openCodeCredentialId = ''
-  }
-  if (id.trim()) markConfigured('apiKey')
-}
-
-function setAuthMode(mode: WizardAuthMode) {
-  if (mode === draft.value.authMode) return
-  customConfigError.value = false
-  if (mode === 'apiKey') {
-    customConfigDraft.value = draft.value.customConfigContent
-    draft.value.customConfigContent = ''
-    draft.value.authMode = mode
-    syncApiKeyInput()
-    return
-  }
-  clearAuthKeys()
-  clearModelCredentials()
-  draft.value.authMode = mode
-  draft.value.customConfigContent =
-    customConfigDraft.value || defaultSettingsPlaceholder(draft.value.acpBackend)
-  markConfigured('apiKey')
-}
-
-function onCustomConfigInput(value: string) {
-  draft.value.customConfigContent = value
-  customConfigError.value = false
-  if (value.trim()) markConfigured('apiKey')
-}
-
-function patchOpenCode(fields: Parameters<typeof applyOpenCodeFields>[1]) {
-  draft.value.env = Object.entries(applyOpenCodeFields(kvToRec(draft.value.env), fields)).map(
-    ([k, v]) => ({ k, v }),
-  )
-  openCodeBaseError.value = false
-  openCodeModelError.value = false
-}
-
-function onOpenCodeProvider(value: OpenCodeProviderId) {
-  patchOpenCode({ provider: value })
-  markConfigured('apiKey')
-}
-
-function onOpenCodeBaseURL(value: string) {
-  patchOpenCode({ baseURL: value })
-  markConfigured('apiKey')
-}
-
-function onOpenCodeModel(value: string) {
-  patchOpenCode({ model: value })
-  markConfigured('apiKey')
-}
-
-function onOpenCodeVision(value: boolean) {
-  patchOpenCode({ vision: value })
-  markConfigured('apiKey')
-}
-
-function onApiKeyInput(value: string) {
-  apiKeyInput.value = value
-  const key = primaryAuthKey.value
-  if (!key) return
-  if (value.trim()) {
-    upsertEnv(key, value)
-    markConfigured('apiKey')
-  } else {
-    const idx = draft.value.env.findIndex((e) => e.k === key)
-    if (idx >= 0) draft.value.env.splice(idx, 1)
-  }
-}
-
-function onGitCredentialType(value: GitCredentialType) {
-  if (draft.value.gitCredentialType !== value) {
-    draft.value.gitCredentialId = ''
-    draft.value.sshHostsCredentialId = ''
-  }
-  draft.value.gitCredentialType = value
-  markConfigured('git')
-}
-
-function onGitCredentialId(id: string) {
-  draft.value.gitCredentialId = id
-  if (id.trim()) markConfigured('git')
-}
-
-function onSshHostsCredentialId(id: string) {
-  draft.value.sshHostsCredentialId = id
-  if (id.trim()) markConfigured('git')
-}
-
-function removeGitRepos() {
-  draft.value.env = draft.value.env.filter((entry) => entry.k !== 'GIT_REPOS')
-}
-
-function goPrev() {
-  if (draft.value.step === 0 || creating.value) return
-  draft.value.step--
-  stepAnimKey.value++
-  if (currentStep.value.id === 'apiKey') syncApiKeyInput()
-}
-
-function goSkip() {
-  const step = currentStep.value
-  if (!step.skip || creating.value) return
-  draft.value.skipped[step.id] = true
-  if (step.id === 'apiKey') {
-    clearAuthKeys()
-    clearModelCredentials()
-    draft.value.customConfigContent = ''
-    customConfigDraft.value = ''
-    customConfigError.value = false
-    draft.value.authMode = 'apiKey'
-  }
-  if (step.id === 'git') {
-    draft.value.gitCredentialType = undefined
-    draft.value.gitCredentialId = ''
-    draft.value.sshHostsCredentialId = ''
-    removeGitRepos()
-  }
-  draft.value.step++
-  stepAnimKey.value++
-  if (currentStep.value.id === 'apiKey') syncApiKeyInput()
-}
-
-function validateApiKeyStep(): boolean {
-  if (draft.value.authMode !== 'customConfig') return true
-  const parsed = parseCustomConfigJson(draft.value.customConfigContent)
-  if (!parsed.ok) {
-    customConfigError.value = true
-    return false
-  }
-  customConfigError.value = false
-  return true
-}
-
-/** Show the basics-step error for err; returns true when there is none. */
-function applyBasicsError(err: string): boolean {
-  nameError.value =
-    err === 'required'
-      ? t('pages.agentStudio.dialogs.nameRequired')
-      : err === 'invalid'
-        ? t('pages.agentStudio.dialogs.nameInvalid')
-        : err === 'exists'
-          ? t('pages.agentStudio.dialogs.nameExists')
-          : ''
-  return !err
-}
-
-function goNext() {
-  if (creating.value) return
-  const step = currentStep.value
-  if (step.id === 'basics') {
-    if (!applyBasicsError(validateBasics(draft.value, props.existingNames))) return
-  }
-  if (step.id === 'apiKey' && !validateApiKeyStep()) return
-  if (step.id === 'review') {
-    void submitCreate()
-    return
-  }
-  markConfigured(step.id)
-  draft.value.step++
-  stepAnimKey.value++
-  if (currentStep.value.id === 'apiKey') syncApiKeyInput()
-}
-
-async function submitCreate() {
-  if (!applyBasicsError(validateBasics(draft.value, props.existingNames))) {
-    draft.value.step = 0
-    stepAnimKey.value++
-    return
-  }
-  creating.value = true
-  createError.value = ''
-  try {
-    const payload = assembleCreatePayload(draft.value)
-    const created = await api.createAgent(payload)
-    emit('created', created)
-    emit('close')
-  } catch (e: any) {
-    createError.value = e?.message || String(e)
-  } finally {
-    creating.value = false
-  }
-}
-
-function chipClass(kind: string) {
-  if (kind === 'ok') return 'border-ok/35 bg-ok/10 text-ok'
-  if (kind === 'def') return 'border-accent/35 bg-accent-dim text-accent-2'
-  return 'border-line bg-elevated text-txt3'
-}
-
-  return {
-  t,
-  draft,
-  nameError,
-  creating,
-  createError,
-  pendingAcp,
-  showAcpConfirm,
-  envHelpOpen,
-  stepAnimKey,
-  apiKeyInput,
-  credentialItems,
-  customConfigError,
-  openCodeBaseError,
-  openCodeModelError,
-  currentStep,
-  progressPct,
-  reviewItems,
-  currentRegionPolicy,
-  currentRegion,
-  authGuide,
-  authConfigured,
-  showAuthReminder,
-  primaryAuthKey,
-  headSub,
-  templateOptions,
-  selectedTemplate,
-  showDescField,
-  templateHint,
-  onTemplateSelect,
-  close,
-  upsertEnv,
-  selectRegion,
-  markConfigured,
-  selectAcp,
-  selectStartPath,
-  confirmAcpSwitch,
-  cancelAcpSwitch,
-  syncApiKeyInput,
-  setAuthMode,
-  onCustomConfigInput,
-  onApiKeyInput,
-  onModelCredential,
-  onOpenCodeProvider,
-  onOpenCodeBaseURL,
-  onOpenCodeModel,
-  onOpenCodeVision,
-  onGitCredentialType,
-  onGitCredentialId,
-  onSshHostsCredentialId,
-  removeGitRepos,
-  goPrev,
-  goSkip,
-  goNext,
-  submitCreate,
-  chipClass,
-  WIZARD_STEPS,
-  ACP_BACKENDS,
-  CLI_BACKENDS,
-  START_PATH_OPTIONS,
-  }
+  function goNext() { if (creating.value || (currentStep.value.id === 'basics' && !validateName()) || (currentStep.value.id === 'acp' && !validModel())) return; if (currentStep.value.id === 'review') { void submitCreate(); return }; markConfigured(currentStep.value.id); draft.value.step++; stepAnimKey.value++ }
+  function chipClass(kind: string) { return kind === 'ok' ? 'border-ok/35 bg-ok/10 text-ok' : 'border-line bg-elevated text-txt3' }
+  return { t, draft, sharedConfig, effectiveModel, nameError, creating, createError, pendingAcp, showAcpConfirm, envHelpOpen, stepAnimKey, credentialItems, currentStep, progressPct, reviewItems, currentRegionPolicy, currentRegion, authConfigured, showAuthReminder, headSub, templateOptions, showDescField, templateHint, selectedTemplate, onTemplateSelect, close, selectRegion, markConfigured, selectAcp, confirmAcpSwitch, cancelAcpSwitch, onGitBindings, goPrev, goSkip, goNext, submitCreate, chipClass, WIZARD_STEPS, ACP_BACKENDS }
 }

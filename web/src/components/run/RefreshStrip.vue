@@ -20,7 +20,7 @@ const { t } = useI18n()
     aria-live="polite"
     data-testid="refresh-strip"
   >
-    <Icon name="spinner" :size="12" class="animate-spin text-accent" aria-hidden="true" />
+    <Icon name="spinner" :size="12" class="text-accent" aria-hidden="true" />
     <span>{{ message || t('common.buttons.refreshing') }}</span>
   </div>
 </template>

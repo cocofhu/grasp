@@ -10,6 +10,7 @@ import {
   runBusySeedRetry,
 } from '@/lib/run/busySeedRetry'
 import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
+import { applySidebarEnter, noteSidebarRunStatus } from '@/lib/inbox/sidebarHandoff'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { EventPageState } from '@/lib/run/useRunDetailLiveLog'
@@ -107,30 +108,47 @@ export function useRunDetailWs(opts: {
    * Align Inbox hard-load: multi nextTick so ReviewComposer/GateApproval mount
    * before queue_state → seed → flush → live (g2.1).
    */
-  async function projectDialogueAfterLoad(r: { reactSessions?: Record<string, any> }) {
+  async function projectDialogueAfterLoad(
+    r: { reactSessions?: Record<string, any> },
+    isCurrent = () => true,
+  ) {
     dialogueRailsFilled = false
     dialogueLiveIncremental = false
     await nextTick()
     await nextTick()
+    if (!isCurrent()) return
     restoreReactSessions(r)
   }
 
   function restoreReactSessions(r: { reactSessions?: Record<string, any> }) {
     const sessions = r.reactSessions
     if (!sessions) return
+    const restoredSessions = { ...sessions }
+    // Idle FIFO sessions are removed from the server registry. Their absence
+    // in an explicit snapshot must release an already mounted dialogue too.
+    for (const nodeId of [selClarify.value?.nodeId, run.value.gate?.reactUpstreamNodeId]) {
+      if (nodeId && !(nodeId in restoredSessions)) {
+        restoredSessions[nodeId] = { busy: false, waiting: 0, items: [] }
+      }
+    }
     const busyNodes: string[] = []
-    for (const [nodeId, snap] of Object.entries(sessions)) {
+    for (const [nodeId, snap] of Object.entries(restoredSessions)) {
       if (!snap || typeof snap !== 'object') continue
       liveBusy[nodeId] = !!snap.busy
       dialoguePlatformBusy[nodeId] = !!snap.busy
       if (snap.busy) busyNodes.push(nodeId)
-      const frame = {
+      const frame: Record<string, unknown> = {
         event: 'queue_state',
         nodeId,
         waiting: snap.waiting ?? 0,
         items: snap.items ?? [],
         busy: !!snap.busy,
         activeItem: snap.activeItem,
+      }
+      if (typeof snap.sandboxBusy === 'boolean' || typeof snap.sandboxDesynced === 'boolean') {
+        frame.sandboxBusy = !!snap.sandboxBusy
+        frame.sandboxDesynced = !!snap.sandboxDesynced
+        if (snap.sandboxRunningOpId) frame.sandboxRunningOpId = snap.sandboxRunningOpId
       }
       if (selClarify.value?.nodeId === nodeId) {
         const ok = reviewChatRef.value?.applyReviewFrame?.(frame)
@@ -395,6 +413,7 @@ export function useRunDetailWs(opts: {
       wsConnected = false
     }
     let socket: WebSocket
+    let dialogueRevision = 0
     try {
       socket = new WebSocket(api.runEventsWsUrl(id))
       ws = socket
@@ -406,10 +425,6 @@ export function useRunDetailWs(opts: {
       if (ws !== socket) return
       wsConnected = true
       wsReconnect.markOpened()
-      // Reconnect: force same-depth re-seed as hard refresh (g4.2).
-      if (opts?.fromReconnect && run.value.reactSessions) {
-        void projectDialogueAfterLoad(run.value)
-      }
     }
     socket.onclose = () => {
       if (ws !== socket) return
@@ -425,10 +440,34 @@ export function useRunDetailWs(opts: {
       } catch {
         return
       }
-      if (m.type === 'snapshot' && m.run?.reactSessions) {
-        run.value = { ...run.value, reactSessions: m.run.reactSessions }
+      if (m.type === 'node_enter') {
+        applySidebarEnter(runId.value, m, run.value?.nodes)
+        return
+      }
+      if (m.type === 'status') noteSidebarRunStatus(runId.value, m.status)
+      if (m.type === 'snapshot' && (m.run?.reactSessions || m.run?.id === id)) {
+        // A full run DTO omits the map once its last FIFO has gone idle.
+        const sessions = m.run.reactSessions ?? {}
+        const revision = ++dialogueRevision
+        const nodeId = selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId
+        const sameDialogue = () =>
+          ws === socket &&
+          (selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId) === nodeId
+        const isCurrent = () => sameDialogue() && dialogueRevision === revision
+        run.value = { ...run.value, reactSessions: sessions }
         // queue_state → seed → flush → live (parity with Inbox g4.2).
-        void projectDialogueAfterLoad(run.value)
+        void projectDialogueAfterLoad(run.value, isCurrent).then(() => {
+          // The disconnected interval may include turn_done and new questions.
+          // Restore the saved dialogue after its current producer becomes idle.
+          if (!sameDialogue() || !opts?.fromReconnect) return
+          const snap = nodeId ? run.value.reactSessions?.[nodeId] : undefined
+          if (
+            nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem &&
+            !dialoguePlatformBusy[nodeId] && !isClarifySessionBusy()
+          ) {
+            loadRun(false, true)
+          }
+        })
         return
       }
       if (m.type === 'acp' && m.nodeId) {
@@ -444,6 +483,10 @@ export function useRunDetailWs(opts: {
         // Dialogue-surface stream (ClarifyChat / GateApproval), not only LiveLog.
         applyOrBufferDialogueAcp(m.nodeId, wsEvents, m.busy)
       } else if (m.type === 'review' && m.nodeId) {
+        if (
+          m.nodeId === selClarify.value?.nodeId ||
+          m.nodeId === run.value.gate?.reactUpstreamNodeId
+        ) dialogueRevision++
         // Prefer matching producer; components also filter by nodeId defensively.
         // Platform session busy (review) is the authority for dialogue seed retry.
         if (m.event === 'turn_begin') {

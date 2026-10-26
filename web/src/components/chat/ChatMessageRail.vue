@@ -63,6 +63,8 @@ let frame = 0
 let highlighted: HTMLElement | null = null
 let highlightTimer: ReturnType<typeof setTimeout> | undefined
 let resize: ResizeObserver | null = null
+// Subpixel and rounding slack. Only a thread that actually overflows may snap to the last question.
+const BOTTOM_SLACK_PX = 4
 
 function messageTargets(): Map<string, HTMLElement> {
   const targets = new Map<string, HTMLElement>()
@@ -82,20 +84,49 @@ function clearHighlight() {
   highlighted = null
 }
 
-function updateActive() {
-  frame = 0
-  const scroller = props.scroller
-  if (!scroller || !props.items.length) return
-  const top = scroller.getBoundingClientRect().top + Math.min(80, scroller.clientHeight * .2)
+function distanceFromBottom(scroller: HTMLElement) {
+  return scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop
+}
+
+function readingLineActiveId(scroller: HTMLElement) {
+  const line = scroller.getBoundingClientRect().top + Math.min(80, scroller.clientHeight * .2)
   let found = props.items[0]!.id
   const targets = messageTargets()
   for (const item of props.items) {
     const target = targets.get(item.id)
     if (!target) continue
-    if (target.getBoundingClientRect().top <= top) found = item.id
+    if (target.getBoundingClientRect().top <= line) found = item.id
     else break
   }
-  activeId.value = found
+  return found
+}
+
+/** Bring the active tick into the rail column. Scrolling the column never moves the conversation. */
+function revealActiveTick(pinToBottom: boolean) {
+  const column = track.value
+  if (!column) return
+  const hidden = column.scrollHeight - column.clientHeight
+  if (hidden <= 0) return
+  if (pinToBottom) {
+    column.scrollTop = hidden
+    return
+  }
+  const button = buttons.get(activeId.value)
+  if (!button) return
+  const columnRect = column.getBoundingClientRect()
+  const buttonRect = button.getBoundingClientRect()
+  if (buttonRect.top < columnRect.top - 1) column.scrollTop += buttonRect.top - columnRect.top
+  else if (buttonRect.bottom > columnRect.bottom + 1) column.scrollTop += buttonRect.bottom - columnRect.bottom
+}
+
+function updateActive() {
+  frame = 0
+  const scroller = props.scroller
+  if (!scroller || !props.items.length) return
+  const overflows = scroller.scrollHeight > scroller.clientHeight + BOTTOM_SLACK_PX
+  const atBottom = overflows && distanceFromBottom(scroller) <= BOTTOM_SLACK_PX
+  activeId.value = atBottom ? props.items[props.items.length - 1]!.id : readingLineActiveId(scroller)
+  revealActiveTick(atBottom)
 }
 
 function scheduleActive() {
@@ -247,7 +278,7 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
 <template>
   <nav v-if="items.length || hasMore" class="chat-message-rail" :aria-label="t('pages.chatNavigation.ariaLabel')" data-testid="chat-message-rail">
     <button v-if="hasMore" type="button" class="chat-message-rail-earlier" :disabled="loadingEarlier" :aria-label="t(loadingEarlier ? 'pages.chatNavigation.loadingEarlier' : 'pages.chatNavigation.loadEarlier')" :title="t('pages.chatNavigation.loadedHistory')" data-testid="chat-message-rail-earlier" @click="emit('loadEarlier')">
-      <Icon :key="loadingEarlier ? 'loading' : 'earlier'" :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="13" :class="loadingEarlier ? 'animate-spin' : ''" />
+      <Icon :key="loadingEarlier ? 'loading' : 'earlier'" :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="13" />
     </button>
     <div ref="track" class="chat-message-rail-track" data-testid="chat-message-rail-track" @mouseenter="onPointerEnter" @mouseleave="onPointerLeave">
       <button v-for="(item, index) in displayItems" :key="item.id" :ref="el => setButton(item.id, el)" type="button" class="chat-message-rail-mark" :class="{ 'is-active': item.id === activeId, 'is-pointed': item.id === pointedId }" :aria-current="item.id === activeId ? 'step' : undefined" :aria-label="t('pages.chatNavigation.jumpTo', { title: item.title })" :aria-controls="open ? cardId : undefined" :tabindex="item.id === (focusId || activeId || items[0]?.id) ? 0 : -1" :data-message-id="item.id" data-testid="chat-message-rail-mark" @mouseenter="hoverId = item.id; onPointerEnter()" @focus="onFocus(item.id)" @blur="onBlur" @keydown="onKeydown($event, index)" @click="navigate(item.id)">
@@ -258,7 +289,7 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
       <Transition name="chat-message-rail-card">
         <div v-if="open && displayItems.length" :id="cardId" ref="card" class="chat-message-rail-card" :style="{ left: `${cardPosition.left}px`, top: `${cardPosition.top}px`, width: `${cardPosition.width}px` }" data-testid="chat-message-rail-card" @mouseenter="onPointerEnter" @mouseleave="onPointerLeave(); hoverId = ''">
           <button v-if="hasMore" type="button" class="chat-message-rail-card-earlier" tabindex="-1" :disabled="loadingEarlier" data-testid="chat-message-rail-card-earlier" @click="emit('loadEarlier')">
-            <Icon :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="12" :class="loadingEarlier ? 'animate-spin' : ''" />
+            <Icon :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="12" />
             {{ t(loadingEarlier ? 'pages.chatNavigation.loadingEarlier' : 'pages.chatNavigation.loadEarlier') }}
           </button>
           <div class="chat-message-rail-list" role="listbox" :aria-label="t('pages.chatNavigation.ariaLabel')">

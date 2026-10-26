@@ -12,10 +12,13 @@ import (
 )
 
 // RunInboxContext returns gate or clarify approval context for a pending inbox
-// item (GET /api/runs/:id/inbox-context?nodeId=&iteration=).
+// item (GET /api/runs/:id/nodes/:nodeId/context?iteration=).
 func (h *Handlers) RunInboxContext(c *gin.Context) {
 	runID := c.Param("id")
-	nodeID := c.Query("nodeId")
+	nodeID := strings.TrimSpace(c.Param("nodeId"))
+	if nodeID == "" {
+		nodeID = strings.TrimSpace(c.Query("nodeId"))
+	}
 	iterStr := c.Query("iteration")
 	if nodeID == "" || iterStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "nodeId and iteration are required"})
@@ -34,7 +37,7 @@ func (h *Handlers) RunInboxContext(c *gin.Context) {
 
 	kind, ok := h.Runs.InboxContextKind(runID, nodeID, iteration)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no pending inbox item"})
+		writeInboxLeftPending(c)
 		return
 	}
 
@@ -46,8 +49,15 @@ func (h *Handlers) RunInboxContext(c *gin.Context) {
 	case services.InboxKindClarifyStarting:
 		h.inboxContextStarting(c, run, nodeID, iteration)
 	default:
-		c.JSON(http.StatusNotFound, gin.H{"error": "no pending inbox item"})
+		writeInboxLeftPending(c)
 	}
+}
+
+// writeInboxLeftPending is the item leaving the inbox: HTTP 200 with
+// pending:false so the browser does not log a failed fetch. The run missing
+// and bad query params stay 404 and 400.
+func writeInboxLeftPending(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"pending": false})
 }
 
 func (h *Handlers) inboxContextGate(c *gin.Context, runID, gateNodeID string, iteration int) {
@@ -69,6 +79,7 @@ func (h *Handlers) inboxContextGate(c *gin.Context, runID, gateNodeID string, it
 	out := gin.H{
 		"type":           "gate",
 		"nodes":          graphNodesDTO(run.Graph),
+		"edges":          graphEdgesDTO(run.Graph),
 		"artifacts":      artsDTO,
 		"nodeExecutions": slimExecs,
 		"nodeRuns":       h.Runs.NodeStatuses(runID),
@@ -119,6 +130,7 @@ func (h *Handlers) inboxContextStarting(c *gin.Context, run models.Run, nodeID s
 		"type":           "clarify",
 		"status":         run.Status,
 		"nodes":          graphNodesDTO(run.Graph),
+		"edges":          graphEdgesDTO(run.Graph),
 		"artifacts":      []gin.H{},
 		"nodeExecutions": map[string][]map[string]any{},
 		"nodeRuns":       h.Runs.NodeStatuses(run.ID),
@@ -164,6 +176,7 @@ func (h *Handlers) inboxContextClarify(c *gin.Context, runID, nodeID string, ite
 		"type":           "clarify",
 		"status":         run.Status,
 		"nodes":          graphNodesDTO(run.Graph),
+		"edges":          graphEdgesDTO(run.Graph),
 		"artifacts":      artsDTO,
 		"nodeExecutions": slimExecs,
 		"nodeRuns":       h.Runs.NodeStatuses(runID),

@@ -54,11 +54,11 @@ Agent / workspace 与 SQLite 持久在仓库根 `.localdata` 宿主机目录（b
 ./start.sh dev -d        # 源码栈：go run + Vite HMR
 ```
 
-镜像 tag / digest 可在 `.env` 覆盖 — 见仓库根目录 [`.env.example`](https://github.com/cocofhu/approving/blob/main/.env.example)。默认一张 `universal-sandbox`（六个 CLI 预装，含 Codex；Codex 使用登录文件而不是 API Key，运行时按 Agent 后端切换）。发布与 smoke 见 [Contributing](https://github.com/cocofhu/approving/blob/main/CONTRIBUTING.md)。
+镜像 tag / digest 可在 `.env` 覆盖 — 见仓库根目录 [`.env.example`](https://github.com/cocofhu/approving/blob/main/.env.example)。默认一张 `universal-sandbox`（七个 CLI 预装；Codex 可使用 ChatGPT 登录文件或 Responses 模型连接，运行时按 Agent 后端切换）。发布与 smoke 见 [Contributing](https://github.com/cocofhu/approving/blob/main/CONTRIBUTING.md)。
 
 ## 下一步
 
-- 登录后进入工作区时，按第一次安装引导在工作区凭据设置 配置 **ACP 后端、API Token、Git 凭据**（Git 可跳过）。运行时密钥只来自工作区凭据。完成后生成一组内置 Agent 与已发布的 **默认工作流**（仓库 URL 在启动 Run 时填写）。全系统只使用一个工作区，侧栏列出全部工作流，原配置入口统一收进设置。
+- 登录后进入工作区时，按第一次安装引导先保存凭据，再创建并选择一条 **编码工具 + 凭据 + 上游模型** 的模型配置；可在向导内打开管理页面完成这些操作。可选多个 Git 授权，也可跳过 Git。运行时仅使用明确绑定的模型与授权。完成后生成一组内置 Agent 与已发布的 **默认工作流**（仓库 URL 在启动 Run 时填写）。全系统只使用一个工作区，侧栏列出全部工作流，原配置入口统一收进设置。
 - [核心概念](../concepts/) — FSM、gate、sandbox、artifact
 - [配置摘要](../../help/configuration/) — 指向完整 `CONFIGURATION.md`
 - [网关摘要](../../help/gateway/) — 指向 `GATEWAY.md`

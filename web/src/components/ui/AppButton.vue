@@ -11,8 +11,10 @@ const props = withDefaults(
     block?: boolean
     disabled?: boolean
     loading?: boolean
+    /** Primary shadow-glow. The run-summary footer passes false; other primaries keep it. */
+    glow?: boolean
   }>(),
-  { variant: 'outline', size: 'md', disabled: false, loading: false },
+  { variant: 'outline', size: 'md', disabled: false, loading: false, glow: true },
 )
 
 const cls = computed(() => {
@@ -23,34 +25,39 @@ const cls = computed(() => {
   // Hover fill moved to --hover-ink-color + v-hover-ink (plan g2.2); keep non-fill hover tokens.
   const variants: Record<string, string> = {
     primary: 'bg-accent text-white shadow-glow',
-    ghost: 'text-txt2 hover:text-txt',
+    // Ghost darkens icon + label only. No elevated fill (disabled stays still via :enabled).
+    ghost: 'text-txt2 enabled:hover:text-txt',
     outline: 'border border-line bg-surface text-txt hover:border-line-strong',
     danger: 'border border-err/40 bg-err/10 text-err',
     subtle: 'bg-elevated text-txt2 hover:text-txt',
   }
+  const variantClass =
+    props.variant === 'primary' && !props.glow ? 'bg-accent text-white' : variants[props.variant]
   const press =
     props.disabled || props.loading ? '' : 'ui-pressable'
-  return [base, sizes, variants[props.variant], press, props.block ? 'w-full' : '']
+  return [base, sizes, variantClass, press, props.block ? 'w-full' : '']
 })
 
 const inkColor = computed(() => {
-  // Matches former hover:bg-* tokens (plan g2.2). subtle never had hover:bg-*
-  // so it keeps text-only hover and does not set an ink color (review v2).
+  // Primary uses the theme accent-hover token (light #5424D8, dark keeps its own).
+  // Ghost and subtle stay text-only so they never lay an elevated gray fill.
   switch (props.variant) {
     case 'primary':
       return 'rgb(var(--c-accent-hover))'
     case 'danger':
       return 'rgb(var(--c-err) / 0.2)'
-    case 'ghost':
     case 'outline':
+      return 'rgb(var(--c-elevated))'
     default:
       return 'rgb(var(--c-elevated))'
   }
 })
 
 const isDisabled = computed(() => props.disabled || props.loading)
-/** subtle had no hover fill before; skip ink (review v2 / plan g2.2). */
-const inkEnabled = computed(() => !isDisabled.value && props.variant !== 'subtle')
+/** Disabled, loading, subtle, and ghost do not spread a hover fill. */
+const inkEnabled = computed(
+  () => !isDisabled.value && props.variant !== 'subtle' && props.variant !== 'ghost',
+)
 </script>
 
 <template>

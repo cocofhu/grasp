@@ -1,22 +1,16 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, beforeEach, beforeAll, vi } from 'vitest'
-import zhPages from '@/locales/zh-CN/pages.json'
-import enPages from '@/locales/en/pages.json'
 import {
   ONBOARDING_SUPPRESS_KEY,
   ONBOARDING_AGENT_NAMES,
-  ONBOARDING_CLI_BACKENDS,
   ONBOARDING_REQUIRED_TEMPLATE_IDS,
   ONBOARDING_STEPS,
   ONBOARDING_WORKFLOW_NAMES,
   applyDefaultTeamNames,
-  applyOnboardingBackend,
-  applyStartPath,
   assembleBootstrapBody,
   buildOnboardingWorkflowPreview,
   deriveOnboardingAgentNames,
   onboardingRoleNames,
-  startPathForBackend,
   detectSystemLocale,
   suppressOnboarding,
   freshOnboardingDraft,
@@ -24,8 +18,11 @@ import {
   gitConfigured,
   hasDefaultWorkflow,
   isOnboardingSuppressed,
+  isProtectedOnboardingAgentName,
   isRequiredTemplate,
+  missingOnboardingNames,
   needsOnboarding,
+  onboardingAgentsReady,
   setTeamMemberEnabled,
   teamNameIssues,
   teamValid,
@@ -54,7 +51,7 @@ describe('onboardingWizard', () => {
   })
 
   it('has one topic per step and defaults language from the system', () => {
-    expect(ONBOARDING_STEPS.map((s) => s.id)).toEqual(['prefs', 'model', 'key', 'git', 'team', 'workflow', 'done'])
+    expect(ONBOARDING_STEPS.map((s) => s.id)).toEqual(['prefs', 'model', 'git', 'team', 'workflow', 'done'])
     vi.stubGlobal('navigator', { language: 'zh-CN' })
     expect(detectSystemLocale()).toBe('zh-CN')
     expect(freshOnboardingDraft().language).toBe('zh-CN')
@@ -64,146 +61,30 @@ describe('onboardingWizard', () => {
     vi.unstubAllGlobals()
   })
 
-  it('starts on the API-key path with OpenCode selected', () => {
-    const d = freshOnboardingDraft()
-    expect(d.startPath).toBe('apiKey')
-    expect(d.acpBackend).toBe('opencode')
-    expect(d.cliBackend).toBe('cursor')
-    expect(d.openCodeProvider).toBe('openai')
-    expect(ONBOARDING_CLI_BACKENDS.map((b) => b.id)).toEqual([
-      'cursor',
-      'claude_code',
-      'codebuddy',
-      'trae',
-      'codex',
-    ])
-    expect(startPathForBackend('opencode')).toBe('apiKey')
-    expect(startPathForBackend('trae')).toBe('cli')
-  })
-
-  it('switching to the API-key path selects OpenCode and clears the CLI key', () => {
-    const d = freshOnboardingDraft()
-    applyStartPath(d, 'cli')
-    d.apiKey = 'crsr_cursor_key'
-    applyStartPath(d, 'apiKey')
-    expect(d.acpBackend).toBe('opencode')
-    expect(d.apiKey).toBe('')
-    expect(d.openCodeProvider).toBe('openai')
-    expect(d.region).toBe('')
-  })
-
-  it('returning to the CLI path keeps the previously chosen CLI backend', () => {
-    const d = freshOnboardingDraft()
-    applyOnboardingBackend(d, 'trae')
-    expect(d.startPath).toBe('cli')
-    expect(d.region).toBe('intl')
-    applyStartPath(d, 'apiKey')
-    expect(d.acpBackend).toBe('opencode')
-    applyStartPath(d, 'cli')
-    expect(d.acpBackend).toBe('trae')
-    expect(d.region).toBe('intl')
-  })
-
   it('defaults theme from the current app theme', () => {
     expect(freshOnboardingDraft().theme).toBe('dark')
   })
 
-  it('assembles bootstrap body without heroku repos or featureHint', () => {
+  it('submits model configuration and a detached Git selection without secrets', () => {
     const d = freshOnboardingDraft()
-    d.acpBackend = 'codebuddy'
-    d.region = 'public'
-    d.apiKey = 'cb-key'
-    d.gitCredentialType = 'github_https'
-    d.githubToken = 'ghp_x'
+    d.modelConfigurationId = 'model-main'
+    d.gitBindings = { items: [{ credentialId: 'git-team', scope: 'github.com' }] }
     const body = assembleBootstrapBody(d)
-    expect(body.apiKey).toBe('cb-key')
-    expect(body.region).toBe('public')
-    expect(body.gitCredentialType).toBe('github_https')
-    expect(body.githubToken).toBe('ghp_x')
-    expect(body).not.toHaveProperty('repos')
-    expect(body).not.toHaveProperty('featureHint')
-    expect(body.vncPreview).toBe(true)
-    expect(body.browserMcp).toBe(true)
-  })
-
-  it('clears the coding-tool model when the backend changes and keeps it when reselected', () => {
-    const d = freshOnboardingDraft()
-    expect(d.cliModel).toBe('')
-    applyOnboardingBackend(d, 'cursor')
-    d.cliModel = 'composer-2.5'
-    applyOnboardingBackend(d, 'cursor')
-    expect(d.cliModel).toBe('composer-2.5')
-
-    applyOnboardingBackend(d, 'claude_code')
-    expect(d.cliModel).toBe('')
-    applyOnboardingBackend(d, 'cursor')
-    expect(d.cliModel).toBe('')
-
-    applyOnboardingBackend(d, 'trae')
-    d.cliModel = 'trae-model'
-    d.apiKey = 'trae-key'
-    applyStartPath(d, 'apiKey')
-    expect(d.acpBackend).toBe('opencode')
-    expect(d.cliModel).toBe('')
-    expect(d.apiKey).toBe('')
-    applyStartPath(d, 'cli')
-    expect(d.acpBackend).toBe('trae')
-    expect(d.cliModel).toBe('')
-  })
-
-  it('sends cliModel for a coding tool and never uses it to carry an OpenCode model', () => {
-    const d = freshOnboardingDraft()
-    applyOnboardingBackend(d, 'cursor')
-    d.apiKey = 'k'
-    expect(assembleBootstrapBody(d)).not.toHaveProperty('cliModel')
-    expect(assembleBootstrapBody(d)).not.toHaveProperty('openCodeModel')
-
-    d.cliModel = '  composer-2.5  '
-    const body = assembleBootstrapBody(d)
-    expect(body.cliModel).toBe('composer-2.5')
-    expect(body).not.toHaveProperty('openCodeModel')
-
-    d.acpBackend = 'opencode'
-    d.openCodeModel = 'openai/gpt-4.1'
-    d.cliModel = 'composer-2.5'
-    const oc = assembleBootstrapBody(d)
-    expect(oc.openCodeModel).toBe('openai/gpt-4.1')
-    expect(oc).not.toHaveProperty('cliModel')
-  })
-
-  it('says a coding-tool account can specify a model or leave the choice to the tool', () => {
-    const zh = zhPages.pages.onboarding.acp.paths.cli.desc
-    const en = enPages.pages.onboarding.acp.paths.cli.desc
-    expect(zh).toContain('可以指定模型')
-    expect(zh).toContain('留给工具自己决定')
-    expect(zh).not.toContain('模型由对应工具决定')
-    expect(zh).not.toContain('不确定就先用自动')
-    expect(en).toContain('specify a model')
-    expect(en).toContain('leave the choice to the tool')
-    expect(en).not.toContain('The tool decides the model')
-    expect(zhPages.pages.onboarding.team.modelInherit).toBe('留空沿用 {model}')
-    expect(enPages.pages.onboarding.team.modelInherit).toContain('{model}')
-    expect(zhPages.pages.agentStudio.cliModel.autoSub).toBe('由 {cli} 决定用哪个模型')
-    expect(zhPages.pages.agentStudio.cliModel.unlisted).toContain('不在内置清单中')
-    expect(zhPages.pages.agentStudio.cliModel.catalogFailed).toContain('暂时不可用')
-    expect(zhPages.pages.agentStudio.cliModel.wizardHint).toContain('不确定就先用自动')
-    expect(enPages.pages.agentStudio.cliModel.wizardHint).toContain('Not sure? Start with auto')
-    expect(zhPages.pages.onboarding.apiKey).not.toHaveProperty('wizardHint')
-  })
-
-  it('includes OpenCode vendor fields on bootstrap', () => {
-    const d = freshOnboardingDraft()
-    d.acpBackend = 'opencode'
-    d.apiKey = 'sk-oc'
-    d.openCodeProvider = 'custom'
-    d.openCodeBaseURL = 'https://llm.example/v1'
-    d.openCodeModel = 'custom/my-model'
-    d.openCodeModelVision = true
-    const body = assembleBootstrapBody(d)
-    expect(body.openCodeProvider).toBe('custom')
-    expect(body.openCodeBaseURL).toBe('https://llm.example/v1')
-    expect(body.openCodeModel).toBe('custom/my-model')
-    expect(body.openCodeModelVision).toBe(true)
+    expect(body.modelConfigurationId).toBe('model-main')
+    expect(body.gitBindings).toEqual(d.gitBindings)
+    d.gitBindings.items[0]!.scope = 'other.example'
+    expect(body.gitBindings.items[0]!.scope).toBe('github.com')
+    for (const field of [
+      'apiKey',
+      'acpBackend',
+      'cliModel',
+      'openCodeProvider',
+      'githubToken',
+      'gitCredentialType',
+      'herokuRepos',
+      'featureHint',
+    ])
+      expect(body).not.toHaveProperty(field)
   })
 
   it('sends the wizard language so the server names the workflow in it', () => {
@@ -214,16 +95,8 @@ describe('onboardingWizard', () => {
     expect(assembleBootstrapBody(d).language).toBe('zh-CN')
   })
 
-  it('defaults a custom OpenCode model to text-only until vision is opted in', () => {
-    const d = freshOnboardingDraft()
-    expect(d.openCodeModelVision).toBe(false)
-    d.acpBackend = 'opencode'
-    expect(assembleBootstrapBody(d).openCodeModelVision).toBe(false)
-  })
-
   it('sends git identity and can turn preview flags off', () => {
     const d = freshOnboardingDraft()
-    d.apiKey = 'k'
     expect(gitIdentityConfigured(d)).toBe(false)
     d.gitUserName = ' Ada Lovelace '
     d.gitUserEmail = ' ada@example.com '
@@ -239,7 +112,6 @@ describe('onboardingWizard', () => {
 
   it('sends the repo only when a URL is given, branch only alongside it', () => {
     const d = freshOnboardingDraft()
-    d.apiKey = 'k'
     expect(assembleBootstrapBody(d)).not.toHaveProperty('repoUrl')
 
     d.repoBranch = 'develop'
@@ -253,10 +125,8 @@ describe('onboardingWizard', () => {
 
   it('skipping Git drops repo and credentials but keeps identity', () => {
     const d = freshOnboardingDraft()
-    d.apiKey = 'k'
     d.repoUrl = 'https://github.com/org/web.git'
-    d.gitCredentialType = 'github_https'
-    d.githubToken = 'ghp_x'
+    d.gitBindings = { items: [{ credentialId: 'git-team' }] }
     d.gitUserName = 'Ada'
     d.gitUserEmail = 'ada@example.com'
     expect(gitConfigured(d)).toBe(true)
@@ -268,36 +138,39 @@ describe('onboardingWizard', () => {
     expect(body).not.toHaveProperty('gitCredentialType')
     expect(body).not.toHaveProperty('githubToken')
     expect(body.gitUserName).toBe('Ada')
+    expect(body.gitBindings).toEqual({ items: [] })
   })
 
-  it('sends the chosen team with names and per-agent models', () => {
+  it('sends every canonical name and a per-agent model', () => {
     const d = freshOnboardingDraft()
-    d.apiKey = 'k'
+    d.language = 'zh-CN'
     applyDefaultTeamNames(d.team, deriveOnboardingAgentNames('zh-CN'))
     expect(d.team.map((m) => m.name)).toEqual(['需求澄清', '实现', '测试评审', '交付'])
-    d.team[1]!.model = ' gpt-5 '
+    d.team[1]!.modelConfigurationId = 'model-review'
+    d.team[1]!.name = '编码'
     setTeamMemberEnabled(d.team, 'test_review', false)
     expect(assembleBootstrapBody(d).agents).toEqual([
       { templateId: 'clarify', name: '需求澄清' },
-      { templateId: 'implement', name: '实现', model: 'gpt-5' },
+      { templateId: 'implement', name: '实现', modelConfigurationId: 'model-review' },
+      { templateId: 'test_review', name: '测试评审' },
       { templateId: 'deliver', name: '交付' },
     ])
   })
 
-  it('keeps required templates checked and leaves edited names alone on refresh', () => {
+  it('keeps every template required and resets names to the canonical defaults', () => {
     const team = freshOnboardingTeam()
-    setTeamMemberEnabled(team, 'clarify', false)
-    setTeamMemberEnabled(team, 'implement', false)
+    setTeamMemberEnabled(team, 'test_review', false)
+    setTeamMemberEnabled(team, 'deliver', false)
     expect(team.every((m) => m.enabled)).toBe(true)
-    expect(isRequiredTemplate('test_review')).toBe(false)
-    expect(isRequiredTemplate('deliver')).toBe(false)
-    expect(ONBOARDING_REQUIRED_TEMPLATE_IDS).toEqual(['clarify', 'implement'])
+    expect(isRequiredTemplate('test_review')).toBe(true)
+    expect(isRequiredTemplate('deliver')).toBe(true)
+    expect(ONBOARDING_REQUIRED_TEMPLATE_IDS).toEqual(['clarify', 'implement', 'test_review', 'deliver'])
 
-    applyDefaultTeamNames(team, ['A需求澄清', 'A实现', 'A测试评审', 'A交付'])
+    applyDefaultTeamNames(team, ['需求澄清', '实现', '测试评审', '交付'])
     team[0]!.name = '澄清官'
     team[0]!.nameEdited = true
-    applyDefaultTeamNames(team, ['B需求澄清', 'B实现', 'B测试评审', 'B交付'])
-    expect(team.map((m) => m.name)).toEqual(['澄清官', 'B实现', 'B测试评审', 'B交付'])
+    applyDefaultTeamNames(team, ['Clarify', 'Implement', 'TestReview', 'Deliver'])
+    expect(team.map((m) => m.name)).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
   })
 
   it('validates team names: required, invalid, duplicate; unchecked members are ignored', () => {
@@ -312,17 +185,28 @@ describe('onboardingWizard', () => {
     expect(issues.clarify).toBe('invalid')
     expect(issues.implement).toBe('duplicate')
     expect(issues.test_review).toBe('duplicate')
-    setTeamMemberEnabled(team, 'test_review', false)
+    team[2]!.enabled = false
     expect(teamNameIssues(team).implement).toBe('')
   })
 
-  it('previews the default workflow with the fail loop, and without it when test_review is off', () => {
+  it('treats either complete quartet as ready and lists the current language gaps', () => {
+    expect(isProtectedOnboardingAgentName('需求澄清')).toBe(true)
+    expect(isProtectedOnboardingAgentName(' Clarify ')).toBe(true)
+    expect(isProtectedOnboardingAgentName('自建')).toBe(false)
+    expect(onboardingAgentsReady(['需求澄清', '实现'])).toBe(false)
+    expect(onboardingAgentsReady(['需求澄清', '实现', '测试评审', '交付', 'extra'])).toBe(true)
+    expect(onboardingAgentsReady(['Clarify', 'Implement', 'TestReview', 'Deliver'])).toBe(true)
+    expect(missingOnboardingNames(['需求澄清', '实现'], 'zh-CN')).toEqual(['测试评审', '交付'])
+    expect(missingOnboardingNames(['需求澄清'], 'en')).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
+  })
+
+  it('previews the default workflow with every role and the fail loop', () => {
     const team = freshOnboardingTeam()
     applyDefaultTeamNames(team, [...ONBOARDING_AGENT_NAMES])
-    team[1]!.name = '编码'
+    setTeamMemberEnabled(team, 'test_review', false)
     const full = buildOnboardingWorkflowPreview(team)
     expect(full.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'test_review', 'deliver', 'output'])
-    expect(full.nodes.find((n) => n.id === 'implement')?.name).toBe('编码')
+    expect(full.nodes.find((n) => n.id === 'implement')?.name).toBe('实现')
     expect(full.edges).toEqual([
       { from: 'input', to: 'clarify' },
       { from: 'clarify', to: 'implement' },
@@ -331,18 +215,6 @@ describe('onboardingWizard', () => {
       { from: 'deliver', to: 'output' },
       { from: 'test_review', to: 'implement', handle: 'fail' },
     ])
-
-    setTeamMemberEnabled(team, 'test_review', false)
-    const noReview = buildOnboardingWorkflowPreview(team)
-    expect(noReview.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'deliver', 'output'])
-    expect(noReview.edges).toContainEqual({ from: 'implement', to: 'deliver' })
-    expect(noReview.edges.some((e) => e.handle)).toBe(false)
-
-    setTeamMemberEnabled(team, 'deliver', false)
-    const trimmed = buildOnboardingWorkflowPreview(team)
-    expect(trimmed.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'output'])
-    expect(trimmed.edges.at(-1)).toEqual({ from: 'implement', to: 'output' })
-    expect(trimmed.edges.some((e) => e.handle)).toBe(false)
   })
 
   it('derives the clone dir the same way the server does', () => {
@@ -362,13 +234,14 @@ describe('onboardingWizard', () => {
     expect(repoConfigured(d)).toBe(true)
   })
 
-  it('gitConfigured requires type and matching secret', () => {
+  it('Git availability uses selected credential references and respects skip', () => {
     const d = freshOnboardingDraft()
     expect(gitConfigured(d)).toBe(false)
-    d.gitCredentialType = 'github_https'
-    expect(gitConfigured(d)).toBe(false)
-    d.githubToken = 'tok'
+    d.gitBindings = { items: [{ credentialId: 'git-team' }] }
     expect(gitConfigured(d)).toBe(true)
+    d.gitSkipped = true
+    expect(gitConfigured(d)).toBe(false)
+    expect(assembleBootstrapBody(d).gitBindings).toEqual({ items: [] })
   })
 
   it('treats only a workspace without workflows or agents as needing onboarding', () => {
@@ -389,7 +262,11 @@ describe('onboardingWizard', () => {
     expect(onboardingRoleNames('zh-CN')).toEqual([...ONBOARDING_AGENT_NAMES])
     expect(onboardingRoleNames('en')).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
     expect(deriveOnboardingAgentNames('en')).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
-    for (const name of [...deriveOnboardingAgentNames('en'), ...onboardingRoleNames('en'), ...onboardingRoleNames('zh-CN')]) {
+    for (const name of [
+      ...deriveOnboardingAgentNames('en'),
+      ...onboardingRoleNames('en'),
+      ...onboardingRoleNames('zh-CN'),
+    ]) {
       expect(validateAgentName(name)).toBe('')
     }
   })

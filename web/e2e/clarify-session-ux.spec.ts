@@ -39,6 +39,21 @@ async function sendClarify(page: import('@playwright/test').Page, text: string) 
 }
 
 test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
+  test('提交选择遇到迟到的排队快照后，后续问题无需刷新即可继续选择', async ({ page }) => {
+    await openHarness(page)
+    await page.getByTestId('sim-choice-rounds').click()
+    for (let round = 1; round <= 2; round++) {
+      await expect(page.getByTestId('clarify-question-prompt')).toHaveText(`第 ${round} 轮图标显示范围`)
+      const submit = page.getByRole('button', { name: '确认选择', exact: true })
+      await expect(submit).toBeEnabled()
+      await submit.click()
+      await expect(page.getByTestId('clarify-question-prompt')).toHaveText(`第 ${round + 1} 轮图标显示范围`)
+      await expect(submit).toBeEnabled()
+      await expect(page.getByTestId('clarify-review-cancel')).toHaveCount(0)
+      await expect(page.getByTestId('clarify-review-queue')).toHaveCount(0)
+    }
+  })
+
   test('排队 → 流式 → Cancel 保留队列 → 刷新续传', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 900 })
     await page.goto('/clarify-session-ux.html')

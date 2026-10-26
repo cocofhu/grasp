@@ -230,14 +230,14 @@ describe('AppShell (no topbar + floating ball)', () => {
     wrapper.unmount()
   })
 
-  it('keeps the settings rail and directory flush alongside the independent page scroll', () => {
+  it('keeps the settings rail in the shared floating shell alongside the independent page scroll', () => {
     routeState.path = '/settings'
     const wrapper = mountShell({ stubSidebar: false })
     expect(wrapper.find('.app-shell-settings').exists()).toBe(true)
     expect(wrapper.find('.app-shell-dotgrid').exists()).toBe(false)
     const slot = wrapper.get('[data-testid="app-shell-sidebar-slot"]')
-    expect(slot.classes()).not.toContain('py-[14px]')
-    expect(slot.classes()).not.toContain('pl-[14px]')
+    expect(slot.classes()).toContain('py-[14px]')
+    expect(slot.classes()).toContain('pl-[14px]')
     const sidebar = wrapper.get('[data-testid="app-desktop-sidebar"]')
     expect(sidebar.classes()).toContain('w-[360px]')
     expect(sidebar.find('[data-testid="sidebar-app-rail"]').exists()).toBe(true)

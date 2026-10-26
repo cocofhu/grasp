@@ -1,6 +1,12 @@
 <script lang="ts">
 /** Host-owned inline hand-off after 确认并流转 (see useGatesInbox.activeHandoff). */
-export type ClarifyHandoff = { phase: 'pending' | 'done'; at: string; target?: string }
+export type ClarifyHandoff = {
+  phase: 'pending' | 'done'
+  at: string
+  target?: string
+  /** Successor runs on its own. False when a person is next. Absent when unknown. */
+  targetAuto?: boolean
+}
 /** Earlier node of the same run shown above this conversation (useGatesInbox.activeChainSegments). */
 export type ClarifyPriorSegment = {
   nodeId: string
@@ -56,7 +62,10 @@ import ComposerShell from './ComposerShell.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
+import { readSidebarHandoff, sidebarHandoffEpoch } from '@/lib/inbox/sidebarHandoff'
+import { confirmFlowWindowVisible } from '@/lib/inbox/confirmFlowWindow'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
+import { resolveBootDisplay } from '@/lib/run/bootDisplay'
 import { emptyFailHeadline, turnProcessParts } from '@/lib/inbox/clarifyEmptyFail'
 import AgentToolGroup from './AgentToolGroup.vue'
 import AgentTimeline from './AgentTimeline.vue'
@@ -174,12 +183,74 @@ const props = withDefaults(
 
 // This node visit's boot (connecting checklist) → one folded row above the first reply.
 const bootRecordKey = computed(() => makeBootKey(props.runId, props.nodeId, props.iteration))
-const bootSummary = computed(() => !!getBootRecord(bootRecordKey.value)?.live)
-/** Sandbox still starting: the three boot steps stand in for the Agent's reply. */
-const bootStarting = computed(() => {
-  const rec = getBootRecord(bootRecordKey.value)
-  return !!rec && !rec.live
+const bootRecord = computed(() => getBootRecord(bootRecordKey.value))
+const bootPending = computed(() => !!bootRecord.value && !bootRecord.value.live)
+const bootLive = computed(() => !!bootRecord.value?.live)
+/**
+ * Window opened while this visit had not connected. Its new handoff and agent
+ * replies stay hidden until the window is actually gone.
+ */
+const sealBootMessages = ref(false)
+/** This dialog was confirmed, as opposed to cancelled. */
+const flowCommitted = ref(false)
+/**
+ * Latched only after the sidebar mark confirms an automatic successor.
+ * A mark that is still unconfirmed is unknown, not “the next process is a person”.
+ */
+const enteredAuto = ref<boolean | null>(null)
+
+function latchEnteredAuto() {
+  const mark = readSidebarHandoff(props.runId)
+  if (mark?.confirmedAuto) enteredAuto.value = true
+}
+
+watch(confirmFlowWindowVisible, (visible, was) => {
+  if (visible && !was) sealBootMessages.value = bootPending.value
+  if (!visible && was) {
+    sealBootMessages.value = false
+    if (!flowCommitted.value) enteredAuto.value = null
+  }
 })
+watch(bootRecordKey, () => {
+  if (confirmFlowWindowVisible.value && bootPending.value) sealBootMessages.value = true
+})
+watch(
+  () => `${props.nodeId}\0${props.iteration}`,
+  (now, prev) => {
+    if (!prev || now === prev || confirmFlowWindowVisible.value) return
+    flowCommitted.value = false
+    enteredAuto.value = null
+  },
+)
+watch(sidebarHandoffEpoch, () => {
+  if (!flowCommitted.value) return
+  latchEnteredAuto()
+})
+
+const nextAuto = computed<boolean | null>(() => {
+  const tail = props.followTail?.kind
+  if (tail === 'auto') return true
+  if (tail === 'waiting' || tail === 'ended' || tail === 'error') return false
+  if (typeof props.handoff?.targetAuto === 'boolean') return props.handoff.targetAuto
+  if (!flowCommitted.value) return null
+  // False is reserved for an explicit non-automatic successor. Unknown stays null.
+  return enteredAuto.value === true ? true : null
+})
+
+const bootView = computed(() => resolveBootDisplay({
+  windowVisible: confirmFlowWindowVisible.value,
+  seal: sealBootMessages.value,
+  committed: flowCommitted.value,
+  nextAuto: nextAuto.value,
+  hasBoot: !!bootRecord.value,
+  live: bootLive.value,
+}))
+/** Folded「环境已就绪」, or merged into the divider when earlier nodes are on screen. */
+const bootSummary = computed(() => bootView.value.showReady)
+/** In-progress checklist. Hidden while the confirm window is still painted. */
+const bootStarting = computed(() => bootView.value.showStarting)
+/** This boot's handoff bubble and agent replies wait until「连接 Agent」. */
+const holdBootMessages = computed(() => bootView.value.holdMessages)
 /** A reply placeholder with nothing in it yet (思考中). */
 function isWaitingAgentTurn(t: ClarifyTurn): boolean {
   return t.role === 'agent' && !!t.streaming && !String(t.text || '').trim() && !t.parts?.length && !t.tools?.length
@@ -299,7 +370,9 @@ const {
   confirmFlowDiscard,
   acceptConfirmFlow,
   dismissConfirmFlow,
+  releaseConfirmFlowWindow,
   playConfirmCeremony,
+  followKeepsComposer,
   showDoneChrome,
   confirmFlowPlaying,
   cancelReview,
@@ -497,7 +570,9 @@ watch(composerBlocksConfirm, (blocked) => {
  * follow lock (#850) disable the textarea / 「+」.
  */
 const confirmBusy = computed(() => validating.value || props.handoff?.phase === 'pending')
-const composerInputLocked = computed(() => !!props.observe || !!props.composerLocked)
+/** Existing observe bar: run-live observe, or this chat following an auto node. */
+const observeComposer = computed(() => !!props.observe || props.followTail?.kind === 'auto')
+const composerInputLocked = computed(() => observeComposer.value || !!props.composerLocked)
 
 /**
  * The composer shows exactly one primary action (fix-post-launch/button-states.md):
@@ -895,6 +970,31 @@ const followTailView = computed<FollowTailView | null>(() => {
   return { ...base, completed: true, title: translate('pages.clarify.followEnded') }
 })
 const currentAsk = computed(() => nodeAsk(props.priorSegments || [], (props.priorSegments || []).length, props.nodeTask, props.nodeId))
+/** Ready row sits in this transcript (not on the divider), so the handoff goes under it. */
+const askUnderReady = computed(() =>
+  !!currentAsk.value && !holdBootMessages.value && bootSummary.value && !bootOnDivider.value,
+)
+const showAskAbove = computed(() => !!currentAsk.value && !holdBootMessages.value && !askUnderReady.value)
+
+function onFlowConfirm() {
+  flowCommitted.value = true
+  acceptConfirmFlow()
+  latchEnteredAuto()
+}
+
+function onFlowDismiss() {
+  if (!flowCommitted.value) {
+    enteredAuto.value = null
+  }
+  dismissConfirmFlow()
+}
+
+function showTurn(t: ClarifyTurn): boolean {
+  if (isEmptyLiveTurn(t) || (props.observe && isBlankHumanTurn(t))) return false
+  if (holdBootMessages.value && t.role === 'agent') return false
+  if (bootStarting.value && isWaitingAgentTurn(t)) return false
+  return true
+}
 
 
 /** A legacy (timeline-less) reply with a failed tool call keeps its completion footnote. */
@@ -976,7 +1076,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         what this node is doing (the chain segment's / taken-over node's task),
         as its first User Message.
       -->
-      <ClarifyHandoffBubble v-if="currentAsk" class="clarify-turn" :ask="currentAsk" />
+      <ClarifyHandoffBubble v-if="showAskAbove && currentAsk" class="clarify-turn" :ask="currentAsk" />
       <ClarifyBootLoader v-if="bootStarting" phase="starting" variant="inline" :boot-key="bootRecordKey" />
       <LlmSystemRow
         v-for="note in notesBesideTurn(systemNotes, -1, displayTurns.length)"
@@ -993,8 +1093,13 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         variant="inline"
         :boot-key="bootRecordKey"
       />
+      <ClarifyHandoffBubble
+        v-if="askUnderReady && currentAsk && bootSummaryAt >= 0 && i === bootSummaryAt"
+        class="clarify-turn"
+        :ask="currentAsk"
+      />
       <div
-        v-if="!isEmptyLiveTurn(t) && !(observe && isBlankHumanTurn(t)) && !(bootStarting && isWaitingAgentTurn(t))"
+        v-if="showTurn(t)"
         class="clarify-turn flex"
         :class="t.role === 'human' ? 'justify-end' : ''"
         :data-turn-role="t.role"
@@ -1081,7 +1186,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             data-testid="clarify-form-summary"
           >
             <div class="chat-response-heading flex items-center gap-2 text-txt2">
-              <Icon name="ci" :size="16" /> {{ translate('pages.clarify.myForm') }}
+              <Icon name="form" :size="16" /> {{ translate('pages.clarify.myForm') }}
             </div>
             <div class="min-w-0 max-w-full">
               <div
@@ -1100,7 +1205,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           </div>
           <!-- Agent busy / thought / message (Demo: four-phase + restrained done) -->
           <template v-else-if="t.role === 'agent'">
-            <!-- Waiting first token: pulse + 思考中… inside bubble -->
+            <!-- Waiting first token: lamp + 思考中… inside bubble -->
             <ClarifyThinkingRow v-if="t.streaming && !t.thought && !agentHasMessage(t)" />
             <!-- Steps in arrival order (thought / tools / message), like the persisted timeline -->
             <AgentTimeline
@@ -1260,44 +1365,33 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                         <span class="clarify-question-kind text-[11px] font-normal leading-5 text-txt2">{{ curQuestion.allowMultiple ? translate('pages.clarify.multiple') : translate('pages.clarify.single') }}</span>
                       </div>
                       <div class="space-y-1.5">
-                        <div v-for="o in curQuestion.options" :key="o.id" class="flex w-full items-stretch gap-1.5">
-                          <button
-                            type="button"
-                            class="chat-choice-option flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"
-                            :aria-pressed="isSelected(curQuestion.id, o.id)"
-                            data-testid="clarify-option-btn"
-                            @click="pick(curQuestion, o.id)"
+                        <button
+                          v-for="o in curQuestion.options"
+                          :key="o.id"
+                          type="button"
+                          class="chat-choice-option flex w-full min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"
+                          :aria-pressed="isSelected(curQuestion.id, o.id)"
+                          data-testid="clarify-option-btn"
+                          @click="pick(curQuestion, o.id)"
+                        >
+                          <span
+                            class="rounded-lg flex h-4 w-4 shrink-0 items-center justify-center border"
+                            :class="[
+                              curQuestion.allowMultiple ? 'rounded' : 'rounded-full',
+                              isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent text-white' : 'border-line-strong',
+                            ]"
                           >
-                            <span
-                              class="rounded-lg flex h-4 w-4 shrink-0 items-center justify-center border"
-                              :class="[
-                                curQuestion.allowMultiple ? 'rounded' : 'rounded-full',
-                                isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent text-white' : 'border-line-strong',
-                              ]"
-                            >
-                              <Icon v-if="isSelected(curQuestion.id, o.id)" name="check" :size="10" />
-                            </span>
-                            <span
-                              class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
-                              data-testid="clarify-option-label"
-                            >{{ o.label }}</span>
-                            <span
-                              v-if="o.recommended"
-                              class="chat-choice-recommendation ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                            >{{ translate('pages.clarify.recommended') }}</span>
-                          </button>
-                          <button
-                            v-if="hasDemoHtml(o)"
-                            type="button"
-                            class="inline-flex shrink-0 items-center self-center rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
-                            data-testid="clarify-option-enlarge"
-                            :aria-label="translate('pages.clarify.demoEnlarge')"
-                            :title="translate('pages.clarify.demoEnlarge')"
-                            @click="openPreviewFocus(curQuestion, o.id, false, i)"
-                          >
-                            <Icon name="expand" :size="11" aria-hidden="true" />
-                          </button>
-                        </div>
+                            <Icon v-if="isSelected(curQuestion.id, o.id)" name="check" :size="10" />
+                          </span>
+                          <span
+                            class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
+                            data-testid="clarify-option-label"
+                          >{{ o.label }}</span>
+                          <span
+                            v-if="o.recommended"
+                            class="chat-choice-recommendation ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                          >{{ translate('pages.clarify.recommended') }}</span>
+                        </button>
                       </div>
                       <div
                         class="chat-choice-other mt-1.5 flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"
@@ -1429,14 +1523,9 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                       <span
                         v-if="historyOptionPicked(q, i, o.label)"
                         class="clarify-history-preview-picked"
-                      >✓ {{ translate('pages.clarify.demoSelected') }}</span>
+                      ><Icon name="check" :size="11" :interactive="false" class="inline align-middle" /> {{ translate('pages.clarify.demoSelected') }}</span>
                       <span class="clarify-history-preview-go" aria-hidden="true">
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M6.25 2.75H2.75V6.25" />
-                          <path d="M2.75 2.75 6.5 6.5" />
-                          <path d="M9.75 13.25h3.5V9.75" />
-                          <path d="M13.25 13.25 9.5 9.5" />
-                        </svg>
+                        <Icon name="preview-expand" :size="14" />
                       </span>
                     </button>
                   </div>
@@ -1469,7 +1558,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   class="mb-3 last:mb-0"
                 >
                   <div v-if="form.title" class="mb-2 flex min-w-0 items-center gap-2 text-[13px] font-medium text-txt">
-                    <Icon name="ci" :size="16" class="shrink-0 text-txt2" />
+                    <Icon name="form" :size="16" class="shrink-0 text-txt2" />
                     <span class="min-w-0 break-words [overflow-wrap:anywhere]">{{ form.title }}</span>
                   </div>
                   <div class="space-y-2.5">
@@ -1516,7 +1605,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               data-testid="clarify-form-readonly"
             >
               <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
-                <Icon name="ci" :size="16" />
+                <Icon name="form" :size="16" />
                 {{ translate('pages.clarify.formsThisRound', { n: t.forms.length }) }}
                 <span class="ml-auto text-[11px] font-normal text-txt2">
                   {{ translate('pages.clarify.readonly') }}
@@ -1546,8 +1635,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <!-- Keep footer time; hide bottom time when completion footnote is shown (keep_footer_hide_bottom) -->
           <!--
             Turn still running: the live status sits at the end of the reply (where
-            the next step will appear), never only at the top. Same pulse +
-            思考中… / shimmer 输出中 styles as before.
+            the next step will appear), never only at the top. Same lamp +
+            思考中… / plain 输出中 styles as before.
           -->
           <ClarifyThinkingRow
             v-if="t.role === 'agent' && t.streaming && (t.thought || agentHasMessage(t) || t.parts?.length)"
@@ -1585,6 +1674,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         phase="done"
         variant="inline"
         :boot-key="bootRecordKey"
+      />
+      <ClarifyHandoffBubble
+        v-if="askUnderReady && currentAsk && bootSummaryAt < 0"
+        class="clarify-turn"
+        :ask="currentAsk"
       />
       <!-- Inline hand-off (方案 B): one more step row in the「思考过程」style — ⟳ 流转到下一节点 · 校验中… → ✓ 已确认并流转 · 已完成. -->
       <Transition name="clarify-row">
@@ -1628,7 +1722,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         </div>
       </Transition>
       <div
-        v-if="handoffRow && followTail && followProcessRows.length"
+        v-if="handoffRow && followTail && followProcessRows.length && !holdBootMessages"
         class="clarify-follow-process mt-1 flex w-full min-w-0 flex-col"
         data-testid="clarify-follow-process"
       >
@@ -1656,8 +1750,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           />
         </div>
       </div>
-      <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootStarting" class="chat-meta grasp-status-host flex items-center gap-2 pl-9">
-        <Icon name="breath-dot" :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
+      <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootPending && !bootStarting" class="chat-meta grasp-status-host flex items-center gap-2 pl-9">
+        <Icon name="breath-dot" busy :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
         {{ translate('pages.clarify.thinking') }}
       </div>
       </div>
@@ -1692,7 +1786,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
     </div>
     <!-- Success ceremony in flight after done: keep composer mounted-off until hold→done (g2.3). -->
     <div
-      v-else-if="done"
+      v-else-if="done && !followKeepsComposer"
       class="border-t border-line p-3 text-center text-[12px] text-txt3"
       data-testid="clarify-confirm-ceremony"
       aria-live="polite"
@@ -1776,14 +1870,14 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             <span class="min-w-0 truncate text-[11px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
           </div>
           <button
-            class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-err text-white"
+            class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full pending-attach-remove"
             @click.stop="removeAttachment(ii)"
           ><Icon name="close" :size="9" /></button>
         </div>
       </div>
       <ComposerShell
         wrap-toolbar
-        :show-footer="!hideFinish && reviewMode && !observe"
+        :show-footer="!hideFinish && reviewMode && !observeComposer"
         box-test-id="clarify-input-row"
         toolbar-test-id="clarify-action-row"
       >
@@ -1795,7 +1889,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             class="chat-input composer-hint-wrap min-h-[40px] min-w-0 w-full resize-none border-0 bg-transparent p-0 shadow-none outline-none focus:ring-0"
             :class="overflowScroll ? 'scroll-area max-h-[128px] overflow-y-auto' : 'overflow-y-hidden'"
             rows="1"
-            :placeholder="observe ? translate(stopping ? 'pages.clarify.observeStoppingPlaceholder' : 'pages.clarify.observeInputPlaceholder') : inputPlaceholder"
+            :placeholder="observeComposer ? translate(stopping ? 'pages.clarify.observeStoppingPlaceholder' : 'pages.clarify.observeInputPlaceholder') : inputPlaceholder"
             :disabled="composerInputLocked"
             data-testid="clarify-input"
             @input="onTextInput"
@@ -1819,7 +1913,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           </button>
           <slot name="composer-controls" :compact="true" />
         </template>
-        <template v-if="observe" #toolbar-end>
+        <template v-if="observeComposer" #toolbar-end>
           <button
             type="button"
             class="chat-action-button chat-action-stop"
@@ -1830,7 +1924,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :disabled="stopping"
             @click="emit('takeover')"
           >
-            <Icon :name="stopping ? 'spinner' : 'chat-stop'" :size="16" :class="stopping ? 'animate-spin motion-reduce:animate-none' : ''" />
+            <Icon :name="stopping ? 'spinner' : 'chat-stop'" :size="16" />
           </button>
         </template>
         <template v-else #toolbar-end>
@@ -1844,7 +1938,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             @click="onPrimary"
           />
         </template>
-        <template v-if="reviewMode && !observe" #hint>
+        <template v-if="reviewMode && !observeComposer" #hint>
           <p
             class="m-0 min-w-0 text-[11px] leading-snug text-txt3 [overflow-wrap:anywhere]"
             data-testid="clarify-confirm-hint"
@@ -1942,8 +2036,9 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   <ConfirmFlowDialog
     :open="confirmFlowDialogOpen"
     :discard="confirmFlowDiscard"
-    @cancel="dismissConfirmFlow"
-    @confirm="acceptConfirmFlow"
+    @cancel="onFlowDismiss"
+    @confirm="onFlowConfirm"
+    @visual-close="releaseConfirmFlowWindow"
   />
 </template>
 

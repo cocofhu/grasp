@@ -11,10 +11,7 @@ import type { Workflow } from '@/lib/shared/types'
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   listWorkflows: vi.fn(),
-  listAgents: vi.fn(async () => [
-    { name: 'clarifier', capabilities: { interaction: 'clarify', tools: ['ask_question'] } },
-    { name: 'worker', capabilities: { interaction: 'auto' } },
-  ]),
+  listAgents: vi.fn(async () => [...soloAgents, ...readyOnboardingAgents]),
   patchWorkflowHomeVisibility: vi.fn(),
   startRun: vi.fn(),
   getRun: vi.fn(),
@@ -59,8 +56,20 @@ vi.mock('@/lib/composables/useToast', () => ({
 import { HOME_COMPOSER_DRAFT_KEY } from '@/lib/run/homeComposerDraft'
 import { HOME_PRIORITY_MEMORY_KEY } from '@/lib/run/useHomeApproveChat'
 import { setBrandSettings } from '@/lib/composables/useBrandSettings'
+import { onboardingOpen } from '@/lib/pm/firstInstall'
 import DashboardView from './DashboardView.vue'
 import dashboardSource from './DashboardView.vue?raw'
+
+const soloAgents = [
+  { name: 'clarifier', capabilities: { interaction: 'clarify', tools: ['ask_question'] } },
+  { name: 'worker', capabilities: { interaction: 'auto' } },
+]
+const readyOnboardingAgents = [
+  { name: '需求澄清' },
+  { name: '实现' },
+  { name: '测试评审' },
+  { name: '交付' },
+]
 
 const HomePreviewAppModalStub = {
   props: ['open', 'title', 'width'],
@@ -216,6 +225,9 @@ describe('DashboardView home composer', () => {
     mocks.getRun.mockReset()
     mocks.reactReply.mockReset()
     mocks.createWorkflowFromBaseline.mockReset()
+    mocks.listAgents.mockReset()
+    mocks.listAgents.mockImplementation(async () => [...soloAgents, ...readyOnboardingAgents])
+    onboardingOpen.value = false
     mocks.listWorkflows.mockResolvedValue([approveWf])
     mocks.patchWorkflowHomeVisibility.mockResolvedValue({ ...approveWf, showOnHome: false })
     mocks.startRun.mockResolvedValue({ id: 'run-9', status: 'queued' })
@@ -296,10 +308,10 @@ describe('DashboardView home composer', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
-    expect(copy.text()).toContain('先说清')
-    expect(copy.text()).toContain('再动手')
+    expect(copy.text()).toContain('我们应该')
+    expect(copy.text()).toContain('做些什么？')
     expect(copy.find('.em').exists()).toBe(false)
-    expect(copy.text().replace(/\s+/g, '')).toContain('先说清，再动手')
+    expect(copy.text().replace(/\s+/g, '')).toContain('我们应该做些什么？')
     expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-text"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-cursor"]').exists()).toBe(false)
@@ -320,7 +332,7 @@ describe('DashboardView home composer', () => {
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
     expect(copy.text()).toBe('先聊清楚，再开工')
     expect(copy.find('.em').exists()).toBe(false)
-    expect(copy.text()).not.toBe('先说清，再动手')
+    expect(copy.text()).not.toBe('我们应该做些什么？')
     wrapper.unmount()
   })
 
@@ -330,7 +342,7 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard()
     await flushPromises()
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
-    expect(copy.text().replace(/\s+/g, '')).toBe('先说清，再动手')
+    expect(copy.text().replace(/\s+/g, '')).toBe('我们应该做些什么？')
     wrapper.unmount()
   })
 
@@ -339,8 +351,8 @@ describe('DashboardView home composer', () => {
     await flushPromises()
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
     expect(copy.find('.em').exists()).toBe(false)
-    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('Clarify first, then act')
-    expect(copy.text()).not.toMatch(/先说清|再动手/)
+    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('What should we do?')
+    expect(copy.text()).not.toMatch(/我们应该做些什么/)
     wrapper.unmount()
   })
 
@@ -349,7 +361,7 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard('en')
     await flushPromises()
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
-    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('Clarify first, then act')
+    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('What should we do?')
     wrapper.unmount()
   })
 
@@ -692,7 +704,7 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  it('shows workflow empty state when none are clarify-first', async () => {
+  it('shows only the new-workflow card when none are clarify-first', async () => {
     mocks.listWorkflows.mockResolvedValue([
       {
         ...approveWf,
@@ -707,20 +719,19 @@ describe('DashboardView home composer', () => {
     ])
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="home-go-workflows"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="home-go-workflows"]').trigger('click')
-    expect(mocks.push).toHaveBeenCalledWith('/workflows')
+    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-go-workflows"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('shows empty state prompting Show on Home when workflows are hidden (g3.2 / g3.3)', async () => {
+  it('keeps workflow creation without the empty-state navigation when workflows are hidden', async () => {
     mocks.listWorkflows.mockResolvedValue([{ ...approveWf, showOnHome: false }])
     const wrapper = mountDashboard()
     await flushPromises()
-    const empty = wrapper.get('[data-testid="home-workflows-empty"]')
-    expect(empty.text()).toContain('首页可见')
-    expect(empty.text()).not.toContain('丢失')
+    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-go-workflows"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     // plan g1.3 — zero visible workflows: select still openable for create
     expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').element).toHaveProperty(
       'disabled',
@@ -783,7 +794,7 @@ describe('DashboardView home composer', () => {
       publishedSnapshot: true,
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/runs/run-9/nodes/ap' })
     wrapper.unmount()
   })
 
@@ -882,6 +893,42 @@ describe('DashboardView home composer', () => {
     vi.unstubAllGlobals()
   })
 
+  it('removes only the clicked home pending attachment', async () => {
+    class FakeReader {
+      result: string | ArrayBuffer | null = null
+      onload: null | (() => void) = null
+      readAsDataURL(file: File) {
+        this.result = `data:${file.type || 'application/octet-stream'};base64,QUJD`
+        queueMicrotask(() => this.onload?.())
+      }
+    }
+    vi.stubGlobal('FileReader', FakeReader as unknown as typeof FileReader)
+
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const fileInput = wrapper.get('[data-testid="home-composer-file"]').element as HTMLInputElement
+    const dt = new DataTransfer()
+    dt.items.add(new File(['ABC'], '首页截图.png', { type: 'image/png' }))
+    dt.items.add(new File(['ABC'], '说明.pdf', { type: 'application/pdf' }))
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: dt.files })
+    await wrapper.get('[data-testid="home-composer-file"]').trigger('change')
+    await flushPromises()
+
+    const removes = wrapper.findAll('[data-testid="home-attach-remove"]')
+    expect(removes).toHaveLength(2)
+    expect(removes[0].classes()).toContain('pending-attach-remove')
+    expect(removes[0].classes()).toContain('rounded')
+    expect(removes[0].classes()).not.toContain('rounded-full')
+    expect(removes[0].classes()).not.toContain('bg-err')
+    await removes[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="home-attach-remove"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="home-draft-image-thumb"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-pending-file-chip"]').text()).toContain('说明.pdf')
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
   it('opens draft image preview, close keeps attachment, no unavailable overlay (g1.3)', async () => {
     class FakeReader {
       result: string | ArrayBuffer | null = null
@@ -958,7 +1005,7 @@ describe('DashboardView home composer', () => {
       },
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/runs/run-9/nodes/ap' })
     wrapper.unmount()
     vi.unstubAllGlobals()
   })
@@ -1338,7 +1385,7 @@ describe('DashboardView home composer', () => {
     expect(vbX + vbW / 2).toBe(vbY + vbH / 2)
 
     // each stroke of the plus is centered on the viewBox center
-    const d = svg.get('path').attributes('d') ?? ''
+    const d = svg.findAll('path').map((path) => path.attributes('d') ?? '').join(' ')
     const vertical = d.match(/M(\d+) (\d+)v(\d+)/)
     const horizontal = d.match(/M(\d+) (\d+)h(\d+)/)
     expect(vertical).not.toBeNull()
@@ -1363,7 +1410,8 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue([])
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-go-workflows"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
     await flushPromises()
@@ -1414,6 +1462,54 @@ describe('DashboardView home composer', () => {
     expect(wrapper.get('[data-testid="home-create-error"]').text()).toContain('create failed')
     expect(mocks.listWorkflows.mock.calls.length).toBe(callsAfterMount)
     expect(wrapper.find('[data-testid="home-workflow-card-wf-ap"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  // review v1 — incomplete quartet never opens the name/repo form; primary action opens the guide
+  it('stops home baseline create when the quartet is incomplete and opens the guide', async () => {
+    mocks.listAgents.mockResolvedValue([{ name: '需求澄清' }, { name: '实现' }])
+    const wrapper = mountDashboard()
+    await flushPromises()
+    await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-create-form"]').exists()).toBe(false)
+    expect(document.body.textContent).toContain('还不能新建工作流')
+    expect(document.body.textContent).toContain('测试评审、交付')
+    expect(mocks.createWorkflowFromBaseline).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="home-onboarding-agents-gate-open"]').trigger('click')
+    await flushPromises()
+    expect(onboardingOpen.value).toBe(true)
+    expect(wrapper.find('[data-testid="home-onboarding-agents-gate-body"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lists the English canonical names when the home UI is English', async () => {
+    mocks.listAgents.mockResolvedValue([{ name: '需求澄清' }, { name: '实现' }])
+    const wrapper = mountDashboard('en')
+    await flushPromises()
+    await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
+    await flushPromises()
+    await teleported('home-workflow-select-create').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(false)
+    expect(document.body.textContent).toContain("Can't create a workflow yet")
+    expect(document.body.textContent).toContain('Clarify, Implement, TestReview, Deliver')
+    expect(document.body.textContent).toContain('Finish the guide')
+    expect(mocks.createWorkflowFromBaseline).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('opens the home baseline form when only the English quartet is complete', async () => {
+    mocks.listAgents.mockResolvedValue(
+      ['Clarify', 'Implement', 'TestReview', 'Deliver'].map((name) => ({ name })),
+    )
+    const wrapper = mountDashboard()
+    await flushPromises()
+    await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-onboarding-agents-gate-body"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -1518,13 +1614,14 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g2.1 — empty list: empty copy + add card in the same enter group
-  it('plan g2.1 — empty workflows reveal empty state and add card together', async () => {
+  // plan g2.1 — empty list: reveal the add card without an empty-state row
+  it('plan g2.1 — empty workflows reveal the add card without an empty-state row', async () => {
     mocks.listWorkflows.mockResolvedValue([])
     const wrapper = mountDashboard()
     await flushPromises()
     const enter = wrapper.get('[data-testid="home-workflow-enter"]')
-    expect(enter.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
+    expect(enter.find('[data-testid="home-workflows-empty"]').exists()).toBe(false)
+    expect(enter.find('[data-testid="home-go-workflows"]').exists()).toBe(false)
     expect(enter.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     expect(enter.classes()).toContain('home-workflow-enter--ready')
     wrapper.unmount()

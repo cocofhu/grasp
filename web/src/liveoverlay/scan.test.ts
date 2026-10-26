@@ -1,13 +1,21 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { applyParam, paramDefault, parseParams, readWrapper, scanWrappers, setVariantVisible, showVariant } from './scan'
 import { describeElement, selectorPath, visibleText } from './describe'
 import { dropView, getView, putView } from './viewStore'
+
+beforeEach(() => {
+  // Happy DOM 21 eagerly creates Animation.finished and rejects it on cancel,
+  // unlike Chromium when finished was never read. Layout tests do not need a
+  // running animation; the animation lifecycle cases supply their own mocks.
+  vi.spyOn(Element.prototype, 'animate').mockImplementation(() => ({ cancel: vi.fn(), onfinish: null }) as unknown as Animation)
+})
 
 afterEach(() => {
   document.body.innerHTML = ''
   sessionStorage.clear()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('scan', () => {

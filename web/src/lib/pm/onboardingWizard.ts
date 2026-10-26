@@ -1,28 +1,10 @@
-import type { BackendId } from '@/lib/shared/regionPolicy'
-import { getRegionPolicy } from '@/lib/shared/regionPolicy'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
+import type { AgentGitBindings } from '@/lib/api/apiTypes'
+import { cloneGitBindings } from '@/lib/agent/gitBindings'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import type { ThemeName } from '@/lib/shared/theme'
 import { locale } from '@/lib/shared/locale'
 import { theme } from '@/lib/shared/theme'
-import { DEFAULT_OPENCODE_PROVIDER } from '@/lib/agent/openCodeProvider'
 import { normalizeAgentName, validateAgentName } from '@/lib/agent/agentIO'
-import {
-  APIKEY_BACKEND,
-  CLI_BACKEND_DEFAULT,
-  CLI_BACKENDS,
-  type StartPath,
-  startPathForBackend,
-  syncStartPathFields,
-} from '@/lib/shared/startPath'
-
-export {
-  APIKEY_BACKEND as ONBOARDING_APIKEY_BACKEND,
-  CLI_BACKEND_DEFAULT as ONBOARDING_CLI_BACKEND_DEFAULT,
-  CLI_BACKENDS as ONBOARDING_CLI_BACKENDS,
-  startPathForBackend,
-  type StartPath as OnboardingStartPath,
-}
 
 /** The default workflow's name in every UI language (mirrors server onboardingLocales). */
 export const ONBOARDING_WORKFLOW_NAMES: readonly string[] = ['默认工作流', 'Default Workflow']
@@ -38,10 +20,15 @@ export const ONBOARDING_TEMPLATES: readonly { id: OnboardingTemplateId; label: s
 ]
 
 /**
- * The default workflow cannot run without clarify → implement; test_review and
- * deliver may be unchecked (their neighbours are wired together). Mirrors the server.
+ * All four roles are required. Names are the canonical ones for the wizard
+ * language and cannot be changed. Mirrors the server.
  */
-export const ONBOARDING_REQUIRED_TEMPLATE_IDS: readonly OnboardingTemplateId[] = ['clarify', 'implement']
+export const ONBOARDING_REQUIRED_TEMPLATE_IDS: readonly OnboardingTemplateId[] = [
+  'clarify',
+  'implement',
+  'test_review',
+  'deliver',
+]
 
 const ONBOARDING_ROLE_NAMES_EN: Record<OnboardingTemplateId, string> = {
   clarify: 'Clarify',
@@ -54,8 +41,34 @@ const ONBOARDING_ROLE_NAMES_EN: Record<OnboardingTemplateId, string> = {
 const LONGEST_ONBOARDING_ROLE_SUFFIX = 10
 const MAX_AGENT_NAME_RUNES = 64
 
-/** Canonical default Agent names (the server's template labels); used for conflict checks. */
+/** Canonical Chinese Agent names (the server's template labels). */
 export const ONBOARDING_AGENT_NAMES: readonly string[] = ONBOARDING_TEMPLATES.map((t) => t.label)
+
+/** Canonical English Agent names, in the same role order. */
+export const ONBOARDING_AGENT_NAMES_EN: readonly string[] = ONBOARDING_TEMPLATES.map((t) => ONBOARDING_ROLE_NAMES_EN[t.id])
+
+/** True when the name is a Chinese or English canonical onboarding Agent. */
+export function isProtectedOnboardingAgentName(name: string): boolean {
+  const trimmed = name.trim()
+  return ONBOARDING_AGENT_NAMES.includes(trimmed) || ONBOARDING_AGENT_NAMES_EN.includes(trimmed)
+}
+
+function onboardingSetComplete(names: Iterable<string>, set: readonly string[]): boolean {
+  const have = new Set(Array.from(names, (name) => name.trim()).filter(Boolean))
+  return set.every((name) => have.has(name))
+}
+
+/** A workflow can be created when either canonical quartet is complete. */
+export function onboardingAgentsReady(names: Iterable<string>): boolean {
+  return onboardingSetComplete(names, ONBOARDING_AGENT_NAMES) || onboardingSetComplete(names, ONBOARDING_AGENT_NAMES_EN)
+}
+
+/** Canonical names missing from the current UI language's quartet. */
+export function missingOnboardingNames(names: Iterable<string>, lang: AppLocale): string[] {
+  const have = new Set(Array.from(names, (name) => name.trim()))
+  const set = lang === 'en' ? ONBOARDING_AGENT_NAMES_EN : ONBOARDING_AGENT_NAMES
+  return set.filter((name) => !have.has(name))
+}
 
 /** Default role names shown and saved for the given UI language. */
 export function onboardingRoleNames(lang: AppLocale): string[] {
@@ -64,7 +77,7 @@ export function onboardingRoleNames(lang: AppLocale): string[] {
 
 export type OnboardingMode = 'firstInstall' | 'retry'
 
-export type OnboardingStepId = 'prefs' | 'model' | 'key' | 'git' | 'team' | 'workflow' | 'done'
+export type OnboardingStepId = 'prefs' | 'model' | 'git' | 'team' | 'workflow' | 'done'
 
 export type OnboardingStep = {
   id: OnboardingStepId
@@ -75,7 +88,6 @@ export type OnboardingStep = {
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 'prefs', labelKey: 'pages.onboarding.steps.prefs' },
   { id: 'model', labelKey: 'pages.onboarding.steps.model' },
-  { id: 'key', labelKey: 'pages.onboarding.steps.key' },
   { id: 'git', labelKey: 'pages.onboarding.steps.git' },
   { id: 'team', labelKey: 'pages.onboarding.steps.team' },
   { id: 'workflow', labelKey: 'pages.onboarding.steps.workflow' },
@@ -89,8 +101,8 @@ export type OnboardingTeamMember = {
   name: string
   /** True once the user typed a name, so default refreshes leave it alone. */
   nameEdited: boolean
-  /** ACP_BRIDGE_MODEL for this Agent; '' inherits the workspace default. */
-  model: string
+  /** Optional explicit configuration for this role instead of the chosen team model. */
+  modelConfigurationId: string
 }
 
 export function freshOnboardingTeam(): OnboardingTeamMember[] {
@@ -99,7 +111,7 @@ export function freshOnboardingTeam(): OnboardingTeamMember[] {
     enabled: true,
     name: '',
     nameEdited: false,
-    model: '',
+    modelConfigurationId: '',
   }))
 }
 
@@ -107,18 +119,19 @@ export function isRequiredTemplate(id: OnboardingTemplateId): boolean {
   return ONBOARDING_REQUIRED_TEMPLATE_IDS.includes(id)
 }
 
-/** Required templates stay checked. */
+/** Every onboarding role stays selected. The enabled flag cannot turn one off. */
 export function setTeamMemberEnabled(team: OnboardingTeamMember[], id: OnboardingTemplateId, enabled: boolean): void {
+  void enabled
   const m = team.find((x) => x.templateId === id)
   if (!m) return
-  m.enabled = isRequiredTemplate(id) ? true : enabled
+  m.enabled = true
 }
 
-/** Fill names the user has not edited with the derived defaults (same order as ONBOARDING_TEMPLATES). */
+/** Names always follow the canonical defaults for the current language. */
 export function applyDefaultTeamNames(team: OnboardingTeamMember[], defaults: readonly string[]): void {
   ONBOARDING_TEMPLATES.forEach((t, i) => {
     const m = team.find((x) => x.templateId === t.id)
-    if (m && !m.nameEdited) m.name = defaults[i] || ''
+    if (m) m.name = defaults[i] || ''
   })
 }
 
@@ -169,14 +182,12 @@ export type OnboardingWorkflowPreview = {
 }
 
 /**
- * The default workflow bootstrap will publish for this team:
+ * The default workflow bootstrap will publish:
  * input → 需求澄清 → 实现 → 测试评审 -pass→ 交付 → output, 测试评审 -fail→ 实现.
- * Unchecked test_review / deliver nodes are skipped (same pruning as the server).
+ * All four roles are always included.
  */
 export function buildOnboardingWorkflowPreview(team: OnboardingTeamMember[]): OnboardingWorkflowPreview {
-  const agents = ONBOARDING_TEMPLATES.filter(
-    (t) => isRequiredTemplate(t.id) || team.find((m) => m.templateId === t.id)?.enabled,
-  )
+  const agents = [...ONBOARDING_TEMPLATES]
   const nodes: OnboardingPreviewNode[] = [
     { id: 'input', kind: 'input' },
     ...agents.map((t) => ({
@@ -199,75 +210,34 @@ export function buildOnboardingWorkflowPreview(team: OnboardingTeamMember[]): On
   return { nodes, edges }
 }
 
-export const ONBOARDING_GIT_TYPES: { id: GitCredentialType; labelKey: string }[] = [
-  { id: 'github_https', labelKey: 'pages.agentStudio.git.types.github_https' },
-  { id: 'gitlab_https', labelKey: 'pages.agentStudio.git.types.gitlab_https' },
-  { id: 'ssh', labelKey: 'pages.agentStudio.git.types.ssh' },
-]
-
 export type OnboardingDraft = {
   step: number
   language: AppLocale
   theme: ThemeName
-  startPath: StartPath
-  acpBackend: BackendId
-  /** Last CLI-path backend, so switching paths back restores the pick. */
-  cliBackend: BackendId
+  modelConfigurationId: string
+  gitBindings: AgentGitBindings
   region: string
-  apiKey: string
-  gitCredentialType: GitCredentialType | ''
-  githubToken: string
-  gitlabToken: string
-  gitlabUrl: string
-  sshPrivateKey: string
-  sshKnownHosts: string
   repoUrl: string
   repoBranch: string
-  /** Repo + credentials skipped on the connect page (identity is still required). */
   gitSkipped: boolean
   gitUserName: string
   gitUserEmail: string
   vncPreview: boolean
   browserMcp: boolean
-  openCodeProvider: string
-  openCodeBaseURL: string
-  openCodeModel: string
-  openCodeModelVision: boolean
-  /** Coding-tool model (`ACP_BRIDGE_MODEL`). Empty means auto: do not pin one. */
-  cliModel: string
   team: OnboardingTeamMember[]
 }
-
-export type OnboardingAgentChoice = {
-  templateId: OnboardingTemplateId
-  name?: string
-  model?: string
-}
-
+export type OnboardingAgentChoice = { templateId: OnboardingTemplateId; name?: string; modelConfigurationId?: string }
 export type OnboardingBootstrapBody = {
-  acpBackend: BackendId
-  apiKey: string
-  /** Names the default workflow and its start/end nodes in this language. */
+  modelConfigurationId: string
+  gitBindings: AgentGitBindings
   language: AppLocale
   region?: string
-  gitCredentialType?: GitCredentialType
-  githubToken?: string
-  gitlabToken?: string
-  gitlabUrl?: string
-  sshPrivateKey?: string
-  sshKnownHosts?: string
   repoUrl?: string
   repoBranch?: string
   gitUserName?: string
   gitUserEmail?: string
   vncPreview?: boolean
   browserMcp?: boolean
-  openCodeProvider?: string
-  openCodeBaseURL?: string
-  openCodeModel?: string
-  openCodeModelVision?: boolean
-  /** Coding-tool model. Omitted when auto. Never used to carry an OpenCode model. */
-  cliModel?: string
   agents?: OnboardingAgentChoice[]
 }
 
@@ -345,60 +315,7 @@ export function shouldAutoOpenOnboarding(workflows: { name?: string }[], agents:
  *   (not browser/OS). firstInstall/retry keep detectSystemLocale().
  */
 export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): OnboardingDraft {
-  return {
-    step: 0,
-    language: opts?.inheritAppLocale ? locale.value : detectSystemLocale(),
-    theme: theme.value,
-    startPath: 'apiKey',
-    acpBackend: APIKEY_BACKEND,
-    cliBackend: CLI_BACKEND_DEFAULT,
-    region: getRegionPolicy(APIKEY_BACKEND)?.defaultRegion || '',
-    apiKey: '',
-    gitCredentialType: '',
-    githubToken: '',
-    gitlabToken: '',
-    gitlabUrl: '',
-    sshPrivateKey: '',
-    sshKnownHosts: '',
-    repoUrl: '',
-    repoBranch: '',
-    gitSkipped: false,
-    gitUserName: '',
-    gitUserEmail: '',
-    vncPreview: true,
-    browserMcp: true,
-    openCodeProvider: DEFAULT_OPENCODE_PROVIDER,
-    openCodeBaseURL: '',
-    openCodeModel: '',
-    openCodeModelVision: false,
-    cliModel: '',
-    team: freshOnboardingTeam(),
-  }
-}
-
-/**
- * Select a backend. Keeps startPath in sync and resets values that belong to the
- * previous backend (region default, and the key, which is vendor-specific).
- * A different backend also clears the coding-tool model: model ids do not transfer,
- * and selecting the previous tool again stays on auto.
- */
-export function applyOnboardingBackend(draft: OnboardingDraft, id: BackendId): void {
-  syncStartPathFields(draft, id)
-  if (draft.acpBackend === id) return
-  draft.acpBackend = id
-  draft.region = getRegionPolicy(id)?.defaultRegion || ''
-  draft.apiKey = ''
-  draft.cliModel = ''
-  if (id === APIKEY_BACKEND && !draft.openCodeProvider) {
-    draft.openCodeProvider = DEFAULT_OPENCODE_PROVIDER
-  }
-}
-
-/** Switch start path; the CLI path restores the last CLI backend that was picked. */
-export function applyStartPath(draft: OnboardingDraft, path: StartPath): void {
-  const id =
-    path === 'apiKey' ? APIKEY_BACKEND : draft.cliBackend || CLI_BACKEND_DEFAULT
-  applyOnboardingBackend(draft, id)
+  return { step: 0, language: opts?.inheritAppLocale ? locale.value : detectSystemLocale(), theme: theme.value, modelConfigurationId: '', gitBindings: { items: [] }, region: '', repoUrl: '', repoBranch: '', gitSkipped: false, gitUserName: '', gitUserEmail: '', vncPreview: true, browserMcp: true, team: freshOnboardingTeam() }
 }
 
 /** Mirrors the server's RepoNameFromURL so the wizard can preview the clone dir. */
@@ -424,57 +341,21 @@ export function detectSystemLocale(): AppLocale {
 }
 
 export function gitConfigured(draft: OnboardingDraft): boolean {
-  if (draft.gitSkipped || !draft.gitCredentialType) return false
-  if (draft.gitCredentialType === 'github_https') return Boolean(draft.githubToken.trim())
-  if (draft.gitCredentialType === 'gitlab_https') return Boolean(draft.gitlabToken.trim())
-  if (draft.gitCredentialType === 'ssh') return Boolean(draft.sshPrivateKey.trim())
-  return false
+  return !draft.gitSkipped && draft.gitBindings.items.length > 0
 }
 
 export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstrapBody {
-  const body: OnboardingBootstrapBody = {
-    acpBackend: draft.acpBackend,
-    apiKey: draft.apiKey.trim(),
-    language: draft.language,
-  }
-  const policy = getRegionPolicy(draft.acpBackend)
-  if (policy && draft.region.trim()) {
-    body.region = draft.region.trim()
-  }
-  if (!draft.gitSkipped) {
-    if (draft.gitCredentialType) {
-      body.gitCredentialType = draft.gitCredentialType
-    }
-    if (draft.githubToken.trim()) body.githubToken = draft.githubToken.trim()
-    if (draft.gitlabToken.trim()) body.gitlabToken = draft.gitlabToken.trim()
-    if (draft.gitlabUrl.trim()) body.gitlabUrl = draft.gitlabUrl.trim()
-    if (draft.sshPrivateKey.trim()) body.sshPrivateKey = draft.sshPrivateKey.trim()
-    if (draft.sshKnownHosts.trim()) body.sshKnownHosts = draft.sshKnownHosts.trim()
-    if (draft.repoUrl.trim()) {
-      body.repoUrl = draft.repoUrl.trim()
-      if (draft.repoBranch.trim()) body.repoBranch = draft.repoBranch.trim()
-    }
-  }
+  const body: OnboardingBootstrapBody = { modelConfigurationId: draft.modelConfigurationId, gitBindings: cloneGitBindings(draft.gitSkipped ? { items: [] } : draft.gitBindings), language: draft.language, vncPreview: draft.vncPreview, browserMcp: draft.browserMcp }
+  if (draft.region.trim()) body.region = draft.region.trim()
+  if (!draft.gitSkipped && draft.repoUrl.trim()) { body.repoUrl = draft.repoUrl.trim(); if (draft.repoBranch.trim()) body.repoBranch = draft.repoBranch.trim() }
   if (draft.gitUserName.trim()) body.gitUserName = draft.gitUserName.trim()
   if (draft.gitUserEmail.trim()) body.gitUserEmail = draft.gitUserEmail.trim()
-  body.vncPreview = draft.vncPreview
-  body.browserMcp = draft.browserMcp
-  if (draft.acpBackend === 'opencode') {
-    body.openCodeProvider = draft.openCodeProvider || 'openai'
-    if (draft.openCodeBaseURL.trim()) body.openCodeBaseURL = draft.openCodeBaseURL.trim()
-    if (draft.openCodeModel.trim()) body.openCodeModel = draft.openCodeModel.trim()
-    body.openCodeModelVision = draft.openCodeModelVision
-  } else if (draft.cliModel.trim()) {
-    body.cliModel = draft.cliModel.trim()
-  }
-  body.agents = draft.team
-    .filter((m) => m.enabled || isRequiredTemplate(m.templateId))
-    .map((m) => {
-      const choice: OnboardingAgentChoice = { templateId: m.templateId }
-      const name = normalizeAgentName(m.name)
-      if (name) choice.name = name
-      if (m.model.trim()) choice.model = m.model.trim()
-      return choice
-    })
+  const names = onboardingRoleNames(draft.language)
+  body.agents = ONBOARDING_TEMPLATES.map((template, index) => {
+    const member = draft.team.find((item) => item.templateId === template.id)
+    const choice: OnboardingAgentChoice = { templateId: template.id, name: names[index] }
+    if (member?.modelConfigurationId) choice.modelConfigurationId = member.modelConfigurationId
+    return choice
+  })
   return body
 }

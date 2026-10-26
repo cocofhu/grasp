@@ -101,6 +101,7 @@ function mountChat(
     aclNote: '',
   },
   stubOverrides: Record<string, boolean | Component> = {},
+  options: { attachTo?: HTMLElement } = {},
 ) {
   const i18n = createI18n({
     legacy: false,
@@ -108,6 +109,7 @@ function mountChat(
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(PmLeaderChat, {
+    attachTo: options.attachTo,
     props: {
       binding,
     },
@@ -2254,5 +2256,106 @@ ${'保留原文 '.repeat(60)}`
     expect(wrapper.findComponent(ConversationWorkspace).props('open')).toBe(false)
     expect(wrapper.findComponent(ConversationArtifactBrowser).props('target')).toBeNull()
     wrapper.unmount()
+  })
+
+  it('reopens from the artifact icon at 440 after a dragged width or full cover, with the icon still outside the covered chat', async () => {
+    const observers: ResizeObserverCallback[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { observers.push(callback) }
+      observe() {}
+      disconnect() {}
+    })
+    const previousWidth = window.innerWidth
+    window.innerWidth = 1200
+    const wrapper = mountChat(undefined, {}, { attachTo: document.body })
+    function setCanvas(width: number) {
+      for (const callback of observers) {
+        try { callback([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver) }
+        catch { /* observers outside the workspace */ }
+      }
+    }
+    function firePointer(el: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', clientX: number) {
+      el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, clientX, pointerId: 1 }))
+    }
+    async function dragTo(target: number) {
+      const sash = wrapper.get('[data-testid="conversation-panel-sash"]')
+      const current = Number(sash.attributes('aria-valuenow'))
+      firePointer(sash.element, 'pointerdown', 0)
+      firePointer(sash.element, 'pointermove', current - target)
+      await flushPromises()
+      if (wrapper.find('[data-testid="conversation-panel-sash"]').exists()) firePointer(sash.element, 'pointerup', current - target)
+      await flushPromises()
+    }
+    try {
+      await flushPromises()
+      setCanvas(1200)
+      await flushPromises()
+      const button = () => wrapper.get('[data-testid="pm-chat-artifacts"]')
+      const main = () => wrapper.get('[data-testid="conversation-main"]')
+      expect(button().text()).toContain('产物')
+      expect(main().element.contains(button().element)).toBe(false)
+      expect(wrapper.get('[data-testid="conversation-masthead"]').element.contains(button().element)).toBe(true)
+      await wrapper.get('textarea').setValue('保留我的草稿')
+
+      await button().trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+
+      await dragTo(700)
+      expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('700')
+      await wrapper.get('[data-testid="conversation-panel-close"]').trigger('click')
+      await flushPromises()
+      expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('700')
+      expect(wrapper.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+
+      await button().trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+      expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
+
+      await dragTo(700)
+      await button().trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+      expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
+      await button().trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+
+      await wrapper.get('[data-testid="conversation-panel-sash"]').trigger('keydown', { key: 'End' })
+      await flushPromises()
+      expect(wrapper.get('[data-testid="conversation-workspace"]').classes()).toContain('is-covered')
+      expect(main().attributes('inert')).toBeDefined()
+      expect(main().attributes('aria-hidden')).toBe('true')
+      expect(main().element.contains(button().element)).toBe(false)
+      expect(wrapper.get('[data-testid="conversation-masthead"]').attributes('inert')).toBeUndefined()
+      expect(button().attributes('aria-expanded')).toBe('true')
+
+      await button().trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+      expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
+      expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('保留我的草稿')
+
+      wrapper.unmount()
+      const refreshed = mountChat(undefined, {}, { attachTo: document.body })
+      try {
+        await flushPromises()
+        setCanvas(1200)
+        await flushPromises()
+        expect(refreshed.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+        expect(refreshed.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(false)
+        await refreshed.get('[data-testid="pm-chat-artifacts"]').trigger('click')
+        await flushPromises()
+        expect(refreshed.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+        expect(refreshed.get('[data-testid="conversation-workspace"]').classes()).not.toContain('is-covered')
+      } finally {
+        refreshed.unmount()
+      }
+    } finally {
+      if (wrapper.exists()) wrapper.unmount()
+      window.innerWidth = previousWidth
+      vi.unstubAllGlobals()
+    }
   })
 })

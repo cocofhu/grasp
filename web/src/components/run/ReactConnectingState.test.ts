@@ -162,7 +162,7 @@ describe('ReactConnectingState', () => {
     const spinner = wrapper.get('[data-testid="react-connecting-stage-spinner"]')
     expect(spinner.attributes('name')).toBe('spinner')
     expect(spinner.attributes('size')).toBe('28')
-    expect(spinner.classes()).toContain('animate-spin')
+    expect(spinner.attributes('busy')).toBe('true')
     expect(spinner.classes()).toContain('text-accent')
 
     expect(wrapper.get('[data-testid="react-connecting-stage-title"]').text()).toBe('正在准备会话')
@@ -217,7 +217,7 @@ describe('ReactConnectingState', () => {
     const wrapper = mountStage('zh-CN')
     await nextTick()
     const spinner = wrapper.get('[data-testid="react-connecting-stage-spinner"]')
-    expect(spinner.classes()).not.toContain('animate-spin')
+    expect(spinner.attributes('busy')).toBe('false')
     expect(wrapper.get('[data-testid="react-connecting-stage-title"]').text()).toBe('正在准备会话')
     expect(wrapper.get('[data-testid="react-connecting-stage-hint"]').text()).toBe(
       '产物会在会话就绪后出现在这里',

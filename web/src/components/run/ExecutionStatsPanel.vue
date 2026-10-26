@@ -592,7 +592,7 @@ html.light .stats-panel {
                 data-testid="stats-multi-refresh"
                 @click="loadCandidates"
               >
-                <Icon name="refresh" :size="12" :class="{ 'animate-spin': candidatesLoading }" />
+                <Icon name="refresh" :size="12" />
                 {{ t('common.buttons.refresh') }}
               </button>
               <button
@@ -649,7 +649,7 @@ html.light .stats-panel {
                 data-testid="stats-multi-remove"
                 @click="toggleRun(c.id)"
               >
-                ×
+                <Icon name="close" :size="12" />
               </button>
               <span class="block text-[22px] font-semibold tabular-nums tracking-tight text-txt sm:text-[24px]">
                 {{ fmtStartHm(c.startedAt) }}

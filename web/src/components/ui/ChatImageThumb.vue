@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -180,11 +181,7 @@ function onPreviewClick() {
       class="flex h-7 w-7 items-center justify-center rounded border border-err/35 text-red-300"
       aria-hidden="true"
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-        <rect x="3" y="5" width="18" height="14" />
-        <path d="M3 15l5-5 4 4 3-3 6 6" />
-        <path d="M15 5l6 6" />
-      </svg>
+      <Icon name="image-off" :size="16" :interactive="false" />
     </div>
     <div class="text-[12px] font-semibold text-red-300">{{ t('common.chatImage.imageLoadFailed') }}</div>
     <div

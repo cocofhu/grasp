@@ -456,12 +456,14 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 				}
 				return
 			}
+			e.rememberHandoffTarget(c, next)
 			cur = next
 		default:
 			e.saveState(c, node, outcome)
 			c.nodeOutputs[node.ID] = outcome.outputs
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit"})
 			next := e.routeSuccess(c, node, outcome)
+			e.rememberHandoffTarget(c, next)
 			cur = next
 		}
 		e.refreshProgress(c)

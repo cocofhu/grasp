@@ -15,7 +15,7 @@ const META: Record<string, { icon: string; cls: string; labelKey: string }> = {
   exit: { icon: 'check', cls: 'text-ok border-ok/40 bg-ok/10', labelKey: 'pages.stateTrace.event.exit' },
   transition: { icon: 'branch', cls: 'text-txt2 border-line bg-elevated', labelKey: 'pages.stateTrace.event.transition' },
   rollback: { icon: 'history', cls: 'text-warn border-warn/40 bg-warn/10', labelKey: 'pages.stateTrace.event.rollback' },
-  pause: { icon: 'gate', cls: 'text-warn border-warn/40 bg-warn/10', labelKey: 'pages.stateTrace.event.pause' },
+  pause: { icon: 'user-hold', cls: 'text-warn border-warn/40 bg-warn/10', labelKey: 'pages.stateTrace.event.pause' },
   resume: { icon: 'play', cls: 'text-accent-2 border-accent/40 bg-accent-dim', labelKey: 'pages.stateTrace.event.resume' },
   artifact_edit: { icon: 'edit', cls: 'text-accent-2 border-accent/40 bg-accent-dim', labelKey: 'pages.stateTrace.event.artifact_edit' },
 }

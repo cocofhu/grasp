@@ -23,8 +23,8 @@ export const STATUS_ORDER = [
 
 export const STATUS_FILTER_OPTIONS = [
   { id: '', labelKey: 'common.status.all', icon: 'clock', cls: 'text-txt2', spin: false },
-  { id: 'running', labelKey: 'common.status.running', icon: 'dot', cls: 'text-info', spin: true },
-  { id: 'waiting_human', labelKey: 'common.status.waiting_human', icon: 'gate', cls: 'text-warn', spin: false },
+  { id: 'running', labelKey: 'common.status.running', icon: 'breath-dot', cls: 'text-info', spin: false },
+  { id: 'waiting_human', labelKey: 'common.status.waiting_human', icon: 'user-hold', cls: 'text-warn', spin: false },
   { id: 'queued', labelKey: 'common.status.queued', icon: 'clock', cls: 'text-txt2', spin: false },
   { id: 'completed', labelKey: 'common.status.completed', icon: 'check', cls: 'text-ok', spin: false },
   { id: 'failed', labelKey: 'common.status.failed', icon: 'alert', cls: 'text-err', spin: false },

@@ -18,6 +18,7 @@ import {
   saveHomeComposerDraft,
 } from '@/lib/run/homeComposerDraft'
 import { setHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
+import { nodeConversationPath } from '@/lib/run/nodeConversation'
 import { runTitleFromDraft } from '@/lib/run/runTitle'
 import { missingRequiredAskField, seedAskLaunchFields } from '@/lib/run/useWorkflowAskInputs'
 import type { ClarifyImage, Workflow } from '@/lib/shared/types'
@@ -344,9 +345,7 @@ export function useHomeApproveChat() {
   }
 
   function goGates(runId: string, nodeId?: string) {
-    const query: Record<string, string> = { run: runId }
-    if (nodeId) query.node = nodeId
-    return router.push({ path: '/gates', query })
+    return router.push({ path: nodeConversationPath(runId, nodeId) })
   }
 
   /**

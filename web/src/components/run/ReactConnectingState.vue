@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
+import { confirmFlowWindowVisible } from '@/lib/inbox/confirmFlowWindow'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import ComposerShell from './ComposerShell.vue'
 import ComposerPrimaryAction from './ComposerPrimaryAction.vue'
@@ -81,9 +82,9 @@ onMounted(() => {
     >
       <Icon
         name="spinner"
+        :busy="!reduceMotion"
         :size="28"
         class="text-accent"
-        :class="reduceMotion ? '' : 'animate-spin'"
         aria-hidden="true"
         data-testid="react-connecting-stage-spinner"
       />
@@ -118,7 +119,13 @@ onMounted(() => {
     <div class="react-connecting-scroller scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="react-connecting-scroller">
       <div class="react-connecting-transcript">
         <div class="react-connecting-turn">
-          <ClarifyBootLoader phase="starting" variant="inline" :sandbox-phase="sandboxPhase" :boot-key="bootKey" />
+          <ClarifyBootLoader
+            v-if="!confirmFlowWindowVisible"
+            phase="starting"
+            variant="inline"
+            :sandbox-phase="sandboxPhase"
+            :boot-key="bootKey"
+          />
         </div>
       </div>
     </div>

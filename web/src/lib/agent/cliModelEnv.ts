@@ -2,7 +2,7 @@ import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import type { BackendId } from '@/lib/shared/regionPolicy'
 import { OPENCODE_MODEL_ENV } from './openCodeProvider'
 
-/** The sandbox turns this into the CLI's `--model`; unset means the CLI's own default. */
+/** Selected native model id; the sandbox applies it through the backend protocol. */
 export const CLI_MODEL_ENV = OPENCODE_MODEL_ENV
 /** Codex only: becomes `-c model_reasoning_effort=…`. */
 export const CLI_EFFORT_ENV = 'ACP_BRIDGE_REASONING_EFFORT'

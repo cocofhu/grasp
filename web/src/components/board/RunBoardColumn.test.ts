@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createI18n } from 'vue-i18n'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
@@ -18,6 +21,39 @@ function stubRun(partial: Partial<Run> & Pick<Run, 'id' | 'status'>): Run {
     nodeRuns: {},
     artifacts: [],
     ...partial,
+  }
+}
+
+/**
+ * happy-dom does not clamp scrollTop when content shrinks. Mirror the browser:
+ * assigning past the limit, or shrinking the content, clamps and emits scroll.
+ */
+function installScrollClamp(el: HTMLElement) {
+  let top = 0
+  let scrollHeight = 800
+  const clientHeight = 200
+  const limit = () => Math.max(0, scrollHeight - clientHeight)
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => scrollHeight })
+  Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => clientHeight })
+  Object.defineProperty(el, 'scrollTop', {
+    configurable: true,
+    get: () => top,
+    set(value: number) {
+      const next = Math.min(Math.max(0, value), limit())
+      if (next === top) return
+      top = next
+      el.dispatchEvent(new Event('scroll'))
+    },
+  })
+  return {
+    setContentHeight(next: number) {
+      scrollHeight = next
+      const max = limit()
+      if (top > max) {
+        top = max
+        el.dispatchEvent(new Event('scroll'))
+      }
+    },
   }
 }
 
@@ -49,7 +85,7 @@ describe('RunBoardColumn', () => {
     wrapper.unmount()
   })
 
-  it('exposes a scroll body with overflow and half-viewport max-height', () => {
+  it('scrolls inside the column with the ghost scrollbar and no viewport cap', () => {
     const items = Array.from({ length: 24 }, (_, i) =>
       stubRun({ id: `run-${i}`, status: 'completed', title: `完成-${i}` }),
     )
@@ -67,11 +103,16 @@ describe('RunBoardColumn', () => {
     expect(body.classes()).toContain('min-h-0')
 
     const el = body.element as HTMLElement
-    expect(el.style.maxHeight).toMatch(/min\(\s*52vh\s*,\s*420px\s*\)/)
-    const style = getComputedStyle(el)
-    // happy-dom may not resolve Tailwind utilities; class + inline max-height are the contract.
+    expect(el.style.maxHeight).toBe('')
     expect(el.className).toContain('overflow-y-auto')
-    expect(style.maxHeight === '' || /vh|px|min/.test(style.maxHeight)).toBe(true)
+
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'RunBoardColumn.vue'), 'utf8')
+    expect(src).not.toMatch(/52vh|420px/)
+    expect(src).toMatch(/overscroll-behavior:\s*contain/)
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'), 'utf8')
+    expect(css).toMatch(/::-webkit-scrollbar\s*\{[^}]*width:\s*4px/s)
+    expect(src).not.toMatch(/scrollbar-width\s*:/)
+    expect(src).not.toMatch(/scrollbar-color\s*:/)
 
     const titleEl = wrapper.find('[data-testid="run-board-column"] > div')
     expect(titleEl.exists()).toBe(true)
@@ -80,22 +121,23 @@ describe('RunBoardColumn', () => {
     const footer = wrapper.find('[data-testid="col-footer"]')
     expect(footer.exists()).toBe(true)
     expect(body.element.contains(footer.element)).toBe(false)
+    expect(wrapper.find('[data-testid="run-board-column-footer"]').exists()).toBe(true)
 
-    expect(wrapper.text()).not.toMatch(/列内可独立滚动|↓/)
+    expect(wrapper.text()).not.toMatch(/列内可独立滚动|↓|按等待时间排序/)
     expect(wrapper.find('.scroll-hint').exists()).toBe(false)
     expect(wrapper.find('.is-short').exists()).toBe(false)
 
     wrapper.unmount()
   })
 
-  it('keeps the same max-height rule for short lists without teaching copy', () => {
+  it('keeps short lists uncapped and without the fill height', () => {
     const wrapper = mountColumn({
       items: [stubRun({ id: 'run-1', status: 'completed', title: '短列' })],
       total: 1,
     })
     const body = wrapper.find('[data-testid="run-board-column-body"]')
     expect(body.exists()).toBe(true)
-    expect((body.element as HTMLElement).style.maxHeight).toMatch(/min\(\s*52vh\s*,\s*420px\s*\)/)
+    expect((body.element as HTMLElement).style.maxHeight).toBe('')
     expect(wrapper.find('[data-testid="run-board-column"]').classes()).not.toContain('h-full')
     expect(wrapper.text()).not.toMatch(/列内可独立滚动/)
     wrapper.unmount()
@@ -122,6 +164,67 @@ describe('RunBoardColumn', () => {
     expect((body.element as HTMLElement).style.maxHeight).toBe('')
 
     wrapper.unmount()
+  })
+
+  it('keeps the previous scroll offset when rendered rows are replaced', async () => {
+    const items = Array.from({ length: 8 }, (_, i) =>
+      stubRun({ id: `run-${i}`, status: 'completed', title: `完成-${i}` }),
+    )
+    const wrapper = mountColumn({ items, total: 8, fill: true })
+    const body = wrapper.get('[data-testid="run-board-column-body"]')
+    const el = body.element as HTMLElement
+    el.scrollTop = 64
+    await body.trigger('scroll')
+    el.scrollTop = 0
+    await wrapper.setProps({ items: items.map((item) => ({ ...item })) })
+    expect((wrapper.get('[data-testid="run-board-column-body"]').element as HTMLElement).scrollTop).toBe(64)
+    wrapper.unmount()
+  })
+
+  it('restores the offset after a short list clamps scroll and the rows come back', async () => {
+    const items = Array.from({ length: 8 }, (_, i) =>
+      stubRun({ id: `run-${i}`, status: 'completed', title: `完成-${i}` }),
+    )
+    const wrapper = mountColumn({ items, total: 8, fill: true })
+    const body = wrapper.get('[data-testid="run-board-column-body"]')
+    const el = body.element as HTMLElement
+    const layout = installScrollClamp(el)
+
+    el.scrollTop = 220
+    expect(el.scrollTop).toBe(220)
+
+    layout.setContentHeight(40)
+    expect(el.scrollTop).toBe(0)
+    await wrapper.setProps({ items: [] })
+    expect(el.scrollTop).toBe(0)
+
+    layout.setContentHeight(800)
+    await wrapper.setProps({ items })
+    expect(el.scrollTop).toBe(220)
+
+    el.scrollTop = 80
+    await wrapper.setProps({ items: items.map((item) => ({ ...item })) })
+    expect(el.scrollTop).toBe(80)
+    wrapper.unmount()
+  })
+
+  it('keeps the header count when a filtered row list is shorter', () => {
+    const items = [
+      stubRun({ id: 'run-1', status: 'completed', title: '完成-1' }),
+      stubRun({ id: 'run-2', status: 'completed', title: '完成-2' }),
+    ]
+    const wrapper = mountColumn({ items: items.slice(0, 1), listedCount: 2, total: 9 })
+    expect(wrapper.get('[data-testid="run-board-column-count"]').text()).toBe('2/9')
+    wrapper.unmount()
+  })
+
+  it('keeps a narrow board from scrolling inside the column', () => {
+    const board = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../views/BoardView.vue'), 'utf8')
+    expect(board).toMatch(
+      /@container board-workbench \(max-width:\s*799px\)[\s\S]*run-board-column-body[\s\S]*?overflow:\s*visible/,
+    )
+    expect(board).not.toMatch(/scrollbar-width\s*:/)
+    expect(board).not.toMatch(/scrollbar-color\s*:/)
   })
 
   it('keeps non-activatable header as a plain div (Dashboard default)', () => {

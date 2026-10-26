@@ -167,42 +167,96 @@ export interface AgentTemplate {
   capabilities?: AgentCapabilities
 }
 
+export type ModelProtocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages'
+export type ModelRoles = Partial<Record<'main' | 'fast' | 'reasoning' | 'subagent' | 'opus' | 'sonnet' | 'haiku', string>>
+export type ConcreteModelBinding =
+  | { kind: 'platform'; credentialId: string; modelId?: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
+  | { kind: 'connection'; connectionId: string; modelId: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
+export type ModelBinding = { kind: 'configuration'; configurationId: string }
+export interface ModelConfiguration {
+  id: string
+  name: string
+  backend: string
+  binding: ConcreteModelBinding
+  state: 'active' | 'disabled'
+  revision: number
+  createdAt?: string
+  updatedAt?: string
+}
+export type ModelConfigurationBody = Pick<ModelConfiguration, 'name' | 'backend' | 'binding'> & { state?: ModelConfiguration['state'] }
+export interface ModelConnection {
+  id: string
+  name: string
+  providerId: string
+  protocol: ModelProtocol
+  baseUrl: string
+  credentialId: string
+  auth: { scheme: 'bearer' | 'x-api-key' | 'custom-header'; headerName?: string }
+  service?: { region?: string; product?: string }
+  models: { id: string; name?: string; source: 'manual' | 'discovered'; capabilities?: { toolCalls?: boolean; vision?: boolean; reasoning?: boolean }; input?: ('text' | 'image')[]; contextWindow?: number; maxTokens?: number; reasoningEfforts?: string[] }[]
+  state: 'active' | 'disabled'
+  revision: number
+  discovery?: { checkedAt: string; status: 'ok' | 'unavailable' | 'failed' }
+}
+export type ModelConnectionBody = Omit<ModelConnection, 'id' | 'revision' | 'discovery'>
+export interface ToolCapability {
+  toolId: string
+  versionConstraint?: string
+  transport?: string
+  modes: ('platform' | 'connection')[]
+  protocols?: ModelProtocol[]
+  roleNames?: string[]
+  requiredRoles?: string[]
+  routeProfiles?: string[]
+  adapterState: 'existing' | 'planned' | 'unsupported'
+  verification?: string
+  evidence?: { url: string; scope?: string; checkedAt?: string; kind?: string }[]
+}
+
+export interface AgentGitBinding {
+  credentialId: string
+  /** Host or repository URL; empty uses the credential provider's default. */
+  scope?: string
+  sshHostsCredentialId?: string
+}
+
+export interface AgentGitBindings {
+  items: AgentGitBinding[]
+}
+
+/** One built-in linear identity icon. Absent means the initial-letter mark. */
+export interface AgentIcon {
+  iconId: string
+  color: 'black' | 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink'
+}
+
 export interface Agent {
+  inheritModel?: boolean
+  inheritGit?: boolean
+  /** Local Git selection; missing grants none unless inheritGit is enabled. */
+  gitBindings?: AgentGitBindings
+  modelBinding?: ModelBinding
   /** Missing inherits, null disables injection, and a credential ID binds explicitly. */
   credentialBindings?: Record<string, string | null>
   name: string
   /** Optional embedded role pack id (e.g. test / preflight); omit for blank. */
   templateId?: string
   acpBackend: BackendId
-  /** Workspace credential selected for OpenCode. The secret is not stored here. */
-  openCodeCredentialId?: string
-  /** Workspace credential selected for a non-OpenCode coding backend. */
-  aiCredentialId?: string
-  /** GitHub, GitLab, or SSH private-key credential selected for the Git method. */
-  gitCredentialId?: string
-  /** Known-hosts credential selected when Git uses SSH. */
-  sshHostsCredentialId?: string
-  gitCredentialType?: 'github_https' | 'gitlab_https' | 'ssh'
-  /** Repositories whose own Git credentials are injected. Missing inherits the workspace default; [] injects none. */
-  repoIds?: string[]
   files?: AgentFile[]
   mcp?: MCPServer[]
   env?: Record<string, string>
   layout?: AgentLayout
   /** Absent = the Agent cannot run workflow nodes ("Agent X 未声明能力"). */
   capabilities?: AgentCapabilities
+  /** Optional linear identity icon. Omitted when the Agent uses its initial. */
+  icon?: AgentIcon | null
 }
 
 /** Workspace-level shared Agent baseline (extend layer; Agent overlays on top). */
 export interface SharedAgentConfig {
-  acpBackend: BackendId
-  gitCredentialType?: string
-  /** Workspace credential id for a non-OpenCode generic authorization. Empty means unset. */
-  aiCredentialId?: string
-  /** Workspace credential id for the OpenCode generic authorization. Empty means unset. */
-  openCodeCredentialId?: string
-  /** Repositories whose own Git credentials every Agent inherits unless it overrides. */
-  repoIds?: string[]
+  acpBackend?: BackendId
+  modelBinding?: ModelBinding
+  gitBindings?: AgentGitBindings
   files: AgentFile[]
   mcp: MCPServer[]
   env: Record<string, string>
@@ -211,6 +265,13 @@ export interface SharedAgentConfig {
 
 /** Workspace-owned credential metadata. Secret values are never returned by GET. */
 export interface CredentialItem {
+  purpose?: 'tool_auth' | 'model_api' | 'git' | 'ssh' | 'mcp' | 'custom'
+  issuer?: string
+  toolId?: string
+  secretKind?: 'api_key' | 'token' | 'login_file' | 'ssh_private_key' | 'ssh_known_hosts'
+  secretRevision?: number
+  hasSecret?: boolean
+  state?: 'active' | 'cleared' | 'revoked'
   id: string
   /** Credential type (ai, git, ssh, mcp, custom, …). */
   type: string
@@ -219,6 +280,8 @@ export interface CredentialItem {
   targetType?: string
   targetId?: string
   provider?: string
+  /** Git hosting origin; HTTPS is assumed when no scheme is supplied. */
+  host?: string
   envKey?: string
   configured: boolean
   /** Masked display value (for example, a key prefix); never the plaintext secret. */
@@ -236,12 +299,18 @@ export interface CredentialsResponse {
 }
 
 export interface CredentialPutBody {
+  purpose?: CredentialItem['purpose']
+  issuer?: string
+  toolId?: string
+  secretKind?: CredentialItem['secretKind']
   type?: string
   name?: string
   target?: string
   targetType?: string
   targetId?: string
   provider?: string
+  /** Git hosting origin; HTTPS is assumed when no scheme is supplied. */
+  host?: string
   envKey?: string
   /** Empty values keep an existing secret; clear/delete removes it. */
   value?: string
@@ -297,12 +366,9 @@ export interface TeamBootstrapRequest {
   prefix: string
   pmName: string
   background: string
-  acpBackend: BackendId
-  apiKey?: string
-  customConfig?: string
-  region?: string
+  modelConfigurationId: string
+  gitBindings?: AgentGitBindings
   gitUrl?: string
-  gitCredentialType?: string
   mcp?: MCPServer[]
   env?: Record<string, string>
 }
@@ -603,15 +669,42 @@ export interface SoloSandboxInfo {
   createdAt?: string
 }
 
+/** One repository frozen into a Solo session at launch. */
+export interface SessionRepo {
+  position: number
+  projectId: string
+  name: string
+  repoUrl: string
+  repoDirName: string
+  branch?: string
+  gitCredentialType?: GitCredentialType | string
+  gitCredentialId?: string
+  sshHostsCredentialId?: string
+  env?: Record<string, string>
+  credentialBindings?: Record<string, string | null>
+}
+
 export interface SoloSession {
   id: string
   userId: string
   title: string
   agentName: string
   projectId?: string
-  /** Project config frozen when the session started. */
+  /** Project config frozen when a single-repo session started. */
   project?: Project
   branch?: string
+  /** Opening model. Empty follows the Agent configuration's primary model. */
+  initialModelId?: string
+  /**
+   * Model later turns use. Empty means the primary model.
+   * Absent currentModelSet means an old session still follows initialModelId.
+   */
+  currentModelId?: string
+  currentModelSet?: boolean
+  /** Stable code set when a model switch is rolled back. */
+  modelNotice?: string
+  /** Ordered repositories frozen at launch. Empty means an empty workspace. */
+  repos?: SessionRepo[]
   sandboxId?: number
   status: SoloStatus
   error?: string
@@ -634,10 +727,19 @@ export interface SoloSessionList {
   maxSandboxes: number
 }
 
+export interface SoloRepoChoice {
+  projectId: string
+  branch?: string
+}
+
 export interface SoloCreateBody {
   agentName: string
   projectId?: string
   branch?: string
+  /** Ordered selection. An empty list starts an empty workspace. */
+  repos?: SoloRepoChoice[]
+  /** Empty follows the Agent configuration's primary model. */
+  initialModelId?: string
   title?: string
   text?: string
   images?: ClarifyImage[]

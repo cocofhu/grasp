@@ -90,7 +90,22 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PUT("/workspace/credentials/:credentialId", h.UpdateCredential)
 		api.PATCH("/workspace/credentials/:credentialId", h.UpdateCredential)
 		api.DELETE("/workspace/credentials/:credentialId", h.ClearCredential)
+		api.DELETE("/workspace/credentials/:credentialId/account", h.RemoveModelAPICredential)
 		api.POST("/workspace/credentials/:credentialId/revoke", h.RevokeCredential)
+		modelConnections := &handlers.ModelConnectionHandlers{Service: h.ModelConnections}
+		api.GET("/workspace/model-connections", modelConnections.List)
+		api.POST("/workspace/model-connections", modelConnections.Create)
+		api.GET("/workspace/model-connections/:connectionId", modelConnections.Get)
+		api.PUT("/workspace/model-connections/:connectionId", modelConnections.Update)
+		api.PATCH("/workspace/model-connections/:connectionId", modelConnections.Update)
+		api.DELETE("/workspace/model-connections/:connectionId", modelConnections.Delete)
+		modelConfigurations := &handlers.ModelConfigurationHandlers{Service: h.ModelConfigurations}
+		api.GET("/workspace/model-configurations", modelConfigurations.List)
+		api.POST("/workspace/model-configurations", modelConfigurations.Create)
+		api.GET("/workspace/model-configurations/:configurationId", modelConfigurations.Get)
+		api.PUT("/workspace/model-configurations/:configurationId", modelConfigurations.Update)
+		api.DELETE("/workspace/model-configurations/:configurationId", modelConfigurations.Delete)
+		api.GET("/workspace/tool-capabilities", modelConnections.Capabilities)
 		api.GET("/workspace/agents/export", h.ExportWorkspaceAgents)
 		api.POST("/workspace/agents/import", h.ImportWorkspaceAgents)
 		api.GET("/workspace/shared-agent-config", h.GetSharedAgent)
@@ -149,6 +164,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/solo/sessions/:id/restart", h.RestartSoloSession)
 		api.GET("/solo/sessions/:id/messages", h.ListSoloMessages)
 		api.GET("/solo/sessions/:id/env", h.GetSoloEnv)
+		api.POST("/solo/sessions/:id/model", h.SetSoloSessionModel)
 		api.POST("/solo/sessions/:id/turns", h.StartSoloTurn)
 		api.POST("/solo/sessions/:id/turns/cancel", h.CancelSoloTurn)
 		api.PUT("/solo/sessions/:id/queue", h.ReorderSoloQueue)
@@ -189,7 +205,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/artifacts/pack", h.PackRunArtifacts)
 		api.GET("/runs/:id/logs/export", h.ExportRunLogs)
 		api.GET("/runs/:id/llm-transcript", h.RunLlmTranscript)
-		api.GET("/runs/:id/inbox-context", h.RunInboxContext)
 		api.GET("/runs/:id/nodes/:nodeId/events", h.NodeEvents)
 		api.GET("/runs/:id/nodes/:nodeId/sandbox-log", h.NodeSandboxLog)
 		api.GET("/runs/:id/nodes/:nodeId/sandbox", h.RunNodeSandbox)
@@ -201,29 +216,22 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/nodes/:nodeId/preview-issues", h.ListPreviewIssues)
 		api.POST("/runs/:id/nodes/:nodeId/preview-issues", h.CreatePreviewIssue)
 		api.DELETE("/runs/:id/nodes/:nodeId/preview-issues/:issueId", h.DeletePreviewIssue)
-		api.POST("/runs/:id/gates/:nodeId/resume", h.ResumeGate)
-		api.POST("/runs/:id/gates/:nodeId/share-link", h.CreateGateShareLink)
-		api.GET("/runs/:id/gates/:nodeId/share-link", h.GetGateShareLink)
-		api.POST("/runs/:id/gates/:nodeId/share-link/regen", h.RegenGateShareLink)
-		api.POST("/runs/:id/gates/:nodeId/share-link/revoke", h.RevokeGateShareLink)
-		api.POST("/runs/:id/reviews/:nodeId/share-link", h.CreateReviewShareLink)
-		api.GET("/runs/:id/reviews/:nodeId/share-link", h.GetReviewShareLink)
-		api.POST("/runs/:id/reviews/:nodeId/share-link/regen", h.RegenReviewShareLink)
-		api.POST("/runs/:id/reviews/:nodeId/share-link/revoke", h.RevokeReviewShareLink)
-		api.POST("/runs/:id/gates/:nodeId/react-revise", h.GateReactRevise)
-		api.POST("/runs/:id/gates/:nodeId/react-cancel", h.GateReactCancel)
-		api.POST("/runs/:id/gates/:nodeId/react-queue/remove", h.GateReactQueueRemove)
-		api.POST("/runs/:id/gates/:nodeId/react-queue/reorder", h.GateReactQueueReorder)
-		api.GET("/runs/:id/gates/:nodeId/primary-artifacts", h.ListGatePrimaryArtifacts)
-		api.PUT("/runs/:id/gates/:nodeId/artifacts/:name", h.SaveGateArtifact)
-		api.PUT("/runs/:id/gates/:nodeId/annotation-artifact", h.SaveAnnotationArtifact)
-		api.POST("/runs/:id/react/:nodeId/reply", h.ReactReply)
-		api.POST("/runs/:id/react/:nodeId/cancel", h.ReactCancel)
-		api.POST("/runs/:id/react/:nodeId/queue/remove", h.ReactQueueRemove)
-		api.POST("/runs/:id/react/:nodeId/queue/reorder", h.ReactQueueReorder)
+		api.POST("/runs/:id/nodes/:nodeId/decision", h.ResumeGate)
+		api.POST("/runs/:id/nodes/:nodeId/share-link", h.NodeCreateShareLink)
+		api.GET("/runs/:id/nodes/:nodeId/share-link", h.NodeGetShareLink)
+		api.POST("/runs/:id/nodes/:nodeId/share-link/regen", h.NodeRegenShareLink)
+		api.POST("/runs/:id/nodes/:nodeId/share-link/revoke", h.NodeRevokeShareLink)
+		api.POST("/runs/:id/nodes/:nodeId/reply", h.NodeReply)
+		api.POST("/runs/:id/nodes/:nodeId/cancel", h.NodeCancel)
+		api.POST("/runs/:id/nodes/:nodeId/queue/remove", h.NodeQueueRemove)
+		api.POST("/runs/:id/nodes/:nodeId/queue/reorder", h.NodeQueueReorder)
+		api.GET("/runs/:id/nodes/:nodeId/primary-artifacts", h.ListGatePrimaryArtifacts)
+		api.PUT("/runs/:id/nodes/:nodeId/artifacts/:name", h.SaveGateArtifact)
+		api.PUT("/runs/:id/nodes/:nodeId/annotation-artifact", h.SaveAnnotationArtifact)
+		api.GET("/runs/:id/nodes/:nodeId/context", h.RunInboxContext)
 		api.GET("/runs/:id/events", h.RunEvents)
 
-		api.GET("/gates", h.ListGates)
+		api.GET("/pending-nodes", h.ListGates)
 		api.GET("/artifacts", h.ListArtifacts)
 		api.GET("/artifacts/tree", h.ArtifactTree)
 		api.GET("/artifacts/:id/content", h.ArtifactContent)
@@ -280,7 +288,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 	// Preview-page chat drawer, artifact modal, and image preview frame (outside /api:
 	// no cf_session, which a cross-site iframe never carries). A ticket is redeemed for
-	// a run/node-bound bearer that the /public/gate-approvals chat endpoints accept.
+	// a run/node-bound bearer that the /public/approvals chat endpoints accept.
 	r.GET("/embed/runs/:runId/nodes/:nodeId/chat", h.EmbedChatPage)
 	r.GET("/embed/runs/:runId/nodes/:nodeId/artifacts", h.EmbedChatPage)
 	r.GET("/embed/runs/:runId/nodes/:nodeId/image", h.EmbedChatPage)
@@ -355,8 +363,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 	// CDP Pick/navigate control. App ports are pages on this desktop.
 	r.GET("/sandbox-vnc/:sandboxId/ws", h.SandboxVNC)
 
-	// Public gate-approval page + API (no session). Security headers + no ACAO.
-	pub := r.Group("/public/gate-approvals")
+	// Public approval page + API (no session). Security headers + no ACAO.
+	pub := r.Group("/public/approvals")
 	pub.Use(publicGateMiddleware())
 	{
 		pub.GET("", h.PublicGateApprovalPage)
@@ -409,7 +417,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 			strings.HasPrefix(p, "/preview/") ||
 			strings.HasPrefix(p, "/preview-vnc/") ||
 			strings.HasPrefix(p, "/embed-api/") ||
-			strings.HasPrefix(p, "/public/gate-approvals") {
+			isPublicApprovalPath(p) || isRetiredPublicGatePath(p) {
 			// /mcp/ covers both /mcp/runs/ and /mcp/pm/
 			c.String(http.StatusNotFound, "not found: %s", p)
 			return
@@ -452,10 +460,20 @@ func errorLogger() gin.HandlerFunc {
 	}
 }
 
+func isPublicApprovalPath(p string) bool {
+	return strings.HasPrefix(p, "/public/approvals")
+}
+
+// Retired share prefix stays out of the SPA shell and out of wildcard CORS,
+// so every method including OPTIONS is a plain 404.
+func isRetiredPublicGatePath(p string) bool {
+	return strings.HasPrefix(p, "/public/gate-approvals")
+}
+
 func cors() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		p := c.Request.URL.Path
-		if strings.HasPrefix(p, "/public/gate-approvals") || strings.HasPrefix(p, "/embed-api/") || strings.HasPrefix(p, "/embed/") {
+		if isPublicApprovalPath(p) || isRetiredPublicGatePath(p) || strings.HasPrefix(p, "/embed-api/") || strings.HasPrefix(p, "/embed/") {
 			c.Next()
 			return
 		}

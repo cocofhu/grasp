@@ -5,6 +5,8 @@ const INK_CLASS = 'hover-ink'
 const HOST_CLASS = 'hover-ink-host'
 const HOVER_CLASS = 'is-hover-ink'
 const LEAVE_CLASS = 'is-leave-ink'
+/** Hides an already-open cover immediately when the control becomes blocked. */
+const SUPPRESS_CLASS = 'is-ink-suppressed'
 
 type HoverInkPhase = 'idle' | 'hover' | 'leave'
 
@@ -12,6 +14,7 @@ type HoverInkState = {
   cleanup: () => void
   binding: DirectiveBinding
   phase: HoverInkPhase
+  pointer?: { x: number; y: number }
   collapseTimer?: ReturnType<typeof setTimeout>
 }
 
@@ -71,8 +74,39 @@ function placeInk(el: HTMLElement, clientX: number, clientY: number) {
 
 function expand(el: HTMLElement) {
   clearCollapseTimer(el)
+  el.classList.remove(SUPPRESS_CLASS)
   const st = stateMap.get(el)
   if (st) st.phase = 'hover'
+  restoreHostState(el)
+}
+
+/** Drop a cover that is already open. No leave animation, so the elevated fallback cannot flash. */
+function collapseNow(el: HTMLElement) {
+  clearCollapseTimer(el)
+  const st = stateMap.get(el)
+  if (st) st.phase = 'idle'
+  el.classList.add(SUPPRESS_CLASS)
+  el.classList.remove(HOVER_CLASS, LEAVE_CLASS)
+  el.style.setProperty('--ink-d', '0px')
+}
+
+function syncInkBlock(el: HTMLElement, binding: DirectiveBinding) {
+  const st = stateMap.get(el)
+  if (!st) return
+  st.binding = binding
+  if (isHoverInkBlocked(el, binding)) {
+    if (st.phase !== 'idle') collapseNow(el)
+    else el.classList.add(SUPPRESS_CLASS)
+    restoreHostState(el)
+    return
+  }
+  el.classList.remove(SUPPRESS_CLASS)
+  // Pointer was already over a blocked control that just became usable.
+  if (st.phase !== 'hover' && st.pointer && el.matches(':hover') && canHoverInk()) {
+    placeInk(el, st.pointer.x, st.pointer.y)
+    expand(el)
+    return
+  }
   restoreHostState(el)
 }
 
@@ -98,21 +132,29 @@ function retract(el: HTMLElement) {
 function bindHoverInk(el: HTMLElement, binding: DirectiveBinding) {
   const existing = stateMap.get(el)
   if (existing) {
-    existing.binding = binding
-    restoreHostState(el)
+    syncInkBlock(el, binding)
     return
   }
 
   const onEnter = (ev: PointerEvent) => {
     if (!canHoverInk()) return
-    const st = stateMap.get(el)
-    if (!st || isHoverInkBlocked(el, st.binding)) return
     // Touch must not leave sticky ink (plan g1.3).
     if (ev.pointerType === 'touch') return
+    const st = stateMap.get(el)
+    if (!st) return
+    st.pointer = { x: ev.clientX, y: ev.clientY }
+    if (isHoverInkBlocked(el, st.binding)) return
     placeInk(el, ev.clientX, ev.clientY)
     expand(el)
   }
   const onLeave = () => {
+    const st = stateMap.get(el)
+    if (st) st.pointer = undefined
+    if (!st || st.phase === 'idle') return
+    if (isHoverInkBlocked(el, st.binding)) {
+      collapseNow(el)
+      return
+    }
     retract(el)
   }
 
@@ -140,12 +182,13 @@ function bindHoverInk(el: HTMLElement, binding: DirectiveBinding) {
       window.removeEventListener('blur', onBlurOrHide)
       document.removeEventListener('visibilitychange', onVisibility)
       clearCollapseTimer(el)
-      el.classList.remove(HOVER_CLASS)
+      el.classList.remove(HOVER_CLASS, SUPPRESS_CLASS)
       el.classList.add(LEAVE_CLASS)
       el.style.setProperty('--ink-d', '0px')
       stateMap.delete(el)
     },
   })
+  if (isHoverInkBlocked(el, binding)) el.classList.add(SUPPRESS_CLASS)
   restoreHostState(el)
 }
 
@@ -157,16 +200,12 @@ export const vHoverInk: Directive = {
   updated(el, binding) {
     const host = el as HTMLElement
     const st = stateMap.get(host)
-    if (st) {
-      st.binding = binding
-      restoreHostState(host)
-    } else {
-      bindHoverInk(host, binding)
-    }
+    if (st) syncInkBlock(host, binding)
+    else bindHoverInk(host, binding)
   },
   unmounted(el) {
     const host = el as HTMLElement
     stateMap.get(host)?.cleanup()
-    host.classList.remove(HOST_CLASS, HOVER_CLASS, LEAVE_CLASS)
+    host.classList.remove(HOST_CLASS, HOVER_CLASS, LEAVE_CLASS, SUPPRESS_CLASS)
   },
 }

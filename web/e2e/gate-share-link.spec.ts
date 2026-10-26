@@ -45,7 +45,7 @@ test.describe('human_gate 临时审批链接', () => {
     await expect(page.getByTestId('gate-share-loopback-warning')).toHaveCount(0)
     const copied = await page.evaluate(() => (window as unknown as { __copied?: string }).__copied || '')
     // plan g3.1 / g2.3: non-loopback fixture (approving.example.com) auto-copies
-    expect(copied).toContain('https://approving.example.com/public/gate-approvals#t=')
+    expect(copied).toContain('https://approving.example.com/public/approvals#t=')
     expect(copied).toMatch(/#t=[0-9a-f]{64}$/)
     // plan g2.2: auto-copy success uses distinct toast
     await expect(page.getByTestId('toast-host')).toContainText('已自动复制新链接')
@@ -84,7 +84,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toHaveValue(/#t=••••/)
     const copied = await page.evaluate(() => (window as unknown as { __copied?: string }).__copied || '')
-    expect(copied).toContain('https://approving.example.com/public/gate-approvals#t=')
+    expect(copied).toContain('https://approving.example.com/public/approvals#t=')
     await expect(page.getByTestId('toast-host')).toContainText('已自动复制新链接')
 
     await page.getByTestId('gate-share-copy').click()
@@ -148,7 +148,7 @@ test.describe('human_gate 临时审批链接', () => {
     await expect(page.getByTestId('toast-host')).toContainText('链接已重新生成')
     await expect(page.getByTestId('toast-host')).toContainText('已自动复制新链接')
     const copied = await page.evaluate(() => (window as unknown as { __copied?: string }).__copied || '')
-    expect(copied).toContain('https://approving.example.com/public/gate-approvals#t=')
+    expect(copied).toContain('https://approving.example.com/public/approvals#t=')
     expect(copied).toMatch(/#t=[0-9a-f]{64}$/)
   })
 
@@ -274,7 +274,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toBeVisible()
     const copied = await page.evaluate(() => (window as unknown as { __copied?: string }).__copied || '')
-    expect(copied).toContain('https://approving.example.com/public/gate-approvals#t=')
+    expect(copied).toContain('https://approving.example.com/public/approvals#t=')
   })
 
   test('未登录复审页三区可发送并底栏确认', async ({ page }) => {
@@ -338,7 +338,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toBeVisible()
     const copied = await page.evaluate(() => (window as unknown as { __copied?: string }).__copied || '')
-    expect(copied).toContain('https://approving.example.com/public/gate-approvals#t=')
+    expect(copied).toContain('https://approving.example.com/public/approvals#t=')
   })
 
   test('待澄清 Inbox 两处入口可生成临时链接', async ({ page }) => {
@@ -364,7 +364,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toBeVisible()
     const copied = await page.evaluate(() => (window as unknown as { __copied?: string }).__copied || '')
-    expect(copied).toContain('https://approving.example.com/public/gate-approvals#t=')
+    expect(copied).toContain('https://approving.example.com/public/approvals#t=')
   })
 
   test('未登录澄清页文案分叉、空产物、多轮与未结束确认不燃链', async ({ page }) => {
@@ -426,7 +426,7 @@ test.describe('human_gate 临时审批链接', () => {
 
     const open = async () => {
       const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
-      await context.route(/\/public\/gate-approvals\/preview$/, async (route) => {
+      await context.route(/\/public\/approvals\/preview$/, async (route) => {
         const visitor = route.request().headers()['x-gate-share-visitor'] || ''
         await route.fulfill({
           json: {
@@ -447,7 +447,7 @@ test.describe('human_gate 临时审批链接', () => {
           },
         })
       })
-      await context.route(/\/public\/gate-approvals\/reply$/, async (route) => {
+      await context.route(/\/public\/approvals\/reply$/, async (route) => {
         const visitor = route.request().headers()['x-gate-share-visitor'] || ''
         const text = String((route.request().postDataJSON() as { text?: string }).text || '')
         const at = new Date().toISOString()
@@ -490,7 +490,7 @@ test.describe('human_gate 临时审批链接', () => {
   })
 
   test('未登录复审页展示 agent 工具调用（仅名称与状态）', async ({ page }) => {
-    await page.route(/\/public\/gate-approvals\/preview$/, async (route) => {
+    await page.route(/\/public\/approvals\/preview$/, async (route) => {
       await route.fulfill({
         json: {
           status: 'active',
@@ -536,7 +536,7 @@ test.describe('human_gate 临时审批链接', () => {
 
   test('未登录复审页按时间轴交替展示思考、工具与回复', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    await page.route(/\/public\/gate-approvals\/preview$/, async (route) => {
+    await page.route(/\/public\/approvals\/preview$/, async (route) => {
       await route.fulfill({
         json: {
           status: 'active',

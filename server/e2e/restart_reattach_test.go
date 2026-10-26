@@ -3,8 +3,13 @@
 // Package e2e holds end-to-end tests that drive a real Grasp stack (gateway +
 // control plane + sandbox containers) through Docker Compose and a real model.
 //
+// Build both images from the same checkout so the sandbox IMAGE_LEVEL satisfies
+// the runtime bundle shipped in the control plane image.
+//
+//	docker build -t universal-sandbox:e2e-restart sandbox-gateway/sandbox
 //	docker build -f server/Dockerfile -t grasp:e2e .
-//	DEEPSEEK_API_KEY=... go test -tags e2ereal ./e2e -run TestRestartReattach -v -timeout 30m
+//	cd server
+//	DEEPSEEK_API_KEY=... SANDBOX_IMAGE=universal-sandbox:e2e-restart GRASP_SANDBOX_IMAGE=universal-sandbox:e2e-restart go test -tags e2ereal ./e2e -run TestRestartReattach -v -timeout 30m
 package e2e
 
 import (
@@ -312,30 +317,62 @@ func (s *stack) pickModel() string {
 
 func (s *stack) onboard(apiKey, model string) {
 	s.t.Helper()
+	var credential, connection, configuration struct {
+		ID string `json:"id"`
+	}
+	// Create the same reference chain as the credentials/model configuration UI.
+	// Only the credential request carries the API key; failures must not print it.
+	if code, err := s.do(http.MethodPost, "/api/workspace/credentials", map[string]any{
+		"purpose": "model_api", "issuer": "deepseek", "name": "E2E DeepSeek key", "value": apiKey,
+	}, &credential); err != nil {
+		s.t.Fatalf("create model credential failed with status %d", code)
+	}
+	if credential.ID == "" {
+		s.t.Fatal("created model credential has no id")
+	}
+	s.mustDo(http.MethodPost, "/api/workspace/model-connections", map[string]any{
+		"name": "E2E DeepSeek service", "providerId": "deepseek",
+		"protocol": "openai-chat-completions", "baseUrl": "https://api.deepseek.com/v1",
+		"credentialId": credential.ID, "auth": map[string]any{"scheme": "bearer"},
+		"models": []map[string]any{{"id": model, "source": "manual"}},
+	}, &connection)
+	if connection.ID == "" {
+		s.t.Fatal("created model connection has no id")
+	}
+	s.mustDo(http.MethodPost, "/api/workspace/model-configurations", map[string]any{
+		"name": "E2E OpenCode model", "backend": "opencode",
+		"binding": map[string]any{"kind": "connection", "connectionId": connection.ID, "modelId": model},
+	}, &configuration)
+	if configuration.ID == "" {
+		s.t.Fatal("created model configuration has no id")
+	}
 	body := map[string]any{
-		"acpBackend": "opencode", "apiKey": apiKey,
-		"openCodeProvider": "deepseek", "openCodeModel": model,
-		"vncPreview": false, "browserMcp": false,
+		"modelConfigurationId": configuration.ID,
+		"language":             "en",
+		"vncPreview":           false, "browserMcp": false,
 		"agents": []map[string]any{
-			{"templateId": "clarify", "name": "e2e-pm"},
-			{"templateId": "implement", "name": "e2e-dev"},
+			{"templateId": "clarify", "name": "Clarify"},
+			{"templateId": "implement", "name": "Implement"},
+			{"templateId": "test_review", "name": "TestReview"},
+			{"templateId": "deliver", "name": "Deliver"},
 		},
 	}
-	// The body carries the API key: report only the status on failure.
-	if code, err := s.do(http.MethodPost, "/api/workspace/bootstrap-onboarding", body, nil); err != nil {
-		s.t.Fatalf("bootstrap onboarding failed with status %d", code)
-	}
+	s.mustDo(http.MethodPost, "/api/workspace/bootstrap-onboarding", body, nil)
 	// The implement template parks for human review after its run; this test
 	// needs the node to finish on its own.
 	var agent map[string]any
-	s.mustDo(http.MethodGet, "/api/agents/e2e-dev", nil, &agent)
+	s.mustDo(http.MethodGet, "/api/agents/Implement", nil, &agent)
+	binding, _ := agent["modelBinding"].(map[string]any)
+	if agent["acpBackend"] != "opencode" || binding["kind"] != "configuration" || binding["configurationId"] != configuration.ID {
+		s.t.Fatal("onboarding did not bind the Agent to the selected OpenCode model configuration")
+	}
 	caps, _ := agent["capabilities"].(map[string]any)
 	if caps == nil {
 		caps = map[string]any{}
 	}
 	caps["review"] = false
 	agent["capabilities"] = caps
-	s.mustDo(http.MethodPut, "/api/agents/e2e-dev", agent, nil)
+	s.mustDo(http.MethodPut, "/api/agents/Implement", agent, nil)
 }
 
 func (s *stack) createWorkflow() string {
@@ -350,7 +387,7 @@ func (s *stack) createWorkflow() string {
 			{"id": "input", "type": "input", "label": "input"},
 			{"id": "work", "type": "agent", "label": "work",
 				"caps":   map[string]any{"interaction": "auto", "reads": []string{"*"}},
-				"config": map[string]any{"agent_profile": "e2e-dev", "prompt": prompt}},
+				"config": map[string]any{"agent_profile": "Implement", "prompt": prompt}},
 			{"id": "output", "type": "output", "label": "output"},
 		},
 		"edges": []map[string]any{

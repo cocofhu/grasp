@@ -1,5 +1,5 @@
 {
-  "principle": "Align with components/{run,agent,inbox,pm,workspace}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; composables/ cross-domain use*; workflow/ graph model shared by the editor and run views (agent capabilities, outlets, validation); shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils",
+  "principle": "Align with components/{run,agent,inbox,pm,workspace}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; composables/ cross-domain use*; workflow/ graph model shared by the editor and run views (agent capabilities, outlets, validation); shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils; icons/ trusted SVG catalog and native runtime shared with Icon.vue",
   "domains": {
     "agent": [
       "agentCreateWizard.ts",
@@ -11,7 +11,10 @@
       "cliCatalog.ts",
       "cliModelEnv.ts",
       "cliModelView.ts",
+      "gitBindings.ts",
       "gitCredentialType.ts",
+      "identityIcons.ts",
+      "modelRouting.ts",
       "openCodeCatalog.ts",
       "openCodeProvider.ts",
       "sandboxPurposeLabel.ts",
@@ -45,6 +48,7 @@
       "useChatImagePreview.ts",
       "useDelayedBusy.ts",
       "useFixedOverlayAbove.ts",
+      "useIconMotion.ts",
       "useImageAttachments.ts",
       "useNotificationsPageEntry.ts",
       "usePlatformStatusMetrics.ts",
@@ -58,6 +62,10 @@
       "useWorkflowFilter.ts",
       "useWorkspaceContext.ts"
     ],
+    "icons": [
+      "catalog.ts",
+      "runtime.ts"
+    ],
     "inbox": [
       "clarifyDemo.ts",
       "clarifyDemoWindow.ts",
@@ -68,6 +76,7 @@
       "composerAutoGrow.ts",
       "confirmFlowCeremony.ts",
       "confirmFlowDiscard.ts",
+      "confirmFlowWindow.ts",
       "conversationToolbarTitle.ts",
       "embedChat.ts",
       "embedDemoPreview.ts",
@@ -90,6 +99,7 @@
       "reviewLayoutBudget.ts",
       "reviewQuote.ts",
       "runConversationChain.ts",
+      "sidebarHandoff.ts",
       "sidebarPins.ts",
       "sidebarRunRows.ts",
       "turnSpan.ts",
@@ -115,6 +125,7 @@
       "acpUnpack.ts",
       "applyLiveWsAcpPage.ts",
       "artifactGroups.ts",
+      "bootDisplay.ts",
       "bootRecord.ts",
       "busySeedRetry.ts",
       "canvasLayout.ts",
@@ -133,6 +144,7 @@
       "llmTranscriptThread.ts",
       "mergeAcpEvents.ts",
       "mergeRunChrome.ts",
+      "nodeConversation.ts",
       "nodeEventsResponse.ts",
       "outputSourceOptions.ts",
       "pendingAcpBuffer.ts",
@@ -213,7 +225,6 @@
       "serviceCommit.ts",
       "sidebarHidden.ts",
       "sidebarSections.ts",
-      "startPath.ts",
       "streamMarkdownPreview.ts",
       "theme.ts",
       "types.ts",
@@ -221,9 +232,12 @@
     ],
     "solo": [
       "acpTurn.ts",
+      "configuredModels.ts",
       "projectForm.ts",
+      "sessionRepos.ts",
       "soloErrors.ts",
       "soloPrefs.ts",
+      "useSessionModelCatalog.ts",
       "useSoloChat.ts",
       "useSoloLauncher.ts",
       "useSoloSessions.ts"
@@ -242,16 +256,17 @@
     ]
   },
   "totals": {
-    "agent": 19,
+    "agent": 22,
     "api": 4,
     "artifacts": 1,
     "chat": 5,
-    "composables": 18,
-    "inbox": 41,
+    "composables": 19,
+    "icons": 2,
+    "inbox": 43,
     "pm": 7,
-    "run": 65,
-    "shared": 40,
-    "solo": 7,
+    "run": 67,
+    "shared": 39,
+    "solo": 10,
     "workflow": 3,
     "workspace": 5
   }

@@ -3,7 +3,9 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -57,7 +60,7 @@ func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxServi
 	skillsRoot := t.TempDir()
 	skills := NewAgentService(skillsRoot)
 	// Create an agent so Open can resolve a profile.
-	if err := skills.Save(Agent{Name: "agentA", AcpBackend: AcpBackendCursor, Files: []AgentFile{{Path: "rules/a.md", Content: "# a"}}}); err != nil {
+	if err := skills.Save(Agent{Name: "agentA", AcpBackend: AcpBackendCursor, ModelBinding: sandboxTestModelBinding(), Files: []AgentFile{{Path: "rules/a.md", Content: "# a"}}}); err != nil {
 		t.Fatal(err)
 	}
 	host := mcp.NewHost(NewArtifactService(db))
@@ -67,10 +70,43 @@ func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxServi
 		TTL:          time.Minute,
 		RunTTL:       time.Minute,
 		Max:          2,
-		Credentials: func() map[string]string {
-			return map[string]string{"GRASP_CURSOR_API_KEY": "test-key", "GRASP_OPENCODE_API_KEY": "sk-test"}
-		},
+		ModelBinding: sandboxTestModelResolver,
 	})
+}
+
+func sandboxTestModelBinding() *modelrouting.Binding {
+	return &modelrouting.Binding{Kind: "configuration", ConfigurationID: "sandbox-fixture"}
+}
+
+func sandboxTestAppliedBindings(t *testing.T, s *SandboxService, row *models.Sandbox) {
+	t.Helper()
+	agent, ok := s.skills.Get(row.Profile)
+	if !ok {
+		t.Fatal("missing fixture Agent")
+	}
+	model, git, err := s.currentBindingFingerprints(s.effectiveAgent(agent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.ModelBindingFingerprint, row.GitBindingsFingerprint = model, git
+}
+
+func sandboxTestModelResolver(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {
+	if binding == nil || binding.Kind != "configuration" || binding.ConfigurationID == "" {
+		return modelrouting.Resolved{}, fmt.Errorf("model configuration is required")
+	}
+	resolved := modelrouting.Resolved{Backend: backend, CredentialID: "fixture-key", Secret: "test-key", Binding: modelrouting.Binding{Kind: "platform", ModelID: "fixture-model"}}
+	if backend == "opencode" || backend == "codex" || backend == "deepseek_harness" {
+		protocol := modelrouting.ProtocolChat
+		if backend == "codex" {
+			protocol = modelrouting.ProtocolResponses
+		} else if backend == "deepseek_harness" {
+			protocol = modelrouting.ProtocolAnthropic
+		}
+		resolved.Binding.Kind = "connection"
+		resolved.Connection = &modelrouting.Connection{ID: "fixture-connection", ProviderID: "custom", Protocol: protocol, BaseURL: "https://models.example/v1", Auth: modelrouting.Auth{Scheme: "bearer"}, Models: []modelrouting.Model{{ID: "fixture-model", Source: "manual"}}}
+	}
+	return resolved, nil
 }
 
 func TestSandboxServiceDefaults(t *testing.T) {
@@ -670,6 +706,7 @@ func TestSandboxOpenPaths(t *testing.T) {
 
 	// Reuse: seed a running test sandbox with empty repo for agentA.
 	reuse := &models.Sandbox{Name: "grasp-sb-reuse", Purpose: "test", Profile: "agentA", Status: "running", RepoURL: ""}
+	sandboxTestAppliedBindings(t, s, reuse)
 	db.Create(reuse)
 	ds.setStatus(reuse.Name, "running")
 	row, err := s.Open(ctx, "agentA", nil)
@@ -724,11 +761,11 @@ func TestSandboxViewForRunNode(t *testing.T) {
 	}
 
 	ds.setStatus(row.Name, "exited")
-	if _, err := s.SandboxViewForRunNode(ctx, "runS", "n1"); err == nil {
-		t.Fatal("non-running container should 404")
+	if _, err := s.SandboxViewForRunNode(ctx, "runS", "n1"); !errors.Is(err, ErrSandboxAbsent) {
+		t.Fatalf("non-running container should be absent: %v", err)
 	}
-	if _, err := s.SandboxViewForRunNode(ctx, "no-run", "n1"); err == nil {
-		t.Fatal("missing record should 404")
+	if _, err := s.SandboxViewForRunNode(ctx, "no-run", "n1"); !errors.Is(err, ErrSandboxAbsent) {
+		t.Fatalf("missing record should be absent: %v", err)
 	}
 }
 
@@ -905,6 +942,7 @@ func TestSandboxFindReusable(t *testing.T) {
 
 	// A live running test sandbox for agentA is reused by Open (no new create).
 	live := &models.Sandbox{Name: "grasp-sb-reuse", Purpose: "test", Profile: "agentA", Status: "running", RepoURL: ""}
+	sandboxTestAppliedBindings(t, s, live)
 	db.Create(live)
 	ds.setStatus(live.Name, "running")
 	got, err := s.Open(ctx, "agentA", nil)
@@ -984,6 +1022,7 @@ func TestSandboxOpenReposSkipReuse(t *testing.T) {
 	ctx := context.Background()
 
 	live := &models.Sandbox{Name: "grasp-sb-reuse-repos", Purpose: "test", Profile: "agentA", Status: "running", RepoURL: ""}
+	sandboxTestAppliedBindings(t, s, live)
 	db.Create(live)
 	ds.setStatus(live.Name, "running")
 
@@ -1236,7 +1275,7 @@ func TestSandboxOpenLifecycle(t *testing.T) {
 	}
 }
 
-func TestSandboxOpenWithEffectiveKeepsNormalizedOpenCodeModel(t *testing.T) {
+func TestSandboxOpenWithEffectiveUsesOnlySelectedModelConfiguration(t *testing.T) {
 	db := newTestDB(t)
 	acp, port := fakeACPServer(t)
 	defer acp.Close()
@@ -1244,8 +1283,9 @@ func TestSandboxOpenWithEffectiveKeepsNormalizedOpenCodeModel(t *testing.T) {
 	s := newSandboxService(t, db, ds)
 
 	effective := Agent{
-		Name:       "agentA",
-		AcpBackend: "opencode",
+		Name:         "agentA",
+		AcpBackend:   "opencode",
+		ModelBinding: sandboxTestModelBinding(),
 		Env: map[string]string{
 			"GRASP_OPENCODE_PROVIDER": "tencent-tokenhub",
 			"ACP_BRIDGE_MODEL":        "deepseek/deepseek-flash",
@@ -1275,8 +1315,11 @@ func TestSandboxOpenWithEffectiveKeepsNormalizedOpenCodeModel(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	env := ds.fg.LastCreateEnv()
-	if got := env["ACP_BRIDGE_MODEL"]; got != "tencent-tokenhub/deepseek/deepseek-flash" {
+	if got := env["ACP_BRIDGE_MODEL"]; got != "fixture-model" {
 		t.Fatalf("ACP_BRIDGE_MODEL=%q", got)
+	}
+	if env["GRASP_OPENCODE_PROVIDER"] != "" || env[runtime.EnvModelConnection] == "" {
+		t.Fatal("an environment model overrode the selected model configuration")
 	}
 }
 
@@ -1293,6 +1336,7 @@ func TestSandboxChatReconnect(t *testing.T) {
 	name := "grasp-sb-reconn"
 	ds.setStatus(name, "running")
 	row := &models.Sandbox{Name: name, Profile: "agentA", Purpose: "test", Status: "running", Token: "test-password"}
+	sandboxTestAppliedBindings(t, s, row)
 	db.Create(row)
 
 	if err := s.Chat(ctx, row.ID, "hi", nil, func(json.RawMessage) {}); err != nil {
@@ -1431,5 +1475,78 @@ func TestSandboxServiceSettersAndShutdownAll(t *testing.T) {
 	db.Create(&models.Sandbox{Name: "grasp-sb-shutdown", Purpose: "test", Status: "stopped"})
 	if n := svc.ShutdownAllTestSandboxes(context.Background(), true); n != 1 {
 		t.Fatalf("shutdown: %d", n)
+	}
+}
+
+func TestAlignChatModelDoesNotRestartWhenUnread(t *testing.T) {
+	db := newTestDB(t)
+	svc := newSandboxService(t, db, &dockerState{})
+	selected := "aux"
+	posts := 0
+	gets := 0
+	failGet := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/login" && r.Method == http.MethodPost:
+			http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "test-cookie", Path: "/"})
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case r.URL.Path == "/api/models" && r.Method == http.MethodGet:
+			gets++
+			if failGet {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"selected": selected})
+		case r.URL.Path == "/api/model" && r.Method == http.MethodPost:
+			posts++
+			var body struct {
+				Model string `json:"model"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			selected = body.Model
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"selected":"` + body.Model + `"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	host, portStr, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := &models.Sandbox{Name: "grasp-sb-align", Host: host, ACPPort: port, Token: "secret", Status: "running"}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	changed, err := svc.AlignChatModel(ctx, row.ID, "aux2")
+	if err == nil || !errors.Is(err, ErrChatModelUnknown) {
+		t.Fatalf("unread: changed=%v err=%v", changed, err)
+	}
+	if posts != 0 {
+		t.Fatalf("unread model restarted the agent: posts=%d", posts)
+	}
+
+	failGet = false
+	changed, err = svc.AlignChatModel(ctx, row.ID, "aux")
+	if err != nil || changed {
+		t.Fatalf("matching model: changed=%v err=%v", changed, err)
+	}
+	if posts != 0 {
+		t.Fatalf("matching model posted: %d", posts)
+	}
+
+	changed, err = svc.AlignChatModel(ctx, row.ID, "aux2")
+	if err != nil || !changed || posts != 1 || selected != "aux2" {
+		t.Fatalf("switch: changed=%v posts=%d selected=%q err=%v", changed, posts, selected, err)
+	}
+	if gets < 2 {
+		t.Fatalf("gets=%d", gets)
 	}
 }

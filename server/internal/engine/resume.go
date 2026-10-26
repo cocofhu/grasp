@@ -195,6 +195,7 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 		e.finish(runID, "completed")
 		return nil
 	}
+	e.rememberHandoffTarget(c, next)
 	go e.resumeAdmitted(runID, next)
 	return nil
 }
@@ -604,6 +605,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 			e.finish(runID, "failed")
 			return nil
 		}
+		e.rememberHandoffTarget(c, next)
 		go e.resumeAdmitted(runID, next)
 		return nil
 	}
@@ -616,8 +618,37 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		e.finish(runID, "completed")
 		return nil
 	}
+	e.rememberHandoffTarget(c, next)
 	go e.resumeAdmitted(runID, next)
 	return nil
+}
+
+// setAdmissionTarget records the node a restart should continue from.
+// It does not change run status.
+func (e *Engine) setAdmissionTarget(c *execCtx, nodeID string) {
+	if c == nil || c.run == nil || nodeID == "" {
+		return
+	}
+	if c.run.Checkpoints == nil {
+		c.run.Checkpoints = map[string]map[string]any{}
+	}
+	c.run.Checkpoints[admissionFromCheckpoint] = map[string]any{"node": nodeID}
+}
+
+// rememberHandoffTarget persists the node the live driver is about to enter
+// when the transition write did not already store it. Status stays as it is:
+// queueing now would let the dispatcher start a second driver beside the
+// goroutine that is about to call resumeAdmitted.
+func (e *Engine) rememberHandoffTarget(c *execCtx, target string) {
+	if c == nil || target == "" {
+		return
+	}
+	if node, ok := e.admissionFromNode(*c.run); ok && node == target {
+		return
+	}
+	e.setAdmissionTarget(c, target)
+	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).
+		Select("Checkpoints").Updates(&models.Run{Checkpoints: c.run.Checkpoints}), c.run.ID, "remember handoff target")
 }
 
 // confirmStillWaiting reports that a force confirm has not finished this

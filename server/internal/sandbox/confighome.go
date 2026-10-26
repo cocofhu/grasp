@@ -51,6 +51,9 @@ type ConfigHomeSpec struct {
 	// OpenCode enables OpenCode-native MCP configuration. OpenCode does not read
 	// mcp.json, so the same servers must also be translated into opencode.json.
 	OpenCode bool
+	// DeepSeekHarness folds alwaysApply rules into the global AGENTS.md that dsh
+	// loads. The copied role files and complete skills tree remain intact.
+	DeepSeekHarness bool
 	// BrowserMCP registers the sandbox's headed Chromium as chrome-devtools.
 	// Putting it in the generated files keeps the later SSH seed from erasing
 	// the startup script's best-effort mcp.json registration.
@@ -90,6 +93,13 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.RemoveAll(dir)
+		}
+	}()
 
 	// First lay down workspace-shared workspace (extend), then agent workspace
 	// (overlay). The embedded base rules + mcp.json layer on top so they can't
@@ -194,6 +204,12 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 			return "", err
 		}
 	}
+	if spec.DeepSeekHarness {
+		if err := writeDeepSeekInstructions(dir); err != nil {
+			return "", err
+		}
+	}
+	complete = true
 	return dir, nil
 }
 

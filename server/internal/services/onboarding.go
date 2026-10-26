@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cocofhu/grasp/internal/envauth"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -22,60 +22,53 @@ const (
 )
 
 var (
-	// ErrOnboardingAPIKeyRequired is returned when bootstrap is called without an API key.
-	ErrOnboardingAPIKeyRequired = errors.New("apiKey is required")
+	// ErrOnboardingModelRequired is returned when no saved model configuration is selected.
+	ErrOnboardingModelRequired = errors.New("modelConfigurationId is required")
 	// ErrBaselineReposRequired is returned when no non-empty repository URL is submitted.
 	ErrBaselineReposRequired = errors.New("at least one repository URL is required")
 	// ErrOnboardingInvalidTeam is returned when the chosen templates are unknown,
-	// duplicated, miss a required template, or produce duplicate Agent names.
+	// duplicated, miss a required template, or use a name other than the
+	// language's canonical Agent name.
 	ErrOnboardingInvalidTeam = errors.New("invalid onboarding team")
+	// ErrOnboardingAgentsIncomplete is returned when neither canonical quartet
+	// exists, so a baseline workflow must not be created.
+	ErrOnboardingAgentsIncomplete = errors.New("onboarding agents incomplete")
+	// ErrProtectedOnboardingAgent is returned when a canonical onboarding Agent
+	// would be deleted or renamed. The Agent is required by workflows.
+	ErrProtectedOnboardingAgent = errors.New("该 Agent 被工作流使用，不能删除或重命名")
 )
 
 // OnboardingBootstrapRequest is the body for POST .../bootstrap-onboarding.
 type OnboardingBootstrapRequest struct {
-	AcpBackend string `json:"acpBackend"`
-	APIKey     string `json:"apiKey"`
+	ModelConfigurationID string              `json:"modelConfigurationId"`
+	GitBindings          *models.GitBindings `json:"gitBindings,omitempty"`
 	// Language is the wizard's UI language (zh-CN | en); it names the default
 	// workflow and its start/end nodes. Empty means Chinese.
-	Language            string `json:"language,omitempty"`
-	Region              string `json:"region,omitempty"`
-	OpenCodeProvider    string `json:"openCodeProvider,omitempty"`
-	OpenCodeBaseURL     string `json:"openCodeBaseURL,omitempty"`
-	OpenCodeModel       string `json:"openCodeModel,omitempty"`
-	OpenCodeModelVision *bool  `json:"openCodeModelVision,omitempty"`
-	// CliModel is the coding-tool model for shared ACP_BRIDGE_MODEL.
-	// Non-empty pins it; empty clears a previous pin. Ignored for OpenCode,
-	// which still uses OpenCodeModel.
-	CliModel          string `json:"cliModel,omitempty"`
-	GitCredentialType string `json:"gitCredentialType,omitempty"`
-	GitHubToken       string `json:"githubToken,omitempty"`
-	GitLabToken       string `json:"gitlabToken,omitempty"`
-	GitLabURL         string `json:"gitlabUrl,omitempty"`
-	SSHPrivateKey     string `json:"sshPrivateKey,omitempty"`
-	SSHKnownHosts     string `json:"sshKnownHosts,omitempty"`
-	RepoURL           string `json:"repoUrl,omitempty"`
-	RepoBranch        string `json:"repoBranch,omitempty"`
-	GitUserName       string `json:"gitUserName,omitempty"`
-	GitUserEmail      string `json:"gitUserEmail,omitempty"`
+	Language     string `json:"language,omitempty"`
+	Region       string `json:"region,omitempty"`
+	RepoURL      string `json:"repoUrl,omitempty"`
+	RepoBranch   string `json:"repoBranch,omitempty"`
+	GitUserName  string `json:"gitUserName,omitempty"`
+	GitUserEmail string `json:"gitUserEmail,omitempty"`
 	// VncPreview / BrowserMcp default on when omitted (first-install preview stack).
 	VncPreview *bool `json:"vncPreview"`
 	BrowserMcp *bool `json:"browserMcp"`
-	// Agents picks the built-in templates to create. Empty = all templates with
-	// derived names. clarify and implement are required; test_review and deliver are optional.
+	// Agents picks the built-in templates to create. Empty = all four templates
+	// with the canonical names for Language. Every template is required, and a
+	// non-empty name must equal that language's canonical name.
 	Agents []OnboardingAgentChoice `json:"agents,omitempty"`
 }
 
-// OnboardingAgentChoice is one chosen built-in template in the wizard's team step.
+// OnboardingAgentChoice chooses a role and optionally a different saved model.
 type OnboardingAgentChoice struct {
 	TemplateID string `json:"templateId"`
-	// Name overrides the derived Agent name when non-empty.
-	Name string `json:"name,omitempty"`
-	// Model is written to the Agent's ACP_BRIDGE_MODEL env when non-empty.
-	Model string `json:"model,omitempty"`
+	// Name must be empty or the canonical name for the wizard language.
+	Name                 string `json:"name,omitempty"`
+	ModelConfigurationID string `json:"modelConfigurationId,omitempty"`
 }
 
-// OnboardingRequiredTemplateIDs must always be part of the onboarding team.
-var OnboardingRequiredTemplateIDs = []string{"clarify", "implement"}
+// OnboardingRequiredTemplateIDs must all be part of the onboarding team.
+var OnboardingRequiredTemplateIDs = []string{"clarify", "implement", "test_review", "deliver"}
 
 // OnboardingBootstrapResult is returned after a successful (idempotent) bootstrap.
 type OnboardingBootstrapResult struct {
@@ -97,7 +90,7 @@ type CreateBaselineWorkflowRequest struct {
 	Repos []BaselineRepo `json:"repos"`
 }
 
-// OnboardingService bootstraps first-install auth + the built-in Agents + 默认工作流.
+// OnboardingService configures built-in Agents and publishes 默认工作流.
 type OnboardingService struct {
 	Skills      *AgentService
 	SharedAgent *SharedAgentService
@@ -105,8 +98,7 @@ type OnboardingService struct {
 	Credentials *CredentialService
 }
 
-// NewOnboardingService wires dependencies. credentials receives every secret the
-// wizard submits (AI key, Git tokens, SSH).
+// NewOnboardingService wires dependencies. Credentials are resolved by reference.
 func NewOnboardingService(skills *AgentService, shared *SharedAgentService, wf *WorkflowService, credentials *CredentialService) *OnboardingService {
 	return &OnboardingService{Skills: skills, SharedAgent: shared, WF: wf, Credentials: credentials}
 }
@@ -126,18 +118,19 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	if err != nil {
 		return models.WorkflowDef{}, err
 	}
+	set := BaselineOnboardingSet(s.existingAgentNames())
+	if set == "" {
+		return models.WorkflowDef{}, ErrOnboardingAgentsIncomplete
+	}
 	applyBaselineRepos(&envelope.Graph, repos)
+	if set == "en" {
+		rebindBaselineProfilesToEnglish(&envelope.Graph)
+	}
 	if err := envelope.Graph.Validate(); err != nil {
 		return models.WorkflowDef{}, fmt.Errorf("default workflow graph invalid: %w", err)
 	}
-	created, err := s.ensureBaselineAgents()
-	if err != nil {
+	if err := s.requireBaselineAgents(set); err != nil {
 		return models.WorkflowDef{}, err
-	}
-	rollback := func() {
-		for _, n := range created {
-			_ = s.Skills.Delete(n)
-		}
 	}
 
 	wf := models.WorkflowDef{
@@ -148,72 +141,104 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 		Graph:       envelope.Graph,
 	}
 	if err := s.WF.Save(&wf); err != nil {
-		rollback()
 		return models.WorkflowDef{}, err
 	}
 	published, err := s.WF.Publish(wf.ID)
 	if err != nil {
 		_ = s.WF.Delete(wf.ID)
-		rollback()
 		return models.WorkflowDef{}, fmt.Errorf("publish baseline workflow: %w", err)
 	}
 	// Align with Bootstrap: Save still forces showOnHome=false; open Home after publish.
 	published, err = s.WF.UpdateShowOnHome(published.ID, true)
 	if err != nil {
 		_ = s.WF.Delete(published.ID)
-		rollback()
 		return models.WorkflowDef{}, fmt.Errorf("show workflow on home: %w", err)
 	}
 	return published, nil
 }
 
-// ensureBaselineAgents creates the fixed-name template Agents that do not exist
-// yet, using the shared Agent backend. Existing Agents are left untouched. It
-// returns the names it created.
-func (s *OnboardingService) ensureBaselineAgents() ([]string, error) {
-	backend := ""
-	if s.SharedAgent != nil {
-		backend = NormalizeAcpBackend(s.SharedAgent.Get().AcpBackend)
+func (s *OnboardingService) existingAgentNames() []string {
+	if s.Skills == nil {
+		return nil
 	}
-	var created []string
-	for _, role := range TeamEngineerTemplates {
-		name := role.RoleLabelZH
-		if _, ok := s.Skills.Get(name); ok {
-			continue
-		}
-		tmpl, err := onboardingTemplateAgent(role)
-		if err != nil {
-			return nil, s.dropAgents(created, err)
-		}
-		b := backend
-		if b == "" {
-			b = NormalizeAcpBackend(tmpl.AcpBackend)
-		}
-		if b == "" {
-			b = AcpBackendCursor
-		}
-		tmpl.Name = name
-		tmpl.AcpBackend = b
-		tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(b)
-		if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
-			tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
-		}
-		if b == AcpBackendOpenCode {
-			tmpl.OpenCodeCredentialID = builtinCredentialID("opencode")
-		}
-		if err := s.Skills.Save(tmpl); err != nil {
-			return nil, s.dropAgents(created, fmt.Errorf("save agent %s: %w", name, err))
-		}
-		created = append(created, name)
+	list := s.Skills.List()
+	names := make([]string, 0, len(list))
+	for _, a := range list {
+		names = append(names, a.Name)
 	}
-	return created, nil
+	return names
 }
 
-func (s *OnboardingService) dropAgents(names []string, cause error) error {
-	for _, n := range names {
-		_ = s.Skills.Delete(n)
+// rebindBaselineProfilesToEnglish points the embedded Chinese agent_profile
+// refs at the English canonical names. Existing Agent files are not written.
+func rebindBaselineProfilesToEnglish(g *models.Graph) {
+	if g == nil {
+		return
 	}
-	return cause
+	mapping := make(map[string]string, len(OnboardingAgentNames))
+	for i, zh := range OnboardingAgentNames {
+		mapping[zh] = OnboardingAgentNamesEN[i]
+	}
+	for i := range g.Nodes {
+		cfg := g.Nodes[i].Config
+		if cfg == nil {
+			continue
+		}
+		cur := models.AgentProfile(cfg)
+		next, ok := mapping[cur]
+		if !ok {
+			continue
+		}
+		models.SetAgentProfile(cfg, next)
+		if g.Nodes[i].Label == cur {
+			g.Nodes[i].Label = next
+		}
+	}
+}
+
+// requireBaselineAgents rejects a workflow whose selected canonical Agents are not configured.
+func (s *OnboardingService) requireBaselineAgents(set string) error {
+	names := OnboardingAgentNames
+	if set == "en" {
+		names = OnboardingAgentNamesEN
+	}
+	for _, name := range names {
+		agent, ok := s.Skills.Get(name)
+		if ok && s.SharedAgent != nil {
+			agent = ExtendOverlay(s.SharedAgent.Get(), agent)
+		}
+		if !ok || agent.ModelBinding == nil {
+			return fmt.Errorf("Agent %s is not configured; complete onboarding first", name)
+		}
+		if err := modelrouting.ValidateConfigurationReference(agent.ModelBinding); err != nil {
+			return fmt.Errorf("Agent %s: %w", agent.Name, err)
+		}
+		configuration, err := s.Credentials.requireModelConfiguration(agent.ModelBinding.ConfigurationID)
+		if err != nil {
+			return fmt.Errorf("Agent %s: %w", agent.Name, err)
+		}
+		if configuration.Backend != agent.AcpBackend {
+			return fmt.Errorf("Agent %s: model configuration belongs to another coding tool", agent.Name)
+		}
+	}
+	return nil
+}
+
+// requireModelConfiguration validates an explicit, active configuration and its dependencies.
+func (s *CredentialService) requireModelConfiguration(id string) (modelrouting.Configuration, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return modelrouting.Configuration{}, ErrOnboardingModelRequired
+	}
+	if s == nil {
+		return modelrouting.Configuration{}, errors.New("credential service unavailable")
+	}
+	configuration, err := NewModelConfigurationService(s.db).Get(id)
+	if err != nil {
+		return modelrouting.Configuration{}, err
+	}
+	_, err = NewModelConnectionService(s.db).Resolve(configuration.Backend, modelrouting.Binding{Kind: "configuration", ConfigurationID: id})
+	return configuration, err
 }
 
 func normalizeBaselineRepos(input []BaselineRepo) []BaselineRepo {
@@ -259,23 +284,23 @@ func applyBaselineRepos(graph *models.Graph, repos []BaselineRepo) {
 	}
 }
 
-// Bootstrap writes shared-agent env auth, saves the install-group agents, and publishes
-// 默认工作流. Idempotent. It never starts a Run. Missing apiKey rejects without
-// creating resources.
+// Bootstrap binds the selected saved models and Git authorizations to the chosen
+// role templates, then publishes the default workflow. It never starts a run.
 func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (OnboardingBootstrapResult, error) {
-	apiKey := strings.TrimSpace(req.APIKey)
-	if apiKey == "" {
-		return OnboardingBootstrapResult{}, ErrOnboardingAPIKeyRequired
-	}
-	loc := onboardingLocaleFor(req.Language)
-
-	backend, err := ParseAcpBackend(req.AcpBackend)
+	configuration, err := s.Credentials.requireModelConfiguration(req.ModelConfigurationID)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
+	gitBindings, err := models.NormalizeGitBindings(req.GitBindings)
+	if err != nil {
+		return OnboardingBootstrapResult{}, err
+	}
+	if _, err := runtime.ResolveGitBindings(gitBindings, s.Credentials.ResolveGitValue); err != nil {
+		return OnboardingBootstrapResult{}, err
+	}
+	loc := onboardingLocaleFor(req.Language)
 	region := strings.TrimSpace(req.Region)
-
-	team, err := resolveOnboardingTeam(req.Agents)
+	team, err := resolveOnboardingTeam(req.Language, req.Agents)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
@@ -303,7 +328,18 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 			return OnboardingBootstrapResult{}, err
 		}
 		tmpl.Name = m.Name
+		selected := configuration
+		if m.ModelConfigurationID != "" {
+			selected, err = s.Credentials.requireModelConfiguration(m.ModelConfigurationID)
+			if err != nil {
+				return OnboardingBootstrapResult{}, err
+			}
+		}
+		backend := selected.Backend
 		tmpl.AcpBackend = backend
+		tmpl.InheritModel, tmpl.InheritGit = false, false
+		tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: selected.ID}
+		tmpl.GitBindings = gitBindings
 		tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 		if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
 			tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
@@ -314,21 +350,21 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 		tmpl.Env = stripTokenKeysFromEnvMap(tmpl.Env)
 		delete(tmpl.Env, runtime.EnvCodeBuddyRegion)
 		delete(tmpl.Env, runtime.EnvTraeRegion)
-		if m.Model != "" {
-			tmpl.Env[runtime.EnvACPBridgeModel] = m.Model
-		}
-		if backend == AcpBackendOpenCode {
-			tmpl.OpenCodeCredentialID = builtinCredentialID("opencode")
-		}
+		applyOnboardingAgentRegion(tmpl.Env, backend, region)
 		templates = append(templates, tmpl)
 	}
 
-	if err := s.writeWorkspaceAuth(backend, apiKey, region, req); err != nil {
+	if err := s.writeWorkspaceSettings(req); err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
 
 	agentIDs := make([]string, 0, len(templates))
 	for _, tmpl := range templates {
+		if _, ok := s.Skills.Get(tmpl.Name); ok {
+			// Re-entry keeps the saved Agent. Only missing canonical names are created.
+			agentIDs = append(agentIDs, tmpl.Name)
+			continue
+		}
 		if err := s.Skills.Save(tmpl); err != nil {
 			return OnboardingBootstrapResult{}, fmt.Errorf("save agent %s: %w", tmpl.Name, err)
 		}
@@ -358,14 +394,24 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 }
 
 type onboardingTeamMember struct {
-	Role  TeamRoleTemplate
-	Name  string
-	Model string
+	Role                 TeamRoleTemplate
+	Name                 string
+	ModelConfigurationID string
 }
 
 // resolveOnboardingTeam turns the wizard's choices into the Agents to save, in
-// workflow order. Empty choices keep every template with its template name.
-func resolveOnboardingTeam(choices []OnboardingAgentChoice) ([]onboardingTeamMember, error) {
+// workflow order. Empty choices keep every template under the language's
+// canonical names. A submitted team must include all four, and each name must
+// match that canonical name.
+func resolveOnboardingTeam(lang string, choices []OnboardingAgentChoice) ([]onboardingTeamMember, error) {
+	canonical := canonicalOnboardingNames(lang)
+	if len(choices) == 0 {
+		out := make([]onboardingTeamMember, 0, len(TeamEngineerTemplates))
+		for i, role := range TeamEngineerTemplates {
+			out = append(out, onboardingTeamMember{Role: role, Name: canonical[i]})
+		}
+		return out, nil
+	}
 	picked := map[string]OnboardingAgentChoice{}
 	for _, c := range choices {
 		id := strings.TrimSpace(c.TemplateID)
@@ -377,25 +423,23 @@ func resolveOnboardingTeam(choices []OnboardingAgentChoice) ([]onboardingTeamMem
 		}
 		picked[id] = c
 	}
-	if len(choices) > 0 {
-		for _, id := range OnboardingRequiredTemplateIDs {
-			if _, ok := picked[id]; !ok {
-				return nil, fmt.Errorf("%w: template %q is required", ErrOnboardingInvalidTeam, id)
-			}
+	for _, id := range OnboardingRequiredTemplateIDs {
+		if _, ok := picked[id]; !ok {
+			return nil, fmt.Errorf("%w: template %q is required", ErrOnboardingInvalidTeam, id)
 		}
 	}
 	out := make([]onboardingTeamMember, 0, len(TeamEngineerTemplates))
 	seen := map[string]bool{}
-	for _, role := range TeamEngineerTemplates {
-		c, ok := picked[role.ID]
-		if len(choices) > 0 && !ok {
-			continue
-		}
-		name := role.RoleLabelZH
+	for i, role := range TeamEngineerTemplates {
+		c := picked[role.ID]
+		name := canonical[i]
 		if custom := strings.TrimSpace(c.Name); custom != "" {
 			normalized, err := NormalizeAndValidateAgentName(custom)
 			if err != nil {
 				return nil, err
+			}
+			if normalized != name {
+				return nil, fmt.Errorf("%w: agent name %q must be %q", ErrOnboardingInvalidTeam, normalized, name)
 			}
 			name = normalized
 		}
@@ -403,7 +447,7 @@ func resolveOnboardingTeam(choices []OnboardingAgentChoice) ([]onboardingTeamMem
 			return nil, fmt.Errorf("%w: duplicate agent name %q", ErrOnboardingInvalidTeam, name)
 		}
 		seen[name] = true
-		out = append(out, onboardingTeamMember{Role: role, Name: name, Model: strings.TrimSpace(c.Model)})
+		out = append(out, onboardingTeamMember{Role: role, Name: name, ModelConfigurationID: strings.TrimSpace(c.ModelConfigurationID)})
 	}
 	return out, nil
 }
@@ -506,57 +550,13 @@ func dropOnboardingAgentNode(g *models.Graph, nodeID string) {
 	}
 }
 
-func (s *OnboardingService) writeWorkspaceAuth(backend, apiKey, region string, req OnboardingBootstrapRequest) error {
+func (s *OnboardingService) writeWorkspaceSettings(req OnboardingBootstrapRequest) error {
 	if s.SharedAgent == nil {
-		return fmt.Errorf("shared agent service unavailable")
-	}
-	if s.Credentials == nil {
-		return fmt.Errorf("credential service unavailable")
+		return errors.New("shared agent service unavailable")
 	}
 	cfg := s.SharedAgent.Get()
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}
-	}
-	cfg.AcpBackend = backend
-	primaryKey := primaryAuthEnvKey(backend)
-	creds := []CredentialInput{
-		{Type: "ai", Provider: backend, Name: aiCredentialName(backend), EnvKey: primaryKey, Value: apiKey},
-		{Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: "GITHUB_TOKEN", Value: req.GitHubToken},
-		{Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: "GITLAB_TOKEN", Value: req.GitLabToken},
-		{Type: "git", Provider: "gitlab", Name: builtinNameGitLabURL, EnvKey: "GITLAB_URL", Value: req.GitLabURL},
-		{Type: "ssh", Provider: "ssh", Name: builtinNameSSHKey, EnvKey: EnvGitSSHPrivateKey, Value: req.SSHPrivateKey},
-		{Type: "ssh", Provider: "ssh", Name: builtinNameSSHHosts, EnvKey: EnvGitSSHKnownHosts, Value: req.SSHKnownHosts},
-	}
-	for _, in := range creds {
-		in.Value = strings.TrimSpace(in.Value)
-		if in.Value == "" {
-			continue
-		}
-		if _, err := s.Credentials.SetByEnvKey(in); err != nil {
-			return err
-		}
-		delete(cfg.Env, in.EnvKey)
-	}
-	switch backend {
-	case AcpBackendCodeBuddy:
-		if region == "" {
-			region = "public"
-		}
-		cfg.Env[runtime.EnvCodeBuddyRegion] = region
-	case AcpBackendTrae:
-		if region == "" {
-			region = "intl"
-		}
-		cfg.Env[runtime.EnvTraeRegion] = region
-	case AcpBackendOpenCode:
-		applyOpenCodeSharedEnv(cfg.Env, req)
-	}
-	if backend != AcpBackendOpenCode {
-		applyCliSharedModel(cfg.Env, req.CliModel)
-	}
-	cred := strings.TrimSpace(req.GitCredentialType)
-	if cred != "" {
-		cfg.GitCredentialType = cred
 	}
 	if v := strings.TrimSpace(req.GitUserName); v != "" {
 		cfg.Env["GIT_USER_NAME"] = v
@@ -582,30 +582,6 @@ func boolOrDefault(p *bool, def bool) bool {
 		return def
 	}
 	return *p
-}
-
-func primaryAuthEnvKey(backend string) string {
-	switch NormalizeAcpBackend(backend) {
-	case AcpBackendClaudeCode:
-		return "GRASP_CLAUDE_API_KEY"
-	case AcpBackendCodeBuddy:
-		return "GRASP_CODEBUDDY_API_KEY"
-	case AcpBackendTrae:
-		return "GRASP_TRAE_API_KEY"
-	case AcpBackendOpenCode:
-		return "GRASP_OPENCODE_API_KEY"
-	case AcpBackendCodex:
-		return envauth.EnvCodexAuthFile
-	default:
-		return "GRASP_CURSOR_API_KEY"
-	}
-}
-
-func agentAuthConfigFileName(backend string) string {
-	if NormalizeAcpBackend(backend) == AcpBackendOpenCode {
-		return "opencode.json"
-	}
-	return "settings.json"
 }
 
 func (s *OnboardingService) upsertDefaultWorkflow(envelope models.ExportEnvelope) (models.WorkflowDef, error) {
@@ -673,7 +649,7 @@ func applyOnboardingRepo(graph *models.Graph, url, branch string) {
 
 // applyOnboardingAgentRegion writes the Studio-managed region env key into an
 // Agent env map for backends that require it (CodeBuddy / Trae). Empty region
-// falls back to the same defaults as writeWorkspaceAuth / web regionPolicy.
+// uses the same region defaults as the tool launcher.
 func applyOnboardingAgentRegion(env map[string]string, backend, region string) {
 	if env == nil {
 		return
@@ -689,38 +665,5 @@ func applyOnboardingAgentRegion(env map[string]string, backend, region string) {
 			region = "intl"
 		}
 		env[runtime.EnvTraeRegion] = region
-	}
-}
-
-// applyCliSharedModel writes the coding-tool model onto the shared Agent.
-// An empty value deletes ACP_BRIDGE_MODEL so a later install can return to auto
-// without touching the rest of the env. OpenCode does not call this.
-func applyCliSharedModel(env map[string]string, model string) {
-	if env == nil {
-		return
-	}
-	if v := strings.TrimSpace(model); v != "" {
-		env[runtime.EnvACPBridgeModel] = v
-		return
-	}
-	delete(env, runtime.EnvACPBridgeModel)
-}
-
-func applyOpenCodeSharedEnv(env map[string]string, req OnboardingBootstrapRequest) {
-	if env == nil {
-		return
-	}
-	provider := runtime.NormalizeOpenCodeProvider(req.OpenCodeProvider)
-	env[runtime.EnvOpenCodeProvider] = provider
-	if v := strings.TrimSpace(req.OpenCodeBaseURL); v != "" {
-		env[runtime.EnvOpenCodeBaseURL] = v
-	}
-	if v := strings.TrimSpace(req.OpenCodeModel); v != "" {
-		env[runtime.EnvACPBridgeModel] = v
-	}
-	if boolOrDefault(req.OpenCodeModelVision, false) {
-		env[runtime.EnvOpenCodeModelVision] = "1"
-	} else {
-		delete(env, runtime.EnvOpenCodeModelVision)
 	}
 }

@@ -1,370 +1,78 @@
 import { describe, expect, it } from 'vitest'
-import {
-  assembleCreatePayload,
-  applyAcpBackend,
-  applyWizardStartPath,
-  buildDefaultRule,
-  buildReviewSummary,
-  configRootFor,
-  freshDraft,
-  hasPathDeps,
-  envConfiguredCount,
-  validateBasics,
-  AGENT_SETTINGS_PATH,
-  parseCustomConfigJson,
-  CLI_BACKENDS,
-} from './agentCreateWizard'
-import { AGENT_OPENCODE_CONFIG_REL_PATH } from './backendAuthGuide'
-
-describe('freshDraft defaults (g1.2)', () => {
-  it('defaults to API Key path with OpenCode', () => {
-    const d = freshDraft()
-    expect(d.startPath).toBe('apiKey')
-    expect(d.acpBackend).toBe('opencode')
-    expect(d.cliBackend).toBe('cursor')
-    expect(d.configRoot).toBe('/root/.config/opencode')
-    expect(CLI_BACKENDS.map((b) => b.id)).toEqual([
-      'cursor',
-      'claude_code',
-      'codebuddy',
-      'trae',
-      'codex',
-    ])
-  })
-
-  it('applyWizardStartPath restores last CLI backend', () => {
-    const d = freshDraft()
-    applyAcpBackend(d, 'codebuddy')
-    expect(d.startPath).toBe('cli')
-    expect(d.cliBackend).toBe('codebuddy')
-    applyWizardStartPath(d, 'apiKey')
-    expect(d.acpBackend).toBe('opencode')
-    expect(d.configRoot).toBe('/root/.config/opencode')
-    applyWizardStartPath(d, 'cli')
-    expect(d.acpBackend).toBe('codebuddy')
-    expect(d.cliBackend).toBe('codebuddy')
-  })
-})
-
-describe('configRootFor', () => {
-  it('maps backends to protocol roots', () => {
-    expect(configRootFor('cursor')).toBe('/root/.cursor')
-    expect(configRootFor('claude_code')).toBe('/root/.claude')
-    expect(configRootFor('codebuddy')).toBe('/root/.codebuddy')
-    expect(configRootFor('trae')).toBe('/root/.trae')
-    expect(configRootFor('opencode')).toBe('/root/.config/opencode')
-  })
-})
-
-describe('buildDefaultRule', () => {
-  it('writes alwaysApply identity template', () => {
-    const text = buildDefaultRule('demo')
-    expect(text).toContain('alwaysApply: true')
-    expect(text).toContain('# demo')
-    expect(text).toContain('描述该 Agent 的职责与行为。')
-  })
-
-  it('prepends description preface when provided', () => {
-    const text = buildDefaultRule('demo', '负责代码评审')
-    expect(text).toContain('负责代码评审\n\n描述该 Agent 的职责与行为。')
-  })
-})
-
-describe('assembleCreatePayload', () => {
-  it('always writes default rule even when Rules skipped', () => {
-    const d = freshDraft()
-    d.name = 'reviewer'
-    d.description = '审阅 PR'
-    d.skipped.rules = true
-    const payload = assembleCreatePayload(d)
-    expect(payload.files?.some((f) => f.path === 'rules/reviewer.md')).toBe(true)
-    const rule = payload.files!.find((f) => f.path === 'rules/reviewer.md')!
-    expect(rule.content).toContain('审阅 PR')
-    expect(rule.content).toContain('alwaysApply: true')
-  })
-
-  it('uses edited rules content when present', () => {
-    const d = freshDraft()
-    d.name = 'x'
-    d.rulesEdited = true
-    d.rulesContent = '# custom'
-    const payload = assembleCreatePayload(d)
-    expect(payload.files![0].content).toBe('# custom')
-  })
-
-  it('maps skills and commands into files[]', () => {
-    const d = freshDraft()
-    d.name = 'x'
-    d.skills = [{ name: 'git', content: '# git skill' }]
-    d.commands = [{ name: 'ship', content: '# ship' }]
-    const paths = assembleCreatePayload(d).files!.map((f) => f.path)
-    expect(paths).toContain('skills/git/SKILL.md')
-    expect(paths).toContain('commands/ship.md')
-  })
-
-  it('includes command-transport MCP env in payload', () => {
-    const d = freshDraft()
-    d.name = 'x'
-    d.mcp = [
-      {
-        name: 'local-mcp',
-        transport: 'command',
-        url: '',
-        headers: [],
-        command: 'npx',
-        args: '-y\n@example/mcp',
-        env: [
-          { k: 'API_KEY', v: 'secret' },
-          { k: '', v: 'ignored' },
-        ],
-      },
-    ]
-    const mcp = assembleCreatePayload(d).mcp!
-    expect(mcp).toHaveLength(1)
-    expect(mcp[0]).toEqual({
-      name: 'local-mcp',
-      command: 'npx',
-      args: ['-y', '@example/mcp'],
-      env: { API_KEY: 'secret' },
-    })
-  })
-
-  it('sets layout.configRoot from backend', () => {
-    const d = freshDraft()
-    d.name = 'x'
-    d.acpBackend = 'claude_code'
-    d.configRoot = '/root/.claude'
-    expect(assembleCreatePayload(d).layout?.configRoot).toBe('/root/.claude')
-    expect(assembleCreatePayload(d).acpBackend).toBe('claude_code')
-  })
-
-  it('includes the confirmed Git credential type in the create payload', () => {
-    const d = freshDraft()
-    d.name = 'x'
-    d.gitCredentialType = 'ssh'
-    expect(assembleCreatePayload(d).gitCredentialType).toBe('ssh')
-    expect(assembleCreatePayload(d)).not.toHaveProperty('gitCredentialId')
-    expect(assembleCreatePayload(d)).not.toHaveProperty('sshHostsCredentialId')
-  })
-
-  it('writes the selected credential ids and omits them when unset', () => {
-    const cursor = freshDraft()
-    cursor.name = 'cursor-agent'
-    cursor.acpBackend = 'cursor'
-    cursor.aiCredentialId = 'cred-cursor'
-    cursor.openCodeCredentialId = 'cred-should-not-send'
-    cursor.gitCredentialType = 'github_https'
-    cursor.gitCredentialId = 'cred-gh'
-    cursor.sshHostsCredentialId = 'cred-hosts'
-    cursor.env = [
-      { k: 'GRASP_CURSOR_API_KEY', v: 'sk-test' },
-      { k: 'GITHUB_TOKEN', v: 'ghp-x' },
-      { k: 'GIT_SSH_PRIVATE_KEY', v: 'key' },
-      { k: 'GIT_SSH_KNOWN_HOSTS', v: 'hosts' },
-      { k: 'GIT_REPOS', v: '${vars.repos}' },
-    ]
-    const cursorPayload = assembleCreatePayload(cursor)
-    expect(cursorPayload.aiCredentialId).toBe('cred-cursor')
-    expect(cursorPayload).not.toHaveProperty('openCodeCredentialId')
-    expect(cursorPayload.gitCredentialType).toBe('github_https')
-    expect(cursorPayload.gitCredentialId).toBe('cred-gh')
-    expect(cursorPayload).not.toHaveProperty('sshHostsCredentialId')
-    expect(cursorPayload.env).toEqual({ GIT_REPOS: '${vars.repos}' })
-
-    const opencode = freshDraft()
-    opencode.name = 'oc-agent'
-    opencode.openCodeCredentialId = 'cred-oc'
-    opencode.aiCredentialId = 'cred-cursor'
-    const ocPayload = assembleCreatePayload(opencode)
-    expect(ocPayload.openCodeCredentialId).toBe('cred-oc')
-    expect(ocPayload).not.toHaveProperty('aiCredentialId')
-
-    const blank = freshDraft()
-    blank.name = 'blank-agent'
-    blank.acpBackend = 'cursor'
-    const blankPayload = assembleCreatePayload(blank)
-    expect(blankPayload).not.toHaveProperty('aiCredentialId')
-    expect(blankPayload).not.toHaveProperty('openCodeCredentialId')
-    expect(blankPayload).not.toHaveProperty('gitCredentialType')
-    expect(blankPayload).not.toHaveProperty('gitCredentialId')
-  })
-
-  it('sends the SSH known-hosts id only for SSH', () => {
-    const d = freshDraft()
-    d.name = 'ssh-agent'
-    d.gitCredentialType = 'ssh'
-    d.gitCredentialId = 'key-1'
-    d.sshHostsCredentialId = 'hosts-1'
-    const payload = assembleCreatePayload(d)
-    expect(payload.gitCredentialId).toBe('key-1')
-    expect(payload.sshHostsCredentialId).toBe('hosts-1')
-  })
-
-  it('strictly normalizes region env without adding a top-level region', () => {
-    const d = freshDraft()
-    d.name = 'x'
-    d.acpBackend = 'trae'
-    d.env = [
-      { k: 'GRASP_CODEBUDDY_REGION', v: 'internal' },
-      { k: 'GRASP_TRAE_REGION', v: 'bad' },
-      { k: 'OTHER', v: 'ok' },
-    ]
-    const payload = assembleCreatePayload(d)
-    expect(payload.env).toEqual({ GRASP_TRAE_REGION: 'intl', OTHER: 'ok' })
-    expect(payload).not.toHaveProperty('region')
-  })
-
-  it('strips Token-class keys from create payload.env (g3.1)', () => {
-    const d = freshDraft()
-    d.name = 'x'
-    d.authMode = 'apiKey'
-    d.env = [
-      { k: 'GRASP_CURSOR_API_KEY', v: 'sk-test' },
-      { k: 'GITLAB_TOKEN', v: 'glpat-x' },
-      { k: 'GIT_REPOS', v: 'app|https://gitlab.com/a/b.git' },
-      { k: 'FEATURE_FLAG', v: '1' },
-    ]
-    const payload = assembleCreatePayload(d)
-    expect(payload.env).toEqual({
-      GIT_REPOS: 'app|https://gitlab.com/a/b.git',
-      FEATURE_FLAG: '1',
-    })
-  })
-})
-
-describe('validateBasics', () => {
-  it('rejects empty / invalid / duplicate names', () => {
-    const d = freshDraft()
-    expect(validateBasics(d, [])).toBe('required')
-    d.name = 'bad name'
-    expect(validateBasics(d, [])).toBe('invalid')
-    d.name = 'ok'
-    expect(validateBasics(d, ['ok'])).toBe('exists')
-    expect(validateBasics(d, [])).toBe('')
-  })
-})
-
-describe('hasPathDeps / buildReviewSummary', () => {
-  it('detects path dependencies', () => {
-    const d = freshDraft()
-    expect(hasPathDeps(d)).toBe(false)
-    d.skills.push({ name: 'a', content: '' })
-    expect(hasPathDeps(d)).toBe(true)
-  })
-
-  it('builds 5-step review chips without ENV/capability steps and reminds when Key skipped', () => {
-    const d = freshDraft()
-    d.name = 'n'
-    d.skipped.apiKey = true
-    const items = buildReviewSummary(d)
-    const keys = items.map((i) => i.key)
-    expect(keys).toContain('acp')
-    expect(keys).toContain('apiKey')
-    expect(keys).toContain('git')
-    expect(keys).toContain('authReminder')
-    expect(keys).not.toContain('env')
-    expect(keys).not.toContain('mcp')
-    expect(keys).not.toContain('rules')
-    expect(keys).not.toContain('skills')
-    expect(keys).not.toContain('commands')
-    expect(keys).not.toContain('prompts')
-    expect(items.find((i) => i.key === 'acp')?.labelKey).toBe('pages.agentStudio.wizard.review.acp')
-    expect(items.find((i) => i.key === 'apiKey')?.kind).toBe('empty')
-    expect(items.find((i) => i.key === 'git')?.kind).toBe('empty')
-  })
-
-  it('marks API Key configured from the selected credential alias, not a pasted secret', () => {
-    const pasted = freshDraft()
-    pasted.name = 'n'
-    pasted.acpBackend = 'cursor'
-    pasted.startPath = 'cli'
-    pasted.env = [{ k: 'GRASP_CURSOR_API_KEY', v: 'crsr_demo' }]
-    expect(buildReviewSummary(pasted).find((i) => i.key === 'apiKey')?.kind).toBe('empty')
-
-    const picked = freshDraft()
-    picked.name = 'n'
-    picked.acpBackend = 'cursor'
-    picked.aiCredentialId = 'cred-cursor'
-    const items = buildReviewSummary(picked, { model: '工作号' })
-    const apiKey = items.find((i) => i.key === 'apiKey')
-    expect(apiKey?.kind).toBe('ok')
-    expect(apiKey?.detail).toBe('工作号')
-    expect(items.find((i) => i.key === 'authReminder')).toBeUndefined()
-    expect(items.find((i) => i.key === 'git')?.kind).toBe('empty')
-  })
-
-  it('shows Git as configured when a credential or GIT_REPOS is present', () => {
-    const repos = freshDraft()
-    repos.name = 'n'
-    repos.gitCredentialType = 'github_https'
-    repos.env = [{ k: 'GIT_REPOS', v: '${vars.repos}' }]
-    const reposGit = buildReviewSummary(repos).find((i) => i.key === 'git')
-    expect(reposGit?.kind).toBe('ok')
-    expect(reposGit?.detail).toBe('GIT_REPOS')
-
-    const cred = freshDraft()
-    cred.name = 'n'
-    cred.gitCredentialType = 'ssh'
-    cred.gitCredentialId = 'key-1'
-    cred.sshHostsCredentialId = 'hosts-1'
-    cred.env = [{ k: 'GIT_REPOS', v: '${vars.repos}' }]
-    const credGit = buildReviewSummary(cred, { git: '部署私钥', sshHosts: '已知主机' }).find((i) => i.key === 'git')
-    expect(credGit?.kind).toBe('ok')
-    expect(credGit?.detail).toBe('部署私钥 · 已知主机 · GIT_REPOS')
-  })
-
-  it('writes settings.json and omits auth env in custom config mode', () => {
-    const d = freshDraft()
-    d.name = 'cfg-agent'
-    d.acpBackend = 'claude_code'
-    d.authMode = 'customConfig'
-    d.customConfigContent = JSON.stringify({ env: { ANTHROPIC_API_KEY: 'sk-ant-x' } })
-    d.env = [{ k: 'GRASP_CLAUDE_API_KEY', v: 'should-strip' }]
-    const payload = assembleCreatePayload(d)
-    expect(payload.files?.some((f) => f.path === AGENT_SETTINGS_PATH)).toBe(true)
-    expect(payload.env?.GRASP_CLAUDE_API_KEY).toBeUndefined()
-    const items = buildReviewSummary(d)
-    expect(items.find((i) => i.key === 'apiKey')?.labelKey).toBe(
-      'pages.agentStudio.wizard.review.customConfigWritten',
-    )
-  })
-
-  it('writes opencode.json in OpenCode custom config mode', () => {
-    const d = freshDraft()
-    d.name = 'oc-agent'
-    applyAcpBackend(d, 'opencode')
-    d.authMode = 'customConfig'
-    d.customConfigContent = JSON.stringify({ model: 'openai/gpt-4.1' })
-    d.env.push({ k: 'GRASP_OPENCODE_API_KEY', v: 'should-strip' })
-    const payload = assembleCreatePayload(d)
-    expect(payload.files?.some((f) => f.path === AGENT_OPENCODE_CONFIG_REL_PATH)).toBe(true)
-    expect(payload.files?.some((f) => f.path === AGENT_SETTINGS_PATH)).toBe(false)
-    expect(payload.env?.GRASP_OPENCODE_API_KEY).toBeUndefined()
-    expect(payload.env?.GRASP_OPENCODE_PROVIDER).toBe('openai')
-  })
-
-  it('rejects invalid custom config json', () => {
-    expect(parseCustomConfigJson('{bad').ok).toBe(false)
-    expect(parseCustomConfigJson('{"ok":true}').ok).toBe(true)
-  })
-
-  it('resets regions on backend switches and excludes the managed key from ENV count', () => {
-    const d = freshDraft()
-    applyAcpBackend(d, 'opencode')
-    expect(d.configRoot).toBe('/root/.config/opencode')
-    expect(d.env).toContainEqual({ k: 'GRASP_OPENCODE_PROVIDER', v: 'openai' })
-    applyAcpBackend(d, 'codebuddy')
-    expect(d.env).toContainEqual({ k: 'GRASP_CODEBUDDY_REGION', v: 'public' })
-    d.env.push({ k: 'CUSTOM', v: '1' })
-    applyAcpBackend(d, 'trae')
-    expect(d.env).toEqual([
-      { k: 'CUSTOM', v: '1' },
-      { k: 'GRASP_TRAE_REGION', v: 'intl' },
-    ])
-    expect(envConfiguredCount(d)).toBe(1)
-    expect(buildReviewSummary(d).find((item) => item.key === 'region')).toMatchObject({
-      labelKey: 'pages.agentStudio.region.international',
-      detail: 'intl',
-    })
-  })
+import { assembleCreatePayload, applyAcpBackend, buildDefaultRule, buildReviewSummary, configRootFor, freshDraft, hasPathDeps, envConfiguredCount, validateBasics, WIZARD_STEPS, ACP_BACKENDS } from './agentCreateWizard'
+describe('Agent creation data contract', () => {
+ it('requires one combined tool and named-model step before optional Git', () => {
+  expect(WIZARD_STEPS.map(step => [step.id, step.skip])).toEqual([['basics', false], ['acp', false], ['git', true], ['review', false]])
+  expect(freshDraft()).toMatchObject({ inheritModel: true, inheritGit: true, acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: '' }, gitBindings: { items: [] } })
+ })
+ it.each(ACP_BACKENDS)('changes to $id with a matching layout and an empty explicit model selection', backend => {
+  const d = freshDraft(); d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
+  if (backend.id !== 'cursor') applyAcpBackend(d, backend.id)
+  expect(d.configRoot).toBe(configRootFor(backend.id))
+  expect(d.modelBinding?.configurationId).toBe(backend.id === 'cursor' ? 'cfg' : '')
+ })
+ it('does not clear a selection on reselection and detects path-dependent edits', () => {
+  const d = freshDraft(); d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
+  applyAcpBackend(d, 'cursor'); expect(d.modelBinding?.configurationId).toBe('cfg'); expect(d.inheritModel).toBe(false)
+  expect(hasPathDeps(d)).toBe(false); d.rulesEdited = true; expect(hasPathDeps(d)).toBe(true)
+ })
+ it('validates names and compares normalized duplicates', () => {
+  const d = freshDraft(); expect(validateBasics(d, [])).toBe('required')
+  d.name = 'bad name'; expect(validateBasics(d, [])).toBe('invalid')
+  d.name = 'team'; expect(validateBasics(d, ['team'])).toBe('exists')
+  expect(validateBasics(d, [])).toBe('')
+ })
+ it('writes identity, skills and commands while retaining their contents', () => {
+  const d = freshDraft(); d.name = 'reviewer'; d.description = 'Review PRs'
+  d.skills = [{ name: 'git', content: '# skill' }, { name: '', content: '' }]
+  d.commands = [{ name: 'ship', content: '' }]
+  const p = assembleCreatePayload(d)
+  expect(p.files?.map(f => f.path)).toEqual(['rules/reviewer.md', 'skills/git/SKILL.md', 'commands/ship.md'])
+  expect(p.files?.[0].content).toContain('Review PRs')
+  expect(buildDefaultRule('reviewer')).toContain('alwaysApply: true')
+  d.rulesEdited = true; d.rulesContent = '# custom'; expect(assembleCreatePayload(d).files?.[0].content).toBe('# custom')
+ })
+ it('uses role packs without synthesizing identity files or capabilities', () => {
+  const d = freshDraft(); d.name = 'planner'; d.templateId = '需求澄清工程师'
+  const p = assembleCreatePayload(d); expect(p.templateId).toBe('需求澄清工程师'); expect(p.files).toEqual([]); expect(p).not.toHaveProperty('capabilities')
+ })
+ it('serializes only a named model and explicit multi-Git references, excluding derived model and auth env', () => {
+  const d = freshDraft(); d.name = 'configured'; d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
+  d.gitBindings = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }] }
+  d.env = [{ k: 'GITHUB_TOKEN', v: 'secret' }, { k: 'OPENAI_API_KEY', v: 'secret' }, { k: 'ACP_BRIDGE_MODEL', v: 'derived' }, { k: 'FEATURE', v: 'on' }]
+  const p = assembleCreatePayload(d)
+  expect(p.modelBinding).toEqual(d.modelBinding); expect(p.gitBindings).toEqual(d.gitBindings); expect(p.gitBindings).not.toBe(d.gitBindings)
+  expect(p.env).toEqual({ FEATURE: 'on' }); expect(JSON.stringify(p)).not.toContain('secret')
+ })
+ it('defaults missing Git bindings to an explicit empty list', () => {
+  const d = freshDraft(); delete d.gitBindings; expect(assembleCreatePayload(d).gitBindings).toEqual({ items: [] })
+ })
+ it('inherits the default model without submitting an invalid empty local reference', () => {
+  const d = freshDraft(); d.name = 'inherited'; d.inheritModel = true
+  expect(assembleCreatePayload(d)).toMatchObject({ inheritModel: true, acpBackend: 'cursor' })
+  expect(assembleCreatePayload(d)).not.toHaveProperty('modelBinding')
+  d.modelBinding = { kind: 'configuration', configurationId: 'local-model' }
+  expect(assembleCreatePayload(d).modelBinding).toEqual(d.modelBinding)
+  expect(d.modelBinding.configurationId).toBe('local-model')
+ })
+ it('maps both MCP transports and ignores unnamed records', () => {
+  const d = freshDraft(); d.mcp = [{ name: 'stdio', transport: 'command', url: '', headers: [], command: 'npx', args: '-y\npkg', env: [{ k: 'CUSTOM', v: 'yes' }] }, { name: 'http', transport: 'url', url: 'https://mcp.example', headers: [{ k: 'X-Tag', v: 'team' }], command: '', args: '', env: [] }]
+  expect(assembleCreatePayload(d).mcp).toEqual([{ name: 'stdio', command: 'npx', args: ['-y', 'pkg'], env: { CUSTOM: 'yes' } }, { name: 'http', url: 'https://mcp.example', headers: { 'X-Tag': 'team' } }])
+ })
+ it('normalizes only the selected tool region and reviews configured aliases', () => {
+  const d = freshDraft(); applyAcpBackend(d, 'codebuddy'); d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
+  d.gitBindings = { items: [{ credentialId: 'gh' }] }
+  const summary = buildReviewSummary(d, { model: 'Team model', gitItems: { gh: 'GitHub team' } })
+  expect(summary.find(row => row.key === 'apiKey')?.detail).toBe('Team model')
+  expect(summary.find(row => row.key === 'git')?.detail).toBe('GitHub team')
+  expect(summary.find(row => row.key === 'icon')?.labelKey).toBe('pages.agentStudio.wizard.review.iconNone')
+  d.icon = { iconId: 'flask', color: 'purple' }
+  const withIcon = buildReviewSummary(d)
+  expect(withIcon.find(row => row.key === 'icon')).toMatchObject({ kind: 'ok', detail: 'flask · purple' })
+  expect(assembleCreatePayload(d).icon).toEqual({ iconId: 'flask', color: 'purple' })
+  d.icon = null
+  expect(assembleCreatePayload(d)).not.toHaveProperty('icon')
+  d.env.push({ k: 'FEATURE', v: 'on' }, { k: '', v: '' })
+  expect(envConfiguredCount(d)).toBe(1)
+ })
 })

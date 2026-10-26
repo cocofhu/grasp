@@ -51,7 +51,11 @@ describe('PrioritySegmented', () => {
       global: { plugins: [i18n] },
     })
     expect(wrapper.find('[data-testid="priority-seg-indicator"]').exists()).toBe(true)
-    expect(wrapper.find('[data-seg-active="true"]').text()).toContain('普通')
+    const active = wrapper.find('[data-seg-active="true"]')
+    expect(active.text()).toContain('普通')
+    expect(active.classes()).toContain('text-txt')
+    expect(active.classes().join(' ')).not.toMatch(/accent/)
+    expect(wrapper.find('[data-testid="priority-seg-indicator"]').classes().join(' ')).not.toMatch(/accent/)
     wrapper.unmount()
   })
 })

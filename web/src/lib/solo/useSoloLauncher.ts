@@ -2,64 +2,138 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { api } from '@/lib/api/api'
-import type { Agent, Project, SoloSession } from '@/lib/api/apiTypes'
+import { loadCliModels } from '@/lib/agent/cliCatalog'
+import type { Agent, CliCatalogModel, ModelConfiguration, ModelConnection, Project, SoloSession } from '@/lib/api/apiTypes'
 import type { ClarifyImage } from '@/lib/shared/types'
+import { configuredModelChoices } from './configuredModels'
 import { soloPrefs } from './soloPrefs'
 import { isSoloLimitError, soloErrorText } from './soloErrors'
+import { soloCreateChoices } from './sessionRepos'
 import { useSoloSessions } from './useSoloSessions'
 
 /**
- * Agent / project / branch selection and session creation shared by the home
- * composer and the /solo "new session" dialog. Choices persist across visits.
+ * Agent / repository selection and session creation shared by the home
+ * composer and the /solo "new session" dialog. Repository ids persist across
+ * visits; branch overrides apply only to the current launch.
  */
 export function useSoloLauncher() {
-  const { t, te } = useI18n()
+  const { t, te, locale } = useI18n()
   const router = useRouter()
   const store = useSoloSessions()
 
   const agents = ref<Agent[]>([])
   const projects = ref<Project[]>([])
+  const configurations = ref<ModelConfiguration[]>([])
+  const connections = ref<ModelConnection[]>([])
+  const cliModels = ref<CliCatalogModel[]>([])
+  const cliReady = ref(false)
   const agentName = ref(soloPrefs.lastAgent())
-  const projectId = ref(soloPrefs.lastProject())
-  const branch = ref('')
+  const projectIds = ref<string[]>(soloPrefs.lastProjects())
+  const branches = ref<Record<string, string>>({})
+  const initialModelId = ref('')
   const loading = ref(false)
   const creating = ref(false)
   const error = ref('')
   const limitOpen = ref(false)
+  // Deep-link dialogs turn this off so a preselect does not overwrite the home page's ids.
+  let persistProjects = true
 
   const agent = computed(() => agents.value.find((a) => a.name === agentName.value) ?? null)
-  const project = computed(() => projects.value.find((p) => p.id === projectId.value) ?? null)
+  const configuration = computed(() => {
+    const binding = agent.value?.modelBinding
+    if (binding?.kind !== 'configuration') return null
+    return configurations.value.find((item) => item.id === binding.configurationId && item.state === 'active') ?? null
+  })
+  const connection = computed(() => {
+    const binding = configuration.value?.binding
+    return binding?.kind === 'connection' ? connections.value.find((item) => item.id === binding.connectionId) ?? null : null
+  })
+  const modelChoices = computed(() => configuredModelChoices({
+    binding: configuration.value?.binding,
+    backend: configuration.value?.backend || agent.value?.acpBackend || '',
+    cliModels: cliModels.value,
+    connectionModels: connection.value?.models,
+    providerId: connection.value?.providerId,
+    catalogReady: configuration.value?.binding.kind === 'connection' ? !!connection.value : cliReady.value,
+  }))
   const canStart = computed(() => !!agent.value && !creating.value)
 
   watch(agentName, (v) => soloPrefs.setLastAgent(v))
-  watch(projectId, (v) => {
-    soloPrefs.setLastProject(v)
-    branch.value = ''
+  watch(agentName, () => { initialModelId.value = '' })
+  watch(modelChoices, (choices) => {
+    const selected = initialModelId.value
+    if (!selected) return
+    const hit = choices.find((choice) => choice.id === selected)
+    if (!hit || hit.unavailable) {
+      initialModelId.value = ''
+      error.value = t('pages.solo.modelSelect.reset')
+    }
+  })
+  watch(() => agent.value?.acpBackend || configuration.value?.backend || '', async (backend) => {
+    cliReady.value = false
+    cliModels.value = backend ? await loadCliModels(backend) : []
+    cliReady.value = true
+  })
+  watch(projectIds, (ids) => {
+    if (persistProjects) soloPrefs.setLastProjects(ids)
+    const keep = new Set(ids)
+    const next: Record<string, string> = {}
+    for (const [id, branch] of Object.entries(branches.value)) {
+      if (keep.has(id) && branch) next[id] = branch
+    }
+    branches.value = next
   })
 
   async function load() {
     loading.value = true
     try {
-      const [a, p] = await Promise.all([
+      const [a, p, configs, services] = await Promise.all([
         api.listAgents().catch(() => [] as Agent[]),
         api.listProjects().catch(() => [] as Project[]),
+        api.listModelConfigurations().catch(() => ({ items: [] as ModelConfiguration[] })),
+        api.listModelConnections().catch(() => ({ items: [] as ModelConnection[] })),
         store.refresh(),
       ])
       agents.value = a
       projects.value = p
+      configurations.value = configs.items
+      connections.value = services.items
       if (agentName.value && !a.some((x) => x.name === agentName.value)) agentName.value = ''
       if (!agentName.value && a.length === 1) agentName.value = a[0]!.name
-      if (projectId.value && !p.some((x) => x.id === projectId.value)) projectId.value = ''
+      projectIds.value = projectIds.value.filter((id) => p.some((x) => x.id === id))
     } finally {
       loading.value = false
     }
+  }
+
+  function toggleProject(id: string) {
+    const current = projectIds.value
+    projectIds.value = current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+  }
+
+  function clearProjects() {
+    projectIds.value = []
+    branches.value = {}
+  }
+
+  function selectOnly(id: string) {
+    projectIds.value = id ? [id] : []
+    branches.value = {}
+  }
+
+  function setPersistProjects(next: boolean) {
+    persistProjects = next
+  }
+
+  function setProjectBranch(id: string, branch: string) {
+    branches.value = { ...branches.value, [id]: branch }
   }
 
   function onProjectSaved(p: Project) {
     const i = projects.value.findIndex((x) => x.id === p.id)
     if (i >= 0) projects.value.splice(i, 1, p)
     else projects.value.unshift(p)
-    projectId.value = p.id
+    if (!projectIds.value.includes(p.id)) projectIds.value = [...projectIds.value, p.id]
   }
 
   /** Creates the session and opens it; the first message runs once the sandbox is up. */
@@ -71,14 +145,21 @@ export function useSoloLauncher() {
     creating.value = true
     error.value = ''
     try {
+      const selected = modelChoices.value.find((choice) => choice.id === initialModelId.value)
+      if (initialModelId.value && (!selected || selected.unavailable)) {
+        initialModelId.value = ''
+        error.value = t('pages.solo.modelSelect.reset')
+        return null
+      }
       const s = await api.createSoloSession({
         agentName: agentName.value,
-        projectId: projectId.value || undefined,
-        branch: branch.value.trim() || undefined,
+        repos: soloCreateChoices(projectIds.value, branches.value),
+        ...(initialModelId.value ? { initialModelId: initialModelId.value } : {}),
         title: title.trim() || undefined,
         text: text.trim() || undefined,
         images: images.length ? images : undefined,
       })
+      soloPrefs.setLastProjects(projectIds.value)
       store.upsert(s)
       void router.push(`/solo/${s.id}`)
       return s
@@ -87,7 +168,7 @@ export function useSoloLauncher() {
         limitOpen.value = true
         void store.refresh()
       } else {
-        error.value = soloErrorText(e, t, te)
+        error.value = soloErrorText(e, t, te, locale.value)
       }
       return null
     } finally {
@@ -99,10 +180,11 @@ export function useSoloLauncher() {
     agents,
     projects,
     agentName,
-    projectId,
-    branch,
+    projectIds,
+    branches,
+    initialModelId,
+    modelChoices,
     agent,
-    project,
     loading,
     creating,
     error,
@@ -110,6 +192,11 @@ export function useSoloLauncher() {
     canStart,
     load,
     start,
+    toggleProject,
+    clearProjects,
+    selectOnly,
+    setPersistProjects,
+    setProjectBranch,
     onProjectSaved,
   }
 }

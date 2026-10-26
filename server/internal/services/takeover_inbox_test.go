@@ -8,7 +8,7 @@ import (
 )
 
 // TestPendingInboxTakeoverAsReview: a taken-over auto node parked at
-// waiting_human shows in /api/gates as kind=review with takeover=true, and
+// waiting_human shows in /api/pending-nodes as kind=review with takeover=true, and
 // its state follows the review rule (replying while its session is busy).
 func TestPendingInboxTakeoverAsReview(t *testing.T) {
 	db := newTestDB(t)
@@ -60,6 +60,7 @@ func TestCurrentNodesKindAndMode(t *testing.T) {
 		mk("r-auto", "running"), mk("r-stopping", "running"), mk("r-takeover", "waiting_human"),
 		mk("r-review", "waiting_human"), mk("r-review-auto", "running"), mk("r-clarify", "waiting_human"),
 		mk("r-clarify-open", "running"), mk("r-gate", "waiting_human"),
+		mk("r-moved", "waiting_human"), mk("r-older-run", "waiting_human"),
 	}
 	db.Create(&models.StateRun{RunID: "r-auto", NodeID: "auto", Iteration: 1, Status: "running"})
 	db.Create(&models.StateRun{RunID: "r-stopping", NodeID: "auto", Iteration: 1, Status: "running", Mode: "manual"})
@@ -69,6 +70,12 @@ func TestCurrentNodesKindAndMode(t *testing.T) {
 	db.Create(&models.StateRun{RunID: "r-clarify", NodeID: "cl", Iteration: 1, Status: "waiting_human"})
 	db.Create(&models.StateRun{RunID: "r-clarify-open", NodeID: "cl", Iteration: 1, Status: "running"})
 	db.Create(&models.Gate{RunID: "r-gate", NodeID: "gate", Iteration: 1, Title: "门禁"})
+	// Newer running visit wins over the clarify row the confirm just left.
+	db.Create(&models.StateRun{RunID: "r-moved", NodeID: "cl", Iteration: 1, Status: "waiting_human"})
+	db.Create(&models.StateRun{RunID: "r-moved", NodeID: "auto", Iteration: 1, Status: "running"})
+	// An older running visit must not hide a later human wait.
+	db.Create(&models.StateRun{RunID: "r-older-run", NodeID: "auto", Iteration: 1, Status: "running"})
+	db.Create(&models.StateRun{RunID: "r-older-run", NodeID: "cl", Iteration: 1, Status: "waiting_human"})
 
 	got := s.CurrentNodes(runs)
 	want := map[string][3]string{ // kind, mode, state
@@ -80,12 +87,20 @@ func TestCurrentNodesKindAndMode(t *testing.T) {
 		"r-clarify":      {"clarify", "manual", "waiting_human"},
 		"r-clarify-open": {"clarify", "manual", "running"},
 		"r-gate":         {"gate", "manual", "waiting_human"},
+		"r-moved":        {"agent", "auto", "running"},
+		"r-older-run":    {"clarify", "manual", "waiting_human"},
 	}
 	for id, w := range want {
 		cn, ok := got[id]
 		if !ok || cn.Kind != w[0] || cn.Mode != w[1] || cn.State != w[2] || cn.Name == "" {
 			t.Fatalf("%s: got %+v (ok=%v), want kind/mode/state %v", id, cn, ok, w)
 		}
+	}
+	if cn := got["r-moved"]; cn.ID != "auto" || cn.Name != "自动" {
+		t.Fatalf("newer running visit must replace the clarify wait: %+v", cn)
+	}
+	if cn := got["r-older-run"]; cn.ID != "cl" || cn.Name != "澄清" {
+		t.Fatalf("older running visit must not hide the later human wait: %+v", cn)
 	}
 }
 

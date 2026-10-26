@@ -6,7 +6,7 @@ import type {
   ReactAnnotation,
   NodeTakeoverResult,
 } from '../../shared/types'
-import type { InboxContextResponse } from '../../inbox/inboxContext'
+import type { InboxContextResponse, InboxLeftPending } from '../../inbox/inboxContext'
 import type { RunChainResponse } from '../../inbox/runConversationChain'
 import type { EmbedTicket } from '../../inbox/embedChat'
 import { apiState, BASE, origin, req, wsUrl } from '../httpCore'
@@ -88,8 +88,8 @@ export const runsClient = {
     iteration: number,
     opts?: { signal?: AbortSignal },
   ) =>
-    req<InboxContextResponse>(
-      `/runs/${runId}/inbox-context?nodeId=${encodeURIComponent(nodeId)}&iteration=${iteration}`,
+    req<InboxContextResponse | InboxLeftPending>(
+      `/runs/${runId}/nodes/${encodeURIComponent(nodeId)}/context?iteration=${iteration}`,
       opts?.signal ? { signal: opts.signal } : undefined,
     ),
   listRunTags: () =>
@@ -153,38 +153,38 @@ export const runsClient = {
       body: JSON.stringify(iteration != null && iteration >= 0 ? { iteration } : {}),
     }),
   resumeGate: (runId: string, nodeId: string, action: string, form: Record<string, any> = {}) =>
-    req<{ status: string }>(`/runs/${runId}/gates/${nodeId}/resume`, {
+    req<{ status: string }>(`/runs/${runId}/nodes/${nodeId}/decision`, {
       method: 'POST',
       body: JSON.stringify({ action, form }),
     }),
   createGateShareLink: (runId: string, nodeId: string, ttlTier = '24h', permissionPreset: SharePermissionPreset = 'full') =>
     req<ShareLinkResult>(
-      `/runs/${runId}/gates/${nodeId}/share-link`,
+      `/runs/${runId}/nodes/${nodeId}/share-link`,
       { method: 'POST', body: JSON.stringify({ ttlTier, permissionPreset }) },
     ),
   getGateShareLink: (runId: string, nodeId: string) =>
-    req<GateShareInboxStatus>(`/runs/${runId}/gates/${nodeId}/share-link`),
+    req<GateShareInboxStatus>(`/runs/${runId}/nodes/${nodeId}/share-link`),
   regenGateShareLink: (runId: string, nodeId: string) =>
     req<ShareLinkResult>(
-      `/runs/${runId}/gates/${nodeId}/share-link/regen`,
+      `/runs/${runId}/nodes/${nodeId}/share-link/regen`,
       { method: 'POST' },
     ),
   revokeGateShareLink: (runId: string, nodeId: string) =>
-    req<{ status: string }>(`/runs/${runId}/gates/${nodeId}/share-link/revoke`, { method: 'POST' }),
+    req<{ status: string }>(`/runs/${runId}/nodes/${nodeId}/share-link/revoke`, { method: 'POST' }),
   createReviewShareLink: (runId: string, nodeId: string, ttlTier = '24h', permissionPreset: SharePermissionPreset = 'full') =>
     req<ShareLinkResult>(
-      `/runs/${runId}/reviews/${nodeId}/share-link`,
+      `/runs/${runId}/nodes/${nodeId}/share-link`,
       { method: 'POST', body: JSON.stringify({ ttlTier, permissionPreset }) },
     ),
   getReviewShareLink: (runId: string, nodeId: string) =>
-    req<GateShareInboxStatus>(`/runs/${runId}/reviews/${nodeId}/share-link`),
+    req<GateShareInboxStatus>(`/runs/${runId}/nodes/${nodeId}/share-link`),
   regenReviewShareLink: (runId: string, nodeId: string) =>
     req<ShareLinkResult>(
-      `/runs/${runId}/reviews/${nodeId}/share-link/regen`,
+      `/runs/${runId}/nodes/${nodeId}/share-link/regen`,
       { method: 'POST' },
     ),
   revokeReviewShareLink: (runId: string, nodeId: string) =>
-    req<{ status: string }>(`/runs/${runId}/reviews/${nodeId}/share-link/revoke`, { method: 'POST' }),
+    req<{ status: string }>(`/runs/${runId}/nodes/${nodeId}/share-link/revoke`, { method: 'POST' }),
   listGatePrimaryArtifacts: (runId: string, nodeId: string) =>
     req<{
       items: {
@@ -194,7 +194,7 @@ export const runsClient = {
         nodeId?: string
         outputKey?: string
       }[]
-    }>(`/runs/${runId}/gates/${nodeId}/primary-artifacts`),
+    }>(`/runs/${runId}/nodes/${nodeId}/primary-artifacts`),
   saveGateArtifact: (
     runId: string,
     nodeId: string,
@@ -213,7 +213,7 @@ export const runsClient = {
       etag: string
       nodeId: string
       content: string
-    }>(`/runs/${runId}/gates/${nodeId}/artifacts/${encodeURIComponent(name)}`, {
+    }>(`/runs/${runId}/nodes/${nodeId}/artifacts/${encodeURIComponent(name)}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({ content }),
@@ -251,7 +251,7 @@ export const runsClient = {
       nodeId: string
       content: string
       cleared?: boolean
-    }>(`/runs/${runId}/gates/${nodeId}/annotation-artifact`, {
+    }>(`/runs/${runId}/nodes/${nodeId}/annotation-artifact`, {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
@@ -267,7 +267,7 @@ export const runsClient = {
     /** Per-send id echoed by clarify_visit_ended (409 and WS) to match this tab's outbox. */
     clientMessageId?: string,
   ) =>
-    req<{ status: string; waiting?: number }>(`/runs/${runId}/react/${nodeId}/reply`, {
+    req<{ status: string; waiting?: number }>(`/runs/${runId}/nodes/${nodeId}/reply`, {
       method: 'POST',
       body: JSON.stringify({
         text,
@@ -281,16 +281,16 @@ export const runsClient = {
     }),
   /** 轮级 Cancel for node-inline review (clears FIFO + aborts active ACP turn). */
   reactCancel: (runId: string, nodeId: string) =>
-    req<{ status: string }>(`/runs/${runId}/react/${nodeId}/cancel`, { method: 'POST' }),
+    req<{ status: string }>(`/runs/${runId}/nodes/${nodeId}/cancel`, { method: 'POST' }),
   /** Remove one waiting queue item by server id. */
   reactQueueRemove: (runId: string, nodeId: string, itemId: string) =>
-    req<{ status: string }>(`/runs/${runId}/react/${nodeId}/queue/remove`, {
+    req<{ status: string }>(`/runs/${runId}/nodes/${nodeId}/queue/remove`, {
       method: 'POST',
       body: JSON.stringify({ itemId }),
     }),
   /** Reorder waiting queue items (authoritative ids). */
   reactQueueReorder: (runId: string, nodeId: string, itemIds: string[]) =>
-    req<{ status: string }>(`/runs/${runId}/react/${nodeId}/queue/reorder`, {
+    req<{ status: string }>(`/runs/${runId}/nodes/${nodeId}/queue/reorder`, {
       method: 'POST',
       body: JSON.stringify({ itemIds }),
     }),
@@ -305,7 +305,7 @@ export const runsClient = {
     annotations: ReactAnnotation[] = [],
   ) =>
     req<{ status: string; waiting?: number; producerNodeId?: string }>(
-      `/runs/${runId}/gates/${nodeId}/react-revise`,
+      `/runs/${runId}/nodes/${nodeId}/reply`,
       {
         method: 'POST',
         body: JSON.stringify({ text, images, annotations }),
@@ -314,17 +314,17 @@ export const runsClient = {
   /** 轮级 Cancel for gate hot-revise (upstream producer session). */
   gateReactCancel: (runId: string, nodeId: string) =>
     req<{ status: string; producerNodeId?: string }>(
-      `/runs/${runId}/gates/${nodeId}/react-cancel`,
+      `/runs/${runId}/nodes/${nodeId}/cancel`,
       { method: 'POST' },
     ),
   gateReactQueueRemove: (runId: string, nodeId: string, itemId: string) =>
     req<{ status: string; producerNodeId?: string }>(
-      `/runs/${runId}/gates/${nodeId}/react-queue/remove`,
+      `/runs/${runId}/nodes/${nodeId}/queue/remove`,
       { method: 'POST', body: JSON.stringify({ itemId }) },
     ),
   gateReactQueueReorder: (runId: string, nodeId: string, itemIds: string[]) =>
     req<{ status: string; producerNodeId?: string }>(
-      `/runs/${runId}/gates/${nodeId}/react-queue/reorder`,
+      `/runs/${runId}/nodes/${nodeId}/queue/reorder`,
       { method: 'POST', body: JSON.stringify({ itemIds }) },
     ),
 
@@ -367,7 +367,6 @@ export const runsClient = {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
     })
-    if (res.status === 404) return null
     if (!res.ok) {
       let msg = `${res.status} /runs/${runId}/nodes/${nodeId}/sandbox`
       try {
@@ -378,9 +377,14 @@ export const runsClient = {
       }
       throw new Error(msg)
     }
+    const body = await res.json()
     apiState.checked = true
     apiState.online = true
-    return (await res.json()) as SandboxView
+    // found:false is confirmed absence. Never turn that into a sandbox with no id.
+    if (body && typeof body === 'object' && (body as { found?: unknown }).found === false) {
+      return null
+    }
+    return body as SandboxView
   },
   nodePreviews: (runId: string, nodeId: string, opts?: { signal?: AbortSignal }) =>
     req<{ ports: PreviewPort[] }>(

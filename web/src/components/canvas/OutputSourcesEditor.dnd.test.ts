@@ -108,7 +108,7 @@ describe('OutputSourcesEditor', () => {
     expect(toast.warn).toHaveBeenCalledTimes(1)
 
     // The rendered button for an already-selected source is disabled.
-    const added = w.findAll('button').find((b) => b.text().includes('✓'))
+    const added = w.findAll('button').find((b) => b.attributes('aria-label') === vm.availableOptions[0].label)
     expect(added?.attributes('disabled')).toBeDefined()
     w.unmount()
   })

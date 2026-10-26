@@ -17,8 +17,9 @@ const props = withDefaults(
     /** Dims the label when nothing is chosen yet. */
     placeholder?: boolean
     invalid?: boolean
+    multiple?: boolean
   }>(),
-  { icon: '', disabled: false, searchPlaceholder: '', testId: 'solo-picker', panelWidth: 340, placeholder: false, invalid: false },
+  { icon: '', disabled: false, searchPlaceholder: '', testId: 'solo-picker', panelWidth: 340, placeholder: false, invalid: false, multiple: false },
 )
 
 const panelId = `solo-picker-${useId().replace(/:/g, '')}`
@@ -136,7 +137,9 @@ defineExpose({ close, show })
       <slot name="trigger">
         <Icon v-if="icon" :name="icon" :size="14" class="solo-picker__glyph" />
       </slot>
-      <span class="solo-picker__label" :title="label">{{ label }}</span>
+      <slot name="label" :label="label">
+        <span class="solo-picker__label" :title="label">{{ label }}</span>
+      </slot>
       <Icon name="chevron-down" :size="12" class="solo-picker__chev" />
     </button>
     <Teleport to="body">
@@ -163,7 +166,7 @@ defineExpose({ close, show })
             @keydown.enter.prevent="onSearchEnter"
           />
         </div>
-        <div class="solo-picker__list scroll-area" role="listbox">
+        <div class="solo-picker__list scroll-area" role="listbox" :aria-multiselectable="multiple || undefined">
           <slot :query="query.trim().toLowerCase()" :close="close" />
         </div>
         <div v-if="$slots.footer" class="solo-picker__footer">

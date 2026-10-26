@@ -62,6 +62,39 @@ describe('ParagraphInput', () => {
     wrapper.unmount()
   })
 
+  it('removes only the clicked pending attachment and disables without a red class', async () => {
+    const wrapper = mountInput(false, [
+      { data: 'AAA', mimeType: 'image/png', name: 'a.png' },
+      { data: 'BBB', mimeType: 'application/pdf', name: 'b.pdf' },
+    ])
+    const buttons = wrapper.findAll('button.pending-attach-remove')
+    expect(buttons).toHaveLength(2)
+    for (const button of buttons) {
+      expect(button.classes()).toContain('rounded-full')
+      expect(button.classes()).not.toContain('bg-err')
+      expect(button.attributes('disabled')).toBeUndefined()
+    }
+    await buttons[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="paragraph-draft-image-thumb"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paragraph-pending-file-chip"]').text()).toContain('b.pdf')
+    expect(wrapper.findAll('button.pending-attach-remove')).toHaveLength(1)
+
+    const disabled = mount(ParagraphInput, {
+      props: {
+        text: 'hello',
+        disabled: true,
+        images: [{ data: 'AAA', mimeType: 'image/png', name: 'a.png' }],
+      },
+      global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common } } })], stubs: { Icon: true, AppModal: PreviewAppModalStub } },
+    })
+    const locked = disabled.get('button.pending-attach-remove')
+    expect((locked.element as HTMLButtonElement).disabled).toBe(true)
+    expect(locked.classes()).not.toContain('bg-err')
+    disabled.unmount()
+    wrapper.unmount()
+  })
+
   it('hides thumbs in text-only even if images are passed', () => {
     const wrapper = mountInput(true, [{ data: 'AAA', mimeType: 'image/png', name: 'a.png' }])
     expect(wrapper.find('[data-testid="paragraph-draft-image-thumb"]').exists()).toBe(false)

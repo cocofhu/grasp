@@ -62,13 +62,14 @@ WORKSPACE_DIR=${WORKSPACE_DIR:-/root/workspace}
 CODE_SERVER_PORT=${CODE_SERVER_PORT:-8744}
 
 # 提前解析 agent provider 与配置根：契约注入（默认落到 CONFIG_ROOT）与 backend 都要用。
-# 未设置时回落 cursor。五类 CLI 已预装，运行时 AGENT_PROVIDER 单活。
+# 未设置时回落 cursor。运行时 AGENT_PROVIDER 单活。
 AGENT_PROVIDER=${AGENT_PROVIDER:-cursor}
 case "$AGENT_PROVIDER" in
   cursor|cursor_acp)                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.cursor} ;;
   claude_code|claude_code_acp)                    CONFIG_ROOT=${CONFIG_ROOT:-/root/.claude} ;;
   codebuddy|codebuddy_acp)                        CONFIG_ROOT=${CONFIG_ROOT:-/root/.codebuddy} ;;
   opencode)                                       CONFIG_ROOT=${CONFIG_ROOT:-/root/.config/opencode} ;;
+  deepseek_harness)                               CONFIG_ROOT=${CONFIG_ROOT:-/root/.dsh} ;;
   *)                                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.$AGENT_PROVIDER} ;;
 esac
 export AGENT_PROVIDER CONFIG_ROOT
@@ -301,6 +302,9 @@ setup_repo_credentials() {
 # 末尾必须 return 0：set -e 下函数最后一行若是 `[ -n "$empty" ] && ...` 会以 1 退出，
 # 导致 startup.sh 在 glab 配置后直接崩掉（remote-dev 只注入 GITLAB_TOKEN 时必现）。
 configure_git_credentials() {
+    # The explicit catalog owns both Git transport and per-host CLI defaults.
+    # Never reintroduce legacy host-wide env or try another account on failure.
+    [ "${_GIT_CATALOG_CONFIGURED:-0}" = "1" ] && return 0
     if [ -n "$GIT_REPOS" ]; then
         IFS=',' read -ra _entries <<< "$GIT_REPOS"
         for _entry in "${_entries[@]}"; do
@@ -435,6 +439,7 @@ configure_repo_credentials() {
     [ -f "$src/manifest" ] || return 0
     mkdir -p "$REPO_CRED_DIR" /root/.ssh
     chmod 700 "$REPO_CRED_DIR" /root/.ssh
+    install -m 600 "$src/manifest" "$REPO_CRED_DIR/manifest"
     : > "$REPO_SSH_CONFIG"
     chmod 600 "$REPO_SSH_CONFIG"
     touch /root/.ssh/config
@@ -460,6 +465,29 @@ configure_repo_credentials() {
         fi
     done < "$src/manifest"
     rm -rf "$src"
+    return 0
+}
+
+# New selections are file-only, including an empty manifest used to explicitly
+# remove all Git permissions. A helper resolves every HTTPS/SSH request once.
+configure_git_catalog() {
+    local src="${1:-/tmp/grasp-ssh-inject/git}"
+    [ -f "$src/manifest.json" ] || return 0
+    local credential_home="${GIT_CREDENTIAL_HOME:-/root}"
+    local helper="${GRASP_GIT_CREDENTIAL_HELPER:-$(dirname "${BASH_SOURCE[0]}")/git-credentials.py}"
+    unset GITHUB_TOKEN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN GITLAB_TOKEN GLAB_TOKEN GITLAB_ACCESS_TOKEN
+    unset GITHUB_URL GITLAB_URL GIT_SSH_PRIVATE_KEY GIT_SSH_KNOWN_HOSTS GIT_SSH_COMMAND GIT_SSH SSH_AUTH_SOCK
+    rm -rf "$credential_home/.git-credentials" "$credential_home/.grasp/repo-credentials" \
+      "$credential_home/.ssh/id_rsa" "$credential_home/.ssh/known_hosts" "$credential_home/.ssh/grasp_repos_config" \
+      "$credential_home/.config/gh/hosts.yml" "$credential_home/.config/glab-cli/config.yml"
+    rm -f "$credential_home"/.ssh/grasp-repo-*
+    git config --global --remove-section credential 2>/dev/null || true
+    git config --global --get-regexp '^credential\..*\.helper$' 2>/dev/null | awk '{print $1}' | sort -u |
+      while IFS= read -r key; do git config --global --unset-all "$key" 2>/dev/null || true; done
+    git config --global --get-regexp '^url\..*grasp-repo-.*\.insteadof$' 2>/dev/null | awk '{print $1}' | sort -u |
+      while IFS= read -r key; do git config --global --unset-all "$key" 2>/dev/null || true; done
+    python3 "$helper" install "$src" "$credential_home" || return 1
+    _GIT_CATALOG_CONFIGURED=1
     return 0
 }
 
@@ -585,12 +613,16 @@ apply_ssh_file_inject() {
     fi
     return 0
 }
-apply_ssh_file_inject /tmp/grasp-ssh-inject
+if [ ! -f /tmp/grasp-ssh-inject/git/manifest.json ]; then
+    apply_ssh_file_inject /tmp/grasp-ssh-inject
+fi
 
 # --- 凭据配置（clone 前；此时 SSH 文件与 Token env 均已就绪）----------------
 # 仓库级凭据先行：GIT_REPOS 里已有仓库级凭据的仓库跳过主机级校验。
+configure_git_catalog /tmp/grasp-ssh-inject/git
 configure_repo_credentials /tmp/grasp-ssh-inject/repos
 configure_git_credentials
+rm -rf /tmp/grasp-ssh-inject
 
 # 配置 Git 用户信息（通用中性默认，可由环境变量覆盖）
 GIT_USER_EMAIL=${GIT_USER_EMAIL:-sandbox@localhost}

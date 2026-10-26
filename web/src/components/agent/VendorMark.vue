@@ -37,6 +37,7 @@ const ASSETS: Record<string, string> = {
   google: googleLogo,
   xai: xaiLogo,
   deepseek: deepseekLogo,
+  deepseek_harness: deepseekLogo,
   moonshot: moonshotLogo,
   bytedance: bytedanceLogo,
   cursor: cursorLogo,
@@ -65,7 +66,7 @@ const radius = computed(() => (props.size >= 28 ? 9 : props.size >= 20 ? 6 : 4))
     :aria-label="label"
     :data-vendor-mark="unknown ? 'unknown' : asset ? vendor : 'monogram'"
   >
-    <Icon v-if="unknown" name="help" :size="Math.round(size * 0.5)" class="text-warn" />
+    <Icon v-if="unknown" name="help" :interactive="false" :size="Math.round(size * 0.5)" class="text-warn" />
     <img
       v-else-if="asset"
       :src="asset"
@@ -88,7 +89,30 @@ const radius = computed(() => (props.size >= 28 ? 9 : props.size >= 20 ? 6 : 4))
       :style="{ width: `${Math.max(12, Math.round(size * 0.45))}px`, height: `${Math.max(12, Math.round(size * 0.45))}px` }"
       data-vendor-mark-auto
     >
-      <Icon name="sparkles" :size="Math.max(8, Math.round(size * 0.28))" />
+      <Icon name="sparkles" :interactive="false" :size="Math.max(8, Math.round(size * 0.28))" />
     </span>
   </span>
 </template>
+
+<style scoped>
+.vendor-mark {
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+/*
+ * Keep the scoped attribute on .vendor-mark. Wrapping only the parent in
+ * :global() makes Vue drop the class and emit a bare button:hover rule, which
+ * paints every button (including a disabled Next and ghost Cancel) with the
+ * elevated gray.
+ */
+button:hover .vendor-mark,
+button:focus-visible .vendor-mark,
+a:hover .vendor-mark,
+a:focus-visible .vendor-mark,
+[role="option"]:hover .vendor-mark {
+  border-color: rgb(var(--c-accent) / .45);
+  background-color: rgb(var(--c-elevated));
+}
+@media (prefers-reduced-motion: reduce) {
+  .vendor-mark { transition: none; }
+}
+</style>

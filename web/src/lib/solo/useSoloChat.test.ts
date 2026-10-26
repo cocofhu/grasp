@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   closeSoloSession: vi.fn(),
   renameSoloSession: vi.fn(),
   removeSoloQueued: vi.fn(),
+  setSoloSessionModel: vi.fn(),
   soloChatWsUrl: vi.fn(() => 'ws://example.test/solo'),
 }))
 
@@ -87,7 +88,9 @@ describe('useSoloChat', () => {
     FakeSocket.all = []
     vi.stubGlobal('WebSocket', FakeSocket)
     Object.values(mocks).forEach((m) => m.mockReset())
-    mocks.soloChatWsUrl.mockReturnValue('ws://example.test/solo')
+    mocks.soloChatWsUrl.mockImplementation((_id: string, after?: number) =>
+      `ws://example.test/solo${after != null && after >= 0 ? `?after=${after}` : ''}`,
+    )
     mocks.getSoloSession.mockResolvedValue(session())
     mocks.listSoloMessages.mockResolvedValue([])
   })
@@ -179,6 +182,134 @@ describe('useSoloChat', () => {
     await flushPromises()
     await chat.cancel()
     expect(ws.sent).toEqual([JSON.stringify({ type: 'cancel' })])
+    app.unmount()
+  })
+
+  it('keeps an old session on its opening model and switches the saved model for later turns', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ initialModelId: 'aux' }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    expect(chat.currentModelId.value).toBe('aux')
+
+    mocks.getSoloSession.mockResolvedValue(session({ initialModelId: 'aux', currentModelSet: true, currentModelId: 'aux' }))
+    mocks.setSoloSessionModel.mockResolvedValue(session({ initialModelId: 'aux', currentModelSet: true, currentModelId: 'aux2' }))
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'q1', text: 'hi', images: [] }, userMsgId: 'q1' })
+    const pending = chat.setCurrentModel('aux2')
+    expect(chat.currentModelId.value).toBe('aux2')
+    expect(chat.modelSwitchNotice.value).toContain('从下一条开始使用新模型')
+    expect(await pending).toBe(true)
+    expect(mocks.setSoloSessionModel).toHaveBeenCalledWith('s1', 'aux2')
+
+    ws.emit({ type: 'session', event: 'turn_done', interrupted: false })
+    expect(chat.modelSwitchNotice.value).toBe('')
+    app.unmount()
+  })
+
+  it('restores the previous model when saving the selection fails', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'aux', initialModelId: 'primary' }))
+    mocks.setSoloSessionModel.mockRejectedValueOnce(Object.assign(new Error('nope'), { code: 'model_not_in_configuration' }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    expect(await chat.setCurrentModel('other')).toBe(false)
+    expect(chat.currentModelId.value).toBe('aux')
+    expect(chat.actionError.value).toContain('不在该 Agent 的模型配置中')
+    expect(chat.modelSwitchNotice.value).toBe('')
+    app.unmount()
+  })
+
+  it('rolls the selector back when the sandbox rejects the switch', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'aux2' }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    ws.emit({
+      type: 'session',
+      event: 'model',
+      currentModelId: 'aux',
+      currentModelSet: true,
+      modelNotice: 'model_switch_failed',
+      error: '切换模型失败，已改回原来的模型',
+    })
+    expect(chat.currentModelId.value).toBe('aux')
+    expect(chat.actionError.value).toContain('已改回原来的模型')
+    app.unmount()
+  })
+  it('writes a second turn and output that arrives before turn_begin', async () => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+
+    ws.emit({ type: 'session', event: 'turn_begin', seq: 1, item: { id: 'q1', text: 'first', images: [] } })
+    ws.emit({ ...acp('One'), seq: 2 })
+    ws.emit({ type: 'session', event: 'turn_done', seq: 3 })
+    expect(chat.turns.value[1]!.text).toBe('One')
+    expect(chat.turns.value[1]!.streaming).toBe(false)
+
+    ws.emit({ type: 'session', event: 'queue_state', seq: 4, busy: true, items: [{ id: 'q2', text: 'second', images: [] }] })
+    ws.emit({ ...acp('Two'), seq: 5 })
+    expect(chat.turns.value.some((t) => t.id === 'live:q2' && t.text === 'Two' && t.streaming)).toBe(true)
+    expect(chat.turns.value.filter((t) => t.text === 'Two')).toHaveLength(1)
+
+    ws.emit({ type: 'session', event: 'turn_begin', seq: 6, item: { id: 'q2', text: 'second', images: [] } })
+    expect(chat.turns.value.find((t) => t.id === 'live:q2')!.text).toBe('Two')
+    app.unmount()
+  })
+
+  it('reconnects after the socket closes and does not draw the same frame twice', async () => {
+    vi.useFakeTimers()
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    ws.emit({ type: 'session', event: 'turn_begin', seq: 1, item: { id: 'q1', text: 'hi', images: [] } })
+    ws.emit({ ...acp('Hello'), seq: 2 })
+    expect(chat.turns.value[1]!.text).toBe('Hello')
+
+    ws.onclose?.()
+    await vi.advanceTimersByTimeAsync(1500)
+    const again = FakeSocket.all.at(-1)!
+    expect(again).not.toBe(ws)
+    expect(again.url).toContain('after=2')
+    again.open()
+    await flushPromises()
+    again.emit({ ...acp('Hello'), seq: 2 })
+    again.emit({ ...acp('!'), seq: 3 })
+    expect(chat.turns.value.find((t) => t.id === 'live:q1')!.text).toBe('Hello!')
+    vi.useRealTimers()
+    app.unmount()
+  })
+
+  it('fills a sequence hole by replaying after the last frame', async () => {
+    vi.useFakeTimers()
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    ws.emit({ type: 'session', event: 'turn_begin', seq: 1, item: { id: 'q1', text: 'hi', images: [] } })
+    ws.emit({ ...acp('A'), seq: 2 })
+    ws.emit({ ...acp('SKIP'), seq: 5 })
+    expect(chat.turns.value[1]!.text).toBe('A')
+
+    await vi.advanceTimersByTimeAsync(1500)
+    const again = FakeSocket.all.at(-1)!
+    expect(again.url).toContain('after=2')
+    again.open()
+    await flushPromises()
+    again.emit({ ...acp('B'), seq: 3 })
+    again.emit({ ...acp('C'), seq: 4 })
+    again.emit({ ...acp('D'), seq: 5 })
+    expect(chat.turns.value.find((t) => t.id === 'live:q1')!.text).toBe('ABCD')
+    expect(chat.turns.value.filter((t) => t.role === 'agent')).toHaveLength(1)
+    vi.useRealTimers()
     app.unmount()
   })
 })

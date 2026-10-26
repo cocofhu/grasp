@@ -156,7 +156,7 @@ const htmlCanvasOverlay = computed(
         </div>
         <div class="artifact-preview-actions" data-testid="artifact-preview-actions" role="group" :aria-label="t('common.table.actions')">
           <button v-if="!hideZoom" type="button" class="artifact-preview-icon-action" :title="t('pages.artifactPreview.enlarge')" :aria-label="t('pages.artifactPreview.enlarge')" data-testid="artifact-preview-zoom" @click="zoom = true"><Icon name="expand" :size="15" /></button>
-          <button v-if="!hideCopy" type="button" class="artifact-preview-icon-action" :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :disabled="copying" :aria-busy="copying ? 'true' : undefined" data-testid="artifact-preview-copy" @click="copyContent"><Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" /></button>
+          <button v-if="!hideCopy" type="button" class="artifact-preview-icon-action" :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :disabled="copying" :aria-busy="copying ? 'true' : undefined" data-testid="artifact-preview-copy" @click="copyContent"><Icon :name="copying ? 'spinner' : 'copy'" :size="15" aria-hidden="true" /></button>
           <button type="button" class="artifact-preview-icon-action" :title="t('pages.artifactPreview.downloadRawTitle')" :aria-label="t('pages.artifactPreview.downloadRawTitle')" data-testid="artifact-preview-download-raw" @click="download"><Icon name="download" :size="15" /></button>
           <button v-if="!hideExport && isStructuredPreview" type="button" class="artifact-preview-text-action" data-testid="artifact-preview-download-png" :disabled="exportDisabled" @click="downloadPng">{{ exporting ? t('pages.artifactPreview.exporting') : t('pages.artifactPreview.downloadPng') }}</button>
           <button v-if="!hideExport && isStructuredPreview" type="button" class="artifact-preview-text-action" data-testid="artifact-preview-download-pdf" :disabled="exportDisabled" @click="downloadPdf">{{ exporting ? t('pages.artifactPreview.exporting') : t('pages.artifactPreview.downloadPdf') }}</button>
@@ -276,7 +276,7 @@ const htmlCanvasOverlay = computed(
               :aria-busy="copying ? 'true' : undefined"
               data-testid="artifact-preview-copy"
               @click="copyContent"
-            ><Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" /></button>
+            ><Icon :name="copying ? 'spinner' : 'copy'" :size="15" aria-hidden="true" /></button>
             <button
               type="button"
               class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"

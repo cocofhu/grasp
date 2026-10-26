@@ -103,7 +103,7 @@ onBeforeUnmount(() => {
       <Icon name="settings" :size="compact ? 16 : 14" aria-hidden="true" />
       <span v-if="!compact">{{ t('pages.embedChat.pageCollaboration') }}</span>
       <span v-if="activeLabels.length" class="rounded px-1 text-[10px] tabular-nums" :class="compact ? 'absolute -right-1 -top-1 bg-accent text-white' : 'bg-accent/15'" aria-hidden="true">{{ activeLabels.length }}</span>
-      <Icon v-if="!compact" name="chevron-down" :size="12" :class="{ 'rotate-180': open }" aria-hidden="true" />
+      <Icon :interactive="false" v-if="!compact" name="chevron-down" :size="12" :class="{ 'rotate-180': open }" aria-hidden="true" />
     </button>
     <span :id="`${id}-summary`" :class="compact ? 'sr-only' : 'min-w-0 truncate text-[11px] text-txt3'" :title="activeLabels.join(' · ')" role="status" data-testid="page-collaboration-summary">{{ activeLabels.join(' · ') }}</span>
     <Teleport to="body">

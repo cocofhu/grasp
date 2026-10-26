@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"backend/internal/provider"
+	"backend/internal/provider/modelconnection"
 	"backend/internal/provider/oneshot"
 )
 
@@ -208,6 +209,9 @@ const codexLoginRepaste = "Codex 登录已失效或无法刷新，请重新粘�
 
 func rewriteCodexAuthError(message string) string {
 	if codexAuthRejected(message) {
+		if strings.TrimSpace(os.Getenv(modelconnection.EnvConfig)) != "" {
+			return "Codex 模型连接认证失败，请检查所选模型 API Key"
+		}
 		return codexLoginRepaste
 	}
 	return message

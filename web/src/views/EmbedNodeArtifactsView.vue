@@ -234,7 +234,7 @@ onUnmounted(() => {
       aria-busy="true"
       data-testid="embed-artifacts-connecting"
     >
-      <Icon name="spinner" :size="24" class="animate-spin text-accent" aria-hidden="true" />
+      <Icon name="spinner" :size="24" class="text-accent" aria-hidden="true" />
       <p class="text-sm text-txt3">{{ t('pages.embedArtifacts.connecting') }}</p>
     </div>
     <div

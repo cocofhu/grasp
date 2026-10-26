@@ -48,7 +48,7 @@ const CATALOG = [
       'pm_delete_workflow',
       'pm_publish_workflow',
       'pm_start_run',
-      'pm_resume_gate',
+      'pm_decide_node',
       'pm_react_reply',
       'pm_cancel_run',
     ],

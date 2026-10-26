@@ -173,6 +173,78 @@ describe('useRunTerminalNotifications', () => {
     vi.mocked(api.markAllNotificationsRead).mockClear()
   })
 
+  it('signals only unread increases after hydration, sharing the event across chrome remounts', async () => {
+    seedList([item(run({ id: 'old', status: 'completed' }))])
+    const first = useRunTerminalNotifications()
+    await first.refresh({ source: 'mount' })
+    expect(first.notificationMotionKey.value).toBe(0)
+    await first.refresh({ source: 'sidebar-poll' })
+    expect(first.notificationMotionKey.value).toBe(0)
+
+    seedList([
+      item(run({ id: 'new', status: 'failed' })),
+      item(run({ id: 'old', status: 'completed' })),
+    ])
+    await first.refresh({ source: 'sidebar-poll' })
+    expect(first.notificationMotionKey.value).toBe(1)
+    const remounted = useRunTerminalNotifications()
+    await remounted.refresh({ source: 'mount' })
+    expect(remounted.notificationMotionKey.value).toBe(1)
+    first.markAllRead()
+    await first.refresh({ source: 'sidebar-poll' })
+    expect(first.notificationMotionKey.value).toBe(1)
+  })
+
+  it('announces a new unread after a local read even when the total returns to its old value', async () => {
+    seedList([item(run({ id: 'old', status: 'completed' }))])
+    const notifications = useRunTerminalNotifications()
+    await notifications.refresh({ source: 'mount' })
+    notifications.markRead('old')
+    seedList([
+      item(run({ id: 'new', status: 'failed' })),
+      item(run({ id: 'old', status: 'completed' }), { unread: false }),
+    ])
+    await notifications.refresh({ source: 'sidebar-poll' })
+    expect(notifications.unreadCount.value).toBe(1)
+    expect(notifications.notificationMotionKey.value).toBe(1)
+  })
+
+  it('merges a burst of new unread counts into one finite bell swing', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(1000)
+      const notifications = useRunTerminalNotifications()
+      await notifications.refresh({ source: 'mount' })
+      seedList([item(run({ id: 'new-a', status: 'completed' }))])
+      await notifications.refresh({ source: 'sidebar-poll' })
+      expect(notifications.notificationMotionKey.value).toBe(1)
+      vi.setSystemTime(1200)
+      seedList([
+        item(run({ id: 'new-b', status: 'completed' })),
+        item(run({ id: 'new-a', status: 'completed' })),
+      ])
+      await notifications.refresh({ source: 'sidebar-poll' })
+      expect(notifications.notificationMotionKey.value).toBe(1)
+      vi.setSystemTime(1700)
+      notifications.markAllRead()
+      seedList([item(run({ id: 'after-read-all', status: 'failed' }))])
+      await notifications.refresh({ source: 'sidebar-poll' })
+      expect(notifications.notificationMotionKey.value).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hydrates a changed identity without announcing its existing unread history', async () => {
+    const notifications = useRunTerminalNotifications()
+    await notifications.refresh({ source: 'mount' })
+    seedList([item(run({ id: 'bob-history', status: 'completed' }))])
+    authUser.value = { username: 'bob', expiresAt: 't' }
+    await notifications.refresh({ source: 'auth' })
+    expect(notifications.unreadCount.value).toBe(1)
+    expect(notifications.notificationMotionKey.value).toBe(0)
+  })
+
   it('loads pool via listNotifications and consumes server unread flags', async () => {
     seedList([
       item(run({ id: 'b', status: 'failed', startedAt: '2026-08-10T13:00:00Z', durationSec: 60 })),

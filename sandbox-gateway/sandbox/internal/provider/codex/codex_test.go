@@ -16,6 +16,18 @@ func TestLoginRepasteKeepsServerMark(t *testing.T) {
 	}
 }
 
+func TestModelConnectionAuthFailureDoesNotRequestPlatformLogin(t *testing.T) {
+	t.Setenv("GRASP_MODEL_CONNECTION", `{"connectionId":"selected"}`)
+	got := rewriteCodexAuthError("401 Unauthorized from https://api.openai.com/v1/responses")
+	if strings.Contains(got, "auth.json") || !strings.Contains(got, "模型 API Key") {
+		t.Fatalf("wrong credential advice: %s", got)
+	}
+	env := (codec{}).AuthEnv([]string{"GRASP_MODEL_API_KEY=selected-secret", "OPENAI_API_KEY=old"})
+	if len(env) != 1 || env[0] != "GRASP_MODEL_API_KEY=selected-secret" {
+		t.Fatal("custom provider env_key was stripped")
+	}
+}
+
 func TestParseAgentMessage(t *testing.T) {
 	var c codec
 	pr := c.ParseLine([]byte(`{"msg":{"type":"agent_message","message":"hello"}}`))

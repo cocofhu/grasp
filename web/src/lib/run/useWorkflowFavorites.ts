@@ -6,7 +6,7 @@ import { useToast } from '@/lib/composables/useToast'
 import { httpStatusOf } from '@/lib/shared/listRequestSeq'
 import type { Workflow } from '@/lib/shared/types'
 
-/** Personal quick-launch favorites hard limit (clarified requirement / Demo). */
+/** Personal starred-workflow hard limit. Favorites are not shown in the sidebar. */
 export const WORKFLOW_FAVORITES_MAX = 8
 
 export type WorkflowFavoriteEntry = {
@@ -15,7 +15,7 @@ export type WorkflowFavoriteEntry = {
   favoritedAt: number
 }
 
-/** Hydrated row for sidebar quick-launch (current names, not stale snapshots). */
+/** Hydrated favorite row (current names, not stale snapshots). Not rendered in the sidebar. */
 export type FavoriteWorkflowDisplay = {
   workflowId: string
   favoritedAt: number
@@ -105,7 +105,7 @@ function ensureHydrated() {
   if (!prefsHydrated) hydrateFromStorage()
 }
 
-/** Stored array order is the user's manual sidebar order. */
+/** Stored array order is the local record order. It is not a sidebar pin order. */
 const listSorted = computed(() => entries.value.slice())
 
 function isFavorite(workflowId: string): boolean {
@@ -244,7 +244,7 @@ export function useWorkflowFavorites() {
     return true
   }
 
-  /** Sidebar star: unfavorite only (no add, no launch). */
+  /** Unfavorite only (no add). Does not change the sidebar. */
   function unfavorite(workflowId: string, opts?: { name?: string; silent?: boolean }): void {
     ensureHydrated()
     const id = workflowId.trim()

@@ -5,7 +5,7 @@
 - **运行环境**（来自 ai-tool/sandbox）：Ubuntu 22.04、多语言工具链、容器内 **Docker（DinD）**、**SSH**、**code-server**（浏览器 IDE）、DB 客户端（mysql/redis/psql/mongosh）、Cursor CLI、Claude Code、glab、gh。
 - **agent 与代码能力**（来自 code-flow/sandbox）：多后端 **backend**（ACP 桥接服务）、**多仓库 PULL**、多托管商 **git 凭据路由**、**Playwright（Chromium）+ noVNC 预览栈**。
 
-六类 agent 后端 CLI 均已预装，`AGENT_PROVIDER` 单活切换：`cursor`（Cursor CLI）、`claude_code`（原生 Claude CLI）、`codebuddy`（`@tencent-ai/codebuddy-code`）、`trae`（Trae CLI）、`opencode`（`opencode-ai`，`run --format json`）、`codex`（`@openai/codex`，`exec --json`）。Codex 使用 `CODEX_HOME/auth.json`，不使用 API Key。
+七类 agent 后端 CLI 均已预装，`AGENT_PROVIDER` 单活切换：`cursor`（Cursor CLI）、`claude_code`（原生 Claude CLI）、`codebuddy`（`@tencent-ai/codebuddy-code`）、`trae`（Trae CLI）、`opencode`（`opencode-ai`，`run --format json`）、`codex`（`@openai/codex`，`exec --json`）、`deepseek_harness`（`@deepseek-ai/dsh@0.2.1-rc.2`，`--profile acp`）。Codex 使用 `CODEX_HOME/auth.json`，不使用 API Key。
 发布一张图 `ghcr.io/cocofhu/universal-sandbox`。本地打薄镜像：`--build-arg AGENT_PROVIDERS=cursor`。
 
 ## 镜像与运行时包
@@ -33,7 +33,7 @@ Grasp 的逻辑——`startup.sh` 等脚本、`backend`、`preview-inject` 和 `
 
 ### 共享运行沙箱：`reprime.sh`
 
-工作流的沙箱模式设为 `shared`（同时要打开平台设置 `shared_run_sandbox_enabled`，默认关闭）时，一次运行的所有节点共用一个沙箱。
+在工作流编辑页的「工作流默认配置」中打开「共享沙箱」（`defaults.sandbox.mode = shared`，默认关闭），保存后新启动的运行复用同一个沙箱；无需额外的平台开关。
 换到下一个节点时，如果它的 env、配置根或凭据和上一个节点不同，Grasp 会经 SSH 执行 `bash /opt/grasp-runtime/current/scripts/reprime.sh`，
 并从 stdin 传入一个 tar.gz：
 
@@ -166,13 +166,13 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
-| `AGENT_PROVIDER` | `cursor` | agent 后端，单活：`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex` |
+| `AGENT_PROVIDER` | `cursor` | agent 后端，单活：`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex` / `deepseek_harness` |
 | `ACP_BRIDGE_PORT` | `8765` | backend 监听端口 |
 | `ACP_BRIDGE_PASSWORD` | 空 | backend 登录口令（`POST /api/login` 下发 `agentchat_session` cookie）。Grasp 创建的沙箱总会设置；留空仅用于本地脚本调试 |
 | `ACP_BRIDGE_MODEL` | 空 | 默认 agent 模型（不设则用后端默认）；AgentChat 各 Tab 可另选 |
 | `ACP_BRIDGE_REASONING_EFFORT` | 空 | 仅 `codex`：思考强度，透传为 `-c model_reasoning_effort=<值>`（`minimal` / `low` / `medium` / `high`，视模型而定）；空或 `auto` 用 codex 默认 |
 | `SANDBOX_MAX_CHATS` | `8` | AgentChat 同时存在的会话（Tab）上限，含 `default` |
-| `CONFIG_ROOT` | 随后端 | 能力发现的配置树根，默认按后端取 `/root/.cursor` `/.claude` `/.codebuddy` `/.trae` `/.config/opencode` `/.codex` |
+| `CONFIG_ROOT` | 随后端 | 能力发现的配置树根，默认按后端取 `/root/.cursor` `/.claude` `/.codebuddy` `/.trae` `/.config/opencode` `/.codex` `/.dsh`；DeepSeek Harness 同步映射为 `DSH_HOME` |
 
 ### 6. 后端鉴权（通用别名，归一化到各 CLI 原生变量）
 
@@ -186,10 +186,15 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 | `ACP_CODEBUDDY_REGION` | `CODEBUDDY_INTERNET_ENVIRONMENT` | CodeBuddy 区域：`public` / `internal` / `ioa` |
 | `ACP_TRAE_API_KEY` | `TRAECLI_PERSONAL_ACCESS_TOKEN` | Trae 后端鉴权 |
 | `ACP_TRAE_REGION` | `TRAECLI_HOST` | Trae 区域：`intl` → `https://www.trae.ai`；`cn` 用默认 |
+| `ACP_DEEPSEEK_API_KEY` / `ACP_DEEPSEEK_HARNESS_API_KEY` / `GRASP_DEEPSEEK_API_KEY` | `DEEPSEEK_API_KEY` | DeepSeek Harness API Key |
 
 > 也可直接注入各 CLI 原生变量（`CURSOR_API_KEY` / `ANTHROPIC_API_KEY` / `CODEBUDDY_API_KEY` 等）；`ACP_*` 仅为跨后端统一命名的便捷别名。
 >
 > Codex 不走这张别名表。登录态是 `CODEX_HOME`（默认 `/root/.codex`）下的 `auth.json`，不会把 `OPENAI_API_KEY` 归一化成 Codex 鉴权。
+
+DeepSeek Harness 默认使用 `deepseek-flash`，`ACP_BRIDGE_MODEL` 可选 `deepseek-v4-pro`。模型从 ACP 返回的选项中匹配并通过 `session/set_config_option` 应用；未知模型在开始对话前报错。stdio MCP 命令在沙箱内解析成绝对路径，HTTP MCP 保留 URL 与鉴权 Header。
+
+dsh 的启动 patch 不包含密钥，并关闭托管凭据来源，保证本次注入的环境凭据生效。平台配置生成器把角色与 alwaysApply 规则合成全局 `AGENTS.md`，skills 由 `$DSH_HOME/skills` 原生发现。ACP 不提供计费 token 用量，bridge 重启后的自动恢复沿用现有 ACP 限制。镜像能力版本 2 增加 dsh；发布顺序为 server → 新沙箱镜像。
 
 ### 7. Claude Code 环境（`claude_code` 后端 / `ai-code` 便捷命令）
 

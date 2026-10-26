@@ -20,6 +20,7 @@ func TestNormalizeBackend(t *testing.T) {
 		{"trae", BackendTrae},
 		{"opencode", BackendOpenCode},
 		{"codex", BackendCodex},
+		{"deepseek_harness", BackendDeepSeekHarness},
 		{" opencode ", BackendOpenCode},
 		{"", ""},
 		{" unknown ", ""},
@@ -62,12 +63,13 @@ func TestDefaultConfigRootAndResolve(t *testing.T) {
 
 func TestAgentRuntimeLabel(t *testing.T) {
 	cases := map[AcpBackend]string{
-		BackendCursor:     "cursor-agent",
-		BackendClaudeCode: "claude-code-acp",
-		BackendCodeBuddy:  "codebuddy-acp",
-		BackendTrae:       "trae-acp",
-		BackendOpenCode:   "opencode-json",
-		BackendCodex:      "codex-cli",
+		BackendCursor:          "cursor-agent",
+		BackendClaudeCode:      "claude-code-acp",
+		BackendCodeBuddy:       "codebuddy-acp",
+		BackendTrae:            "trae-acp",
+		BackendOpenCode:        "opencode-json",
+		BackendCodex:           "codex-cli",
+		BackendDeepSeekHarness: "dsh-acp",
 	}
 	for b, want := range cases {
 		if got := AgentRuntimeLabel(b); got != want {
@@ -86,7 +88,7 @@ func TestMergeAuthEnv_CredentialKeyOnly(t *testing.T) {
 		{BackendClaudeCode, envauth.EnvClaudeAPIKey, "ANTHROPIC_API_KEY"},
 		{BackendCodeBuddy, envauth.EnvCodeBuddyAPIKey, "CODEBUDDY_API_KEY"},
 		{BackendTrae, envauth.EnvTraeAPIKey, EnvTraeCLIToken},
-		{BackendOpenCode, envauth.EnvOpenCodeAPIKey, "OPENCODE_API_KEY"},
+		{BackendDeepSeekHarness, envauth.EnvDeepSeekAPIKey, "DEEPSEEK_API_KEY"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.backend), func(t *testing.T) {

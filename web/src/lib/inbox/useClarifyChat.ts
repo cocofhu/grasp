@@ -25,6 +25,7 @@ import {
   isRetryableFailedAgent,
 } from '@/lib/inbox/clarifyEmptyFail'
 import { relTime as formatRelTime } from '@/lib/shared/format'
+import { holdSidebarConfirmWindow, releaseSidebarConfirmWindow } from '@/lib/inbox/sidebarHandoff'
 import {
   demoOptionsOf,
   restoreChoiceAnswers,
@@ -97,6 +98,11 @@ export type ClarifyChatProps = {
   seedHumanImages?: ClarifyImage[]
   /** Host hand-off row; while pending, that confirm owns the 校验中 state. */
   handoff?: { phase: 'pending' | 'done' } | null
+  /**
+   * Row under the hand-off while this conversation follows the run.
+   * auto / waiting still own the composer; ended keeps the done footer.
+   */
+  followTail?: { kind: 'waiting' | 'auto' | 'ended' | 'error' } | null
 }
 
 export type ClarifyChatEmit = {
@@ -161,9 +167,18 @@ const confirmFlow = useConfirmFlowCeremony()
 /** True after we ran (or parent ran) the success ceremony for the current done cycle. */
 let confirmFlowPlayedForDone = false
 const confirmFlowPlaying = computed(() => !!confirmFlow?.playing.value)
-/** Hold done footer until check draw finishes (g2.3). */
+/**
+ * Hand-off still in progress: the session is already marked done, but the
+ * bottom must stay the auto-run bar (auto) or the preparing composer
+ * (next chat still starting). Ended runs and gates keep the done footer.
+ */
+const followKeepsComposer = computed(() => {
+  const kind = props.followTail?.kind
+  return kind === 'auto' || kind === 'waiting'
+})
+/** Hold done footer until check draw finishes (g2.3), and while a follow still owns the composer. */
 const showDoneChrome = computed(
-  () => !!props.done && !confirmFlowPlaying.value,
+  () => !!props.done && !confirmFlowPlaying.value && !followKeepsComposer.value,
 )
 
 async function playConfirmCeremony(): Promise<void> {
@@ -180,6 +195,8 @@ const queued = ref<QueueItem[]>([])
 const liveTurns = ref<ClarifyTurn[]>([])
 /** Bridge-reported orphan turn (platform FIFO idle, sandbox still busy). */
 const sandboxOrphan = ref<{ runningOpId: string; desynced: boolean } | null>(null)
+/** Last queue_state said the platform FIFO is idle (not tracking a turn). */
+const platformQueueIdle = ref(false)
 const showClarifyEmptyHint = computed(
   () =>
     !props.reviewMode &&
@@ -220,6 +237,25 @@ function prependSeedHuman(list: ClarifyTurn[]): ClarifyTurn[] {
   return [seed, ...list]
 }
 const liveAgentIdx = ref(-1)
+/** A delayed queue snapshot must not requeue the turn that just finished. */
+let lastCompletedItemId: string | undefined
+/**
+ * Platform FIFO is idle (no waiting item, no active turn). Later ACP is the
+ * turn that just lost its streaming slot — paint it, do not ask the host to
+ * buffer until the next hard load. Stays false until the first idle
+ * queue_state so a hard-load race still buffers.
+ */
+let idleNarrativeOpen = false
+/** Last ACP snapshot written into the open slot, so a replay does not draw it twice. */
+let lastAppliedAcpSig = ''
+/**
+ * paintIdleNarrative wrote a row after the streaming slot closed. A later
+ * persisted snapshot is the refresh transcript: once the bridge is idle, that
+ * snapshot replaces the idle row. While the bridge is still busy the row stays.
+ */
+let idlePainted = false
+/** Persisted transcript changed after the idle row was painted. */
+let persistedMovedAfterIdlePaint = false
 type OutputClock = { text: string; startedAt: string; endedAt: string }
 /** Page-session wall clocks, kept after the live bubble is replaced by the transcript. */
 const outputClocks = ref<OutputClock[]>([])
@@ -383,6 +419,7 @@ function relTime(iso: string): string {
 }
 
 onBeforeUnmount(() => {
+  releaseConfirmFlowWindow()
   clearInterval(relClockTimer)
   composerResizeObserver?.disconnect()
   composerResizeObserver = null
@@ -728,29 +765,50 @@ function turnsSemanticKey(turnList: ClarifyTurn[]): string {
   return `${turnList.length}:${last.at}:${last.role}:${last.text}`
 }
 
+/** Later turns make a persisted live prefix historical, even if its rails differ. */
+function prunePersistedLiveHistory(persisted: ClarifyTurn[]) {
+  let keepFrom = 0
+  while (keepFrom < liveTurns.value.length) {
+    const human = liveTurns.value[keepFrom]
+    const text = (human?.text || '').trim()
+    if (human?.role !== 'human' || !text) break
+    let persistedHuman = -1
+    for (let i = persisted.length - 1; i >= 0; i--) {
+      if (persisted[i].role === 'human' && (persisted[i].text || '').trim() === text) {
+        persistedHuman = i
+        break
+      }
+    }
+    if (persistedHuman < 0) break
+    const reply = persisted[persistedHuman + 1]
+    if (
+      reply?.role !== 'agent' || reply.streaming ||
+      (!(reply.text || reply.thought) && !isRetryableFailedAgent(reply))
+    ) break
+    const nextHuman = liveTurns.value.findIndex((turn, i) => i > keepFrom && turn.role === 'human')
+    const persistedAdvanced = persisted.slice(persistedHuman + 2).some((turn) => turn.role === 'human')
+    if (nextHuman < 0 && !persistedAdvanced) break
+    keepFrom = nextHuman < 0 ? liveTurns.value.length : nextHuman
+  }
+  if (!keepFrom) return
+  if (keepFrom === liveTurns.value.length) {
+    clearSettledLiveTurns()
+    return
+  }
+  liveTurns.value = liveTurns.value.slice(keepFrom)
+  liveAgentIdx.value = liveAgentIdx.value >= keepFrom ? liveAgentIdx.value - keepFrom : -1
+}
+
 // Real turns streamed back from the run: drop optimistic choice echo + clear
 // settled live bubbles. Scroll only when stuck to bottom.
 watch(
   () => turnsSemanticKey(persistedTurns.value),
   (key, prevKey) => {
     if (prevKey !== undefined && key === prevKey) return
-    const turnList = persistedTurns.value
-    const liveHumanText = liveTurns.value[0]?.role === 'human' ? liveTurns.value[0].text || '' : ''
-    const persistedCaughtUp = persistedCompletedLiveHuman(turnList, liveHumanText)
-    // Clear live bubbles once persisted transcript includes them (not while streaming).
-    // Empty persisted must not wipe an in-flight / seed-only human bubble.
-    if (
-      liveTurns.value.length &&
-      (persistedCaughtUp || (turnList.length > 0 && !liveTurns.value.some((t) => t.streaming)))
-    ) {
-      liveTurns.value = []
-      liveAgentIdx.value = -1
-      messageReveal.reset()
-      thoughtReveal.reset()
-      streamPreview.reset()
-      thoughtPreview.reset()
-      if (queued.value.length === 0) thinking.value = false
-    }
+    if (prevKey !== undefined && idlePainted) persistedMovedAfterIdlePaint = true
+    // While the sandbox is still writing, keep the open row even if a refresh
+    // snapshot already has the same short reply.
+    dropSettledLiveIfPersistedWins()
     void scrollBottom()
   },
 )
@@ -778,6 +836,13 @@ watch(
 watch(
   () => `${props.runId}.${props.nodeId}.${props.iteration}`,
   () => {
+    idleNarrativeOpen = false
+    idlePainted = false
+    persistedMovedAfterIdlePaint = false
+    lastAppliedAcpSig = ''
+    platformQueueIdle.value = false
+    sandboxOrphan.value = null
+    lastCompletedItemId = undefined
     void enterStickSequence()
   },
 )
@@ -1334,8 +1399,23 @@ function finishAbort() {
   requestFlowConfirm('abort')
 }
 
+/** Run whose confirm window is still up. Released when that window leaves or this chat unmounts. */
+let heldConfirmRunId = ''
+
+function holdConfirmWindow() {
+  heldConfirmRunId = props.runId
+  holdSidebarConfirmWindow(props.runId)
+}
+
+function releaseConfirmFlowWindow() {
+  const runId = heldConfirmRunId
+  heldConfirmRunId = ''
+  if (runId) releaseSidebarConfirmWindow(runId)
+}
+
 function commitFinishAbort() {
   if (!canFinishAbort()) return
+  holdConfirmWindow()
   emit('finish-abort')
 }
 
@@ -1347,6 +1427,8 @@ function finishEarly() {
 function commitFinishEarly() {
   if (!canFinishEarly()) return
   // Click intent: play overlay only after the in-app confirm; parent force must not wait for done (g1.1).
+  // The sidebar hold is armed before the parent hears finish, so the row cannot fly while the window is up.
+  holdConfirmWindow()
   validating.value = true
   // Hand-off progress is shown inline in the transcript (no full-desk overlay).
   emit('finish')
@@ -1685,14 +1767,20 @@ function forceAuthoritativeIdle() {
 }
 
 /**
- * After turn_done/error: drop only ghost optimistic rows (no server id).
- * Keep authoritative waiters so multi-turn queue does not briefly unlock
- * confirm before the next queue_state. Empty after filter ⇒ synthesized idle.
+ * After turn_done/error: drop the completed item and ghost optimistic rows.
+ * Keep distinct authoritative waiters so multi-turn queue does not briefly
+ * unlock confirm before the next queue_state. Empty after filter ⇒ idle.
  */
 function settleAfterTurnEnd() {
+  const completedId = liveTurnOrigin?.id
+  if (completedId) {
+    lastCompletedItemId = completedId
+    queued.value = queued.value.filter((q) => q.id !== completedId)
+  }
   if (queued.value.some((q) => !q.id)) {
     queued.value = dropGhostItems(queued.value)
   }
+  liveTurnOrigin = null
   thinking.value = queued.value.length > 0 || liveAgentIdx.value >= 0
 }
 
@@ -1703,7 +1791,15 @@ function applySandboxOrphan(frame: {
 }) {
   const busy = !!frame.sandboxBusy || !!frame.sandboxDesynced
   if (!busy) {
+    const wasOrphan = !!sandboxOrphan.value
     sandboxOrphan.value = null
+    if (wasOrphan) {
+      endLiveStreaming()
+      if (queued.value.length === 0) thinking.value = false
+    }
+    // The refresh snapshot may have landed while the bridge was still busy.
+    // Now that it is idle, drop the idle row the snapshot did not keep.
+    dropSettledLiveIfPersistedWins()
     return
   }
   sandboxOrphan.value = {
@@ -1728,19 +1824,11 @@ function latestNormallyCompletedTurn(): ClarifyTurn | null {
 }
 
 const showSandboxOrphanBanner = computed(() => {
-  if (
-    !sandboxOrphan.value ||
-    thinking.value ||
-    queued.value.length > 0 ||
-    liveAgentIdx.value >= 0 ||
-    props.done
-  ) {
+  if (!sandboxOrphan.value || !platformQueueIdle.value || props.done || queued.value.length > 0) {
     return false
   }
-  // plan g1.2: no live bubble and the latest bubble already completed —
-  // do not paint the interrupt banner when the bridge is echoing that same
-  // turn. A different op, or busy/desync with no op to point at, keeps the
-  // banner and the abort button so it matches a confirm the server still rejects.
+  // A live slot for this orphan turn must not hide the banner: the platform
+  // already stopped tracking, and the transcript still has to keep growing.
   const completed = latestNormallyCompletedTurn()
   if (!completed) return true
   const running = sandboxOrphan.value.runningOpId
@@ -1760,15 +1848,122 @@ const sandboxOrphanOpLabel = computed(() => {
  * while allowing at most one local-ahead item when no live turn (HTTP ack /
  * turn_begin in flight). busy+activeItem restores live bubble after refresh.
  */
+function syncIdleNarrative(
+  waiting: number,
+  busy?: boolean,
+  activeItem?: SessionFrameItem | null,
+) {
+  idleNarrativeOpen = waiting === 0 && !busy && !activeItem
+  platformQueueIdle.value = idleNarrativeOpen
+}
+
+/** Drop idle or settled live rows once the persisted transcript is the dialogue. */
+function clearSettledLiveTurns() {
+  liveTurns.value = []
+  liveAgentIdx.value = -1
+  messageReveal.reset()
+  thoughtReveal.reset()
+  streamPreview.reset()
+  thoughtPreview.reset()
+  if (queued.value.length === 0) thinking.value = false
+  idlePainted = false
+  persistedMovedAfterIdlePaint = false
+  lastAppliedAcpSig = ''
+}
+
+/** Live rails differ from the persisted tail, so a transcript refresh must not drop them. */
+function liveNarrativeAhead(persisted: ClarifyTurn[]): boolean {
+  const liveAgent = [...liveTurns.value].reverse().find((t) => t.role === 'agent')
+  if (!liveAgent) return false
+  const liveText = (liveAgent.text || '').trim()
+  const liveThought = (liveAgent.thought || '').trim()
+  if (!liveText && !liveThought && !liveAgent.tools?.length && !liveAgent.parts?.length) return false
+  const last = [...persisted].reverse().find((t) => t.role === 'agent' && !t.handoff)
+  if (!last) return true
+  if ((last.text || '').trim() !== liveText) return true
+  if ((last.thought || '').trim() !== liveThought) return true
+  if (!sameTools(last.tools, liveAgent.tools)) return true
+  if (!sameParts(last.parts, liveAgent.parts)) return true
+  return false
+}
+
+/**
+ * Drop a settled live row once the persisted transcript is the dialogue.
+ * While the sandbox orphan is still writing, the open row stays.
+ */
+function dropSettledLiveIfPersistedWins() {
+  if (sandboxOrphan.value) return
+  const turnList = persistedTurns.value
+  prunePersistedLiveHistory(turnList)
+  const liveHumanText = liveTurns.value[0]?.role === 'human' ? liveTurns.value[0].text || '' : ''
+  const persistedCaughtUp = persistedCompletedLiveHuman(turnList, liveHumanText)
+  const ahead = liveNarrativeAhead(turnList)
+  const snapshotWins =
+    idlePainted &&
+    persistedMovedAfterIdlePaint &&
+    liveAgentIdx.value < 0 &&
+    ahead
+  if (
+    liveTurns.value.length &&
+    (snapshotWins ||
+      (!ahead &&
+        (persistedCaughtUp || (turnList.length > 0 && !liveTurns.value.some((t) => t.streaming)))))
+  ) {
+    clearSettledLiveTurns()
+  }
+}
+
 function applyQueueState(
   waiting: number,
   items: SessionFrameItem[] | null,
   busy?: boolean,
   activeItem?: SessionFrameItem | null,
+  sandbox?: { busy?: boolean; desynced?: boolean; runningOpId?: string },
 ) {
+  // A queue snapshot captured before completion can arrive after turn_done.
+  // Its busy bit describes the completed turn, so an otherwise empty snapshot
+  // must not reopen thinking. Distinct waiting items still belong to the queue.
+  if (
+    lastCompletedItemId &&
+    !liveTurnOrigin &&
+    liveAgentIdx.value < 0 &&
+    (activeItem?.id === lastCompletedItemId || items?.some((it) => it.id === lastCompletedItemId))
+  ) {
+    if (activeItem?.id === lastCompletedItemId) activeItem = null
+    if (items) items = items.filter((it) => it.id !== lastCompletedItemId)
+    if (!activeItem && (!items || items.length === 0)) return
+    if (items) waiting = items.length
+  }
+  syncIdleNarrative(waiting, busy, activeItem ?? null)
   if (isAuthoritativeIdle(waiting, busy, activeItem)) {
+    const row = liveAgentIdx.value >= 0 ? liveTurns.value[liveAgentIdx.value] : undefined
+    const keep =
+      !!row?.streaming &&
+      sandboxStillRunning(sandbox) &&
+      !orphanEchoesCompleted(sandbox?.runningOpId)
+    if (keep && row) {
+      if (queued.value.length) queued.value = []
+      thinking.value = true
+      if (
+        (row.text || '').trim() ||
+        (row.thought || '').trim() ||
+        row.tools?.length ||
+        row.parts?.length
+      ) {
+        idlePainted = true
+      }
+      return
+    }
     forceAuthoritativeIdle()
     return
+  }
+  // A delayed waiting snapshot may still list the item that turn_begin has
+  // already started. Keep that active item out of the pending queue; only a
+  // distinct server id can represent a waiter, including a same-text reply.
+  const activeId = (busy ? activeItem?.id : undefined) || liveTurnOrigin?.id
+  if (activeId) {
+    queued.value = queued.value.filter((q) => q.id !== activeId)
+    if (items) items = items.filter((it) => it.id !== activeId)
   }
   if (waiting === 0 && !busy) {
     if (queued.value.length) queued.value = []
@@ -1786,6 +1981,13 @@ function applyQueueState(
     !persistedCompletedLiveHuman(persistedTurns.value, activeItem.text ?? '')
   ) {
     const text = activeItem.text ?? ''
+    liveTurnOrigin = {
+      id: activeItem.id,
+      text,
+      images: activeItem.images ?? [],
+      annotations: activeItem.annotations ?? [],
+      newHuman: true,
+    }
     const started = new Date().toISOString()
     liveTurns.value = [
       {
@@ -1861,7 +2063,6 @@ function applyVisitEndedFrame(frame: {
     markOutputEnd(agent)
     liveAgentIdx.value = -1
   }
-  liveTurnOrigin = null
   if (auto) {
     // System first message: resume resends it; nothing to put back.
     restoreUnsentQueued({}, visitEndedNotice(true), { autoRetryOnResume: true })
@@ -1907,6 +2108,11 @@ function applyReviewFrame(frame: {
   if (frame.nodeId && frame.nodeId !== props.nodeId) return
   switch (frame.event) {
     case 'turn_begin': {
+      idleNarrativeOpen = false
+      idlePainted = false
+      persistedMovedAfterIdlePaint = false
+      lastAppliedAcpSig = ''
+      platformQueueIdle.value = false
       // Pump order: queue_state(remaining, no active) → turn_begin(item=active).
       // frame.item is server-authoritative; match-remove by id first, text fallback —
       // never blind-shift (that would bind live human to the next waiter after trim).
@@ -2035,6 +2241,11 @@ function applyReviewFrame(frame: {
         Array.isArray(frame.items) ? frame.items : null,
         frame.busy,
         frame.activeItem ?? null,
+        {
+          busy: frame.sandboxBusy,
+          desynced: frame.sandboxDesynced,
+          runningOpId: frame.sandboxRunningOpId,
+        },
       )
       applySandboxOrphan(frame)
       break
@@ -2130,23 +2341,232 @@ function applyAgentSegments(segs: { thought: string; message: string }[], tools:
 }
 
 /**
+ * Platform FIFO is idle and the streaming slot is gone. Write the snapshot
+ * onto the closed agent row (or a new one) without reopening the slot, so the
+ * orphan banner can stay while the text is visible. The row is settled: the
+ * slot is closed, so it must not keep a streaming tail. Stick-gated scroll only.
+ */
+function paintIdleNarrative(events: AcpEvent[]): boolean {
+  let idx = -1
+  for (let i = liveTurns.value.length - 1; i >= 0; i--) {
+    if (liveTurns.value[i]?.role === 'agent') {
+      idx = i
+      break
+    }
+  }
+  let created = false
+  if (idx < 0) {
+    if (idleSnapshotAlreadyVisible(events)) return true
+    const started = new Date().toISOString()
+    idx =
+      liveTurns.value.push({
+        role: 'agent',
+        text: '',
+        thought: '',
+        at: started,
+        startedAt: started,
+        streaming: false,
+      }) - 1
+    created = true
+  }
+  liveAgentIdx.value = idx
+  const applied = applyAcpEventsToSlot(events)
+  const row = liveTurns.value[idx]
+  liveAgentIdx.value = -1
+  if (queued.value.length === 0) thinking.value = false
+  const emptyCreated =
+    created &&
+    row &&
+    !(row.text || '').trim() &&
+    !(row.thought || '').trim() &&
+    !row.tools?.length &&
+    !row.parts?.length &&
+    liveTurns.value[liveTurns.value.length - 1] === row
+  if (emptyCreated) {
+    liveTurns.value.pop()
+  } else {
+    settleIdleNarrative()
+    const hasBody = liveTurns.value.some(
+      (t) =>
+        t.role === 'agent' &&
+        (!!(t.text || '').trim() || !!(t.thought || '').trim() || !!t.tools?.length || !!t.parts?.length),
+    )
+    if (hasBody) idlePainted = true
+  }
+  return applied
+}
+
+/** Slot is closed: show the written snapshot as a settled reply, not a live tail. */
+function settleIdleNarrative() {
+  for (const turn of liveTurns.value) {
+    if (turn.role !== 'agent' || !turn.streaming) continue
+    turn.streaming = false
+    if (!turn.handoff) markOutputEnd(turn)
+  }
+  messageReveal.flush()
+  thoughtReveal.flush()
+  streamPreview.flush()
+  thoughtPreview.flush()
+}
+
+/** Persisted tail already shows this cumulative snapshot — do not add an empty row. */
+function idleSnapshotAlreadyVisible(events: AcpEvent[]): boolean {
+  const last = [...persistedTurns.value].reverse().find((t) => t.role === 'agent' && !t.handoff)
+  if (!last) return false
+  let msg = ''
+  let thought = ''
+  for (const ev of events) {
+    if (ev.kind === 'message' && ev.text) msg = ev.text
+    if (ev.kind === 'thought' && ev.text) thought = ev.text
+  }
+  return (
+    (last.text || '') === msg &&
+    (last.thought || '') === thought &&
+    sameTools(last.tools, toolsFromAcp(events)) &&
+    sameParts(last.parts, partsFromAcp(events))
+  )
+}
+
+function sandboxStillRunning(sandbox?: { busy?: boolean; desynced?: boolean }): boolean {
+  return !!sandbox?.busy || !!sandbox?.desynced
+}
+
+/** Bridge is echoing a turn the transcript already finished normally. */
+function orphanEchoesCompleted(runningOpId?: string): boolean {
+  const running = (runningOpId || '').trim()
+  if (!running) return false
+  const completed = latestNormallyCompletedTurn()
+  if (!completed) return false
+  return (completed.opId || '') === running
+}
+
+/** Platform queue is idle, but the sandbox is still producing this turn. */
+function orphanTurnStillRunning(): boolean {
+  if (!sandboxOrphan.value || !platformQueueIdle.value) return false
+  return !orphanEchoesCompleted(sandboxOrphan.value.runningOpId)
+}
+
+function noteOrphanPainted() {
+  if (!sandboxOrphan.value) return
+  const hasBody = liveTurns.value.some(
+    (t) =>
+      t.role === 'agent' &&
+      (!!(t.text || '').trim() || !!(t.thought || '').trim() || !!t.tools?.length || !!t.parts?.length),
+  )
+  if (hasBody) idlePainted = true
+}
+
+/** Reopen the turn the platform stopped tracking so later frames still paint. */
+function ensureOrphanSlot() {
+  for (let i = liveTurns.value.length - 1; i >= 0; i--) {
+    const row = liveTurns.value[i]
+    if (row?.role !== 'agent') continue
+    row.streaming = true
+    row.interrupted = false
+    delete row.endedAt
+    liveAgentIdx.value = i
+    thinking.value = true
+    return
+  }
+  const persisted = persistedTurns.value
+  let human: ClarifyTurn | undefined
+  for (let i = persisted.length - 1; i >= 0; i--) {
+    const t = persisted[i]
+    if (!t) continue
+    if (t.role === 'human') {
+      human = t
+      break
+    }
+    if (t.role === 'agent' && !t.handoff) break
+  }
+  const started = new Date().toISOString()
+  const next: ClarifyTurn[] = []
+  if (human) {
+    next.push({
+      role: 'human',
+      text: human.text || '',
+      at: human.at || started,
+      images: human.images,
+      annotations: human.annotations,
+    })
+  }
+  next.push({
+    role: 'agent',
+    text: '',
+    thought: '',
+    at: started,
+    startedAt: started,
+    streaming: true,
+  })
+  liveTurns.value = next
+  liveAgentIdx.value = next.length - 1
+  thinking.value = true
+  lastAppliedAcpSig = ''
+  messageReveal.reset()
+  thoughtReveal.reset()
+  streamPreview.reset()
+  thoughtPreview.reset()
+}
+
+function acpSnapshotSig(events: AcpEvent[]): string {
+  let msg = ''
+  let thought = ''
+  const tools: string[] = []
+  let parts = ''
+  for (const ev of events) {
+    if (ev.kind === 'message' && ev.text) msg = ev.text
+    else if (ev.kind === 'thought' && ev.text) thought = ev.text
+    else if (ev.kind === 'tool_call') tools.push(`${ev.title || ''}:${ev.status || ''}`)
+    else if (ev.kind === 'timeline' && ev.parts) {
+      parts = ev.parts.map((p) => `${p.kind}:${p.text || ''}:${p.title || ''}:${p.status || ''}`).join('|')
+    }
+  }
+  return `${thought}\n${msg}\n${tools.join(',')}\n${parts}`
+}
+
+function snapshotAlreadyOnAgent(agent: ClarifyTurn, events: AcpEvent[]): boolean {
+  let msg = ''
+  let thought = ''
+  for (const ev of events) {
+    if (ev.kind === 'message' && ev.text) msg = ev.text
+    if (ev.kind === 'thought' && ev.text) thought = ev.text
+  }
+  return (agent.text || '') === msg && (agent.thought || '') === thought
+}
+
+/**
  * Consume publishAcp events for the streaming agent bubble (dialogue surface).
  * Returns false when mounted but streaming slot is not ready — host must buffer
  * (hard-load / remount race; never silent-noop as applied).
+ * After an idle queue_state, the missing slot is intentional: paint anyway.
+ * A sandbox that is still writing after the platform stopped tracking keeps
+ * the slot open, so late thought and body land on the open page.
  */
 function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolean {
   if (!events?.length) return true
   // Wrong node: not a readiness failure — do not buffer for another surface.
   if (nodeId && nodeId !== props.nodeId) return true
-  // Slot not rebuilt yet (queue_state pending) — buffer at host.
-  if (liveAgentIdx.value < 0) return false
+  if (liveAgentIdx.value < 0 && orphanTurnStillRunning()) ensureOrphanSlot()
+  if (liveAgentIdx.value < 0) {
+    if (!idleNarrativeOpen) return false
+    return paintIdleNarrative(events)
+  }
+  const applied = applyAcpEventsToSlot(events)
+  if (applied) noteOrphanPainted()
+  return applied
+}
+
+function applyAcpEventsToSlot(events: AcpEvent[]): boolean {
   const agent = liveTurns.value[liveAgentIdx.value]
   if (!agent) return false
+  const sig = acpSnapshotSig(events)
+  if (sig === lastAppliedAcpSig && snapshotAlreadyOnAgent(agent, events)) return true
   const tools = toolsFromAcp(events)
   const parts = partsFromAcp(events)
   const segs = agentSegments(events)
   if (segs) {
     applyAgentSegments(segs, tools, parts)
+    lastAppliedAcpSig = sig
     void scrollBottom()
     return true
   }
@@ -2164,6 +2584,7 @@ function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolea
   agent.thought = thought
   agent.text = msg
   setRowTools(agent, tools, parts)
+  lastAppliedAcpSig = sig
   // Authority → reveal → markdown/text coalesce (not absolute snapshot → DOM).
   messageReveal.setTarget(msg)
   thoughtReveal.setTarget(thought)
@@ -2382,7 +2803,9 @@ function retryLastFailed() {
     confirmFlowDiscard,
     acceptConfirmFlow,
     dismissConfirmFlow,
+    releaseConfirmFlowWindow,
     playConfirmCeremony,
+    followKeepsComposer,
     showDoneChrome,
     confirmFlowPlaying,
     cancelReview,

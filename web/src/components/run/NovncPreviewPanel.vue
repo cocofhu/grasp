@@ -865,7 +865,7 @@ onBeforeUnmount(() => {
         :title="t('pages.appPreview.novnc.back')"
         @click="nav('back')"
       >
-        ←
+        <Icon name="arrow-left" :size="13" />
       </button>
       <button
         type="button"
@@ -873,7 +873,7 @@ onBeforeUnmount(() => {
         :title="t('pages.appPreview.novnc.forward')"
         @click="nav('forward')"
       >
-        →
+        <Icon name="arrow-right" :size="13" />
       </button>
       <button
         type="button"
@@ -881,7 +881,7 @@ onBeforeUnmount(() => {
         :title="t('pages.appPreview.novnc.reload')"
         @click="nav('reload')"
       >
-        ⟳
+        <Icon name="refresh" :size="13" />
       </button>
       <button
         type="button"
@@ -974,7 +974,7 @@ onBeforeUnmount(() => {
         :title="t('pages.appPreview.novnc.back')"
         @click="nav('back')"
       >
-        ←
+        <Icon name="arrow-left" :size="13" />
       </button>
       <button
         type="button"
@@ -982,7 +982,7 @@ onBeforeUnmount(() => {
         :title="t('pages.appPreview.novnc.forward')"
         @click="nav('forward')"
       >
-        →
+        <Icon name="arrow-right" :size="13" />
       </button>
       <button
         type="button"
@@ -990,7 +990,7 @@ onBeforeUnmount(() => {
         :title="t('pages.appPreview.novnc.reload')"
         @click="nav('reload')"
       >
-        ⟳
+        <Icon name="refresh" :size="13" />
       </button>
       <input
         v-model="address"

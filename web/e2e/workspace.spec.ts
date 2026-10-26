@@ -10,8 +10,11 @@ test('settings keeps the app rail and a centered document without search', async
   await expect(page.getByTestId('sidebar-app-rail')).toBeVisible()
   await expect(sidebar.locator('input[type="search"]')).toHaveCount(0)
   await expect(page.locator('.app-shell-dotgrid')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '常规', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '工作区信息', exact: true })).toBeVisible()
+  await expect(sidebar.getByRole('link', { name: '工作区信息' })).toHaveCount(0)
   const navBox = await sidebar.boundingBox()
-  const formBox = await page.getByTestId('workspace-page').boundingBox()
+  const formBox = await page.getByTestId('settings-panel').boundingBox()
   const mainBox = await page.getByTestId('shell-page-scroll').boundingBox()
   const mainWidth = await page.getByTestId('shell-page-scroll').evaluate(el => el.clientWidth)
   expect(navBox!.width).toBe(360)
@@ -19,7 +22,7 @@ test('settings keeps the app rail and a centered document without search', async
   expect(Math.abs(formBox!.x + formBox!.width / 2 - (mainBox!.x + mainWidth / 2))).toBeLessThan(2)
   const field = page.locator('#workspace-meta-name')
   await field.fill('清晰的设置布局')
-  await page.getByTestId('workspace-page').getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByTestId('settings-save-actions').getByRole('button', { name: '保存', exact: true }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.workspace.name)).toBe('清晰的设置布局')
 })
 
@@ -141,27 +144,34 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
   await expect(lists.locator('input[type="search"]')).toHaveCount(0)
   await expect(page.getByTestId('workflows-page').getByRole('searchbox')).toBeVisible()
   await expect(lists.getByRole('link', { name: '历史执行', exact: true })).toBeVisible()
-  // Finished runs only; the running and waiting ones are listed under 正在执行.
+  // Finished runs only. Waiting-human stays under 正在执行; the automatic agent run is 自动过程.
   await expect(lists.getByTestId('sidebar-recent-run')).toHaveCount(4)
   await expect(lists.getByTestId('sidebar-recent-run').first()).toHaveAttribute('href', '/runs/run-3')
   const running = page.getByTestId('app-desktop-sidebar').getByTestId('nav-pending-approvals')
   await expect(running).toContainText('正在执行')
-  await expect(running.getByTestId('nav-pending-row')).toHaveCount(2)
+  await expect(running.getByTestId('nav-pending-row')).toHaveCount(1)
+  await expect(running.getByTestId('nav-pending-row')).toContainText('修复回归测试中的不稳定用例')
+  const automatic = page.getByTestId('app-desktop-sidebar').getByTestId('nav-auto-process')
+  await expect(automatic).toContainText('自动过程')
+  await expect(automatic.getByTestId('nav-pending-row')).toHaveCount(1)
+  await expect(automatic.getByTestId('nav-pending-row')).toContainText('优化工作流审批交互')
   const calls = await page.evaluate(() => (window as any).__workspaceFixture.calls)
   expect(calls.some((call: any) => call.path === '/api/workflows/catalog')).toBe(false)
   expect(calls.some((call: any) => call.path === '/api/workflows' && call.method === 'GET')).toBe(true)
 })
 
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
-  await page.goto('/workspace.html?view=/settings/workspace')
+  await page.goto('/workspace.html?view=/settings')
   await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
-  for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings/workspace']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/variables', '/settings/audit']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/workspace"]')).toHaveCount(0)
+  await expect(page.getByTestId('nav-settings-chrome').getByRole('link', { name: '工作区信息' })).toHaveCount(0)
   // Agent 默认配置 moved into the Agent list (pinned first item); no separate settings entry.
   await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/shared-agent"]')).toHaveCount(0)
   await expect(page.locator('.settings-group-heading')).toHaveText(['工作区工具', '执行配置', '平台配置'])
   await expect(page.getByTestId('workspace-meta-delete')).toHaveCount(0)
   await page.locator('#workspace-meta-name').fill('共享研发工作区')
-  await page.getByTestId('workspace-page').getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByTestId('settings-save-actions').getByRole('button', { name: '保存', exact: true }).click()
   await expect.poll(async () => page.evaluate(() => (window as any).__workspaceFixture.workspace.name)).toBe('共享研发工作区')
 })
 
@@ -183,7 +193,7 @@ test('390px drawer shows recent runs without a workflow directory', async ({ pag
 })
 
 test('settings tool links keep the settings directory until explicitly leaving it', async ({ page }) => {
-  await page.goto('/workspace.html?view=/settings/workspace')
+  await page.goto('/workspace.html?view=/settings')
   for (const path of ['/board', '/workflows', '/requirements', '/assistant']) {
     const settings = page.getByTestId('nav-settings-chrome')
     await settings.locator(`a[href="${path}"]`).click()
@@ -213,7 +223,7 @@ test('settings tool links keep the settings directory until explicitly leaving i
 
 test('mobile settings tool navigation survives closing and reopening the drawer', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/workspace.html?view=/settings/workspace')
+  await page.goto('/workspace.html?view=/settings')
   await page.getByTestId('floating-nav-ball').click()
   const drawer = page.getByTestId('mobile-nav-drawer')
   await expect(drawer.getByTestId('mobile-settings-title')).toHaveText('设置')
@@ -243,7 +253,7 @@ for (const [lang, title] of [['zh-CN', '智能体'], ['en', 'Agents']]) test(`Ag
   await expect(page.getByTestId('agent-tree-manage')).toHaveCount(0)
   const more = sidebar.getByTestId('agent-tree-more')
   await more.click()
-  await expect(page.getByTestId('agent-tree-manage')).toBeVisible()
+  await expect(page.getByTestId('agent-tree-manage')).toHaveCount(0)
   await expect(page.getByTestId('agent-tree-import')).toBeVisible()
   await expect(page.getByTestId('agent-tree-export')).toBeVisible()
   await page.keyboard.press('Escape')
@@ -254,17 +264,40 @@ for (const [lang, title] of [['zh-CN', '智能体'], ['en', 'Agents']]) test(`Ag
 test('settings and workspace retain the same app rail while changing directory', async ({ page }) => {
   await page.goto('/workspace.html')
   const rail = page.getByTestId('sidebar-app-rail')
-  const before = await rail.boundingBox()
-  await rail.locator('a[href="/settings"]').click()
+  await expect(rail).toBeVisible()
+  const railAppearance = () => rail.evaluate((nav) => {
+    const shell = nav.closest<HTMLElement>('[data-testid="app-desktop-sidebar"]')!
+    const shellStyle = getComputedStyle(shell)
+    return {
+      bounds: nav.getBoundingClientRect().toJSON(),
+      topIcon: nav.querySelector('a svg')!.getBoundingClientRect().toJSON(),
+      avatar: nav.querySelector('[data-testid="sidebar-user-avatar"]')!.getBoundingClientRect().toJSON(),
+      background: shellStyle.backgroundColor,
+      radius: shellStyle.borderRadius,
+      border: getComputedStyle(nav).borderRightWidth,
+    }
+  })
+  const before = await railAppearance()
+  const settingsToggle = page.getByTestId('sidebar-settings-toggle')
+  await settingsToggle.click()
   await expect(page.getByTestId('sidebar-settings-title')).toBeVisible()
-  await expect(rail.locator('a[href="/settings"]')).toHaveAttribute('aria-current', 'page')
-  expect((await rail.boundingBox())?.width).toBe(before?.width)
-  await rail.locator('a[href="/workflows"]').click()
+  await expect(settingsToggle).toHaveAttribute('aria-current', 'page')
+  await expect(settingsToggle).toHaveAttribute('aria-label', '返回工作区')
+  await expect.poll(railAppearance).toEqual(before)
+  await settingsToggle.click()
+  await expect(page.getByTestId('nav-workspace-chrome')).toBeVisible()
+  await expect(page.getByTestId('workflows-page')).toBeVisible()
+  await expect(settingsToggle).toHaveAttribute('aria-label', '设置')
+  await expect.poll(railAppearance).toEqual(before)
+  await settingsToggle.click()
+  await expect(page.getByTestId('sidebar-settings-title')).toBeVisible()
+  await rail.locator(':scope > a[href="/workflows"]').click()
   await expect(page.getByTestId('sidebar-workflows')).toHaveCount(0)
   await expect(page.getByTestId('workflows-page')).toBeVisible()
   await expect(page.getByTestId('sidebar-recent')).toBeVisible()
   await expect(page.getByTestId('sidebar-settings-title')).toHaveCount(0)
   await expect(rail.locator('a[href="/workflows"]')).toHaveAttribute('aria-current', 'page')
+  await expect.poll(railAppearance).toEqual(before)
 })
 
 test('workflow notification controls save the selected policy and custom events', async ({ page }) => {
