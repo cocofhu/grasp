@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 3.0.0 — 2026-10-26
+
 - **Clarify conversation recovery:** delayed queue snapshots and old temporary replies no longer leave later questions read-only after submitting choices. Reconnecting after a completed turn restores the saved questions and releases the stale busy state without reloading the page.
 
 - **Clearer token analytics:** usage structure now uses readable ranked rows with drill-down details. Model and workflow breakdowns share a full-width tabbed table with usage bars, and the busiest runs show eight rows by default with an option to expand; CSV exports still include the complete list.
@@ -254,6 +256,8 @@ All notable public-release changes are documented here.
   prompts now say not to register backends and to self-test on
   `127.0.0.1:<app port>`. Sandboxes on an older runtime bundle keep the old
   behavior until the bundle updates.
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:3.0.0`.
 
 ## 2.2.0 — 2026-10-15
 
