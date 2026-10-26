@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Solo message delivery:** fixed a subscription race that could discard a sent message's opening frame when the queue snapshot shared its sequence number. The live transcript now keeps the message without requiring a refresh, while identical frame replays remain deduplicated.
+
 - **Coding-tool credentials:** OpenCode CLI and DeepSeek Harness now save their own vendor keys as coding-tool authorizations, alongside Cursor and CodeBuddy. General model service keys remain in API accounts. Both tools can use their vendor authorization or an explicitly selected API account when configuring a model.
 
 - **API account model selection:** model configuration reads the selected API account's model directory for searchable primary and auxiliary choices. Saved models stay available, failed reads can be retried, and original model IDs can still be entered manually. Only selected models are added to the account when saving.

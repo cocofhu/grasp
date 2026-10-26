@@ -72,7 +72,8 @@ export function useSoloChat(sessionId: Ref<string>) {
   type ModelSettings = Pick<SoloSession, 'currentModelId' | 'currentModelSet' | 'modelNotice' | 'reasoningEffort' | 'reasoningEfforts'>
   let confirmedSettings: ModelSettings | null = null
   const modelChangePending = ref(false)
-  const seenSeq = new Set<number>()
+  // 订阅快照会复用最新真实事件的 seq；按事件类型分别记录，避免快照吞掉同序号的开场帧。
+  const seenSeq = new Map<number, Set<string>>()
 
   const reconnect = createWsReconnectController({
     connect: () => openWs(),
@@ -270,20 +271,23 @@ export function useSoloChat(sessionId: Ref<string>) {
   function noteSeq(frame: any): 'ok' | 'dup' | 'gap' {
     const seq = frame?.seq
     if (typeof seq !== 'number' || seq < 0) return 'ok'
-    if (seenSeq.has(seq)) return 'dup'
+    const kind = `${String(frame?.type ?? '')}:${String(frame?.event ?? '')}`
+    const seenKinds = seenSeq.get(seq)
+    if (seenKinds?.has(kind)) return 'dup'
     if (lastSeq >= 0 && seq > lastSeq + 1) {
       if (resyncs >= 3) {
-        seenSeq.add(seq)
+        seenSeq.set(seq, new Set([kind]))
         lastSeq = seq
         return 'ok'
       }
       return 'gap'
     }
-    seenSeq.add(seq)
+    if (seenKinds) seenKinds.add(kind)
+    else seenSeq.set(seq, new Set([kind]))
     if (seq === lastSeq + 1 || lastSeq < 0) resyncs = 0
     if (seq > lastSeq) lastSeq = seq
     if (seenSeq.size > 4096) {
-      for (const n of seenSeq) {
+      for (const n of seenSeq.keys()) {
         if (n < lastSeq - 2048) seenSeq.delete(n)
       }
     }

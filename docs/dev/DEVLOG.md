@@ -28,6 +28,14 @@
 - 为什么：配置名或服务名不是模型名称，混用会让用户无法判断实际调用的模型；主模型与辅助模型组成的配置在管理入口应明确称为模型组。
 - 如何验证：5 个相关 Vitest 文件共 126 项测试及 1 项 Solo 真实浏览器回归通过，覆盖 TokenHub 别名不显示、真实模型名称、原始模型 ID 与推理强度提交、自动模式和新建模型组入口。Web 全量 526 个文件、5,504 项测试通过，Lines 91.49%；ESLint（0 errors、12 个既有 warnings）、Vue 类型检查、生产构建及 Secure Context/品牌断言通过。docs 构建与官方源高/严重漏洞审计、actionlint、error-level shellcheck 和 diff 检查通过。
 
+### 2026-10-26（修复 Solo 同序号快照吞掉消息开场）
+
+- 日期：2026-10-26（UTC）
+- 范围：`web/src/lib/solo/useSoloChat.ts`、`web/src/lib/solo/useSoloChat.test.ts`、`CHANGELOG.md`。
+- 做了什么：WebSocket 帧去重由仅比较 `seq` 改为同时比较事件类型；订阅快照与真实 `turn_begin` 共用序号时仍处理开场帧，同一真实事件的重复重放仍被忽略。补上与服务器 `Subscribe` 序号语义一致的竞态回归。
+- 为什么：订阅快照复用最新真实事件的 `seq`，原逻辑先记录快照后会误删同序号的消息开场，导致已发送消息偶发不上屏，只能刷新后从历史接口恢复。
+- 如何验证：新增用例在修复前稳定失败（`turns=[]`），修复后通过；Solo 定向 20 项、Web 全量 526 文件 / 5,505 项测试通过，Lines 91.49%，关键浏览器测试 240 项通过（5.9 分钟）；lint（0 errors、12 条既有 warnings）、类型检查及生产构建通过，docs 构建与官方源高/严重漏洞审计、actionlint、error-level shellcheck 和 diff 检查通过。构建首次触及默认约 2GB Node 堆上限，改为 4GB 后成功。
+
 ### 2026-10-26（修复 DeepSeek Harness 无密钥 CI 握手）
 
 - 日期：2026-10-26（Asia/Shanghai）
