@@ -44,6 +44,13 @@ html.light :is(.chat-thread, .chat-composer) {
 .chat-thread .chat-prose li::marker { color: rgb(var(--c-txt2)); }
 .chat-thread .chat-prose :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote):first-child { margin-top: 0; }
 .chat-thread .chat-prose :is(p, ul, ol, pre, blockquote):last-child { margin-bottom: 0; }
+/* Timeline prose sits in a column flex, and marked leaves a trailing newline
+   inside the span, so :last-child never clears the block margin. Zero only
+   the final block here; paragraph rhythm inside the message stays put. */
+.agent-timeline :is(.agent-live-message, .agent-elapsed-note) > span:not(.stream-md) > :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote):not(:has(~ :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr))),
+.agent-timeline .agent-live-message .stream-md-block:last-child > :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote):not(:has(~ :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr))) {
+  margin-bottom: 0;
+}
 .chat-thread .chat-prose a {
   color: rgb(var(--c-accent-2));
   text-decoration-color: rgb(var(--c-accent) / .35);

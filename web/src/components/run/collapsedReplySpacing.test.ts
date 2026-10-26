@@ -48,8 +48,10 @@ describe('collapsed reply spacing', () => {
     expect(style).toContain('.agent-thought { margin: 0 0 2px;')
     expect(chat).toContain('.chat-thought { margin: 0 0 2px; }')
     expect(tools).toContain('margin: 0 0 2px;')
-    expect(status).toContain(':size="16"')
-    expect(status).toContain('width: 16px; height: 16px;')
+    expect(status).toContain(':size="12"')
+    expect(status).toContain('width: 12px; height: 12px;')
+    expect(status).not.toContain(':size="16"')
+    expect(status).not.toContain('width: 16px; height: 16px;')
 
     const elapsed = block(style, '\\.agent-elapsed')
     expect(elapsed).toContain('min-height: 24px')
@@ -118,5 +120,30 @@ describe('collapsed reply spacing', () => {
     expect(block(chat, '\\.chat-thread \\.chat-prose blockquote')).toContain('margin-block: 1em')
     expect(block(chat, '\\.chat-thread \\.chat-prose table')).toContain('margin-block: 1em')
     expect(block(chat, '\\.chat-thread \\.chat-prose hr')).toContain('margin-block: 1.5em')
+  })
+
+  it('uses a 2px block gap and lines the thought summary up with the tool row', () => {
+    expect(timeline).not.toContain('mb-3')
+    expect(timeline).toContain('agent-live-message')
+    expect(style).toContain('.agent-live-message { margin: 0 0 2px;')
+    expect(style).toContain('.agent-live-message:last-child { margin-bottom: 0; }')
+
+    const elapsedThought = block(style, '\\.agent-elapsed-thought')
+    expect(elapsedThought).toContain('margin: 0 0 2px')
+    expect(elapsedThought).not.toContain('8px')
+    expect(style).toContain('.agent-elapsed-note { margin-bottom: 2px; }')
+    expect(style).not.toContain('margin-bottom: 8px;')
+    expect(style).not.toContain('margin-bottom: 4px;')
+
+    const detail = block(tools, '\\.agent-tool-detail')
+    expect(detail).toContain('margin: 2px 0 2px 28px')
+    expect(detail).not.toContain('10px')
+
+    expect(style).toContain('.agent-thought-summary::marker { content: none; }')
+    expect(style).toContain('.agent-thought-summary::-webkit-details-marker { display: none; }')
+
+    expect(chat).toMatch(/\.agent-timeline :is\(\.agent-live-message, \.agent-elapsed-note\)/)
+    expect(chat).toMatch(/\.agent-timeline \.agent-live-message \.stream-md-block:last-child/)
+    expect(chat).toMatch(/\.chat-thread \.chat-prose p\s*\{\s*margin:\s*0 0 11px;\s*\}/)
   })
 })

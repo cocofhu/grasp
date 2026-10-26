@@ -108,7 +108,7 @@ button.agent-tool-row-main:focus-visible,
   min-width: 0;
   flex-direction: column;
   gap: 12px;
-  margin: 2px 0 10px 28px;
+  margin: 2px 0 2px 28px;
   font-size: 12px;
 }
 .agent-tool-raw-name { overflow-wrap: anywhere; font-size: 11px; }

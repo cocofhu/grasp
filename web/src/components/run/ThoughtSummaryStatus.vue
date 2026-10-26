@@ -84,7 +84,7 @@ const iconName = computed(() => {
       :key="iconName"
       :name="iconName"
       :busy="state === 'generating'"
-      :size="16"
+      :size="12"
       class="thought-summary-icon"
       aria-hidden="true"
     />
@@ -105,7 +105,7 @@ const iconName = computed(() => {
   font-size: 12px;
   line-height: 20px;
 }
-.thought-summary-icon { flex-shrink: 0; width: 16px; height: 16px; }
+.thought-summary-icon { flex-shrink: 0; width: 12px; height: 12px; }
 .thought-summary-title { min-width: 0; font-weight: 500; }
 .thought-summary-badge {
   flex-shrink: 0;
