@@ -224,7 +224,7 @@ test('CodeBuddy offers Chat connections and filters unsupported Responses and Me
 test('create credentials, then save a reusable tool-credential-model configuration', async ({ page }) => {
   const state = await setup(page)
   await openCredentials(page)
-  await expect(page.getByRole('tab')).toHaveText(['凭据', '模型'])
+  await expect(page.getByRole('tab')).toHaveText(['凭据', '模型组'])
   await page.getByTestId('workspace-credential-create').click()
   await page.getByTestId('workspace-add-credential').click()
   await page.getByTestId('credential-kind-model_api').click()
@@ -253,7 +253,7 @@ test('create credentials, then save a reusable tool-credential-model configurati
   expect(state.keyWrites[0]).toMatchObject({ purpose: 'model_api', issuer: 'Team gateway', provider: 'custom', value: 'test-key-no-provider-access' })
   expect(state.connectionWrites[0]).toMatchObject({ baseUrl: 'https://gateway.example/v1', credentialId: 'new-key', models: [] })
   expect(state.connectionWrites[0]).not.toHaveProperty('value')
-  await page.getByRole('tab', { name: '模型', exact: true }).click()
+  await page.getByRole('tab', { name: '模型组', exact: true }).click()
   await expect(page.getByTestId('model-configurations-manager')).toBeVisible()
   await expect(page.getByText('模型目录', { exact: true })).toHaveCount(0)
   await expect(page.getByTestId('model-catalog-panel')).toHaveCount(0)
@@ -275,7 +275,7 @@ test('named model configurations preserve tool and credential identity when edit
   const state = await setup(page, [connection('responses-account', 'openai-responses', 'vendor/raw/model')])
   state.configurations.push({ id: 'configured-model', name: 'Team Codex model', backend: 'codex', binding: { kind: 'connection', connectionId: 'responses-account', modelId: 'vendor/raw/model' }, state: 'active', revision: 1 })
   await openCredentials(page)
-  await page.getByRole('tab', { name: '模型', exact: true }).click()
+  await page.getByRole('tab', { name: '模型组', exact: true }).click()
   const row = page.getByTestId('model-configuration-configured-model')
   await expect(row).toContainText('Team Codex model')
   await row.getByRole('button', { name: '编辑', exact: true }).click()
@@ -600,7 +600,7 @@ for (const backend of ['cursor', 'opencode', 'deepseek_harness']) {
 }
 
 
-test('Solo uses saved model names and sends exact model IDs and advertised effort values', async ({ page }, testInfo) => {
+test('Solo uses real model names and sends exact model IDs and advertised effort values', async ({ page }, testInfo) => {
   const primary = 'kimi-k3.1-pro'
   const auxiliary = 'kimi-k2.5'
   const service = {
@@ -608,7 +608,7 @@ test('Solo uses saved model names and sends exact model IDs and advertised effor
     models: [{ id: primary, name: 'Kimi upstream model', source: 'manual', reasoningEfforts: ['low', 'high'] }, { id: auxiliary, name: 'Kimi 2.5', source: 'manual' }],
   }
   const state = await setup(page, [service])
-  state.configurations.push({ id: 'kimi-config', name: 'Kimi', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: service.id, modelId: primary, auxiliaryModelIds: [auxiliary] }, state: 'active', revision: 1 })
+  state.configurations.push({ id: 'kimi-config', name: 'TokenHub', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: service.id, modelId: primary, auxiliaryModelIds: [auxiliary] }, state: 'active', revision: 1 })
   state.agents.push({ name: 'Solo', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' }, gitBindings: { items: [] }, files: [], mcp: [], env: {}, layout: {} })
   const session = { id: 'solo-named-model', title: 'A Solo task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-10-26T00:00:00Z', updatedAt: '2026-10-26T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialModelId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', reasoningEfforts: ['low', 'high'] }
   let createBody: Record<string, unknown> | undefined
@@ -658,11 +658,12 @@ test('Solo uses saved model names and sends exact model IDs and advertised effor
     if (framed) expect(border.alpha).toBeGreaterThan(0)
     else expect(border.alpha).toBe(0)
   }
-  await expect(trigger).toContainText('Kimi')
+  await expect(trigger).toContainText('Kimi upstream model')
+  await expect(trigger).not.toContainText('TokenHub')
   await expect(trigger).not.toContainText(primary)
   await expectModelPill()
   await trigger.click()
-  await expect(page.getByTestId(`solo-model-option-${primary}`)).toContainText('Kimi')
+  await expect(page.getByTestId(`solo-model-option-${primary}`)).toContainText('Kimi upstream model')
   await expect(page.getByTestId('solo-model-select-panel')).not.toContainText(primary)
   await expect(page.getByTestId('solo-model-select-panel')).not.toContainText(auxiliary)
   await settleVisualTransitions(page)
@@ -696,7 +697,8 @@ test('Solo uses saved model names and sends exact model IDs and advertised effor
   await expect(page.getByTestId('solo-session-pane')).toBeVisible()
   expect(createBody).toMatchObject({ agentName: 'Solo', reasoningEffort: 'high' })
   expect(createBody).not.toHaveProperty('initialModelId')
-  await expect(trigger).toContainText('Kimi')
+  await expect(trigger).toContainText('Kimi upstream model')
+  await expect(trigger).not.toContainText('TokenHub')
   await expect(trigger).not.toContainText(primary)
   await expectModelPill(false)
   await trigger.click()

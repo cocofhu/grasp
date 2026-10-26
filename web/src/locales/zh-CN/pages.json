@@ -1243,7 +1243,7 @@
         "modelApiKeySubtitle": "在这里新增、更换或清除。不会标成某个 Agent 的当前使用，密钥只显示掩码。",
         "empty": "该工作区暂未提供可管理的凭据。",
         "add": "新增",
-        "addModel": "添加模型",
+        "addModel": "新建模型组",
         "create": "新增凭据",
         "createTitle": "新增工作区凭据",
         "alias": "别名",

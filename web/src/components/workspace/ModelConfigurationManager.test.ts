@@ -99,6 +99,8 @@ describe('ModelConfigurationManager', () => {
     const wrapper = setup()
     await flushPromises()
     expect(wrapper.find('[data-testid="model-catalog-panel"]').exists()).toBe(false)
+    expect(wrapper.get('h3').text()).toBe('Model groups')
+    expect(wrapper.get('[data-testid="model-configuration-add"]').text()).toBe('New model group')
     expect(wrapper.find('.configuration-advanced').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Model catalog')
     await wrapper.get('[data-testid="model-configuration-add"]').trigger('click')
