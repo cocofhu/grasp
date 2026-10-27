@@ -5,6 +5,12 @@
   font-size: 12px;
   line-height: 1.65;
 }
+/* An open call list already ends in 2px. The group margin would stack on top
+   of that, because the timeline is a column flex and these boxes do not collapse.
+   Boot checklists have no .agent-tool-line, so they keep the group margin. */
+.agent-tools:has(> .agent-tool-list > li > .agent-tool-line) {
+  margin-bottom: 0;
+}
 .agent-tools-head,
 .agent-tool-row-main {
   display: flex;
@@ -61,6 +67,11 @@ button.agent-tool-row-main:focus-visible,
   border-left: 1px solid rgb(var(--c-line) / .8);
   padding: 0 0 2px 15px;
   list-style: none;
+}
+/* The open detail is the list's last box and already has a 2px bottom margin.
+   Leaving the list padding on adds another 2px that does not collapse. */
+.agent-tool-list:has(> li:last-child > .agent-tool-detail) {
+  padding-bottom: 0;
 }
 .agent-tool-line {
   display: flex;

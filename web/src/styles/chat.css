@@ -46,10 +46,44 @@ html.light :is(.chat-thread, .chat-composer) {
 .chat-thread .chat-prose :is(p, ul, ol, pre, blockquote):last-child { margin-bottom: 0; }
 /* Timeline prose sits in a column flex, and marked leaves a trailing newline
    inside the span, so :last-child never clears the block margin. Zero only
-   the final block here; paragraph rhythm inside the message stays put. */
-.agent-timeline :is(.agent-live-message, .agent-elapsed-note) > span:not(.stream-md) > :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote):not(:has(~ :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr))),
-.agent-timeline .agent-live-message .stream-md-block:last-child > :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote):not(:has(~ :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr))) {
+   the final block here; paragraph rhythm inside the message stays put.
+   Tables and rules are included so a message that ends on one does not leave
+   its own bottom margin under the timeline. */
+.agent-timeline :is(.agent-live-message, .agent-elapsed-note) > span:not(.stream-md) > :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr):not(:has(~ :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr))),
+.agent-timeline .agent-live-message .stream-md-block:last-child > :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr):not(:has(~ :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr))) {
   margin-bottom: 0;
+}
+/* Solo is outside .chat-thread, so the first block still carries .md's top
+   margin (8px). That stacks on the previous row's 2px. Clear only the first
+   block; later blocks keep their own rhythm. A leading newline must not
+   stop this — :first-child would miss it. */
+.agent-timeline :is(.agent-live-message, .agent-elapsed-note) > span:not(.stream-md) > :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr):not(:is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr) ~ *),
+.agent-timeline .agent-live-message .stream-md-block:first-child > :is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr):not(:is(p, ul, ol, h1, h2, h3, h4, pre, blockquote, table, hr) ~ *) {
+  margin-top: 0;
+}
+/* Each streaming block is the only child of its wrapper, so the thread's
+   :first-child / :last-child rules wipe every paragraph. Restore the rhythm
+   on blocks that are not the message's first or last edge. */
+.chat-thread .agent-timeline .agent-live-message .stream-md-block:not(:last-child) > p {
+  margin-bottom: 11px;
+}
+.chat-thread .agent-timeline .agent-live-message .stream-md-block:not(:first-child) > :is(ul, ol) {
+  margin-top: 10px;
+}
+.chat-thread .agent-timeline .agent-live-message .stream-md-block:not(:last-child) > :is(ul, ol) {
+  margin-bottom: 10px;
+}
+.chat-thread .agent-timeline .agent-live-message .stream-md-block:not(:first-child) > :is(h1, h2, h3, h4) {
+  margin-top: 1.35em;
+}
+.chat-thread .agent-timeline .agent-live-message .stream-md-block:not(:last-child) > :is(h1, h2, h3, h4) {
+  margin-bottom: .5em;
+}
+.chat-thread .agent-timeline .agent-live-message .stream-md-block:not(:first-child) > :is(pre, blockquote, table) {
+  margin-top: 1em;
+}
+.chat-thread .agent-timeline .agent-live-message .stream-md-block:not(:last-child) > :is(pre, blockquote, table) {
+  margin-bottom: 1em;
 }
 .chat-thread .chat-prose a {
   color: rgb(var(--c-accent-2));
