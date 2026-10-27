@@ -61,7 +61,9 @@ export function useSoloChat(sessionId: Ref<string>) {
   let disposed = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let refetchSeq = 0
+  // lastSeq 是缺口检测高水位（含快照）；ackedSeq 仅确认已处理的真实帧，供重连回放。
   let lastSeq = -1
+  let ackedSeq = -1
   let resyncs = 0
   let sessionGeneration = 0
   let settingsEpoch = 0
@@ -72,7 +74,7 @@ export function useSoloChat(sessionId: Ref<string>) {
   type ModelSettings = Pick<SoloSession, 'currentModelId' | 'currentModelSet' | 'modelNotice' | 'reasoningEffort' | 'reasoningEfforts'>
   let confirmedSettings: ModelSettings | null = null
   const modelChangePending = ref(false)
-  // 订阅快照会复用最新真实事件的 seq；按事件类型分别记录，避免快照吞掉同序号的开场帧。
+  // 真实帧按序号和事件类型去重；订阅快照不进入此表，避免吞掉同序号的开场帧。
   const seenSeq = new Map<number, Set<string>>()
 
   const reconnect = createWsReconnectController({
@@ -268,9 +270,14 @@ export function useSoloChat(sessionId: Ref<string>) {
     return turns.value.find((x) => x.id === `live:${id}`) ?? null
   }
 
-  function noteSeq(frame: any): 'ok' | 'dup' | 'gap' {
+  function noteSeq(frame: any, subscriptionSnapshot: boolean): 'ok' | 'dup' | 'gap' {
     const seq = frame?.seq
     if (typeof seq !== 'number' || seq < 0) return 'ok'
+    // 快照只宣告服务端高水位，不代表其前的真实帧均已处理，也不构成序号缺口。
+    if (subscriptionSnapshot) {
+      if (seq > lastSeq) lastSeq = seq
+      return 'ok'
+    }
     const kind = `${String(frame?.type ?? '')}:${String(frame?.event ?? '')}`
     const seenKinds = seenSeq.get(seq)
     if (seenKinds?.has(kind)) return 'dup'
@@ -307,15 +314,19 @@ export function useSoloChat(sessionId: Ref<string>) {
     reconnect.onClose()
   }
 
-  function onFrame(raw: string) {
+  function onFrame(raw: string, firstFrame = false) {
     const frame = parseFrame(raw)
     if (!frame || typeof frame !== 'object') return
-    const seqState = noteSeq(frame)
+    // Subscribe 保证首帧是 queue_state 快照；之后的同名帧才是真实流事件。
+    const subscriptionSnapshot = firstFrame && frame.type === 'session' && frame.event === 'queue_state'
+    const seqState = noteSeq(frame, subscriptionSnapshot)
     if (seqState === 'dup') return
     if (seqState === 'gap') {
       requestResync()
       return
     }
+    const seq = frame.seq
+    if (!subscriptionSnapshot && typeof seq === 'number' && seq >= 0 && seq > ackedSeq) ackedSeq = seq
     if (frame.type === 'acp') {
       const turn = activeTurn.value ?? adoptTurnForOutput()
       if (turn) applyAcp(frame.data, turn, label, toolFallback())
@@ -392,9 +403,15 @@ export function useSoloChat(sessionId: Ref<string>) {
     const id = sessionId.value
     if (!id || disposed) return
     link.value = link.value === 'idle' ? 'connecting' : 'reconnecting'
-    const sock = new WebSocket(api.soloChatWsUrl(id, lastSeq >= 0 ? lastSeq : undefined))
+    const sock = new WebSocket(api.soloChatWsUrl(id, ackedSeq >= 0 ? ackedSeq : undefined))
     ws = sock
     held = []
+    let firstFrame = true
+    const receive = (raw: string) => {
+      const first = firstFrame
+      firstFrame = false
+      onFrame(raw, first)
+    }
     sock.onopen = async () => {
       if (ws !== sock) return
       reconnect.markOpened()
@@ -409,12 +426,12 @@ export function useSoloChat(sessionId: Ref<string>) {
       if (ws !== sock) return
       const pending = held ?? []
       held = null
-      for (const raw of pending) onFrame(raw)
+      for (const raw of pending) receive(raw)
     }
     sock.onmessage = (ev) => {
       if (ws !== sock) return
       if (held) held.push(ev.data)
-      else onFrame(ev.data)
+      else receive(ev.data)
     }
     sock.onclose = () => {
       if (ws !== sock) return
@@ -455,6 +472,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     phase.value = ''
     activeId.value = ''
     lastSeq = -1
+    ackedSeq = -1
     resyncs = 0
     seenSeq.clear()
     link.value = 'idle'

@@ -178,7 +178,7 @@ func (b *Bridge) info(title string) ChatInfo {
 	busy := b.activeTurn != nil
 	b.turnMu.Unlock()
 	b.mu.Lock()
-	connected := b.sess != nil
+	connected := sessionUsable(b.sess)
 	model := b.model
 	b.mu.Unlock()
 	return ChatInfo{

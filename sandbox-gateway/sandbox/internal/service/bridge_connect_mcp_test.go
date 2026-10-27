@@ -64,9 +64,7 @@ func (s *stubSess) CumulativeUsage() map[string]provider.TokenUsage { return nil
 func (s *stubSess) Cancel() error                                   { return nil }
 func (s *stubSess) Close() error                                    { return nil }
 func (s *stubSess) Done() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
+	return nil // a live session; no exit signal in these rebuild tests
 }
 func (s *stubSess) ExitInfo() (string, error) { return "stub exit", nil }
 

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/channels"
 	"github.com/cocofhu/grasp/internal/contextmcp"
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/memorymcp"
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/platformmcp"
 	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -13,7 +16,55 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
+
+// wireArtifactMCPPersistence restores authorization and active-node capabilities
+// when a sandbox calls another replica or the server restarts. Solo namespaces
+// have no Run row: validate their current resident sandbox and session instead.
+func wireArtifactMCPPersistence(host *mcp.Host, db *gorm.DB, runs *services.RunService, preview *services.PreviewService) {
+	host.SetRunTokenSource(func(runID string) (string, bool, bool) {
+		var run models.Run
+		if err := db.Select("mcp_token").First(&run, "id = ?", runID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if sb, _, ok := preview.SoloMCPBinding(runID); ok {
+					return sb.Token, true, true
+				}
+			}
+			return "", false, false
+		}
+		var live int64
+		db.Model(&models.Sandbox{}).Where("run_id = ? AND purpose = ?", runID, "run").Count(&live)
+		return run.McpToken, live > 0, true
+	})
+	host.SetActiveNodeSource(func(runID string) (string, *models.AgentCapabilities, bool) {
+		var run models.Run
+		if err := db.Select("id", "status", "graph").First(&run, "id = ?", runID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if _, caps, ok := preview.SoloMCPBinding(runID); ok {
+					return "solo", caps, true
+				}
+			}
+			return "", nil, false
+		}
+		// Prefer the active visit; retained workflow sandboxes keep the same
+		// token window after completion, so fall back to their owning node.
+		nodeID := runs.CurrentNodeIDs([]models.Run{run})[runID]
+		if nodeID == "" {
+			var sb models.Sandbox
+			if db.Where("run_id = ? AND purpose = ?", runID, "run").
+				Order("updated_at desc").First(&sb).Error != nil || strings.TrimSpace(sb.NodeID) == "" {
+				return "", nil, false
+			}
+			nodeID = sb.NodeID
+		}
+		var caps *models.AgentCapabilities
+		if n := services.EffectiveNode(db, run, nodeID); n != nil {
+			caps = n.Caps
+		}
+		return nodeID, caps, true
+	})
+}
 
 // platformMCPWire owns the shared register/restore/unregister paths for the
 // four platform MCP hosts so cron, channel, and sandbox-destroy hooks stay in
