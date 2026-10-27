@@ -24,10 +24,10 @@ func prepareClaude(p Prepared, root string) (Prepared, error) {
 		p.Env = common.UpsertEnv(p.Env, "ANTHROPIC_API_KEY", common.GetEnvValue(p.Env, EnvAPIKey))
 	}
 	for variable, model := range map[string]string{
-		"ANTHROPIC_MODEL":                          c.SelectedModelID,
-		"ANTHROPIC_DEFAULT_MODEL":                  c.SelectedModelID,
+		"ANTHROPIC_MODEL":                          p.Model,
+		"ANTHROPIC_DEFAULT_MODEL":                  p.Model,
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":             c.role("opus"),
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":            c.SelectedModelID,
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":            p.Model,
 		"ANTHROPIC_DEFAULT_SONNET_MODEL":           c.role("sonnet"),
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL":            c.role("haiku"),
 		"ANTHROPIC_SMALL_FAST_MODEL":               c.role("fast"),
@@ -39,7 +39,7 @@ func prepareClaude(p Prepared, root string) (Prepared, error) {
 	}
 	// Restrict native aliases and project settings to the selected connection.
 	ids := modelIDs(c.Models)
-	if err := writeJSON(filepath.Join(dir, "settings.json"), map[string]any{"model": c.SelectedModelID, "availableModels": ids, "fallbackModel": []string{}}); err != nil {
+	if err := writeJSON(filepath.Join(dir, "settings.json"), map[string]any{"model": p.Model, "availableModels": ids, "fallbackModel": []string{}}); err != nil {
 		return p, err
 	}
 	p.Args = []string{"--setting-sources", "user"}
@@ -57,7 +57,7 @@ func prepareCodeBuddy(p Prepared, root string) (Prepared, error) {
 	p.Env = common.UpsertEnv(p.Env, "CODEBUDDY_API_KEY", common.GetEnvValue(p.Env, EnvAPIKey))
 	p.Env = common.UpsertEnv(p.Env, "CODEBUDDY_BASE_URL", c.BaseURL)
 	for variable, model := range map[string]string{
-		"CODEBUDDY_MODEL":               c.SelectedModelID,
+		"CODEBUDDY_MODEL":               p.Model,
 		"CODEBUDDY_SMALL_FAST_MODEL":    c.role("fast"),
 		"CODEBUDDY_BIG_SLOW_MODEL":      c.role("reasoning"),
 		"CODEBUDDY_CODE_SUBAGENT_MODEL": c.role("subagent"),
@@ -65,7 +65,7 @@ func prepareCodeBuddy(p Prepared, root string) (Prepared, error) {
 		p.Env = common.UpsertEnv(p.Env, variable, model)
 	}
 	ids := modelIDs(c.Models)
-	settings := map[string]any{"model": c.SelectedModelID, "availableModels": ids,
+	settings := map[string]any{"model": p.Model, "availableModels": ids,
 		"variantModels": map[string]string{"lite": c.role("fast"), "reasoning": c.role("reasoning")}}
 	if err := writeJSON(filepath.Join(dir, "settings.json"), settings); err != nil {
 		return p, err
@@ -139,7 +139,7 @@ func prepareOpenCode(p Prepared) (Prepared, error) {
 	if c.Protocol == Messages {
 		npm = "@ai-sdk/anthropic"
 	}
-	p.Model = p.RouteID + "/" + c.SelectedModelID
+	p.Model = p.RouteID + "/" + p.Model
 	config := map[string]any{"$schema": "https://opencode.ai/config.json", "model": p.Model,
 		"small_model": p.RouteID + "/" + c.role("fast"), "enabled_providers": []string{p.RouteID},
 		"provider": map[string]any{p.RouteID: map[string]any{"npm": npm, "name": c.ProviderID,
@@ -177,7 +177,7 @@ func prepareCodex(p Prepared) Prepared {
 	// custom provider never consults the platform auth.json (which is preserved).
 	prefix := "model_providers." + p.RouteID + "."
 	for _, setting := range []string{
-		"model=" + strconv.Quote(c.SelectedModelID),
+		"model=" + strconv.Quote(p.Model),
 		"model_provider=" + strconv.Quote(p.RouteID),
 		prefix + "name=" + strconv.Quote(c.ProviderID),
 		prefix + "base_url=" + strconv.Quote(c.BaseURL),

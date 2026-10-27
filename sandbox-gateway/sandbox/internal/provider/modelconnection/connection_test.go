@@ -243,6 +243,128 @@ func TestCodexUsesResponsesProviderAndPreservesPlatformHome(t *testing.T) {
 	}
 }
 
+func TestCatalogSessionModelOverridesPrimary(t *testing.T) {
+	const session = "fast/model"
+	base := connection(Chat)
+	for _, tool := range []provider.Name{provider.OpenCode, provider.ClaudeCode, provider.CodeBuddy, provider.Codex, provider.DeepSeekHarness} {
+		t.Run(string(tool), func(t *testing.T) {
+			toolConnection := base
+			toolConnection.ToolSettings.ModelRoles = map[string]string{}
+			switch tool {
+			case provider.OpenCode:
+				toolConnection.ToolSettings.ModelRoles["fast"] = base.SelectedModelID
+			case provider.ClaudeCode:
+				toolConnection.Protocol = Messages
+				toolConnection.Auth.Scheme = "x-api-key"
+				toolConnection.ToolSettings.ModelRoles["fast"] = base.SelectedModelID
+				toolConnection.ToolSettings.ModelRoles["haiku"] = base.SelectedModelID
+				toolConnection.ToolSettings.ModelRoles["subagent"] = base.SelectedModelID
+			case provider.CodeBuddy:
+				toolConnection.ToolSettings.ModelRoles["fast"] = base.SelectedModelID
+				toolConnection.ToolSettings.ModelRoles["reasoning"] = base.SelectedModelID
+				toolConnection.ToolSettings.ModelRoles["subagent"] = base.SelectedModelID
+			case provider.Codex:
+				toolConnection.Protocol = Responses
+			}
+			p, err := Prepare(tool, environ(t, toolConnection), session, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(p.Cleanup)
+			if p.Connection.SelectedModelID != toolConnection.SelectedModelID {
+				t.Fatal("preparing a chat changed the configuration primary")
+			}
+			if p.ChatModelID() != session {
+				t.Fatalf("chat model = %q", p.ChatModelID())
+			}
+			switch tool {
+			case provider.OpenCode:
+				if p.Model != p.RouteID+"/"+session {
+					t.Fatalf("OpenCode model = %q", p.Model)
+				}
+				raw := common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")
+				var doc struct {
+					Model      string
+					SmallModel string `json:"small_model"`
+				}
+				if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+					t.Fatal(err)
+				}
+				if doc.Model != p.Model || doc.SmallModel != p.RouteID+"/"+toolConnection.SelectedModelID {
+					t.Fatalf("OpenCode main/fast slots: %s", raw)
+				}
+			case provider.ClaudeCode:
+				if common.GetEnvValue(p.Env, "ANTHROPIC_MODEL") != session || common.GetEnvValue(p.Env, "ANTHROPIC_DEFAULT_MODEL") != session || common.GetEnvValue(p.Env, "ANTHROPIC_DEFAULT_FABLE_MODEL") != session {
+					t.Fatal("Claude main model stayed on the primary")
+				}
+				if common.GetEnvValue(p.Env, "ANTHROPIC_SMALL_FAST_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "ANTHROPIC_DEFAULT_HAIKU_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "CLAUDE_CODE_SUBAGENT_MODEL") != toolConnection.SelectedModelID {
+					t.Fatal("Claude role models followed the chat model")
+				}
+				data, err := os.ReadFile(filepath.Join(common.GetEnvValue(p.Env, "CLAUDE_CONFIG_DIR"), "settings.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var settings struct{ Model string }
+				if err := json.Unmarshal(data, &settings); err != nil || settings.Model != session {
+					t.Fatalf("Claude settings model: %s", data)
+				}
+			case provider.CodeBuddy:
+				if common.GetEnvValue(p.Env, "CODEBUDDY_MODEL") != session {
+					t.Fatal("CodeBuddy main model stayed on the primary")
+				}
+				if common.GetEnvValue(p.Env, "CODEBUDDY_SMALL_FAST_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "CODEBUDDY_BIG_SLOW_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "CODEBUDDY_CODE_SUBAGENT_MODEL") != toolConnection.SelectedModelID {
+					t.Fatal("CodeBuddy role models followed the chat model")
+				}
+				data, err := os.ReadFile(filepath.Join(common.GetEnvValue(p.Env, "CODEBUDDY_CONFIG_DIR"), "settings.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var settings struct{ Model string }
+				if err := json.Unmarshal(data, &settings); err != nil || settings.Model != session {
+					t.Fatalf("CodeBuddy settings model: %s", data)
+				}
+			case provider.Codex:
+				if p.Model != session || !strings.Contains(strings.Join(p.Args, " "), "model="+strconvQuote(session)) {
+					t.Fatalf("Codex model args = %q model=%q", p.Args, p.Model)
+				}
+			case provider.DeepSeekHarness:
+				var rows []map[string]any
+				if err := yaml.Unmarshal(p.DSHPatch, &rows); err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, row := range rows {
+					if row["id"] != "acp" {
+						continue
+					}
+					found = true
+					if row["config"].(map[string]any)["model"] != session {
+						t.Fatalf("DSH ACP model: %s", p.DSHPatch)
+					}
+				}
+				if !found {
+					t.Fatal("DSH ACP patch missing")
+				}
+			}
+		})
+	}
+	for _, requested := range []string{"", "auto", "stale-platform-model"} {
+		stale, err := Prepare(provider.DeepSeekHarness, environ(t, base), requested, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(stale.Cleanup)
+		if stale.ChatModelID() != base.SelectedModelID {
+			t.Fatalf("requested %q escaped the primary: %q", requested, stale.ChatModelID())
+		}
+	}
+}
+
+func strconvQuote(value string) string {
+	data, _ := json.Marshal(value)
+	return string(data)
+}
+
 func TestDSHThreeProtocolsAndNativeRoute(t *testing.T) {
 	for _, protocol := range []string{Chat, Responses, Messages} {
 		t.Run(protocol, func(t *testing.T) {

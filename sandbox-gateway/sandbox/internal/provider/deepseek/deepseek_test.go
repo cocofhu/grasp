@@ -254,6 +254,48 @@ func TestOpenConnectionNegotiatesExactRouteAndRawModel(t *testing.T) {
 	}
 }
 
+func TestOpenConnectionHonorsCatalogSessionModel(t *testing.T) {
+	trace := setupDSH(t, "connection")
+	c := modelconnection.Connection{ConnectionID: "same-vendor-team-a", ProviderID: "gateway", Protocol: modelconnection.Chat,
+		BaseURL: "https://gateway.example/v1", Auth: modelconnection.Auth{Scheme: "bearer"},
+		Models:          []modelconnection.Model{{ID: "vendor/model/with/slashes"}, {ID: "initial/model"}},
+		SelectedModelID: "vendor/model/with/slashes"}
+	data, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(modelconnection.EnvConfig, string(data))
+	t.Setenv(modelconnection.EnvAPIKey, "selected-connection-key")
+	sess := openDSH(t, "initial/model", nil, nil)
+	if sess.Info().ModelID != "initial/model" {
+		t.Fatalf("session model fell back to the primary: %+v", sess.Info())
+	}
+	data, err = os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first struct {
+		Patch string `json:"patch"`
+	}
+	if err := json.Unmarshal([]byte(strings.Split(string(data), "\n")[0]), &first); err != nil {
+		t.Fatal(err)
+	}
+	var rows []map[string]any
+	if err := yaml.Unmarshal([]byte(first.Patch), &rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row["id"] != "acp" {
+			continue
+		}
+		if row["config"].(map[string]any)["model"] != "initial/model" {
+			t.Fatalf("ACP patch kept the primary model: %s", first.Patch)
+		}
+		return
+	}
+	t.Fatal("ACP patch missing")
+}
+
 func TestOpenDefaultAndFailures(t *testing.T) {
 	for _, tc := range []struct{ mode, model, failure string }{
 		{"", "", ""}, {"", "auto", ""},
@@ -517,11 +559,21 @@ func TestDSHProcess(t *testing.T) {
 				os.Exit(4)
 			}
 			if connectionMode {
-				want, _ := json.Marshal([]string{connection.RouteID(), connection.SelectedModelID})
-				if params.Value != string(want) {
+				var route []string
+				if json.Unmarshal([]byte(params.Value), &route) != nil || len(route) != 2 || route[0] != connection.RouteID() {
 					os.Exit(4)
 				}
-				model = connection.SelectedModelID
+				known := false
+				for _, item := range connection.Models {
+					if item.ID == route[1] {
+						known = true
+						model = item.ID
+						break
+					}
+				}
+				if !known {
+					os.Exit(4)
+				}
 			} else if params.Value != `[ "deepseek-official", "deepseek-v4-pro" ]` {
 				os.Exit(4)
 			} else {
