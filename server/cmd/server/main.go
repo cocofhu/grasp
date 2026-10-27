@@ -482,6 +482,7 @@ func main() {
 	cronSched.Start(sweeperCtx)
 
 	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
+	soloSvc.SetBlobStore(blobStore)
 
 	h := &handlers.Handlers{
 		WF:                  wfSvc,
