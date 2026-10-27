@@ -66,6 +66,22 @@ func ValidEffortToken(effort string) bool {
 	return effortTokenPattern.MatchString(strings.TrimSpace(effort))
 }
 
+// SessionEffortChoices is the menu a chat may change. A saved token that is
+// not already one of the documented levels is fixed to this model, so the
+// menu is empty and the run keeps that token.
+func SessionEffortChoices(catalog []string, saved string) []string {
+	saved = strings.TrimSpace(saved)
+	if !ValidEffortToken(saved) {
+		return catalog
+	}
+	for _, item := range catalog {
+		if item == saved {
+			return catalog
+		}
+	}
+	return []string{}
+}
+
 // WithSavedEffort appends a saved custom variant when the catalog does not
 // already list it, so a session can select the value stored on the model group.
 func WithSavedEffort(efforts []string, saved string) []string {

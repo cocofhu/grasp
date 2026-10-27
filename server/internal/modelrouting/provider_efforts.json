@@ -1,0 +1,177 @@
+{
+  "providers": [
+    {
+      "ids": ["tokenhub", "hunyuan"],
+      "hosts": ["tokenhub.tencentmaas.com", "tokenhub-intl.tencentcloudmaas.com"],
+      "suffixes": [".tokenhub.tencentmaas.com"],
+      "models": {
+        "hy4-preview": ["none", "high"],
+        "hy3": ["none", "low", "high"],
+        "deepseek-v4": ["low", "high", "max"],
+        "deepseek-v4-flash": ["low", "high", "max"],
+        "deepseek-v4-pro": ["low", "high", "max"],
+        "deepseek-v4.1-flash": ["low", "high", "max"],
+        "deepseek-v4.1-flash-free": ["low", "high", "max"],
+        "deepseek-flash": ["low", "high", "max"],
+        "glm-5.3": ["low", "high", "max"],
+        "glm-5.3-flash": ["low", "high", "max"],
+        "glm-5.3-flashx": ["low", "high", "max"],
+        "kimi-k3": ["low", "high", "max"],
+        "kimi-k3.1-pro": ["low", "high", "max"],
+        "kimi-k3.1-pro-highspeed": ["low", "high", "max"],
+        "kimi-k2.8-preview": ["low", "high", "max"],
+        "glm-5.2": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+      }
+    },
+    {
+      "ids": ["deepseek"],
+      "hosts": ["api.deepseek.com"],
+      "models": {
+        "deepseek-flash": ["low", "high", "max"],
+        "deepseek-v4-pro": ["low", "high", "max"],
+        "deepseek-v4-flash": ["low", "high", "max"],
+        "deepseek-v4-flash-vision-exp": ["low", "high", "max"]
+      }
+    },
+    {
+      "ids": ["anthropic"],
+      "hosts": ["api.anthropic.com"],
+      "models": {
+        "claude-fable-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-fable-5-1": ["low", "medium", "high", "xhigh", "max"],
+        "claude-mythos-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-mythos-5-1": ["low", "medium", "high", "xhigh", "max"],
+        "claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-opus-5-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-opus-4-8": ["low", "medium", "high", "xhigh", "max"],
+        "claude-opus-4-7": ["low", "medium", "high", "xhigh", "max"],
+        "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-sonnet-5-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-haiku-5-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-opus-4-6": ["low", "medium", "high", "max"],
+        "claude-sonnet-4-6": ["low", "medium", "high", "max"]
+      }
+    },
+    {
+      "ids": ["openai"],
+      "hosts": ["api.openai.com"],
+      "models": {
+        "gpt-5": ["minimal", "low", "medium", "high"],
+        "gpt-5-mini": ["minimal", "low", "medium", "high"],
+        "gpt-5-nano": ["minimal", "low", "medium", "high"],
+        "gpt-5-pro": ["high"],
+        "gpt-5.1": ["none", "low", "medium", "high"],
+        "gpt-5.1-codex": ["none", "low", "medium", "high"],
+        "gpt-5.1-codex-mini": ["none", "low", "medium", "high"],
+        "gpt-5.1-codex-max": ["none", "low", "medium", "high", "xhigh"],
+        "gpt-5.4": ["none", "low", "medium", "high", "xhigh"],
+        "gpt-5.5": ["none", "low", "medium", "high", "xhigh"],
+        "gpt-5.6": ["none", "low", "medium", "high", "xhigh", "max"],
+        "gpt-6-astra": ["low", "medium", "high", "xhigh", "max"],
+        "gpt-6.1-sol": ["low", "medium", "high", "xhigh", "max"]
+      }
+    },
+    {
+      "ids": ["google"],
+      "hosts": ["generativelanguage.googleapis.com"],
+      "models": {
+        "gemini-4-argon": ["low", "medium", "high"],
+        "gemini-3.8-flash": ["low", "medium", "high"],
+        "gemini-3.1-pro-preview": ["low", "medium", "high"],
+        "gemini-3.6-flash": ["minimal", "low", "medium", "high"],
+        "gemini-3.5-flash-lite": ["minimal", "low", "medium", "high"],
+        "gemini-3.1-flash-lite": ["minimal", "low", "medium", "high"],
+        "gemini-3.1-flash-lite-image": ["minimal", "high"],
+        "gemini-3-flash-preview": ["minimal", "low", "medium", "high"],
+        "gemini-3-pro-preview": ["low", "high"],
+        "gemini-robotics-er-2-preview": ["minimal", "low", "medium", "high"],
+        "gemini-2.5-flash": ["none", "low", "medium", "high"],
+        "gemini-2.5-flash-lite": ["none", "low", "medium", "high"],
+        "gemini-2.5-pro": ["low", "medium", "high"]
+      }
+    },
+    {
+      "ids": ["moonshot"],
+      "hosts": ["api.moonshot.ai", "api.moonshot.cn"],
+      "models": {
+        "kimi-k3": ["low", "high", "max"],
+        "kimi-k3.1-pro": ["low", "high", "max"],
+        "kimi-k3.1-pro-highspeed": ["low", "high", "max"]
+      }
+    },
+    {
+      "ids": ["zhipu", "zai"],
+      "hosts": ["open.bigmodel.cn", "api.z.ai"],
+      "models": {
+        "glm-5.3": ["low", "high", "max"],
+        "glm-5.3-flash": ["low", "high", "max"],
+        "glm-5.3-flashx": ["low", "high", "max"],
+        "glm-5.2": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+      }
+    },
+    {
+      "ids": ["qwen"],
+      "hosts": ["dashscope.aliyuncs.com"],
+      "suffixes": [".maas.qwencloudapi.com"],
+      "models": {
+        "qwen3.8-max": ["low", "medium", "xhigh"],
+        "qwen3.8-max-0902": ["low", "medium", "xhigh"],
+        "qwen3.8-flash": ["low", "medium", "xhigh"],
+        "qwen3.8-2.4t-a95b": ["low", "medium", "xhigh"],
+        "qwen3.8-27b": ["low", "medium", "xhigh"],
+        "qwen3.8-omni-flash": ["low", "medium", "xhigh"],
+        "glm-5.3": ["low", "high", "max"],
+        "glm-5.2": ["high", "max"],
+        "glm-5.1": ["high", "max"],
+        "glm-5": ["high", "max"],
+        "deepseek-v4-pro": ["high", "max"],
+        "deepseek-v4-pro-0813": ["low", "high", "max"],
+        "deepseek-v4-flash-0731": ["low", "high", "max"],
+        "deepseek-v4.1-flash": ["low", "high", "max"],
+        "kimi-k3": ["low", "high", "max"],
+        "kimi/kimi-k3": ["max"]
+      }
+    },
+    {
+      "ids": ["doubao"],
+      "suffixes": [".volces.com"],
+      "models": {
+        "doubao-seed-evolving": ["minimal", "low", "medium", "high"],
+        "doubao-seed-2-1-pro-260915": ["minimal", "low", "medium", "high"],
+        "doubao-seed-2-1-lite-260915": ["minimal", "low", "medium", "high"],
+        "doubao-seed-2-1-pro-260628": ["minimal", "low", "medium", "high"],
+        "doubao-seed-2-1-turbo-260628": ["minimal", "low", "medium", "high"],
+        "doubao-seed-2-0-lite-260428": ["minimal", "low", "medium", "high"],
+        "deepseek-v4-pro-260425": ["minimal", "low", "high", "max"],
+        "deepseek-v4-pro-ga-260813": ["none", "minimal", "low", "high", "max"],
+        "deepseek-v4-flash-ga-260731": ["none", "minimal", "low", "high", "max"],
+        "glm-5-2-260617": ["none", "minimal", "high", "max"]
+      }
+    },
+    {
+      "ids": ["xai"],
+      "hosts": ["api.x.ai"],
+      "models": {
+        "grok-4.7": ["low", "medium", "high", "xhigh"],
+        "grok-4.6": ["low", "medium", "high", "xhigh"],
+        "grok-4.20-multi-agent": ["low", "medium", "high", "xhigh"],
+        "grok-4.5": ["low", "medium", "high"]
+      }
+    },
+    {
+      "ids": ["minimax"],
+      "hosts": ["api.minimax.cn", "api.minimax.io"],
+      "models": {
+        "minimax-m3.1-flash": ["low", "medium", "high", "xhigh", "max"]
+      }
+    },
+    {
+      "ids": ["qianfan"],
+      "hosts": ["qianfan.baidubce.com"],
+      "models": {
+        "deepseek-v4-pro": ["high", "max"],
+        "deepseek-v4-flash": ["high", "max"]
+      }
+    }
+  ]
+}

@@ -61,6 +61,13 @@ async function chooseCredential(wrapper: ReturnType<typeof setup>, value: string
   await field.get(`[data-test="app-select-option-${value}"]`).trigger('click')
 }
 
+async function chooseRole(wrapper: ReturnType<typeof setup>, value: string) {
+  const field = wrapper.get('[data-testid="model-configuration-role-fast"]')
+  await field.get('[data-test="app-select-trigger"]').trigger('click')
+  await field.get('[data-test="app-select-search"]').setValue(value)
+  await field.get('[data-test="app-select-custom"]').trigger('click')
+}
+
 async function chooseModel(wrapper: ReturnType<typeof setup>, value: string, custom = false) {
   const field = wrapper.get('[data-testid="model-configuration-model-id"]')
   await field.get('[data-test="app-select-trigger"]').trigger('click')
@@ -148,12 +155,10 @@ describe('ModelConfigurationManager', () => {
     await openConnectionModelStep(wrapper)
     await chooseModel(wrapper, model.id)
     const menu = wrapper.get('[data-testid="model-configuration-effort"]')
-    expect(menu.text()).toContain('Default')
-    expect(menu.text()).toContain('Low')
-    expect(menu.text()).toContain('High')
-    expect(menu.text()).toContain('Max')
+    expect(menu.get('[data-testid="model-effort-slider"]').exists()).toBe(true)
+    expect(menu.attributes('data-levels')).toBe('Default|Low|High|Max')
+    expect(menu.get('[data-testid="model-effort-current"]').text()).toBe('Default')
     expect(menu.text()).not.toContain('Medium')
-    expect(wrapper.get('[data-testid="model-effort-default"]').attributes('aria-checked')).toBe('true')
     await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
     await flushPromises()
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -166,7 +171,7 @@ describe('ModelConfigurationManager', () => {
     const again = setup()
     await openConnectionModelStep(again)
     await chooseModel(again, model.id)
-    await again.get('[data-testid="model-effort-high"]').trigger('click')
+    await again.get('[data-testid="model-effort-slider"]').setValue('2')
     await again.get('[data-testid="model-configuration-save"]').trigger('click')
     await flushPromises()
     expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -182,11 +187,30 @@ describe('ModelConfigurationManager', () => {
     const wrapper = setup()
     await openConnectionModelStep(wrapper)
     await chooseModel(wrapper, model.id)
+    expect(wrapper.get('[data-testid="model-configuration-effort"]').attributes('data-levels')).toBe('Default|Low|High|Max')
+    wrapper.unmount()
+  })
+
+  it('shows the Codex slider for TokenHub Kimi K3.1 Pro', async () => {
+    const model = { id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro', source: 'discovered' as const }
+    services = structuredClone([{ ...service, providerId: 'tokenhub', name: 'TokenHub', models: [model] }])
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, model.id)
+    expect(wrapper.get('[data-testid="model-configuration-effort"]').attributes('data-levels')).toBe('Default|Low|High|Max')
+    wrapper.unmount()
+  })
+
+  it('shows the Codex slider for a dated TokenHub model id', async () => {
+    const model = { id: 'DeepSeek-V4.1-Flash-1017', name: 'DeepSeek-V4.1-Flash-1017', source: 'discovered' as const }
+    services = structuredClone([{ ...service, providerId: 'tokenhub', name: 'TokenHub', models: [model] }])
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, model.id)
     const menu = wrapper.get('[data-testid="model-configuration-effort"]')
-    expect(menu.text()).toContain('Default')
-    expect(menu.text()).toContain('Low')
-    expect(menu.text()).toContain('High')
-    expect(menu.text()).toContain('Max')
+    expect(menu.get('[data-testid="model-effort-slider"]').exists()).toBe(true)
+    expect(menu.attributes('data-levels')).toBe('Default|Low|High|Max')
+    expect(menu.text()).toContain('DeepSeek-V4.1-Flash-1017')
     wrapper.unmount()
   })
 
@@ -211,7 +235,9 @@ describe('ModelConfigurationManager', () => {
     }
     for (const [modelId, labels] of Object.entries(menus)) {
       await wrapper.get('[data-testid="platform-model"]').setValue(modelId)
-      expect(wrapper.findAll('[data-testid="model-configuration-effort"] button').map((button) => button.text())).toEqual(labels)
+      const menu = wrapper.get('[data-testid="model-configuration-effort"]')
+      expect(menu.get('[data-testid="model-effort-slider"]').exists()).toBe(true)
+      expect(menu.attributes('data-levels')).toBe(labels.join('|'))
     }
     for (const modelId of ['opencode/minimax-m3', 'opencode/kimi-k2.7-code']) {
       await wrapper.get('[data-testid="platform-model"]').setValue(modelId)
@@ -219,6 +245,9 @@ describe('ModelConfigurationManager', () => {
       expect(wrapper.find('[data-testid="model-configuration-effort-custom"]').exists()).toBe(true)
     }
     await wrapper.get('[data-testid="platform-model"]').setValue('opencode/gpt-5.5')
+    await wrapper.get('[data-testid="model-effort-mode-fixed"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-effort-slider"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="model-effort-fixed-note"]').text()).toContain('cannot change')
     await wrapper.get('[data-testid="model-configuration-effort-custom"]').setValue('turbo')
     await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
     await flushPromises()
@@ -242,8 +271,8 @@ describe('ModelConfigurationManager', () => {
     await wrapper.get('[data-testid="model-configuration-edit-saved-effort"]').trigger('click')
     await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
     await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
-    expect(wrapper.get('[data-testid="model-effort-max"]').attributes('aria-checked')).toBe('true')
-    expect(wrapper.get('[data-testid="model-effort-default"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.get('[data-testid="model-effort-current"]').text()).toBe('Max')
+    expect((wrapper.get('[data-testid="model-effort-slider"]').element as HTMLInputElement).value).toBe('3')
     await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
     await flushPromises()
     expect(mocks.update).toHaveBeenCalledWith(saved.id, expect.objectContaining({
@@ -316,7 +345,9 @@ describe('ModelConfigurationManager', () => {
     const auxiliaryField = wrapper.get('[data-testid="model-configuration-aux-select-0"]')
     await auxiliaryField.get('[data-test="app-select-trigger"]').trigger('click')
     await auxiliaryField.get(`[data-test="app-select-option-${auxiliary.id}"]`).trigger('click')
-    expect(wrapper.findAll('#configuration-model-catalog option').map((option) => option.attributes('value'))).toEqual(expect.arrayContaining([primary.id, auxiliary.id, unused.id]))
+    const roleField = wrapper.get('[data-testid="model-configuration-role-fast"]')
+    await roleField.get('[data-test="app-select-trigger"]').trigger('click')
+    for (const id of [primary.id, auxiliary.id, unused.id]) expect(roleField.find(`[data-test="app-select-option-${id}"]`).exists()).toBe(true)
     expect(mocks.updateConnection).not.toHaveBeenCalled()
     await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
     await flushPromises()
@@ -461,7 +492,7 @@ describe('ModelConfigurationManager', () => {
     const wrapper = setup()
     await openConnectionModelStep(wrapper, 'codebuddy')
     await chooseModel(wrapper, 'new/vendor/raw/model', true)
-    await wrapper.get('[data-testid="model-configuration-role-fast"]').setValue('fast/raw/model')
+    await chooseRole(wrapper, 'fast/raw/model')
     const concurrentModel = { id: 'concurrent/model', source: 'manual' as const, maxTokens: 2048 }
     services = [{ ...service, baseUrl: 'https://latest.example.test/v1', models: [...service.models, concurrentModel] }]
     await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
@@ -497,18 +528,18 @@ describe('ModelConfigurationManager', () => {
     const wrapper = setup()
     await openConnectionModelStep(wrapper)
     await chooseModel(wrapper, 'draft/vendor/model', true)
-    await wrapper.get('[data-testid="model-configuration-role-fast"]').setValue('fast/draft/model')
+    await chooseRole(wrapper, 'fast/draft/model')
     await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
     expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('2')
     await chooseCredential(wrapper, `connection:${service.id}`)
     await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
     expect(wrapper.get('[data-testid="model-configuration-model-id"] [data-test="app-select-trigger"]').text()).toContain('draft/vendor/model')
-    expect(wrapper.get('[data-testid="model-configuration-role-fast"]').element).toHaveProperty('value', 'fast/draft/model')
+    expect(wrapper.get('[data-testid="model-configuration-role-fast"] [data-test="app-select-trigger"]').text()).toContain('fast/draft/model')
     await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
     await chooseCredential(wrapper, 'connection:other-service')
     await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
     expect(wrapper.get('[data-testid="model-configuration-model-id"] [data-test="app-select-trigger"]').text()).not.toContain('draft/vendor/model')
-    expect(wrapper.get('[data-testid="model-configuration-role-fast"]').element).toHaveProperty('value', '')
+    expect(wrapper.get('[data-testid="model-configuration-role-fast"] [data-test="app-select-trigger"]').text()).toContain('Same as main model')
     expect(wrapper.get('[data-testid="model-configuration-save"]').attributes('disabled')).toBeDefined()
     expect(mocks.create).not.toHaveBeenCalled()
     expect(mocks.updateConnection).not.toHaveBeenCalled()
@@ -519,7 +550,7 @@ describe('ModelConfigurationManager', () => {
     const wrapper = setup()
     await openConnectionModelStep(wrapper)
     await chooseModel(wrapper, 'draft/vendor/model', true)
-    await wrapper.get('[data-testid="model-configuration-role-fast"]').setValue('fast/draft/model')
+    await chooseRole(wrapper, 'fast/draft/model')
     await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
     await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
     await wrapper.get('[data-testid="model-configuration-backend-cursor"]').trigger('click')

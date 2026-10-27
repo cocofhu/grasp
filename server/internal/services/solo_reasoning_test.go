@@ -404,11 +404,14 @@ func TestOpenCodeSessionUsesTheSavedVariantWithoutWritingBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	efforts = solo.reasoningEfforts(agent, "opencode/gpt-5.5")
-	if len(efforts) != 6 || efforts[5] != "turbo" {
-		t.Fatalf("saved custom variant was not selectable: %v", efforts)
+	if len(efforts) != 0 {
+		t.Fatalf("custom level should hide the chat menu: %v", efforts)
 	}
 	if err := solo.validateReasoningEffort(agent, "opencode/gpt-5.5", "turbo"); err != nil {
 		t.Fatal(err)
+	}
+	if err := solo.validateReasoningEffort(agent, "opencode/gpt-5.5", "high"); err == nil {
+		t.Fatal("chat selected a documented level while the model is fixed")
 	}
 	if err := solo.validateReasoningEffort(agent, "opencode/gpt-5.5", "not a variant"); err == nil {
 		t.Fatal("an invented session variant was accepted")

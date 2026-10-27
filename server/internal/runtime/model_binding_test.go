@@ -312,8 +312,8 @@ func TestOpenCodeSavedVariantIsTheRunDefault(t *testing.T) {
 	if err := ApplyModelBinding(env, "opencode", binding, resolve); err != nil {
 		t.Fatal(err)
 	}
-	if env[EnvACPBridgeReasoningEffort] != "turbo" || !strings.Contains(env[EnvConfiguredModels], "turbo") {
-		t.Fatalf("custom variant was dropped: effort=%q models=%s", env[EnvACPBridgeReasoningEffort], env[EnvConfiguredModels])
+	if env[EnvACPBridgeReasoningEffort] != "turbo" || strings.Contains(env[EnvConfiguredModels], "turbo") || strings.Contains(env[EnvConfiguredModels], "reasoningEfforts") {
+		t.Fatalf("custom level stayed selectable: effort=%q models=%s", env[EnvACPBridgeReasoningEffort], env[EnvConfiguredModels])
 	}
 
 	env = map[string]string{EnvACPBridgeReasoningEffort: "stale"}

@@ -115,6 +115,10 @@ const roleNames = computed(() => [...new Set(toolCaps.value.flatMap((item) => it
 function modelEffortLevels(id: string) {
   return effortChoices(form.backend, form.kind, selectedService.value?.providerId, selectedService.value?.baseUrl, id)
 }
+function modelSlotLabel(id: string) {
+  const value = id.trim()
+  return optionsFor(value).find((option) => option.value === value)?.label || value
+}
 function showEffort(id: string) {
   return form.backend === 'opencode' && !!id.trim()
 }
@@ -176,6 +180,12 @@ function toolLabel(id: string) { return ACP_BACKENDS.find((tool) => tool.id === 
 function credentialProvider(value: string) { return credentialOptions.value.find((option) => option.value === value)?.provider || '' }
 function problem(row: ModelConfiguration) { return bindingProblem(row.binding, row.backend, connections.value, credentials.value, capabilities.value) }
 function roleLabel(role: keyof ModelRoles) { return c.value[`role_${role}`] }
+function roleOptions(current: string) {
+  const value = current.trim()
+  const options = [...slotCatalog.value]
+  if (value && !options.some((option) => option.value === value)) options.unshift({ value, label: value, vendor: modelVendor(value, '', selectedService.value?.providerId || '') })
+  return [{ value: '', label: c.value.followMain }, ...options]
+}
 async function load() {
   loading.value = true
   error.value = ''
@@ -389,7 +399,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
               <template #leading><VendorMark :vendor="slotVendor(form.modelId)" :size="28" :unknown="slotUnavailable(form.modelId)" /></template>
               <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
             </AppSelect>
-            <ModelEffortPicker v-if="showEffort(form.modelId)" :efforts="modelEffortLevels(form.modelId)" :model-value="form.efforts[form.modelId.trim()] || ''" @update:model-value="setEffort(form.modelId, $event)" />
+            <ModelEffortPicker v-if="showEffort(form.modelId)" :model-name="modelSlotLabel(form.modelId)" :efforts="modelEffortLevels(form.modelId)" :model-value="form.efforts[form.modelId.trim()] || ''" @update:model-value="setEffort(form.modelId, $event)" />
           </div>
           <div v-for="(modelId, index) in form.auxiliaryModelIds" :key="index" class="model-slot" :data-testid="`model-configuration-aux-${index}`">
             <div class="model-slot-top">
@@ -401,14 +411,23 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
               <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
             </AppSelect>
             <p v-if="slotUnavailable(modelId)" class="mb-0 mt-1 text-xs text-warn">{{ c.modelUnavailable }}</p>
-            <ModelEffortPicker v-if="showEffort(modelId)" :efforts="modelEffortLevels(modelId)" :model-value="form.efforts[modelId.trim()] || ''" @update:model-value="setEffort(modelId, $event)" />
+            <ModelEffortPicker v-if="showEffort(modelId)" :model-name="modelSlotLabel(modelId)" :efforts="modelEffortLevels(modelId)" :model-value="form.efforts[modelId.trim()] || ''" @update:model-value="setEffort(modelId, $event)" />
           </div>
           <button type="button" class="model-add" data-testid="model-configuration-add-model" :disabled="!canAddModel" :title="canAddModel ? '' : c.noMoreModels" @click="addAuxiliary"><Icon name="plus" :size="14" />{{ c.addModel }}</button>
           <p v-if="auxiliaryProblem" class="mb-0 text-xs text-err">{{ auxiliaryProblem }}</p>
           <template v-if="form.kind !== 'platform'">
             <p class="mb-0 text-xs leading-5 text-txt3">{{ c.manualModelHint }}</p>
-            <datalist id="configuration-model-catalog"><option v-for="model in serviceModels" :key="model.id" :value="model.id">{{ model.name || model.id }}</option></datalist>
-            <details v-if="roleNames.length" class="rounded-lg border border-line p-3"><summary class="cursor-pointer text-xs text-txt2">{{ c.auxiliary }}</summary><div class="mt-3 grid gap-3 sm:grid-cols-2"><label v-for="role in roleNames" :key="role" class="block"><span class="label">{{ roleLabel(role) }}</span><input v-model="form.roles[role]" class="input w-full font-mono" list="configuration-model-catalog" :placeholder="c.followMain" :data-testid="`model-configuration-role-${role}`" /></label></div></details>
+            <template v-if="roleNames.length">
+              <p class="mb-0 text-xs font-medium text-txt2">{{ c.auxiliary }}</p>
+              <div v-for="role in roleNames" :key="role" class="model-slot" :data-testid="`model-configuration-role-${role}`">
+                <div class="model-slot-top"><span>{{ roleLabel(role) }}</span></div>
+                <AppSelect :model-value="form.roles[role] || ''" :options="roleOptions(form.roles[role] || '')" :aria-label="roleLabel(role)" :placeholder="c.followMain" :loading="catalogLoading" searchable allow-custom custom-position="last" @update:model-value="form.roles[role] = $event">
+                  <template #leading><VendorMark v-if="form.roles[role]" :vendor="slotVendor(form.roles[role] || '')" :size="28" :unknown="slotUnavailable(form.roles[role] || '')" /></template>
+                  <template #option-leading="{ option }"><VendorMark v-if="option.value" :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
+                </AppSelect>
+                <ModelEffortPicker v-if="showEffort(form.roles[role] || '')" :model-name="modelSlotLabel(form.roles[role] || '')" :efforts="modelEffortLevels(form.roles[role] || '')" :model-value="form.efforts[(form.roles[role] || '').trim()] || ''" @update:model-value="setEffort(form.roles[role] || '', $event)" />
+              </div>
+            </template>
             <label v-if="nativeRoute" class="block"><span class="label">{{ c.routeProfile }}</span><AppSelect v-model="form.routeProfile" :options="[{ value: '', label: c.standardRoute }, { value: 'deepseek-native', label: 'DeepSeek native' }]" :aria-label="c.routeProfile" searchable data-testid="model-configuration-route-profile" /></label>
           </template>
         </template>

@@ -21,6 +21,8 @@ COPY web/package*.json web/.npmrc ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 COPY scripts/assert-no-approving-brand.mjs /src/scripts/assert-no-approving-brand.mjs
+# Sibling of /src/web, matching the frontend import of the Go effort catalog.
+COPY server/internal/modelrouting/provider_efforts.json /src/server/internal/modelrouting/provider_efforts.json
 RUN npm run build
 
 # --- 沙箱运行时包 ---
