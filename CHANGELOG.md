@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Agent chat failures:** OpenCode passes reasoning variants separately from model IDs. Gemini chats now display native streamed text, tools and failure details, with cached input counted once. Solo and Agent test chats show provider failures and refusals, including errors recovered from older empty replies, while retaining partial output and usage.
+
 - **API model image input:** OpenCode, CodeBuddy and DeepSeek Harness model groups can declare text-only or text-and-image input for primary and auxiliary models. Saving fills missing model-directory metadata without overwriting explicit choices. Native adapters consistently honor those declarations, preventing image-capable custom models from being treated as text-only when their API directory omits capabilities. Claude Code and Codex retain their native image handling; platform-authorized tools retain their own model catalogs.
 
 - **CLI chat activity:** Solo and Agent test chats keep an animated processing indicator visible between tool calls and reply text until the turn ends, including OpenCode, Claude Code and DeepSeek Harness. Completed tools retain their completed status, and stopped or failed replies clear the activity indicator.

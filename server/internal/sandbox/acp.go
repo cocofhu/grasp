@@ -613,7 +613,7 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 			stop := strings.ToLower(strings.TrimSpace(ev.StopReason))
 			result.StopReason = stop
 			switch stop {
-			case "failed":
+			case "failed", "refusal":
 				result.Failed = true
 			case stopReasonTimeout, "cancelled":
 				result.Interrupted = true

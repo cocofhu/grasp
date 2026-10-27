@@ -379,8 +379,8 @@ func (s *SandboxService) recordStudioUsage(id uint, usage *models.TokenUsage, by
 // legitimately run longer than an interactive UI turn.
 //
 // Returns the turn's TokenUsage (+ optional by-model breakdown) from
-// prompt_done (nil = not reported). Callers that account usage (PmTurnRunner)
-// must persist only after a successful turn.
+// prompt_done (nil = not reported), including failed turns. Provider failures
+// are errors even when their transport completed with prompt_done.
 func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
 	ls, row, err := s.ensureConnected(ctx, id)
 	if err != nil {
@@ -419,6 +419,21 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 	_ = row
 	if result == nil {
 		return nil, nil, err
+	}
+	// ChatStream keeps provider failures in the result for callers such as
+	// React that render partial output themselves. This API only returns usage,
+	// so preserve the failure before discarding the rest of that result. Keep
+	// existing transport errors and partial timeout/cancel outcomes unchanged.
+	if err == nil && (result.Failed || !result.Interrupted && strings.TrimSpace(result.ErrorText) != "") {
+		failure := strings.TrimSpace(result.ErrorText)
+		if failure == "" {
+			if result.StopReason == "refusal" {
+				failure = "Agent 拒绝了本轮请求（stopReason=refusal）"
+			} else {
+				failure = "Agent 本轮执行失败（stopReason=failed）"
+			}
+		}
+		err = errors.New(failure)
 	}
 	return models.CloneTokenUsage(result.Usage), models.CloneTokenUsageByModel(result.UsageByModel), err
 }

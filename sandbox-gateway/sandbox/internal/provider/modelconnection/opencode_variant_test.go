@@ -2,6 +2,7 @@ package modelconnection
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -39,6 +40,9 @@ func TestOpenCodeDefaultDoesNotAttachVariant(t *testing.T) {
 	if next.Model != "opencode/gpt-5.5" || strings.Contains(next.Model, "#") {
 		t.Fatalf("default attached a variant: %s", next.Model)
 	}
+	if len(next.Args) != 0 {
+		t.Fatalf("default attached CLI arguments: %v", next.Args)
+	}
 	raw := common.GetEnvValue(next.Env, "OPENCODE_CONFIG_CONTENT")
 	if strings.Contains(raw, "#") || strings.Contains(raw, "variants") {
 		t.Fatalf("default rewrote the request: %s", raw)
@@ -51,11 +55,11 @@ func TestOpenCodeCatalogVariantIsPassedThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Model != "opencode/gpt-5.5#high" {
+	if next.Model != "opencode/gpt-5.5" || !reflect.DeepEqual(next.Args, []string{"--variant", "high"}) {
 		t.Fatalf("model: %s", next.Model)
 	}
 	config := configJSON(t, next)
-	if config["model"] != "opencode/gpt-5.5#high" || config["small_model"] != "opencode/gpt-5.5#high" {
+	if config["model"] != "opencode/gpt-5.5" || config["small_model"] != "opencode/gpt-5.5" {
 		t.Fatalf("config model: %v / %v", config["model"], config["small_model"])
 	}
 	raw := common.GetEnvValue(next.Env, "OPENCODE_CONFIG_CONTENT")
@@ -70,7 +74,7 @@ func TestOpenCodeCustomVariantIsDeclaredForTheRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Model != "opencode/gpt-5.5#turbo" {
+	if next.Model != "opencode/gpt-5.5" || !reflect.DeepEqual(next.Args, []string{"--variant", "turbo"}) {
 		t.Fatalf("model: %s", next.Model)
 	}
 	config := configJSON(t, next)
@@ -100,7 +104,7 @@ func TestConnectedOpenCodeDeclaresEffortWithoutForcingDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(next.Model, "/deepseek-v4-flash#low") {
+	if !strings.HasSuffix(next.Model, "/deepseek-v4-flash") || !reflect.DeepEqual(next.Args, []string{"--variant", "low"}) {
 		t.Fatalf("model: %s", next.Model)
 	}
 	config := configJSON(t, next)
@@ -108,6 +112,10 @@ func TestConnectedOpenCodeDeclaresEffortWithoutForcingDefault(t *testing.T) {
 		t.Fatal("the fast model inherited the primary variant")
 	}
 	entry := config["provider"].(map[string]any)[next.RouteID].(map[string]any)
+	fast := entry["models"].(map[string]any)["fast/model"].(map[string]any)
+	if fast["variants"] != nil || config["small_model"] != next.RouteID+"/fast/model" {
+		t.Fatal("the fast model inherited the primary variant")
+	}
 	model := entry["models"].(map[string]any)["deepseek-v4-flash"].(map[string]any)
 	if _, forced := model["options"]; forced {
 		t.Fatal("connection options forced a reasoning effort")

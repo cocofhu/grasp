@@ -294,6 +294,9 @@ type streamEvent struct {
 }
 
 func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
+	if d.c.AgentName == provider.Gemini {
+		return parseGeminiLine(line)
+	}
 	var ev streamEvent
 	if err := json.Unmarshal(line, &ev); err != nil {
 		log.Printf("streamjson: skip non-json line: %v (snippet=%q)", err, truncateForLog(line, 120))

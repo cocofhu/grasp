@@ -62,6 +62,38 @@ describe('acpTurn', () => {
     expect(turns[3]!.status).toBe('stopped')
     expect(turns[4]!.role).toBe('system')
   })
+
+  it('keeps provider diagnostics and partial output when the turn fails', () => {
+    const turn = emptyAgentTurn('live:failed', true)
+    applyAcp(chunk('agent_message_chunk', 'Partial reply'), turn, label, 'Tool')
+    for (const text of ['Quota exhausted', 'Check the selected model']) {
+      applyAcp({ op: 'event', data: { type: 'error_text', text } }, turn, label, 'Tool')
+    }
+    applyAcp({ data: { type: 'prompt_done', stopReason: 'failed' } }, turn, label, 'Tool')
+    expect(turn.status).toBe('failed')
+    expect(turn.error).toBe('Quota exhausted\nCheck the selected model')
+    expect(partsOf(turn)).toEqual([{ kind: 'message', text: 'Partial reply' }])
+  })
+
+  it.each<{ events: NonNullable<SoloMessage['events']>; error?: string }>([
+    { events: [{ data: { type: 'error_text', text: 'Unexpected server error. Check server logs for details.' } }, { data: { type: 'prompt_done', stopReason: 'failed' } }], error: 'Unexpected server error. Check server logs for details.' },
+    { events: [{ data: { type: 'prompt_done', stopReason: 'failed' } }] },
+    { events: [{ data: { type: 'prompt_done', stopReason: 'refusal' } }] },
+  ])('recovers provider failures from history incorrectly persisted as ok', ({ events, error }) => {
+    const [turn] = turnsFromMessages([{
+      id: 'a1', sessionId: 's', role: 'assistant', content: '', status: 'ok', error: '', createdAt: '', events,
+    }], label, 'Tool')
+    expect(turn).toMatchObject({ status: 'failed', steps: [], streaming: false })
+    expect(turn!.error).toBe(error)
+  })
+
+  it('preserves explicit stopped status and stored diagnostics when replaying errors', () => {
+    const [turn] = turnsFromMessages([{
+      id: 'a1', sessionId: 's', role: 'assistant', content: '', status: 'stopped', error: 'Stopped by user', createdAt: '',
+      events: [{ data: { type: 'error_text', text: 'Provider interrupted' } }],
+    }], label, 'Tool')
+    expect(turn).toMatchObject({ status: 'stopped', error: 'Stopped by user' })
+  })
 })
 
 describe('session repos', () => {

@@ -1,4 +1,5 @@
 import { contentText, flattenUpdate, normalizeKind } from '@/lib/run/acpUnpack'
+import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import type { AgentPart, ClarifyImage } from '@/lib/shared/types'
 import type { SoloMessage } from '@/lib/api/apiTypes'
 
@@ -102,6 +103,12 @@ function applyTool(u: any, turn: SoloTurn, label: ToolLabeler, fallback: string)
 
 /** Folds one acp-bridge frame ({op:"event",data:{type,update}}) into a reply turn. */
 export function applyAcp(envelope: any, turn: SoloTurn, label: ToolLabeler, toolFallback: string) {
+  const failure = acpFailureText(envelope)
+  if (failure !== null) {
+    turn.status = 'failed'
+    turn.error = appendAcpError(turn.error, failure)
+    return
+  }
   const ev = envelope?.data ?? envelope
   if (!ev || ev.type !== 'session_update' || !ev.update) return
   const u = flattenUpdate(ev.update)

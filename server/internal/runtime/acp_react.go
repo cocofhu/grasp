@@ -1023,7 +1023,7 @@ func clarifyHasOpenedTurn(history []models.ReactMessage) bool {
 const chatFailureMaxLen = 2000
 
 // chatFailure returns the provider-side failure text when the bridge reported
-// prompt_done but the turn actually failed (stopReason=failed and/or an
+// prompt_done but the turn actually failed (stopReason=failed/refusal and/or an
 // error_text body). Empty means the turn completed normally.
 func chatFailure(res *sandbox.ChatResult) string {
 	if res == nil {
@@ -1034,7 +1034,11 @@ func chatFailure(res *sandbox.ChatResult) string {
 		return ""
 	}
 	if text == "" {
-		text = "stopReason=failed"
+		reason := strings.TrimSpace(res.StopReason)
+		if reason == "" {
+			reason = "failed"
+		}
+		text = "stopReason=" + reason
 	}
 	return truncateChatFailure(text)
 }

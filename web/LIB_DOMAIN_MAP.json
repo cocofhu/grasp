@@ -123,6 +123,7 @@
       "usePmLeaderChat.ts"
     ],
     "run": [
+      "acpFailure.ts",
       "acpTools.ts",
       "acpUnpack.ts",
       "applyLiveWsAcpPage.ts",
@@ -266,7 +267,7 @@
     "icons": 2,
     "inbox": 43,
     "pm": 7,
-    "run": 67,
+    "run": 68,
     "shared": 39,
     "solo": 10,
     "workflow": 3,

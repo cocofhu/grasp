@@ -419,6 +419,44 @@ describe('AgentChatTester interactions', () => {
     w.unmount()
   })
 
+  it('keeps provider errors visible after a live turn ends', async () => {
+    const w = mountTester({ attachId: 7 })
+    try {
+      await flushPromises()
+      socket!.onopen?.()
+      await flushPromises()
+      frame('turn_begin', { item: { id: 'failed', text: 'hi', images: [] } })
+      frame('acp', { data: { op: 'event', data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: 'Partial reply' } } } })
+      frame('acp', { data: { op: 'event', data: { type: 'error_text', text: 'Quota exhausted' } } })
+      frame('acp', { data: { op: 'event', data: { type: 'prompt_done', stopReason: 'failed' } } })
+      frame('turn_done')
+      await flushPromises()
+      expect((w.vm as any).turns[1]).toMatchObject({ text: 'Partial reply', error: 'Quota exhausted', streaming: false })
+      expect(w.text()).toContain('Quota exhausted')
+    } finally {
+      w.unmount()
+    }
+  })
+
+  it.each(['failed', 'refusal'])('restores an otherwise empty provider failure from %s history', async (stopReason) => {
+    mocks.eventLog.mockResolvedValueOnce({ events: [
+      { op: 'event', data: { type: 'prompt_begin', text: 'hi' } },
+      { op: 'event', data: { type: 'prompt_done', stopReason } },
+    ] })
+    const w = mountTester()
+    try {
+      await (w.vm as any).restoreHistory(7)
+      ;(w.vm as any).sandbox = { id: 7, status: 'running' }
+      ;(w.vm as any).status = 'ready'
+      await flushPromises()
+      expect((w.vm as any).turns).toHaveLength(2)
+      expect((w.vm as any).turns[1]).toMatchObject({ error: pages.pages.agentChatTester.execError, streaming: false })
+      expect(w.text()).toContain(pages.pages.agentChatTester.execError)
+    } finally {
+      w.unmount()
+    }
+  })
+
   it('restores paged history, loads earlier events, and tolerates failures', async () => {
     const newer = [
       { op: 'event', data: { type: 'prompt_begin', promptText: 'new', imageURLs: ['https://x/a.png', '', 1] } },
