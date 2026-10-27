@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"errors"
 	"io"
 	"net"
 	"strings"
@@ -107,12 +106,43 @@ func TestHostKeyTOFUPinAndMismatch(t *testing.T) {
 		t.Fatalf("same key should pass FixedHostKey: %v", err)
 	}
 	err := cb2("127.0.0.1", dummyAddr{}, key2)
-	if err == nil {
-		t.Fatal("mismatch should be rejected")
+	if err == nil || !strings.Contains(err.Error(), "mismatch") {
+		t.Fatalf("mismatch should be rejected, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "mismatch") && !errors.Is(err, err) {
-		// ssh.FixedHostKey returns a clear error; accept any non-nil.
-		t.Logf("mismatch error: %v", err)
+}
+
+func TestHostKeyReplacedWhenAddressChangesSandbox(t *testing.T) {
+	t.Parallel()
+	cache := newHostKeyCache()
+	first := sshCreds{host: "192.168.2.181", port: 22, sandboxID: "sandbox-a", hostKeys: cache}
+	second := first
+	second.sandboxID = "sandbox-b"
+	keyA := mustSSHPublicKey(t)
+	keyB := mustSSHPublicKey(t)
+	keyB2 := mustSSHPublicKey(t)
+
+	if err := first.hostKeyCallback()("192.168.2.181", dummyAddr{}, keyA); err != nil {
+		t.Fatalf("pin sandbox-a: %v", err)
+	}
+	if err := second.hostKeyCallback()("192.168.2.181", dummyAddr{}, keyB); err != nil {
+		t.Fatalf("reused address should trust sandbox-b: %v", err)
+	}
+	if got := cache.get(second.addrKey()); got == nil || string(got.Marshal()) != string(keyB.Marshal()) {
+		t.Fatal("pin was not replaced with sandbox-b")
+	}
+	if err := second.hostKeyCallback()("192.168.2.181", dummyAddr{}, keyB2); err == nil || !strings.Contains(err.Error(), "mismatch") {
+		t.Fatalf("same sandbox must keep its key, got %v", err)
+	}
+	if got := cache.get(second.addrKey()); string(got.Marshal()) != string(keyB.Marshal()) {
+		t.Fatal("rejected key replaced the pin")
+	}
+
+	cache.forget("sandbox-b")
+	if cache.get(second.addrKey()) != nil {
+		t.Fatal("forget left sandbox-b's pin")
+	}
+	if err := second.hostKeyCallback()("192.168.2.181", dummyAddr{}, keyB2); err != nil {
+		t.Fatalf("address is free after forget: %v", err)
 	}
 }
 
