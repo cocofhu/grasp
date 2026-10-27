@@ -30,6 +30,8 @@ func TestReasoningEffortsRespectAdapterAndExactMetadata(t *testing.T) {
 		{"opencode", "deepseek-v4.1-flash", &Connection{ProviderID: "tokenhub"}, []string{"low", "high", "max"}},
 		{"opencode", "vendor/deepseek-v4.1-flash", &Connection{ProviderID: "hunyuan"}, []string{"low", "high", "max"}},
 		{"opencode", "deepseek-v4-flash", &Connection{ProviderID: "tokenhub", BaseURL: "https://tokenhub.tencentmaas.com/v1"}, []string{"low", "high", "max"}},
+		{"opencode", "deepseek-v4-pro", &Connection{BaseURL: "https://tokenhub.tencentmaas.com/v1"}, []string{"low", "high", "max"}},
+		{"opencode", "deepseek-v4-pro", &Connection{BaseURL: "https://tokenhub.tencentmaas.com.evil.example/v1"}, nil},
 		{"opencode", "deepseek-v4-pro", &Connection{ProviderID: "tokenhub"}, []string{"low", "high", "max"}},
 		{"opencode", "deepseek-v4-pro", nil, []string{"high", "max"}},
 		{"opencode", "opencode/gpt-5.5", nil, []string{"none", "low", "medium", "high", "xhigh"}},

@@ -37,10 +37,21 @@ export function platformVariants(modelId: string): string[] {
   return entry?.variants?.length ? [...entry.variants] : []
 }
 
+function tokenHubHost(baseUrl?: string) {
+  const raw = (baseUrl || '').trim()
+  if (!raw) return false
+  try {
+    const host = new URL(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase()
+    return host === 'tokenhub.tencentmaas.com' || host.endsWith('.tokenhub.tencentmaas.com')
+  } catch {
+    return false
+  }
+}
+
 export function tokenHubService(providerId?: string, baseUrl?: string) {
   const id = (providerId || '').trim().toLowerCase()
   if (id === 'tokenhub' || id === 'hunyuan') return true
-  return (baseUrl || '').toLowerCase().includes('tokenhub.tencentmaas.com')
+  return tokenHubHost(baseUrl)
 }
 
 export function tokenHubVariants(modelId: string): string[] {

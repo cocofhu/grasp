@@ -26,6 +26,8 @@ describe('OpenCode variant catalog', () => {
     expect(tokenHubVariants('deepseek-v4-pro')).toEqual(['low', 'high', 'max'])
     expect(effortChoices('opencode', 'platform', undefined, undefined, 'opencode/deepseek-v4-pro')).toEqual(['high', 'max'])
     expect(effortChoices('opencode', 'connection', 'tokenhub', 'https://tokenhub.tencentmaas.com/v1', 'deepseek-v4-pro')).toEqual(['low', 'high', 'max'])
+    expect(effortChoices('opencode', 'connection', '', 'https://tokenhub.tencentmaas.com/v1', 'deepseek-v4-pro')).toEqual(['low', 'high', 'max'])
+    expect(effortChoices('opencode', 'connection', '', 'https://tokenhub.tencentmaas.com.evil.example/v1', 'deepseek-v4-pro')).toEqual([])
     expect(effortChoices('opencode', 'connection', 'other', 'https://models.example/v1', 'deepseek-v4-pro')).toEqual([])
     expect(effortChoices('cursor', 'platform', undefined, undefined, 'gpt-5.5')).toEqual([])
     expect(effortChoices('codex', 'platform', undefined, undefined, 'gpt-5.5')).toEqual([])

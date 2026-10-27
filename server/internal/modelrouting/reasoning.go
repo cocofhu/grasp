@@ -1,10 +1,27 @@
 package modelrouting
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/clicatalog"
 )
+
+func tokenHubHost(baseURL string) bool {
+	raw := strings.TrimSpace(baseURL)
+	if raw == "" {
+		return false
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "tokenhub.tencentmaas.com" || strings.HasSuffix(host, ".tokenhub.tencentmaas.com")
+}
 
 // openCodeEfforts is the verified TokenHub table. It is not the official
 // OpenCode catalog: a model can have different levels on TokenHub than it does
@@ -40,7 +57,7 @@ func TokenHub(connection *Connection) bool {
 	if id == "tokenhub" || id == "hunyuan" {
 		return true
 	}
-	return strings.Contains(strings.ToLower(connection.BaseURL), "tokenhub.tencentmaas.com")
+	return tokenHubHost(connection.BaseURL)
 }
 
 // FixedEffortBinding is OpenCode on TokenHub. Those models use the verified
