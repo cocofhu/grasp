@@ -201,7 +201,7 @@ function onToggle(index: number, last: boolean, e: Event) {
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-col" data-testid="agent-timeline">
+  <div class="agent-timeline flex min-w-0 flex-col" data-testid="agent-timeline">
     <template v-if="settled">
       <button
         type="button"
@@ -258,7 +258,7 @@ function onToggle(index: number, last: boolean, e: Event) {
         </details>
         <div
           v-else
-          class="chat-prose md mb-3 min-w-0 last:mb-0"
+          class="chat-prose md agent-live-message min-w-0"
           :data-testid="messageTestId"
         >
           <StreamMarkdown v-if="streaming && b.last" :blocks="liveBlocks" /><span
@@ -303,8 +303,10 @@ function onToggle(index: number, last: boolean, e: Event) {
 .agent-elapsed:hover .agent-elapsed-chevron { color: rgb(var(--c-txt)); }
 .agent-elapsed[aria-expanded='true'] .agent-elapsed-chevron { transform: rotate(90deg); }
 .agent-elapsed-work { margin: 14px 0 2px; }
+.agent-live-message { margin: 0 0 2px; }
+.agent-live-message:last-child { margin-bottom: 0; }
 .agent-elapsed-thought {
-  margin: 0 0 8px;
+  margin: 0 0 2px;
   color: rgb(var(--c-txt3));
   font-size: 12.5px;
   line-height: 1.45;
@@ -312,9 +314,7 @@ function onToggle(index: number, last: boolean, e: Event) {
 }
 .agent-elapsed-thought p { margin: 0 0 8px; }
 .agent-elapsed-thought p:last-child { margin-bottom: 0; }
-.agent-elapsed-thought:last-child,
-.agent-elapsed-note:last-child { margin-bottom: 4px; }
-.agent-elapsed-note { margin-bottom: 8px; }
+.agent-elapsed-note { margin-bottom: 2px; }
 .agent-elapsed-rule {
   height: 1px;
   margin: 4px 0 8px;
@@ -341,6 +341,7 @@ function onToggle(index: number, last: boolean, e: Event) {
   transition: background-color var(--dur-ui), color var(--dur-ui);
 }
 .agent-thought-summary::-webkit-details-marker { display: none; }
+.agent-thought-summary::marker { content: none; }
 .agent-thought-summary:hover { background: rgb(var(--c-elevated) / .6); color: rgb(var(--c-txt)); }
 .agent-thought-summary:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
 .agent-thought-summary :deep(.app-icon) { flex: none; width: 12px; height: 12px; }
