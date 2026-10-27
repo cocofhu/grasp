@@ -6,6 +6,7 @@ import { loadCliModels } from '@/lib/agent/cliCatalog'
 import { modelVendor } from '@/lib/agent/cliModelView'
 import { bindingProblem, connectionCapabilities, credentialUsable, isModelCredential, isToolCredential, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { effortChoices, validEffortToken } from '@/lib/agent/fixedEffort'
+import { mergeModelMetadata, modelInputMode, setModelInputMode, type ModelInputMode } from '@/lib/agent/modelCapabilities'
 import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
 import { useToast } from '@/lib/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -47,6 +48,7 @@ const form = reactive({ name: '', backend: 'cursor', kind: 'platform' as 'platfo
 const cliModels = ref<CliCatalogModel[]>([])
 const cliReady = ref(false)
 const savedModelIds = ref<string[]>([])
+const imageInputDrafts = reactive(new Map<string, ModelInputMode>())
 const toolCaps = computed(() => capabilities.value.filter((item) => item.toolId === form.backend && item.adapterState === 'existing'))
 const platformAvailable = computed(() => toolCaps.value.some((item) => item.modes.includes('platform')))
 const connectionAvailable = computed(() => connectionCapabilities(capabilities.value, form.backend).length > 0)
@@ -59,7 +61,7 @@ const catalogError = ref(false)
 let catalogRequest = 0
 const serviceModels = computed(() => {
   const discovered = new Map(discoveredModels.value.map(model => [model.id, model]))
-  const saved = (selectedService.value?.models || []).map(model => ({ ...discovered.get(model.id), ...model, name: model.name || discovered.get(model.id)?.name }))
+  const saved = (selectedService.value?.models || []).map(model => mergeModelMetadata(model, discovered.get(model.id)))
   const savedIds = new Set(saved.map(model => model.id))
   return [...saved, ...discoveredModels.value.filter(model => !savedIds.has(model.id))]
 })
@@ -101,6 +103,7 @@ const credentialChoice = computed<string>({
     form.credentialId = form.kind === 'platform' ? value.slice('platform:'.length) : ''
     form.connectionId = form.kind === 'connection' ? value.slice('connection:'.length) : ''
     form.modelId = ''; form.auxiliaryModelIds = []; form.roles = {}; form.routeProfile = ''; form.efforts = {}
+    imageInputDrafts.clear()
   },
 })
 const selectedCredential = computed(() => credentialOptions.value.find((option) => option.value === credentialChoice.value))
@@ -112,6 +115,25 @@ const slotCatalog = computed<SlotOption[]>(() => {
 })
 const wizardSteps = computed(() => [c.value.chooseTool, c.value.chooseCredential, c.value.selectModel])
 const roleNames = computed(() => [...new Set(toolCaps.value.flatMap((item) => item.roleNames || []))].filter((role) => role !== 'main') as (keyof ModelRoles)[])
+const configurableImageInput = computed(() => form.kind === 'connection' && ['codebuddy', 'opencode', 'deepseek_harness'].includes(form.backend))
+const imageInputOptions = computed(() => [
+  { value: 'default', label: c.value.imageInputDefault },
+  { value: 'text', label: c.value.imageInputText },
+  { value: 'image', label: c.value.imageInputImage },
+])
+function imageInputMode(id: string): ModelInputMode {
+  const key = id.trim()
+  return imageInputDrafts.get(key) ?? modelInputMode(serviceModels.value.find(model => model.id === key))
+}
+function changeImageInput(id: string, mode: string) {
+  if (id.trim() && mode !== imageInputMode(id) && (mode === 'default' || mode === 'text' || mode === 'image')) imageInputDrafts.set(id.trim(), mode)
+}
+function showRoleImageInput(role: keyof ModelRoles) {
+  if (!configurableImageInput.value) return false
+  const id = form.roles[role]?.trim()
+  if (!id || id === form.modelId.trim() || form.auxiliaryModelIds.some(model => model.trim() === id)) return false
+  return roleNames.value.find(name => form.roles[name]?.trim() === id) === role
+}
 function modelEffortLevels(id: string) {
   return effortChoices(form.backend, form.kind, selectedService.value?.providerId, selectedService.value?.baseUrl, id)
 }
@@ -198,6 +220,7 @@ function resetSource() {
   if (form.kind === 'platform' && !platformAvailable.value) form.kind = 'connection'
   if (form.kind === 'connection' && !connectionAvailable.value && platformAvailable.value) form.kind = 'platform'
   form.credentialId = ''; form.connectionId = ''; form.modelId = ''; form.auxiliaryModelIds = []; form.roles = {}; form.routeProfile = ''; form.efforts = {}
+  imageInputDrafts.clear()
 }
 function chooseTool(backend: string) {
   if (editingId.value || form.backend === backend) return
@@ -214,6 +237,7 @@ function toolKeydown(event: KeyboardEvent, index: number) {
   group?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus()
 }
 function start(row?: ModelConfiguration) {
+  imageInputDrafts.clear()
   editingId.value = row?.id || ''
   savedModelIds.value = [row?.binding.modelId || '', ...(row?.binding.auxiliaryModelIds || [])].map((id) => id.trim()).filter(Boolean)
   Object.assign(form, { name: row?.name || '', backend: row?.backend || 'cursor', kind: row?.binding.kind || 'platform', credentialId: row?.binding.kind === 'platform' ? row.binding.credentialId : '', connectionId: row?.binding.kind === 'connection' ? row.binding.connectionId : '', modelId: row?.binding.modelId || '', auxiliaryModelIds: [...(row?.binding.auxiliaryModelIds || [])], state: row?.state || 'active', roles: { ...row?.binding.toolSettings?.modelRoles }, routeProfile: row?.binding.toolSettings?.routeProfile || '', efforts: { ...(row?.binding.toolSettings?.modelEfforts || {}) } })
@@ -269,10 +293,20 @@ async function ensureModels(binding: ConcreteModelBinding) {
   const latest = (await api.listModelConnections()).items.find((item) => item.id === binding.connectionId)
   if (!latest || latest.state !== 'active' || !connectionCapabilities(capabilities.value, form.backend, latest).length) throw new Error(c.value.missingConnection)
   const required = [...new Set([binding.modelId, ...(binding.auxiliaryModelIds || []), ...Object.values(binding.toolSettings?.modelRoles || {})])].filter(Boolean) as string[]
-  const missing = required.filter((id) => !latest.models.some((model) => model.id === id))
-  if (!missing.length) return
-  const additions = missing.map(id => serviceModels.value.find(model => model.id === id) || { id, source: 'manual' as const })
-  const updated = await api.updateModelConnection(latest.id, { name: latest.name, providerId: latest.providerId, protocol: latest.protocol, baseUrl: latest.baseUrl, credentialId: latest.credentialId, auth: latest.auth, service: latest.service, state: latest.state, models: [...latest.models, ...additions] })
+  const requiredIds = new Set(required)
+  const discovered = new Map(discoveredModels.value.map(model => [model.id, model]))
+  const mergeRequired = (model: ModelConnection['models'][number]) => {
+    const merged = mergeModelMetadata(model, discovered.get(model.id))
+    const draft = imageInputDrafts.get(model.id)
+    return draft === undefined ? merged : setModelInputMode(merged, draft)
+  }
+  const models = latest.models.map(model => requiredIds.has(model.id) ? mergeRequired(model) : model)
+  for (const id of required) {
+    if (!models.some(model => model.id === id)) models.push(mergeRequired(serviceModels.value.find(model => model.id === id) || { id, source: 'manual' }))
+  }
+  const metadataKey = (model: ModelConnection['models'][number]) => [model.id, model.name || null, model.source, model.capabilities?.toolCalls ?? null, model.capabilities?.vision ?? null, model.capabilities?.reasoning ?? null, model.input?.length ? [...model.input].sort() : null, model.contextWindow ?? null, model.maxTokens ?? null, model.reasoningEfforts?.length ? model.reasoningEfforts : null]
+  if (JSON.stringify(models.map(metadataKey)) === JSON.stringify(latest.models.map(metadataKey))) return
+  const updated = await api.updateModelConnection(latest.id, { name: latest.name, providerId: latest.providerId, protocol: latest.protocol, baseUrl: latest.baseUrl, credentialId: latest.credentialId, auth: latest.auth, service: latest.service, state: latest.state, models })
   connections.value = connections.value.map((item) => item.id === updated.id ? updated : item)
 }
 async function save() {
@@ -399,6 +433,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
               <template #leading><VendorMark :vendor="slotVendor(form.modelId)" :size="28" :unknown="slotUnavailable(form.modelId)" /></template>
               <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
             </AppSelect>
+            <label v-if="configurableImageInput && form.modelId.trim()" class="model-image-input"><span>{{ c.imageInput }}</span><AppSelect :model-value="imageInputMode(form.modelId)" :options="imageInputOptions" :aria-label="`${c.primarySlot} · ${c.imageInput}`" size="sm" data-testid="model-configuration-image-input" @update:model-value="changeImageInput(form.modelId, $event)" /></label>
             <ModelEffortPicker v-if="showEffort(form.modelId)" :model-name="modelSlotLabel(form.modelId)" :efforts="modelEffortLevels(form.modelId)" :model-value="form.efforts[form.modelId.trim()] || ''" @update:model-value="setEffort(form.modelId, $event)" />
           </div>
           <div v-for="(modelId, index) in form.auxiliaryModelIds" :key="index" class="model-slot" :data-testid="`model-configuration-aux-${index}`">
@@ -411,12 +446,14 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
               <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
             </AppSelect>
             <p v-if="slotUnavailable(modelId)" class="mb-0 mt-1 text-xs text-warn">{{ c.modelUnavailable }}</p>
+            <label v-if="configurableImageInput && modelId.trim()" class="model-image-input"><span>{{ c.imageInput }}</span><AppSelect :model-value="imageInputMode(modelId)" :options="imageInputOptions" :aria-label="`${c.auxiliarySlot} · ${c.imageInput}`" size="sm" :data-testid="`model-configuration-aux-image-input-${index}`" @update:model-value="changeImageInput(modelId, $event)" /></label>
             <ModelEffortPicker v-if="showEffort(modelId)" :model-name="modelSlotLabel(modelId)" :efforts="modelEffortLevels(modelId)" :model-value="form.efforts[modelId.trim()] || ''" @update:model-value="setEffort(modelId, $event)" />
           </div>
           <button type="button" class="model-add" data-testid="model-configuration-add-model" :disabled="!canAddModel" :title="canAddModel ? '' : c.noMoreModels" @click="addAuxiliary"><Icon name="plus" :size="14" />{{ c.addModel }}</button>
           <p v-if="auxiliaryProblem" class="mb-0 text-xs text-err">{{ auxiliaryProblem }}</p>
           <template v-if="form.kind !== 'platform'">
             <p class="mb-0 text-xs leading-5 text-txt3">{{ c.manualModelHint }}</p>
+            <p v-if="configurableImageInput && form.modelId.trim()" class="mb-0 text-xs leading-5 text-txt3">{{ c.imageInputSharedHint }}</p>
             <template v-if="roleNames.length">
               <p class="mb-0 text-xs font-medium text-txt2">{{ c.auxiliary }}</p>
               <div v-for="role in roleNames" :key="role" class="model-slot" :data-testid="`model-configuration-role-${role}`">
@@ -425,6 +462,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
                   <template #leading><VendorMark v-if="form.roles[role]" :vendor="slotVendor(form.roles[role] || '')" :size="28" :unknown="slotUnavailable(form.roles[role] || '')" /></template>
                   <template #option-leading="{ option }"><VendorMark v-if="option.value" :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
                 </AppSelect>
+                <label v-if="showRoleImageInput(role)" class="model-image-input"><span>{{ c.imageInput }}</span><AppSelect :model-value="imageInputMode(form.roles[role] || '')" :options="imageInputOptions" :aria-label="`${roleLabel(role)} · ${c.imageInput}`" size="sm" :data-testid="`model-configuration-role-image-input-${role}`" @update:model-value="changeImageInput(form.roles[role] || '', $event)" /></label>
                 <ModelEffortPicker v-if="showEffort(form.roles[role] || '')" :model-name="modelSlotLabel(form.roles[role] || '')" :efforts="modelEffortLevels(form.roles[role] || '')" :model-value="form.efforts[(form.roles[role] || '').trim()] || ''" @update:model-value="setEffort(form.roles[role] || '', $event)" />
               </div>
             </template>
@@ -617,6 +655,15 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
   border-color: rgb(var(--c-err) / .28);
   background: rgb(var(--c-err) / .08);
   color: rgb(var(--c-err));
+}
+.model-image-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  color: rgb(var(--c-txt3));
+  font-size: 12px;
 }
 .model-add {
   display: flex;
