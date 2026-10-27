@@ -65,10 +65,6 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	}
 	// Shared workspace files and ordinary defaults remain independent of authorization.
 	agent = s.effectiveAgent(agent)
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
-	if err != nil {
-		return nil, err
-	}
 	// Reuse an existing test sandbox bound to the same agent when one is still
 	// alive, instead of spinning up a fresh container every time. The chat path
 	// (ensureConnected) transparently re-attaches if the live ACP connection was
@@ -76,14 +72,9 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	//
 	// Skip reuse when any repos are configured: the caller wants those clones
 	// in a fresh workspace, so always create a new sandbox for them.
+	// Model and Git authorization changes do not reject this reuse.
 	if len(repos) == 0 {
 		if row := s.findReusable(ctx, profile); row != nil {
-			s.mu.Lock()
-			bindingErr := checkAppliedBindings(modelFingerprint, gitFingerprint, row, s.live[row.ID])
-			s.mu.Unlock()
-			if bindingErr != nil {
-				return nil, bindingErr
-			}
 			at := time.Now().Add(s.TTL())
 			s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{"destroy_at": &at, "updated_at": time.Now()})
 			row.DestroyAt = &at
@@ -95,6 +86,14 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 		return nil, fmt.Errorf("已达到测试沙箱上限(%d),请先清理空闲沙箱", maxN)
 	}
 
+	modelFingerprint, err := s.currentModelFingerprint(agent)
+	if err != nil {
+		return nil, err
+	}
+	gitFingerprint, err := s.currentGitFingerprint(agent)
+	if err != nil {
+		return nil, err
+	}
 	runID := "test-" + strings.ReplaceAll(filepath.Base(profile), "/", "") + "-" + randID()
 	token := s.host.RegisterRun(runID)
 	// Pre-allocate the container name so the "creating" record references the
@@ -443,13 +442,10 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	s.mu.Unlock()
 	agent, _ := s.skills.Get(row.Profile)
 	effective := s.effectiveAgent(agent)
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := checkAppliedBindings(modelFingerprint, gitFingerprint, &row, ls); err != nil {
-		return nil, nil, err
-	}
+	// Keep the model route and Git authorization captured at creation.
+	// Later configuration changes do not block or retarget this sandbox.
+	modelFingerprint := appliedModelFingerprint(&row, ls)
+	gitFingerprint := appliedGitFingerprint(&row, ls)
 	agent = effective
 	if ls != nil && ls.acp != nil && ls.acp.IsConnected() {
 		return ls, &row, nil

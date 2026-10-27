@@ -151,10 +151,6 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 	}
 	// Merge SharedAgent Token env / meta (Agent → Shared 选源).
 	agent = s.effectiveAgent(agent)
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
-	if err != nil {
-		return nil, false, err
-	}
 
 	if opts.Reuse {
 		var existing models.Sandbox
@@ -163,12 +159,6 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 			Order("created_at desc").First(&existing).Error; err == nil {
 			if existing.Profile != profile {
 				return nil, false, fmt.Errorf("此会话的沙箱属于其他 Agent，请重新打开沙箱")
-			}
-			s.mu.Lock()
-			bindingErr := checkAppliedBindings(modelFingerprint, gitFingerprint, &existing, s.live[existing.ID])
-			s.mu.Unlock()
-			if bindingErr != nil {
-				return nil, false, bindingErr
 			}
 			if existing.Status == "running" && s.mgr.Status(ctx, existing.Name) == "running" {
 				at := time.Now().Add(s.TTL())
@@ -189,6 +179,14 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 		return nil, false, fmt.Errorf("已达到沙箱上限(%d),请先清理空闲沙箱", maxN)
 	}
 
+	modelFingerprint, err := s.currentModelFingerprint(agent)
+	if err != nil {
+		return nil, false, err
+	}
+	gitFingerprint, err := s.currentGitFingerprint(agent)
+	if err != nil {
+		return nil, false, err
+	}
 	prefix := strings.TrimSpace(opts.RunIDPrefix)
 	if prefix == "" {
 		if opts.Reuse {

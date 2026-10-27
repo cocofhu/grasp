@@ -176,7 +176,7 @@ func TestBaselineReadinessResolvesInheritedModel(t *testing.T) {
 	}
 }
 
-func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
+func TestInheritedModelChangesDoNotBlockLongLivedSandbox(t *testing.T) {
 	for _, purpose := range []string{"test", SandboxPurposeAgent, SandboxPurposeSolo} {
 		for _, change := range []string{"model", "git", "missing model"} {
 			t.Run(purpose+"/"+change, func(t *testing.T) {
@@ -237,8 +237,8 @@ func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
 				if err := shared.Save(defaults); err != nil {
 					t.Fatal(err)
 				}
-				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "must reopen", nil, 0, nil); err == nil {
-					t.Fatal("a new turn ignored changed inherited defaults")
+				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "existing sandbox", nil, 0, nil); err != nil {
+					t.Fatalf("inherited binding change %q blocked an existing sandbox: %v", change, err)
 				}
 			})
 		}

@@ -103,7 +103,7 @@ func TestSharedWorkspaceDoesNotGrantGitAuthorization(t *testing.T) {
 	}
 }
 
-func TestGitBindingsInteractiveReuseRejectsUnappliedOrInvalidSelection(t *testing.T) {
+func TestExistingAgentSandboxIgnoresGitAuthorizationChanges(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
@@ -118,28 +118,20 @@ func TestGitBindingsInteractiveReuseRejectsUnappliedOrInvalidSelection(t *testin
 	}
 	ds.setStatus(row.Name, "running")
 	opts := AgentSandboxOpenOpts{Profile: "agentA", ThreadID: "git-thread", Reuse: true}
-	if _, _, err := s.OpenAgentSandbox(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "重新打开") {
-		t.Fatalf("unknown/unapplied binding reused: %v", err)
+	assertReused := func(change string) {
+		t.Helper()
+		got, reused, err := s.OpenAgentSandbox(context.Background(), opts)
+		if err != nil || !reused || got.ID != row.ID {
+			t.Fatalf("%s blocked the existing sandbox: %+v reused=%v err=%v", change, got, reused, err)
+		}
 	}
-	agent, _ := s.skills.Get("agentA")
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.live[row.ID] = &liveSandbox{modelBindingFingerprint: modelFingerprint, gitBindingsFingerprint: gitFingerprint}
-	if got, reused, err := s.OpenAgentSandbox(context.Background(), opts); err != nil || !reused || got.ID != row.ID {
-		t.Fatalf("identical applied binding not reused: %+v %v %v", got, reused, err)
-	}
+	assertReused("unrecorded Git authorization")
 	s.gitCredential = func(string) (runtime.GitCredentialValue, bool) {
 		return runtime.GitCredentialValue{EnvKey: "GITHUB_TOKEN", Secret: "rotated", Host: "https://github.com"}, true
 	}
-	if _, _, err := s.OpenAgentSandbox(context.Background(), opts); err == nil {
-		t.Fatal("rotated secret reused without sync")
-	}
+	assertReused("rotated Git secret")
 	s.gitCredential = func(string) (runtime.GitCredentialValue, bool) { return runtime.GitCredentialValue{}, false }
-	if _, _, err := s.OpenAgentSandbox(context.Background(), opts); err == nil {
-		t.Fatal("revoked authorization fell back to existing container")
-	}
+	assertReused("revoked Git authorization")
 	s.gitCredential = serviceGitValue
 	if err := s.skills.Save(Agent{Name: "other", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: selection}); err != nil {
 		t.Fatal(err)

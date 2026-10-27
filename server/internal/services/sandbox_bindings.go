@@ -13,8 +13,8 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
-// Fingerprints retain no secret material. They let long-lived sessions refuse
-// another turn when the selected authorization or model route has changed.
+// Fingerprints retain no secret material. A sandbox records the model route and
+// Git authorization it was created with. Later changes do not affect that sandbox.
 func modelBindingFingerprint(agent Agent, env map[string]string) string {
 	if agent.ModelBinding == nil {
 		return ""
@@ -36,39 +36,68 @@ func gitBindingsFingerprint(credentials []sandbox.GitCredential) string {
 	return sandbox.SpecFingerprint(sandbox.Spec{GitBindingsConfigured: true, GitCredentials: credentials})
 }
 
-func (s *SandboxService) currentBindingFingerprints(agent Agent) (model, git string, err error) {
+func (s *SandboxService) currentModelFingerprint(agent Agent) (string, error) {
 	if agent.ModelBinding == nil || agent.ModelBinding.Kind != "configuration" || strings.TrimSpace(agent.ModelBinding.ConfigurationID) == "" {
-		return "", "", fmt.Errorf("请先为 Agent 选择模型配置")
-	}
-	credentials, err := runtime.ResolveGitBindings(agent.GitBindings, s.gitCredential)
-	if err != nil {
-		return "", "", err
+		return "", fmt.Errorf("请先为 Agent 选择模型配置")
 	}
 	env := map[string]string{}
 	if err := runtime.ApplyModelBinding(env, agent.AcpBackend, agent.ModelBinding, s.modelBinding); err != nil {
-		return "", "", err
+		return "", err
 	}
-	return modelBindingFingerprint(agent, env), gitBindingsFingerprint(credentials), nil
+	return modelBindingFingerprint(agent, env), nil
 }
 
-func checkAppliedBindings(model, git string, row *models.Sandbox, live *liveSandbox) error {
-	appliedModel, appliedGit := "", ""
-	if live != nil {
-		appliedModel, appliedGit = live.modelBindingFingerprint, live.gitBindingsFingerprint
+func (s *SandboxService) currentGitFingerprint(agent Agent) (string, error) {
+	credentials, err := runtime.ResolveGitBindings(agent.GitBindings, s.gitCredential)
+	if err != nil {
+		return "", err
 	}
+	return gitBindingsFingerprint(credentials), nil
+}
+
+func (s *SandboxService) currentBindingFingerprints(agent Agent) (model, git string, err error) {
+	model, err = s.currentModelFingerprint(agent)
+	if err != nil {
+		return "", "", err
+	}
+	git, err = s.currentGitFingerprint(agent)
+	if err != nil {
+		return "", "", err
+	}
+	return model, git, nil
+}
+
+// appliedModelFingerprint is the route captured when the sandbox was created.
+// Reconnects keep it; they do not re-read the Agent's current configuration.
+func appliedModelFingerprint(row *models.Sandbox, live *liveSandbox) string {
+	stored := ""
 	if row != nil {
-		if row.ModelBindingFingerprint != "" {
-			appliedModel = row.ModelBindingFingerprint
-		}
-		if row.GitBindingsFingerprint != "" {
-			appliedGit = row.GitBindingsFingerprint
-		}
+		stored = row.ModelBindingFingerprint
 	}
-	if model != appliedModel {
-		return fmt.Errorf("模型或凭据已变更或尚未同步，请重新打开沙箱")
+	liveValue := ""
+	if live != nil {
+		liveValue = live.modelBindingFingerprint
 	}
-	if git != appliedGit {
-		return fmt.Errorf("Git 授权已变更或尚未同步，请重新打开沙箱")
+	return appliedFingerprint(stored, liveValue)
+}
+
+// appliedGitFingerprint is the Git authorization captured when the sandbox was
+// created. Reconnects keep it and do not recheck the current selection.
+func appliedGitFingerprint(row *models.Sandbox, live *liveSandbox) string {
+	stored := ""
+	if row != nil {
+		stored = row.GitBindingsFingerprint
 	}
-	return nil
+	liveValue := ""
+	if live != nil {
+		liveValue = live.gitBindingsFingerprint
+	}
+	return appliedFingerprint(stored, liveValue)
+}
+
+func appliedFingerprint(stored, live string) string {
+	if stored != "" {
+		return stored
+	}
+	return live
 }

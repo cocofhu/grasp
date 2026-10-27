@@ -864,8 +864,8 @@ type PromptImage struct {
 //     so it shows in the sandbox UI; the runtime provider owns its lifecycle.
 //   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
 type Sandbox struct {
-	// Binding fingerprints retain only hashes, so reconnect can validate the
-	// exact applied authorization even after a control-plane restart.
+	// Binding fingerprints retain only hashes of the model route and Git
+	// authorization captured at creation. Reconnect does not recheck them.
 	ModelBindingFingerprint string `json:"-"`
 	GitBindingsFingerprint  string `json:"-"`
 	ID                      uint   `gorm:"primaryKey" json:"id"`

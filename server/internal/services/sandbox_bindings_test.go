@@ -53,7 +53,7 @@ func boundSandboxFixture(t *testing.T, purpose string, git bool) (*SandboxServic
 	return s, row, connections, configurations, key, connection, configuration
 }
 
-func TestLongLivedSandboxModelChangesBlockNextTurn(t *testing.T) {
+func TestLongLivedSandboxKeepsWorkingAfterModelConfigurationChanges(t *testing.T) {
 	for _, purpose := range []string{"test", SandboxPurposeAgent, SandboxPurposeSolo} {
 		for _, change := range []string{"cleared key", "revoked key", "rotated key", "disabled configuration", "deleted configuration", "disabled connection", "changed model", "removed binding"} {
 			t.Run(purpose+"/"+change, func(t *testing.T) {
@@ -88,12 +88,13 @@ func TestLongLivedSandboxModelChangesBlockNextTurn(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "must not reach the old model", nil, 0, nil); err == nil {
-					t.Fatal("a new turn used stale model authorization")
+				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "keep the sandbox that already started", nil, 0, nil); err != nil {
+					t.Fatalf("model configuration change %q blocked an existing sandbox: %v", change, err)
 				}
 				if purpose == SandboxPurposeAgent {
-					if _, _, err := s.OpenAgentSandbox(context.Background(), AgentSandboxOpenOpts{Profile: row.Profile, ThreadID: row.ThreadID, Reuse: true}); err == nil {
-						t.Fatal("thread reused stale model authorization")
+					got, reused, err := s.OpenAgentSandbox(context.Background(), AgentSandboxOpenOpts{Profile: row.Profile, ThreadID: row.ThreadID, Reuse: true})
+					if err != nil || !reused || got.ID != row.ID {
+						t.Fatalf("model configuration change %q dropped the existing thread sandbox: %v", change, err)
 					}
 				}
 			})
@@ -122,31 +123,43 @@ func TestLiveBindingFingerprintsSurviveReconnectAndRestart(t *testing.T) {
 		}
 	}
 	s.gitCredential = func(string) (runtime.GitCredentialValue, bool) { return runtime.GitCredentialValue{}, false }
-	if _, _, err := s.ChatWithTimeout(ctx, row.ID, "revoked Git must block", nil, 0, nil); err == nil {
-		t.Fatal("chat ignored revoked Git authorization")
+	if _, _, err := s.ChatWithTimeout(ctx, row.ID, "revoked Git keeps the sandbox", nil, 0, nil); err != nil {
+		t.Fatalf("revoked Git authorization blocked an existing sandbox: %v", err)
 	}
 }
 
-func TestTestSandboxDoesNotReusePreviouslyBoundCredentials(t *testing.T) {
-	for _, binding := range []string{"model", "git"} {
-		t.Run(binding, func(t *testing.T) {
-			db := newTestDB(t)
-			ds := &dockerState{}
-			s := newSandboxService(t, db, ds)
-			row := models.Sandbox{Name: "previously-bound", Profile: "agentA", Purpose: "test", Status: "running"}
-			if binding == "model" {
-				row.ModelBindingFingerprint = "old-model"
-			} else {
-				row.GitBindingsFingerprint = "old-git"
-			}
-			if err := db.Create(&row).Error; err != nil {
-				t.Fatal(err)
-			}
-			ds.setStatus(row.Name, "running")
-			if got, err := s.Open(context.Background(), "agentA", nil); err == nil && got.ID == row.ID {
-				t.Fatal("cleared binding reused a sandbox with previous authorization")
-			}
-		})
+func TestTestSandboxModelChangesDoNotBlockReuse(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+	row := &models.Sandbox{Name: "previously-bound", Profile: "agentA", Purpose: "test", Status: "running"}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	sandboxTestAppliedBindings(t, s, row)
+	row.ModelBindingFingerprint = "old-model"
+	if err := db.Save(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	ds.setStatus(row.Name, "running")
+	got, err := s.Open(context.Background(), "agentA", nil)
+	if err != nil || got.ID != row.ID {
+		t.Fatalf("model configuration change blocked an existing test sandbox: %v", err)
+	}
+}
+
+func TestTestSandboxGitChangesDoNotBlockReuse(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+	row := models.Sandbox{Name: "previously-bound", Profile: "agentA", Purpose: "test", Status: "running", GitBindingsFingerprint: "old-git"}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	ds.setStatus(row.Name, "running")
+	got, err := s.Open(context.Background(), "agentA", nil)
+	if err != nil || got.ID != row.ID {
+		t.Fatalf("Git authorization change blocked an existing test sandbox: %v", err)
 	}
 }
 
