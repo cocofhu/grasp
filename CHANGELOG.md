@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **DeepSeek Harness token usage:** workflow, React and Solo turns now record per-turn input, output and cache tokens from DSH's session projection, so usage analytics, cost estimates and the token ledger include DeepSeek Harness. Cached input is counted once in its own bucket; turns without a model call, unavailable caches and subagent sessions keep the previous omission behavior.
+
 - **Clarify timeline alignment:** the in-progress 「思考中…」 indicator and label now line up with thought and tool summaries in current turns, follow-up nodes and run history. First-token placeholders, 「输出中」, other busy indicators and reduced-motion behavior are unchanged.
 
 - **Agent chat failures:** OpenCode passes reasoning variants separately from model IDs. Gemini chats now display native streamed text, tools and failure details, with cached input counted once. Solo and Agent test chats show provider failures and refusals, including errors recovered from older empty replies, while retaining partial output and usage.
