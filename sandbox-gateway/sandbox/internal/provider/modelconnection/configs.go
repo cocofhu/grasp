@@ -87,8 +87,8 @@ func prepareCodeBuddy(p Prepared, root string) (Prepared, error) {
 		if model.Capabilities.ToolCalls != nil {
 			m["supportsToolCall"] = *model.Capabilities.ToolCalls
 		}
-		if model.Capabilities.Vision != nil {
-			m["supportsImages"] = *model.Capabilities.Vision
+		if _, images := modelInput(model); images != nil {
+			m["supportsImages"] = *images
 		}
 		if model.Capabilities.Reasoning != nil {
 			m["supportsReasoning"] = *model.Capabilities.Reasoning
@@ -123,15 +123,12 @@ func prepareOpenCode(p Prepared) (Prepared, error) {
 			}
 			m["limit"] = limit
 		}
-		input := model.Input
-		if len(input) == 0 && model.Capabilities.Vision != nil && *model.Capabilities.Vision {
-			input = []string{"text", "image"}
-		}
+		input, images := modelInput(model)
 		if len(input) > 0 {
 			m["modalities"] = map[string]any{"input": input, "output": []string{"text"}}
 		}
-		if model.Capabilities.Vision != nil {
-			m["attachment"] = *model.Capabilities.Vision
+		if images != nil {
+			m["attachment"] = *images
 		}
 		models[model.ID] = m
 	}

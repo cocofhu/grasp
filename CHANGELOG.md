@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **API model image input:** OpenCode, CodeBuddy and DeepSeek Harness model groups can declare text-only or text-and-image input for primary and auxiliary models. Saving fills missing model-directory metadata without overwriting explicit choices. Native adapters consistently honor those declarations, preventing image-capable custom models from being treated as text-only when their API directory omits capabilities. Claude Code and Codex retain their native image handling; platform-authorized tools retain their own model catalogs.
+
 - **CLI chat activity:** Solo and Agent test chats keep an animated processing indicator visible between tool calls and reply text until the turn ends, including OpenCode, Claude Code and DeepSeek Harness. Completed tools retain their completed status, and stopped or failed replies clear the activity indicator.
 
 - **Home scrolling:** hide the scrollbar beside the home composer while keeping overflow content accessible by mouse wheel and touch in Workflow and Solo modes.

@@ -15,10 +15,7 @@ func (c Connection) dshPatch(route string) ([]byte, error) {
 		if model.MaxTokens > 0 {
 			m["maxTokens"] = model.MaxTokens
 		}
-		input := model.Input
-		if len(input) == 0 && model.Capabilities.Vision != nil && *model.Capabilities.Vision {
-			input = []string{"text", "image"}
-		}
+		input, _ := modelInput(model)
 		if len(input) > 0 {
 			if c.ToolSettings.RouteProfile == "deepseek-native" {
 				m["inputModalities"] = input

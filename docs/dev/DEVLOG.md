@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-27（API 模型图片能力声明与多工具适配）
+
+- 日期：2026-10-27（Asia/Shanghai）
+- 范围：`web/src/components/workspace/ModelConfigurationManager.vue` 及单测、`web/src/lib/agent/modelCapabilities.ts` 及单测、`web/src/lib/agent/modelRouting.ts`、`web/LIB_DOMAIN_MAP.json`、`web/e2e/model-routing.spec.ts`、`sandbox-gateway/sandbox/internal/provider/modelconnection/{configs,dsh,modalities}.go` 及适配回归、`CHANGELOG.md`。
+- 做了什么：OpenCode、CodeBuddy 和 DeepSeek Harness 的 API 模型组按模型提供图片输入声明，覆盖主模型、辅助模型和独立角色模型；草稿只在保存时写入共享 API 账号，切换账号、工具或取消后不泄漏。模型目录按字段补齐已保存模型缺失的能力，保留明确的仅文字、视觉关闭及其他能力，并基于保存时最新账号记录更新实际引用的模型。原生适配统一以明确输入类型优先于旧视觉标志，修正 CodeBuddy 忽略输入列表、OpenCode attachment 与 modalities 不一致、DSH 关闭视觉声明不完整等问题；未声明能力沿用工具默认值，不按模型名称猜测。Claude Code、Codex 使用各自原生图片处理，不显示无法生效的能力控件；Cursor、Trae 保留平台授权目录。
+- 为什么：Kimi K3.1 Pro 经 API 目录添加后只有模型 ID、名称和空能力对象，DSH 默认按仅文字模型运行，在本地 Read Image 检查阶段拒绝图片。OpenCode 自定义模型也会在未声明时关闭图片输入，旧界面没有补录入口，已有模型再次刷新目录也不能修复缺失 metadata。
+- 如何验证：Web 全量 528 文件、5,547 项单测通过，Lines 91.51%；关键浏览器回归 248 项通过（11.4 分钟），覆盖三种适配器的图片启用/仅文字持久化及刷新保留、Claude/Codex 原生入口，并人工核对手机截图。ESLint（0 errors、12 条既有 warnings）、类型检查、生产构建与 Secure Context/品牌断言通过。Sandbox 使用 Go 1.26.10、golangci-lint 2.12.0 完成 lint（0 issues）、vet、全量 Go 测试、核心覆盖率 96.6% 和规定语法、inject/git-auth/runtime-bootstrap/preview-inject smoke，mock chat 8 项通过；新增 8 种能力组合 × 4 种适配模式回归。全部七种工具完成只读能力核查；禁外网新容器中以假接口、合成 PNG 验证 Claude 2.1.310 的 Read 和 Codex 0.164.0 的 view_image 均把图片内容带入后续请求，未访问真实厂商推理。docs 构建与官方源高/严重漏洞审计、actionlint、error-level shellcheck 和 diff 检查通过。
+
 ### 2026-10-27（CLI 对话持续显示处理状态）
 
 - 日期：2026-10-27（Asia/Shanghai）

@@ -6,6 +6,7 @@ import { routeApi } from './helpers/apiRoute'
 const key = { id: 'key-model', name: 'Shared model key', purpose: 'model_api', issuer: 'custom', secretKind: 'api_key', type: 'ai', configured: true, enabled: true, masked: '••••1234' }
 const caps = [
   { toolId: 'cursor', modes: ['platform'], protocols: [] },
+  { toolId: 'claude_code', modes: ['platform', 'connection'], protocols: ['anthropic-messages'] },
   { toolId: 'codex', modes: ['platform', 'connection'], protocols: ['openai-responses'] },
   { toolId: 'codebuddy', modes: ['platform', 'connection'], protocols: ['openai-chat-completions'] },
   { toolId: 'opencode', modes: ['platform', 'connection'], protocols: ['openai-chat-completions', 'openai-responses', 'anthropic-messages'] },
@@ -459,6 +460,86 @@ test('API accounts offer the provider model catalog and persist only the chosen 
   expect(state.rows[0]!.models.some((model) => model.id === unusedHunyuan.id)).toBe(false)
   expect(state.keyWrites).toHaveLength(0)
 })
+
+for (const backend of ['codebuddy', 'opencode', 'deepseek_harness']) {
+  test(`${backend} saves image input for an existing API model and preserves explicit text-only input`, async ({ page }, testInfo) => {
+    const protocol = 'openai-chat-completions'
+    const saved = {
+      ...connection('shared-vision-account', protocol, 'kimi-k3.1-pro'),
+      auth: { scheme: 'bearer' },
+      models: [{ id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro', source: 'discovered', capabilities: {} }],
+    }
+    const state = await setup(page, [saved])
+    state.configurations.push({ id: 'vision-group', name: 'Image model', backend, binding: { kind: 'connection', connectionId: saved.id, modelId: saved.models[0]!.id }, state: 'active', revision: 1 })
+    if (backend === 'deepseek_harness') await page.setViewportSize({ width: 390, height: 844 })
+    await openCredentials(page)
+    await page.getByTestId('credentials-tab-models').click()
+    const edit = async () => {
+      await page.getByTestId('model-configuration-vision-group').getByRole('button', { name: /编辑/ }).click()
+      await page.getByTestId('model-configuration-next').click()
+      await page.getByTestId('model-configuration-next').click()
+    }
+    const selectInput = async (mode: string) => {
+      await page.getByTestId('model-configuration-image-input').locator('[data-test="app-select-trigger"]').click()
+      await page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])').locator(`[data-test="app-select-option-${mode}"]`).click()
+    }
+    await edit()
+    const input = page.getByTestId('model-configuration-image-input')
+    await expect(input).toContainText('未声明')
+    await selectInput('image')
+    await expect(input).toContainText('文字和图片')
+    await expect(page.getByRole('dialog')).toContainText('同一 API 账号')
+    expect(state.connectionWrites).toHaveLength(0)
+    if (backend === 'deepseek_harness') {
+      await settleVisualTransitions(page)
+      await page.screenshot({ path: testInfo.outputPath('image-input-mobile-light.png'), fullPage: true, animations: 'disabled' })
+    }
+    await page.getByTestId('model-configuration-save').click()
+    await expect(input).toHaveCount(0)
+    expect(state.connectionWrites).toHaveLength(1)
+    expect(state.rows[0]!.models).toEqual([expect.objectContaining({ id: saved.models[0]!.id, input: ['text', 'image'], capabilities: { vision: true } })])
+
+    await edit()
+    await expect(input).toContainText('文字和图片')
+    await selectInput('text')
+    await page.getByTestId('model-configuration-save').click()
+    await expect(input).toHaveCount(0)
+    expect(state.connectionWrites).toHaveLength(2)
+    expect(state.rows[0]!.models).toEqual([expect.objectContaining({ input: ['text'], capabilities: { vision: false } })])
+
+    state.modelCatalogs[saved.id] = { models: [{ ...saved.models[0], input: ['text', 'image'], capabilities: { vision: true } }] }
+    await edit()
+    await expect(input).toContainText('仅文字')
+    await page.getByTestId('model-configuration-refresh-models').click()
+    await expect(input).toContainText('仅文字')
+    await page.getByTestId('model-configuration-save').click()
+    await expect(input).toHaveCount(0)
+    expect(state.connectionWrites).toHaveLength(2)
+    expect(state.rows[0]!.models).toEqual([expect.objectContaining({ input: ['text'], capabilities: { vision: false } })])
+  })
+}
+
+for (const backend of ['claude_code', 'codex']) {
+  test(`${backend} keeps native image handling for API models`, async ({ page }) => {
+    const saved = { ...connection('native-image-account', backend === 'claude_code' ? 'anthropic-messages' : 'openai-responses', 'kimi-k3.1-pro'), auth: { scheme: backend === 'claude_code' ? 'x-api-key' : 'bearer' } }
+    const state = await setup(page, [saved])
+    await openCredentials(page)
+    await page.getByTestId('credentials-tab-models').click()
+    await addModelConfiguration(page)
+    await page.getByTestId('model-configuration-name').fill('Native image model')
+    await page.getByTestId(`model-configuration-backend-${backend}`).click()
+    await page.getByTestId('model-configuration-next').click()
+    await chooseCredential(page, `connection:${saved.id}`)
+    await page.getByTestId('model-configuration-next').click()
+    await page.getByTestId('model-configuration-model-id').locator('[data-test="app-select-trigger"]').click()
+    await page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])').locator('[data-test="app-select-option-kimi-k3.1-pro"]').click()
+    await expect(page.getByTestId('model-configuration-image-input')).toHaveCount(0)
+    await page.getByTestId('model-configuration-save').click()
+    await expect(page.getByTestId('model-configuration-configured-model')).toContainText('Native image model')
+    expect(state.connectionWrites).toHaveLength(0)
+    expect(state.configurationWrites).toEqual([expect.objectContaining({ backend, binding: { kind: 'connection', connectionId: saved.id, modelId: 'kimi-k3.1-pro' } })])
+  })
+}
 
 for (const backend of ['opencode', 'deepseek_harness']) {
   test(`${backend} saves its official authorization and binds an Agent without an API connection`, async ({ page }) => {

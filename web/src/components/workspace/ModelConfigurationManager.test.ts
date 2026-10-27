@@ -75,6 +75,12 @@ async function chooseModel(wrapper: ReturnType<typeof setup>, value: string, cus
   await field.get(`[data-test="${custom ? 'app-select-custom' : `app-select-option-${value}`}"]`).trigger('click')
 }
 
+async function chooseImageInput(wrapper: ReturnType<typeof setup>, value: 'default' | 'text' | 'image', testId = 'model-configuration-image-input') {
+  const field = wrapper.get(`[data-testid="${testId}"]`)
+  await field.get('[data-test="app-select-trigger"]').trigger('click')
+  await field.get(`[data-test="app-select-option-${value}"]`).trigger('click')
+}
+
 async function openConnectionModelStep(wrapper: ReturnType<typeof setup>, backend = 'opencode') {
   await openStepTwo(wrapper, backend)
   await chooseCredential(wrapper, `connection:${service.id}`)
@@ -139,12 +145,196 @@ describe('ModelConfigurationManager', () => {
     await chooseCredential(wrapper, `platform:${platformKey.id}`)
     await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
     await wrapper.get('[data-testid="platform-model"]').setValue(modelId)
+    expect(wrapper.find('[data-testid="model-configuration-image-input"]').exists()).toBe(false)
     await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
     await flushPromises()
     expect(mocks.create).toHaveBeenCalledWith({ name: 'Team configuration', backend: 'cursor', binding: { kind: 'platform', credentialId: platformKey.id, ...(modelId ? { modelId } : {}) }, state: 'active' })
     expect(mocks.updateConnection).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="model-configuration-form"]').exists()).toBe(false)
     expect(wrapper.emitted('changed')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it.each(['claude_code', 'codex'])('keeps %s image handling native while saving and enriching its connection models', async (backend) => {
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: backend, modes: ['connection'], protocols: ['openai-chat-completions'], roleNames: ['main', 'fast'], adapterState: 'existing' }] })
+    const primary: ModelConnection['models'][number] = { id: 'primary/model', source: 'manual', capabilities: {} }
+    const auxiliary: ModelConnection['models'][number] = { id: 'aux/model', source: 'manual' }
+    services = [{ ...service, models: [primary, auxiliary] }]
+    mocks.connectionModels.mockResolvedValue({ models: [{ ...primary, input: ['text', 'image'], capabilities: { vision: true } }] })
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper, backend)
+    await flushPromises()
+    await chooseModel(wrapper, primary.id)
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    await chooseRole(wrapper, 'role/model')
+    expect(wrapper.find('[data-testid="model-configuration-image-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-configuration-aux-image-input-0"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-configuration-role-image-input-fast"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Image input')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ backend, binding: { kind: 'connection', connectionId: service.id, modelId: primary.id, auxiliaryModelIds: [auxiliary.id], toolSettings: { modelRoles: { fast: 'role/model' } } } }))
+    expect(services[0]!.models).toEqual([{ ...primary, input: ['text', 'image'], capabilities: { vision: true } }, auxiliary, { id: 'role/model', source: 'manual' }])
+    wrapper.unmount()
+  })
+
+  it('keeps unknown model input undeclared until the user enables images and saves', async () => {
+    const model: ModelConnection['models'][number] = { id: 'kimi-k3.1-pro', source: 'discovered', capabilities: {} }
+    services = [{ ...service, models: [model] }]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, model.id)
+    const field = wrapper.getComponent('[data-testid="model-configuration-image-input"]')
+    expect(field.props('modelValue')).toBe('default')
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    await chooseImageInput(wrapper, 'image')
+    expect(field.props('modelValue')).toBe('image')
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updateConnection).toHaveBeenCalledExactlyOnceWith(service.id, expect.objectContaining({ models: [{ ...model, input: ['text', 'image'], capabilities: { vision: true } }] }))
+    expect(services[0]!.models.map(item => item.id)).toEqual([model.id])
+    wrapper.unmount()
+  })
+
+  it.each<['default' | 'text' | 'image', Partial<ModelConnection['models'][number]>]>([
+    ['default', { capabilities: {} }],
+    ['image', { input: ['text', 'image'] }],
+    ['text', { capabilities: { vision: false } }],
+  ])('does not rewrite a saved model when keeping its %s input', async (mode, metadata) => {
+    services = [{ ...service, models: [{ id: 'unknown/model', source: 'manual', ...metadata }] }]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, 'unknown/model')
+    await chooseImageInput(wrapper, mode)
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    expect(mocks.create).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('enriches required saved models on save while preserving explicit text-only input and false capabilities', async () => {
+    const unknown: ModelConnection['models'][number] = { id: 'unknown/model', source: 'manual', capabilities: {} }
+    const textOnly: ModelConnection['models'][number] = { id: 'text/model', source: 'manual', input: ['text'], capabilities: { vision: false, reasoning: false } }
+    const unselected: ModelConnection['models'][number] = { id: 'other/model', source: 'manual', capabilities: {} }
+    services = [{ ...service, models: [unknown, textOnly, unselected] }]
+    mocks.connectionModels.mockResolvedValue({ models: [unknown, textOnly, unselected].map(model => ({ ...model, input: ['text', 'image'], capabilities: { vision: true, reasoning: true } })) })
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await flushPromises()
+    await chooseModel(wrapper, unknown.id)
+    expect(wrapper.getComponent('[data-testid="model-configuration-image-input"]').props('modelValue')).toBe('image')
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    expect(wrapper.getComponent('[data-testid="model-configuration-aux-image-input-0"]').props('modelValue')).toBe('text')
+    await wrapper.get('[data-testid="model-configuration-refresh-models"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.getComponent('[data-testid="model-configuration-aux-image-input-0"]').props('modelValue')).toBe('text')
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(services[0]!.models).toEqual([
+      { ...unknown, input: ['text', 'image'], capabilities: { vision: true, reasoning: true } },
+      textOnly,
+      unselected,
+    ])
+    wrapper.unmount()
+  })
+
+  it('saves independent primary, auxiliary and role image choices against the latest account metadata', async () => {
+    const primary: ModelConnection['models'][number] = { id: 'primary/model', source: 'manual', capabilities: {} }
+    const auxiliary: ModelConnection['models'][number] = { id: 'aux/model', source: 'manual' }
+    const role: ModelConnection['models'][number] = { id: 'role/model', source: 'manual', input: ['text', 'image'], capabilities: { vision: true } }
+    services = [{ ...service, models: [primary, auxiliary, role] }]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper, 'codebuddy')
+    await chooseModel(wrapper, primary.id)
+    await chooseImageInput(wrapper, 'image')
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    await chooseImageInput(wrapper, 'text', 'model-configuration-aux-image-input-0')
+    const roleField = wrapper.get('[data-testid="model-configuration-role-fast"]')
+    await roleField.get('[data-test="app-select-trigger"]').trigger('click')
+    await roleField.get(`[data-test="app-select-option-${role.id}"]`).trigger('click')
+    await chooseImageInput(wrapper, 'default', 'model-configuration-role-image-input-fast')
+    const concurrent: ModelConnection['models'][number] = { id: 'concurrent/model', source: 'manual', input: ['text'] }
+    services = [{ ...service, name: 'Latest name', models: [{ ...primary, name: 'Latest primary', maxTokens: 8192, capabilities: { toolCalls: true } }, auxiliary, role, concurrent] }]
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updateConnection).toHaveBeenCalledExactlyOnceWith(service.id, expect.objectContaining({ name: 'Latest name', models: [
+      { ...primary, name: 'Latest primary', maxTokens: 8192, input: ['text', 'image'], capabilities: { toolCalls: true, vision: true } },
+      { ...auxiliary, input: ['text'], capabilities: { vision: false } },
+      { id: role.id, source: 'manual' },
+      concurrent,
+    ] }))
+    wrapper.unmount()
+  })
+
+  it('discards image drafts when cancelling or switching the API account', async () => {
+    const model: ModelConnection['models'][number] = { id: 'same/model', source: 'manual' }
+    services = [{ ...service, models: [model] }, { ...service, id: 'other-service', name: 'Other API', models: [model] }]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, model.id)
+    await chooseImageInput(wrapper, 'image')
+    await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
+    await chooseCredential(wrapper, 'connection:other-service')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await chooseModel(wrapper, model.id)
+    expect(wrapper.getComponent('[data-testid="model-configuration-image-input"]').props('modelValue')).toBe('default')
+    await chooseImageInput(wrapper, 'text')
+    await wrapper.get('button[aria-label="Close"]').trigger('click')
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, model.id)
+    expect(wrapper.getComponent('[data-testid="model-configuration-image-input"]').props('modelValue')).toBe('default')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps the image draft through catalog refresh and revisiting the same account, and resets it for a different tool', async () => {
+    const model: ModelConnection['models'][number] = { id: 'same/model', source: 'manual' }
+    services = [{ ...service, models: [model] }]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, model.id)
+    await chooseImageInput(wrapper, 'image')
+    mocks.connectionModels.mockResolvedValue({ models: [{ ...model, input: ['text'], capabilities: { vision: false } }] })
+    await wrapper.get('[data-testid="model-configuration-refresh-models"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.getComponent('[data-testid="model-configuration-image-input"]').props('modelValue')).toBe('image')
+    await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
+    await chooseCredential(wrapper, `connection:${service.id}`)
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    expect(wrapper.getComponent('[data-testid="model-configuration-image-input"]').props('modelValue')).toBe('image')
+    await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-backend-codebuddy"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await chooseCredential(wrapper, `connection:${service.id}`)
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await flushPromises()
+    await chooseModel(wrapper, model.id)
+    expect(wrapper.getComponent('[data-testid="model-configuration-image-input"]').props('modelValue')).toBe('text')
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('saves image drafts only for models that remain selected', async () => {
+    const primary: ModelConnection['models'][number] = { id: 'primary/model', source: 'manual' }
+    const auxiliary: ModelConnection['models'][number] = { id: 'aux/model', source: 'manual' }
+    services = [{ ...service, models: [primary, auxiliary] }]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, primary.id)
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    await chooseImageInput(wrapper, 'image', 'model-configuration-aux-image-input-0')
+    await wrapper.get('[data-testid="model-configuration-aux-remove-0"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updateConnection).not.toHaveBeenCalled()
+    expect(services[0]!.models).toEqual([primary, auxiliary])
     wrapper.unmount()
   })
 
