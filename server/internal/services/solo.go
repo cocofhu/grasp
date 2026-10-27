@@ -376,6 +376,9 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 		return nil, err
 	}
 	effort := strings.TrimSpace(in.ReasoningEffort)
+	if effort == "" {
+		effort = s.configuredOpenCodeEffort(effective, initialModel)
+	}
 	if err := s.validateReasoningEffort(effective, initialModel, effort); err != nil {
 		return nil, err
 	}
@@ -795,7 +798,36 @@ func (s *SoloService) reasoningEfforts(agent Agent, requestedModel string) []str
 		}
 		connection = &value
 	}
-	return modelrouting.ReasoningEfforts(configuration.Backend, id, connection)
+	efforts := modelrouting.ReasoningEfforts(configuration.Backend, id, connection)
+	if configuration.Backend == "opencode" {
+		efforts = modelrouting.WithSavedEffort(efforts, configuration.Binding.ToolSettings.ModelEfforts[id])
+	}
+	return efforts
+}
+
+// configuredOpenCodeEffort is the variant saved on the model group. An empty
+// result means the run uses OpenCode's default. A session can still change the
+// variant afterwards without writing it back here.
+func (s *SoloService) configuredOpenCodeEffort(agent Agent, model string) string {
+	if agent.ModelBinding == nil || agent.ModelBinding.Kind != "configuration" || strings.TrimSpace(agent.AcpBackend) != "opencode" {
+		return ""
+	}
+	configuration, err := NewModelConfigurationService(s.db).Get(agent.ModelBinding.ConfigurationID)
+	if err != nil || configuration.State != "active" || configuration.Backend != "opencode" {
+		return ""
+	}
+	id := strings.TrimSpace(model)
+	if id == "" {
+		id = strings.TrimSpace(configuration.Binding.ModelID)
+	}
+	if !modelrouting.AcceptsConfiguredModel(configuration.Binding, id) {
+		return ""
+	}
+	effort := strings.TrimSpace(configuration.Binding.ToolSettings.ModelEfforts[id])
+	if !modelrouting.ValidEffortToken(effort) {
+		return ""
+	}
+	return effort
 }
 
 func (s *SoloService) validateReasoningEffort(agent Agent, model, effort string) error {

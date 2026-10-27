@@ -51,6 +51,7 @@ type Model struct {
 type ToolSettings struct {
 	ModelRoles   map[string]string `json:"modelRoles,omitempty"`
 	RouteProfile string            `json:"routeProfile,omitempty"`
+	ModelEfforts map[string]string `json:"modelEfforts,omitempty"`
 }
 
 type Connection struct {

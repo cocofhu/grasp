@@ -1,6 +1,7 @@
 package runtime
 
-// EnvACPBridgeReasoningEffort configures Codex reasoning effort.
+// EnvACPBridgeReasoningEffort is the variant for this run. OpenCode receives it
+// as model#variant. Tools that already negotiate an effort keep their own path.
 const EnvACPBridgeReasoningEffort = "ACP_BRIDGE_REASONING_EFFORT"
 
 // ModelIndependentEnv copies environment values excluding model routing/auth.

@@ -5,6 +5,7 @@ import { api, type CliCatalogModel, type ConcreteModelBinding, type CredentialIt
 import { loadCliModels } from '@/lib/agent/cliCatalog'
 import { modelVendor } from '@/lib/agent/cliModelView'
 import { bindingProblem, connectionCapabilities, credentialUsable, isModelCredential, isToolCredential, useRoutingCopy } from '@/lib/agent/modelRouting'
+import { effortChoices, validEffortToken } from '@/lib/agent/fixedEffort'
 import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
 import { useToast } from '@/lib/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -15,6 +16,7 @@ import CliModelSelect from '@/components/agent/CliModelSelect.vue'
 import VendorMark from '@/components/agent/VendorMark.vue'
 import CredentialProviderLogo from './CredentialProviderLogo.vue'
 import ModelRecordActions from './ModelRecordActions.vue'
+import ModelEffortPicker from './ModelEffortPicker.vue'
 
 const props = withDefaults(defineProps<{ hideCreateButton?: boolean; inline?: boolean; allowCredentialCreation?: boolean; setup?: boolean }>(), { hideCreateButton: false, inline: false, allowCredentialCreation: true, setup: false })
 const emit = defineEmits<{ (e: 'manageCredentials', backend?: string): void; (e: 'changed'): void; (e: 'saved', configuration: ModelConfiguration): void; (e: 'editing', active: boolean): void }>()
@@ -41,7 +43,7 @@ const saving = ref(false)
 const editingId = ref('')
 const awaitingCredential = ref(false)
 watch(() => open.value || awaitingCredential.value || saving.value, (active) => emit('editing', active))
-const form = reactive({ name: '', backend: 'cursor', kind: 'platform' as 'platform' | 'connection', credentialId: '', connectionId: '', modelId: '', auxiliaryModelIds: [] as string[], state: 'active' as ModelConfiguration['state'], roles: {} as ModelRoles, routeProfile: '' })
+const form = reactive({ name: '', backend: 'cursor', kind: 'platform' as 'platform' | 'connection', credentialId: '', connectionId: '', modelId: '', auxiliaryModelIds: [] as string[], state: 'active' as ModelConfiguration['state'], roles: {} as ModelRoles, routeProfile: '', efforts: {} as Record<string, string> })
 const cliModels = ref<CliCatalogModel[]>([])
 const cliReady = ref(false)
 const savedModelIds = ref<string[]>([])
@@ -98,7 +100,7 @@ const credentialChoice = computed<string>({
     form.kind = value.startsWith('platform:') ? 'platform' : 'connection'
     form.credentialId = form.kind === 'platform' ? value.slice('platform:'.length) : ''
     form.connectionId = form.kind === 'connection' ? value.slice('connection:'.length) : ''
-    form.modelId = ''; form.auxiliaryModelIds = []; form.roles = {}; form.routeProfile = ''
+    form.modelId = ''; form.auxiliaryModelIds = []; form.roles = {}; form.routeProfile = ''; form.efforts = {}
   },
 })
 const selectedCredential = computed(() => credentialOptions.value.find((option) => option.value === credentialChoice.value))
@@ -110,6 +112,17 @@ const slotCatalog = computed<SlotOption[]>(() => {
 })
 const wizardSteps = computed(() => [c.value.chooseTool, c.value.chooseCredential, c.value.selectModel])
 const roleNames = computed(() => [...new Set(toolCaps.value.flatMap((item) => item.roleNames || []))].filter((role) => role !== 'main') as (keyof ModelRoles)[])
+function modelEffortLevels(id: string) {
+  return effortChoices(form.backend, form.kind, selectedService.value?.providerId, selectedService.value?.baseUrl, id)
+}
+function showEffort(id: string) {
+  return form.backend === 'opencode' && !!id.trim()
+}
+function setEffort(id: string, value: string) {
+  const key = id.trim()
+  if (!value) delete form.efforts[key]
+  else form.efforts[key] = value
+}
 const nativeRoute = computed(() => {
   const service = selectedService.value
   if (form.backend !== 'deepseek_harness' || service?.providerId !== 'deepseek' || service.protocol !== 'anthropic-messages' || service.auth.scheme !== 'x-api-key') return false
@@ -174,7 +187,7 @@ async function load() {
 function resetSource() {
   if (form.kind === 'platform' && !platformAvailable.value) form.kind = 'connection'
   if (form.kind === 'connection' && !connectionAvailable.value && platformAvailable.value) form.kind = 'platform'
-  form.credentialId = ''; form.connectionId = ''; form.modelId = ''; form.auxiliaryModelIds = []; form.roles = {}; form.routeProfile = ''
+  form.credentialId = ''; form.connectionId = ''; form.modelId = ''; form.auxiliaryModelIds = []; form.roles = {}; form.routeProfile = ''; form.efforts = {}
 }
 function chooseTool(backend: string) {
   if (editingId.value || form.backend === backend) return
@@ -193,7 +206,7 @@ function toolKeydown(event: KeyboardEvent, index: number) {
 function start(row?: ModelConfiguration) {
   editingId.value = row?.id || ''
   savedModelIds.value = [row?.binding.modelId || '', ...(row?.binding.auxiliaryModelIds || [])].map((id) => id.trim()).filter(Boolean)
-  Object.assign(form, { name: row?.name || '', backend: row?.backend || 'cursor', kind: row?.binding.kind || 'platform', credentialId: row?.binding.kind === 'platform' ? row.binding.credentialId : '', connectionId: row?.binding.kind === 'connection' ? row.binding.connectionId : '', modelId: row?.binding.modelId || '', auxiliaryModelIds: [...(row?.binding.auxiliaryModelIds || [])], state: row?.state || 'active', roles: { ...row?.binding.toolSettings?.modelRoles }, routeProfile: row?.binding.toolSettings?.routeProfile || '' })
+  Object.assign(form, { name: row?.name || '', backend: row?.backend || 'cursor', kind: row?.binding.kind || 'platform', credentialId: row?.binding.kind === 'platform' ? row.binding.credentialId : '', connectionId: row?.binding.kind === 'connection' ? row.binding.connectionId : '', modelId: row?.binding.modelId || '', auxiliaryModelIds: [...(row?.binding.auxiliaryModelIds || [])], state: row?.state || 'active', roles: { ...row?.binding.toolSettings?.modelRoles }, routeProfile: row?.binding.toolSettings?.routeProfile || '', efforts: { ...(row?.binding.toolSettings?.modelEfforts || {}) } })
   if (!row) resetSource()
   step.value = 1; error.value = ''; open.value = true
 }
@@ -232,7 +245,10 @@ async function resumeWithCredential(credentialId?: string, connectionId?: string
 function concreteBinding(): ConcreteModelBinding {
   const roles = Object.fromEntries(Object.entries(form.roles).filter(([, value]) => value?.trim()).map(([role, value]) => [role, value!.trim()])) as ModelRoles
   if (roles.main) roles.main = form.modelId.trim()
-  const toolSettings = { ...(Object.keys(roles).length ? { modelRoles: roles } : {}), ...(form.routeProfile ? { routeProfile: form.routeProfile } : {}) }
+  const selectedIds = [form.modelId.trim(), ...form.auxiliaryModelIds.map((id) => id.trim())].filter(Boolean)
+  const effortEntries = form.backend === 'opencode' ? selectedIds.map((id) => [id, (form.efforts[id] || '').trim()] as const).filter(([, effort]) => validEffortToken(effort)) : []
+  const modelEfforts = effortEntries.length ? Object.fromEntries(effortEntries) : undefined
+  const toolSettings = { ...(Object.keys(roles).length ? { modelRoles: roles } : {}), ...(form.routeProfile ? { routeProfile: form.routeProfile } : {}), ...(modelEfforts ? { modelEfforts } : {}) }
   const settings = Object.keys(toolSettings).length ? { toolSettings } : {}
   const auxiliaryModelIds = form.auxiliaryModelIds.map((id) => id.trim()).filter(Boolean)
   const aux = auxiliaryModelIds.length ? { auxiliaryModelIds } : {}
@@ -373,6 +389,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
               <template #leading><VendorMark :vendor="slotVendor(form.modelId)" :size="28" :unknown="slotUnavailable(form.modelId)" /></template>
               <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
             </AppSelect>
+            <ModelEffortPicker v-if="showEffort(form.modelId)" :efforts="modelEffortLevels(form.modelId)" :model-value="form.efforts[form.modelId.trim()] || ''" @update:model-value="setEffort(form.modelId, $event)" />
           </div>
           <div v-for="(modelId, index) in form.auxiliaryModelIds" :key="index" class="model-slot" :data-testid="`model-configuration-aux-${index}`">
             <div class="model-slot-top">
@@ -384,6 +401,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
               <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
             </AppSelect>
             <p v-if="slotUnavailable(modelId)" class="mb-0 mt-1 text-xs text-warn">{{ c.modelUnavailable }}</p>
+            <ModelEffortPicker v-if="showEffort(modelId)" :efforts="modelEffortLevels(modelId)" :model-value="form.efforts[modelId.trim()] || ''" @update:model-value="setEffort(modelId, $event)" />
           </div>
           <button type="button" class="model-add" data-testid="model-configuration-add-model" :disabled="!canAddModel" :title="canAddModel ? '' : c.noMoreModels" @click="addAuxiliary"><Icon name="plus" :size="14" />{{ c.addModel }}</button>
           <p v-if="auxiliaryProblem" class="mb-0 text-xs text-err">{{ auxiliaryProblem }}</p>

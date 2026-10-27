@@ -95,6 +95,14 @@ func ValidateBinding(backend string, binding Binding, connection *Connection) er
 		if len(binding.ToolSettings.ModelRoles) != 0 {
 			return fmt.Errorf("platform role mappings are not supported")
 		}
+		if len(binding.ToolSettings.ModelEfforts) != 0 {
+			if backend != "opencode" {
+				return fmt.Errorf("reasoning effort is only available for OpenCode")
+			}
+			if err := validateOpenCodeEfforts(binding); err != nil {
+				return err
+			}
+		}
 		if backend == "opencode" {
 			for _, id := range append([]string{binding.ModelID}, binding.AuxiliaryModelIDs...) {
 				if id != "" && (!strings.HasPrefix(id, "opencode/") || strings.TrimPrefix(id, "opencode/") == "" || strings.Contains(strings.TrimPrefix(id, "opencode/"), "/")) {
@@ -146,6 +154,36 @@ func ValidateBinding(backend string, binding Binding, connection *Connection) er
 	}
 	if main := binding.ToolSettings.ModelRoles["main"]; main != "" && main != binding.ModelID {
 		return fmt.Errorf("main role must match modelId")
+	}
+	if len(binding.ToolSettings.ModelEfforts) != 0 {
+		if backend != "opencode" {
+			return fmt.Errorf("reasoning effort is only available for OpenCode")
+		}
+		if err := validateOpenCodeEfforts(binding); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateOpenCodeEfforts allows an empty map, a catalog variant, or one custom
+// token on a model that this configuration actually selected.
+func validateOpenCodeEfforts(binding Binding) error {
+	selected := map[string]bool{}
+	if id := strings.TrimSpace(binding.ModelID); id != "" {
+		selected[id] = true
+	}
+	for _, id := range binding.AuxiliaryModelIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			selected[id] = true
+		}
+	}
+	for id, effort := range binding.ToolSettings.ModelEfforts {
+		id = strings.TrimSpace(id)
+		effort = strings.TrimSpace(effort)
+		if !selected[id] || !ValidEffortToken(effort) {
+			return fmt.Errorf("reasoning effort must be a catalog variant or one custom variant of a selected OpenCode model")
+		}
 	}
 	return nil
 }

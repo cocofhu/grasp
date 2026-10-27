@@ -169,9 +169,10 @@ export interface AgentTemplate {
 
 export type ModelProtocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages'
 export type ModelRoles = Partial<Record<'main' | 'fast' | 'reasoning' | 'subagent' | 'opus' | 'sonnet' | 'haiku', string>>
+export type ModelEfforts = Record<string, string>
 export type ConcreteModelBinding =
-  | { kind: 'platform'; credentialId: string; modelId?: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
-  | { kind: 'connection'; connectionId: string; modelId: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
+  | { kind: 'platform'; credentialId: string; modelId?: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string; modelEfforts?: ModelEfforts } }
+  | { kind: 'connection'; connectionId: string; modelId: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string; modelEfforts?: ModelEfforts } }
 export type ModelBinding = { kind: 'configuration'; configurationId: string }
 export interface ModelConfiguration {
   id: string

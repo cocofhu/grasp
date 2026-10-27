@@ -87,7 +87,23 @@ func ApplyModelBinding(env map[string]string, backend string, binding *modelrout
 		return err
 	}
 	env[EnvConfiguredModels] = configured
+	delete(env, EnvACPBridgeReasoningEffort)
+	if effort := primaryOpenCodeEffort(backend, resolved); effort != "" {
+		env[EnvACPBridgeReasoningEffort] = effort
+	}
 	return nil
+}
+
+func primaryOpenCodeEffort(backend string, resolved modelrouting.Resolved) string {
+	if backend != "opencode" {
+		return ""
+	}
+	id := strings.TrimSpace(resolved.Binding.ModelID)
+	effort := strings.TrimSpace(resolved.Binding.ToolSettings.ModelEfforts[id])
+	if !modelrouting.ValidEffortToken(effort) {
+		return ""
+	}
+	return effort
 }
 
 func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
@@ -103,8 +119,12 @@ func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
 	}
 	modelItem := func(id string) item {
 		id = strings.TrimSpace(id)
-		value := item{ID: id, Vendor: vendor, ReasoningEfforts: modelrouting.ReasoningEfforts(resolved.Backend, id, resolved.Connection)}
-		if resolved.Connection != nil {
+		efforts := modelrouting.ReasoningEfforts(resolved.Backend, id, resolved.Connection)
+		if resolved.Backend == "opencode" {
+			efforts = modelrouting.WithSavedEffort(efforts, resolved.Binding.ToolSettings.ModelEfforts[id])
+		}
+		value := item{ID: id, Vendor: vendor, ReasoningEfforts: efforts}
+		if resolved.Connection != nil && !modelrouting.FixedEffortBinding(resolved.Backend, resolved.Connection) {
 			for _, model := range resolved.Connection.Models {
 				if model.ID == id && model.Capabilities.Reasoning != nil && !*model.Capabilities.Reasoning {
 					value.ReasoningDisabled = true

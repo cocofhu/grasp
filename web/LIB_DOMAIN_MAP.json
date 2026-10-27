@@ -11,6 +11,7 @@
       "cliCatalog.ts",
       "cliModelEnv.ts",
       "cliModelView.ts",
+      "fixedEffort.ts",
       "gitBindings.ts",
       "gitCredentialType.ts",
       "identityIcons.ts",
@@ -256,7 +257,7 @@
     ]
   },
   "totals": {
-    "agent": 22,
+    "agent": 23,
     "api": 4,
     "artifacts": 1,
     "chat": 5,

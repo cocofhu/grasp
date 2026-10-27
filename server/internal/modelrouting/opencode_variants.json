@@ -1,0 +1,973 @@
+{
+  "beam-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "big-pickle": {
+    "spell": "chat",
+    "variants": []
+  },
+  "cat-jam-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "claude-3-5-haiku": {
+    "spell": "anthropic",
+    "variants": []
+  },
+  "claude-fable-5": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "claude-fable-5-1": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "claude-haiku-4-5": {
+    "spell": "anthropic",
+    "variants": [
+      "high",
+      "max"
+    ]
+  },
+  "claude-haiku-5-5": {
+    "spell": "anthropic",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "claude-opus-4-1": {
+    "spell": "anthropic",
+    "variants": [
+      "high",
+      "max"
+    ]
+  },
+  "claude-opus-4-5": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "claude-opus-4-6": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "max"
+    ]
+  },
+  "claude-opus-4-7": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "claude-opus-4-8": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "claude-opus-5": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "claude-opus-5-5": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "claude-sonnet-4": {
+    "spell": "anthropic",
+    "variants": [
+      "high",
+      "max"
+    ]
+  },
+  "claude-sonnet-4-5": {
+    "spell": "anthropic",
+    "variants": [
+      "high",
+      "max"
+    ]
+  },
+  "claude-sonnet-4-6": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "max"
+    ]
+  },
+  "claude-sonnet-5": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "claude-sonnet-5-5": {
+    "spell": "anthropic",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "deepseek-v4-flash": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "deepseek-v4-flash-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "deepseek-v4-flash-vision-exp": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "deepseek-v4-pro": {
+    "spell": "chat",
+    "variants": [
+      "high",
+      "max"
+    ]
+  },
+  "deepseek-v4.1-flash": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "deepseek-v4.1-flash-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "exo-free": {
+    "spell": "chat",
+    "variants": [
+      "high"
+    ]
+  },
+  "fledge-alpha-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "flint-40b-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "gemini-3-flash": {
+    "spell": "google",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gemini-3-pro": {
+    "spell": "google",
+    "variants": [
+      "low",
+      "high"
+    ]
+  },
+  "gemini-3.1-pro": {
+    "spell": "google",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gemini-3.5-flash": {
+    "spell": "google",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gemini-3.5-flash-lite": {
+    "spell": "google",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gemini-3.6-flash": {
+    "spell": "google",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gemini-3.7-flash": {
+    "spell": "google",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gemini-3.8-flash": {
+    "spell": "google",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gemini-4-argon": {
+    "spell": "google",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "glm-4.6": {
+    "spell": "chat",
+    "variants": []
+  },
+  "glm-4.7": {
+    "spell": "chat",
+    "variants": []
+  },
+  "glm-4.7-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "glm-5": {
+    "spell": "chat",
+    "variants": []
+  },
+  "glm-5-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "glm-5.1": {
+    "spell": "chat",
+    "variants": []
+  },
+  "glm-5.2": {
+    "spell": "chat",
+    "variants": [
+      "high",
+      "max"
+    ]
+  },
+  "glm-5.3": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "glm-5.3-flash": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "glm-5.3-flash-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "gpt-5": {
+    "spell": "responses",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gpt-5-codex": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gpt-5-nano": {
+    "spell": "responses",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gpt-5.1": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gpt-5.1-codex": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gpt-5.1-codex-max": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.1-codex-mini": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "gpt-5.2": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.2-codex": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.3-codex": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.3-codex-spark": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.4": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.4-mini": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.4-nano": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.4-pro": {
+    "spell": "responses",
+    "variants": [
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.5": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.5-pro": {
+    "spell": "responses",
+    "variants": [
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "gpt-5.6-luna": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "gpt-5.6-sol": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "gpt-5.6-terra": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "gpt-6-astra": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "gpt-6-luna": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "gpt-6-sol": {
+    "spell": "responses",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "gpt-6.1-sol": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "gpt-live-1": {
+    "spell": "chat",
+    "variants": []
+  },
+  "grok-4.5": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "grok-4.6": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "grok-4.7": {
+    "spell": "responses",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "grok-build-0.1": {
+    "spell": "responses",
+    "variants": []
+  },
+  "grok-code": {
+    "spell": "chat",
+    "variants": []
+  },
+  "hy3-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "hy3-preview-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "jev-1.13": {
+    "spell": "chat",
+    "variants": []
+  },
+  "jev-1.13-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "kimi-k2": {
+    "spell": "chat",
+    "variants": []
+  },
+  "kimi-k2-thinking": {
+    "spell": "chat",
+    "variants": []
+  },
+  "kimi-k2.5": {
+    "spell": "chat",
+    "variants": []
+  },
+  "kimi-k2.5-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "kimi-k2.6": {
+    "spell": "chat",
+    "variants": []
+  },
+  "kimi-k2.7-code": {
+    "spell": "chat",
+    "variants": []
+  },
+  "kimi-k3": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  },
+  "laguna-s-2.1-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "ling-2.6-flash-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "ling-3.0-flash-fin-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "ling-3.0-flash-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "ling-3.0-tiny-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "ling-3.1-flash-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "ll-alpha-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "longcat-2.0-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "longcat-2.5-preview-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "mimo-v2-flash-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "mimo-v2-omni-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "mimo-v2-pro-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "mimo-v2.5-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "mimo-v2.6-flash-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "minimax-m2.1": {
+    "spell": "chat",
+    "variants": []
+  },
+  "minimax-m2.1-free": {
+    "spell": "anthropic",
+    "variants": []
+  },
+  "minimax-m2.5": {
+    "spell": "chat",
+    "variants": []
+  },
+  "minimax-m2.5-free": {
+    "spell": "anthropic",
+    "variants": []
+  },
+  "minimax-m2.7": {
+    "spell": "chat",
+    "variants": []
+  },
+  "minimax-m3": {
+    "spell": "chat",
+    "variants": []
+  },
+  "minimax-m3-free": {
+    "spell": "anthropic",
+    "variants": [
+      "none",
+      "thinking"
+    ]
+  },
+  "minimax-m3.1-flash-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "mistral-large-4": {
+    "spell": "chat",
+    "variants": [
+      "none",
+      "high"
+    ]
+  },
+  "muse-spark-1.2": {
+    "spell": "responses",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "muse-spark-1.2-contributor-free": {
+    "spell": "responses",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "muse-spark-1.3": {
+    "spell": "responses",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "muse-spark-1.3-contributor-free": {
+    "spell": "responses",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "muse-wonder-1.0": {
+    "spell": "responses",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "nemotron-3-super-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "nemotron-3-ultra-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "nemotron-3.5-lightning-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "nemotron-3.5-super-vl-free": {
+    "spell": "chat",
+    "variants": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  "north-mini-code-free": {
+    "spell": "chat",
+    "variants": [
+      "none",
+      "high"
+    ]
+  },
+  "qwen3-coder": {
+    "spell": "chat",
+    "variants": []
+  },
+  "qwen3.5-plus": {
+    "spell": "anthropic",
+    "variants": [
+      "none",
+      "high",
+      "max"
+    ]
+  },
+  "qwen3.6-plus": {
+    "spell": "anthropic",
+    "variants": [
+      "none",
+      "high",
+      "max"
+    ]
+  },
+  "qwen3.6-plus-free": {
+    "spell": "anthropic",
+    "variants": [
+      "none",
+      "high",
+      "max"
+    ]
+  },
+  "qwen3.8-flash": {
+    "spell": "anthropic",
+    "variants": [
+      "none",
+      "low",
+      "medium",
+      "xhigh"
+    ]
+  },
+  "qwen3.8-max": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "xhigh"
+    ]
+  },
+  "ring-2.6-1t-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "space-bunny-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  },
+  "step-5-preview-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "medium",
+      "high"
+    ]
+  },
+  "trinity-large-preview-free": {
+    "spell": "chat",
+    "variants": []
+  },
+  "x-preview-f-free": {
+    "spell": "chat",
+    "variants": [
+      "low",
+      "high",
+      "max"
+    ]
+  }
+}

@@ -170,6 +170,13 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 	if err != nil {
 		return nil, err
 	}
+	if p.Name() == provider.OpenCode {
+		prepared, err = modelconnection.ApplyOpenCodeVariant(prepared, opts.ReasoningEffort)
+		if err != nil {
+			prepared.Cleanup()
+			return nil, err
+		}
+	}
 	if err := prepared.ValidateOptions(p.Name(), opts); err != nil {
 		prepared.Cleanup()
 		return nil, err

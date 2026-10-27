@@ -14,7 +14,7 @@ func ValidateConfigurationReference(binding *Binding) error {
 	if binding.Kind != "configuration" || strings.TrimSpace(binding.ConfigurationID) == "" || binding.ConfigurationID != strings.TrimSpace(binding.ConfigurationID) {
 		return fmt.Errorf("Agent model binding must reference a saved model configuration; select a model configuration")
 	}
-	if binding.CredentialID != "" || binding.ConnectionID != "" || binding.ModelID != "" || len(binding.ToolSettings.ModelRoles) != 0 || binding.ToolSettings.RouteProfile != "" {
+	if binding.CredentialID != "" || binding.ConnectionID != "" || binding.ModelID != "" || len(binding.ToolSettings.ModelRoles) != 0 || binding.ToolSettings.RouteProfile != "" || len(binding.ToolSettings.ModelEfforts) != 0 {
 		return fmt.Errorf("Agent model binding requires only configurationId")
 	}
 	return nil
