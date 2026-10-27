@@ -23,6 +23,7 @@ const box = vi.hoisted(() => ({
     reasoningEfforts?: string[]
   }>,
   status: undefined as undefined | import('vue').Ref<string>,
+  phase: undefined as undefined | import('vue').Ref<string>,
   link: undefined as undefined | import('vue').Ref<string>,
   currentModelId: undefined as undefined | import('vue').Ref<string>,
   currentReasoningEffort: undefined as undefined | import('vue').Ref<string>,
@@ -54,7 +55,7 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     turns: box.turns,
     queued: ref([]),
     busy: ref(false),
-    phase: ref(''),
+    phase: box.phase,
     link: box.link,
     loading: ref(false),
     loadError: ref(''),
@@ -90,6 +91,7 @@ const sessionState = (box.session = ref<NonNullable<typeof box.session>['value']
   repos: [] as Array<{ position: number; projectId: string; name: string; repoUrl: string; repoDirName: string; branch: string }>,
 }))
 const statusState = (box.status = ref('running'))
+const phaseState = (box.phase = ref(''))
 const linkState = (box.link = ref('open'))
 const currentModelId = (box.currentModelId = ref(''))
 const currentReasoningEffort = (box.currentReasoningEffort = ref(''))
@@ -125,6 +127,76 @@ function turn(id: string, role: SoloTurn['role'], text: string): SoloTurn {
 }
 
 describe('SoloSessionPane', () => {
+  it('switches the preparation cue to processing when output arrives, even before the phase catches up', async () => {
+    turns.value = [{ ...turn('live', 'agent', ''), steps: [], streaming: true }]
+    phaseState.value = 'preparing'
+    const wrapper = mountPane(pages)
+    try {
+      await flushPromises()
+      const activity = () => wrapper.get('[data-testid="solo-agent-activity"]')
+      expect(activity().attributes('role')).toBe('status')
+      expect(activity().text()).toBe('等待沙箱就绪…')
+      expect(activity().find('[data-testid="thinking-lamp"]').exists()).toBe(true)
+
+      turns.value[0]!.tools.push({ id: 't1', title: 'Shell', status: 'completed' })
+      turns.value[0]!.steps.push({ kind: 'tool', tool: 0 })
+      await flushPromises()
+      expect(activity().get('[data-testid="thinking-sheen"]').text()).toBe('Agent 正在处理')
+    } finally {
+      wrapper.unmount()
+      phaseState.value = ''
+    }
+  })
+
+  it.each(['completed', 'stopped', 'error'] as const)('keeps turn activity through completed tools and later output until the turn is %s', async (ending) => {
+    const history = turn('history', 'agent', '上一轮已完成')
+    turns.value = [history, {
+      ...turn('live', 'agent', ''),
+      tools: [{ id: 't1', title: 'Shell', status: 'completed' }],
+      steps: [{ kind: 'tool', tool: 0 }],
+      streaming: true,
+    }]
+    phaseState.value = 'running'
+    const wrapper = mountPane(pages)
+    try {
+      await flushPromises()
+      const expectActive = () => {
+        const cues = wrapper.findAll('[data-testid="solo-agent-activity"]')
+        expect(cues).toHaveLength(1)
+        expect(cues[0]!.get('[data-testid="thinking-sheen"]').text()).toBe('Agent 正在处理')
+        expect(cues[0]!.find('[data-testid="thinking-lamp"]').exists()).toBe(true)
+      }
+      // A completed tool may be the last event for a long time while the turn runs.
+      expectActive()
+      const live = turns.value[1]!
+      live.steps.push({ kind: 'thought', text: '继续检查' })
+      await flushPromises()
+      expectActive()
+      live.text = '已经找到原因，继续验证。'
+      live.steps.push({ kind: 'message', text: live.text })
+      await flushPromises()
+      expectActive()
+      live.tools.push({ id: 't2', title: 'Read', status: 'running' })
+      live.steps.push({ kind: 'tool', tool: 1 })
+      await flushPromises()
+      expectActive()
+      live.tools[1]!.status = 'completed'
+      await flushPromises()
+      expectActive()
+
+      live.streaming = false
+      if (ending === 'stopped') live.status = 'stopped'
+      if (ending === 'error') live.error = '执行失败'
+      await flushPromises()
+      expect(wrapper.find('[data-testid="solo-agent-activity"]').exists()).toBe(false)
+      if (ending === 'stopped') expect(wrapper.text()).toContain('已停止')
+      if (ending === 'error') expect(wrapper.text()).toContain('执行失败')
+    } finally {
+      wrapper.unmount()
+      phaseState.value = ''
+    }
+  })
+
   it('renders the message rail with one mark per user turn', async () => {
     turns.value = [
       turn('u1', 'user', '修一下登录'),

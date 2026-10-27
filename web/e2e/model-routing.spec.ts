@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test'
+import { expect, test, type Page, type TestInfo, type WebSocketRoute } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 import { routeApi } from './helpers/apiRoute'
@@ -724,3 +724,110 @@ test('Solo uses real model names and sends exact model IDs and advertised effort
   await expect(trigger).toContainText('Kimi 2.5')
   await expect(page.getByTestId('solo-model-effort-label')).toHaveCount(0)
 })
+
+for (const scenario of [
+  { backend: 'opencode', theme: 'light', width: 1280, ending: 'done' },
+  { backend: 'claude_code', theme: 'dark', width: 1280, ending: 'error' },
+  { backend: 'deepseek_harness', theme: 'light', width: 390, ending: 'cancel' },
+] as const) {
+  test(`Solo activity remains visible between CLI events (${scenario.backend})`, async ({ page }, testInfo) => {
+    const state = await setup(page)
+    state.agents.push({ name: 'Solo', acpBackend: scenario.backend, files: [], mcp: [], env: {}, layout: {} })
+    const session = { id: 'solo-activity', title: '分析项目', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-10-27T00:00:00Z', updatedAt: '2026-10-27T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [] }
+    let history: Record<string, unknown>[] = []
+    let socket: WebSocketRoute | undefined
+    let connections = 0
+    let cancelled = false
+    const emit = (frame: Record<string, unknown>) => {
+      if (!socket) throw new Error('Solo socket has not opened')
+      socket.send(JSON.stringify(frame))
+    }
+    const update = (body: Record<string, unknown>) => emit({ type: 'acp', data: { op: 'event', data: { type: 'session_update', update: body } } })
+    const finish = (ending: 'done' | 'error' | 'cancel') => {
+      session.busy = false
+      history = [
+        { id: 'question', sessionId: session.id, role: 'user', content: '分析这个项目', status: 'ok', createdAt: session.createdAt },
+        { id: 'answer', sessionId: session.id, role: 'assistant', content: '正在整理分析结果。', status: ending === 'error' ? 'failed' : ending === 'cancel' ? 'stopped' : 'ok', error: ending === 'error' ? 'Model connection failed' : undefined, createdAt: session.updatedAt },
+      ]
+      emit(ending === 'error'
+        ? { type: 'session', event: 'error', message: 'Model connection failed' }
+        : { type: 'session', event: 'turn_done', interrupted: ending === 'cancel' })
+    }
+    await routeApi(page, '**/api/solo/sessions**', async route => {
+      const pathname = new URL(route.request().url()).pathname
+      if (pathname === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
+      if (pathname.endsWith('/messages')) return route.fulfill({ json: history })
+      if (pathname.endsWith('/env')) return route.fulfill({ json: [] })
+      return route.fulfill({ json: session })
+    })
+    await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => {
+      socket = ws
+      connections++
+      ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: session.busy, phase: session.busy ? 'running' : '', items: [] }))
+      ws.onMessage(message => {
+        if (JSON.parse(String(message)).type === 'cancel') {
+          cancelled = true
+          finish('cancel')
+        }
+      })
+    })
+    await page.setViewportSize({ width: scenario.width, height: 820 })
+    await page.goto(`/workspace-config.html?view=/solo/${session.id}&theme=${scenario.theme}`)
+    await expect(page.getByTestId('solo-session-pane')).toBeVisible()
+    await expect.poll(() => connections).toBe(1)
+    const activity = page.getByTestId('solo-agent-activity')
+    await expect(activity).toHaveCount(0)
+
+    session.busy = true
+    emit({ type: 'session', event: 'turn_begin', item: { id: 'question', text: '分析这个项目', images: [] } })
+    await expect(activity).toHaveAttribute('role', 'status')
+    await expect(activity).toHaveText('等待沙箱就绪…')
+    emit({ type: 'session', event: 'phase', phase: 'running' })
+    await expect(activity).toHaveText('Agent 正在处理')
+
+    update({ sessionUpdate: 'tool_call', toolCallId: 'read-1', title: 'Read', status: 'in_progress', rawInput: { file_path: 'README.md' } })
+    await expect(page.getByTestId('agent-tool-group')).toHaveAttribute('data-state', 'running')
+    await expect(activity).toBeVisible()
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'read-1', status: 'completed' })
+    await expect(page.getByTestId('agent-tool-group')).toHaveAttribute('data-state', 'done')
+    await expect(activity).toBeVisible()
+    await expect(page.getByTestId('solo-stop')).toBeVisible()
+
+    // No new model events arrive here. The live cue must keep moving even
+    // though the last tool truthfully has a completed checkmark.
+    const lamp = activity.getByTestId('thinking-lamp-core')
+    const initialTime = await lamp.evaluate(el => Number(el.getAnimations()[0]?.currentTime ?? -1))
+    expect(initialTime).toBeGreaterThanOrEqual(0)
+    await expect.poll(() => lamp.evaluate(el => Number(el.getAnimations()[0]?.currentTime ?? -1))).toBeGreaterThan(initialTime)
+    await page.screenshot({ path: testInfo.outputPath(`solo-activity-${scenario.backend}-${scenario.theme}.png`) })
+
+    if (scenario.backend === 'opencode') {
+      await socket!.close({ code: 1012, reason: 'reconnect activity regression' })
+      await expect(activity).toBeVisible()
+      await expect.poll(() => connections).toBe(2)
+      await expect(activity).toHaveText('Agent 正在处理')
+    }
+    update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '继续检查项目结构。' } })
+    await expect(page.getByTestId('agent-timeline-thought')).toContainText('继续检查项目结构。')
+    await expect(activity).toBeVisible()
+    update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '正在整理分析结果。' } })
+    await expect(page.getByTestId('solo-agent-message')).toHaveText('正在整理分析结果。')
+    await expect(activity).toBeVisible()
+    update({ sessionUpdate: 'tool_call', toolCallId: 'read-2', title: 'Read', status: 'pending', rawInput: { file_path: 'package.json' } })
+    await expect(page.getByTestId('agent-tool-group').last()).toHaveAttribute('data-state', 'running')
+    await expect(activity).toBeVisible()
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'read-2', status: 'completed' })
+    await expect(page.getByTestId('agent-tool-group').last()).toHaveAttribute('data-state', 'done')
+    await expect(activity).toBeVisible()
+
+    if (scenario.ending === 'cancel') {
+      await page.getByTestId('solo-stop').click()
+      await expect.poll(() => cancelled).toBe(true)
+    } else finish(scenario.ending)
+    await expect(activity).toHaveCount(0)
+    await expect(page.getByTestId('solo-stop')).toHaveCount(0)
+    await expect(page.getByTestId('solo-agent-message')).toHaveText('正在整理分析结果。')
+    if (scenario.ending === 'error') await expect(page.getByTestId('solo-transcript')).toContainText('Model connection failed')
+    if (scenario.ending === 'cancel') await expect(page.getByTestId('solo-transcript')).toContainText('已停止')
+  })
+}
