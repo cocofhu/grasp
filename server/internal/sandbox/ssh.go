@@ -21,14 +21,22 @@ import (
 // SSH_KEY env at create time and authenticates with the matching private key.
 // When that key is refused, the dial retries with that sandbox's own token.
 
+// pinnedHostKey is the host key last accepted for one SSH address, plus the
+// sandbox that presented it. A later sandbox published on the same address
+// replaces the pin; the same sandbox must keep presenting this key.
+type pinnedHostKey struct {
+	sandboxID string
+	key       ssh.PublicKey
+}
+
 // hostKeyCache stores TOFU host keys keyed by "host:port" for ephemeral sandboxes.
 type hostKeyCache struct {
 	mu   sync.Mutex
-	keys map[string]ssh.PublicKey
+	keys map[string]pinnedHostKey
 }
 
 func newHostKeyCache() *hostKeyCache {
-	return &hostKeyCache{keys: make(map[string]ssh.PublicKey)}
+	return &hostKeyCache{keys: make(map[string]pinnedHostKey)}
 }
 
 func (c *hostKeyCache) get(addr string) ssh.PublicKey {
@@ -37,31 +45,65 @@ func (c *hostKeyCache) get(addr string) ssh.PublicKey {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.keys[addr]
+	return c.keys[addr].key
 }
 
-func (c *hostKeyCache) set(addr string, key ssh.PublicKey) {
-	if c == nil || key == nil {
-		return
+// accept trusts key for addr. The first key is pinned to sandboxID. A different
+// sandbox publishing the same address replaces the pin. The same sandbox (or a
+// dial with no sandbox id) must present the pinned key.
+func (c *hostKeyCache) accept(addr, sandboxID string, key ssh.PublicKey) error {
+	if key == nil {
+		return fmt.Errorf("ssh: empty host key from %s", addr)
+	}
+	if c == nil {
+		return fmt.Errorf("ssh: host key cache not configured")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.keys == nil {
-		c.keys = make(map[string]ssh.PublicKey)
+		c.keys = make(map[string]pinnedHostKey)
 	}
-	c.keys[addr] = key
+	prev, ok := c.keys[addr]
+	if !ok || (sandboxID != "" && prev.sandboxID != "" && prev.sandboxID != sandboxID) {
+		c.keys[addr] = pinnedHostKey{sandboxID: sandboxID, key: key}
+		return nil
+	}
+	if !bytes.Equal(prev.key.Marshal(), key.Marshal()) {
+		return ssh.FixedHostKey(prev.key)("", nil, key)
+	}
+	if prev.sandboxID == "" && sandboxID != "" {
+		prev.sandboxID = sandboxID
+		c.keys[addr] = prev
+	}
+	return nil
+}
+
+// forget drops every pin recorded for sandboxID. The next sandbox published on
+// that address can trust its own host key.
+func (c *hostKeyCache) forget(sandboxID string) {
+	if c == nil || sandboxID == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for addr, pinned := range c.keys {
+		if pinned.sandboxID == sandboxID {
+			delete(c.keys, addr)
+		}
+	}
 }
 
 // sshCreds is the SSH connection material for one sandbox: its reachable
 // host:port, the shared signer, and that sandbox's token as a password.
 type sshCreds struct {
-	host     string
-	port     int
-	signer   ssh.Signer
-	authKey  string // authorized_keys line for the current signer
-	password string // this sandbox's token; empty skips password auth
-	user     string
-	hostKeys *hostKeyCache
+	host      string
+	port      int
+	signer    ssh.Signer
+	authKey   string // authorized_keys line for the current signer
+	password  string // this sandbox's token; empty skips password auth
+	user      string
+	sandboxID string // gateway sandbox id; empty keeps the pin strict
+	hostKeys  *hostKeyCache
 }
 
 // authObserver records the password passed into a data-plane dial. Tests only.
@@ -112,26 +154,17 @@ func (c sshCreds) addrKey() string {
 	return fmt.Sprintf("%s:%d", c.host, c.port)
 }
 
-// hostKeyCallback implements TOFU: first successful handshake records the key;
-// later dials use ssh.FixedHostKey and reject mismatches.
+// hostKeyCallback implements TOFU: the first handshake records the key. A
+// different sandbox on the same address replaces it. The same sandbox is held
+// to the recorded key.
 func (c sshCreds) hostKeyCallback() ssh.HostKeyCallback {
 	if c.hostKeys == nil {
 		return nil
 	}
 	addr := c.addrKey()
-	if known := c.hostKeys.get(addr); known != nil {
-		return ssh.FixedHostKey(known)
-	}
+	sandboxID := c.sandboxID
 	return func(_ string, _ net.Addr, key ssh.PublicKey) error {
-		if key == nil {
-			return fmt.Errorf("ssh: empty host key from %s", addr)
-		}
-		// Race-safe: if another dial already pinned a key, require a match.
-		if known := c.hostKeys.get(addr); known != nil {
-			return ssh.FixedHostKey(known)("", nil, key)
-		}
-		c.hostKeys.set(addr, key)
-		return nil
+		return c.hostKeys.accept(addr, sandboxID, key)
 	}
 }
 

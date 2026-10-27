@@ -66,6 +66,36 @@ install_claude_native() {
   claude --version
 }
 
+# Codex 的原生二进制是 optionalDependency 别名（npm:@openai/codex@<ver>-linux-<arch>）。
+# 平台包 tarball 下载失败时 npm 仍以 0 退出，只留下会在启动时抛错的 JS 包装器。
+# 版本检查失败时把当前平台包按必需依赖装进包装器的 node_modules，并整体重试。
+install_codex_once() {
+  local arch="$1" root pkg ver nested
+  npm install -g @openai/codex
+  if codex --version; then
+    return 0
+  fi
+  root="$(npm root -g)"
+  pkg="$root/@openai/codex"
+  ver="$(node -p "require('${pkg}/package.json').version")"
+  nested="$pkg/node_modules/@openai/codex-linux-${arch}"
+  log "codex 平台包未装上，改为必需依赖安装 linux-${arch}@${ver}"
+  rm -rf "$nested"
+  npm install --prefix "$pkg" --no-save \
+    "@openai/codex-linux-${arch}@npm:@openai/codex@${ver}-linux-${arch}"
+  codex --version
+}
+
+install_codex() {
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64) arch=x64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *) log "错误：codex 不支持架构 $(uname -m)"; return 1 ;;
+  esac
+  retry 3 install_codex_once "$arch"
+}
+
 install_trae() {
   # TraeCode CLI 1.x（https://docs.trae.cn/cli_get-started-with-trae-cli）。官方 install.sh
   # 所在的 trae.cn 对海外 IP（GitHub runner）返回 403，这里照它的逻辑直接从 CDN 下载。
@@ -107,7 +137,7 @@ install_one() {
     opencode)
       npm_global opencode-ai && opencode --version ;;
     codex)
-      npm_global @openai/codex && codex --version ;;
+      install_codex ;;
     deepseek_harness)
       # Developer preview: keep the tested ACP contract stable across image builds.
       npm_global @deepseek-ai/dsh@0.2.1-rc.2 && dsh --version ;;

@@ -696,7 +696,11 @@ func (m *Manager) DestroyByName(ctx context.Context, id string) error {
 		return nil
 	}
 	m.runtime.forget(id)
-	return m.gw.Destroy(ctx, id)
+	if err := m.gw.Destroy(ctx, id); err != nil {
+		return err
+	}
+	m.hostKeys.forget(id)
+	return nil
 }
 
 // Logs fetches PID1 combined stdout/stderr via the gateway control plane.
@@ -958,6 +962,7 @@ func (s *Sandbox) creds() sshCreds {
 		}
 		c = sshCreds{host: s.SSHHost, port: s.SSHPort, signer: signer, authKey: authKey, user: "root", hostKeys: s.hostKeys}
 	}
+	c.sandboxID = strings.TrimSpace(s.ID)
 	c.password = s.dataPlanePassword()
 	if c.authKey == "" {
 		_, c.authKey, _ = sharedSSHKey()
