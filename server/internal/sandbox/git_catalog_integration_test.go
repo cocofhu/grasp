@@ -19,9 +19,7 @@ func selectedGitCatalog() []GitCredential {
 
 func TestSelectedGitCatalogStagesEveryAccountWithoutGlobalIdentity(t *testing.T) {
 	credentials := selectedGitCatalog()
-	data, err := packGitInjectBundle("unselected-private-key", "unselected-hosts", []RepoCredential{{
-		URL: "https://git.example.com/explicit/repo.git", Kind: RepoCredentialGitLabHTTPS, Secret: "synthetic-explicit-token",
-	}}, true, credentials)
+	data, err := packGitInjectBundle("unselected-private-key", "unselected-hosts", true, credentials)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,17 +62,19 @@ func TestSelectedGitCatalogStagesEveryAccountWithoutGlobalIdentity(t *testing.T)
 			t.Fatal("explicit selection retained the inherited global SSH identity")
 		}
 	}
-	if files["repos/0.secret"] != "synthetic-explicit-token\n" || !strings.Contains(files["repos/manifest"], "explicit/repo.git") {
-		t.Fatal("independent repository permission was not preserved")
+	for name := range files {
+		if strings.HasPrefix(name, "repos/") {
+			t.Fatal("explicit per-repository grant was staged beside the Agent catalog")
+		}
 	}
 }
 
 func TestGitCatalogExplicitEmptySurvivesTransport(t *testing.T) {
-	legacy, err := packGitInjectBundle("", "", nil, false, nil)
+	legacy, err := packGitInjectBundle("", "", false, nil)
 	if err != nil || legacy != nil {
 		t.Fatal("unset selection must retain the empty legacy transport")
 	}
-	explicit, err := packGitInjectBundle("legacy-key", "legacy-hosts", nil, true, nil)
+	explicit, err := packGitInjectBundle("legacy-key", "legacy-hosts", true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestGitCatalogExplicitEmptySurvivesTransport(t *testing.T) {
 		{ID: "bad", Kind: "unknown", Secret: "synthetic"},
 		{ID: "empty", Kind: RepoCredentialGitHubHTTPS, Secret: " \n"},
 	} {
-		if _, err := packGitInjectBundle("", "", nil, true, []GitCredential{credential}); err == nil {
+		if _, err := packGitInjectBundle("", "", true, []GitCredential{credential}); err == nil {
 			t.Fatal("invalid selected credential must not be silently dropped")
 		}
 	}

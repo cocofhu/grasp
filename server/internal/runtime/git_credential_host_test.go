@@ -33,14 +33,6 @@ func TestGitCredentialHostConstrainsAgentScopeAndProject(t *testing.T) {
 					t.Fatalf("scope escaped the credential host: %s", scope)
 				}
 			}
-			projects := []models.Project{
-				{RepoURL: host + "/team/repo.git", GitCredentialType: "gitlab_https", GitCredentialID: "gl"},
-				{RepoURL: "https://other.example/team/repo.git", GitCredentialType: "gitlab_https", GitCredentialID: "gl"},
-			}
-			rows := RepoCredentialsFor(projects, resolve)
-			if len(rows) != 1 || rows[0].URL != projects[0].RepoURL {
-				t.Fatal("project-specific authorization escaped the credential host")
-			}
 		})
 	}
 	for _, host := range []string{"", "https://user:token@host"} {

@@ -10,8 +10,10 @@
 #   env      required. NAME=base64(value) lines: the Grasp spec env of the next node.
 #   unset    optional. One env name per line: Grasp spec env of the previous node.
 #   config/  optional. Config home of the next node, extracted into its CONFIG_ROOT.
-#   ssh/     optional. SSH staging bundle (id_rsa, known_hosts, repos/...), the
-#            same layout startup.sh reads from /tmp/grasp-ssh-inject.
+#   ssh/     optional. SSH staging bundle (id_rsa, known_hosts, git/ catalog).
+#            The same layout startup.sh reads from /tmp/grasp-ssh-inject.
+#            Leftover ssh/repos grants are ignored; repository auth comes from
+#            the Agent catalog only.
 # Exit: 0 ok · 1 failed · 2 usage / bad bundle
 set -u
 
@@ -124,8 +126,7 @@ if [ ! -r "$STARTUP" ]; then
 fi
 FUNCS="repo_scheme repo_host url_host prepare_git_credentials_file glab_auth_login gh_auth_login
 setup_https_credentials setup_ssh_credentials setup_bare_gitlab_credentials setup_bare_github_credentials
-setup_repo_credentials configure_git_credentials repo_url_key repo_has_own_credential
-setup_repo_https_credential setup_repo_ssh_credential configure_repo_credentials configure_git_catalog repo_name_from_url
+setup_repo_credentials configure_git_credentials configure_git_catalog repo_name_from_url
 apply_ssh_file_inject"
 # shellcheck disable=SC2086
 defs="$(awk -v want="$(echo $FUNCS)" '
@@ -144,9 +145,6 @@ defs="${defs//\/root/\$HOME_DIR}"
 eval "$defs"
 # startup.sh's helpers read optional env without defaults.
 set +u
-REPO_CRED_DIR="$HOME_DIR/.grasp/repo-credentials"
-REPO_SSH_CONFIG="$HOME_DIR/.ssh/grasp_repos_config"
-_REPO_CRED_URLS=""
 _GIT_CATALOG_CONFIGURED=0
 GIT_CREDENTIAL_HOME="$HOME_DIR"
 GIT_REPOS="${GIT_REPOS:-}"
@@ -162,7 +160,6 @@ if [ -d "$STAGE/ssh" ]; then
     apply_ssh_file_inject "$STAGE/ssh"
   fi
   configure_git_catalog "$STAGE/ssh/git" || { echo "reprime: git catalog failed" >&2; exit 1; }
-  configure_repo_credentials "$STAGE/ssh/repos"
 fi
 configure_git_credentials || { echo "reprime: git credentials failed" >&2; exit 1; }
 git config --global user.email "${GIT_USER_EMAIL:-sandbox@localhost}"

@@ -14,7 +14,7 @@ die() { echo "FAIL: $*" >&2; exit 1; }
 H="$TMP/home"
 RUN="$TMP/run"
 # Never authenticate with developer-machine credentials during a smoke test.
-unset GITHUB_TOKEN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN GITLAB_TOKEN GLAB_TOKEN GITLAB_ACCESS_TOKEN
+unset GIT_REPOS PREVIEW_DIRECT GITHUB_TOKEN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN GITLAB_TOKEN GLAB_TOKEN GITLAB_ACCESS_TOKEN
 unset GITHUB_URL GITLAB_URL GIT_SSH_PRIVATE_KEY GIT_SSH_KNOWN_HOSTS GIT_SSH_COMMAND GIT_SSH SSH_AUTH_SOCK
 unset GIT_CONFIG GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$H/.gitconfig"
@@ -70,7 +70,8 @@ grep -q 'new@example.com' "$H/.gitconfig" || die "git identity not updated"
 echo "OK: previous node wiped, next node config applied"
 
 # shellcheck disable=SC1091
-( . "$RUN/env"
+( unset GRASP_NODE_ID MULTI OLD_SECRET
+  . "$RUN/env"
   [ "$AGENT_PROVIDER" = claude_code ] || die "AGENT_PROVIDER=$AGENT_PROVIDER"
   [ "$CONFIG_ROOT" = "$H/.claude" ] || die "CONFIG_ROOT=$CONFIG_ROOT"
   [ "$GRASP_NODE_ID" = node-b ] || die "GRASP_NODE_ID=$GRASP_NODE_ID"
@@ -93,7 +94,9 @@ HOME="$H" GRASP_REPRIME_HOME="$H" GRASP_RUNTIME_RUN_DIR="$RUN" \
   GRASP_REPRIME_SERVICES="$TMP/services.sh" \
   bash "$REPRIME" <"$TMP/bundle2.tgz" >"$TMP/out2.log" 2>&1 || { cat "$TMP/out2.log"; die "second reprime failed"; }
 # shellcheck disable=SC1091
-( . "$RUN/env"
+# The assertion subshell must not inherit the sandbox's own GRASP_* exports.
+( unset GRASP_NODE_ID MULTI OLD_SECRET
+  . "$RUN/env"
   [ -z "${GRASP_NODE_ID:-}" ] || die "recorded key survived"
   [ -z "${MULTI:-}" ] || die "recorded key survived"
   [ "$CONFIG_ROOT" = "$H/.cursor" ] || die "CONFIG_ROOT=$CONFIG_ROOT"
@@ -105,7 +108,7 @@ echo "OK: recorded keys dropped"
 # secret is staged privately; routing remains deterministic and the next node
 # can explicitly clear the complete selection.
 rm -rf "$TMP/bundle"
-mkdir -p "$TMP/bundle/ssh/git" "$TMP/bundle/ssh/repos" "$H/.config/gh" "$H/.config/glab-cli"
+mkdir -p "$TMP/bundle/ssh/git" "$TMP/bundle/ssh/repos" "$H/.config/gh" "$H/.config/glab-cli" "$H/.grasp/repo-credentials" "$H/.ssh"
 printf 'legacy-cli\n' >"$H/.config/gh/hosts.yml"
 printf 'legacy-cli\n' >"$H/.config/glab-cli/config.yml"
 cat >"$TMP/bundle/ssh/git/manifest.json" <<'EOF'
@@ -123,6 +126,8 @@ printf 'catalog-ssh-key\n' >"$TMP/bundle/ssh/git/3.secret"
 printf 'git.example ssh-ed25519 FAKE\n' >"$TMP/bundle/ssh/git/3.known_hosts"
 printf '0\tgithub_https\thttps://github.com/team/private.git\n' >"$TMP/bundle/ssh/repos/manifest"
 printf 'explicit-repo-token\n' >"$TMP/bundle/ssh/repos/0.secret"
+printf 'leftover-explicit\n' >"$H/.grasp/repo-credentials/0.token"
+printf 'OLDKEY\n' >"$H/.ssh/grasp-repo-1"
 {
   echo "AGENT_PROVIDER=$(b64 cursor)"
   echo "GITHUB_TOKEN=$(b64 must-not-survive-catalog)"
@@ -137,7 +142,10 @@ for index in 0 1 2 3; do
   [ "$(stat -c %a "$CATALOG/$index.secret")" = 600 ] || die "selected secret not private"
 done
 password="$(printf 'url=https://github.com/team/private.git\n\n' | HOME="$H" GIT_TERMINAL_PROMPT=0 git credential fill | sed -n 's/^password=//p')"
-[ "$password" = explicit-repo-token ] || die "explicit repository grant did not override selected catalog"
+[ "$password" = catalog-repo-token ] || die "explicit repository grant overrode the Agent catalog ($password)"
+[ ! -e "$H/.grasp/repo-credentials" ] || die "old repository credential directory survived"
+[ ! -e "$H/.ssh/grasp-repo-1" ] || die "old repository SSH alias survived"
+! grep -q explicit-repo-token "$H/.gitconfig" "$RUN/env" 2>/dev/null || die "explicit repository token was applied"
 password="$(printf 'url=https://github.com/team/public.git\n\n' | HOME="$H" GIT_TERMINAL_PROMPT=0 git credential fill | sed -n 's/^password=//p')"
 [ "$password" = catalog-host-token ] || die "default host credential missing"
 ! grep -q 'catalog-.*-token\|must-not-survive-catalog' "$RUN/env" || die "Git secrets persisted in runtime env"

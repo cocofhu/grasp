@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Repository settings:** a repository now stores only its name, description, URL, default branch and directory. Access methods, credential bindings and environment variables are removed from the repository form, API and Solo snapshots. New sessions and restarts use the current Agent's environment, credential bindings and Git authorization, including its existing default inheritance. Upgrade deletes those historical fields and does not copy them onto any Agent; a private repository that relied on them needs the Agent configured again. Public anonymous clones, repository selection, branch and directory checks, and platform or system variables stay as they are. Running sandboxes are not interrupted; the next restart follows the new rules.
+
 - **DeepSeek Harness token usage:** workflow, React and Solo turns now record per-turn input, output and cache tokens from DSH's session projection, so usage analytics, cost estimates and the token ledger include DeepSeek Harness. Cached input is counted once in its own bucket; turns without a model call, unavailable caches and subagent sessions keep the previous omission behavior.
 
 - **Clarify timeline alignment:** the in-progress 「思考中…」 indicator and label now line up with thought and tool summaries in current turns, follow-up nodes and run history. First-token placeholders, 「输出中」, other busy indicators and reduced-motion behavior are unchanged.

@@ -155,13 +155,6 @@ onMounted(load)
           <p v-if="p.description" class="line-clamp-2 text-[12px] text-txt2">{{ p.description }}</p>
           <div class="flex flex-wrap gap-1.5">
             <span class="project-card__tag"><Icon name="branch" :size="11" />{{ p.defaultBranch || t('pages.solo.env.remoteDefault') }}</span>
-            <span class="project-card__tag"><Icon name="key" :size="11" />{{ t(`pages.solo.access.${p.gitCredentialType || 'none'}`) }}</span>
-            <span v-if="Object.keys(p.env ?? {}).length" class="project-card__tag">
-              <Icon name="variable" :size="11" />{{ t('pages.projects.envCount', { n: Object.keys(p.env ?? {}).length }) }}
-            </span>
-            <span v-if="Object.keys(p.credentialBindings ?? {}).length" class="project-card__tag">
-              <Icon name="lock" :size="11" />{{ t('pages.projects.bindingCount', { n: Object.keys(p.credentialBindings ?? {}).length }) }}
-            </span>
           </div>
           <div class="mt-auto flex items-center justify-between gap-2 pt-1">
             <span class="text-[11px] text-txt3">{{ p.lastUsedAt ? t('pages.projects.lastUsed', { time: relTime(p.lastUsedAt) }) : t('pages.projects.neverUsed') }}</span>

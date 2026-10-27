@@ -255,9 +255,6 @@ def ssh(directory, args):
     host = destination.rsplit("@", 1)[-1]
     if "@" in destination:
         user = destination.rsplit("@", 1)[0]
-    # The existing explicit per-repository route owns its private key/config.
-    if re.fullmatch(r"grasp-repo-[0-9]+", host):
-        os.execvp("ssh", ["ssh", "-F", str(directory.parent.parent / ".ssh/grasp_repos_config")] + args)
     # Git removes URL brackets before invoking SSH (git@::1 plus -p 2222).
     # Restore them for catalog matching while retaining its OpenSSH destination.
     authority_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
@@ -300,32 +297,11 @@ def exec_cli(directory, tool, repo_url, arguments):
     scheme, host, repo = location(repo_url, repo_kind)
     if not scheme or not repo:
         raise ValueError("CLI requires a repository URL")
-    token = None
-    api_protocol = "https"
-    # Explicit repository grants override the selected catalog, as they do for
-    # git credential. Retain the manifest after its staging files are consumed.
-    explicit = directory.parent / "repo-credentials"
-    manifest = explicit / "manifest"
-    if manifest.is_file() and not manifest.is_symlink():
-        for line in manifest.read_text().splitlines():
-            index, explicit_kind, url = line.split("\t")
-            if not index.isdigit() or explicit_kind not in KINDS:
-                raise ValueError("invalid repository credential")
-            if explicit_kind == "ssh":
-                continue
-            url_kind = "ssh" if url.startswith("ssh://") or "://" not in url else explicit_kind
-            if location(url, url_kind) == (scheme, host, repo):
-                if explicit_kind != kind:
-                    raise ValueError("repository credential does not match CLI")
-                token = (explicit / f"{index}.token").read_text().strip()
-                api_protocol = "http" if scheme == "http" else "https"
-                break
-    if token is None:
-        record = choose(catalog(directory), scheme, host, repo, kind=kind, ssh_api=tool == "glab")
-        if record is None or record["kind"] != kind:
-            raise ValueError("no selected CLI credential matches")
-        token = (directory / f'{record["index"]}.secret').read_text().strip()
-        api_protocol = "http" if record["location"][0] == "http" else "https"
+    record = choose(catalog(directory), scheme, host, repo, kind=kind, ssh_api=tool == "glab")
+    if record is None or record["kind"] != kind:
+        raise ValueError("no selected CLI credential matches")
+    token = (directory / f'{record["index"]}.secret').read_text().strip()
+    api_protocol = "http" if record["location"][0] == "http" else "https"
     if not token or any(c in token for c in "\r\n\0"):
         raise ValueError("invalid CLI token")
     environment = dict(os.environ)

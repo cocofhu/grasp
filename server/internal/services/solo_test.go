@@ -32,11 +32,6 @@ func TestProjectValidation(t *testing.T) {
 	}{
 		{"empty name", ProjectInput{RepoURL: "https://x/y.git"}, "name_required"},
 		{"bad url", ProjectInput{Name: "a", RepoURL: "ftp://x"}, "repo_url_invalid"},
-		{"sensitive env", ProjectInput{Name: "a", RepoURL: "https://x/y.git", Env: map[string]string{"NPM_TOKEN": "x"}}, "env_key_sensitive"},
-		{"secret preset", ProjectInput{Name: "a", RepoURL: "https://x/y.git", Env: map[string]string{"GITHUB_TOKEN": "x"}}, "env_key_sensitive"},
-		{"reserved env", ProjectInput{Name: "a", RepoURL: "https://x/y.git", Env: map[string]string{"GIT_REPOS": "x"}}, "env_key_reserved"},
-		{"bad env name", ProjectInput{Name: "a", RepoURL: "https://x/y.git", Env: map[string]string{"1X": "x"}}, "env_key_invalid"},
-		{"bad git type", ProjectInput{Name: "a", RepoURL: "https://x/y.git", GitCredentialType: "svn"}, "git_type_invalid"},
 		{"bad dir", ProjectInput{Name: "a", RepoURL: "https://x/y.git", RepoDirName: "../up"}, "repo_dir_invalid"},
 	}
 	for _, tc := range cases {
@@ -48,21 +43,20 @@ func TestProjectValidation(t *testing.T) {
 	}
 
 	p, err := ps.Create(ProjectInput{
-		Name: " demo ", RepoURL: "git@github.com:acme/demo.git", GitCredentialType: "github_https",
-		GitCredentialID: "c1", SshHostsCredentialID: "dropped", Env: map[string]string{"APP_ENV": "dev"},
+		Name: " demo ", RepoURL: "git@github.com:acme/demo.git", DefaultBranch: "main",
 	}, "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Name != "demo" || p.RepoDirName != "demo" || p.SshHostsCredentialID != "" || p.Env["APP_ENV"] != "dev" {
+	if p.Name != "demo" || p.RepoDirName != "demo" || p.DefaultBranch != "main" || p.RepoURL != "git@github.com:acme/demo.git" {
 		t.Fatalf("normalized project: %+v", p)
 	}
 	if _, err := ps.Create(ProjectInput{Name: "demo", RepoURL: "https://x/y.git"}, "bob"); err == nil {
 		t.Fatal("duplicate name should be rejected")
 	}
-	upd, err := ps.Update(p.ID, ProjectInput{Name: "demo", RepoURL: "https://github.com/acme/demo.git"})
-	if err != nil || upd.GitCredentialType != "" || upd.GitCredentialID != "" {
-		t.Fatalf("update without access clears repo creds: %+v %v", upd, err)
+	upd, err := ps.Update(p.ID, ProjectInput{Name: "demo", RepoURL: "https://github.com/acme/demo.git", Description: "kept"})
+	if err != nil || upd.RepoURL != "https://github.com/acme/demo.git" || upd.Description != "kept" || upd.RepoDirName != "demo" {
+		t.Fatalf("update keeps clone fields: %+v %v", upd, err)
 	}
 }
 
@@ -128,8 +122,6 @@ func TestSoloSessionLifecycle(t *testing.T) {
 
 	p, err := solo.Projects().Create(ProjectInput{
 		Name: "app", RepoURL: "https://github.com/acme/app.git", DefaultBranch: "main",
-		GitCredentialType: "github_https", GitCredentialID: "cred-proj",
-		Env: map[string]string{"APP_ENV": "dev"},
 	}, "alice")
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +184,7 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	if env["GIT_REPOS"] != "app|https://github.com/acme/app.git|main" {
 		t.Fatalf("GIT_REPOS = %q", env["GIT_REPOS"])
 	}
-	if env["APP_ENV"] != "dev" || env["AGENT_FLAG"] != "1" || env["GITHUB_TOKEN"] != "" {
+	if env["APP_ENV"] != "" || env["AGENT_FLAG"] != "1" || env["GITHUB_TOKEN"] != "" {
 		t.Fatalf("env layering: APP_ENV=%q AGENT_FLAG=%q GITHUB_TOKEN=%q", env["APP_ENV"], env["AGENT_FLAG"], env["GITHUB_TOKEN"])
 	}
 	entries, err := solo.Env(id, "alice")
@@ -203,7 +195,7 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	for _, e := range entries {
 		src[e.Key] = e.Source
 	}
-	if src["APP_ENV"] != EnvSourceProject || src["AGENT_FLAG"] != EnvSourceAgent || src["GITHUB_TOKEN"] != "" || src["GIT_REPOS"] != EnvSourceSystem {
+	if src["APP_ENV"] != "" || src["AGENT_FLAG"] != EnvSourceAgent || src["GITHUB_TOKEN"] != "" || src["GIT_REPOS"] != EnvSourceSystem {
 		t.Fatalf("env sources: %+v", src)
 	}
 
@@ -314,16 +306,12 @@ func TestSoloMultiRepoCreate(t *testing.T) {
 	ps := solo.Projects()
 	app, err := ps.Create(ProjectInput{
 		Name: "app", RepoURL: "https://github.com/acme/app.git", DefaultBranch: "main",
-		Env: map[string]string{"APP_ENV": "dev"},
 	}, "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
-	apiToken := "cred-api"
 	api, err := ps.Create(ProjectInput{
 		Name: "api", RepoURL: "https://github.com/acme/api.git", DefaultBranch: "develop",
-		GitCredentialType: "github_https", GitCredentialID: "missing-cred",
-		CredentialBindings: map[string]*string{"API_TOKEN": &apiToken},
 	}, "alice")
 	if err != nil {
 		t.Fatal(err)
@@ -351,8 +339,8 @@ func TestSoloMultiRepoCreate(t *testing.T) {
 		return err == nil && row.Status == models.SoloStatusRunning && fg.LastCreateEnv()["GIT_REPOS"] == want
 	})
 	env := fg.LastCreateEnv()
-	if env["APP_ENV"] != "dev" || env["API_TOKEN"] != "" {
-		t.Fatalf("merged env: APP_ENV=%q API_TOKEN=%q", env["APP_ENV"], env["API_TOKEN"])
+	if env["APP_ENV"] != "" || env["API_TOKEN"] != "" || env["GITHUB_TOKEN"] != "" {
+		t.Fatalf("repository config leaked into env: APP_ENV=%q API_TOKEN=%q GITHUB_TOKEN=%q", env["APP_ENV"], env["API_TOKEN"], env["GITHUB_TOKEN"])
 	}
 
 	appRow, _ := ps.Get(app.ID)
@@ -367,7 +355,7 @@ func TestSoloMultiRepoCreate(t *testing.T) {
 	}
 
 	if _, err := ps.Update(app.ID, ProjectInput{
-		Name: "app", RepoURL: app.RepoURL, DefaultBranch: "dev", Env: map[string]string{"APP_ENV": "prod"},
+		Name: "app", RepoURL: app.RepoURL, DefaultBranch: "dev",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -382,8 +370,8 @@ func TestSoloMultiRepoCreate(t *testing.T) {
 		return err == nil && row.Status == models.SoloStatusRunning
 	})
 	env = fg.LastCreateEnv()
-	if env["GIT_REPOS"] != want || env["APP_ENV"] != "dev" {
-		t.Fatalf("restart should keep the snapshot, GIT_REPOS=%q APP_ENV=%q", env["GIT_REPOS"], env["APP_ENV"])
+	if env["GIT_REPOS"] != want || env["APP_ENV"] != "" {
+		t.Fatalf("restart should keep the clone snapshot only, GIT_REPOS=%q APP_ENV=%q", env["GIT_REPOS"], env["APP_ENV"])
 	}
 
 	var n int64
@@ -399,7 +387,6 @@ func TestSoloCreateRejectsConflicts(t *testing.T) {
 	ps := solo.Projects()
 	web, err := ps.Create(ProjectInput{
 		Name: "webapp", RepoURL: "https://github.com/acme/webapp.git", RepoDirName: "webapp",
-		Env: map[string]string{"APP_ENV": "dev"},
 	}, "alice")
 	if err != nil {
 		t.Fatal(err)
@@ -407,27 +394,6 @@ func TestSoloCreateRejectsConflicts(t *testing.T) {
 	checkout, err := ps.Create(ProjectInput{
 		Name: "checkout", RepoURL: "https://github.com/acme/checkout.git", RepoDirName: "webapp",
 	}, "alice")
-	if err != nil {
-		t.Fatal(err)
-	}
-	token := "cred-b"
-	billing, err := ps.Create(ProjectInput{
-		Name: "billing", RepoURL: "https://github.com/acme/billing.git", RepoDirName: "billing",
-		CredentialBindings: map[string]*string{"APP_ENV": &token},
-	}, "alice")
-	if err != nil {
-		t.Fatal(err)
-	}
-	shared := "x"
-	one, err := ps.Create(ProjectInput{Name: "one", RepoURL: "https://github.com/acme/one.git", Env: map[string]string{"SHARED": shared}}, "alice")
-	if err != nil {
-		t.Fatal(err)
-	}
-	two, err := ps.Create(ProjectInput{Name: "two", RepoURL: "https://github.com/acme/two.git", Env: map[string]string{"SHARED": shared}}, "alice")
-	if err != nil {
-		t.Fatal(err)
-	}
-	three, err := ps.Create(ProjectInput{Name: "three", RepoURL: "https://github.com/acme/three.git", Env: map[string]string{"SHARED": shared}}, "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,10 +447,6 @@ func TestSoloCreateRejectsConflicts(t *testing.T) {
 
 	assertRejected(SoloCreateInput{AgentName: "agentA", Repos: []SoloRepoChoice{{ProjectID: web.ID}, {ProjectID: checkout.ID}}},
 		"repo_dir_conflict", "webapp", "checkout")
-	assertRejected(SoloCreateInput{AgentName: "agentA", Repos: []SoloRepoChoice{{ProjectID: web.ID}, {ProjectID: billing.ID}}},
-		"env_key_conflict", "APP_ENV", "webapp", "billing")
-	assertRejected(SoloCreateInput{AgentName: "agentA", Repos: []SoloRepoChoice{{ProjectID: one.ID}, {ProjectID: two.ID}, {ProjectID: three.ID}}},
-		"env_key_conflict", "SHARED", "one", "two", "three")
 	assertRejected(SoloCreateInput{AgentName: "agentA", Repos: []SoloRepoChoice{{ProjectID: web.ID, Branch: "bad branch"}}},
 		"branch_invalid_repo", "webapp")
 
@@ -503,7 +465,6 @@ func TestSoloLegacySessionRestart(t *testing.T) {
 	ctx := context.Background()
 	p, err := solo.Projects().Create(ProjectInput{
 		Name: "app", RepoURL: "https://github.com/acme/app.git", DefaultBranch: "main",
-		Env: map[string]string{"APP_ENV": "dev"},
 	}, "alice")
 	if err != nil {
 		t.Fatal(err)
@@ -516,7 +477,7 @@ func TestSoloLegacySessionRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := solo.Projects().Update(p.ID, ProjectInput{
-		Name: "app", RepoURL: p.RepoURL, DefaultBranch: "dev", Env: map[string]string{"APP_ENV": "prod"},
+		Name: "app", RepoURL: p.RepoURL, DefaultBranch: "dev",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +486,7 @@ func TestSoloLegacySessionRestart(t *testing.T) {
 	}
 	want := "app|https://github.com/acme/app.git|release"
 	waitFor(t, "legacy clone", func() bool {
-		return fg.LastCreateEnv()["GIT_REPOS"] == want && fg.LastCreateEnv()["APP_ENV"] == "dev"
+		return fg.LastCreateEnv()["GIT_REPOS"] == want && fg.LastCreateEnv()["APP_ENV"] == ""
 	})
 	got, err := solo.Get(ctx, row.ID, "alice")
 	if err != nil {
