@@ -2481,7 +2481,7 @@ describe('pending rows leave the artifact panel switch alone', () => {
 })
 
 describe('自动过程 grouping and flight', () => {
-  const auto = (id: string, name: string, state: 'running' | 'stopping' = 'running') => ({
+  const auto = (id: string, name: string, state: 'running' | 'stopping' | 'entering' = 'running') => ({
     id, name, iteration: 1, kind: 'agent', mode: 'auto', state,
   })
   const run = (id: string, title: string, status: string, currentNode?: Record<string, unknown>) => ({
@@ -3080,6 +3080,21 @@ describe('自动过程 grouping and flight', () => {
     expect(wrapper.get('[data-key="run-h"]').attributes('data-flight')).toBeUndefined()
     expect(wrapper.find('[data-key="run-e"]').exists()).toBe(false)
     expect(document.querySelector('[data-flight="in"]')).toBeNull()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps a settled automatic successor in 自动过程 on a cold load, without a memory mark', async () => {
+    const wrapper = await show([
+      run('run-x', '仓库不应该保存任何权限信息', 'waiting_human', auto('implement', '实现', 'entering')),
+      run('run-y', '调研codex 的沙箱', 'waiting_human', { id: 'clarify', name: '需求澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' }),
+    ])
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-key="run-x"]').get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBeUndefined()
+    expect(wrapper.get('[data-key="run-y"]').attributes('data-section')).toBe('running')
+    expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('1')
     wrapper.unmount()
     vi.useRealTimers()
   })

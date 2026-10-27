@@ -16,7 +16,9 @@ export type LiveDecision =
 
 /**
  * The auto node the run is on now (server currentNode: kind=agent, mode=auto,
- * state=running), or null. Same source as the sidebar row.
+ * state=running), or null. A confirm can name the next automatic agent before
+ * its visit exists (state=entering). The sidebar counts that. This view does
+ * not: only a visit that is already running is observable.
  */
 export function runningAutoNode(run: Run): RunCurrentNode | null {
   const n = recentCurrentNode(run)
@@ -34,6 +36,17 @@ export function runningAutoNode(run: Run): RunCurrentNode | null {
  * page stays put and shows that node as finished.
  */
 export function decideLive(run: Run, requested: string): LiveDecision {
+  const named = run.currentNode
+  if (
+    named &&
+    named.kind === 'agent' &&
+    named.mode === 'auto' &&
+    named.state === 'entering' &&
+    (run.status === 'running' || run.status === 'waiting_human')
+  ) {
+    // The successor is chosen but its visit has not started. Do not watch it.
+    return { kind: 'detail' }
+  }
   const cur = recentCurrentNode(run)
   if (cur) {
     if (isObservableNode(cur)) {
