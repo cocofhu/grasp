@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import VendorMark from '@/components/agent/VendorMark.vue'
@@ -29,12 +29,26 @@ const effortChoices = computed(() => ['', ...efforts.value])
 const effortIndex = computed(() => Math.max(0, effortChoices.value.indexOf(props.reasoningEffort)))
 const effortLabel = computed(() => levelLabel(props.reasoningEffort))
 const effortBlocked = computed(() => props.disabled || !!current.value?.unavailable)
-const effortProgress = computed(() => `${efforts.value.length ? effortIndex.value / efforts.value.length * 100 : 0}%`)
-const effortColor = computed(() => props.reasoningEffort === 'ultra' ? '#9b4dff' : '#3b82f6')
+const dragging = ref(false)
+const position = ref(0)
+const effortPanel = ref<HTMLElement | null>(null)
+const announced = ref(props.reasoningEffort || '')
+watch(effortIndex, (value) => { if (!dragging.value) position.value = value }, { immediate: true })
+watch(() => props.reasoningEffort, (value) => { announced.value = value || '' })
+watchEffect(() => {
+  const el = effortSlider.value
+  if (!el || dragging.value) return
+  const next = String(position.value)
+  if (el.value !== next) el.value = next
+})
+const ratio = computed(() => efforts.value.length ? Math.min(1, Math.max(0, position.value / efforts.value.length)) : 0)
+const previewLabel = computed(() => levelLabel(effortChoices.value[Math.min(efforts.value.length, Math.max(0, Math.round(position.value)))] || ''))
+const shownLabel = computed(() => dragging.value ? previewLabel.value : effortLabel.value)
+const effortColor = computed(() => (dragging.value ? effortChoices.value[Math.min(efforts.value.length, Math.max(0, Math.round(position.value)))] : props.reasoningEffort) === 'ultra' ? '#9b4dff' : '#3b82f6')
 
 function tickPosition(index: number) {
-  const ratio = efforts.value.length ? index / efforts.value.length : 0
-  return `calc(${ratio * 100}% + ${13 - ratio * 26}px)`
+  const stepRatio = efforts.value.length ? index / efforts.value.length : 0
+  return `calc(14px + ${stepRatio} * (100% - 28px))`
 }
 
 function levelLabel(value: string) {
@@ -57,13 +71,38 @@ function selected(model: ConfiguredModelChoice) {
   return model.id === props.modelValue
 }
 function setEffort(value: string) {
-  if (effortBlocked.value || !effortChoices.value.includes(value) || value === props.reasoningEffort) return
+  if (effortBlocked.value || !effortChoices.value.includes(value) || value === announced.value) return
+  announced.value = value
   emit('update:reasoningEffort', value)
 }
+function paintEffort(raw: number) {
+  const max = efforts.value.length
+  if (!max || effortBlocked.value || !Number.isFinite(raw)) return
+  const clamped = Math.min(max, Math.max(0, raw))
+  position.value = clamped
+  effortPanel.value?.style.setProperty('--effort-ratio', String(clamped / max))
+  const next = effortChoices.value[Math.round(clamped)]
+  if (next !== undefined) setEffort(next)
+}
+function beginEffort() {
+  if (!effortBlocked.value) dragging.value = true
+}
 function moveEffort(event: Event) {
-  const index = Number((event.target as HTMLInputElement).value)
-  const value = effortChoices.value[index]
-  if (value !== undefined) setEffort(value)
+  paintEffort(Number((event.target as HTMLInputElement).value))
+}
+function settleEffort(event: Event) {
+  const raw = Number((event.target as HTMLInputElement).value)
+  const max = efforts.value.length
+  const clamped = Math.min(max, Math.max(0, Math.round(Number.isFinite(raw) ? raw : position.value)))
+  const glide = Math.abs(position.value - clamped) > 0.001
+  dragging.value = false
+  const apply = () => {
+    position.value = clamped
+    const next = effortChoices.value[clamped]
+    if (next !== undefined) setEffort(next)
+  }
+  if (glide) requestAnimationFrame(apply)
+  else apply()
 }
 async function showEffort() {
   if (!efforts.value.length || effortBlocked.value) return
@@ -108,10 +147,10 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
       <div class="solo-model-menu-title">{{ t('pages.solo.modelSelect.placeholder') }}</div>
     </template>
     <template #default="{ query, close }">
-      <section v-if="view === 'effort'" class="solo-effort" :style="{ '--effort-color': effortColor, '--effort-progress': effortProgress }" data-testid="solo-effort-panel" :aria-label="t('pages.solo.modelSelect.reasoningEffort')">
+      <section v-if="view === 'effort'" ref="effortPanel" class="solo-effort" :class="{ 'solo-effort--dragging': dragging }" :style="{ '--effort-color': effortColor, '--effort-ratio': String(ratio) }" data-testid="solo-effort-panel" :aria-label="t('pages.solo.modelSelect.reasoningEffort')">
         <header class="solo-effort-heading">
           <Icon name="priority-bolt" :size="15" :interactive="false" class="solo-effort-glyph" />
-          <strong class="solo-effort-current" data-testid="solo-effort-current">{{ effortLabel }}</strong>
+          <strong class="solo-effort-current" data-testid="solo-effort-current">{{ shownLabel }}</strong>
           <button type="button" class="solo-effort-reset" :disabled="effortBlocked || !reasoningEffort" :aria-label="t('pages.solo.modelSelect.effortReset')" :title="t('pages.solo.modelSelect.effortReset')" data-testid="solo-effort-reset" @click="setEffort('')">
             <Icon name="refresh" :size="14" :interactive="false" />
           </button>
@@ -123,9 +162,10 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
         <div class="solo-effort-control" :class="{ 'solo-effort-control--disabled': effortBlocked }">
           <div class="solo-effort-track" aria-hidden="true">
             <span class="solo-effort-fill" />
-            <span v-for="(value, index) in effortChoices" :key="value || 'auto'" class="solo-effort-tick" :class="{ 'solo-effort-tick--filled': index <= effortIndex }" :style="{ left: tickPosition(index) }" />
+            <span v-for="(value, index) in effortChoices" :key="value || 'auto'" class="solo-effort-tick" :class="{ 'solo-effort-tick--filled': index <= position + 0.02 }" :style="{ left: tickPosition(index) }" />
           </div>
-          <input ref="effortSlider" class="solo-effort-slider" type="range" min="0" :max="efforts.length" step="1" :value="effortIndex" :disabled="effortBlocked" :aria-label="t('pages.solo.modelSelect.reasoningEffort')" :aria-valuetext="effortLabel" data-testid="solo-effort-slider" @input="moveEffort" />
+          <span class="solo-effort-thumb" />
+          <input ref="effortSlider" class="solo-effort-slider" type="range" min="0" :max="efforts.length" step="any" :disabled="effortBlocked" :aria-label="t('pages.solo.modelSelect.reasoningEffort')" :aria-valuetext="shownLabel" :aria-valuenow="effortIndex" data-testid="solo-effort-slider" @pointerdown="beginEffort" @input="moveEffort" @change="settleEffort" @pointerup="settleEffort" @pointercancel="settleEffort" />
         </div>
       </section>
       <template v-else>
@@ -158,7 +198,8 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
 .solo-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .solo-model-effort { flex-shrink: 0; color: rgb(var(--c-accent-2)); font-size: 12px; font-weight: 500; }
 .solo-model-menu-title { padding: 4px 8px 5px; color: rgb(var(--c-txt3)); font-size: 11px; font-weight: 500; line-height: 16px; }
-.solo-effort { padding: 1px 6px 6px; }
+.solo-effort { padding: 1px 6px 6px; transition: --effort-ratio 200ms cubic-bezier(0.22, 1, 0.36, 1); }
+.solo-effort--dragging { transition: none; }
 .solo-effort-heading { display: grid; grid-template-columns: 26px minmax(0, 1fr) 26px; min-height: 24px; align-items: center; gap: 5px; }
 .solo-effort-glyph { justify-self: start; color: var(--effort-color); }
 .solo-effort-current { min-width: 0; overflow: hidden; color: var(--effort-color); font-size: 13px; font-weight: 500; line-height: 20px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
@@ -170,14 +211,24 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
 .solo-effort-control { position: relative; height: 28px; }
 .solo-effort-control--disabled { opacity: 0.45; }
 .solo-effort-track { position: absolute; inset: 2px 0; overflow: hidden; border-radius: 999px; background: rgb(var(--c-txt) / 0.08); box-shadow: inset 0 0 0 1px rgb(var(--c-line) / 0.5); pointer-events: none; }
-.solo-effort-fill { position: absolute; inset: 0 auto 0 0; width: var(--effort-progress); border-radius: inherit; background: linear-gradient(110deg, #3b82f6, var(--effort-color)); }
+.solo-effort-fill { position: absolute; inset: 0 auto 0 0; width: calc(14px + var(--effort-ratio) * (100% - 28px)); border-radius: inherit; background: linear-gradient(110deg, #3b82f6, var(--effort-color)); }
 .solo-effort-tick { position: absolute; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: rgb(var(--c-txt3) / 0.38); transform: translate(-50%, -50%); }
 .solo-effort-tick--filled { background: rgb(255 255 255 / 0.6); }
-.solo-effort-slider { position: relative; display: block; width: 100%; height: 28px; margin: 0; padding: 0; appearance: none; border-radius: 999px; background: transparent; cursor: pointer; }
-.solo-effort-slider::-webkit-slider-runnable-track { height: 24px; border-radius: 999px; background: transparent; }
-.solo-effort-slider::-webkit-slider-thumb { width: 28px; height: 28px; margin-top: -2px; appearance: none; border: 1px solid rgb(0 0 0 / 0.09); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.07); }
-.solo-effort-slider::-moz-range-track { height: 24px; border: 0; border-radius: 999px; background: transparent; }
-.solo-effort-slider::-moz-range-thumb { width: 26px; height: 26px; border: 1px solid rgb(0 0 0 / 0.09); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.07); }
+.solo-effort-thumb { position: absolute; z-index: 1; top: 0; left: calc(var(--effort-ratio) * (100% - 28px)); width: 28px; height: 28px; border: 1px solid rgb(0 0 0 / 0.09); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); pointer-events: none; }
+.solo-effort-slider { position: relative; z-index: 2; display: block; width: 100%; height: 28px; margin: 0; padding: 0; appearance: none; border-radius: 999px; background: transparent; cursor: grab; touch-action: none; }
+.solo-effort--dragging .solo-effort-slider { cursor: grabbing; }
+.solo-effort-slider::-webkit-slider-runnable-track { height: 28px; border-radius: 999px; background: transparent; }
+.solo-effort-slider::-webkit-slider-thumb { width: 28px; height: 28px; appearance: none; border: 0; border-radius: 50%; background: transparent; box-shadow: none; }
+.solo-effort-slider::-moz-range-track { height: 28px; border: 0; border-radius: 999px; background: transparent; }
+.solo-effort-slider::-moz-range-thumb { width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; box-shadow: none; }
 .solo-effort-slider:disabled { cursor: default; }
 .solo-effort-slider:focus-visible, .solo-effort-back:focus-visible, .solo-effort-reset:focus-visible { outline: 2px solid rgb(var(--c-accent) / 0.65); outline-offset: 3px; }
+</style>
+
+<style>
+@property --effort-ratio {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
 </style>

@@ -109,6 +109,9 @@ services:
     volumes:
       - ./web:/web
       - web-node-modules:/web/node_modules
+      # Same catalog the Go server embeds. The dev image only mounts web/, so
+      # the relative import would otherwise resolve to a missing /server path.
+      - ./server/internal/modelrouting/provider_efforts.json:/server/internal/modelrouting/provider_efforts.json:ro
     depends_on:
       - server
       - gateway

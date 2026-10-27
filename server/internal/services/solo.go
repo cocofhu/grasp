@@ -759,7 +759,15 @@ func (s *SoloService) SetCurrentModelSettings(ctx context.Context, id, user stri
 		return nil, err
 	}
 	effort := strings.TrimSpace(row.CurrentReasoningEffort)
-	if requestedEffort != nil {
+	if pinned, locked := s.lockedEffort(agent, stored); locked {
+		if requestedEffort != nil {
+			asked := strings.TrimSpace(*requestedEffort)
+			if asked != "" && asked != pinned {
+				return nil, s.validateReasoningEffort(agent, stored, asked)
+			}
+		}
+		effort = pinned
+	} else if requestedEffort != nil {
 		effort = strings.TrimSpace(*requestedEffort)
 		if err := s.validateSessionReasoningEffort(ctx, row, agent, stored, effort); err != nil {
 			return nil, err
@@ -800,9 +808,24 @@ func (s *SoloService) reasoningEfforts(agent Agent, requestedModel string) []str
 	}
 	efforts := modelrouting.ReasoningEfforts(configuration.Backend, id, connection)
 	if configuration.Backend == "opencode" {
-		efforts = modelrouting.WithSavedEffort(efforts, configuration.Binding.ToolSettings.ModelEfforts[id])
+		efforts = modelrouting.SessionEffortChoices(efforts, configuration.Binding.ToolSettings.ModelEfforts[id])
 	}
 	return efforts
+}
+
+// lockedEffort is a custom token saved for this model. It is not a chat menu
+// entry: the session keeps it and cannot pick another level.
+func (s *SoloService) lockedEffort(agent Agent, model string) (string, bool) {
+	pinned := s.configuredOpenCodeEffort(agent, model)
+	if pinned == "" {
+		return "", false
+	}
+	for _, option := range s.reasoningEfforts(agent, model) {
+		if option == pinned {
+			return "", false
+		}
+	}
+	return pinned, true
 }
 
 // configuredOpenCodeEffort is the variant saved on the model group. An empty
@@ -832,6 +855,9 @@ func (s *SoloService) configuredOpenCodeEffort(agent Agent, model string) string
 
 func (s *SoloService) validateReasoningEffort(agent Agent, model, effort string) error {
 	if effort == "" {
+		return nil
+	}
+	if pinned := s.configuredOpenCodeEffort(agent, model); pinned != "" && effort == pinned {
 		return nil
 	}
 	for _, option := range s.reasoningEfforts(agent, model) {

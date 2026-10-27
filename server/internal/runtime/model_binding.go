@@ -121,7 +121,7 @@ func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
 		id = strings.TrimSpace(id)
 		efforts := modelrouting.ReasoningEfforts(resolved.Backend, id, resolved.Connection)
 		if resolved.Backend == "opencode" {
-			efforts = modelrouting.WithSavedEffort(efforts, resolved.Binding.ToolSettings.ModelEfforts[id])
+			efforts = modelrouting.SessionEffortChoices(efforts, resolved.Binding.ToolSettings.ModelEfforts[id])
 		}
 		value := item{ID: id, Vendor: vendor, ReasoningEfforts: efforts}
 		if resolved.Connection != nil && !modelrouting.FixedEffortBinding(resolved.Backend, resolved.Connection) {

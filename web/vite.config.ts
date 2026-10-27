@@ -59,6 +59,13 @@ export default defineConfig(({ command }) => {
       },
     },
     server: {
+      // The effort catalog lives next to the Go embed, outside this package.
+      fs: {
+        allow: [
+          fileURLToPath(new URL('.', import.meta.url)),
+          fileURLToPath(new URL('../server/internal/modelrouting', import.meta.url)),
+        ],
+      },
       // host: true binds 0.0.0.0 so the platform preview proxy (which dials the
       // container's bridge IP) can reach the dev server, not just loopback.
       host: true,
