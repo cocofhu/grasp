@@ -166,7 +166,7 @@ func declareVariant(config map[string]any, p Prepared, effort string, overlay ma
 	modelKey := catalogID(p.Model)
 	if p.Connection != nil {
 		providerKey = p.RouteID
-		modelKey = p.Connection.SelectedModelID
+		modelKey = p.ChatModelID()
 	}
 	providers, _ := config["provider"].(map[string]any)
 	if providers == nil {

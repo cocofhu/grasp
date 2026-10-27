@@ -133,7 +133,9 @@ func Prepare(name provider.Name, env []string, model, configRoot string) (Prepar
 	}
 	p.Connection = &c
 	p.RouteID = c.RouteID()
-	p.Model = c.SelectedModelID
+	// A chat may select any model on this connection. Anything else, including a
+	// stale platform model id, stays on the configuration primary.
+	p.Model = sessionModelID(c, model)
 	p.Env = cleanEnv(env)
 	p.Env = common.UpsertEnv(p.Env, EnvAPIKey, key)
 	if root := strings.TrimSpace(common.GetEnvValue(env, "CONFIG_ROOT")); root != "" {
@@ -150,7 +152,7 @@ func Prepare(name provider.Name, env []string, model, configRoot string) (Prepar
 	case provider.Codex:
 		p = prepareCodex(p)
 	case provider.DeepSeekHarness:
-		p.DSHPatch, err = c.dshPatch(p.RouteID)
+		p.DSHPatch, err = c.dshPatch(p.RouteID, p.Model)
 		if c.ToolSettings.RouteProfile == "deepseek-native" {
 			p.RouteID = "deepseek-official"
 		}
@@ -160,6 +162,33 @@ func Prepare(name provider.Name, env []string, model, configRoot string) (Prepar
 		return Prepared{}, err
 	}
 	return p, nil
+}
+
+// sessionModelID is the model for this launch. A requested id is used only
+// when it belongs to the connection; empty, auto, and unknown ids stay on
+// the primary so a stale platform model cannot leave the connection.
+func sessionModelID(c Connection, requested string) string {
+	requested = strings.TrimSpace(requested)
+	if requested != "" && requested != "auto" {
+		for _, model := range c.Models {
+			if model.ID == requested {
+				return requested
+			}
+		}
+	}
+	return c.SelectedModelID
+}
+
+// ChatModelID is the catalog id prepared for this connection. OpenCode stores
+// route/id in Model; every other tool stores the raw id.
+func (p Prepared) ChatModelID() string {
+	if p.Connection == nil {
+		return strings.TrimSpace(p.Model)
+	}
+	if prefix := p.RouteID + "/"; p.RouteID != "" && strings.HasPrefix(p.Model, prefix) {
+		return strings.TrimPrefix(p.Model, prefix)
+	}
+	return p.Model
 }
 
 func (c Connection) RouteID() string {
