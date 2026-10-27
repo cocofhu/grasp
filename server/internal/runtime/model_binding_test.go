@@ -15,8 +15,9 @@ import (
 
 func TestConfiguredModelsCarryExactEffortsWithoutExpandingModels(t *testing.T) {
 	no := false
-	resolved := modelrouting.Resolved{Backend: "deepseek_harness", Binding: modelrouting.Binding{ModelID: "kimi", AuxiliaryModelIDs: []string{"fixed"}}, Connection: &modelrouting.Connection{ProviderID: "moonshot", Models: []modelrouting.Model{{ID: "kimi", ReasoningEfforts: []string{"quiet", "deep"}}, {ID: "fixed", Capabilities: modelrouting.ModelCapabilities{Reasoning: &no}}, {ID: "not-selected", ReasoningEfforts: []string{"ultra"}}}}}
-	raw, err := configuredModelsJSON(resolved)
+	connection := &modelrouting.Connection{ProviderID: "moonshot", Models: []modelrouting.Model{{ID: "kimi", ReasoningEfforts: []string{"quiet", "deep"}}, {ID: "fixed", Capabilities: modelrouting.ModelCapabilities{Reasoning: &no}}, {ID: "not-selected", ReasoningEfforts: []string{"ultra"}}}}
+	binding := modelrouting.Binding{ModelID: "kimi", AuxiliaryModelIDs: []string{"fixed"}}
+	raw, err := configuredModelsJSON(modelrouting.Resolved{Backend: "deepseek_harness", Binding: binding, Connection: connection})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,5 +283,50 @@ func TestSpecNamedConfigurationResolvesCurrentModelAndRejectsMissingConfiguratio
 	selected = ""
 	if _, err := p.spec(req); err == nil || !strings.Contains(err.Error(), "configuration not found") {
 		t.Fatal("missing named configuration fell back")
+	}
+}
+
+func TestOpenCodeSavedVariantIsTheRunDefault(t *testing.T) {
+	env := map[string]string{EnvACPBridgeReasoningEffort: "stale"}
+	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "official"}
+	resolve := func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+		return modelrouting.Resolved{
+			Backend: "opencode", CredentialID: "key", Secret: "secret",
+			Binding: modelrouting.Binding{Kind: "platform", CredentialID: "key", ModelID: "opencode/gpt-5.5", ToolSettings: modelrouting.ToolSettings{ModelEfforts: map[string]string{"opencode/gpt-5.5": "high"}}},
+		}, nil
+	}
+	if err := ApplyModelBinding(env, "opencode", binding, resolve); err != nil {
+		t.Fatal(err)
+	}
+	if env[EnvACPBridgeReasoningEffort] != "high" || !strings.Contains(env[EnvConfiguredModels], `"high"`) || strings.Contains(env[EnvConfiguredModels], "ultra") {
+		t.Fatalf("saved catalog variant was not advertised: effort=%q models=%s", env[EnvACPBridgeReasoningEffort], env[EnvConfiguredModels])
+	}
+
+	env = map[string]string{EnvACPBridgeReasoningEffort: "stale"}
+	resolve = func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+		return modelrouting.Resolved{
+			Backend: "opencode", CredentialID: "key", Secret: "secret",
+			Binding: modelrouting.Binding{Kind: "platform", CredentialID: "key", ModelID: "opencode/minimax-m3", ToolSettings: modelrouting.ToolSettings{ModelEfforts: map[string]string{"opencode/minimax-m3": "turbo"}}},
+		}, nil
+	}
+	if err := ApplyModelBinding(env, "opencode", binding, resolve); err != nil {
+		t.Fatal(err)
+	}
+	if env[EnvACPBridgeReasoningEffort] != "turbo" || !strings.Contains(env[EnvConfiguredModels], "turbo") {
+		t.Fatalf("custom variant was dropped: effort=%q models=%s", env[EnvACPBridgeReasoningEffort], env[EnvConfiguredModels])
+	}
+
+	env = map[string]string{EnvACPBridgeReasoningEffort: "stale"}
+	resolve = func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+		return modelrouting.Resolved{
+			Backend: "opencode", CredentialID: "key", Secret: "secret",
+			Binding: modelrouting.Binding{Kind: "platform", CredentialID: "key", ModelID: "opencode/kimi-k2.7-code"},
+		}, nil
+	}
+	if err := ApplyModelBinding(env, "opencode", binding, resolve); err != nil {
+		t.Fatal(err)
+	}
+	if env[EnvACPBridgeReasoningEffort] != "" || strings.Contains(env[EnvConfiguredModels], "reasoningEfforts") {
+		t.Fatalf("a model without variants invented levels: effort=%q models=%s", env[EnvACPBridgeReasoningEffort], env[EnvConfiguredModels])
 	}
 }

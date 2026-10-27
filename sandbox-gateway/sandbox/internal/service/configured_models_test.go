@@ -39,6 +39,11 @@ func TestConfiguredReasoningEffortsAreExactAndAdapterBacked(t *testing.T) {
 	if ReasoningEffortSelectable("pinned-model", "ultra") {
 		t.Fatal("a model name/metadata must not invent a separate-effort provider adapter")
 	}
+	t.Setenv("AGENT_PROVIDER", "opencode")
+	t.Setenv("GRASP_CONFIGURED_MODELS", `[{"id":"opencode/gpt-5.5","reasoningEfforts":["none","low","medium","high","xhigh","turbo"]}]`)
+	if !ReasoningEffortSelectable("opencode/gpt-5.5", "turbo") || !ReasoningEffortSelectable("opencode/gpt-5.5", "") || ReasoningEffortSelectable("opencode/gpt-5.5", "ultra") {
+		t.Fatal("OpenCode did not accept its configured variant or accepted an unlisted one")
+	}
 	t.Setenv("AGENT_PROVIDER", "codex")
 	t.Setenv("GRASP_CONFIGURED_MODELS", "{bad")
 	if ReasoningEffortSelectable("pinned-model", "low") {

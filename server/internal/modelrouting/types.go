@@ -13,6 +13,10 @@ const (
 type ToolSettings struct {
 	ModelRoles   map[string]string `json:"modelRoles,omitempty"`
 	RouteProfile string            `json:"routeProfile,omitempty"`
+	// ModelEfforts stores one reasoning variant per selected OpenCode model.
+	// An omitted key is the default and is not sent to OpenCode. A stored value
+	// is a catalog variant or the single custom variant for that model.
+	ModelEfforts map[string]string `json:"modelEfforts,omitempty"`
 }
 
 type Binding struct {

@@ -39,7 +39,7 @@ function setup(options: { hoverInk?: boolean; inline?: boolean } = {}) {
         Teleport: true, Icon: true,
         CliModelSelect: defineComponent({
           props: { modelValue: String, backend: String, hideReset: Boolean, excludeIds: { type: Array, default: () => [] } }, emits: ['update:modelValue'],
-          template: '<select data-testid="platform-model" :data-hide-reset="String(!!hideReset)" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="">Tool default</option><option value="platform-model-v1">Platform model</option><option value="platform-model-v2">Second</option></select>',
+          template: '<select data-testid="platform-model" :data-hide-reset="String(!!hideReset)" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="">Tool default</option><option value="platform-model-v1">Platform model</option><option value="platform-model-v2">Second</option><option value="opencode/gpt-5.5">GPT-5.5</option><option value="opencode/gpt-5.6-sol">GPT-5.6 Sol</option><option value="opencode/gpt-5.5-pro">GPT-5.5 Pro</option><option value="opencode/deepseek-v4.1-flash">DeepSeek V4.1 Flash</option><option value="opencode/deepseek-v4-pro">DeepSeek V4 Pro</option><option value="opencode/claude-haiku-4-5">Haiku 4.5</option><option value="opencode/claude-haiku-5-5">Haiku 5.5</option><option value="opencode/qwen3.5-plus">Qwen 3.5 Plus</option><option value="opencode/qwen3.8-max">Qwen 3.8 Max</option><option value="opencode/minimax-m3-free">MiniMax M3 Free</option><option value="opencode/minimax-m3">MiniMax M3</option><option value="opencode/kimi-k2.7-code">Kimi</option></select>',
         }),
       },
     },
@@ -141,6 +141,130 @@ describe('ModelConfigurationManager', () => {
     wrapper.unmount()
   })
 
+  it('saves the maintained OpenCode levels under a TokenHub model', async () => {
+    const model = { id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', source: 'discovered' as const }
+    services = structuredClone([{ ...service, providerId: 'tokenhub', name: 'TokenHub', models: [model] }])
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, model.id)
+    const menu = wrapper.get('[data-testid="model-configuration-effort"]')
+    expect(menu.text()).toContain('Default')
+    expect(menu.text()).toContain('Low')
+    expect(menu.text()).toContain('High')
+    expect(menu.text()).toContain('Max')
+    expect(menu.text()).not.toContain('Medium')
+    expect(wrapper.get('[data-testid="model-effort-default"]').attributes('aria-checked')).toBe('true')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      backend: 'opencode',
+      binding: expect.objectContaining({ kind: 'connection', modelId: model.id }),
+    }))
+    expect(mocks.create.mock.calls[0]?.[0].binding.toolSettings).toBeUndefined()
+    wrapper.unmount()
+
+    const again = setup()
+    await openConnectionModelStep(again)
+    await chooseModel(again, model.id)
+    await again.get('[data-testid="model-effort-high"]').trigger('click')
+    await again.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      backend: 'opencode',
+      binding: expect.objectContaining({ toolSettings: { modelEfforts: { [model.id]: 'high' } } }),
+    }))
+    again.unmount()
+  })
+
+  it('keeps TokenHub deepseek-v4-pro on the verified levels', async () => {
+    const model = { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', source: 'discovered' as const }
+    services = structuredClone([{ ...service, providerId: 'tokenhub', name: 'TokenHub', models: [model] }])
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, model.id)
+    const menu = wrapper.get('[data-testid="model-configuration-effort"]')
+    expect(menu.text()).toContain('Default')
+    expect(menu.text()).toContain('Low')
+    expect(menu.text()).toContain('High')
+    expect(menu.text()).toContain('Max')
+    wrapper.unmount()
+  })
+
+  it('shows each official OpenCode model its own variants and remembers a custom level', async () => {
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'opencode', modes: ['platform'], adapterState: 'existing' }] })
+    mocks.credentials.mockResolvedValue({ items: [{ id: 'zen', type: 'ai', name: 'OpenCode', purpose: 'tool_auth', toolId: 'opencode', configured: true }] })
+    const wrapper = setup()
+    await openStepTwo(wrapper, 'opencode')
+    await chooseCredential(wrapper, 'platform:zen')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    const menus: Record<string, string[]> = {
+      'opencode/gpt-5.5': ['Default', 'None', 'Low', 'Medium', 'High', 'Extra high'],
+      'opencode/gpt-5.6-sol': ['Default', 'None', 'Low', 'Medium', 'High', 'Extra high', 'Max'],
+      'opencode/gpt-5.5-pro': ['Default', 'Medium', 'High', 'Extra high'],
+      'opencode/deepseek-v4.1-flash': ['Default', 'Low', 'High', 'Max'],
+      'opencode/deepseek-v4-pro': ['Default', 'High', 'Max'],
+      'opencode/claude-haiku-4-5': ['Default', 'High', 'Max'],
+      'opencode/claude-haiku-5-5': ['Default', 'None', 'Low', 'Medium', 'High', 'Extra high', 'Max'],
+      'opencode/qwen3.5-plus': ['Default', 'None', 'High', 'Max'],
+      'opencode/qwen3.8-max': ['Default', 'Low', 'Medium', 'Extra high'],
+      'opencode/minimax-m3-free': ['Default', 'None', 'thinking'],
+    }
+    for (const [modelId, labels] of Object.entries(menus)) {
+      await wrapper.get('[data-testid="platform-model"]').setValue(modelId)
+      expect(wrapper.findAll('[data-testid="model-configuration-effort"] button').map((button) => button.text())).toEqual(labels)
+    }
+    for (const modelId of ['opencode/minimax-m3', 'opencode/kimi-k2.7-code']) {
+      await wrapper.get('[data-testid="platform-model"]').setValue(modelId)
+      expect(wrapper.find('[data-testid="model-configuration-effort"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="model-configuration-effort-custom"]').exists()).toBe(true)
+    }
+    await wrapper.get('[data-testid="platform-model"]').setValue('opencode/gpt-5.5')
+    await wrapper.get('[data-testid="model-configuration-effort-custom"]').setValue('turbo')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      backend: 'opencode',
+      binding: expect.objectContaining({ modelId: 'opencode/gpt-5.5', toolSettings: { modelEfforts: { 'opencode/gpt-5.5': 'turbo' } } }),
+    }))
+    wrapper.unmount()
+  })
+
+  it('restores the saved variant when the model group is opened again', async () => {
+    const model = { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', source: 'discovered' as const }
+    services = structuredClone([{ ...service, providerId: 'tokenhub', name: 'TokenHub', models: [model] }])
+    const saved: ModelConfiguration = {
+      id: 'saved-effort', name: 'TokenHub group', backend: 'opencode', state: 'active', revision: 1,
+      binding: { kind: 'connection', connectionId: service.id, modelId: model.id, toolSettings: { modelEfforts: { [model.id]: 'max' } } },
+    }
+    mocks.configurations.mockResolvedValue({ items: [saved] })
+    const wrapper = setup()
+    await flushPromises()
+    await wrapper.get('[data-testid="model-configuration-edit-saved-effort"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-effort-max"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-testid="model-effort-default"]').attributes('aria-checked')).toBe('false')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.update).toHaveBeenCalledWith(saved.id, expect.objectContaining({
+      binding: expect.objectContaining({ toolSettings: { modelEfforts: { [model.id]: 'max' } } }),
+    }))
+    wrapper.unmount()
+  })
+
+  it('hides the effort slider for an OpenCode model we have not listed', async () => {
+    services = structuredClone([{ ...service, providerId: 'tokenhub', name: 'TokenHub' }])
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, service.models[0]!.id)
+    expect(wrapper.find('[data-testid="model-configuration-effort"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-configuration-effort-custom"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith({ name: 'Team configuration', backend: 'opencode', binding: { kind: 'connection', connectionId: service.id, modelId: service.models[0]!.id }, state: 'active' })
+    wrapper.unmount()
+  })
+
   it.each(['opencode', 'deepseek_harness'])('offers the official %s authorization alongside compatible API accounts', async (backend) => {
     const officialKey: CredentialItem = { id: 'official-key', type: 'ai', name: 'Official tool account', purpose: 'tool_auth', toolId: backend, provider: backend, secretKind: 'api_key', configured: true }
     const otherTool: CredentialItem = { ...officialKey, id: 'other-tool-key', name: 'Another tool account', toolId: backend === 'opencode' ? 'deepseek_harness' : 'opencode' }
@@ -157,6 +281,8 @@ describe('ModelConfigurationManager', () => {
     await field.get('[data-test="app-select-option-platform:official-key"]').trigger('click')
     await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
     await wrapper.get('[data-testid="platform-model"]').setValue('platform-model-v1')
+    expect(wrapper.find('[data-testid="model-configuration-effort"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-configuration-effort-custom"]').exists()).toBe(backend === 'opencode')
     await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
     await flushPromises()
     expect(mocks.cliModels).toHaveBeenCalledWith(backend)

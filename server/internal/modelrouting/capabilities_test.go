@@ -115,3 +115,49 @@ func TestOfficialToolPlatformBindings(t *testing.T) {
 		t.Fatalf("generic connection model IDs changed: %v", err)
 	}
 }
+
+func TestOpenCodeEffortBinding(t *testing.T) {
+	platform := Binding{Kind: "platform", CredentialID: "zen", ModelID: "opencode/gpt-5.5", AuxiliaryModelIDs: []string{"opencode/kimi-k2.7-code"}, ToolSettings: ToolSettings{ModelEfforts: map[string]string{"opencode/gpt-5.5": "high"}}}
+	if err := ValidateBinding("opencode", platform, nil); err != nil {
+		t.Fatal(err)
+	}
+	platform.ToolSettings.ModelEfforts = map[string]string{"opencode/gpt-5.5": "turbo"}
+	if err := ValidateBinding("opencode", platform, nil); err != nil {
+		t.Fatal(err)
+	}
+	platform.ToolSettings.ModelEfforts = nil
+	if err := ValidateBinding("opencode", platform, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, effort := range []string{" ", "high#max", "bad/value", "low medium"} {
+		platform.ToolSettings.ModelEfforts = map[string]string{"opencode/gpt-5.5": effort}
+		if err := ValidateBinding("opencode", platform, nil); err == nil {
+			t.Fatalf("accepted invalid effort %q", effort)
+		}
+	}
+	platform.ToolSettings.ModelEfforts = map[string]string{"opencode/gpt-5.6-sol": "max"}
+	if err := ValidateBinding("opencode", platform, nil); err == nil {
+		t.Fatal("accepted an effort for a model that is not selected")
+	}
+	if err := ValidateBinding("cursor", Binding{Kind: "platform", CredentialID: "key", ToolSettings: ToolSettings{ModelEfforts: map[string]string{"gpt-5.5": "high"}}}, nil); err == nil {
+		t.Fatal("cursor accepted an OpenCode effort")
+	}
+	connection := Connection{Protocol: ProtocolChat, Auth: Auth{Scheme: "bearer"}, ProviderID: "tokenhub"}
+	saved := Binding{Kind: "connection", ConnectionID: "hub", ModelID: "deepseek-v4-flash", ToolSettings: ToolSettings{ModelEfforts: map[string]string{"deepseek-v4-flash": "low"}}}
+	if err := ValidateBinding("opencode", saved, &connection); err != nil {
+		t.Fatal(err)
+	}
+	saved.ToolSettings.ModelEfforts = map[string]string{"deepseek-v4-pro": "low"}
+	saved.ModelID = "deepseek-v4-pro"
+	if err := ValidateBinding("opencode", saved, &connection); err != nil {
+		t.Fatal(err)
+	}
+	saved.ModelID = "vendor/unlisted"
+	saved.ToolSettings.ModelEfforts = map[string]string{"vendor/unlisted": "custom-1"}
+	if err := ValidateBinding("opencode", saved, &connection); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateBinding("codex", saved, &connection); err == nil {
+		t.Fatal("codex accepted a model effort")
+	}
+}

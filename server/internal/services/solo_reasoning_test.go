@@ -373,3 +373,48 @@ func TestSoloLegacyNullEffortStillRollsBackModel(t *testing.T) {
 		t.Fatalf("migrated session did not roll back: %+v", after)
 	}
 }
+
+func TestOpenCodeSessionUsesTheSavedVariantWithoutWritingBack(t *testing.T) {
+	solo, _, _, _ := newSoloFixture(t, 0, 3)
+	configuration := models.ModelConfiguration{ID: "official-opencode", State: "active", Backend: "opencode", Binding: modelrouting.Binding{
+		Kind: "platform", CredentialID: "zen", ModelID: "opencode/gpt-5.5",
+		ToolSettings: modelrouting.ToolSettings{ModelEfforts: map[string]string{"opencode/gpt-5.5": "high"}},
+	}}
+	if err := solo.db.Create(&configuration).Error; err != nil {
+		t.Fatal(err)
+	}
+	agent, _ := solo.agents.Get("agentA")
+	agent.AcpBackend = "opencode"
+	agent.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}
+	if err := solo.agents.Save(agent); err != nil {
+		t.Fatal(err)
+	}
+	if got := solo.configuredOpenCodeEffort(agent, ""); got != "high" {
+		t.Fatalf("empty session request did not start from the saved variant: %q", got)
+	}
+	efforts := solo.reasoningEfforts(agent, "opencode/gpt-5.5")
+	if !reflect.DeepEqual(efforts, []string{"none", "low", "medium", "high", "xhigh"}) {
+		t.Fatalf("official menu: %v", efforts)
+	}
+	if err := solo.validateReasoningEffort(agent, "opencode/gpt-5.5", ""); err != nil {
+		t.Fatal(err)
+	}
+	configuration.Binding.ToolSettings.ModelEfforts["opencode/gpt-5.5"] = "turbo"
+	if err := solo.db.Save(&configuration).Error; err != nil {
+		t.Fatal(err)
+	}
+	efforts = solo.reasoningEfforts(agent, "opencode/gpt-5.5")
+	if len(efforts) != 6 || efforts[5] != "turbo" {
+		t.Fatalf("saved custom variant was not selectable: %v", efforts)
+	}
+	if err := solo.validateReasoningEffort(agent, "opencode/gpt-5.5", "turbo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := solo.validateReasoningEffort(agent, "opencode/gpt-5.5", "not a variant"); err == nil {
+		t.Fatal("an invented session variant was accepted")
+	}
+	agent.AcpBackend = "cursor"
+	if solo.configuredOpenCodeEffort(agent, "") != "" || solo.reasoningEfforts(agent, "opencode/gpt-5.5") != nil {
+		t.Fatal("another coding tool received OpenCode variants")
+	}
+}

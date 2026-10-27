@@ -104,7 +104,7 @@ func ReasoningEffortSelectable(model, effort string) bool {
 
 func configuredReasoningOptions(model string) []string {
 	backend := agents.Current().Name()
-	if backend != provider.Codex && backend != provider.DeepSeekHarness {
+	if backend != provider.Codex && backend != provider.DeepSeekHarness && backend != provider.OpenCode {
 		return nil
 	}
 	spec, configured, err := parseConfiguredModels()
