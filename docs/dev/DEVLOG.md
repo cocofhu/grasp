@@ -20,6 +20,22 @@
 
 ## 记录
 
+### 2026-10-27（CLI 对话持续显示处理状态）
+
+- 日期：2026-10-27（Asia/Shanghai）
+- 范围：`web/src/components/solo/SoloSessionPane.vue`、`web/src/components/agent/AgentChatTester.vue`、相关前端单测与浏览器回归、`CHANGELOG.md`。
+- 做了什么：Solo 和 Agent 测试对话在整轮仍进行时，持续显示共用的脉冲指示灯与处理文案，覆盖首段输出、工具调用结束后的等待以及正文输出；准备沙箱文案在首段时间线输出后切换为处理状态，思考过程标题省去重复忙碌标记。正常完成、停止和报错后移除处理行，保留工具自身准确的完成状态，沿用减少动态效果设置。
+- 为什么：原先的 loading 行只在尚无输出时显示，OpenCode 等 CLI 在工具调用完成后等待下一段模型输出时，界面只剩已完成工具摘要，容易被误认为卡住。Claude Code、DeepSeek Harness 等使用相同的整轮生命周期，无需修改适配器事件合同。
+- 如何验证：新增 6 项单测与 3 项浏览器回归，覆盖 OpenCode、Claude Code 和 DSH 的工具完成后静默等待、思考/正文/工具切换、重连与正常/异常/停止收尾，并核对明暗主题和手机截图；只读核对全部 7 种 CLI 的进度归一化与整轮结束事件。Web 全量 527 文件、5,523 项单测通过，Lines 91.50%；关键浏览器回归 243 项通过（9.4 分钟）。ESLint（0 errors、12 条既有 warnings）、类型检查、生产构建及 Secure Context/品牌断言、docs 构建与官方源高/严重漏洞审计、actionlint、error-level shellcheck 和 diff 检查通过。
+
+### 2026-10-27（隐藏首页内容区滚动条）
+
+- 日期：2026-10-27（Asia/Shanghai）
+- 范围：`web/src/views/DashboardView.vue`、`CHANGELOG.md`。
+- 做了什么：首页内容容器增加 Firefox 与 Chromium/WebKit 的隐藏滚动条样式，工作流和 Solo 模式共用；保留原有垂直溢出滚动。
+- 为什么：居中的内容容器溢出时，滚动条出现在输入框右侧，破坏首页连续背景；小屏和较长内容仍需通过滚轮或触屏访问。
+- 如何验证：真实浏览器覆盖工作流/Solo、明暗主题与桌面/手机 8 种组合，确认无可见滚动条和横向溢出，滚轮与触屏仍能访问底部控件。Web 全量 527 文件、5,517 项单测通过，Lines 91.49%；关键浏览器回归 240 项通过（进程意外终止后补跑未完成用例）。ESLint（0 errors、12 条既有 warnings）、类型检查、生产构建及 Secure Context/品牌断言、docs 构建与官方源高/严重漏洞审计、actionlint、error-level shellcheck 和 diff 检查通过。
+
 ### 2026-10-27（PR #1000 同步 main 并解除文档冲突）
 
 - 日期：2026-10-27（Asia/Hong_Kong）

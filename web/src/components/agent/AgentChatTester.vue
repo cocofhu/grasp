@@ -12,6 +12,7 @@ import AgentToolGroup from '@/components/run/AgentToolGroup.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import ThoughtSummaryStatus from '@/components/run/ThoughtSummaryStatus.vue'
+import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { thoughtParagraphs } from '@/lib/run/thoughtParagraphs'
 import StreamMarkdown from '@/components/run/StreamMarkdown.vue'
@@ -1059,6 +1060,7 @@ onBeforeUnmount(() => {
             :interrupted="!turn.streaming && !!turn.error"
             :started-at="turn.startedAt"
             :ended-at="turn.endedAt"
+            quiet-thought
             message-test-id="tester-agent-message"
           />
           <!-- thought -->
@@ -1082,8 +1084,8 @@ onBeforeUnmount(() => {
             <StreamMarkdown v-if="turn.streaming" :blocks="renderMarkdownBlocks(turn.text, blockCache)" />
             <span v-else v-html="renderMarkdown(turn.text)" />
           </div>
-          <div v-else-if="turn.streaming && !turn.thought && !turn.tools.length && !turn.text" class="chat-meta py-2">
-            <Icon name="spinner" :size="13" class="mr-1 inline" />{{ t('pages.agentChatTester.generating') }}
+          <div v-if="turn.streaming" class="chat-meta grasp-status-host py-2" data-testid="tester-agent-activity" role="status">
+            <ThinkingBusyCue :label="t('pages.agentChatTester.generating')" />
           </div>
           <div v-if="turn.error" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error }}</div>
         </div>

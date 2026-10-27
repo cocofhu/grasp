@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **CLI chat activity:** Solo and Agent test chats keep an animated processing indicator visible between tool calls and reply text until the turn ends, including OpenCode, Claude Code and DeepSeek Harness. Completed tools retain their completed status, and stopped or failed replies clear the activity indicator.
+
+- **Home scrolling:** hide the scrollbar beside the home composer while keeping overflow content accessible by mouse wheel and touch in Workflow and Solo modes.
+
 - **Sandbox Agent recovery:** a broken ACP output stream now closes the failed connection, releases pending calls and marks the Agent disconnected. Reconnecting creates a usable session instead of leaving later messages busy forever; delayed exit handling cannot disconnect a replacement session.
 
 - **Solo app previews:** preview registration now resolves the current Solo sandbox and its Agent's preview permissions. Existing Solo sessions also recover their MCP authorization after a server restart, while closed sessions and replaced sandbox generations remain rejected.

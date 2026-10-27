@@ -8,6 +8,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
+import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
@@ -404,6 +405,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 :interrupted="turnInterrupted(turn)"
                 :started-at="turn.startedAt"
                 :ended-at="turn.endedAt"
+                quiet-thought
                 message-test-id="solo-agent-message"
               />
               <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
@@ -413,9 +415,13 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                   <span :class="p.status === 'completed' ? 'text-txt3 line-through' : ''">{{ p.content }}</span>
                 </div>
               </div>
-              <div v-if="turn.streaming && !turn.steps.length" class="chat-meta flex items-center gap-1.5 py-1">
-                <Icon name="spinner" :size="13" />
-                {{ phase === 'preparing' ? t('pages.solo.phase.preparing') : t('pages.solo.chat.generating') }}
+              <div
+                v-if="turn.streaming"
+                class="chat-meta grasp-status-host flex items-center gap-2 py-1"
+                data-testid="solo-agent-activity"
+                role="status"
+              >
+                <ThinkingBusyCue :label="phase === 'preparing' && !turn.steps.length ? t('pages.solo.phase.preparing') : t('pages.solo.phase.running')" />
               </div>
               <div v-if="turn.status === 'stopped' && !turn.streaming" class="chat-meta">{{ t('pages.solo.chat.stopped') }}</div>
               <div v-else-if="turn.error" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error }}</div>

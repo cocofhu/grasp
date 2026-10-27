@@ -1174,6 +1174,13 @@ html.light .home-shell {
    stays inside this scrolling column. */
 .home-shell__content {
   padding-bottom: 40px;
+  scrollbar-width: none;
+}
+
+.home-shell__content::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .home-shell__content::before {

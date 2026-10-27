@@ -167,6 +167,42 @@ describe('AgentChatTester interactions', () => {
     expect(w.find('[data-testid="agent-chat-generating"]').exists()).toBe(false)
   })
 
+  it.each(['turn_done', 'error'])('keeps turn activity after completed tools until %s', async (terminal) => {
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.openWs(3)
+    socket!.onopen?.()
+    await flushPromises()
+    frame('turn_begin', { item: { id: 'activity-turn', text: 'go' } })
+    await flushPromises()
+    expect(w.get('[data-testid="tester-agent-activity"]').attributes('role')).toBe('status')
+
+    const up = (update: Record<string, unknown>) => frame('acp', { data: { type: 'session_update', update } })
+    up({ sessionUpdate: 'agent_thought_chunk', content: { text: 'plan' } })
+    await flushPromises()
+    expect(w.get('[data-testid="thought-summary-state"]').attributes('data-state')).toBe('idle')
+    expect(w.findAll('[data-testid="thinking-lamp"]')).toHaveLength(1)
+
+    up({ sessionUpdate: 'tool_call', toolCallId: 'read', title: 'Read', status: 'in_progress' })
+    up({ sessionUpdate: 'tool_call_update', toolCallId: 'read', status: 'completed' })
+    await flushPromises()
+    expect(w.get('[data-testid="agent-tool-group"]').attributes('data-state')).toBe('done')
+    expect(w.get('[data-testid="tester-agent-activity"]').text()).toContain('正在生成')
+
+    up({ sessionUpdate: 'agent_message_chunk', content: { text: 'working' } })
+    await flushPromises()
+    expect(w.get('[data-testid="tester-agent-message"]').text()).toContain('working')
+    expect(w.find('[data-testid="tester-agent-activity"]').exists()).toBe(true)
+
+    frame(terminal, terminal === 'error' ? { message: 'agent failed' } : {})
+    await flushPromises()
+    expect(w.find('[data-testid="tester-agent-activity"]').exists()).toBe(false)
+    expect(w.find('[data-testid="thinking-lamp"]').exists()).toBe(false)
+    if (terminal === 'error') expect(w.text()).toContain('agent failed')
+    w.unmount()
+  })
+
   it('folds a finished reply into one elapsed line', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-20T00:00:00.000Z'))
