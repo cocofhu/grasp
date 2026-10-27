@@ -790,11 +790,15 @@ function applyQueueState(msg: { busy?: boolean; waiting?: number; phase?: string
   }
   if ((msg.waiting ?? 0) > 0) return
   sandboxBootStatus.value = ''
+  // 同一次连接上，冷启动对账失败后的后续 idle 必须能重试。
+  // 门闩不能挡在失败重试前面；finalizing 仍保证 single-flight。
+  if (finalizing.value && finalizingRefetchFailed.value) {
+    void refetchAfterTurnDone()
+    return
+  }
   if (idleHistoryReconciled) return
   idleHistoryReconciled = true
   if (finalizing.value) {
-    // 重连后的 idle 可能是尾部历史拉取失败后的最后一个控制帧。
-    if (finalizingRefetchFailed.value) void refetchAfterTurnDone()
     return
   }
   // 首次 GET 后、订阅前，其它入口可能已完成一轮。

@@ -345,12 +345,20 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 	write := func(v any) error {
 		wmu.Lock()
 		defer wmu.Unlock()
-		return conn.WriteJSON(v)
+		return writeChatJSON(conn, v)
 	}
 
 	ch, unsub := h.SbxChats.Subscribe(id, -1)
-	defer unsub()
-	go pumpChatSubscription(conn, ch, write, nil)
+	writeDone := make(chan struct{})
+	go func() {
+		defer close(writeDone)
+		pumpChatSubscription(conn, ch, write, nil)
+	}()
+	defer func() {
+		unsub()
+		_ = conn.Close()
+		<-writeDone
+	}()
 
 	for {
 		_, data, err := conn.ReadMessage()

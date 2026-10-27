@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-27（补齐同文回复、重连尾轮与阻塞写）
+
+- 日期：2026-10-27（Asia/Shanghai）。
+- 范围：`web/src/lib/inbox/useClarifyChat.ts`、`web/src/lib/pm/usePmLeaderChat.ts`、`web/src/lib/solo/useSoloChat.ts`、`web/src/components/agent/AgentChatTester.vue` 及相关回归；`server/internal/handlers/chat_subscription.go`、`pm.go`、`solo.go`、`sandbox.go`、`server/internal/services/solo.go`；`CHANGELOG.md`。
+- 做了什么：Clarify 只把不同提问上的旧回复快照视为外来内容，同文同回复在流式、turn_done 和快照未到的 idle 期间都保留；历史对账只看当前锚点之后的后缀。Studio 按问题 ID 删除待回放尾轮，空闲重连时把游标对齐事件日志里仍开放的尾轮，并拆开重连与更早分页的代际。共享 WebSocket 写泵在订阅关闭时不再等待阻塞写返回，数据写有截止时间，PM、Solo 和 Studio 都先退订并关闭连接再等待写泵。Solo 订阅首帧带上状态和模型快照，重连时再拉一次会话。PM 在同一连接上重试失败的冷启动 idle 对账。
+- 为什么：评审探针证明同文同回复会被当成旧快照丢掉，Studio 会按文本截掉上一轮或把断线期间新开始的回合画两次，而写阻塞时关闭订阅 channel 并不能让连接进入重连。
+- 如何验证：评审四项探针与三项中等缺口的回归已补上并通过。Clarify 同文同回复在 idle 先于快照时保留两轮；Studio 同文滞后不截掉旧轮，断线后 A 完成、B 开放且 ACP 先于 turn_begin 时不写到 A；写阻塞时关闭订阅，泵在 250ms 内退出并关闭连接；Solo 订阅首帧恢复状态与模型；PM 同一连接上冷启动失败后下一帧 idle 重试；Studio 重连与更早分页使用独立代际。定向 Vitest 5 个文件、293 项通过。Server golangci-lint 0 issues、go vet、配置文档检查、`go test ./... -count=1 -p 2`、核心覆盖率 90.4%、`TestRunAgent|TestReact` 及 chatsession/handlers `-race` 通过。Web ESLint 0 errors（12 条既有 warnings）、vue-tsc、全量 528 个文件、5,583 项单测通过，Lines 91.48%（37208/40672）；生产构建含 Secure Context 与品牌断言通过（未跟踪的 `docs/public` 残留已删除，未入库）。message-reliability Playwright 3/3 与 critical 248/248（6.3 分钟）通过。
+
 ### 2026-10-27（修复全入口消息末尾可靠性）
 
 - 日期：2026-10-27（Asia/Shanghai）。

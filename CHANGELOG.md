@@ -4,7 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **Reliable live message delivery:** repeated identical clarify replies stay in separate turns, completion refreshes are no longer lost, and stale detail or preview-feedback responses cannot overwrite newer context. PM and Agent Studio reconcile saved history after idle reconnects, slow chat subscribers reconnect instead of silently losing final frames, and Studio reuses an active restored turn when its replay arrives late.
+- **Reliable live message delivery:** repeated identical clarify replies stay in separate turns, including when the new reply text matches the previous one and the saved snapshot has not arrived yet. Completion refreshes are no longer lost, and stale detail or preview-feedback responses cannot overwrite newer context. PM retries a failed cold-start history read on the next idle frame of the same connection and still isolates back-to-back turns. Agent Studio reconnects without deleting an older same-text turn or duplicating the turn that started while the socket was down. Slow chat subscribers close the WebSocket even when a data write is blocked, so Solo, PM, and Agent Studio can reconnect. A Solo reconnect snapshot restores session status and model state that is not kept in the replay buffer.
 
 - **Agent chat failures:** OpenCode passes reasoning variants separately from model IDs. Gemini chats now display native streamed text, tools and failure details, with cached input counted once. Solo and Agent test chats show provider failures and refusals, including errors recovered from older empty replies, while retaining partial output and usage.
 

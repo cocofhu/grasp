@@ -650,6 +650,21 @@ func (s *SoloService) appendSystem(id, text string) {
 	}
 }
 
+// applySoloResumeSnapshot attaches the session fields that KeepNone frames
+// would otherwise lose when a slow subscriber is closed and the client resubscribes.
+func applySoloResumeSnapshot(qs map[string]any, row *models.SoloSession) {
+	if qs == nil || row == nil {
+		return
+	}
+	qs["status"] = row.Status
+	qs["error"] = row.Error
+	qs["sandboxId"] = row.SandboxID
+	qs["currentModelId"] = row.CurrentModelID
+	qs["currentModelSet"] = row.CurrentModelSet
+	qs["reasoningEffort"] = row.CurrentReasoningEffort
+	qs["modelNotice"] = row.ModelNotice
+}
+
 func (s *SoloService) publishStatus(id string) {
 	row, err := s.load(id)
 	if err != nil {
@@ -1089,6 +1104,9 @@ func (s *SoloService) Subscribe(id, user string, afterSeq int) (<-chan chatsessi
 		return nil, nil, err
 	}
 	c := s.acquire(id)
+	// KeepNone status/model frames are not replayed. Capture the row at subscribe
+	// time so the first queue_state is an authoritative session snapshot.
+	row, rowErr := s.load(id)
 	ch, unsub := c.stream.Subscribe(func() (map[string]any, bool) {
 		sn := c.sess.Snapshot()
 		qs := sn.QueueState()
@@ -1098,6 +1116,9 @@ func (s *SoloService) Subscribe(id, user string, afterSeq int) (<-chan chatsessi
 			qs["userMsgId"] = c.turnID
 		}
 		c.mu.Unlock()
+		if rowErr == nil {
+			applySoloResumeSnapshot(qs, row)
+		}
 		return qs, sn.Busy
 	}, afterSeq)
 	return ch, unsub, nil

@@ -762,6 +762,31 @@ describe('usePmLeaderChat actions', () => {
     app.unmount()
   })
 
+  it('retries a failed cold-idle reconciliation on the next idle of the same socket', async () => {
+    mocks.listPmMessages
+      .mockResolvedValueOnce({ items: [message('before', 'assistant')], hasMore: false })
+      .mockRejectedValueOnce(new Error('cold down'))
+      .mockResolvedValueOnce({
+        items: [message('before', 'assistant'), message('u-external'), message('a-external', 'assistant')],
+        hasMore: false,
+      })
+    const { chat, app } = withChat()
+    await flushPromises()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.frame({ type: 'session', event: 'queue_state', busy: false, waiting: 0 })
+    await flushPromises()
+    expect(chat.finalizing.value).toBe(true)
+    expect(chat.finalizingRefetchFailed.value).toBe(true)
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['before'])
+
+    socket.frame({ type: 'session', event: 'queue_state', busy: false, waiting: 0 })
+    await flushPromises()
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['before', 'u-external', 'a-external'])
+    expect(chat.finalizing.value).toBe(false)
+    expect(chat.finalizingRefetchFailed.value).toBe(false)
+    app.unmount()
+  })
+
   it('keeps the new same-thread live turn when an older finalizing response arrives', async () => {
     mocks.listPmMessages.mockResolvedValueOnce({
       items: [message('u1'), message('u2')],

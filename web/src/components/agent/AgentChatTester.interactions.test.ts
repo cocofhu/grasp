@@ -772,4 +772,115 @@ describe('AgentChatTester interactions', () => {
     socket!.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'other' }) }))
     w.unmount()
   })
+
+  it('keeps a completed same-text turn when the event log lags the new busy turn', async () => {
+    mocks.eventLog.mockResolvedValue({
+      events: [
+        { type: 'prompt_begin', opId: 'old', promptText: '继续' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: '旧回复' } } },
+        { type: 'prompt_done' },
+      ],
+      hasMore: false,
+      nextCursor: '',
+    })
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.wsSandboxId = 5
+    vm.turns = [
+      { id: 'question:old', role: 'user', text: '继续', thought: '', tools: [], plan: [], streaming: false },
+      { id: 'question:old:reply', role: 'agent', text: '旧回复', thought: '', tools: [], plan: [], streaming: false },
+    ]
+    vm.activeIdx = -1
+    vm.activeItemId = ''
+    vm.openWs(5)
+    socket!.onopen?.()
+    frame('queue_state', { busy: true, activeItem: { id: 'new', text: '继续' }, items: [] })
+    frame('turn_begin', { item: { id: 'new', text: '继续' } })
+    await flushPromises()
+    expect(vm.turns.filter((turn: any) => turn.role === 'user').map((turn: any) => turn.id)).toEqual(['question:old', 'question:new'])
+    expect(vm.turns.some((turn: any) => turn.id === 'question:old:reply' && turn.text === '旧回复')).toBe(true)
+    w.unmount()
+  })
+
+  it('does not duplicate B when A finishes and B starts while disconnected', async () => {
+    mocks.eventLog.mockResolvedValue({
+      events: [
+        { type: 'prompt_begin', opId: 'A', promptText: '问题 A' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'A 最终回复' } } },
+        { type: 'prompt_done' },
+        { type: 'prompt_begin', opId: 'B', promptText: '问题 B' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'B 部分回复' } } },
+      ],
+      hasMore: false,
+      nextCursor: '',
+    })
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.wsSandboxId = 5
+    vm.turns = [
+      { id: 'question:A', role: 'user', text: '问题 A', thought: '', tools: [], plan: [], streaming: false },
+      { id: 'question:A:reply', role: 'agent', text: 'A 部分', thought: '', tools: [], plan: [], streaming: true },
+    ]
+    vm.activeIdx = 1
+    vm.activeItemId = 'A'
+    vm.openWs(5)
+    socket!.onopen?.()
+    frame('queue_state', { busy: true, activeItem: { id: 'B', text: '问题 B' }, items: [] })
+    frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: '续写' } } } })
+    await flushPromises()
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:A')).toHaveLength(1)
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:A:reply' && turn.text === 'A 最终回复')).toHaveLength(1)
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:B')).toHaveLength(1)
+    expect(vm.turns.find((turn: any) => turn.id === 'question:B:reply')?.text).toContain('续写')
+    expect(vm.activeItemId).toBe('B')
+
+    frame('turn_begin', { item: { id: 'B', text: '问题 B' } })
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:B')).toHaveLength(1)
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:B:reply')).toHaveLength(1)
+    expect(vm.activeItemId).toBe('B')
+    w.unmount()
+  })
+
+  it('clears restoring when history fails and ignores earlier pages during restore', async () => {
+    mocks.eventLog.mockRejectedValueOnce(new Error('log down'))
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.wsSandboxId = 5
+    vm.turns = [
+      { id: 'question:old', role: 'user', text: '继续', thought: '', tools: [], plan: [], streaming: false },
+    ]
+    vm.openWs(5)
+    socket!.onopen?.()
+    await flushPromises()
+    expect(vm.restoring).toBe(false)
+
+    let release!: (value: unknown) => void
+    mocks.eventLog.mockImplementation((_id: number, opts?: { cursor?: string }) => {
+      if (opts?.cursor) return Promise.resolve({ events: [], hasMore: false, nextCursor: '' })
+      return new Promise((resolve) => { release = resolve })
+    })
+    vm.historyHasMore = true
+    vm.historyCursor = 'c1'
+    vm.sandbox = { id: 5 }
+    vm.openWs(5)
+    socket!.onopen?.()
+    const earlier = vm.loadEarlierHistory()
+    expect(mocks.eventLog.mock.calls.some((call: unknown[]) => (call[1] as { cursor?: string } | undefined)?.cursor)).toBe(false)
+    release({
+      events: [
+        { type: 'prompt_begin', opId: 'old', promptText: '继续' },
+        { type: 'prompt_done' },
+      ],
+      hasMore: true,
+      nextCursor: 'c2',
+    })
+    await earlier
+    await flushPromises()
+    expect(vm.restoring).toBe(false)
+    expect(vm.loadingEarlier).toBe(false)
+    w.unmount()
+  })
 })

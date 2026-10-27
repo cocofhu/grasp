@@ -105,6 +105,8 @@ const historyCursor = ref('')
 let rawFrames: any[] = []
 /** Latest history request owns rebuild/merge; socket close invalidates older reads. */
 let historyRestoreGen = 0
+/** Pagination is a separate generation so an earlier page cannot cancel reconnect restore. */
+let historyPageGen = 0
 let activeIdx = -1
 let activeItemId = ''
 let ws: WebSocket | null = null
@@ -319,6 +321,7 @@ function openWs(id: number) {
 
 function closeWs() {
   historyRestoreGen++
+  historyPageGen++
   restoring.value = false
   loadingEarlier.value = false
   if (wsReconnectTimer !== undefined) {
@@ -348,17 +351,30 @@ function flushHeldFrames() {
   heldFrames = null
   const head = parseFrame(held[0])
   const active = head?.event === 'queue_state' && head.busy ? head.activeItem : null
-  if (active && activeIdx < 0) dropRestoredActiveTurn(String(active.text ?? ''))
+  if (active && activeIdx < 0) dropRestoredActiveTurn(active)
   for (const raw of held) onFrame(raw)
 }
 
 // The event log already holds the running turn's prompt and partial reply; drop
-// them so the replayed frames rebuild that turn once.
-function dropRestoredActiveTurn(text: string) {
+// that turn by id so replay rebuilds it once. Text is not an identity: a
+// completed same-text turn must stay when the new turn is not in the log yet.
+function dropRestoredActiveTurn(active: { id?: string; text?: string }) {
+  const id = String(active?.id ?? '').trim()
+  if (id) {
+    const questionId = `question:${id}`
+    const index = turns.value.findIndex((turn) => turn.role === 'user' && turn.id === questionId)
+    if (index >= 0) turns.value = turns.value.slice(0, index)
+    return
+  }
+  const text = String(active?.text ?? '').trim()
+  if (!text) return
   for (let i = turns.value.length - 1; i >= 0; i--) {
     const turn = turns.value[i]
     if (turn?.role !== 'user') continue
-    if (turn.text === text.trim()) turns.value = turns.value.slice(0, i)
+    if ((turn.text || '').trim() !== text) return
+    const reply = turns.value[i + 1]
+    const completed = reply?.role === 'agent' && !reply.streaming
+    if (!completed) turns.value = turns.value.slice(0, i)
     return
   }
 }
@@ -465,16 +481,29 @@ function beginTurn(frame: any) {
   const item = serverItem(frame.item)
   const questionId = `question:${item.id || newItemId()}`
   queued.value = queued.value.filter((q) => q.id !== item.id)
-  if (item.id && activeIdx < 0) {
+  if (item.id && activeItemId !== item.id) {
     const last = turns.value.at(-1)
     const previous = turns.value.at(-2)
     if (last?.role === 'agent' && last.id === `${questionId}:reply` && previous?.id === questionId) {
-      // 历史恢复可能先于 busy/turn_begin 完成，此时尾轮已不在 held frames
-      // 的移除逻辑覆盖范围内。稳定 opId 相同则复用该尾部回复进行回放。
+      // 断线期间下一轮已经写进事件日志时，游标可能还停在上一轮。
+      // 按稳定 id 复用已恢复的尾轮，禁止再 push 一条同 id 用户行。
+      if (activeIdx >= 0 && activeIdx !== turns.value.length - 1) {
+        const prev = turns.value[activeIdx]
+        if (prev?.streaming) {
+          prev.streaming = false
+          if (!prev.endedAt) prev.endedAt = new Date().toISOString()
+        }
+      }
       activeIdx = turns.value.length - 1
       activeItemId = item.id
     } else if (last?.role === 'user' && last.id === questionId) {
-      // 尚无输出的历史只保留用户行；补建同一回复，不能再加一条用户行。
+      if (activeIdx >= 0) {
+        const prev = turns.value[activeIdx]
+        if (prev?.streaming) {
+          prev.streaming = false
+          if (!prev.endedAt) prev.endedAt = new Date().toISOString()
+        }
+      }
       activeItemId = item.id
       activeIdx = turns.value.push({
         id: `${questionId}:reply`, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true,
@@ -718,7 +747,18 @@ function mergeReconnectHistory(restored: Turn[], current: Turn[], restoredActive
   return [...prefix, ...suffix]
 }
 
-function remapReconnectActiveCursor(previousTurns: Turn[], previousActiveIdx: number) {
+function remapReconnectActiveCursor(previousTurns: Turn[], previousActiveIdx: number, restoredActive = false) {
+  if (restoredActive) {
+    const last = turns.value.length - 1
+    const agent = turns.value[last]
+    const user = last > 0 ? turns.value[last - 1] : undefined
+    if (agent?.role === 'agent' && user?.role === 'user' && user.id.startsWith('question:')) {
+      activeIdx = last
+      activeItemId = user.id.slice('question:'.length)
+      agent.streaming = true
+      return
+    }
+  }
   if (previousActiveIdx < 0) {
     activeIdx = -1
     activeItemId = ''
@@ -781,8 +821,9 @@ async function restoreHistory(id: number, reconcile = false) {
     if (reconcile) {
       const previousTurns = turns.value
       const previousActiveIdx = activeIdx
-      turns.value = mergeReconnectHistory(rebuilt, previousTurns, hasOpenEventTail(events))
-      remapReconnectActiveCursor(previousTurns, previousActiveIdx)
+      const restoredActive = hasOpenEventTail(events)
+      turns.value = mergeReconnectHistory(rebuilt, previousTurns, restoredActive)
+      remapReconnectActiveCursor(previousTurns, previousActiveIdx, restoredActive)
     } else {
       turns.value = rebuilt
     }
@@ -791,9 +832,9 @@ async function restoreHistory(id: number, reconcile = false) {
 }
 
 async function loadEarlierHistory() {
-  if (!sandbox.value || !historyHasMore.value || loadingEarlier.value) return
+  if (!sandbox.value || !historyHasMore.value || loadingEarlier.value || restoring.value) return
   const sandboxId = sandbox.value.id
-  const generation = ++historyRestoreGen
+  const generation = ++historyPageGen
   followBottom.value = false
   loadingEarlier.value = true
   try {
@@ -801,7 +842,7 @@ async function loadEarlierHistory() {
       cursor: historyCursor.value,
       limit: 20,
     })
-    if (generation !== historyRestoreGen || sandbox.value?.id !== sandboxId || !('hasMore' in r)) return
+    if (generation !== historyPageGen || sandbox.value?.id !== sandboxId || !('hasMore' in r)) return
     const paged = r as { events: any[]; nextCursor: string; hasMore: boolean }
     const earlier = paged.events || []
     rawFrames = [...earlier, ...rawFrames]
@@ -820,7 +861,7 @@ async function loadEarlierHistory() {
   } catch {
     /* keep current transcript */
   } finally {
-    if (generation === historyRestoreGen) loadingEarlier.value = false
+    if (generation === historyPageGen) loadingEarlier.value = false
   }
 }
 

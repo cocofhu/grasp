@@ -422,7 +422,7 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 		defer close(writeDone)
 		ping := time.NewTicker(soloPingPeriod)
 		defer ping.Stop()
-		pumpChatSubscription(conn, ch, conn.WriteJSON, ping.C)
+		pumpChatSubscription(conn, ch, func(v any) error { return writeChatJSON(conn, v) }, ping.C)
 	}()
 
 	for {
@@ -441,6 +441,9 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 			_ = h.Solo.Cancel(id, user)
 		}
 	}
+	// 先退订并关闭连接，再等写泵退出。阻塞中的 WriteJSON 会被 Close 打断，
+	// 不能先等 writeDone，否则慢订阅关不掉这条 socket。
 	unsub()
+	_ = conn.Close()
 	<-writeDone
 }

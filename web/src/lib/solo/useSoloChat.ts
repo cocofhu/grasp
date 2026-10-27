@@ -111,6 +111,27 @@ export function useSoloChat(sessionId: Ref<string>) {
     schedulePoll()
   }
 
+  function applyResumeSnapshot(frame: Record<string, any>) {
+    if (pendingSettings) return
+    const patch: Partial<SoloSession> = {}
+    if (typeof frame.status === 'string' && frame.status) {
+      patch.status = frame.status as SoloSession['status']
+      patch.error = typeof frame.error === 'string' ? frame.error : ''
+    }
+    if (typeof frame.sandboxId === 'number') patch.sandboxId = frame.sandboxId
+    if (typeof frame.currentModelSet === 'boolean') {
+      patch.currentModelSet = frame.currentModelSet
+      if (typeof frame.currentModelId === 'string') patch.currentModelId = frame.currentModelId
+    }
+    if (typeof frame.reasoningEffort === 'string') patch.reasoningEffort = frame.reasoningEffort
+    if (typeof frame.modelNotice === 'string') patch.modelNotice = frame.modelNotice
+    if (!Object.keys(patch).length) return
+    patchSession(patch)
+    if (session.value) confirmedSettings = modelSettings(session.value)
+    if (frame.modelNotice) showModelNotice(String(frame.modelNotice), typeof frame.error === 'string' ? frame.error : '')
+    if (frame.status === 'closed' || frame.status === 'error') void refetchMessages()
+  }
+
   function patchSession(patch: Partial<SoloSession>) {
     const cur = session.value
     if (!cur) return
@@ -338,6 +359,7 @@ export function useSoloChat(sessionId: Ref<string>) {
         queued.value = Array.isArray(frame.items) ? frame.items.map(queueItem) : []
         busy.value = !!frame.busy
         patchSession({ busy: busy.value, waiting: queued.value.length })
+        if (subscriptionSnapshot) applyResumeSnapshot(frame)
         if (frame.busy && frame.phase) phase.value = frame.phase
         if (!frame.busy && activeId.value) {
           endActive()
@@ -417,6 +439,9 @@ export function useSoloChat(sessionId: Ref<string>) {
       reconnect.markOpened()
       link.value = 'open'
       schedulePoll()
+      // KeepNone status/model frames are not replayed; refresh the session row
+      // and also accept the subscribe snapshot below.
+      void refreshSession()
       try {
         const messages = await api.listSoloMessages(id)
         if (ws === sock) applyMessages(messages)

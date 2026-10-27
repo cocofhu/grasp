@@ -1889,14 +1889,19 @@ function clearSettledLiveTurns() {
   lastAppliedAcpSig = ''
 }
 
-/** Live rails differ from the persisted tail, so a transcript refresh must not drop them. */
+function currentPersistedSuffix(persisted: ClarifyTurn[]): ClarifyTurn[] {
+  const anchor = Math.max(0, Math.min(liveHistoryAnchor, persisted.length))
+  return persisted.slice(anchor)
+}
+
+/** Live rails differ from this turn's persisted suffix, so a transcript refresh must not drop them. */
 function liveNarrativeAhead(persisted: ClarifyTurn[]): boolean {
   const liveAgent = [...liveTurns.value].reverse().find((t) => t.role === 'agent')
   if (!liveAgent) return false
   const liveText = (liveAgent.text || '').trim()
   const liveThought = (liveAgent.thought || '').trim()
   if (!liveText && !liveThought && !liveAgent.tools?.length && !liveAgent.parts?.length) return false
-  const last = [...persisted].reverse().find((t) => t.role === 'agent' && !t.handoff)
+  const last = [...currentPersistedSuffix(persisted)].reverse().find((t) => t.role === 'agent' && !t.handoff)
   if (!last) return true
   if ((last.text || '').trim() !== liveText) return true
   if ((last.thought || '').trim() !== liveThought) return true
@@ -1914,7 +1919,8 @@ function dropSettledLiveIfPersistedWins() {
   const turnList = persistedTurns.value
   prunePersistedLiveHistory(turnList)
   const liveHumanText = liveTurns.value[0]?.role === 'human' ? liveTurns.value[0].text || '' : ''
-  const persistedCaughtUp = persistedCompletedLiveHuman(turnList.slice(liveHistoryAnchor), liveHumanText)
+  const suffix = currentPersistedSuffix(turnList)
+  const persistedCaughtUp = persistedCompletedLiveHuman(suffix, liveHumanText)
   const ahead = liveNarrativeAhead(turnList)
   const snapshotWins =
     idlePainted &&
@@ -1925,7 +1931,7 @@ function dropSettledLiveIfPersistedWins() {
     liveTurns.value.length &&
     (snapshotWins ||
       (!ahead &&
-        (persistedCaughtUp || (turnList.length > 0 && !liveTurns.value.some((t) => t.streaming)))))
+        (persistedCaughtUp || (suffix.length > 0 && !liveTurns.value.some((t) => t.streaming)))))
   ) {
     clearSettledLiveTurns()
   }
@@ -2435,9 +2441,9 @@ function settleIdleNarrative() {
   thoughtPreview.flush()
 }
 
-/** Persisted tail already shows this cumulative snapshot — do not add an empty row. */
+/** This turn's persisted suffix already shows this cumulative snapshot — do not add an empty row. */
 function idleSnapshotAlreadyVisible(events: AcpEvent[]): boolean {
-  const last = [...persistedTurns.value].reverse().find((t) => t.role === 'agent' && !t.handoff)
+  const last = [...currentPersistedSuffix(persistedTurns.value)].reverse().find((t) => t.role === 'agent' && !t.handoff)
   if (!last) return false
   let msg = ''
   let thought = ''
@@ -2603,9 +2609,9 @@ function applyAcpEventsToSlot(events: AcpEvent[]): boolean {
     if (ev.kind === 'message' && ev.text) msg = ev.text
     if (ev.kind === 'thought' && ev.text) thought = ev.text
   }
-  // Until the new prompt emits output, live snapshots still hold the previous
-  // turn; message rails never clear, so accepting one would stick in this bubble.
-  if (msg !== agent.text && msg.trim() && msg.trim() === lastSettledAgentText(agent)) return true
+  // A different prompt can still be sitting on the previous turn's rail. The
+  // same prompt's identical reply is this turn and must be kept.
+  if (rejectsForeignSettledSnapshot(agent, msg)) return true
   // Keep thought / message on separate rails — never msg||thought overwrite.
   agent.thought = thought
   agent.text = msg
@@ -2619,14 +2625,34 @@ function applyAcpEventsToSlot(events: AcpEvent[]): boolean {
   return true
 }
 
-function lastSettledAgentText(live: ClarifyTurn): string {
+function lastSettledAgent(live: ClarifyTurn): ClarifyTurn | undefined {
   const list = displayTurns.value
   for (let i = list.length - 1; i >= 0; i--) {
     const t = list[i]
-    if (t.role !== 'agent' || t === live || t.streaming) continue
-    return (t.text || '').trim()
+    if (!t || t.role !== 'agent' || t === live || t.streaming) continue
+    return t
+  }
+  return undefined
+}
+
+function humanTextBefore(agent: ClarifyTurn): string {
+  const list = displayTurns.value
+  const idx = list.indexOf(agent)
+  for (let i = idx - 1; i >= 0; i--) {
+    if (list[i]?.role === 'human') return (list[i]?.text || '').trim()
   }
   return ''
+}
+
+function rejectsForeignSettledSnapshot(agent: ClarifyTurn, msg: string): boolean {
+  const next = msg.trim()
+  const settled = lastSettledAgent(agent)
+  const settledText = (settled?.text || '').trim()
+  if (!next || next === (agent.text || '').trim() || next !== settledText || !settled) return false
+  const liveHuman = (liveTurns.value.find((t) => t.role === 'human')?.text || '').trim()
+  const settledHuman = humanTextBefore(settled)
+  if (liveHuman && settledHuman && liveHuman === settledHuman) return false
+  return true
 }
 
 /** Live agent bubble has visible message body (text or coalesced markdown). */

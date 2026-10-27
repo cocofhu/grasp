@@ -503,6 +503,38 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('restores KeepNone session and model state from the subscribe snapshot', async () => {
+    mocks.getSoloSession
+      .mockResolvedValueOnce(session({ status: 'running', currentModelSet: true, currentModelId: 'old' }))
+      .mockImplementationOnce(() => new Promise(() => {}))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    ws.emit({
+      type: 'session',
+      event: 'queue_state',
+      busy: false,
+      items: [],
+      status: 'closed',
+      error: '会话已关闭',
+      sandboxId: 9,
+      currentModelId: 'model-b',
+      currentModelSet: true,
+      reasoningEffort: 'high',
+      modelNotice: 'rolled',
+    })
+    await flushPromises()
+    expect(chat.session.value?.status).toBe('closed')
+    expect(chat.session.value?.error).toBe('会话已关闭')
+    expect(chat.session.value?.sandboxId).toBe(9)
+    expect(chat.session.value?.currentModelId).toBe('model-b')
+    expect(chat.session.value?.currentModelSet).toBe(true)
+    expect(chat.session.value?.reasoningEffort).toBe('high')
+    expect(chat.session.value?.modelNotice).toBe('rolled')
+    app.unmount()
+  })
+
   it('reconnects after the socket closes and does not draw the same frame twice', async () => {
     vi.useFakeTimers()
     const { chat, app } = mountChat()

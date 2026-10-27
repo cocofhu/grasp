@@ -79,6 +79,41 @@ func TestPumpChatSubscriptionClosesWebSocket(t *testing.T) {
 	requirePumpedSocketClosed(t, conn, pumpDone)
 }
 
+func TestPumpSubscriptionCloseWhileWriteBlocked(t *testing.T) {
+	ch := make(chan chatsession.Event, 1)
+	ch <- chatsession.Event{Type: chatsession.FrameSession, Event: chatsession.EventTurnDone, Payload: map[string]any{}}
+	writeEntered := make(chan struct{})
+	unblockWrite := make(chan struct{})
+	conn, pumpDone := chatSubscriptionWSPair(t, ch, func(any) error {
+		close(writeEntered)
+		<-unblockWrite
+		return nil
+	})
+
+	select {
+	case <-writeEntered:
+	case <-time.After(time.Second):
+		close(unblockWrite)
+		t.Fatal("blocking writer was not entered")
+	}
+	close(ch)
+	select {
+	case <-pumpDone:
+	case <-time.After(250 * time.Millisecond):
+		t.Error("pump remained blocked after the subscription channel closed")
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Error("websocket stayed open while the data write was still blocked")
+	}
+	close(unblockWrite)
+	select {
+	case <-pumpDone:
+	case <-time.After(time.Second):
+		t.Fatal("pump did not exit after the blocked writer was released")
+	}
+}
+
 func TestPumpChatSubscriptionWriteFailureClosesWebSocket(t *testing.T) {
 	ch := make(chan chatsession.Event, 1)
 	ch <- chatsession.Event{Type: chatsession.FrameSession, Event: chatsession.EventError, Payload: map[string]any{}}
