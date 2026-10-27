@@ -204,3 +204,18 @@ func TestArgsResume(t *testing.T) {
 		t.Fatalf("resume args=%v", res)
 	}
 }
+
+func TestArgsOmitExternalSandboxBypassInWorktree(t *testing.T) {
+	var c codec
+	opts := provider.OpenOptions{AutoPermission: true}
+	t.Setenv("GRASP_EXECUTION_MODE", "worktree")
+	got := strings.Join(c.Args(opts, "hi", ""), " ")
+	if strings.Contains(got, "dangerously-bypass-approvals-and-sandbox") {
+		t.Fatalf("worktree codex kept the external-sandbox bypass: %s", got)
+	}
+	t.Setenv("GRASP_EXECUTION_MODE", "sandbox")
+	got = strings.Join(c.Args(opts, "hi", ""), " ")
+	if !strings.Contains(got, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Fatalf("sandbox codex lost the bypass flag: %s", got)
+	}
+}

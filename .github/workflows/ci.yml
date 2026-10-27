@@ -55,6 +55,7 @@ jobs:
       gateway: ${{ github.event_name != 'pull_request' || steps.filter.outputs.gateway == 'true' }}
       sandbox: ${{ github.event_name != 'pull_request' || steps.filter.outputs.sandbox == 'true' }}
       server_image: ${{ github.event_name != 'pull_request' || steps.filter.outputs.server_image == 'true' }}
+      worktree_image: ${{ github.event_name != 'pull_request' || steps.filter.outputs.worktree_image == 'true' }}
     steps:
       - uses: actions/checkout@v7
         if: github.event_name != 'pull_request'
@@ -78,6 +79,17 @@ jobs:
               - "web/**"
               - "sandbox-gateway/sandbox/**"
               - "scripts/build-sandbox-runtime.sh"
+              - "scripts/assert-no-approving-brand.mjs"
+              - ".dockerignore"
+              - ".github/workflows/ci.yml"
+            worktree_image:
+              - "server/Dockerfile.worktree"
+              - "server/**"
+              - "web/**"
+              - "sandbox-gateway/sandbox/scripts/install-agent.sh"
+              - "sandbox-gateway/sandbox/scripts/**"
+              - "scripts/build-sandbox-runtime.sh"
+              - "scripts/check-worktree-image.sh"
               - "scripts/assert-no-approving-brand.mjs"
               - ".dockerignore"
               - ".github/workflows/ci.yml"
@@ -192,12 +204,47 @@ jobs:
             type=gha,scope=grasp-e2e
           cache-to: type=gha,mode=max,scope=grasp-server-image
 
+  # Worktree image: build and check commands, never push. Cache scope is
+  # separate from the slim server image.
+  worktree-image:
+    needs: changes
+    if: needs.changes.outputs.worktree_image == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - name: Free disk space before loading the image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af >/dev/null
+          df -h /
+      - uses: docker/setup-buildx-action@v4
+      - name: Build server/Dockerfile.worktree (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: server/Dockerfile.worktree
+          push: false
+          load: true
+          tags: grasp-worktree:ci
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            GITHUB_SHA=${{ github.sha }}
+            BASE_IMAGE=ubuntu:22.04
+            USE_CN_MIRROR=false
+          cache-from: type=gha,scope=grasp-worktree-image
+          cache-to: type=gha,mode=max,scope=grasp-worktree-image
+      - name: Check worktree image commands
+        run: ./scripts/check-worktree-image.sh grasp-worktree:ci
+
   ci-required:
     name: ci-required
     if: always()
-    needs: [gate, changes, go-hygiene, go-race, server-image]
+    needs: [gate, changes, go-hygiene, go-race, server-image, worktree-image]
     runs-on: ubuntu-latest
-    # Waits for ci-sandbox, whose image job may take up to 180 minutes.
+    # Waits for ci-sandbox and for worktree-image. Each image job may take up
+    # to 180 minutes. needs finishes before this job's timer starts; 200 covers
+    # the sibling-workflow wait after that build.
     timeout-minutes: 200
     permissions:
       actions: read

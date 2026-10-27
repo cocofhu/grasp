@@ -3,12 +3,15 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/execution"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -298,6 +301,9 @@ type Sandbox struct {
 	// hostKeys is used when mgr is nil (detached test handles) so TOFU state
 	// survives across dials on the same Sandbox.
 	hostKeys *hostKeyCache
+	// local is set when the worktree image runs the agent in this process.
+	// Data-plane calls use the filesystem, and Destroy does not talk to the gateway.
+	local *localExec
 }
 
 // NewManager builds a gateway-backed manager.
@@ -373,6 +379,9 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 // resolved session endpoint, and returns the handle. The caller should
 // WaitForACPReady before connecting the ACP client.
 func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
+	if execution.Worktree() {
+		return m.createWorktree(ctx, spec)
+	}
 	if m.gw == nil {
 		return nil, fmt.Errorf("sandbox manager has no gateway client configured")
 	}
@@ -966,15 +975,25 @@ func (s *Sandbox) creds() sshCreds {
 }
 
 func (s *Sandbox) resolvePath(path string) string {
-	if strings.HasPrefix(path, "/") {
-		return path
+	if !strings.HasPrefix(path, "/") {
+		path = strings.TrimRight(s.workspaceDir(), "/") + "/" + path
 	}
-	return strings.TrimRight(s.workspaceDir(), "/") + "/" + path
+	if s.local != nil {
+		return s.mapLocalPath(path)
+	}
+	return path
 }
 
 // ReadFile reads a file from inside the sandbox (relative paths resolve against
 // WORKSPACE_DIR).
 func (s *Sandbox) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	if s.local != nil {
+		body, err := os.ReadFile(s.resolvePath(path))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
+		return body, nil
+	}
 	cmd, err := newSafeCmd("cat", "--", s.resolvePath(path))
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -988,6 +1007,16 @@ func (s *Sandbox) ReadFile(ctx context.Context, path string) ([]byte, error) {
 
 // WriteFile writes content to a path inside the sandbox, creating parent dirs.
 func (s *Sandbox) WriteFile(ctx context.Context, path string, content []byte) error {
+	if s.local != nil {
+		resolved := s.resolvePath(path)
+		if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		if err := os.WriteFile(resolved, content, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		return nil
+	}
 	resolved := s.resolvePath(path)
 	dir := resolved
 	if i := strings.LastIndex(resolved, "/"); i > 0 {
@@ -1013,6 +1042,10 @@ func (s *Sandbox) WriteFile(ctx context.Context, path string, content []byte) er
 
 // FileExists reports whether a path exists inside the sandbox.
 func (s *Sandbox) FileExists(ctx context.Context, path string) bool {
+	if s.local != nil {
+		_, err := os.Stat(s.resolvePath(path))
+		return err == nil
+	}
 	cmd, err := newSafeCmd("test", "-e", s.resolvePath(path))
 	if err != nil {
 		return false
@@ -1028,6 +1061,9 @@ func (s *Sandbox) Exec(ctx context.Context, timeout time.Duration, cmd ...string
 	if err != nil {
 		return "", err
 	}
+	if s.local != nil {
+		return s.runLocal(ctx, timeout, sc.argv, nil)
+	}
 	out, err := s.creds().run(ctx, timeout, sc)
 	return strings.TrimSpace(string(out)), err
 }
@@ -1039,13 +1075,23 @@ func (s *Sandbox) ExecScript(ctx context.Context, timeout time.Duration, interpr
 	if err != nil {
 		return "", err
 	}
+	if s.local != nil {
+		return s.runLocal(ctx, timeout, sc.argv, strings.NewReader(script))
+	}
 	out, err := s.creds().runInput(ctx, timeout, sc, strings.NewReader(script))
 	return strings.TrimSpace(string(out)), err
 }
 
 // Destroy removes the sandbox via the gateway (best effort).
 func (s *Sandbox) Destroy(ctx context.Context) {
-	if s == nil || s.mgr == nil {
+	if s == nil {
+		return
+	}
+	if s.local != nil {
+		s.local.shutdown()
+		return
+	}
+	if s.mgr == nil {
 		return
 	}
 	if err := s.mgr.DestroyByName(ctx, s.ID); err != nil {

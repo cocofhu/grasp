@@ -80,7 +80,8 @@ COPY --from=sandbox-runtime /out/sandbox-runtime.tgz /app/sandbox-runtime/sandbo
 
 # 数据落 SQLite,挂到持久卷;端口与默认 DB 路径可被部署的 env 覆盖。
 ENV GRASP_PORT=8080 \
-    GRASP_DB=/data/grasp.db
+    GRASP_DB=/data/grasp.db \
+    GRASP_EXECUTION_MODE=sandbox
 VOLUME ["/data"]
 EXPOSE 8080
 ENTRYPOINT ["/app/grasp-server"]

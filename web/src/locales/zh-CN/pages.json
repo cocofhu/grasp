@@ -1944,6 +1944,17 @@
           "desc": "统一配置沙箱内存与 Agent 无动作时限。"
         }
       },
+      "execution": {
+        "label": "执行模式",
+        "worktree": "工作树",
+        "sandbox": "沙箱",
+        "sectionDesc": "执行模式由当前部署的镜像决定，此页只展示。",
+        "worktreeHelp": "本环境跑的是 Worktree 镜像。Solo、工作流、对话测试和助手都在这张镜像里启动，没有另一层容器边界。Git 仓库用本次工作树，没有仓库时用独立文件夹。命令来自镜像内的七种编码工具、git、gh、glab 和 Chromium。该值来自当前镜像。换成沙箱要改部署精简服务镜像加沙箱镜像。",
+        "sandboxHelp": "本环境跑的是精简服务镜像加沙箱镜像。Agent 在沙箱容器里启动。该值来自当前镜像，不能在此修改。换成工作树要改部署 Worktree 镜像。",
+        "banner": "本镜像带有七种 CLI、浏览器预览和构建工具链，没有 dockerd、sshd 和 code-server。Agent 与服务在同一个容器里。沙箱内存、回收和容量属于另一套沙箱部署，这里不提供。",
+        "bannerNoSwitch": "首页、新建会话和启动运行没有模式开关。",
+        "bannerNoSave": "保存其他常规项不会改变执行模式。"
+      },
       "summaries": {
         "run_sandbox_max_retention_hours": "从节点结束起计算的保留总上限；超时后自动回收沙箱。",
         "sandbox_memory_mb": "每个新建沙箱可用的内存上限，包含浏览器、构建与测试的占用。",
