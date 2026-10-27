@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Clarify timeline alignment:** the in-progress 「思考中…」 indicator and label now line up with thought and tool summaries in current turns, follow-up nodes and run history. First-token placeholders, 「输出中」, other busy indicators and reduced-motion behavior are unchanged.
+
 - **Agent chat failures:** OpenCode passes reasoning variants separately from model IDs. Gemini chats now display native streamed text, tools and failure details, with cached input counted once. Solo and Agent test chats show provider failures and refusals, including errors recovered from older empty replies, while retaining partial output and usage.
 
 - **API model image input:** OpenCode, CodeBuddy and DeepSeek Harness model groups can declare text-only or text-and-image input for primary and auxiliary models. Saving fills missing model-directory metadata without overwriting explicit choices. Native adapters consistently honor those declarations, preventing image-capable custom models from being treated as text-only when their API directory omits capabilities. Claude Code and Codex retain their native image handling; platform-authorized tools retain their own model catalogs.

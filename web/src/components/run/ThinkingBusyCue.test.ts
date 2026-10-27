@@ -59,11 +59,16 @@ function expectThinkingCue(root: ReturnType<typeof mountRow>, copy: string) {
 describe('ThinkingBusyCue', () => {
   it('clarify placeholder and step tail share the lamp and gray sheen', () => {
     const placeholder = mountRow()
-    expect(placeholder.get('[data-testid="clarify-busy-placeholder"]').text()).toBe('思考中…')
+    const placeholderRow = placeholder.get('[data-testid="clarify-busy-placeholder"]')
+    expect(placeholderRow.text()).toBe('思考中…')
+    expect(placeholderRow.classes()).toEqual(expect.arrayContaining(['gap-2.5', 'py-2']))
+    expect(placeholderRow.classes()).not.toContain('clarify-thinking')
     expectThinkingCue(placeholder, '思考中…')
 
     const tail = mountRow({ variant: 'status' })
-    expect(tail.get('[data-testid="clarify-busy-status"]').attributes('data-state')).toBe('thinking')
+    const tailRow = tail.get('[data-testid="clarify-busy-status"]')
+    expect(tailRow.attributes('data-state')).toBe('thinking')
+    expect(tailRow.classes()).toContain('clarify-thinking')
     expectThinkingCue(tail, '思考中…')
     expect(tail.find('.clarify-outputting').exists()).toBe(false)
 
@@ -79,11 +84,25 @@ describe('ThinkingBusyCue', () => {
     const row = w.get('[data-testid="clarify-busy-status"]')
     expect(row.attributes('data-state')).toBe('outputting')
     expect(row.classes()).toContain('clarify-outputting')
+    expect(row.classes()).not.toContain('clarify-thinking')
     expect(row.text()).toBe('输出中')
     expect(w.find('[data-testid="thinking-lamp"]').exists()).toBe(false)
     expect(w.find('[data-testid="thinking-sheen"]').exists()).toBe(false)
     expect(readSrc('ClarifyThinkingRow.vue')).toMatch(/\.clarify-outputting \{ color: rgb\(var\(--c-txt3\)\); \}/)
     w.unmount()
+  })
+
+  it('scopes timeline geometry to the thinking tail and keeps the shared 8px default', () => {
+    const row = readSrc('ClarifyThinkingRow.vue')
+    expect(row).toContain('.clarify-thinking { padding-inline: 4px; }')
+    expect(row).toContain('.clarify-thinking :deep(.thinking-busy) { gap: 6px; }')
+    expect(row).not.toMatch(/\.clarify-outputting[^\n]*padding/)
+    expect(row).not.toMatch(/clarify-busy-placeholder[^\n]*clarify-thinking/)
+
+    const css = readSrc('ThinkingBusyCue.vue')
+    const shared = css.slice(css.indexOf('.thinking-busy {'), css.indexOf('/* 12px inline slot.'))
+    expect(shared).toMatch(/gap:\s*8px/)
+    expect(shared).not.toMatch(/gap:\s*6px/)
   })
 
   it('gate thinking branches use the same cue, and outputting stays accent text', async () => {

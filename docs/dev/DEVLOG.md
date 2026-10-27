@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-27（修复尾部「思考中…」横向对齐）
+
+- 日期：2026-10-27。
+- 范围：`web/src/components/run/ClarifyThinkingRow.vue`、`web/src/components/run/ThinkingBusyCue.test.ts`、`web/src/components/run/collapsedReplySpacing.test.ts`、`CHANGELOG.md`。
+- 做了什么：仅为 `variant=status` 且非输出中的尾部思考行增加 4px 水平内边距，并把该行内部 12px 灯槽与文案的间距改为 6px；共用 `ThinkingBusyCue` 的 8px 默认间距、首内容占位、「输出中」及其他使用方均保持不变。新增真实 Chromium 几何回归，在连续动画帧分别比较尾部状态与思考、工具摘要的图标槽及文案左缘，并覆盖非目标状态的间距与位置。
+- 为什么：过程行原有 4px 水平内边距和 6px 图标—文案间距，尾部思考行却从容器左缘直接排列且间距为 8px，导致灯槽左偏 4px、文案左偏 2px，破坏同一 Agent 回合的时间线对齐。
+- 如何验证：相关 Vitest 与真实浏览器回归 13 项通过，图标槽和文案左缘差均不超过 1px，占位、输出中和共享指示灯默认间距不回归。Web 全量 528 个测试文件、5,559 项测试通过，Lines 91.5%；关键 Playwright 套件 248 项通过（6.2 分钟）。ESLint（0 errors、12 条既有 warnings）、vue-tsc、生产构建及 Secure Context/品牌断言、actionlint 和 error-level shellcheck 通过。
+
 ### 2026-10-27（修复 CLI 失败后空回复与 OpenCode 变体参数）
 
 - 日期：2026-10-27。

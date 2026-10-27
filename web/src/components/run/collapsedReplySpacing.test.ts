@@ -9,11 +9,19 @@ const timeline = readFileSync(join(here, 'AgentTimeline.vue'), 'utf8')
 const tools = readFileSync(join(here, 'agentToolGroup.css'), 'utf8')
 const chat = readFileSync(join(here, '../../styles/chat.css'), 'utf8')
 const status = readFileSync(join(here, 'ThoughtSummaryStatus.vue'), 'utf8')
+const thinkingRow = readFileSync(join(here, 'ClarifyThinkingRow.vue'), 'utf8')
+const busyCue = readFileSync(join(here, 'ThinkingBusyCue.vue'), 'utf8')
 
 function block(css: string, selector: string): string {
   const found = css.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`, 's'))
   expect(found, selector).not.toBeNull()
   return found![0]
+}
+
+function sfcStyle(source: string): string {
+  const found = source.match(/<style scoped>([\s\S]*?)<\/style>/)
+  expect(found).not.toBeNull()
+  return found![1].replace(/:deep\(([^)]+)\)/g, '$1')
 }
 
 describe('collapsed reply spacing', () => {
@@ -235,6 +243,140 @@ describe('rendered timeline gaps', () => {
       expect(gap.soloParagraphs).toBe(8)
       expect(gap.streamParagraphs).toBe(11)
       expect(gap.tableSlack).toBe(0)
+    } finally {
+      await browser.close()
+    }
+  })
+
+  it.skipIf(!chromiumReady)('aligns the thinking tail across animation frames without moving other busy states', async () => {
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage()
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      await page.setContent(`<!doctype html><style>
+        :root {
+          --c-txt: 24 24 27;
+          --c-txt2: 82 82 91;
+          --c-txt3: 161 161 170;
+          --c-accent-2: 79 70 229;
+          --c-elevated: 244 244 245;
+          --c-line: 229 229 232;
+          --c-ok: 22 163 74;
+          --c-err: 220 38 38;
+          --dur-ui: 160ms;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: sans-serif; }
+        button { border: 0; background: transparent; }
+        .timeline { display: flex; flex-direction: column; width: 420px; }
+        .inline-flex { display: inline-flex; }
+        .min-w-0 { min-width: 0; }
+        .flex-1 { flex: 1 1 0%; }
+        .items-center { align-items: center; }
+        ${tools}
+        ${sfcStyle(timeline)}
+        ${sfcStyle(status)}
+        ${sfcStyle(thinkingRow)}
+        ${sfcStyle(busyCue)}
+      </style>
+      <div class="timeline agent-timeline" id="timeline">
+        <details class="agent-thought chat-meta">
+          <summary class="agent-thought-summary">
+            <span class="thought-summary-status grasp-status-host inline-flex min-w-0 flex-1 items-center">
+              <svg class="app-icon thought-summary-icon" id="thought-icon" aria-hidden="true"></svg>
+              <span class="thought-summary-title" id="thought-copy">思考过程</span>
+            </span>
+            <svg class="app-icon agent-thought-chevron" aria-hidden="true"></svg>
+          </summary>
+        </details>
+        <div class="agent-tools chat-meta">
+          <button type="button" class="agent-tools-head">
+            <svg class="app-icon agent-tool-icon" id="tool-icon" aria-hidden="true"></svg>
+            <span class="agent-tools-count" id="tool-copy">使用了 2 个工具</span>
+            <span class="agent-tools-context">读取文件</span>
+            <svg class="app-icon agent-tool-chevron" aria-hidden="true"></svg>
+          </button>
+        </div>
+        <div
+          class="chat-meta grasp-status-host mt-1 inline-flex items-center gap-2 font-normal clarify-thinking"
+          id="thinking-status"
+          data-state="thinking"
+          role="status"
+        >
+          <span class="thinking-busy">
+            <span class="thinking-lamp" id="thinking-lamp" aria-hidden="true">
+              <span class="thinking-lamp-halo"></span>
+              <span class="thinking-lamp-core"></span>
+            </span>
+            <span class="thinking-sheen" id="thinking-copy">思考中…</span>
+          </span>
+        </div>
+        <div
+          class="chat-meta grasp-status-host mt-1 inline-flex items-center gap-2 font-normal clarify-outputting"
+          id="output-status"
+          data-state="outputting"
+          role="status"
+        ><span id="output-copy">输出中</span></div>
+        <div class="chat-meta grasp-status-host inline-flex items-center gap-2.5 py-2" id="placeholder-status">
+          <span class="thinking-busy" id="placeholder-cue">
+            <span class="thinking-lamp" id="placeholder-lamp" aria-hidden="true">
+              <span class="thinking-lamp-halo"></span>
+              <span class="thinking-lamp-core"></span>
+            </span>
+            <span class="thinking-sheen">思考中…</span>
+          </span>
+        </div>
+        <div id="shared-host">
+          <span class="thinking-busy" id="shared-cue">
+            <span class="thinking-lamp" id="shared-lamp" aria-hidden="true">
+              <span class="thinking-lamp-halo"></span>
+              <span class="thinking-lamp-core"></span>
+            </span>
+            <span class="thinking-sheen">生成中…</span>
+          </span>
+        </div>
+      </div>`)
+      const frames = await page.evaluate(async () => {
+        const byId = (id: string) => document.getElementById(id)!
+        const left = (id: string) => byId(id).getBoundingClientRect().left
+        const measure = () => ({
+          thoughtIconDelta: Math.abs(left('thinking-lamp') - left('thought-icon')),
+          thoughtCopyDelta: Math.abs(left('thinking-copy') - left('thought-copy')),
+          toolIconDelta: Math.abs(left('thinking-lamp') - left('tool-icon')),
+          toolCopyDelta: Math.abs(left('thinking-copy') - left('tool-copy')),
+          lampWidth: byId('thinking-lamp').getBoundingClientRect().width,
+          targetPadding: getComputedStyle(byId('thinking-status')).paddingLeft,
+          targetGap: getComputedStyle(byId('thinking-status').querySelector('.thinking-busy')!).columnGap,
+          placeholderPadding: getComputedStyle(byId('placeholder-status')).paddingLeft,
+          placeholderGap: getComputedStyle(byId('placeholder-cue')).columnGap,
+          placeholderLampDelta: Math.abs(left('placeholder-lamp') - left('timeline')),
+          outputPadding: getComputedStyle(byId('output-status')).paddingLeft,
+          outputCopyDelta: Math.abs(left('output-copy') - left('timeline')),
+          outputLampCount: byId('output-status').querySelectorAll('.thinking-lamp').length,
+          sharedGap: getComputedStyle(byId('shared-cue')).columnGap,
+          sharedLampDelta: Math.abs(left('shared-lamp') - left('timeline')),
+        })
+        const first = measure()
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        return [first, measure()]
+      })
+      for (const frame of frames) {
+        expect(frame.thoughtIconDelta).toBeLessThanOrEqual(1)
+        expect(frame.thoughtCopyDelta).toBeLessThanOrEqual(1)
+        expect(frame.toolIconDelta).toBeLessThanOrEqual(1)
+        expect(frame.toolCopyDelta).toBeLessThanOrEqual(1)
+        expect(frame.lampWidth).toBe(12)
+        expect(frame.targetPadding).toBe('4px')
+        expect(frame.targetGap).toBe('6px')
+        expect(frame.placeholderPadding).toBe('0px')
+        expect(frame.placeholderGap).toBe('8px')
+        expect(frame.placeholderLampDelta).toBeLessThanOrEqual(1)
+        expect(frame.outputPadding).toBe('0px')
+        expect(frame.outputCopyDelta).toBeLessThanOrEqual(1)
+        expect(frame.outputLampCount).toBe(0)
+        expect(frame.sharedGap).toBe('8px')
+        expect(frame.sharedLampDelta).toBeLessThanOrEqual(1)
+      }
     } finally {
       await browser.close()
     }
