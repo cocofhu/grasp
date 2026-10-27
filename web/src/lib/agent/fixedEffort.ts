@@ -6,7 +6,7 @@ export type OpenCodeVariantModel = { spell: string; variants: string[] }
 export const openCodeVariantCatalog = catalog as Record<string, OpenCodeVariantModel>
 
 type ProviderEffortEntry = { ids?: string[]; hosts?: string[]; suffixes?: string[]; models: Record<string, string[]> }
-const providerEfforts = (providerCatalog as { providers: ProviderEffortEntry[] }).providers
+const providerEfforts = (providerCatalog as unknown as { providers: ProviderEffortEntry[] }).providers
 
 const LABELS: Record<string, { zh: string; en: string }> = {
   none: { zh: '无', en: 'None' },
