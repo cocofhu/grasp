@@ -22,6 +22,10 @@ func TestChatFailureHelper(t *testing.T) {
 	if got != "stopReason=failed" {
 		t.Fatalf("Failed without body: got %q", got)
 	}
+	got = chatFailure(&sandbox.ChatResult{Failed: true, StopReason: "refusal"})
+	if got != "stopReason=refusal" {
+		t.Fatalf("refusal without body: got %q", got)
+	}
 	got = chatFailure(&sandbox.ChatResult{ErrorText: "  quota gone  "})
 	if got != "quota gone" {
 		t.Fatalf("ErrorText trim: got %q", got)
@@ -33,6 +37,42 @@ func TestChatFailureHelper(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "…") {
 		t.Fatalf("truncate suffix: %q", got[len(got)-3:])
+	}
+}
+
+func TestReactReplySurfacesProviderRefusal(t *testing.T) {
+	for _, firstTurn := range []bool{true, false} {
+		name := "reply"
+		if firstTurn {
+			name = "first turn"
+		}
+		t.Run(name, func(t *testing.T) {
+			p, _, _, _, req := reactSetup(t, func(int) chatFunc {
+				return func(turn int) turnAction {
+					if turn == 0 && !firstTurn {
+						return turnAction{
+							narration: "need info",
+							questions: []models.ReactQuestion{{ID: "q1", Prompt: "?", Options: []models.ReactOption{{ID: "a", Label: "A"}}}},
+						}
+					}
+					return turnAction{stopReason: "refusal"}
+				}
+			})
+			result := clarifyFirstTurn(p, req)
+			if !firstTurn {
+				if result.Done {
+					t.Fatal("opening question must pause")
+				}
+				hist := []models.ReactMessage{{Role: "agent", Text: "need info"}, {Role: "human", Text: "answer"}}
+				result = p.ReactReply(context.Background(), req, hist, "answer", nil, false)
+			}
+			if result.Done || !strings.Contains(result.Msg, "澄清回复失败") || !strings.Contains(result.Msg, "stopReason=refusal") {
+				t.Fatalf("refusal must keep dialogue open with its failure: %+v", result)
+			}
+			if !p.HasLiveSession(req.RunID, req.NodeID) {
+				t.Fatal("session must stay parked after refusal")
+			}
+		})
 	}
 }
 

@@ -1180,6 +1180,21 @@ func TestSandboxMcpVarsUsesOptionsFallbackPassthrough(t *testing.T) {
 // the ACP protocol for Connect + ChatStream: it acks connect with a connected
 // frame and answers each chat with one event + prompt_done.
 func fakeACPServer(t *testing.T) (*httptest.Server, int) {
+	return fakeACPServerFrames(t,
+		map[string]any{
+			"type": "session_update",
+			"update": map[string]any{
+				"sessionUpdate": "agent_message_chunk",
+				"content":       map[string]any{"type": "text", "text": "hi"},
+			},
+		},
+		map[string]any{"type": "prompt_done"},
+	)
+}
+
+// fakeACPServerFrames sends the supplied event bodies for each chat, through
+// the real ACP client's WebSocket and dispatch path.
+func fakeACPServerFrames(t *testing.T, frames ...map[string]any) (*httptest.Server, int) {
 	t.Helper()
 	up := websocket.Upgrader{}
 	mux := http.NewServeMux()
@@ -1210,14 +1225,11 @@ func fakeACPServer(t *testing.T) (*httptest.Server, int) {
 			case "connect":
 				c.WriteJSON(map[string]any{"op": "connected", "sessionId": "sess-1"})
 			case "chat":
-				c.WriteJSON(map[string]any{"op": "event", "opId": m.OpID, "data": map[string]any{
-					"type": "session_update",
-					"update": map[string]any{
-						"sessionUpdate": "agent_message_chunk",
-						"content":       map[string]any{"type": "text", "text": "hi"},
-					},
-				}})
-				c.WriteJSON(map[string]any{"op": "event", "opId": m.OpID, "data": map[string]any{"type": "prompt_done"}})
+				for _, frame := range frames {
+					if err := c.WriteJSON(map[string]any{"op": "event", "opId": m.OpID, "data": frame}); err != nil {
+						return
+					}
+				}
 			}
 		}
 	})

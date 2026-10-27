@@ -32,6 +32,7 @@ import {
 } from '@/lib/shared/attachments'
 import { chatImageSrc } from '@/lib/shared/compositeText'
 import { contentText, flattenUpdate, normalizeKind, unwrapFrame } from '@/lib/run/acpUnpack'
+import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import type { AgentPart } from '@/lib/shared/types'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 
@@ -608,13 +609,13 @@ function rebuildTurnsFromFrames(events: any[]): Turn[] {
     } else if (ev.type === 'turn_end' || ev.type === 'prompt_end') {
       const ended = isoStamp(ev.at)
       if (ended && agent) agent.endedAt = ended
-    } else if (ev.type === 'session_update' && ev.update) {
+    } else if ((ev.type === 'session_update' && ev.update) || acpFailureText(ev) !== null) {
       if (!agent) agent = newAgent(`${historyFrameId(ev, ev.opId ?? frame.opId)}:reply`)
       applyAcp(ev, agent)
     }
   }
   const last = rebuilt[rebuilt.length - 1]
-  if (last && last.role === 'agent' && !last.text && !last.thought && !last.tools.length && !last.plan.length) {
+  if (last && last.role === 'agent' && !last.text && !last.thought && !last.tools.length && !last.plan.length && !last.error) {
     rebuilt.pop()
   }
   return rebuilt
@@ -687,6 +688,11 @@ async function loadEarlierHistory() {
 
 // applyAcp tolerantly parses an acp-bridge event frame ({op:"event",data:{type,update}}).
 function applyAcp(envelope: any, turn: Turn) {
+  const failure = acpFailureText(envelope)
+  if (failure !== null) {
+    turn.error = appendAcpError(turn.error, failure) || t('pages.agentChatTester.execError')
+    return
+  }
   const ev = envelope?.data ?? envelope
   if (!ev || ev.type !== 'session_update' || !ev.update) return
   const u = flattenUpdate(ev.update)

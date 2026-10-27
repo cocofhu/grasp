@@ -280,7 +280,8 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 		if sr := strings.ToLower(strings.TrimSpace(stopReason)); sr == "refusal" {
 			log.Printf("prompt %s oid=%s: 轮次结束 stopReason=refusal（多为鉴权失败：检查 CODEBUDDY_API_KEY / 区域 ACP_CODEBUDDY_REGION，或执行 codebuddy login）", b.AgentLogPrefix(), oid)
 			b.Broadcast(map[string]any{
-				"op": "error",
+				"op":   "error",
+				"opId": oid,
 				"message": "Agent 拒绝本轮请求（refusal）。CodeBuddy 多为 API Key 无效或区域不匹配：" +
 					"请确认 CODEBUDDY_API_KEY（iOA 站：https://tencent.sso.copilot.tencent.com/profile/keys），" +
 					"并设置 ACP_CODEBUDDY_REGION=ioa；也可 unset CODEBUDDY_API_KEY 后执行 codebuddy login。",

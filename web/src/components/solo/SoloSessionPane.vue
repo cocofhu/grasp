@@ -424,7 +424,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <ThinkingBusyCue :label="phase === 'preparing' && !turn.steps.length ? t('pages.solo.phase.preparing') : t('pages.solo.phase.running')" />
               </div>
               <div v-if="turn.status === 'stopped' && !turn.streaming" class="chat-meta">{{ t('pages.solo.chat.stopped') }}</div>
-              <div v-else-if="turn.error" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error }}</div>
+              <div v-else-if="turn.error || turn.status === 'failed'" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error || t('pages.solo.chat.turnFailed') }}</div>
             </div>
           </template>
         </div>

@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { describe, expect, it, vi } from 'vitest'
 import type { SoloTurn } from '@/lib/solo/acpTurn'
+import { turnsFromMessages } from '@/lib/solo/acpTurn'
 
 const box = vi.hoisted(() => ({
   turns: undefined as undefined | import('vue').Ref<SoloTurn[]>,
@@ -127,6 +128,21 @@ function turn(id: string, role: SoloTurn['role'], text: string): SoloTurn {
 }
 
 describe('SoloSessionPane', () => {
+  it.each(['failed', 'refusal'])('shows a fallback for a history reply that ended with %s but was saved as ok', async (stopReason) => {
+    turns.value = turnsFromMessages([{
+      id: 'failed', sessionId: 's1', role: 'assistant', content: '', status: 'ok', createdAt: '',
+      events: [{ data: { type: 'prompt_done', stopReason } }],
+    }], () => '', 'Tool')
+    const wrapper = mountPane(pages)
+    try {
+      await flushPromises()
+      expect(wrapper.text()).toContain('本轮执行失败')
+      expect(wrapper.find('[data-testid="solo-agent-activity"]').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('switches the preparation cue to processing when output arrives, even before the phase catches up', async () => {
     turns.value = [{ ...turn('live', 'agent', ''), steps: [], streaming: true }]
     phaseState.value = 'preparing'

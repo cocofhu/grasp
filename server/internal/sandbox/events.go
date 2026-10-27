@@ -64,7 +64,7 @@ type ChatResult struct {
 	// "error_text"} frames (quota exhaustion, HTTP 4xx/5xx). Non-empty means
 	// the turn failed even when the bridge still emitted prompt_done.
 	ErrorText string `json:"errorText,omitempty"`
-	// Failed is set when prompt_done.stopReason == "failed".
+	// Failed is set when prompt_done.stopReason is "failed" or "refusal".
 	Failed bool `json:"-"`
 
 	// OpID is the turn id this client sent with {op:chat}; the bridge echoes it

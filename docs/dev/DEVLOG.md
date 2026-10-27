@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-27（修复 CLI 失败后空回复与 OpenCode 变体参数）
+
+- 日期：2026-10-27。
+- 范围：`sandbox-gateway/sandbox/internal/provider/modelconnection/`、`internal/provider/streamjson/`、`internal/agents/`；`server/internal/services/`、`internal/sandbox/`、`internal/runtime/`；`web/src/lib/run/`、`src/lib/solo/`、`src/components/solo/`、`src/components/agent/`、`web/LIB_DOMAIN_MAP.json`；`CHANGELOG.md`。
+- 做了什么：OpenCode 保留原始模型 ID，以独立 `--variant` 参数选择推理强度，继续保留官方、自定义和连接服务的变体声明及辅助模型隔离。Gemini 按原生 stream-json 解析正文、工具、失败与用量，缓存输入只计一次。服务端把 provider 失败和 refusal 传递给对话调用方，保留已生成内容、用量及现有中断语义；Solo 与 Agent 测试聊天显示实时错误，并从历史原始事件恢复此前误存为成功的空回复，无需修改历史数据库。
+- 为什么：OpenCode 1.19.4 将 `model#max` 当作字面模型 ID；桥接已回传失败，但调用边界丢弃结果中的失败标记，前端又忽略错误事件，导致有用户消息却无回复或报错。交叉检查还发现 Gemini 被套用 Claude 消息格式，以及 ACP refusal 被当成正常结束的问题。
+- 如何验证：OpenCode 参数子进程回归覆盖官方默认、原生、自定义与连接服务三种协议；Gemini 原生消息、工具、失败、警告和缓存计数回归；真实 WebSocket 验证 Solo/Studio 失败落库与部分输出、用量和取消/超时语义，React 覆盖首次及续聊 refusal，桥接测试验证迟到错误归属原轮。server/sandbox 完整 lint、vet、Go 测试、配置文档检查及 RunAgent/React 专项通过，核心覆盖率分别为 90.4% / 96.6%；规定脚本 smoke、actionlint 和 error-level shellcheck 通过。前端 527 个测试文件、5,533 项测试通过，Lines 91.5%，lint（0 errors）、vue-tsc 与生产构建通过；完整 critical Playwright 套件 243 项全部通过（隔离容器，10.4 分钟）。docs build/audit 通过。运行时包构建通过，无需镜像或 IMAGE_LEVEL 变更。另用隔离 HOME 和本地模拟模型尝试真实 OpenCode 1.19.4：CLI 停在初始化且未发出模型请求，超时后清理，不能计为真实回复端到端验证通过。
+
 ### 2026-10-27（API 模型图片能力声明与多工具适配）
 
 - 日期：2026-10-27（Asia/Shanghai）

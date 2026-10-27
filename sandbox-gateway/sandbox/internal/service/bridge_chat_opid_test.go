@@ -21,6 +21,18 @@ type blockingSess struct {
 	prompts atomic.Int32
 }
 
+// refusingSess emits the provider's done boundary before Prompt returns, as
+// the ACP transport does. The bridge's refusal explanation follows it.
+type refusingSess struct {
+	stubSess
+	emit func(json.RawMessage)
+}
+
+func (s *refusingSess) Prompt(context.Context, string, []provider.PromptImage) (provider.TurnResult, error) {
+	s.emit(json.RawMessage(`{"type":"prompt_done","stopReason":"refusal"}`))
+	return provider.TurnResult{StopReason: "refusal"}, nil
+}
+
 func (s *blockingSess) Prompt(ctx context.Context, _ string, _ []provider.PromptImage) (provider.TurnResult, error) {
 	s.prompts.Add(1)
 	<-ctx.Done()
@@ -126,6 +138,27 @@ func TestPromptBeginCarriesOpID(t *testing.T) {
 		t.Fatalf("activeOpID=%q want op-A", got)
 	}
 	b.CancelPromptOp("op-A")
+	waitIdle(t, b)
+}
+
+func TestRefusalErrorCarriesCompletedTurnOpID(t *testing.T) {
+	sess := &refusingSess{stubSess: stubSess{id: "refused"}}
+	b := newTestBridge(sess)
+	sess.emit = func(raw json.RawMessage) {
+		b.Broadcast(eventEnvelope(raw, b.touchActiveTurn(raw)))
+	}
+	c := dialBridge(t, b)
+	if err := b.ChatWithOpID("hello", "refused-op", "chat", nil); err != nil {
+		t.Fatal(err)
+	}
+	done := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "prompt_done" })
+	if done.OpID != "refused-op" {
+		t.Fatalf("done opId=%q", done.OpID)
+	}
+	late := readUntil(t, c, func(f wsFrame) bool { return f.Op == "error" })
+	if late.OpID != done.OpID {
+		t.Fatalf("late refusal error lost its completed turn: opId=%q want %q", late.OpID, done.OpID)
+	}
 	waitIdle(t, b)
 }
 

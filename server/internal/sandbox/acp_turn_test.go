@@ -42,6 +42,7 @@ func TestRunTurnIgnoresOtherOpFrames(t *testing.T) {
 			mine, _ := msg["opId"].(string)
 			_ = conn.WriteJSON(tagged(chunkFrame("stale "), "old-op"))
 			_ = conn.WriteJSON(tagged(doneFrame(), "old-op"))
+			_ = conn.WriteJSON(map[string]any{"op": "error", "opId": "old-op", "message": "late refusal from previous turn"})
 			_ = conn.WriteJSON(tagged(chunkFrame("fresh"), mine))
 			_ = conn.WriteJSON(tagged(doneFrame(), mine))
 		}
