@@ -42,12 +42,13 @@ type Bridge struct {
 
 	mu sync.Mutex
 	// closed 在会话被 ChatManager.Delete 后置位：不再接受 WebSocket，也不再拉起 Agent。
-	closed         bool
-	sess           provider.Session
-	agentCtx       context.Context
-	agentCancel    context.CancelFunc
-	permWait       map[string]chan string
-	autoPermission bool
+	closed          bool
+	sess            provider.Session
+	agentCtx        context.Context
+	agentCancel     context.CancelFunc
+	agentGeneration uint64 // guarded by mu; scopes delayed exit notifications
+	permWait        map[string]chan string
+	autoPermission  bool
 	// 每连接 *wsClient 一把写锁，禁止并发 Write、禁止双 map 维护。
 	clients map[*websocket.Conn]*wsClient
 
@@ -72,7 +73,7 @@ type Bridge struct {
 	queueMu     sync.Mutex
 	promptQueue []queuedPrompt
 
-	// 多 WebSocket / 多 goroutine 同时 Chat 时，入队 + 触发泵送必须全局串行，否则两条消息可能交错 append/pump
+	// 会话校验与入队串行，并与 Connect / watcher 清队列互斥；泵送由 turnMu 保证单 worker。
 	enqueueMu sync.Mutex
 
 	// 已完成的用户轮次（新 Agent / Connect 时清空；刷新时与 queue 一并下发 userTimeline）
@@ -227,6 +228,9 @@ func (b *Bridge) EffectiveModel() string {
 func (b *Bridge) Session() provider.Session {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if !sessionUsable(b.sess) {
+		return nil
+	}
 	return b.sess
 }
 

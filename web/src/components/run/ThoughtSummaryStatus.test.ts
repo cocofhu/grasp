@@ -45,7 +45,7 @@ describe('ThoughtSummaryStatus', () => {
   it('a busy auto-run row uses the breath dot instead of the arc', () => {
     const w = mountStatus({ busy: true, busyIcon: 'breath-dot' })
     expect(w.get('icon-stub').attributes('name')).toBe('breath-dot')
-    expect(w.get('icon-stub').attributes('size')).toBe('16')
+    expect(w.get('icon-stub').attributes('size')).toBe('12')
     w.unmount()
   })
 

@@ -113,53 +113,6 @@ func main() {
 	// MCP tools so agent nodes can recall past executions and human feedback.
 	runSvc := services.NewRunService(db)
 	host.SetHistoryProvider(runSvc)
-	// Token lifetime tracks sandbox lifetime: when the in-memory registration is
-	// gone (run finished / restart), MCP calls still authorize with the run's
-	// persisted token for as long as the run has a live sandbox row. Once the
-	// last sandbox is torn down (row deleted), the token stops authorizing.
-	host.SetRunTokenSource(func(runID string) (string, bool, bool) {
-		var run models.Run
-		if db.Select("mcp_token").First(&run, "id = ?", runID).Error != nil {
-			return "", false, false
-		}
-		var live int64
-		db.Model(&models.Sandbox{}).Where("run_id = ? AND purpose = ?", runID, "run").Count(&live)
-		return run.McpToken, live > 0, true
-	})
-	// Node-type gate fallback: when the in-memory SetActiveNode registration is
-	// gone (server restarted mid-run, or the MCP call is served by a replica
-	// that never executed the node — e.g. a preview-capable sandbox kept alive
-	// during waiting_human), resolve the run's current node + type from the DB
-	// so set_preview / set_plan / set_* keep passing their node-type gate
-	// instead of being wrongly rejected.
-	//
-	// Prefer CurrentNodeIDs (running / waiting_human). When that misses but a
-	// purpose=run sandbox row still exists — matching authorize's sandbox-alive
-	// token window after cancel/finish — fall back to Sandbox.NodeID so an
-	// in-sandbox agent can still call set_preview / set_* while the container
-	// lives (otherwise ActiveNodeType is "" and node-scoped tools are wrongly
-	// rejected after UnregisterRun).
-	host.SetActiveNodeSource(func(runID string) (string, *models.AgentCapabilities, bool) {
-		var run models.Run
-		if db.Select("id", "status", "graph").First(&run, "id = ?", runID).Error != nil {
-			return "", nil, false
-		}
-		nodeID := runSvc.CurrentNodeIDs([]models.Run{run})[runID]
-		if nodeID == "" {
-			var sb models.Sandbox
-			if db.Where("run_id = ? AND purpose = ?", runID, "run").
-				Order("updated_at desc").First(&sb).Error != nil || strings.TrimSpace(sb.NodeID) == "" {
-				return "", nil, false
-			}
-			nodeID = sb.NodeID
-		}
-		var caps *models.AgentCapabilities
-		// Manual-aware: a live takeover visit reads as a review node.
-		if n := services.EffectiveNode(db, run, nodeID); n != nil {
-			caps = n.Caps
-		}
-		return nodeID, caps, true
-	})
 	host.SetReviewPhaseSource(func(runID string) bool {
 		nodeID := host.ActiveNode(runID)
 		if !host.ActiveCaps(runID).ReviewEnabled() {
@@ -432,6 +385,8 @@ func main() {
 	settingsSvc.ApplyOnBoot()
 
 	previewSvc := services.NewPreviewService(db, sbxMgr)
+	previewSvc.SetAgents(agentSvc)
+	wireArtifactMCPPersistence(host, db, runSvc, previewSvc)
 	previewSvc.SetBrowser(browserSvc)
 	previewSvc.SetSandboxLeases(sbxSvc)
 	host.SetPreviewStore(previewSvc)

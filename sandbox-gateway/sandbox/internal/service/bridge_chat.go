@@ -56,9 +56,14 @@ func (b *Bridge) pumpPromptQueue() {
 	if !busy {
 		b.ensureSelectableModel()
 	}
+	// Model fallback may reconnect under ensureMu, so take enqueueMu only
+	// after it finishes. Keep the queue pop / restore / turn reservation
+	// atomic with Connect and watcher cleanup.
+	b.enqueueMu.Lock()
 	b.turnMu.Lock()
 	if b.activeTurn != nil {
 		b.turnMu.Unlock()
+		b.enqueueMu.Unlock()
 		b.BroadcastQueueState()
 		return
 	}
@@ -67,6 +72,7 @@ func (b *Bridge) pumpPromptQueue() {
 	if len(b.promptQueue) == 0 {
 		b.queueMu.Unlock()
 		b.turnMu.Unlock()
+		b.enqueueMu.Unlock()
 		b.BroadcastQueueState()
 		return
 	}
@@ -78,11 +84,12 @@ func (b *Bridge) pumpPromptQueue() {
 	p := b.sess
 	ctx := b.agentCtx
 	b.mu.Unlock()
-	if p == nil {
+	if !sessionUsable(p) {
 		b.queueMu.Lock()
 		b.promptQueue = append([]queuedPrompt{item}, b.promptQueue...)
 		b.queueMu.Unlock()
 		b.turnMu.Unlock()
+		b.enqueueMu.Unlock()
 		b.BroadcastQueueState()
 		return
 	}
@@ -97,6 +104,7 @@ func (b *Bridge) pumpPromptQueue() {
 	th.lastActivity.Store(time.Now().UnixNano())
 	b.activeTurn = th
 	b.turnMu.Unlock()
+	b.enqueueMu.Unlock()
 
 	log.Printf("prompt %s oid=%s: 开始 session/prompt textLen=%d", b.AgentLogPrefix(), oid, len(item.Text))
 
@@ -439,23 +447,27 @@ func (b *Bridge) ChatWithLimits(text, opID, action string, images []PromptImage,
 	if action == "" {
 		action = "chat"
 	}
+	b.enqueueMu.Lock()
+
 	b.mu.Lock()
-	ok := b.sess != nil
+	ok := sessionUsable(b.sess)
 	b.mu.Unlock()
 	if !ok {
+		b.enqueueMu.Unlock()
 		return errors.New("not connected; send connect first")
 	}
-
-	b.enqueueMu.Lock()
-	defer b.enqueueMu.Unlock()
 
 	b.queueMu.Lock()
 	if len(b.promptQueue) >= MaxPromptQueueItems {
 		b.queueMu.Unlock()
+		b.enqueueMu.Unlock()
 		return fmt.Errorf("消息队列已满（最多 %d 条），请等待当前回复结束后再发", MaxPromptQueueItems)
 	}
 	b.promptQueue = append(b.promptQueue, queuedPrompt{Text: t, OpID: opID, Action: action, Images: images, MaxDuration: maxDuration, IdleTimeout: idleTimeout})
 	b.queueMu.Unlock()
+	b.enqueueMu.Unlock()
+	// The pump owns turnMu for its single-worker reservation. Do not keep
+	// enqueueMu while pumping: model fallback may reconnect under ensureMu.
 	b.BroadcastQueueState()
 	b.pumpPromptQueue()
 	return nil

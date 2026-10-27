@@ -123,7 +123,7 @@ func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool
 	}
 
 	b.mu.Lock()
-	if b.sess != nil {
+	if sessionUsable(b.sess) {
 		if !mcpUpgradeNeeded(b.lastMCP, mcp) {
 			p := b.sess
 			b.mu.Unlock()
@@ -201,9 +201,11 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 	count, names := mcpServerSummary(mcp)
 	log.Printf("acp: 实际使用目录 cwd=%q fsRoot=%q（前端留空时已用服务端当前目录或默认与 cwd 相同） mcp_servers_count=%d names=%v", cwd, fsEff, count, names)
 
+	b.enqueueMu.Lock()
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
+		b.enqueueMu.Unlock()
 		return nil, ErrChatNotFound
 	}
 	if b.sess != nil {
@@ -212,6 +214,7 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 		b.sess = nil
 	}
 	b.agentCtx, b.agentCancel = context.WithCancel(context.Background())
+	b.agentGeneration++
 	if auto != nil {
 		b.autoPermission = *auto
 	}
@@ -222,6 +225,7 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 	b.clearPromptQueue()
 	b.clearUserTurnHistory()
 	b.evLog.clear()
+	b.enqueueMu.Unlock()
 
 	// 握手 RPC 用 handshakeCtx；子进程必须用会话级 ctx（agentCtx）。切勿把 handshakeCtx 传给 provider.Open，
 	// 否则 Connect 返回时 defer handshakeCancel 会取消 CommandContext 并 SIGKILL 刚握手成功的 Agent。
@@ -273,35 +277,68 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 // WebSocket 客户端（避免仍显示「已连接」但一发消息就 broken pipe）。
 func (b *Bridge) watchAgentConn(watched provider.Session) {
 	<-watched.Done()
-
-	// ExitInfo 内部先 Wait 回收子进程（再 Close，避免 Kill 与 Wait 竞态）。
-	exitMsg, waitErr := watched.ExitInfo()
-	if waitErr != nil {
-		log.Printf("acp: Agent Wait: %v", waitErr)
-	}
-
+	// Invalidate before reaping: Done can mean a fatal protocol error while
+	// the subprocess is still alive. Serialize queue cleanup with reconnects
+	// and new messages so an old watcher cannot clear a replacement's queue.
+	b.ensureMu.Lock()
+	b.enqueueMu.Lock()
 	b.mu.Lock()
 	still := b.sess == watched
 	var cancel context.CancelFunc
+	generation := b.agentGeneration
 	if still {
 		b.sess = nil
 		cancel = b.agentCancel
 	}
 	b.mu.Unlock()
+	if still {
+		b.clearPromptQueue()
+		if cancel != nil {
+			cancel()
+		}
+		// Keep the failed conversation available for diagnosis until an
+		// explicit new Agent session clears it through Connect.
+	}
+	b.enqueueMu.Unlock()
+	if still {
+		b.BroadcastQueueState()
+	}
+	b.ensureMu.Unlock()
+
+	// Close only the watched session, never the current one. ACP Close kills
+	// a process whose stdout reader failed; Wait can then reap it safely.
+	logging.WarnErr(watched.Close(), "agent session close after exit", nil)
+	exitMsg, waitErr := watched.ExitInfo()
+	if waitErr != nil {
+		log.Printf("acp: Agent Wait: %v", waitErr)
+	}
 	if !still {
 		return
 	}
-	b.clearPromptQueue()
-	b.clearUserTurnHistory()
-	b.evLog.clear()
-	b.BroadcastQueueState()
-	if cancel != nil {
-		cancel()
-	}
-	logging.WarnErr(watched.Close(), "agent session close after exit", nil)
 
-	b.broadcastAgentExitDebounced(exitMsg +
-		" （刚显示「会话就绪」就失败，一般是 Agent 鉴权或运行环境问题，不是本页 WebSocket 未连上。）")
+	// Reaping may finish after a reconnect. Hold ensureMu through the notice
+	// so a stale agentExited frame cannot disconnect a newly ready session.
+	b.ensureMu.Lock()
+	defer b.ensureMu.Unlock()
+	b.mu.Lock()
+	notify := b.sess == nil && b.agentGeneration == generation
+	b.mu.Unlock()
+	if notify {
+		b.broadcastAgentExitDebounced(exitMsg +
+			" 请重新连接 Agent 后继续。")
+	}
+}
+
+func sessionUsable(sess provider.Session) bool {
+	if sess == nil {
+		return false
+	}
+	select {
+	case <-sess.Done():
+		return false
+	default:
+		return true
+	}
 }
 
 const agentExitBroadcastMinInterval = 3 * time.Second
