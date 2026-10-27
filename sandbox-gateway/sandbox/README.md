@@ -194,7 +194,7 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 
 DeepSeek Harness 默认使用 `deepseek-flash`，`ACP_BRIDGE_MODEL` 可选 `deepseek-v4-pro`。模型从 ACP 返回的选项中匹配并通过 `session/set_config_option` 应用；未知模型在开始对话前报错。stdio MCP 命令在沙箱内解析成绝对路径，HTTP MCP 保留 URL 与鉴权 Header。
 
-dsh 的启动 patch 不包含密钥，并关闭托管凭据来源，保证本次注入的环境凭据生效。平台配置生成器把角色与 alwaysApply 规则合成全局 `AGENTS.md`，skills 由 `$DSH_HOME/skills` 原生发现。ACP 不提供计费 token 用量，bridge 重启后的自动恢复沿用现有 ACP 限制。镜像能力版本 2 增加 dsh；发布顺序为 server → 新沙箱镜像。
+dsh 的启动 patch 不包含密钥，并关闭托管凭据来源，保证本次注入的环境凭据生效。平台配置生成器把角色与 alwaysApply 规则合成全局 `AGENTS.md`，skills 由 `$DSH_HOME/skills` 原生发现。ACP 本身只回 `stopReason`，计费用量由 bridge 读取 dsh 的 `storages/session_projcache` 投影并按轮差分，缓存缺失或回退时省略；子代理会话暂不汇总。bridge 重启后的自动恢复沿用现有 ACP 限制。镜像能力版本 2 增加 dsh；发布顺序为 server → 新沙箱镜像。
 
 ### 7. Claude Code 环境（`claude_code` 后端 / `ai-code` 便捷命令）
 

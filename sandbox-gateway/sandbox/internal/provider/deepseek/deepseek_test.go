@@ -180,17 +180,29 @@ func TestOpenNegotiatesModelAndPreservesTransport(t *testing.T) {
 	if info := sess.Info(); info.ModelID != "deepseek-v4-pro" || info.ModelName != "DeepSeek Pro" || info.Name != "dsh-fixture" {
 		t.Fatalf("wrong connected metadata: %+v", info)
 	}
-	if sess.ReportsUsage() || sess.CumulativeUsage() != nil || sess.SessionID() != "fixture-session" || !filepath.IsAbs(sess.CWD()) || sess.FSRoot() != sess.CWD() {
+	if !sess.ReportsUsage() || sess.CumulativeUsage() != nil || sess.SessionID() != "fixture-session" || !filepath.IsAbs(sess.CWD()) || sess.FSRoot() != sess.CWD() {
 		t.Fatalf("unexpected session metadata/usage")
 	}
 	for i := range 2 {
 		res, err := sess.Prompt(context.Background(), fmt.Sprintf("turn %d", i), nil)
-		if err != nil || res.StopReason != "end_turn" || res.Usage != nil {
+		if err != nil || res.StopReason != "end_turn" {
 			t.Fatalf("turn failed: %+v %v", res, err)
+		}
+		// 夹具每轮累计 +100/+20/+30/+5，provider 必须按轮差分。
+		want := map[string]provider.TokenUsage{"deepseek-v4-pro": {
+			InputTokens: 100, OutputTokens: 20, CacheReadTokens: 30, CacheWriteTokens: 5,
+		}}
+		if !reflect.DeepEqual(res.Usage, want) {
+			t.Fatalf("turn %d usage = %+v, want %+v", i, res.Usage, want)
 		}
 	}
 	if len(events) != 4 {
 		t.Fatalf("expected text + done per turn, got %d events", len(events))
+	}
+	for _, idx := range []int{1, 3} {
+		if !strings.Contains(string(events[idx]), `"usage"`) || !strings.Contains(string(events[idx]), `"inputTokens":100`) {
+			t.Fatalf("prompt_done without per-turn usage: %s", events[idx])
+		}
 	}
 	data, err := os.ReadFile(trace)
 	if err != nil {
@@ -508,6 +520,49 @@ func TestDSHProcess(t *testing.T) {
 	notify := func(text string) {
 		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fixture-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": text}}}})
 	}
+	// 模拟 dsh 的 tokenUsage 投影缓存：每完成一轮累计增加固定的四桶用量。
+	usageCalls := int64(0)
+	writeUsageCache := func() {
+		usageCalls++
+		home := os.Getenv("DSH_HOME")
+		if home == "" {
+			return
+		}
+		dir := filepath.Join(home, "storages", "session_projcache", "sessions")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			os.Exit(5)
+		}
+		record := map[string]any{
+			"version": 7,
+			"record": map[string]any{"rows": map[string]any{
+				"tokenUsage": map[string]any{
+					"ver": 2,
+					"seq": usageCalls * 10,
+					"val": map[string]any{"totals": map[string]any{
+						"uncachedInputTokens": usageCalls * 100,
+						"outputTokens":        usageCalls * 20,
+						"cacheReadTokens":     usageCalls * 30,
+						"cacheWriteTokens":    usageCalls * 5,
+					}},
+				},
+				"title":       map[string]any{"ver": 1, "seq": usageCalls * 10, "val": "fixture"},
+				"sandboxMode": map[string]any{"ver": 1, "seq": usageCalls * 10, "val": "workspace-write"},
+				"todos":       map[string]any{"ver": 2, "seq": usageCalls * 10, "val": nil},
+			}},
+		}
+		encoded, err := json.Marshal(record)
+		if err != nil {
+			os.Exit(5)
+		}
+		path := filepath.Join(dir, "fixture-session.json")
+		tmp := path + ".tmp"
+		if err := os.WriteFile(tmp, encoded, 0o600); err != nil {
+			os.Exit(5)
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			os.Exit(5)
+		}
+	}
 	var waiting, permissionPrompt json.RawMessage
 	scan := bufio.NewScanner(os.Stdin)
 	for scan.Scan() {
@@ -596,6 +651,7 @@ func TestDSHProcess(t *testing.T) {
 				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "permission", "method": "session/request_permission", "params": map[string]any{"sessionId": "fixture-session", "options": []any{map[string]any{"optionId": "allow", "kind": "allow_once"}, map[string]any{"optionId": "deny", "kind": "reject_once"}}}})
 			default:
 				notify(model)
+				writeUsageCache()
 				respond(req.ID, map[string]any{"stopReason": "end_turn"})
 			}
 		case "session/cancel":

@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-28（DSH 每轮 token 用量接入统计）
+
+- 日期：2026-10-28（Asia/Shanghai）。
+- 范围：`sandbox-gateway/sandbox/internal/provider/deepseek/{deepseek.go,usage.go,usage_test.go,deepseek_test.go}`、`sandbox-gateway/sandbox/internal/acp/panel.go`、`server/README.md`、`sandbox-gateway/sandbox/README.md`、`CHANGELOG.md`。
+- 做了什么：给 ACP `Panel` 增加可选的 `PromptUsage` 钩子，在 `session/prompt` 返回后把本轮用量写进 `prompt_done.usage`；DSH provider 读取固定版本 dsh 的 `storages/session_projcache/sessions/<sessionID>.json` 中 `tokenUsage` 投影（uncachedInput/output/cacheRead/cacheWrite），按轮前后累计值差分后上报，并对 `turn/end` 的异步落盘做短重试；缓存缺失、回退重建、畸形 JSON 或非法 session id 时保持省略 `usage` 的旧帧结构。`ReportsUsage` 改为 true，`CumulativeUsage` 仍返回空（投影不区分模型，跨模型复用会话无法正确归属）。
+- 为什么：dsh 的 ACP 响应只带 `stopReason`，`usage_update` 只是上下文占用，因此 Grasp 的 token ledger 对 DSH 一直是 0；而 dsh 自身已经把精确的四桶累计写入投影缓存，应直接复用，不能再让用量分析漏掉 DeepSeek Harness。
+- 如何验证：新增 usage tracker 单测覆盖按轮差分、异步落盘重试、无变化、缓存回退、畸形/缺行/负值、非法 session id 与空模型回退；DSH 子进程夹具按真实缓存路径写入累计用量，断言每轮 `TurnResult.Usage` 与 `prompt_done` 帧；另用当前会话的真实缓存跑过一次解析，发现并修复了“其他投影行的 `val` 是字符串/null 时整块反序列化失败”的问题，夹具已加入同类兄弟行。`go test ./...`（`sandbox-gateway/sandbox`）全绿，`go test ./internal/provider/deepseek ./internal/acp` 通过。`server/README.md`、`sandbox-gateway/sandbox/README.md` 与 `CHANGELOG.md` 已同步说明统计口径及子代理限制。
+
 ### 2026-10-27（修复尾部「思考中…」横向对齐）
 
 - 日期：2026-10-27。

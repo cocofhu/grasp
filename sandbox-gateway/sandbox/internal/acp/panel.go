@@ -103,6 +103,10 @@ type Panel struct {
 
 	OnEvent func(ev json.RawMessage)
 
+	// PromptUsage 可选：在本轮 session/prompt 返回后、prompt_done 发出前调用，
+	// 返回本轮用量；为空或返回空 map 时帧结构与旧版完全一致。
+	PromptUsage func() map[string]provider.TokenUsage
+
 	Permissions PermissionChooser
 }
 
@@ -642,11 +646,17 @@ func (p *Panel) Prompt(ctx context.Context, text string, images []PromptImage) (
 	if err := json.Unmarshal(res, &out); err != nil {
 		return "", err
 	}
-	p.emit(map[string]any{
+	frame := map[string]any{
 		"type":       "prompt_done",
 		"sessionId":  p.SessionID,
 		"stopReason": out.StopReason,
-	})
+	}
+	if p.PromptUsage != nil {
+		if usage := p.PromptUsage(); len(usage) > 0 {
+			frame["usage"] = usage
+		}
+	}
+	p.emit(frame)
 	return out.StopReason, nil
 }
 
