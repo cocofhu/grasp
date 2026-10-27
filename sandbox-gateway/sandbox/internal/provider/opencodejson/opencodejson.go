@@ -87,6 +87,9 @@ type toolState struct {
 	Status string          `json:"status"`
 	Input  json.RawMessage `json:"input"`
 	Output any             `json:"output"`
+	// Error is set when Status is error (OpenCode stores the failure text here,
+	// not in Output).
+	Error any `json:"error"`
 }
 
 type part struct {
@@ -145,11 +148,9 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 			Kind: oneshot.KindToolUse, ToolCallID: ev.Part.CallID, ToolTitle: ev.Part.Tool, RawInput: input,
 		})
 		// A single tool_use event carries both the call and (when finished)
-		// its result in part.state, so emit a matching tool result too.
-		if ev.Part.State != nil && ev.Part.State.Status == "completed" {
-			res.Msgs = append(res.Msgs, oneshot.Msg{
-				Kind: oneshot.KindToolResult, ToolCallID: ev.Part.CallID, Text: extractToolOutput(ev.Part.State.Output),
-			})
+		// its result in part.state. OpenCode emits this for completed and error.
+		if msg, ok := toolResult(ev.Part); ok {
+			res.Msgs = append(res.Msgs, msg)
 		}
 	case "error":
 		res.StopReason = "failed"
@@ -171,6 +172,28 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		}
 	}
 	return res
+}
+
+// toolResult maps a finished tool_use part onto a tool result. Pending and
+// running updates stay as the tool-use event alone, so the card remains open.
+func toolResult(p part) (oneshot.Msg, bool) {
+	if p.State == nil {
+		return oneshot.Msg{}, false
+	}
+	msg := oneshot.Msg{Kind: oneshot.KindToolResult, ToolCallID: p.CallID}
+	switch p.State.Status {
+	case "completed":
+		msg.Text = extractToolOutput(p.State.Output)
+	case "error", "failed":
+		msg.ToolStatus = "failed"
+		msg.Text = extractToolOutput(p.State.Error)
+		if msg.Text == "" {
+			msg.Text = extractToolOutput(p.State.Output)
+		}
+	default:
+		return oneshot.Msg{}, false
+	}
+	return msg, true
 }
 
 // extractToolOutput renders a tool's state.output (string or arbitrary JSON)

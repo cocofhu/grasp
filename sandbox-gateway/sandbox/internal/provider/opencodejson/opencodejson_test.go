@@ -61,6 +61,29 @@ func TestParseToolUse(t *testing.T) {
 	}
 }
 
+func TestParseToolUseFinished(t *testing.T) {
+	c := &codec{}
+	t.Run("completed", func(t *testing.T) {
+		pr := c.ParseLine([]byte(`{"type":"tool_use","part":{"tool":"bash","callID":"c1","state":{"status":"completed","output":"docs\n"}}}`))
+		if len(pr.Msgs) != 2 || pr.Msgs[1].Kind != oneshot.KindToolResult || pr.Msgs[1].ToolStatus != "" || pr.Msgs[1].Text != "docs\n" {
+			t.Fatalf("msgs=%+v", pr.Msgs)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		pr := c.ParseLine([]byte(`{"type":"tool_use","part":{"tool":"artifact-store_get_plan","callID":"c2","state":{"status":"error","input":{},"error":"get_plan failed: denied"}}}`))
+		if len(pr.Msgs) != 2 {
+			t.Fatalf("msgs=%+v", pr.Msgs)
+		}
+		if pr.Msgs[0].Kind != oneshot.KindToolUse || pr.Msgs[0].ToolCallID != "c2" || pr.Msgs[0].ToolTitle != "artifact-store_get_plan" {
+			t.Fatalf("use=%+v", pr.Msgs[0])
+		}
+		got := pr.Msgs[1]
+		if got.Kind != oneshot.KindToolResult || got.ToolCallID != "c2" || got.ToolStatus != "failed" || got.Text != "get_plan failed: denied" {
+			t.Fatalf("result=%+v", got)
+		}
+	})
+}
+
 func TestParseStepFinishUsage(t *testing.T) {
 	c := &codec{}
 	pr := c.ParseLine([]byte(`{"type":"step_finish","part":{"reason":"stop","tokens":{"input":10,"output":20,"cache":{"read":3,"write":4}}}}`))

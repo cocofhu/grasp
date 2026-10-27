@@ -2,12 +2,15 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
@@ -586,6 +589,100 @@ func TestSoloEmptyWorkspace(t *testing.T) {
 		env := fg.LastCreateEnv()
 		return env != nil && env["GIT_REPOS"] == ""
 	})
+}
+
+// imageChat records the prompt and attachments one Solo turn hands to the model.
+type imageChat struct {
+	mu     sync.Mutex
+	text   string
+	images []models.PromptImage
+	calls  int
+	done   chan struct{}
+}
+
+func (c *imageChat) ChatWithTimeout(_ context.Context, _ uint, text string, images []models.PromptImage, _ time.Duration, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+	c.mu.Lock()
+	c.calls++
+	c.text = text
+	c.images = append([]models.PromptImage(nil), images...)
+	c.mu.Unlock()
+	select {
+	case <-c.done:
+	default:
+		close(c.done)
+	}
+	return &models.TokenUsage{}, nil, nil
+}
+
+func (c *imageChat) Cancel(uint) {}
+
+func TestSoloSendExternalizesImages(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, db := newSoloFixture(t, port, 3)
+	ctx := context.Background()
+	v, err := solo.Create(ctx, "alice", SoloCreateInput{AgentName: "agentA"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "sandbox ready", func() bool {
+		row, err := solo.Require(v.ID, "alice")
+		return err == nil && row.Status == models.SoloStatusRunning
+	})
+
+	chat := &imageChat{done: make(chan struct{})}
+	solo.SetChatterForTest(chat)
+	raw := []models.PromptImage{{Data: "aGVsbG8=", MimeType: "image/png", Name: "shot.png"}}
+	if _, err := solo.Send(v.ID, "alice", "", raw); err == nil || !strings.Contains(err.Error(), "blob store not configured") {
+		t.Fatalf("missing blob store: %v", err)
+	}
+	if chat.calls != 0 {
+		t.Fatal("dropped attachment was still sent")
+	}
+
+	solo.SetBlobStore(blob.NewMemory())
+	if _, err := solo.Send(v.ID, "alice", "", raw); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-chat.done:
+	case <-time.After(8 * time.Second):
+		t.Fatal("timed out waiting for the image turn")
+	}
+
+	chat.mu.Lock()
+	gotText, gotImages := chat.text, chat.images
+	chat.mu.Unlock()
+	if gotText != "（见附件）" {
+		t.Fatalf("prompt = %q", gotText)
+	}
+	if len(gotImages) != 1 || !strings.HasPrefix(gotImages[0].Ref, "blob:") || gotImages[0].Data != "" || gotImages[0].Name != "shot.png" || gotImages[0].MimeType != "image/png" {
+		t.Fatalf("chat images = %+v", gotImages)
+	}
+
+	msgs, err := solo.Messages(v.ID, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored models.SoloMessage
+	for _, m := range msgs {
+		if m.Role == "user" {
+			stored = m
+		}
+	}
+	if stored.ID == "" || stored.Content != "" {
+		t.Fatalf("user message = %+v", stored)
+	}
+	if len(stored.Images) != 1 || stored.Images[0].Ref != gotImages[0].Ref || stored.Images[0].Data != "" {
+		t.Fatalf("stored images = %+v", stored.Images)
+	}
+	var row models.SoloMessage
+	if err := db.First(&row, "id = ?", stored.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(row.Images) != 1 || row.Images[0].Data != "" || row.Images[0].Ref != gotImages[0].Ref {
+		t.Fatalf("db images = %+v", row.Images)
+	}
 }
 
 func counts(t *testing.T, db *gorm.DB) (sessions, sandboxes int64) {

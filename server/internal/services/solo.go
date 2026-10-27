@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
@@ -106,6 +107,7 @@ type SoloEnvEntry struct {
 // SoloService runs Solo sessions: one Agent, an optional project, a resident
 // sandbox and a FIFO of chat turns per session.
 type SoloService struct {
+	blobs    blob.Store
 	db       *gorm.DB
 	sbx      *SandboxService
 	agents   *AgentService
@@ -161,6 +163,9 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 	}
 	return s
 }
+
+// SetBlobStore wires attachment externalization for Solo turns.
+func (s *SoloService) SetBlobStore(store blob.Store) { s.blobs = store }
 
 // SetChatterForTest replaces the sandbox chat backend.
 func (s *SoloService) SetChatterForTest(c pmChatter) { s.chat = c }
@@ -1030,6 +1035,10 @@ func (s *SoloService) Send(id, user, text string, images []models.PromptImage) (
 	text = strings.TrimSpace(text)
 	if text == "" && len(images) == 0 {
 		return 0, soloErr(http.StatusBadRequest, "content_required", "消息不能为空")
+	}
+	images, err = blob.IngestPromptImages(context.Background(), s.blobs, images)
+	if err != nil {
+		return 0, fmt.Errorf("ingest attachments: %w", err)
 	}
 	if s.chat == nil {
 		return 0, errors.New("solo chat unavailable")
