@@ -86,6 +86,8 @@ async function loadUnknownModelDisplayName() {
   }
 }
 const runLoading = ref(false)
+/** Latest getRun generation owns snapshots, route changes and loading cleanup. */
+let runLoadGeneration = 0
 const loadError = ref(false)
 const loadErrorKind = ref<RunLoadErrorKind | null>(null)
 const refreshing = ref(false)
@@ -339,15 +341,20 @@ function isClarifySessionBusy(): boolean {
   return false
 }
 
-async function refreshArtifactPreviewState(frame?: { previewArtifact?: string }) {
+async function refreshArtifactPreviewState(
+  frame?: { previewArtifact?: string },
+  generation = runLoadGeneration,
+) {
+  const id = runId.value
+  const isCurrent = () => generation === runLoadGeneration && runId.value === id
   const name = String(frame?.previewArtifact || '').trim()
   const nodeId = selClarify.value?.nodeId || selected.value
   if (name && nodeId) {
     run.value = applyPreviewArtifactName(run.value, nodeId, name)
   }
   try {
-    const arts = await api.runArtifacts(runId.value)
-    if (!Array.isArray(arts)) return
+    const arts = await api.runArtifacts(id)
+    if (!isCurrent() || !Array.isArray(arts)) return
     if (artifactsListFingerprint(run.value.artifacts) === artifactsListFingerprint(arts)) return
     run.value = { ...run.value, artifacts: arts }
   } catch {
@@ -359,11 +366,13 @@ async function refreshArtifactPreviewState(frame?: { previewArtifact?: string })
 let chromePatchInflight = false
 async function patchRunChrome() {
   const id = runId.value
+  const generation = runLoadGeneration
   if (chromePatchInflight || runLoading.value || loadError.value) return
   if (isClearlyInvalidRunRouteId(id)) return
   chromePatchInflight = true
   try {
     const snapshot = await api.getRun(id)
+    if (generation !== runLoadGeneration || runId.value !== id) return
     const prev = run.value
     // Keeps in-progress streaming bubbles; adopts clarify once the server copy
     // is more complete and the session is no longer ahead (plan g1.3).
@@ -379,7 +388,7 @@ async function patchRunChrome() {
     // clear liveBusy while the chat is still streaming (plan g1.3).
     if (turnsChanged) releaseIdleClarifyBusy(prev, merged, snapshot)
     if (artsChanged) {
-      void refreshArtifactPreviewState()
+      void refreshArtifactPreviewState(undefined, generation)
     }
   } catch {
     /* keep last known chrome */
@@ -466,13 +475,15 @@ function classifyRunLoadError(err: unknown): RunLoadErrorKind {
   return 'network_or_server'
 }
 
-async function fetchRunData(): Promise<true | RunLoadErrorKind> {
+async function fetchRunData(generation = ++runLoadGeneration): Promise<true | RunLoadErrorKind> {
   const id = runId.value
+  const isCurrent = () => generation === runLoadGeneration && runId.value === id
   if (isClearlyInvalidRunRouteId(id)) {
     return 'not_found'
   }
   try {
     const r = await api.getRun(id)
+    if (!isCurrent()) return true
     if (run.value.id === r.id && runSnapshotUnchanged(run.value, r)) {
       await loadUnknownModelDisplayName()
       return true
@@ -500,19 +511,25 @@ async function fetchRunData(): Promise<true | RunLoadErrorKind> {
         version: r.workflowVersion || 1, updatedAt: '', needsRepo: false, nodes: r.nodes, edges: r.edges || [],
       }
     } else if (r.workflowId) {
-      wf.value = await api.getWorkflow(r.workflowId)
+      const workflow = await api.getWorkflow(r.workflowId)
+      if (!isCurrent()) return true
+      wf.value = workflow
     }
     await loadUnknownModelDisplayName()
+    if (!isCurrent()) return true
     // Refresh-resume: wait for dialogue surfaces to mount, then project busy/queue.
-    void projectDialogueAfterLoad(r)
+    void projectDialogueAfterLoad(r, isCurrent)
     return true
   } catch (err) {
+    if (!isCurrent()) return true
     return classifyRunLoadError(err)
   }
 }
 
 async function loadRun(hard = false, silent = false) {
   const id = runId.value
+  const generation = ++runLoadGeneration
+  const isCurrent = () => generation === runLoadGeneration && runId.value === id
   if (hard) {
     runLoading.value = true
     loadError.value = false
@@ -524,7 +541,8 @@ async function loadRun(hard = false, silent = false) {
   }
 
   try {
-    const result = await fetchRunData()
+    const result = await fetchRunData(generation)
+    if (!isCurrent()) return
     if (hard) {
       if (result === true) {
         loadError.value = false
@@ -541,8 +559,12 @@ async function loadRun(hard = false, silent = false) {
       }
     }
   } finally {
-    if (hard) runLoading.value = false
-    else if (!silent) refreshing.value = false
+    if (isCurrent()) {
+      // The newest request also owns any loading flag left by the request it
+      // superseded; an older finally must never clear a newer request's flags.
+      runLoading.value = false
+      refreshing.value = false
+    }
   }
 }
 
@@ -576,6 +598,7 @@ watch(
   },
 )
 onUnmounted(() => {
+  runLoadGeneration++
   if (clock) window.clearInterval(clock)
   abortSandboxFetches()
   document.removeEventListener('visibilitychange', onVisible)

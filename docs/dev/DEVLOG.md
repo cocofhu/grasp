@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-27（修复全入口消息末尾可靠性）
+
+- 日期：2026-10-27（Asia/Shanghai）。
+- 范围：`web/src/lib/inbox/`、`src/lib/run/`、`src/lib/pm/`、`src/components/run/`、`src/components/agent/`、`web/e2e/message-reliability*`；`server/internal/chatsession/`、`server/internal/handlers/`；`CHANGELOG.md`。
+- 做了什么：Clarify 以当前历史锚点限制同文轮次合并，并覆盖无 `turn_begin` 的 busy 恢复；Inbox 在单飞期间合并保留一次末尾刷新；RunDetail 以请求代际隔离快照、loading、异步对话投影和 artifacts，PreviewFeedback 隔离旧响应并按 ID upsert 已落库 issue。PM 在冷启动 idle 时有界重读历史并隔离跨轮 finalizing。Studio 在重连后按事件历史恢复 idle 完成态，以稳定 opId 复用迟到的活跃尾轮，同时保留 earlier 前缀与非空旧日志、重定位活动游标，并兼容无 opId/尚无输出的尾轮。慢订阅无法在有界等待内交付时关闭订阅及 WebSocket，由现有断线恢复收敛，不再静默丢弃尾帧。
+- 为什么：发送成功但实时帧、刷新或请求响应发生竞态时，界面会漏消息、重复同文回合或被旧快照覆盖，只能整页刷新才能看到持久化结果。
+- 如何验证：新增回归先复现同文合并、末尾刷新、旧响应覆盖、PM/Studio idle 与慢订阅尾帧失败；消息链路定向 Vitest、Go 专项及 targeted race 通过。新增 3 项浏览器竞态与 45 项既有消息链路 Playwright 通过；Server 全量 lint/vet/configdoc/test/coverage/runtime 通过（核心覆盖率 90.4%）。Web lint/typecheck/build 通过，全量 528 个文件、5,577 项单测通过，Lines 91.50%；完整 critical Playwright 248/248 通过，docs build/audit 与根 actionlint/error-level shellcheck 通过。
+
 ### 2026-10-27（修复 CLI 失败后空回复与 OpenCode 变体参数）
 
 - 日期：2026-10-27。

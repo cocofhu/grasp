@@ -350,14 +350,7 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 
 	ch, unsub := h.SbxChats.Subscribe(id, -1)
 	defer unsub()
-	go func() {
-		for ev := range ch {
-			if write(ev.Frame()) != nil {
-				_ = conn.Close()
-				return
-			}
-		}
-	}()
+	go pumpChatSubscription(conn, ch, write, nil)
 
 	for {
 		_, data, err := conn.ReadMessage()

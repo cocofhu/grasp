@@ -17,8 +17,7 @@ const (
 // DefaultStreamBuffer caps the frames kept for replaying the active turn.
 const DefaultStreamBuffer = 2048
 
-// subscriberGrace is how long a slow subscriber may block a frame before it is
-// skipped for that subscriber.
+// subscriberGrace 是慢订阅阻塞单帧发送的最长等待时间。
 const subscriberGrace = 3 * time.Second
 
 // Event is one frame of a chat stream.
@@ -122,7 +121,7 @@ func (s *Stream) Emit(ev Event, keep Keep) {
 func (s *Stream) Subscribe(head func() (queueState map[string]any, busy bool), afterSeq int) (<-chan Event, func()) {
 	s.mu.Lock()
 	ch := make(chan Event, s.max+16)
-	sub := &subscriber{ch: ch}
+	sub := &subscriber{ch: ch, grace: subscriberGrace}
 	qs, busy := head()
 	ch <- Event{Seq: s.nextSeq - 1, Type: FrameSession, Event: EventQueueState, Payload: qs}
 	if busy {
@@ -156,6 +155,7 @@ func (s *Stream) LastSeq() int {
 type subscriber struct {
 	mu     sync.Mutex
 	ch     chan Event
+	grace  time.Duration
 	closed bool
 }
 
@@ -181,7 +181,10 @@ func (s *subscriber) send(ev Event) {
 	}
 	select {
 	case s.ch <- ev:
-	case <-time.After(subscriberGrace):
-		log.Warn().Int("seq", ev.Seq).Str("type", ev.Type).Msg("chat stream subscriber too slow; frame skipped")
+	case <-time.After(s.grace):
+		log.Warn().Int("seq", ev.Seq).Str("type", ev.Type).Msg("chat stream subscriber too slow; frame skipped and subscription closed")
+		// 与 close 共用同一把锁，避免并发发送或重复关闭 channel。
+		s.closed = true
+		close(s.ch)
 	}
 }

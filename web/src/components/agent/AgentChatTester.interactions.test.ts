@@ -574,9 +574,35 @@ describe('AgentChatTester interactions', () => {
     expect(reply.text).toBe('live answer continued')
     expect(scroller.scrollTop).toBe(520)
     expect(vm.followBottom).toBe(false)
+    // First open establishes the sandbox identity; the second is a real reconnect.
     vm.openWs(7)
     socket!.onopen?.()
     await flushPromises()
+    vm.openWs(7)
+    socket!.onopen?.()
+    await flushPromises()
+    expect(vm.turns.at(-1)).toBe(reply)
+    expect(vm.activeIdx).toBe(vm.turns.length - 1)
+    expect(() => vm.beginTurn({ item: { id: 'live-question', text: 'live question' } })).not.toThrow()
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:live-question')).toHaveLength(1)
+
+    const earlierIds = vm.turns.slice(0, -2).map((turn: any) => turn.id)
+    mocks.eventLog.mockResolvedValueOnce({
+      events: [
+        { type: 'prompt_begin', opId: 'live-question', promptText: 'live question' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'live final' } } },
+        { type: 'prompt_done' },
+      ],
+      hasMore: true,
+      nextCursor: 'older',
+    })
+    vm.openWs(7)
+    socket!.onopen?.()
+    frame('queue_state', { busy: false, items: [] })
+    await flushPromises()
+    expect(vm.turns.slice(0, -2).map((turn: any) => turn.id)).toEqual(earlierIds)
+    expect(vm.turns.slice(-2).map((turn: any) => turn.text)).toEqual(['live question', 'live final'])
+    expect(vm.activeIdx).toBe(-1)
     vm.input = 'next question'
     vm.send()
     await flushPromises()
@@ -604,12 +630,98 @@ describe('AgentChatTester interactions', () => {
     w.unmount()
   })
 
+  it('reuses a restored active turn when its replay arrives after history', async () => {
+    mocks.eventLog.mockResolvedValue({
+      events: [
+        { type: 'prompt_begin', opId: 'srv-late', promptText: 'live' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'par' } } },
+      ],
+    })
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.openWs(5)
+    socket!.onopen?.()
+    await flushPromises()
+    expect(vm.turns.map((t: any) => t.text)).toEqual(['live', 'par'])
+
+    frame('queue_state', { busy: true, activeItem: { id: 'srv-late', text: 'live' }, items: [] })
+    frame('turn_begin', { item: { id: 'srv-late', text: 'live' } })
+    frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'partial' } } } })
+    await flushPromises()
+    expect(vm.turns.map((t: any) => t.text)).toEqual(['live', 'partial'])
+    expect(vm.turns.filter((t: any) => t.id === 'question:srv-late')).toHaveLength(1)
+    expect(vm.turns.at(-1).streaming).toBe(true)
+    w.unmount()
+  })
+
+  it('keeps a richer live partial only while restored history is still active', async () => {
+    mocks.eventLog.mockResolvedValue({
+      events: [
+        { type: 'prompt_begin', opId: 'active', promptText: 'live' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'par' } } },
+      ],
+    })
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.turns = [
+      { id: 'question:active', role: 'user', text: 'live', thought: '', tools: [], plan: [], streaming: false },
+      { id: 'question:active:reply', role: 'agent', text: 'partial longer', thought: '', tools: [], plan: [], streaming: true },
+    ]
+    vm.activeIdx = 1
+    vm.activeItemId = 'active'
+    vm.wsSandboxId = 5
+    vm.openWs(5)
+    socket!.onopen?.()
+    await flushPromises()
+    expect(vm.turns.at(-1)).toMatchObject({ text: 'partial longer', streaming: true })
+
+    mocks.eventLog.mockResolvedValue({
+      events: [
+        { type: 'prompt_begin', opId: 'active', promptText: 'live' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'done' } } },
+        { type: 'prompt_done' },
+      ],
+    })
+    vm.openWs(5)
+    socket!.onopen?.()
+    await flushPromises()
+    expect(vm.turns.at(-1)).toMatchObject({ text: 'done', streaming: false })
+    w.unmount()
+  })
+
+  it('reconciles a legacy active prompt that has no reply or opId yet', async () => {
+    mocks.eventLog.mockResolvedValue({ events: [{ type: 'prompt_begin', promptText: 'live' }] })
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.turns = [
+      { id: 'question:legacy', role: 'user', text: 'live', thought: '', tools: [], plan: [], streaming: false },
+      { id: 'question:legacy:reply', role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true },
+    ]
+    vm.activeIdx = 1
+    vm.activeItemId = 'legacy'
+    vm.wsSandboxId = 5
+    vm.openWs(5)
+    socket!.onopen?.()
+    await flushPromises()
+    expect(vm.turns.map((t: any) => t.role)).toEqual(['user', 'agent'])
+    expect(vm.turns.filter((t: any) => t.role === 'user' && t.text === 'live')).toHaveLength(1)
+    expect(vm.activeIdx).toBe(1)
+
+    frame('turn_begin', { item: { id: 'legacy', text: 'live' } })
+    frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'partial' } } } })
+    expect(vm.turns.map((t: any) => t.text)).toEqual(['live', 'partial'])
+    w.unmount()
+  })
+
   it('replays a running turn after reconnecting without duplicating it', async () => {
     mocks.eventLog.mockResolvedValue({
       events: [
         { type: 'prompt_begin', promptText: 'old' },
         { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'done' } } },
-        { type: 'prompt_begin', promptText: 'live' },
+        { type: 'prompt_begin', opId: 'srv-1', promptText: 'live' },
         { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'par' } } },
       ],
     })
@@ -636,11 +748,23 @@ describe('AgentChatTester interactions', () => {
     await flushPromises()
     expect(vm.turns.map((t: any) => t.text)).toEqual(['old', 'done', 'live', 'partial more'])
 
-    // The turn finished while disconnected: an idle snapshot settles it.
+    // The turn finished while disconnected: idle must reconcile the event log,
+    // not merely stop the old partial bubble's streaming caret.
+    mocks.eventLog.mockResolvedValue({
+      events: [
+        { type: 'prompt_begin', promptText: 'old' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'done' } } },
+        { type: 'prompt_begin', opId: 'srv-1', promptText: 'live' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'partial more final' } } },
+        { type: 'prompt_done', stopReason: 'end_turn' },
+      ],
+    })
     vm.openWs(5)
     socket!.onopen?.()
     frame('queue_state', { busy: false, waiting: 0, items: [] })
     await flushPromises()
+    expect(vm.turns.map((t: any) => t.text)).toEqual(['old', 'done', 'live', 'partial more final'])
+    expect(vm.turns.filter((t: any) => t.id === 'question:srv-1')).toHaveLength(1)
     expect(vm.turns.at(-1).streaming).toBe(false)
     expect(vm.status).toBe('ready')
     frame('error', { message: '消息队列已满，请稍候' })

@@ -11,7 +11,6 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 )
 
 func writeSoloErr(c *gin.Context, err error) {
@@ -423,23 +422,7 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 		defer close(writeDone)
 		ping := time.NewTicker(soloPingPeriod)
 		defer ping.Stop()
-		for {
-			select {
-			case ev, ok := <-ch:
-				if !ok {
-					return
-				}
-				if err := conn.WriteJSON(ev.Frame()); err != nil {
-					_ = conn.Close()
-					return
-				}
-			case <-ping.C:
-				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(soloWriteWait)); err != nil {
-					_ = conn.Close()
-					return
-				}
-			}
-		}
+		pumpChatSubscription(conn, ch, conn.WriteJSON, ping.C)
 	}()
 
 	for {

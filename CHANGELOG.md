@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Reliable live message delivery:** repeated identical clarify replies stay in separate turns, completion refreshes are no longer lost, and stale detail or preview-feedback responses cannot overwrite newer context. PM and Agent Studio reconcile saved history after idle reconnects, slow chat subscribers reconnect instead of silently losing final frames, and Studio reuses an active restored turn when its replay arrives late.
+
 - **Agent chat failures:** OpenCode passes reasoning variants separately from model IDs. Gemini chats now display native streamed text, tools and failure details, with cached input counted once. Solo and Agent test chats show provider failures and refusals, including errors recovered from older empty replies, while retaining partial output and usage.
 
 - **API model image input:** OpenCode, CodeBuddy and DeepSeek Harness model groups can declare text-only or text-and-image input for primary and auxiliary models. Saving fills missing model-directory metadata without overwriting explicit choices. Native adapters consistently honor those declarations, preventing image-capable custom models from being treated as text-only when their API directory omits capabilities. Claude Code and Codex retain their native image handling; platform-authorized tools retain their own model catalogs.

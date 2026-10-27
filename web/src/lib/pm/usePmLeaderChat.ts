@@ -180,6 +180,10 @@ const sandboxBootStatus = ref('')
 /** Discard stale listPmMessages responses after thread switch or re-load. */
 let threadLoadGen = 0
 let threadsLoadGen = 0
+/** 新回合开始后，作废旧回合同线程的 finalizing 响应。 */
+let turnGen = 0
+/** 每次连接或观察到新回合时，最多做一次 idle 历史对账。 */
+let idleHistoryReconciled = false
 
 const enabled = computed(() => !!props.binding?.enabled)
 const threadsLoadFailed = ref(false)
@@ -695,6 +699,7 @@ function openThreadWs() {
   clearReconnectTimer()
   const tid = wsThreadId
   if (!tid || disposed) return
+  idleHistoryReconciled = false
   let socket: WebSocket
   try {
     socket = new WebSocket(api.pmThreadChatWsUrl(tid))
@@ -769,9 +774,10 @@ function handleFrame(msg: any) {
   }
 }
 
-/** Snapshot / queue change: busy restores the live bubble; idle settles a turn whose end we missed. */
+/** 队列快照/变化：busy 恢复 live 气泡；idle 做一次历史对账。 */
 function applyQueueState(msg: { busy?: boolean; waiting?: number; phase?: string; userMsgId?: string }) {
   if (msg.busy) {
+    idleHistoryReconciled = false
     if (msg.phase) sandboxBootStatus.value = msg.phase
     if (msg.userMsgId && msg.userMsgId !== activeUserMessageId.value) {
       beginServerTurn(msg.userMsgId)
@@ -784,10 +790,20 @@ function applyQueueState(msg: { busy?: boolean; waiting?: number; phase?: string
   }
   if ((msg.waiting ?? 0) > 0) return
   sandboxBootStatus.value = ''
-  if ((sending.value || streaming.value) && !finalizing.value) void onTurnDone()
+  if (idleHistoryReconciled) return
+  idleHistoryReconciled = true
+  if (finalizing.value) {
+    // 重连后的 idle 可能是尾部历史拉取失败后的最后一个控制帧。
+    if (finalizingRefetchFailed.value) void refetchAfterTurnDone()
+    return
+  }
+  // 首次 GET 后、订阅前，其它入口可能已完成一轮。
+  void onTurnDone()
 }
 
 function beginServerTurn(userMsgId: string) {
+  turnGen += 1
+  idleHistoryReconciled = false
   if (userMsgId) activeUserMessageId.value = userMsgId
   clearStreamText()
   sending.value = false
@@ -801,6 +817,7 @@ function beginServerTurn(userMsgId: string) {
 }
 
 function resetTurnLocal() {
+  turnGen += 1
   clearStreamText()
   streaming.value = false
   sending.value = false
@@ -863,16 +880,19 @@ async function refetchAfterTurnDone() {
   finalizingRefetchFailed.value = false
   const tid = activeId.value
   const gen = threadLoadGen
+  const completedTurnGen = turnGen
   try {
+    // 旧响应仍可按消息 ID 合入历史，但只有原回合可清理 live 状态。
     if (!(await refreshMessages())) return
     const thr = await api.listPmThreads()
-    if (gen !== threadLoadGen || tid !== activeId.value) return
+    if (gen !== threadLoadGen || tid !== activeId.value || completedTurnGen !== turnGen) return
     threads.value = thr.items || []
     await nextTick()
+    if (gen !== threadLoadGen || tid !== activeId.value || completedTurnGen !== turnGen) return
     scrollBottom()
     clearFinalizingStream()
   } catch {
-    if (gen !== threadLoadGen || tid !== activeId.value) return
+    if (gen !== threadLoadGen || tid !== activeId.value || completedTurnGen !== turnGen) return
     finalizingRefetchFailed.value = true
     toast.error(t('pages.workspace.pm.loadFailed'))
   }

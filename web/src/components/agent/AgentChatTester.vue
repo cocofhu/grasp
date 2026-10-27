@@ -103,6 +103,8 @@ const loadingEarlier = ref(false)
 const historyHasMore = ref(false)
 const historyCursor = ref('')
 let rawFrames: any[] = []
+/** Latest history request owns rebuild/merge; socket close invalidates older reads. */
+let historyRestoreGen = 0
 let activeIdx = -1
 let activeItemId = ''
 let ws: WebSocket | null = null
@@ -280,6 +282,7 @@ async function waitReady(id: number) {
 }
 
 function openWs(id: number) {
+  const reconcileCurrentSandbox = wsSandboxId === id && turns.value.length > 0
   closeWs()
   wsSandboxId = id
   const sock = new WebSocket(api.sandboxChatWsUrl(id))
@@ -292,7 +295,7 @@ function openWs(id: number) {
     errorMsg.value = ''
     // Reused sandbox: rebuild the prior transcript so the context is visible,
     // like the sandbox console page. Live frames wait until it is in place.
-    void restoreHistory(id).finally(() => {
+    void restoreHistory(id, reconcileCurrentSandbox).finally(() => {
       if (ws === sock) flushHeldFrames()
     })
   }
@@ -315,6 +318,9 @@ function openWs(id: number) {
 }
 
 function closeWs() {
+  historyRestoreGen++
+  restoring.value = false
+  loadingEarlier.value = false
   if (wsReconnectTimer !== undefined) {
     clearTimeout(wsReconnectTimer)
     wsReconnectTimer = undefined
@@ -457,7 +463,27 @@ function applyQueueState(frame: any) {
 
 function beginTurn(frame: any) {
   const item = serverItem(frame.item)
+  const questionId = `question:${item.id || newItemId()}`
   queued.value = queued.value.filter((q) => q.id !== item.id)
+  if (item.id && activeIdx < 0) {
+    const last = turns.value.at(-1)
+    const previous = turns.value.at(-2)
+    if (last?.role === 'agent' && last.id === `${questionId}:reply` && previous?.id === questionId) {
+      // 历史恢复可能先于 busy/turn_begin 完成，此时尾轮已不在 held frames
+      // 的移除逻辑覆盖范围内。稳定 opId 相同则复用该尾部回复进行回放。
+      activeIdx = turns.value.length - 1
+      activeItemId = item.id
+    } else if (last?.role === 'user' && last.id === questionId) {
+      // 尚无输出的历史只保留用户行；补建同一回复，不能再加一条用户行。
+      activeItemId = item.id
+      activeIdx = turns.value.push({
+        id: `${questionId}:reply`, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true,
+        startedAt: new Date().toISOString(),
+      }) - 1
+      status.value = 'thinking'
+      return
+    }
+  }
   if (item.id && item.id === activeItemId && activeIdx >= 0) {
     // Replay of the turn we were already showing: rebuild its reply.
     const replayStarted = new Date().toISOString()
@@ -472,7 +498,6 @@ function beginTurn(frame: any) {
       if (!prev.endedAt) prev.endedAt = new Date().toISOString()
     }
   }
-  const questionId = `question:${item.id || newItemId()}`
   turns.value.push({
     id: questionId,
     role: 'user',
@@ -621,34 +646,146 @@ function rebuildTurnsFromFrames(events: any[]): Turn[] {
   return rebuilt
 }
 
+function hasOpenEventTail(events: any[]): boolean {
+  let open = false
+  for (const raw of events) {
+    const frame = typeof raw === 'string' ? parseFrame(raw) : raw
+    const ev = unwrapFrame(frame)
+    if (ev?.type === 'prompt_begin') open = true
+    else if (ev?.type === 'turn_end' || ev?.type === 'prompt_end' || ev?.type === 'prompt_done') open = false
+  }
+  return open
+}
+
+function mergeReconnectHistory(restored: Turn[], current: Turn[], restoredActive = false): Turn[] {
+  // 空日志可能来自旧 runtime，不能把已显示的会话当成权威空记录清掉。
+  if (!restored.length) return current
+  if (!current.length) return restored
+  const questionId = activeItemId ? `question:${activeItemId}` : ''
+  const localUserIdx = questionId
+    ? current.findIndex((turn) => turn.role === 'user' && turn.id === questionId)
+    : activeIdx > 0
+      ? activeIdx - 1
+      : -1
+  const localUser = localUserIdx >= 0 ? current[localUserIdx]! : null
+  const localAgent = localUser && current[localUserIdx + 1]?.role === 'agent' ? current[localUserIdx + 1]! : null
+  const hasStableIds = restored.some((turn) => turn.id.startsWith('question:'))
+  let prefix: Turn[] = []
+  if (hasStableIds) {
+    // 最新事件窗口可能从已加载列表的中间开始，保留它之前的 earlier 页面。
+    const restoredIndexById = new Map(restored.map((turn, index) => [turn.id, index]))
+    const currentOverlap = current.findIndex((turn) => restoredIndexById.has(turn.id))
+    const restoredOverlap = currentOverlap >= 0 ? restoredIndexById.get(current[currentOverlap]!.id) : undefined
+    const windowStart = restoredOverlap === undefined ? -1 : currentOverlap - restoredOverlap
+    prefix = currentOverlap < 0 ? current : current.slice(0, Math.max(0, windowStart))
+  } else {
+    // 旧日志没有稳定 ID 时只做活动尾轮对账，不能全局按同文去重。
+    if (!localUser) return current
+    prefix = current.slice(0, localUserIdx)
+  }
+  if (!localUser) return [...prefix, ...restored]
+  let restoredUserIdx = questionId
+    ? restored.findIndex((turn) => turn.role === 'user' && turn.id === questionId)
+    : -1
+  if (restoredUserIdx < 0) {
+    const last = restored.length - 1
+    const paired = last - 1
+    if (restored[last]?.role === 'user' && restored[last]?.text === localUser.text) {
+      restoredUserIdx = last
+    } else if (restored[paired]?.role === 'user' && restored[paired]?.text === localUser.text) {
+      restoredUserIdx = paired
+    }
+  }
+  if (restoredUserIdx < 0) {
+    return hasStableIds
+      ? [...prefix, ...restored, localUser, ...(localAgent ? [localAgent] : [])]
+      : current
+  }
+  // 旧日志仅保留匹配的活动尾轮；稳定 ID 则采用整个最新事件窗口。
+  const suffix = hasStableIds ? restored : restored.slice(restoredUserIdx)
+  const suffixUserIdx = hasStableIds ? restoredUserIdx : 0
+  const restoredAgent = suffix[suffixUserIdx + 1]
+  const restoredAgentIsActive = restoredActive && suffixUserIdx >= suffix.length - 2
+  if (
+    localAgent?.streaming && restoredAgent && restoredAgentIsActive &&
+    (localAgent.text.length > restoredAgent.text.length || localAgent.thought.length > restoredAgent.thought.length)
+  ) {
+    suffix[suffixUserIdx + 1] = localAgent
+  } else if (!restoredAgent && localAgent) {
+    // prompt_begin 后尚无输出时 rebuild 只含用户行，补回同一个本地回复槽。
+    suffix.push(localAgent)
+  }
+  return [...prefix, ...suffix]
+}
+
+function remapReconnectActiveCursor(previousTurns: Turn[], previousActiveIdx: number) {
+  if (previousActiveIdx < 0) {
+    activeIdx = -1
+    activeItemId = ''
+    return
+  }
+  const previousUser = previousActiveIdx > 0 ? previousTurns[previousActiveIdx - 1] : null
+  const replyId = activeItemId ? `question:${activeItemId}:reply` : ''
+  let nextIdx = replyId ? turns.value.findIndex((turn) => turn.id === replyId) : -1
+  if (nextIdx < 0 && previousUser) {
+    // 无 opId 的旧日志只允许匹配合并后的尾部活动对。
+    const candidate = turns.value.length - 1
+    if (
+      turns.value[candidate]?.role === 'agent' &&
+      turns.value[candidate - 1]?.role === 'user' &&
+      turns.value[candidate - 1]?.text === previousUser.text
+    ) {
+      nextIdx = candidate
+    }
+  }
+  activeIdx = nextIdx
+  if (nextIdx < 0) activeItemId = ''
+}
+
 // restoreHistory rebuilds the transcript from the sandbox's raw event log so a
 // reopened (reused) sandbox shows its prior conversation. prompt_begin frames
 // carry the original user prompt (+ image data URLs); session_update frames are
 // folded into the following agent turn via the same applyAcp used live.
-async function restoreHistory(id: number) {
-  if (turns.value.length > 0) return
+async function restoreHistory(id: number, reconcile = false) {
+  const generation = ++historyRestoreGen
+  const isCurrent = () =>
+    generation === historyRestoreGen && !disposed && (wsSandboxId === 0 || wsSandboxId === id)
+  if (turns.value.length > 0 && !reconcile) {
+    restoring.value = false
+    return
+  }
   restoring.value = true
+  let events: any[] = []
   try {
     const r = await api.sandboxEventLog(id, { limit: 20 })
+    if (!isCurrent()) return
     if ('hasMore' in r) {
       const paged = r as { events: any[]; nextCursor: string; hasMore: boolean }
-      rawFrames = paged.events || []
+      events = paged.events || []
       historyHasMore.value = paged.hasMore
       historyCursor.value = paged.nextCursor || ''
     } else {
-      rawFrames = r.events || []
+      events = r.events || []
       historyHasMore.value = false
       historyCursor.value = ''
     }
   } catch {
     return
   } finally {
-    restoring.value = false
+    if (isCurrent()) restoring.value = false
   }
-  if (!rawFrames.length || turns.value.length > 0) return
-  const rebuilt = rebuildTurnsFromFrames(rawFrames)
-  if (rebuilt.length) {
-    turns.value = rebuilt
+  if (!isCurrent()) return
+  rawFrames = events
+  const rebuilt = rebuildTurnsFromFrames(events)
+  if (rebuilt.length || reconcile) {
+    if (reconcile) {
+      const previousTurns = turns.value
+      const previousActiveIdx = activeIdx
+      turns.value = mergeReconnectHistory(rebuilt, previousTurns, hasOpenEventTail(events))
+      remapReconnectActiveCursor(previousTurns, previousActiveIdx)
+    } else {
+      turns.value = rebuilt
+    }
     scrollDown()
   }
 }
@@ -656,6 +793,7 @@ async function restoreHistory(id: number) {
 async function loadEarlierHistory() {
   if (!sandbox.value || !historyHasMore.value || loadingEarlier.value) return
   const sandboxId = sandbox.value.id
+  const generation = ++historyRestoreGen
   followBottom.value = false
   loadingEarlier.value = true
   try {
@@ -663,7 +801,7 @@ async function loadEarlierHistory() {
       cursor: historyCursor.value,
       limit: 20,
     })
-    if (sandbox.value?.id !== sandboxId || !('hasMore' in r)) return
+    if (generation !== historyRestoreGen || sandbox.value?.id !== sandboxId || !('hasMore' in r)) return
     const paged = r as { events: any[]; nextCursor: string; hasMore: boolean }
     const earlier = paged.events || []
     rawFrames = [...earlier, ...rawFrames]
@@ -682,7 +820,7 @@ async function loadEarlierHistory() {
   } catch {
     /* keep current transcript */
   } finally {
-    loadingEarlier.value = false
+    if (generation === historyRestoreGen) loadingEarlier.value = false
   }
 }
 

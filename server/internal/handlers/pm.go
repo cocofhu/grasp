@@ -602,12 +602,7 @@ func (h *Handlers) PmThreadChat(c *gin.Context) {
 	writeDone := make(chan struct{})
 	go func() {
 		defer close(writeDone)
-		for ev := range ch {
-			if err := conn.WriteJSON(ev.Frame()); err != nil {
-				_ = conn.Close()
-				return
-			}
-		}
+		pumpChatSubscription(conn, ch, conn.WriteJSON, nil)
 	}()
 
 	for {

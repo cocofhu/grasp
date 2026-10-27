@@ -135,4 +135,43 @@ describe('mergePersistedAndLiveTurns', () => {
     expect(merged[merged.length - 1]?.streaming).toBe(true)
     expect(merged.some((t) => t.role === 'human')).toBe(true)
   })
+
+  it.each([
+    ['更短的新回复', '旧回合的完整回复内容'],
+    ['等长新回复', '旧回合的另一条回复'],
+    ['一个明显比旧回复更长的新回合回复', '旧回复'],
+  ])('keeps a new same-text turn before persistence catches up: %s', (reply, oldReply) => {
+    const persisted: ClarifyTurn[] = [
+      { role: 'human', text: '继续', at: 't1' },
+      { role: 'agent', text: oldReply, at: 't2' },
+    ]
+    const live: ClarifyTurn[] = [
+      { role: 'human', text: '继续', at: 't3' },
+      { role: 'agent', text: reply, at: 't4', streaming: true },
+    ]
+    const merged = mergePersistedAndLiveTurns(persisted, live, persisted.length)
+    expect(merged).toHaveLength(4)
+    expect(merged.filter((t) => t.role === 'human' && t.text === '继续')).toHaveLength(2)
+    expect(merged.at(-1)).toMatchObject({ text: reply, streaming: true })
+  })
+
+  it('dedupes only the snapshot suffix belonging to the anchored live turn', () => {
+    const oldTurns: ClarifyTurn[] = [
+      { role: 'human', text: '继续', at: 't1' },
+      { role: 'agent', text: '旧回复', at: 't2' },
+    ]
+    const persisted: ClarifyTurn[] = [
+      ...oldTurns,
+      { role: 'human', text: '继续', at: 't3' },
+      { role: 'agent', text: '新回复', at: 't4' },
+    ]
+    const live: ClarifyTurn[] = [
+      { role: 'human', text: '继续', at: 't3-live' },
+      { role: 'agent', text: '新回复', at: 't4-live', streaming: true },
+    ]
+    const merged = mergePersistedAndLiveTurns(persisted, live, oldTurns.length)
+    expect(merged).toHaveLength(4)
+    expect(merged.filter((t) => t.role === 'human')).toHaveLength(2)
+    expect(merged.filter((t) => t.text === '新回复')).toHaveLength(1)
+  })
 })

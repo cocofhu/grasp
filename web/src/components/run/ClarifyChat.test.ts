@@ -1978,6 +1978,56 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
+    it('keeps a new same-text turn when only the previous turn is persisted', async () => {
+      const wrapper = mountChat({
+        turns: [
+          { role: 'human', text: '继续', at: 't1' },
+          { role: 'agent', text: '上一轮的完整回复', at: 't2' },
+        ],
+      })
+      const vm = wrapper.vm as unknown as {
+        applyReviewFrame: (f: Record<string, unknown>) => void
+        applyAcpEvents: (events: { kind: string; text: string }[], nodeId?: string) => boolean
+      }
+      vm.applyReviewFrame({
+        event: 'turn_begin',
+        nodeId: 'react-1',
+        item: { id: 'new-turn', text: '继续' },
+      })
+      expect(vm.applyAcpEvents([{ kind: 'message', text: '新回合回复' }], 'react-1')).toBe(true)
+      await flushPromises()
+      expect((wrapper.text().match(/继续/g) || []).length).toBe(2)
+      expect(wrapper.text()).toContain('上一轮的完整回复')
+      expect(wrapper.text()).toContain('新回合回复')
+      wrapper.unmount()
+    })
+
+    it('restores a same-text active seed even when no turn_begin follows', async () => {
+      const wrapper = mountChat({
+        turns: [
+          { role: 'human', text: '继续', at: 't1' },
+          { role: 'agent', text: '上一轮的完整回复', at: 't2' },
+        ],
+      })
+      const vm = wrapper.vm as unknown as {
+        applyReviewFrame: (f: Record<string, unknown>) => void
+        applyAcpEvents: (events: { kind: string; text: string }[], nodeId?: string) => boolean
+      }
+      vm.applyReviewFrame({
+        event: 'queue_state',
+        nodeId: 'react-1',
+        waiting: 0,
+        items: [],
+        busy: true,
+        activeItem: { id: 'seed-turn', text: '继续' },
+      })
+      expect(vm.applyAcpEvents([{ kind: 'message', text: '硬加载后的新回复' }], 'react-1')).toBe(true)
+      await flushPromises()
+      expect((wrapper.text().match(/继续/g) || []).length).toBe(2)
+      expect(wrapper.text()).toContain('硬加载后的新回复')
+      wrapper.unmount()
+    })
+
     it('tears down streaming placeholder when persisted catches up mid-stream', async () => {
       const wrapper = mountChat({ reviewMode: true, turns: [{ role: 'agent', text: '请复审', at: 't0' }] })
       const vm = wrapper.vm as unknown as {

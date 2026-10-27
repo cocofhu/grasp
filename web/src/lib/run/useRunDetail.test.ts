@@ -101,6 +101,16 @@ const sampleWorkflow = (): Workflow => ({
   edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
 })
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 class MockWebSocket {
   static CONNECTING = 0
   static OPEN = 1
@@ -433,6 +443,117 @@ describe('useRunDetail', () => {
     expect(detail.run.value.clarify?.turns[0]?.text).toBe('live bubble')
     expect(detail.run.value.clarifyByNode?.n1?.turns[0]?.thought).toBe('思考中')
 
+    app.unmount()
+  })
+
+  it('lets only the latest getRun response and loading cleanup win', async () => {
+    const { detail, app } = await withRunDetail()
+    await flushPromises()
+    mocks.getRun.mockClear()
+    const older = deferred<Run>()
+    const newer = deferred<Run>()
+    const newest = deferred<Run>()
+    mocks.getRun
+      .mockImplementationOnce(() => older.promise)
+      .mockImplementationOnce(() => newer.promise)
+      .mockImplementationOnce(() => newest.promise)
+
+    const oldLoad = detail.loadRun(false)
+    const newLoad = detail.loadRun(false)
+    newer.resolve({ ...sampleRun(), workflowName: '较新的运行快照', progress: 0.6 })
+    await newLoad
+    expect(detail.run.value.workflowName).toBe('较新的运行快照')
+
+    const newestLoad = detail.loadRun(false)
+    expect(detail.refreshing.value).toBe(true)
+    older.resolve({ ...sampleRun(), workflowName: '晚到的旧快照', progress: 0.1 })
+    await oldLoad
+    expect(detail.run.value.workflowName).toBe('较新的运行快照')
+    expect(detail.refreshing.value).toBe(true)
+
+    newest.resolve({ ...sampleRun(), workflowName: '最终快照', progress: 0.9 })
+    await newestLoad
+    expect(detail.run.value.workflowName).toBe('最终快照')
+    expect(detail.refreshing.value).toBe(false)
+    app.unmount()
+  })
+
+  it('does not project old reactSessions after a newer load starts', async () => {
+    const { detail, app } = await withRunDetail()
+    await flushPromises()
+    mocks.getRun.mockClear()
+    const applyReviewFrame = vi.fn()
+    detail.reviewChatRef.value = { applyReviewFrame }
+    detail.selected.value = 'n1'
+    const clarify = { nodeId: 'n1', done: false, turns: [] }
+    const first = deferred<Run>()
+    const second = deferred<Run>()
+    mocks.getRun.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise)
+
+    const oldLoad = detail.loadRun(false)
+    first.resolve({
+      ...sampleRun(),
+      progress: 0.4,
+      clarify,
+      clarifyByNode: { n1: clarify },
+      reactSessions: { n1: { busy: true, waiting: 0, items: [] } },
+    } as Run)
+    // 让旧请求进入 projectDialogueAfterLoad 的 nextTick 等待窗口。
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    const newerLoad = detail.loadRun(false)
+    second.resolve({
+      ...sampleRun(), progress: 0.9, clarify, clarifyByNode: { n1: clarify }, reactSessions: {},
+    } as Run)
+    await Promise.all([oldLoad, newerLoad])
+    await flushPromises()
+    expect(applyReviewFrame.mock.calls.some(([frame]) => frame?.busy === true)).toBe(false)
+    app.unmount()
+  })
+
+  it('ignores an old route response and its finally after navigation', async () => {
+    const { detail, app, router } = await withRunDetail()
+    await flushPromises()
+    mocks.getRun.mockClear()
+    const oldRoute = deferred<Run>()
+    const newRoute = deferred<Run>()
+    mocks.getRun
+      .mockImplementationOnce(() => oldRoute.promise)
+      .mockImplementationOnce(() => newRoute.promise)
+
+    const oldLoad = detail.loadRun(false)
+    await router.push('/runs/run-2')
+    await nextTick()
+    expect(detail.runLoading.value).toBe(true)
+    oldRoute.resolve({ ...sampleRun(), id: 'run-1', workflowName: '旧路由响应' })
+    await oldLoad
+    expect(detail.runLoading.value).toBe(true)
+    expect(detail.run.value.id).toBe('run-2')
+
+    newRoute.resolve({ ...sampleRun(), id: 'run-2', workflowId: 'wf-2', workflowName: '新路由快照' })
+    await flushPromises()
+    expect(detail.run.value.id).toBe('run-2')
+    expect(detail.run.value.workflowName).toBe('新路由快照')
+    expect(detail.runLoading.value).toBe(false)
+    app.unmount()
+  })
+
+  it('does not apply old runArtifacts after the route changes', async () => {
+    const { detail, app, router } = await withRunDetail()
+    await flushPromises()
+    const arts = deferred<{ id: string; name: string; nodeId: string }[]>()
+    mocks.runArtifacts.mockImplementationOnce(() => arts.promise)
+    const refresh = detail.refreshArtifactPreviewState()
+    mocks.getRun.mockResolvedValueOnce({ ...sampleRun(), id: 'run-2', workflowName: '新路由' })
+    await router.push('/runs/run-2')
+    await flushPromises()
+    expect(detail.run.value.id).toBe('run-2')
+
+    arts.resolve([{ id: 'old-art', name: 'old.txt', nodeId: 'n1' }])
+    await refresh
+    await flushPromises()
+    expect(detail.run.value.artifacts?.some((artifact) => artifact.id === 'old-art')).toBe(false)
     app.unmount()
   })
 
