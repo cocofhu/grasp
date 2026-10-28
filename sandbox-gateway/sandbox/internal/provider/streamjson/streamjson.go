@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -66,6 +67,41 @@ func New(c Config) provider.Provider { return oneshot.NewProvider(&codec{c: c}) 
 
 type codec struct{ c Config }
 
+// NewTurnParser keeps result fallback state local to one subprocess. Registry
+// codecs are shared by sessions, so they must never retain a turn's text state.
+func (d *codec) NewTurnParser(provider.OpenOptions) oneshot.LineParser {
+	if d.c.AgentName == provider.Gemini {
+		return d
+	}
+	return &turnParser{codec: d}
+}
+
+type turnParser struct {
+	codec   *codec
+	hasText bool
+}
+
+func (p *turnParser) ParseLine(line []byte) oneshot.ParseResult {
+	result := p.codec.ParseLine(line)
+	for _, message := range result.Msgs {
+		if message.Kind == oneshot.KindText && strings.TrimSpace(message.Text) != "" {
+			p.hasText = true
+		}
+	}
+	if !p.hasText && result.StopReason == "end_turn" {
+		var terminal streamEvent
+		if json.Unmarshal(line, &terminal) == nil && terminal.Type == "result" && terminal.Subtype == "success" &&
+			!terminal.IsError && terminal.StopReason != "refusal" && strings.TrimSpace(terminal.Result) != "" {
+			// CodeBuddy may report its complete answer only in result.result.
+			// Keep it when the assistant stream was absent, without duplicating
+			// the answer normal streams already delivered.
+			result.Msgs = append(result.Msgs, oneshot.Msg{Kind: oneshot.KindText, Text: terminal.Result})
+			p.hasText = true
+		}
+	}
+	return result
+}
+
 func (d *codec) AgentName() provider.Name { return d.c.AgentName }
 func (d *codec) Bin() string              { return d.c.Bin }
 func (d *codec) Runtime() string          { return d.c.Runtime }
@@ -89,10 +125,15 @@ func (d *codec) StdinBytes(prompt string, images []provider.PromptImage) []byte 
 }
 
 func (d *codec) AuthEnv(env []string) []string {
-	if d.c.AuthEnvFn == nil {
-		return env
+	if d.c.AuthEnvFn != nil {
+		env = d.c.AuthEnvFn(env)
 	}
-	return d.c.AuthEnvFn(env)
+	if d.c.AgentName == provider.Cursor {
+		if root := strings.TrimSpace(common.GetEnvValue(env, "CONFIG_ROOT")); root != "" {
+			env = common.UpsertEnv(env, "CURSOR_CONFIG_DIR", root)
+		}
+	}
+	return env
 }
 
 func (d *codec) Models(context.Context) ([]provider.Model, error) { return d.c.Catalog, nil }
@@ -108,9 +149,13 @@ func (d *codec) Args(opts provider.OpenOptions, prompt, resumeID string) []strin
 	}
 	args = append(args, d.c.BaseArgs...)
 	// --strict-mcp-config means "only MCP from --mcp-config". Without a path,
-	// Claude/CodeBuddy load zero servers and ignore ConfigRoot/mcp.json — which
-	// is exactly how Approving's seeded artifact-store was being wiped.
-	args = appendStrictMcpConfigPath(args, d.c.ConfigRoot, opts.CustomArgs)
+	// Claude/CodeBuddy load zero servers without this path. Worktree sessions
+	// stage the managed config outside the image's default CLI home.
+	configRoot := strings.TrimSpace(os.Getenv("CONFIG_ROOT"))
+	if configRoot == "" {
+		configRoot = d.c.ConfigRoot
+	}
+	args = appendStrictMcpConfigPath(args, configRoot, opts.CustomArgs)
 	if d.c.WorkspaceFlag != "" && opts.Cwd != "" {
 		args = append(args, d.c.WorkspaceFlag, opts.Cwd)
 	}
@@ -291,6 +336,7 @@ type streamEvent struct {
 	ModelUsage map[string]wireUsage `json:"modelUsage"`
 	Result     string               `json:"result"`
 	IsError    bool                 `json:"is_error"`
+	StopReason string               `json:"stop_reason"`
 }
 
 func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
@@ -376,11 +422,21 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		} else {
 			addUsage(ev.Usage, ev.Model)
 		}
-		if ev.IsError {
+		// Native result totals already include the preceding assistant samples.
+		// Preserve those samples only when the terminal event reports no total.
+		res.UsageIsTotal = len(res.Usage) > 0
+		if ev.IsError || strings.HasPrefix(ev.Subtype, "error") {
 			res.StopReason = "failed"
 			if ev.Result != "" {
 				res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: ev.Result})
 			}
+		} else if ev.StopReason == "refusal" || ev.Subtype == "refusal" {
+			res.StopReason = "refusal"
+			text := ev.Result
+			if text == "" {
+				text = "Agent refused the request"
+			}
+			res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: text})
 		} else {
 			res.StopReason = "end_turn"
 		}

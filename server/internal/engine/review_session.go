@@ -707,6 +707,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
 		OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
 	}
+	applyReplyMetadata(&agentMsg, t)
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" {
 		agentMsg.Text = "(已中断)"
 	}
@@ -876,6 +877,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
 		GateNodeID: gateTag,
 	}
+	applyReplyMetadata(&agentMsg, t)
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" && t.Err != nil {
 		agentMsg.Text = "(已中断)"
 	}

@@ -1,0 +1,139 @@
+name: ci-agent-e2e
+
+# No repository/vendor secrets. Every product tool participates; native CLI
+# coverage and proprietary-platform doubles are identified in the report.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'sandbox-gateway/sandbox/**'
+      - 'sandbox-gateway/scripts/**'
+      - 'scripts/build-sandbox-runtime.sh'
+      - 'web/src/components/agent/**'
+      - 'web/src/components/solo/**'
+      - 'web/src/lib/agent/**'
+      - 'web/src/lib/solo/**'
+      - 'web/src/lib/api/clients/soloClient.ts'
+      - 'AGENTS.md'
+      - '.github/workflows/ci-agent-e2e.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'sandbox-gateway/sandbox/**'
+      - 'sandbox-gateway/scripts/**'
+      - 'scripts/build-sandbox-runtime.sh'
+      - 'web/src/components/agent/**'
+      - 'web/src/components/solo/**'
+      - 'web/src/lib/agent/**'
+      - 'web/src/lib/solo/**'
+      - 'web/src/lib/api/clients/soloClient.ts'
+      - 'AGENTS.md'
+      - '.github/workflows/ci-agent-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  agent-switching:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GOPROXY: https://proxy.golang.org,direct
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_SYSTEM: /dev/null
+      GIT_CONFIG_NOSYSTEM: '1'
+      GIT_ASKPASS: /bin/false
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.10'
+          cache-dependency-path: |
+            server/go.sum
+            sandbox-gateway/sandbox/go.sum
+      - name: Check user namespaces for the native Codex workspace sandbox
+        run: |
+          if unshare --user --map-root-user --mount --pid --fork /bin/true; then
+            exit 0
+          fi
+          # This hosted VM is disposable. Restore any changed setting below;
+          # never change the production CLI permission or sandbox policy.
+          if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            old="$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"
+            echo "GRASP_E2E_OLD_APPARMOR_USERNS=$old" >> "$GITHUB_ENV"
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          if [[ -r /proc/sys/kernel/unprivileged_userns_clone ]]; then
+            old="$(sysctl -n kernel.unprivileged_userns_clone)"
+            if [[ "$old" == 0 ]]; then
+              echo "GRASP_E2E_OLD_USERNS_CLONE=$old" >> "$GITHUB_ENV"
+              sudo sysctl -w kernel.unprivileged_userns_clone=1
+            fi
+          fi
+          unshare --user --map-root-user --mount --pid --fork /bin/true
+      - name: Mock model and complete-matrix contracts
+        run: |
+          node --test sandbox-gateway/scripts/mock-agent-model.test.mjs sandbox-gateway/scripts/mock-chat-model.test.mjs
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s sandbox-gateway/scripts -p 'test_agent_switching_test.py'
+      - name: Install and verify every required native CLI
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/agent-e2e-artifacts"
+          bash sandbox-gateway/scripts/install-agent-e2e-clis.sh "$RUNNER_TEMP/grasp-agent-clis" 2>&1 | tee "$RUNNER_TEMP/agent-e2e-artifacts/cli-install.log"
+      - name: Build real server and runtime from this checkout
+        run: |
+          cd server
+          go build -o "$RUNNER_TEMP/grasp-agent-server" ./cmd/server
+          cd ..
+          ./scripts/build-sandbox-runtime.sh "$RUNNER_TEMP/grasp-agent-runtime"
+          mkdir "$RUNNER_TEMP/grasp-agent-runtime/current"
+          tar -xzf "$RUNNER_TEMP/grasp-agent-runtime/sandbox-runtime.tgz" -C "$RUNNER_TEMP/grasp-agent-runtime/current"
+      - name: All tools, all directed switches, models, reasoning and native MCP
+        run: >-
+          python3 sandbox-gateway/scripts/test-agent-switching.py
+          --server "$RUNNER_TEMP/grasp-agent-server"
+          --runtime "$RUNNER_TEMP/grasp-agent-runtime/current"
+          --output "$RUNNER_TEMP/agent-e2e-artifacts"
+      - name: Publish coverage boundary and results
+        if: always()
+        run: |
+          python3 - "$RUNNER_TEMP/agent-e2e-artifacts/report.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, pathlib, sys
+          p = pathlib.Path(sys.argv[1])
+          if not p.exists():
+              print('Agent switching E2E did not reach the matrix. Inspect the failed build/install step.')
+              raise SystemExit(0)
+          r = json.loads(p.read_text())
+          print('### Agent switching E2E: ' + r['status'])
+          print('\n| Tool | Execution coverage |\n| --- | --- |')
+          for tool in r['tools']:
+              print('| ' + tool['id'] + ' | ' + tool['mode'] + ' |')
+          print('\nCompleted cases: ' + str(len(r['switches'])) + '. Paid model calls: 0.')
+          print('\n' + r['nativePlatformInference'])
+          PY
+      - name: Restore hosted-runner namespace settings
+        if: always()
+        run: |
+          if [[ -n "${GRASP_E2E_OLD_APPARMOR_USERNS:-}" ]]; then
+            sudo sysctl -w "kernel.apparmor_restrict_unprivileged_userns=$GRASP_E2E_OLD_APPARMOR_USERNS"
+          fi
+          if [[ -n "${GRASP_E2E_OLD_USERNS_CLONE:-}" ]]; then
+            sudo sysctl -w "kernel.unprivileged_userns_clone=$GRASP_E2E_OLD_USERNS_CLONE"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: agent-e2e-results
+          path: ${{ runner.temp }}/agent-e2e-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7

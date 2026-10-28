@@ -32,16 +32,14 @@ const (
 	soloStreamBuffer   = 4096
 	// soloMaxEvents caps persisted ACP frames per assistant message.
 	soloMaxEvents = 6000
-	// soloPreambleMessages is how many past messages a restart summary carries.
-	soloPreambleMessages = 30
-	soloPreambleRuneCap  = 1200
 )
 
 // Solo stream events beyond the chatsession control frames.
 const (
-	SoloEventStatus = "status"
-	SoloEventPhase  = "phase"
-	SoloEventModel  = "model"
+	SoloEventStatus    = "status"
+	SoloEventPhase     = "phase"
+	SoloEventModel     = "model"
+	SoloEventExecution = "execution"
 )
 
 // soloModelSwitchFailed is stored on the session and localized by the client
@@ -58,15 +56,16 @@ const (
 // list starts an empty workspace. When Repos is omitted, ProjectID and Branch
 // are read as a one-item list.
 type SoloCreateInput struct {
-	AgentName       string               `json:"agentName"`
-	ProjectID       string               `json:"projectId"`
-	Branch          string               `json:"branch"`
-	Repos           []SoloRepoChoice     `json:"repos"`
-	Title           string               `json:"title"`
-	Text            string               `json:"text"`
-	Images          []models.PromptImage `json:"images"`
-	InitialModelID  string               `json:"initialModelId,omitempty"`
-	ReasoningEffort string               `json:"reasoningEffort,omitempty"`
+	AgentName              string               `json:"agentName"`
+	ProjectID              string               `json:"projectId"`
+	Branch                 string               `json:"branch"`
+	Repos                  []SoloRepoChoice     `json:"repos"`
+	Title                  string               `json:"title"`
+	Text                   string               `json:"text"`
+	Images                 []models.PromptImage `json:"images"`
+	InitialModelID         string               `json:"initialModelId,omitempty"`
+	InitialConfigurationID string               `json:"initialConfigurationId,omitempty"`
+	ReasoningEffort        string               `json:"reasoningEffort,omitempty"`
 }
 
 // SoloSandboxInfo is the sandbox state shown on a session.
@@ -138,6 +137,9 @@ type soloChat struct {
 	id     string
 	sess   *chatsession.Session[*soloTurn]
 	stream *chatsession.Stream
+	// Serialize reading and publishing saved settings so concurrent viewers
+	// cannot receive an older selection after a newer one.
+	settingsMu sync.Mutex
 
 	mu        sync.Mutex
 	phase     string
@@ -145,6 +147,7 @@ type soloChat struct {
 	turnID    string
 	text      strings.Builder
 	events    []json.RawMessage
+	execution *models.ChatExecution
 }
 
 type soloTurn struct {
@@ -160,6 +163,9 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 	if sbx != nil {
 		s.chat = sbx
 		sbx.SetSoloSandboxDestroyHook(s.onSandboxGone)
+	}
+	if err := s.pinLegacyConfigurationIDs(); err != nil {
+		log.Error().Err(err).Msg("pin existing Solo model group selections")
 	}
 	return s
 }
@@ -267,13 +273,22 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 			if s.sbx != nil {
 				agent = s.sbx.effectiveAgent(agent)
 			}
-			if choices := s.reasoningEfforts(agent, chatModelID(row)); choices != nil {
-				v.ReasoningEfforts = choices
-			}
-			if live {
-				if choices := s.liveReasoningEfforts(ctx, row, agent, chatModelID(row)); choices != nil {
+			if selected, err := s.sessionAgent(row); err == nil {
+				agent = selected
+				v.Backend = selected.AcpBackend
+				if cfg, err := NewModelConfigurationService(s.db).Get(selected.ModelBinding.ConfigurationID); err == nil {
+					v.Model = cfg.Binding.ModelID
+				}
+				if choices := s.reasoningEfforts(agent, chatModelID(row)); choices != nil {
 					v.ReasoningEfforts = choices
 				}
+				if live {
+					if choices := s.liveReasoningEfforts(ctx, row, agent, chatModelID(row)); choices != nil {
+						v.ReasoningEfforts = choices
+					}
+				}
+			} else {
+				v.Backend, v.Model = "", ""
 			}
 		}
 	}
@@ -376,6 +391,11 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	if s.sbx != nil {
 		effective = s.sbx.effectiveAgent(agent)
 	}
+	effective, err = selectSoloConfiguration(s.db, effective, in.InitialConfigurationID)
+	if err != nil {
+		return nil, err
+	}
+	initialConfiguration := effective.ModelBinding.ConfigurationID
 	initialModel, err := s.acceptInitialModel(effective, in.InitialModelID)
 	if err != nil {
 		return nil, err
@@ -392,6 +412,7 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	row := &models.SoloSession{
 		ID: uuid.NewString(), UserID: user, Title: soloTitle(in, agentName), AgentName: agentName,
 		Repos: snaps, InitialModelID: initialModel, Status: models.SoloStatusStarting, LastActiveAt: &now,
+		InitialConfigurationID: initialConfiguration, CurrentConfigurationID: initialConfiguration, AppliedConfigurationID: initialConfiguration,
 		CurrentModelID: initialModel, CurrentModelSet: true,
 		AppliedModelID: initialModel, AppliedModelSet: true,
 		CurrentReasoningEffort: effort, AppliedReasoningEffort: effort,
@@ -430,7 +451,8 @@ func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) 
 	model := chatModelID(row)
 	sb, err := s.sbx.OpenSoloSandbox(ctx, SoloSandboxOpts{
 		Profile: row.AgentName, SessionID: sid, Repos: effectiveSessionRepos(row), InitialModelID: model,
-		ReasoningEffort: row.CurrentReasoningEffort,
+		InitialConfigurationID: chatConfigurationID(row),
+		ReasoningEffort:        row.CurrentReasoningEffort,
 		OnEnv: func(sources map[string]string) {
 			s.db.Model(&models.SoloSession{ID: sid}).Select("EnvSources").
 				Updates(&models.SoloSession{EnvSources: sources})
@@ -462,7 +484,7 @@ func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) 
 		return err
 	}
 	// The new container is born on this model. Later switches compare against it.
-	return s.rememberApplied(sid, model, row.CurrentReasoningEffort)
+	return s.rememberAppliedRoute(sid, chatConfigurationID(row), model, row.CurrentReasoningEffort)
 }
 
 // onSandboxGone marks sessions whose sandbox was destroyed outside Close.
@@ -660,6 +682,8 @@ func applySoloResumeSnapshot(qs map[string]any, row *models.SoloSession) {
 	qs["error"] = row.Error
 	qs["sandboxId"] = row.SandboxID
 	qs["currentModelId"] = row.CurrentModelID
+	qs["currentConfigurationId"] = row.CurrentConfigurationID
+	qs["initialConfigurationId"] = row.InitialConfigurationID
 	qs["currentModelSet"] = row.CurrentModelSet
 	qs["reasoningEffort"] = row.CurrentReasoningEffort
 	qs["modelNotice"] = row.ModelNotice
@@ -725,6 +749,7 @@ func (s *SoloService) newChat(id string) *soloChat {
 			c.phase = SoloPhasePreparing
 			c.text.Reset()
 			c.events = nil
+			c.execution = nil
 			c.mu.Unlock()
 		},
 		CancelTurn: func() {
@@ -750,6 +775,12 @@ func (s *SoloService) SetCurrentModel(ctx context.Context, id, user, requested s
 // SetCurrentModelSettings preserves omitted settings and validates before any
 // write. An effort-only request never changes the selected model.
 func (s *SoloService) SetCurrentModelSettings(ctx context.Context, id, user string, requested, requestedEffort *string) (*SoloSessionView, error) {
+	return s.SetCurrentModelRouteSettings(ctx, id, user, nil, requested, requestedEffort)
+}
+
+// SetCurrentModelRouteSettings stores a group-qualified choice without interrupting
+// the active turn. Omitted group keeps the current group; empty selects the default.
+func (s *SoloService) SetCurrentModelRouteSettings(ctx context.Context, id, user string, requestedConfiguration, requested, requestedEffort *string) (*SoloSessionView, error) {
 	row, err := s.Require(id, user)
 	if err != nil {
 		return nil, err
@@ -770,9 +801,20 @@ func (s *SoloService) SetCurrentModelSettings(ctx context.Context, id, user stri
 	if s.sbx != nil {
 		agent = s.sbx.effectiveAgent(agent)
 	}
+	configurationID := chatConfigurationID(row)
+	if requestedConfiguration != nil {
+		configurationID = *requestedConfiguration
+	}
+	agent, err = selectSoloConfiguration(s.db, agent, configurationID)
+	if err != nil {
+		return nil, err
+	}
+	configurationID = agent.ModelBinding.ConfigurationID
 	model := chatModelID(row)
 	if requested != nil {
 		model = *requested
+	} else if requestedConfiguration != nil && configurationID != chatConfigurationID(row) {
+		model = ""
 	}
 	stored, err := s.acceptInitialModel(agent, model)
 	if err != nil {
@@ -796,11 +838,34 @@ func (s *SoloService) SetCurrentModelSettings(ctx context.Context, id, user stri
 		effort = ""
 	}
 	if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"current_model_id": stored, "current_model_set": true, "current_reasoning_effort": effort, "model_notice": "",
+		"current_configuration_id": configurationID, "current_model_id": stored, "current_model_set": true, "current_reasoning_effort": effort, "model_notice": "",
 	}).Error; err != nil {
 		return nil, err
 	}
-	return s.Get(ctx, row.ID, user)
+	c := s.lookup(row.ID)
+	if c == nil {
+		return s.Get(ctx, row.ID, user)
+	}
+	c.settingsMu.Lock()
+	defer c.settingsMu.Unlock()
+	view, err := s.Get(ctx, row.ID, user)
+	if err != nil {
+		return nil, err
+	}
+	// This only announces the next-turn selection. The active CLI and its
+	// applied route stay untouched until alignSessionModel runs at a boundary.
+	pendingChange := ""
+	if chatConfigurationID(&view.SoloSession) != appliedChatConfigurationID(&view.SoloSession) || chatModelID(&view.SoloSession) != appliedChatModelID(&view.SoloSession) {
+		pendingChange = "model"
+	} else if view.CurrentReasoningEffort != view.AppliedReasoningEffort {
+		pendingChange = "effort"
+	}
+	c.stream.Session(SoloEventModel, map[string]any{
+		"currentConfigurationId": view.CurrentConfigurationID, "currentModelId": view.CurrentModelID, "currentModelSet": view.CurrentModelSet,
+		"reasoningEffort": view.CurrentReasoningEffort, "reasoningEfforts": view.ReasoningEfforts,
+		"backend": view.Backend, "modelNotice": view.ModelNotice, "pendingChange": pendingChange,
+	}, chatsession.KeepNone)
+	return view, nil
 }
 
 func (s *SoloService) reasoningEfforts(agent Agent, requestedModel string) []string {
@@ -892,7 +957,7 @@ func (s *SoloService) validateReasoningEffort(agent Agent, model, effort string)
 // for that exact current model. It never assigns those choices to another model
 // or writes them into the shared model catalog.
 func (s *SoloService) liveReasoningEfforts(ctx context.Context, row *models.SoloSession, agent Agent, model string) []string {
-	if s.sbx == nil || row.SandboxID == 0 || row.Status != models.SoloStatusRunning || agent.AcpBackend != "deepseek_harness" || agent.ModelBinding == nil {
+	if s.sbx == nil || row.SandboxID == 0 || row.Status != models.SoloStatusRunning || agent.AcpBackend != "deepseek_harness" || agent.ModelBinding == nil || chatConfigurationID(row) != appliedChatConfigurationID(row) || agent.ModelBinding.ConfigurationID != appliedChatConfigurationID(row) {
 		return nil
 	}
 	configuration, err := NewModelConfigurationService(s.db).Get(agent.ModelBinding.ConfigurationID)
@@ -957,9 +1022,9 @@ func (s *SoloService) validateSessionReasoningEffort(ctx context.Context, row *m
 	return s.validateReasoningEffort(agent, model, effort)
 }
 
-func (s *SoloService) rememberApplied(id, model, effort string) error {
+func (s *SoloService) rememberAppliedRoute(id, configuration, model, effort string) error {
 	return s.db.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{
-		"applied_model_id": model, "applied_model_set": true, "applied_reasoning_effort": effort, "model_notice": "",
+		"applied_configuration_id": configuration, "applied_model_id": model, "applied_model_set": true, "applied_reasoning_effort": effort, "model_notice": "",
 	}).Error
 }
 
@@ -991,46 +1056,86 @@ func appliedChatModelID(row *models.SoloSession) string {
 // and reports it to the open page. The in-flight turn is left alone; this runs
 // only at the start of a turn.
 func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandboxID uint, row *models.SoloSession) (bool, error) {
-	desired := chatModelID(row)
-	applied := appliedChatModelID(row)
-	desiredEffort := strings.TrimSpace(row.CurrentReasoningEffort)
-	appliedEffort := strings.TrimSpace(row.AppliedReasoningEffort)
-	if desired == applied && desiredEffort == appliedEffort {
-		return false, nil
+	desired, applied := chatModelID(row), appliedChatModelID(row)
+	desiredConfiguration, appliedConfiguration := chatConfigurationID(row), appliedChatConfigurationID(row)
+	defaultConfiguration := s.defaultConfigurationID(row.AgentName)
+	if desiredConfiguration == "" {
+		desiredConfiguration = defaultConfiguration
 	}
-	aligner := s.modelAligner()
-	if aligner == nil {
-		return false, nil
+	if appliedConfiguration == "" {
+		appliedConfiguration = defaultConfiguration
 	}
+	desiredEffort, appliedEffort := strings.TrimSpace(row.CurrentReasoningEffort), strings.TrimSpace(row.AppliedReasoningEffort)
 	var changed bool
 	var err error
-	if settings, ok := aligner.(soloSettingsAligner); ok {
-		changed, err = settings.AlignChatSettings(ctx, sandboxID, desired, desiredEffort)
-	} else if desiredEffort != appliedEffort {
-		err = errors.New("sandbox reasoning settings unavailable")
-	} else {
-		changed, err = aligner.AlignChatModel(ctx, sandboxID, desired)
+	if s.sbx != nil && s.modelAlign == nil {
+		var agent Agent
+		agent, err = s.sessionAgent(row)
+		if err != nil {
+			return false, err
+		}
+		changed, err = s.sbx.AlignSoloModelRoute(ctx, sandboxID, agent)
+	}
+	routeChanged := changed
+	if err == nil && !changed && !row.ModelContextPending && desired == applied && desiredEffort == appliedEffort && desiredConfiguration == appliedConfiguration {
+		return false, nil
+	}
+	if err == nil {
+		aligner := s.modelAligner()
+		if aligner == nil {
+			return changed, nil
+		}
+		// Mark before the mutation: the bridge may restart its CLI and then lose
+		// the response. A retry must still supply the task's existing context.
+		if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("model_context_pending", true).Error; err != nil {
+			return false, err
+		}
+		var modelChanged bool
+		if settings, ok := aligner.(soloSettingsAligner); ok {
+			modelChanged, err = settings.AlignChatSettings(ctx, sandboxID, desired, desiredEffort)
+		} else if desiredEffort != appliedEffort {
+			err = errors.New("sandbox reasoning settings unavailable")
+		} else {
+			modelChanged, err = aligner.AlignChatModel(ctx, sandboxID, desired)
+		}
+		changed = changed || modelChanged
 	}
 	if err != nil {
-		// Stopping the turn, or failing to read the current model, must not
-		// undo the selection or restart the coding agent. The next turn retries.
 		if ctx.Err() != nil || errors.Is(err, ErrChatModelUnknown) {
 			return false, err
 		}
-		res := s.db.Model(&models.SoloSession{}).Where("id = ? AND current_model_id = ? AND current_model_set = ? AND COALESCE(current_reasoning_effort, '') = ?", row.ID, row.CurrentModelID, row.CurrentModelSet, row.CurrentReasoningEffort).Updates(map[string]any{
-			"current_model_id": applied, "current_model_set": true, "current_reasoning_effort": appliedEffort, "model_notice": soloModelSwitchFailed,
+		if routeChanged && s.sbx != nil {
+			previous := *row
+			previous.CurrentConfigurationID = appliedConfiguration
+			previous.CurrentModelID, previous.CurrentModelSet = applied, true
+			oldAgent, rollbackErr := s.sessionAgent(&previous)
+			if rollbackErr == nil {
+				_, rollbackErr = s.sbx.AlignSoloModelRoute(ctx, sandboxID, oldAgent)
+			}
+			if rollbackErr != nil {
+				return false, fmt.Errorf("切换失败且恢复原执行环境失败: %w", errors.Join(err, rollbackErr))
+			}
+		}
+		res := s.db.Model(&models.SoloSession{}).Where("id = ? AND current_model_id = ? AND current_model_set = ? AND COALESCE(current_reasoning_effort, '') = ? AND COALESCE(current_configuration_id, '') = ?", row.ID, row.CurrentModelID, row.CurrentModelSet, row.CurrentReasoningEffort, row.CurrentConfigurationID).Updates(map[string]any{
+			"current_configuration_id": appliedConfiguration, "current_model_id": applied, "current_model_set": true, "current_reasoning_effort": appliedEffort, "model_notice": soloModelSwitchFailed,
 		})
 		if res.Error == nil && res.RowsAffected > 0 {
 			c.stream.Session(SoloEventModel, map[string]any{
-				"currentModelId": applied, "currentModelSet": true, "reasoningEffort": appliedEffort,
+				"currentConfigurationId": appliedConfiguration, "currentModelId": applied, "currentModelSet": true, "reasoningEffort": appliedEffort,
 				"modelNotice": soloModelSwitchFailed, "error": "切换模型设置失败，已恢复原来的设置",
 			}, chatsession.KeepNone)
 		}
-		log.Warn().Err(err).Str("session", row.ID).Str("model", desired).Msg("solo model switch rolled back")
+		log.Warn().Err(err).Str("session", row.ID).Str("configuration", desiredConfiguration).Str("model", desired).Msg("solo model switch rolled back")
 		return false, err
 	}
-	if err := s.rememberApplied(row.ID, desired, desiredEffort); err != nil {
-		log.Warn().Err(err).Str("session", row.ID).Msg("solo applied model persist failed")
+	changed = changed || row.ModelContextPending || desired != applied || desiredEffort != appliedEffort || desiredConfiguration != appliedConfiguration
+	if changed {
+		if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("model_context_pending", true).Error; err != nil {
+			return false, err
+		}
+	}
+	if err := s.rememberAppliedRoute(row.ID, desiredConfiguration, desired, desiredEffort); err != nil {
+		return false, err
 	}
 	return changed, nil
 }
@@ -1114,6 +1219,9 @@ func (s *SoloService) Subscribe(id, user string, afterSeq int) (<-chan chatsessi
 		if sn.Busy && c.phase != "" {
 			qs["phase"] = c.phase
 			qs["userMsgId"] = c.turnID
+			if c.execution != nil {
+				qs["execution"] = c.execution
+			}
 		}
 		c.mu.Unlock()
 		if rowErr == nil {
@@ -1132,6 +1240,9 @@ func (c *soloChat) publish(event string, payload map[string]any) {
 		if busy, _ := payload["busy"].(bool); busy && c.phase != "" {
 			payload["phase"] = c.phase
 			payload["userMsgId"] = c.turnID
+			if c.execution != nil {
+				payload["execution"] = c.execution
+			}
 		}
 		c.mu.Unlock()
 	case chatsession.EventTurnBegin:
@@ -1139,6 +1250,9 @@ func (c *soloChat) publish(event string, payload map[string]any) {
 	case chatsession.EventTurnDone, chatsession.EventError:
 		c.mu.Lock()
 		payload["userMsgId"] = c.turnID
+		if c.execution != nil {
+			payload["execution"] = c.execution
+		}
 		c.phase = ""
 		c.sandboxID = 0
 		c.mu.Unlock()
@@ -1241,6 +1355,17 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 
 	noticeBefore := strings.TrimSpace(row.ModelNotice)
 	switched, alignErr := s.alignSessionModel(ctx, c, sandboxID, row)
+	if alignErr != nil {
+		s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Updates(map[string]any{"status": "failed", "error": truncErr(alignErr)})
+		return ctx.Err() != nil, alignErr
+	}
+	execution := s.turnExecutionSnapshot(row, sandboxID, started)
+	c.mu.Lock()
+	c.execution = execution
+	c.mu.Unlock()
+	if execution != nil {
+		c.stream.Session(SoloEventExecution, map[string]any{"userMsgId": q.ID, "execution": execution}, chatsession.KeepAppend)
+	}
 
 	prompt := q.Text
 	if prompt == "" {
@@ -1251,15 +1376,18 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	// restarts the coding agent, so it must not claim the sandbox or the
 	// repository was rebuilt.
 	var pre string
-	if row.NeedsPreamble {
-		pre = s.buildPreamble(c.id, q.ID)
-		usedPreamble = pre != ""
-	} else if switched {
-		if chatModelID(row) == appliedChatModelID(row) {
-			pre = s.preamble(c.id, q.ID, soloReasoningPreambleHeader)
-		} else {
-			pre = s.buildModelSwitchPreamble(c.id, q.ID)
+	if row.NeedsPreamble || switched || row.ModelContextPending {
+		header := soloModelPreambleHeader
+		if row.NeedsPreamble {
+			header = soloRestartPreambleHeader
+		} else if switched && !row.ModelContextPending && row.CurrentReasoningEffort != row.AppliedReasoningEffort && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
+			header = soloReasoningPreambleHeader
 		}
+		pre, err = s.contextPreambleChecked(c.id, q.ID, header)
+		if err != nil {
+			s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Updates(map[string]any{"status": "failed", "error": truncErr(err)})
+		}
+		usedPreamble = true
 	}
 	if pre != "" {
 		prompt = pre + "\n\n用户本轮消息：\n" + prompt
@@ -1267,7 +1395,11 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 
 	tctx, cancel := context.WithTimeout(ctx, soloTurnTimeout+30*time.Second)
 	defer cancel()
-	usage, byModel, err := s.chat.ChatWithTimeout(tctx, sandboxID, prompt, q.Images, soloTurnTimeout, c.onAcp)
+	var usage *models.TokenUsage
+	var byModel models.TokenUsageByModel
+	if err == nil {
+		usage, byModel, err = s.chat.ChatWithTimeout(tctx, sandboxID, prompt, q.Images, soloTurnTimeout, c.onAcp)
+	}
 
 	c.mu.Lock()
 	text := strings.TrimSpace(c.text.String())
@@ -1285,6 +1417,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	reply := models.SoloMessage{
 		ID: uuid.NewString(), SessionID: c.id, Role: "assistant", Content: text, Events: events,
 		Status: status, Error: errText, Usage: usage, UsageByModel: byModel,
+		Execution:  execution,
 		DurationMs: time.Since(started).Milliseconds(),
 	}
 	if text != "" || len(events) > 0 || err != nil {
@@ -1296,7 +1429,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Update("status", status)
 	}
 	if usedPreamble && status == "ok" {
-		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("needs_preamble", false)
+		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false})
 	}
 	// A switch that failed on an earlier turn leaves model_notice set. Once a
 	// later turn succeeds on the model that is already applied, the banner is
@@ -1336,28 +1469,6 @@ func (s *SoloService) buildPreamble(sessionID, exceptMsgID string) string {
 	return s.preamble(sessionID, exceptMsgID, soloRestartPreambleHeader)
 }
 
-// buildModelSwitchPreamble hands the existing dialogue to the next turn after
-// the coding agent is recreated for a new model.
-func (s *SoloService) buildModelSwitchPreamble(sessionID, exceptMsgID string) string {
-	return s.preamble(sessionID, exceptMsgID, soloModelPreambleHeader)
-}
-
 func (s *SoloService) preamble(sessionID, exceptMsgID, header string) string {
-	var msgs []models.SoloMessage
-	s.db.Where("session_id = ? AND role <> ? AND id <> ?", sessionID, "system", exceptMsgID).
-		Order("created_at desc").Limit(soloPreambleMessages).Find(&msgs)
-	if len(msgs) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString(header)
-	for i := len(msgs) - 1; i >= 0; i-- {
-		m := msgs[i]
-		role := "用户"
-		if m.Role == "assistant" {
-			role = "助手"
-		}
-		b.WriteString(fmt.Sprintf("[%s] %s\n", role, truncRunes(strings.TrimSpace(m.Content), soloPreambleRuneCap)))
-	}
-	return b.String()
+	return s.contextPreamble(sessionID, exceptMsgID, header)
 }

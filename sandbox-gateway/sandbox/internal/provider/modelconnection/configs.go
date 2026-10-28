@@ -2,6 +2,7 @@ package modelconnection
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -105,7 +106,7 @@ func prepareCodeBuddy(p Prepared, root string) (Prepared, error) {
 	return p, nil
 }
 
-func prepareOpenCode(p Prepared) (Prepared, error) {
+func prepareOpenCode(p Prepared, root string) (Prepared, error) {
 	c := p.Connection
 	models := make(map[string]any, len(c.Models))
 	for _, model := range c.Models {
@@ -144,12 +145,32 @@ func prepareOpenCode(p Prepared) (Prepared, error) {
 		"small_model": p.RouteID + "/" + c.role("fast"), "enabled_providers": []string{p.RouteID},
 		"provider": map[string]any{p.RouteID: map[string]any{"npm": npm, "name": c.ProviderID,
 			"options": map[string]any{"baseURL": openCodeBaseURL(c), "apiKey": "{env:" + EnvAPIKey + "}"}, "models": models}}}
+	preserveOpenCodeManagedConfig(config, root)
 	data, err := json.Marshal(config)
 	if err != nil {
 		return p, err
 	}
 	p.Env = common.UpsertEnv(p.Env, "OPENCODE_CONFIG_CONTENT", string(data))
 	return p, nil
+}
+
+// MCP endpoints and instruction paths are managed alongside the selected
+// configuration. Keep them when replacing native model routing, without
+// carrying provider overrides, plugins or saved account credentials.
+func preserveOpenCodeManagedConfig(config map[string]any, root string) {
+	data, err := os.ReadFile(filepath.Join(root, "opencode.json"))
+	if err != nil {
+		return
+	}
+	var existing map[string]json.RawMessage
+	if json.Unmarshal(data, &existing) != nil {
+		return
+	}
+	for _, key := range []string{"mcp", "instructions"} {
+		if value, ok := existing[key]; ok {
+			config[key] = value
+		}
+	}
 }
 
 // Anthropic's native SDK (also used by DSH) appends /v1/messages. Accept a

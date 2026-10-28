@@ -36,7 +36,7 @@ test.describe('ClarifyChat 完成态相对时间单通道', () => {
     })
   })
 
-  test('流式中：无完成脚注，底部时间仍保留', async ({ page }) => {
+  test('流式中：保留用户时间，Agent 显示生成状态', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 900 })
     await page.goto('/clarify-session-ux.html')
     await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
@@ -48,8 +48,8 @@ test.describe('ClarifyChat 完成态相对时间单通道', () => {
 
     await expect(page.getByTestId('clarify-turn-completed')).toHaveCount(0)
     await expect(page.getByTestId('clarify-stream-caret')).toBeVisible()
-    // human + streaming agent
-    await expect(page.getByTestId('clarify-turn-bottom-time')).toHaveCount(2)
+    // The current agent reply retains its live status; its shared footer is shown after completion.
+    await expect(page.getByTestId('clarify-turn-bottom-time')).toHaveCount(1)
 
     await page.screenshot({
       path: path.join(shotDir, '02-streaming-keeps-bottom-time.png'),

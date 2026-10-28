@@ -1,126 +1,85 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { api } from '@/lib/api/api'
 import { cliCatalogFailed, loadCliModels } from '@/lib/agent/cliCatalog'
-import type { Agent, CliCatalogModel, ModelConfiguration, ModelConnection } from '@/lib/api/apiTypes'
-import { configuredModelChoices } from './configuredModels'
+import type { Agent, CliCatalogModel, CredentialItem, ModelConfiguration, ModelConnection } from '@/lib/api/apiTypes'
+import { boundConfigurationIds, effectiveModelAgent, parseModelRoute } from '@/lib/agent/modelBindings'
+import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
+import { boundModelChoices } from './configuredModels'
 
-/**
- * Model list for one Solo session. Same source as the start-of-session picker:
- * the Agent's current configuration, primary then auxiliaries.
- *
- * A failed directory request is not evidence that the saved model disappeared.
- * The page may fall back to the primary model only after the Agent configuration
- * has loaded and the model is absent from it, or after the directory itself
- * loaded and confirmed the model is missing.
- */
+/** One reactive directory for every group bound to the session's Agent. */
 export function useSessionModelCatalog(agentName: Ref<string>) {
   const agents = ref<Agent[]>([])
   const configurations = ref<ModelConfiguration[]>([])
   const connections = ref<ModelConnection[]>([])
-  const cliModels = ref<CliCatalogModel[]>([])
+  const credentials = ref<CredentialItem[]>()
+  const cliModels = ref<Record<string, CliCatalogModel[]>>({})
   const cliReady = ref(false)
   const cliFailed = ref(false)
   const listState = ref<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const connectionLoaded = ref(false)
-
-  const agent = computed(() => agents.value.find((item) => item.name === agentName.value) ?? null)
-  const configuration = computed(() => {
-    const binding = agent.value?.modelBinding
-    if (binding?.kind !== 'configuration') return null
-    return configurations.value.find((item) => item.id === binding.configurationId && item.state === 'active') ?? null
-  })
-  const connection = computed(() => {
-    const binding = configuration.value?.binding
-    return binding?.kind === 'connection' ? connections.value.find((item) => item.id === binding.connectionId) ?? null : null
-  })
-  const catalogConfirmed = computed(() => {
-    if (listState.value !== 'ok' || !configuration.value) return false
-    if (configuration.value.binding.kind === 'connection') return connectionLoaded.value && !!connection.value
-    return cliReady.value && !cliFailed.value
-  })
-  const choices = computed(() => configuredModelChoices({
-    binding: configuration.value?.binding,
-    configurationName: configuration.value?.name,
-    backend: configuration.value?.backend || agent.value?.acpBackend || '',
-    cliModels: cliModels.value,
-    connectionModels: connection.value?.models,
-    providerId: connection.value?.providerId,
-    catalogReady: catalogConfirmed.value,
+  let loadGeneration = 0
+  let cliGeneration = 0
+  const agent = computed(() => agents.value.find(item => item.name === agentName.value) ?? null)
+  const bound = computed(() => boundConfigurationIds(agent.value?.modelBinding))
+  const active = computed(() => bound.value.map(id => configurations.value.find(row => row.id === id && row.state === 'active')).filter((row): row is ModelConfiguration => !!row))
+  const hasConnections = computed(() => active.value.some(row => row.binding.kind === 'connection'))
+  const hasPlatform = computed(() => active.value.some(row => row.binding.kind === 'platform'))
+  const catalogConfirmed = computed(() => listState.value === 'ok' && (!hasConnections.value || connectionLoaded.value) && (!hasPlatform.value || cliReady.value && !cliFailed.value))
+  const choices = computed(() => boundModelChoices({
+    binding: agent.value?.modelBinding, configurations: configurations.value, connections: connections.value,
+    cliModels: cliModels.value, cliReady: cliReady.value && !cliFailed.value, connectionReady: connectionLoaded.value, credentials: credentials.value,
   }))
-  // True when the selector can offer a list that is safe to judge. A failed
-  // read stays false so the page does not treat an empty list as "no models".
-  const ready = computed(() => {
-    if (listState.value !== 'ok') return false
-    if (!configuration.value) return true
-    return catalogConfirmed.value
-  })
+  const ready = computed(() => catalogConfirmed.value)
   const configLoaded = computed(() => listState.value === 'ok')
-  // The directory request failed. Keep the saved model and tell the user.
-  const blocked = computed(() => {
-    if (!agentName.value) return false
-    if (listState.value === 'error') return true
-    if (listState.value !== 'ok' || !configuration.value) return false
-    if (configuration.value.binding.kind === 'connection') return !connectionLoaded.value
-    return cliFailed.value
-  })
+  const blocked = computed(() => !!agentName.value && (listState.value === 'error' || listState.value === 'ok' && (hasConnections.value && !connectionLoaded.value || hasPlatform.value && cliFailed.value)))
 
-  watch(() => agent.value?.acpBackend || configuration.value?.backend || '', async (backend) => {
+  watch(() => active.value.map(row => row.backend).join('|'), async (backends) => {
+    const generation = ++cliGeneration
     cliReady.value = false
     cliFailed.value = false
-    cliModels.value = backend ? await loadCliModels(backend) : []
-    cliFailed.value = backend ? cliCatalogFailed(backend) : false
+    const rows = await Promise.all([...new Set(backends.split('|').filter(Boolean))].map(async backend => [backend, await loadCliModels(backend)] as const))
+    if (generation !== cliGeneration) return
+    cliModels.value = Object.fromEntries(rows)
+    cliFailed.value = rows.some(([backend]) => cliCatalogFailed(backend))
     cliReady.value = true
   })
 
   async function load() {
+    const generation = ++loadGeneration
     listState.value = 'loading'
-    connectionLoaded.value = false
-    let agentsOk = false
-    let configsOk = false
-    let connectionsOk = false
     try {
-      const [listed, configs, services] = await Promise.all([
-        api.listAgents().then((value) => {
-          agentsOk = true
-          return value
-        }).catch(() => [] as Agent[]),
-        api.listModelConfigurations().then((value) => {
-          configsOk = true
-          return value
-        }).catch(() => ({ items: [] as ModelConfiguration[] })),
-        api.listModelConnections().then((value) => {
-          connectionsOk = true
-          return value
-        }).catch(() => ({ items: [] as ModelConnection[] })),
+      const [listed, configs, services, keys] = await Promise.all([
+        api.listAgents(), api.listModelConfigurations(),
+        api.listModelConnections().then(value => ({ ok: true, items: value.items })).catch(() => ({ ok: false, items: [] as ModelConnection[] })),
+        Promise.resolve().then(() => api.listCredentials?.()).then(value => value?.items).catch(() => undefined),
       ])
-      if (!agentsOk || !configsOk) {
-        agents.value = []
-        configurations.value = []
-        connections.value = []
-        listState.value = 'error'
-        return
-      }
-      agents.value = listed
+      const defaults = listed.some(agent => agent.inheritModel) ? await api.getSharedAgentConfig() : undefined
+      if (generation !== loadGeneration) return
+      agents.value = listed.map(agent => effectiveModelAgent(agent, defaults))
       configurations.value = configs.items
-      connections.value = connectionsOk ? services.items : []
-      connectionLoaded.value = connectionsOk
+      if (services.ok) connections.value = services.items
+      if (keys !== undefined) credentials.value = keys
+      connectionLoaded.value = services.ok
       listState.value = 'ok'
-    } finally {
-      if (listState.value === 'loading') listState.value = 'error'
+    } catch {
+      if (generation === loadGeneration) listState.value = 'error'
+      // A failed read preserves the last known directory and the selected route.
     }
   }
-
+  ensureModelCatalogEvents()
+  watch(modelCatalogRevision, () => void load())
   watch(agentName, () => void load(), { immediate: true })
 
-  /** null while the configuration has not loaded; false when the id is outside it. */
-  function modelInConfiguration(id: string): boolean | null {
+  /** Null means the server directory has not safely confirmed membership. */
+  function modelInConfiguration(id: string, configurationId?: string): boolean | null {
     if (listState.value !== 'ok') return null
-    const binding = configuration.value?.binding
-    if (!binding) return false
-    const primary = binding.modelId?.trim() || ''
-    const auxiliary = (binding.auxiliaryModelIds || []).map((item) => item.trim()).filter(Boolean)
-    return id === primary || auxiliary.includes(id)
+    const route = parseModelRoute(id)
+    const groupId = configurationId || route.configurationId || agent.value?.modelBinding?.configurationId
+    if (!groupId || !bound.value.includes(groupId)) return false
+    const configuration = active.value.find(row => row.id === groupId)
+    if (!configuration) return false
+    const primary = configuration.binding.modelId?.trim() || ''
+    return !route.modelId || route.modelId === primary || (configuration.binding.auxiliaryModelIds || []).includes(route.modelId)
   }
-
-  return { choices, ready, blocked, configLoaded, catalogConfirmed, modelInConfiguration }
+  return { choices, ready, blocked, configLoaded, catalogConfirmed, modelInConfiguration, defaultConfigurationId: computed(() => agent.value?.modelBinding?.configurationId || '') }
 }

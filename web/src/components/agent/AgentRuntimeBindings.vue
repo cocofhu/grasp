@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { api, type AgentGitBindings, type CredentialItem, type ModelBinding, type ModelConfiguration, type SharedAgentConfig } from '@/lib/api/api'
 import { ACP_BACKENDS, getRegionPolicy, normalizeRegions, setRegion, switchBackendRegions, type BackendId } from '@/lib/shared/regionPolicy'
 import { defaultConfigRootFor, kvToRec, recToKV } from '@/lib/agent/agentStudioDraft'
+import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -81,6 +82,8 @@ function selectRegion(value: string) {
   props.draft.env = recToKV(setRegion(kvToRec(props.draft.env), props.draft.acpBackend, value))
 }
 onMounted(loadDefaults)
+ensureModelCatalogEvents()
+watch(modelCatalogRevision, loadDefaults)
 </script>
 
 <template>

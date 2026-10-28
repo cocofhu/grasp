@@ -20,6 +20,31 @@
 
 ## 记录
 
+### 2026-10-28（免费全工具切换 CI 与共享聊天详情）
+
+- 日期：2026-10-28（Asia/Shanghai）。
+- 范围：`.github/workflows/ci-agent-e2e.yml`、`AGENTS.md`、`sandbox-gateway/scripts/agent-*` / `test-agent-switching.py` / `mock-agent-model*`、server 的 MCP、运行时与聊天记录、sandbox provider、共享聊天组件及 Solo/工作流/Agent 测试/PM 调用方、中英文帮助与 `CHANGELOG.md`。
+- 做了什么：新增不读取厂商 Key 的真实服务端、运行时和原生 CLI 集成 CI，使用本地 Chat Completions、Responses、Anthropic Messages mock；七个产品后端按能力 API 严格核对测试清单，覆盖全部 42 个有向切换、9 次推理强度切换、10 次主/辅助模型切换及初始轮，共 62 轮同会话、同工作区。每次续聊必须收到先前原始要求、调用真实授权的历史 MCP、读取上轮文件进度；历史分页根据真实游标回到原始 user 消息，不接受模型回显或嵌套工具结果充当原文。请求侧核对实际模型和强度，并检查重载后的逐条执行信息。五个可配置工具使用真实 CLI；Cursor/Trae 因平台私有协议使用明确标记的 CLI wire fixture，不声称原生厂商推理通过。未来新增/删除产品后端必须同步矩阵、安装、MCP 和推理覆盖，缺项不能跳过为成功。
+- 做了什么（聊天）：Solo、工作流、Agent 测试与 PM 统一到 `AgentTimeline`、`ChatUserMessage` 和共享 `ChatMessageMeta`，恢复时间悬停并提供支持鼠标、键盘、触屏的信息浮层；逐条保存实际 Agent、编码工具、模型组、模型、强度、开始时间、本轮用量和耗时，保留服务商/估算来源，未知历史不按当前选择补猜。模型和凭据图标共用透明背景规则，检查 26 个品牌的明暗主题与交互尺寸。
+- 为什么：仅检查下拉选中、CLI 启动或模拟回复不能证明实际模型参数、原生 MCP 与上下文接续。真实测试发现并修复 OpenCode variant 参数层级导致上游始终 medium、跨组 DSH 强度校验误读旧工具、Codex 原生 MCP 配置与只读注解缺失、可恢复诊断提前触发失败、stream-json 最终结果正文丢失，以及增量用量与最终总量重复累计；共享聊天入口原先存在时间、用量和布局分叉。
+- 如何验证：本地隔离、禁止外网的运行环境中，62 场景完整通过，其中真实 CLI 之间的全部 20 个有向切换完成；模型、思考强度、默认恢复、实际 MCP 事件、原始历史分页、文件和执行快照均有请求与 API 证据。另以真实 CodeBuddy 比对 mock 请求数、CLI 最终计数和持久化用量，三轮完全一致；OpenCode 的 OpenAI 和 TokenHub 身份均以本地 mock 验证默认→low→high→默认的实际请求。五个 CLI 的独立临时安装通过。Server 全量 lint、vet、配置文档检查、Go 测试、运行时专项与相关 race 通过，核心覆盖率 90.4%；Sandbox 全量 lint、vet、Go 测试、相关 race 通过，核心覆盖率 96.6%。Web 全量 535 文件、5,622 项通过，Lines 91.57%，lint 0 errors（12 条既有 warnings）、类型检查、生产构建、品牌与安全上下文断言通过；最终完整关键浏览器回归 255/255（9.1 分钟），26 品牌双主题与共享消息鼠标/键盘/触屏 12/12 通过。较早全量中的既有配置页偶发超时，经不改源码的独立重复 6/6 与最终安静环境全量重跑通过，未放宽断言或阈值。Mock 协议新旧 37 项与矩阵防漏/清理契约 7 项通过。docs 构建与官方源审计、actionlint、error-level shellcheck、diff 检查通过。本轮没有真实厂商推理费用，没有提交凭据或改动镜像发布契约。
+
+### 2026-10-28（worktree 真实工具接续与原生历史 MCP）
+
+- 日期：2026-10-28（Asia/Shanghai）。
+- 范围：`server/internal/{sandbox,services}/`、`sandbox-gateway/sandbox/internal/provider/{streamjson,modelconnection}/`、`web/src/lib/solo/useSoloChat.ts` 及回归、模型路由设计与 `CHANGELOG.md`。
+- 做了什么：本地 worktree 模式切换工具时只替换 backend 进程，保留原目录、文件和 launch 持有关系，成功或回滚后保存实际 ACP 端口；最终关闭才释放目录并停止最新 CLI 子进程，宿主其他模型账号不会被继承为所选授权。CodeBuddy/Claude 的严格 MCP 参数读取实际 `CONFIG_ROOT/mcp.json`；OpenCode 连接配置保留当前目录的受管 MCP 与 instructions，继续隔离其他 provider、plugin 和账号设置。Solo 保存模型组、模型或推理强度后向已连接视图广播完整选择，不打断当前轮；忙时保留下一轮生效提示，较早发起的详情请求不能覆盖通知。
+- 为什么：真实本地测试暴露出容器路径假设、重启 backend 误释放 worktree、原生 MCP 读取默认目录和其他标签页选择滞后的问题。模型能复述交接内容仍不足以证明原生历史工具已经加载，需要同时验证文件、实际工具事件与多个浏览器视图。
+- 如何验证：使用单独的本地数据库、临时数据目录、真实运行时包和 TokenHub 连接，第一阶段 OpenCode → DeepSeek Harness → CodeBuddy → OpenCode/辅助模型四轮真实回复成功，始终使用同一 Solo 会话、沙箱记录和工作目录，保留暗号文件、功能约束及中途新增的按钮圆角要求。定位并修复原生 MCP 缺口后，最终同一会话中 OpenCode → CodeBuddy → DeepSeek Harness 三轮全部成功；原生 `get_history` 分别完成 1、1、3 页，末轮回查至首条用户消息，未使用 curl 或读取凭据替代，原文件保留四行暗号和接续标记。真实双标签页选择主/辅助模型立即同步，模型组名称保存与恢复也无需刷新；浏览器与 API 无错误。Server 全量 lint、vet、配置文档检查、Go 测试、运行时专项通过，核心覆盖率 90.4%；sandbox 全量 lint、vet、Go 测试与专项 race 通过，核心覆盖率 96.6%；规定 shell/node 语法、inject、Git 授权、runtime bootstrap、preview-inject 与 mock chat smoke 通过。Web 全量 534 文件、5,613 项通过，Lines 91.55%，关键 Playwright 249/249（9.2 分钟），lint（0 errors、12 条既有 warnings）、类型检查及生产构建通过；选择通知、忙时提示和旧详情请求覆盖的专项回归通过。docs 构建、官方源审计、actionlint、error-level shellcheck 与 diff 检查通过。真实凭据仅进入本地测试数据目录，未写入仓库；未变更镜像、IMAGE_LEVEL 或工作流发布契约。
+
+### 2026-10-28（Agent 多模型组与跨工具上下文接续）
+
+- 日期：2026-10-28（Asia/Shanghai）。
+- 范围：`server/internal/{modelrouting,models,services,handlers,mcp,runtime,sandbox}/`、`server/cmd/server/`、`web/src/components/{agent,solo,canvas/inspector}/`、`web/src/lib/{agent,api,solo}/`、中英文文案、模型路由浏览器回归、配置帮助与 `CHANGELOG.md`。
+- 做了什么：Agent 的模型绑定保留默认 `configurationId`，增加包含默认组的有序 `configurationIds`，支持不同 CLI 的多组选择；默认配置、继承、创建、团队、初始化和导入导出保留完整绑定。Solo 初始、请求与实际应用的路由分别保存模型组 ID，同名模型按组区分账号。每轮边界在原沙箱内重载工具、配置与授权，保留仓库快照、工作目录和未提交改动；组内辅助模型目录也参与指纹，失效路由要求重新选择。切换前持久化历史交接标记，取消、响应丢失或回滚后的重试仍补入上下文；历史读取失败阻止空白续聊。artifact-store 新增只读 `get_history`，从当前沙箱代次定位原始 Solo 消息，提供固定快照分页、附件引用和可见工具结果；交接携带覆盖会话的用户要求与更正记录、近期对话，并标明预算省略范围。历史查询自身的结果正文不再嵌入下一次历史，避免递归膨胀。成功保存模型、账号或 Agent 绑定后通过页内版本和跨标签通知重读目录，失败读取保留选择，其他用户刷新后读取最新配置。
+- 为什么：原来 Agent 只引用一个组，选择器与沙箱白名单无法覆盖其他工具或账号；原生 CLI 会话重建后需要已持久化的任务记录接续。模型组 ID、执行环境和上下文交接必须一起处理，避免界面选中与实际账号不一致，或使用过期需求继续执行。
+- 如何验证：模型组、实际路由、原工作区保留、分阶段失败回滚、旧会话固定默认组、忙时切换、模糊响应重试、历史读取失败、分页授权、中段需求更正与历史查询防递归专项通过；相关服务、运行时和沙箱竞态测试通过。Server golangci-lint 0 issues、go vet、配置文档检查、隔离 Git 配置及 ASKPASS 的 `go test ./... -p 2`、`TestRunAgent|TestReact` 通过，核心覆盖率 90.4%。Web 全量 534 文件、5,610 项测试通过，Lines 91.55%，关键 Playwright 249/249 通过；类型检查、ESLint（0 errors、12 条既有 warnings）、生产构建与安全上下文/品牌断言通过。首次浏览器全量中一项既有移动端弹层断言失败，单独重跑与最终完整重跑均通过，未改无关逻辑。docs 构建与官方源高/严重漏洞审计、actionlint、error-level shellcheck、diff 检查通过。未调用真实厂商账号，未修改沙箱镜像或工作流发布契约。
+
 ### 2026-10-28（保留重连尾轮正文与订阅快照）
 
 - 日期：2026-10-28（Asia/Shanghai）。

@@ -4,6 +4,13 @@ import { describe, expect, it } from 'vitest'
 import ChatUserMessage from './ChatUserMessage.vue'
 
 describe('ChatUserMessage markdown', () => {
+  it('shows the recorded time on hover without inventing a time for older rows', () => {
+    const known = mount(ChatUserMessage, { props: { text: 'A question', createdAt: '2026-10-28T08:00:00Z' } })
+    expect(known.attributes('title')).toMatch(/2026-10-28/)
+    const old = mount(ChatUserMessage, { props: { text: 'Old question' } })
+    expect(old.attributes('title')).toBeUndefined()
+    known.unmount(); old.unmount()
+  })
   it('renders headings, emphasis, lists and inline code like assistant replies', () => {
     const w = mount(ChatUserMessage, {
       props: {

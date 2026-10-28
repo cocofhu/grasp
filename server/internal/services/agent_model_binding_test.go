@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
@@ -39,5 +40,38 @@ func TestAgentSavesOnlyNamedModelReferencesOrDraft(t *testing.T) {
 	got, _ := s.Get("named")
 	if got.ModelBinding == nil || got.ModelBinding.ConfigurationID != "named" || got.Env["ACP_BRIDGE_MODEL"] != "" || got.Env["OPENAI_BASE_URL"] != "" || got.Env["KEEP"] != "1" {
 		t.Fatal("configuration reference was not the single source of model routing")
+	}
+}
+
+func TestAgentBindsDifferentToolsWithoutChangingItsDefault(t *testing.T) {
+	s := NewAgentService(t.TempDir())
+	backends := map[string]string{"daily": "codex", "review": "claude_code"}
+	s.SetModelConfigurationResolver(func(binding *modelrouting.Binding) (string, error) {
+		backend := backends[binding.ConfigurationID]
+		if backend == "" {
+			return "", errors.New("configuration missing")
+		}
+		return backend, nil
+	})
+	validated := map[string]string{}
+	s.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
+		if backends[binding.ConfigurationID] != backend {
+			return errors.New("backend mismatch")
+		}
+		validated[binding.ConfigurationID] = backend
+		return nil
+	})
+	ref := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "daily", ConfigurationIDs: []string{"daily", "review"}}
+	if err := s.Save(Agent{Name: "multi", AcpBackend: "cursor", ModelBinding: ref}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get("multi")
+	if got.AcpBackend != "codex" || !reflect.DeepEqual(got.ModelBinding, ref) || !reflect.DeepEqual(validated, backends) {
+		t.Fatalf("saved route: %+v, validations=%v", got, validated)
+	}
+	bad := *ref
+	bad.ConfigurationIDs = []string{"daily", "missing"}
+	if err := s.Save(Agent{Name: "bad-set", AcpBackend: "codex", ModelBinding: &bad}); !errors.Is(err, ErrInvalidAgent) || s.Exists("bad-set") {
+		t.Fatalf("invalid alternate was saved: %v", err)
 	}
 }

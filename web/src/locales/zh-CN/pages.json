@@ -4574,6 +4574,20 @@
       "run_not_found": "运行不存在",
       "node_not_found": "节点不存在"
     },
+    "chatMessageInfo": {
+      "title": "回复信息",
+      "time": "时间",
+      "tool": "编码工具",
+      "model": "模型",
+      "group": "模型组",
+      "effort": "思考强度",
+      "duration": "用时",
+      "notReported": "未提供",
+      "unknownModel": "未按模型分桶",
+      "sourceReported": "服务商上报",
+      "sourceAttribution": "按执行模型归属",
+      "sourceUnknown": "未上报模型"
+    },
     "solo": {
       "title": "Solo 对话",
       "capacity": "运行中 {n} / {max} 个沙箱",
@@ -4607,6 +4621,7 @@
         "empty": "当前 Agent 还没有可用模型",
         "noMatch": "没有匹配的模型",
         "unavailable": "不可用",
+        "unavailableSelection": "所选模型或模型组已不可用，请重新选择后继续",
         "reset": "所选模型已不在配置中，已改回主模型",
         "pending": "当前回复仍使用原来的模型，从下一条开始使用新模型。",
         "catalogFailed": "模型目录没有加载出来，仍使用已选模型",

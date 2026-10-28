@@ -119,6 +119,9 @@ func (s *ModelConfigurationService) validate(configuration *modelrouting.Configu
 	if configuration.Binding.Kind != "platform" && configuration.Binding.Kind != "connection" {
 		return fmt.Errorf("%w: a concrete platform or connection binding is required", ErrModelConfigurationInvalid)
 	}
+	if configuration.Binding.ConfigurationID != "" || len(configuration.Binding.ConfigurationIDs) != 0 {
+		return fmt.Errorf("%w: concrete model groups cannot reference other configurations", ErrModelConfigurationInvalid)
+	}
 	if err := modelrouting.NormalizeAuxiliaryModels(&configuration.Binding); err != nil {
 		return fmt.Errorf("%w: %w", ErrModelConfigurationInvalid, err)
 	}

@@ -389,7 +389,7 @@ describe('SoloSessionPane', () => {
     statusState.value = 'running'
   })
 
-  it('asks to fall back when the saved model is no longer available', async () => {
+  it('keeps an unavailable selection and blocks sending until explicitly replaced', async () => {
     resetCliCatalog()
     const { api } = await import('@/lib/api/api')
     vi.mocked(api.listAgents).mockResolvedValueOnce([
@@ -412,8 +412,10 @@ describe('SoloSessionPane', () => {
     actionError.value = ''
     const wrapper = mountPane(pages)
     await flushPromises()
-    expect(setCurrentModel).toHaveBeenCalledWith('')
-    expect(actionError.value).toContain('已改回主模型')
+    expect(setCurrentModel).not.toHaveBeenCalled()
+    expect(currentModelId.value).toBe('gone')
+    expect(wrapper.get('[data-testid="solo-model-invalid-notice"]').text()).toContain('请重新选择')
+    expect(wrapper.get('[data-testid="solo-send"]').attributes('disabled')).toBeDefined()
     wrapper.unmount()
     currentModelId.value = ''
     resetCliCatalog()

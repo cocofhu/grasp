@@ -5,6 +5,7 @@ import { RouterLink } from 'vue-router'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 import { api, type ConcreteModelBinding, type CredentialItem, type ModelConfiguration, type ModelConnection } from '@/lib/api/api'
 import { credentialUsable, isModelCredential, isToolCredential, useRoutingCopy } from '@/lib/agent/modelRouting'
+import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
 import type { CanvasAgent } from '../composables/outlets'
 
 const props = defineProps<{
@@ -20,8 +21,9 @@ const summaryConnection = ref<ModelConnection | null>(null)
 const summaryLoading = ref(false)
 const summaryError = ref('')
 const inheritedBackend = ref('')
+ensureModelCatalogEvents()
 watch(
-  () => [props.agent?.modelBinding, props.agent?.acpBackend, props.agent?.inheritModel] as const,
+  () => [props.agent?.modelBinding, props.agent?.acpBackend, props.agent?.inheritModel, modelCatalogRevision.value] as const,
   async ([localBinding, localToolId, inheritModel], _previous, onCleanup) => {
     let stale = false
     onCleanup(() => { stale = true })

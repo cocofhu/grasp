@@ -80,8 +80,8 @@ func TestOpenCodeCustomVariantIsDeclaredForTheRun(t *testing.T) {
 	config := configJSON(t, next)
 	provider := config["provider"].(map[string]any)["opencode"].(map[string]any)
 	model := provider["models"].(map[string]any)["gpt-5.5"].(map[string]any)
-	overlay := model["variants"].(map[string]any)["turbo"].(map[string]any)["settings"].(map[string]any)
-	if overlay["reasoningEffort"] != "turbo" || overlay["reasoningSummary"] != "auto" {
+	overlay := model["variants"].(map[string]any)["turbo"].(map[string]any)
+	if overlay["reasoningEffort"] != "turbo" || overlay["reasoningSummary"] != "auto" || overlay["settings"] != nil {
 		t.Fatalf("custom declaration: %#v", overlay)
 	}
 	if _, err := ApplyOpenCodeVariant(p, "not a variant"); err == nil {
@@ -120,8 +120,8 @@ func TestConnectedOpenCodeDeclaresEffortWithoutForcingDefault(t *testing.T) {
 	if _, forced := model["options"]; forced {
 		t.Fatal("connection options forced a reasoning effort")
 	}
-	overlay := model["variants"].(map[string]any)["low"].(map[string]any)["settings"].(map[string]any)
-	if overlay["reasoningEffort"] != "low" || overlay["reasoningSummary"] != nil {
+	overlay := model["variants"].(map[string]any)["low"].(map[string]any)
+	if overlay["reasoningEffort"] != "low" || overlay["reasoningSummary"] != nil || overlay["settings"] != nil {
 		t.Fatalf("chat declaration: %#v", overlay)
 	}
 }

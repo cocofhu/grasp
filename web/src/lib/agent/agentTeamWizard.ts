@@ -21,7 +21,7 @@ export const TEAM_ENGINEER_COUNT = 4
 export type TeamWizardDraft = {
   step: number; teamName: string; prefix: string; pmName: string; background: string
   prefixTouched: boolean; pmTouched: boolean
-  modelConfigurationId: string; gitBindings: AgentGitBindings; gitUrl: string
+  modelConfigurationId: string; modelConfigurationIds?: string[]; gitBindings: AgentGitBindings; gitUrl: string
   env: WizardKV[]; mcp: WizardMCP[]; skipped: Partial<Record<TeamWizardStepId, boolean>>
 }
 
@@ -79,10 +79,10 @@ function mcpToApi(m: WizardMCP): MCPServer {
 }
 
 export type TeamBootstrapPayload = {
-  prefix: string; pmName: string; background: string; modelConfigurationId: string; gitBindings: AgentGitBindings
+  prefix: string; pmName: string; background: string; modelConfigurationId: string; modelConfigurationIds?: string[]; gitBindings: AgentGitBindings
   gitUrl?: string; mcp: MCPServer[]; env: Record<string, string>
 }
 export function assembleTeamBootstrapPayload(draft: TeamWizardDraft): TeamBootstrapPayload {
-  return { prefix: draft.prefix.trim(), pmName: normalizeAgentName(draft.pmName), background: draft.background.trim(), modelConfigurationId: draft.modelConfigurationId, gitBindings: cloneGitBindings(draft.gitBindings), ...(draft.gitUrl.trim() ? { gitUrl: draft.gitUrl.trim() } : {}), mcp: draft.mcp.filter((row) => row.name.trim()).map(mcpToApi), env: stripSecretKeysFromRecord(kvToRec(draft.env)) }
+  return { prefix: draft.prefix.trim(), pmName: normalizeAgentName(draft.pmName), background: draft.background.trim(), modelConfigurationId: draft.modelConfigurationId, ...(draft.modelConfigurationIds ? { modelConfigurationIds: [...draft.modelConfigurationIds] } : {}), gitBindings: cloneGitBindings(draft.gitBindings), ...(draft.gitUrl.trim() ? { gitUrl: draft.gitUrl.trim() } : {}), mcp: draft.mcp.filter((row) => row.name.trim()).map(mcpToApi), env: stripSecretKeysFromRecord(kvToRec(draft.env)) }
 }
 export function teamHasAuth(draft: TeamWizardDraft): boolean { return !!draft.modelConfigurationId }

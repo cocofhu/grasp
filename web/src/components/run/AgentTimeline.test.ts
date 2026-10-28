@@ -30,7 +30,7 @@ const endedAt = '2026-10-20T00:03:34.000Z'
 describe('AgentTimeline', () => {
   it('renders steps in arrival order with consecutive tools folded', async () => {
     const w = mountTimeline({ completed: true, startedAt, endedAt })
-    expect(order(w)).toEqual(['agent-timeline-elapsed', 'agent-timeline-rule', 'agent-timeline-message'])
+    expect(order(w)).toEqual(['agent-timeline-elapsed', 'agent-timeline-rule', 'agent-timeline-message', 'chat-message-meta'])
     expect(w.get('[data-testid="agent-timeline-elapsed"]').text()).toContain('用时 3m 34s')
     expect(w.get('[data-testid="agent-timeline-elapsed"]').text()).not.toContain('使用了')
     expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(false)
@@ -222,7 +222,7 @@ describe('AgentTimeline', () => {
         { kind: 'tool', title: 'Grep', status: 'failed' },
       ],
     })
-    expect(order(w)).toEqual(['agent-timeline-elapsed', 'agent-timeline-rule', 'agent-timeline-message'])
+    expect(order(w)).toEqual(['agent-timeline-elapsed', 'agent-timeline-rule', 'agent-timeline-message', 'chat-message-meta'])
     expect(w.get('[data-testid="agent-timeline-message"]').text()).toBe('收尾回复')
     expect(w.get('[data-testid="agent-timeline-elapsed-failed"]').text()).toBe('3 个失败')
     expect(w.get('[data-testid="agent-timeline-elapsed"]').attributes('aria-label')).toContain('3 个失败')

@@ -3,6 +3,7 @@ package streamjson
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"backend/internal/provider"
@@ -257,6 +258,7 @@ func TestArgsStdinJSONMode(t *testing.T) {
 }
 
 func TestArgsStrictMcpConfigAddsMcpConfigPath(t *testing.T) {
+	t.Setenv("CONFIG_ROOT", "")
 	// Mirrors Approving's codebuddy BaseArgs: strict without --mcp-config used
 	// to load zero MCP servers (official CLI semantics).
 	c := &codec{c: Config{
@@ -272,6 +274,56 @@ func TestArgsStrictMcpConfigAddsMcpConfigPath(t *testing.T) {
 	wantPath := "/root/.codebuddy/mcp.json"
 	if i := indexOfSlice(args, "--mcp-config"); i < 0 || i+1 >= len(args) || args[i+1] != wantPath {
 		t.Fatalf("want --mcp-config %s in %v", wantPath, args)
+	}
+}
+
+func TestArgsStrictMcpConfigUsesWorktreeConfigRoot(t *testing.T) {
+	root := t.TempDir()
+	const managedMCP = `{"mcpServers":{"artifact-store":{"type":"http","url":"http://127.0.0.1:9999/mcp/runs/worktree"}}}`
+	if err := os.WriteFile(filepath.Join(root, "mcp.json"), []byte(managedMCP), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CONFIG_ROOT", root)
+	for _, bin := range []string{"codebuddy", "claude"} {
+		t.Run(bin, func(t *testing.T) {
+			c := &codec{c: Config{Bin: bin, ConfigRoot: filepath.Join("/root", "."+bin),
+				BaseArgs: []string{"--strict-mcp-config"}}}
+			args := c.Args(provider.OpenOptions{}, "read history", "")
+			i := indexOfSlice(args, "--mcp-config")
+			if i < 0 || i+1 >= len(args) {
+				t.Fatal("native MCP config argument missing")
+			}
+			data, err := os.ReadFile(args[i+1])
+			if err != nil || string(data) != managedMCP {
+				t.Fatal("native MCP argument does not load this worktree's managed servers")
+			}
+			args = c.Args(provider.OpenOptions{CustomArgs: []string{"--mcp-config", "/custom/mcp.json"}}, "read history", "")
+			i = indexOfSlice(args, "--mcp-config")
+			if countFlag(args, "--mcp-config") != 1 || args[i+1] != "/custom/mcp.json" {
+				t.Fatal("explicit native MCP config argument was overridden")
+			}
+		})
+	}
+}
+
+func TestCursorAuthEnvUsesManagedWorktreeConfigRoot(t *testing.T) {
+	root := t.TempDir()
+	env := []string{"CONFIG_ROOT=" + root, "CURSOR_CONFIG_DIR=/old/account-home", "CURSOR_API_KEY=synthetic-key"}
+	c := &codec{c: Config{AgentName: provider.Cursor, AuthEnvFn: func(env []string) []string {
+		return append(env, "CURSOR_EXTRA=kept")
+	}}}
+	next := c.AuthEnv(env)
+	want := "CURSOR_CONFIG_DIR=" + root
+	if !containsStr(next, want) || containsStr(next, "CURSOR_CONFIG_DIR=/old/account-home") || !containsStr(next, "CURSOR_API_KEY=synthetic-key") || !containsStr(next, "CURSOR_EXTRA=kept") {
+		t.Fatal("Cursor native home did not follow this worktree's managed MCP config")
+	}
+	plain := []string{"CURSOR_CONFIG_DIR=/explicit/cli-home"}
+	if got := c.AuthEnv(plain); !containsStr(got, plain[0]) {
+		t.Fatal("unmanaged Cursor config override was replaced")
+	}
+	other := &codec{c: Config{AgentName: provider.CodeBuddy}}
+	if got := other.AuthEnv(env); containsStr(got, want) {
+		t.Fatal("another backend changed Cursor's native home")
 	}
 }
 

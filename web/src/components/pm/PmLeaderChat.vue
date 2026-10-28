@@ -16,7 +16,8 @@ import {
   reduceArtifactCitationUnread,
 } from '@/lib/chat/artifactUnread'
 import ArtifactLoadingPane from '@/components/run/ArtifactLoadingPane.vue'
-import TokenUsageByModelTip from '@/components/ui/TokenUsageByModelTip.vue'
+import AgentTimeline from '@/components/run/AgentTimeline.vue'
+import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import { usePmLeaderChat } from '@/lib/pm/usePmLeaderChat'
 import type { PmLeaderBinding } from '@/lib/shared/types'
 
@@ -462,12 +463,11 @@ function showConversationHistory() { workspace.value?.close() }
                   </div>
                 </template>
               </div>
-              <div
+              <ChatUserMessage
                 v-if="m.content"
-                class="chat-user-message px-4 py-2.5 whitespace-pre-wrap break-words"
-              >
-                {{ m.content }}
-              </div>
+                :text="m.content"
+                :created-at="m.createdAt"
+              />
               <div
                 v-else-if="m.images?.length"
                 class="chat-user-message px-4 py-2.5"
@@ -483,18 +483,13 @@ function showConversationHistory() { workspace.value?.close() }
                 data-assistant-bubble
                 class="min-w-0"
               >
-                <div class="md chat-prose" v-html="renderMarkdown(m.content)" />
-                <div
-                  v-if="m.content?.trim() || m.usage != null"
-                  class="chat-meta msg-actions mt-2.5 flex flex-wrap items-center gap-3"
+                <AgentTimeline
+                  :text="m.content"
+                  :metadata="m"
+                  :unknown-model-display-name="unknownModelDisplayName"
+                  completed
                 >
-                  <time class="msg-time" :datetime="m.createdAt">{{ relTime(m.createdAt) }}</time>
-                  <TokenUsageByModelTip
-                    v-if="m.usage != null"
-                    :usage="m.usage"
-                    :usage-by-model="m.usageByModel"
-                    :unknown-model-display-name="unknownModelDisplayName"
-                  />
+                  <template #metadata-actions>
                   <button
                     v-if="m.content?.trim()"
                     type="button"
@@ -504,7 +499,8 @@ function showConversationHistory() { workspace.value?.close() }
                     <Icon name="copy" :size="12" />
                     {{ t('pages.workspace.pm.copyFull') }}
                   </button>
-                </div>
+                  </template>
+                </AgentTimeline>
               </div>
               <div v-if="m.citations?.length" class="mt-3 space-y-1">
                 <CitationCard v-for="(c, i) in m.citations" :key="i" :citation="c" />

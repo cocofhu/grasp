@@ -122,6 +122,9 @@ export function clarifyTurnsFromLlm(turns: LlmTurn[], error?: string): ClarifyTu
         ...(parts.length ? { parts } : {}),
         ...(streaming ? { streaming: true } : {}),
       }
+      // One prompt can seal several visible answers. Attribute its reported
+      // usage once, on the final answer, instead of repeating the call total.
+      if (last && turn.usage != null) row.usage = turn.usage
       if (!streaming && prompt?.at && turn.endedAt) {
         row.startedAt = prompt.at
         row.endedAt = turn.endedAt

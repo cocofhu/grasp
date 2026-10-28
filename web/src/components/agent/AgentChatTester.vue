@@ -8,15 +8,11 @@ import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import ReposEditor, { type RepoRow } from '@/components/ui/ReposEditor.vue'
 import AcpStatusPill from '@/components/run/AcpStatusPill.vue'
-import AgentToolGroup from '@/components/run/AgentToolGroup.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
+import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
-import ThoughtSummaryStatus from '@/components/run/ThoughtSummaryStatus.vue'
 import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
-import { thoughtParagraphs } from '@/lib/run/thoughtParagraphs'
-import StreamMarkdown from '@/components/run/StreamMarkdown.vue'
-import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import {
   SITE_ATTACH_MAX_BYTES,
@@ -52,7 +48,6 @@ const props = defineProps<{
 }>()
 
 const { t, te } = useI18n()
-const blockCache: MarkdownBlockCache = new Map()
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 const { worktreeMode } = useExecutionMode()
 
@@ -1254,29 +1249,23 @@ onBeforeUnmount(() => {
               </div>
             </template>
           </div>
-          <div v-if="turn.text" class="chat-user-message whitespace-pre-wrap break-words px-4 py-2.5 [overflow-wrap:anywhere]">
-            {{ turn.text }}
-          </div>
+          <ChatUserMessage v-if="turn.text" :text="turn.text" :created-at="turn.startedAt" />
         </div>
         <div v-else class="min-w-0 w-full space-y-3">
           <AgentTimeline
-            v-if="turn.steps?.length"
             :parts="partsOf(turn)"
+            :text="turn.text"
+            :thought="turn.thought"
+            :tools="turn.tools"
             :streaming="turn.streaming"
             :completed="!turn.streaming && !turn.error"
             :interrupted="!turn.streaming && !!turn.error"
             :started-at="turn.startedAt"
             :ended-at="turn.endedAt"
+            :metadata="turn"
             quiet-thought
             message-test-id="tester-agent-message"
           />
-          <!-- thought -->
-          <details v-if="turn.thought && !turn.steps?.length" class="chat-thought chat-meta">
-            <summary class="chat-thought-summary"><ThoughtSummaryStatus :busy="turn.streaming" :completed="!turn.streaming && !turn.error" :interrupted="!turn.streaming && !!turn.error" /><Icon name="chevron-down" :size="12" class="chat-thought-chevron" aria-hidden="true" /></summary>
-            <div class="chat-thought-body break-words [overflow-wrap:anywhere]">
-              <p v-for="(para, pi) in thoughtParagraphs(turn.thought)" :key="pi">{{ para }}</p>
-            </div>
-          </details>
           <!-- plan -->
           <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
             <div class="chat-meta mb-1">{{ t('pages.agentChatTester.plan') }}</div>
@@ -1284,12 +1273,6 @@ onBeforeUnmount(() => {
               <Icon :name="p.status === 'completed' ? 'check' : 'clock'" :size="13" :class="p.status === 'completed' ? 'text-ok' : 'text-txt3'" />
               <span :class="p.status === 'completed' ? 'line-through text-txt3' : ''">{{ p.content }}</span>
             </div>
-          </div>
-          <AgentToolGroup v-if="turn.tools.length && !turn.steps?.length" :tools="turn.tools" :busy="turn.streaming" />
-          <!-- narration -->
-          <div v-if="turn.text && !turn.steps?.length" class="chat-prose md py-1">
-            <StreamMarkdown v-if="turn.streaming" :blocks="renderMarkdownBlocks(turn.text, blockCache)" />
-            <span v-else v-html="renderMarkdown(turn.text)" />
           </div>
           <div v-if="turn.streaming" class="chat-meta grasp-status-host py-2" data-testid="tester-agent-activity" role="status">
             <ThinkingBusyCue :label="t('pages.agentChatTester.generating')" />

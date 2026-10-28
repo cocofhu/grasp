@@ -1,6 +1,7 @@
 import type {
   AcpEvent,
   ClarifyImage,
+  ChatExecution,
   McpCall,
   NodeRunStatus,
   TokenUsage,
@@ -173,7 +174,7 @@ export type ModelEfforts = Record<string, string>
 export type ConcreteModelBinding =
   | { kind: 'platform'; credentialId: string; modelId?: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string; modelEfforts?: ModelEfforts } }
   | { kind: 'connection'; connectionId: string; modelId: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string; modelEfforts?: ModelEfforts } }
-export type ModelBinding = { kind: 'configuration'; configurationId: string }
+export type ModelBinding = { kind: 'configuration'; configurationId: string; configurationIds?: string[] }
 export interface ModelConfiguration {
   id: string
   name: string
@@ -368,6 +369,7 @@ export interface TeamBootstrapRequest {
   pmName: string
   background: string
   modelConfigurationId: string
+  modelConfigurationIds?: string[]
   gitBindings?: AgentGitBindings
   gitUrl?: string
   mcp?: MCPServer[]
@@ -680,11 +682,13 @@ export interface SoloSession {
   branch?: string
   /** Opening model. Empty follows the Agent configuration's primary model. */
   initialModelId?: string
+  initialConfigurationId?: string
   /**
    * Model later turns use. Empty means the primary model.
    * Absent currentModelSet means an old session still follows initialModelId.
    */
   currentModelId?: string
+  currentConfigurationId?: string
   currentModelSet?: boolean
   /** Session reasoning effort; empty follows the coding tool's default. */
   reasoningEffort?: string
@@ -729,6 +733,7 @@ export interface SoloCreateBody {
   repos?: SoloRepoChoice[]
   /** Empty follows the Agent configuration's primary model. */
   initialModelId?: string
+  initialConfigurationId?: string
   reasoningEffort?: string
   title?: string
   text?: string
@@ -748,6 +753,7 @@ export interface SoloMessage {
   usage?: TokenUsage
   usageByModel?: TokenUsageByModel
   durationMs?: number
+  execution?: ChatExecution
   createdAt: string
 }
 

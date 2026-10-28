@@ -14,6 +14,9 @@ const (
 	EnvModelConnection   = "GRASP_MODEL_CONNECTION"
 	EnvModelAPIKey       = "GRASP_MODEL_API_KEY"
 	EnvModelCredentialID = "GRASP_MODEL_CREDENTIAL_ID"
+	// EnvModelConfigurationID freezes the selected group alongside the launch
+	// environment, so parked workflow sessions retain their original identity.
+	EnvModelConfigurationID = "GRASP_MODEL_CONFIGURATION_ID"
 	// EnvConfiguredModels is the ordered allow-list for interactive switching.
 	// Index 0 is the primary model and may be empty when the tool should choose.
 	EnvConfiguredModels = "GRASP_CONFIGURED_MODELS"
@@ -43,6 +46,9 @@ func ApplyModelBinding(env map[string]string, backend string, binding *modelrout
 		return fmt.Errorf("selected model credential is unavailable")
 	}
 	ClearModelRoutingEnv(env)
+	if binding != nil && binding.Kind == "configuration" {
+		env[EnvModelConfigurationID] = binding.ConfigurationID
+	}
 	env[EnvModelCredentialID] = resolved.CredentialID
 	switch resolved.Binding.Kind {
 	case "platform":
@@ -151,19 +157,26 @@ func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
 // ClearModelRoutingEnv removes only coding authentication and derived model
 // routing. It deliberately leaves repository, SSH, MCP and run coordinates.
 func ClearModelRoutingEnv(env map[string]string) {
-	for _, key := range []string{
+	for _, key := range ModelRoutingEnvKeys() {
+		delete(env, key)
+	}
+}
+
+// ModelRoutingEnvKeys lists tool authentication and model-derived variables.
+// Re-prime callers also clear these after a platform restart, when no previous
+// in-memory Spec remains to enumerate the old tool's injected credentials.
+func ModelRoutingEnvKeys() []string {
+	return []string{
 		envauth.EnvCursorAPIKey, envauth.EnvClaudeAPIKey, envauth.EnvCodeBuddyAPIKey,
 		envauth.EnvTraeAPIKey, envauth.EnvOpenCodeAPIKey, envauth.EnvCodexAuthFile, envauth.EnvDeepSeekAPIKey,
 		"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CODEBUDDY_API_KEY",
 		"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "DEEPSEEK_API_KEY",
 		"ACP_CURSOR_API_KEY", "ACP_CLAUDE_API_KEY", "ACP_CODEBUDDY_API_KEY", "ACP_CODEX_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
-		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvACPBridgeModel, EnvConfiguredModels, EnvInitialChatModel, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
+		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvModelConfigurationID, EnvACPBridgeModel, EnvConfiguredModels, EnvInitialChatModel, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
 		"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL",
 		"ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 		"CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_CCR",
 		"OPENAI_BASE_URL", "CODEBUDDY_BASE_URL", "CODEBUDDY_MODEL", "CODEBUDDY_SMALL_FAST_MODEL", "CODEBUDDY_BIG_SLOW_MODEL", "CODEBUDDY_CODE_SUBAGENT_MODEL", "CODEBUDDY_SUBAGENT_MODEL",
-	} {
-		delete(env, key)
 	}
 }
 

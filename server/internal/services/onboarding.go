@@ -42,8 +42,9 @@ var (
 
 // OnboardingBootstrapRequest is the body for POST .../bootstrap-onboarding.
 type OnboardingBootstrapRequest struct {
-	ModelConfigurationID string              `json:"modelConfigurationId"`
-	GitBindings          *models.GitBindings `json:"gitBindings,omitempty"`
+	ModelConfigurationID  string              `json:"modelConfigurationId"`
+	ModelConfigurationIDs []string            `json:"modelConfigurationIds,omitempty"`
+	GitBindings           *models.GitBindings `json:"gitBindings,omitempty"`
 	// Language is the wizard's UI language (zh-CN | en); it names the default
 	// workflow and its start/end nodes. Empty means Chinese.
 	Language     string `json:"language,omitempty"`
@@ -65,8 +66,9 @@ type OnboardingBootstrapRequest struct {
 type OnboardingAgentChoice struct {
 	TemplateID string `json:"templateId"`
 	// Name must be empty or the canonical name for the wizard language.
-	Name                 string `json:"name,omitempty"`
-	ModelConfigurationID string `json:"modelConfigurationId,omitempty"`
+	Name                  string   `json:"name,omitempty"`
+	ModelConfigurationID  string   `json:"modelConfigurationId,omitempty"`
+	ModelConfigurationIDs []string `json:"modelConfigurationIds,omitempty"`
 }
 
 // OnboardingRequiredTemplateIDs must all be part of the onboarding team.
@@ -244,6 +246,27 @@ func (s *CredentialService) requireModelConfiguration(id string) (modelrouting.C
 	return configuration, err
 }
 
+func (s *CredentialService) requireModelConfigurationSet(defaultID string, ids []string) (modelrouting.Configuration, error) {
+	ref := &modelrouting.Binding{Kind: "configuration", ConfigurationID: defaultID, ConfigurationIDs: ids}
+	if len(ids) > 0 {
+		if err := modelrouting.ValidateConfigurationReference(ref); err != nil {
+			return modelrouting.Configuration{}, err
+		}
+	}
+	configuration, err := s.requireModelConfiguration(defaultID)
+	if err != nil {
+		return modelrouting.Configuration{}, err
+	}
+	for _, id := range modelrouting.ConfigurationIDs(ref) {
+		if id != defaultID {
+			if _, err := s.requireModelConfiguration(id); err != nil {
+				return modelrouting.Configuration{}, err
+			}
+		}
+	}
+	return configuration, nil
+}
+
 func normalizeBaselineRepos(input []BaselineRepo) []BaselineRepo {
 	out := make([]BaselineRepo, 0, len(input))
 	seen := map[string]bool{}
@@ -290,7 +313,7 @@ func applyBaselineRepos(graph *models.Graph, repos []BaselineRepo) {
 // Bootstrap binds the selected saved models and Git authorizations to the chosen
 // role templates, then publishes the default workflow. It never starts a run.
 func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (OnboardingBootstrapResult, error) {
-	configuration, err := s.Credentials.requireModelConfiguration(req.ModelConfigurationID)
+	configuration, err := s.Credentials.requireModelConfigurationSet(req.ModelConfigurationID, req.ModelConfigurationIDs)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
@@ -332,8 +355,10 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 		}
 		tmpl.Name = m.Name
 		selected := configuration
+		configurationIDs := req.ModelConfigurationIDs
 		if m.ModelConfigurationID != "" {
-			selected, err = s.Credentials.requireModelConfiguration(m.ModelConfigurationID)
+			configurationIDs = m.ModelConfigurationIDs
+			selected, err = s.Credentials.requireModelConfigurationSet(m.ModelConfigurationID, configurationIDs)
 			if err != nil {
 				return OnboardingBootstrapResult{}, err
 			}
@@ -341,7 +366,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 		backend := selected.Backend
 		tmpl.AcpBackend = backend
 		tmpl.InheritModel, tmpl.InheritGit = false, false
-		tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: selected.ID}
+		tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: selected.ID, ConfigurationIDs: append([]string(nil), configurationIDs...)}
 		tmpl.GitBindings = gitBindings
 		tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 		if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
@@ -378,7 +403,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 		solo := Agent{
 			Name:         OnboardingSoloAgentName,
 			AcpBackend:   configuration.Backend,
-			ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID},
+			ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID, ConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...)},
 			GitBindings:  gitBindings,
 			Env:          map[string]string{},
 			Layout: AgentLayout{
@@ -416,9 +441,10 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 }
 
 type onboardingTeamMember struct {
-	Role                 TeamRoleTemplate
-	Name                 string
-	ModelConfigurationID string
+	Role                  TeamRoleTemplate
+	Name                  string
+	ModelConfigurationID  string
+	ModelConfigurationIDs []string
 }
 
 // resolveOnboardingTeam turns the wizard's choices into the Agents to save, in
@@ -469,7 +495,7 @@ func resolveOnboardingTeam(lang string, choices []OnboardingAgentChoice) ([]onbo
 			return nil, fmt.Errorf("%w: duplicate agent name %q", ErrOnboardingInvalidTeam, name)
 		}
 		seen[name] = true
-		out = append(out, onboardingTeamMember{Role: role, Name: name, ModelConfigurationID: strings.TrimSpace(c.ModelConfigurationID)})
+		out = append(out, onboardingTeamMember{Role: role, Name: name, ModelConfigurationID: strings.TrimSpace(c.ModelConfigurationID), ModelConfigurationIDs: append([]string(nil), c.ModelConfigurationIDs...)})
 	}
 	return out, nil
 }

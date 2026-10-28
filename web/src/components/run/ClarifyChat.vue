@@ -67,10 +67,8 @@ import { confirmFlowWindowVisible } from '@/lib/inbox/confirmFlowWindow'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
 import { resolveBootDisplay } from '@/lib/run/bootDisplay'
 import { emptyFailHeadline, turnProcessParts } from '@/lib/inbox/clarifyEmptyFail'
-import AgentToolGroup from './AgentToolGroup.vue'
 import AgentTimeline from './AgentTimeline.vue'
 import ClarifyHandoffBubble from './ClarifyHandoffBubble.vue'
-import StreamMarkdown from './StreamMarkdown.vue'
 import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
@@ -101,10 +99,8 @@ import type {
 } from '@/lib/shared/types'
 import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
-import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
 import { hasFailedTool } from '@/lib/run/acpTools'
-import { thoughtParagraphs } from '@/lib/run/thoughtParagraphs'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 
@@ -384,9 +380,6 @@ const {
   applyAcpEvents,
   agentHasMessage,
   agentTailOutputting,
-  agentThoughtDisplay,
-  isThoughtOpen,
-  onThoughtToggle,
   showTurnCompleted,
   isRetryableFailedAgent,
   emptyFailDisplayText,
@@ -406,7 +399,6 @@ const {
   showSandboxOrphanBanner,
   sandboxOrphanOpLabel,
   liveStreamHtml,
-  liveStreamBlocks,
   streamPreview,
   unsubStream,
   liveThoughtText,
@@ -1209,14 +1201,17 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             <ClarifyThinkingRow v-if="t.streaming && !t.thought && !agentHasMessage(t)" />
             <!-- Steps in arrival order (thought / tools / message), like the persisted timeline -->
             <AgentTimeline
-              v-if="turnProcessParts(t).length"
               :parts="turnProcessParts(t)"
+              :text="isRetryableFailedAgent(t) ? '' : t.text"
+              :thought="t.thought"
+              :tools="isRetryableFailedAgent(t) ? [] : t.tools"
               :streaming="!!t.streaming"
               :completed="showTurnCompleted(t)"
               :interrupted="!!t.interrupted"
               :run-id="runId"
               :started-at="outputBounds(i).startedAt"
               :ended-at="outputBounds(i).endedAt"
+              :metadata="t"
               :quiet-thought="observeQuietBusy(t)"
               message-test-id="clarify-agent-message"
               @reveal="scrollBottom()"
@@ -1225,48 +1220,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                 <span class="clarify-stream-caret" data-testid="clarify-stream-caret" aria-hidden="true" />
               </template>
             </AgentTimeline>
-            <template v-else>
-              <!-- Thought: open while thought-only; default collapsed once message starts -->
-              <details
-                v-if="t.thought"
-                class="chat-thought chat-meta w-full"
-                data-testid="clarify-thought"
-                :open="isThoughtOpen(i, t)"
-                @toggle="onThoughtToggle(i, $event)"
-              >
-                <summary
-                  class="chat-thought-summary"
-                  data-testid="clarify-thought-summary"
-                >
-                  <ThoughtSummaryStatus
-                    :busy="!!t.streaming && !observeQuietBusy(t)"
-                    :completed="showTurnCompleted(t)"
-                    :interrupted="!!t.interrupted"
-                  />
-                  <Icon name="chevron-down" :size="12" class="chat-thought-chevron" aria-hidden="true" />
-                </summary>
-                <div class="chat-thought-body break-words [overflow-wrap:anywhere]">
-                  <p v-for="(para, pi) in thoughtParagraphs(agentThoughtDisplay(t, i))" :key="pi">{{ para }}</p>
-                </div>
-              </details>
-              <AgentToolGroup v-if="t.tools?.length && !isRetryableFailedAgent(t)" :tools="t.tools" :busy="!!t.streaming" :run-id="runId" />
-              <!-- Message body + streaming caret -->
-              <div
-                v-if="agentHasMessage(t) && !isRetryableFailedAgent(t)"
-                class="chat-prose md py-2"
-                data-testid="clarify-agent-message"
-              >
-                <StreamMarkdown v-if="t.streaming" :blocks="liveStreamBlocks" /><span
-                  v-else
-                  v-html="renderChatMarkdown(t.text)"
-                /><span
-                  v-if="t.streaming"
-                  class="clarify-stream-caret"
-                  data-testid="clarify-stream-caret"
-                  aria-hidden="true"
-                />
-              </div>
-            </template>
             <!-- Failure sits under this turn's own steps, not under the capped tool list. -->
             <div
               v-if="isRetryableFailedAgent(t)"
@@ -1331,6 +1284,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             v-else-if="humanBubbleText(t)"
             test-id="clarify-human-message"
             :text="humanBubbleText(t)"
+            :created-at="t.at"
           />
 
           <!-- Structured choice questions (ask_question). The latest agent turn

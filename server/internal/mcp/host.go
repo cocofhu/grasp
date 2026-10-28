@@ -105,6 +105,9 @@ type Host struct {
 	// history exposes read-only run history to the list_run_history /
 	// get_history_detail tools (injected in main). Nil ⇒ tools unavailable.
 	history HistoryProvider
+	// conversationHistory reads the current Solo conversation from its original
+	// message store. The run token supplies scope; callers never choose a thread.
+	conversationHistory ConversationHistoryProvider
 	// tokenSrc is the persistence-backed fallback for authorize: given a runID
 	// it returns the run's persisted MCP token and whether the run still has a
 	// live sandbox. It lets a token outlive the in-memory registration (run

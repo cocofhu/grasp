@@ -42,6 +42,7 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) (strin
 		OmitOutcomeRule:      req.Caps.Clarify(),
 		MCP:                  specs,
 		OpenCode:             c.backend == BackendOpenCode,
+		Codex:                c.backend == BackendCodex,
 		DeepSeekHarness:      c.backend == BackendDeepSeekHarness,
 		BrowserMCP:           EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             CodeBuddySettingsForEnv(c.backend, env),

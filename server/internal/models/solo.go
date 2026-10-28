@@ -60,12 +60,14 @@ type SoloSession struct {
 	// InitialModelID is the model chosen for this session's first chat.
 	// Empty follows the Agent configuration's primary model and does not change it.
 	// Switching models later does not rewrite this value.
-	InitialModelID string `json:"initialModelId,omitempty"`
+	InitialModelID         string `json:"initialModelId,omitempty"`
+	InitialConfigurationID string `json:"initialConfigurationId,omitempty"`
 	// CurrentModelID is the model later turns use. Empty means the primary model.
 	// It is independent of InitialModelID. CurrentModelSet distinguishes that
 	// explicit primary from an old row that never stored a current model.
-	CurrentModelID  string `json:"currentModelId,omitempty"`
-	CurrentModelSet bool   `json:"currentModelSet,omitempty"`
+	CurrentModelID         string `json:"currentModelId,omitempty"`
+	CurrentModelSet        bool   `json:"currentModelSet,omitempty"`
+	CurrentConfigurationID string `json:"currentConfigurationId,omitempty"`
 	// CurrentReasoningEffort is a session choice, independent of the Agent's
 	// saved configuration. Empty selects the tool's default reasoning behavior.
 	CurrentReasoningEffort string `json:"reasoningEffort"`
@@ -73,10 +75,14 @@ type SoloSession struct {
 	// part of the API. AppliedModelSet false means the sandbox still has the
 	// opening model (or has not been aligned yet).
 	AppliedModelID         string `json:"-"`
+	AppliedConfigurationID string `json:"-"`
 	AppliedModelSet        bool   `json:"-"`
 	AppliedReasoningEffort string `json:"-"`
 	// ModelNotice is a stable error code shown after a switch is rolled back.
 	ModelNotice string `json:"modelNotice,omitempty"`
+	// ModelContextPending survives a cancelled switch after the coding tool was
+	// restarted, so the next turn still receives the existing task history.
+	ModelContextPending bool `json:"-"`
 	// Repos is the ordered repository snapshot. Empty means an empty workspace
 	// when ProjectSnapshot is also empty. Legacy rows leave this empty and are
 	// read as a one-element list built from ProjectSnapshot.
@@ -113,6 +119,9 @@ type SoloMessage struct {
 	Error        string            `json:"error,omitempty"`
 	Usage        *TokenUsage       `gorm:"serializer:json" json:"usage,omitempty"`
 	UsageByModel TokenUsageByModel `gorm:"serializer:json" json:"usageByModel,omitempty"`
-	DurationMs   int64             `json:"durationMs,omitempty"`
-	CreatedAt    time.Time         `json:"createdAt"`
+	// Execution freezes the route applied when this assistant turn started.
+	// Legacy messages remain nil; readers must not infer it from current settings.
+	Execution  *ChatExecution `gorm:"serializer:json" json:"execution,omitempty"`
+	DurationMs int64          `json:"durationMs,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt"`
 }

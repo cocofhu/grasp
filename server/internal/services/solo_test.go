@@ -77,6 +77,9 @@ func TestSoloRepoSpecs(t *testing.T) {
 func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxService, *sandboxtest.FakeGateway, *gorm.DB) {
 	t.Helper()
 	db := newTestDB(t)
+	if err := db.Create(&models.ModelConfiguration{ID: "sandbox-fixture", Name: "Fixture", Backend: "cursor", State: "active", Binding: modelrouting.Binding{Kind: "platform", CredentialID: "k", ModelID: "fixture-model"}}).Error; err != nil {
+		t.Fatal(err)
+	}
 	fg := sandboxtest.New(t)
 	fg.ACPPort = acpPort
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
@@ -288,7 +291,7 @@ func TestSoloInitialModelMustBelongToConfiguration(t *testing.T) {
 		ID: "sandbox-fixture", Name: "Fixture", Backend: "cursor", State: "active",
 		Binding: modelrouting.Binding{Kind: "platform", CredentialID: "k", ModelID: "primary", AuxiliaryModelIDs: []string{"aux"}},
 	}
-	if err := db.Create(&row).Error; err != nil {
+	if err := db.Save(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 	_, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA", InitialModelID: "nope"})

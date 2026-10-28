@@ -69,7 +69,7 @@ func ValidateBinding(backend string, binding Binding, connection *Connection) er
 	if err := NormalizeAuxiliaryModels(&binding); err != nil {
 		return err
 	}
-	if binding.ConfigurationID != "" {
+	if binding.ConfigurationID != "" || len(binding.ConfigurationIDs) != 0 {
 		return fmt.Errorf("concrete bindings cannot reference a model configuration")
 	}
 	capability, ok := CapabilityFor(backend)

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/mcp"
@@ -27,7 +29,7 @@ func persistenceDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.Run{}, &models.Sandbox{}, &models.SoloSession{}, &models.Artifact{}, &models.ArtifactVersion{}, &models.StateRun{}, &models.Gate{}); err != nil {
+	if err := db.AutoMigrate(&models.Run{}, &models.Sandbox{}, &models.SoloSession{}, &models.SoloMessage{}, &models.Artifact{}, &models.ArtifactVersion{}, &models.StateRun{}, &models.Gate{}); err != nil {
 		t.Fatal(err)
 	}
 	sqlDB, err := db.DB()
@@ -36,6 +38,60 @@ func persistenceDB(t *testing.T) *gorm.DB {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
+}
+
+func TestSoloHistoryMCPRestoresScopeAndRevokesOldSandbox(t *testing.T) {
+	db := persistenceDB(t)
+	agents := persistenceAgents{"Solo": {Name: "Solo"}}
+	sb := models.Sandbox{Name: "history-solo", RunID: "history-generation", ThreadID: "history-thread", Profile: "Solo", Purpose: services.SandboxPurposeSolo, Status: "running", Token: "history-token"}
+	if err := db.Create(&sb).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.SoloSession{ID: sb.ThreadID, AgentName: sb.Profile, UserID: "alice", SandboxID: sb.ID, Status: models.SoloStatusRunning}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.SoloMessage{ID: "history-source", SessionID: sb.ThreadID, Role: "user", Content: "圆角19px，原始要求"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.SoloMessage{ID: "foreign-source", SessionID: "other-user-thread", Role: "user", Content: "other user's private task"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	preview := services.NewPreviewService(db, nil)
+	preview.SetAgents(agents)
+	host := mcp.NewHost(services.NewArtifactService(db))
+	wireArtifactMCPPersistence(host, db, services.NewRunService(db), preview)
+	host.SetConversationHistoryProvider(services.NewConversationHistoryService(db, func(runID string) (models.Sandbox, bool) { row, _, ok := preview.SoloMCPBinding(runID); return row, ok }))
+	request := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_history","arguments":{"view":"messages"}}}`)
+	read := func(token string) (bool, string) {
+		t.Helper()
+		_, raw := host.ServeRPC(sb.RunID, token, request)
+		var response struct {
+			Result struct {
+				IsError bool `json:"isError"`
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(raw, &response); err != nil || len(response.Result.Content) == 0 {
+			t.Fatalf("MCP response: %s %v", raw, err)
+		}
+		return response.Result.IsError, response.Result.Content[0].Text
+	}
+	if failed, _ := read("wrong"); !failed {
+		t.Fatal("wrong token read history")
+	}
+	if failed, text := read(sb.Token); failed || !strings.Contains(text, "圆角19px") || strings.Contains(text, "private task") {
+		t.Fatalf("history scope: %v %s", failed, text)
+	}
+	// Even a token cached before the restart generation changes cannot select
+	// the old namespace once the session points at a replacement sandbox.
+	if err := db.Model(&models.SoloSession{}).Where("id = ?", sb.ThreadID).Update("sandbox_id", sb.ID+1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failed, _ := read(sb.Token); !failed {
+		t.Fatal("replaced sandbox retained history access")
+	}
 }
 
 func TestArtifactMCPPersistenceRestoresSoloAfterRestart(t *testing.T) {

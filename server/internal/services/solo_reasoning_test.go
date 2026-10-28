@@ -59,7 +59,7 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	configuration := models.ModelConfiguration{ID: "sandbox-fixture", State: "active", Backend: "deepseek_harness", Binding: modelrouting.Binding{Kind: "connection", ConnectionID: connection.ID, ModelID: "kimi"}}
-	if err := solo.db.Create(&configuration).Error; err != nil {
+	if err := solo.db.Save(&configuration).Error; err != nil {
 		t.Fatal(err)
 	}
 	agent, _ := solo.agents.Get("agentA")
@@ -67,11 +67,13 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 	if err := solo.agents.Save(agent); err != nil {
 		t.Fatal(err)
 	}
-	sandboxRow := models.Sandbox{Name: "live-dsh", Host: host, ACPPort: port, Token: "fixture", Status: "running"}
+	sandboxRow := models.Sandbox{Name: "live-dsh", Host: host, ACPPort: port, Token: "fixture", Status: "running", Purpose: SandboxPurposeSolo, Profile: "agentA", ThreadID: "live-reasoning"}
+	sandboxTestAppliedBindings(t, solo.sbx, &sandboxRow)
 	if err := solo.db.Create(&sandboxRow).Error; err != nil {
 		t.Fatal(err)
 	}
-	row := models.SoloSession{ID: "live-reasoning", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning, SandboxID: sandboxRow.ID, CurrentModelSet: true, AppliedModelSet: true}
+	row := models.SoloSession{ID: "live-reasoning", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning, SandboxID: sandboxRow.ID, CurrentModelSet: true, AppliedModelSet: true,
+		InitialConfigurationID: configuration.ID, CurrentConfigurationID: configuration.ID, AppliedConfigurationID: configuration.ID}
 	if err := solo.db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +129,70 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 	}
 }
 
+func TestSoloTargetDSHGroupDoesNotBorrowAnotherRoutesLiveEfforts(t *testing.T) {
+	for _, currentBackend := range []string{"claude_code", "deepseek_harness"} {
+		t.Run(currentBackend, func(t *testing.T) {
+			peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				if request.URL.Path == "/api/login" {
+					http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "fixture", Path: "/"})
+					_, _ = w.Write([]byte(`{"ok":true}`))
+					return
+				}
+				// Both groups use their primary (selected=""). This must not make
+				// the current CLI's empty live choices apply to a requested group.
+				_ = json.NewEncoder(w).Encode(map[string]any{"selected": "", "reasoningEffort": "", "reasoningEfforts": []string{}})
+			}))
+			defer peer.Close()
+			host, rawPort, err := net.SplitHostPort(strings.TrimPrefix(peer.URL, "http://"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			port, err := strconv.Atoi(rawPort)
+			if err != nil {
+				t.Fatal(err)
+			}
+			solo, _, _, db := newSoloFixture(t, 0, 3)
+			connection := models.ModelConnection{ID: "target-account", State: "active", Models: []modelrouting.Model{{ID: "same-model", ReasoningEfforts: []string{"low", "high"}}}}
+			if err := db.Create(&connection).Error; err != nil {
+				t.Fatal(err)
+			}
+			current := models.ModelConfiguration{ID: "sandbox-fixture", State: "active", Backend: currentBackend, Binding: modelrouting.Binding{Kind: "platform", CredentialID: "k", ModelID: "same-model"}}
+			target := models.ModelConfiguration{ID: "target-dsh", State: "active", Backend: "deepseek_harness", Binding: modelrouting.Binding{Kind: "connection", ConnectionID: connection.ID, ModelID: "same-model"}}
+			for _, configuration := range []models.ModelConfiguration{current, target} {
+				if err := db.Save(&configuration).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			agent, _ := solo.agents.Get("agentA")
+			agent.AcpBackend = currentBackend
+			agent.ModelBinding.ConfigurationIDs = []string{current.ID, target.ID}
+			solo.agents.SetModelConfigurationResolver(func(binding *modelrouting.Binding) (string, error) {
+				if binding.ConfigurationID == target.ID {
+					return target.Backend, nil
+				}
+				return currentBackend, nil
+			})
+			if err := solo.agents.Save(agent); err != nil {
+				t.Fatal(err)
+			}
+			sandboxRow := models.Sandbox{Name: "old-live-route", Host: host, ACPPort: port, Token: "fixture", Status: "running", Purpose: SandboxPurposeSolo, Profile: "agentA", ThreadID: "target-reasoning"}
+			sandboxTestAppliedBindings(t, solo.sbx, &sandboxRow)
+			if err := db.Create(&sandboxRow).Error; err != nil {
+				t.Fatal(err)
+			}
+			row := models.SoloSession{ID: "target-reasoning", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning, SandboxID: sandboxRow.ID,
+				InitialConfigurationID: current.ID, CurrentConfigurationID: current.ID, AppliedConfigurationID: current.ID, CurrentModelSet: true, AppliedModelSet: true}
+			if err := db.Create(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			view, err := solo.SetCurrentModelRouteSettings(context.Background(), row.ID, "alice", &target.ID, effortPointer(""), effortPointer("low"))
+			if err != nil || view.CurrentConfigurationID != target.ID || view.CurrentReasoningEffort != "low" || view.AppliedConfigurationID != current.ID || !reflect.DeepEqual(view.ReasoningEfforts, []string{"low", "high"}) {
+				t.Fatalf("target group inherited another route's empty live capabilities: view=%+v err=%v", view, err)
+			}
+		})
+	}
+}
+
 func prepareSoloEfforts(t *testing.T, solo *SoloService) {
 	t.Helper()
 	connection := modelrouting.Connection{ID: "effort-connection", State: "active", ProviderID: "fixture", Protocol: modelrouting.ProtocolResponses, Models: []modelrouting.Model{
@@ -138,7 +204,7 @@ func prepareSoloEfforts(t *testing.T, solo *SoloService) {
 		t.Fatal(err)
 	}
 	configuration := models.ModelConfiguration{ID: "sandbox-fixture", State: "active", Backend: "codex", Binding: modelrouting.Binding{Kind: "connection", ConnectionID: connection.ID, ModelID: "primary", AuxiliaryModelIDs: []string{"aux", "fixed"}}}
-	if err := solo.db.Create(&configuration).Error; err != nil {
+	if err := solo.db.Save(&configuration).Error; err != nil {
 		t.Fatal(err)
 	}
 	agent, _ := solo.agents.Get("agentA")
@@ -380,7 +446,7 @@ func TestOpenCodeSessionUsesTheSavedVariantWithoutWritingBack(t *testing.T) {
 		Kind: "platform", CredentialID: "zen", ModelID: "opencode/gpt-5.5",
 		ToolSettings: modelrouting.ToolSettings{ModelEfforts: map[string]string{"opencode/gpt-5.5": "high"}},
 	}}
-	if err := solo.db.Create(&configuration).Error; err != nil {
+	if err := solo.db.Save(&configuration).Error; err != nil {
 		t.Fatal(err)
 	}
 	agent, _ := solo.agents.Get("agentA")

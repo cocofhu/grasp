@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { LlmTranscriptResponse } from '@/lib/api/apiTypes'
 import { buildLlmTranscript } from './llmTranscript'
-import { llmTranscriptThread, notesAfterVisit, notesBesideTurn } from './llmTranscriptThread'
+import { clarifyTurnsFromLlm, llmTranscriptThread, notesAfterVisit, notesBesideTurn } from './llmTranscriptThread'
 
 const nodeInfo = (id: string) => ({ label: `L-${id}`, type: id === 'gate' ? 'human_gate' : 'agent' })
 
@@ -25,6 +25,18 @@ function baseRun(over: Partial<Run> = {}): Run {
 const ev = (e: Partial<AcpEvent> & { kind: AcpEvent['kind'] }): AcpEvent => ({ t: 0, ...e })
 
 describe('llmTranscriptThread', () => {
+  it('carries a prompt’s reported usage once onto its final sealed reply without guessing execution metadata', () => {
+    const usage = { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 }
+    const rows = clarifyTurnsFromLlm([{
+      prompt: { text: 'Continue', at: '2026-10-28T08:00:00Z', truncated: false, imageCount: 0, source: 'human' },
+      answers: [{ text: 'Reading first', tools: [] }, { text: 'Complete', tools: [] }],
+      endedAt: '2026-10-28T08:00:25Z', usage, mcpCalls: [], failed: false,
+    }]).filter(row => row.role === 'agent')
+    expect(rows[0].usage).toBeUndefined()
+    expect(rows[1].usage).toEqual(usage)
+    expect(rows[1].execution).toBeUndefined()
+    expect(rows[1].startedAt).toBe('2026-10-28T08:00:00Z')
+  })
   it('slots pause and resume between turns and keeps a bare exit after the visit', () => {
     const transcript: LlmTranscriptResponse = {
       executions: [

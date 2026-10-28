@@ -243,6 +243,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		IncludeArtifactStore: hasArtifactStoreSpec(specs),
 		MCP:                  specs,
 		OpenCode:             backend == runtime.BackendOpenCode,
+		Codex:                backend == runtime.BackendCodex,
 		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
@@ -389,7 +390,7 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 		return nil, nil, err
 	}
 	s.mu.Lock()
-	if ls.busy {
+	if ls.busy || ls.switching {
 		s.mu.Unlock()
 		return nil, nil, fmt.Errorf("sandbox busy")
 	}
@@ -442,7 +443,11 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 func (s *SandboxService) Cancel(id uint) {
 	s.mu.Lock()
 	ls := s.live[id]
+	switching := ls != nil && ls.switching
 	s.mu.Unlock()
+	if switching {
+		return
+	}
 	if ls != nil && ls.acp != nil {
 		_ = ls.acp.Cancel()
 	}
@@ -457,9 +462,20 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	}
 	s.mu.Lock()
 	ls := s.live[id]
+	switching := ls != nil && ls.switching
 	s.mu.Unlock()
+	if switching {
+		return nil, nil, fmt.Errorf("sandbox 正在切换编码工具")
+	}
 	agent, _ := s.skills.Get(row.Profile)
 	effective := s.effectiveAgent(agent)
+	if row.Purpose == SandboxPurposeSolo {
+		selected, routeErr := s.appliedSoloAgent(&row, ls, effective)
+		if routeErr != nil {
+			return nil, nil, routeErr
+		}
+		effective = selected
+	}
 	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective)
 	if err != nil {
 		return nil, nil, err
@@ -496,6 +512,7 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 			mcpVars = runtime.MergeEnvIntoTemplateVars(s.credentialReferences(), mcpVars)
 		}
 		specs = filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
+		specs = append(specs, s.soloPlatformSpecs(&row)...)
 	} else {
 		specs = s.buildTestSandboxSpecs(row.Profile, row.RunID, row.Token, agent,
 			s.testMcpVars(row.RunID, row.Token, row.Profile))
@@ -514,6 +531,8 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 			DeepSeekHarness:      deepSeekHarness,
 			IncludeArtifactStore: hasArtifactStoreSpec(specs),
 			MCP:                  specs,
+			OpenCode:             runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendOpenCode,
+			Codex:                runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendCodex,
 		}); err != nil {
 			if deepSeekHarness {
 				return nil, nil, fmt.Errorf("reconnect: rebuild DeepSeek Harness config home: %w", err)
@@ -537,13 +556,17 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	injected := ""
 	credentialID := ""
 	rejected := false
+	var prepared *preparedAgentContainer
+	home := ""
 	if ls != nil {
 		injected = ls.codexAuthInjected
 		credentialID = ls.codexAuthCredentialID
 		rejected = ls.codexAuthRejected
+		prepared, home = ls.prepared, ls.home
 	}
 	ls = &liveSandbox{
-		sb: sb, acp: acp,
+		sb: sb, acp: acp, prepared: prepared, home: home,
+		soloRouteAgent:          &agent,
 		modelBindingFingerprint: modelFingerprint,
 		gitBindingsFingerprint:  gitFingerprint,
 		codexAuthInjected:       injected,
@@ -867,7 +890,7 @@ func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sa
 func (s *SandboxService) isBusyRow(row *models.Sandbox) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if ls := s.live[row.ID]; ls != nil && ls.busy {
+	if ls := s.live[row.ID]; ls != nil && (ls.busy || ls.switching) {
 		return true
 	}
 	return row.Purpose == "run" && s.runActive[row.Name]
@@ -881,6 +904,9 @@ func (s *SandboxService) teardownLive(id uint) {
 	if ls != nil {
 		if ls.acp != nil {
 			ls.acp.Close()
+		}
+		if ls.sb != nil && ls.sb.IsLocal() {
+			ls.sb.Destroy(context.Background())
 		}
 		if ls.home != "" {
 			_ = os.RemoveAll(ls.home)

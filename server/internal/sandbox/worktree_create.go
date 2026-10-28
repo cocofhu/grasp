@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/rs/zerolog/log"
 )
@@ -93,16 +95,12 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	kind := strings.TrimSpace(env[envLaunchKind])
 	endOnStop := kind != execution.LaunchRun
 	local := &localExec{
-		configRoot: spec.ConfigRoot,
-		configHome: configHome,
-		stop: func() {
-			if stop != nil {
-				stop()
-			}
-			execution.Release(launchID, endOnStop)
-		},
+		configRoot:  spec.ConfigRoot,
+		configHome:  configHome,
+		backendStop: stop,
+		stop:        func() { execution.Release(launchID, endOnStop) },
 	}
-	execution.AddStop(launchID, stop)
+	execution.AddStop(launchID, local.shutdown)
 	name := strings.TrimSpace(spec.Name)
 	if name == "" {
 		name = NewContainerName()
@@ -146,20 +144,82 @@ func realStartWorktreeBackend(ctx context.Context, env map[string]string, worksp
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = workspace
 	cmd.Env = envList(env)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return 0, nil, fmt.Errorf("启动本地执行后端: %w", err)
 	}
 	var once sync.Once
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
 	stop := func() {
 		once.Do(func() {
 			if cmd.Process != nil {
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 				_ = cmd.Process.Kill()
-				_, _ = cmd.Process.Wait()
+				<-done
 			}
 		})
 	}
-	go func() { _ = cmd.Wait() }()
 	return port, stop, nil
+}
+
+// reprimeWorktree changes only the local backend process. A Solo launch owns
+// its worktree until final shutdown, so restarting a tool must not Release or
+// Prepare the launch (both can discard or recreate the user's current files).
+func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	env := make(map[string]string, len(spec.Env)+4)
+	for key, value := range spec.Env {
+		env[key] = value
+	}
+	if strings.TrimSpace(env[BridgePasswordEnv]) == "" {
+		return fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
+	}
+	provider := strings.TrimSpace(env["AGENT_PROVIDER"])
+	if err := execution.RequireTools(provider, env); err != nil {
+		return err
+	}
+	configHome := strings.TrimSpace(spec.ConfigHome)
+	configRoot := configHome
+	if configRoot == "" {
+		configRoot = strings.TrimSpace(spec.ConfigRoot)
+	}
+	if configRoot == "" {
+		configRoot = sb.ConfigRoot
+	}
+	env["CONFIG_ROOT"] = configRoot
+	if provider == "codex" {
+		env["CODEX_HOME"] = configRoot
+	} else {
+		delete(env, "CODEX_HOME")
+	}
+	env["WORKSPACE_DIR"] = sb.WorkspaceDir
+	env[execution.EnvMode] = execution.ModeWorktree
+	port, stop, err := startWorktreeBackend(ctx, env, sb.WorkspaceDir)
+	if err != nil {
+		return err
+	}
+	local := sb.local
+	local.mu.Lock()
+	if local.closed {
+		local.mu.Unlock()
+		if stop != nil {
+			stop()
+		}
+		return fmt.Errorf("工作树会话已关闭")
+	}
+	previousStop := local.backendStop
+	local.backendStop = stop
+	local.configRoot, local.configHome = spec.ConfigRoot, configHome
+	sb.Host, sb.Port, sb.ConfigRoot = "127.0.0.1", port, configRoot
+	sb.Password = strings.TrimSpace(env[BridgePasswordEnv])
+	local.mu.Unlock()
+	if previousStop != nil {
+		previousStop()
+	}
+	return nil
 }
 
 // authFromSpec copies the credentials this launch already resolved. An explicit
@@ -213,7 +273,7 @@ func envList(overlay map[string]string) []string {
 	}
 	for _, item := range base {
 		key, _, _ := strings.Cut(item, "=")
-		if skip[key] {
+		if skip[key] || envauth.IsSecretEnvKey(key) || envauth.IsPlatformReservedEnvKey(key) {
 			continue
 		}
 		out = append(out, item)
@@ -226,25 +286,45 @@ func envList(overlay map[string]string) []string {
 
 // localExec is the in-process data plane for a worktree launch.
 type localExec struct {
-	configRoot string
-	configHome string
-	once       sync.Once
-	stop       func()
+	mu          sync.Mutex
+	configRoot  string
+	configHome  string
+	backendStop func()
+	closed      bool
+	once        sync.Once
+	stop        func()
 }
 
 func (e *localExec) shutdown() {
-	if e == nil || e.stop == nil {
+	if e == nil {
 		return
 	}
-	e.once.Do(e.stop)
+	e.once.Do(func() {
+		e.mu.Lock()
+		e.closed = true
+		stop := e.backendStop
+		e.backendStop = nil
+		e.mu.Unlock()
+		if stop != nil {
+			stop()
+		}
+		if e.stop != nil {
+			e.stop()
+		}
+	})
 }
+
+// IsLocal reports an in-process worktree backend rather than a container.
+func (s *Sandbox) IsLocal() bool { return s != nil && s.local != nil }
 
 func (s *Sandbox) mapLocalPath(path string) string {
 	if s.local == nil {
 		return path
 	}
+	s.local.mu.Lock()
 	root := strings.TrimRight(s.local.configRoot, "/")
 	home := s.local.configHome
+	s.local.mu.Unlock()
 	if root != "" && home != "" && (path == root || strings.HasPrefix(path, root+"/")) {
 		return filepath.Join(home, strings.TrimPrefix(path, root))
 	}

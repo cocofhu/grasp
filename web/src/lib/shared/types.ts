@@ -725,6 +725,28 @@ export interface ModelTokenUsage extends TokenUsage {
 /** modelKey → bucket (keys are ingest-merged;「未知/未分桶」when the model is unknown). */
 export type TokenUsageByModel = Record<string, ModelTokenUsage>
 
+/** Frozen execution identity of one reply; never inferred from current settings. */
+export interface ChatExecution {
+  agentName: string
+  backend: string
+  configurationId?: string
+  modelId?: string
+  reasoningEffort?: string
+  startedAt?: string
+}
+
+/** Message-local facts shared by Solo, workflow, test and assistant chat views. */
+export interface ChatMessageMetadata {
+  createdAt?: string
+  at?: string
+  startedAt?: string
+  endedAt?: string
+  execution?: ChatExecution
+  usage?: TokenUsage | null
+  usageByModel?: TokenUsageByModel | null
+  durationMs?: number
+}
+
 export interface NodeRun {
   nodeId: string
   // 该节点的第几次执行(1 起)。循环回边/门禁退回会让同一节点执行多次,
@@ -874,7 +896,7 @@ export interface ReactAnnotation {
   outerHTML?: string
 }
 
-export interface ClarifyTurn {
+export interface ClarifyTurn extends ChatMessageMetadata {
   role: 'agent' | 'human'
   text: string
   at: string

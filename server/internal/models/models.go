@@ -520,6 +520,12 @@ type ReactMessage struct {
 	Role string `json:"role"` // agent | human
 	Text string `json:"text"`
 	At   string `json:"at"`
+	// Metadata belongs to this reply only; visit-wide StateRun totals must
+	// never be copied onto every historical assistant message.
+	Execution    *ChatExecution    `json:"execution,omitempty"`
+	Usage        *TokenUsage       `json:"usage,omitempty"`
+	UsageByModel TokenUsageByModel `json:"usageByModel,omitempty"`
+	DurationMs   int64             `json:"durationMs,omitempty"`
 	// Images are optional base64 attachments the human sent with this turn.
 	// Persisted so the run detail can re-render thumbnails after a refresh.
 	Images []PromptImage `json:"images,omitempty"`

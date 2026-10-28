@@ -139,7 +139,7 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
 
     await page.getByTestId('sim-hard-refresh-acp-race').click()
-    await expect(page.getByTestId('clarify-thought')).toContainText('竞态恢复的思考', {
+    await expect(page.getByTestId('agent-timeline-thought')).toContainText('竞态恢复的思考', {
       timeout: 5_000,
     })
     await expect(page.getByText('竞态恢复的正文续流。继续追加。')).toBeVisible()
@@ -158,8 +158,9 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(page.getByTestId('clarify-busy-status')).toHaveCount(0)
     await expect(page.getByTestId('clarify-stream-caret')).toHaveCount(0)
     await expect(page.getByTestId('clarify-turn-completed')).toHaveCount(0)
-    // Thought default-collapsed after message / done.
-    await expect(page.getByTestId('clarify-thought')).not.toHaveAttribute('open')
+    // Every chat surface folds a settled reply through the shared timeline.
+    await expect(page.getByTestId('agent-timeline-elapsed')).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByTestId('chat-message-info')).toBeVisible()
     await page.screenshot({ path: path.join(shotDir, '08-clarify-four-phase-done.png'), fullPage: true })
   })
 

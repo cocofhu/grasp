@@ -1,10 +1,35 @@
 package services
 
 import (
+	"fmt"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
+
+// validateAdditionalModelConfigurations validates each alternate with its own
+// coding tool; the Agent's acpBackend only describes the default group.
+func validateAdditionalModelConfigurations(binding *modelrouting.Binding, resolve func(*modelrouting.Binding) (string, error), validate func(string, *modelrouting.Binding) error) error {
+	for _, id := range modelrouting.ConfigurationIDs(binding) {
+		if id == binding.ConfigurationID {
+			continue
+		}
+		if resolve == nil {
+			return fmt.Errorf("model configuration resolver unavailable")
+		}
+		ref := modelrouting.ConfigurationReference(id)
+		backend, err := resolve(ref)
+		if err != nil {
+			return err
+		}
+		if validate != nil {
+			if err := validate(backend, ref); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 // SetModelBindingResolver wires validation for explicitly saved bindings.
 // Agents can save only named model configuration references.

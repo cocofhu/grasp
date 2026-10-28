@@ -5,6 +5,7 @@ import Icon from '@/components/ui/Icon.vue'
 import VendorMark from '@/components/agent/VendorMark.vue'
 import SoloPickerShell from './SoloPickerShell.vue'
 import type { ConfiguredModelChoice } from '@/lib/solo/configuredModels'
+import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
 
 const props = withDefaults(
   defineProps<{ models: ConfiguredModelChoice[]; modelValue: string; reasoningEffort?: string; disabled?: boolean; emptyAsLabel?: boolean; flat?: boolean }>(),
@@ -19,7 +20,9 @@ const view = ref<'models' | 'effort'>('models')
 const effortSlider = ref<HTMLInputElement | null>(null)
 const effortEntry = ref<HTMLButtonElement | null>(null)
 
-const current = computed(() => props.models.find((model) => model.id === props.modelValue) ?? props.models[0] ?? null)
+const current = computed(() => props.models.find((model) => model.id === props.modelValue) ?? (!props.modelValue ? props.models[0] : null) ?? null)
+const multipleGroups = computed(() => new Set(props.models.map(model => model.configurationId).filter(Boolean)).size > 1)
+function toolLabel(tool?: string) { return ACP_BACKENDS.find(row => row.id === tool)?.label || tool || '' }
 const label = computed(() => {
   if (!props.models.length && props.emptyAsLabel) return t('pages.solo.modelSelect.empty')
   return current.value?.name || t('pages.solo.modelSelect.placeholder')
@@ -58,7 +61,7 @@ function levelLabel(value: string) {
 }
 function groups(q: string) {
   const query = q.trim().toLowerCase()
-  return props.models.filter((model) => !query || model.name.toLowerCase().includes(query) || model.hint.toLowerCase().includes(query) || model.id.toLowerCase().includes(query))
+  return props.models.filter((model) => !query || [model.name, model.hint, model.id, model.configurationName, model.tool, model.source].some(value => value?.toLowerCase().includes(query)))
 }
 function choose(model: ConfiguredModelChoice, close: () => void) {
   if (model.unavailable) return
@@ -129,18 +132,19 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
     :disabled="disabled || !models.length"
     :search-placeholder="view === 'models' && models.length > 5 ? t('pages.solo.modelSelect.search') : ''"
     :content-role="view === 'effort' ? 'group' : 'listbox'"
-    :panel-width="view === 'effort' ? 250 : 240"
+    :panel-width="view === 'effort' ? 250 : multipleGroups ? 320 : 240"
     :flat="flat"
     compact
     test-id="solo-model-select"
     @open="onOpen"
   >
     <template #trigger>
-      <VendorMark v-if="current" :vendor="current.vendor" :backend="current.backend" :auto="current.backend && !current.id" :size="20" :class="{ 'solo-model-brand--flat': flat }" :style="flat ? { borderColor: 'transparent' } : undefined" />
+      <VendorMark v-if="current" :vendor="current.vendor" :backend="current.backend" :auto="current.backend && !(current.modelId ?? current.id)" :size="20" :flat="flat" />
       <Icon v-else name="sparkles" :size="14" class="shrink-0 text-accent" />
     </template>
     <template #label>
       <span class="solo-model-name" :title="label">{{ label }}</span>
+      <span v-if="multipleGroups && current?.configurationName" class="truncate text-[10px] text-txt3">{{ current.configurationName }}</span>
       <span v-if="efforts.length" class="solo-model-effort" data-testid="solo-model-effort-label">{{ effortLabel }}</span>
     </template>
     <template v-if="view === 'models'" #header>
@@ -171,12 +175,15 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
       <template v-else>
         <div v-if="!models.length" class="solo-picker-empty">{{ t('pages.solo.modelSelect.empty') }}</div>
         <template v-else>
-          <button v-for="model in groups(query)" :key="model.id || 'auto'" type="button" role="option" data-picker-opt :disabled="model.unavailable" :aria-selected="selected(model)" :data-testid="`solo-model-option-${model.id || 'auto'}`" @click="choose(model, close)">
-            <VendorMark class="solo-model-option-brand" :vendor="model.vendor" :backend="model.backend" :auto="model.backend && !model.id" :size="18" :unknown="model.unavailable" :style="{ borderColor: 'transparent' }" />
-            <span class="min-w-0 flex-1 truncate" :title="model.name">{{ model.name }}</span>
+          <template v-for="(model, index) in groups(query)" :key="model.id || 'auto'">
+          <div v-if="multipleGroups && (index === 0 || groups(query)[index - 1]?.configurationId !== model.configurationId)" class="solo-model-menu-title">{{ model.configurationName }} · {{ toolLabel(model.tool) }}</div>
+          <button type="button" role="option" data-picker-opt :disabled="model.unavailable" :aria-selected="selected(model)" :data-testid="`solo-model-option-${model.id || 'auto'}`" @click="choose(model, close)">
+            <VendorMark :vendor="model.vendor" :backend="model.backend" :auto="model.backend && !(model.modelId ?? model.id)" :size="18" :unknown="model.unavailable" flat />
+            <span class="min-w-0 flex-1 truncate" :title="model.name">{{ model.name }}<span v-if="multipleGroups && model.source" class="block truncate text-[10px] text-txt3">{{ model.source }}</span></span>
             <span v-if="model.unavailable" class="shrink-0 text-[11px] text-txt3">{{ t('pages.solo.modelSelect.unavailable') }}</span>
             <Icon v-else-if="selected(model)" name="check" :size="14" class="shrink-0 text-accent" />
           </button>
+          </template>
           <div v-if="!groups(query).length" class="solo-picker-empty">{{ t('pages.solo.modelSelect.noMatch') }}</div>
         </template>
       </template>
@@ -193,8 +200,6 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
 </template>
 
 <style scoped>
-.solo-model-brand--flat:not(.vendor-mark--color) { background: transparent; }
-.solo-model-option-brand:not(.vendor-mark--color) { background: transparent; }
 .solo-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .solo-model-effort { flex-shrink: 0; color: rgb(var(--c-accent-2)); font-size: 12px; font-weight: 500; }
 .solo-model-menu-title { padding: 4px 8px 5px; color: rgb(var(--c-txt3)); font-size: 11px; font-weight: 500; line-height: 16px; }

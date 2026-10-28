@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
@@ -32,13 +33,14 @@ type SoloSandboxOpts struct {
 	// Repos is the frozen snapshot, in clone order. Empty starts an empty workspace.
 	Repos []models.SessionRepo
 	// Project and Branch remain for callers that still open a single repository.
-	Project         *models.Project
-	Branch          string
-	InitialModelID  string
-	ReasoningEffort string
-	OnEnv           func(sources map[string]string)
-	OnReady         func(sandboxID uint)
-	OnFail          func(sandboxID uint, err error)
+	Project                *models.Project
+	Branch                 string
+	InitialModelID         string
+	InitialConfigurationID string
+	ReasoningEffort        string
+	OnEnv                  func(sources map[string]string)
+	OnReady                func(sandboxID uint)
+	OnFail                 func(sandboxID uint, err error)
 }
 
 // MaxSoloSandboxes returns the resident Solo sandbox cap.
@@ -109,6 +111,15 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
 	agent = s.effectiveAgent(agent)
+	if selected := strings.TrimSpace(opts.InitialConfigurationID); selected != "" {
+		var err error
+		agent, err = selectSoloConfiguration(s.db, agent, selected)
+		if err != nil {
+			return nil, err
+		}
+	} else if agent.ModelBinding != nil {
+		agent.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: agent.ModelBinding.ConfigurationID}
+	}
 	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
 	if err != nil {
 		return nil, err

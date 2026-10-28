@@ -55,10 +55,13 @@ type Msg struct {
 
 // ParseResult is what a codec extracts from a single stdout line.
 type ParseResult struct {
-	Msgs       []Msg
-	SessionID  string
-	Usage      map[string]provider.TokenUsage
-	StopReason string
+	Msgs      []Msg
+	SessionID string
+	Usage     map[string]provider.TokenUsage
+	// UsageIsTotal marks an authoritative per-turn snapshot. A nonempty total
+	// replaces prior streamed samples, which may use different model aliases.
+	UsageIsTotal bool
+	StopReason   string
 }
 
 // Codec captures the per-CLI specifics: how to launch it and how to parse its
@@ -109,6 +112,12 @@ type LineParser interface {
 // singleton codec never leaks state between concurrent sessions or turns.
 type StatefulCodec interface {
 	NewTurnParser(opts provider.OpenOptions) LineParser
+}
+
+// RecoverableDiagnosticCodec identifies a CLI's documented nonfatal messages.
+// A diagnostic is suppressed only after a successful turn with assistant text.
+type RecoverableDiagnosticCodec interface {
+	IsRecoverableDiagnostic(Msg) bool
 }
 
 // WholeOutputCodec is an optional Codec extension for CLIs that emit a single
@@ -362,6 +371,9 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	// diagnostics, so an error from the abandoned attempt cannot fail that turn.
 	errorReported := false
 	for _, diagnostic := range res.diagnostics {
+		if recoverable, ok := e.c.(RecoverableDiagnosticCodec); ok && err == nil && res.stopReason == "end_turn" && res.hasText && recoverable.IsRecoverableDiagnostic(diagnostic) {
+			continue
+		}
 		if strings.TrimSpace(diagnostic.Text) != "" {
 			e.emitUpdate(diagnostic)
 			errorReported = true
@@ -385,6 +397,7 @@ type turnOutcome struct {
 	usage        map[string]provider.TokenUsage
 	newSessionID string
 	diagnostics  []Msg
+	hasText      bool
 }
 
 func (e *engine) runOnce(ctx context.Context, text string, images []provider.PromptImage, resumeID string) (turnOutcome, error) {
@@ -522,6 +535,7 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	turnUsage := map[string]provider.TokenUsage{}
 	var newSID, stop string
 	var diagnostics []Msg
+	var hasText bool
 	resultSeen := make(chan struct{})
 	var resultOnce sync.Once
 	var resultStop string
@@ -533,11 +547,16 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 			e.sessionID = pr.SessionID
 			e.mu.Unlock()
 		}
+		if pr.UsageIsTotal && len(pr.Usage) > 0 {
+			turnUsage = make(map[string]provider.TokenUsage, len(pr.Usage))
+		}
 		for model, u := range pr.Usage {
 			turnUsage[model] = addUsage(turnUsage[model], u)
 		}
 		for _, m := range pr.Msgs {
 			switch m.Kind {
+			case KindText:
+				hasText = hasText || strings.TrimSpace(m.Text) != ""
 			case KindError:
 				diagnostics = append(diagnostics, m)
 				continue
@@ -652,7 +671,7 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 			stop = "end_turn"
 		}
 	}
-	out := turnOutcome{stopReason: stop, usage: nonEmptyUsage(turnUsage), newSessionID: newSID, diagnostics: diagnostics}
+	out := turnOutcome{stopReason: stop, usage: nonEmptyUsage(turnUsage), newSessionID: newSID, diagnostics: diagnostics, hasText: hasText}
 	if waitErr != nil {
 		if streamErr != nil && !errors.Is(waitErr, context.Canceled) {
 			return out, fmt.Errorf("%v; %w; stderr: %s", streamErr, waitErr, tail.String())

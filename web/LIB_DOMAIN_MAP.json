@@ -15,6 +15,7 @@
       "gitBindings.ts",
       "gitCredentialType.ts",
       "identityIcons.ts",
+      "modelBindings.ts",
       "modelCapabilities.ts",
       "modelRouting.ts",
       "openCodeCatalog.ts",
@@ -31,6 +32,7 @@
       "api.ts",
       "apiTypes.ts",
       "httpCore.ts",
+      "modelCatalogEvents.ts",
       "workflowCatalogEvents.ts"
     ],
     "artifacts": [
@@ -259,8 +261,8 @@
     ]
   },
   "totals": {
-    "agent": 24,
-    "api": 4,
+    "agent": 25,
+    "api": 5,
     "artifacts": 1,
     "chat": 5,
     "composables": 19,

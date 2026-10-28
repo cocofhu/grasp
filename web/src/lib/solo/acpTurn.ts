@@ -1,13 +1,13 @@
 import { contentText, flattenUpdate, normalizeKind } from '@/lib/run/acpUnpack'
 import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
-import type { AgentPart, ClarifyImage } from '@/lib/shared/types'
+import type { AgentPart, ChatMessageMetadata, ClarifyImage } from '@/lib/shared/types'
 import type { SoloMessage } from '@/lib/api/apiTypes'
 
 export type SoloTool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
 /** Arrival order of a reply: text runs, or an index into SoloTurn.tools. */
 export type SoloStep = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
 
-export type SoloTurn = {
+export type SoloTurn = ChatMessageMetadata & {
   id: string
   role: 'user' | 'agent' | 'system'
   text: string
@@ -168,9 +168,13 @@ export function turnsFromMessages(messages: SoloMessage[], label: ToolLabeler, t
     } else if (m.role === 'system') {
       out.push({ id: `s:${m.id}`, role: 'system', text: m.content, tools: [], steps: [], plan: [], streaming: false, createdAt: m.createdAt })
     } else {
-      const turn = emptyAgentTurn(`a:${m.id}`, false, addMs(m.createdAt, m.durationMs))
+      const turn = emptyAgentTurn(`a:${m.id}`, false, m.execution?.startedAt || addMs(m.createdAt, m.durationMs))
       turn.endedAt = m.createdAt
       turn.createdAt = m.createdAt
+      turn.execution = m.execution
+      turn.usage = m.usage
+      turn.usageByModel = m.usageByModel
+      turn.durationMs = m.durationMs
       for (const ev of m.events ?? []) applyAcp(ev, turn, label, toolFallback)
       if (!turn.steps.length && m.content) {
         turn.text = m.content

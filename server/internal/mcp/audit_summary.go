@@ -73,6 +73,8 @@ func formatMCPAuditAction(tool string, args map[string]any) string {
 		return "提出表单"
 	case "list_run_history":
 		return "读取运行历史"
+	case "get_history":
+		return "读取当前会话历史"
 	case "get_history_detail":
 		return joinAudit("读取历史详情", whitelistArg(args, "node_id"))
 	case "set_preview":

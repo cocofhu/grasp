@@ -77,6 +77,9 @@ type SandboxService struct {
 	// codexLoginWriteBack stores a refreshed Codex auth.json into the workspace
 	// credential. Nil skips write-back. The callback must not log the file body.
 	codexLoginWriteBack func(credentialID, content string) error
+	// soloRouteRuntime defaults to the real manager and ACP bridge. Tests can
+	// supply the same operations without requiring Docker or SSH.
+	soloRouteRuntime soloRouteOps
 }
 
 // TestSchedulerHooks wires purpose=test scheduler session lifecycle.
@@ -92,10 +95,15 @@ type liveSandbox struct {
 	sb                      *sandbox.Sandbox
 	acp                     *sandbox.ACPClient
 	home                    string
-	busy                    bool
-	codexAuthCredentialID   string
-	codexAuthInjected       string
-	codexAuthPath           string
+	prepared                *preparedAgentContainer
+	// soloRouteAgent identifies the applied route between re-prime completion
+	// and Solo's persistence write. It never changes the saved Agent profile.
+	soloRouteAgent        *Agent
+	switching             bool
+	busy                  bool
+	codexAuthCredentialID string
+	codexAuthInjected     string
+	codexAuthPath         string
 	// codexAuthRejected is set from the latest turn's CLI error, not from
 	// narration. A login refusal keeps the previously saved file.
 	codexAuthRejected bool

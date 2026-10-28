@@ -8,6 +8,7 @@ import ModelBindingEditor from '@/components/agent/ModelBindingEditor.vue'
 import AgentGitCredentialPicker from '@/components/agent/AgentGitCredentialPicker.vue'
 import WorkspaceCredentialsPanel from '@/components/workspace/WorkspaceCredentialsPanel.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import { boundConfigurationIds } from '@/lib/agent/modelBindings'
 import { bindingProblem, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { api, type ModelBinding, type ModelConfiguration, type TeamBootstrapSession } from '@/lib/api/api'
 import {
@@ -44,8 +45,8 @@ const resourcesVersion = ref(0)
 const models = ref<ModelConfiguration[]>([])
 const c = useRoutingCopy()
 const modelBinding = computed<ModelBinding>({
-  get: () => ({ kind: 'configuration' as const, configurationId: draft.value.modelConfigurationId }),
-  set: (value: ModelBinding) => { draft.value.modelConfigurationId = value.configurationId },
+  get: () => ({ kind: 'configuration' as const, configurationId: draft.value.modelConfigurationId, ...(draft.value.modelConfigurationIds ? { configurationIds: draft.value.modelConfigurationIds } : {}) }),
+  set: (value: ModelBinding) => { draft.value.modelConfigurationId = value.configurationId; draft.value.modelConfigurationIds = value.configurationIds },
 })
 const selectedModel = computed(() => models.value.find(model => model.id === draft.value.modelConfigurationId))
 async function refreshResources() {
@@ -59,8 +60,10 @@ async function refreshResources() {
     if (returningFromManager && configurationId) {
       const [keys, services, caps] = await Promise.all([api.listCredentials(), api.listModelConnections(), api.listToolCapabilities()])
       if (draft.value.modelConfigurationId !== configurationId) return
-      const configuration = models.value.find(model => model.id === configurationId)
-      modelValid.value = !bindingProblem({ kind: 'configuration', configurationId }, configuration?.backend || '', services.items || [], keys.items || [], caps.items || [], models.value)
+      modelValid.value = boundConfigurationIds(modelBinding.value).every(id => {
+        const configuration = models.value.find(model => model.id === id)
+        return !bindingProblem({ kind: 'configuration', configurationId: id }, configuration?.backend || '', services.items || [], keys.items || [], caps.items || [], models.value)
+      })
       if (!modelValid.value) { draft.value.step = 1; stepAnimKey.value++ }
     }
   } catch {

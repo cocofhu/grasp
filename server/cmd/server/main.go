@@ -386,6 +386,10 @@ func main() {
 
 	previewSvc := services.NewPreviewService(db, sbxMgr)
 	previewSvc.SetAgents(agentSvc)
+	host.SetConversationHistoryProvider(services.NewConversationHistoryService(db, func(runID string) (models.Sandbox, bool) {
+		row, _, ok := previewSvc.SoloMCPBinding(runID)
+		return row, ok
+	}))
 	wireArtifactMCPPersistence(host, db, runSvc, previewSvc)
 	previewSvc.SetBrowser(browserSvc)
 	previewSvc.SetSandboxLeases(sbxSvc)

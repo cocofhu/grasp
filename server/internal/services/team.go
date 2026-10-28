@@ -27,15 +27,16 @@ var (
 
 // TeamBootstrapRequest is the body for POST /api/agent-teams/bootstrap.
 type TeamBootstrapRequest struct {
-	Prefix               string              `json:"prefix"`
-	PMName               string              `json:"pmName"`
-	Background           string              `json:"background"`
-	ModelConfigurationID string              `json:"modelConfigurationId"`
-	GitBindings          *models.GitBindings `json:"gitBindings,omitempty"`
-	Region               string              `json:"region,omitempty"`
-	GitURL               string              `json:"gitUrl,omitempty"`
-	MCP                  []MCPServer         `json:"mcp,omitempty"`
-	Env                  map[string]string   `json:"env,omitempty"`
+	Prefix                string              `json:"prefix"`
+	PMName                string              `json:"pmName"`
+	Background            string              `json:"background"`
+	ModelConfigurationID  string              `json:"modelConfigurationId"`
+	ModelConfigurationIDs []string            `json:"modelConfigurationIds,omitempty"`
+	GitBindings           *models.GitBindings `json:"gitBindings,omitempty"`
+	Region                string              `json:"region,omitempty"`
+	GitURL                string              `json:"gitUrl,omitempty"`
+	MCP                   []MCPServer         `json:"mcp,omitempty"`
+	Env                   map[string]string   `json:"env,omitempty"`
 }
 
 // TeamBootstrapEvent is one progress log line for the UI.
@@ -182,17 +183,18 @@ func (s *TeamService) Retry(ctx context.Context, sessionID string) (TeamBootstra
 }
 
 type normalizedTeamReq struct {
-	WorkspaceName        string
-	Prefix               string
-	PMName               string
-	Background           string
-	AcpBackend           string
-	ModelConfigurationID string
-	GitBindings          *models.GitBindings
-	Region               string
-	GitURL               string
-	MCP                  []MCPServer
-	Env                  map[string]string
+	WorkspaceName         string
+	Prefix                string
+	PMName                string
+	Background            string
+	AcpBackend            string
+	ModelConfigurationID  string
+	ModelConfigurationIDs []string
+	GitBindings           *models.GitBindings
+	Region                string
+	GitURL                string
+	MCP                   []MCPServer
+	Env                   map[string]string
 }
 
 func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeamReq, error) {
@@ -218,7 +220,7 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 			return normalizedTeamReq{}, fmt.Errorf("%w: pmName: %v", ErrTeamValidation, err)
 		}
 	}
-	configuration, err := s.Credentials.requireModelConfiguration(req.ModelConfigurationID)
+	configuration, err := s.Credentials.requireModelConfigurationSet(req.ModelConfigurationID, req.ModelConfigurationIDs)
 	if err != nil {
 		return normalizedTeamReq{}, fmt.Errorf("%w: %v", ErrTeamValidation, err)
 	}
@@ -245,17 +247,18 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 		env["GIT_REPOS"] = "${vars.repos}"
 	}
 	return normalizedTeamReq{
-		WorkspaceName:        workspace.Name,
-		Prefix:               prefix,
-		PMName:               pmName,
-		Background:           background,
-		AcpBackend:           configuration.Backend,
-		ModelConfigurationID: configuration.ID,
-		GitBindings:          bindings,
-		Region:               strings.TrimSpace(req.Region),
-		GitURL:               strings.TrimSpace(req.GitURL),
-		MCP:                  mcp,
-		Env:                  env,
+		WorkspaceName:         workspace.Name,
+		Prefix:                prefix,
+		PMName:                pmName,
+		Background:            background,
+		AcpBackend:            configuration.Backend,
+		ModelConfigurationID:  configuration.ID,
+		ModelConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...),
+		GitBindings:           bindings,
+		Region:                strings.TrimSpace(req.Region),
+		GitURL:                strings.TrimSpace(req.GitURL),
+		MCP:                   mcp,
+		Env:                   env,
 	}, nil
 }
 
@@ -312,13 +315,14 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 		name := EngineerDisplayName(req.Prefix, role.RoleLabelZH)
 		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name)
 		created, err := s.CreateAgentFromTemplate(CreateFromTemplateArgs{
-			TemplateID:           role.ID,
-			Name:                 name,
-			ModelConfigurationID: req.ModelConfigurationID,
-			GitBindings:          req.GitBindings,
-			MCP:                  req.MCP,
-			Env:                  req.Env,
-			Region:               req.Region,
+			TemplateID:            role.ID,
+			Name:                  name,
+			ModelConfigurationID:  req.ModelConfigurationID,
+			ModelConfigurationIDs: req.ModelConfigurationIDs,
+			GitBindings:           req.GitBindings,
+			MCP:                   req.MCP,
+			Env:                   req.Env,
+			Region:                req.Region,
 		})
 		if err != nil {
 			fail(err)
@@ -355,14 +359,15 @@ func (s *TeamService) runRetry(ctx context.Context, sessionID string, req normal
 		name := EngineerDisplayName(req.Prefix, role.RoleLabelZH)
 		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name)
 		created, err := s.CreateAgentFromTemplate(CreateFromTemplateArgs{
-			TemplateID:           role.ID,
-			Name:                 name,
-			ModelConfigurationID: req.ModelConfigurationID,
-			GitBindings:          req.GitBindings,
-			MCP:                  req.MCP,
-			Env:                  req.Env,
-			Region:               req.Region,
-			SkipIfExists:         true,
+			TemplateID:            role.ID,
+			Name:                  name,
+			ModelConfigurationID:  req.ModelConfigurationID,
+			ModelConfigurationIDs: req.ModelConfigurationIDs,
+			GitBindings:           req.GitBindings,
+			MCP:                   req.MCP,
+			Env:                   req.Env,
+			Region:                req.Region,
+			SkipIfExists:          true,
 		})
 		if err != nil {
 			fail(err)
@@ -504,14 +509,15 @@ func (s *TeamService) waitTeamSandboxReady(ctx context.Context, sessionID string
 
 // CreateFromTemplateArgs is used by MCP and bootstrap.
 type CreateFromTemplateArgs struct {
-	TemplateID           string
-	Name                 string
-	ModelConfigurationID string
-	GitBindings          *models.GitBindings
-	MCP                  []MCPServer
-	Env                  map[string]string
-	Region               string
-	SkipIfExists         bool
+	TemplateID            string
+	Name                  string
+	ModelConfigurationID  string
+	ModelConfigurationIDs []string
+	GitBindings           *models.GitBindings
+	MCP                   []MCPServer
+	Env                   map[string]string
+	Region                string
+	SkipIfExists          bool
 }
 
 // CreateAgentFromTemplate creates one engineer from an embedded template.
@@ -535,13 +541,13 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 		return Agent{}, err
 	}
 	tmpl.Name = name
-	configuration, err := s.Credentials.requireModelConfiguration(args.ModelConfigurationID)
+	configuration, err := s.Credentials.requireModelConfigurationSet(args.ModelConfigurationID, args.ModelConfigurationIDs)
 	if err != nil {
 		return Agent{}, err
 	}
 	backend := configuration.Backend
 	tmpl.InheritModel, tmpl.InheritGit = false, false
-	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}
+	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID, ConfigurationIDs: append([]string(nil), args.ModelConfigurationIDs...)}
 	bindings, err := models.NormalizeGitBindings(args.GitBindings)
 	if err != nil {
 		return Agent{}, err
@@ -596,7 +602,7 @@ func (s *TeamService) buildPMAgent(req normalizedTeamReq) (Agent, error) {
 	if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
 		tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
 	}
-	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: req.ModelConfigurationID}
+	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: req.ModelConfigurationID, ConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...)}
 	tmpl.GitBindings = req.GitBindings
 
 	mergedEnv := map[string]string{}

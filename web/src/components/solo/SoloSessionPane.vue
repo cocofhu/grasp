@@ -8,6 +8,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
+import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReviewShell from '@/components/run/ReviewShell.vue'
@@ -24,6 +25,7 @@ import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { partsOf } from '@/lib/solo/acpTurn'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
+import { modelRouteValue } from '@/lib/agent/modelBindings'
 import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { repoShort } from '@/lib/solo/soloPrefs'
@@ -44,33 +46,39 @@ const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentN
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
 const modelCatalogBlocked = modelCatalog.blocked
+const currentGroup = computed(() => session.value?.currentConfigurationId || session.value?.initialConfigurationId || modelCatalog.defaultConfigurationId?.value || '')
+const currentSelection = computed(() => {
+  const raw = currentModelId.value
+  const group = currentGroup.value
+  const choices = modelChoices.value
+  const selected = choices.find(choice => (!group || choice.configurationId === group) && ((choice.modelId ?? choice.id) === raw || !raw))
+  if (selected) return selected.id
+  return group && choices.length ? modelRouteValue(group, raw) : raw
+})
+const selectionInvalid = computed(() => {
+  if (!modelCatalog.configLoaded.value) return false
+  if (modelCatalog.modelInConfiguration(currentModelId.value, currentGroup.value) === false) return true
+  const selected = modelChoices.value.find(choice => choice.id === currentSelection.value)
+  if (selected?.unavailable) return true
+  if (!modelCatalog.catalogConfirmed.value) return false
+  return !selected || selected.unavailable
+})
 const shownModels = computed(() => {
   let choices = modelChoices.value
-  if (!choices.length && modelCatalogBlocked.value && currentModelId.value) {
-    const id = currentModelId.value
-    choices = [{ id, name: id, hint: id, vendor: '', backend: false, unavailable: false }]
+  const selectedId = currentSelection.value
+  if (!choices.some(choice => choice.id === selectedId) && selectedId) {
+    choices = [...choices, { id: selectedId, name: currentModelId.value || session.value?.model || t('pages.solo.modelSelect.placeholder'), hint: currentModelId.value, vendor: '', backend: false, unavailable: selectionInvalid.value }]
   }
   const row = session.value
   if (!row || row.reasoningEffort === undefined) return choices
-  const selectedId = currentModelId.value || choices[0]?.id
   return choices.map(choice => choice.id === selectedId ? { ...choice, efforts: modelChangePending.value ? [] : row.reasoningEfforts || [] } : choice)
 })
-let modelResetFor = ''
-watch([modelChoices, modelCatalog.configLoaded, modelCatalog.catalogConfirmed, currentModelId, canSend], async () => {
-  if (!canSend.value) return
-  const id = currentModelId.value
-  if (!id || modelResetFor === id) return
-  // A failed directory read must not be stored as "back to the primary model".
-  const inConfig = modelCatalog.modelInConfiguration(id)
-  if (inConfig === null) return
-  if (inConfig && !modelCatalog.catalogConfirmed.value) return
-  const hit = modelChoices.value.find((choice) => choice.id === id)
-  if (inConfig && hit && !hit.unavailable) return
-  modelResetFor = id
-  const ok = await setCurrentModel('')
-  if (ok) actionError.value = t('pages.solo.modelSelect.reset')
-  else modelResetFor = ''
-})
+function chooseSessionModel(value: string) {
+  const choice = modelChoices.value.find(choice => choice.id === value) || (!value ? modelChoices.value[0] : undefined)
+  const grouped = modelChoices.value.some(choice => choice.id.startsWith('@group:'))
+  const changesGroup = !!choice?.configurationId && !!currentGroup.value && choice.configurationId !== currentGroup.value
+  return setCurrentModel(choice?.configurationId && (grouped || changesGroup) ? modelRouteValue(choice.configurationId, choice.modelId || '') : value)
+}
 const attach = useImageAttachments()
 const fileInput = attach.fileInput
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
@@ -207,7 +215,7 @@ watch(input, () => nextTick(autoGrow))
 async function send() {
   const text = input.value.trim()
   const images = attach.attachments.value.slice()
-  if ((!text && !images.length) || !canSend.value) return
+  if ((!text && !images.length) || !canSend.value || selectionInvalid.value) return
   if (attach.blockSendIfOversized(images)) return
   input.value = ''
   attach.clearAttachments()
@@ -395,18 +403,19 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                     </div>
                   </template>
                 </div>
-                <div v-if="turn.text" class="chat-user-message whitespace-pre-wrap break-words px-4 py-2.5 [overflow-wrap:anywhere]">{{ turn.text }}</div>
+                <ChatUserMessage v-if="turn.text" :text="turn.text" :created-at="turn.createdAt" />
               </div>
             </div>
             <div v-else class="min-w-0 space-y-3">
               <AgentTimeline
-                v-if="turn.steps.length"
+                v-if="turn.steps.length || !turn.streaming"
                 :parts="partsOf(turn)"
                 :streaming="turn.streaming"
                 :completed="!turn.streaming && !turnInterrupted(turn)"
                 :interrupted="turnInterrupted(turn)"
                 :started-at="turn.startedAt"
                 :ended-at="turn.endedAt"
+                :metadata="turn"
                 quiet-thought
                 message-test-id="solo-agent-message"
               />
@@ -465,6 +474,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div v-else class="solo-bottom shrink-0 py-3">
         <div class="solo-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
+          <p v-if="selectionInvalid && canSend" class="mb-2 text-[12px] text-warn" role="status" data-testid="solo-model-invalid-notice">{{ t('pages.solo.modelSelect.unavailableSelection') }}</p>
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
           <p v-if="modelSwitchNotice" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-switch-notice">{{ modelSwitchNotice }}</p>
           <p v-if="attach.notice.value" class="mb-2 text-[12px]" :class="attach.notice.value.kind === 'error' ? 'text-err' : 'text-ok'">{{ attach.notice.value.text }}</p>
@@ -513,12 +523,12 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <SoloModelSelect
                   class="min-w-0"
                   flat
-                  :model-value="currentModelId"
+                  :model-value="currentSelection"
                   :reasoning-effort="currentReasoningEffort"
                   :models="shownModels"
                   :disabled="!canSend || !modelCatalogReady"
                   :empty-as-label="modelCatalogReady && !modelChoices.length"
-                  @update:model-value="setCurrentModel"
+                  @update:model-value="chooseSessionModel"
                   @update:reasoning-effort="setCurrentReasoningEffort"
                 />
                 <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
@@ -538,7 +548,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <button
                   type="button"
                   class="chat-action-button chat-action-primary"
-                  :disabled="!canSend || (!input.trim() && !attach.attachments.value.length)"
+                  :disabled="!canSend || selectionInvalid || (!input.trim() && !attach.attachments.value.length)"
                   :aria-label="t('pages.solo.chat.send')"
                   :title="t('pages.solo.chat.send')"
                   data-testid="solo-send"

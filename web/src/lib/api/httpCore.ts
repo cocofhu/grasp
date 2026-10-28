@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { invalidateWorkflowCatalog } from './workflowCatalogEvents'
+import { invalidateModelCatalog } from './modelCatalogEvents'
 import { i18n } from '../shared/i18n'
 import {
   isDraining,
@@ -143,6 +144,7 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   apiState.online = true
   const result = (await res.json()) as T
   if (writesWorkflowCatalog(method, path)) invalidateWorkflowCatalog()
+  if (isMutationMethod(method) && /^(?:\/workspace\/(?:model-configurations|model-connections|credentials)(?:\/|$)|\/workspace\/(?:shared-agent-config|bootstrap-onboarding)$|\/agents(?:$|\/[^/]+$|\/[^/]+\/rename$)|\/agent-teams\/bootstrap$)/.test(path)) invalidateModelCatalog()
   return result
 }
 

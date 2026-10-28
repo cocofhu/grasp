@@ -1,0 +1,65 @@
+import { expect, test } from '@playwright/test'
+
+test.use({ timezoneId: 'Asia/Shanghai' })
+
+for (const theme of ['dark', 'light']) {
+  test(`all model and provider marks keep their themed surfaces in ${theme}`, async ({ page }) => {
+    await page.goto(`/chat-message-info.html?theme=${theme}`)
+    await expect(page.getByTestId('shared-chat-audit')).toBeVisible()
+    const images = page.locator('[data-brand] img')
+    await expect.poll(() => images.evaluateAll(rows => rows.every(row => (row as HTMLImageElement).complete && (row as HTMLImageElement).naturalWidth > 0))).toBe(true)
+    const compact = page.getByTestId('compact-mark').locator('[data-vendor-mark]')
+    for (const mark of await compact.all()) await expect(mark).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    const glm = page.locator('[data-brand="zhipu"]')
+    await glm.getByTestId('compact-mark').hover()
+    await expect(glm.getByTestId('compact-mark').locator('[data-vendor-mark]')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    await expect(glm.getByTestId('compact-mark').locator('img')).toHaveCSS('filter', 'none')
+    for (const row of await page.locator('[data-provider-logo]').all()) await expect(row).toHaveCSS('background-color', theme === 'dark' ? 'rgb(20, 20, 23)' : 'rgb(255, 255, 255)')
+    await page.getByTestId('solo-model-select-trigger').click()
+    await expect(page.getByTestId('solo-model-option-glm-current').locator('[data-vendor-mark]')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    await page.screenshot({ path: test.info().outputPath(`provider-marks-${theme}.png`), fullPage: true })
+  })
+}
+
+test('Solo and workflow use the same timestamp and reply information controls', async ({ page }) => {
+  await page.goto('/chat-message-info.html')
+  for (const kind of ['solo', 'workflow']) {
+    const chat = page.getByTestId('chat-'+kind)
+    await expect(chat.locator('[data-testid="agent-timeline-message"]')).toHaveAttribute('title', '2026-10-28 16:00')
+    await chat.getByTestId('chat-message-info').scrollIntoViewIfNeeded()
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await chat.getByTestId('chat-message-info').hover()
+    const panel = page.getByTestId('chat-message-info-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText('Recorded Agent')
+    await expect(panel).toContainText('OpenCode')
+    await expect(panel).toContainText('glm-recorded')
+    await expect(panel).not.toContainText('glm-current')
+    await expect(panel.getByTestId('chat-message-token-total')).toHaveText('1,500')
+    const bounds = await panel.boundingBox()
+    const anchor = await chat.getByTestId('chat-message-info').boundingBox()
+    expect(bounds!.y + bounds!.height <= anchor!.y || bounds!.y >= anchor!.y + anchor!.height).toBe(true)
+    await page.keyboard.press('Escape')
+    await chat.getByTestId('chat-message-info').focus()
+    await expect(panel).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(panel).toHaveCount(0)
+  }
+})
+
+test('reply information supports touch and stays within a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/chat-message-info.html?theme=light')
+  const button = page.getByTestId('chat-workflow').getByTestId('chat-message-info')
+  await button.scrollIntoViewIfNeeded()
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+  await button.click()
+  const panel = page.getByTestId('chat-message-info-panel')
+  await expect(panel).toBeVisible()
+  const box = await panel.boundingBox()
+  expect(box!.x).toBeGreaterThanOrEqual(12)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(378)
+  await button.click()
+  await expect(panel).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
