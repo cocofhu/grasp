@@ -25,6 +25,8 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 	if err != nil {
 
 		req := e.nodeReq(c, node)
+		req.ResetToDefaultModel = true
+		req.ChatRoute = nil
 		carried := e.interruptedDialogue(c.run.ID, node.ID, iter)
 		var t runtime.ReactTurn
 		if rr, ok := e.provider.(runtime.ReactResumer); ok && len(carried) > 0 {
@@ -56,6 +58,7 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 		}
 		conv = models.ReactConversation{RunID: c.run.ID, NodeID: node.ID, Iteration: iter, Done: t.Done,
 			Messages: msgs}
+		e.rememberTurnRoute(&conv, &req, t)
 		logDB(e.db.Create(&conv), c.run.ID, "create react conversation")
 
 		if t.Done {

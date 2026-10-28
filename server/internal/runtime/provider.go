@@ -163,6 +163,24 @@ type NodeReq struct {
 	// models.SandboxModeShared runs every node of the run in one sandbox;
 	// anything else keeps the per-node sandboxes.
 	SandboxMode string
+	// ChatRoute is the model this chat turn should use. Nil or Set false means
+	// the visit has not chosen one. ModelID empty is the Agent primary model.
+	ChatRoute *ChatRoute
+	// AppliedRoute is the route last given to the sandbox. A failed switch
+	// rolls the sandbox back to it. Nil means the visit default.
+	AppliedRoute *ChatRoute
+	// ResetToDefaultModel clears a shared sandbox back to this node's primary
+	// model before an automatic turn or a visit that never switched.
+	ResetToDefaultModel bool
+}
+
+// ChatRoute is one visit's model choice. It is not an Agent binding.
+type ChatRoute struct {
+	ConfigurationID string
+	Backend         string
+	ModelID         string
+	ReasoningEffort string
+	Set             bool
 }
 
 // GitInfo is the VCS-agnostic push detection result.
@@ -243,6 +261,17 @@ type ReactTurn struct {
 	// OpID is the sandbox turn id of this reply, persisted on the agent
 	// message so a later refresh can match it to the bridge.
 	OpID string
+	// ModelNotice is a stable code when this turn's model switch rolled back.
+	ModelNotice string
+	// RouteApplied is true when a live session was aligned before the prompt.
+	RouteApplied bool
+}
+
+// ChatRouteAligner aligns a parked visit's sandbox to ChatRoute before the
+// next prompt. notice is empty on success. aligned is false when no session
+// exists yet. A rollback returns notice and a nil error so the turn continues.
+type ChatRouteAligner interface {
+	AlignChatRoute(ctx context.Context, req NodeReq) (notice string, aligned bool, err error)
 }
 
 // ExecProvider runs the two user-defined agent node kinds.

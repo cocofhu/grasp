@@ -181,6 +181,15 @@ func reactConversationDTO(conv models.ReactConversation) gin.H {
 	if conv.Takeover {
 		out["takeover"] = true
 	}
+	if conv.CurrentModelSet || conv.ModelNotice != "" {
+		out["currentConfigurationId"] = conv.CurrentConfigurationID
+		out["currentModelId"] = conv.CurrentModelID
+		out["currentModelSet"] = conv.CurrentModelSet
+		out["reasoningEffort"] = conv.CurrentReasoningEffort
+	}
+	if conv.ModelNotice != "" {
+		out["modelNotice"] = conv.ModelNotice
+	}
 	return out
 }
 

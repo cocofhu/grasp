@@ -13,6 +13,8 @@ import AnnotationChip from './AnnotationChip.vue'
 import PageControlStatus from './PageControlStatus.vue'
 import type { GateReactTurn } from './gateApproval/gateApprovalContext'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
+import VisitModelSelect from './VisitModelSelect.vue'
+import { visitModelSelectVisible } from '@/lib/run/visitModel'
 
 /**
  * Thin mode wrapper around ClarifyChat / a gate-local composer.
@@ -94,6 +96,16 @@ const props = withDefaults(
     doneNote?: { text: string; tone: 'ok' | 'muted' | 'wait' } | null
     followTail?: ClarifyFollowTail | null
     followProcess?: ClarifyFollowProcess[] | null
+    /** Member composer may switch this visit's model. */
+    modelSwitch?: boolean
+    agentName?: string
+    modelNodeId?: string
+    modelIteration?: number
+    currentConfigurationId?: string
+    currentModelId?: string
+    currentModelSet?: boolean
+    reasoningEffort?: string
+    modelNotice?: string
   }>(),
   {
     iteration: 1,
@@ -275,6 +287,14 @@ function onConfirm() {
   if (!props.canPass || props.passDisabled) return
   emit('finish')
 }
+const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVisible({
+  modelSwitch: props.modelSwitch && !!props.agentName,
+  done: props.done,
+  active: props.active,
+  coldSession: props.coldSession,
+  observe: props.observe,
+  composerLocked: props.composerLocked,
+}))
 </script>
 
 <template>
@@ -317,6 +337,15 @@ function onConfirm() {
       :prior-segments="priorSegments ?? []"
       :node-label="nodeLabel"
       :composer-locked="!!composerLocked"
+      :model-switch="modelSwitch"
+      :agent-name="agentName"
+      :model-node-id="modelNodeId || nodeId"
+      :model-iteration="modelIteration || iteration"
+      :current-configuration-id="currentConfigurationId"
+      :current-model-id="currentModelId"
+      :current-model-set="currentModelSet"
+      :reasoning-effort="reasoningEffort"
+      :model-notice="modelNotice"
       :done-note="doneNote ?? null"
       :follow-tail="followTail ?? null"
       :follow-process="followProcess ?? null"
@@ -375,7 +404,7 @@ function onConfirm() {
         </div>
         <div v-if="rejectError" class="mb-1.5 text-[11px] text-err">{{ rejectError }}</div>
       </template>
-      <ComposerShell :show-chrome="!coldSession" :show-footer="true">
+      <ComposerShell :show-chrome="!coldSession" :show-footer="true" wrap-toolbar>
         <template v-if="!coldSession" #input>
           <ParagraphInput
             ref="paragraphRef"
@@ -401,6 +430,18 @@ function onConfirm() {
           >
             <Icon name="plus" :size="18" />
           </button>
+          <VisitModelSelect
+            v-if="showGateModel"
+            :run-id="runId || ''"
+            :node-id="modelNodeId || nodeId || ''"
+            :iteration="modelIteration || iteration"
+            :agent-name="agentName || ''"
+            :current-configuration-id="currentConfigurationId"
+            :current-model-id="currentModelId"
+            :current-model-set="currentModelSet"
+            :reasoning-effort="reasoningEffort"
+            :model-notice="modelNotice"
+          />
         </template>
         <template v-if="!coldSession" #toolbar-end>
           <button

@@ -41,6 +41,8 @@ func (e *Engine) execAgent(c *execCtx, node *models.Node) nodeOutcome {
 
 func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 	req := e.nodeReq(c, node)
+	req.ResetToDefaultModel = true
+	req.ChatRoute = nil
 	req.ReattachSandbox, c.reattachSandbox = c.reattachSandbox, ""
 	ctx, ar := e.beginAutoAgent(c, node)
 	settled := false

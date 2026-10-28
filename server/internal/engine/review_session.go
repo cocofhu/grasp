@@ -674,6 +674,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
 
 	req := e.nodeReq(c, node)
+	e.prepareVisitModel(ctx, &req, &conv, s.runID, s.producerID)
 	force := item.Force
 	var t runtime.ReactTurn
 	if err := e.prepareLiveTurn(ctx, s.runID, s.producerID, item); err != nil {
@@ -712,6 +713,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		agentMsg.Text = "(已中断)"
 	}
 	conv.Messages = append(conv.Messages, agentMsg)
+	e.rememberTurnRoute(&conv, &req, t)
 	e.recordFeedback(e.clarifyFeedbackEvent(s, item, conv.Iteration, answered, humanMsg, agentMsg, interrupted, t.AgentSummary))
 
 	if interrupted {
@@ -842,6 +844,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	humanMsg := conv.Messages[len(conv.Messages)-1]
 
 	req := e.nodeReq(c, producer)
+	e.prepareVisitModel(ctx, &req, &conv, s.runID, s.producerID)
 	e.host.SetActiveReview(s.runID, true)
 
 	// Publish react so UIs that refetch on turn_begin see the human bubble.
@@ -882,6 +885,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		agentMsg.Text = "(已中断)"
 	}
 	conv.Messages = append(conv.Messages, agentMsg)
+	e.rememberTurnRoute(&conv, &req, t)
 	logDB(e.db.Save(&conv), s.runID, "save review agent turn")
 
 	e.flushMcpCalls(s.runID, s.producerID)

@@ -38,6 +38,11 @@ const props = defineProps<{
     previewArtifact?: string
     takeover?: boolean
     task?: string
+    currentConfigurationId?: string
+    currentModelId?: string
+    currentModelSet?: boolean
+    reasoningEffort?: string
+    modelNotice?: string
   } | null
   runId: string
   run?: Run | null
@@ -95,6 +100,7 @@ const conversationRunName = useConversationToolbarRunName(() => ({
 const artifacts = computed(() => props.run?.artifacts || [])
 const previewArtifact = computed(() => props.clarify?.previewArtifact || '')
 const graphNode = computed(() => findGraphNode(props.run?.nodes, props.nodeId) || null)
+const agentName = computed(() => String(graphNode.value?.config?.agent_profile || '').trim())
 // set_preview defaults to off; ReactArtifactStage silently probes previews and upgrades to app when registered.
 const remoteKind = computed(() => (isPreviewNode(graphNode.value) ? 'off' : 'sandbox'))
 
@@ -188,6 +194,13 @@ defineExpose({
         :done="clarify.done"
         :node-task="takeoverTask(clarify)"
         :active="inputActive"
+        :model-switch="!!agentName"
+        :agent-name="agentName"
+        :current-configuration-id="clarify?.currentConfigurationId"
+        :current-model-id="clarify?.currentModelId"
+        :current-model-set="clarify?.currentModelSet"
+        :reasoning-effort="clarify?.reasoningEffort"
+        :model-notice="clarify?.modelNotice"
         :confirm-error="confirmError"
         :confirm-can-abort="confirmCanAbort"
         :handoff="handoff ?? null"
