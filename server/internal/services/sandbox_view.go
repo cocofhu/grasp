@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
@@ -224,10 +225,17 @@ func (s *SandboxService) EventLogPage(ctx context.Context, id uint, cursor strin
 }
 
 // OpenTerminal attaches an interactive PTY shell to a sandbox over SSH.
-func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (*sandbox.SSHTerminal, error) {
+func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (sandbox.Terminal, error) {
 	row, err := s.Get(id)
 	if err != nil {
 		return nil, err
+	}
+	if execution.Worktree() {
+		dir, err := execution.ShellDir(row.RunID)
+		if err != nil {
+			return nil, err
+		}
+		return sandbox.OpenLocalTerminal(dir)
 	}
 	if s.mgr.Status(ctx, row.Name) != "running" {
 		return nil, fmt.Errorf("container 不在运行")

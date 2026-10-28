@@ -44,6 +44,7 @@ import {
   settingsNavItems,
   type SettingsNavItem,
 } from '@/data/settingsNav'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { useRunTerminalNotifications } from '@/lib/run/useRunTerminalNotifications'
 import { useToast } from '@/lib/composables/useToast'
@@ -1199,7 +1200,10 @@ const primaryGroup = sidebarNavGroups[0]
 const primaryItems = computed(() => props.rail
   ? primaryGroup?.items.filter((item) => item.to === '/dashboard') ?? []
   : primaryGroup?.items ?? [])
-const settingsItems = settingsNavItems
+const { worktreeMode } = useExecutionMode()
+const settingsItems = computed(() => (
+  worktreeMode.value ? settingsNavItems.filter((item) => item.to !== '/sandboxes') : settingsNavItems
+))
 </script>
 
 <template>

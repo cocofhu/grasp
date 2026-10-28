@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -881,6 +882,16 @@ func (m *Manager) PublishPort(ctx context.Context, id string, port int) (string,
 // proxies so dial targets track gateway endpoints rather than hard-coded
 // 127.0.0.1:<persistedPort>.
 func (m *Manager) EndpointAddr(ctx context.Context, id, key string) (string, error) {
+	if execution.Worktree() {
+		switch strings.TrimSpace(key) {
+		case "cdp":
+			return "127.0.0.1:9222", nil
+		case "novnc":
+			return "127.0.0.1:6080", nil
+		default:
+			return "", fmt.Errorf("worktree has no %q endpoint", key)
+		}
+	}
 	if m.gw == nil {
 		return "", fmt.Errorf("no gateway client")
 	}
@@ -902,11 +913,29 @@ func (m *Manager) EndpointAddr(ctx context.Context, id, key string) (string, err
 // Exec runs a command on a named sandbox over SSH and returns combined output.
 // Each argv fragment must pass validateShellArg (via newSafeCmd).
 func (m *Manager) Exec(ctx context.Context, id string, timeout time.Duration, cmd ...string) (string, error) {
+	if execution.Worktree() {
+		return execLocal(ctx, timeout, cmd...)
+	}
 	sb, err := m.Attach(ctx, id)
 	if err != nil {
 		return "", err
 	}
 	return sb.Exec(ctx, timeout, cmd...)
+}
+
+func execLocal(ctx context.Context, timeout time.Duration, argv ...string) (string, error) {
+	if _, err := newSafeCmd(argv...); err != nil {
+		return "", err
+	}
+	cctx := ctx
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		cctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
 }
 
 // ExecScript runs interpreter with script on stdin (argv is only the

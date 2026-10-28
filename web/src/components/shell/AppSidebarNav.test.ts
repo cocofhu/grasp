@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetBrandSettingsForTest } from '@/lib/composables/useBrandSettings'
 import { nextTick, reactive } from 'vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
@@ -248,6 +249,10 @@ beforeEach(() => {
   const toast = useToast()
   for (const item of [...toast.toasts.value]) toast.dismiss(item.id)
   vi.useFakeTimers()
+})
+
+afterEach(() => {
+  resetBrandSettingsForTest()
 })
 
 function mountNav(attachOrOptions: boolean | { realIcon?: boolean } = false) {
@@ -637,6 +642,18 @@ describe('AppSidebarNav', () => {
     expect(wrapper.text()).toContain('常规')
     expect(wrapper.find('[data-to="/agents"]').text()).toContain('智能体')
     expect(wrapper.text()).not.toContain('待办')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('worktree settings chrome hides the sandbox page', async () => {
+    const { resetBrandSettingsForTest, setExecutionMode } = await import('@/lib/composables/useBrandSettings')
+    setExecutionMode('worktree')
+    routeState.path = '/notifications'
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(wrapper.find('[data-to="/sandboxes"]').exists()).toBe(false)
+    expect(wrapper.find('[data-to="/agents"]').exists()).toBe(true)
     wrapper.unmount()
     vi.useRealTimers()
   })

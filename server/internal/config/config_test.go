@@ -9,6 +9,7 @@ import (
 )
 
 func TestSetDefaults(t *testing.T) {
+	t.Setenv("GRASP_EXECUTION_MODE", "sandbox")
 	c := &Config{}
 	setDefaults(c)
 
@@ -57,6 +58,15 @@ func TestRewriteMisconfiguredMCPAdvertise(t *testing.T) {
 		if got := RewriteMisconfiguredMCPAdvertise(tc.in); got != tc.want {
 			t.Errorf("RewriteMisconfiguredMCPAdvertise(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestSetDefaultsWorktreeMCPAdvertise(t *testing.T) {
+	t.Setenv("GRASP_EXECUTION_MODE", "worktree")
+	c := &Config{}
+	setDefaults(c)
+	if c.Server.MCPAdvertise != "http://127.0.0.1:8080" {
+		t.Fatalf("worktree mcp_advertise = %q", c.Server.MCPAdvertise)
 	}
 }
 

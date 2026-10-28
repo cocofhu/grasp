@@ -17,6 +17,7 @@ import {
   type LiveLogBootSession,
 } from '@/lib/run/liveLogBootPhase'
 import { allowBootEmptyState, type RehydrateStatus } from '@/lib/run/liveLogRehydrate'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
 // events are the canonical ACP timeline for the selected node — streamed
 // incrementally over the run WebSocket while the node runs (live), or the
@@ -54,6 +55,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { worktreeMode } = useExecutionMode()
 
 // Which MCP call rows are expanded to show full in/out.
 const openCalls = ref<Set<number>>(new Set())
@@ -567,6 +569,7 @@ watch(
             {{ t('pages.liveLog.boot.timeout.body', { stage: t(stageTitleKey[activeStageId]) }) }}
           </p>
           <button
+            v-if="!worktreeMode"
             type="button"
             data-testid="go-sandbox-log"
             class="rounded-md mt-2 inline-flex items-center gap-1 border border-accent/45 bg-accent-dim px-2.5 py-1 text-[11px] text-accent-2 hover:text-txt"

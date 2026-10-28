@@ -13,7 +13,7 @@ import Icon from '@/components/ui/Icon.vue'
 import IntegrationsPanel from '@/components/settings/IntegrationsPanel.vue'
 import SettingsSection from '@/components/settings/SettingsSection.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
-import { setBrandSettings } from '@/lib/composables/useBrandSettings'
+import { setBrandSettings, setExecutionMode } from '@/lib/composables/useBrandSettings'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -216,6 +216,7 @@ async function loadSettings() {
     hydrate(res.items)
     hydrateBrand(res.brand)
     executionMode.value = res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
+    setExecutionMode(res.execution_mode)
   } catch (e: any) {
     if (!settingsSeq.isCurrentSeq(localSeq)) return
     if (items.value.length > 0) {
@@ -359,6 +360,7 @@ async function save() {
           hydrateBrand(res.brand)
           if (res.execution_mode) {
             executionMode.value = res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
+            setExecutionMode(res.execution_mode)
           }
         }
       } catch (cause) {

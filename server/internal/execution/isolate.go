@@ -55,6 +55,35 @@ func ResetForTest() {
 	endedIDs = map[string]bool{}
 }
 
+// ShellDir is the local terminal directory for a launch. A launch with one
+// repository checkout starts inside that checkout; otherwise it starts at the
+// launch root, which is also the agent workspace.
+func ShellDir(launchID string) (string, error) {
+	id, err := safeID(launchID)
+	if err != nil {
+		return "", err
+	}
+	root := filepath.Join(Root(), id)
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("工作树目录不存在")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", err
+	}
+	var dirs []string
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			dirs = append(dirs, entry.Name())
+		}
+	}
+	if len(dirs) == 1 {
+		return filepath.Join(root, dirs[0]), nil
+	}
+	return root, nil
+}
+
 // Root is the directory that holds per-launch trees. Tests set GRASP_WORKTREE_ROOT.
 func Root() string {
 	if v := strings.TrimSpace(os.Getenv("GRASP_WORKTREE_ROOT")); v != "" {
