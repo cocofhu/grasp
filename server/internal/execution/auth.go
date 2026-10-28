@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -81,7 +82,8 @@ func (a Auth) gitPrefix(raw string) (env []string, prefix []string, cleanup func
 		if remote.scheme == "ssh" {
 			env = append(env, "GIT_SSH_COMMAND="+failClosedSSH())
 		}
-		return env, []string{"-c", "credential.helper="}, cleanup, nil
+		// An empty helper clears inherited helpers for this process only.
+		return append(env, gitConfigEnv([][2]string{{"credential.helper", ""}})...), nil, cleanup, nil
 	}
 	if id.kind == credSSH {
 		if id.legacySSH && strings.TrimSpace(id.knownHosts) == "" {
@@ -332,12 +334,26 @@ func httpsHelper(remote gitScope, id identity) (env []string, prefix []string, c
 		cleanup()
 		return nil, nil, func() {}, err
 	}
-	prefix = []string{
-		"-c", "credential.helper=",
-		"-c", "credential.helper=!" + helper + " " + dir,
-		"-c", "credential.useHttpPath=true",
+	// The helper value contains "!" and a space, which cannot be a git argv.
+	// GIT_CONFIG_* applies to this process only and does not write git config.
+	env = gitConfigEnv([][2]string{
+		{"credential.helper", ""},
+		{"credential.helper", "!" + helper + " " + dir},
+		{"credential.useHttpPath", "true"},
+	})
+	return env, nil, cleanup, nil
+}
+
+// gitConfigEnv encodes key/value pairs as GIT_CONFIG_COUNT / KEY_n / VALUE_n.
+func gitConfigEnv(settings [][2]string) []string {
+	env := []string{"GIT_CONFIG_COUNT=" + strconv.Itoa(len(settings))}
+	for i, setting := range settings {
+		env = append(env,
+			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", i, setting[0]),
+			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", i, setting[1]),
+		)
 	}
-	return nil, prefix, cleanup, nil
+	return env
 }
 
 const helperScript = `#!/bin/sh
