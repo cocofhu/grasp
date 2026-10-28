@@ -47,8 +47,10 @@ const props = withDefaults(
     hideReset?: boolean
     /** Model ids already used by another slot. The current value stays visible. */
     excludeIds?: string[]
+    /** When set, only these catalog vendors stay selectable. The current value stays visible. */
+    allowedVendors?: string[]
   }>(),
-  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto', hideCommand: false, hideReset: false, excludeIds: () => [] },
+  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto', hideCommand: false, hideReset: false, excludeIds: () => [], allowedVendors: () => [] },
 )
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -97,12 +99,17 @@ watch(
 )
 
 const cliLabel = computed(() => ACP_BACKENDS.find((b) => b.id === props.backend)?.label || props.backend)
-const current = computed(() => models.value.find((m) => m.id === props.modelValue) ?? null)
+const visibleModels = computed(() => {
+  const allow = new Set((props.allowedVendors || []).map((id) => id.trim()).filter(Boolean))
+  if (!allow.size) return models.value
+  return models.value.filter((model) => allow.has(model.vendor) || model.id === props.modelValue)
+})
+const current = computed(() => visibleModels.value.find((m) => m.id === props.modelValue) ?? null)
 const unlisted = computed(() => !!props.modelValue && !current.value && !loading.value && models.value.length > 0)
 const command = computed(() => launchCommand(props.backend, props.modelValue))
 const split = computed(() => props.variant === 'full' && !narrow.value)
 
-const view = computed(() => buildView(models.value, query.value, vendor.value))
+const view = computed(() => buildView(visibleModels.value, query.value, vendor.value))
 const typed = computed(() => {
   const q = query.value.trim()
   return q && !view.value.exact ? q : ''

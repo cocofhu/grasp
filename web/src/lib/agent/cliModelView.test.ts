@@ -145,6 +145,9 @@ describe('formatting', () => {
   it('labels vendors and colors monograms stably', () => {
     expect(vendorLabel('openai')).toBe('OpenAI')
     expect(vendorLabel('zhipu')).toBe('Zhipu')
+    expect(vendorLabel('opencode')).toBe('OpenCode')
+    expect(vendorLabel('opencode-go')).toBe('OpenCode Go')
+    expect(vendorLogoProvider('opencode-go')).toBe('opencode')
     expect(monogramColor('zhipu')).toBe(monogramColor('zhipu'))
   })
 })

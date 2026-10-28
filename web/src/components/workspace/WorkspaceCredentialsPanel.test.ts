@@ -713,6 +713,8 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.find('[data-testid="model-credential-connection-base-url"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="workspace-credential-create-value"]').attributes('type')).toBe('password')
     expect(wrapper.text()).toContain(backend === 'opencode' ? 'OpenCode 官方 Key' : 'DeepSeek 官方 Key')
+    if (backend === 'opencode') expect(wrapper.get('[data-testid="workspace-credential-opencode-family"]').text()).toContain('opencode-go/<模型>')
+    else expect(wrapper.find('[data-testid="workspace-credential-opencode-family"]').exists()).toBe(false)
     await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue(alias)
     await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('test-official-key')
     await reviewCredential(wrapper)

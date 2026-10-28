@@ -1257,6 +1257,7 @@
         "hideSecret": "隐藏",
         "secretApiKey": "API Key",
         "secretOpenCodeKey": "OpenCode 官方 Key",
+        "opencodeFamilyHint": "这把钥匙对应所选官方家族。官方模式可以使用 opencode/<模型> 或 opencode-go/<模型>。OpenCode 与 OpenCode Go 各存一把 OpenCode CLI 钥匙，用别名区分；一份模型配置只绑一把钥匙。",
         "secretDeepSeekKey": "DeepSeek 官方 Key",
         "secretLoginFile": "登录文件",
         "secretPrivateKey": "私钥",
