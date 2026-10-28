@@ -8,7 +8,14 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { relTime } from '@/lib/shared/format'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
-import type { AgentTool } from '@/lib/shared/types'
+import type { AgentTool, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
+import type { GateReactTurn } from './gateApproval/gateApprovalContext'
+import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
+import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
+import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
+import { imgSrc } from '@/lib/shared/compositeText'
+import { attachmentDisplayName } from '@/lib/shared/attachments'
+import AnnotationChip from './AnnotationChip.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import ThinkingBusyCue from './ThinkingBusyCue.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
@@ -29,6 +36,10 @@ const props = withDefaults(
     runId?: string
     /** Accepted user text, visible before the agent frame arrives. */
     userText?: string
+    userImages?: ClarifyImage[]
+    userAnnotations?: ReactAnnotation[]
+    /** Each request owns its response; settled turns stay above queued requests. */
+    turns?: GateReactTurn[]
   }>(),
   {
     thinking: false,
@@ -38,10 +49,13 @@ const props = withDefaults(
     completedAt: null,
     streamTools: () => [],
     userText: '',
+    userImages: () => [],
+    userAnnotations: () => [],
   },
 )
 
 const { t, locale } = useI18n()
+const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
 const thoughtOpenOverride = ref<boolean | undefined>(undefined)
 /** Revealed display texts (catch-up); authority stays on props. */
@@ -118,7 +132,7 @@ const showCompleted = computed(
 )
 const showPanel = computed(
   () =>
-    !!props.userText ||
+    !!props.userText || props.userImages.length > 0 || props.userAnnotations.length > 0 ||
     props.thinking ||
     showCompleted.value ||
     (props.interrupted && (hasThought.value || hasMessage.value)),
@@ -137,13 +151,45 @@ function onThoughtToggle(e: Event) {
 </script>
 
 <template>
+  <div v-if="turns?.length" class="space-y-3" data-testid="gate-react-transcript">
+    <GateReactStreamPanel
+      v-for="turn in turns"
+      :key="turn.key"
+      :run-id="runId"
+      :user-text="turn.historySynced ? '' : turn.text"
+      :user-images="turn.historySynced ? [] : turn.images"
+      :user-annotations="turn.historySynced ? [] : turn.annotations"
+      :thinking="turn.thinking"
+      :stream-text="turn.streamText"
+      :stream-thought="turn.streamThought"
+      :stream-tools="turn.streamTools"
+      :interrupted="turn.interrupted"
+      :completed-at="turn.completedAt"
+    />
+  </div>
   <div
-    v-if="showPanel"
+    v-else-if="showPanel"
     class="min-w-0 space-y-3 py-2"
     data-testid="gate-react-stream"
   >
-    <div v-if="userText" class="flex justify-end" data-testid="gate-live-human">
-      <div class="max-w-[88%] whitespace-pre-wrap rounded-lg bg-elevated px-3 py-2 text-[13px] text-txt">{{ userText }}</div>
+    <div v-if="userText || userImages.length || userAnnotations.length" class="flex justify-end" data-testid="gate-live-human">
+      <div class="max-w-[88%] space-y-2 rounded-lg bg-elevated px-3 py-2 text-[13px] text-txt">
+        <div v-if="userText" class="whitespace-pre-wrap break-words">{{ userText }}</div>
+        <div v-if="userImages.length" class="flex flex-wrap gap-1.5">
+          <ChatImageThumb
+            v-for="(im, index) in userImages"
+            :key="index"
+            :src="imgSrc(im)"
+            :label="attachmentDisplayName(im, index)"
+            size="sm"
+            test-id="gate-live-human-image"
+            @preview="openChatImagePreview(imgSrc(im), attachmentDisplayName(im, index))"
+          />
+        </div>
+        <div v-if="userAnnotations.length" class="flex flex-wrap gap-1.5">
+          <AnnotationChip v-for="(ann, index) in userAnnotations" :key="index" :ann="ann" />
+        </div>
+      </div>
     </div>
     <div
       v-if="streaming && !hasMessage && !hasThought"
@@ -210,6 +256,13 @@ function onThoughtToggle(e: Event) {
       <span>{{ locale && completedAt ? relTime(completedAt) : '' }}</span>
     </div>
   </div>
+  <ChatImagePreviewModal
+    v-if="imagePreview"
+    :open="!!imagePreview"
+    :src="imagePreview.src"
+    :label="imagePreview.label"
+    @close="closeChatImagePreview"
+  />
 </template>
 
 <style scoped>

@@ -213,7 +213,10 @@ function replaceWithFresherLiveAgent(persisted: ClarifyTurn[], live: ClarifyTurn
       delete replaced.endedAt
       return [...persisted.slice(0, i + 1), replaced]
     }
-    if (!liveAgentRicher(agent, liveAgent)) return null
+    // A successful retry replaces the persisted failure even when its body
+    // is shorter than the error banner; completion must not resurrect it.
+    const recoveredFailure = isRetryableFailedAgent(agent) && !isRetryableFailedAgent(liveAgent)
+    if (!recoveredFailure && !liveAgentRicher(agent, liveAgent)) return null
     const replaced: ClarifyTurn = {
       ...agent,
       text: liveAgent.text || '',

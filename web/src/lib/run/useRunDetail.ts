@@ -107,6 +107,8 @@ const reviewChatRef = ref<{
 
 /** Conversational LLM view. It is not the node-panel chat, so frames must be delivered here too. */
 const llmTranscriptRef = ref<{
+  getNodeId?: () => string
+  isChatReady?: () => boolean
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
   isSessionBusy?: () => boolean

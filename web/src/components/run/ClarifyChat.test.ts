@@ -1019,6 +1019,39 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
+  it('keeps every assistant segment before a pending user row, without a failure card for the waiter', async () => {
+    const wrapper = mountChat({ draft: '下一条请求' })
+    const vm = wrapper.vm as unknown as {
+      applyReviewFrame: (frame: Record<string, unknown>) => void
+      applyAcpEvents: (events: { kind: string; text?: string }[], node?: string) => void
+    }
+    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'active', text: '当前请求' } })
+    await clickSend(wrapper)
+    vm.applyAcpEvents([
+      { kind: 'message', text: '第一段回复' },
+      { kind: 'segment' },
+      { kind: 'message', text: '第二段回复' },
+      { kind: 'segment' },
+      { kind: 'message', text: '第三段回复' },
+    ], 'react-1')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((node) => node.text()))
+      .toEqual(['第一段回复', '第二段回复', '第三段回复'])
+    expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
+    const scroller = wrapper.get('[data-testid="clarify-scroller"]')
+    expect(scroller.text().indexOf('下一条请求')).toBeGreaterThan(scroller.text().indexOf('第三段回复'))
+
+    vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'waiting', text: '下一条请求' } })
+    vm.applyAcpEvents([{ kind: 'message', text: '下一轮的回复' }], 'react-1')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="clarify-human-message"]').map((node) => node.text()))
+      .toEqual(['当前请求', '下一条请求'])
+    expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((node) => node.text()))
+      .toEqual(['第一段回复', '第二段回复', '第三段回复', '下一轮的回复'])
+    wrapper.unmount()
+  })
+
   it('a rejected send removes the row it just painted', async () => {
     const wrapper = mountChat({
       turns: [{ role: 'agent', text: '上一句回复', at: '1' }],

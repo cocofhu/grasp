@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-28（修复已接受消息的排队与实时对账）
+
+- 日期：2026-10-28（Asia/Shanghai）。
+- 范围：`web/src/lib/inbox/useClarifyChat.ts`、`mergeClarifyLiveTurns.ts`、`useGateApproval.ts`、`web/src/lib/solo/useSoloChat.ts`、RunDetail/LLM 实时接线、Gate 对话组件及相关回归；`CHANGELOG.md`。
+- 做了什么：每次发送保留独立本地身份并只绑定一次服务端回合；处理 HTTP 确认晚于实时帧、同文及纯图片排队、删除/编辑/取消与拒收。当前回答的 ACP 分段在待发用户行之前插入。Gate 按回合保存用户与回答，预览意见持久化后去掉本地重复用户行。LLM 视图接入真实组件引用，并沿用快照恢复、缓冲与重连种子链路。成功重试可覆盖较长的历史错误提示。
+- 为什么：PR #1021 的乐观消息仅以正文查重，造成同文串轮、重复消息、被取消消息残留、输出分段丢失和 Gate 回复错配；新增 LLM 引用没有绑定页面组件。
+- 如何验证：Node 24 下 Web ESLint 0 errors（12 条既有 warnings）、vue-tsc、生产构建及 Secure Context/品牌断言通过；全量 530 个文件、5,660 项单测通过，Lines 91.67%（37660/41078），高于 85% 门槛。源码冻结后 critical Playwright 248/248 通过；早先开发中运行受 Vite 热更新影响的导航/拖拽失败未在最终重跑复现。docs build/audit、根 actionlint 与 error-level shellcheck 通过；生成的 docs/public 已清理，未入库。
+
 ### 2026-10-28（保留重连尾轮正文与订阅快照）
 
 - 日期：2026-10-28（Asia/Shanghai）。

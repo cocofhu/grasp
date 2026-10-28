@@ -405,7 +405,7 @@ const conversationRunName = useConversationToolbarRunName(() => ({
                       :stream-tools="s.reactStreamTools"
                       :interrupted="reactInterrupted"
                       :completed-at="reactStreamCompletedAt"
-                      :user-text="s.reactLiveHumanText"
+                      :turns="s.reactTurns"
                     />
                   </template>
                 </PreviewFeedbackChat>

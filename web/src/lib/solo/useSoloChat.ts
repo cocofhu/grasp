@@ -52,6 +52,7 @@ export function useSoloChat(sessionId: Ref<string>) {
   const phase = ref<SoloPhase>('')
   const link = ref<SoloLink>('idle')
   const loading = ref(false)
+  const historyReady = ref(false)
   const loadError = ref('')
   const actionError = ref('')
 
@@ -76,8 +77,20 @@ export function useSoloChat(sessionId: Ref<string>) {
   const modelChangePending = ref(false)
   // 真实帧按序号和事件类型去重；订阅快照不进入此表，避免吞掉同序号的开场帧。
   const seenSeq = new Map<number, Set<string>>()
-  /** Accepted sends still missing from history. baseline is how many same-text user rows already existed. */
-  const openSends: { key: string; text: string; baseline: number }[] = []
+  type LocalSend = {
+    localId: string
+    serverId?: string
+    text: string
+    images: ClarifyImage[]
+    started: boolean
+  }
+  // The local identity survives HTTP, queue acknowledgement and turn_begin.
+  // A server identity can be assigned once; repeated text is never a turn id.
+  const openSends: LocalSend[] = []
+  const knownServerIds = new Set<string>()
+  const missingQueuedIds = new Set<string>()
+  let persistedHistory: SoloTurn[] = []
+  let chatEpoch = 0
 
   const reconnect = createWsReconnectController({
     connect: () => openWs(),
@@ -86,7 +99,10 @@ export function useSoloChat(sessionId: Ref<string>) {
 
   const status = computed(() => session.value?.status ?? 'starting')
   const closed = computed(() => status.value === 'closed')
-  const canSend = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
+  const sessionOpen = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
+  // Establish the old message identities before accepting a new send. An old
+  // same-text row from a delayed initial read must never acknowledge it.
+  const canSend = computed(() => sessionOpen.value && historyReady.value)
   // An explicit current model wins, including empty (primary). Old sessions
   // omit the flag and keep the opening model.
   const currentModelId = computed(() => {
@@ -152,7 +168,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     if (disposed) return
     const st = session.value?.status
     const boot = st === 'starting'
-    const catchUp = st === 'running' && link.value !== 'open'
+    const catchUp = st === 'running' && (link.value !== 'open' || !historyReady.value)
     if (!boot && !catchUp) return
     pollTimer = setTimeout(() => {
       pollTimer = undefined
@@ -175,69 +191,144 @@ export function useSoloChat(sessionId: Ref<string>) {
     }
   }
 
-  function historySettles(
-    history: SoloTurn[],
-    send: { text: string; baseline: number },
-    liveAgent: SoloTurn | undefined,
-  ): boolean {
-    let seen = 0
-    for (let i = 0; i < history.length; i++) {
-      const row = history[i]
-      if (!row || row.role !== 'user' || row.text !== send.text) continue
-      if (seen !== send.baseline) {
-        seen++
-        continue
-      }
-      const next = history[i + 1]
-      if (!next || next.role === 'user') return false
-      return (next.text || '').length >= (liveAgent?.text || '').length
-    }
-    return false
+  const sendKey = (send: LocalSend) => send.serverId || send.localId
+
+  function samePayload(send: LocalSend, item: SoloQueueItem): boolean {
+    return send.text === item.text && send.images.length === item.images.length && send.images.every((image, i) => {
+      const other = item.images[i]!
+      if (image.mimeType !== other.mimeType) return false
+      if (image.name && other.name && image.name !== other.name) return false
+      if (image.sizeBytes && other.sizeBytes && image.sizeBytes !== other.sizeBytes) return false
+      const imageRef = image.ref || (image.data?.startsWith('blob:') ? image.data : '')
+      const otherRef = other.ref || (other.data?.startsWith('blob:') ? other.data : '')
+      if (imageRef && otherRef) return imageRef === otherRef
+      if (!imageRef && !otherRef && image.data && other.data) return image.data === other.data
+      // Inline uploads become opaque blob references on the server.
+      return true
+    })
   }
 
-  /** Rows for accepted sends that this snapshot does not contain yet. */
-  function rowsToKeep(history: SoloTurn[]): SoloTurn[] {
-    const kept: SoloTurn[] = []
-    for (let i = openSends.length - 1; i >= 0; i--) {
-      const send = openSends[i]!
-      const user = turns.value.find((turn) => turn.id === `u:${send.key}`)
-      const agent = turns.value.find((turn) => turn.id === `live:${send.key}`)
-      if (historySettles(history, send, agent)) {
-        openSends.splice(i, 1)
-        if (activeId.value === send.key) {
-          activeId.value = ''
-          phase.value = ''
-        }
-        continue
-      }
-      const seen = history.filter((turn) => turn.role === 'user' && turn.text === send.text).length
-      if (user && seen <= send.baseline) kept.push(user)
-      if (agent) kept.push(agent)
+  /** Bind the first unacknowledged matching send, once, including image-only sends. */
+  function adoptLocalSend(item: SoloQueueItem): LocalSend | undefined {
+    if (!item.id) return undefined
+    const bound = openSends.find((send) => send.serverId === item.id || send.localId === item.id)
+    if (bound) return bound
+    if (knownServerIds.has(item.id)) return undefined
+    const send = openSends.find((row) => !row.serverId && samePayload(row, item))
+    knownServerIds.add(item.id)
+    if (!send) return undefined
+    const old = send.localId
+    send.serverId = item.id
+    for (const row of turns.value) {
+      if (row.id === `u:${old}`) row.id = `u:${item.id}`
+      if (row.id === `live:${old}`) row.id = `live:${item.id}`
     }
-    return kept
+    if (activeId.value === old) activeId.value = item.id
+    queued.value = queued.value.filter((row) => row.id !== old)
+    return send
+  }
+
+  function forgetSend(send: LocalSend) {
+    const key = sendKey(send)
+    const index = openSends.indexOf(send)
+    if (index >= 0) openSends.splice(index, 1)
+    missingQueuedIds.delete(key)
+    turns.value = turns.value.filter((turn) => turn.id !== `u:${key}` && turn.id !== `live:${key}`)
+    queued.value = queued.value.filter((item) => item.id !== key && item.id !== send.localId)
+    if (activeId.value === key) {
+      activeId.value = ''
+      phase.value = ''
+    }
+  }
+
+  function dropQueuedSends() {
+    for (const send of [...openSends]) {
+      if (!send.started) forgetSend(send)
+    }
+  }
+
+  function historyCoversLive(saved: SoloTurn | undefined, live: SoloTurn | undefined): boolean {
+    if (!saved || saved.role !== 'agent') return false
+    if (!live) return true
+    if (!saved.text.trim().startsWith(live.text.trim())) return false
+    if (live.error && !(saved.error || '').includes(live.error)) return false
+    if (live.status && live.status !== saved.status) return false
+    const thoughts = (turn: SoloTurn) => turn.steps.flatMap((step) => step.kind === 'thought' ? [step.text] : []).join('')
+    if (!thoughts(saved).startsWith(thoughts(live))) return false
+    if (live.plan.length && !saved.plan.length) return false
+    return live.tools.every((tool) => saved.tools.some((other) => other.id === tool.id &&
+      (!['completed', 'failed'].includes(tool.status) || other.status === tool.status) &&
+      (!tool.input || (other.input || '').startsWith(tool.input)) &&
+      (!tool.output || (other.output || '').startsWith(tool.output))))
   }
 
   function applyMessages(messages: SoloMessage[]) {
-    const history = turnsFromMessages(messages, label, toolFallback())
-    const kept = rowsToKeep(history)
-    const active = activeId.value
-    if (!active) {
-      const ids = new Set(kept.map((turn) => turn.id))
-      turns.value = [...history.filter((turn) => !ids.has(turn.id)), ...kept]
-      return
+    const incoming = turnsFromMessages(messages, label, toolFallback())
+    // Messages are append-only. A shorter HTTP snapshot must not erase rows
+    // already reconciled from an earlier response.
+    if (incoming.length >= persistedHistory.length) persistedHistory = incoming
+    const history = persistedHistory.slice()
+    for (const user of history) {
+      if (user.role !== 'user') continue
+      const send = adoptLocalSend({ id: user.id.slice(2), text: user.text, images: user.images || [] })
+      if (send) send.started = true
     }
-    const live = turns.value.filter((turn) => turn.id === `u:${active}` || turn.id === `live:${active}`)
-    const extras = kept.filter((turn) => !live.some((row) => row.id === turn.id))
-    const drop = new Set([...live, ...extras].map((turn) => turn.id))
-    turns.value = [...history.filter((turn) => !drop.has(turn.id) && turn.id !== `u:${active}`), ...live, ...extras]
+    // A queue item can be removed in another viewer. Confirm its absence
+    // against a history read started after the queue frame, since a missing
+    // queue item may also have completed while this socket was disconnected.
+    for (const id of [...missingQueuedIds]) {
+      const send = openSends.find((row) => row.serverId === id)
+      if (send && !send.started && !history.some((row) => row.id === `u:${id}`)) forgetSend(send)
+      missingQueuedIds.delete(id)
+    }
+
+    const mergePair = (key: string) => {
+      const user = turns.value.find((turn) => turn.id === `u:${key}`)
+      const agent = turns.value.find((turn) => turn.id === `live:${key}`)
+      const index = history.findIndex((turn) => turn.id === `u:${key}`)
+      if (index < 0) {
+        if (user) history.push(user)
+        if (agent) history.push(agent)
+      } else if (agent) {
+        if (history[index + 1]?.role === 'agent') history.splice(index + 1, 1, agent)
+        else history.splice(index + 1, 0, agent)
+      }
+    }
+
+    const retained = new Set<string>()
+    for (const send of [...openSends]) {
+      const key = sendKey(send)
+      const index = history.findIndex((turn) => turn.id === `u:${key}`)
+      const live = turns.value.find((turn) => turn.id === `live:${key}`)
+      // Keep an active stream until its terminal/idle frame: history may be
+      // persisted before the last output frames have reached this browser.
+      if (activeId.value !== key && index >= 0 && historyCoversLive(history[index + 1], live)) {
+        openSends.splice(openSends.indexOf(send), 1)
+      } else {
+        retained.add(key)
+      }
+    }
+    if (activeId.value) retained.add(activeId.value)
+    // Use transcript order, including turns started in another viewer, so an
+    // active remote turn always remains before locally queued sends.
+    for (const turn of turns.value) {
+      if (turn.role !== 'user') continue
+      const key = turn.id.slice(2)
+      if (retained.delete(key)) mergePair(key)
+    }
+    for (const key of retained) mergePair(key)
+    turns.value = history
+    historyReady.value = true
+    schedulePoll()
   }
 
   async function refetchMessages() {
     const id = sessionId.value
+    const epoch = chatEpoch
     const seq = ++refetchSeq
     try {
       const messages = await api.listSoloMessages(id)
-      if (seq === refetchSeq && id === sessionId.value) applyMessages(messages)
+      if (!disposed && epoch === chatEpoch && seq === refetchSeq && id === sessionId.value) applyMessages(messages)
     } catch {
       /* keep the current transcript */
     }
@@ -260,30 +351,15 @@ export function useSoloChat(sessionId: Ref<string>) {
     phase.value = ''
   }
 
-  /** Point the accepted local row at the server id so turn_begin does not add a second one. */
-  function adoptLocalSend(serverId: string, text: string) {
-    if (!serverId || !text) return
-    const send = openSends.find((row) => row.text === text && row.key !== serverId)
-    if (!send) return
-    const old = send.key
-    send.key = serverId
-    for (const row of turns.value) {
-      if (row.id === `u:${old}`) row.id = `u:${serverId}`
-      if (row.id === `live:${old}`) row.id = `live:${serverId}`
-    }
-    if (activeId.value === old) activeId.value = serverId
-    queued.value = queued.value.filter((item) => item.id !== old)
-  }
-
   function beginTurn(frame: any) {
     const item = queueItem(frame.item)
     const id = item.id || String(frame.userMsgId ?? '')
-    adoptLocalSend(id, item.text)
-    queued.value = queued.value.filter((q) => q.id !== id && !q.local)
+    const send = adoptLocalSend({ ...item, id })
+    if (send) send.started = true
+    queued.value = queued.value.filter((q) => q.id !== id)
     if (activeId.value && activeId.value !== id) endActive()
     const existing = turns.value.find((x) => x.id === `live:${id}`)
-    const hasOutput = !!existing && (!!existing.text || existing.steps.length > 0 || existing.tools.length > 0)
-    if (hasOutput && existing) {
+    if (existing) {
       activeId.value = id
       if (!turns.value.some((x) => x.id === `u:${id}`)) {
         const started = existing.startedAt || new Date().toISOString()
@@ -310,11 +386,13 @@ export function useSoloChat(sessionId: Ref<string>) {
     }
     const started = new Date().toISOString()
     activeId.value = id
-    turns.value = [
-      ...turns.value.filter((x) => x.id !== `u:${id}` && x.id !== `live:${id}`),
+    const next = turns.value.filter((x) => x.id !== `u:${id}` && x.id !== `live:${id}`)
+    const firstPending = next.findIndex((turn) => openSends.some((row) => !row.started && turn.id === `u:${sendKey(row)}`))
+    next.splice(firstPending < 0 ? next.length : firstPending, 0,
       { id: `u:${id}`, role: 'user', text: item.text, tools: [], steps: [], plan: [], streaming: false, images: item.images.length ? item.images : undefined, createdAt: started },
       emptyAgentTurn(`live:${id}`, true, started),
-    ]
+    )
+    turns.value = next
     busy.value = true
     if (!phase.value) phase.value = 'preparing'
   }
@@ -418,6 +496,8 @@ export function useSoloChat(sessionId: Ref<string>) {
     if (!subscriptionSnapshot && typeof seq === 'number' && seq >= 0 && seq > ackedSeq) ackedSeq = seq
     if (frame.type === 'acp') {
       const turn = activeTurn.value ?? adoptTurnForOutput()
+      const send = openSends.find((row) => sendKey(row) === activeId.value)
+      if (send) send.started = true
       if (turn) applyAcp(frame.data, turn, label, toolFallback())
       return
     }
@@ -425,7 +505,23 @@ export function useSoloChat(sessionId: Ref<string>) {
     switch (frame.event) {
       case 'queue_state': {
         const serverItems: SoloQueueItem[] = Array.isArray(frame.items) ? frame.items.map(queueItem) : []
-        const locals = queued.value.filter((item) => item.local && !serverItems.some((server) => server.id === item.id))
+        if (frame.activeItem) {
+          // The active item precedes queued items, including identical prompts.
+          // Rebuild it even when replay has no turn_begin after our cursor.
+          beginTurn({ item: frame.activeItem })
+        }
+        for (const item of serverItems) adoptLocalSend(item)
+        if (frame.userMsgId) {
+          const send = openSends.find((row) => row.serverId === String(frame.userMsgId))
+          if (send) send.started = true
+        }
+        const serverActiveId = String(frame.activeItem?.id || frame.userMsgId || '')
+        for (const send of openSends) {
+          if (!send.serverId || send.started) continue
+          if (serverItems.some((item) => item.id === send.serverId) || serverActiveId === send.serverId) missingQueuedIds.delete(send.serverId)
+          else if (!frame.busy || serverActiveId) missingQueuedIds.add(send.serverId)
+        }
+        const locals = queued.value.filter((item) => item.local && openSends.some((send) => send.localId === item.id && !send.serverId))
         queued.value = [...serverItems, ...locals]
         busy.value = !!frame.busy
         patchSession({ busy: busy.value, waiting: queued.value.length })
@@ -434,7 +530,7 @@ export function useSoloChat(sessionId: Ref<string>) {
         if (!frame.busy && (activeId.value || openSends.length)) {
           if (activeId.value) endActive()
           void refetchMessages()
-        }
+        } else if (missingQueuedIds.size) void refetchMessages()
         break
       }
       case 'turn_begin':
@@ -551,6 +647,7 @@ export function useSoloChat(sessionId: Ref<string>) {
 
   async function load() {
     const id = sessionId.value
+    chatEpoch++
     const generation = ++sessionGeneration
     settingsEpoch++
     settingSequence++
@@ -565,6 +662,10 @@ export function useSoloChat(sessionId: Ref<string>) {
     turns.value = []
     queued.value = []
     openSends.splice(0, openSends.length)
+    knownServerIds.clear()
+    missingQueuedIds.clear()
+    persistedHistory = []
+    historyReady.value = false
     busy.value = false
     phase.value = ''
     activeId.value = ''
@@ -597,12 +698,13 @@ export function useSoloChat(sessionId: Ref<string>) {
 
   async function send(text: string, images: ClarifyImage[] = []) {
     const id = sessionId.value
-    if (!id || !canSend.value || (!text.trim() && !images.length)) return false
+    const epoch = chatEpoch
+    if (!id || disposed || !canSend.value || (!text.trim() && !images.length)) return false
     actionError.value = ''
     const body = text.trim()
     const local: SoloQueueItem = { id: newLocalId(), text: body, images, local: true }
-    const baseline = turns.value.filter((turn) => turn.role === 'user' && turn.text === body).length
-    openSends.push({ key: local.id, text: body, baseline })
+    const send: LocalSend = { localId: local.id, text: body, images, started: false }
+    openSends.push(send)
     const started = new Date().toISOString()
     const makeActive = !activeId.value
     turns.value = [
@@ -628,16 +730,13 @@ export function useSoloChat(sessionId: Ref<string>) {
     patchSession({ waiting: queued.value.length, busy: true })
     try {
       await api.sendSoloTurn(id, { text: body, images })
-      return true
+      return !disposed && epoch === chatEpoch && id === sessionId.value
     } catch (e: any) {
-      queued.value = queued.value.filter((q) => q.id !== local.id)
-      const openAt = openSends.findIndex((row) => row.key === local.id)
-      if (openAt >= 0) openSends.splice(openAt, 1)
-      turns.value = turns.value.filter((turn) => turn.id !== `u:${local.id}` && turn.id !== `live:${local.id}`)
-      if (activeId.value === local.id) {
-        activeId.value = ''
-        phase.value = ''
-      }
+      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
+      // The socket can confirm acceptance before the HTTP connection fails.
+      if (send.serverId) return true
+      if (!openSends.includes(send)) return false
+      forgetSend(send)
       patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 || !!activeId.value })
       actionError.value = String(e?.message || e)
       return false
@@ -647,7 +746,7 @@ export function useSoloChat(sessionId: Ref<string>) {
   async function saveModelSetting(kind: 'model' | 'effort', value: string): Promise<boolean> {
     const id = sessionId.value
     const cur = session.value
-    if (!id || !cur || !canSend.value || disposed) return false
+    if (!id || !cur || !sessionOpen.value || disposed) return false
     const next = value.trim()
     if (kind === 'model' ? cur.currentModelSet && (cur.currentModelId || '') === next : (cur.reasoningEffort || '') === next) return true
     const generation = sessionGeneration
@@ -665,7 +764,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     const request = settingsQueue.then(async () => {
       try {
         if (!isCurrentSession()) return false
-        if (!canSend.value) {
+        if (!sessionOpen.value) {
           if (latest() && confirmedSettings) { patchSession(confirmedSettings); modelSwitchNotice.value = '' }
           return false
         }
@@ -703,31 +802,46 @@ export function useSoloChat(sessionId: Ref<string>) {
 
   async function cancel() {
     const id = sessionId.value
+    const epoch = chatEpoch
     if (!id) return
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'cancel' }))
     else await api.cancelSoloTurn(id).catch(() => undefined)
+    if (disposed || epoch !== chatEpoch || id !== sessionId.value) return
+    dropQueuedSends()
     queued.value = []
     patchSession({ waiting: 0, busy: false })
   }
 
   async function removeQueued(turnId: string) {
     const id = sessionId.value
+    const epoch = chatEpoch
     const before = queued.value
     queued.value = before.filter((q) => q.id !== turnId)
     try {
       await api.removeSoloQueued(id, turnId)
+      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return
+      const send = openSends.find((row) => sendKey(row) === turnId)
+      if (send && !send.started) forgetSend(send)
     } catch {
-      queued.value = before
+      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return
+      const removed = before.find((row) => row.id === turnId)
+      if (removed && activeId.value !== turnId && !queued.value.some((row) => row.id === turnId)) {
+        const next = queued.value.slice()
+        next.splice(Math.min(before.indexOf(removed), next.length), 0, removed)
+        queued.value = next
+      }
     }
     patchSession({ waiting: queued.value.length, busy: busy.value || queued.value.length > 0 })
   }
 
   async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
+    const epoch = chatEpoch
     actionError.value = ''
     try {
-      return await fn()
+      const result = await fn()
+      return !disposed && epoch === chatEpoch ? result : undefined
     } catch (e: any) {
-      actionError.value = String(e?.message || e)
+      if (!disposed && epoch === chatEpoch) actionError.value = String(e?.message || e)
       return undefined
     }
   }
@@ -736,6 +850,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     const v = await run(() => api.closeSoloSession(sessionId.value))
     if (v) {
       setSession(v)
+      dropQueuedSends()
       endActive()
       queued.value = []
       busy.value = false
