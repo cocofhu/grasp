@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-29（OpenCode 目录缓存读取边界）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`sandbox-gateway/sandbox/internal/provider/modelconnection/opencode_catalog{,_test}.go`。
+- 做了什么：以原生缓存目录为 `os.Root`，仅打开固定的 `opencode/models.json`；检查和读取使用同一文件句柄，限制读取大小，非阻塞打开后拒绝 FIFO 等非普通文件。
+- 为什么：PR #1037 的 CodeQL 检查指出环境变量派生路径直接传给 `os.Stat` / `os.ReadFile`，需要明确文件访问边界，防止子路径符号链接跳出缓存目录，同时避免检查后替换文件及读取增长文件的问题。
+- 如何验证：新增目录和文件符号链接越界回归在旧实现上确定失败，修复后通过；缓存目录内的符号链接仍可使用，超大文件和 FIFO 立即拒绝。完整 sandbox lint、vet、单测、核心覆盖率及相关包 race 检查通过；提交后继续核对远端 CodeQL 与完整 CI。
+
 ### 2026-10-29（OpenCode 官方模型目录自动同步）
 
 - 日期：2026-10-29（Asia/Hong_Kong）。

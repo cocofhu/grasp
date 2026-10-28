@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"backend/internal/backend/common"
@@ -154,13 +156,26 @@ func openCodeCatalogPath(env []string) (string, error) {
 }
 
 func (s *openCodeCatalogState) read(path string) (openCodeCatalog, bool) {
-	info, err := os.Stat(path)
+	// Environment selects the native cache root; the fixed relative path cannot
+	// escape that root through a symlink. Inspect and read the same open file.
+	root, err := os.OpenRoot(filepath.Dir(filepath.Dir(path)))
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = root.Close() }()
+	// A substituted FIFO must not block startup before the regular-file check.
+	file, err := root.OpenFile("opencode/models.json", os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Size() > 64<<20 {
 		return nil, false
 	}
 	if s.parsed == nil || !info.ModTime().Equal(s.mtime) || info.Size() != s.size {
-		data, err := os.ReadFile(path)
-		if err != nil {
+		data, err := io.ReadAll(io.LimitReader(file, (64<<20)+1))
+		if err != nil || len(data) > 64<<20 {
 			return nil, false
 		}
 		var parsed openCodeCatalog

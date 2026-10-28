@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -250,6 +251,81 @@ func TestOpenCodeCatalogInvalidFilesRefresh(t *testing.T) {
 				t.Fatalf("corrupt cache not refreshed: %d", got)
 			}
 		})
+	}
+}
+
+func TestOpenCodeCatalogReadStaysInsideCacheRoot(t *testing.T) {
+	for _, linkDirectory := range []bool{false, true} {
+		t.Run(map[bool]string{false: "file", true: "directory"}[linkDirectory], func(t *testing.T) {
+			f := newCatalogFixture(t, "exit 99\n")
+			outside := filepath.Join(t.TempDir(), "models.json")
+			f.write(t, outside, currentOpenCodeCatalog)
+			link, target := f.path, outside
+			if linkDirectory {
+				link, target = filepath.Dir(link), filepath.Dir(target)
+			}
+			if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatal(err)
+			}
+			var state openCodeCatalogState
+			if catalog, fresh := state.read(f.path); catalog != nil || fresh {
+				t.Fatal("accepted a catalog symlink outside the native cache root")
+			}
+		})
+	}
+	// Native cache arrangements can still use symlinks within the selected root.
+	f := newCatalogFixture(t, "exit 99\n")
+	f.write(t, filepath.Join(filepath.Dir(f.path), "catalog.json"), currentOpenCodeCatalog)
+	if err := os.Symlink("catalog.json", f.path); err != nil {
+		t.Fatal(err)
+	}
+	var state openCodeCatalogState
+	if catalog, fresh := state.read(f.path); catalog == nil || !fresh {
+		t.Fatal("rejected a catalog symlink inside the native cache root")
+	}
+}
+
+func TestOpenCodeCatalogReadRejectsOversizedFile(t *testing.T) {
+	f := newCatalogFixture(t, "exit 99\n")
+	f.write(t, f.path, currentOpenCodeCatalog)
+	if err := os.Truncate(f.path, (64<<20)+1); err != nil {
+		t.Fatal(err)
+	}
+	var state openCodeCatalogState
+	if catalog, fresh := state.read(f.path); catalog != nil || fresh {
+		t.Fatal("accepted an oversized catalog")
+	}
+}
+
+func TestOpenCodeCatalogReadRejectsFIFOWithoutBlocking(t *testing.T) {
+	f := newCatalogFixture(t, "exit 99\n")
+	if err := os.MkdirAll(filepath.Dir(f.path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(f.path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan bool, 1)
+	go func() {
+		var state openCodeCatalogState
+		catalog, fresh := state.read(f.path)
+		done <- catalog == nil && !fresh
+	}()
+	select {
+	case rejected := <-done:
+		if !rejected {
+			t.Fatal("accepted a FIFO catalog")
+		}
+	case <-time.After(time.Second):
+		// Unblock a regressed reader so the test leaves no blocked goroutine.
+		if writer, err := os.OpenFile(f.path, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			_ = writer.Close()
+			<-done
+		}
+		t.Fatal("catalog reader blocked on a FIFO")
 	}
 }
 
