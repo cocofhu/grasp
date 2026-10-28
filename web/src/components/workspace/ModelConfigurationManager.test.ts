@@ -7,6 +7,8 @@ import type { CredentialItem, ModelConfiguration, ModelConnection, ModelConnecti
 import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 import { theme } from '@/lib/shared/theme'
 import openaiLogo from '@/assets/provider-logos/openai.svg'
+import claudeLogo from '@/assets/provider-logos/claude.svg'
+import geminiLogo from '@/assets/provider-logos/gemini.svg'
 import kimiLogo from '@/assets/provider-logos/kimi.svg'
 import kimiDarkLogo from '@/assets/provider-logos/kimi-dark.svg'
 import zhipuLogo from '@/assets/provider-logos/zhipu.svg'
@@ -615,6 +617,39 @@ describe('ModelConfigurationManager', () => {
     expect(field.get('[data-test="app-select-trigger"] [data-vendor-mark="zhipu"] img').attributes('src')).toBe(zhipuLogo)
     expect(mocks.updateConnection).not.toHaveBeenCalled()
     expect(mocks.create).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('marks official OpenCode auxiliary models by family instead of the provider letter', async () => {
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'opencode', modes: ['platform'], adapterState: 'existing' }] })
+    mocks.credentials.mockResolvedValue({ items: [{ id: 'zen', type: 'ai', name: 'OpenCode', purpose: 'tool_auth', toolId: 'opencode', configured: true }] })
+    mocks.cliModels.mockResolvedValue([
+      { id: 'opencode/gemini-3.5-flash', name: 'Gemini 3.5 Flash', vendor: 'opencode' },
+      { id: 'opencode/claude-sonnet-5', name: 'Claude Sonnet 5', vendor: 'opencode' },
+      { id: 'opencode/custom-private', name: 'Private model', vendor: 'opencode' },
+    ])
+    const wrapper = setup()
+    await openStepTwo(wrapper, 'opencode')
+    await chooseCredential(wrapper, 'platform:zen')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    const auxiliary = wrapper.get('[data-testid="model-configuration-aux-select-0"]')
+    await auxiliary.get('[data-test="app-select-trigger"]').trigger('click')
+    const gemini = auxiliary.get('[data-test="app-select-option-opencode/gemini-3.5-flash"]')
+    const claude = auxiliary.get('[data-test="app-select-option-opencode/claude-sonnet-5"]')
+    const unknown = auxiliary.get('[data-test="app-select-option-opencode/custom-private"]')
+    expect(gemini.get('[data-vendor-mark="google"] img').attributes('src')).toBe(geminiLogo)
+    expect(gemini.get('[data-vendor-mark="google"]').classes()).toContain('vendor-mark--color')
+    expect(gemini.get('[data-vendor-mark="google"] img').classes()).not.toContain('invert')
+    expect(claude.get('[data-vendor-mark="anthropic"] img').attributes('src')).toBe(claudeLogo)
+    expect(claude.find('[data-vendor-mark="google"]').exists()).toBe(false)
+    expect(unknown.get('[data-vendor-mark="monogram"]').text()).toBe('O')
+    expect(unknown.find('img').exists()).toBe(false)
+    await gemini.trigger('click')
+    const selected = auxiliary.get('[data-test="app-select-trigger"] [data-vendor-mark="google"] img')
+    expect(selected.attributes('src')).toBe(geminiLogo)
+    expect(selected.classes()).not.toContain('invert')
     wrapper.unmount()
   })
 
