@@ -275,7 +275,9 @@ describe('ClarifyChat', () => {
     expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((m) => m.text())).toEqual(['found it', 'done'])
     expect(wrapper.findAll('[data-testid="agent-tool-group"]')).toHaveLength(2)
     expect(wrapper.find('[data-testid="agent-timeline-elapsed"]').text()).not.toContain('使用了')
-    expect(wrapper.find('[data-testid="thought-summary-state"]').exists()).toBe(false)
+    const thought = wrapper.get('[data-testid="agent-timeline-thought"]')
+    expect((thought.element as HTMLDetailsElement).open).toBe(false)
+    expect(thought.get('[data-testid="thought-summary-state"]').attributes('data-state')).toBe('idle')
     wrapper.unmount()
   })
 
@@ -2406,7 +2408,8 @@ describe('ClarifyChat', () => {
         }],
       })
       await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
-      const thought = wrapper.get('[data-testid="agent-timeline-thought"]')
+      await wrapper.get('[data-testid="agent-timeline-thought"] summary').trigger('click')
+      const thought = wrapper.get('[data-testid="agent-timeline-thought"] .agent-thought-body')
       expect(thought.text()).toBe(longThought)
       expect(thought.text()).not.toContain('…(truncated)')
       const bubble = wrapper.get('[data-testid="clarify-agent-message"]')
@@ -2955,7 +2958,8 @@ describe('ClarifyChat', () => {
       expect(agentLink.attributes('href')).toBe(LONG_URL)
 
       await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
-      const thoughtBody = wrapper.get('.agent-elapsed-thought')
+      await wrapper.get('[data-testid="agent-timeline-thought"] summary').trigger('click')
+      const thoughtBody = wrapper.get('[data-testid="agent-timeline-thought"] .agent-thought-body')
       expect(thoughtBody.exists()).toBe(true)
       expect(thoughtBody.classes().join(' ')).toMatch(/overflow-wrap:anywhere/)
       expect(thoughtBody.classes()).toContain('break-words')
