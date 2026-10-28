@@ -4626,9 +4626,9 @@
         "catalogFailed": "模型目录没有加载出来，仍使用已选模型",
         "reasoningEffort": "思考强度",
         "effortAuto": "默认",
-        "effortReset": "恢复默认强度",
+        "effortReset": "恢复最高强度",
         "backToModels": "返回模型选择",
-        "effortResetNotice": "所选思考强度已不可用，已恢复模型默认值。",
+        "effortResetNotice": "所选思考强度已不可用，已改用该模型的最高强度。",
         "effortLevels": {
           "off": "关闭",
           "none": "无",

@@ -662,6 +662,30 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('writes the new model highest effort when a switch clears the saved level', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'old', reasoningEffort: 'low', reasoningEfforts: ['low', 'high'] }))
+    mocks.setSoloSessionModel.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'gemini-4-argon', reasoningEffort: '', reasoningEfforts: ['low', 'medium', 'high'] }))
+    mocks.setSoloSessionReasoningEffort.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'gemini-4-argon', reasoningEffort: 'high', reasoningEfforts: ['low', 'medium', 'high'] }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    expect(await chat.setCurrentModel('gemini-4-argon')).toBe(true)
+    expect(mocks.setSoloSessionModel).toHaveBeenCalledWith('s1', 'gemini-4-argon')
+    expect(mocks.setSoloSessionReasoningEffort).toHaveBeenCalledWith('s1', 'high')
+    expect(chat.currentReasoningEffort.value).toBe('high')
+    app.unmount()
+  })
+
+  it('does not raise a lower effort that the new model still accepts', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'old', reasoningEffort: 'low', reasoningEfforts: ['low', 'medium', 'high'] }))
+    mocks.setSoloSessionModel.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'gemini-4-argon', reasoningEffort: 'low', reasoningEfforts: ['low', 'medium', 'high'] }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    expect(await chat.setCurrentModel('gemini-4-argon')).toBe(true)
+    expect(mocks.setSoloSessionReasoningEffort).not.toHaveBeenCalled()
+    expect(chat.currentReasoningEffort.value).toBe('low')
+    app.unmount()
+  })
+
   it.each([false, true])('ignores an old session effort response after navigation (failure: %s)', async (fails) => {
     mocks.getSoloSession.mockResolvedValueOnce(session({ reasoningEffort: 'low' }))
       .mockResolvedValueOnce(session({ id: 's2', reasoningEffort: 'medium' }))
