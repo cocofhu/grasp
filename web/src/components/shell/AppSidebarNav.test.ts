@@ -2515,6 +2515,65 @@ describe('自动过程 grouping and flight', () => {
     return wrapper
   }
 
+  it('places a resumed run in 自动过程 or 正在执行 and follows the highlight', async () => {
+    routeState.path = '/runs/chat'
+    apiMocks.listRuns.mockResolvedValue({ items: [], total: 0 })
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+
+    const title = '工作流的聊天过程也支持切换模型'
+    apiMocks.listRuns.mockResolvedValue({
+      items: [{
+        id: 'chat', workflowId: 'wf', workflowName: 'w', title, status: 'running', startedAt: 'T0',
+        currentNode: { id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' },
+      }],
+      total: 1,
+    })
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    const autoRow = wrapper.get('[data-testid="nav-auto-rows"]').get('[data-key="chat"]')
+    expect(autoRow.classes()).toContain('active')
+    expect(autoRow.attributes('aria-current')).toBe('true')
+    expect(autoRow.get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+    expect(autoRow.get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('breath-dot')
+    expect(autoRow.find('[name="alert"]').exists()).toBe(false)
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [{ id: 'chat', workflowId: 'wf', workflowName: 'w', title, status: 'queued', startedAt: 'T0' }],
+      total: 1,
+    })
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+    const queuedRow = wrapper.get('[data-testid="nav-running-rows"]').get('[data-key="chat"]')
+    expect(queuedRow.classes()).toContain('active')
+    expect(queuedRow.attributes('aria-current')).toBe('true')
+    expect(queuedRow.find('[name="alert"]').exists()).toBe(false)
+    expect(queuedRow.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [{
+        id: 'chat', workflowId: 'wf', workflowName: 'w', title, status: 'running', startedAt: 'T0',
+        currentNode: { id: 'impl', name: '   ', iteration: 1, kind: 'agent', mode: 'auto', state: 'entering' },
+      }],
+      total: 1,
+    })
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    await flushPromises()
+    const entering = wrapper.get('[data-testid="nav-auto-rows"]').get('[data-key="chat"]')
+    expect(entering.classes()).toContain('active')
+    expect(entering.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    expect(entering.get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('breath-dot')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('splits waiting, queued and Solo from automatic runs, and hides an empty group', async () => {
     apiMocks.listSoloSessions.mockResolvedValue({
       sessions: [{ id: 'solo-1', title: '单独', agentName: '需求澄清', status: 'running', restarts: 0, busy: false, waiting: 0, createdAt: 'T', updatedAt: 'T' }],

@@ -472,7 +472,6 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
             <ModelEffortPicker v-if="showEffort(modelId)" :model-name="modelSlotLabel(modelId)" :efforts="modelEffortLevels(modelId)" :model-value="form.efforts[modelId.trim()] || ''" @update:model-value="setEffort(modelId, $event)" />
           </div>
           <button type="button" class="model-add" data-testid="model-configuration-add-model" :disabled="!canAddModel" :title="canAddModel ? '' : c.noMoreModels" @click="addAuxiliary"><Icon name="plus" :size="14" />{{ c.addModel }}</button>
-          <p v-if="form.backend === 'opencode' && form.kind === 'platform'" class="mb-0 text-xs leading-5 text-txt3" data-testid="model-configuration-official-family">{{ c.officialFamilyHint }}</p>
           <p v-if="auxiliaryProblem" class="mb-0 text-xs text-err">{{ auxiliaryProblem }}</p>
           <p v-if="officialProblem" class="mb-0 text-xs text-err" data-testid="model-configuration-official-problem">{{ officialProblem }}</p>
           <template v-if="form.kind !== 'platform'">

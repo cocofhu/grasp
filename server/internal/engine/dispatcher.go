@@ -169,23 +169,28 @@ func pickQueuedByRemainingHumanGate(candidates []models.Run) models.Run {
 // capacity the run is persisted as queued (with fromNodeID) and the dispatcher
 // promotes it later by Priority → remaining human_gate → FIFO — never writing
 // "running" before a slot is held. Already-running runs are never preempted.
-func (e *Engine) scheduleRunAdmission(runID, fromNodeID string) {
+// scheduleRunAdmission reports whether the run is queued or running before it
+// returns. A free slot writes running; a full scheduler writes queued and
+// keeps fromNodeID for the dispatcher. Callers that answer a resume must not
+// return success while the run is still failed or cancelled.
+func (e *Engine) scheduleRunAdmission(runID, fromNodeID string) bool {
 	e.haltMu.RLock()
 	if e.halted || !e.sem.TryAcquire() {
 		e.haltMu.RUnlock()
-		e.queueForAdmission(runID, fromNodeID)
-		return
+		return e.queueForAdmission(runID, fromNodeID)
 	}
 	e.haltMu.RUnlock()
-	if !e.admitRunDirect(runID, fromNodeID) {
-		e.sem.Release()
-		e.queueForAdmission(runID, fromNodeID)
+	if e.admitRunDirect(runID, fromNodeID) {
+		return true
 	}
+	e.sem.Release()
+	return e.queueForAdmission(runID, fromNodeID)
 }
 
-func (e *Engine) queueForAdmission(runID, fromNodeID string) {
-	e.enqueueAdmission(runID, fromNodeID, false)
+func (e *Engine) queueForAdmission(runID, fromNodeID string) bool {
+	ok := e.enqueueAdmission(runID, fromNodeID, false)
 	e.signalDispatch()
+	return ok
 }
 
 // requeueRun rolls a run back from running to queued when execute bails before

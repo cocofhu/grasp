@@ -21,6 +21,19 @@ async function bootstrap() {
     ],
   })
   const q = new URLSearchParams(location.search)
+  if (q.has('observeSockets')) {
+    // The switch regression replays an already queued socket callback after
+    // navigation. Wrap Playwright's socket only after its init script ran.
+    const observed: WebSocket[] = []
+    ;(window as unknown as { __switchSockets: WebSocket[] }).__switchSockets = observed
+    window.WebSocket = new Proxy(window.WebSocket, {
+      construct(target, args) {
+        const socket = Reflect.construct(target, args) as WebSocket
+        if (String(args[0]).includes('/api/runs/')) observed.push(socket)
+        return socket
+      },
+    })
+  }
   await router.push(`/runs/${q.get('run') || 'run-live-e2e'}/live?node=${q.get('node') || 'impl'}`)
   ;(window as unknown as { __router: typeof router }).__router = router
   createApp({ render: () => h('div', { class: 'h-screen' }, h(RouterView)) })

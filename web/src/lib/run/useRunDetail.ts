@@ -48,6 +48,9 @@ type RunLoadErrorKind = 'not_found' | 'network_or_server'
 
 export type RunViewMode = 'canvas' | 'timeline' | 'stats' | 'llm'
 
+/** Re-read interval while an accepted resume is still failed or cancelled. */
+export const RESUME_STATUS_FOLLOW_MS = 250
+const RESUME_STATUS_FOLLOW_TRIES = 40
 
 export function useRunDetail() {
 const route = useRoute()
@@ -994,18 +997,57 @@ function exportLogs() {
 // the whole workflow.
 const resuming = ref(false)
 const resumeError = ref<string | null>(null)
+/** A resume read that still says failed or cancelled is not the sidebar update. */
+let resumeFollowGen = 0
+onUnmounted(() => { resumeFollowGen++ })
+
+function resumeStillEnded(status: string | undefined): boolean {
+  return status === 'failed' || status === 'cancelled'
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => { window.setTimeout(resolve, ms) })
+}
+
+// Keep reading until this run is no longer failed or cancelled, then tell the
+// sidebar to reload history and the unfinished lists. A terminal snapshot is
+// not that update. Giving up leaves the 15s poll to catch a later change.
+async function followResumeUntilLeftTerminal(gen: number, id: string) {
+  for (let i = 0; i < RESUME_STATUS_FOLLOW_TRIES; i++) {
+    await delay(RESUME_STATUS_FOLLOW_MS)
+    if (gen !== resumeFollowGen || runId.value !== id) return
+    await loadRun(false, true)
+    if (gen !== resumeFollowGen || runId.value !== id) return
+    if (!resumeStillEnded(run.value.status)) {
+      notifyRecentActivity()
+      return
+    }
+  }
+}
+
 async function onResume(nodeId = '') {
   if (resuming.value) return
+  resumeFollowGen++
+  const followGen = resumeFollowGen
+  const id = runId.value
   resuming.value = true
   resumeError.value = null
+  let accepted = false
   try {
-    await api.resumeRun(runId.value, nodeId)
+    await api.resumeRun(id, nodeId)
+    accepted = true
   } catch (e: any) {
     resumeError.value = e?.message || t('pages.runDetail.resumeError')
   } finally {
     resuming.value = false
   }
   await loadRun(false)
+  if (!accepted || followGen !== resumeFollowGen || runId.value !== id) return
+  if (resumeStillEnded(run.value.status)) {
+    void followResumeUntilLeftTerminal(followGen, id)
+    return
+  }
+  notifyRecentActivity()
 }
 
 const priorityDraft = ref<RunPriority>('normal')

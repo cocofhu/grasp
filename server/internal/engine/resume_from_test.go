@@ -2,6 +2,7 @@ package engine
 
 import (
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
@@ -222,4 +223,87 @@ func TestResumeFromUnknownNode(t *testing.T) {
 	if err := eng.ResumeFrom(run.ID, "nope"); err == nil {
 		t.Error("expected rejection for an unknown node id")
 	}
+}
+
+// TestResumeFromLeavesTerminalBeforeReturn: ResumeFrom must persist queued or
+// running before it returns. History queries only include completed, failed,
+// and cancelled, so a later goroutine would still look like a failed row.
+func TestResumeFromLeavesTerminalBeforeReturn(t *testing.T) {
+	g := models.Graph{
+		Nodes: []models.Node{
+			{ID: "input", Type: "input"},
+			{ID: "risky", Type: "agent", Caps: capsPlain, Config: map[string]any{"prompt": "x", "produces": "out.md"}},
+			{ID: "output", Type: "output"},
+		},
+		Edges: []models.Edge{
+			{ID: "e1", Source: "input", Target: "risky"},
+			{ID: "e2", Source: "risky", Target: "output", Kind: models.EdgeSuccess},
+		},
+	}
+	eng, db, _ := setupEngineGraphP(t, g)
+	blocker := newBlockingFake(eng.host)
+	blocker.blockNode("risky")
+	eng.provider = blocker
+	t.Cleanup(func() { blocker.ReleaseAll() })
+
+	seed := func(id, status string) {
+		t.Helper()
+		run := models.Run{ID: id, WorkflowID: "wf", Status: status, Graph: g}
+		if err := db.Create(&run).Error; err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+		if err := db.Create(&models.StateRun{
+			RunID: id, NodeID: "risky", NodeType: "agent", Iteration: 1, Status: "failed",
+		}).Error; err != nil {
+			t.Fatalf("create state %s: %v", id, err)
+		}
+	}
+
+	// Empty node id picks the failed node. A free slot writes running before return.
+	seed("live", "failed")
+	if err := eng.ResumeFrom("live", ""); err != nil {
+		t.Fatalf("ResumeFrom live: %v", err)
+	}
+	var live models.Run
+	if err := db.First(&live, "id = ?", "live").Error; err != nil {
+		t.Fatal(err)
+	}
+	if live.Status != "running" {
+		t.Fatalf("status immediately after ResumeFrom = %q, want running", live.Status)
+	}
+	resumedRisky := false
+	for _, te := range live.Trace {
+		if te.Event == "resume" && te.NodeID == "risky" {
+			resumedRisky = true
+		}
+	}
+	if !resumedRisky {
+		t.Fatalf("resume trace = %+v, want node risky", live.Trace)
+	}
+
+	// The resumed run holds the only slot, so the next resume is queued and
+	// still names the node the caller chose.
+	eng.SetMaxConcurrent(1)
+	if eng.ActiveDrivers() < 1 {
+		t.Fatal("expected the resumed run to hold the only slot")
+	}
+	seed("wait", "cancelled")
+	if err := eng.ResumeFrom("wait", "risky"); err != nil {
+		t.Fatalf("ResumeFrom wait: %v", err)
+	}
+	var wait models.Run
+	if err := db.First(&wait, "id = ?", "wait").Error; err != nil {
+		t.Fatal(err)
+	}
+	if wait.Status != "queued" {
+		t.Fatalf("status immediately after a full scheduler = %q, want queued", wait.Status)
+	}
+	if node, ok := eng.admissionFromNode(wait); !ok || node != "risky" {
+		t.Fatalf("admission node = %q ok=%v, want risky", node, ok)
+	}
+
+	// The seeded runs have no MCP token, so the driver exits once released.
+	// Drain it before the test database closes.
+	blocker.ReleaseAll()
+	waitAdmissionUntil(t, func() bool { return eng.ActiveDrivers() == 0 }, 5*time.Second)
 }

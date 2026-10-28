@@ -124,6 +124,11 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   let refreshTimer: number | undefined
   let disposed = false
   let loadGen = 0
+  // A visit changes even when navigation returns to the same run/node (A→B→A).
+  let visitEpoch = 0
+  let seedRequest = 0
+  let chainRequest = 0
+  let completedRequest = 0
   let seededKey = ''
   /**
    * The surface instance the current node was seeded on. RunLiveView re-keys
@@ -152,6 +157,12 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       reconnect.onClose()
     },
   })
+
+  function currentVisit(visit: number, id: string, node?: string, iter?: number) {
+    return !disposed && visit === visitEpoch && id === runId.value &&
+      (node === undefined || node === nodeId.value) &&
+      (iter === undefined || iter === iteration.value)
+  }
 
   function leaveTo(target: Parameters<typeof router.replace>[0]) {
     if (disposed) return
@@ -184,12 +195,14 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   async function refreshCompletedEvents() {
+    const visit = visitEpoch
+    const request = ++completedRequest
     const id = runId.value
     const node = nodeId.value
     const iter = iteration.value
     try {
       const page = await api.nodeEvents(id, node)
-      if (disposed || !ended.value || id !== runId.value || node !== nodeId.value || iter !== iteration.value || isNodeEventsUnavailable(page)) return
+      if (!currentVisit(visit, id, node, iter) || request !== completedRequest || !ended.value || isNodeEventsUnavailable(page)) return
       if (page.events?.length) completedEvents.value = page.events
     } catch {
       /* The terminal run snapshot still supplies its persisted turn metadata. */
@@ -198,15 +211,20 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
 
   /** Earlier nodes of this run (folded above) and the current node's task. */
   async function loadChain() {
+    const visit = visitEpoch
+    const request = ++chainRequest
     const id = runId.value
+    const node = nodeId.value
+    const iter = iteration.value
+    const graph = run.value?.nodes
     let c: RunChain | null = null
     try {
-      c = normalizeRunChain(await api.runConversationChain(id), run.value?.nodes)
+      c = normalizeRunChain(await api.runConversationChain(id), graph)
     } catch (e: unknown) {
       // Same rule as /gates: only a 404 (older backend) falls back to the run graph.
-      if ((e as { status?: number })?.status === 404 && run.value) c = runChainFromRun(run.value)
+      if (currentVisit(visit, id, node, iter) && (e as { status?: number })?.status === 404 && run.value) c = runChainFromRun(run.value)
     }
-    if (!c || disposed || id !== runId.value) return
+    if (!c || !currentVisit(visit, id, node, iter) || request !== chainRequest) return
     seedChainBoots(c)
     chain.value = c
     const seg = activeSegment(c, nodeId.value, iteration.value)
@@ -232,6 +250,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     mode.value = m
     chatKind.value = c?.kind === 'clarify' ? 'clarify' : 'review'
     seededKey = ''
+    seededSurface = null
+    seedRequest++
     completedEvents.value = null
     lastEvents = aheadEvents?.nodeId === next ? aheadEvents.events : null
     aheadEvents = null
@@ -267,7 +287,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
    * a gate or the end of the run ends it in place.
    */
   function applyRun(r: Run, id: string, fromSnapshot = false) {
-    if (ended.value) return
+    if (disposed || id !== runId.value || (r.id && r.id !== id) || ended.value) return
     const d = decideLive(r, requestedNode.value)
     const c = recentCurrentNode(r)
     if (shown && mode.value === 'chat' && d.kind === 'chat' && d.nodeId === nodeId.value) {
@@ -339,14 +359,16 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     if (nodeId.value !== d.nodeId) {
       nodeId.value = d.nodeId
       seededKey = ''
+      seededSurface = null
+      seedRequest++
       lastEvents = null
       task.value = ''
     }
     const first = !shown
     shown = true
-    if (first) void loadChain()
     if (d.task) task.value = d.task
     if (d.iteration != null) iteration.value = d.iteration
+    if (first) void loadChain()
     if (d.stopping) stopping.value = true
     connect(id)
     void seed()
@@ -355,16 +377,17 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   async function load() {
     if (ended.value) return
     const gen = ++loadGen
+    const visit = visitEpoch
     const id = runId.value
     const revision = dialogueRevision
     try {
       const r = await api.getRun(id)
-      if (gen !== loadGen || disposed || revision !== dialogueRevision) return
+      if (gen !== loadGen || !currentVisit(visit, id) || revision !== dialogueRevision) return
       applyRun(r, id)
     } catch {
-      if (gen === loadGen) loadError.value = !run.value
+      if (gen === loadGen && currentVisit(visit, id)) loadError.value = !run.value
     } finally {
-      if (gen === loadGen) loading.value = false
+      if (gen === loadGen && currentVisit(visit, id)) loading.value = false
     }
   }
 
@@ -382,10 +405,17 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
 
   /** Open the live bubble, then seed it from the node's current turn snapshot. */
   async function seed(force = false) {
-    const key = `${runId.value}:${nodeId.value}:${iteration.value}`
+    const visit = visitEpoch
+    const id = runId.value
+    const node = nodeId.value
+    const iter = iteration.value
+    if (!node || !run.value || (run.value.id && run.value.id !== id) || ended.value) return
+    const key = `${id}:${node}:${iter}`
     const surface = chat.value
+    const seedMode = mode.value
     const alreadySeeded = seededKey === key && seededSurface === surface
     if (!surface || (!force && alreadySeeded) || (mode.value !== 'observe' && (!force || !chatBusy))) return
+    const request = ++seedRequest
     seededKey = key
     seededSurface = surface
     if (mode.value === 'observe' && !alreadySeeded) {
@@ -395,15 +425,17 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
     const revision = acpRevision
     try {
-      const r = await api.nodeEvents(runId.value, nodeId.value)
-      if (disposed || seededKey !== key || seededSurface !== chat.value || isNodeEventsUnavailable(r)) return
+      const r = await api.nodeEvents(id, node)
+      if (!currentVisit(visit, id, node, iter) || request !== seedRequest || ended.value ||
+        mode.value !== seedMode || (mode.value === 'chat' && !chatBusy) ||
+        seededKey !== key || surface !== chat.value || isNodeEventsUnavailable(r)) return
       // A WS frame newer than the snapshot may already be on screen.
       // Top-level task on the first (non-paged) page only.
       const sent = 'task' in r ? r.task : undefined
       if (!task.value && typeof sent === 'string' && sent.trim()) task.value = sent.trim()
       if (r.events?.length && ((!lastEvents && !force) || (force && revision === acpRevision))) {
         lastEvents = r.events
-        chat.value?.applyAcpEvents(r.events, nodeId.value)
+        surface.applyAcpEvents(r.events, node)
       }
     } catch {
       /* stream frames still arrive over WS */
@@ -411,6 +443,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   function onFrame(m: LiveFrame) {
+    const frameRun = (m as { runId?: unknown }).runId
+    if (typeof frameRun === 'string' && frameRun && frameRun !== runId.value) return
     if (m.type === 'snapshot') {
       // Same run detail DTO as GET /runs/:id, currentNode included.
       const r = (m as { run?: Run }).run
@@ -487,6 +521,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     ws = null
     previous?.close()
     const recovering = wsRun === id
+    const visit = visitEpoch
     wsRun = id
     reconnect.markConnecting()
     let socket: WebSocket
@@ -501,12 +536,12 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     heartbeat.start()
     let receivedSnapshot = false
     socket.onopen = () => {
-      if (ws !== socket) return
+      if (ws !== socket || !currentVisit(visit, id)) return
       reconnect.markOpened()
       heartbeat.touch()
     }
     socket.onmessage = (ev) => {
-      if (ws !== socket) return
+      if (ws !== socket || !currentVisit(visit, id)) return
       heartbeat.touch()
       try {
         const frame = JSON.parse(String(ev.data)) as LiveFrame
@@ -526,7 +561,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       }
     }
     socket.onclose = () => {
-      if (ws !== socket) return
+      if (ws !== socket || !currentVisit(visit, id)) return
       ws = null
       heartbeat.stop()
       reconnect.onClose()
@@ -535,14 +570,20 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
 
   async function takeover() {
     if (stopping.value || !nodeId.value) return
+    const visit = visitEpoch
+    const id = runId.value
+    const node = nodeId.value
+    const iter = iteration.value
     stopping.value = true
     notifyRecentActivity()
     try {
-      const res = await api.takeoverNode(runId.value, nodeId.value, iteration.value)
+      const res = await api.takeoverNode(id, node, iter)
+      if (!currentVisit(visit, id, node, iter)) return
       // taken_over and already_manual (a concurrent takeover won) are both success.
-      if (res.state === 'waiting_human') goToChat(nodeId.value)
+      if (res.state === 'waiting_human') goToChat(node)
       // stopping: wait for WS node_takeover waiting_human (poll is the fallback).
     } catch (e) {
+      if (!currentVisit(visit, id, node, iter)) return
       const code = takeoverErrorCode(e)
       if (code === 'run_not_running') {
         // The run was cancelled / failed under us: say so, then refresh (the
@@ -568,10 +609,15 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   /** Reply in the continued chat (same API as /gates). */
   async function send(text: string, images: ClarifyImage[] = [], annotations: ReactAnnotation[] = [], clientMessageId?: string) {
     if (mode.value !== 'chat' || handoff.value) return
+    const visit = visitEpoch
+    const id = runId.value
+    const node = nodeId.value
+    const iter = iteration.value
     try {
-      if (clientMessageId) await api.reactReply(runId.value, nodeId.value, text, images, false, annotations, false, false, clientMessageId)
-      else await api.reactReply(runId.value, nodeId.value, text, images, false, annotations)
+      if (clientMessageId) await api.reactReply(id, node, text, images, false, annotations, false, false, clientMessageId)
+      else await api.reactReply(id, node, text, images, false, annotations)
     } catch (e) {
+      if (!currentVisit(visit, id, node, iter)) return
       toast.error(e instanceof Error ? e.message : String(e))
       void load()
     }
@@ -618,22 +664,24 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if (handoff.value?.phase !== 'pending') chat.value?.releaseConfirmPending?.()
       return
     }
+    const visit = visitEpoch
+    const id = runId.value
     const node = nodeId.value
     const iter = iteration.value
     confirmError.value = null
     assignLiveHandoff('pending', node)
-    armSidebarHandoff(runId.value, node, Date.now(), sidebarAutoTarget(run.value?.nodes, run.value?.edges, node))
+    armSidebarHandoff(id, node, Date.now(), sidebarAutoTarget(run.value?.nodes, run.value?.edges, node))
     try {
       const prompt = chatKind.value === 'review' ? t('pages.clarify.confirmFlowPrompt') : t('pages.runDetail.clarifyFinishPrompt')
-      await api.reactReply(runId.value, node, prompt, [], true, [])
-      if (nodeId.value !== node) return
+      await api.reactReply(id, node, prompt, [], true, [])
+      if (!currentVisit(visit, id, node, iter)) return
       assignLiveHandoff('done', node)
       opened.value = [...opened.value.filter((k) => k !== `${node}:${iter}`), `${node}:${iter}`]
       notifyRecentActivity()
       void load()
     } catch (e) {
-      clearSidebarHandoff(runId.value)
-      if (nodeId.value !== node) return
+      if (!currentVisit(visit, id, node, iter)) return
+      clearSidebarHandoff(id)
       handoff.value = null
       confirmError.value = e instanceof Error ? e.message : String(e)
       chat.value?.releaseConfirmPending?.()
@@ -661,20 +709,41 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       return
     }
     selfRoute = ''
+    visitEpoch++
+    loadGen++
+    seedRequest++
+    chainRequest++
+    completedRequest++
+    stop()
     reviewCursor.reset()
-    loading.value = !run.value || run.value.id !== runId.value
+    loading.value = true
+    loadError.value = false
+    run.value = null
+    nodeId.value = ''
+    iteration.value = 1
+    task.value = ''
+    nodeLabel.value = ''
     stopping.value = false
-    // A new route (sidebar click / follow while opening) starts a fresh page.
-    if (ended.value) pollTimer = window.setInterval(poll, LIVE_POLL_MS)
     ended.value = false
     endState.value = null
     shown = false
     mode.value = 'observe'
+    chatKind.value = 'review'
     completedEvents.value = null
     chain.value = null
     handoff.value = null
+    confirmError.value = null
+    opened.value = []
+    chatBusy = false
+    seededKey = ''
+    seededSurface = null
+    lastEvents = null
+    aheadEvents = null
+    dialogueRevision = 0
+    acpRevision = 0
+    pollTimer = window.setInterval(poll, LIVE_POLL_MS)
     void load()
-  }, { immediate: true })
+  }, { immediate: true, flush: 'sync' })
   watch(chat, () => { void seed() }, { flush: 'post' })
   /** The observed node's sandbox is still starting: its boot steps follow the chain. */
   function observeBooting() {
@@ -685,7 +754,6 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     void load()
     if (observeBooting()) void loadChain()
   }
-  pollTimer = window.setInterval(poll, LIVE_POLL_MS)
   onBeforeUnmount(() => { disposed = true; stop() })
 
   return {
