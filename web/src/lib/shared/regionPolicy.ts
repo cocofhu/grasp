@@ -1,4 +1,4 @@
-export type BackendId = 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'opencode' | 'codex' | 'deepseek_harness'
+export type BackendId = 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'opencode' | 'codex' | 'deepseek_harness' | 'kimi_code'
 export type RegionSite = 'domestic' | 'international'
 export type RegionMode = 'strict' | 'preserve-special'
 
@@ -23,6 +23,7 @@ export const ACP_BACKENDS: { id: BackendId; label: string; configRoot: string }[
   { id: 'opencode', label: 'OpenCode', configRoot: '/root/.config/opencode' },
   { id: 'codex', label: 'Codex', configRoot: '/root/.codex' },
   { id: 'deepseek_harness', label: 'DeepSeek Harness', configRoot: '/root/.dsh' },
+  { id: 'kimi_code', label: 'Kimi Code', configRoot: '/root/.kimi-code' },
 ]
 
 const REGION_POLICIES: Partial<Record<BackendId, RegionPolicy>> = {
@@ -59,6 +60,24 @@ const REGION_POLICIES: Partial<Record<BackendId, RegionPolicy>> = {
         site: 'international',
         labelKey: 'pages.agentStudio.region.international',
         hintKey: 'pages.agentStudio.region.traeInternationalHint',
+      },
+    ],
+  },
+  kimi_code: {
+    regionEnvKey: 'GRASP_KIMI_CODE_REGION',
+    defaultRegion: 'intl',
+    options: [
+      {
+        id: 'cn',
+        site: 'domestic',
+        labelKey: 'pages.agentStudio.region.domestic',
+        hintKey: 'pages.agentStudio.region.kimiDomesticHint',
+      },
+      {
+        id: 'intl',
+        site: 'international',
+        labelKey: 'pages.agentStudio.region.international',
+        hintKey: 'pages.agentStudio.region.kimiInternationalHint',
       },
     ],
   },

@@ -83,7 +83,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 		_ = conn.WriteJSON(gin.H{"type": "error", "status": "visitor_required"})
 		return
 	}
-	_ = conn.SetReadDeadline(time.Time{})
+	configureEventHeartbeat(conn, eventPongWait)
 	// Subscribe before advertising ready so events published right after the
 	// client sees ready are not lost to a subscribe race.
 	runID := lookup.Link.RunID
@@ -105,7 +105,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 	}
 	conn.SetReadLimit(publicEventsReadLimit)
 
-	ping := time.NewTicker(25 * time.Second)
+	ping := time.NewTicker(eventPingPeriod)
 	defer ping.Stop()
 
 	readDone := make(chan struct{})
@@ -117,6 +117,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 				_ = conn.Close()
 				return
 			}
+			_ = conn.SetReadDeadline(time.Now().Add(eventPongWait))
 			handlePublicPageFrame(pc, data)
 		}
 	}()
@@ -137,7 +138,7 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 				return
 			}
 		case <-ping.C:
-			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+			if err := writeEventHeartbeat(conn, w.write); err != nil {
 				return
 			}
 		}

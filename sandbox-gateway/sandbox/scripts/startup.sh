@@ -70,6 +70,7 @@ case "$AGENT_PROVIDER" in
   codebuddy|codebuddy_acp)                        CONFIG_ROOT=${CONFIG_ROOT:-/root/.codebuddy} ;;
   opencode)                                       CONFIG_ROOT=${CONFIG_ROOT:-/root/.config/opencode} ;;
   deepseek_harness)                               CONFIG_ROOT=${CONFIG_ROOT:-/root/.dsh} ;;
+  kimi_code)                                      CONFIG_ROOT=${CONFIG_ROOT:-/root/.kimi-code} ;;
   *)                                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.$AGENT_PROVIDER} ;;
 esac
 export AGENT_PROVIDER CONFIG_ROOT

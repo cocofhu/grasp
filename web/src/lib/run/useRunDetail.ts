@@ -97,7 +97,7 @@ const manual = ref(false)
 const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
-  discardLastQueued?: () => void
+  discardLastQueued?: (clientMessageId?: string) => void
   releaseConfirmPending?: () => void
   restoreUnsentQueued?: import('@/lib/inbox/clarifyVisitEnded').RestoreUnsent
   isSessionBusy?: () => boolean
@@ -733,6 +733,7 @@ async function onClarifySend(
   force = false,
   retryLast = false,
   abortRunning = false,
+  sentClientMessageId?: string,
 ) {
   const conv = selClarify.value
   if (!conv || conv.done) {
@@ -750,7 +751,7 @@ async function onClarifySend(
   if (anns !== annotations) lastStagedAppPreviewPick.value = null
   // Click intent: play overlay before wrap-up HTTP (plan g1.1); never wait for forceOk/done.
   // 确认并流转: progress is the inline hand-off row in ClarifyChat (no overlay).
-  const clientMessageId = beginClarifySend(runId.value, nodeId, { text, images, annotations: anns }, { force, retryLast })
+  const clientMessageId = beginClarifySend(runId.value, nodeId, { text, images, annotations: anns }, { force, retryLast, clientMessageId: sentClientMessageId })
   if (force) clarifyForceInFlight = true
   // Same as the inbox: arm 确认并流转 before the request, drop it if the request fails.
   if (force && runId.value) {
@@ -804,7 +805,7 @@ async function onClarifySend(
     }
     failClarifySend(runId.value, nodeId, clientMessageId)
     // Non-force: roll back optimistic pending-send row so FR4 / send lock is not stuck.
-    if (!force && !retryLast) reviewChatRef.value?.discardLastQueued?.()
+    if (!force && !retryLast) reviewChatRef.value?.discardLastQueued?.(clientMessageId)
     if (!force && clarifyForceInFlight) return
     if (force && isSandboxBusyError(e)) {
       clarifyConfirmCanAbort.value = true

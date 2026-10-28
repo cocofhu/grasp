@@ -8,6 +8,7 @@ const LAUNCH_HEAD: Record<string, string> = {
   trae: 'traecli acp serve',
   codex: 'codex exec',
   deepseek_harness: 'dsh --profile acp',
+  kimi_code: 'kimi acp',
 }
 
 const VENDOR_LABELS: Record<string, string> = {
@@ -58,7 +59,8 @@ const VENDOR_LOGOS: Record<string, string> = {
   siliconflow: 'siliconflow',
   bytedance: 'bytedance',
   cursor: 'cursor',
-  // Unrecognized OpenCode catalog models stay monograms. opencode-go still uses the tool logo.
+  // OpenCode Go uses the OpenCode mark. A plain opencode vendor is the catalog
+  // fallback, so an unrecognized model id stays a letter instead of that logo.
   'opencode-go': 'opencode',
 }
 
@@ -119,8 +121,8 @@ export function contextRatio(k?: number): number {
 
 export function launchCommand(backend: string, modelId: string): string {
   const head = LAUNCH_HEAD[backend] || backend
-  // DeepSeek sets its model through ACP session configuration, not a CLI flag.
-  if (backend === 'deepseek_harness') return head
+  // DeepSeek and Kimi Code write the model into their own config, not a CLI flag.
+  if (backend === 'deepseek_harness' || backend === 'kimi_code') return head
   return modelId ? `${head} --model ${modelId}` : head
 }
 

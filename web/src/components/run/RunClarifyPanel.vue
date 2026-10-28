@@ -64,7 +64,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:draft': [v: string]
   'update:attachments': [v: ClarifyImage[]]
-  send: [text: string, images: ClarifyImage[], annotations: ReactAnnotation[]]
+  send: [text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string]
   'retry-last': []
   finish: []
   'finish-abort': []
@@ -85,7 +85,7 @@ const reviewShellRef = ref<{
 const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
-  discardLastQueued?: () => void
+  discardLastQueued?: (clientMessageId?: string) => void
   releaseConfirmPending?: () => void
   restoreUnsentQueued?: RestoreUnsent
   isSessionBusy?: () => boolean
@@ -114,7 +114,7 @@ defineExpose({
   applyReviewFrame: (frame: any) => reviewChatRef.value?.applyReviewFrame?.(frame),
   applyAcpEvents: (events: any[] | undefined, nodeId?: string) =>
     reviewChatRef.value?.applyAcpEvents?.(events, nodeId),
-  discardLastQueued: () => reviewChatRef.value?.discardLastQueued?.(),
+  discardLastQueued: (clientMessageId?: string) => reviewChatRef.value?.discardLastQueued?.(clientMessageId),
   releaseConfirmPending: () => reviewChatRef.value?.releaseConfirmPending?.(),
   restoreUnsentQueued: (...args: Parameters<RestoreUnsent>) =>
     reviewChatRef.value?.restoreUnsentQueued?.(...args),
@@ -208,7 +208,7 @@ defineExpose({
         v-model:annotations="annotations"
         @update:draft="emit('update:draft', $event)"
         @update:attachments="emit('update:attachments', $event)"
-        @send="(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) => emit('send', text, images, anns)"
+        @send="(text: string, images: ClarifyImage[], anns: ReactAnnotation[], clientMessageId?: string) => emit('send', text, images, anns, clientMessageId)"
         @retry-last="emit('retry-last')"
         @finish="emit('finish')"
         @finish-abort="emit('finish-abort')"

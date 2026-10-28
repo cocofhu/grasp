@@ -1,5 +1,6 @@
 import type { CliCatalogModel, ConcreteModelBinding, CredentialItem, ModelBinding, ModelConfiguration, ModelConnection } from '@/lib/api/apiTypes'
 import { modelVendor } from '@/lib/agent/cliModelView'
+import { effortChoices, validEffortToken } from '@/lib/agent/fixedEffort'
 import { credentialUsable } from '@/lib/agent/modelRouting'
 import { boundConfigurationIds, modelRouteValue } from '@/lib/agent/modelBindings'
 
@@ -42,7 +43,7 @@ export function boundModelChoices(input: {
     return configuredModelChoices({
       binding, configurationName: configuration.name, backend: configuration.backend,
       cliModels: input.cliModels[configuration.backend] || [], connectionModels: connection?.models,
-      providerId: connection?.providerId,
+      providerId: connection?.providerId, baseUrl: connection?.baseUrl,
       catalogReady: binding.kind === 'connection' ? !!connection && input.connectionReady !== false : input.cliReady,
     }).map(choice => ({
       ...choice,
@@ -66,6 +67,7 @@ export function configuredModelChoices(input: {
   cliModels?: CliCatalogModel[]
   connectionModels?: { id: string; name?: string; reasoningEfforts?: string[]; capabilities?: { reasoning?: boolean } }[]
   providerId?: string
+  baseUrl?: string
   catalogReady: boolean
 }): ConfiguredModelChoice[] {
   const binding = input.binding
@@ -90,7 +92,10 @@ export function configuredModelChoices(input: {
     const known = !!cli || !!connection
     const supportsEffort = input.backend === 'codex' || input.backend === 'deepseek_harness'
     const declaredEfforts = connection?.reasoningEfforts?.length ? connection.reasoningEfforts : input.backend === 'codex' ? cli?.efforts : undefined
-    const efforts = supportsEffort && connection?.capabilities?.reasoning !== false ? [...new Set((declaredEfforts || []).map(value => value.trim()).filter(Boolean))] : []
+    const adapterEfforts = supportsEffort && connection?.capabilities?.reasoning !== false ? [...new Set((declaredEfforts || []).map(value => value.trim()).filter(Boolean))] : []
+    const catalogEfforts = input.backend === 'opencode' ? effortChoices(input.backend, binding.kind, input.providerId, input.baseUrl, id) : []
+    const savedEffort = binding.toolSettings?.modelEfforts?.[id]?.trim() || ''
+    const efforts = input.backend === 'opencode' && validEffortToken(savedEffort) && !catalogEfforts.includes(savedEffort) ? [] : input.backend === 'opencode' ? catalogEfforts : adapterEfforts
     choices.push({
       id,
       name,

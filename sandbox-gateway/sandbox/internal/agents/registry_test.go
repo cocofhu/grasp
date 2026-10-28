@@ -9,7 +9,7 @@ import (
 // allNames is every agent the sandbox advertises support for.
 var allNames = []provider.Name{
 	provider.Cursor, provider.ClaudeCode, provider.CodeBuddy, provider.Trae,
-	provider.Kiro, provider.Qoder, provider.Grok, provider.Kimi, provider.Hermes,
+	provider.Kiro, provider.Qoder, provider.Grok, provider.KimiCode, provider.Hermes,
 	provider.Codex, provider.Gemini, provider.OpenCode,
 	provider.DevEco, provider.Copilot, provider.OpenClaw, provider.Antigravity, provider.Pi, provider.DeepSeekHarness,
 }
@@ -38,7 +38,7 @@ func TestTransportSplit(t *testing.T) {
 	// aliases are the opt-in long-lived fallbacks.
 	long := map[provider.Name]bool{
 		provider.Trae: true, provider.Kiro: true, provider.Qoder: true,
-		provider.Grok: true, provider.Kimi: true, provider.Hermes: true,
+		provider.Grok: true, provider.KimiCode: true, provider.Hermes: true,
 		provider.CursorACP: true, provider.ClaudeCodeACP: true, provider.CodeBuddyACP: true,
 		provider.DeepSeekHarness: true,
 	}

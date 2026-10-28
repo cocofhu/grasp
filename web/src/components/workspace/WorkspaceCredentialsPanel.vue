@@ -426,6 +426,7 @@ function secretLabel(kindId: CredentialKindId): string {
   if (kind.id === 'ssh_hosts') return t('pages.workspace.credentials.secretKnownHosts')
   if (kind.id === 'opencode') return t('pages.workspace.credentials.secretOpenCodeKey')
   if (kind.id === 'deepseek_harness') return t('pages.workspace.credentials.secretDeepSeekKey')
+  if (kind.id === 'kimi_code') return t('pages.workspace.credentials.secretKimiCodeKey')
   return t('pages.workspace.credentials.secretApiKey')
 }
 
@@ -601,7 +602,7 @@ function manageModelCredentials(backend?: string) {
   modelCredentialBackend.value = backend
   if (backend === 'claude_code') selectIssuer('anthropic')
   else if (backend === 'codex') selectIssuer('openai')
-  if (['cursor', 'trae', 'opencode', 'deepseek_harness'].includes(backend)) {
+  if (['cursor', 'trae', 'opencode', 'deepseek_harness', 'kimi_code'].includes(backend)) {
     selectKind(backend as CredentialKindId)
     goNext()
   }

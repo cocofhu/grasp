@@ -1077,6 +1077,36 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
+  it.each([false, true])('keeps the active reply visible before a newly accepted waiter when persisted history includes a sealed segment: %s', async (persistedSegment) => {
+    const saved: ClarifyTurn[] = [
+      { role: 'human', text: '之前的请求', at: 't1' },
+      { role: 'agent', text: '之前的回复', at: 't2', startedAt: '2026-10-28T13:30:00Z', endedAt: '2026-10-28T13:30:38Z' },
+    ]
+    const currentHuman: ClarifyTurn = { role: 'human', text: '回复信息改成统计信息', at: 't3' }
+    const wrapper = mountChat({ turns: [...saved, currentHuman], draft: '暗色主题感觉不太行' })
+    const vm = wrapper.vm as unknown as {
+      applyReviewFrame: (frame: Record<string, unknown>) => void
+      applyAcpEvents: (events: { kind: string; text?: string }[], node?: string) => void
+    }
+    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', busy: true, waiting: 0, items: [], activeItem: { id: 'active-stats', text: currentHuman.text } })
+    vm.applyAcpEvents([
+      { kind: 'message', text: '已把回复信息改成统计信息。' },
+      { kind: 'segment' },
+      { kind: 'thought', text: '继续检查统计信息的展示效果。' },
+    ], 'react-1')
+    await flushPromises()
+    await clickSend(wrapper)
+    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', busy: true, waiting: 1, items: [{ id: 'queued-dark', text: '暗色主题感觉不太行' }], activeItem: { id: 'active-stats', text: currentHuman.text } })
+    await wrapper.setProps({ turns: [...saved, currentHuman, ...(persistedSegment ? [{ role: 'agent' as const, text: '已把回复信息改成统计信息。', at: 't4', handoff: true }] : [])] })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="clarify-review-queue"]').text()).toContain('暗色主题感觉不太行')
+    expect(wrapper.findAll('[data-testid="clarify-human-message"]').filter((node) => node.text().includes(currentHuman.text))).toHaveLength(1)
+    expect(wrapper.text()).toContain('继续检查统计信息的展示效果。')
+    expect(wrapper.findAll('[data-testid="clarify-busy-status"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('a rejected send removes the row it just painted', async () => {
     const wrapper = mountChat({
       turns: [{ role: 'agent', text: '上一句回复', at: '1' }],
@@ -1466,7 +1496,7 @@ describe('ClarifyChat', () => {
     const wrapper = mountChat({ draft: '1', sendRequest })
     expectConfirmHidden(wrapper)
     await clickSend(wrapper)
-    expect(sendRequest).toHaveBeenCalledWith('1', [], [])
+    expect(sendRequest).toHaveBeenCalledWith('1', [], [], expect.any(String))
     expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('1')
     expectConfirmHidden(wrapper)
     const send = wrapper.get('[data-testid="clarify-send-icon"]')

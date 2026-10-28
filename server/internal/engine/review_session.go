@@ -69,7 +69,7 @@ type reviewQueueItem struct {
 }
 
 func reviewItemView(it *reviewQueueItem) chatsession.ItemView {
-	return chatsession.ItemView{ID: it.ID, Text: it.Text, Images: it.Images, Annotations: it.Annotations}
+	return chatsession.ItemView{ID: it.ID, ClientMessageID: it.ClientMessageID, Text: it.Text, Images: it.Images, Annotations: it.Annotations}
 }
 
 // reviewSession is one parked producer ACP session on the shared chatsession
@@ -207,12 +207,14 @@ func (e *Engine) laneSnapshot(s *reviewSession) (ReviewSessionSnapshot, bool) {
 	}
 	sn := s.Snapshot()
 	return ReviewSessionSnapshot{
-		NodeID:     s.producerID,
-		Kind:       string(s.kind),
-		Waiting:    sn.Waiting,
-		Busy:       sn.Busy,
-		Items:      sn.Items,
-		ActiveItem: sn.ActiveItem,
+		SessionGeneration: sn.SessionGeneration,
+		Revision:          sn.Revision,
+		NodeID:            s.producerID,
+		Kind:              string(s.kind),
+		Waiting:           sn.Waiting,
+		Busy:              sn.Busy,
+		Items:             sn.Items,
+		ActiveItem:        sn.ActiveItem,
 	}, true
 }
 
@@ -221,6 +223,8 @@ func (e *Engine) laneSnapshot(s *reviewSession) (ReviewSessionSnapshot, bool) {
 // refresh and the open page share one orphan-banner fact. SandboxKnown is
 // false when the bridge has no view; the DTO then omits the sandbox fields.
 type ReviewSessionSnapshot struct {
+	SessionGeneration  uint64           `json:"sessionGeneration"`
+	Revision           uint64           `json:"revision"`
 	NodeID             string           `json:"nodeId"`
 	Kind               string           `json:"kind"`
 	Waiting            int              `json:"waiting"`
@@ -285,21 +289,39 @@ func (e *Engine) decorateSessionSnapshot(runID string, snap ReviewSessionSnapsho
 	return snap
 }
 
-// BroadcastReviewSessions re-emits queue_state (+ active hint) for every session
-// on a run — used on WS connect so refresh can resume busy/queue/stream.
-func (e *Engine) BroadcastReviewSessions(runID string) {
+// SendReviewSessions replays heads only to the newly subscribed connection.
+// Another viewer's delayed reconnect head must never enter the live broker.
+func (e *Engine) SendReviewSessions(runID string, write func([]byte) error) error {
 	for _, snap := range e.ReviewSessionsForRun(runID) {
 		payload := map[string]any{
-			"waiting": snap.Waiting,
-			"items":   snap.Items,
-			"busy":    snap.Busy,
-			"kind":    snap.Kind,
+			"type": "review", "event": "queue_state", "runId": runID, "nodeId": snap.NodeID,
+			"sessionGeneration": snap.SessionGeneration,
+			"revision":          snap.Revision,
+			"waiting":           snap.Waiting,
+			"items":             snap.Items,
+			"busy":              snap.Busy,
+			"kind":              snap.Kind,
 		}
 		if snap.ActiveItem != nil {
 			payload["activeItem"] = snap.ActiveItem
 		}
-		e.publishReview(runID, snap.NodeID, "queue_state", payload)
+		if snap.SandboxKnown {
+			payload["sandboxBusy"] = snap.SandboxBusy
+			payload["sandboxDesynced"] = snap.SandboxDesynced
+			payload["sandboxWaiting"] = snap.SandboxWaiting
+			if snap.SandboxRunningOpID != "" {
+				payload["sandboxRunningOpId"] = snap.SandboxRunningOpID
+			}
+		}
+		msg, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		if err := write(msg); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // EnqueueReviewTurn queues a revise turn for the parked producer session and
@@ -463,7 +485,10 @@ func (e *Engine) enqueueLaneItem(runID, producerID, lane, linkID string, kind se
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
 	}
-	s := e.getOrCreateLaneSession(runID, producerID, lane, linkID, kind)
+	s, release := e.reviewSess.AcquireOrCreate(e.laneSessionKey(runID, producerID, lane), func() *reviewSession {
+		return e.newReviewSession(runID, producerID, lane, linkID, kind)
+	})
+	defer release()
 	retryLast, text := item.RetryLast, item.Text
 	choiceDup := models.IsChoiceReply(text)
 	if lane == "" && !retryLast && choiceDup && e.transcriptHasChoiceAfterLatestAsk(runID, producerID) {
@@ -568,6 +593,21 @@ func (e *Engine) cancelReactSession(runID, producerID string, clearQueue bool) e
 }
 
 func (e *Engine) cancelLaneSession(runID, producerID, lane string, clearQueue bool) error {
+	if lane == "" {
+		// Even an orphan cancellation owns a FIFO lease. A concurrent sender
+		// must share its transition gate instead of creating a new provider
+		// target between a nil lookup and the native cancel call.
+		kind := sessionKindReview
+		if !clearQueue {
+			kind = sessionKindClarify
+		}
+		s, release := e.reviewSess.AcquireOrCreate(e.laneSessionKey(runID, producerID, lane), func() *reviewSession {
+			return e.newReviewSession(runID, producerID, lane, "", kind)
+		})
+		defer release()
+		s.Cancel(clearQueue)
+		return nil
+	}
 	s := e.laneSession(runID, producerID, lane)
 	if s == nil {
 		// Still best-effort ACP cancel in case a turn is in flight without a session.
@@ -666,7 +706,8 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	} else {
 		humanMsg = models.ReactMessage{
 			Role: "human", Text: item.Text, At: now,
-			Images: item.Images, Annotations: item.Annotations, Live: item.Live,
+			ClientMessageID: item.ClientMessageID,
+			Images:          item.Images, Annotations: item.Annotations, Live: item.Live,
 		}
 		conv.Messages = append(conv.Messages, humanMsg)
 		logDB(e.db.Save(&conv), s.runID, "save clarify human turn (turn_begin)")
@@ -701,11 +742,13 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	for _, text := range t.Handoffs {
 		conv.Messages = append(conv.Messages, models.ReactMessage{
 			Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Handoff: true,
+			ClientMessageID: humanMsg.ClientMessageID,
 		})
 	}
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
-		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
+		ClientMessageID: humanMsg.ClientMessageID,
+		Questions:       t.Questions, Forms: t.Forms, Interrupted: interrupted,
 		OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
 	}
 	applyReplyMetadata(&agentMsg, t)
@@ -836,7 +879,8 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	now := time.Now().Format(time.RFC3339)
 	conv.Messages = append(conv.Messages, models.ReactMessage{
 		Role: "human", Text: item.Text, At: now,
-		Images: item.Images, Annotations: item.Annotations, Live: item.Live,
+		ClientMessageID: item.ClientMessageID,
+		Images:          item.Images, Annotations: item.Annotations, Live: item.Live,
 		GateNodeID: gateTag,
 	})
 	logDB(e.db.Save(&conv), s.runID, "save review human turn (turn_begin)")
@@ -871,12 +915,14 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	for _, text := range t.Handoffs {
 		conv.Messages = append(conv.Messages, models.ReactMessage{
 			Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Handoff: true,
-			GateNodeID: gateTag,
+			ClientMessageID: humanMsg.ClientMessageID,
+			GateNodeID:      gateTag,
 		})
 	}
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
-		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
+		ClientMessageID: humanMsg.ClientMessageID,
+		Questions:       t.Questions, Forms: t.Forms, Interrupted: interrupted,
 		OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
 		GateNodeID: gateTag,
 	}

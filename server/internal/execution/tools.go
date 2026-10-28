@@ -44,6 +44,8 @@ func CLIForProvider(provider string) (string, bool) {
 		return "codex", true
 	case "deepseek_harness":
 		return "dsh", true
+	case "kimi_code":
+		return "kimi", true
 	default:
 		return "", false
 	}

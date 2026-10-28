@@ -193,6 +193,7 @@
       "workflowCanvasFlow.ts",
       "workflowEditorDirty.ts",
       "workflowIO.ts",
+      "wsHeartbeat.ts",
       "wsReconnect.ts"
     ],
     "shared": [
@@ -270,7 +271,7 @@
     "icons": 2,
     "inbox": 43,
     "pm": 7,
-    "run": 69,
+    "run": 70,
     "shared": 39,
     "solo": 10,
     "workflow": 3,

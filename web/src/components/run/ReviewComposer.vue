@@ -27,7 +27,7 @@ import { visitModelSelectVisible } from '@/lib/run/visitModel'
 const props = withDefaults(
   defineProps<{
     mode: 'clarify' | 'review' | 'gate'
-    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) => Promise<boolean>
+    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) => Promise<boolean>
     runId?: string
     nodeId?: string
     iteration?: number
@@ -142,7 +142,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[]): void
+  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string): void
   (e: 'retry-last'): void
   (e: 'finish'): void
   (e: 'finish-abort'): void
@@ -167,7 +167,7 @@ const chatRef = ref<{
     activeItem?: any | null,
   ) => void
   cancelReview: () => void
-  discardLastQueued: () => void
+  discardLastQueued: (clientMessageId?: string) => void
   releaseConfirmPending?: () => void
   settleConfirmedTurn?: () => void
   restoreUnsentQueued: RestoreUnsent
@@ -197,7 +197,7 @@ defineExpose({
     activeItem?: any | null,
   ) => chatRef.value?.applyQueueState?.(waiting, items, busy, activeItem),
   cancelReview: () => chatRef.value?.cancelReview(),
-  discardLastQueued: () => chatRef.value?.discardLastQueued(),
+  discardLastQueued: (clientMessageId?: string) => chatRef.value?.discardLastQueued(clientMessageId),
   releaseConfirmPending: () => chatRef.value?.releaseConfirmPending?.(),
   settleConfirmedTurn: () => chatRef.value?.settleConfirmedTurn?.(),
   restoreUnsentQueued: (...args: Parameters<RestoreUnsent>) =>
@@ -350,7 +350,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
       :follow-tail="followTail ?? null"
       :follow-process="followProcess ?? null"
       @takeover="emit('takeover')"
-      @send="(text, images, anns) => emit('send', text, images, anns)"
+      @send="(text, images, anns, clientMessageId) => emit('send', text, images, anns, clientMessageId)"
       @retry-last="emit('retry-last')"
       @finish="emit('finish')"
       @finish-abort="emit('finish-abort')"

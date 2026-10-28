@@ -15,6 +15,7 @@ func TestOfficialToolAuthorizationLifecycleAndIsolation(t *testing.T) {
 	for _, test := range []struct{ tool, env, model string }{
 		{"opencode", envauth.EnvOpenCodeAPIKey, "opencode/kimi-k3"},
 		{"deepseek_harness", envauth.EnvDeepSeekAPIKey, "deepseek-flash"},
+		{"kimi_code", envauth.EnvKimiCodeAPIKey, "kimi-k3.1-pro"},
 	} {
 		t.Run(test.tool, func(t *testing.T) {
 			setCredentialKey(t)

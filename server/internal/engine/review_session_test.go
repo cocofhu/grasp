@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,6 +11,59 @@ import (
 	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
+
+type heldOrphanCancelProvider struct {
+	*fakeProvider
+	once    sync.Once
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (p *heldOrphanCancelProvider) CancelSessionTurn(string, string) {
+	p.once.Do(func() { close(p.entered) })
+	<-p.release
+}
+
+func TestReviewOrphanCancelPinsSessionUntilConcurrentAdmissionIsSafe(t *testing.T) {
+	eng, _, provider := setupReviewEngine(t)
+	held := &heldOrphanCancelProvider{fakeProvider: provider, entered: make(chan struct{}), release: make(chan struct{})}
+	eng.provider = held
+	cancelDone := make(chan error, 1)
+	go func() { cancelDone <- eng.CancelClarifyTurn("orphan-run", "clarify") }()
+	select {
+	case <-held.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("native orphan cancellation did not start")
+	}
+	s := eng.laneSession("orphan-run", "clarify", "")
+	if s == nil {
+		close(held.release)
+		t.Fatal("orphan cancel did not reserve a shared FIFO")
+	}
+	generation := s.Snapshot().SessionGeneration
+	if _, err := eng.enqueueReviewItem("orphan-run", "clarify", sessionKindClarify, &reviewQueueItem{ID: "new", Text: "new request"}); err != nil {
+		close(held.release)
+		t.Fatal(err)
+	}
+	current := eng.laneSession("orphan-run", "clarify", "")
+	snap := current.Snapshot()
+	if current != s || snap.SessionGeneration != generation || snap.Waiting != 1 || snap.Busy {
+		close(held.release)
+		t.Fatalf("new turn escaped a still-running orphan cancellation: %+v", snap)
+	}
+	close(held.release)
+	select {
+	case err := <-cancelDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancellation did not finish")
+	}
+	if err := eng.waitReviewReadyForTest("orphan-run", "clarify", 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // TestReviewSessionQueueAndCancel: FIFO enqueue + Cancel clears pending and
 // interrupts the held active turn (plan g1/g3 evidence).
@@ -75,6 +129,72 @@ func TestReviewSessionQueueAndCancel(t *testing.T) {
 	}
 	if !sawInterrupted {
 		t.Fatalf("expected interrupted agent turn after Cancel: %+v", conv.Messages)
+	}
+}
+
+func TestReviewSessionReconnectReplayIsTargetedAndKeepsCapturedVersion(t *testing.T) {
+	eng, _, _ := setupReviewEngine(t)
+	s := eng.getOrCreateReviewSession("reconnect-run", "prop", sessionKindReview)
+	s.SeedForTest([]*reviewQueueItem{
+		{ID: "a", ClientMessageID: "client-a", Text: "first"},
+		{ID: "b", ClientMessageID: "client-b", Text: "second"},
+	})
+	first, stopFirst := eng.Broker().Subscribe("reconnect-run")
+	defer stopFirst()
+	second, stopSecond := eng.Broker().Subscribe("reconnect-run")
+	defer stopSecond()
+	read := func(ch <-chan []byte) map[string]any {
+		t.Helper()
+		select {
+		case raw := <-ch:
+			var payload map[string]any
+			if err := json.Unmarshal(raw, &payload); err != nil {
+				t.Fatal(err)
+			}
+			return payload
+		case <-time.After(2 * time.Second):
+			t.Fatal("viewer did not receive its queue snapshot")
+			return nil
+		}
+	}
+	before, ok := eng.ReviewSessionSnapshotFor("reconnect-run", "prop")
+	if !ok || before.SessionGeneration == 0 {
+		t.Fatalf("missing session authority: %+v", before)
+	}
+	for range 2 { // A second viewer's reconnect must not publish old state to other viewers.
+		if err := eng.SendReviewSessions("reconnect-run", func(raw []byte) error {
+			var payload map[string]any
+			if err := json.Unmarshal(raw, &payload); err != nil {
+				return err
+			}
+			if payload["sessionGeneration"] != float64(before.SessionGeneration) || payload["revision"] != float64(before.Revision) || payload["waiting"] != float64(2) {
+				t.Fatalf("replay restamped captured state: %v snapshot=%+v", payload, before)
+			}
+			items := payload["items"].([]any)
+			if items[1].(map[string]any)["clientMessageId"] != "client-b" {
+				t.Fatalf("sender identity was lost: %v", payload)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for _, viewer := range []<-chan []byte{first, second} {
+			select {
+			case raw := <-viewer:
+				t.Fatalf("reconnect head leaked into another viewer's live stream: %s", raw)
+			default:
+			}
+		}
+	}
+	if err := s.Remove("a"); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := eng.ReviewSessionSnapshotFor("reconnect-run", "prop")
+	for _, viewer := range []<-chan []byte{first, second} {
+		payload := read(viewer)
+		if payload["sessionGeneration"] != float64(before.SessionGeneration) || payload["revision"] != float64(after.Revision) || after.Revision <= before.Revision {
+			t.Fatalf("queue mutation did not supersede every viewer's earlier head: %v before=%+v after=%+v", payload, before, after)
+		}
 	}
 }
 

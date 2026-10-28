@@ -1065,7 +1065,9 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 	if appliedConfiguration == "" {
 		appliedConfiguration = defaultConfiguration
 	}
-	desiredEffort, appliedEffort := strings.TrimSpace(row.CurrentReasoningEffort), strings.TrimSpace(row.AppliedReasoningEffort)
+	storedEffort := strings.TrimSpace(row.CurrentReasoningEffort)
+	desiredEffort := s.resolveChatEffort(ctx, row, desired, storedEffort)
+	appliedEffort := strings.TrimSpace(row.AppliedReasoningEffort)
 	var changed bool
 	var err error
 	if s.sbx != nil && s.modelAlign == nil {
@@ -1078,6 +1080,9 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 	}
 	routeChanged := changed
 	if err == nil && !changed && !row.ModelContextPending && desired == applied && desiredEffort == appliedEffort && desiredConfiguration == appliedConfiguration {
+		if err := s.persistResolvedEffort(row, storedEffort, desiredEffort); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	if err == nil {
@@ -1134,10 +1139,49 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 			return false, err
 		}
 	}
+	if err := s.persistResolvedEffort(row, storedEffort, desiredEffort); err != nil {
+		return false, err
+	}
 	if err := s.rememberAppliedRoute(row.ID, desiredConfiguration, desired, desiredEffort); err != nil {
 		return false, err
 	}
 	return changed, nil
+}
+
+// resolveChatEffort keeps a saved level and fills an empty one with the last
+// advertised choice. Models without a list stay empty, including a custom lock
+// that hides the menu.
+func (s *SoloService) resolveChatEffort(ctx context.Context, row *models.SoloSession, model, effort string) string {
+	effort = strings.TrimSpace(effort)
+	if effort != "" || row == nil {
+		return effort
+	}
+	agent, err := s.sessionAgent(row)
+	if err != nil {
+		return ""
+	}
+	choices := s.liveReasoningEfforts(ctx, row, agent, model)
+	if choices == nil {
+		choices = s.reasoningEfforts(agent, model)
+	}
+	if len(choices) == 0 {
+		return ""
+	}
+	return choices[len(choices)-1]
+}
+
+func (s *SoloService) persistResolvedEffort(row *models.SoloSession, stored, resolved string) error {
+	if row == nil || resolved == stored {
+		return nil
+	}
+	res := s.db.Model(&models.SoloSession{}).Where("id = ? AND COALESCE(current_reasoning_effort, '') = ?", row.ID, stored).Update("current_reasoning_effort", resolved)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		row.CurrentReasoningEffort = resolved
+	}
+	return nil
 }
 
 // Send queues a user turn. It returns the number of turns ahead of it.

@@ -5,6 +5,7 @@ import { api } from '@/lib/api/api'
 import type { SoloMessage, SoloSession } from '@/lib/api/apiTypes'
 import type { ChatExecution, ClarifyImage } from '@/lib/shared/types'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
+import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './acpTurn'
 import { soloErrorText } from './soloErrors'
 import { useSoloSessions } from './useSoloSessions'
@@ -22,6 +23,10 @@ function parseFrame(data: unknown): any {
   } catch {
     return null
   }
+}
+
+function listedEfforts(efforts?: string[]) {
+  return [...new Set((efforts || []).map(value => value.trim()).filter(Boolean))]
 }
 
 function queueItem(raw: any): SoloQueueItem {
@@ -50,6 +55,7 @@ export function useSoloChat(sessionId: Ref<string>) {
   const turns = ref<SoloTurn[]>([])
   const queued = ref<SoloQueueItem[]>([])
   const busy = ref(false)
+  const sessionStateCursor = createReviewStateCursor()
   const phase = ref<SoloPhase>('')
   const link = ref<SoloLink>('idle')
   const loading = ref(false)
@@ -67,6 +73,7 @@ export function useSoloChat(sessionId: Ref<string>) {
   // lastSeq 是缺口检测高水位（含快照）；ackedSeq 仅确认已处理的真实帧，供重连回放。
   let lastSeq = -1
   let ackedSeq = -1
+  let streamGeneration: number | undefined
   let resyncs = 0
   let sessionGeneration = 0
   let settingsEpoch = 0
@@ -503,6 +510,20 @@ export function useSoloChat(sessionId: Ref<string>) {
     if (!frame || typeof frame !== 'object') return
     // Subscribe 保证首帧是 queue_state 快照；之后的同名帧才是真实流事件。
     const subscriptionSnapshot = firstFrame && frame.type === 'session' && frame.event === 'queue_state'
+    if (subscriptionSnapshot) {
+      sessionStateCursor.reset()
+      if (Number.isSafeInteger(frame.sessionGeneration) && frame.sessionGeneration >= 0) {
+        if (streamGeneration !== undefined && streamGeneration !== frame.sessionGeneration) {
+          // A recreated server stream starts its sequence at zero. Same-stream
+          // reconnects retain their deduplication and replay acknowledgements.
+          lastSeq = -1
+          ackedSeq = -1
+          seenSeq.clear()
+          resyncs = 0
+        }
+        streamGeneration = frame.sessionGeneration
+      }
+    }
     const seqState = noteSeq(frame, subscriptionSnapshot)
     if (seqState === 'dup') return
     if (seqState === 'gap') {
@@ -519,6 +540,8 @@ export function useSoloChat(sessionId: Ref<string>) {
       return
     }
     if (frame.type !== 'session') return
+    if (!sessionStateCursor.acceptServer(frame)) return
+    if (Number.isSafeInteger(frame.sessionGeneration) && frame.sessionGeneration >= 0) streamGeneration = frame.sessionGeneration
     switch (frame.event) {
       case 'queue_state': {
         const serverItems: SoloQueueItem[] = Array.isArray(frame.items) ? frame.items.map(queueItem) : []
@@ -684,6 +707,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     settingsQueue = Promise.resolve()
     closeWs()
     reconnect.reset()
+    sessionStateCursor.reset()
     turns.value = []
     queued.value = []
     openSends.splice(0, openSends.length)
@@ -696,6 +720,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     activeId.value = ''
     lastSeq = -1
     ackedSeq = -1
+    streamGeneration = undefined
     resyncs = 0
     seenSeq.clear()
     link.value = 'idle'
@@ -793,8 +818,17 @@ export function useSoloChat(sessionId: Ref<string>) {
           if (latest() && confirmedSettings) patchSession(confirmedSettings)
           return false
         }
-        const row = kind === 'model' ? configurationId === undefined ? await api.setSoloSessionModel(id, next) : await api.setSoloSessionModel(id, next, undefined, configurationId) : await api.setSoloSessionReasoningEffort(id, next)
+        let row = kind === 'model' ? configurationId === undefined ? await api.setSoloSessionModel(id, next) : await api.setSoloSessionModel(id, next, undefined, configurationId) : await api.setSoloSessionReasoningEffort(id, next)
         if (!isCurrentSession() || row.id !== id) return false
+        // A model switch clears an effort the new model does not offer. The
+        // selector shows that gap as the highest level, so persist that token.
+        if (kind === 'model' && latest() && !row.reasoningEffort?.trim()) {
+          const highest = listedEfforts(row.reasoningEfforts).at(-1)
+          if (highest) {
+            row = await api.setSoloSessionReasoningEffort(id, highest)
+            if (!isCurrentSession() || row.id !== id) return false
+          }
+        }
         confirmedSettings = modelSettings(row)
         if (latest()) {
           patchSession(modelSettings(row))

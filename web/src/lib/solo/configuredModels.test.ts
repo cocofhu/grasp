@@ -124,6 +124,19 @@ describe('configuredModelChoices', () => {
     expect(choices[0]).toMatchObject({ name: 'deepseek-pro', id: 'deepseek-pro', efforts: ['low', 'high'] })
   })
 
+  it('offers the OpenCode catalog for Gemini 4 Argon and hides a custom locked level', () => {
+    const open = configuredModelChoices({
+      binding: { kind: 'connection', connectionId: 'google-account', modelId: 'gemini-4-argon' },
+      backend: 'opencode', providerId: 'google', catalogReady: true,
+    })
+    expect(open[0]?.efforts).toEqual(['low', 'medium', 'high'])
+    const locked = configuredModelChoices({
+      binding: { kind: 'connection', connectionId: 'google-account', modelId: 'gemini-4-argon', toolSettings: { modelEfforts: { 'gemini-4-argon': 'turbo' } } },
+      backend: 'opencode', providerId: 'google', catalogReady: true,
+    })
+    expect(locked[0]?.efforts).toEqual([])
+  })
+
   it.each(['opencode', 'cursor'])('does not offer effort controls for an unsupported %s adapter', (backend) => {
     const choices = configuredModelChoices({
       binding: { kind: 'connection', connectionId: 'account', modelId: 'model' },

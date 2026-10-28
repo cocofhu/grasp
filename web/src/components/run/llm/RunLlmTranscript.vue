@@ -173,11 +173,12 @@ function onMessageNavigate(id: string) {
   revealRailTarget(scroller.value, id)
 }
 
-async function sendRequest(text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) {
+async function sendRequest(text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) {
   const current = thread.value.current
   if (!current) return false
   try {
-    await api.reactReply(props.run.id, current.nodeId, text, images, false, annotations)
+    if (clientMessageId) await api.reactReply(props.run.id, current.nodeId, text, images, false, annotations, false, false, clientMessageId)
+    else await api.reactReply(props.run.id, current.nodeId, text, images, false, annotations)
     return true
   } catch {
     return false
@@ -189,8 +190,8 @@ async function onFinish() {
   await api.reactReply(props.run.id, current.nodeId, '', [], true, [])
 }
 
-async function onSend(text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) {
-  if (!await sendRequest(text, images, annotations)) chatRef.value?.discardLastQueued?.()
+async function onSend(text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) {
+  if (!await sendRequest(text, images, annotations, clientMessageId)) chatRef.value?.discardLastQueued?.()
 }
 
 async function onCancel() {

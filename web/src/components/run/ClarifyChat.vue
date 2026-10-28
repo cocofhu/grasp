@@ -124,7 +124,7 @@ const props = withDefaults(
     /** Host-level lock for the final confirmation action. */
     finishDisabled?: boolean
     sendLabel?: string
-    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) => Promise<boolean>
+    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) => Promise<boolean>
     confirmError?: string | null
     confirmCanAbort?: boolean
     seedHumanText?: string
@@ -295,7 +295,7 @@ function isEmptyLiveTurn(t: ClarifyTurn): boolean {
 }
 
 const emit = defineEmits<{
-  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[]): void
+  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string): void
   (e: 'retry-last'): void
   (e: 'finish'): void
   (e: 'finish-abort'): void

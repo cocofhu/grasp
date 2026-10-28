@@ -118,6 +118,7 @@ const (
 	AcpBackendOpenCode        = "opencode"
 	AcpBackendCodex           = "codex"
 	AcpBackendDeepSeekHarness = "deepseek_harness"
+	AcpBackendKimiCode        = "kimi_code"
 )
 
 // ErrInvalidAcpBackend is returned when a required acpBackend is empty or unknown.
@@ -126,7 +127,7 @@ var ErrInvalidAcpBackend = errors.New("invalid acpBackend")
 // NormalizeAcpBackend returns the trimmed backend when it is known, else "".
 func NormalizeAcpBackend(raw string) string {
 	switch strings.TrimSpace(raw) {
-	case AcpBackendCursor, AcpBackendClaudeCode, AcpBackendCodeBuddy, AcpBackendTrae, AcpBackendOpenCode, AcpBackendCodex, AcpBackendDeepSeekHarness:
+	case AcpBackendCursor, AcpBackendClaudeCode, AcpBackendCodeBuddy, AcpBackendTrae, AcpBackendOpenCode, AcpBackendCodex, AcpBackendDeepSeekHarness, AcpBackendKimiCode:
 		return strings.TrimSpace(raw)
 	default:
 		return ""
@@ -159,6 +160,8 @@ func DefaultConfigRootForBackend(backend string) string {
 		return "/root/.codex"
 	case AcpBackendDeepSeekHarness:
 		return "/root/.dsh"
+	case AcpBackendKimiCode:
+		return "/root/.kimi-code"
 	default:
 		return DefaultConfigRoot
 	}
@@ -173,7 +176,7 @@ type Agent struct {
 	ModelBinding       *modelrouting.Binding `json:"modelBinding,omitempty"`
 	Name               string                `json:"name"`
 	CredentialBindings map[string]*string    `json:"credentialBindings,omitempty"`
-	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode | codex | deepseek_harness).
+	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode | codex | deepseek_harness | kimi_code).
 	// Required on save.
 	AcpBackend string `json:"acpBackend"`
 	// Files is the agent's working directory, copied into ConfigRoot at run.

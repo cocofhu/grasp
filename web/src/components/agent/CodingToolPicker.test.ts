@@ -34,10 +34,10 @@ function setup(options: { backend?: BackendId; currentRegion?: string; specialRe
 afterEach(() => { mounted.splice(0).forEach((wrapper) => wrapper.unmount()); document.body.innerHTML = '' })
 
 describe('CodingToolPicker', () => {
-  it('offers all seven tools with one selected radio and lets users choose OpenCode', async () => {
+  it('offers every coding tool with one selected radio and lets users choose OpenCode', async () => {
     const { wrapper, picker, backend } = setup({ testIdPrefix: 'agent-wizard' })
     const tools = wrapper.get('[role="radiogroup"]').findAll('[role="radio"]')
-    expect(tools).toHaveLength(7)
+    expect(tools).toHaveLength(8)
     expect(tools.filter((tool) => tool.attributes('aria-checked') === 'true')).toHaveLength(1)
     expect(tools.filter((tool) => tool.attributes('tabindex') === '0')).toHaveLength(1)
     expect(tools.every((tool) => tool.attributes('aria-pressed') === undefined)).toBe(true)
@@ -60,16 +60,16 @@ describe('CodingToolPicker', () => {
     ;(cursor.element as HTMLButtonElement).focus()
     await cursor.trigger('keydown', { key: 'ArrowUp' })
     await flushPromises()
-    expect(backend.value).toBe('deepseek_harness')
-    expect(document.activeElement).toBe(wrapper.get('[data-testid="acp-backend-deepseek_harness"]').element)
-    await wrapper.get('[data-testid="acp-backend-deepseek_harness"]').trigger('keydown', { key: 'Home' })
+    expect(backend.value).toBe('kimi_code')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="acp-backend-kimi_code"]').element)
+    await wrapper.get('[data-testid="acp-backend-kimi_code"]').trigger('keydown', { key: 'Home' })
     await flushPromises()
     expect(backend.value).toBe('cursor')
     expect(document.activeElement).toBe(cursor.element)
     await cursor.trigger('keydown', { key: 'End' })
     await flushPromises()
-    expect(backend.value).toBe('deepseek_harness')
-    await wrapper.get('[data-testid="acp-backend-deepseek_harness"]').trigger('keydown', { key: 'ArrowDown' })
+    expect(backend.value).toBe('kimi_code')
+    await wrapper.get('[data-testid="acp-backend-kimi_code"]').trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     expect(backend.value).toBe('cursor')
     expect(document.activeElement).toBe(cursor.element)
@@ -104,6 +104,15 @@ describe('CodingToolPicker', () => {
     expect(picker.emitted('selectRegion')).toBeUndefined()
     await wrapper.get('[data-testid="acp-region-internal"]').trigger('click')
     expect(currentRegion.value).toBe('internal')
+  })
+
+  it('shows China and International sites for Kimi Code', async () => {
+    const { wrapper, backend } = setup({ backend: 'kimi_code', currentRegion: 'intl' })
+    expect(wrapper.get('[data-testid="acp-region-cn"]').attributes('aria-label')).toBe('国内站 (cn)')
+    expect(wrapper.get('[data-testid="acp-region-intl"]').attributes('aria-label')).toBe('国际站 (intl)')
+    expect(wrapper.get('[data-testid="acp-region-intl"]').attributes('aria-checked')).toBe('true')
+    await wrapper.get('[data-testid="acp-region-cn"]').trigger('click')
+    expect(backend.value).toBe('kimi_code')
   })
 
   it('blocks tool and site changes while disabled', async () => {

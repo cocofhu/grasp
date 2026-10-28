@@ -22,6 +22,11 @@ import {
   type RunChain,
 } from '@/lib/inbox/runConversationChain'
 import { decideLive, takeoverConflictRunStatus, takeoverErrorCode, takeoverRaceLost, type LiveFrame } from '@/lib/run/runLive'
+import { createWsReconnectController } from '@/lib/run/wsReconnect'
+import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
+import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
+import { splitTurns } from '@/lib/run/llmTranscript'
+import { clarifyTurnsFromLlm } from '@/lib/run/llmTranscriptThread'
 import type { AcpEvent, ClarifyImage, ClarifyTurn, ReactAnnotation, Run, RunCurrentNode } from '@/lib/shared/types'
 
 /** The ReviewComposer / ClarifyChat surface this view drives. */
@@ -88,9 +93,21 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       open: opened.value.includes(`${s.nodeId}:${s.iteration}`),
     })),
   )
-  const turns = computed<ClarifyTurn[]>(() =>
-    mode.value === 'chat' ? (run.value?.clarifyByNode?.[nodeId.value]?.turns ?? []) : [],
-  )
+  const completedEvents = ref<AcpEvent[] | null>(null)
+  const turns = computed<ClarifyTurn[]>(() => {
+    if (mode.value === 'chat') return run.value?.clarifyByNode?.[nodeId.value]?.turns ?? []
+    if (!ended.value) return []
+    const execution = run.value?.nodeExecutions?.[nodeId.value]?.find((row) => (row.iteration || 1) === iteration.value)
+      ?? run.value?.nodeRuns?.[nodeId.value]
+    const events = completedEvents.value?.some((event) => event.kind === 'turn_end')
+      ? completedEvents.value
+      : execution?.events?.some((event) => event.kind === 'turn_end')
+        ? execution.events
+        : completedEvents.value ?? execution?.events
+    // Per-turn turn_end carries the reported usage. Execution totals may span
+    // several turns and must not be attached to a single visible reply.
+    return clarifyTurnsFromLlm(splitTurns(events)).filter((row) => row.role === 'agent')
+  })
   /**
    * Locked only after confirm succeeds, while the same composer follows a
    * non-waiting node. `handoff.pending` (产物校验中) must not lock typing.
@@ -119,6 +136,22 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   let aheadEvents: { nodeId: string; events: AcpEvent[] } | null = null
   /** A node has been shown on this page: from now on, no automatic navigation. */
   let shown = false
+  let dialogueRevision = 0
+  let acpRevision = 0
+  const reviewCursor = createReviewStateCursor()
+  const reconnect = createWsReconnectController({
+    connect: () => connect(runId.value),
+    shouldReconnect: () => !!runId.value && shown && !disposed && !ended.value,
+  })
+  const heartbeat = createWsHeartbeat({
+    onTimeout: () => {
+      const socket = ws
+      ws = null
+      heartbeat.stop()
+      socket?.close()
+      reconnect.onClose()
+    },
+  })
 
   function leaveTo(target: Parameters<typeof router.replace>[0]) {
     if (disposed) return
@@ -146,7 +179,21 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     stopping.value = false
     stop()
     chat.value?.applyReviewFrame({ event: 'turn_done', nodeId: nodeId.value })
+    if (mode.value === 'observe') void refreshCompletedEvents()
     notifyRecentActivity()
+  }
+
+  async function refreshCompletedEvents() {
+    const id = runId.value
+    const node = nodeId.value
+    const iter = iteration.value
+    try {
+      const page = await api.nodeEvents(id, node)
+      if (disposed || !ended.value || id !== runId.value || node !== nodeId.value || iter !== iteration.value || isNodeEventsUnavailable(page)) return
+      if (page.events?.length) completedEvents.value = page.events
+    } catch {
+      /* The terminal run snapshot still supplies its persisted turn metadata. */
+    }
   }
 
   /** Earlier nodes of this run (folded above) and the current node's task. */
@@ -185,6 +232,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     mode.value = m
     chatKind.value = c?.kind === 'clarify' ? 'clarify' : 'review'
     seededKey = ''
+    completedEvents.value = null
     lastEvents = aheadEvents?.nodeId === next ? aheadEvents.events : null
     aheadEvents = null
     task.value = typeof c?.task === 'string' ? c.task.trim() : ''
@@ -218,16 +266,36 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
    * it is opening; after a node was shown the run is followed in place, and
    * a gate or the end of the run ends it in place.
    */
-  function applyRun(r: Run, id: string) {
+  function applyRun(r: Run, id: string, fromSnapshot = false) {
     if (ended.value) return
     const d = decideLive(r, requestedNode.value)
     const c = recentCurrentNode(r)
+    if (shown && mode.value === 'chat' && d.kind === 'chat' && d.nodeId === nodeId.value) {
+      // Reconnect independently of chatBusy: turn_done may have been lost.
+      connect(id)
+      if (fromSnapshot) {
+        const session = r.reactSessions?.[nodeId.value]
+        if (!reviewCursor.accept({ ...session, nodeId: nodeId.value })) return
+        chatBusy = !!session?.busy
+        chat.value?.applyReviewFrame({
+          ...session,
+          event: 'queue_state',
+          nodeId: nodeId.value,
+          busy: chatBusy,
+          waiting: session?.waiting ?? 0,
+          items: session?.items ?? [],
+        })
+      }
+    }
     // Mid-turn in the continued chat: keep the live stream (refresh on turn_done).
     if (shown && mode.value === 'chat' && chatBusy && d.kind === 'chat' && d.nodeId === nodeId.value) return
     run.value = r
     loadError.value = false
     // Between nodes after a node was shown: stay and wait for the next one.
-    if (shown && !c && (r.status === 'running' || r.status === 'queued')) return
+    if (shown && !c && (
+      r.status === 'running' || r.status === 'queued' ||
+      (r.status === 'waiting_human' && r.currentNode?.state === 'entering')
+    )) return
     if (d.kind === 'chat') {
       if (!shown) return goToChat(d.nodeId)
       if (d.nodeId === nodeId.value) {
@@ -288,9 +356,10 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     if (ended.value) return
     const gen = ++loadGen
     const id = runId.value
+    const revision = dialogueRevision
     try {
       const r = await api.getRun(id)
-      if (gen !== loadGen || disposed) return
+      if (gen !== loadGen || disposed || revision !== dialogueRevision) return
       applyRun(r, id)
     } catch {
       if (gen === loadGen) loadError.value = !run.value
@@ -312,15 +381,19 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   /** Open the live bubble, then seed it from the node's current turn snapshot. */
-  async function seed() {
+  async function seed(force = false) {
     const key = `${runId.value}:${nodeId.value}:${iteration.value}`
     const surface = chat.value
-    if (!surface || (seededKey === key && seededSurface === surface) || mode.value !== 'observe') return
+    const alreadySeeded = seededKey === key && seededSurface === surface
+    if (!surface || (!force && alreadySeeded) || (mode.value !== 'observe' && (!force || !chatBusy))) return
     seededKey = key
     seededSurface = surface
-    surface.applyReviewFrame({ event: 'queue_state', nodeId: nodeId.value, waiting: 0, items: [], busy: true })
-    surface.applyReviewFrame({ event: 'turn_begin', nodeId: nodeId.value, item: { text: '' } })
-    if (lastEvents) surface.applyAcpEvents(lastEvents, nodeId.value)
+    if (mode.value === 'observe' && !alreadySeeded) {
+      surface.applyReviewFrame({ event: 'queue_state', nodeId: nodeId.value, waiting: 0, items: [], busy: true })
+      surface.applyReviewFrame({ event: 'turn_begin', nodeId: nodeId.value, item: { text: '' } })
+      if (lastEvents) surface.applyAcpEvents(lastEvents, nodeId.value)
+    }
+    const revision = acpRevision
     try {
       const r = await api.nodeEvents(runId.value, nodeId.value)
       if (disposed || seededKey !== key || seededSurface !== chat.value || isNodeEventsUnavailable(r)) return
@@ -328,7 +401,10 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       // Top-level task on the first (non-paged) page only.
       const sent = 'task' in r ? r.task : undefined
       if (!task.value && typeof sent === 'string' && sent.trim()) task.value = sent.trim()
-      if (!lastEvents && r.events?.length) chat.value?.applyAcpEvents(r.events, nodeId.value)
+      if (r.events?.length && ((!lastEvents && !force) || (force && revision === acpRevision))) {
+        lastEvents = r.events
+        chat.value?.applyAcpEvents(r.events, nodeId.value)
+      }
     } catch {
       /* stream frames still arrive over WS */
     }
@@ -340,11 +416,12 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       const r = (m as { run?: Run }).run
       if (r && typeof r === 'object' && (!r.id || r.id === runId.value)) {
         loadGen++ // a GET still in flight is older than this frame
-        applyRun(r, runId.value)
+        applyRun(r, runId.value, true)
       }
       return
     }
     if (m.type === 'acp') {
+      acpRevision++
       if (m.nodeId !== nodeId.value) {
         if (m.nodeId) {
           const ahead = Array.isArray(m.events) ? (m.events as AcpEvent[]) : []
@@ -362,7 +439,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if (events.length) {
         // Snapshots are cumulative: keep the latest for a surface not seeded yet.
         lastEvents = events
-        if (isSeeded()) chat.value?.applyAcpEvents(events, nodeId.value)
+        if (mode.value === 'chat' || isSeeded()) chat.value?.applyAcpEvents(events, nodeId.value)
       }
       if (m.busy === false) scheduleRefresh()
       return
@@ -383,6 +460,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     if (m.type === 'review' && mode.value === 'chat') {
       const f = m as Record<string, unknown>
       if (typeof f.nodeId === 'string' && f.nodeId && f.nodeId !== nodeId.value) return
+      if (!reviewCursor.acceptServer(f)) return
+      dialogueRevision++
       notifyRecentActivity()
       if (f.event === 'turn_begin') chatBusy = true
       if (f.event === 'queue_state' && typeof f.busy === 'boolean') chatBusy = f.busy
@@ -401,27 +480,56 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   function connect(id: string) {
+    if (!id || disposed || ended.value) return
     if (ws && wsRun === id) return
-    ws?.close()
+    heartbeat.stop()
+    const previous = ws
+    ws = null
+    previous?.close()
+    const recovering = wsRun === id
     wsRun = id
+    reconnect.markConnecting()
     let socket: WebSocket
     try {
       socket = new WebSocket(api.runEventsWsUrl(id))
     } catch {
       ws = null
+      reconnect.onClose()
       return
     }
     ws = socket
+    heartbeat.start()
+    let receivedSnapshot = false
+    socket.onopen = () => {
+      if (ws !== socket) return
+      reconnect.markOpened()
+      heartbeat.touch()
+    }
     socket.onmessage = (ev) => {
       if (ws !== socket) return
+      heartbeat.touch()
       try {
-        onFrame(JSON.parse(String(ev.data)) as LiveFrame)
+        const frame = JSON.parse(String(ev.data)) as LiveFrame
+        if (frame.type === 'snapshot' && !receivedSnapshot) {
+          receivedSnapshot = true
+          const snapshot = (frame as { run?: Run }).run
+          const sessions = snapshot?.reactSessions ?? {}
+          const versioned = reviewCursor.hasVersion || typeof snapshot?.reviewSessionGeneration === 'number' || Object.values(sessions).some(snap => typeof snap.sessionGeneration === 'number')
+          reviewCursor.reset()
+          reviewCursor.installSnapshot(sessions, snapshot?.reviewSessionGeneration)
+          if (versioned) chat.value?.applyReviewFrame({ event: 'session_reset', nodeId: nodeId.value })
+        }
+        onFrame(frame)
+        if (recovering && frame.type === 'snapshot' && !ended.value) void seed(true)
       } catch {
         /* ignore malformed frames */
       }
     }
     socket.onclose = () => {
-      if (ws === socket) ws = null
+      if (ws !== socket) return
+      ws = null
+      heartbeat.stop()
+      reconnect.onClose()
     }
   }
 
@@ -458,10 +566,11 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   /** Reply in the continued chat (same API as /gates). */
-  async function send(text: string, images: ClarifyImage[] = [], annotations: ReactAnnotation[] = []) {
+  async function send(text: string, images: ClarifyImage[] = [], annotations: ReactAnnotation[] = [], clientMessageId?: string) {
     if (mode.value !== 'chat' || handoff.value) return
     try {
-      await api.reactReply(runId.value, nodeId.value, text, images, false, annotations)
+      if (clientMessageId) await api.reactReply(runId.value, nodeId.value, text, images, false, annotations, false, false, clientMessageId)
+      else await api.reactReply(runId.value, nodeId.value, text, images, false, annotations)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
       void load()
@@ -532,8 +641,11 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   function stop() {
-    ws?.close()
+    reconnect.reset()
+    heartbeat.stop()
+    const socket = ws
     ws = null
+    socket?.close()
     wsRun = ''
     if (pollTimer) window.clearInterval(pollTimer)
     pollTimer = undefined
@@ -549,6 +661,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       return
     }
     selfRoute = ''
+    reviewCursor.reset()
     loading.value = !run.value || run.value.id !== runId.value
     stopping.value = false
     // A new route (sidebar click / follow while opening) starts a fresh page.
@@ -557,6 +670,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     endState.value = null
     shown = false
     mode.value = 'observe'
+    completedEvents.value = null
     chain.value = null
     handoff.value = null
     void load()

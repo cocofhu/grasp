@@ -536,6 +536,9 @@ type ReactMessage struct {
 	Role string `json:"role"` // agent | human
 	Text string `json:"text"`
 	At   string `json:"at"`
+	// ClientMessageID groups this human request with all of its agent segments.
+	// Older messages and requests without a sender id keep it absent.
+	ClientMessageID string `json:"clientMessageId,omitempty"`
 	// Metadata belongs to this reply only; visit-wide StateRun totals must
 	// never be copied onto every historical assistant message.
 	Execution    *ChatExecution    `json:"execution,omitempty"`

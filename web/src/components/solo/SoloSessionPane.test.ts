@@ -355,16 +355,18 @@ describe('SoloSessionPane', () => {
     ;(document.querySelector('[data-testid="solo-effort-open"]') as HTMLButtonElement).click()
     await flushPromises()
     const slider = document.querySelector<HTMLInputElement>('[data-testid="solo-effort-slider"]')!
-    expect(slider.max).toBe('2')
-    expect(slider.value).toBe('2')
+    expect(slider.max).toBe('1')
+    expect(slider.value).toBe('1')
     expect(document.activeElement).toBe(slider)
-    slider.value = '1'
+    slider.value = '0'
     slider.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     expect(setCurrentReasoningEffort).toHaveBeenCalledWith('low')
+    currentReasoningEffort.value = 'low'
+    await flushPromises()
     ;(document.querySelector('[data-testid="solo-effort-reset"]') as HTMLButtonElement).click()
     await flushPromises()
-    expect(setCurrentReasoningEffort).toHaveBeenLastCalledWith('')
+    expect(setCurrentReasoningEffort).toHaveBeenLastCalledWith('high')
     expect(setCurrentModel).not.toHaveBeenCalled()
     // A model write must not expose the previous model's levels on its target.
     modelChangePending.value = true

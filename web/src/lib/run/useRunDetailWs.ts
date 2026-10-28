@@ -12,6 +12,8 @@ import {
 import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
 import { applySidebarEnter, noteSidebarRunStatus } from '@/lib/inbox/sidebarHandoff'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
+import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
+import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { EventPageState } from '@/lib/run/useRunDetailLiveLog'
 
@@ -107,11 +109,22 @@ export function useRunDetailWs(opts: {
    */
   const dialoguePlatformBusy: Record<string, boolean> = Object.create(null)
   const busySeedRetry = createBusySeedRetryController()
+  const reviewCursor = createReviewStateCursor()
   const wsReconnect = createWsReconnectController({
     connect: () => connectWs({ fromReconnect: true }),
     shouldReconnect: () =>
       !!runId.value &&
-      (run.value.status === 'running' || run.value.status === 'waiting_human'),
+      (run.value.status === 'queued' || run.value.status === 'running' || run.value.status === 'waiting_human'),
+  })
+  const heartbeat = createWsHeartbeat({
+    onTimeout: () => {
+      const socket = ws
+      ws = undefined
+      wsConnected = false
+      heartbeat.stop()
+      socket?.close()
+      wsReconnect.onClose()
+    },
   })
 
   let timer: number | undefined
@@ -148,6 +161,7 @@ export function useRunDetailWs(opts: {
     const busyNodes: string[] = []
     for (const [nodeId, snap] of Object.entries(restoredSessions)) {
       if (!snap || typeof snap !== 'object') continue
+      if (!reviewCursor.accept({ ...snap, nodeId })) continue
       liveBusy[nodeId] = !!snap.busy
       dialoguePlatformBusy[nodeId] = !!snap.busy
       if (snap.busy) busyNodes.push(nodeId)
@@ -158,6 +172,8 @@ export function useRunDetailWs(opts: {
         items: snap.items ?? [],
         busy: !!snap.busy,
         activeItem: snap.activeItem,
+        sessionGeneration: snap.sessionGeneration,
+        revision: snap.revision,
       }
       if (typeof snap.sandboxBusy === 'boolean' || typeof snap.sandboxDesynced === 'boolean') {
         frame.sandboxBusy = !!snap.sandboxBusy
@@ -352,6 +368,7 @@ export function useRunDetailWs(opts: {
   )
 
   function resetDialogueState() {
+    reviewCursor.reset()
     pendingDialogueAcp.clear()
     dialogueRailsFilled = false
     dialogueLiveIncremental = false
@@ -361,9 +378,11 @@ export function useRunDetailWs(opts: {
 
   function teardownRealtime() {
     busySeedRetry.stop()
-    wsReconnect.markIntentionalClose()
-    ws?.close()
+    wsReconnect.reset()
+    heartbeat.stop()
+    const socket = ws
     ws = undefined
+    socket?.close()
     wsConnected = false
     if (timer) {
       window.clearInterval(timer)
@@ -432,16 +451,20 @@ export function useRunDetailWs(opts: {
     const id = runId.value
     if (!id) return
     if (opts?.fromReconnect) {
-      wsReconnect.markIntentionalClose()
-      ws?.close()
+      const socket = ws
       ws = undefined
       wsConnected = false
+      heartbeat.stop()
+      socket?.close()
     }
+    wsReconnect.markConnecting()
     let socket: WebSocket
     let dialogueRevision = 0
+    let receivedSnapshot = false
     try {
       socket = new WebSocket(api.runEventsWsUrl(id))
       ws = socket
+      heartbeat.start()
     } catch {
       wsReconnect.onClose()
       return
@@ -450,15 +473,18 @@ export function useRunDetailWs(opts: {
       if (ws !== socket) return
       wsConnected = true
       wsReconnect.markOpened()
+      heartbeat.touch()
     }
     socket.onclose = () => {
       if (ws !== socket) return
       wsConnected = false
       ws = undefined
+      heartbeat.stop()
       wsReconnect.onClose()
     }
     socket.onmessage = (ev) => {
       if (ws !== socket) return
+      heartbeat.touch()
       let m: any
       try {
         m = JSON.parse(ev.data)
@@ -473,6 +499,19 @@ export function useRunDetailWs(opts: {
       if (m.type === 'snapshot' && (m.run?.reactSessions || m.run?.id === id)) {
         // A full run DTO omits the map once its last FIFO has gone idle.
         const sessions = m.run.reactSessions ?? {}
+        if (!receivedSnapshot) {
+          receivedSnapshot = true
+          const versioned = reviewCursor.hasVersion || typeof m.run.reviewSessionGeneration === 'number' || Object.values(sessions).some((snap: any) => typeof snap?.sessionGeneration === 'number')
+          reviewCursor.reset()
+          if (versioned) {
+            for (const nodeId of new Set([selClarify.value?.nodeId, llmTranscriptRef?.value?.getNodeId?.(), run.value.gate?.reactUpstreamNodeId])) {
+              if (!nodeId) continue
+              dialogueChat(nodeId)?.applyReviewFrame?.({ event: 'session_reset', nodeId })
+              if (run.value.gate?.reactUpstreamNodeId === nodeId) gateApprovalRef.value?.applyReviewFrame?.({ event: 'session_reset', nodeId })
+            }
+          }
+        }
+        reviewCursor.installSnapshot(sessions, m.run.reviewSessionGeneration)
         const revision = ++dialogueRevision
         const nodeId = selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId
         const sameDialogue = () =>
@@ -508,15 +547,16 @@ export function useRunDetailWs(opts: {
         // Dialogue-surface stream (ClarifyChat / GateApproval), not only LiveLog.
         applyOrBufferDialogueAcp(m.nodeId, wsEvents, m.busy)
       } else if (m.type === 'review' && m.nodeId) {
+        if (!reviewCursor.acceptServer(m)) return
         // A newly mounted LLM surface restores from this same authority. Keep
         // it current so mounting cannot replace a newer live turn with idle.
         const previous = run.value.reactSessions?.[m.nodeId]
         const session = m.event === 'queue_state'
-          ? { ...previous, busy: !!m.busy, waiting: m.waiting ?? 0, items: m.items ?? [], activeItem: m.activeItem }
+          ? { ...previous, sessionGeneration: m.sessionGeneration, revision: m.revision, busy: !!m.busy, waiting: m.waiting ?? 0, items: m.items ?? [], activeItem: m.activeItem }
           : m.event === 'turn_begin'
-            ? { ...previous, busy: true, waiting: previous?.waiting ?? 0, items: previous?.items ?? [], activeItem: m.item }
+            ? { ...previous, sessionGeneration: m.sessionGeneration, revision: m.revision, busy: true, waiting: m.waiting ?? previous?.waiting ?? 0, items: m.items ?? previous?.items ?? [], activeItem: m.item }
             : m.event === 'turn_done' || m.event === 'error'
-              ? { ...previous, busy: false, waiting: previous?.waiting ?? 0, items: previous?.items ?? [], activeItem: undefined }
+              ? { ...previous, sessionGeneration: m.sessionGeneration, revision: m.revision, busy: false, waiting: m.waiting ?? previous?.waiting ?? 0, items: m.items ?? previous?.items ?? [], activeItem: undefined }
               : null
         if (session) {
           run.value = { ...run.value, reactSessions: { ...run.value.reactSessions, [m.nodeId]: session } }

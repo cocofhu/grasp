@@ -5,9 +5,68 @@
  */
 import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 
+export type ReviewStateVersion = {
+  nodeId?: string
+  sessionGeneration?: number
+  revision?: number
+}
+
+/** Compare server state, never network arrival order or message text. */
+export function createReviewStateCursor() {
+  const versions = new Map<string, { generation: number; revision: number }>()
+  let generationFloor = -1
+  let snapshotGenerations = new Map<string, number>()
+  return {
+    get hasVersion() {
+      return versions.size > 0 || generationFloor >= 0
+    },
+    accept(frame: ReviewStateVersion | Record<string, unknown>): boolean {
+      const generation = frame.sessionGeneration
+      const revision = frame.revision
+      // Older servers and local optimistic frames have no server version.
+      if (typeof generation !== 'number' || typeof revision !== 'number' ||
+        !Number.isSafeInteger(generation) || !Number.isSafeInteger(revision) ||
+        generation < 0 || revision < 0) return true
+      const key = typeof frame.nodeId === 'string' ? frame.nodeId : ''
+      const previous = versions.get(key)
+      if (generation <= generationFloor && previous?.generation !== generation && snapshotGenerations.get(key) !== generation) return false
+      if (previous && (generation < previous.generation ||
+        (generation === previous.generation && revision < previous.revision))) return false
+      versions.set(key, { generation, revision })
+      return true
+    },
+    acceptServer(frame: (ReviewStateVersion & { event?: string }) | Record<string, unknown>): boolean {
+      const key = typeof frame.nodeId === 'string' ? frame.nodeId : ''
+      const event = typeof frame.event === 'string' ? frame.event : ''
+      if (versions.has(key) && ['queue_state', 'turn_begin', 'turn_done', 'error'].includes(event) &&
+        (typeof frame.sessionGeneration !== 'number' || typeof frame.revision !== 'number')) return false
+      return this.accept(frame)
+    },
+    installSnapshot(sessions: Record<string, ReviewStateVersion | undefined>, watermark?: number) {
+      if (typeof watermark !== 'number' || !Number.isSafeInteger(watermark) || watermark < 0) return
+      generationFloor = Math.max(generationFloor, watermark)
+      snapshotGenerations = new Map(Object.entries(sessions).flatMap(([nodeId, state]) =>
+        typeof state?.sessionGeneration === 'number' ? [[nodeId, state.sessionGeneration] as const] : []))
+      for (const [nodeId, state] of versions) {
+        if (!(nodeId in sessions) && state.generation <= watermark) versions.delete(nodeId)
+      }
+      for (const [nodeId, state] of Object.entries(sessions)) {
+        if (state) this.accept({ ...state, nodeId })
+      }
+    },
+    reset() {
+      versions.clear()
+      generationFloor = -1
+      snapshotGenerations.clear()
+    },
+  }
+}
+
 export type SessionQueueItem = {
   /** Server item id; absent on an optimistic row not yet acknowledged. */
   id?: string
+  /** Stable sender identity; distinct tabs may send identical payloads. */
+  clientMessageId?: string
   text: string
   images: ClarifyImage[]
   annotations: ReactAnnotation[]
@@ -16,6 +75,7 @@ export type SessionQueueItem = {
 /** Item shape in queue_state.items, queue_state.activeItem and turn_begin.item. */
 export type SessionFrameItem = {
   id?: string
+  clientMessageId?: string
   text?: string
   images?: ClarifyImage[]
   annotations?: ReactAnnotation[]
@@ -60,11 +120,14 @@ export function reconcileQueue(
   const rebuilt: SessionQueueItem[] = items.map((it) => {
     const text = it.text ?? ''
     const id = frameId(it)
-    const match = id
-      ? local.find((q) => q.id === id) ?? local.find((q) => !q.id && q.text === text)
-      : local.find((q) => q.text === text)
+    const pendingMatch = local.find((q) => !q.id && (it.clientMessageId
+      ? q.clientMessageId === it.clientMessageId
+      : q.text === text))
+    const match = id ? local.find((q) => q.id === id) ?? pendingMatch : pendingMatch
     return {
       id: id ?? match?.id,
+      ...(it.clientMessageId || match?.clientMessageId
+        ? { clientMessageId: it.clientMessageId ?? match?.clientMessageId } : {}),
       text,
       images: Array.isArray(it.images) ? cloneImages(it.images) : cloneImages(match?.images),
       annotations: Array.isArray(it.annotations)

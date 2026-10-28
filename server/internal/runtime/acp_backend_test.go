@@ -21,6 +21,7 @@ func TestNormalizeBackend(t *testing.T) {
 		{"opencode", BackendOpenCode},
 		{"codex", BackendCodex},
 		{"deepseek_harness", BackendDeepSeekHarness},
+		{"kimi_code", BackendKimiCode},
 		{" opencode ", BackendOpenCode},
 		{"", ""},
 		{" unknown ", ""},
@@ -70,6 +71,7 @@ func TestAgentRuntimeLabel(t *testing.T) {
 		BackendOpenCode:        "opencode-json",
 		BackendCodex:           "codex-cli",
 		BackendDeepSeekHarness: "dsh-acp",
+		BackendKimiCode:        "kimi-code-acp",
 	}
 	for b, want := range cases {
 		if got := AgentRuntimeLabel(b); got != want {
@@ -90,6 +92,7 @@ func TestMergeAuthEnv_CredentialKeyOnly(t *testing.T) {
 		{BackendTrae, envauth.EnvTraeAPIKey, EnvTraeCLIToken},
 		{BackendOpenCode, envauth.EnvOpenCodeAPIKey, "OPENCODE_API_KEY"},
 		{BackendDeepSeekHarness, envauth.EnvDeepSeekAPIKey, "DEEPSEEK_API_KEY"},
+		{BackendKimiCode, envauth.EnvKimiCodeAPIKey, "KIMI_CODE_API_KEY"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.backend), func(t *testing.T) {

@@ -87,6 +87,29 @@ const OPENCODE_GUIDE: BackendAuthGuide = {
   noteKey: 'pages.agentStudio.wizard.apiKey.notes.opencode',
 }
 
+const KIMI_SITE_LINKS: Record<string, AuthApplyLink> = {
+  cn: {
+    labelKey: 'pages.agentStudio.wizard.apiKey.links.kimiDomestic',
+    url: 'https://platform.kimi.com/console/api-keys',
+  },
+  intl: {
+    labelKey: 'pages.agentStudio.wizard.apiKey.links.kimiInternational',
+    url: 'https://platform.kimi.ai/console/api-keys',
+  },
+}
+
+const KIMI_GUIDE: BackendAuthGuide = {
+  backend: 'kimi_code',
+  keys: [{ key: 'GRASP_KIMI_CODE_API_KEY' }],
+  pathStepKeys: [
+    'pages.agentStudio.wizard.apiKey.paths.kimi.step1',
+    'pages.agentStudio.wizard.apiKey.paths.kimi.step2',
+    'pages.agentStudio.wizard.apiKey.paths.kimi.step3',
+  ],
+  links: [KIMI_SITE_LINKS.intl],
+  noteKey: 'pages.agentStudio.wizard.apiKey.notes.kimi',
+}
+
 const DEEPSEEK_GUIDE: BackendAuthGuide = {
   backend: 'deepseek_harness',
   keys: [{ key: 'GRASP_DEEPSEEK_API_KEY' }],
@@ -176,6 +199,7 @@ export const BACKEND_AUTH_HINTS: Record<
     note: 'OpenCode API Key 鉴权',
   },
   deepseek_harness: { key: 'GRASP_DEEPSEEK_API_KEY', note: 'DeepSeek Harness API Key 鉴权' },
+  kimi_code: { key: 'GRASP_KIMI_CODE_API_KEY', note: 'Kimi Code 开放平台 API Key 鉴权' },
   codex: {
     key: 'GRASP_CODEX_AUTH_JSON',
     note: 'Codex ChatGPT 登录文件',
@@ -190,6 +214,10 @@ export function authGuideFor(backend: BackendId, region = ''): BackendAuthGuide 
   if (backend === 'opencode') return OPENCODE_GUIDE
   if (backend === 'codex') return CODEX_GUIDE
   if (backend === 'deepseek_harness') return DEEPSEEK_GUIDE
+  if (backend === 'kimi_code') {
+    const siteLink = KIMI_SITE_LINKS[region] || KIMI_SITE_LINKS.intl
+    return { ...KIMI_GUIDE, links: [siteLink] }
+  }
 
   const siteLink = CODEBUDDY_SITE_LINKS[region] || CODEBUDDY_SITE_LINKS.public
   return {
