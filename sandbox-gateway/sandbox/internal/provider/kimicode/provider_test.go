@@ -108,6 +108,27 @@ func TestOpenEmptyResetIgnoresInheritedEffortAndRejectsUnknownModels(t *testing.
 	}
 }
 
+func TestOpenKeepsModelAndNativeEnvOverridesOutOfConfigurationRoot(t *testing.T) {
+	root := setupKimiFixture(t, "success")
+	otherHome := t.TempDir()
+	t.Setenv("KIMI_CODE_HOME", otherHome)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	session, err := New().Open(ctx, ctx, provider.OpenOptions{
+		Cwd: otherHome, Model: "kimi-k3.1-pro", ReasoningEffort: "max", ReasoningEffortSet: true,
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	if entries, err := os.ReadDir(otherHome); err != nil || len(entries) != 0 {
+		t.Fatal("native environment or session state redirected configuration writes", err)
+	}
+	if entries, err := os.ReadDir(filepath.Join(root, ".grasp-configs")); err != nil || len(entries) != 1 {
+		t.Fatal("process CONFIG_ROOT did not own the selected model configuration", err)
+	}
+}
+
 func TestReasoningOptionRequiresThoughtLevelAndExactValue(t *testing.T) {
 	options := []acp.ConfigOption{{ID: "native-thinking", Category: "thought_level", CurrentValue: "low", Groups: []acp.ConfigOptionGroup{{Options: []acp.ConfigOptionValue{{Value: "low"}, {Value: "max"}}}}}}
 	if option, ok := reasoningOption(options, "max"); !ok || option.ID != "native-thinking" {

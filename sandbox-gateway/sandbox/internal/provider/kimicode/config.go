@@ -1,6 +1,7 @@
 package kimicode
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -147,6 +148,24 @@ func WriteConfig(dir, baseURL, model string) error {
 }
 
 func writeConfig(dir, baseURL, model, effort string) error {
+	dir = filepath.Clean(strings.TrimSpace(dir))
+	if !filepath.IsAbs(dir) {
+		return fmt.Errorf("kimi config directory must be an absolute path")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	directory, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = directory.Close() }()
+	return writeConfigAt(directory, baseURL, model, effort)
+}
+
+// Keep reads and atomic publication on the same opened directory. Reopening
+// its name could follow a symlink substituted after isolatedHome resolved it.
+func writeConfigAt(directory *os.Root, baseURL, model, effort string) error {
 	model = strings.TrimSpace(model)
 	if model == "auto" {
 		model = ""
@@ -157,25 +176,18 @@ func writeConfig(dir, baseURL, model, effort string) error {
 	if err := validateReasoningEffort(model, effort); err != nil {
 		return err
 	}
-	dir = filepath.Clean(strings.TrimSpace(dir))
-	if !strings.HasPrefix(dir, "/") || strings.Contains(dir, "..") {
-		return fmt.Errorf("kimi config directory must be an absolute path")
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	path := filepath.Join(dir, "config.toml")
 	body := renderConfig(baseURL, model, effort)
-	if existing, err := os.ReadFile(path); err == nil && string(existing) == body {
+	if existing, err := directory.ReadFile("config.toml"); err == nil && string(existing) == body {
 		return nil
 	}
 	// Homes are reused by concurrent processes selecting the same route.
 	// Never expose a truncated file to native startup or config watchers.
-	temporary, err := os.CreateTemp(dir, ".config-*.toml")
+	temporaryName := ".config-" + rand.Text() + ".toml"
+	temporary, err := directory.OpenFile(temporaryName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(temporary.Name()) }()
+	defer func() { _ = directory.Remove(temporaryName) }()
 	if _, err := temporary.WriteString(body); err != nil {
 		_ = temporary.Close()
 		return err
@@ -183,7 +195,7 @@ func writeConfig(dir, baseURL, model, effort string) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temporary.Name(), path)
+	return directory.Rename(temporaryName, "config.toml")
 }
 
 // isolatedHome reuses an immutable home per site/model/effort combination.
@@ -191,58 +203,62 @@ func writeConfig(dir, baseURL, model, effort string) error {
 // symlink shells keeps native absolute session-index paths valid after exit,
 // while all histories, process locks and blobs share the configured home.
 // Credentials and provider settings are excluded; configs name an env var.
-func isolatedHome(root, baseURL, model, effort string) (string, error) {
+func isolatedHome(root, baseURL, model, effort string) (*os.Root, error) {
 	root = filepath.Clean(strings.TrimSpace(root))
 	if !filepath.IsAbs(root) {
-		return "", fmt.Errorf("kimi config directory must be an absolute path")
+		return nil, fmt.Errorf("kimi config directory must be an absolute path")
 	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
-		return "", err
+		return nil, err
 	}
+	boundary, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = boundary.Close() }()
 	identity := sha256.Sum256([]byte(baseURL + "\x00" + model + "\x00" + effort))
-	dir := filepath.Join(root, ".grasp-configs", fmt.Sprintf("%x", identity[:12]))
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
+	dir := filepath.Join(".grasp-configs", fmt.Sprintf("%x", identity[:12]))
+	if err := boundary.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
 	}
 	link := func(entry string) error {
-		shared := filepath.Join(root, entry)
+		shared := filepath.Join("..", "..", entry)
 		path := filepath.Join(dir, entry)
-		if err := os.Symlink(shared, path); err != nil {
-			if target, readErr := os.Readlink(path); readErr != nil || target != shared {
+		if err := boundary.Symlink(shared, path); err != nil {
+			// Preserve exact absolute links made by earlier runtime bundles.
+			if target, readErr := boundary.Readlink(path); readErr != nil || target != shared && target != filepath.Join(root, entry) {
 				return err
 			}
 		}
 		return nil
 	}
 	for _, entry := range []string{"sessions", "blobs", "store", "cache", "logs", "locks"} {
-		shared := filepath.Join(root, entry)
-		if err := os.MkdirAll(shared, 0o700); err != nil {
-			return "", err
+		if err := boundary.MkdirAll(entry, 0o700); err != nil {
+			return nil, err
 		}
 		if err := link(entry); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
-	index, err := os.OpenFile(filepath.Join(root, "session_index.jsonl"), os.O_CREATE|os.O_RDWR, 0o600)
+	index, err := boundary.OpenFile("session_index.jsonl", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := index.Close(); err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := link("session_index.jsonl"); err != nil {
-		return "", err
+		return nil, err
 	}
 	for _, entry := range []string{"skills", "agents", "rules", "plugins", "mcp.json", ".mcp.json", "AGENTS.md"} {
-		shared := filepath.Join(root, entry)
-		if _, err := os.Stat(shared); os.IsNotExist(err) {
+		if _, err := boundary.Lstat(entry); os.IsNotExist(err) {
 			continue
 		}
 		if err := link(entry); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
-	return dir, nil
+	return boundary.OpenRoot(dir)
 }
 
 func contextTokens(model string) int {

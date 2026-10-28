@@ -58,7 +58,8 @@ func TestNativeKimiReasoningRequests(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := writeConfig(home, endpoint.URL+"/v1", model, effort); err != nil {
+		defer func() { _ = home.Close() }()
+		if err := writeConfigAt(home, endpoint.URL+"/v1", model, effort); err != nil {
 			t.Fatal(err)
 		}
 		env := make([]string, 0)
@@ -68,7 +69,7 @@ func TestNativeKimiReasoningRequests(t *testing.T) {
 				env = append(env, item)
 			}
 		}
-		env = common.UpsertEnv(env, "KIMI_CODE_HOME", home)
+		env = common.UpsertEnv(env, "KIMI_CODE_HOME", home.Name())
 		env = common.UpsertEnv(env, APIKeyEnv, "synthetic-kimi-native-test")
 		env = common.UpsertEnv(env, "KIMI_CODE_NO_AUTO_UPDATE", "1")
 		env = common.UpsertEnv(env, "KIMI_DISABLE_TELEMETRY", "1")
@@ -177,7 +178,8 @@ func TestIsolatedHomeConcurrentCreation(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			if err := writeConfig(home, intlBase, "kimi-k3", "low"); err != nil {
+			defer func() { _ = home.Close() }()
+			if err := writeConfigAt(home, intlBase, "kimi-k3", "low"); err != nil {
 				t.Error(err)
 			}
 		})

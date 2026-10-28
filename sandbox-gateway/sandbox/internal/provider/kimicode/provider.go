@@ -68,6 +68,12 @@ func (*Provider) AuthEnv(env []string) []string {
 
 func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.OpenOptions,
 	onEvent func(json.RawMessage), perm provider.PermissionChooser) (provider.Session, error) {
+	// Configuration paths belong to the process, independently of the model
+	// route. Never derive filesystem roots from a model-prepared env slice.
+	root := strings.TrimSpace(os.Getenv("CONFIG_ROOT"))
+	if root == "" {
+		root = ConfigRoot
+	}
 	// Resolve the model route before copying the API key into the environment.
 	// The key is not an input to the route id.
 	prepared, err := modelconnection.Prepare(p.Name(), os.Environ(), opts.Model, p.DefaultConfigRoot())
@@ -83,10 +89,6 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	if secret == "" || strings.ContainsAny(secret, "\r\n\x00") {
 		prepared.Cleanup()
 		return nil, fmt.Errorf("%s", MsgMissingKey)
-	}
-	root := strings.TrimSpace(common.GetEnvValue(env, "KIMI_CODE_HOME"))
-	if root == "" {
-		root = ConfigRoot
 	}
 	baseURL, err := BaseURL(common.GetEnvValue(env, RegionEnv))
 	if err != nil {
@@ -111,9 +113,10 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		prepared.Cleanup()
 		return nil, fmt.Errorf("kimi config: %w", err)
 	}
+	defer func() { _ = home.Close() }()
 	var cleanupOnce sync.Once
 	cleanup := func() { cleanupOnce.Do(prepared.Cleanup) }
-	env = common.UpsertEnv(env, "KIMI_CODE_HOME", home)
+	env = common.UpsertEnv(env, "KIMI_CODE_HOME", home.Name())
 	// Native model environment overrides have higher precedence than config
 	// and ACP state. The selected Coding Plan route owns model, credential
 	// and strength, including an empty reset to the native default.
@@ -123,7 +126,7 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 			cleanEnv = append(cleanEnv, item)
 		}
 	}
-	if err := writeConfig(home, baseURL, model, effort); err != nil {
+	if err := writeConfigAt(home, baseURL, model, effort); err != nil {
 		cleanup()
 		return nil, fmt.Errorf("kimi config: %w", err)
 	}
