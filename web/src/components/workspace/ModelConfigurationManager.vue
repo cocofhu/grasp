@@ -109,7 +109,7 @@ const credentialChoice = computed<string>({
 const selectedCredential = computed(() => credentialOptions.value.find((option) => option.value === credentialChoice.value))
 type SlotOption = { value: string; label: string; hint?: string; vendor: string }
 const slotCatalog = computed<SlotOption[]>(() => {
-  if (form.kind === 'platform') return cliModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: model.vendor }))
+  if (form.kind === 'platform') return cliModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: modelVendor(model.id, model.name, model.vendor) }))
   const vendor = selectedService.value?.providerId || ''
   return serviceModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: modelVendor(model.id, model.name, vendor) }))
 })

@@ -6,7 +6,7 @@ import codebuddyLogo from '@/assets/provider-logos/codebuddy.svg'
 import codexLogo from '@/assets/provider-logos/codex.svg'
 import cursorLogo from '@/assets/provider-logos/cursor.svg'
 import deepseekLogo from '@/assets/provider-logos/deepseek.svg'
-import googleLogo from '@/assets/provider-logos/google.svg'
+import geminiLogo from '@/assets/provider-logos/gemini.svg'
 import moonshotLogo from '@/assets/provider-logos/moonshot.svg'
 import kimiLogo from '@/assets/provider-logos/kimi.svg'
 import kimiDarkLogo from '@/assets/provider-logos/kimi-dark.svg'
@@ -49,7 +49,7 @@ const ASSETS: Record<string, string> = {
   claude_code: claudeLogo,
   openai: openaiLogo,
   opencode: opencodeLogo,
-  google: googleLogo,
+  google: geminiLogo,
   xai: xaiLogo,
   deepseek: deepseekLogo,
   deepseek_harness: deepseekLogo,
@@ -73,7 +73,7 @@ const ASSETS: Record<string, string> = {
 
 /** These marks ship with wide built-in padding and read tiny at icon sizes. */
 const PADDED = new Set(['openai', 'codex'])
-const COLOR_ASSETS = new Set(['qwen', 'doubao', 'siliconflow', 'minimax', 'zhipu', 'hunyuan', 'qianfan'])
+const COLOR_ASSETS = new Set(['google', 'qwen', 'doubao', 'siliconflow', 'minimax', 'zhipu', 'hunyuan', 'qianfan'])
 
 const assetKey = computed(() => (props.backend ? props.vendor : vendorLogoProvider(props.vendor)))
 const asset = computed(() => props.unknown ? '' : assetKey.value === 'kimi' && theme.value === 'dark' ? kimiDarkLogo : ASSETS[assetKey.value] || '')
