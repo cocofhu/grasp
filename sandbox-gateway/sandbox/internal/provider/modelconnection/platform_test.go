@@ -93,7 +93,7 @@ func TestOpenCodeOfficialModeIsolatesRoutingAndKeepsHistory(t *testing.T) {
 }
 
 func TestOpenCodeOfficialModeRejectsOtherProviderAndLeavesConnectionMode(t *testing.T) {
-	for _, model := range []string{"openai/gpt-example", "raw-model", "opencode/", "opencode/  "} {
+	for _, model := range []string{"openai/gpt-example", "raw-model", "opencode/", "opencode/  ", "opencode/vendor/model", "opencode-go/", "opencode-go/a/b"} {
 		if _, err := Prepare(provider.OpenCode, []string{"GRASP_OPENCODE_PROVIDER=opencode", "OPENCODE_API_KEY=official-test-key"}, model, t.TempDir()); err == nil {
 			t.Errorf("nonofficial model accepted: %q", model)
 		}
@@ -132,6 +132,58 @@ func TestOfficialModesRejectInvalidKeyBeforeWriting(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestOpenCodeGoOfficialModeEnablesOnlyGoProvider(t *testing.T) {
+	root := t.TempDir()
+	env := []string{"GRASP_OPENCODE_PROVIDER=opencode", "OPENCODE_API_KEY=official-test-key", "CONFIG_ROOT=" + root}
+	model := "opencode-go/mimo-v2.5-pro"
+	p, err := Prepare(provider.OpenCode, env, model, "/unused")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Cleanup()
+	raw := common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")
+	var config map[string]any
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(config["enabled_providers"], []any{"opencode-go"}) || config["model"] != model || config["small_model"] != model {
+		t.Fatalf("go provider: %s", raw)
+	}
+	providers := config["provider"].(map[string]any)
+	if len(providers) != 1 || providers["opencode"] != nil {
+		t.Fatalf("zen provider still enabled: %s", raw)
+	}
+	options := providers["opencode-go"].(map[string]any)["options"].(map[string]any)
+	if options["apiKey"] != "{env:OPENCODE_API_KEY}" || options["baseURL"] != nil || strings.Contains(raw, "official-test-key") || strings.Contains(raw, "npm") {
+		t.Fatalf("native endpoint or key copied: %s", raw)
+	}
+	if common.GetEnvValue(p.Env, "OPENCODE_API_KEY") != "official-test-key" {
+		t.Fatal("selected key was not mapped to OPENCODE_API_KEY")
+	}
+}
+
+func TestOpenCodeGoFamilyFromAuxiliaryModelsWhenPrimaryIsEmpty(t *testing.T) {
+	env := []string{"GRASP_OPENCODE_PROVIDER=opencode", "OPENCODE_API_KEY=official-test-key",
+		`GRASP_CONFIGURED_MODELS=[{"id":""},{"id":"opencode-go/mimo-v2.5"},{"id":"opencode-go/mimo-v2.5-pro"}]`}
+	p, err := Prepare(provider.OpenCode, env, "", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Cleanup()
+	var config map[string]any
+	if err := json.Unmarshal([]byte(common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")), &config); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(config["enabled_providers"], []any{"opencode-go"}) || config["model"] != nil || len(config["provider"].(map[string]any)) != 1 {
+		t.Fatalf("empty primary should still enable opencode-go: %v", config)
+	}
+	mixed := []string{"GRASP_OPENCODE_PROVIDER=opencode", "OPENCODE_API_KEY=official-test-key",
+		`GRASP_CONFIGURED_MODELS=[{"id":"opencode-go/mimo-v2.5"},{"id":"opencode/kimi-k3"}]`}
+	if _, err := Prepare(provider.OpenCode, mixed, "", t.TempDir()); err == nil || !strings.Contains(err.Error(), "one model family") {
+		t.Fatalf("mixed families accepted: %v", err)
 	}
 }
 

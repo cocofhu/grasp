@@ -6,7 +6,7 @@ let closeMessageInfo: (() => void) | undefined
 import { computed, nextTick, onBeforeUnmount, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ChatMessageMetadata, TokenUsage } from '@/lib/shared/types'
-import { effectiveModelUsageRows, fmtTokenCount, tokenUsageTotal, TOKEN_USAGE_SOURCE_BRIDGE, unknownDisplayName } from '@/lib/run/tokenUsage'
+import { effectiveModelUsageRows, fmtTokenCount, tokenUsageTotal, TOKEN_USAGE_SOURCE_BRIDGE } from '@/lib/run/tokenUsage'
 import { fmtTime, fmtTurnElapsed, wallClockSec } from '@/lib/shared/format'
 import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
 import Icon from '@/components/ui/Icon.vue'
@@ -43,13 +43,12 @@ const duration = computed(() => {
   return sec == null ? notReported.value : ms === 0 ? '0s' : fmtTurnElapsed(sec)
 })
 const rows = computed(() => [
-  { key: 'time', label: t('pages.chatMessageInfo.time'), value: fullTime.value || notReported.value },
-  { key: 'agent', label: 'Agent', value: props.metadata?.execution?.agentName || notReported.value },
-  { key: 'tool', label: t('pages.chatMessageInfo.tool'), value: tool.value },
-  { key: 'model', label: t('pages.chatMessageInfo.model'), value: model.value },
-  ...(props.metadata?.execution?.configurationId ? [{ key: 'group', label: t('pages.chatMessageInfo.group'), value: props.metadata.execution.configurationId }] : []),
-  ...(props.metadata?.execution?.reasoningEffort ? [{ key: 'effort', label: t('pages.chatMessageInfo.effort'), value: props.metadata.execution.reasoningEffort }] : []),
-  { key: 'duration', label: t('pages.chatMessageInfo.duration'), value: duration.value },
+  { key: 'time', label: t('pages.chatMessageInfo.time'), value: fullTime.value || notReported.value, mono: Boolean(fullTime.value) },
+  { key: 'agent', label: 'Agent', value: props.metadata?.execution?.agentName || notReported.value, mono: false },
+  { key: 'tool', label: t('pages.chatMessageInfo.tool'), value: tool.value, mono: false },
+  { key: 'model', label: t('pages.chatMessageInfo.model'), value: model.value, mono: false },
+  ...(props.metadata?.execution?.reasoningEffort ? [{ key: 'effort', label: t('pages.chatMessageInfo.effort'), value: props.metadata.execution.reasoningEffort, mono: false }] : []),
+  { key: 'duration', label: t('pages.chatMessageInfo.duration'), value: duration.value, mono: duration.value !== notReported.value },
 ])
 const tokenRows = computed(() => usage.value ? [
   { key: 'input', label: t('pages.executionTimeline.partInput'), value: usage.value.inputTokens },
@@ -120,19 +119,19 @@ onBeforeUnmount(close)
     <slot />
     <Teleport to="body">
       <section v-if="open" :id="tipId" ref="panel" role="tooltip" class="chat-message-info-panel" :style="position" data-testid="chat-message-info-panel" @pointerenter="clearClose" @pointerleave="leave" @keydown.esc.stop.prevent="close">
-        <strong class="block text-[12px] font-semibold text-txt">{{ t('pages.chatMessageInfo.title') }}</strong>
+        <strong class="chat-info-title">{{ t('pages.chatMessageInfo.title') }}</strong>
         <dl class="chat-info-rows">
-          <div v-for="row in rows" :key="row.key" :data-info-row="row.key"><dt>{{ row.label }}</dt><dd>{{ row.value }}</dd></div>
+          <div v-for="row in rows" :key="row.key" :data-info-row="row.key"><dt>{{ row.label }}</dt><dd :class="{ 'chat-info-mono': row.mono }">{{ row.value }}</dd></div>
         </dl>
         <div class="chat-info-tokens">
-          <div class="flex items-center justify-between gap-3 text-[12px]"><strong>Tokens</strong><span class="font-mono tabular-nums" data-testid="chat-message-token-total">{{ usage ? fmtTokenCount(tokenUsageTotal(usage)) : notReported }}</span></div>
-          <dl v-if="usage" class="chat-info-rows"><div v-for="row in tokenRows" :key="row.key" :data-token-row="row.key"><dt>{{ row.label }}</dt><dd class="font-mono tabular-nums">{{ fmtTokenCount(row.value) }}</dd></div></dl>
-          <div v-if="modelRows.length" class="chat-info-models" data-testid="chat-message-model-usage">
-            <div v-for="row in modelRows" :key="row.modelKey" class="flex items-start justify-between gap-3" :data-model-key="row.modelKey">
-              <span class="min-w-0 break-words">{{ row.unknown ? unknownModelDisplayName?.trim() ? unknownDisplayName(row.modelKey, unknownModelDisplayName) : t('pages.chatMessageInfo.unknownModel') : row.modelKey }}<span class="block text-[10px] text-txt3">{{ t(row.filled || row.source === TOKEN_USAGE_SOURCE_BRIDGE ? 'pages.chatMessageInfo.sourceAttribution' : row.unknown ? 'pages.chatMessageInfo.sourceUnknown' : 'pages.chatMessageInfo.sourceReported') }}</span></span>
-              <span class="shrink-0 font-mono tabular-nums">{{ fmtTokenCount(row.total) }}</span>
+          <div class="chat-info-token-head"><strong>Tokens</strong><span v-if="usage" class="chat-info-token-total" data-testid="chat-message-token-total">{{ fmtTokenCount(tokenUsageTotal(usage)) }}</span><span v-else data-testid="chat-message-token-total">{{ notReported }}</span></div>
+          <dl v-if="usage" class="chat-info-token-parts">
+            <div v-for="row in tokenRows" :key="row.key" class="chat-info-token-part" :class="{ 'is-zero': row.value === 0 }" :data-token-row="row.key">
+              <span class="chat-info-dot" :class="`is-${row.key}`" aria-hidden="true"></span>
+              <dt>{{ row.label }}</dt>
+              <dd class="chat-info-mono">{{ fmtTokenCount(row.value) }}</dd>
             </div>
-          </div>
+          </dl>
         </div>
       </section>
     </Teleport>
@@ -144,12 +143,33 @@ onBeforeUnmount(close)
 .chat-message-info { display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; flex-shrink: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
 .chat-message-info:hover, .chat-message-info[aria-expanded='true'] { background: rgb(var(--c-elevated)); color: rgb(var(--c-txt)); }
 .chat-message-info:focus-visible { outline: 2px solid rgb(var(--c-accent) / .6); outline-offset: 2px; }
-.chat-message-info-panel { position: fixed; z-index: 10010; width: min(320px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; border: 1px solid rgb(var(--c-line)); border-radius: 12px; padding: 14px; background: rgb(var(--c-surface)); color: rgb(var(--c-txt2)); box-shadow: 0 12px 36px rgb(0 0 0 / .22); font-size: 11px; line-height: 1.6; text-align: left; }
-.chat-info-rows { display: grid; gap: 6px; margin: 10px 0 0; }
-.chat-info-rows > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; }
-.chat-info-rows dt { color: rgb(var(--c-txt3)); }
-.chat-info-rows dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
-.chat-info-tokens { margin-top: 12px; border-top: 1px solid rgb(var(--c-line)); padding-top: 10px; }
-.chat-info-models { display: grid; gap: 6px; margin-top: 10px; border-top: 1px solid rgb(var(--c-line)); padding-top: 10px; }
+.chat-message-info-panel { position: fixed; z-index: 10010; width: min(320px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; border: 1px solid rgb(var(--c-line-strong)); border-radius: 12px; padding: 14px; background: rgb(var(--c-surface)); color: rgb(var(--c-txt2)); box-shadow: 0 0 0 1px rgb(255 255 255 / .06), 0 16px 40px rgb(0 0 0 / .6); font-size: 12px; line-height: 1.4; text-align: left; }
+html.light .chat-message-info-panel { border-color: rgb(var(--c-line)); box-shadow: 0 12px 36px rgb(0 0 0 / .22); }
+.chat-info-title { display: block; color: rgb(var(--c-txt)); font-size: 13px; font-weight: 600; }
+.chat-info-rows { display: grid; gap: 8px; margin: 12px 0 0; }
+.chat-info-rows > div { display: grid; grid-template-columns: minmax(5.5em, max-content) minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.chat-info-rows dt { color: rgb(var(--c-txt2)); }
+html.light .chat-info-rows dt { color: rgb(var(--c-txt3)); }
+.chat-info-rows dd { margin: 0; overflow-wrap: anywhere; text-align: right; color: rgb(var(--c-txt)); }
+.chat-info-mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 12px; }
+.chat-info-tokens { margin-top: 12px; border-top: 1px solid rgb(var(--c-line-strong)); padding-top: 12px; }
+html.light .chat-info-tokens { border-top-color: rgb(var(--c-line)); }
+.chat-info-token-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.chat-info-token-head strong { color: rgb(var(--c-txt)); font-size: 12px; font-weight: 600; }
+.chat-info-token-total { color: rgb(var(--c-txt)); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; }
+.chat-info-token-parts { display: grid; gap: 6px; margin: 10px 0 0; }
+.chat-info-token-part { display: grid; grid-template-columns: 8px minmax(5.5em, max-content) minmax(0, 1fr); gap: 8px; align-items: center; }
+.chat-info-token-part dt { color: #D4D4D8; }
+html.light .chat-info-token-part dt { color: rgb(var(--c-txt2)); }
+.chat-info-token-part dd { margin: 0; overflow-wrap: anywhere; text-align: right; color: rgb(var(--c-txt)); }
+.chat-info-token-part.is-zero dt, .chat-info-token-part.is-zero dd { color: #8A8A94; }
+html.light .chat-info-token-part.is-zero dt, html.light .chat-info-token-part.is-zero dd { color: rgb(var(--c-txt3)); }
+.chat-info-dot { width: 8px; height: 8px; border-radius: 99px; background: #9A9AA4; }
+.chat-info-dot.is-input { background: rgb(var(--c-accent)); }
+.chat-info-dot.is-output { background: rgb(var(--c-accent-2)); }
+.chat-info-dot.is-cacheRead { background: rgb(var(--c-info)); }
+.chat-info-dot.is-cacheWrite { background: #9A9AA4; }
+html.light .chat-info-dot.is-cacheRead { background: #93C5FD; }
+html.light .chat-info-dot.is-cacheWrite { background: rgb(var(--c-line-strong)); }
 @media (pointer: coarse) { .chat-message-info { width: 32px; height: 32px; } }
 </style>

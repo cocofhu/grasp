@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { effortChoices, openCodeVariantCatalog, platformVariants, tokenHubVariants } from './fixedEffort'
+import { effortChoices, officialModelFamily, openCodeModelID, openCodeVariantCatalog, platformVariants, tokenHubVariants } from './fixedEffort'
 
 describe('OpenCode variant catalog', () => {
   it('covers every official model and only the variants OpenCode resolves', () => {
@@ -22,6 +22,13 @@ describe('OpenCode variant catalog', () => {
     expect(platformVariants('opencode/glm-4.6')).toEqual([])
     expect(platformVariants('opencode/kimi-k2.5')).toEqual([])
     expect(platformVariants('opencode/kimi-k2.7-code')).toEqual([])
+    expect(openCodeModelID('opencode-go/gpt-5.5#high')).toBe('gpt-5.5')
+    expect(platformVariants('opencode-go/gpt-5.5')).toEqual(platformVariants('opencode/gpt-5.5'))
+    expect(platformVariants('opencode-go/mimo-v2.5')).toEqual([])
+    expect(officialModelFamily('opencode-go/mimo-v2.5-pro')).toBe('opencode-go')
+    expect(officialModelFamily('opencode/kimi-k3')).toBe('opencode')
+    expect(officialModelFamily('opencode-go/')).toBe('')
+    expect(officialModelFamily('opencode-go/a/b')).toBe('')
     expect(tokenHubVariants('deepseek-v4-flash')).toEqual(['low', 'high', 'max'])
     expect(tokenHubVariants('deepseek-v4-pro')).toEqual(['low', 'high', 'max'])
     expect(tokenHubVariants('DeepSeek-V4.1-Flash-1017')).toEqual(['low', 'high', 'max'])

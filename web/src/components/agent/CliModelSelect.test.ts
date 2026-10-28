@@ -5,6 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { CliCatalogModel } from '@/lib/api/apiTypes'
+import { theme } from '@/lib/shared/theme'
+import claudeLogo from '@/assets/provider-logos/claude.svg'
+import geminiLogo from '@/assets/provider-logos/gemini.svg'
 import CliModelSelect from './CliModelSelect.vue'
 
 const catalog: CliCatalogModel[] = [
@@ -248,12 +251,23 @@ describe('CliModelSelect panel', () => {
     expect(q('[data-testid="cli-model-detail"]')!.textContent).not.toContain('自动')
   })
 
-  it('shows details inline in the compact variant', async () => {
+  it('highlights a compact row without inserting a detail strip', async () => {
     mocks.load.mockResolvedValue(catalog)
     const w = await mountSelect({ variant: 'compact', modelValue: 'gpt-5' })
     await openPanel(w)
     expect(q('[data-testid="cli-model-detail"]')).toBeNull()
-    expect(q('[data-testid="cli-model-inline-detail"]')!.textContent).toContain('--model gpt-5')
+    expect(q('[data-testid="cli-model-inline-detail"]')).toBeNull()
+    const row = q('[data-testid="cli-model-option-gpt-5"]')!
+    expect(row.textContent).toContain('GPT-5')
+    expect(row.textContent).toContain('gpt-5')
+    expect(row.textContent).not.toContain('日常编码')
+    expect(row.textContent).not.toContain('--model')
+    row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+    await flushPromises()
+    expect(q('[data-testid="cli-model-inline-detail"]')).toBeNull()
+    await key('ArrowDown')
+    expect(q('[data-testid="cli-model-inline-detail"]')).toBeNull()
+    expect(q('[data-testid="cli-model-option-gpt-5"]')!.textContent).toContain('gpt-5')
   })
 })
 
@@ -293,5 +307,64 @@ describe('CliModelSelect listed Cursor ids', () => {
     q('[data-testid="cli-model-option-grok-4.7-xhigh"]')!.click()
     await flushPromises()
     expect(w.emitted('update:modelValue')?.[0]).toEqual(['grok-4.7-xhigh'])
+  })
+})
+
+const opencodeCatalog: CliCatalogModel[] = [
+  { id: 'opencode/gemini-3.5-flash', name: 'Gemini 3.5 Flash', vendor: 'opencode' },
+  { id: 'opencode/claude-sonnet-5', name: 'Claude Sonnet 5', vendor: 'opencode' },
+  { id: 'opencode/custom-private', name: 'Private model', vendor: 'opencode' },
+]
+
+describe('CliModelSelect OpenCode family marks', () => {
+  it('uses the color Gemini mark for Gemini and keeps other families and unknown ids distinct', async () => {
+    mocks.load.mockResolvedValue(opencodeCatalog)
+    const previous = theme.value
+    const w = await mountSelect({ variant: 'compact', modelValue: 'opencode/gemini-3.5-flash', backend: 'opencode' })
+    try {
+      const triggerMark = w.get('[data-testid="cli-model-trigger"] [data-vendor-mark="google"]')
+      expect(triggerMark.get('img').attributes('src')).toBe(geminiLogo)
+      expect(triggerMark.classes()).toContain('vendor-mark--color')
+      for (const mode of ['light', 'dark'] as const) {
+        theme.value = mode
+        await flushPromises()
+        expect(triggerMark.get('img').classes()).not.toContain('invert')
+      }
+      await openPanel(w)
+      const gemini = q('[data-testid="cli-model-option-opencode/gemini-3.5-flash"]')!
+      const claude = q('[data-testid="cli-model-option-opencode/claude-sonnet-5"]')!
+      const unknown = q('[data-testid="cli-model-option-opencode/custom-private"]')!
+      expect(gemini.querySelector('[data-vendor-mark="google"] img')!.getAttribute('src')).toBe(geminiLogo)
+      expect(gemini.querySelector('[data-vendor-mark="google"]')!.classList.contains('vendor-mark--color')).toBe(true)
+      expect(gemini.querySelector('[data-vendor-mark="google"] img')!.classList.contains('invert')).toBe(false)
+      expect(claude.querySelector('[data-vendor-mark="anthropic"] img')!.getAttribute('src')).toBe(claudeLogo)
+      expect(claude.querySelector('[data-vendor-mark="anthropic"] img')!.getAttribute('src')).not.toBe(geminiLogo)
+      const monogram = unknown.querySelector('[data-vendor-mark="monogram"]')!
+      expect(monogram.querySelector('img')).toBeNull()
+      expect(monogram.textContent?.trim()).toBe('O')
+      expect(q('[data-testid="cli-model-inline-detail"]')).toBeNull()
+      expect(gemini.textContent).toContain('opencode/gemini-3.5-flash')
+    } finally {
+      theme.value = previous
+    }
+  })
+
+  it('writes the original id, matches search, and keeps the selected check', async () => {
+    mocks.load.mockResolvedValue(opencodeCatalog)
+    const w = await mountSelect({ variant: 'compact', modelValue: 'opencode/gemini-3.5-flash', backend: 'opencode', hideCommand: true })
+    await openPanel(w)
+    expect(q('[data-testid="cli-model-option-opencode/gemini-3.5-flash"] icon-stub[name="check"]')).not.toBeNull()
+    expect(q('[data-testid="cli-model-option-opencode/claude-sonnet-5"] icon-stub[name="check"]')).toBeNull()
+    await typeQuery('Claude Sonnet')
+    expect(q('[data-testid="cli-model-option-opencode/claude-sonnet-5"]')).not.toBeNull()
+    expect(q('[data-testid="cli-model-option-opencode/gemini-3.5-flash"]')).toBeNull()
+    await typeQuery('opencode/gemini-3.5-flash')
+    expect(q('[data-testid="cli-model-option-opencode/gemini-3.5-flash"]')).not.toBeNull()
+    expect(q('[data-testid="cli-model-option-typed"]')).toBeNull()
+    await typeQuery('claude-sonnet-5')
+    q('[data-testid="cli-model-option-opencode/claude-sonnet-5"]')!.click()
+    await flushPromises()
+    expect(w.emitted('update:modelValue')?.[0]).toEqual(['opencode/claude-sonnet-5'])
+    expect(panel()).toBeNull()
   })
 })

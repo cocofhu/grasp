@@ -29,10 +29,16 @@ func mustOpenCodeVariantCatalog() map[string]openCodeVariantModel {
 
 var effortTokenPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}$`)
 
-// OpenCodeCatalogID strips the platform provider prefix from a model id.
+// OpenCodeCatalogID strips the official provider prefix from a model id.
+// opencode-go/ is removed before opencode/ so the longer prefix wins.
 func OpenCodeCatalogID(modelID string) string {
 	id := strings.TrimSpace(modelID)
-	id = strings.TrimPrefix(id, "opencode/")
+	switch {
+	case strings.HasPrefix(id, "opencode-go/"):
+		id = strings.TrimPrefix(id, "opencode-go/")
+	case strings.HasPrefix(id, "opencode/"):
+		id = strings.TrimPrefix(id, "opencode/")
+	}
 	if i := strings.LastIndex(id, "#"); i >= 0 {
 		id = id[:i]
 	}
