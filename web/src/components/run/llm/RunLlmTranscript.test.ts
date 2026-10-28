@@ -7,21 +7,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { LlmTranscriptResponse } from '@/lib/api/apiTypes'
-import type { Run, WFNode } from '@/lib/shared/types'
+import type { AcpEvent, Run, WFNode } from '@/lib/shared/types'
 
 const llmTranscript = vi.fn()
 const reactReply = vi.fn()
 const nodeEvents = vi.fn()
+const reactCancel = vi.fn()
+const reactQueueRemove = vi.fn()
+const reactQueueReorder = vi.fn()
 vi.mock('@/lib/api/api', () => ({
   api: {
     llmTranscript: (...args: unknown[]) => llmTranscript(...args),
     reactReply: (...args: unknown[]) => reactReply(...args),
     nodeEvents: (...args: unknown[]) => nodeEvents(...args),
+    reactCancel: (...args: unknown[]) => reactCancel(...args),
+    reactQueueRemove: (...args: unknown[]) => reactQueueRemove(...args),
+    reactQueueReorder: (...args: unknown[]) => reactQueueReorder(...args),
   },
 }))
 
 import RunLlmTranscript from './RunLlmTranscript.vue'
 import LiveLogPanel from '../LiveLogPanel.vue'
+import ClarifyChat from '../ClarifyChat.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 
 const transcriptSrc = readFileSync(join(process.cwd(), 'src/components/run/llm/RunLlmTranscript.vue'), 'utf8')
@@ -84,6 +91,9 @@ beforeEach(() => {
   llmTranscript.mockReset()
   reactReply.mockReset()
   nodeEvents.mockReset()
+  reactCancel.mockReset().mockResolvedValue({})
+  reactQueueRemove.mockReset().mockResolvedValue({})
+  reactQueueReorder.mockReset().mockResolvedValue({})
   llmTranscript.mockResolvedValue(transcript)
   reactReply.mockResolvedValue({ status: 'ok' })
   nodeEvents.mockResolvedValue({ events: [] })
@@ -259,6 +269,53 @@ describe('RunLlmTranscript', () => {
     expect(prior.find('textarea, [data-testid="clarify-input"]').exists()).toBe(false)
     expect(w.get('[data-testid="clarify-input"]').exists()).toBe(true)
     expect(w.findAll('[data-testid="clarify-input"]')).toHaveLength(1)
+  })
+
+  it('delivers live frames to its current conversation and connects the chat controls', async () => {
+    llmTranscript.mockResolvedValue({ executions: [{
+      id: 2, nodeId: 'b', iteration: 1, status: 'waiting_human',
+      startedAt: '2026-10-01T00:00:20Z',
+      events: [{ t: 0, kind: 'prompt', text: '请确认范围', at: '2026-10-01T00:00:21Z' }],
+    }] })
+    const w = mountView({ run: run({
+      status: 'waiting_human',
+      currentNode: { id: 'b', name: '人工审批', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' },
+      clarifyByNode: { b: { turns: [{ role: 'agent', text: '请确认范围', at: '1' }] } },
+    } as Partial<Run>) })
+    try {
+      await flushPromises()
+      const vm = w.vm as unknown as {
+        getNodeId: () => string
+        isChatReady: () => boolean
+        isSessionBusy: () => boolean
+        applyReviewFrame: (frame: Record<string, unknown>) => void
+        applyAcpEvents: (events: AcpEvent[], nodeId: string) => void
+      }
+      expect(vm.getNodeId()).toBe('b')
+      expect(vm.isChatReady()).toBe(true)
+      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'b', item: { id: 'live-b', text: '新的要求' } })
+      vm.applyAcpEvents([{ kind: 'message', text: '实时回复' }], 'b')
+      await flushPromises()
+      expect(w.text()).toContain('新的要求')
+      expect(w.text()).toContain('实时回复')
+      expect(vm.isSessionBusy()).toBe(true)
+      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'b' })
+      await flushPromises()
+      expect(vm.isSessionBusy()).toBe(false)
+      const chat = w.getComponent(ClarifyChat)
+      chat.vm.$emit('cancel')
+      chat.vm.$emit('queue-remove', 'queued-1', 0)
+      chat.vm.$emit('queue-reorder', ['queued-2', 'queued-1'])
+      chat.vm.$emit('send', '结构化回答', [], [])
+      await flushPromises()
+      expect(reactCancel).toHaveBeenCalledWith('r1', 'b')
+      expect(reactQueueRemove).toHaveBeenCalledWith('r1', 'b', 'queued-1')
+      expect(reactQueueReorder).toHaveBeenCalledWith('r1', 'b', ['queued-2', 'queued-1'])
+      expect(reactReply).toHaveBeenCalledWith('r1', 'b', '结构化回答', [], false, [])
+      chat.vm.$emit('retry-last')
+      await flushPromises()
+      expect(reactReply).toHaveBeenLastCalledWith('r1', 'b', '', [], false, [], true)
+    } finally { w.unmount() }
   })
 
   it('keeps angle brackets as text and folds a finished timeline into 用时', async () => {

@@ -110,6 +110,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(RESEND)
     // No pending-send row and no error reply bubble.
     expect(wrapper.findAll('[data-testid="clarify-queue-item"]')).toHaveLength(0)
+    expect(wrapper.find('[data-testid="clarify-human-message"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="clarify-confirm-error"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-testid="clarify-input"]').length).toBe(1)
   })

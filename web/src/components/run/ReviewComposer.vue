@@ -11,6 +11,7 @@ import PendingSendQueuePanel, { type PendingQueueRow } from './PendingSendQueueP
 import type { AgentTool, ClarifyTurn, ClarifyImage, ReactAnnotation, AcpEvent } from '@/lib/shared/types'
 import AnnotationChip from './AnnotationChip.vue'
 import PageControlStatus from './PageControlStatus.vue'
+import type { GateReactTurn } from './gateApproval/gateApprovalContext'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
 
 /**
@@ -73,6 +74,9 @@ const props = withDefaults(
     interrupted?: boolean
     /** ISO when turn completed normally — drives restrained「已完成」footnote. */
     streamCompletedAt?: string | null
+    /** Accepted user line for the gate transcript, before a frame arrives. */
+    liveHumanText?: string
+    gateTurns?: GateReactTurn[]
     /** This user's preview-page control state; unset hides the line. */
     pageControl?: PageControlState
     /** Read-only auto stream; Stop emits takeover (ClarifyChat observe). */
@@ -119,6 +123,7 @@ const props = withDefaults(
     streamTools: () => [],
     interrupted: false,
     streamCompletedAt: null,
+    liveHumanText: '',
     observe: false,
     stopping: false,
   },
@@ -351,6 +356,8 @@ function onConfirm() {
         :stream-tools="streamTools"
         :interrupted="interrupted"
         :completed-at="streamCompletedAt"
+        :user-text="liveHumanText"
+        :turns="gateTurns"
       />
       </div>
     </div>

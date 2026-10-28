@@ -970,6 +970,142 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
+  it('accepted send stays in the transcript before any frame, including a shorter snapshot', async () => {
+    const prior: ClarifyTurn[] = [
+      { role: 'human', text: '上一句', at: '1' },
+      { role: 'agent', text: '上一句回复', at: '2' },
+    ]
+    const wrapper = mountChat({ turns: prior, draft: '直接回答' })
+    await clickSend(wrapper)
+
+    const humanTexts = () =>
+      wrapper.findAll('[data-testid="clarify-human-message"]').map((node) => node.text())
+    expect(humanTexts()).toContain('直接回答')
+
+    const vm = wrapper.vm as unknown as {
+      discardLastQueued: () => void
+      applyReviewFrame: (frame: Record<string, unknown>) => void
+    }
+    await wrapper.setProps({
+      turns: [
+        { role: 'human', text: '上一句', at: '1' },
+        { role: 'agent', text: '上一句回复', at: '2-refresh' },
+        { role: 'agent', text: '旁路刷新', at: '9' },
+      ],
+    })
+    await flushPromises()
+    expect(humanTexts().filter((text) => text.includes('直接回答'))).toHaveLength(1)
+
+    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', waiting: 0, items: [], busy: false })
+    await wrapper.setProps({
+      turns: [
+        { role: 'human', text: '上一句', at: '1' },
+        { role: 'agent', text: '上一句回复', at: '2-idle' },
+      ],
+    })
+    await flushPromises()
+    expect(humanTexts().filter((text) => text.includes('直接回答'))).toHaveLength(1)
+
+    await wrapper.setProps({
+      turns: [
+        { role: 'human', text: '上一句', at: '1' },
+        { role: 'agent', text: '上一句回复', at: '2' },
+        { role: 'human', text: '直接回答', at: '3' },
+        { role: 'agent', text: '收到', at: '4' },
+      ],
+    })
+    await flushPromises()
+    expect(humanTexts().filter((text) => text.includes('直接回答'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('keeps every assistant segment before a pending user row, without a failure card for the waiter', async () => {
+    const wrapper = mountChat({ draft: '下一条请求' })
+    const vm = wrapper.vm as unknown as {
+      applyReviewFrame: (frame: Record<string, unknown>) => void
+      applyAcpEvents: (events: { kind: string; text?: string }[], node?: string) => void
+    }
+    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'active', text: '当前请求' } })
+    await clickSend(wrapper)
+    vm.applyAcpEvents([
+      { kind: 'message', text: '第一段回复' },
+      { kind: 'segment' },
+      { kind: 'message', text: '第二段回复' },
+      { kind: 'segment' },
+      { kind: 'message', text: '第三段回复' },
+    ], 'react-1')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((node) => node.text()))
+      .toEqual(['第一段回复', '第二段回复', '第三段回复'])
+    expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
+    const scroller = wrapper.get('[data-testid="clarify-scroller"]')
+    expect(scroller.text().indexOf('下一条请求')).toBeGreaterThan(scroller.text().indexOf('第三段回复'))
+
+    vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'waiting', text: '下一条请求' } })
+    vm.applyAcpEvents([{ kind: 'message', text: '下一轮的回复' }], 'react-1')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="clarify-human-message"]').map((node) => node.text()))
+      .toEqual(['当前请求', '下一条请求'])
+    expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((node) => node.text()))
+      .toEqual(['第一段回复', '第二段回复', '第三段回复', '下一轮的回复'])
+    wrapper.unmount()
+  })
+
+  it('a rejected send removes the row it just painted', async () => {
+    const wrapper = mountChat({
+      turns: [{ role: 'agent', text: '上一句回复', at: '1' }],
+      draft: '会被拒绝',
+    })
+    await clickSend(wrapper)
+    expect(wrapper.get('[data-testid="clarify-human-message"]').text()).toContain('会被拒绝')
+    const vm = wrapper.vm as unknown as { discardLastQueued: () => void }
+    vm.discardLastQueued()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('会被拒绝')
+    wrapper.unmount()
+  })
+
+  it('accepted skip answer is in the transcript before any frame', async () => {
+    const wrapper = mountChat({
+      turns: [
+        {
+          role: 'agent',
+          text: '请确认',
+          at: '1',
+          questions: [{ id: 'q1', prompt: '要保留吗', options: [{ id: 'a', label: '保留' }] }],
+        },
+      ],
+      draft: '下线创建团队',
+    })
+    await clickSend(wrapper)
+    const human = wrapper.find('[data-testid="clarify-human-message"]')
+    expect(human.exists()).toBe(true)
+    expect(human.text()).toContain('回答已跳过')
+    expect(human.text()).toContain('下线创建团队')
+    wrapper.unmount()
+  })
+
+  it('sendRequest paints on success and leaves no row when the send is refused', async () => {
+    const accepted = mountChat({ draft: '普通消息', sendRequest: async () => true })
+    await clickSend(accepted)
+    expect(accepted.find('[data-testid="clarify-human-message"]').text()).toContain('普通消息')
+    await accepted.setProps({
+      turns: [
+        { role: 'human', text: '普通消息', at: '1' },
+        { role: 'agent', text: '好', at: '2' },
+      ],
+    })
+    await flushPromises()
+    expect(accepted.findAll('[data-testid="clarify-human-message"]')).toHaveLength(1)
+    accepted.unmount()
+
+    const refused = mountChat({ draft: '失败消息', sendRequest: async () => false })
+    await clickSend(refused)
+    expect(refused.find('[data-testid="clarify-human-message"]').exists()).toBe(false)
+    refused.unmount()
+  })
+
   it('enqueue annotation-only shows queue row without transcript bubble', async () => {
     const anns: ReactAnnotation[] = [{ label: 'Hero', selector: '#hero' }]
     const wrapper = mountChat({
@@ -1318,22 +1454,25 @@ describe('ClarifyChat', () => {
     complete(accepted)
     await flushPromises()
     expect(wrapper.emitted('finish')).toBeUndefined()
-    expect(send.attributes('aria-busy')).toBeUndefined()
-    // Accepted: the draft is gone, so the same button morphs into 确认并流转.
-    expect(send.attributes('data-kind')).toBe(accepted ? 'confirm' : 'send')
-    if (!accepted) {
-      expect(send.attributes('aria-label')).toBe(pages.pages.reviewComposer.send)
-      expect(send.attributes('title')).toBe(pages.pages.reviewComposer.send)
-      expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('chat-send')
-      expect((send.element as HTMLButtonElement).disabled).toBe(false)
-    }
     const input = wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement
     expect(input.value).toBe(accepted ? '' : '1')
     if (accepted) {
+      // The reply is already in the transcript, so the turn stays busy until it ends.
+      expect(wrapper.get('[data-testid="clarify-human-message"]').text()).toContain('1')
+      expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
+      const vm = wrapper.vm as unknown as { applyReviewFrame: (frame: Record<string, unknown>) => void }
+      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+      await flushPromises()
       const confirm = wrapper.get('[data-testid="clarify-confirm-flow"]')
       expect(confirm.isVisible()).toBe(true)
       expect((confirm.element as HTMLButtonElement).disabled).toBe(false)
     } else {
+      expect(send.attributes('aria-busy')).toBeUndefined()
+      expect(send.attributes('data-kind')).toBe('send')
+      expect(send.attributes('aria-label')).toBe(pages.pages.reviewComposer.send)
+      expect(send.attributes('title')).toBe(pages.pages.reviewComposer.send)
+      expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('chat-send')
+      expect((send.element as HTMLButtonElement).disabled).toBe(false)
       expectConfirmHidden(wrapper)
       expect(wrapper.emitted('update:draft')).toBeUndefined()
     }
@@ -1350,6 +1489,10 @@ describe('ClarifyChat', () => {
     expect((wrapper.get('[data-testid="clarify-send-icon"]').element as HTMLButtonElement).disabled).toBe(true)
 
     complete(true)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="clarify-human-message"]').text()).toContain('1')
+    const vm = wrapper.vm as unknown as { applyReviewFrame: (frame: Record<string, unknown>) => void }
+    vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
     await flushPromises()
     const confirm = wrapper.get('[data-testid="clarify-confirm-flow"]')
     expect(confirm.isVisible()).toBe(true)
@@ -2812,7 +2955,8 @@ describe('ClarifyChat', () => {
       await clickSend(wrapper)
       expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
-      expect(wrapper.text()).toContain('Agent 正在思考下一轮')
+      expect(wrapper.get('[data-testid="clarify-human-message"]').text()).toContain('请按意见修改')
+      expect(wrapper.text()).toContain('思考中')
 
       const vm = wrapper.vm as unknown as {
         applyReviewFrame: (f: Record<string, unknown>) => void

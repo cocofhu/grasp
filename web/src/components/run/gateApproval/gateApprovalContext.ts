@@ -4,6 +4,23 @@ import type { GatePrimaryProductRef } from '@/lib/inbox/gateUpstream'
 import type { CommentPin } from '@/lib/inbox/useCommentPins'
 import type { PlanDoc } from '../PlanView.vue'
 
+/** One gate revise request and the response belonging to that request. */
+export type GateReactTurn = {
+  key: string
+  id?: string
+  text: string
+  images: ClarifyImage[]
+  annotations: ReactAnnotation[]
+  historySynced: boolean
+  status: 'pending' | 'active' | 'settled'
+  thinking: boolean
+  streamText: string
+  streamThought: string
+  streamTools: AgentTool[]
+  interrupted: boolean
+  completedAt: string | null
+}
+
 export type GateApprovalProductEditorExpose = {
   isDirty: { value: boolean }
   discard: () => void
@@ -120,6 +137,8 @@ export type GateApprovalState = {
   editReactQueuedItem: (index: number) => void | Promise<void>
   reactThinking: boolean
   reactStreamText: string
+  reactLiveHumanText: string
+  reactTurns: GateReactTurn[]
   reactStreamThought: string
   reactStreamTools: AgentTool[]
   reactInterrupted: boolean

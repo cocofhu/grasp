@@ -105,6 +105,15 @@ const reviewChatRef = ref<{
   playConfirmCeremony?: () => Promise<void>
 } | null>(null)
 
+/** Conversational LLM view. It is not the node-panel chat, so frames must be delivered here too. */
+const llmTranscriptRef = ref<{
+  getNodeId?: () => string
+  isChatReady?: () => boolean
+  applyReviewFrame?: (frame: any) => boolean | void
+  applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  isSessionBusy?: () => boolean
+} | null>(null)
+
 const gateApprovalRef = ref<{
   applyReviewFrame?: (frame: any) => void
   applyAcpEvents?: (events: AcpEvent[] | undefined) => boolean | void
@@ -338,6 +347,7 @@ function isClarifySessionBusy(): boolean {
   if (liveBusy[nodeId] === true) return true
   if (!!(run.value as any)?.reactSessions?.[nodeId]?.busy) return true
   if (reviewChatRef.value?.isSessionBusy?.()) return true
+  if (llmTranscriptRef.value?.isSessionBusy?.()) return true
   return false
 }
 
@@ -424,6 +434,7 @@ const wsApi = useRunDetailWs({
   eventPages,
   nodeTab,
   reviewChatRef,
+  llmTranscriptRef,
   gateApprovalRef,
   selClarify,
   fetchNodeEvents,
@@ -1498,6 +1509,7 @@ function locateExecution(nodeId: string, idx: number) {
   refreshing,
   manual,
   reviewChatRef,
+  llmTranscriptRef,
   gateApprovalRef,
   ACTIVE,
   nowMs,
