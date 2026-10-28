@@ -110,6 +110,30 @@ func assertImageDeclaration(t *testing.T, model map[string]any, key string, want
 	}
 }
 
+func TestOpenCodePreservesDeclaredReasoningCapability(t *testing.T) {
+	yes, no := true, false
+	for _, test := range []struct {
+		name      string
+		reasoning *bool
+	}{
+		{name: "unknown"},
+		{name: "enabled", reasoning: &yes},
+		{name: "disabled", reasoning: &no},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := connection(Chat)
+			c.Models[0].Capabilities.Reasoning = test.reasoning
+			p := prepare(t, provider.OpenCode, c)
+			selected, other := nativeModelDeclarations(t, provider.OpenCode, p)
+			assertImageDeclaration(t, selected, "reasoning", test.reasoning)
+			assertImageDeclaration(t, other, "reasoning", nil)
+			if _, exists := selected["variants"]; exists {
+				t.Fatal("capability declaration forced a reasoning effort")
+			}
+		})
+	}
+}
+
 func nativeModelDeclarations(t *testing.T, tool provider.Name, p Prepared) (map[string]any, map[string]any) {
 	t.Helper()
 	if tool == provider.CodeBuddy {

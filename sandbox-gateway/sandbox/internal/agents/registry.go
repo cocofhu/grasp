@@ -118,7 +118,7 @@ var registry = map[Name]provider.Provider{
 		Bin:           "opencode",
 		Runtime:       "opencode-json",
 		ConfigRoot:    "/root/.config/opencode",
-		BaseArgs:      []string{"run", "--format", "json", "--dangerously-skip-permissions"},
+		BaseArgs:      []string{"run", "--format", "json", "--thinking", "--dangerously-skip-permissions"},
 		WorkspaceFlag: "--dir",
 		ResumeFlag:    "--session",
 		ModelFlag:     "--model",

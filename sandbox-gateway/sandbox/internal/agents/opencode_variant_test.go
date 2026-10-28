@@ -38,6 +38,11 @@ if [ "${1:-}" = "--version" ]; then
 fi
 printf '%s\n' "$@" > "$GRASP_VARIANT_TEST_ARGV_OUT"
 printf '%s' "$OPENCODE_CONFIG_CONTENT" > "$GRASP_VARIANT_TEST_CONFIG_OUT"
+for arg in "$@"; do
+  if [ "$arg" = "--thinking" ]; then
+    printf '%s\n' '{"type":"reasoning","part":{"type":"reasoning","text":"fixture model thought"}}'
+  fi
+done
 printf '%s\n' '{"type":"text","part":{"text":"connected"}}' '{"type":"step_finish","part":{"reason":"stop"}}'
 `
 			if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(fixture), 0o700); err != nil {
@@ -73,9 +78,23 @@ printf '%s\n' '{"type":"text","part":{"text":"connected"}}' '{"type":"step_finis
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
+			var thoughts []string
 			sess, err := Get(provider.OpenCode).Open(ctx, ctx, provider.OpenOptions{
 				Cwd: t.TempDir(), Model: modelID, ReasoningEffort: tc.effort,
-			}, nil, nil)
+			}, func(raw json.RawMessage) {
+				var event struct {
+					Update struct {
+						SessionUpdate string                `json:"sessionUpdate"`
+						Content       struct{ Text string } `json:"content"`
+					} `json:"update"`
+				}
+				if err := json.Unmarshal(raw, &event); err != nil {
+					t.Error(err)
+				}
+				if event.Update.SessionUpdate == "agent_thought_chunk" {
+					thoughts = append(thoughts, event.Update.Content.Text)
+				}
+			}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -83,6 +102,9 @@ printf '%s\n' '{"type":"text","part":{"text":"connected"}}' '{"type":"step_finis
 			result, err := sess.Prompt(ctx, "hello", nil)
 			if err != nil || result.StopReason != "end_turn" {
 				t.Fatalf("fixture turn: %+v, %v", result, err)
+			}
+			if len(thoughts) != 1 || thoughts[0] != "fixture model thought" {
+				t.Fatalf("native reasoning did not reach chat events: %q", thoughts)
 			}
 			data, err := os.ReadFile(argvPath)
 			if err != nil {

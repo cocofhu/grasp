@@ -131,6 +131,9 @@ func prepareOpenCode(p Prepared, root string) (Prepared, error) {
 		if images != nil {
 			m["attachment"] = *images
 		}
+		if model.Capabilities.Reasoning != nil {
+			m["reasoning"] = *model.Capabilities.Reasoning
+		}
 		models[model.ID] = m
 	}
 	npm := "@ai-sdk/openai-compatible"
