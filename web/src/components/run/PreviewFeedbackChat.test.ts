@@ -100,6 +100,56 @@ describe('PreviewFeedbackChat', () => {
     wrapper.unmount()
   })
 
+  it('does not let an older list response erase a newly created issue', async () => {
+    let resolveList!: (value: { issues: { id: string; body: string; createdAt: string }[] }) => void
+    apiMocks.listPreviewIssues.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveList = resolve
+    }))
+    const wrapper = mountChat()
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('刚创建的问题')
+    apiMocks.createPreviewIssue.mockResolvedValueOnce({
+      id: 'i-new',
+      body: '刚创建的问题',
+      createdAt: '2026-07-18T00:02:00Z',
+    })
+    const sendBtn = wrapper.findAll('button').find((b) => b.text().includes('提交问题'))!
+    await sendBtn.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('刚创建的问题')
+
+    resolveList({
+      issues: [{ id: 'i-old', body: '旧列表快照', createdAt: '2026-07-18T00:00:00Z' }],
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('刚创建的问题')
+    wrapper.unmount()
+  })
+
+  it('upserts a created issue already included by an earlier list response', async () => {
+    let resolveList!: (value: { issues: { id: string; body: string; createdAt: string }[] }) => void
+    let resolveCreate!: (value: { id: string; body: string; createdAt: string }) => void
+    apiMocks.listPreviewIssues.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveList = resolve
+    }))
+    apiMocks.createPreviewIssue.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveCreate = resolve
+    }))
+    const wrapper = mountChat()
+    await wrapper.find('textarea').setValue('并发创建的问题')
+    const sendBtn = wrapper.findAll('button').find((b) => b.text().includes('提交问题'))!
+    await sendBtn.trigger('click')
+    const issue = { id: 'i-race', body: '并发创建的问题', createdAt: '2026-07-18T00:02:00Z' }
+    resolveList({ issues: [issue] })
+    await flushPromises()
+    expect((wrapper.text().match(/并发创建的问题/g) || []).length).toBe(1)
+
+    resolveCreate(issue)
+    await flushPromises()
+    expect((wrapper.text().match(/并发创建的问题/g) || []).length).toBe(1)
+    wrapper.unmount()
+  })
+
   it('requires body+selector+screenshot in requireElement mode', async () => {
     const wrapper = mount(PreviewFeedbackChat, {
       props: {

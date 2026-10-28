@@ -602,12 +602,7 @@ func (h *Handlers) PmThreadChat(c *gin.Context) {
 	writeDone := make(chan struct{})
 	go func() {
 		defer close(writeDone)
-		for ev := range ch {
-			if err := conn.WriteJSON(ev.Frame()); err != nil {
-				_ = conn.Close()
-				return
-			}
-		}
+		pumpChatSubscription(conn, ch, func(v any) error { return writeChatJSON(conn, v) }, nil)
 	}()
 
 	for {
@@ -625,7 +620,9 @@ func (h *Handlers) PmThreadChat(c *gin.Context) {
 			h.PmTurns.Cancel(tid)
 		}
 	}
+	// 先退订并关闭连接，再等写泵退出，阻塞写不能挡住重连。
 	unsub()
+	_ = conn.Close()
 	<-writeDone
 }
 

@@ -427,3 +427,24 @@ func (g *gateChat) snapshot() []string {
 	copy(out, g.prompts)
 	return out
 }
+
+func TestSoloResumeSnapshotKeepsKeepNoneSessionFields(t *testing.T) {
+	qs := map[string]any{"busy": false, "waiting": 0}
+	applySoloResumeSnapshot(qs, &models.SoloSession{
+		Status:                 models.SoloStatusClosed,
+		Error:                  "会话已关闭",
+		SandboxID:              9,
+		CurrentModelID:         "model-b",
+		CurrentModelSet:        true,
+		CurrentReasoningEffort: "high",
+		ModelNotice:            "rolled",
+	})
+	if qs["status"] != models.SoloStatusClosed || qs["error"] != "会话已关闭" || qs["sandboxId"] != uint(9) {
+		t.Fatalf("session snapshot = %#v", qs)
+	}
+	if qs["currentModelId"] != "model-b" || qs["currentModelSet"] != true || qs["reasoningEffort"] != "high" || qs["modelNotice"] != "rolled" {
+		t.Fatalf("model snapshot = %#v", qs)
+	}
+	applySoloResumeSnapshot(nil, &models.SoloSession{})
+	applySoloResumeSnapshot(qs, nil)
+}

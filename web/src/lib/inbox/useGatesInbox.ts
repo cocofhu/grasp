@@ -1108,6 +1108,8 @@ const confirmedAbsentTriples = new Set<string>()
 const inboxContextAborts = new Map<string, AbortController>()
 /** Single-flight: one softRefresh/loadActiveRun at a time for the selected triple. */
 let inboxContextInFlight: string | null = null
+/** Terminal frames received during that flight retain one coalesced trailing refresh. */
+const inboxContextTrailingRefreshes = new Set<string>()
 /**
  * In-flight confirm intents (triple keys). Non-empty ⇒ list reselection / refresh
  * stay gated (race with lagging list). Force confirm is gated per-item only so a
@@ -1155,6 +1157,7 @@ function isProcessedTriple(it: Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'>
 }
 
 function abortInboxContext(triple: string) {
+  inboxContextTrailingRefreshes.delete(triple)
   const ctrl = inboxContextAborts.get(triple)
   if (!ctrl) return
   ctrl.abort()
@@ -1178,8 +1181,17 @@ function acquireInboxContextSignal(triple: string): AbortSignal | null {
 
 function releaseInboxContextSignal(triple: string, signal: AbortSignal) {
   const ctrl = inboxContextAborts.get(triple)
+  const ownsFlight = ctrl?.signal === signal && inboxContextInFlight === triple
   if (ctrl?.signal === signal) inboxContextAborts.delete(triple)
   if (inboxContextInFlight === triple) inboxContextInFlight = null
+  if (!ownsFlight || signal.aborted || !inboxContextTrailingRefreshes.delete(triple)) return
+  // Run after the owner's finally finishes its loading cleanup. The selected
+  // triple may have moved or been processed while the request was in flight.
+  queueMicrotask(() => {
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (!shouldFetchActiveInboxContext()) return
+    void softRefreshActiveRun()
+  })
 }
 
 /**
@@ -2629,7 +2641,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       if (currentDialogue && (m.event === 'turn_done' || m.event === 'error')) {
         clarifyLiveBusy.value = false
         busySeedRetry.stop()
-        if (active.value && active.value.runId === runId) void softRefreshActiveRun()
+        if (active.value && active.value.runId === runId) void softRefreshActiveRun(true)
       }
       // Platform idle while the bridge is still busy: the terminal frame may
       // never arrive. Re-read the same snapshot a refresh would, without
@@ -2891,12 +2903,15 @@ async function patchActiveRunArtifacts(frame?: { previewArtifact?: string; name?
   }
 }
 
-async function softRefreshActiveRun() {
+async function softRefreshActiveRun(afterTurnEnd = false) {
   if (!shouldFetchActiveInboxContext()) return
   const target = active.value!
   const triple = inboxTripleKey(target)
   const signal = acquireInboxContextSignal(triple)
-  if (!signal) return
+  if (!signal) {
+    if (afterTurnEnd && inboxContextInFlight === triple) inboxContextTrailingRefreshes.add(triple)
+    return
+  }
   try {
     const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
     // Drop stale responses if active moved while in flight.

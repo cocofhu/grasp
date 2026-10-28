@@ -503,6 +503,49 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('restores KeepNone session and model state from the subscribe snapshot', async () => {
+    let releaseStale: (row: ReturnType<typeof session>) => void = () => {}
+    mocks.getSoloSession
+      .mockResolvedValueOnce(session({ status: 'running', currentModelSet: true, currentModelId: 'old' }))
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseStale = resolve }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    ws.emit({
+      type: 'session',
+      event: 'queue_state',
+      busy: false,
+      items: [],
+      status: 'closed',
+      error: '会话已关闭',
+      sandboxId: 9,
+      currentModelId: 'model-b',
+      currentModelSet: true,
+      reasoningEffort: 'high',
+      modelNotice: 'rolled',
+    })
+    await flushPromises()
+    expect(chat.session.value?.status).toBe('closed')
+    expect(chat.session.value?.error).toBe('会话已关闭')
+    expect(chat.session.value?.sandboxId).toBe(9)
+    expect(chat.session.value?.currentModelId).toBe('model-b')
+    expect(chat.session.value?.currentModelSet).toBe(true)
+    expect(chat.session.value?.reasoningEffort).toBe('high')
+    expect(chat.session.value?.modelNotice).toBe('rolled')
+    expect(mocks.getSoloSession).toHaveBeenCalledTimes(2)
+    releaseStale(session({ status: 'running', currentModelSet: true, currentModelId: 'old' }))
+    await flushPromises()
+    expect(chat.session.value?.status).toBe('closed')
+    expect(chat.session.value?.error).toBe('会话已关闭')
+    expect(chat.session.value?.sandboxId).toBe(9)
+    expect(chat.session.value?.currentModelId).toBe('model-b')
+    expect(chat.session.value?.currentModelSet).toBe(true)
+    expect(chat.session.value?.reasoningEffort).toBe('high')
+    expect(chat.session.value?.modelNotice).toBe('rolled')
+    app.unmount()
+  })
+
   it('reconnects after the socket closes and does not draw the same frame twice', async () => {
     vi.useFakeTimers()
     const { chat, app } = mountChat()
@@ -525,6 +568,39 @@ describe('useSoloChat', () => {
     again.emit({ ...acp('Hello'), seq: 2 })
     again.emit({ ...acp('!'), seq: 3 })
     expect(chat.turns.value.find((t) => t.id === 'live:q1')!.text).toBe('Hello!')
+    vi.useRealTimers()
+    app.unmount()
+  })
+
+  it('settles a missing terminal frame from persisted history after reconnect idle', async () => {
+    vi.useFakeTimers()
+    mocks.listSoloMessages.mockResolvedValueOnce([])
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    ws.emit({ type: 'session', event: 'turn_begin', seq: 1, item: { id: 'q1', text: 'hi', images: [] } })
+    ws.emit({ ...acp('partial'), seq: 2 })
+    expect(chat.turns.value[1]?.streaming).toBe(true)
+
+    mocks.listSoloMessages.mockResolvedValue([
+      { id: 'q1', sessionId: 's1', role: 'user', content: 'hi', createdAt: '' },
+      { id: 'a1', sessionId: 's1', role: 'assistant', content: 'final reply', status: 'ok', createdAt: '' },
+    ])
+    // The server closes an undeliverable subscription; no later seq or done arrives.
+    ws.onclose?.()
+    await vi.advanceTimersByTimeAsync(1500)
+    const again = FakeSocket.all.at(-1)!
+    again.open()
+    await flushPromises()
+    again.emit({ type: 'session', event: 'queue_state', seq: 2, busy: false, items: [] })
+    await flushPromises()
+
+    expect(chat.turns.value.map((turn) => turn.id)).toEqual(['u:q1', 'a:a1'])
+    expect(chat.turns.value[1]?.text).toBe('final reply')
+    expect(chat.turns.value.some((turn) => turn.streaming)).toBe(false)
+    expect(chat.busy.value).toBe(false)
     vi.useRealTimers()
     app.unmount()
   })

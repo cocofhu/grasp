@@ -1195,6 +1195,35 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
+  it('keeps one trailing refresh when turn_done arrives during an in-flight context load', async () => {
+    const { inbox, app } = await withInbox()
+    mocks.inboxContext.mockClear()
+    let resolveFirst!: (value: { run: Run }) => void
+    const first = new Promise<{ run: Run }>((resolve) => {
+      resolveFirst = resolve
+    })
+    mocks.inboxContext
+      .mockImplementationOnce(() => first)
+      .mockResolvedValueOnce({ run: contextRun('run-gate', { workflowName: '完成后的最新快照' }) })
+
+    const inFlight = inbox.softRefreshActiveRun()
+    expect(mocks.inboxContext).toHaveBeenCalledTimes(1)
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({ type: 'review', nodeId: 'producer', event: 'turn_done', waiting: 0 })
+    // Multiple terminal notifications in the same window coalesce to one trailing load.
+    socket.message({ type: 'review', nodeId: 'producer', event: 'turn_done', waiting: 0 })
+    await flushPromises()
+    expect(mocks.inboxContext).toHaveBeenCalledTimes(1)
+
+    resolveFirst({ run: contextRun('run-gate', { workflowName: '在途旧快照' }) })
+    await inFlight
+    await flushPromises()
+    expect(mocks.inboxContext).toHaveBeenCalledTimes(2)
+    expect(inbox.activeRun.value?.workflowName).toBe('完成后的最新快照')
+    app.unmount()
+  })
+
   it('applies manual refreshes, pending updates and editing banners', async () => {
     const { inbox, app } = await withInbox()
     // No update banner any more: a held pending change is applied by manual refresh.

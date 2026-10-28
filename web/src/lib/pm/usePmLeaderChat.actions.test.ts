@@ -731,4 +731,133 @@ describe('usePmLeaderChat actions', () => {
     expect(chat.finalizing.value).toBe(false)
     app.unmount()
   })
+
+  it('reconciles a completed external turn once from the cold idle snapshot', async () => {
+    mocks.listPmMessages
+      .mockResolvedValueOnce({ items: [message('before', 'assistant')], hasMore: false })
+      .mockResolvedValueOnce({
+        items: [
+          message('before', 'assistant', { content: 'updated before' }),
+          message('u-external'),
+          message('a-external', 'assistant'),
+        ],
+        hasMore: false,
+      })
+    const { chat, app } = withChat()
+    await flushPromises()
+    const socket = MockWebSocket.instances.at(-1)!
+    expect(chat.sending.value).toBe(false)
+    expect(chat.streaming.value).toBe(false)
+
+    socket.frame({ type: 'session', event: 'queue_state', busy: false, waiting: 0 })
+    await flushPromises()
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['before', 'u-external', 'a-external'])
+    expect(chat.messages.value[0]?.content).toBe('updated before')
+    expect(chat.finalizing.value).toBe(false)
+
+    socket.frame({ type: 'session', event: 'queue_state', busy: false, waiting: 0 })
+    socket.frame({ type: 'session', event: 'queue_state', busy: false, waiting: 0 })
+    await flushPromises()
+    expect(mocks.listPmMessages).toHaveBeenCalledTimes(2)
+    app.unmount()
+  })
+
+  it('retries a failed cold-idle reconciliation on the next idle of the same socket', async () => {
+    mocks.listPmMessages
+      .mockResolvedValueOnce({ items: [message('before', 'assistant')], hasMore: false })
+      .mockRejectedValueOnce(new Error('cold down'))
+      .mockResolvedValueOnce({
+        items: [message('before', 'assistant'), message('u-external'), message('a-external', 'assistant')],
+        hasMore: false,
+      })
+    const { chat, app } = withChat()
+    await flushPromises()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.frame({ type: 'session', event: 'queue_state', busy: false, waiting: 0 })
+    await flushPromises()
+    expect(chat.finalizing.value).toBe(true)
+    expect(chat.finalizingRefetchFailed.value).toBe(true)
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['before'])
+
+    socket.frame({ type: 'session', event: 'queue_state', busy: false, waiting: 0 })
+    await flushPromises()
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['before', 'u-external', 'a-external'])
+    expect(chat.finalizing.value).toBe(false)
+    expect(chat.finalizingRefetchFailed.value).toBe(false)
+    app.unmount()
+  })
+
+  it('keeps the new same-thread live turn when an older finalizing response arrives', async () => {
+    mocks.listPmMessages.mockResolvedValueOnce({
+      items: [message('u1'), message('u2')],
+      hasMore: false,
+    })
+    const { chat, app } = withChat()
+    await flushPromises()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.frame({ type: 'session', event: 'turn_begin', userMsgId: 'u1' })
+    socket.frame({
+      type: 'acp',
+      data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'old live' } } },
+    })
+
+    let resolveOldRefetch!: (value: { items: ReturnType<typeof message>[]; hasMore: boolean }) => void
+    mocks.listPmMessages.mockImplementationOnce(() => new Promise((resolve) => { resolveOldRefetch = resolve }))
+    socket.frame({ type: 'session', event: 'turn_done', interrupted: false, userMsgId: 'u1' })
+    expect(chat.finalizing.value).toBe(true)
+
+    socket.frame({ type: 'session', event: 'turn_begin', userMsgId: 'u2' })
+    socket.frame({
+      type: 'acp',
+      data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'new live' } } },
+    })
+    resolveOldRefetch({
+      items: [message('u1', 'user', { content: 'updated u1' }), message('a1', 'assistant')],
+      hasMore: false,
+    })
+    await flushPromises()
+
+    expect(chat.streamText.value).toBe('new live')
+    expect(chat.activeUserMessageId.value).toBe('u2')
+    expect(chat.streaming.value).toBe(true)
+    expect(chat.finalizing.value).toBe(false)
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['u1', 'u2', 'a1'])
+    expect(chat.messages.value[0]?.content).toBe('updated u1')
+    app.unmount()
+  })
+
+  it('retries a failed finalizing refetch from reconnect idle without later frames', async () => {
+    mocks.listPmMessages.mockResolvedValueOnce({ items: [message('u1')], hasMore: false })
+    const { chat, app } = withChat()
+    await flushPromises()
+    const first = MockWebSocket.instances.at(-1)!
+    first.frame({ type: 'session', event: 'turn_begin', userMsgId: 'u1' })
+    first.frame({
+      type: 'acp',
+      data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'partial' } } },
+    })
+    mocks.listPmMessages.mockRejectedValueOnce(new Error('tail unavailable'))
+    first.frame({ type: 'session', event: 'turn_done', interrupted: false, userMsgId: 'u1' })
+    await flushPromises()
+    expect(chat.finalizing.value).toBe(true)
+    expect(chat.finalizingRefetchFailed.value).toBe(true)
+
+    first.onclose?.(new CloseEvent('close'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    const reconnected = MockWebSocket.instances.at(-1)!
+    expect(reconnected).not.toBe(first)
+    mocks.listPmMessages.mockResolvedValueOnce({
+      items: [message('u1'), message('a1', 'assistant')],
+      hasMore: false,
+    })
+    reconnected.frame({ type: 'session', event: 'queue_state', busy: false, waiting: 0 })
+    await flushPromises()
+
+    expect(chat.finalizing.value).toBe(false)
+    expect(chat.finalizingRefetchFailed.value).toBe(false)
+    expect(chat.streamText.value).toBe('')
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['u1', 'a1'])
+    expect(mocks.listPmMessages).toHaveBeenCalledTimes(3)
+    app.unmount()
+  })
 })

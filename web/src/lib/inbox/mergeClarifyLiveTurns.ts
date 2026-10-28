@@ -48,15 +48,21 @@ export function persistedCompletedLiveHuman(
 export function mergePersistedAndLiveTurns(
   persisted: ClarifyTurn[],
   live: ClarifyTurn[],
+  historyAnchor = 0,
 ): ClarifyTurn[] {
   if (!live.length) return persisted
   if (!persisted.length) return [...persisted, ...live]
 
+  // Only this live turn's persisted suffix may dedupe or close it. Older
+  // same-text turns stay in the prefix and must never swallow a new reply.
+  const anchor = Math.max(0, Math.min(historyAnchor, persisted.length))
+  const prefix = persisted.slice(0, anchor)
+  const current = persisted.slice(anchor)
   const liveHuman = live[0]?.role === 'human' ? live[0] : null
   const liveAgent = live.length >= 2 && live[1]?.role === 'agent' ? live[1] : null
-  if (liveHuman && liveAgent?.streaming && persisted.length >= 2) {
-    const ph = persisted[persisted.length - 2]
-    const pa = persisted[persisted.length - 1]
+  if (liveHuman && liveAgent?.streaming && current.length >= 2) {
+    const ph = current[current.length - 2]
+    const pa = current[current.length - 1]
     if (
       ph.role === 'human' &&
       pa.role === 'agent' &&
@@ -64,20 +70,20 @@ export function mergePersistedAndLiveTurns(
       isRetryableFailedAgent(pa)
     ) {
       // Cover retry: replace trailing empty/failure agent with live stream.
-      return [...persisted.slice(0, -1), ...live.slice(1)]
+      return [...prefix, ...current.slice(0, -1), ...live.slice(1)]
     }
   }
 
-  if (liveHuman && persistedCompletedLiveHuman(persisted, liveHuman.text || '')) {
+  if (liveHuman && persistedCompletedLiveHuman(current, liveHuman.text || '')) {
     // The slot may already be closed while a longer snapshot is still arriving.
     // Keep that longer snapshot. A shorter or different live must not cover
     // the reply already on disk.
-    const fresher = replaceWithFresherLiveAgent(persisted, live)
-    if (fresher) return fresher
+    const fresher = replaceWithFresherLiveAgent(current, live)
+    if (fresher) return [...prefix, ...fresher]
     return persisted
   }
 
-  const maxK = Math.min(live.length, persisted.length)
+  const maxK = Math.min(live.length, current.length)
   let matched = 0
   for (let candidate = maxK; candidate >= 1; candidate--) {
     let ok = true
@@ -87,7 +93,7 @@ export function mergePersistedAndLiveTurns(
         ok = false
         break
       }
-      const pt = persisted[persisted.length - candidate + i]
+      const pt = current[current.length - candidate + i]
       // Empty failed agent matches empty live agent by role only (both texts '').
       if (pt.role !== lt.role || (pt.text || '') !== (lt.text || '')) {
         if (

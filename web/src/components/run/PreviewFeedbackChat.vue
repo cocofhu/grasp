@@ -77,6 +77,8 @@ function copyKey(key: string): string {
 }
 
 const issues = ref<PreviewIssue[]>([])
+/** Only the latest list/generation may replace issues; create invalidates older reads. */
+let issuesLoadGen = 0
 const sending = ref(false)
 const loadError = ref<string | null>(null)
 const listRef = ref<HTMLDivElement | null>(null)
@@ -120,13 +122,19 @@ const optionalPickHint = computed(() => {
 })
 
 async function load() {
+  const generation = ++issuesLoadGen
+  const runId = props.runId
+  const nodeId = props.nodeId
   loadError.value = null
   try {
-    const r = await api.listPreviewIssues(props.runId, props.nodeId)
+    const r = await api.listPreviewIssues(runId, nodeId)
+    if (generation !== issuesLoadGen || props.runId !== runId || props.nodeId !== nodeId) return
     issues.value = r.issues || []
     await nextTick()
+    if (generation !== issuesLoadGen || props.runId !== runId || props.nodeId !== nodeId) return
     if (props.fillSidebar || !props.compact || historyExpanded.value) scrollToBottom()
   } catch (e: any) {
+    if (generation !== issuesLoadGen || props.runId !== runId || props.nodeId !== nodeId) return
     loadError.value = e?.message || 'load failed'
   }
 }
@@ -172,18 +180,25 @@ async function send(opts?: { body?: string }): Promise<boolean> {
   } else if (!body && images.length === 0) {
     return false
   }
+  const runId = props.runId
+  const nodeId = props.nodeId
   sending.value = true
   loadError.value = null
   try {
     const issue = await api.createPreviewIssue(
-      props.runId,
-      props.nodeId,
+      runId,
+      nodeId,
       body,
       props.selector || '',
       props.port || 0,
       images,
     )
-    issues.value.push(issue)
+    if (props.runId !== runId || props.nodeId !== nodeId) return true
+    // A list that started before this create is stale even if it resolves later.
+    issuesLoadGen++
+    const existing = issues.value.findIndex((item) => item.id === issue.id)
+    if (existing >= 0) issues.value[existing] = issue
+    else issues.value.push(issue)
     clearDraft()
     if (props.selector || props.elementImage) emit('clear-selector')
     emit('issues-changed')
@@ -191,7 +206,7 @@ async function send(opts?: { body?: string }): Promise<boolean> {
     if (props.fillSidebar || !props.compact || historyExpanded.value) scrollToBottom()
     return true
   } catch (e: any) {
-    loadError.value = e?.message || 'send failed'
+    if (props.runId === runId && props.nodeId === nodeId) loadError.value = e?.message || 'send failed'
     return false
   } finally {
     sending.value = false
