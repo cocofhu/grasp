@@ -1,16 +1,19 @@
 package execution
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
+
+// gitArgPattern is the same anchored allowlist as sandbox.shellArgPattern.
+// gitWith rechecks every argv against it before exec.Command.
+var gitArgPattern = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
 
 // Source is one repository or folder to isolate for a launch.
 type Source struct {
@@ -117,16 +120,25 @@ func PrepareAuth(id string, sources []Source, auth Auth) (Launch, error) {
 		cur.holders++
 		return cur.Launch, nil
 	}
-	root := filepath.Join(Root(), id)
+	base, err := filepath.Abs(filepath.Clean(Root()))
+	if err != nil {
+		return Launch{}, err
+	}
+	root, err := pathWithin(base, filepath.Join(base, id))
+	if err != nil {
+		return Launch{}, err
+	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return Launch{}, err
 	}
 	prepared, err := prepareSources(root, sources, auth)
 	if err != nil {
 		detachWorktrees(prepared)
-		_ = os.RemoveAll(root)
+		removeWithin(base, root)
 		pruneWorktrees(prepared)
-		_ = os.RemoveAll(launchMirrors(root))
+		if mirrors, mErr := mirrorDir(root); mErr == nil {
+			removeWithin(filepath.Dir(mirrors), mirrors)
+		}
 		return Launch{}, err
 	}
 	st := &launchState{Launch: Launch{ID: id, Root: root, Repos: prepared}, holders: 1}
@@ -227,8 +239,10 @@ func removeLocked(cur *launchState) {
 			_, _ = git(repo.GitDir, "worktree", "prune")
 		}
 	}
-	_ = os.RemoveAll(cur.Root)
-	_ = os.RemoveAll(launchMirrors(cur.Root))
+	removeWithin(filepath.Dir(cur.Root), cur.Root)
+	if mirrors, err := mirrorDir(cur.Root); err == nil {
+		removeWithin(filepath.Dir(mirrors), mirrors)
+	}
 	delete(launches, cur.ID)
 	endedIDs[cur.ID] = true
 }
@@ -238,6 +252,13 @@ func removeLocked(cur *launchState) {
 // another launch's private objects.
 func launchMirrors(root string) string {
 	return filepath.Join(Root(), ".mirrors", filepath.Base(root))
+}
+
+// mirrorDir is the bare-clone directory for one launch, checked against the
+// mirrors parent. Callers must use the returned path for later removal.
+func mirrorDir(launchRoot string) (string, error) {
+	parent := filepath.Join(filepath.Dir(launchRoot), ".mirrors")
+	return pathWithin(parent, filepath.Join(parent, filepath.Base(launchRoot)))
 }
 
 func prepareSources(root string, sources []Source, auth Auth) ([]Prepared, error) {
@@ -256,8 +277,11 @@ func prepareSources(root string, sources []Source, auth Auth) ([]Prepared, error
 			return out, fmt.Errorf("不安全的目录名 %q", name)
 		}
 		seen[name] = true
-		dest := filepath.Join(root, name)
-		prep, err := prepareOne(url, strings.TrimSpace(src.Branch), dest, name, auth)
+		dest, err := pathWithin(root, filepath.Join(root, name))
+		if err != nil {
+			return out, err
+		}
+		prep, err := prepareOne(url, strings.TrimSpace(src.Branch), dest, name, root, auth)
 		if err != nil {
 			return out, err
 		}
@@ -288,29 +312,59 @@ func pruneWorktrees(repos []Prepared) {
 	}
 }
 
-func prepareOne(url, branch, dest, name string, auth Auth) (Prepared, error) {
-	if local, ok := localDir(url); ok {
-		if isGitRepo(local) {
-			return addWorktree(local, branch, dest, name)
-		}
-		if err := copyTree(local, dest); err != nil {
-			return Prepared{}, err
-		}
-		return Prepared{Name: name, Path: dest, Kind: "folder"}, nil
-	}
-	cache := filepath.Join(launchMirrors(filepath.Dir(dest)), mirrorKey(url))
-	if err := ensureMirror(cache, url, branch, auth); err != nil {
+func prepareOne(url, branch, dest, name, launchRoot string, auth Auth) (Prepared, error) {
+	if err := validateBranch(branch); err != nil {
 		return Prepared{}, err
 	}
-	return addWorktree(cache, branch, dest, name)
+	dest, err := pathWithin(launchRoot, dest)
+	if err != nil {
+		return Prepared{}, err
+	}
+	if isRemoteURL(url) {
+		remote, err := validateRemote(url)
+		if err != nil {
+			return Prepared{}, err
+		}
+		mirrors, err := mirrorDir(launchRoot)
+		if err != nil {
+			return Prepared{}, err
+		}
+		cache, err := pathWithin(mirrors, filepath.Join(mirrors, name))
+		if err != nil {
+			return Prepared{}, err
+		}
+		if err := ensureMirror(mirrors, cache, remote, branch, auth); err != nil {
+			return Prepared{}, err
+		}
+		return addWorktree(cache, branch, dest, name, launchRoot)
+	}
+	local, err := localDir(url)
+	if err != nil {
+		return Prepared{}, err
+	}
+	if isGitRepo(local) {
+		return addWorktree(local, branch, dest, name, launchRoot)
+	}
+	if err := copyTree(local, dest); err != nil {
+		return Prepared{}, err
+	}
+	return Prepared{Name: name, Path: dest, Kind: "folder"}, nil
 }
 
-func addWorktree(repo, branch, dest, name string) (Prepared, error) {
+func addWorktree(repo, branch, dest, name, launchRoot string) (Prepared, error) {
+	dest, err := pathWithin(launchRoot, dest)
+	if err != nil {
+		return Prepared{}, err
+	}
 	sha, err := branchHEAD(repo, branch)
 	if err != nil {
 		return Prepared{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+	parent, err := pathWithin(launchRoot, filepath.Dir(dest))
+	if err != nil {
+		return Prepared{}, err
+	}
+	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return Prepared{}, err
 	}
 	if _, err := git(repo, "worktree", "add", "--detach", dest, sha); err != nil {
@@ -329,11 +383,11 @@ func addWorktree(repo, branch, dest, name string) (Prepared, error) {
 }
 
 func branchHEAD(repo, branch string) (string, error) {
+	if err := validateBranch(branch); err != nil {
+		return "", err
+	}
 	if branch == "" {
 		return git(repo, "rev-parse", "--verify", "HEAD")
-	}
-	if strings.ContainsAny(branch, " \t\n\r") || strings.HasPrefix(branch, "-") || strings.Contains(branch, "..") {
-		return "", fmt.Errorf("非法分支名 %q", branch)
 	}
 	if sha, err := git(repo, "rev-parse", "--verify", "--end-of-options", "refs/heads/"+branch); err == nil {
 		return sha, nil
@@ -341,45 +395,118 @@ func branchHEAD(repo, branch string) (string, error) {
 	return git(repo, "rev-parse", "--verify", "--end-of-options", branch)
 }
 
-func ensureMirror(cache, url, branch string, auth Auth) error {
+func ensureMirror(mirrorRoot, cache, url, branch string, auth Auth) error {
+	cache, err := pathWithin(mirrorRoot, cache)
+	if err != nil {
+		return err
+	}
 	env, prefix, cleanup, err := auth.gitPrefix(url)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 	if _, err := os.Stat(cache); err != nil {
-		if err := os.MkdirAll(filepath.Dir(cache), 0o755); err != nil {
+		parent, err := pathWithin(mirrorRoot, filepath.Dir(cache))
+		if err != nil {
 			return err
 		}
-		args := append(append([]string{}, prefix...), "clone", "--bare", url, cache)
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return err
+		}
+		// URL and cache are data, after options have ended.
+		args := append(append([]string{}, prefix...), "clone", "--bare", "--end-of-options", url, cache)
 		if _, err := gitWith("", env, args...); err != nil {
-			_ = os.RemoveAll(cache)
+			removeWithin(mirrorRoot, cache)
 			return err
 		}
 	}
-	if branch != "" && !strings.ContainsAny(branch, " \t\n\r") && !strings.HasPrefix(branch, "-") {
-		args := append(append([]string{}, prefix...), "fetch", "origin", branch)
+	if branch != "" {
+		args := append(append([]string{}, prefix...), "fetch", "--end-of-options", "origin", branch)
 		_, _ = gitWith(cache, env, args...)
 	}
 	return nil
 }
 
-func localDir(url string) (string, bool) {
-	u := strings.TrimSpace(url)
+func isRemoteURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	return strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") ||
+		strings.HasPrefix(raw, "ssh://") || strings.HasPrefix(raw, "git@")
+}
+
+func validateRemote(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.HasPrefix(raw, "-") || strings.Contains(raw, "..") || !gitArgPattern.MatchString(raw) {
+		return "", fmt.Errorf("非法仓库地址")
+	}
 	switch {
-	case strings.HasPrefix(u, "file://"):
-		u = strings.TrimPrefix(u, "file://")
-	case strings.HasPrefix(u, "http://"), strings.HasPrefix(u, "https://"), strings.HasPrefix(u, "ssh://"), strings.HasPrefix(u, "git@"):
-		return "", false
+	case strings.HasPrefix(raw, "http://"), strings.HasPrefix(raw, "https://"), strings.HasPrefix(raw, "ssh://"):
+		rest := raw
+		switch {
+		case strings.HasPrefix(raw, "https://"):
+			rest = strings.TrimPrefix(raw, "https://")
+		case strings.HasPrefix(raw, "http://"):
+			rest = strings.TrimPrefix(raw, "http://")
+		default:
+			rest = strings.TrimPrefix(raw, "ssh://")
+		}
+		if rest == "" || strings.HasPrefix(rest, "/") {
+			return "", fmt.Errorf("非法仓库地址")
+		}
+		host := rest
+		if i := strings.IndexByte(host, '/'); i >= 0 {
+			host = host[:i]
+		}
+		if host == "" {
+			return "", fmt.Errorf("非法仓库地址")
+		}
+		return raw, nil
+	case strings.HasPrefix(raw, "git@"):
+		colon := strings.Index(raw, ":")
+		if colon <= len("git@") || strings.Contains(raw, "://") {
+			return "", fmt.Errorf("不支持的仓库地址")
+		}
+		host := raw[len("git@"):colon]
+		path := raw[colon+1:]
+		if host == "" || path == "" {
+			return "", fmt.Errorf("不支持的仓库地址")
+		}
+		return raw, nil
+	default:
+		return "", fmt.Errorf("不支持的仓库地址")
 	}
-	if !filepath.IsAbs(u) {
-		return "", false
+}
+
+func validateBranch(branch string) error {
+	if branch == "" {
+		return nil
 	}
-	info, err := os.Stat(u)
+	if strings.HasPrefix(branch, "-") || strings.Contains(branch, "..") || strings.ContainsAny(branch, " \t\n\r") || !gitArgPattern.MatchString(branch) {
+		return fmt.Errorf("非法分支名 %q", branch)
+	}
+	return nil
+}
+
+func localDir(url string) (string, error) {
+	u := strings.TrimSpace(url)
+	if strings.HasPrefix(u, "file://") {
+		u = strings.TrimSpace(strings.TrimPrefix(u, "file://"))
+	}
+	// Reject ".." before Clean collapses it into another directory.
+	if strings.Contains(u, "..") {
+		return "", fmt.Errorf("本机目录不能包含 ..")
+	}
+	cleaned := filepath.Clean(u)
+	if strings.Contains(cleaned, "..") {
+		return "", fmt.Errorf("本机目录不能包含 ..")
+	}
+	if !filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("不支持的仓库地址")
+	}
+	info, err := os.Stat(cleaned)
 	if err != nil || !info.IsDir() {
-		return "", false
+		return "", fmt.Errorf("本机目录不可用")
 	}
-	return u, true
+	return cleaned, nil
 }
 
 func isGitRepo(path string) bool {
@@ -388,15 +515,20 @@ func isGitRepo(path string) bool {
 }
 
 func copyTree(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+	srcRoot := filepath.Clean(src)
+	dstRoot := filepath.Clean(dst)
+	return filepath.Walk(srcRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(src, path)
+		rel, err := filepath.Rel(srcRoot, path)
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(dst, rel)
+		target, err := copyTarget(dstRoot, rel)
+		if err != nil {
+			return err
+		}
 		if info.IsDir() {
 			return os.MkdirAll(target, 0o755)
 		}
@@ -407,20 +539,40 @@ func copyTree(src, dst string) error {
 			}
 			return os.Symlink(link, target)
 		}
-		return copyFile(path, target, info.Mode().Perm())
+		return copyFile(srcRoot, path, dstRoot, target, info.Mode().Perm())
 	})
 }
 
-func copyFile(src, dst string, mode os.FileMode) error {
-	in, err := os.Open(src)
+// copyTarget joins a walk-relative path onto dstRoot and keeps the result inside it.
+func copyTarget(dstRoot, rel string) (string, error) {
+	if rel != "." && !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("路径越界")
+	}
+	return pathWithin(dstRoot, filepath.Join(dstRoot, rel))
+}
+
+func copyFile(srcRoot, src, dstRoot, dst string, mode os.FileMode) error {
+	srcSafe, err := pathWithin(srcRoot, src)
+	if err != nil {
+		return err
+	}
+	dstSafe, err := pathWithin(dstRoot, dst)
+	if err != nil {
+		return err
+	}
+	parent, err := pathWithin(dstRoot, filepath.Dir(dstSafe))
+	if err != nil {
+		return err
+	}
+	in, err := os.Open(srcSafe)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	out, err := os.OpenFile(dstSafe, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
@@ -429,26 +581,65 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	return err
 }
 
-func mirrorKey(url string) string {
-	sum := sha256.Sum256([]byte(url))
-	return hex.EncodeToString(sum[:8])
-}
-
 func git(dir string, args ...string) (string, error) {
 	return gitWith(dir, nil, args...)
 }
 
 func gitWith(dir string, extra []string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	safe := make([]string, 0, len(args))
+	for _, arg := range args {
+		if !gitArgPattern.MatchString(arg) {
+			return "", fmt.Errorf("git 参数不被接受")
+		}
+		safe = append(safe, arg)
+	}
+	cmd := exec.Command("git", safe...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
 	cmd.Env = mergeEnv(os.Environ(), append([]string{"GIT_TERMINAL_PROMPT=0"}, extra...))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(safe, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// pathWithin returns candidate only after it is confined to root.
+// Relative candidates must be local; absolute ones must equal root or sit under root+separator.
+// The returned string is the value that passed the check.
+func pathWithin(root, candidate string) (string, error) {
+	root = filepath.Clean(root)
+	sep := string(os.PathSeparator)
+	if !filepath.IsAbs(root) || root == sep {
+		return "", fmt.Errorf("路径越界")
+	}
+	candidate = filepath.Clean(candidate)
+	if candidate == "" {
+		return "", fmt.Errorf("路径越界")
+	}
+	if !filepath.IsAbs(candidate) {
+		if !filepath.IsLocal(candidate) {
+			return "", fmt.Errorf("路径越界")
+		}
+		candidate = filepath.Clean(filepath.Join(root, candidate))
+	}
+	if strings.HasPrefix(candidate, root+sep) {
+		return candidate, nil
+	}
+	if candidate == root && strings.HasPrefix(candidate, root) {
+		return candidate, nil
+	}
+	return "", fmt.Errorf("路径越界")
+}
+
+// removeWithin deletes candidate only when it is still inside root.
+func removeWithin(root, candidate string) {
+	safe, err := pathWithin(root, candidate)
+	if err != nil {
+		return
+	}
+	_ = os.RemoveAll(safe)
 }
 
 func mergeEnv(base, extra []string) []string {
