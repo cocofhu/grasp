@@ -58,7 +58,9 @@ const VENDOR_LOGOS: Record<string, string> = {
   siliconflow: 'siliconflow',
   bytedance: 'bytedance',
   cursor: 'cursor',
-  opencode: 'opencode',
+  // OpenCode's own catalog vendor is an aggregator. Recognized families use
+  // their logos; an unknown id keeps the OpenCode letter instead of this mark.
+  // OpenCode Go is its own subscription and still uses the OpenCode logo.
   'opencode-go': 'opencode',
 }
 
