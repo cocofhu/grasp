@@ -1459,8 +1459,12 @@ describe('useClarifyChat actions', () => {
     chat.applyQueueState(1, [{ id: 'one', text: 'one' }], true)
     expect(chat.queued.value).toHaveLength(1)
 
+    const painted = chat.liveTurns.value.length
+    const paintedIdx = chat.liveAgentIdx.value
     chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'wrong', item: { text: 'ignored' } })
-    expect(chat.liveAgentIdx.value).toBe(-1)
+    expect(chat.liveTurns.value).toHaveLength(painted)
+    expect(chat.liveTurns.value.some((turn) => turn.text === 'ignored')).toBe(false)
+    expect(chat.liveAgentIdx.value).toBe(paintedIdx)
     chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'missing', text: 'active' } })
     chat.applyAcpEvents([{ kind: 'message', text: 'complete' }])
     chat.applyQueueState(0, [], false)

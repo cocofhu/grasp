@@ -155,6 +155,53 @@ describe('mergePersistedAndLiveTurns', () => {
     expect(merged.at(-1)).toMatchObject({ text: reply, streaming: true })
   })
 
+  it('keeps a later accepted row after the snapshot settles the in-flight turn', () => {
+    const persisted: ClarifyTurn[] = [
+      { role: 'human', text: '澄清意见甲', at: 't1' },
+      { role: 'agent', text: '收到', at: 't2' },
+    ]
+    const live: ClarifyTurn[] = [
+      { role: 'human', text: '澄清意见甲', at: 't1-live', localPending: true },
+      { role: 'agent', text: '', at: 't2-live', streaming: true, localPending: true },
+      { role: 'human', text: '澄清意见乙', at: 't3-live', localPending: true },
+    ]
+    const merged = mergePersistedAndLiveTurns(persisted, live)
+    expect(merged.filter((t) => t.text === '澄清意见甲')).toHaveLength(1)
+    expect(merged.filter((t) => t.text === '收到')).toHaveLength(1)
+    expect(merged.filter((t) => t.text === '澄清意见乙')).toHaveLength(1)
+    expect(merged.at(-1)?.role).toBe('human')
+  })
+
+  it('does not paint a later turn onto the settled reply', () => {
+    const persisted: ClarifyTurn[] = [
+      { role: 'human', text: '澄清意见甲', at: 't1' },
+      { role: 'agent', text: '收到', at: 't2' },
+    ]
+    const live: ClarifyTurn[] = [
+      { role: 'human', text: '澄清意见甲', at: 't1-live', localPending: true },
+      { role: 'agent', text: '收到', at: 't2-live', streaming: true, localPending: true },
+      { role: 'human', text: '澄清意见乙', at: 't3-live', localPending: true },
+      { role: 'agent', text: '这是第二条更长的回复', at: 't4-live', streaming: true, localPending: true },
+    ]
+    const merged = mergePersistedAndLiveTurns(persisted, live)
+    expect(merged.map((t) => t.text)).toEqual(['澄清意见甲', '收到', '澄清意见乙', '这是第二条更长的回复'])
+  })
+
+  it('keeps a later same-text row after the first copy is already persisted', () => {
+    const persisted: ClarifyTurn[] = [
+      { role: 'human', text: '继续', at: 't1' },
+      { role: 'agent', text: '第一轮', at: 't2' },
+    ]
+    const live: ClarifyTurn[] = [
+      { role: 'human', text: '继续', at: 't1-live', localPending: true },
+      { role: 'agent', text: '', at: 't2-live', streaming: true, localPending: true },
+      { role: 'human', text: '继续', at: 't3-live', localPending: true },
+    ]
+    const merged = mergePersistedAndLiveTurns(persisted, live)
+    expect(merged.filter((t) => t.role === 'human' && t.text === '继续')).toHaveLength(2)
+    expect(merged.filter((t) => t.text === '第一轮')).toHaveLength(1)
+  })
+
   it('dedupes only the snapshot suffix belonging to the anchored live turn', () => {
     const oldTurns: ClarifyTurn[] = [
       { role: 'human', text: '继续', at: 't1' },

@@ -954,11 +954,14 @@ const composerOrigin = new WeakMap<object, string>()
 
 /** Index of an accepted user row that still has no reply text. -1 if none. */
 function findLocalPendingPair(humanText: string): number {
-  for (let i = 0; i < liveTurns.value.length - 1; i++) {
+  for (let i = 0; i < liveTurns.value.length; i++) {
     const human = liveTurns.value[i]
-    const agent = liveTurns.value[i + 1]
-    if (human?.role !== 'human' || !human.localPending || agent?.role !== 'agent') continue
+    if (human?.role !== 'human' || !human.localPending) continue
     if ((human.text || '') !== humanText) continue
+    const agent = liveTurns.value[i + 1]
+    // A later send is user-only until its own turn_begin. The in-flight send
+    // already has an empty agent slot.
+    if (!agent || agent.role !== 'agent') return i
     if ((agent.text || '').trim() || (agent.thought || '').trim()) continue
     return i
   }
@@ -987,17 +990,20 @@ function paintAcceptedUserTurn(
     annotations: annotations.length ? annotations : undefined,
     localPending: true,
   })
-  const agentIdx =
-    liveTurns.value.push({
-      role: 'agent',
-      text: '',
-      thought: '',
-      at: started,
-      startedAt: started,
-      streaming,
-      localPending: true,
-    }) - 1
-  if (streaming) liveAgentIdx.value = agentIdx
+  // Only the send that can start now gets an agent slot. A later queued send
+  // stays a user row, so it is not drawn as an empty failure while it waits.
+  if (streaming) {
+    liveAgentIdx.value =
+      liveTurns.value.push({
+        role: 'agent',
+        text: '',
+        thought: '',
+        at: started,
+        startedAt: started,
+        streaming: true,
+        localPending: true,
+      }) - 1
+  }
   thinking.value = true
   stickToBottom.value = true
   unreadCount.value = 0
@@ -1007,18 +1013,24 @@ function paintAcceptedUserTurn(
 /** Drop the last accepted row for this text when the send itself failed. */
 function removeLocalPendingPair(text: string) {
   let idx = -1
-  for (let i = 0; i < liveTurns.value.length - 1; i++) {
+  for (let i = 0; i < liveTurns.value.length; i++) {
     const human = liveTurns.value[i]
     if (human?.role === 'human' && human.localPending && (human.text || '') === text) idx = i
   }
   if (idx < 0) return
   const agent = liveTurns.value[idx + 1]
-  if (agent?.role !== 'agent') return
-  if ((agent.text || '').trim() || (agent.thought || '').trim() || agent.tools?.length || agent.parts?.length) return
-  const removedLive = liveAgentIdx.value === idx + 1
-  liveTurns.value.splice(idx, 2)
+  const dropAgent =
+    agent?.role === 'agent' &&
+    !(agent.text || '').trim() &&
+    !(agent.thought || '').trim() &&
+    !agent.tools?.length &&
+    !agent.parts?.length
+  if (agent?.role === 'agent' && !dropAgent) return
+  const count = dropAgent ? 2 : 1
+  const removedLive = dropAgent && liveAgentIdx.value === idx + 1
+  liveTurns.value.splice(idx, count)
   if (removedLive) liveAgentIdx.value = -1
-  else if (liveAgentIdx.value > idx) liveAgentIdx.value -= 2
+  else if (liveAgentIdx.value > idx) liveAgentIdx.value -= count
   if (!liveTurns.value.length) liveHistoryAnchor = 0
 }
 
@@ -1569,7 +1581,7 @@ function discardLastQueued() {
   const item = queued.value[queued.value.length - 1]
   queued.value.pop()
   if (item) removeLocalPendingPair(item.text)
-  if (queued.value.length === 0 && liveAgentIdx.value < 0 && !liveTurns.value.some((turn) => turn.localPending)) {
+  if (queued.value.length === 0 && liveAgentIdx.value < 0) {
     thinking.value = false
   }
 }
@@ -1784,6 +1796,8 @@ function restoreUnsentQueued(
     }
   }
   const item = idx >= 0 ? queued.value.splice(idx, 1)[0] : null
+  // The refused send was already painted. Take that row back with the queue item.
+  if (item) removeLocalPendingPair(item.text)
   if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
   sendNotice.value = notice
   if (opts.autoRetryOnResume) return
@@ -1990,11 +2004,16 @@ function liveNarrativeAhead(persisted: ClarifyTurn[]): boolean {
  */
 /** An accepted user row is still missing from this snapshot. */
 function localPendingStillOpen(suffix: ClarifyTurn[]): boolean {
-  for (let i = 0; i < liveTurns.value.length - 1; i++) {
+  for (let i = 0; i < liveTurns.value.length; i++) {
     const human = liveTurns.value[i]
+    if (human?.role !== 'human' || !human.localPending) continue
     const agent = liveTurns.value[i + 1]
-    if (human?.role !== 'human' || !human.localPending || agent?.role !== 'agent') continue
     const text = (human.text || '').trim()
+    // Queued behind the in-flight send: the user row has no agent slot yet.
+    if (!agent || agent.role !== 'agent') {
+      if (!text || !persistedCompletedLiveHuman(suffix, text)) return true
+      continue
+    }
     if (!text) {
       if (!agent.streaming && !(agent.text || '').trim() && !(agent.thought || '').trim()) return true
       continue
@@ -2278,6 +2297,19 @@ function applyReviewFrame(frame: {
       const pairAt = pendingAt >= 0 ? pendingAt : tailReusable ? last - 2 : -1
       if (pairAt >= 0) {
         const existingHuman = liveTurns.value[pairAt]!
+        if (!liveTurns.value[pairAt + 1] || liveTurns.value[pairAt + 1]?.role !== 'agent') {
+          const started = new Date().toISOString()
+          liveTurns.value.splice(pairAt + 1, 0, {
+            role: 'agent',
+            text: '',
+            thought: '',
+            at: started,
+            startedAt: started,
+            streaming: true,
+            localPending: true,
+          })
+          if (liveAgentIdx.value >= pairAt + 1) liveAgentIdx.value += 1
+        }
         const existingAgent = liveTurns.value[pairAt + 1]!
         if (existingHuman.localPending) liveTurnOrigin.newHuman = true
         existingHuman.images = images ?? existingHuman.images

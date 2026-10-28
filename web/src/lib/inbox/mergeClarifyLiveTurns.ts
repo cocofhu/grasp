@@ -77,10 +77,12 @@ export function mergePersistedAndLiveTurns(
   if (liveHuman && persistedCompletedLiveHuman(current, liveHuman.text || '')) {
     // The slot may already be closed while a longer snapshot is still arriving.
     // Keep that longer snapshot. A shorter or different live must not cover
-    // the reply already on disk.
-    const fresher = replaceWithFresherLiveAgent(current, live)
-    if (fresher) return [...prefix, ...fresher]
-    return persisted
+    // the reply already on disk. A later accepted row that this snapshot does
+    // not contain yet stays after the settled pair.
+    const fresher = replaceWithFresherLiveAgent(current, live.slice(0, liveHeadCount(live)))
+    const tail = pendingLiveTail(live, current)
+    if (fresher) return [...prefix, ...fresher, ...tail]
+    return [...persisted, ...tail]
   }
 
   const maxK = Math.min(live.length, current.length)
@@ -115,6 +117,52 @@ export function mergePersistedAndLiveTurns(
   }
   if (matched === 0) return [...persisted, ...live]
   return [...persisted, ...live.slice(matched)]
+}
+
+/**
+ * Live rows after the settled head. A queued send is only a user row until
+ * its turn starts; once the snapshot already has that user, it is not appended
+ * again. Same-text replies stay when the snapshot has no extra copy.
+ */
+function liveHeadCount(live: ClarifyTurn[]): number {
+  let head = 0
+  if (live[0]?.role === 'human') head = 1
+  if (head < live.length && live[head]?.role === 'agent') head += 1
+  return head
+}
+
+function pendingLiveTail(live: ClarifyTurn[], persistedCurrent: ClarifyTurn[]): ClarifyTurn[] {
+  const head = liveHeadCount(live)
+  const headHumans = new Map<string, number>()
+  for (let i = 0; i < head; i++) {
+    const turn = live[i]
+    if (turn?.role !== 'human') continue
+    const key = (turn.text || '').trim()
+    headHumans.set(key, (headHumans.get(key) || 0) + 1)
+  }
+  const kept: ClarifyTurn[] = []
+  for (let j = head; j < live.length; j++) {
+    const turn = live[j]!
+    if (turn.role !== 'human' || !turn.localPending) continue
+    const key = (turn.text || '').trim()
+    const seen = persistedCurrent.filter(
+      (item) => item.role === 'human' && (item.text || '').trim() === key,
+    ).length
+    // The settled head already accounts for its own copy, including same text.
+    if (seen > (headHumans.get(key) || 0)) {
+      headHumans.set(key, (headHumans.get(key) || 0) + 1)
+      const next = live[j + 1]
+      if (next?.role === 'agent') j += 1
+      continue
+    }
+    kept.push(turn)
+    const next = live[j + 1]
+    if (next?.role === 'agent') {
+      kept.push(next)
+      j += 1
+    }
+  }
+  return kept
 }
 
 /** True when live carries a strictly longer reply than the persisted agent. */
