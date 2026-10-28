@@ -58,7 +58,8 @@ const VENDOR_LOGOS: Record<string, string> = {
   siliconflow: 'siliconflow',
   bytedance: 'bytedance',
   cursor: 'cursor',
-  opencode: 'opencode',
+  // OpenCode Go uses the OpenCode mark. A plain opencode vendor is the catalog
+  // fallback, so an unrecognized model id stays a letter instead of that logo.
   'opencode-go': 'opencode',
 }
 
