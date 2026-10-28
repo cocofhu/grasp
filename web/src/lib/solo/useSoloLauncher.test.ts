@@ -175,6 +175,38 @@ describe('useSoloLauncher', () => {
     expect(mocks.createSoloSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('reasoningEffort')
   })
 
+  it('sends the highest Gemini 4 Argon effort when the slider is left untouched and keeps a saved lower level', async () => {
+    mocks.listAgents.mockResolvedValueOnce([{ name: 'Solo', acpBackend: 'opencode', modelBinding: { kind: 'configuration', configurationId: 'argon-config' } }] as never)
+    mocks.listModelConfigurations.mockResolvedValueOnce({ items: [{
+      id: 'argon-config', name: 'Argon', backend: 'opencode', state: 'active', revision: 1,
+      binding: { kind: 'connection', connectionId: 'argon-service', modelId: 'gemini-4-argon', auxiliaryModelIds: ['gemini-3.1-flash-lite-image'] },
+    }] } as never)
+    mocks.listModelConnections.mockResolvedValueOnce({ items: [{
+      id: 'argon-service', name: 'Argon API', providerId: 'google', protocol: 'openai-chat-completions',
+      baseUrl: 'https://api.example.test/v1', credentialId: 'argon-key', auth: { scheme: 'bearer' }, state: 'active', revision: 1,
+      models: [
+        { id: 'gemini-4-argon', name: 'Gemini 4 Argon' },
+        { id: 'gemini-3.1-flash-lite-image', name: 'Lite image' },
+      ],
+    }] } as never)
+    const launcher = mountLauncher()
+    await launcher.load()
+    await flushPromises()
+    expect(launcher.modelChoices.value[0]).toMatchObject({ id: 'gemini-4-argon', efforts: ['low', 'medium', 'high'] })
+    expect(launcher.reasoningEffort.value).toBe('')
+    await launcher.start('Start at the top')
+    expect(mocks.createSoloSession).toHaveBeenLastCalledWith(expect.objectContaining({ agentName: 'Solo', reasoningEffort: 'high' }))
+    expect(launcher.reasoningEffort.value).toBe('high')
+    launcher.reasoningEffort.value = 'low'
+    await launcher.start('Stay low')
+    expect(mocks.createSoloSession).toHaveBeenLastCalledWith(expect.objectContaining({ reasoningEffort: 'low' }))
+    launcher.initialModelId.value = 'gemini-3.1-flash-lite-image'
+    await flushPromises()
+    expect(launcher.modelChoices.value.find(choice => choice.id === 'gemini-3.1-flash-lite-image')?.efforts).toEqual(['minimal', 'high'])
+    expect(launcher.reasoningEffort.value).toBe('high')
+    expect(launcher.error.value).toBe('所选思考强度已不可用，已改用该模型的最高强度。')
+  })
+
   it('keeps automatic platform selection on its coding-tool mark and omits a model override', async () => {
     mocks.listAgents.mockResolvedValueOnce([{ name: 'Solo', acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'cursor-default' } }] as never)
     mocks.listModelConfigurations.mockResolvedValueOnce({ items: [{

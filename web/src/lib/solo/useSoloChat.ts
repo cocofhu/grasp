@@ -25,6 +25,10 @@ function parseFrame(data: unknown): any {
   }
 }
 
+function listedEfforts(efforts?: string[]) {
+  return [...new Set((efforts || []).map(value => value.trim()).filter(Boolean))]
+}
+
 function queueItem(raw: any): SoloQueueItem {
   return {
     id: String(raw?.id ?? ''),
@@ -814,8 +818,17 @@ export function useSoloChat(sessionId: Ref<string>) {
           if (latest() && confirmedSettings) patchSession(confirmedSettings)
           return false
         }
-        const row = kind === 'model' ? configurationId === undefined ? await api.setSoloSessionModel(id, next) : await api.setSoloSessionModel(id, next, undefined, configurationId) : await api.setSoloSessionReasoningEffort(id, next)
+        let row = kind === 'model' ? configurationId === undefined ? await api.setSoloSessionModel(id, next) : await api.setSoloSessionModel(id, next, undefined, configurationId) : await api.setSoloSessionReasoningEffort(id, next)
         if (!isCurrentSession() || row.id !== id) return false
+        // A model switch clears an effort the new model does not offer. The
+        // selector shows that gap as the highest level, so persist that token.
+        if (kind === 'model' && latest() && !row.reasoningEffort?.trim()) {
+          const highest = listedEfforts(row.reasoningEfforts).at(-1)
+          if (highest) {
+            row = await api.setSoloSessionReasoningEffort(id, highest)
+            if (!isCurrentSession() || row.id !== id) return false
+          }
+        }
         confirmedSettings = modelSettings(row)
         if (latest()) {
           patchSession(modelSettings(row))

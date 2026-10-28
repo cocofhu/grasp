@@ -15,6 +15,10 @@ import { useSoloSessions } from './useSoloSessions'
 import { ONBOARDING_SOLO_AGENT_NAME } from '@/lib/pm/onboardingWizard'
 import { firstInstallCompletedAt } from '@/lib/pm/firstInstall'
 
+function listedEfforts(efforts?: string[]) {
+  return [...new Set((efforts || []).map(value => value.trim()).filter(Boolean))]
+}
+
 /**
  * Agent / repository selection and session creation shared by the home
  * composer and the /solo "new session" dialog. Repository ids persist across
@@ -57,7 +61,12 @@ export function useSoloLauncher() {
   watch(agentName, () => { initialModelId.value = ''; reasoningEffort.value = '' })
   watch([initialModelId, modelChoices], ([modelId, choices]) => {
     const selected = modelId ? choices.find(choice => choice.id === modelId) : choices[0]
-    if (reasoningEffort.value && !selected?.efforts?.includes(reasoningEffort.value)) reasoningEffort.value = ''
+    const listed = listedEfforts(selected?.efforts)
+    if (reasoningEffort.value && !listed.includes(reasoningEffort.value)) {
+      const next = listed.at(-1) || ''
+      reasoningEffort.value = next
+      if (next) error.value = t('pages.solo.modelSelect.effortResetNotice')
+    }
   })
   watch(modelChoices, (choices) => {
     const selected = initialModelId.value
@@ -169,11 +178,15 @@ export function useSoloLauncher() {
         return null
       }
       const effective = initialModelId.value ? selected : modelChoices.value[0]
-      if (reasoningEffort.value && !effective?.efforts?.includes(reasoningEffort.value)) {
-        reasoningEffort.value = ''
+      const listed = listedEfforts(effective?.efforts)
+      if (reasoningEffort.value && !listed.includes(reasoningEffort.value)) {
+        reasoningEffort.value = listed.at(-1) || ''
         error.value = t('pages.solo.modelSelect.effortResetNotice')
         return null
       }
+      // The selector shows an empty effort as the highest level. Send that token
+      // so creation does not inherit a lower model-group variant or the tool default.
+      if (!reasoningEffort.value && listed.length) reasoningEffort.value = listed[listed.length - 1]!
       const s = await api.createSoloSession({
         agentName: agentName.value,
         repos: soloCreateChoices(projectIds.value, branches.value),

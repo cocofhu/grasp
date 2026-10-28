@@ -4639,9 +4639,9 @@
         "catalogFailed": "The model list did not load. The saved model stays selected.",
         "reasoningEffort": "Reasoning effort",
         "effortAuto": "Default",
-        "effortReset": "Reset reasoning effort",
+        "effortReset": "Use the highest effort",
         "backToModels": "Back to models",
-        "effortResetNotice": "The selected reasoning effort is unavailable. Restored the model default.",
+        "effortResetNotice": "The selected reasoning effort is unavailable. Using this model's highest effort.",
         "effortLevels": {
           "off": "Off",
           "none": "None",
