@@ -3,9 +3,11 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { api } from '@/lib/api/api'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
-import type { Agent, CliCatalogModel, ModelConfiguration, ModelConnection, Project, SoloSession } from '@/lib/api/apiTypes'
+import type { Agent, CliCatalogModel, CredentialItem, ModelConfiguration, ModelConnection, Project, SoloSession } from '@/lib/api/apiTypes'
 import type { ClarifyImage } from '@/lib/shared/types'
-import { configuredModelChoices } from './configuredModels'
+import { boundModelChoices } from './configuredModels'
+import { parseModelRoute, boundConfigurationIds, effectiveModelAgent } from '@/lib/agent/modelBindings'
+import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
 import { soloPrefs } from './soloPrefs'
 import { isSoloLimitError, soloErrorText } from './soloErrors'
 import { soloCreateChoices } from './sessionRepos'
@@ -27,7 +29,8 @@ export function useSoloLauncher() {
   const projects = ref<Project[]>([])
   const configurations = ref<ModelConfiguration[]>([])
   const connections = ref<ModelConnection[]>([])
-  const cliModels = ref<CliCatalogModel[]>([])
+  const credentials = ref<CredentialItem[]>()
+  const cliModels = ref<Record<string, CliCatalogModel[]>>({})
   const cliReady = ref(false)
   const agentName = ref(soloPrefs.lastAgent())
   const projectIds = ref<string[]>(soloPrefs.lastProjects())
@@ -44,23 +47,9 @@ export function useSoloLauncher() {
   let loadGeneration = 0
 
   const agent = computed(() => agents.value.find((a) => a.name === agentName.value) ?? null)
-  const configuration = computed(() => {
-    const binding = agent.value?.modelBinding
-    if (binding?.kind !== 'configuration') return null
-    return configurations.value.find((item) => item.id === binding.configurationId && item.state === 'active') ?? null
-  })
-  const connection = computed(() => {
-    const binding = configuration.value?.binding
-    return binding?.kind === 'connection' ? connections.value.find((item) => item.id === binding.connectionId) ?? null : null
-  })
-  const modelChoices = computed(() => configuredModelChoices({
-    binding: configuration.value?.binding,
-    configurationName: configuration.value?.name,
-    backend: configuration.value?.backend || agent.value?.acpBackend || '',
-    cliModels: cliModels.value,
-    connectionModels: connection.value?.models,
-    providerId: connection.value?.providerId,
-    catalogReady: configuration.value?.binding.kind === 'connection' ? !!connection.value : cliReady.value,
+  const modelChoices = computed(() => boundModelChoices({
+    binding: agent.value?.modelBinding, configurations: configurations.value, connections: connections.value,
+    cliModels: cliModels.value, cliReady: cliReady.value, credentials: credentials.value,
   }))
   const canStart = computed(() => !!agent.value && !creating.value)
 
@@ -75,15 +64,20 @@ export function useSoloLauncher() {
     if (!selected) return
     const hit = choices.find((choice) => choice.id === selected)
     if (!hit || hit.unavailable) {
-      initialModelId.value = ''
-      error.value = t('pages.solo.modelSelect.reset')
+      error.value = t('pages.solo.modelSelect.unavailableSelection')
     }
   })
-  watch(() => agent.value?.acpBackend || configuration.value?.backend || '', async (backend) => {
+  let cliGeneration = 0
+  watch(() => boundConfigurationIds(agent.value?.modelBinding).map(id => configurations.value.find(row => row.id === id)?.backend || '').join('|'), async (backends) => {
+    const generation = ++cliGeneration
     cliReady.value = false
-    cliModels.value = backend ? await loadCliModels(backend) : []
+    const rows = await Promise.all([...new Set(backends.split('|').filter(Boolean))].map(async backend => [backend, await loadCliModels(backend)] as const))
+    if (generation !== cliGeneration) return
+    cliModels.value = Object.fromEntries(rows)
     cliReady.value = true
   })
+  ensureModelCatalogEvents()
+  watch(modelCatalogRevision, () => { if (hasLoaded) void load() })
   watch(projectIds, (ids) => {
     if (persistProjects) soloPrefs.setLastProjects(ids)
     const keep = new Set(ids)
@@ -102,24 +96,29 @@ export function useSoloLauncher() {
     const generation = ++loadGeneration
     loading.value = true
     try {
-      const [a, p, configs, services] = await Promise.all([
-        api.listAgents().catch(() => [] as Agent[]),
+      const [a, p, configs, services, keys] = await Promise.all([
+        api.listAgents(),
         api.listProjects().catch(() => [] as Project[]),
-        api.listModelConfigurations().catch(() => ({ items: [] as ModelConfiguration[] })),
-        api.listModelConnections().catch(() => ({ items: [] as ModelConnection[] })),
+        api.listModelConfigurations(),
+        api.listModelConnections(),
+        Promise.resolve().then(() => api.listCredentials?.()).then(value => value?.items).catch(() => undefined),
         store.refresh(),
       ])
+      const defaults = a.some(agent => agent.inheritModel) ? await api.getSharedAgentConfig() : undefined
       if (generation !== loadGeneration) return
-      agents.value = a
+      agents.value = a.map(agent => effectiveModelAgent(agent, defaults))
       projects.value = p
       configurations.value = configs.items
       connections.value = services.items
+      if (keys !== undefined) credentials.value = keys
       if (agentName.value && !a.some((x) => x.name === agentName.value)) agentName.value = ''
       if (!agentName.value) {
         const defaultAgent = a.find((item) => item.name === ONBOARDING_SOLO_AGENT_NAME)
         agentName.value = defaultAgent?.name || (a.length === 1 ? a[0]!.name : '')
       }
       projectIds.value = projectIds.value.filter((id) => p.some((x) => x.id === id))
+    } catch (cause) {
+      if (generation === loadGeneration) error.value = String((cause as Error).message || cause)
     } finally {
       if (generation === loadGeneration) loading.value = false
     }
@@ -166,8 +165,7 @@ export function useSoloLauncher() {
     try {
       const selected = modelChoices.value.find((choice) => choice.id === initialModelId.value)
       if (initialModelId.value && (!selected || selected.unavailable)) {
-        initialModelId.value = ''
-        error.value = t('pages.solo.modelSelect.reset')
+        error.value = t('pages.solo.modelSelect.unavailableSelection')
         return null
       }
       const effective = initialModelId.value ? selected : modelChoices.value[0]
@@ -179,7 +177,7 @@ export function useSoloLauncher() {
       const s = await api.createSoloSession({
         agentName: agentName.value,
         repos: soloCreateChoices(projectIds.value, branches.value),
-        ...(initialModelId.value ? { initialModelId: initialModelId.value } : {}),
+        ...(initialModelId.value ? { initialModelId: parseModelRoute(initialModelId.value).modelId, ...(parseModelRoute(initialModelId.value).configurationId ? { initialConfigurationId: parseModelRoute(initialModelId.value).configurationId } : {}) } : {}),
         ...(reasoningEffort.value ? { reasoningEffort: reasoningEffort.value } : {}),
         title: title.trim() || undefined,
         text: text.trim() || undefined,

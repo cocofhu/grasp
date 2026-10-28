@@ -48,9 +48,11 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 		msgs := append([]models.ReactMessage{}, carried...)
 		skipEmpty := strings.TrimSpace(t.Msg) == "" && len(t.Questions) == 0 && len(t.Forms) == 0
 		if !skipEmpty {
-			msgs = append(msgs, models.ReactMessage{Role: "agent", Text: t.Msg,
+			message := models.ReactMessage{Role: "agent", Text: t.Msg,
 				At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
-				OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg)})
+				OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg)}
+			applyReplyMetadata(&message, t)
+			msgs = append(msgs, message)
 		}
 		conv = models.ReactConversation{RunID: c.run.ID, NodeID: node.ID, Iteration: iter, Done: t.Done,
 			Messages: msgs}

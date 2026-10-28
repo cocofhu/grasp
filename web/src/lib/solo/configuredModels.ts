@@ -1,5 +1,7 @@
-import type { CliCatalogModel, ConcreteModelBinding } from '@/lib/api/apiTypes'
+import type { CliCatalogModel, ConcreteModelBinding, CredentialItem, ModelBinding, ModelConfiguration, ModelConnection } from '@/lib/api/apiTypes'
 import { modelVendor } from '@/lib/agent/cliModelView'
+import { credentialUsable } from '@/lib/agent/modelRouting'
+import { boundConfigurationIds, modelRouteValue } from '@/lib/agent/modelBindings'
 
 export interface ConfiguredModelChoice {
   id: string
@@ -11,6 +13,45 @@ export interface ConfiguredModelChoice {
   unavailable: boolean
   /** Exact levels accepted by this model and its coding-tool adapter. */
   efforts?: string[]
+  configurationId?: string
+  modelId?: string
+  configurationName?: string
+  tool?: string
+  source?: string
+}
+
+/** Expand every bound group without merging same-named models from different accounts. */
+export function boundModelChoices(input: {
+  binding?: ModelBinding
+  configurations: ModelConfiguration[]
+  connections: ModelConnection[]
+  cliModels: Record<string, CliCatalogModel[]>
+  cliReady: boolean
+  connectionReady?: boolean
+  credentials?: CredentialItem[]
+}): ConfiguredModelChoice[] {
+  const ids = boundConfigurationIds(input.binding)
+  const grouped = ids.length > 1
+  return ids.flatMap(id => {
+    const configuration = input.configurations.find(row => row.id === id && row.state === 'active')
+    if (!configuration) return []
+    const binding = configuration.binding
+    const connection = binding.kind === 'connection' ? input.connections.find(row => row.id === binding.connectionId && row.state === 'active') : undefined
+    const credentialId = binding.kind === 'platform' ? binding.credentialId : connection?.credentialId
+    const credentialUnavailable = input.credentials !== undefined && !input.credentials.some(credential => credential.id === credentialId && credentialUsable(credential))
+    return configuredModelChoices({
+      binding, configurationName: configuration.name, backend: configuration.backend,
+      cliModels: input.cliModels[configuration.backend] || [], connectionModels: connection?.models,
+      providerId: connection?.providerId,
+      catalogReady: binding.kind === 'connection' ? !!connection && input.connectionReady !== false : input.cliReady,
+    }).map(choice => ({
+      ...choice,
+      id: grouped ? modelRouteValue(id, choice.id) : choice.id,
+      configurationId: id, modelId: choice.id, configurationName: configuration.name,
+      tool: configuration.backend, source: connection?.name,
+      unavailable: choice.unavailable || credentialUnavailable || (binding.kind === 'connection' && input.connectionReady !== false && !connection),
+    }))
+  })
 }
 
 /**

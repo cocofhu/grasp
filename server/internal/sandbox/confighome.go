@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 //go:embed skills_embed
@@ -51,6 +53,8 @@ type ConfigHomeSpec struct {
 	// OpenCode enables OpenCode-native MCP configuration. OpenCode does not read
 	// mcp.json, so the same servers must also be translated into opencode.json.
 	OpenCode bool
+	// Codex writes the same managed MCP servers into its native config.toml.
+	Codex bool
 	// DeepSeekHarness folds alwaysApply rules into the global AGENTS.md that dsh
 	// loads. The copied role files and complete skills tree remain intact.
 	DeepSeekHarness bool
@@ -204,6 +208,11 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 			return "", err
 		}
 	}
+	if spec.Codex {
+		if err := writeCodexMCPConfig(dir, mcpSpecs); err != nil {
+			return "", err
+		}
+	}
 	if spec.DeepSeekHarness {
 		if err := writeDeepSeekInstructions(dir); err != nil {
 			return "", err
@@ -211,6 +220,73 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 	}
 	complete = true
 	return dir, nil
+}
+
+func writeCodexMCPConfig(dir string, specs []MCPServerSpec) error {
+	path := filepath.Join(dir, "config.toml")
+	config := map[string]any{}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := toml.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("read existing Codex configuration: invalid TOML")
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read existing Codex configuration: %w", err)
+	}
+	servers, _ := config["mcp_servers"].(map[string]any)
+	if servers == nil {
+		servers = map[string]any{}
+	}
+	for _, spec := range specs {
+		if spec.Name == "" {
+			continue
+		}
+		entry, _ := servers[spec.Name].(map[string]any)
+		entry = cloneMap(entry)
+		if entry == nil {
+			entry = map[string]any{}
+		}
+		// Keep the user's explicit tool policies and other native settings.
+		// Every transport/auth field belongs to the newly resolved server, so
+		// stale credentials or launch settings can never override this route.
+		for _, key := range []string{"url", "command", "args", "env", "env_vars", "cwd", "experimental_environment", "environment_id", "auth", "bearer_token", "bearer_token_env_var", "http_headers", "env_http_headers", "http_headers_helper", "oauth", "oauth_resource", "scopes"} {
+			delete(entry, key)
+		}
+		switch {
+		case spec.URL != "":
+			entry["url"] = spec.URL
+			if len(spec.Headers) != 0 {
+				entry["http_headers"] = spec.Headers
+			}
+		case spec.Command != "":
+			entry["command"] = spec.Command
+			if len(spec.Args) != 0 {
+				entry["args"] = spec.Args
+			}
+			if len(spec.Env) != 0 {
+				entry["env"] = spec.Env
+			}
+		default:
+			continue
+		}
+		servers[spec.Name] = entry
+	}
+	if len(servers) == 0 {
+		return nil
+	}
+	config["mcp_servers"] = servers
+	data, err := toml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("encode Codex MCP configuration: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return fmt.Errorf("write Codex MCP configuration: %w", err)
+	}
+	// An overlaid user file may have broader permissions than a newly created
+	// file. Managed HTTP authorization belongs only to this sandbox's user.
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("protect Codex MCP configuration: %w", err)
+	}
+	return nil
 }
 
 // writeMergedSettingsJSON writes settings.json, merging platform Settings into an

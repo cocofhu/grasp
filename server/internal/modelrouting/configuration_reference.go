@@ -17,5 +17,45 @@ func ValidateConfigurationReference(binding *Binding) error {
 	if binding.CredentialID != "" || binding.ConnectionID != "" || binding.ModelID != "" || len(binding.ToolSettings.ModelRoles) != 0 || binding.ToolSettings.RouteProfile != "" || len(binding.ToolSettings.ModelEfforts) != 0 {
 		return fmt.Errorf("Agent model binding requires only configurationId")
 	}
+	seen := map[string]bool{}
+	for _, id := range binding.ConfigurationIDs {
+		if id == "" || id != strings.TrimSpace(id) || seen[id] {
+			return fmt.Errorf("Agent model configuration IDs must be nonempty and unique")
+		}
+		seen[id] = true
+	}
+	if len(binding.ConfigurationIDs) > 0 && !seen[binding.ConfigurationID] {
+		return fmt.Errorf("Agent default model configuration must be in configurationIds")
+	}
 	return nil
+}
+
+// ConfigurationIDs returns the bound groups in display order, including the
+// single default for bindings saved before multiple groups were supported.
+func ConfigurationIDs(binding *Binding) []string {
+	if binding == nil {
+		return nil
+	}
+	if len(binding.ConfigurationIDs) > 0 {
+		return append([]string(nil), binding.ConfigurationIDs...)
+	}
+	if binding.ConfigurationID != "" {
+		return []string{binding.ConfigurationID}
+	}
+	return nil
+}
+
+func HasConfiguration(binding *Binding, id string) bool {
+	for _, configured := range ConfigurationIDs(binding) {
+		if configured == id {
+			return true
+		}
+	}
+	return false
+}
+
+// ConfigurationReference constructs a single execution route, without carrying
+// the Agent's unrelated alternatives into an execution fingerprint.
+func ConfigurationReference(id string) *Binding {
+	return &Binding{Kind: "configuration", ConfigurationID: id}
 }

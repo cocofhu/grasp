@@ -1,5 +1,6 @@
 import { expect, test, type Page, type TestInfo, type WebSocketRoute } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 import { routeApi } from './helpers/apiRoute'
 
@@ -912,3 +913,74 @@ for (const scenario of [
     if (scenario.ending === 'cancel') await expect(page.getByTestId('solo-transcript')).toContainText('已停止')
   })
 }
+
+test('Solo distinguishes equal model IDs across tools and synchronizes saved groups across tabs', async ({ page, context }) => {
+  const modelId = 'vendor/shared-model'
+  const first = { ...connection('account-a', 'openai-responses', modelId), models: [{ id: modelId, name: 'Shared real model', source: 'manual' }] }
+  const second = { ...connection('account-b', 'openai-responses', modelId), models: [{ id: modelId, name: 'Shared real model', source: 'manual' }] }
+  const state = await setup(page, [first, second])
+  state.configurations.push(
+    { id: 'group-a', name: 'Direct team', backend: 'codex', state: 'active', revision: 1, binding: { kind: 'connection', connectionId: first.id, modelId } },
+    { id: 'group-b', name: 'Gateway team', backend: 'opencode', state: 'active', revision: 1, binding: { kind: 'connection', connectionId: second.id, modelId } },
+  )
+  state.agents.push({ name: 'Solo', acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'group-a', configurationIds: ['group-a', 'group-b'] }, files: [], mcp: [], env: {}, layout: {} })
+  const session = { id: 'multi-group', title: 'One continuous task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '', updatedAt: '', restarts: 0, busy: false, waiting: 0, repos: [], currentModelSet: true, currentModelId: modelId, currentConfigurationId: 'group-a', backend: 'codex', reasoningEffort: '', reasoningEfforts: [] }
+  const writes: Record<string, unknown>[] = []
+  async function mockSession(target: Page) {
+    await routeApi(target, '**/api/solo/sessions**', async route => {
+      const path = new URL(route.request().url()).pathname
+      if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
+      if (path.endsWith('/messages') || path.endsWith('/env')) return route.fulfill({ json: [] })
+      if (path.endsWith('/model')) {
+        const body = route.request().postDataJSON()
+        writes.push(body)
+        session.currentModelId = String(body.modelId || '')
+        session.currentConfigurationId = String(body.configurationId || session.currentConfigurationId)
+        session.backend = session.currentConfigurationId === 'group-b' ? 'opencode' : 'codex'
+      }
+      return route.fulfill({ json: session })
+    })
+    await target.routeWebSocket('**/api/solo/sessions/*/chat*', ws => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))
+  }
+  await mockSession(page)
+  await page.goto('/workspace-config.html?view=/solo/multi-group')
+  const trigger = page.getByTestId('solo-model-select-trigger')
+  await trigger.click()
+  await expect(page.getByRole('option').filter({ hasText: 'Shared real model' })).toHaveCount(2)
+  const qualified = '@group:' + JSON.stringify(['group-b', modelId])
+  await page.getByTestId(`solo-model-option-${qualified}`).click()
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0]).toMatchObject({ configurationId: 'group-b', modelId })
+  await expect(trigger).toContainText('Gateway team')
+
+  const sibling = await context.newPage()
+  await setup(sibling, [first, second])
+  await routeApi(sibling, '**/api/agents', route => route.fulfill({ json: state.agents }))
+  await routeApi(sibling, '**/api/workspace/model-configurations', route => route.fulfill({ json: { items: state.configurations } }))
+  await routeApi(sibling, '**/api/workspace/model-configurations/group-b', async route => {
+    const body = route.request().postDataJSON()
+    state.configurations[1] = { ...state.configurations[1]!, ...body }
+    await route.fulfill({ json: state.configurations[1] })
+  })
+  await mockSession(sibling)
+  await sibling.goto('/workspace-config.html?view=/solo/multi-group')
+  await expect(sibling.getByTestId('solo-model-select-trigger')).toContainText('Gateway team')
+  await trigger.click()
+  const apiSource = '/@fs' + fileURLToPath(new URL('../src/lib/api/api.ts', import.meta.url))
+  await sibling.evaluate(async (source) => {
+    const { api } = await import(/* @vite-ignore */ source)
+    await api.updateModelConfiguration('group-b', { name: 'Updated gateway team' })
+  }, apiSource)
+  await expect(page.getByTestId('solo-model-select-panel')).toContainText('Updated gateway team')
+  await expect(trigger).toContainText('Updated gateway team')
+  await expect(sibling.getByTestId('solo-model-select-trigger')).toContainText('Updated gateway team')
+  await sibling.evaluate(async (source) => {
+    const { api } = await import(/* @vite-ignore */ source)
+    await api.updateModelConfiguration('group-b', { state: 'disabled' })
+  }, apiSource)
+  await expect(page.getByTestId('solo-model-invalid-notice')).toBeVisible()
+  await page.getByTestId('solo-input').fill('Continue with existing context')
+  await expect(page.getByTestId('solo-send')).toBeDisabled()
+  expect(writes).toHaveLength(1)
+  await sibling.close()
+})

@@ -70,6 +70,9 @@ func (m *Manager) Reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys 
 	if sb == nil {
 		return fmt.Errorf("reprime: no sandbox")
 	}
+	if sb.local != nil {
+		return m.reprimeWorktree(ctx, sb, spec)
+	}
 	bundle, err := packReprimeBundle(spec, prevKeys)
 	if err != nil {
 		return fmt.Errorf("reprime: %w", err)

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentsClient } from './agentsClient'
+import { modelCatalogRevision } from '../modelCatalogEvents'
 
 const jsonResponse = (body: unknown = { status: 'ok' }, init: ResponseInit = {}) =>
   new Response(JSON.stringify(body), {
@@ -114,11 +115,13 @@ describe('agentsClient request coverage', () => {
 
   it('imports workspace bundles and agents with exact multipart fields and handles failures', async () => {
     const file = new File(['zip'], 'agents.zip')
+    const revision = modelCatalogRevision.value
     fetchMock.mockResolvedValueOnce(jsonResponse({ created: ['a'], overwritten: ['b'] }))
     await expect(agentsClient.importWorkspaceAgents(file, { mode: 'overwrite' })).resolves.toEqual({
       created: ['a'],
       overwritten: ['b'],
     })
+    expect(modelCatalogRevision.value).toBe(revision + 1)
     let [, init] = fetchMock.mock.calls.at(-1)!
     expect(fetchMock.mock.calls.at(-1)![0]).toBe('/api/workspace/agents/import')
     expect(init).toMatchObject({ method: 'POST', credentials: 'include' })
@@ -127,6 +130,7 @@ describe('agentsClient request coverage', () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ name: 'new-agent' }))
     await agentsClient.importAgent(file, { targetName: 'new-agent', mode: 'create' })
+    expect(modelCatalogRevision.value).toBe(revision + 2)
     ;[, init] = fetchMock.mock.calls.at(-1)!
     expect(fetchMock.mock.calls.at(-1)![0]).toBe('/api/agents/import')
     expect([...(init.body as FormData).keys()]).toEqual(['file', 'targetName', 'mode'])
@@ -141,5 +145,11 @@ describe('agentsClient request coverage', () => {
     await expect(agentsClient.importAgent(file, { targetName: 'a', mode: 'create' })).rejects.toThrow('name exists')
     fetchMock.mockResolvedValueOnce(new Response('invalid', { status: 500 }))
     await expect(agentsClient.importAgent(file, { targetName: 'a', mode: 'create' })).rejects.toThrow('500 import failed')
+    expect(modelCatalogRevision.value).toBe(revision + 2)
+    fetchMock.mockResolvedValueOnce(new Response('invalid JSON', { status: 200 }))
+    await expect(agentsClient.importAgent(file, { targetName: 'a', mode: 'create' })).rejects.toThrow()
+    fetchMock.mockResolvedValueOnce(new Response('invalid JSON', { status: 200 }))
+    await expect(agentsClient.importWorkspaceAgents(file, { mode: 'rename' })).rejects.toThrow()
+    expect(modelCatalogRevision.value).toBe(revision + 2)
   })
 })

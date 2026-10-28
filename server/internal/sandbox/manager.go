@@ -272,6 +272,7 @@ func DecodeRepos(s string) []RepoSpec {
 type Sandbox struct {
 	ID             string // gateway sandbox id (authoritative handle)
 	Name           string // == ID (kept for API/DB compatibility)
+	Image          string // gateway-reported image of the existing container
 	Host           string // session endpoint host
 	Port           int    // session endpoint port (ACP bridge, 8765)
 	CodeServerPort int    // published code-server (ide) port (0 if none)
@@ -358,7 +359,7 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 		workspaceDir = m.WorkspaceDir
 	}
 	return &Sandbox{
-		ID: sb.ID, Name: sb.ID, Host: sh, Port: sp, CodeServerPort: ide,
+		ID: sb.ID, Name: sb.ID, Image: sb.Image, Host: sh, Port: sp, CodeServerPort: ide,
 		SSHHost: sshHost, SSHPort: sshPort, WorkspaceDir: workspaceDir, mgr: m, Blobs: m.blobs,
 	}
 }

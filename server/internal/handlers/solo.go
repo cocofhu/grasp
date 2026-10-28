@@ -201,13 +201,14 @@ func (h *Handlers) SetSoloSessionModel(c *gin.Context) {
 	}
 	var body struct {
 		ModelID         *string `json:"modelId"`
+		ConfigurationID *string `json:"configurationId"`
 		ReasoningEffort *string `json:"reasoningEffort"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	v, err := h.Solo.SetCurrentModelSettings(c.Request.Context(), c.Param("id"), user, body.ModelID, body.ReasoningEffort)
+	v, err := h.Solo.SetCurrentModelRouteSettings(c.Request.Context(), c.Param("id"), user, body.ConfigurationID, body.ModelID, body.ReasoningEffort)
 	if err != nil {
 		writeSoloErr(c, err)
 		return

@@ -197,6 +197,36 @@ func TestOneShotStructuredFailureWithoutExitError(t *testing.T) {
 	}
 }
 
+type recoverableDiagnosticFake struct{ diagnosticFake }
+
+func (*recoverableDiagnosticFake) IsRecoverableDiagnostic(message Msg) bool {
+	return message.Text == "known metadata fallback warning"
+}
+
+func TestOneShotRecoverableDiagnosticRequiresCompleteAnswer(t *testing.T) {
+	for _, test := range []struct {
+		name, script, stop string
+		wantErrors         int
+		wantErr            bool
+	}{
+		{"confirmed answer", `printf '%s\n' 'error:known metadata fallback warning' 'text:completed answer' 'done'`, "end_turn", 0, false},
+		{"empty success", `printf '%s\n' 'error:known metadata fallback warning' 'done'`, "end_turn", 1, false},
+		{"unknown error", `printf '%s\n' 'error:unknown provider failure' 'text:partial answer' 'done'`, "end_turn", 1, false},
+		{"process failure", `printf '%s\n' 'error:known metadata fallback warning' 'text:partial answer' 'done'; exit 1`, "end_turn", 1, true},
+		{"reported failure", `printf '%s\n' 'error:known metadata fallback warning' 'text:partial answer'`, "failed", 1, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			codec := &recoverableDiagnosticFake{diagnosticFake{scripts: []string{test.script}}}
+			session, frames := openDiagnosticSession(t, codec, "")
+			result, err := session.Prompt(context.Background(), "continue", nil)
+			if (err != nil) != test.wantErr || result.StopReason != test.stop {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			assertDiagnosticBoundary(t, frames.take(), test.stop, test.wantErrors)
+		})
+	}
+}
+
 func TestOneShotCancelDoesNotReportCLIError(t *testing.T) {
 	t.Setenv("CURSOR_API_KEY", "fake-cancel-credential")
 	c := &diagnosticFake{scripts: []string{`printf '%s\n' "$CURSOR_API_KEY" >&2; printf '%s\n' 'text:working'; exec sleep 30`}}

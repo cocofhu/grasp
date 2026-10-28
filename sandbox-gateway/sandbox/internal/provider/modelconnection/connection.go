@@ -151,7 +151,7 @@ func Prepare(name provider.Name, env []string, model, configRoot string) (Prepar
 	case provider.CodeBuddy, provider.CodeBuddyACP:
 		p, err = prepareCodeBuddy(p, configRoot)
 	case provider.OpenCode:
-		p, err = prepareOpenCode(p)
+		p, err = prepareOpenCode(p, configRoot)
 	case provider.Codex:
 		p = prepareCodex(p)
 	case provider.DeepSeekHarness:

@@ -255,6 +255,12 @@ func (h *Host) listedTools(runID string) []map[string]any {
 		}
 		out = append(out, t)
 	}
+	h.mu.RLock()
+	hasConversationHistory := h.conversationHistory != nil
+	h.mu.RUnlock()
+	if hasConversationHistory && h.ActiveNode(runID) == "solo" {
+		out = append(out, conversationHistoryTool())
+	}
 	if h.pageToolsListed(runID) {
 		out = append(out, pageTools()...)
 	}

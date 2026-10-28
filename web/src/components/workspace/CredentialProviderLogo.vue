@@ -179,7 +179,6 @@ const imageClasses = computed(() => ({
     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
     :class="[
       selected ? 'border-accent bg-surface' : 'border-line bg-surface',
-      { 'provider-logo--color-surface': !icon && asset && !monochromeLogos.has(logoKey) && theme === 'dark' },
     ]"
     :data-provider-logo="icon === 'key' ? 'ssh-key' : icon === 'host' ? 'ssh-host' : logoKey"
     role="img"
@@ -203,10 +202,6 @@ const imageClasses = computed(() => ({
 </template>
 
 <style scoped>
-.provider-logo--color-surface {
-  background-color: #fff;
-}
-
 .provider-logo-image--invert {
   filter: invert(1);
 }

@@ -25,8 +25,10 @@ func modelBindingFingerprint(agent Agent, env map[string]string) string {
 		Connection string                `json:"connection"`
 		Credential string                `json:"credential"`
 		Model      string                `json:"model"`
+		Catalog    string                `json:"catalog"`
 		Secret     string                `json:"secret"`
 	}{agent.AcpBackend, agent.ModelBinding, env[runtime.EnvModelConnection], env[runtime.EnvModelCredentialID], env[runtime.EnvACPBridgeModel],
+		env[runtime.EnvConfiguredModels],
 		env[runtime.EnvModelAPIKey] + env[runtime.CredentialEnvKeyForBackend(agent.AcpBackend)]})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])

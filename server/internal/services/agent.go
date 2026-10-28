@@ -474,6 +474,11 @@ func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
 		}
 	}
+	if effective.ModelBinding != nil {
+		if err := validateAdditionalModelConfigurations(effective.ModelBinding, s.resolveModelConfiguration, s.validateModelBinding); err != nil {
+			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
+		}
+	}
 	if s.validateGitBindings != nil {
 		if err := s.validateGitBindings(effective.GitBindings); err != nil {
 			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)

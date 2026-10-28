@@ -543,8 +543,10 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 			e.flushMcpCalls(runID, nodeID)
 			e.flushTokenUsage(runID, nodeID, liveWrap.Usage, liveWrap.UsageByModel)
 			if strings.TrimSpace(liveWrap.Msg) != "" {
-				conv.Messages = append(conv.Messages, models.ReactMessage{Role: "agent", Text: liveWrap.Msg,
-					At: time.Now().Format(time.RFC3339), OpID: liveWrap.OpID, Tools: models.ToolsFromEvents(liveWrap.Events), Parts: models.PartsForReply(liveWrap.Events, liveWrap.Msg)})
+				message := models.ReactMessage{Role: "agent", Text: liveWrap.Msg,
+					At: time.Now().Format(time.RFC3339), OpID: liveWrap.OpID, Tools: models.ToolsFromEvents(liveWrap.Events), Parts: models.PartsForReply(liveWrap.Events, liveWrap.Msg)}
+				applyReplyMetadata(&message, liveWrap)
+				conv.Messages = append(conv.Messages, message)
 				logDB(e.db.Save(&conv), runID, "save Grasp Live git wrap-up")
 			}
 		}
@@ -560,6 +562,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
 		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
 		Interrupted: t.Interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(replyEvents), Parts: models.PartsForReply(replyEvents, t.Msg)}
+	applyReplyMetadata(&agentMsg, t)
 	conv.Messages = append(conv.Messages, agentMsg)
 
 	// A model/send error (including finishReact's agent-chat failure, which

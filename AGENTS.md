@@ -118,6 +118,45 @@ go vet ./...
 cd .. && ./scripts/cover-check.sh gateway 90
 ```
 
+### Agent / model routing → `ci-agent-e2e`
+
+Go **1.26.10**, Node **24**, Python 3. The workflow builds the real server and
+runtime and uses localhost model endpoints, real configurable CLIs and real
+scoped MCP calls. It does not read `DEEPSEEK_API_KEY` or incur model API cost.
+When this workflow runs, treat its `agent-switching` check as merge-required.
+It does not replace the module gates above or the browser checks.
+
+```bash
+node --test sandbox-gateway/scripts/mock-agent-model.test.mjs sandbox-gateway/scripts/mock-chat-model.test.mjs sandbox-gateway/scripts/agent-platform-wire-fixture.test.mjs
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s sandbox-gateway/scripts -p 'test_agent_switching_test.py'
+agent_e2e_dir="$(mktemp -d)"
+bash sandbox-gateway/scripts/install-agent-e2e-clis.sh "$agent_e2e_dir/clis"
+export PATH="$agent_e2e_dir/clis/node_modules/.bin:$PATH"
+(cd server && go build -o "$agent_e2e_dir/server" ./cmd/server)
+./scripts/build-sandbox-runtime.sh "$agent_e2e_dir/runtime"
+mkdir "$agent_e2e_dir/runtime/current"
+tar -xzf "$agent_e2e_dir/runtime/sandbox-runtime.tgz" -C "$agent_e2e_dir/runtime/current"
+python3 sandbox-gateway/scripts/test-agent-switching.py --server "$agent_e2e_dir/server" --runtime "$agent_e2e_dir/runtime/current" --output "$agent_e2e_dir/results"
+```
+
+**Adding or removing a product Agent / coding-tool backend must update this
+E2E coverage in the same change.** Keep
+`sandbox-gateway/scripts/agent-e2e-matrix.json` equal to the product
+`tool-capabilities` API; missing, duplicate and stale cases fail. Supply the
+native CLI installation, protocol adapter, model/MCP round trip and reasoning
+coverage. Every ordered pair of different tools must switch in the same
+session/workspace. Supported reasoning levels must reach real model requests;
+unsupported levels must be rejected. Include primary/auxiliary model changes,
+original-history retrieval and file retention. A new backend must not silently
+skip because credentials or a binary are absent.
+
+Cursor and Trae currently require proprietary platform authorization, so the
+free suite explicitly labels their CLI-wire fixtures; it does **not** claim
+native vendor inference for them. All configurable CLIs are required native
+processes. Keep this boundary explicit in CI summaries/artifacts and never
+replace a missing required native CLI with a successful stub. A local
+`--tools` debug subset is not full coverage and must not be used by the CI gate.
+
 ### `docs/**` → `ci-docs`
 
 Working directory: `docs/` (Node 24). Homepage is static HTML under `site/`;

@@ -256,7 +256,7 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
     gitBindings: cloneGitBindings(draft.gitBindings || { items: [] }),
     acpBackend: draft.acpBackend,
     ...(!draft.inheritModel || draft.modelBinding?.configurationId?.trim()
-      ? { modelBinding: { kind: 'configuration' as const, configurationId: draft.modelBinding?.configurationId || '' } }
+      ? { modelBinding: { kind: 'configuration' as const, configurationId: draft.modelBinding?.configurationId || '', ...(draft.modelBinding?.configurationIds ? { configurationIds: [...draft.modelBinding.configurationIds] } : {}) } }
       : {}),
     ...(useTemplate ? { templateId: draft.templateId.trim() } : {}),
     files,

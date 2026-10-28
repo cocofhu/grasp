@@ -115,28 +115,31 @@ func protocolOverlay(protocol, effort string) map[string]any {
 }
 
 func chatOverlay(effort string) map[string]any {
-	return map[string]any{"settings": map[string]any{"reasoningEffort": effort}}
+	// OpenCode's native variants map is merged directly into provider options.
+	// A nested settings object is accepted as an unknown option but never
+	// overrides the built-in model default (for example GPT-5's medium).
+	return map[string]any{"reasoningEffort": effort}
 }
 
 func responsesOverlay(effort string) map[string]any {
-	return map[string]any{"settings": map[string]any{
+	return map[string]any{
 		"reasoningEffort":  effort,
 		"reasoningSummary": "auto",
 		"include":          []string{"reasoning.encrypted_content"},
-	}}
+	}
 }
 
 func anthropicOverlay(effort string) map[string]any {
-	return map[string]any{"settings": map[string]any{
+	return map[string]any{
 		"thinking": map[string]any{"type": "adaptive", "display": "summarized"},
 		"effort":   effort,
-	}}
+	}
 }
 
 func googleOverlay(effort string) map[string]any {
-	return map[string]any{"settings": map[string]any{
+	return map[string]any{
 		"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingLevel": effort},
-	}}
+	}
 }
 
 func writeOpenCodeVariant(p Prepared, effort string, overlay map[string]any) (Prepared, error) {

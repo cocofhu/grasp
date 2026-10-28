@@ -37,6 +37,16 @@ func (codec) ConfigRoot() string       { return configRoot }
 func (codec) ReportsUsage() bool       { return true }
 func (codec) PromptViaStdin() bool     { return false }
 
+func (codec) IsRecoverableDiagnostic(message oneshot.Msg) bool {
+	// The native CLI reports missing custom-model metadata as an error event,
+	// then continues using its fallback metadata. Keep every other error fatal;
+	// oneshot also requires a complete successful answer before ignoring this.
+	return message.Kind == oneshot.KindError &&
+		strings.HasPrefix(message.Text, "Model metadata for `") &&
+		strings.HasSuffix(message.Text, "` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.") &&
+		!strings.ContainsAny(message.Text, "\r\n")
+}
+
 // AuthEnv does not inject an API key. Codex authenticates from CODEX_HOME/auth.json.
 func (codec) AuthEnv(env []string) []string {
 	if len(env) == 0 {
@@ -195,7 +205,11 @@ func parseLegacyLine(line []byte) oneshot.ParseResult {
 	case "error":
 		res.StopReason = "failed"
 		if m.Message != "" {
-			res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(m.Message)})
+			diagnostic := oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(m.Message)}
+			res.Msgs = append(res.Msgs, diagnostic)
+			if (codec{}).IsRecoverableDiagnostic(diagnostic) {
+				res.StopReason = ""
+			}
 		}
 	case "task_complete", "turn_complete", "shutdown_complete":
 		res.StopReason = "end_turn"
@@ -321,7 +335,13 @@ func parseThreadLine(line []byte) oneshot.ParseResult {
 	case "error":
 		res.StopReason = "failed"
 		if msg := firstNonEmpty(ev.Message, errMessage(ev.Error)); msg != "" {
-			res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(msg)})
+			diagnostic := oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(msg)}
+			res.Msgs = append(res.Msgs, diagnostic)
+			if (codec{}).IsRecoverableDiagnostic(diagnostic) {
+				// This warning does not end a turn. Arming the result watchdog here
+				// can kill the CLI before its actual terminal response is received.
+				res.StopReason = ""
+			}
 		}
 	case "item.started":
 		if ev.Item != nil && isCodexToolItem(ev.Item.Type) {
@@ -344,7 +364,11 @@ func parseThreadLine(line []byte) oneshot.ParseResult {
 			msg := firstNonEmpty(ev.Item.Message, ev.Item.Text, errMessage(ev.Item.Error))
 			if msg != "" {
 				res.StopReason = "failed"
-				res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(msg)})
+				diagnostic := oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(msg)}
+				res.Msgs = append(res.Msgs, diagnostic)
+				if (codec{}).IsRecoverableDiagnostic(diagnostic) {
+					res.StopReason = ""
+				}
 			}
 		default:
 			if isCodexToolItem(ev.Item.Type) {

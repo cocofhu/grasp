@@ -5,6 +5,7 @@ import type {
   MemoryItem,
 } from '../../shared/types'
 import { BASE, req } from '../httpCore'
+import { invalidateModelCatalog } from '../modelCatalogEvents'
 import type {
   Agent,
   AgentGitBindings,
@@ -199,7 +200,9 @@ export const agentsClient = {
       }
       throw new Error(msg)
     }
-    return (await res.json()) as WorkspaceAgentsImportResult
+    const result = (await res.json()) as WorkspaceAgentsImportResult
+    invalidateModelCatalog()
+    return result
   },
   /** Vendors OpenCode can resolve models for (models.dev, cached server-side). */
   openCodeProviders: () => req<OpenCodeProvidersResponse>(`/opencode/providers`),
@@ -232,6 +235,8 @@ export const agentsClient = {
       }
       throw new Error(msg)
     }
-    return (await res.json()) as Agent
+    const result = (await res.json()) as Agent
+    invalidateModelCatalog()
+    return result
   },
 }

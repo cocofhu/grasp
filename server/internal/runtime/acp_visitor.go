@@ -27,7 +27,7 @@ func visitorKey(runID, nodeID, lane string) string {
 
 // VisitorTurn runs one visitor turn on its own bridge chat. The chat shares
 // the parked session's sandbox (and so its workspace) but not its Agent context.
-func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelude, human string, images []models.PromptImage, onProgress func([]models.AcpEvent, bool)) ReactTurn {
+func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelude, human string, images []models.PromptImage, onProgress func([]models.AcpEvent, bool)) (out ReactTurn) {
 	vl, err := c.openVisitorLane(ctx, req, lane)
 	if err != nil {
 		if errors.Is(err, ErrVisitorsFull) {
@@ -39,6 +39,7 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).Msg("visitor chat open failed")
 		return ReactTurn{Msg: "(访客会话启动失败:" + err.Error() + ")", Err: err}
 	}
+	defer finishChatTurn(&out, vl.acp, time.Now())
 	prompt := human
 	if !vl.primed {
 		prelude = strings.TrimSpace(prelude + clarifyPreviewExtras(req) + reviewCapabilityExtras(req))
@@ -73,7 +74,7 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 	var usageByModel models.TokenUsageByModel
 	var events []models.AcpEvent
 	absorbChat(&usage, &usageByModel, &events, res)
-	out := ReactTurn{Msg: res.Narration, Events: events, Usage: usage, UsageByModel: usageByModel,
+	out = ReactTurn{Msg: res.Narration, Events: events, Usage: usage, UsageByModel: usageByModel,
 		Handoffs: handoffNarrations(res), OpID: res.OpID}
 	if fail := chatFailure(res); fail != "" {
 		out.Msg = withFailureBanner(res.Narration, "访客对话失败", fail)
@@ -115,7 +116,8 @@ func (c *acpProvider) openVisitorLane(ctx context.Context, req NodeReq, lane str
 	acp := sb.ACP().WithChat(chatID).
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
-		WithBridgeModel(parked.acp.BridgeModel())
+		WithBridgeModel(parked.acp.BridgeModel()).
+		WithExecution(parked.acp.Execution())
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
 		_ = sandbox.DeleteChat(context.Background(), sb.Host, sb.Port, sb.Password, chatID)

@@ -222,6 +222,10 @@ type ReactTurn struct {
 	Usage *models.TokenUsage
 	// UsageByModel is the per-model breakdown paired with Usage.
 	UsageByModel models.TokenUsageByModel
+	// Execution is frozen from the live CLI connection, not current Agent
+	// defaults. DurationMs covers this provider call, including finish chats.
+	Execution  *models.ChatExecution
+	DurationMs int64
 	// SetupErr is set when the sandbox/ACP session could not be acquired
 	// (container create, image pull, connect handshake). Distinct from a normal
 	// clarify pause where the agent raises Questions via ask_question.

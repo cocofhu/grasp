@@ -36,7 +36,6 @@ describe('identity icon catalog', () => {
 
   it('leaves letter avatars on surfaces outside the Solo selector', () => {
     const untouched = [
-      'components/solo/SoloSessionPane.vue',
       'components/canvas/inspector/AgentPicker.vue',
       'components/canvas/nodes/AgentNode.vue',
       'components/canvas/NodePalette.vue',
@@ -51,7 +50,6 @@ describe('identity icon catalog', () => {
       expect(source, rel).not.toContain('AgentIconPicker')
       expect(source, rel).not.toContain('AgentIdentityGlyph')
     }
-    expect(readFileSync(join(srcRoot, 'components/solo/SoloSessionPane.vue'), 'utf8')).toContain('agentInitial')
     expect(readFileSync(join(srcRoot, 'components/canvas/nodes/AgentNode.vue'), 'utf8')).toContain('agentInitial')
   })
 })

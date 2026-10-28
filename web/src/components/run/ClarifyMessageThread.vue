@@ -20,12 +20,10 @@ import { confirmFlowWindowVisible } from '@/lib/inbox/confirmFlowWindow'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
 import { resolveBootDisplay } from '@/lib/run/bootDisplay'
 import { fmtTurnElapsed, relTime as formatRelTime } from '@/lib/shared/format'
-import { renderChatMarkdown } from '@/lib/shared/markdown'
 import type { ClarifyPriorSegment } from './ClarifyChat.vue'
 import { nodeAsk, priorAsk } from './clarifyPrior'
 import { currentAnchorId, priorAnchorId } from './clarifyChatAnchors'
 import AgentTimeline from './AgentTimeline.vue'
-import AgentToolGroup from './AgentToolGroup.vue'
 import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
 import ChatTurnAttachments from './ChatTurnAttachments.vue'
 import ChatUserMessage from './ChatUserMessage.vue'
@@ -556,21 +554,21 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                   v-else-if="pt.role === 'human'"
                   class="max-w-[88%]"
                   :text="pt.text"
+                  :created-at="pt.at"
                 />
                 <div v-else class="min-w-0 w-full">
                   <AgentTimeline
-                    v-if="pt.parts?.length"
                     :parts="pt.parts"
+                    :text="pt.text"
+                    :thought="pt.thought"
+                    :tools="pt.tools"
                     :completed="true"
                     :run-id="runId"
                     :started-at="priorReplySpan(seg, pi)?.startedAt"
                     :ended-at="priorReplySpan(seg, pi)?.endedAt"
+                    :metadata="pt"
                     message-test-id="clarify-prior-agent-message"
                   />
-                  <template v-else>
-                    <AgentToolGroup v-if="pt.tools?.length" :tools="pt.tools" :run-id="runId" />
-                    <div v-if="pt.text?.trim()" class="chat-prose md w-full" v-html="renderChatMarkdown(pt.text)" />
-                  </template>
                   <div
                     v-if="pt.questions?.length"
                     class="clarify-request clarify-request--history mt-2 min-w-0"
@@ -741,18 +739,22 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
               v-if="turn.role === 'human' && turn.text"
               test-id="clarify-human-message"
               :text="turn.text"
+              :created-at="turn.at"
             />
             <template v-else-if="turn.role === 'agent'">
               <ClarifyThinkingRow v-if="waitingTurn(turn)" />
               <AgentTimeline
-                v-if="turnParts(turn).length"
                 :parts="turnParts(turn)"
+                :text="turn.text"
+                :thought="turn.thought"
+                :tools="turn.tools"
                 :streaming="!!turn.streaming"
                 :completed="!turn.streaming"
                 :interrupted="!!turn.interrupted"
                 :run-id="runId"
                 :started-at="turn.startedAt"
                 :ended-at="turn.endedAt"
+                :metadata="turn"
                 message-test-id="clarify-agent-message"
               />
               <ClarifyThinkingRow

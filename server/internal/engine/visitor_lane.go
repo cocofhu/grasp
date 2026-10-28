@@ -373,6 +373,7 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
 		Interrupted: interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
 	}
+	applyReplyMetadata(&agentMsg, t)
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" {
 		agentMsg.Text = "(已中断)"
 	}

@@ -150,6 +150,29 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
+  it('shows each workflow reply’s own execution and token report through the shared information control', async () => {
+    const at = '2026-10-28T08:00:00Z'
+    const wrapper = mountChat({ turns: [
+      { role: 'agent', text: 'First recorded reply', at, execution: { agentName: 'First Agent', backend: 'opencode', modelId: 'first/model' }, usage: { inputTokens: 0, outputTokens: 12, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+      { role: 'human', text: 'Continue', at },
+      { role: 'agent', text: 'Second recorded reply', at, execution: { agentName: 'Second Agent', backend: 'codex', modelId: 'second/model' } },
+    ] })
+    const buttons = wrapper.findAll('[data-testid="chat-message-info"]')
+    expect(buttons).toHaveLength(2)
+    await buttons[0].trigger('focus'); await flushPromises()
+    let panel = document.querySelector('[data-testid="chat-message-info-panel"]')!
+    expect(panel.textContent).toContain('First Agent')
+    expect(panel.textContent).toContain('first/model')
+    expect(panel.textContent).not.toContain('second/model')
+    expect(panel.querySelector('[data-testid="chat-message-token-total"]')?.textContent).toBe('12')
+    await buttons[1].trigger('focus'); await flushPromises()
+    panel = document.querySelector('[data-testid="chat-message-info-panel"]')!
+    expect(panel.textContent).toContain('Second Agent')
+    expect(panel.textContent).toContain('second/model')
+    expect(panel.textContent).not.toContain('first/model')
+    wrapper.unmount()
+  })
+
   it('sends the interactive card under the agent reply in the preview drawer', () => {
     const at = '2026-07-18T00:00:00Z'
     const turns: ClarifyTurn[] = [
@@ -244,7 +267,7 @@ describe('ClarifyChat', () => {
     })
     const tl = wrapper.get('[data-testid="agent-timeline"]')
     expect(Array.from(tl.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'agent-timeline-elapsed', 'agent-timeline-rule', 'clarify-agent-message',
+      'agent-timeline-elapsed', 'agent-timeline-rule', 'clarify-agent-message', 'chat-message-meta',
     ])
     expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((m) => m.text())).toEqual(['done'])
     expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
@@ -2066,7 +2089,7 @@ describe('ClarifyChat', () => {
       expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
       expect(vm.applyAcpEvents([{ kind: 'thought', text: '已恢复的思考' }], 'react-1')).toBe(true)
       await flushPromises()
-      expect(wrapper.find('[data-testid="clarify-thought"]').text()).toContain('已恢复的思考')
+      expect(wrapper.find('[data-testid="agent-timeline-thought"]').text()).toContain('已恢复的思考')
       wrapper.unmount()
     })
 
@@ -2253,7 +2276,7 @@ describe('ClarifyChat', () => {
       expect(placeholder.find('[data-testid="thinking-sheen"]').exists()).toBe(true)
       expect(placeholder.find('icon-stub').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-agent-message"]').exists()).toBe(false)
-      expect(wrapper.find('[data-testid="clarify-thought"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="agent-timeline-thought"]').exists()).toBe(false)
       wrapper.unmount()
     })
 
@@ -2273,7 +2296,7 @@ describe('ClarifyChat', () => {
       vm.applyAcpEvents([{ kind: 'thought', text: '先核对边界与分轨' }], 'react-1')
       await flushPromises()
 
-      const thought = wrapper.find('[data-testid="clarify-thought"]')
+      const thought = wrapper.find('[data-testid="agent-timeline-thought"]')
       expect(thought.exists()).toBe(true)
       expect(thought.attributes('open')).toBeDefined()
       expect(thought.text()).toContain('先核对边界与分轨')
@@ -2293,14 +2316,14 @@ describe('ClarifyChat', () => {
       )
       await flushPromises()
 
-      expect(wrapper.find('[data-testid="clarify-thought"]').text()).toContain('先核对边界与分轨')
+      expect(wrapper.find('[data-testid="agent-timeline-thought"]').text()).toContain('先核对边界与分轨')
       // Demo: collapse thought once message streaming starts.
-      expect(wrapper.find('[data-testid="clarify-thought"]').attributes('open')).toBeUndefined()
-      // Message outputting — summary stays generating (not done).
+      expect(wrapper.find('[data-testid="agent-timeline-thought"]').attributes('open')).toBeUndefined()
+      // The shared timeline marks only the currently written step as busy.
       expect(wrapper.find('[data-testid="thought-summary-state"]').attributes('data-state')).toBe(
-        'streaming',
+        'idle',
       )
-      expect(wrapper.find('[data-testid="thought-summary-state"]').text()).toContain('生成中')
+      expect(wrapper.find('[data-testid="thought-summary-state"]').text()).not.toContain('已完成')
       expect(wrapper.find('[data-testid="clarify-agent-message"]').text()).toContain('已核对完成')
       expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
       expect(wrapper.find('[data-testid="clarify-stream-caret"]').exists()).toBe(true)
@@ -2326,7 +2349,7 @@ describe('ClarifyChat', () => {
       vm.applyAcpEvents([{ kind: 'thought', text: longThought }], 'react-1')
       await flushPromises()
 
-      const thoughtBody = wrapper.find('[data-testid="clarify-thought"] .chat-thought-body')
+      const thoughtBody = wrapper.find('[data-testid="agent-timeline-thought"] .agent-thought-body')
       expect(thoughtBody.exists()).toBe(true)
       expect(thoughtBody.text()).toBe(longThought)
       expect(thoughtBody.text()).toContain('结尾标记END')
@@ -2354,7 +2377,7 @@ describe('ClarifyChat', () => {
       vm.applyAcpEvents([{ kind: 'message', text: longMessage }], 'react-1')
       await flushPromises()
 
-      expect(wrapper.find('[data-testid="agent-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="agent-timeline"]').exists()).toBe(true)
       const bubble = wrapper.get('[data-testid="clarify-agent-message"]')
       expect(bubble.text()).toBe(longMessage)
       expect(bubble.text()).toContain('结尾标记END')
@@ -2420,15 +2443,14 @@ describe('ClarifyChat', () => {
       await flushPromises()
       expect(wrapper.find('[data-testid="clarify-busy-status"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-stream-caret"]').exists()).toBe(false)
-      expect(wrapper.find('[data-testid="clarify-thought"]').text()).toContain('思考内容')
+      await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+      expect(wrapper.find('[data-testid="agent-timeline-work"]').text()).toContain('思考内容')
       expect(wrapper.find('[data-testid="clarify-agent-message"]').text()).toContain('正文内容')
       expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
       // Completed agent keeps no bottom time; the human turn still has one.
       expect(wrapper.findAll('[data-testid="clarify-turn-bottom-time"]').length).toBe(1)
-      expect(wrapper.find('[data-testid="thought-summary-state"]').attributes('data-state')).toBe(
-        'done',
-      )
-      expect(wrapper.find('[data-testid="thought-summary-state"]').text()).toContain('已完成')
+      expect(wrapper.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="agent-timeline-elapsed"]').text()).not.toContain('已中断')
       wrapper.unmount()
     })
 
@@ -2535,11 +2557,8 @@ describe('ClarifyChat', () => {
       expect(wrapper.find('[data-testid="clarify-interrupted"]').exists()).toBe(true)
       // interrupted is non-completed: keep bottom time (human + interrupted agent)
       expect(wrapper.findAll('[data-testid="clarify-turn-bottom-time"]').length).toBe(2)
-      expect(wrapper.find('[data-testid="thought-summary-state"]').attributes('data-state')).toBe(
-        'interrupted',
-      )
-      expect(wrapper.find('[data-testid="thought-summary-state"]').text()).toContain('已中断')
-      expect(wrapper.find('[data-testid="thought-summary-state"]').text()).not.toContain('已完成')
+      expect(wrapper.get('[data-testid="agent-timeline-elapsed-status"]').text()).toContain('已中断')
+      expect(wrapper.get('[data-testid="agent-timeline-elapsed"]').text()).not.toContain('已完成')
       wrapper.unmount()
     })
 
@@ -2570,11 +2589,8 @@ describe('ClarifyChat', () => {
       expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
       expect(wrapper.text()).not.toMatch(/\bDone\b/)
       expect(wrapper.find('[data-testid="clarify-interrupted"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="thought-summary-state"]').attributes('data-state')).toBe(
-        'interrupted',
-      )
-      expect(wrapper.find('[data-testid="thought-summary-state"]').text()).toContain('已中断')
-      expect(wrapper.find('[data-testid="thought-summary-state"]').text()).not.toContain('已完成')
+      expect(wrapper.get('[data-testid="agent-timeline-elapsed-status"]').text()).toContain('已中断')
+      expect(wrapper.get('[data-testid="agent-timeline-elapsed"]').text()).not.toContain('已完成')
       wrapper.unmount()
     })
 
@@ -2646,7 +2662,7 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
-    it('renders persisted tools on a settled agent turn', () => {
+    it('renders persisted tools in the shared settled reply fold', async () => {
       const wrapper = mountChat({
         turns: [
           {
@@ -2657,6 +2673,7 @@ describe('ClarifyChat', () => {
           },
         ],
       })
+      await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
       const group = wrapper.find('[data-testid="agent-tool-group"]')
       expect(group.exists()).toBe(true)
       expect(group.attributes('data-state')).toBe('done')
@@ -2719,7 +2736,7 @@ describe('ClarifyChat', () => {
       })
       vm.applyAcpEvents([{ kind: 'message', text: reply }], 'react-1')
       await flushPromises()
-      expect(wrapper.find('[data-testid="agent-timeline"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="agent-timeline"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
       expectReply(wrapper.get('[data-testid="clarify-agent-message"]'))
 
@@ -2919,7 +2936,7 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
-    it('agent .md + thought body have wrap classes; thought shows full long url (g3.1/g3.2/f3)', () => {
+    it('agent .md + shared thought fold preserve the full long URL and wrapping', async () => {
       const wrapper = mountChat({
         turns: [
           {
@@ -2937,9 +2954,8 @@ describe('ClarifyChat', () => {
       expect(agentLink.exists()).toBe(true)
       expect(agentLink.attributes('href')).toBe(LONG_URL)
 
-      const thought = wrapper.find('[data-testid="clarify-thought"]')
-      expect(thought.exists()).toBe(true)
-      const thoughtBody = thought.find('.chat-thought-body')
+      await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+      const thoughtBody = wrapper.get('.agent-elapsed-thought')
       expect(thoughtBody.exists()).toBe(true)
       expect(thoughtBody.classes().join(' ')).toMatch(/overflow-wrap:anywhere/)
       expect(thoughtBody.classes()).toContain('break-words')

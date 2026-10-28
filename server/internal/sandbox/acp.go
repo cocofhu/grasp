@@ -154,6 +154,9 @@ type ACPClient struct {
 	// bridgeModel is the session ACP_BRIDGE_MODEL string used at ingest to
 	// backfill weak usage keys (default/unknown/empty). Empty disables backfill.
 	bridgeModel string
+	// execution is the nonsecret route captured when this connection opened.
+	// It is independent of later edits to the Agent or its default group.
+	execution *models.ChatExecution
 
 	// chatID selects a bridge chat (/ws?chat=<id>); empty is the default chat.
 	chatID string
@@ -230,6 +233,24 @@ func (c *ACPClient) agentIdle() time.Duration {
 func (c *ACPClient) WithBridgeModel(model string) *ACPClient {
 	c.bridgeModel = strings.TrimSpace(model)
 	return c
+}
+
+// WithExecution sets immutable launch metadata before the connection is used.
+func (c *ACPClient) WithExecution(execution *models.ChatExecution) *ACPClient {
+	if execution != nil {
+		cp := *execution
+		c.execution = &cp
+	}
+	return c
+}
+
+// Execution returns a copy so callers can add per-turn timestamps safely.
+func (c *ACPClient) Execution() *models.ChatExecution {
+	if c.execution == nil {
+		return nil
+	}
+	cp := *c.execution
+	return &cp
 }
 
 // WithBlobs wires a blob.Store so chat turns can resolve blob:{id} refs.

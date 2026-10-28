@@ -4,6 +4,16 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Solo chat display:** an empty running chat opens directly to the composer. Model and reasoning changes apply from the next message without an informational banner. Completed thought/tool details collapse at the end of a turn and can be opened again, while the final reply remains visible.
+
+- **Shared chat details and theme-aware logos:** Solo, workflow, Agent test and PM replies use the same timeline, time hint and information popup. Each new reply keeps its actual Agent, coding tool, model, reasoning and per-turn token/duration snapshot; later selections do not relabel old replies. Missing historical fields remain unavailable. Colored model logos no longer receive a forced white background in dark mode.
+
+- **Native CLI reasoning and history:** OpenCode variants now reach the model API with the requested reasoning strength, declared reasoning capabilities are preserved, and thoughts returned by the model appear in chat. Cross-group DSH settings use the target group's choices. Codex loads native MCP configuration and recognizes read-only history access; recoverable model-metadata notices no longer fail successful replies. Result-only stream-json replies retain their final text, and terminal usage totals replace incremental samples to avoid counting tokens twice.
+
+- **Worktree conversation switching:** changing coding tools keeps the local worktree and its files, replaces the backend process and updates its connection port. OpenCode and CodeBuddy load artifact-store MCP from the selected configuration directory. Saved Solo model choices also update other open views immediately.
+
+- **Multiple model groups per Agent:** bind groups across coding tools and select an explicit default. Solo selectors include models from every bound group and keep identical model IDs from different accounts distinct. Model and tool changes apply at the next turn, preserving the workspace and handing prior conversation to the new tool. Unavailable selections require an explicit replacement. Successful configuration changes refresh open selectors in the same browser, including other tabs. The artifact-store `get_history` tool provides current-session history with scoped, snapshot-based pagination.
+
 - **Accepted chat messages:** Workflow, Solo and gate chats show each accepted send once while waiting for live frames and saved history. Repeated text and image-only sends retain separate turns and queue order; rejected, edited or cancelled pending messages are removed correctly. Queuing another message preserves the current answer's streamed segments. Gate replies stay attached to their own request without duplicating saved preview feedback, and the LLM transcript receives live frames and reconnect recovery.
 
 - **Worktree Git authentication:** Agents now receive their selected Git credentials for commands after checkout, including `git push` and GitHub/GitLab CLI operations. Each backend uses private credential files and Git configuration, so concurrent nodes keep their own authorization and an empty selection cannot inherit the server's credentials.

@@ -31,7 +31,11 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 	}
 	s.mu.Lock()
 	ls := s.live[id]
+	switching := ls != nil && ls.switching
 	s.mu.Unlock()
+	if switching {
+		return "", 0, "", fmt.Errorf("sandbox 正在切换编码工具")
+	}
 	host, port, password := row.Host, row.ACPPort, row.Token
 	if ls != nil && ls.sb != nil {
 		host, port = ls.sb.Host, ls.sb.Port
@@ -371,7 +375,7 @@ func (s *SandboxService) view(ctx context.Context, row *models.Sandbox) SandboxV
 func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox, statusMap map[string]string, dockerFailed bool) SandboxView {
 	s.mu.Lock()
 	ls := s.live[row.ID]
-	busy := ls != nil && ls.busy
+	busy := ls != nil && (ls.busy || ls.switching)
 	if row.Purpose == "run" && s.runActive[row.Name] {
 		busy = true
 	}

@@ -192,13 +192,12 @@ func TestSoloModelSwitchFailureRollsBack(t *testing.T) {
 	if _, err := solo.Send(v.ID, "alice", "next", nil); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "failed switch still chats", func() bool {
+	waitFor(t, "failed switch stops this turn", func() bool {
 		c := solo.lookup(v.ID)
-		return gate.count() >= 1 && c != nil && c.sess.Ready()
+		return c != nil && c.sess.Ready()
 	})
-	prompt := gate.snapshot()[0]
-	if prompt != "next" {
-		t.Fatalf("rolled-back turn should not rebuild context: %q", prompt)
+	if gate.count() != 0 {
+		t.Fatal("failed switch sent the request under the old model")
 	}
 	row, _ := solo.Require(v.ID, "alice")
 	if row.CurrentModelID != "aux" || row.ModelNotice != soloModelSwitchFailed || row.InitialModelID != "aux" {
@@ -242,19 +241,19 @@ func TestSoloUnreadableModelRetriesWithoutRollback(t *testing.T) {
 	}
 	waitFor(t, "first attempt", func() bool {
 		c := solo.lookup(v.ID)
-		return gate.count() >= 1 && c != nil && c.sess.Ready()
+		return align.count() >= 1 && c != nil && c.sess.Ready()
 	})
 	row, _ := solo.Require(v.ID, "alice")
 	if row.CurrentModelID != "aux2" || row.ModelNotice != "" || row.AppliedModelID != "aux" {
 		t.Fatalf("unread switch rolled back: current=%q applied=%q notice=%q", row.CurrentModelID, row.AppliedModelID, row.ModelNotice)
 	}
-	if prompt := gate.snapshot()[0]; prompt != "next" || strings.Contains(prompt, "编码模型已更换") {
-		t.Fatalf("unread turn changed the prompt: %q", prompt)
+	if gate.count() != 0 {
+		t.Fatal("unconfirmed model executed a prompt")
 	}
 	if _, err := solo.Send(v.ID, "alice", "again", nil); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "retry", func() bool { return align.count() >= 2 && gate.count() >= 2 })
+	waitFor(t, "retry", func() bool { return align.count() >= 2 })
 	got := align.snapshot()
 	if len(got) != 2 || got[0] != "aux2" || got[1] != "aux2" {
 		t.Fatalf("retries: %+v", got)
@@ -281,7 +280,8 @@ func TestSoloModelNoticeClearsAfterLaterTurn(t *testing.T) {
 	})
 	gate := newGateChat(false)
 	solo.SetChatterForTest(gate)
-	solo.SetModelAlignerForTest(&recordAligner{err: errors.New("bridge refused")})
+	aligner := &recordAligner{err: errors.New("bridge refused")}
+	solo.SetModelAlignerForTest(aligner)
 	if _, err := solo.SetCurrentModel(ctx, v.ID, "alice", "aux2"); err != nil {
 		t.Fatal(err)
 	}
@@ -293,6 +293,9 @@ func TestSoloModelNoticeClearsAfterLaterTurn(t *testing.T) {
 		c := solo.lookup(v.ID)
 		return err == nil && row.ModelNotice == soloModelSwitchFailed && c != nil && c.sess.Ready()
 	})
+	aligner.mu.Lock()
+	aligner.err = nil
+	aligner.mu.Unlock()
 	if _, err := solo.Send(v.ID, "alice", "later", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +334,7 @@ func insertSoloModelConfig(t *testing.T, db *gorm.DB) {
 			AuxiliaryModelIDs: []string{"aux", "aux2"},
 		},
 	}
-	if err := db.Create(&row).Error; err != nil {
+	if err := db.Save(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 }

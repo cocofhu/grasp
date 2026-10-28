@@ -111,6 +111,7 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 // under force/max_rounds). Only then is the produces contract ensured (with
 // re-prompting) and the sandbox torn down.
 func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) (out ReactTurn) {
+	started := time.Now()
 	var chatOp string
 	defer func() {
 		if out.OpID == "" && chatOp != "" {
@@ -143,6 +144,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		}
 	}
 
+	defer func() { finishChatTurn(&out, sess.acp, started) }()
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
 	// Confirm (force) exposes node_complete before the confirm turn so
@@ -282,6 +284,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 // producer's parked session). A dead/lost session is rebuilt from the
 // transcript, mirroring ReactReply.
 func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage) (out ReactTurn) {
+	started := time.Now()
 	var chatOp string
 	defer func() {
 		if out.OpID == "" && chatOp != "" {
@@ -313,6 +316,7 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 		}
 		rehydrated = true
 	}
+	defer func() { finishChatTurn(&out, sess.acp, started) }()
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
 	prompt := reviewTurnPrompt(req, history, human, rehydrated)
@@ -482,7 +486,7 @@ func (c *acpProvider) AbortSessionTurn(runID, nodeID string) bool {
 //
 // Best-effort like OfferCommitOnConfirm: a dead session or a failed chat only
 // yields an empty turn, never a failed confirm.
-func (c *acpProvider) ReconcileOnConfirm(ctx context.Context, req NodeReq) ReactTurn {
+func (c *acpProvider) ReconcileOnConfirm(ctx context.Context, req NodeReq) (out ReactTurn) {
 	c.mu.Lock()
 	sess := c.sessions[reactKey(req)]
 	c.mu.Unlock()
@@ -491,6 +495,7 @@ func (c *acpProvider) ReconcileOnConfirm(ctx context.Context, req NodeReq) React
 			Msg("confirm reconcile skipped: no live session")
 		return ReactTurn{}
 	}
+	defer finishChatTurn(&out, sess.acp, time.Now())
 
 	var usage *models.TokenUsage
 	var usageByModel models.TokenUsageByModel

@@ -7,11 +7,12 @@
  */
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { AgentPart } from '@/lib/shared/types'
+import type { AgentPart, AgentTool, ChatMessageMetadata } from '@/lib/shared/types'
 import { timelineBlocks, timelineFolds } from '@/lib/run/acpTools'
 import { thoughtParagraphs } from '@/lib/run/thoughtParagraphs'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
-import { fmtTurnElapsed, wallClockSec } from '@/lib/shared/format'
+import { fmtTime, fmtTurnElapsed, wallClockSec } from '@/lib/shared/format'
+import ChatMessageMeta from '@/components/chat/ChatMessageMeta.vue'
 import { renderChatMarkdown, renderChatMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import AgentToolGroup from './AgentToolGroup.vue'
@@ -21,7 +22,11 @@ import Icon from '../ui/Icon.vue'
 
 const props = withDefaults(
   defineProps<{
-    parts: AgentPart[]
+    parts?: AgentPart[]
+    /** Older transports without ordered parts use the same renderer. */
+    text?: string
+    thought?: string
+    tools?: AgentTool[]
     /** The reply is still streaming. */
     streaming?: boolean
     /** Finished on its own (thought summaries show 已完成 while streaming). */
@@ -41,6 +46,9 @@ const props = withDefaults(
     startedAt?: string
     /** ISO when this reply stopped. */
     endedAt?: string
+    /** Facts recorded for this reply, shared by every conversation host. */
+    metadata?: ChatMessageMetadata
+    unknownModelDisplayName?: string | null
     /**
      * The host already shows one busy line (「思考中…」), so the streaming
      * thought summary drops its own 生成中… badge (observe view, before text).
@@ -48,6 +56,10 @@ const props = withDefaults(
     quietThought?: boolean
   }>(),
   {
+    parts: () => [],
+    text: '',
+    thought: '',
+    tools: () => [],
     streaming: false,
     completed: false,
     interrupted: false,
@@ -67,7 +79,17 @@ const emit = defineEmits<{ reveal: [] }>()
 const { t } = useI18n()
 const workId = `agent-elapsed-${useId().replace(/:/g, '')}`
 const cache: MarkdownBlockCache = new Map()
-const blocks = computed(() => timelineBlocks(props.parts).filter((b) => !(props.hideThought && b.kind === 'thought')))
+const replyMetadata = computed<ChatMessageMetadata>(() => ({ ...props.metadata, startedAt: props.metadata?.startedAt || props.startedAt, endedAt: props.metadata?.endedAt || props.endedAt }))
+const replyTime = computed(() => {
+  const stamp = replyMetadata.value.execution?.startedAt || replyMetadata.value.createdAt || replyMetadata.value.at || replyMetadata.value.endedAt
+  return stamp && Number.isFinite(Date.parse(stamp)) ? fmtTime(stamp) : undefined
+})
+const replyParts = computed<AgentPart[]>(() => props.parts.length ? props.parts : [
+  ...(props.thought ? [{ kind: 'thought' as const, text: props.thought }] : []),
+  ...props.tools.map(tool => ({ kind: 'tool' as const, ...tool })),
+  ...(props.text ? [{ kind: 'message' as const, text: props.text }] : []),
+])
+const blocks = computed(() => timelineBlocks(replyParts.value).filter((b) => !(props.hideThought && b.kind === 'thought')))
 
 const elapsedTime = computed(() => {
   const sec = wallClockSec(props.startedAt, props.endedAt)
@@ -87,7 +109,7 @@ const failedCount = computed(() => {
  * A finished turn folds into the elapsed line (#843). Failed tool calls fold
  * too; the line says how many failed, and opening it shows them expanded.
  */
-const settled = computed(() => !props.streaming && timelineFolds(props.parts))
+const settled = computed(() => !props.streaming && timelineFolds(replyParts.value))
 const statusLabel = computed(() => {
   if (!settled.value) return ''
   if (props.interrupted) return t('pages.clarify.thoughtInterrupted')
@@ -122,6 +144,12 @@ const workBlocks = computed(() => {
 
 /** null follows expand-all; a click pins this reply for the rest of the page. */
 const manualOpen = ref<boolean | null>(null)
+// A renderer can be reused for another turn. Auto-open live work must never
+// leave the next completed reply expanded; clicks on a settled reply stay pinned.
+watch(() => props.streaming, () => {
+  manualOpen.value = null
+  thoughtOpen.value = {}
+})
 watch(
   () => props.expanded,
   () => {
@@ -221,7 +249,7 @@ function onToggle(index: number, last: boolean, e: Event) {
       <div v-if="processOpen && workBlocks.length" :id="workId" class="agent-elapsed-work" data-testid="agent-timeline-work">
         <template v-for="b in workBlocks" :key="b.key">
           <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :expanded="expanded" :run-id="runId" />
-          <div v-else-if="b.kind === 'thought'" class="agent-elapsed-thought" data-testid="agent-timeline-thought">
+          <div v-else-if="b.kind === 'thought'" class="agent-elapsed-thought break-words [overflow-wrap:anywhere]" data-testid="agent-timeline-thought">
             <p v-for="(para, pi) in thoughtParagraphs(b.text)" :key="pi">{{ para }}</p>
           </div>
           <div v-else class="chat-prose md agent-elapsed-note min-w-0" :data-testid="messageTestId">
@@ -230,7 +258,7 @@ function onToggle(index: number, last: boolean, e: Event) {
         </template>
       </div>
       <hr class="agent-elapsed-rule" data-testid="agent-timeline-rule" />
-      <div v-if="tailBlock" class="chat-prose md min-w-0" :data-testid="messageTestId">
+      <div v-if="tailBlock" class="chat-prose md min-w-0" :data-testid="messageTestId" :title="replyTime">
         <span v-html="renderChatMarkdown(tailBlock.text)" />
       </div>
     </template>
@@ -252,7 +280,7 @@ function onToggle(index: number, last: boolean, e: Event) {
             />
             <Icon name="chevron-down" :size="12" class="agent-thought-chevron" aria-hidden="true" />
           </summary>
-          <div class="agent-thought-body">
+          <div class="agent-thought-body break-words [overflow-wrap:anywhere]">
             <p v-for="(para, pi) in thoughtParagraphs(streaming && b.last ? liveThought : b.text)" :key="pi">{{ para }}</p>
           </div>
         </details>
@@ -260,6 +288,7 @@ function onToggle(index: number, last: boolean, e: Event) {
           v-else
           class="chat-prose md agent-live-message min-w-0"
           :data-testid="messageTestId"
+          :title="replyTime"
         >
           <StreamMarkdown v-if="streaming && b.last" :blocks="liveBlocks" /><span
             v-else
@@ -268,6 +297,7 @@ function onToggle(index: number, last: boolean, e: Event) {
         </div>
       </template>
     </template>
+    <ChatMessageMeta v-if="!streaming && (replyParts.length || metadata)" :metadata="replyMetadata" :unknown-model-display-name="unknownModelDisplayName"><slot name="metadata-actions" /></ChatMessageMeta>
   </div>
 </template>
 

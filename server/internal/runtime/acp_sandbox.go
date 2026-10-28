@@ -386,7 +386,8 @@ func (c *acpProvider) openNodeSandbox(ctx context.Context, req NodeReq) (*sandbo
 	acp := sb.ACP().
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
-		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"])
+		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"]).
+		WithExecution(c.executionForEnvironment(req, spec.Env))
 	if err := acp.Connect(ctx); err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
@@ -428,10 +429,15 @@ func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.
 	sb.Password = req.Token
 	sb.ConfigRoot = c.agentLayout(models.AgentProfile(req.Config), c.effectiveAgent(req)).ConfigRoot
 	model, _ := sb.ExecScript(ctx, 10*time.Second, "bash", "printenv "+EnvACPBridgeModel+" || true")
+	group, _ := sb.ExecScript(ctx, 10*time.Second, "bash", "printenv "+EnvModelConfigurationID+" || true")
+	effort, _ := sb.ExecScript(ctx, 10*time.Second, "bash", "printenv "+EnvACPBridgeReasoningEffort+" || true")
 	acp := sb.ACP().
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
-		WithBridgeModel(strings.TrimSpace(model))
+		WithBridgeModel(strings.TrimSpace(model)).
+		WithExecution(c.executionForEnvironment(req, map[string]string{
+			EnvACPBridgeModel: strings.TrimSpace(model), EnvModelConfigurationID: strings.TrimSpace(group), EnvACPBridgeReasoningEffort: strings.TrimSpace(effort),
+		}))
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
 		c.deregisterRunSandbox(name)

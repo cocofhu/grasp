@@ -39,8 +39,8 @@ requests to an image host.
 
   SiliconFlow uses its SiliconCloud service mark. Baidu Qianfan uses the
   Baidu AI Cloud provider mark. Color fills and gradients are retained in
-  both themes. Color marks keep a white tile in the dark theme for contrast;
-  only monochrome marks are inverted.
+  both themes. Marks use the surrounding themed surface, or stay transparent
+  in compact model pickers; only monochrome marks are inverted.
 
 The marks remain trademarks of their respective owners. They are shown only
 to identify credential providers and model brands.

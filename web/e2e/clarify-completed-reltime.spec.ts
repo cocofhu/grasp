@@ -36,7 +36,7 @@ test.describe('ClarifyChat 完成态相对时间单通道', () => {
     })
   })
 
-  test('流式中：无完成脚注，底部时间仍保留', async ({ page }) => {
+  test('流式中：保留用户时间，Agent 显示生成状态', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 900 })
     await page.goto('/clarify-session-ux.html')
     await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
@@ -48,8 +48,14 @@ test.describe('ClarifyChat 完成态相对时间单通道', () => {
 
     await expect(page.getByTestId('clarify-turn-completed')).toHaveCount(0)
     await expect(page.getByTestId('clarify-stream-caret')).toBeVisible()
-    // human + streaming agent
-    await expect(page.getByTestId('clarify-turn-bottom-time')).toHaveCount(2)
+    // Both accepted user requests stay visible, including the request queued
+    // behind this stream. Each keeps its own time; live Agent rows have no footer.
+    const humans = page.locator('[data-turn-role="human"]')
+    await expect(humans).toHaveCount(2)
+    await expect(humans.getByTestId('clarify-turn-bottom-time')).toHaveCount(2)
+    const agents = page.locator('[data-turn-role="agent"]')
+    await expect(agents.getByTestId('clarify-turn-bottom-time')).toHaveCount(0)
+    await expect(agents.getByTestId('chat-message-meta')).toHaveCount(0)
 
     await page.screenshot({
       path: path.join(shotDir, '02-streaming-keeps-bottom-time.png'),

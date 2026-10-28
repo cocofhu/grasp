@@ -22,9 +22,12 @@ type ToolSettings struct {
 type Binding struct {
 	Kind            string `json:"kind"`
 	ConfigurationID string `json:"configurationId,omitempty"`
-	CredentialID    string `json:"credentialId,omitempty"`
-	ConnectionID    string `json:"connectionId,omitempty"`
-	ModelID         string `json:"modelId,omitempty"`
+	// ConfigurationIDs is the ordered set available to an Agent. ConfigurationID
+	// remains its explicit default; an omitted list is a single-group binding.
+	ConfigurationIDs []string `json:"configurationIds,omitempty"`
+	CredentialID     string   `json:"credentialId,omitempty"`
+	ConnectionID     string   `json:"connectionId,omitempty"`
+	ModelID          string   `json:"modelId,omitempty"`
 	// AuxiliaryModelIDs are extra models the user may switch to. Order is the
 	// display order. ModelID stays the primary and is the only model automation uses.
 	// A missing field on older rows reads as an empty list.

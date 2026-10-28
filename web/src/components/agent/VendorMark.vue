@@ -38,8 +38,10 @@ const props = withDefaults(
     auto?: boolean
     /** Generic mark for a model outside the shortlist. */
     unknown?: boolean
+    /** Standalone mark in compact pickers, without a surrounding tile. */
+    flat?: boolean
   }>(),
-  { backend: false, size: 32, auto: false, unknown: false },
+  { backend: false, size: 32, auto: false, unknown: false, flat: false },
 )
 
 const ASSETS: Record<string, string> = {
@@ -76,7 +78,7 @@ const COLOR_ASSETS = new Set(['qwen', 'doubao', 'siliconflow', 'minimax', 'zhipu
 const assetKey = computed(() => (props.backend ? props.vendor : vendorLogoProvider(props.vendor)))
 const asset = computed(() => props.unknown ? '' : assetKey.value === 'kimi' && theme.value === 'dark' ? kimiDarkLogo : ASSETS[assetKey.value] || '')
 const colorAsset = computed(() => COLOR_ASSETS.has(assetKey.value))
-const markPx = computed(() => Math.round(props.size * (PADDED.has(assetKey.value) ? 0.82 : 0.58)))
+const markPx = computed(() => Math.round(props.size * (PADDED.has(assetKey.value) ? props.flat ? 1.2 : 0.82 : props.flat ? 0.8 : 0.58)))
 const label = computed(() => (props.backend ? props.vendor : vendorLabel(props.vendor)))
 const initial = computed(() => label.value.charAt(0).toUpperCase() || '?')
 const tint = computed(() => monogramColor(props.vendor))
@@ -86,7 +88,7 @@ const radius = computed(() => (props.size >= 28 ? 9 : props.size >= 20 ? 6 : 4))
 <template>
   <span
     class="vendor-mark relative inline-flex shrink-0 items-center justify-center border border-line bg-surface"
-    :class="{ 'vendor-mark--color': colorAsset && theme === 'dark' }"
+    :class="{ 'vendor-mark--color': colorAsset, 'vendor-mark--flat': flat }"
     :style="{ width: `${size}px`, height: `${size}px`, borderRadius: `${radius}px` }"
     role="img"
     :aria-label="label"
@@ -98,8 +100,8 @@ const radius = computed(() => (props.size >= 28 ? 9 : props.size >= 20 ? 6 : 4))
       :src="asset"
       alt=""
       aria-hidden="true"
-      class="object-contain"
-      :class="theme === 'dark' && !colorAsset && assetKey !== 'kimi' ? 'invert' : ''"
+      class="shrink-0 object-contain"
+      :class="[flat ? 'max-w-none' : '', theme === 'dark' && !colorAsset && assetKey !== 'kimi' ? 'invert' : '']"
       :style="{ width: `${markPx}px`, height: `${markPx}px` }"
     />
     <span
@@ -138,13 +140,14 @@ a:focus-visible .vendor-mark,
   border-color: rgb(var(--c-accent) / .45);
   background-color: rgb(var(--c-elevated));
 }
-.vendor-mark--color,
-button:hover .vendor-mark--color,
-button:focus-visible .vendor-mark--color,
-a:hover .vendor-mark--color,
-a:focus-visible .vendor-mark--color,
-[role="option"]:hover .vendor-mark--color {
-  background-color: #fff;
+.vendor-mark--flat,
+button:hover .vendor-mark--flat,
+button:focus-visible .vendor-mark--flat,
+a:hover .vendor-mark--flat,
+a:focus-visible .vendor-mark--flat,
+[role="option"]:hover .vendor-mark--flat {
+  border-color: transparent;
+  background-color: transparent;
 }
 @media (prefers-reduced-motion: reduce) {
   .vendor-mark { transition: none; }

@@ -228,7 +228,7 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     vm.applyAcpEvents([{ kind: 'thought', text: '已恢复的思考增量' }])
     await nextTick()
     expect(w.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(false)
-    expect(w.find('[data-testid="clarify-thought"]').text()).toContain('已恢复的思考增量')
+    expect(w.find('[data-testid="agent-timeline-thought"]').text()).toContain('已恢复的思考增量')
     expect(w.find('[data-testid="clarify-busy-status"]').text()).toContain('思考中')
 
     vm.applyAcpEvents([

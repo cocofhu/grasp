@@ -178,6 +178,9 @@ func (s *ModelConnectionService) Resolve(backend string, binding modelrouting.Bi
 		if binding.ConfigurationID == "" || binding.CredentialID != "" || binding.ConnectionID != "" || binding.ModelID != "" || len(binding.AuxiliaryModelIDs) != 0 || len(binding.ToolSettings.ModelRoles) != 0 || binding.ToolSettings.RouteProfile != "" || len(binding.ToolSettings.ModelEfforts) != 0 {
 			return resolved, fmt.Errorf("%w: configuration binding requires only configurationId", ErrModelBindingInvalid)
 		}
+		if err := modelrouting.ValidateConfigurationReference(&binding); err != nil {
+			return resolved, fmt.Errorf("%w: %w", ErrModelBindingInvalid, err)
+		}
 		configuration, err := NewModelConfigurationService(s.db).Get(binding.ConfigurationID)
 		if err != nil {
 			return resolved, fmt.Errorf("%w: %w", ErrModelBindingInvalid, err)

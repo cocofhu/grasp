@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -18,7 +19,7 @@ const reviewDirtyFileCap = 80
 // parked, or the tree is clean and already pushed. Never fails the confirm.
 // Clarify Agents get the offer for adopted Live edits; other Agents only when
 // they commit code.
-func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) ReactTurn {
+func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) (out ReactTurn) {
 	if req.Caps == nil || (!req.Caps.Clarify() && !req.Caps.CommitsCode()) {
 		// Agents that never commit keep review demos and Live trials in this
 		// node's sandbox; downstream clones fresh.
@@ -31,6 +32,7 @@ func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) Rea
 	if sess == nil || sess.sb == nil {
 		return ReactTurn{}
 	}
+	defer finishChatTurn(&out, sess.acp, time.Now())
 
 	ch := c.collectChanges(ctx, sess.sb, req)
 	dirty, unpushed := reviewGitNeedsWrapUp(ch)

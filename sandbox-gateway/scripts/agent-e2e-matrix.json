@@ -1,0 +1,11 @@
+{
+  "tools": [
+    {"id": "cursor", "bin": "cursor-agent", "mode": "platform-wire-fixture", "model": "gpt-5", "efforts": [], "reason": "Cursor uses its authenticated proprietary service, not an OpenAI model endpoint."},
+    {"id": "claude_code", "bin": "claude", "package": "@anthropic-ai/claude-code", "mode": "native-cli", "protocol": "anthropic-messages", "model": "claude-sonnet-4-6", "efforts": []},
+    {"id": "codebuddy", "bin": "codebuddy", "package": "@tencent-ai/codebuddy-code", "mode": "native-cli", "protocol": "openai-chat-completions", "model": "gpt-5", "efforts": []},
+    {"id": "trae", "bin": "traecli", "mode": "platform-wire-fixture", "model": "gpt-5", "efforts": [], "reason": "Trae requires its own platform authorization; a DeepSeek key cannot replace it."},
+    {"id": "opencode", "bin": "opencode", "package": "opencode-ai", "mode": "native-cli", "protocol": "openai-chat-completions", "model": "gpt-5", "efforts": ["low", "high"]},
+    {"id": "codex", "bin": "codex", "package": "@openai/codex", "mode": "native-cli", "protocol": "openai-responses", "model": "gpt-5", "efforts": ["low", "high"]},
+    {"id": "deepseek_harness", "bin": "dsh", "package": "@deepseek-ai/dsh@0.2.1-rc.2", "mode": "native-cli", "protocol": "openai-chat-completions", "model": "gpt-5", "efforts": ["low", "high"]}
+  ]
+}

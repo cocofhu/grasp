@@ -24,6 +24,7 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import { useSoloChat } from './useSoloChat'
+import { modelRouteValue } from '@/lib/agent/modelBindings'
 
 class FakeSocket {
   static all: FakeSocket[] = []
@@ -528,12 +529,10 @@ describe('useSoloChat', () => {
     ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'q1', text: 'hi', images: [] }, userMsgId: 'q1' })
     const pending = chat.setCurrentModel('aux2')
     expect(chat.currentModelId.value).toBe('aux2')
-    expect(chat.modelSwitchNotice.value).toContain('从下一条开始使用新模型')
     expect(await pending).toBe(true)
     expect(mocks.setSoloSessionModel).toHaveBeenCalledWith('s1', 'aux2')
 
     ws.emit({ type: 'session', event: 'turn_done', interrupted: false })
-    expect(chat.modelSwitchNotice.value).toBe('')
     app.unmount()
   })
 
@@ -545,7 +544,6 @@ describe('useSoloChat', () => {
     expect(await chat.setCurrentModel('other')).toBe(false)
     expect(chat.currentModelId.value).toBe('aux')
     expect(chat.actionError.value).toContain('不在该 Agent 的模型配置中')
-    expect(chat.modelSwitchNotice.value).toBe('')
     app.unmount()
   })
 
@@ -582,7 +580,6 @@ describe('useSoloChat', () => {
     expect(chat.currentReasoningEffort.value).toBe('high')
     expect(chat.currentModelId.value).toBe('aux')
     expect(chat.modelChangePending.value).toBe(false)
-    expect(chat.modelSwitchNotice.value).not.toBe('')
     await flushPromises()
     expect(mocks.setSoloSessionReasoningEffort).toHaveBeenCalledWith('s1', 'high')
     expect(mocks.setSoloSessionModel).not.toHaveBeenCalled()
@@ -591,7 +588,6 @@ describe('useSoloChat', () => {
     expect(chat.currentModelId.value).toBe('aux')
     ws.emit({ type: 'session', event: 'queue_state', busy: false, items: [] })
     await flushPromises()
-    expect(chat.modelSwitchNotice.value).toBe('')
     app.unmount()
   })
 
@@ -960,4 +956,126 @@ describe('useSoloChat', () => {
     vi.useRealTimers()
     app.unmount()
   })
+  it('switches the same model through another group and restores the group on runtime rollback', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'same/model', currentConfigurationId: 'account-a', backend: 'codex' }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open(); await flushPromises()
+    mocks.setSoloSessionModel.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'same/model', currentConfigurationId: 'account-b', backend: 'opencode' }))
+    const pending = chat.setCurrentModel(modelRouteValue('account-b', 'same/model'))
+    expect(chat.currentConfigurationId.value).toBe('account-b')
+    expect(await pending).toBe(true)
+    expect(mocks.setSoloSessionModel).toHaveBeenCalledWith('s1', 'same/model', undefined, 'account-b')
+    expect(chat.session.value?.backend).toBe('opencode')
+    ws.emit({ type: 'session', event: 'model', currentModelSet: true, currentModelId: 'same/model', currentConfigurationId: 'account-a', backend: 'codex', modelNotice: 'model_switch_failed' })
+    expect(chat.currentConfigurationId.value).toBe('account-a')
+    expect(chat.session.value?.backend).toBe('codex')
+    app.unmount()
+  })
+
+  it('allows a qualified model choice while initial history still blocks sending', async () => {
+    let releaseHistory!: (messages: unknown[]) => void
+    mocks.listSoloMessages.mockImplementationOnce(() => new Promise(resolve => { releaseHistory = resolve }))
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'same/model', currentConfigurationId: 'account-a', backend: 'codex' }))
+    mocks.setSoloSessionModel.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'same/model', currentConfigurationId: 'account-b', backend: 'opencode' }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+
+    expect(chat.canSend.value).toBe(false)
+    expect(await chat.setCurrentModel(modelRouteValue('account-b', 'same/model'))).toBe(true)
+    expect(mocks.setSoloSessionModel).toHaveBeenCalledWith('s1', 'same/model', undefined, 'account-b')
+    expect(chat.currentConfigurationId.value).toBe('account-b')
+    expect(chat.session.value?.backend).toBe('opencode')
+    expect(await chat.send('continue')).toBe(false)
+    expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+
+    releaseHistory([])
+    await flushPromises()
+    expect(chat.canSend.value).toBe(true)
+    expect(chat.currentConfigurationId.value).toBe('account-b')
+    app.unmount()
+  })
+
+  it('keeps recorded reply execution and usage when the next-turn selection changes', async () => {
+    const execution = { agentName: 'Original', backend: 'opencode', configurationId: 'old-group', modelId: 'old/model', startedAt: '2026-10-28T08:00:00Z' }
+    const usage = { inputTokens: 0, outputTokens: 12, cacheReadTokens: 34, cacheWriteTokens: 0 }
+    mocks.listSoloMessages.mockResolvedValue([{ id: 'old', sessionId: 's1', role: 'assistant', content: 'Recorded reply', createdAt: '2026-10-28T08:00:25Z', durationMs: 25000, execution, usage, usageByModel: { 'old/model': usage } }])
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+    mocks.setSoloSessionModel.mockResolvedValue(session({ currentModelSet: true, currentConfigurationId: 'new-group', currentModelId: 'new/model', backend: 'codex' }))
+    expect(await chat.setCurrentModel(modelRouteValue('new-group', 'new/model'))).toBe(true)
+    expect(chat.turns.value[0]).toMatchObject({ execution, usage, durationMs: 25000, startedAt: execution.startedAt, usageByModel: { 'old/model': usage } })
+    app.unmount()
+  })
+
+  it('retains an execution snapshot from the reconnect head before turn_begin is replayed', async () => {
+    const execution = { agentName: 'Actual', backend: 'opencode', configurationId: 'recorded', modelId: 'recorded/model', startedAt: '2026-10-28T08:00:00Z' }
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open(); await flushPromises()
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'q1', activeItem: { id: 'q1', text: 'Continue' }, items: [], execution })
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'q1', text: 'Continue' } })
+    const reply = () => chat.turns.value.find(turn => turn.id === 'live:q1')
+    expect(reply()?.execution).toEqual(execution)
+    expect(reply()?.startedAt).toBe(execution.startedAt)
+    ws.emit({ type: 'session', event: 'execution', userMsgId: 'another-turn', execution: { ...execution, modelId: 'another/model' } })
+    expect(reply()?.execution?.modelId).toBe('recorded/model')
+    app.unmount()
+  })
+
+  it('keeps another tab’s qualified selection when an older metadata request finishes during a turn', async () => {
+    const before = session({ currentModelSet: true, currentModelId: 'same/model', currentConfigurationId: 'account-a', backend: 'codex', reasoningEffort: 'low' })
+    mocks.getSoloSession.mockResolvedValue(before)
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open(); await flushPromises()
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [] })
+    let resolve!: (value: ReturnType<typeof session>) => void
+    mocks.getSoloSession.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const background = chat.refreshSession()
+
+    ws.emit({ type: 'session', event: 'model', currentModelSet: true, currentModelId: 'same/model', currentConfigurationId: 'account-b', backend: 'opencode', reasoningEffort: 'high', reasoningEfforts: ['low', 'high'], modelNotice: '', pendingChange: 'model' })
+    expect(chat.currentConfigurationId.value).toBe('account-b')
+    expect(chat.currentReasoningEffort.value).toBe('high')
+    expect(chat.busy.value).toBe(true)
+    resolve(before)
+    await background
+
+    expect(chat.currentConfigurationId.value).toBe('account-b')
+    expect(chat.currentModelId.value).toBe('same/model')
+    expect(chat.session.value?.backend).toBe('opencode')
+    expect(chat.currentReasoningEffort.value).toBe('high')
+    expect(chat.busy.value).toBe(true)
+    expect(mocks.setSoloSessionModel).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it.each(['model', 'effort'] as const)('keeps the saved %s selection when its notification arrives during the current turn', async kind => {
+    const before = session({ currentModelSet: true, currentModelId: 'aux', currentConfigurationId: 'account-a', reasoningEffort: 'low' })
+    const saved = session({ ...before, ...(kind === 'model' ? { currentModelId: 'aux2' } : { reasoningEffort: 'high' }) })
+    mocks.getSoloSession.mockResolvedValue(before)
+    mocks.setSoloSessionModel.mockResolvedValue(saved)
+    mocks.setSoloSessionReasoningEffort.mockResolvedValue(saved)
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open(); await flushPromises()
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [] })
+    expect(await (kind === 'model' ? chat.setCurrentModel('aux2') : chat.setCurrentReasoningEffort('high'))).toBe(true)
+
+    ws.emit({ type: 'session', event: 'model', currentConfigurationId: saved.currentConfigurationId, currentModelId: saved.currentModelId, reasoningEffort: saved.reasoningEffort, pendingChange: kind })
+    expect(chat.currentModelId.value).toBe(saved.currentModelId)
+    expect(chat.currentReasoningEffort.value).toBe(saved.reasoningEffort)
+    expect(chat.busy.value).toBe(true)
+    ws.emit({ type: 'session', event: 'model', currentConfigurationId: saved.currentConfigurationId, currentModelId: saved.currentModelId, reasoningEffort: saved.reasoningEffort, pendingChange: '' })
+    app.unmount()
+  })
+
 })

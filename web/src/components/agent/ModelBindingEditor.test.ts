@@ -65,4 +65,25 @@ describe('named Agent model selector', () => {
     expect(w.find('[role="alert"]').exists()).toBe(false)
     expect(w.emitted('update:modelValue')).toBeUndefined(); w.unmount()
   })
+  it('adds a group from another tool and only changes the CLI when making it the default', async () => {
+    mocks.listModelConnections.mockResolvedValue({ items: [{ ...connection, auth: { scheme: 'x-api-key' } }] })
+    mocks.listToolCapabilities.mockResolvedValue({ items: [
+      { toolId: 'claude_code', modes: ['connection'], protocols: ['anthropic-messages'], adapterState: 'existing' },
+      { toolId: 'opencode', modes: ['connection'], protocols: ['anthropic-messages'], adapterState: 'existing' },
+    ] })
+    const w = setup('', { kind: 'configuration', configurationId: 'profile' }); await flushPromises()
+    w.findAllComponents(AppSelect).at(-1)!.vm.$emit('update:modelValue', 'other')
+    const binding = { kind: 'configuration' as const, configurationId: 'profile', configurationIds: ['profile', 'other'] }
+    expect(w.emitted('update:modelValue')?.at(-1)).toEqual([binding])
+    expect(w.emitted('selectConfiguration')).toBeUndefined()
+    await w.setProps({ modelValue: binding })
+    expect(w.emitted('validity')?.at(-1)).toEqual([true])
+    await w.get('[data-testid="model-binding-default-other"]').trigger('click')
+    expect(w.emitted('update:modelValue')?.at(-1)).toEqual([{ ...binding, configurationId: 'other' }])
+    expect(w.emitted('selectConfiguration')?.at(-1)?.[0]).toMatchObject({ id: 'other', backend: 'opencode' })
+    await w.get('[data-testid="model-binding-remove-other"]').trigger('click')
+    expect(w.emitted('update:modelValue')?.at(-1)).toEqual([{ kind: 'configuration', configurationId: 'profile' }])
+    w.unmount()
+  })
+
 })

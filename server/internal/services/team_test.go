@@ -34,14 +34,23 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	pm := NewPmService(db, skills)
 	team := NewTeamService(workspace, skills, pm, nil)
 	initTeamModel(t, team, db)
+	var alternate models.ModelConfiguration
+	if err := db.First(&alternate, "id = ?", "model-team").Error; err != nil {
+		t.Fatal(err)
+	}
+	alternate.ID, alternate.Name = "model-team-alt", "Alternative team model"
+	if err := db.Create(&alternate).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		Prefix:               "Demo",
-		PMName:               "Demo项目经理",
-		Background:           "demo background for workflow team",
-		ModelConfigurationID: "model-team",
-		MCP:                  DefaultPlatformMCP(),
-		Env:                  map[string]string{"GIT_REPOS": "${vars.repos}"},
+		Prefix:                "Demo",
+		PMName:                "Demo项目经理",
+		Background:            "demo background for workflow team",
+		ModelConfigurationID:  "model-team",
+		ModelConfigurationIDs: []string{"model-team", "model-team-alt"},
+		MCP:                   DefaultPlatformMCP(),
+		Env:                   map[string]string{"GIT_REPOS": "${vars.repos}"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -71,6 +80,9 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	if !ok {
 		t.Fatal("missing PM agent")
 	}
+	if len(pmAg.ModelBinding.ConfigurationIDs) != 2 || pmAg.ModelBinding.ConfigurationID != "model-team" {
+		t.Fatalf("PM lost model group bindings: %+v", pmAg.ModelBinding)
+	}
 	if !agentHasFilePath(pmAg, "rules/role.md") {
 		t.Fatalf("PM missing role.md files=%v", filePaths(pmAg))
 	}
@@ -91,6 +103,9 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	ag, ok := skills.Get(impl)
 	if !ok {
 		t.Fatalf("missing %s", impl)
+	}
+	if len(ag.ModelBinding.ConfigurationIDs) != 2 || ag.ModelBinding.ConfigurationID != "model-team" {
+		t.Fatalf("engineer lost model group bindings: %+v", ag.ModelBinding)
 	}
 	if len(ag.MCP) == 0 || ag.MCP[0].Name != "artifact-store" {
 		t.Fatalf("mcp=%+v", ag.MCP)
@@ -365,6 +380,10 @@ func initTeamModel(t *testing.T, team *TeamService, db *gorm.DB) {
 	team.Skills.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
 		_, err := NewModelConnectionService(db).Resolve(backend, *binding)
 		return err
+	})
+	team.Skills.SetModelConfigurationResolver(func(binding *modelrouting.Binding) (string, error) {
+		configuration, err := NewModelConfigurationService(db).Get(binding.ConfigurationID)
+		return configuration.Backend, err
 	})
 }
 func TestTeamRequiresSavedModel(t *testing.T) {

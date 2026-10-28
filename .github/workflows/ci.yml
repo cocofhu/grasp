@@ -8,7 +8,7 @@ name: ci
 # - `go-hygiene` / `go-race` / `server-image`: cross-module checks.
 # - `ci-required`: single fan-in check. Fails when any job above failed or was
 #   cancelled, then waits for the path-filtered sibling workflows (ci-server,
-#   ci-gateway, ci-sandbox, ci-web, ci-docs) of the same commit and fails when
+#   ci-gateway, ci-sandbox, ci-web, ci-docs, ci-agent-e2e) of the same commit and fails when
 #   any of them did not succeed. Skipped / not triggered = not affected = OK.
 #   Require only `ci-required` (plus `gate` if desired) in branch protection.
 on:
@@ -269,5 +269,5 @@ jobs:
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           EVENT: ${{ github.event_name }}
-          WORKFLOWS: ci-server,ci-gateway,ci-sandbox,ci-web,ci-docs
+          WORKFLOWS: ci-server,ci-gateway,ci-sandbox,ci-web,ci-docs,ci-agent-e2e
         run: ./.github/scripts/wait-workflows.sh

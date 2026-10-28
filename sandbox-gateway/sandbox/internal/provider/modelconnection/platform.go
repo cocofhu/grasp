@@ -64,16 +64,7 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 	}
 	// Preserve managed MCP servers and instruction paths, never provider/model
 	// definitions, account tokens, plugins, or other credential routing settings.
-	if data, readErr := os.ReadFile(filepath.Join(root, "opencode.json")); readErr == nil {
-		var existing map[string]json.RawMessage
-		if json.Unmarshal(data, &existing) == nil {
-			for _, key := range []string{"mcp", "instructions"} {
-				if value, ok := existing[key]; ok {
-					config[key] = value
-				}
-			}
-		}
-	}
+	preserveOpenCodeManagedConfig(config, root)
 	data, err := json.Marshal(config)
 	if err != nil {
 		p.Cleanup()

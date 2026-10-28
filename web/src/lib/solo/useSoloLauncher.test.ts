@@ -184,7 +184,7 @@ describe('useSoloLauncher', () => {
     const launcher = mountLauncher()
     await launcher.load()
     await flushPromises()
-    expect(launcher.modelChoices.value).toEqual([{ id: '', name: 'Cursor daily', hint: '交给编码工具选择', vendor: 'cursor', backend: true, unavailable: false }])
+    expect(launcher.modelChoices.value).toMatchObject([{ id: '', name: 'Cursor daily', hint: '交给编码工具选择', vendor: 'cursor', backend: true, unavailable: false }])
     await launcher.start('Let the tool choose')
     const body = mocks.createSoloSession.mock.calls.at(-1)?.[0]
     expect(body).toMatchObject({ agentName: 'Solo', text: 'Let the tool choose' })

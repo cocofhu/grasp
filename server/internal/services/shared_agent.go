@@ -126,6 +126,9 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 			return fmt.Errorf("%w: %v", ErrInvalidAgent, err)
 		}
 		cfg.AcpBackend = backend
+		if err := validateAdditionalModelConfigurations(cfg.ModelBinding, s.resolveModel, nil); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidAgent, err)
+		}
 	} else {
 		cfg.AcpBackend = ""
 	}

@@ -1,3 +1,4 @@
+import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
 /** Agent creation binds one saved model configuration and an explicit Git list. */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -47,6 +48,8 @@ export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentC
     if (defaults.status === 'fulfilled') sharedConfig.value = defaults.value
   }
   onMounted(loadOptions)
+  ensureModelCatalogEvents()
+  watch(modelCatalogRevision, loadOptions)
   watch(() => props.open, (open) => { if (open) { draft.value = freshDraft(); nameError.value = ''; createError.value = ''; creating.value = false; pendingAcp.value = null; showAcpConfirm.value = false; envHelpOpen.value = false; stepAnimKey.value++; void loadOptions(); void nextTick(() => document.getElementById('wiz-name-input')?.focus()) } })
   function onTemplateSelect(id: string) { draft.value.templateId = id; if (hasRoleTemplate(draft.value)) draft.value.description = '' }
   function close() { if (!creating.value) emit('close') }

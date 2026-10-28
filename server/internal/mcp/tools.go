@@ -25,6 +25,8 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		return h.runLiveUpdate(runID, token, args)
 	}
 	switch name {
+	case "get_history":
+		return h.getConversationHistory(runID, token, args)
 	case "upload_image_artifact":
 		aname := asString(args["name"])
 		content := asString(args["content"])

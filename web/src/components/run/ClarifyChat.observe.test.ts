@@ -209,7 +209,7 @@ describe('ClarifyChat takeover turns (re-review after Stop)', () => {
 describe('ClarifyChat takeover opening turn (turns[0].events = auto phase)', () => {
   beforeEach(() => sessionStorage.clear())
 
-  it('continues the auto-phase timeline with the existing thought / tool rows before the narration', () => {
+  it('continues the auto-phase shared timeline before the takeover narration', async () => {
     const wrapper = mountChat({
       reviewMode: true,
       turns: [{
@@ -226,7 +226,8 @@ describe('ClarifyChat takeover opening turn (turns[0].events = auto phase)', () 
     })
     const agentRows = wrapper.findAll('[data-turn-role="agent"]')
     expect(agentRows).toHaveLength(2)
-    expect(agentRows[0]!.find('[data-testid="clarify-thought"]').exists()).toBe(true)
+    await agentRows[0]!.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+    expect(agentRows[0]!.find('[data-testid="agent-timeline-thought"]').exists()).toBe(true)
     expect(agentRows[0]!.find('[data-testid="agent-tool-group"]').exists()).toBe(true)
     expect(agentRows[0]!.get('[data-testid="clarify-agent-message"]').text()).toContain('表单布局已调整一半')
     expect(agentRows[1]!.get('[data-testid="clarify-agent-message"]').text()).toContain('转为人工接管')

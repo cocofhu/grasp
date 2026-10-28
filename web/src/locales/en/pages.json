@@ -4574,6 +4574,20 @@
       "run_not_found": "Run not found",
       "node_not_found": "Node not found"
     },
+    "chatMessageInfo": {
+      "title": "Reply information",
+      "time": "Time",
+      "tool": "Coding tool",
+      "model": "Model",
+      "group": "Model group",
+      "effort": "Reasoning effort",
+      "duration": "Duration",
+      "notReported": "Not reported",
+      "unknownModel": "Unattributed tokens",
+      "sourceReported": "Provider reported",
+      "sourceAttribution": "Attributed to the execution model",
+      "sourceUnknown": "Model not reported"
+    },
     "solo": {
       "title": "Solo chats",
       "capacity": "{n} / {max} sandboxes running",
@@ -4607,15 +4621,14 @@
         "empty": "This Agent has no available model",
         "noMatch": "No matching model",
         "unavailable": "Unavailable",
+        "unavailableSelection": "The selected model or group is unavailable. Choose another model to continue.",
         "reset": "That model is no longer in the configuration. The primary model is selected again.",
-        "pending": "This reply still uses the previous model. The next message uses the new one.",
         "catalogFailed": "The model list did not load. The saved model stays selected.",
         "reasoningEffort": "Reasoning effort",
         "effortAuto": "Default",
         "effortReset": "Reset reasoning effort",
         "backToModels": "Back to models",
         "effortResetNotice": "The selected reasoning effort is unavailable. Restored the model default.",
-        "effortPending": "The current reply keeps its settings. New reasoning effort applies from the next message.",
         "effortLevels": {
           "off": "Off",
           "none": "None",

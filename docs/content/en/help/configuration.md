@@ -24,7 +24,21 @@ Image tags / digests, gateway, and sandbox-related variables are in `.env.exampl
 
 An Agent can bind multiple saved GitHub, GitLab or SSH credentials. All selected credentials are placed in the sandbox and matched by site or repository; equally specific scopes use the earlier selected credential. Optional scope settings distinguish accounts on the same platform. Credential selection is separate from the repositories to clone. A repository record keeps only its name, URL, branch and directory; it no longer stores an access method, credential bindings or environment variables. Workflow nodes use their selected Agent's bindings, and shared sandboxes clear the previous node's credentials before applying the next set. An empty list injects none of these default Git credentials. Upgrade removes historical repository and Solo snapshot permissions and environment variables without copying them onto any Agent; configure them again on the current Agent when a private repository or variable is still needed. Unavailable references stop execution without switching accounts.
 
-GitHub and GitLab credentials configure Host and Token together. Host defaults to the official service and supports self-hosted sites and ports; there is no separate GitLab URL credential. Agent defaults can select a named model and multiple Git authorizations. Each Agent independently opts into model or Git inheritance; turning a switch off uses its local selection, and unavailable defaults never fall back to another account or model. Selecting a model also determines its CLI.
+GitHub and GitLab credentials configure Host and Token together. Host defaults to the official service and supports self-hosted sites and ports; there is no separate GitLab URL credential. Agent defaults can select multiple model groups and Git authorizations. Each Agent independently opts into model or Git inheritance; turning a switch off uses its local selection, and unavailable defaults never fall back to another account or model.
+
+### Multiple model groups and conversation continuity
+
+Bind several groups, including groups for different coding tools, and choose an explicit default. Home, new Solo sessions and active Solo conversations offer primary and auxiliary models from every bound group. Identical models from different groups retain their group and tool labels. An unspecified choice and automated workflow execution use the default group's primary model.
+
+A session choice selects the group's tool, account and reasoning settings together. An active turn finishes with its original settings; the new choice applies before the next turn. Tool changes retain the current workspace and uncommitted changes, and hand early requirements, recent dialogue, attachment references and tool results to the new tool. Agents can retrieve older original messages through artifact-store `get_history`. Native sessions are not interchangeable between tools; continuity uses persisted task records and the current workspace.
+
+Successful group or binding saves refresh selectors in the current page and other tabs in the same browser. Other users see changes after refreshing. Valid selections stay selected; disabled, deleted or unbound choices require an explicit replacement. A temporary read failure is not treated as deletion. Different dedicated sandbox images or changed Git authorization require reopening the session.
+
+### Per-reply time and execution details
+
+Solo, workflows, Agent tests and PM share the same chat presentation. Hover a message to see its time. The reply information icon supports hover, keyboard focus and touch, showing the turn's Agent, coding tool, model, reasoning, duration and token usage. Input, output, caches and individual models remain separate, with upstream or estimated attribution preserved.
+
+Each reply keeps its execution snapshot; later model changes do not relabel old replies. Missing historical fields remain unavailable rather than being inferred from the current selection. An unfinished reply shows only information already received.
 
 ## Database and attachment lifecycle
 
