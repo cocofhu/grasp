@@ -8,7 +8,6 @@ import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import { theme } from '@/lib/shared/theme'
 import claudeLogo from '@/assets/provider-logos/claude.svg'
 import geminiLogo from '@/assets/provider-logos/gemini.svg'
-import opencodeLogo from '@/assets/provider-logos/opencode.svg'
 import CliModelSelect from './CliModelSelect.vue'
 
 const catalog: CliCatalogModel[] = [
@@ -318,7 +317,7 @@ const opencodeCatalog: CliCatalogModel[] = [
 ]
 
 describe('CliModelSelect OpenCode family marks', () => {
-  it('uses model family marks and the official OpenCode logo for an unfamiliar family', async () => {
+  it('uses model family marks and a letter for an unfamiliar OpenCode id', async () => {
     mocks.load.mockResolvedValue(opencodeCatalog)
     const previous = theme.value
     const w = await mountSelect({ variant: 'compact', modelValue: 'opencode/gemini-3.5-flash', backend: 'opencode' })
@@ -340,7 +339,9 @@ describe('CliModelSelect OpenCode family marks', () => {
       expect(gemini.querySelector('[data-vendor-mark="google"] img')!.classList.contains('invert')).toBe(false)
       expect(claude.querySelector('[data-vendor-mark="anthropic"] img')!.getAttribute('src')).toBe(claudeLogo)
       expect(claude.querySelector('[data-vendor-mark="anthropic"] img')!.getAttribute('src')).not.toBe(geminiLogo)
-      expect(providerFallback.querySelector('[data-vendor-mark="opencode"] img')!.getAttribute('src')).toBe(opencodeLogo)
+      const monogram = providerFallback.querySelector('[data-vendor-mark="monogram"]')!
+      expect(monogram.querySelector('img')).toBeNull()
+      expect(monogram.textContent?.trim()).toBe('O')
       expect(providerFallback.querySelector('[data-vendor-mark="google"]')).toBeNull()
       expect(providerFallback.querySelector('[data-vendor-mark="anthropic"]')).toBeNull()
       expect(q('[data-testid="cli-model-inline-detail"]')).toBeNull()
