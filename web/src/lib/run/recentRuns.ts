@@ -40,6 +40,17 @@ export function isObservableNode(n: RunCurrentNode | null | undefined): boolean 
  * breath dot, and anyone waiting (approval included) is the person-hold mark.
  */
 export function recentRunMark(run: RecentRun): RecentRunMark | null {
+  const raw = run.currentNode
+  if (
+    raw &&
+    raw.id &&
+    raw.kind === 'agent' &&
+    raw.mode === 'auto' &&
+    raw.state === 'entering' &&
+    (run.status === 'running' || run.status === 'waiting_human')
+  ) {
+    return { icon: { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' } }
+  }
   const n = recentCurrentNode(run)
   if (!n) return null
   if (n.state === 'stopping' || (n.state === 'running' && n.kind === 'clarify')) {

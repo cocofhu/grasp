@@ -1053,6 +1053,8 @@ export type RunNodeMode = 'auto' | 'manual'
  * kind priority on the server:
  * takeover > gate > clarify > review > agent. mode is auto only for kind=agent.
  * state busy = a manual session turn is running (offer Stop).
+ * state entering = a confirm already settled on this automatic agent, and its
+ * visit has not started. The sidebar counts it; the live page does not.
  */
 export interface RunCurrentNode {
   id: string
@@ -1060,7 +1062,7 @@ export interface RunCurrentNode {
   iteration: number
   kind: 'agent' | 'gate' | 'clarify' | 'review' | 'takeover'
   mode: RunNodeMode
-  state: 'running' | 'stopping' | 'waiting_human' | 'busy'
+  state: 'running' | 'stopping' | 'waiting_human' | 'busy' | 'entering'
   /**
    * Agent node's task preview (interpolated prompt, secrets as •••, trimmed,
    * ≤280 chars + 「…」). Omitted when empty or not an Agent node.

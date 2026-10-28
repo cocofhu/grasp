@@ -103,6 +103,9 @@ func (e *Engine) startNodeRun(c *execCtx, node *models.Node) {
 		VarsBefore: before, ArtifactBaseRev: base, ArtifactBaseSet: true,
 	}), c.run.ID, "startNodeRun")
 	e.touchActivity(c.run.ID, true)
+	// The list can see this visit now. Drop the confirm-time successor mark
+	// so a later human visit of the node we left is not reported as automatic.
+	e.clearPendingAuto(c)
 }
 
 // execCtx is the in-memory execution context, rebuildable from the DB so a
