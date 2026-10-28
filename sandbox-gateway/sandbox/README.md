@@ -31,6 +31,17 @@ Grasp 的逻辑——`startup.sh` 等脚本、`backend`、`preview-inject` 和 `
 改动它们必须同时给 `IMAGE_LEVEL` 加 1。什么时候需要重建镜像：只有系统软件、Agent CLI、工具链、code-server、sshd 或 `grasp-bootstrap.sh` 变了才需要；
 其余逻辑改动发服务端即可。
 
+### OpenCode 官方模型目录
+
+使用 OpenCode 官方授权时，运行时会在启动或重建后端会话时同步模型目录并校验所选模型；沙箱和 worktree 共用此入口。
+同步使用原生 `opencode models <provider> --refresh`，与终端共享 OpenCode 的 XDG 缓存；启动阶段的重复握手可复用原生五分钟有效缓存。
+普通聊天回合不执行此预检，Grasp 不会在聊天中按五分钟计时触发刷新。短暂更新失败时，已有可用模型的旧缓存仍可继续使用；没有可用缓存时返回明确的更新失败提示。
+模型已弃用或不存在时要求重新选择模型，不自动替换到其它模型或账号；服务端模型列表也会过滤已弃用及默认未启用的 alpha 模型。
+这属于运行时逻辑，更新服务端下发的运行时包即可，不需要重建沙箱镜像。
+
+OpenCode 官方将 `--refresh` 用于更新缓存目录，并建议用 `opencode models` 核对完整的 `provider/model` ID：
+参见 [CLI 文档](https://dev.opencode.ai/docs/cli#models) 与 [模型不可用排障](https://dev.opencode.ai/docs/troubleshooting/#model-not-available)。
+
 ### 共享运行沙箱：`reprime.sh`
 
 在工作流编辑页的「工作流默认配置」中打开「共享沙箱」（`defaults.sandbox.mode = shared`，默认关闭），保存后新启动的运行复用同一个沙箱；无需额外的平台开关。
