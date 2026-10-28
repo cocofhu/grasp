@@ -223,11 +223,19 @@ type Run struct {
 	// conditional UPDATE on it guarantees exactly-once delivery.
 	FirstMessage            *CompositeText `gorm:"serializer:json" json:"-"`
 	FirstMessageDeliveredAt *time.Time     `json:"-"`
-	Attempt                 int            `json:"attempt"`
-	Progress                float64        `json:"progress"`
-	Branch                  string         `json:"branch,omitempty"`
-	Title                   string         `json:"title,omitempty"`
-	Trace                   []TraceEntry   `gorm:"serializer:json" json:"trace"`
+	// Launch* is the home composer's model choice for this run. It is copied
+	// only onto the first clarify visit that does not yet have a human turn.
+	// Empty LaunchModelID with LaunchModelSet means that Agent's primary model.
+	// These fields are not the workflow definition and not an Agent binding.
+	LaunchModelSet        bool         `json:"-"`
+	LaunchConfigurationID string       `json:"-"`
+	LaunchModelID         string       `json:"-"`
+	LaunchReasoningEffort string       `json:"-"`
+	Attempt               int          `json:"attempt"`
+	Progress              float64      `json:"progress"`
+	Branch                string       `json:"branch,omitempty"`
+	Title                 string       `json:"title,omitempty"`
+	Trace                 []TraceEntry `gorm:"serializer:json" json:"trace"`
 	// Checkpoints holds variable snapshots keyed by checkpoint node id, used
 	// to restore state on rollback.
 	Checkpoints map[string]map[string]any `gorm:"serializer:json" json:"-"`

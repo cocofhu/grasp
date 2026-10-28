@@ -93,6 +93,17 @@ describe('runsClient request coverage', () => {
       title: '已发布',
       firstMessage: { text: '开工', images: [] },
     })
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).not.toHaveProperty('launchModelId')
+
+    await runsClient.startRun('wf-home', {}, 'manual', 'normal', [], {
+      publishedSnapshot: true,
+      launchModel: { configurationId: 'group', modelId: '', reasoningEffort: 'high' },
+    })
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).toMatchObject({
+      launchConfigurationId: 'group',
+      launchModelId: '',
+      launchReasoningEffort: 'high',
+    })
 
     await runsClient.updateRunPriority('r1', 'high')
     await runsClient.updateRunTitle('r1', '短名字')
