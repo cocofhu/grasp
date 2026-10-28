@@ -144,21 +144,29 @@ const workBlocks = computed(() => {
 
 /** null follows expand-all; a click pins this reply for the rest of the page. */
 const manualOpen = ref<boolean | null>(null)
+// Finished thoughts fold independently from the outer process and live steps.
+const processThoughtOpen = ref<Record<number, boolean>>({})
 // A renderer can be reused for another turn. Auto-open live work must never
 // leave the next completed reply expanded; clicks on a settled reply stay pinned.
 watch(() => props.streaming, () => {
   manualOpen.value = null
   thoughtOpen.value = {}
+  processThoughtOpen.value = {}
 })
 watch(
   () => props.expanded,
   () => {
     manualOpen.value = null
+    processThoughtOpen.value = {}
   },
 )
 const processOpen = computed(() => (manualOpen.value === null ? props.expanded : manualOpen.value))
 function toggleProcess() {
   manualOpen.value = !processOpen.value
+}
+const isProcessThoughtOpen = (index: number) => processThoughtOpen.value[index] ?? props.expanded
+function toggleProcessThought(index: number) {
+  processThoughtOpen.value[index] = !isProcessThoughtOpen(index)
 }
 
 const liveBlocks = ref<string[]>([])
@@ -249,9 +257,20 @@ function onToggle(index: number, last: boolean, e: Event) {
       <div v-if="processOpen && workBlocks.length" :id="workId" class="agent-elapsed-work" data-testid="agent-timeline-work">
         <template v-for="b in workBlocks" :key="b.key">
           <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :expanded="expanded" :run-id="runId" />
-          <div v-else-if="b.kind === 'thought'" class="agent-elapsed-thought break-words [overflow-wrap:anywhere]" data-testid="agent-timeline-thought">
-            <p v-for="(para, pi) in thoughtParagraphs(b.text)" :key="pi">{{ para }}</p>
-          </div>
+          <details
+            v-else-if="b.kind === 'thought'"
+            class="agent-thought chat-meta w-full min-w-0"
+            data-testid="agent-timeline-thought"
+            :open="isProcessThoughtOpen(b.index)"
+          >
+            <summary class="agent-thought-summary" @click.prevent="toggleProcessThought(b.index)">
+              <ThoughtSummaryStatus />
+              <Icon name="chevron-down" :size="12" class="agent-thought-chevron" aria-hidden="true" />
+            </summary>
+            <div class="agent-thought-body break-words [overflow-wrap:anywhere]">
+              <p v-for="(para, pi) in thoughtParagraphs(b.text)" :key="pi">{{ para }}</p>
+            </div>
+          </details>
           <div v-else class="chat-prose md agent-elapsed-note min-w-0" :data-testid="messageTestId">
             <span v-html="renderChatMarkdown(b.text)" />
           </div>
@@ -335,15 +354,6 @@ function onToggle(index: number, last: boolean, e: Event) {
 .agent-elapsed-work { margin: 14px 0 2px; }
 .agent-live-message { margin: 0 0 2px; }
 .agent-live-message:last-child { margin-bottom: 0; }
-.agent-elapsed-thought {
-  margin: 0 0 2px;
-  color: rgb(var(--c-txt3));
-  font-size: 12.5px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-.agent-elapsed-thought p { margin: 0 0 8px; }
-.agent-elapsed-thought p:last-child { margin-bottom: 0; }
 .agent-elapsed-note { margin-bottom: 2px; }
 .agent-elapsed-rule {
   height: 1px;

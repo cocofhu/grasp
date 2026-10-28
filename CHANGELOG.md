@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Chat process folding:** opening a finished reply's elapsed-time row now keeps each thought in its own collapsed “思考过程” row alongside tool groups. Thoughts expand independently, and “expand all” still opens them together.
+
 - **Solo chat display:** an empty running chat opens directly to the composer. Model and reasoning changes apply from the next message without an informational banner. Completed thought/tool details collapse at the end of a turn and can be opened again, while the final reply remains visible.
 
 - **Shared chat details and theme-aware logos:** Solo, workflow, Agent test and PM replies use the same timeline, time hint and information popup. Each new reply keeps its actual Agent, coding tool, model, reasoning and per-turn token/duration snapshot; later selections do not relabel old replies. Missing historical fields remain unavailable. Colored model logos no longer receive a forced white background in dark mode.

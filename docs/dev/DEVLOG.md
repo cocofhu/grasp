@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-28（Chat 展开过程后仍按段折叠思考）
+
+- 日期：2026-10-28（Asia/Hong_Kong）
+- 范围：`web/src/components/run/AgentTimeline.vue`、`web/src/components/run/{AgentTimeline,ClarifyChat,collapsedReplySpacing}.test.ts`、`web/TimelineHarness.vue`、`web/e2e/{agent-tool-timeline,chat-message-info}.spec.ts`、`CHANGELOG.md`。
+- 做了什么：展开已结束回复的「用时」后，每段思考改为默认收起的「思考过程」行，复用现有思考折叠样式；各段独立展开，外层收起再打开保留选择，「全部展开」切换会重新同步。完成后的展开状态与流式状态分开，开始下一条流式回复时清除旧选择，最终回复继续显示在过程外。保留最新共享消息元数据、紧凑间距与长 URL 换行；移除不再使用的平铺思考样式及对应断言，并同步现有布局测量页的选择器。
+- 为什么：外层过程展开后，思考全文直接铺开会与工具摘要挤在一起，长聊天难以浏览；需要保留逐段查看的层次。
+- 如何验证：基于最新主分支，Web 全量 535 个文件、5,694 项测试通过，Lines 91.71%；回归覆盖默认收起、逐段切换、外层重开、新旧传输数据的流式切换、全部展开和长文本完整保留。完整关键浏览器套件初跑 255 项通过，剩余 1 条旧平铺断言调整为逐段折叠后，两个相关 spec 共 7 项复验通过，覆盖 Solo/工作流、明暗主题、点击、Enter/Space、390px 窄屏及工具/产物交互，并核对截图。ESLint 0 errors（12 个既有 warnings）、Vue 类型检查、生产构建、Secure Context/品牌断言、actionlint、error-level shellcheck、docs 构建及官方源高/严重漏洞审计通过。
+
 ### 2026-10-28（OpenCode 思考输出与 PR 验证修复）
 
 - 日期：2026-10-28（Asia/Shanghai）。

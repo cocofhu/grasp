@@ -85,7 +85,6 @@ describe('collapsed reply spacing', () => {
   it('renders thought as 12.5px / 1.45 paragraphs with an 8px gap', () => {
     for (const [css, selector] of [
       [style, '\\.agent-thought-body'],
-      [style, '\\.agent-elapsed-thought'],
       [chat, '\\.chat-thought-body'],
     ] as const) {
       const body = block(css, selector)
@@ -97,7 +96,6 @@ describe('collapsed reply spacing', () => {
       expect(css).toMatch(new RegExp(`${selector} p\\s*\\{[^}]*margin:\\s*0 0 8px`))
     }
     expect(timeline).not.toMatch(/agent-thought-body whitespace-pre-wrap/)
-    expect(timeline).not.toMatch(/agent-elapsed-thought whitespace-pre-wrap/)
     expect(timeline).toContain('thoughtParagraphs(')
   })
 
@@ -137,9 +135,6 @@ describe('collapsed reply spacing', () => {
     expect(style).toContain('.agent-live-message { margin: 0 0 2px;')
     expect(style).toContain('.agent-live-message:last-child { margin-bottom: 0; }')
 
-    const elapsedThought = block(style, '\\.agent-elapsed-thought')
-    expect(elapsedThought).toContain('margin: 0 0 2px')
-    expect(elapsedThought).not.toContain('8px')
     expect(style).toContain('.agent-elapsed-note { margin-bottom: 2px; }')
     expect(style).not.toContain('margin-bottom: 8px;')
     expect(style).not.toContain('margin-bottom: 4px;')

@@ -46,7 +46,10 @@ describe('AgentTimeline', () => {
     expect(msgs.map((m) => m.text())).toEqual(['first bold', 'second'])
     expect(w.find('[data-testid="stream-md"]').exists()).toBe(false)
     expect(w.text()).not.toContain('已完成')
-    expect(w.text()).not.toContain('思考过程')
+    const thought = work.get('[data-testid="agent-timeline-thought"]')
+    expect(thought.element.tagName).toBe('DETAILS')
+    expect((thought.element as HTMLDetailsElement).open).toBe(false)
+    expect(thought.get('summary').text()).toBe('思考过程')
   })
 
   it('streams only the last message and keeps the caret on it', () => {
@@ -116,6 +119,8 @@ describe('AgentTimeline', () => {
     expect(w.get('[data-testid="agent-timeline-message"]').text()).toBe('Final answer')
     await fold().trigger('click')
     expect(w.get('[data-testid="agent-timeline-work"]').text()).toContain('Recorded thought')
+    await w.get('[data-testid="agent-timeline-thought"] summary').trigger('click')
+    expect((w.get('[data-testid="agent-timeline-thought"]').element as HTMLDetailsElement).open).toBe(true)
     await w.setProps({ streaming: true, completed: false })
     expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
     await w.setProps({ streaming: false, completed: true })
@@ -123,6 +128,7 @@ describe('AgentTimeline', () => {
     expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
     expect(w.get('[data-testid="agent-timeline-message"]').text()).toBe('Final answer')
     await fold().trigger('click')
+    expect((w.get('[data-testid="agent-timeline-thought"]').element as HTMLDetailsElement).open).toBe(false)
     await w.setProps({ metadata: { durationMs: 500 } })
     expect(fold().attributes('aria-expanded')).toBe('true')
     await fold().trigger('click')
@@ -146,7 +152,8 @@ describe('AgentTimeline', () => {
       ],
     })
     await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
-    const thought = w.get('[data-testid="agent-timeline-thought"]')
+    await w.get('[data-testid="agent-timeline-thought"] summary').trigger('click')
+    const thought = w.get('[data-testid="agent-timeline-thought"] .agent-thought-body')
     expect(thought.text()).toBe(longThought)
     expect(thought.text()).not.toContain('…(truncated)')
     expect(thought.text()).not.toContain('...(truncated)')
@@ -337,6 +344,47 @@ describe('AgentTimeline', () => {
     const w = mountTimeline({ expanded: true, startedAt, endedAt })
     expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(true)
     expect(w.get('[data-testid="agent-timeline-elapsed"]').attributes('aria-expanded')).toBe('true')
+  })
+
+  it('folds finished thoughts separately from live choices and remembers each nested toggle', async () => {
+    const steps: AgentPart[] = [
+      { kind: 'thought', text: 'first thought' },
+      { kind: 'tool', title: 'Read', status: 'completed' },
+      { kind: 'thought', text: 'second thought' },
+    ]
+    const w = mountTimeline({ streaming: true, parts: steps })
+    // Pin an earlier live thought open before finishing the reply.
+    const live = w.findAll('[data-testid="agent-timeline-thought"]')[0]!
+    ;(live.element as HTMLDetailsElement).open = true
+    await live.trigger('toggle')
+    await w.setProps({ streaming: false, completed: true, parts: [...steps, { kind: 'message', text: 'final reply' }] })
+    const elapsed = w.get('[data-testid="agent-timeline-elapsed"]')
+    await elapsed.trigger('click')
+    const thoughts = () => w.findAll('[data-testid="agent-timeline-thought"]')
+    const openStates = () => thoughts().map((row) => (row.element as HTMLDetailsElement).open)
+    expect(openStates()).toEqual([false, false])
+    await thoughts()[0]!.get('summary').trigger('click')
+    expect(openStates()).toEqual([true, false])
+    await thoughts()[1]!.get('summary').trigger('click')
+    expect(openStates()).toEqual([true, true])
+    await thoughts()[0]!.get('summary').trigger('click')
+    expect(openStates()).toEqual([false, true])
+    await elapsed.trigger('click')
+    await elapsed.trigger('click')
+    expect(openStates()).toEqual([false, true])
+    expect(w.get('[data-testid="agent-timeline-message"]').text()).toBe('final reply')
+  })
+
+  it('resets nested thought choices when expand-all changes', async () => {
+    const w = mountTimeline({ expanded: true })
+    const thought = () => w.get('[data-testid="agent-timeline-thought"]')
+    expect((thought().element as HTMLDetailsElement).open).toBe(true)
+    await thought().get('summary').trigger('click')
+    expect((thought().element as HTMLDetailsElement).open).toBe(false)
+    await w.setProps({ expanded: false })
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
+    await w.setProps({ expanded: true })
+    expect((thought().element as HTMLDetailsElement).open).toBe(true)
   })
 
   // Root cause of "streaming looks finished": earlier thoughts were marked 已完成
