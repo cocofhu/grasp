@@ -166,6 +166,199 @@ describe('useGateApproval actions', () => {
     vi.restoreAllMocks()
   })
 
+  it('keeps queued requests separate from the active response and retains completed turns', async () => {
+    const { approval, app } = withApproval()
+    await flushPromises()
+    approval.reactText.value = 'request A'
+    await approval.sendReactRevise()
+    approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: { id: 'A', text: 'request A' } })
+    approval.applyAcpEvents([{ kind: 'message', text: 'response A' }])
+    approval.reactText.value = 'request B'
+    await approval.sendReactRevise()
+    expect(approval.reactLiveHumanText.value).toBe('request A')
+    expect(approval.reactTurns.value.map(turn => [turn.text, turn.streamText, turn.status])).toEqual([
+      ['request A', 'response A', 'active'], ['request B', '', 'pending'],
+    ])
+    approval.applyReviewFrame({ event: 'turn_done', nodeId: 'producer' })
+    approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: { id: 'B', text: 'request B' } })
+    approval.applyAcpEvents([{ kind: 'message', text: 'response B' }])
+    expect(approval.reactTurns.value.map(turn => [turn.text, turn.streamText])).toEqual([
+      ['request A', 'response A'], ['request B', 'response B'],
+    ])
+    app.unmount()
+  })
+
+  it('adopts repeated request text as distinct server turns', async () => {
+    const { approval, app } = withApproval()
+    await flushPromises()
+    approval.reactText.value = 'again'
+    await approval.sendReactRevise()
+    approval.reactText.value = 'again'
+    await approval.sendReactRevise()
+    approval.applyReviewFrame({ event: 'queue_state', nodeId: 'producer', waiting: 2, busy: true,
+      items: [{ id: 'one', text: 'again' }, { id: 'two', text: 'again' }],
+    })
+    approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: { id: 'one', text: 'again' } })
+    approval.applyAcpEvents([{ kind: 'message', text: 'first response' }])
+    approval.applyReviewFrame({ event: 'turn_done', nodeId: 'producer' })
+    approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: { id: 'two', text: 'again' } })
+    expect(approval.reactTurns.value.map(turn => [turn.id, turn.status])).toEqual([
+      ['one', 'settled'], ['two', 'active'],
+    ])
+    expect(approval.reactTurns.value[0]?.streamText).toBe('first response')
+    app.unmount()
+  })
+
+  it('keeps an image-only accepted request through idle and removes rejected or cancelled waiters', async () => {
+    const { approval, app } = withApproval()
+    await flushPromises()
+    const image = { data: 'image-data', mimeType: 'image/png' }
+    approval.reactImages.value = [image]
+    await approval.sendReactRevise()
+    approval.applyReviewFrame({ event: 'queue_state', nodeId: 'producer', busy: false, waiting: 0, items: [] })
+    expect(approval.reactTurns.value).toHaveLength(1)
+    expect(approval.reactTurns.value[0]?.images).toEqual([image])
+    approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: { id: 'image', text: '', images: [{ data: 'blob:stored-image', mimeType: 'image/png' }] } })
+    expect(approval.reactTurns.value).toHaveLength(1)
+    expect(approval.reactTurns.value[0]?.images[0]?.data).toBe('image-data')
+    approval.applyAcpEvents([{ kind: 'message', text: 'image response' }])
+    approval.reactText.value = 'rejected'
+    mocks.gateReactRevise.mockRejectedValueOnce(new Error('rejected'))
+    await approval.sendReactRevise()
+    expect(approval.reactTurns.value.map(turn => turn.text)).toEqual([''])
+    approval.reactText.value = 'cancelled'
+    await approval.sendReactRevise()
+    await approval.cancelReactQueuedItem(approval.reactQueued.value.length - 1)
+    expect(approval.reactTurns.value.map(turn => turn.text)).toEqual([''])
+    expect(approval.reactTurns.value[0]?.streamText).toBe('image response')
+    approval.reactText.value = 'also cancelled'
+    await approval.sendReactRevise()
+    await approval.cancelReactRevise()
+    expect(approval.reactTurns.value).toHaveLength(1)
+    expect(approval.reactTurns.value[0]?.interrupted).toBe(true)
+    app.unmount()
+  })
+
+  it('rolls back only the rejected image-only request and stops a failed history placeholder', async () => {
+    const { approval, app } = withApproval({ run: pageGateRun() })
+    await flushPromises()
+    const rejectedImage = { data: 'rejected-image', mimeType: 'image/png' }
+    approval.reactImages.value = [rejectedImage]
+    mocks.gateReactRevise.mockRejectedValueOnce(new Error('no session'))
+    await approval.sendReactRevise()
+    expect(approval.reactTurns.value).toEqual([])
+    expect(approval.reactQueued.value).toEqual([])
+    expect(approval.reactThinking.value).toBe(false)
+    approval.feedbackChatRef.value = { flush: vi.fn().mockResolvedValue(false), send: vi.fn(), reload: vi.fn(), clearDraft: vi.fn() }
+    approval.reactText.value = 'history failed'
+    await approval.sendHotReject()
+    expect(approval.reactTurns.value).toEqual([])
+    expect(approval.reactThinking.value).toBe(false)
+    app.unmount()
+  })
+
+  it('matches restored preview requests to saved issues once without consuming a new local repeat', async () => {
+    const { approval, app } = withApproval({ run: pageGateRun() })
+    await flushPromises()
+    approval.previewIssues.value = [{ id: 'saved', body: 'same', images: [], status: 'open' } as never]
+    approval.applyReviewFrame({ event: 'queue_state', nodeId: 'producer', busy: true, waiting: 1,
+      activeItem: { id: 'active', text: 'same' }, items: [{ id: 'queued', text: 'same' }],
+    })
+    expect(approval.reactTurns.value.filter(turn => turn.historySynced)).toHaveLength(1)
+    approval.reactText.value = 'same'
+    await approval.sendReactRevise()
+    expect(approval.reactTurns.value.at(-1)?.historySynced).toBe(false)
+    app.unmount()
+  })
+
+  it('keeps immutable payloads and rolls back the matching repeated image request', async () => {
+    const { approval, app } = withApproval()
+    await flushPromises()
+    approval.reactText.value = 'same'
+    approval.reactImages.value = [{ data: 'one', mimeType: 'image/png' }]
+    await approval.sendReactRevise()
+    approval.reactImages.value = [{ data: 'two', mimeType: 'image/png' }]
+    approval.reactText.value = 'same'
+    mocks.gateReactRevise.mockRejectedValueOnce(new Error('second failed'))
+    await approval.sendReactRevise()
+    approval.reactImages.value[0]!.data = 'changed after rejection'
+    expect(approval.reactTurns.value).toHaveLength(1)
+    expect(approval.reactTurns.value[0]?.images[0]?.data).toBe('one')
+    expect(approval.reactQueued.value[0]?.images[0]?.data).toBe('one')
+    expect(mocks.gateReactRevise.mock.calls[1]?.[3][0]?.data).toBe('two')
+    app.unmount()
+  })
+
+  it('removes remotely cancelled acknowledged waiters while preserving active output', async () => {
+    const { approval, app } = withApproval()
+    await flushPromises()
+    approval.reactText.value = 'active'
+    await approval.sendReactRevise()
+    approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: { id: 'A', text: 'active' } })
+    approval.applyAcpEvents([{ kind: 'message', text: 'keep this response' }])
+    approval.reactText.value = 'cancelled remotely'
+    await approval.sendReactRevise()
+    approval.applyReviewFrame({ event: 'queue_state', nodeId: 'producer', busy: true, waiting: 1,
+      activeItem: { id: 'A', text: 'active' }, items: [{ id: 'B', text: 'cancelled remotely' }],
+    })
+    approval.applyReviewFrame({ event: 'queue_state', nodeId: 'producer', busy: false, waiting: 0, items: [] })
+    expect(approval.reactTurns.value.map(turn => turn.text)).toEqual(['active'])
+    expect(approval.reactTurns.value[0]?.streamText).toBe('keep this response')
+    expect(approval.reactTurns.value[0]?.thinking).toBe(false)
+    app.unmount()
+  })
+
+  it('matches reordered identical text by images and annotations and ignores replayed turn_begin', async () => {
+    const { approval, app } = withApproval()
+    await flushPromises()
+    const imageA = { data: 'one', mimeType: 'image/png' }
+    const imageB = { data: 'two', mimeType: 'image/png' }
+    approval.reactText.value = 'same'
+    approval.reactImages.value = [imageA]
+    approval.reactAnnotations.value = [{ jsonPath: '$.one' }]
+    await approval.sendReactRevise()
+    approval.reactText.value = 'same'
+    approval.reactImages.value = [imageB]
+    approval.reactAnnotations.value = [{ jsonPath: '$.two' }]
+    await approval.sendReactRevise()
+    approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: {
+      id: 'B', text: 'same', images: [imageB], annotations: [{ jsonPath: '$.two' }],
+    } })
+    approval.applyAcpEvents([{ kind: 'message', text: 'response for B' }])
+    approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: {
+      id: 'B', text: 'same', images: [imageB], annotations: [{ jsonPath: '$.two' }],
+    } })
+    expect(approval.reactStreamText.value).toBe('response for B')
+    expect(approval.reactTurns.value.map(turn => [turn.id, turn.images[0]?.data, turn.streamText])).toEqual([
+      [undefined, 'one', ''], ['B', 'two', 'response for B'],
+    ])
+    app.unmount()
+  })
+
+  it('removes a remotely deleted waiter while another turn runs, preserving unbound sends and pump snapshots', async () => {
+    const { approval, app } = withApproval()
+    await flushPromises()
+    approval.reactText.value = 'active'
+    await approval.sendReactRevise()
+    const activeItem = { id: 'A', text: 'active' }
+    approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: activeItem })
+    approval.applyAcpEvents([{ kind: 'message', text: 'active output' }])
+    approval.reactText.value = 'removed remotely'
+    await approval.sendReactRevise()
+    approval.applyReviewFrame({ event: 'queue_state', nodeId: 'producer', busy: true, waiting: 1,
+      activeItem, items: [{ id: 'B', text: 'removed remotely' }],
+    })
+    approval.reactText.value = 'unbound local'
+    await approval.sendReactRevise()
+    approval.applyReviewFrame({ event: 'queue_state', nodeId: 'producer', busy: true, waiting: 0, items: [] })
+    expect(approval.reactTurns.value.map(turn => turn.text)).toEqual(['active', 'removed remotely', 'unbound local'])
+    approval.applyReviewFrame({ event: 'queue_state', nodeId: 'producer', busy: true, waiting: 0, activeItem, items: [] })
+    expect(approval.reactTurns.value.map(turn => turn.text)).toEqual(['active', 'unbound local'])
+    expect(approval.reactTurns.value[0]?.streamText).toBe('active output')
+    expect(approval.reactTurns.value[0]?.thinking).toBe(true)
+    app.unmount()
+  })
+
   it('validates forms, confirms dirty products and emits normalized submissions', async () => {
     const { approval, app, emit, props } = withApproval()
     await flushPromises()

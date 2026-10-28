@@ -172,6 +172,334 @@ describe('useSoloChat', () => {
     expect(await pending).toBe(false)
     expect(chat.queued.value).toEqual([])
     expect(chat.actionError.value).toBe('排队已满')
+    expect(chat.turns.value.some((turn) => turn.text === 'hello')).toBe(false)
+    app.unmount()
+  })
+
+  it('shows an accepted message before turn_begin and keeps it when history is short', async () => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    mocks.sendSoloTurn.mockResolvedValue(undefined)
+    const pending = chat.send('你好')
+    expect(chat.turns.value.some((turn) => turn.role === 'user' && turn.text === '你好')).toBe(true)
+    expect(await pending).toBe(true)
+
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [] })
+    ws.emit({
+      type: 'session',
+      event: 'turn_begin',
+      item: { id: 'srv', text: '你好', images: [] },
+      userMsgId: 'srv',
+    })
+    expect(chat.turns.value.filter((turn) => turn.role === 'user' && turn.text === '你好')).toHaveLength(1)
+
+    mocks.listSoloMessages.mockResolvedValue([])
+    ws.emit({ type: 'session', event: 'turn_done' })
+    await flushPromises()
+    expect(chat.turns.value.some((turn) => turn.role === 'user' && turn.text === '你好')).toBe(true)
+
+    mocks.listSoloMessages.mockResolvedValue([
+      { id: 'srv', sessionId: 's1', role: 'user', content: '你好', createdAt: '' },
+      { id: 'a1', sessionId: 's1', role: 'assistant', content: '收到', status: 'ok', createdAt: '' },
+    ])
+    ws.emit({ type: 'session', event: 'queue_state', busy: false, items: [] })
+    await flushPromises()
+    expect(chat.turns.value.filter((turn) => turn.role === 'user' && turn.text === '你好')).toHaveLength(1)
+    expect(chat.turns.value.some((turn) => turn.text === '收到')).toBe(true)
+    app.unmount()
+  })
+
+  async function openChat() {
+    const context = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    mocks.sendSoloTurn.mockResolvedValue({ waiting: 1 })
+    return { ...context, ws }
+  }
+
+  it('replaces a local queued item with its server acknowledgement once', async () => {
+    const { chat, app, ws } = await openChat()
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'active', text: 'first', images: [] } })
+    await chat.send('queued')
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [{ id: 'server-queued', text: 'queued', images: [] }] })
+    expect(chat.queued.value.map(row => row.id)).toEqual(['server-queued'])
+    expect(chat.session.value?.waiting).toBe(1)
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [{ id: 'server-queued', text: 'queued', images: [] }] })
+    expect(chat.queued.value.map(row => row.id)).toEqual(['server-queued'])
+    expect(chat.turns.value.filter(row => row.role === 'user' && row.text === 'queued')).toHaveLength(1)
+    app.unmount()
+  })
+
+  it('keeps repeated queued prompts and their replies separate before history returns', async () => {
+    const { chat, app, ws } = await openChat()
+    await chat.send('continue')
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'server-1', text: 'continue', images: [] } })
+    ws.emit(acp('first reply'))
+    await chat.send('continue')
+    ws.emit({ type: 'session', event: 'turn_done' })
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'server-2', text: 'continue', images: [] } })
+    ws.emit(acp('second reply'))
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.id)).toEqual(['u:server-1', 'u:server-2'])
+    expect(chat.turns.value.filter(row => row.role === 'agent').map(row => row.text)).toEqual(['first reply', 'second reply'])
+    // The first turn's HTTP history response may arrive while the next streams.
+    await flushPromises()
+    expect(chat.turns.value.filter(row => row.role === 'agent').map(row => row.text)).toEqual(['first reply', 'second reply'])
+    app.unmount()
+  })
+
+  it('adopts image-only sends and preserves their order through queue and opening frames', async () => {
+    const { chat, app, ws } = await openChat()
+    const first = [{ mimeType: 'image/png', data: 'first-image', name: 'first.png' }]
+    const second = [{ mimeType: 'image/png', data: 'second-image', name: 'second.png' }]
+    await chat.send('', first)
+    await chat.send('', second)
+    const item1 = { id: 'image-1', text: '', images: [{ mimeType: 'image/png', ref: 'blob:first', name: 'first.png' }] }
+    const item2 = { id: 'image-2', text: '', images: [{ mimeType: 'image/png', ref: 'blob:second', name: 'second.png' }] }
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [item1, item2] })
+    ws.emit({ type: 'session', event: 'turn_begin', item: item1 })
+    ws.emit(acp('first image reply'))
+    ws.emit({ type: 'session', event: 'turn_done' })
+    ws.emit({ type: 'session', event: 'turn_begin', item: item2 })
+    ws.emit(acp('second image reply'))
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.id)).toEqual(['u:image-1', 'u:image-2'])
+    expect(chat.turns.value.filter(row => row.role === 'agent').map(row => row.text)).toEqual(['first image reply', 'second image reply'])
+    expect(chat.queued.value).toEqual([])
+    app.unmount()
+  })
+
+  it('keeps pending transcript rows in send order when an earlier turn settles', async () => {
+    const { chat, app, ws } = await openChat()
+    await chat.send('one')
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'server-one', text: 'one', images: [] } })
+    ws.emit(acp('first answer'))
+    await chat.send('two')
+    await chat.send('three')
+    mocks.listSoloMessages.mockResolvedValue([
+      { id: 'server-one', sessionId: 's1', role: 'user', content: 'one', createdAt: '' },
+      { id: 'answer-one', sessionId: 's1', role: 'assistant', content: 'first answer', createdAt: '' },
+    ])
+    ws.emit({ type: 'session', event: 'turn_done' })
+    await flushPromises()
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.text)).toEqual(['one', 'two', 'three'])
+    app.unmount()
+  })
+
+  it.each(['cancel', 'remove'] as const)('cleans pending transcript rows after queue %s', async action => {
+    const { chat, app, ws } = await openChat()
+    mocks.removeSoloQueued.mockResolvedValue({ ok: true })
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'active', text: 'first', images: [] } })
+    ws.emit(acp('first partial reply'))
+    await chat.send('do not execute')
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'server-queued', text: 'do not execute', images: [] }] })
+    if (action === 'cancel') await chat.cancel()
+    else await chat.removeQueued('server-queued')
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [] })
+    ws.emit({ type: 'session', event: 'turn_done', interrupted: action === 'cancel' })
+    ws.emit({ type: 'session', event: 'queue_state', busy: false, items: [] })
+    await flushPromises()
+    expect(chat.turns.value.some(row => row.text === 'do not execute')).toBe(false)
+    expect(chat.queued.value).toEqual([])
+    app.unmount()
+  })
+
+  it('keeps accepted rows when the HTTP send fails after socket acknowledgement', async () => {
+    const { chat, app, ws } = await openChat()
+    let reject!: (error: Error) => void
+    mocks.sendSoloTurn.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
+    const pending = chat.send('accepted')
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'confirmed', text: 'accepted', images: [] } })
+    ws.emit(acp('reply'))
+    reject(new Error('connection lost after acceptance'))
+    expect(await pending).toBe(true)
+    expect(chat.turns.value.map(row => row.id)).toEqual(['u:confirmed', 'live:confirmed'])
+    expect(chat.turns.value[1]?.text).toBe('reply')
+    expect(chat.actionError.value).toBe('')
+    app.unmount()
+  })
+
+  it.each([false, true])('ignores a pending send after navigating away and back (failure: %s)', async fails => {
+    const { chat, app, id } = await openChat()
+    let resolve!: (value: { waiting: number }) => void
+    let reject!: (error: Error) => void
+    mocks.sendSoloTurn.mockImplementationOnce(() => new Promise((done, fail) => { resolve = done; reject = fail }))
+    const pending = chat.send('old draft')
+    mocks.getSoloSession.mockResolvedValueOnce(session({ id: 's2' })).mockResolvedValue(session())
+    id.value = 's2'
+    await flushPromises()
+    id.value = 's1'
+    await flushPromises()
+    if (fails) reject(new Error('old request failed'))
+    else resolve({ waiting: 1 })
+    expect(await pending).toBe(false)
+    expect(chat.turns.value).toEqual([])
+    expect(chat.queued.value).toEqual([])
+    expect(chat.actionError.value).toBe('')
+    app.unmount()
+  })
+
+  it.each([false, true])('cleans a remotely removed acknowledged queue item (idle: %s)', async idle => {
+    const { chat, app, ws } = await openChat()
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'active', text: 'first', images: [] } })
+    await chat.send('removed elsewhere')
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'remote-removed', text: 'removed elsewhere', images: [] }] })
+    ws.emit({ type: 'session', event: 'queue_state', busy: !idle, userMsgId: idle ? '' : 'active', items: [] })
+    await flushPromises()
+    expect(chat.turns.value.some(row => row.text === 'removed elsewhere')).toBe(false)
+    expect(chat.queued.value).toEqual([])
+    app.unmount()
+  })
+
+  it('reconciles a completed queued turn when its opening and terminal frames were missed', async () => {
+    const { chat, app, ws } = await openChat()
+    await chat.send('completed while disconnected')
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [{ id: 'completed', text: 'completed while disconnected', images: [] }] })
+    mocks.listSoloMessages.mockResolvedValue([
+      { id: 'completed', sessionId: 's1', role: 'user', content: 'completed while disconnected', createdAt: '' },
+      { id: 'answer', sessionId: 's1', role: 'assistant', content: 'saved reply', createdAt: '' },
+    ])
+    ws.emit({ type: 'session', event: 'queue_state', busy: false, items: [] })
+    await flushPromises()
+    expect(chat.turns.value.map(row => row.id)).toEqual(['u:completed', 'a:answer'])
+    app.unmount()
+  })
+
+  it('keeps an active remote turn before local pending sends after a history refresh', async () => {
+    const { chat, app, ws } = await openChat()
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'remote-active', text: 'first', images: [] } })
+    ws.emit(acp('first partial reply'))
+    await chat.send('later')
+    ws.onclose?.()
+    await flushPromises()
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.text)).toEqual(['first', 'later'])
+    expect(chat.turns.value[1]?.text).toBe('first partial reply')
+    app.unmount()
+  })
+
+  it('preserves live tool output until persisted history contains it', async () => {
+    const { chat, app, ws } = await openChat()
+    await chat.send('run tool')
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'tools', text: 'run tool', images: [] } })
+    ws.emit(acp('reply'))
+    const tool = { op: 'event', data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: 'tool-1', title: 'Read', status: 'completed', rawOutput: 'important result' } } }
+    ws.emit({ type: 'acp', data: tool })
+    mocks.listSoloMessages.mockResolvedValue([
+      { id: 'tools', sessionId: 's1', role: 'user', content: 'run tool', createdAt: '' },
+      { id: 'answer', sessionId: 's1', role: 'assistant', content: 'reply', createdAt: '' },
+    ])
+    ws.emit({ type: 'session', event: 'turn_done' })
+    await flushPromises()
+    expect(chat.turns.value.filter(row => row.role === 'agent')).toHaveLength(1)
+    expect(chat.turns.value[1]?.tools[0]?.output).toBe('important result')
+    mocks.listSoloMessages.mockResolvedValue([
+      { id: 'tools', sessionId: 's1', role: 'user', content: 'run tool', createdAt: '' },
+      { id: 'answer', sessionId: 's1', role: 'assistant', content: 'reply', events: [acp('reply').data, tool], createdAt: '' },
+    ])
+    ws.emit({ type: 'session', event: 'queue_state', busy: false, items: [] })
+    await flushPromises()
+    expect(chat.turns.value.map(row => row.id)).toEqual(['u:tools', 'a:answer'])
+    expect(chat.turns.value[1]?.tools[0]?.output).toBe('important result')
+    app.unmount()
+  })
+
+  it('keeps already streamed output when cancel arrives before the opening frame', async () => {
+    const { chat, app, ws } = await openChat()
+    await chat.send('started without opening frame')
+    ws.emit(acp('partial reply'))
+    await chat.cancel()
+    ws.emit({ type: 'session', event: 'turn_done', interrupted: true })
+    await flushPromises()
+    expect(chat.turns.value.some(row => row.text === 'started without opening frame')).toBe(true)
+    expect(chat.turns.value.find(row => row.role === 'agent')?.text).toBe('partial reply')
+    app.unmount()
+  })
+
+  it('loads old message identities before accepting a same-text send', async () => {
+    let releaseHistory!: (messages: unknown[]) => void
+    mocks.listSoloMessages.mockImplementationOnce(() => new Promise(resolve => { releaseHistory = resolve }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    expect(chat.canSend.value).toBe(false)
+    expect(await chat.send('continue')).toBe(false)
+    expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+    releaseHistory([
+      { id: 'old-user', sessionId: 's1', role: 'user', content: 'continue', createdAt: '' },
+      { id: 'old-answer', sessionId: 's1', role: 'assistant', content: 'old reply', createdAt: '' },
+    ])
+    await flushPromises()
+    expect(chat.canSend.value).toBe(true)
+    await chat.send('continue')
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'new-user', text: 'continue', images: [] } })
+    ws.emit(acp('new reply'))
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.id)).toEqual(['u:old-user', 'u:new-user'])
+    expect(chat.turns.value.filter(row => row.role === 'agent').map(row => row.text)).toEqual(['old reply', 'new reply'])
+    app.unmount()
+  })
+
+  it('retries a failed initial history read before enabling the composer', async () => {
+    vi.useFakeTimers()
+    mocks.listSoloMessages.mockRejectedValueOnce(new Error('temporary history failure')).mockResolvedValue([])
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+    expect(chat.canSend.value).toBe(false)
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(chat.canSend.value).toBe(true)
+    expect(mocks.listSoloMessages).toHaveBeenCalledTimes(2)
+    app.unmount()
+    vi.useRealTimers()
+  })
+
+  it('adopts the active repeated prompt before its queued twin on a resume snapshot', async () => {
+    const { chat, app, ws } = await openChat()
+    await chat.send('continue')
+    await chat.send('continue')
+    ws.emit({
+      type: 'session', event: 'queue_state', busy: true,
+      activeItem: { id: 'active-same', text: 'continue', images: [] },
+      items: [{ id: 'queued-same', text: 'continue', images: [] }],
+    })
+    ws.emit(acp('first reply'))
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.id)).toEqual(['u:active-same', 'u:queued-same'])
+    expect(chat.turns.value[1]?.text).toBe('first reply')
+    expect(chat.queued.value.map(row => row.id)).toEqual(['queued-same'])
+    app.unmount()
+  })
+
+  it('restores an active item ahead of queued items when turn_begin is outside replay', async () => {
+    const { chat, app, ws } = await openChat()
+    ws.emit({
+      type: 'session', event: 'queue_state', busy: true,
+      activeItem: { id: 'active-resumed', text: 'first', images: [] },
+      items: [{ id: 'later', text: 'second', images: [] }],
+    })
+    ws.emit(acp('first reply'))
+    expect(chat.turns.value.map(row => row.id)).toEqual(['u:active-resumed', 'live:active-resumed'])
+    expect(chat.turns.value[1]?.text).toBe('first reply')
+    expect(chat.queued.value.map(row => row.id)).toEqual(['later'])
+    app.unmount()
+  })
+
+  it('adopts blob-in-data image acknowledgements without replacing the inline preview', async () => {
+    const { chat, app, ws } = await openChat()
+    const images = [{ mimeType: 'image/png', data: 'aW1hZ2UtYnl0ZXM=', name: 'preview.png' }]
+    await chat.send('', images)
+    const item = { id: 'blob-in-data', text: '', images: [{ mimeType: 'image/png', data: 'blob:waiting-asset', name: 'preview.png' }] }
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [item] })
+    expect(chat.queued.value.map(row => row.id)).toEqual(['blob-in-data'])
+    ws.emit({ type: 'session', event: 'turn_begin', item })
+    const users = chat.turns.value.filter(row => row.role === 'user')
+    expect(users).toHaveLength(1)
+    expect(users[0]?.id).toBe('u:blob-in-data')
+    expect(users[0]?.images).toEqual(images)
+    expect(chat.queued.value).toEqual([])
     app.unmount()
   })
 
