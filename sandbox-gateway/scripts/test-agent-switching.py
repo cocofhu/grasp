@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Real Grasp/API/runtime/MCP E2E with native CLIs and a free model server.
 
-Only Cursor/Trae use explicitly labelled proprietary-platform wire doubles.
+Cursor, Trae and Kimi Code use explicitly labelled platform wire doubles.
 Every other CLI is real. No vendor key is read, inherited or required.
 """
 import argparse
@@ -219,6 +219,22 @@ class E2E:
             return None
         return state, assistants[-1]
 
+    def resolved_effort(self, step):
+        # An empty session effort is stored as the last advertised level.
+        # OpenCode reads the provider catalog, which does not list the matrix
+        # auxiliary id, so that model keeps an empty effort.
+        effort = step.get('effort') or ''
+        if effort:
+            return effort
+        tool = next(tool for tool in self.tools if tool['id'] == step['backend'])
+        efforts = tool.get('efforts') or []
+        if not efforts:
+            return ''
+        model = step.get('model') or tool['model']
+        if tool['id'] == 'opencode' and model != tool['model']:
+            return ''
+        return efforts[-1]
+
     def run_matrix(self):
         names = [tool['id'] for tool in self.tools]
         walk = directed_walk(names)
@@ -248,8 +264,9 @@ class E2E:
             expected_model = step.get('model') or next(tool['model'] for tool in self.tools if tool['id'] == step['backend'])
             if execution.get('modelId') != expected_model or execution.get('agentName') != 'AgentMatrixE2E':
                 raise AssertionError('reply model or Agent snapshot is not the route that actually ran')
-            if execution.get('reasoningEffort', '') != step.get('effort', ''):
-                raise AssertionError('persisted reply reasoning does not match this turn')
+            expected_effort = self.resolved_effort(step)
+            if execution.get('reasoningEffort', '') != expected_effort:
+                raise AssertionError('persisted reply reasoning does not match this turn: got %r, expected %r' % (execution.get('reasoningEffort', ''), expected_effort))
             if index and not history_tool_completed(message):
                 raise AssertionError('native MCP history result did not pass through the runtime event parser')
             case = {'from': self.plan[index-1]['backend'] if index else None, 'to': step['backend'], 'kind': step['kind'], 'effort': step.get('effort'), 'model': step.get('model'), 'mode': next(tool['mode'] for tool in self.tools if tool['id'] == step['backend']), 'sessionId': session_id, 'sandboxId': sandbox_id, 'turn': step['id'], 'status': 'passed', 'execution': execution, 'usage': message.get('usage'), 'durationMs': message.get('durationMs')}
@@ -259,7 +276,6 @@ class E2E:
         if pairs != set(itertools.permutations(names, 2)):
             raise AssertionError('directed switch coverage is incomplete')
         report = self.request('/__mock/report', base=self.model)
-        defaults = {}
         for step in self.plan:
             observed = [request for request in report['requests'] if request.get('run') == self.run and request.get('turn') == step['id']]
             if not any(request.get('completed') for request in observed):
@@ -268,13 +284,9 @@ class E2E:
             if not any(request.get('model') == model and request.get('completed') for request in observed):
                 raise AssertionError('selected primary/auxiliary model did not reach the upstream API for '+step['id'])
             main_requests = [request for request in observed if request.get('availableTools') and not request.get('failure') and request.get('model') == model]
-            if step.get('effort') and (not main_requests or any(step['effort'] not in [(request.get('reasoning') or {}).get(key) for key in ['reasoning_effort', 'effort', 'output_effort']] for request in main_requests)):
-                raise AssertionError('reasoning strength did not reach every main model request for '+step['backend']+'/'+step['effort'])
-            actual = {json.dumps(request.get('reasoning') or {}, sort_keys=True) for request in main_requests}
-            if step['kind'] == 'switch' and step['backend'] not in defaults:
-                defaults[step['backend']] = actual
-            if step['kind'] == 'effort' and step['effort'] == '' and actual != defaults.get(step['backend']):
-                raise AssertionError('resetting effort did not restore the original CLI request default for '+step['backend'])
+            wired = step.get('effort') or (self.resolved_effort(step) if step['kind'] == 'effort' and step.get('effort') == '' else '')
+            if wired and (not main_requests or any(wired not in [(request.get('reasoning') or {}).get(key) for key in ['reasoning_effort', 'effort', 'output_effort']] for request in main_requests)):
+                raise AssertionError('reasoning strength did not reach every main model request for '+step['backend']+'/'+wired)
         self.check_efforts(session_id)
         persisted = [message for message in self.request('/api/solo/sessions/'+session_id+'/messages') if message['role'] == 'assistant']
         if len(persisted) != len(self.plan):
@@ -284,7 +296,7 @@ class E2E:
             if execution.get('backend') != step['backend'] or execution.get('configurationId') != self.groups[step['backend']]:
                 raise AssertionError('later selection changed an earlier reply execution snapshot')
             expected_model = step.get('model') or next(tool['model'] for tool in self.tools if tool['id'] == step['backend'])
-            if execution.get('modelId') != expected_model or execution.get('agentName') != 'AgentMatrixE2E' or execution.get('reasoningEffort', '') != step.get('effort', ''):
+            if execution.get('modelId') != expected_model or execution.get('agentName') != 'AgentMatrixE2E' or execution.get('reasoningEffort', '') != self.resolved_effort(step):
                 raise AssertionError('later selection relabelled an earlier reply model/Agent/effort')
 
     def check_efforts(self, session_id):
@@ -307,7 +319,7 @@ class E2E:
                     raise AssertionError('unsupported reasoning strength was silently accepted')
 
     def save_report(self, error=None):
-        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor/Trae require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
+        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
         (self.output/'report.json').write_text(json.dumps(report, indent=2))
         if error:
             # Test prompts, commands and credentials are synthetic. Keep the

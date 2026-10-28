@@ -43,6 +43,70 @@ test('同文连续澄清在 Inbox、Public 与 Embed 共享组件中各自保留
   }
 })
 
+test('并发回合结束后拒绝迟到队列，旧会话帧不会打断新会话的相同消息', async ({ page }) => {
+  await openHarness(page)
+  const chat = page.getByTestId('clarify-host-inbox')
+  const sameTextHumans = chat.getByTestId('clarify-human-message').filter({ hasText: '继续检查' })
+  await page.getByTestId('sim-concurrent-complete').click()
+  await expect(sameTextHumans).toHaveCount(3)
+  for (let round = 1; round <= 3; round++) {
+    await expect(chat.getByText(`并发回合 ${round} 已完成。`, { exact: true })).toHaveCount(1)
+  }
+  await expect(chat.getByTestId('clarify-review-queue')).toHaveCount(0)
+  await expect(chat.getByTestId('clarify-review-cancel')).toHaveCount(0)
+  await expect(chat.getByTestId('clarify-busy-status')).toHaveCount(0)
+
+  await page.getByTestId('sim-delayed-queue').click()
+  await expect(sameTextHumans).toHaveCount(3)
+  await expect(chat.getByTestId('clarify-review-queue')).toHaveCount(0)
+  await expect(chat.getByTestId('clarify-review-cancel')).toHaveCount(0)
+  await expect(chat.getByTestId('clarify-busy-status')).toHaveCount(0)
+
+  await page.getByTestId('sim-new-generation').click()
+  await expect(sameTextHumans).toHaveCount(4)
+  await expect(chat.getByText('新会话正在继续检查。', { exact: true })).toHaveCount(1)
+  await expect(chat.getByTestId('clarify-review-cancel')).toHaveCount(1)
+  await page.getByTestId('sim-retired-frames').click()
+  await expect(chat.getByText('新会话继续输出，旧快照没有打断。', { exact: true })).toHaveCount(1)
+  await expect(sameTextHumans).toHaveCount(4)
+  await expect(chat.getByTestId('clarify-review-queue')).toHaveCount(0)
+  await expect(chat.getByTestId('clarify-review-cancel')).toHaveCount(1)
+  await expect(chat.getByTestId('clarify-busy-status')).toHaveCount(1)
+  expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1)
+})
+
+test('持久化首段回复后，当前思考仍在排队用户前继续输出', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 1000 })
+  await page.goto('/message-reliability.html?sealed-segment')
+  const chat = page.getByTestId('clarify-host-inbox')
+  await page.getByTestId('sim-segmented-reply').click()
+  await expect(chat.getByTestId('agent-timeline-thought')).toContainText('继续检查统计信息的展示效果。')
+  await chat.getByTestId('clarify-input').fill('暗色主题感觉不太行')
+  await chat.getByTestId('clarify-send-icon').click()
+  await page.getByTestId('sim-persist-segment').click()
+
+  const currentHuman = chat.getByTestId('clarify-human-message').filter({ hasText: '回复信息改成统计信息' })
+  const nextHuman = chat.getByTestId('clarify-human-message').filter({ hasText: '暗色主题感觉不太行' })
+  await expect(currentHuman).toHaveCount(1)
+  await expect(nextHuman).toHaveCount(1)
+  await expect(chat.getByText('已把回复信息改成统计信息。', { exact: true })).toHaveCount(1)
+  await expect(chat.getByTestId('agent-timeline-thought')).toContainText('继续检查统计信息的展示效果。')
+  await expect(chat.getByTestId('clarify-busy-status')).toHaveCount(1)
+  await expect(chat.getByTestId('clarify-review-cancel')).toBeVisible()
+  await expect(chat.getByTestId('clarify-review-queue')).toContainText('暗色主题感觉不太行')
+  await expect(chat.getByTestId('clarify-empty-fail')).toHaveCount(0)
+  const text = await chat.getByTestId('clarify-scroller').innerText()
+  expect(text.indexOf('继续检查统计信息的展示效果。')).toBeGreaterThan(text.indexOf('回复信息改成统计信息'))
+  expect(text.indexOf('暗色主题感觉不太行')).toBeGreaterThan(text.indexOf('继续检查统计信息的展示效果。'))
+  await page.screenshot({ path: test.info().outputPath('sealed-segment-still-running.png'), fullPage: false })
+
+  await page.getByTestId('sim-continue-segment').click()
+  await expect(chat.getByText('统计信息检查还在继续，无需刷新。', { exact: true })).toBeVisible()
+  await expect(chat.getByTestId('clarify-busy-status')).toHaveCount(1)
+  await expect(chat.getByTestId('clarify-review-queue')).toContainText('暗色主题感觉不太行')
+  expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1)
+})
+
 test('Studio 断线期间完成后由事件历史与 idle 重连恢复且不重复用户消息', async ({ page }) => {
   await openHarness(page)
   await expect.poll(() => socketCount(page, '/sandboxes/7/chat')).toBe(1)

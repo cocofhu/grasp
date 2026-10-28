@@ -11,6 +11,7 @@ const (
 	EnvTraeAPIKey      = "GRASP_TRAE_API_KEY"
 	EnvOpenCodeAPIKey  = "GRASP_OPENCODE_API_KEY"
 	EnvDeepSeekAPIKey  = "GRASP_DEEPSEEK_API_KEY"
+	EnvKimiCodeAPIKey  = "GRASP_KIMI_CODE_API_KEY"
 	// EnvCodexAuthFile is the workspace-credential slot for a ChatGPT login file
 	// (~/.codex/auth.json). It is a secret identity key only: the file body is
 	// written to the sandbox as auth.json and must not be injected as an env var.
@@ -28,11 +29,12 @@ var cliAuthEnvKeys = []string{
 	"OPENAI_API_KEY", "CODEX_API_KEY", "GRASP_MODEL_API_KEY", "GRASP_MODEL_CONNECTION", "GRASP_MODEL_CREDENTIAL_ID",
 	"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "DEEPSEEK_API_KEY",
 	"ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
+	"KIMI_CODE_API_KEY", "ACP_KIMI_CODE_API_KEY",
 }
 
 // credentialEnvKeys are the secret preset keys of workspace credentials.
 var credentialEnvKeys = []string{
-	EnvCursorAPIKey, EnvClaudeAPIKey, EnvCodeBuddyAPIKey, EnvTraeAPIKey, EnvOpenCodeAPIKey, EnvCodexAuthFile, EnvDeepSeekAPIKey,
+	EnvCursorAPIKey, EnvClaudeAPIKey, EnvCodeBuddyAPIKey, EnvTraeAPIKey, EnvOpenCodeAPIKey, EnvCodexAuthFile, EnvDeepSeekAPIKey, EnvKimiCodeAPIKey,
 	EnvGitHubToken, EnvGitLabToken, EnvGitSSHPrivateKey, EnvGitSSHKnownHosts,
 }
 

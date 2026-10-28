@@ -9,6 +9,7 @@ describe('explicit credential domains', () => {
  it.each([
   ['opencode', 'GRASP_OPENCODE_API_KEY'],
   ['deepseek_harness', 'GRASP_DEEPSEEK_API_KEY'],
+  ['kimi_code', 'GRASP_KIMI_CODE_API_KEY'],
  ])('classifies %s official keys independently of API accounts', (toolId, envKey) => {
   expect(kindById(toolId)).toMatchObject({ id: toolId, provider: toolId, envKey, secret: 'apiKey' })
   expect(kindOfItem({ purpose: 'tool_auth', toolId, secretKind: 'api_key' })?.id).toBe(toolId)

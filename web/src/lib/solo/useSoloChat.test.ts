@@ -98,6 +98,56 @@ describe('useSoloChat', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
+  it.each(['turn_done', 'error'] as const)('rejects an older busy queue snapshot after %s', async (event) => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const socket = FakeSocket.all[0]!
+    socket.open()
+    await flushPromises()
+    const item = { id: 'active', text: 'active', images: [] }
+    socket.emit({ type: 'session', event: 'queue_state', seq: 0, sessionGeneration: 7, revision: 2, busy: true, activeItem: item, items: [] })
+    socket.emit({ type: 'session', event, seq: 1, sessionGeneration: 7, revision: 4, message: 'stopped' })
+    await flushPromises()
+    expect(chat.busy.value).toBe(false)
+    // Cancel captured busy before the native cancellation completed the turn.
+    socket.emit({ type: 'session', event: 'queue_state', seq: 2, sessionGeneration: 7, revision: 3, busy: true, activeItem: item, items: [] })
+    expect(chat.busy.value).toBe(false)
+    expect(chat.queued.value).toEqual([])
+    expect(chat.turns.value.some(turn => turn.streaming)).toBe(false)
+    app.unmount()
+  })
+
+  it('rebases state and replay sequence on a new subscription to a recreated server stream', async () => {
+    vi.useFakeTimers()
+    const { chat, app } = mountChat()
+    try {
+      await flushPromises()
+      const first = FakeSocket.all[0]!
+      first.open()
+      await flushPromises()
+      first.emit({ type: 'session', event: 'queue_state', seq: 0, sessionGeneration: 9, revision: 20, busy: false, items: [] })
+      first.emit({ type: 'session', event: 'turn_begin', seq: 1, sessionGeneration: 9, revision: 21, item: { id: 'old', text: 'old', images: [] } })
+      first.emit({ ...acp('old output'), seq: 2 })
+      first.emit({ type: 'session', event: 'turn_done', seq: 3, sessionGeneration: 9, revision: 22 })
+      first.onclose?.()
+      await vi.advanceTimersByTimeAsync(1500)
+      const next = FakeSocket.all.at(-1)!
+      expect(next).not.toBe(first)
+      next.open()
+      await flushPromises()
+      const item = { id: 'new', text: 'new', images: [] }
+      next.emit({ type: 'session', event: 'queue_state', seq: 0, sessionGeneration: 1, revision: 1, busy: true, activeItem: item, items: [] })
+      next.emit({ type: 'session', event: 'turn_begin', seq: 1, sessionGeneration: 1, revision: 2, item })
+      // This collides with the prior stream's ACP sequence number.
+      next.emit({ ...acp('new output'), seq: 2 })
+      expect(chat.busy.value).toBe(true)
+      expect(chat.turns.value.find(turn => turn.id === 'live:new')?.text).toBe('new output')
+    } finally {
+      app.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('streams a turn from turn_begin to turn_done and then reloads history', async () => {
     const { chat, app } = mountChat()
     await flushPromises()
@@ -662,6 +712,30 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('writes the new model highest effort when a switch clears the saved level', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'old', reasoningEffort: 'low', reasoningEfforts: ['low', 'high'] }))
+    mocks.setSoloSessionModel.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'gemini-4-argon', reasoningEffort: '', reasoningEfforts: ['low', 'medium', 'high'] }))
+    mocks.setSoloSessionReasoningEffort.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'gemini-4-argon', reasoningEffort: 'high', reasoningEfforts: ['low', 'medium', 'high'] }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    expect(await chat.setCurrentModel('gemini-4-argon')).toBe(true)
+    expect(mocks.setSoloSessionModel).toHaveBeenCalledWith('s1', 'gemini-4-argon')
+    expect(mocks.setSoloSessionReasoningEffort).toHaveBeenCalledWith('s1', 'high')
+    expect(chat.currentReasoningEffort.value).toBe('high')
+    app.unmount()
+  })
+
+  it('does not raise a lower effort that the new model still accepts', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'old', reasoningEffort: 'low', reasoningEfforts: ['low', 'medium', 'high'] }))
+    mocks.setSoloSessionModel.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'gemini-4-argon', reasoningEffort: 'low', reasoningEfforts: ['low', 'medium', 'high'] }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    expect(await chat.setCurrentModel('gemini-4-argon')).toBe(true)
+    expect(mocks.setSoloSessionReasoningEffort).not.toHaveBeenCalled()
+    expect(chat.currentReasoningEffort.value).toBe('low')
+    app.unmount()
+  })
+
   it.each([false, true])('ignores an old session effort response after navigation (failure: %s)', async (fails) => {
     mocks.getSoloSession.mockResolvedValueOnce(session({ reasoningEffort: 'low' }))
       .mockResolvedValueOnce(session({ id: 's2', reasoningEffort: 'medium' }))
@@ -877,7 +951,7 @@ describe('useSoloChat', () => {
     const ws = FakeSocket.all[0]!
     ws.open()
     await flushPromises()
-    ws.emit({ type: 'session', event: 'turn_begin', seq: 1, item: { id: 'q1', text: 'hi', images: [] } })
+    ws.emit({ type: 'session', event: 'turn_begin', seq: 1, sessionGeneration: 3, revision: 2, item: { id: 'q1', text: 'hi', images: [] } })
     ws.emit({ ...acp('Hello'), seq: 2 })
     expect(chat.turns.value[1]!.text).toBe('Hello')
 
@@ -888,7 +962,7 @@ describe('useSoloChat', () => {
     expect(again.url).toContain('after=2')
     again.open()
     await flushPromises()
-    again.emit({ type: 'session', event: 'queue_state', seq: 2, busy: true, items: [], activeItem: { id: 'q1', text: 'hi', images: [] } })
+    again.emit({ type: 'session', event: 'queue_state', seq: 2, sessionGeneration: 3, revision: 2, busy: true, items: [], activeItem: { id: 'q1', text: 'hi', images: [] } })
     again.emit({ ...acp('Hello'), seq: 2 })
     again.emit({ ...acp('!'), seq: 3 })
     expect(chat.turns.value.find((t) => t.id === 'live:q1')!.text).toBe('Hello!')

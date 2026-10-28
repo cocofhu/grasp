@@ -6,7 +6,7 @@
 # 用法：scripts/test-agent-connect.sh <image> [providers]
 #   RUNTIME_BUNDLE：运行时包（默认 .devdata/sandbox-runtime/sandbox-runtime.tgz，
 #   scripts/build-sandbox-runtime.sh 构建）；镜像本身不带逻辑，由本脚本像 Grasp 一样下发。
-#   providers 默认 cursor,claude_code,codebuddy,opencode,trae,deepseek_harness
+#   providers 默认 cursor,claude_code,codebuddy,opencode,trae,deepseek_harness,kimi_code
 #   opencode 始终跑一轮 mock 对话，不需要厂商密钥：本脚本在宿主机拉起
 #   mock-chat-model.mjs（夹具 ci-e2e，回复含 GRASP_AGENT_E2E_OK），容器通过
 #   host.docker.internal 访问。配置与平台一致：GRASP_OPENCODE_PROVIDER=custom、
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 image="${1:?usage: test-agent-connect.sh <image> [providers]}"
-providers="${2:-cursor,claude_code,codebuddy,opencode,trae,deepseek_harness}"
+providers="${2:-cursor,claude_code,codebuddy,opencode,trae,deepseek_harness,kimi_code}"
 ready_timeout="${READY_TIMEOUT:-240}"
 connect_timeout="${CONNECT_TIMEOUT:-120}"
 chat_timeout="${CHAT_TIMEOUT:-240}"
@@ -191,6 +191,7 @@ check_provider() {
     codebuddy) probe="codebuddy --version" ;;
     opencode) probe="opencode --version" ;;
     deepseek_harness) probe="dsh --version" ;;
+    kimi_code) probe="kimi --version" ;;
     trae) probe="traecli acp serve --help" ;;
     *) probe="" ;;
   esac
@@ -205,6 +206,8 @@ check_provider() {
 
   if [ "$provider" = trae ] && [ -z "${TRAECLI_PERSONAL_ACCESS_TOKEN:-}" ]; then
     log "provider=$provider: 未设置 TRAECLI_PERSONAL_ACCESS_TOKEN，跳过握手"
+  elif [ "$provider" = kimi_code ] && [ -z "${KIMI_CODE_API_KEY:-}" ]; then
+    log "provider=$provider: 未设置 KIMI_CODE_API_KEY，仅校验 kimi 版本，跳过握手"
   else
     node "$ws_check" "ws://127.0.0.1:$api/ws" connect "$connect_timeout" \
       || die "provider=$provider: Agent connect 失败"

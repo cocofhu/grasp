@@ -171,6 +171,41 @@ describe('usePmLeaderChat actions', () => {
     vi.restoreAllMocks()
   })
 
+  it.each(['turn_done', 'error'] as const)('rejects an older busy queue snapshot after %s', async (event) => {
+    const { chat, app } = withChat()
+    await flushPromises()
+    const socket = MockWebSocket.instances[0]!
+    socket.frame({ type: 'session', event: 'queue_state', sessionGeneration: 7, revision: 2, busy: true, userMsgId: 'active', waiting: 0 })
+    socket.frame({ type: 'session', event, sessionGeneration: 7, revision: 4, message: 'stopped' })
+    await flushPromises()
+    expect(chat.busy.value).toBe(false)
+    socket.frame({ type: 'session', event: 'queue_state', sessionGeneration: 7, revision: 3, busy: true, userMsgId: 'active', waiting: 0 })
+    expect(chat.busy.value).toBe(false)
+    expect(chat.streaming.value).toBe(false)
+    expect(chat.resuming.value).toBe(false)
+    app.unmount()
+  })
+
+  it('accepts a recreated server session lower revision only at its new subscription head', async () => {
+    const { chat, app } = withChat()
+    await flushPromises()
+    const first = MockWebSocket.instances[0]!
+    first.frame({ type: 'session', event: 'queue_state', sessionGeneration: 9, revision: 20, busy: true, userMsgId: 'old', waiting: 0 })
+    first.frame({ type: 'session', event: 'turn_done', sessionGeneration: 9, revision: 21 })
+    await flushPromises()
+    expect(chat.busy.value).toBe(false)
+    chat.connectThreadWs('th-1')
+    const next = MockWebSocket.instances.at(-1)!
+    expect(next).not.toBe(first)
+    next.frame({ type: 'session', event: 'queue_state', sessionGeneration: 1, revision: 1, busy: true, userMsgId: 'new', waiting: 0 })
+    expect(chat.streaming.value).toBe(true)
+    expect(chat.busy.value).toBe(true)
+    next.frame({ type: 'session', event: 'turn_done', sessionGeneration: 1, revision: 2 })
+    await flushPromises()
+    expect(chat.busy.value).toBe(false)
+    app.unmount()
+  })
+
   it('restores the stored thread and derives channel presentation', async () => {
     localStorage.setItem(PM_ACTIVE_THREAD_STORAGE_KEY, 'ch')
     mocks.listPmThreads.mockResolvedValue({

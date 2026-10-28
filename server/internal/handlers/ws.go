@@ -20,6 +20,28 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+const (
+	eventPingPeriod = 25 * time.Second
+	eventPongWait   = 60 * time.Second
+)
+
+// A successful TCP write does not prove that the browser is still reachable.
+// Require pong replies, and send a data heartbeat too so browser JavaScript
+// can detect a dead downstream (protocol ping/pong is hidden by its WS API).
+func configureEventHeartbeat(conn *websocket.Conn, pongWait time.Duration) {
+	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
+}
+
+func writeEventHeartbeat(conn *websocket.Conn, write func([]byte) error) error {
+	if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+		return err
+	}
+	return write([]byte(`{"type":"heartbeat"}`))
+}
+
 // RunEvents streams a run's live updates over WebSocket. On connect it sends a
 // "snapshot" frame, then relays broker messages: "trace" (state-trace entries),
 // "status" (run status changes), "react" (react-dialogue turns), "acp"
@@ -53,6 +75,7 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 	}
 	defer func() { _ = conn.Close() }()
 	w := &wsWriter{conn: conn}
+	configureEventHeartbeat(conn, eventPongWait)
 
 	ch, unsub := h.Eng.Broker().Subscribe(runID)
 	defer unsub()
@@ -64,12 +87,14 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 		}
 	}
 	// Re-emit authoritative queue/busy so refresh can resume mid-stream.
-	h.Eng.BroadcastReviewSessions(runID)
+	if err := h.Eng.SendReviewSessions(runID, w.write); err != nil {
+		return
+	}
 	if h.PageBridge != nil && owner != "" {
 		defer h.PageBridge.Watch(runID, owner, w.write)()
 	}
 
-	ping := time.NewTicker(25 * time.Second)
+	ping := time.NewTicker(eventPingPeriod)
 	defer ping.Stop()
 
 	// Reader pump: detect disconnect + handle review control frames.
@@ -82,6 +107,7 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 				_ = conn.Close()
 				return
 			}
+			_ = conn.SetReadDeadline(time.Now().Add(eventPongWait))
 			h.handleRunWSControl(runID, owner, data, w.write)
 		}
 	}()
@@ -98,7 +124,7 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 				return
 			}
 		case <-ping.C:
-			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+			if err := writeEventHeartbeat(conn, w.write); err != nil {
 				return
 			}
 		}
@@ -120,6 +146,13 @@ func (h *Handlers) handleRunWSControl(runID, owner string, data []byte, reply fu
 	if json.Unmarshal(data, &m) != nil {
 		return
 	}
+	reject := func(nodeID string, extra map[string]any) {
+		extra["requestType"] = m.Type
+		if validClientMessageID(m.ClientMessageID) {
+			extra["clientMessageId"] = m.ClientMessageID
+		}
+		h.replyReviewWSRejection(reply, runID, nodeID, extra)
+	}
 	switch m.Type {
 	case "review_cancel":
 		nodeID := strings.TrimSpace(m.NodeID)
@@ -139,7 +172,7 @@ func (h *Handlers) handleRunWSControl(runID, owner string, data []byte, reply fu
 			err = h.Eng.CancelClarifyTurn(runID, nodeID)
 		}
 		if err != nil {
-			h.publishReviewWSError(runID, nodeID, err.Error())
+			reject(nodeID, map[string]any{"message": err.Error()})
 		}
 	case "review_chat", "chat":
 		nodeID := strings.TrimSpace(m.NodeID)
@@ -149,7 +182,7 @@ func (h *Handlers) handleRunWSControl(runID, owner string, data []byte, reply fu
 		gateID := strings.TrimSpace(m.GateNodeID)
 		if gateID != "" {
 			if err := h.Eng.GateReactReviseAs(owner, runID, gateID, m.Content, m.Images, m.Annotations); err != nil {
-				h.publishReviewWSError(runID, nodeID, err.Error())
+				reject(nodeID, map[string]any{"message": err.Error()})
 			}
 			return
 		}
@@ -165,50 +198,36 @@ func (h *Handlers) handleRunWSControl(runID, owner string, data []byte, reply fu
 					if errors.As(err, &ve) {
 						// The reject carries the sender's own content, so it
 						// goes back on this connection only, never the broker.
-						h.replyReviewWSFrame(reply, runID, nodeID, ve.FrameExtra(true))
+						reject(nodeID, ve.FrameExtra(true))
 					} else {
-						h.publishReviewWSError(runID, nodeID, err.Error())
+						reject(nodeID, map[string]any{"message": err.Error()})
 					}
 				}
 				return
 			}
 		}
 		if _, err := h.Eng.EnqueueReviewTurnAs(owner, runID, nodeID, m.Content, m.Images, m.Annotations, "node", ""); err != nil {
-			h.publishReviewWSError(runID, nodeID, err.Error())
+			reject(nodeID, map[string]any{"message": err.Error()})
 		}
 	}
 }
 
-// publishReviewWSError pushes a type:"review" event:"error" frame so WS clients
-// see enqueue/cancel failures (aligned with SandboxChat error frames).
-func (h *Handlers) publishReviewWSError(runID, nodeID, message string) {
-	h.publishReviewWSFrame(runID, nodeID, map[string]any{"message": message})
-}
-
-// publishReviewWSFrame is publishReviewWSError with extra fields (code,
-// autoRetryOnResume, dropped, ...); extra keys may not change type/event.
-func (h *Handlers) publishReviewWSFrame(runID, nodeID string, extra map[string]any) {
-	msg, err := reviewErrorFrame(runID, nodeID, extra)
-	if err != nil {
-		return
-	}
-	h.Eng.Broker().Publish(runID, msg)
-}
-
-// replyReviewWSFrame sends a review error frame to one connection only.
-func (h *Handlers) replyReviewWSFrame(reply func([]byte) error, runID, nodeID string, extra map[string]any) {
-	msg, err := reviewErrorFrame(runID, nodeID, extra)
+// A rejected control request did not end the active turn. Send it only to its
+// sender, with a distinct event so no viewer mistakes it for a terminal error.
+// Preserve dropped-message and retry details for restoring an unsent reply.
+func (h *Handlers) replyReviewWSRejection(reply func([]byte) error, runID, nodeID string, extra map[string]any) {
+	msg, err := reviewRequestRejectedFrame(runID, nodeID, extra)
 	if err != nil || reply == nil {
 		return
 	}
 	_ = reply(msg)
 }
 
-func reviewErrorFrame(runID, nodeID string, extra map[string]any) ([]byte, error) {
+func reviewRequestRejectedFrame(runID, nodeID string, extra map[string]any) ([]byte, error) {
 	frame := map[string]any{"runId": runID, "nodeId": nodeID}
 	for k, v := range extra {
 		frame[k] = v
 	}
-	frame["type"], frame["event"] = "review", "error"
+	frame["type"], frame["event"] = "review", "request_rejected"
 	return json.Marshal(frame)
 }

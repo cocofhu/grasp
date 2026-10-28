@@ -20,6 +20,41 @@
 
 ## 记录
 
+### 2026-10-28（取消队列清理与当前轮结束落库顺序）
+
+- 日期：2026-10-28（Asia/Hong_Kong）。
+- 范围：`server/internal/chatsession/{session,session_test}.go`。
+- 做了什么：取消时在回合切换锁内、状态锁外先完成 `OnDropped`，再通知当前上下文与原生 CLI 取消；广播仍在取消之后。恢复待发消息清理先于取消触发的当前轮结束处理，同时继续保护原生取消不会误中下一轮，清理回调仍可读取会话快照。
+- 为什么：PR #1031 的远端核心竞态检查发现 `TestPmTurnCancelStopsAndDropsQueue` 中 PM 队列取消落库与当前轮取消落库重叠，测试 SQLite 报表锁并留下错误的消息状态。没有将其当作偶发失败重跑，也没有修改数据库测试设置或放宽断言；生产 SQLite 的单连接设置没有变动。
+- 如何验证：新增确定性用例先在旧顺序下以“队列清理前当前轮已取消”复现失败。修复后新增用例与原生取消目标回归各重复 50 次 race 通过，原失败 PM 用例重复 50 次 race 通过；chatsession/services 完整 race 通过。Server 全量 lint（0 issues）、vet、配置文档检查、单测、runtime 专项通过，核心覆盖率 90.5%，diff 检查通过；提交后继续核对最新提交的远端 CI。
+
+### 2026-10-28（聊天恢复 PR 的主线集成检查）
+
+- 日期：2026-10-28（Asia/Hong_Kong）。
+- 范围：`web/src/components/agent/CliModelSelect.test.ts`、`web/src/components/workspace/ModelConfigurationManager.test.ts`。
+- 做了什么：将未知 OpenCode 模型家族的旧字母占位断言更新为精确的官方 OpenCode SVG 资产，继续分别核对 Gemini、Claude 家族图标以及明暗主题规则。
+- 为什么：聊天恢复 PR #1031 创建期间主线合入官方 OpenCode 模型支持，GitHub 合并结果中的两项旧测试仍要求 monogram，但实际新契约使用服务商图标回退。没有改变产品图标实现或放宽家族区分，也没有修改 CI 契约。
+- 如何验证：两文件 70 项测试、全 Web 类型检查及定向 ESLint 通过；合入最新主线后全量 536 文件、5,767 项单测通过，Lines 91.77%，完整 lint 与生产构建及品牌/安全上下文断言通过。更新后的 GitHub CI 继续核对。
+
+### 2026-10-28（并发聊天状态一致性与历史复核）
+
+- 日期：2026-10-28（Asia/Hong_Kong）。
+- 范围：`server/internal/chatsession/`、`server/internal/engine/{review_session,resume,chat_identity_test}*`、`server/internal/models/models.go`、`server/internal/handlers/{ws,dto,inbox_context,react_sessions_dto}*`；`web/src/lib/{chat,inbox,run,shared,solo,pm}/`、聊天宿主与消息可靠性浏览器用例、`web/src/components/agent/AgentChatTester*`、`CHANGELOG.md`。
+- 为什么：复核 `d26f472a`、`2882fbea`、`752dea81`、`8a96dc01`、`f4ac5af9`、`4ca6c74b` 等历史修复后，确定已有修补分别解决丢帧、恢复文本与乐观消息，却没有定义队列状态跨发布协程的顺序。确定性复现 A/B/C 全部完成后 B 的早期队列快照最后发布，连接健康时也会恢复残影；同时复现空闲会话回收与入队竞争产生两个执行队列，以及取消发布被阻塞后原生取消误中下一轮。
+- 做了什么（后端）：状态锁内分配会话代次与递增 revision，队列、开场和结束帧都带完整队列与当前请求身份；发布仍在状态锁外执行。Run/Inbox 快照在读取会话表前记录代次水位，阻止新连接接受已退休会话的迟到帧；重连头部只发给该连接。共享流序号与完整订阅者投递串行化。注册表租约保护查找至入队，孤立取消同样占有租约；原生取消与切换当前轮共享边界锁。WebSocket 请求拒绝只回复来源连接的非终结事件。
+- 做了什么（前端与历史）：发送 UUID 贯穿实际组件、HTTP/WS、当前项、等待项与持久化人类/Agent/交接分段，重复文字按身份区分。工作流宿主在修改 busy 前过滤旧版本，对话终结帧按完整队列对账，重连按新连接快照重置版本。历史没有身份时保留兼容匹配。审批、Solo、PM 和 Agent 测试入口同步处理共享控制器的版本顺序，避免迟到的取消队列覆盖结束状态。
+- 如何验证：新增 Go 用例在旧实现上复现并发旧快照与投递倒序，实际多协程队列/取消/订阅者、相同文本持久化与多窗口拒绝隔离用例通过重复竞态检测。Server 全量 lint、vet、配置文档校验、单测、runtime 专项与 race 通过，核心覆盖率 90.5%。Gate 的终结先于取消队列、新当前项先于开场帧三项回归先复现失败再修复通过；Solo/PM/Studio 同步验证迟到队列、服务端重启及序号复用。Web 最终 536 文件、5,761 项单测全部通过，Lines 91.76%；lint 0 errors（12 条既有 warnings）、类型检查、生产构建和品牌/安全上下文断言通过。完整关键浏览器回归 259/259（5.5 分钟）及额外可靠性 5/5 通过，覆盖同文 UUID、不同代次旧帧、终结丢失、无 close 的半开连接、恢复最终用量和不重载续聊。旧 Inbox/Panel 测试桩改用真实的独立 finish 事件与明确 UUID，保留强制流转和消息身份断言。文档构建/审计、actionlint、error-level shellcheck 和 diff 检查通过；生成物未入库。
+- 验证边界：浏览器用例使用本地模型/事件夹具，没有给线上工作流发送、取消、确认或重试，也没有触发付费推理。变更尚未部署。测试覆盖明确的并发交错，不能据此承诺所有网络故障下恰好一次执行；请求已接收但全部确认丢失后的人工重发仍需另行设计幂等策略。
+
+### 2026-10-28（工作流聊天断线恢复、队列与用量对齐）
+
+- 日期：2026-10-28（Asia/Hong_Kong）。
+- 范围：`server/internal/handlers/{ws,gate_share_public_events,ws_heartbeat_test}.go`；`web/src/lib/run/{wsHeartbeat,wsReconnect,useRunLive,useRunDetailWs}*`、`web/src/lib/inbox/{useGatesInbox,useClarifyChat,mergeClarifyLiveTurns}*`、`web/src/components/run/ClarifyChat.test.ts`、`web/src/views/PublicGateApprovalView.vue`、`web/e2e/{run-live-continue.spec,message-reliability.spec,message-reliability-main}.ts`、`web/LIB_DOMAIN_MAP.json` 与 `CHANGELOG.md`。
+- 做了什么：工作流与公开审批连接每 25 秒发送可被浏览器观察的心跳；服务端以 pong 续期，客户端在 60 秒无任何帧、联网恢复或挂起后唤醒时检测失效连接。关闭旧连接前先解绑身份，重建连接显式清除主动关闭标记而保留重试退避，修复握手失败后不再重试。忙碌续聊仍建立连接，重连按平台队列恢复正在执行与真正等待的消息，并重新读取当前输出；较早 HTTP 读取不能覆盖新实时轮次。续聊接收 ACP 正文，下一节点仍在 entering 时继续等待，完成后按原始逐轮事件恢复用量，不把节点累计 token 附在单条回复上。
+- 做了什么（对话合并）：持久化历史接管较早轮次后，保留随后由服务端启动的完整人类/Agent 回合及连续的全部 Agent 分段，避免只剩停止按钮、后续内容被合并逻辑吞掉。已封口但仍标记 handoff 的中间分段不能证明整轮完成；裁剪历史时等待该人类请求的最终分段，保留其仍在生成的思考以及后续排队用户。宿主追加暂存预览标注时按原始标注前缀关联已发送消息；重复开场帧先移除属于自己的待发送项，再保留已经收到的正文，真实的后续同文消息继续排队。
+- 为什么：仅依赖浏览器 close 事件、聊天忙时跳过连接、握手失败消费主动关闭标记，以及只保留本地乐观回合，均可能让工作流聊天需要整页刷新才能恢复。线上只读核对同时区分了两种现象：已完成且保存用量的消息仍显示本地队列残影；真实忙碌时下一条确实排队，但当前轮思考内容没有显示。没有向线上工作流发送、取消、重试或确认消息，没有改动沙箱镜像和发布契约。
+- 如何验证：队列及分段裁剪回归先复现后修复。Server 全量 lint、vet、配置文档校验、测试、runtime 专项及心跳/事件 handler race 通过，核心覆盖率 90.4%。Web 全量 536 文件、5,722 项单测通过，Lines 91.73%；lint 0 errors（12 条既有 warnings）、类型检查、生产构建及品牌/安全上下文断言通过。最终完整关键浏览器回归 259/259（5.5 分钟），额外消息可靠性 4/4，覆盖真实 UI 排队、持久化中间分段、继续思考与无需重载的后续输出。首轮既有凭据向导出现导航超时，未改其源码或断言，独立重复 3/3 与最终完整回归均通过。文档构建、官方源高/严重审计、actionlint、error-level shellcheck 和 diff 检查通过；文档生成目录清理后品牌断言通过，生成物未入库。没有向用户工作流插入请求，也没有触发厂商模型费用。
+
 ### 2026-10-28（Chat 展开过程后仍按段折叠思考）
 
 - 日期：2026-10-28（Asia/Hong_Kong）

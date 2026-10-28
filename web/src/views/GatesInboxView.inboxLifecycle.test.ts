@@ -7,6 +7,8 @@ import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { InboxItem } from '@/lib/shared/types'
 
+const COMPOSER_SEND_ID = '30000000-0000-4000-8000-000000000001'
+
 const mocks = vi.hoisted(() => ({
   listGates: vi.fn(),
   inboxContext: vi.fn(),
@@ -219,8 +221,8 @@ const ReviewComposerStub = defineComponent({
   },
   template:
     `<div data-testid="review-composer-stub">
-      <button data-testid="clarify-send" @click="$emit('send', 'hi', [], [], true)">finish</button>
-      <button data-testid="clarify-turn" @click="$emit('send', 'hi', [], [], false)">turn</button>
+      <button data-testid="clarify-send" @click="$emit('finish')">finish</button>
+      <button data-testid="clarify-turn" @click="$emit('send', 'hi', [], [], '${COMPOSER_SEND_ID}')">turn</button>
     </div>`,
 })
 
@@ -1063,7 +1065,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       1,
       'run-a',
       'clarify-a',
-      'hi',
+      pages.pages.runDetail.clarifyFinishPrompt,
       [],
       true,
       [],
@@ -1081,7 +1083,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       2,
       'run-b',
       'clarify-b',
-      'hi',
+      pages.pages.runDetail.clarifyFinishPrompt,
       [],
       true,
       [],
@@ -1156,7 +1158,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     expect(mocks.reactReply).toHaveBeenCalledWith(
       'run-b',
       'clarify-b',
-      'hi',
+      pages.pages.runDetail.clarifyFinishPrompt,
       [],
       true,
       [],
@@ -1228,7 +1230,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       [],
       false,
       false,
-      expect.stringMatching(/\S/),
+      COMPOSER_SEND_ID,
     )
     const ws = FakeWebSocket.instances.find((w) => w.url.includes('run-a'))
     expect(ws).toBeTruthy()
@@ -1272,7 +1274,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     expect(mocks.reactReply).toHaveBeenLastCalledWith(
       'run-a',
       'clarify-a',
-      'hi',
+      pages.pages.runDetail.clarifyFinishPrompt,
       [],
       true,
       [],

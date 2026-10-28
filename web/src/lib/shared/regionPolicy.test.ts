@@ -19,6 +19,7 @@ describe('region policy', () => {
       'opencode',
       'codex',
       'deepseek_harness',
+      'kimi_code',
     ])
   })
 
@@ -36,6 +37,11 @@ describe('region policy', () => {
       defaultRegion: 'intl',
     })
     expect(getRegionPolicy('trae')?.options.map((item) => item.id)).toEqual(['cn', 'intl'])
+    expect(getRegionPolicy('kimi_code')).toMatchObject({
+      regionEnvKey: 'GRASP_KIMI_CODE_REGION',
+      defaultRegion: 'intl',
+    })
+    expect(getRegionPolicy('kimi_code')?.options.map((item) => item.id)).toEqual(['cn', 'intl'])
     expect(getRegionPolicy('cursor')).toBeUndefined()
     expect(getRegionPolicy('opencode')).toBeUndefined()
     expect(getRegionPolicy('codex')).toBeUndefined()
@@ -46,10 +52,15 @@ describe('region policy', () => {
       KEEP: 'yes',
       GRASP_CODEBUDDY_REGION: 'internal',
       GRASP_TRAE_REGION: 'cn',
+      GRASP_KIMI_CODE_REGION: 'cn',
     }
     expect(switchBackendRegions(env, 'trae')).toEqual({
       KEEP: 'yes',
       GRASP_TRAE_REGION: 'intl',
+    })
+    expect(switchBackendRegions(env, 'kimi_code')).toEqual({
+      KEEP: 'yes',
+      GRASP_KIMI_CODE_REGION: 'intl',
     })
     expect(switchBackendRegions(env, 'cursor')).toEqual({ KEEP: 'yes' })
   })

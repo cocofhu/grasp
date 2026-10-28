@@ -52,4 +52,18 @@ describe('createWsReconnectController', () => {
     ctrl.markOpened()
     expect(ctrl.attempt).toBe(0)
   })
+
+  it('retries failed replacement handshakes without resetting their backoff', () => {
+    const schedule = vi.fn(() => 1 as unknown as ReturnType<typeof setTimeout>)
+    const ctrl = createWsReconnectController({
+      connect: vi.fn(), shouldReconnect: () => true, schedule, clearSchedule: vi.fn(),
+    })
+    ctrl.markIntentionalClose()
+    ctrl.markConnecting()
+    expect(ctrl.onClose()).toBe(true)
+    ctrl.markConnecting()
+    expect(ctrl.onClose()).toBe(true)
+    expect(ctrl.attempt).toBe(2)
+    expect(schedule).toHaveBeenCalledTimes(2)
+  })
 })

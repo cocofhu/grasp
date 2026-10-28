@@ -28,9 +28,20 @@ const label = computed(() => {
   return current.value?.name || t('pages.solo.modelSelect.placeholder')
 })
 const efforts = computed(() => [...new Set((current.value?.efforts || []).map((value) => value.trim()).filter(Boolean))])
-const effortChoices = computed(() => ['', ...efforts.value])
-const effortIndex = computed(() => Math.max(0, effortChoices.value.indexOf(props.reasoningEffort)))
-const effortLabel = computed(() => levelLabel(props.reasoningEffort))
+const effortMax = computed(() => Math.max(0, efforts.value.length - 1))
+const resolvedEffort = computed(() => {
+  const choices = efforts.value
+  if (!choices.length) return ''
+  return choices.includes(props.reasoningEffort) ? props.reasoningEffort : choices[choices.length - 1]!
+})
+const effortIndex = computed(() => {
+  const choices = efforts.value
+  if (!choices.length) return 0
+  const index = choices.indexOf(resolvedEffort.value)
+  return index >= 0 ? index : choices.length - 1
+})
+const effortLabel = computed(() => levelLabel(resolvedEffort.value))
+const atHighest = computed(() => efforts.value.length > 0 && resolvedEffort.value === efforts.value[efforts.value.length - 1])
 const effortBlocked = computed(() => props.disabled || !!current.value?.unavailable)
 const dragging = ref(false)
 const position = ref(0)
@@ -44,18 +55,18 @@ watchEffect(() => {
   const next = String(position.value)
   if (el.value !== next) el.value = next
 })
-const ratio = computed(() => efforts.value.length ? Math.min(1, Math.max(0, position.value / efforts.value.length)) : 0)
-const previewLabel = computed(() => levelLabel(effortChoices.value[Math.min(efforts.value.length, Math.max(0, Math.round(position.value)))] || ''))
+const ratio = computed(() => effortMax.value ? Math.min(1, Math.max(0, position.value / effortMax.value)) : 0)
+const previewLabel = computed(() => levelLabel(efforts.value[Math.min(effortMax.value, Math.max(0, Math.round(position.value)))] || ''))
 const shownLabel = computed(() => dragging.value ? previewLabel.value : effortLabel.value)
-const effortColor = computed(() => (dragging.value ? effortChoices.value[Math.min(efforts.value.length, Math.max(0, Math.round(position.value)))] : props.reasoningEffort) === 'ultra' ? '#9b4dff' : '#3b82f6')
+const effortColor = computed(() => (dragging.value ? efforts.value[Math.min(effortMax.value, Math.max(0, Math.round(position.value)))] : resolvedEffort.value) === 'ultra' ? '#9b4dff' : '#3b82f6')
 
 function tickPosition(index: number) {
-  const stepRatio = efforts.value.length ? index / efforts.value.length : 0
+  const stepRatio = effortMax.value ? index / effortMax.value : 0
   return `calc(14px + ${stepRatio} * (100% - 28px))`
 }
 
 function levelLabel(value: string) {
-  if (!value) return t('pages.solo.modelSelect.effortAuto')
+  if (!value) return ''
   const key = `pages.solo.modelSelect.effortLevels.${value}`
   return te(key) ? t(key) : value
 }
@@ -74,17 +85,17 @@ function selected(model: ConfiguredModelChoice) {
   return model.id === props.modelValue
 }
 function setEffort(value: string) {
-  if (effortBlocked.value || !effortChoices.value.includes(value) || value === announced.value) return
+  if (effortBlocked.value || !efforts.value.includes(value) || value === announced.value) return
   announced.value = value
   emit('update:reasoningEffort', value)
 }
 function paintEffort(raw: number) {
-  const max = efforts.value.length
-  if (!max || effortBlocked.value || !Number.isFinite(raw)) return
+  const max = effortMax.value
+  if (!efforts.value.length || effortBlocked.value || !Number.isFinite(raw)) return
   const clamped = Math.min(max, Math.max(0, raw))
   position.value = clamped
-  effortPanel.value?.style.setProperty('--effort-ratio', String(clamped / max))
-  const next = effortChoices.value[Math.round(clamped)]
+  effortPanel.value?.style.setProperty('--effort-ratio', String(max ? clamped / max : 0))
+  const next = efforts.value[Math.round(clamped)]
   if (next !== undefined) setEffort(next)
 }
 function beginEffort() {
@@ -95,13 +106,13 @@ function moveEffort(event: Event) {
 }
 function settleEffort(event: Event) {
   const raw = Number((event.target as HTMLInputElement).value)
-  const max = efforts.value.length
+  const max = effortMax.value
   const clamped = Math.min(max, Math.max(0, Math.round(Number.isFinite(raw) ? raw : position.value)))
   const glide = Math.abs(position.value - clamped) > 0.001
   dragging.value = false
   const apply = () => {
     position.value = clamped
-    const next = effortChoices.value[clamped]
+    const next = efforts.value[clamped]
     if (next !== undefined) setEffort(next)
   }
   if (glide) requestAnimationFrame(apply)
@@ -155,7 +166,7 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
         <header class="solo-effort-heading">
           <Icon name="priority-bolt" :size="15" :interactive="false" class="solo-effort-glyph" />
           <strong class="solo-effort-current" data-testid="solo-effort-current">{{ shownLabel }}</strong>
-          <button type="button" class="solo-effort-reset" :disabled="effortBlocked || !reasoningEffort" :aria-label="t('pages.solo.modelSelect.effortReset')" :title="t('pages.solo.modelSelect.effortReset')" data-testid="solo-effort-reset" @click="setEffort('')">
+          <button type="button" class="solo-effort-reset" :disabled="effortBlocked || atHighest" :aria-label="t('pages.solo.modelSelect.effortReset')" :title="t('pages.solo.modelSelect.effortReset')" data-testid="solo-effort-reset" @click="setEffort(efforts[efforts.length - 1] || '')">
             <Icon name="refresh" :size="14" :interactive="false" />
           </button>
         </header>
@@ -166,10 +177,10 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
         <div class="solo-effort-control" :class="{ 'solo-effort-control--disabled': effortBlocked }">
           <div class="solo-effort-track" aria-hidden="true">
             <span class="solo-effort-fill" />
-            <span v-for="(value, index) in effortChoices" :key="value || 'auto'" class="solo-effort-tick" :class="{ 'solo-effort-tick--filled': index <= position + 0.02 }" :style="{ left: tickPosition(index) }" />
+            <span v-for="(value, index) in efforts" :key="value" class="solo-effort-tick" :class="{ 'solo-effort-tick--filled': index <= position + 0.02 }" :style="{ left: tickPosition(index) }" />
           </div>
           <span class="solo-effort-thumb" />
-          <input ref="effortSlider" class="solo-effort-slider" type="range" min="0" :max="efforts.length" step="any" :disabled="effortBlocked" :aria-label="t('pages.solo.modelSelect.reasoningEffort')" :aria-valuetext="shownLabel" :aria-valuenow="effortIndex" data-testid="solo-effort-slider" @pointerdown="beginEffort" @input="moveEffort" @change="settleEffort" @pointerup="settleEffort" @pointercancel="settleEffort" />
+          <input ref="effortSlider" class="solo-effort-slider" type="range" min="0" :max="effortMax" step="any" :disabled="effortBlocked" :aria-label="t('pages.solo.modelSelect.reasoningEffort')" :aria-valuetext="shownLabel" :aria-valuenow="effortIndex" data-testid="solo-effort-slider" @pointerdown="beginEffort" @input="moveEffort" @change="settleEffort" @pointerup="settleEffort" @pointercancel="settleEffort" />
         </div>
       </section>
       <template v-else>

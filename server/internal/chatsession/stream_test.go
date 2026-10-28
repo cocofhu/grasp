@@ -2,6 +2,7 @@ package chatsession
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 )
@@ -21,6 +22,100 @@ func drain(t *testing.T, ch <-chan Event, n int) []Event {
 		}
 	}
 	return out
+}
+
+func TestStreamConcurrentPublishWaitsForEarlierDelivery(t *testing.T) {
+	s := NewStream(8)
+	ch, unsub := s.Subscribe(func() (map[string]any, bool) { return nil, false }, -1)
+	defer unsub()
+	drain(t, ch, 1)
+	s.mu.Lock()
+	var sub *subscriber
+	for current := range s.subs {
+		sub = current
+	}
+	s.mu.Unlock()
+	// Pause the first fanout after it has assigned its sequence. A concurrent
+	// publisher must not assign a later sequence before that delivery finishes.
+	sub.mu.Lock()
+	paused := true
+	defer func() {
+		if paused {
+			sub.mu.Unlock()
+		}
+	}()
+	firstDone := make(chan struct{})
+	go func() {
+		s.Session(EventTurnBegin, nil, KeepBegin)
+		close(firstDone)
+	}()
+	waitFor(t, func() bool { return s.LastSeq() == 0 })
+	secondStarted := make(chan struct{})
+	secondDone := make(chan struct{})
+	go func() {
+		close(secondStarted)
+		s.Session(EventTurnDone, nil, KeepEnd)
+		close(secondDone)
+	}()
+	<-secondStarted
+	select {
+	case <-secondDone:
+		t.Error("later publication completed while the first delivery was paused")
+	case <-time.After(20 * time.Millisecond):
+	}
+	if seq := s.LastSeq(); seq != 0 {
+		t.Errorf("later frame overtook the paused delivery: last sequence = %d", seq)
+	}
+	sub.mu.Unlock()
+	paused = false
+	select {
+	case <-firstDone:
+	case <-time.After(time.Second):
+		t.Fatal("first publication did not finish")
+	}
+	select {
+	case <-secondDone:
+	case <-time.After(time.Second):
+		t.Fatal("second publication did not finish")
+	}
+	got := drain(t, ch, 2)
+	if got[0].Event != EventTurnBegin || got[0].Seq != 0 || got[1].Event != EventTurnDone || got[1].Seq != 1 {
+		t.Fatalf("concurrent turn lifecycle delivered out of order: %#v", got)
+	}
+}
+
+func TestStreamConcurrentPublishersDeliverIncreasingSequences(t *testing.T) {
+	const publishers, perPublisher, viewers = 8, 128, 3
+	const total = publishers * perPublisher
+	s := NewStream(total)
+	channels := make([]<-chan Event, 0, viewers)
+	for range viewers {
+		ch, unsub := s.Subscribe(func() (map[string]any, bool) { return nil, false }, -1)
+		defer unsub()
+		drain(t, ch, 1)
+		channels = append(channels, ch)
+	}
+	start := make(chan struct{})
+	var publishersDone sync.WaitGroup
+	for range publishers {
+		publishersDone.Add(1)
+		go func() {
+			defer publishersDone.Done()
+			<-start
+			for range perPublisher {
+				s.Acp(json.RawMessage(`{"kind":"thought"}`))
+			}
+		}()
+	}
+	close(start)
+	publishersDone.Wait()
+	for viewer, ch := range channels {
+		for seq, ev := range drain(t, ch, total) {
+			if ev.Seq != seq {
+				t.Fatalf("viewer %d received sequence %d at index %d", viewer, ev.Seq, seq)
+			}
+		}
+	}
 }
 
 func TestEventFrame(t *testing.T) {

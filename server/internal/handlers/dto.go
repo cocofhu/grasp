@@ -374,9 +374,7 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 	out["clarifyByNode"] = clarifyByNode
 	// Authoritative busy/queue for refresh resume (clarify + review sessions).
 	if h.Eng != nil {
-		if byNode := reactSessionsDTO(h.Eng.ReviewSessionsForRun(r.ID)); byNode != nil {
-			out["reactSessions"] = byNode
-		}
+		projectReviewSessionsDTO(out, h.Eng, r.ID)
 	}
 	// Lift a Run-level failure reason for any failed run so the Web detail banner
 	// (and clients) can read a human message without opening a node. Successful

@@ -7,7 +7,7 @@ import (
 )
 
 func TestEveryBackendHasAUsableList(t *testing.T) {
-	for _, b := range []string{"cursor", "claude_code", "codex", "codebuddy", "trae", "deepseek_harness"} {
+	for _, b := range []string{"cursor", "claude_code", "codex", "codebuddy", "trae", "deepseek_harness", "kimi_code"} {
 		list := Models(b)
 		if len(list) == 0 {
 			t.Fatalf("%s: empty list", b)
@@ -197,6 +197,14 @@ func TestNonCursorCatalogsUnchanged(t *testing.T) {
 			"gemini-2.5-pro\tGemini 2.5 Pro\tgoogle\tvision,reasoning\t1000\tfalse\t",
 			"deepseek-v3.1\tDeepSeek V3.1\tdeepseek\treasoning\t128\tfalse\t",
 			"hunyuan-turbos\tHunyuan TurboS\ttencent\tfast\t128\tfalse\t",
+		},
+		"kimi_code": {
+			"kimi-k3.1-pro\tKimi K3.1 Pro\tkimi\tvision,reasoning\t1000\ttrue\t",
+			"kimi-k3.1-pro-highspeed\tKimi K3.1 Pro Highspeed\tkimi\tvision,reasoning\t1000\tfalse\t",
+			"kimi-k3\tKimi K3\tkimi\tvision,reasoning\t1000\tfalse\t",
+			"kimi-k2.7-code\tKimi K2.7 Code\tkimi\treasoning\t256\tfalse\t",
+			"kimi-k2.7-code-highspeed\tKimi K2.7 Code Highspeed\tkimi\treasoning\t256\tfalse\t",
+			"kimi-k2.6\tKimi K2.6\tkimi\tvision,reasoning\t256\tfalse\t",
 		},
 		"trae": {
 			"claude-sonnet-4\tClaude Sonnet 4\tanthropic\tvision,reasoning\t200\ttrue\t",

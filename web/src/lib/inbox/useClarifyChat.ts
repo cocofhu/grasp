@@ -5,9 +5,11 @@ import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { expandAutoPhase } from '@/lib/run/takeoverTimeline'
-import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
+import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman, sameClarifyRequest } from '@/lib/inbox/mergeClarifyLiveTurns'
 import {
   ackClarifyOutboxText,
+  dropClarifyOutbox,
+  newClientMessageId,
   clarifyTabReady,
   initClarifyTab,
   insertRescued,
@@ -69,6 +71,7 @@ import {
   cloneAnnotations as cloneReactAnnotations,
   cloneImages as cloneClarifyImages,
   dropGhostItems,
+  createReviewStateCursor,
   isAuthoritativeIdle,
   reconcileQueue,
   takeTurnBeginItem,
@@ -90,7 +93,7 @@ export type ClarifyChatProps = {
   finishDisabled?: boolean
   sendLabel?: string
   /** Optional adapter transport: retain the composer until the request is accepted. */
-  sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) => Promise<boolean>
+  sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) => Promise<boolean>
   confirmError?: string | null
   /** Host set this after a 409 sandbox_busy so the error bar offers abort+confirm. */
   confirmCanAbort?: boolean
@@ -106,7 +109,7 @@ export type ClarifyChatProps = {
 }
 
 export type ClarifyChatEmit = {
-  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[]): void
+  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string): void
   (e: 'retry-last'): void
   (e: 'finish'): void
   (e: 'finish-abort'): void
@@ -196,6 +199,7 @@ const liveTurns = ref<ClarifyTurn[]>([])
 /** Persisted index where the first live turn begins; older same-text turns cannot dedupe it. */
 let liveHistoryAnchor = 0
 let conversationGeneration = 0
+const reviewStateCursor = createReviewStateCursor()
 
 function anchorForNewLiveHuman(text: string): number {
   const persisted = persistedTurns.value
@@ -792,21 +796,23 @@ function prunePersistedLiveHistory(persisted: ClarifyTurn[]) {
     if (human?.role !== 'human' || !text) break
     let persistedHuman = -1
     for (let i = nextAnchor; i < persisted.length; i++) {
-      if (persisted[i].role === 'human' && (persisted[i].text || '').trim() === text) {
+      if (persisted[i].role === 'human' && sameClarifyRequest(persisted[i], human)) {
         persistedHuman = i
         break
       }
     }
     if (persistedHuman < 0) break
-    const reply = persisted[persistedHuman + 1]
+    const nextPersistedHuman = persisted.findIndex((turn, i) => i > persistedHuman && turn.role === 'human')
+    const persistedEnd = nextPersistedHuman < 0 ? persisted.length : nextPersistedHuman
+    const reply = persisted[persistedEnd - 1]
     if (
-      reply?.role !== 'agent' || reply.streaming ||
+      reply?.role !== 'agent' || reply.streaming || reply.handoff ||
       (!(reply.text || reply.thought) && !isRetryableFailedAgent(reply))
     ) break
     const nextHuman = liveTurns.value.findIndex((turn, i) => i > keepFrom && turn.role === 'human')
-    const persistedAdvanced = persisted.slice(persistedHuman + 2).some((turn) => turn.role === 'human')
+    const persistedAdvanced = nextPersistedHuman >= 0
     if (nextHuman < 0 && !persistedAdvanced) break
-    nextAnchor = persistedHuman + 2
+    nextAnchor = persistedEnd
     keepFrom = nextHuman < 0 ? liveTurns.value.length : nextHuman
   }
   if (!keepFrom) return
@@ -857,6 +863,7 @@ watch(
   () => `${props.runId}.${props.nodeId}.${props.iteration}`,
   () => {
     conversationGeneration++
+    reviewStateCursor.reset()
     queued.value = []
     clearSettledLiveTurns()
     localSends.splice(0)
@@ -975,6 +982,7 @@ const localSends: LocalSend[] = []
 const knownServerIds = new Set<string>()
 
 function registerLocalSend(item: QueueItem): LocalSend {
+  item.clientMessageId ??= newClientMessageId()
   const send: LocalSend = { key: ++localSendSequence, item, begun: false, previousIds: new Set(knownServerIds) }
   item.localKey = send.key
   localSends.push(send)
@@ -989,6 +997,14 @@ function localSendForFrame(item?: SessionFrameItem | null): LocalSend | undefine
     if (bound) return bound
   }
   if (item.id) knownServerIds.add(item.id)
+  // An identified send belongs to its originating tab even when another tab
+  // sent exactly the same text, images and annotations. Payload matching is
+  // only for older transports that do not expose the sender identity.
+  if (item.clientMessageId) {
+    const own = localSends.find(send => send.item.clientMessageId === item.clientMessageId)
+    if (own && item.id) own.serverId = item.id
+    return own
+  }
   const send = localSends.find(send => !send.serverId && !send.begun && (!item.id || !send.previousIds.has(item.id)) &&
     send.item.text === (item.text ?? '') &&
     (!item.images || (send.item.images.length === item.images.length && send.item.images.every((image, i) => {
@@ -997,8 +1013,12 @@ function localSendForFrame(item?: SessionFrameItem | null): LocalSend | undefine
         (!image.data || !other.data || image.data.startsWith('blob:') !== other.data.startsWith('blob:') || image.data === other.data) &&
         (!image.ref || !other.ref || image.ref === other.ref)
     }))) &&
-    (!item.annotations || (send.item.annotations.length === item.annotations.length &&
-      send.item.annotations.every((ann, i) => ann.selector === item.annotations![i]?.selector))))
+    // Hosts may append their staged preview selection before enqueueing.
+    // Match the original annotations as a prefix so the real turn can adopt
+    // its optimistic row even when turn_begin beats the queue acknowledgement.
+    (!item.annotations || (send.item.annotations.length <= item.annotations.length &&
+      send.item.annotations.every((ann, i) => ann.selector === item.annotations![i]?.selector &&
+        (!ann.url || !item.annotations![i]?.url || ann.url === item.annotations![i]?.url)))))
   if (send && item.id) send.serverId = item.id
   return send
 }
@@ -1021,7 +1041,7 @@ function paintAcceptedUserTurn(send: LocalSend) {
   const started = new Date().toISOString()
   const streaming = liveAgentIdx.value < 0
   const human: ClarifyTurn = {
-    role: 'human', text, at: started,
+    role: 'human', text, at: started, clientMessageId: send.item.clientMessageId,
     images: images.length ? images : undefined,
     annotations: annotations.length ? annotations : undefined,
     localPending: true,
@@ -1032,7 +1052,7 @@ function paintAcceptedUserTurn(send: LocalSend) {
   if (streaming) {
     liveAgentIdx.value = liveTurns.value.push({
       role: 'agent', text: '', thought: '', at: started, startedAt: started,
-      streaming: true, localPending: true,
+      clientMessageId: send.item.clientMessageId, streaming: true, localPending: true,
     }) - 1
   }
   thinking.value = true
@@ -1077,7 +1097,7 @@ function sendMessage(
   queued.value.push(item)
   paintAcceptedUserTurn(send)
   thinking.value = true
-  emit('send', t, imgs, anns)
+  emit('send', t, imgs, anns, item.clientMessageId)
   stickToBottom.value = true
   unreadCount.value = 0
   void scrollBottom(true)
@@ -1139,7 +1159,7 @@ async function sendFromComposer(): Promise<boolean> {
     const generation = conversationGeneration
     let accepted = false
     try {
-      const acknowledged = await props.sendRequest(prepared.text, prepared.images, prepared.annotations)
+      const acknowledged = await props.sendRequest(prepared.text, prepared.images, prepared.annotations, item.clientMessageId)
       // The socket can prove acceptance even when the HTTP response was lost.
       if (!acknowledged && !localSend.begun) return false
       if (generation !== conversationGeneration) return false
@@ -1612,10 +1632,12 @@ function cancelReview() {
  * Parent calls this when reactReply(force=false) fails after optimistic enqueue,
  * so the pending-send panel and FR4 confirm gate do not stick forever.
  */
-function discardLastQueued() {
-  if (queued.value.length === 0) return
-  const item = queued.value[queued.value.length - 1]
-  queued.value.pop()
+function discardLastQueued(clientMessageId?: string) {
+  const send = clientMessageId ? localSends.find(send => send.item.clientMessageId === clientMessageId) : undefined
+  const index = clientMessageId
+    ? queued.value.findIndex(item => item.clientMessageId === clientMessageId || (!!send && item.localKey === send.key))
+    : queued.value.length - 1
+  const item = index >= 0 ? queued.value.splice(index, 1)[0] : send?.item
   if (item) removeLocalPendingPair(item)
   if (queued.value.length === 0 && liveAgentIdx.value < 0) {
     thinking.value = false
@@ -1813,6 +1835,7 @@ function restoreUnsentQueued(
     images?: ClarifyImage[]
     annotations?: ReactAnnotation[]
     clientId?: string
+    clientMessageId?: string
     /** Send time (outbox), so several refusals come back in send order. */
     at?: number
     /** Inline images the outbox already had to leave out. */
@@ -1823,8 +1846,11 @@ function restoreUnsentQueued(
 ) {
   // Local optimistic copy first: by id (clientId), then by text.
   let idx = -1
-  if (sent.clientId) idx = queued.value.findIndex((q) => q.id === sent.clientId)
-  if (idx < 0 && (sent.text || sent.images?.length || sent.annotations?.length)) {
+  const send = sent.clientMessageId
+    ? localSends.find(send => send.item.clientMessageId === sent.clientMessageId) : undefined
+  if (sent.clientMessageId) idx = queued.value.findIndex(q => q.clientMessageId === sent.clientMessageId || (!!send && q.localKey === send.key))
+  else if (sent.clientId) idx = queued.value.findIndex((q) => q.id === sent.clientId)
+  if (!sent.clientMessageId && idx < 0 && (sent.text || sent.images?.length || sent.annotations?.length)) {
     for (let i = queued.value.length - 1; i >= 0; i--) {
       const candidate = queued.value[i]
       if (candidate.text === (sent.text ?? '') &&
@@ -1836,9 +1862,9 @@ function restoreUnsentQueued(
     }
   }
   const item = idx >= 0 ? queued.value.splice(idx, 1)[0] : null
-  const original = item ? localSendForQueue(item)?.item ?? item : null
+  const original = item ? localSendForQueue(item)?.item ?? item : send?.item
   // The refused send was already painted. Take that row back with the queue item.
-  if (item) removeLocalPendingPair(item)
+  if (item || send) removeLocalPendingPair(item ?? send!.item)
   if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
   sendNotice.value = notice
   if (opts.autoRetryOnResume) return
@@ -1920,8 +1946,8 @@ function forceAuthoritativeIdle() {
  * Keep distinct authoritative waiters so multi-turn queue does not briefly
  * unlock confirm before the next queue_state. Empty after filter ⇒ idle.
  */
-function settleAfterTurnEnd() {
-  const completedId = liveTurnOrigin?.id
+function settleAfterTurnEnd(completedItem?: SessionFrameItem) {
+  const completedId = completedItem?.id ?? liveTurnOrigin?.id
   if (completedId) {
     lastCompletedItemId = completedId
     queued.value = queued.value.filter((q) => q.id !== completedId)
@@ -2060,14 +2086,14 @@ function localPendingStillOpen(suffix: ClarifyTurn[]): boolean {
     const text = (human.text || '').trim()
     // Queued behind the in-flight send: the user row has no agent slot yet.
     if (!agent || agent.role !== 'agent') {
-      if (!text || !persistedCompletedLiveHuman(suffix, text)) return true
+      if (!text || !persistedCompletedLiveHuman(suffix, text, human.clientMessageId)) return true
       continue
     }
     if (!text) {
       if (!agent.streaming && !(agent.text || '').trim() && !(agent.thought || '').trim()) return true
       continue
     }
-    if (!persistedCompletedLiveHuman(suffix, text)) return true
+    if (!persistedCompletedLiveHuman(suffix, text, human.clientMessageId)) return true
   }
   return false
 }
@@ -2081,7 +2107,7 @@ function dropSettledLiveIfPersistedWins() {
   // Older history, or an agent slot that has not started streaming, is not a
   // reason to remove a user row the snapshot does not contain yet.
   if (localPendingStillOpen(suffix)) return
-  const persistedCaughtUp = persistedCompletedLiveHuman(suffix, liveHumanText)
+  const persistedCaughtUp = persistedCompletedLiveHuman(suffix, liveHumanText, liveTurns.value[0]?.clientMessageId)
   const ahead = liveNarrativeAhead(turnList)
   const snapshotWins =
     idlePainted &&
@@ -2181,8 +2207,8 @@ function applyQueueState(
   if (
     busy &&
     activeItem &&
-    liveAgentIdx.value < 0 &&
-    !persistedCompletedLiveHuman(persistedTurns.value.slice(restoreAnchor), restoreText)
+    (liveAgentIdx.value < 0 || (!!activeItem.id && activeItem.id !== liveTurnOrigin?.id)) &&
+    !persistedCompletedLiveHuman(persistedTurns.value.slice(restoreAnchor), restoreText, activeItem.clientMessageId)
   ) {
     applyReviewFrame({ event: 'turn_begin', nodeId: props.nodeId, item: activeItem })
   }
@@ -2196,6 +2222,7 @@ function applyQueueState(
 /** What the live turn opened by the latest turn_begin carried (local copy). */
 let liveTurnOrigin: {
   id?: string
+  clientMessageId?: string
   text: string
   images: ClarifyImage[]
   annotations: ReactAnnotation[]
@@ -2211,6 +2238,7 @@ let liveTurnOrigin: {
 function applyVisitEndedFrame(frame: {
   autoRetryOnResume?: boolean
   clientMessageId?: string
+  item?: SessionFrameItem
 }) {
   const auto = !!frame.autoRetryOnResume
   // Broadcast frames carry no text and no `dropped`: the reply is ours to put
@@ -2218,8 +2246,10 @@ function applyVisitEndedFrame(frame: {
   // just lose the empty live slot (no refill, no stash, no notice).
   const mine = auto ? null : takeClarifyOutbox(props.runId, props.nodeId, frame.clientMessageId)
   const idx = liveAgentIdx.value
-  const agent = idx >= 0 ? liveTurns.value[idx] : null
   const origin = liveTurnOrigin
+  const sameActiveItem = !frame.item?.id || frame.item.id === origin?.id
+  const agent = sameActiveItem && idx >= 0 ? liveTurns.value[idx] : null
+  if (!sameActiveItem) endLiveStreaming()
   let local: { text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] } | null = null
   if (agent && !(agent.text || '').trim() && !(agent.thought || '').trim()) {
     // Drop the empty agent slot and the human bubble this turn opened.
@@ -2245,6 +2275,7 @@ function applyVisitEndedFrame(frame: {
     const sameTurn = !!local && local.text.trim() === mine.text.trim()
     restoreUnsentQueued(
       {
+        clientMessageId: frame.clientMessageId,
         text: mine.text,
         images: sameTurn && local!.images.length ? local!.images : mine.images,
         annotations: mine.annotations.length ? mine.annotations : (sameTurn ? local!.annotations : []),
@@ -2255,11 +2286,13 @@ function applyVisitEndedFrame(frame: {
       visitEndedNotice(false),
     )
   }
-  settleAfterTurnEnd()
+  settleAfterTurnEnd(frame.item)
 }
 
 /** Parent feeds review/clarify WS frames here (shared session protocol). */
 function applyReviewFrame(frame: {
+  sessionGeneration?: number
+  revision?: number
   event?: string
   nodeId?: string
   item?: SessionFrameItem
@@ -2277,10 +2310,33 @@ function applyReviewFrame(frame: {
   autoRetryOnResume?: boolean
   /** Echo of the request's clientMessageId (only when the request had one). */
   clientMessageId?: string
+  dropped?: ClarifyDroppedPayload
 }) {
   // Defense: ignore frames for other producer sessions on the same run.
   if (frame.nodeId && frame.nodeId !== props.nodeId) return
+  if (frame.event === 'session_reset') {
+    reviewStateCursor.reset()
+    return
+  }
+  if (!reviewStateCursor.accept(frame)) return
   switch (frame.event) {
+    case 'request_rejected': {
+      const send = frame.clientMessageId
+        ? localSends.find(send => send.item.clientMessageId === frame.clientMessageId) : undefined
+      const mine = takeClarifyOutbox(props.runId, props.nodeId, frame.clientMessageId, { own: !!send })
+      if (!send && !mine) return
+      restoreUnsentQueued({
+        clientMessageId: frame.clientMessageId,
+        text: send?.item.text ?? mine?.text,
+        images: send?.item.images ?? mine?.images,
+        annotations: send?.item.annotations ?? mine?.annotations,
+        at: mine?.at,
+        imagesDropped: mine?.imagesDropped,
+      }, frame.code === 'clarify_visit_ended'
+        ? visitEndedNotice(frame.autoRetryOnResume)
+        : frame.message || 'error', { autoRetryOnResume: frame.autoRetryOnResume })
+      break
+    }
     case 'turn_begin': {
       idleNarrativeOpen = false
       idlePainted = false
@@ -2291,15 +2347,18 @@ function applyReviewFrame(frame: {
       // frame.item is server-authoritative; match-remove by id first, text fallback —
       // never blind-shift (that would bind live human to the next waiter after trim).
       const auth = frame.item
-      if (auth?.id && (auth.id === lastCompletedItemId ||
-        (auth.id === liveTurnOrigin?.id && liveAgentIdx.value >= 0))) return
       const localSend = localSendForFrame(auth)
-      if (localSend?.begun && liveTurnOrigin?.id === auth?.id) return
       const text = auth?.text ?? ''
       const begun = takeTurnBeginItem(queued.value, auth)
       queued.value = localSend
         ? begun.queue.filter(item => (item as QueueItem).localKey !== localSend.key)
         : begun.queue
+      // Duplicate opening frames still acknowledge/remove their own queue row.
+      // They must preserve any output already streamed into the active reply.
+      if (auth?.id && (auth.id === lastCompletedItemId ||
+        (auth.id === liveTurnOrigin?.id && liveAgentIdx.value >= 0))) return
+      if (localSend?.begun && liveTurnOrigin?.id === auth?.id) return
+      if (auth?.id && liveTurnOrigin?.id && auth.id !== liveTurnOrigin.id) endLiveStreaming()
       const local = begun.taken ?? localSend?.item
       const images =
         auth?.images && auth.images.length > 0 ? auth.images : local?.images
@@ -2308,9 +2367,11 @@ function applyReviewFrame(frame: {
           ? auth.annotations
           : local?.annotations
       const humanText = text || local?.text || ''
+      const clientMessageId = auth?.clientMessageId ?? localSend?.item.clientMessageId
       if (!liveTurns.value.length) liveHistoryAnchor = anchorForNewLiveHuman(humanText)
       liveTurnOrigin = {
         id: auth?.id,
+        clientMessageId: auth?.clientMessageId,
         text: (local ? composerOrigin.get(toRaw(local)) : undefined) ?? humanText,
         // Prefer the local copy: it still has inline data/preview, while the
         // server item may already be ref-only (blob:…) after upload.
@@ -2320,6 +2381,16 @@ function applyReviewFrame(frame: {
       }
       // Attach to the accepted row. Same text on an older finished turn does
       // not count. Cover retry still reuses the trailing failed/empty slot.
+      const currentAgent = liveTurns.value[liveAgentIdx.value]
+      const currentHuman = liveTurns.value[liveAgentIdx.value - 1]
+      const pendingOwner = localSends.find(send => !send.begun && send.human &&
+        toRaw(send.human) === toRaw(currentHuman))
+      if (pendingOwner && pendingOwner !== localSend && currentAgent?.localPending &&
+        !(currentAgent.text || '').trim() && !(currentAgent.thought || '').trim() &&
+        !currentAgent.tools?.length && !currentAgent.parts?.length) {
+        liveTurns.value.splice(liveAgentIdx.value, 1)
+        liveAgentIdx.value = -1
+      }
       const pendingAt = findLocalPendingPair(localSend)
       if (localSend) localSend.begun = true
       const last = liveTurns.value.length
@@ -2329,6 +2400,7 @@ function applyReviewFrame(frame: {
         pendingAt < 0 &&
         tailHuman?.role === 'human' &&
         tailAgent?.role === 'agent' &&
+        (!clientMessageId || !tailHuman.clientMessageId || tailHuman.clientMessageId === clientMessageId) &&
         (tailHuman.text || '') === humanText &&
         (isRetryableFailedAgent(tailAgent) ||
           (!(tailAgent.text || '').trim() && !(tailAgent.thought || '').trim()))
@@ -2339,6 +2411,7 @@ function applyReviewFrame(frame: {
           const started = new Date().toISOString()
           liveTurns.value.splice(pairAt + 1, 0, {
             role: 'agent',
+            clientMessageId,
             text: '',
             thought: '',
             at: started,
@@ -2350,6 +2423,8 @@ function applyReviewFrame(frame: {
         }
         const existingAgent = liveTurns.value[pairAt + 1]!
         if (existingHuman.localPending) liveTurnOrigin.newHuman = true
+        existingHuman.clientMessageId = clientMessageId ?? existingHuman.clientMessageId
+        existingAgent.clientMessageId = existingHuman.clientMessageId
         existingHuman.images = images ?? existingHuman.images
         existingHuman.annotations = annotations ?? existingHuman.annotations
         existingAgent.text = ''
@@ -2365,12 +2440,13 @@ function applyReviewFrame(frame: {
       } else {
         const started = new Date().toISOString()
         liveTurnOrigin.newHuman = true
-        const human: ClarifyTurn = { role: 'human', text: humanText, at: started, images, annotations }
+        const human: ClarifyTurn = { role: 'human', text: humanText, at: started, images, annotations, clientMessageId }
         if (localSend) localSend.human = human
         liveTurns.value.push(human)
         liveAgentIdx.value =
           liveTurns.value.push({
             role: 'agent',
+            clientMessageId,
             text: '',
             thought: '',
             at: started,
@@ -2387,8 +2463,12 @@ function applyReviewFrame(frame: {
       break
     }
     case 'turn_done': {
-      // Answered: this tab's outbox copy is no longer needed.
-      if (liveTurnOrigin?.text) ackClarifyOutboxText(props.runId, props.nodeId, liveTurnOrigin.text)
+      // A full terminal snapshot may be newer than a missed turn_begin. Ack
+      // the request it names, never an older slot that happens to be visible.
+      const origin = !frame.item?.id || frame.item.id === liveTurnOrigin?.id ? liveTurnOrigin : null
+      const completedClientId = frame.item?.clientMessageId ?? origin?.clientMessageId
+      if (completedClientId) dropClarifyOutbox(props.runId, props.nodeId, completedClientId)
+      else if (origin?.text) ackClarifyOutboxText(props.runId, props.nodeId, origin.text)
       if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
         const agent = liveTurns.value[liveAgentIdx.value]
         agent.streaming = false
@@ -2404,12 +2484,18 @@ function applyReviewFrame(frame: {
       liveAgentIdx.value = -1
       // Pump may omit idle queue_state; clear ghost optimistic rows only.
       // Real id waiters stay busy until authoritative idle (review v1).
-      settleAfterTurnEnd()
+      settleAfterTurnEnd(frame.item)
+      if (typeof frame.waiting === 'number' && Array.isArray(frame.items)) {
+        applyQueueState(frame.waiting, frame.items, frame.busy, frame.activeItem)
+      }
       break
     }
     case 'error': {
       if (frame.code === 'clarify_visit_ended') {
         applyVisitEndedFrame(frame)
+        if (typeof frame.waiting === 'number' && Array.isArray(frame.items)) {
+          applyQueueState(frame.waiting, frame.items, frame.busy, frame.activeItem)
+        }
         break
       }
       if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
@@ -2426,7 +2512,10 @@ function applyReviewFrame(frame: {
       }
       liveAgentIdx.value = -1
       // Same as turn_done: ghosts only; keep real remaining waiters.
-      settleAfterTurnEnd()
+      settleAfterTurnEnd(frame.item)
+      if (typeof frame.waiting === 'number' && Array.isArray(frame.items)) {
+        applyQueueState(frame.waiting, frame.items, frame.busy, frame.activeItem)
+      }
       break
     }
     case 'queue_state':
@@ -2511,6 +2600,7 @@ function applyAgentSegments(segs: { thought: string; message: string }[], tools:
     const started = new Date().toISOString()
     liveTurns.value.splice(first + count, 0, {
       role: 'agent', text: '', thought: '', at: started, startedAt: started, streaming: true,
+      clientMessageId: liveTurns.value[first]?.clientMessageId ?? liveTurns.value[first - 1]?.clientMessageId ?? liveTurnOrigin?.clientMessageId,
     })
     count++
   }
@@ -2553,6 +2643,7 @@ function paintIdleNarrative(events: AcpEvent[]): boolean {
     idx =
       liveTurns.value.push({
         role: 'agent',
+        clientMessageId: liveTurnOrigin?.clientMessageId ?? [...persistedTurns.value].reverse().find(turn => turn.role === 'human')?.clientMessageId,
         text: '',
         thought: '',
         at: started,
@@ -2676,6 +2767,7 @@ function ensureOrphanSlot() {
   if (human) {
     next.push({
       role: 'human',
+      clientMessageId: human.clientMessageId,
       text: human.text || '',
       at: human.at || started,
       images: human.images,
@@ -2684,6 +2776,7 @@ function ensureOrphanSlot() {
   }
   next.push({
     role: 'agent',
+    clientMessageId: human?.clientMessageId,
     text: '',
     thought: '',
     at: started,
@@ -2928,6 +3021,7 @@ function retryLastFailed() {
   liveTurns.value = [
     {
       role: 'human',
+      clientMessageId: human.clientMessageId,
       text: human.text || '',
       at: human.at || new Date().toISOString(),
       images: human.images,
@@ -2935,6 +3029,7 @@ function retryLastFailed() {
     },
     {
       role: 'agent',
+      clientMessageId: human.clientMessageId,
       text: '',
       thought: '',
       at: new Date().toISOString(),

@@ -138,7 +138,7 @@ describe('Run detail panel shells (Demo entry assembly)', () => {
           ClarifyChat: defineComponent({
             emits: ['send', 'finish', 'cancel'],
             template:
-              '<button data-testid="clarify-send" @click="$emit(\'send\', \'hi\', [], [])">send</button>',
+              '<button data-testid="clarify-send" @click="$emit(\'send\', \'hi\', [], [], \'30000000-0000-4000-8000-000000000001\')">send</button>',
           }),
         },
       },
@@ -151,7 +151,7 @@ describe('Run detail panel shells (Demo entry assembly)', () => {
     expect(stage.props('annotatable')).toBe(true)
     expect(stage.props('nodeId')).toBe('c1')
     await clarify.get('[data-testid="clarify-send"]').trigger('click')
-    expect(clarify.emitted('send')?.[0]).toEqual(['hi', [], []])
+    expect(clarify.emitted('send')?.[0]).toEqual(['hi', [], [], '30000000-0000-4000-8000-000000000001'])
     clarify.unmount()
 
     const output = mount(RunOutputPanel, {

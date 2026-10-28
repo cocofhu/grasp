@@ -134,6 +134,8 @@ describe('formatting', () => {
     expect(launchCommand('cursor', 'gpt-5')).toBe('cursor-agent --model gpt-5')
     expect(launchCommand('codex', 'gpt-5-codex')).toBe('codex exec --model gpt-5-codex')
     expect(launchCommand('claude_code', '')).toBe('claude')
+    expect(launchCommand('kimi_code', 'kimi-k3.1-pro')).toBe('kimi acp')
+    expect(launchCommand('kimi_code', '')).toBe('kimi acp')
   })
 
   it('derives strengths from tags', () => {

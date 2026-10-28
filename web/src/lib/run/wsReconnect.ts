@@ -34,6 +34,11 @@ export function createWsReconnectController(opts: WsReconnectOptions) {
   }
 
   return {
+    /** A replacement must retry even when its handshake fails before open. */
+    markConnecting() {
+      intentionalClose = false
+      clearTimer()
+    },
     /** Call before closing the socket on purpose (navigate away / hard load). */
     markIntentionalClose() {
       intentionalClose = true

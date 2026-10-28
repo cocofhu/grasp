@@ -23,6 +23,8 @@ import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { isFeedbackArtifactName } from '@/lib/run/reactArtifactPreview'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
+import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
+import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import {
   createBusySeedRetryController,
   runBusySeedRetry,
@@ -887,6 +889,7 @@ function rewritePublicFrameImages(frame: Record<string, unknown>): Record<string
   return next
 }
 
+const publicReviewCursor = createReviewStateCursor()
 function handlePublicWsMessage(raw: string) {
   let m: Record<string, unknown>
   try {
@@ -897,6 +900,8 @@ function handlePublicWsMessage(raw: string) {
   lastChatUpdateAt = Date.now()
   const typ = String(m.type || '')
   if (typ === 'ready') {
+    if (publicReviewCursor.hasVersion) chatRef.value?.applyReviewFrame?.({ event: 'session_reset', nodeId: 'public-gate' })
+    publicReviewCursor.reset()
     emit('events-ready')
     // Frames published while disconnected are gone (the server only seeds a
     // still-busy turn), so a reconnect re-reads the transcript like run detail.
@@ -915,6 +920,7 @@ function handlePublicWsMessage(raw: string) {
     return
   }
   if (typ === 'review') {
+    if (!publicReviewCursor.acceptServer(m)) return
     // ACP buffered before this turn started belongs to an earlier turn.
     if (m.event === 'turn_begin') pendingPublicAcp = null
     chatRef.value?.applyReviewFrame?.(rewritePublicFrameImages(m))
@@ -937,15 +943,25 @@ const publicWsReconnect = createWsReconnectController({
   connect: () => connectPublicEvents(),
   shouldReconnect: () => isActive.value && !doneKind.value && !linkInvalid.value && !!token.value,
 })
+const publicHeartbeat = createWsHeartbeat({
+  onTimeout: () => {
+    const socket = publicWs
+    publicWs = undefined
+    socket?.close()
+    emit('events-closed')
+    publicWsReconnect.onClose()
+  },
+})
 
 function connectPublicEvents() {
   if (!isActive.value || doneKind.value || linkInvalid.value || !token.value) return
   const prev = publicWs
+  publicHeartbeat.stop()
+  publicWs = undefined
   if (prev) {
-    publicWsReconnect.markIntentionalClose()
     prev.close()
-    if (publicWs === prev) publicWs = undefined
   }
+  publicWsReconnect.markConnecting()
   let socket: WebSocket
   try {
     socket = new WebSocket(publicGateApi.eventsWsUrl())
@@ -954,8 +970,10 @@ function connectPublicEvents() {
     publicWsReconnect.onClose()
     return
   }
+  publicHeartbeat.start()
   socket.onopen = () => {
     if (publicWs !== socket) return
+    publicHeartbeat.touch()
     publicWsReconnect.markOpened()
     try {
       socket.send(JSON.stringify({ token: token.value, visitor: getShareVisitorId() }))
@@ -965,10 +983,12 @@ function connectPublicEvents() {
   }
   socket.onmessage = (ev) => {
     if (publicWs !== socket) return
+    publicHeartbeat.touch()
     handlePublicWsMessage(String(ev.data || ''))
   }
   socket.onclose = () => {
     if (publicWs !== socket) return
+    publicHeartbeat.stop()
     publicWs = undefined
     emit('events-closed')
     publicWsReconnect.onClose()
@@ -976,11 +996,13 @@ function connectPublicEvents() {
 }
 
 function stopPublicEvents() {
+  publicHeartbeat.stop()
   publicWsWasReady = false
   publicBusySeedRetry.stop()
   publicWsReconnect.markIntentionalClose()
-  publicWs?.close()
+  const socket = publicWs
   publicWs = undefined
+  socket?.close()
   pendingPublicAcp = null
   publicRailsFilled = false
   publicLiveIncremental = false
@@ -1802,7 +1824,7 @@ defineExpose({
                   :key="publicConversationScope"
                   ref="chatRef"
                   :mode="composerMode"
-                  :send-request="chatOnly ? onSend : undefined"
+                  :send-request="chatOnly ? (text, images, anns) => onSend(text, images, anns) : undefined"
                   run-id="public-share"
                   node-id="public-gate"
                   :iteration="1"

@@ -208,6 +208,13 @@ func TestPrepareAuthClonesPrivateHTTP(t *testing.T) {
 	if exec.Command("git", "-C", got.Repos[0].Path, "symbolic-ref", "-q", "HEAD").Run() == nil {
 		t.Fatal("worktree is still on a branch")
 	}
+	mirror := filepath.Join(os.Getenv("GRASP_WORKTREE_ROOT"), ".mirrors", "priv", "app")
+	if info, err := os.Stat(mirror); err != nil || !info.IsDir() {
+		t.Fatalf("mirror directory: %v", err)
+	}
+	if body, err := os.ReadFile(os.Getenv("GIT_CONFIG_GLOBAL")); err == nil && strings.Contains(string(body), "credential") {
+		t.Fatal("credential helper was written to process git config")
+	}
 	End("priv")
 }
 
@@ -241,6 +248,262 @@ func TestPrepareAuthRejectsPrivateHTTPWithoutCredential(t *testing.T) {
 	}
 	if _, statErr := os.Stat(bare); statErr != nil {
 		t.Fatal(statErr)
+	}
+}
+
+func TestPrepareBranchWithSlash(t *testing.T) {
+	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+	repo := initRepo(t)
+	gitRun(t, repo, "checkout", "-b", "topic/slash")
+	want := gitOut(t, repo, "rev-parse", "refs/heads/topic/slash")
+	got, err := Prepare("slash", []Source{{Name: "app", URL: repo, Branch: "topic/slash"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gitOut(t, got.Repos[0].Path, "rev-parse", "HEAD") != want {
+		t.Fatal("slash branch was not checked out")
+	}
+	End("slash")
+}
+
+func TestPrepareEmptyBranchUsesHEAD(t *testing.T) {
+	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+	repo := initRepo(t)
+	want := gitOut(t, repo, "rev-parse", "HEAD")
+	got, err := Prepare("empty-branch", []Source{{Name: "app", URL: repo}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gitOut(t, got.Repos[0].Path, "rev-parse", "HEAD") != want {
+		t.Fatal("empty branch did not use HEAD")
+	}
+	End("empty-branch")
+}
+
+func TestPrepareCopiesNamesWithTwoDots(t *testing.T) {
+	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+	src := t.TempDir()
+	if err := os.Mkdir(filepath.Join(src, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "foo..bar.txt"), []byte("dots"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "sub", "a..b"), []byte("inner"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Prepare("dots", []Source{{Name: "notes", URL: src}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(got.Repos[0].Path, "foo..bar.txt"))
+	if err != nil || string(body) != "dots" {
+		t.Fatalf("copy=%q err=%v", body, err)
+	}
+	inner, err := os.ReadFile(filepath.Join(got.Repos[0].Path, "sub", "a..b"))
+	if err != nil || string(inner) != "inner" {
+		t.Fatalf("nested=%q err=%v", inner, err)
+	}
+	End("dots")
+}
+
+func TestPrepareRejectsLocalPathWithDotDot(t *testing.T) {
+	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+	base := t.TempDir()
+	sentinel := filepath.Join(base, "sentinel")
+	if err := os.Mkdir(sentinel, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sentinel, "keep"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Join would clean ".." away; the address must still contain the segment.
+	url := filepath.Join(base, "missing") + "/../sentinel"
+	if _, err := Prepare("dotdot", []Source{{Name: "app", URL: url}}); err == nil {
+		t.Fatal("expected local path with .. to fail")
+	}
+	body, err := os.ReadFile(filepath.Join(sentinel, "keep"))
+	if err != nil || string(body) != "x" {
+		t.Fatalf("sentinel changed: %q %v", body, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(os.Getenv("GRASP_WORKTREE_ROOT"), "dotdot")); !os.IsNotExist(statErr) {
+		t.Fatal("rejected launch directory was kept")
+	}
+}
+
+func TestPrepareRejectsBadRemoteAndBranch(t *testing.T) {
+	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+	repo := initRepo(t)
+	cases := []Source{
+		{Name: "app", URL: "git://example.com/repo.git", Branch: "main"},
+		{Name: "app", URL: "http://example.com/a b.git", Branch: "main"},
+		{Name: "app", URL: "-not-a-url", Branch: "main"},
+		{Name: "app", URL: repo, Branch: "feature/../main"},
+		{Name: "app", URL: repo, Branch: "-rf"},
+	}
+	for _, src := range cases {
+		if _, err := Prepare("bad", []Source{src}); err == nil {
+			t.Fatalf("expected rejection for %+v", src)
+		}
+		if _, statErr := os.Stat(filepath.Join(os.Getenv("GRASP_WORKTREE_ROOT"), "bad")); !os.IsNotExist(statErr) {
+			t.Fatalf("rejected launch kept for %+v", src)
+		}
+	}
+	if _, err := validateRemote("git@github.com:org/repo.git"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateRemote("ssh://git@github.com/org/repo.git"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateRemote("https://example.com/a/../b.git"); err == nil {
+		t.Fatal("expected .. in a remote URL to fail")
+	}
+}
+
+func TestCopyTargetRejectsEscape(t *testing.T) {
+	dst := t.TempDir()
+	outside := filepath.Join(filepath.Dir(dst), "outside-copy")
+	if _, err := copyTarget(dst, ".."); err == nil {
+		t.Fatal("relative .. was accepted")
+	}
+	if _, err := copyTarget(dst, "sub/../../"+filepath.Base(outside)); err == nil {
+		t.Fatal("relative escape was accepted")
+	}
+	got, err := copyTarget(dst, "foo..bar.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Join(dst, "foo..bar.txt") {
+		t.Fatalf("two-dot name: %s", got)
+	}
+	if _, err := pathWithin(dst, dst+"evil"); err == nil {
+		t.Fatal("adjacent directory was accepted")
+	}
+	if _, err := pathWithin(dst, filepath.Join(dst, "..", "outside-copy")); err == nil {
+		t.Fatal("cleaned escape was accepted")
+	}
+}
+
+func TestRemoveWithinDoesNotEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(filepath.Dir(root), "outside-rm")
+	if err := os.Mkdir(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(outside, "keep")
+	if err := os.WriteFile(keep, []byte("z"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	removeWithin(root, outside)
+	removeWithin(root, filepath.Join(root, "..", filepath.Base(outside)))
+	body, err := os.ReadFile(keep)
+	if err != nil || string(body) != "z" {
+		t.Fatalf("outside file removed: %q %v", body, err)
+	}
+}
+
+func TestFailedPrepareDoesNotRemoveOutsideMirror(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("GRASP_WORKTREE_ROOT", root)
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+	sentinel := filepath.Join(root, "sentinel")
+	if err := os.Mkdir(sentinel, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sentinel, "keep"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Prepare("bad-mirror", []Source{{Name: "app", URL: "http://127.0.0.1:1/nope.git", Branch: "main"}})
+	if err == nil {
+		t.Fatal("expected clone to fail")
+	}
+	body, readErr := os.ReadFile(filepath.Join(sentinel, "keep"))
+	if readErr != nil || string(body) != "x" {
+		t.Fatalf("sentinel removed: %q %v", body, readErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "bad-mirror")); !os.IsNotExist(statErr) {
+		t.Fatal("failed launch directory was kept")
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".mirrors", "bad-mirror")); !os.IsNotExist(statErr) {
+		t.Fatal("failed mirror directory was kept")
+	}
+}
+
+func TestPrepareSeparateMirrorsPerName(t *testing.T) {
+	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+	bare, feature := bareFeatureRepo(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveGitHTTP(w, r, filepath.Dir(bare))
+	}))
+	t.Cleanup(srv.Close)
+	cloneURL := "http://alice@" + strings.TrimPrefix(srv.URL, "http://") + "/repo.git"
+	got, err := Prepare("two", []Source{
+		{Name: "alpha", URL: cloneURL, Branch: "feature"},
+		{Name: "beta", URL: cloneURL, Branch: "feature"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mirrors := filepath.Join(os.Getenv("GRASP_WORKTREE_ROOT"), ".mirrors", "two")
+	for _, name := range []string{"alpha", "beta"} {
+		info, statErr := os.Stat(filepath.Join(mirrors, name))
+		if statErr != nil || !info.IsDir() {
+			t.Fatalf("mirror %s: %v", name, statErr)
+		}
+	}
+	entries, err := os.ReadDir(mirrors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].Name() == entries[1].Name() {
+		t.Fatalf("mirrors=%v", entries)
+	}
+	if strings.Contains(mirrors, "alice") {
+		t.Fatalf("userinfo leaked into mirror path %s", mirrors)
+	}
+	for _, repo := range got.Repos {
+		if gitOut(t, repo.Path, "rev-parse", "HEAD") != feature {
+			t.Fatalf("repo %s is not at feature", repo.Name)
+		}
+	}
+	End("two")
+}
+
+func TestHTTPSHelperStaysInProcessEnv(t *testing.T) {
+	env, prefix, cleanup, err := httpsHelper(gitScope{scheme: "https", host: "github.com", path: "org/repo"}, identity{kind: credGitHubHTTPS, secret: "example-token"})
+	if cleanup != nil {
+		t.Cleanup(cleanup)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prefix) != 0 {
+		t.Fatalf("helper returned argv: %v", prefix)
+	}
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "GIT_CONFIG_COUNT=3") || !strings.Contains(joined, "GIT_CONFIG_KEY_1=credential.helper") {
+		t.Fatalf("missing process config: %s", joined)
+	}
+	if !strings.Contains(joined, "!") || !strings.Contains(joined, " ") {
+		t.Fatal("helper value was not passed through process config")
+	}
+	for _, arg := range prefix {
+		if strings.Contains(arg, "!") {
+			t.Fatal("credential helper remained in argv")
+		}
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -143,6 +144,263 @@ func TestSessionRunsInOrderAndPublishesFrames(t *testing.T) {
 	}
 	if !s.Idle() || !s.Ready() {
 		t.Fatal("session should be idle")
+	}
+}
+
+// A paused queue publisher must keep the version captured at the mutation,
+// even when three turns finish before its callback reaches the wire. Otherwise
+// a delayed enqueue/reconnect snapshot can make completed B appear queued again.
+func TestSessionDelayedQueueFrameCannotBecomeNewerThanCompletedTurns(t *testing.T) {
+	h := newHarness()
+	finishA, finishB, finishC := h.hold("a"), h.hold("b"), h.hold("c")
+	cfg := h.config()
+	cfg.Capacity = 4
+	originalPublish := cfg.Publish
+	delayed := make(chan struct{})
+	releasePublish := make(chan struct{})
+	enqueued := make(chan struct{})
+	cfg.Publish = func(event string, payload map[string]any) {
+		if event == EventQueueState {
+			items := payload["items"].([]map[string]any)
+			if len(items) == 1 && items[0]["id"] == "b" {
+				close(delayed)
+				<-releasePublish
+			}
+		}
+		originalPublish(event, payload)
+	}
+	s := New(cfg)
+	_, _ = s.Enqueue(&testItem{"a", "first"}, nil)
+	waitFor(t, func() bool { return h.last(EventTurnBegin) != nil })
+	go func() { _, _ = s.Enqueue(&testItem{"b", "second"}, nil); close(enqueued) }()
+	select {
+	case <-delayed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("queue publication did not pause")
+	}
+	_, _ = s.Enqueue(&testItem{"c", "third"}, nil)
+	close(finishA)
+	waitFor(t, func() bool { active, ok := s.Active(); return ok && active.id == "b" })
+	beginB := h.last(EventTurnBegin)
+	waitFor(t, func() bool {
+		beginB = h.last(EventTurnBegin)
+		return beginB != nil && beginB["item"].(map[string]any)["id"] == "b"
+	})
+	if beginB["activeItem"].(map[string]any)["id"] != "b" || beginB["waiting"] != 1 || beginB["items"].([]map[string]any)[0]["id"] != "c" {
+		t.Fatalf("begin must carry the complete current FIFO: %v", beginB)
+	}
+	close(finishB)
+	waitFor(t, func() bool { active, ok := s.Active(); return ok && active.id == "c" })
+	close(finishC)
+	h.waitIdle(t)
+	latest := h.last(EventTurnDone)
+	snapshot := s.Snapshot()
+	close(releasePublish)
+	select {
+	case <-enqueued:
+	case <-time.After(2 * time.Second):
+		t.Fatal("delayed enqueue never returned")
+	}
+	stale := h.last(EventQueueState)
+	if latest["sessionGeneration"] == nil || latest["sessionGeneration"] != stale["sessionGeneration"] || latest["revision"].(uint64) <= stale["revision"].(uint64) {
+		t.Fatalf("completed state must supersede the delayed snapshot: latest=%v stale=%v", latest, stale)
+	}
+	if snapshot.SessionGeneration != latest["sessionGeneration"] || snapshot.Revision != latest["revision"] || snapshot.Busy || snapshot.Waiting != 0 {
+		t.Fatalf("reconnect snapshot must match terminal authority: %+v latest=%v", snapshot, latest)
+	}
+	if latest["item"].(map[string]any)["id"] != "c" || latest["busy"] != false || latest["waiting"] != 0 {
+		t.Fatalf("terminal identity/state missing: %v", latest)
+	}
+}
+
+func TestSessionQueueRefreshCapturesVersionAndActiveIdentityTogether(t *testing.T) {
+	h := newHarness()
+	finish := h.hold("a")
+	cfg := h.config()
+	cfg.View = func(it *testItem) ItemView {
+		return ItemView{ID: it.id, ClientMessageID: "client-" + it.id, Text: it.text}
+	}
+	s := New(cfg)
+	_, _ = s.Enqueue(&testItem{"a", "first"}, nil)
+	waitFor(t, func() bool { return h.last(EventTurnBegin) != nil })
+	_, _ = s.Enqueue(&testItem{"b", "second"}, nil)
+	for range 2 { // Independent viewers reconnecting must observe the same authority.
+		s.PublishQueueState()
+		state := h.last(EventQueueState)
+		snap := s.Snapshot()
+		if state["sessionGeneration"] != snap.SessionGeneration || state["revision"] != snap.Revision || state["waiting"] != 1 || state["activeItem"].(map[string]any)["clientMessageId"] != "client-a" {
+			t.Fatalf("refresh lost atomic version/identity: frame=%v snapshot=%+v", state, snap)
+		}
+		if state["items"].([]map[string]any)[0]["clientMessageId"] != "client-b" {
+			t.Fatalf("pending item lost sender identity: %v", state)
+		}
+	}
+	close(finish)
+	h.waitIdle(t)
+}
+
+func TestSessionSnapshotWatermarkDistinguishesRetiredAndNewSessions(t *testing.T) {
+	retired := New(Config[string]{}).Snapshot()
+	floor := CurrentSessionGeneration()
+	next := New(Config[string]{}).Snapshot()
+	if retired.SessionGeneration > floor || next.SessionGeneration <= floor {
+		t.Fatalf("idle snapshot cannot distinguish retired/new sessions: retired=%d floor=%d next=%d", retired.SessionGeneration, floor, next.SessionGeneration)
+	}
+}
+
+func TestSessionCancelPersistsDroppedItemsBeforeInterruptingActiveTurn(t *testing.T) {
+	var s *Session[string]
+	var droppedPersisted atomic.Bool
+	activeCtx := make(chan context.Context, 1)
+	interruptedBeforeDrop := make(chan struct{}, 1)
+	dropStarted, releaseDrop := make(chan struct{}), make(chan struct{})
+	cancelDone, idle := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseDrop) }) }
+	t.Cleanup(release)
+	var dropCtxErr error
+	var dropSnapshot Snapshot
+	var nativeTarget string
+	s = New(Config[string]{
+		View: func(id string) ItemView { return ItemView{ID: id} },
+		Execute: func(ctx context.Context, _ string) (bool, error) {
+			activeCtx <- ctx
+			<-ctx.Done()
+			// PM persists its active turn's failure immediately after cancellation.
+			// Pending-item persistence must finish before releasing that writer.
+			if !droppedPersisted.Load() {
+				interruptedBeforeDrop <- struct{}{}
+			}
+			return true, nil
+		},
+		OnDropped: func(items []string) {
+			if len(items) != 1 || items[0] != "b" {
+				t.Errorf("dropped items = %v, want [b]", items)
+			}
+			dropCtxErr = (<-activeCtx).Err()
+			dropSnapshot = s.Snapshot() // Cleanup callbacks must not hold the state mutex.
+			close(dropStarted)
+			<-releaseDrop
+			droppedPersisted.Store(true)
+		},
+		CancelTurn: func() { nativeTarget, _ = s.Active() },
+		Publish:    func(string, map[string]any) {},
+		OnIdle:     func() { close(idle) },
+	})
+	_, _ = s.Enqueue("a", nil)
+	waitFor(t, func() bool { return s.Snapshot().Busy })
+	_, _ = s.Enqueue("b", nil)
+	go func() { s.Cancel(true); close(cancelDone) }()
+	select {
+	case <-dropStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dropped-item cleanup could not inspect session state")
+	}
+	if dropCtxErr != nil {
+		t.Errorf("active turn was interrupted before dropped-item persistence: %v", dropCtxErr)
+	}
+	if !dropSnapshot.Busy || dropSnapshot.Waiting != 0 || dropSnapshot.ActiveItem["id"] != "a" {
+		t.Errorf("cleanup snapshot = %+v, want active a with no pending items", dropSnapshot)
+	}
+	release()
+	select {
+	case <-cancelDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel never returned")
+	}
+	select {
+	case <-idle:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled session never became idle")
+	}
+	if nativeTarget != "a" {
+		t.Errorf("native cancel targeted %q, want a", nativeTarget)
+	}
+	select {
+	case <-interruptedBeforeDrop:
+		t.Error("active cancellation finalization raced dropped-item persistence")
+	default:
+	}
+}
+
+func TestSessionDelayedCancelPublicationCannotCancelNextTurn(t *testing.T) {
+	var s *Session[string]
+	var cancelling atomic.Bool
+	activeA, activeB := make(chan struct{}), make(chan struct{})
+	finishB := make(chan struct{})
+	delayedPublish, releasePublish, cancelDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	nativeTarget := make(chan string, 1)
+	idle := make(chan struct{})
+	s = New(Config[string]{
+		View: func(id string) ItemView { return ItemView{ID: id} },
+		Execute: func(ctx context.Context, id string) (bool, error) {
+			if id == "a" {
+				close(activeA)
+				<-ctx.Done()
+				return true, nil
+			}
+			close(activeB)
+			<-finishB
+			return false, nil
+		},
+		CancelTurn: func() {
+			active, _ := s.Active() // Native cancellation may inspect session state.
+			nativeTarget <- active
+		},
+		Publish: func(event string, payload map[string]any) {
+			active, _ := payload["activeItem"].(map[string]any)
+			if cancelling.Load() && event == EventQueueState && active["id"] == "a" {
+				close(delayedPublish)
+				<-releasePublish
+			}
+		},
+		OnIdle: func() { close(idle) },
+	})
+	_, _ = s.Enqueue("a", nil)
+	select {
+	case <-activeA:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first turn never started")
+	}
+	_, _ = s.Enqueue("b", nil)
+	cancelling.Store(true)
+	go func() { s.Cancel(false); close(cancelDone) }()
+	select {
+	case <-delayedPublish:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel publication did not pause")
+	}
+	// The old cancellation frame is still blocked, while the kept queue has
+	// already advanced. Native cancellation must have targeted A before this.
+	select {
+	case <-activeB:
+	case <-time.After(2 * time.Second):
+		t.Fatal("next turn was pinned behind a slow cancel publisher")
+	}
+	select {
+	case target := <-nativeTarget:
+		if target != "a" {
+			t.Fatalf("cancel for A targeted %q", target)
+		}
+	default:
+		t.Fatal("native cancellation was postponed until after queue publication")
+	}
+	close(releasePublish)
+	select {
+	case <-cancelDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel never returned")
+	}
+	select {
+	case target := <-nativeTarget:
+		t.Fatalf("late cancellation targeted %q", target)
+	default:
+	}
+	close(finishB)
+	select {
+	case <-idle:
+	case <-time.After(2 * time.Second):
+		t.Fatal("session never became idle")
 	}
 }
 

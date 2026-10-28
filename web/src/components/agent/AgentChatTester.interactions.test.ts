@@ -773,6 +773,77 @@ describe('AgentChatTester interactions', () => {
     w.unmount()
   })
 
+  it.each(['turn_done', 'error'])('keeps %s final when a delayed cancel queue frame arrives afterward', async (terminal) => {
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.openWs(5)
+    socket!.onopen?.()
+    await flushPromises()
+    frame('turn_begin', { sessionGeneration: 8, revision: 3, item: { id: 'A', text: 'first' } })
+    frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'partial answer' } } } })
+    frame(terminal, { sessionGeneration: 8, revision: 5, item: { id: 'A' }, ...(terminal === 'error' ? { message: 'stopped' } : {}) })
+    // Cancel captured this busy state before A ended, but its publisher was delayed.
+    frame('queue_state', { sessionGeneration: 8, revision: 4, busy: true, waiting: 1, activeItem: { id: 'A', text: 'first' }, items: [{ id: 'A', text: 'first' }] })
+    frame('turn_begin', { sessionGeneration: 8, revision: 3, item: { id: 'A', text: 'first' } })
+    await flushPromises()
+    expect(vm.status).toBe('ready')
+    expect(vm.activeIdx).toBe(-1)
+    expect(vm.queued).toEqual([])
+    expect(vm.turns.map((turn: any) => turn.text)).toEqual(['first', 'partial answer'])
+    expect(vm.turns.at(-1).streaming).toBe(false)
+
+    // A new live turn must still start after the stale frames were rejected.
+    frame('turn_begin', { sessionGeneration: 8, revision: 6, item: { id: 'B', text: 'second' } })
+    expect(vm.status).toBe('thinking')
+    expect(vm.activeItemId).toBe('B')
+    w.unmount()
+  })
+
+  it('restores a fresh subscription head after a server restart without requiring its older replay begin', async () => {
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.openWs(5)
+    socket!.onopen?.()
+    await flushPromises()
+    frame('turn_begin', { sessionGeneration: 8, revision: 3, item: { id: 'A', text: 'first' } })
+    frame('turn_done', { sessionGeneration: 8, revision: 4, item: { id: 'A' } })
+
+    vm.openWs(5)
+    socket!.onopen?.()
+    frame('queue_state', { sessionGeneration: 1, revision: 6, busy: true, waiting: 0, activeItem: { id: 'B', text: 'second' }, items: [] })
+    frame('turn_begin', { sessionGeneration: 1, revision: 3, item: { id: 'B', text: 'second' } })
+    frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'running after restart' } } } })
+    await flushPromises()
+    expect(vm.activeItemId).toBe('B')
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:B')).toHaveLength(1)
+    expect(vm.turns.at(-1).text).toBe('running after restart')
+    expect(vm.status).toBe('thinking')
+    frame('turn_done', { sessionGeneration: 1, revision: 7, item: { id: 'B' } })
+    await flushPromises()
+    expect(vm.status).toBe('ready')
+    w.unmount()
+  })
+
+  it('shows an unversioned queue-control refusal without stopping the active versioned turn', async () => {
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.openWs(5)
+    socket!.onopen?.()
+    await flushPromises()
+    frame('queue_state', { sessionGeneration: 8, revision: 3, busy: true, waiting: 0, activeItem: { id: 'A', text: 'first' }, items: [] })
+    frame('error', { message: 'cannot remove active item' })
+    frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'still running' } } } })
+    await flushPromises()
+    expect(vm.errorMsg).toBe('cannot remove active item')
+    expect(vm.status).toBe('thinking')
+    expect(vm.activeItemId).toBe('A')
+    expect(vm.turns.at(-1)).toMatchObject({ text: 'still running', streaming: true })
+    expect(vm.turns.at(-1).error).toBeUndefined()
+    frame('turn_done', { sessionGeneration: 8, revision: 4, item: { id: 'A' } })
+    expect(vm.status).toBe('ready')
+    w.unmount()
+  })
+
   it('keeps a completed same-text turn when the event log lags the new busy turn', async () => {
     mocks.eventLog.mockResolvedValue({
       events: [

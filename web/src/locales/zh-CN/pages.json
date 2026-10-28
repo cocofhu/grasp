@@ -424,7 +424,7 @@
           },
           "cli": {
             "title": "用编码工具",
-            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae、Codex 或 DeepSeek Harness（DSH）。DSH 使用 DeepSeek API Key，Codex 使用 ChatGPT 登录文件，其余工具使用各自的账号密钥。可以指定模型，也可以留给工具自己决定。"
+            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae、Codex、DeepSeek Harness（DSH）或 Kimi Code。DSH 使用 DeepSeek API Key，Kimi Code 使用开放平台 API Key（国内站 platform.kimi.com，国际站 platform.kimi.ai），Codex 使用 ChatGPT 登录文件，其余工具使用各自的账号密钥。可以指定模型，也可以留给工具自己决定。"
           }
         },
         "cliLabel": "选择编码工具",
@@ -1259,6 +1259,7 @@
         "secretOpenCodeKey": "OpenCode 官方 Key",
         "opencodeFamilyHint": "这把钥匙对应所选官方家族。官方模式可以使用 opencode/<模型> 或 opencode-go/<模型>。OpenCode 与 OpenCode Go 各存一把 OpenCode CLI 钥匙，用别名区分；一份模型配置只绑一把钥匙。",
         "secretDeepSeekKey": "DeepSeek 官方 Key",
+        "secretKimiCodeKey": "Kimi Code 开放平台 Key",
         "secretLoginFile": "登录文件",
         "secretPrivateKey": "私钥",
         "secretKnownHosts": "已知主机",
@@ -1279,7 +1280,8 @@
           "gitlab": "GitLab",
           "ssh_key": "SSH 私钥",
           "ssh_hosts": "SSH 已知主机",
-          "deepseek_harness": "DeepSeek Harness"
+          "deepseek_harness": "DeepSeek Harness",
+          "kimi_code": "Kimi Code"
         },
         "summary": {
           "total": "凭据槽位",
@@ -2352,6 +2354,8 @@
         "codebuddyInternationalHint": "codebuddy.ai · public",
         "traeDomesticHint": "docs.trae.cn · cn",
         "traeInternationalHint": "www.trae.ai · intl",
+        "kimiDomesticHint": "platform.kimi.com · cn",
+        "kimiInternationalHint": "platform.kimi.ai · intl",
         "managedByAcp": "此保留变量由 ACP 站点选择接管，不可在 ENV 中编辑或删除。",
         "managedConflict": "区域保留键已由 ACP 接管，请在 ACP 步骤选择站点。",
         "managedKey": "ACP 管理的区域变量",
@@ -2750,7 +2754,7 @@
           "templateHintPack": "将套用 {name}。"
         },
         "acp": {
-          "meta": "先选启动方式：用模型厂商的 API Key，或用编码工具。CodeBuddy 与 Trae 还需选择国内站或国际站，默认国际站。",
+          "meta": "先选启动方式：用模型厂商的 API Key，或用编码工具。CodeBuddy、Trae 与 Kimi Code 还需选择国内站或国际站，默认国际站。",
           "remapTitle": "确认更换 Backend？",
           "remapBody": "已配置的 MCP / Skills / Commands / Rules 可能依赖当前路径。更换 Backend 将按新的 configRoot 重映射；取消则保持原 Backend。"
         },
@@ -2777,7 +2781,8 @@
             "traeToken": "官方 CLI 登录令牌须含 trae-lt- 前缀（旗舰版）。",
             "opencode": "用模型厂商的 API Key 启动，可以指定模型和接口地址。",
             "codex": "Codex 使用 ChatGPT 登录文件，不使用 API Key。用 API Key 接 OpenAI 请改用 OpenCode。运行会更新这份文件，不要和正在使用的本机登录共用同一份。",
-            "deepseek": "使用 DeepSeek 平台的 API Key。密钥保存在工作区凭据中，模型单独选择。"
+            "deepseek": "使用 DeepSeek 平台的 API Key。密钥保存在工作区凭据中，模型单独选择。",
+            "kimi": "只接受开放平台 API Key，不接受登录文件。国内站密钥来自 platform.kimi.com，国际站密钥来自 platform.kimi.ai，两者不能混用。模型可以留空，留空时使用 CLI 默认模型。"
           },
           "paths": {
             "cursor": {
@@ -2815,6 +2820,11 @@
               "step1": "打开 DeepSeek 开放平台并登录账号。",
               "step2": "在 API Keys 页面创建一个 API Key。",
               "step3": "复制密钥并填入下方，或保存为工作区凭据。"
+            },
+            "kimi": {
+              "step1": "确认所选站点：国内站 platform.kimi.com，或国际站 platform.kimi.ai。",
+              "step2": "在该站点的 API Keys 页面创建一个开放平台 API Key。",
+              "step3": "只粘贴密钥本身。含 access_token 或 refresh_token 的登录文件会被拒绝。"
             }
           },
           "links": {
@@ -2830,7 +2840,9 @@
             "traeTokenDocs": "Trae CLI 登录令牌文档",
             "opencodeProviders": "支持的模型厂商",
             "codexAuth": "Codex 登录说明",
-            "deepseekKeys": "DeepSeek API Keys"
+            "deepseekKeys": "DeepSeek API Keys",
+            "kimiDomestic": "国内站申请 Key",
+            "kimiInternational": "国际站申请 Key"
           },
           "customConfig": {
             "cardTitle": "后端配置文件",
@@ -4627,9 +4639,9 @@
         "catalogFailed": "模型目录没有加载出来，仍使用已选模型",
         "reasoningEffort": "思考强度",
         "effortAuto": "默认",
-        "effortReset": "恢复默认强度",
+        "effortReset": "恢复最高强度",
         "backToModels": "返回模型选择",
-        "effortResetNotice": "所选思考强度已不可用，已恢复模型默认值。",
+        "effortResetNotice": "所选思考强度已不可用，已改用该模型的最高强度。",
         "effortLevels": {
           "off": "关闭",
           "none": "无",

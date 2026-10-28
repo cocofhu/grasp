@@ -13,6 +13,7 @@ import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
+import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import {
   SITE_ATTACH_MAX_BYTES,
@@ -115,6 +116,7 @@ let wsAttempt = 0
 let wsReconnectTimer: number | undefined
 // Frames that arrive before the reused sandbox's history is restored.
 let heldFrames: string[] | null = null
+const sessionStateCursor = createReviewStateCursor()
 let disposed = false
 // Local copies of sent items so turn_begin can show their previews.
 const sentItems = new Map<string, QueueItem>()
@@ -286,6 +288,9 @@ async function waitReady(id: number) {
 function openWs(id: number) {
   const reconcileCurrentSandbox = wsSandboxId === id && turns.value.length > 0
   closeWs()
+  // A new subscription starts with its own authoritative queue head, including
+  // after a server restart where process-local session generations restart.
+  sessionStateCursor.reset()
   wsSandboxId = id
   const sock = new WebSocket(api.sandboxChatWsUrl(id))
   ws = sock
@@ -476,6 +481,12 @@ function applyQueueState(frame: any) {
   }
   if (frame.busy) status.value = 'thinking'
   else refreshStatus()
+  // A subscription head may be newer than its replayed turn_begin. Restore
+  // the active item from that full state before rejecting the older control.
+  if (frame.busy && typeof frame.sessionGeneration === 'number' && frame.activeItem?.id &&
+    (activeIdx < 0 || activeItemId !== frame.activeItem.id)) {
+    beginTurn({ item: frame.activeItem })
+  }
 }
 
 function beginTurn(frame: any) {
@@ -585,6 +596,15 @@ function onFrame(data: string) {
     return
   }
   if (frame.type !== 'session') return
+  if (!sessionStateCursor.acceptServer(frame)) {
+    // Queue remove/reorder refusals are request errors, not terminal turn
+    // errors. Preserve their notice without stopping the versioned live turn.
+    if (frame.event === 'error' &&
+      (typeof frame.sessionGeneration !== 'number' || typeof frame.revision !== 'number')) {
+      errorMsg.value = frame.message || t('pages.agentChatTester.execError')
+    }
+    return
+  }
   switch (frame.event) {
     case 'queue_state':
       applyQueueState(frame)

@@ -103,9 +103,7 @@ func (h *Handlers) inboxContextGate(c *gin.Context, runID, gateNodeID string, it
 		out["gate"] = gateDTO
 	}
 	if h.Eng != nil {
-		if byNode := reactSessionsDTO(h.Eng.ReviewSessionsForRun(runID)); byNode != nil {
-			out["reactSessions"] = byNode
-		}
+		projectReviewSessionsDTO(out, h.Eng, runID)
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -184,9 +182,7 @@ func (h *Handlers) inboxContextClarify(c *gin.Context, runID, nodeID string, ite
 	}
 	// Authoritative busy/queue for GatesInbox refresh-resume (parity with runDetailDTO).
 	if h.Eng != nil {
-		if byNode := reactSessionsDTO(h.Eng.ReviewSessionsForRun(runID)); byNode != nil {
-			out["reactSessions"] = byNode
-		}
+		projectReviewSessionsDTO(out, h.Eng, runID)
 	}
 	c.JSON(http.StatusOK, out)
 }

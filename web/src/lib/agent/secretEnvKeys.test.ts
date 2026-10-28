@@ -15,12 +15,12 @@ describe('secretEnvKeys', () => {
   })
 
   it('excludes repos / urls / region / dropped aliases', () => {
-    for (const k of ['GIT_REPOS', 'GITHUB_URL', 'GITLAB_URL', 'GRASP_CODEBUDDY_REGION', 'TRAE_API_KEY']) {
+    for (const k of ['GIT_REPOS', 'GITHUB_URL', 'GITLAB_URL', 'GRASP_CODEBUDDY_REGION', 'GRASP_KIMI_CODE_REGION', 'TRAE_API_KEY']) {
       expect(isSecretEnvKey(k)).toBe(false)
     }
   })
 
-  it.each(['ACP_DEEPSEEK_API_KEY', 'ACP_DEEPSEEK_HARNESS_API_KEY'])(
+  it.each(['ACP_DEEPSEEK_API_KEY', 'ACP_DEEPSEEK_HARNESS_API_KEY', 'KIMI_CODE_API_KEY', 'ACP_KIMI_CODE_API_KEY', 'GRASP_KIMI_CODE_API_KEY'])(
     'strips DeepSeek alias %s from env records and editor rows',
     (key) => {
       expect(isSecretEnvKey(` ${key} `)).toBe(true)
