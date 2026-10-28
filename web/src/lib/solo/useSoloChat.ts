@@ -127,6 +127,9 @@ export function useSoloChat(sessionId: Ref<string>) {
     if (typeof frame.modelNotice === 'string') patch.modelNotice = frame.modelNotice
     if (!Object.keys(patch).length) return
     patchSession(patch)
+    // Invalidate getSoloSession calls that started before this subscribe snapshot.
+    // Otherwise a slower row can setSession over the status and model just applied.
+    sessionGeneration++
     if (session.value) confirmedSettings = modelSettings(session.value)
     if (frame.modelNotice) showModelNotice(String(frame.modelNotice), typeof frame.error === 'string' ? frame.error : '')
     if (frame.status === 'closed' || frame.status === 'error') void refetchMessages()

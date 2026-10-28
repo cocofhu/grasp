@@ -109,6 +109,9 @@ let historyRestoreGen = 0
 let historyPageGen = 0
 let activeIdx = -1
 let activeItemId = ''
+// Item whose open reply already received a live ACP after the cursor landed.
+// A later turn_begin for that same item must not wipe the restored prefix.
+let liveOutputItemId = ''
 let ws: WebSocket | null = null
 let wsSandboxId = 0
 let wsAttempt = 0
@@ -472,6 +475,7 @@ function applyQueueState(frame: any) {
     }
     activeIdx = -1
     activeItemId = ''
+    liveOutputItemId = ''
   }
   if (frame.busy) status.value = 'thinking'
   else refreshStatus()
@@ -505,6 +509,7 @@ function beginTurn(frame: any) {
         }
       }
       activeItemId = item.id
+      liveOutputItemId = ''
       activeIdx = turns.value.push({
         id: `${questionId}:reply`, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true,
         startedAt: new Date().toISOString(),
@@ -514,7 +519,16 @@ function beginTurn(frame: any) {
     }
   }
   if (item.id && item.id === activeItemId && activeIdx >= 0) {
+    // Live ACP already landed on this restored tail in the same flush.
+    // Rebuilding here would drop both the event-log prefix and that chunk.
+    if (liveOutputItemId === item.id) {
+      const turn = turns.value[activeIdx]
+      if (turn) turn.streaming = true
+      status.value = 'thinking'
+      return
+    }
     // Replay of the turn we were already showing: rebuild its reply.
+    liveOutputItemId = ''
     const replayStarted = new Date().toISOString()
     turns.value[activeIdx] = { id: turns.value[activeIdx]!.id, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true, startedAt: replayStarted }
     status.value = 'thinking'
@@ -541,6 +555,7 @@ function beginTurn(frame: any) {
   activeIdx =
     turns.value.push({ id: `${questionId}:reply`, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true, startedAt: started }) - 1
   activeItemId = item.id
+  liveOutputItemId = ''
   status.value = 'thinking'
 }
 
@@ -556,6 +571,7 @@ function endTurn(error?: string) {
   if (activeItemId) sentItems.delete(activeItemId)
   activeIdx = -1
   activeItemId = ''
+  liveOutputItemId = ''
   refreshStatus()
 }
 
@@ -564,7 +580,10 @@ function onFrame(data: string) {
   if (!frame || typeof frame !== 'object') return
   if (frame.type === 'acp') {
     const turn = activeIdx >= 0 ? turns.value[activeIdx] : null
-    if (turn) applyAcp(frame.data, turn)
+    if (turn) {
+      applyAcp(frame.data, turn)
+      if (activeItemId) liveOutputItemId = activeItemId
+    }
     scrollDown()
     return
   }
@@ -748,6 +767,7 @@ function mergeReconnectHistory(restored: Turn[], current: Turn[], restoredActive
 }
 
 function remapReconnectActiveCursor(previousTurns: Turn[], previousActiveIdx: number, restoredActive = false) {
+  liveOutputItemId = ''
   if (restoredActive) {
     const last = turns.value.length - 1
     const agent = turns.value[last]

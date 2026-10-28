@@ -504,9 +504,10 @@ describe('useSoloChat', () => {
   })
 
   it('restores KeepNone session and model state from the subscribe snapshot', async () => {
+    let releaseStale: (row: ReturnType<typeof session>) => void = () => {}
     mocks.getSoloSession
       .mockResolvedValueOnce(session({ status: 'running', currentModelSet: true, currentModelId: 'old' }))
-      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseStale = resolve }))
     const { chat, app } = mountChat()
     await flushPromises()
     const ws = FakeSocket.all[0]!
@@ -524,6 +525,16 @@ describe('useSoloChat', () => {
       reasoningEffort: 'high',
       modelNotice: 'rolled',
     })
+    await flushPromises()
+    expect(chat.session.value?.status).toBe('closed')
+    expect(chat.session.value?.error).toBe('会话已关闭')
+    expect(chat.session.value?.sandboxId).toBe(9)
+    expect(chat.session.value?.currentModelId).toBe('model-b')
+    expect(chat.session.value?.currentModelSet).toBe(true)
+    expect(chat.session.value?.reasoningEffort).toBe('high')
+    expect(chat.session.value?.modelNotice).toBe('rolled')
+    expect(mocks.getSoloSession).toHaveBeenCalledTimes(2)
+    releaseStale(session({ status: 'running', currentModelSet: true, currentModelId: 'old' }))
     await flushPromises()
     expect(chat.session.value?.status).toBe('closed')
     expect(chat.session.value?.error).toBe('会话已关闭')

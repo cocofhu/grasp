@@ -833,10 +833,53 @@ describe('AgentChatTester interactions', () => {
     expect(vm.turns.filter((turn: any) => turn.id === 'question:A')).toHaveLength(1)
     expect(vm.turns.filter((turn: any) => turn.id === 'question:A:reply' && turn.text === 'A 最终回复')).toHaveLength(1)
     expect(vm.turns.filter((turn: any) => turn.id === 'question:B')).toHaveLength(1)
+    expect(vm.turns.find((turn: any) => turn.id === 'question:B:reply')?.text).toContain('B 部分回复')
     expect(vm.turns.find((turn: any) => turn.id === 'question:B:reply')?.text).toContain('续写')
     expect(vm.activeItemId).toBe('B')
 
     frame('turn_begin', { item: { id: 'B', text: '问题 B' } })
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:B')).toHaveLength(1)
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:B:reply')).toHaveLength(1)
+    expect(vm.turns.find((turn: any) => turn.id === 'question:B:reply')?.text).toContain('B 部分回复')
+    expect(vm.turns.find((turn: any) => turn.id === 'question:B:reply')?.text).toContain('续写')
+    expect(vm.activeItemId).toBe('B')
+    w.unmount()
+  })
+
+  it('keeps the event-log prefix and ACP when turn_begin shares the reconnect flush', async () => {
+    mocks.eventLog.mockResolvedValue({
+      events: [
+        { type: 'prompt_begin', opId: 'A', promptText: '问题 A' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'A 最终回复' } } },
+        { type: 'prompt_done' },
+        { type: 'prompt_begin', opId: 'B', promptText: '问题 B' },
+        { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'B 部分回复' } } },
+      ],
+      hasMore: false,
+      nextCursor: '',
+    })
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.wsSandboxId = 5
+    vm.turns = [
+      { id: 'question:A', role: 'user', text: '问题 A', thought: '', tools: [], plan: [], streaming: false },
+      { id: 'question:A:reply', role: 'agent', text: 'A 部分', thought: '', tools: [], plan: [], streaming: true },
+    ]
+    vm.activeIdx = 1
+    vm.activeItemId = 'A'
+    vm.openWs(5)
+    socket!.onopen?.()
+    frame('queue_state', { busy: true, activeItem: { id: 'B', text: '问题 B' }, items: [] })
+    frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: '续写' } } } })
+    frame('turn_begin', { item: { id: 'B', text: '问题 B' } })
+    await flushPromises()
+    const reply = vm.turns.find((turn: any) => turn.id === 'question:B:reply')
+    expect(reply?.text).toContain('B 部分回复')
+    expect(reply?.text).toContain('续写')
+    expect(reply?.text).not.toBe('')
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:A')).toHaveLength(1)
+    expect(vm.turns.filter((turn: any) => turn.id === 'question:A:reply' && turn.text === 'A 最终回复')).toHaveLength(1)
     expect(vm.turns.filter((turn: any) => turn.id === 'question:B')).toHaveLength(1)
     expect(vm.turns.filter((turn: any) => turn.id === 'question:B:reply')).toHaveLength(1)
     expect(vm.activeItemId).toBe('B')
