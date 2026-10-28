@@ -21,11 +21,13 @@ type Model struct {
 	Name   string   `json:"name"`
 	Vendor string   `json:"vendor"`
 	Tags   []string `json:"tags,omitempty"`
+	// Aliases are exact saved model IDs still handled by this CLI adapter.
+	Aliases []string `json:"aliases,omitempty"`
 	// Context is the context window in thousands of tokens; 0 means unknown.
 	Context     int  `json:"context,omitempty"`
 	Recommended bool `json:"recommended,omitempty"`
-	// Efforts lists the reasoning levels the CLI accepts for this model
-	// (Codex's model_reasoning_effort); empty means the CLI exposes none.
+	// Efforts lists the reasoning levels the CLI accepts for this model;
+	// empty means the CLI exposes none.
 	Efforts []string `json:"efforts,omitempty"`
 }
 
@@ -37,6 +39,7 @@ var (
 
 	codexEfforts     = []string{"low", "medium", "high", "xhigh", "max", "ultra"}
 	codexLunaEfforts = []string{"low", "medium", "high", "xhigh", "max"}
+	kimiEfforts      = []string{"low", "high", "max"}
 )
 
 // Cursor bakes the reasoning level into the id. This is every non-auto
@@ -339,12 +342,12 @@ var catalog = map[string][]Model{
 		{ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro", Vendor: "deepseek"},
 	},
 	"kimi_code": {
-		{ID: "kimi-k3.1-pro", Name: "Kimi K3.1 Pro", Vendor: "kimi", Tags: visionReasoning, Context: 1000, Recommended: true},
-		{ID: "kimi-k3.1-pro-highspeed", Name: "Kimi K3.1 Pro Highspeed", Vendor: "kimi", Tags: visionReasoning, Context: 1000},
-		{ID: "kimi-k3", Name: "Kimi K3", Vendor: "kimi", Tags: visionReasoning, Context: 1000},
-		{ID: "kimi-k2.7-code", Name: "Kimi K2.7 Code", Vendor: "kimi", Tags: reasoningOnly, Context: 256},
-		{ID: "kimi-k2.7-code-highspeed", Name: "Kimi K2.7 Code Highspeed", Vendor: "kimi", Tags: reasoningOnly, Context: 256},
-		{ID: "kimi-k2.6", Name: "Kimi K2.6", Vendor: "kimi", Tags: visionReasoning, Context: 256},
+		{ID: "k3.1-pro", Name: "Kimi K3.1 Pro", Vendor: "kimi", Tags: visionReasoning, Aliases: []string{"kimi-k3.1-pro"}, Context: 1000, Recommended: true, Efforts: kimiEfforts},
+		{ID: "k3.1-pro-highspeed", Name: "Kimi K3.1 Pro Highspeed", Vendor: "kimi", Tags: visionReasoning, Aliases: []string{"kimi-k3.1-pro-highspeed"}, Context: 1000, Efforts: kimiEfforts},
+		{ID: "k3", Name: "Kimi K3", Vendor: "kimi", Tags: visionReasoning, Aliases: []string{"kimi-k3"}, Context: 1000, Efforts: kimiEfforts},
+		{ID: "k3-256k", Name: "Kimi K3 256K", Vendor: "kimi", Tags: visionReasoning, Context: 256, Efforts: kimiEfforts},
+		{ID: "kimi-for-coding", Name: "Kimi K2.8 Preview", Vendor: "kimi", Tags: visionReasoning, Context: 1000, Efforts: kimiEfforts},
+		{ID: "kimi-for-coding-highspeed", Name: "Kimi K2.7 Code Highspeed", Vendor: "kimi", Tags: visionReasoning, Context: 256},
 	},
 	"trae": {
 		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4", Vendor: "anthropic", Tags: visionReasoning, Context: 200, Recommended: true},

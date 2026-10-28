@@ -43,8 +43,8 @@ describe('backendAuthGuide', () => {
   })
 
   it('switches the Kimi Code apply link with the selected site', () => {
-    expect(authGuideFor('kimi_code', 'cn').links[0].url).toBe('https://platform.kimi.com/console/api-keys')
-    expect(authGuideFor('kimi_code', 'intl').links[0].url).toBe('https://platform.kimi.ai/console/api-keys')
+    expect(authGuideFor('kimi_code', 'cn').links[0].url).toBe('https://www.kimi.com/code/console')
+    expect(authGuideFor('kimi_code', 'intl').links[0].url).toBe('https://www.kimi.ai/code/console')
     expect(authGuideFor('kimi_code').keys[0]).toMatchObject({ key: 'GRASP_KIMI_CODE_API_KEY' })
     expect(hasAuthKeyConfigured({ GRASP_KIMI_CODE_API_KEY: 'sk-test' }, 'kimi_code')).toBe(true)
   })

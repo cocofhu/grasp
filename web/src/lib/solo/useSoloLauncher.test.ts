@@ -207,6 +207,35 @@ describe('useSoloLauncher', () => {
     expect(launcher.error.value).toBe('所选思考强度已不可用，已改用该模型的最高强度。')
   })
 
+  it('starts Kimi Code with the selected CLI effort and clears it for K2.7', async () => {
+    mocks.listAgents.mockResolvedValueOnce([{ name: 'Solo', acpBackend: 'kimi_code', modelBinding: { kind: 'configuration', configurationId: 'kimi-cli' } }] as never)
+    mocks.listModelConfigurations.mockResolvedValueOnce({ items: [{
+      id: 'kimi-cli', name: 'Kimi Code', backend: 'kimi_code', state: 'active', revision: 1,
+      binding: { kind: 'platform', credentialId: 'kimi-key', modelId: 'k3.1-pro', auxiliaryModelIds: ['kimi-for-coding-highspeed'] },
+    }] } as never)
+    mocks.cliModels.mockResolvedValueOnce({ models: [
+      { id: 'k3.1-pro', name: 'Kimi K3.1 Pro', vendor: 'kimi', efforts: ['low', 'high', 'max'] },
+      { id: 'kimi-for-coding-highspeed', name: 'Kimi K2.7 Code Highspeed', vendor: 'kimi' },
+    ] } as never)
+    const launcher = mountLauncher()
+    await launcher.load()
+    await flushPromises()
+    expect(launcher.modelChoices.value[0]).toMatchObject({ id: 'k3.1-pro', efforts: ['low', 'high', 'max'] })
+    await launcher.start('Use the displayed highest effort')
+    expect(mocks.createSoloSession).toHaveBeenLastCalledWith(expect.objectContaining({ reasoningEffort: 'max' }))
+    for (const effort of ['low', 'high', 'max']) {
+      launcher.reasoningEffort.value = effort
+      await launcher.start('Use Kimi Code with the selected effort')
+      expect(mocks.createSoloSession).toHaveBeenLastCalledWith(expect.objectContaining({ agentName: 'Solo', reasoningEffort: effort }))
+    }
+    launcher.initialModelId.value = 'kimi-for-coding-highspeed'
+    await flushPromises()
+    expect(launcher.reasoningEffort.value).toBe('')
+    await launcher.start('Use Kimi Code without selectable effort')
+    expect(mocks.createSoloSession.mock.calls.at(-1)?.[0]).toMatchObject({ initialModelId: 'kimi-for-coding-highspeed' })
+    expect(mocks.createSoloSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('reasoningEffort')
+  })
+
   it('keeps automatic platform selection on its coding-tool mark and omits a model override', async () => {
     mocks.listAgents.mockResolvedValueOnce([{ name: 'Solo', acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'cursor-default' } }] as never)
     mocks.listModelConfigurations.mockResolvedValueOnce({ items: [{

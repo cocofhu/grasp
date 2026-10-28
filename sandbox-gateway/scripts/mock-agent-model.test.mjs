@@ -319,6 +319,13 @@ describe('deterministic multi-protocol native tool fixture', () => {
     assert.equal(report.requests.some((request) => request.toolResults.some((result) => /^[a-f0-9]{64}$/.test(result.sha256))), true)
   })
 
+  it('records the native Kimi thinking effort field independently of OpenAI reasoning effort', async () => {
+    await invoke(server, 'chat', [], {model: 'kimi-for-coding', thinking: {type: 'enabled', effort: 'max', keep: 'all'}})
+    const report = await (await fetch(`${server.url}/__mock/report`)).json()
+    assert.deepEqual(report.requests.at(-1).reasoning, {thinking_type: 'enabled', thinking_effort: 'max'})
+    assert.equal(report.requests.at(-1).model, 'kimi-for-coding')
+  })
+
   for (const stream of [false, true]) {
     it(`encodes native Responses namespace separately from the function name (stream=${stream})`, async () => {
       const tools = [{type: 'namespace', name: 'mcp__artifact_store', tools: [{type: 'function', name: 'get_history', parameters: history.parameters}]}, ...toolsFor('responses', [shell])]

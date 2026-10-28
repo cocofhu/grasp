@@ -78,6 +78,16 @@ def history_tool_completed(message):
     return bool(history_calls & completed)
 
 
+def model_efforts(tool, model):
+    return tool.get('modelEfforts', {}).get(model, tool.get('efforts') or [])
+
+
+def assert_reasoning_requests(requests, effort, backend):
+    keys = ['thinking_effort'] if backend == 'kimi_code' else ['reasoning_effort', 'effort', 'output_effort']
+    if not requests or any(effort not in [(request.get('reasoning') or {}).get(key) for key in keys] or backend == 'kimi_code' and (request.get('reasoning') or {}).get('thinking_type') != 'enabled' for request in requests):
+        raise AssertionError('reasoning strength did not reach every main model request for '+backend+'/'+effort)
+
+
 class E2E:
     def __init__(self, args):
         self.args = args
@@ -177,6 +187,8 @@ class E2E:
             else:
                 key = self.request('/api/workspace/credentials', {'purpose': 'tool_auth', 'toolId': tool['id'], 'name': 'Synthetic '+tool['id'], 'value': 'synthetic-platform-wire-key'})
                 binding = {'kind': 'platform', 'credentialId': key['id'], 'modelId': tool['model']}
+                if tool.get('auxiliaryModels'):
+                    binding['auxiliaryModelIds'] = tool['auxiliaryModels']
             self.groups[tool['id']] = self.request('/api/workspace/model-configurations', {'name': 'CI '+tool['id'], 'backend': tool['id'], 'binding': binding, 'state': 'active'})['id']
         ids = list(self.groups.values())
         self.request('/api/agents', {'name': 'AgentMatrixE2E', 'inheritModel': False, 'inheritGit': False, 'acpBackend': self.tools[0]['id'], 'modelBinding': {'kind': 'configuration', 'configurationId': ids[0], 'configurationIds': ids}, 'gitBindings': {'items': []}, 'env': {'SKIP_INNER_DOCKER': '1', 'IS_SANDBOX': '1', 'GRASP_CI_MOCK_URL': self.model}, 'files': [{'path': 'AGENTS.md', 'content': 'This is an isolated deterministic CI task. Use only the local model and scoped artifact-store. Do not access other workspaces, deploy, or submit Git changes.'}, {'path': 'config.toml', 'content': 'sandbox_mode = "workspace-write"\napproval_policy = "never"\n'}]})
@@ -187,8 +199,9 @@ class E2E:
         for tool in self.tools:
             for effort in tool['efforts']+([''] if tool['efforts'] else []):
                 self.plan.append({'backend': tool['id'], 'kind': 'effort', 'effort': effort})
-            if tool['mode'] == 'native-cli':
-                for model in ['e2e-auxiliary', '']:
+            auxiliary = tool.get('auxiliaryModels', ['e2e-auxiliary'] if tool['mode'] == 'native-cli' else [])
+            if auxiliary:
+                for model in auxiliary+['']:
                     self.plan.append({'backend': tool['id'], 'kind': 'model', 'model': model})
         seed_phrase = 'Remember the task nonce '+self.nonce+'.'
         for index, step in enumerate(self.plan):
@@ -227,10 +240,10 @@ class E2E:
         if effort:
             return effort
         tool = next(tool for tool in self.tools if tool['id'] == step['backend'])
-        efforts = tool.get('efforts') or []
+        model = step.get('model') or tool['model']
+        efforts = model_efforts(tool, model)
         if not efforts:
             return ''
-        model = step.get('model') or tool['model']
         if tool['id'] == 'opencode' and model != tool['model']:
             return ''
         return efforts[-1]
@@ -284,9 +297,11 @@ class E2E:
             if not any(request.get('model') == model and request.get('completed') for request in observed):
                 raise AssertionError('selected primary/auxiliary model did not reach the upstream API for '+step['id'])
             main_requests = [request for request in observed if request.get('availableTools') and not request.get('failure') and request.get('model') == model]
-            wired = step.get('effort') or (self.resolved_effort(step) if step['kind'] == 'effort' and step.get('effort') == '' else '')
-            if wired and (not main_requests or any(wired not in [(request.get('reasoning') or {}).get(key) for key in ['reasoning_effort', 'effort', 'output_effort']] for request in main_requests)):
-                raise AssertionError('reasoning strength did not reach every main model request for '+step['backend']+'/'+wired)
+            wired = step.get('effort') or (self.resolved_effort(step) if step['backend'] == 'kimi_code' or step['kind'] == 'effort' and step.get('effort') == '' else '')
+            if wired:
+                assert_reasoning_requests(main_requests, wired, step['backend'])
+            elif step['backend'] == 'kimi_code' and any(any(key in (request.get('reasoning') or {}) for key in ['thinking_effort', 'reasoning_effort', 'effort', 'output_effort']) for request in main_requests):
+                raise AssertionError('unsupported Kimi model received a reasoning strength')
         self.check_efforts(session_id)
         persisted = [message for message in self.request('/api/solo/sessions/'+session_id+'/messages') if message['role'] == 'assistant']
         if len(persisted) != len(self.plan):
@@ -302,21 +317,27 @@ class E2E:
     def check_efforts(self, session_id):
         # Unsupported strengths must be rejected, not silently reported applied.
         for tool in self.tools:
-            state = self.request('/api/solo/sessions/'+session_id+'/model', {'configurationId': self.groups[tool['id']], 'modelId': ''})
-            available = state.get('reasoningEfforts') or []
-            if tool['efforts']:
-                if not set(tool['efforts']).issubset(available):
-                    raise AssertionError('declared reasoning levels missing for '+tool['id'])
-            else:
-                if available:
-                    raise AssertionError('unsupported reasoning unexpectedly exposed for '+tool['id'])
-                try:
-                    self.request('/api/solo/sessions/'+session_id+'/model', {'reasoningEffort': 'high'})
-                except urllib.error.HTTPError as error:
-                    if error.code != 400:
-                        raise
+            models = ['']+(tool.get('auxiliaryModels', []) if tool.get('modelEfforts') else [])
+            for model in models:
+                state = self.request('/api/solo/sessions/'+session_id+'/model', {'configurationId': self.groups[tool['id']], 'modelId': model})
+                available = state.get('reasoningEfforts') or []
+                expected = model_efforts(tool, model or tool['model'])
+                if expected:
+                    if not set(expected).issubset(available):
+                        raise AssertionError('declared reasoning levels missing for '+tool['id'])
+                    unsupported = tool.get('unsupportedEfforts', [])
                 else:
-                    raise AssertionError('unsupported reasoning strength was silently accepted')
+                    if available:
+                        raise AssertionError('unsupported reasoning unexpectedly exposed for '+tool['id'])
+                    unsupported = ['high']
+                for effort in unsupported:
+                    try:
+                        self.request('/api/solo/sessions/'+session_id+'/model', {'reasoningEffort': effort})
+                    except urllib.error.HTTPError as error:
+                        if error.code != 400:
+                            raise
+                    else:
+                        raise AssertionError('unsupported reasoning strength was silently accepted for '+tool['id']+'/'+effort)
 
     def save_report(self, error=None):
         report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}

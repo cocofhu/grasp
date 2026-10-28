@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Kimi Code subscription and reasoning:** Kimi Code now uses the official Coding Plan endpoints and model IDs with subscription-console API keys. Supported models offer `low`, `high` and `max` thinking strengths, confirmed by the native CLI before the next turn. Parallel chats keep separate model and thinking settings, and previously saved K3 model IDs map to their subscription equivalents.
+
 - **Switching workflow conversations:** selecting another running workflow clears the previous reply while the selected conversation loads. Delayed snapshots and old connection events cannot restore another conversation's thought, tools or task, including when both runs use the same node name or the user switches back quickly.
 
 - **Concurrent workflow chat:** delayed queue frames cannot restore completed messages or stop a newer reply. Reconnecting windows receive their own session snapshot; message identities remain attached through queues, streamed replies and saved history, including repeated text. Concurrent session cleanup and sends share one processing queue, and stopping a reply cannot cancel the next reply. A rejected WebSocket request reports an error only to its sender without ending another window's active reply.

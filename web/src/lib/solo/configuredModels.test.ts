@@ -124,6 +124,57 @@ describe('configuredModelChoices', () => {
     expect(choices[0]).toMatchObject({ name: 'deepseek-pro', id: 'deepseek-pro', efforts: ['low', 'high'] })
   })
 
+  it('offers Kimi Code effort levels from the CLI catalog for each supported model', () => {
+    const ids = ['k3.1-pro', 'k3.1-pro-highspeed', 'k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed']
+    const choices = configuredModelChoices({
+      binding: { kind: 'platform', credentialId: 'kimi-key', modelId: ids[0], auxiliaryModelIds: ids.slice(1) },
+      backend: 'kimi_code', catalogReady: true,
+      cliModels: ids.map((id, index) => ({ id, name: id, vendor: 'kimi', efforts: index < 5 ? ['low', 'high', 'max'] : undefined })),
+    })
+    expect(choices.map(choice => ({ id: choice.id, efforts: choice.efforts }))).toEqual([
+      { id: 'k3.1-pro', efforts: ['low', 'high', 'max'] },
+      { id: 'k3.1-pro-highspeed', efforts: ['low', 'high', 'max'] },
+      { id: 'k3', efforts: ['low', 'high', 'max'] },
+      { id: 'k3-256k', efforts: ['low', 'high', 'max'] },
+      { id: 'kimi-for-coding', efforts: ['low', 'high', 'max'] },
+      { id: 'kimi-for-coding-highspeed', efforts: [] },
+    ])
+  })
+
+  it('keeps exact saved K3 aliases selectable without changing their upstream IDs', () => {
+    const choices = configuredModelChoices({
+      binding: { kind: 'platform', credentialId: 'kimi-key', modelId: 'kimi-k3.1-pro', auxiliaryModelIds: ['kimi-k3.1-pro-highspeed', 'kimi-k3', 'kimi-k2.7-code'] },
+      backend: 'kimi_code', catalogReady: true,
+      cliModels: [
+        { id: 'k3.1-pro', name: 'Kimi K3.1 Pro', vendor: 'kimi', aliases: ['kimi-k3.1-pro'], efforts: ['low', 'high', 'max'] },
+        { id: 'k3.1-pro-highspeed', name: 'Kimi K3.1 Pro Highspeed', vendor: 'kimi', aliases: ['kimi-k3.1-pro-highspeed'], efforts: ['low', 'high', 'max'] },
+        { id: 'k3', name: 'Kimi K3', vendor: 'kimi', aliases: ['kimi-k3'], efforts: ['low', 'high', 'max'] },
+      ],
+    })
+    expect(choices).toMatchObject([
+      { id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro', unavailable: false, efforts: ['low', 'high', 'max'] },
+      { id: 'kimi-k3.1-pro-highspeed', name: 'Kimi K3.1 Pro Highspeed', unavailable: false, efforts: ['low', 'high', 'max'] },
+      { id: 'kimi-k3', name: 'Kimi K3', unavailable: false, efforts: ['low', 'high', 'max'] },
+      { id: 'kimi-k2.7-code', unavailable: true, efforts: [] },
+    ])
+  })
+
+  it('keeps automatic Kimi Code without efforts and ignores connection metadata for unknown models', () => {
+    const choices = configuredModelChoices({
+      binding: { kind: 'platform', credentialId: 'kimi-key', auxiliaryModelIds: ['k3', 'k3-unknown'] },
+      backend: 'kimi_code', catalogReady: true,
+      cliModels: [{ id: 'k3', name: 'Kimi K3', vendor: 'kimi', efforts: ['low', 'high', 'max'] }],
+      connectionModels: [
+        { id: 'k3', reasoningEfforts: ['ultra'], capabilities: { reasoning: false } },
+        { id: 'k3-unknown', reasoningEfforts: ['low', 'high', 'max'] },
+      ],
+    })
+    expect(choices[0]).toMatchObject({ id: '', backend: true })
+    expect(choices[0]?.efforts || []).toEqual([])
+    expect(choices[1]?.efforts).toEqual(['low', 'high', 'max'])
+    expect(choices[2]?.efforts).toEqual([])
+  })
+
   it('offers the OpenCode catalog for Gemini 4 Argon and hides a custom locked level', () => {
     const open = configuredModelChoices({
       binding: { kind: 'connection', connectionId: 'google-account', modelId: 'gemini-4-argon' },

@@ -126,6 +126,17 @@ describe('CliModelSelect trigger', () => {
     expect(w.get('[data-testid="cli-model-trigger"]').classes()).toContain('border-warn/60')
     expect(w.get('[data-testid="cli-model-unlisted"]').text()).toContain('my-private-model')
   })
+
+  it('recognizes a saved Kimi model alias without adding duplicate picker rows', async () => {
+    mocks.load.mockResolvedValue([{ id: 'k3.1-pro', name: 'Kimi K3.1 Pro', vendor: 'kimi', aliases: ['kimi-k3.1-pro'], efforts: ['low', 'high', 'max'] }])
+    const w = await mountSelect({ backend: 'kimi_code', modelValue: 'kimi-k3.1-pro' })
+    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('Kimi K3.1 Pro')
+    expect(w.find('[data-testid="cli-model-unlisted"]').exists()).toBe(false)
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    await openPanel(w)
+    expect(q('[data-testid="cli-model-option-k3.1-pro"]')?.getAttribute('aria-selected')).toBe('true')
+    expect(q('[data-testid="cli-model-option-kimi-k3.1-pro"]')).toBeNull()
+  })
 })
 
 describe('CliModelSelect panel', () => {

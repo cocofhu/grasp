@@ -77,3 +77,43 @@ func TestReasoningEffortsRespectAdapterAndExactMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestKimiCodeReasoningEffortsUseExactCLICatalog(t *testing.T) {
+	for _, tc := range []struct {
+		id   string
+		want []string
+	}{
+		{"k3", []string{"low", "high", "max"}},
+		{"k3.1-pro", []string{"low", "high", "max"}},
+		{"k3.1-pro-highspeed", []string{"low", "high", "max"}},
+		{"k3-256k", []string{"low", "high", "max"}},
+		{"kimi-for-coding", []string{"low", "high", "max"}},
+		{"kimi-k3", []string{"low", "high", "max"}},
+		{"kimi-k3.1-pro", []string{"low", "high", "max"}},
+		{"kimi-k3.1-pro-highspeed", []string{"low", "high", "max"}},
+		{" kimi-k3 ", []string{"low", "high", "max"}},
+		{"kimi-for-coding-highspeed", nil},
+		{"kimi-k2.6", nil},
+		{"kimi-k2.7-code", nil},
+		{"kimi-k2.7-code-highspeed", nil},
+		{"kimi-k3-unknown", nil},
+		{"k3-unknown", nil},
+		{"KIMI-K3", nil},
+		{"", nil},
+		{"auto", nil},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			no := false
+			metadata := &Connection{Models: []Model{{
+				ID:               tc.id,
+				Capabilities:     ModelCapabilities{Reasoning: &no},
+				ReasoningEfforts: []string{"medium", "ultra"},
+			}}}
+			for _, connection := range []*Connection{nil, metadata} {
+				if got := ReasoningEfforts("kimi_code", tc.id, connection); !reflect.DeepEqual(got, tc.want) {
+					t.Errorf("got %v, want %v (connection metadata: %t)", got, tc.want, connection != nil)
+				}
+			}
+		})
+	}
+}

@@ -6,11 +6,11 @@ import (
 )
 
 const (
-	// MsgMissingKey is shown when the open-platform key was not injected.
+	// MsgMissingKey is shown when the Coding Plan key was not injected.
 	// The CLI must not be started into /login in that case.
-	MsgMissingKey = "需要 Kimi Code 的开放平台 API Key：请在工作区凭据中配置 GRASP_KIMI_CODE_API_KEY"
+	MsgMissingKey = "需要 Kimi Code 的 Coding Plan API Key：请在工作区凭据中配置 GRASP_KIMI_CODE_API_KEY"
 	// MsgSiteMismatch explains a 401 without echoing the key or changing site.
-	MsgSiteMismatch = "密钥需与所选站点一致：国内站密钥来自 platform.kimi.com，国际站密钥来自 platform.kimi.ai。"
+	MsgSiteMismatch = "密钥需与所选站点一致：请使用国内站 kimi.com/code/console 或国际站 kimi.ai/code/console 的 Coding Plan API Key。"
 	// MsgModelUnavailable explains a missing or forbidden model id.
 	MsgModelUnavailable = "模型不可用：请确认模型 ID 在所选站点存在，且当前账号可以使用。"
 )
@@ -33,7 +33,7 @@ func Explain(text, secret string) string {
 }
 
 func isMissingKey(low string) bool {
-	if strings.Contains(low, "开放平台 api key") {
+	if strings.Contains(low, "coding plan api key") || strings.Contains(low, "开放平台 api key") {
 		return true
 	}
 	mentionsVar := strings.Contains(low, "kimi_code_api_key") || strings.Contains(low, "api_key_env")

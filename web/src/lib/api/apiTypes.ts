@@ -576,6 +576,8 @@ export interface CliCatalogModel {
   name: string
   vendor: string
   tags?: CliModelTag[]
+  /** Exact saved IDs still handled by the coding-tool adapter. */
+  aliases?: string[]
   /** Context window in thousands of tokens. */
   context?: number
   recommended?: boolean

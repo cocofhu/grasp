@@ -100,12 +100,15 @@ watch(
 )
 
 const cliLabel = computed(() => ACP_BACKENDS.find((b) => b.id === props.backend)?.label || props.backend)
+function matchesModel(model: CliCatalogModel, id = props.modelValue): boolean {
+  return model.id === id || !!model.aliases?.includes(id)
+}
 const visibleModels = computed(() => {
   const allow = new Set((props.allowedVendors || []).map((id) => id.trim()).filter(Boolean))
   if (!allow.size) return models.value
-  return models.value.filter((model) => allow.has(model.vendor) || model.id === props.modelValue)
+  return models.value.filter((model) => allow.has(model.vendor) || matchesModel(model))
 })
-const current = computed(() => visibleModels.value.find((m) => m.id === props.modelValue) ?? null)
+const current = computed(() => visibleModels.value.find((model) => matchesModel(model)) ?? null)
 const unlisted = computed(() => !!props.modelValue && !current.value && !loading.value && models.value.length > 0)
 const command = computed(() => launchCommand(props.backend, props.modelValue))
 const split = computed(() => props.variant === 'full' && !narrow.value)
@@ -130,7 +133,7 @@ const activeRow = computed<Row | null>(() => rows.value[active.value] ?? null)
 const noResults = computed(() => !!query.value.trim() && !view.value.flat.length)
 
 function rowIndexOf(id: string): number {
-  return rows.value.findIndex((r) => (id ? r.kind === 'model' && r.model.id === id : r.kind === 'auto'))
+  return rows.value.findIndex((r) => (id ? r.kind === 'model' && matchesModel(r.model, id) : r.kind === 'auto'))
 }
 
 /** A vendor heading goes above the first row of each vendor, unless a query ranks across them. */
@@ -487,7 +490,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                       type="button"
                       tabindex="-1"
                       class="cms-card"
-                      :class="{ 'is-selected': m.id === modelValue, 'is-active': activeRow?.kind === 'model' && activeRow.model.id === m.id }"
+                      :class="{ 'is-selected': matchesModel(m), 'is-active': activeRow?.kind === 'model' && activeRow.model.id === m.id }"
                       :data-testid="`cli-model-card-${m.id}`"
                       @mouseenter="active = rowIndexOf(m.id)"
                       @click="pick(m.id)"
@@ -495,7 +498,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                       <span class="flex items-start gap-2">
                         <VendorMark :vendor="markVendor(m)" :size="22" />
                         <span class="cms-card-name min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-txt">{{ m.name }}</span>
-                        <Icon v-if="m.id === modelValue" name="check" :size="13" class="shrink-0 text-accent-2" />
+                        <Icon v-if="matchesModel(m)" name="check" :size="13" class="shrink-0 text-accent-2" />
                       </span>
                       <span class="mt-auto flex items-center gap-1 pt-1.5 text-txt3">
                         <span v-for="tag in tagsOf(m)" :key="tag" class="cms-tag-icon is-sm" :title="t(`pages.agentStudio.cliModel.tags.${tag}`)">
@@ -540,9 +543,9 @@ defineExpose({ focus: () => trigger.value?.focus() })
                     :id="`cli-model-row-${i}`"
                     :data-row="i"
                     role="option"
-                    :aria-selected="r.model.id === modelValue"
+                    :aria-selected="matchesModel(r.model)"
                     class="cms-row"
-                    :class="{ 'is-active': active === i, 'is-selected': r.model.id === modelValue }"
+                    :class="{ 'is-active': active === i, 'is-selected': matchesModel(r.model) }"
                     :data-testid="`cli-model-option-${r.model.id}`"
                     @mouseenter="active = i"
                     @click="pick(r.model.id)"
@@ -562,7 +565,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                       </span>
                       <span v-if="r.model.context" class="w-9 text-right font-mono text-[10.5px]">{{ formatContext(r.model.context) }}</span>
                     </span>
-                    <Icon v-if="r.model.id === modelValue" name="check" :size="14" class="shrink-0 text-accent-2" />
+                    <Icon v-if="matchesModel(r.model)" name="check" :size="14" class="shrink-0 text-accent-2" />
                     <span v-else class="w-[14px] shrink-0" />
                   </div>
 

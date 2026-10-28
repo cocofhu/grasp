@@ -172,6 +172,12 @@ Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另�
 
 dsh ACP 文本按已提交的消息块推送，`usage_update` 仅表示上下文占用，不计入输入/输出/缓存 token 统计。每轮输入/输出/缓存用量改为读取固定版本 dsh 的 `tokenUsage` 会话投影缓存，按轮差分后随 `prompt_done.usage` 上报：缓存未落盘或会话无模型调用时省略 `usage`，帧结构与旧版一致；子代理会话的用量不在主会话投影内，暂不汇总。会话续接遵循现有 ACP bridge 生命周期：网络或服务端重连可复用仍存活的会话，bridge 重启后的自动会话恢复尚未接入。
 
+### Kimi Code
+
+- 使用 [Kimi Code 订阅控制台](https://www.kimi.com/code/console) 创建的 API Key，保存为工作区的 Kimi Code 凭据。国内站连接 `https://api.kimi.com/coding/v1`，国际站连接 `https://api.kimi.ai/coding/v1`。
+- 模型使用订阅版 ID：`k3.1-pro`、`k3.1-pro-highspeed`、`k3`、`k3-256k`、`kimi-for-coding`（K2.8 Preview）和 `kimi-for-coding-highspeed`（K2.7 Code Highspeed），实际访问权限由订阅决定。旧配置中的 `kimi-k3.1-pro`、`kimi-k3.1-pro-highspeed` 和 `kimi-k3` 会映射到对应订阅模型。
+- 除 K2.7 Code Highspeed 外，上述模型提供 `low` / `high` / `max` 思考强度。Solo 沿用当前统一规则：未选强度时使用列表最后一档 `max`。修改在下一轮应用，原生 ACP 确认后再请求模型；并行聊天的模型和强度配置独立保存。
+
 ### 模型目录与 Solo 会话设置
 
 - `GET /api/workspace/model-connections/:connectionId/models` 使用该连接绑定的 API 账号读取模型目录，仅返回 ID、名称和明确提供的能力信息，不写入连接的模型列表。标准模型目录不可用时返回 `{ "models": [], "error": "..." }`，可重试或手动填写；只有保存配置时选中的模型会追加到账号。

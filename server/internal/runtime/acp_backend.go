@@ -32,8 +32,8 @@ const (
 	EnvTraeRegion      = "GRASP_TRAE_REGION"
 	EnvKimiCodeRegion  = "GRASP_KIMI_CODE_REGION"
 
-	KimiCodeCNBaseURL   = "https://api.moonshot.cn/v1"
-	KimiCodeIntlBaseURL = "https://api.moonshot.ai/v1"
+	KimiCodeCNBaseURL   = "https://api.kimi.com/coding/v1"
+	KimiCodeIntlBaseURL = "https://api.kimi.ai/coding/v1"
 
 	EnvCodeBuddyInternet = "CODEBUDDY_INTERNET_ENVIRONMENT"
 	EnvCodeBuddyBaseURL  = "CODEBUDDY_BASE_URL"
@@ -344,7 +344,7 @@ func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (
 				return out, fmt.Errorf("鉴权未配置:请在工作区凭据中配置 %s", spec.credKey)
 			}
 			if backend == BackendKimiCode {
-				return out, fmt.Errorf("需要 Kimi Code 的开放平台 API Key：请在工作区凭据中配置 %s", spec.credKey)
+				return out, fmt.Errorf("需要 Kimi Code 的订阅 API Key：请在工作区凭据中配置 %s", spec.credKey)
 			}
 			cfgHint := "settings.json"
 			if backend == BackendOpenCode {
@@ -382,7 +382,7 @@ func mergeRegionEnv(backend AcpBackend, env map[string]string) error {
 	return nil
 }
 
-// KimiPlatformBaseURL is the open-platform root for a saved Kimi Code site.
+// KimiPlatformBaseURL is the Coding Plan root for a saved Kimi Code site.
 // Empty selects the international default. Unknown sites are refused.
 func KimiPlatformBaseURL(region string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(region)) {

@@ -402,7 +402,7 @@ function respondMessages(res, body, choice, id) {
 function recordRequest(body, protocol, normalized, decision, sequence) {
   const scalar = (value) => ['string', 'number', 'boolean'].includes(typeof value) ? identifier(value) : undefined
   const reasoning = {}
-  for (const [key, value] of Object.entries({reasoning_effort: body.reasoning_effort, effort: body.reasoning?.effort, thinking_type: body.thinking?.type, thinking_budget: body.thinking?.budget_tokens, output_effort: body.output_config?.effort})) {
+  for (const [key, value] of Object.entries({reasoning_effort: body.reasoning_effort, effort: body.reasoning?.effort, thinking_type: body.thinking?.type, thinking_effort: body.thinking?.effort, thinking_budget: body.thinking?.budget_tokens, output_effort: body.output_config?.effort})) {
     if (value !== undefined) reasoning[key] = scalar(value)
   }
   return {sequence, protocol, model: identifier(body.model), stream: Boolean(body.stream), reasoning,
