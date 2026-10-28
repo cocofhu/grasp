@@ -220,14 +220,20 @@ class E2E:
         return state, assistants[-1]
 
     def resolved_effort(self, step):
-        # An empty session effort is no longer the CLI default. The next turn
-        # stores and sends the last advertised level for that tool.
+        # An empty session effort is stored as the last advertised level.
+        # OpenCode reads the provider catalog, which does not list the matrix
+        # auxiliary id, so that model keeps an empty effort.
         effort = step.get('effort') or ''
         if effort:
             return effort
         tool = next(tool for tool in self.tools if tool['id'] == step['backend'])
         efforts = tool.get('efforts') or []
-        return efforts[-1] if efforts else ''
+        if not efforts:
+            return ''
+        model = step.get('model') or tool['model']
+        if tool['id'] == 'opencode' and model != tool['model']:
+            return ''
+        return efforts[-1]
 
     def run_matrix(self):
         names = [tool['id'] for tool in self.tools]
