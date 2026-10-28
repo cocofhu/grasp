@@ -47,7 +47,7 @@ func TestClarifyFirstMessageDeliveredOnPark(t *testing.T) {
 			{Data: "QUJD", MimeType: "image/png", Name: "shot.png"},
 		},
 	}
-	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", msg)
+	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", msg, LaunchChoice{})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestApproveWithoutFirstMessageParksEmpty(t *testing.T) {
 func TestClarifyFirstMessageRedeliveredAfterCancelResume(t *testing.T) {
 	eng, db, _ := setupEngineGraphP(t, clarifyOnlyGraph())
 	msg := &models.CompositeText{Text: "把登录做清楚"}
-	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", msg)
+	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", msg, LaunchChoice{})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestClarifyFirstMessageTurnShowsBusy(t *testing.T) {
 	p.mu.Lock()
 	p.reactHold = hold
 	p.mu.Unlock()
-	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", &models.CompositeText{Text: "开始吧"})
+	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", &models.CompositeText{Text: "开始吧"}, LaunchChoice{})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestClarifyResumeCarriesInterruptedDialogue(t *testing.T) {
 	p.mu.Lock()
 	p.reactPending = 5
 	p.mu.Unlock()
-	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", &models.CompositeText{Text: "把登录做清楚"})
+	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", &models.CompositeText{Text: "把登录做清楚"}, LaunchChoice{})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}

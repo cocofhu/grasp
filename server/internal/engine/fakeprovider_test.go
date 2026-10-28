@@ -66,6 +66,11 @@ type fakeProvider struct {
 	abortCalls       int
 	// reactSetupErr, when set, makes ReactOpen fail with a sandbox setup error.
 	reactSetupErr error
+	// reactOpenRouteApplied / reactOpenNotice simulate a sandbox reset that
+	// reports the route, so visit-model writes can be checked against it.
+	reactOpenRouteApplied bool
+	reactOpenNotice       string
+	chatRoutes            []chatRouteSnap
 	// reactTools are extra tool_call events a follow-up ReactReply turn reports.
 	reactTools []models.AcpEvent
 
@@ -458,6 +463,8 @@ func (f *fakeProvider) writeDeclaredProducts(req runtime.NodeReq) error {
 func (f *fakeProvider) ReactOpen(ctx context.Context, req runtime.NodeReq) runtime.ReactTurn {
 	f.mu.Lock()
 	setupErr := f.reactSetupErr
+	applied := f.reactOpenRouteApplied
+	notice := f.reactOpenNotice
 	f.mu.Unlock()
 	if setupErr != nil {
 		return runtime.ReactTurn{
@@ -466,7 +473,37 @@ func (f *fakeProvider) ReactOpen(ctx context.Context, req runtime.NodeReq) runti
 			Events:   []models.AcpEvent{{Kind: "message", Text: "react open failed: " + setupErr.Error()}},
 		}
 	}
-	return runtime.ReactTurn{}
+	f.recordChatRoute("open", req)
+	return runtime.ReactTurn{RouteApplied: applied, ModelNotice: notice}
+}
+
+type chatRouteSnap struct {
+	Kind            string
+	NodeID          string
+	Reset           bool
+	Set             bool
+	ConfigurationID string
+	ModelID         string
+	Effort          string
+}
+
+func (f *fakeProvider) recordChatRoute(kind string, req runtime.NodeReq) {
+	snap := chatRouteSnap{Kind: kind, NodeID: req.NodeID, Reset: req.ResetToDefaultModel}
+	if req.ChatRoute != nil && req.ChatRoute.Set {
+		snap.Set = true
+		snap.ConfigurationID = req.ChatRoute.ConfigurationID
+		snap.ModelID = req.ChatRoute.ModelID
+		snap.Effort = req.ChatRoute.ReasoningEffort
+	}
+	f.mu.Lock()
+	f.chatRoutes = append(f.chatRoutes, snap)
+	f.mu.Unlock()
+}
+
+func (f *fakeProvider) chatRouteSnaps() []chatRouteSnap {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]chatRouteSnap(nil), f.chatRoutes...)
 }
 
 // ReactResume records the carried dialogue, then opens like ReactOpen.
@@ -484,6 +521,7 @@ func (f *fakeProvider) ReactResume(ctx context.Context, req runtime.NodeReq, his
 // forced finish), writing the declared produces artifact like the real provider
 // harvests one.
 func (f *fakeProvider) ReactReply(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) runtime.ReactTurn {
+	f.recordChatRoute("reply", req)
 	t := f.reactReply(ctx, req, history, human, images, force)
 	f.mu.Lock()
 	if t.Usage == nil {

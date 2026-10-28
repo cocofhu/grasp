@@ -69,6 +69,20 @@ export function isPublishedClarifyFirst(
   return !!graph && isClarifyFirstWorkflow(graph, agents)
 }
 
+/** Agent name of the published snapshot's first clarify node, or empty. */
+export function publishedClarifyFirstAgentName(
+  wf: HomeWorkflowPick,
+  agents?: AgentCapsLookup,
+): string {
+  const graph = publishedHomeGraph(wf)
+  if (!graph) return ''
+  const id = clarifyFirstNodeId(graph, agents)
+  if (!id) return ''
+  const node = (graph.nodes || []).find((n) => n.id === id)
+  const profile = node?.config?.agent_profile
+  return typeof profile === 'string' ? profile.trim() : ''
+}
+
 /** Card fields for home: name, description, and graph come from the published snapshot. */
 export function withPublishedSnapshot<T extends Workflow>(wf: T): T {
   const snap = wf.publishedSnapshot

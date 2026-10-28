@@ -16,7 +16,7 @@ func startHeldFirstMessage(t *testing.T) (*Engine, *models.Run, chan struct{}, f
 	p.mu.Lock()
 	p.reactHold = hold
 	p.mu.Unlock()
-	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", &models.CompositeText{Text: "把登录做清楚"})
+	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", &models.CompositeText{Text: "把登录做清楚"}, LaunchChoice{})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}

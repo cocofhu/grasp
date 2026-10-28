@@ -10,8 +10,15 @@ import {
   clarifyFirstNodeId,
   isClarifyFirstWorkflow,
   isPublishedClarifyFirst,
+  publishedClarifyFirstAgentName,
   withPublishedSnapshot,
 } from '@/lib/run/clarifyFirstWorkflow'
+import {
+  listedEfforts,
+  resolveHomeLaunchModel,
+  type HomeLaunchModel,
+} from '@/lib/run/homeLaunchModel'
+import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import {
   clearHomeComposerDraft,
   loadHomeComposerDraft,
@@ -30,6 +37,11 @@ export const HOME_WORKFLOW_MEMORY_KEY = 'grasp.home.lastPipelineId'
 
 /** Remember last home Composer priority (plan g1.4). Not stored in IndexedDB draft. */
 export const HOME_PRIORITY_MEMORY_KEY = 'grasp.home.lastPriority'
+
+/** Per-workflow last model and effort for the home composer. Browser-local only. */
+export const HOME_LAUNCH_MODEL_MEMORY_KEY = 'grasp.home.lastLaunchModel'
+
+type LaunchMemory = { modelId: string; effort: string }
 
 /** Debounce for auto-save (plan g2.2; NFR ~300–800ms). */
 export const HOME_COMPOSER_DRAFT_DEBOUNCE_MS = 400
@@ -77,6 +89,28 @@ function writeLastPriority(value: RunPriority) {
   }
 }
 
+function readLaunchMemory(): Record<string, LaunchMemory> {
+  try {
+    const raw = localStorage.getItem(HOME_LAUNCH_MODEL_MEMORY_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, LaunchMemory>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeLaunchMemory(workflowId: string, memory: LaunchMemory) {
+  if (!workflowId) return
+  try {
+    const all = readLaunchMemory()
+    all[workflowId] = { modelId: memory.modelId || '', effort: memory.effort || '' }
+    localStorage.setItem(HOME_LAUNCH_MODEL_MEMORY_KEY, JSON.stringify(all))
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 export function useHomeApproveChat() {
   const router = useRouter()
   const toast = useToast()
@@ -90,6 +124,11 @@ export function useHomeApproveChat() {
   const loadError = ref<string | null>(null)
   const selectedId = ref('')
   const launchPriority = ref<RunPriority>(readLastPriority())
+  const launchModelId = ref('')
+  const launchReasoningEffort = ref('')
+  const launchModelTouched = ref(false)
+  const launchModelForModal = ref<HomeLaunchModel | null>(null)
+  let launchResetAnnounced = ''
   const draft = ref('')
   const sending = ref(false)
   const hidingWorkflowId = ref<string | null>(null)
@@ -136,6 +175,14 @@ export function useHomeApproveChat() {
     ),
   )
   const selected = computed(() => homeWorkflows.value.find((w) => w.id === selectedId.value) || homeWorkflows.value[0] || null)
+  const launchAgentName = computed(() => {
+    const wf = selected.value
+    if (!wf) return ''
+    return publishedClarifyFirstAgentName(wf, agentsByName.value)
+  })
+  const showLaunchModel = computed(() => !!selected.value && isPublishedClarifyFirst(selected.value, agentsByName.value))
+  const launchCatalog = useSessionModelCatalog(launchAgentName)
+  const launchModelChoices = launchCatalog.choices
   const launchTitle = computed(() => runTitleFromDraft(pendingText.value, pendingImages.value))
   /** Opening message carried through the launch modal's own startRun call. */
   const launchFirstMessage = computed(() => ({
@@ -222,6 +269,45 @@ export function useHomeApproveChat() {
     }
   }
 
+  watch(() => selected.value?.id || '', (id) => {
+    const saved = id ? readLaunchMemory()[id] : undefined
+    launchModelId.value = saved?.modelId || ''
+    launchReasoningEffort.value = saved?.effort || ''
+    launchModelTouched.value = false
+    launchResetAnnounced = ''
+  }, { immediate: true })
+
+  watch([launchCatalog.ready, launchModelChoices, () => selected.value?.id || ''], () => {
+    const wfId = selected.value?.id || ''
+    if (!showLaunchModel.value || !launchCatalog.ready.value || !wfId) return
+    const choices = launchModelChoices.value
+    if (!choices.length) return
+    const modelId = launchModelId.value
+    const effort = launchReasoningEffort.value
+    const announce = `${wfId}:${modelId}:${effort}`
+    if (modelId && !choices.some((choice) => choice.id === modelId && !choice.unavailable)) {
+      launchModelId.value = ''
+      launchReasoningEffort.value = ''
+      writeLaunchMemory(wfId, { modelId: '', effort: '' })
+      if (launchResetAnnounced !== announce) {
+        launchResetAnnounced = announce
+        toast.warn(t('pages.dashboard.launchModelReset'))
+      }
+      return
+    }
+    const picked = modelId ? choices.find((choice) => choice.id === modelId) : choices[0]
+    const listed = listedEfforts(picked?.efforts)
+    if (effort && !listed.includes(effort)) {
+      const next = listed.at(-1) || ''
+      launchReasoningEffort.value = next
+      writeLaunchMemory(wfId, { modelId, effort: next })
+      if (launchResetAnnounced !== announce) {
+        launchResetAnnounced = announce
+        toast.warn(t('pages.dashboard.launchModelReset'))
+      }
+    }
+  })
+
   watch(homeWorkflows, (list) => {
       // While the list is still empty (initial mount / load in flight), keep any
       // draft workflow preference from hydrate — do not treat "not in empty list"
@@ -300,6 +386,45 @@ export function useHomeApproveChat() {
     writeLastPriority(launchPriority.value)
   }
 
+  function rememberLaunchSelection() {
+    const wfId = selected.value?.id || ''
+    if (!wfId) return
+    writeLaunchMemory(wfId, { modelId: launchModelId.value, effort: launchReasoningEffort.value })
+  }
+
+  function selectLaunchModel(id: string) {
+    const previousEffort = launchReasoningEffort.value
+    launchModelId.value = id
+    launchModelTouched.value = true
+    const picked = id
+      ? launchModelChoices.value.find((choice) => choice.id === id)
+      : launchModelChoices.value[0]
+    const listed = listedEfforts(picked?.efforts)
+    if (previousEffort && !listed.includes(previousEffort)) {
+      launchReasoningEffort.value = listed.at(-1) || ''
+      toast.warn(t('pages.solo.modelSelect.effortResetNotice'))
+    }
+    rememberLaunchSelection()
+  }
+
+  function selectLaunchEffort(effort: string) {
+    launchReasoningEffort.value = effort
+    launchModelTouched.value = true
+    rememberLaunchSelection()
+  }
+
+  function decideLaunchModel() {
+    const custom = launchModelTouched.value || !!launchModelId.value || !!launchReasoningEffort.value
+    return resolveHomeLaunchModel({
+      clarify: showLaunchModel.value,
+      ready: launchCatalog.ready.value,
+      custom,
+      modelId: launchModelId.value,
+      effort: launchReasoningEffort.value,
+      choices: launchModelChoices.value,
+    })
+  }
+
   async function hideWorkflowFromHome(wf: Workflow) {
     if (hidingWorkflowId.value) return
     const previousWorkflows = workflows.value
@@ -373,6 +498,16 @@ export function useHomeApproveChat() {
     }
     if (attach.blockSendIfOversized(images)) return
     if (sending.value) return
+    const decision = decideLaunchModel()
+    if (decision.action === 'block') {
+      toast.warn(decision.notice === 'blocked'
+        ? t('pages.dashboard.launchModelCatalogBlocked')
+        : t('pages.solo.modelSelect.unavailableSelection'))
+      return
+    }
+    if (decision.notice === 'default') toast.warn(t('pages.solo.modelSelect.catalogFailedDefault'))
+    const launchModel = decision.action === 'send' ? decision.model : null
+    launchModelForModal.value = launchModel
     sending.value = true
     pendingText.value = text
     pendingImages.value = images
@@ -388,6 +523,7 @@ export function useHomeApproveChat() {
         title: runTitleFromDraft(text, images),
         firstMessage: { text, images },
         publishedSnapshot: true,
+        ...(launchModel ? { launchModel } : {}),
       })
       // Success path: clear composer + local draft (plan g2.3).
       suppressSave = true
@@ -457,6 +593,13 @@ export function useHomeApproveChat() {
     selected,
     selectedId,
     launchPriority,
+    showLaunchModel,
+    launchModelId,
+    launchReasoningEffort,
+    launchModelChoices,
+    launchModelForModal,
+    selectLaunchModel,
+    selectLaunchEffort,
     draft,
     sending,
     hidingWorkflowId,

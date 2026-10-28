@@ -22,6 +22,7 @@ import {
   validateRunSandboxEnvRows,
 } from '@/lib/run/runSandboxEnv'
 import type { ClarifyImage } from '@/lib/shared/types'
+import type { HomeLaunchModel } from '@/lib/run/homeLaunchModel'
 
 export type InputField = {
   key: string
@@ -62,6 +63,11 @@ const props = defineProps<{
    * unset so the run still executes the latest saved head.
    */
   publishedSnapshot?: boolean
+  /**
+   * Home composer only. The modal does not render its own model picker;
+   * confirm reuses the toolbar selection. Other entries leave this unset.
+   */
+  launchModel?: HomeLaunchModel | null
 }>()
 
 const emit = defineEmits<{
@@ -381,6 +387,7 @@ async function startRun() {
       title: props.runTitle?.trim() || (ownMessage ? runTitleFromDraft(ownText, ownImages) : '') || undefined,
       firstMessage: props.firstMessage ?? ownMessage ?? undefined,
       ...(props.publishedSnapshot ? { publishedSnapshot: true } : {}),
+      ...(props.launchModel ? { launchModel: props.launchModel } : {}),
     })
     if (gen !== startGen) return
     successRunId.value = res.id

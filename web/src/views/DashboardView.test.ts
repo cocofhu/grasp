@@ -17,6 +17,10 @@ const mocks = vi.hoisted(() => ({
   getRun: vi.fn(),
   reactReply: vi.fn(),
   createWorkflowFromBaseline: vi.fn(),
+  listModelConfigurations: vi.fn(),
+  listModelConnections: vi.fn(),
+  listCredentials: vi.fn(),
+  cliModels: vi.fn(),
 }))
 
 vi.mock('@/lib/composables/useWorkspaceContext', async () => {
@@ -43,6 +47,10 @@ vi.mock('@/lib/api/api', async () => {
       getRun: mocks.getRun,
       reactReply: mocks.reactReply,
       createWorkflowFromBaseline: mocks.createWorkflowFromBaseline,
+      listModelConfigurations: mocks.listModelConfigurations,
+      listModelConnections: mocks.listModelConnections,
+      listCredentials: mocks.listCredentials,
+      cliModels: mocks.cliModels,
     },
   }
 })
@@ -54,7 +62,7 @@ vi.mock('@/lib/composables/useToast', () => ({
 }))
 
 import { HOME_COMPOSER_DRAFT_KEY } from '@/lib/run/homeComposerDraft'
-import { HOME_PRIORITY_MEMORY_KEY } from '@/lib/run/useHomeApproveChat'
+import { HOME_LAUNCH_MODEL_MEMORY_KEY, HOME_PRIORITY_MEMORY_KEY } from '@/lib/run/useHomeApproveChat'
 import { setBrandSettings } from '@/lib/composables/useBrandSettings'
 import { onboardingOpen } from '@/lib/pm/firstInstall'
 import DashboardView from './DashboardView.vue'
@@ -227,6 +235,14 @@ describe('DashboardView home composer', () => {
     mocks.createWorkflowFromBaseline.mockReset()
     mocks.listAgents.mockReset()
     mocks.listAgents.mockImplementation(async () => [...soloAgents, ...readyOnboardingAgents])
+    mocks.listModelConfigurations.mockReset()
+    mocks.listModelConfigurations.mockRejectedValue(new Error('catalog'))
+    mocks.listModelConnections.mockReset()
+    mocks.listModelConnections.mockResolvedValue({ items: [] })
+    mocks.listCredentials.mockReset()
+    mocks.listCredentials.mockRejectedValue(new Error('credentials'))
+    mocks.cliModels.mockReset()
+    mocks.cliModels.mockResolvedValue({ models: [] })
     onboardingOpen.value = false
     mocks.listWorkflows.mockResolvedValue([approveWf])
     mocks.patchWorkflowHomeVisibility.mockResolvedValue({ ...approveWf, showOnHome: false })
@@ -242,12 +258,14 @@ describe('DashboardView home composer', () => {
     setBrandSettings(null)
     localStorage.removeItem(HOME_COMPOSER_DRAFT_KEY)
     localStorage.removeItem(HOME_PRIORITY_MEMORY_KEY)
+    localStorage.removeItem(HOME_LAUNCH_MODEL_MEMORY_KEY)
     vi.useFakeTimers()
   })
 
   afterEach(() => {
     localStorage.removeItem(HOME_COMPOSER_DRAFT_KEY)
     localStorage.removeItem(HOME_PRIORITY_MEMORY_KEY)
+    localStorage.removeItem(HOME_LAUNCH_MODEL_MEMORY_KEY)
     vi.useRealTimers()
     vi.unstubAllGlobals()
     document.body.innerHTML = ''
@@ -750,6 +768,86 @@ describe('DashboardView home composer', () => {
     expect(wrapper.get('[data-testid="home-priority-select"]').element.compareDocumentPosition(
       wrapper.get('[data-testid="home-workflow-select"]').element,
     ) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  function readyLaunchCatalog() {
+    mocks.listAgents.mockImplementation(async () => [
+      {
+        name: 'clarifier',
+        acpBackend: 'codex',
+        capabilities: { interaction: 'clarify', tools: ['ask_question'] },
+        modelBinding: { kind: 'configuration', configurationId: 'group' },
+      },
+      { name: 'worker', capabilities: { interaction: 'auto' } },
+      ...readyOnboardingAgents,
+    ])
+    mocks.listModelConfigurations.mockResolvedValue({
+      items: [{
+        id: 'group',
+        name: 'Codex',
+        backend: 'codex',
+        state: 'active',
+        binding: { kind: 'connection', connectionId: 'conn', modelId: 'm1', auxiliaryModelIds: ['m2'] },
+      }],
+    })
+    mocks.listModelConnections.mockResolvedValue({
+      items: [{
+        id: 'conn',
+        name: 'OpenAI',
+        state: 'active',
+        providerId: 'openai',
+        protocol: 'openai-chat-completions',
+        models: [
+          { id: 'm1', name: 'Primary Model', reasoningEfforts: ['low', 'medium', 'high'] },
+          { id: 'm2', name: 'Aux Model', reasoningEfforts: ['low', 'high'] },
+        ],
+      }],
+    })
+  }
+
+  it('places the model picker between workflow and priority and keeps the menu selection', async () => {
+    readyLaunchCatalog()
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const workflow = wrapper.get('[data-testid="home-workflow-select"]').element
+    const model = wrapper.get('[data-testid="solo-model-select"]').element
+    const priority = wrapper.get('[data-testid="home-priority-select"]').element
+    expect(workflow.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(model.compareDocumentPosition(priority) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const trigger = wrapper.get('[data-testid="solo-model-select-trigger"]')
+    expect(trigger.text()).toContain('Primary Model')
+    expect(trigger.text()).toContain('高')
+    expect(trigger.element).toHaveProperty('disabled', false)
+    await trigger.trigger('click')
+    await flushPromises()
+    const panel = document.querySelector('[data-testid="solo-model-select-panel"]')
+    expect(panel).toBeTruthy()
+    await teleported('solo-model-option-m2').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).toContain('Aux Model')
+    await wrapper.get('[data-testid="home-composer-input"]').setValue('换一个模型')
+    await wrapper.get('[data-testid="home-composer"]').trigger('submit')
+    await flushPromises()
+    expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'normal', [], expect.objectContaining({
+      launchModel: { configurationId: 'group', modelId: 'm2', reasoningEffort: 'high' },
+    }))
+    wrapper.unmount()
+  })
+
+  it('hides the model picker when the home list has no clarify-first workflow', async () => {
+    mocks.listWorkflows.mockResolvedValue([{
+      ...approveWf,
+      id: 'wf-auto',
+      nodes: [
+        { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
+        { id: 'work', type: 'agent', label: '实现', position: { x: 0, y: 0 }, config: { agent_profile: 'worker' } },
+      ],
+      edges: [{ id: 'e1', source: 'in', target: 'work' }],
+    }])
+    const wrapper = mountDashboard()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="solo-model-select"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
