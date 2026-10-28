@@ -80,7 +80,22 @@ func platformSpell(model string) string {
 
 func catalogID(model string) string {
 	id := stripVariant(strings.TrimSpace(model))
-	return strings.TrimPrefix(id, "opencode/")
+	switch {
+	case strings.HasPrefix(id, "opencode-go/"):
+		return strings.TrimPrefix(id, "opencode-go/")
+	case strings.HasPrefix(id, "opencode/"):
+		return strings.TrimPrefix(id, "opencode/")
+	default:
+		return id
+	}
+}
+
+func platformProvider(model string) string {
+	id := stripVariant(strings.TrimSpace(model))
+	if strings.HasPrefix(id, "opencode-go/") {
+		return "opencode-go"
+	}
+	return "opencode"
 }
 
 func stripVariant(model string) string {
@@ -165,7 +180,7 @@ func writeOpenCodeVariant(p Prepared, effort string, overlay map[string]any) (Pr
 }
 
 func declareVariant(config map[string]any, p Prepared, effort string, overlay map[string]any) error {
-	providerKey := "opencode"
+	providerKey := platformProvider(p.Model)
 	modelKey := catalogID(p.Model)
 	if p.Connection != nil {
 		providerKey = p.RouteID

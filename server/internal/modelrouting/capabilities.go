@@ -105,10 +105,8 @@ func ValidateBinding(backend string, binding Binding, connection *Connection) er
 			}
 		}
 		if backend == "opencode" {
-			for _, id := range append([]string{binding.ModelID}, binding.AuxiliaryModelIDs...) {
-				if id != "" && (!strings.HasPrefix(id, "opencode/") || strings.TrimPrefix(id, "opencode/") == "" || strings.Contains(strings.TrimPrefix(id, "opencode/"), "/")) {
-					return fmt.Errorf("OpenCode platform models must belong to OpenCode Zen (opencode/model)")
-				}
+			if err := validateOpenCodePlatformModels(binding); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -165,6 +163,53 @@ func ValidateBinding(backend string, binding Binding, connection *Connection) er
 		}
 	}
 	return nil
+}
+
+// validateOpenCodePlatformModels accepts an empty selection, or one official
+// family. opencode-go/ is recognized before opencode/ so the longer prefix wins.
+func validateOpenCodePlatformModels(binding Binding) error {
+	ids := make([]string, 0, 1+len(binding.AuxiliaryModelIDs))
+	if id := strings.TrimSpace(binding.ModelID); id != "" {
+		ids = append(ids, id)
+	}
+	for _, id := range binding.AuxiliaryModelIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	family := ""
+	for _, id := range ids {
+		got, ok := openCodePlatformFamily(id)
+		if !ok {
+			return fmt.Errorf("OpenCode platform model ID must be opencode/<model> or opencode-go/<model>")
+		}
+		if family == "" {
+			family = got
+			continue
+		}
+		if family != got {
+			return fmt.Errorf("OpenCode platform models must belong to one family: all opencode/<model> or all opencode-go/<model>")
+		}
+	}
+	return nil
+}
+
+func openCodePlatformFamily(id string) (string, bool) {
+	id = strings.TrimSpace(id)
+	prefix := ""
+	switch {
+	case strings.HasPrefix(id, "opencode-go/"):
+		prefix = "opencode-go/"
+	case strings.HasPrefix(id, "opencode/"):
+		prefix = "opencode/"
+	default:
+		return "", false
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(id, prefix))
+	if rest == "" || strings.Contains(rest, "/") {
+		return "", false
+	}
+	return strings.TrimSuffix(prefix, "/"), true
 }
 
 // validateOpenCodeEfforts allows an empty map, a catalog variant, or one custom

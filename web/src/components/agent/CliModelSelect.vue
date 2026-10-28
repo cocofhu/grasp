@@ -16,6 +16,7 @@ import {
   formatContext,
   highlight,
   launchCommand,
+  modelVendor,
   strengthKeys,
   vendorLabel,
 } from '@/lib/agent/cliModelView'
@@ -26,7 +27,7 @@ const props = withDefaults(
     /** Model id passed as `--model`. Empty means the CLI default, unless emptyMode is required. */
     modelValue: string
     backend: string
-    /** full: list plus a detail pane. compact: list only, details inline. */
+    /** full: list plus a detail pane. compact: list only, highlight without an extra row. */
     variant?: 'full' | 'compact'
     disabled?: boolean
     /**
@@ -47,8 +48,10 @@ const props = withDefaults(
     hideReset?: boolean
     /** Model ids already used by another slot. The current value stays visible. */
     excludeIds?: string[]
+    /** When set, only these catalog vendors stay selectable. The current value stays visible. */
+    allowedVendors?: string[]
   }>(),
-  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto', hideCommand: false, hideReset: false, excludeIds: () => [] },
+  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto', hideCommand: false, hideReset: false, excludeIds: () => [], allowedVendors: () => [] },
 )
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -97,12 +100,17 @@ watch(
 )
 
 const cliLabel = computed(() => ACP_BACKENDS.find((b) => b.id === props.backend)?.label || props.backend)
-const current = computed(() => models.value.find((m) => m.id === props.modelValue) ?? null)
+const visibleModels = computed(() => {
+  const allow = new Set((props.allowedVendors || []).map((id) => id.trim()).filter(Boolean))
+  if (!allow.size) return models.value
+  return models.value.filter((model) => allow.has(model.vendor) || model.id === props.modelValue)
+})
+const current = computed(() => visibleModels.value.find((m) => m.id === props.modelValue) ?? null)
 const unlisted = computed(() => !!props.modelValue && !current.value && !loading.value && models.value.length > 0)
 const command = computed(() => launchCommand(props.backend, props.modelValue))
 const split = computed(() => props.variant === 'full' && !narrow.value)
 
-const view = computed(() => buildView(models.value, query.value, vendor.value))
+const view = computed(() => buildView(visibleModels.value, query.value, vendor.value))
 const typed = computed(() => {
   const q = query.value.trim()
   return q && !view.value.exact ? q : ''
@@ -140,6 +148,11 @@ function rowValue(r: Row): string {
 
 function tagsOf(m: CliCatalogModel | null): CliModelTag[] {
   return TAG_ORDER.filter((tag) => m?.tags?.includes(tag))
+}
+
+/** Brand for a catalog row. The directory vendor is the provider, not the family. */
+function markVendor(model: Pick<CliCatalogModel, 'id' | 'name' | 'vendor'>): string {
+  return modelVendor(model.id, model.name, model.vendor)
 }
 
 function placePanel() {
@@ -327,7 +340,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
       <VendorMark v-if="!modelValue && !allowAuto" :vendor="backend" backend unknown :size="32" />
       <VendorMark v-else-if="!modelValue" :vendor="backend" backend auto :size="32" />
       <VendorMark v-else-if="unlisted" :vendor="backend" backend unknown :size="32" />
-      <VendorMark v-else :vendor="current?.vendor || ''" :size="32" />
+      <VendorMark v-else :vendor="current ? markVendor(current) : modelVendor(modelValue)" :size="32" />
 
       <span class="min-w-0 flex-1">
         <template v-if="!modelValue && !allowAuto">
@@ -480,7 +493,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                       @click="pick(m.id)"
                     >
                       <span class="flex items-start gap-2">
-                        <VendorMark :vendor="m.vendor" :size="22" />
+                        <VendorMark :vendor="markVendor(m)" :size="22" />
                         <span class="cms-card-name min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-txt">{{ m.name }}</span>
                         <Icon v-if="m.id === modelValue" name="check" :size="13" class="shrink-0 text-accent-2" />
                       </span>
@@ -534,7 +547,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                     @mouseenter="active = i"
                     @click="pick(r.model.id)"
                   >
-                    <VendorMark :vendor="r.model.vendor" :size="18" />
+                    <VendorMark :vendor="markVendor(r.model)" :size="18" />
                     <span class="min-w-0 flex-1">
                       <span class="block truncate text-[12.5px] text-txt">
                         <template v-for="(s, k) in highlight(r.model.name, query)" :key="k"><mark v-if="s.hit" class="cms-hit">{{ s.text }}</mark><template v-else>{{ s.text }}</template></template>
@@ -572,9 +585,9 @@ defineExpose({ focus: () => trigger.value?.focus() })
                     <span class="min-w-0 flex-1 truncate text-[12.5px] text-accent-2">{{ t('pages.agentStudio.cliModel.useTyped', { id: r.id }) }}</span>
                   </div>
 
-                  <!-- Compact: details of the active row, inline -->
+                  <!-- Narrow full variant only. Compact highlight must not insert a row. -->
                   <div
-                    v-if="!split && active === i && r.kind === 'model'"
+                    v-if="variant !== 'compact' && !split && active === i && r.kind === 'model'"
                     class="mx-2 mb-1 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-elevated/60 px-2.5 py-1.5 text-[10.5px] text-txt3"
                     data-testid="cli-model-inline-detail"
                   >
@@ -613,7 +626,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
               <Transition name="ui-fade" mode="out-in">
                 <div v-if="activeRow?.kind === 'model'" :key="activeRow.model.id" class="flex flex-col">
                   <div class="flex items-center gap-3">
-                    <VendorMark :vendor="activeRow.model.vendor" :size="40" />
+                    <VendorMark :vendor="markVendor(activeRow.model)" :size="40" />
                     <div class="min-w-0">
                       <p class="m-0 truncate text-[14px] font-semibold text-txt">{{ activeRow.model.name }}</p>
                       <p class="m-0 truncate text-[11px] text-txt3">{{ vendorLabel(activeRow.model.vendor) }}</p>

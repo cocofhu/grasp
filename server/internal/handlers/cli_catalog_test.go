@@ -52,11 +52,11 @@ func TestListCliBackendModelsUnlisted(t *testing.T) {
 	}
 }
 
-func TestOpenCodePlatformModelsOnlyIncludeZenProvider(t *testing.T) {
+func TestOpenCodePlatformModelsIncludeZenAndGo(t *testing.T) {
 	hn := catalogHarness(t, `{
- "opencode":{"models":{"kimi-k3":{"name":"Kimi K3"},"vendor/model":{"name":"Invalid namespace"}}},
+ "opencode":{"models":{"kimi-k3":{"name":"Kimi K3"},"vendor/model":{"name":"Invalid namespace"},"":{"name":"Blank"}}},
  "anthropic":{"models":{"claude-sonnet-5":{"name":"Claude Sonnet 5"}}},
- "opencode-go":{"models":{"kimi-k3":{"name":"Go only"}}}
+ "opencode-go":{"models":{"mimo-v2.5":{"name":"MiMo V2.5"},"mimo-v2.5-pro":{"name":"MiMo V2.5 Pro"},"a/b":{"name":"Nested"}," ":{"name":"Blank segment"}}}
 }`, http.StatusOK)
 	w := hn.do(http.MethodGet, "/api/acp-backends/opencode/models", nil)
 	var got struct {
@@ -65,8 +65,18 @@ func TestOpenCodePlatformModelsOnlyIncludeZenProvider(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if w.Code != http.StatusOK || len(got.Models) != 1 || got.Models[0].ID != "opencode/kimi-k3" || got.Models[0].Name != "Kimi K3" || got.Models[0].Vendor != "opencode" {
-		t.Fatalf("non-Zen model offered for official authorization: %s", w.Body.String())
+	want := []struct{ ID, Name, Vendor string }{
+		{"opencode/kimi-k3", "Kimi K3", "opencode"},
+		{"opencode-go/mimo-v2.5", "MiMo V2.5", "opencode-go"},
+		{"opencode-go/mimo-v2.5-pro", "MiMo V2.5 Pro", "opencode-go"},
+	}
+	if w.Code != http.StatusOK || len(got.Models) != len(want) {
+		t.Fatalf("official models: %s", w.Body.String())
+	}
+	for i, model := range want {
+		if got.Models[i] != model {
+			t.Fatalf("model %d = %+v, want %+v", i, got.Models[i], model)
+		}
 	}
 }
 

@@ -983,6 +983,7 @@ watch(showCreate, (open) => {
                 :placeholder="t('pages.workspace.credentials.valuePlaceholder')"
               />
             </label>
+            <p v-if="selectedKind?.id === 'opencode'" class="m-0 text-xs leading-5 text-txt3" data-testid="workspace-credential-opencode-family">{{ t('pages.workspace.credentials.opencodeFamilyHint') }}</p>
             <template v-if="createKind === 'model_api'">
               <label v-if="!modelCredentialBackend" :for="`${addMenuId}-connection`" class="flex items-center gap-2 text-xs font-medium text-txt2"><AppSwitch :id="`${addMenuId}-connection`" v-model="createConnectionAfter" :disabled="creating" :aria-label="routingCopy.configureConnectionNow" data-testid="model-credential-create-connection" />{{ routingCopy.configureConnectionNow }}</label>
               <div v-if="createConnectionAfter" class="space-y-3">

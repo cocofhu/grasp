@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { api, type CliCatalogModel, type ConcreteModelBinding, type CredentialItem, type ModelConfiguration, type ModelConfigurationBody, type ModelConnection, type ModelRoles, type ToolCapability } from '@/lib/api/api'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
 import { modelVendor } from '@/lib/agent/cliModelView'
+import { officialModelFamily } from '@/lib/agent/fixedEffort'
 import { bindingProblem, connectionCapabilities, credentialUsable, isModelCredential, isToolCredential, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { effortChoices, validEffortToken } from '@/lib/agent/fixedEffort'
 import { mergeModelMetadata, modelInputMode, setModelInputMode, type ModelInputMode } from '@/lib/agent/modelCapabilities'
@@ -109,7 +110,7 @@ const credentialChoice = computed<string>({
 const selectedCredential = computed(() => credentialOptions.value.find((option) => option.value === credentialChoice.value))
 type SlotOption = { value: string; label: string; hint?: string; vendor: string }
 const slotCatalog = computed<SlotOption[]>(() => {
-  if (form.kind === 'platform') return cliModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: model.vendor }))
+  if (form.kind === 'platform') return cliModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: modelVendor(model.id, model.name, model.vendor) }))
   const vendor = selectedService.value?.providerId || ''
   return serviceModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: modelVendor(model.id, model.name, vendor) }))
 })
@@ -161,7 +162,28 @@ const auxiliaryProblem = computed(() => {
   const all = [form.modelId.trim(), ...ids].filter(Boolean)
   return new Set(all).size === all.length ? '' : c.value.duplicateModel
 })
-const modelValid = computed(() => sourceValid.value && (form.kind === 'platform' || !!form.modelId.trim()) && !auxiliaryProblem.value)
+const lockedFamily = computed(() => {
+  if (form.backend !== 'opencode' || form.kind !== 'platform') return ''
+  for (const id of [form.modelId, ...form.auxiliaryModelIds]) {
+    const family = officialModelFamily(id)
+    if (family) return family
+  }
+  return ''
+})
+const familyCatalog = computed(() => {
+  const family = lockedFamily.value
+  if (!family) return slotCatalog.value
+  return slotCatalog.value.filter((option) => option.vendor === family || officialModelFamily(option.value) === family)
+})
+const officialProblem = computed(() => {
+  if (form.backend !== 'opencode' || form.kind !== 'platform') return ''
+  const ids = [form.modelId, ...form.auxiliaryModelIds].map((id) => id.trim()).filter(Boolean)
+  if (!ids.length) return ''
+  const families = ids.map((id) => officialModelFamily(id))
+  if (families.some((family) => !family)) return c.value.officialModelInvalid
+  return new Set(families).size > 1 ? c.value.officialFamilyMixed : ''
+})
+const modelValid = computed(() => sourceValid.value && (form.kind === 'platform' || !!form.modelId.trim()) && !auxiliaryProblem.value && !officialProblem.value)
 const valid = computed(() => !!form.name.trim() && !!form.backend && modelValid.value)
 function takenIds(except: string) {
   const skip = except.trim()
@@ -177,14 +199,14 @@ function takenIds(except: string) {
 function optionsFor(current: string): SlotOption[] {
   const value = current.trim()
   const taken = takenIds(value)
-  const options = slotCatalog.value.filter((option) => option.value === value || !taken.has(option.value))
+  const options = familyCatalog.value.filter((option) => option.value === value || !taken.has(option.value))
   if (value && !options.some((option) => option.value === value)) options.unshift({ value, label: value, vendor: modelVendor(value, '', form.kind === 'platform' ? '' : (selectedService.value?.providerId || '')) })
   return options
 }
-const canAddModel = computed(() => slotCatalog.value.some((option) => !takenIds('').has(option.value)))
+const canAddModel = computed(() => familyCatalog.value.some((option) => !takenIds('').has(option.value)))
 const primaryExcludeIds = computed(() => form.auxiliaryModelIds.map((id) => id.trim()).filter(Boolean))
 function addAuxiliary() {
-  const next = slotCatalog.value.find((option) => !takenIds('').has(option.value))
+  const next = familyCatalog.value.find((option) => !takenIds('').has(option.value))
   if (!next) return
   form.auxiliaryModelIds.push(next.value)
 }
@@ -428,7 +450,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
           </div>
           <div class="model-slot" data-testid="model-configuration-primary">
             <div class="model-slot-top"><span>{{ c.primarySlot }}</span></div>
-            <CliModelSelect v-if="form.kind === 'platform'" v-model="form.modelId" :backend="form.backend" :exclude-ids="primaryExcludeIds" variant="compact" hide-command hide-auto-sub hide-reset />
+            <CliModelSelect v-if="form.kind === 'platform'" v-model="form.modelId" :backend="form.backend" :exclude-ids="primaryExcludeIds" :allowed-vendors="lockedFamily ? [lockedFamily] : []" variant="compact" hide-command hide-auto-sub hide-reset />
             <AppSelect v-else v-model="form.modelId" :options="optionsFor(form.modelId)" :aria-label="c.primarySlot" :placeholder="c.selectModel" :loading="catalogLoading" searchable allow-custom custom-position="last" data-testid="model-configuration-model-id">
               <template #leading><VendorMark :vendor="slotVendor(form.modelId)" :size="28" :unknown="slotUnavailable(form.modelId)" /></template>
               <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
@@ -450,7 +472,9 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
             <ModelEffortPicker v-if="showEffort(modelId)" :model-name="modelSlotLabel(modelId)" :efforts="modelEffortLevels(modelId)" :model-value="form.efforts[modelId.trim()] || ''" @update:model-value="setEffort(modelId, $event)" />
           </div>
           <button type="button" class="model-add" data-testid="model-configuration-add-model" :disabled="!canAddModel" :title="canAddModel ? '' : c.noMoreModels" @click="addAuxiliary"><Icon name="plus" :size="14" />{{ c.addModel }}</button>
+          <p v-if="form.backend === 'opencode' && form.kind === 'platform'" class="mb-0 text-xs leading-5 text-txt3" data-testid="model-configuration-official-family">{{ c.officialFamilyHint }}</p>
           <p v-if="auxiliaryProblem" class="mb-0 text-xs text-err">{{ auxiliaryProblem }}</p>
+          <p v-if="officialProblem" class="mb-0 text-xs text-err" data-testid="model-configuration-official-problem">{{ officialProblem }}</p>
           <template v-if="form.kind !== 'platform'">
             <p class="mb-0 text-xs leading-5 text-txt3">{{ c.manualModelHint }}</p>
             <p v-if="configurableImageInput && form.modelId.trim()" class="mb-0 text-xs leading-5 text-txt3">{{ c.imageInputSharedHint }}</p>
