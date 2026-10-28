@@ -38,6 +38,8 @@ export function useRunDetailWs(opts: {
   eventPages: Record<string, EventPageState>
   nodeTab: Ref<string>
   reviewChatRef: Ref<DialogueSurface>
+  /** LLM transcript chat. Mounted only in that view; frames still belong to it. */
+  llmTranscriptRef?: Ref<DialogueSurface>
   gateApprovalRef: Ref<GateSurface>
   selClarify: ComputedRef<{ nodeId: string } | null>
   fetchNodeEvents: (nodeId: string | null, opts?: { signal?: AbortSignal }) => Promise<boolean>
@@ -64,6 +66,7 @@ export function useRunDetailWs(opts: {
     eventPages,
     nodeTab,
     reviewChatRef,
+    llmTranscriptRef,
     gateApprovalRef,
     selClarify,
     fetchNodeEvents,
@@ -482,6 +485,7 @@ export function useRunDetailWs(opts: {
         if (!manual.value) selected.value = m.nodeId
         // Dialogue-surface stream (ClarifyChat / GateApproval), not only LiveLog.
         applyOrBufferDialogueAcp(m.nodeId, wsEvents, m.busy)
+        llmTranscriptRef?.value?.applyAcpEvents?.(wsEvents, m.nodeId)
       } else if (m.type === 'review' && m.nodeId) {
         if (
           m.nodeId === selClarify.value?.nodeId ||
@@ -501,6 +505,7 @@ export function useRunDetailWs(opts: {
         if (!selClarify.value || selClarify.value.nodeId === m.nodeId) {
           reviewChatRef.value?.applyReviewFrame?.(m)
         }
+        llmTranscriptRef?.value?.applyReviewFrame?.(m)
         gateApprovalRef.value?.applyReviewFrame?.(m)
         if (m.event === 'turn_done' || m.event === 'error') {
           liveBusy[m.nodeId] = false

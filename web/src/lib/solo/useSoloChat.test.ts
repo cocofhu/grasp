@@ -172,6 +172,43 @@ describe('useSoloChat', () => {
     expect(await pending).toBe(false)
     expect(chat.queued.value).toEqual([])
     expect(chat.actionError.value).toBe('排队已满')
+    expect(chat.turns.value.some((turn) => turn.text === 'hello')).toBe(false)
+    app.unmount()
+  })
+
+  it('shows an accepted message before turn_begin and keeps it when history is short', async () => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    mocks.sendSoloTurn.mockResolvedValue(undefined)
+    const pending = chat.send('你好')
+    expect(chat.turns.value.some((turn) => turn.role === 'user' && turn.text === '你好')).toBe(true)
+    expect(await pending).toBe(true)
+
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [] })
+    ws.emit({
+      type: 'session',
+      event: 'turn_begin',
+      item: { id: 'srv', text: '你好', images: [] },
+      userMsgId: 'srv',
+    })
+    expect(chat.turns.value.filter((turn) => turn.role === 'user' && turn.text === '你好')).toHaveLength(1)
+
+    mocks.listSoloMessages.mockResolvedValue([])
+    ws.emit({ type: 'session', event: 'turn_done' })
+    await flushPromises()
+    expect(chat.turns.value.some((turn) => turn.role === 'user' && turn.text === '你好')).toBe(true)
+
+    mocks.listSoloMessages.mockResolvedValue([
+      { id: 'm1', sessionId: 's1', role: 'user', content: '你好', createdAt: '' },
+      { id: 'a1', sessionId: 's1', role: 'assistant', content: '收到', status: 'ok', createdAt: '' },
+    ])
+    ws.emit({ type: 'session', event: 'queue_state', busy: false, items: [] })
+    await flushPromises()
+    expect(chat.turns.value.filter((turn) => turn.role === 'user' && turn.text === '你好')).toHaveLength(1)
+    expect(chat.turns.value.some((turn) => turn.text === '收到')).toBe(true)
     app.unmount()
   })
 

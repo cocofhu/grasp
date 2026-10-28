@@ -39,6 +39,7 @@ const { s } = useGateApprovalCtx()
     :stream-tools="s.reactStreamTools"
     :interrupted="s.reactInterrupted"
     :stream-completed-at="s.reactStreamCompletedAt"
+    :live-human-text="s.reactLiveHumanText"
     @send="s.onComposerReject"
     @finish="s.onComposerPass"
     @cancel="s.cancelReactRevise"

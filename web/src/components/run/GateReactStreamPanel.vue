@@ -27,6 +27,8 @@ const props = withDefaults(
     streamTools?: AgentTool[]
     /** Exact run owning any artifact links shown by tools. */
     runId?: string
+    /** Accepted user text, visible before the agent frame arrives. */
+    userText?: string
   }>(),
   {
     thinking: false,
@@ -35,6 +37,7 @@ const props = withDefaults(
     interrupted: false,
     completedAt: null,
     streamTools: () => [],
+    userText: '',
   },
 )
 
@@ -115,6 +118,7 @@ const showCompleted = computed(
 )
 const showPanel = computed(
   () =>
+    !!props.userText ||
     props.thinking ||
     showCompleted.value ||
     (props.interrupted && (hasThought.value || hasMessage.value)),
@@ -138,6 +142,9 @@ function onThoughtToggle(e: Event) {
     class="min-w-0 space-y-3 py-2"
     data-testid="gate-react-stream"
   >
+    <div v-if="userText" class="flex justify-end" data-testid="gate-live-human">
+      <div class="max-w-[88%] whitespace-pre-wrap rounded-lg bg-elevated px-3 py-2 text-[13px] text-txt">{{ userText }}</div>
+    </div>
     <div
       v-if="streaming && !hasMessage && !hasThought"
       class="chat-meta inline-flex items-center gap-2"

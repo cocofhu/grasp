@@ -1133,6 +1133,8 @@ const reactThinking = ref(false)
 /** True between turn_begin and turn_done/error (mirrors ClarifyChat liveAgentIdx). */
 const reactInFlight = ref(false)
 const reactStreamText = ref('')
+/** Accepted revise text, shown before turn_begin and kept if a snapshot is still short. */
+const reactLiveHumanText = ref('')
 /** ACP thought rail (separate from message — Demo: thought must not be dropped). */
 const reactStreamThought = ref('')
 /** ACP tool_call rows of the current turn (name + status) for the folded tool group. */
@@ -1343,6 +1345,7 @@ function applyReviewFrame(frame: {
   switch (frame.event) {
     case 'turn_begin':
       reactQueued.value = takeTurnBeginItem(reactQueued.value, frame.item).queue
+      if (frame.item?.text) reactLiveHumanText.value = frame.item.text
       reactThinking.value = true
       reactInFlight.value = true
       reactStreamText.value = ''
@@ -1546,6 +1549,7 @@ async function sendReactRevise() {
     images: cloneClarifyImages(reactImages.value),
     annotations: cloneReactAnnotations(reactAnnotations.value),
   })
+  if (body) reactLiveHumanText.value = body
   reactThinking.value = true
   reactSending.value = true
   reactError.value = null
@@ -1561,6 +1565,7 @@ async function sendReactRevise() {
     emit('react-revised')
   } catch (e: any) {
     reactQueued.value.pop()
+    if (reactLiveHumanText.value === body) reactLiveHumanText.value = ''
     reactThinking.value = reactQueued.value.length > 0 || reactStreamText.value.length > 0
     reactError.value = e?.message || t('pages.gateApproval.reactRevise.failed')
   } finally {
@@ -1634,6 +1639,7 @@ async function sendHotReject() {
     selector: pickedSelector.value,
     elementImage: pickedElementImage.value,
   }
+  if (body) reactLiveHumanText.value = body
   reactQueued.value.push({
     text: body || '(annotate)',
     images: reviseImages.map((im) => ({ data: im.data, mimeType: im.mimeType })),
@@ -1644,6 +1650,7 @@ async function sendHotReject() {
     const synced = await syncHotRejectHistory(anns)
     if (!synced) {
       reactQueued.value.pop()
+      if (reactLiveHumanText.value === body) reactLiveHumanText.value = ''
       return
     }
 
@@ -1652,6 +1659,7 @@ async function sendHotReject() {
     emit('react-revised')
   } catch (e: any) {
     reactQueued.value.pop()
+    if (reactLiveHumanText.value === body) reactLiveHumanText.value = ''
     reactThinking.value = reactQueued.value.length > 0
     if (hotRejectHistorySynced.value) {
       reactError.value = t('pages.gateApproval.reactRevise.issueSavedReviseFailed')
@@ -1818,6 +1826,7 @@ provide(gateApprovalKey, {
     editReactQueuedItem,
     reactThinking,
     reactStreamText,
+    reactLiveHumanText,
     reactStreamThought,
     reactStreamTools,
     reactInterrupted,
@@ -1998,6 +2007,7 @@ provide(gateApprovalKey, {
     reactThinking,
     reactInFlight,
     reactStreamText,
+    reactLiveHumanText,
     reactStreamThought,
     reactStreamTools,
     reactInterrupted,

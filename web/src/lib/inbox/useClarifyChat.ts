@@ -188,8 +188,8 @@ async function playConfirmCeremony(): Promise<void> {
   if (confirmFlow.playing.value) return
   await confirmFlow.play()
 }
-// SandboxChat-aligned pending-send queue (clarify + review). Items live ONLY in
-// the bottom panel until turn_begin materializes transcript bubbles.
+// Pending sends stay in the bottom queue, and the accepted user row is also
+// in the transcript immediately. turn_begin attaches to that row.
 const queued = ref<QueueItem[]>([])
 /** In-flight turn bubbles (human + streaming agent) before props.turns catch up. */
 const liveTurns = ref<ClarifyTurn[]>([])
@@ -952,6 +952,76 @@ function removeAttachment(i: number) {
 /** Composer text behind an optimistic row (before any skip-envelope wrap). */
 const composerOrigin = new WeakMap<object, string>()
 
+/** Index of an accepted user row that still has no reply text. -1 if none. */
+function findLocalPendingPair(humanText: string): number {
+  for (let i = 0; i < liveTurns.value.length - 1; i++) {
+    const human = liveTurns.value[i]
+    const agent = liveTurns.value[i + 1]
+    if (human?.role !== 'human' || !human.localPending || agent?.role !== 'agent') continue
+    if ((human.text || '') !== humanText) continue
+    if ((agent.text || '').trim() || (agent.thought || '').trim()) continue
+    return i
+  }
+  return -1
+}
+
+/**
+ * Put the accepted user row into the transcript before any frame arrives.
+ * The empty agent slot stays localPending until a snapshot has the reply,
+ * so a shorter history cannot sweep the row.
+ */
+function paintAcceptedUserTurn(
+  text: string,
+  images: ClarifyImage[] = [],
+  annotations: ReactAnnotation[] = [],
+) {
+  if (findLocalPendingPair(text) >= 0) return
+  if (!liveTurns.value.length) liveHistoryAnchor = anchorForNewLiveHuman(text)
+  const started = new Date().toISOString()
+  const streaming = liveAgentIdx.value < 0
+  liveTurns.value.push({
+    role: 'human',
+    text,
+    at: started,
+    images: images.length ? images : undefined,
+    annotations: annotations.length ? annotations : undefined,
+    localPending: true,
+  })
+  const agentIdx =
+    liveTurns.value.push({
+      role: 'agent',
+      text: '',
+      thought: '',
+      at: started,
+      startedAt: started,
+      streaming,
+      localPending: true,
+    }) - 1
+  if (streaming) liveAgentIdx.value = agentIdx
+  thinking.value = true
+  stickToBottom.value = true
+  unreadCount.value = 0
+  void scrollBottom(true)
+}
+
+/** Drop the last accepted row for this text when the send itself failed. */
+function removeLocalPendingPair(text: string) {
+  let idx = -1
+  for (let i = 0; i < liveTurns.value.length - 1; i++) {
+    const human = liveTurns.value[i]
+    if (human?.role === 'human' && human.localPending && (human.text || '') === text) idx = i
+  }
+  if (idx < 0) return
+  const agent = liveTurns.value[idx + 1]
+  if (agent?.role !== 'agent') return
+  if ((agent.text || '').trim() || (agent.thought || '').trim() || agent.tools?.length || agent.parts?.length) return
+  const removedLive = liveAgentIdx.value === idx + 1
+  liveTurns.value.splice(idx, 2)
+  if (removedLive) liveAgentIdx.value = -1
+  else if (liveAgentIdx.value > idx) liveAgentIdx.value -= 2
+  if (!liveTurns.value.length) liveHistoryAnchor = 0
+}
+
 function sendMessage(
   text: string,
   imgs: ClarifyImage[] = [],
@@ -962,11 +1032,12 @@ function sendMessage(
   // (trim would collapse "回答已跳过\n用户回复\n" → two lines).
   const t = textHasSkipPrefix(text) ? text.replace(/^\s+/, '') : text.trim()
   if ((!t && imgs.length === 0 && anns.length === 0) || props.done || !props.active) return
-  // Enqueue only — bubbles materialize on turn_begin (AgentChatTester / Demo).
-  // Busy may still enqueue; never open a concurrent turn via optimistic pending.
+  // Busy may still enqueue; the accepted row is painted now, and turn_begin
+  // attaches to it instead of opening a second human bubble.
   const item: QueueItem = { text: t, images: imgs, annotations: cloneReactAnnotations(anns) }
   if (composerText !== undefined) composerOrigin.set(item, composerText)
   queued.value.push(item)
+  paintAcceptedUserTurn(t, imgs, anns)
   thinking.value = true
   emit('send', t, imgs, anns)
   stickToBottom.value = true
@@ -1033,6 +1104,7 @@ async function sendFromComposer(): Promise<boolean> {
       attachNotice.value = null
       sendNotice.value = null
       if (!hasComposerDraft()) releaseStash()
+      paintAcceptedUserTurn(prepared.text, prepared.images, prepared.annotations)
     } finally {
       composerSending.value = false
     }
@@ -1494,8 +1566,10 @@ function cancelReview() {
  */
 function discardLastQueued() {
   if (queued.value.length === 0) return
+  const item = queued.value[queued.value.length - 1]
   queued.value.pop()
-  if (queued.value.length === 0 && liveAgentIdx.value < 0) {
+  if (item) removeLocalPendingPair(item.text)
+  if (queued.value.length === 0 && liveAgentIdx.value < 0 && !liveTurns.value.some((turn) => turn.localPending)) {
     thinking.value = false
   }
 }
@@ -1914,12 +1988,31 @@ function liveNarrativeAhead(persisted: ClarifyTurn[]): boolean {
  * Drop a settled live row once the persisted transcript is the dialogue.
  * While the sandbox orphan is still writing, the open row stays.
  */
+/** An accepted user row is still missing from this snapshot. */
+function localPendingStillOpen(suffix: ClarifyTurn[]): boolean {
+  for (let i = 0; i < liveTurns.value.length - 1; i++) {
+    const human = liveTurns.value[i]
+    const agent = liveTurns.value[i + 1]
+    if (human?.role !== 'human' || !human.localPending || agent?.role !== 'agent') continue
+    const text = (human.text || '').trim()
+    if (!text) {
+      if (!agent.streaming && !(agent.text || '').trim() && !(agent.thought || '').trim()) return true
+      continue
+    }
+    if (!persistedCompletedLiveHuman(suffix, text)) return true
+  }
+  return false
+}
+
 function dropSettledLiveIfPersistedWins() {
   if (sandboxOrphan.value) return
   const turnList = persistedTurns.value
   prunePersistedLiveHistory(turnList)
   const liveHumanText = liveTurns.value[0]?.role === 'human' ? liveTurns.value[0].text || '' : ''
   const suffix = currentPersistedSuffix(turnList)
+  // Older history, or an agent slot that has not started streaming, is not a
+  // reason to remove a user row the snapshot does not contain yet.
+  if (localPendingStillOpen(suffix)) return
   const persistedCaughtUp = persistedCompletedLiveHuman(suffix, liveHumanText)
   const ahead = liveNarrativeAhead(turnList)
   const snapshotWins =
@@ -2169,21 +2262,24 @@ function applyReviewFrame(frame: {
         annotations: local?.annotations?.length ? local.annotations : (annotations ?? []),
         newHuman: false,
       }
-      // Cover retry: reuse trailing live human + failed/empty agent instead of duplicating.
+      // Attach to the accepted row. Same text on an older finished turn does
+      // not count. Cover retry still reuses the trailing failed/empty slot.
+      const pendingAt = findLocalPendingPair(humanText)
       const last = liveTurns.value.length
-      const existingHuman = last >= 2 ? liveTurns.value[last - 2] : null
-      const existingAgent = last >= 2 ? liveTurns.value[last - 1] : null
-      if (
-        existingHuman?.role === 'human' &&
-        existingAgent?.role === 'agent' &&
-        (existingHuman.text || '') === humanText &&
-        // An agent slot with no content yet is this turn's slot — including the
-        // already-streaming one retryLastFailed / refresh-resume opened
-        // optimistically, which must not be duplicated.
-        (isRetryableFailedAgent(existingAgent) ||
-          (!(existingAgent.text || '').trim() &&
-            !(existingAgent.thought || '').trim()))
-      ) {
+      const tailHuman = last >= 2 ? liveTurns.value[last - 2] : null
+      const tailAgent = last >= 2 ? liveTurns.value[last - 1] : null
+      const tailReusable =
+        pendingAt < 0 &&
+        tailHuman?.role === 'human' &&
+        tailAgent?.role === 'agent' &&
+        (tailHuman.text || '') === humanText &&
+        (isRetryableFailedAgent(tailAgent) ||
+          (!(tailAgent.text || '').trim() && !(tailAgent.thought || '').trim()))
+      const pairAt = pendingAt >= 0 ? pendingAt : tailReusable ? last - 2 : -1
+      if (pairAt >= 0) {
+        const existingHuman = liveTurns.value[pairAt]!
+        const existingAgent = liveTurns.value[pairAt + 1]!
+        if (existingHuman.localPending) liveTurnOrigin.newHuman = true
         existingHuman.images = images ?? existingHuman.images
         existingHuman.annotations = annotations ?? existingHuman.annotations
         existingAgent.text = ''
@@ -2195,7 +2291,7 @@ function applyReviewFrame(frame: {
         existingAgent.streaming = true
         markOutputStart(existingAgent, true)
         existingAgent.at = existingAgent.startedAt || new Date().toISOString()
-        liveAgentIdx.value = last - 1
+        liveAgentIdx.value = pairAt + 1
       } else {
         const started = new Date().toISOString()
         liveTurnOrigin.newHuman = true

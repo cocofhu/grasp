@@ -120,6 +120,7 @@ export type GateApprovalState = {
   editReactQueuedItem: (index: number) => void | Promise<void>
   reactThinking: boolean
   reactStreamText: string
+  reactLiveHumanText: string
   reactStreamThought: string
   reactStreamTools: AgentTool[]
   reactInterrupted: boolean

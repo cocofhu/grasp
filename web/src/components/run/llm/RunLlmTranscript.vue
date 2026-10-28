@@ -30,6 +30,19 @@ defineEmits<{
 
 const { t, locale } = useI18n()
 
+const chatRef = ref<{
+  applyReviewFrame?: (frame: Record<string, unknown>) => boolean | void
+  applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  isSessionBusy?: () => boolean
+} | null>(null)
+
+defineExpose({
+  applyReviewFrame: (frame: Record<string, unknown>) => chatRef.value?.applyReviewFrame?.(frame),
+  applyAcpEvents: (events: AcpEvent[] | undefined, nodeId?: string) =>
+    chatRef.value?.applyAcpEvents?.(events, nodeId),
+  isSessionBusy: () => !!chatRef.value?.isSessionBusy?.(),
+})
+
 const transcript = ref<LlmTranscriptResponse | null>(null)
 const loading = ref(false)
 const loadError = ref(false)
@@ -185,6 +198,7 @@ async function onFinish() {
         @retry="load"
       />
       <ClarifyChat
+        ref="chatRef"
         class="min-h-0 flex-1"
         :run-id="run.id"
         :node-id="thread.current.nodeId"
