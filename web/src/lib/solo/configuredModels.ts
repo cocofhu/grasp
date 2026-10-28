@@ -85,14 +85,14 @@ export function configuredModelChoices(input: {
       choices.push({ id: '', name: configurationName || '自动', hint: '交给编码工具选择', vendor: input.backend, backend: true, unavailable: false })
       continue
     }
-    const cli = (input.cliModels || []).find((model) => model.id === id)
+    const cli = (input.cliModels || []).find((model) => model.id === id || model.aliases?.includes(id))
     const connection = (input.connectionModels || []).find((model) => model.id === id)
     const name = cli?.name || connection?.name || id
     const vendor = modelVendor(id, cli?.name || connection?.name, cli?.vendor || input.providerId || '')
     const known = !!cli || !!connection
-    const supportsEffort = input.backend === 'codex' || input.backend === 'deepseek_harness'
-    const declaredEfforts = connection?.reasoningEfforts?.length ? connection.reasoningEfforts : input.backend === 'codex' ? cli?.efforts : undefined
-    const adapterEfforts = supportsEffort && connection?.capabilities?.reasoning !== false ? [...new Set((declaredEfforts || []).map(value => value.trim()).filter(Boolean))] : []
+    const supportsEffort = input.backend === 'codex' || input.backend === 'deepseek_harness' || input.backend === 'kimi_code'
+    const declaredEfforts = input.backend === 'kimi_code' ? cli?.efforts : connection?.reasoningEfforts?.length ? connection.reasoningEfforts : input.backend === 'codex' ? cli?.efforts : undefined
+    const adapterEfforts = supportsEffort && (input.backend === 'kimi_code' || connection?.capabilities?.reasoning !== false) ? [...new Set((declaredEfforts || []).map(value => value.trim()).filter(Boolean))] : []
     const catalogEfforts = input.backend === 'opencode' ? effortChoices(input.backend, binding.kind, input.providerId, input.baseUrl, id) : []
     const savedEffort = binding.toolSettings?.modelEfforts?.[id]?.trim() || ''
     const efforts = input.backend === 'opencode' && validEffortToken(savedEffort) && !catalogEfforts.includes(savedEffort) ? [] : input.backend === 'opencode' ? catalogEfforts : adapterEfforts

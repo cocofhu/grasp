@@ -9,6 +9,7 @@ import (
 
 	"backend/internal/agents"
 	"backend/internal/provider"
+	"backend/internal/provider/kimicode"
 )
 
 const envConfiguredModels = "GRASP_CONFIGURED_MODELS"
@@ -104,7 +105,7 @@ func ReasoningEffortSelectable(model, effort string) bool {
 
 func configuredReasoningOptions(model string) []string {
 	backend := agents.Current().Name()
-	if backend != provider.Codex && backend != provider.DeepSeekHarness && backend != provider.OpenCode {
+	if backend != provider.Codex && backend != provider.DeepSeekHarness && backend != provider.OpenCode && backend != provider.KimiCode {
 		return nil
 	}
 	spec, configured, err := parseConfiguredModels()
@@ -117,6 +118,20 @@ func configuredReasoningOptions(model string) []string {
 		}
 		if item.ReasoningDisabled {
 			return nil
+		}
+		if backend == provider.KimiCode {
+			// Kimi Code accepts only the exact native strengths for these
+			// models, even if stale server metadata declares more values.
+			var efforts []string
+			for _, supported := range kimicode.ReasoningEfforts(model) {
+				for _, declared := range item.ReasoningEfforts {
+					if declared == supported {
+						efforts = append(efforts, supported)
+						break
+					}
+				}
+			}
+			return efforts
 		}
 		return append([]string(nil), item.ReasoningEfforts...)
 	}

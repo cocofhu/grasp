@@ -7,6 +7,6 @@
     {"id": "opencode", "bin": "opencode", "package": "opencode-ai", "mode": "native-cli", "protocol": "openai-chat-completions", "model": "gpt-5", "efforts": ["low", "high"]},
     {"id": "codex", "bin": "codex", "package": "@openai/codex", "mode": "native-cli", "protocol": "openai-responses", "model": "gpt-5", "efforts": ["low", "high"]},
     {"id": "deepseek_harness", "bin": "dsh", "package": "@deepseek-ai/dsh@0.2.1-rc.2", "mode": "native-cli", "protocol": "openai-chat-completions", "model": "gpt-5", "efforts": ["low", "high"]},
-    {"id": "kimi_code", "bin": "kimi", "mode": "platform-wire-fixture", "model": "gpt-5", "efforts": [], "reason": "Kimi Code only accepts an open-platform API key for api.moonshot.cn or api.moonshot.ai and does not take a custom model endpoint."}
+    {"id": "kimi_code", "bin": "kimi", "mode": "platform-wire-fixture", "model": "k3.1-pro", "auxiliaryModels": ["k3", "kimi-for-coding", "kimi-for-coding-highspeed"], "modelEfforts": {"kimi-for-coding-highspeed": []}, "efforts": ["low", "high", "max"], "unsupportedEfforts": ["minimal", "medium", "xhigh"], "reason": "Kimi Code uses its own subscription credentials and the official api.kimi.com/coding/v1 or api.kimi.ai/coding/v1 endpoint. Grasp does not allow a custom model endpoint. Its native config and ACP wire are exercised here; vendor inference is not covered."}
   ]
 }

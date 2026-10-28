@@ -426,7 +426,7 @@
           },
           "cli": {
             "title": "用编码工具",
-            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae、Codex、DeepSeek Harness（DSH）或 Kimi Code。DSH 使用 DeepSeek API Key，Kimi Code 使用开放平台 API Key（国内站 platform.kimi.com，国际站 platform.kimi.ai），Codex 使用 ChatGPT 登录文件，其余工具使用各自的账号密钥。可以指定模型，也可以留给工具自己决定。"
+            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae、Codex、DeepSeek Harness（DSH）或 Kimi Code。DSH 使用 DeepSeek API Key，Kimi Code 使用订阅控制台创建的 API Key（国内站 kimi.com/code/console，国际站 kimi.ai/code/console），Codex 使用 ChatGPT 登录文件，其余工具使用各自的账号密钥。可以指定模型，也可以留给工具自己决定。"
           }
         },
         "cliLabel": "选择编码工具",
@@ -1261,7 +1261,7 @@
         "secretOpenCodeKey": "OpenCode 官方 Key",
         "opencodeFamilyHint": "这把钥匙对应所选官方家族。官方模式可以使用 opencode/<模型> 或 opencode-go/<模型>。OpenCode 与 OpenCode Go 各存一把 OpenCode CLI 钥匙，用别名区分；一份模型配置只绑一把钥匙。",
         "secretDeepSeekKey": "DeepSeek 官方 Key",
-        "secretKimiCodeKey": "Kimi Code 开放平台 Key",
+        "secretKimiCodeKey": "Kimi Code 订阅 Key",
         "secretLoginFile": "登录文件",
         "secretPrivateKey": "私钥",
         "secretKnownHosts": "已知主机",
@@ -2356,8 +2356,8 @@
         "codebuddyInternationalHint": "codebuddy.ai · public",
         "traeDomesticHint": "docs.trae.cn · cn",
         "traeInternationalHint": "www.trae.ai · intl",
-        "kimiDomesticHint": "platform.kimi.com · cn",
-        "kimiInternationalHint": "platform.kimi.ai · intl",
+        "kimiDomesticHint": "api.kimi.com/coding/v1 · cn",
+        "kimiInternationalHint": "api.kimi.ai/coding/v1 · intl",
         "managedByAcp": "此保留变量由 ACP 站点选择接管，不可在 ENV 中编辑或删除。",
         "managedConflict": "区域保留键已由 ACP 接管，请在 ACP 步骤选择站点。",
         "managedKey": "ACP 管理的区域变量",
@@ -2784,7 +2784,7 @@
             "opencode": "用模型厂商的 API Key 启动，可以指定模型和接口地址。",
             "codex": "Codex 使用 ChatGPT 登录文件，不使用 API Key。用 API Key 接 OpenAI 请改用 OpenCode。运行会更新这份文件，不要和正在使用的本机登录共用同一份。",
             "deepseek": "使用 DeepSeek 平台的 API Key。密钥保存在工作区凭据中，模型单独选择。",
-            "kimi": "只接受开放平台 API Key，不接受登录文件。国内站密钥来自 platform.kimi.com，国际站密钥来自 platform.kimi.ai，两者不能混用。模型可以留空，留空时使用 CLI 默认模型。"
+            "kimi": "使用 Kimi Code 订阅控制台创建的 API Key。国内站连接 api.kimi.com，国际站连接 api.kimi.ai。模型可留空，默认使用 K3.1 Pro；可用模型取决于订阅权益。"
           },
           "paths": {
             "cursor": {
@@ -2824,8 +2824,8 @@
               "step3": "复制密钥并填入下方，或保存为工作区凭据。"
             },
             "kimi": {
-              "step1": "确认所选站点：国内站 platform.kimi.com，或国际站 platform.kimi.ai。",
-              "step2": "在该站点的 API Keys 页面创建一个开放平台 API Key。",
+              "step1": "打开所选站点的 Kimi Code 控制台：kimi.com/code/console 或 kimi.ai/code/console。",
+              "step2": "在订阅控制台的 API Keys 区域创建 API Key。",
               "step3": "只粘贴密钥本身。含 access_token 或 refresh_token 的登录文件会被拒绝。"
             }
           },

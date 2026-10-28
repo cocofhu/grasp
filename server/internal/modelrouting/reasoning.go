@@ -1,6 +1,7 @@
 package modelrouting
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/clicatalog"
@@ -29,7 +30,8 @@ func FixedEffortBinding(backend string, connection *Connection) bool {
 
 // ReasoningEfforts returns only declared choices for adapters that apply a
 // separate effort. Model identifiers remain opaque; their spelling grants no
-// capabilities. Connection metadata takes precedence over the CLI shortlist.
+// capabilities. Kimi Code uses its CLI shortlist; compatible connection
+// adapters may take their levels from connection metadata.
 func ReasoningEfforts(backend, modelID string, connection *Connection) []string {
 	modelID = strings.TrimSpace(modelID)
 	if modelID == "" || modelID == "auto" {
@@ -40,6 +42,9 @@ func ReasoningEfforts(backend, modelID string, connection *Connection) []string 
 			return OpenCodePlatformVariants(modelID)
 		}
 		return providerModelEfforts(connection, modelID)
+	}
+	if backend == "kimi_code" {
+		return cliModelEfforts(backend, modelID)
 	}
 	if backend != "codex" && backend != "deepseek_harness" {
 		return nil
@@ -64,10 +69,15 @@ func ReasoningEfforts(backend, modelID string, connection *Connection) []string 
 		}
 	}
 	if backend == "codex" {
-		for _, model := range clicatalog.Models(backend) {
-			if model.ID == modelID {
-				return cleanEfforts(model.Efforts)
-			}
+		return cliModelEfforts(backend, modelID)
+	}
+	return nil
+}
+
+func cliModelEfforts(backend, modelID string) []string {
+	for _, model := range clicatalog.Models(backend) {
+		if model.ID == modelID || slices.Contains(model.Aliases, modelID) {
+			return cleanEfforts(model.Efforts)
 		}
 	}
 	return nil

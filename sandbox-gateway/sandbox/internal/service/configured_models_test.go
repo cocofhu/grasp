@@ -56,6 +56,27 @@ func TestConfiguredReasoningEffortsAreExactAndAdapterBacked(t *testing.T) {
 	}
 }
 
+func TestKimiReasoningRequiresExactModelAndDeclaredNativeStrength(t *testing.T) {
+	t.Setenv("AGENT_PROVIDER", "kimi_code")
+	t.Setenv("GRASP_CONFIGURED_MODELS", `[{"id":"kimi-k3.1-pro","reasoningEfforts":["ultra","max","low","low"]},{"id":"kimi-k3","reasoningEfforts":["low","high","max"],"reasoningDisabled":true},{"id":"kimi-k2.7-code","reasoningEfforts":["low","high","max"]}]`)
+	if !ReasoningEffortSelectable("kimi-k3.1-pro", "low") || !ReasoningEffortSelectable("kimi-k3.1-pro", "max") || !ReasoningEffortSelectable("kimi-k3.1-pro", "") {
+		t.Fatal("Kimi rejected a declared native strength or default reset")
+	}
+	for _, effort := range []string{"high", "ultra", "on", "off"} {
+		if ReasoningEffortSelectable("kimi-k3.1-pro", effort) {
+			t.Fatalf("Kimi accepted unadvertised strength %q", effort)
+		}
+	}
+	for _, model := range []string{"kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "other/kimi-k3"} {
+		if ReasoningEffortSelectable(model, "low") {
+			t.Fatalf("Kimi accepted unsupported or disabled model %q", model)
+		}
+	}
+	if options := configuredReasoningOptions("kimi-k3.1-pro"); len(options) != 2 || options[0] != "low" || options[1] != "max" {
+		t.Fatalf("native capabilities must filter and order declared choices: %v", options)
+	}
+}
+
 func TestModelAndEffortRestartIsAtomicAndChatScoped(t *testing.T) {
 	t.Setenv("ACP_BRIDGE_REASONING_EFFORT", "low")
 	manager := NewChatManager()

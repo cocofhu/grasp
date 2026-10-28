@@ -90,11 +90,11 @@ const OPENCODE_GUIDE: BackendAuthGuide = {
 const KIMI_SITE_LINKS: Record<string, AuthApplyLink> = {
   cn: {
     labelKey: 'pages.agentStudio.wizard.apiKey.links.kimiDomestic',
-    url: 'https://platform.kimi.com/console/api-keys',
+    url: 'https://www.kimi.com/code/console',
   },
   intl: {
     labelKey: 'pages.agentStudio.wizard.apiKey.links.kimiInternational',
-    url: 'https://platform.kimi.ai/console/api-keys',
+    url: 'https://www.kimi.ai/code/console',
   },
 }
 
@@ -199,7 +199,7 @@ export const BACKEND_AUTH_HINTS: Record<
     note: 'OpenCode API Key 鉴权',
   },
   deepseek_harness: { key: 'GRASP_DEEPSEEK_API_KEY', note: 'DeepSeek Harness API Key 鉴权' },
-  kimi_code: { key: 'GRASP_KIMI_CODE_API_KEY', note: 'Kimi Code 开放平台 API Key 鉴权' },
+  kimi_code: { key: 'GRASP_KIMI_CODE_API_KEY', note: 'Kimi Code 订阅 API Key 鉴权' },
   codex: {
     key: 'GRASP_CODEX_AUTH_JSON',
     note: 'Codex ChatGPT 登录文件',

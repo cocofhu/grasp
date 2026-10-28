@@ -16,7 +16,7 @@ func TestKimiCodeAuthAndSite(t *testing.T) {
 		t.Fatal("settings.json must not satisfy Kimi Code auth")
 	}
 	_, err := MergeAuthEnv(BackendKimiCode, map[string]string{})
-	if err == nil || !strings.Contains(err.Error(), "开放平台 API Key") || !strings.Contains(err.Error(), envauth.EnvKimiCodeAPIKey) {
+	if err == nil || !strings.Contains(err.Error(), "订阅 API Key") || !strings.Contains(err.Error(), envauth.EnvKimiCodeAPIKey) {
 		t.Fatalf("missing key: %v", err)
 	}
 	out, err := MergeAuthEnv(BackendKimiCode, map[string]string{envauth.EnvKimiCodeAPIKey: "sk-test-value"})
@@ -34,11 +34,11 @@ func TestKimiCodeAuthAndSite(t *testing.T) {
 		t.Fatalf("unknown site: %v", err)
 	}
 	cn, err := KimiPlatformBaseURL("cn")
-	if err != nil || cn != KimiCodeCNBaseURL {
+	if err != nil || cn != "https://api.kimi.com/coding/v1" {
 		t.Fatal(cn, err)
 	}
 	intl, err := KimiPlatformBaseURL("")
-	if err != nil || intl != KimiCodeIntlBaseURL {
+	if err != nil || intl != "https://api.kimi.ai/coding/v1" {
 		t.Fatal(intl, err)
 	}
 }

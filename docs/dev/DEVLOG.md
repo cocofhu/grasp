@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-29（Kimi Code 订阅接入与思考强度）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`server/internal/{clicatalog,modelrouting,runtime,services}`、`sandbox-gateway/sandbox/internal/{provider/kimicode,service}`、`sandbox-gateway/scripts/agent-*`、`sandbox-gateway/scripts/{mock-agent-model*,test-agent-switching.py,test_agent_switching_test.py}`、`web/src/{components/agent,lib,locales}`、`server/README.md`、`CHANGELOG.md`。
+- 做了什么：Kimi Code 使用订阅控制台 API Key，国内／国际站分别连接官方 `api.kimi.com/coding/v1` 与 `api.kimi.ai/coding/v1`。目录改用六个订阅模型 ID，以精确别名兼容已有 K3 配置；五个可调模型公开 `low/high/max`，K2.7 Highspeed 保持布尔思考开启。配置、聊天选择、服务端校验和原生 ACP 确认贯通至真实请求的 `thinking.effort`。每个站点／模型／强度组合复用有界、原子发布的独立配置，同时共享原生历史、索引、锁及用户扩展；清除继承的 `KIMI_MODEL_*` 覆盖，拒绝未知 ID 和不支持的强度。 配置根从原始进程环境独立读取，目录、链接、索引及配置发布使用同一个 `os.Root` 边界，防止模型派生环境污染路径或符号链接替换造成越界写入。
+- 为什么：原接入把 Kimi Code 订阅 Key 发给 Moonshot 开放平台导致 401，界面也没有思考强度。仅添加选项无法证明原生请求生效；共用可变配置还会让并行聊天互相覆盖，不声明 Highspeed 的布尔思考能力会触发厂商的跨模型回退。
+- 如何验证：使用用户授权的订阅 Key，在真实 Grasp Solo API → worktree runtime → 原生 Kimi Code 2.4.0 → 官方 Coding API 链路分别测试国内／国际站的 low、high、max、空值恢复 max，八次请求均 200，实际 wire 字段与回复执行快照一致，非法值拒绝且历史快照不被后续选择改写。原生 CLI 本地模型回归另覆盖并存进程、同路由复用、旧别名、各模型默认值和 Highspeed enabled/no-effort。 远端 CodeQL 首轮发现的路径告警通过配置根来源隔离和文件操作边界收紧处理，另以外部符号链接、目录替换和外部配置目标保护回归验证；没有添加扫描豁免。免费 CI 仍明确使用 Kimi platform-wire-fixture；完整八工具矩阵 84 项、Node 合约 45 项、Python 合约 9 项通过。Server／Sandbox 全量 lint、vet、单测与核心覆盖率通过（90.5%／96.6%），runtime 专项与 provider/service race 通过；Web 541 文件、5,810 单测通过，Lines 91.73%，260 项关键浏览器用例、lint、vue-tsc、生产构建通过。文档构建和 high/critical audit、actionlint、error-level shellcheck、三模块 govulncheck、沙箱 smoke 与运行时包字节复现检查通过。密钥未进入仓库、PR 或测试日志；远端 CI 在 PR 最新提交上单独核对。
+
 ### 2026-10-29（OpenCode 目录缓存读取边界）
 
 - 日期：2026-10-29（Asia/Hong_Kong）。

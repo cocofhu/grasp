@@ -1,4 +1,4 @@
-// Package kimicode runs Kimi Code over ACP with an open-platform API key.
+// Package kimicode runs Kimi Code over ACP with a Coding Plan API key.
 // The key stays in the process environment. config.toml only names that
 // variable and the selected site.
 package kimicode
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"backend/internal/acp"
 	"backend/internal/backend/common"
@@ -31,7 +32,18 @@ func (*Provider) ListModels(context.Context) ([]provider.Model, error) {
 	if models, selected, err := modelconnection.Catalog(provider.KimiCode, os.Environ()); selected {
 		return models, err
 	}
-	return []provider.Model{{ID: "kimi-k3.1-pro", Name: "Kimi K3.1 Pro", IsDefault: true}}, nil
+	return []provider.Model{
+		{ID: defaultModel, Name: "Kimi K3.1 Pro", IsDefault: true},
+		{ID: "k3.1-pro-highspeed", Name: "Kimi K3.1 Pro Highspeed"},
+		{ID: "k3", Name: "Kimi K3"},
+		{ID: "k3-256k", Name: "Kimi K3 256K"},
+		{ID: "kimi-for-coding", Name: "Kimi K2.8 Preview"},
+		{ID: "kimi-for-coding-highspeed", Name: "Kimi K2.7 Highspeed"},
+		// Saved bindings keep their identity until the user changes them.
+		{ID: "kimi-k3.1-pro", Name: "Kimi K3.1 Pro"},
+		{ID: "kimi-k3.1-pro-highspeed", Name: "Kimi K3.1 Pro Highspeed"},
+		{ID: "kimi-k3", Name: "Kimi K3"},
+	}, nil
 }
 
 // AuthEnv copies the workspace credential onto APIKeyEnv. Exporting
@@ -56,6 +68,12 @@ func (*Provider) AuthEnv(env []string) []string {
 
 func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.OpenOptions,
 	onEvent func(json.RawMessage), perm provider.PermissionChooser) (provider.Session, error) {
+	// Configuration paths belong to the process, independently of the model
+	// route. Never derive filesystem roots from a model-prepared env slice.
+	root := strings.TrimSpace(os.Getenv("CONFIG_ROOT"))
+	if root == "" {
+		root = ConfigRoot
+	}
 	// Resolve the model route before copying the API key into the environment.
 	// The key is not an input to the route id.
 	prepared, err := modelconnection.Prepare(p.Name(), os.Environ(), opts.Model, p.DefaultConfigRoot())
@@ -64,7 +82,7 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	}
 	if prepared.Connection != nil {
 		prepared.Cleanup()
-		return nil, fmt.Errorf("Kimi Code 只使用开放平台，不接受自定义模型接口")
+		return nil, fmt.Errorf("Kimi Code 只使用 Coding Plan，不接受自定义模型接口")
 	}
 	env := p.AuthEnv(prepared.Env)
 	secret := strings.TrimSpace(common.GetEnvValue(env, APIKeyEnv))
@@ -72,33 +90,106 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		prepared.Cleanup()
 		return nil, fmt.Errorf("%s", MsgMissingKey)
 	}
-	root := strings.TrimSpace(common.GetEnvValue(env, "KIMI_CODE_HOME"))
-	if root == "" {
-		root = ConfigRoot
-	}
 	baseURL, err := BaseURL(common.GetEnvValue(env, RegionEnv))
 	if err != nil {
 		prepared.Cleanup()
 		return nil, err
 	}
 	model := strings.TrimSpace(prepared.Model)
-	if model == "auto" {
-		model = ""
+	if model == "" || model == "auto" {
+		model = defaultModel
 	}
-	if err := WriteConfig(root, baseURL, model); err != nil {
+	if _, supported := canonicalModel(model); !supported {
 		prepared.Cleanup()
+		return nil, fmt.Errorf("%s", MsgModelUnavailable)
+	}
+	effort := strings.TrimSpace(opts.ReasoningEffort)
+	if err := validateReasoningEffort(model, effort); err != nil {
+		prepared.Cleanup()
+		return nil, err
+	}
+	home, err := isolatedHome(root, baseURL, model, effort)
+	if err != nil {
+		prepared.Cleanup()
+		return nil, fmt.Errorf("kimi config: %w", err)
+	}
+	defer func() { _ = home.Close() }()
+	var cleanupOnce sync.Once
+	cleanup := func() { cleanupOnce.Do(prepared.Cleanup) }
+	env = common.UpsertEnv(env, "KIMI_CODE_HOME", home.Name())
+	// Native model environment overrides have higher precedence than config
+	// and ACP state. The selected Coding Plan route owns model, credential
+	// and strength, including an empty reset to the native default.
+	cleanEnv := make([]string, 0, len(env))
+	for _, item := range env {
+		if key, _, _ := strings.Cut(item, "="); !strings.HasPrefix(key, "KIMI_MODEL_") {
+			cleanEnv = append(cleanEnv, item)
+		}
+	}
+	if err := writeConfigAt(home, baseURL, model, effort); err != nil {
+		cleanup()
 		return nil, fmt.Errorf("kimi config: %w", err)
 	}
 	wrapped := onEvent
 	if onEvent != nil {
 		wrapped = func(ev json.RawMessage) { onEvent(RewriteEvent(ev, secret)) }
 	}
-	panel, err := acp.NewPanel(procCtx, handshakeCtx, LaunchArgv(model), env, opts.Cwd, firstNonEmpty(opts.FSRoot, opts.Cwd), opts.McpServers, wrapped, acp.PermissionChooser(perm))
+	panel, err := acp.NewPanel(procCtx, handshakeCtx, LaunchArgv(model), cleanEnv, opts.Cwd, firstNonEmpty(opts.FSRoot, opts.Cwd), opts.McpServers, wrapped, acp.PermissionChooser(perm))
 	if err != nil {
-		prepared.Cleanup()
+		cleanup()
 		return nil, fmt.Errorf("%s", Explain(err.Error(), secret))
 	}
-	return &explainingSession{Session: acpx.Wrap(panel), secret: secret, cleanup: prepared.Cleanup}, nil
+	if err := selectReasoningEffort(handshakeCtx, panel, effort); err != nil {
+		_ = panel.Close()
+		cleanup()
+		return nil, fmt.Errorf("%s", Explain(err.Error(), secret))
+	}
+	session := &explainingSession{Session: acpx.Wrap(panel), secret: secret, cleanup: cleanup}
+	go func() { <-session.Done(); cleanup() }()
+	return session, nil
+}
+
+// Confirm the native ACP thought-level selection before any model request.
+// A missing or boolean-only selector must never silently accept a strength.
+func selectReasoningEffort(ctx context.Context, panel *acp.Panel, effort string) error {
+	if effort == "" {
+		return nil
+	}
+	option, ok := reasoningOption(panel.ConfigOptions, effort)
+	if !ok {
+		return fmt.Errorf("Kimi Code: reasoning effort was not advertised by the agent")
+	}
+	if option.CurrentValue != effort {
+		if err := panel.SetConfigOption(ctx, option.ID, effort); err != nil {
+			return err
+		}
+	}
+	option, ok = reasoningOption(panel.ConfigOptions, effort)
+	if !ok || option.CurrentValue != effort {
+		return fmt.Errorf("Kimi Code: reasoning effort selection was not confirmed by the agent")
+	}
+	return nil
+}
+
+func reasoningOption(options []acp.ConfigOption, effort string) (acp.ConfigOption, bool) {
+	for _, option := range options {
+		if option.Category != "thought_level" || option.ID == "" {
+			continue
+		}
+		for _, value := range option.Options {
+			if value.Value == effort {
+				return option, true
+			}
+		}
+		for _, group := range option.Groups {
+			for _, value := range group.Options {
+				if value.Value == effort {
+					return option, true
+				}
+			}
+		}
+	}
+	return acp.ConfigOption{}, false
 }
 
 func firstNonEmpty(values ...string) string {

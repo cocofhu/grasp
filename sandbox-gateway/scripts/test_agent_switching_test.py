@@ -1,6 +1,7 @@
 """Contracts which prevent accidental gaps in the integration matrix."""
 import importlib.util
 import itertools
+import json
 from pathlib import Path
 import unittest
 from types import SimpleNamespace
@@ -34,6 +35,27 @@ class MatrixContracts(unittest.TestCase):
         tools = [{'id': 'cursor', 'mode': 'platform-wire-fixture'}]
         with self.assertRaisesRegex(AssertionError, 'missing native coverage'):
             runner.validate_inventory(tools, [{'toolId': 'cursor'}])
+
+    def test_kimi_matrix_covers_efforts_reset_and_supported_and_unsupported_auxiliary_models(self):
+        tools = json.loads(Path(__file__).with_name('agent-e2e-matrix.json').read_text())['tools']
+        tool = next(tool for tool in tools if tool['id'] == 'kimi_code')
+        self.assertEqual(tool['mode'], 'platform-wire-fixture')
+        self.assertIn('vendor inference is not covered', tool['reason'])
+        self.assertEqual(tool['model'], 'k3.1-pro')
+        self.assertEqual(tool['efforts'], ['low', 'high', 'max'])
+        test = runner.E2E.__new__(runner.E2E)
+        test.tools, test.nonce, test.marker, test.run, test.model = [tool], 'task-'+'a'*24, 'checkpoint.txt', 'unit-test', 'http://localhost'
+        test.request = lambda *_args, **_kwargs: None
+        test.scenario(['kimi_code'])
+        self.assertEqual([step.get('effort') for step in test.plan if step['kind'] == 'effort'], ['low', 'high', 'max', ''])
+        self.assertEqual([test.resolved_effort(step) for step in test.plan], ['max', 'low', 'high', 'max', 'max', 'max', 'max', '', 'max'])
+        self.assertEqual([step.get('model') for step in test.plan if step['kind'] == 'model'], ['k3', 'kimi-for-coding', 'kimi-for-coding-highspeed', ''])
+
+    def test_reasoning_wire_assertion_requires_every_request_to_carry_the_selected_level(self):
+        for requests in [[], [{'reasoning': {}}], [{'reasoning': {'reasoning_effort': 'max'}}], [{'reasoning': {'thinking_effort': 'max'}}], [{'reasoning': {'thinking_type': 'enabled', 'thinking_effort': 'low'}}], [{'reasoning': {'thinking_type': 'enabled', 'thinking_effort': 'max'}}, {'reasoning': {'thinking_type': 'enabled', 'thinking_effort': 'high'}}]]:
+            with self.assertRaisesRegex(AssertionError, 'every main model request'):
+                runner.assert_reasoning_requests(requests, 'max', 'kimi_code')
+        runner.assert_reasoning_requests([{'reasoning': {'thinking_type': 'enabled', 'thinking_effort': 'max'}}, {'reasoning': {'thinking_type': 'enabled', 'thinking_effort': 'max'}}], 'max', 'kimi_code')
 
     def test_history_result_must_match_its_native_call(self):
         message = {'events': [

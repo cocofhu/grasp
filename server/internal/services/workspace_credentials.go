@@ -626,7 +626,7 @@ func isCodexCredential(provider, envKey string) bool {
 }
 
 // ErrKimiCodeAPIKeyOnly rejects an OAuth login file pasted into the Kimi Code key.
-var ErrKimiCodeAPIKeyOnly = errors.New("这里只接受开放平台 API Key")
+var ErrKimiCodeAPIKeyOnly = errors.New("这里只接受 Kimi Code 订阅 API Key")
 
 func rejectKimiCodeLoginValue(toolID, provider, envKey, value string) error {
 	if toolID != "kimi_code" && !strings.EqualFold(strings.TrimSpace(provider), "kimi_code") && strings.TrimSpace(envKey) != envauth.EnvKimiCodeAPIKey {

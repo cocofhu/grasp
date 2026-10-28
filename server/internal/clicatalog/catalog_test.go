@@ -2,6 +2,7 @@ package clicatalog
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -40,15 +41,15 @@ func TestEveryBackendHasAUsableList(t *testing.T) {
 	}
 }
 
-func TestEffortsAreCodexLevels(t *testing.T) {
-	known := map[string]bool{"low": true, "medium": true, "high": true, "xhigh": true, "max": true, "ultra": true}
+func TestEffortsAreSupportedCLILevels(t *testing.T) {
+	known := map[string]map[string]bool{
+		"codex":     {"low": true, "medium": true, "high": true, "xhigh": true, "max": true, "ultra": true},
+		"kimi_code": {"low": true, "high": true, "max": true},
+	}
 	for b, list := range catalog {
 		for _, m := range list {
-			if b != "codex" && len(m.Efforts) > 0 {
-				t.Fatalf("%s/%s: only codex takes a separate effort", b, m.ID)
-			}
 			for _, e := range m.Efforts {
-				if !known[e] {
+				if !known[b][e] {
 					t.Fatalf("%s/%s: unknown effort %q", b, m.ID, e)
 				}
 			}
@@ -58,6 +59,23 @@ func TestEffortsAreCodexLevels(t *testing.T) {
 		if len(m.Efforts) == 0 {
 			t.Fatalf("codex/%s: every Codex model lists its efforts", m.ID)
 		}
+	}
+}
+
+func TestKimiCodeCatalogKeepsOnlyExactSavedK3Aliases(t *testing.T) {
+	aliases := map[string][]string{}
+	for _, model := range Models("kimi_code") {
+		if len(model.Aliases) > 0 {
+			aliases[model.ID] = model.Aliases
+		}
+	}
+	want := map[string][]string{
+		"k3.1-pro":           {"kimi-k3.1-pro"},
+		"k3.1-pro-highspeed": {"kimi-k3.1-pro-highspeed"},
+		"k3":                 {"kimi-k3"},
+	}
+	if !reflect.DeepEqual(aliases, want) {
+		t.Fatalf("saved model aliases = %v, want %v", aliases, want)
 	}
 }
 
@@ -199,12 +217,12 @@ func TestNonCursorCatalogsUnchanged(t *testing.T) {
 			"hunyuan-turbos\tHunyuan TurboS\ttencent\tfast\t128\tfalse\t",
 		},
 		"kimi_code": {
-			"kimi-k3.1-pro\tKimi K3.1 Pro\tkimi\tvision,reasoning\t1000\ttrue\t",
-			"kimi-k3.1-pro-highspeed\tKimi K3.1 Pro Highspeed\tkimi\tvision,reasoning\t1000\tfalse\t",
-			"kimi-k3\tKimi K3\tkimi\tvision,reasoning\t1000\tfalse\t",
-			"kimi-k2.7-code\tKimi K2.7 Code\tkimi\treasoning\t256\tfalse\t",
-			"kimi-k2.7-code-highspeed\tKimi K2.7 Code Highspeed\tkimi\treasoning\t256\tfalse\t",
-			"kimi-k2.6\tKimi K2.6\tkimi\tvision,reasoning\t256\tfalse\t",
+			"k3.1-pro\tKimi K3.1 Pro\tkimi\tvision,reasoning\t1000\ttrue\tlow,high,max",
+			"k3.1-pro-highspeed\tKimi K3.1 Pro Highspeed\tkimi\tvision,reasoning\t1000\tfalse\tlow,high,max",
+			"k3\tKimi K3\tkimi\tvision,reasoning\t1000\tfalse\tlow,high,max",
+			"k3-256k\tKimi K3 256K\tkimi\tvision,reasoning\t256\tfalse\tlow,high,max",
+			"kimi-for-coding\tKimi K2.8 Preview\tkimi\tvision,reasoning\t1000\tfalse\tlow,high,max",
+			"kimi-for-coding-highspeed\tKimi K2.7 Code Highspeed\tkimi\tvision,reasoning\t256\tfalse\t",
 		},
 		"trae": {
 			"claude-sonnet-4\tClaude Sonnet 4\tanthropic\tvision,reasoning\t200\ttrue\t",
