@@ -30,10 +30,12 @@ import { repoShort } from '@/lib/solo/soloPrefs'
 import { branchOfRepo, sessionRepos } from '@/lib/solo/sessionRepos'
 import { isSoloLimitError, soloErrorText } from '@/lib/solo/soloErrors'
 import type { Artifact } from '@/lib/shared/types'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
 const props = defineProps<{ sessionId: string }>()
 const emit = defineEmits<{ (e: 'back'): void }>()
 const { t, te, locale } = useI18n()
+const { worktreeMode } = useExecutionMode()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'))
@@ -341,7 +343,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             </div>
             <div class="mt-3 flex flex-wrap gap-2">
               <AppButton size="sm" variant="primary" icon="refresh" :loading="restarting" @click="doRestart">{{ t('pages.solo.errorCard.retry') }}</AppButton>
-              <RouterLink v-if="sandboxId" :to="`/sandboxes/${sandboxId}/console`" class="solo-error-link">
+              <RouterLink v-if="sandboxId && !worktreeMode" :to="`/sandboxes/${sandboxId}/console`" class="solo-error-link">
                 <Icon name="terminal" :size="14" />{{ t('pages.solo.errorCard.logs') }}
               </RouterLink>
               <RouterLink

@@ -1,7 +1,8 @@
-import { createRouter, createWebHistory, type RouteRecordRaw, type RouterHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw, type Router, type RouterHistory } from 'vue-router'
 import { updateDocumentTitle } from '@/lib/shared/locale'
 import { installAuthGuard } from '@/lib/shared/authGuard'
 import { installRoutePendingGuards } from '@/lib/shared/routePending'
+import { hideSandboxPath, loadBrandSettings } from '@/lib/composables/useBrandSettings'
 import LoginView from '@/views/LoginView.vue'
 
 const routes: RouteRecordRaw[] = [
@@ -72,10 +73,25 @@ const routes: RouteRecordRaw[] = [
 ]
 
 /** Shared production route table for the app and browser acceptance harnesses. */
+function installWorktreeGuard(router: Router) {
+  router.beforeEach(async (to) => {
+    if (to.meta.public) return true
+    if (to.path !== '/sandboxes' && !to.path.startsWith('/sandboxes/')) return true
+    try {
+      await loadBrandSettings()
+    } catch {
+      return true
+    }
+    if (hideSandboxPath(to.path)) return '/dashboard'
+    return true
+  })
+}
+
 export function createAppRouter(history: RouterHistory = createWebHistory()) {
   const instance = createRouter({ history, routes, scrollBehavior: () => ({ top: 0 }) })
   installRoutePendingGuards(instance)
   installAuthGuard(instance)
+  installWorktreeGuard(instance)
   instance.afterEach((to) => updateDocumentTitle(to.meta.titleKey as string | undefined))
   return instance
 }

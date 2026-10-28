@@ -35,6 +35,7 @@ import { contentText, flattenUpdate, normalizeKind, unwrapFrame } from '@/lib/ru
 import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import type { AgentPart } from '@/lib/shared/types'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
 // `attachId` attaches to an existing sandbox (skips the create flow) — used by
 // the sandbox console's ACP tab. `embedded` hides the internal header/controls
@@ -53,6 +54,7 @@ const props = defineProps<{
 const { t, te } = useI18n()
 const blockCache: MarkdownBlockCache = new Map()
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
+const { worktreeMode } = useExecutionMode()
 
 type Tool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
 /** Arrival order of the reply: text runs, or an index into Turn.tools. */
@@ -1081,7 +1083,7 @@ onBeforeUnmount(() => {
       <span v-if="sandbox" class="text-[11px] font-mono text-txt3">{{ sandbox.name }}</span>
       <div class="ml-auto flex items-center gap-2">
         <RouterLink
-          v-if="sandbox"
+          v-if="sandbox && !worktreeMode"
           :to="`/sandboxes/${sandbox.id}/console`"
           class="rounded border border-line px-2 py-1 text-[11px] text-txt2 hover:border-line-strong"
         ><Icon name="terminal" :size="12" class="-mt-0.5 mr-0.5 inline" />{{ t('pages.agentChatTester.console') }}</RouterLink>

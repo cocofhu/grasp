@@ -18,6 +18,7 @@ import type { PublicPreviewPort } from '@/lib/inbox/gateShareLink'
 import { relTime } from '@/lib/shared/format'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { useToast } from '@/lib/composables/useToast'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { provideReviewAnnotate, useReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
 import { addClarifyAnnotation } from '@/lib/inbox/useClarifyDraft'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
@@ -297,6 +298,7 @@ const showGridCards = computed(() => showFixedCards.value || gridArtifacts.value
 const showNoArtifactHint = computed(
   () => showFixedCards.value && gridArtifacts.value.length === 0,
 )
+const { worktreeMode } = useExecutionMode()
 const fixedCards = computed(() => {
   if (!showFixedCards.value) return []
   const cards: { id: string; icon: string; title: string; meta: string }[] = [
@@ -333,8 +335,14 @@ const fixedCards = computed(() => {
     title: t('pages.reactArtifactStage.fixedLogTitle'),
     meta: t('pages.reactArtifactStage.fixedLogMeta'),
   })
-  return cards
+  if (!worktreeMode.value) return cards
+  return cards.filter((card) => card.id !== 'ide' && card.id !== 'log')
 })
+watch(worktreeMode, (on) => {
+  if (!on) return
+  fixedOpen.value = fixedOpen.value.filter((id) => id !== 'ide' && id !== 'log')
+  if (activeTab.value === 'ide' || activeTab.value === 'log') activeTab.value = REACT_STAGE_TAB_GRID
+}, { immediate: true })
 const fixedTabsBeforeApp = computed(() =>
   (['ide', 'terminal', 'browser'] as const).filter((id) => fixedOpen.value.includes(id)),
 )
@@ -592,6 +600,7 @@ function closePreview(name: string) {
 }
 
 function openFixed(id: FixedPanelId) {
+  if (worktreeMode.value && (id === 'ide' || id === 'log')) return
   markUserMoved()
   fixedMounted.value = { ...fixedMounted.value, [id]: true }
   if (!fixedOpen.value.includes(id)) fixedOpen.value = [...fixedOpen.value, id]

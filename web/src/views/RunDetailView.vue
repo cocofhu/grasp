@@ -33,6 +33,7 @@ import AppDrawer from '@/components/ui/AppDrawer.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 
 import { useRunDetail } from '@/lib/run/useRunDetail'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { formatRepoNames, runRepoNames } from '@/lib/run/runTitle'
 import { api } from '@/lib/api/api'
 import type { Agent } from '@/lib/api/apiTypes'
@@ -226,6 +227,7 @@ const {
   currentLiveLogBootSession,
   onLiveLogBootSession,
 } = useRunDetail()
+const { worktreeMode } = useExecutionMode()
 
 const followCanvas = ref(true)
 const runRepos = computed(() => formatRepoNames(runRepoNames(run.value.vars)))
@@ -875,7 +877,7 @@ onMounted(() => {
                 :status="selStatus"
                 :mcp-calls="selMcpCalls"
                 :has-more="logHasMore"
-                :show-console="!!sandboxLookup"
+                :show-console="!!sandboxLookup && !worktreeMode"
                 :sandbox-status="sandboxLookup?.status"
                 :sandbox-container-status="sandboxLookup?.containerStatus"
                 :boot-session="currentLiveLogBootSession"
@@ -891,7 +893,7 @@ onMounted(() => {
                 :loading="sbxLogLoading"
                 :sbx-log="sbxLog"
                 :sel-status="selStatus"
-                :sandbox-lookup="sandboxLookup"
+                :sandbox-lookup="worktreeMode ? null : sandboxLookup"
                 @refresh="fetchSandboxLog(selected)"
                 @console-click="openSandboxConsole"
               />

@@ -13,8 +13,7 @@ alwaysApply: true
 - `list_artifacts()`:列出本次运行已有产物。
 
 若原生 MCP 不可用、需经 HTTP 调用时:优先用环境变量 `GRASP_ARTIFACT_URL` /
-`GRASP_ARTIFACT_TOKEN`。该 URL 必须指向实际提供 `/mcp/runs/:id` 的 API 入口
-(本地 Docker 常见为 `host.docker.internal`)。不要改写环境变量中的主机名。
+`GRASP_ARTIFACT_TOKEN`。直接使用环境变量中的地址，不要改主机名，也不要为了连通产物接口去检查容器引擎。
 
 ## 产物契约
 

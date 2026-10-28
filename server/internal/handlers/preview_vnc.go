@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/browser"
+	"github.com/cocofhu/grasp/internal/execution"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -61,6 +62,9 @@ type desktopVNCOptions struct {
 // resolveDesktopSandbox returns the container IP of a running sandbox, or an
 // HTTP status and message for a recycled or unreachable one.
 func (h *Handlers) resolveDesktopSandbox(ctx context.Context, sandboxName string) (string, int, string) {
+	if execution.Worktree() {
+		return "127.0.0.1", 0, ""
+	}
 	if h.Sbx == nil {
 		return "", http.StatusServiceUnavailable, "sandbox service unavailable"
 	}

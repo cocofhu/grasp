@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { isProductNode } from '@/lib/run/productNodeArtifacts'
 import { isAppPreviewRemoteNode } from '@/lib/run/reactArtifactPreview'
 import { resolveOutputFocusNodeId } from '@/lib/run/runOutputSelection'
@@ -26,6 +27,7 @@ export function useRunDetailSelection(opts: {
   const { t } = useI18n()
   const toast = useToast()
   const route = useRoute()
+  const { worktreeMode } = useExecutionMode()
   const { isMobile } = useBreakpoint()
   const { run, wf, selected, manual, selNode, selStatus, selRun, runLoading } = opts
 
@@ -81,11 +83,15 @@ export function useRunDetailSelection(opts: {
     if (gateActive.value) tabs.push({ id: 'gate', label: t('pages.runDetail.tabs.gate') })
     if (clarifyActive.value) tabs.push({ id: 'clarify', label: t('pages.runDetail.tabs.clarify') })
     if (reviewActive.value) tabs.push({ id: 'review', label: t('pages.runDetail.tabs.review') })
-    if (hasAppPreview.value) tabs.push({ id: 'preview', label: t('pages.runDetail.tabs.appPreview') })
+    if (hasAppPreview.value && !worktreeMode.value) {
+      tabs.push({ id: 'preview', label: t('pages.runDetail.tabs.appPreview') })
+    }
     if (hasProduct.value) tabs.push({ id: 'product', label: t('pages.runDetail.tabs.product') })
     tabs.push({ id: 'output', label: t('pages.runDetail.tabs.output') })
     if (hasLog.value) tabs.push({ id: 'log', label: t('pages.runDetail.tabs.log') })
-    if (hasLog.value) tabs.push({ id: 'sandbox', label: t('pages.runDetail.tabs.sandbox') })
+    if (hasLog.value && !worktreeMode.value) {
+      tabs.push({ id: 'sandbox', label: t('pages.runDetail.tabs.sandbox') })
+    }
     return tabs
   })
 

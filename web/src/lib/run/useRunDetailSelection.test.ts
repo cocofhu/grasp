@@ -2,11 +2,12 @@
 import { createApp, computed, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { Run, WFNode, Workflow } from '@/lib/shared/types'
-import { AUTO_CAPS, IMPLEMENT_CAPS } from '@/test/capsFixtures'
+import { AUTO_CAPS, IMPLEMENT_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
+import { resetBrandSettingsForTest, setExecutionMode } from '@/lib/composables/useBrandSettings'
 
 const toastWarn = vi.fn()
 const isMobile = ref(false)
@@ -34,6 +35,11 @@ describe('useRunDetailSelection', () => {
   beforeEach(() => {
     toastWarn.mockReset()
     isMobile.value = false
+    resetBrandSettingsForTest()
+  })
+
+  afterEach(() => {
+    resetBrandSettingsForTest()
   })
 
   it('builds tabs for agent node and supports select / deep-link / mobile helpers', async () => {
@@ -143,6 +149,17 @@ describe('useRunDetailSelection', () => {
       'completed',
     )
     expect(selection.nodeTabs.value.map((tab) => tab.id)).toEqual(['output', 'log', 'sandbox'])
+    selection.app.unmount()
+  })
+
+  it('hides the app preview and sandbox log tabs in worktree mode', async () => {
+    setExecutionMode('worktree')
+    const selection = await mountSelection(
+      stubNode({ id: 'preview', type: 'agent', label: '预览', caps: PREVIEW_REVIEW_CAPS }),
+      'running',
+    )
+    expect(selection.nodeTabs.value.map((tab) => tab.id)).toEqual(['output', 'log'])
+    expect(selection.nodeTabs.value.map((tab) => tab.label)).toEqual(['概览', '执行日志'])
     selection.app.unmount()
   })
 })

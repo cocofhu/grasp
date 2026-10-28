@@ -82,6 +82,7 @@ RUN set -eu; \
         xvfb \
         x11vnc \
         websockify \
+        procps \
         socat; then ok=1; break; fi; \
       echo "apt install attempt $i failed; waiting..."; sleep 20; \
     done; \
@@ -169,6 +170,9 @@ RUN chmod +x /usr/local/bin/install-agent.sh && \
     AGENT_INSTALL_CMD="${AGENT_INSTALL_CMD}" \
     AGENT_OPTIONAL_PROVIDERS="${AGENT_OPTIONAL_PROVIDERS}" \
     /usr/local/bin/install-agent.sh "${AGENT_PROVIDERS}"
+
+COPY sandbox-gateway/sandbox/scripts/vnc-preview.sh /usr/local/bin/vnc-preview.sh
+RUN chmod +x /usr/local/bin/vnc-preview.sh
 
 WORKDIR /app
 COPY --from=build /out/grasp-server /app/grasp-server
