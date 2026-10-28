@@ -202,10 +202,10 @@ function measureSettled(name: string) {
   const root = document.querySelector(`[data-section="${name}"]`)
   const work = root?.querySelector('[data-testid="agent-timeline-work"]')
   if (!root || !work) return { name, missing: true }
-  const thought = work.querySelector('.agent-elapsed-thought')
+  const thought = work.querySelector('.agent-thought')
   const note = work.querySelector('.agent-elapsed-note')
   const group = work.querySelector('.agent-tools')
-  const paras = thought ? [...thought.querySelectorAll(':scope > p')] : []
+  const paras = thought ? [...thought.querySelectorAll('.agent-thought-body > p')] : []
   const noteBlocks = note ? blocksOf(note) : []
   const detail = work.querySelector('.agent-tool-detail')
   const output = work.querySelector('[data-testid="agent-tool-output"]')
