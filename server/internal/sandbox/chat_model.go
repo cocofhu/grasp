@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -22,8 +23,21 @@ type ChatModelSettings struct {
 	ReasoningEfforts []string `json:"reasoningEfforts"`
 }
 
+func chatQuery(chat string) string {
+	chat = strings.TrimSpace(chat)
+	if chat == "" {
+		chat = "default"
+	}
+	return url.QueryEscape(chat)
+}
+
 func GetChatModelSettings(ctx context.Context, host string, port int, password string) (ChatModelSettings, error) {
-	resp, err := chatRequest(ctx, http.MethodGet, host, port, password, "/api/models?chat=default", nil)
+	return GetChatModelSettingsFor(ctx, host, port, password, "default")
+}
+
+// GetChatModelSettingsFor reads one bridge chat. Empty chat is the default chat.
+func GetChatModelSettingsFor(ctx context.Context, host string, port int, password, chat string) (ChatModelSettings, error) {
+	resp, err := chatRequest(ctx, http.MethodGet, host, port, password, "/api/models?chat="+chatQuery(chat), nil)
 	if err != nil {
 		return ChatModelSettings{}, err
 	}
@@ -67,20 +81,26 @@ func GetChatModel(ctx context.Context, host string, port int, password string) (
 // coding agent. Empty restores the primary model. The caller must not invoke
 // this while a turn is still generating.
 func SetChatModel(ctx context.Context, host string, port int, password, model string) error {
-	return setChatSettings(ctx, host, port, password, map[string]string{"model": strings.TrimSpace(model)})
+	return setChatSettings(ctx, host, port, password, "/api/model?chat="+chatQuery("default"), map[string]string{"model": strings.TrimSpace(model)})
 }
 
 // SetChatModelSettings applies both settings through one runtime restart.
 func SetChatModelSettings(ctx context.Context, host string, port int, password, model, effort string) error {
-	return setChatSettings(ctx, host, port, password, map[string]string{"model": strings.TrimSpace(model), "reasoningEffort": strings.TrimSpace(effort)})
+	return SetChatModelSettingsFor(ctx, host, port, password, "default", model, effort)
 }
 
-func setChatSettings(ctx context.Context, host string, port int, password string, settings map[string]string) error {
+// SetChatModelSettingsFor applies both settings to one bridge chat. Empty chat
+// is the default chat. Empty model restores that chat's primary model.
+func SetChatModelSettingsFor(ctx context.Context, host string, port int, password, chat, model, effort string) error {
+	return setChatSettings(ctx, host, port, password, "/api/model?chat="+chatQuery(chat), map[string]string{"model": strings.TrimSpace(model), "reasoningEffort": strings.TrimSpace(effort)})
+}
+
+func setChatSettings(ctx context.Context, host string, port int, password, path string, settings map[string]string) error {
 	body, err := json.Marshal(settings)
 	if err != nil {
 		return err
 	}
-	resp, err := chatRequestTimeout(ctx, http.MethodPost, host, port, password, "/api/model?chat=default", body, chatModelTimeout)
+	resp, err := chatRequestTimeout(ctx, http.MethodPost, host, port, password, path, body, chatModelTimeout)
 	if err != nil {
 		return err
 	}

@@ -91,6 +91,38 @@ func (s *sharedSandboxes) get(runID string) *sharedRunSandbox {
 	return s.runs[runID]
 }
 
+func (s *sharedSandboxes) primedEnvKeys(runID string, sb *sandbox.Sandbox) []string {
+	if s == nil || sb == nil || runID == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur := s.runs[runID]
+	if cur == nil || cur.sb != sb {
+		return nil
+	}
+	return append([]string(nil), cur.envKeys...)
+}
+
+// notePrimed records a chat group switch on the run's shared sandbox so the
+// next automatic node sees a changed fingerprint and re-primes its own binding.
+func (s *sharedSandboxes) notePrimed(runID string, sb *sandbox.Sandbox, spec sandbox.Spec) {
+	if s == nil || sb == nil || runID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur := s.runs[runID]
+	if cur == nil || cur.sb != sb {
+		return
+	}
+	cur.fingerprint = sandbox.SpecFingerprint(spec)
+	cur.envKeys = sandbox.ReprimeEnvKeys(spec)
+	if spec.Image != "" {
+		cur.image = spec.Image
+	}
+}
+
 func (s *sharedSandboxes) put(runID string, ss *sharedRunSandbox) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

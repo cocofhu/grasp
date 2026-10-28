@@ -162,6 +162,32 @@ describe('adaptInboxContextToRun', () => {
     expect(without.clarifyByNode?.impl).not.toHaveProperty('takeover')
   })
 
+  it('keeps an explicit visit model on the clarify session', () => {
+    const run = adaptInboxContextToRun(
+      {
+        type: 'clarify',
+        status: 'waiting_human',
+        clarify: {
+          nodeId: 'react',
+          turns: [],
+          done: false,
+          label: '澄清',
+          currentModelSet: true,
+          currentConfigurationId: 'group-kimi',
+          currentModelId: 'kimi-k2.5',
+          reasoningEffort: 'high',
+        },
+      },
+      'r-model',
+    )
+    expect(run.clarifyByNode?.react).toMatchObject({
+      currentModelSet: true,
+      currentConfigurationId: 'group-kimi',
+      currentModelId: 'kimi-k2.5',
+      reasoningEffort: 'high',
+    })
+  })
+
   it('keeps run-graph edges and leaves them absent when the payload has none', () => {
     const edges = [{ id: 'e-impl', source: 'react', target: 'implement' }]
     const withEdges = adaptInboxContextToRun(

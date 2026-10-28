@@ -34,6 +34,7 @@ func (c *acpProvider) agentLayout(profile string, cfg agentFile) agentLayout {
 func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) (string, error) {
 	profile := models.AgentProfile(req.Config)
 	specs := c.resolvedMCPSpecs(req)
+	backend := c.routeTool(req)
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
 		BaseWorkDirSrc:       c.sharedWorkDir(req),
 		WorkDirSrc:           c.workDir(profile),
@@ -41,11 +42,11 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) (strin
 		IncludeArtifactStore: hasArtifactStore(specs),
 		OmitOutcomeRule:      req.Caps.Clarify(),
 		MCP:                  specs,
-		OpenCode:             c.backend == BackendOpenCode,
-		Codex:                c.backend == BackendCodex,
-		DeepSeekHarness:      c.backend == BackendDeepSeekHarness,
+		OpenCode:             backend == BackendOpenCode,
+		Codex:                backend == BackendCodex,
+		DeepSeekHarness:      backend == BackendDeepSeekHarness,
 		BrowserMCP:           EnvEnabled(env["BROWSER_MCP"]),
-		Settings:             CodeBuddySettingsForEnv(c.backend, env),
+		Settings:             CodeBuddySettingsForEnv(backend, env),
 	})
 	if err != nil {
 		if c.backend == BackendDeepSeekHarness || env[EnvModelConnection] != "" {

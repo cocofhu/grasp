@@ -161,6 +161,11 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		return NodeResult{}, ErrNodeTakenOver
 	}
 
+	if req.ResetToDefaultModel {
+		if err := c.resetLiveChatModel(ctx, sb, acp); err != nil {
+			return NodeResult{}, fmt.Errorf("reset chat model: %w", err)
+		}
+	}
 	seeded := c.upstreamArtifacts(req)
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()

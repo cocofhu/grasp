@@ -526,18 +526,19 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	if err != nil {
 		return sandbox.Spec{}, err
 	}
-	if err := ApplyModelBinding(env, string(c.backend), agentCfg.ModelBinding, c.opts.ModelBinding); err != nil {
+	backend, modelBinding := routeBackend(req, c.backend, agentCfg.ModelBinding)
+	if err := ApplyModelBinding(env, string(backend), modelBinding, c.opts.ModelBinding); err != nil {
 		return sandbox.Spec{}, err
 	}
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
-	codexLogin := CodexLoginFileFromEnv(c.backend, env)
+	codexLogin := CodexLoginFileFromEnv(backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (workspace-shared workspace).
-	merged, err := PrepareBoundAuth(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
+	merged, err := PrepareBoundAuth(backend, env, c.workDir(profile), c.sharedWorkDir(req))
 	if err != nil {
 		return sandbox.Spec{}, err
 	}
 	env = merged
-	env["AGENT_PROVIDER"] = string(c.backend)
+	env["AGENT_PROVIDER"] = string(backend)
 	if req.RunID != "" {
 		env["GRASP_RUN_ID"] = req.RunID
 		env["GRASP_LAUNCH_KIND"] = "run"
@@ -556,7 +557,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 
 	layout := c.agentLayout(profile, agentCfg)
 	env["CONFIG_ROOT"] = layout.ConfigRoot
-	if c.backend == BackendCodex {
+	if backend == BackendCodex {
 		env["CODEX_HOME"] = layout.ConfigRoot
 	}
 
@@ -565,19 +566,19 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	if err != nil {
 		return sandbox.Spec{}, fmt.Errorf("build backend config home: %w", err)
 	}
-	if err := InstallBoundCodexLoginFile(c.backend, home, codexLogin, env); err != nil {
+	if err := InstallBoundCodexLoginFile(backend, home, codexLogin, env); err != nil {
 		return sandbox.Spec{}, err
 	}
-	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
+	if backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
 		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), ModelCredentialIDForWriteBack(env))
 	}
-	if c.backend == BackendCodex && env[EnvModelConnection] != "" {
+	if backend == BackendCodex && env[EnvModelConnection] != "" {
 		codexConnectionRuns.Store(c.backendKey(codexLoginKey(req)), true)
 	}
 	spec := sandbox.Spec{
 		GitBindingsConfigured: true,
 		GitCredentials:        gitCredentials,
-		Image:                 resolveProviderImage(c.opts, c.backend),
+		Image:                 resolveProviderImage(c.opts, backend),
 		Env:                   env,
 		ConfigHome:            home,
 		ConfigRoot:            layout.ConfigRoot,

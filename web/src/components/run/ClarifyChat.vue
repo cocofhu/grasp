@@ -103,6 +103,8 @@ import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
 import { hasFailedTool } from '@/lib/run/acpTools'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
+import VisitModelSelect from './VisitModelSelect.vue'
+import { visitModelSelectVisible } from '@/lib/run/visitModel'
 
 defineOptions({ inheritAttrs: false })
 
@@ -156,6 +158,16 @@ const props = withDefaults(
     followProcess?: ClarifyFollowProcess[] | null
     /** LLM process rows for this open visit. */
     systemNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
+    /** Member composer may switch this visit's model. Off for visitors and observers. */
+    modelSwitch?: boolean
+    agentName?: string
+    modelNodeId?: string
+    modelIteration?: number
+    currentConfigurationId?: string
+    currentModelId?: string
+    currentModelSet?: boolean
+    reasoningEffort?: string
+    modelNotice?: string
   }>(),
   {
     active: true,
@@ -564,6 +576,15 @@ watch(composerBlocksConfirm, (blocked) => {
 const confirmBusy = computed(() => validating.value || props.handoff?.phase === 'pending')
 /** Existing observe bar: run-live observe, or this chat following an auto node. */
 const observeComposer = computed(() => !!props.observe || props.followTail?.kind === 'auto')
+const showModelSelect = computed(() => visitModelSelectVisible({
+  modelSwitch: props.modelSwitch,
+  observe: props.observe,
+  followAuto: props.followTail?.kind === 'auto',
+  done: props.done,
+  active: props.active,
+  coldSession: props.coldSession,
+  composerLocked: props.composerLocked,
+}))
 const composerInputLocked = computed(() => observeComposer.value || !!props.composerLocked)
 
 /**
@@ -1865,6 +1886,18 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           >
             <Icon name="plus" :size="18" />
           </button>
+          <VisitModelSelect
+            v-if="showModelSelect"
+            :run-id="runId"
+            :node-id="modelNodeId || nodeId"
+            :iteration="modelIteration || iteration"
+            :agent-name="agentName || ''"
+            :current-configuration-id="currentConfigurationId"
+            :current-model-id="currentModelId"
+            :current-model-set="currentModelSet"
+            :reasoning-effort="reasoningEffort"
+            :model-notice="modelNotice"
+          />
           <slot name="composer-controls" :compact="true" />
         </template>
         <template v-if="observeComposer" #toolbar-end>

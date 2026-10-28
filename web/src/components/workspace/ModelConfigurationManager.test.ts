@@ -664,7 +664,7 @@ describe('ModelConfigurationManager', () => {
     wrapper.unmount()
   })
 
-  it('marks official OpenCode auxiliary models by family and a letter when the family is unknown', async () => {
+  it('marks official OpenCode auxiliary models by family and a letter for an unfamiliar id', async () => {
     mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'opencode', modes: ['platform'], adapterState: 'existing' }] })
     mocks.credentials.mockResolvedValue({ items: [{ id: 'zen', type: 'ai', name: 'OpenCode', purpose: 'tool_auth', toolId: 'opencode', configured: true }] })
     mocks.cliModels.mockResolvedValue([

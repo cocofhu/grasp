@@ -1156,12 +1156,17 @@ export interface Run {
     takeover?: boolean
     /** Taken-over node's task (interpolated prompt, secrets masked, ≤280 chars). Only with takeover. */
     task?: string
+    currentConfigurationId?: string
+    currentModelId?: string
+    currentModelSet?: boolean
+    reasoningEffort?: string
+    modelNotice?: string
   }
   // Per-node react conversations, keyed by node id (a run may have several
   // react nodes). Lets each react node show its own dialogue immediately.
   clarifyByNode?: Record<
     string,
-    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string; firstMessage?: string }
+    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string; firstMessage?: string; currentConfigurationId?: string; currentModelId?: string; currentModelSet?: boolean; reasoningEffort?: string; modelNotice?: string }
   >
   /** Authoritative busy/queue snapshots for refresh-resume (clarify + review). */
   reviewSessionGeneration?: number

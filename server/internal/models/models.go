@@ -505,6 +505,22 @@ type ReactConversation struct {
 	// Takeover marks a manual session opened by interrupting an auto visit;
 	// it is driven through the review path regardless of the node's caps.
 	Takeover bool `json:"takeover,omitempty"`
+	// Current* is the model this visit's later chat turns should use.
+	// Empty model follows the node Agent's primary model. CurrentModelSet
+	// distinguishes an explicit choice from a visit that never switched.
+	// These fields are not the Agent binding and are not the workflow definition.
+	CurrentConfigurationID string `json:"currentConfigurationId,omitempty"`
+	CurrentModelID         string `json:"currentModelId,omitempty"`
+	CurrentModelSet        bool   `json:"currentModelSet,omitempty"`
+	CurrentReasoningEffort string `json:"reasoningEffort,omitempty"`
+	// Applied* is the route last given to the sandbox chat. It is not part of
+	// the API. AppliedModelSet false means the sandbox still has the visit default.
+	AppliedConfigurationID string `json:"-"`
+	AppliedModelID         string `json:"-"`
+	AppliedModelSet        bool   `json:"-"`
+	AppliedReasoningEffort string `json:"-"`
+	// ModelNotice is a stable code shown after a switch is rolled back.
+	ModelNotice string `json:"modelNotice,omitempty"`
 }
 
 // Turns returns the transcript as a non-nil slice so JSON clients always get [].

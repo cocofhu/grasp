@@ -181,7 +181,22 @@ func reactConversationDTO(conv models.ReactConversation) gin.H {
 	if conv.Takeover {
 		out["takeover"] = true
 	}
+	putReactModelChoice(out, conv)
 	return out
+}
+
+// putReactModelChoice copies this visit's chat selection onto a conversation
+// DTO. An unset visit omits the fields so the client keeps the primary model.
+func putReactModelChoice(out gin.H, conv models.ReactConversation) {
+	if conv.CurrentModelSet || strings.TrimSpace(conv.ModelNotice) != "" {
+		out["currentConfigurationId"] = conv.CurrentConfigurationID
+		out["currentModelId"] = conv.CurrentModelID
+		out["currentModelSet"] = conv.CurrentModelSet
+		out["reasoningEffort"] = conv.CurrentReasoningEffort
+	}
+	if notice := strings.TrimSpace(conv.ModelNotice); notice != "" {
+		out["modelNotice"] = notice
+	}
 }
 
 func visitKeyOf(nodeID string, iter int) string {

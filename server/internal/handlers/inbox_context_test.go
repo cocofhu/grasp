@@ -333,3 +333,37 @@ func TestRunInboxContextIterationMismatch(t *testing.T) {
 		t.Fatalf("iteration mismatch should leave: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestRunInboxContextClarifyCarriesVisitModel(t *testing.T) {
+	h := newHarness(t)
+	now := time.Now()
+	h.db.Create(&models.Run{
+		ID: "ic-model", Status: "waiting_human", StartedAt: now,
+		Graph: models.Graph{Nodes: []models.Node{{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "需求澄清"}}},
+	})
+	h.db.Create(&models.ReactConversation{
+		RunID: "ic-model", NodeID: "react", Iteration: 1, Done: false,
+		CurrentModelSet: true, CurrentConfigurationID: "group-kimi", CurrentModelID: "kimi-k2.5", CurrentReasoningEffort: "high",
+		Messages: []models.ReactMessage{{Role: "agent", Text: "q", At: now.Format(time.RFC3339)}},
+	})
+	h.db.Create(&models.StateRun{RunID: "ic-model", NodeID: "react", Iteration: 1, Status: "waiting_human"})
+
+	w := h.do("GET", "/api/runs/ic-model/nodes/react/context?iteration=1", nil)
+	if w.Code != 200 {
+		t.Fatalf("clarify inbox-context: %d %s", w.Code, w.Body)
+	}
+	var out struct {
+		Clarify struct {
+			CurrentModelSet        bool   `json:"currentModelSet"`
+			CurrentModelID         string `json:"currentModelId"`
+			CurrentConfigurationID string `json:"currentConfigurationId"`
+			ReasoningEffort        string `json:"reasoningEffort"`
+		} `json:"clarify"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.Clarify.CurrentModelSet || out.Clarify.CurrentModelID != "kimi-k2.5" || out.Clarify.CurrentConfigurationID != "group-kimi" || out.Clarify.ReasoningEffort != "high" {
+		t.Fatalf("visit model = %+v", out.Clarify)
+	}
+}
