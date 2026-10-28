@@ -89,6 +89,31 @@ func TestOpenCodeCustomVariantIsDeclaredForTheRun(t *testing.T) {
 	}
 }
 
+func TestOpenCodeGoVariantIsDeclaredOnTheGoProvider(t *testing.T) {
+	p := officialPrepared(t, "opencode-go/gpt-5.5")
+	passed, err := ApplyOpenCodeVariant(p, "high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if passed.Model != "opencode-go/gpt-5.5" || strings.Contains(common.GetEnvValue(passed.Env, "OPENCODE_CONFIG_CONTENT"), "variants") {
+		t.Fatal("catalog variant was declared instead of passed through")
+	}
+	next, err := ApplyOpenCodeVariant(p, "turbo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := configJSON(t, next)
+	providers := config["provider"].(map[string]any)
+	if providers["opencode"] != nil {
+		t.Fatal("custom variant was written onto provider opencode")
+	}
+	model := providers["opencode-go"].(map[string]any)["models"].(map[string]any)["gpt-5.5"].(map[string]any)
+	overlay := model["variants"].(map[string]any)["turbo"].(map[string]any)
+	if overlay["reasoningEffort"] != "turbo" || overlay["reasoningSummary"] != "auto" {
+		t.Fatalf("go declaration: %#v", overlay)
+	}
+}
+
 func TestConnectedOpenCodeDeclaresEffortWithoutForcingDefault(t *testing.T) {
 	c := connection(Chat)
 	c.ProviderID = "tokenhub"

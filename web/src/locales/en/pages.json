@@ -1257,6 +1257,7 @@
         "hideSecret": "Hide",
         "secretApiKey": "API Key",
         "secretOpenCodeKey": "OpenCode key",
+        "opencodeFamilyHint": "This key matches the official family you select. Official mode can use opencode/<model> or opencode-go/<model>. Save one OpenCode CLI key for OpenCode and another for OpenCode Go, and tell them apart by alias. One model configuration uses one key.",
         "secretDeepSeekKey": "DeepSeek key",
         "secretLoginFile": "Login file",
         "secretPrivateKey": "Private key",
@@ -4575,7 +4576,7 @@
       "node_not_found": "Node not found"
     },
     "chatMessageInfo": {
-      "title": "Reply information",
+      "title": "Statistics",
       "time": "Time",
       "tool": "Coding tool",
       "model": "Model",

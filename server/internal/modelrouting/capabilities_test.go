@@ -94,21 +94,34 @@ func TestOfficialToolPlatformBindings(t *testing.T) {
 			t.Fatalf("%s default: %v", tool, err)
 		}
 	}
-	for _, id := range []string{"opencode/claude-sonnet-5", "opencode/kimi-k3"} {
+	for _, id := range []string{"opencode/claude-sonnet-5", "opencode/kimi-k3", "opencode-go/kimi-k3", "opencode-go/mimo-v2.5-pro"} {
 		if err := ValidateBinding("opencode", Binding{Kind: "platform", CredentialID: "zen", ModelID: id}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, id := range []string{"anthropic/claude-sonnet-5", "opencode-go/kimi-k3", "custom/model", "opencode/", "opencode/vendor/model", "claude-sonnet-5"} {
+	goFamily := Binding{Kind: "platform", CredentialID: "go", ModelID: "opencode-go/mimo-v2.5-pro", AuxiliaryModelIDs: []string{"opencode-go/mimo-v2.5"}}
+	if err := ValidateBinding("opencode", goFamily, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateBinding("opencode", Binding{Kind: "platform", CredentialID: "go", AuxiliaryModelIDs: []string{"opencode-go/mimo-v2.5"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"anthropic/claude-sonnet-5", "custom/model", "opencode/", "opencode/  ", "opencode/vendor/model", "opencode-go/", "opencode-go/a/b", "claude-sonnet-5"} {
 		for _, auxiliary := range []bool{false, true} {
 			binding := Binding{Kind: "platform", CredentialID: "zen", ModelID: id}
 			if auxiliary {
 				binding.ModelID, binding.AuxiliaryModelIDs = "opencode/kimi-k3", []string{id}
 			}
-			if err := ValidateBinding("opencode", binding, nil); err == nil {
-				t.Fatalf("Zen key accepted another provider model %q (auxiliary=%v)", id, auxiliary)
+			err := ValidateBinding("opencode", binding, nil)
+			if err == nil || !strings.Contains(err.Error(), "opencode/<model> or opencode-go/<model>") || strings.Contains(err.Error(), "one family") {
+				t.Fatalf("invalid official id %q (auxiliary=%v): %v", id, auxiliary, err)
 			}
 		}
+	}
+	mixed := Binding{Kind: "platform", CredentialID: "zen", ModelID: "opencode-go/mimo-v2.5", AuxiliaryModelIDs: []string{"opencode/kimi-k3"}}
+	err := ValidateBinding("opencode", mixed, nil)
+	if err == nil || !strings.Contains(err.Error(), "one family") {
+		t.Fatalf("mixed families: %v", err)
 	}
 	connection := Connection{Protocol: ProtocolChat, Auth: Auth{Scheme: "bearer"}}
 	if err := ValidateBinding("opencode", Binding{Kind: "connection", ConnectionID: "generic", ModelID: "vendor/raw/model"}, &connection); err != nil {
