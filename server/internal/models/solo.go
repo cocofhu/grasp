@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-// Project is one Git repository registered for Solo sessions, with the access
-// credentials and environment it needs. Secret values never live here: Env only
-// holds non-secret keys, and secrets are referenced through CredentialBindings.
+// Project is one Git repository registered for Solo sessions. It stores only
+// identity, display text and the clone location. Access and environment come
+// from the Agent that starts the session, never from the repository row.
 type Project struct {
 	ID          string `gorm:"primaryKey" json:"id"`
 	Name        string `gorm:"size:191;uniqueIndex" json:"name"`
@@ -16,19 +16,11 @@ type Project struct {
 	// DefaultBranch is checked out when a session does not pick a branch.
 	DefaultBranch string `json:"defaultBranch,omitempty"`
 	// RepoDirName is the clone directory under the sandbox workspace.
-	RepoDirName string `json:"repoDirName,omitempty"`
-	// GitCredentialType is this repository's own access method:
-	// github_https | gitlab_https | ssh. Empty means no repository credential
-	// (public clone or none). It never inherits or replaces the Agent's Git.
-	GitCredentialType    string             `json:"gitCredentialType,omitempty"`
-	GitCredentialID      string             `json:"gitCredentialId,omitempty"`
-	SshHostsCredentialID string             `json:"sshHostsCredentialId,omitempty"`
-	Env                  map[string]string  `gorm:"serializer:json" json:"env,omitempty"`
-	CredentialBindings   map[string]*string `gorm:"serializer:json" json:"credentialBindings,omitempty"`
-	CreatedBy            string             `json:"createdBy,omitempty"`
-	LastUsedAt           *time.Time         `json:"lastUsedAt,omitempty"`
-	CreatedAt            time.Time          `json:"createdAt"`
-	UpdatedAt            time.Time          `json:"updatedAt"`
+	RepoDirName string     `json:"repoDirName,omitempty"`
+	CreatedBy   string     `json:"createdBy,omitempty"`
+	LastUsedAt  *time.Time `json:"lastUsedAt,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
 // Solo session statuses.
@@ -40,20 +32,15 @@ const (
 )
 
 // SessionRepo is one repository frozen into a Solo session at start. It is
-// stored inside the session, not as its own table. Secret values are never
-// copied: Env holds non-secret keys and CredentialBindings holds credential ids.
+// stored inside the session, not as its own table, and only records what to
+// clone. Agent permissions and environment are resolved again on each start.
 type SessionRepo struct {
-	Position             int                `json:"position"`
-	ProjectID            string             `json:"projectId"`
-	Name                 string             `json:"name"`
-	RepoURL              string             `json:"repoUrl"`
-	RepoDirName          string             `json:"repoDirName"`
-	Branch               string             `json:"branch,omitempty"`
-	GitCredentialType    string             `json:"gitCredentialType,omitempty"`
-	GitCredentialID      string             `json:"gitCredentialId,omitempty"`
-	SshHostsCredentialID string             `json:"sshHostsCredentialId,omitempty"`
-	Env                  map[string]string  `json:"env,omitempty"`
-	CredentialBindings   map[string]*string `json:"credentialBindings,omitempty"`
+	Position    int    `json:"position"`
+	ProjectID   string `json:"projectId"`
+	Name        string `json:"name"`
+	RepoURL     string `json:"repoUrl"`
+	RepoDirName string `json:"repoDirName"`
+	Branch      string `json:"branch,omitempty"`
 }
 
 // SoloSession is a direct CLI chat with one Agent in a resident sandbox. The

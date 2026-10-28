@@ -21,7 +21,7 @@ Agent
 - Agent.modelBinding 只允许 `{kind:"configuration", configurationId}`。不在 Agent 上重复保存 Key、连接、模型角色或默认继承设置。Agent.acpBackend 必须与所选配置的 backend 一致。
 - Agent 草稿允许 modelBinding 为空，表示未配置；没有可执行的默认模型。运行入口在创建或复用沙箱前验证配置及其依赖。
 - SharedAgent 只保留通用文件、MCP、环境和布局。它不指定 CLI 或模型，不给 Agent 补模型或 Git 授权。
-- 项目独立保存的逐仓库访问配置仍是项目功能；Agent 不再通过 repoIds 自动继承仓库授权。
+- 仓库登记只保存克隆信息。访问方式、凭据绑定和环境变量只来自当前有效 Agent，历史仓库配置不会自动迁移。
 
 ## 凭据与模型页面
 
