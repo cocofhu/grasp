@@ -1642,7 +1642,8 @@ describe('PublicGateApprovalView workbench', () => {
     else await w.find('[data-testid="clarify-send-icon"]').trigger('click')
     await flushPromises()
     expect(w.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
-    expect(w.text()).toContain('Agent 正在思考下一轮')
+    expect(w.get('[data-testid="clarify-human-message"]').text()).toContain('请改验收')
+    expect(w.text()).toContain('思考中')
 
     // Optimistic no-id ghost + turn_begin with id (no text fallback).
     vm.applyReviewFrame({

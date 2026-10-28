@@ -267,39 +267,13 @@ func packGitInjectBundle(privateKey, knownHosts string, configured bool, credent
 	}
 	var files []entry
 	if configured {
-		type catalogEntry struct {
-			Index     int    `json:"index"`
-			ID        string `json:"id"`
-			Name      string `json:"name,omitempty"`
-			Kind      string `json:"kind"`
-			Scope     string `json:"scope"`
-			Preferred bool   `json:"preferred"`
-		}
-		catalog := make([]catalogEntry, 0, len(credentials))
-		for i, credential := range credentials {
-			switch credential.Kind {
-			case RepoCredentialGitHubHTTPS, RepoCredentialGitLabHTTPS, RepoCredentialSSH:
-			default:
-				return nil, fmt.Errorf("invalid git credential kind at index %d", i)
-			}
-			if strings.TrimSpace(credential.Secret) == "" {
-				return nil, fmt.Errorf("empty git credential at index %d", i)
-			}
-			catalog = append(catalog, catalogEntry{i, credential.ID, credential.Name, credential.Kind, credential.Scope, credential.Preferred})
-			secret := credential.Secret
-			if credential.Kind != RepoCredentialSSH {
-				secret = strings.TrimSpace(secret)
-			}
-			files = append(files, entry{fmt.Sprintf("git/%d.secret", i), secret, 0o600})
-			if strings.TrimSpace(credential.KnownHosts) != "" {
-				files = append(files, entry{fmt.Sprintf("git/%d.known_hosts", i), credential.KnownHosts, 0o600})
-			}
-		}
-		body, err := json.Marshal(catalog)
+		catalog, err := gitCatalogFiles(credentials)
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, entry{"git/manifest.json", string(body), 0o600})
+		for _, file := range catalog {
+			files = append(files, entry{"git/" + file.name, file.body, 0o600})
+		}
 	}
 	// Preserve the caller's PEM / known_hosts body (not the trimmed copy).
 	if key != "" {
@@ -323,4 +297,58 @@ func packGitInjectBundle(privateKey, knownHosts string, configured bool, credent
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// gitCatalogFile has a generated basename and a newline-terminated body.
+// Catalog metadata and secrets never determine file paths: names are either
+// manifest.json or a numeric index with a fixed suffix.
+type gitCatalogFile struct {
+	name string
+	body string
+}
+
+// gitCatalogFiles is shared by the sandbox transport and local worktree
+// installer so validation, metadata and secret normalization stay identical.
+func gitCatalogFiles(credentials []GitCredential) ([]gitCatalogFile, error) {
+	type catalogEntry struct {
+		Index     int    `json:"index"`
+		ID        string `json:"id"`
+		Name      string `json:"name,omitempty"`
+		Kind      string `json:"kind"`
+		Scope     string `json:"scope"`
+		Preferred bool   `json:"preferred"`
+	}
+	catalog := make([]catalogEntry, 0, len(credentials))
+	var files []gitCatalogFile
+	appendFile := func(name, body string) {
+		if !strings.HasSuffix(body, "\n") {
+			body += "\n"
+		}
+		files = append(files, gitCatalogFile{name: name, body: body})
+	}
+	for i, credential := range credentials {
+		switch credential.Kind {
+		case RepoCredentialGitHubHTTPS, RepoCredentialGitLabHTTPS, RepoCredentialSSH:
+		default:
+			return nil, fmt.Errorf("invalid git credential kind at index %d", i)
+		}
+		if strings.TrimSpace(credential.Secret) == "" {
+			return nil, fmt.Errorf("empty git credential at index %d", i)
+		}
+		catalog = append(catalog, catalogEntry{i, credential.ID, credential.Name, credential.Kind, credential.Scope, credential.Preferred})
+		secret := credential.Secret
+		if credential.Kind != RepoCredentialSSH {
+			secret = strings.TrimSpace(secret)
+		}
+		appendFile(fmt.Sprintf("%d.secret", i), secret)
+		if strings.TrimSpace(credential.KnownHosts) != "" {
+			appendFile(fmt.Sprintf("%d.known_hosts", i), credential.KnownHosts)
+		}
+	}
+	body, err := json.Marshal(catalog)
+	if err != nil {
+		return nil, err
+	}
+	appendFile("manifest.json", string(body))
+	return files, nil
 }

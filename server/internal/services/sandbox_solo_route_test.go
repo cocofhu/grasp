@@ -291,6 +291,11 @@ func (o worktreeSoloRouteOps) Reprime(ctx context.Context, sb *sandbox.Sandbox, 
 func TestSoloRouteSwitchUsesSameLocalWorktreeAndPersistsNewPort(t *testing.T) {
 	for _, rollback := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "rollback"}[rollback], func(t *testing.T) {
+			backendPath, err := filepath.Abs(filepath.Join("..", "..", "..", "sandbox-gateway", "sandbox", "bin", "backend"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("GRASP_WORKTREE_BACKEND", backendPath)
 			t.Setenv(execution.EnvMode, execution.ModeWorktree)
 			t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
 			execution.ResetForTest()

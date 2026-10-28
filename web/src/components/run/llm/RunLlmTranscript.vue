@@ -30,6 +30,22 @@ defineEmits<{
 
 const { t, locale } = useI18n()
 
+const chatRef = ref<{
+  applyReviewFrame?: (frame: Record<string, unknown>) => boolean | void
+  applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  isSessionBusy?: () => boolean
+  discardLastQueued?: () => void
+} | null>(null)
+
+defineExpose({
+  getNodeId: () => thread.value.conversational ? thread.value.current?.nodeId || '' : '',
+  isChatReady: () => !!chatRef.value,
+  applyReviewFrame: (frame: Record<string, unknown>) => chatRef.value?.applyReviewFrame?.(frame) ?? false,
+  applyAcpEvents: (events: AcpEvent[] | undefined, nodeId?: string) =>
+    chatRef.value?.applyAcpEvents?.(events, nodeId) ?? false,
+  isSessionBusy: () => !!chatRef.value?.isSessionBusy?.(),
+})
+
 const transcript = ref<LlmTranscriptResponse | null>(null)
 const loading = ref(false)
 const loadError = ref(false)
@@ -172,6 +188,30 @@ async function onFinish() {
   if (!current) return
   await api.reactReply(props.run.id, current.nodeId, '', [], true, [])
 }
+
+async function onSend(text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) {
+  if (!await sendRequest(text, images, annotations)) chatRef.value?.discardLastQueued?.()
+}
+
+async function onCancel() {
+  const current = thread.value.current
+  if (current) await api.reactCancel(props.run.id, current.nodeId)
+}
+
+async function onRetryLast() {
+  const current = thread.value.current
+  if (current) await api.reactReply(props.run.id, current.nodeId, '', [], false, [], true)
+}
+
+async function onQueueRemove(id: string | undefined) {
+  const current = thread.value.current
+  if (current && id) await api.reactQueueRemove(props.run.id, current.nodeId, id)
+}
+
+async function onQueueReorder(ids: string[]) {
+  const current = thread.value.current
+  if (current) await api.reactQueueReorder(props.run.id, current.nodeId, ids)
+}
 </script>
 
 <template>
@@ -185,6 +225,7 @@ async function onFinish() {
         @retry="load"
       />
       <ClarifyChat
+        ref="chatRef"
         class="min-h-0 flex-1"
         :run-id="run.id"
         :node-id="thread.current.nodeId"
@@ -197,6 +238,11 @@ async function onFinish() {
         :done="false"
         :review-mode="run.currentNode?.kind === 'review'"
         :send-request="sendRequest"
+        @send="onSend"
+        @cancel="onCancel"
+        @retry-last="onRetryLast"
+        @queue-remove="onQueueRemove"
+        @queue-reorder="onQueueReorder"
         @finish="onFinish"
       />
     </template>

@@ -918,6 +918,11 @@ export interface ClarifyTurn extends ChatMessageMetadata {
   /** Live streaming agent bubble (not yet persisted). */
   streaming?: boolean
   /**
+   * Accepted on this page before the transcript snapshot contains it.
+   * A shorter or busy snapshot must not drop the row.
+   */
+  localPending?: boolean
+  /**
    * Earlier agent row of the same user message. Keeps its text, no「已完成」.
    */
   handoff?: boolean

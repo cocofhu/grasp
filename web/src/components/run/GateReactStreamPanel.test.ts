@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import GateReactStreamPanel from './GateReactStreamPanel.vue'
+import type { GateReactTurn } from './gateApproval/gateApprovalContext'
 import { registerStageLinks } from '@/lib/run/stageLinks'
 
 function mountStream(props: Record<string, unknown> = {}) {
@@ -13,6 +14,25 @@ function mountStream(props: Record<string, unknown> = {}) {
 }
 
 describe('GateReactStreamPanel', () => {
+  it('renders pending image-only requests alongside the response belonging to an earlier request', () => {
+    const turn = (over: Partial<GateReactTurn>): GateReactTurn => ({
+      key: 'A', text: 'request A', images: [], annotations: [], historySynced: false,
+      status: 'active', thinking: true, streamText: 'response A', streamThought: '',
+      streamTools: [], interrupted: false, completedAt: null, ...over,
+    })
+    const w = mountStream({ turns: [
+      turn({}),
+      turn({ key: 'B', text: '', images: [{ data: 'abc', mimeType: 'image/png' }], status: 'pending', thinking: false, streamText: '' }),
+    ] })
+    const rows = w.findAll('[data-testid="gate-react-stream"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.text()).toContain('request A')
+    expect(rows[0]?.text()).toContain('response A')
+    expect(rows[1]?.find('[data-testid="gate-live-human-image"]').exists()).toBe(true)
+    expect(rows[1]?.find('[data-testid="gate-react-message"]').exists()).toBe(false)
+    w.unmount()
+  })
+
   it('keeps the complete thought, output and tool details through completion', async () => {
     const w = mountStream({ thinking: true })
     expect(w.get('[data-testid="gate-busy-placeholder"]').text()).toBeTruthy()

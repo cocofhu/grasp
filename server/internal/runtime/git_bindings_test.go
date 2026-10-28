@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -178,7 +179,7 @@ func TestGitBindingsWorkflowSpecAndMRUseSelectedCatalog(t *testing.T) {
 		t.Fatalf("MR = %s", got)
 	}
 	for _, script := range scripts {
-		if !strings.Contains(script, "helper.py exec-cli glab") || !strings.Contains(script, "--repo 'https://gitlab.com/team/repo.git'") || strings.Contains(script, "gl-secret") || strings.Contains(script, "workspace-unselected") {
+		if !strings.Contains(script, `"${GRASP_GIT_CREDENTIAL_HELPER:-/root/.grasp/git-credentials/helper.py}" exec-cli glab`) || !strings.Contains(script, "--repo 'https://gitlab.com/team/repo.git'") || strings.Contains(script, "gl-secret") || strings.Contains(script, "workspace-unselected") {
 			t.Fatalf("unsafe/wrong MR script: %s", script)
 		}
 	}
@@ -188,6 +189,58 @@ func TestGitBindingsWorkflowSpecAndMRUseSelectedCatalog(t *testing.T) {
 	}
 	if p.gitToken(req) != "" {
 		t.Fatal("invalid selected authorization fell back in MR gate")
+	}
+}
+
+func TestFindOrCreateMRUsesSessionGitHelper(t *testing.T) {
+	const defaultHelper = "/root/.grasp/git-credentials/helper.py"
+	for _, mode := range []string{"sandbox", "empty", "worktree"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			bin := filepath.Join(dir, "bin")
+			if err := os.Mkdir(bin, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			// Inspect the argument received by Python, so shell quoting and the
+			// unset/empty fallback are exercised without a sandbox installation.
+			shim := `#!/bin/sh
+[ "$1" = "$EXPECT_HELPER" ] && [ "$2" = exec-cli ] && [ "$3" = glab ] || exit 1
+[ "$4" = https://gitlab.example/team/repo.git ] && [ "$5" = -- ] && [ "$6" = mr ] || exit 1
+case "$7" in
+  list) printf '[]\n' ;;
+  create) printf 'https://gitlab.example/team/repo/-/merge_requests/7\n' ;;
+  *) exit 1 ;;
+esac
+`
+			if err := os.WriteFile(filepath.Join(bin, "python3"), []byte(shim), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			env := []string{"PATH=" + bin + ":" + os.Getenv("PATH")}
+			expect := defaultHelper
+			switch mode {
+			case "empty":
+				env = append(env, "GRASP_GIT_CREDENTIAL_HELPER=")
+			case "worktree":
+				expect = filepath.Join(dir, "session's private home", "helper.py")
+				env = append(env, "GRASP_GIT_CREDENTIAL_HELPER="+expect)
+			}
+			env = append(env, "EXPECT_HELPER="+expect)
+			calls := 0
+			restore := sandbox.SetExecHook(func(ctx context.Context, _ string, _ int, _ string, stdin io.Reader) ([]byte, error) {
+				calls++
+				cmd := exec.CommandContext(ctx, "bash", "-s")
+				cmd.Stdin = stdin
+				cmd.Env = env
+				return cmd.CombinedOutput()
+			})
+			defer restore()
+			p := newACPProvider(mcp.NewHost(newMemStore()), Options{}).(*acpProvider)
+			sb := &sandbox.Sandbox{Host: "127.0.0.1", Port: 1, Password: "test"}
+			got := p.findOrCreateMR(context.Background(), sb, dir, "feature", "https://gitlab.example/team/repo.git")
+			if got != "https://gitlab.example/team/repo/-/merge_requests/7" || calls != 2 {
+				t.Fatalf("MR=%q calls=%d", got, calls)
+			}
+		})
 	}
 }
 

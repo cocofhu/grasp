@@ -42,7 +42,9 @@ func SetWorktreeBackendForTest(fn func(context.Context, map[string]string, strin
 func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, error) {
 	env := map[string]string{}
 	for k, v := range spec.Env {
-		env[k] = v
+		if !worktreeGitEnvKey(k) {
+			env[k] = v
+		}
 	}
 	if strings.TrimSpace(env[BridgePasswordEnv]) == "" {
 		return nil, fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
@@ -87,6 +89,15 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	}
 	env["WORKSPACE_DIR"] = launch.Root
 	env[execution.EnvMode] = execution.ModeWorktree
+	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if failed {
+			cleanupGit()
+		}
+	}()
 
 	port, stop, err := startWorktreeBackend(ctx, env, launch.Root)
 	if err != nil {
@@ -97,7 +108,8 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	local := &localExec{
 		configRoot:  spec.ConfigRoot,
 		configHome:  configHome,
-		backendStop: stop,
+		env:         envList(env),
+		backendStop: worktreeSessionStop(stop, cleanupGit),
 		stop:        func() { execution.Release(launchID, endOnStop) },
 	}
 	execution.AddStop(launchID, local.shutdown)
@@ -172,7 +184,9 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 	}
 	env := make(map[string]string, len(spec.Env)+4)
 	for key, value := range spec.Env {
-		env[key] = value
+		if !worktreeGitEnvKey(key) {
+			env[key] = value
+		}
 	}
 	if strings.TrimSpace(env[BridgePasswordEnv]) == "" {
 		return fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
@@ -197,21 +211,26 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 	}
 	env["WORKSPACE_DIR"] = sb.WorkspaceDir
 	env[execution.EnvMode] = execution.ModeWorktree
-	port, stop, err := startWorktreeBackend(ctx, env, sb.WorkspaceDir)
+	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
 	if err != nil {
 		return err
 	}
+	port, stop, err := startWorktreeBackend(ctx, env, sb.WorkspaceDir)
+	if err != nil {
+		cleanupGit()
+		return err
+	}
+	stopSession := worktreeSessionStop(stop, cleanupGit)
 	local := sb.local
 	local.mu.Lock()
 	if local.closed {
 		local.mu.Unlock()
-		if stop != nil {
-			stop()
-		}
+		stopSession()
 		return fmt.Errorf("工作树会话已关闭")
 	}
 	previousStop := local.backendStop
-	local.backendStop = stop
+	local.backendStop = stopSession
+	local.env = envList(env)
 	local.configRoot, local.configHome = spec.ConfigRoot, configHome
 	sb.Host, sb.Port, sb.ConfigRoot = "127.0.0.1", port, configRoot
 	sb.Password = strings.TrimSpace(env[BridgePasswordEnv])
@@ -220,6 +239,22 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 		previousStop()
 	}
 	return nil
+}
+
+// Each backend owns its selected private Git catalog. Re-prime retires that
+// backend and its catalog together while the launch keeps its worktree holder.
+func worktreeSessionStop(stop, cleanupGit func()) func() {
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			if stop != nil {
+				stop()
+			}
+			if cleanupGit != nil {
+				cleanupGit()
+			}
+		})
+	}
 }
 
 // authFromSpec copies the credentials this launch already resolved. An explicit
@@ -273,7 +308,7 @@ func envList(overlay map[string]string) []string {
 	}
 	for _, item := range base {
 		key, _, _ := strings.Cut(item, "=")
-		if skip[key] || envauth.IsSecretEnvKey(key) || envauth.IsPlatformReservedEnvKey(key) {
+		if skip[key] || worktreeGitEnvKey(key) || envauth.IsSecretEnvKey(key) || envauth.IsPlatformReservedEnvKey(key) {
 			continue
 		}
 		out = append(out, item)
@@ -289,6 +324,7 @@ type localExec struct {
 	mu          sync.Mutex
 	configRoot  string
 	configHome  string
+	env         []string
 	backendStop func()
 	closed      bool
 	once        sync.Once
@@ -340,6 +376,9 @@ func (s *Sandbox) runLocal(ctx context.Context, timeout time.Duration, argv []st
 	}
 	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
 	cmd.Dir = s.workspaceDir()
+	s.local.mu.Lock()
+	cmd.Env = append([]string{}, s.local.env...)
+	s.local.mu.Unlock()
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}

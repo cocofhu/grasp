@@ -1,4 +1,4 @@
-import { ref, computed, watch, provide, onUnmounted, reactive, toRef } from 'vue'
+import { ref, computed, watch, provide, onUnmounted, reactive, toRef, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { renderMarkdown } from '@/lib/shared/markdown'
 import { api, type PreviewIssue } from '@/lib/api/api'
@@ -37,7 +37,7 @@ import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/
 import { REVERT_ACTION_IDS, POSITIVE_ACTION_IDS } from '@/components/run/gateApproval/gateApprovalActions'
 import { confirmFlowDiscardKind, type ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 import { holdSidebarConfirmWindow, releaseSidebarConfirmWindow } from '@/lib/inbox/sidebarHandoff'
-import { gateApprovalKey, type GateApprovalProductEditorExpose } from '@/components/run/gateApproval/gateApprovalContext'
+import { gateApprovalKey, type GateApprovalProductEditorExpose, type GateReactTurn } from '@/components/run/gateApproval/gateApprovalContext'
 import { type PlanDoc } from '@/components/run/PlanView.vue'
 import { isStructuredArtifactName } from '@/components/run/StructuredArtifactView.vue'
 import {
@@ -1133,6 +1133,14 @@ const reactThinking = ref(false)
 /** True between turn_begin and turn_done/error (mirrors ClarifyChat liveAgentIdx). */
 const reactInFlight = ref(false)
 const reactStreamText = ref('')
+/** Accepted requests retain their own response and survive short queue snapshots. */
+const reactTurns = ref<GateReactTurn[]>([])
+const reactActiveTurnKey = ref('')
+let nextReactTurn = 0
+const reactQueueTurnKeys = new WeakMap<SessionQueueItem, string>()
+const localReactTurnKeys = new Set<string>()
+const activeReactTurn = computed(() => reactTurns.value.find(turn => turn.key === reactActiveTurnKey.value))
+const reactLiveHumanText = computed(() => activeReactTurn.value?.text || '')
 /** ACP thought rail (separate from message — Demo: thought must not be dropped). */
 const reactStreamThought = ref('')
 /** ACP tool_call rows of the current turn (name + status) for the folded tool group. */
@@ -1153,6 +1161,148 @@ const feedbackChatRef = ref<{
  * issue on retry (avoids duplicate history entries).
  */
 const hotRejectHistorySynced = ref(false)
+
+function syncReactTurn() {
+  const turn = activeReactTurn.value
+  if (!turn) return
+  turn.thinking = reactThinking.value && (turn.status !== 'settled')
+  turn.streamText = reactStreamText.value
+  turn.streamThought = reactStreamThought.value
+  turn.streamTools = reactStreamTools.value
+  turn.interrupted = reactInterrupted.value
+  turn.completedAt = reactStreamCompletedAt.value
+}
+
+function activateReactTurn(turn: GateReactTurn, reset = true) {
+  syncReactTurn()
+  const previous = activeReactTurn.value
+  if (previous && previous.key !== turn.key) {
+    previous.thinking = false
+    if (previous.status === 'active') {
+      previous.status = 'settled'
+      if (!previous.interrupted && (previous.streamText || previous.streamThought)) {
+        previous.completedAt ||= new Date().toISOString()
+      }
+    }
+  }
+  reactActiveTurnKey.value = turn.key
+  if (reset) {
+    reactStreamText.value = ''
+    reactStreamThought.value = ''
+    reactStreamTools.value = []
+    reactInterrupted.value = false
+    reactStreamCompletedAt.value = null
+  }
+}
+
+function addReactTurn(item: SessionFrameItem, activate = true): GateReactTurn {
+  const key = `gate-turn-${++nextReactTurn}`
+  if (activate) localReactTurnKeys.add(key)
+  reactTurns.value.push({
+    key, id: item.id, text: item.text || '',
+    images: cloneClarifyImages(item.images), annotations: cloneReactAnnotations(item.annotations),
+    historySynced: false, status: 'pending', thinking: false,
+    streamText: '', streamThought: '', streamTools: [], interrupted: false, completedAt: null,
+  })
+  const turn = reactTurns.value[reactTurns.value.length - 1]!
+  if (activate && (!activeReactTurn.value || activeReactTurn.value.status === 'settled')) {
+    activateReactTurn(turn)
+    turn.thinking = true
+  }
+  syncReactPreviewHistory()
+  return turn
+}
+
+/** Restored server turns consume saved preview rows once; local sends use their own write acknowledgement. */
+function syncReactPreviewHistory() {
+  if (!usesPreviewIssues.value) return
+  const unused = previewIssues.value.slice()
+  const takeIssue = (turn: GateReactTurn) => {
+    const index = unused.findIndex(issue => issue.body === (turn.text || (turn.annotations.length ? annotationHistoryBody(turn.annotations) : '')) &&
+      sameReactImages(turn.images, issue.images || []))
+    if (index < 0) return false
+    unused.splice(index, 1)
+    return true
+  }
+  for (const turn of reactTurns.value) {
+    if (turn.historySynced) takeIssue(turn)
+  }
+  for (const turn of reactTurns.value) {
+    if (!turn.historySynced && !localReactTurnKeys.has(turn.key) && takeIssue(turn)) turn.historySynced = true
+  }
+}
+watch(previewIssues, syncReactPreviewHistory)
+
+function sameReactImages(local: ClarifyImage[], incoming: ClarifyImage[] | undefined): boolean {
+  if (!incoming) return true
+  return local.length === incoming.length && local.every((image, index) => {
+    const other = incoming[index]!
+    if (image.mimeType !== other.mimeType) return false
+    if (image.name && other.name && image.name !== other.name) return false
+    if (image.sizeBytes && other.sizeBytes && image.sizeBytes !== other.sizeBytes) return false
+    const localRef = image.ref || (image.data?.startsWith('blob:') ? image.data : '')
+    const serverRef = other.ref || (other.data?.startsWith('blob:') ? other.data : '')
+    if (localRef && serverRef) return localRef === serverRef
+    if (image.data && other.data && !localRef && !serverRef) return image.data === other.data
+    // Inline uploads become opaque blob references; FIFO plus the assigned id
+    // disambiguates those after the first queue acknowledgement.
+    return true
+  })
+}
+
+function sameReactAnnotations(local: ReactAnnotation[], incoming: ReactAnnotation[] | undefined): boolean {
+  if (!incoming) return true
+  return local.length === incoming.length && local.every((annotation, index) => {
+    const other = incoming[index]!
+    const keys = new Set([...Object.keys(annotation), ...Object.keys(other)]) as Set<keyof ReactAnnotation>
+    return [...keys].every(key => (annotation[key] || '') === (other[key] || ''))
+  })
+}
+
+function matchReactTurn(item: SessionFrameItem): GateReactTurn | undefined {
+  if (item.id) {
+    const exact = reactTurns.value.find(turn => turn.id === item.id)
+    if (exact) return exact
+  }
+  return reactTurns.value.find(turn =>
+    turn.status === 'pending' && !turn.id && turn.text === (item.text || '') &&
+    sameReactImages(turn.images, item.images) && sameReactAnnotations(turn.annotations, item.annotations),
+  )
+}
+
+function adoptReactTurn(item: SessionFrameItem): GateReactTurn {
+  const turn = matchReactTurn(item) || addReactTurn(item, false)
+  if (item.id) turn.id = item.id
+  return turn
+}
+
+/** A rejected or explicitly cancelled waiter must not remain in the transcript. */
+function discardReactTurn(turn: GateReactTurn | undefined) {
+  if (!turn || turn.status !== 'pending') return
+  reactTurns.value = reactTurns.value.filter(row => row.key !== turn.key)
+  localReactTurnKeys.delete(turn.key)
+  if (reactActiveTurnKey.value === turn.key) {
+    reactActiveTurnKey.value = ''
+    const next = reactTurns.value.find(row => row.status === 'pending')
+    if (next) activateReactTurn(next)
+  }
+}
+
+function discardReactQueueTurn(item: SessionQueueItem | undefined) {
+  if (!item) return
+  const key = reactQueueTurnKeys.get(toRaw(item))
+  discardReactTurn(reactTurns.value.find(turn => turn.key === key) ||
+    matchReactTurn({ ...item, text: item.text === '(annotate)' ? '' : item.text }))
+}
+
+function removeReactSend(turn: GateReactTurn) {
+  const index = reactQueued.value.findIndex(item =>
+    reactQueueTurnKeys.get(toRaw(item)) === turn.key || (!!turn.id && item.id === turn.id),
+  )
+  if (index >= 0) reactQueued.value.splice(index, 1)
+  discardReactTurn(turn)
+  syncReactQueueThinking()
+}
 
 /** Hot 打回 threshold: text ∪ images ∪ annotations ∪ pick screenshot. */
 const canSubmitReact = computed(
@@ -1183,11 +1333,13 @@ function showReactQueueToast(msg: string) {
 
 function syncReactQueueThinking() {
   reactThinking.value = reactInFlight.value || reactQueued.value.length > 0
+  syncReactTurn()
 }
 
 async function cancelReactQueuedItem(index: number) {
   if (index < 0 || index >= reactQueued.value.length) return
   const removed = reactQueued.value.splice(index, 1)[0]
+  discardReactQueueTurn(removed)
   syncReactQueueThinking()
   const preview = (removed.text || '').slice(0, 18)
   showReactQueueToast(t('pages.clarify.queueCancelled', { text: preview }))
@@ -1282,6 +1434,7 @@ async function editReactQueuedItem(index: number) {
   }
 
   const item = reactQueued.value.splice(index, 1)[0]
+  discardReactQueueTurn(item)
   reactText.value = item.text === '(annotate)' ? '' : item.text
   reactImages.value = cloneClarifyImages(item.images)
   reactAnnotations.value = cloneReactAnnotations(item.annotations)
@@ -1302,6 +1455,10 @@ async function editReactQueuedItem(index: number) {
  */
 function forceReactAuthoritativeIdle() {
   if (reactQueued.value.length) reactQueued.value = []
+  // Known waiters that never began were removed remotely. An unacknowledged
+  // local send can still be ahead of this snapshot and must remain visible.
+  reactTurns.value = reactTurns.value.filter(turn => turn.status !== 'pending' || !turn.id)
+  if (!activeReactTurn.value) reactActiveTurnKey.value = ''
   if (reactInFlight.value) {
     reactInFlight.value = false
     if (
@@ -1313,6 +1470,8 @@ function forceReactAuthoritativeIdle() {
     }
   }
   reactThinking.value = false
+  if (activeReactTurn.value?.status === 'active') activeReactTurn.value.status = 'settled'
+  syncReactTurn()
 }
 
 /**
@@ -1325,6 +1484,8 @@ function settleReactAfterTurnEnd() {
   }
   reactQueued.value = dropGhostItems(reactQueued.value)
   reactThinking.value = reactQueued.value.length > 0
+  if (activeReactTurn.value) activeReactTurn.value.status = 'settled'
+  syncReactTurn()
 }
 
 function applyReviewFrame(frame: {
@@ -1341,8 +1502,15 @@ function applyReviewFrame(frame: {
   const producer = props.gate.reactUpstreamNodeId
   if (producer && frame.nodeId && frame.nodeId !== producer) return
   switch (frame.event) {
-    case 'turn_begin':
-      reactQueued.value = takeTurnBeginItem(reactQueued.value, frame.item).queue
+    case 'turn_begin': {
+      const begun = takeTurnBeginItem(reactQueued.value, frame.item)
+      reactQueued.value = begun.queue
+      const turn = adoptReactTurn(frame.item || begun.taken || {})
+      // A resumed activeItem can seed ACP before replay reaches turn_begin.
+      // Replaying that same request must not reset its response or a later turn.
+      if (turn.status !== 'pending') break
+      activateReactTurn(turn)
+      turn.status = 'active'
       reactThinking.value = true
       reactInFlight.value = true
       reactStreamText.value = ''
@@ -1350,7 +1518,9 @@ function applyReviewFrame(frame: {
       reactStreamTools.value = []
       reactInterrupted.value = false
       reactStreamCompletedAt.value = null
+      syncReactTurn()
       break
+    }
     case 'turn_done':
       if (frame.interrupted) {
         reactInterrupted.value = true
@@ -1374,11 +1544,26 @@ function applyReviewFrame(frame: {
       const items = Array.isArray(frame.items) ? frame.items : null
       const busy = !!frame.busy
       const activeItem = frame.activeItem
+      // Bind the active request first: identical-text waiters must not steal its local row.
+      const restoredActive = busy && activeItem ? adoptReactTurn(activeItem) : undefined
+      for (const item of items || []) adoptReactTurn(item)
+      if (busy && activeItem?.id && items) {
+        // An explicit active request distinguishes removed waiters from the
+        // pump snapshot sent just before turn_begin (which has no activeItem).
+        const present = new Set([activeItem.id, ...items.flatMap(item => item.id ? [item.id] : [])])
+        reactTurns.value = reactTurns.value.filter(turn =>
+          turn.status !== 'pending' || !turn.id || present.has(turn.id),
+        )
+        if (!activeReactTurn.value) reactActiveTurnKey.value = ''
+      }
       if (isAuthoritativeIdle(waiting, busy, activeItem)) {
         forceReactAuthoritativeIdle()
         break
       }
       if (busy && activeItem && !reactInFlight.value) {
+        const turn = restoredActive!
+        activateReactTurn(turn, reactActiveTurnKey.value !== turn.key)
+        turn.status = 'active'
         reactInFlight.value = true
         reactThinking.value = true
         reactStreamCompletedAt.value = null
@@ -1414,6 +1599,7 @@ function applyReviewFrame(frame: {
       break
     }
   }
+  syncReactTurn()
 }
 
 /**
@@ -1434,16 +1620,20 @@ function applyAcpEvents(events: { kind?: string; text?: string; title?: string; 
   // Snapshots are cumulative: the latest tool list replaces the previous one.
   const tools = toolsFromAcp(events as AcpEvent[])
   if (!sameTools(reactStreamTools.value, tools)) reactStreamTools.value = tools
+  syncReactTurn()
   return true
 }
 
 async function cancelReactRevise() {
   if (!props.run?.id || !canReactRevise.value) return
   reactQueued.value = []
+  reactTurns.value = reactTurns.value.filter(turn => turn.status !== 'pending')
   reactThinking.value = false
   reactInFlight.value = false
   reactInterrupted.value = true
   reactStreamCompletedAt.value = null
+  if (activeReactTurn.value) activeReactTurn.value.status = 'settled'
+  syncReactTurn()
   try {
     await api.gateReactCancel(props.run.id, props.gate.nodeId)
   } catch (e: any) {
@@ -1541,11 +1731,12 @@ async function recordFeedbackIssue() {
 async function sendReactRevise() {
   if (!props.run?.id || !canSubmitReact.value) return
   const body = reactText.value.trim()
-  reactQueued.value.push({
-    text: body,
-    images: cloneClarifyImages(reactImages.value),
-    annotations: cloneReactAnnotations(reactAnnotations.value),
-  })
+  const images = cloneClarifyImages(reactImages.value)
+  const annotations = cloneReactAnnotations(reactAnnotations.value)
+  const item = { text: body, images, annotations }
+  reactQueued.value.push(item)
+  const turn = addReactTurn(item)
+  reactQueueTurnKeys.set(item, turn.key)
   reactThinking.value = true
   reactSending.value = true
   reactError.value = null
@@ -1554,14 +1745,14 @@ async function sendReactRevise() {
       props.run.id,
       props.gate.nodeId,
       body,
-      reactImages.value,
-      cloneReactAnnotations(reactAnnotations.value),
+      images,
+      annotations,
     )
     clearUnifiedDraft()
     emit('react-revised')
   } catch (e: any) {
-    reactQueued.value.pop()
-    reactThinking.value = reactQueued.value.length > 0 || reactStreamText.value.length > 0
+    removeReactSend(turn)
+    syncReactQueueThinking()
     reactError.value = e?.message || t('pages.gateApproval.reactRevise.failed')
   } finally {
     reactSending.value = false
@@ -1634,25 +1825,30 @@ async function sendHotReject() {
     selector: pickedSelector.value,
     elementImage: pickedElementImage.value,
   }
-  reactQueued.value.push({
+  const turn = addReactTurn({ text: body, images: reviseImages, annotations: anns })
+  const item = {
     text: body || '(annotate)',
-    images: reviseImages.map((im) => ({ data: im.data, mimeType: im.mimeType })),
+    images: cloneClarifyImages(reviseImages),
     annotations: cloneReactAnnotations(anns),
-  })
+  }
+  reactQueued.value.push(item)
+  reactQueueTurnKeys.set(item, turn.key)
   reactThinking.value = true
   try {
     const synced = await syncHotRejectHistory(anns)
     if (!synced) {
-      reactQueued.value.pop()
+      removeReactSend(turn)
       return
     }
 
+    // PreviewFeedbackChat now owns this human row (text, images and annotations).
+    turn.historySynced = usesPreviewIssues.value
     await api.gateReactRevise(props.run.id, props.gate.nodeId, body, reviseImages, anns)
     clearUnifiedDraft()
     emit('react-revised')
   } catch (e: any) {
-    reactQueued.value.pop()
-    reactThinking.value = reactQueued.value.length > 0
+    removeReactSend(turn)
+    syncReactQueueThinking()
     if (hotRejectHistorySynced.value) {
       reactError.value = t('pages.gateApproval.reactRevise.issueSavedReviseFailed')
       reactText.value = draftSnap.text
@@ -1818,6 +2014,8 @@ provide(gateApprovalKey, {
     editReactQueuedItem,
     reactThinking,
     reactStreamText,
+    reactLiveHumanText,
+    reactTurns,
     reactStreamThought,
     reactStreamTools,
     reactInterrupted,
@@ -1998,6 +2196,8 @@ provide(gateApprovalKey, {
     reactThinking,
     reactInFlight,
     reactStreamText,
+    reactLiveHumanText,
+    reactTurns,
     reactStreamThought,
     reactStreamTools,
     reactInterrupted,

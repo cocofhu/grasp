@@ -3116,7 +3116,10 @@ describe('GateApproval mobileFillRemaining layout', () => {
     vm.applyAcpEvents?.([{ kind: 'message', text: '半截' }])
     vm.applyReviewFrame?.({ event: 'turn_done', nodeId: 'visual', interrupted: true })
     await flushPromises()
-    expect(wrapper.find('[data-testid="gate-turn-completed"]').exists()).toBe(false)
+    // The earlier successful response stays completed; the interrupted turn does not.
+    const latest = wrapper.findAll('[data-testid="gate-react-stream"]').at(-1)!
+    expect(latest.find('[data-testid="gate-turn-completed"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="gate-turn-completed"]')).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -3784,6 +3787,74 @@ describe('GateApproval record issue refreshes real PreviewFeedbackChat history',
     expect((form.find('[data-testid="paragraph-input"]').element as HTMLTextAreaElement).value).toBe(
       '',
     )
+    wrapper.unmount()
+  })
+
+
+  it('replaces the accepted preview row with saved history without duplicating it', async () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: { 'zh-CN': { ...common, ...pages } },
+    })
+    const pageHtml = '<!doctype html><html><body><h1>记入刷新</h1></body></html>'
+    const { gate, run } = visualGateRun(pageHtml)
+    mountedRun = run
+    const wrapper = mount(GateApproval, {
+      props: {
+        gate: { ...gate, reactSessionAlive: true, reactUpstreamNodeId: 'visual' },
+        run,
+        fillPreview: true,
+        compact: true,
+      },
+      global: {
+        plugins: [i18n],
+        stubs: {
+          Icon: true,
+          ParagraphInput: ParagraphInputStub,
+          ArtifactLoadingPane: defineComponent({
+            name: 'ArtifactLoadingPane',
+            template: '<div data-testid="artifact-loading-pane" />',
+          }),
+          HtmlPreview: HtmlPreviewStub,
+          StructuredArtifactView: StructuredStub,
+          AppPreviewPanel: AppPreviewStub,
+          // Real PreviewFeedbackChat — assert history list UI refresh.
+          PlanView: PlanStub,
+          UpstreamRequirementContext: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    const form = wrapper.find('[data-testid="content-fit-form"]')
+    expect(form.find('[data-testid="preview-feedback-chat"]').exists()).toBe(true)
+    await form.find('[data-testid="paragraph-input"]').setValue('标题需加大')
+    await flushPromises()
+
+    await form.find('[data-testid="review-composer-send"]').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.createPreviewIssue).toHaveBeenCalledWith(
+      'run-1',
+      'hg-visual',
+      '标题需加大',
+      '',
+      0,
+      [],
+    )
+    expect(form.find('[data-testid="preview-feedback-chat"]').text()).toContain('标题需加大')
+    expect((form.find('[data-testid="paragraph-input"]').element as HTMLTextAreaElement).value).toBe(
+      '',
+    )
+    const vm = wrapper.vm as any
+    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'visual', item: { id: 'accepted', text: '标题需加大' } })
+    vm.applyAcpEvents([{ kind: 'message', text: 'done revising' }])
+    vm.applyReviewFrame({ event: 'turn_done', nodeId: 'visual' })
+    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'visual', busy: false, waiting: 0, items: [] })
+    await flushPromises()
+    expect(form.find('[data-testid="preview-feedback-chat"]').text().split('标题需加大').length - 1).toBe(1)
+    expect(form.find('[data-testid="gate-react-message"]').text()).toContain('done revising')
     wrapper.unmount()
   })
 })

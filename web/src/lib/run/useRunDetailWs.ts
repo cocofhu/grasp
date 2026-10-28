@@ -1,7 +1,7 @@
 /**
  * Run 详情：WS 连接、对话面 ACP 再水合（seed/buffer/busy-retry）、reconnect。
  */
-import { nextTick, type ComputedRef, type Ref } from 'vue'
+import { nextTick, watch, type ComputedRef, type Ref } from 'vue'
 import { api } from '@/lib/api/api'
 import { createPendingAcpBuffer, pickAcpRails } from '@/lib/run/pendingAcpBuffer'
 import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
@@ -16,6 +16,7 @@ import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { EventPageState } from '@/lib/run/useRunDetailLiveLog'
 
 type DialogueSurface = {
+  getNodeId?: () => string
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
@@ -38,6 +39,8 @@ export function useRunDetailWs(opts: {
   eventPages: Record<string, EventPageState>
   nodeTab: Ref<string>
   reviewChatRef: Ref<DialogueSurface>
+  /** LLM transcript chat. Mounted only in that view; frames still belong to it. */
+  llmTranscriptRef?: Ref<DialogueSurface>
   gateApprovalRef: Ref<GateSurface>
   selClarify: ComputedRef<{ nodeId: string } | null>
   fetchNodeEvents: (nodeId: string | null, opts?: { signal?: AbortSignal }) => Promise<boolean>
@@ -64,6 +67,7 @@ export function useRunDetailWs(opts: {
     eventPages,
     nodeTab,
     reviewChatRef,
+    llmTranscriptRef,
     gateApprovalRef,
     selClarify,
     fetchNodeEvents,
@@ -77,6 +81,16 @@ export function useRunDetailWs(opts: {
     patchRunChrome,
     refreshArtifactPreview,
   } = opts
+
+  function dialogueChat(nodeId: string) {
+    const llm = llmTranscriptRef?.value
+    if (llm && llm.getNodeId?.() === nodeId) return llm
+    return reviewChatRef.value
+  }
+
+  function showsDialogue(nodeId: string) {
+    return selClarify.value?.nodeId === nodeId || llmTranscriptRef?.value?.getNodeId?.() === nodeId
+  }
 
   /**
    * ACP frames that arrived while ClarifyChat / GateApproval was unmounted
@@ -126,7 +140,7 @@ export function useRunDetailWs(opts: {
     const restoredSessions = { ...sessions }
     // Idle FIFO sessions are removed from the server registry. Their absence
     // in an explicit snapshot must release an already mounted dialogue too.
-    for (const nodeId of [selClarify.value?.nodeId, run.value.gate?.reactUpstreamNodeId]) {
+    for (const nodeId of [selClarify.value?.nodeId, llmTranscriptRef?.value?.getNodeId?.(), run.value.gate?.reactUpstreamNodeId]) {
       if (nodeId && !(nodeId in restoredSessions)) {
         restoredSessions[nodeId] = { busy: false, waiting: 0, items: [] }
       }
@@ -150,8 +164,8 @@ export function useRunDetailWs(opts: {
         frame.sandboxDesynced = !!snap.sandboxDesynced
         if (snap.sandboxRunningOpId) frame.sandboxRunningOpId = snap.sandboxRunningOpId
       }
-      if (selClarify.value?.nodeId === nodeId) {
-        const ok = reviewChatRef.value?.applyReviewFrame?.(frame)
+      if (showsDialogue(nodeId)) {
+        const ok = dialogueChat(nodeId)?.applyReviewFrame?.(frame)
         if (ok === false) {
           /* inner ClarifyChat not ready — seed path still buffers ACP */
         }
@@ -209,7 +223,7 @@ export function useRunDetailWs(opts: {
     if (!events?.length) return false
     const rails = pickAcpRails(events)
     if (!rails.thought && !rails.message) return false
-    const forClarify = selClarify.value?.nodeId === nodeId
+    const forClarify = showsDialogue(nodeId)
     const forGate = run.value.gate?.reactUpstreamNodeId === nodeId
     const result = deliverOrBufferDialogueAcp({
       forClarify,
@@ -217,8 +231,9 @@ export function useRunDetailWs(opts: {
       events,
       nodeId,
       applyClarify: (evs, nid) => {
-        if (!reviewChatRef.value?.applyAcpEvents) return false
-        return reviewChatRef.value.applyAcpEvents(evs, nid)
+        const chat = dialogueChat(nid || nodeId)
+        if (!chat?.applyAcpEvents) return false
+        return chat.applyAcpEvents(evs, nid)
       },
       applyGate: (evs) => {
         if (!gateApprovalRef.value?.applyAcpEvents) return false
@@ -243,7 +258,7 @@ export function useRunDetailWs(opts: {
             (nid) =>
               !!dialoguePlatformBusy[nid] ||
               !!run.value.reactSessions?.[nid]?.busy ||
-              !!reviewChatRef.value?.isSessionBusy?.(),
+              !!dialogueChat(nid)?.isSessionBusy?.(),
           ),
         hasContent: () => dialogueRailsFilled,
         liveIncrementalReceived: () => dialogueLiveIncremental,
@@ -265,7 +280,7 @@ export function useRunDetailWs(opts: {
     const leftover: { nodeId?: string; events: AcpEvent[]; busy?: boolean }[] = []
     for (const frame of pendingDialogueAcp.takeAll()) {
       const nodeId = frame.nodeId || ''
-      const forClarify = !!selClarify.value?.nodeId && (selClarify.value.nodeId === nodeId || !nodeId)
+      const forClarify = showsDialogue(nodeId)
       const forGate =
         !!run.value.gate?.reactUpstreamNodeId &&
         (run.value.gate.reactUpstreamNodeId === nodeId || !nodeId)
@@ -275,8 +290,9 @@ export function useRunDetailWs(opts: {
         events: frame.events,
         nodeId: nodeId || selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId || '',
         applyClarify: (events, nid) => {
-          if (!reviewChatRef.value?.applyAcpEvents) return false
-          return reviewChatRef.value.applyAcpEvents(events, nid)
+          const chat = dialogueChat(nid || nodeId)
+          if (!chat?.applyAcpEvents) return false
+          return chat.applyAcpEvents(events, nid)
         },
         applyGate: (events) => {
           if (!gateApprovalRef.value?.applyAcpEvents) return false
@@ -298,7 +314,7 @@ export function useRunDetailWs(opts: {
     events: AcpEvent[],
     busy?: boolean,
   ) {
-    const forClarify = selClarify.value?.nodeId === nodeId
+    const forClarify = showsDialogue(nodeId)
     const forGate = run.value.gate?.reactUpstreamNodeId === nodeId
     const result = deliverOrBufferDialogueAcp({
       forClarify,
@@ -306,8 +322,9 @@ export function useRunDetailWs(opts: {
       events,
       nodeId,
       applyClarify: (evs, nid) => {
-        if (!reviewChatRef.value?.applyAcpEvents) return false
-        return reviewChatRef.value.applyAcpEvents(evs, nid)
+        const chat = dialogueChat(nid || nodeId)
+        if (!chat?.applyAcpEvents) return false
+        return chat.applyAcpEvents(evs, nid)
       },
       applyGate: (evs) => {
         if (!gateApprovalRef.value?.applyAcpEvents) return false
@@ -325,6 +342,14 @@ export function useRunDetailWs(opts: {
       pendingDialogueAcp.push({ nodeId, events, busy })
     }
   }
+
+  watch(
+    () => [llmTranscriptRef?.value?.getNodeId?.(), llmTranscriptRef?.value?.isChatReady?.()] as const,
+    ([nodeId, ready]) => {
+      if (nodeId && ready !== false) void projectDialogueAfterLoad(run.value)
+    },
+    { flush: 'post' },
+  )
 
   function resetDialogueState() {
     pendingDialogueAcp.clear()
@@ -483,6 +508,19 @@ export function useRunDetailWs(opts: {
         // Dialogue-surface stream (ClarifyChat / GateApproval), not only LiveLog.
         applyOrBufferDialogueAcp(m.nodeId, wsEvents, m.busy)
       } else if (m.type === 'review' && m.nodeId) {
+        // A newly mounted LLM surface restores from this same authority. Keep
+        // it current so mounting cannot replace a newer live turn with idle.
+        const previous = run.value.reactSessions?.[m.nodeId]
+        const session = m.event === 'queue_state'
+          ? { ...previous, busy: !!m.busy, waiting: m.waiting ?? 0, items: m.items ?? [], activeItem: m.activeItem }
+          : m.event === 'turn_begin'
+            ? { ...previous, busy: true, waiting: previous?.waiting ?? 0, items: previous?.items ?? [], activeItem: m.item }
+            : m.event === 'turn_done' || m.event === 'error'
+              ? { ...previous, busy: false, waiting: previous?.waiting ?? 0, items: previous?.items ?? [], activeItem: undefined }
+              : null
+        if (session) {
+          run.value = { ...run.value, reactSessions: { ...run.value.reactSessions, [m.nodeId]: session } }
+        }
         if (
           m.nodeId === selClarify.value?.nodeId ||
           m.nodeId === run.value.gate?.reactUpstreamNodeId
@@ -501,6 +539,7 @@ export function useRunDetailWs(opts: {
         if (!selClarify.value || selClarify.value.nodeId === m.nodeId) {
           reviewChatRef.value?.applyReviewFrame?.(m)
         }
+        llmTranscriptRef?.value?.applyReviewFrame?.(m)
         gateApprovalRef.value?.applyReviewFrame?.(m)
         if (m.event === 'turn_done' || m.event === 'error') {
           liveBusy[m.nodeId] = false
