@@ -3,6 +3,9 @@
 # 复用 sandbox-gateway/sandbox/scripts/install-agent.sh，不复制沙箱镜像。
 # 不安装容器引擎、远程登录服务、网页 IDE，也不安装数据库客户端。
 # 执行模式在构建时写死，运行时不能改。
+# 运行阶段底包。这条 ARG 必须写在第一条 FROM 之前，后面的 FROM 才能读到。
+# 默认走国内镜像；CI 与发版传入 BASE_IMAGE=ubuntu:22.04。
+ARG BASE_IMAGE=docker.m.daocloud.io/library/ubuntu:22.04
 
 # --- Web (Vite) 构建 ---
 FROM node:24-bookworm-slim AS web-builder
@@ -43,7 +46,6 @@ RUN COMMIT_SHA="${GIT_COMMIT:-$GITHUB_SHA}" && \
 RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/grasp ./cmd/doctor
 
 # --- 运行：Ubuntu 22.04，与沙箱镜像同一底包，才能装浏览器系统库和 JDK 11 ---
-ARG BASE_IMAGE=docker.m.daocloud.io/library/ubuntu:22.04
 FROM ${BASE_IMAGE}
 ARG USE_CN_MIRROR=true
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
