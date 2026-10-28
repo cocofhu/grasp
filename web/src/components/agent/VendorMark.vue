@@ -77,7 +77,14 @@ const PADDED = new Set(['openai', 'codex'])
 const COLOR_ASSETS = new Set(['google', 'qwen', 'doubao', 'siliconflow', 'minimax', 'zhipu', 'hunyuan', 'qianfan'])
 
 const assetKey = computed(() => (props.backend ? props.vendor : vendorLogoProvider(props.vendor)))
-const asset = computed(() => props.unknown ? '' : (assetKey.value === 'kimi' || assetKey.value === 'kimi_code') && theme.value === 'dark' ? kimiDarkLogo : ASSETS[assetKey.value] || '')
+// OpenCode and OpenCode Go are subscriptions, not model families. An unmatched
+// official id keeps that name for the monogram and does not reuse the product logo.
+const providerMonogram = computed(() => !props.backend && (props.vendor === 'opencode' || props.vendor === 'opencode-go'))
+const asset = computed(() => {
+  if (props.unknown || providerMonogram.value) return ''
+  if ((assetKey.value === 'kimi' || assetKey.value === 'kimi_code') && theme.value === 'dark') return kimiDarkLogo
+  return ASSETS[assetKey.value] || ''
+})
 const colorAsset = computed(() => COLOR_ASSETS.has(assetKey.value))
 const markPx = computed(() => Math.round(props.size * (PADDED.has(assetKey.value) ? props.flat ? 1.2 : 0.82 : props.flat ? 0.8 : 0.58)))
 const label = computed(() => (props.backend ? props.vendor : vendorLabel(props.vendor)))
