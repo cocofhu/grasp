@@ -248,6 +248,81 @@ func TestSessionSnapshotWatermarkDistinguishesRetiredAndNewSessions(t *testing.T
 	}
 }
 
+func TestSessionCancelPersistsDroppedItemsBeforeInterruptingActiveTurn(t *testing.T) {
+	var s *Session[string]
+	var droppedPersisted atomic.Bool
+	activeCtx := make(chan context.Context, 1)
+	interruptedBeforeDrop := make(chan struct{}, 1)
+	dropStarted, releaseDrop := make(chan struct{}), make(chan struct{})
+	cancelDone, idle := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseDrop) }) }
+	t.Cleanup(release)
+	var dropCtxErr error
+	var dropSnapshot Snapshot
+	var nativeTarget string
+	s = New(Config[string]{
+		View: func(id string) ItemView { return ItemView{ID: id} },
+		Execute: func(ctx context.Context, _ string) (bool, error) {
+			activeCtx <- ctx
+			<-ctx.Done()
+			// PM persists its active turn's failure immediately after cancellation.
+			// Pending-item persistence must finish before releasing that writer.
+			if !droppedPersisted.Load() {
+				interruptedBeforeDrop <- struct{}{}
+			}
+			return true, nil
+		},
+		OnDropped: func(items []string) {
+			if len(items) != 1 || items[0] != "b" {
+				t.Errorf("dropped items = %v, want [b]", items)
+			}
+			dropCtxErr = (<-activeCtx).Err()
+			dropSnapshot = s.Snapshot() // Cleanup callbacks must not hold the state mutex.
+			close(dropStarted)
+			<-releaseDrop
+			droppedPersisted.Store(true)
+		},
+		CancelTurn: func() { nativeTarget, _ = s.Active() },
+		Publish:    func(string, map[string]any) {},
+		OnIdle:     func() { close(idle) },
+	})
+	_, _ = s.Enqueue("a", nil)
+	waitFor(t, func() bool { return s.Snapshot().Busy })
+	_, _ = s.Enqueue("b", nil)
+	go func() { s.Cancel(true); close(cancelDone) }()
+	select {
+	case <-dropStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dropped-item cleanup could not inspect session state")
+	}
+	if dropCtxErr != nil {
+		t.Errorf("active turn was interrupted before dropped-item persistence: %v", dropCtxErr)
+	}
+	if !dropSnapshot.Busy || dropSnapshot.Waiting != 0 || dropSnapshot.ActiveItem["id"] != "a" {
+		t.Errorf("cleanup snapshot = %+v, want active a with no pending items", dropSnapshot)
+	}
+	release()
+	select {
+	case <-cancelDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel never returned")
+	}
+	select {
+	case <-idle:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled session never became idle")
+	}
+	if nativeTarget != "a" {
+		t.Errorf("native cancel targeted %q, want a", nativeTarget)
+	}
+	select {
+	case <-interruptedBeforeDrop:
+		t.Error("active cancellation finalization raced dropped-item persistence")
+	default:
+	}
+}
+
 func TestSessionDelayedCancelPublicationCannotCancelNextTurn(t *testing.T) {
 	var s *Session[string]
 	var cancelling atomic.Bool

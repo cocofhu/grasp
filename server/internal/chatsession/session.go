@@ -274,6 +274,12 @@ func (s *Session[T]) Cancel(clearQueue bool) {
 	cancelFn := s.cancelFn
 	s.mu.Unlock()
 
+	// Settle removed items before cancellation releases the active turn's
+	// finalization (e.g. PM failure persistence against the same thread).
+	// Keep the transition gate, but never the state mutex, across callbacks.
+	if len(dropped) > 0 && s.cfg.OnDropped != nil {
+		s.cfg.OnDropped(dropped)
+	}
 	// Cancel the captured turn before publishing: a slow viewer must never
 	// postpone this request until a later turn has become the runtime's target.
 	if cancelFn != nil {
@@ -283,9 +289,6 @@ func (s *Session[T]) Cancel(clearQueue bool) {
 		s.cfg.CancelTurn()
 	}
 	s.transitionMu.Unlock()
-	if len(dropped) > 0 && s.cfg.OnDropped != nil {
-		s.cfg.OnDropped(dropped)
-	}
 	s.publish(frame)
 }
 
