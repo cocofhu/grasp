@@ -795,9 +795,12 @@ test('Solo uses real model names and sends exact model IDs and advertised effort
   await page.getByTestId('solo-effort-reset').click()
   await expect.poll(() => modelWrites.at(-1)).toEqual({ reasoningEffort: 'high' })
   await page.setViewportSize({ width: 390, height: 900 })
+  await expect.poll(async () => {
+    const box = await page.getByTestId('solo-model-select-panel').boundingBox()
+    return box ? box.x + box.width : Number.POSITIVE_INFINITY
+  }).toBeLessThanOrEqual(391)
   const panel = await page.getByTestId('solo-model-select-panel').boundingBox()
   expect(panel!.x).toBeGreaterThanOrEqual(0)
-  expect(panel!.x + panel!.width).toBeLessThanOrEqual(391)
   await settleVisualTransitions(page)
   await page.screenshot({ path: testInfo.outputPath('solo-model-effort-session-mobile.png'), animations: 'disabled' })
   await page.getByTestId('solo-effort-back').click()

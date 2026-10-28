@@ -48,6 +48,14 @@ function place() {
   if (below < 280 && r.top > below) style.bottom = `${Math.round(window.innerHeight - r.top + 6)}px`
   else style.top = `${Math.round(r.bottom + 6)}px`
   panelStyle.value = style
+  // Vue flushes the binding on a later tick. Viewport checks read geometry immediately after resize.
+  const node = panel.value
+  if (!node) return
+  node.style.position = style.position
+  node.style.left = style.left
+  node.style.width = style.width
+  node.style.top = style.top || ''
+  node.style.bottom = style.bottom || ''
 }
 
 async function show() {
