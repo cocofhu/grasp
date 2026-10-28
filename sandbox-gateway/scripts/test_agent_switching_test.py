@@ -13,11 +13,11 @@ spec.loader.exec_module(runner)
 
 class MatrixContracts(unittest.TestCase):
     def test_every_directed_pair_is_exercised_once(self):
-        names = ['cursor', 'claude_code', 'codebuddy', 'trae', 'opencode', 'codex', 'deepseek_harness']
+        names = ['cursor', 'claude_code', 'codebuddy', 'trae', 'opencode', 'codex', 'deepseek_harness', 'kimi_code']
         walk = runner.directed_walk(names)
         edges = list(zip(walk, walk[1:]))
-        self.assertEqual(len(walk), 43)
-        self.assertEqual(len(set(edges)), 42)
+        self.assertEqual(len(walk), 57)
+        self.assertEqual(len(set(edges)), 56)
         self.assertEqual(set(edges), set(itertools.permutations(names, 2)))
 
     def test_new_product_agent_without_case_fails(self):

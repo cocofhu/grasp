@@ -51,6 +51,12 @@ func TestBaseURLRefusesUnknownSite(t *testing.T) {
 	}
 }
 
+func TestWriteConfigRejectsRelativeDirectory(t *testing.T) {
+	if err := WriteConfig("relative/kimi", intlBase, ""); err == nil || !strings.Contains(err.Error(), "absolute path") {
+		t.Fatal(err)
+	}
+}
+
 func TestWriteConfigKeepsTheKeyOutOfTheFile(t *testing.T) {
 	dir := t.TempDir()
 	secret := "sk-live-secret-value"

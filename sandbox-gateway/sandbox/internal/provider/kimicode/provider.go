@@ -56,8 +56,9 @@ func (*Provider) AuthEnv(env []string) []string {
 
 func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.OpenOptions,
 	onEvent func(json.RawMessage), perm provider.PermissionChooser) (provider.Session, error) {
-	env := p.AuthEnv(os.Environ())
-	prepared, err := modelconnection.Prepare(p.Name(), env, opts.Model, p.DefaultConfigRoot())
+	// Resolve the model route before copying the API key into the environment.
+	// The key is not an input to the route id.
+	prepared, err := modelconnection.Prepare(p.Name(), os.Environ(), opts.Model, p.DefaultConfigRoot())
 	if err != nil {
 		return nil, err
 	}
@@ -65,16 +66,17 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		prepared.Cleanup()
 		return nil, fmt.Errorf("Kimi Code 只使用开放平台，不接受自定义模型接口")
 	}
-	secret := strings.TrimSpace(common.GetEnvValue(prepared.Env, APIKeyEnv))
+	env := p.AuthEnv(prepared.Env)
+	secret := strings.TrimSpace(common.GetEnvValue(env, APIKeyEnv))
 	if secret == "" || strings.ContainsAny(secret, "\r\n\x00") {
 		prepared.Cleanup()
 		return nil, fmt.Errorf("%s", MsgMissingKey)
 	}
-	root := strings.TrimSpace(common.GetEnvValue(prepared.Env, "KIMI_CODE_HOME"))
+	root := strings.TrimSpace(common.GetEnvValue(env, "KIMI_CODE_HOME"))
 	if root == "" {
 		root = ConfigRoot
 	}
-	baseURL, err := BaseURL(common.GetEnvValue(prepared.Env, RegionEnv))
+	baseURL, err := BaseURL(common.GetEnvValue(env, RegionEnv))
 	if err != nil {
 		prepared.Cleanup()
 		return nil, err
@@ -91,7 +93,7 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	if onEvent != nil {
 		wrapped = func(ev json.RawMessage) { onEvent(RewriteEvent(ev, secret)) }
 	}
-	panel, err := acp.NewPanel(procCtx, handshakeCtx, LaunchArgv(model), prepared.Env, opts.Cwd, firstNonEmpty(opts.FSRoot, opts.Cwd), opts.McpServers, wrapped, acp.PermissionChooser(perm))
+	panel, err := acp.NewPanel(procCtx, handshakeCtx, LaunchArgv(model), env, opts.Cwd, firstNonEmpty(opts.FSRoot, opts.Cwd), opts.McpServers, wrapped, acp.PermissionChooser(perm))
 	if err != nil {
 		prepared.Cleanup()
 		return nil, fmt.Errorf("%s", Explain(err.Error(), secret))

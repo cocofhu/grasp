@@ -70,8 +70,13 @@ func RenderConfig(baseURL, model string) string {
 }
 
 // WriteConfig replaces config.toml under dir. The file mode keeps it private
-// even though the body has no secret.
+// even though the body has no secret. dir is the server-chosen config home,
+// never a model id; reject anything that is not an absolute cleaned path.
 func WriteConfig(dir, baseURL, model string) error {
+	dir = filepath.Clean(strings.TrimSpace(dir))
+	if !strings.HasPrefix(dir, "/") || strings.Contains(dir, "..") {
+		return fmt.Errorf("kimi config directory must be an absolute path")
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}

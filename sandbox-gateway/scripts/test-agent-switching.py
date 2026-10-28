@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Real Grasp/API/runtime/MCP E2E with native CLIs and a free model server.
 
-Only Cursor/Trae use explicitly labelled proprietary-platform wire doubles.
+Cursor, Trae and Kimi Code use explicitly labelled platform wire doubles.
 Every other CLI is real. No vendor key is read, inherited or required.
 """
 import argparse
@@ -307,7 +307,7 @@ class E2E:
                     raise AssertionError('unsupported reasoning strength was silently accepted')
 
     def save_report(self, error=None):
-        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor/Trae require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
+        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
         (self.output/'report.json').write_text(json.dumps(report, indent=2))
         if error:
             # Test prompts, commands and credentials are synthetic. Keep the
