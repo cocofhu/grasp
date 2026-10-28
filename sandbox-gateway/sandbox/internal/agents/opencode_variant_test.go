@@ -56,6 +56,7 @@ printf '%s\n' '{"type":"text","part":{"text":"connected"}}' '{"type":"step_finis
 			modelID := "opencode/gpt-5.5"
 			if tc.protocol == "" {
 				t.Setenv("GRASP_OPENCODE_PROVIDER", "opencode")
+				t.Setenv("GRASP_CONFIGURED_MODELS", "")
 				t.Setenv("OPENCODE_API_KEY", "official-test-key")
 			} else {
 				modelID = "kimi-k3.1-pro"
