@@ -11,6 +11,7 @@
 #   ./start.sh pull        refresh compose images + the sandbox runtime
 #   ./start.sh dev         local source stack (build server/web/gateway)
 #   ./start.sh dev -d      local source stack, detached
+#   ./start.sh --local     host-local mode (no Docker / no sandbox, uses host Agent CLI auth)
 #   ./start.sh sandbox     build universal-sandbox:local (dev only)
 #   ./start.sh gateway     rebuild local sandbox-gateway image (dev only)
 #   ./start.sh runtime     rebuild the sandbox runtime bundle (dev only)
@@ -21,18 +22,23 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 export HOST_REPO_DIR="$(pwd)"
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "error: docker not found" >&2
-  exit 1
-fi
+ensure_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "error: docker not found" >&2
+    exit 1
+  fi
 
-if docker compose version >/dev/null 2>&1; then
-  COMPOSE=(docker compose)
-elif command -v docker-compose >/dev/null 2>&1; then
-  COMPOSE=(docker-compose)
-else
-  echo "error: docker compose / docker-compose not found" >&2
-  exit 1
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE=(docker-compose)
+  else
+    echo "error: docker compose / docker-compose not found" >&2
+    exit 1
+  fi
+}
+if [[ "${1:-}" != "local" && "${1:-}" != "--local" ]]; then
+  ensure_docker
 fi
 
 if [[ ! -f .env ]]; then
@@ -245,6 +251,62 @@ up_dev() {
   fi
 }
 
+up_local() {
+  local detach="${1:-}"
+  if ! command -v go >/dev/null 2>&1; then
+    echo "error: go not found (required for --local mode)" >&2
+    exit 1
+  fi
+  if [[ ! -f server/config.yaml ]]; then
+    cp server/config.example.yaml server/config.yaml
+    echo "created server/config.yaml from config.example.yaml"
+  fi
+  local local_root="$HOST_REPO_DIR/.devdata/local"
+  mkdir -p "$local_root/db" "$local_root/profiles" "$local_root/blobs" "$local_root/worktrees" "$local_root/runtime/current" "$local_root/bin"
+
+  echo "building local runtime (backend + scripts)..."
+  scripts/build-sandbox-runtime.sh "$local_root/runtime" >/dev/null
+  tar -xzf "$local_root/runtime/sandbox-runtime.tgz" -C "$local_root/runtime/current"
+
+  if [[ "${SKIP_WEB_BUILD:-0}" != "1" && ( ! -f web/dist/index.html || "${FORCE_WEB_BUILD:-0}" == "1" ) ]]; then
+    if command -v npm >/dev/null 2>&1; then
+      echo "building frontend assets (web/dist)..."
+      (cd web && ([[ -d node_modules ]] || npm install) && npm run build)
+    else
+      echo "warning: web/dist/index.html not found and npm is unavailable" >&2
+    fi
+  fi
+
+  echo "building grasp-server..."
+  (
+    cd server
+    go build -trimpath -buildvcs=false -o "$local_root/bin/grasp-server" ./cmd/server
+  )
+
+  export GRASP_EXECUTION_MODE="local"
+  export GRASP_WORKTREE_BACKEND="$local_root/runtime/current/bin/backend"
+  export GRASP_WORKTREE_ROOT="$local_root/worktrees"
+  export GRASP_SANDBOX_RUNTIME_BUNDLE="$local_root/runtime/sandbox-runtime.tgz"
+  export GRASP_DB="$local_root/db/grasp.db"
+  export GRASP_PROFILES_ROOT="$local_root/profiles"
+  export GRASP_BLOBS_ROOT="$local_root/blobs"
+  export CONFIG_PATH="$HOST_REPO_DIR/server/config.yaml"
+
+  if [[ "$detach" == "1" ]]; then
+    nohup "$local_root/bin/grasp-server" "$CONFIG_PATH" >"$local_root/grasp-server.log" 2>&1 &
+    echo $! >"$local_root/grasp-server.pid"
+    wait_for_url "http://127.0.0.1:${GRASP_PORT}/api/health" "api"
+    echo "started (local mode, pid $(cat "$local_root/grasp-server.pid"))"
+    echo "—— UI/API  http://localhost:${GRASP_PORT}"
+    echo "—— login   admin / demo1234  (local-demo)"
+    echo "—— log     $local_root/grasp-server.log"
+  else
+    echo "starting local mode (foreground) — UI http://localhost:${GRASP_PORT}"
+    echo "—— login   admin / demo1234  (local-demo)"
+    exec "$local_root/bin/grasp-server" "$CONFIG_PATH"
+  fi
+}
+
 cmd="${1:-up}"
 shift || true
 case "$cmd" in
@@ -273,12 +335,27 @@ case "$cmd" in
     fi
     ;;
   down)
+    if [[ -f ".devdata/local/grasp-server.pid" ]]; then
+      kill "$(cat .devdata/local/grasp-server.pid)" 2>/dev/null || true
+      rm -f ".devdata/local/grasp-server.pid"
+    fi
     "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" down --remove-orphans || true
     "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" down --remove-orphans || true
     ;;
   restart)
     "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" down --remove-orphans || true
     up_release 1
+    ;;
+  local|--local)
+    sub="${1:-up}"
+    case "$sub" in
+      -d|up-d|detach) up_local 1 ;;
+      up|"") up_local 0 ;;
+      *)
+        echo "usage: ./start.sh --local [-d]" >&2
+        exit 1
+        ;;
+    esac
     ;;
   dev)
     sub="${1:-up}"
@@ -316,7 +393,7 @@ case "$cmd" in
     ;;
   *)
     echo "unknown: $cmd" >&2
-    echo "usage: ./start.sh [up|-d|pull|logs|gw-logs|down|restart|dev|sandbox|gateway|runtime]" >&2
+    echo "usage: ./start.sh [up|-d|pull|logs|gw-logs|down|restart|local|--local|dev|sandbox|gateway|runtime]" >&2
     exit 1
     ;;
 esac

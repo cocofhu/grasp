@@ -180,9 +180,11 @@ func InstallCodexLoginFile(backend AcpBackend, home, body string) error {
 func mergeCodexAuthEnv(out map[string]string, requireAuth bool) (map[string]string, error) {
 	file := out[envauth.EnvCodexAuthFile]
 	delete(out, envauth.EnvCodexAuthFile)
-	delete(out, "OPENAI_API_KEY")
-	delete(out, "CODEX_API_KEY")
-	delete(out, "ACP_CODEX_API_KEY")
+	if strings.TrimSpace(out[EnvLocalAuth]) != "1" {
+		delete(out, "OPENAI_API_KEY")
+		delete(out, "CODEX_API_KEY")
+		delete(out, "ACP_CODEX_API_KEY")
+	}
 	if strings.TrimSpace(file) == "" && requireAuth {
 		return out, ErrCodexLoginFileMissing
 	}

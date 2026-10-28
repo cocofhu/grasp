@@ -47,10 +47,12 @@ func ApplyOpenCodeVariant(p Prepared, effort string) (Prepared, error) {
 	p.Model = base
 	p.Args = append(append([]string(nil), p.Args...), "--variant", effort)
 	var overlay map[string]any
-	if p.Connection == nil {
+	if p.Connection == nil && p.RouteID == "" {
 		if !platformCatalogVariant(base, effort) {
 			overlay = spellOverlay(platformSpell(base), effort)
 		}
+	} else if p.Connection == nil {
+		overlay = chatOverlay(effort)
 	} else {
 		overlay = protocolOverlay(p.Connection.Protocol, effort)
 	}
@@ -182,7 +184,7 @@ func writeOpenCodeVariant(p Prepared, effort string, overlay map[string]any) (Pr
 func declareVariant(config map[string]any, p Prepared, effort string, overlay map[string]any) error {
 	providerKey := platformProvider(p.Model)
 	modelKey := catalogID(p.Model)
-	if p.Connection != nil {
+	if p.Connection != nil || p.RouteID != "" {
 		providerKey = p.RouteID
 		modelKey = p.ChatModelID()
 	}

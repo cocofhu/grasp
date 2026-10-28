@@ -172,6 +172,7 @@ export type ModelProtocol = 'openai-chat-completions' | 'openai-responses' | 'an
 export type ModelRoles = Partial<Record<'main' | 'fast' | 'reasoning' | 'subagent' | 'opus' | 'sonnet' | 'haiku', string>>
 export type ModelEfforts = Record<string, string>
 export type ConcreteModelBinding =
+  | { kind: 'local'; modelId?: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string; modelEfforts?: ModelEfforts } }
   | { kind: 'platform'; credentialId: string; modelId?: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string; modelEfforts?: ModelEfforts } }
   | { kind: 'connection'; connectionId: string; modelId: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string; modelEfforts?: ModelEfforts } }
 export type ModelBinding = { kind: 'configuration'; configurationId: string; configurationIds?: string[] }
@@ -205,7 +206,7 @@ export interface ToolCapability {
   toolId: string
   versionConstraint?: string
   transport?: string
-  modes: ('platform' | 'connection')[]
+  modes: ('local' | 'platform' | 'connection')[]
   protocols?: ModelProtocol[]
   roleNames?: string[]
   requiredRoles?: string[]

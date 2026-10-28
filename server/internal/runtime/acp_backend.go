@@ -238,6 +238,9 @@ func PrepareAuthEnv(backend AcpBackend, env map[string]string, workDirSrc string
 	if NormalizeBackend(string(backend)) == BackendCodex {
 		requireAuth = true
 	}
+	if strings.TrimSpace(merged[EnvLocalAuth]) == "1" {
+		requireAuth = false
+	}
 	out, err := mergeAuthEnv(backend, merged, requireAuth)
 	if err != nil {
 		return out, err

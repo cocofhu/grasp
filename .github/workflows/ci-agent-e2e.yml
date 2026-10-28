@@ -104,6 +104,13 @@ jobs:
           --server "$RUNNER_TEMP/grasp-agent-server"
           --runtime "$RUNNER_TEMP/grasp-agent-runtime/current"
           --output "$RUNNER_TEMP/agent-e2e-artifacts"
+      - name: Local execution mode credential-free multi-agent switching
+        run: >-
+          python3 sandbox-gateway/scripts/test-agent-switching.py
+          --execution-mode local
+          --server "$RUNNER_TEMP/grasp-agent-server"
+          --runtime "$RUNNER_TEMP/grasp-agent-runtime/current"
+          --output "$RUNNER_TEMP/agent-e2e-artifacts/local-mode"
       - name: Publish coverage boundary and results
         if: always()
         run: |

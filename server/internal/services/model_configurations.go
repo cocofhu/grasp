@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
@@ -25,6 +26,9 @@ func NewModelConfigurationService(db *gorm.DB) *ModelConfigurationService {
 }
 
 func (s *ModelConfigurationService) List() ([]modelrouting.Configuration, error) {
+	if execution.Local() {
+		_ = s.EnsureLocalDefaults()
+	}
 	var rows []models.ModelConfiguration
 	if err := s.db.Order("created_at desc").Find(&rows).Error; err != nil {
 		return nil, err
@@ -36,7 +40,76 @@ func (s *ModelConfigurationService) List() ([]modelrouting.Configuration, error)
 	return items, nil
 }
 
+// EnsureLocalDefaults seeds default host-auth model configurations for installed
+// Agent CLIs when running in local execution mode and no configurations exist yet.
+func (s *ModelConfigurationService) EnsureLocalDefaults() error {
+	if !execution.Local() || s == nil || s.db == nil {
+		return nil
+	}
+	var existing []models.ModelConfiguration
+	if err := s.db.Select("id", "backend").Find(&existing).Error; err != nil {
+		return err
+	}
+	backends := execution.InstalledProviders()
+	if len(existing) == 0 && len(backends) == 0 {
+		backends = execution.KnownProviders
+	}
+	seenID := make(map[string]bool, len(existing))
+	seenBackend := make(map[string]bool, len(existing))
+	for _, row := range existing {
+		seenID[row.ID] = true
+		seenBackend[row.Backend] = true
+	}
+	now := time.Now()
+	for i, backend := range backends {
+		id := "model-local-" + strings.ReplaceAll(backend, "_", "-")
+		if seenID[id] || seenBackend[backend] {
+			continue
+		}
+		row := models.ModelConfiguration{
+			ID:        id,
+			Name:      localToolLabel(backend),
+			Backend:   backend,
+			Binding:   modelrouting.Binding{Kind: "local"},
+			State:     "active",
+			Revision:  1,
+			CreatedAt: now.Add(-time.Duration(i) * time.Millisecond),
+			UpdatedAt: now.Add(-time.Duration(i) * time.Millisecond),
+		}
+		if err := s.db.Create(&row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func localToolLabel(backend string) string {
+	switch backend {
+	case "claude_code":
+		return "Claude Code"
+	case "codex":
+		return "Codex"
+	case "cursor":
+		return "Cursor"
+	case "opencode":
+		return "OpenCode"
+	case "deepseek_harness":
+		return "DeepSeek Harness"
+	case "kimi_code":
+		return "Kimi Code"
+	case "codebuddy":
+		return "CodeBuddy"
+	case "trae":
+		return "Trae"
+	default:
+		return backend
+	}
+}
+
 func (s *ModelConfigurationService) Get(id string) (modelrouting.Configuration, error) {
+	if execution.Local() {
+		_ = s.EnsureLocalDefaults()
+	}
 	var row models.ModelConfiguration
 	if err := s.db.First(&row, "id = ?", strings.TrimSpace(id)).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -116,7 +189,10 @@ func (s *ModelConfigurationService) validate(configuration *modelrouting.Configu
 	if configuration.State != "active" && configuration.State != "disabled" {
 		return fmt.Errorf("%w: state must be active or disabled", ErrModelConfigurationInvalid)
 	}
-	if configuration.Binding.Kind != "platform" && configuration.Binding.Kind != "connection" {
+	if execution.Local() && (configuration.Binding.Kind == "" || (configuration.Binding.Kind == "platform" && strings.TrimSpace(configuration.Binding.CredentialID) == "")) {
+		configuration.Binding.Kind = "local"
+	}
+	if configuration.Binding.Kind != "platform" && configuration.Binding.Kind != "connection" && !(execution.Local() && configuration.Binding.Kind == "local") {
 		return fmt.Errorf("%w: a concrete platform or connection binding is required", ErrModelConfigurationInvalid)
 	}
 	if configuration.Binding.ConfigurationID != "" || len(configuration.Binding.ConfigurationIDs) != 0 {

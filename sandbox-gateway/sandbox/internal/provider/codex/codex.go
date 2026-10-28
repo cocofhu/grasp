@@ -52,6 +52,11 @@ func (codec) AuthEnv(env []string) []string {
 	if len(env) == 0 {
 		return env
 	}
+	for _, item := range env {
+		if k, v, ok := strings.Cut(item, "="); ok && k == "GRASP_LOCAL_AUTH" && strings.TrimSpace(v) == "1" {
+			return env
+		}
+	}
 	out := make([]string, 0, len(env))
 	for _, item := range env {
 		key, _, _ := strings.Cut(item, "=")

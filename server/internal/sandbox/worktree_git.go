@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/cocofhu/grasp/internal/execution"
 )
 
 // worktreeGitEnvKey excludes process-wide identities and Git configuration.
@@ -43,6 +45,43 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 	files, err := gitCatalogFiles(worktreeGitCredentials(spec))
 	if err != nil {
 		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
+	}
+	if execution.Local() && len(worktreeGitCredentials(spec)) == 0 {
+		home := filepath.Join(dir, "home")
+		if err := os.Mkdir(home, 0o700); err != nil {
+			return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
+		}
+		gitConfigPath := filepath.Join(home, ".gitconfig")
+		if hostHome, err := os.UserHomeDir(); err == nil && strings.TrimSpace(hostHome) != "" {
+			hostGitConfig := filepath.Join(hostHome, ".gitconfig")
+			if _, statErr := os.Stat(hostGitConfig); statErr == nil {
+				cmd := exec.CommandContext(ctx, "git", "config", "--file", gitConfigPath, "--add", "include.path", hostGitConfig)
+				if err := cmd.Run(); err != nil {
+					return nil, fmt.Errorf("include host Git config: %w", err)
+				}
+			}
+		}
+		hostName, hostEmail := execution.HostGitIdentity()
+		if hostName == "" {
+			hostName = "sandbox"
+		}
+		if hostEmail == "" {
+			hostEmail = "sandbox@localhost"
+		}
+		identity := [][2]string{
+			{"user.name", worktreeGitIdentity(spec.Env["GIT_USER_NAME"], hostName)},
+			{"user.email", worktreeGitIdentity(spec.Env["GIT_USER_EMAIL"], hostEmail)},
+		}
+		for _, setting := range identity {
+			cmd := exec.CommandContext(ctx, "git", "config", "--file", gitConfigPath, "--", setting[0], setting[1])
+			if err := cmd.Run(); err != nil {
+				return nil, fmt.Errorf("configure worktree Git author: %w", err)
+			}
+		}
+		env["GIT_CONFIG_GLOBAL"] = gitConfigPath
+		env["GIT_TERMINAL_PROMPT"] = "0"
+		failed = false
+		return cleanup, nil
 	}
 	source := filepath.Join(dir, "stage", "git")
 	if err := os.MkdirAll(source, 0o700); err != nil {

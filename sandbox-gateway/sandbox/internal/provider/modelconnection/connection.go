@@ -113,13 +113,36 @@ func Prepare(name provider.Name, env []string, model, configRoot string) (Prepar
 		if name == provider.OpenCode && common.GetEnvValue(env, "GRASP_OPENCODE_PROVIDER") == "opencode" {
 			return prepareOpenCodePlatform(p, configRoot)
 		}
+		localAuth := strings.TrimSpace(common.GetEnvValue(env, "GRASP_LOCAL_AUTH")) == "1"
+		if localAuth {
+			if root := strings.TrimSpace(common.GetEnvValue(env, "CONFIG_ROOT")); root != "" {
+				configRoot = root
+			}
+			if strings.TrimSpace(configRoot) != "" {
+				switch name {
+				case provider.OpenCode:
+					p.Env = common.UpsertEnv(p.Env, "OPENCODE_CONFIG_DIR", configRoot)
+					p = qualifyLocalOpenCodeModel(p, configRoot)
+				case provider.ClaudeCode, provider.ClaudeCodeACP:
+					p.Env = common.UpsertEnv(p.Env, "CLAUDE_CONFIG_DIR", configRoot)
+				case provider.CodeBuddy, provider.CodeBuddyACP:
+					p.Env = common.UpsertEnv(p.Env, "CODEBUDDY_CONFIG_DIR", configRoot)
+				}
+			}
+		}
 		if name == provider.DeepSeekHarness {
 			key := common.GetEnvValue(env, "DEEPSEEK_API_KEY")
-			if strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00") {
+			baseURL := common.GetEnvValue(env, "DEEPSEEK_BASE_URL")
+			if !localAuth && (strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00")) {
 				return p, errors.New("DeepSeek Harness official authorization: selected API key is missing or invalid")
 			}
 			p.Env = cleanEnv(env)
-			p.Env = common.UpsertEnv(p.Env, "DEEPSEEK_API_KEY", key)
+			if strings.TrimSpace(key) != "" {
+				p.Env = common.UpsertEnv(p.Env, "DEEPSEEK_API_KEY", key)
+			}
+			if localAuth && strings.TrimSpace(baseURL) != "" {
+				p.Env = common.UpsertEnv(p.Env, "DEEPSEEK_BASE_URL", baseURL)
+			}
 		}
 		return p, nil
 	}
@@ -186,13 +209,48 @@ func sessionModelID(c Connection, requested string) string {
 // ChatModelID is the catalog id prepared for this connection. OpenCode stores
 // route/id in Model; every other tool stores the raw id.
 func (p Prepared) ChatModelID() string {
-	if p.Connection == nil {
-		return strings.TrimSpace(p.Model)
-	}
 	if prefix := p.RouteID + "/"; p.RouteID != "" && strings.HasPrefix(p.Model, prefix) {
 		return strings.TrimPrefix(p.Model, prefix)
 	}
+	if p.Connection == nil {
+		return strings.TrimSpace(p.Model)
+	}
 	return p.Model
+}
+
+func qualifyLocalOpenCodeModel(p Prepared, root string) Prepared {
+	data, err := os.ReadFile(filepath.Join(root, "opencode.json"))
+	if err != nil {
+		return p
+	}
+	p.Env = common.UpsertEnv(p.Env, "OPENCODE_CONFIG_CONTENT", string(data))
+	m := strings.TrimSpace(p.Model)
+	if m == "" || m == "auto" || strings.Contains(m, "/") {
+		return p
+	}
+	var doc struct {
+		Model            string         `json:"model"`
+		EnabledProviders []string       `json:"enabled_providers"`
+		Provider         map[string]any `json:"provider"`
+	}
+	if json.Unmarshal(data, &doc) != nil {
+		return p
+	}
+	prov, _, ok := strings.Cut(strings.TrimSpace(doc.Model), "/")
+	if !ok || prov == "" {
+		if len(doc.EnabledProviders) == 1 {
+			prov = strings.TrimSpace(doc.EnabledProviders[0])
+		} else if len(doc.Provider) == 1 {
+			for k := range doc.Provider {
+				prov = strings.TrimSpace(k)
+			}
+		}
+	}
+	if prov != "" {
+		p.RouteID = prov
+		p.Model = prov + "/" + m
+	}
+	return p
 }
 
 func (c Connection) RouteID() string {

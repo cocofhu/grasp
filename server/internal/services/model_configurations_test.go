@@ -326,3 +326,31 @@ func TestModelConfigurationDoesNotReportFailedWritesAsSaved(t *testing.T) {
 		t.Fatalf("failed update changed persisted revision: %+v %v", stored, err)
 	}
 }
+
+func TestLocalModeModelConfigurationsAndConnections(t *testing.T) {
+	t.Setenv("GRASP_EXECUTION_MODE", "local")
+	db := newTestDB(t)
+	connections, configurations := NewModelConnectionService(db), NewModelConfigurationService(db)
+	items, err := configurations.List()
+	if err != nil || len(items) == 0 {
+		t.Fatalf("expected auto-seeded local configurations, got %+v %v", items, err)
+	}
+	if items[0].Binding.Kind != "local" || items[0].Binding.CredentialID != "" {
+		t.Fatalf("expected kind=local without credential, got %+v", items[0])
+	}
+	resolved, err := connections.Resolve(items[0].Backend, modelrouting.Binding{
+		Kind:            "configuration",
+		ConfigurationID: items[0].ID,
+	})
+	if err != nil || resolved.Binding.Kind != "local" || resolved.Secret != "" {
+		t.Fatalf("expected credential-free resolution in local mode, got %+v %v", resolved, err)
+	}
+	created, err := configurations.Create(modelrouting.Configuration{
+		Name:    "Custom Local Group",
+		Backend: "deepseek_harness",
+		Binding: modelrouting.Binding{Kind: "local", ModelID: "deepseek-flash"},
+	})
+	if err != nil || created.Binding.Kind != "local" || created.Binding.ModelID != "deepseek-flash" {
+		t.Fatalf("create local configuration failed: %+v %v", created, err)
+	}
+}

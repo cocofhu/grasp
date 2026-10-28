@@ -50,6 +50,11 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 		return nil, fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
 	}
 	provider := strings.TrimSpace(env["AGENT_PROVIDER"])
+	if execution.Local() && !execution.PreviewAvailable() {
+		delete(env, "BROWSER_MCP")
+		delete(env, "VNC_PREVIEW")
+		delete(env, "PREVIEW_DIRECT")
+	}
 	if err := execution.RequireTools(provider, env); err != nil {
 		return nil, err
 	}
@@ -86,6 +91,9 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	env["CONFIG_ROOT"] = configRoot
 	if env["CODEX_HOME"] != "" || provider == "codex" {
 		env["CODEX_HOME"] = configRoot
+	}
+	if execution.Local() || strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" {
+		seedLocalAuthConfigHome(provider, configRoot)
 	}
 	env["WORKSPACE_DIR"] = launch.Root
 	env[execution.EnvMode] = execution.ModeWorktree
@@ -192,6 +200,11 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 		return fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
 	}
 	provider := strings.TrimSpace(env["AGENT_PROVIDER"])
+	if execution.Local() && !execution.PreviewAvailable() {
+		delete(env, "BROWSER_MCP")
+		delete(env, "VNC_PREVIEW")
+		delete(env, "PREVIEW_DIRECT")
+	}
 	if err := execution.RequireTools(provider, env); err != nil {
 		return err
 	}
@@ -208,6 +221,9 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 		env["CODEX_HOME"] = configRoot
 	} else {
 		delete(env, "CODEX_HOME")
+	}
+	if execution.Local() || strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" {
+		seedLocalAuthConfigHome(provider, configRoot)
 	}
 	env["WORKSPACE_DIR"] = sb.WorkspaceDir
 	env[execution.EnvMode] = execution.ModeWorktree
@@ -263,13 +279,17 @@ func worktreeSessionStop(stop, cleanupGit func()) func() {
 // conversation tests, and the assistant all arrive through Create with those
 // fields set.
 func authFromSpec(spec Spec) execution.Auth {
-	auth := execution.Auth{Configured: spec.GitBindingsConfigured}
+	configured := spec.GitBindingsConfigured
+	if execution.Local() && len(spec.GitCredentials) == 0 {
+		configured = false
+	}
+	auth := execution.Auth{Configured: configured}
 	for _, cred := range spec.GitCredentials {
 		auth.Credentials = append(auth.Credentials, execution.Credential{
 			Kind: cred.Kind, Scope: cred.Scope, Secret: cred.Secret, KnownHosts: cred.KnownHosts,
 		})
 	}
-	if spec.GitBindingsConfigured {
+	if configured {
 		return auth
 	}
 	auth.SSHPrivateKey = spec.SSHPrivateKey
@@ -306,9 +326,13 @@ func envList(overlay map[string]string) []string {
 	for k := range overlay {
 		skip[k] = true
 	}
+	localAuth := execution.Local() || strings.TrimSpace(overlay["GRASP_LOCAL_AUTH"]) == "1"
 	for _, item := range base {
 		key, _, _ := strings.Cut(item, "=")
-		if skip[key] || worktreeGitEnvKey(key) || envauth.IsSecretEnvKey(key) || envauth.IsPlatformReservedEnvKey(key) {
+		if skip[key] || envauth.IsPlatformReservedEnvKey(key) {
+			continue
+		}
+		if !localAuth && (worktreeGitEnvKey(key) || envauth.IsSecretEnvKey(key)) {
 			continue
 		}
 		out = append(out, item)

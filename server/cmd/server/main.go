@@ -31,6 +31,7 @@ import (
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/logging"
@@ -169,6 +170,26 @@ func main() {
 		_, err := runtime.ResolveGitBindings(bindings, credentialSvc.ResolveGitValue)
 		return err
 	})
+	if execution.Local() {
+		_ = modelConfigurationSvc.EnsureLocalDefaults()
+		sharedCfg := sharedAgentSvc.Get()
+		if items, err := modelConfigurationSvc.List(); err == nil && len(items) > 0 {
+			ids := make([]string, 0, len(items))
+			for _, item := range items {
+				if item.State == "active" {
+					ids = append(ids, item.ID)
+				}
+			}
+			if len(ids) > 0 && sharedCfg.ModelBinding == nil {
+				sharedCfg.ModelBinding = &modelrouting.Binding{
+					Kind:             "configuration",
+					ConfigurationID:  ids[0],
+					ConfigurationIDs: ids,
+				}
+				_ = sharedAgentSvc.Save(sharedCfg)
+			}
+		}
+	}
 	// The catalog provides model choices; saved model configurations determine execution.
 	openCodeCatalog := opencodecatalog.New(cfg.Sandbox.OpenCodeCatalogURL)
 	sshKeyPath := sandbox.DataPlaneKeyPath(cfg.SecretsKeyFile())

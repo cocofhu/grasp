@@ -51,6 +51,7 @@ export function bindingProblem(binding: ModelBinding | ConcreteModelBinding | un
     return bindingProblem(configuration.binding, toolId, connections, credentials, capabilities)
   }
   if (!binding) return 'missingConfiguration'
+  if (binding.kind === 'local') return ''
   if (binding.kind === 'platform') return credentials.some((item) => item.id === binding.credentialId && credentialUsable(item) && isToolCredential(item, toolId)) ? '' : 'missingCredential'
   const connection = connections.find((item) => item.id === binding.connectionId)
   if (!connection || connection.state !== 'active') return 'missingConnection'

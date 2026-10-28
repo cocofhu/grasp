@@ -25,7 +25,13 @@ type updateSettingsBody struct {
 // GetSettings returns scheduling params and instance brand overrides to every
 // authenticated shell user.
 func (h *Handlers) GetSettings(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"items": h.Settings.Effective(), "brand": h.Settings.Brand(), "execution_mode": execution.Mode()})
+	resp := gin.H{"items": h.Settings.Effective(), "brand": h.Settings.Brand(), "execution_mode": execution.Mode()}
+	if execution.Local() {
+		gitName, gitEmail := execution.HostGitIdentity()
+		resp["installed_tools"] = execution.InstalledProviders()
+		resp["host_git_user"] = gin.H{"name": gitName, "email": gitEmail}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // UpdateSettings persists a patch of platform scheduling params and applies
@@ -61,7 +67,13 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "brand": h.Settings.Brand(), "execution_mode": execution.Mode()})
+	resp := gin.H{"items": items, "brand": h.Settings.Brand(), "execution_mode": execution.Mode()}
+	if execution.Local() {
+		gitName, gitEmail := execution.HostGitIdentity()
+		resp["installed_tools"] = execution.InstalledProviders()
+		resp["host_git_user"] = gin.H{"name": gitName, "email": gitEmail}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // requireAdmin writes 403 and returns false unless the session is an admin.

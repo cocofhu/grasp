@@ -42,8 +42,8 @@ const kimiDefaultEffort = (model) => kimiWireModel(model) === 'kimi-for-coding' 
 // Read only Grasp's generated TOML fields. This deliberately consumes the
 // native CLI config, never Grasp's desired session-effort environment variable.
 export function kimiConfiguration(config, secret) {
-  if (!secret) throw new Error('KIMI_CODE_API_KEY was not set')
-  if (!config.includes('api_key_env = "KIMI_CODE_API_KEY"') || config.includes(secret)) throw new Error('kimi config.toml must name the key variable and must not contain the key')
+  if (!secret && process.env.GRASP_LOCAL_AUTH !== '1') throw new Error('KIMI_CODE_API_KEY was not set')
+  if (!config.includes('api_key_env = "KIMI_CODE_API_KEY"') || (secret && config.includes(secret))) throw new Error('kimi config.toml must name the key variable and must not contain the key')
   if (!/base_url = "https:\/\/api\.kimi\.(?:com|ai)\/coding\/v1"/.test(config)) throw new Error('kimi config.toml site is not an official Kimi Code subscription endpoint')
   const tables = new Map([['', {}]])
   let table = tables.get('')

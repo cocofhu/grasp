@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
@@ -20,10 +21,12 @@ func selectSoloConfiguration(db *gorm.DB, agent Agent, configurationID string) (
 	if id == "" {
 		id = agent.ModelBinding.ConfigurationID
 	}
-	if !modelrouting.HasConfiguration(agent.ModelBinding, id) {
-		return Agent{}, soloErr(http.StatusBadRequest, "model_not_in_configuration", "所选模型组未绑定到该 Agent")
-	}
 	configuration, err := NewModelConfigurationService(db).Get(id)
+	if !modelrouting.HasConfiguration(agent.ModelBinding, id) {
+		if !execution.Local() || err != nil || configuration.State != "active" || configuration.Binding.Kind != "local" {
+			return Agent{}, soloErr(http.StatusBadRequest, "model_not_in_configuration", "所选模型组未绑定到该 Agent")
+		}
+	}
 	if err != nil || configuration.State != "active" {
 		return Agent{}, soloErr(http.StatusBadRequest, "model_unavailable", "所选模型组不存在或已停用")
 	}

@@ -22,8 +22,8 @@ const { workspace, loading: workspaceLoading, error: workspaceError, ensureLoade
 
 const isAdmin = computed(() => !!user.value?.isAdmin)
 
-const executionMode = ref<'worktree' | 'sandbox'>('sandbox')
-const worktreeMode = computed(() => executionMode.value === 'worktree')
+const executionMode = ref<'worktree' | 'local' | 'sandbox'>('sandbox')
+const worktreeMode = computed(() => executionMode.value === 'worktree' || executionMode.value === 'local')
 const executionLabel = computed(() =>
   worktreeMode.value ? t('pages.settings.execution.worktree') : t('pages.settings.execution.sandbox'),
 )
@@ -215,7 +215,7 @@ async function loadSettings() {
     if (!settingsSeq.isCurrentSeq(localSeq)) return
     hydrate(res.items)
     hydrateBrand(res.brand)
-    executionMode.value = res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
+    executionMode.value = res.execution_mode === 'local' ? 'local' : res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
     setExecutionMode(res.execution_mode)
   } catch (e: any) {
     if (!settingsSeq.isCurrentSeq(localSeq)) return
@@ -359,7 +359,7 @@ async function save() {
           hydrate(res.items)
           hydrateBrand(res.brand)
           if (res.execution_mode) {
-            executionMode.value = res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
+            executionMode.value = res.execution_mode === 'local' ? 'local' : res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
             setExecutionMode(res.execution_mode)
           }
         }

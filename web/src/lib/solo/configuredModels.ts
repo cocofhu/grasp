@@ -39,7 +39,7 @@ export function boundModelChoices(input: {
     const binding = configuration.binding
     const connection = binding.kind === 'connection' ? input.connections.find(row => row.id === binding.connectionId && row.state === 'active') : undefined
     const credentialId = binding.kind === 'platform' ? binding.credentialId : connection?.credentialId
-    const credentialUnavailable = input.credentials !== undefined && !input.credentials.some(credential => credential.id === credentialId && credentialUsable(credential))
+    const credentialUnavailable = binding.kind !== 'local' && input.credentials !== undefined && !input.credentials.some(credential => credential.id === credentialId && credentialUsable(credential))
     return configuredModelChoices({
       binding, configurationName: configuration.name, backend: configuration.backend,
       cliModels: input.cliModels[configuration.backend] || [], connectionModels: connection?.models,
@@ -75,7 +75,7 @@ export function configuredModelChoices(input: {
   const primary = binding.modelId?.trim() || ''
   const configurationName = input.configurationName?.trim() || ''
   const auxiliary = (binding.auxiliaryModelIds || []).map((id) => id.trim()).filter(Boolean)
-  const ids = binding.kind === 'platform' ? [primary, ...auxiliary] : [primary, ...auxiliary].filter((id, index) => id || index > 0)
+  const ids = binding.kind === 'platform' || binding.kind === 'local' ? [primary, ...auxiliary] : [primary, ...auxiliary].filter((id, index) => id || index > 0)
   const seen = new Set<string>()
   const choices: ConfiguredModelChoice[] = []
   for (const id of ids) {
@@ -102,7 +102,7 @@ export function configuredModelChoices(input: {
       hint: id,
       vendor: vendor || input.backend,
       backend: !vendor,
-      unavailable: input.catalogReady && !known,
+      unavailable: binding.kind !== 'local' && input.catalogReady && !known,
       efforts,
     })
   }

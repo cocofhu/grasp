@@ -88,7 +88,7 @@ export function tokenHubVariants(modelId: string): string[] {
 
 export function effortChoices(backend: string, kind: string, providerId: string | undefined, baseUrl: string | undefined, modelId: string): string[] {
   if (backend !== 'opencode' || !modelId.trim()) return []
-  if (kind === 'platform') return platformVariants(modelId)
+  if (kind === 'platform' || kind === 'local') return platformVariants(modelId)
   if (kind === 'connection') return lookupProviderEfforts(providerEntry(providerId, baseUrl)?.models || {}, modelId)
   return []
 }

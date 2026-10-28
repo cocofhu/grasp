@@ -12,8 +12,67 @@ import (
 var lookPath = defaultLookPath
 
 func defaultLookPath(name string) error {
+	if _, err := exec.LookPath(name); err == nil {
+		return nil
+	} else if !Local() {
+		return err
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		for _, dir := range []string{
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, ".cursor", "bin"),
+			filepath.Join(home, ".kimi", "bin"),
+			filepath.Join(home, ".npm-global", "bin"),
+		} {
+			cand := filepath.Join(dir, name)
+			if st, err := os.Stat(cand); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+				return nil
+			}
+		}
+	}
 	_, err := exec.LookPath(name)
 	return err
+}
+
+// KnownProviders is the canonical list of supported Agent CLI providers.
+var KnownProviders = []string{
+	"claude_code",
+	"codex",
+	"cursor",
+	"opencode",
+	"deepseek_harness",
+	"kimi_code",
+	"codebuddy",
+	"trae",
+}
+
+// InstalledProviders returns the subset of KnownProviders whose CLI binary is installed locally.
+func InstalledProviders() []string {
+	out := make([]string, 0, len(KnownProviders))
+	for _, p := range KnownProviders {
+		bin, ok := CLIForProvider(p)
+		if !ok {
+			continue
+		}
+		if err := lookPath(bin); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// HostGitIdentity reads the host user's global git user.name and user.email when running in Local mode.
+func HostGitIdentity() (name, email string) {
+	if !Local() {
+		return "", ""
+	}
+	if out, err := exec.Command("git", "config", "--global", "--get", "user.name").Output(); err == nil {
+		name = strings.TrimSpace(string(out))
+	}
+	if out, err := exec.Command("git", "config", "--global", "--get", "user.email").Output(); err == nil {
+		email = strings.TrimSpace(string(out))
+	}
+	return name, email
 }
 
 // SetLookPathForTest replaces CLI lookup. The returned function restores it.
@@ -65,7 +124,7 @@ func RequireTools(provider string, env map[string]string) error {
 	if err := lookPath(bin); err != nil {
 		return fmt.Errorf("工作树镜像缺少 CLI %s（%s），无法启动。不会改用沙箱容器", bin, name)
 	}
-	if !previewRequested(env) {
+	if !previewRequested(env) || Local() {
 		return nil
 	}
 	if err := lookPath("chrome-devtools-mcp"); err != nil {
@@ -80,6 +139,22 @@ func RequireTools(provider string, env map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// PreviewAvailable reports whether the local VNC/browser preview toolchain is installed.
+func PreviewAvailable() bool {
+	if err := lookPath("chrome-devtools-mcp"); err != nil {
+		return false
+	}
+	if !hasChromium() {
+		return false
+	}
+	for _, bin := range []string{"Xvfb", "x11vnc", "websockify", "socat"} {
+		if err := lookPath(bin); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func previewRequested(env map[string]string) bool {

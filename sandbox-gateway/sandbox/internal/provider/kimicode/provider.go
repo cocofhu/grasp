@@ -86,7 +86,8 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	}
 	env := p.AuthEnv(prepared.Env)
 	secret := strings.TrimSpace(common.GetEnvValue(env, APIKeyEnv))
-	if secret == "" || strings.ContainsAny(secret, "\r\n\x00") {
+	localAuth := strings.TrimSpace(common.GetEnvValue(env, "GRASP_LOCAL_AUTH")) == "1"
+	if !localAuth && (secret == "" || strings.ContainsAny(secret, "\r\n\x00")) {
 		prepared.Cleanup()
 		return nil, fmt.Errorf("%s", MsgMissingKey)
 	}

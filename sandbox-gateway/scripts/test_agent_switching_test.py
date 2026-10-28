@@ -89,6 +89,20 @@ class MatrixContracts(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, 'session cleanup failed'):
                 test.close()
 
+    def test_local_mode_seed_rejects_preexisting_credentials(self):
+        test = runner.E2E.__new__(runner.E2E)
+        test.args = SimpleNamespace(execution_mode='local')
+        test.tools = [{'id': 'opencode', 'mode': 'native-cli', 'model': 'gpt-5', 'efforts': []}]
+        def fake_request(path, *_args, **_kwargs):
+            if path == '/api/settings':
+                return {'execution_mode': 'local'}
+            if path == '/api/workspace/credentials':
+                return {'items': [{'id': 'cred-1'}]}
+            return {}
+        test.request = fake_request
+        with self.assertRaisesRegex(AssertionError, 'must not require or pre-populate workspace credentials'):
+            test.seed()
+
 
 if __name__ == '__main__':
     unittest.main()

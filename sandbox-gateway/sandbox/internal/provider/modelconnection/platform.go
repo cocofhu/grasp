@@ -19,7 +19,8 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 	if key == "" {
 		key = common.GetEnvValue(p.Env, "GRASP_OPENCODE_API_KEY")
 	}
-	if strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00") {
+	localAuth := strings.TrimSpace(common.GetEnvValue(p.Env, "GRASP_LOCAL_AUTH")) == "1"
+	if !localAuth && (strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00")) {
 		return p, errors.New("OpenCode official authorization: selected API key is missing or invalid")
 	}
 	p.Model = strings.TrimSpace(p.Model)
@@ -62,10 +63,24 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 			return p, errors.New("OpenCode official authorization: cannot prepare session storage")
 		}
 	}
+	if localAuth && strings.TrimSpace(key) == "" {
+		if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+			hostAuth := filepath.Join(home, ".local", "share", "opencode", "auth.json")
+			if _, statErr := os.Stat(hostAuth); statErr == nil {
+				dstDir := filepath.Join(storage, "data", "opencode")
+				_ = os.MkdirAll(dstDir, 0o700)
+				dstAuth := filepath.Join(dstDir, "auth.json")
+				_ = os.Remove(dstAuth)
+				_ = os.Symlink(hostAuth, dstAuth)
+			}
+		}
+	}
 	// One native provider only. The key stays OPENCODE_API_KEY; do not write the
 	// provider's base URL or model SDK.
-	config := map[string]any{"$schema": "https://opencode.ai/config.json", "enabled_providers": []string{providerID},
-		"provider": map[string]any{providerID: map[string]any{"options": map[string]any{"apiKey": "{env:OPENCODE_API_KEY}"}}}}
+	config := map[string]any{"$schema": "https://opencode.ai/config.json", "enabled_providers": []string{providerID}}
+	if strings.TrimSpace(key) != "" {
+		config["provider"] = map[string]any{providerID: map[string]any{"options": map[string]any{"apiKey": "{env:OPENCODE_API_KEY}"}}}
+	}
 	if p.Model != "" {
 		config["model"], config["small_model"] = p.Model, p.Model
 	}

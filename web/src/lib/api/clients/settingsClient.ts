@@ -16,7 +16,9 @@ import type {
 export type SettingsResponse = {
   items: SettingItem[]
   brand: BrandSettings
-  execution_mode?: 'worktree' | 'sandbox'
+  execution_mode?: 'worktree' | 'local' | 'sandbox'
+  installed_tools?: string[]
+  host_git_user?: { name?: string; email?: string }
 }
 
 export const settingsClient = {
