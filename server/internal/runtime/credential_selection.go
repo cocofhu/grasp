@@ -39,6 +39,8 @@ func CredentialEnvKeyForBackend(backend string) string {
 		return envauth.EnvOpenCodeAPIKey
 	case BackendDeepSeekHarness:
 		return envauth.EnvDeepSeekAPIKey
+	case BackendKimiCode:
+		return envauth.EnvKimiCodeAPIKey
 	default:
 		return ""
 	}

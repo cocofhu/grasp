@@ -713,5 +713,10 @@ func applyOnboardingAgentRegion(env map[string]string, backend, region string) {
 			region = "intl"
 		}
 		env[runtime.EnvTraeRegion] = region
+	case AcpBackendKimiCode:
+		if region == "" {
+			region = "intl"
+		}
+		env[runtime.EnvKimiCodeRegion] = region
 	}
 }

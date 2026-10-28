@@ -338,6 +338,14 @@ var catalog = map[string][]Model{
 		{ID: "deepseek-flash", Name: "DeepSeek Flash", Vendor: "deepseek", Recommended: true},
 		{ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro", Vendor: "deepseek"},
 	},
+	"kimi_code": {
+		{ID: "kimi-k3.1-pro", Name: "Kimi K3.1 Pro", Vendor: "kimi", Tags: visionReasoning, Context: 1000, Recommended: true},
+		{ID: "kimi-k3.1-pro-highspeed", Name: "Kimi K3.1 Pro Highspeed", Vendor: "kimi", Tags: visionReasoning, Context: 1000},
+		{ID: "kimi-k3", Name: "Kimi K3", Vendor: "kimi", Tags: visionReasoning, Context: 1000},
+		{ID: "kimi-k2.7-code", Name: "Kimi K2.7 Code", Vendor: "kimi", Tags: reasoningOnly, Context: 256},
+		{ID: "kimi-k2.7-code-highspeed", Name: "Kimi K2.7 Code Highspeed", Vendor: "kimi", Tags: reasoningOnly, Context: 256},
+		{ID: "kimi-k2.6", Name: "Kimi K2.6", Vendor: "kimi", Tags: visionReasoning, Context: 256},
+	},
 	"trae": {
 		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4", Vendor: "anthropic", Tags: visionReasoning, Context: 200, Recommended: true},
 		{ID: "gpt-5", Name: "GPT-5", Vendor: "openai", Tags: visionReasoning, Context: 400, Recommended: true},

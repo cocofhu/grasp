@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// CI double for the proprietary Cursor/Trae CLIs, never a claim of vendor
-// inference. The real Grasp server and runtime still load the selected config,
-// negotiate their native CLI wire protocol, call the actual scoped MCP server,
-// and execute commands issued by the localhost model fixture.
+// CI double for CLIs that cannot be pointed at the localhost model without a
+// vendor credential: Cursor, Trae, and Kimi Code. This is never a claim of
+// vendor inference. The real Grasp server and runtime still load the selected
+// config, negotiate their native CLI wire protocol, call the actual scoped MCP
+// server, and execute commands issued by the localhost model fixture.
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
@@ -96,7 +97,18 @@ if (args.includes('--version')) {
   })
   send({type: 'assistant', message: {content: [{type: 'text', text: reply}]}})
   send({type: 'result', subtype: 'success', result: reply, session_id: sid, usage: {input_tokens: 128, output_tokens: 32}})
-} else if (provider === 'trae') {
+} else if (provider === 'trae' || provider === 'kimi_code') {
+  if (provider === 'kimi_code') {
+    const root = process.env.KIMI_CODE_HOME
+    if (!root) throw new Error('native KIMI_CODE_HOME was not set')
+    const config = fs.readFileSync(path.join(root, 'config.toml'), 'utf8')
+    const secret = process.env.KIMI_CODE_API_KEY || ''
+    if (!secret) throw new Error('KIMI_CODE_API_KEY was not set')
+    if (!config.includes('api_key_env = "KIMI_CODE_API_KEY"') || config.includes(secret)) throw new Error('kimi config.toml must name the key variable and must not contain the key')
+    if (!/base_url = "https:\/\/api\.moonshot\.(?:cn|ai)\/v1"/.test(config)) throw new Error('kimi config.toml site is not an open-platform base URL')
+    const configured = config.match(/^default_model = "([^"]*)"/m)
+    if (configured) selectedModel = configured[1]
+  }
   const lines = readline.createInterface({input: process.stdin})
   const options = () => [{id: 'model', category: 'model', currentValue: selectedModel, options: [{value: 'gpt-5', name: 'gpt-5'}, {value: 'e2e-auxiliary', name: 'e2e-auxiliary'}]}]
   for await (const line of lines) {
@@ -104,7 +116,7 @@ if (args.includes('--version')) {
     if (request.id === undefined) continue
     try {
       let result = {}
-      if (request.method === 'initialize') result = {protocolVersion: 1, agentCapabilities: {mcpCapabilities: {http: true}}, agentInfo: {name: 'grasp-trae-platform-wire-fixture', version: '1'}}
+      if (request.method === 'initialize') result = {protocolVersion: 1, agentCapabilities: {mcpCapabilities: {http: true}}, agentInfo: {name: `grasp-${provider}-platform-wire-fixture`, version: '1'}}
       else if (request.method === 'session/new') {
         mcp = request.params.mcpServers.find((server) => server.name === 'artifact-store')
         result = {sessionId: sid, configOptions: options()}

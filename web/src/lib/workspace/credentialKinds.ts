@@ -6,6 +6,7 @@ export type CredentialKindId =
   | 'codex'
   | 'opencode'
   | 'deepseek_harness'
+  | 'kimi_code'
   | 'github'
   | 'gitlab'
   | 'ssh_key'
@@ -31,6 +32,7 @@ export const CREDENTIAL_KINDS: CredentialKind[] = [
   { id: 'codex', type: 'ai', provider: 'codex', envKey: 'GRASP_CODEX_AUTH_JSON', secret: 'loginFile', logoProvider: 'codex' },
   { id: 'opencode', type: 'ai', provider: 'opencode', envKey: 'GRASP_OPENCODE_API_KEY', secret: 'apiKey', logoProvider: 'opencode' },
   { id: 'deepseek_harness', type: 'ai', provider: 'deepseek_harness', envKey: 'GRASP_DEEPSEEK_API_KEY', secret: 'apiKey', logoProvider: 'deepseek' },
+  { id: 'kimi_code', type: 'ai', provider: 'kimi_code', envKey: 'GRASP_KIMI_CODE_API_KEY', secret: 'apiKey', logoProvider: 'kimi' },
   { id: 'github', type: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', secret: 'apiKey', logoProvider: 'github' },
   { id: 'gitlab', type: 'git', provider: 'gitlab', envKey: 'GITLAB_TOKEN', secret: 'apiKey', logoProvider: 'gitlab' },
   { id: 'ssh_key', type: 'ssh', provider: 'ssh', envKey: 'GIT_SSH_PRIVATE_KEY', secret: 'multiline', icon: 'key' },
@@ -109,6 +111,8 @@ export function backendKind(backend: string): CredentialKind | undefined {
       return kindById('codex')
     case 'deepseek_harness':
       return kindById('deepseek_harness')
+    case 'kimi_code':
+      return kindById('kimi_code')
     case 'opencode':
       return kindById('opencode')
     default:

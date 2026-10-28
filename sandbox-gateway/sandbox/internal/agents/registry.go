@@ -22,6 +22,7 @@ import (
 	"backend/internal/provider/codex"
 	"backend/internal/provider/copilot"
 	"backend/internal/provider/deepseek"
+	"backend/internal/provider/kimicode"
 	"backend/internal/provider/openclaw"
 	"backend/internal/provider/opencodejson"
 	"backend/internal/provider/pi"
@@ -180,8 +181,8 @@ var registry = map[Name]provider.Provider{
 
 	// --- ACP family (long-lived, JSON-RPC over stdio) ----------------------
 	provider.DeepSeekHarness: deepseek.New(),
+	provider.KimiCode:        kimicode.New(),
 	provider.Trae:            acpx.FromBackend(backend.Get(backend.Trae)),
-	provider.Kimi:            acpSpec(provider.Kimi, "kimi-acp", "/root/.kimi", []string{"kimi", "acp"}, "MOONSHOT_API_KEY"),
 	provider.Hermes:          acpSpec(provider.Hermes, "hermes-acp", "/root/.hermes", []string{"hermes", "acp"}, "HERMES_API_KEY"),
 	provider.Kiro:            acpSpec(provider.Kiro, "kiro-acp", "/root/.kiro", []string{"kiro-cli", "acp", "--trust-all-tools"}, "KIRO_API_KEY"),
 	provider.Qoder:           acpSpec(provider.Qoder, "qoder-acp", "/root/.qoder", []string{"qodercli", "--yolo", "--acp"}, "QODER_PERSONAL_ACCESS_TOKEN"),

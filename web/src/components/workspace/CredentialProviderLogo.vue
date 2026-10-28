@@ -14,6 +14,8 @@ import deepseekLogo from '@/assets/provider-logos/deepseek.svg'
 import openrouterLogo from '@/assets/provider-logos/openrouter.svg'
 import xaiLogo from '@/assets/provider-logos/xai.svg'
 import moonshotLogo from '@/assets/provider-logos/moonshot.svg'
+import kimiLogo from '@/assets/provider-logos/kimi.svg'
+import kimiDarkLogo from '@/assets/provider-logos/kimi-dark.svg'
 import qwenLogo from '@/assets/provider-logos/qwen.svg'
 import doubaoLogo from '@/assets/provider-logos/doubao.svg'
 import siliconflowLogo from '@/assets/provider-logos/siliconflow.svg'
@@ -55,6 +57,7 @@ type LogoKey =
   | 'openrouter'
   | 'xai'
   | 'moonshot'
+  | 'kimi'
   | 'qwen'
   | 'doubao'
   | 'siliconflow'
@@ -80,6 +83,7 @@ const logoLabels: Record<LogoKey, string> = {
   openrouter: 'OpenRouter',
   xai: 'xAI',
   moonshot: 'Moonshot / Kimi',
+  kimi: 'Kimi Code',
   qwen: 'Qwen',
   doubao: 'Doubao',
   siliconflow: 'SiliconFlow',
@@ -106,6 +110,7 @@ const logoAssets: Partial<Record<LogoKey, string>> = {
   openrouter: openrouterLogo,
   xai: xaiLogo,
   moonshot: moonshotLogo,
+  kimi: kimiLogo,
   qwen: qwenLogo,
   doubao: doubaoLogo,
   siliconflow: siliconflowLogo,
@@ -154,6 +159,7 @@ const logoKey = computed<LogoKey>(() => {
   if (values.some((value) => value === 'deepseek' || value.includes('deepseek'))) return 'deepseek'
   if (values.some((value) => value === 'openrouter' || value.includes('openrouter'))) return 'openrouter'
   if (values.some((value) => value === 'xai' || value.includes('xai'))) return 'xai'
+  if (values.some((value) => value === 'kimicode' || value === 'kimi')) return 'kimi'
   if (values.some((value) => value.includes('moonshot') || value.includes('kimi'))) return 'moonshot'
   if (values.some((value) => value.includes('qwen') || value.includes('dashscope') || value === 'alibaba')) return 'qwen'
   if (values.some((value) => value.includes('doubao') || value.includes('volcengine') || value === 'bytedance')) return 'doubao'
@@ -168,7 +174,7 @@ const logoKey = computed<LogoKey>(() => {
 })
 
 const label = computed(() => logoLabels[logoKey.value])
-const asset = computed(() => logoAssets[logoKey.value] ?? '')
+const asset = computed(() => logoKey.value === 'kimi' && theme.value === 'dark' ? kimiDarkLogo : logoAssets[logoKey.value] ?? '')
 const imageClasses = computed(() => ({
   'provider-logo-image--invert': monochromeLogos.has(logoKey.value) && theme.value === 'dark',
 }))

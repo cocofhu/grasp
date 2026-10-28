@@ -16,7 +16,7 @@ const (
 	Kiro            Name = "kiro"
 	Qoder           Name = "qoder"
 	Grok            Name = "grok"
-	Kimi            Name = "kimi"
+	KimiCode        Name = "kimi_code"
 	Hermes          Name = "hermes"
 	Codex           Name = "codex"
 	Gemini          Name = "gemini"

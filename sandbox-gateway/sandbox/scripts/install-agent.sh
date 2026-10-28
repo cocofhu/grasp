@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # install-agent.sh — 构建期安装一个或多个 Agent CLI。
 #
-# 由 Dockerfile 调用。默认装齐七个对外后端（cursor / claude_code / codebuddy /
-# trae / opencode / codex / deepseek_harness）；运行时由 AGENT_PROVIDER 单活选后端。
+# 由 Dockerfile 调用。默认装齐对外后端（cursor / claude_code / codebuddy /
+# trae / opencode / codex / deepseek_harness / kimi_code）；运行时由 AGENT_PROVIDER 单活选后端。
 # 本地打薄镜像：--build-arg AGENT_PROVIDERS=cursor
 #
 # 约定：
@@ -11,7 +11,7 @@
 #   $AGENT_INSTALL_CMD             可选：完全接管安装（用于未内置方式或私有源）。
 set -euo pipefail
 
-DEFAULT_PROVIDERS="cursor,claude_code,codebuddy,trae,opencode,codex,deepseek_harness"
+DEFAULT_PROVIDERS="cursor,claude_code,codebuddy,trae,opencode,codex,deepseek_harness,kimi_code"
 raw="${1:-${AGENT_PROVIDERS:-all}}"
 custom_cmd="${AGENT_INSTALL_CMD:-}"
 optional_raw="${AGENT_OPTIONAL_PROVIDERS:-}"
@@ -120,6 +120,23 @@ install_trae() {
   traecli acp serve --help >/dev/null
 }
 
+# Kimi Code CLI. The official installer accepts KIMI_VERSION; pin it so image
+# builds do not float. The binary goes to /usr/local/bin. KIMI_CODE_HOME during
+# install is a throwaway so the image does not bake a login region file into
+# the runtime config root.
+install_kimi() {
+  local ver="${KIMI_CODE_CLI_VERSION:-2.4.0}"
+  export KIMI_VERSION="$ver"
+  export KIMI_INSTALL_DIR=/usr/local
+  export KIMI_NO_MODIFY_PATH=1
+  export KIMI_CODE_HOME=/tmp/kimi-install-home
+  curl_install https://code.kimi.com/kimi-code/install.sh bash
+  hash -r || true
+  kimi --version
+  kimi acp --help >/dev/null
+  log "已钉住 kimi ${ver}，实际 $(kimi --version)"
+}
+
 install_one() {
   local provider="$1"
   log "安装 provider=$provider"
@@ -141,6 +158,8 @@ install_one() {
     deepseek_harness)
       # Developer preview: keep the tested ACP contract stable across image builds.
       npm_global @deepseek-ai/dsh@0.2.1-rc.2 && dsh --version ;;
+    kimi_code)
+      install_kimi ;;
     gemini)
       npm_global @google/gemini-cli && gemini --version ;;
     copilot)

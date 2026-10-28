@@ -162,7 +162,7 @@ ENV PATH=/root/.local/bin:/usr/local/go/bin:${JAVA_HOME}/bin:${PATH}
 ENV GOPROXY=https://goproxy.cn,direct
 RUN mkdir -p /root/.local/bin && npm install -g chrome-devtools-mcp
 
-ARG AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode,codex,deepseek_harness
+ARG AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode,codex,deepseek_harness,kimi_code
 ARG AGENT_OPTIONAL_PROVIDERS=
 ARG AGENT_INSTALL_CMD=
 COPY sandbox-gateway/sandbox/scripts/install-agent.sh /usr/local/bin/install-agent.sh

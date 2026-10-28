@@ -424,7 +424,7 @@
           },
           "cli": {
             "title": "Use a coding tool",
-            "desc": "Use Cursor, Claude Code, CodeBuddy, Trae, Codex, or DeepSeek Harness (DSH). DSH takes a DeepSeek API key, Codex a ChatGPT login file, and the others their account keys. You can specify a model, or leave the choice to the tool."
+            "desc": "Use Cursor, Claude Code, CodeBuddy, Trae, Codex, DeepSeek Harness (DSH), or Kimi Code. DSH takes a DeepSeek API key, Kimi Code an open-platform API key (platform.kimi.com for China, platform.kimi.ai for International), Codex a ChatGPT login file, and the others their account keys. You can specify a model, or leave the choice to the tool."
           }
         },
         "cliLabel": "Choose a coding tool",
@@ -1259,6 +1259,7 @@
         "secretOpenCodeKey": "OpenCode key",
         "opencodeFamilyHint": "This key matches the official family you select. Official mode can use opencode/<model> or opencode-go/<model>. Save one OpenCode CLI key for OpenCode and another for OpenCode Go, and tell them apart by alias. One model configuration uses one key.",
         "secretDeepSeekKey": "DeepSeek key",
+        "secretKimiCodeKey": "Kimi Code platform key",
         "secretLoginFile": "Login file",
         "secretPrivateKey": "Private key",
         "secretKnownHosts": "Known hosts",
@@ -1279,7 +1280,8 @@
           "gitlab": "GitLab",
           "ssh_key": "SSH private key",
           "ssh_hosts": "SSH known hosts",
-          "deepseek_harness": "DeepSeek Harness"
+          "deepseek_harness": "DeepSeek Harness",
+          "kimi_code": "Kimi Code"
         },
         "summary": {
           "total": "Credential slots",
@@ -2352,6 +2354,8 @@
         "codebuddyInternationalHint": "codebuddy.ai · public",
         "traeDomesticHint": "docs.trae.cn · cn",
         "traeInternationalHint": "www.trae.ai · intl",
+        "kimiDomesticHint": "platform.kimi.com · cn",
+        "kimiInternationalHint": "platform.kimi.ai · intl",
         "managedByAcp": "This reserved variable is managed by the ACP site selection and cannot be edited or removed in ENV.",
         "managedConflict": "Region keys are managed by ACP. Choose the site in the ACP step.",
         "managedKey": "ACP-managed region variable",
@@ -2750,7 +2754,7 @@
           "templateHintPack": "Will apply {name}."
         },
         "acp": {
-          "meta": "Choose how to start: a model-vendor API key, or a coding tool. CodeBuddy and Trae also require a China or International site; International is the default.",
+          "meta": "Choose how to start: a model-vendor API key, or a coding tool. CodeBuddy, Trae, and Kimi Code also require a China or International site; International is the default.",
           "remapTitle": "Switch Backend?",
           "remapBody": "MCP / Skills / Commands / Rules may depend on the current paths. Switching remaps to the new configRoot; cancel keeps the current Backend."
         },
@@ -2777,7 +2781,8 @@
             "traeToken": "Official CLI login tokens must start with trae-lt- (Enterprise plan).",
             "opencode": "Starts with a model vendor API key; you can set the model and the service address.",
             "codex": "Codex uses a ChatGPT login file, not an API key. To call OpenAI with an API key, use OpenCode. A run may update this file; do not share it with a Codex login that is still in use on your computer.",
-            "deepseek": "Use a DeepSeek platform API key. It is stored in workspace credentials; choose the model separately."
+            "deepseek": "Use a DeepSeek platform API key. It is stored in workspace credentials; choose the model separately.",
+            "kimi": "Only an open-platform API key is accepted; login files are rejected. A China key comes from platform.kimi.com and an International key from platform.kimi.ai. They cannot be mixed. Leave the model empty to use the CLI default."
           },
           "paths": {
             "cursor": {
@@ -2815,6 +2820,11 @@
               "step1": "Sign in to the DeepSeek platform.",
               "step2": "Create an API key on the API Keys page.",
               "step3": "Copy the key below, or save it as a workspace credential."
+            },
+            "kimi": {
+              "step1": "Confirm the site: platform.kimi.com for China, or platform.kimi.ai for International.",
+              "step2": "Create an open-platform API key on that site's API Keys page.",
+              "step3": "Paste only the key. A login file containing access_token or refresh_token is rejected."
             }
           },
           "links": {
@@ -2830,7 +2840,9 @@
             "traeTokenDocs": "Trae CLI login-token docs",
             "opencodeProviders": "Supported vendors",
             "codexAuth": "Codex login docs",
-            "deepseekKeys": "DeepSeek API Keys"
+            "deepseekKeys": "DeepSeek API Keys",
+            "kimiDomestic": "Apply key (China)",
+            "kimiInternational": "Apply key (International)"
           },
           "customConfig": {
             "cardTitle": "Backend config file",

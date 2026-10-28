@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -135,6 +136,8 @@ func defaultCredentialEnvKey(in CredentialInput) string {
 			return envauth.EnvOpenCodeAPIKey
 		case "deepseek_harness":
 			return envauth.EnvDeepSeekAPIKey
+		case "kimi_code":
+			return envauth.EnvKimiCodeAPIKey
 		}
 	case "git":
 		switch p {
@@ -228,6 +231,9 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 		return CredentialView{}, &CredentialAliasTakenError{Alias: taken}
 	}
 	if err := rejectCodexLoginValue(in.Provider, in.EnvKey, in.Value); err != nil {
+		return CredentialView{}, err
+	}
+	if err := rejectKimiCodeLoginValue(in.ToolID, in.Provider, in.EnvKey, in.Value); err != nil {
 		return CredentialView{}, err
 	}
 	enc, err := crypto.Encrypt(in.Value)
@@ -346,6 +352,9 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 	}
 	if !in.Clear && in.Value != "" {
 		if err := rejectCodexLoginValue(row.Provider, row.EnvKey, in.Value); err != nil {
+			return CredentialView{}, err
+		}
+		if err := rejectKimiCodeLoginValue(row.ToolID, row.Provider, row.EnvKey, in.Value); err != nil {
 			return CredentialView{}, err
 		}
 	}
@@ -614,6 +623,55 @@ func isCodexCredential(provider, envKey string) bool {
 		return true
 	}
 	return strings.TrimSpace(envKey) == envauth.EnvCodexAuthFile
+}
+
+// ErrKimiCodeAPIKeyOnly rejects an OAuth login file pasted into the Kimi Code key.
+var ErrKimiCodeAPIKeyOnly = errors.New("这里只接受开放平台 API Key")
+
+func rejectKimiCodeLoginValue(toolID, provider, envKey, value string) error {
+	if toolID != "kimi_code" && !strings.EqualFold(strings.TrimSpace(provider), "kimi_code") && strings.TrimSpace(envKey) != envauth.EnvKimiCodeAPIKey {
+		return nil
+	}
+	if looksLikeOAuthLoginFile(value) {
+		return ErrKimiCodeAPIKeyOnly
+	}
+	return nil
+}
+
+func looksLikeOAuthLoginFile(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || !strings.HasPrefix(value, "{") {
+		return false
+	}
+	var doc any
+	if json.Unmarshal([]byte(value), &doc) != nil {
+		return false
+	}
+	return jsonHasTokenKey(doc)
+}
+
+func jsonHasTokenKey(value any) bool {
+	switch item := value.(type) {
+	case map[string]any:
+		if _, ok := item["access_token"]; ok {
+			return true
+		}
+		if _, ok := item["refresh_token"]; ok {
+			return true
+		}
+		for _, child := range item {
+			if jsonHasTokenKey(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range item {
+			if jsonHasTokenKey(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func rejectCodexLoginValue(provider, envKey, value string) error {
