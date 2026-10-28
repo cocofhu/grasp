@@ -52,6 +52,69 @@ func TestProvidersSortedAndSlimmed(t *testing.T) {
 	}
 }
 
+func TestCatalogExcludesModelsOpenCodeCannotResolveByDefault(t *testing.T) {
+	s, _ := serve(t, `{
+  "opencode-go": {"name":"OpenCode Go", "models":{
+    "gemini-4-argon-contributor":{"name":"Gemini 4 Argon Contributor", "status":"deprecated"},
+    "gemini-4-argon":{"name":"Gemini 4 Argon", "status":"active"},
+    "next-alpha":{"name":"Next Alpha", "status":"alpha"},
+    "preview-beta":{"name":"Preview Beta", "status":"beta"},
+    "unversioned":{"name":"Unversioned"}
+  }}
+}`, http.StatusOK)
+	ctx := context.Background()
+	providers, _, err := s.Providers(ctx)
+	if err != nil {
+		t.Fatalf("Providers: %v", err)
+	}
+	if len(providers) != 1 || len(providers[0].Models) != 3 {
+		t.Fatalf("provider model counts must exclude unavailable models: %+v", providers)
+	}
+	models, err := s.Models(ctx, "opencode-go")
+	if err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	for i, want := range []string{"gemini-4-argon", "preview-beta", "unversioned"} {
+		if models[i].ID != want {
+			t.Fatalf("models[%d].ID = %q, want %q", i, models[i].ID, want)
+		}
+		if known, readable := s.KnowsModel(ctx, "opencode-go", want); !known || !readable {
+			t.Fatalf("KnowsModel(%q) = %v, %v", want, known, readable)
+		}
+	}
+	if models[0].Name != "Gemini 4 Argon" {
+		t.Fatalf("active model display name lost: %+v", models[0])
+	}
+	for _, id := range []string{"gemini-4-argon-contributor", "next-alpha"} {
+		if known, readable := s.KnowsModel(ctx, "opencode-go", id); known || !readable {
+			t.Fatalf("excluded model %q must not be considered selectable: known=%v readable=%v", id, known, readable)
+		}
+	}
+}
+
+func TestProviderMetadataSurvivesWhenAllModelsAreExcluded(t *testing.T) {
+	s, _ := serve(t, `{
+  "opencode-go": {"name":"OpenCode Go", "env":["OPENCODE_API_KEY"], "models":{
+    "old":{"status":"deprecated"},
+    "experimental":{"status":"alpha"}
+  }}
+}`, http.StatusOK)
+	ctx := context.Background()
+	providers, _, err := s.Providers(ctx)
+	if err != nil {
+		t.Fatalf("Providers: %v", err)
+	}
+	if len(providers) != 1 || providers[0].ID != "opencode-go" || len(providers[0].Models) != 0 {
+		t.Fatalf("provider should remain with no selectable models: %+v", providers)
+	}
+	if known, readable := s.KnowsProvider(ctx, "opencode-go"); !known || !readable {
+		t.Fatalf("KnowsProvider = %v, %v", known, readable)
+	}
+	if env := s.KeyEnv(ctx, "opencode-go"); env != "OPENCODE_API_KEY" {
+		t.Fatalf("provider key environment lost: %q", env)
+	}
+}
+
 func TestFreshSnapshotIsNotRefetched(t *testing.T) {
 	s, hits := serve(t, sample, http.StatusOK)
 	for i := 0; i < 3; i++ {

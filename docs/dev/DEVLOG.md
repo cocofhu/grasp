@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-29（OpenCode 官方模型目录自动同步）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`server/internal/opencodecatalog/`、`sandbox-gateway/sandbox/internal/provider/{modelconnection,oneshot}/`、`sandbox-gateway/sandbox/internal/agents/{platform_auth,opencode_variant}_test.go`、`sandbox-gateway/sandbox/README.md`、`CHANGELOG.md`。
+- 做了什么：OpenCode 官方模式仅在启动或重建后端会话时同步原生模型目录并校验选择，沙箱与 worktree 共用入口。启动阶段的重复握手复用原生五分钟有效缓存；普通消息不执行目录预检或按时间刷新。启动时过期或新模型缺失会合并刷新，更新失败短暂抑制重复尝试并保留仍包含所选模型的旧缓存。检查真实缓存文件，避免原生 CLI 吞掉下载失败却输出成功提示时误判。在添加自定义推理变体之前校验目录，避免模型覆盖项伪造可用性。服务端列表同步过滤 deprecated/alpha，不自动更换已保存的模型或账号。
+- 为什么：新容器沿用镜像预装 CLI 的目录快照，原生后台更新不保证在短命的单轮进程退出前完成。模型目录更新后，旧 Contributor 已标记 deprecated，但平台列表和已保存选择仍可能继续使用，分别触发本地模型找不到和上游模型不可用。官方文档把 `models --refresh` 作为目录更新命令，而非每轮对话要求；集成层应自动处理。
+- 如何验证：回归覆盖冷启动、有效缓存复用、过期/缺失模型更新、并发合并、更新失败与成功退出却未更新缓存、取消后立即重试、缓存文件变更、弃用拦截及推理变体不可绕过。启动策略专项验证缓存过期后当前会话连续三轮不刷新，新 worktree 会话启动才更新；普通与 race 测试通过。真实 OpenCode CLI 1.19.5 在隔离缓存下通过冷启动、缓存复用和弃用拦截，未调用 Prompt，推理请求为零。Server 与 sandbox 全量 lint、vet、单测及规定 smoke 通过，核心覆盖率分别 90.5% / 96.6%；配置文档、runtime 专项、docs 构建和官方源审计通过。最终运行时在 worktree 模式通过完整 8 工具、76 项 Agent 切换/模型/推理验证，付费模型请求为零；可配置工具使用原生 CLI，Cursor、Trae、Kimi Code 仍按既有契约明确标注平台 CLI-wire fixtures。品牌断言、actionlint、error-level shellcheck 与 diff 检查通过；运行时逻辑不要求重建沙箱镜像。
+
 ### 2026-10-28（取消队列清理与当前轮结束落库顺序）
 
 - 日期：2026-10-28（Asia/Hong_Kong）。
