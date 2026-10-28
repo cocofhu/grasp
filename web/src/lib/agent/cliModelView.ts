@@ -30,6 +30,8 @@ const VENDOR_LABELS: Record<string, string> = {
   tencent: 'Tencent',
   bytedance: 'ByteDance',
   cursor: 'Cursor',
+  opencode: 'OpenCode',
+  'opencode-go': 'OpenCode Go',
 }
 
 /** Logo files under `assets/provider-logos` that stand for a vendor. */
@@ -56,6 +58,8 @@ const VENDOR_LOGOS: Record<string, string> = {
   siliconflow: 'siliconflow',
   bytedance: 'bytedance',
   cursor: 'cursor',
+  opencode: 'opencode',
+  'opencode-go': 'opencode',
 }
 
 export const TAG_ORDER: CliModelTag[] = ['vision', 'reasoning', 'fast']

@@ -24,9 +24,19 @@ const EFFORT_DATE = /-(?:\d{8}|\d{6}|\d{4})$/
 
 export function openCodeModelID(modelId: string) {
   const id = modelId.trim()
-  const bare = id.startsWith('opencode/') ? id.slice('opencode/'.length) : id
+  const bare = id.startsWith('opencode-go/') ? id.slice('opencode-go/'.length) : id.startsWith('opencode/') ? id.slice('opencode/'.length) : id
   const hash = bare.lastIndexOf('#')
   return hash >= 0 ? bare.slice(0, hash) : bare
+}
+
+/** Official family of a platform model id. opencode-go/ wins over opencode/. */
+export function officialModelFamily(modelId: string): 'opencode' | 'opencode-go' | '' {
+  const id = modelId.trim()
+  const prefix = id.startsWith('opencode-go/') ? 'opencode-go/' : id.startsWith('opencode/') ? 'opencode/' : ''
+  if (!prefix) return ''
+  const rest = id.slice(prefix.length)
+  if (!rest.trim() || rest.includes('/')) return ''
+  return prefix === 'opencode-go/' ? 'opencode-go' : 'opencode'
 }
 
 export function platformVariants(modelId: string): string[] {
