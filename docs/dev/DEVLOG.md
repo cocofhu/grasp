@@ -23,10 +23,10 @@
 ### 2026-10-28（补齐工作树 Agent 的 Git 授权）
 
 - 日期：2026-10-28（Asia/Shanghai）。
-- 范围：`server/internal/sandbox/worktree_create.go`、`worktree_git.go`、`server/internal/execution/auth.go`、`server/internal/runtime/acp_run_agent.go` 及相关回归；`CHANGELOG.md`。
-- 做了什么：工作树 backend 启动前安装当前 Agent 选中的 Git catalog，把 Git、SSH、gh/glab 指向每个 backend 独立的私有配置目录，平台本地命令也使用同一环境；启动失败或 backend 关闭时清理凭据文件。自动 GitLab MR 操作读取会话内的 helper 路径，沙箱仍使用原默认路径；克隆凭据缺失时不调用宿主 askpass。
+- 范围：`server/internal/sandbox/{worktree_create,worktree_git,inject_bundle}.go`、`server/internal/execution/auth.go`、`server/internal/runtime/acp_run_agent.go` 及相关回归；`CHANGELOG.md`。
+- 做了什么：工作树 backend 启动前安装当前 Agent 选中的 Git catalog，把 Git、SSH、gh/glab 指向每个 backend 独立的私有配置目录，平台本地命令也使用同一环境；启动失败或 backend 关闭时清理凭据文件。自动 GitLab MR 操作读取会话内的 helper 路径，沙箱仍使用原默认路径；克隆凭据缺失时不调用宿主 askpass。沙箱打包与工作树安装共用固定文件名的 catalog 生成逻辑，工作树直接写入文件，不再解包 tar；Git 配置命令直接使用私有目录生成的路径。
 - 为什么：工作树模式原先只在 `execution.PrepareAuth` 的 clone/fetch 期间临时使用所选凭据，实际 Agent 执行 `git push` 时未获得这些凭据；工作区已有 GitHub 授权仍会失败。不能通过修改宿主全局配置修复，否则并发节点会共享身份。
-- 如何验证：真实 HTTP 认证 clone → Agent `git push` → 平台本地 `git push` 通过；同一 run 的不同节点与空授权不串用，仓库范围限制、gh/glab 私有配置、legacy 授权、启动失败/结束清理和仓库本地作者优先级均有回归。宿主 askpass 即使能提供有效凭据，空授权 clone 仍失败且不调用它。GitLab MR 回归实际执行 shell，覆盖默认、空值和含空格/单引号的 helper 路径。两路独立 review 未发现阻断问题；基于最新 main 用 Go 1.26.10 重跑 Server 全量 `go test ./...`、`go vet ./...`、golangci-lint（0 issues）、配置文档检查、核心覆盖率 90.4%（门槛 90%）、`TestRunAgent|TestReact` 通过；最终工作树回归 `-race` 通过。actionlint、error-level shellcheck、docs Node 24 build/audit 与 `git diff --check` 通过。
+- 如何验证：真实 HTTP 认证 clone → Agent `git push` → 平台本地 `git push` 通过；同一 run 的不同节点与空授权不串用，仓库范围限制、gh/glab 私有配置、legacy 授权、启动失败/结束清理和仓库本地作者优先级均有回归。宿主 askpass 即使能提供有效凭据，空授权 clone 仍失败且不调用它。GitLab MR 回归实际执行 shell，覆盖默认、空值和含空格/单引号的 helper 路径；catalog 回归确认含 `../` 的账号元数据不影响生成路径，本地文件与沙箱打包内容、换行和权限一致。两路独立 review 复核通过；基于最新 main 用 Go 1.26.10 重跑 Server 全量 `go test ./...`、`go vet ./...`、golangci-lint（0 issues）、配置文档检查、核心覆盖率 90.4%（门槛 90%）、`TestRunAgent|TestReact` 通过；最终工作树回归 `-race` 通过。actionlint、error-level shellcheck、docs Node 24 build/audit 与 `git diff --check` 通过。
 
 ### 2026-10-28（保留重连尾轮正文与订阅快照）
 

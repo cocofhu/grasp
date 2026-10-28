@@ -92,6 +92,45 @@ func TestGitCatalogExplicitEmptySurvivesTransport(t *testing.T) {
 	}
 }
 
+func TestGitCatalogMetadataCannotChangeFilePaths(t *testing.T) {
+	credentials := []GitCredential{
+		{ID: "../../outside", Name: "../account", Kind: RepoCredentialGitHubHTTPS, Secret: "  selected-token \n"},
+		{ID: "ssh", Kind: RepoCredentialSSH, Secret: "private-key", KnownHosts: "selected-host ssh-ed25519 SYNTHETIC"},
+	}
+	files, err := gitCatalogFiles(credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := packGitInjectBundle("", "", true, credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, modes := untar(t, bundle)
+	want := map[string]string{
+		"0.secret":      "selected-token\n",
+		"1.secret":      "private-key\n",
+		"1.known_hosts": "selected-host ssh-ed25519 SYNTHETIC\n",
+	}
+	if len(files) != len(want)+1 || len(transport) != len(files) {
+		t.Fatal("catalog file set changed between local installation and transport")
+	}
+	for _, file := range files {
+		if file.name == "manifest.json" {
+			var manifest []struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal([]byte(file.body), &manifest); err != nil || len(manifest) != 2 || manifest[0].ID != credentials[0].ID {
+				t.Fatal("catalog lost the account metadata")
+			}
+		} else if body, ok := want[file.name]; !ok || file.body != body {
+			t.Fatal("catalog metadata changed a generated filename or secret normalization")
+		}
+		if transport["git/"+file.name] != file.body || modes["git/"+file.name] != 0o600 || !strings.HasSuffix(file.body, "\n") {
+			t.Fatal("catalog transport changed a private file's body or permissions")
+		}
+	}
+}
+
 func TestReprimeSelectedGitCatalogReplacesLegacyEnvironment(t *testing.T) {
 	credentials := selectedGitCatalog()
 	spec := Spec{GitBindingsConfigured: true, GitCredentials: credentials, Env: map[string]string{

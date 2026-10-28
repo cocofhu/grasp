@@ -1,12 +1,8 @@
 package sandbox
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -44,19 +40,25 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 			cleanup()
 		}
 	}()
-	data, err := packGitInjectBundle("", "", true, worktreeGitCredentials(spec))
+	files, err := gitCatalogFiles(worktreeGitCredentials(spec))
 	if err != nil {
 		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
 	}
-	source := filepath.Join(dir, "stage")
-	if err := unpackWorktreeGit(data, source); err != nil {
+	source := filepath.Join(dir, "stage", "git")
+	if err := os.MkdirAll(source, 0o700); err != nil {
 		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
+	}
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(source, file.name), []byte(file.body), 0o600); err != nil {
+			return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
+		}
 	}
 	home := filepath.Join(dir, "home")
 	if err := os.Mkdir(home, 0o700); err != nil {
 		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
 	}
-	env["GIT_CONFIG_GLOBAL"] = filepath.Join(home, ".gitconfig")
+	gitConfigPath := filepath.Join(home, ".gitconfig")
+	env["GIT_CONFIG_GLOBAL"] = gitConfigPath
 	env["GIT_CONFIG_NOSYSTEM"] = "1"
 	env["GH_CONFIG_DIR"] = filepath.Join(home, ".config", "gh")
 	env["GLAB_CONFIG_DIR"] = filepath.Join(home, ".config", "glab-cli")
@@ -66,7 +68,7 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 		backend = "/opt/grasp-runtime/current/bin/backend"
 	}
 	helper := filepath.Join(filepath.Dir(filepath.Dir(backend)), "scripts", "git-credentials.py")
-	cmd := exec.CommandContext(ctx, "python3", helper, "install", filepath.Join(source, "git"), home)
+	cmd := exec.CommandContext(ctx, "python3", helper, "install", source, home)
 	cmd.Env = envList(env)
 	// A malformed catalog or subprocess error may contain a secret. Keep the
 	// installer's output out of error strings and logs.
@@ -80,7 +82,7 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 		{"user.email", worktreeGitIdentity(spec.Env["GIT_USER_EMAIL"], "sandbox@localhost")},
 	}
 	for _, setting := range identity {
-		cmd := exec.CommandContext(ctx, "git", "config", "--file", env["GIT_CONFIG_GLOBAL"], "--", setting[0], setting[1])
+		cmd := exec.CommandContext(ctx, "git", "config", "--file", gitConfigPath, "--", setting[0], setting[1])
 		cmd.Env = envList(env)
 		if err := cmd.Run(); err != nil {
 			return nil, fmt.Errorf("configure worktree Git author: %w", err)
@@ -153,40 +155,6 @@ func worktreeGitIdentity(value, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-// unpackWorktreeGit reads only the catalog files emitted by packGitInjectBundle.
-func unpackWorktreeGit(data []byte, destination string) error {
-	gz, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	defer func() { _ = gz.Close() }()
-	tr := tar.NewReader(gz)
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		name := strings.TrimPrefix(header.Name, "git/")
-		if header.Typeflag != tar.TypeReg || name == header.Name || name == "." || name == ".." || filepath.Base(name) != name {
-			return fmt.Errorf("invalid Git catalog file")
-		}
-		path := filepath.Join(destination, "git", name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return err
-		}
-		body, err := io.ReadAll(tr)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(path, body, 0o600); err != nil {
-			return err
-		}
-	}
 }
 
 func quoteWorktreeGit(value string) string {
