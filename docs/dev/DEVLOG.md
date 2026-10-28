@@ -23,12 +23,14 @@
 ### 2026-10-28（OpenCode 思考输出与 PR 验证修复）
 
 - 日期：2026-10-28（Asia/Shanghai）。
-- 范围：`web/src/components/{solo,run}/`、`web/src/lib/solo/useSoloChat*`、中英文文案、共享聊天浏览器回归、`server/internal/sandbox/worktree_create.go`、`sandbox-gateway/sandbox/internal/{agents,provider/modelconnection}/`、`sandbox-gateway/scripts/agent-platform-wire-fixture*`、免费 Agent CI、`AGENTS.md` 与 `CHANGELOG.md`。
+- 范围：`web/src/components/{solo,run}/`、`web/src/lib/solo/useSoloChat*`、中英文文案、共享聊天浏览器回归、`server/internal/sandbox/worktree_create.go`、`server/internal/engine/clarify_visit_ended_test.go`、`sandbox-gateway/sandbox/internal/{agents,provider/modelconnection}/`、`sandbox-gateway/scripts/agent-platform-wire-fixture*`、免费 Agent CI、`AGENTS.md` 与 `CHANGELOG.md`。
 - 做了什么：移除空 Solo 的欢迎头像、就绪说明和仓库占位，以及模型/思考强度的下一轮生效提示；切换保存、跨标签同步、逐轮执行快照和真实错误继续保留。共享 timeline 在流式状态边界清除展开状态，完成后收起过程详情，仍能手动展开且最终回复始终可见。浏览器时间断言分别核对两个已接受的用户请求和未完成的 Agent 回复，兼容排队消息可见性。平台 wire fixture 只按白名单真实读写固定的 checkpoint 文件，完全移除模型字符串的 shell 执行；Go 环境收集去掉不必要的长度加法预分配，保留非 nil 空切片，避免环境继承语义变化。
 - 做了什么（OpenCode）：JSON 模式显式添加原生 `--thinking`，让模型已经返回的思考通过 parser 进入聊天事件；模型声明的 reasoning true/false 原样写入原生配置，未知能力仍省略。没有额外开启模型推理模式或修改请求强度。
+- 做了什么（取消回归）：两个 turn-start drop 测试等待第一条消息真正进入 held provider 后再排队、取消，避免只观察 busy 状态时第一条也被丢弃、误取其无 clientMessageId 的通知。保留排队消息身份和错误契约断言，没有增加固定延时或放宽超时。
 - 为什么：处理本地体验反馈及 GitHub 浏览器/CodeQL 首轮失败，保持相同工具切换、上下文与安全测试要求，不屏蔽告警、不放宽断言和覆盖率门槛。
 - 如何验证：Web 相关 7 文件、284 项和共享聊天/时间浏览器 14 项（两次重复）通过，类型检查通过；只读检查真实 DSH 的 1m31s 回复，21 个思考块和 22 次工具调用均在可折叠过程内，最终正文独立，首次加载和重载均收起。Server 全量 lint、vet、配置文档检查、测试、运行时专项通过，核心覆盖率 90.4%，相关 worktree/SoloRoute race 通过。Mock 协议与新增安全用例 39 项、矩阵契约 7 项通过；禁外网的 Cursor→Trae→Cursor 三轮真实服务/历史 MCP/文件续接通过。GitHub 首轮实际 artifact 确认完整矩阵 62/62、42 个有向切换、9 次强度、10 次模型切换及零付费调用；server、免费 Agent suite 和包含完整镜像的 sandbox CI 均成功。actionlint、error-level shellcheck 和差异检查通过。
 - 如何验证（OpenCode）：已安装的真实 OpenCode 1.19.2 对本地免费 SSE，reasoning 能力缺省/true/false 三组分别对比：原先均为 0 个 thought，加参数后均收到正确的思考事件，实际 reasoning_effort=max 不变，未新增 thinking/enable_thinking 参数。原生 provider 子进程到 `agent_thought_chunk` 的六路回归与 race 通过；Sandbox 全量 Go、lint、vet、核心覆盖率 96.6% 通过。未向用户会话插入消息或调用付费模型。
+- 如何验证（取消回归）：两个测试各重复 200 次、合计 400 次 race 通过；修正测试同步而非放宽 clientMessageId 断言。
 
 ### 2026-10-28（免费全工具切换 CI 与共享聊天详情）
 

@@ -104,7 +104,7 @@ func TestClarifyTurnStartDropFrameUserMessage(t *testing.T) {
 	if err := eng.ReactReply(run.ID, "predev", "第一条", nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	waitClarifyBusy(t, eng, run.ID, "predev")
+	waitClarifyReplyStarted(t, p, "predev")
 	ann := []models.ReactAnnotation{{Selector: "#login", Note: "按钮放大"}}
 	img := []models.PromptImage{{Ref: "blob:abc", MimeType: "image/png", Name: "shot.png"}}
 	const cid = "7b1f3c2e-9d4a-4e8b-a1c5-2f6d8e0b4a91"
@@ -149,7 +149,7 @@ func TestClarifyTurnStartDropFrameFirstMessage(t *testing.T) {
 	if err := eng.ReactReply(run.ID, "predev", "第一条", nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	waitClarifyBusy(t, eng, run.ID, "predev")
+	waitClarifyReplyStarted(t, p, "predev")
 	if _, err := eng.EnqueueClarifyFirstMessageAs("", run.ID, "predev", "系统首条", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -171,14 +171,19 @@ func TestClarifyTurnStartDropFrameFirstMessage(t *testing.T) {
 	}
 }
 
-func waitClarifyBusy(t *testing.T, eng *Engine, runID, nodeID string) {
+// Busy is set before the turn-start visit check. Wait for the provider instead
+// so Cancel cannot drop the first turn before the queued turn under test.
+func waitClarifyReplyStarted(t *testing.T, p *fakeProvider, nodeID string) {
 	t.Helper()
 	deadline := time.Now().Add(waitPollTimeout)
 	for time.Now().Before(deadline) {
-		if _, busy := eng.ReviewSessionState(runID, nodeID); busy {
+		p.mu.Lock()
+		calls := p.reactReplyCalls[nodeID]
+		p.mu.Unlock()
+		if calls > 0 {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatal("clarify turn never became active")
+	t.Fatal("clarify turn never entered the provider")
 }
