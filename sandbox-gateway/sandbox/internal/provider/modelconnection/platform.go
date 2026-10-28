@@ -26,8 +26,13 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 	if p.Model == "auto" {
 		p.Model = ""
 	}
-	if p.Model != "" && (!strings.HasPrefix(p.Model, "opencode/") || strings.TrimSpace(strings.TrimPrefix(p.Model, "opencode/")) == "") {
-		return p, errors.New("OpenCode official authorization requires an opencode model")
+	configured, err := configuredOfficialModelIDs(p.Env)
+	if err != nil {
+		return p, err
+	}
+	providerID, err := officialProviderID(p.Model, configured)
+	if err != nil {
+		return p, err
 	}
 	if configured := strings.TrimSpace(common.GetEnvValue(p.Env, "CONFIG_ROOT")); configured != "" {
 		root = configured
@@ -57,8 +62,10 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 			return p, errors.New("OpenCode official authorization: cannot prepare session storage")
 		}
 	}
-	config := map[string]any{"$schema": "https://opencode.ai/config.json", "enabled_providers": []string{"opencode"},
-		"provider": map[string]any{"opencode": map[string]any{"options": map[string]any{"apiKey": "{env:OPENCODE_API_KEY}"}}}}
+	// One native provider only. The key stays OPENCODE_API_KEY; do not write the
+	// provider's base URL or model SDK.
+	config := map[string]any{"$schema": "https://opencode.ai/config.json", "enabled_providers": []string{providerID},
+		"provider": map[string]any{providerID: map[string]any{"options": map[string]any{"apiKey": "{env:OPENCODE_API_KEY}"}}}}
 	if p.Model != "" {
 		config["model"], config["small_model"] = p.Model, p.Model
 	}
@@ -80,4 +87,76 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 		p.Env = common.UpsertEnv(p.Env, name, value)
 	}
 	return p, nil
+}
+
+// configuredOfficialModelIDs reads the allow-list already injected for the run.
+// An empty primary is skipped so auxiliary OpenCode Go models can still select
+// that family. Invalid JSON fails closed instead of enabling the wrong provider.
+func configuredOfficialModelIDs(env []string) ([]string, error) {
+	raw := strings.TrimSpace(common.GetEnvValue(env, "GRASP_CONFIGURED_MODELS"))
+	if raw == "" {
+		return nil, nil
+	}
+	var items []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		return nil, errors.New("OpenCode official authorization: configured models are invalid")
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if id := strings.TrimSpace(item.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+// officialProviderID enables opencode when nothing is selected. Otherwise every
+// non-empty id must share one family. opencode-go/ is matched before opencode/.
+func officialProviderID(session string, configured []string) (string, error) {
+	ids := make([]string, 0, 1+len(configured))
+	if session != "" {
+		ids = append(ids, session)
+	}
+	ids = append(ids, configured...)
+	if len(ids) == 0 {
+		return "opencode", nil
+	}
+	family := ""
+	for _, id := range ids {
+		got, ok := officialModelFamily(id)
+		if !ok {
+			return "", errors.New("OpenCode official authorization requires an opencode or opencode-go model")
+		}
+		if family == "" {
+			family = got
+			continue
+		}
+		if family != got {
+			return "", errors.New("OpenCode official authorization requires one model family")
+		}
+	}
+	return family, nil
+}
+
+func officialModelFamily(id string) (string, bool) {
+	id = strings.TrimSpace(id)
+	if hash := strings.LastIndex(id, "#"); hash >= 0 {
+		id = strings.TrimSpace(id[:hash])
+	}
+	prefix := ""
+	switch {
+	case strings.HasPrefix(id, "opencode-go/"):
+		prefix = "opencode-go/"
+	case strings.HasPrefix(id, "opencode/"):
+		prefix = "opencode/"
+	default:
+		return "", false
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(id, prefix))
+	if rest == "" || strings.Contains(rest, "/") {
+		return "", false
+	}
+	return strings.TrimSuffix(prefix, "/"), true
 }

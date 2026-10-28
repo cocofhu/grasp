@@ -26,6 +26,7 @@ func TestOfficialOpenCodeAuthorizationSubprocess(t *testing.T) {
 	t.Setenv("GRASP_OFFICIAL_TEST_BINARY", os.Args[0])
 	t.Setenv("GRASP_OFFICIAL_TEST_VERSION", "1.4.1")
 	t.Setenv("GRASP_OPENCODE_PROVIDER", "opencode")
+	t.Setenv("GRASP_CONFIGURED_MODELS", "")
 	t.Setenv("GRASP_OPENCODE_API_KEY", "official-synthetic-secret")
 	t.Setenv("OPENCODE_API_KEY", "")
 	t.Setenv("OPENCODE_CONFIG_CONTENT", `{"model":"old-provider/model","provider":{"opencode":{"options":{"baseURL":"https://old.example"}}}}`)

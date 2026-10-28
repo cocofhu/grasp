@@ -16,7 +16,7 @@ Agent env、工作区共享 env、Run env 与平台 `sandbox.env` 中出现密�
 
 | 管理项 | UI 内容 | 注入/使用 |
 |---|---|---|
-| 编码工具厂商授权 | Cursor、Claude Code、CodeBuddy、Trae、OpenCode Zen、DeepSeek Harness 的官方 Key/Token；Codex 平台授权使用登录文件 | 保存为 `tool_auth`，只注入具名模型配置选中的授权；Codex 登录文件写入 `{configRoot}/auth.json` |
+| 编码工具厂商授权 | Cursor、Claude Code、CodeBuddy、Trae、OpenCode（含 OpenCode Go）、DeepSeek Harness 的官方 Key/Token；Codex 平台授权使用登录文件 | 保存为 `tool_auth`，只注入具名模型配置选中的授权；Codex 登录文件写入 `{configRoot}/auth.json` |
 | 模型 API 账号 | 通用模型服务的 Key、Base URL、协议与原始模型 ID | 保存为 `model_api`；通过具名模型配置选择兼容编码工具和连接，不与厂商授权混用 |
 | Git HTTPS | GitHub/GitLab Token、GitLab URL | 注入沙箱，由 startup 配置 `git`、`gh`/`glab` |
 | Git SSH | 私钥、known_hosts | 写入 `~/.ssh/id_rsa`、`~/.ssh/known_hosts`，不作为普通 env |
@@ -139,10 +139,10 @@ Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另�
 
 ### OpenCode
 
-1. 工作区凭据中的「OpenCode CLI」保存 OpenCode Zen 官方 Key，域为 `tool_auth` / `toolId=opencode`；第三方模型服务的 Key 保存在「API 账号」。
-2. 创建模型配置，选择 OpenCode CLI 和所需授权。官方模式的模型目录只列 `opencode/<model-id>`，空模型表示由工具选择默认项；主、辅助模型均不能跨到其他厂商。API 账号模式则使用所选连接的原始模型 ID。
-3. 官方模式只注入选中的 Key，并在隔离配置中启用原生 `opencode` provider，保留原生模型 SDK 与端点。旧全局、项目配置和账号不会覆盖路由；独立 data/state 目录保留会话历史。该模式要求 OpenCode >=1.4.1，不兼容的 CLI 会明确报错。
-4. API 账号模式继续按所选协议生成连接适配器，不复用厂商授权；模型 ID 中的 `/` 原样保留。厂商文档见 https://opencode.ai/docs/providers/
+1. 工作区凭据中的「OpenCode CLI」保存官方 Key，域为 `tool_auth` / `toolId=opencode`。OpenCode（`opencode/<模型>`）与 OpenCode Go（`opencode-go/<模型>`）是两套订阅：各存一把同类型钥匙，用别名区分。一份模型配置只绑一把钥匙。保存时不核对钥匙属于哪一家，配错要到运行才失败。第三方模型服务的 Key 仍保存在「API 账号」。
+2. 创建模型配置，选择 OpenCode CLI 和所需授权。官方模式可以使用 `opencode/<模型>` 或 `opencode-go/<模型>`，目录更新后两边都会出现。同一配置的主模型与辅助模型必须同属一家。没有非空模型时仍只启用 `opencode`；主模型留空但辅助模型全是 Go 时只启用 `opencode-go`。API 账号模式仍使用所选连接的原始模型 ID。
+3. 官方模式只注入选中的 Key，映射为 `OPENCODE_API_KEY`。非空模型全属 Go 时，隔离配置只启用原生 `opencode-go`；全属 Zen 或没有非空模型时仍只启用 `opencode`。不覆盖该 provider 的原生模型 SDK 与端点。旧全局、项目配置和账号不会覆盖路由；独立 data/state 目录保留会话历史。该模式要求 OpenCode >=1.4.1，不兼容的 CLI 会明确报错。
+4. API 账号模式继续按所选协议生成连接适配器，不复用厂商授权；模型 ID 中的 `/` 原样保留。厂商文档见 https://opencode.ai/docs/providers/ 与 https://opencode.ai/docs/go/
 
 ```json
 {
