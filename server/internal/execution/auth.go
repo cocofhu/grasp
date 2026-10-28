@@ -71,7 +71,9 @@ func (a Auth) gitPrefix(raw string) (env []string, prefix []string, cleanup func
 		return nil, nil, cleanup, nil
 	}
 	id, matched := a.pick(remote)
-	env = []string{"GIT_TERMINAL_PROMPT=0"}
+	// Disabling terminal prompts alone still allows an inherited askpass
+	// program to supply an unselected identity or wait for user interaction.
+	env = []string{"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/bin/false", "SSH_ASKPASS=/bin/false"}
 	if !matched {
 		return env, nil, cleanup, nil
 	}

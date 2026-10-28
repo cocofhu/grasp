@@ -40,7 +40,9 @@ func SetWorktreeBackendForTest(fn func(context.Context, map[string]string, strin
 func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, error) {
 	env := map[string]string{}
 	for k, v := range spec.Env {
-		env[k] = v
+		if !worktreeGitEnvKey(k) {
+			env[k] = v
+		}
 	}
 	if strings.TrimSpace(env[BridgePasswordEnv]) == "" {
 		return nil, fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
@@ -85,6 +87,15 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	}
 	env["WORKSPACE_DIR"] = launch.Root
 	env[execution.EnvMode] = execution.ModeWorktree
+	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if failed {
+			cleanupGit()
+		}
+	}()
 
 	port, stop, err := startWorktreeBackend(ctx, env, launch.Root)
 	if err != nil {
@@ -92,17 +103,25 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	}
 	kind := strings.TrimSpace(env[envLaunchKind])
 	endOnStop := kind != execution.LaunchRun
-	local := &localExec{
-		configRoot: spec.ConfigRoot,
-		configHome: configHome,
-		stop: func() {
+	var stopOnce sync.Once
+	stopSession := func() {
+		stopOnce.Do(func() {
 			if stop != nil {
 				stop()
 			}
+			cleanupGit()
+		})
+	}
+	local := &localExec{
+		configRoot: spec.ConfigRoot,
+		configHome: configHome,
+		env:        envList(env),
+		stop: func() {
+			stopSession()
 			execution.Release(launchID, endOnStop)
 		},
 	}
-	execution.AddStop(launchID, stop)
+	execution.AddStop(launchID, stopSession)
 	name := strings.TrimSpace(spec.Name)
 	if name == "" {
 		name = NewContainerName()
@@ -213,7 +232,7 @@ func envList(overlay map[string]string) []string {
 	}
 	for _, item := range base {
 		key, _, _ := strings.Cut(item, "=")
-		if skip[key] {
+		if skip[key] || worktreeGitEnvKey(key) {
 			continue
 		}
 		out = append(out, item)
@@ -228,6 +247,7 @@ func envList(overlay map[string]string) []string {
 type localExec struct {
 	configRoot string
 	configHome string
+	env        []string
 	once       sync.Once
 	stop       func()
 }
@@ -260,6 +280,7 @@ func (s *Sandbox) runLocal(ctx context.Context, timeout time.Duration, argv []st
 	}
 	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
 	cmd.Dir = s.workspaceDir()
+	cmd.Env = s.local.env
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}

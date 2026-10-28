@@ -17,6 +17,7 @@ import (
 )
 
 func TestWorktreeCreateSkipsGateway(t *testing.T) {
+	useWorktreeGitHelper(t)
 	root := t.TempDir()
 	t.Setenv(execution.EnvMode, execution.ModeWorktree)
 	t.Setenv("GRASP_WORKTREE_ROOT", root)
@@ -130,6 +131,7 @@ func TestWorktreeMissingCLIDoesNotCreateContainer(t *testing.T) {
 }
 
 func TestWorktreeFolderAndSoloDelete(t *testing.T) {
+	useWorktreeGitHelper(t)
 	t.Setenv(execution.EnvMode, execution.ModeWorktree)
 	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
 	execution.ResetForTest()
@@ -266,6 +268,15 @@ func TestWorktreeMissingCredentialDoesNotCreateContainer(t *testing.T) {
 	t.Setenv(execution.EnvMode, execution.ModeWorktree)
 	t.Setenv("GRASP_WORKTREE_ROOT", root)
 	isolateWorktreeGit(t)
+	askpassDir := t.TempDir()
+	askpassCalled := filepath.Join(askpassDir, "called")
+	askpass := filepath.Join(askpassDir, "askpass")
+	script := "#!/bin/sh\nprintf called >> " + quoteWorktreeGit(askpassCalled) + "\ncase \"$1\" in *Username*) printf x-access-token ;; *) printf secret-token ;; esac\n"
+	if err := os.WriteFile(askpass, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_ASKPASS", askpass)
+	t.Setenv("SSH_ASKPASS", askpass)
 	execution.ResetForTest()
 	t.Cleanup(execution.ResetForTest)
 	started := false
@@ -295,6 +306,9 @@ func TestWorktreeMissingCredentialDoesNotCreateContainer(t *testing.T) {
 	}
 	if started {
 		t.Fatal("backend started without credentials")
+	}
+	if _, err := os.Stat(askpassCalled); !os.IsNotExist(err) {
+		t.Fatal("an empty selection consulted the host's Git askpass identity")
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "run-nocred")); !os.IsNotExist(statErr) {
 		t.Fatal("launch directory created on failure")
@@ -399,10 +413,14 @@ func bareWorktreeRepo(t *testing.T) string {
 
 func isolateWorktreeGit(t *testing.T) {
 	t.Helper()
+	useWorktreeGitHelper(t)
 	dir := t.TempDir()
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(dir, "none"))
 	t.Setenv("GIT_CONFIG_SYSTEM", filepath.Join(dir, "none-system"))
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_ASKPASS", "/bin/false")
+	t.Setenv("SSH_ASKPASS", "/bin/false")
+	t.Setenv("GIT_TERMINAL_PROMPT", "0")
 }
 
 func initWorktreeRepo(t *testing.T) string {

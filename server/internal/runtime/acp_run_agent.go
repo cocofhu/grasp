@@ -476,7 +476,7 @@ func (c *acpProvider) findOrCreateMR(ctx context.Context, sb *sandbox.Sandbox, d
 	cd := "cd " + shellArg(dir) + " && "
 	cli, repoFlag := "glab ", ""
 	if len(selectedRepo) > 0 && selectedRepo[0] != "" {
-		cli = "python3 /root/.grasp/git-credentials/helper.py exec-cli glab " + shellArg(selectedRepo[0]) + " -- "
+		cli = `python3 "${GRASP_GIT_CREDENTIAL_HELPER:-/root/.grasp/git-credentials/helper.py}" exec-cli glab ` + shellArg(selectedRepo[0]) + " -- "
 		repoFlag = " --repo " + shellArg(selectedRepo[0])
 	}
 	view, err := sb.ExecScript(ctx, 25*time.Second, "bash",
