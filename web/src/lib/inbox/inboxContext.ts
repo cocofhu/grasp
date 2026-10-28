@@ -44,6 +44,11 @@ export type ClarifyInboxContext = {
     task?: string
     /** Starting only: the launcher's opening message, waiting for the agent. */
     firstMessage?: string
+    currentConfigurationId?: string
+    currentModelId?: string
+    currentModelSet?: boolean
+    reasoningEffort?: string
+    modelNotice?: string
   }
 }
 
@@ -101,6 +106,15 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
         ...(ctx.clarify.takeover ? { takeover: true } : {}),
         ...(ctx.clarify.task ? { task: ctx.clarify.task } : {}),
         ...(ctx.clarify.firstMessage ? { firstMessage: ctx.clarify.firstMessage } : {}),
+        ...(ctx.clarify.currentModelSet || ctx.clarify.modelNotice
+          ? {
+              currentConfigurationId: ctx.clarify.currentConfigurationId,
+              currentModelId: ctx.clarify.currentModelId,
+              currentModelSet: !!ctx.clarify.currentModelSet,
+              reasoningEffort: ctx.clarify.reasoningEffort,
+            }
+          : {}),
+        ...(ctx.clarify.modelNotice ? { modelNotice: ctx.clarify.modelNotice } : {}),
       },
     },
   }

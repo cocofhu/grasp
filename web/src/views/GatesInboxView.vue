@@ -230,6 +230,8 @@ const listFadeKey = computed(() =>
   [listPage.value, selectedTags.value.slice().sort().join(',')].join('|'),
 )
 
+const inboxAgentName = computed(() => String(inboxStageNode.value?.config?.agent_profile || '').trim())
+
 /** Toolbar title: loaded run, else the inbox row patchRunTitle rewrites. */
 const inboxConversationRunName = useConversationToolbarRunName(() => {
   const item = active.value
@@ -464,6 +466,13 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
               :stopping="followStopping"
               :composer-locked="clarifyComposerLocked"
               :active="clarifyInputActive"
+              :model-switch="!!inboxAgentName"
+              :agent-name="inboxAgentName"
+              :current-configuration-id="activeClarify?.currentConfigurationId"
+              :current-model-id="activeClarify?.currentModelId"
+              :current-model-set="activeClarify?.currentModelSet"
+              :reasoning-effort="activeClarify?.reasoningEffort"
+              :model-notice="activeClarify?.modelNotice"
               :confirm-error="clarifyConfirmError"
               :confirm-can-abort="clarifyConfirmCanAbort"
               :page-control="inboxPageControl"
@@ -593,6 +602,13 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                   :stopping="followStopping"
                   :composer-locked="clarifyComposerLocked"
                   :active="clarifyInputActive"
+                  :model-switch="!!inboxAgentName"
+                  :agent-name="inboxAgentName"
+                  :current-configuration-id="activeClarify?.currentConfigurationId"
+                  :current-model-id="activeClarify?.currentModelId"
+                  :current-model-set="activeClarify?.currentModelSet"
+                  :reasoning-effort="activeClarify?.reasoningEffort"
+                  :model-notice="activeClarify?.modelNotice"
                   :confirm-error="clarifyConfirmError"
                   :confirm-can-abort="clarifyConfirmCanAbort"
                   :page-control="inboxPageControl"

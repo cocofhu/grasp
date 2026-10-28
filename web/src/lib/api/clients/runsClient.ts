@@ -20,6 +20,18 @@ import type {
   SandboxView,
 } from '../apiTypes'
 
+export type VisitModelChoice = {
+  runId?: string
+  nodeId?: string
+  iteration?: number
+  currentConfigurationId?: string
+  currentModelId?: string
+  currentModelSet?: boolean
+  reasoningEffort?: string
+  modelNotice?: string
+  backend?: string
+}
+
 type SharePermissionPreset = NonNullable<GateShareInboxStatus['permissionPreset']>
 type ShareLinkResult = {
   id: string
@@ -254,6 +266,17 @@ export const runsClient = {
     }>(`/runs/${runId}/nodes/${nodeId}/annotation-artifact`, {
       method: 'PUT',
       body: JSON.stringify(body),
+    }),
+  getVisitModel: (runId: string, nodeId: string, iteration = 1) =>
+    req<VisitModelChoice>(`/runs/${runId}/nodes/${nodeId}/model?iteration=${iteration}`),
+  setVisitModel: (
+    runId: string,
+    nodeId: string,
+    body: { iteration?: number; configurationId?: string; modelId?: string; reasoningEffort?: string },
+  ) =>
+    req<VisitModelChoice>(`/runs/${runId}/nodes/${nodeId}/model`, {
+      method: 'POST',
+      body: JSON.stringify({ iteration: body.iteration ?? 1, configurationId: body.configurationId ?? '', modelId: body.modelId ?? '', reasoningEffort: body.reasoningEffort ?? '' }),
     }),
   reactReply: (
     runId: string,

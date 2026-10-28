@@ -295,6 +295,14 @@ func (c *ACPClient) setConnected(sessionID string) {
 }
 
 // WithChat targets a bridge chat created via CreateChat instead of the default one.
+// ChatID is the bridge chat this client uses. Empty is the default chat.
+func (c *ACPClient) ChatID() string {
+	if c == nil {
+		return ""
+	}
+	return c.chatID
+}
+
 func (c *ACPClient) WithChat(chatID string) *ACPClient {
 	c.chatID = strings.TrimSpace(chatID)
 	return c

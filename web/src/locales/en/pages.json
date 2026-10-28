@@ -4637,6 +4637,7 @@
         "unavailableSelection": "The selected model or group is unavailable. Choose another model to continue.",
         "reset": "That model is no longer in the configuration. The primary model is selected again.",
         "catalogFailed": "The model list did not load. The saved model stays selected.",
+        "catalogFailedDefault": "The model list did not load. The default primary model stays in use.",
         "reasoningEffort": "Reasoning effort",
         "effortAuto": "Default",
         "effortReset": "Use the highest effort",

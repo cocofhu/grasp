@@ -28,7 +28,11 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn
 		sb, acp, home, err := c.openSandbox(ctx, req)
 		if err == nil {
 			c.parkReactSession(req, sb, acp, home)
-			return ReactTurn{}
+			notice, aligned, aerr := c.AlignChatRoute(ctx, req)
+			if aerr != nil {
+				return ReactTurn{SetupErr: aerr, Msg: "(沙箱启动失败,无法开始澄清:" + aerr.Error() + ")", ModelNotice: notice, RouteApplied: aligned}
+			}
+			return ReactTurn{ModelNotice: notice, RouteApplied: aligned}
 		}
 		if isRetryableSandboxErr(err) && attempt < n && ctx.Err() == nil {
 			c.emitRetryNotice(req, attempt, n, err)
@@ -144,7 +148,19 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		}
 	}
 
-	defer func() { finishChatTurn(&out, sess.acp, started) }()
+	notice, aligned, aerr := c.AlignChatRoute(ctx, req)
+	defer func() {
+		finishChatTurn(&out, sess.acp, started)
+		if notice != "" {
+			out.ModelNotice = notice
+		}
+		if aligned {
+			out.RouteApplied = true
+		}
+	}()
+	if aerr != nil {
+		return ReactTurn{Msg: "(模型切换失败:" + aerr.Error() + ")", Err: aerr, ModelNotice: notice, RouteApplied: aligned}
+	}
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
 	// Confirm (force) exposes node_complete before the confirm turn so
@@ -316,7 +332,19 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 		}
 		rehydrated = true
 	}
-	defer func() { finishChatTurn(&out, sess.acp, started) }()
+	notice, aligned, aerr := c.AlignChatRoute(ctx, req)
+	defer func() {
+		finishChatTurn(&out, sess.acp, started)
+		if notice != "" {
+			out.ModelNotice = notice
+		}
+		if aligned {
+			out.RouteApplied = true
+		}
+	}()
+	if aerr != nil {
+		return ReactTurn{Msg: "(模型切换失败:" + aerr.Error() + ")", Err: aerr, ModelNotice: notice, RouteApplied: aligned}
+	}
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
 	prompt := reviewTurnPrompt(req, history, human, rehydrated)

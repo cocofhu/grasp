@@ -130,6 +130,20 @@ func (r *ProviderRegistry) providerFor(req NodeReq) (ExecProvider, error) {
 	return p, nil
 }
 
+// AlignChatRoute forwards a visit model switch to the backend that owns the
+// parked session. Providers without the capability leave the choice untouched.
+func (r *ProviderRegistry) AlignChatRoute(ctx context.Context, req NodeReq) (string, bool, error) {
+	p, err := r.providerFor(req)
+	if err != nil {
+		return "", false, err
+	}
+	aligner, ok := p.(ChatRouteAligner)
+	if !ok {
+		return "", false, nil
+	}
+	return aligner.AlignChatRoute(ctx, req)
+}
+
 func (r *ProviderRegistry) RunAgent(ctx context.Context, req NodeReq) (NodeResult, error) {
 	p, err := r.providerFor(req)
 	if err != nil {

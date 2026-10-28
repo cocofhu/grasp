@@ -338,10 +338,16 @@ func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter 
 	err := e.db.Where("run_id = ? AND node_id = ? AND iteration = ?", runID, node.ID, iter).
 		Order("id desc").First(&conv).Error
 	if err == nil {
-		if !conv.Takeover || conv.Done {
-			conv.Takeover, conv.Done = true, false
-			logDB(e.db.Save(&conv), runID, "reopen takeover conversation")
+		if conv.Takeover && !conv.Done {
+			return
 		}
+		conv.Takeover, conv.Done = true, false
+		conv.CurrentConfigurationID, conv.CurrentModelID, conv.CurrentReasoningEffort = "", "", ""
+		conv.CurrentModelSet = false
+		conv.AppliedConfigurationID, conv.AppliedModelID, conv.AppliedReasoningEffort = "", "", ""
+		conv.AppliedModelSet = false
+		conv.ModelNotice = ""
+		logDB(e.db.Save(&conv), runID, "reopen takeover conversation")
 		return
 	}
 	auto := autoPhaseEvents(events)

@@ -12,8 +12,12 @@ import (
 // Re-reading an Agent here could label a parked session with a newly saved
 // default even while its original CLI and credentials are still in use.
 func (c *acpProvider) executionForEnvironment(req NodeReq, env map[string]string) *models.ChatExecution {
+	backend := string(c.backend)
+	if envBackend := strings.TrimSpace(env["AGENT_PROVIDER"]); envBackend != "" {
+		backend = envBackend
+	}
 	return &models.ChatExecution{
-		AgentName: models.AgentProfile(req.Config), Backend: string(c.backend),
+		AgentName: models.AgentProfile(req.Config), Backend: backend,
 		ConfigurationID: strings.TrimSpace(env[EnvModelConfigurationID]),
 		ModelID:         strings.TrimSpace(env[EnvACPBridgeModel]),
 		ReasoningEffort: strings.TrimSpace(env[EnvACPBridgeReasoningEffort]),

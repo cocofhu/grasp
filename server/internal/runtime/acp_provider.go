@@ -286,6 +286,11 @@ type reactSession struct {
 	home         string // temp /root/.cursor host dir to clean up
 	liveMu       sync.Mutex
 	liveBaseline liveMarkerBaseline
+	// routeConfigurationID is the group this sandbox was last primed for.
+	// Empty means the node Agent's default group.
+	routeConfigurationID string
+	// primedEnvKeys are the env names last written into this sandbox.
+	primedEnvKeys []string
 }
 
 func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecProvider {

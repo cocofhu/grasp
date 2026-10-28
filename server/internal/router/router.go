@@ -222,6 +222,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/nodes/:nodeId/share-link", h.NodeGetShareLink)
 		api.POST("/runs/:id/nodes/:nodeId/share-link/regen", h.NodeRegenShareLink)
 		api.POST("/runs/:id/nodes/:nodeId/share-link/revoke", h.NodeRevokeShareLink)
+		api.GET("/runs/:id/nodes/:nodeId/model", h.GetVisitModel)
+		api.POST("/runs/:id/nodes/:nodeId/model", h.SetVisitModel)
 		api.POST("/runs/:id/nodes/:nodeId/reply", h.NodeReply)
 		api.POST("/runs/:id/nodes/:nodeId/cancel", h.NodeCancel)
 		api.POST("/runs/:id/nodes/:nodeId/queue/remove", h.NodeQueueRemove)

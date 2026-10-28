@@ -36,6 +36,11 @@ const props = defineProps<{
     previewArtifact?: string
     takeover?: boolean
     task?: string
+    currentConfigurationId?: string
+    currentModelId?: string
+    currentModelSet?: boolean
+    reasoningEffort?: string
+    modelNotice?: string
   } | null
   draft: string
   attachments: ClarifyImage[]
@@ -149,6 +154,13 @@ defineExpose({
         :done="clarify.done"
         :node-task="takeoverTask(clarify)"
         :active="inputActive"
+        :model-switch="!!String(node.config?.agent_profile || '').trim()"
+        :agent-name="String(node.config?.agent_profile || '')"
+        :current-configuration-id="clarify?.currentConfigurationId"
+        :current-model-id="clarify?.currentModelId"
+        :current-model-set="clarify?.currentModelSet"
+        :reasoning-effort="clarify?.reasoningEffort"
+        :model-notice="clarify?.modelNotice"
         :confirm-error="confirmError"
         :confirm-can-abort="confirmCanAbort"
         :handoff="handoff ?? null"
