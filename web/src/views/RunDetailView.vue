@@ -57,7 +57,6 @@ const {
   refreshing,
   manual,
   reviewChatRef,
-  llmTranscriptRef,
   gateApprovalRef,
   ACTIVE,
   nowMs,
@@ -509,7 +508,6 @@ onMounted(() => {
         class="relative flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col md:pt-12"
       >
         <RunLlmTranscript
-          ref="llmTranscriptRef"
           :run="run"
           :nodes="wf.nodes"
           :live-events="liveEvents"
