@@ -225,6 +225,8 @@ type agentContainerExtra struct {
 	Repos []sandbox.RepoSpec
 	// Resident leaves destroy_at NULL so the sweeper never reclaims the sandbox.
 	Resident bool
+	// LaunchKind is solo, test, or assistant. Empty means assistant.
+	LaunchKind string
 	// OnEnv receives the env key provenance once the env is final.
 	OnEnv func(sources map[string]string)
 	// OnFail runs after the row is marked as error.
@@ -433,6 +435,11 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	}
 	env["GRASP_THREAD_ID"] = threadID
 	env["GRASP_RUN_ID"] = runID
+	kind := strings.TrimSpace(extra.LaunchKind)
+	if kind == "" {
+		kind = "assistant"
+	}
+	env["GRASP_LAUNCH_KIND"] = kind
 	sandbox.ApplyPasswords(env, sharedToken)
 	env["GIT_REPOS"] = sandbox.EncodeRepos(extra.Repos)
 	if initial := strings.TrimSpace(extra.InitialChatModel); initial != "" {

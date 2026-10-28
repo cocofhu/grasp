@@ -274,6 +274,8 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	// wire GIT_REPOS explicitly here. Overrides any stray "${vars.repos}" the
 	// Agent env may carry (unresolved in this path).
 	env["GIT_REPOS"] = sandbox.EncodeRepos(repos)
+	env["GRASP_RUN_ID"] = runID
+	env["GRASP_LAUNCH_KIND"] = "test"
 
 	spec := sandbox.Spec{
 		GitBindingsConfigured: true,

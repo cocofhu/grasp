@@ -1944,6 +1944,17 @@
           "desc": "Set sandbox memory and the agent no-activity limit."
         }
       },
+      "execution": {
+        "label": "Execution mode",
+        "worktree": "Worktree",
+        "sandbox": "Sandbox",
+        "sectionDesc": "Execution mode comes from the image that is running. This page only shows it.",
+        "worktreeHelp": "This environment runs the Worktree image. Solo, workflows, chat tests, and the assistant all start in this image, with no extra container boundary. Git repositories use a worktree for this launch; other folders get their own directory. Commands come from the seven coding tools, git, gh, glab, and Chromium in the image. The value comes from the current image. Switch to sandbox by deploying the slim service image plus the sandbox image.",
+        "sandboxHelp": "This environment runs the slim service image plus the sandbox image. Agents start in a sandbox container. The value comes from the current image and cannot be edited here. Switch to worktree by deploying the Worktree image.",
+        "banner": "This image includes the seven CLIs, the browser preview, and the build toolchain. It does not include dockerd, sshd, or code-server. The agent and the service share one container. Sandbox memory, recycle, and capacity belong to the sandbox deployment and are not offered here.",
+        "bannerNoSwitch": "Home, new session, and start run have no mode switch.",
+        "bannerNoSave": "Saving other general settings does not change the execution mode."
+      },
       "summaries": {
         "run_sandbox_max_retention_hours": "The total retention limit after a node finishes. Sandboxes are reclaimed when it expires.",
         "sandbox_memory_mb": "Memory available to each new sandbox, shared by the browser, builds, and tests.",

@@ -726,3 +726,63 @@ describe('SettingsView workspace information on the general page', () => {
     w.unmount()
   })
 })
+
+describe('SettingsView execution mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.dashboard.mockResolvedValue({ running: 0 })
+  })
+
+  it('shows the sandbox pill from the image and keeps memory settings', async () => {
+    apiMocks.getSettings.mockResolvedValue({ ...SETTINGS, execution_mode: 'sandbox' })
+    const w = mountSettings()
+    await flushPromises()
+    expect(w.get('[data-testid="execution-mode-value"]').text()).toBe('沙箱')
+    expect(w.get('[data-testid="execution-mode"]').text()).toContain('来自当前镜像')
+    expect(w.find('#setting-sandbox_memory_mb').exists()).toBe(true)
+    expect(w.find('[data-testid="execution-mode"] input, [data-testid="execution-mode"] [role="switch"]').exists()).toBe(false)
+    expect(w.find('[data-testid="execution-mode-banner"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('shows a read-only worktree mode and does not save it', async () => {
+    const settings = { ...SETTINGS, execution_mode: 'worktree' as const }
+    apiMocks.getSettings.mockResolvedValue(settings)
+    apiMocks.updateSettings.mockResolvedValue(settings)
+    const w = mountSettings()
+    await flushPromises()
+    expect(w.get('[data-testid="execution-mode-value"]').text()).toBe('工作树')
+    expect(w.get('[data-testid="execution-mode"]').text()).toContain('没有另一层容器边界')
+    expect(w.get('[data-testid="execution-mode"]').text()).toContain('来自当前镜像')
+    expect(w.find('#setting-sandbox_memory_mb').exists()).toBe(false)
+    expect(w.find('#setting-run_sandbox_ttl_minutes').exists()).toBe(false)
+    expect(w.find('#setting-max_test_sandboxes').exists()).toBe(false)
+    expect(w.get('[data-testid="execution-mode-banner"]').text()).toContain('没有 dockerd、sshd 和 code-server')
+    expect(w.get('[data-testid="execution-mode-banner"]').text()).toContain('没有模式开关')
+    expect(w.find('[data-testid="execution-mode"] input, [data-testid="execution-mode"] [role="switch"]').exists()).toBe(false)
+
+    await w.get('#setting-max_concurrent_runs').setValue('6')
+    await w.findAll('button').find((button) => button.text().includes('保存'))!.trigger('click')
+    await flushPromises()
+    const patch = apiMocks.updateSettings.mock.calls[0]![0]
+    expect(patch).toMatchObject({ max_concurrent_runs: 6 })
+    expect(patch).not.toHaveProperty('execution_mode')
+    expect(w.get('[data-testid="execution-mode-value"]').text()).toBe('工作树')
+    w.unmount()
+  })
+
+  it('does not put an execution-mode switch on home, new session, or start run', () => {
+    const dir = dirname(fileURLToPath(import.meta.url))
+    for (const rel of [
+      '../components/dashboard/HomeModeSwitch.vue',
+      '../components/solo/HomeSoloPanel.vue',
+      '../components/workflow/RunLaunchModal.vue',
+      'SoloView.vue',
+    ]) {
+      const src = readFileSync(join(dir, rel), 'utf8')
+      expect(src, rel).not.toContain('execution_mode')
+      expect(src, rel).not.toContain('执行模式')
+    }
+  })
+})

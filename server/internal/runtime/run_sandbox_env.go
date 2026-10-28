@@ -25,7 +25,7 @@ func IsDeniedRunSandboxEnvKey(k string) bool {
 		"ROOT_PASSWORD", sandbox.BridgePasswordEnv,
 		// mcpVars reserved (exact)
 		"GRASP_ARTIFACT_URL", "GRASP_ARTIFACT_TOKEN",
-		"GRASP_RUN_ID", "GRASP_NODE_ID",
+		"GRASP_RUN_ID", "GRASP_NODE_ID", "GRASP_LAUNCH_KIND", "GRASP_EXECUTION_MODE",
 		// platform write-backs / manager injects
 		"AGENT_PROVIDER", "CONFIG_ROOT", "SSH_KEY", "GIT_REPOS":
 		return true

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
@@ -211,6 +212,7 @@ func (e *Engine) finish(runID, status string) bool {
 		if ab, ok := e.provider.(runtime.RunAborter); ok {
 			ab.AbortRun(runID)
 		}
+		execution.End(runID)
 		e.host.UnregisterRun(runID)
 		e.mu.Lock()
 		delete(e.tokens, runID)
