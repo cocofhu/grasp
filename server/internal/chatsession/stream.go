@@ -62,6 +62,10 @@ const (
 // to subscribers. A subscriber gets a queue_state snapshot, the active turn
 // and then live frames, so a reconnecting viewer catches up without gaps.
 type Stream struct {
+	// Keep sequence assignment and delivery in the same order. Queue changes,
+	// ACP callbacks and terminal events can publish from different goroutines.
+	// Keep mu separate so bounded subscriber delivery holds no stream state lock.
+	emitMu  sync.Mutex
 	mu      sync.Mutex
 	max     int
 	subs    map[*subscriber]struct{}
@@ -89,6 +93,8 @@ func (s *Stream) Acp(raw json.RawMessage) {
 
 // Emit assigns the next seq and sends ev to every subscriber.
 func (s *Stream) Emit(ev Event, keep Keep) {
+	s.emitMu.Lock()
+	defer s.emitMu.Unlock()
 	s.mu.Lock()
 	ev.Seq = s.nextSeq
 	s.nextSeq++

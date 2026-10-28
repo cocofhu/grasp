@@ -283,6 +283,82 @@ describe('useRunDetailWs coverage', () => {
     h.api.teardownRealtime()
   })
 
+  it('rejects old server queue snapshots before mutating parent busy state', () => {
+    const h = harness()
+    h.api.connectWs()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({ type: 'review', event: 'queue_state', nodeId: 'n1', sessionGeneration: 3, revision: 12,
+      busy: true, waiting: 0, items: [], activeItem: { id: 'c', text: 'current' } })
+    h.review.applyReviewFrame.mockClear()
+    socket.message({ type: 'review', event: 'queue_state', nodeId: 'n1', sessionGeneration: 3, revision: 4,
+      busy: false, waiting: 1, items: [{ id: 'b', text: 'completed earlier' }] })
+    expect(h.liveBusy.n1).toBe(true)
+    expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
+    socket.message({ type: 'review', event: 'turn_done', nodeId: 'n1', sessionGeneration: 3, revision: 13,
+      item: { id: 'c' }, busy: false, waiting: 0, items: [] })
+    h.review.applyReviewFrame.mockClear()
+    socket.message({ type: 'review', event: 'turn_begin', nodeId: 'n1', sessionGeneration: 3, revision: 8, item: { id: 'b' } })
+    expect(h.liveBusy.n1).toBe(false)
+    expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
+    h.api.teardownRealtime()
+  })
+
+  it('keeps a newly connected idle view idle when a retired session publishes late', async () => {
+    const h = harness()
+    h.api.connectWs()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({ type: 'snapshot', run: {
+      id: 'run-1', reviewSessionGeneration: 7, reactSessions: {},
+    } })
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    h.review.applyReviewFrame.mockClear()
+
+    // This viewer never saw generation 7 finish; its empty snapshot is enough.
+    socket.message({ type: 'review', event: 'queue_state', nodeId: 'n1',
+      sessionGeneration: 7, revision: 2, busy: true, waiting: 1,
+      items: [{ id: 'already-completed', text: 'old request' }],
+    })
+    expect(h.liveBusy.n1).toBe(false)
+    expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
+
+    // A session created after the snapshot must still be admitted.
+    socket.message({ type: 'review', event: 'turn_begin', nodeId: 'n1',
+      sessionGeneration: 8, revision: 1, busy: true,
+      item: { id: 'new-request', text: 'new request' },
+    })
+    expect(h.liveBusy.n1).toBe(true)
+    expect(h.review.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'turn_begin', sessionGeneration: 8,
+    }))
+    h.api.teardownRealtime()
+  })
+
+  it('rebases revisions only on a new socket snapshot after a server restart', async () => {
+    const h = harness()
+    h.api.connectWs()
+    let socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({ type: 'review', event: 'turn_begin', nodeId: 'n1', sessionGeneration: 500, revision: 8, item: { id: 'before-restart' } })
+    h.api.connectWs({ fromReconnect: true })
+    socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({ type: 'snapshot', run: { id: 'run-1', reactSessions: {
+      n1: { sessionGeneration: 1, revision: 1, busy: false, waiting: 0, items: [] },
+    } } })
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    expect(h.review.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({ event: 'session_reset', nodeId: 'n1' }))
+    expect(h.liveBusy.n1).toBe(false)
+    socket.message({ type: 'review', event: 'turn_begin', nodeId: 'n1', sessionGeneration: 1, revision: 2, item: { id: 'after-restart' } })
+    expect(h.liveBusy.n1).toBe(true)
+    h.api.teardownRealtime()
+  })
+
   it('handles empty, non-rail, failed, and unready seed paths', async () => {
     const h = harness({ eventPages: { empty: { events: [] }, meta: { events: [{ kind: 'tool', t: 1 }] } } })
     h.fetchNodeEvents.mockRejectedValueOnce(new Error('offline'))
@@ -374,6 +450,60 @@ describe('useRunDetailWs coverage', () => {
     const empty = harness({ runId: '' })
     empty.api.connectWs()
     expect(mocks.runEventsWsUrl).not.toHaveBeenCalledWith('')
+  })
+
+  it('retries reconnect construction and handshake failures without consuming an intentional close', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const h = harness()
+    h.api.connectWs()
+    MockWebSocket.instances[0]!.open()
+    MockWebSocket.throwNext = true
+    MockWebSocket.instances[0]!.remoteClose()
+    await vi.advanceTimersByTimeAsync(800)
+    expect(MockWebSocket.instances).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1600)
+    expect(MockWebSocket.instances).toHaveLength(2)
+    MockWebSocket.instances[1]!.remoteClose()
+    await vi.advanceTimersByTimeAsync(3200)
+    expect(MockWebSocket.instances).toHaveLength(3)
+    h.api.teardownRealtime()
+  })
+
+  it('repairs a half-open socket without close and preserves the streaming session', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const h = harness({ sessions: { n1: { busy: true, waiting: 0, items: [] } } })
+    h.api.connectWs()
+    const stalled = MockWebSocket.instances[0]!
+    stalled.open()
+    h.liveBusy.n1 = true
+    await vi.advanceTimersByTimeAsync(60_800)
+    expect(stalled.close).toHaveBeenCalledTimes(1)
+    expect(MockWebSocket.instances).toHaveLength(2)
+    expect(h.liveBusy.n1).toBe(true)
+    const replacement = MockWebSocket.instances[1]!
+    replacement.open()
+    for (let i = 0; i < 3; i++) {
+      await vi.advanceTimersByTimeAsync(25_000)
+      replacement.message({ type: 'heartbeat' })
+    }
+    expect(MockWebSocket.instances).toHaveLength(2)
+    h.api.teardownRealtime()
+    await vi.advanceTimersByTimeAsync(70_000)
+    expect(MockWebSocket.instances).toHaveLength(2)
+  })
+
+  it('reconnects queued runs before their first node starts', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const h = harness({ status: 'queued' })
+    h.api.connectWs()
+    MockWebSocket.instances[0]!.open()
+    MockWebSocket.instances[0]!.remoteClose()
+    await vi.advanceTimersByTimeAsync(800)
+    expect(MockWebSocket.instances).toHaveLength(2)
+    h.api.teardownRealtime()
   })
 
   it('dispatches ACP and review frames to live and dialogue state', async () => {

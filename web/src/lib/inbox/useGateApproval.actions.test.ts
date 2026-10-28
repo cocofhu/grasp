@@ -209,6 +209,66 @@ describe('useGateApproval actions', () => {
     app.unmount()
   })
 
+  it.each(['turn_done', 'error'] as const)('applies the full %s state when cancellation publication arrives late', async (event) => {
+    const { approval, app } = withApproval()
+    try {
+      await flushPromises()
+      const active = { id: 'A', text: 'request A' }
+      approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', sessionGeneration: 1, revision: 2, item: active })
+      approval.applyAcpEvents([{ kind: 'message', text: 'response A' }])
+      approval.applyReviewFrame({
+        event: 'queue_state', nodeId: 'producer', sessionGeneration: 1, revision: 3,
+        busy: true, waiting: 1, activeItem: active, items: [{ id: 'B', text: 'cancelled waiter' }],
+      })
+      expect(approval.reactQueued.value.map(item => item.id)).toEqual(['B'])
+      // Cancel captured revision 4, but its publication was overtaken by the
+      // terminal snapshot. No later frame is needed to release the queue.
+      approval.applyReviewFrame({
+        event, nodeId: 'producer', sessionGeneration: 1, revision: 5, item: active,
+        busy: false, waiting: 0, items: [],
+      })
+      approval.applyReviewFrame({
+        event: 'queue_state', nodeId: 'producer', sessionGeneration: 1, revision: 4,
+        busy: true, waiting: 0, activeItem: active, items: [],
+      })
+      expect(approval.reactQueued.value).toEqual([])
+      expect(approval.reactThinking.value).toBe(false)
+      expect(approval.reactInFlight.value).toBe(false)
+      expect(approval.reactTurns.value.map(turn => [turn.id, turn.streamText, turn.status])).toEqual([
+        ['A', 'response A', 'settled'],
+      ])
+    } finally { app.unmount() }
+  })
+
+  it('switches to the newer active snapshot before its delayed turn_begin arrives', async () => {
+    const { approval, app } = withApproval()
+    try {
+      await flushPromises()
+      const first = { id: 'A', text: 'request A' }
+      const second = { id: 'B', text: 'request B' }
+      approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', sessionGeneration: 1, revision: 2, item: first })
+      approval.applyAcpEvents([{ kind: 'message', text: 'response A' }])
+      approval.applyReviewFrame({
+        event: 'queue_state', nodeId: 'producer', sessionGeneration: 1, revision: 3,
+        busy: true, waiting: 1, activeItem: first, items: [second],
+      })
+      // The new queue state overtook both A's completion and B's opening.
+      approval.applyReviewFrame({
+        event: 'queue_state', nodeId: 'producer', sessionGeneration: 1, revision: 6,
+        busy: true, waiting: 0, activeItem: second, items: [],
+      })
+      approval.applyAcpEvents([{ kind: 'message', text: 'response B' }])
+      approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', sessionGeneration: 1, revision: 5, item: second })
+      expect(approval.reactLiveHumanText.value).toBe('request B')
+      expect(approval.reactTurns.value.map(turn => [turn.id, turn.streamText, turn.status])).toEqual([
+        ['A', 'response A', 'settled'], ['B', 'response B', 'active'],
+      ])
+      expect(approval.reactQueued.value).toEqual([])
+      expect(approval.reactThinking.value).toBe(true)
+      expect(approval.reactInFlight.value).toBe(true)
+    } finally { app.unmount() }
+  })
+
   it('keeps an image-only accepted request through idle and removes rejected or cancelled waiters', async () => {
     const { approval, app } = withApproval()
     await flushPromises()

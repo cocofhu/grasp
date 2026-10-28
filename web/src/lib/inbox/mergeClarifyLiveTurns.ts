@@ -2,6 +2,11 @@ import type { ClarifyTurn } from '@/lib/shared/types'
 import { isEmptyFailedAgent, isRetryableFailedAgent } from '@/lib/inbox/clarifyEmptyFail'
 import { sameParts, sameTools } from '@/lib/run/acpTools'
 
+export function sameClarifyRequest(a: Pick<ClarifyTurn, 'text' | 'clientMessageId'>, b: Pick<ClarifyTurn, 'text' | 'clientMessageId'>): boolean {
+  if (a.clientMessageId && b.clientMessageId) return a.clientMessageId === b.clientMessageId
+  return (a.text || '').trim() === (b.text || '').trim()
+}
+
 /**
  * True when `persisted` already has a completed agent reply after the in-flight
  * live human (no later human). Public poll / refresh can persist the finished
@@ -14,21 +19,19 @@ import { sameParts, sameTools } from '@/lib/run/acpTools'
 export function persistedCompletedLiveHuman(
   persisted: ClarifyTurn[],
   liveHumanText: string,
+  clientMessageId?: string,
 ): boolean {
   const want = (liveHumanText || '').trim()
   if (!want || persisted.length < 2) return false
-  for (let i = persisted.length - 2; i >= 0; i--) {
+  for (let i = persisted.length - 1; i >= 0; i--) {
     const human = persisted[i]
-    const agent = persisted[i + 1]
-    if (
-      human.role === 'human' &&
-      (human.text || '').trim() === want &&
-      agent.role === 'agent' &&
-      !agent.streaming &&
+    if (human.role !== 'human') continue
+    if (!sameClarifyRequest(human, { text: want, clientMessageId })) return false
+    const agent = persisted[persisted.length - 1]!
+    // A sealed segment hands off to another reply of the same turn. Only its
+    // final agent row may prove that this human request actually completed.
+    return agent.role === 'agent' && !agent.streaming && !agent.handoff &&
       (!!(agent.text || agent.thought) || isRetryableFailedAgent(agent))
-    ) {
-      return !persisted.slice(i + 2).some((t) => t.role === 'human')
-    }
   }
   return false
 }
@@ -66,7 +69,7 @@ export function mergePersistedAndLiveTurns(
     if (
       ph.role === 'human' &&
       pa.role === 'agent' &&
-      (ph.text || '').trim() === (liveHuman.text || '').trim() &&
+      sameClarifyRequest(ph, liveHuman) &&
       isRetryableFailedAgent(pa)
     ) {
       // Cover retry: replace trailing empty/failure agent with live stream.
@@ -74,7 +77,7 @@ export function mergePersistedAndLiveTurns(
     }
   }
 
-  if (liveHuman && persistedCompletedLiveHuman(current, liveHuman.text || '')) {
+  if (liveHuman && persistedCompletedLiveHuman(current, liveHuman.text || '', liveHuman.clientMessageId)) {
     // The slot may already be closed while a longer snapshot is still arriving.
     // Keep that longer snapshot. A shorter or different live must not cover
     // the reply already on disk. A later accepted row that this snapshot does
@@ -96,8 +99,15 @@ export function mergePersistedAndLiveTurns(
         break
       }
       const pt = current[current.length - candidate + i]
+      if (pt.clientMessageId && lt.clientMessageId && pt.clientMessageId !== lt.clientMessageId) {
+        ok = false
+        break
+      }
       // Empty failed agent matches empty live agent by role only (both texts '').
-      if (pt.role !== lt.role || (pt.text || '') !== (lt.text || '')) {
+      const sameBody = lt.role === 'human' && pt.role === 'human'
+        ? sameClarifyRequest(pt, lt)
+        : (pt.text || '') === (lt.text || '')
+      if (pt.role !== lt.role || !sameBody) {
         if (
           pt.role === 'agent' &&
           lt.role === 'agent' &&
@@ -120,14 +130,15 @@ export function mergePersistedAndLiveTurns(
 }
 
 /**
- * Live rows after the settled head. A queued send is only a user row until
- * its turn starts; once the snapshot already has that user, it is not appended
- * again. Same-text replies stay when the snapshot has no extra copy.
+ * Live rows after the settled head, including turns started in another tab.
+ * A queued send is only a user row until its turn starts; once the snapshot
+ * has that user, it is not appended again. Same-text replies stay when the
+ * snapshot has no extra copy.
  */
 function liveHeadCount(live: ClarifyTurn[]): number {
   let head = 0
   if (live[0]?.role === 'human') head = 1
-  if (head < live.length && live[head]?.role === 'agent') head += 1
+  while (head < live.length && live[head]?.role === 'agent') head += 1
   return head
 }
 
@@ -137,30 +148,27 @@ function pendingLiveTail(live: ClarifyTurn[], persistedCurrent: ClarifyTurn[]): 
   for (let i = 0; i < head; i++) {
     const turn = live[i]
     if (turn?.role !== 'human') continue
-    const key = (turn.text || '').trim()
+    const key = turn.clientMessageId || (turn.text || '').trim()
     headHumans.set(key, (headHumans.get(key) || 0) + 1)
   }
   const kept: ClarifyTurn[] = []
   for (let j = head; j < live.length; j++) {
     const turn = live[j]!
-    if (turn.role !== 'human' || !turn.localPending) continue
-    const key = (turn.text || '').trim()
+    if (turn.role !== 'human') continue
+    let end = j + 1
+    while (end < live.length && live[end]?.role === 'agent') end += 1
+    const key = turn.clientMessageId || (turn.text || '').trim()
     const seen = persistedCurrent.filter(
-      (item) => item.role === 'human' && (item.text || '').trim() === key,
+      (item) => item.role === 'human' && sameClarifyRequest(item, turn),
     ).length
     // The settled head already accounts for its own copy, including same text.
     if (seen > (headHumans.get(key) || 0)) {
       headHumans.set(key, (headHumans.get(key) || 0) + 1)
-      const next = live[j + 1]
-      if (next?.role === 'agent') j += 1
+      j = end - 1
       continue
     }
-    kept.push(turn)
-    const next = live[j + 1]
-    if (next?.role === 'agent') {
-      kept.push(next)
-      j += 1
-    }
+    kept.push(...live.slice(j, end))
+    j = end - 1
   }
   return kept
 }
@@ -196,9 +204,10 @@ function replaceWithFresherLiveAgent(persisted: ClarifyTurn[], live: ClarifyTurn
   const want = (liveHuman.text || '').trim()
   for (let i = persisted.length - 2; i >= 0; i--) {
     const human = persisted[i]
-    const agent = persisted[i + 1]
+    const agentIndex = persisted.length - 1
+    const agent = persisted[agentIndex]
     if (!human || !agent) continue
-    if (human.role !== 'human' || (human.text || '').trim() !== want || agent.role !== 'agent') continue
+    if (human.role !== 'human' || !sameClarifyRequest(human, { text: want, clientMessageId: liveHuman.clientMessageId }) || agent.role !== 'agent') continue
     if (persisted.slice(i + 2).some((t) => t.role === 'human')) return null
     const same =
       (agent.text || '').trim() === text &&
@@ -211,7 +220,7 @@ function replaceWithFresherLiveAgent(persisted: ClarifyTurn[], live: ClarifyTurn
       if (!liveAgent.streaming) return null
       const replaced: ClarifyTurn = { ...agent, streaming: true }
       delete replaced.endedAt
-      return [...persisted.slice(0, i + 1), replaced]
+      return [...persisted.slice(0, agentIndex), replaced]
     }
     // A successful retry replaces the persisted failure even when its body
     // is shorter than the error banner; completion must not resurrect it.
@@ -227,7 +236,7 @@ function replaceWithFresherLiveAgent(persisted: ClarifyTurn[], live: ClarifyTurn
     else delete replaced.tools
     if (liveAgent.parts?.length) replaced.parts = liveAgent.parts
     else delete replaced.parts
-    return [...persisted.slice(0, i + 1), replaced]
+    return [...persisted.slice(0, agentIndex), replaced]
   }
   return null
 }

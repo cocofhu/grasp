@@ -9,8 +9,44 @@ type Idler interface {
 
 // Registry maps chat keys to their sessions.
 type Registry[V Idler] struct {
-	mu sync.Mutex
-	m  map[string]V
+	mu     sync.Mutex
+	m      map[string]V
+	leases map[string]int
+}
+
+// AcquireOrCreate pins the returned session until release. A caller that will
+// enqueue must hold this lease: otherwise DropIfIdle can discard its returned
+// idle session before admission and a second sender can create another pump.
+// No registry lock is held while the caller works or publishes its frames.
+func (r *Registry[V]) AcquireOrCreate(key string, create func() V) (V, func()) {
+	r.mu.Lock()
+	v, ok := r.m[key]
+	if !ok {
+		if r.m == nil {
+			r.m = map[string]V{}
+		}
+		v = create()
+		r.m[key] = v
+	}
+	if r.leases == nil {
+		r.leases = map[string]int{}
+	}
+	r.leases[key]++
+	r.mu.Unlock()
+	var once sync.Once
+	return v, func() {
+		once.Do(func() {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.leases[key]--
+			if r.leases[key] == 0 {
+				delete(r.leases, key)
+				if v.Idle() {
+					delete(r.m, key)
+				}
+			}
+		})
+	}
 }
 
 // GetOrCreate returns the session for key, building it with create when absent.
@@ -41,7 +77,7 @@ func (r *Registry[V]) Get(key string) (V, bool) {
 func (r *Registry[V]) DropIfIdle(key string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if v, ok := r.m[key]; ok && v.Idle() {
+	if v, ok := r.m[key]; ok && r.leases[key] == 0 && v.Idle() {
 		delete(r.m, key)
 	}
 }

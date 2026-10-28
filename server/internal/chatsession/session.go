@@ -11,6 +11,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
@@ -29,10 +30,11 @@ const (
 
 // ItemView is the client-visible part of a queued turn.
 type ItemView struct {
-	ID          string
-	Text        string
-	Images      []models.PromptImage
-	Annotations []models.ReactAnnotation
+	ID              string
+	ClientMessageID string
+	Text            string
+	Images          []models.PromptImage
+	Annotations     []models.ReactAnnotation
 }
 
 // Frame renders the view in the queue_state / turn_begin item shape. Nil
@@ -46,12 +48,16 @@ func (v ItemView) Frame() map[string]any {
 	if annotations == nil {
 		annotations = []models.ReactAnnotation{}
 	}
-	return map[string]any{
+	out := map[string]any{
 		"id":          v.ID,
 		"text":        v.Text,
 		"images":      images,
 		"annotations": annotations,
 	}
+	if v.ClientMessageID != "" {
+		out["clientMessageId"] = v.ClientMessageID
+	}
+	return out
 }
 
 // Config wires a Session to its surface. View, Execute and Publish are required.
@@ -90,20 +96,40 @@ type Config[T any] struct {
 
 // Session is one chat's FIFO and pump. Use New.
 type Session[T any] struct {
-	cfg Config[T]
+	cfg        Config[T]
+	generation uint64
+	revision   uint64
 
-	mu        sync.Mutex
-	queue     []T
-	active    T
-	hasActive bool
-	cancelFn  context.CancelFunc
-	pumping   bool
+	// Serialize native cancellation with active-turn boundaries. The provider
+	// callback may read Snapshot, so it never runs under the state mutex.
+	transitionMu sync.Mutex
+	mu           sync.Mutex
+	queue        []T
+	active       T
+	hasActive    bool
+	cancelFn     context.CancelFunc
+	pumping      bool
 	// cancelRequested is set by Cancel; the active turn saves partial output
 	// as interrupted when it returns.
 	cancelRequested bool
 	// liveEvents is the in-flight stream kept for reconnect seeding by
 	// surfaces whose runtime does not hold one.
 	liveEvents []models.AcpEvent
+}
+
+// A generation distinguishes a discarded/re-created FIFO from its predecessor.
+// It is process-local: reconnecting sockets receive a fresh authoritative head
+// after a server restart, while every session in one process remains ordered.
+var sessionGeneration atomic.Uint64
+
+// CurrentSessionGeneration is the creation watermark for an authoritative
+// snapshot. Capture it before collecting the session map: an omitted session
+// at or below this watermark has retired, while later creations remain valid.
+func CurrentSessionGeneration() uint64 { return sessionGeneration.Load() }
+
+type sessionFrame struct {
+	event   string
+	payload map[string]any
 }
 
 // New builds a Session from cfg.
@@ -114,20 +140,23 @@ func New[T any](cfg Config[T]) *Session[T] {
 	if cfg.FullError == "" {
 		cfg.FullError = "消息队列已满，请稍候"
 	}
-	return &Session[T]{cfg: cfg}
+	return &Session[T]{cfg: cfg, generation: sessionGeneration.Add(1)}
 }
 
 // Snapshot is the refresh-resume view of a session.
 type Snapshot struct {
-	Waiting    int
-	Busy       bool
-	Items      []map[string]any
-	ActiveItem map[string]any
+	SessionGeneration uint64
+	Revision          uint64
+	Waiting           int
+	Busy              bool
+	Items             []map[string]any
+	ActiveItem        map[string]any
 }
 
 // QueueState renders the snapshot as a queue_state payload.
 func (sn Snapshot) QueueState() map[string]any {
-	p := map[string]any{"waiting": sn.Waiting, "items": sn.Items, "busy": sn.Busy}
+	p := map[string]any{"waiting": sn.Waiting, "items": sn.Items, "busy": sn.Busy,
+		"sessionGeneration": sn.SessionGeneration, "revision": sn.Revision}
 	if sn.ActiveItem != nil {
 		p["activeItem"] = sn.ActiveItem
 	}
@@ -161,10 +190,10 @@ func (s *Session[T]) Enqueue(item T, admit Admit[T]) (int, error) {
 	if startPump {
 		s.pumping = true
 	}
-	items := s.itemsLocked()
+	frame := s.queueFrameLocked(true)
 	s.mu.Unlock()
 
-	s.publishQueue(waiting, items, true)
+	s.publish(frame)
 	if startPump {
 		go s.pump()
 	}
@@ -194,9 +223,9 @@ func (s *Session[T]) Remove(id string) error {
 		return ErrNotFound
 	}
 	s.queue = append(s.queue[:idx], s.queue[idx+1:]...)
-	waiting, items, busy := len(s.queue), s.itemsLocked(), s.hasActive
+	frame := s.queueFrameLocked(s.hasActive)
 	s.mu.Unlock()
-	s.publishQueue(waiting, items, busy)
+	s.publish(frame)
 	return nil
 }
 
@@ -224,15 +253,16 @@ func (s *Session[T]) Reorder(ids []string) error {
 		reordered = append(reordered, it)
 	}
 	s.queue = reordered
-	waiting, items, busy := len(s.queue), s.itemsLocked(), s.hasActive
+	frame := s.queueFrameLocked(s.hasActive)
 	s.mu.Unlock()
-	s.publishQueue(waiting, items, busy)
+	s.publish(frame)
 	return nil
 }
 
 // Cancel stops the active turn. With clearQueue the pending items are dropped
 // too; otherwise the pump moves on to the next one.
 func (s *Session[T]) Cancel(clearQueue bool) {
+	s.transitionMu.Lock()
 	s.mu.Lock()
 	var dropped []T
 	if clearQueue {
@@ -240,27 +270,35 @@ func (s *Session[T]) Cancel(clearQueue bool) {
 		s.queue = nil
 	}
 	s.cancelRequested = true
-	waiting, items, busy := len(s.queue), s.itemsLocked(), s.hasActive
+	frame := s.queueFrameLocked(s.hasActive)
 	cancelFn := s.cancelFn
 	s.mu.Unlock()
 
-	if len(dropped) > 0 && s.cfg.OnDropped != nil {
-		s.cfg.OnDropped(dropped)
-	}
-	s.publishQueue(waiting, items, busy)
-	if s.cfg.CancelTurn != nil {
-		s.cfg.CancelTurn()
-	}
+	// Cancel the captured turn before publishing: a slow viewer must never
+	// postpone this request until a later turn has become the runtime's target.
 	if cancelFn != nil {
 		cancelFn()
 	}
+	if s.cfg.CancelTurn != nil {
+		s.cfg.CancelTurn()
+	}
+	s.transitionMu.Unlock()
+	if len(dropped) > 0 && s.cfg.OnDropped != nil {
+		s.cfg.OnDropped(dropped)
+	}
+	s.publish(frame)
 }
 
 // Snapshot returns the current queue view.
 func (s *Session[T]) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sn := Snapshot{Waiting: len(s.queue), Busy: s.hasActive, Items: s.itemsLocked()}
+	return s.snapshotLocked()
+}
+
+func (s *Session[T]) snapshotLocked() Snapshot {
+	sn := Snapshot{SessionGeneration: s.generation, Revision: s.revision,
+		Waiting: len(s.queue), Busy: s.hasActive, Items: s.itemsLocked()}
 	if s.hasActive {
 		sn.ActiveItem = s.cfg.View(s.active).Frame()
 	}
@@ -314,7 +352,10 @@ func (s *Session[T]) LiveEvents() []models.AcpEvent {
 
 // PublishQueueState re-emits the current queue_state, e.g. for a new viewer.
 func (s *Session[T]) PublishQueueState() {
-	s.publish(EventQueueState, s.Snapshot().QueueState())
+	s.mu.Lock()
+	frame := s.queueFrameLocked(s.hasActive)
+	s.mu.Unlock()
+	s.publish(frame)
 }
 
 func (s *Session[T]) itemsLocked() []map[string]any {
@@ -325,11 +366,25 @@ func (s *Session[T]) itemsLocked() []map[string]any {
 	return out
 }
 
-func (s *Session[T]) publishQueue(waiting int, items []map[string]any, busy bool) {
-	s.publish(EventQueueState, map[string]any{"waiting": waiting, "items": items, "busy": busy})
+func (s *Session[T]) queueFrameLocked(busy bool) sessionFrame {
+	payload := s.snapshotLocked().QueueState()
+	payload["busy"] = busy
+	return s.frameLocked(EventQueueState, payload)
 }
 
-func (s *Session[T]) publish(event string, payload map[string]any) {
+// Reserve the version while holding the same lock as the state mutation.
+// Publishing may block or re-enter Snapshot, so it must happen after unlock.
+// Receivers discard older versions; every control frame carries the full FIFO
+// state, including its active item, so a skipped turn_begin loses no authority.
+func (s *Session[T]) frameLocked(event string, payload map[string]any) sessionFrame {
+	s.revision++
+	payload["sessionGeneration"] = s.generation
+	payload["revision"] = s.revision
+	return sessionFrame{event: event, payload: payload}
+}
+
+func (s *Session[T]) publish(frame sessionFrame) {
+	event, payload := frame.event, frame.payload
 	if event == EventQueueState || event == EventTurnBegin {
 		for k, v := range s.cfg.FrameExtra {
 			if _, set := payload[k]; !set {
@@ -343,33 +398,37 @@ func (s *Session[T]) publish(event string, payload map[string]any) {
 func (s *Session[T]) pump() {
 	defer s.pumpExit()
 	for {
+		s.transitionMu.Lock()
 		s.mu.Lock()
 		if len(s.queue) == 0 {
 			s.mu.Unlock()
+			s.transitionMu.Unlock()
 			return
 		}
 		item := s.queue[0]
 		s.queue = s.queue[1:]
-		waiting := len(s.queue)
 		s.active, s.hasActive = item, true
 		s.cancelRequested = false
 		s.liveEvents = nil
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancelFn = cancel
-		items := s.itemsLocked()
+		queueFrame := s.queueFrameLocked(true)
+		begin := s.snapshotLocked().QueueState()
+		begin["item"] = s.cfg.View(item).Frame()
+		beginFrame := s.frameLocked(EventTurnBegin, begin)
 		s.mu.Unlock()
+		s.transitionMu.Unlock()
 
 		if s.cfg.BeforeTurn != nil {
 			s.cfg.BeforeTurn(item, ctx.Done())
 		}
-		s.publishQueue(waiting, items, true)
-		begin := map[string]any{"item": s.cfg.View(item).Frame()}
+		s.publish(queueFrame)
 		if s.cfg.TurnBeginExtra != nil {
 			for k, v := range s.cfg.TurnBeginExtra(item) {
 				begin[k] = v
 			}
 		}
-		s.publish(EventTurnBegin, begin)
+		s.publish(beginFrame)
 
 		interrupted, err := s.cfg.Execute(ctx, item)
 
@@ -377,6 +436,7 @@ func (s *Session[T]) pump() {
 		if s.cfg.AfterTurn != nil {
 			s.cfg.AfterTurn(item)
 		}
+		s.transitionMu.Lock()
 		s.mu.Lock()
 		var zero T
 		s.active, s.hasActive = zero, false
@@ -384,19 +444,26 @@ func (s *Session[T]) pump() {
 		s.liveEvents = nil
 		wasCancel := s.cancelRequested || interrupted
 		s.cancelRequested = false
+		terminal := s.snapshotLocked().QueueState()
+		terminal["item"] = s.cfg.View(item).Frame()
+		terminal["interrupted"] = wasCancel
+		terminalEvent := EventTurnDone
+		if err != nil && !wasCancel {
+			terminalEvent = EventError
+			terminal["message"] = err.Error()
+		}
+		terminalFrame := s.frameLocked(terminalEvent, terminal)
 		s.mu.Unlock()
+		s.transitionMu.Unlock()
 
 		if err != nil && !wasCancel {
-			frame := map[string]any{"message": err.Error(), "interrupted": false}
 			if s.cfg.ErrorExtra != nil {
 				for k, v := range s.cfg.ErrorExtra(err) {
-					frame[k] = v
+					terminal[k] = v
 				}
 			}
-			s.publish(EventError, frame)
-		} else {
-			s.publish(EventTurnDone, map[string]any{"interrupted": wasCancel})
 		}
+		s.publish(terminalFrame)
 	}
 }
 

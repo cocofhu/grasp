@@ -15,9 +15,19 @@ import { useRunLive, type LiveChatSurface } from './useRunLive'
 
 class FakeSocket {
   static last: FakeSocket | null = null
+  static instances: FakeSocket[] = []
+  static throwNext = false
+  onopen: (() => void) | null = null
   onmessage: ((ev: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
-  constructor(public url: string) { FakeSocket.last = this }
+  constructor(public url: string) {
+    if (FakeSocket.throwNext) {
+      FakeSocket.throwNext = false
+      throw new Error('connection failed')
+    }
+    FakeSocket.last = this
+    FakeSocket.instances.push(this)
+  }
   close() { this.onclose?.() }
   send(frame: unknown) { this.onmessage?.({ data: JSON.stringify(frame) }) }
 }
@@ -47,13 +57,18 @@ async function setup() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  FakeSocket.instances = []
+  FakeSocket.throwNext = false
   vi.stubGlobal('WebSocket', FakeSocket)
   mocks.getRun.mockResolvedValue(autoRun)
   mocks.nodeEvents.mockResolvedValue({ events: [{ kind: 'agent_message', text: '已有输出' }] })
   mocks.runConversationChain.mockRejectedValue(Object.assign(new Error('until_not_found'), { status: 400 }))
   mocks.reactReply.mockResolvedValue({})
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe('useRunLive (auto node → Stop → chat)', () => {
   it('confirm before the chat is open does not send and releases the spinner', async () => {
@@ -298,6 +313,140 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(live().ended.value).toBe(true)
     expect(replace).toHaveBeenCalledTimes(1)
     expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=accept')
+    wrapper.unmount()
+  })
+
+  it('streams ACP into a continued chat and reconnects while its previous turn is still busy', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const { live, surface, wrapper } = await setup()
+    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
+    mocks.getRun.mockResolvedValue(chatRun)
+    await live().reload()
+    await flushPromises()
+    const first = FakeSocket.last!
+    first.onopen?.()
+    first.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', item: { id: 'q1', text: '继续' } })
+    const partial = [{ kind: 'message', text: '正在继续', t: 0 }]
+    first.send({ type: 'acp', nodeId: 'accept', events: partial, busy: true })
+    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(partial, 'accept')
+    first.close()
+    await vi.advanceTimersByTimeAsync(800)
+    const replacement = FakeSocket.last!
+    expect(replacement).not.toBe(first)
+    replacement.onopen?.()
+    const recovered = [{ kind: 'message', text: '正在继续，补齐断线期间内容', t: 0 }]
+    mocks.nodeEvents.mockResolvedValue({ events: recovered, live: true })
+    replacement.send({ type: 'snapshot', run: { ...chatRun, reactSessions: { accept: { busy: true, waiting: 0, items: [], activeItem: { id: 'q1', text: '继续' } } } } })
+    await flushPromises()
+    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'queue_state', nodeId: 'accept', busy: true }))
+    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(recovered, 'accept')
+    expect(live().ended.value).toBe(false)
+
+    // turn_done was lost while offline. The authoritative reconnect snapshot
+    // restores its persisted reply and usage without another page load.
+    const usage = { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 }
+    const finalTurns = [{ role: 'agent', text: '已经完成', at: '2026-10-28T01:00:00Z', usage }]
+    replacement.send({ type: 'snapshot', run: { ...chatRun, currentNode: cur('accept', 'review', 'manual', 'waiting_human'), reactSessions: {}, clarifyByNode: { accept: { nodeId: 'accept', turns: finalTurns, done: false } } } })
+    await flushPromises()
+    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'queue_state', busy: false }))
+    expect(live().turns.value).toEqual(finalTurns)
+    wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(70_000)
+    expect(FakeSocket.instances).toHaveLength(2)
+  })
+
+  it('keeps retrying constructor and handshake failures and repairs a socket that never closes', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const { surface, wrapper } = await setup()
+    FakeSocket.last!.onopen?.()
+    FakeSocket.throwNext = true
+    FakeSocket.last!.close()
+    await vi.advanceTimersByTimeAsync(800)
+    expect(FakeSocket.instances).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1600)
+    expect(FakeSocket.instances).toHaveLength(2)
+    FakeSocket.last!.close() // handshake failed before onopen
+    await vi.advanceTimersByTimeAsync(3200)
+    expect(FakeSocket.instances).toHaveLength(3)
+    const stalled = FakeSocket.last!
+    stalled.onopen?.()
+    // Native close is never delivered on a half-open connection.
+    await vi.advanceTimersByTimeAsync(60_800)
+    const recovered = FakeSocket.last!
+    expect(recovered).not.toBe(stalled)
+    const events = [{ kind: 'message', t: 0, text: '断线期间的新输出' }]
+    mocks.nodeEvents.mockResolvedValue({ events, live: true })
+    recovered.onopen?.()
+    recovered.send({ type: 'snapshot', run: autoRun })
+    await flushPromises()
+    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(events, 'impl')
+    expect((surface.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([frame]) => frame.event === 'turn_begin')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('uses application heartbeats to keep a healthy quiet socket open', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = await setup()
+    const socket = FakeSocket.last!
+    socket.onopen?.()
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(25_000)
+      socket.send({ type: 'heartbeat' })
+    }
+    expect(FakeSocket.instances).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('ignores an older HTTP snapshot that crosses a live review turn', async () => {
+    const { live, wrapper } = await setup()
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'waiting_human') })
+    await live().reload()
+    await flushPromises()
+    let resolve!: (value: unknown) => void
+    mocks.getRun.mockImplementationOnce(() => new Promise((done) => { resolve = done }))
+    const pending = live().reload()
+    FakeSocket.last!.send({ type: 'review', event: 'turn_begin', nodeId: 'accept' })
+    resolve({ id: 'r1', status: 'succeeded' })
+    await pending
+    expect(live().ended.value).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('waits for an entering successor while the run still reports waiting_human', async () => {
+    const { live, surface, wrapper } = await setup()
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('verify', 'agent', 'auto', 'entering') })
+    await live().reload()
+    expect(live().ended.value).toBe(false)
+    expect(surface.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_done' }))
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', currentNode: cur('verify', 'agent', 'auto', 'running') })
+    await live().reload()
+    await flushPromises()
+    expect(live().nodeId.value).toBe('verify')
+    expect(live().ended.value).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('restores completed per-turn usage from persisted events instead of assigning execution totals to a reply', async () => {
+    const { live, wrapper } = await setup()
+    const usage = { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWriteTokens: 0 }
+    const events = [
+      { kind: 'prompt', t: 0, text: '实现功能', at: '2026-10-28T01:00:00Z' },
+      { kind: 'message', t: 1, text: '完成第一步' },
+      { kind: 'segment', t: 2 },
+      { kind: 'message', t: 3, text: '实现已完成' },
+      { kind: 'turn_end', t: 4, at: '2026-10-28T01:00:04Z', usage },
+    ]
+    mocks.nodeEvents.mockResolvedValue({ events, live: false })
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'succeeded', nodeExecutions: { impl: [{ nodeId: 'impl', iteration: 1, status: 'succeeded', events, usage: { ...usage, inputTokens: 9000 } }] } })
+    await live().reload()
+    await flushPromises()
+    expect(live().turns.value).toEqual([
+      expect.objectContaining({ role: 'agent', text: '完成第一步' }),
+      expect.objectContaining({ role: 'agent', text: '实现已完成', usage }),
+    ])
+    expect(live().turns.value[0].usage).toBeUndefined()
     wrapper.unmount()
   })
 

@@ -84,6 +84,9 @@ func TestRunEventsWSSnapshotIncludesTitle(t *testing.T) {
 	if frame.Run["workflowName"] != "自我迭代" {
 		t.Fatalf("snapshot workflowName=%v", frame.Run["workflowName"])
 	}
+	if _, ok := frame.Run["reviewSessionGeneration"].(float64); !ok {
+		t.Fatalf("idle snapshot omitted its retired-session watermark: %v", frame.Run["reviewSessionGeneration"])
+	}
 
 	detail := h.do("GET", "/api/runs/rw-title", nil)
 	if detail.Code != 200 {
@@ -96,10 +99,13 @@ func TestRunEventsWSSnapshotIncludesTitle(t *testing.T) {
 	if got["title"] != frame.Run["title"] {
 		t.Fatalf("GetRun title=%v snapshot title=%v", got["title"], frame.Run["title"])
 	}
+	if _, ok := got["reviewSessionGeneration"].(float64); !ok {
+		t.Fatal("GET run omitted its session watermark")
+	}
 }
 
 // TestRunEventsWSReviewEnqueueError ensures review_chat failures surface as
-// type:"review" event:"error" (not silently dropped).
+// type:"review" event:"request_rejected" without ending another viewer's turn.
 func TestRunEventsWSReviewEnqueueError(t *testing.T) {
 	h := newHarness(t)
 	h.db.Create(&models.Run{ID: "rw-rev", Status: "running", StartedAt: time.Now(), Graph: models.Graph{
@@ -118,9 +124,26 @@ func TestRunEventsWSReviewEnqueueError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
-	// Empty content → EnqueueReviewTurn error → review/error frame.
+	observer, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/api/runs/rw-rev/events"), h.wsHeader())
+	if err != nil {
+		t.Fatalf("observer dial: %v", err)
+	}
+	defer observer.Close()
+	observer.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, _, err := observer.ReadMessage(); err != nil {
+		t.Fatalf("observer snapshot: %v", err)
+	}
+	// Both clients follow the same active turn. Refusing a new request from
+	// one client must not emit a lifecycle error that stops the other viewer.
+	h.h.Eng.Broker().Publish("rw-rev", []byte(`{"type":"review","event":"turn_begin","nodeId":"research","item":{"id":"active","text":"running"}}`))
+	for _, viewer := range []*websocket.Conn{c, observer} {
+		if _, raw, err := viewer.ReadMessage(); err != nil || !strings.Contains(string(raw), `"event":"turn_begin"`) {
+			t.Fatalf("active turn frame: %v %s", err, raw)
+		}
+	}
+	// Empty content is refused before admission; this is not a turn error.
 	if err := c.WriteJSON(map[string]any{
-		"type": "review_chat", "nodeId": "research", "content": "",
+		"type": "review_chat", "nodeId": "research", "content": "", "clientMessageId": "0f8e2a6c-3b1d-4c7e-9a5f-6d2b8c4e1a70",
 	}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -131,13 +154,20 @@ func TestRunEventsWSReviewEnqueueError(t *testing.T) {
 			break
 		}
 		s := string(msg)
-		if strings.Contains(s, `"type":"review"`) && strings.Contains(s, `"event":"error"`) {
+		if strings.Contains(s, `"type":"review"`) && strings.Contains(s, `"event":"request_rejected"`) {
+			if !strings.Contains(s, `"requestType":"review_chat"`) || !strings.Contains(s, `"clientMessageId":"0f8e2a6c-3b1d-4c7e-9a5f-6d2b8c4e1a70"`) {
+				t.Fatalf("rejection lost request identity: %s", s)
+			}
 			saw = true
 			break
 		}
 	}
 	if !saw {
-		t.Fatal("expected review error frame for empty enqueue")
+		t.Fatal("expected request rejection frame for empty enqueue")
+	}
+	h.h.Eng.Broker().Publish("rw-rev", []byte(`{"type":"heartbeat","probe":"after_reject"}`))
+	if _, raw, err := observer.ReadMessage(); err != nil || !strings.Contains(string(raw), `"probe":"after_reject"`) {
+		t.Fatalf("another viewer received the request failure: %v %s", err, raw)
 	}
 }
 
@@ -254,7 +284,7 @@ func TestRunEventsWSClarifyVisitEnded(t *testing.T) {
 			break
 		}
 		var m map[string]any
-		if json.Unmarshal(msg, &m) == nil && m["event"] == "error" {
+		if json.Unmarshal(msg, &m) == nil && m["event"] == "request_rejected" {
 			f = m
 			break
 		}

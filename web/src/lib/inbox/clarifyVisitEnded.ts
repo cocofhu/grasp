@@ -15,6 +15,7 @@ type Sent = {
   images?: ClarifyImage[]
   annotations?: ReactAnnotation[]
   clientId?: string
+  clientMessageId?: string
   at?: number
   imagesDropped?: number
 }
@@ -88,6 +89,7 @@ export function handleClarifyVisitEnded(
         at: outbox?.at,
         imagesDropped: usedLocalImages ? 0 : outbox?.imagesDropped,
         clientId: dropped.clientId,
+        clientMessageId: ctx.clientMessageId,
         text: local.text || dropped.text,
         images: local.images?.length ? local.images : (dropped.images ?? local.images),
         annotations: local.annotations?.length ? local.annotations : (dropped.annotations ?? local.annotations),
@@ -123,10 +125,10 @@ export function beginClarifySend(
   runId: string,
   nodeId: string,
   sent: { text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] },
-  opts: { force?: boolean; retryLast?: boolean },
+  opts: { force?: boolean; retryLast?: boolean; clientMessageId?: string },
 ): string | undefined {
   if (opts.force || opts.retryLast) return undefined
-  const id = newClientMessageId()
+  const id = opts.clientMessageId || newClientMessageId()
   putClarifyOutbox(runId, nodeId, id, sent)
   return id
 }

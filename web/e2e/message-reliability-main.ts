@@ -104,7 +104,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 
 type ClarifyExpose = {
   applyReviewFrame: (frame: RawFrame) => void
-  applyAcpEvents: (events: { kind: string; text: string }[]) => void
+  applyAcpEvents: (events: { kind: string; text?: string }[]) => void
 }
 
 const hosts = ['inbox', 'public', 'embed'] as const
@@ -127,14 +127,90 @@ async function startSameTextRound() {
   await nextTick()
 }
 
+const activeStats = { id: 'active-stats', text: '回复信息改成统计信息' }
+const queuedDark = { id: 'queued-dark', text: '暗色主题感觉不太行' }
+const sealedReply = '已把回复信息改成统计信息。'
+const activeThought = '继续检查统计信息的展示效果。'
+const segmentedEvents = [
+  { kind: 'message', text: sealedReply },
+  { kind: 'segment' },
+  { kind: 'thought', text: activeThought },
+]
+function statsHistory(): ClarifyTurn[] {
+  return [
+    { role: 'human', text: '之前的请求', at: '2026-10-28T13:30:00Z' },
+    { role: 'agent', text: '之前的回复', at: '2026-10-28T13:30:38Z' },
+    { role: 'human', text: activeStats.text, at: '2026-10-28T13:31:00Z' },
+  ]
+}
+async function startSegmentedReply() {
+  clarifyTurns.inbox.value = statsHistory()
+  await nextTick()
+  const chat = clarifyRefs.inbox.value
+  chat?.applyReviewFrame({ event: 'queue_state', nodeId: 'clarify', busy: true, waiting: 0, items: [], activeItem: activeStats })
+  chat?.applyAcpEvents(segmentedEvents)
+}
+async function persistSealedSegment() {
+  clarifyRefs.inbox.value?.applyReviewFrame({ event: 'queue_state', nodeId: 'clarify', busy: true, waiting: 1, items: [queuedDark], activeItem: activeStats })
+  // Only the first assistant segment is sealed. The same request still owns
+  // an open thought segment while the next accepted user waits behind it.
+  clarifyTurns.inbox.value = [...statsHistory(), { role: 'agent', text: sealedReply, at: '2026-10-28T13:31:10Z', handoff: true }]
+  await nextTick()
+}
+
+const concurrentItems = ['a', 'b', 'c'].map((id) => ({
+  id: `concurrent-${id}`, text: '继续检查', clientMessageId: `10000000-0000-4000-8000-00000000000${id === 'a' ? 1 : id === 'b' ? 2 : 3}`,
+}))
+const nextGenerationItem = { id: 'new-session-active', text: '继续检查', clientMessageId: '20000000-0000-4000-8000-000000000001' }
+function versionedFrame(event: string, revision: number, extra: RawFrame, sessionGeneration = 7) {
+  clarifyRefs.inbox.value?.applyReviewFrame({ event, nodeId: 'clarify', sessionGeneration, revision, ...extra })
+}
+async function finishConcurrentRounds() {
+  for (const [index, item] of concurrentItems.entries()) {
+    const revision = index === 0 ? 2 : index === 1 ? 6 : 8
+    versionedFrame('turn_begin', revision, { item })
+    clarifyRefs.inbox.value?.applyAcpEvents([{ kind: 'message', text: `并发回合 ${index + 1} 已完成。` }])
+    const waiting = concurrentItems.slice(index + 1)
+    versionedFrame('turn_done', index === 0 ? 5 : index === 1 ? 7 : 9, {
+      item, waiting: waiting.length, items: waiting, busy: false,
+    })
+  }
+  await nextTick()
+}
+function deliverDelayedQueue() {
+  // B's enqueue captured A active + B waiting. Its publish was delayed until
+  // all three requests finished; arrival order must not overwrite revision 9.
+  versionedFrame('queue_state', 3, {
+    busy: true, waiting: 1, activeItem: concurrentItems[0], items: [concurrentItems[1]],
+  })
+}
+function startNewGeneration() {
+  versionedFrame('queue_state', 1, { busy: true, waiting: 0, items: [], activeItem: nextGenerationItem }, 8)
+  clarifyRefs.inbox.value?.applyAcpEvents([{ kind: 'message', text: '新会话正在继续检查。' }])
+}
+function deliverRetiredFrames() {
+  deliverDelayedQueue()
+  versionedFrame('turn_done', 999, { item: concurrentItems[2], busy: false, waiting: 0, items: [] })
+  clarifyRefs.inbox.value?.applyAcpEvents([{ kind: 'message', text: '新会话继续输出，旧快照没有打断。' }])
+}
+
+const segmentedScenario = new URLSearchParams(location.search).has('sealed-segment')
+
 const App = defineComponent({
   name: 'MessageReliabilityHarness',
   setup() {
     const pm = usePmLeaderChat({ binding: null }, () => {})
     return () => h('main', { 'data-testid': 'message-reliability-root', class: 'space-y-6 p-4' }, [
       h('section', { class: 'space-y-3' }, [
+        h('button', { 'data-testid': 'sim-concurrent-complete', type: 'button', onClick: () => void finishConcurrentRounds() }, '完成三个并发回合'),
+        h('button', { 'data-testid': 'sim-delayed-queue', type: 'button', onClick: deliverDelayedQueue }, '送达延迟队列快照'),
+        h('button', { 'data-testid': 'sim-new-generation', type: 'button', onClick: startNewGeneration }, '启动新会话'),
+        h('button', { 'data-testid': 'sim-retired-frames', type: 'button', onClick: deliverRetiredFrames }, '送达已退休会话帧'),
         h('button', { 'data-testid': 'sim-same-text', type: 'button', onClick: () => void startSameTextRound() }, '同文下一轮'),
-        ...hosts.map((host) => h('div', { 'data-testid': `clarify-host-${host}`, class: 'h-64 border border-line' }, [
+        h('button', { 'data-testid': 'sim-segmented-reply', type: 'button', onClick: () => void startSegmentedReply() }, '分段回复'),
+        h('button', { 'data-testid': 'sim-persist-segment', type: 'button', onClick: () => void persistSealedSegment() }, '持久化已封口片段'),
+        h('button', { 'data-testid': 'sim-continue-segment', type: 'button', onClick: () => clarifyRefs.inbox.value?.applyAcpEvents([...segmentedEvents, { kind: 'message', text: '统计信息检查还在继续，无需刷新。' }]) }, '继续当前回复'),
+        ...hosts.map((host) => h('div', { 'data-testid': `clarify-host-${host}`, class: 'h-64 border border-line', style: segmentedScenario && host === 'inbox' ? { height: '650px' } : undefined }, [
           h(ClarifyChat, {
             ref: clarifyRefs[host],
             runId: `run-${host}`,

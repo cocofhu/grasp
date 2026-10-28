@@ -43,6 +43,7 @@ import { isStructuredArtifactName } from '@/components/run/StructuredArtifactVie
 import {
   cloneAnnotations as cloneReactAnnotations,
   cloneImages as cloneClarifyImages,
+  createReviewStateCursor,
   dropGhostItems,
   isAuthoritativeIdle,
   reconcileQueue,
@@ -72,6 +73,8 @@ export function useGateApproval(
   props: GateApprovalProps,
   emit: GateApprovalEmit,
 ) {
+const reviewStateCursor = createReviewStateCursor()
+watch(() => [props.run?.id, props.gate.nodeId, props.gate.iteration], () => reviewStateCursor.reset())
 
 // props injected
 // emit injected
@@ -1491,6 +1494,8 @@ function settleReactAfterTurnEnd() {
 function applyReviewFrame(frame: {
   event?: string
   nodeId?: string
+  sessionGeneration?: number
+  revision?: number
   item?: SessionFrameItem
   interrupted?: boolean
   message?: string
@@ -1501,7 +1506,15 @@ function applyReviewFrame(frame: {
 }) {
   const producer = props.gate.reactUpstreamNodeId
   if (producer && frame.nodeId && frame.nodeId !== producer) return
+  if (frame.event === 'session_reset') {
+    reviewStateCursor.reset()
+    return
+  }
+  if (!reviewStateCursor.accept(frame)) return
   switch (frame.event) {
+    case 'request_rejected':
+      reactError.value = frame.message || reactError.value
+      break
     case 'turn_begin': {
       const begun = takeTurnBeginItem(reactQueued.value, frame.item)
       reactQueued.value = begun.queue
@@ -1530,12 +1543,18 @@ function applyReviewFrame(frame: {
       }
       // Ghosts only; keep real id waiters (review v1 / ClarifyChat settleAfterTurnEnd).
       settleReactAfterTurnEnd()
+      if (typeof frame.waiting === 'number' && Array.isArray(frame.items)) {
+        applyReviewFrame({ ...frame, event: 'queue_state' })
+      }
       break
     case 'error':
       reactError.value = frame.message || reactError.value
       reactStreamCompletedAt.value = null
       if (frame.interrupted) reactInterrupted.value = true
       settleReactAfterTurnEnd()
+      if (typeof frame.waiting === 'number' && Array.isArray(frame.items)) {
+        applyReviewFrame({ ...frame, event: 'queue_state' })
+      }
       break
     case 'queue_state': {
       // Platform-authoritative: remote Cancel / cross-entry must clear ghost rows.
@@ -1560,7 +1579,7 @@ function applyReviewFrame(frame: {
         forceReactAuthoritativeIdle()
         break
       }
-      if (busy && activeItem && !reactInFlight.value) {
+      if (busy && activeItem && (!reactInFlight.value || restoredActive?.key !== reactActiveTurnKey.value)) {
         const turn = restoredActive!
         activateReactTurn(turn, reactActiveTurnKey.value !== turn.key)
         turn.status = 'active'

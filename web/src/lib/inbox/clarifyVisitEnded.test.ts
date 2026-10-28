@@ -10,7 +10,7 @@ import {
   handleClarifyVisitEnded,
   readDropped,
 } from './clarifyVisitEnded'
-import { readClarifyStash, resetClarifyTabForTest } from './clarifyDraftStash'
+import { readClarifyStash, resetClarifyTabForTest, takeClarifyOutbox } from './clarifyDraftStash'
 import { vi, afterEach, beforeEach } from 'vitest'
 
 beforeEach(() => resetClarifyTabForTest({ checked: true }))
@@ -97,6 +97,13 @@ describe('handleClarifyVisitEnded', () => {
 })
 
 describe('beginClarifySend / 409 outbox', () => {
+  it('keeps the ID minted by the composer in the host outbox', () => {
+    const clientMessageId = '11111111-1111-4111-8111-111111111111'
+    expect(beginClarifySend('r', 'n', { text: 'same payload', images: [], annotations: [] }, { clientMessageId }))
+      .toBe(clientMessageId)
+    expect(takeClarifyOutbox('r', 'n', clientMessageId, { own: true })?.text).toBe('same payload')
+  })
+
   const zh = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhPages } }).global
   afterEach(() => {
     localStorage.clear()

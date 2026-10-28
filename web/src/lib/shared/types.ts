@@ -897,6 +897,8 @@ export interface ReactAnnotation {
 }
 
 export interface ClarifyTurn extends ChatMessageMetadata {
+  /** Sender identity shared by the live request and its persisted reply group. */
+  clientMessageId?: string
   role: 'agent' | 'human'
   text: string
   at: string
@@ -1162,19 +1164,23 @@ export interface Run {
     { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string; firstMessage?: string }
   >
   /** Authoritative busy/queue snapshots for refresh-resume (clarify + review). */
+  reviewSessionGeneration?: number
   reactSessions?: Record<
     string,
     {
       kind?: string
+      sessionGeneration?: number
+      revision?: number
       waiting?: number
       busy?: boolean
       /** Bridge view, same keys as a live queue_state frame. Absent when the bridge has no session. */
       sandboxBusy?: boolean
       sandboxDesynced?: boolean
       sandboxRunningOpId?: string
-      items?: { id?: string; text?: string }[]
+      items?: { id?: string; clientMessageId?: string; text?: string }[]
       activeItem?: {
         id?: string
+        clientMessageId?: string
         text?: string
         images?: ClarifyImage[]
         annotations?: ReactAnnotation[]
