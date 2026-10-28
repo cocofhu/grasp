@@ -118,8 +118,8 @@ function onCustom(event: Event) {
 <template>
   <div class="effort" :data-mode="fixed ? 'fixed' : 'levels'">
     <div v-if="levels.length" class="effort-switch" role="radiogroup" :aria-label="zh ? '思考强度' : 'Reasoning effort'">
-      <button type="button" role="radio" :aria-checked="!fixed" data-testid="model-effort-mode-levels" @click="useLevels">{{ zh ? '聊天里选' : 'Choose in chat' }}</button>
-      <button type="button" role="radio" :aria-checked="fixed" data-testid="model-effort-mode-fixed" @click="useFixed">{{ zh ? '固定一档' : 'Fix a level' }}</button>
+      <button type="button" role="radio" :aria-checked="!fixed" data-testid="model-effort-mode-levels" @click="useLevels">{{ zh ? '思考强度' : 'Reasoning effort' }}</button>
+      <button type="button" role="radio" :aria-checked="fixed" data-testid="model-effort-mode-fixed" @click="useFixed">{{ zh ? '固定强度' : 'Fixed effort' }}</button>
     </div>
     <section v-if="levels.length && !fixed" ref="panel" class="cfg-effort" :class="{ 'cfg-effort--dragging': dragging }" :style="{ '--effort-color': color, '--cfg-effort-ratio': String(ratio) }" data-testid="model-configuration-effort" :data-levels="labels.join('|')" :aria-label="zh ? '思考强度' : 'Reasoning effort'">
       <header class="cfg-effort-heading">
@@ -143,9 +143,7 @@ function onCustom(event: Event) {
       </div>
     </section>
     <label v-if="!levels.length || fixed" class="effort-custom">
-      <span class="effort-label">{{ zh ? '只用于这个模型' : 'This model only' }}</span>
-      <input class="input" data-testid="model-configuration-effort-custom" :value="draft" :placeholder="zh ? '例如 turbo' : 'e.g. turbo'" @input="onCustom" />
-      <span class="effort-note" data-testid="model-effort-fixed-note">{{ zh ? '填了之后，聊天里不能再选强度。' : 'Chat cannot change the level after this is set.' }}</span>
+      <input class="input" data-testid="model-configuration-effort-custom" :value="draft" :placeholder="zh ? '固定强度例如 high' : 'Fixed effort e.g. high'" :aria-label="zh ? '固定强度' : 'Fixed effort'" @input="onCustom" />
     </label>
   </div>
 </template>
@@ -156,8 +154,6 @@ function onCustom(event: Event) {
 .effort-switch button { min-height: 28px; border-radius: 8px; color: rgb(var(--c-txt3)); font-size: 12px; font-weight: 500; line-height: 16px; }
 .effort-switch button[aria-checked="true"] { background: rgb(var(--c-surface)); color: rgb(var(--c-txt)); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
 .effort-switch button:focus-visible { outline: 2px solid rgb(var(--c-accent) / 0.65); outline-offset: 2px; }
-.effort-label { color: rgb(var(--c-txt2)); font-size: 12px; font-weight: 500; line-height: 18px; }
-.effort-note { color: rgb(var(--c-txt3)); font-size: 12px; line-height: 18px; }
 .effort-custom { display: flex; flex-direction: column; gap: 4px; }
 .cfg-effort { padding: 8px 8px 6px; border: 1px solid rgb(var(--c-line)); border-radius: 12px; transition: --cfg-effort-ratio 200ms cubic-bezier(0.22, 1, 0.36, 1); }
 .cfg-effort--dragging { transition: none; }

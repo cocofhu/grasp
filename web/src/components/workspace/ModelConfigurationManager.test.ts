@@ -31,11 +31,12 @@ const capabilities: ToolCapability[] = [
 ]
 let services: ModelConnection[]
 
-function setup(options: { hoverInk?: boolean; inline?: boolean } = {}) {
+function setup(options: { hoverInk?: boolean; inline?: boolean; locale?: string } = {}) {
+  const locale = options.locale ?? 'en'
   return mount(ModelConfigurationManager, {
     props: { inline: options.inline },
     global: {
-      plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })],
+      plugins: [createI18n({ legacy: false, locale, messages: { en: {}, 'zh-CN': {} } })],
       ...(options.hoverInk ? { directives: { 'hover-ink': vHoverInk } } : {}),
       stubs: {
         Teleport: true, Icon: true,
@@ -434,12 +435,26 @@ describe('ModelConfigurationManager', () => {
     for (const modelId of ['opencode/minimax-m3', 'opencode/kimi-k2.7-code']) {
       await wrapper.get('[data-testid="platform-model"]').setValue(modelId)
       expect(wrapper.find('[data-testid="model-configuration-effort"]').exists()).toBe(false)
-      expect(wrapper.find('[data-testid="model-configuration-effort-custom"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="model-effort-mode-levels"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="model-effort-mode-fixed"]').exists()).toBe(false)
+      const bare = wrapper.get('[data-testid="model-configuration-effort-custom"]')
+      expect((bare.element as HTMLInputElement).value).toBe('')
+      expect(bare.attributes('placeholder')).toBe('Fixed effort e.g. high')
     }
     await wrapper.get('[data-testid="platform-model"]').setValue('opencode/gpt-5.5')
+    expect(wrapper.get('[data-testid="model-effort-mode-levels"]').text()).toBe('Reasoning effort')
+    expect(wrapper.get('[data-testid="model-effort-mode-fixed"]').text()).toBe('Fixed effort')
+    expect(wrapper.text()).not.toContain('Choose in chat')
+    expect(wrapper.text()).not.toContain('Fix a level')
     await wrapper.get('[data-testid="model-effort-mode-fixed"]').trigger('click')
     expect(wrapper.find('[data-testid="model-effort-slider"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="model-effort-fixed-note"]').text()).toContain('cannot change')
+    expect(wrapper.find('[data-testid="model-effort-fixed-note"]').exists()).toBe(false)
+    const fixedInput = wrapper.get('[data-testid="model-configuration-effort-custom"]')
+    expect((fixedInput.element as HTMLInputElement).value).toBe('')
+    expect(fixedInput.attributes('placeholder')).toBe('Fixed effort e.g. high')
+    expect(wrapper.text()).not.toContain('This model only')
+    expect(wrapper.text()).not.toContain('cannot change')
+    expect(wrapper.text()).not.toContain('e.g. turbo')
     await wrapper.get('[data-testid="model-configuration-effort-custom"]').setValue('turbo')
     await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
     await flushPromises()
@@ -470,6 +485,57 @@ describe('ModelConfigurationManager', () => {
     expect(mocks.update).toHaveBeenCalledWith(saved.id, expect.objectContaining({
       binding: expect.objectContaining({ toolSettings: { modelEfforts: { [model.id]: 'max' } } }),
     }))
+    wrapper.unmount()
+  })
+
+  it('echoes a saved fixed effort instead of prefilling the placeholder example', async () => {
+    const model = { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', source: 'discovered' as const }
+    services = structuredClone([{ ...service, providerId: 'tokenhub', name: 'TokenHub', models: [model] }])
+    const saved: ModelConfiguration = {
+      id: 'saved-fixed', name: 'TokenHub group', backend: 'opencode', state: 'active', revision: 1,
+      binding: { kind: 'connection', connectionId: service.id, modelId: model.id, toolSettings: { modelEfforts: { [model.id]: 'turbo' } } },
+    }
+    mocks.configurations.mockResolvedValue({ items: [saved] })
+    const wrapper = setup()
+    await flushPromises()
+    await wrapper.get('[data-testid="model-configuration-edit-saved-fixed"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    const input = wrapper.get('[data-testid="model-configuration-effort-custom"]')
+    expect((input.element as HTMLInputElement).value).toBe('turbo')
+    expect(input.attributes('placeholder')).toBe('Fixed effort e.g. high')
+    expect(wrapper.find('[data-testid="model-effort-slider"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-effort-fixed-note"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('uses the Chinese effort labels and an empty fixed field', async () => {
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'opencode', modes: ['platform'], adapterState: 'existing' }] })
+    mocks.credentials.mockResolvedValue({ items: [{ id: 'zen', type: 'ai', name: 'OpenCode', purpose: 'tool_auth', toolId: 'opencode', configured: true }] })
+    const wrapper = setup({ locale: 'zh-CN' })
+    await openStepTwo(wrapper, 'opencode')
+    await chooseCredential(wrapper, 'platform:zen')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await wrapper.get('[data-testid="platform-model"]').setValue('opencode/gpt-5.5')
+    expect(wrapper.get('[data-testid="model-effort-mode-levels"]').text()).toBe('思考强度')
+    expect(wrapper.get('[data-testid="model-effort-mode-fixed"]').text()).toBe('固定强度')
+    expect(wrapper.text()).not.toContain('聊天里选')
+    expect(wrapper.text()).not.toContain('固定一档')
+    expect(wrapper.find('[data-testid="model-configuration-official-family"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('两套订阅')
+    await wrapper.get('[data-testid="model-effort-mode-fixed"]').trigger('click')
+    const input = wrapper.get('[data-testid="model-configuration-effort-custom"]')
+    expect((input.element as HTMLInputElement).value).toBe('')
+    expect(input.attributes('placeholder')).toBe('固定强度例如 high')
+    expect(wrapper.find('[data-testid="model-effort-fixed-note"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('只用于这个模型')
+    expect(wrapper.text()).not.toContain('聊天里不能再选强度')
+    await wrapper.get('[data-testid="platform-model"]').setValue('opencode/kimi-k2.7-code')
+    expect(wrapper.find('[data-testid="model-effort-mode-levels"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-effort-mode-fixed"]').exists()).toBe(false)
+    const bare = wrapper.get('[data-testid="model-configuration-effort-custom"]')
+    expect((bare.element as HTMLInputElement).value).toBe('')
+    expect(bare.attributes('placeholder')).toBe('固定强度例如 high')
     wrapper.unmount()
   })
 
@@ -528,10 +594,12 @@ describe('ModelConfigurationManager', () => {
     await chooseCredential(wrapper, 'platform:go-key')
     await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="model-configuration-official-family"]').text()).toContain('opencode-go/<model>')
+    expect(wrapper.find('[data-testid="model-configuration-official-family"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('separate subscriptions')
     await wrapper.getComponent('[data-testid="platform-model"]').vm.$emit('update:modelValue', 'opencode-go/mimo-v2.5-pro')
     expect(wrapper.getComponent('[data-testid="platform-model"]').props('allowedVendors')).toEqual(['opencode-go'])
     await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-configuration-official-family"]').exists()).toBe(false)
     const aux = wrapper.get('[data-testid="model-configuration-aux-select-0"]')
     await aux.get('[data-test="app-select-trigger"]').trigger('click')
     expect(aux.text()).toContain('MiMo V2.5')
