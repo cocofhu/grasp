@@ -55,6 +55,7 @@ const ASSETS: Record<string, string> = {
   deepseek_harness: deepseekLogo,
   moonshot: moonshotLogo,
   kimi: kimiLogo,
+  kimi_code: kimiLogo,
   bytedance: bytedanceLogo,
   cursor: cursorLogo,
   codex: codexLogo,
@@ -76,7 +77,7 @@ const PADDED = new Set(['openai', 'codex'])
 const COLOR_ASSETS = new Set(['qwen', 'doubao', 'siliconflow', 'minimax', 'zhipu', 'hunyuan', 'qianfan'])
 
 const assetKey = computed(() => (props.backend ? props.vendor : vendorLogoProvider(props.vendor)))
-const asset = computed(() => props.unknown ? '' : assetKey.value === 'kimi' && theme.value === 'dark' ? kimiDarkLogo : ASSETS[assetKey.value] || '')
+const asset = computed(() => props.unknown ? '' : (assetKey.value === 'kimi' || assetKey.value === 'kimi_code') && theme.value === 'dark' ? kimiDarkLogo : ASSETS[assetKey.value] || '')
 const colorAsset = computed(() => COLOR_ASSETS.has(assetKey.value))
 const markPx = computed(() => Math.round(props.size * (PADDED.has(assetKey.value) ? props.flat ? 1.2 : 0.82 : props.flat ? 0.8 : 0.58)))
 const label = computed(() => (props.backend ? props.vendor : vendorLabel(props.vendor)))

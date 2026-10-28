@@ -25,7 +25,7 @@ func TestCapabilityBoundaries(t *testing.T) {
 			t.Fatalf("%s: %v", tool, err)
 		}
 	}
-	for _, tool := range []string{"cursor", "trae", "codebuddy", "codex", "unknown"} {
+	for _, tool := range []string{"cursor", "trae", "codebuddy", "codex", "kimi_code", "unknown"} {
 		if err := ValidateBinding(tool, binding, &connection); err == nil {
 			t.Fatalf("unsupported %s accepted", tool)
 		}

@@ -168,10 +168,11 @@ func ClearModelRoutingEnv(env map[string]string) {
 func ModelRoutingEnvKeys() []string {
 	return []string{
 		envauth.EnvCursorAPIKey, envauth.EnvClaudeAPIKey, envauth.EnvCodeBuddyAPIKey,
-		envauth.EnvTraeAPIKey, envauth.EnvOpenCodeAPIKey, envauth.EnvCodexAuthFile, envauth.EnvDeepSeekAPIKey,
+		envauth.EnvTraeAPIKey, envauth.EnvOpenCodeAPIKey, envauth.EnvCodexAuthFile, envauth.EnvDeepSeekAPIKey, envauth.EnvKimiCodeAPIKey,
 		"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CODEBUDDY_API_KEY",
 		"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "DEEPSEEK_API_KEY",
 		"ACP_CURSOR_API_KEY", "ACP_CLAUDE_API_KEY", "ACP_CODEBUDDY_API_KEY", "ACP_CODEX_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
+		"KIMI_CODE_API_KEY", "ACP_KIMI_CODE_API_KEY",
 		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvModelConfigurationID, EnvACPBridgeModel, EnvConfiguredModels, EnvInitialChatModel, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
 		"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL",
 		"ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",

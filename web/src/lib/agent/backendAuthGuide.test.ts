@@ -42,6 +42,13 @@ describe('backendAuthGuide', () => {
     expect(hasAuthKeyConfigured({ GRASP_CODEX_AUTH_JSON: '{"auth_mode":"chatgpt"}' }, 'codex')).toBe(true)
   })
 
+  it('switches the Kimi Code apply link with the selected site', () => {
+    expect(authGuideFor('kimi_code', 'cn').links[0].url).toBe('https://platform.kimi.com/console/api-keys')
+    expect(authGuideFor('kimi_code', 'intl').links[0].url).toBe('https://platform.kimi.ai/console/api-keys')
+    expect(authGuideFor('kimi_code').keys[0]).toMatchObject({ key: 'GRASP_KIMI_CODE_API_KEY' })
+    expect(hasAuthKeyConfigured({ GRASP_KIMI_CODE_API_KEY: 'sk-test' }, 'kimi_code')).toBe(true)
+  })
+
   it('routes OpenCode custom config to opencode.json and provider docs', () => {
     const guide = authGuideFor('opencode')
     expect(guide.keys[0]).toMatchObject({

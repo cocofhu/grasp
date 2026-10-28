@@ -23,12 +23,17 @@ const (
 	BackendOpenCode        AcpBackend = "opencode"
 	BackendCodex           AcpBackend = "codex"
 	BackendDeepSeekHarness AcpBackend = "deepseek_harness"
+	BackendKimiCode        AcpBackend = "kimi_code"
 )
 
 // Region / site env keys written by Agent Studio or set manually.
 const (
 	EnvCodeBuddyRegion = "GRASP_CODEBUDDY_REGION"
 	EnvTraeRegion      = "GRASP_TRAE_REGION"
+	EnvKimiCodeRegion  = "GRASP_KIMI_CODE_REGION"
+
+	KimiCodeCNBaseURL   = "https://api.moonshot.cn/v1"
+	KimiCodeIntlBaseURL = "https://api.moonshot.ai/v1"
 
 	EnvCodeBuddyInternet = "CODEBUDDY_INTERNET_ENVIRONMENT"
 	EnvCodeBuddyBaseURL  = "CODEBUDDY_BASE_URL"
@@ -82,6 +87,8 @@ func DefaultConfigRoot(b AcpBackend) string {
 		return "/root/.codex"
 	case BackendDeepSeekHarness:
 		return "/root/.dsh"
+	case BackendKimiCode:
+		return "/root/.kimi-code"
 	default:
 		return "/root/.cursor"
 	}
@@ -92,7 +99,7 @@ func DefaultConfigRoot(b AcpBackend) string {
 // backend must be reported.
 func NormalizeBackend(raw string) AcpBackend {
 	switch b := AcpBackend(strings.TrimSpace(raw)); b {
-	case BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex, BackendDeepSeekHarness:
+	case BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex, BackendDeepSeekHarness, BackendKimiCode:
 		return b
 	default:
 		return ""
@@ -138,6 +145,8 @@ func authSpecFor(b AcpBackend) authSpec {
 		return authSpec{credKey: envauth.EnvOpenCodeAPIKey, cliKey: "OPENCODE_API_KEY"}
 	case BackendDeepSeekHarness:
 		return authSpec{credKey: envauth.EnvDeepSeekAPIKey, cliKey: "DEEPSEEK_API_KEY"}
+	case BackendKimiCode:
+		return authSpec{credKey: envauth.EnvKimiCodeAPIKey, cliKey: "KIMI_CODE_API_KEY"}
 	case BackendCodex:
 		// Slot identity only. The login file is not copied onto a CLI env var.
 		return authSpec{credKey: envauth.EnvCodexAuthFile, cliKey: ""}
@@ -176,7 +185,7 @@ func OpenCodeConfigFileExists(workDirSrc string) bool {
 func AuthConfigFileExists(workDirSrc string, backend AcpBackend) bool {
 	// DeepSeek Harness authenticates with the selected API key. It does not
 	// consume settings.json, so that unrelated file cannot satisfy its gate.
-	if NormalizeBackend(string(backend)) == BackendDeepSeekHarness {
+	if NormalizeBackend(string(backend)) == BackendDeepSeekHarness || NormalizeBackend(string(backend)) == BackendKimiCode {
 		return false
 	}
 	if SettingsFileExists(workDirSrc) {
@@ -334,6 +343,9 @@ func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (
 			if backend == BackendDeepSeekHarness {
 				return out, fmt.Errorf("鉴权未配置:请在工作区凭据中配置 %s", spec.credKey)
 			}
+			if backend == BackendKimiCode {
+				return out, fmt.Errorf("需要 Kimi Code 的开放平台 API Key：请在工作区凭据中配置 %s", spec.credKey)
+			}
 			cfgHint := "settings.json"
 			if backend == BackendOpenCode {
 				cfgHint = "opencode.json 或 settings.json"
@@ -344,23 +356,55 @@ func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (
 				cfgHint,
 			)
 		}
-		mergeRegionEnv(backend, out)
+		if err := mergeRegionEnv(backend, out); err != nil {
+			return nil, err
+		}
 		return out, nil
 	}
 	out[spec.cliKey] = val
-	mergeRegionEnv(backend, out)
+	if err := mergeRegionEnv(backend, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
 // mergeRegionEnv normalizes intl/CN (and CodeBuddy staging) site settings into
 // the env vars each CLI actually reads. Explicit official vars win over region aliases.
-func mergeRegionEnv(backend AcpBackend, env map[string]string) {
+func mergeRegionEnv(backend AcpBackend, env map[string]string) error {
 	switch backend {
 	case BackendCodeBuddy:
 		mergeCodeBuddyRegion(env)
 	case BackendTrae:
 		mergeTraeRegion(env)
+	case BackendKimiCode:
+		return mergeKimiCodeRegion(env)
 	}
+	return nil
+}
+
+// KimiPlatformBaseURL is the open-platform root for a saved Kimi Code site.
+// Empty selects the international default. Unknown sites are refused.
+func KimiPlatformBaseURL(region string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(region)) {
+	case "", "intl", "international", "public", "global", "ai":
+		return KimiCodeIntlBaseURL, nil
+	case "cn", "china", "domestic", "internal":
+		return KimiCodeCNBaseURL, nil
+	default:
+		return "", fmt.Errorf("未知的 Kimi Code 服务站点")
+	}
+}
+
+func mergeKimiCodeRegion(env map[string]string) error {
+	switch strings.ToLower(strings.TrimSpace(env[EnvKimiCodeRegion])) {
+	case "cn", "china", "domestic", "internal":
+		env[EnvKimiCodeRegion] = "cn"
+	case "", "intl", "international", "public", "global", "ai":
+		env[EnvKimiCodeRegion] = "intl"
+	default:
+		return fmt.Errorf("未知的 Kimi Code 服务站点")
+	}
+	return nil
 }
 
 func mergeCodeBuddyRegion(env map[string]string) {
@@ -443,6 +487,8 @@ func AgentRuntimeLabel(b AcpBackend) string {
 		return "codex-cli"
 	case BackendDeepSeekHarness:
 		return "dsh-acp"
+	case BackendKimiCode:
+		return "kimi-code-acp"
 	default:
 		return "cursor-agent"
 	}
