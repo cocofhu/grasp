@@ -42,6 +42,18 @@ type ShareLinkResult = {
   state: string
 }
 
+/** Body fragment for the home composer's launch model. Absent means "do not send". */
+function startRunLaunchModel(
+  model?: { configurationId?: string; modelId?: string; reasoningEffort?: string } | null,
+): { launchConfigurationId: string; launchModelId: string; launchReasoningEffort: string } | null {
+  if (!model) return null
+  return {
+    launchConfigurationId: model.configurationId ?? '',
+    launchModelId: model.modelId ?? '',
+    launchReasoningEffort: model.reasoningEffort ?? '',
+  }
+}
+
 /** Body fragment for startRun's opening message; blank messages are omitted. */
 function startRunFirstMessage(
   msg?: { text?: string; images?: ClarifyImage[] } | null,
@@ -120,6 +132,11 @@ export const runsClient = {
       firstMessage?: { text: string; images?: ClarifyImage[] }
       /** Home page: execute the published snapshot instead of the draft head. */
       publishedSnapshot?: boolean
+      /**
+       * Home composer only. Empty modelId is the primary model. Omitted by
+       * every other start path, including a non-clarify workflow.
+       */
+      launchModel?: { configurationId?: string; modelId?: string; reasoningEffort?: string } | null
     },
   ) =>
     req<{ id: string; status: string; priority?: string }>(`/workflows/${workflowId}/runs`, {
@@ -133,6 +150,7 @@ export const runsClient = {
         ...(opts?.title && opts.title.trim() ? { title: opts.title.trim() } : {}),
         ...(startRunFirstMessage(opts?.firstMessage) ?? {}),
         ...(opts?.publishedSnapshot ? { publishedSnapshot: true } : {}),
+        ...(startRunLaunchModel(opts?.launchModel) ?? {}),
       }),
       ...(opts?.signal ? { signal: opts.signal } : {}),
     }),

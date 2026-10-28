@@ -173,25 +173,16 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.Model, error) {
 }
 
 // Open probes the CLI (fail-fast if missing) and returns a virtual session.
-func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
+func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.OpenOptions,
 	onEvent func(json.RawMessage), _ provider.PermissionChooser) (provider.Session, error) {
 	prepared, err := modelconnection.Prepare(p.Name(), p.c.AuthEnv(os.Environ()), opts.Model, p.DefaultConfigRoot())
 	if err != nil {
 		return nil, err
 	}
-	if p.Name() == provider.OpenCode {
-		prepared, err = modelconnection.ApplyOpenCodeVariant(prepared, opts.ReasoningEffort)
-		if err != nil {
-			prepared.Cleanup()
-			return nil, err
-		}
-	}
 	if err := prepared.ValidateOptions(p.Name(), opts); err != nil {
 		prepared.Cleanup()
 		return nil, err
 	}
-	opts.Model = prepared.Model
-	opts.CustomArgs = append(append([]string(nil), opts.CustomArgs...), prepared.Args...)
 	bin := p.c.Bin()
 	path, err := exec.LookPath(bin)
 	if err != nil {
@@ -205,6 +196,21 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 			return nil, err
 		}
 	}
+	if p.Name() == provider.OpenCode {
+		// Validate the native directory before custom variants can declare an
+		// otherwise unknown official model in the generated configuration.
+		if err := modelconnection.CheckOpenCodeCatalog(handshakeCtx, path, prepared, opts.Cwd); err != nil {
+			prepared.Cleanup()
+			return nil, err
+		}
+		prepared, err = modelconnection.ApplyOpenCodeVariant(prepared, opts.ReasoningEffort)
+		if err != nil {
+			prepared.Cleanup()
+			return nil, err
+		}
+	}
+	opts.Model = prepared.Model
+	opts.CustomArgs = append(append([]string(nil), opts.CustomArgs...), prepared.Args...)
 	fsRoot := opts.FSRoot
 	if fsRoot == "" {
 		fsRoot = opts.Cwd

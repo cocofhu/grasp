@@ -3,6 +3,7 @@ import {
   clarifyFirstNodeId,
   isClarifyFirstWorkflow,
   isPublishedClarifyFirst,
+  publishedClarifyFirstAgentName,
   withPublishedSnapshot,
 } from './clarifyFirstWorkflow'
 import { AUTO_CAPS, CLARIFY_CAPS } from '@/test/capsFixtures'
@@ -166,6 +167,18 @@ describe('isClarifyFirstWorkflow', () => {
     expect(card.name).toBe('已发布名')
     expect(card.description).toBe('已发布说明')
     expect(clarifyFirstNodeId(card, AGENTS)).toBe('ask')
+    expect(publishedClarifyFirstAgentName(wf, AGENTS)).toBe('clarifier')
+  })
+
+  it('has no launch agent when the published snapshot is not clarify-first', () => {
+    const g = graph(
+      [
+        { id: 'in', type: 'input' },
+        { id: 'work', profile: 'worker' },
+      ],
+      [{ source: 'in', target: 'work' }],
+    )
+    expect(publishedClarifyFirstAgentName({ status: 'published', version: 1, publishedVersion: 1, ...g }, AGENTS)).toBe('')
   })
 
   it('rejects a clarify-first draft whose published snapshot is not clarify-first', () => {

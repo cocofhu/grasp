@@ -28,6 +28,22 @@
 - 为什么：原接入把 Kimi Code 订阅 Key 发给 Moonshot 开放平台导致 401，界面也没有思考强度。仅添加选项无法证明原生请求生效；共用可变配置还会让并行聊天互相覆盖，不声明 Highspeed 的布尔思考能力会触发厂商的跨模型回退。
 - 如何验证：使用用户授权的订阅 Key，在真实 Grasp Solo API → worktree runtime → 原生 Kimi Code 2.4.0 → 官方 Coding API 链路分别测试国内／国际站的 low、high、max、空值恢复 max，八次请求均 200，实际 wire 字段与回复执行快照一致，非法值拒绝且历史快照不被后续选择改写。原生 CLI 本地模型回归另覆盖并存进程、同路由复用、旧别名、各模型默认值和 Highspeed enabled/no-effort。 远端 CodeQL 首轮发现的路径告警通过配置根来源隔离和文件操作边界收紧处理，另以外部符号链接、目录替换和外部配置目标保护回归验证；没有添加扫描豁免。免费 CI 仍明确使用 Kimi platform-wire-fixture；完整八工具矩阵 84 项、Node 合约 45 项、Python 合约 9 项通过。Server／Sandbox 全量 lint、vet、单测与核心覆盖率通过（90.5%／96.6%），runtime 专项与 provider/service race 通过；Web 541 文件、5,810 单测通过，Lines 91.73%，260 项关键浏览器用例、lint、vue-tsc、生产构建通过。文档构建和 high/critical audit、actionlint、error-level shellcheck、三模块 govulncheck、沙箱 smoke 与运行时包字节复现检查通过。密钥未进入仓库、PR 或测试日志；远端 CI 在 PR 最新提交上单独核对。
 
+### 2026-10-29（OpenCode 目录缓存读取边界）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`sandbox-gateway/sandbox/internal/provider/modelconnection/opencode_catalog{,_test}.go`。
+- 做了什么：以原生缓存目录为 `os.Root`，仅打开固定的 `opencode/models.json`；检查和读取使用同一文件句柄，限制读取大小，非阻塞打开后拒绝 FIFO 等非普通文件。
+- 为什么：PR #1037 的 CodeQL 检查指出环境变量派生路径直接传给 `os.Stat` / `os.ReadFile`，需要明确文件访问边界，防止子路径符号链接跳出缓存目录，同时避免检查后替换文件及读取增长文件的问题。
+- 如何验证：新增目录和文件符号链接越界回归在旧实现上确定失败，修复后通过；缓存目录内的符号链接仍可使用，超大文件和 FIFO 立即拒绝。完整 sandbox lint、vet、单测、核心覆盖率及相关包 race 检查通过；提交后继续核对远端 CodeQL 与完整 CI。
+
+### 2026-10-29（OpenCode 官方模型目录自动同步）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`server/internal/opencodecatalog/`、`sandbox-gateway/sandbox/internal/provider/{modelconnection,oneshot}/`、`sandbox-gateway/sandbox/internal/agents/{platform_auth,opencode_variant}_test.go`、`sandbox-gateway/sandbox/README.md`、`CHANGELOG.md`。
+- 做了什么：OpenCode 官方模式仅在启动或重建后端会话时同步原生模型目录并校验选择，沙箱与 worktree 共用入口。启动阶段的重复握手复用原生五分钟有效缓存；普通消息不执行目录预检或按时间刷新。启动时过期或新模型缺失会合并刷新，更新失败短暂抑制重复尝试并保留仍包含所选模型的旧缓存。检查真实缓存文件，避免原生 CLI 吞掉下载失败却输出成功提示时误判。在添加自定义推理变体之前校验目录，避免模型覆盖项伪造可用性。服务端列表同步过滤 deprecated/alpha，不自动更换已保存的模型或账号。
+- 为什么：新容器沿用镜像预装 CLI 的目录快照，原生后台更新不保证在短命的单轮进程退出前完成。模型目录更新后，旧 Contributor 已标记 deprecated，但平台列表和已保存选择仍可能继续使用，分别触发本地模型找不到和上游模型不可用。官方文档把 `models --refresh` 作为目录更新命令，而非每轮对话要求；集成层应自动处理。
+- 如何验证：回归覆盖冷启动、有效缓存复用、过期/缺失模型更新、并发合并、更新失败与成功退出却未更新缓存、取消后立即重试、缓存文件变更、弃用拦截及推理变体不可绕过。启动策略专项验证缓存过期后当前会话连续三轮不刷新，新 worktree 会话启动才更新；普通与 race 测试通过。真实 OpenCode CLI 1.19.5 在隔离缓存下通过冷启动、缓存复用和弃用拦截，未调用 Prompt，推理请求为零。Server 与 sandbox 全量 lint、vet、单测及规定 smoke 通过，核心覆盖率分别 90.5% / 96.6%；配置文档、runtime 专项、docs 构建和官方源审计通过。最终运行时在 worktree 模式通过完整 8 工具、76 项 Agent 切换/模型/推理验证，付费模型请求为零；可配置工具使用原生 CLI，Cursor、Trae、Kimi Code 仍按既有契约明确标注平台 CLI-wire fixtures。品牌断言、actionlint、error-level shellcheck 与 diff 检查通过；运行时逻辑不要求重建沙箱镜像。
+
 ### 2026-10-28（工作流自动过程切换时的对话隔离）
 
 - 日期：2026-10-28（UTC）。

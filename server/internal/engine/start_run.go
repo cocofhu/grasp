@@ -38,14 +38,14 @@ func (e *Engine) StartRunWithPriority(workflowID string, inputs map[string]any, 
 // Trimmed empty titles still fall back to computeRunTitle; non-empty titles
 // are clipped to 80 runes.
 func (e *Engine) StartRunWithTitle(workflowID string, inputs map[string]any, trigger, priorityLabel string, tags []string, env []models.EnvEntry, title string) (*models.Run, error) {
-	return e.StartRunWithFirstMessage(workflowID, inputs, trigger, priorityLabel, tags, env, title, nil)
+	return e.StartRunWithFirstMessage(workflowID, inputs, trigger, priorityLabel, tags, env, title, nil, LaunchChoice{})
 }
 
 // StartRunWithFirstMessage is StartRunWithTitle plus the launcher's opening
 // message (text + attachments). The engine delivers it into the first approve
 // node's sandbox as soon as that node parks, so the caller can navigate away
 // immediately instead of polling for the pause and sending the message itself.
-func (e *Engine) StartRunWithFirstMessage(workflowID string, inputs map[string]any, trigger, priorityLabel string, tags []string, env []models.EnvEntry, title string, firstMessage *models.CompositeText) (*models.Run, error) {
+func (e *Engine) StartRunWithFirstMessage(workflowID string, inputs map[string]any, trigger, priorityLabel string, tags []string, env []models.EnvEntry, title string, firstMessage *models.CompositeText, launch LaunchChoice) (*models.Run, error) {
 	if e.IsHalted() {
 		return nil, fmt.Errorf("server is shutting down")
 	}
@@ -59,7 +59,7 @@ func (e *Engine) StartRunWithFirstMessage(workflowID string, inputs map[string]a
 	}
 	// def.Graph is the latest saved version (def.Version); the run freezes its
 	// own copy into Run.Graph.
-	return e.startRun(def, def.Graph, inputs, trigger, pri, tags, env, title, firstMessage)
+	return e.startRun(def, def.Graph, inputs, trigger, pri, tags, env, title, firstMessage, launch)
 }
 
 // publishedSnapshot loads the head and the WorkflowVersion row numbered
@@ -97,7 +97,7 @@ func (e *Engine) StartRunFromPublished(workflowID string, inputs map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	return e.startRun(def, snap.Graph, inputs, resolved, models.PriorityNormal, tags, env, "", nil)
+	return e.startRun(def, snap.Graph, inputs, resolved, models.PriorityNormal, tags, env, "", nil, LaunchChoice{})
 }
 
 // StartRunFromPublishedWithFirstMessage runs the same published snapshot as
@@ -105,7 +105,7 @@ func (e *Engine) StartRunFromPublished(workflowID string, inputs map[string]any,
 // opening message. trigger is the caller's already-resolved value.
 // A non-blank snapshot name is copied onto the run so it is not labeled with
 // a newer draft head.
-func (e *Engine) StartRunFromPublishedWithFirstMessage(workflowID string, inputs map[string]any, trigger, priorityLabel string, tags []string, env []models.EnvEntry, title string, firstMessage *models.CompositeText) (*models.Run, error) {
+func (e *Engine) StartRunFromPublishedWithFirstMessage(workflowID string, inputs map[string]any, trigger, priorityLabel string, tags []string, env []models.EnvEntry, title string, firstMessage *models.CompositeText, launch LaunchChoice) (*models.Run, error) {
 	if e.IsHalted() {
 		return nil, fmt.Errorf("server is shutting down")
 	}
@@ -120,10 +120,10 @@ func (e *Engine) StartRunFromPublishedWithFirstMessage(workflowID string, inputs
 	if name := strings.TrimSpace(snap.Name); name != "" {
 		def.Name = name
 	}
-	return e.startRun(def, snap.Graph, inputs, trigger, pri, tags, env, title, firstMessage)
+	return e.startRun(def, snap.Graph, inputs, trigger, pri, tags, env, title, firstMessage, launch)
 }
 
-func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map[string]any, trigger string, priority int, tags []string, env []models.EnvEntry, titleOverride string, firstMessage *models.CompositeText) (*models.Run, error) {
+func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map[string]any, trigger string, priority int, tags []string, env []models.EnvEntry, titleOverride string, firstMessage *models.CompositeText, launch LaunchChoice) (*models.Run, error) {
 
 	if err := graph.Validate(); err != nil {
 		return nil, err
@@ -133,6 +133,10 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 	}
 	graph.Nodes = append([]models.Node(nil), graph.Nodes...)
 	if err := e.snapshotCaps(&graph); err != nil {
+		return nil, err
+	}
+	storedLaunch, err := e.normalizeLaunchModel(&graph, launch)
+	if err != nil {
 		return nil, err
 	}
 	if !models.ValidPriorityInt(priority) {
@@ -182,12 +186,14 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 	run := models.Run{
 		ID: runID, WorkflowID: def.ID, WorkflowName: def.Name, WorkflowVersion: def.Version,
 		Status: "queued", Trigger: trigger, Inputs: inputs, Graph: graph, Title: title,
-		FirstMessage: firstMessage,
-		Tags:         append([]string{}, tags...),
-		Priority:     priority,
-		SandboxEnv:   sandboxEnv,
-		SandboxMode:  runSandboxMode(def),
-		Trace:        []models.TraceEntry{}, Checkpoints: map[string]map[string]any{},
+		FirstMessage:   firstMessage,
+		LaunchModelSet: storedLaunch.Set, LaunchConfigurationID: storedLaunch.ConfigurationID,
+		LaunchModelID: storedLaunch.ModelID, LaunchReasoningEffort: storedLaunch.ReasoningEffort,
+		Tags:        append([]string{}, tags...),
+		Priority:    priority,
+		SandboxEnv:  sandboxEnv,
+		SandboxMode: runSandboxMode(def),
+		Trace:       []models.TraceEntry{}, Checkpoints: map[string]map[string]any{},
 	}
 
 	tok := e.host.RegisterRun(runID)

@@ -109,6 +109,12 @@ func loadVisitConversation(db *gorm.DB, runID, nodeID string, iteration int) (mo
 	return conv, nil
 }
 
+// AcceptVisitSelection checks a choice against the Agent's bound groups.
+// The primary model is stored as empty. The Agent row is not modified.
+func AcceptVisitSelection(db *gorm.DB, agent Agent, configurationID, modelID, effort string) (storedConfig, storedModel, storedEffort, backend string, err error) {
+	return acceptVisitSelection(db, agent, configurationID, modelID, effort)
+}
+
 // acceptVisitSelection checks a choice against the Agent's bound groups.
 // The primary model is stored as empty. The Agent row is not modified.
 func acceptVisitSelection(db *gorm.DB, agent Agent, configurationID, modelID, effort string) (storedConfig, storedModel, storedEffort, backend string, err error) {

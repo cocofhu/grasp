@@ -183,8 +183,9 @@ type wireProvider struct {
 	API    string   `json:"api"`
 	Env    []string `json:"env"`
 	Models map[string]struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		Status string `json:"status"`
 	} `json:"models"`
 }
 
@@ -226,6 +227,13 @@ func slim(wire map[string]wireProvider) []Provider {
 			p.KeyEnv = strings.TrimSpace(wp.Env[0])
 		}
 		for modelKey, wm := range wp.Models {
+			// OpenCode removes deprecated models and, unless experimental
+			// models are enabled, alpha models before resolving a model id.
+			// Offering either here would let users save a model the CLI
+			// cannot run with its default settings.
+			if wm.Status == "deprecated" || wm.Status == "alpha" {
+				continue
+			}
 			mid := strings.TrimSpace(wm.ID)
 			if mid == "" {
 				mid = strings.TrimSpace(modelKey)

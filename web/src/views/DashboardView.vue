@@ -45,6 +45,13 @@ const {
   selected,
   selectedId,
   launchPriority,
+  showLaunchModel,
+  launchModelId,
+  launchReasoningEffort,
+  launchModelChoices,
+  launchModelForModal,
+  selectLaunchModel,
+  selectLaunchEffort,
   draft,
   sending,
   hidingWorkflowId,
@@ -799,7 +806,7 @@ onBeforeUnmount(() => {
               />
             </span>
           </div>
-          <div class="home-composer__toolbar flex items-center gap-2 border-t px-3 py-2.5">
+          <div class="home-composer__toolbar flex flex-wrap items-center gap-2 border-t px-3 py-2.5">
             <button
               type="button"
               class="home-composer__plus flex h-8 w-8 shrink-0 items-center justify-center border text-txt2 hover:text-txt disabled:opacity-40"
@@ -811,7 +818,7 @@ onBeforeUnmount(() => {
               <Icon name="plus" :size="16" />
             </button>
             <Transition name="home-mode-controls" mode="out-in">
-              <div v-if="homeMode === 'workflow'" key="workflow" class="home-mode-controls flex min-w-0 items-center gap-2">
+              <div v-if="homeMode === 'workflow'" key="workflow" class="home-mode-controls flex min-w-0 flex-wrap items-center gap-2">
                 <label class="sr-only" for="home-workflow-select">{{ t('pages.dashboard.pickWorkflow') }}</label>
                 <HomeWorkflowSelect
                   :workflows="homeWorkflows"
@@ -819,6 +826,15 @@ onBeforeUnmount(() => {
                   :disabled="sending"
                   @update:model-value="selectWorkflow"
                   @create="onCreateFromSelect"
+                />
+                <SoloModelSelect
+                  v-if="showLaunchModel"
+                  :model-value="launchModelId"
+                  :reasoning-effort="launchReasoningEffort"
+                  :models="launchModelChoices"
+                  :disabled="sending"
+                  @update:model-value="selectLaunchModel"
+                  @update:reasoning-effort="selectLaunchEffort"
                 />
                 <HomePrioritySelect
                   :model-value="launchPriority"
@@ -1132,6 +1148,7 @@ onBeforeUnmount(() => {
       :run-title="launchTitle"
       :first-message="launchFirstMessage"
       :initial-priority="launchPriority"
+      :launch-model="launchModelForModal"
       published-snapshot
       @close="closeLaunch()"
       @stayed="closeLaunch()"

@@ -23,6 +23,8 @@
       "send": "发送",
       "sendShortcut": "Ctrl/⌘ + Enter 发送",
       "missingRequired": "启动前还需填写必填项",
+      "launchModelReset": "上次选择的模型或思考强度已不可用，已改回主模型和最高思考强度。",
+      "launchModelCatalogBlocked": "模型目录没有加载出来，请稍后再发送。",
       "cardFallback": "Grasp 开发前澄清",
       "scrollLeft": "短按向左滚一张，按住到最左端",
       "scrollRight": "短按向右滚一张，按住到最右端",

@@ -13,6 +13,31 @@ import (
 	"backend/internal/provider/modelconnection"
 )
 
+const openCodeVariantFixture = `#!/bin/sh
+set -eu
+if [ "${1:-}" = "--version" ]; then
+  printf '1.19.4\n'
+  exit 0
+fi
+if [ "${1:-}" = "models" ]; then
+  [ "$#" -eq 3 ] && [ "$2" = "opencode" ] && [ "$3" = "--refresh" ]
+  printf 'models\n' >> "$GRASP_VARIANT_TEST_CALLS_OUT"
+  mkdir -p "$XDG_CACHE_HOME/opencode"
+  printf '%s' '{"opencode":{"id":"opencode","models":{"gpt-5.5":{"id":"gpt-5.5","name":"GPT-5.5","status":"active"}}}}' > "$XDG_CACHE_HOME/opencode/models.json"
+  printf 'opencode/gpt-5.5\n'
+  exit 0
+fi
+printf 'run\n' >> "$GRASP_VARIANT_TEST_CALLS_OUT"
+printf '%s\n' "$@" > "$GRASP_VARIANT_TEST_ARGV_OUT"
+printf '%s' "$OPENCODE_CONFIG_CONTENT" > "$GRASP_VARIANT_TEST_CONFIG_OUT"
+for arg in "$@"; do
+  if [ "$arg" = "--thinking" ]; then
+    printf '%s\n' '{"type":"reasoning","part":{"type":"reasoning","text":"fixture model thought"}}'
+  fi
+done
+printf '%s\n' '{"type":"text","part":{"text":"connected"}}' '{"type":"step_finish","part":{"reason":"stop"}}'
+`
+
 // Record the subprocess boundary so a valid variant declaration cannot hide an
 // invalid --model argument. The fixture never contacts a model service.
 func TestOpenCodeVariantSubprocessKeepsModelID(t *testing.T) {
@@ -30,27 +55,14 @@ func TestOpenCodeVariantSubprocessKeepsModelID(t *testing.T) {
 			dir := t.TempDir()
 			argvPath := filepath.Join(dir, "argv")
 			configPath := filepath.Join(dir, "config.json")
-			fixture := `#!/bin/sh
-set -eu
-if [ "${1:-}" = "--version" ]; then
-  printf '1.19.4\n'
-  exit 0
-fi
-printf '%s\n' "$@" > "$GRASP_VARIANT_TEST_ARGV_OUT"
-printf '%s' "$OPENCODE_CONFIG_CONTENT" > "$GRASP_VARIANT_TEST_CONFIG_OUT"
-for arg in "$@"; do
-  if [ "$arg" = "--thinking" ]; then
-    printf '%s\n' '{"type":"reasoning","part":{"type":"reasoning","text":"fixture model thought"}}'
-  fi
-done
-printf '%s\n' '{"type":"text","part":{"text":"connected"}}' '{"type":"step_finish","part":{"reason":"stop"}}'
-`
-			if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(fixture), 0o700); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(openCodeVariantFixture), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			t.Setenv("GRASP_VARIANT_TEST_ARGV_OUT", argvPath)
 			t.Setenv("GRASP_VARIANT_TEST_CONFIG_OUT", configPath)
+			t.Setenv("GRASP_VARIANT_TEST_CALLS_OUT", filepath.Join(dir, "calls"))
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
 			t.Setenv("CONFIG_ROOT", t.TempDir())
 			t.Setenv(modelconnection.EnvConfig, "")
 			modelID := "opencode/gpt-5.5"
@@ -143,5 +155,40 @@ printf '%s\n' '{"type":"text","part":{"text":"connected"}}' '{"type":"step_finis
 				}
 			}
 		})
+	}
+}
+
+func TestOfficialOpenCodeCustomVariantCannotFabricateModel(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(openCodeVariantFixture), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("CONFIG_ROOT", t.TempDir())
+	t.Setenv(modelconnection.EnvConfig, "")
+	t.Setenv("GRASP_OPENCODE_PROVIDER", "opencode")
+	t.Setenv("GRASP_CONFIGURED_MODELS", "")
+	t.Setenv("OPENCODE_API_KEY", "official-test-key")
+	t.Setenv("GRASP_VARIANT_TEST_CALLS_OUT", filepath.Join(dir, "calls"))
+	t.Setenv("GRASP_VARIANT_TEST_ARGV_OUT", filepath.Join(dir, "argv"))
+	t.Setenv("GRASP_VARIANT_TEST_CONFIG_OUT", filepath.Join(dir, "config.json"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	sess, err := Get(provider.OpenCode).Open(ctx, ctx, provider.OpenOptions{
+		Cwd: t.TempDir(), Model: "opencode/missing-model", ReasoningEffort: "turbo",
+	}, nil, nil)
+	if err == nil {
+		_ = sess.Close()
+		t.Fatal("custom variant fabricated an official model missing from the native catalog")
+	}
+	if !strings.Contains(err.Error(), "opencode/missing-model") {
+		t.Fatalf("missing official model diagnostic lost selected ID: %v", err)
+	}
+	assertOfficialOpenCodeCalls(t, filepath.Join(dir, "calls"), 1, 0)
+	for _, file := range []string{"argv", "config.json"} {
+		if _, err := os.Stat(filepath.Join(dir, file)); !os.IsNotExist(err) {
+			t.Fatalf("catalog validation reached native run: file=%s err=%v", file, err)
+		}
 	}
 }
