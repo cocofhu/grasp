@@ -172,6 +172,7 @@ func (h *Handlers) inboxContextClarify(c *gin.Context, runID, nodeID string, ite
 			clarify["task"] = t
 		}
 	}
+	putReactModelChoice(clarify, conv)
 	out := gin.H{
 		"type":           "clarify",
 		"status":         run.Status,

@@ -190,10 +190,8 @@ func (c *acpProvider) alignChatSettings(ctx context.Context, sess *reactSession,
 	effort = strings.TrimSpace(effort)
 	cur, err := sandbox.GetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat)
 	if err != nil {
-		if model == "" && effort == "" {
-			log.Warn().Err(err).Str("chat", chat).Msg("reset chat model: settings unread")
-			return nil
-		}
+		// An unread session is not the primary model. Reset and align both
+		// fail so a shared sandbox cannot keep a chat-selected model.
 		return err
 	}
 	if chatSettingsMatch(cur, model, effort) {

@@ -10,6 +10,11 @@ export type InboxClarifySession = {
   takeover?: boolean
   /** Taken-over node's task (see Run.clarifyByNode). */
   task?: string
+  currentConfigurationId?: string
+  currentModelId?: string
+  currentModelSet?: boolean
+  reasoningEffort?: string
+  modelNotice?: string
 }
 
 /** Resolve the open clarify/review session for an inbox item's node. */

@@ -132,6 +132,30 @@ func TestResetLiveChatModelUsesTheSessionChat(t *testing.T) {
 	}
 }
 
+func TestResetLiveChatModelErrorsWhenSettingsUnread(t *testing.T) {
+	var posts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/login" {
+			http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "cookie", Path: "/"})
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		if r.URL.Path == "/api/model" {
+			posts++
+			t.Errorf("posted a reset without reading settings")
+		}
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+	host, port := splitRouteHost(t, srv.URL)
+	acp := sandbox.NewACPClient(host, port).WithPassword("secret").WithChat("node-chat").WithBridgeModel("primary")
+	p := &acpProvider{backend: BackendCursor}
+	err := p.resetLiveChatModel(context.Background(), &sandbox.Sandbox{Host: host, Port: port, Password: "secret"}, acp)
+	if err == nil || posts != 0 {
+		t.Fatalf("unread settings treated as primary: err=%v posts=%d", err, posts)
+	}
+}
+
 func containsAll(values []string, want string) bool {
 	for _, value := range values {
 		if value != want {

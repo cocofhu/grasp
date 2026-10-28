@@ -76,6 +76,13 @@ function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) {
   void send(text, images, anns)
 }
 const stageNode = computed(() => findGraphNode(run.value?.nodes, nodeId.value) || null)
+const liveAgentName = computed(() => String(stageNode.value?.config?.agent_profile || '').trim())
+const liveConversation = computed(() => {
+  const byNode = run.value?.clarifyByNode?.[nodeId.value]
+  if (byNode) return byNode
+  const top = run.value?.clarify
+  return top?.nodeId === nodeId.value ? top : undefined
+})
 const conversationRunName = useConversationToolbarRunName(() => ({
   run: run.value,
   fallback: { runId: runId.value, runTitle: run.value?.title, workflowName: run.value?.workflowName },
@@ -143,6 +150,13 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
                   :handoff="handoff"
                   :composer-locked="composerLocked"
                   :confirm-error="confirmError"
+                  :model-switch="mode === 'chat' && !!liveAgentName"
+                  :agent-name="liveAgentName"
+                  :current-configuration-id="liveConversation?.currentConfigurationId"
+                  :current-model-id="liveConversation?.currentModelId"
+                  :current-model-set="liveConversation?.currentModelSet"
+                  :reasoning-effort="liveConversation?.reasoningEffort"
+                  :model-notice="liveConversation?.modelNotice"
                   :done-note="doneNote"
                   @takeover="takeover"
                   @send="onSend"

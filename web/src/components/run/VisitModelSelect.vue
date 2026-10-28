@@ -93,6 +93,7 @@ const shownModels = computed(() => {
 })
 const noticeText = computed(() => notice.value ? soloErrorText({ code: notice.value, message: notice.value }, t, te, locale.value) : '')
 const errorText = computed(() => localError.value || noticeText.value)
+const catalogFailedDefault = computed(() => catalog.blocked.value && !modelSet.value)
 
 async function save(nextConfiguration: string, nextModel: string, nextEffort: string) {
   const previous = { configurationId: configurationId.value, modelId: modelId.value, modelSet: modelSet.value, effort: effort.value, notice: notice.value }
@@ -147,10 +148,11 @@ function chooseEffort(value: string) {
       :model-value="currentSelection"
       :reasoning-effort="effort"
       :disabled="saving || !catalog.ready.value"
-      :empty-as-label="!catalog.ready.value && !modelSet"
+      :empty-as-label="catalog.ready.value && !shownModels.length && !modelSet"
       @update:model-value="chooseModel"
       @update:reasoning-effort="chooseEffort"
     />
+    <p v-if="catalogFailedDefault" class="mt-1 text-[11px] text-txt2" role="status" data-testid="visit-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailedDefault') }}</p>
     <p v-if="errorText" class="mt-1 text-[11px] text-err" data-testid="visit-model-notice">{{ errorText }}</p>
   </div>
 </template>

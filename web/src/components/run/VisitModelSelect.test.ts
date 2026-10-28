@@ -42,5 +42,23 @@ describe('VisitModelSelect', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).toContain('composer-fast')
     expect(wrapper.get('[data-testid="visit-model-select"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('当前 Agent 还没有可用模型')
+  })
+
+  it('keeps the default primary model when the directory fails before a switch', async () => {
+    mocks.getVisitModel.mockResolvedValue({ currentModelSet: false })
+    const wrapper = mount(VisitModelSelect, {
+      props: {
+        runId: 'run', nodeId: 'clarify', iteration: 1, agentName: '澄清',
+        currentModelSet: false, currentModelId: '',
+      },
+      global: {
+        plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { ...common, ...pages } } })],
+        stubs: { Icon: true, VendorMark: true },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('当前 Agent 还没有可用模型')
+    expect(wrapper.get('[data-testid="visit-model-catalog-notice"]').text()).toContain('模型目录没有加载出来，仍使用默认主模型')
   })
 })
