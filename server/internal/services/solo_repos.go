@@ -62,17 +62,12 @@ func sessionRepoFromProject(p *models.Project, branch string, position int) mode
 		b = strings.TrimSpace(p.DefaultBranch)
 	}
 	return models.SessionRepo{
-		Position:             position,
-		ProjectID:            p.ID,
-		Name:                 p.Name,
-		RepoURL:              strings.TrimSpace(p.RepoURL),
-		RepoDirName:          resolvedRepoDir(p.RepoDirName, p.RepoURL),
-		Branch:               b,
-		GitCredentialType:    p.GitCredentialType,
-		GitCredentialID:      p.GitCredentialID,
-		SshHostsCredentialID: p.SshHostsCredentialID,
-		Env:                  cloneStringMap(p.Env),
-		CredentialBindings:   cloneBindingMap(p.CredentialBindings),
+		Position:    position,
+		ProjectID:   p.ID,
+		Name:        p.Name,
+		RepoURL:     strings.TrimSpace(p.RepoURL),
+		RepoDirName: resolvedRepoDir(p.RepoDirName, p.RepoURL),
+		Branch:      b,
 	}
 }
 
@@ -87,38 +82,8 @@ func resolvedRepoDir(dir, repoURL string) string {
 	return name
 }
 
-func cloneStringMap(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func cloneBindingMap(in map[string]*string) map[string]*string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]*string, len(in))
-	for k, v := range in {
-		if v == nil {
-			out[k] = nil
-			continue
-		}
-		s := *v
-		out[k] = &s
-	}
-	return out
-}
-
 func validateSessionRepos(repos []models.SessionRepo) error {
 	if err := validateRepoDirs(repos); err != nil {
-		return err
-	}
-	if err := validateRepoKeys(repos); err != nil {
 		return err
 	}
 	return validateRepoBranches(repos)
@@ -142,54 +107,6 @@ func validateRepoDirs(repos []models.SessionRepo) error {
 			"目录名 %s 被仓库 %s 同时使用，请到仓库配置里修改目录名。",
 			map[string]any{"dir": dir, "repos": names[dir]},
 			dir, strings.Join(names[dir], "、"))
-	}
-	return nil
-}
-
-func validateRepoKeys(repos []models.SessionRepo) error {
-	if len(repos) < 2 {
-		return nil
-	}
-	type acc struct {
-		names []string
-		seen  map[string]struct{}
-	}
-	order := make([]string, 0)
-	keys := map[string]*acc{}
-	add := func(key, name string) {
-		key = strings.TrimSpace(key)
-		if key == "" || name == "" {
-			return
-		}
-		row := keys[key]
-		if row == nil {
-			row = &acc{seen: map[string]struct{}{}}
-			keys[key] = row
-			order = append(order, key)
-		}
-		if _, ok := row.seen[name]; ok {
-			return
-		}
-		row.seen[name] = struct{}{}
-		row.names = append(row.names, name)
-	}
-	for _, repo := range repos {
-		for key := range repo.Env {
-			add(key, repo.Name)
-		}
-		for key := range repo.CredentialBindings {
-			add(key, repo.Name)
-		}
-	}
-	for _, key := range order {
-		names := keys[key].names
-		if len(names) < 2 {
-			continue
-		}
-		return soloErrParams(http.StatusBadRequest, "env_key_conflict",
-			"变量 %s 在仓库 %s 中冲突，请修改后再启动。",
-			map[string]any{"key": key, "repos": names},
-			key, strings.Join(names, "、"))
 	}
 	return nil
 }
@@ -244,46 +161,4 @@ func SoloRepoSpecsList(repos []models.SessionRepo) []sandbox.RepoSpec {
 		return nil
 	}
 	return out
-}
-
-func projectsFromSessionRepos(repos []models.SessionRepo) []models.Project {
-	out := make([]models.Project, 0, len(repos))
-	for _, repo := range repos {
-		if strings.TrimSpace(repo.RepoURL) == "" {
-			continue
-		}
-		out = append(out, models.Project{
-			ID:                   repo.ProjectID,
-			Name:                 repo.Name,
-			RepoURL:              repo.RepoURL,
-			DefaultBranch:        repo.Branch,
-			RepoDirName:          repo.RepoDirName,
-			GitCredentialType:    repo.GitCredentialType,
-			GitCredentialID:      repo.GitCredentialID,
-			SshHostsCredentialID: repo.SshHostsCredentialID,
-			Env:                  repo.Env,
-			CredentialBindings:   repo.CredentialBindings,
-		})
-	}
-	return out
-}
-
-func mergeSessionRepoConfig(repos []models.SessionRepo) (map[string]string, map[string]*string) {
-	env := map[string]string{}
-	bindings := map[string]*string{}
-	for _, repo := range repos {
-		for k, v := range repo.Env {
-			env[k] = v
-		}
-		for k, v := range repo.CredentialBindings {
-			bindings[k] = v
-		}
-	}
-	if len(env) == 0 {
-		env = nil
-	}
-	if len(bindings) == 0 {
-		bindings = nil
-	}
-	return env, bindings
 }

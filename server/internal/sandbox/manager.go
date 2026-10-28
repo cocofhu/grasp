@@ -3,12 +3,15 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/execution"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -133,31 +136,18 @@ type Spec struct {
 	// Empty fields are omitted (do not create/clear the corresponding file).
 	SSHPrivateKey string
 	SSHKnownHosts string
-	// RepoCredentials are per-repository Git secrets layered over the host-wide
-	// credential. They ride in the SSH staging bundle, never in env.
-	RepoCredentials []RepoCredential
 	// GitBindingsConfigured distinguishes legacy host credentials from an
 	// explicitly selected (possibly empty) catalog of Git credentials.
 	GitBindingsConfigured bool
 	GitCredentials        []GitCredential
 }
 
-// Repo credential kinds understood by startup.sh.
+// Repo credential kinds understood by the Agent Git catalog and startup.sh.
 const (
 	RepoCredentialGitHubHTTPS = "github_https"
 	RepoCredentialGitLabHTTPS = "gitlab_https"
 	RepoCredentialSSH         = "ssh"
 )
-
-// RepoCredential grants access to exactly one repository URL, so different
-// repositories on one host can use different tokens or SSH keys. Secret is a
-// token for the HTTPS kinds and a private key for ssh.
-type RepoCredential struct {
-	URL        string
-	Kind       string
-	Secret     string
-	KnownHosts string
-}
 
 // GitCredential is an explicitly selected credential, delivered as root-only
 // files. Scope is a host or repository URL; empty uses the provider's default
@@ -298,6 +288,9 @@ type Sandbox struct {
 	// hostKeys is used when mgr is nil (detached test handles) so TOFU state
 	// survives across dials on the same Sandbox.
 	hostKeys *hostKeyCache
+	// local is set when the worktree image runs the agent in this process.
+	// Data-plane calls use the filesystem, and Destroy does not talk to the gateway.
+	local *localExec
 }
 
 // NewManager builds a gateway-backed manager.
@@ -373,6 +366,9 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 // resolved session endpoint, and returns the handle. The caller should
 // WaitForACPReady before connecting the ACP client.
 func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
+	if execution.Worktree() {
+		return m.createWorktree(ctx, spec)
+	}
 	if m.gw == nil {
 		return nil, fmt.Errorf("sandbox manager has no gateway client configured")
 	}
@@ -445,12 +441,12 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	// the runtime bundle into GRASP_RUNTIME_URL. SSH staging must land before
 	// git clone; startup.sh runs inject first. All share one auth token.
 	var bundleIDs []string
-	if inj := m.buildMultiInject(spec.ConfigHome, configRoot, spec.SSHPrivateKey, spec.SSHKnownHosts, spec.RepoCredentials, spec.GitBindingsConfigured, spec.GitCredentials, runtimeData); inj.ok() {
+	if inj := m.buildMultiInject(spec.ConfigHome, configRoot, spec.SSHPrivateKey, spec.SSHKnownHosts, spec.GitBindingsConfigured, spec.GitCredentials, runtimeData); inj.ok() {
 		if len(inj.parts) > 0 {
 			env["SANDBOX_INJECT"] = strings.Join(inj.parts, ",")
 			log.Info().Str("sandbox_inject", env["SANDBOX_INJECT"]).
 				Bool("ssh", strings.TrimSpace(spec.SSHPrivateKey) != "" || strings.TrimSpace(spec.SSHKnownHosts) != "").
-				Int("repo_credentials", len(spec.RepoCredentials)).
+				Int("git_credentials", len(spec.GitCredentials)).
 				Msg("sandbox config+ssh inject via SANDBOX_INJECT")
 		}
 		if inj.runtimeURL != "" {
@@ -577,7 +573,7 @@ func (p injectPlan) ok() bool { return len(p.parts) > 0 || p.runtimeURL != "" }
 // buildMultiInject registers the optional SSH staging, ConfigHome and runtime
 // bundles under one bearer token. The zero plan means nothing to inject (or no
 // inject store / reachable base URL).
-func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts string, repoCreds []RepoCredential, gitConfigured bool, gitCredentials []GitCredential, runtime []byte) injectPlan {
+func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts string, gitConfigured bool, gitCredentials []GitCredential, runtime []byte) injectPlan {
 	if m.bundles == nil {
 		return injectPlan{}
 	}
@@ -598,7 +594,7 @@ func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts stri
 		plan.ids = append(plan.ids, id)
 		return base + "/sandbox-inject/" + id + ".tgz"
 	}
-	if sshData, err := packGitInjectBundle(sshKey, sshHosts, repoCreds, gitConfigured, gitCredentials); err != nil {
+	if sshData, err := packGitInjectBundle(sshKey, sshHosts, gitConfigured, gitCredentials); err != nil {
 		log.Warn().Err(err).Msg("pack ssh inject bundle failed")
 	} else if sshData != nil {
 		u := put(sshData)
@@ -696,7 +692,11 @@ func (m *Manager) DestroyByName(ctx context.Context, id string) error {
 		return nil
 	}
 	m.runtime.forget(id)
-	return m.gw.Destroy(ctx, id)
+	if err := m.gw.Destroy(ctx, id); err != nil {
+		return err
+	}
+	m.hostKeys.forget(id)
+	return nil
 }
 
 // Logs fetches PID1 combined stdout/stderr via the gateway control plane.
@@ -958,6 +958,7 @@ func (s *Sandbox) creds() sshCreds {
 		}
 		c = sshCreds{host: s.SSHHost, port: s.SSHPort, signer: signer, authKey: authKey, user: "root", hostKeys: s.hostKeys}
 	}
+	c.sandboxID = strings.TrimSpace(s.ID)
 	c.password = s.dataPlanePassword()
 	if c.authKey == "" {
 		_, c.authKey, _ = sharedSSHKey()
@@ -966,15 +967,25 @@ func (s *Sandbox) creds() sshCreds {
 }
 
 func (s *Sandbox) resolvePath(path string) string {
-	if strings.HasPrefix(path, "/") {
-		return path
+	if !strings.HasPrefix(path, "/") {
+		path = strings.TrimRight(s.workspaceDir(), "/") + "/" + path
 	}
-	return strings.TrimRight(s.workspaceDir(), "/") + "/" + path
+	if s.local != nil {
+		return s.mapLocalPath(path)
+	}
+	return path
 }
 
 // ReadFile reads a file from inside the sandbox (relative paths resolve against
 // WORKSPACE_DIR).
 func (s *Sandbox) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	if s.local != nil {
+		body, err := os.ReadFile(s.resolvePath(path))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
+		return body, nil
+	}
 	cmd, err := newSafeCmd("cat", "--", s.resolvePath(path))
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -988,6 +999,16 @@ func (s *Sandbox) ReadFile(ctx context.Context, path string) ([]byte, error) {
 
 // WriteFile writes content to a path inside the sandbox, creating parent dirs.
 func (s *Sandbox) WriteFile(ctx context.Context, path string, content []byte) error {
+	if s.local != nil {
+		resolved := s.resolvePath(path)
+		if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		if err := os.WriteFile(resolved, content, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		return nil
+	}
 	resolved := s.resolvePath(path)
 	dir := resolved
 	if i := strings.LastIndex(resolved, "/"); i > 0 {
@@ -1013,6 +1034,10 @@ func (s *Sandbox) WriteFile(ctx context.Context, path string, content []byte) er
 
 // FileExists reports whether a path exists inside the sandbox.
 func (s *Sandbox) FileExists(ctx context.Context, path string) bool {
+	if s.local != nil {
+		_, err := os.Stat(s.resolvePath(path))
+		return err == nil
+	}
 	cmd, err := newSafeCmd("test", "-e", s.resolvePath(path))
 	if err != nil {
 		return false
@@ -1028,6 +1053,9 @@ func (s *Sandbox) Exec(ctx context.Context, timeout time.Duration, cmd ...string
 	if err != nil {
 		return "", err
 	}
+	if s.local != nil {
+		return s.runLocal(ctx, timeout, sc.argv, nil)
+	}
 	out, err := s.creds().run(ctx, timeout, sc)
 	return strings.TrimSpace(string(out)), err
 }
@@ -1039,13 +1067,23 @@ func (s *Sandbox) ExecScript(ctx context.Context, timeout time.Duration, interpr
 	if err != nil {
 		return "", err
 	}
+	if s.local != nil {
+		return s.runLocal(ctx, timeout, sc.argv, strings.NewReader(script))
+	}
 	out, err := s.creds().runInput(ctx, timeout, sc, strings.NewReader(script))
 	return strings.TrimSpace(string(out)), err
 }
 
 // Destroy removes the sandbox via the gateway (best effort).
 func (s *Sandbox) Destroy(ctx context.Context) {
-	if s == nil || s.mgr == nil {
+	if s == nil {
+		return
+	}
+	if s.local != nil {
+		s.local.shutdown()
+		return
+	}
+	if s.mgr == nil {
 		return
 	}
 	if err := s.mgr.DestroyByName(ctx, s.ID); err != nil {

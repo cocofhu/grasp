@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -241,6 +242,195 @@ func TestCodexUsesResponsesProviderAndPreservesPlatformHome(t *testing.T) {
 	if strings.Contains(args, "selected-secret") || common.GetEnvValue(p.Env, "CODEX_HOME") != "/original-auth-home" || p.Model != c.SelectedModelID {
 		t.Fatal("custom provider must use separate env credential and preserve auth home")
 	}
+}
+
+func TestCatalogSessionModelOverridesPrimary(t *testing.T) {
+	const session = "fast/model"
+	base := connection(Chat)
+	for _, tool := range []provider.Name{provider.OpenCode, provider.ClaudeCode, provider.CodeBuddy, provider.Codex, provider.DeepSeekHarness} {
+		t.Run(string(tool), func(t *testing.T) {
+			toolConnection := base
+			toolConnection.ToolSettings.ModelRoles = map[string]string{}
+			switch tool {
+			case provider.OpenCode:
+				toolConnection.ToolSettings.ModelRoles["fast"] = base.SelectedModelID
+			case provider.ClaudeCode:
+				toolConnection.Protocol = Messages
+				toolConnection.Auth.Scheme = "x-api-key"
+				toolConnection.ToolSettings.ModelRoles["fast"] = base.SelectedModelID
+				toolConnection.ToolSettings.ModelRoles["haiku"] = base.SelectedModelID
+				toolConnection.ToolSettings.ModelRoles["subagent"] = base.SelectedModelID
+			case provider.CodeBuddy:
+				toolConnection.ToolSettings.ModelRoles["fast"] = base.SelectedModelID
+				toolConnection.ToolSettings.ModelRoles["reasoning"] = base.SelectedModelID
+				toolConnection.ToolSettings.ModelRoles["subagent"] = base.SelectedModelID
+			case provider.Codex:
+				toolConnection.Protocol = Responses
+			}
+			p, err := Prepare(tool, environ(t, toolConnection), session, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(p.Cleanup)
+			if p.Connection.SelectedModelID != toolConnection.SelectedModelID {
+				t.Fatal("preparing a chat changed the configuration primary")
+			}
+			if p.ChatModelID() != session {
+				t.Fatalf("chat model = %q", p.ChatModelID())
+			}
+			switch tool {
+			case provider.OpenCode:
+				if p.Model != p.RouteID+"/"+session {
+					t.Fatalf("OpenCode model = %q", p.Model)
+				}
+				raw := common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")
+				var doc struct {
+					Model      string
+					SmallModel string `json:"small_model"`
+				}
+				if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+					t.Fatal(err)
+				}
+				if doc.Model != p.Model || doc.SmallModel != p.RouteID+"/"+toolConnection.SelectedModelID {
+					t.Fatalf("OpenCode main/fast slots: %s", raw)
+				}
+			case provider.ClaudeCode:
+				if common.GetEnvValue(p.Env, "ANTHROPIC_MODEL") != session || common.GetEnvValue(p.Env, "ANTHROPIC_DEFAULT_MODEL") != session || common.GetEnvValue(p.Env, "ANTHROPIC_DEFAULT_FABLE_MODEL") != session {
+					t.Fatal("Claude main model stayed on the primary")
+				}
+				if common.GetEnvValue(p.Env, "ANTHROPIC_SMALL_FAST_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "ANTHROPIC_DEFAULT_HAIKU_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "CLAUDE_CODE_SUBAGENT_MODEL") != toolConnection.SelectedModelID {
+					t.Fatal("Claude role models followed the chat model")
+				}
+				data, err := os.ReadFile(filepath.Join(common.GetEnvValue(p.Env, "CLAUDE_CONFIG_DIR"), "settings.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var settings struct{ Model string }
+				if err := json.Unmarshal(data, &settings); err != nil || settings.Model != session {
+					t.Fatalf("Claude settings model: %s", data)
+				}
+			case provider.CodeBuddy:
+				if common.GetEnvValue(p.Env, "CODEBUDDY_MODEL") != session {
+					t.Fatal("CodeBuddy main model stayed on the primary")
+				}
+				if common.GetEnvValue(p.Env, "CODEBUDDY_SMALL_FAST_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "CODEBUDDY_BIG_SLOW_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "CODEBUDDY_CODE_SUBAGENT_MODEL") != toolConnection.SelectedModelID {
+					t.Fatal("CodeBuddy role models followed the chat model")
+				}
+				data, err := os.ReadFile(filepath.Join(common.GetEnvValue(p.Env, "CODEBUDDY_CONFIG_DIR"), "settings.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var settings struct{ Model string }
+				if err := json.Unmarshal(data, &settings); err != nil || settings.Model != session {
+					t.Fatalf("CodeBuddy settings model: %s", data)
+				}
+			case provider.Codex:
+				if p.Model != session || !strings.Contains(strings.Join(p.Args, " "), "model="+strconvQuote(session)) {
+					t.Fatalf("Codex model args = %q model=%q", p.Args, p.Model)
+				}
+			case provider.DeepSeekHarness:
+				var rows []map[string]any
+				if err := yaml.Unmarshal(p.DSHPatch, &rows); err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, row := range rows {
+					if row["id"] != "acp" {
+						continue
+					}
+					found = true
+					if row["config"].(map[string]any)["model"] != session {
+						t.Fatalf("DSH ACP model: %s", p.DSHPatch)
+					}
+				}
+				if !found {
+					t.Fatal("DSH ACP patch missing")
+				}
+			}
+		})
+	}
+	for _, requested := range []string{"", "auto", "stale-platform-model"} {
+		stale, err := Prepare(provider.DeepSeekHarness, environ(t, base), requested, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(stale.Cleanup)
+		if stale.ChatModelID() != base.SelectedModelID {
+			t.Fatalf("requested %q escaped the primary: %q", requested, stale.ChatModelID())
+		}
+	}
+}
+
+func strconvQuote(value string) string {
+	data, _ := json.Marshal(value)
+	return string(data)
+}
+
+func TestLaunchArgsUseCatalogIDNotRequestText(t *testing.T) {
+	const (
+		primary = "alpha"
+		catalog = "beta"
+		quoted  = `beta "v2"`
+		foreign = "request-body-not-in-catalog"
+	)
+	c := connection(Responses)
+	c.Models = []Model{{ID: primary}, {ID: catalog}, {ID: quoted}}
+	c.SelectedModelID = primary
+
+	t.Run("hit", func(t *testing.T) {
+		p, err := Prepare(provider.Codex, environ(t, c), catalog, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(p.Cleanup)
+		if p.Model != catalog || !codexModelArg(p.Args, catalog) {
+			t.Fatalf("catalog id missing: model=%q args=%q", p.Model, p.Args)
+		}
+	})
+
+	t.Run("quoted catalog id stays one argument", func(t *testing.T) {
+		p, err := Prepare(provider.Codex, environ(t, c), quoted, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(p.Cleanup)
+		if p.Model != quoted || !codexModelArg(p.Args, quoted) {
+			t.Fatalf("quoted catalog id missing: model=%q args=%q", p.Model, p.Args)
+		}
+		for _, arg := range p.Args {
+			if arg == quoted || arg == "beta" || arg == `"v2"` {
+				t.Fatalf("catalog id was split: %q", p.Args)
+			}
+		}
+	})
+
+	for _, requested := range []string{"", "auto", foreign, "  " + foreign} {
+		t.Run("fallback "+strconv.Quote(requested), func(t *testing.T) {
+			p, err := Prepare(provider.Codex, environ(t, c), requested, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(p.Cleanup)
+			if p.Model != primary || !codexModelArg(p.Args, primary) {
+				t.Fatalf("requested %q model=%q args=%q", requested, p.Model, p.Args)
+			}
+			for _, arg := range p.Args {
+				if strings.Contains(arg, foreign) {
+					t.Fatalf("request %q leaked into %q", requested, p.Args)
+				}
+			}
+		})
+	}
+}
+
+func codexModelArg(args []string, id string) bool {
+	want := "model=" + strconv.Quote(id)
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-c" && args[i+1] == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDSHThreeProtocolsAndNativeRoute(t *testing.T) {

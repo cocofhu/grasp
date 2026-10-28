@@ -24,8 +24,15 @@ func TestSettingsAndLiveEndpoints(t *testing.T) {
 	if w := h.do("GET", "/api/live", nil); w.Code != 200 {
 		t.Fatalf("live: %d", w.Code)
 	}
-	if w := h.do("GET", "/api/settings", nil); w.Code != 200 {
+	t.Setenv("GRASP_EXECUTION_MODE", "worktree")
+	if w := h.do("GET", "/api/settings", nil); w.Code != 200 || !strings.Contains(w.Body.String(), `"execution_mode":"worktree"`) {
 		t.Fatalf("get settings: %d %s", w.Code, w.Body)
+	}
+	if w := h.do("PUT", "/api/settings", map[string]any{
+		"execution_mode":      "sandbox",
+		"max_concurrent_runs": 4,
+	}); w.Code != 200 || !strings.Contains(w.Body.String(), `"execution_mode":"worktree"`) {
+		t.Fatalf("save changed execution mode: %d %s", w.Code, w.Body)
 	}
 	if w := h.do("PUT", "/api/settings", map[string]any{
 		services.KeyBrandProductName: "Acme",

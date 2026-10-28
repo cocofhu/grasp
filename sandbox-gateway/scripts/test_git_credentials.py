@@ -285,7 +285,8 @@ class CredentialsTest(unittest.TestCase):
         (explicit / "0.token").write_text("explicit-token\n")
         with patch.object(HELPER.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
             HELPER.exec_cli(self.directory, "glab", "https://git.example/team/app.git", ["--", "mr", "list"])
-        self.assertEqual(run.call_args.kwargs["env"]["GITLAB_TOKEN"], "explicit-token")
+        self.assertEqual(run.call_args.kwargs["env"]["GITLAB_TOKEN"], "exact-token")
+        self.assertNotIn("explicit-token", repr(run.call_args.kwargs["env"]))
         with self.assertRaises(ValueError):
             HELPER.exec_cli(self.directory, "curl", "https://git.example/team/app.git", ["--", "anything"])
 

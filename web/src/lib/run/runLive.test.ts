@@ -40,6 +40,13 @@ describe('decideLive (server currentNode)', () => {
     expect(runningAutoNode(run('waiting_human', cur('gate', 'gate', 'waiting_human')))).toBeNull()
     expect(runningAutoNode(run('running'))).toBeNull()
   })
+  it('does not observe an automatic successor that has not started', () => {
+    const entering = cur('impl', 'agent', 'entering')
+    expect(runningAutoNode(run('waiting_human', entering))).toBeNull()
+    expect(runningAutoNode(run('running', entering))).toBeNull()
+    expect(decideLive(run('waiting_human', entering), 'clarify')).toEqual({ kind: 'detail' })
+    expect(decideLive(run('running', entering), 'impl')).toEqual({ kind: 'detail' })
+  })
 })
 
 describe('takeover error codes', () => {

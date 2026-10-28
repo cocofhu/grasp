@@ -217,7 +217,7 @@ func (p *Provider) Open(procCtx, _ context.Context, opts provider.OpenOptions,
 		bgGrace:  BackgroundGrace(),
 	}
 	if prepared.Connection != nil {
-		s.displayModel = prepared.Connection.SelectedModelID
+		s.displayModel = prepared.ChatModelID()
 	}
 	s.sessionID = opts.ResumeSessionID
 	if s.sessionID == "" {

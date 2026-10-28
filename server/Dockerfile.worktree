@@ -1,0 +1,188 @@
+# Worktree 镜像：Grasp 服务与本地执行依赖在同一个容器里。
+# 构建上下文 = 仓库根。入口仍是 grasp-server。
+# 复用 sandbox-gateway/sandbox/scripts/install-agent.sh，不复制沙箱镜像。
+# 不安装容器引擎、远程登录服务、网页 IDE，也不安装数据库客户端。
+# 执行模式在构建时写死，运行时不能改。
+# 运行阶段底包。这条 ARG 必须写在第一条 FROM 之前，后面的 FROM 才能读到。
+# 默认走国内镜像；CI 与发版传入 BASE_IMAGE=ubuntu:22.04。
+ARG BASE_IMAGE=docker.m.daocloud.io/library/ubuntu:22.04
+
+# --- Web (Vite) 构建 ---
+FROM node:24-bookworm-slim AS web-builder
+WORKDIR /src/web
+COPY web/package*.json web/.npmrc ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+COPY scripts/assert-no-approving-brand.mjs /src/scripts/assert-no-approving-brand.mjs
+COPY server/internal/modelrouting/provider_efforts.json /src/server/internal/modelrouting/provider_efforts.json
+RUN npm run build
+
+# --- 沙箱运行时包（本地启动 backend，不创建沙箱容器）---
+FROM golang:1.26-bookworm AS sandbox-runtime
+WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
+COPY sandbox-gateway/sandbox/go.mod sandbox-gateway/sandbox/go.sum sandbox-gateway/sandbox/
+RUN cd sandbox-gateway/sandbox && go mod download
+COPY sandbox-gateway/sandbox/ sandbox-gateway/sandbox/
+COPY scripts/build-sandbox-runtime.sh scripts/
+RUN scripts/build-sandbox-runtime.sh /out
+
+# --- Go 构建 ---
+FROM golang:1.26-bookworm AS build
+WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
+COPY server/go.mod server/go.sum ./
+RUN go mod download
+COPY server/ .
+COPY --from=web-builder /src/web/dist ./web/dist
+ARG GIT_COMMIT=""
+ARG GITHUB_SHA=""
+RUN COMMIT_SHA="${GIT_COMMIT:-$GITHUB_SHA}" && \
+    CGO_ENABLED=1 go build -trimpath \
+      -ldflags="-s -w -X github.com/cocofhu/grasp/internal/version.commit=${COMMIT_SHA}" \
+      -o /out/grasp-server ./cmd/server
+RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/grasp ./cmd/doctor
+
+# --- 运行：Ubuntu 22.04，与沙箱镜像同一底包，才能装浏览器系统库和 JDK 11 ---
+FROM ${BASE_IMAGE}
+ARG USE_CN_MIRROR=true
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
+      sed -i 's@http://.*archive.ubuntu.com@http://mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list && \
+      sed -i 's@http://.*security.ubuntu.com@http://mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list; \
+    fi
+
+RUN set -eu; \
+    ok=0; \
+    for i in 1 2 3 4 5; do \
+      if apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+        unzip \
+        xz-utils \
+        libsqlite3-0 \
+        build-essential \
+        gcc \
+        g++ \
+        make \
+        python3 \
+        python3-pip \
+        python3-venv \
+        openjdk-11-jdk \
+        fonts-noto-cjk \
+        fonts-liberation \
+        fonts-noto-color-emoji \
+        fontconfig \
+        xvfb \
+        x11vnc \
+        websockify \
+        socat; then ok=1; break; fi; \
+      echo "apt install attempt $i failed; waiting..."; sleep 20; \
+    done; \
+    [ "$ok" = 1 ]; \
+    rm -rf /var/lib/apt/lists/*
+
+ENV GLAB_VERSION=1.91.0
+RUN curl -fsSL --http1.1 --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 300 \
+      "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_amd64.tar.gz" -o /tmp/glab.tgz && \
+    tar -xzf /tmp/glab.tgz -C /tmp && \
+    install -m 0755 /tmp/bin/glab /usr/local/bin/glab && \
+    rm -rf /tmp/glab.tgz /tmp/bin /tmp/CHANGELOG.md /tmp/LICENSE /tmp/README.md && \
+    glab --version
+
+ENV GH_VERSION=2.96.0
+RUN set -eu; \
+    file="gh_${GH_VERSION}_linux_amd64.tar.gz"; \
+    ok=0; \
+    for url in \
+      "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${file}" \
+      "https://ghfast.top/https://github.com/cli/cli/releases/download/v${GH_VERSION}/${file}"; do \
+      if curl -fsSL --http1.1 --retry 5 --retry-delay 5 --retry-all-errors \
+          --connect-timeout 30 --max-time 300 "$url" -o /tmp/gh.tgz; then \
+        ok=1; break; \
+      fi; \
+      rm -f /tmp/gh.tgz; \
+    done; \
+    test "$ok" = "1"; \
+    tar -xzf /tmp/gh.tgz -C /tmp; \
+    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh; \
+    rm -rf /tmp/gh.tgz "/tmp/gh_${GH_VERSION}_linux_amd64"; \
+    gh --version
+
+ENV NODE_VERSION=24.13.0
+RUN set -eu; \
+    file="node-v${NODE_VERSION}-linux-x64.tar.xz"; \
+    if [ "$USE_CN_MIRROR" = "true" ]; then \
+      url="https://cdn.npmmirror.com/binaries/node/v${NODE_VERSION}/${file}"; \
+    else \
+      url="https://nodejs.org/dist/v${NODE_VERSION}/${file}"; \
+    fi; \
+    curl -fsSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 300 \
+      "$url" -o /tmp/node.tar.xz && \
+    tar -C /usr/local --strip-components=1 -xf /tmp/node.tar.xz && \
+    rm /tmp/node.tar.xz && \
+    node --version | grep -q "^v${NODE_VERSION}"
+
+RUN if [ "$USE_CN_MIRROR" = "true" ]; then npm config set registry https://registry.npmmirror.com; fi
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_VERSION=1.61.1
+RUN npx --yes playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \
+    && fc-cache -f \
+    && rm -rf /var/lib/apt/lists/* /root/.npm
+
+ENV GO_VERSION=1.26.10
+RUN set -eux; \
+    file="go${GO_VERSION}.linux-amd64.tar.gz"; \
+    ok=0; \
+    for base in \
+      "https://mirrors.aliyun.com/golang" \
+      "https://golang.google.cn/dl"; do \
+      if curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+          --connect-timeout 30 --max-time 600 \
+          "${base}/${file}" -o /tmp/go.tar.gz; then \
+        ok=1; break; \
+      fi; \
+      rm -f /tmp/go.tar.gz; \
+    done; \
+    test "$ok" = "1"; \
+    tar -C /usr/local -xzf /tmp/go.tar.gz; \
+    rm /tmp/go.tar.gz; \
+    /usr/local/go/bin/go version
+
+ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+ENV PATH=/root/.local/bin:/usr/local/go/bin:${JAVA_HOME}/bin:${PATH}
+ENV GOPROXY=https://goproxy.cn,direct
+RUN mkdir -p /root/.local/bin && npm install -g chrome-devtools-mcp
+
+ARG AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode,codex,deepseek_harness
+ARG AGENT_OPTIONAL_PROVIDERS=
+ARG AGENT_INSTALL_CMD=
+COPY sandbox-gateway/sandbox/scripts/install-agent.sh /usr/local/bin/install-agent.sh
+RUN chmod +x /usr/local/bin/install-agent.sh && \
+    AGENT_INSTALL_CMD="${AGENT_INSTALL_CMD}" \
+    AGENT_OPTIONAL_PROVIDERS="${AGENT_OPTIONAL_PROVIDERS}" \
+    /usr/local/bin/install-agent.sh "${AGENT_PROVIDERS}"
+
+WORKDIR /app
+COPY --from=build /out/grasp-server /app/grasp-server
+COPY --from=build /out/grasp /app/grasp
+COPY --from=build /src/web/dist /app/web/dist
+COPY --from=sandbox-runtime /out/sandbox-runtime.tgz /app/sandbox-runtime/sandbox-runtime.tgz
+RUN mkdir -p /opt/grasp-runtime/current && \
+    tar -xzf /app/sandbox-runtime/sandbox-runtime.tgz -C /opt/grasp-runtime/current && \
+    test -x /opt/grasp-runtime/current/bin/backend
+
+ENV GRASP_PORT=8080 \
+    GRASP_DB=/data/grasp.db \
+    GRASP_EXECUTION_MODE=worktree \
+    GRASP_WORKTREE_BACKEND=/opt/grasp-runtime/current/bin/backend
+VOLUME ["/data"]
+EXPOSE 8080
+ENTRYPOINT ["/app/grasp-server"]

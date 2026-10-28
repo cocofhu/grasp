@@ -165,7 +165,13 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		}
 	}
 	currentEffort, efforts := reasoningOptions(panel.ConfigOptions)
-	sess := &session{Session: acpx.Wrap(panel), cleanup: cleanup, selectedRoute: route, currentEffort: currentEffort, efforts: efforts}
+	home := common.GetEnvValue(prepared.Env, "DSH_HOME")
+	if strings.TrimSpace(home) == "" {
+		home = p.DefaultConfigRoot()
+	}
+	usage := newUsageTracker(home, panel.SessionID, model)
+	panel.PromptUsage = usage.promptDone
+	sess := &session{Session: acpx.Wrap(panel), cleanup: cleanup, selectedRoute: route, currentEffort: currentEffort, efforts: efforts, usage: usage}
 	go func() {
 		<-sess.Done()
 		cleanup()
@@ -285,6 +291,7 @@ type session struct {
 	selectedRoute string
 	currentEffort string
 	efforts       []string
+	usage         *usageTracker
 }
 
 // ReasoningOptions reads the immutable post-handshake snapshot; it never races
@@ -292,6 +299,22 @@ type session struct {
 func (s *session) ReasoningOptions() (string, []string) {
 	return s.currentEffort, append([]string(nil), s.efforts...)
 }
+
+// Prompt 在每轮开始前记下投影缓存基线，结束后把四桶差分写入 TurnResult。
+// prompt_done 帧里的 usage 由 Panel.PromptUsage 在同一轮结束前发出。
+func (s *session) Prompt(ctx context.Context, text string, images []provider.PromptImage) (provider.TurnResult, error) {
+	s.usage.begin()
+	res, err := s.Session.Prompt(ctx, text, images)
+	res.Usage = s.usage.turnUsage()
+	return res, err
+}
+
+// ReportsUsage 表示该会话会按轮上报用量。缓存读取失败时仍按旧行为省略 usage。
+func (s *session) ReportsUsage() bool { return s.usage.enabled() }
+
+// CumulativeUsage 不提供整会话累计量：DSH 的缓存分桶不区分模型，
+// 跨模型复用会话时无法正确归属。平台只用每轮 prompt_done 的增量。
+func (s *session) CumulativeUsage() map[string]provider.TokenUsage { return nil }
 
 func (s *session) Info() provider.AgentInfo {
 	info := s.Session.Info()

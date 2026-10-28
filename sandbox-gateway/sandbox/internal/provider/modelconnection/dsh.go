@@ -2,7 +2,7 @@ package modelconnection
 
 import "gopkg.in/yaml.v3"
 
-func (c Connection) dshPatch(route string) ([]byte, error) {
+func (c Connection) dshPatch(route, sessionModel string) ([]byte, error) {
 	models := make([]map[string]any, 0, len(c.Models))
 	for _, model := range c.Models {
 		m := map[string]any{"id": model.ID}
@@ -52,6 +52,6 @@ func (c Connection) dshPatch(route string) ([]byte, error) {
 				route: map[string]any{"apiKeyEnv": EnvAPIKey, "api": api, "baseURL": nativeBaseURL(&c), "models": models},
 			}}})
 	}
-	rows = append(rows, map[string]any{"id": "acp", "config": map[string]any{"provider": route, "model": c.SelectedModelID}})
+	rows = append(rows, map[string]any{"id": "acp", "config": map[string]any{"provider": route, "model": sessionModel}})
 	return yaml.Marshal(rows)
 }

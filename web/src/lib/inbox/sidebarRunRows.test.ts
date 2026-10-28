@@ -87,9 +87,11 @@ describe('isAutoProcessNode', () => {
   const node = (over: Record<string, unknown>) =>
     ({ id: 'n', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running', ...over }) as never
 
-  it('is an automatic agent that is running or stopping', () => {
+  it('is an automatic agent that is running, stopping, or entering', () => {
     expect(isAutoProcessNode(node({}))).toBe(true)
     expect(isAutoProcessNode(node({ state: 'stopping' }))).toBe(true)
+    expect(isAutoProcessNode(node({ state: 'entering' }))).toBe(true)
+    expect(isAutoProcessNode(node({ state: 'entering', mode: 'manual' }))).toBe(false)
     expect(isAutoProcessNode(node({ state: 'waiting_human' }))).toBe(false)
     expect(isAutoProcessNode(node({ mode: 'manual' }))).toBe(false)
     expect(isAutoProcessNode(node({ kind: 'takeover', mode: 'manual', state: 'stopping' }))).toBe(false)
@@ -111,6 +113,21 @@ describe('isAutoProcessNode', () => {
 describe('sidebar handoff group', () => {
   const human = { id: 'r', currentNode: { id: 'clarify', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' } } as never
   const claim = { fromNodeId: 'clarify', confirmedAuto: true, autoNodeId: 'impl', autoNodeName: '实现' }
+
+  it('groups a not-yet-started automatic successor from the list alone', () => {
+    const entering = {
+      id: 'r',
+      status: 'waiting_human',
+      currentNode: { id: 'impl', name: '实现', iteration: 0, kind: 'agent', mode: 'auto', state: 'entering' },
+    } as never
+    expect(sidebarRunGroup(entering, null)).toBe('auto')
+    expect(sidebarAutoNodeName(entering, null)).toBe('实现')
+    expect(sidebarRunGroup(human, null)).toBe('running')
+    expect(sidebarAutoNodeName(human, null)).toBe('')
+    const ended = { id: 'r', status: 'completed' } as never
+    expect(sidebarRunGroup(ended, null)).toBe('running')
+    expect(isAutoProcessRun(ended)).toBe(false)
+  })
 
   it('counts a settled automatic handoff before the snapshot is running', () => {
     expect(sidebarRunGroup(human, claim)).toBe('auto')

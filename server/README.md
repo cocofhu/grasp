@@ -170,7 +170,7 @@ Agent Studio 的 Env 页会按当前后端提示所需 Key;CodeBuddy / Trae 另�
 4. `CONFIG_ROOT` 映射为 `DSH_HOME`。生成的 `AGENTS.md` 合并角色指令和显式 `alwaysApply: true` 的规则，保留条件规则原文件与完整 `skills/`；澄清节点仍裁剪完成标记规则。stdio/HTTP MCP 经 ACP 创建会话时传入。
 5. 沙箱镜像预装固定版本 `@deepseek-ai/dsh@0.2.1-rc.2`，需要 `IMAGE_LEVEL >= 2`。按服务端、沙箱镜像的顺序发布；已有旧镜像中的运行时热更新不会安装 dsh。
 
-dsh ACP 文本按已提交的消息块推送，`usage_update` 仅表示上下文占用，不计入输入/输出/缓存 token 统计。会话续接遵循现有 ACP bridge 生命周期：网络或服务端重连可复用仍存活的会话，bridge 重启后的自动会话恢复尚未接入。
+dsh ACP 文本按已提交的消息块推送，`usage_update` 仅表示上下文占用，不计入输入/输出/缓存 token 统计。每轮输入/输出/缓存用量改为读取固定版本 dsh 的 `tokenUsage` 会话投影缓存，按轮差分后随 `prompt_done.usage` 上报：缓存未落盘或会话无模型调用时省略 `usage`，帧结构与旧版一致；子代理会话的用量不在主会话投影内，暂不汇总。会话续接遵循现有 ACP bridge 生命周期：网络或服务端重连可复用仍存活的会话，bridge 重启后的自动会话恢复尚未接入。
 
 ### 模型目录与 Solo 会话设置
 

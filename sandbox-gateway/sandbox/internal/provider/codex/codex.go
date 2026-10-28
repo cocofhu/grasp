@@ -74,7 +74,9 @@ func (codec) Args(opts provider.OpenOptions, prompt, resumeID string) []string {
 	if !sessionEffort && effort != "" && effort != "auto" {
 		args = append(args, "-c", "model_reasoning_effort="+effort)
 	}
-	if opts.AutoPermission {
+	// The bypass flag tells Codex an outer sandbox already exists. The worktree
+	// image has no outer sandbox, so the flag stays off there.
+	if opts.AutoPermission && os.Getenv("GRASP_EXECUTION_MODE") != "worktree" {
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}
 	args = append(args, opts.CustomArgs...)

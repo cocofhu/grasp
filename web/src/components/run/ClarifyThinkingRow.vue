@@ -30,7 +30,7 @@ const { t } = useI18n()
   <div
     v-else
     class="chat-meta grasp-status-host mt-1 inline-flex items-center gap-2 font-normal"
-    :class="outputting ? 'clarify-outputting' : ''"
+    :class="outputting ? 'clarify-outputting' : 'clarify-thinking'"
     data-testid="clarify-busy-status"
     :data-state="outputting ? 'outputting' : 'thinking'"
     role="status"
@@ -41,5 +41,7 @@ const { t } = useI18n()
 </template>
 
 <style scoped>
+.clarify-thinking { padding-inline: 4px; }
+.clarify-thinking :deep(.thinking-busy) { gap: 6px; }
 .clarify-outputting { color: rgb(var(--c-txt3)); }
 </style>

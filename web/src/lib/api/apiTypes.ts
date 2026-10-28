@@ -623,9 +623,7 @@ export interface WorkflowCatalogItem {
   needsRepo?: boolean
 }
 
-export type GitCredentialType = '' | 'github_https' | 'gitlab_https' | 'ssh'
-
-/** A Git repository registered for Solo sessions. Env never holds secrets. */
+/** A Git repository registered for Solo sessions. Access and environment live on the Agent. */
 export interface Project {
   id: string
   name: string
@@ -633,12 +631,6 @@ export interface Project {
   repoUrl: string
   defaultBranch?: string
   repoDirName?: string
-  /** This repository's own access method. Empty means none configured. */
-  gitCredentialType?: GitCredentialType
-  gitCredentialId?: string
-  sshHostsCredentialId?: string
-  env?: Record<string, string>
-  credentialBindings?: Record<string, string | null>
   createdBy?: string
   lastUsedAt?: string
   createdAt: string
@@ -651,11 +643,6 @@ export interface ProjectInput {
   repoUrl: string
   defaultBranch?: string
   repoDirName?: string
-  gitCredentialType?: GitCredentialType
-  gitCredentialId?: string
-  sshHostsCredentialId?: string
-  env?: Record<string, string>
-  credentialBindings?: Record<string, string | null>
 }
 
 export type SoloStatus = 'starting' | 'running' | 'closed' | 'error'
@@ -680,11 +667,6 @@ export interface SessionRepo {
   repoUrl: string
   repoDirName: string
   branch?: string
-  gitCredentialType?: GitCredentialType | string
-  gitCredentialId?: string
-  sshHostsCredentialId?: string
-  env?: Record<string, string>
-  credentialBindings?: Record<string, string | null>
 }
 
 export interface SoloSession {

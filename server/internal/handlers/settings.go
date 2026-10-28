@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/cocofhu/grasp/internal/auth"
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +25,7 @@ type updateSettingsBody struct {
 // GetSettings returns scheduling params and instance brand overrides to every
 // authenticated shell user.
 func (h *Handlers) GetSettings(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"items": h.Settings.Effective(), "brand": h.Settings.Brand()})
+	c.JSON(http.StatusOK, gin.H{"items": h.Settings.Effective(), "brand": h.Settings.Brand(), "execution_mode": execution.Mode()})
 }
 
 // UpdateSettings persists a patch of platform scheduling params and applies
@@ -60,7 +61,7 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "brand": h.Settings.Brand()})
+	c.JSON(http.StatusOK, gin.H{"items": items, "brand": h.Settings.Brand(), "execution_mode": execution.Mode()})
 }
 
 // requireAdmin writes 403 and returns false unless the session is an admin.

@@ -16,9 +16,6 @@ export function sessionRepos(session: RepoSource): SessionRepo[] {
       repoUrl: project.repoUrl,
       repoDirName: project.repoDirName || '',
       branch: session.branch || project.defaultBranch || '',
-      gitCredentialType: project.gitCredentialType,
-      env: project.env,
-      credentialBindings: project.credentialBindings,
     },
   ]
 }
