@@ -209,6 +209,9 @@ func finalize(db *gorm.DB) (*gorm.DB, error) {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		return nil, err
 	}
+	if err := stripProjectRuntimeConfig(db); err != nil {
+		return nil, err
+	}
 	createChannelIndexes(db)
 	if err := ensureWorkspace(db); err != nil {
 		return nil, err

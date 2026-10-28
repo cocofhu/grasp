@@ -222,31 +222,25 @@ func PackConfigHomeTarGz(hostDir string) ([]byte, error) {
 // known_hosts entries for extraction into SSHInjectStagingDir. Returns
 // (nil, nil) when both inputs are empty after trim.
 func PackSSHInjectTarGz(privateKey, knownHosts string) ([]byte, error) {
-	return PackSSHInjectBundle(privateKey, knownHosts, nil)
+	return PackSSHInjectBundle(privateKey, knownHosts)
 }
 
-// RepoCredentialsDir is the bundle subdirectory startup.sh reads per-repository
-// credentials from: a tab-separated "index kind url" manifest plus
-// <index>.secret and optional <index>.known_hosts files.
-const RepoCredentialsDir = "repos"
-
-// PackSSHInjectBundle is PackSSHInjectTarGz plus per-repository credentials.
-// Entries with an unknown kind, an empty secret or a URL containing whitespace
-// are dropped. Returns (nil, nil) when nothing is left to inject.
-func PackSSHInjectBundle(privateKey, knownHosts string, repos []RepoCredential) ([]byte, error) {
-	return packGitInjectBundle(privateKey, knownHosts, repos, false, nil)
+// PackSSHInjectBundle packs the legacy host SSH files. Per-repository
+// credential manifests are no longer produced; Agent Git authorization is the
+// git/ catalog from packGitInjectBundle.
+func PackSSHInjectBundle(privateKey, knownHosts string) ([]byte, error) {
+	return packGitInjectBundle(privateKey, knownHosts, false, nil)
 }
 
-// packGitInjectBundle preserves legacy injection while carrying an explicit
-// catalog (including an empty selection) entirely as root-only files.
-func packGitInjectBundle(privateKey, knownHosts string, repos []RepoCredential, configured bool, credentials []GitCredential) ([]byte, error) {
+// packGitInjectBundle preserves legacy host SSH files while carrying an
+// explicit Agent catalog (including an empty selection) as root-only files.
+func packGitInjectBundle(privateKey, knownHosts string, configured bool, credentials []GitCredential) ([]byte, error) {
 	if configured {
 		privateKey, knownHosts = "", ""
 	}
 	key := strings.TrimSpace(privateKey)
 	hosts := strings.TrimSpace(knownHosts)
-	repos = validRepoCredentials(repos)
-	if key == "" && hosts == "" && len(repos) == 0 && !configured {
+	if key == "" && hosts == "" && !configured {
 		return nil, nil
 	}
 	var buf bytes.Buffer
@@ -314,21 +308,6 @@ func packGitInjectBundle(privateKey, knownHosts string, repos []RepoCredential, 
 	if hosts != "" {
 		files = append(files, entry{"known_hosts", knownHosts, 0o644})
 	}
-	if len(repos) > 0 {
-		var manifest strings.Builder
-		for i, r := range repos {
-			fmt.Fprintf(&manifest, "%d\t%s\t%s\n", i, r.Kind, r.URL)
-			secret := r.Secret
-			if r.Kind != RepoCredentialSSH {
-				secret = strings.TrimSpace(secret)
-			}
-			files = append(files, entry{fmt.Sprintf("%s/%d.secret", RepoCredentialsDir, i), secret, 0o600})
-			if strings.TrimSpace(r.KnownHosts) != "" {
-				files = append(files, entry{fmt.Sprintf("%s/%d.known_hosts", RepoCredentialsDir, i), r.KnownHosts, 0o644})
-			}
-		}
-		files = append(files, entry{RepoCredentialsDir + "/manifest", manifest.String(), 0o600})
-	}
 	for _, f := range files {
 		if err := writeFile(f.name, f.body, f.mode); err != nil {
 			_ = tw.Close()
@@ -344,19 +323,4 @@ func packGitInjectBundle(privateKey, knownHosts string, repos []RepoCredential, 
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-func validRepoCredentials(in []RepoCredential) []RepoCredential {
-	out := make([]RepoCredential, 0, len(in))
-	for _, r := range in {
-		r.URL = strings.TrimSpace(r.URL)
-		if r.URL == "" || strings.ContainsAny(r.URL, " \t\r\n") || strings.TrimSpace(r.Secret) == "" {
-			continue
-		}
-		switch r.Kind {
-		case RepoCredentialGitHubHTTPS, RepoCredentialGitLabHTTPS, RepoCredentialSSH:
-			out = append(out, r)
-		}
-	}
-	return out
 }

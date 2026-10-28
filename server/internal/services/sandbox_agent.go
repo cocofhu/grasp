@@ -223,13 +223,6 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 // The zero value keeps the PM / cron behavior.
 type agentContainerExtra struct {
 	Repos []sandbox.RepoSpec
-	// Env is layered above the Agent env and below workspace credentials.
-	Env map[string]string
-	// RepoCredentials are per-repository secrets layered on the Agent's
-	// host-wide Git credential. They never replace the Agent choice.
-	RepoCredentials []sandbox.RepoCredential
-	// Bindings apply after the Agent's credential bindings.
-	Bindings map[string]*string
 	// Resident leaves destroy_at NULL so the sweeper never reclaims the sandbox.
 	Resident bool
 	// OnEnv receives the env key provenance once the env is final.
@@ -244,6 +237,8 @@ type agentContainerExtra struct {
 }
 
 // Env key provenance labels reported to the Solo environment panel.
+// EnvSourceProject remains so sessions recorded before repository env was
+// removed still display that source. New starts do not assign it.
 const (
 	EnvSourcePlatform   = "platform"
 	EnvSourceAgent      = "agent"
@@ -376,13 +371,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		env[k] = v
 	}
 	track.mark(env, EnvSourceSystem)
-	for k, v := range envauth.StripSecretEnvKeys(extra.Env) {
-		if envauth.IsPlatformReservedEnvKey(k) {
-			continue
-		}
-		env[k] = v
-	}
-	track.mark(env, EnvSourceProject)
 	creds := map[string]string{}
 	backend, err := runtime.ParseBackend(agent.AcpBackend)
 	if err != nil {
@@ -390,9 +378,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		return
 	}
 	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
-	if len(extra.Bindings) > 0 {
-		runtime.ApplyCredentialBindings(env, creds, extra.Bindings, s.selectedCredential)
-	}
 	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.gitCredential)
 	if err != nil {
 		fail(err)
@@ -475,7 +460,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		ConfigRoot:            configRoot,
 		WorkspaceDir:          agent.Layout.WorkspaceDir,
 	}
-	spec.RepoCredentials = extra.RepoCredentials
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)

@@ -1,19 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SoloMessage } from '@/lib/api/apiTypes'
 import { applyAcp, emptyAgentTurn, partsOf, turnsFromMessages } from './acpTurn'
-import {
-  accessMismatch,
-  bindingKeyProblem,
-  credentialsFor,
-  draftFromProject,
-  draftProblems,
-  emptyDraft,
-  envKeyProblem,
-  inputFromDraft,
-  isRepoUrl,
-  repoAccessKey,
-  repoNameFromUrl,
-} from './projectForm'
+import { draftFromProject, draftProblems, emptyDraft, inputFromDraft, isRepoUrl, repoNameFromUrl } from './projectForm'
 import { repoProtocol, repoShort } from './soloPrefs'
 import { soloErrorText } from './soloErrors'
 import { branchOfRepo, repoTriggerLabel, sessionRepoLabel, sessionRepos, soloCreateChoices } from './sessionRepos'
@@ -133,7 +121,7 @@ describe('session repos', () => {
   it('interpolates conflict names in the active language', () => {
     const dict: Record<string, string> = {
       'pages.solo.errors.repo_dir_conflict': '目录名 {dir} 被仓库 {repos} 同时使用',
-      'pages.solo.errors.env_key_conflict': 'Variable {key} conflicts across {repos}',
+      'pages.solo.errors.branch_invalid_repo': '分支名不能包含空格（{repo}）',
     }
     const t = (key: string, params?: Record<string, unknown>) => {
       let text = dict[key] || key
@@ -144,26 +132,13 @@ describe('session repos', () => {
     expect(soloErrorText({ code: 'repo_dir_conflict', params: { dir: 'webapp', repos: ['webapp', 'checkout'] } }, t, te, 'zh-CN')).toBe(
       '目录名 webapp 被仓库 webapp、checkout 同时使用',
     )
-    expect(soloErrorText({ code: 'env_key_conflict', params: { key: 'APP_ENV', repos: ['webapp', 'api'] } }, t, te, 'en')).toBe(
-      'Variable APP_ENV conflicts across webapp, api',
+    expect(soloErrorText({ code: 'branch_invalid_repo', params: { repo: 'webapp' } }, t, te, 'en')).toBe(
+      '分支名不能包含空格（webapp）',
     )
   })
 })
 
 describe('projectForm', () => {
-  it('flags invalid, reserved and sensitive env keys', () => {
-    expect(envKeyProblem('NODE_ENV')).toBe('')
-    expect(envKeyProblem('')).toBe('')
-    expect(envKeyProblem('1BAD')).toBe('invalid')
-    expect(envKeyProblem('GIT_REPOS')).toBe('reserved')
-    expect(envKeyProblem('GITHUB_TOKEN')).toBe('sensitive')
-    expect(envKeyProblem('db_password')).toBe('sensitive')
-    expect(envKeyProblem('MY_API_KEY')).toBe('sensitive')
-    // Bindings exist precisely to carry secrets.
-    expect(bindingKeyProblem('NPM_TOKEN')).toBe('')
-    expect(bindingKeyProblem('GIT_REPOS')).toBe('reserved')
-  })
-
   it('validates repo URLs and derives directory names', () => {
     expect(isRepoUrl('https://github.com/acme/app.git')).toBe(true)
     expect(isRepoUrl('git@github.com:acme/app.git')).toBe(true)
@@ -177,23 +152,14 @@ describe('projectForm', () => {
     expect(repoProtocol('https://x/y')).toBe('https')
   })
 
-  it('treats an empty access mode as this repository having none', () => {
-    expect(repoAccessKey('')).toBe('none')
-    expect(repoAccessKey('github_https')).toBe('github_https')
-  })
-
-  it('warns when the access mode does not fit the URL', () => {
-    expect(accessMismatch('git@github.com:a/b.git', 'github_https')).toBe('https')
-    expect(accessMismatch('https://github.com/a/b.git', 'ssh')).toBe('ssh')
-    expect(accessMismatch('https://github.com/a/b.git', 'github_https')).toBe('')
-    expect(accessMismatch('https://github.com/a/b.git', '')).toBe('')
-  })
-
-  it('round-trips a project and drops fields the access mode does not use', () => {
-    const draft = draftFromProject({
+  it('round-trips clone fields and drops retired runtime keys', () => {
+    const raw = {
       id: 'p1',
       name: ' app ',
+      description: 'demo',
       repoUrl: 'https://github.com/acme/app.git',
+      defaultBranch: 'main',
+      repoDirName: 'app',
       gitCredentialType: 'github_https',
       gitCredentialId: 'c1',
       sshHostsCredentialId: 'h1',
@@ -201,20 +167,20 @@ describe('projectForm', () => {
       credentialBindings: { NPM_TOKEN: 'c2' },
       createdAt: '',
       updatedAt: '',
-    })
-    draft.env.push({ k: '', v: 'ignored' })
-    draft.bindings.push({ k: 'EMPTY', v: '' })
+    }
+    const draft = draftFromProject(raw)
     const body = inputFromDraft(draft)
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       name: 'app',
-      gitCredentialType: 'github_https',
-      gitCredentialId: 'c1',
-      sshHostsCredentialId: '',
-      env: { NODE_ENV: 'test' },
-      credentialBindings: { NPM_TOKEN: 'c2' },
+      description: 'demo',
+      repoUrl: 'https://github.com/acme/app.git',
+      defaultBranch: 'main',
+      repoDirName: 'app',
     })
-    draft.gitCredentialType = ''
-    expect(inputFromDraft(draft).gitCredentialId).toBe('')
+    expect(body).not.toHaveProperty('gitCredentialType')
+    expect(body).not.toHaveProperty('env')
+    expect(body).not.toHaveProperty('credentialBindings')
+    expect(draft).not.toHaveProperty('gitCredentialType')
   })
 
   it('lists draft problems before submit', () => {
@@ -222,18 +188,24 @@ describe('projectForm', () => {
     expect(draftProblems(d)).toEqual(['name', 'repoUrl'])
     d.name = 'x'
     d.repoUrl = 'https://h/x.git'
-    d.gitCredentialType = 'ssh'
-    d.env = [{ k: 'API_TOKEN', v: 'v' }]
-    expect(draftProblems(d)).toEqual(['credential', 'env'])
+    d.defaultBranch = 'bad branch'
+    d.repoDirName = '../up'
+    expect(draftProblems(d)).toEqual(['branch', 'repoDir'])
+    d.defaultBranch = ''
+    d.repoDirName = 'app'
+    expect(draftProblems(d)).toEqual([])
   })
 
-  it('prefers credentials whose env key matches the access mode', () => {
-    const items = [
-      { id: 'a', type: 'git', name: 'gh', envKey: 'GITHUB_TOKEN', configured: true },
-      { id: 'b', type: 'ssh', name: 'key', envKey: 'GIT_SSH_PRIVATE_KEY', configured: true },
-      { id: 'c', type: 'git', name: 'old', envKey: 'GITHUB_TOKEN', configured: true, revokedAt: '2026-01-01' },
-    ]
-    expect(credentialsFor(items, 'GITHUB_TOKEN').map((c) => c.id)).toEqual(['a'])
-    expect(credentialsFor(items, 'GITLAB_TOKEN').map((c) => c.id)).toEqual(['a', 'b'])
+  it('keeps the repository URL placeholder to a single HTTPS example', async () => {
+    const zh = (await import('@/locales/zh-CN/pages.json')).default as {
+      pages: { projects: { form: { repoUrlPlaceholder: string }; subtitle: string } }
+    }
+    const en = (await import('@/locales/en/pages.json')).default as {
+      pages: { projects: { form: { repoUrlPlaceholder: string }; subtitle: string } }
+    }
+    expect(zh.pages.projects.form.repoUrlPlaceholder).toBe('https://github.com/acme/app.git')
+    expect(en.pages.projects.form.repoUrlPlaceholder).toBe('https://github.com/acme/app.git')
+    expect(zh.pages.projects.subtitle).not.toMatch(/凭据|环境变量/)
+    expect(en.pages.projects.subtitle).not.toMatch(/credential|variable/i)
   })
 })

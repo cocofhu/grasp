@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-27（仓库只保留克隆配置）
+
+- 日期：2026-10-27。
+- 范围：`server/internal/models/solo.go`、`server/internal/services/{project.go,solo_repos.go,sandbox_solo.go,sandbox_agent.go}`、`server/internal/database/project_runtime.go`、`server/internal/sandbox`、`sandbox-gateway/sandbox/scripts/{startup.sh,reprime.sh,git-credentials.py}`、`web/src/components/solo/ProjectForm.vue`、`web/src/views/ProjectsView.vue`、`web/src/lib/{solo,api}`、`docs/content/{help,en/help}/configuration.md`、`docs/dev/agent-model-routing-design.md`、`CHANGELOG.md`。
+- 做了什么：仓库登记和 Solo 单仓/多仓快照只保留名称、描述、地址、分支、目录及原有元信息。启动迁移幂等删除 projects 旧列，并清掉两类会话 JSON 里的访问方式、凭据引用、凭据绑定和环境变量，不写入任何 Agent。Solo 新建和重启只注入当前有效 Agent 的环境、通用绑定和 Git catalog，以及 GIT_REPOS 克隆清单。沙箱不再打包或消费 ssh/repos 显式授权，仍会清掉旧的 repo-credentials 与 grasp-repo 文件。仓库表单和列表去掉这三个区域，地址占位只保留 `https://github.com/acme/app.git`。
+- 为什么：权限和运行环境应由 Agent 统一维护。旧仓库配置如果留在快照里，重启会话时会重新盖过 Agent。
+- 如何验证：迁移回归覆盖旧列、单仓/多仓快照、空值和重复执行；原始 HTTP JSON 提交旧字段后不回显、不落库；Solo 新建与重启断言仓库来源环境为空且 GIT_REPOS 仍在；bundle 不再包含 repos/；startup/reprime 与 git-credentials.py 回归确认旧显式授权被清掉且 Agent catalog 仍可用。server：golangci-lint 2.12.2 无问题，go vet、gen-configdoc -check、`go test ./...` 与 runtime `TestRunAgent|TestReact` 通过，核心覆盖率 90.4%。web：528 个测试文件、5556 项通过，Lines 91.55%；ESLint 0 errors（12 条既有 warnings），vue-tsc 与生产构建通过。sandbox：lint/vet 无问题，核心覆盖率 96.6%；bash -n、inject、git-auth、runtime-bootstrap、preview-inject 与 mock chat 8 项通过。docs 构建与高/严重漏洞审计通过。actionlint 与 error-level shellcheck 通过。未跑完整 Playwright 套件。
+
 ### 2026-10-28（DSH 每轮 token 用量接入统计）
 
 - 日期：2026-10-28（Asia/Shanghai）。

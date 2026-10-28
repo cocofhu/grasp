@@ -4589,12 +4589,6 @@
         "preparing": "Waiting for the sandbox…",
         "running": "Agent is working"
       },
-      "access": {
-        "none": "No credential",
-        "github_https": "GitHub token",
-        "gitlab_https": "GitLab token",
-        "ssh": "SSH key"
-      },
       "modelSelect": {
         "label": "Model",
         "placeholder": "Choose a model",
@@ -4740,7 +4734,6 @@
         "model": "Model",
         "repo": "Repository",
         "branch": "Branch",
-        "access": "Access",
         "remoteDefault": "Remote default branch",
         "dir": "Directory",
         "snapshotHint": "These repository settings were frozen at launch and cannot be added or removed in this session. Restarting still uses this snapshot. Later changes to repository settings are not applied here; start a new session to use them.",
@@ -4773,26 +4766,18 @@
         "branch_invalid": "Branch names cannot contain spaces, {'|'} or ,",
         "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
         "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
-        "env_key_conflict": "Variable {key} conflicts across repositories {repos}. Change it before starting.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
-        "git_type_invalid": "Unsupported access mode",
-        "env_key_invalid": "Invalid variable name",
-        "env_key_reserved": "Contains a variable name reserved by the platform",
-        "env_key_sensitive": "Contains a sensitive variable; use a credential binding instead",
-        "binding_key_invalid": "The credential binding variable name is not allowed",
         "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level."
       }
     },
     "projects": {
       "title": "Repositories",
-      "subtitle": "Register Git repositories for Solo sessions. They are cloned when a session starts, with access credentials and variables injected as configured.",
+      "subtitle": "Register Git repositories for Solo sessions. They are cloned when a session starts.",
       "new": "Add repository",
       "edit": "Edit repository",
       "search": "Search repositories",
       "empty": "No repositories yet",
       "emptyHint": "Add a Git repository, then pick it on the home page or the Solo page to start a session with it.",
-      "envCount": "{n} variables",
-      "bindingCount": "{n} credential bindings",
       "lastUsed": "Used {time}",
       "neverUsed": "Never used",
       "start": "Start Solo",
@@ -4809,7 +4794,7 @@
         "descriptionPlaceholder": "Optional, what this repository is for",
         "sectionRepo": "Repository",
         "repoUrl": "Repository URL",
-        "repoUrlPlaceholder": "https://github.com/acme/app.git or git{'@'}github.com:acme/app.git",
+        "repoUrlPlaceholder": "https://github.com/acme/app.git",
         "repoUrlRequired": "Enter the repository URL",
         "repoUrlInvalid": "Use https://, ssh:// or git{'@'}host:path",
         "defaultBranch": "Default branch",
@@ -4817,38 +4802,6 @@
         "repoDir": "Directory",
         "repoDirPlaceholder": "Defaults to the repository name",
         "repoDirHint": "Cloned to /root/workspace/{dir} in the sandbox",
-        "sectionAccess": "Access",
-        "accessHint": {
-          "none": "Do not inject access for this repository. Leave empty for a public repo; pick a credential here for a private one.",
-          "github_https": "GitHub personal token over HTTPS",
-          "gitlab_https": "GitLab access token over HTTPS",
-          "ssh": "SSH private key, optionally with known_hosts"
-        },
-        "mismatch": {
-          "https": "The URL is an SSH address but the access mode is an HTTPS token; cloning may fail.",
-          "ssh": "The URL is an HTTPS address but the access mode is an SSH key; cloning may fail."
-        },
-        "credential": "Credential",
-        "credentialPlaceholder": "Choose a credential",
-        "hosts": "SSH known_hosts",
-        "hostsNone": "None (skip host verification)",
-        "noCredential": "No credential of this kind yet.",
-        "manageCredentials": "Add one on the Credentials page",
-        "sectionEnv": "Environment variables",
-        "envHint": "Non-sensitive variables injected into the sandbox; they override the Agent's variables of the same name. Use credential bindings below for tokens and passwords.",
-        "envKey": "Name",
-        "envValue": "Value",
-        "addEnv": "Add variable",
-        "keyProblem": {
-          "invalid": "Letters, digits and underscores only, not starting with a digit",
-          "reserved": "Set by the platform; cannot be configured here",
-          "sensitive": "Looks sensitive; use a credential binding instead"
-        },
-        "sectionBindings": "Credential bindings",
-        "bindingsHint": "Injects workspace credentials into the sandbox under a variable name. Values never appear on the page or in logs.",
-        "bindingKey": "Name",
-        "bindingCred": "Choose a credential",
-        "addBinding": "Add binding",
         "save": "Save"
       }
     }
