@@ -149,6 +149,7 @@ describe('formatting', () => {
     expect(vendorLabel('zhipu')).toBe('Zhipu')
     expect(vendorLabel('opencode')).toBe('OpenCode')
     expect(vendorLabel('opencode-go')).toBe('OpenCode Go')
+    expect(vendorLogoProvider('opencode')).toBe('')
     expect(vendorLogoProvider('opencode-go')).toBe('opencode')
     expect(monogramColor('zhipu')).toBe(monogramColor('zhipu'))
   })

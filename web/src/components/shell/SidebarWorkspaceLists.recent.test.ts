@@ -237,6 +237,57 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     wrapper.unmount()
   })
 
+  it('drops a resumed run from history once the refresh no longer lists it', async () => {
+    mocks.listRuns.mockResolvedValue({
+      items: [r('gone', undefined, 'failed'), r('keep', undefined, 'cancelled')],
+      total: 2,
+    })
+    const { wrapper } = await setup('/runs/gone')
+    const failed = wrapper.get('[data-run-id="gone"]')
+    expect(failed.classes()).toContain('is-active')
+    expect(failed.get('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-failed')
+    expect(wrapper.get('[data-run-id="keep"]').get('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-cancelled')
+
+    mocks.listRuns.mockResolvedValue({ items: [r('gone', undefined, 'failed'), r('keep', undefined, 'cancelled')], total: 2 })
+    notifyRecentActivity()
+    await new Promise((res) => setTimeout(res, RECENT_RELAY_DEBOUNCE_MS + 30))
+    await flushPromises()
+    expect(order(wrapper)).toEqual(['gone', 'keep'])
+    expect(wrapper.get('[data-run-id="gone"]').get('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-failed')
+
+    mocks.listRuns.mockResolvedValue({ items: [r('keep', undefined, 'cancelled')], total: 1 })
+    notifyRecentActivity()
+    await new Promise((res) => setTimeout(res, RECENT_RELAY_DEBOUNCE_MS + 30))
+    await flushPromises()
+    expect(order(wrapper)).toEqual(['keep'])
+    expect(wrapper.find('[data-run-id="gone"]').exists()).toBe(false)
+    expect(wrapper.get('[data-run-id="keep"]').classes()).not.toContain('is-active')
+    expect(wrapper.get('[data-run-id="keep"]').get('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-cancelled')
+    wrapper.unmount()
+  })
+
+  it('holds a resumed run under the pointer, then removes it from history after leave', async () => {
+    mocks.listRuns.mockResolvedValue({
+      items: [r('gone', undefined, 'failed'), r('keep', undefined, 'completed')],
+      total: 2,
+    })
+    const { wrapper } = await setup('/runs/gone')
+    const row = wrapper.get('[data-run-id="gone"]')
+    const list = row.element.closest('[data-testid="sidebar-recent-list"]') as HTMLElement
+    list.dispatchEvent(new Event('pointerenter'))
+    mocks.listRuns.mockResolvedValue({ items: [r('keep', undefined, 'completed')], total: 1 })
+    notifyRecentActivity()
+    await new Promise((res) => setTimeout(res, RECENT_RELAY_DEBOUNCE_MS + 30))
+    await flushPromises()
+    expect(order(wrapper)).toEqual(['gone', 'keep'])
+    expect(wrapper.get('[data-run-id="gone"]').classes()).toContain('is-active')
+    list.dispatchEvent(new Event('pointerleave'))
+    await flushPromises()
+    expect(order(wrapper)).toEqual(['keep'])
+    expect(wrapper.find('[data-run-id="gone"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('shows failed and cancelled end icons after a relay without remounting', async () => {
     mocks.listRuns.mockResolvedValue({ items: [r('c', undefined, 'completed')], total: 1 })
     const { wrapper } = await setup('/')
