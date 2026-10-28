@@ -91,6 +91,7 @@ describe('RunLaunchModal interactions', () => {
     expect(mocks.startRun).toHaveBeenCalledWith('wf', expect.objectContaining({ para: expect.anything() }), 'manual', 'high', ['bug'], expect.objectContaining({
       env: [{ key: 'LOG_LEVEL', value: 'debug', secret: false }], title: 'title', firstMessage: { text: 'hello' },
     }))
+    expect(mocks.startRun.mock.calls.at(-1)?.[5]).not.toHaveProperty('launchModel')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     expect(w.emitted('view-run')?.[0]).toEqual(['run-1'])
     expect(w.emitted('close')).toBeTruthy()
@@ -136,6 +137,22 @@ describe('RunLaunchModal interactions', () => {
     await flushPromises()
     expect(vm.tags).toEqual([])
     expect(vm.loadingLayerMinHeight).toBeUndefined()
+    w.unmount()
+  })
+
+  it('passes the home toolbar model through and does not render another picker', async () => {
+    const w = mountModal({
+      publishedSnapshot: true,
+      launchModel: { configurationId: 'group', modelId: '', reasoningEffort: 'high' },
+    })
+    await flushPromises()
+    expect(w.find('[data-testid="solo-model-select"]').exists()).toBe(false)
+    await (w.vm as any).startRun()
+    await flushPromises()
+    expect(mocks.startRun).toHaveBeenCalledWith('wf', expect.anything(), 'manual', 'normal', [], expect.objectContaining({
+      publishedSnapshot: true,
+      launchModel: { configurationId: 'group', modelId: '', reasoningEffort: 'high' },
+    }))
     w.unmount()
   })
 })

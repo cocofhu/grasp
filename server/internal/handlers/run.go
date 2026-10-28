@@ -26,6 +26,30 @@ type startRunBody struct {
 	// PublishedSnapshot selects the home-page start: execute PublishedVersion
 	// instead of the latest saved head. Editor, home, and sidebar starts omit it.
 	PublishedSnapshot bool `json:"publishedSnapshot"`
+	// Launch* is the home composer's optional model for the first clarify
+	// visit. All three absent keeps the previous start behavior. An empty
+	// model id means that Agent's primary model. Pointers distinguish omit
+	// from an explicit empty string.
+	LaunchConfigurationID *string `json:"launchConfigurationId"`
+	LaunchModelID         *string `json:"launchModelId"`
+	LaunchReasoningEffort *string `json:"launchReasoningEffort"`
+}
+
+func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
+	if b.LaunchConfigurationID == nil && b.LaunchModelID == nil && b.LaunchReasoningEffort == nil {
+		return engine.LaunchChoice{}
+	}
+	choice := engine.LaunchChoice{Set: true}
+	if b.LaunchConfigurationID != nil {
+		choice.ConfigurationID = strings.TrimSpace(*b.LaunchConfigurationID)
+	}
+	if b.LaunchModelID != nil {
+		choice.ModelID = strings.TrimSpace(*b.LaunchModelID)
+	}
+	if b.LaunchReasoningEffort != nil {
+		choice.ReasoningEffort = strings.TrimSpace(*b.LaunchReasoningEffort)
+	}
+	return choice
 }
 
 func (h *Handlers) StartRun(c *gin.Context) {
@@ -44,11 +68,12 @@ func (h *Handlers) StartRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	launch := launchChoiceFromBody(b)
 	var run *models.Run
 	if b.PublishedSnapshot {
-		run, err = h.Eng.StartRunFromPublishedWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, b.FirstMessage)
+		run, err = h.Eng.StartRunFromPublishedWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, b.FirstMessage, launch)
 	} else {
-		run, err = h.Eng.StartRunWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, b.FirstMessage)
+		run, err = h.Eng.StartRunWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, b.FirstMessage, launch)
 	}
 	if err != nil {
 		_ = c.Error(err)

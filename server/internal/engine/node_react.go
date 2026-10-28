@@ -58,7 +58,11 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 		}
 		conv = models.ReactConversation{RunID: c.run.ID, NodeID: node.ID, Iteration: iter, Done: t.Done,
 			Messages: msgs}
+		// Opening the sandbox still asks for the Agent primary. Record that
+		// route first, then write the launch choice so the reset cannot clear
+		// it before the first human message is prepared.
 		e.rememberTurnRoute(&conv, &req, t)
+		e.applyVisitLaunchModel(&conv, c.run, node, iter, msgs)
 		logDB(e.db.Create(&conv), c.run.ID, "create react conversation")
 
 		if t.Done {

@@ -24,6 +24,10 @@ const mocks = vi.hoisted(() => ({
   startRun: vi.fn(),
   getRun: vi.fn(),
   reactReply: vi.fn(),
+  listModelConfigurations: vi.fn(),
+  listModelConnections: vi.fn(),
+  listCredentials: vi.fn(),
+  cliModels: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -50,6 +54,10 @@ vi.mock('@/lib/api/api', async () => {
       startRun: mocks.startRun,
       getRun: mocks.getRun,
       reactReply: mocks.reactReply,
+      listModelConfigurations: mocks.listModelConfigurations,
+      listModelConnections: mocks.listModelConnections,
+      listCredentials: mocks.listCredentials,
+      cliModels: mocks.cliModels,
     },
   }
 })
@@ -59,6 +67,7 @@ import {
   useHomeApproveChat,
   HOME_WORKFLOW_MEMORY_KEY,
   HOME_PRIORITY_MEMORY_KEY,
+  HOME_LAUNCH_MODEL_MEMORY_KEY,
   HOME_COMPOSER_DRAFT_DEBOUNCE_MS,
   parseRunPriority,
 } from './useHomeApproveChat'
@@ -157,9 +166,18 @@ describe('useHomeApproveChat', () => {
       nodeRuns: { ap: { nodeId: 'ap', status: 'waiting_human' } },
     })
     mocks.reactReply.mockResolvedValue({ status: 'ok' })
+    mocks.listModelConfigurations.mockReset()
+    mocks.listModelConfigurations.mockRejectedValue(new Error('catalog'))
+    mocks.listModelConnections.mockReset()
+    mocks.listModelConnections.mockResolvedValue({ items: [] })
+    mocks.listCredentials.mockReset()
+    mocks.listCredentials.mockRejectedValue(new Error('credentials'))
+    mocks.cliModels.mockReset()
+    mocks.cliModels.mockResolvedValue({ models: [] })
     __setDraftIdbBackendForTests(createMemoryDraftIdb())
     localStorage.removeItem(HOME_WORKFLOW_MEMORY_KEY)
     localStorage.removeItem(HOME_PRIORITY_MEMORY_KEY)
+    localStorage.removeItem(HOME_LAUNCH_MODEL_MEMORY_KEY)
     localStorage.removeItem(HOME_COMPOSER_DRAFT_KEY)
   })
 
@@ -168,6 +186,7 @@ describe('useHomeApproveChat', () => {
     __resetDraftIdbForTests()
     localStorage.removeItem(HOME_WORKFLOW_MEMORY_KEY)
     localStorage.removeItem(HOME_PRIORITY_MEMORY_KEY)
+    localStorage.removeItem(HOME_LAUNCH_MODEL_MEMORY_KEY)
     localStorage.removeItem(HOME_COMPOSER_DRAFT_KEY)
   })
 
@@ -933,5 +952,121 @@ describe('useHomeApproveChat', () => {
     await flushPromises()
     expect(chat.homeWorkflows.value.map((w) => w.name)).toEqual(['默认工作流'])
     expect(chat.selected.value?.id).toBe('wf-default')
+  })
+
+  function readyLaunchCatalog() {
+    mocks.listAgents.mockImplementation(async () => [
+      {
+        name: 'clarifier',
+        acpBackend: 'codex',
+        capabilities: { interaction: 'clarify', tools: ['ask_question'] },
+        modelBinding: { kind: 'configuration', configurationId: 'group' },
+      },
+      { name: 'worker', capabilities: { interaction: 'auto' } },
+    ])
+    mocks.listModelConfigurations.mockResolvedValue({
+      items: [{
+        id: 'group',
+        name: 'Codex',
+        backend: 'codex',
+        state: 'active',
+        binding: { kind: 'connection', connectionId: 'conn', modelId: 'm1', auxiliaryModelIds: ['m2'] },
+      }],
+    })
+    mocks.listModelConnections.mockResolvedValue({
+      items: [{
+        id: 'conn',
+        name: 'OpenAI',
+        state: 'active',
+        providerId: 'openai',
+        protocol: 'openai-chat-completions',
+        models: [
+          { id: 'm1', name: 'Primary Model', reasoningEfforts: ['low', 'medium', 'high'] },
+          { id: 'm2', name: 'Aux Model', reasoningEfforts: ['low', 'high'] },
+        ],
+      }],
+    })
+  }
+
+  it('sends the displayed highest effort when the picker was not changed', async () => {
+    readyLaunchCatalog()
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    await chat.load()
+    await flushPromises()
+    chat.draft.value = '用默认模型'
+    await chat.send()
+    expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'normal', [], expect.objectContaining({
+      publishedSnapshot: true,
+      launchModel: { configurationId: 'group', modelId: '', reasoningEffort: 'high' },
+    }))
+  })
+
+  it('sends the model chosen on the toolbar and keeps it for the launch modal', async () => {
+    readyLaunchCatalog()
+    const missing = {
+      ...approveWf,
+      nodes: [
+        {
+          id: 'in',
+          type: 'input' as const,
+          label: '开始',
+          position: { x: 0, y: 0 },
+          config: { variables: [{ name: 'topic', ask: true, required: true, type: 'string', value: '' }] },
+        },
+        approveWf.nodes[1],
+        approveWf.nodes[2],
+      ],
+    }
+    mocks.listWorkflows.mockResolvedValue([missing])
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    await chat.load()
+    await flushPromises()
+    chat.selectLaunchModel('m2')
+    chat.selectLaunchEffort('low')
+    chat.draft.value = '换模型'
+    await chat.send()
+    expect(mocks.startRun).not.toHaveBeenCalled()
+    expect(chat.launchOpen.value).toBe(true)
+    expect(chat.launchModelForModal.value).toEqual({ configurationId: 'group', modelId: 'm2', reasoningEffort: 'low' })
+  })
+
+  it('does not start when the catalog failed after the user changed the model', async () => {
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    await chat.load()
+    await flushPromises()
+    chat.selectLaunchModel('m2')
+    chat.selectLaunchEffort('low')
+    chat.draft.value = '目录挂了'
+    await chat.send()
+    expect(mocks.startRun).not.toHaveBeenCalled()
+    expect(chat.draft.value).toBe('目录挂了')
+    expect(mocks.toastWarn).toHaveBeenCalledWith('模型目录没有加载出来，请稍后再发送。')
+  })
+
+  it('restores the model remembered for this workflow', async () => {
+    readyLaunchCatalog()
+    localStorage.setItem(HOME_LAUNCH_MODEL_MEMORY_KEY, JSON.stringify({ 'wf-ap': { modelId: 'm2', effort: 'low' } }))
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    await chat.load()
+    await flushPromises()
+    expect(chat.launchModelId.value).toBe('m2')
+    expect(chat.launchReasoningEffort.value).toBe('low')
+    expect(chat.showLaunchModel.value).toBe(true)
+  })
+
+  it('resets a remembered model that is no longer in the catalog', async () => {
+    readyLaunchCatalog()
+    localStorage.setItem(HOME_LAUNCH_MODEL_MEMORY_KEY, JSON.stringify({ 'wf-ap': { modelId: 'gone', effort: 'low' } }))
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    await chat.load()
+    await flushPromises()
+    expect(chat.launchModelId.value).toBe('')
+    expect(chat.launchReasoningEffort.value).toBe('')
+    expect(mocks.toastWarn).toHaveBeenCalledWith('上次选择的模型或思考强度已不可用，已改回主模型和最高思考强度。')
   })
 })
