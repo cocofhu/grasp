@@ -321,3 +321,179 @@ test('live page: continued workflow chat reconciles a completion missed while di
   await expect(page.locator('[data-e2e-mount="1"]')).toHaveCount(1)
   expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([`/runs/${RUN}/live?node=verify`])
 })
+
+test('live page: switching A → B → A isolates same-node streams and deferred snapshots', async ({ page }) => {
+  const A = 'run-switch-a'
+  const B = 'run-switch-b'
+  const taskA = 'A 任务：整理目录服务的执行计划'
+  const taskB = 'B 任务：实现通知中心的消息列表'
+  const taskNewestA = 'A 最新任务：继续校验目录服务'
+  const bodyA = 'A 独有正文：正在读取目录服务的接口定义。'
+  const thoughtA = 'A 独有思考：先检查目录服务的数据约束。'
+  const toolA = 'A 读取目录服务 schema'
+  const bodyB = 'B 独有正文：通知中心的消息列表正在生成。'
+  const thoughtB = 'B 独有思考：按通知来源组织消息分组。'
+  const toolB = 'B 写入通知消息列表'
+  const newestA = 'A 最新正文：目录服务校验已继续执行。'
+  const retiredA = 'A 已退役请求：这段旧快照不能覆盖新的会话。'
+  const retiredTaskA = 'A 已退役任务：不得替换最新任务'
+  const lateA = 'A 迟到推送：不能进入 B 的会话'
+  const sockets = { [A]: [] as WebSocketRoute[], [B]: [] as WebSocketRoute[] }
+  const gates = () => {
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => { release = resolve })
+    return { waiting, release }
+  }
+  const oldChain = gates()
+  const oldEvents = gates()
+  const bRun = gates()
+  const bEvents = gates()
+  const pending = { oldChain: 0, oldEvents: 0, bRun: 0, bEvents: 0 }
+  let holdOldEvents = false
+  let firstAChain = true
+  let aReturned = false
+  const taskFor = (id: string) => id === B ? taskB : aReturned ? taskNewestA : taskA
+  const eventsFor = (id: string) => flat(id === B
+    ? [{ kind: 'thought', text: thoughtB }, tool(toolB), { kind: 'message', text: bodyB }]
+    : [{ kind: 'thought', text: thoughtA }, tool(toolA), { kind: 'message', text: aReturned ? newestA : bodyA }])
+  const snapshot = (id: string) => ({
+    ...runFor('impl'), id, title: id === B ? 'B 通知中心' : 'A 目录服务',
+    currentNode: { ...cur('impl'), task: taskFor(id) },
+  })
+
+  await page.routeWebSocket(/\/api\/runs\/run-switch-[ab]\/events/, (ws) => {
+    const id = ws.url().includes(`/${A}/`) ? A : B
+    sockets[id].push(ws)
+    ws.send(JSON.stringify({ type: 'snapshot', run: snapshot(id) }))
+  })
+  await page.route((url) => url.pathname.startsWith('/api/'), async (route) => {
+    const path = new URL(route.request().url()).pathname
+    const id = path.includes(`/${B}`) ? B : A
+    const json = (body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+    if (path === `/api/runs/${id}`) {
+      const value = snapshot(id)
+      if (id === B) { pending.bRun++; await bRun.waiting }
+      return json(value)
+    }
+    if (path === `/api/runs/${id}/conversation-chain`) {
+      const value = { ...chainFor('impl'), runId: id, currentNode: snapshot(id).currentNode,
+        segments: chainFor('impl').segments.map((segment) => ({ ...segment, task: taskFor(id) })) }
+      if (id === A && firstAChain) {
+        firstAChain = false
+        value.segments[0]!.task = retiredTaskA
+        pending.oldChain++
+        await oldChain.waiting
+      }
+      return json(value)
+    }
+    if (path === `/api/runs/${id}/nodes/impl/events`) {
+      let events = eventsFor(id)
+      if (id === A && holdOldEvents) {
+        holdOldEvents = false
+        events = flat([{ kind: 'message', text: retiredA }])
+        pending.oldEvents++
+        await oldEvents.waiting
+      } else if (id === B) {
+        pending.bEvents++
+        await bEvents.waiting
+      }
+      return json({ events, task: taskFor(id), live: true })
+    }
+    return json({})
+  })
+  const navigate = (id: string) => page.evaluate(async (runId) => {
+    const w = window as unknown as { __router: { push: (path: string) => Promise<unknown> } }
+    await w.__router.push(`/runs/${runId}/live?node=impl`)
+  }, id)
+  const pane = page.getByTestId('run-live-detail')
+  const absent = async (...texts: string[]) => {
+    const content = await pane.textContent()
+    for (const text of texts) expect(content).not.toContain(text)
+  }
+  const socketStates = (id: string) => page.evaluate((runId) => {
+    const w = window as unknown as { __switchSockets: WebSocket[] }
+    return w.__switchSockets.filter((socket) => socket.url.includes(`/${runId}/`)).map((socket) => socket.readyState)
+  }, id)
+
+  try {
+    await page.goto(`/run-live-continue.html?run=${A}&node=impl&observeSockets=1`)
+    await page.waitForFunction(() => !!(window as unknown as { __router?: unknown }).__router)
+    await expect(page.getByText(bodyA, { exact: true })).toBeVisible()
+    await expect(pane).toContainText(taskA)
+    await expect(page.getByTestId('agent-timeline-thought')).toContainText(thoughtA)
+    await expect(page.getByTestId('agent-tool-group')).toContainText(toolA)
+    await expect(busy(page)).toHaveCount(1)
+    await expect.poll(() => pending.oldChain).toBe(1)
+
+    // Hold A's reconnect seed. Its run/node/iteration will match again after
+    // A → B → A, so only ownership by this visit can make it stale later.
+    holdOldEvents = true
+    sockets[A][0]!.close({ code: 1011, reason: 'hold an old A recovery snapshot' })
+    await expect.poll(() => sockets[A].length).toBe(2)
+    await expect.poll(() => pending.oldEvents).toBe(1)
+    await page.evaluate((runId) => {
+      const w = window as unknown as { __switchSockets: WebSocket[]; __lateAFrame?: (event: MessageEvent) => void }
+      const socket = w.__switchSockets.filter((value) => value.url.includes(`/${runId}/`)).at(-1)!
+      if (!socket.onmessage) throw new Error('A must have a live callback before navigation')
+      w.__lateAFrame = socket.onmessage.bind(socket)
+    }, A)
+
+    await navigate(B)
+    await expect(pane).toHaveAttribute('data-run-id', B)
+    await expect.poll(() => pending.bRun).toBeGreaterThan(0)
+    // Before B's GET resolves, A's task, body, thought and tools must all leave.
+    await absent(taskA, bodyA, thoughtA, toolA)
+    await expect.poll(() => socketStates(A)).toEqual([3, 3])
+    await page.evaluate((frame) => {
+      const w = window as unknown as { __lateAFrame?: (event: MessageEvent) => void }
+      w.__lateAFrame?.(new MessageEvent('message', { data: JSON.stringify(frame) }))
+    }, { type: 'acp', runId: A, nodeId: 'impl', busy: true, events: flat([{ kind: 'message', text: lateA }]) })
+    await absent(bodyA, thoughtA, toolA, lateA)
+
+    bRun.release()
+    await expect.poll(() => sockets[B].length).toBe(1)
+    await expect.poll(() => pending.bEvents).toBeGreaterThan(0)
+    await expect(pane).toContainText(taskB)
+    await absent(taskA, bodyA, thoughtA, toolA, lateA)
+    // B receives no ACP WebSocket frames: its own HTTP seed must paint it.
+    bEvents.release()
+    await expect(page.getByText(bodyB, { exact: true })).toBeVisible()
+    await expect(page.getByTestId('agent-timeline-thought')).toContainText(thoughtB)
+    await expect(page.getByTestId('agent-tool-group')).toContainText(toolB)
+    await expect(busy(page)).toHaveCount(1)
+
+    aReturned = true
+    await navigate(A)
+    await expect(pane).toHaveAttribute('data-run-id', A)
+    await expect(page.getByText(newestA, { exact: true })).toBeVisible()
+    await expect(pane).toContainText(taskNewestA)
+    await absent(taskB, bodyB, thoughtB, toolB)
+    await expect.poll(() => sockets[A].length).toBe(3)
+    await expect.poll(() => socketStates(B)).toEqual([3])
+    await expect(busy(page)).toHaveCount(1)
+
+    const oldEventsResponse = page.waitForResponse(async (response) =>
+      response.url().endsWith(`/api/runs/${A}/nodes/impl/events`) &&
+      (await response.json()).events.some((event: { text?: string }) => event.text === retiredA))
+    const oldChainResponse = page.waitForResponse(async (response) =>
+      response.url().endsWith(`/api/runs/${A}/conversation-chain`) &&
+      (await response.json()).segments[0]?.task === retiredTaskA)
+    oldEvents.release()
+    oldChain.release()
+    // Wait for both deferred HTTP responses to finish, then a render. Neither
+    // may overwrite the newest A even though its node and iteration match.
+    const delivered = await Promise.all([oldEventsResponse, oldChainResponse])
+    await Promise.all(delivered.map((response) => response.finished()))
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect(page.getByText(newestA, { exact: true })).toHaveCount(1)
+    await absent(retiredA, retiredTaskA, taskB, bodyB, thoughtB, toolB)
+    await expect(pane).toContainText(taskNewestA)
+    await expect(busy(page)).toHaveCount(1)
+    expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1)
+  } finally {
+    oldEvents.release()
+    oldChain.release()
+    bRun.release()
+    bEvents.release()
+  }
+})

@@ -162,7 +162,8 @@ describe('run conversation toolbar titles', () => {
     usePendingGates().displayedItems.value = []
     liveMocks.getRun.mockResolvedValue({
       ...stubRun('这个行高有点高了', '自我迭代'),
-      currentNode: { id: 'c1', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' },
+      status: 'running',
+      currentNode: { id: 'c1', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' },
     })
     const router = createRouter({
       history: createMemoryHistory(),
@@ -199,7 +200,8 @@ describe('run conversation toolbar titles', () => {
     usePendingGates().displayedItems.value = []
     liveMocks.getRun.mockResolvedValue({
       ...stubRun('', '自我迭代'),
-      currentNode: { id: 'c1', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' },
+      status: 'running',
+      currentNode: { id: 'c1', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' },
     })
     const router = createRouter({
       history: createMemoryHistory(),
@@ -233,7 +235,8 @@ describe('run conversation toolbar titles', () => {
   it('live view shows sidebarRunTitle for the open run', async () => {
     liveMocks.getRun.mockResolvedValue({
       ...stubRun('优化这里的段间距'),
-      currentNode: { id: 'c1', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' },
+      status: 'running',
+      currentNode: { id: 'c1', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' },
     })
     const router = createRouter({
       history: createMemoryHistory(),

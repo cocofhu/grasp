@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({ getRun: vi.fn(), nodeEvents: vi.fn(), takeover
 vi.mock('@/lib/api/api', () => ({ api: { getRun: mocks.getRun, nodeEvents: mocks.nodeEvents, takeoverNode: mocks.takeoverNode, runConversationChain: mocks.runConversationChain, reactReply: mocks.reactReply, runEventsWsUrl: (id: string) => `ws://test/api/runs/${id}/events` } }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ show: mocks.show, error: mocks.error }) }))
 
-import { useRunLive, type LiveChatSurface } from './useRunLive'
+import { LIVE_POLL_MS, useRunLive, type LiveChatSurface } from './useRunLive'
 
 class FakeSocket {
   static last: FakeSocket | null = null
@@ -55,6 +55,37 @@ async function setup() {
   return { wrapper, router, surface, live: () => live }
 }
 
+function deferred<T = any>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
+async function setupRouteReuse() {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/runs/:id/live', component: { template: '<div />' } }] })
+  await router.push('/runs/a/live?node=impl')
+  const makeSurface = (): LiveChatSurface => ({ applyReviewFrame: vi.fn(), applyAcpEvents: vi.fn(), releaseConfirmPending: vi.fn() })
+  const chat = ref<LiveChatSurface | null>(makeSurface())
+  const surfaces = [chat.value!]
+  let live!: ReturnType<typeof useRunLive>
+  const Harness = defineComponent({
+    setup() {
+      const id = computed(() => String(router.currentRoute.value.params.id || ''))
+      live = useRunLive(id, computed(() => String(router.currentRoute.value.query.node || '')), chat)
+      // RunLiveView reuses its controller but re-keys the child by run/node.
+      watch(id, () => { chat.value = makeSurface(); surfaces.push(chat.value!) }, { flush: 'post' })
+      return () => h('div')
+    },
+  })
+  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...pages, ...common } } })
+  const wrapper = mount(Harness, { global: { plugins: [router, i18n] } })
+  await flushPromises()
+  return { wrapper, router, surfaces, live }
+}
+
+const routeRun = (id: string) => ({ ...autoRun, id, title: id, currentNode: { ...cur('impl', 'agent', 'auto', 'running'), task: `task ${id}` } })
+const routeChain = (id: string, task: string) => ({ runId: id, status: 'running', currentNode: cur('impl', 'agent', 'auto', 'running'), segments: [{ nodeId: 'impl', iteration: 1, name: 'impl', kind: 'agent', mode: 'auto', status: 'running', task }] })
+
 beforeEach(() => {
   vi.clearAllMocks()
   FakeSocket.instances = []
@@ -71,6 +102,145 @@ afterEach(() => {
 })
 
 describe('useRunLive (auto node → Stop → chat)', () => {
+  it('does not replay another run cached output when a reused route changes to the same node', async () => {
+    const bRun = deferred()
+    const aEvents = [{ kind: 'message', text: 'only A output' }]
+    const bEvents = [{ kind: 'message', text: 'only B output' }]
+    mocks.getRun.mockImplementation(id => id === 'b' ? bRun.promise : Promise.resolve(routeRun(id)))
+    mocks.nodeEvents.mockImplementation(id => Promise.resolve({ events: id === 'a' ? aEvents : bEvents }))
+    const { live, router, surfaces, wrapper } = await setupRouteReuse()
+    try {
+      expect(surfaces[0].applyAcpEvents).toHaveBeenCalledWith(aEvents, 'impl')
+      await router.push('/runs/b/live?node=impl')
+      await flushPromises()
+      expect(surfaces[1].applyAcpEvents).not.toHaveBeenCalled()
+      expect(live.run.value).toBeNull()
+      expect(live.nodeId.value).toBe('')
+      expect(live.task.value).toBe('')
+      bRun.resolve(routeRun('b'))
+      await flushPromises()
+      expect(surfaces[1].applyAcpEvents).toHaveBeenCalledExactlyOnceWith(bEvents, 'impl')
+      expect(live.run.value?.id).toBe('b')
+      expect(live.task.value).toBe('task b')
+    } finally { wrapper.unmount() }
+  })
+
+  it('ignores the old run socket while the newly selected run HTTP load is pending', async () => {
+    const bRun = deferred()
+    mocks.getRun.mockImplementation(id => id === 'b' ? bRun.promise : Promise.resolve(routeRun(id)))
+    const { router, surfaces, wrapper } = await setupRouteReuse()
+    try {
+      const old = FakeSocket.last!
+      await router.push('/runs/b/live?node=impl')
+      await flushPromises()
+      vi.mocked(surfaces[1].applyAcpEvents).mockClear()
+      old.send({ type: 'acp', runId: 'a', nodeId: 'impl', events: [{ kind: 'message', text: 'late A output' }] })
+      expect(surfaces[1].applyAcpEvents).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+
+  it('ignores an earlier visit seed response after switching A to B and back to A', async () => {
+    const firstA = deferred()
+    const currentA = deferred()
+    let aSeeds = 0
+    mocks.getRun.mockImplementation(id => Promise.resolve(routeRun(id)))
+    mocks.nodeEvents.mockImplementation(id => id === 'a' ? (++aSeeds === 1 ? firstA.promise : currentA.promise) : Promise.resolve({ events: [] }))
+    const { router, surfaces, wrapper } = await setupRouteReuse()
+    try {
+      await router.push('/runs/b/live?node=impl')
+      await flushPromises()
+      await router.push('/runs/a/live?node=impl')
+      await flushPromises()
+      const obsolete = [{ kind: 'message', text: 'obsolete first A visit' }]
+      firstA.resolve({ events: obsolete })
+      await flushPromises()
+      expect(surfaces[2].applyAcpEvents).not.toHaveBeenCalledWith(obsolete, 'impl')
+      const current = [{ kind: 'message', text: 'current A visit' }]
+      currentA.resolve({ events: current })
+      await flushPromises()
+      expect(surfaces[2].applyAcpEvents).toHaveBeenLastCalledWith(current, 'impl')
+    } finally { wrapper.unmount() }
+  })
+
+  it('ignores an earlier visit conversation chain after switching A to B and back to A', async () => {
+    const firstA = deferred()
+    let aChains = 0
+    mocks.getRun.mockImplementation(id => Promise.resolve(routeRun(id)))
+    mocks.runConversationChain.mockImplementation(id => id === 'a' && ++aChains === 1 ? firstA.promise : Promise.resolve(routeChain(id, `fresh ${id}`)))
+    const { live, router, wrapper } = await setupRouteReuse()
+    try {
+      await router.push('/runs/b/live?node=impl')
+      await flushPromises()
+      await router.push('/runs/a/live?node=impl')
+      await flushPromises()
+      expect(live.task.value).toBe('fresh a')
+      firstA.resolve(routeChain('a', 'obsolete a task'))
+      await flushPromises()
+      expect(live.task.value).toBe('fresh a')
+    } finally { wrapper.unmount() }
+  })
+
+  it('keeps one poll after repeated route switches and removes all timers on unmount', async () => {
+    vi.useFakeTimers()
+    mocks.getRun.mockImplementation(id => Promise.resolve(routeRun(id)))
+    const { router, wrapper } = await setupRouteReuse()
+    try {
+      await router.push('/runs/b/live?node=impl')
+      await flushPromises()
+      await router.push('/runs/a/live?node=impl')
+      await flushPromises()
+      const before = mocks.getRun.mock.calls.length
+      await vi.advanceTimersByTimeAsync(LIVE_POLL_MS)
+      await flushPromises()
+      expect(mocks.getRun).toHaveBeenCalledTimes(before + 1)
+    } finally { wrapper.unmount() }
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('ignores completed-event history from an earlier visit after A to B to A ends again', async () => {
+    const oldTerminal = deferred()
+    const currentEvents = [{ kind: 'message', text: 'current completed reply' }]
+    let aReads = 0
+    mocks.getRun.mockImplementation(id => Promise.resolve(routeRun(id)))
+    mocks.nodeEvents.mockImplementation(id => {
+      if (id !== 'a') return Promise.resolve({ events: [] })
+      aReads++
+      if (aReads === 2) return oldTerminal.promise
+      return Promise.resolve({ events: aReads === 4 ? currentEvents : [] })
+    })
+    const { live, router, wrapper } = await setupRouteReuse()
+    try {
+      const completed = { ...routeRun('a'), status: 'completed', currentNode: undefined }
+      live.onFrame({ type: 'snapshot', run: completed })
+      expect(live.ended.value).toBe(true)
+      await router.push('/runs/b/live?node=impl')
+      await flushPromises()
+      await router.push('/runs/a/live?node=impl')
+      await flushPromises()
+      live.onFrame({ type: 'snapshot', run: completed })
+      await flushPromises()
+      expect(live.turns.value.at(-1)?.text).toBe('current completed reply')
+      oldTerminal.resolve({ events: [{ kind: 'message', text: 'obsolete completed reply' }] })
+      await flushPromises()
+      expect(live.turns.value.at(-1)?.text).toBe('current completed reply')
+    } finally { wrapper.unmount() }
+  })
+
+  it('loads the initial conversation chain for the selected iteration above one', async () => {
+    mocks.getRun.mockResolvedValue({ ...autoRun, currentNode: { ...cur('impl', 'agent', 'auto', 'running'), iteration: 2 } })
+    mocks.nodeEvents.mockResolvedValue({ events: [] })
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'r1', status: 'running', currentNode: { ...cur('impl', 'agent', 'auto', 'running'), iteration: 2 },
+      segments: [{ nodeId: 'impl', iteration: 2, name: 'second implementation visit', kind: 'agent', mode: 'auto', status: 'running', task: 'task for the second iteration' }],
+    })
+    const { live, wrapper } = await setup()
+    try {
+      expect(live().iteration.value).toBe(2)
+      expect(live().task.value).toBe('task for the second iteration')
+      expect(live().nodeLabel.value).toBe('second implementation visit')
+    } finally { wrapper.unmount() }
+  })
+
   it('confirm before the chat is open does not send and releases the spinner', async () => {
     const { live, surface, wrapper } = await setup()
     await live().confirm()

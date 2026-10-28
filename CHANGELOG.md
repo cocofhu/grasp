@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Switching workflow conversations:** selecting another running workflow clears the previous reply while the selected conversation loads. Delayed snapshots and old connection events cannot restore another conversation's thought, tools or task, including when both runs use the same node name or the user switches back quickly.
+
 - **Concurrent workflow chat:** delayed queue frames cannot restore completed messages or stop a newer reply. Reconnecting windows receive their own session snapshot; message identities remain attached through queues, streamed replies and saved history, including repeated text. Concurrent session cleanup and sends share one processing queue, and stopping a reply cannot cancel the next reply. A rejected WebSocket request reports an error only to its sender without ending another window's active reply.
 
 - **Workflow chat recovery:** stalled connections reconnect automatically and restore the active reply, queue and completed token usage. Failed handshakes keep retrying; recovery preserves subsequent replies and their streamed segments. Saving an intermediate reply segment no longer hides its still-running thought or reply when another message is queued. Starting an annotated message removes its own pending row, including when the host adds a preview selection or the opening frame is replayed. Waiting for the next node to start no longer ends the live conversation.
