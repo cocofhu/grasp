@@ -1,10 +1,13 @@
 package codex
 
 import (
+	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
 	"backend/internal/provider"
+	"backend/internal/provider/modelconnection"
 	"backend/internal/provider/oneshot"
 )
 
@@ -203,4 +206,58 @@ func TestArgsResume(t *testing.T) {
 	if !(res[2] == "resume" && res[3] == "S1") {
 		t.Fatalf("resume args=%v", res)
 	}
+}
+
+func TestCodexLaunchUsesCatalogIDNotRequestText(t *testing.T) {
+	const foreign = "request-body-not-in-catalog"
+	raw, err := json.Marshal(modelconnection.Connection{
+		ConnectionID:    "connection-team-a",
+		ProviderID:      "gateway",
+		Protocol:        modelconnection.Responses,
+		BaseURL:         "https://gateway.example/v1",
+		Auth:            modelconnection.Auth{Scheme: "bearer"},
+		Models:          []modelconnection.Model{{ID: "alpha"}, {ID: "beta"}},
+		SelectedModelID: "alpha",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := []string{modelconnection.EnvConfig + "=" + string(raw), modelconnection.EnvAPIKey + "=selected-secret-12345", "PATH=/usr/bin:/bin"}
+	for _, step := range []struct {
+		requested string
+		model     string
+	}{
+		{requested: "beta", model: "beta"},
+		{requested: foreign, model: "alpha"},
+		{requested: "", model: "alpha"},
+		{requested: "auto", model: "alpha"},
+	} {
+		prepared, err := modelconnection.Prepare(provider.Codex, env, step.requested, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(prepared.Cleanup)
+		opts := provider.OpenOptions{Model: prepared.Model, CustomArgs: append([]string(nil), prepared.Args...)}
+		args := (codec{}).Args(opts, "prompt", "")
+		if args[0] != bin {
+			t.Fatalf("program = %q args=%q", args[0], args)
+		}
+		if !hasArgPair(args, "--model", step.model) || !hasArgPair(args, "-c", "model="+strconv.Quote(step.model)) {
+			t.Fatalf("requested %q args=%q", step.requested, args)
+		}
+		for _, arg := range args {
+			if strings.Contains(arg, foreign) {
+				t.Fatalf("request leaked into %q", args)
+			}
+		}
+	}
+}
+
+func hasArgPair(args []string, flag, value string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
 }

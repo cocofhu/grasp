@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -363,6 +364,73 @@ func TestCatalogSessionModelOverridesPrimary(t *testing.T) {
 func strconvQuote(value string) string {
 	data, _ := json.Marshal(value)
 	return string(data)
+}
+
+func TestLaunchArgsUseCatalogIDNotRequestText(t *testing.T) {
+	const (
+		primary = "alpha"
+		catalog = "beta"
+		quoted  = `beta "v2"`
+		foreign = "request-body-not-in-catalog"
+	)
+	c := connection(Responses)
+	c.Models = []Model{{ID: primary}, {ID: catalog}, {ID: quoted}}
+	c.SelectedModelID = primary
+
+	t.Run("hit", func(t *testing.T) {
+		p, err := Prepare(provider.Codex, environ(t, c), catalog, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(p.Cleanup)
+		if p.Model != catalog || !codexModelArg(p.Args, catalog) {
+			t.Fatalf("catalog id missing: model=%q args=%q", p.Model, p.Args)
+		}
+	})
+
+	t.Run("quoted catalog id stays one argument", func(t *testing.T) {
+		p, err := Prepare(provider.Codex, environ(t, c), quoted, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(p.Cleanup)
+		if p.Model != quoted || !codexModelArg(p.Args, quoted) {
+			t.Fatalf("quoted catalog id missing: model=%q args=%q", p.Model, p.Args)
+		}
+		for _, arg := range p.Args {
+			if arg == quoted || arg == "beta" || arg == `"v2"` {
+				t.Fatalf("catalog id was split: %q", p.Args)
+			}
+		}
+	})
+
+	for _, requested := range []string{"", "auto", foreign, "  " + foreign} {
+		t.Run("fallback "+strconv.Quote(requested), func(t *testing.T) {
+			p, err := Prepare(provider.Codex, environ(t, c), requested, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(p.Cleanup)
+			if p.Model != primary || !codexModelArg(p.Args, primary) {
+				t.Fatalf("requested %q model=%q args=%q", requested, p.Model, p.Args)
+			}
+			for _, arg := range p.Args {
+				if strings.Contains(arg, foreign) {
+					t.Fatalf("request %q leaked into %q", requested, p.Args)
+				}
+			}
+		})
+	}
+}
+
+func codexModelArg(args []string, id string) bool {
+	want := "model=" + strconv.Quote(id)
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-c" && args[i+1] == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDSHThreeProtocolsAndNativeRoute(t *testing.T) {

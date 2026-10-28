@@ -88,6 +88,20 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.Model, error) {
 	return p.spec.ModelsFn(ctx)
 }
 
+// agentArgv is the vector passed to StartAgent. The program name stays the
+// provider literal from ArgvFn. When a connection is active, extra arguments
+// come from Prepared (catalog ids only) and are not the raw request model.
+func agentArgv(base []string, prepared modelconnection.Prepared, custom []string) []string {
+	if prepared.Connection == nil {
+		return base
+	}
+	argv := make([]string, 0, len(base)+len(custom)+len(prepared.Args))
+	argv = append(argv, base...)
+	argv = append(argv, custom...)
+	argv = append(argv, prepared.Args...)
+	return argv
+}
+
 // Open spawns the CLI, performs the ACP handshake + session/new, and wraps the
 // panel as a provider.Session.
 func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.OpenOptions,
@@ -106,11 +120,7 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 			return nil, err
 		}
 	}
-	argv := p.spec.ArgvFn(prepared.Model)
-	if prepared.Connection != nil {
-		argv = append(argv, opts.CustomArgs...)
-		argv = append(argv, prepared.Args...)
-	}
+	argv := agentArgv(p.spec.ArgvFn(prepared.Model), prepared, opts.CustomArgs)
 	env := prepared.Env
 	fsRoot := opts.FSRoot
 	if fsRoot == "" {
