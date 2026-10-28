@@ -2105,6 +2105,61 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
+  it('recovers a half-open workflow chat without clearing the active reply', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const applyReviewFrame = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame, isSessionBusy: () => true }
+    inbox.clarifyLiveBusy.value = true
+    const original = MockWebSocket.instances.at(-1)!
+    vi.useFakeTimers()
+    try {
+      // A laptop can resume with OPEN still reported and no onclose event.
+      vi.setSystemTime(Date.now() + 61_000)
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(original.readyState).toBe(3)
+      expect(inbox.clarifyLiveBusy.value).toBe(true)
+      expect(applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_done' }))
+      await vi.advanceTimersByTimeAsync(1100)
+      const replacement = MockWebSocket.instances.at(-1)!
+      expect(replacement).not.toBe(original)
+      replacement.open()
+      replacement.message({ type: 'snapshot', run: { reactSessions: {
+        react: { busy: true, waiting: 0, items: [], activeItem: { id: 'still-running', text: 'continue' } },
+      } } })
+      await flushPromises()
+      expect(applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({ event: 'queue_state', busy: true }))
+    } finally {
+      app.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('continues retrying when replacement workflow handshakes fail before open', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const original = MockWebSocket.instances.at(-1)!
+    vi.useFakeTimers()
+    try {
+      original.close()
+      await vi.advanceTimersByTimeAsync(1100)
+      const first = MockWebSocket.instances.at(-1)!
+      expect(first).not.toBe(original)
+      first.close()
+      await vi.advanceTimersByTimeAsync(2000)
+      const second = MockWebSocket.instances.at(-1)!
+      expect(second).not.toBe(first)
+      second.close()
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(MockWebSocket.instances.at(-1)).not.toBe(second)
+    } finally {
+      app.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it.each([undefined, {}, { other: { busy: true, waiting: 0, items: [] } }])(
     'recovers missed turn completion and saved questions on reconnect: %j',
     async (sessions) => {

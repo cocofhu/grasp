@@ -20,6 +20,7 @@ import {
   type PmFailKind,
 } from '@/lib/pm/pmTurnState'
 import { extractAgentMessageDelta } from '@/lib/run/acpUnpack'
+import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import {
   channelPeerId,
@@ -170,6 +171,7 @@ watch(attachNotice, (n) => {
 })
 
 let ws: WebSocket | null = null
+const sessionStateCursor = createReviewStateCursor()
 /** Thread the socket should follow; '' disables reconnect. */
 let wsThreadId = ''
 let wsAttempt = 0
@@ -708,6 +710,7 @@ function openThreadWs() {
     return
   }
   ws = socket
+  let firstFrame = true
   socket.onmessage = (ev) => {
     if (ws !== socket || tid !== activeId.value) return
     let msg: any
@@ -716,6 +719,8 @@ function openThreadWs() {
     } catch {
       return
     }
+    if (firstFrame && msg?.type === 'session' && msg.event === 'queue_state') sessionStateCursor.reset()
+    firstFrame = false
     wsAttempt = 0
     handleFrame(msg)
   }
@@ -749,6 +754,7 @@ function handleFrame(msg: any) {
     return
   }
   if (msg?.type !== 'session') return
+  if (!sessionStateCursor.acceptServer(msg)) return
   switch (msg.event) {
     case 'queue_state':
       applyQueueState(msg)

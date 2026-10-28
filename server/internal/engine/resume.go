@@ -408,7 +408,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 					if convPeek.Done {
 						return errors.New("react already done")
 					}
-					_, err := e.EnqueueReviewTurnAs(owner, runID, nodeID, humanText, images, annotations, "node", "")
+					_, err := e.enqueueReactTurn(runID, nodeID, humanText, images, annotations, "node", "", sessionKindReview, false, owner, false, clientMessageID)
 					return err
 				}
 				// Review force (确认并流转): only when ready (no active turn, empty queue).

@@ -9,6 +9,7 @@ import { theme } from '@/lib/shared/theme'
 import openaiLogo from '@/assets/provider-logos/openai.svg'
 import claudeLogo from '@/assets/provider-logos/claude.svg'
 import geminiLogo from '@/assets/provider-logos/gemini.svg'
+import opencodeLogo from '@/assets/provider-logos/opencode.svg'
 import kimiLogo from '@/assets/provider-logos/kimi.svg'
 import kimiDarkLogo from '@/assets/provider-logos/kimi-dark.svg'
 import zhipuLogo from '@/assets/provider-logos/zhipu.svg'
@@ -664,7 +665,7 @@ describe('ModelConfigurationManager', () => {
     wrapper.unmount()
   })
 
-  it('marks official OpenCode auxiliary models by family instead of the provider letter', async () => {
+  it('marks official OpenCode auxiliary models by family with an official provider logo fallback', async () => {
     mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'opencode', modes: ['platform'], adapterState: 'existing' }] })
     mocks.credentials.mockResolvedValue({ items: [{ id: 'zen', type: 'ai', name: 'OpenCode', purpose: 'tool_auth', toolId: 'opencode', configured: true }] })
     mocks.cliModels.mockResolvedValue([
@@ -682,14 +683,15 @@ describe('ModelConfigurationManager', () => {
     await auxiliary.get('[data-test="app-select-trigger"]').trigger('click')
     const gemini = auxiliary.get('[data-test="app-select-option-opencode/gemini-3.5-flash"]')
     const claude = auxiliary.get('[data-test="app-select-option-opencode/claude-sonnet-5"]')
-    const unknown = auxiliary.get('[data-test="app-select-option-opencode/custom-private"]')
+    const providerFallback = auxiliary.get('[data-test="app-select-option-opencode/custom-private"]')
     expect(gemini.get('[data-vendor-mark="google"] img').attributes('src')).toBe(geminiLogo)
     expect(gemini.get('[data-vendor-mark="google"]').classes()).toContain('vendor-mark--color')
     expect(gemini.get('[data-vendor-mark="google"] img').classes()).not.toContain('invert')
     expect(claude.get('[data-vendor-mark="anthropic"] img').attributes('src')).toBe(claudeLogo)
     expect(claude.find('[data-vendor-mark="google"]').exists()).toBe(false)
-    expect(unknown.get('[data-vendor-mark="monogram"]').text()).toBe('O')
-    expect(unknown.find('img').exists()).toBe(false)
+    expect(providerFallback.get('[data-vendor-mark="opencode"] img').attributes('src')).toBe(opencodeLogo)
+    expect(providerFallback.find('[data-vendor-mark="google"]').exists()).toBe(false)
+    expect(providerFallback.find('[data-vendor-mark="anthropic"]').exists()).toBe(false)
     await gemini.trigger('click')
     const selected = auxiliary.get('[data-test="app-select-trigger"] [data-vendor-mark="google"] img')
     expect(selected.attributes('src')).toBe(geminiLogo)

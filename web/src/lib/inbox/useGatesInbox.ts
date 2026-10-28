@@ -58,6 +58,8 @@ import { agentPartsFromEvents, sameParts } from '@/lib/run/acpTools'
 import { takeoverConflictRunStatus, takeoverErrorCode, takeoverRaceLost } from '@/lib/run/runLive'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
+import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
+import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { useToast } from '@/lib/composables/useToast'
 import { inboxShareKind, isHumanGateInboxItem, isShareableInboxItem } from '@/lib/inbox/gateShareLink'
 import { inboxCancelDepartureRunId, isInboxCancelDeparture } from '@/lib/inbox/inboxCancelDeparture'
@@ -185,7 +187,7 @@ const reviewShellRef = ref<{ playConfirmCeremony?: () => Promise<void> } | null>
 const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
-  discardLastQueued?: () => void
+  discardLastQueued?: (clientMessageId?: string) => void
   releaseConfirmPending?: () => void
   settleConfirmedTurn?: () => void
   restoreUnsentQueued?: import('@/lib/inbox/clarifyVisitEnded').RestoreUnsent
@@ -444,7 +446,17 @@ const followReconnect = createWsReconnectController({
     return !!ft && ft.kind !== 'ended' && !!followItem && !!active.value && itemKey(active.value) === ft.key
   },
 })
+const followHeartbeat = createWsHeartbeat({
+  onTimeout: () => {
+    const ws = followWs
+    followWs = null
+    ws?.close()
+    followReconnect.onClose()
+    kickFollow()
+  },
+})
 function closeFollowWs() {
+  followHeartbeat.stop()
   followReconnect.markIntentionalClose()
   const ws = followWs
   followWs = null
@@ -467,22 +479,25 @@ function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter
   if (followWsLive(runId)) return
   closeFollowWs()
   if (typeof WebSocket === 'undefined') return
+  followReconnect.markConnecting()
   let ws: WebSocket
   try {
     ws = new WebSocket(api.runEventsWsUrl(runId))
   } catch {
-    // closeFollowWs marked the drop intentional; this failure still wants a retry.
-    followReconnect.markOpened()
     followReconnect.onClose()
     return
   }
   ;(ws as WebSocket & { _runId?: string })._runId = runId
   followWs = ws
-  // The replacement close above marked the drop intentional. This socket's
-  // own close must reconnect. markOpened also resets the backoff.
-  followReconnect.markOpened()
+  followHeartbeat.start()
+  ws.onopen = () => {
+    if (followWs !== ws) return
+    followReconnect.markOpened()
+    followHeartbeat.touch()
+  }
   ws.onmessage = (ev) => {
     if (followWs !== ws) return
+    followHeartbeat.touch()
     let m: {
       type?: string
       runId?: string
@@ -511,6 +526,7 @@ function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter
   }
   ws.onclose = () => {
     if (followWs !== ws) return
+    followHeartbeat.stop()
     followWs = null
     const ft = followTail.value
     const item = followItem
@@ -2212,6 +2228,7 @@ let dialogueLiveIncremental = false
 /** Node whose sandbox is still writing after the platform queue went idle. */
 let orphanLiveNodeId = ''
 const busySeedRetry = createBusySeedRetryController()
+const reviewCursor = createReviewStateCursor()
 const activeRunWsReconnect = createWsReconnectController({
   connect: () => {
     const id = active.value?.runId
@@ -2223,6 +2240,15 @@ const activeRunWsReconnect = createWsReconnectController({
     !isProcessedTriple(active.value) &&
     isActiveStillInList(active.value),
 })
+const activeRunHeartbeat = createWsHeartbeat({
+  onTimeout: () => {
+    const socket = activeRunWs
+    activeRunWs = undefined
+    activeRunWsRunId = ''
+    socket?.close()
+    activeRunWsReconnect.onClose()
+  },
+})
 
 function isClarifySoftRefreshBlocked(): boolean {
   if (active.value?.type !== 'clarify') return false
@@ -2232,13 +2258,16 @@ function isClarifySoftRefreshBlocked(): boolean {
 }
 
 function closeActiveRunWs() {
+  reviewCursor.reset()
+  activeRunHeartbeat.stop()
   stopOrphanRealign()
   orphanLiveNodeId = ''
   stopOrphanLiveSeed()
   busySeedRetry.stop()
   activeRunWsReconnect.markIntentionalClose()
-  activeRunWs?.close()
+  const socket = activeRunWs
   activeRunWs = undefined
+  socket?.close()
   activeRunWsRunId = ''
   clarifyLiveBusy.value = false
   pageControlByNode.value = {}
@@ -2386,6 +2415,7 @@ function restoreReactSessions(r: { reactSessions?: Run['reactSessions']; gate?: 
   // snapshot without this producer is idle, including after a missed turn_done.
   const snap = sessions[nodeId] ?? { busy: false, waiting: 0, items: [] }
   if (typeof snap !== 'object') return
+  if (!reviewCursor.accept({ ...snap, nodeId })) return
   clarifyLiveBusy.value = !!snap.busy
   const frame: Record<string, unknown> = {
     event: 'queue_state',
@@ -2394,6 +2424,8 @@ function restoreReactSessions(r: { reactSessions?: Run['reactSessions']; gate?: 
     items: snap.items ?? [],
     busy: !!snap.busy,
     activeItem: snap.activeItem,
+    sessionGeneration: snap.sessionGeneration,
+    revision: snap.revision,
   }
   // Only when the snapshot actually carried the bridge view. Omitting the
   // keys keeps an older payload identical to a frame that never attached.
@@ -2420,6 +2452,7 @@ function flushPendingReviewFrames() {
   const frames = pendingReviewFrames
   pendingReviewFrames = []
   for (const frame of frames) {
+    if (!reviewCursor.accept(frame)) continue
     gateApprovalRef.value?.applyReviewFrame?.(frame)
     reviewChatRef.value?.applyReviewFrame?.(frame)
   }
@@ -2501,16 +2534,19 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
   if (activeRunWs && activeRunWsRunId === runId && !opts?.fromReconnect) return
   // Soft close for reconnect: keep buffers; only mark intentional when switching away.
   if (opts?.fromReconnect) {
-    activeRunWsReconnect.markIntentionalClose()
-    activeRunWs?.close()
+    activeRunHeartbeat.stop()
+    const previous = activeRunWs
     activeRunWs = undefined
+    previous?.close()
     activeRunWsRunId = ''
   } else {
     closeActiveRunWs()
   }
   activeRunWsRunId = runId
+  activeRunWsReconnect.markConnecting()
   let socket: WebSocket
   let dialogueRevision = 0
+  let receivedSnapshot = false
   try {
     socket = new WebSocket(api.runEventsWsUrl(runId))
     activeRunWs = socket
@@ -2520,12 +2556,15 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     activeRunWsReconnect.onClose()
     return
   }
+  activeRunHeartbeat.start()
   socket.onopen = () => {
     if (activeRunWs !== socket) return
+    activeRunHeartbeat.touch()
     activeRunWsReconnect.markOpened()
   }
   socket.onmessage = (ev) => {
     if (activeRunWs !== socket) return
+    activeRunHeartbeat.touch()
     let m: {
       type?: string
       event?: string
@@ -2539,7 +2578,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       status?: string
       iteration?: number
       entry?: { nodeId?: string; event?: string; iteration?: number; detail?: string }
-      run?: { id?: string; reactSessions?: Run['reactSessions'] }
+      run?: { id?: string; reviewSessionGeneration?: number; reactSessions?: Run['reactSessions'] }
       previewArtifact?: string
       name?: string
     }
@@ -2560,6 +2599,17 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     }
     // WS connect snapshot may carry reactSessions before BroadcastReviewSessions.
     if (m.type === 'snapshot') {
+      if (!receivedSnapshot) {
+        receivedSnapshot = true
+        const sessions = m.run?.reactSessions ?? {}
+        const versioned = reviewCursor.hasVersion || typeof m.run?.reviewSessionGeneration === 'number' || Object.values(sessions).some(snap => typeof snap?.sessionGeneration === 'number')
+        reviewCursor.reset()
+        if (versioned) {
+          pendingReviewFrames = []
+          applyOrBufferReviewFrame({ event: 'session_reset', nodeId: activeDialogueNodeId() || '' })
+        }
+      }
+      reviewCursor.installSnapshot(m.run?.reactSessions ?? {}, m.run?.reviewSessionGeneration)
       // The full run DTO omits reactSessions after its last FIFO is removed.
       // Only a matching full snapshot makes that omission authoritative idle.
       const sessions = m.run?.reactSessions ?? (m.run?.id === runId ? {} : undefined)
@@ -2597,6 +2647,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       return
     }
     if (m.type === 'review') {
+      if (!reviewCursor.acceptServer(m)) return
       const currentDialogue = m.nodeId === activeDialogueNodeId()
       if (currentDialogue) dialogueRevision++
       // Sidebar「最近」has no channel of its own: relay turn boundaries.
@@ -2716,6 +2767,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
   socket.onclose = () => {
     // Ignore stale close from a superseded socket (reconnect race).
     if (activeRunWs !== socket) return
+    activeRunHeartbeat.stop()
     activeRunWs = undefined
     activeRunWsRunId = ''
     activeRunWsReconnect.onClose()
@@ -3380,6 +3432,7 @@ async function onClarifySend(
   force = false,
   retryLast = false,
   abortRunning = false,
+  sentClientMessageId?: string,
 ) {
   const it = active.value
   if (!it || it.type !== 'clarify' || it.done) {
@@ -3428,7 +3481,7 @@ async function onClarifySend(
     it.runId,
     it.nodeId,
     { text, images, annotations: mergedAnnotations },
-    { force, retryLast },
+    { force, retryLast, clientMessageId: sentClientMessageId },
   )
   try {
     if (retryLast) {
@@ -3500,7 +3553,7 @@ async function onClarifySend(
     }
     failClarifySend(it.runId, it.nodeId, clientMessageId)
     // Non-force enqueue failed: roll back optimistic queue + surface error.
-    if (!retryLast) reviewChatRef.value?.discardLastQueued?.()
+    if (!retryLast) reviewChatRef.value?.discardLastQueued?.(clientMessageId)
     // A confirm already left the dialogue pending (conv.Done). This reply is
     // refused immediately; showing it under the composer unlocks 确认并流转
     // while the hand-off row is still 校验中, and the next click does not send.

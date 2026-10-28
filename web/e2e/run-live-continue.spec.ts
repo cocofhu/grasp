@@ -3,6 +3,8 @@
  * also auto (实现 → 验证), the conversation continues in place. The re-keyed
  * surface must get the next node's stream: streamed text stays, one busy
  * indicator that clears at the end, no 「本轮没有输出」, no navigation.
+ * Workflow connections also recover missed output and completion metadata
+ * after explicit disconnects or silent stalls, without reloading the page.
  * Real RunLiveView; API and run WS mocked.
  */
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
@@ -70,14 +72,28 @@ function chainFor(phase: Phase) {
 }
 
 async function setup(page: Page) {
-  const state = { phase: 'impl' as Phase, ws: null as WebSocketRoute | null }
-  await page.routeWebSocket(new RegExp(`/api/runs/${RUN}/events`), (ws) => { state.ws = ws })
+  const state = {
+    phase: 'impl' as Phase,
+    ws: null as WebSocketRoute | null,
+    sockets: [] as WebSocketRoute[],
+    events: {} as Record<string, unknown[]>,
+    runPatch: {} as Record<string, unknown>,
+  }
+  const snapshot = () => ({ ...runFor(state.phase), ...state.runPatch })
+  await page.routeWebSocket(new RegExp(`/api/runs/${RUN}/events`), (ws) => {
+    state.ws = ws
+    state.sockets.push(ws)
+    // Reconnecting to the real endpoint starts with a run snapshot; ACP that
+    // arrived while disconnected must be recovered from the node endpoint.
+    if (state.sockets.length > 1) ws.send(JSON.stringify({ type: 'snapshot', run: snapshot() }))
+  })
   await page.route((u) => u.pathname.startsWith('/api/'), async (route) => {
     const url = new URL(route.request().url())
     const json = (body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
-    if (url.pathname === `/api/runs/${RUN}`) return json(runFor(state.phase))
+    if (url.pathname === `/api/runs/${RUN}`) return json(snapshot())
     if (url.pathname === `/api/runs/${RUN}/conversation-chain`) return json(chainFor(state.phase))
-    if (/\/nodes\/[^/]+\/events$/.test(url.pathname)) return json({ events: [], live: true })
+    const eventsNode = url.pathname.match(/\/nodes\/([^/]+)\/events$/)?.[1]
+    if (eventsNode) return json({ events: state.events[eventsNode] ?? [], live: state.phase !== 'done' })
     return json({})
   })
   const navs: string[] = []
@@ -190,4 +206,118 @@ test('live page: the watched node ends at a gate → ends in place and names the
   await expect(page.getByText('实现完成，登录页已改版。')).toBeVisible()
   await expect(page.getByText('本轮没有输出')).toHaveCount(0)
   expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([])
+})
+
+test('live page: interrupted workflow stream recovers missed output and final tokens without reloading', async ({ page }) => {
+  const { state, send } = await setup(page)
+  const partial: Step = { kind: 'message', text: '正在实现登录页。' }
+  const recovered: Step = { kind: 'message', text: '连接中断期间已完成布局，正在运行测试。' }
+  const final: Step = { kind: 'message', text: '登录页实现完成，测试通过。' }
+  send(acp('impl', [T1, partial]))
+  await expect(page.getByText(partial.text)).toBeVisible()
+  await expect(busy(page)).toHaveCount(1)
+
+  // No ACP frame is sent on the replacement socket. Its snapshot must cause
+  // the already mounted conversation to fetch output missed during the gap.
+  state.events.impl = flat([T1, recovered])
+  state.ws!.close({ code: 1011, reason: 'connection interrupted' })
+  await expect.poll(() => state.sockets.length).toBe(2)
+  await expect(page.getByText(recovered.text)).toBeVisible()
+  await expect(busy(page)).toHaveCount(1)
+  await expect(page.getByTestId('clarify-done-note')).toHaveCount(0)
+
+  send(acp('impl', [T1, final]))
+  await expect(page.getByText(final.text)).toBeVisible()
+  const usage = { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 300, cacheWriteTokens: 0 }
+  state.events.impl = [
+    { kind: 'prompt', t: 0, at: at(1), text: cur('impl').task },
+    ...flat([T1, final]),
+    { kind: 'turn_end', t: 12, at: at(13), usage },
+  ]
+  const completed = { ...runFor('done').nodeRuns.impl, iteration: 1, outputMd: final.text, events: state.events.impl, usage }
+  state.runPatch = { nodeRuns: { impl: completed }, nodeExecutions: { impl: [completed] } }
+  state.phase = 'done'
+  send({ type: 'snapshot', run: { ...runFor('done'), ...state.runPatch } })
+  await expect(page.getByTestId('clarify-done-note')).toHaveText('运行已完成')
+  await expect(busy(page)).toHaveCount(0)
+  await expect(page.getByText(final.text)).toBeVisible()
+  await expect(page.getByText('本轮没有输出')).toHaveCount(0)
+  await page.getByTestId('agent-timeline').last().getByTestId('chat-message-info').click()
+  await expect(page.getByTestId('chat-message-token-total')).toHaveText('1,500')
+  expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([])
+  await expect(page.locator('[data-e2e-mount="1"]')).toHaveCount(1)
+  expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1)
+})
+
+test('live page: a silent open workflow socket reconnects and resumes output automatically', async ({ page }) => {
+  await page.clock.install()
+  const { state, send } = await setup(page)
+  const partial: Step = { kind: 'message', text: '开始执行工作流。' }
+  const recovered: Step = { kind: 'message', text: '网络恢复后继续输出，工作流仍在执行。' }
+  send(acp('impl', [T1, partial]))
+  await expect(page.getByText(partial.text)).toBeVisible()
+
+  // Model a half-open connection: neither close nor error reaches the page.
+  // The server keeps progressing, but this transport delivers no heartbeat.
+  state.events.impl = flat([T1, recovered])
+  await page.clock.fastForward(61_000)
+  await page.clock.runFor(1000)
+  await expect.poll(() => state.sockets.length).toBe(2)
+  await expect(page.getByText(recovered.text)).toBeVisible()
+  await expect(busy(page)).toHaveCount(1)
+  await expect(page.getByTestId('clarify-done-note')).toHaveCount(0)
+  await expect(page.locator('[data-e2e-mount="1"]')).toHaveCount(1)
+  expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([])
+})
+
+test('live page: continued workflow chat reconciles a completion missed while disconnected', async ({ page }) => {
+  const { state, send } = await setup(page)
+  send(acp('impl', [{ kind: 'message', text: '实现完成，等待验收。' }]))
+  await expect(page.getByText('实现完成，等待验收。')).toBeVisible()
+  state.phase = 'verify'
+  state.runPatch = {
+    status: 'waiting_human',
+    currentNode: { ...cur('verify'), kind: 'clarify', mode: 'manual', state: 'waiting_human' },
+    clarifyByNode: { verify: { nodeId: 'verify', iteration: 1, turns: [], done: false } },
+    reactSessions: { verify: { busy: false, waiting: 0, items: [] } },
+  }
+  send({ type: 'snapshot', run: { ...runFor(state.phase), ...state.runPatch } })
+  await expect(page.getByTestId('clarify-segment-divider')).toContainText('验证')
+  await expect(page.getByRole('textbox')).toBeEnabled()
+
+  const item = { id: 'verify-reply-1', text: '请补充测试结论。' }
+  send({ type: 'review', nodeId: 'verify', event: 'turn_begin', item })
+  send(acp('verify', [{ kind: 'message', text: '正在执行验收测试。' }]))
+  await expect(page.getByText('正在执行验收测试。')).toBeVisible()
+  await expect(busy(page)).toHaveCount(1)
+
+  // turn_done and the final ACP frame never reach this tab. The next run
+  // snapshot carries the persisted answer, its usage, and authoritative idle.
+  state.runPatch.clarifyByNode = {
+    verify: {
+      nodeId: 'verify', iteration: 1, done: false,
+      turns: [
+        { role: 'human', text: item.text, at: at(15) },
+        {
+          role: 'agent', text: '全部测试通过，无需刷新。', at: at(25), startedAt: at(15), endedAt: at(25),
+          usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 300, cacheWriteTokens: 0 },
+        },
+      ],
+    },
+  }
+  state.ws!.close({ code: 1011, reason: 'completion lost during disconnect' })
+  await expect.poll(() => state.sockets.length).toBe(2)
+  await expect(page.getByText('全部测试通过，无需刷新。')).toHaveCount(1)
+  await expect(busy(page)).toHaveCount(0)
+  await page.getByTestId('agent-timeline').last().getByTestId('chat-message-info').click()
+  await expect(page.getByTestId('chat-message-token-total')).toHaveText('1,500')
+  await page.keyboard.press('Escape')
+
+  send({ type: 'review', nodeId: 'verify', event: 'turn_begin', item: { id: 'verify-reply-2', text: '再检查可访问性。' } })
+  send(acp('verify', [{ kind: 'message', text: '继续检查可访问性。' }]))
+  await expect(page.getByText('继续检查可访问性。')).toBeVisible()
+  await expect(busy(page)).toHaveCount(1)
+  await expect(page.getByTestId('clarify-done-note')).toHaveCount(0)
+  await expect(page.locator('[data-e2e-mount="1"]')).toHaveCount(1)
+  expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([`/runs/${RUN}/live?node=verify`])
 })

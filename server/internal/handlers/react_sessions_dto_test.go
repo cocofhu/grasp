@@ -17,11 +17,13 @@ func TestReactSessionsDTO(t *testing.T) {
 		t.Fatal("empty snaps → nil DTO")
 	}
 	out := reactSessionsDTO([]engine.ReviewSessionSnapshot{{
-		NodeID:  "react",
-		Kind:    "clarify",
-		Waiting: 1,
-		Busy:    true,
-		Items:   []map[string]any{{"id": "q2", "text": "乙"}},
+		SessionGeneration: 7,
+		Revision:          12,
+		NodeID:            "react",
+		Kind:              "clarify",
+		Waiting:           1,
+		Busy:              true,
+		Items:             []map[string]any{{"id": "q2", "text": "乙"}},
 		ActiveItem: map[string]any{
 			"id": "q1", "text": "甲",
 		},
@@ -35,6 +37,9 @@ func TestReactSessionsDTO(t *testing.T) {
 	}
 	if node["busy"] != true {
 		t.Fatalf("busy=%v", node["busy"])
+	}
+	if node["sessionGeneration"] != uint64(7) || node["revision"] != uint64(12) {
+		t.Fatalf("snapshot dropped its concurrency version: %v", node)
 	}
 	if node["waiting"] != 1 {
 		t.Fatalf("waiting=%v", node["waiting"])
