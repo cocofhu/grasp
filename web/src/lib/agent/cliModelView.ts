@@ -58,7 +58,7 @@ const VENDOR_LOGOS: Record<string, string> = {
   siliconflow: 'siliconflow',
   bytedance: 'bytedance',
   cursor: 'cursor',
-  opencode: 'opencode',
+  // Unrecognized OpenCode catalog models stay monograms. opencode-go still uses the tool logo.
   'opencode-go': 'opencode',
 }
 
