@@ -40,7 +40,7 @@ function setup(options: { hoverInk?: boolean; inline?: boolean } = {}) {
       stubs: {
         Teleport: true, Icon: true,
         CliModelSelect: defineComponent({
-          props: { modelValue: String, backend: String, hideReset: Boolean, excludeIds: { type: Array, default: () => [] } }, emits: ['update:modelValue'],
+          props: { modelValue: String, backend: String, hideReset: Boolean, excludeIds: { type: Array, default: () => [] }, allowedVendors: { type: Array, default: () => [] } }, emits: ['update:modelValue'],
           template: '<select data-testid="platform-model" :data-hide-reset="String(!!hideReset)" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="">Tool default</option><option value="platform-model-v1">Platform model</option><option value="platform-model-v2">Second</option><option value="opencode/gpt-5.5">GPT-5.5</option><option value="opencode/gpt-5.6-sol">GPT-5.6 Sol</option><option value="opencode/gpt-5.5-pro">GPT-5.5 Pro</option><option value="opencode/deepseek-v4.1-flash">DeepSeek V4.1 Flash</option><option value="opencode/deepseek-v4-pro">DeepSeek V4 Pro</option><option value="opencode/claude-haiku-4-5">Haiku 4.5</option><option value="opencode/claude-haiku-5-5">Haiku 5.5</option><option value="opencode/qwen3.5-plus">Qwen 3.5 Plus</option><option value="opencode/qwen3.8-max">Qwen 3.8 Max</option><option value="opencode/minimax-m3-free">MiniMax M3 Free</option><option value="opencode/minimax-m3">MiniMax M3</option><option value="opencode/kimi-k2.7-code">Kimi</option></select>',
         }),
       },
@@ -501,15 +501,59 @@ describe('ModelConfigurationManager', () => {
     expect(field.find('[data-test="app-select-option-platform:model-key"]').exists()).toBe(false)
     await field.get('[data-test="app-select-option-platform:official-key"]').trigger('click')
     await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
-    await wrapper.get('[data-testid="platform-model"]').setValue('platform-model-v1')
+    const modelId = backend === 'opencode' ? 'opencode/kimi-k2.7-code' : 'platform-model-v1'
+    await wrapper.get('[data-testid="platform-model"]').setValue(modelId)
     expect(wrapper.find('[data-testid="model-configuration-effort"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="model-configuration-effort-custom"]').exists()).toBe(backend === 'opencode')
     await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
     await flushPromises()
     expect(mocks.cliModels).toHaveBeenCalledWith(backend)
-    expect(mocks.create).toHaveBeenCalledWith({ name: 'Team configuration', backend, binding: { kind: 'platform', credentialId: officialKey.id, modelId: 'platform-model-v1' }, state: 'active' })
+    expect(mocks.create).toHaveBeenCalledWith({ name: 'Team configuration', backend, binding: { kind: 'platform', credentialId: officialKey.id, modelId }, state: 'active' })
     expect(mocks.updateConnection).not.toHaveBeenCalled()
     expect(mocks.connectionModels).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('locks OpenCode Go and OpenCode to one family and rejects a typed id from the other', async () => {
+    const officialKey: CredentialItem = { id: 'go-key', type: 'ai', name: 'Go subscription', purpose: 'tool_auth', toolId: 'opencode', configured: true }
+    mocks.credentials.mockResolvedValue({ items: [officialKey] })
+    mocks.capabilities.mockResolvedValue({ items: [{ toolId: 'opencode', modes: ['platform'], adapterState: 'existing' }] })
+    mocks.cliModels.mockResolvedValue([
+      { id: 'opencode/kimi-k3', name: 'Kimi K3', vendor: 'opencode' },
+      { id: 'opencode-go/mimo-v2.5', name: 'MiMo V2.5', vendor: 'opencode-go' },
+      { id: 'opencode-go/mimo-v2.5-pro', name: 'MiMo V2.5 Pro', vendor: 'opencode-go' },
+    ])
+    const wrapper = setup()
+    await openStepTwo(wrapper, 'opencode')
+    await chooseCredential(wrapper, 'platform:go-key')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="model-configuration-official-family"]').text()).toContain('opencode-go/<model>')
+    await wrapper.getComponent('[data-testid="platform-model"]').vm.$emit('update:modelValue', 'opencode-go/mimo-v2.5-pro')
+    expect(wrapper.getComponent('[data-testid="platform-model"]').props('allowedVendors')).toEqual(['opencode-go'])
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    const aux = wrapper.get('[data-testid="model-configuration-aux-select-0"]')
+    await aux.get('[data-test="app-select-trigger"]').trigger('click')
+    expect(aux.text()).toContain('MiMo V2.5')
+    expect(aux.text()).not.toContain('Kimi K3')
+    await aux.get('[data-test="app-select-search"]').setValue('opencode/kimi-k3')
+    await aux.get('[data-test="app-select-custom"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-configuration-official-problem"]').text()).toContain('one family')
+    expect(wrapper.get('[data-testid="model-configuration-save"]').attributes('disabled')).toBeDefined()
+    await aux.get('[data-test="app-select-trigger"]').trigger('click')
+    await aux.get('[data-test="app-select-search"]').setValue('opencode-go/a/b')
+    await aux.get('[data-test="app-select-custom"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-configuration-official-problem"]').text()).toContain('opencode/<model> or opencode-go/<model>')
+    expect(wrapper.get('[data-testid="model-configuration-save"]').attributes('disabled')).toBeDefined()
+    await aux.get('[data-test="app-select-trigger"]').trigger('click')
+    await aux.get('[data-test="app-select-option-opencode-go/mimo-v2.5"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-configuration-official-problem"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      backend: 'opencode',
+      binding: expect.objectContaining({ kind: 'platform', credentialId: 'go-key', modelId: 'opencode-go/mimo-v2.5-pro', auxiliaryModelIds: ['opencode-go/mimo-v2.5'] }),
+    }))
     wrapper.unmount()
   })
 
