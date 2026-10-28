@@ -144,6 +144,12 @@ const workBlocks = computed(() => {
 
 /** null follows expand-all; a click pins this reply for the rest of the page. */
 const manualOpen = ref<boolean | null>(null)
+// A renderer can be reused for another turn. Auto-open live work must never
+// leave the next completed reply expanded; clicks on a settled reply stay pinned.
+watch(() => props.streaming, () => {
+  manualOpen.value = null
+  thoughtOpen.value = {}
+})
 watch(
   () => props.expanded,
   () => {

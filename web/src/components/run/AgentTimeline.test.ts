@@ -105,6 +105,31 @@ describe('AgentTimeline', () => {
     expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
   })
 
+  it.each(['ordered', 'legacy'])('collapses completed %s process on load and after a new streamed turn', async kind => {
+    const reply = kind === 'ordered'
+      ? { parts: [{ kind: 'thought', text: 'Recorded thought' }, { kind: 'tool', title: 'Read', status: 'completed' }, { kind: 'message', text: 'Final answer' }] }
+      : { parts: [], thought: 'Recorded thought', tools: [{ title: 'Read', status: 'completed' }], text: 'Final answer' }
+    const w = mountTimeline({ ...reply, completed: true, startedAt, endedAt })
+    const fold = () => w.get('[data-testid="agent-timeline-elapsed"]')
+    expect(fold().attributes('aria-expanded')).toBe('false')
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
+    expect(w.get('[data-testid="agent-timeline-message"]').text()).toBe('Final answer')
+    await fold().trigger('click')
+    expect(w.get('[data-testid="agent-timeline-work"]').text()).toContain('Recorded thought')
+    await w.setProps({ streaming: true, completed: false })
+    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
+    await w.setProps({ streaming: false, completed: true })
+    expect(fold().attributes('aria-expanded')).toBe('false')
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
+    expect(w.get('[data-testid="agent-timeline-message"]').text()).toBe('Final answer')
+    await fold().trigger('click')
+    await w.setProps({ metadata: { durationMs: 500 } })
+    expect(fold().attributes('aria-expanded')).toBe('true')
+    await fold().trigger('click')
+    expect(fold().attributes('aria-expanded')).toBe('false')
+    w.unmount()
+  })
+
   // plan coverage: g2.2 — timeline parts render thought and message in full.
   it('renders long thought and message without a truncated suffix (g2.2)', async () => {
     const longThought = `${'思'.repeat(3000)}思考结尾END`

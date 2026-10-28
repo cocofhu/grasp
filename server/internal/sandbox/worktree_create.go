@@ -182,7 +182,7 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	env := make(map[string]string, len(spec.Env)+4)
+	env := make(map[string]string)
 	for key, value := range spec.Env {
 		if !worktreeGitEnvKey(key) {
 			env[key] = value
@@ -301,7 +301,7 @@ func firstEnv(env map[string]string, keys ...string) string {
 
 func envList(overlay map[string]string) []string {
 	base := os.Environ()
-	out := make([]string, 0, len(base)+len(overlay))
+	out := make([]string, 0)
 	skip := map[string]bool{}
 	for k := range overlay {
 		skip[k] = true

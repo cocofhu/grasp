@@ -127,7 +127,7 @@ When this workflow runs, treat its `agent-switching` check as merge-required.
 It does not replace the module gates above or the browser checks.
 
 ```bash
-node --test sandbox-gateway/scripts/mock-agent-model.test.mjs
+node --test sandbox-gateway/scripts/mock-agent-model.test.mjs sandbox-gateway/scripts/mock-chat-model.test.mjs sandbox-gateway/scripts/agent-platform-wire-fixture.test.mjs
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s sandbox-gateway/scripts -p 'test_agent_switching_test.py'
 agent_e2e_dir="$(mktemp -d)"
 bash sandbox-gateway/scripts/install-agent-e2e-clis.sh "$agent_e2e_dir/clis"

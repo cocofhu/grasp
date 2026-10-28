@@ -30,6 +30,7 @@ async function bootstrap() {
   setTheme(new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark')
   createApp({ setup() {
     const selected = ref('glm-current')
+    const active = ref<Record<string, boolean>>({})
     return () => h('main', { class: 'mx-auto max-w-[1280px] p-5', 'data-testid': 'shared-chat-audit' }, [
       h('h1', { class: 'mb-4 text-lg font-semibold' }, 'Model and provider marks'),
       h('div', { class: 'mb-8 grid grid-cols-2 gap-3 md:grid-cols-4' }, marks.map(([vendor, provider]) => h('section', { class: 'rounded-lg border border-line p-3', 'data-brand': vendor }, [
@@ -50,6 +51,16 @@ async function bootstrap() {
         h('h2', { class: 'mb-4 text-sm text-txt2' }, kind),
         h(ChatUserMessage, { text: 'Continue the task.', createdAt: '2026-10-28T08:00:00Z' }),
         h(AgentTimeline, { parts: [{ kind: 'message', text: 'This reply records its own execution and token usage.' }], completed: true, metadata, startedAt: metadata.startedAt, endedAt: metadata.endedAt }),
+      ])),
+      ...['solo', 'workflow'].map(kind => h('section', { class: 'mb-8 rounded-lg border border-line p-4', 'data-testid': 'fold-'+kind }, [
+        h('button', { type: 'button', 'data-testid': 'start-turn', onClick: () => { active.value[kind] = true } }, 'Start next turn'),
+        h('button', { type: 'button', 'data-testid': 'finish-turn', onClick: () => { active.value[kind] = false } }, 'Finish turn'),
+        h(AgentTimeline, {
+          ...(kind === 'solo'
+            ? { parts: [{ kind: 'thought', text: 'Private process detail' }, { kind: 'tool', title: 'Read', status: 'completed' }, { kind: 'message', text: 'Final answer remains visible.' }] }
+            : { thought: 'Private process detail', tools: [{ title: 'Read', status: 'completed' }], text: 'Final answer remains visible.' }),
+          streaming: !!active.value[kind], completed: !active.value[kind], startedAt: metadata.startedAt, endedAt: metadata.endedAt,
+        }),
       ])),
     ])
   } }).use(i18n).mount('#app')

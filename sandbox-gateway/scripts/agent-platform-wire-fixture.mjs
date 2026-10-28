@@ -6,8 +6,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
-import {execFileSync} from 'node:child_process'
 import {randomUUID} from 'node:crypto'
+import {pathToFileURL} from 'node:url'
 
 const provider = process.argv[2]
 const args = process.argv.slice(3)
@@ -15,6 +15,18 @@ let selectedModel = args.includes('--model') ? args[args.indexOf('--model') + 1]
 const sid = randomUUID()
 const send = (value) => process.stdout.write(`${JSON.stringify(value)}\n`)
 let mcp, mcpSession, messages = []
+
+// These two proprietary-platform doubles exercise only the matrix's fixed
+// checkpoint operations. Model output is data, never a host shell command.
+// Configurable native CLIs separately exercise their real command tools.
+export function checkpointOperation(command, cwd = process.cwd()) {
+  const file = path.join(cwd, 'checkpoint.txt')
+  if (command === 'cat checkpoint.txt') return fs.readFileSync(file, 'utf8')
+  const append = typeof command === 'string' && command.match(/^printf "%s\\n" (task-[a-f0-9]{24}:step=(?:0|[1-9][0-9]{0,2})) >> checkpoint\.txt; cat checkpoint\.txt$/)
+  if (!append) throw new Error('unsupported platform fixture checkpoint operation')
+  fs.appendFileSync(file, append[1]+'\n', {encoding: 'utf8', mode: 0o600})
+  return fs.readFileSync(file, 'utf8')
+}
 
 async function rpc(method, params) {
   if (!mcp?.url) throw new Error('selected artifact-store MCP configuration is missing')
@@ -50,7 +62,7 @@ async function run(prompt, notify) {
         result = await rpc('tools/call', {name: call.function.name.slice('mcp__artifact-store__'.length), arguments: input})
         if (result?.isError) throw new Error('the scoped MCP tool returned an error')
       } else if (call.function.name === 'exec_command') {
-        result = execFileSync('/bin/sh', ['-c', input.cmd], {cwd: process.cwd(), encoding: 'utf8', timeout: 10_000, maxBuffer: 1_000_000})
+        result = checkpointOperation(input.cmd)
       } else throw new Error('fixture received an unadvertised tool')
       const text = typeof result === 'string' ? result : JSON.stringify(result)
       notify({sessionUpdate: 'tool_call_update', toolCallId: call.id, status: 'completed', content: [{type: 'content', content: {type: 'text', text}}]})
@@ -60,6 +72,7 @@ async function run(prompt, notify) {
   throw new Error('model/tool loop exceeded its bounded turn budget')
 }
 
+async function main() {
 if (args.includes('--version')) {
   console.log(`grasp-${provider}-platform-wire-fixture 1`)
 } else if (provider === 'cursor') {
@@ -113,3 +126,6 @@ if (args.includes('--version')) {
     }
   }
 } else throw new Error('only proprietary platform wire fixtures are permitted here')
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main()

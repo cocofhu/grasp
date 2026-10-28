@@ -30,7 +30,6 @@ const box = vi.hoisted(() => ({
   currentReasoningEffort: undefined as undefined | import('vue').Ref<string>,
   modelChangePending: undefined as undefined | import('vue').Ref<boolean>,
   setCurrentReasoningEffort: undefined as undefined | ReturnType<typeof vi.fn>,
-  modelSwitchNotice: undefined as undefined | import('vue').Ref<string>,
   actionError: undefined as undefined | import('vue').Ref<string>,
   setCurrentModel: undefined as undefined | ReturnType<typeof vi.fn>,
 }))
@@ -68,7 +67,6 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     currentReasoningEffort: box.currentReasoningEffort,
     modelChangePending: box.modelChangePending,
     setCurrentReasoningEffort: (...args: unknown[]) => box.setCurrentReasoningEffort?.(...args),
-    modelSwitchNotice: box.modelSwitchNotice,
     load: vi.fn(),
     send: vi.fn(),
     setCurrentModel: (...args: unknown[]) => box.setCurrentModel?.(...args),
@@ -98,7 +96,6 @@ const currentModelId = (box.currentModelId = ref(''))
 const currentReasoningEffort = (box.currentReasoningEffort = ref(''))
 const modelChangePending = (box.modelChangePending = ref(false))
 const setCurrentReasoningEffort = (box.setCurrentReasoningEffort = vi.fn(async () => true))
-const modelSwitchNotice = (box.modelSwitchNotice = ref(''))
 const actionError = (box.actionError = ref(''))
 const setCurrentModel = (box.setCurrentModel = vi.fn(async () => true))
 
@@ -128,6 +125,18 @@ function turn(id: string, role: SoloTurn['role'], text: string): SoloTurn {
 }
 
 describe('SoloSessionPane', () => {
+  it('leaves a running empty transcript blank with the composer available', async () => {
+    turns.value = []
+    statusState.value = 'running'
+    const wrapper = mountPane(pages)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="solo-transcript"]').text()).toBe('')
+    expect(wrapper.find('.solo-empty').exists()).toBe(false)
+    expect(wrapper.find('textarea').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="solo-model-switch-notice"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it.each(['failed', 'refusal'])('shows a fallback for a history reply that ended with %s but was saved as ok', async (stopReason) => {
     turns.value = turnsFromMessages([{
       id: 'failed', sessionId: 's1', role: 'assistant', content: '', status: 'ok', createdAt: '',
@@ -295,7 +304,6 @@ describe('SoloSessionPane', () => {
     turns.value = []
     statusState.value = 'running'
     currentModelId.value = ''
-    modelSwitchNotice.value = '当前回复仍使用原来的模型，从下一条开始使用新模型。'
     const wrapper = mountPane(pages)
     await flushPromises()
 
@@ -303,11 +311,10 @@ describe('SoloSessionPane', () => {
     const plus = toolbar.get('[aria-label="添加附件"]')
     const select = toolbar.get('[data-testid="solo-model-select"]')
     expect(plus.element.compareDocumentPosition(select.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(wrapper.get('[data-testid="solo-model-switch-notice"]').text()).toContain('从下一条开始使用新模型')
+    expect(wrapper.find('[data-testid="solo-model-switch-notice"]').exists()).toBe(false)
     expect(select.text()).toContain('当前 Agent 还没有可用模型')
     expect(select.get('button').attributes('disabled')).toBeDefined()
     wrapper.unmount()
-    modelSwitchNotice.value = ''
   })
 
   it('shows the real model name instead of the configuration name and uses only the active session effort capabilities', async () => {

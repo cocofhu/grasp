@@ -83,7 +83,7 @@ jobs:
           unshare --user --map-root-user --mount --pid --fork /bin/true
       - name: Mock model and complete-matrix contracts
         run: |
-          node --test sandbox-gateway/scripts/mock-agent-model.test.mjs sandbox-gateway/scripts/mock-chat-model.test.mjs
+          node --test sandbox-gateway/scripts/mock-agent-model.test.mjs sandbox-gateway/scripts/mock-chat-model.test.mjs sandbox-gateway/scripts/agent-platform-wire-fixture.test.mjs
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s sandbox-gateway/scripts -p 'test_agent_switching_test.py'
       - name: Install and verify every required native CLI
         run: |

@@ -529,12 +529,10 @@ describe('useSoloChat', () => {
     ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'q1', text: 'hi', images: [] }, userMsgId: 'q1' })
     const pending = chat.setCurrentModel('aux2')
     expect(chat.currentModelId.value).toBe('aux2')
-    expect(chat.modelSwitchNotice.value).toContain('从下一条开始使用新模型')
     expect(await pending).toBe(true)
     expect(mocks.setSoloSessionModel).toHaveBeenCalledWith('s1', 'aux2')
 
     ws.emit({ type: 'session', event: 'turn_done', interrupted: false })
-    expect(chat.modelSwitchNotice.value).toBe('')
     app.unmount()
   })
 
@@ -546,7 +544,6 @@ describe('useSoloChat', () => {
     expect(await chat.setCurrentModel('other')).toBe(false)
     expect(chat.currentModelId.value).toBe('aux')
     expect(chat.actionError.value).toContain('不在该 Agent 的模型配置中')
-    expect(chat.modelSwitchNotice.value).toBe('')
     app.unmount()
   })
 
@@ -583,7 +580,6 @@ describe('useSoloChat', () => {
     expect(chat.currentReasoningEffort.value).toBe('high')
     expect(chat.currentModelId.value).toBe('aux')
     expect(chat.modelChangePending.value).toBe(false)
-    expect(chat.modelSwitchNotice.value).not.toBe('')
     await flushPromises()
     expect(mocks.setSoloSessionReasoningEffort).toHaveBeenCalledWith('s1', 'high')
     expect(mocks.setSoloSessionModel).not.toHaveBeenCalled()
@@ -592,7 +588,6 @@ describe('useSoloChat', () => {
     expect(chat.currentModelId.value).toBe('aux')
     ws.emit({ type: 'session', event: 'queue_state', busy: false, items: [] })
     await flushPromises()
-    expect(chat.modelSwitchNotice.value).toBe('')
     app.unmount()
   })
 
@@ -1050,7 +1045,6 @@ describe('useSoloChat', () => {
     expect(chat.currentConfigurationId.value).toBe('account-b')
     expect(chat.currentReasoningEffort.value).toBe('high')
     expect(chat.busy.value).toBe(true)
-    expect(chat.modelSwitchNotice.value).toContain('下一条')
     resolve(before)
     await background
 
@@ -1063,7 +1057,7 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
-  it.each(['model', 'effort'] as const)('keeps the next-turn %s hint when its save notification arrives after HTTP success', async kind => {
+  it.each(['model', 'effort'] as const)('keeps the saved %s selection when its notification arrives during the current turn', async kind => {
     const before = session({ currentModelSet: true, currentModelId: 'aux', currentConfigurationId: 'account-a', reasoningEffort: 'low' })
     const saved = session({ ...before, ...(kind === 'model' ? { currentModelId: 'aux2' } : { reasoningEffort: 'high' }) })
     mocks.getSoloSession.mockResolvedValue(before)
@@ -1075,14 +1069,12 @@ describe('useSoloChat', () => {
     ws.open(); await flushPromises()
     ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [] })
     expect(await (kind === 'model' ? chat.setCurrentModel('aux2') : chat.setCurrentReasoningEffort('high'))).toBe(true)
-    const hint = chat.modelSwitchNotice.value
-    expect(hint).toContain('下一条')
 
     ws.emit({ type: 'session', event: 'model', currentConfigurationId: saved.currentConfigurationId, currentModelId: saved.currentModelId, reasoningEffort: saved.reasoningEffort, pendingChange: kind })
-    expect(chat.modelSwitchNotice.value).toBe(hint)
+    expect(chat.currentModelId.value).toBe(saved.currentModelId)
+    expect(chat.currentReasoningEffort.value).toBe(saved.reasoningEffort)
     expect(chat.busy.value).toBe(true)
     ws.emit({ type: 'session', event: 'model', currentConfigurationId: saved.currentConfigurationId, currentModelId: saved.currentModelId, reasoningEffort: saved.reasoningEffort, pendingChange: '' })
-    expect(chat.modelSwitchNotice.value).toBe('')
     app.unmount()
   })
 

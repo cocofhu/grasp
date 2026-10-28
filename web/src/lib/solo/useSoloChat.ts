@@ -115,7 +115,6 @@ export function useSoloChat(sessionId: Ref<string>) {
   })
   const currentConfigurationId = computed(() => session.value?.currentConfigurationId || session.value?.initialConfigurationId || '')
   const currentReasoningEffort = computed(() => session.value?.reasoningEffort || '')
-  const modelSwitchNotice = ref('')
   const activeTurn = computed(() => (activeId.value ? turns.value.find((x) => x.id === `live:${activeId.value}`) ?? null : null))
 
   function modelSettings(row: SoloSession): ModelSettings {
@@ -567,13 +566,11 @@ export function useSoloChat(sessionId: Ref<string>) {
         applyExecution(frame)
         endActive(undefined, !!frame.interrupted)
         busy.value = queued.value.length > 0
-        modelSwitchNotice.value = ''
         patchSession({ busy: busy.value, waiting: queued.value.length })
         void refetchMessages()
         break
       case 'error':
         applyExecution(frame)
-        modelSwitchNotice.value = ''
         endActive(frame.message || t('pages.solo.chat.turnFailed'))
         busy.value = queued.value.length > 0
         patchSession({ busy: busy.value, waiting: queued.value.length })
@@ -600,9 +597,6 @@ export function useSoloChat(sessionId: Ref<string>) {
         // A saved choice from another tab supersedes metadata reads already in flight.
         sessionGeneration++
         if (session.value) confirmedSettings = modelSettings(session.value)
-        modelSwitchNotice.value = busy.value && (frame.pendingChange === 'model' || frame.pendingChange === 'effort')
-          ? t(frame.pendingChange === 'model' ? 'pages.solo.modelSelect.pending' : 'pages.solo.modelSelect.effortPending')
-          : ''
         if (frame.modelNotice) showModelNotice(String(frame.modelNotice), String(frame.error || ''))
         break
       }
@@ -687,7 +681,6 @@ export function useSoloChat(sessionId: Ref<string>) {
     pendingModels = 0
     confirmedSettings = null
     modelChangePending.value = false
-    modelSwitchNotice.value = ''
     settingsQueue = Promise.resolve()
     closeWs()
     reconnect.reset()
@@ -790,16 +783,14 @@ export function useSoloChat(sessionId: Ref<string>) {
     pendingSettings++
     if (kind === 'model') { pendingModels++; modelChangePending.value = true }
     actionError.value = ''
-    const deferNotice = busy.value
     patchSession(kind === 'model' ? { currentModelId: next, ...(configurationId === undefined ? {} : { currentConfigurationId: configurationId }), currentModelSet: true, reasoningEffort: '', reasoningEfforts: [], modelNotice: '' } : { reasoningEffort: next, modelNotice: '' })
-    modelSwitchNotice.value = deferNotice ? t(kind === 'model' ? 'pages.solo.modelSelect.pending' : 'pages.solo.modelSelect.effortPending') : ''
     const isCurrentSession = () => !disposed && id === sessionId.value && generation === sessionGeneration && epoch === settingsEpoch
     const latest = () => isCurrentSession() && sequence === settingSequence
     const request = settingsQueue.then(async () => {
       try {
         if (!isCurrentSession()) return false
         if (!sessionOpen.value) {
-          if (latest() && confirmedSettings) { patchSession(confirmedSettings); modelSwitchNotice.value = '' }
+          if (latest() && confirmedSettings) patchSession(confirmedSettings)
           return false
         }
         const row = kind === 'model' ? configurationId === undefined ? await api.setSoloSessionModel(id, next) : await api.setSoloSessionModel(id, next, undefined, configurationId) : await api.setSoloSessionReasoningEffort(id, next)
@@ -807,13 +798,11 @@ export function useSoloChat(sessionId: Ref<string>) {
         confirmedSettings = modelSettings(row)
         if (latest()) {
           patchSession(modelSettings(row))
-          if (!(deferNotice && busy.value)) modelSwitchNotice.value = ''
         }
         return true
       } catch (error) {
         if (latest()) {
           if (confirmedSettings) patchSession(confirmedSettings)
-          modelSwitchNotice.value = ''
           actionError.value = soloErrorText(error, t, te, locale.value)
         }
         return false
@@ -899,10 +888,6 @@ export function useSoloChat(sessionId: Ref<string>) {
     return !!v
   }
 
-  watch(busy, (now, was) => {
-    if (was && !now) modelSwitchNotice.value = ''
-  })
-
   watch(sessionId, () => void load(), { immediate: true })
 
   onBeforeUnmount(() => {
@@ -928,7 +913,6 @@ export function useSoloChat(sessionId: Ref<string>) {
     currentConfigurationId,
     currentReasoningEffort,
     modelChangePending,
-    modelSwitchNotice,
     load,
     send,
     setCurrentModel,

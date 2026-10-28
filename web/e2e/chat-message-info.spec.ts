@@ -63,3 +63,28 @@ test('reply information supports touch and stays within a narrow viewport', asyn
   await expect(panel).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
+
+test('completed Solo and workflow process collapses on load and after streaming, with click to expand', async ({ page }) => {
+  await page.goto('/chat-message-info.html')
+  for (const kind of ['solo', 'workflow']) {
+    const row = page.getByTestId('fold-'+kind)
+    const fold = row.getByTestId('agent-timeline-elapsed')
+    await expect(fold).toHaveAttribute('aria-expanded', 'false')
+    await expect(row.getByTestId('agent-timeline-work')).toHaveCount(0)
+    await expect(row.getByText('Final answer remains visible.', { exact: true })).toBeVisible()
+    await fold.click()
+    await expect(row.getByText('Private process detail', { exact: true })).toBeVisible()
+    await fold.click()
+    await expect(row.getByTestId('agent-timeline-work')).toHaveCount(0)
+    await fold.click()
+    await row.getByTestId('start-turn').click()
+    await expect(fold).toHaveCount(0)
+    await row.getByTestId('finish-turn').click()
+    await expect(fold).toHaveAttribute('aria-expanded', 'false')
+    await expect(row.getByTestId('agent-timeline-work')).toHaveCount(0)
+    await expect(row.getByText('Final answer remains visible.', { exact: true })).toBeVisible()
+  }
+  await page.reload()
+  await expect(page.getByTestId('fold-solo').getByTestId('agent-timeline-elapsed')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('fold-workflow').getByTestId('agent-timeline-elapsed')).toHaveAttribute('aria-expanded', 'false')
+})

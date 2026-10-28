@@ -48,8 +48,14 @@ test.describe('ClarifyChat 完成态相对时间单通道', () => {
 
     await expect(page.getByTestId('clarify-turn-completed')).toHaveCount(0)
     await expect(page.getByTestId('clarify-stream-caret')).toBeVisible()
-    // The current agent reply retains its live status; its shared footer is shown after completion.
-    await expect(page.getByTestId('clarify-turn-bottom-time')).toHaveCount(1)
+    // Both accepted user requests stay visible, including the request queued
+    // behind this stream. Each keeps its own time; live Agent rows have no footer.
+    const humans = page.locator('[data-turn-role="human"]')
+    await expect(humans).toHaveCount(2)
+    await expect(humans.getByTestId('clarify-turn-bottom-time')).toHaveCount(2)
+    const agents = page.locator('[data-turn-role="agent"]')
+    await expect(agents.getByTestId('clarify-turn-bottom-time')).toHaveCount(0)
+    await expect(agents.getByTestId('chat-message-meta')).toHaveCount(0)
 
     await page.screenshot({
       path: path.join(shotDir, '02-streaming-keeps-bottom-time.png'),
