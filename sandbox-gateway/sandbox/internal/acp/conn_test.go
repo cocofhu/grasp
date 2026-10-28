@@ -57,6 +57,28 @@ func startConnHelper(t *testing.T, mode string) *Conn {
 	return c
 }
 
+func TestStartAgentProgramIsArgvZero(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const modelArg = "request-body-not-a-program"
+	c, err := StartAgent(context.Background(), []string{exe, "-test.run=^TestConnHelperProcess$", modelArg}, append(os.Environ(), "GRASP_ACP_CONN_HELPER=eof"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close(); _ = c.Wait() })
+	if c.cmd == nil || len(c.cmd.Args) == 0 || c.cmd.Args[0] != exe {
+		t.Fatalf("program = %#v", c.cmd)
+	}
+	if c.cmd.Path == "sh" || strings.HasSuffix(c.cmd.Path, "/sh") || strings.Contains(c.cmd.Path, "bash") {
+		t.Fatalf("StartAgent used a shell: %q", c.cmd.Path)
+	}
+	if c.cmd.Args[len(c.cmd.Args)-1] != modelArg {
+		t.Fatalf("model text became the program: %q", c.cmd.Args)
+	}
+}
+
 func TestConnReaderFailureStopsLiveAgent(t *testing.T) {
 	for _, mode := range []string{"invalid", "eof"} {
 		t.Run(mode, func(t *testing.T) {

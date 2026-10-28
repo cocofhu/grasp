@@ -104,9 +104,12 @@ func Catalog(name provider.Name, env []string) ([]provider.Model, bool, error) {
 // Prepare preserves platform mode when no connection is selected. It must run
 // after legacy AuthEnv normalization so old aliases cannot restore an old key.
 func Prepare(name provider.Name, env []string, model, configRoot string) (Prepared, error) {
-	p := Prepared{Env: env, Model: model, Cleanup: func() {}}
+	p := Prepared{Env: env, Cleanup: func() {}}
 	raw := strings.TrimSpace(common.GetEnvValue(env, EnvConfig))
 	if raw == "" {
+		// No catalog: the request model stays on the platform path and is not
+		// written into a connection command line.
+		p.Model = model
 		if name == provider.OpenCode && common.GetEnvValue(env, "GRASP_OPENCODE_PROVIDER") == "opencode" {
 			return prepareOpenCodePlatform(p, configRoot)
 		}
@@ -164,15 +167,16 @@ func Prepare(name provider.Name, env []string, model, configRoot string) (Prepar
 	return p, nil
 }
 
-// sessionModelID is the model for this launch. A requested id is used only
-// when it belongs to the connection; empty, auto, and unknown ids stay on
-// the primary so a stale platform model cannot leave the connection.
+// sessionModelID is the catalog id for this launch. A request is accepted only
+// when it equals one catalog entry; the result is that entry's own ID, never
+// the request string. Empty, auto, and unknown ids stay on the primary so a
+// stale platform model cannot leave the connection.
 func sessionModelID(c Connection, requested string) string {
 	requested = strings.TrimSpace(requested)
 	if requested != "" && requested != "auto" {
-		for _, model := range c.Models {
-			if model.ID == requested {
-				return requested
+		for i := range c.Models {
+			if c.Models[i].ID == requested {
+				return c.Models[i].ID
 			}
 		}
 	}

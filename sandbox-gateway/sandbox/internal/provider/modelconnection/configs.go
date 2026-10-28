@@ -175,9 +175,12 @@ func prepareCodex(p Prepared) Prepared {
 	c := p.Connection
 	// Explicit command-line provider selection outranks old config.toml; the
 	// custom provider never consults the platform auth.json (which is preserved).
+	// Resolve the catalog entry again so -c model= cannot keep a request body
+	// that merely compared equal to an entry.
+	modelID := sessionModelID(*c, p.Model)
 	prefix := "model_providers." + p.RouteID + "."
 	for _, setting := range []string{
-		"model=" + strconv.Quote(p.Model),
+		"model=" + strconv.Quote(modelID),
 		"model_provider=" + strconv.Quote(p.RouteID),
 		prefix + "name=" + strconv.Quote(c.ProviderID),
 		prefix + "base_url=" + strconv.Quote(c.BaseURL),
