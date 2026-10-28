@@ -63,6 +63,11 @@ func TestImageAndCIContract(t *testing.T) {
 	if !strings.Contains(ci, "sandbox-gateway/sandbox/scripts/install-agent.sh") {
 		t.Fatal("worktree path filter does not include install-agent.sh")
 	}
+	filterStart := strings.Index(ci, "            worktree_image:")
+	filterEnd := strings.Index(ci, "  go-hygiene:")
+	if filterStart < 0 || filterEnd < filterStart || !strings.Contains(ci[filterStart:filterEnd], "sandbox-gateway/sandbox/**") {
+		t.Fatal("worktree path filter does not cover the sandbox backend")
+	}
 	section := ci[strings.Index(ci, "\n  worktree-image:"):strings.Index(ci, "\n  ci-required:")]
 	for _, want := range []string{"timeout-minutes: 180", "push: false", "scope=grasp-worktree-image", "check-worktree-image.sh"} {
 		if !strings.Contains(section, want) {

@@ -86,6 +86,7 @@ jobs:
               - "server/Dockerfile.worktree"
               - "server/**"
               - "web/**"
+              - "sandbox-gateway/sandbox/**"
               - "sandbox-gateway/sandbox/scripts/install-agent.sh"
               - "sandbox-gateway/sandbox/scripts/**"
               - "scripts/build-sandbox-runtime.sh"

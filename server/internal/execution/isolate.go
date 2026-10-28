@@ -66,7 +66,15 @@ func Root() string {
 // Prepare creates the launch directory on the first call and reuses it after that.
 // Git sources become a detached worktree at the selected branch HEAD. Anything
 // else becomes an independent folder. Parallel launch IDs never share a directory.
+// Remote clones done here are anonymous; pass credentials with PrepareAuth.
 func Prepare(id string, sources []Source) (Launch, error) {
+	return PrepareAuth(id, sources, Auth{})
+}
+
+// PrepareAuth is Prepare with the launch's already-resolved Git credentials.
+// Those credentials are used for clone and fetch and are not written to the
+// process-wide git config. A miss does not create a sandbox container.
+func PrepareAuth(id string, sources []Source, auth Auth) (Launch, error) {
 	id, err := safeID(id)
 	if err != nil {
 		return Launch{}, err
@@ -84,9 +92,12 @@ func Prepare(id string, sources []Source) (Launch, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return Launch{}, err
 	}
-	prepared, err := prepareSources(root, sources)
+	prepared, err := prepareSources(root, sources, auth)
 	if err != nil {
+		detachWorktrees(prepared)
 		_ = os.RemoveAll(root)
+		pruneWorktrees(prepared)
+		_ = os.RemoveAll(launchMirrors(root))
 		return Launch{}, err
 	}
 	st := &launchState{Launch: Launch{ID: id, Root: root, Repos: prepared}, holders: 1}
@@ -153,7 +164,8 @@ func ReleaseFailed(id string) {
 }
 
 // End deletes the launch directory even if a node handle is still winding down.
-// Missing IDs are ignored. A later Prepare of the same ID fails.
+// An ID that never created a directory is ignored, so sandbox runs do not
+// accumulate here. A later Prepare of an ID that did run fails.
 func End(id string) {
 	id, err := safeID(id)
 	if err != nil {
@@ -166,8 +178,8 @@ func End(id string) {
 		cur.ended = true
 		kills = cur.kills
 		cur.kills = nil
+		endedIDs[id] = true
 	}
-	endedIDs[id] = true
 	isolateMu.Unlock()
 	for _, kill := range kills {
 		kill()
@@ -187,11 +199,19 @@ func removeLocked(cur *launchState) {
 		}
 	}
 	_ = os.RemoveAll(cur.Root)
+	_ = os.RemoveAll(launchMirrors(cur.Root))
 	delete(launches, cur.ID)
 	endedIDs[cur.ID] = true
 }
 
-func prepareSources(root string, sources []Source) ([]Prepared, error) {
+// launchMirrors holds bare clones for one launch, outside the workspace the
+// agent sees, and is deleted with that launch. A later launch cannot reuse
+// another launch's private objects.
+func launchMirrors(root string) string {
+	return filepath.Join(Root(), ".mirrors", filepath.Base(root))
+}
+
+func prepareSources(root string, sources []Source, auth Auth) ([]Prepared, error) {
 	if len(sources) == 0 {
 		return nil, nil
 	}
@@ -204,20 +224,42 @@ func prepareSources(root string, sources []Source) ([]Prepared, error) {
 			continue
 		}
 		if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
-			return nil, fmt.Errorf("不安全的目录名 %q", name)
+			return out, fmt.Errorf("不安全的目录名 %q", name)
 		}
 		seen[name] = true
 		dest := filepath.Join(root, name)
-		prep, err := prepareOne(url, strings.TrimSpace(src.Branch), dest, name)
+		prep, err := prepareOne(url, strings.TrimSpace(src.Branch), dest, name, auth)
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		out = append(out, prep)
 	}
 	return out, nil
 }
 
-func prepareOne(url, branch, dest, name string) (Prepared, error) {
+// detachWorktrees unregisters worktrees while their directories still exist.
+// pruneWorktrees runs after those directories are deleted, so a remove that
+// lost the race still drops the "prunable" registration.
+func detachWorktrees(repos []Prepared) {
+	for _, repo := range repos {
+		if repo.Kind == "worktree" && repo.GitDir != "" {
+			_, _ = git(repo.GitDir, "worktree", "remove", "--force", repo.Path)
+		}
+	}
+}
+
+func pruneWorktrees(repos []Prepared) {
+	seen := map[string]bool{}
+	for _, repo := range repos {
+		if repo.Kind != "worktree" || repo.GitDir == "" || seen[repo.GitDir] {
+			continue
+		}
+		seen[repo.GitDir] = true
+		_, _ = git(repo.GitDir, "worktree", "prune")
+	}
+}
+
+func prepareOne(url, branch, dest, name string, auth Auth) (Prepared, error) {
 	if local, ok := localDir(url); ok {
 		if isGitRepo(local) {
 			return addWorktree(local, branch, dest, name)
@@ -227,8 +269,8 @@ func prepareOne(url, branch, dest, name string) (Prepared, error) {
 		}
 		return Prepared{Name: name, Path: dest, Kind: "folder"}, nil
 	}
-	cache := filepath.Join(Root(), "_mirrors", mirrorKey(url))
-	if err := ensureMirror(cache, url, branch); err != nil {
+	cache := filepath.Join(launchMirrors(filepath.Dir(dest)), mirrorKey(url))
+	if err := ensureMirror(cache, url, branch, auth); err != nil {
 		return Prepared{}, err
 	}
 	return addWorktree(cache, branch, dest, name)
@@ -246,10 +288,12 @@ func addWorktree(repo, branch, dest, name string) (Prepared, error) {
 		return Prepared{}, err
 	}
 	got, err := git(dest, "rev-parse", "HEAD")
-	if err != nil {
-		return Prepared{}, err
-	}
-	if got != sha {
+	if err != nil || got != sha {
+		_, _ = git(repo, "worktree", "remove", "--force", dest)
+		_, _ = git(repo, "worktree", "prune")
+		if err != nil {
+			return Prepared{}, err
+		}
 		return Prepared{}, fmt.Errorf("工作树 %s 停在 %s，所选分支 HEAD 是 %s", name, got, sha)
 	}
 	return Prepared{Name: name, Path: dest, Kind: "worktree", GitDir: repo}, nil
@@ -268,18 +312,25 @@ func branchHEAD(repo, branch string) (string, error) {
 	return git(repo, "rev-parse", "--verify", "--end-of-options", branch)
 }
 
-func ensureMirror(cache, url, branch string) error {
+func ensureMirror(cache, url, branch string, auth Auth) error {
+	env, prefix, cleanup, err := auth.gitPrefix(url)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	if _, err := os.Stat(cache); err != nil {
 		if err := os.MkdirAll(filepath.Dir(cache), 0o755); err != nil {
 			return err
 		}
-		if _, err := git("", "clone", "--bare", url, cache); err != nil {
+		args := append(append([]string{}, prefix...), "clone", "--bare", url, cache)
+		if _, err := gitWith("", env, args...); err != nil {
 			_ = os.RemoveAll(cache)
 			return err
 		}
 	}
 	if branch != "" && !strings.ContainsAny(branch, " \t\n\r") && !strings.HasPrefix(branch, "-") {
-		_, _ = git(cache, "fetch", "origin", branch)
+		args := append(append([]string{}, prefix...), "fetch", "origin", branch)
+		_, _ = gitWith(cache, env, args...)
 	}
 	return nil
 }
@@ -355,15 +406,47 @@ func mirrorKey(url string) string {
 }
 
 func git(dir string, args ...string) (string, error) {
+	return gitWith(dir, nil, args...)
+}
+
+func gitWith(dir string, extra []string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
+	cmd.Env = mergeEnv(os.Environ(), append([]string{"GIT_TERMINAL_PROMPT=0"}, extra...))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func mergeEnv(base, extra []string) []string {
+	overlay := map[string]string{}
+	order := make([]string, 0, len(extra))
+	for _, item := range extra {
+		key, val, ok := strings.Cut(item, "=")
+		if !ok || key == "" {
+			continue
+		}
+		if _, seen := overlay[key]; !seen {
+			order = append(order, key)
+		}
+		overlay[key] = val
+	}
+	out := make([]string, 0, len(base)+len(order))
+	for _, item := range base {
+		key, _, _ := strings.Cut(item, "=")
+		if _, skip := overlay[key]; skip {
+			continue
+		}
+		out = append(out, item)
+	}
+	for _, key := range order {
+		out = append(out, key+"="+overlay[key])
+	}
+	return out
 }
 
 func safeID(id string) (string, error) {

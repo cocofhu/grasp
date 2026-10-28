@@ -60,7 +60,7 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	for _, repo := range DecodeRepos(env["GIT_REPOS"]) {
 		sources = append(sources, execution.Source{Name: repo.Name, URL: repo.URL, Branch: repo.Branch})
 	}
-	launch, err := execution.Prepare(launchID, sources)
+	launch, err := execution.PrepareAuth(launchID, sources, authFromSpec(spec))
 	if err != nil {
 		return nil, fmt.Errorf("准备工作树: %w", err)
 	}
@@ -160,6 +160,52 @@ func realStartWorktreeBackend(ctx context.Context, env map[string]string, worksp
 	}
 	go func() { _ = cmd.Wait() }()
 	return port, stop, nil
+}
+
+// authFromSpec copies the credentials this launch already resolved. An explicit
+// catalog does not fall back to host tokens or the legacy SSH key. Solo,
+// workflow runs, conversation tests, and the assistant all arrive through Create
+// with those fields set.
+func authFromSpec(spec Spec) execution.Auth {
+	auth := execution.Auth{Configured: spec.GitBindingsConfigured}
+	for _, cred := range spec.GitCredentials {
+		auth.Credentials = append(auth.Credentials, execution.Credential{
+			Kind: cred.Kind, Scope: cred.Scope, Secret: cred.Secret, KnownHosts: cred.KnownHosts,
+		})
+	}
+	for _, repo := range spec.RepoCredentials {
+		auth.Repos = append(auth.Repos, execution.RepoCredential{
+			URL: repo.URL, Kind: repo.Kind, Secret: repo.Secret, KnownHosts: repo.KnownHosts,
+		})
+	}
+	if spec.GitBindingsConfigured {
+		return auth
+	}
+	auth.SSHPrivateKey = spec.SSHPrivateKey
+	auth.SSHKnownHosts = spec.SSHKnownHosts
+	if spec.Env == nil {
+		return auth
+	}
+	auth.GitHubToken = firstEnv(spec.Env, "GITHUB_TOKEN", "GH_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_ENTERPRISE_TOKEN")
+	auth.GitHubURL = spec.Env["GITHUB_URL"]
+	auth.GitLabToken = firstEnv(spec.Env, "GITLAB_TOKEN", "GLAB_TOKEN", "GITLAB_ACCESS_TOKEN")
+	auth.GitLabURL = spec.Env["GITLAB_URL"]
+	if strings.TrimSpace(auth.SSHPrivateKey) == "" {
+		auth.SSHPrivateKey = spec.Env["GIT_SSH_PRIVATE_KEY"]
+	}
+	if strings.TrimSpace(auth.SSHKnownHosts) == "" {
+		auth.SSHKnownHosts = spec.Env["GIT_SSH_KNOWN_HOSTS"]
+	}
+	return auth
+}
+
+func firstEnv(env map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if v := strings.TrimSpace(env[key]); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func envList(overlay map[string]string) []string {
