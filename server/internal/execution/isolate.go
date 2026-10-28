@@ -247,13 +247,6 @@ func removeLocked(cur *launchState) {
 	endedIDs[cur.ID] = true
 }
 
-// launchMirrors holds bare clones for one launch, outside the workspace the
-// agent sees, and is deleted with that launch. A later launch cannot reuse
-// another launch's private objects.
-func launchMirrors(root string) string {
-	return filepath.Join(Root(), ".mirrors", filepath.Base(root))
-}
-
 // mirrorDir is the bare-clone directory for one launch, checked against the
 // mirrors parent. Callers must use the returned path for later removal.
 func mirrorDir(launchRoot string) (string, error) {
