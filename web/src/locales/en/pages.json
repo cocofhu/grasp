@@ -4575,7 +4575,7 @@
       "node_not_found": "Node not found"
     },
     "chatMessageInfo": {
-      "title": "Reply information",
+      "title": "Statistics",
       "time": "Time",
       "tool": "Coding tool",
       "model": "Model",
