@@ -317,6 +317,35 @@ defineExpose({ close, show })
   flex: 1 1 auto;
   overflow-y: auto;
 }
+.solo-picker__panel--compact .solo-picker__list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.solo-picker__panel--compact .solo-picker__list::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.solo-picker__panel--compact .solo-picker__list::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.solo-picker__panel--compact .solo-picker__list::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.solo-picker__panel--compact .solo-picker__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.solo-picker__panel--compact .solo-picker__list::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+.solo-picker__panel--compact .solo-picker__list:hover::-webkit-scrollbar-thumb {
+  background: rgb(var(--c-line));
+}
+.solo-picker__panel--compact .solo-picker__list:hover::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--c-line-strong));
+}
 .solo-picker__footer {
   margin-top: 4px;
   flex-shrink: 0;
@@ -382,6 +411,13 @@ defineExpose({ close, show })
   padding: 6px 8px;
   font-size: 13px;
   line-height: 20px;
+}
+.solo-picker__panel--compact .solo-picker__list :deep(.solo-model-option) {
+  box-sizing: border-box;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+  padding: 0 8px;
 }
 .solo-picker__panel--compact .solo-picker__list :deep([data-picker-opt][aria-selected='true']) {
   border-color: transparent;

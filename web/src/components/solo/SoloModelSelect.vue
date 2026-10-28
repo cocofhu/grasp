@@ -5,7 +5,6 @@ import Icon from '@/components/ui/Icon.vue'
 import VendorMark from '@/components/agent/VendorMark.vue'
 import SoloPickerShell from './SoloPickerShell.vue'
 import type { ConfiguredModelChoice } from '@/lib/solo/configuredModels'
-import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
 
 const props = withDefaults(
   defineProps<{ models: ConfiguredModelChoice[]; modelValue: string; reasoningEffort?: string; disabled?: boolean; emptyAsLabel?: boolean; flat?: boolean }>(),
@@ -22,7 +21,7 @@ const effortEntry = ref<HTMLButtonElement | null>(null)
 
 const current = computed(() => props.models.find((model) => model.id === props.modelValue) ?? (!props.modelValue ? props.models[0] : null) ?? null)
 const multipleGroups = computed(() => new Set(props.models.map(model => model.configurationId).filter(Boolean)).size > 1)
-function toolLabel(tool?: string) { return ACP_BACKENDS.find(row => row.id === tool)?.label || tool || '' }
+function optionNote(model: ConfiguredModelChoice) { return model.source || model.hint || '' }
 const label = computed(() => {
   if (!props.models.length && props.emptyAsLabel) return t('pages.solo.modelSelect.empty')
   return current.value?.name || t('pages.solo.modelSelect.placeholder')
@@ -141,7 +140,7 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
     :label="label"
     :placeholder="!current"
     :disabled="disabled || !models.length"
-    :search-placeholder="view === 'models' && models.length > 5 ? t('pages.solo.modelSelect.search') : ''"
+    :search-placeholder="view === 'models' && models.length > 0 ? t('pages.solo.modelSelect.search') : ''"
     :content-role="view === 'effort' ? 'group' : 'listbox'"
     :panel-width="view === 'effort' ? 250 : multipleGroups ? 320 : 240"
     :flat="flat"
@@ -187,10 +186,13 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
         <div v-if="!models.length" class="solo-picker-empty">{{ t('pages.solo.modelSelect.empty') }}</div>
         <template v-else>
           <template v-for="(model, index) in groups(query)" :key="model.id || 'auto'">
-          <div v-if="multipleGroups && (index === 0 || groups(query)[index - 1]?.configurationId !== model.configurationId)" class="solo-model-menu-title">{{ model.configurationName }} · {{ toolLabel(model.tool) }}</div>
-          <button type="button" role="option" data-picker-opt :disabled="model.unavailable" :aria-selected="selected(model)" :data-testid="`solo-model-option-${model.id || 'auto'}`" @click="choose(model, close)">
+          <div v-if="multipleGroups && (index === 0 || groups(query)[index - 1]?.configurationId !== model.configurationId)" class="solo-model-menu-title">{{ model.configurationName }}</div>
+          <button type="button" role="option" class="solo-model-option" data-picker-opt :disabled="model.unavailable" :aria-selected="selected(model)" :data-testid="`solo-model-option-${model.id || 'auto'}`" @click="choose(model, close)">
             <VendorMark :vendor="model.vendor" :backend="model.backend" :auto="model.backend && !(model.modelId ?? model.id)" :size="18" :unknown="model.unavailable" flat />
-            <span class="min-w-0 flex-1 truncate" :title="model.name">{{ model.name }}<span v-if="multipleGroups && model.source" class="block truncate text-[10px] text-txt3">{{ model.source }}</span></span>
+            <span class="solo-model-option-text">
+              <span class="solo-model-option-name" :title="model.name">{{ model.name }}</span>
+              <span class="solo-model-option-note" :title="optionNote(model) || undefined">{{ optionNote(model) }}</span>
+            </span>
             <span v-if="model.unavailable" class="shrink-0 text-[11px] text-txt3">{{ t('pages.solo.modelSelect.unavailable') }}</span>
             <Icon v-else-if="selected(model)" name="check" :size="14" class="shrink-0 text-accent" />
           </button>
@@ -212,6 +214,11 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
 
 <style scoped>
 .solo-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solo-model-option-text { min-width: 0; flex: 1 1 auto; }
+.solo-model-option-name,
+.solo-model-option-note { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solo-model-option-name { font-size: 13px; line-height: 18px; }
+.solo-model-option-note { min-height: 14px; color: rgb(var(--c-txt3)); font-size: 10px; line-height: 14px; }
 .solo-model-effort { flex-shrink: 0; color: rgb(var(--c-accent-2)); font-size: 12px; font-weight: 500; }
 .solo-model-menu-title { padding: 4px 8px 5px; color: rgb(var(--c-txt3)); font-size: 11px; font-weight: 500; line-height: 16px; }
 .solo-effort { padding: 1px 6px 6px; transition: --effort-ratio 200ms cubic-bezier(0.22, 1, 0.36, 1); }
