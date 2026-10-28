@@ -4576,7 +4576,7 @@
       "node_not_found": "节点不存在"
     },
     "chatMessageInfo": {
-      "title": "回复信息",
+      "title": "统计信息",
       "time": "时间",
       "tool": "编码工具",
       "model": "模型",
