@@ -287,9 +287,11 @@ func (e *Engine) runAdmitted(runID, fromNodeID string) {
 
 // resumeAdmitted continues a paused or terminated run from fromNodeID via the
 // same TryAcquire + queued fallback path as the priority-then-FIFO dispatcher.
-// DB status is only promoted to running once a slot is actually held.
-func (e *Engine) resumeAdmitted(runID, fromNodeID string) {
-	e.scheduleRunAdmission(runID, fromNodeID)
+// It returns only after the run is queued or running. Status becomes running
+// once a slot is held; otherwise it stays queued for the dispatcher. The node
+// to continue from is unchanged.
+func (e *Engine) resumeAdmitted(runID, fromNodeID string) bool {
+	return e.scheduleRunAdmission(runID, fromNodeID)
 }
 
 // execute drives the FSM loop from the given node id. The caller must already

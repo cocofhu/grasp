@@ -779,7 +779,12 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: "从失败位置继续"})
 	log.Info().Str("run_id", runID).Str("node_id", nodeID).Str("transition", "resume-from").Msg("run resumed from node")
 
-	go e.resumeAdmitted(runID, nodeID)
+	// History only lists completed, failed, and cancelled. Write queued or
+	// running before returning so the caller does not still observe a terminal
+	// status. The driver itself still starts asynchronously once a slot is held.
+	if !e.resumeAdmitted(runID, nodeID) {
+		return errors.New("续跑入场失败")
+	}
 	return nil
 }
 

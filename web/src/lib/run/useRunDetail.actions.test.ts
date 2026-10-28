@@ -74,8 +74,9 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
-import { useRunDetail } from './useRunDetail'
+import { RESUME_STATUS_FOLLOW_MS, useRunDetail } from './useRunDetail'
 import { __resetSidebarHandoffForTests, readSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
+import { RECENT_RELAY_DEBOUNCE_MS, onRecentActivity, resetRecentActivityRelayForTests } from '@/lib/run/recentRuns'
 
 function stubNode(partial: Partial<WFNode> & Pick<WFNode, 'id' | 'type'>): WFNode {
   return { label: partial.id, position: { x: 0, y: 0 }, config: {}, ...partial }
@@ -247,6 +248,8 @@ describe('useRunDetail actions', () => {
 
   afterEach(() => {
     __resetSidebarHandoffForTests()
+    resetRecentActivityRelayForTests()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -689,6 +692,49 @@ describe('useRunDetail actions', () => {
     expect(detail.canResumeSelected.value).toBe(false)
 
     app.unmount()
+  })
+
+  it('notifies the sidebar after a resume leaves failed or cancelled, and stays quiet when it is refused', async () => {
+    const notices: string[] = []
+    const off = onRecentActivity(() => { notices.push('refresh') })
+    const { detail, app } = await withRunDetail()
+    vi.useFakeTimers()
+    try {
+      mocks.getRun.mockResolvedValue(sampleRun({ status: 'failed' }))
+      await detail.onResume('n1')
+      await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+      expect(mocks.resumeRun).toHaveBeenCalledWith('run-1', 'n1')
+      expect(detail.resumeError.value).toBeNull()
+      expect(notices).toEqual([])
+
+      mocks.getRun.mockResolvedValue(sampleRun({ status: 'queued' }))
+      await vi.advanceTimersByTimeAsync(RESUME_STATUS_FOLLOW_MS)
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+      expect(notices).toEqual(['refresh'])
+
+      notices.length = 0
+      resetRecentActivityRelayForTests()
+      mocks.resumeRun.mockClear()
+      mocks.getRun.mockResolvedValue(sampleRun({ status: 'running' }))
+      await detail.onResume('')
+      await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+      expect(mocks.resumeRun).toHaveBeenCalledWith('run-1', '')
+      expect(notices).toEqual(['refresh'])
+
+      notices.length = 0
+      resetRecentActivityRelayForTests()
+      mocks.resumeRun.mockRejectedValueOnce(new Error('sandbox gone'))
+      await detail.onResume('n1')
+      await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS + RESUME_STATUS_FOLLOW_MS)
+      expect(detail.resumeError.value).toBe('sandbox gone')
+      expect(notices).toEqual([])
+    } finally {
+      off()
+      app.unmount()
+      resetRecentActivityRelayForTests()
+      vi.useRealTimers()
+    }
   })
 
   it('derives priority presentation and saves the draft', async () => {
