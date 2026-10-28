@@ -255,6 +255,23 @@ func TestLaunchModelReappliesOnEmptyResumeAndKeepsHumanVisit(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFirstHumanTurn(t, db2, run2.ID, "predev")
+	waitRunStatus(t, db2, run2.ID, "waiting_human")
+	// The opening turn writes the human row before the agent reply. Under -race
+	// that gap is wide enough for this update to land, then be overwritten by
+	// the reply save. Wait until the reply is persisted.
+	deadline = time.Now().Add(waitPollTimeout)
+	for {
+		var settled models.ReactConversation
+		err := db2.Where("run_id = ? AND node_id = ?", run2.ID, "predev").Order("iteration desc").First(&settled).Error
+		n := len(settled.Messages)
+		if err == nil && n > 0 && settled.Messages[n-1].Role == "agent" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("opening turn did not settle before model edit: %+v %v", settled, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if err := db2.Model(&models.ReactConversation{}).Where("run_id = ? AND node_id = ?", run2.ID, "predev").Updates(map[string]any{
 		"current_model_id": "m2", "current_model_set": true, "current_configuration_id": "group", "current_reasoning_effort": "low",
 	}).Error; err != nil {

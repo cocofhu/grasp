@@ -505,7 +505,9 @@ export function useHomeApproveChat() {
         : t('pages.solo.modelSelect.unavailableSelection'))
       return
     }
-    if (decision.notice === 'default') toast.warn(t('pages.solo.modelSelect.catalogFailedDefault'))
+    if (decision.action === 'omit' && decision.notice === 'default') {
+      toast.warn(t('pages.solo.modelSelect.catalogFailedDefault'))
+    }
     const launchModel = decision.action === 'send' ? decision.model : null
     launchModelForModal.value = launchModel
     sending.value = true
