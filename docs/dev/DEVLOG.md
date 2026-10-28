@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-28（聊天恢复 PR 的主线集成检查）
+
+- 日期：2026-10-28（Asia/Hong_Kong）。
+- 范围：`web/src/components/agent/CliModelSelect.test.ts`、`web/src/components/workspace/ModelConfigurationManager.test.ts`。
+- 做了什么：将未知 OpenCode 模型家族的旧字母占位断言更新为精确的官方 OpenCode SVG 资产，继续分别核对 Gemini、Claude 家族图标以及明暗主题规则。
+- 为什么：聊天恢复 PR #1031 创建期间主线合入官方 OpenCode 模型支持，GitHub 合并结果中的两项旧测试仍要求 monogram，但实际新契约使用服务商图标回退。没有改变产品图标实现或放宽家族区分，也没有修改 CI 契约。
+- 如何验证：两文件 70 项测试、全 Web 类型检查及定向 ESLint 通过；合入最新主线后全量 536 文件、5,767 项单测通过，Lines 91.77%，完整 lint 与生产构建及品牌/安全上下文断言通过。更新后的 GitHub CI 继续核对。
+
 ### 2026-10-28（并发聊天状态一致性与历史复核）
 
 - 日期：2026-10-28（Asia/Hong_Kong）。

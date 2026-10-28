@@ -8,6 +8,7 @@ import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import { theme } from '@/lib/shared/theme'
 import claudeLogo from '@/assets/provider-logos/claude.svg'
 import geminiLogo from '@/assets/provider-logos/gemini.svg'
+import opencodeLogo from '@/assets/provider-logos/opencode.svg'
 import CliModelSelect from './CliModelSelect.vue'
 
 const catalog: CliCatalogModel[] = [
@@ -317,7 +318,7 @@ const opencodeCatalog: CliCatalogModel[] = [
 ]
 
 describe('CliModelSelect OpenCode family marks', () => {
-  it('uses the color Gemini mark for Gemini and keeps other families and unknown ids distinct', async () => {
+  it('uses model family marks and the official OpenCode logo for an unfamiliar family', async () => {
     mocks.load.mockResolvedValue(opencodeCatalog)
     const previous = theme.value
     const w = await mountSelect({ variant: 'compact', modelValue: 'opencode/gemini-3.5-flash', backend: 'opencode' })
@@ -333,15 +334,15 @@ describe('CliModelSelect OpenCode family marks', () => {
       await openPanel(w)
       const gemini = q('[data-testid="cli-model-option-opencode/gemini-3.5-flash"]')!
       const claude = q('[data-testid="cli-model-option-opencode/claude-sonnet-5"]')!
-      const unknown = q('[data-testid="cli-model-option-opencode/custom-private"]')!
+      const providerFallback = q('[data-testid="cli-model-option-opencode/custom-private"]')!
       expect(gemini.querySelector('[data-vendor-mark="google"] img')!.getAttribute('src')).toBe(geminiLogo)
       expect(gemini.querySelector('[data-vendor-mark="google"]')!.classList.contains('vendor-mark--color')).toBe(true)
       expect(gemini.querySelector('[data-vendor-mark="google"] img')!.classList.contains('invert')).toBe(false)
       expect(claude.querySelector('[data-vendor-mark="anthropic"] img')!.getAttribute('src')).toBe(claudeLogo)
       expect(claude.querySelector('[data-vendor-mark="anthropic"] img')!.getAttribute('src')).not.toBe(geminiLogo)
-      const monogram = unknown.querySelector('[data-vendor-mark="monogram"]')!
-      expect(monogram.querySelector('img')).toBeNull()
-      expect(monogram.textContent?.trim()).toBe('O')
+      expect(providerFallback.querySelector('[data-vendor-mark="opencode"] img')!.getAttribute('src')).toBe(opencodeLogo)
+      expect(providerFallback.querySelector('[data-vendor-mark="google"]')).toBeNull()
+      expect(providerFallback.querySelector('[data-vendor-mark="anthropic"]')).toBeNull()
       expect(q('[data-testid="cli-model-inline-detail"]')).toBeNull()
       expect(gemini.textContent).toContain('opencode/gemini-3.5-flash')
     } finally {
