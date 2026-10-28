@@ -8,7 +8,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/google/uuid"
@@ -152,10 +151,6 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		return nil, err
 	}
 	extra := agentContainerExtra{Repos: repos, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort}
-	if len(snapshots) > 0 {
-		extra.Env, extra.Bindings = mergeSessionRepoConfig(snapshots)
-		extra.RepoCredentials = runtime.RepoCredentialsFor(projectsFromSessionRepos(snapshots), s.gitCredential)
-	}
 	id := row.ID
 	if opts.OnReady != nil {
 		extra.OnReady = func() { opts.OnReady(id) }

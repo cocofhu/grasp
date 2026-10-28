@@ -239,12 +239,10 @@ func TestWorktreeRepoCredentialOverridesCatalog(t *testing.T) {
 	sb, err := m.Create(context.Background(), Spec{
 		Name:                  "repo-cred",
 		GitBindingsConfigured: true,
-		GitCredentials: []GitCredential{{
-			ID: "wrong", Kind: RepoCredentialGitHubHTTPS, Scope: cloneURL, Secret: "catalog-token",
-		}},
-		RepoCredentials: []RepoCredential{{
-			URL: cloneURL, Kind: RepoCredentialGitHubHTTPS, Secret: token,
-		}},
+		GitCredentials: []GitCredential{
+			{ID: "wrong", Kind: RepoCredentialGitHubHTTPS, Scope: srv.URL, Secret: "catalog-token"},
+			{ID: "repo", Kind: RepoCredentialGitHubHTTPS, Scope: cloneURL, Secret: token},
+		},
 		Env: map[string]string{
 			BridgePasswordEnv: "pw",
 			"AGENT_PROVIDER":  "codex",

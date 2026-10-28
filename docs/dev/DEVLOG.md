@@ -20,6 +20,22 @@
 
 ## 记录
 
+### 2026-10-27（仓库只保留克隆配置）
+
+- 日期：2026-10-27。
+- 范围：`server/internal/models/solo.go`、`server/internal/services/{project.go,solo_repos.go,sandbox_solo.go,sandbox_agent.go}`、`server/internal/database/project_runtime.go`、`server/internal/sandbox`、`sandbox-gateway/sandbox/scripts/{startup.sh,reprime.sh,git-credentials.py}`、`web/src/components/solo/ProjectForm.vue`、`web/src/views/ProjectsView.vue`、`web/src/lib/{solo,api}`、`docs/content/{help,en/help}/configuration.md`、`docs/dev/agent-model-routing-design.md`、`CHANGELOG.md`。
+- 做了什么：仓库登记和 Solo 单仓/多仓快照只保留名称、描述、地址、分支、目录及原有元信息。启动迁移幂等删除 projects 旧列，并清掉两类会话 JSON 里的访问方式、凭据引用、凭据绑定和环境变量，不写入任何 Agent。Solo 新建和重启只注入当前有效 Agent 的环境、通用绑定和 Git catalog，以及 GIT_REPOS 克隆清单。沙箱不再打包或消费 ssh/repos 显式授权，仍会清掉旧的 repo-credentials 与 grasp-repo 文件。仓库表单和列表去掉这三个区域，地址占位只保留 `https://github.com/acme/app.git`。
+- 为什么：权限和运行环境应由 Agent 统一维护。旧仓库配置如果留在快照里，重启会话时会重新盖过 Agent。
+- 如何验证：迁移回归覆盖旧列、单仓/多仓快照、空值和重复执行；原始 HTTP JSON 提交旧字段后不回显、不落库；Solo 新建与重启断言仓库来源环境为空且 GIT_REPOS 仍在；bundle 不再包含 repos/；startup/reprime 与 git-credentials.py 回归确认旧显式授权被清掉且 Agent catalog 仍可用。server：golangci-lint 2.12.2 无问题，go vet、gen-configdoc -check、`go test ./...` 与 runtime `TestRunAgent|TestReact` 通过，核心覆盖率 90.4%。web：528 个测试文件、5556 项通过，Lines 91.55%；ESLint 0 errors（12 条既有 warnings），vue-tsc 与生产构建通过。sandbox：lint/vet 无问题，核心覆盖率 96.6%；bash -n、inject、git-auth、runtime-bootstrap、preview-inject 与 mock chat 8 项通过。docs 构建与高/严重漏洞审计通过。actionlint 与 error-level shellcheck 通过。未跑完整 Playwright 套件。
+
+### 2026-10-28（DSH 每轮 token 用量接入统计）
+
+- 日期：2026-10-28（Asia/Shanghai）。
+- 范围：`sandbox-gateway/sandbox/internal/provider/deepseek/{deepseek.go,usage.go,usage_test.go,deepseek_test.go}`、`sandbox-gateway/sandbox/internal/acp/panel.go`、`server/README.md`、`sandbox-gateway/sandbox/README.md`、`CHANGELOG.md`。
+- 做了什么：给 ACP `Panel` 增加可选的 `PromptUsage` 钩子，在 `session/prompt` 返回后把本轮用量写进 `prompt_done.usage`；DSH provider 读取固定版本 dsh 的 `storages/session_projcache/sessions/<sessionID>.json` 中 `tokenUsage` 投影（uncachedInput/output/cacheRead/cacheWrite），按轮前后累计值差分后上报，并对 `turn/end` 的异步落盘做短重试；缓存缺失、回退重建、畸形 JSON 或非法 session id 时保持省略 `usage` 的旧帧结构。`ReportsUsage` 改为 true，`CumulativeUsage` 仍返回空（投影不区分模型，跨模型复用会话无法正确归属）。
+- 为什么：dsh 的 ACP 响应只带 `stopReason`，`usage_update` 只是上下文占用，因此 Grasp 的 token ledger 对 DSH 一直是 0；而 dsh 自身已经把精确的四桶累计写入投影缓存，应直接复用，不能再让用量分析漏掉 DeepSeek Harness。
+- 如何验证：新增 usage tracker 单测覆盖按轮差分、异步落盘重试、无变化、缓存回退、畸形/缺行/负值、非法 session id 与空模型回退；DSH 子进程夹具按真实缓存路径写入累计用量，断言每轮 `TurnResult.Usage` 与 `prompt_done` 帧；另用当前会话的真实缓存跑过一次解析，发现并修复了“其他投影行的 `val` 是字符串/null 时整块反序列化失败”的问题，夹具已加入同类兄弟行。`go test ./...`（`sandbox-gateway/sandbox`）全绿，`go test ./internal/provider/deepseek ./internal/acp` 通过。`server/README.md`、`sandbox-gateway/sandbox/README.md` 与 `CHANGELOG.md` 已同步说明统计口径及子代理限制。
+
 ### 2026-10-27（修复尾部「思考中…」横向对齐）
 
 - 日期：2026-10-27。

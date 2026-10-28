@@ -49,10 +49,9 @@ func reprimeSpec(t *testing.T) Spec {
 			"AGENT_PROVIDER": "claude_code", "MULTI": "a\nb 'c'",
 			"SANDBOX_INJECT": "x", "SSH_KEY": "k", "bad-name": "v",
 		},
-		ConfigHome:      home,
-		ConfigRoot:      "/root/.claude",
-		SSHPrivateKey:   "PRIVATE",
-		RepoCredentials: []RepoCredential{{URL: "https://git.example/a.git", Kind: RepoCredentialGitHubHTTPS, Secret: "tok"}},
+		ConfigHome:    home,
+		ConfigRoot:    "/root/.claude",
+		SSHPrivateKey: "PRIVATE",
 	}
 }
 
@@ -85,8 +84,13 @@ func TestPackReprimeBundle(t *testing.T) {
 	if files["config/rules/r.md"] != "rule" {
 		t.Fatalf("config home not packed: %v", files)
 	}
-	if files["ssh/id_rsa"] != "PRIVATE\n" || files["ssh/repos/0.secret"] != "tok\n" {
+	if files["ssh/id_rsa"] != "PRIVATE\n" {
 		t.Fatalf("ssh bundle not packed: %v", files)
+	}
+	for name := range files {
+		if strings.HasPrefix(name, "ssh/repos/") {
+			t.Fatalf("explicit repository credential was packed: %s", name)
+		}
 	}
 }
 

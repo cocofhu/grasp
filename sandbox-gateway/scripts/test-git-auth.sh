@@ -287,62 +287,48 @@ _GIT_CRED_RESET=0
 configure_git_credentials
 echo "OK: empty tokens without repos does not abort"
 
-# 仓库级凭据：同主机不同仓库各用各的 token / 私钥，其余仓库仍走主机级凭据。
+# Old explicit per-repository grants are wiped. The Agent catalog is the only
+# Git identity, and a plain GIT_REPOS list does not revive those files.
 rm -f "$HOME/gh.last" "$HOME/gh.token" "$HOME/glab.last" "$TMP/root/.git-credentials"
 : >"$GIT_CONFIG_GLOBAL"
-REPOS_SRC="$TMP/repo-inject/repos"
-mkdir -p "$REPOS_SRC"
-printf '0\tgithub_https\thttps://github.com/acme/private.git\n1\tssh\tgit@github.com:acme/other.git\n2\tgitlab_https\thttps://git.example.com/team/svc\n3\tssh\tssh://git@git.example.com:2222/team/infra.git\n' >"$REPOS_SRC/manifest"
-printf 'repo_tok\n' >"$REPOS_SRC/0.secret"
-printf -- '-----BEGIN KEY-----\nother\n-----END KEY-----\n' >"$REPOS_SRC/1.secret"
-printf 'github.com ssh-ed25519 AAAAother\n' >"$REPOS_SRC/1.known_hosts"
-printf 'svc_tok\n' >"$REPOS_SRC/2.secret"
-printf -- '-----BEGIN KEY-----\ninfra\n-----END KEY-----\n' >"$REPOS_SRC/3.secret"
-GITHUB_TOKEN="gh_host"
+mkdir -p "$TMP/root/.grasp/repo-credentials" "$TMP/root/.ssh"
+printf '0\tgithub_https\thttps://github.com/acme/private.git\n' >"$TMP/root/.grasp/repo-credentials/manifest"
+printf 'explicit-token\n' >"$TMP/root/.grasp/repo-credentials/0.token"
+printf 'OLDKEY\n' >"$TMP/root/.ssh/grasp-repo-0"
+printf 'Host grasp-repo-0\n' >"$TMP/root/.ssh/grasp_repos_config"
+CATSRC="$TMP/catalog/git"
+mkdir -p "$CATSRC"
+printf '[{"index":0,"id":"gh","name":"gh","kind":"github_https","scope":"","preferred":true}]\n' >"$CATSRC/manifest.json"
+printf 'catalog-token\n' >"$CATSRC/0.secret"
+export GRASP_GIT_CREDENTIAL_HELPER="$ROOT/sandbox/scripts/git-credentials.py"
+# startup.sh itself is set -e without pipefail. git config --get-regexp exits 1
+# when a section is absent; keep that non-fatal here.
+set +o pipefail
+configure_git_catalog "$CATSRC"
+set -o pipefail
+if [ -e "$TMP/root/.grasp/repo-credentials" ] || [ -e "$TMP/root/.ssh/grasp-repo-0" ] || [ -e "$TMP/root/.ssh/grasp_repos_config" ]; then
+  echo "FAIL: old explicit repository grant survived catalog install" >&2
+  exit 1
+fi
+if [ ! -f "$TMP/root/.grasp/git-credentials/manifest.json" ]; then
+  echo "FAIL: Agent catalog was not installed" >&2
+  exit 1
+fi
+password="$(printf 'protocol=https\nhost=github.com\npath=acme/app.git\n\n' | GIT_TERMINAL_PROMPT=0 git credential fill | sed -n 's/^password=//p')"
+if [ "$password" != "catalog-token" ]; then
+  echo "FAIL: catalog password [$password]" >&2
+  exit 1
+fi
+GITHUB_TOKEN=""
 GITLAB_TOKEN=""
-GITHUB_URL=""
-GITLAB_URL=""
-GIT_REPOS="other|git@github.com:acme/other.git|main"
+GIT_REPOS="app|https://github.com/acme/app.git|main"
 _GIT_CRED_RESET=0
-_REPO_CRED_URLS=""
-configure_repo_credentials "$REPOS_SRC"
 configure_git_credentials
-# credential.helper store reads $HOME/.git-credentials; the helpers were rewritten to $TMP/root.
-ln -sf "$TMP/root/.git-credentials" "$HOME/.git-credentials"
-
-cred_password() {
-  printf 'url=%s\n\n' "$1" | GIT_TERMINAL_PROMPT=0 git credential fill 2>/dev/null | sed -n 's/^password=//p'
-}
-expect_eq() {
-  if [ "$2" != "$3" ]; then
-    echo "FAIL: $1: want [$3] got [$2]" >&2
-    exit 1
-  fi
-}
-expect_eq "repo token (.git)" "$(cred_password https://github.com/acme/private.git)" repo_tok
-expect_eq "repo token (no .git)" "$(cred_password https://github.com/acme/private)" repo_tok
-expect_eq "host token for other repo" "$(cred_password https://github.com/acme/public.git)" gh_host
-expect_eq "gitlab repo token" "$(cred_password https://git.example.com/team/svc.git)" svc_tok
-expect_eq "ssh rewrite scp" "$(git ls-remote --get-url git@github.com:acme/other.git)" "ssh://git@grasp-repo-1/acme/other.git"
-expect_eq "ssh rewrite ssh url" "$(git ls-remote --get-url ssh://git@github.com/acme/other.git)" "ssh://git@grasp-repo-1/acme/other.git"
-expect_eq "ssh other repo untouched" "$(git ls-remote --get-url git@github.com:acme/else.git)" "git@github.com:acme/else.git"
-expect_eq "ssh port rewrite" "$(git ls-remote --get-url ssh://git@git.example.com:2222/team/infra.git)" "ssh://git@grasp-repo-3/team/infra.git"
-grep -qxF "Include $TMP/root/.ssh/grasp_repos_config" "$TMP/root/.ssh/config"
-grep -q 'IdentityFile .*/grasp-repo-1$' "$TMP/root/.ssh/grasp_repos_config"
-grep -q 'StrictHostKeyChecking yes' "$TMP/root/.ssh/grasp_repos_config"
-grep -q 'Port 2222' "$TMP/root/.ssh/grasp_repos_config"
-grep -q 'StrictHostKeyChecking accept-new' "$TMP/root/.ssh/grasp_repos_config"
-grep -qxF 'github.com ssh-ed25519 AAAAother' "$TMP/root/.ssh/known_hosts"
-expect_eq "key mode" "$(stat -c %a "$TMP/root/.ssh/grasp-repo-1")" 600
-if [ -e "$REPOS_SRC" ]; then
-  echo "FAIL: staging repos dir should be removed" >&2
+if [ -e "$TMP/root/.grasp/repo-credentials" ] || [ -e "$TMP/root/.ssh/grasp-repo-0" ]; then
+  echo "FAIL: GIT_REPOS recreated an explicit repository grant" >&2
   exit 1
 fi
-if grep -rq 'repo_tok\|svc_tok' "$GIT_CONFIG_GLOBAL"; then
-  echo "FAIL: repo tokens must not be written into git config" >&2
-  exit 1
-fi
-echo "OK: per-repo credentials route by repository path and SSH alias"
+echo "OK: Agent catalog replaces explicit repository grants and GIT_REPOS stays a clone list"
 
 echo "OK: git auth unit smoke passed"
 

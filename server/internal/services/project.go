@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
@@ -36,18 +35,15 @@ func soloErrParams(status int, code, format string, params map[string]any, args 
 	return &SoloError{Status: status, Code: code, Msg: fmt.Sprintf(format, args...), Params: params}
 }
 
-// ProjectInput is the create / update shape of a project.
+// ProjectInput is the create / update shape of a project. Older clients may
+// still send access, credential and environment fields; those keys are not
+// part of this struct, so encoding/json drops them and they never persist.
 type ProjectInput struct {
-	Name                 string             `json:"name"`
-	Description          string             `json:"description"`
-	RepoURL              string             `json:"repoUrl"`
-	DefaultBranch        string             `json:"defaultBranch"`
-	RepoDirName          string             `json:"repoDirName"`
-	GitCredentialType    string             `json:"gitCredentialType"`
-	GitCredentialID      string             `json:"gitCredentialId"`
-	SshHostsCredentialID string             `json:"sshHostsCredentialId"`
-	Env                  map[string]string  `json:"env"`
-	CredentialBindings   map[string]*string `json:"credentialBindings"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	RepoURL       string `json:"repoUrl"`
+	DefaultBranch string `json:"defaultBranch"`
+	RepoDirName   string `json:"repoDirName"`
 }
 
 // ProjectService manages Solo projects (one Git repository each).
@@ -60,32 +56,7 @@ func NewProjectService(db *gorm.DB) *ProjectService {
 	return &ProjectService{db: db}
 }
 
-var (
-	envKeyPattern  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	repoDirPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-	// sensitiveEnvMarkers flag env names that look like secrets; those must be
-	// supplied through workspace credentials, not stored on the project.
-	sensitiveEnvMarkers = []string{"TOKEN", "SECRET", "PASSWORD", "PASSWD", "API_KEY", "APIKEY", "PRIVATE_KEY", "ACCESS_KEY", "CREDENTIAL"}
-	// soloReservedEnvKeys are written by the platform when the sandbox starts.
-	soloReservedEnvKeys = map[string]bool{
-		"GIT_REPOS": true, "GRASP_THREAD_ID": true, "CODEX_HOME": true,
-		"ACP_BRIDGE_MODEL": true, "GRASP_CONFIGURED_MODELS": true, "GRASP_INITIAL_CHAT_MODEL": true,
-	}
-)
-
-// IsSensitiveEnvName reports env names that must come from credentials.
-func IsSensitiveEnvName(k string) bool {
-	k = strings.ToUpper(strings.TrimSpace(k))
-	if envauth.IsSecretEnvKey(k) || envauth.IsPlatformAuthEnvKey(k) {
-		return true
-	}
-	for _, m := range sensitiveEnvMarkers {
-		if strings.Contains(k, m) {
-			return true
-		}
-	}
-	return false
-}
+var repoDirPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func validRepoURL(raw string) bool {
 	raw = strings.TrimSpace(raw)
@@ -105,9 +76,6 @@ func normalizeProjectInput(in ProjectInput) (ProjectInput, error) {
 	in.RepoURL = strings.TrimSpace(in.RepoURL)
 	in.DefaultBranch = strings.TrimSpace(in.DefaultBranch)
 	in.RepoDirName = strings.TrimSpace(in.RepoDirName)
-	in.GitCredentialType = strings.TrimSpace(in.GitCredentialType)
-	in.GitCredentialID = strings.TrimSpace(in.GitCredentialID)
-	in.SshHostsCredentialID = strings.TrimSpace(in.SshHostsCredentialID)
 
 	if in.Name == "" {
 		return in, soloErr(http.StatusBadRequest, "name_required", "仓库名称不能为空")
@@ -127,49 +95,6 @@ func normalizeProjectInput(in ProjectInput) (ProjectInput, error) {
 	if in.RepoDirName != "" && (!repoDirPattern.MatchString(in.RepoDirName) || in.RepoDirName == "." || in.RepoDirName == "..") {
 		return in, soloErr(http.StatusBadRequest, "repo_dir_invalid", "目录名只能包含字母、数字、. _ -")
 	}
-	switch in.GitCredentialType {
-	case "":
-		in.GitCredentialID, in.SshHostsCredentialID = "", ""
-	case "github_https", "gitlab_https":
-		in.SshHostsCredentialID = ""
-	case "ssh":
-	default:
-		return in, soloErr(http.StatusBadRequest, "git_type_invalid", "不支持的访问方式 %q", in.GitCredentialType)
-	}
-	env := map[string]string{}
-	for k, v := range in.Env {
-		k = strings.TrimSpace(k)
-		if k == "" {
-			continue
-		}
-		if !envKeyPattern.MatchString(k) {
-			return in, soloErr(http.StatusBadRequest, "env_key_invalid", "环境变量名 %q 不合法", k)
-		}
-		if envauth.IsPlatformReservedEnvKey(k) || soloReservedEnvKeys[k] {
-			return in, soloErr(http.StatusBadRequest, "env_key_reserved", "环境变量 %s 由平台注入，不能在仓库配置里设置", k)
-		}
-		if IsSensitiveEnvName(k) {
-			return in, soloErr(http.StatusBadRequest, "env_key_sensitive", "%s 看起来是敏感值，请放到凭据中并通过凭据绑定引用", k)
-		}
-		env[k] = v
-	}
-	in.Env = env
-	bindings := map[string]*string{}
-	for k, id := range in.CredentialBindings {
-		k = strings.TrimSpace(k)
-		if k == "" {
-			continue
-		}
-		if !envKeyPattern.MatchString(k) || envauth.IsPlatformReservedEnvKey(k) || soloReservedEnvKeys[k] {
-			return in, soloErr(http.StatusBadRequest, "binding_key_invalid", "凭据绑定的变量名 %q 不可用", k)
-		}
-		if id == nil || strings.TrimSpace(*id) == "" {
-			continue
-		}
-		v := strings.TrimSpace(*id)
-		bindings[k] = &v
-	}
-	in.CredentialBindings = bindings
 	return in, nil
 }
 
@@ -179,11 +104,6 @@ func applyProjectInput(p *models.Project, in ProjectInput) {
 	p.RepoURL = in.RepoURL
 	p.DefaultBranch = in.DefaultBranch
 	p.RepoDirName = in.RepoDirName
-	p.GitCredentialType = in.GitCredentialType
-	p.GitCredentialID = in.GitCredentialID
-	p.SshHostsCredentialID = in.SshHostsCredentialID
-	p.Env = in.Env
-	p.CredentialBindings = in.CredentialBindings
 }
 
 // List returns projects, most recently used first.

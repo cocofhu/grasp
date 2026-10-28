@@ -4600,12 +4600,6 @@
         "preparing": "等待沙箱就绪…",
         "running": "Agent 正在处理"
       },
-      "access": {
-        "none": "未配置凭据",
-        "github_https": "GitHub 令牌",
-        "gitlab_https": "GitLab 令牌",
-        "ssh": "SSH 密钥"
-      },
       "modelSelect": {
         "label": "模型",
         "placeholder": "选择模型",
@@ -4751,7 +4745,6 @@
         "model": "模型",
         "repo": "仓库",
         "branch": "分支",
-        "access": "访问方式",
         "remoteDefault": "远端默认分支",
         "dir": "目录名",
         "snapshotHint": "这些仓库配置在启动时已经固定，这次会话不能增删仓库。重新启动仍使用这份快照；之后修改仓库登记不会写回这次会话，要用新登记请新开一次会话。",
@@ -4784,26 +4777,18 @@
         "branch_invalid": "分支名不能包含空格、{'|'} 或 ,",
         "branch_invalid_repo": "分支名不能包含空格、{'|'} 或 ,（{repo}）",
         "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
-        "env_key_conflict": "变量 {key} 在仓库 {repos} 中冲突，请修改后再启动。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
-        "git_type_invalid": "不支持的访问方式",
-        "env_key_invalid": "变量名格式不正确",
-        "env_key_reserved": "包含平台保留的变量名",
-        "env_key_sensitive": "包含敏感变量，请改用凭据绑定",
-        "binding_key_invalid": "凭据绑定的变量名不可用",
         "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。"
       }
     },
     "projects": {
       "title": "仓库",
-      "subtitle": "为 Solo 会话登记 Git 仓库。启动会话时自动克隆，并按配置注入访问凭据和环境变量。",
+      "subtitle": "为 Solo 会话登记 Git 仓库，启动会话时自动克隆。",
       "new": "添加仓库",
       "edit": "编辑仓库",
       "search": "搜索仓库",
       "empty": "还没有仓库",
       "emptyHint": "添加一个 Git 仓库，之后在首页或 Solo 页选择它即可启动带仓库的会话。",
-      "envCount": "{n} 个变量",
-      "bindingCount": "{n} 个凭据绑定",
       "lastUsed": "{time}使用",
       "neverUsed": "从未使用",
       "start": "开始 Solo",
@@ -4820,7 +4805,7 @@
         "descriptionPlaceholder": "可选，说明这个仓库是做什么的",
         "sectionRepo": "仓库",
         "repoUrl": "仓库地址",
-        "repoUrlPlaceholder": "https://github.com/acme/app.git 或 git{'@'}github.com:acme/app.git",
+        "repoUrlPlaceholder": "https://github.com/acme/app.git",
         "repoUrlRequired": "请填写仓库地址",
         "repoUrlInvalid": "支持 https://、ssh:// 或 git{'@'}host:path 格式",
         "defaultBranch": "默认分支",
@@ -4828,38 +4813,6 @@
         "repoDir": "目录名",
         "repoDirPlaceholder": "默认取仓库名",
         "repoDirHint": "仓库会克隆到沙箱的 /root/workspace/{dir}",
-        "sectionAccess": "访问方式",
-        "accessHint": {
-          "none": "不给这个仓库注入访问凭据。公开仓库可留空；私有仓库请在这里单独选择。",
-          "github_https": "通过 HTTPS 使用 GitHub 个人令牌",
-          "gitlab_https": "通过 HTTPS 使用 GitLab 访问令牌",
-          "ssh": "使用 SSH 私钥，可附带 known_hosts"
-        },
-        "mismatch": {
-          "https": "仓库地址是 SSH 格式，但访问方式是 HTTPS 令牌，克隆可能失败。",
-          "ssh": "仓库地址是 HTTPS 格式，但访问方式是 SSH 密钥，克隆可能失败。"
-        },
-        "credential": "凭据",
-        "credentialPlaceholder": "选择凭据",
-        "hosts": "SSH known_hosts",
-        "hostsNone": "不使用（跳过主机校验）",
-        "noCredential": "还没有对应类型的凭据。",
-        "manageCredentials": "去凭据页添加",
-        "sectionEnv": "环境变量",
-        "envHint": "注入到沙箱的非敏感变量，会覆盖 Agent 的同名变量。令牌、密码等请改用下方的凭据绑定。",
-        "envKey": "变量名",
-        "envValue": "值",
-        "addEnv": "添加变量",
-        "keyProblem": {
-          "invalid": "只能包含字母、数字和下划线，且不能以数字开头",
-          "reserved": "由平台注入，不能在这里配置",
-          "sensitive": "看起来是敏感值，请改用凭据绑定"
-        },
-        "sectionBindings": "凭据绑定",
-        "bindingsHint": "把工作区凭据按变量名注入沙箱，值不会出现在页面或日志里。",
-        "bindingKey": "变量名",
-        "bindingCred": "选择凭据",
-        "addBinding": "添加绑定",
         "save": "保存"
       }
     }

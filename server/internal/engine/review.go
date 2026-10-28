@@ -144,6 +144,9 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 	// Ready-gate is enforced by ReactReply before taking the lock.
 	conv.Done = true
 	logDB(e.db.Save(conv), runID, "confirm leave pending (review force)")
+	// Same window as clarify force: the wrap-up has not finished, so record
+	// a unique automatic successor before this function routes.
+	e.notePendingAuto(c, node)
 
 	humanMsg := lastHumanMessage(conv.Messages)
 
@@ -186,6 +189,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		// Keep paused/waiting_human so the reviewer can fix and retry.
 		conv.Done = false
 		logDB(e.db.Save(conv), runID, "reopen review after force validation failure")
+		e.clearPendingAuto(c)
 		e.host.SetActiveReview(runID, true)
 		e.broker.Publish(runID, jsonMsg("react", runID, nodeID))
 		errMsg := strings.TrimSpace(outcome.err)
@@ -204,6 +208,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		if lifeErr := e.markPreviewIssuesResolvedByNode(runID, nodeID); lifeErr != nil {
 			conv.Done = false
 			logDB(e.db.Save(conv), runID, "reopen review after preview-issue lifecycle failure")
+			e.clearPendingAuto(c)
 			e.host.SetActiveReview(runID, true)
 			e.broker.Publish(runID, jsonMsg("react", runID, nodeID))
 			return lifeErr
@@ -228,17 +233,21 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		e.persistVar(runID, "last_error", outcome.err)
 		next := e.routeFailure(c, node, outcome)
 		if next == "" {
+			e.clearPendingAuto(c)
 			e.finish(runID, "failed")
 			return nil
 		}
+		e.keepPendingAutoOnly(c, next)
 		go e.resumeAdmitted(runID, next)
 		return nil
 	}
 	next := e.routeSuccess(c, node, outcome)
 	if next == "" {
+		e.clearPendingAuto(c)
 		e.finish(runID, "completed")
 		return nil
 	}
+	e.keepPendingAutoOnly(c, next)
 	go e.resumeAdmitted(runID, next)
 	return nil
 }

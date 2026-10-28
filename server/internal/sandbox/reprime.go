@@ -140,7 +140,7 @@ func packReprimeBundle(spec Spec, prevKeys []string) ([]byte, error) {
 			return nil, fmt.Errorf("pack config home: %w", err)
 		}
 	}
-	sshData, err := packGitInjectBundle(spec.SSHPrivateKey, spec.SSHKnownHosts, spec.RepoCredentials, spec.GitBindingsConfigured, spec.GitCredentials)
+	sshData, err := packGitInjectBundle(spec.SSHPrivateKey, spec.SSHKnownHosts, spec.GitBindingsConfigured, spec.GitCredentials)
 	if err != nil {
 		return nil, fmt.Errorf("pack ssh bundle: %w", err)
 	}
@@ -231,9 +231,6 @@ func SpecFingerprint(spec Spec) string {
 		_, _ = fmt.Fprintf(h, "env\x00%s\x00%s\x00", k, spec.Env[k])
 	}
 	_, _ = fmt.Fprintf(h, "root\x00%s\x00ssh\x00%s\x00%s\x00", spec.ConfigRoot, spec.SSHPrivateKey, spec.SSHKnownHosts)
-	for _, r := range spec.RepoCredentials {
-		_, _ = fmt.Fprintf(h, "repo\x00%s\x00%s\x00%s\x00%s\x00", r.URL, r.Kind, r.Secret, r.KnownHosts)
-	}
 	_, _ = fmt.Fprintf(h, "git-configured\x00%t\x00", spec.GitBindingsConfigured)
 	for _, credential := range spec.GitCredentials {
 		_, _ = fmt.Fprintf(h, "git\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%t\x00",

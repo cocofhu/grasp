@@ -66,6 +66,8 @@ make_bundle() {
 
 export GRASP_RUNTIME_ROOT="$TMP/opt"
 export GRASP_IMAGE_LEVEL_FILE="$TMP/image-level"
+# The skip path is what this smoke asserts. A developer shell may export it.
+unset PREVIEW_DIRECT
 echo 1 >"$GRASP_IMAGE_LEVEL_FILE"
 
 rc=0; bash "$BOOTSTRAP" bogus 2>/dev/null || rc=$?

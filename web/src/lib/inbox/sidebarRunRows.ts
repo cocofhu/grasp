@@ -6,11 +6,12 @@ export const RUNNING_RUN_STATUSES = 'queued,running,waiting_human'
 export const HISTORY_RUN_STATUSES = 'completed,failed,cancelled'
 
 /**
- * 「自动过程」: the run is on an automatic agent that is running or stopping.
- * Takeover, waiting for a person, a queued run, and Solo are not this group.
+ * 「自动过程」: the run is on an automatic agent that is running, stopping,
+ * or already chosen and not started yet (entering). Takeover, waiting for a
+ * person, a queued run, and Solo are not this group.
  */
 export function isAutoProcessNode(n: RunCurrentNode | null | undefined): boolean {
-  return !!n && n.kind === 'agent' && n.mode === 'auto' && (n.state === 'running' || n.state === 'stopping')
+  return !!n && n.kind === 'agent' && n.mode === 'auto' && (n.state === 'running' || n.state === 'stopping' || n.state === 'entering')
 }
 
 export function isAutoProcessRun(run: Run | null | undefined): boolean {

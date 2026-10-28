@@ -44,20 +44,6 @@ func CredentialEnvKeyForBackend(backend string) string {
 	}
 }
 
-// CredentialEnvKeyForGit is the workspace-credential env key for a Git method.
-func CredentialEnvKeyForGit(gitType string) string {
-	switch strings.TrimSpace(gitType) {
-	case "github_https":
-		return envauth.EnvGitHubToken
-	case "gitlab_https":
-		return envauth.EnvGitLabToken
-	case "ssh":
-		return envauth.EnvGitSSHPrivateKey
-	default:
-		return ""
-	}
-}
-
 // ApplyCredentialBindings applies explicit per-Agent choices after inherited defaults.
 // A missing binding inherits; nil and unresolved IDs explicitly remove the value.
 func ApplyCredentialBindings(env, creds map[string]string, bindings map[string]*string, resolve SelectedCredentialFunc) {

@@ -163,19 +163,15 @@ func realStartWorktreeBackend(ctx context.Context, env map[string]string, worksp
 }
 
 // authFromSpec copies the credentials this launch already resolved. An explicit
-// catalog does not fall back to host tokens or the legacy SSH key. Solo,
-// workflow runs, conversation tests, and the assistant all arrive through Create
-// with those fields set.
+// catalog does not fall back to host tokens or the legacy SSH key. A
+// repository-scoped catalog row outranks a broader one. Solo, workflow runs,
+// conversation tests, and the assistant all arrive through Create with those
+// fields set.
 func authFromSpec(spec Spec) execution.Auth {
 	auth := execution.Auth{Configured: spec.GitBindingsConfigured}
 	for _, cred := range spec.GitCredentials {
 		auth.Credentials = append(auth.Credentials, execution.Credential{
 			Kind: cred.Kind, Scope: cred.Scope, Secret: cred.Secret, KnownHosts: cred.KnownHosts,
-		})
-	}
-	for _, repo := range spec.RepoCredentials {
-		auth.Repos = append(auth.Repos, execution.RepoCredential{
-			URL: repo.URL, Kind: repo.Kind, Secret: repo.Secret, KnownHosts: repo.KnownHosts,
 		})
 	}
 	if spec.GitBindingsConfigured {

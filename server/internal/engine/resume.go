@@ -488,6 +488,9 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		if force && e.confirmStillWaiting(runID, nodeID, c.run.Status) {
 			conv.Done = false
 			logDB(e.db.Save(&conv), runID, "reopen react for retry confirm")
+			// The previous confirm did not finish this visit. Do not keep
+			// reporting the successor it guessed.
+			e.clearPendingAuto(c)
 		} else {
 			return errors.New("react already done")
 		}
@@ -524,6 +527,10 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	// Roll back Done when the agent stays open (questions / unfinished).
 	conv.Done = true
 	logDB(e.db.Save(&conv), runID, "confirm leave pending (force)")
+	// The wrap-up reply has not returned, so the successor has no running
+	// visit yet. Record it now when the positive outlet is already one
+	// automatic agent; the list reads this before rememberHandoffTarget.
+	e.notePendingAuto(c, node)
 
 	req := e.nodeReq(c, node)
 	var liveWrap runtime.ReactTurn
@@ -565,6 +572,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 			why = "reopen react after force chat error"
 		}
 		logDB(e.db.Save(&conv), runID, why)
+		e.clearPendingAuto(c)
 		// Early Done made pauseStillPending false, so the opening driver's
 		// finish("waiting_human") may have been skipped and the run left
 		// "running". Restore the pause now that the dialogue is open again.
@@ -602,9 +610,11 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	if outcome.status == "failed" {
 		next := e.routeFailure(c, node, outcome)
 		if next == "" {
+			e.clearPendingAuto(c)
 			e.finish(runID, "failed")
 			return nil
 		}
+		e.keepPendingAutoOnly(c, next)
 		e.rememberHandoffTarget(c, next)
 		go e.resumeAdmitted(runID, next)
 		return nil
@@ -615,9 +625,11 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 
 	next := e.routeSuccess(c, node, outcome)
 	if next == "" {
+		e.clearPendingAuto(c)
 		e.finish(runID, "completed")
 		return nil
 	}
+	e.keepPendingAutoOnly(c, next)
 	e.rememberHandoffTarget(c, next)
 	go e.resumeAdmitted(runID, next)
 	return nil
