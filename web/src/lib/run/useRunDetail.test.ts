@@ -273,6 +273,50 @@ describe('useRunDetail', () => {
     app.unmount()
   })
 
+  it('applies one-shot view=canvas on desktop and clears the query', async () => {
+    const { detail, app, router } = await withRunDetail('/runs/run-1?view=canvas&wf=nightly')
+    await flushPromises()
+    await nextTick()
+
+    expect(detail.viewMode.value).toBe('canvas')
+    expect(router.currentRoute.value.path).toBe('/runs/run-1')
+    expect(router.currentRoute.value.query).toEqual({ wf: 'nightly' })
+
+    for (const mode of ['timeline', 'stats', 'llm'] as const) {
+      detail.viewMode.value = mode
+      await router.push({ path: '/runs/run-1', query: { view: 'canvas', wf: 'nightly' } })
+      await flushPromises()
+      expect(detail.viewMode.value).toBe('canvas')
+      expect(router.currentRoute.value.query).toEqual({ wf: 'nightly' })
+    }
+
+    await router.push({ path: '/runs/run-1', query: { view: 'canvas' } })
+    await flushPromises()
+    expect(detail.viewMode.value).toBe('canvas')
+    expect(router.currentRoute.value.query.view).toBeUndefined()
+    expect(router.currentRoute.value.path).toBe('/runs/run-1')
+
+    app.unmount()
+  })
+
+  it('keeps the timeline when view=canvas arrives on a narrow screen', async () => {
+    isMobile.value = true
+    const { detail, app, router } = await withRunDetail('/runs/run-1?view=canvas')
+    await flushPromises()
+    await nextTick()
+
+    expect(detail.viewMode.value).toBe('timeline')
+    expect(router.currentRoute.value.path).toBe('/runs/run-1')
+    expect(router.currentRoute.value.query.view).toBeUndefined()
+
+    await router.push({ path: '/runs/run-1', query: { view: 'canvas' } })
+    await flushPromises()
+    expect(detail.viewMode.value).toBe('timeline')
+    expect(router.currentRoute.value.query.view).toBeUndefined()
+
+    app.unmount()
+  })
+
   it('keeps unknown model alias stable during soft refresh while getWorkspace is pending', async () => {
     let resolveWorkspace: ((value: { unknownModelDisplayName: string }) => void) | null = null
     mocks.getWorkspace.mockImplementation(

@@ -13,7 +13,7 @@ const routeState = reactive({ path: '/dashboard', query: {} as Record<string, un
 
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
-  useRouter: () => ({ push: routerMocks.push }),
+  useRouter: () => ({ push: routerMocks.push, replace: routerMocks.replace }),
   RouterLink: {
     props: ['to'],
     template:
@@ -23,6 +23,7 @@ vi.mock('vue-router', () => ({
 
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
+  replace: vi.fn(),
 }))
 
 const gateMocks = vi.hoisted(() => {
@@ -214,6 +215,7 @@ beforeEach(() => {
   gateMocks.startFailedKeys.value = []
   gateMocks.activeInboxKey.value = null
   routerMocks.push.mockReset()
+  routerMocks.replace.mockReset()
   notifMocks.unreadCount.value = 0
   favMocks.displayItems.value = []
   favMocks.hydrateDisplay.mockResolvedValue(undefined)
@@ -388,9 +390,15 @@ describe('AppSidebarNav', () => {
     expect(routerMocks.push).toHaveBeenLastCalledWith('/solo/solo-1')
     await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="nav-pending-menu-workflow"]')).toBeNull()
     expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeNull()
     expect(document.querySelector('[data-testid="nav-pending-menu-rename"]')).toBeTruthy()
     expect(document.querySelector('[data-testid="nav-pending-menu-cancel"]')).toBeTruthy()
+    expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map((el) => el.getAttribute('data-testid'))).toEqual([
+      'nav-pending-menu-pin',
+      'nav-pending-menu-rename',
+      'nav-pending-menu-cancel',
+    ])
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -1506,6 +1514,8 @@ describe('AppSidebarNav', () => {
     expect(rows[0].get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('arc-spinner')
     await rows[1].trigger('click')
     expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-2/nodes/clarify' })
+    expect(enNav.nav.pendingWorkflowView).toBe('Workflow view')
+    expect(nav.nav.pendingWorkflowView).toBe('工作流视图')
     expect(enNav.nav.pendingPin).toBe('Pin')
     expect(enNav.nav.pendingUnpin).toBe('Unpin')
     expect(enNav.nav.pendingRename).toBe('Rename')
@@ -1541,10 +1551,12 @@ describe('AppSidebarNav', () => {
     await nextTick()
     const menu = document.querySelector('[data-testid="nav-pending-menu"]')
     expect(menu).toBeTruthy()
+    expect(menu?.textContent).toContain('工作流视图')
     expect(menu?.textContent).toContain('置顶')
     expect(menu?.textContent).toContain('重命名')
     expect(menu?.textContent).toContain('取消运行')
     const firstMenuItems = [...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')]
+    expect(firstMenuItems[0]?.getAttribute('data-testid')).toBe('nav-pending-menu-workflow')
     expect(firstMenuItems.at(-1)?.getAttribute('data-testid')).toBe('nav-pending-menu-cancel')
     expect(firstMenuItems.at(-1)?.className).toBe(firstMenuItems[0]?.className)
     expect(firstMenuItems.at(-1)?.className).not.toContain('text-err')
@@ -1799,9 +1811,11 @@ describe('AppSidebarNav', () => {
     await vi.advanceTimersByTimeAsync(499)
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
     await vi.advanceTimersByTimeAsync(1)
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('工作流视图')
     expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('重命名')
     expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('取消运行')
     const longPressItems = [...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')]
+    expect(longPressItems[0]?.getAttribute('data-testid')).toBe('nav-pending-menu-workflow')
     expect(longPressItems.at(-1)?.getAttribute('data-testid')).toBe('nav-pending-menu-cancel')
     routerMocks.push.mockClear()
     await row.trigger('click')
@@ -1907,11 +1921,41 @@ describe('AppSidebarNav', () => {
       (el) => el.getAttribute('data-testid'),
     )
     expect(labels).toEqual([
+      'nav-pending-menu-workflow',
       'nav-pending-menu-pin',
       'nav-pending-menu-rename',
       'nav-pending-menu-share',
       'nav-pending-menu-cancel',
     ])
+    const workflow = document.querySelector('[data-testid="nav-pending-menu-workflow"]') as HTMLButtonElement
+    expect(workflow.textContent).toContain('工作流视图')
+    expect(workflow.querySelector('icon-stub')?.getAttribute('name')).toBe('workflow')
+    routerMocks.push.mockClear()
+    workflow.click()
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-g', query: { view: 'canvas' } })
+    expect(routerMocks.replace).not.toHaveBeenCalled()
+
+    routeState.path = '/runs/run-g'
+    routeState.query = { wf: 'nightly' }
+    openRow('run-g')
+    await nextTick()
+    routerMocks.push.mockClear()
+    routerMocks.replace.mockClear()
+    ;(document.querySelector('[data-testid="nav-pending-menu-workflow"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      path: '/runs/run-g',
+      query: { wf: 'nightly', view: 'canvas' },
+    })
+    routeState.path = '/dashboard'
+    routeState.query = {}
+
+    openRow('run-g')
+    await nextTick()
     const share = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
     expect(share.textContent).toContain('分享审批')
     expect(share.disabled).toBe(false)
@@ -1941,9 +1985,12 @@ describe('AppSidebarNav', () => {
     openRow('run-x')
     await nextTick()
     expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeNull()
-    expect(document.querySelector('[data-testid="nav-pending-menu-pin"]')).toBeTruthy()
-    expect(document.querySelector('[data-testid="nav-pending-menu-rename"]')).toBeTruthy()
-    expect(document.querySelector('[data-testid="nav-pending-menu-cancel"]')).toBeTruthy()
+    expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map((el) => el.getAttribute('data-testid'))).toEqual([
+      'nav-pending-menu-workflow',
+      'nav-pending-menu-pin',
+      'nav-pending-menu-rename',
+      'nav-pending-menu-cancel',
+    ])
 
     routerMocks.push.mockClear()
     openRow('run-s')
@@ -1996,11 +2043,11 @@ describe('AppSidebarNav', () => {
     openRow('run-g', window.innerHeight - 4)
     await nextTick()
     const clamped = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
-    expect(clamped.style.top).toBe(`${window.innerHeight - 136}px`)
+    expect(clamped.style.top).toBe(`${window.innerHeight - 168}px`)
     openRow('run-x', window.innerHeight - 4)
     await nextTick()
     const shortMenu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
-    expect(shortMenu.style.top).toBe(`${window.innerHeight - 104}px`)
+    expect(shortMenu.style.top).toBe(`${window.innerHeight - 136}px`)
 
     wrapper.unmount()
     vi.useRealTimers()
@@ -3453,17 +3500,31 @@ describe('自动过程 grouping and flight', () => {
     open('run-a')
     await nextTick()
     expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map((el) => el.getAttribute('data-testid'))).toEqual([
+      'nav-pending-menu-workflow',
       'nav-pending-menu-pin',
       'nav-pending-menu-rename',
       'nav-pending-menu-share',
       'nav-pending-menu-cancel',
     ])
+    routerMocks.push.mockClear()
+    ;(document.querySelector('[data-testid="nav-pending-menu-workflow"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-a', query: { view: 'canvas' } })
+    open('run-a')
+    await nextTick()
     ;(document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).click()
     await nextTick()
     expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/runs/run-a/nodes/g', query: { share: '1' } })
 
     open('run-b')
     await nextTick()
+    expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map((el) => el.getAttribute('data-testid'))).toEqual([
+      'nav-pending-menu-workflow',
+      'nav-pending-menu-pin',
+      'nav-pending-menu-rename',
+      'nav-pending-menu-cancel',
+    ])
     ;(document.querySelector('[data-testid="nav-pending-menu-pin"]') as HTMLButtonElement).click()
     await nextTick()
     expect(autoKeys()).toEqual(['run-b', 'run-a'])

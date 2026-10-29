@@ -18,6 +18,7 @@
     "runs": "Runs",
     "gates": "Needs attention",
     "pendingApprovals": "Pending",
+    "pendingWorkflowView": "Workflow view",
     "pendingPin": "Pin",
     "pendingUnpin": "Unpin",
     "pendingRename": "Rename",

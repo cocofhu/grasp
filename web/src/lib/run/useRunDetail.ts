@@ -1504,6 +1504,25 @@ watch(
   { immediate: true },
 )
 
+// Sidebar「工作流视图」: one-shot ?view=canvas. Desktop lands on the canvas
+// (including when this page is already open on timeline, stats, or LLM).
+// Narrow screens stay on the timeline. The query is then replaced away.
+function applyCanvasViewIntent() {
+  if (queryParam('view') !== 'canvas') return
+  viewMode.value = isMobile.value ? 'timeline' : 'canvas'
+  const query = { ...route.query }
+  delete query.view
+  void router.replace({ path: route.path, query })
+}
+
+watch(
+  () => [runId.value, queryParam('view')] as const,
+  () => {
+    applyCanvasViewIntent()
+  },
+  { immediate: true },
+)
+
 // Entering mobile timeline should already have a meaningful selection when possible.
 watch([viewMode, isMobile, defaultNode], () => {
   if (isMobile.value && viewMode.value === 'timeline' && !selected.value && defaultNode.value) {
