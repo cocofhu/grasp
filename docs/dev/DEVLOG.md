@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-29（PR #1040 同步主线并解决记录冲突）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`CHANGELOG.md`、`docs/dev/DEVLOG.md`、`web/audit-allowlist.json`，合并主线 `87f12cf0`。
+- 做了什么：完整保留本机执行模式的发布说明与开发记录，同时保留主线的确认竞态修复、回归测试和 Vue I18n 11.4.16 升级；本机执行功能源码不变。移除已由升级修复的 Vue I18n 漏洞例外，保留原有 braces 例外。
+- 为什么：PR #1041 合入主线后，两个分支都在发布说明和开发日志顶部追加记录，导致 PR #1040 无法合并。直接取任一侧会丢失另一侧记录；继续保留旧版依赖的审计例外也已无必要。
+- 如何验证：逐文件核对本机功能源码与合并前相同、主线六个修复文件与 main 相同，双方记录完整且不重复，无冲突标记。Server 全量 lint、vet、配置文档、单测、runtime 专项及核心覆盖率通过（90.5%），确认/当前节点回归各重复 25 次 race 通过；sandbox lint、vet、完整单测与核心覆盖率通过（96.6%）。Web 542 文件、5,836 单测通过，Lines 91.74%，完整关键浏览器 260 项通过；lint、类型检查、构建及官方源审计通过。本机关闭、46 项 Node 合约、12 项 Python 合约、文档构建/审计和根目录检查通过。Python 合约在本机 Python 3.10 下使用已有 tomli 兼容加载，CI 原始命令保持不变。
+
 ### 2026-10-29（PR #1040 本机配置路径来源隔离）
 
 - 日期：2026-10-29（Asia/Shanghai）。
@@ -35,6 +43,22 @@
 - 做了什么：本机执行仍过滤服务环境中的密钥与 Git 覆盖；所选 CLI 登录按文件白名单复制，跳过历史与 worktrees，防止目标嵌套导致自复制，保留 hooks 的执行位。Git/SSH 配置使用私有副本，子进程使用独立 HOME/XDG 并保留 local 模式，仅显式继承 SSH agent。Trae 的 HOME 路径只允许链接 Grasp 自有 ConfigHome，以保留切换后的历史。移除 Codex 本机模式的 API Key 放行与外部沙箱绕过参数；OpenCode 使用配置文件路径与无密钥的运行期覆盖，官方登录文件复制并清理已移除的授权。Kimi 最终隔离配置保留匹配站点的已保存 API Key 或文件 OAuth，凭据刷新不写回来源。`down` 在 Docker 检查之前停止本地 PID。默认模型组只为已安装 CLI 创建，发现路径同步到子进程 PATH，具体绑定类型必须明确，Solo 严格限定 Agent 的绑定组。补充本机模式中英文提示；E2E 授权改用原生配置文件，并让 local 模式覆盖全部 56 个有向工具切换。
 - 为什么：已有 review 的三个必须修复项分别会扩大宿主机密钥传播、通过软链接写回登录状态，以及阻止无 Docker 环境关闭本地服务。继续核查发现模式传播、OpenCode 内联密钥、未绑定模型组回退和 E2E 依赖宿主环境变量也会掩盖实际边界问题。
 - 如何验证：新增密钥过滤、配置副本写回、HOME/SSH、绑定校验、OpenCode 登录及无 Docker 生命周期回归；Server / Sandbox 全量 lint、vet、单测、配置文档与 runtime 专项通过，核心覆盖率 90.5% / 96.6%，相关 race 通过。Web lint、vue-tsc、5,836 单测（Lines 91.75%）、生产构建及 260 项关键浏览器用例通过。最终本机构建通过完整 worktree 84 项与 local 57 轮矩阵（覆盖全部 56 个有向切换），46 项 Node 和 12 项 Python 合约通过。真实 Kimi Code 2.4.0 在无环境密钥情况下使用保存的 synthetic API Key 向 localhost 完成原生 ACP 请求，模型与强度正确；云模式原生模型／强度专项也通过。沙箱 smoke、Git、bootstrap、preview 检查，actionlint、error-level shellcheck、品牌断言、文档构建及 npm high/critical audit 通过。完整切换矩阵中的 Cursor / Trae / Kimi 仍明确标注协议夹具，Kimi 原生授权另测；未调用厂商 API 或读取真实密钥。
+
+### 2026-10-29（PR #1041 的 Vue I18n 安全审计修复）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`web/package{,-lock}.json`、`web/src/locales/locales.compile.test.ts`、`CHANGELOG.md`。
+- 做了什么：Vue I18n 与 Intlify 依赖从 10.0.8 升级到受支持的 11.4.16，保留现有 Composition API 配置。编译探针使用导出的 `INVALID_TOKEN_IN_PLACEHOLDER` 常量，继续要求非法占位符被拒绝；全量语言包编译与环境变量字面量的中英文实际渲染断言保持完整。
+- 为什么：原确认竞态修复的 server、Go race 与汇总检查已通过，但独立安全流程因 [GHSA-83rm-6c8r-g728](https://github.com/advisories/GHSA-83rm-6c8r-g728) 拒绝 `vue-i18n 10.0.8`。上游 v10 已停止支持，修复从 11.4.14 开始。升级后编译器对原非法表达式报告更精确的错误类型，旧数字 7 断言需同步到具名错误常量。
+- 如何验证：官方源完整 npm audit 报告所有严重级别均为 0，`audit:check` 通过；没有新增审计例外。Web 542 文件、5,833 项单测通过，Lines 91.75%；完整关键路径浏览器 260 项通过，覆盖真实中英文界面。lint、vue-tsc、生产构建及品牌、安全上下文断言通过，根目录 actionlint 和 error-level shellcheck 通过；更新同一 PR 后继续核对最新提交的远端 CI。
+
+### 2026-10-29（确认早于暂停时保留当前节点）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`server/internal/services/run_current{,_pending_test}.go`、`server/internal/engine/pending_auto_test.go`、`CHANGELOG.md`。
+- 做了什么：运行仍为 `running`、没有运行中的节点或有效的确定后继时，当前节点查询回退到最新的等待节点；真实运行节点和确定后继继续优先。原失败测试通过数据库提交后的同步屏障覆盖确认先于、晚于运行暂停两种交错，并在清理前等待确认实际到达后继审批节点。
+- 为什么：CI run `40768511138` 的 `TestConfirmDoesNotMarkAnUnsettledSuccessor` 读取到空当前节点。确认提前写入对话 `Done` 时，初始执行器可以跳过运行的 `waiting_human` 转换，而节点自身已经在等待；后继条件尚未确定，没有 pending-auto 标记，原查询遗漏了这个合法中间态。单纯增加测试等待或重跑 CI 无法修复刷新时的节点消失。
+- 如何验证：新增服务回归在旧实现上确定失败；同步屏障也确定复现原引擎断言失败。修复后两种交错各重复 100 次 race 通过，engine/services 完整 race 与 server 全量单测通过；服务回归覆盖澄清、复审、接管、审批、旧标记、运行后继优先、终态和无活动节点。Go 1.26.10 下 lint、vet、配置文档检查、runtime 专项及核心覆盖率检查通过（90.5%，门槛 90%）；actionlint、error-level shellcheck、docs 构建和官方源 high/critical audit 通过。文档生成目录移至临时目录后，最终品牌断言与 diff 检查通过，生成物未入库。
 
 ### 2026-10-29（Kimi Code 订阅接入与思考强度）
 

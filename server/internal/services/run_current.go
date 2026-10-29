@@ -169,6 +169,13 @@ func (s *RunService) CurrentNodes(runs []models.Run) map[string]CurrentNode {
 			// visit still waiting, until the successor's row exists.
 			if entered, ok := enteringAutoSuccessor(r, hasWait, srWait); ok {
 				cn = entered
+				break
+			}
+			// A confirm can close the conversation before the opening driver
+			// pauses the run. Until its successor is settled or starts, the
+			// waiting visit remains current even while the run is running.
+			if hasWait {
+				cn = currentFromVisit(r, srWait, "waiting_human", true)
 			}
 		}
 		if cn.ID == "" {

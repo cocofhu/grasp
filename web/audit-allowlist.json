@@ -4,11 +4,5 @@
     "package": "braces",
     "reason": "No patched release (all versions <=3.0.3). Reached only via devDependencies (tailwindcss 3 -> chokidar/micromatch, @vue/eslint-config-typescript -> fast-glob) that expand our own config globs at build/lint time; never bundled or fed untrusted patterns. Upstream fix: micromatch/braces#72.",
     "expires": "2026-12-31"
-  },
-  {
-    "id": "GHSA-83rm-6c8r-g728",
-    "package": "vue-i18n",
-    "reason": "Grasp does not enable escapeParameter or pass i18n messages into v-html/srcdoc; all locale messages are static JSON bundles rendered as plain text.",
-    "expires": "2026-12-31"
   }
 ]
