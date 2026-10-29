@@ -14,7 +14,10 @@ import (
 // Local backends receive selected snapshots, rather than use the server's HOME
 // implicitly. This limits accidental auth/config writes; local processes still
 // run as the host user and do not provide an OS security boundary.
-func prepareLocalProcessHome(home string, env map[string]string, ownedConfigHome string) {
+func prepareLocalProcessHome(home string, env map[string]string, configRoot, ownedConfigHome string) {
+	if configRoot != "" {
+		env["CONFIG_ROOT"] = configRoot
+	}
 	env["HOME"] = home
 	for key, rel := range map[string]string{
 		"XDG_CONFIG_HOME": ".config", "XDG_DATA_HOME": ".local/share",
@@ -34,17 +37,21 @@ func prepareLocalProcessHome(home string, env map[string]string, ownedConfigHome
 		"codebuddy": ".codebuddy", "trae": ".trae", "opencode": ".config/opencode",
 		"deepseek_harness": ".dsh", "kimi_code": ".kimi",
 	}
-	if rel := roots[provider]; rel != "" && env["CONFIG_ROOT"] != "" {
+	if rel := roots[provider]; rel != "" && configRoot != "" {
 		destination := filepath.Join(home, rel)
 		// Trae has no config-directory selector. Its private HOME path must
 		// retain native history when a backend is replaced. Only the caller's
 		// owned ConfigHome may be linked; host login directories are copied.
-		if provider == "trae" && localOwnedConfigHome(env["CONFIG_ROOT"], ownedConfigHome, hostHome) {
-			if err := os.Symlink(env["CONFIG_ROOT"], destination); err == nil {
-				return
+		if provider == "trae" && localOwnedConfigHome(configRoot, ownedConfigHome, hostHome) {
+			if root, err := os.OpenRoot(home); err == nil {
+				linkErr := root.Symlink(ownedConfigHome, ".trae")
+				_ = root.Close()
+				if linkErr == nil {
+					return
+				}
 			}
 		}
-		snapshotLocalConfig(env["CONFIG_ROOT"], destination, false)
+		snapshotLocalConfig(configRoot, destination, false)
 	}
 	if strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" && provider == "claude_code" {
 		snapshotLocalEntries(hostHome, home, []string{".claude.json"})
@@ -54,7 +61,7 @@ func prepareLocalProcessHome(home string, env map[string]string, ownedConfigHome
 		if !filepath.IsAbs(hostData) {
 			hostData = filepath.Join(hostHome, ".local", "share")
 		}
-		snapshotLocalEntries(filepath.Join(hostData, "opencode"), filepath.Join(env["XDG_DATA_HOME"], "opencode"), []string{"auth.json"})
+		snapshotLocalEntries(filepath.Join(hostData, "opencode"), filepath.Join(home, ".local", "share", "opencode"), []string{"auth.json"})
 	}
 }
 

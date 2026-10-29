@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-29（PR #1040 本机配置路径来源隔离）
+
+- 日期：2026-10-29（Asia/Shanghai）。
+- 范围：`server/internal/sandbox/worktree_git{,_local,_test}.go`。
+- 做了什么：本机 CLI 配置根改从服务端 Spec 的独立字段传入，私有 XDG 目标从 HOME 的固定相对目录计算；环境 map 仅接收最终路径输出。Trae 使用 HOME 的 `os.Root` 创建固定 `.trae` 链接，继续只指向 Grasp 自有配置目录。
+- 为什么：推送后的 CodeQL 报告四条路径注入告警，数据流均从 PM 请求字段进入 Agent 环境 map，再经 `CONFIG_ROOT` / `XDG_DATA_HOME` 回读抵达文件操作。将文件路径来源与模型环境分开，保留已有目录访问边界，不添加扫描豁免。
+- 如何验证：新增 Codex / Trae / OpenCode 恶意环境路径回归，确认无法改写配置来源、私有布局或外部目录；完整 sandbox 包单测及针对性 race 通过。Server 完整 lint、vet、配置文档、单测、90.5% 核心覆盖率与 runtime 专项通过；三个工具的本机切换 smoke 7 轮通过，该 smoke 是完整 8 工具矩阵之外的针对性复查。远端 CodeQL 在新提交上复查。
+
 ### 2026-10-29（PR #1040 本机执行 review 修复）
 
 - 日期：2026-10-29（Asia/Shanghai）。

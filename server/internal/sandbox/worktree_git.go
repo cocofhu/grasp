@@ -51,7 +51,13 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
 	}
 	if execution.Local() {
-		prepareLocalProcessHome(home, env, spec.ConfigHome)
+		// Filesystem roots come from the server-owned spec fields, never from
+		// the model/Agent environment map that this function also populates.
+		configRoot := strings.TrimSpace(spec.ConfigHome)
+		if configRoot == "" {
+			configRoot = strings.TrimSpace(spec.ConfigRoot)
+		}
+		prepareLocalProcessHome(home, env, configRoot, spec.ConfigHome)
 		if len(worktreeGitCredentials(spec)) == 0 {
 			if err := prepareLocalWorktreeGit(ctx, spec, home, env); err != nil {
 				return nil, err

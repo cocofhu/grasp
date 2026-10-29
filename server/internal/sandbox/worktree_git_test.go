@@ -367,7 +367,7 @@ func TestLocalProcessHomeStagesOnlySelectedProviderAuth(t *testing.T) {
 	}
 	privateHome := t.TempDir()
 	env := map[string]string{"AGENT_PROVIDER": "opencode", "CONFIG_ROOT": t.TempDir(), "GRASP_LOCAL_AUTH": "1"}
-	prepareLocalProcessHome(privateHome, env, "")
+	prepareLocalProcessHome(privateHome, env, env["CONFIG_ROOT"], "")
 	path := filepath.Join(env["XDG_DATA_HOME"], "opencode", "auth.json")
 	if body, err := os.ReadFile(path); err != nil || string(body) != "host-opencode-auth" {
 		t.Fatal("selected provider's XDG auth snapshot is missing")
@@ -379,12 +379,12 @@ func TestLocalProcessHomeStagesOnlySelectedProviderAuth(t *testing.T) {
 		t.Fatal("provider auth wrote back to the host")
 	}
 	cloudHome := t.TempDir()
-	prepareLocalProcessHome(cloudHome, map[string]string{"AGENT_PROVIDER": "opencode", "CONFIG_ROOT": t.TempDir()}, "")
+	prepareLocalProcessHome(cloudHome, map[string]string{"AGENT_PROVIDER": "opencode"}, t.TempDir(), "")
 	if _, err := os.Stat(filepath.Join(cloudHome, ".local", "share", "opencode", "auth.json")); !os.IsNotExist(err) {
 		t.Fatal("cloud binding received host native OpenCode auth")
 	}
 	otherHome := t.TempDir()
-	prepareLocalProcessHome(otherHome, map[string]string{"AGENT_PROVIDER": "codex", "CONFIG_ROOT": t.TempDir()}, "")
+	prepareLocalProcessHome(otherHome, map[string]string{"AGENT_PROVIDER": "codex"}, t.TempDir(), "")
 	if _, err := os.Stat(filepath.Join(otherHome, ".local", "share", "opencode", "auth.json")); !os.IsNotExist(err) {
 		t.Fatal("another provider received unrelated OpenCode auth")
 	}
@@ -397,7 +397,7 @@ func TestLocalTraeHistorySurvivesBackendHomeReplacement(t *testing.T) {
 	stage := func() string {
 		t.Helper()
 		home := t.TempDir()
-		prepareLocalProcessHome(home, map[string]string{"AGENT_PROVIDER": "trae", "CONFIG_ROOT": owned}, owned)
+		prepareLocalProcessHome(home, map[string]string{"AGENT_PROVIDER": "trae"}, owned, owned)
 		info, err := os.Lstat(filepath.Join(home, ".trae"))
 		if err != nil || info.Mode()&os.ModeSymlink == 0 {
 			t.Fatal("private Trae HOME did not select the owned config home")
@@ -423,7 +423,7 @@ func TestLocalTraeHistorySurvivesBackendHomeReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	unownedHome := t.TempDir()
-	prepareLocalProcessHome(unownedHome, map[string]string{"AGENT_PROVIDER": "trae", "CONFIG_ROOT": hostTrae}, hostTrae)
+	prepareLocalProcessHome(unownedHome, map[string]string{"AGENT_PROVIDER": "trae"}, hostTrae, hostTrae)
 	info, err := os.Lstat(filepath.Join(unownedHome, ".trae"))
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		t.Fatal("host Trae login directory was linked instead of copied")
@@ -433,5 +433,63 @@ func TestLocalTraeHistorySurvivesBackendHomeReplacement(t *testing.T) {
 	}
 	if body, err := os.ReadFile(filepath.Join(hostTrae, "auth.json")); err != nil || string(body) != "host-login" {
 		t.Fatal("Trae's staged HOME changed host auth")
+	}
+}
+
+func TestLocalProcessFilesystemRootsIgnoreAgentEnvironment(t *testing.T) {
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	hostData := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", hostData)
+	if err := os.MkdirAll(filepath.Join(hostData, "opencode"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostData, "opencode", "auth.json"), []byte("native-opencode-login"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unrelated := t.TempDir()
+	if err := os.WriteFile(filepath.Join(unrelated, "auth.json"), []byte("unrelated-login"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range []string{"codex", "trae", "opencode"} {
+		t.Run(provider, func(t *testing.T) {
+			owned := t.TempDir()
+			if err := os.WriteFile(filepath.Join(owned, "auth.json"), []byte("selected-login"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			home := t.TempDir()
+			env := map[string]string{
+				"AGENT_PROVIDER": provider, "GRASP_LOCAL_AUTH": "1",
+				"CONFIG_ROOT": unrelated, "HOME": unrelated,
+				"XDG_DATA_HOME": unrelated, "XDG_CONFIG_HOME": unrelated,
+			}
+			prepareLocalProcessHome(home, env, owned, owned)
+			rel := "." + provider
+			if provider == "opencode" {
+				rel = ".config/opencode"
+			}
+			if body, err := os.ReadFile(filepath.Join(home, rel, "auth.json")); err != nil || string(body) != "selected-login" {
+				t.Fatal("Agent environment replaced the server-owned CLI config source")
+			}
+			if provider == "opencode" {
+				if body, err := os.ReadFile(filepath.Join(home, ".local", "share", "opencode", "auth.json")); err != nil || string(body) != "native-opencode-login" {
+					t.Fatal("Agent environment redirected the native auth destination")
+				}
+			}
+			if env["CONFIG_ROOT"] != owned || env["HOME"] != home || env["XDG_DATA_HOME"] != filepath.Join(home, ".local", "share") {
+				t.Fatal("Agent environment replaced the private process layout")
+			}
+			if provider == "trae" {
+				if target, err := os.Readlink(filepath.Join(home, ".trae")); err != nil || target != owned {
+					t.Fatal("Trae's private link did not select the server-owned config home")
+				}
+			}
+		})
+	}
+	if body, err := os.ReadFile(filepath.Join(unrelated, "auth.json")); err != nil || string(body) != "unrelated-login" {
+		t.Fatal("Agent environment caused a write to an unrelated directory")
+	}
+	if _, err := os.Stat(filepath.Join(unrelated, "opencode")); !os.IsNotExist(err) {
+		t.Fatal("Agent environment created auth directories outside the private HOME")
 	}
 }
