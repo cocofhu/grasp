@@ -176,39 +176,56 @@ class E2E:
 
     def prepare_local_host_home(self, env):
         host_home = self.data/'host-home'
-        (host_home/'.claude').mkdir(parents=True)
-        (host_home/'.claude'/'settings.json').write_text(json.dumps({'model': 'claude-sonnet-4-6', 'availableModels': ['claude-sonnet-4-6', 'e2e-auxiliary'], 'fallbackModel': []}))
-        (host_home/'.codebuddy').mkdir(parents=True)
-        (host_home/'.codebuddy'/'settings.json').write_text(json.dumps({'model': 'gpt-5', 'availableModels': ['gpt-5', 'e2e-auxiliary'], 'variantModels': {'lite': 'gpt-5', 'reasoning': 'gpt-5'}}))
-        (host_home/'.codebuddy'/'models.json').write_text(json.dumps({'models': [{'id': m, 'name': m, 'vendor': 'custom', 'apiKey': 'synthetic-local-host-key', 'url': self.model+'/v1/chat/completions', 'maxInputTokens': 200000, 'maxOutputTokens': 4096, 'supportsToolCall': True, 'supportsReasoning': True} for m in ['gpt-5', 'e2e-auxiliary']], 'availableModels': ['gpt-5', 'e2e-auxiliary']}))
-        (host_home/'.config'/'opencode').mkdir(parents=True)
-        (host_home/'.config'/'opencode'/'opencode.json').write_text(json.dumps({'$schema': 'https://opencode.ai/config.json', 'model': 'local_openai/gpt-5', 'small_model': 'local_openai/gpt-5', 'enabled_providers': ['local_openai'], 'provider': {'local_openai': {'npm': '@ai-sdk/openai-compatible', 'name': 'openai', 'options': {'baseURL': self.model+'/v1', 'apiKey': 'synthetic-local-host-key'}, 'models': {m: {'id': m, 'name': m, 'reasoning': True, 'limit': {'context': 200000, 'output': 4096}} for m in ['gpt-5', 'e2e-auxiliary']}}}}))
-        (host_home/'.codex').mkdir(parents=True)
-        (host_home/'.codex'/'config.toml').write_text(f'model = "gpt-5"\nmodel_provider = "local"\nsandbox_mode = "workspace-write"\napproval_policy = "never"\n\n[model_providers.local]\nname = "custom"\nbase_url = "{self.model}/v1"\nwire_api = "responses"\nenv_key = "OPENAI_API_KEY"\nrequires_openai_auth = false\n')
-        env.update({
-            'HOME': str(host_home),
-            'ANTHROPIC_BASE_URL': self.model,
-            'ANTHROPIC_API_KEY': 'synthetic-local-host-key',
-            'ANTHROPIC_MODEL': 'claude-sonnet-4-6',
-            'ANTHROPIC_DEFAULT_MODEL': 'claude-sonnet-4-6',
-            'ANTHROPIC_DEFAULT_SONNET_MODEL': 'claude-sonnet-4-6',
-            'ANTHROPIC_DEFAULT_HAIKU_MODEL': 'claude-sonnet-4-6',
-            'ANTHROPIC_DEFAULT_OPUS_MODEL': 'claude-sonnet-4-6',
-            'ANTHROPIC_SMALL_FAST_MODEL': 'claude-sonnet-4-6',
-            'CLAUDE_CODE_SUBAGENT_MODEL': 'claude-sonnet-4-6',
-            'CLAUDE_CODE_SUBAGENT_MODEL_FORCE': '1',
-            'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1',
-            'CODEBUDDY_API_KEY': 'synthetic-local-host-key',
-            'CODEBUDDY_BASE_URL': self.model+'/v1',
-            'CODEBUDDY_MODEL': 'gpt-5',
-            'CODEBUDDY_SMALL_FAST_MODEL': 'gpt-5',
-            'CODEBUDDY_BIG_SLOW_MODEL': 'gpt-5',
-            'CODEBUDDY_CODE_SUBAGENT_MODEL': 'gpt-5',
-            'OPENAI_API_KEY': 'synthetic-local-host-key',
-            'DEEPSEEK_API_KEY': 'synthetic-local-host-key',
-            'DEEPSEEK_BASE_URL': self.model,
-            'KIMI_CODE_API_KEY': 'synthetic-local-host-key',
+
+        def write_config(relative, value):
+            path = host_home/relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(value))
+            path.chmod(0o600)
+
+        # These are saved native CLI authorizations, subsequently copied by
+        # local mode. No API key may depend on inherited server environment.
+        write_config('.claude/settings.json', {
+            'model': 'claude-sonnet-4-6', 'availableModels': ['claude-sonnet-4-6', 'e2e-auxiliary'], 'fallbackModel': [],
+            'env': {
+                'ANTHROPIC_BASE_URL': self.model,
+                'ANTHROPIC_API_KEY': 'synthetic-local-host-key',
+                'ANTHROPIC_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_DEFAULT_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_DEFAULT_SONNET_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_DEFAULT_HAIKU_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_DEFAULT_OPUS_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_SMALL_FAST_MODEL': 'claude-sonnet-4-6',
+                'CLAUDE_CODE_SUBAGENT_MODEL': 'claude-sonnet-4-6',
+                'CLAUDE_CODE_SUBAGENT_MODEL_FORCE': '1',
+                'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1',
+            },
         })
+        write_config('.codebuddy/settings.json', {
+            'model': 'gpt-5', 'availableModels': ['gpt-5', 'e2e-auxiliary'], 'variantModels': {'lite': 'gpt-5', 'reasoning': 'gpt-5'},
+            'env': {
+                'CODEBUDDY_BASE_URL': self.model+'/v1',
+                'CODEBUDDY_MODEL': 'gpt-5',
+                'CODEBUDDY_SMALL_FAST_MODEL': 'gpt-5',
+                'CODEBUDDY_BIG_SLOW_MODEL': 'gpt-5',
+                'CODEBUDDY_CODE_SUBAGENT_MODEL': 'gpt-5',
+            },
+        })
+        write_config('.codebuddy/models.json', {'models': [{'id': m, 'name': m, 'vendor': 'custom', 'apiKey': 'synthetic-local-host-key', 'url': self.model+'/v1/chat/completions', 'maxInputTokens': 200000, 'maxOutputTokens': 4096, 'supportsToolCall': True, 'supportsReasoning': True} for m in ['gpt-5', 'e2e-auxiliary']], 'availableModels': ['gpt-5', 'e2e-auxiliary']})
+        write_config('.config/opencode/opencode.json', {'$schema': 'https://opencode.ai/config.json', 'model': 'local_openai/gpt-5', 'small_model': 'local_openai/gpt-5', 'enabled_providers': ['local_openai'], 'provider': {'local_openai': {'npm': '@ai-sdk/openai-compatible', 'name': 'openai', 'options': {'baseURL': self.model+'/v1', 'apiKey': 'synthetic-local-host-key'}, 'models': {m: {'id': m, 'name': m, 'reasoning': True, 'limit': {'context': 200000, 'output': 4096}} for m in ['gpt-5', 'e2e-auxiliary']}}}})
+        (host_home/'.codex').mkdir(parents=True)
+        codex_config = host_home/'.codex'/'config.toml'
+        codex_config.write_text(f'model = "gpt-5"\nmodel_provider = "local"\nsandbox_mode = "workspace-write"\napproval_policy = "never"\n\n[model_providers.local]\nname = "custom"\nbase_url = "{self.model}/v1"\nwire_api = "responses"\nexperimental_bearer_token = "synthetic-local-host-key"\nrequires_openai_auth = false\n')
+        codex_config.chmod(0o600)
+        # DSH 0.2.1-rc.2 resolves saved credential references from this private
+        # document and applies cordis.patch.yml over every native profile.
+        write_config('.dsh/.credentials.yaml', {'version': 1, 'refs': {'DEEPSEEK_API_KEY': 'synthetic-local-host-key'}})
+        write_config('.dsh/cordis.patch.yml', [{'id': 'llm-deepseek', 'config': {'apiKeyEnv': 'DEEPSEEK_API_KEY', 'baseURL': self.model}}])
+        (host_home/'.kimi-code').mkdir(parents=True)
+        kimi_config = host_home/'.kimi-code'/'config.toml'
+        kimi_config.write_text('[providers.kimi]\ntype = "kimi"\nbase_url = "https://api.kimi.ai/coding/v1"\napi_key = "synthetic-local-host-key"\n')
+        kimi_config.chmod(0o600)
+        env['HOME'] = str(host_home)
 
     def seed(self):
         if self.args.execution_mode == 'local':
@@ -315,7 +332,7 @@ class E2E:
 
     def run_matrix(self):
         names = [tool['id'] for tool in self.tools]
-        walk = (names + [names[0]]) if self.args.execution_mode == 'local' and len(names) > 1 else directed_walk(names)
+        walk = directed_walk(names)
         self.scenario(walk)
         session_id, sandbox_id = None, None
         for index, step in enumerate(self.plan):
@@ -351,13 +368,11 @@ class E2E:
             self.cases.append(case)
             print(json.dumps(case), flush=True)
         pairs = {(case['from'], case['to']) for case in self.cases if case['from'] and case['kind'] == 'switch'}
+        if pairs != set(itertools.permutations(names, 2)):
+            raise AssertionError('directed switch coverage is incomplete')
         if self.args.execution_mode == 'local':
-            if {case['to'] for case in self.cases} != set(names):
-                raise AssertionError('local switch coverage missed a tool')
             if self.request('/api/workspace/credentials')['items'] or self.request('/api/workspace/model-connections')['items']:
                 raise AssertionError('local execution mode created workspace credentials or model connections')
-        elif pairs != set(itertools.permutations(names, 2)):
-            raise AssertionError('directed switch coverage is incomplete')
         report = self.request('/__mock/report', base=self.model)
         for step in self.plan:
             observed = [request for request in report['requests'] if request.get('run') == self.run and request.get('turn') == step['id']]

@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+func TestLocalBindingsRequireLocalExecutionMode(t *testing.T) {
+	for _, mode := range []string{"sandbox", "worktree", "local"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("GRASP_EXECUTION_MODE", mode)
+			for _, capability := range Capabilities() {
+				err := ValidateBinding(capability.ToolID, Binding{Kind: "local"}, nil)
+				if (err == nil) != (mode == "local") {
+					t.Fatalf("mode=%s backend=%s: %v", mode, capability.ToolID, err)
+				}
+			}
+		})
+	}
+}
+
 func TestCapabilityBoundaries(t *testing.T) {
 	for _, capability := range Capabilities() {
 		if capability.ToolID == "" || len(capability.Evidence) == 0 || capability.Verification != "not-run" {

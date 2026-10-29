@@ -4,8 +4,10 @@ import itertools
 import json
 from pathlib import Path
 import unittest
+from unittest import mock
 from types import SimpleNamespace
 import tempfile
+import tomllib
 
 spec = importlib.util.spec_from_file_location('agent_switching', Path(__file__).with_name('test-agent-switching.py'))
 runner = importlib.util.module_from_spec(spec)
@@ -19,6 +21,19 @@ class MatrixContracts(unittest.TestCase):
         edges = list(zip(walk, walk[1:]))
         self.assertEqual(len(walk), 57)
         self.assertEqual(len(set(edges)), 56)
+        self.assertEqual(set(edges), set(itertools.permutations(names, 2)))
+
+    def test_local_matrix_plans_every_directed_pair(self):
+        names = ['cursor', 'claude_code', 'codebuddy', 'trae', 'opencode', 'codex', 'deepseek_harness', 'kimi_code']
+        test = runner.E2E.__new__(runner.E2E)
+        test.args = SimpleNamespace(execution_mode='local')
+        test.tools = [{'id': name} for name in names]
+        with mock.patch.object(test, 'scenario', side_effect=RuntimeError('plan captured')) as scenario:
+            with self.assertRaisesRegex(RuntimeError, 'plan captured'):
+                test.run_matrix()
+        walk = scenario.call_args.args[0]
+        edges = list(zip(walk, walk[1:]))
+        self.assertEqual(len(edges), 56)
         self.assertEqual(set(edges), set(itertools.permutations(names, 2)))
 
     def test_new_product_agent_without_case_fails(self):
@@ -102,6 +117,32 @@ class MatrixContracts(unittest.TestCase):
         test.request = fake_request
         with self.assertRaisesRegex(AssertionError, 'must not require or pre-populate workspace credentials'):
             test.seed()
+
+    def test_local_host_auth_uses_saved_native_configs_without_secret_environment(self):
+        with tempfile.TemporaryDirectory() as data:
+            test = runner.E2E.__new__(runner.E2E)
+            test.data, test.model = Path(data), 'http://127.0.0.1:12345'
+            env = {'PATH': '/synthetic/bin', 'LANG': 'C.UTF-8'}
+            test.prepare_local_host_home(env)
+            home = Path(env['HOME'])
+            self.assertEqual(env, {'PATH': '/synthetic/bin', 'LANG': 'C.UTF-8', 'HOME': str(test.data/'host-home')})
+            claude = json.loads((home/'.claude/settings.json').read_text())
+            self.assertEqual(claude['env']['ANTHROPIC_BASE_URL'], test.model)
+            self.assertEqual(claude['env']['ANTHROPIC_API_KEY'], 'synthetic-local-host-key')
+            codebuddy = json.loads((home/'.codebuddy/models.json').read_text())
+            self.assertTrue(all(model['apiKey'] == 'synthetic-local-host-key' and model['url'] == test.model+'/v1/chat/completions' for model in codebuddy['models']))
+            codex = tomllib.loads((home/'.codex/config.toml').read_text())
+            self.assertEqual(codex['model_providers']['local']['experimental_bearer_token'], 'synthetic-local-host-key')
+            self.assertNotIn('env_key', codex['model_providers']['local'])
+            dsh = json.loads((home/'.dsh/.credentials.yaml').read_text())
+            self.assertEqual(dsh, {'version': 1, 'refs': {'DEEPSEEK_API_KEY': 'synthetic-local-host-key'}})
+            self.assertEqual(json.loads((home/'.dsh/cordis.patch.yml').read_text()), [{'id': 'llm-deepseek', 'config': {'apiKeyEnv': 'DEEPSEEK_API_KEY', 'baseURL': test.model}}])
+            kimi = tomllib.loads((home/'.kimi-code/config.toml').read_text())
+            self.assertEqual(kimi['providers']['kimi']['api_key'], 'synthetic-local-host-key')
+            self.assertNotIn('api_key_env', kimi['providers']['kimi'])
+            for path in home.rglob('*'):
+                if path.is_file():
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o600, path)
 
 
 if __name__ == '__main__':

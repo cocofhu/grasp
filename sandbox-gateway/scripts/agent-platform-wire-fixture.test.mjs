@@ -101,6 +101,19 @@ test('Kimi fixture reads native thinking config and resets to the declared nativ
   assert.equal(kimiConfiguration(kimiConfig('high').replace('https://api.kimi.ai/coding/v1', 'https://api.kimi.com/coding/v1'), syntheticKey).effort, 'high')
 })
 
+test('local Kimi fixture requires saved login instead of a host environment key', () => {
+  const previous = process.env.GRASP_LOCAL_AUTH
+  try {
+    process.env.GRASP_LOCAL_AUTH = '1'
+    const config = kimiConfig('max').replace('api_key_env = "KIMI_CODE_API_KEY"', 'api_key = "synthetic-saved-local-key"')
+    assert.equal(kimiConfiguration(config, '').effort, 'max')
+    assert.throws(() => kimiConfiguration(kimiConfig('max'), ''), /saved login authentication/)
+  } finally {
+    if (previous === undefined) delete process.env.GRASP_LOCAL_AUTH
+    else process.env.GRASP_LOCAL_AUTH = previous
+  }
+})
+
 test('Kimi native ACP thinking selections reach each actual fixture model request', async () => {
   const commands = []
   for (const [index, effort] of ['low', 'high', 'max'].entries()) {

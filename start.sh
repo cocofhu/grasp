@@ -6,7 +6,7 @@
 #   ./start.sh            foreground (ensure Grasp+Gateway if missing + up)
 #   ./start.sh -d          detached
 #   ./start.sh logs        follow logs
-#   ./start.sh down        stop and remove containers
+#   ./start.sh down        stop the local server and remove containers
 #   ./start.sh restart     down + up -d
 #   ./start.sh pull        refresh compose images + the sandbox runtime
 #   ./start.sh dev         local source stack (build server/web/gateway)
@@ -16,7 +16,7 @@
 #   ./start.sh gateway     rebuild local sandbox-gateway image (dev only)
 #   ./start.sh runtime     rebuild the sandbox runtime bundle (dev only)
 #
-# Requires Docker Compose on a Linux host (services use network_mode: host).
+# Container commands require Docker Compose on Linux (network_mode: host).
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -25,7 +25,7 @@ export HOST_REPO_DIR="$(pwd)"
 ensure_docker() {
   if ! command -v docker >/dev/null 2>&1; then
     echo "error: docker not found" >&2
-    exit 1
+    return 1
   fi
 
   if docker compose version >/dev/null 2>&1; then
@@ -34,12 +34,33 @@ ensure_docker() {
     COMPOSE=(docker-compose)
   else
     echo "error: docker compose / docker-compose not found" >&2
-    exit 1
+    return 1
   fi
 }
-if [[ "${1:-}" != "local" && "${1:-}" != "--local" ]]; then
-  ensure_docker
-fi
+
+stop_local() {
+  local pid_file=".devdata/local/grasp-server.pid" pid
+  [[ -f "$pid_file" ]] || return 0
+  pid="$(<"$pid_file")"
+  # A malformed PID must never signal this shell's or the host's process group.
+  if [[ "$pid" =~ ^[1-9][0-9]*$ && "$pid" != 1 ]]; then
+    kill -- "$pid" 2>/dev/null || true
+  fi
+  rm -f "$pid_file"
+}
+
+case "${1:-up}" in
+  down)
+    # Local shutdown must also work before Docker, .env, or Compose exist.
+    stop_local
+    if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1 || ! ensure_docker >/dev/null 2>&1; then
+      exit 0
+    fi
+    ;;
+  up|-d|up-d|detach|pull|logs|gw-logs|restart|dev|sandbox|gateway)
+    ensure_docker
+    ;;
+esac
 
 if [[ ! -f .env ]]; then
   cp .env.example .env
@@ -335,10 +356,6 @@ case "$cmd" in
     fi
     ;;
   down)
-    if [[ -f ".devdata/local/grasp-server.pid" ]]; then
-      kill "$(cat .devdata/local/grasp-server.pid)" 2>/dev/null || true
-      rm -f ".devdata/local/grasp-server.pid"
-    fi
     "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" down --remove-orphans || true
     "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" down --remove-orphans || true
     ;;

@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Local execution:** run Grasp with `./start.sh --local` and reuse installed coding tools' saved logins without Docker or workspace credentials. Each process receives private CLI and Git/SSH configuration copies, while host secret environment variables stay filtered. Agents switch only between their bound model groups, and `./start.sh down` stops the local service even when Docker is unavailable.
+
 - **Kimi Code subscription and reasoning:** Kimi Code now uses the official Coding Plan endpoints and model IDs with subscription-console API keys. Supported models offer `low`, `high` and `max` thinking strengths, confirmed by the native CLI before the next turn. Parallel chats keep separate model and thinking settings, and previously saved K3 model IDs map to their subscription equivalents.
 
 - **OpenCode model availability:** official backends synchronize the native model catalog at startup in sandboxes and worktrees, so manual refresh commands are no longer needed. Ordinary chat messages do not trigger catalog checks or refreshes. Missing or retired selections fail with a clear startup error, and deprecated entries are excluded from the provider's model catalog.

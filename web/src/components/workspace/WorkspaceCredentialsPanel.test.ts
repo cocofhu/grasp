@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import enCommon from '@/locales/en/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import enPages from '@/locales/en/pages.json'
 import type { CredentialItem, ModelConnection } from '@/lib/api/api'
+import { resetBrandSettingsForTest, setExecutionMode } from '@/lib/composables/useBrandSettings'
 import WorkspaceCredentialsPanel from './WorkspaceCredentialsPanel.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -127,6 +128,7 @@ async function chooseSearchOption(wrapper: ReturnType<typeof mountPanel>, testId
 
 describe('WorkspaceCredentialsPanel', () => {
   beforeEach(() => {
+    resetBrandSettingsForTest()
     vi.clearAllMocks()
     mocks.get.mockResolvedValue(config)
     mocks.put.mockImplementation(async (id: string) => ({
@@ -144,6 +146,23 @@ describe('WorkspaceCredentialsPanel', () => {
     mocks.createConfiguration.mockImplementation(async (body: Record<string, unknown>) => ({ id: 'configuration-created', ...body, revision: 1 }))
     mocks.createConnection.mockImplementation(async (body: Record<string, unknown>) => ({ id: 'connection-created', ...body, revision: 1 }))
     mocks.updateConnection.mockImplementation(async (id: string, body: Record<string, unknown>) => ({ id, ...body, revision: 4 }))
+  })
+
+  afterEach(() => resetBrandSettingsForTest())
+
+  it.each([
+    ['zh-CN', '本地模式复用本机 Agent CLI 登录和 Git 配置。请先在终端安装并登录所用工具，无需在此添加凭据。'],
+    ['en', 'Local mode uses your CLI logins and Git settings on this computer. Install and sign in to each coding tool in your terminal; no workspace credentials are needed here.'],
+  ] as const)('explains host login in local mode (%s)', async (locale, hint) => {
+    setExecutionMode('local')
+    const wrapper = mountPanel(config, locale)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="workspace-local-mode-hint"]').text()).toBe(hint)
+    expect(wrapper.find('[data-testid="credentials-tab-credentials"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-add-credential"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-credential-row"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-add-model"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('creates a Git credential inline, filters unrelated providers and reports the saved reference', async () => {

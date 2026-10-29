@@ -17,21 +17,50 @@ func defaultLookPath(name string) error {
 	} else if !Local() {
 		return err
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		for _, dir := range []string{
-			filepath.Join(home, ".local", "bin"),
-			filepath.Join(home, ".cursor", "bin"),
-			filepath.Join(home, ".kimi", "bin"),
-			filepath.Join(home, ".npm-global", "bin"),
-		} {
-			cand := filepath.Join(dir, name)
-			if st, err := os.Stat(cand); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
-				return nil
-			}
+	for _, dir := range localCLIDirs() {
+		cand := filepath.Join(dir, name)
+		if st, err := os.Stat(cand); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return nil
 		}
 	}
 	_, err := exec.LookPath(name)
 	return err
+}
+
+// Keep discovery and the launched backend's PATH on the same host directories.
+func localCLIDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	return []string{
+		filepath.Join(home, ".local", "bin"),
+		filepath.Join(home, ".cursor", "bin"),
+		filepath.Join(home, ".kimi", "bin"),
+		filepath.Join(home, ".npm-global", "bin"),
+	}
+}
+
+func appendLocalCLIPath(env map[string]string) {
+	if env == nil {
+		return
+	}
+	path, configured := env["PATH"]
+	if !configured {
+		path = os.Getenv("PATH")
+	}
+	dirs := filepath.SplitList(path)
+	seen := make(map[string]bool, len(dirs))
+	for _, dir := range dirs {
+		seen[dir] = true
+	}
+	for _, dir := range localCLIDirs() {
+		if !seen[dir] {
+			dirs = append(dirs, dir)
+			seen[dir] = true
+		}
+	}
+	env["PATH"] = strings.Join(dirs, string(os.PathListSeparator))
 }
 
 // KnownProviders is the canonical list of supported Agent CLI providers.
@@ -124,7 +153,11 @@ func RequireTools(provider string, env map[string]string) error {
 	if err := lookPath(bin); err != nil {
 		return fmt.Errorf("工作树镜像缺少 CLI %s（%s），无法启动。不会改用沙箱容器", bin, name)
 	}
-	if !previewRequested(env) || Local() {
+	if Local() {
+		appendLocalCLIPath(env)
+		return nil
+	}
+	if !previewRequested(env) {
 		return nil
 	}
 	if err := lookPath("chrome-devtools-mcp"); err != nil {

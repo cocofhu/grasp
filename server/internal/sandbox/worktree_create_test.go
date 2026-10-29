@@ -458,7 +458,7 @@ func gitWorktreeOut(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func TestSeedLocalAuthConfigHomeMergesAndLinksHostConfigs(t *testing.T) {
+func TestSeedLocalAuthConfigHomeMergesAndCopiesHostConfigs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -483,7 +483,7 @@ func TestSeedLocalAuthConfigHomeMergesAndLinksHostConfigs(t *testing.T) {
 		t.Fatalf("opencode.json merge failed: %s %v", mergedJSON, err)
 	}
 	if _, err := os.Lstat(filepath.Join(openCodeRoot, "auth.json")); err != nil {
-		t.Fatalf("auth.json was not linked: %v", err)
+		t.Fatalf("auth.json was not copied: %v", err)
 	}
 
 	// 2. Codex: merge host config.toml with Grasp's mcp_servers.

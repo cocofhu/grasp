@@ -13,8 +13,8 @@ import (
 const (
 	// ConfigRoot is the official Kimi Code data directory.
 	ConfigRoot = "/root/.kimi-code"
-	// APIKeyEnv is the process variable named by config.toml. The key itself
-	// is never written into that file.
+	// APIKeyEnv is the process variable named by workspace-mode config.toml.
+	// Local execution instead preserves the selected saved authorization.
 	APIKeyEnv = "KIMI_CODE_API_KEY"
 	// RegionEnv is the Agent site selection. It is not a secret.
 	RegionEnv = "GRASP_KIMI_CODE_REGION"
@@ -176,7 +176,10 @@ func writeConfigAt(directory *os.Root, baseURL, model, effort string) error {
 	if err := validateReasoningEffort(model, effort); err != nil {
 		return err
 	}
-	body := renderConfig(baseURL, model, effort)
+	return writeConfigBodyAt(directory, renderConfig(baseURL, model, effort))
+}
+
+func writeConfigBodyAt(directory *os.Root, body string) error {
 	if existing, err := directory.ReadFile("config.toml"); err == nil && string(existing) == body {
 		return nil
 	}

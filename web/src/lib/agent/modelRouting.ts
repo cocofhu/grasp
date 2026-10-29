@@ -67,6 +67,7 @@ export function bindingProblem(binding: ModelBinding | ConcreteModelBinding | un
 }
 
 const zh = {
+  localModeHint: '本地模式复用本机 Agent CLI 登录和 Git 配置。请先在终端安装并登录所用工具，无需在此添加凭据。',
   defaultGroup: '默认组', makeDefault: '设为默认', addGroup: '绑定其他模型组',
   imageInput: '图片输入', imageInputDefault: '未声明（使用工具默认值）', imageInputText: '仅文字', imageInputImage: '文字和图片', imageInputSharedHint: '图片能力设置会应用到使用同一 API 账号和模型的配置。',
   modelsLoading: '正在读取模型…', modelsLoadFailed: '暂时无法读取模型，可重试或填写原始模型 ID。', modelsEmpty: '未获取到模型，可填写原始模型 ID。', refreshModels: '刷新模型',
@@ -76,6 +77,7 @@ const zh = {
   officialFamilyHint: 'OpenCode 与 OpenCode Go 是两套订阅。各存一把 OpenCode CLI 钥匙，用别名区分；一份模型配置只绑其中一把，主模型与辅助模型必须同属一家。官方模式可以使用 opencode/<模型> 或 opencode-go/<模型>。',
 }
 const en: Record<keyof typeof zh, string> = {
+  localModeHint: 'Local mode uses your CLI logins and Git settings on this computer. Install and sign in to each coding tool in your terminal; no workspace credentials are needed here.',
   defaultGroup: 'Default', makeDefault: 'Make default', addGroup: 'Bind another model group',
   imageInput: 'Image input', imageInputDefault: 'Unspecified (tool default)', imageInputText: 'Text only', imageInputImage: 'Text and images', imageInputSharedHint: 'Image settings apply to configurations using the same API account and model.',
   modelsLoading: 'Loading models…', modelsLoadFailed: 'Could not load models. Retry or enter an original model ID.', modelsEmpty: 'No models returned. Enter an original model ID.', refreshModels: 'Refresh models',

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
@@ -329,6 +330,12 @@ func TestModelConfigurationDoesNotReportFailedWritesAsSaved(t *testing.T) {
 
 func TestLocalModeModelConfigurationsAndConnections(t *testing.T) {
 	t.Setenv("GRASP_EXECUTION_MODE", "local")
+	t.Cleanup(execution.SetLookPathForTest(func(name string) error {
+		if name == "codex" || name == "dsh" {
+			return nil
+		}
+		return errors.New("not installed")
+	}))
 	db := newTestDB(t)
 	connections, configurations := NewModelConnectionService(db), NewModelConfigurationService(db)
 	items, err := configurations.List()
@@ -352,5 +359,49 @@ func TestLocalModeModelConfigurationsAndConnections(t *testing.T) {
 	})
 	if err != nil || created.Binding.Kind != "local" || created.Binding.ModelID != "deepseek-flash" {
 		t.Fatalf("create local configuration failed: %+v %v", created, err)
+	}
+}
+
+func TestLocalDefaultsOnlySeedInstalledTools(t *testing.T) {
+	t.Setenv("GRASP_EXECUTION_MODE", "local")
+	installed := map[string]bool{}
+	t.Cleanup(execution.SetLookPathForTest(func(name string) error {
+		if installed[name] {
+			return nil
+		}
+		return errors.New("not installed")
+	}))
+	configurations := NewModelConfigurationService(newTestDB(t))
+	items, err := configurations.List()
+	if err != nil || len(items) != 0 {
+		t.Fatalf("uninstalled CLIs became selectable: %+v %v", items, err)
+	}
+	installed["codex"] = true
+	items, err = configurations.List()
+	if err != nil || len(items) != 1 || items[0].Backend != "codex" {
+		t.Fatalf("installed CLI was not discovered: %+v %v", items, err)
+	}
+	items, err = configurations.List()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("discovery was not idempotent: %+v %v", items, err)
+	}
+}
+
+func TestLocalBindingRequiresExplicitKindAndLocalExecution(t *testing.T) {
+	db := newTestDB(t)
+	configurations, connections := NewModelConfigurationService(db), NewModelConnectionService(db)
+	for _, mode := range []string{"sandbox", "worktree", "local"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv(execution.EnvMode, mode)
+			for _, kind := range []string{"", "platform", "local"} {
+				binding := modelrouting.Binding{Kind: kind}
+				_, createErr := configurations.Create(modelrouting.Configuration{Name: "Explicit source", Backend: "codex", Binding: binding})
+				_, resolveErr := connections.Resolve("codex", binding)
+				wantSuccess := mode == "local" && kind == "local"
+				if (createErr == nil) != wantSuccess || (resolveErr == nil) != wantSuccess {
+					t.Fatalf("mode=%s kind=%q: create=%v resolve=%v", mode, kind, createErr, resolveErr)
+				}
+			}
+		})
 	}
 }

@@ -61,6 +61,13 @@ func TestAuthEnvDropsAPIKey(t *testing.T) {
 	}
 }
 
+func TestLocalAuthStillDropsAmbientAPIKeys(t *testing.T) {
+	env := (codec{}).AuthEnv([]string{"GRASP_LOCAL_AUTH=1", "OPENAI_API_KEY=host", "CODEX_API_KEY=host", "ACP_CODEX_API_KEY=host"})
+	if len(env) != 1 || env[0] != "GRASP_LOCAL_AUTH=1" {
+		t.Fatalf("ambient keys survived local auth: %v", env)
+	}
+}
+
 func TestArgsReasoningEffort(t *testing.T) {
 	var c codec
 	opts := provider.OpenOptions{Model: "gpt-5"}
@@ -211,13 +218,15 @@ func TestArgsResume(t *testing.T) {
 func TestArgsOmitExternalSandboxBypassInWorktree(t *testing.T) {
 	var c codec
 	opts := provider.OpenOptions{AutoPermission: true}
-	t.Setenv("GRASP_EXECUTION_MODE", "worktree")
-	got := strings.Join(c.Args(opts, "hi", ""), " ")
-	if strings.Contains(got, "dangerously-bypass-approvals-and-sandbox") {
-		t.Fatalf("worktree codex kept the external-sandbox bypass: %s", got)
+	for _, mode := range []string{"worktree", "local"} {
+		t.Setenv("GRASP_EXECUTION_MODE", mode)
+		got := strings.Join(c.Args(opts, "hi", ""), " ")
+		if strings.Contains(got, "dangerously-bypass-approvals-and-sandbox") {
+			t.Fatalf("%s codex kept the external-sandbox bypass: %s", mode, got)
+		}
 	}
 	t.Setenv("GRASP_EXECUTION_MODE", "sandbox")
-	got = strings.Join(c.Args(opts, "hi", ""), " ")
+	got := strings.Join(c.Args(opts, "hi", ""), " ")
 	if !strings.Contains(got, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Fatalf("sandbox codex lost the bypass flag: %s", got)
 	}

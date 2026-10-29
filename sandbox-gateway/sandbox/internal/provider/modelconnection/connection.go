@@ -223,9 +223,16 @@ func qualifyLocalOpenCodeModel(p Prepared, root string) Prepared {
 	if err != nil {
 		return p
 	}
-	p.Env = common.UpsertEnv(p.Env, "OPENCODE_CONFIG_CONTENT", string(data))
+	// Native config files can contain saved credentials. Let the CLI read the
+	// private snapshot; inline content contains only Grasp's per-turn overlay.
+	p.Env = common.UpsertEnv(p.Env, "OPENCODE_CONFIG", filepath.Join(root, "opencode.json"))
+	p.Env = common.UpsertEnv(p.Env, "OPENCODE_CONFIG_CONTENT", "{}")
 	m := strings.TrimSpace(p.Model)
-	if m == "" || m == "auto" || strings.Contains(m, "/") {
+	if m == "" || m == "auto" {
+		return p
+	}
+	if prov, _, qualified := strings.Cut(m, "/"); qualified {
+		p.RouteID = prov
 		return p
 	}
 	var doc struct {

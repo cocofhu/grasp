@@ -681,6 +681,7 @@ watch(showCreate, (open) => {
           <div class="flex min-w-0 items-center gap-3.5">
             <div class="min-w-0">
               <h2 class="m-0 text-[20px] font-semibold tracking-tight text-txt">{{ localMode ? routingCopy.modelsTab : view === 'credentials' ? routingCopy.credentials : scope === 'model' || view === 'models' ? routingCopy.modelsTab : scope === 'git' ? t('pages.workspace.credentials.sections.git') : t('pages.workspace.credentials.title') }}</h2>
+              <p v-if="localMode" class="mb-0 mt-2 text-[13px] leading-6 text-txt3" data-testid="workspace-local-mode-hint">{{ routingCopy.localModeHint }}</p>
             </div>
           </div>
           <div v-if="localMode || inline || view" class="flex flex-wrap gap-2">

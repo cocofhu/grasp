@@ -92,11 +92,11 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	if env["CODEX_HOME"] != "" || provider == "codex" {
 		env["CODEX_HOME"] = configRoot
 	}
-	if execution.Local() || strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" {
+	if execution.Local() && strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" {
 		seedLocalAuthConfigHome(provider, configRoot)
 	}
 	env["WORKSPACE_DIR"] = launch.Root
-	env[execution.EnvMode] = execution.ModeWorktree
+	env[execution.EnvMode] = execution.Mode()
 	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
 	if err != nil {
 		return nil, err
@@ -222,11 +222,11 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 	} else {
 		delete(env, "CODEX_HOME")
 	}
-	if execution.Local() || strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" {
+	if execution.Local() && strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" {
 		seedLocalAuthConfigHome(provider, configRoot)
 	}
 	env["WORKSPACE_DIR"] = sb.WorkspaceDir
-	env[execution.EnvMode] = execution.ModeWorktree
+	env[execution.EnvMode] = execution.Mode()
 	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
 	if err != nil {
 		return err
@@ -279,10 +279,12 @@ func worktreeSessionStop(stop, cleanupGit func()) func() {
 // conversation tests, and the assistant all arrive through Create with those
 // fields set.
 func authFromSpec(spec Spec) execution.Auth {
-	configured := spec.GitBindingsConfigured
-	if execution.Local() && len(spec.GitCredentials) == 0 {
-		configured = false
+	// Local's empty binding deliberately uses host Git authorization, but must
+	// not revive unrelated legacy credentials from Spec.Env or SSH fields.
+	if execution.Local() && len(spec.GitCredentials) == 0 && spec.GitBindingsConfigured {
+		return execution.Auth{}
 	}
+	configured := spec.GitBindingsConfigured
 	auth := execution.Auth{Configured: configured}
 	for _, cred := range spec.GitCredentials {
 		auth.Credentials = append(auth.Credentials, execution.Credential{
@@ -326,13 +328,12 @@ func envList(overlay map[string]string) []string {
 	for k := range overlay {
 		skip[k] = true
 	}
-	localAuth := execution.Local() || strings.TrimSpace(overlay["GRASP_LOCAL_AUTH"]) == "1"
 	for _, item := range base {
 		key, _, _ := strings.Cut(item, "=")
 		if skip[key] || envauth.IsPlatformReservedEnvKey(key) {
 			continue
 		}
-		if !localAuth && (worktreeGitEnvKey(key) || envauth.IsSecretEnvKey(key)) {
+		if worktreeGitEnvKey(key) || envauth.IsSecretEnvKey(key) {
 			continue
 		}
 		out = append(out, item)

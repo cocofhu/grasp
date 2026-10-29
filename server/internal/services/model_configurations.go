@@ -41,7 +41,7 @@ func (s *ModelConfigurationService) List() ([]modelrouting.Configuration, error)
 }
 
 // EnsureLocalDefaults seeds default host-auth model configurations for installed
-// Agent CLIs when running in local execution mode and no configurations exist yet.
+// Agent CLIs when running in local execution mode.
 func (s *ModelConfigurationService) EnsureLocalDefaults() error {
 	if !execution.Local() || s == nil || s.db == nil {
 		return nil
@@ -51,9 +51,6 @@ func (s *ModelConfigurationService) EnsureLocalDefaults() error {
 		return err
 	}
 	backends := execution.InstalledProviders()
-	if len(existing) == 0 && len(backends) == 0 {
-		backends = execution.KnownProviders
-	}
 	seenID := make(map[string]bool, len(existing))
 	seenBackend := make(map[string]bool, len(existing))
 	for _, row := range existing {
@@ -188,9 +185,6 @@ func (s *ModelConfigurationService) validate(configuration *modelrouting.Configu
 	}
 	if configuration.State != "active" && configuration.State != "disabled" {
 		return fmt.Errorf("%w: state must be active or disabled", ErrModelConfigurationInvalid)
-	}
-	if execution.Local() && (configuration.Binding.Kind == "" || (configuration.Binding.Kind == "platform" && strings.TrimSpace(configuration.Binding.CredentialID) == "")) {
-		configuration.Binding.Kind = "local"
 	}
 	if configuration.Binding.Kind != "platform" && configuration.Binding.Kind != "connection" && !(execution.Local() && configuration.Binding.Kind == "local") {
 		return fmt.Errorf("%w: a concrete platform or connection binding is required", ErrModelConfigurationInvalid)

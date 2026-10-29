@@ -4,13 +4,21 @@
 
 ## 执行后端(ExecProvider)
 
-支持七类 ACP 后端(`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex` / `deepseek_harness`),由 Agent 卡片
+支持八类 ACP 后端(`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex` / `deepseek_harness` / `kimi_code`),由 Agent 卡片
 `agent.json` 的 `acpBackend` 字段选择;`ProviderRegistry` 按 Agent profile (`agent_profile`) 路由到
 对应 Provider。统一沙箱镜像内 `acp-bridge` 按 `AGENT_PROVIDER` 单活启动 bridge(:8765)。
 
-**鉴权**:各后端 Key 与 Git 凭据**只**在**工作区凭据** UI 中管理，运行时按 Run 注入沙箱。
+**沙箱 / worktree 鉴权**:各后端 Key 与 Git 凭据**只**在**工作区凭据** UI 中管理，运行时按 Run 注入沙箱。
 Agent env、工作区共享 env、Run env 与平台 `sandbox.env` 中出现密钥键（见下）会在保存时被拒绝(400)；
 服务进程自身的环境变量不会注入沙箱；Agent Studio 不继承工作区凭据。
+
+**本机执行（local）**：使用 `./start.sh --local` 或设置 `GRASP_EXECUTION_MODE=local`，无需 Docker。
+先在终端安装并登录所需的编码工具；服务只为已安装的 CLI 创建 `kind: "local"` 模型组，Agent 只能切换到自己已绑定的模型组。
+本机模型组读取所选 CLI 登录与配置的私有副本，保留 Grasp 管理的 MCP 和指令；更新副本不会通过软链接改写本机登录文件。
+子进程使用独立的 HOME/XDG 目录，服务进程中的 API Key、Git Token 与 Git 环境覆盖仍会被过滤。
+未绑定 Git 凭据时，复制本机 Git/SSH 配置并显式传入 SSH agent socket；选定工作区凭据时使用所选授权。
+`./start.sh down` 会先停止本地服务，未安装 Docker 或 Docker 不可用时也能执行。
+本机执行与服务使用同一操作系统用户权限，配置副本用于避免意外写回，不提供容器级文件访问隔离。
 
 凭据解析与注入范围如下。UI 保存的值使用 `security.secrets_key` 加密，列表和审计只显示掩码。
 

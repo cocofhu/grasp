@@ -195,8 +195,7 @@ func (s *ModelConnectionService) Resolve(backend string, binding modelrouting.Bi
 		concrete, err := s.Resolve(backend, configuration.Binding)
 		return concrete, err
 	}
-	if execution.Local() && (binding.Kind == "local" || (binding.Kind == "platform" && strings.TrimSpace(binding.CredentialID) == "")) {
-		binding.Kind = "local"
+	if binding.Kind == "local" {
 		if normErr := modelrouting.NormalizeAuxiliaryModels(&binding); normErr != nil {
 			return resolved, fmt.Errorf("%w: %w", ErrModelBindingInvalid, normErr)
 		}
