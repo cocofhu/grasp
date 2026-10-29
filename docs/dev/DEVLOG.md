@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（OpenCode 官方模型容量计算溢出保护）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`sandbox-gateway/sandbox/internal/provider/modelconnection/platform.go`、`docs/dev/DEVLOG.md`。
+- 做了什么：官方模型 provider 校验按实际配置数预分配容量，仅在存在会话模型时先检查 `math.MaxInt` 再递增，保持模型顺序、默认 provider 和同族校验不变。
+- 为什么：修复 CodeQL 告警 #73 指出的 `1+len(configured)` 分配容量整数溢出风险，拒绝不可表示的容量。
+- 如何验证：独立审查两个调用点及空／非空会话边界；Go 1.26.10 下 sandbox 全量单测、lint（0 issues）、vet 和核心覆盖率门禁通过（96.6%，门槛 90%）。actionlint、error-level shellcheck、Shell／Node 语法检查及 inject、git-auth、runtime-bootstrap、mock-chat-model、preview-inject-upstream smoke 通过；合并前继续核对完整 Agent 切换测试和最新提交的远端 CI。
+
 ### 2026-10-30（继承所有已配置的模型组）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。
