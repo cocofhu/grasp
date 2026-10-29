@@ -778,31 +778,18 @@ describe('preview-pick.js floating chat window', () => {
     expect(title.textContent).toBe('Page Harness CoCo')
     expect(title.getAttribute('title')).toBe('Page Harness CoCo')
     expect(grip).not.toBeNull()
-    const markHtml = mark?.innerHTML || ''
     const markRule = css.match(/\.dhead \.mark\{([^}]+)\}/)?.[1] || ''
     expect(mark?.textContent ?? '').not.toContain('PH')
-    expect(mark?.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 72 88')
-    expect(mark?.querySelectorAll('circle')).toHaveLength(2)
-    expect(mark?.querySelectorAll('path')).toHaveLength(3)
-    const outline = mark?.querySelector('path')?.getAttribute('d') || ''
-    const head = outline.split(/[cC]/)[0] || ''
-    const nums = head.match(/-?\d+(?:\.\d+)?/g)?.map(Number) || []
-    const pts: { x: number; y: number }[] = []
-    for (let i = 0; i + 1 < nums.length; i += 2) pts.push({ x: nums[i]!, y: nums[i + 1]! })
-    const peaks: number[] = []
-    for (let i = 1; i < pts.length - 1; i++) {
-      if (pts[i]!.y < pts[i - 1]!.y && pts[i]!.y < pts[i + 1]!.y) peaks.push(i)
-    }
-    // Two ear tips only. A third crown spike (the rejected y=16 point between y=12 tips)
-    // is another local high. The valley between the tips must sit well below them:
-    // 12 viewBox units is about 4px on the 30px-tall mark.
-    expect(peaks).toHaveLength(2)
-    const earY = Math.max(pts[peaks[0]!]!.y, pts[peaks[1]!]!.y)
-    for (let i = peaks[0]! + 1; i < peaks[1]!; i++) {
-      expect(pts[i]!.y).toBeGreaterThanOrEqual(earY + 12)
-    }
-    expect(markHtml).toContain('currentColor')
-    expect(markHtml).toContain('M6 47h14')
+    // The injected, dependency-free toolbar must match the canonical Grasp lockup.
+    const canonical = p.win.document.createElement('div')
+    canonical.innerHTML = readFileSync(resolve(repo, 'web/src/components/shell/BrandCharacterMark.vue'), 'utf8')
+      .split('<template>')[1]!.split('</template>')[0]!
+    const svg = mark?.querySelector('svg')
+    expect(svg?.getAttribute('viewBox')).toBe(canonical.querySelector('svg')?.getAttribute('viewBox'))
+    const shapes = (root: Element | null | undefined) => Array.from(root?.querySelectorAll('path,ellipse,circle') || [],
+      (part) => [part.tagName, Object.fromEntries(Array.from(part.attributes, (attr) => [attr.name, attr.value]))])
+    expect(shapes(svg)).toEqual(shapes(canonical))
+    expect(mark?.querySelectorAll('.brand-character__eye')).toHaveLength(2)
     expect(markRule).toContain('width:24px')
     expect(markRule).toContain('height:30px')
     expect(markRule).not.toContain('color:')

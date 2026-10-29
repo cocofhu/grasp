@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（CoCo 浮窗使用 Grasp 动态图标）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/public/preview-pick.js`、`web/src/lib/shared/previewPickScript.test.ts`、`web/e2e/live-variants.spec.ts`、`server/internal/handlers/preview-pick.js`、`sandbox-gateway/sandbox/internal/previewinject/preview-pick.js`、`CHANGELOG.md`。
+- 做了什么：浮窗标题栏改用主站 `BrandCharacterMark.vue` 的双耳轮廓、椭圆眼睛、微笑和灰色脸颊；加入同样的轻摆、呼吸和双眨眼，以及悬停抬头反馈。保持原有图标占位，减少动态效果设置即时停止动画和悬停变换；通过既有构建命令同步三个注入脚本副本。单测直接比较主站图标的 SVG 图形属性，浏览器回归检查真实动画、主题和稳定布局。
+- 为什么：原浮窗自行绘制的长耳、胡须图形与 Grasp 标识不一致，也没有角色动画；复用现有角色形状和动画节奏，让浮窗与主站一致。
+- 如何验证：图标相关 73 项单测及 Web 全量 542 文件、5,833 项单测通过，Lines 91.75%；lint、vue-tsc、生产构建和品牌／安全上下文断言通过。新增动画浏览器专项通过；完整关键路径浏览器首轮 258/261 项通过，三项因模块请求 `ERR_NETWORK_CHANGED` 中断，保留 trace 后仅复测失败项，三项全部通过。使用隔离端口避免复用其他 worktree 的测试服务，临时测试文件已清理；深浅主题截图人工核对一致。Server 全套 lint、vet、配置文档、单测、runtime 专项与核心覆盖率通过（90.5%）；Sandbox lint、vet、注入／Git／bootstrap／mock smoke、previewinject 单测、cli-tools 构建和核心覆盖率通过（96.6%）。actionlint、error-level shellcheck、docs 构建和官方源 high/critical audit 通过；文档生成物移至临时目录，三个注入脚本副本字节一致。 提交 PR 前同步最新 main，保留双方日志条目；图标实现与已测版本一致，同步后 73 项图标单测、动画浏览器专项、配置文档、品牌与根目录检查再次通过。
+
 ### 2026-10-30（OpenCode 官方模型容量计算溢出保护）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。
