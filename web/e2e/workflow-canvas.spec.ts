@@ -284,7 +284,7 @@ for (const [width, theme] of [[1440, 'light'], [1024, 'dark']] as const) {
     await dialog.screenshot({ animations: 'disabled', path: `${SHOT}/workflow-settings-${width}-${theme}.png` })
 
     await dialog.getByRole('button', { name: '添加变量', exact: true }).click()
-    await dialog.getByRole('textbox', { name: '变量名', exact: true }).fill('COUNT')
+    await dialog.getByTestId('workflow-variables-settings').getByRole('textbox', { name: '变量名', exact: true }).fill('COUNT')
     await dialog.getByRole('button', { name: '变量类型', exact: true }).click()
     await page.getByRole('combobox', { name: '搜索…', exact: true }).fill('数字')
     await page.getByRole('option', { name: '数字', exact: true }).click()
