@@ -1,12 +1,16 @@
 package engine
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
+	"gorm.io/gorm"
 )
 
 func autoNode(id, label string, caps *models.AgentCapabilities) models.Node {
@@ -225,6 +229,16 @@ func TestConfirmClearsPendingAutoWhenReplyFails(t *testing.T) {
 	}
 }
 
+type confirmBarrierProvider struct {
+	*fakeProvider
+	entered chan struct{}
+}
+
+func (p *confirmBarrierProvider) ReactReply(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) runtime.ReactTurn {
+	close(p.entered)
+	return p.fakeProvider.ReactReply(ctx, req, history, human, images, force)
+}
+
 func TestConfirmDoesNotMarkAnUnsettledSuccessor(t *testing.T) {
 	g := clarifyImplementGraph()
 	g.Nodes = append(g.Nodes, models.Node{ID: "gate", Type: "human_gate", Label: "审批"})
@@ -233,51 +247,111 @@ func TestConfirmDoesNotMarkAnUnsettledSuccessor(t *testing.T) {
 		{ID: "e2", Source: "clarify", Target: "impl", When: "vars.ready"},
 		{ID: "e3", Source: "clarify", Target: "gate"},
 	}
-	eng, db, p := setupEngineGraphP(t, g)
-	run, err := eng.StartRun("wf", nil, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitReactPause(t, db, run.ID, "clarify")
-	hold := make(chan struct{})
-	p.reactHold = hold
-	released := false
-	release := func() {
-		if released {
-			return
+	for _, beforePause := range []bool{false, true} {
+		name := "after run pause"
+		if beforePause {
+			name = "before run pause"
 		}
-		released = true
-		close(hold)
-	}
-	defer release()
-	done := make(chan error, 1)
-	go func() {
-		done <- eng.ReactConfirmAs("", run.ID, "clarify", "确认并流转", nil, nil, false)
-	}()
+		t.Run(name, func(t *testing.T) {
+			eng, db, p := setupEngineGraphP(t, g)
+			openingPaused, releaseOpening := make(chan struct{}), make(chan struct{})
+			replyEntered, releaseReply := make(chan struct{}), make(chan struct{})
+			var openingOnce, releaseOpeningOnce, releaseReplyOnce sync.Once
+			unblockOpening := func() { releaseOpeningOnce.Do(func() { close(releaseOpening) }) }
+			unblockReply := func() { releaseReplyOnce.Do(func() { close(releaseReply) }) }
+			var done chan error
+			var runID string
+			defer func() {
+				unblockOpening()
+				unblockReply()
+				if done != nil {
+					select {
+					case err := <-done:
+						if err == nil {
+							waitGatePending(t, db, runID, "gate")
+						}
+					case <-time.After(waitPollTimeout):
+						t.Error("confirm did not finish during cleanup")
+					}
+				}
+				waitDriversIdle(t, eng)
+			}()
+			await := func(ch <-chan struct{}, phase string) {
+				t.Helper()
+				select {
+				case <-ch:
+				case <-time.After(waitPollTimeout):
+					t.Fatalf("timed out waiting for %s", phase)
+				}
+			}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		var conv models.ReactConversation
-		err := db.Where("run_id = ? AND node_id = ?", run.ID, "clarify").First(&conv).Error
-		if err == nil && conv.Done {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("confirm did not mark the dialogue done")
-		}
-		time.Sleep(10 * time.Millisecond)
+			// Park after the node pause commits, before the opening driver
+			// checks Done and decides whether to pause the run itself.
+			if err := db.Callback().Update().After("gorm:commit_or_rollback_transaction").Register("test:park-clarify-pause", func(tx *gorm.DB) {
+				if sr, ok := tx.Statement.Dest.(*models.StateRun); ok && sr.NodeID == "clarify" && sr.Status == "waiting_human" {
+					openingOnce.Do(func() {
+						close(openingPaused)
+						<-releaseOpening
+					})
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			// Configure the reply barrier before any provider calls begin.
+			p.reactHold = releaseReply
+			eng.provider = &confirmBarrierProvider{fakeProvider: p, entered: replyEntered}
+			run, err := eng.StartRun("wf", nil, "test")
+			if err != nil {
+				t.Fatalf("start: %v", err)
+			}
+			runID = run.ID
+			await(openingPaused, "opening node pause")
+			if !beforePause {
+				unblockOpening()
+				waitDriversIdle(t, eng)
+			}
+			done = make(chan error, 1)
+			go func() {
+				done <- eng.ReactConfirmAs("", run.ID, "clarify", "确认并流转", nil, nil, false)
+			}()
+			await(replyEntered, "confirm reply")
+			// The early Done write now makes pauseStillPending false in the
+			// before-pause case, leaving the run running during wrap-up.
+			unblockOpening()
+			waitDriversIdle(t, eng)
+			var stored models.Run
+			if err := db.First(&stored, "id = ?", run.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			wantStatus := "waiting_human"
+			if beforePause {
+				wantStatus = "running"
+			}
+			if stored.Status != wantStatus {
+				t.Fatalf("run status = %q, want %q", stored.Status, wantStatus)
+			}
+			if _, ok := stored.Checkpoints[services.PendingAutoCheckpoint]; ok {
+				t.Fatalf("unsettled successor must not be marked: %#v", stored.Checkpoints[services.PendingAutoCheckpoint])
+			}
+			var conv models.ReactConversation
+			if err := db.Where("run_id = ? AND node_id = ?", run.ID, "clarify").First(&conv).Error; err != nil || !conv.Done {
+				t.Fatalf("dialogue must be done during wrap-up: err=%v done=%v", err, conv.Done)
+			}
+			cn := services.NewRunService(db).CurrentNodes([]models.Run{stored})[run.ID]
+			if cn.ID != "clarify" || cn.Kind != services.CurrentKindClarify || cn.Mode != models.NodeModeManual || cn.State != "waiting_human" {
+				t.Fatalf("clarify stays current: %+v", cn)
+			}
+			unblockReply()
+			select {
+			case err := <-done:
+				done = nil
+				if err != nil {
+					t.Fatalf("confirm: %v", err)
+				}
+			case <-time.After(waitPollTimeout):
+				t.Fatal("confirm did not finish after releasing reply")
+			}
+			waitGatePending(t, db, run.ID, "gate")
+		})
 	}
-	var stored models.Run
-	if err := db.First(&stored, "id = ?", run.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := stored.Checkpoints[services.PendingAutoCheckpoint]; ok {
-		t.Fatalf("unsettled successor must not be marked: %#v", stored.Checkpoints[services.PendingAutoCheckpoint])
-	}
-	cn := services.NewRunService(db).CurrentNodes([]models.Run{stored})[run.ID]
-	if cn.ID != "clarify" || cn.Kind != services.CurrentKindClarify {
-		t.Fatalf("clarify stays current: %+v", cn)
-	}
-	release()
-	<-done
 }

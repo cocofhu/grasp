@@ -145,3 +145,95 @@ func TestCurrentNodesPendingAutoYieldsToRealState(t *testing.T) {
 		t.Fatalf("ended run must not stay current: %+v", got["done"])
 	}
 }
+
+// A confirm can mark its conversation done before the opening driver changes
+// the run to waiting_human. Without a settled successor, the waiting visit is
+// still current even though the run itself remains running.
+func TestCurrentNodesRetainsWaitingVisitWhileRunIsRunning(t *testing.T) {
+	cases := []struct {
+		name        string
+		node        string
+		mode        string
+		runStatus   string
+		staleMark   bool
+		runningNode string
+		want        CurrentNode
+	}{
+		{
+			name: "clarify", node: "clarify",
+			want: CurrentNode{ID: "clarify", Name: "需求澄清", Iteration: 2, Kind: CurrentKindClarify, Mode: models.NodeModeManual, State: "waiting_human"},
+		},
+		{
+			name: "review", node: "impl",
+			want: CurrentNode{ID: "impl", Name: "实现", Iteration: 2, Kind: CurrentKindReview, Mode: models.NodeModeManual, State: "waiting_human"},
+		},
+		{
+			name: "takeover", node: "impl", mode: models.NodeModeManual,
+			want: CurrentNode{ID: "impl", Name: "实现", Iteration: 2, Kind: CurrentKindTakeover, Mode: models.NodeModeManual, State: "waiting_human"},
+		},
+		{
+			name: "gate", node: "gate",
+			want: CurrentNode{ID: "gate", Name: "审批", Iteration: 2, Kind: CurrentKindGate, Mode: models.NodeModeManual, State: "waiting_human"},
+		},
+		{
+			name: "reopened visit ignores old pending successor", node: "clarify", staleMark: true,
+			want: CurrentNode{ID: "clarify", Name: "需求澄清", Iteration: 2, Kind: CurrentKindClarify, Mode: models.NodeModeManual, State: "waiting_human"},
+		},
+		{
+			name: "running successor takes precedence", node: "clarify", runningNode: "impl",
+			want: CurrentNode{ID: "impl", Name: "实现", Iteration: 3, Kind: CurrentKindAgent, Mode: models.NodeModeAuto, State: "running"},
+		},
+		{name: "completed run", node: "clarify", runStatus: "completed"},
+		{name: "failed run", node: "clarify", runStatus: "failed"},
+		{name: "cancelled run", node: "clarify", runStatus: "cancelled"},
+		{name: "no active visit"},
+	}
+	db := newTestDB(t)
+	s := NewRunService(db)
+	var runs []models.Run
+	for _, tc := range cases {
+		status := tc.runStatus
+		if status == "" {
+			status = "running"
+		}
+		run := models.Run{ID: tc.name, WorkflowID: "wf", Status: status, Graph: pendingAutoGraph()}
+		if tc.staleMark {
+			old := models.StateRun{RunID: run.ID, NodeID: "clarify", Iteration: 1, Status: "completed"}
+			if err := db.Create(&old).Error; err != nil {
+				t.Fatal(err)
+			}
+			run.Checkpoints = pendingAutoRun(run.ID, status, old.ID).Checkpoints
+		}
+		if err := db.Create(&run).Error; err != nil {
+			t.Fatal(err)
+		}
+		if tc.node != "" {
+			visit := models.StateRun{RunID: run.ID, NodeID: tc.node, Iteration: 2, Status: "waiting_human", Mode: tc.mode}
+			if err := db.Create(&visit).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if tc.runningNode != "" {
+			visit := models.StateRun{RunID: run.ID, NodeID: tc.runningNode, Iteration: 3, Status: "running"}
+			if err := db.Create(&visit).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		runs = append(runs, run)
+	}
+	got := s.CurrentNodes(runs)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cn, ok := got[tc.name]
+			if tc.want.ID == "" {
+				if ok {
+					t.Fatalf("no current node expected, got %+v", cn)
+				}
+				return
+			}
+			if !ok || cn != tc.want {
+				t.Fatalf("got %+v ok=%v, want %+v", cn, ok, tc.want)
+			}
+		})
+	}
+}

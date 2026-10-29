@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-29（确认早于暂停时保留当前节点）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`server/internal/services/run_current{,_pending_test}.go`、`server/internal/engine/pending_auto_test.go`、`CHANGELOG.md`。
+- 做了什么：运行仍为 `running`、没有运行中的节点或有效的确定后继时，当前节点查询回退到最新的等待节点；真实运行节点和确定后继继续优先。原失败测试通过数据库提交后的同步屏障覆盖确认先于、晚于运行暂停两种交错，并在清理前等待确认实际到达后继审批节点。
+- 为什么：CI run `40768511138` 的 `TestConfirmDoesNotMarkAnUnsettledSuccessor` 读取到空当前节点。确认提前写入对话 `Done` 时，初始执行器可以跳过运行的 `waiting_human` 转换，而节点自身已经在等待；后继条件尚未确定，没有 pending-auto 标记，原查询遗漏了这个合法中间态。单纯增加测试等待或重跑 CI 无法修复刷新时的节点消失。
+- 如何验证：新增服务回归在旧实现上确定失败；同步屏障也确定复现原引擎断言失败。修复后两种交错各重复 100 次 race 通过，engine/services 完整 race 与 server 全量单测通过；服务回归覆盖澄清、复审、接管、审批、旧标记、运行后继优先、终态和无活动节点。Go 1.26.10 下 lint、vet、配置文档检查、runtime 专项及核心覆盖率检查通过（90.5%，门槛 90%）；actionlint、error-level shellcheck、docs 构建和官方源 high/critical audit 通过。文档生成目录移至临时目录后，最终品牌断言与 diff 检查通过，生成物未入库。
+
 ### 2026-10-29（Kimi Code 订阅接入与思考强度）
 
 - 日期：2026-10-29（Asia/Hong_Kong）。
