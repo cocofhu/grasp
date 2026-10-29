@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **All configured model groups:** Agent defaults and individual Agents have a switch to inherit every active model group, including groups added later. This mode uses a generic group icon and a short explanation; the default startup group is selected separately. Inheriting Agents follow this setting, including workflow launch validation, and unavailable groups still require valid authorization before use.
+
 - **Translation dependency security:** upgrade Vue I18n to a supported release with fixes for translation HTML and parameter escaping.
 
 - **Workflow confirmation:** the current node stays visible while a clarification or review is being confirmed and its successor is still undecided, including when confirmation arrives before the run finishes entering its waiting state.

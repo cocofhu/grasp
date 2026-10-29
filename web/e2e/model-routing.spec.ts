@@ -411,6 +411,111 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   await captureRuntimeBindings(page, 'agent-inherit-model-git', testInfo)
 })
 
+test('Agent defaults inherit all configured model groups with a generic identity and a separate startup default', async ({ page }, testInfo) => {
+  const primary = connection('responses-service', 'openai-responses', 'vendor/responses')
+  const additional = connection('chat-service', 'openai-chat-completions', 'vendor/chat')
+  const later = connection('later-service', 'openai-chat-completions', 'vendor/later')
+  const state = await setup(page, [primary, additional, later])
+  state.configurations.push(
+    { id: 'team-codex', name: 'Team Codex default', backend: 'codex', binding: { kind: 'connection', connectionId: primary.id, modelId: primary.models[0]!.id }, state: 'active', revision: 1 },
+    { id: 'team-opencode', name: 'Team OpenCode', backend: 'opencode', binding: { kind: 'connection', connectionId: additional.id, modelId: additional.models[0]!.id }, state: 'active', revision: 1 },
+    { id: 'disabled-group', name: 'Disabled team model', backend: 'codex', binding: { kind: 'connection', connectionId: primary.id, modelId: primary.models[0]!.id }, state: 'disabled', revision: 1 },
+  )
+  state.agents.push({ name: 'Solo', acpBackend: 'codex', inheritModel: true, inheritGit: true, files: [], mcp: [], env: {}, layout: {} })
+  const openDefaults = async () => {
+    await page.goto(`/workspace-config.html?view=${encodeURIComponent('/agents?view=defaults')}`)
+    await page.getByTestId('shared-agent-subtab-meta').click()
+  }
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await openDefaults()
+  await chooseBoundConfiguration(page, 'team-codex')
+  const useAll = page.getByTestId('model-binding-all-configurations')
+  await expect(useAll).toHaveRole('switch')
+  await expect(useAll).toHaveAccessibleName('继承所有已配置的模型组')
+  await expect(useAll).toHaveAttribute('aria-checked', 'false')
+  await useAll.click()
+  await expect(useAll).toHaveAttribute('aria-checked', 'true')
+  const allGroups = page.getByTestId('model-binding-all-groups')
+  await expect(allGroups.locator('[data-icon="layers"]')).toBeVisible()
+  await expect(allGroups.locator('[data-provider-logo]')).toHaveCount(0)
+  await expect(allGroups.getByTestId('model-binding-inherited-groups')).toHaveCount(0)
+  await expect(allGroups).not.toContainText('Team Codex default')
+  await expect(allGroups).not.toContainText('Team OpenCode')
+  await expect(allGroups).not.toContainText('Disabled team model')
+  const startupDefault = page.getByTestId('model-binding-startup-default')
+  await expect(startupDefault.getByRole('button', { name: '默认启动模型组', exact: true })).toBeVisible()
+  await expect(startupDefault.locator('[data-provider-logo="codex"]')).toBeVisible()
+  await expect(page.getByTestId('model-binding-configuration-select')).toContainText('Team Codex default')
+  await expect(page.getByTestId('model-binding-groups')).toHaveCount(0)
+  await expect(page.getByTestId('model-binding-add-select')).toHaveCount(0)
+  await page.getByTestId('shared-agent-save').click()
+  await expect.poll(() => state.sharedWrites.length).toBe(1)
+  expect(state.sharedWrites[0]).toMatchObject({
+    acpBackend: 'codex',
+    modelBinding: { kind: 'configuration', configurationId: 'team-codex', allConfigurations: true },
+  })
+  expect(state.sharedWrites[0]!.modelBinding).not.toHaveProperty('configurationIds')
+
+  await page.reload()
+  await page.getByTestId('shared-agent-subtab-meta').click()
+  await expect(useAll).toHaveAttribute('aria-checked', 'true')
+  await expect(allGroups.locator('[data-icon="layers"]')).toBeVisible()
+  await expect(allGroups.locator('[data-provider-logo]')).toHaveCount(0)
+  await expect(allGroups.getByTestId('model-binding-inherited-groups')).toHaveCount(0)
+  await expect(allGroups).not.toContainText('Team Codex default')
+  await expect(allGroups).not.toContainText('Team OpenCode')
+  await expect(startupDefault.getByRole('button', { name: '默认启动模型组', exact: true })).toBeVisible()
+  await expect(page.getByTestId('model-binding-configuration-select')).toContainText('Team Codex default')
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 960 })
+    await useAll.scrollIntoViewIfNeeded()
+    await expect(useAll).toBeVisible()
+    const box = await useAll.boundingBox()
+    expect(box!.x).toBeGreaterThanOrEqual(0)
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`agent-all-model-groups-${width}.png`), fullPage: true, animations: 'disabled' })
+  }
+  await page.setViewportSize({ width: 1440, height: 960 })
+
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent('/agents?agent=Solo&studioTab=meta')}`)
+  const inherited = page.getByTestId('agent-inherit-default').getByTestId('model-binding-inherited-summary')
+  await expect(inherited.getByTestId('model-binding-all-summary')).toHaveText('继承所有已配置的模型组')
+  await expect(inherited.locator('[data-icon="layers"]')).toBeVisible()
+  await expect(inherited.locator('[data-provider-logo]')).toHaveCount(0)
+  await expect(inherited).toContainText('默认启动模型组：Team Codex default')
+
+  // A group created after the defaults were saved must be inherited too.
+  state.configurations.push({ id: 'team-later', name: 'Team later model', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: later.id, modelId: later.models[0]!.id }, state: 'active', revision: 1 })
+  await page.goto('/workspace-config.html?view=/dashboard')
+  await page.getByRole('tab', { name: 'Solo', exact: true }).click()
+  const trigger = page.getByTestId('solo-model-select-trigger')
+  await trigger.click()
+  const option = (id: string, modelId: string) => page.getByTestId(`solo-model-option-@group:${JSON.stringify([id, modelId])}`)
+  await expect(option('team-codex', primary.models[0]!.id)).toBeEnabled()
+  await expect(option('team-opencode', additional.models[0]!.id)).toBeEnabled()
+  await expect(option('team-later', later.models[0]!.id)).toBeEnabled()
+  await expect(option('disabled-group', primary.models[0]!.id)).toHaveCount(0)
+  await option('team-later', later.models[0]!.id).click()
+  await expect(trigger).toContainText('Team later model')
+
+  await openDefaults()
+  await useAll.click()
+  await expect(useAll).toHaveAttribute('aria-checked', 'false')
+  await expect(allGroups).toHaveCount(0)
+  await expect(startupDefault).toHaveCount(0)
+  await expect(page.getByTestId('model-binding-groups')).toContainText('Team Codex default')
+  await expect(page.getByTestId('model-binding-add-select')).toBeVisible()
+  await page.getByTestId('shared-agent-save').click()
+  await expect.poll(() => state.sharedWrites.length).toBe(2)
+  expect(state.sharedWrites[1]!.modelBinding).toEqual({ kind: 'configuration', configurationId: 'team-codex' })
+  await page.goto('/workspace-config.html?view=/dashboard')
+  await trigger.click()
+  await expect(page.getByTestId(`solo-model-option-${primary.models[0]!.id}`)).toBeEnabled()
+  await expect(page.getByTestId('solo-model-select-panel').getByRole('option')).toHaveCount(1)
+  await expect(page.getByTestId('solo-model-select-panel')).not.toContainText('Team OpenCode')
+  await expect(page.getByTestId('solo-model-select-panel')).not.toContainText('Team later model')
+})
+
 test('API accounts offer the provider model catalog and persist only the chosen primary and auxiliary models', async ({ page }, testInfo) => {
   const saved = connection('tokenhub-account', 'openai-chat-completions', 'saved/manual-model')
   const primary = { id: 'gpt-5.5', name: 'TokenHub GPT 5.5', source: 'discovered', capabilities: { vision: true, reasoning: true }, input: ['text', 'image'], contextWindow: 256000, reasoningEfforts: ['low', 'high'] }

@@ -1,4 +1,4 @@
-import type { Agent, ModelBinding, SharedAgentConfig } from '@/lib/api/apiTypes'
+import type { Agent, ModelBinding, ModelConfiguration, SharedAgentConfig } from '@/lib/api/apiTypes'
 
 /** Only selectors project inheritance; editing keeps the Agent's local values. */
 export function effectiveModelAgent(agent: Agent, defaults?: SharedAgentConfig): Agent {
@@ -6,9 +6,10 @@ export function effectiveModelAgent(agent: Agent, defaults?: SharedAgentConfig):
 }
 
 /** The default is first in selectors; stored additional-group order is stable. */
-export function boundConfigurationIds(binding?: ModelBinding | null): string[] {
+export function boundConfigurationIds(binding?: ModelBinding | null, configurations: ModelConfiguration[] = []): string[] {
   if (!binding?.configurationId) return []
-  return [...new Set([binding.configurationId, ...(binding.configurationIds || [])].filter(Boolean))]
+  const additional = binding.allConfigurations ? configurations.filter(row => row.state === 'active').map(row => row.id) : binding.configurationIds || []
+  return [...new Set([binding.configurationId, ...additional].filter(Boolean))]
 }
 
 const routePrefix = '@group:'

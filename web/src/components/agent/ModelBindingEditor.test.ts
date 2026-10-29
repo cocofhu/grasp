@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ModelBindingEditor from './ModelBindingEditor.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import type { ModelBinding } from '@/lib/api/api'
+import { invalidateModelCatalog } from '@/lib/api/modelCatalogEvents'
 const mocks = vi.hoisted(() => ({ listCredentials: vi.fn(), listModelConnections: vi.fn(), listModelConfigurations: vi.fn(), listToolCapabilities: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 const key = { id: 'key', name: 'Team key', purpose: 'model_api', configured: true }
@@ -17,7 +18,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.listCredentials.mockResolvedValue({ items: [key] })
   mocks.listModelConnections.mockResolvedValue({ items: [connection] })
-  mocks.listModelConfigurations.mockResolvedValue({ items: [configuration, { ...configuration, id: 'disabled', state: 'disabled' }, { ...configuration, id: 'other', name: 'OpenCode model', backend: 'opencode' }] })
+  mocks.listModelConfigurations.mockResolvedValue({ items: [configuration, { ...configuration, id: 'disabled', name: 'Disabled group', state: 'disabled' }, { ...configuration, id: 'other', name: 'OpenCode model', backend: 'opencode' }] })
   mocks.listToolCapabilities.mockResolvedValue({ items: [{ toolId: 'claude_code', modes: ['connection'], protocols: ['anthropic-messages'], adapterState: 'existing' }] })
 })
 describe('named Agent model selector', () => {
@@ -83,6 +84,87 @@ describe('named Agent model selector', () => {
     expect(w.emitted('selectConfiguration')?.at(-1)?.[0]).toMatchObject({ id: 'other', backend: 'opencode' })
     await w.get('[data-testid="model-binding-remove-other"]').trigger('click')
     expect(w.emitted('update:modelValue')?.at(-1)).toEqual([{ kind: 'configuration', configurationId: 'profile' }])
+    w.unmount()
+  })
+
+  it('uses all model groups without serializing a snapshot and restores manual groups when turned off', async () => {
+    const manual = { kind: 'configuration' as const, configurationId: 'profile', configurationIds: ['profile', 'other'] }
+    const w = setup('', manual); await flushPromises()
+    await w.get('[data-testid="model-binding-all-configurations"]').trigger('click')
+    const all = { kind: 'configuration' as const, configurationId: 'profile', allConfigurations: true }
+    expect(w.emitted('update:modelValue')?.at(-1)).toEqual([all])
+    expect(w.emitted('selectConfiguration')).toBeUndefined()
+    await w.setProps({ modelValue: all })
+    expect(w.get('[data-testid="model-binding-all-configurations"]').attributes('aria-checked')).toBe('true')
+    expect(w.find('[data-testid="model-binding-add-select"]').exists()).toBe(false)
+    expect(w.find('[data-testid="model-binding-remove-other"]').exists()).toBe(false)
+    const groups = w.get('[data-testid="model-binding-all-groups"]')
+    expect(groups.get('[data-icon="layers"]').exists()).toBe(true)
+    expect(groups.find('[data-provider-logo]').exists()).toBe(false)
+    expect(groups.text()).not.toContain('Team Claude')
+    expect(groups.text()).not.toContain('OpenCode model')
+    expect(groups.text()).not.toContain('Disabled group')
+    expect(w.find('[data-testid="model-binding-groups"]').exists()).toBe(false)
+    const startupDefault = w.get('[data-testid="model-binding-startup-default"]')
+    expect(startupDefault.text()).toContain('Default startup model group')
+    expect(startupDefault.get('[data-testid="model-binding-configuration-select"]').text()).toContain('Team Claude')
+    expect(startupDefault.find('[data-provider-logo="claude"]').exists()).toBe(true)
+    expect(w.get('[data-testid="model-binding-all-hint"]').text()).toContain('included automatically')
+    // A broken additional group must not prevent using the valid explicit default.
+    expect(w.emitted('validity')?.at(-1)).toEqual([true])
+    await w.get('[data-testid="model-binding-all-configurations"]').trigger('click')
+    expect(w.emitted('update:modelValue')?.at(-1)).toEqual([manual])
+    await w.setProps({ modelValue: manual })
+    expect(w.find('[data-testid="model-binding-remove-other"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('keeps all mode and the explicit default when the default or catalog changes', async () => {
+    const all = { kind: 'configuration' as const, configurationId: 'profile', allConfigurations: true }
+    const w = setup('', all); await flushPromises()
+    expect(w.get('[data-testid="model-binding-all-groups"]').text()).not.toContain('OpenCode model')
+    mocks.listModelConfigurations.mockResolvedValue({ items: [configuration, { ...configuration, id: 'new', name: 'New review group' }] })
+    invalidateModelCatalog(); await flushPromises()
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    expect(w.get('[data-testid="model-binding-all-groups"]').text()).not.toContain('New review group')
+    expect(w.get('[data-testid="model-binding-all-groups"]').text()).not.toContain('OpenCode model')
+    expect(w.get('[data-testid="model-binding-startup-default"]').get('[data-testid="model-binding-configuration-select"]').text()).toContain('Team Claude')
+    w.getComponent(AppSelect).vm.$emit('update:modelValue', 'new')
+    const updated = { ...all, configurationId: 'new' }
+    expect(w.emitted('update:modelValue')?.at(-1)).toEqual([updated])
+    expect(w.emitted('selectConfiguration')?.at(-1)?.[0]).toMatchObject({ id: 'new' })
+    await w.setProps({ modelValue: updated })
+    expect(w.get('[data-testid="model-binding-startup-default"]').get('[data-testid="model-binding-configuration-select"]').text()).toContain('New review group')
+    await w.get('[data-testid="model-binding-all-configurations"]').trigger('click')
+    expect(w.emitted('update:modelValue')?.at(-1)).toEqual([{ kind: 'configuration', configurationId: 'new' }])
+    w.unmount()
+  })
+
+  it('summarizes inherited all mode without exposing editing controls', async () => {
+    const w = setup('', { kind: 'configuration', configurationId: 'profile', allConfigurations: true })
+    await w.setProps({ summary: true, summarySource: 'Agent defaults' }); await flushPromises()
+    const summary = w.get('[data-testid="model-binding-inherited-summary"]')
+    expect(w.get('[data-testid="model-binding-all-summary"]').text()).toBe('Inherit all configured model groups')
+    expect(summary.get('[data-icon="layers"]').exists()).toBe(true)
+    expect(summary.find('[data-provider-logo]').exists()).toBe(false)
+    expect(summary.text()).toContain('Default startup model group')
+    expect(summary.text()).toContain('Team Claude')
+    expect(w.text()).toContain('Agent defaults')
+    expect(w.find('[role="switch"]').exists()).toBe(false)
+    expect(w.findComponent(AppSelect).exists()).toBe(false)
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('requires an explicit default and supports read-only or restricted forms', async () => {
+    const w = setup(''); await flushPromises()
+    expect(w.get('[data-testid="model-binding-all-configurations"]').attributes('disabled')).toBeDefined()
+    await w.get('[data-testid="model-binding-all-configurations"]').trigger('click')
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    await w.setProps({ modelValue: { kind: 'configuration', configurationId: 'profile' }, disabled: true })
+    expect(w.get('[data-testid="model-binding-all-configurations"]').attributes('disabled')).toBeDefined()
+    await w.setProps({ disabled: false, allowAllConfigurations: false })
+    expect(w.find('[data-testid="model-binding-all-configurations"]').exists()).toBe(false)
     w.unmount()
   })
 
