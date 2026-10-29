@@ -1,10 +1,20 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 import pages from '@/locales/en/pages.json'
 import ChatMessageMeta from './ChatMessageMeta.vue'
 import type { ChatMessageMetadata } from '@/lib/shared/types'
+
+const componentStyle = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ChatMessageMeta.vue'), 'utf8').match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
+function styleRule(selector: string) {
+  const found = componentStyle.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`))
+  expect(found, selector).toBeTruthy()
+  return found![0]
+}
 
 const mounted: Array<{ unmount(): void }> = []
 function setup(metadata?: ChatMessageMetadata) {
@@ -73,6 +83,92 @@ describe('shared reply information', () => {
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
     await flushPromises()
     expect(panel()).toBeNull()
+  })
+
+  it('renders right-side values at 12px regular interface sans with tabular digits', async () => {
+    expect(componentStyle).not.toMatch(/ui-monospace|SF Mono|Menlo|Consolas|monospace/)
+    const mono = styleRule('.chat-info-mono')
+    const totalRule = styleRule('.chat-info-token-total')
+    const valueRule = styleRule('.chat-info-rows dd')
+    const partRule = styleRule('.chat-info-token-part dd')
+    for (const rule of [mono, totalRule, valueRule, partRule]) {
+      expect(rule).toMatch(/font-family:\s*inherit/)
+      expect(rule).toMatch(/font-size:\s*12px/)
+      expect(rule).toMatch(/font-weight:\s*400/)
+    }
+    expect(mono).toMatch(/font-variant-numeric:\s*tabular-nums/)
+    expect(totalRule).toMatch(/font-variant-numeric:\s*tabular-nums/)
+    expect(partRule).not.toMatch(/font-variant-numeric/)
+    expect(totalRule).not.toMatch(/15px|font-weight:\s*600/)
+    const titleRule = styleRule('.chat-info-title')
+    expect(titleRule).toMatch(/font-size:\s*13px/)
+    expect(titleRule).toMatch(/font-weight:\s*600/)
+    const tokenLabel = styleRule('.chat-info-token-head strong')
+    expect(tokenLabel).toMatch(/font-size:\s*12px/)
+    expect(tokenLabel).toMatch(/font-weight:\s*600/)
+
+    const sheet = document.createElement('style')
+    sheet.textContent = componentStyle
+    document.head.appendChild(sheet)
+    const previousFont = document.body.style.fontFamily
+    document.body.style.fontFamily = 'Inter, ui-sans-serif, system-ui, sans-serif'
+    const wrapper = setup({ createdAt: '2026-10-28T08:00:25Z', durationMs: 25000, execution: { agentName: 'Original Agent', backend: 'opencode', modelId: 'original/model', reasoningEffort: 'high' }, usage })
+    try {
+      await wrapper.get('button').trigger('pointerenter', { pointerType: 'mouse' })
+      await flushPromises()
+      const root = panel()
+      expect(root).not.toBeNull()
+      const panelFont = getComputedStyle(root!).fontFamily
+      expect(panelFont).toContain('Inter')
+      expect(panelFont.toLowerCase()).not.toMatch(/monospace|menlo|consolas/)
+      const weight = (value: string) => value === 'normal' ? '400' : value
+      const right = [
+        '[data-info-row="time"] dd',
+        '[data-info-row="agent"] dd',
+        '[data-info-row="tool"] dd',
+        '[data-info-row="model"] dd',
+        '[data-info-row="effort"] dd',
+        '[data-info-row="duration"] dd',
+        '[data-testid="chat-message-token-total"]',
+        '[data-token-row="input"] dd',
+        '[data-token-row="output"] dd',
+        '[data-token-row="cacheRead"] dd',
+        '[data-token-row="cacheWrite"] dd',
+      ]
+      for (const selector of right) {
+        const style = getComputedStyle(root!.querySelector(selector)!)
+        expect(style.fontSize, selector).toBe('12px')
+        expect(weight(style.fontWeight), selector).toBe('400')
+        expect(style.fontFamily, selector).toBe(panelFont)
+        expect(style.fontFamily.toLowerCase(), selector).not.toMatch(/monospace|menlo|consolas/)
+      }
+      for (const selector of ['[data-info-row="time"] dd', '[data-info-row="duration"] dd', '[data-testid="chat-message-token-total"]', '[data-token-row="input"] dd', '[data-token-row="cacheWrite"] dd']) {
+        expect(getComputedStyle(root!.querySelector(selector)!).fontVariantNumeric, selector).toContain('tabular-nums')
+      }
+      const title = getComputedStyle(root!.querySelector('.chat-info-title')!)
+      expect(title.fontSize).toBe('13px')
+      expect(weight(title.fontWeight)).toBe('600')
+      expect(getComputedStyle(root!.querySelector('[data-info-row="agent"] dt')!).fontSize).toBe('12px')
+      const tokens = getComputedStyle(root!.querySelector('.chat-info-token-head strong')!)
+      expect(tokens.fontSize).toBe('12px')
+      expect(weight(tokens.fontWeight)).toBe('600')
+
+      await wrapper.setProps({ metadata: {} })
+      await flushPromises()
+      const missingTotal = getComputedStyle(root!.querySelector('[data-testid="chat-message-token-total"]')!)
+      expect(root!.querySelector('[data-testid="chat-message-token-total"]')?.textContent).toBe('Not reported')
+      expect(missingTotal.fontSize).toBe('12px')
+      expect(weight(missingTotal.fontWeight)).toBe('400')
+      expect(missingTotal.fontFamily).toBe(getComputedStyle(root!).fontFamily)
+      const missingModel = getComputedStyle(root!.querySelector('[data-info-row="model"] dd')!)
+      expect(root!.querySelector('[data-info-row="model"] dd')?.textContent).toBe('Not reported')
+      expect(missingModel.fontSize).toBe('12px')
+      expect(weight(missingModel.fontWeight)).toBe('400')
+      expect(missingModel.fontFamily).toBe(getComputedStyle(root!).fontFamily)
+    } finally {
+      sheet.remove()
+      document.body.style.fontFamily = previousFont
+    }
   })
 
   it('keeps token attribution and custom unknown labels distinct from an observed execution model', async () => {
