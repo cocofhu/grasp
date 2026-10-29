@@ -343,7 +343,7 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                 </template>
 
                 <template v-else-if="currentStep.id === 'model'">
-                  <ModelBindingEditor :key="resourcesVersion" v-model="modelBinding" @validity="modelValid = $event" />
+                  <ModelBindingEditor :key="resourcesVersion" v-model="modelBinding" :allow-all-configurations="false" @validity="modelValid = $event" />
                   <AppButton class="mt-3" size="sm" variant="ghost" icon="plus" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton>
                 </template>
 
