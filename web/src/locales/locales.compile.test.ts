@@ -1,7 +1,7 @@
 /**
  * Golden lock: every locale message string must compile under
  * @intlify/message-compiler (vue-i18n message format). Catches unescaped
- * `{`/`}` that surface in production as `SyntaxError: 7` (UNTERMINATED_CLOSING_BRACE).
+ * interpolation syntax that would fail when a translation is rendered.
  *
  * plan coverage: g2.1 / g2.2 / g2.3 — full zh-CN+en JSON scan via `npm test`.
  */
@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { baseCompile } from '@intlify/message-compiler'
+import { baseCompile, CompileErrorCodes } from '@intlify/message-compiler'
 
 const LOCALES_ROOT = dirname(fileURLToPath(import.meta.url))
 const LOCALE_DIRS = ['zh-CN', 'en'] as const
@@ -60,7 +60,7 @@ describe('locale message-compiler scan', () => {
       '在 Agent Studio 添加 memory-store（${GRASP_MEMORY_URL/TOKEN}）。PM 咨询沙箱会自动注入。'
     const codes = compileErrors(bad)
     expect(codes.length).toBeGreaterThan(0)
-    expect(codes).toContain(7) // UNTERMINATED_CLOSING_BRACE
+    expect(codes).toContain(CompileErrorCodes.INVALID_TOKEN_IN_PLACEHOLDER)
   })
 
   it('compiles every zh-CN and en locale string without CompileError', () => {

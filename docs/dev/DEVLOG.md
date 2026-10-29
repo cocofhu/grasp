@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-29（PR #1041 的 Vue I18n 安全审计修复）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`web/package{,-lock}.json`、`web/src/locales/locales.compile.test.ts`、`CHANGELOG.md`。
+- 做了什么：Vue I18n 与 Intlify 依赖从 10.0.8 升级到受支持的 11.4.16，保留现有 Composition API 配置。编译探针使用导出的 `INVALID_TOKEN_IN_PLACEHOLDER` 常量，继续要求非法占位符被拒绝；全量语言包编译与环境变量字面量的中英文实际渲染断言保持完整。
+- 为什么：原确认竞态修复的 server、Go race 与汇总检查已通过，但独立安全流程因 [GHSA-83rm-6c8r-g728](https://github.com/advisories/GHSA-83rm-6c8r-g728) 拒绝 `vue-i18n 10.0.8`。上游 v10 已停止支持，修复从 11.4.14 开始。升级后编译器对原非法表达式报告更精确的错误类型，旧数字 7 断言需同步到具名错误常量。
+- 如何验证：官方源完整 npm audit 报告所有严重级别均为 0，`audit:check` 通过；没有新增审计例外。Web 542 文件、5,833 项单测通过，Lines 91.75%；完整关键路径浏览器 260 项通过，覆盖真实中英文界面。lint、vue-tsc、生产构建及品牌、安全上下文断言通过，根目录 actionlint 和 error-level shellcheck 通过；更新同一 PR 后继续核对最新提交的远端 CI。
+
 ### 2026-10-29（确认早于暂停时保留当前节点）
 
 - 日期：2026-10-29（Asia/Hong_Kong）。
