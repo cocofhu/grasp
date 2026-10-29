@@ -304,6 +304,9 @@
       "dirty": "未保存更改",
       "saving": "保存中…",
       "error": "保存失败",
+      "fresh": "已是最新配置",
+      "savedAck": "已保存",
+      "failedAck": "保存失败：{error}",
       "saveFirstFailed": "请先保存更改"
     },
     "leave": {
