@@ -10,8 +10,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// selectSoloConfiguration selects one of an effective Agent's explicitly bound
-// groups. It only constructs the execution view; the saved Agent is untouched.
+// selectSoloConfiguration selects an effective Agent's bound group or, when
+// enabled, any active saved group. It only constructs the execution view;
+// the saved Agent is untouched.
 func selectSoloConfiguration(db *gorm.DB, agent Agent, configurationID string) (Agent, error) {
 	if err := modelrouting.ValidateConfigurationReference(agent.ModelBinding); err != nil {
 		return Agent{}, soloErr(http.StatusBadRequest, "model_not_in_configuration", "%s", err)

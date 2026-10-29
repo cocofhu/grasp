@@ -36,6 +36,12 @@ func (e *Engine) normalizeLaunchModel(graph *models.Graph, launch LaunchChoice) 
 	if !ok {
 		return LaunchChoice{}, fmt.Errorf("节点 %s 的 Agent %s 不存在", node.ID, profile)
 	}
+	// Launch choices follow the same workspace model inheritance as execution.
+	if catalog, ok := e.skills.(interface {
+		Effective(services.Agent) services.Agent
+	}); ok {
+		agent = catalog.Effective(agent)
+	}
 	cfg, modelID, effort, _, err := services.AcceptVisitSelection(e.db, agent, launch.ConfigurationID, launch.ModelID, launch.ReasoningEffort)
 	if err != nil {
 		return LaunchChoice{}, err

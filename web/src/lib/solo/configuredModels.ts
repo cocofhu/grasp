@@ -31,8 +31,8 @@ export function boundModelChoices(input: {
   connectionReady?: boolean
   credentials?: CredentialItem[]
 }): ConfiguredModelChoice[] {
-  const ids = boundConfigurationIds(input.binding)
-  const grouped = ids.length > 1
+  const ids = boundConfigurationIds(input.binding, input.configurations)
+  const grouped = !!input.binding?.allConfigurations || ids.length > 1
   return ids.flatMap(id => {
     const configuration = input.configurations.find(row => row.id === id && row.state === 'active')
     if (!configuration) return []

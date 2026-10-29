@@ -54,3 +54,35 @@ func TestAgentConfigurationSetHasExplicitDefaultAndStableOrder(t *testing.T) {
 		t.Fatal("concrete group accepted nested configuration references")
 	}
 }
+
+func TestAllConfigurationsKeepsExplicitDefaultAndConcreteRoutes(t *testing.T) {
+	ref := &Binding{Kind: "configuration", ConfigurationID: "daily", AllConfigurations: true}
+	if err := ValidateConfigurationReference(ref); err != nil {
+		t.Fatal(err)
+	}
+	if !HasConfiguration(ref, "added-later") || HasConfiguration(ref, "") || HasConfiguration(ref, " padded ") {
+		t.Fatal("all configurations must authorize nonempty saved IDs")
+	}
+	if got := ConfigurationIDs(ref); !reflect.DeepEqual(got, []string{"daily"}) {
+		t.Fatalf("dynamic alternatives replaced the explicit default: %v", got)
+	}
+	for _, bad := range []Binding{
+		{Kind: "configuration", AllConfigurations: true},
+		{Kind: "configuration", ConfigurationID: "daily", AllConfigurations: true, ConfigurationIDs: []string{"daily"}},
+		{Kind: "platform", ConfigurationID: "daily", AllConfigurations: true},
+	} {
+		if err := ValidateConfigurationReference(&bad); err == nil {
+			t.Fatalf("invalid all-configurations reference accepted: %+v", bad)
+		}
+	}
+	if HasConfiguration(&Binding{Kind: "platform", AllConfigurations: true}, "other") {
+		t.Fatal("concrete binding granted configuration access")
+	}
+	if err := ValidateBinding("cursor", Binding{Kind: "platform", CredentialID: "key", AllConfigurations: true}, nil); err == nil {
+		t.Fatal("concrete binding accepted allConfigurations")
+	}
+	selected := ConfigurationReference("added-later")
+	if selected.AllConfigurations || len(selected.ConfigurationIDs) != 0 || selected.ConfigurationID != "added-later" {
+		t.Fatal("execution reference retained dynamic alternatives")
+	}
+}
