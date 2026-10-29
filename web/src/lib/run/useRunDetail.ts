@@ -375,56 +375,38 @@ async function refreshArtifactPreviewState(
   }
 }
 
-/** Busy-safe REST patch: chrome, plus a longer idle transcript (plan g1.3). */
-let chromePatchInflight = false
+/** Read-only REST catch-up for chrome, persisted dialogue and session authority. */
 async function patchRunChrome() {
-  const id = runId.value
-  const generation = runLoadGeneration
-  if (chromePatchInflight || runLoading.value || loadError.value) return
-  if (isClearlyInvalidRunRouteId(id)) return
-  chromePatchInflight = true
-  try {
-    const snapshot = await api.getRun(id)
-    if (generation !== runLoadGeneration || runId.value !== id) return
-    const prev = run.value
-    // Keeps in-progress streaming bubbles; adopts clarify once the server copy
-    // is more complete and the session is no longer ahead (plan g1.3).
-    const merged = applyPersistedClarify(prev, snapshot)
-    const artsChanged =
-      artifactsListFingerprint(prev.artifacts) !== artifactsListFingerprint(merged.artifacts)
-    const chromeChanged = runChromeFingerprint(prev) !== runChromeFingerprint(merged)
-    const turnsChanged = clarifyTurnsFingerprint(prev) !== clarifyTurnsFingerprint(merged)
-    if (chromeChanged || turnsChanged) {
-      run.value = merged
+  if (runLoading.value || loadError.value) return
+  return wsApi.requestReviewRecovery(async (_checkpoint, signal) => {
+    const id = runId.value
+    const generation = runLoadGeneration
+    if (runLoading.value || loadError.value || !id || isClearlyInvalidRunRouteId(id)) return
+    const reviewCapture = wsApi.captureReviewSnapshot()
+    try {
+      const incoming = await api.getRun(id, { signal })
+      if (signal.aborted || generation !== runLoadGeneration || runId.value !== id) return
+      const snapshot = wsApi.reconcileReviewSnapshot(incoming, reviewCapture, false)
+      if (!snapshot) return
+      const prev = run.value
+      // Keeps in-progress streaming bubbles; adopts clarify once the server copy
+      // is more complete and the session is no longer ahead (plan g1.3).
+      const merged = applyPersistedClarify(prev, snapshot)
+      const artsChanged =
+        artifactsListFingerprint(prev.artifacts) !== artifactsListFingerprint(merged.artifacts)
+      const chromeChanged = runChromeFingerprint(prev) !== runChromeFingerprint(merged)
+      const turnsChanged = clarifyTurnsFingerprint(prev) !== clarifyTurnsFingerprint(merged)
+      if (chromeChanged || turnsChanged) {
+        run.value = merged
+      }
+      if (artsChanged) {
+        void refreshArtifactPreviewState(undefined, generation)
+      }
+      await wsApi.recoverDialogueProgress(signal)
+    } catch {
+      /* keep last known chrome */
     }
-    // Only after a longer transcript landed. A chrome-only patch must not
-    // clear liveBusy while the chat is still streaming (plan g1.3).
-    if (turnsChanged) releaseIdleClarifyBusy(prev, merged, snapshot)
-    if (artsChanged) {
-      void refreshArtifactPreviewState(undefined, generation)
-    }
-  } catch {
-    /* keep last known chrome */
-  } finally {
-    chromePatchInflight = false
-  }
-}
-
-/** Drop stale live-busy only for nodes whose persisted transcript was just adopted. */
-function releaseIdleClarifyBusy(prev: Run, merged: Run, snapshot: Run) {
-  const sessions = snapshot.reactSessions
-  if (!sessions) return
-  for (const [nodeId, snap] of Object.entries(sessions)) {
-    if (snap?.busy) continue
-    const before = clarifySlotFor(prev, nodeId)
-    const after = clarifySlotFor(merged, nodeId)
-    if (!after || before === after) continue
-    liveBusy[nodeId] = false
-  }
-}
-
-function clarifySlotFor(run: Run, nodeId: string) {
-  return run.clarifyByNode?.[nodeId] || (run.clarify?.nodeId === nodeId ? run.clarify : undefined)
+  })
 }
 
 const wsApi = useRunDetailWs({
@@ -490,16 +472,30 @@ function classifyRunLoadError(err: unknown): RunLoadErrorKind {
 }
 
 async function fetchRunData(generation = ++runLoadGeneration): Promise<true | RunLoadErrorKind> {
+  let result: true | RunLoadErrorKind = 'network_or_server'
+  await wsApi.requestReviewRecovery(async (_checkpoint, signal) => {
+    const next = await readRunData(generation, signal)
+    if (!signal.aborted) result = next
+  })
+  return result
+}
+
+async function readRunData(generation: number, signal: AbortSignal): Promise<true | RunLoadErrorKind> {
   const id = runId.value
-  const isCurrent = () => generation === runLoadGeneration && runId.value === id
-  if (isClearlyInvalidRunRouteId(id)) {
+  const isCurrent = () => !signal.aborted && generation === runLoadGeneration && runId.value === id
+  if (!isCurrent()) return true
+  if (!id || isClearlyInvalidRunRouteId(id)) {
     return 'not_found'
   }
+  const reviewCapture = wsApi.captureReviewSnapshot()
   try {
-    const r = await api.getRun(id)
+    const incoming = await api.getRun(id, { signal })
     if (!isCurrent()) return true
+    const r = wsApi.reconcileReviewSnapshot(incoming, reviewCapture, false)
+    if (!r) return true
     if (run.value.id === r.id && runSnapshotUnchanged(run.value, r)) {
       await loadUnknownModelDisplayName()
+      if (isCurrent()) await wsApi.recoverDialogueProgress(signal)
       return true
     }
     // Turn fingerprint changed, but a local stream is still ahead of a shorter
@@ -513,6 +509,7 @@ async function fetchRunData(generation = ++runLoadGeneration): Promise<true | Ru
         run.value = merged
       }
       await loadUnknownModelDisplayName()
+      if (isCurrent()) await wsApi.recoverDialogueProgress(signal)
       return true
     }
     run.value = r
@@ -533,6 +530,7 @@ async function fetchRunData(generation = ++runLoadGeneration): Promise<true | Ru
     if (!isCurrent()) return true
     // Refresh-resume: wait for dialogue surfaces to mount, then project busy/queue.
     void projectDialogueAfterLoad(r, isCurrent)
+    await wsApi.recoverDialogueProgress(signal)
     return true
   } catch (err) {
     if (!isCurrent()) return true

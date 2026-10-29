@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { deliverOrBufferDialogueAcp } from './dialogueAcpDelivery'
 import { runBusySeedRetry } from './busySeedRetry'
 import { createWsReconnectController } from './wsReconnect'
+import { createReviewSessionState } from '@/lib/chat/reviewSessionState'
 import type { AcpEvent } from '@/lib/shared/types'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -171,8 +172,12 @@ describe('stream resume acceptance (g5.2 three surfaces × four scenarios)', () 
     const acpRun = runWs.slice(runWs.indexOf("if (m.type === 'acp' && m.nodeId)"))
     const acpRunBlock = acpRun.slice(0, 600)
     expect(acpRunBlock).not.toMatch(/if \(!m\.busy\) busySeedRetry\.stop\(\)/)
-    expect(runWs).toMatch(/dialoguePlatformBusy/)
-    expect(runWs).toMatch(/Platform session busy only/)
+    const state = createReviewSessionState()
+    state.acceptServer({ event: 'turn_begin', nodeId: 'chat', sessionGeneration: 1, revision: 1 })
+    state.noteAcp('chat')
+    expect(state.session('chat')?.busy).toBe(true)
+    state.acceptServer({ event: 'queue_state', nodeId: 'chat', sessionGeneration: 1, revision: 2, busy: false })
+    expect(state.session('chat')?.busy).toBe(false)
   })
 
   it('g1.3: ReviewComposer exposes isSessionBusy', () => {

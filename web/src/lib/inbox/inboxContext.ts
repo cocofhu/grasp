@@ -11,6 +11,8 @@ export type GateInboxContext = {
   nodeRuns?: Record<string, NodeRun>
   /** Authoritative busy/queue for Inbox gate hard-refresh resume. */
   reactSessions?: Run['reactSessions']
+  /** Generation captured before the session map, including removed FIFOs. */
+  reviewSessionGeneration?: number
   /** Gate DTO subset (reactUpstream / sessionAlive) for hot-revise seed. */
   gate?: Gate
 }
@@ -30,6 +32,8 @@ export type ClarifyInboxContext = {
   nodeRuns?: Record<string, NodeRun>
   /** Authoritative busy/queue for refresh-resume (parity with Run detail). */
   reactSessions?: Run['reactSessions']
+  /** Generation captured before the session map, including removed FIFOs. */
+  reviewSessionGeneration?: number
   clarify: {
     nodeId: string
     iteration?: number
@@ -83,6 +87,7 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
       nodeRuns: ctx.nodeRuns ?? {},
       nodeExecutions: ctx.nodeExecutions,
       reactSessions: ctx.reactSessions,
+      reviewSessionGeneration: ctx.reviewSessionGeneration,
       gate: ctx.gate,
     }
   }
@@ -96,6 +101,7 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
     nodeRuns: ctx.nodeRuns ?? {},
     nodeExecutions: ctx.nodeExecutions,
     reactSessions: ctx.reactSessions,
+    reviewSessionGeneration: ctx.reviewSessionGeneration,
     clarifyByNode: {
       [ctx.clarify.nodeId]: {
         nodeId: ctx.clarify.nodeId,

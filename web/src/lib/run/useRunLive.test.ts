@@ -6,6 +6,7 @@ import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import pages from '@/locales/zh-CN/pages.json'
 import common from '@/locales/zh-CN/common.json'
+import { REVIEW_RECOVERY_TIMEOUT_MS } from '@/lib/chat/reviewSessionState'
 
 const mocks = vi.hoisted(() => ({ getRun: vi.fn(), nodeEvents: vi.fn(), takeoverNode: vi.fn(), runConversationChain: vi.fn(), reactReply: vi.fn(), show: vi.fn(), error: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: { getRun: mocks.getRun, nodeEvents: mocks.nodeEvents, takeoverNode: mocks.takeoverNode, runConversationChain: mocks.runConversationChain, reactReply: mocks.reactReply, runEventsWsUrl: (id: string) => `ws://test/api/runs/${id}/events` } }))
@@ -102,6 +103,38 @@ afterEach(() => {
 })
 
 describe('useRunLive (auto node → Stop → chat)', () => {
+  it('shows a retryable error when its initial GET ignores abort and rejects the late response after retry', async () => {
+    vi.useFakeTimers()
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    const initial = deferred()
+    let signal!: AbortSignal
+    mocks.getRun.mockImplementationOnce((_id: string, options: { signal: AbortSignal }) => {
+      signal = options.signal
+      return initial.promise
+    })
+    const { live, wrapper } = await setup()
+    try {
+      expect(live().loading.value).toBe(true)
+      await vi.advanceTimersByTimeAsync(REVIEW_RECOVERY_TIMEOUT_MS)
+      await flushPromises()
+      expect(signal.aborted).toBe(true)
+      expect(live().loading.value).toBe(false)
+      expect(live().loadError.value).toBe(true)
+      expect(live().run.value).toBeNull()
+      await live().reload()
+      await flushPromises()
+      expect(live().run.value?.id).toBe('r1')
+      expect(live().loadError.value).toBe(false)
+      initial.resolve({ id: 'r1', status: 'succeeded' })
+      await flushPromises()
+      expect(live().run.value?.status).toBe('running')
+      expect(live().ended.value).toBe(false)
+    } finally {
+      wrapper.unmount()
+      hidden.mockRestore()
+    }
+  })
+
   it('does not replay another run cached output when a reused route changes to the same node', async () => {
     const bRun = deferred()
     const aEvents = [{ kind: 'message', text: 'only A output' }]
@@ -483,6 +516,258 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(live().ended.value).toBe(true)
     expect(replace).toHaveBeenCalledTimes(1)
     expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=accept')
+    wrapper.unmount()
+  })
+
+  it('polls the authoritative queue and persisted reply when turn_done was lost on a healthy socket', async () => {
+    vi.useFakeTimers()
+    const { live, surface, wrapper } = await setup()
+    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
+    mocks.getRun.mockResolvedValue(chatRun)
+    await live().reload()
+    await flushPromises()
+    const socket = FakeSocket.last!
+    socket.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', sessionGeneration: 3, revision: 1,
+      item: { id: 'q1', text: '继续' } })
+    socket.send({ type: 'review', event: 'queue_state', nodeId: 'accept', sessionGeneration: 3, revision: 2,
+      busy: true, waiting: 1, items: [{ id: 'q2', text: '你应该只修改前端' }] })
+    const finalTurns = [{ role: 'agent', text: '已经完成两条消息', at: '2026-10-29T01:00:00Z' }]
+    mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 3,
+      clarifyByNode: { accept: { nodeId: 'accept', turns: finalTurns, done: false } } })
+    vi.mocked(surface.applyReviewFrame).mockClear()
+    await vi.advanceTimersByTimeAsync(LIVE_POLL_MS)
+    await flushPromises()
+    expect(surface.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'queue_state', nodeId: 'accept', busy: false, waiting: 0, items: [],
+    }))
+    expect(live().turns.value).toEqual(finalTurns)
+    expect(FakeSocket.last).toBe(socket)
+    vi.mocked(surface.applyReviewFrame).mockClear()
+    socket.send({ type: 'review', event: 'queue_state', nodeId: 'accept', sessionGeneration: 3, revision: 3,
+      busy: true, waiting: 1, items: [{ id: 'q2', text: 'retired queue' }] })
+    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps a newer streamed turn when an older poll response arrives late', async () => {
+    const { live, surface, wrapper } = await setup()
+    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
+    mocks.getRun.mockResolvedValue(chatRun)
+    await live().reload()
+    await flushPromises()
+    const response = deferred()
+    mocks.getRun.mockReturnValueOnce(response.promise)
+    const pending = live().reload()
+    const socket = FakeSocket.last!
+    socket.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', sessionGeneration: 4, revision: 1,
+      item: { id: 'new', text: 'new request' } })
+    const events = [{ kind: 'message', text: 'new request output', t: 0 }]
+    socket.send({ type: 'acp', nodeId: 'accept', events, busy: true })
+    vi.mocked(surface.applyReviewFrame).mockClear()
+    response.resolve({ ...chatRun, reviewSessionGeneration: 3, reactSessions: {} })
+    await pending
+    await flushPromises()
+    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
+    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(events, 'accept')
+    wrapper.unmount()
+  })
+
+  it('recovers missing ACP progress while the socket stays open and the same queued turn stays busy', async () => {
+    vi.useFakeTimers()
+    const { live, surface, wrapper } = await setup()
+    const session = { sessionGeneration: 4, revision: 3, busy: true, waiting: 1,
+      items: [{ id: 'queued', text: '只修改前端' }], activeItem: { id: 'active', text: '继续实现' } }
+    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy'),
+      reviewSessionGeneration: 4, reactSessions: { accept: session } }
+    mocks.getRun.mockResolvedValue(chatRun)
+    await live().reload()
+    await flushPromises()
+    const socket = FakeSocket.last!
+    socket.send({ type: 'review', event: 'queue_state', nodeId: 'accept', ...session })
+    socket.send({ type: 'acp', nodeId: 'accept', events: [{ kind: 'thought', t: 0, text: '开始实现' }], busy: true })
+    const recovered = [{ kind: 'thought', t: 0, text: '开始实现，已经写完组件并准备验证' }]
+    mocks.nodeEvents.mockResolvedValue({ events: recovered, live: true })
+    vi.mocked(surface.applyAcpEvents).mockClear()
+    await vi.advanceTimersByTimeAsync(LIVE_POLL_MS)
+    await flushPromises()
+    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(recovered, 'accept')
+    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
+      event: 'queue_state', busy: true, waiting: 1, activeItem: session.activeItem,
+    }))
+    expect(FakeSocket.last).toBe(socket)
+    wrapper.unmount()
+  })
+
+  it.each(['empty', 'liveness', 'unchanged-content'])('recovers live chat across %s ACP observations during REST reads', async noise => {
+    const { live, surface, wrapper } = await setup()
+    try {
+      const session = { sessionGeneration: 4, revision: 3, busy: true, waiting: 1,
+        items: [{ id: 'queued', text: 'next' }], activeItem: { id: 'active', text: 'current' } }
+      const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy'),
+        reviewSessionGeneration: 4, reactSessions: { accept: session } }
+      mocks.getRun.mockResolvedValue(chatRun)
+      await live().reload()
+      await flushPromises()
+      const socket = FakeSocket.last!
+      const known = [{ kind: 'thought', t: 0, text: 'existing output' }]
+      const heartbeat = { kind: 'liveness', t: 3, liveness: { active: true, cpuMs: 20, ioBytes: 40, idleSec: 0, limitSec: 300 } }
+      const observations = noise === 'empty' ? [] : noise === 'liveness' ? [heartbeat]
+        : [{ ...known[0], t: 3 }, heartbeat]
+      socket.send({ type: 'review', event: 'queue_state', nodeId: 'accept', ...session })
+      socket.send({ type: 'acp', nodeId: 'accept', events: known, busy: true })
+      const runRead = deferred()
+      const eventRead = deferred()
+      mocks.getRun.mockReturnValueOnce(runRead.promise)
+      mocks.nodeEvents.mockReturnValueOnce(eventRead.promise)
+      const pending = live().reload()
+      socket.send({ type: 'acp', nodeId: 'accept', events: observations, busy: true })
+      runRead.resolve(chatRun)
+      await flushPromises()
+      socket.send({ type: 'acp', nodeId: 'accept', events: observations, busy: true })
+      const recovered = [{ kind: 'message', t: 2, text: 'recovered after missed push' }]
+      eventRead.resolve({ events: recovered, live: true })
+      await pending
+      await flushPromises()
+      expect(surface.applyAcpEvents).toHaveBeenCalledWith(recovered, 'accept')
+      expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ busy: true, waiting: 1 }))
+
+      const finalRead = deferred()
+      mocks.getRun.mockReturnValueOnce(finalRead.promise)
+      const completion = live().reload()
+      socket.send({ type: 'acp', nodeId: 'accept', events: observations, busy: false })
+      finalRead.resolve({ ...chatRun, reactSessions: {} })
+      await completion
+      expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ busy: false, waiting: 0, items: [] }))
+      expect(FakeSocket.last).toBe(socket)
+    } finally { wrapper.unmount() }
+  })
+
+  it('recovers missed automatic-node tool output on normal polling without a reconnect', async () => {
+    const original = [{ kind: 'thought', t: 0, text: 'checking the repository' }]
+    mocks.nodeEvents.mockResolvedValue({ events: original, live: true })
+    const { live, surface, wrapper } = await setup()
+    try {
+      const socket = FakeSocket.last!
+      socket.send({ type: 'acp', nodeId: 'impl', events: original, busy: true })
+      const recovered = [{ kind: 'timeline', t: 1, parts: [{ kind: 'tool', title: 'Shell', status: 'in_progress', output: 'recovered output' }] }]
+      mocks.nodeEvents.mockResolvedValueOnce({ events: recovered, live: true })
+      vi.mocked(surface.applyAcpEvents).mockClear()
+      await live().reload()
+      await flushPromises()
+      expect(surface.applyAcpEvents).toHaveBeenCalledWith(recovered, 'impl')
+      expect(FakeSocket.last).toBe(socket)
+      expect(live().mode.value).toBe('observe')
+    } finally { wrapper.unmount() }
+  })
+
+  it('keeps newer observed ACP when it overtakes either the run poll or its content read', async () => {
+    const { live, surface, wrapper } = await setup()
+    try {
+      const socket = FakeSocket.last!
+      const duringRunRead = [{ kind: 'message', t: 1, text: 'new output while polling run' }]
+      const runRead = deferred()
+      mocks.getRun.mockReturnValueOnce(runRead.promise)
+      const before = mocks.nodeEvents.mock.calls.length
+      const poll = live().reload()
+      socket.send({ type: 'acp', nodeId: 'impl', events: duringRunRead, busy: true })
+      runRead.resolve(autoRun)
+      await poll
+      expect(mocks.nodeEvents.mock.calls.length).toBe(before)
+      const contentRead = deferred()
+      mocks.nodeEvents.mockReturnValueOnce(contentRead.promise)
+      const recovery = live().reload()
+      await flushPromises()
+      const duringContentRead = [{ kind: 'message', t: 2, text: 'new output while reading content' }]
+      socket.send({ type: 'acp', nodeId: 'impl', events: duringContentRead, busy: true })
+      contentRead.resolve({ events: [{ kind: 'message', t: 0, text: 'obsolete content snapshot' }], live: true })
+      await recovery
+      expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(duringContentRead, 'impl')
+    } finally { wrapper.unmount() }
+  })
+
+  it('discards a content recovery response after newer live ACP reaches the same active item', async () => {
+    const { live, surface, wrapper } = await setup()
+    const session = { sessionGeneration: 4, revision: 3, busy: true, waiting: 0, items: [], activeItem: { id: 'active' } }
+    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy'),
+      reviewSessionGeneration: 4, reactSessions: { accept: session } }
+    mocks.getRun.mockResolvedValue(chatRun)
+    await live().reload()
+    await flushPromises()
+    const socket = FakeSocket.last!
+    socket.send({ type: 'review', event: 'queue_state', nodeId: 'accept', ...session })
+    const response = deferred()
+    mocks.nodeEvents.mockReturnValueOnce(response.promise)
+    const pending = live().reload()
+    await flushPromises()
+    const newer = [{ kind: 'message', t: 0, text: 'newest live output' }]
+    socket.send({ type: 'acp', nodeId: 'accept', events: newer, busy: true })
+    response.resolve({ events: [{ kind: 'message', t: 0, text: 'stale recovery output' }], live: true })
+    await pending
+    await flushPromises()
+    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(newer, 'accept')
+    wrapper.unmount()
+  })
+
+  it('rejects an older queue revision returned by polling and accepts its newer completion', async () => {
+    const { live, surface, wrapper } = await setup()
+    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
+    mocks.getRun.mockResolvedValue(chatRun)
+    await live().reload()
+    await flushPromises()
+    FakeSocket.last!.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', sessionGeneration: 4, revision: 3,
+      item: { id: 'new', text: 'new request' } })
+    vi.mocked(surface.applyReviewFrame).mockClear()
+    mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 4,
+      reactSessions: { accept: { sessionGeneration: 4, revision: 1, busy: false, waiting: 0, items: [] } } })
+    await live().reload()
+    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
+    mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 4,
+      reactSessions: { accept: { sessionGeneration: 4, revision: 4, busy: false, waiting: 0, items: [] } } })
+    await live().reload()
+    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
+      event: 'queue_state', sessionGeneration: 4, revision: 4, busy: false,
+    }))
+    wrapper.unmount()
+  })
+
+  it('preserves streaming received after a continued chat poll began', async () => {
+    const { live, surface, wrapper } = await setup()
+    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
+    mocks.getRun.mockResolvedValue(chatRun)
+    await live().reload()
+    await flushPromises()
+    const socket = FakeSocket.last!
+    socket.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', sessionGeneration: 4, revision: 1,
+      item: { id: 'new', text: 'new request' } })
+    const response = deferred()
+    mocks.getRun.mockReturnValueOnce(response.promise)
+    const pending = live().reload()
+    const events = [{ kind: 'message', text: 'new streamed output', t: 0 }]
+    socket.send({ type: 'acp', nodeId: 'accept', events, busy: true })
+    vi.mocked(surface.applyReviewFrame).mockClear()
+    response.resolve({ ...chatRun, reviewSessionGeneration: 4, reactSessions: {} })
+    await pending
+    await flushPromises()
+    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
+    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(events, 'accept')
+    wrapper.unmount()
+  })
+
+  it('does not infer idle from a poll watermark older than the active session', async () => {
+    const { live, surface, wrapper } = await setup()
+    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
+    mocks.getRun.mockResolvedValue(chatRun)
+    await live().reload()
+    await flushPromises()
+    FakeSocket.last!.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', sessionGeneration: 8, revision: 1,
+      item: { id: 'new', text: 'new request' } })
+    vi.mocked(surface.applyReviewFrame).mockClear()
+    mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 7, reactSessions: {} })
+    await live().reload()
+    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
+    mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 8, reactSessions: {} })
+    await live().reload()
+    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'queue_state', busy: false }))
     wrapper.unmount()
   })
 

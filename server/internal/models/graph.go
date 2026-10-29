@@ -137,12 +137,50 @@ type AcpPart struct {
 	DurationMs int64 `json:"durationMs,omitempty"`
 }
 
-// PartsForReply returns the steps of the last timeline event (the row the
+// eventsForReply leaves full-session snapshot history out of a message's
+// projection. Runtime snapshots keep older turns outside prompt markers;
+// retain this reply's brackets, including any hidden follow-up prompts. A
+// combined wrap-up/reply can have old snapshot events between those brackets.
+// Legacy snapshots without prompt markers end each turn with a timeline.
+// Projection must not change the full Events saved for the node transcript.
+func eventsForReply(events []AcpEvent) []AcpEvent {
+	for i, event := range events {
+		if event.Kind == AcpKindPrompt {
+			var reply []AcpEvent
+			open := false
+			for _, current := range events[i:] {
+				if current.Kind == AcpKindPrompt {
+					open = true
+				}
+				if open {
+					reply = append(reply, current)
+				}
+				if current.Kind == AcpKindTurnEnd {
+					open = false
+				}
+			}
+			return reply
+		}
+	}
+	seenTimeline := false
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Kind == AcpKindTimeline {
+			if seenTimeline {
+				return events[i+1:]
+			}
+			seenTimeline = true
+		}
+	}
+	return events
+}
+
+// PartsForReply returns the steps of this reply's last timeline event (the row the
 // tools and narration of a persisted agent turn belong to), or nil. When the
 // stored reply text differs from the streamed narration (the engine cleaned
 // it), message steps are replaced by one final step carrying text, so the
 // timeline never shows what the reply itself dropped.
 func PartsForReply(events []AcpEvent, text string) []AcpPart {
+	events = eventsForReply(events)
 	var parts []AcpPart
 	for i := len(events) - 1; i >= 0; i-- {
 		if events[i].Kind == AcpKindTimeline {

@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Workflow chat synchronization:** clarification, run details and live conversations share one message processing loop for queue state and recovery. Missed startup, output and completion updates recover without a page reload, while newer replies, queued messages and drafts stay intact. Tool-first replies and growing tool details remain visible across watchdog updates and healthy automatic observations. ACP bursts preserve their output, errors and completion notifications. Saved tool summaries count only their own reply; empty replies no longer reuse earlier timeline steps. Late send, confirmation and artifact responses stay with their originating visit when switching workflows.
+
 - **Page Harness icon:** CoCo now uses the Grasp character with gentle sway, breathing, blinking and hover feedback, respecting reduced-motion preferences.
 
 - **All configured model groups:** Agent defaults and individual Agents have a switch to inherit every active model group, including groups added later. This mode uses a generic group icon and a short explanation; the default startup group is selected separately. Inheriting Agents follow this setting, including workflow launch validation, and unavailable groups still require valid authorization before use.

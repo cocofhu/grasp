@@ -7,6 +7,7 @@ import { flushPromises } from '@vue/test-utils'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { InboxItem, Run } from '@/lib/shared/types'
+import { REVIEW_RECOVERY_TIMEOUT_MS } from '@/lib/chat/reviewSessionState'
 
 const shared = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -158,6 +159,7 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import * as recentRuns from '@/lib/run/recentRuns'
+import { beginBoot, bootKey, clearBootRecords, markBootLive } from '@/lib/run/bootRecord'
 import { TYPING_IDLE_MS, useGatesInbox } from './useGatesInbox'
 import { CLARIFY_CAPS, IMPLEMENT_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
 
@@ -257,6 +259,7 @@ async function withInbox(path = '/inbox') {
 
 describe('useGatesInbox actions', () => {
   beforeEach(() => {
+    clearBootRecords()
     vi.stubGlobal('WebSocket', MockWebSocket)
     MockWebSocket.instances = []
     for (const fn of Object.values(mocks)) (fn as ReturnType<typeof vi.fn>).mockReset()
@@ -486,6 +489,214 @@ describe('useGatesInbox actions', () => {
     expect(inbox.clarifyConfirmError.value).toBe('react already done')
     expect(releaseConfirmPending).toHaveBeenCalledTimes(2)
     app.unmount()
+  })
+
+  it.each((['other-run', 'return-to-a'] as const).flatMap(destination =>
+    (['success', 'failure', 'visit-ended'] as const).map(outcome => ({ destination, outcome }))))('ignores an old ordinary $outcome after visiting $destination', async ({ destination, outcome }) => {
+    const a = clarifyItem('run-a'), b = clarifyItem('run-b')
+    mocks.listGates.mockResolvedValue({ items: [a, b], total: 2 })
+    const { inbox, app } = await withInbox('/inbox?run=run-a&node=react')
+    try {
+      inbox.active.value = b
+      await flushPromises()
+      inbox.active.value = a
+      await flushPromises()
+      let resolve!: (value: unknown) => void
+      let reject!: (error: Error) => void
+      mocks.reactReply.mockImplementationOnce(() => new Promise((done, fail) => { resolve = done; reject = fail }))
+      const old = inbox.onClarifySend('only the first A visit owns this message')
+      inbox.active.value = b
+      await flushPromises()
+      if (destination === 'return-to-a') {
+        inbox.active.value = a
+        await flushPromises()
+      }
+      shared.draft.value = 'current visit private draft'
+      const restoreUnsentQueued = vi.fn(() => { shared.draft.value = 'WRONG OLD MESSAGE\n' + shared.draft.value })
+      const discardLastQueued = vi.fn()
+      inbox.reviewChatRef.value = { restoreUnsentQueued, discardLastQueued }
+      inbox.onAppPreviewStagedPick({ selector: '#current', url: '', tagName: 'BUTTON' })
+      inbox.clarifyConfirmError.value = 'current visit error'
+      mocks.patchItemReplying.mockClear()
+      mocks.toastWarn.mockClear()
+      if (outcome === 'success') resolve({})
+      else reject(Object.assign(new Error('old A response'), outcome === 'visit-ended'
+        ? { status: 409, code: 'clarify_visit_ended', autoRetryOnResume: false } : {}))
+      await old
+      await flushPromises()
+      expect(restoreUnsentQueued).not.toHaveBeenCalled()
+      expect(discardLastQueued).not.toHaveBeenCalled()
+      expect(shared.draft.value).toBe('current visit private draft')
+      expect(inbox.clarifyConfirmError.value).toBe('current visit error')
+      expect(inbox.mergeStagedAppPreviewPick([])).toEqual([expect.objectContaining({ selector: '#current' })])
+      expect(mocks.patchItemReplying).not.toHaveBeenCalled()
+      expect(mocks.toastWarn).not.toHaveBeenCalled()
+    } finally { app.unmount() }
+  })
+
+  it.each(['success', 'failure'] as const)('an old force %s cannot settle or release another visit confirmation', async outcome => {
+    const a = clarifyItem('run-a'), b = clarifyItem('run-b')
+    mocks.listGates.mockResolvedValue({ items: [a, b], total: 2 })
+    const { inbox, app } = await withInbox('/inbox?run=run-a&node=react')
+    try {
+      let resolveOld!: (value: unknown) => void
+      let rejectOld!: (error: Error) => void
+      let resolveCurrent!: (value: unknown) => void
+      mocks.reactReply.mockImplementationOnce(() => new Promise((done, fail) => { resolveOld = done; rejectOld = fail }))
+        .mockImplementationOnce(() => new Promise(done => { resolveCurrent = done }))
+      const old = inbox.onClarifySend('finish A', [], [], true)
+      inbox.active.value = b
+      await flushPromises()
+      const settleConfirmedTurn = vi.fn(), releaseConfirmPending = vi.fn()
+      inbox.reviewChatRef.value = { settleConfirmedTurn, releaseConfirmPending }
+      const current = inbox.onClarifySend('finish B', [], [], true)
+      const handoff = inbox.activeHandoff.value
+      const reads = mocks.inboxContext.mock.calls.length
+      mocks.refresh.mockClear()
+      if (outcome === 'success') resolveOld({})
+      else rejectOld(new Error('old A force failed'))
+      await old
+      await flushPromises()
+      expect(inbox.active.value?.runId).toBe(b.runId)
+      expect(inbox.activeHandoff.value).toBe(handoff)
+      expect(inbox.activeHandoff.value?.phase).toBe('pending')
+      expect(inbox.clarifyConfirmError.value).toBeNull()
+      expect(settleConfirmedTurn).not.toHaveBeenCalled()
+      expect(releaseConfirmPending).not.toHaveBeenCalled()
+      expect(mocks.refresh).not.toHaveBeenCalled()
+      expect(mocks.inboxContext.mock.calls.length).toBe(reads)
+      expect(inbox.isProcessingIntent(a)).toBe(false)
+      expect(inbox.isProcessingIntent(b)).toBe(true)
+      resolveCurrent({})
+      await current
+      expect(settleConfirmedTurn).toHaveBeenCalledOnce()
+    } finally { app.unmount() }
+  })
+
+  it.each(['success', 'failure'] as const)('rejects an old force %s after A to B to A returns to the same node', async outcome => {
+    const a = clarifyItem('run-a'), b = clarifyItem('run-b')
+    mocks.listGates.mockResolvedValue({ items: [a, b], total: 2 })
+    const { inbox, app } = await withInbox('/inbox?run=run-a&node=react')
+    try {
+      let resolve!: (value: unknown) => void
+      let reject!: (error: Error) => void
+      mocks.reactReply.mockImplementationOnce(() => new Promise((done, fail) => { resolve = done; reject = fail }))
+      const old = inbox.onClarifySend('finish old A', [], [], true)
+      inbox.active.value = b
+      await flushPromises()
+      inbox.active.value = a
+      await flushPromises()
+      const settleConfirmedTurn = vi.fn(), releaseConfirmPending = vi.fn()
+      inbox.reviewChatRef.value = { settleConfirmedTurn, releaseConfirmPending }
+      shared.draft.value = 'new A visit draft'
+      mocks.refresh.mockClear()
+      if (outcome === 'success') resolve({})
+      else reject(new Error('old A force failed'))
+      await old
+      expect(settleConfirmedTurn).not.toHaveBeenCalled()
+      expect(releaseConfirmPending).not.toHaveBeenCalled()
+      expect(inbox.clarifyConfirmError.value).toBeNull()
+      expect(shared.draft.value).toBe('new A visit draft')
+      expect(mocks.refresh).not.toHaveBeenCalled()
+      expect(inbox.isProcessingIntent(a)).toBe(false)
+      expect(inbox.isProcessedTriple(a)).toBe(outcome === 'success')
+    } finally { app.unmount() }
+  })
+
+  it.each(['other-run', 'return-to-a'] as const)('a failed departed confirmation does not leave a pending handoff after visiting %s', async destination => {
+    const a = clarifyItem('run-a'), b = clarifyItem('run-b')
+    mocks.listGates.mockResolvedValue({ items: [a, b], total: 2 })
+    const { inbox, app } = await withInbox('/inbox?run=run-a&node=react')
+    try {
+      let reject!: (error: Error) => void
+      mocks.reactReply.mockImplementationOnce(() => new Promise((_done, fail) => { reject = fail }))
+      const old = inbox.onClarifySend('finish old A', [], [], true)
+      expect(inbox.activeHandoff.value?.phase).toBe('pending')
+      inbox.active.value = b
+      await flushPromises()
+      if (destination === 'return-to-a') {
+        inbox.active.value = a
+        await flushPromises()
+      }
+      const socket = MockWebSocket.instances.at(-1)
+      reject(new Error('old confirmation rejected'))
+      await old
+      expect(MockWebSocket.instances.at(-1)).toBe(socket)
+      expect(inbox.active.value?.runId).toBe(destination === 'return-to-a' ? a.runId : b.runId)
+      expect(inbox.isProcessingIntent(a)).toBe(false)
+      expect(inbox.isProcessedTriple(a)).toBe(false)
+      inbox.selectItem(a)
+      await flushPromises()
+      expect(inbox.activeHandoff.value).toBeNull()
+      const before = mocks.reactReply.mock.calls.length
+      await inbox.onClarifySend('A can continue after its confirmation failed')
+      expect(mocks.reactReply.mock.calls.length).toBe(before + 1)
+      expect(mocks.reactReply.mock.calls.at(-1)?.slice(0, 3)).toEqual([a.runId, a.nodeId, 'A can continue after its confirmation failed'])
+    } finally { app.unmount() }
+  })
+
+  it.each(['same-run-successor', 'follow'] as const)('drops a force handoff after leaving during its %s chain read', async mode => {
+    const a = clarifyItem('run-a'), b = clarifyItem('run-b')
+    const successor = clarifyItem('run-a', { nodeId: 'next' })
+    mocks.listGates.mockResolvedValue({ items: [a, b], total: 2 })
+    const { inbox, app } = await withInbox('/inbox?run=run-a&node=react')
+    try {
+      let readStarted = false
+      let finishChain!: (value: unknown) => void
+      mocks.listGates.mockResolvedValue({ items: mode === 'follow' ? [b] : [successor, b], total: 2 })
+      mocks.runConversationChain.mockImplementationOnce(() => {
+        readStarted = true
+        return new Promise(resolve => { finishChain = resolve })
+      })
+      const old = inbox.onClarifySend('finish A', [], [], true)
+      await flushPromises()
+      expect(readStarted).toBe(true)
+      inbox.active.value = b
+      await flushPromises()
+      const socket = MockWebSocket.instances.at(-1)
+      shared.draft.value = 'B handoff must stay private'
+      finishChain({ runId: a.runId, status: 'running', segments: [], currentNode: null })
+      await old
+      await flushPromises()
+      expect(inbox.active.value?.runId).toBe(b.runId)
+      expect(shared.draft.value).toBe('B handoff must stay private')
+      expect(MockWebSocket.instances.at(-1)).toBe(socket)
+      expect(inbox.activeFollowTail.value).toBeNull()
+      expect(inbox.isProcessingIntent(a)).toBe(false)
+    } finally { app.unmount() }
+  })
+
+  it.each(['success', 'failure'] as const)('an old confirmation %s cannot clear a replacement confirmation for the same A node', async outcome => {
+    const a = clarifyItem('run-a'), b = clarifyItem('run-b')
+    mocks.listGates.mockResolvedValue({ items: [a, b], total: 2 })
+    const { inbox, app } = await withInbox('/inbox?run=run-a&node=react')
+    try {
+      let rejectOld!: (error: Error) => void
+      let resolveOld!: (value: unknown) => void
+      let resolveCurrent!: (value: unknown) => void
+      mocks.reactReply.mockImplementationOnce(() => new Promise((done, fail) => { resolveOld = done; rejectOld = fail }))
+        .mockImplementationOnce(() => new Promise(done => { resolveCurrent = done }))
+      const old = inbox.onClarifySend('finish old A', [], [], true)
+      inbox.active.value = b
+      await flushPromises()
+      // Simulate the original intent being retired before a replacement visit
+      // confirms the same node. Its old HTTP response can still arrive late.
+      inbox.rollbackProcessingIntent(a)
+      inbox.selectItem(a)
+      await flushPromises()
+      const current = inbox.onClarifySend('finish replacement A', [], [], true)
+      const handoff = inbox.activeHandoff.value
+      expect(handoff?.phase).toBe('pending')
+      if (outcome === 'success') resolveOld({})
+      else rejectOld(new Error('old A request failed'))
+      await old
+      expect(inbox.activeHandoff.value).toBe(handoff)
+      expect(inbox.isProcessingIntent(a)).toBe(true)
+      expect(inbox.isProcessedTriple(a)).toBe(true)
+      resolveCurrent({})
+      await current
+      expect(inbox.isProcessingIntent(a)).toBe(false)
+    } finally { app.unmount() }
   })
 
   it('an ordinary reply refused during confirm does not show react already done', async () => {
@@ -1173,6 +1384,118 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
+  it('retains the current context latch when an aborted owner releases late', async () => {
+    const { inbox, app } = await withInbox()
+    const triple = 'run-chat:react:1'
+    const old = inbox.acquireInboxContextSignal(triple)!
+    inbox.abortInboxContext(triple)
+    const current = inbox.acquireInboxContextSignal(triple)!
+    inbox.releaseInboxContextSignal(triple, old)
+    expect(inbox.acquireInboxContextSignal(triple)).toBeNull()
+    expect(current.aborted).toBe(false)
+    inbox.releaseInboxContextSignal(triple, current)
+    expect(inbox.acquireInboxContextSignal(triple)).toBeInstanceOf(AbortSignal)
+    app.unmount()
+  })
+
+  it('retries a hung heartbeat context after its deadline and keeps the retry latch when the old read returns', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    vi.useFakeTimers()
+    try {
+      const socket = MockWebSocket.instances.at(-1)!
+      socket.open()
+      const session = { sessionGeneration: 4, revision: 2, busy: true, waiting: 0,
+        items: [], activeItem: { id: 'active', text: 'continue' } }
+      socket.message({ type: 'review', event: 'queue_state', nodeId: 'react', ...session })
+      const context = { run: contextRun('run-chat', { reviewSessionGeneration: 4, reactSessions: { react: session } }) }
+      let oldSignal!: AbortSignal
+      let finishOld!: (value: unknown) => void
+      let finishRetry!: (value: unknown) => void
+      mocks.inboxContext.mockImplementationOnce((_runId, _nodeId, _iteration, options: { signal: AbortSignal }) => {
+        oldSignal = options.signal
+        return new Promise(resolve => { finishOld = resolve })
+      }).mockImplementationOnce(() => new Promise(resolve => { finishRetry = resolve }))
+      const before = mocks.inboxContext.mock.calls.length
+      socket.message({ type: 'heartbeat' })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(REVIEW_RECOVERY_TIMEOUT_MS / 2)
+      socket.message({ type: 'heartbeat' })
+      await vi.advanceTimersByTimeAsync(REVIEW_RECOVERY_TIMEOUT_MS / 2)
+      await flushPromises()
+      expect(oldSignal.aborted).toBe(true)
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 2)
+      expect(inbox.clarifyLiveBusy.value).toBe(true)
+      expect(MockWebSocket.instances.at(-1)).toBe(socket)
+      finishOld(context)
+      await flushPromises()
+      expect(inbox.acquireInboxContextSignal('run-chat:react:1')).toBeNull()
+      finishRetry(context)
+      await flushPromises()
+      expect(inbox.clarifyLiveBusy.value).toBe(true)
+    } finally {
+      app.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('releases an initial context that ignores abort and retries without applying its late result', async () => {
+    const { inbox, app } = await withInbox()
+    vi.useFakeTimers()
+    try {
+      let signal!: AbortSignal
+      let finishOld!: (value: unknown) => void
+      mocks.inboxContext.mockImplementationOnce((_runId, _nodeId, _iteration, options: { signal: AbortSignal }) => {
+        signal = options.signal
+        return new Promise(resolve => { finishOld = resolve })
+      })
+      const initial = inbox.loadActiveRun(true)
+      await flushPromises()
+      expect(inbox.activeRunLoading.value).toBe(true)
+      await vi.advanceTimersByTimeAsync(REVIEW_RECOVERY_TIMEOUT_MS)
+      await flushPromises()
+      expect(signal.aborted).toBe(true)
+      expect(inbox.activeRunLoading.value).toBe(false)
+      expect(inbox.activeRunLoadError.value).toBe(true)
+      await initial
+      await inbox.retryActiveRun()
+      const current = inbox.activeRun.value
+      expect(current?.id).toBe('run-gate')
+      expect(inbox.activeRunLoadError.value).toBe(false)
+      finishOld({ run: contextRun('run-gate', { title: 'obsolete initial context' }) })
+      await flushPromises()
+      expect(inbox.activeRun.value).toBe(current)
+      expect(inbox.activeRunLoading.value).toBe(false)
+    } finally {
+      app.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the new selection loading when its cancelled predecessor finishes cleanup', async () => {
+    const { inbox, app } = await withInbox()
+    vi.useFakeTimers()
+    try {
+      let finishCurrent!: (value: unknown) => void
+      mocks.inboxContext.mockImplementationOnce(() => new Promise(() => {}))
+        .mockImplementationOnce(() => new Promise(resolve => { finishCurrent = resolve }))
+      const previous = inbox.loadActiveRun(true)
+      inbox.active.value = inbox.listItems.value[1]!
+      await flushPromises()
+      await previous
+      expect(inbox.active.value?.runId).toBe('run-chat')
+      expect(inbox.activeRunLoading.value).toBe(true)
+      finishCurrent({ run: contextRun('run-chat') })
+      await flushPromises()
+      expect(inbox.activeRun.value?.id).toBe('run-chat')
+      expect(inbox.activeRunLoading.value).toBe(false)
+    } finally {
+      app.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('loads active context, reports hard-load errors and ignores soft failures', async () => {
     const { inbox, app } = await withInbox()
     await inbox.loadActiveRun(true)
@@ -1193,6 +1516,30 @@ describe('useGatesInbox actions', () => {
     expect(inbox.activeRun.value).toBeNull()
     await inbox.softRefreshActiveRun()
     app.unmount()
+  })
+
+  it('does not let a delayed soft refresh replace a newer live turn', async () => {
+    const { inbox, app } = await withInbox()
+    try {
+      inbox.active.value = inbox.listItems.value[1]!
+      await flushPromises()
+      const socket = MockWebSocket.instances.at(-1)!
+      socket.open()
+      socket.message({ type: 'review', event: 'turn_begin', nodeId: 'react',
+        sessionGeneration: 4, revision: 1, item: { id: 'first', text: 'first reply' } })
+      let release: (value: unknown) => void = () => {}
+      mocks.inboxContext.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+      const refresh = inbox.softRefreshActiveRun()
+      await flushPromises()
+      socket.message({ type: 'review', event: 'turn_begin', nodeId: 'react',
+        sessionGeneration: 4, revision: 2, item: { id: 'newest', text: 'new reply' } })
+      const current = inbox.activeRun.value
+      release({ run: contextRun('run-chat', { title: 'stale completed snapshot',
+        reviewSessionGeneration: 4, reactSessions: {} }) })
+      await refresh
+      expect(inbox.activeRun.value).toBe(current)
+      expect(inbox.clarifyLiveBusy.value).toBe(true)
+    } finally { app.unmount() }
   })
 
   it('keeps one trailing refresh when turn_done arrives during an in-flight context load', async () => {
@@ -1595,34 +1942,18 @@ describe('useGatesInbox actions', () => {
     }
   })
 
-  it('retries orphan realign when the context request is blocked or already in flight', async () => {
+  it('reads an orphan snapshot while local busy stays set and retries an in-flight request', async () => {
     const { inbox, app } = await withInbox()
     const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
     inbox.active.value = clarify
     await flushPromises()
-    let sessionBusy = true
-    inbox.reviewChatRef.value = { applyReviewFrame: vi.fn(), isSessionBusy: () => sessionBusy }
+    const applyReviewFrame = vi.fn()
+    inbox.reviewChatRef.value = { applyReviewFrame, isSessionBusy: () => true }
     const before = mocks.inboxContext.mock.calls.length
     vi.useFakeTimers()
     try {
       const socket = MockWebSocket.instances.find((sock) => sock.url.includes('run-chat'))!
       socket.open()
-      socket.message({
-        type: 'review',
-        event: 'queue_state',
-        nodeId: 'react',
-        busy: false,
-        waiting: 0,
-        sandboxBusy: true,
-        sandboxRunningOpId: 'g-sess4c0e-8x8t',
-      })
-      await flushPromises()
-      expect(mocks.inboxContext.mock.calls.length).toBe(before)
-      await vi.advanceTimersByTimeAsync(2000)
-      await flushPromises()
-      expect(mocks.inboxContext.mock.calls.length).toBe(before)
-
-      sessionBusy = false
       const stillBusy = {
         run: contextRun('run-chat', {
           reactSessions: {
@@ -1634,7 +1965,10 @@ describe('useGatesInbox actions', () => {
       mocks.inboxContext.mockImplementationOnce(
         () => new Promise((resolve) => { releaseContext = resolve }),
       )
-      await vi.advanceTimersByTimeAsync(2000)
+      socket.message({
+        type: 'review', event: 'queue_state', nodeId: 'react', busy: false,
+        waiting: 0, sandboxBusy: true, sandboxRunningOpId: 'g-sess4c0e-8x8t',
+      })
       await flushPromises()
       expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
 
@@ -1653,8 +1987,6 @@ describe('useGatesInbox actions', () => {
       await flushPromises()
       expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
 
-      releaseContext(stillBusy)
-      await flushPromises()
       mocks.inboxContext.mockResolvedValueOnce({
         run: contextRun('run-chat', {
           reactSessions: {
@@ -1662,13 +1994,347 @@ describe('useGatesInbox actions', () => {
           },
         }),
       })
-      await vi.advanceTimersByTimeAsync(2000)
+      releaseContext(stillBusy)
       await flushPromises()
       expect(mocks.inboxContext.mock.calls.length).toBe(before + 2)
+      expect(applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
+        event: 'queue_state', busy: false, sandboxBusy: false,
+      }))
     } finally {
       vi.useRealTimers()
       app.unmount()
     }
+  })
+
+  it('reconciles a missed terminal frame on a healthy workflow heartbeat', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const applyReviewFrame = vi.fn(() => true)
+    const applyAcpEvents = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame, applyAcpEvents, isSessionBusy: () => true }
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({
+      type: 'review', event: 'queue_state', nodeId: 'react', sessionGeneration: 4,
+      revision: 2, busy: true, waiting: 1, activeItem: { id: 'running', text: 'first' },
+      items: [{ id: 'next', text: 'second' }],
+    })
+    await flushPromises()
+    const before = mocks.inboxContext.mock.calls.length
+    mocks.inboxContext.mockResolvedValueOnce({ run: contextRun('run-chat', {
+      reviewSessionGeneration: 4,
+      reactSessions: { react: { sessionGeneration: 4, revision: 5, busy: false, waiting: 0, items: [] } },
+    }) })
+    shared.draft.value = 'keep this draft'
+    applyReviewFrame.mockClear()
+    socket.message({ type: 'heartbeat' })
+    await flushPromises()
+    expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+    expect(applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
+      event: 'queue_state', busy: false, waiting: 0, items: [], revision: 5,
+    }))
+    expect(inbox.clarifyLiveBusy.value).toBe(false)
+    expect(shared.draft.value).toBe('keep this draft')
+    expect(applyAcpEvents).not.toHaveBeenCalled()
+    expect(MockWebSocket.instances.at(-1)).toBe(socket)
+    app.unmount()
+  })
+
+  it('keeps a genuinely busy queue intact when heartbeat reconciliation returns it', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const applyReviewFrame = vi.fn(() => true)
+    const applyAcpEvents = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame, applyAcpEvents, isSessionBusy: () => true }
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    const state = {
+      sessionGeneration: 4, revision: 2, busy: true, waiting: 1,
+      activeItem: { id: 'running', text: 'first' }, items: [{ id: 'next', text: 'second' }],
+    }
+    socket.message({ type: 'review', event: 'queue_state', nodeId: 'react', ...state })
+    mocks.inboxContext.mockResolvedValueOnce({ run: contextRun('run-chat', { reactSessions: { react: state } }) })
+    applyReviewFrame.mockClear()
+    socket.message({ type: 'heartbeat' })
+    await flushPromises()
+    expect(applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'queue_state', ...state }))
+    expect(inbox.clarifyLiveBusy.value).toBe(true)
+    expect(applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_done' }))
+    expect(applyAcpEvents).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('recovers missed content while the same turn and its next message remain busy', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const applyReviewFrame = vi.fn(() => true)
+    const applyAcpEvents = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame, applyAcpEvents, isSessionBusy: () => true }
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    const state = {
+      sessionGeneration: 4, revision: 2, busy: true, waiting: 1,
+      activeItem: { id: 'running', text: 'first' }, items: [{ id: 'next', text: 'second' }],
+    }
+    socket.message({ type: 'review', event: 'queue_state', nodeId: 'react', ...state })
+    mocks.inboxContext.mockResolvedValueOnce({ run: contextRun('run-chat', { reactSessions: { react: state } }) })
+    const recovered = [{ kind: 'thought', text: 'The tool finished and this turn is continuing.' }]
+    mocks.nodeEvents.mockResolvedValueOnce({ events: recovered, hasMore: false })
+    socket.message({ type: 'heartbeat' })
+    await flushPromises()
+    expect(applyAcpEvents).toHaveBeenLastCalledWith(recovered, 'react')
+    expect(applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'queue_state', ...state }))
+    expect(inbox.clarifyLiveBusy.value).toBe(true)
+    app.unmount()
+  })
+
+  it.each(['empty', 'liveness', 'unchanged-content'])('recovers output and completion across %s ACP observations', async noise => {
+    const { inbox, app } = await withInbox()
+    try {
+      inbox.active.value = inbox.listItems.value[1]!
+      await flushPromises()
+      const applyReviewFrame = vi.fn(() => true)
+      const applyAcpEvents = vi.fn(() => true)
+      inbox.reviewChatRef.value = { applyReviewFrame, applyAcpEvents, isSessionBusy: () => true }
+      const socket = MockWebSocket.instances.at(-1)!
+      socket.open()
+      const state = { sessionGeneration: 4, revision: 2, busy: true, waiting: 1,
+        activeItem: { id: 'running', text: 'first' }, items: [{ id: 'next', text: 'second' }] }
+      const context = { run: contextRun('run-chat', { reactSessions: { react: state } }) }
+      const known = [{ kind: 'thought', t: 0, text: 'existing output' }]
+      const heartbeat = { kind: 'liveness', t: 3, liveness: { active: true, cpuMs: 20, ioBytes: 40, idleSec: 0, limitSec: 300 } }
+      const observations = noise === 'empty' ? [] : noise === 'liveness' ? [heartbeat]
+        : [{ ...known[0], t: 3 }, heartbeat]
+      socket.message({ type: 'review', event: 'queue_state', nodeId: 'react', ...state })
+      socket.message({ type: 'acp', nodeId: 'react', events: known, busy: true })
+      mocks.inboxContext.mockResolvedValueOnce(context)
+      socket.message({ type: 'heartbeat' })
+      await flushPromises()
+
+      let finishContext!: (value: unknown) => void
+      mocks.inboxContext.mockImplementationOnce(() => new Promise(resolve => { finishContext = resolve }))
+      const recovered = [{ kind: 'message', t: 2, text: 'recovered after lost content notification' }]
+      mocks.nodeEvents.mockResolvedValueOnce({ events: recovered, hasMore: false })
+      socket.message({ type: 'acp', nodeId: 'react', events: observations, busy: true })
+      socket.message({ type: 'heartbeat' })
+      await flushPromises()
+      socket.message({ type: 'acp', nodeId: 'react', events: observations, busy: true })
+      finishContext(context)
+      await flushPromises()
+      expect(applyAcpEvents).toHaveBeenCalledWith(recovered, 'react')
+      expect(inbox.clarifyLiveBusy.value).toBe(true)
+
+      mocks.inboxContext.mockImplementationOnce(() => new Promise(resolve => { finishContext = resolve }))
+      socket.message({ type: 'heartbeat' })
+      await flushPromises()
+      socket.message({ type: 'acp', nodeId: 'react', events: observations, busy: false })
+      finishContext({ run: contextRun('run-chat', { reviewSessionGeneration: 4, reactSessions: {} }) })
+      await flushPromises()
+      expect(inbox.clarifyLiveBusy.value).toBe(false)
+      expect(applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ busy: false, waiting: 0, items: [] }))
+    } finally { app.unmount() }
+  })
+
+  it.each([
+    { events: [{ kind: 'tool_call', t: 1, title: 'read_file', status: 'running' }] },
+    { events: [{ kind: 'timeline', t: 1, parts: [{ kind: 'tool', title: 'Shell', status: 'in_progress', output: 'line one' }] }] },
+  ])('recovers a tool-only reply before any thought or message is available: $events', async ({ events }) => {
+    const { inbox, app } = await withInbox()
+    try {
+      inbox.active.value = inbox.listItems.value[1]!
+      await flushPromises()
+      const applyAcpEvents = vi.fn(() => true)
+      inbox.reviewChatRef.value = { applyReviewFrame: vi.fn(() => true), applyAcpEvents, isSessionBusy: () => true }
+      const socket = MockWebSocket.instances.at(-1)!
+      socket.open()
+      const state = { sessionGeneration: 4, revision: 2, busy: true, waiting: 0, items: [], activeItem: { id: 'tools-first' } }
+      socket.message({ type: 'review', event: 'queue_state', nodeId: 'react', ...state })
+      mocks.inboxContext.mockResolvedValueOnce({ run: contextRun('run-chat', { reactSessions: { react: state } }) })
+      mocks.nodeEvents.mockResolvedValueOnce({ events, hasMore: false })
+      socket.message({ type: 'heartbeat' })
+      await flushPromises()
+      expect(applyAcpEvents).toHaveBeenCalledWith(events, 'react')
+      expect(inbox.clarifyLiveBusy.value).toBe(true)
+    } finally { app.unmount() }
+  })
+
+  it.each([false, true])('leaves a stale startup card despite ACP progress during the context read: %s', async duringAcp => {
+    const { inbox, app } = await withInbox()
+    const image = { data: 'aGVsbG8=', mimeType: 'image/png', name: 'opening.png' }
+    const context = {
+      type: 'clarify', status: 'waiting_human', nodes: [], artifacts: [], nodeExecutions: {},
+      reviewSessionGeneration: 4,
+      reactSessions: { react: {
+        sessionGeneration: 4, revision: 2, busy: true, waiting: 0, items: [],
+        activeItem: { id: 'opening', text: 'inspect the image', images: [image] },
+      } },
+      clarify: { nodeId: 'react', iteration: 1, done: false, label: '澄清',
+        turns: [{ role: 'human', text: 'inspect the image', images: [image], at: '1' }] },
+    }
+    mocks.inboxContext.mockResolvedValue(context)
+    const starting = clarifyItem('run-chat', { state: 'starting', requestedAt: '2026-10-30T00:00:00Z' })
+    inbox.listItems.value = [starting]
+    inbox.active.value = starting
+    await flushPromises()
+    expect(inbox.activeStarting.value).toBe(true)
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    let releaseContext: (value: unknown) => void = () => {}
+    if (duringAcp) mocks.inboxContext.mockImplementationOnce(() => new Promise(resolve => { releaseContext = resolve }))
+    socket.message({ type: 'heartbeat' })
+    await flushPromises()
+    if (duringAcp) {
+      socket.message({ type: 'acp', nodeId: 'react', events: [{ kind: 'thought', text: 'newer live content' }] })
+      releaseContext(context)
+      await flushPromises()
+    }
+    expect(inbox.activeStarting.value).toBe(false)
+    expect(inbox.active.value?.runId).toBe('run-chat')
+    expect(inbox.activeRun.value?.clarifyByNode?.react.turns[0]?.images).toEqual([image])
+    expect(inbox.clarifyLiveBusy.value).toBe(true)
+    mocks.listGates.mockResolvedValueOnce({ items: [starting], total: 1 })
+    await inbox.loadList({ keepActive: true })
+    await flushPromises()
+    expect(inbox.activeStarting.value).toBe(false)
+    expect(inbox.listItems.value[0]?.state).toBe('replying')
+    for (const visit of [{ iteration: 2 }, { requestedAt: '2026-10-30T00:01:00Z' }]) {
+      mocks.listGates.mockResolvedValueOnce({ items: [{ ...starting, ...visit }], total: 1 })
+      await inbox.loadList({ keepActive: true })
+      expect(inbox.listItems.value[0]?.state).toBe('starting')
+    }
+    app.unmount()
+  })
+
+  it('does not copy another run busy state onto a previously ready startup row', async () => {
+    const { inbox, app } = await withInbox()
+    try {
+      const startedAt = '2026-10-30T00:00:00Z'
+      const oldRow = clarifyItem('run-ready', { state: 'starting', requestedAt: startedAt })
+      const current = clarifyItem('run-current')
+      beginBoot(bootKey(oldRow.runId, oldRow.nodeId, 1), startedAt)
+      markBootLive(bootKey(oldRow.runId, oldRow.nodeId, 1))
+      inbox.listItems.value = [oldRow, current]
+      inbox.active.value = current
+      await flushPromises()
+      const socket = MockWebSocket.instances.at(-1)!
+      socket.open()
+      socket.message({ type: 'review', event: 'turn_begin', nodeId: 'react',
+        sessionGeneration: 5, revision: 1, item: { id: 'other-run', text: 'busy in another run' } })
+      mocks.listGates.mockResolvedValueOnce({ items: [oldRow, current], total: 2 })
+      await inbox.loadList({ keepActive: true })
+      expect(inbox.listItems.value.find(row => row.runId === oldRow.runId)?.state).toBeUndefined()
+      expect(inbox.active.value?.runId).toBe(current.runId)
+      expect(inbox.clarifyLiveBusy.value).toBe(true)
+    } finally { app.unmount() }
+  })
+
+  it.each(['acp', 'turn_begin'])('does not overwrite newer %s with a delayed recovery seed', async event => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const applyAcpEvents = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame: vi.fn(() => true), applyAcpEvents, isSessionBusy: () => true }
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    const state = {
+      sessionGeneration: 4, revision: 2, busy: true, waiting: 0,
+      activeItem: { id: 'running', text: 'first' }, items: [],
+    }
+    socket.message({ type: 'review', event: 'queue_state', nodeId: 'react', ...state })
+    mocks.inboxContext.mockResolvedValueOnce({ run: contextRun('run-chat', { reactSessions: { react: state } }) })
+    let releaseEvents: (value: unknown) => void = () => {}
+    mocks.nodeEvents.mockImplementationOnce(() => new Promise(resolve => { releaseEvents = resolve }))
+    socket.message({ type: 'heartbeat' })
+    await flushPromises()
+    expect(mocks.nodeEvents).toHaveBeenCalledWith('run-chat', 'react', expect.objectContaining({ limit: 50, signal: expect.any(AbortSignal) }))
+    socket.message(event === 'acp'
+      ? { type: 'acp', nodeId: 'react', events: [{ kind: 'thought', text: 'newest live thought' }] }
+      : { type: 'review', event: 'turn_begin', nodeId: 'react', sessionGeneration: 4, revision: 3, item: { id: 'next', text: 'second' } })
+    applyAcpEvents.mockClear()
+    releaseEvents({ events: [{ kind: 'thought', text: 'stale recovery thought' }], hasMore: false })
+    await flushPromises()
+    expect(applyAcpEvents).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('drops a heartbeat read that overlaps a newer live turn', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const applyReviewFrame = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame, isSessionBusy: () => true }
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    let releaseContext: (value: unknown) => void = () => {}
+    mocks.inboxContext.mockImplementationOnce(() => new Promise(resolve => { releaseContext = resolve }))
+    const before = mocks.inboxContext.mock.calls.length
+    socket.message({ type: 'heartbeat' })
+    await flushPromises()
+    expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+    socket.message({ type: 'review', event: 'turn_begin', nodeId: 'react', item: { id: 'new-turn', text: 'continue' } })
+    applyReviewFrame.mockClear()
+    const current = inbox.activeRun.value
+    releaseContext({ run: contextRun('run-chat', { reactSessions: {}, title: 'stale result' }) })
+    await flushPromises()
+    expect(inbox.activeRun.value).toBe(current)
+    expect(inbox.clarifyLiveBusy.value).toBe(true)
+    expect(applyReviewFrame).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('releases busy after the finished FIFO disappears from a current heartbeat snapshot', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const applyReviewFrame = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame, isSessionBusy: () => true }
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({
+      type: 'review', event: 'queue_state', nodeId: 'react', sessionGeneration: 4,
+      revision: 2, busy: true, waiting: 1, activeItem: { id: 'running', text: 'first' },
+      items: [{ id: 'next', text: 'second' }],
+    })
+    mocks.inboxContext.mockResolvedValueOnce({ run: contextRun('run-chat', {
+      reviewSessionGeneration: 4, reactSessions: undefined,
+    }) })
+    applyReviewFrame.mockClear()
+    socket.message({ type: 'heartbeat' })
+    await flushPromises()
+    expect(applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
+      event: 'queue_state', busy: false, waiting: 0, items: [],
+    }))
+    expect(inbox.clarifyLiveBusy.value).toBe(false)
+    app.unmount()
+  })
+
+  it.each([
+    { reactSessions: { react: { sessionGeneration: 4, revision: 1, busy: false, waiting: 0, items: [] } } },
+    { reviewSessionGeneration: 3, reactSessions: undefined },
+  ])('ignores a stale idle heartbeat snapshot: %j', async snapshot => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const applyReviewFrame = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame, isSessionBusy: () => true }
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({
+      type: 'review', event: 'queue_state', nodeId: 'react', sessionGeneration: 4,
+      revision: 2, busy: true, waiting: 0, activeItem: { id: 'running', text: 'first' }, items: [],
+    })
+    const current = inbox.activeRun.value
+    mocks.inboxContext.mockResolvedValueOnce({ run: contextRun('run-chat', snapshot) })
+    applyReviewFrame.mockClear()
+    socket.message({ type: 'heartbeat' })
+    await flushPromises()
+    expect(applyReviewFrame).not.toHaveBeenCalled()
+    expect(inbox.activeRun.value).toBe(current)
+    expect(inbox.clarifyLiveBusy.value).toBe(true)
+    app.unmount()
   })
 
   it('patches workflow status and artifact cards without clearing the open transcript', async () => {
@@ -1704,6 +2370,44 @@ describe('useGatesInbox actions', () => {
     expect(inbox.activeRun.value?.clarify?.previewArtifact || inbox.activeRun.value?.clarifyByNode?.react?.previewArtifact).toBe('page.html')
     expect(inbox.clarifyComposerTurns.value.map((t) => t.text)).toEqual(['还在'])
     app.unmount()
+  })
+
+  it.each(['other-run', 'return-to-a'] as const)('does not publish an old artifact read after visiting %s', async destination => {
+    const a = clarifyItem('run-a'), b = clarifyItem('run-b')
+    mocks.listGates.mockResolvedValue({ items: [a, b], total: 2 })
+    const { inbox, app } = await withInbox('/inbox?run=run-a&node=react')
+    try {
+      let finishOld!: (value: unknown) => void
+      mocks.runArtifacts.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+      const old = inbox.patchActiveRunArtifacts()
+      inbox.active.value = b
+      await flushPromises()
+      if (destination === 'return-to-a') {
+        inbox.active.value = a
+        await flushPromises()
+      }
+      const currentId = inbox.active.value!.runId
+      mocks.runArtifacts.mockResolvedValueOnce([{ name: 'current-visit.md' }])
+      await inbox.patchActiveRunArtifacts()
+      finishOld([{ name: 'old-A-private.md' }])
+      await old
+      expect(inbox.activeRun.value?.id).toBe(currentId)
+      expect(inbox.activeRun.value?.artifacts?.map(artifact => artifact.name)).toEqual(['current-visit.md'])
+    } finally { app.unmount() }
+  })
+
+  it('keeps the newest artifact read when two reads finish out of order in one visit', async () => {
+    const { inbox, app } = await withInbox('/inbox?run=run-chat&node=react')
+    try {
+      let finishOld!: (value: unknown) => void
+      mocks.runArtifacts.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+        .mockResolvedValueOnce([{ name: 'newest.md' }])
+      const old = inbox.patchActiveRunArtifacts()
+      await inbox.patchActiveRunArtifacts()
+      finishOld([{ name: 'older.md' }])
+      await old
+      expect(inbox.activeRun.value?.artifacts?.map(artifact => artifact.name)).toEqual(['newest.md'])
+    } finally { app.unmount() }
   })
 
   it('routes focus and visibility peeks and reacts to query deep links', async () => {
@@ -2055,6 +2759,78 @@ describe('useGatesInbox actions', () => {
     const rows = [clarifyItem()]
     inbox.incomingArmed.value = false
     expect(inbox.mergeIncomingGhost(rows)).toBe(rows)
+    app.unmount()
+  })
+
+  it.each(['startup', 'retry', 'orphan'])('rejects a delayed %s seed after switching runs with the same node id', async source => {
+    const { inbox, app } = await withInbox()
+    const first = clarifyItem('run-chat')
+    const second = clarifyItem('run-other')
+    inbox.listItems.value = [first, second]
+    inbox.active.value = first
+    await flushPromises()
+    const applyAcpEvents = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame: vi.fn(() => true), applyAcpEvents }
+    const session = source === 'orphan'
+      ? { busy: false, waiting: 0, items: [], sandboxBusy: true }
+      : { busy: true, waiting: 0, items: [], activeItem: { id: 'first-active', text: 'first task' } }
+    const firstRun = contextRun(first.runId, { reactSessions: { react: session } })
+    inbox.activeRun.value = firstRun
+    let finish!: (value: unknown) => void
+    let oldSignal!: AbortSignal
+    mocks.nodeEvents.mockClear()
+    mocks.nodeEvents.mockImplementationOnce((_run, _node, options: { signal: AbortSignal }) => {
+      oldSignal = options.signal
+      return new Promise(resolve => { finish = resolve })
+    })
+    let projection: Promise<void> | undefined
+    if (source === 'retry') {
+      inbox.restoreReactSessions(firstRun)
+      inbox.startBusySeedRetry(first.runId, first.nodeId)
+    } else {
+      projection = inbox.projectClarifySessionAfterLoad(firstRun)
+    }
+    await flushPromises()
+    expect(mocks.nodeEvents).toHaveBeenCalledTimes(1)
+    expect(oldSignal.aborted).toBe(false)
+
+    inbox.active.value = second
+    await flushPromises()
+    expect(oldSignal.aborted).toBe(true)
+    shared.draft.value = 'second run draft'
+    applyAcpEvents.mockClear()
+    finish({ events: [{ kind: 'thought', text: 'first run private thought' }], hasMore: false })
+    await flushPromises()
+    await projection
+    expect(applyAcpEvents).not.toHaveBeenCalled()
+    expect(inbox.activeRun.value?.id).toBe(second.runId)
+    expect(shared.draft.value).toBe('second run draft')
+    expect(mocks.nodeEvents.mock.calls.some(([run]) => run === second.runId)).toBe(false)
+    app.unmount()
+  })
+
+  it('rejects an earlier seed after A to B to A returns to the same visit key', async () => {
+    const { inbox, app } = await withInbox()
+    const first = clarifyItem('run-chat')
+    const second = clarifyItem('run-other')
+    inbox.listItems.value = [first, second]
+    inbox.active.value = first
+    await flushPromises()
+    const applyAcpEvents = vi.fn(() => true)
+    inbox.reviewChatRef.value = { applyReviewFrame: vi.fn(() => true), applyAcpEvents }
+    let finish!: (value: unknown) => void
+    mocks.nodeEvents.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const seed = inbox.seedClarifyAcpFromNodeEventsOnce(first.runId, first.nodeId)
+    await flushPromises()
+    inbox.active.value = second
+    await flushPromises()
+    inbox.active.value = first
+    await flushPromises()
+    applyAcpEvents.mockClear()
+    finish({ events: [{ kind: 'message', text: 'previous socket reply' }], hasMore: false })
+    await flushPromises()
+    expect(await seed).toBe(false)
+    expect(applyAcpEvents).not.toHaveBeenCalled()
     app.unmount()
   })
 

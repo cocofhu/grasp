@@ -98,7 +98,8 @@ export const runsClient = {
     const init = params?.signal ? { signal: params.signal } : undefined
     return req<PaginatedResponse<Run>>(path, init)
   },
-  getRun: (id: string) => req<Run>(`/runs/${id}`),
+  getRun: (id: string, opts?: { signal?: AbortSignal }) =>
+    req<Run>(`/runs/${id}`, opts?.signal ? { signal: opts.signal } : undefined),
   /**
    * Slim per-node conversation chain of a run, in execution order (#850).
    * Callers fall back to getRun only on 404 (unknown run / older backend).

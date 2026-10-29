@@ -225,63 +225,9 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 	idleC, idleReset, idleStop := newIdleWatch(watch)
 	defer func() { idleStop() }()
 	for {
+		var raw json.RawMessage
 		select {
-		case raw := <-c.eventCh:
-			f := parseTurnFrame(raw)
-			if !c.belongsTo(f, opID) {
-				continue
-			}
-			switch f.Op {
-			case "event":
-				idleReset()
-				if onEvent != nil {
-					onEvent(raw)
-				}
-				done := c.dispatchEventData(raw, result)
-				if onProgress != nil {
-					onProgress(result)
-				}
-				if done {
-					return c.finishTurn(result)
-				}
-			case "liveness":
-				if result.Liveness == nil && idle > 0 {
-					idleStop()
-					watch = bridgeLostAfter
-					idleC, idleReset, idleStop = newIdleWatch(watch)
-				} else {
-					idleReset()
-				}
-				var lv Liveness
-				if json.Unmarshal(f.Data, &lv) == nil {
-					result.Liveness = &lv
-				}
-				if onProgress != nil {
-					onProgress(result)
-				}
-			case "queue_state":
-				if f.Busy != nil {
-					result.Busy, result.BusySet = *f.Busy, true
-				}
-				if onEvent != nil {
-					onEvent(raw)
-				}
-				if onProgress != nil && f.Busy != nil {
-					onProgress(result)
-				}
-			case "error":
-				idleReset()
-				errMsg := parseErrorMessage(raw)
-				c.lg.Warn().Str("err", errMsg).Str("op_id", opID).Msg("acp chat error event")
-				if onEvent != nil {
-					onEvent(raw)
-				}
-				result.appendErrorText(errMsg)
-				if hasContent(result) {
-					return result, nil
-				}
-				return nil, fmt.Errorf("acp error: %s", errMsg)
-			}
+		case raw = <-c.eventCh:
 		case <-idleC:
 			c.lg.Warn().Dur("watch", watch).Bool("heartbeats", result.Liveness != nil).
 				Str("op_id", opID).Msg("acp bridge silent; turn abandoned")
@@ -300,11 +246,74 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 			}
 			return c.abortTurn(result, reason, cause)
 		case <-c.done:
+			// The socket may close immediately after sending prompt_done. The
+			// read loop has now exited, so drain its ordered buffer before
+			// deciding that the turn was interrupted.
+			select {
+			case raw = <-c.eventCh:
+			default:
+				if hasContent(result) {
+					result.Interrupted = true
+					result.appendErrorText("沙箱连接已断开，本轮未完成")
+					return result, nil
+				}
+				return nil, fmt.Errorf("%w during chat", ErrConnClosed)
+			}
+		}
+		f := parseTurnFrame(raw)
+		if !c.belongsTo(f, opID) {
+			continue
+		}
+		switch f.Op {
+		case "event":
+			idleReset()
+			if onEvent != nil {
+				onEvent(raw)
+			}
+			done := c.dispatchEventData(raw, result)
+			if onProgress != nil {
+				onProgress(result)
+			}
+			if done {
+				return c.finishTurn(result)
+			}
+		case "liveness":
+			if result.Liveness == nil && idle > 0 {
+				idleStop()
+				watch = bridgeLostAfter
+				idleC, idleReset, idleStop = newIdleWatch(watch)
+			} else {
+				idleReset()
+			}
+			var lv Liveness
+			if json.Unmarshal(f.Data, &lv) == nil {
+				result.Liveness = &lv
+			}
+			if onProgress != nil {
+				onProgress(result)
+			}
+		case "queue_state":
+			if f.Busy != nil {
+				result.Busy, result.BusySet = *f.Busy, true
+			}
+			if onEvent != nil {
+				onEvent(raw)
+			}
+			if onProgress != nil && f.Busy != nil {
+				onProgress(result)
+			}
+		case "error":
+			idleReset()
+			errMsg := parseErrorMessage(raw)
+			c.lg.Warn().Str("err", errMsg).Str("op_id", opID).Msg("acp chat error event")
+			if onEvent != nil {
+				onEvent(raw)
+			}
+			result.appendErrorText(errMsg)
 			if hasContent(result) {
-				result.Interrupted = true
 				return result, nil
 			}
-			return nil, fmt.Errorf("%w during chat", ErrConnClosed)
+			return nil, fmt.Errorf("acp error: %s", errMsg)
 		}
 	}
 }
