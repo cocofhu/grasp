@@ -54,6 +54,13 @@ function toggleCurrentFavorite() {
 type EditorTab = 'canvas' | 'runs' | 'api'
 const activeTab = ref<EditorTab>('canvas')
 const defaultsOpen = ref(false)
+type DefaultsNotice = { kind: 'saving' | 'saved' | 'fresh' | 'error'; text: string }
+const defaultsNotice = ref<DefaultsNotice | null>(null)
+const defaultsSaving = ref(false)
+function openDefaults() {
+  if (!defaultsSaving.value) defaultsNotice.value = null
+  defaultsOpen.value = true
+}
 const TABS: EditorTab[] = ['canvas', 'runs', 'api']
 const editorTabTrack = ref<HTMLElement | null>(null)
 const editorTabIndicator = ref<Record<string, string>>({ opacity: '0', transform: 'translateX(0)', width: '0px' })
@@ -185,6 +192,28 @@ async function saveNow(silent = false): Promise<boolean> {
   const ok = await saver.save(!wf.id)
   if (!ok && !silent) toast.error(t('canvas.topbar.saveError', { error: saver.error.value || t('canvas.save.error') }))
   return ok
+}
+
+/** Footer feedback for the defaults dialog. No write when the open workflow is already saved. */
+async function saveDefaults() {
+  if (defaultsSaving.value || saver.saving.value) return
+  if (!saver.dirty.value && wf.id) {
+    defaultsNotice.value = { kind: 'fresh', text: t('canvas.save.fresh') }
+    return
+  }
+  defaultsSaving.value = true
+  defaultsNotice.value = { kind: 'saving', text: t('canvas.save.saving') }
+  try {
+    const ok = await saveNow(true)
+    if (!defaultsOpen.value) return
+    if (ok) defaultsNotice.value = { kind: 'saved', text: t('canvas.save.savedAck') }
+    else {
+      const reason = saver.error.value || t('canvas.save.error')
+      defaultsNotice.value = { kind: 'error', text: t('canvas.save.failedAck', { error: reason }) }
+    }
+  } finally {
+    defaultsSaving.value = false
+  }
 }
 
 const saveShortcut = (isMac() ? '⌘' : 'Ctrl+') + 'S'
@@ -749,7 +778,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
       >
         {{ t('canvas.topbar.versions') }}
       </AppButton>
-      <AppButton variant="ghost" size="sm" icon="settings" :disabled="!editable || !!preview" data-testid="editor-defaults" @click="defaultsOpen = true">{{ t('pages.workspaceDefaults.title') }}</AppButton>
+      <AppButton variant="ghost" size="sm" icon="settings" :disabled="!editable || !!preview" data-testid="editor-defaults" @click="openDefaults">{{ t('pages.workspaceDefaults.title') }}</AppButton>
       <AppButton
         :variant="saver.dirty.value || !wf.id ? 'primary' : 'outline'"
         size="sm"
@@ -837,7 +866,13 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
 
     <AppModal :open="defaultsOpen" :title="t('pages.workspaceDefaults.title')" :width="720" @close="defaultsOpen = false">
       <WorkflowDefaultsPanel :workflow="wf" :agents="allAgents || []" />
-      <template #footer><AppButton variant="ghost" @click="defaultsOpen = false">{{ t('common.buttons.close') }}</AppButton><AppButton variant="primary" :loading="saver.saving.value" @click="saveNow()">{{ t('canvas.save.button') }}</AppButton></template>
+      <template #footer>
+        <p class="defaults-save-status mr-auto min-w-0 text-xs" :class="defaultsNotice?.kind === 'error' ? 'text-err' : 'text-txt2'" data-testid="defaults-save-status" role="status" :data-state="defaultsNotice?.kind || 'idle'">
+          <span v-if="defaultsNotice" :key="defaultsNotice.kind + defaultsNotice.text" class="defaults-save-fade">{{ defaultsNotice.text }}</span>
+        </p>
+        <AppButton variant="ghost" data-testid="defaults-close" @click="defaultsOpen = false">{{ t('common.buttons.close') }}</AppButton>
+        <AppButton variant="primary" data-testid="defaults-save" :loading="defaultsSaving || saver.saving.value" @click="saveDefaults">{{ defaultsSaving || saver.saving.value ? t('canvas.save.saving') : t('canvas.save.button') }}</AppButton>
+      </template>
     </AppModal>
 
     <AppModal :open="backupComparisonOpen && !!backupContent" :title="t('pages.workflowEditor.backupCompare')" :width="640" @close="backupComparisonOpen = false">
@@ -1173,6 +1208,18 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
     transform var(--dur-ui) var(--ease-out-expo),
     width var(--dur-ui) var(--ease-out-expo),
     opacity var(--dur-ui) ease;
+}
+.defaults-save-fade {
+  animation: defaults-save-in var(--dur-ui) var(--ease-out-expo);
+}
+@keyframes defaults-save-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .defaults-save-fade {
+    animation: none;
+  }
 }
 
 .editor-menu-item {

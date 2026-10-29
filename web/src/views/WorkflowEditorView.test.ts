@@ -17,6 +17,7 @@ const apiMocks = vi.hoisted(() => ({
   publishWorkflow: vi.fn(),
   listAgents: vi.fn(),
   getWorkspace: vi.fn(),
+  listChannels: vi.fn(),
   listWorkflowVersions: vi.fn(),
   getWorkflowVersionGraph: vi.fn(),
   restoreWorkflowVersion: vi.fn(),
@@ -153,6 +154,7 @@ beforeEach(() => {
   apiMocks.restoreWorkflowVersion.mockImplementation(async (_id: string, v: number) => workflow({ version: 4, name: `restored-v${v}` }))
   apiMocks.listAgents.mockResolvedValue([{ name: '测试评审', capabilities: TEST_REVIEW_CAPS }])
   apiMocks.getWorkspace.mockResolvedValue({ name: '我的工作区' })
+  apiMocks.listChannels.mockResolvedValue({ items: [] })
 })
 
 afterEach(() => {
@@ -268,6 +270,91 @@ describe('WorkflowEditorView', () => {
     expect(apiMocks.saveWorkflow).not.toHaveBeenCalled()
     expect(router.currentRoute.value.path).toBe('/workflows')
     expect(localStorage.getItem(BACKUP_PREFIX + 'wf-1')).toBeNull()
+  })
+
+  it('plays the defaults footer through fresh, saving, saved, and failed without a second write', async () => {
+    const { wrapper } = await mountEditor()
+    await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
+    await flushPromises()
+    const save = () => wrapper.get('[data-testid="defaults-save"]')
+    const notice = () => wrapper.get('[data-testid="defaults-save-status"]')
+    expect(save().classes()).toContain('ui-pressable')
+    await save().trigger('click')
+    expect(apiMocks.saveWorkflow).not.toHaveBeenCalled()
+    expect(notice().text()).toContain('已是最新配置')
+    expect(notice().attributes('data-state')).toBe('fresh')
+    expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="editor-name"]').setValue('renamed')
+    let resolveSave: (value: unknown) => void = () => {}
+    apiMocks.saveWorkflow.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+    const pending = save().trigger('click')
+    await nextTick()
+    expect(notice().text()).toContain('保存中')
+    expect(notice().attributes('data-state')).toBe('saving')
+    expect(save().attributes('aria-busy')).toBe('true')
+    expect(save().attributes('disabled')).toBeDefined()
+    await save().trigger('click')
+    expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1)
+    resolveSave({ id: 'wf-1', version: 4, updatedAt: 'now', name: 'renamed' })
+    await pending
+    await flushPromises()
+    expect(notice().text()).toContain('已保存')
+    expect(notice().attributes('data-state')).toBe('saved')
+    expect(save().attributes('disabled')).toBeUndefined()
+    expect(save().text()).not.toContain('保存中')
+    expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="editor-name"]').setValue('renamed again')
+    apiMocks.saveWorkflow.mockRejectedValueOnce(new Error('offline'))
+    await save().trigger('click')
+    await flushPromises()
+    expect(notice().text()).toContain('保存失败')
+    expect(notice().text()).toContain('offline')
+    expect(notice().attributes('data-state')).toBe('error')
+    expect(save().attributes('disabled')).toBeUndefined()
+    expect(save().text()).not.toContain('保存中')
+    expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(true)
+  })
+
+  it('closes the defaults dialog without saving and keeps the in-memory change', async () => {
+    const { wrapper } = await mountEditor()
+    await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="workflow-shared-sandbox-row"]').get('h3').trigger('click')
+    expect(status(wrapper)).toBe('dirty')
+    await wrapper.get('[data-testid="defaults-close"]').trigger('click')
+    expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(false)
+    expect(apiMocks.saveWorkflow).not.toHaveBeenCalled()
+    expect(status(wrapper)).toBe('dirty')
+    await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="workflow-shared-sandbox-switch"]').attributes('aria-checked')).toBe('true')
+  })
+
+  it('still updates the defaults footer when reduced motion is on', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: String(query).includes('prefers-reduced-motion'),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })))
+    try {
+      const { wrapper } = await mountEditor()
+      await wrapper.get('[data-testid="editor-name"]').setValue('renamed')
+      await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="defaults-save"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="defaults-save-status"]').text()).toContain('已保存')
+      expect(wrapper.get('[data-testid="defaults-save"]').text()).not.toContain('保存中')
+      expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('warns on tab close with unsaved changes', async () => {

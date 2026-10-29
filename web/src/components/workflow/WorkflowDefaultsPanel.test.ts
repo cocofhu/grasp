@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import pages from '@/locales/zh-CN/pages.json'
@@ -166,6 +169,63 @@ describe('Workflow defaults', () => {
     expect(workflow.defaults!.gateAuto!.enabledMcps).toEqual(['other-pack', 'pm-progress'])
     await pack.trigger('click')
     expect(workflow.defaults!.gateAuto!.enabledMcps).toEqual(['other-pack'])
+    wrapper.unmount()
+  })
+
+  it('toggles each settings row once and keeps notification and approval sections mounted', async () => {
+    const { workflow, wrapper } = setup()
+    await flushPromises()
+    const sandbox = wrapper.get('[data-testid="workflow-shared-sandbox-row"]')
+    await sandbox.get('h3').trigger('click')
+    expect(workflow.defaults?.sandbox?.mode).toBe('shared')
+    await sandbox.get('[data-testid="workflow-shared-sandbox-switch"]').trigger('click')
+    expect(workflow.defaults?.sandbox?.mode).toBe('per_node')
+    await wrapper.get('[data-testid="workflow-inherit-row"]').get('span').trigger('click')
+    expect(workflow.defaults?.inheritWorkspace).toBe(false)
+    const notify = wrapper.get('[data-testid="workflow-notify-expansion"]')
+    const gate = wrapper.get('[data-testid="workflow-gate-expansion"]')
+    expect(notify.attributes('hidden')).toBeUndefined()
+    expect(gate.attributes('hidden')).toBeUndefined()
+    expect(notify.classes()).not.toContain('is-open')
+    await wrapper.get('[data-testid="workflow-notify-row"]').get('h3').trigger('click')
+    expect(notify.classes()).toContain('is-open')
+    expect(wrapper.get('[data-testid="workflow-notify-expansion"]').element.parentElement).toBeTruthy()
+    expect(workflow.defaults?.notifyPolicy).toMatchObject({ enabled: true })
+    await wrapper.get('[data-testid="workflow-notify-row"]').get('[role="switch"]').trigger('click')
+    expect(workflow.defaults?.notifyPolicy).toBeUndefined()
+    expect(wrapper.get('[data-testid="workflow-notify-expansion"]').element.parentElement).toBeTruthy()
+    expect(wrapper.get('[data-testid="workflow-notify-expansion"]').classes()).not.toContain('is-open')
+    await wrapper.get('[data-testid="workflow-gate-row"]').get('h3').trigger('click')
+    expect(wrapper.get('[data-testid="workflow-gate-expansion"]').classes()).toContain('is-open')
+    expect(workflow.defaults?.gateAuto).toBeTruthy()
+    await wrapper.get('[data-testid="workflow-gate-row"]').get('[role="switch"]').trigger('click')
+    expect(workflow.defaults?.gateAuto).toBeUndefined()
+    expect(wrapper.get('[data-testid="workflow-gate-expansion"]').element.parentElement).toBeTruthy()
+    expect(wrapper.get('[data-testid="workflow-gate-expansion"]').classes()).not.toContain('is-open')
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'WorkflowDefaultsPanel.vue'), 'utf8')
+    expect(source).toContain('grid-template-rows: 0fr')
+    expect(source).not.toContain('v-if="defaults?.notifyPolicy"')
+    expect(source).not.toContain('v-if="defaults?.gateAuto"')
+    wrapper.unmount()
+  })
+
+  it('inserts a variable row, then removes it only after the row collapses', async () => {
+    const { workflow, wrapper } = setup({ inheritWorkspace: false, variables: [] })
+    await flushPromises()
+    const motion = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../styles/icon-motion.css'), 'utf8')
+    expect(motion).toMatch(/@keyframes iconMotion_plus_m20_39998[\s\S]*?scale\(1\.26\)/)
+    expect(motion).toMatch(/@keyframes iconMotion_plus_m20_62948[\s\S]*?scale\(1\.26\)/)
+    await wrapper.get(`[aria-label="${pages.pages.workspaceDefaults.addVariable}"]`).trigger('click')
+    expect(workflow.defaults?.variables).toHaveLength(1)
+    const row = wrapper.get('[data-variable-row]')
+    expect(row.find('input').exists()).toBe(true)
+    await row.get(`[aria-label="${common.common.buttons.delete}"]`).trigger('click')
+    expect(workflow.defaults?.variables).toHaveLength(1)
+    expect(row.classes()).toContain('is-collapsing')
+    row.element.dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'grid-template-rows', bubbles: true }))
+    await nextTick()
+    expect(workflow.defaults?.variables).toHaveLength(0)
+    expect(wrapper.find('[data-variable-row]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

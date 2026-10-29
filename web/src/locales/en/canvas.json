@@ -304,6 +304,9 @@
       "dirty": "Unsaved changes",
       "saving": "Saving…",
       "error": "Save failed",
+      "fresh": "Already up to date",
+      "savedAck": "Saved",
+      "failedAck": "Save failed: {error}",
       "saveFirstFailed": "Save your changes first"
     },
     "leave": {
