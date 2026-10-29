@@ -918,6 +918,13 @@ function onChromeReposition() {
 function onChromeKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
   if (showFullNameTip.value) closeMobileChromeOverlays()
+  // Esc closes the narrow-screen Agent sheet (also after 取消 on its switch prompt), but not
+  // while a prompt or another dialog sits on top of it; that one is answered first.
+  else if (showSidebarSheet.value && !leaveConfirmCfg.value && !confirmCfg.value && sidebarSheetOnTop()) closeSidebarSheet()
+}
+
+function sidebarSheetOnTop() {
+  return Array.from(document.querySelectorAll('[aria-modal="true"]')).every((el) => el.matches('[data-test="sidebar-sheet"]'))
 }
 
 watch(activeName, () => {
