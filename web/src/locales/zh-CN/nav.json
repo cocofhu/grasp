@@ -18,6 +18,7 @@
     "runs": "运行",
     "gates": "待办",
     "pendingApprovals": "待审批",
+    "pendingWorkflowView": "工作流视图",
     "pendingPin": "置顶",
     "pendingUnpin": "取消置顶",
     "pendingRename": "重命名",
