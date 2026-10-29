@@ -90,6 +90,90 @@ async function markSelection(page: Page) {
 }
 
 test.describe('Live preview and Chat browser bridge', () => {
+  test('CoCo uses the Grasp character with live motion, stable layout and reduced-motion support', async ({ page }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await open(page, 'coco-brand-motion')
+    await page.evaluate(() => document.fonts.ready)
+    await page.mouse.move(0, 0)
+    const host = bar(page, 'drawer')
+    const mark = host.locator('.mark')
+    const response = mark.locator('.brand-character__response')
+    const motion = mark.locator('.brand-character__motion')
+    const breath = mark.locator('.brand-character__breath')
+    const eyes = mark.locator('.brand-character__eye')
+    await expect(mark.locator('svg')).toHaveAttribute('viewBox', '48 52 104 118')
+    await expect(eyes).toHaveCount(2)
+
+    const layout = () => mark.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const title = element.parentElement!.querySelector('[data-role="drawer-title"]')!.getBoundingClientRect()
+      return { x: box.x, y: box.y, width: box.width, height: box.height, titleX: title.x, titleY: title.y, titleWidth: title.width, titleHeight: title.height }
+    })
+    const original = await layout()
+    expect(original).toMatchObject({ width: 24, height: 30 })
+
+    // Sample the running browser timeline: animation declarations alone do not
+    // prove that the injected SVG is visibly moving.
+    await expect.poll(() => mark.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(4)
+    for (const part of [motion, breath]) {
+      const transform = await part.evaluate((element) => getComputedStyle(element).transform)
+      await expect.poll(() => part.evaluate((element) => getComputedStyle(element).transform)).not.toBe(transform)
+    }
+    const initialTimes = await mark.evaluate((element) => element.getAnimations({ subtree: true }).map((animation) => Number(animation.currentTime)))
+    await expect.poll(() => mark.evaluate((element, initial) => element.getAnimations({ subtree: true }).every((animation, index) =>
+      animation.playState === 'running' && Number(animation.currentTime) > initial[index]! + 50,
+    ), initialTimes)).toBe(true)
+
+    // Seek each real blink animation to its closed pose without waiting for a
+    // full idle cycle; both oval eyes must open again afterward.
+    const blink = await eyes.evaluateAll((elements) => elements.map((element) => {
+      const animation = element.getAnimations()[0]!
+      const duration = Number(animation.effect!.getTiming().duration)
+      const scaleY = () => {
+        const transform = getComputedStyle(element).transform
+        return transform === 'none' ? 1 : new DOMMatrixReadOnly(transform).d
+      }
+      animation.pause()
+      animation.currentTime = duration * .67
+      const closed = scaleY()
+      animation.currentTime = 0
+      const opened = scaleY()
+      animation.play()
+      return { closed, opened }
+    }))
+    expect(blink.every((eye) => eye.closed < .2 && eye.opened === 1)).toBe(true)
+
+    for (const theme of ['dark', 'light']) {
+      if (theme === 'light') await bar(page, 'drawer-theme').click()
+      if (theme === 'light') await expect(host).toHaveClass(/\blight\b/)
+      else await expect(host).not.toHaveClass(/\blight\b/)
+      await expect(mark).toBeVisible()
+      await expect(mark.locator('path').first()).toHaveCSS('fill', 'rgb(255, 255, 255)')
+      await expect(mark.locator('path').first()).toHaveCSS('stroke', 'rgb(26, 26, 26)')
+      await expect(mark.locator('circle').first()).toHaveCSS('fill', 'rgb(200, 200, 200)')
+      await mark.hover()
+      await expect.poll(() => response.evaluate((element) => getComputedStyle(element).transform)).not.toBe('none')
+      expect(await layout()).toEqual(original)
+      await bar(page, 'drawer-head').screenshot({ path: testInfo.outputPath(`coco-brand-${theme}.png`), animations: 'disabled' })
+      await page.mouse.move(0, 0)
+      await expect(response).toHaveCSS('transform', 'none')
+    }
+
+    await mark.hover()
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect.poll(() => mark.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0)
+    for (const part of [response, motion, breath, eyes.nth(0), eyes.nth(1)]) {
+      await expect(part).toHaveCSS('transform', 'none')
+    }
+    await page.mouse.move(0, 0)
+    await mark.hover()
+    expect(await mark.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0)
+    expect(await layout()).toEqual(original)
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await expect.poll(() => mark.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBeGreaterThan(0)
+    expect(await layout()).toEqual(original)
+  })
+
   test('drawings and positioned notes reach the agent request, and clearing keeps them out of the next generation', async ({ page }, testInfo) => {
     const key = 'annotations'
     await open(page, key)

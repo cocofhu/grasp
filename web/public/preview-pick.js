@@ -426,7 +426,20 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
     'opacity:.32;flex:none;color:inherit}' +
     '.dhead .drag i{width:3px;height:3px;border-radius:50%;background:currentColor}' +
     '.dhead .mark{width:24px;height:30px;flex:none;display:grid;place-items:center}' +
-    '.dhead .mark svg{width:24px;height:30px;display:block}' +
+    '.dhead .mark svg{width:24px;height:30px;display:block;overflow:visible}' +
+    '.dhead .mark :is(.brand-character__response,.brand-character__motion,.brand-character__breath){transform-box:fill-box;transform-origin:50% 100%}' +
+    '.dhead .mark .brand-character__response{transition:transform 260ms cubic-bezier(.22,1,.36,1)}' +
+    '.dhead .mark .brand-character__motion{animation:grasp-brand-sway 5.6s ease-in-out infinite}' +
+    '.dhead .mark .brand-character__breath{animation:grasp-brand-breathe 3.8s ease-in-out infinite}' +
+    '.dhead .mark .brand-character__face{transition:transform 220ms ease}' +
+    '.dhead .mark .brand-character__eye{transform-box:fill-box;transform-origin:center;animation:grasp-brand-blink 6.8s ease-in-out infinite}' +
+    '.dhead .mark .brand-character__eye--right{animation-delay:35ms}' +
+    '.dhead .mark:hover .brand-character__response{transform:translateY(-1.5%) rotate(-3deg) scale(1.035)}' +
+    '.dhead .mark:hover .brand-character__face{transform:translateY(-1px)}' +
+    '@keyframes grasp-brand-sway{0%,100%{transform:translateY(0) rotate(-.8deg)}50%{transform:translateY(-1.5%) rotate(.8deg)}}' +
+    '@keyframes grasp-brand-breathe{0%,100%{transform:scale(1)}45%{transform:scale(1.012,1.023)}}' +
+    '@keyframes grasp-brand-blink{0%,64%,70%,76%,100%{transform:scaleY(1)}66%,68%{transform:scaleY(.1)}72%,74%{transform:scaleY(.16)}}' +
+    '@media (prefers-reduced-motion:reduce){.dhead .mark :is(.brand-character__response,.brand-character__motion,.brand-character__breath,.brand-character__face,.brand-character__eye){animation:none!important;transition:none!important;transform:none!important}}' +
     '.dhead [data-role="drawer-title"]{flex:1;min-width:0;font-size:14px;font-weight:600;letter-spacing:-0.01em;' +
     'line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.dhead button{width:30px;height:30px;padding:0;display:grid;place-items:center;flex:none;' +
@@ -1265,12 +1278,17 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
       '<div class="dhead" data-role="drawer-head">' +
       '<span class="drag" data-icon-host data-role="drawer-grip" aria-hidden="true">' + ICON_GRIP + '</span>' +
       '<span class="mark" aria-hidden="true">' +
-      '<svg viewBox="0 0 72 88" fill="none" aria-hidden="true">' +
-      '<path d="M24 36 L16 12 L36 32 L56 12 L48 36 C60 40 64 52 64 64 C64 76 56 80 50 72 C46 82 40 74 36 76 C32 78 28 74 24 76 C20 74 14 82 10 72 C6 80 4 72 4 64 C4 52 8 40 24 36Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>' +
-      '<circle cx="30" cy="50" r="2.5" fill="currentColor"/>' +
-      '<circle cx="42" cy="50" r="2.5" fill="currentColor"/>' +
-      '<path d="M36 55.2 34.1 58.4h3.8Z" fill="currentColor"/>' +
-      '<path d="M6 47h14M7 52h13M8 42h12M52 47h14M52 52h13M52 42h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
+      // Match the Grasp lockup in BrandCharacterMark.vue, including its idle motion.
+      '<svg class="brand-character__svg" viewBox="48 52 104 118" focusable="false" aria-hidden="true">' +
+      '<g class="brand-character__response"><g class="brand-character__motion"><g class="brand-character__breath">' +
+      '<path d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z" fill="#fff" stroke="#1a1a1a" stroke-width="6" stroke-linejoin="round"/>' +
+      '<g class="brand-character__face"><g class="brand-character__eyes">' +
+      '<ellipse class="brand-character__eye" cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a"/>' +
+      '<ellipse class="brand-character__eye brand-character__eye--right" cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a"/>' +
+      '</g><path d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>' +
+      '<circle cx="74" cy="126" r="6" fill="#c8c8c8"/>' +
+      '<circle cx="126" cy="126" r="6" fill="#c8c8c8"/>' +
+      '</g></g></g></g>' +
       '</svg></span>' +
       '<span data-role="drawer-title"></span>' +
       '<button type="button" data-role="drawer-theme"></button>' +
