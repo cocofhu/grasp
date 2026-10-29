@@ -20,7 +20,7 @@ export function useSessionModelCatalog(agentName: Ref<string>) {
   let loadGeneration = 0
   let cliGeneration = 0
   const agent = computed(() => agents.value.find(item => item.name === agentName.value) ?? null)
-  const bound = computed(() => boundConfigurationIds(agent.value?.modelBinding))
+  const bound = computed(() => boundConfigurationIds(agent.value?.modelBinding, configurations.value))
   const active = computed(() => bound.value.map(id => configurations.value.find(row => row.id === id && row.state === 'active')).filter((row): row is ModelConfiguration => !!row))
   const hasConnections = computed(() => active.value.some(row => row.binding.kind === 'connection'))
   const hasPlatform = computed(() => active.value.some(row => row.binding.kind === 'platform'))

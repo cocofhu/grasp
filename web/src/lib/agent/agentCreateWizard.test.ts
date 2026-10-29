@@ -37,7 +37,7 @@ describe('Agent creation data contract', () => {
   const p = assembleCreatePayload(d); expect(p.templateId).toBe('需求澄清工程师'); expect(p.files).toEqual([]); expect(p).not.toHaveProperty('capabilities')
  })
  it('serializes only a named model and explicit multi-Git references, excluding derived model and auth env', () => {
-  const d = freshDraft(); d.name = 'configured'; d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
+  const d = freshDraft(); d.name = 'configured'; d.modelBinding = { kind: 'configuration', configurationId: 'cfg', allConfigurations: true }
   d.gitBindings = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }] }
   d.env = [{ k: 'GITHUB_TOKEN', v: 'secret' }, { k: 'OPENAI_API_KEY', v: 'secret' }, { k: 'ACP_BRIDGE_MODEL', v: 'derived' }, { k: 'FEATURE', v: 'on' }]
   const p = assembleCreatePayload(d)

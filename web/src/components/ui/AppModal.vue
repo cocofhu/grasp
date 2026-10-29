@@ -257,8 +257,20 @@ defineExpose({ scrollAreaEl })
   transition: opacity 180ms var(--ease-out-expo);
 }
 @media (prefers-reduced-motion: reduce) {
-  .app-modal-dim {
+  .app-modal-dim,
+  .modal-enter-active,
+  .modal-leave-active,
+  .modal-enter-active > div:last-child,
+  .modal-leave-active > div:last-child {
     transition: none;
+  }
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 1;
+  }
+  .modal-enter-from > div:last-child,
+  .modal-leave-to > div:last-child {
+    transform: none;
   }
 }
 </style>

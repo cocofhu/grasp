@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { boundConfigurationIds, effectiveModelAgent, modelRouteValue, parseModelRoute } from './modelBindings'
+import type { ModelConfiguration } from '@/lib/api/apiTypes'
 
 describe('group-qualified model routing', () => {
   it('reads existing singleton bindings and keeps the explicit default first', () => {
@@ -21,6 +22,13 @@ describe('group-qualified model routing', () => {
     expect(effectiveModelAgent(local, defaults)).toBe(local)
     expect(effectiveModelAgent({ ...local, inheritModel: true }, defaults).modelBinding).toEqual(defaults.modelBinding)
     expect(effectiveModelAgent({ ...local, inheritModel: true }, undefined).modelBinding).toBeUndefined()
+  })
+  it('resolves all mode from the current active catalog and keeps an unavailable default explicit', () => {
+    const binding = { kind: 'configuration' as const, configurationId: 'default', allConfigurations: true }
+    const catalog = [{ id: 'first', state: 'active' }, { id: 'default', state: 'disabled' }, { id: 'off', state: 'disabled' }] as ModelConfiguration[]
+    expect(boundConfigurationIds(binding, catalog)).toEqual(['default', 'first'])
+    expect(boundConfigurationIds(binding, [...catalog, { id: 'new', state: 'active' } as ModelConfiguration])).toEqual(['default', 'first', 'new'])
+    expect(boundConfigurationIds(binding)).toEqual(['default'])
   })
 
 })

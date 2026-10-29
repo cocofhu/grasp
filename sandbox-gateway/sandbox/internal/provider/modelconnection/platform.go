@@ -3,6 +3,7 @@ package modelconnection
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,7 +116,14 @@ func configuredOfficialModelIDs(env []string) ([]string, error) {
 // officialProviderID enables opencode when nothing is selected. Otherwise every
 // non-empty id must share one family. opencode-go/ is matched before opencode/.
 func officialProviderID(session string, configured []string) (string, error) {
-	ids := make([]string, 0, 1+len(configured))
+	capHint := len(configured)
+	if session != "" {
+		if capHint == math.MaxInt {
+			return "", errors.New("OpenCode official authorization: configured models are too large")
+		}
+		capHint++
+	}
+	ids := make([]string, 0, capHint)
 	if session != "" {
 		ids = append(ids, session)
 	}

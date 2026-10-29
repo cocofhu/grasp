@@ -150,18 +150,18 @@ html.light .chat-message-info-panel { border-color: rgb(var(--c-line)); box-shad
 .chat-info-rows > div { display: grid; grid-template-columns: minmax(5.5em, max-content) minmax(0, 1fr); gap: 12px; align-items: baseline; }
 .chat-info-rows dt { color: rgb(var(--c-txt2)); }
 html.light .chat-info-rows dt { color: rgb(var(--c-txt3)); }
-.chat-info-rows dd { margin: 0; overflow-wrap: anywhere; text-align: right; color: rgb(var(--c-txt)); }
-.chat-info-mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 12px; }
+.chat-info-rows dd { margin: 0; overflow-wrap: anywhere; text-align: right; color: rgb(var(--c-txt)); font-family: inherit; font-size: 12px; font-weight: 400; }
+.chat-info-mono { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 400; }
 .chat-info-tokens { margin-top: 12px; border-top: 1px solid rgb(var(--c-line-strong)); padding-top: 12px; }
 html.light .chat-info-tokens { border-top-color: rgb(var(--c-line)); }
 .chat-info-token-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .chat-info-token-head strong { color: rgb(var(--c-txt)); font-size: 12px; font-weight: 600; }
-.chat-info-token-total { color: rgb(var(--c-txt)); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; }
+.chat-info-token-total { color: rgb(var(--c-txt)); font-family: inherit; font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 400; }
 .chat-info-token-parts { display: grid; gap: 6px; margin: 10px 0 0; }
 .chat-info-token-part { display: grid; grid-template-columns: 8px minmax(5.5em, max-content) minmax(0, 1fr); gap: 8px; align-items: center; }
 .chat-info-token-part dt { color: #D4D4D8; }
 html.light .chat-info-token-part dt { color: rgb(var(--c-txt2)); }
-.chat-info-token-part dd { margin: 0; overflow-wrap: anywhere; text-align: right; color: rgb(var(--c-txt)); }
+.chat-info-token-part dd { margin: 0; overflow-wrap: anywhere; text-align: right; color: rgb(var(--c-txt)); font-family: inherit; font-size: 12px; font-weight: 400; }
 .chat-info-token-part.is-zero dt, .chat-info-token-part.is-zero dd { color: #8A8A94; }
 html.light .chat-info-token-part.is-zero dt, html.light .chat-info-token-part.is-zero dd { color: rgb(var(--c-txt3)); }
 .chat-info-dot { width: 8px; height: 8px; border-radius: 99px; background: #9A9AA4; }

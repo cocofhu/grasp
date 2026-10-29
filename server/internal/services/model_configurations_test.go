@@ -94,6 +94,7 @@ func TestModelConfigurationRequiresConcreteValidSource(t *testing.T) {
 			c.Binding = modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}
 		},
 		"mixed reference":    func(c *modelrouting.Configuration) { c.Binding.ConfigurationID = configuration.ID },
+		"all configurations": func(c *modelrouting.Configuration) { c.Binding.AllConfigurations = true },
 		"missing connection": func(c *modelrouting.Configuration) { c.Binding.ConnectionID = "absent" },
 		"missing model":      func(c *modelrouting.Configuration) { c.Binding.ModelID = "absent/model" },
 		"incompatible tool":  func(c *modelrouting.Configuration) { c.Backend = "cursor" },

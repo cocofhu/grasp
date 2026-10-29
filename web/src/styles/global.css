@@ -722,7 +722,7 @@ html.light .app-sidebar-card {
 
 /*
  * Modal footer primary only (drawer footers are not .app-modal-footer).
- * Light fill #18181B, white label, ink #52525B.
+ * Light fill #18181B, white label, ink #F4F4F5 (light wash on the black button).
  * Dark fill #EDEDF0, label #141417, ink #A1A1AA.
  * Zero --tw-shadow so shadow-glow drops, while the focus ring stays.
  * Label color is set here so text-white cannot pin icons or the spinner.
@@ -737,7 +737,7 @@ html.light .app-sidebar-card {
 html.light .app-modal-footer button.bg-accent {
   background-color: #18181b;
   color: #ffffff;
-  --hover-ink-color: #52525b !important;
+  --hover-ink-color: #f4f4f5 !important;
 }
 .app-modal-footer button.bg-accent .app-icon,
 .app-modal-footer button.bg-accent .app-spinner,

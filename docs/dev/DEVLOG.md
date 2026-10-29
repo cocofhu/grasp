@@ -20,6 +20,22 @@
 
 ## 记录
 
+### 2026-10-30（OpenCode 官方模型容量计算溢出保护）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`sandbox-gateway/sandbox/internal/provider/modelconnection/platform.go`、`docs/dev/DEVLOG.md`。
+- 做了什么：官方模型 provider 校验按实际配置数预分配容量，仅在存在会话模型时先检查 `math.MaxInt` 再递增，保持模型顺序、默认 provider 和同族校验不变。
+- 为什么：修复 CodeQL 告警 #73 指出的 `1+len(configured)` 分配容量整数溢出风险，拒绝不可表示的容量。
+- 如何验证：独立审查两个调用点及空／非空会话边界；Go 1.26.10 下 sandbox 全量单测、lint（0 issues）、vet 和核心覆盖率门禁通过（96.6%，门槛 90%）。actionlint、error-level shellcheck、Shell／Node 语法检查及 inject、git-auth、runtime-bootstrap、mock-chat-model、preview-inject-upstream smoke 通过；合并前继续核对完整 Agent 切换测试和最新提交的远端 CI。
+
+### 2026-10-30（继承所有已配置的模型组）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/src/components/{agent,onboarding}/`、`web/src/lib/{agent,api,solo}/`、`web/e2e/model-routing.spec.ts`、`server/internal/{modelrouting,services,engine}/`、`CHANGELOG.md`。
+- 做了什么：默认配置与 Agent 增加“继承所有已配置的模型组”开关，以 `allConfigurations` 持久化动态继承所有已启用组，新增组自动加入。明确的默认启动组独立选择；全部继承卡片与 Agent 继承摘要使用通用图标，卡片仅保留开关和说明，不列组名。聊天选择始终携带模型组身份，新增组不改变已有选择；新建、磁盘配置与 ZIP 导入导出保留标记。关闭开关恢复当前编辑期间的手动绑定，重新打开后保留默认组。团队与首次配置向导维持原有显式组请求格式。工作流启动校验读取 Agent 的有效继承配置，与聊天选择保持一致。
+- 为什么：逐个维护绑定无法持续跟随新建模型组；默认工具的品牌图标也不能代表继承全部组。独立 review 复现了工作流启动按本地绑定校验、拒绝界面已列出继承组的边界，已补有效配置解析与真实服务回归。实际执行继续验证所选组、模型和授权，其他组失效不阻止有效默认组保存／运行，缺失默认组不自动更换账号。
+- 如何验证：Web 全量 542 文件、5,840 项单测通过，Lines 91.75%；lint、vue-tsc、生产构建和完整关键路径浏览器 261 项通过。组件与桌面／手机截图确认通用图标、独立启动默认组、无组名列表；浏览器覆盖保存重载、继承新增组、停用组排除与关闭开关。完整八工具、84 项 Agent 切换矩阵以全量模式创建 Agent，并在保存后新增实际参与切换的组，通过真实服务端／运行时／本地模型／MCP 链路；可配置工具使用原生 CLI，Cursor、Trae、Kimi Code 保持明确的 platform-wire fixtures 边界，付费模型请求为零。Node 45 项、Python 9 项合约及 docs 构建、官方源 high/critical audit、actionlint、error-level shellcheck、品牌与 diff 检查通过；Go 1.26.10 下 server 全量 lint、vet、配置文档检查、单测、runtime 专项与核心覆盖率检查通过（90.5%）；新增真实服务回归先在旧代码复现工作流启动拒绝继承组，再验证修复。
+
 ### 2026-10-29（PR #1041 的 Vue I18n 安全审计修复）
 
 - 日期：2026-10-29（Asia/Hong_Kong）。

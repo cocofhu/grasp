@@ -73,4 +73,23 @@ describe('reactive session group catalog', () => {
     scope.stop()
   })
 
+  it('includes later model groups for an Agent inheriting all configured models', async () => {
+    mocks.listAgents.mockResolvedValue([{ name: 'Coder', inheritModel: true }])
+    mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'a', allConfigurations: true } })
+    mocks.listModelConfigurations.mockResolvedValue({ items: [a] })
+    const { scope, catalog } = setup(); await flushPromises()
+    const original = catalog.choices.value[0]!.id
+    expect(catalog.choices.value).toHaveLength(1)
+    mocks.listModelConfigurations.mockResolvedValue({ items: [a, b] })
+    invalidateModelCatalog(); await flushPromises()
+    expect(catalog.choices.value).toHaveLength(2)
+    expect(catalog.choices.value[0]!.id).toBe(original)
+    expect(catalog.modelInConfiguration('same', 'b')).toBe(true)
+    mocks.listModelConfigurations.mockResolvedValue({ items: [a, { ...b, state: 'disabled' }] })
+    invalidateModelCatalog(); await flushPromises()
+    expect(catalog.choices.value).toHaveLength(1)
+    expect(catalog.modelInConfiguration('same', 'b')).toBe(false)
+    scope.stop()
+  })
+
 })

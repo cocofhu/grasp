@@ -174,7 +174,7 @@ export type ModelEfforts = Record<string, string>
 export type ConcreteModelBinding =
   | { kind: 'platform'; credentialId: string; modelId?: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string; modelEfforts?: ModelEfforts } }
   | { kind: 'connection'; connectionId: string; modelId: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string; modelEfforts?: ModelEfforts } }
-export type ModelBinding = { kind: 'configuration'; configurationId: string; configurationIds?: string[] }
+export type ModelBinding = { kind: 'configuration'; configurationId: string; configurationIds?: string[]; allConfigurations?: boolean }
 export interface ModelConfiguration {
   id: string
   name: string
