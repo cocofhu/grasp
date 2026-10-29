@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Grasp</title>
-  <meta name="description" content="Agent 工作流与人类协同推进，开启多Agent协作新范式 — Grasp。">
+  <meta name="description" content="Human-on-the-Loop 编码工作流：澄清、审查、审批在同一干净工作区 — Grasp。">
   <link rel="alternate" hreflang="zh-CN" href="https://www.approving-ai.com/">
   <link rel="alternate" hreflang="en" href="https://www.approving-ai.com/en/">
   <link rel="alternate" hreflang="x-default" href="https://www.approving-ai.com/">
@@ -22,7 +22,7 @@
       <a class="site-header__brand" href="{{BASE_SLASH}}">Grasp</a>
       <nav class="site-header__nav" aria-label="主导航">
         <a class="site-header__link" href="{{BASE}}/guide/quick-start/">文档</a>
-        <a class="site-header__link" href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">GitHub</a>
+        <a class="site-header__link" href="https://github.com/cocofhu/grasp" rel="noopener noreferrer" target="_blank">GitHub</a>
         <nav class="lang-switch" aria-label="语言">
           <a class="lang-switch__link is-current" href="{{BASE_SLASH}}" data-locale-set="zh-CN" aria-current="page">中文</a>
           <span class="lang-switch__sep" aria-hidden="true">|</span>
@@ -37,16 +37,18 @@
       <div class="hero__atmosphere" aria-hidden="true"></div>
       <div class="hero__shell">
         <div class="hero__content">
-          <p class="hero__brand" data-reveal>Grasp</p>
+          <p class="hero__eyebrow" data-reveal>Human-on-the-Loop</p>
           <h1 class="hero__headline" data-reveal>
-            <span>Agent 工作流与人类协同推进，</span>
-            <span>开启多Agent协作新范式。</span>
+            <span>Agent 在沙箱里跑，</span>
+            <span>关键决定留给你。</span>
           </h1>
-          <p class="hero__support" data-reveal>Grasp 把 coding agent 编成可信任的工作流：可视化编排、沙箱执行，关键节点由人 Approve 后再继续。</p>
+          <p class="hero__support" data-reveal>把 coding agent 编成可信任的工作流：可视化编排、沙箱执行；澄清、审查与审批收进更干净的聊天与收件箱，人 Approve 后再继续。</p>
           <div class="hero__cta" data-reveal>
-            <a class="btn btn--primary" href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">项目仓库</a>
-            <a class="btn btn--ghost" href="{{BASE}}/guide/quick-start/">快速开始</a>
-            <span class="hero__cta-note">此项目由该工作流构建</span>
+            <div class="hero__cta-row">
+              <a class="btn btn--primary" href="https://github.com/cocofhu/grasp" rel="noopener noreferrer" target="_blank">GitHub</a>
+              <a class="btn btn--ghost" href="{{BASE}}/guide/quick-start/">快速开始</a>
+            </div>
+            <p class="hero__cta-note">此站点由 Grasp 工作流构建</p>
           </div>
           <div class="hero__backends" data-reveal aria-label="支持的 Agent 后端">
             <span class="hero__backends-label">支持</span>
@@ -55,6 +57,8 @@
               <li>Claude Code</li>
               <li>CodeBuddy</li>
               <li>Trae</li>
+              <li>OpenCode</li>
+              <li>Codex</li>
             </ul>
           </div>
         </div>
@@ -62,7 +66,7 @@
           <div class="hero-flow" data-hero-flow>
             <div class="hero-flow__chrome">
               <span class="hero-flow__chip" data-hero-title>需求交付 · 编排</span>
-              <span class="hero-flow__chip hero-flow__chip--live" data-hero-live>● idle</span>
+              <span class="hero-flow__chip hero-flow__chip--live" data-hero-live>● 待机</span>
             </div>
             <div class="hf-board">
               <div class="hf-chain">
@@ -107,8 +111,8 @@
                     <span class="hf-node__badge"></span>
                   </div>
                   <div class="hf-node__actions">
-                    <span class="hf-action" data-hf-action="approve"><em>动作</em>批准</span>
-                    <span class="hf-action" data-hf-action="revise"><em>动作</em>退回修改</span>
+                    <span class="hf-action" data-hf-action="approve">批准</span>
+                    <span class="hf-action" data-hf-action="revise">退回修改</span>
                   </div>
                 </div>
                 <span class="hf-link" data-hf-e="e4"><i></i></span>
@@ -132,12 +136,42 @@
       </div>
     </section>
 
+
+    <section class="proof" aria-label="产品界面">
+      <div class="proof__inner">
+        <header class="proof__intro">
+          <p class="proof__kicker">真实界面</p>
+          <h2 class="proof__title">工作区里一眼能看懂</h2>
+          <p class="proof__lead">画布编排、产物审查、Agent 配置与用量统计——都是仓库里现有的界面，不是示意稿。</p>
+        </header>
+        <div class="proof__grid">
+          <figure class="proof__card">
+            <img src="{{BASE}}/img/workflow-canvas.webp" alt="工作流画布" width="1024" height="552" loading="lazy">
+            <figcaption>工作流画布</figcaption>
+          </figure>
+          <figure class="proof__card">
+            <img src="{{BASE}}/img/artifact-review.webp" alt="产物审查" width="1024" height="590" loading="lazy">
+            <figcaption>产物审查</figcaption>
+          </figure>
+          <figure class="proof__card">
+            <img src="{{BASE}}/img/agent-studio.webp" alt="Agent Studio" width="1024" height="438" loading="lazy">
+            <figcaption>Agent Studio</figcaption>
+          </figure>
+          <figure class="proof__card">
+            <img src="{{BASE}}/img/token-analytics.webp" alt="Token 用量" width="1024" height="488" loading="lazy">
+            <figcaption>Token 用量</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
     <!-- Big page 1: Approve — unified Inbox (clarify + gates) -->
     <section class="showcase showcase--alt" id="showcase-approve" data-showcase="approve" aria-label="Approve 演示">
       <div class="showcase__inner showcase__inner--wide">
         <header class="showcase__intro">
-          <h2 class="showcase__title">人机协作 从未如此简单</h2>
-          <p class="showcase__lead showcase__lead--single">多 Agent 协作最大瓶颈就是审核。统一 Inbox：集中澄清与集中审批后，各 Run 继续推进。</p>
+          <p class="showcase__kicker">01 · 统一 Inbox</p>
+          <h2 class="showcase__title">审查，本该这么干净</h2>
+          <p class="showcase__lead">多 Agent 协作最大瓶颈就是审核。统一 Inbox 收齐澄清与门禁；聊天更安静，产物就在旁边，Approve 后各 Run 继续推进。</p>
         </header>
         <div class="showcase__stage" data-stage="approve">
           <div class="panel panel--light">
@@ -210,8 +244,9 @@
     <section class="showcase" id="showcase-pm" data-showcase="pm" aria-label="PM 演示">
       <div class="showcase__inner showcase__inner--wide">
         <header class="showcase__intro">
-          <h2 class="showcase__title">项目管理正在被重新定义</h2>
-          <p class="showcase__lead">我们为每一个项目定义了一位 PM，你可以接入自己常用的 IM，在手机上管理你的项目、下发任务。<br>未来，我们将支持总监、总经理等更复杂的组织架构——OPC 这一次是真的。</p>
+          <p class="showcase__kicker">02 · IM 中的 PM</p>
+          <h2 class="showcase__title">在 IM 里管住工作流</h2>
+          <p class="showcase__lead">为工作区绑定一位 PM Agent，接入飞书、钉钉、企业微信或 QQ，在手机上跟进运行、下发任务。<br>对话即编排：澄清、门禁与并行推进仍回到同一套 Human-on-the-Loop。</p>
         </header>
         <div class="showcase__stage" data-stage="pm">
           <div class="panel panel--light">
@@ -293,8 +328,9 @@
     <section class="showcase" id="showcase-parallel" data-showcase="parallel" aria-label="并行演示">
       <div class="showcase__inner showcase__inner--wide">
         <header class="showcase__intro">
+          <p class="showcase__kicker">03 · 并行沙箱</p>
           <h2 class="showcase__title">并行调度，加速迭代</h2>
-          <p class="showcase__lead">所有 Agent 在沙箱执行，由 PM 统一管理，迭代速度更进一步。</p>
+          <p class="showcase__lead">Agent 在独立沙箱里并行执行；门禁仍汇入统一 Inbox，人只在关键节点出手。</p>
         </header>
         <div class="showcase__stage" data-stage="parallel">
           <div class="panel">
@@ -588,11 +624,14 @@
 
     <section class="section capabilities" id="capabilities">
       <div class="section__inner">
-        <h2 class="section__title">能力</h2>
+        <header class="capabilities__intro">
+          <p class="capabilities__kicker">能力一览</p>
+          <h2 class="section__title">为 Human-on-the-Loop 准备</h2>
+        </header>
         <ul class="capabilities__list">
           <li class="capabilities__item">
             <strong class="capabilities__name">可视化编排</strong>
-            <span class="capabilities__body">画布 FSM、运行态高亮；多需求并行泳道，门禁 Inbox 收口审批。</span>
+            <span class="capabilities__body">画布 FSM、运行态高亮；并行泳道 + 统一 Inbox；聊天与审查更干净，少噪音。</span>
           </li>
           <li class="capabilities__item">
             <strong class="capabilities__name">真实 Docker 沙箱</strong>
@@ -600,7 +639,7 @@
           </li>
           <li class="capabilities__item">
             <strong class="capabilities__name">多 Agent 后端</strong>
-            <span class="capabilities__body">Cursor、Claude Code、CodeBuddy、Trae；按 Agent 选择 acpBackend。</span>
+            <span class="capabilities__body">Cursor、Claude Code、CodeBuddy、Trae、OpenCode、Codex；按 Agent 选择 acpBackend。</span>
           </li>
           <li class="capabilities__item">
             <strong class="capabilities__name">产物契约 + MCP</strong>
@@ -608,7 +647,11 @@
           </li>
           <li class="capabilities__item">
             <strong class="capabilities__name">工作区凭据与沙箱 Git</strong>
-            <span class="capabilities__body">工作区凭据 UI 优先管理 GITHUB_* / GITLAB_* / SSH；兼容 env 回退，GitLab auto-MR 与 GitHub gh 可用。</span>
+            <span class="capabilities__body">工作区凭据 UI 管理 API Key / GITHUB_* / GITLAB_* / SSH；沙箱内可推分支并开 PR / MR。</span>
+          </li>
+          <li class="capabilities__item">
+            <strong class="capabilities__name">IM 中的 PM</strong>
+            <span class="capabilities__body">QQ / 企微 / 飞书 / 钉钉绑定 PM Agent，聊天里启动与跟进运行。</span>
           </li>
           <li class="capabilities__item">
             <strong class="capabilities__name">单仓自托管</strong>
@@ -626,9 +669,9 @@
         <a href="{{BASE}}/guide/quick-start/">快速开始</a>
         <a href="{{BASE}}/help/configuration/">配置</a>
         <a href="{{BASE}}/help/gateway/">网关</a>
-        <a href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">源码</a>
+        <a href="https://github.com/cocofhu/grasp" rel="noopener noreferrer" target="_blank">源码</a>
       </nav>
-      <p class="site-footer__meta">MIT · <a href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">cocofhu/approving</a></p>
+      <p class="site-footer__meta">MIT · <a href="https://github.com/cocofhu/grasp" rel="noopener noreferrer" target="_blank">cocofhu/grasp</a></p>
     </div>
   </footer>
 
