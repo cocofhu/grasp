@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（对话右侧产物/资源抽屉记住打开状态）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`web/src/lib/chat/conversationDrawer.ts`、`web/src/components/run/ReviewShell.vue`、`web/src/components/solo/SoloSessionPane.vue`、`web/src/components/run/ReviewShell.test.ts`。
+- 做了什么：抽屉开关改为按对话记忆（`ReviewShell` 新增 `panelMemoryKey`，默认 run id；Solo 用 `solo:<sessionId>`），同时记住开/关和停在「资源」还是「产物」；没有自己记录的对话沿用最近一次的状态。存 `localStorage` 的 `grasp.conversation.drawer`，整页刷新后仍恢复，最多保留最近 200 个对话（按数组存顺序，数字 run id 也按最近使用淘汰），每次读写都直接读存储以免覆盖其他标签页写入，坏数据忽略。不分栏的壳不覆盖记住的栏。Solo 对话接入（`remember-artifact-panel`）。
+- 为什么：回到对话时右侧资源/产物每次都被关掉；Solo 原本不记忆，`artifactRunId` 从 pending 变为真实 id 时也会关；运行视图只记产物且只存内存，刷新即丢。
+- 如何验证：`ReviewShell.test.ts` 新增按对话恢复（含刷新）、坏数据、数字 id 的淘汰顺序与跨标签页写入用例，并按新语义改写原会话用例；`npm run lint`（0 error）、`npx vue-tsc --noEmit`、`npm test -- --coverage` 全量 544 文件 / 6004 用例通过（Lines 91.84%），`npm run build` 通过。
+
 ### 2026-10-30（Solo 排队消息不提前进入对话）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。
