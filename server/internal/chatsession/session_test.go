@@ -147,6 +147,65 @@ func TestSessionRunsInOrderAndPublishesFrames(t *testing.T) {
 	}
 }
 
+func TestSessionPanickingTurnPublishesErrorAndKeepsPumping(t *testing.T) {
+	h := newHarness()
+	cfg := h.config()
+	execute := cfg.Execute
+	cfg.Execute = func(ctx context.Context, it *testItem) (bool, error) {
+		if it.id == "a" {
+			panic("boom")
+		}
+		return execute(ctx, it)
+	}
+	afterTurns := 0
+	cfg.AfterTurn = func(*testItem) { afterTurns++ }
+	gate := h.hold("b")
+	s := New(cfg)
+	if _, err := s.Enqueue(&testItem{"a", "first"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Enqueue(&testItem{"b", "second"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	close(gate)
+	h.waitIdle(t)
+
+	failed := h.last(EventError)
+	if failed == nil || failed["item"].(map[string]any)["id"] != "a" || failed["message"] != errTurnPanicked.Error() {
+		t.Fatalf("error frame=%v", failed)
+	}
+	if done := h.last(EventTurnDone); done == nil || done["item"].(map[string]any)["id"] != "b" {
+		t.Fatalf("turn_done=%v", done)
+	}
+	if got := h.ran; len(got) != 1 || got[0] != "b" {
+		t.Fatalf("ran=%v", got)
+	}
+	if afterTurns != 2 {
+		t.Fatalf("AfterTurn ran %d times", afterTurns)
+	}
+	if !s.Idle() {
+		t.Fatal("session should be idle")
+	}
+}
+
+func TestSessionPanickingBeforeTurnSkipsExecute(t *testing.T) {
+	h := newHarness()
+	cfg := h.config()
+	cfg.BeforeTurn = func(*testItem, <-chan struct{}) { panic("boom") }
+	s := New(cfg)
+	if _, err := s.Enqueue(&testItem{"a", "first"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.waitIdle(t)
+
+	if failed := h.last(EventError); failed == nil || failed["message"] != errTurnPanicked.Error() {
+		t.Fatalf("error frame=%v", failed)
+	}
+	if len(h.ran) != 0 {
+		t.Fatalf("execute ran after BeforeTurn panic: %v", h.ran)
+	}
+}
+
 // A paused queue publisher must keep the version captured at the mutation,
 // even when three turns finish before its callback reaches the wire. Otherwise
 // a delayed enqueue/reconnect snapshot can make completed B appear queued again.
