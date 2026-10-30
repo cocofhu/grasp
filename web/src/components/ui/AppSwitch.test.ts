@@ -81,13 +81,20 @@ describe('AppSwitch', () => {
     }
   })
 
-  it('drops color transitions when the user prefers reduced motion', () => {
+  it('slides the thumb with the track and skips travel when motion is reduced', () => {
+    expect(switchSrc).toMatch(/translateX\(var\(--switch-x/)
+    expect(switchSrc).toMatch(/transform 180ms/)
+    expect(switchSrc).toMatch(/background-color 180ms/)
+    expect(switchSrc).toContain('scale(0.88)')
+    expect(switchSrc).toContain('stopPropagation')
+    expect(switchSrc).not.toContain('left var(--dur-ui)')
     const reduced = switchSrc.match(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{([\s\S]*?)\n\}/)
     expect(reduced, 'reduced-motion block').toBeTruthy()
     const block = reduced![1]
     expect(block).toContain('.app-switch')
+    expect(block).toMatch(/transition:\s*none/)
+    expect(block).toMatch(/scale\(1\)/)
     expect(block).not.toMatch(/background-color/)
     expect(block).not.toMatch(/border-color/)
-    expect(block).toMatch(/transition:/)
   })
 })

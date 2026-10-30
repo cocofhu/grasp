@@ -42,6 +42,14 @@ export function createReviewStateCursor() {
         (typeof frame.sessionGeneration !== 'number' || typeof frame.revision !== 'number')) return false
       return this.accept(frame)
     },
+    /** Check before installSnapshot: an omitted FIFO is idle only when the
+     * capture watermark covers the session this viewer has already seen. */
+    acceptSnapshot(nodeId: string, session?: ReviewStateVersion, watermark?: number): boolean {
+      if (session) return this.acceptServer({ ...session, nodeId, event: 'queue_state' })
+      const previous = versions.get(nodeId)
+      return !previous || (typeof watermark === 'number' && Number.isSafeInteger(watermark) &&
+        watermark >= previous.generation)
+    },
     installSnapshot(sessions: Record<string, ReviewStateVersion | undefined>, watermark?: number) {
       if (typeof watermark !== 'number' || !Number.isSafeInteger(watermark) || watermark < 0) return
       generationFloor = Math.max(generationFloor, watermark)

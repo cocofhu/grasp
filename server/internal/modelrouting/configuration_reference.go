@@ -17,6 +17,9 @@ func ValidateConfigurationReference(binding *Binding) error {
 	if binding.CredentialID != "" || binding.ConnectionID != "" || binding.ModelID != "" || len(binding.ToolSettings.ModelRoles) != 0 || binding.ToolSettings.RouteProfile != "" || len(binding.ToolSettings.ModelEfforts) != 0 {
 		return fmt.Errorf("Agent model binding requires only configurationId")
 	}
+	if binding.AllConfigurations && len(binding.ConfigurationIDs) != 0 {
+		return fmt.Errorf("Agent allConfigurations cannot be combined with configurationIds")
+	}
 	seen := map[string]bool{}
 	for _, id := range binding.ConfigurationIDs {
 		if id == "" || id != strings.TrimSpace(id) || seen[id] {
@@ -30,8 +33,9 @@ func ValidateConfigurationReference(binding *Binding) error {
 	return nil
 }
 
-// ConfigurationIDs returns the bound groups in display order, including the
-// single default for bindings saved before multiple groups were supported.
+// ConfigurationIDs returns explicitly bound groups in display order, including
+// the default. Dynamic alternatives from AllConfigurations require a live list
+// of saved configurations and are not expanded here.
 func ConfigurationIDs(binding *Binding) []string {
 	if binding == nil {
 		return nil
@@ -46,6 +50,9 @@ func ConfigurationIDs(binding *Binding) []string {
 }
 
 func HasConfiguration(binding *Binding, id string) bool {
+	if binding != nil && binding.Kind == "configuration" && binding.AllConfigurations && strings.TrimSpace(id) != "" && id == strings.TrimSpace(id) {
+		return true
+	}
 	for _, configured := range ConfigurationIDs(binding) {
 		if configured == id {
 			return true

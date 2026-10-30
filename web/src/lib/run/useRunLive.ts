@@ -24,7 +24,7 @@ import {
 import { decideLive, takeoverConflictRunStatus, takeoverErrorCode, takeoverRaceLost, type LiveFrame } from '@/lib/run/runLive'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
-import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
+import { createReviewSessionState, type ReviewRecoveryCheckpoint } from '@/lib/chat/reviewSessionState'
 import { splitTurns } from '@/lib/run/llmTranscript'
 import { clarifyTurnsFromLlm } from '@/lib/run/llmTranscriptThread'
 import type { AcpEvent, ClarifyImage, ClarifyTurn, ReactAnnotation, Run, RunCurrentNode } from '@/lib/shared/types'
@@ -141,9 +141,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   let aheadEvents: { nodeId: string; events: AcpEvent[] } | null = null
   /** A node has been shown on this page: from now on, no automatic navigation. */
   let shown = false
-  let dialogueRevision = 0
-  let acpRevision = 0
-  const reviewCursor = createReviewStateCursor()
+  const reviewState = createReviewSessionState()
   const reconnect = createWsReconnectController({
     connect: () => connect(runId.value),
     shouldReconnect: () => !!runId.value && shown && !disposed && !ended.value,
@@ -286,25 +284,22 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
    * it is opening; after a node was shown the run is followed in place, and
    * a gate or the end of the run ends it in place.
    */
-  function applyRun(r: Run, id: string, fromSnapshot = false) {
+  function applyRun(r: Run, id: string, fromSnapshot = false, checkpoint?: ReviewRecoveryCheckpoint) {
     if (disposed || id !== runId.value || (r.id && r.id !== id) || ended.value) return
     const d = decideLive(r, requestedNode.value)
     const c = recentCurrentNode(r)
     if (shown && mode.value === 'chat' && d.kind === 'chat' && d.nodeId === nodeId.value) {
       // Reconnect independently of chatBusy: turn_done may have been lost.
       connect(id)
-      if (fromSnapshot) {
-        const session = r.reactSessions?.[nodeId.value]
-        if (!reviewCursor.accept({ ...session, nodeId: nodeId.value })) return
-        chatBusy = !!session?.busy
-        chat.value?.applyReviewFrame({
-          ...session,
-          event: 'queue_state',
-          nodeId: nodeId.value,
-          busy: chatBusy,
-          waiting: session?.waiting ?? 0,
-          items: session?.items ?? [],
-        })
+      if (fromSnapshot || r.reactSessions || typeof r.reviewSessionGeneration === 'number') {
+        // A healthy socket can still lose a terminal frame. Polling uses the
+        // same queue authority as reconnect, without rebasing newer versions.
+        const source = fromSnapshot ? { ...r, reactSessions: r.reactSessions ?? {} } : r
+        const frame = reviewState.reconcileSnapshot(source, checkpoint, [nodeId.value])
+          .find(frame => frame.nodeId === nodeId.value)
+        if (!frame) return
+        chatBusy = !!frame.busy
+        chat.value?.applyReviewFrame(frame)
       }
     }
     // Mid-turn in the continued chat: keep the live stream (refresh on turn_done).
@@ -376,17 +371,35 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
 
   async function load() {
     if (ended.value) return
+    return reviewState.requestRecovery((checkpoint, signal) => loadOnce(checkpoint, signal))
+  }
+
+  async function loadOnce(checkpoint: ReviewRecoveryCheckpoint, signal: AbortSignal) {
+    if (ended.value || signal.aborted) return
     const gen = ++loadGen
     const visit = visitEpoch
     const id = runId.value
-    const revision = dialogueRevision
+    const continuedChat = mode.value === 'chat'
+    const observingSeeded = mode.value === 'observe' && isSeeded()
+    const node = nodeId.value
+    const releaseAbortedInitialLoad = () => {
+      if (gen !== loadGen || !currentVisit(visit, id) || run.value) return
+      loadError.value = true
+      loading.value = false
+    }
+    signal.addEventListener('abort', releaseAbortedInitialLoad, { once: true })
     try {
-      const r = await api.getRun(id)
-      if (gen !== loadGen || !currentVisit(visit, id) || revision !== dialogueRevision) return
-      applyRun(r, id)
+      const r = await api.getRun(id, { signal })
+      if (signal.aborted || gen !== loadGen || !currentVisit(visit, id)) return
+      if (continuedChat && !reviewState.isCurrent(checkpoint, node)) return
+      applyRun(r, id, false, checkpoint)
+      if (continuedChat && mode.value === 'chat' && chatBusy) await seed(true, signal)
+      else if (observingSeeded && mode.value === 'observe' && nodeId.value === node &&
+        reviewState.isCurrent(checkpoint, node)) await seed(true, signal)
     } catch {
       if (gen === loadGen && currentVisit(visit, id)) loadError.value = !run.value
     } finally {
+      signal.removeEventListener('abort', releaseAbortedInitialLoad)
       if (gen === loadGen && currentVisit(visit, id)) loading.value = false
     }
   }
@@ -404,7 +417,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   /** Open the live bubble, then seed it from the node's current turn snapshot. */
-  async function seed(force = false) {
+  async function seed(force = false, signal?: AbortSignal) {
     const visit = visitEpoch
     const id = runId.value
     const node = nodeId.value
@@ -423,17 +436,17 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       surface.applyReviewFrame({ event: 'turn_begin', nodeId: nodeId.value, item: { text: '' } })
       if (lastEvents) surface.applyAcpEvents(lastEvents, nodeId.value)
     }
-    const revision = acpRevision
+    const checkpoint = reviewState.capture()
     try {
-      const r = await api.nodeEvents(id, node)
-      if (!currentVisit(visit, id, node, iter) || request !== seedRequest || ended.value ||
+      const r = await api.nodeEvents(id, node, signal ? { signal } : undefined)
+      if (signal?.aborted || !currentVisit(visit, id, node, iter) || request !== seedRequest || ended.value ||
         mode.value !== seedMode || (mode.value === 'chat' && !chatBusy) ||
         seededKey !== key || surface !== chat.value || isNodeEventsUnavailable(r)) return
       // A WS frame newer than the snapshot may already be on screen.
       // Top-level task on the first (non-paged) page only.
       const sent = 'task' in r ? r.task : undefined
       if (!task.value && typeof sent === 'string' && sent.trim()) task.value = sent.trim()
-      if (r.events?.length && ((!lastEvents && !force) || (force && revision === acpRevision))) {
+      if (r.events?.length && ((!lastEvents && !force) || (force && reviewState.isCurrent(checkpoint, node)))) {
         lastEvents = r.events
         surface.applyAcpEvents(r.events, node)
       }
@@ -455,7 +468,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       return
     }
     if (m.type === 'acp') {
-      acpRevision++
+      reviewState.noteAcp(String(m.nodeId ?? ''), Array.isArray(m.events) ? m.events as AcpEvent[] : [])
       if (m.nodeId !== nodeId.value) {
         if (m.nodeId) {
           const ahead = Array.isArray(m.events) ? (m.events as AcpEvent[]) : []
@@ -480,6 +493,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
     if (m.type === 'node_enter') {
       const frame = m as { nodeId?: string; name?: string; mode?: string }
+      reviewState.noteVisit(frame.nodeId ?? nodeId.value)
       applySidebarEnter(runId.value, frame, run.value?.nodes)
       settleLiveHandoffFromEnter(frame)
       return
@@ -494,14 +508,12 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     if (m.type === 'review' && mode.value === 'chat') {
       const f = m as Record<string, unknown>
       if (typeof f.nodeId === 'string' && f.nodeId && f.nodeId !== nodeId.value) return
-      if (!reviewCursor.acceptServer(f)) return
-      dialogueRevision++
+      if (!reviewState.acceptServer(f)) return
       notifyRecentActivity()
-      if (f.event === 'turn_begin') chatBusy = true
-      if (f.event === 'queue_state' && typeof f.busy === 'boolean') chatBusy = f.busy
+      const session = reviewState.session(nodeId.value)
+      if (session) chatBusy = !!session.busy
       chat.value?.applyReviewFrame(f)
       if (f.event === 'turn_done' || f.event === 'error') {
-        chatBusy = false
         scheduleRefresh()
       }
       return
@@ -549,9 +561,9 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
           receivedSnapshot = true
           const snapshot = (frame as { run?: Run }).run
           const sessions = snapshot?.reactSessions ?? {}
-          const versioned = reviewCursor.hasVersion || typeof snapshot?.reviewSessionGeneration === 'number' || Object.values(sessions).some(snap => typeof snap.sessionGeneration === 'number')
-          reviewCursor.reset()
-          reviewCursor.installSnapshot(sessions, snapshot?.reviewSessionGeneration)
+          const versioned = reviewState.hasVersion || typeof snapshot?.reviewSessionGeneration === 'number' || Object.values(sessions).some(snap => typeof snap.sessionGeneration === 'number')
+          reviewState.reset()
+          reviewState.installSnapshot(sessions, snapshot?.reviewSessionGeneration)
           if (versioned) chat.value?.applyReviewFrame({ event: 'session_reset', nodeId: nodeId.value })
         }
         onFrame(frame)
@@ -715,7 +727,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     chainRequest++
     completedRequest++
     stop()
-    reviewCursor.reset()
+    reviewState.reset()
     loading.value = true
     loadError.value = false
     run.value = null
@@ -739,8 +751,6 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     seededSurface = null
     lastEvents = null
     aheadEvents = null
-    dialogueRevision = 0
-    acpRevision = 0
     pollTimer = window.setInterval(poll, LIVE_POLL_MS)
     void load()
   }, { immediate: true, flush: 'sync' })
@@ -754,7 +764,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     void load()
     if (observeBooting()) void loadChain()
   }
-  onBeforeUnmount(() => { disposed = true; stop() })
+  onBeforeUnmount(() => { disposed = true; reviewState.dispose(); stop() })
 
   return {
     run,

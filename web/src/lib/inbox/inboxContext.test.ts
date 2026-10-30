@@ -129,6 +129,20 @@ describe('adaptInboxContextToRun', () => {
     expect(run.reactSessions?.react?.activeItem?.text).toBe('甲')
   })
 
+  it('carries the session generation even after the last FIFO was removed', () => {
+    const clarify = adaptInboxContextToRun({
+      type: 'clarify', status: 'waiting_human', reviewSessionGeneration: 7,
+      clarify: { nodeId: 'react', turns: [], done: false, label: '澄清' },
+    }, 'r-sess')
+    const gate = adaptInboxContextToRun({
+      type: 'gate', nodes: [], artifacts: [], nodeExecutions: {}, reviewSessionGeneration: 8,
+    }, 'r-gate')
+    expect(clarify.reviewSessionGeneration).toBe(7)
+    expect(gate.reviewSessionGeneration).toBe(8)
+    expect(clarify.reactSessions).toBeUndefined()
+    expect(gate.reactSessions).toBeUndefined()
+  })
+
   it('normalizes null clarify turns to an empty array', () => {
     const run = adaptInboxContextToRun(
       {

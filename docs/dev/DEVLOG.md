@@ -24,9 +24,9 @@
 
 - 日期：2026-10-30（UTC）。
 - 范围：`server/cmd/server/main.go`、`server/internal/{handlers/settings.go,execution/tools.go,services/model_configurations*,sandbox/{confighome_local,worktree_create,worktree_git_local,worktree_git_test}.go}`、`start.sh`、`scripts/test-start-local.sh`、`server/README.md`、`CHANGELOG.md`。
-- 做了什么：本机模式服务只监听 `127.0.0.1`。默认模型组按 CLI 记录已创建过的工具（`settings` 表 `local_model_defaults_seeded`），删除后不再自动恢复，`Get` 不再写库。本机 Git 只复制 SSH `config`/`known_hosts`，私钥原位使用。`/api/settings` 的宿主 Git 身份只返回给管理员。`start.sh` 停止前校验 PID 属于 grasp-server，重复启动报错，新增 `--local down|restart`。快照失败、预览工具缺失与启动期绑定失败改为记录警告。README 说明 OAuth 刷新不写回的限制。
+- 做了什么：本机模式服务只监听 `127.0.0.1`。默认模型组按 CLI 记录已创建过的工具（`settings` 表 `local_model_defaults_seeded`），删除后不再自动恢复，`Get` 不再写库。本机 Git 只复制 SSH `config`/`known_hosts`，私钥原位使用。`/api/settings` 的宿主 Git 身份只返回给管理员。`start.sh` 停止前校验 PID 属于 grasp-server，重复启动报错，新增 `--local down|restart`。快照失败、预览工具缺失与启动期绑定失败改为记录警告。README 说明 OAuth 刷新不写回的限制。合并主线 `68d9ab0f`（含 #1042 继承全部模型组），保留双方发布说明与开发记录；本机模式首次启动为共享 Agent 默认使用 `allConfigurations`，启动后新装的 CLI 也可选。
 - 为什么：服务原先监听所有网卡并使用公开的演示密码，本机模式下等同把宿主用户的执行权限、CLI 登录与 SSH agent 开放到局域网。默认组在每次读取时补种导致删除无效；私钥副本在进程崩溃时会残留在 worktree 目录；PID 复用可能误杀无关进程。
-- 如何验证：server execution、handlers、services、modelrouting、runtime、sandbox 全量单测通过，新增删除后不复活回归；`ssh -G` 校验身份文件指向宿主私钥、known_hosts 指向私有副本；`scripts/test-start-local.sh` 新增 PID 复用用例通过。
+- 如何验证：server execution、handlers、services、modelrouting、runtime、sandbox 全量单测通过，新增删除后不复活回归；`ssh -G` 校验身份文件指向宿主私钥、known_hosts 指向私有副本；`scripts/test-start-local.sh` 新增 PID 复用用例通过。合并后 web vue-tsc 与相关 546 项单测通过；本机模式实启服务确认只监听 127.0.0.1、默认组按已安装 CLI 创建、共享 Agent 绑定为 allConfigurations，删除默认组并重启后不复活。
 
 ### 2026-10-29（PR #1040 同步主线并解决记录冲突）
 
@@ -51,6 +51,77 @@
 - 做了什么：本机执行仍过滤服务环境中的密钥与 Git 覆盖；所选 CLI 登录按文件白名单复制，跳过历史与 worktrees，防止目标嵌套导致自复制，保留 hooks 的执行位。Git/SSH 配置使用私有副本，子进程使用独立 HOME/XDG 并保留 local 模式，仅显式继承 SSH agent。Trae 的 HOME 路径只允许链接 Grasp 自有 ConfigHome，以保留切换后的历史。移除 Codex 本机模式的 API Key 放行与外部沙箱绕过参数；OpenCode 使用配置文件路径与无密钥的运行期覆盖，官方登录文件复制并清理已移除的授权。Kimi 最终隔离配置保留匹配站点的已保存 API Key 或文件 OAuth，凭据刷新不写回来源。`down` 在 Docker 检查之前停止本地 PID。默认模型组只为已安装 CLI 创建，发现路径同步到子进程 PATH，具体绑定类型必须明确，Solo 严格限定 Agent 的绑定组。补充本机模式中英文提示；E2E 授权改用原生配置文件，并让 local 模式覆盖全部 56 个有向工具切换。
 - 为什么：已有 review 的三个必须修复项分别会扩大宿主机密钥传播、通过软链接写回登录状态，以及阻止无 Docker 环境关闭本地服务。继续核查发现模式传播、OpenCode 内联密钥、未绑定模型组回退和 E2E 依赖宿主环境变量也会掩盖实际边界问题。
 - 如何验证：新增密钥过滤、配置副本写回、HOME/SSH、绑定校验、OpenCode 登录及无 Docker 生命周期回归；Server / Sandbox 全量 lint、vet、单测、配置文档与 runtime 专项通过，核心覆盖率 90.5% / 96.6%，相关 race 通过。Web lint、vue-tsc、5,836 单测（Lines 91.75%）、生产构建及 260 项关键浏览器用例通过。最终本机构建通过完整 worktree 84 项与 local 57 轮矩阵（覆盖全部 56 个有向切换），46 项 Node 和 12 项 Python 合约通过。真实 Kimi Code 2.4.0 在无环境密钥情况下使用保存的 synthetic API Key 向 localhost 完成原生 ACP 请求，模型与强度正确；云模式原生模型／强度专项也通过。沙箱 smoke、Git、bootstrap、preview 检查，actionlint、error-level shellcheck、品牌断言、文档构建及 npm high/critical audit 通过。完整切换矩阵中的 Cursor / Trae / Kimi 仍明确标注协议夹具，Kimi 原生授权另测；未调用厂商 API 或读取真实密钥。
+### 2026-10-30（运行记录悬停行留白）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/src/views/RunListView.vue`、`web/src/views/RunListView.test.ts`、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：移除桌面表格首尾列清零内边距的覆盖，恢复表头、骨架和运行行两端的 12px 留白；操作列由 44px 调整为 56px，为 28px 按钮保留两侧间距，并同步既有列宽断言。
+- 为什么：运行标题和元信息紧贴悬停背景左边缘，缺少视觉留白；恢复右侧间距时也需为操作按钮预留足够列宽。
+- 如何验证：浏览器实测 1280px、768px 桌面布局中标题和操作按钮距行边缘均为 12px，表头、骨架对齐；长标题正常截断，390px 手机卡片保持 12px 内边距且无页面横向溢出。Web lint、vue-tsc、生产构建及全量 542 文件、5,849 项单测通过，Lines 91.76%；关键路径浏览器首轮 261/262 项通过，唯一失败与更新旧列宽断言触发的 Vite 页面刷新时间精确一致，保留 trace 后稳定页面下单独复测通过。actionlint、error-level shellcheck、品牌断言、docs 构建和官方源 high/critical audit 通过，构建产物已移至临时目录。 提交 PR 前同步最新 main，仅合并双方日志新增内容；Vue 实现与已测版本字节一致，同步后运行列表 53 项单测与桌面／手机删除、取消 10 项浏览器用例再次通过。
+
+### 2026-10-30（提交前审查：退休队列与迟到确认归属）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/src/lib/chat/reviewSessionState{,.test}.ts`、`web/src/lib/inbox/useGatesInbox{,.actions.test}.ts`、`docs/dev/workflow-chat-state.md`。
+- 做了什么：最终独立审查补齐两类边界：被拒绝或已过期且没有当前会话的 REST 节点，不再进入游标安装字典，防止已退休 FIFO 的旧代次被重新授权；离开后的确认失败只清自身捕获的 pending handoff，成功与失败都不能释放同一节点后来替换的新确认。提交前整合最新主分支，保留侧栏画布入口、所有模型组继承及双方日志。
+- 为什么：仅拒绝本次快照不够，安装阶段仍可能留下旧代次的隐式授权；仅释放原确认的逻辑锁也不够，残留的 pending 行会在返回原工作流时继续锁住发送，按相同条目键清理还可能误伤新的确认。
+- 如何验证：新增六项确定性回归均先在旧逻辑失败，再在修复后通过；共享状态、游标与历史三文件 76 项，Inbox/组件目标三文件 293 项通过。独立复查无剩余阻塞；整合后完整 Web 544 文件、5,997 项单测及 266 项关键路径浏览器回归全部通过，Lines 91.83%，lint、vue-tsc、生产构建、品牌与安全上下文断言通过。Go 1.26.10 下 server 全量测试、vet、golangci-lint 2.12、配置文档检查、runtime 专项和核心覆盖率 90.6% 通过；docs 构建与 high/critical audit、根目录 actionlint/error-level shellcheck 通过。远端 CI 在 PR 最新提交上单独核对，不将此前版本的绿色检查当作最新提交的结果。
+
+### 2026-10-30（多工作流并发实测与访问隔离）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/src/lib/inbox/{useGatesInbox,useGatesInbox.actions.test,useClarifyChat}.ts`、`web/src/components/run/ClarifyChat.test.ts`、`docs/dev/workflow-chat-state.md`、`CHANGELOG.md`。
+- 做了什么：补真实三个不同工作流的并发验收，节点均名为 `clarify`，每个工作流发送三条相同正文，共九条真实 DeepSeek Flash 回复；同时观察三个工作流各自的 Inbox、详情和实时页。仅 A 丢运行通知但保留心跳，B/C 正常；A 的真实发送确认和上下文响应延迟到切换 B 后才释放，另做 A→B→A 及反复访问、独立草稿恢复。补查发现 Inbox 的发送/确认和产物异步旁路遗漏访问守卫；现在同步记录访问代次，迟到 HTTP 成功、失败、409 及确认收尾内部等待只能处理原访问，旧产物读取还受请求序号限制。组件发送回调和 finally 也检查原会话代次与 run/node/iteration。
+- 为什么：统一状态循环已经保护实时消息和恢复读取，但父级动作与产物请求仍可能把 A 的迟到结果写到 B，或在 A→B→A 时误认成同一次访问。单工作流连续发送与纯流切换不能证明这些旁路隔离正确。
+- 如何验证：新增 19 个回归用例，首批 11 个在旧逻辑确定性失败；目标三文件 289 项测试、类型检查与 ESLint 通过，独立审查无阻塞。最终完整 Web 单测 544 文件、5,975 项通过，Lines 91.82%；完整关键路径浏览器回归 264 项通过，lint、vue-tsc、生产构建、品牌与安全上下文断言通过；根目录 actionlint、error-level shellcheck、docs 构建与 high/critical audit 通过。真实并发阶段确认三个 FIFO 同时 busy、各 waiting=2，代次分别 6/5/4；原生首轮时间区间重叠，三个原生会话独立，每个请求恰有一次 native shell 完成与成功终态，各自等待数 2/1/0。九个页面均只加载一次文档，B/C 始终各一条连接且无丢帧，A 实时观察页不切换、不重连也自行恢复；三个工作流各有三对身份与顺序独立的用户/回复，无串入其他工作流内容、无残留队列或忙碌状态。A 的迟到确认与上下文不改 B 草稿，返回 A 恢复 A 草稿。Key 与私有状态均仅用于临时环境，全部运行、服务及凭据已清理；未部署生产。
+
+### 2026-10-30（真实 DeepSeek 消息队列验收与单轮工具投影）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`server/internal/models/{graph,models,react_tools_test}.go`、`server/internal/engine/chat_tools_test.go`、`docs/dev/workflow-chat-state.md`、`CHANGELOG.md`；真实模型验收使用仓库外临时脚本与隔离数据。
+- 做了什么：使用当前源码构建的服务端、运行时、原生 dsh 0.2.1-rc.2 和真实 DeepSeek Flash，在真实澄清页面发送消息，同时观察运行详情与实时页。验证连续不同正文、三条同文、遗漏 ACP 与开始/结束通知，以及只保留心跳、丢弃其余运行通知。实测另发现单条回复的工具摘要累计先前轮次；Tools 与 Parts 现在共用当前回复事件范围，保留隐藏续轮，排除首部与确认收尾拼接中夹入的旧快照，完整原始 Events 保持不变。
+- 为什么：模拟模型不能证明真实原生 CLI 的累计日志与平台 FIFO、三个页面恢复能够组合工作。真实调用将工具统计的旧投影缺陷暴露为 1/2/3；独立审查进一步复现确认收尾的夹层历史重复，必须在公共投影边界一起修复。
+- 如何验证：12 条有效验收消息均按身份顺序产生一条用户记录和一条真实回复，各有一次原生 shell 完成和 ACP 成功终态；等待数依次 2/1/0，最终权威 FIFO 消失。三个页面各只有一次文档加载和一次 socket 连接，均补回回复、清空队列与忙碌状态、保留草稿，无浏览器错误；最终代码再验三条全通知丢失，工具数保持 1/1/1。新增单测先红后绿，覆盖澄清、复审和审批修改三轮 1/1/0、无当前时间线、隐藏续轮、历史占满工具上限及确认收尾夹层快照；受影响模型与引擎 race 通过。独立审查及最终 Go 1.26.10 全量测试、vet、配置文档检查、runtime 专项、golangci-lint 2.12 全绿，核心覆盖率 90.6%；docs 构建与 high/critical audit 通过。Key 仅临时注入，临时服务、运行、私有状态及凭据均已清理，不写入仓库或测试日志。验收使用本地 worktree 执行模式，不代表已部署生产或验证生产容器网络。
+
+### 2026-10-30（聊天历史故障矩阵与组合回归）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/src/lib/{chat,inbox,run}/`、`web/src/components/run/ClarifyChat.test.ts`、`web/e2e/{gates-typing-autoapply,run-live-continue}.spec.ts`、`server/internal/sandbox/acp_session_integration_test.go`、`docs/dev/workflow-chat-state.md`、`CHANGELOG.md`。
+- 做了什么：沿 Git 差异核对并记录 19 类历史消息故障及具体测试位置，保留旧身份、并发、取消、重连、切换与续跑回归。追加 68 项前端单测，覆盖混合 WS/REST 的确定性投递排列，以及三个宿主在空帧、纯 liveness、旧累计内容加新 liveness 到达时的恢复。内容进展与渲染去重共享完整语义指纹，忽略存活采样和事件偏移；工具的输出、输入、摘要与耗时变化继续更新；纯存活帧保留已画出的工具详情且不创建空回复。Inbox/详情接受纯工具与时间线补读，自动观察页在正常轮询时也补回已展示节点的输出，并继续拒绝被新实时内容超越的结果。新增两个浏览器组合场景验证工具先行、心跳交错、WS 先于 HTTP、三条同文不同身份的请求、遗漏开始/结束、旧队列帧、草稿和不刷新。服务端新增真实 ACP WebSocket 与 chatsession FIFO 的连续失败、EOF、取消持久化、慢发布及迟到帧组合回归。
+- 为什么：上一轮的全绿测试没有覆盖这四处真实边界：存活采样被误当作内容进展；纯工具恢复被正文条件过滤；状态不变但工具细节增长时被去重；自动观察页只完成首次 seed。历史修复仍需按实际触发顺序与当前统一循环组合验证，不能只检查已有测试数量。
+- 如何验证：恢复旧进展计数和纯正文过滤后，13 项宿主测试确定性失败；旧工具签名的 4 项 DOM 回归全红，纯存活帧渲染另有 3 项旧逻辑确定性失败；自动观察页旧轮询确定性不补读。旧 ACP 实现的连续 FIFO 测试丢失大部分正文及失败终态，`1971431e^` 的取消顺序在清队列持久化前中断原生回合；当前实现全部通过，新后端组合回归 race 重复 30 次、完整 sandbox/chatsession 两包单测与 race、vet 通过。Web 544 文件、5,956 项单测及完整 264 项浏览器用例全部通过，Lines 91.82%；两个新增组合场景验证无刷新、无重复发送、三条同文身份独立及草稿保留。lint、vue-tsc、生产构建、品牌和安全上下文断言通过；server 全测、lint、vet、配置文档、runtime 专项和核心覆盖率 90.5% 通过；根目录 actionlint、error-level shellcheck、docs 构建与 high/critical audit 通过。最终 diff 与历史 Go 测试引用检查通过，生成物和本地配置不入库。
+
+### 2026-10-30（工作流聊天统一消息处理循环）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/src/lib/chat/{reviewSessionState,sessionQueue}*`、`web/src/lib/{inbox,run,api/clients}/`、相关组件与浏览器回归、`web/LIB_DOMAIN_MAP.json`、`server/internal/sandbox/acp*`、`docs/dev/workflow-chat-state.md`、`CHANGELOG.md`。
+- 做了什么：澄清收件箱、运行详情和实时运行页共用消息处理循环，统一权威队列投影、服务端事件更新、会话版本检查和恢复请求的合并与取消。状态读取不受本地旧 busy 阻挡；健康连接下也能恢复遗漏的启动、输出和结束通知。较新的轮次、实时内容或访问使旧恢复结果失效，结束后的软刷新也走同一恢复通道。恢复读取超过 60 秒即取消并释放后续核对；即使底层请求不响应取消，迟到结果也不能回写，真实执行中的请求与队列保持不变。首次读取超时显示可重试错误。当前上下文已就绪时直接推进旧启动选中项，保留首条消息附件；同一轮次与启动时间的迟到列表不能再退回启动中。inbox adapter 保留会话代次水位。底层 ACP 缓冲改为可取消的有界背压，保留正文、错误与结束顺序，断连先消费已接收的结束帧，未完成的部分回复保留明确错误。
+- 为什么：沿 git history 核对已有发送身份、重连、队列版本修复后，三个页面仍各自推断 busy 和刷新条件。遗漏结束通知后，本地 busy 又阻止恢复读取；即使真实状态已空闲或正在输出，页面也只能靠手动刷新追上。启动页还可能被过期列表选中项锁在启动中。服务端另有缓冲满时静默丢失所有帧的实际漏洞，包括结束通知，会连带阻塞后续队列。架构与约束见同目录 `workflow-chat-state.md`。
+- 如何验证：新增收件箱与实时页定向回归在旧实现上复现失败；新增 ACP 慢消费者回归在旧实现只保留 128 段中的 5 段且遗失结束帧，修复后全部保留，后续消息仅执行一次。首次读取超时、旧读取迟到、旧加载清理影响新选中项、相同节点名跨会话与 A→B→A 的补读均有确定性回归。Web 543 文件、5,888 项单测及完整 262 项关键浏览器用例全部通过，Lines 91.82%；浏览器覆盖健康连接下遗漏启动、持续输出与结束通知，验证无需刷新、队列按序、草稿保留。lint、vue-tsc、生产构建、品牌和安全上下文断言通过。server 全量单测、lint、vet、配置文档检查、runtime 专项及核心覆盖率（90.5%，门槛 90%）、完整 sandbox 包 race 和专项重复验证通过；根目录 actionlint、error-level shellcheck、docs 构建和 high/critical audit 通过。生成物与本地配置不入库。
+
+### 2026-10-30（CoCo 浮窗使用 Grasp 动态图标）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/public/preview-pick.js`、`web/src/lib/shared/previewPickScript.test.ts`、`web/e2e/live-variants.spec.ts`、`server/internal/handlers/preview-pick.js`、`sandbox-gateway/sandbox/internal/previewinject/preview-pick.js`、`CHANGELOG.md`。
+- 做了什么：浮窗标题栏改用主站 `BrandCharacterMark.vue` 的双耳轮廓、椭圆眼睛、微笑和灰色脸颊；加入同样的轻摆、呼吸和双眨眼，以及悬停抬头反馈。保持原有图标占位，减少动态效果设置即时停止动画和悬停变换；通过既有构建命令同步三个注入脚本副本。单测直接比较主站图标的 SVG 图形属性，浏览器回归检查真实动画、主题和稳定布局。
+- 为什么：原浮窗自行绘制的长耳、胡须图形与 Grasp 标识不一致，也没有角色动画；复用现有角色形状和动画节奏，让浮窗与主站一致。
+- 如何验证：图标相关 73 项单测及 Web 全量 542 文件、5,833 项单测通过，Lines 91.75%；lint、vue-tsc、生产构建和品牌／安全上下文断言通过。新增动画浏览器专项通过；完整关键路径浏览器首轮 258/261 项通过，三项因模块请求 `ERR_NETWORK_CHANGED` 中断，保留 trace 后仅复测失败项，三项全部通过。使用隔离端口避免复用其他 worktree 的测试服务，临时测试文件已清理；深浅主题截图人工核对一致。Server 全套 lint、vet、配置文档、单测、runtime 专项与核心覆盖率通过（90.5%）；Sandbox lint、vet、注入／Git／bootstrap／mock smoke、previewinject 单测、cli-tools 构建和核心覆盖率通过（96.6%）。actionlint、error-level shellcheck、docs 构建和官方源 high/critical audit 通过；文档生成物移至临时目录，三个注入脚本副本字节一致。 提交 PR 前同步最新 main，保留双方日志条目；图标实现与已测版本一致，同步后 73 项图标单测、动画浏览器专项、配置文档、品牌与根目录检查再次通过。
+
+### 2026-10-30（OpenCode 官方模型容量计算溢出保护）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`sandbox-gateway/sandbox/internal/provider/modelconnection/platform.go`、`docs/dev/DEVLOG.md`。
+- 做了什么：官方模型 provider 校验按实际配置数预分配容量，仅在存在会话模型时先检查 `math.MaxInt` 再递增，保持模型顺序、默认 provider 和同族校验不变。
+- 为什么：修复 CodeQL 告警 #73 指出的 `1+len(configured)` 分配容量整数溢出风险，拒绝不可表示的容量。
+- 如何验证：独立审查两个调用点及空／非空会话边界；Go 1.26.10 下 sandbox 全量单测、lint（0 issues）、vet 和核心覆盖率门禁通过（96.6%，门槛 90%）。actionlint、error-level shellcheck、Shell／Node 语法检查及 inject、git-auth、runtime-bootstrap、mock-chat-model、preview-inject-upstream smoke 通过；合并前继续核对完整 Agent 切换测试和最新提交的远端 CI。
+
+### 2026-10-30（继承所有已配置的模型组）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/src/components/{agent,onboarding}/`、`web/src/lib/{agent,api,solo}/`、`web/e2e/model-routing.spec.ts`、`server/internal/{modelrouting,services,engine}/`、`CHANGELOG.md`。
+- 做了什么：默认配置与 Agent 增加“继承所有已配置的模型组”开关，以 `allConfigurations` 持久化动态继承所有已启用组，新增组自动加入。明确的默认启动组独立选择；全部继承卡片与 Agent 继承摘要使用通用图标，卡片仅保留开关和说明，不列组名。聊天选择始终携带模型组身份，新增组不改变已有选择；新建、磁盘配置与 ZIP 导入导出保留标记。关闭开关恢复当前编辑期间的手动绑定，重新打开后保留默认组。团队与首次配置向导维持原有显式组请求格式。工作流启动校验读取 Agent 的有效继承配置，与聊天选择保持一致。
+- 为什么：逐个维护绑定无法持续跟随新建模型组；默认工具的品牌图标也不能代表继承全部组。独立 review 复现了工作流启动按本地绑定校验、拒绝界面已列出继承组的边界，已补有效配置解析与真实服务回归。实际执行继续验证所选组、模型和授权，其他组失效不阻止有效默认组保存／运行，缺失默认组不自动更换账号。
+- 如何验证：Web 全量 542 文件、5,840 项单测通过，Lines 91.75%；lint、vue-tsc、生产构建和完整关键路径浏览器 261 项通过。组件与桌面／手机截图确认通用图标、独立启动默认组、无组名列表；浏览器覆盖保存重载、继承新增组、停用组排除与关闭开关。完整八工具、84 项 Agent 切换矩阵以全量模式创建 Agent，并在保存后新增实际参与切换的组，通过真实服务端／运行时／本地模型／MCP 链路；可配置工具使用原生 CLI，Cursor、Trae、Kimi Code 保持明确的 platform-wire fixtures 边界，付费模型请求为零。Node 45 项、Python 9 项合约及 docs 构建、官方源 high/critical audit、actionlint、error-level shellcheck、品牌与 diff 检查通过；Go 1.26.10 下 server 全量 lint、vet、配置文档检查、单测、runtime 专项与核心覆盖率检查通过（90.5%）；新增真实服务回归先在旧代码复现工作流启动拒绝继承组，再验证修复。
 
 ### 2026-10-29（PR #1041 的 Vue I18n 安全审计修复）
 

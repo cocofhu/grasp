@@ -171,28 +171,21 @@ func main() {
 		return err
 	})
 	if execution.Local() {
-		if err := modelConfigurationSvc.EnsureLocalDefaults(); err != nil {
-			log.Warn().Err(err).Msg("seed local model configurations failed")
-		}
+		// List also seeds groups for installed CLIs. Inheriting all groups keeps
+		// CLIs installed after this start selectable without editing defaults.
 		sharedCfg := sharedAgentSvc.Get()
 		if items, err := modelConfigurationSvc.List(); err != nil {
 			log.Warn().Err(err).Msg("list local model configurations failed")
-		} else if len(items) > 0 {
-			ids := make([]string, 0, len(items))
+		} else if sharedCfg.ModelBinding == nil {
 			for _, item := range items {
-				if item.State == "active" {
-					ids = append(ids, item.ID)
+				if item.State != "active" {
+					continue
 				}
-			}
-			if len(ids) > 0 && sharedCfg.ModelBinding == nil {
-				sharedCfg.ModelBinding = &modelrouting.Binding{
-					Kind:             "configuration",
-					ConfigurationID:  ids[0],
-					ConfigurationIDs: ids,
-				}
+				sharedCfg.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: item.ID, AllConfigurations: true}
 				if err := sharedAgentSvc.Save(sharedCfg); err != nil {
 					log.Warn().Err(err).Msg("bind local model configurations to the shared Agent failed")
 				}
+				break
 			}
 		}
 	}

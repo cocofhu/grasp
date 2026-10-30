@@ -22,6 +22,11 @@ function toggle() {
   emit('update:modelValue', !props.modelValue)
 }
 
+function onClick(event: MouseEvent) {
+  event.stopPropagation()
+  toggle()
+}
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
@@ -40,24 +45,34 @@ function onKeydown(e: KeyboardEvent) {
     :aria-disabled="disabled ? 'true' : undefined"
     :disabled="disabled"
     :tabindex="disabled ? -1 : 0"
-    @click="toggle"
+    @click="onClick"
     @keydown="onKeydown"
   >
     <span
-      class="app-switch-thumb pointer-events-none absolute top-0.5 h-4 w-4 rounded-full"
-      :class="modelValue ? 'left-[18px] bg-white' : 'left-0.5 bg-txt2'"
+      class="app-switch-thumb pointer-events-none absolute left-0.5 top-0.5 h-4 w-4 rounded-full"
+      :class="modelValue ? 'is-on bg-white' : 'bg-txt2'"
     />
   </button>
 </template>
 
 <style scoped>
-.app-switch,
-.app-switch-thumb {
+.app-switch {
   transition:
-    background-color var(--dur-ui) var(--ease-out-expo),
-    border-color var(--dur-ui) var(--ease-out-expo),
-    left var(--dur-ui) var(--ease-out-expo),
-    transform var(--dur-ui) var(--ease-out-expo);
+    background-color 180ms var(--ease-out-expo),
+    border-color 180ms var(--ease-out-expo);
+}
+.app-switch-thumb {
+  --switch-x: 0px;
+  transform: translateX(var(--switch-x)) scale(1);
+  transition:
+    background-color 180ms var(--ease-out-expo),
+    transform 180ms var(--ease-out-expo);
+}
+.app-switch-thumb.is-on {
+  --switch-x: 16px;
+}
+.app-switch:active:not(:disabled) .app-switch-thumb {
+  transform: translateX(var(--switch-x)) scale(0.88);
 }
 
 /* On + enabled only. Resting track stays bg-accent (#7B61FF). */
@@ -66,13 +81,14 @@ function onKeydown(e: KeyboardEvent) {
   border-color: rgb(var(--c-accent-hover));
 }
 
-/* Color still snaps to the hover token; only the color transition is dropped. */
+/* Reduced motion still lands on the target side, without travel or press scale. */
 @media (prefers-reduced-motion: reduce) {
   .app-switch,
   .app-switch-thumb {
-    transition:
-      left var(--dur-ui) var(--ease-out-expo),
-      transform var(--dur-ui) var(--ease-out-expo);
+    transition: none;
+  }
+  .app-switch:active:not(:disabled) .app-switch-thumb {
+    transform: translateX(var(--switch-x)) scale(1);
   }
 }
 </style>

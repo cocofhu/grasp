@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { computed, nextTick, ref } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 
@@ -185,7 +186,7 @@ describe('useRunDetailWs coverage', () => {
     })
     h.clarifyNode.value = 'fetched'
     await h.api.seedDialogueAcpAfterRestore(['fetched'])
-    expect(h.fetchNodeEvents).toHaveBeenCalledWith('fetched')
+    expect(h.fetchNodeEvents).toHaveBeenCalledWith('fetched', expect.anything())
     expect(h.review.applyAcpEvents).toHaveBeenCalledWith(rails, 'fetched')
 
     h.api.teardownRealtime()
@@ -304,6 +305,191 @@ describe('useRunDetailWs coverage', () => {
     h.api.teardownRealtime()
   })
 
+  it('reconciles an idle REST session despite stale local busy and a healthy heartbeat', async () => {
+    const h = harness({ clarifyBusy: true })
+    h.api.connectWs()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({ type: 'review', nodeId: 'n1', event: 'turn_begin', sessionGeneration: 5, revision: 2,
+      item: { id: 'finished', text: '我的选择' }, waiting: 1, items: [{ id: 'sent', text: '后续更正' }] })
+    h.review.isSessionBusy.mockReturnValue(true)
+    h.review.applyReviewFrame.mockClear()
+    socket.message({ type: 'heartbeat' })
+    const capture = h.api.captureReviewSnapshot()
+    await h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: {} } as Run, capture)
+    expect(h.liveBusy.n1).toBe(false)
+    expect(h.review.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'queue_state', nodeId: 'n1', busy: false, waiting: 0, items: [],
+    }))
+    expect(h.review.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'session_reset' }))
+    expect(h.run.value.reactSessions?.n1?.busy).not.toBe(true)
+    h.api.teardownRealtime()
+  })
+
+  it('keeps newer WS turn authority when an older REST session snapshot returns', async () => {
+    const h = harness()
+    h.api.connectWs()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    socket.message({ type: 'review', nodeId: 'n1', event: 'turn_begin', sessionGeneration: 5, revision: 2,
+      item: { id: 'first', text: 'first' }, waiting: 0, items: [] })
+    const capture = h.api.captureReviewSnapshot()
+    socket.message({ type: 'review', nodeId: 'n1', event: 'turn_begin', sessionGeneration: 6, revision: 1,
+      item: { id: 'new', text: 'newer turn' }, waiting: 0, items: [] })
+    h.review.applyReviewFrame.mockClear()
+    await h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: {} } as Run, capture)
+    expect(h.liveBusy.n1).toBe(true)
+    expect(h.run.value.reactSessions?.n1?.activeItem?.id).toBe('new')
+    expect(h.review.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ busy: false }))
+    h.api.teardownRealtime()
+  })
+
+  it('recovers missing ACP progress for the same busy turn without resetting it', async () => {
+    const h = harness({ clarifyBusy: true, eventPages: { n1: { events: [{ kind: 'thought', text: 'older', t: 0 }] } } })
+    h.api.connectWs()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    const state = { sessionGeneration: 5, revision: 2, busy: true, waiting: 0, items: [], activeItem: { id: 'active', text: 'work' } }
+    socket.message({ type: 'review', nodeId: 'n1', event: 'queue_state', ...state })
+    h.review.applyReviewFrame.mockClear()
+    h.review.applyAcpEvents.mockClear()
+    h.fetchNodeEvents.mockImplementationOnce(async (nodeId) => {
+      h.eventPages[nodeId!] = { events: rails }
+      return true
+    })
+    const capture = h.api.captureReviewSnapshot()
+    await h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: { n1: state } } as Run, capture)
+    expect(h.fetchNodeEvents).toHaveBeenCalledWith('n1', expect.anything())
+    expect(h.review.applyAcpEvents).toHaveBeenCalledWith(rails, 'n1')
+    expect(h.liveBusy.n1).toBe(true)
+    expect(h.review.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'session_reset' }))
+    h.api.teardownRealtime()
+  })
+
+  it.each(['empty', 'liveness', 'unchanged-content'])('keeps detail recovery current across %s ACP observations', async noise => {
+    const h = harness()
+    try {
+      h.api.connectWs()
+      const socket = MockWebSocket.instances.at(-1)!
+      socket.open()
+      const state = { sessionGeneration: 5, revision: 2, busy: true, waiting: 1,
+        items: [{ id: 'next' }], activeItem: { id: 'active' } }
+      socket.message({ type: 'review', nodeId: 'n1', event: 'queue_state', ...state })
+      socket.message({ type: 'acp', nodeId: 'n1', events: rails, busy: true })
+      const heartbeat = { kind: 'liveness', t: 20, liveness: { active: true, cpuMs: 100, ioBytes: 200, idleSec: 0, limitSec: 300 } }
+      const observations = noise === 'empty' ? [] : noise === 'liveness' ? [heartbeat]
+        : [...rails.map(event => ({ ...event, t: 20 })), heartbeat]
+      const recovered: AcpEvent[] = [{ kind: 'message', t: 3, text: 'recovered content after missed push' }]
+      let finish!: () => void
+      let readCurrent!: () => boolean
+      h.fetchNodeEvents.mockImplementationOnce((_nodeId, options) => new Promise(resolve => {
+        readCurrent = options!.isCurrent!
+        finish = () => {
+          if (readCurrent()) h.eventPages.n1 = { events: recovered }
+          resolve(readCurrent())
+        }
+      }))
+      h.api.reconcileReviewSnapshot({ id: 'run-1', reactSessions: { n1: state } } as Run, h.api.captureReviewSnapshot())
+      socket.message({ type: 'acp', nodeId: 'n1', events: observations, busy: true })
+      expect(readCurrent()).toBe(true)
+      finish()
+      await flushPromises()
+      expect(h.review.applyAcpEvents).toHaveBeenCalledWith(recovered, 'n1')
+      expect(h.liveBusy.n1).toBe(true)
+
+      const capture = h.api.captureReviewSnapshot()
+      socket.message({ type: 'acp', nodeId: 'n1', events: observations, busy: false })
+      const settled = h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: {} } as Run, capture)
+      expect(settled).toBeDefined()
+      expect(h.review.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ busy: false, waiting: 0, items: [] }))
+    } finally { h.api.teardownRealtime() }
+  })
+
+  it.each([
+    { events: [{ kind: 'tool_call', t: 1, title: 'read_file', status: 'running' }] },
+    { events: [{ kind: 'timeline', t: 1, parts: [{ kind: 'tool', title: 'Shell', status: 'in_progress', output: 'line one' }] }] },
+  ])('restores detail tool-only progress before thought/message: $events', async ({ events }) => {
+    const h = harness()
+    try {
+      h.api.connectWs()
+      const socket = MockWebSocket.instances.at(-1)!
+      socket.open()
+      const state = { sessionGeneration: 5, revision: 2, busy: true, waiting: 0, items: [], activeItem: { id: 'tools-first' } }
+      socket.message({ type: 'review', nodeId: 'n1', event: 'queue_state', ...state })
+      h.fetchNodeEvents.mockImplementationOnce(async nodeId => {
+        h.eventPages[nodeId!] = { events }
+        return true
+      })
+      h.api.reconcileReviewSnapshot({ id: 'run-1', reactSessions: { n1: state } } as Run, h.api.captureReviewSnapshot())
+      await flushPromises()
+      expect(h.review.applyAcpEvents).toHaveBeenCalledWith(events, 'n1')
+    } finally { h.api.teardownRealtime() }
+  })
+
+  it('discards delayed progress after newer ACP and rejects REST from a prior visit', async () => {
+    const h = harness()
+    h.api.connectWs()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    const state = { sessionGeneration: 5, revision: 2, busy: true, waiting: 0, items: [], activeItem: { id: 'active', text: 'work' } }
+    socket.message({ type: 'review', nodeId: 'n1', event: 'queue_state', ...state })
+    let finish!: () => void
+    let readCurrent!: () => boolean
+    h.fetchNodeEvents.mockImplementationOnce((_nodeId, options) => new Promise((resolve) => {
+      readCurrent = options!.isCurrent!
+      finish = () => {
+        if (readCurrent()) h.eventPages.n1 = { events: [{ kind: 'thought', text: 'old response', t: 0 }] }
+        resolve(readCurrent())
+      }
+    }))
+    h.api.reconcileReviewSnapshot({ id: 'run-1', reactSessions: { n1: state } } as Run, h.api.captureReviewSnapshot())
+    socket.message({ type: 'acp', nodeId: 'n1', events: rails, busy: true })
+    expect(readCurrent()).toBe(false)
+    finish()
+    await nextTick()
+    expect(h.review.applyAcpEvents).toHaveBeenLastCalledWith(rails, 'n1')
+    expect(h.review.applyAcpEvents).not.toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ text: 'old response' })]), 'n1')
+
+    const previousVisit = h.api.captureReviewSnapshot()
+    h.run.value = { ...h.run.value, clarify: { nodeId: 'n1', iteration: 2, turns: [], done: false } }
+    expect(h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: {} } as Run, previousVisit)).toBeUndefined()
+    expect(h.liveBusy.n1).toBe(true)
+    h.api.teardownRealtime()
+  })
+
+  it('serializes snapshot and content recovery while live WS ingress remains immediate', async () => {
+    const h = harness()
+    h.api.connectWs()
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    const state = { sessionGeneration: 5, revision: 2, busy: true, waiting: 0, items: [], activeItem: { id: 'active', text: 'work' } }
+    socket.message({ type: 'review', nodeId: 'n1', event: 'queue_state', ...state })
+    let releaseSnapshot!: () => void
+    let snapshotPending = true
+    const recovery = h.api.requestReviewRecovery(async () => {
+      await new Promise<void>(resolve => { releaseSnapshot = resolve })
+      snapshotPending = false
+    })
+    h.fetchNodeEvents.mockImplementationOnce(async nodeId => {
+      expect(snapshotPending).toBe(false)
+      h.eventPages[nodeId!] = { events: rails }
+      return true
+    })
+    h.api.reconcileReviewSnapshot({ id: 'run-1', reactSessions: { n1: state } } as Run)
+    expect(h.fetchNodeEvents).not.toHaveBeenCalled()
+    socket.message({ type: 'acp', nodeId: 'n1', events: rails, busy: true })
+    expect(h.review.applyAcpEvents).toHaveBeenCalledWith(rails, 'n1')
+    releaseSnapshot()
+    await recovery
+    expect(h.fetchNodeEvents).toHaveBeenCalledTimes(1)
+
+    const beforeVisit = h.api.captureReviewSnapshot()
+    socket.message({ type: 'node_enter', nodeId: 'n1', iteration: 2 })
+    expect(h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: {} } as Run, beforeVisit)).toBeUndefined()
+    expect(h.liveBusy.n1).toBe(true)
+    h.api.teardownRealtime()
+  })
+
   it('keeps a newly connected idle view idle when a retired session publishes late', async () => {
     const h = harness()
     h.api.connectWs()
@@ -404,7 +590,7 @@ describe('useRunDetailWs coverage', () => {
     first.message('not json')
     first.message({ type: 'snapshot', run: { reactSessions: { n1: { busy: false } } } })
     await nextTick()
-    expect(h.run.value.reactSessions).toEqual({ n1: { busy: false } })
+    expect(h.run.value.reactSessions).toEqual({ n1: { busy: false, waiting: 0, items: [] } })
 
     first.remoteClose()
     expect(h.api.wsConnected).toBe(false)
@@ -576,7 +762,7 @@ describe('useRunDetailWs coverage', () => {
 
   it('initializes selection and covers every polling state', async () => {
     vi.useFakeTimers()
-    const h = harness({ selected: null, nodeTab: 'sandbox' })
+    const h = harness({ selected: null, nodeTab: 'sandbox', clarifyNode: null })
     const deep = vi.fn(() => true)
     const output = vi.fn(() => false)
     const sync = vi.fn()

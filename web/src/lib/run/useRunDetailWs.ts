@@ -3,7 +3,7 @@
  */
 import { nextTick, watch, type ComputedRef, type Ref } from 'vue'
 import { api } from '@/lib/api/api'
-import { createPendingAcpBuffer, pickAcpRails } from '@/lib/run/pendingAcpBuffer'
+import { createPendingAcpBuffer } from '@/lib/run/pendingAcpBuffer'
 import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
   createBusySeedRetryController,
@@ -13,7 +13,7 @@ import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
 import { applySidebarEnter, noteSidebarRunStatus } from '@/lib/inbox/sidebarHandoff'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
-import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
+import { createReviewSessionState, hasAcpContent, type ReviewRecoveryCheckpoint, type ReviewSessionFrame } from '@/lib/chat/reviewSessionState'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { EventPageState } from '@/lib/run/useRunDetailLiveLog'
 
@@ -45,7 +45,7 @@ export function useRunDetailWs(opts: {
   llmTranscriptRef?: Ref<DialogueSurface>
   gateApprovalRef: Ref<GateSurface>
   selClarify: ComputedRef<{ nodeId: string } | null>
-  fetchNodeEvents: (nodeId: string | null, opts?: { signal?: AbortSignal }) => Promise<boolean>
+  fetchNodeEvents: (nodeId: string | null, opts?: { signal?: AbortSignal; isCurrent?: () => boolean }) => Promise<boolean>
   mergeLiveWsAcpPage: (nodeId: string, wsEvents: AcpEvent[]) => void
   rehydrateByNode: Record<string, string>
   rehydrateNodeEvents: (nodeId: string | null, opts?: { force?: boolean }) => Promise<void>
@@ -102,14 +102,8 @@ export function useRunDetailWs(opts: {
   /** Rails applied via seed or live — stops busy seed retry (g3). */
   let dialogueRailsFilled = false
   let dialogueLiveIncremental = false
-  /**
-   * Platform review/clarify session busy per node (queue_state / turn_begin /
-   * reactSessions). Separate from liveBusy which also tracks ACP sandbox dips
-   * for LiveLog — dialogue seed retry must not go idle on ACP busy=false (g1.2).
-   */
-  const dialoguePlatformBusy: Record<string, boolean> = Object.create(null)
   const busySeedRetry = createBusySeedRetryController()
-  const reviewCursor = createReviewStateCursor()
+  const reviewState = createReviewSessionState()
   const wsReconnect = createWsReconnectController({
     connect: () => connectWs({ fromReconnect: true }),
     shouldReconnect: () =>
@@ -135,68 +129,111 @@ export function useRunDetailWs(opts: {
    * Align Inbox hard-load: multi nextTick so ReviewComposer/GateApproval mount
    * before queue_state → seed → flush → live (g2.1).
    */
+  function dialogueNodes() {
+    return [...new Set([selClarify.value?.nodeId, llmTranscriptRef?.value?.getNodeId?.(),
+      run.value.gate?.reactUpstreamNodeId].filter((nodeId): nodeId is string => !!nodeId))]
+  }
+
+  // A node revisit can reuse its id while replacing the conversation. Request
+  // checkpoints therefore include the visit as well as the shared WS clocks.
+  function dialogueVisit() {
+    return JSON.stringify([runId.value, run.value.attempt,
+      run.value.clarify?.nodeId, run.value.clarify?.iteration,
+      Object.entries(run.value.clarifyByNode ?? {}).map(([id, slot]) => [id, slot.iteration]),
+      Object.entries(run.value.nodeRuns ?? {}).map(([id, node]) => [id, node.iteration, node.startedAt])])
+  }
+
+  function captureReviewSnapshot() {
+    return { runId: runId.value, visit: dialogueVisit(), state: reviewState.capture() }
+  }
+
+  function currentReviewRead(capture: ReturnType<typeof captureReviewSnapshot>, nodeId?: string) {
+    return capture.runId === runId.value && capture.visit === dialogueVisit() &&
+      reviewState.isCurrent(capture.state, nodeId)
+  }
+
+  function projectReviewFrame(frame: ReviewSessionFrame, restore = false) {
+    const nodeId = frame.nodeId
+    if (!nodeId) return
+    const session = reviewState.session(nodeId)
+    if (session) {
+      liveBusy[nodeId] = !!session.busy
+      if (!session.busy) busySeedRetry.stop()
+    }
+    if (restore) {
+      if (showsDialogue(nodeId)) dialogueChat(nodeId)?.applyReviewFrame?.(frame)
+    } else {
+      if (!selClarify.value || selClarify.value.nodeId === nodeId) reviewChatRef.value?.applyReviewFrame?.(frame)
+      llmTranscriptRef?.value?.applyReviewFrame?.(frame)
+    }
+    if (!restore || run.value.gate?.reactUpstreamNodeId === nodeId) {
+      gateApprovalRef.value?.applyReviewFrame?.(frame)
+    }
+  }
+
   async function projectDialogueAfterLoad(
-    r: { reactSessions?: Record<string, any> },
+    r: Pick<Run, 'reactSessions' | 'reviewSessionGeneration'>,
     isCurrent = () => true,
   ) {
-    dialogueRailsFilled = false
-    dialogueLiveIncremental = false
+    const checkpoint = reviewState.capture()
     await nextTick()
     await nextTick()
     if (!isCurrent()) return
-    restoreReactSessions(r)
+    restoreReactSessions(r, checkpoint)
   }
 
-  function restoreReactSessions(r: { reactSessions?: Record<string, any> }) {
-    const sessions = r.reactSessions
-    if (!sessions) return
-    const restoredSessions = { ...sessions }
-    // Idle FIFO sessions are removed from the server registry. Their absence
-    // in an explicit snapshot must release an already mounted dialogue too.
-    for (const nodeId of [selClarify.value?.nodeId, llmTranscriptRef?.value?.getNodeId?.(), run.value.gate?.reactUpstreamNodeId]) {
-      if (nodeId && !(nodeId in restoredSessions)) {
-        restoredSessions[nodeId] = { busy: false, waiting: 0, items: [] }
-      }
-    }
+  function restoreReactSessions(
+    r: Pick<Run, 'reactSessions' | 'reviewSessionGeneration'>,
+    checkpoint?: ReviewRecoveryCheckpoint,
+  ) {
+    const frames = reviewState.reconcileSnapshot(r, checkpoint, dialogueNodes())
+    if (!frames.length) return
+    dialogueRailsFilled = false
+    dialogueLiveIncremental = false
     const busyNodes: string[] = []
-    for (const [nodeId, snap] of Object.entries(restoredSessions)) {
-      if (!snap || typeof snap !== 'object') continue
-      if (!reviewCursor.accept({ ...snap, nodeId })) continue
-      liveBusy[nodeId] = !!snap.busy
-      dialoguePlatformBusy[nodeId] = !!snap.busy
-      if (snap.busy) busyNodes.push(nodeId)
-      const frame: Record<string, unknown> = {
-        event: 'queue_state',
-        nodeId,
-        waiting: snap.waiting ?? 0,
-        items: snap.items ?? [],
-        busy: !!snap.busy,
-        activeItem: snap.activeItem,
-        sessionGeneration: snap.sessionGeneration,
-        revision: snap.revision,
-      }
-      if (typeof snap.sandboxBusy === 'boolean' || typeof snap.sandboxDesynced === 'boolean') {
-        frame.sandboxBusy = !!snap.sandboxBusy
-        frame.sandboxDesynced = !!snap.sandboxDesynced
-        if (snap.sandboxRunningOpId) frame.sandboxRunningOpId = snap.sandboxRunningOpId
-      }
-      if (showsDialogue(nodeId)) {
-        const ok = dialogueChat(nodeId)?.applyReviewFrame?.(frame)
-        if (ok === false) {
-          /* inner ClarifyChat not ready — seed path still buffers ACP */
-        }
-      }
-      // Gate hot-revise shares the producer reactSessions key.
-      if (run.value.gate?.reactUpstreamNodeId === nodeId) {
-        gateApprovalRef.value?.applyReviewFrame?.(frame)
-      }
+    for (const frame of frames) {
+      projectReviewFrame(frame, true)
+      if (frame.busy && frame.nodeId && (showsDialogue(frame.nodeId) ||
+        run.value.gate?.reactUpstreamNodeId === frame.nodeId)) busyNodes.push(frame.nodeId)
     }
     if (busyNodes.length) {
       void seedDialogueAcpAfterRestore(busyNodes)
-    } else {
-      // Authority not busy (f3): surfaces already tore down empty placeholders.
+    } else if (!dialogueNodes().some(nodeId => reviewState.session(nodeId)?.busy)) {
       busySeedRetry.stop()
       void nextTick(() => flushPendingDialogueAcp())
+    }
+  }
+
+  /** Existing REST polling also repairs missed dialogue frames. Local busy is
+   * display state; it never vetoes an authoritative server reconciliation. */
+  function reconcileReviewSnapshot(snapshot: Run, capture = captureReviewSnapshot(), recoverProgress = true): Run | undefined {
+    if (snapshot.id !== runId.value || !currentReviewRead(capture)) return
+    const nodes = [...new Set([...dialogueNodes(), ...Object.keys(run.value.reactSessions ?? {}),
+      ...Object.keys(snapshot.reactSessions ?? {})])]
+    const authority = { ...snapshot, reactSessions: snapshot.reactSessions ?? {} }
+    const frames = reviewState.reconcileSnapshot(authority, capture.state, nodes)
+    const sessions = { ...run.value.reactSessions }
+    for (const frame of frames) {
+      if (!frame.nodeId) continue
+      sessions[frame.nodeId] = reviewState.session(frame.nodeId)!
+      projectReviewFrame(frame, true)
+    }
+    run.value = { ...run.value, reactSessions: sessions }
+    const reconciled = { ...snapshot, reactSessions: sessions }
+    if (recoverProgress) void reviewState.requestRecovery((_checkpoint, signal) => recoverDialogueProgress(signal))
+    return reconciled
+  }
+
+  async function recoverDialogueProgress(signal?: AbortSignal) {
+    // Snapshot reconciliation can advance active identity. Capture afterwards
+    // and guard both the event-page write and the surface projection.
+    const progress = captureReviewSnapshot()
+    for (const nodeId of dialogueNodes()) {
+      if (!reviewState.session(nodeId)?.busy) continue
+      const isCurrent = () => !signal?.aborted && currentReviewRead(progress, nodeId)
+      if (!await fetchNodeEvents(nodeId, { signal, isCurrent }) || !isCurrent() ||
+        !eventPages[nodeId]?.events?.length) continue
+      await seedDialogueNodeOnce(nodeId, isCurrent)
     }
   }
 
@@ -214,7 +251,7 @@ export function useRunDetailWs(opts: {
     flushPendingDialogueAcp()
     const stillEmptyBusy = nodeIds.filter(
       (nid) =>
-        (!!dialoguePlatformBusy[nid] || !!liveBusy[nid]) &&
+        !!reviewState.session(nid)?.busy &&
         !dialogueRailsFilled &&
         !dialogueLiveIncremental,
     )
@@ -223,22 +260,25 @@ export function useRunDetailWs(opts: {
     }
   }
 
-  async function seedDialogueNodeOnce(nodeId: string): Promise<boolean> {
+  async function seedDialogueNodeOnce(nodeId: string, isCurrent = () => true): Promise<boolean> {
+    const capture = captureReviewSnapshot()
+    const current = () => isCurrent() && currentReviewRead(capture, nodeId)
     // Live seed rails are current-turn only (server AggregateLastTurnFrames /
     // timeline). Applied as absolute snapshot onto the live bubble — never
     // appended onto prior-turn transcript text.
     let events = eventPages[nodeId]?.events as AcpEvent[] | undefined
     if (!events?.length) {
       try {
-        await fetchNodeEvents(nodeId)
+        await reviewState.requestRecovery(async (_checkpoint, signal) => {
+          if (current()) await fetchNodeEvents(nodeId, { signal, isCurrent: current })
+        })
       } catch {
         return false
       }
       events = eventPages[nodeId]?.events as AcpEvent[] | undefined
     }
-    if (!events?.length) return false
-    const rails = pickAcpRails(events)
-    if (!rails.thought && !rails.message) return false
+    if (!events?.length || !current()) return false
+    if (!hasAcpContent(events)) return false
     const forClarify = showsDialogue(nodeId)
     const forGate = run.value.gate?.reactUpstreamNodeId === nodeId
     const result = deliverOrBufferDialogueAcp({
@@ -270,18 +310,13 @@ export function useRunDetailWs(opts: {
         signal,
         // Platform session busy only — ACP sandbox busy=false must not idle out (g1.2).
         isBusy: () =>
-          nodeIds.some(
-            (nid) =>
-              !!dialoguePlatformBusy[nid] ||
-              !!run.value.reactSessions?.[nid]?.busy ||
-              !!dialogueChat(nid)?.isSessionBusy?.(),
-          ),
+          nodeIds.some(nid => !!reviewState.session(nid)?.busy),
         hasContent: () => dialogueRailsFilled,
         liveIncrementalReceived: () => dialogueLiveIncremental,
         seed: async () => {
           let any = false
           for (const nid of nodeIds) {
-            if (!dialoguePlatformBusy[nid] && !run.value.reactSessions?.[nid]?.busy) continue
+            if (!reviewState.session(nid)?.busy) continue
             if (await seedDialogueNodeOnce(nid)) any = true
           }
           flushPendingDialogueAcp()
@@ -316,8 +351,7 @@ export function useRunDetailWs(opts: {
         },
       })
       if (result === 'applied') {
-        const rails = pickAcpRails(frame.events)
-        if (rails.thought || rails.message) dialogueRailsFilled = true
+        if (hasAcpContent(frame.events)) dialogueRailsFilled = true
       }
       if (result === 'buffer') leftover.push(frame)
     }
@@ -348,8 +382,7 @@ export function useRunDetailWs(opts: {
       },
     })
     if (result === 'applied') {
-      const rails = pickAcpRails(events)
-      if (rails.thought || rails.message) {
+      if (hasAcpContent(events)) {
         dialogueRailsFilled = true
         dialogueLiveIncremental = true
       }
@@ -368,15 +401,15 @@ export function useRunDetailWs(opts: {
   )
 
   function resetDialogueState() {
-    reviewCursor.reset()
+    reviewState.reset()
     pendingDialogueAcp.clear()
     dialogueRailsFilled = false
     dialogueLiveIncremental = false
-    for (const k of Object.keys(dialoguePlatformBusy)) delete dialoguePlatformBusy[k]
     busySeedRetry.stop()
   }
 
   function teardownRealtime() {
+    reviewState.reset()
     busySeedRetry.stop()
     wsReconnect.reset()
     heartbeat.stop()
@@ -399,8 +432,14 @@ export function useRunDetailWs(opts: {
     args.applyDetailArtifactsDeepLink()
     if (!args.applyOutputDeepLinkFocus() && !selected.value) selected.value = args.defaultNode || null
     args.syncAllMcpCallsFromRun()
-    // Rehydrate regardless of which tab is active (default tab stays unchanged).
-    void rehydrateNodeEvents(selected.value)
+    const dialogueSelected = selected.value && (showsDialogue(selected.value) ||
+      run.value.gate?.reactUpstreamNodeId === selected.value)
+    // Dialogue startup shares the same recovery lane as later snapshots.
+    if (dialogueSelected) {
+      void reviewState.requestRecovery((_checkpoint, signal) => recoverDialogueProgress(signal))
+    } else {
+      void rehydrateNodeEvents(selected.value)
+    }
     fetchSandboxLog(selected.value)
     connectWs()
     if (!timer) {
@@ -427,7 +466,8 @@ export function useRunDetailWs(opts: {
           liveNode.value === sel &&
           !!eventPages[sel]?.live &&
           (eventPages[sel]?.events.length || 0) > 0
-        if (!skipPoll && sel) {
+        const dialogueOwnsProgress = !!sel && (showsDialogue(sel) || run.value.gate?.reactUpstreamNodeId === sel)
+        if (!skipPoll && sel && !dialogueOwnsProgress) {
           const rh = rehydrateByNode[sel] || 'idle'
           // Do not auto-recover from error; keep polling only after ready.
           if (rh === 'error' || rh === 'loading') {
@@ -492,6 +532,7 @@ export function useRunDetailWs(opts: {
         return
       }
       if (m.type === 'node_enter') {
+        reviewState.noteVisit(m.nodeId || '')
         applySidebarEnter(runId.value, m, run.value?.nodes)
         return
       }
@@ -501,8 +542,8 @@ export function useRunDetailWs(opts: {
         const sessions = m.run.reactSessions ?? {}
         if (!receivedSnapshot) {
           receivedSnapshot = true
-          const versioned = reviewCursor.hasVersion || typeof m.run.reviewSessionGeneration === 'number' || Object.values(sessions).some((snap: any) => typeof snap?.sessionGeneration === 'number')
-          reviewCursor.reset()
+          const versioned = reviewState.hasVersion || typeof m.run.reviewSessionGeneration === 'number' || Object.values(sessions).some((snap: any) => typeof snap?.sessionGeneration === 'number')
+          reviewState.reset()
           if (versioned) {
             for (const nodeId of new Set([selClarify.value?.nodeId, llmTranscriptRef?.value?.getNodeId?.(), run.value.gate?.reactUpstreamNodeId])) {
               if (!nodeId) continue
@@ -511,14 +552,19 @@ export function useRunDetailWs(opts: {
             }
           }
         }
-        reviewCursor.installSnapshot(sessions, m.run.reviewSessionGeneration)
+        const restored = reviewState.reconcileSnapshot({ reactSessions: sessions,
+          reviewSessionGeneration: m.run.reviewSessionGeneration }, undefined, dialogueNodes())
+        const restoredSessions = { ...run.value.reactSessions }
+        for (const frame of restored) {
+          if (frame.nodeId) restoredSessions[frame.nodeId] = reviewState.session(frame.nodeId)!
+        }
         const revision = ++dialogueRevision
         const nodeId = selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId
         const sameDialogue = () =>
           ws === socket &&
           (selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId) === nodeId
         const isCurrent = () => sameDialogue() && dialogueRevision === revision
-        run.value = { ...run.value, reactSessions: sessions }
+        run.value = { ...run.value, reactSessions: restoredSessions }
         // queue_state → seed → flush → live (parity with Inbox g4.2).
         void projectDialogueAfterLoad(run.value, isCurrent).then(() => {
           // The disconnected interval may include turn_done and new questions.
@@ -526,8 +572,7 @@ export function useRunDetailWs(opts: {
           if (!sameDialogue() || !opts?.fromReconnect) return
           const snap = nodeId ? run.value.reactSessions?.[nodeId] : undefined
           if (
-            nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem &&
-            !dialoguePlatformBusy[nodeId] && !isClarifySessionBusy()
+            nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem
           ) {
             loadRun(false, true)
           }
@@ -535,7 +580,8 @@ export function useRunDetailWs(opts: {
         return
       }
       if (m.type === 'acp' && m.nodeId) {
-        const wsEvents: AcpEvent[] = m.events || []
+        const wsEvents: AcpEvent[] = Array.isArray(m.events) ? m.events : []
+        reviewState.noteAcp(m.nodeId, wsEvents)
         mergeLiveWsAcpPage(m.nodeId, wsEvents)
         if (typeof m.busy === 'boolean') {
           // LiveLog / sandbox bridge only. Do not stop dialogue busySeedRetry and
@@ -547,17 +593,8 @@ export function useRunDetailWs(opts: {
         // Dialogue-surface stream (ClarifyChat / GateApproval), not only LiveLog.
         applyOrBufferDialogueAcp(m.nodeId, wsEvents, m.busy)
       } else if (m.type === 'review' && m.nodeId) {
-        if (!reviewCursor.acceptServer(m)) return
-        // A newly mounted LLM surface restores from this same authority. Keep
-        // it current so mounting cannot replace a newer live turn with idle.
-        const previous = run.value.reactSessions?.[m.nodeId]
-        const session = m.event === 'queue_state'
-          ? { ...previous, sessionGeneration: m.sessionGeneration, revision: m.revision, busy: !!m.busy, waiting: m.waiting ?? 0, items: m.items ?? [], activeItem: m.activeItem }
-          : m.event === 'turn_begin'
-            ? { ...previous, sessionGeneration: m.sessionGeneration, revision: m.revision, busy: true, waiting: m.waiting ?? previous?.waiting ?? 0, items: m.items ?? previous?.items ?? [], activeItem: m.item }
-            : m.event === 'turn_done' || m.event === 'error'
-              ? { ...previous, sessionGeneration: m.sessionGeneration, revision: m.revision, busy: false, waiting: m.waiting ?? previous?.waiting ?? 0, items: m.items ?? previous?.items ?? [], activeItem: undefined }
-              : null
+        if (!reviewState.acceptServer(m)) return
+        const session = reviewState.session(m.nodeId)
         if (session) {
           run.value = { ...run.value, reactSessions: { ...run.value.reactSessions, [m.nodeId]: session } }
         }
@@ -565,25 +602,9 @@ export function useRunDetailWs(opts: {
           m.nodeId === selClarify.value?.nodeId ||
           m.nodeId === run.value.gate?.reactUpstreamNodeId
         ) dialogueRevision++
-        // Prefer matching producer; components also filter by nodeId defensively.
-        // Platform session busy (review) is the authority for dialogue seed retry.
-        if (m.event === 'turn_begin') {
-          liveBusy[m.nodeId] = true
-          dialoguePlatformBusy[m.nodeId] = true
-        }
-        if (m.event === 'queue_state' && typeof m.busy === 'boolean') {
-          liveBusy[m.nodeId] = !!m.busy
-          dialoguePlatformBusy[m.nodeId] = !!m.busy
-          if (!m.busy) busySeedRetry.stop()
-        }
-        if (!selClarify.value || selClarify.value.nodeId === m.nodeId) {
-          reviewChatRef.value?.applyReviewFrame?.(m)
-        }
-        llmTranscriptRef?.value?.applyReviewFrame?.(m)
-        gateApprovalRef.value?.applyReviewFrame?.(m)
+        projectReviewFrame(m)
         if (m.event === 'turn_done' || m.event === 'error') {
           liveBusy[m.nodeId] = false
-          dialoguePlatformBusy[m.nodeId] = false
           busySeedRetry.stop()
           // Session is idle: loadRun writes back persisted clarify turns when
           // the transcript fingerprint changed (plan g1.2). A shorter snapshot
@@ -614,6 +635,10 @@ export function useRunDetailWs(opts: {
 
   return {
     pendingDialogueAcp,
+    captureReviewSnapshot,
+    requestReviewRecovery: reviewState.requestRecovery,
+    recoverDialogueProgress,
+    reconcileReviewSnapshot,
     projectDialogueAfterLoad,
     seedDialogueAcpAfterRestore,
     applyOrBufferDialogueAcp,

@@ -680,7 +680,7 @@ function editWorkflow() {
                   <WorkspaceCredentialsPanel class="mt-6" inline scope="model" view="models" setup :configuration-id="draft.modelConfigurationId" @model-saved="selectSavedModel" @editing="resourceEditing = $event" />
                   <section v-if="!resourceEditing && models.length" class="onb-card mt-4" data-testid="onboarding-section-model">
                     <div class="onb-label">{{ t('pages.onboarding.toolSetup.existing') }}</div>
-                    <ModelBindingEditor :key="resourcesVersion" v-model="modelBinding" @validity="modelValid = $event" />
+                    <ModelBindingEditor :key="resourcesVersion" v-model="modelBinding" :allow-all-configurations="false" @validity="modelValid = $event" />
                   </section>
                   <div v-if="regionPolicy && !resourceEditing" class="onb-seg mt-4" role="radiogroup" :aria-label="t('pages.onboarding.acp.region')"><button v-for="option in regionPolicy.options" :key="option.id" type="button" role="radio" class="onb-seg-item" :aria-checked="draft.region === option.id" @click="selectRegion(option.id)">{{ t(option.labelKey) }}</button></div>
                 </template>

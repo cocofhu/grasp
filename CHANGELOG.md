@@ -6,6 +6,18 @@ All notable public-release changes are documented here.
 
 - **Local execution:** run Grasp with `./start.sh --local` and reuse installed coding tools' saved logins without Docker or workspace credentials. Each process receives private CLI and Git/SSH configuration copies, while host secret environment variables stay filtered. Agents switch only between their bound model groups, and `./start.sh down` stops the local service even when Docker is unavailable. The local server listens on loopback only, SSH private keys stay in place, and a deleted default model group is not recreated.
 
+## 3.1.0 — 2026-10-30
+
+Agents can run Kimi Code, keep several model groups, and execute in a worktree image. Conversations stay on the same visit through reconnects, queues and workflow switches.
+
+- **Run list spacing:** restore horizontal padding inside desktop rows so titles and actions have room within the hover highlight.
+
+- **Workflow chat synchronization:** clarification, run details and live conversations share one message processing loop for queue state and recovery. Missed startup, output and completion updates recover without a page reload, while newer replies, queued messages and drafts stay intact. Tool-first replies and growing tool details remain visible across watchdog updates and healthy automatic observations. ACP bursts preserve their output, errors and completion notifications. Saved tool summaries count only their own reply; empty replies no longer reuse earlier timeline steps. Late send, confirmation and artifact responses stay with their originating visit when switching workflows.
+
+- **Page Harness icon:** CoCo now uses the Grasp character with gentle sway, breathing, blinking and hover feedback, respecting reduced-motion preferences.
+
+- **All configured model groups:** Agent defaults and individual Agents have a switch to inherit every active model group, including groups added later. This mode uses a generic group icon and a short explanation; the default startup group is selected separately. Inheriting Agents follow this setting, including workflow launch validation, and unavailable groups still require valid authorization before use.
+
 - **Translation dependency security:** upgrade Vue I18n to a supported release with fixes for translation HTML and parameter escaping.
 
 - **Workflow confirmation:** the current node stays visible while a clarification or review is being confirmed and its successor is still undecided, including when confirmation arrives before the run finishes entering its waiting state.
@@ -71,6 +83,8 @@ All notable public-release changes are documented here.
 - **Solo model controls:** startup selectors have a border, while active conversations use a borderless model control. Both show the actual model name and open a compact name-only model list with lighter shadows, small brand marks and a clear selected check. Light mode uses a white panel. Supported models offer their available reasoning levels in a small slider panel; a single-model configuration opens that panel directly. Session changes apply to the next turn, with rollback if the coding tool rejects the change.
 
 - **Model groups and model names:** workspace model management now uses “Model groups” and “New model group” (「模型组」/「新建模型组」), including the edit dialog and group-name field. Solo selectors show each concrete model's catalog name or upstream ID instead of a configuration or API service name such as TokenHub; automatic tool selection keeps its existing label.
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:3.1.0`. First publish of `ghcr.io/cocofhu/grasp-worktree`.
 
 ## 3.0.0 — 2026-10-26
 

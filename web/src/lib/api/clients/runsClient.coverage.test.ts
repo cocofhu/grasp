@@ -17,6 +17,16 @@ describe('runsClient request coverage', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
+  it('aborts a pending run snapshot when its conversation recovery is cancelled', async () => {
+    const controller = new AbortController()
+    fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true })
+    }))
+    const snapshot = runsClient.getRun('r1', { signal: controller.signal })
+    controller.abort()
+    await expect(snapshot).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('builds filtered and paginated run lists, including validated sorting', async () => {
     const signal = new AbortController().signal
     await runsClient.listRuns()

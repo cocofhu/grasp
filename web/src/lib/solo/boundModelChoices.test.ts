@@ -27,6 +27,16 @@ describe('models from all Agent groups', () => {
     const choices = boundModelChoices({ ...input, binding: { kind: 'configuration', configurationId: 'codex' } })
     expect(choices[0]?.id).toBe('same/model')
   })
+  it('automatically expands all groups and keeps route values stable as groups are added', () => {
+    const binding = { kind: 'configuration' as const, configurationId: 'codex', allConfigurations: true }
+    const single = boundModelChoices({ ...input, configurations: [configurations[0]!], binding })
+    const expanded = boundModelChoices({ ...input, binding })
+    expect(single[0]?.id).toBe(expanded[0]?.id)
+    expect(parseModelRoute(single[0]!.id)).toEqual({ configurationId: 'codex', modelId: 'same/model' })
+    expect(expanded.map(choice => choice.configurationId)).toEqual(['codex', 'code', 'code'])
+    const disabled = boundModelChoices({ ...input, configurations: [configurations[0]!, { ...configurations[1]!, state: 'disabled' }], binding })
+    expect(disabled).toEqual(single)
+  })
   it('removes disabled groups and marks unavailable connections without substituting accounts', () => {
     const choices = boundModelChoices({ ...input, configurations: [configurations[0]!, { ...configurations[1]!, state: 'disabled' }], connections: [], binding: { kind: 'configuration', configurationId: 'code', configurationIds: ['code', 'codex'] } })
     expect(choices).toHaveLength(1)

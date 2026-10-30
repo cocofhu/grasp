@@ -75,6 +75,22 @@ describe('sessionQueue', () => {
     expect(cursor.accept({ nodeId: 'new', sessionGeneration: 21, revision: 2 })).toBe(true)
   })
 
+  it('requires an omitted snapshot session to cover the known generation before declaring idle', () => {
+    const cursor = createReviewStateCursor()
+    expect(cursor.acceptSnapshot('chat')).toBe(true)
+    expect(cursor.accept({ nodeId: 'chat', sessionGeneration: 8, revision: 4 })).toBe(true)
+    expect(cursor.acceptSnapshot('chat')).toBe(false)
+    expect(cursor.acceptSnapshot('chat', undefined, 7)).toBe(false)
+    expect(cursor.acceptSnapshot('chat', undefined, Number.NaN)).toBe(false)
+    expect(cursor.acceptSnapshot('chat', { sessionGeneration: 8, revision: 3 }, 8)).toBe(false)
+    expect(cursor.acceptSnapshot('chat', { sessionGeneration: 8, revision: 5 }, 8)).toBe(true)
+    expect(cursor.acceptSnapshot('chat', {}, 8)).toBe(false)
+    expect(cursor.acceptSnapshot('chat', undefined, 8)).toBe(true)
+    cursor.installSnapshot({}, 8)
+    expect(cursor.acceptServer({ nodeId: 'chat', event: 'turn_begin', sessionGeneration: 8, revision: 6 })).toBe(false)
+    expect(cursor.acceptServer({ nodeId: 'chat', event: 'turn_begin', sessionGeneration: 9, revision: 1 })).toBe(true)
+  })
+
   it('detects authoritative idle', () => {
     expect(isAuthoritativeIdle(0, false, null)).toBe(true)
     expect(isAuthoritativeIdle(0, undefined, undefined)).toBe(true)

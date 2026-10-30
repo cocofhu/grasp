@@ -36,7 +36,7 @@ import {
   sidebarTrackedRunIds,
   type SidebarRunGroup,
 } from '@/lib/inbox/sidebarHandoff'
-import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget } from '@/lib/run/recentRuns'
+import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget, runDetailPath } from '@/lib/run/recentRuns'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   settingsItemActive,
@@ -344,7 +344,7 @@ const LONG_PRESS_MOVE_PX = 8
 const MENU_WIDTH = 168
 /** Blocked share copy is longer than the two-item menu, so the clamp must follow it. */
 const MENU_WIDTH_BLOCKED = 280
-/** 8px of menu padding plus 32px per row (pin, rename, cancel, optional share). */
+/** 8px of menu padding plus 32px per row (workflow view, pin, rename, cancel, optional share). */
 const MENU_CHROME = 8
 const MENU_ROW_HEIGHT = 32
 const MENU_MARGIN = 8
@@ -400,7 +400,8 @@ function shareBlockReason(it: InboxItem): 'starting' | 'locked' | 'used' | null 
 }
 
 function pendingMenuHeight(it: InboxItem): number {
-  const rows = !isRunOnlyRow(it) && isShareableInboxItem(it) ? 4 : 3
+  const shareRow = !isRunOnlyRow(it) && isShareableInboxItem(it) ? 1 : 0
+  const rows = 4 + shareRow
   return MENU_CHROME + rows * MENU_ROW_HEIGHT
 }
 
@@ -671,6 +672,18 @@ function preservedListFilters(): Record<string, string> {
     if (typeof value === 'string' && value) query[key] = value
   }
   return query
+}
+
+function onMenuWorkflowView() {
+  const it = menuItem.value
+  if (!it) return
+  closeMenu()
+  const query: Record<string, string> = { ...preservedListFilters(), view: 'canvas' }
+  const path = runDetailPath(it.runId)
+  const location = { path, query }
+  if (route.path === path) void router.replace(location)
+  else void router.push(location)
+  onNavigate()
 }
 
 function pushConversation(runId: string, nodeId?: string, extra?: Record<string, string>) {
@@ -1477,6 +1490,17 @@ const settingsItems = computed(() => (
       @click.stop
       @contextmenu.prevent
     >
+      <button
+        v-if="menuItem"
+        type="button"
+        role="menuitem"
+        class="pending-row-menu__item"
+        data-testid="nav-pending-menu-workflow"
+        @click="onMenuWorkflowView"
+      >
+        <Icon name="workflow" :size="14" />
+        <span>{{ t('nav.pendingWorkflowView') }}</span>
+      </button>
       <button
         type="button"
         role="menuitem"

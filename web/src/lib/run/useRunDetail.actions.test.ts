@@ -1012,7 +1012,7 @@ describe('useRunDetail actions', () => {
     app.unmount()
   })
 
-  it('skips focus refresh while a clarify session is busy', async () => {
+  it('reconciles focus refresh against authoritative busy, newer activity and idle snapshots', async () => {
     const { detail, app } = await withRunDetail()
     detail.selectNode('n1')
     await nextTick()
@@ -1021,28 +1021,53 @@ describe('useRunDetail actions', () => {
     detail.reviewChatRef.value = { isSessionBusy: () => true }
     expect(detail.isClarifySessionBusy()).toBe(true)
 
-    const sessions = { n1: { busy: true, items: [{ id: 'keep', text: 'stream' }] } }
+    const sessions = { n1: { sessionGeneration: 5, revision: 2, busy: true, waiting: 1,
+      activeItem: { id: 'active', text: 'work' }, items: [{ id: 'keep', text: 'stream' }] } }
     detail.run.value = {
       ...detail.run.value,
       reactSessions: sessions,
     } as unknown as Run
+    await detail.wsApi.projectDialogueAfterLoad({ reactSessions: sessions })
     const turns = detail.run.value.clarifyByNode?.n1
 
     mocks.getRun.mockClear()
     mocks.getRun.mockResolvedValueOnce({
       ...detail.run.value,
       progress: 0.88,
-      reactSessions: { n1: { busy: false, items: [] } },
+      reactSessions: { n1: { ...sessions.n1, revision: 3 } },
     })
     detail.onFocusRefresh()
     await flushPromises()
-    // Busy focus still patches chrome (g1.2) but must not replace dialogue buffers (g1.1).
+    // A genuinely busy server snapshot keeps the current turn and queue.
     expect(mocks.getRun).toHaveBeenCalled()
     expect(detail.run.value.progress).toBe(0.88)
     expect(detail.run.value.reactSessions?.n1?.busy).toBe(true)
     expect(detail.run.value.reactSessions?.n1?.items?.[0]?.text).toBe('stream')
     expect(detail.run.value.clarifyByNode?.n1).toBe(turns)
     expect(detail.refreshing.value).toBe(false)
+
+    let finishOlder!: (run: Run) => void
+    mocks.getRun.mockImplementationOnce(() => new Promise<Run>(resolve => { finishOlder = resolve }))
+    detail.onFocusRefresh()
+    await detail.wsApi.projectDialogueAfterLoad({ reactSessions: { n1: {
+      ...sessions.n1, revision: 5, activeItem: { id: 'newer', text: 'newer turn' },
+    } } })
+    finishOlder({ ...detail.run.value, progress: 0.1, reactSessions: { n1: {
+      sessionGeneration: 5, revision: 4, busy: false, waiting: 0, items: [],
+    } } })
+    await flushPromises()
+    expect(detail.run.value.progress).toBe(0.88)
+    expect(detail.live.liveBusy.n1).toBe(true)
+
+    mocks.getRun.mockResolvedValueOnce({ ...detail.run.value, reviewSessionGeneration: 5,
+      reactSessions: { n1: { sessionGeneration: 5, revision: 6, busy: false, waiting: 0, items: [] } },
+    })
+    detail.onFocusRefresh()
+    await flushPromises()
+    expect(detail.run.value.reactSessions?.n1?.busy).toBe(false)
+    expect(detail.run.value.reactSessions?.n1?.items).toEqual([])
+    expect(detail.live.liveBusy.n1).toBe(false)
+    expect(detail.run.value.clarifyByNode?.n1).toBe(turns)
 
     detail.reviewChatRef.value = null
     detail.run.value = {

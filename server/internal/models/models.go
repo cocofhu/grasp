@@ -623,11 +623,12 @@ type ReactTool struct {
 // MaxReactTools caps how many tool calls one persisted agent turn keeps.
 const MaxReactTools = 50
 
-// ToolsFromEvents extracts the tool_call rows of a turn's ACP timeline in
-// order (capped at MaxReactTools). Returns nil when the turn used no tools.
+// ToolsFromEvents extracts this reply's tool_call rows in order (capped at
+// MaxReactTools), excluding any earlier snapshot history. Returns nil when the
+// reply used no tools. The full event transcript remains unchanged.
 func ToolsFromEvents(events []AcpEvent) []ReactTool {
 	var out []ReactTool
-	for _, ev := range events {
+	for _, ev := range eventsForReply(events) {
 		if ev.Kind != "tool_call" || ev.Title == "" {
 			continue
 		}

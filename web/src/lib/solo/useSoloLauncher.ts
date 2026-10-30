@@ -77,7 +77,7 @@ export function useSoloLauncher() {
     }
   })
   let cliGeneration = 0
-  watch(() => boundConfigurationIds(agent.value?.modelBinding).map(id => configurations.value.find(row => row.id === id)?.backend || '').join('|'), async (backends) => {
+  watch(() => boundConfigurationIds(agent.value?.modelBinding, configurations.value).map(id => configurations.value.find(row => row.id === id)?.backend || '').join('|'), async (backends) => {
     const generation = ++cliGeneration
     cliReady.value = false
     const rows = await Promise.all([...new Set(backends.split('|').filter(Boolean))].map(async backend => [backend, await loadCliModels(backend)] as const))

@@ -4,12 +4,14 @@ import { api, type CredentialItem, type ModelBinding, type ModelConfiguration, t
 import { bindingProblem, useRoutingCopy } from '@/lib/agent/modelRouting'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
+import Icon from '@/components/ui/Icon.vue'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
 import { boundConfigurationIds } from '@/lib/agent/modelBindings'
 import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
 
-const props = withDefaults(defineProps<{ backend?: string; modelValue?: ModelBinding; compact?: boolean; disabled?: boolean; summary?: boolean; summarySource?: string }>(), { compact: false, backend: '', disabled: false, summary: false, summarySource: '' })
+const props = withDefaults(defineProps<{ backend?: string; modelValue?: ModelBinding; compact?: boolean; disabled?: boolean; summary?: boolean; summarySource?: string; allowAllConfigurations?: boolean }>(), { compact: false, backend: '', disabled: false, summary: false, summarySource: '', allowAllConfigurations: true })
 const emit = defineEmits<{ 'update:modelValue': [value: ModelBinding]; selectConfiguration: [value: ModelConfiguration]; validity: [valid: boolean] }>()
 const c = useRoutingCopy()
 const configurations = ref<ModelConfiguration[]>([])
@@ -20,6 +22,11 @@ const loading = ref(true)
 const error = ref('')
 const configurationId = computed(() => props.modelValue?.configurationId || '')
 const configurationIds = computed(() => boundConfigurationIds(props.modelValue))
+const allConfigurations = computed(() => !!props.modelValue?.allConfigurations)
+let manualConfigurationIds: string[] | undefined
+watch(() => props.modelValue, (value) => {
+  if (!value?.allConfigurations) manualConfigurationIds = value ? boundConfigurationIds(value) : undefined
+})
 const extraOptions = computed(() => configurations.value.filter(row => row.state === 'active' && !configurationIds.value.includes(row.id)).map(row => ({ value: row.id, label: `${row.name} · ${ACP_BACKENDS.find(tool => tool.id === row.backend)?.label || row.backend}` })))
 const available = computed(() => configurations.value.filter((row) => (!props.backend || row.backend === props.backend) && row.state === 'active'))
 const selected = computed(() => configurations.value.find((row) => row.id === configurationId.value))
@@ -27,7 +34,7 @@ const summaryLabel = computed(() => props.summarySource && selected.value ? ACP_
 const options = computed(() => available.value.map((row) => ({ value: row.id, label: row.name })))
 const problem = computed(() => {
   const primary = bindingProblem(props.modelValue, props.backend || selected.value?.backend || '', connections.value, credentials.value, capabilities.value, configurations.value)
-  if (primary) return primary
+  if (primary || allConfigurations.value) return primary
   for (const id of configurationIds.value) {
     const row = configurations.value.find(row => row.id === id)
     const issue = bindingProblem({ kind: 'configuration', configurationId: id }, row?.backend || '', connections.value, credentials.value, capabilities.value, configurations.value)
@@ -48,7 +55,17 @@ async function load() {
   finally { if (generation === loadGeneration) loading.value = false }
 }
 let loadGeneration = 0
-function bindingWith(ids: string[], primary: string): ModelBinding { return { kind: 'configuration', configurationId: primary, ...(ids.length > 1 ? { configurationIds: ids } : {}) } }
+function bindingWith(ids: string[], primary: string): ModelBinding { return { kind: 'configuration', configurationId: primary, ...(allConfigurations.value ? { allConfigurations: true } : ids.length > 1 ? { configurationIds: ids } : {}) } }
+function setAllConfigurations(value: boolean) {
+  if (props.disabled || props.summary || !props.allowAllConfigurations || !configurationId.value) return
+  if (value) {
+    manualConfigurationIds = configurationIds.value
+    emit('update:modelValue', { kind: 'configuration', configurationId: configurationId.value, allConfigurations: true })
+  } else {
+    const ids = [...new Set([configurationId.value, ...(manualConfigurationIds || [])])]
+    emit('update:modelValue', { kind: 'configuration', configurationId: configurationId.value, ...(ids.length > 1 ? { configurationIds: ids } : {}) })
+  }
+}
 function select(id: string) {
   const row = available.value.find((row) => row.id === id)
   if (!props.disabled && !props.summary && row && id !== configurationId.value) {
@@ -58,13 +75,13 @@ function select(id: string) {
 }
 function add(id: string) {
   const row = configurations.value.find(row => row.id === id && row.state === 'active')
-  if (!row || props.disabled || props.summary) return
+  if (!row || props.disabled || props.summary || allConfigurations.value) return
   const ids = [...new Set([...configurationIds.value, id])]
   emit('update:modelValue', bindingWith(ids, configurationId.value || id))
   if (!configurationId.value) emit('selectConfiguration', row)
 }
 function remove(id: string) {
-  if (props.disabled || props.summary || id === configurationId.value) return
+  if (props.disabled || props.summary || allConfigurations.value || id === configurationId.value) return
   emit('update:modelValue', bindingWith(configurationIds.value.filter(value => value !== id), configurationId.value))
 }
 function makeDefault(id: string) {
@@ -84,27 +101,41 @@ watch(modelCatalogRevision, load)
     <p v-else-if="error" role="alert" class="text-xs text-err">{{ error }} <AppButton size="sm" @click="load">{{ c.retry }}</AppButton></p>
     <template v-else>
       <div v-if="summary" class="flex min-w-0 items-center gap-2.5 py-1 text-[13px] text-txt2" data-testid="model-binding-inherited-summary">
-        <CredentialProviderLogo :provider="selected?.backend || backend" match="provider" :selected="!!summarySource" aria-hidden="true" />
+        <span v-if="allConfigurations" class="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line bg-surface text-accent"><Icon name="layers" :size="18" /></span>
+        <CredentialProviderLogo v-else :provider="selected?.backend || backend" match="provider" :selected="!!summarySource" aria-hidden="true" />
         <div class="min-w-0">
-          <div class="truncate" :class="summarySource ? 'text-[12px] font-semibold text-txt' : ''" :title="selected?.name">{{ summaryLabel }}</div>
+          <div class="truncate" :class="summarySource ? 'text-[12px] font-semibold text-txt' : ''" :title="allConfigurations ? c.allConfigurations : selected?.name" :data-testid="allConfigurations ? 'model-binding-all-summary' : undefined">{{ allConfigurations ? c.allConfigurations : summaryLabel }}</div>
           <div v-if="summarySource" class="text-[11px] text-txt3">{{ summarySource }}</div>
-          <div v-if="configurationIds.length > 1" class="text-[11px] text-txt3">{{ configurationIds.map(id => configurations.find(row => row.id === id)?.name || id).join(' · ') }}</div>
+          <div v-if="allConfigurations" class="truncate text-[11px] text-txt3">{{ c.startupDefault }}：{{ selected?.name || c.missingConfiguration }}</div>
+          <div v-else-if="configurationIds.length > 1" class="text-[11px] text-txt3">{{ configurationIds.map(id => configurations.find(row => row.id === id)?.name || id).join(' · ') }}</div>
         </div>
       </div>
-      <AppSelect v-else :model-value="configurationId" :options="options" :aria-label="c.configuration" :placeholder="configurationId && problem ? `${selected?.name || configurationId} · ${c.configurationUnavailable}` : available.length ? c.selectConfiguration : c.noConfigurations" :empty-text="c.noConfigurations" :invalid="!!configurationId && !!problem" :disabled="disabled" searchable data-testid="model-binding-configuration-select" @update:model-value="select">
-        <template #leading><CredentialProviderLogo :provider="selected?.backend || backend" match="provider" aria-hidden="true" /></template>
-        <template #option-leading="{ option }"><CredentialProviderLogo :provider="backendOf(option.value)" match="provider" aria-hidden="true" /></template>
-      </AppSelect>
-      <div v-if="!summary && configurationId" class="mt-2 space-y-2" data-testid="model-binding-groups">
-        <div v-for="id in configurationIds" :key="id" class="flex min-w-0 items-center gap-2 rounded-md border border-line px-2.5 py-2 text-xs">
-          <CredentialProviderLogo :provider="backendOf(id)" match="provider" class="shrink-0" />
-          <span class="min-w-0 flex-1 truncate">{{ configurations.find(row => row.id === id)?.name || id }}</span>
-          <span v-if="id === configurationId" class="shrink-0 text-[11px] text-accent">{{ c.defaultGroup }}</span>
-          <button v-else type="button" class="shrink-0 text-[11px] text-txt3 hover:text-accent" :disabled="disabled" :data-testid="`model-binding-default-${id}`" @click="makeDefault(id)">{{ c.makeDefault }}</button>
-          <button v-if="id !== configurationId" type="button" class="shrink-0 text-[11px] text-txt3 hover:text-err" :disabled="disabled" :data-testid="`model-binding-remove-${id}`" @click="remove(id)">{{ c.removeModel }}</button>
+      <template v-else>
+        <div v-if="allowAllConfigurations" class="mb-3 space-y-1.5" :class="allConfigurations ? 'rounded-md border border-line bg-surface px-3 py-3' : ''" :data-testid="allConfigurations ? 'model-binding-all-groups' : undefined">
+          <label class="flex items-center justify-between gap-3 text-xs text-txt2">
+            <span class="flex min-w-0 items-center gap-2"><Icon v-if="allConfigurations" name="layers" :size="18" class="shrink-0 text-accent" /><span>{{ c.allConfigurations }}</span></span>
+            <AppSwitch :model-value="allConfigurations" :disabled="disabled || !configurationId" :aria-label="c.allConfigurations" data-testid="model-binding-all-configurations" @update:model-value="setAllConfigurations" />
+          </label>
+          <p v-if="allConfigurations" class="m-0 text-[11px] leading-5 text-txt3" data-testid="model-binding-all-hint">{{ c.allConfigurationsHint }}</p>
         </div>
-        <AppSelect v-if="extraOptions.length" model-value="" :options="extraOptions" :disabled="disabled" :placeholder="c.addGroup" :aria-label="c.addGroup" searchable data-testid="model-binding-add-select" @update:model-value="add" />
-      </div>
+        <div :class="allConfigurations ? 'space-y-1.5' : ''" :data-testid="allConfigurations ? 'model-binding-startup-default' : undefined">
+          <div v-if="allConfigurations" class="text-xs text-txt2">{{ c.startupDefault }}</div>
+          <AppSelect :model-value="configurationId" :options="options" :aria-label="allConfigurations ? c.startupDefault : c.configuration" :placeholder="configurationId && problem ? `${selected?.name || configurationId} · ${c.configurationUnavailable}` : available.length ? c.selectConfiguration : c.noConfigurations" :empty-text="c.noConfigurations" :invalid="!!configurationId && !!problem" :disabled="disabled" searchable data-testid="model-binding-configuration-select" @update:model-value="select">
+            <template #leading><CredentialProviderLogo :provider="selected?.backend || backend" match="provider" aria-hidden="true" /></template>
+            <template #option-leading="{ option }"><CredentialProviderLogo :provider="backendOf(option.value)" match="provider" aria-hidden="true" /></template>
+          </AppSelect>
+        </div>
+        <div v-if="!allConfigurations && configurationId" class="mt-2 space-y-2" data-testid="model-binding-groups">
+          <div v-for="id in configurationIds" :key="id" class="flex min-w-0 items-center gap-2 rounded-md border border-line px-2.5 py-2 text-xs">
+            <CredentialProviderLogo :provider="backendOf(id)" match="provider" class="shrink-0" />
+            <span class="min-w-0 flex-1 truncate">{{ configurations.find(row => row.id === id)?.name || id }}</span>
+            <span v-if="id === configurationId" class="shrink-0 text-[11px] text-accent">{{ c.defaultGroup }}</span>
+            <button v-else type="button" class="shrink-0 text-[11px] text-txt3 hover:text-accent" :disabled="disabled" :data-testid="`model-binding-default-${id}`" @click="makeDefault(id)">{{ c.makeDefault }}</button>
+            <button v-if="id !== configurationId" type="button" class="shrink-0 text-[11px] text-txt3 hover:text-err" :disabled="disabled" :data-testid="`model-binding-remove-${id}`" @click="remove(id)">{{ c.removeModel }}</button>
+          </div>
+          <AppSelect v-if="!allConfigurations && extraOptions.length" model-value="" :options="extraOptions" :disabled="disabled" :placeholder="c.addGroup" :aria-label="c.addGroup" searchable data-testid="model-binding-add-select" @update:model-value="add" />
+        </div>
+      </template>
       <p v-if="configurationId && problem" role="status" class="mb-0 mt-2 text-xs leading-5 text-warn" data-testid="model-binding-problem">{{ c[problem as keyof typeof c] || problem }}</p>
     </template>
   </section>

@@ -232,11 +232,21 @@ describe('AppModal', () => {
     leaving.unmount()
   })
 
+  it('fades the backdrop and lifts the dialog, then reverses that motion before unmount', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppModal.vue'), 'utf8')
+    expect(source).toMatch(/translateY\(12px\) scale\(0\.98\)/)
+    expect(source).toMatch(/opacity var\(--dur-overlay\)/)
+    const reduced = source.match(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{([\s\S]*?)\n\}/)
+    expect(reduced, 'reduced-motion block').toBeTruthy()
+    expect(reduced![1]).toMatch(/transform:\s*none/)
+    expect(reduced![1]).toMatch(/opacity:\s*1/)
+  })
+
   it('neutralizes footer primary only, and leaves page primary purple', () => {
     const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'), 'utf8')
     expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*background-color:\s*#18181b/i)
     expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*color:\s*#ffffff/i)
-    expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*--hover-ink-color:\s*#52525b/i)
+    expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*--hover-ink-color:\s*#f4f4f5/i)
     expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*background-color:\s*#ededf0/i)
     expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*color:\s*#141417/i)
     expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*--hover-ink-color:\s*#a1a1aa/i)

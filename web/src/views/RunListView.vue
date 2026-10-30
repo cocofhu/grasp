@@ -724,7 +724,7 @@ onUnmounted(() => {
           <col style="width: 216px" />
           <col style="width: 112px" />
           <col style="width: 88px" />
-          <col style="width: 44px" />
+          <col style="width: 56px" />
         </colgroup>
         <thead>
           <tr class="text-left text-[11px] uppercase tracking-wider text-txt3">
@@ -941,8 +941,8 @@ onUnmounted(() => {
   opacity: 0.55;
 }
 
-/* Flat page table (same structure as 用量统计): page-coloured sticky header with a
-   bottom rule, first/last columns flush with the page header instead of a card inset. */
+/* Flat page table with a page-coloured sticky header and bottom rule.
+   Keep the cell padding so content is inset from the row hover background. */
 thead th {
   position: sticky;
   top: 0;
@@ -950,15 +950,6 @@ thead th {
   background: rgb(var(--c-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--c-line));
 }
-table th:first-child,
-table td:first-child {
-  padding-left: 0;
-}
-table th:last-child,
-table td:last-child {
-  padding-right: 0;
-}
-
 @keyframes nodeLabelFadeIn {
   from {
     opacity: 0;
