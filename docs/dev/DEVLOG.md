@@ -28,6 +28,22 @@
 - 为什么：忙时入队的消息同时出现在对话与排队面板，空回复被渲染为只有时间的已完成轮次；刷新后持久化历史不含未开始的消息，气泡消失，刷新前后不一致。
 - 如何验证：按服务端帧顺序（Enqueue 的 queue_state、pump 的 activeItem、turn_begin、忙时入队带 activeItem 的 queue_state、后续 ACP 输出）模拟，旧代码对话末尾多出 `u:srv-2` 与空 `live:srv-2`，修复后仅保留当前轮且流式输出持续；新用例在旧实现上失败。Web lint（0 error）、vue-tsc、全量 544 文件 5,998 项单测（Lines 91.83%）与生产构建通过。
 
+### 2026-10-30（亮色主题文字对比度与首页背景）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`web/src/styles/global.css`、`web/src/views/DashboardView.vue`、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：亮色主题 `--c-txt3` 由 `161 161 170` 加深为 `113 113 122`，`--c-txt2` 由 `82 82 91` 调为 `72 72 82`；`--c-line`／`--c-line-strong` 略加深；`--c-accent-dim` 改为偏紫的 `240 237 255`。首页粒子背景在亮色下透明度由 0.2 降为 0.1；发送按钮亮色禁用态改用 `line-strong` 底色，暗色保持 `txt3`。
+- 为什么：反馈亮色界面整体发灰、沉闷；原 `txt3` 在白底对比度约 2.6:1，11–12px 次要文字发虚，粒子纹理也加重灰感。新 `txt3` 在 surface／base 上约 4.8:1。
+- 如何验证：本地起 server + Vite，亮色首页前后截图对比，次要文字、占位符与边框更清晰，暗色未变；DashboardView、styles、dashboard 组件相关 15 个测试文件 174 项通过，lint 与 vue-tsc 通过。
+
+### 2026-10-30（对话轮次 panic 兜底与 Solo 静默忙碌核对）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`server/internal/chatsession/session{,_test}.go`、`web/src/lib/solo/useSoloChat{,.test}.ts`、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：`chatsession` 泵以 `guardTurn` 包住 `BeforeTurn`、`Execute`、`AfterTurn`，panic 记录堆栈后按普通轮次错误发布 `error` 帧并继续处理队列；`BeforeTurn` panic 时跳过 `Execute`。Solo 在 socket 正常、本地 busy 且 30 秒无任何帧时读取 `getSoloSession`，仅当服务端 `busy=false` 且读取期间无新帧时重新订阅，由订阅快照结算当前轮。
+- 为什么：泵运行在独立 goroutine，未恢复的 panic 会终止整个进程，所有对话都收不到结束帧。Solo 此前只在启动或断线时轮询，socket 正常时若结束帧未被处理会一直显示执行中直至刷新。桥接层 liveness 不转发给 Solo 页面，长工具调用本身可以静默，因此只读核对、确认空闲后才重订阅。PM 线程没有返回权威 busy 的 REST 接口，强制重连会在长工具调用期间反复进入恢复态，本次不改。
+- 如何验证：新增 Go 回归覆盖 `Execute` panic 后发布 error、下一项继续执行、`AfterTurn` 仍运行，以及 `BeforeTurn` panic 跳过执行；新增 Solo 回归覆盖服务端空闲时重订阅结算、服务端仍忙时保持原连接、读取期间新帧使结果作废，前两项在旧实现失败。server golangci-lint 2.12、vet、配置文档检查、全量测试、runtime 专项与核心覆盖率 90.6% 通过；Web lint（0 error）、vue-tsc、生产构建及 544 文件 6,000 项单测通过，Lines 91.83%，关键路径浏览器 266 项通过；actionlint 与 error-level shellcheck 通过。本机 Node 默认堆上限约 2.2GB，生产构建需 `NODE_OPTIONS=--max-old-space-size=8192`，与本次改动无关。
+
 ### 2026-10-30（运行记录悬停行留白）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。
