@@ -15,6 +15,9 @@ export type SoloPhase = '' | 'preparing' | 'running'
 export type SoloLink = 'idle' | 'connecting' | 'open' | 'reconnecting'
 
 const SANDBOX_POLL_MS = 2500
+// Bridge liveness is not forwarded, so a long tool call can be silent: a quiet
+// busy turn only triggers a read, and resubscribes when the server says idle.
+const STALL_CHECK_MS = 30_000
 
 function parseFrame(data: unknown): any {
   if (typeof data !== 'string') return null
@@ -69,6 +72,8 @@ export function useSoloChat(sessionId: Ref<string>) {
   const executions = new Map<string, ChatExecution>()
   let disposed = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
+  let stallTimer: ReturnType<typeof setTimeout> | undefined
+  let frameCount = 0
   let refetchSeq = 0
   // lastSeq 是缺口检测高水位（含快照）；ackedSeq 仅确认已处理的真实帧，供重连回放。
   let lastSeq = -1
@@ -495,6 +500,10 @@ export function useSoloChat(sessionId: Ref<string>) {
   function requestResync() {
     if (disposed || resyncs >= 3) return
     resyncs += 1
+    resubscribe()
+  }
+
+  function resubscribe() {
     const sock = ws
     ws = null
     held = null
@@ -505,7 +514,38 @@ export function useSoloChat(sessionId: Ref<string>) {
     reconnect.onClose()
   }
 
+  function scheduleStallCheck() {
+    if (stallTimer) clearTimeout(stallTimer)
+    stallTimer = undefined
+    if (disposed || !busy.value || link.value !== 'open') return
+    const frames = frameCount
+    stallTimer = setTimeout(() => {
+      stallTimer = undefined
+      if (frames === frameCount) void checkStall()
+      else scheduleStallCheck()
+    }, STALL_CHECK_MS)
+  }
+
+  async function checkStall() {
+    const id = sessionId.value
+    const generation = sessionGeneration
+    const frames = frameCount
+    const sock = ws
+    try {
+      const row = await api.getSoloSession(id)
+      if (disposed || generation !== sessionGeneration || ws !== sock || frames !== frameCount) return
+      if (!row.busy && busy.value) {
+        resubscribe()
+        return
+      }
+    } catch {
+      /* check again after the next quiet window */
+    }
+    scheduleStallCheck()
+  }
+
   function onFrame(raw: string, firstFrame = false) {
+    frameCount++
     const frame = parseFrame(raw)
     if (!frame || typeof frame !== 'object') return
     // Subscribe 保证首帧是 queue_state 快照；之后的同名帧才是真实流事件。
@@ -923,10 +963,12 @@ export function useSoloChat(sessionId: Ref<string>) {
   }
 
   watch(sessionId, () => void load(), { immediate: true })
+  watch([busy, link], scheduleStallCheck)
 
   onBeforeUnmount(() => {
     disposed = true
     if (pollTimer) clearTimeout(pollTimer)
+    if (stallTimer) clearTimeout(stallTimer)
     closeWs()
   })
 
