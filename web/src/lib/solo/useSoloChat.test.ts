@@ -117,6 +117,65 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  describe('quiet busy turn', () => {
+    const item = { id: 'active', text: 'active', images: [] }
+    async function busyChat() {
+      vi.useFakeTimers()
+      const mounted = mountChat()
+      await flushPromises()
+      const socket = FakeSocket.all[0]!
+      socket.open()
+      await flushPromises()
+      socket.emit({ type: 'session', event: 'queue_state', seq: 0, sessionGeneration: 1, revision: 1, busy: true, activeItem: item, items: [] })
+      await flushPromises()
+      expect(mounted.chat.busy.value).toBe(true)
+      mocks.getSoloSession.mockClear()
+      return { ...mounted, socket }
+    }
+    afterEach(() => vi.useRealTimers())
+
+    it('resubscribes when the server is idle after a missed turn_done', async () => {
+      const { chat, app, socket } = await busyChat()
+      mocks.getSoloSession.mockResolvedValue(session({ busy: false }))
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(mocks.getSoloSession).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1500)
+      const next = FakeSocket.all.at(-1)!
+      expect(next).not.toBe(socket)
+      next.open()
+      await flushPromises()
+      next.emit({ type: 'session', event: 'queue_state', seq: 2, sessionGeneration: 1, revision: 3, busy: false, items: [] })
+      await flushPromises()
+      expect(chat.busy.value).toBe(false)
+      expect(chat.turns.value.some(turn => turn.streaming)).toBe(false)
+      app.unmount()
+    })
+
+    it('keeps a long silent turn on its socket while the server is still busy', async () => {
+      const { chat, app } = await busyChat()
+      mocks.getSoloSession.mockResolvedValue(session({ busy: true }))
+      await vi.advanceTimersByTimeAsync(30_000)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(mocks.getSoloSession).toHaveBeenCalledTimes(2)
+      expect(FakeSocket.all).toHaveLength(1)
+      expect(chat.busy.value).toBe(true)
+      app.unmount()
+    })
+
+    it('discards an idle read when a live frame arrives during it', async () => {
+      const { chat, app, socket } = await busyChat()
+      let resolve!: (row: unknown) => void
+      mocks.getSoloSession.mockReturnValueOnce(new Promise(r => { resolve = r }))
+      await vi.advanceTimersByTimeAsync(30_000)
+      socket.emit({ ...acp('still working'), seq: 1 })
+      resolve(session({ busy: false }))
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(FakeSocket.all).toHaveLength(1)
+      expect(chat.busy.value).toBe(true)
+      app.unmount()
+    })
+  })
+
   it('rebases state and replay sequence on a new subscription to a recreated server stream', async () => {
     vi.useFakeTimers()
     const { chat, app } = mountChat()

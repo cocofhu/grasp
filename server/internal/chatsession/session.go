@@ -9,9 +9,12 @@ package chatsession
 import (
 	"context"
 	"errors"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
@@ -169,6 +172,8 @@ type Admit[T any] func(active T, hasActive bool, pending []T) error
 
 // ErrNotFound is returned by Remove / Reorder for an unknown item id.
 var ErrNotFound = errors.New("item not found")
+
+var errTurnPanicked = errors.New("对话执行异常，请重试")
 
 // Enqueue appends item, publishes queue_state and starts the pump when idle.
 // It returns the pending count including item.
@@ -422,8 +427,10 @@ func (s *Session[T]) pump() {
 		s.mu.Unlock()
 		s.transitionMu.Unlock()
 
+		var interrupted bool
+		var err error
 		if s.cfg.BeforeTurn != nil {
-			s.cfg.BeforeTurn(item, ctx.Done())
+			err = guardTurn(func() { s.cfg.BeforeTurn(item, ctx.Done()) })
 		}
 		s.publish(queueFrame)
 		if s.cfg.TurnBeginExtra != nil {
@@ -433,11 +440,18 @@ func (s *Session[T]) pump() {
 		}
 		s.publish(beginFrame)
 
-		interrupted, err := s.cfg.Execute(ctx, item)
+		if err == nil {
+			var execErr error
+			if err = guardTurn(func() { interrupted, execErr = s.cfg.Execute(ctx, item) }); err == nil {
+				err = execErr
+			}
+		}
 
 		cancel()
 		if s.cfg.AfterTurn != nil {
-			s.cfg.AfterTurn(item)
+			if afterErr := guardTurn(func() { s.cfg.AfterTurn(item) }); err == nil {
+				err = afterErr
+			}
 		}
 		s.transitionMu.Lock()
 		s.mu.Lock()
@@ -468,6 +482,20 @@ func (s *Session[T]) pump() {
 		}
 		s.publish(terminalFrame)
 	}
+}
+
+// guardTurn turns a panic in surface code into a turn error: the pump runs on
+// its own goroutine, so an unrecovered panic would end the whole process and
+// leave every viewer without turn_done.
+func guardTurn(fn func()) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("chat session turn panicked")
+			err = errTurnPanicked
+		}
+	}()
+	fn()
+	return nil
 }
 
 func (s *Session[T]) pumpExit() {

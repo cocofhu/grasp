@@ -59,6 +59,22 @@
 - 做了什么：本机执行仍过滤服务环境中的密钥与 Git 覆盖；所选 CLI 登录按文件白名单复制，跳过历史与 worktrees，防止目标嵌套导致自复制，保留 hooks 的执行位。Git/SSH 配置使用私有副本，子进程使用独立 HOME/XDG 并保留 local 模式，仅显式继承 SSH agent。Trae 的 HOME 路径只允许链接 Grasp 自有 ConfigHome，以保留切换后的历史。移除 Codex 本机模式的 API Key 放行与外部沙箱绕过参数；OpenCode 使用配置文件路径与无密钥的运行期覆盖，官方登录文件复制并清理已移除的授权。Kimi 最终隔离配置保留匹配站点的已保存 API Key 或文件 OAuth，凭据刷新不写回来源。`down` 在 Docker 检查之前停止本地 PID。默认模型组只为已安装 CLI 创建，发现路径同步到子进程 PATH，具体绑定类型必须明确，Solo 严格限定 Agent 的绑定组。补充本机模式中英文提示；E2E 授权改用原生配置文件，并让 local 模式覆盖全部 56 个有向工具切换。
 - 为什么：已有 review 的三个必须修复项分别会扩大宿主机密钥传播、通过软链接写回登录状态，以及阻止无 Docker 环境关闭本地服务。继续核查发现模式传播、OpenCode 内联密钥、未绑定模型组回退和 E2E 依赖宿主环境变量也会掩盖实际边界问题。
 - 如何验证：新增密钥过滤、配置副本写回、HOME/SSH、绑定校验、OpenCode 登录及无 Docker 生命周期回归；Server / Sandbox 全量 lint、vet、单测、配置文档与 runtime 专项通过，核心覆盖率 90.5% / 96.6%，相关 race 通过。Web lint、vue-tsc、5,836 单测（Lines 91.75%）、生产构建及 260 项关键浏览器用例通过。最终本机构建通过完整 worktree 84 项与 local 57 轮矩阵（覆盖全部 56 个有向切换），46 项 Node 和 12 项 Python 合约通过。真实 Kimi Code 2.4.0 在无环境密钥情况下使用保存的 synthetic API Key 向 localhost 完成原生 ACP 请求，模型与强度正确；云模式原生模型／强度专项也通过。沙箱 smoke、Git、bootstrap、preview 检查，actionlint、error-level shellcheck、品牌断言、文档构建及 npm high/critical audit 通过。完整切换矩阵中的 Cursor / Trae / Kimi 仍明确标注协议夹具，Kimi 原生授权另测；未调用厂商 API 或读取真实密钥。
+### 2026-10-30（亮色主题文字对比度与首页背景）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`web/src/styles/global.css`、`web/src/views/DashboardView.vue`、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：亮色主题 `--c-txt3` 由 `161 161 170` 加深为 `113 113 122`，`--c-txt2` 由 `82 82 91` 调为 `72 72 82`；`--c-line`／`--c-line-strong` 略加深；`--c-accent-dim` 改为偏紫的 `240 237 255`。首页粒子背景在亮色下透明度由 0.2 降为 0.1；发送按钮亮色禁用态改用 `line-strong` 底色，暗色保持 `txt3`。
+- 为什么：反馈亮色界面整体发灰、沉闷；原 `txt3` 在白底对比度约 2.6:1，11–12px 次要文字发虚，粒子纹理也加重灰感。新 `txt3` 在 surface／base 上约 4.8:1。
+- 如何验证：本地起 server + Vite，亮色首页前后截图对比，次要文字、占位符与边框更清晰，暗色未变；DashboardView、styles、dashboard 组件相关 15 个测试文件 174 项通过，lint 与 vue-tsc 通过。
+
+### 2026-10-30（对话轮次 panic 兜底与 Solo 静默忙碌核对）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`server/internal/chatsession/session{,_test}.go`、`web/src/lib/solo/useSoloChat{,.test}.ts`、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：`chatsession` 泵以 `guardTurn` 包住 `BeforeTurn`、`Execute`、`AfterTurn`，panic 记录堆栈后按普通轮次错误发布 `error` 帧并继续处理队列；`BeforeTurn` panic 时跳过 `Execute`。Solo 在 socket 正常、本地 busy 且 30 秒无任何帧时读取 `getSoloSession`，仅当服务端 `busy=false` 且读取期间无新帧时重新订阅，由订阅快照结算当前轮。
+- 为什么：泵运行在独立 goroutine，未恢复的 panic 会终止整个进程，所有对话都收不到结束帧。Solo 此前只在启动或断线时轮询，socket 正常时若结束帧未被处理会一直显示执行中直至刷新。桥接层 liveness 不转发给 Solo 页面，长工具调用本身可以静默，因此只读核对、确认空闲后才重订阅。PM 线程没有返回权威 busy 的 REST 接口，强制重连会在长工具调用期间反复进入恢复态，本次不改。
+- 如何验证：新增 Go 回归覆盖 `Execute` panic 后发布 error、下一项继续执行、`AfterTurn` 仍运行，以及 `BeforeTurn` panic 跳过执行；新增 Solo 回归覆盖服务端空闲时重订阅结算、服务端仍忙时保持原连接、读取期间新帧使结果作废，前两项在旧实现失败。server golangci-lint 2.12、vet、配置文档检查、全量测试、runtime 专项与核心覆盖率 90.6% 通过；Web lint（0 error）、vue-tsc、生产构建及 544 文件 6,000 项单测通过，Lines 91.83%，关键路径浏览器 266 项通过；actionlint 与 error-level shellcheck 通过。本机 Node 默认堆上限约 2.2GB，生产构建需 `NODE_OPTIONS=--max-old-space-size=8192`，与本次改动无关。
+
 ### 2026-10-30（运行记录悬停行留白）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。
