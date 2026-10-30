@@ -192,8 +192,8 @@ async function playConfirmCeremony(): Promise<void> {
   if (confirmFlow.playing.value) return
   await confirmFlow.play()
 }
-// Pending sends stay in the bottom queue, and the accepted user row is also
-// in the transcript immediately. turn_begin attaches to that row.
+// Pending sends stay in the bottom queue. Only a send with no active reply is
+// painted at once; turn_begin attaches to that row or opens the waiter's own.
 const queued = ref<QueueItem[]>([])
 /** In-flight turn bubbles (human + streaming agent) before props.turns catch up. */
 const liveTurns = ref<ClarifyTurn[]>([])
@@ -1034,13 +1034,16 @@ function findLocalPendingPair(send?: LocalSend): number {
   return liveTurns.value.findIndex(turn => toRaw(turn) === toRaw(send.human!))
 }
 
-/** Paint this send once; an earlier WebSocket frame may already own its row. */
+/**
+ * Paint this send once; an earlier WebSocket frame may already own its row.
+ * A send behind an active reply stays in the queue until its turn_begin,
+ * matching the persisted transcript a reload shows.
+ */
 function paintAcceptedUserTurn(send: LocalSend) {
-  if (send.begun || findLocalPendingPair(send) >= 0) return
+  if (send.begun || findLocalPendingPair(send) >= 0 || liveAgentIdx.value >= 0) return
   const { text, images, annotations } = send.item
   if (!liveTurns.value.length) liveHistoryAnchor = anchorForNewLiveHuman(text)
   const started = new Date().toISOString()
-  const streaming = liveAgentIdx.value < 0
   const human: ClarifyTurn = {
     role: 'human', text, at: started, clientMessageId: send.item.clientMessageId,
     images: images.length ? images : undefined,
@@ -1049,13 +1052,10 @@ function paintAcceptedUserTurn(send: LocalSend) {
   }
   send.human = human
   liveTurns.value.push(human)
-  // Waiters have no assistant row until their own turn starts.
-  if (streaming) {
-    liveAgentIdx.value = liveTurns.value.push({
-      role: 'agent', text: '', thought: '', at: started, startedAt: started,
-      clientMessageId: send.item.clientMessageId, streaming: true, localPending: true,
-    }) - 1
-  }
+  liveAgentIdx.value = liveTurns.value.push({
+    role: 'agent', text: '', thought: '', at: started, startedAt: started,
+    clientMessageId: send.item.clientMessageId, streaming: true, localPending: true,
+  }) - 1
   thinking.value = true
   stickToBottom.value = true
   unreadCount.value = 0
@@ -1090,8 +1090,8 @@ function sendMessage(
   // (trim would collapse "回答已跳过\n用户回复\n" → two lines).
   const t = textHasSkipPrefix(text) ? text.replace(/^\s+/, '') : text.trim()
   if ((!t && imgs.length === 0 && anns.length === 0) || props.done || !props.active) return
-  // Busy may still enqueue; the accepted row is painted now, and turn_begin
-  // attaches to it instead of opening a second human bubble.
+  // Busy may still enqueue. With no active reply the row is painted now and
+  // turn_begin attaches to it instead of opening a second human bubble.
   const item: QueueItem = { text: t, images: imgs, annotations: cloneReactAnnotations(anns) }
   if (composerText !== undefined) composerOrigin.set(item, composerText)
   const send = registerLocalSend(item)

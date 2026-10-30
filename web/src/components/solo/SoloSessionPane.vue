@@ -304,6 +304,8 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       :run-id="session.artifactRunId || ''"
       :run-name="title"
       split-drawer
+      remember-artifact-panel
+      :panel-memory-key="`solo:${props.sessionId}`"
       class="solo-workspace min-h-0 min-w-0 flex-1"
     >
       <template #stage>

@@ -1144,6 +1144,9 @@ const reactQueueTurnKeys = new WeakMap<SessionQueueItem, string>()
 const localReactTurnKeys = new Set<string>()
 const activeReactTurn = computed(() => reactTurns.value.find(turn => turn.key === reactActiveTurnKey.value))
 const reactLiveHumanText = computed(() => activeReactTurn.value?.text || '')
+/** A waiter stays in the queue panel until its own turn starts, matching a reload. */
+const reactTranscriptTurns = computed(() =>
+  reactTurns.value.filter(turn => turn.status !== 'pending' || turn.key === reactActiveTurnKey.value))
 /** ACP thought rail (separate from message — Demo: thought must not be dropped). */
 const reactStreamThought = ref('')
 /** ACP tool_call rows of the current turn (name + status) for the folded tool group. */
@@ -2035,6 +2038,7 @@ provide(gateApprovalKey, {
     reactStreamText,
     reactLiveHumanText,
     reactTurns,
+    reactTranscriptTurns,
     reactStreamThought,
     reactStreamTools,
     reactInterrupted,
@@ -2217,6 +2221,7 @@ provide(gateApprovalKey, {
     reactStreamText,
     reactLiveHumanText,
     reactTurns,
+    reactTranscriptTurns,
     reactStreamThought,
     reactStreamTools,
     reactInterrupted,

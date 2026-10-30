@@ -6,6 +6,10 @@ All notable public-release changes are documented here.
 
 - **Long agent turns:** a turn is no longer stopped while the agent is still working. Solo turns were cut off at 60 minutes, PM, channel and scheduled-task turns at about 10 minutes (scheduled tasks gave up waiting at 30 minutes), and Agent test chats at 10 minutes; none of them has a default total time limit now. A turn that goes silent is still stopped by the no-activity limit. Limits you set yourself still apply: the workflow node time limit, a channel's turn timeout and `SANDBOX_TURN_MAX_DURATION`.
 
+- **Workflow and approval queued messages:** in clarification, run details, review gates and shared approval links, a message sent while a reply is still running now appears only in the queue panel and enters the conversation when its own reply starts, matching Solo and the page after a reload.
+
+- **Conversation side panel memory:** each chat, including Solo conversations, remembers whether its right-hand panel was open and whether it showed Resources or Artifacts, and restores that when you return, also after a page reload. A chat you have not opened before follows the last state you used.
+
 - **Solo queued messages:** a message sent while a reply is still running now waits only in the queue and enters the conversation when its turn begins, instead of also showing an early bubble with an empty reply that disappeared on reload.
 
 - **Light theme contrast:** secondary text, placeholders and borders are darker so small labels stay readable, and the home page background pattern is fainter.
