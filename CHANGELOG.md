@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Light theme contrast:** secondary text, placeholders and borders are darker so small labels stay readable, and the home page background pattern is fainter.
+
 ## 3.1.0 — 2026-10-30
 
 Agents can run Kimi Code, keep several model groups, and execute in a worktree image. Conversations stay on the same visit through reconnects, queues and workflow switches.

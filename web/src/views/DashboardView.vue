@@ -1182,6 +1182,10 @@ html.light .home-shell {
   opacity: 0.2;
 }
 
+html.light .home-shell :deep(.home-particle-mesh__canvas) {
+  opacity: 0.1;
+}
+
 /* Top inset shrinks before the column scrolls. Basis 120px, floor 48px:
    the 72px of slack absorbs exactly one image-chip row (56px thumb + 6px
    pt-1.5 + 8px mb-2 = 70px). A second chip row or the attach notice still
@@ -1364,10 +1368,13 @@ html.light .home-composer__send {
   color: #fff;
 }
 
-.home-composer__send:disabled,
-html.light .home-composer__send:disabled {
+.home-composer__send:disabled {
   background: rgb(var(--c-txt3));
   box-shadow: none;
+}
+
+html.light .home-composer__send:disabled {
+  background: rgb(var(--c-line-strong));
 }
 
 /* Card role 12px; selected = accent inset border */
