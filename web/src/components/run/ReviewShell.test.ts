@@ -7,12 +7,12 @@ import pages from '@/locales/zh-CN/pages.json'
 import ReviewShell from './ReviewShell.vue'
 import { useConversationArtifacts, type ConversationArtifacts } from '@/lib/chat/conversationArtifacts'
 import { registerStageLinks } from '@/lib/run/stageLinks'
-import { ensureConversationDrawer, readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
+import { PANEL_MEMORY_LIMIT, PANEL_MEMORY_STORAGE_KEY, ensureConversationDrawer, readArtifactPanelOpen, readRememberedPanelMode, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 
 enableAutoUnmount(afterEach)
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); resetConversationDrawers() })
 
-function mountShell(props: { scopeKey?: string; runId?: string; chatOnly?: boolean; hostConfirmFlow?: boolean; splitDrawer?: boolean; rememberArtifactPanel?: boolean; runName?: string } = {}) {
+function mountShell(props: { scopeKey?: string; runId?: string; chatOnly?: boolean; hostConfirmFlow?: boolean; splitDrawer?: boolean; rememberArtifactPanel?: boolean; panelMemoryKey?: string; runName?: string } = {}) {
   const mountedChat = vi.fn()
   const mountedStage = vi.fn()
   let artifacts: ConversationArtifacts | null = null
@@ -190,7 +190,7 @@ describe('ReviewShell artifact panel session', () => {
       expect(pending.wrapper.get('[data-testid="conversation-artifact-panel"]').attributes('data-drawer-mode')).toBe('artifacts')
       expect(readArtifactPanelOpen()).toBe(true)
       expect(openArtifact).not.toHaveBeenCalled()
-      expect(localStorage.length).toBe(0)
+      expect(localStorage.getItem(PANEL_MEMORY_STORAGE_KEY)).not.toBeNull()
 
       const epoch = ensureConversationDrawer('run-pending')!.resetEpoch
       await pending.wrapper.setProps({ scopeKey: 'inbox:run-pending:node:2' })
@@ -221,32 +221,98 @@ describe('ReviewShell artifact panel session', () => {
       expect(readArtifactPanelOpen()).toBe(false)
 
       recent.wrapper.unmount()
-      const closed = mountShell({
+      const back = mountShell({
         rememberArtifactPanel: true,
         scopeKey: 'approval:run-pending:gate:3',
         runId: 'run-pending',
       })
-      expect(closed.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
-      await closed.wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
-      expect(readArtifactPanelOpen()).toBe(true)
-      closed.wrapper.unmount()
+      expect(back.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+      expect(readArtifactPanelOpen('run-pending')).toBe(true)
+      expect(readArtifactPanelOpen()).toBe(false)
+      back.wrapper.unmount()
 
-      const swapped = mountShell({
+      const fresh = mountShell({
         rememberArtifactPanel: true,
         splitDrawer: true,
-        scopeKey: 'run-review:run-recent:node:3',
-        runId: 'run-recent',
+        scopeKey: 'run-review:run-new:node:1',
+        runId: 'run-new',
       })
-      expect(swapped.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
-      await swapped.wrapper.setProps({ scopeKey: 'inbox:run-recent:other:1' })
-      expect(swapped.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+      expect(fresh.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
+      await fresh.wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+      await fresh.wrapper.setProps({ scopeKey: 'inbox:run-new:other:1' })
+      expect(fresh.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+      expect(readArtifactPanelOpen('run-recent')).toBe(false)
       expect(openArtifact).not.toHaveBeenCalled()
       expect(openPreview).not.toHaveBeenCalled()
-      expect(localStorage.length).toBe(0)
     } finally {
       unregisterPending()
       unregisterRecent()
     }
+  })
+
+  it('reopens each chat on its own home, also after a reload', async () => {
+    const soloA = { rememberArtifactPanel: true, splitDrawer: true, panelMemoryKey: 'solo:a' }
+    const first = mountShell({ ...soloA, scopeKey: 'solo:a:pending', runId: '' })
+    await first.wrapper.get('[data-testid="conversation-resource-toggle"]').trigger('click')
+    expect(readArtifactPanelOpen('solo:a')).toBe(true)
+    expect(readRememberedPanelMode('solo:a')).toBe('resources')
+    await first.wrapper.setProps({ scopeKey: 'solo:a:run-a', runId: 'run-a' })
+    expect(first.wrapper.get('[data-testid="conversation-artifact-panel"]').attributes('data-drawer-mode')).toBe('resources')
+    first.wrapper.unmount()
+
+    const soloB = { rememberArtifactPanel: true, splitDrawer: true, panelMemoryKey: 'solo:b' }
+    const other = mountShell({ ...soloB, scopeKey: 'solo:b:run-b', runId: 'run-b' })
+    expect(other.wrapper.get('[data-testid="conversation-resource-toggle"]').attributes('aria-pressed')).toBe('true')
+    await other.wrapper.get('[data-testid="conversation-resource-toggle"]').trigger('click')
+    expect(readArtifactPanelOpen('solo:b')).toBe(false)
+    other.wrapper.unmount()
+
+    const back = mountShell({ ...soloA, scopeKey: 'solo:a:run-a', runId: 'run-a' })
+    expect(back.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+    expect(back.wrapper.get('[data-testid="conversation-resource-toggle"]').attributes('aria-pressed')).toBe('true')
+    expect(back.wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('false')
+    await back.wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    expect(readRememberedPanelMode('solo:a')).toBe('artifacts')
+    back.wrapper.unmount()
+
+    const closed = mountShell({ ...soloB, scopeKey: 'solo:b:run-b', runId: 'run-b' })
+    expect(closed.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
+  })
+
+  it('ignores broken stored memory', () => {
+    localStorage.setItem(PANEL_MEMORY_STORAGE_KEY, '{not json')
+    expect(readArtifactPanelOpen('solo:x')).toBe(false)
+    localStorage.setItem(PANEL_MEMORY_STORAGE_KEY, JSON.stringify({ last: { open: 'yes' }, chats: [['solo:x', { open: true, mode: 'bogus' }], ['solo:y', null], [7, { open: true }], 'bad'] }))
+    expect(readArtifactPanelOpen()).toBe(false)
+    expect(readArtifactPanelOpen('solo:x')).toBe(true)
+    expect(readRememberedPanelMode('solo:x')).toBe('artifacts')
+    expect(readArtifactPanelOpen('solo:y')).toBe(false)
+    localStorage.setItem(PANEL_MEMORY_STORAGE_KEY, JSON.stringify({ chats: { 'solo:x': { open: true } } }))
+    expect(readArtifactPanelOpen('solo:x')).toBe(false)
+  })
+
+  it('drops the least recently used chats first, numeric run ids included', () => {
+    writeArtifactPanelOpen(true, 'resources', '42')
+    for (let i = 0; i < PANEL_MEMORY_LIMIT - 1; i++) writeArtifactPanelOpen(true, 'resources', `chat-${i}`)
+    writeArtifactPanelOpen(false, undefined, '42')
+    writeArtifactPanelOpen(true, 'artifacts', '7')
+    const stored = JSON.parse(localStorage.getItem(PANEL_MEMORY_STORAGE_KEY)!) as { chats: [string, unknown][] }
+    const keys = stored.chats.map(([key]) => key)
+    expect(keys).toHaveLength(PANEL_MEMORY_LIMIT)
+    expect(keys).not.toContain('chat-0')
+    expect(keys.slice(-2)).toEqual(['42', '7'])
+    expect(readArtifactPanelOpen('42')).toBe(false)
+    expect(readRememberedPanelMode('42')).toBe('resources')
+  })
+
+  it('keeps chats another tab wrote', () => {
+    writeArtifactPanelOpen(true, 'resources', 'solo:here')
+    const stored = JSON.parse(localStorage.getItem(PANEL_MEMORY_STORAGE_KEY)!) as { last: unknown; chats: [string, unknown][] }
+    stored.chats.push(['solo:other-tab', { open: true, mode: 'artifacts' }])
+    localStorage.setItem(PANEL_MEMORY_STORAGE_KEY, JSON.stringify(stored))
+    writeArtifactPanelOpen(false, undefined, 'solo:here')
+    expect(readArtifactPanelOpen('solo:other-tab')).toBe(true)
+    expect(readArtifactPanelOpen('solo:here')).toBe(false)
   })
 
   it('opens a cited file once and does not open it again when the scope changes', async () => {
