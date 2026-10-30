@@ -50,41 +50,6 @@ const hideTeamCreate = computed(() => embedded.value)
 const showCreateTeam = computed(() => !hideTeamCreate.value)
 function filterAgentsByScope(list: Agent[] | null | undefined): Agent[] { return list || [] }
 
-const AGENT_LIST_COLLAPSED_KEY = 'agent-studio-agent-list-collapsed'
-const SIDEBAR_EXPANDED_W = '280px'
-const SIDEBAR_COLLAPSED_W = '28px'
-
-function readCollapsedState(key: string): boolean {
-  try {
-    const v = localStorage.getItem(key)
-    if (v === null) return false
-    return v === 'true'
-  } catch {
-    return false
-  }
-}
-
-function writeCollapsedState(key: string, collapsed: boolean) {
-  try {
-    localStorage.setItem(key, String(collapsed))
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
-
-const agentListCollapsed = ref(false)
-function toggleAgentListCollapsed() {
-  agentListCollapsed.value = !agentListCollapsed.value
-  writeCollapsedState(AGENT_LIST_COLLAPSED_KEY, agentListCollapsed.value)
-}
-
-const cardGridStyle = computed(() => {
-  if (isMobile.value) return { gridTemplateColumns: '1fr' }
-  return {
-    gridTemplateColumns: `${agentListCollapsed.value ? SIDEBAR_COLLAPSED_W : SIDEBAR_EXPANDED_W} 1fr`,
-  }
-})
-
 const filesStep = ref<'list' | 'edit'>('list')
 const justSaved = ref(false)
 const showSaveReasonModal = ref(false)
@@ -340,9 +305,9 @@ const studioTabs = computed(() => {
   if (!draft.value) return []
   const d = draft.value
   return [
-    { k: 'files' as const, l: t('pages.agentStudio.tabs.files', { n: d.files.length }) },
-    { k: 'mcp' as const, l: t('pages.agentStudio.tabs.mcp', { n: d.mcp.length }) },
-    { k: 'env' as const, l: t('pages.agentStudio.tabs.env', { n: d.env.filter((e) => !isManagedRegionKey(e.k)).length }) },
+    { k: 'files' as const, l: t('pages.agentStudio.tabs.files'), n: d.files.length },
+    { k: 'mcp' as const, l: t('pages.agentStudio.tabs.mcp'), n: d.mcp.length },
+    { k: 'env' as const, l: t('pages.agentStudio.tabs.env'), n: d.env.filter((e) => !isManagedRegionKey(e.k)).length },
     { k: 'capabilities' as const, l: t('pages.agentStudio.tabs.capabilities') },
     { k: 'data' as const, l: t('pages.agentStudio.tabs.data') },
     { k: 'meta' as const, l: t('pages.agentStudio.tabs.meta') },
@@ -507,6 +472,11 @@ function select(
   if (!opts?.skipQuerySync) syncStudioQuery()
 }
 
+/** User-initiated switch: the next Agent opens on the same tab (and data sub-tab). */
+function selectKeepingTab(name: string) {
+  select(name, { tab: tab.value, dataSub: dataSubTab.value })
+}
+
 // guard agent switches when there are unsaved changes
 function chooseAgent(name: string) {
   if (name === activeName.value) return
@@ -516,11 +486,11 @@ function chooseAgent(name: string) {
       message: t('pages.agentStudio.dialogs.discardMessage', { name: activeName.value }),
       confirmText: t('pages.agentStudio.dialogs.discardConfirm'),
       danger: true,
-      ok: () => select(name),
+      ok: () => selectKeepingTab(name),
     }
     return
   }
-  select(name)
+  selectKeepingTab(name)
 }
 
 /** Narrow-screen sheet switch: leaveConfirm-style save / discard / cancel. */
@@ -530,7 +500,7 @@ function chooseAgentFromSheet(name: string) {
     return
   }
   if (!dirty.value) {
-    select(name)
+    selectKeepingTab(name)
     closeSidebarSheet()
     return
   }
@@ -543,12 +513,12 @@ function chooseAgentFromSheet(name: string) {
       const ok = await save()
       if (!ok) return false
       justSaved.value = true
-      select(name)
+      selectKeepingTab(name)
       closeSidebarSheet()
       return true
     },
     onDiscard: () => {
-      select(name)
+      selectKeepingTab(name)
       closeSidebarSheet()
     },
   }
@@ -931,7 +901,6 @@ watch(tabStripEl, () => {
 })
 
 onMounted(() => {
-  agentListCollapsed.value = readCollapsedState(AGENT_LIST_COLLAPSED_KEY)
   load()
   document.addEventListener('keydown', onChromeKeydown)
   window.addEventListener('resize', onChromeReposition)
@@ -957,14 +926,6 @@ onBeforeUnmount(() => {
   isMobile,
   route,
   router,
-  AGENT_LIST_COLLAPSED_KEY,
-  SIDEBAR_EXPANDED_W,
-  SIDEBAR_COLLAPSED_W,
-  readCollapsedState,
-  writeCollapsedState,
-  agentListCollapsed,
-  toggleAgentListCollapsed,
-  cardGridStyle,
   filesStep,
   justSaved,
   showSaveReasonModal,
@@ -1056,6 +1017,7 @@ onBeforeUnmount(() => {
   leaveConfirmCancel,
   load,
   select,
+  selectKeepingTab,
   chooseAgent,
   chooseAgentFromSheet,
   save,

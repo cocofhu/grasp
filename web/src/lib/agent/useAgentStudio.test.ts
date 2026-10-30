@@ -145,7 +145,6 @@ describe('useAgentStudio', () => {
     expect(studio.activeName.value).toBe('agent-a')
     expect(studio.tab.value).toBe('files')
 
-    studio.toggleAgentListCollapsed()
     studio.closeFullNameTip()
     studio.closeMobileChromeOverlays()
 
