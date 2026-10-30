@@ -589,6 +589,9 @@ func main() {
 	// Every provider hook is wired now; continue agent nodes whose sandboxes
 	// survived the previous process.
 	eng.ResumeInterrupted()
+	// Put back dialogue turns that were still queued when it exited.
+	eng.RestoreQueuedTurns()
+	soloSvc.RestoreQueuedTurns()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
