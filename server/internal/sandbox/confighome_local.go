@@ -3,6 +3,7 @@ package sandbox
 import (
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/rs/zerolog/log"
 )
 
 // seedLocalAuthConfigHome snapshots host CLI login/config files into configRoot
@@ -73,24 +75,34 @@ func snapshotLocalConfigEntries(source, destination string, merge bool, names []
 	if err != nil || !info.IsDir() {
 		return
 	}
-	if err := os.MkdirAll(destination, 0o700); err != nil {
-		return
+	if err := snapshotLocalConfigDir(source, destination, merge, names); err != nil {
+		log.Warn().Err(err).Str("source", source).Msg("local CLI configuration snapshot failed; the CLI may report it is not logged in")
 	}
-	info, err = os.Lstat(destination)
-	if err != nil || !info.IsDir() {
-		return
+}
+
+func snapshotLocalConfigDir(source, destination string, merge bool, names []string) error {
+	if err := os.MkdirAll(destination, 0o700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(destination); err != nil {
+		return err
+	} else if !info.IsDir() {
+		return fmt.Errorf("snapshot destination is not a directory")
 	}
 	sourcePath, err := filepath.EvalSymlinks(source)
 	if err != nil {
-		return
+		return err
 	}
 	destinationPath, err := filepath.EvalSymlinks(destination)
 	if err != nil {
-		return
+		return err
 	}
 	rel, err := filepath.Rel(sourcePath, destinationPath)
-	if err != nil || rel == "." {
-		return
+	if err != nil {
+		return err
+	}
+	if rel == "." {
+		return nil
 	}
 	// A managed config home can live below a host CLI worktree directory.
 	// Never import the source branch containing our own destination.
@@ -100,17 +112,17 @@ func snapshotLocalConfigEntries(source, destination string, merge bool, names []
 	}
 	src, err := os.OpenRoot(source)
 	if err != nil {
-		return
+		return err
 	}
 	defer func() { _ = src.Close() }()
 	dst, err := os.OpenRoot(destination)
 	if err != nil {
-		return
+		return err
 	}
 	defer func() { _ = dst.Close() }()
 	entries, err := fs.ReadDir(src.FS(), ".")
 	if err != nil {
-		return
+		return err
 	}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -127,6 +139,7 @@ func snapshotLocalConfigEntries(source, destination string, merge bool, names []
 		}
 		copyLocalConfigEntry(src, dst, name)
 	}
+	return nil
 }
 
 func copyLocalConfigEntry(src, dst *os.Root, name string) {

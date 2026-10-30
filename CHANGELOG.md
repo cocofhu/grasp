@@ -4,7 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **Local execution:** run Grasp with `./start.sh --local` and reuse installed coding tools' saved logins without Docker or workspace credentials. Each process receives private CLI and Git/SSH configuration copies, while host secret environment variables stay filtered. Agents switch only between their bound model groups, and `./start.sh down` stops the local service even when Docker is unavailable.
+- **Local execution:** run Grasp with `./start.sh --local` and reuse installed coding tools' saved logins without Docker or workspace credentials. Each process receives private CLI and Git/SSH configuration copies, while host secret environment variables stay filtered. Agents switch only between their bound model groups, and `./start.sh down` stops the local service even when Docker is unavailable. The local server listens on loopback only, SSH private keys stay in place, and a deleted default model group is not recreated.
 
 - **Translation dependency security:** upgrade Vue I18n to a supported release with fixes for translation HTML and parameter escaping.
 

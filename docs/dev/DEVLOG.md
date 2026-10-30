@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（PR #1040 本机执行二次 review 修复）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`server/cmd/server/main.go`、`server/internal/{handlers/settings.go,execution/tools.go,services/model_configurations*,sandbox/{confighome_local,worktree_create,worktree_git_local,worktree_git_test}.go}`、`start.sh`、`scripts/test-start-local.sh`、`server/README.md`、`CHANGELOG.md`。
+- 做了什么：本机模式服务只监听 `127.0.0.1`。默认模型组按 CLI 记录已创建过的工具（`settings` 表 `local_model_defaults_seeded`），删除后不再自动恢复，`Get` 不再写库。本机 Git 只复制 SSH `config`/`known_hosts`，私钥原位使用。`/api/settings` 的宿主 Git 身份只返回给管理员。`start.sh` 停止前校验 PID 属于 grasp-server，重复启动报错，新增 `--local down|restart`。快照失败、预览工具缺失与启动期绑定失败改为记录警告。README 说明 OAuth 刷新不写回的限制。
+- 为什么：服务原先监听所有网卡并使用公开的演示密码，本机模式下等同把宿主用户的执行权限、CLI 登录与 SSH agent 开放到局域网。默认组在每次读取时补种导致删除无效；私钥副本在进程崩溃时会残留在 worktree 目录；PID 复用可能误杀无关进程。
+- 如何验证：server execution、handlers、services、modelrouting、runtime、sandbox 全量单测通过，新增删除后不复活回归；`ssh -G` 校验身份文件指向宿主私钥、known_hosts 指向私有副本；`scripts/test-start-local.sh` 新增 PID 复用用例通过。
+
 ### 2026-10-29（PR #1040 同步主线并解决记录冲突）
 
 - 日期：2026-10-29（Asia/Hong_Kong）。

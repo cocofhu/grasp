@@ -23,8 +23,7 @@ func defaultLookPath(name string) error {
 			return nil
 		}
 	}
-	_, err := exec.LookPath(name)
-	return err
+	return exec.ErrNotFound
 }
 
 // Keep discovery and the launched backend's PATH on the same host directories.
@@ -189,6 +188,9 @@ func PreviewAvailable() bool {
 	}
 	return true
 }
+
+// PreviewRequested reports whether env enables any browser/VNC preview.
+func PreviewRequested(env map[string]string) bool { return previewRequested(env) }
 
 func previewRequested(env map[string]string) bool {
 	for _, key := range []string{"BROWSER_MCP", "VNC_PREVIEW", "PREVIEW_DIRECT"} {

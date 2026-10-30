@@ -113,7 +113,11 @@ func prepareLocalWorktreeGit(ctx context.Context, spec Spec, home string, env ma
 	if err != nil || strings.TrimSpace(hostHome) == "" {
 		return fmt.Errorf("prepare local Git credentials: host home is unavailable")
 	}
-	snapshotLocalEntries(hostHome, home, []string{".gitconfig", ".git-credentials", ".ssh"})
+	snapshotLocalEntries(hostHome, home, []string{".gitconfig", ".git-credentials"})
+	// Private keys stay in place: the process already runs as their owner, and
+	// copies would outlive a crashed backend. Only files SSH may write are copied.
+	hostSSH := filepath.Join(hostHome, ".ssh")
+	snapshotLocalEntries(hostSSH, filepath.Join(home, ".ssh"), []string{"config", "known_hosts", "known_hosts2"})
 	hostConfig := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
 	if !filepath.IsAbs(hostConfig) {
 		hostConfig = filepath.Join(hostHome, ".config")
@@ -133,34 +137,28 @@ func prepareLocalWorktreeGit(ctx context.Context, spec Spec, home string, env ma
 		}
 	}
 	// OpenSSH resolves default ~/.ssh paths through passwd, ignoring HOME.
-	// Supply the private copies explicitly, including default identity files.
+	// Name the private config and known_hosts, and the host identities, explicitly.
 	sshDir := filepath.Join(home, ".ssh")
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
 		return fmt.Errorf("prepare local SSH credentials: %w", err)
 	}
 	sshConfig := filepath.Join(sshDir, "config")
-	if _, err := os.Stat(sshConfig); os.IsNotExist(err) {
+	if body, err := os.ReadFile(sshConfig); err == nil {
+		body = []byte(strings.ReplaceAll(string(body), "~/", hostHome+"/"))
+		if err := os.WriteFile(sshConfig, body, 0o600); err != nil {
+			return fmt.Errorf("prepare local SSH config: %w", err)
+		}
+	} else if os.IsNotExist(err) {
 		if err := os.WriteFile(sshConfig, nil, 0o600); err != nil {
 			return fmt.Errorf("prepare local SSH config: %w", err)
 		}
+	} else {
+		return fmt.Errorf("prepare local SSH config: %w", err)
 	}
-	// Config includes and explicit identity paths should use the snapshot too.
-	_ = filepath.WalkDir(sshDir, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil || !entry.Type().IsRegular() {
-			return nil
-		}
-		if entry.Name() == "config" || strings.HasSuffix(entry.Name(), ".conf") {
-			if body, err := os.ReadFile(path); err == nil {
-				body = []byte(strings.ReplaceAll(strings.ReplaceAll(string(body), hostHome+"/", home+"/"), "~/", home+"/"))
-				_ = os.WriteFile(path, body, 0o600)
-			}
-		}
-		return nil
-	})
 	command := "ssh -F " + quoteWorktreeGit(sshConfig) + " -o IdentityFile=none -o BatchMode=yes -o UserKnownHostsFile=" + quoteWorktreeGit(filepath.Join(sshDir, "known_hosts")) + " -o GlobalKnownHostsFile=/dev/null"
 	for _, name := range []string{"id_rsa", "id_ecdsa", "id_ecdsa_sk", "id_ed25519", "id_ed25519_sk", "id_dsa"} {
-		if info, err := os.Stat(filepath.Join(sshDir, name)); err == nil && info.Mode().IsRegular() {
-			command += " -i " + quoteWorktreeGit(filepath.Join(sshDir, name))
+		if info, err := os.Stat(filepath.Join(hostSSH, name)); err == nil && info.Mode().IsRegular() {
+			command += " -i " + quoteWorktreeGit(filepath.Join(hostSSH, name))
 		}
 	}
 	env["GIT_SSH_COMMAND"] = command

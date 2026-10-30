@@ -50,11 +50,7 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 		return nil, fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
 	}
 	provider := strings.TrimSpace(env["AGENT_PROVIDER"])
-	if execution.Local() && !execution.PreviewAvailable() {
-		delete(env, "BROWSER_MCP")
-		delete(env, "VNC_PREVIEW")
-		delete(env, "PREVIEW_DIRECT")
-	}
+	dropUnavailableLocalPreview(env)
 	if err := execution.RequireTools(provider, env); err != nil {
 		return nil, err
 	}
@@ -200,11 +196,7 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 		return fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
 	}
 	provider := strings.TrimSpace(env["AGENT_PROVIDER"])
-	if execution.Local() && !execution.PreviewAvailable() {
-		delete(env, "BROWSER_MCP")
-		delete(env, "VNC_PREVIEW")
-		delete(env, "PREVIEW_DIRECT")
-	}
+	dropUnavailableLocalPreview(env)
 	if err := execution.RequireTools(provider, env); err != nil {
 		return err
 	}
@@ -270,6 +262,19 @@ func worktreeSessionStop(stop, cleanupGit func()) func() {
 				cleanupGit()
 			}
 		})
+	}
+}
+
+// A host without the preview toolchain still runs the Agent, without preview.
+func dropUnavailableLocalPreview(env map[string]string) {
+	if !execution.Local() || execution.PreviewAvailable() {
+		return
+	}
+	if execution.PreviewRequested(env) {
+		log.Warn().Str("provider", env["AGENT_PROVIDER"]).Msg("local browser preview requested but Chromium/VNC tools are not installed; running without preview")
+	}
+	for _, key := range []string{"BROWSER_MCP", "VNC_PREVIEW", "PREVIEW_DIRECT"} {
+		delete(env, key)
 	}
 }
 

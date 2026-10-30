@@ -1,16 +1,20 @@
 package services
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -26,8 +30,8 @@ func NewModelConfigurationService(db *gorm.DB) *ModelConfigurationService {
 }
 
 func (s *ModelConfigurationService) List() ([]modelrouting.Configuration, error) {
-	if execution.Local() {
-		_ = s.EnsureLocalDefaults()
+	if err := s.EnsureLocalDefaults(); err != nil {
+		log.Warn().Err(err).Msg("seed local model configurations failed")
 	}
 	var rows []models.ModelConfiguration
 	if err := s.db.Order("created_at desc").Find(&rows).Error; err != nil {
@@ -40,25 +44,47 @@ func (s *ModelConfigurationService) List() ([]modelrouting.Configuration, error)
 	return items, nil
 }
 
-// EnsureLocalDefaults seeds default host-auth model configurations for installed
-// Agent CLIs when running in local execution mode.
+// localDefaultsSeededKey records the CLIs already offered a default group, so a
+// group the user deleted is not recreated by later discovery.
+const localDefaultsSeededKey = "local_model_defaults_seeded"
+
+var localDefaultsMu sync.Mutex
+
+// EnsureLocalDefaults seeds one default host-auth model configuration for each
+// newly installed Agent CLI when running in local execution mode.
 func (s *ModelConfigurationService) EnsureLocalDefaults() error {
 	if !execution.Local() || s == nil || s.db == nil {
 		return nil
+	}
+	localDefaultsMu.Lock()
+	defer localDefaultsMu.Unlock()
+	var marker models.Setting
+	if err := s.db.Where(&models.Setting{Key: localDefaultsSeededKey}).Limit(1).Find(&marker).Error; err != nil {
+		return err
+	}
+	var seeded []string
+	if marker.Value != "" {
+		if err := json.Unmarshal([]byte(marker.Value), &seeded); err != nil {
+			return fmt.Errorf("decode %s: %w", localDefaultsSeededKey, err)
+		}
 	}
 	var existing []models.ModelConfiguration
 	if err := s.db.Select("id", "backend").Find(&existing).Error; err != nil {
 		return err
 	}
-	backends := execution.InstalledProviders()
 	seenID := make(map[string]bool, len(existing))
 	seenBackend := make(map[string]bool, len(existing))
 	for _, row := range existing {
 		seenID[row.ID] = true
 		seenBackend[row.Backend] = true
 	}
+	changed := false
 	now := time.Now()
-	for i, backend := range backends {
+	for i, backend := range execution.InstalledProviders() {
+		if slices.Contains(seeded, backend) {
+			continue
+		}
+		seeded, changed = append(seeded, backend), true
 		id := "model-local-" + strings.ReplaceAll(backend, "_", "-")
 		if seenID[id] || seenBackend[backend] {
 			continue
@@ -77,7 +103,14 @@ func (s *ModelConfigurationService) EnsureLocalDefaults() error {
 			return err
 		}
 	}
-	return nil
+	if !changed {
+		return nil
+	}
+	value, err := json.Marshal(seeded)
+	if err != nil {
+		return err
+	}
+	return setSetting(s.db, localDefaultsSeededKey, string(value))
 }
 
 func localToolLabel(backend string) string {
@@ -104,9 +137,6 @@ func localToolLabel(backend string) string {
 }
 
 func (s *ModelConfigurationService) Get(id string) (modelrouting.Configuration, error) {
-	if execution.Local() {
-		_ = s.EnsureLocalDefaults()
-	}
 	var row models.ModelConfiguration
 	if err := s.db.First(&row, "id = ?", strings.TrimSpace(id)).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

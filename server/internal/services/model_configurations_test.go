@@ -385,6 +385,16 @@ func TestLocalDefaultsOnlySeedInstalledTools(t *testing.T) {
 	if err != nil || len(items) != 1 {
 		t.Fatalf("discovery was not idempotent: %+v %v", items, err)
 	}
+	if err := configurations.Delete(items[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if items, err = configurations.List(); err != nil || len(items) != 0 {
+		t.Fatalf("deleted default group was recreated: %+v %v", items, err)
+	}
+	installed["dsh"] = true
+	if items, err = configurations.List(); err != nil || len(items) != 1 || items[0].Backend != "deepseek_harness" {
+		t.Fatalf("a newly installed CLI was not discovered after a deletion: %+v %v", items, err)
+	}
 }
 
 func TestLocalBindingRequiresExplicitKindAndLocalExecution(t *testing.T) {

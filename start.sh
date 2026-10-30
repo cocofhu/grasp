@@ -11,7 +11,8 @@
 #   ./start.sh pull        refresh compose images + the sandbox runtime
 #   ./start.sh dev         local source stack (build server/web/gateway)
 #   ./start.sh dev -d      local source stack, detached
-#   ./start.sh --local     host-local mode (no Docker / no sandbox, uses host Agent CLI auth)
+#   ./start.sh --local     host-local mode (no Docker / no sandbox, uses host Agent CLI auth;
+#                          listens on 127.0.0.1 only). Also: --local -d | down | restart
 #   ./start.sh sandbox     build universal-sandbox:local (dev only)
 #   ./start.sh gateway     rebuild local sandbox-gateway image (dev only)
 #   ./start.sh runtime     rebuild the sandbox runtime bundle (dev only)
@@ -38,15 +39,34 @@ ensure_docker() {
   fi
 }
 
-stop_local() {
-  local pid_file=".devdata/local/grasp-server.pid" pid
-  [[ -f "$pid_file" ]] || return 0
-  pid="$(<"$pid_file")"
+LOCAL_PID_FILE=".devdata/local/grasp-server.pid"
+
+# Print the recorded PID only while it still names a running grasp-server, so a
+# PID reused after a reboot or crash is never signalled.
+local_server_pid() {
+  local pid command
+  [[ -f "$LOCAL_PID_FILE" ]] || return 1
+  pid="$(<"$LOCAL_PID_FILE")"
   # A malformed PID must never signal this shell's or the host's process group.
-  if [[ "$pid" =~ ^[1-9][0-9]*$ && "$pid" != 1 ]]; then
+  [[ "$pid" =~ ^[1-9][0-9]*$ && "$pid" != 1 ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    IFS= read -r -d '' command <"/proc/$pid/cmdline" || true
+  elif command -v ps >/dev/null 2>&1; then
+    command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  else
+    return 1
+  fi
+  [[ "$command" == *grasp-server* ]] || return 1
+  printf '%s\n' "$pid"
+}
+
+stop_local() {
+  local pid
+  if pid="$(local_server_pid)"; then
     kill -- "$pid" 2>/dev/null || true
   fi
-  rm -f "$pid_file"
+  rm -f "$LOCAL_PID_FILE"
 }
 
 case "${1:-up}" in
@@ -273,7 +293,11 @@ up_dev() {
 }
 
 up_local() {
-  local detach="${1:-}"
+  local detach="${1:-}" pid
+  if pid="$(local_server_pid)"; then
+    echo "error: local server is already running (pid $pid); use ./start.sh --local restart" >&2
+    exit 1
+  fi
   if ! command -v go >/dev/null 2>&1; then
     echo "error: go not found (required for --local mode)" >&2
     exit 1
@@ -315,14 +339,14 @@ up_local() {
 
   if [[ "$detach" == "1" ]]; then
     nohup "$local_root/bin/grasp-server" "$CONFIG_PATH" >"$local_root/grasp-server.log" 2>&1 &
-    echo $! >"$local_root/grasp-server.pid"
+    echo $! >"$LOCAL_PID_FILE"
     wait_for_url "http://127.0.0.1:${GRASP_PORT}/api/health" "api"
-    echo "started (local mode, pid $(cat "$local_root/grasp-server.pid"))"
-    echo "—— UI/API  http://localhost:${GRASP_PORT}"
+    echo "started (local mode, pid $(<"$LOCAL_PID_FILE"))"
+    echo "—— UI/API  http://127.0.0.1:${GRASP_PORT}  (loopback only)"
     echo "—— login   admin / demo1234  (local-demo)"
     echo "—— log     $local_root/grasp-server.log"
   else
-    echo "starting local mode (foreground) — UI http://localhost:${GRASP_PORT}"
+    echo "starting local mode (foreground) — UI http://127.0.0.1:${GRASP_PORT}  (loopback only)"
     echo "—— login   admin / demo1234  (local-demo)"
     exec "$local_root/bin/grasp-server" "$CONFIG_PATH"
   fi
@@ -368,8 +392,23 @@ case "$cmd" in
     case "$sub" in
       -d|up-d|detach) up_local 1 ;;
       up|"") up_local 0 ;;
+      down) stop_local ;;
+      restart)
+        if pid="$(local_server_pid)"; then
+          stop_local
+          for _ in $(seq 1 100); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.1
+          done
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "error: local server (pid $pid) did not stop within 10s" >&2
+            exit 1
+          fi
+        fi
+        up_local 1
+        ;;
       *)
-        echo "usage: ./start.sh --local [-d]" >&2
+        echo "usage: ./start.sh --local [-d|down|restart]" >&2
         exit 1
         ;;
     esac

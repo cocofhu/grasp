@@ -29,7 +29,7 @@ export TEST_DOCKER_LOG="$TMP/docker.log"
 
 run_case() {
   local mode="$1" pid i
-  sleep 60 &
+  (exec -a grasp-server sleep 60) &
   pid=$!
   PIDS+=("$pid")
   printf '%s\n' "$pid" >"$TEST_PID_FILE"
@@ -81,3 +81,13 @@ run_case available
 # Repeated teardown also succeeds after the PID file is gone.
 PATH="$TMP/bin" TEST_DOCKER_MODE=daemon-unavailable bash "$TMP/repo/start.sh" down
 echo "ok - repeated local down"
+
+# A stale PID reused by an unrelated process must not be signalled.
+sleep 60 &
+unrelated=$!
+PIDS+=("$unrelated")
+printf '%s\n' "$unrelated" >"$TEST_PID_FILE"
+PATH="$TMP/bin" TEST_DOCKER_MODE=daemon-unavailable bash "$TMP/repo/start.sh" --local down
+[[ ! -f "$TEST_PID_FILE" ]] || fail "stale pid file retained"
+kill -0 "$unrelated" 2>/dev/null || fail "unrelated process reusing the recorded PID was killed"
+echo "ok - stale local pid ignored"

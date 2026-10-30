@@ -26,12 +26,20 @@ type updateSettingsBody struct {
 // authenticated shell user.
 func (h *Handlers) GetSettings(c *gin.Context) {
 	resp := gin.H{"items": h.Settings.Effective(), "brand": h.Settings.Brand(), "execution_mode": execution.Mode()}
-	if execution.Local() {
+	h.addLocalSettings(c, resp)
+	c.JSON(http.StatusOK, resp)
+}
+
+// The host Git identity is the server operator's, so only admins receive it.
+func (h *Handlers) addLocalSettings(c *gin.Context, resp gin.H) {
+	if !execution.Local() {
+		return
+	}
+	resp["installed_tools"] = execution.InstalledProviders()
+	if sess, ok := auth.GetSession(c); ok && h.Auth != nil && h.Auth.IsAdmin(sess.Username) {
 		gitName, gitEmail := execution.HostGitIdentity()
-		resp["installed_tools"] = execution.InstalledProviders()
 		resp["host_git_user"] = gin.H{"name": gitName, "email": gitEmail}
 	}
-	c.JSON(http.StatusOK, resp)
 }
 
 // UpdateSettings persists a patch of platform scheduling params and applies
@@ -68,11 +76,7 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		return
 	}
 	resp := gin.H{"items": items, "brand": h.Settings.Brand(), "execution_mode": execution.Mode()}
-	if execution.Local() {
-		gitName, gitEmail := execution.HostGitIdentity()
-		resp["installed_tools"] = execution.InstalledProviders()
-		resp["host_git_user"] = gin.H{"name": gitName, "email": gitEmail}
-	}
+	h.addLocalSettings(c, resp)
 	c.JSON(http.StatusOK, resp)
 }
 

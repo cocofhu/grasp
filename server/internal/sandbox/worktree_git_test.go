@@ -328,25 +328,41 @@ func TestLocalGitUsesPrivateHomeAndSSHSnapshot(t *testing.T) {
 	if out, err := cmd.Output(); err != nil || !strings.Contains(string(out), "Host Author <host@example.com>") {
 		t.Fatalf("local Git did not retain the host author: %v", err)
 	}
-	if strings.Contains(env["GIT_SSH_COMMAND"], hostHome) || !strings.Contains(env["GIT_SSH_COMMAND"], filepath.Join(privateHome, ".ssh", "config")) {
+	if !strings.Contains(env["GIT_SSH_COMMAND"], filepath.Join(privateHome, ".ssh", "config")) {
 		t.Fatal("local Git SSH transport did not select the private config")
 	}
 	// Check OpenSSH's resolved paths without making a network connection.
 	sshProbe := exec.Command("sh", "-c", env["GIT_SSH_COMMAND"]+" -G local-auth-test")
 	sshProbe.Env = envList(env)
 	out, err := sshProbe.CombinedOutput()
-	if err != nil || strings.Contains(string(out), hostHome) || !strings.Contains(string(out), filepath.Join(privateHome, ".ssh", "id_ed25519")) {
-		t.Fatalf("OpenSSH did not resolve private identity paths: %v: %s", err, out)
+	if err != nil {
+		t.Fatalf("OpenSSH config probe failed: %v: %s", err, out)
 	}
-	privateKey := filepath.Join(privateHome, ".ssh", "id_ed25519")
-	if info, err := os.Lstat(privateKey); err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
-		t.Fatal("local SSH identity was not copied privately")
+	resolved := map[string]string{}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
+		if key == "identityfile" || key == "userknownhostsfile" {
+			resolved[key] += value + "\n"
+		}
 	}
-	if err := os.WriteFile(privateKey, []byte("changed-by-cli"), 0o600); err != nil {
+	if !strings.Contains(resolved["identityfile"], filepath.Join(hostSSH, "id_ed25519")) {
+		t.Fatalf("OpenSSH did not use the host identity in place: %s", out)
+	}
+	if strings.TrimSpace(resolved["userknownhostsfile"]) != filepath.Join(privateHome, ".ssh", "known_hosts") {
+		t.Fatalf("OpenSSH known_hosts can write back to the host: %s", out)
+	}
+	if _, err := os.Lstat(filepath.Join(privateHome, ".ssh", "id_ed25519")); !os.IsNotExist(err) {
+		t.Fatal("local SSH private key was copied into the backend HOME")
+	}
+	privateKnownHosts := filepath.Join(privateHome, ".ssh", "known_hosts")
+	if info, err := os.Lstat(privateKnownHosts); err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+		t.Fatal("local known_hosts was not copied privately")
+	}
+	if err := os.WriteFile(privateKnownHosts, []byte("changed-by-ssh"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if body, err := os.ReadFile(filepath.Join(hostSSH, "id_ed25519")); err != nil || string(body) != "host-private-key" {
-		t.Fatal("local SSH snapshot changed host login state")
+	if body, err := os.ReadFile(filepath.Join(hostSSH, "known_hosts")); err != nil || string(body) != "host-known-hosts" {
+		t.Fatal("local SSH snapshot changed host known_hosts")
 	}
 	cleanup()
 	if _, err := os.Stat(privateHome); !os.IsNotExist(err) {

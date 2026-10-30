@@ -16,8 +16,11 @@ Agent env、工作区共享 env、Run env 与平台 `sandbox.env` 中出现密�
 先在终端安装并登录所需的编码工具；服务只为已安装的 CLI 创建 `kind: "local"` 模型组，Agent 只能切换到自己已绑定的模型组。
 本机模型组读取所选 CLI 登录与配置的私有副本，保留 Grasp 管理的 MCP 和指令；更新副本不会通过软链接改写本机登录文件。
 子进程使用独立的 HOME/XDG 目录，服务进程中的 API Key、Git Token 与 Git 环境覆盖仍会被过滤。
-未绑定 Git 凭据时，复制本机 Git/SSH 配置并显式传入 SSH agent socket；选定工作区凭据时使用所选授权。
-`./start.sh down` 会先停止本地服务，未安装 Docker 或 Docker 不可用时也能执行。
+未绑定 Git 凭据时，复制本机 Git 配置与 SSH `config`/`known_hosts`，私钥保留原位不复制，并显式传入 SSH agent socket；选定工作区凭据时使用所选授权。
+本机模式服务只监听 `127.0.0.1`：Agent 以宿主用户身份运行，可使用本机登录与 SSH agent，不应暴露到局域网。
+默认模型组每个 CLI 只自动创建一次，删除后不会再自动恢复；新安装的 CLI 会在下次读取模型组时出现。
+OAuth 登录（如 Claude Code 订阅、Codex ChatGPT 登录）在私有副本中刷新的令牌不会写回本机；若厂商轮换 refresh token，本机 CLI 可能需要重新登录。长期使用建议在 CLI 中保存 API Key 登录。
+`./start.sh down` 或 `./start.sh --local down` 会先停止本地服务，未安装 Docker 或 Docker 不可用时也能执行；`./start.sh --local restart` 重启本地服务。
 本机执行与服务使用同一操作系统用户权限，配置副本用于避免意外写回，不提供容器级文件访问隔离。
 
 凭据解析与注入范围如下。UI 保存的值使用 `security.secrets_key` 加密，列表和审计只显示掩码。

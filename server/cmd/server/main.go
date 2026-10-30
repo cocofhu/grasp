@@ -171,9 +171,13 @@ func main() {
 		return err
 	})
 	if execution.Local() {
-		_ = modelConfigurationSvc.EnsureLocalDefaults()
+		if err := modelConfigurationSvc.EnsureLocalDefaults(); err != nil {
+			log.Warn().Err(err).Msg("seed local model configurations failed")
+		}
 		sharedCfg := sharedAgentSvc.Get()
-		if items, err := modelConfigurationSvc.List(); err == nil && len(items) > 0 {
+		if items, err := modelConfigurationSvc.List(); err != nil {
+			log.Warn().Err(err).Msg("list local model configurations failed")
+		} else if len(items) > 0 {
 			ids := make([]string, 0, len(items))
 			for _, item := range items {
 				if item.State == "active" {
@@ -186,7 +190,9 @@ func main() {
 					ConfigurationID:  ids[0],
 					ConfigurationIDs: ids,
 				}
-				_ = sharedAgentSvc.Save(sharedCfg)
+				if err := sharedAgentSvc.Save(sharedCfg); err != nil {
+					log.Warn().Err(err).Msg("bind local model configurations to the shared Agent failed")
+				}
 			}
 		}
 	}
@@ -596,6 +602,10 @@ func main() {
 	r := router.New(h)
 	port := strconv.Itoa(cfg.Server.Port)
 	addr := ":" + port
+	if execution.Local() {
+		// Local agents run as the host user with its CLI logins and SSH agent.
+		addr = "127.0.0.1:" + port
+	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatal().Err(err).Str("addr", addr).Msg("listen failed")
