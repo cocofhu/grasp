@@ -742,12 +742,64 @@ export interface SoloCreateBody {
   images?: ClarifyImage[]
 }
 
+export type ReferenceKind = 'solo' | 'github_issue' | 'github_pr'
+
+/** What the composer submits; the server resolves everything else. */
+export interface ReferenceInput {
+  kind: ReferenceKind
+  target: string
+}
+
+/** A reference as stored on a user message (or shown on a queued/local one). */
+export interface MessageReference extends ReferenceInput {
+  id?: string
+  title: string
+  url?: string
+  messages?: number
+  state?: string
+  access?: 'ok' | 'denied' | 'unchecked'
+  error?: string
+}
+
+export interface SoloReferenceCandidate {
+  kind: 'solo'
+  target: string
+  title: string
+  status: string
+  lastActiveAt?: string
+}
+
+export interface GitHubReferenceCandidate {
+  kind: 'github_issue' | 'github_pr'
+  target: string
+  title: string
+  state: string
+  url: string
+  comments: number
+  updatedAt: string
+  repo: string
+  number: number
+}
+
+export interface ReferenceSearchResult<T> {
+  lane: 'solo' | 'github'
+  items: T[]
+  total?: number
+  nextPage?: number
+  incomplete?: boolean
+  source?: string
+  hint?: string
+  rateLimit?: { remaining: number; resetAt: string }
+  error?: { code: string; message: string; retryAfterMs?: number }
+}
+
 export interface SoloMessage {
   id: string
   sessionId: string
   role: 'user' | 'assistant' | 'system'
   content: string
   images?: ClarifyImage[]
+  references?: MessageReference[]
   /** Raw ACP frames of an assistant turn, replayed into the timeline. */
   events?: unknown[]
   status?: '' | 'ok' | 'failed' | 'stopped'

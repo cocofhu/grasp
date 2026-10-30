@@ -27,6 +27,8 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 	switch name {
 	case "get_history":
 		return h.getConversationHistory(runID, token, args)
+	case "read_reference":
+		return h.readReference(runID, token, args)
 	case "upload_image_artifact":
 		aname := asString(args["name"])
 		content := asString(args["content"])

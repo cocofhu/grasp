@@ -3,6 +3,8 @@ import { req, wsUrl } from '../httpCore'
 import type {
   Project,
   ProjectInput,
+  ReferenceInput,
+  ReferenceSearchResult,
   SoloCreateBody,
   SoloEnvEntry,
   SoloMessage,
@@ -44,8 +46,15 @@ export const soloClient = {
     req<SoloSession>(`/solo/sessions/${enc(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
   listSoloMessages: (id: string) => req<SoloMessage[]>(`/solo/sessions/${enc(id)}/messages`),
   getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),
-  sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[] }) =>
+  sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; references?: ReferenceInput[] }) =>
     req<{ waiting: number }>(`/solo/sessions/${enc(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
+  searchSoloReferences: <T>(id: string, params: { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }, signal?: AbortSignal) => {
+    const qs = new URLSearchParams({ lane: params.lane, q: params.q })
+    if (params.kind) qs.set('kind', params.kind)
+    if (params.state) qs.set('state', params.state)
+    if (params.page && params.page > 1) qs.set('page', String(params.page))
+    return req<ReferenceSearchResult<T>>(`/solo/sessions/${enc(id)}/references/search?${qs}`, { signal })
+  },
   cancelSoloTurn: (id: string) =>
     req<{ ok: boolean }>(`/solo/sessions/${enc(id)}/turns/cancel`, { method: 'POST' }),
   removeSoloQueued: (id: string, turnId: string) =>

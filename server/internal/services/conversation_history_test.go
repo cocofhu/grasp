@@ -132,7 +132,7 @@ func TestConversationHistoryIncludesVisibleToolResults(t *testing.T) {
 	if len(message.ToolResults) != 1 || message.ToolResults[0].Title != "npm test" || message.ToolResults[0].Status != "completed" || message.ToolResults[0].Text != "42 tests passed" {
 		t.Fatalf("tool continuity: %+v", message.ToolResults)
 	}
-	if got := historyExcerpt(strings.Repeat("大", 4000), 2000); !strings.Contains(got, "摘录") || !strings.Contains(got, "get_history") {
+	if got := historyExcerpt(strings.Repeat("大", 4000), 2000, ownHistoryTool); !strings.Contains(got, "摘录") || !strings.Contains(got, "get_history") {
 		t.Fatal("large excerpts need an explicit retrieval instruction")
 	}
 }
@@ -166,7 +166,7 @@ func TestContextPreambleKeepsMidConversationUserCorrections(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		users = append(users, models.SoloMessage{ID: fmt.Sprint(i), Content: strings.Repeat("要求", 1000)})
 	}
-	ledger := renderUserInstructions(users, 3000)
+	ledger := renderUserInstructions(users, 3000, ownHistoryTool)
 	if !strings.Contains(ledger, "条用户消息未装入") || !strings.Contains(ledger, "[用户要求 · 19]") {
 		t.Fatalf("missing budget disclosure/latest decision: %s", ledger)
 	}

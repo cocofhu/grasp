@@ -2,7 +2,7 @@ import { parseModelRoute } from '@/lib/agent/modelBindings'
 import { computed, onBeforeUnmount, ref, shallowRef, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
-import type { SoloMessage, SoloSession } from '@/lib/api/apiTypes'
+import type { MessageReference, SoloMessage, SoloSession } from '@/lib/api/apiTypes'
 import type { ChatExecution, ClarifyImage } from '@/lib/shared/types'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
@@ -10,7 +10,7 @@ import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './ac
 import { soloErrorText } from './soloErrors'
 import { useSoloSessions } from './useSoloSessions'
 
-export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; local?: boolean }
+export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; references?: MessageReference[]; local?: boolean }
 export type SoloPhase = '' | 'preparing' | 'running'
 export type SoloLink = 'idle' | 'connecting' | 'open' | 'reconnecting'
 
@@ -37,6 +37,7 @@ function queueItem(raw: any): SoloQueueItem {
     id: String(raw?.id ?? ''),
     text: String(raw?.text ?? ''),
     images: Array.isArray(raw?.images) ? raw.images : [],
+    ...(Array.isArray(raw?.references) && raw.references.length ? { references: raw.references } : {}),
   }
 }
 
@@ -96,6 +97,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     serverId?: string
     text: string
     images: ClarifyImage[]
+    references: MessageReference[]
     started: boolean
   }
   // The local identity survives HTTP, queue acknowledgement and turn_begin.
@@ -210,6 +212,8 @@ export function useSoloChat(sessionId: Ref<string>) {
   const sendKey = (send: LocalSend) => send.serverId || send.localId
 
   function samePayload(send: LocalSend, item: SoloQueueItem): boolean {
+    const refs = item.references || []
+    if (refs.length && (refs.length !== send.references.length || refs.some((ref, i) => ref.target !== send.references[i]!.target))) return false
     return send.text === item.text && send.images.length === item.images.length && send.images.every((image, i) => {
       const other = item.images[i]!
       if (image.mimeType !== other.mimeType) return false
@@ -390,7 +394,10 @@ export function useSoloChat(sessionId: Ref<string>) {
     const existing = turns.value.find((x) => x.id === `live:${id}`)
     if (existing) {
       activeId.value = id
-      if (!turns.value.some((x) => x.id === `u:${id}`)) {
+      const shown = turns.value.find((x) => x.id === `u:${id}`)
+      // The server copy carries the send-time access check; prefer it over the optimistic one.
+      if (shown && item.references?.length) shown.references = item.references
+      if (!shown) {
         const started = existing.startedAt || new Date().toISOString()
         const user = {
           id: `u:${id}`,
@@ -401,6 +408,7 @@ export function useSoloChat(sessionId: Ref<string>) {
           plan: [],
           streaming: false,
           images: item.images.length ? item.images : undefined,
+          references: item.references,
           createdAt: started,
         }
         const idx = turns.value.findIndex((x) => x.id === existing.id)
@@ -418,7 +426,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     const next = turns.value.filter((x) => x.id !== `u:${id}` && x.id !== `live:${id}`)
     const firstPending = next.findIndex((turn) => openSends.some((row) => !row.started && turn.id === `u:${sendKey(row)}`))
     next.splice(firstPending < 0 ? next.length : firstPending, 0,
-      { id: `u:${id}`, role: 'user', text: item.text, tools: [], steps: [], plan: [], streaming: false, images: item.images.length ? item.images : undefined, createdAt: started },
+      { id: `u:${id}`, role: 'user', text: item.text, tools: [], steps: [], plan: [], streaming: false, images: item.images.length ? item.images : undefined, references: item.references, createdAt: started },
       emptyAgentTurn(`live:${id}`, true, started),
     )
     turns.value = next
@@ -786,14 +794,15 @@ export function useSoloChat(sessionId: Ref<string>) {
     return `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   }
 
-  async function send(text: string, images: ClarifyImage[] = []) {
+  async function send(text: string, images: ClarifyImage[] = [], references: MessageReference[] = []) {
     const id = sessionId.value
     const epoch = chatEpoch
-    if (!id || disposed || !canSend.value || (!text.trim() && !images.length)) return false
+    if (!id || disposed || !canSend.value || (!text.trim() && !images.length && !references.length)) return false
     actionError.value = ''
     const body = text.trim()
-    const local: SoloQueueItem = { id: newLocalId(), text: body, images, local: true }
-    const send: LocalSend = { localId: local.id, text: body, images, started: false }
+    const refs = references.length ? references : undefined
+    const local: SoloQueueItem = { id: newLocalId(), text: body, images, references: refs, local: true }
+    const send: LocalSend = { localId: local.id, text: body, images, references, started: false }
     openSends.push(send)
     const started = new Date().toISOString()
     // A send behind a running turn stays in the queue until its turn_begin,
@@ -810,6 +819,7 @@ export function useSoloChat(sessionId: Ref<string>) {
           plan: [],
           streaming: false,
           images: images.length ? images : undefined,
+          references: refs,
           createdAt: started,
         },
         emptyAgentTurn(`live:${local.id}`, true, started),
@@ -820,7 +830,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     queued.value = [...queued.value, local]
     patchSession({ waiting: queued.value.length, busy: true })
     try {
-      await api.sendSoloTurn(id, { text: body, images })
+      await api.sendSoloTurn(id, { text: body, images, ...(refs ? { references: refs.map(({ kind, target }) => ({ kind, target })) } : {}) })
       return !disposed && epoch === chatEpoch && id === sessionId.value
     } catch (e: any) {
       if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false

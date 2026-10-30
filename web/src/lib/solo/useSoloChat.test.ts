@@ -399,6 +399,21 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('sends reference-only messages and carries references through queue and opening frames', async () => {
+    const { chat, app, ws } = await openChat()
+    mocks.sendSoloTurn.mockResolvedValue(undefined)
+    const ref = { kind: 'github_pr' as const, target: 'acme/web#7', title: 'Fix' }
+    expect(await chat.send('', [], [ref])).toBe(true)
+    expect(mocks.sendSoloTurn).toHaveBeenLastCalledWith('s1', expect.objectContaining({ references: [{ kind: 'github_pr', target: 'acme/web#7' }] }))
+    const pinned = { ...ref, id: 'ref-1', access: 'ok' }
+    const item = { id: 'r1', text: '', references: [pinned] }
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [item] })
+    ws.emit({ type: 'session', event: 'turn_begin', item })
+    const user = chat.turns.value.find(row => row.role === 'user')
+    expect(user?.references).toEqual([pinned])
+    app.unmount()
+  })
+
   it('keeps sends behind a running turn in the queue, in send order, until they begin', async () => {
     const { chat, app, ws } = await openChat()
     await chat.send('one')

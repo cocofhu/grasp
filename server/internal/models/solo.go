@@ -104,6 +104,44 @@ type SoloSession struct {
 	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
+// Reference kinds a Solo user turn may attach.
+const (
+	ReferenceKindSolo        = "solo"
+	ReferenceKindGitHubIssue = "github_issue"
+	ReferenceKindGitHubPR    = "github_pr"
+)
+
+// GitHub reference access check outcomes.
+const (
+	ReferenceAccessOK        = "ok"
+	ReferenceAccessDenied    = "denied"
+	ReferenceAccessUnchecked = "unchecked"
+)
+
+// ReferenceErrorDeleted marks a Solo reference whose target was deleted before
+// the turn ran.
+const ReferenceErrorDeleted = "deleted"
+
+// MessageReference is one context the user explicitly attached to a turn.
+// Solo entries pin a snapshot of another session owned by the same user;
+// GitHub entries are links the Agent reads itself with gh.
+type MessageReference struct {
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Target string `json:"target"`
+	// Title is resolved by the server and kept after the target is deleted.
+	Title string `json:"title"`
+	URL   string `json:"url,omitempty"`
+	// Anchor is the last message of the referenced session when the turn ran.
+	Anchor   string `json:"anchor,omitempty"`
+	Messages int    `json:"messages,omitempty"`
+	// State is the GitHub state at send time, for display only.
+	State     string    `json:"state,omitempty"`
+	Access    string    `json:"access,omitempty"`
+	Error     string    `json:"error,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 // SoloMessage is one persisted turn of a Solo session. Agent turns keep the raw
 // ACP frames so the UI can replay thoughts and tool calls.
 type SoloMessage struct {
@@ -114,6 +152,9 @@ type SoloMessage struct {
 	Content string            `json:"content"`
 	Images  []PromptImage     `gorm:"serializer:json" json:"images,omitempty"`
 	Events  []json.RawMessage `gorm:"serializer:json" json:"events,omitempty"`
+	// References are the contexts the user explicitly picked for this turn.
+	// They are the only authority read_reference accepts.
+	References []MessageReference `gorm:"column:message_references;serializer:json" json:"references,omitempty"`
 	// Status: ok | failed | stopped. Empty means ok.
 	Status       string            `json:"status,omitempty"`
 	Error        string            `json:"error,omitempty"`

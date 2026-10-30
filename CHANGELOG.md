@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **@ references in Solo:** type `@` in a Solo message (or use the "+" menu) to reference another of your Solo sessions or a GitHub issue or pull request from the session's repositories. Typing `#number` or pasting an issue or PR link works too. The agent gets a summary of a referenced session and can read its full conversation as it was when the turn began. GitHub items are checked with the sandbox's Git credential and read by the agent with `gh`. A message can carry up to 5 references, shown as chips in the message and the queue.
+
 - **Solo sandbox limit and running order:** admins can change how many Solo sandboxes run at once under Settings → Capacity, applied immediately and kept across restarts. Solo sessions in the running list now stay in start order, newest first, instead of jumping to the top on every reply.
 
 - **Long agent turns:** a turn is no longer stopped while the agent is still working. Solo turns were cut off at 60 minutes, PM, channel and scheduled-task turns at about 10 minutes (scheduled tasks gave up waiting at 30 minutes), and Agent test chats at 10 minutes; none of them has a default total time limit now. A turn that goes silent is still stopped by the no-activity limit. Limits you set yourself still apply: the workflow node time limit, a channel's turn timeout and `SANDBOX_TURN_MAX_DURATION`.

@@ -20,6 +20,27 @@
 
 ## 记录
 
+### 2026-10-30（Solo @ 引用：其他会话与 GitHub issue/PR）
+
+- 日期：2026-10-30。
+- 范围：`server/internal/models/solo.go`、`server/internal/chatsession/session.go`、`server/internal/services/{solo,conversation_history,solo_reference,solo_reference_github,solo_reference_search}.go`、`server/internal/mcp/{reference,conversation_history,outcome,tools,audit_summary}.go`、`server/internal/handlers/solo.go`、`server/internal/router/router.go`、`web/src/components/solo/{ReferencePicker,ReferenceChip,SoloSessionPane}.vue`、`web/src/lib/solo/{referenceTokens,referenceDisplay,useReferenceSearch,useSoloChat,acpTurn}.ts`、`web/src/lib/api/{apiTypes.ts,clients/soloClient.ts}`、`web/src/locales/{zh-CN,en}/pages.json`、`web/LIB_DOMAIN_MAP.json`、`docs/content/{,en/}guide/concepts.md`，以及对应测试。
+- 做了什么：按 mention-plan v0.4 的 MVP（M1–M3）实现。
+  - 后端：`SoloMessage` 加 `References`，列名 `message_references`，因为 `references` 是 SQL 保留字。`soloTurn` 带上 `References`（JSON 兼容 #1059 的队列序列化）。发送时 `prepareReferences` 做校验：只能引用自己的其他会话，别人的会话与不存在同样返回 404；最多 5 个，并去重；GitHub 用沙箱同一份凭据（精确仓库优先于 host）做一次访问检查。轮次开始时 `pinReferences` 把快照锚定到被引用会话当时的最后一条消息，排队期间新增的消息也算在内，排队期间被删的标记 `deleted`。提示词前缀加「用户引用的上下文」块（8000 字预算，单个会话摘要 2000 字），新 CLI 的 preamble 列出此前的引用。
+  - 读取：`get_history` 的分页拆成 `readSession(historyScope)`，不再要求会话 running。新增 MCP 工具 `read_reference`，Solo 运行始终列出。引用游标用 v2 并绑定 refID，与本会话 v1 游标互不通用；ref 必须挂在本会话的用户消息上，目标仍须属于同一用户；GitHub ref 返回 gh 命令提示。摘录与省略提示里的回查工具改为参数，引用场景指向 `read_reference(ref=…)` 而不是 `get_history`。
+  - GitHub provider 内置为 Go 代码，路由是 `GET /api/solo/sessions/:id/references/search?lane=solo|github`，每个 lane 一次请求。
+    - 查询方式：精确 `#n`、`owner/repo#n` 或 URL 走单次 GET；空查询列最近更新且不占搜索配额；关键词走 search API，限定在会话仓库，拒绝 `repo:`/`org:`/`user:`，最深 100 条。
+    - 缓存与限流：60s 缓存加 ETag/304，按凭据哈希分开缓存；搜索配额剩余少于 5 时提前限流。
+    - 错误放在 lane 内返回，不让整个请求失败。
+  - 前端：
+    - `ReferencePicker` 有「全部 / 会话 / Issue / PR」四个标签和 Open/全部切换，默认没有高亮，所以 Enter 照常发送；↑↓、Tab、Esc 可用；会话 lane 防抖 120ms，GitHub 250ms，精确目标不防抖；请求可取消、带序号校验、缓存 5 分钟。
+    - 输入框用 `referenceTokens` 跟踪 `@标题` 的位置区间，任何触到区间的编辑都会去掉该引用，光标在区间末尾按 Backspace 整段删除。粘贴 GitHub 链接直接变成 `#n`。「+」菜单新增「引用会话」「引用 Issue / PR」。
+    - 历史消息、队列和输入框上方显示引用 chip；会话 chip 走 `RouterLink`。
+- 为什么：用户需要在 Solo 里把另一段对话或某个 issue/PR 显式交给 Agent，而不是复制粘贴。v0.3 评审中的四个必须项都已落实：跨用户引用默认关闭；`read_reference` 始终列出；引用随排队轮次走，快照在轮次开始时锚定；readSession 不要求 running，游标绑定 refID。
+- 如何验证：
+  - Server：`go vet`、`go test ./...` 与 `gen-configdoc -check` 通过；`cover-check-server.sh 90` 为 90.6%。新测试覆盖锚点快照、跨引用与跨版本游标拒绝、外部用户和伪造 ref、排队期间锚定、预算截断、GitHub 精确查询、缓存、304 与各错误码、搜索限定词与配额保护、凭据选择、搜索分页与 LIKE 转义、handler 端点。
+  - Web：lint 0 error（12 个 warning 都在未改动的文件），`vue-tsc` 通过；全量 549 文件、6,039 项单测通过，Lines 91.94%；生产构建通过（本机需 `NODE_OPTIONS=--max-old-space-size=8192`，默认堆会 OOM）。新单测覆盖 token 运算、picker 分组、键盘、分页、错误与缓存、面板内 @ 选择、粘贴、Backspace、「+」菜单、chip 渲染，以及 `useSoloChat` 透传引用。
+  - 本地没有 golangci-lint，未跑。
+
 ### 2026-10-30（智能体页去掉 Agent 列表栏、标签行重做）
 
 - 日期：2026-10-30。
