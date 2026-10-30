@@ -42,7 +42,6 @@ type SandboxService struct {
 	modelBinding         func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
 	selectedCredential   runtime.SelectedCredentialFunc
 	gitCredential        runtime.GitCredentialFunc
-	chatTimeout          time.Duration
 	// ttl / runTTL / max are runtime-tunable via the settings page, so they are
 	// held atomically (read from many sites, some already under s.mu) rather
 	// than guarded by s.mu — avoiding any lock-reentrancy at the read points.
@@ -121,9 +120,8 @@ type SandboxOptions struct {
 	MCPEndpoint  string
 	// Env is the vendor-neutral sandbox env (e.g. CURSOR_API_KEY for the
 	// reference image), injected into interactive test sandboxes.
-	Env         map[string]string
-	ChatTimeout time.Duration
-	TTL         time.Duration
+	Env map[string]string
+	TTL time.Duration
 	// RunTTL is how long a finished run's node sandbox is retained (kept alive)
 	// for debugging before the idle sweeper reclaims it.
 	RunTTL time.Duration
@@ -171,9 +169,6 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 	if opts.Max <= 0 {
 		opts.Max = 5
 	}
-	if opts.ChatTimeout <= 0 {
-		opts.ChatTimeout = 10 * time.Minute
-	}
 	if opts.RunTTL <= 0 {
 		opts.RunTTL = opts.TTL
 	}
@@ -187,7 +182,6 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		modelBinding:         opts.ModelBinding,
 		selectedCredential:   opts.SelectedCredential,
 		gitCredential:        opts.GitCredential,
-		chatTimeout:          opts.ChatTimeout,
 		live:                 map[uint]*liveSandbox{},
 		runActive:            map[string]bool{},
 		lastTouch:            map[uint]time.Time{},

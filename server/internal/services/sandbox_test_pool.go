@@ -346,9 +346,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	log.Info().Str("name", sb.Name).Str("profile", profile).Uint("id", id).Msg("test sandbox opened")
 }
 
-// NoTurnDeadline asks ChatWithTimeout for a turn without a total time limit.
-const NoTurnDeadline time.Duration = -1
-
 // Chat runs one streaming chat turn (text + optional image attachments)
 // against a sandbox, forwarding each raw ACP event frame to onEvent. While a
 // turn runs the sandbox is marked busy and its idle TTL is suspended. The busy
@@ -380,10 +377,9 @@ func (s *SandboxService) recordStudioUsage(id uint, usage *models.TokenUsage, by
 	})
 }
 
-// ChatWithTimeout is Chat with a per-call turn timeout override. timeout==0
-// uses the service default (s.chatTimeout); NoTurnDeadline sets no total limit,
-// leaving the bridge's no-activity watchdog and ctx cancellation. Used by
-// channel/cron/Solo turns that may legitimately run longer than a UI turn.
+// ChatWithTimeout is Chat with an optional total time limit. timeout<=0 sets
+// none: an active turn may run as long as it needs, and a stalled one ends on
+// the sandbox no-activity watchdog or ctx cancellation.
 //
 // Returns the turn's TokenUsage (+ optional by-model breakdown) from
 // prompt_done (nil = not reported), including failed turns. Provider failures
@@ -416,12 +412,8 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 	}()
 
 	chatCtx, cancel := context.WithCancel(ctx)
-	if timeout >= 0 {
-		turnTimeout := s.chatTimeout
-		if timeout > 0 {
-			turnTimeout = timeout
-		}
-		chatCtx, cancel = context.WithTimeout(ctx, turnTimeout)
+	if timeout > 0 {
+		chatCtx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	defer cancel()
 	result, err := ls.acp.ChatStream(chatCtx, text, images, onEvent)

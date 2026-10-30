@@ -22,11 +22,15 @@ type fakePmChat struct {
 	started chan uint
 	prompts []string
 	cancels []uint
+	// limited records, per turn, whether the turn got a total time limit.
+	limited []bool
 }
 
-func (f *fakePmChat) ChatWithTimeout(ctx context.Context, id uint, text string, _ []models.PromptImage, _ time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+func (f *fakePmChat) ChatWithTimeout(ctx context.Context, id uint, text string, _ []models.PromptImage, timeout time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+	_, hasDeadline := ctx.Deadline()
 	f.mu.Lock()
 	f.prompts = append(f.prompts, text)
+	f.limited = append(f.limited, hasDeadline || timeout > 0)
 	frames, err, release, started := f.frames, f.err, f.release, f.started
 	f.mu.Unlock()
 	if started != nil {
@@ -214,6 +218,24 @@ func TestPmTurnQueuesBehindRunningTurn(t *testing.T) {
 	msgs, _ := f.pm.ListMessages(f.thread)
 	if len(msgs) != 4 {
 		t.Fatalf("want two replies, messages=%d", len(msgs))
+	}
+}
+
+func TestPmTurnTotalLimitOnlyWhenRequested(t *testing.T) {
+	f := newPmTurnFixture(t)
+	a, b := f.userMsg(t, "一"), f.userMsg(t, "二")
+	if err := f.runner.Start(f.thread, a.ID, 1, "一", nil); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, f.runner, f.thread)
+	if err := f.runner.StartWithTimeout(f.thread, b.ID, 1, "二", nil, 5*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, f.runner, f.thread)
+	f.chat.mu.Lock()
+	defer f.chat.mu.Unlock()
+	if len(f.chat.limited) != 2 || f.chat.limited[0] || !f.chat.limited[1] {
+		t.Fatalf("total limits per turn = %v, want [false true]", f.chat.limited)
 	}
 }
 

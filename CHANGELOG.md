@@ -4,7 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **Long Solo turns:** a Solo turn is no longer stopped after 60 minutes while the agent is still working. Solo and the sandbox now have no default total time limit for a turn; a turn that goes silent is still stopped by the no-activity limit, workflow nodes keep their node time limit, and operators can still set `SANDBOX_TURN_MAX_DURATION`.
+- **Long agent turns:** a turn is no longer stopped while the agent is still working. Solo turns were cut off at 60 minutes, PM, channel and scheduled-task turns at about 10 minutes (scheduled tasks gave up waiting at 30 minutes), and Agent test chats at 10 minutes; none of them has a default total time limit now. A turn that goes silent is still stopped by the no-activity limit. Limits you set yourself still apply: the workflow node time limit, a channel's turn timeout and `SANDBOX_TURN_MAX_DURATION`.
 
 - **Solo queued messages:** a message sent while a reply is still running now waits only in the queue and enters the conversation when its turn begins, instead of also showing an early bubble with an empty reply that disappeared on reload.
 

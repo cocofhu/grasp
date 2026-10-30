@@ -253,22 +253,24 @@ func (s *CronScheduler) execute(ctx context.Context, job *models.AgentCronJob) {
 		s.destroyCronSandbox(ctx, row.ID, job.ID)
 		return
 	}
-	turnDeadline := time.Now().Add(30 * time.Minute)
-	for time.Now().Before(turnDeadline) {
-		if !s.turns.Active(job.ThreadID) {
-			run.Status = "ok"
-			if err := s.maybeDeliver(job, userMsg); err != nil {
-				run.Error = err.Error()
-			}
-			s.destroyCronSandbox(ctx, row.ID, job.ID)
+	// No total limit: the turn ends on its own or on the sandbox no-activity
+	// watchdog; only shutdown abandons it.
+	for s.turns.Active(job.ThreadID) {
+		select {
+		case <-ctx.Done():
+			run.Status = "error"
+			run.Error = "turn cancelled"
+			s.turns.Cancel(job.ThreadID)
+			s.deliverCronFailure(job, "回合被取消")
+			s.destroyCronSandbox(context.WithoutCancel(ctx), row.ID, job.ID)
 			return
+		case <-time.After(2 * time.Second):
 		}
-		time.Sleep(2 * time.Second)
 	}
-	run.Status = "error"
-	run.Error = "turn timeout"
-	s.turns.Cancel(job.ThreadID)
-	s.deliverCronFailure(job, "回合超时")
+	run.Status = "ok"
+	if err := s.maybeDeliver(job, userMsg); err != nil {
+		run.Error = err.Error()
+	}
 	s.destroyCronSandbox(ctx, row.ID, job.ID)
 }
 

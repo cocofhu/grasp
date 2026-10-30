@@ -618,7 +618,7 @@ func TestSoloTurnHasNoTotalDeadline(t *testing.T) {
 	case <-time.After(8 * time.Second):
 		t.Fatal("timed out waiting for the Solo turn")
 	}
-	if chat.hasDeadline || chat.timeout != NoTurnDeadline {
+	if chat.hasDeadline || chat.timeout > 0 {
 		t.Fatalf("Solo turn got a total limit: deadline=%v timeout=%s", chat.hasDeadline, chat.timeout)
 	}
 }

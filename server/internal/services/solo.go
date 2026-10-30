@@ -23,10 +23,6 @@ import (
 )
 
 const (
-	// soloTurnTimeout leaves coding turns without a total time limit: they can
-	// legitimately edit, build and wait on CI for hours. A stalled turn is still
-	// stopped by the bridge's no-activity watchdog, and the user can cancel.
-	soloTurnTimeout = NoTurnDeadline
 	// soloPrepareTimeout bounds waiting for a cold sandbox (image pull + clone).
 	soloPrepareTimeout = 20 * time.Minute
 	soloQueueCapacity  = 16
@@ -1441,7 +1437,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	var usage *models.TokenUsage
 	var byModel models.TokenUsageByModel
 	if err == nil {
-		usage, byModel, err = s.chat.ChatWithTimeout(ctx, sandboxID, prompt, q.Images, soloTurnTimeout, c.onAcp)
+		usage, byModel, err = s.chat.ChatWithTimeout(ctx, sandboxID, prompt, q.Images, 0, c.onAcp)
 	}
 
 	c.mu.Lock()
