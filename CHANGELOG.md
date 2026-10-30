@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 3.1.0 — 2026-10-30
+
+Agents can run Kimi Code, keep several model groups, and execute in a worktree image. Conversations stay on the same visit through reconnects, queues and workflow switches.
+
 - **Run list spacing:** restore horizontal padding inside desktop rows so titles and actions have room within the hover highlight.
 
 - **Workflow chat synchronization:** clarification, run details and live conversations share one message processing loop for queue state and recovery. Missed startup, output and completion updates recover without a page reload, while newer replies, queued messages and drafts stay intact. Tool-first replies and growing tool details remain visible across watchdog updates and healthy automatic observations. ACP bursts preserve their output, errors and completion notifications. Saved tool summaries count only their own reply; empty replies no longer reuse earlier timeline steps. Late send, confirmation and artifact responses stay with their originating visit when switching workflows.
@@ -77,6 +81,8 @@ All notable public-release changes are documented here.
 - **Solo model controls:** startup selectors have a border, while active conversations use a borderless model control. Both show the actual model name and open a compact name-only model list with lighter shadows, small brand marks and a clear selected check. Light mode uses a white panel. Supported models offer their available reasoning levels in a small slider panel; a single-model configuration opens that panel directly. Session changes apply to the next turn, with rollback if the coding tool rejects the change.
 
 - **Model groups and model names:** workspace model management now uses “Model groups” and “New model group” (「模型组」/「新建模型组」), including the edit dialog and group-name field. Solo selectors show each concrete model's catalog name or upstream ID instead of a configuration or API service name such as TokenHub; automatic tool selection keeps its existing label.
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:3.1.0`. First publish of `ghcr.io/cocofhu/grasp-worktree`.
 
 ## 3.0.0 — 2026-10-26
 
