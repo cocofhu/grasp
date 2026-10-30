@@ -4,7 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import AgentSidebar from '@/components/agent/AgentSidebar.vue'
+import AgentSwitcher from '@/components/agent/AgentSwitcher.vue'
+import StudioTabStrip from '@/components/agent/StudioTabStrip.vue'
 import ResourceList from '@/components/ui/ResourceList.vue'
 import AgentDataPanel, { type DataSubTab } from '@/components/agent/AgentDataPanel.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
@@ -30,7 +31,6 @@ const showDefaults = computed(() => route.query.view === 'defaults')
 const {
   t,
   isMobile,
-  cardGridStyle,
   justSaved,
   filesPanelRef,
   agentNameEl,
@@ -50,10 +50,8 @@ const {
   activeTreeKey,
   onTreeSelect,
   onSheetTreeSelect,
-  select,
+  selectKeepingTab,
   syncStudioQuery,
-  agentListCollapsed,
-  toggleAgentListCollapsed,
   activeName,
   draft,
   tab,
@@ -177,8 +175,7 @@ function agentQuery(): Record<string, string> {
 /** Defaults → Agent. The URL only changes once every confirm has passed. */
 function leaveDefaultsTo(key: string) {
   const apply = () => {
-    // Coming back to the same Agent keeps the tab it was on; another Agent starts on Files.
-    if (key !== activeName.value) select(key)
+    if (key !== activeName.value) selectKeepingTab(key)
     void router.replace({ query: agentQuery() })
   }
   // The Agent itself may be unsaved too: same prompts as switching Agents (sheet on narrow screens).
@@ -252,6 +249,22 @@ function onSheetSelect(key: string) {
   }
   onSheetTreeSelect(key)
 }
+/** Every desktop pane title opens the same Agent switcher. */
+const switcherProps = computed(() => ({
+  nodes: treeNodes.value,
+  pinned: pinnedNodes.value,
+  activeKey: showDefaults.value ? DEFAULTS_KEY : activeTreeKey.value,
+  hideCreateTeam: hideTeamCreate.value,
+}))
+const switcherEvents = {
+  select: onSidebarSelect,
+  rename: openRenameAgent,
+  delete: confirmDeleteAgent,
+  import: triggerImport,
+  'create-agent': () => openCreateAgent(),
+  'create-team': openCreateTeam,
+  'export-workspace': onExportWorkspace,
+}
 
 async function createStudioChatTest(
   profile: string,
@@ -287,16 +300,11 @@ async function createStudioChatTest(
 
       <div
         v-if="initialLoading"
-        class="agent-studio-skeleton grid min-h-0 flex-1 overflow-hidden"
+        class="agent-studio-skeleton min-h-0 flex-1 overflow-hidden"
         :data-mobile="isMobile"
         data-testid="agent-studio-skeleton"
         aria-hidden="true"
-        :style="isMobile ? { gridTemplateColumns: '1fr' } : { gridTemplateColumns: '280px 1fr' }"
       >
-        <div v-if="!isMobile" class="border-r border-line bg-base p-3">
-          <div class="mb-3 h-3 w-16 bg-elevated animate-pulse" />
-          <div v-for="n in 6" :key="'tree-skel-' + n" class="mb-1.5 h-8 bg-elevated animate-pulse" />
-        </div>
         <div class="space-y-3 p-4">
           <div class="h-8 w-48 bg-elevated animate-pulse" />
           <div class="h-10 w-full bg-elevated animate-pulse" />
@@ -382,46 +390,30 @@ async function createStudioChatTest(
 
       <div
         v-else
-        class="agent-studio-layout grid min-h-0 flex-1 overflow-hidden bg-surface transition-[grid-template-columns] duration-[var(--dur-ui)] ease-[var(--ease-out-expo)]"
+        class="agent-studio-layout grid min-h-0 flex-1 grid-cols-1 overflow-hidden bg-surface"
         :class="showRefreshProgress ? 'opacity-[0.55]' : ''"
-        :style="cardGridStyle"
         :data-mobile="isMobile"
-        :data-directory-collapsed="agentListCollapsed"
       >
-      <!-- Agent tree (hidden on narrow screens; agent name bar remains) -->
-      <AgentSidebar
-        class="agent-studio-directory"
-        v-if="!isMobile"
-        :nodes="treeNodes"
-        :pinned="pinnedNodes"
-        :active-key="showDefaults ? DEFAULTS_KEY : activeTreeKey"
-        :collapsed="agentListCollapsed"
-        :hide-create-team="hideTeamCreate"
-        @select="onSidebarSelect"
-        @rename="openRenameAgent"
-        @delete="confirmDeleteAgent"
-        @import="triggerImport"
-        @create-agent="openCreateAgent"
-        @create-team="openCreateTeam"
-        @export-workspace="onExportWorkspace"
-        @toggle-collapsed="toggleAgentListCollapsed"
-      />
-
-      <TeamBootstrapPanel
-        v-if="teamBootstrapSessionId"
-        class="min-h-0 min-w-0"
-        :session-id="teamBootstrapSessionId"
-        @open-pm="onTeamBootstrapOpenPm"
-        @select-pm="onTeamBootstrapSelectPm"
-        @done="onTeamBootstrapDone"
-        @refresh="onTeamBootstrapRefresh"
-      />
+      <div v-if="teamBootstrapSessionId" class="flex min-h-0 min-w-0 flex-col">
+        <div v-if="!isMobile" class="toolbar-inline-row flex items-center border-b border-line px-4">
+          <AgentSwitcher :label="t('pages.agentStudio.switcher.choose')" v-bind="switcherProps" v-on="switcherEvents" />
+        </div>
+        <TeamBootstrapPanel
+          class="min-h-0 min-w-0"
+          :session-id="teamBootstrapSessionId"
+          @open-pm="onTeamBootstrapOpenPm"
+          @select-pm="onTeamBootstrapSelectPm"
+          @done="onTeamBootstrapDone"
+          @refresh="onTeamBootstrapRefresh"
+        />
+      </div>
 
       <!-- workspace defaults (was /settings/shared-agent) -->
       <div v-else-if="showDefaults" class="flex min-h-0 min-w-0 flex-col overflow-hidden" data-testid="studio-defaults-pane">
         <div data-test="studio-name-bar" class="toolbar-inline-row flex items-center gap-2 border-b border-line px-4">
           <Icon name="skills" :size="15" class="shrink-0 text-accent-2" />
-          <span class="min-w-0 flex-1 truncate text-[13px] font-medium text-txt">{{ t('nav.sharedAgent') }}</span>
+          <span v-if="isMobile" class="min-w-0 flex-1 truncate text-[13px] font-medium text-txt">{{ t('nav.sharedAgent') }}</span>
+          <AgentSwitcher v-else :label="t('nav.sharedAgent')" v-bind="switcherProps" v-on="switcherEvents" />
           <button
             v-if="isMobile"
             type="button"
@@ -528,7 +520,7 @@ async function createStudioChatTest(
             size="sm"
             purpose="change"
           />
-          <span class="min-w-0 truncate text-[13px] font-medium text-txt" :title="activeName">{{ activeName }}</span>
+          <AgentSwitcher :label="activeName" v-bind="switcherProps" v-on="switcherEvents" />
           <span class="studio-status-slot">
             <Transition name="studio-feedback">
               <span v-if="dirty" key="dirty" class="chip border-warn/30 text-warn">{{ t('pages.agentStudio.unsaved') }}</span>
@@ -571,19 +563,10 @@ async function createStudioChatTest(
           <div
             ref="tabStripEl"
             data-test="studio-tab-strip"
-            class="scroll-area flex min-w-0 gap-1 overflow-x-auto px-3 pt-2 [-webkit-overflow-scrolling:touch]"
+            class="scroll-area flex min-w-0 overflow-x-auto px-2 [-webkit-overflow-scrolling:touch]"
             @scroll="syncTabFade"
           >
-            <button
-              v-for="tabItem in studioTabs"
-              :key="tabItem.k"
-              class="shrink-0 whitespace-nowrap px-3 text-[12px] transition"
-              :class="[
-                isMobile ? 'min-h-11 py-2.5' : 'rounded-t py-1.5',
-                tab === tabItem.k ? 'border-b-2 border-accent text-txt' : 'text-txt3 hover:text-txt2',
-              ]"
-              @click="requestStudioTab(tabItem.k)"
-            >{{ tabItem.l }}</button>
+            <StudioTabStrip :model-value="tab" :tabs="studioTabs" :touch="isMobile" @update:model-value="requestStudioTab" />
           </div>
           <div
             v-if="isMobile && tabFadeLeft"
@@ -708,6 +691,7 @@ async function createStudioChatTest(
       >
         <Icon name="robot" :size="24" class="opacity-50" />
         <span>{{ t('pages.agentStudio.tree.noSelection') }}</span>
+        <AgentSwitcher v-if="!isMobile" :label="t('pages.agentStudio.switcher.choose')" v-bind="switcherProps" v-on="switcherEvents" />
       </div>
     </div>
     </div>
@@ -1061,10 +1045,6 @@ async function createStudioChatTest(
 </template>
 
 <style scoped>
-.agent-studio-document {
-  container: agent-studio / inline-size;
-}
-
 .studio-status-slot,
 .studio-save-label {
   display: inline-grid;
@@ -1123,24 +1103,6 @@ async function createStudioChatTest(
   .studio-toast-enter-from,
   .studio-toast-leave-to {
     transform: none;
-  }
-}
-
-/* Account for the Settings directory as well as the browser width. */
-@container agent-studio (max-width: 780px) {
-  .agent-studio-layout[data-mobile="false"],
-  .agent-studio-skeleton[data-mobile="false"] {
-    grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: 160px minmax(0, 1fr);
-  }
-
-  .agent-studio-layout[data-mobile="false"][data-directory-collapsed="true"] {
-    grid-template-rows: 28px minmax(0, 1fr);
-  }
-
-  .agent-studio-directory {
-    border-right: 0;
-    border-bottom: 1px solid rgb(var(--c-line));
   }
 }
 </style>

@@ -234,7 +234,7 @@ describe('AgentStudio region UI', () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
     const wrapper = await mountStudio()
     await flushPromises()
-    await wrapper.findAll('button').find((item) => item.text() === '环境变量 (0)')!.trigger('click')
+    await wrapper.get('[data-studio-tab="env"]').trigger('click')
     await wrapper.findAll('button').find((item) => item.text() === '原始 JSON')!.trigger('click')
     await wrapper.get('[data-test="code-editor"]').setValue(
       JSON.stringify({
@@ -608,8 +608,7 @@ describe('AgentStudio list context actions', () => {
     await flushPromises()
     expect(wrapper.text()).not.toContain('名称请在 Agent 管理中重命名')
     expect(wrapper.text()).not.toContain('Rename this agent in Agent management')
-    const headerName = wrapper.findAll('span').find((s) => s.text() === 'legacy' && s.classes().includes('font-medium'))
-    expect(headerName).toBeTruthy()
+    expect(wrapper.get('[data-testid="agent-switcher-trigger"]').text()).toBe('legacy')
   })
 
   it('keeps a lock on canonical agents and does not open rename or delete for them', async () => {
@@ -666,8 +665,7 @@ describe('AgentStudio list context actions', () => {
     expect(mocks.renameAgent).toHaveBeenCalledWith('other', 'other2')
     expect(wrapper.get('[data-resource-key="legacy"]').attributes('aria-current')).toBe('true')
     expect(wrapper.get('[data-resource-key="other2"]').attributes('aria-current')).toBeUndefined()
-    const headerName = wrapper.findAll('span').find((s) => s.text() === 'legacy' && s.classes().includes('font-medium'))
-    expect(headerName).toBeTruthy()
+    expect(wrapper.get('[data-testid="agent-switcher-trigger"]').text()).toBe('legacy')
   })
 
   it('rename success toast shows workflow count when N>0 and omits count when N=0', async () => {
@@ -728,7 +726,8 @@ describe('AgentStudio list context actions', () => {
     expect(mocks.deleteAgent).toHaveBeenCalledWith('legacy')
     expect(wrapper.find('[data-resource-key="legacy"]').exists()).toBe(false)
     expect(wrapper.get('[data-resource-key="other"]').attributes('aria-current')).toBeUndefined()
-    expect(wrapper.text()).toContain('未选中 Agent。从左侧列表选择。')
+    expect(wrapper.text()).toContain('未选中 Agent。')
+    expect(wrapper.get('[data-testid="agent-switcher-trigger"]').text()).toBe('选择智能体')
   })
 })
 
@@ -1996,7 +1995,7 @@ describe('AgentStudioView entry assembly (g3 / Demo main path)', () => {
     )
     const src = viewSrc + '\n' + orchestrationSrc
     for (const panel of [
-      'AgentSidebar',
+      'AgentSwitcher',
       'AgentFilesPanel',
       'AgentMcpPanel',
       'AgentEnvPanel',
@@ -2089,7 +2088,7 @@ describe('AgentStudio pinned Agent 默认配置', () => {
     await flushPromises()
   }
   const activeTab = (wrapper: Awaited<ReturnType<typeof mountWithDefaults>>['wrapper']) =>
-    wrapper.findAll('[data-test="studio-tab-strip"] button').find((b) => b.classes().includes('border-accent'))?.text() ?? ''
+    wrapper.find('[data-test="studio-tab-strip"] [aria-selected="true"]').text()
 
   it('lists Agent 默认配置 as the pinned first item and opens it in the same page', async () => {
     mocks.listAgents.mockResolvedValue(agents())
@@ -2122,14 +2121,21 @@ describe('AgentStudio pinned Agent 默认配置', () => {
     expect(activeTab(wrapper)).toContain('MCP')
   })
 
-  it('opens another Agent on its Files tab after the defaults', async () => {
+  it('opens another Agent on the same tab after the defaults', async () => {
     mocks.listAgents.mockResolvedValue(agents())
     const { wrapper, router } = await mountWithDefaults({ agent: 'alpha', studioTab: 'mcp' })
     await pick(wrapper, '__workspace_defaults__')
     await pick(wrapper, 'beta')
     expect(wrapper.find('[data-testid="studio-defaults-pane"]').exists()).toBe(false)
     expect(router.currentRoute.value.query.agent).toBe('beta')
-    expect(router.currentRoute.value.query.studioTab).toBeUndefined()
+    expect(router.currentRoute.value.query.studioTab).toBe('mcp')
+  })
+
+  it('keeps the tab and data sub-tab when switching directly between Agents', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountWithDefaults({ agent: 'alpha', studioTab: 'data', sub: 'context' })
+    await pick(wrapper, 'beta')
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta', studioTab: 'data', sub: 'context' })
   })
 
   it('narrow screens reach the defaults from the switch sheet and can switch back', async () => {
@@ -2348,7 +2354,7 @@ describe('AgentStudio Agent 默认配置 — empty workspace, unsaved defaults, 
     expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
     await clickModal(wrapper, '放弃并切换')
     expect(modal(wrapper).exists()).toBe(false)
-    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta', studioTab: 'meta' })
     expect(pane(wrapper)).toBe(false)
   })
 
@@ -2373,7 +2379,7 @@ describe('AgentStudio Agent 默认配置 — empty workspace, unsaved defaults, 
     expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
     await clickModal(wrapper, '丢弃并切换')
     expect(modal(wrapper).exists()).toBe(false)
-    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta', studioTab: 'meta' })
   })
 
   // S3 / S4: the URL alone decides

@@ -4,7 +4,7 @@ import { routeApi } from './helpers/apiRoute'
 import { dismissOnboardingIfOpen } from './helpers/onboarding'
 
 /**
- * Agent 默认配置 lives in the Agent Studio list (pinned first item):
+ * Agent 默认配置 lives in the Agent switcher list (pinned first item):
  * switching to it stays on the same page, switching back keeps the Agent's tab,
  * and the old /settings/shared-agent link lands on it.
  */
@@ -54,38 +54,48 @@ async function openStudio(page: Page, view: string) {
 
 const pinned = (page: Page) => page.getByTestId('resource-list-pinned').getByRole('button', { name: '默认配置', exact: true })
 const agentRow = (page: Page, name: string) => page.getByTestId('agent-resource-sidebar').locator(`[data-resource-key="${name}"]`)
+const openSwitcher = async (page: Page) => {
+  await page.getByTestId('agent-switcher-trigger').click()
+  await expect(page.getByTestId('agent-switcher-panel')).toBeVisible()
+}
 const studioTab = (page: Page, label: RegExp) => page.locator('[data-test="studio-tab-strip"] button').filter({ hasText: label })
 
 test('Agent 默认配置 is the first item of the Agent list and opens in the same page', async ({ page }) => {
   await openStudio(page, '/agents?agent=alpha')
+  await openSwitcher(page)
   await expect(agentRow(page, 'alpha')).toHaveAttribute('aria-current', 'true')
   await pinned(page).click()
   await expect(page.getByTestId('studio-defaults-pane')).toBeVisible()
-  await expect(pinned(page)).toHaveAttribute('aria-current', 'true')
+  await expect(page.getByTestId('agent-switcher-panel')).toBeHidden()
   await expect(page.getByTestId('workspace-shared-agent-panel')).toBeVisible()
   await expect(page.getByTestId('shared-agent-subtab-mcp')).toContainText('MCP')
   await expect(page.locator('[data-testid^="shared-agent-subtab-"]')).toHaveCount(4)
   await expect(page.getByTestId('shared-agent-subtab-git')).toHaveCount(0)
   await expect(page.getByTestId('shared-agent-subtab-model')).toHaveCount(0)
-  // Still Agent Studio: the Agent list stays on the left.
+  // Still Agent Studio: the same switcher lists the Agents.
+  await openSwitcher(page)
+  await expect(pinned(page)).toHaveAttribute('aria-current', 'true')
   await expect(agentRow(page, 'beta')).toBeVisible()
 })
 
 test('switching back from Agent 默认配置 keeps the Agent tab', async ({ page }) => {
   await openStudio(page, '/agents?agent=alpha')
   await studioTab(page, /^MCP/).click()
-  await expect(studioTab(page, /^MCP/)).toHaveClass(/border-accent/)
+  await expect(studioTab(page, /^MCP/)).toHaveAttribute('aria-selected', 'true')
+  await openSwitcher(page)
   await pinned(page).click()
   await expect(page.getByTestId('studio-defaults-pane')).toBeVisible()
+  await openSwitcher(page)
   await agentRow(page, 'alpha').click()
   await expect(page.getByTestId('studio-defaults-pane')).toHaveCount(0)
-  await expect(studioTab(page, /^MCP/)).toHaveClass(/border-accent/)
+  await expect(studioTab(page, /^MCP/)).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('[data-test="mcp-custom-name"]').first()).toHaveValue('alpha-fs')
 })
 
 test('old /settings/shared-agent link opens Agent 默认配置 in Agent Studio', async ({ page }) => {
   await openStudio(page, '/settings/shared-agent')
   await expect(page.getByTestId('studio-defaults-pane')).toBeVisible()
+  await openSwitcher(page)
   await expect(pinned(page)).toHaveAttribute('aria-current', 'true')
   await expect(page.getByTestId('agent-resource-sidebar')).toBeVisible()
 })
@@ -100,6 +110,7 @@ test('with no Agents the empty state still opens Agent 默认配置, and the old
   await page.getByTestId('agent-studio-empty-defaults').click()
   await expect(page.getByTestId('studio-defaults-pane')).toBeVisible()
   // Only the pinned item in the list; no "暂无工作区" copy under it.
+  await openSwitcher(page)
   await expect(page.getByTestId('resource-list-pinned')).toBeVisible()
   await expect(page.getByTestId('agent-resource-sidebar').getByTestId('resource-list-empty')).toHaveCount(0)
   await expect(page.getByTestId('workspace-shared-agent-panel')).toBeVisible()
