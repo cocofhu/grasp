@@ -6,6 +6,7 @@ import { api, type Agent, type AgentGitBindings, type AgentTemplate, type Creden
 import { ACP_BACKENDS, WIZARD_STEPS, applyAcpBackend, assembleCreatePayload, buildReviewSummary, freshDraft, hasPathDeps, hasRoleTemplate, kvToRec, validateBasics, type WizardBackendId, type WizardDraft, type WizardStepId } from './agentCreateWizard'
 import { buildTemplateOptions } from './agentTemplateOptions'
 import { getRegionPolicy, setRegion } from '@/lib/shared/regionPolicy'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { setDraftGitBindings } from './gitBindings'
 import { useRoutingCopy } from './modelRouting'
 export interface AgentCreateWizardProps { open: boolean; existingNames: string[] }
@@ -13,6 +14,8 @@ export type AgentCreateWizardEmit = { (e: 'close'): void; (e: 'created', agent: 
 export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentCreateWizardEmit) {
   const { t, te } = useI18n()
   const c = useRoutingCopy()
+  const { localMode } = useExecutionMode()
+  const wizardSteps = computed(() => localMode.value ? WIZARD_STEPS.filter((s) => s.id !== 'git') : WIZARD_STEPS)
   const draft = ref<WizardDraft>(freshDraft())
   const nameError = ref(''); const creating = ref(false); const createError = ref('')
   const pendingAcp = ref<WizardBackendId | null>(null); const showAcpConfirm = ref(false); const envHelpOpen = ref(false); const stepAnimKey = ref(0)
@@ -26,8 +29,8 @@ export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentC
   const selectedTemplate = computed(() => templateOptions.value.find((row) => row.id === draft.value.templateId) || null)
   const showDescField = computed(() => !hasRoleTemplate(draft.value))
   const templateHint = computed(() => hasRoleTemplate(draft.value) ? t('pages.agentStudio.wizard.basics.templateHintPack', { name: selectedTemplate.value?.name || draft.value.templateId }) : t('pages.agentStudio.wizard.basics.templateHintBlank'))
-  const currentStep = computed(() => WIZARD_STEPS[draft.value.step]!)
-  const progressPct = computed(() => ((draft.value.step + 1) / WIZARD_STEPS.length) * 100)
+  const currentStep = computed(() => wizardSteps.value[draft.value.step] || wizardSteps.value[0]!)
+  const progressPct = computed(() => ((draft.value.step + 1) / wizardSteps.value.length) * 100)
   const currentRegionPolicy = computed(() => getRegionPolicy(draft.value.acpBackend))
   const currentRegion = computed(() => draft.value.env.find((row) => row.k.trim() === currentRegionPolicy.value?.regionEnvKey)?.v || '')
   const authConfigured = computed(() => !!effectiveModel.value?.configurationId)
@@ -86,5 +89,5 @@ export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentC
   }
   function goNext() { if (creating.value || (currentStep.value.id === 'basics' && !validateName()) || (currentStep.value.id === 'acp' && !validModel())) return; if (currentStep.value.id === 'review') { void submitCreate(); return }; markConfigured(currentStep.value.id); draft.value.step++; stepAnimKey.value++ }
   function chipClass(kind: string) { return kind === 'ok' ? 'border-ok/35 bg-ok/10 text-ok' : 'border-line bg-elevated text-txt3' }
-  return { t, draft, sharedConfig, effectiveModel, nameError, creating, createError, pendingAcp, showAcpConfirm, envHelpOpen, stepAnimKey, credentialItems, currentStep, progressPct, reviewItems, currentRegionPolicy, currentRegion, authConfigured, showAuthReminder, headSub, templateOptions, showDescField, templateHint, selectedTemplate, onTemplateSelect, close, selectRegion, markConfigured, selectAcp, confirmAcpSwitch, cancelAcpSwitch, onGitBindings, goPrev, goSkip, goNext, submitCreate, chipClass, WIZARD_STEPS, ACP_BACKENDS }
+  return { t, draft, sharedConfig, effectiveModel, nameError, creating, createError, pendingAcp, showAcpConfirm, envHelpOpen, stepAnimKey, credentialItems, currentStep, progressPct, reviewItems, currentRegionPolicy, currentRegion, authConfigured, showAuthReminder, headSub, templateOptions, showDescField, templateHint, selectedTemplate, onTemplateSelect, close, selectRegion, markConfigured, selectAcp, confirmAcpSwitch, cancelAcpSwitch, onGitBindings, goPrev, goSkip, goNext, submitCreate, chipClass, WIZARD_STEPS: wizardSteps, ACP_BACKENDS }
 }

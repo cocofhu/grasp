@@ -58,6 +58,7 @@ jobs:
           bash -n sandbox/scripts/grasp-bootstrap.sh
           bash -n sandbox/scripts/services.sh
           bash -n ../scripts/build-sandbox-runtime.sh
+          bash -n ../start.sh
           bash -n scripts/lib-runtime.sh
           bash -n scripts/runtime-server.sh
           bash -n scripts/test-runtime-bootstrap.sh

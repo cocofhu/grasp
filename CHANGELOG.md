@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Local execution:** run Grasp with `./start.sh --local` and reuse installed coding tools' saved logins without Docker or workspace credentials. Each process receives private CLI and Git/SSH configuration copies, while host secret environment variables stay filtered. Agents switch only between their bound model groups, and `./start.sh down` stops the local service even when Docker is unavailable. The local server listens on loopback only, SSH private keys stay in place, and a deleted default model group is not recreated.
+
 - **Light theme contrast:** secondary text, placeholders and borders are darker so small labels stay readable, and the home page background pattern is fainter.
 
 - **Chat turn safety:** an unexpected failure inside one chat turn now ends that turn with an error and lets queued messages continue, instead of stopping the server. A Solo conversation that stays busy without updates checks the session and recovers a missed completion without a page reload; long silent tool calls keep their connection.

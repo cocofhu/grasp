@@ -31,6 +31,7 @@ import (
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/logging"
@@ -169,6 +170,25 @@ func main() {
 		_, err := runtime.ResolveGitBindings(bindings, credentialSvc.ResolveGitValue)
 		return err
 	})
+	if execution.Local() {
+		// List also seeds groups for installed CLIs. Inheriting all groups keeps
+		// CLIs installed after this start selectable without editing defaults.
+		sharedCfg := sharedAgentSvc.Get()
+		if items, err := modelConfigurationSvc.List(); err != nil {
+			log.Warn().Err(err).Msg("list local model configurations failed")
+		} else if sharedCfg.ModelBinding == nil {
+			for _, item := range items {
+				if item.State != "active" {
+					continue
+				}
+				sharedCfg.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: item.ID, AllConfigurations: true}
+				if err := sharedAgentSvc.Save(sharedCfg); err != nil {
+					log.Warn().Err(err).Msg("bind local model configurations to the shared Agent failed")
+				}
+				break
+			}
+		}
+	}
 	// The catalog provides model choices; saved model configurations determine execution.
 	openCodeCatalog := opencodecatalog.New(cfg.Sandbox.OpenCodeCatalogURL)
 	sshKeyPath := sandbox.DataPlaneKeyPath(cfg.SecretsKeyFile())
@@ -575,6 +595,10 @@ func main() {
 	r := router.New(h)
 	port := strconv.Itoa(cfg.Server.Port)
 	addr := ":" + port
+	if execution.Local() {
+		// Local agents run as the host user with its CLI logins and SSH agent.
+		addr = "127.0.0.1:" + port
+	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatal().Err(err).Str("addr", addr).Msg("listen failed")

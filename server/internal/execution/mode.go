@@ -14,6 +14,8 @@ const (
 	ModeSandbox = "sandbox"
 	// ModeWorktree runs agents in this image, with no sandbox container.
 	ModeWorktree = "worktree"
+	// ModeLocal runs agents on the host machine using worktree isolation and host CLI/Git authorization.
+	ModeLocal = "local"
 
 	LaunchRun       = "run"
 	LaunchSolo      = "solo"
@@ -21,14 +23,23 @@ const (
 	LaunchAssistant = "assistant"
 )
 
-// Mode returns the image execution mode. Anything other than worktree is sandbox,
-// which is what existing deployments already do.
+// Mode returns the execution mode ("local", "worktree", or "sandbox").
 func Mode() string {
-	if strings.TrimSpace(os.Getenv(EnvMode)) == ModeWorktree {
+	switch strings.TrimSpace(os.Getenv(EnvMode)) {
+	case ModeWorktree:
 		return ModeWorktree
+	case ModeLocal:
+		return ModeLocal
+	default:
+		return ModeSandbox
 	}
-	return ModeSandbox
 }
 
-// Worktree reports whether this process must execute locally.
-func Worktree() bool { return Mode() == ModeWorktree }
+// Worktree reports whether this process must execute locally without sandbox containers.
+func Worktree() bool {
+	m := Mode()
+	return m == ModeWorktree || m == ModeLocal
+}
+
+// Local reports whether this process runs in host-local mode with native CLI/Git authorization.
+func Local() bool { return Mode() == ModeLocal }

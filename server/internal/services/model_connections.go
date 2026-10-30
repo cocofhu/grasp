@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/crypto"
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
@@ -188,11 +189,21 @@ func (s *ModelConnectionService) Resolve(backend string, binding modelrouting.Bi
 		if configuration.State != "active" || configuration.Backend != backend {
 			return resolved, fmt.Errorf("%w: model configuration is disabled or belongs to a different coding tool", ErrModelBindingInvalid)
 		}
-		if configuration.Binding.Kind != "platform" && configuration.Binding.Kind != "connection" {
+		if configuration.Binding.Kind != "platform" && configuration.Binding.Kind != "connection" && !(execution.Local() && configuration.Binding.Kind == "local") {
 			return resolved, fmt.Errorf("%w: model configuration must contain a concrete binding", ErrModelBindingInvalid)
 		}
 		concrete, err := s.Resolve(backend, configuration.Binding)
 		return concrete, err
+	}
+	if binding.Kind == "local" {
+		if normErr := modelrouting.NormalizeAuxiliaryModels(&binding); normErr != nil {
+			return resolved, fmt.Errorf("%w: %w", ErrModelBindingInvalid, normErr)
+		}
+		resolved.Binding = binding
+		if err := modelrouting.ValidateBinding(backend, binding, nil); err != nil {
+			return resolved, fmt.Errorf("%w: %w", ErrModelBindingInvalid, err)
+		}
+		return resolved, nil
 	}
 	var credential models.Credential
 	var err error

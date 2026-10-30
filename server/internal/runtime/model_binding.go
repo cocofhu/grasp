@@ -22,6 +22,8 @@ const (
 	EnvConfiguredModels = "GRASP_CONFIGURED_MODELS"
 	// EnvInitialChatModel pins only the first sandbox chat. Empty follows the primary.
 	EnvInitialChatModel = "GRASP_INITIAL_CHAT_MODEL"
+	// EnvLocalAuth signals that this backend uses host CLI authorization without platform credentials.
+	EnvLocalAuth = "GRASP_LOCAL_AUTH"
 )
 
 // ModelBindingResolver resolves only selected, active references. The secret is
@@ -42,7 +44,7 @@ func ApplyModelBinding(env map[string]string, backend string, binding *modelrout
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(resolved.Secret) == "" {
+	if resolved.Binding.Kind != "local" && strings.TrimSpace(resolved.Secret) == "" {
 		return fmt.Errorf("selected model credential is unavailable")
 	}
 	ClearModelRoutingEnv(env)
@@ -51,6 +53,13 @@ func ApplyModelBinding(env map[string]string, backend string, binding *modelrout
 	}
 	env[EnvModelCredentialID] = resolved.CredentialID
 	switch resolved.Binding.Kind {
+	case "local":
+		env[EnvLocalAuth] = "1"
+		env[EnvACPBridgeModel] = resolved.Binding.ModelID
+		modelID := strings.TrimSpace(resolved.Binding.ModelID)
+		if backend == string(BackendOpenCode) && (strings.HasPrefix(modelID, "opencode/") || strings.HasPrefix(modelID, "opencode-go/")) {
+			env["GRASP_OPENCODE_PROVIDER"] = "opencode"
+		}
 	case "platform":
 		key := CredentialEnvKeyForBackend(backend)
 		if key == "" {
@@ -173,7 +182,7 @@ func ModelRoutingEnvKeys() []string {
 		"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "DEEPSEEK_API_KEY",
 		"ACP_CURSOR_API_KEY", "ACP_CLAUDE_API_KEY", "ACP_CODEBUDDY_API_KEY", "ACP_CODEX_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
 		"KIMI_CODE_API_KEY", "ACP_KIMI_CODE_API_KEY",
-		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvModelConfigurationID, EnvACPBridgeModel, EnvConfiguredModels, EnvInitialChatModel, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
+		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvModelConfigurationID, EnvACPBridgeModel, EnvConfiguredModels, EnvInitialChatModel, EnvLocalAuth, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
 		"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL",
 		"ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 		"CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_CCR",
@@ -197,7 +206,7 @@ func PrepareBoundAuth(backend AcpBackend, env map[string]string, workDir string,
 // InstallBoundCodexLoginFile installs platform login material only when that
 // source was selected. A Responses connection authenticates with its own key.
 func InstallBoundCodexLoginFile(backend AcpBackend, home, body string, env map[string]string) error {
-	if env[EnvModelConnection] != "" {
+	if env[EnvModelConnection] != "" || strings.TrimSpace(env[EnvLocalAuth]) == "1" {
 		return nil
 	}
 	return InstallCodexLoginFile(backend, home, body)

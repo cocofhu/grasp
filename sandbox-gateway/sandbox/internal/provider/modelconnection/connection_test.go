@@ -546,3 +546,17 @@ func TestIsolatedConfigPreservesAssetsWithoutLogin(t *testing.T) {
 		t.Fatal("login file copied into connection config")
 	}
 }
+
+func TestLocalAuthPrepareDeepSeekAndOpenCode(t *testing.T) {
+	p, err := Prepare(provider.DeepSeekHarness, []string{"GRASP_LOCAL_AUTH=1"}, "deepseek-flash", t.TempDir())
+	if err != nil {
+		t.Fatalf("DeepSeekHarness local auth prepare failed: %v", err)
+	}
+	p.Cleanup()
+
+	p2, err := Prepare(provider.OpenCode, []string{"GRASP_LOCAL_AUTH=1", "GRASP_OPENCODE_PROVIDER=opencode"}, "opencode/gpt-5.5", t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenCode local auth prepare failed: %v", err)
+	}
+	p2.Cleanup()
+}

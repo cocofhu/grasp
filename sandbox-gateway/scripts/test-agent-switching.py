@@ -155,9 +155,11 @@ class E2E:
                 script = fixture_bin/tool['bin']
                 script.write_text('#!/bin/sh\nexec node '+shlex.quote(str(HERE/'agent-platform-wire-fixture.mjs'))+' '+shlex.quote(tool['id'])+' "$@"\n')
                 script.chmod(0o755)
-            elif not shutil.which(tool['bin']):
+            elif (not self.args.tools or tool['id'] in self.args.tools.split(',')) and not shutil.which(tool['bin']):
                 raise AssertionError(f'required real CLI missing: {tool["id"]} ({tool["bin"]}); no skip or fake fallback is permitted')
-        env.update({'PATH': str(fixture_bin)+os.pathsep+env['PATH'], 'GRASP_EXECUTION_MODE': 'worktree', 'GRASP_WORKTREE_ROOT': str(self.data/'launches'), 'GRASP_WORKTREE_BACKEND': str(Path(self.args.runtime).resolve()/'bin/backend'), 'GRASP_BLOBS_ROOT': str(self.data/'blobs'), 'GIT_ASKPASS': '/bin/false', 'GIT_TERMINAL_PROMPT': '0'})
+        env.update({'PATH': str(fixture_bin)+os.pathsep+env['PATH'], 'GRASP_EXECUTION_MODE': self.args.execution_mode, 'GRASP_WORKTREE_ROOT': str(self.data/'launches'), 'GRASP_WORKTREE_BACKEND': str(Path(self.args.runtime).resolve()/'bin/backend'), 'GRASP_BLOBS_ROOT': str(self.data/'blobs'), 'GIT_ASKPASS': '/bin/false', 'GIT_TERMINAL_PROMPT': '0'})
+        if self.args.execution_mode == 'local':
+            self.prepare_local_host_home(env)
         port = int(self.base.rsplit(':', 1)[1])
         config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': self.base, 'public_advertise': self.base}, 'database': {'path': str(self.data/'grasp.db')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
         config_path = self.data/'config.json'
@@ -172,7 +174,62 @@ class E2E:
             if {tool['id'] for tool in self.tools} != set(wanted):
                 raise AssertionError('unknown --tools selection')
 
+    def prepare_local_host_home(self, env):
+        host_home = self.data/'host-home'
+
+        def write_config(relative, value):
+            path = host_home/relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(value))
+            path.chmod(0o600)
+
+        # These are saved native CLI authorizations, subsequently copied by
+        # local mode. No API key may depend on inherited server environment.
+        write_config('.claude/settings.json', {
+            'model': 'claude-sonnet-4-6', 'availableModels': ['claude-sonnet-4-6', 'e2e-auxiliary'], 'fallbackModel': [],
+            'env': {
+                'ANTHROPIC_BASE_URL': self.model,
+                'ANTHROPIC_API_KEY': 'synthetic-local-host-key',
+                'ANTHROPIC_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_DEFAULT_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_DEFAULT_SONNET_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_DEFAULT_HAIKU_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_DEFAULT_OPUS_MODEL': 'claude-sonnet-4-6',
+                'ANTHROPIC_SMALL_FAST_MODEL': 'claude-sonnet-4-6',
+                'CLAUDE_CODE_SUBAGENT_MODEL': 'claude-sonnet-4-6',
+                'CLAUDE_CODE_SUBAGENT_MODEL_FORCE': '1',
+                'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1',
+            },
+        })
+        write_config('.codebuddy/settings.json', {
+            'model': 'gpt-5', 'availableModels': ['gpt-5', 'e2e-auxiliary'], 'variantModels': {'lite': 'gpt-5', 'reasoning': 'gpt-5'},
+            'env': {
+                'CODEBUDDY_BASE_URL': self.model+'/v1',
+                'CODEBUDDY_MODEL': 'gpt-5',
+                'CODEBUDDY_SMALL_FAST_MODEL': 'gpt-5',
+                'CODEBUDDY_BIG_SLOW_MODEL': 'gpt-5',
+                'CODEBUDDY_CODE_SUBAGENT_MODEL': 'gpt-5',
+            },
+        })
+        write_config('.codebuddy/models.json', {'models': [{'id': m, 'name': m, 'vendor': 'custom', 'apiKey': 'synthetic-local-host-key', 'url': self.model+'/v1/chat/completions', 'maxInputTokens': 200000, 'maxOutputTokens': 4096, 'supportsToolCall': True, 'supportsReasoning': True} for m in ['gpt-5', 'e2e-auxiliary']], 'availableModels': ['gpt-5', 'e2e-auxiliary']})
+        write_config('.config/opencode/opencode.json', {'$schema': 'https://opencode.ai/config.json', 'model': 'local_openai/gpt-5', 'small_model': 'local_openai/gpt-5', 'enabled_providers': ['local_openai'], 'provider': {'local_openai': {'npm': '@ai-sdk/openai-compatible', 'name': 'openai', 'options': {'baseURL': self.model+'/v1', 'apiKey': 'synthetic-local-host-key'}, 'models': {m: {'id': m, 'name': m, 'reasoning': True, 'limit': {'context': 200000, 'output': 4096}} for m in ['gpt-5', 'e2e-auxiliary']}}}})
+        (host_home/'.codex').mkdir(parents=True)
+        codex_config = host_home/'.codex'/'config.toml'
+        codex_config.write_text(f'model = "gpt-5"\nmodel_provider = "local"\nsandbox_mode = "workspace-write"\napproval_policy = "never"\n\n[model_providers.local]\nname = "custom"\nbase_url = "{self.model}/v1"\nwire_api = "responses"\nexperimental_bearer_token = "synthetic-local-host-key"\nrequires_openai_auth = false\n')
+        codex_config.chmod(0o600)
+        # DSH 0.2.1-rc.2 resolves saved credential references from this private
+        # document and applies cordis.patch.yml over every native profile.
+        write_config('.dsh/.credentials.yaml', {'version': 1, 'refs': {'DEEPSEEK_API_KEY': 'synthetic-local-host-key'}})
+        write_config('.dsh/cordis.patch.yml', [{'id': 'llm-deepseek', 'config': {'apiKeyEnv': 'DEEPSEEK_API_KEY', 'baseURL': self.model}}])
+        (host_home/'.kimi-code').mkdir(parents=True)
+        kimi_config = host_home/'.kimi-code'/'config.toml'
+        kimi_config.write_text('[providers.kimi]\ntype = "kimi"\nbase_url = "https://api.kimi.ai/coding/v1"\napi_key = "synthetic-local-host-key"\n')
+        kimi_config.chmod(0o600)
+        env['HOME'] = str(host_home)
+
     def seed(self):
+        if self.args.execution_mode == 'local':
+            return self.seed_local()
         credential = self.request('/api/workspace/credentials', {'purpose': 'model_api', 'issuer': 'custom', 'name': 'E2E localhost only', 'secretKind': 'api_key', 'value': 'synthetic-local-model-key'})
         connections = {}
         for protocol in {tool['protocol'] for tool in self.tools if tool['mode'] == 'native-cli'}:
@@ -193,16 +250,41 @@ class E2E:
         ids = list(self.groups.values())
         self.request('/api/agents', {'name': 'AgentMatrixE2E', 'inheritModel': False, 'inheritGit': False, 'acpBackend': self.tools[0]['id'], 'modelBinding': {'kind': 'configuration', 'configurationId': ids[0], 'configurationIds': ids}, 'gitBindings': {'items': []}, 'env': {'SKIP_INNER_DOCKER': '1', 'IS_SANDBOX': '1', 'GRASP_CI_MOCK_URL': self.model}, 'files': [{'path': 'AGENTS.md', 'content': 'This is an isolated deterministic CI task. Use only the local model and scoped artifact-store. Do not access other workspaces, deploy, or submit Git changes.'}, {'path': 'config.toml', 'content': 'sandbox_mode = "workspace-write"\napproval_policy = "never"\n'}]})
 
+    def seed_local(self):
+        settings = self.request('/api/settings')
+        if settings.get('execution_mode') != 'local':
+            raise AssertionError(f'expected execution_mode=local, got {settings.get("execution_mode")!r}')
+        if self.request('/api/workspace/credentials')['items']:
+            raise AssertionError('local execution mode must not require or pre-populate workspace credentials')
+        seeded = {row['backend']: row for row in self.request('/api/workspace/model-configurations')['items']}
+        for tool in self.tools:
+            if tool['id'] == 'deepseek_harness':
+                tool['model'] = 'deepseek-flash'
+                tool['efforts'] = []
+            elif tool['id'] == 'codex':
+                tool['efforts'] = []
+            row = seeded.get(tool['id'])
+            if not row or (row.get('binding') or {}).get('kind') != 'local':
+                raise AssertionError(f'missing auto-seeded kind=local configuration for {tool["id"]}')
+            binding = {'kind': 'local', 'modelId': tool['model']}
+            if tool.get('auxiliaryModels'):
+                binding['auxiliaryModelIds'] = tool['auxiliaryModels']
+            updated = self.request('/api/workspace/model-configurations/'+row['id'], {'name': row['name'], 'backend': tool['id'], 'binding': binding, 'state': 'active'}, method='PUT')
+            self.groups[tool['id']] = updated['id']
+        ids = list(self.groups.values())
+        self.request('/api/agents', {'name': 'AgentMatrixE2E', 'inheritModel': False, 'inheritGit': False, 'acpBackend': self.tools[0]['id'], 'modelBinding': {'kind': 'configuration', 'configurationId': ids[0], 'configurationIds': ids}, 'gitBindings': {'items': []}, 'env': {'SKIP_INNER_DOCKER': '1', 'IS_SANDBOX': '1', 'GRASP_CI_MOCK_URL': self.model}, 'files': [{'path': 'AGENTS.md', 'content': 'This is an isolated deterministic CI task. Use only the local model and scoped artifact-store. Do not access other workspaces, deploy, or submit Git changes.'}]})
+
     def scenario(self, walk):
         turns = []
         self.plan = [{'backend': backend, 'kind': 'switch'} for backend in walk]
-        for tool in self.tools:
-            for effort in tool['efforts']+([''] if tool['efforts'] else []):
-                self.plan.append({'backend': tool['id'], 'kind': 'effort', 'effort': effort})
-            auxiliary = tool.get('auxiliaryModels', ['e2e-auxiliary'] if tool['mode'] == 'native-cli' else [])
-            if auxiliary:
-                for model in auxiliary+['']:
-                    self.plan.append({'backend': tool['id'], 'kind': 'model', 'model': model})
+        if getattr(getattr(self, 'args', None), 'execution_mode', 'worktree') != 'local':
+            for tool in self.tools:
+                for effort in tool['efforts']+([''] if tool['efforts'] else []):
+                    self.plan.append({'backend': tool['id'], 'kind': 'effort', 'effort': effort})
+                auxiliary = tool.get('auxiliaryModels', ['e2e-auxiliary'] if tool['mode'] == 'native-cli' else [])
+                if auxiliary:
+                    for model in auxiliary+['']:
+                        self.plan.append({'backend': tool['id'], 'kind': 'model', 'model': model})
         seed_phrase = 'Remember the task nonce '+self.nonce+'.'
         for index, step in enumerate(self.plan):
             turn_id = 't'+str(index)
@@ -288,6 +370,9 @@ class E2E:
         pairs = {(case['from'], case['to']) for case in self.cases if case['from'] and case['kind'] == 'switch'}
         if pairs != set(itertools.permutations(names, 2)):
             raise AssertionError('directed switch coverage is incomplete')
+        if self.args.execution_mode == 'local':
+            if self.request('/api/workspace/credentials')['items'] or self.request('/api/workspace/model-connections')['items']:
+                raise AssertionError('local execution mode created workspace credentials or model connections')
         report = self.request('/__mock/report', base=self.model)
         for step in self.plan:
             observed = [request for request in report['requests'] if request.get('run') == self.run and request.get('turn') == step['id']]
@@ -384,6 +469,7 @@ def main():
     parser.add_argument('--runtime', required=True, help='extracted runtime directory with bin/backend')
     parser.add_argument('--output', default='agent-e2e-artifacts')
     parser.add_argument('--tools', help='local debugging subset only; CI always uses all tools')
+    parser.add_argument('--execution-mode', choices=['worktree', 'local'], default='worktree', help='Grasp execution mode to verify')
     parser.add_argument('--turn-timeout', type=int, default=120)
     parser.add_argument('--keep-data', action='store_true')
     args = parser.parse_args()

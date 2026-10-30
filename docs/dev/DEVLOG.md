@@ -20,6 +20,45 @@
 
 ## 记录
 
+### 2026-10-30（PR #1040 本机 Cursor 登录位置）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`server/internal/sandbox/worktree_git_{local,test}.go`。
+- 做了什么：本机模式为 Cursor 复制 `$XDG_CONFIG_HOME/cursor/auth.json`（默认 `~/.config/cursor`）到私有 HOME 的同一相对位置；新增合成用例与默认跳过的真实 CLI 用例（`GRASP_CURSOR_NATIVE_CLI`）。
+- 为什么：用本机真实 cursor-agent 2026.10.22 实测，登录只从 `XDG_CONFIG_HOME/cursor` 读取，`~/.cursor/auth.json` 与 `CURSOR_CONFIG_DIR` 都不生效；原实现只复制 `~/.cursor`，私有 HOME 内显示 Not logged in。切换矩阵中 Cursor 使用协议夹具，因此 CI 未发现。该机 Cursor 登录为 API Key 换取的 `api_key_token`（access 与 refresh 相同），过期后凭 API Key 重新换取，不受 refresh token 轮换影响；机器上的 Claude Code、Codex 未登录，OAuth 轮换仍无法实测。
+- 如何验证：真实 cursor-agent 在私有 HOME 中 `status` 显示已登录，宿主 auth.json 未改动；sandbox 包全量单测通过。
+
+### 2026-10-30（PR #1040 本机执行二次 review 修复）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`server/cmd/server/main.go`、`server/internal/{handlers/settings.go,execution/tools.go,services/model_configurations*,sandbox/{confighome_local,worktree_create,worktree_git_local,worktree_git_test}.go}`、`start.sh`、`scripts/test-start-local.sh`、`server/README.md`、`CHANGELOG.md`。
+- 做了什么：本机模式服务只监听 `127.0.0.1`。默认模型组按 CLI 记录已创建过的工具（`settings` 表 `local_model_defaults_seeded`），删除后不再自动恢复，`Get` 不再写库。本机 Git 只复制 SSH `config`/`known_hosts`，私钥原位使用。`/api/settings` 的宿主 Git 身份只返回给管理员。`start.sh` 停止前校验 PID 属于 grasp-server，重复启动报错，新增 `--local down|restart`。快照失败、预览工具缺失与启动期绑定失败改为记录警告。README 说明 OAuth 刷新不写回的限制。合并主线 `68d9ab0f`（含 #1042 继承全部模型组），保留双方发布说明与开发记录；本机模式首次启动为共享 Agent 默认使用 `allConfigurations`，启动后新装的 CLI 也可选。
+- 为什么：服务原先监听所有网卡并使用公开的演示密码，本机模式下等同把宿主用户的执行权限、CLI 登录与 SSH agent 开放到局域网。默认组在每次读取时补种导致删除无效；私钥副本在进程崩溃时会残留在 worktree 目录；PID 复用可能误杀无关进程。
+- 如何验证：server execution、handlers、services、modelrouting、runtime、sandbox 全量单测通过，新增删除后不复活回归；`ssh -G` 校验身份文件指向宿主私钥、known_hosts 指向私有副本；`scripts/test-start-local.sh` 新增 PID 复用用例通过。合并后 web vue-tsc 与相关 546 项单测通过；本机模式实启服务确认只监听 127.0.0.1、默认组按已安装 CLI 创建、共享 Agent 绑定为 allConfigurations，删除默认组并重启后不复活。
+
+### 2026-10-29（PR #1040 同步主线并解决记录冲突）
+
+- 日期：2026-10-29（Asia/Hong_Kong）。
+- 范围：`CHANGELOG.md`、`docs/dev/DEVLOG.md`、`web/audit-allowlist.json`，合并主线 `87f12cf0`。
+- 做了什么：完整保留本机执行模式的发布说明与开发记录，同时保留主线的确认竞态修复、回归测试和 Vue I18n 11.4.16 升级；本机执行功能源码不变。移除已由升级修复的 Vue I18n 漏洞例外，保留原有 braces 例外。
+- 为什么：PR #1041 合入主线后，两个分支都在发布说明和开发日志顶部追加记录，导致 PR #1040 无法合并。直接取任一侧会丢失另一侧记录；继续保留旧版依赖的审计例外也已无必要。
+- 如何验证：逐文件核对本机功能源码与合并前相同、主线六个修复文件与 main 相同，双方记录完整且不重复，无冲突标记。Server 全量 lint、vet、配置文档、单测、runtime 专项及核心覆盖率通过（90.5%），确认/当前节点回归各重复 25 次 race 通过；sandbox lint、vet、完整单测与核心覆盖率通过（96.6%）。Web 542 文件、5,836 单测通过，Lines 91.74%，完整关键浏览器 260 项通过；lint、类型检查、构建及官方源审计通过。本机关闭、46 项 Node 合约、12 项 Python 合约、文档构建/审计和根目录检查通过。Python 合约在本机 Python 3.10 下使用已有 tomli 兼容加载，CI 原始命令保持不变。
+
+### 2026-10-29（PR #1040 本机配置路径来源隔离）
+
+- 日期：2026-10-29（Asia/Shanghai）。
+- 范围：`server/internal/sandbox/worktree_git{,_local,_test}.go`。
+- 做了什么：本机 CLI 配置根改从服务端 Spec 的独立字段传入，私有 XDG 目标从 HOME 的固定相对目录计算；环境 map 仅接收最终路径输出。Trae 使用 HOME 的 `os.Root` 创建固定 `.trae` 链接，继续只指向 Grasp 自有配置目录。
+- 为什么：推送后的 CodeQL 报告四条路径注入告警，数据流均从 PM 请求字段进入 Agent 环境 map，再经 `CONFIG_ROOT` / `XDG_DATA_HOME` 回读抵达文件操作。将文件路径来源与模型环境分开，保留已有目录访问边界，不添加扫描豁免。
+- 如何验证：新增 Codex / Trae / OpenCode 恶意环境路径回归，确认无法改写配置来源、私有布局或外部目录；完整 sandbox 包单测及针对性 race 通过。Server 完整 lint、vet、配置文档、单测、90.5% 核心覆盖率与 runtime 专项通过；三个工具的本机切换 smoke 7 轮通过，该 smoke 是完整 8 工具矩阵之外的针对性复查。远端 CodeQL 在新提交上复查。
+
+### 2026-10-29（PR #1040 本机执行 review 修复）
+
+- 日期：2026-10-29（Asia/Shanghai）。
+- 范围：`server/internal/{sandbox,services,modelrouting,runtime,execution}`、`sandbox-gateway/sandbox/internal/provider/{codex,modelconnection,kimicode}`、`sandbox-gateway/scripts/{test-agent-switching.py,agent-platform-wire-fixture*}` 及其合约测试、`start.sh`、`scripts/test-start-local.sh`、`web/src/components/workspace/WorkspaceCredentialsPanel*`、`web/src/lib/agent/modelRouting.ts`、`server/README.md`、`CHANGELOG.md`。
+- 做了什么：本机执行仍过滤服务环境中的密钥与 Git 覆盖；所选 CLI 登录按文件白名单复制，跳过历史与 worktrees，防止目标嵌套导致自复制，保留 hooks 的执行位。Git/SSH 配置使用私有副本，子进程使用独立 HOME/XDG 并保留 local 模式，仅显式继承 SSH agent。Trae 的 HOME 路径只允许链接 Grasp 自有 ConfigHome，以保留切换后的历史。移除 Codex 本机模式的 API Key 放行与外部沙箱绕过参数；OpenCode 使用配置文件路径与无密钥的运行期覆盖，官方登录文件复制并清理已移除的授权。Kimi 最终隔离配置保留匹配站点的已保存 API Key 或文件 OAuth，凭据刷新不写回来源。`down` 在 Docker 检查之前停止本地 PID。默认模型组只为已安装 CLI 创建，发现路径同步到子进程 PATH，具体绑定类型必须明确，Solo 严格限定 Agent 的绑定组。补充本机模式中英文提示；E2E 授权改用原生配置文件，并让 local 模式覆盖全部 56 个有向工具切换。
+- 为什么：已有 review 的三个必须修复项分别会扩大宿主机密钥传播、通过软链接写回登录状态，以及阻止无 Docker 环境关闭本地服务。继续核查发现模式传播、OpenCode 内联密钥、未绑定模型组回退和 E2E 依赖宿主环境变量也会掩盖实际边界问题。
+- 如何验证：新增密钥过滤、配置副本写回、HOME/SSH、绑定校验、OpenCode 登录及无 Docker 生命周期回归；Server / Sandbox 全量 lint、vet、单测、配置文档与 runtime 专项通过，核心覆盖率 90.5% / 96.6%，相关 race 通过。Web lint、vue-tsc、5,836 单测（Lines 91.75%）、生产构建及 260 项关键浏览器用例通过。最终本机构建通过完整 worktree 84 项与 local 57 轮矩阵（覆盖全部 56 个有向切换），46 项 Node 和 12 项 Python 合约通过。真实 Kimi Code 2.4.0 在无环境密钥情况下使用保存的 synthetic API Key 向 localhost 完成原生 ACP 请求，模型与强度正确；云模式原生模型／强度专项也通过。沙箱 smoke、Git、bootstrap、preview 检查，actionlint、error-level shellcheck、品牌断言、文档构建及 npm high/critical audit 通过。完整切换矩阵中的 Cursor / Trae / Kimi 仍明确标注协议夹具，Kimi 原生授权另测；未调用厂商 API 或读取真实密钥。
 ### 2026-10-30（亮色主题文字对比度与首页背景）
 
 - 日期：2026-10-30（UTC）。

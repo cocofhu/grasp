@@ -58,6 +58,16 @@ const startupPatch = `- id: acp
     baseURL: https://api.deepseek.com/v1/tools
 `
 
+const localAccountStartupPatch = `- id: acp
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
+- id: settings
+  disabled: true
+- id: config-editor
+  disabled: true
+`
+
 type Provider struct{}
 
 func New() provider.Provider                        { return &Provider{} }
@@ -112,6 +122,12 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	if prepared.Connection != nil {
 		patchData = prepared.DSHPatch
 		route = prepared.RouteID
+	} else if strings.TrimSpace(common.GetEnvValue(prepared.Env, "GRASP_LOCAL_AUTH")) == "1" {
+		if baseURL := strings.TrimSpace(common.GetEnvValue(prepared.Env, "DEEPSEEK_BASE_URL")); baseURL != "" {
+			patchData = []byte(strings.ReplaceAll(startupPatch, "https://api.deepseek.com/anthropic", strings.TrimRight(baseURL, "/")))
+		} else if strings.TrimSpace(common.GetEnvValue(prepared.Env, "DEEPSEEK_API_KEY")) == "" {
+			patchData = []byte(localAccountStartupPatch)
+		}
 	}
 	if _, err = patch.Write(patchData); err != nil {
 		_ = patch.Close()

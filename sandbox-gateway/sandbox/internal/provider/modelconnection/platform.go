@@ -1,6 +1,7 @@
 package modelconnection
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"math"
@@ -20,7 +21,8 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 	if key == "" {
 		key = common.GetEnvValue(p.Env, "GRASP_OPENCODE_API_KEY")
 	}
-	if strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00") {
+	localAuth := strings.TrimSpace(common.GetEnvValue(p.Env, "GRASP_LOCAL_AUTH")) == "1"
+	if !localAuth && (strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00")) {
 		return p, errors.New("OpenCode official authorization: selected API key is missing or invalid")
 	}
 	p.Model = strings.TrimSpace(p.Model)
@@ -63,10 +65,18 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 			return p, errors.New("OpenCode official authorization: cannot prepare session storage")
 		}
 	}
+	if localAuth && strings.TrimSpace(key) == "" {
+		if err := copyLocalOpenCodeAuth(p.Env, filepath.Join(storage, "data")); err != nil {
+			p.Cleanup()
+			return p, errors.New("OpenCode local authorization: cannot prepare private login file")
+		}
+	}
 	// One native provider only. The key stays OPENCODE_API_KEY; do not write the
 	// provider's base URL or model SDK.
-	config := map[string]any{"$schema": "https://opencode.ai/config.json", "enabled_providers": []string{providerID},
-		"provider": map[string]any{providerID: map[string]any{"options": map[string]any{"apiKey": "{env:OPENCODE_API_KEY}"}}}}
+	config := map[string]any{"$schema": "https://opencode.ai/config.json", "enabled_providers": []string{providerID}}
+	if strings.TrimSpace(key) != "" {
+		config["provider"] = map[string]any{providerID: map[string]any{"options": map[string]any{"apiKey": "{env:OPENCODE_API_KEY}"}}}
+	}
 	if p.Model != "" {
 		config["model"], config["small_model"] = p.Model, p.Model
 	}
@@ -88,6 +98,66 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 		p.Env = common.UpsertEnv(p.Env, name, value)
 	}
 	return p, nil
+}
+
+// The server has already staged the selected host login in the process's private
+// HOME/XDG data directory. Materialize another private file for official mode;
+// never link a credential file back to its source.
+func copyLocalOpenCodeAuth(env []string, dataDir string) error {
+	dst, err := os.OpenRoot(dataDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = dst.Close() }()
+	if err := dst.MkdirAll("opencode", 0o700); err != nil {
+		return err
+	}
+	clear := func() error {
+		if err := dst.Remove("opencode/auth.json"); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	source := strings.TrimSpace(common.GetEnvValue(env, "XDG_DATA_HOME"))
+	if source == "" {
+		home := strings.TrimSpace(common.GetEnvValue(env, "HOME"))
+		if home == "" {
+			return clear()
+		}
+		source = filepath.Join(home, ".local", "share")
+	}
+	src, err := os.OpenRoot(source)
+	if os.IsNotExist(err) {
+		return clear()
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = src.Close() }()
+	data, err := src.ReadFile("opencode/auth.json")
+	if os.IsNotExist(err) {
+		return clear()
+	}
+	if err != nil {
+		return err
+	}
+	// Publish atomically, replacing even a pre-existing symlink/hardlink without
+	// modifying its target or briefly removing a login another session uses.
+	temp := "opencode/.grasp-auth-" + rand.Text()
+	file, err := dst.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = dst.Remove(temp) }()
+	_, writeErr := file.Write(data)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return dst.Rename(temp, "opencode/auth.json")
 }
 
 // configuredOfficialModelIDs reads the allow-list already injected for the run.

@@ -429,3 +429,40 @@ func TestSoloConfigurationSelectionKeepsCustomLayoutAndRejectsInvalidGroups(t *t
 		t.Fatalf("selection lacks actionable error: %v", err)
 	}
 }
+
+func TestSoloLocalModeOnlyAllowsBoundConfigurations(t *testing.T) {
+	t.Setenv("GRASP_EXECUTION_MODE", "local")
+	_, _, _, db := newSoloFixture(t, 0, 3)
+	for _, cfg := range []models.ModelConfiguration{
+		{ID: "model-local-deepseek-harness", Backend: "deepseek_harness", State: "active", Binding: modelrouting.Binding{Kind: "local"}},
+		{ID: "model-local-claude-code", Backend: "claude_code", State: "active", Binding: modelrouting.Binding{Kind: "local"}},
+		{ID: "model-local-opencode", Backend: "opencode", State: "active", Binding: modelrouting.Binding{Kind: "local"}},
+		{ID: "unbound-local", Backend: "codex", State: "active", Binding: modelrouting.Binding{Kind: "local"}},
+	} {
+		if err := db.Create(&cfg).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	agent := Agent{
+		AcpBackend:   "deepseek_harness",
+		Layout:       AgentLayout{ConfigRoot: DefaultConfigRootForBackend("deepseek_harness")},
+		ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: "model-local-deepseek-harness", ConfigurationIDs: []string{"model-local-deepseek-harness", "model-local-claude-code", "model-local-opencode"}},
+	}
+	for _, target := range []struct {
+		id      string
+		backend string
+	}{
+		{"model-local-claude-code", "claude_code"},
+		{"model-local-opencode", "opencode"},
+		{"model-local-deepseek-harness", "deepseek_harness"},
+	} {
+		selected, err := selectSoloConfiguration(db, agent, target.id)
+		if err != nil || selected.AcpBackend != target.backend || selected.ModelBinding.ConfigurationID != target.id {
+			t.Fatalf("local mode switch to %s failed: %+v %v", target.id, selected, err)
+		}
+	}
+	var se *SoloError
+	if _, err := selectSoloConfiguration(db, agent, "unbound-local"); !errors.As(err, &se) || se.Code != "model_not_in_configuration" {
+		t.Fatalf("unbound local configuration accepted: %v", err)
+	}
+}

@@ -330,3 +330,34 @@ func TestOpenCodeSavedVariantIsTheRunDefault(t *testing.T) {
 		t.Fatalf("a model without variants invented levels: effort=%q models=%s", env[EnvACPBridgeReasoningEffort], env[EnvConfiguredModels])
 	}
 }
+
+func TestApplyLocalModelBindingSkipsCredentialGate(t *testing.T) {
+	for _, tool := range []string{"deepseek_harness", "codex", "opencode", "claude_code"} {
+		t.Run(tool, func(t *testing.T) {
+			env := map[string]string{}
+			ref := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "model-local-" + tool}
+			resolve := func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+				return modelrouting.Resolved{
+					Backend: tool,
+					Binding: modelrouting.Binding{Kind: "local", ModelID: "deepseek-flash"},
+				}, nil
+			}
+			if err := ApplyModelBinding(env, tool, ref, resolve); err != nil {
+				t.Fatalf("ApplyModelBinding(%s): %v", tool, err)
+			}
+			if env[EnvLocalAuth] != "1" || env[EnvACPBridgeModel] != "deepseek-flash" {
+				t.Fatalf("unexpected local binding env: %v", env)
+			}
+			prepared, err := PrepareBoundAuth(AcpBackend(tool), env, "")
+			if err != nil {
+				t.Fatalf("PrepareBoundAuth(%s): %v", tool, err)
+			}
+			if prepared[EnvLocalAuth] != "1" {
+				t.Fatalf("EnvLocalAuth lost after PrepareBoundAuth: %v", prepared)
+			}
+			if err := InstallBoundCodexLoginFile(BackendCodex, t.TempDir(), "", prepared); err != nil {
+				t.Fatalf("InstallBoundCodexLoginFile: %v", err)
+			}
+		})
+	}
+}

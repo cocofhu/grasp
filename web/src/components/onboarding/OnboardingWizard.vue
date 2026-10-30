@@ -17,6 +17,7 @@ import OnboardingWorkflowPreview from './OnboardingWorkflowPreview.vue'
 import { setLocale } from '@/lib/shared/locale'
 import { setTheme, type ThemeName } from '@/lib/shared/theme'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
 import {
@@ -61,6 +62,7 @@ const { t } = useI18n()
 const toast = useToast()
 const router = useRouter()
 const launch = useWorkflowRunLaunch()
+const { localMode, hostGitUser } = useExecutionMode()
 
 const draft = ref<OnboardingDraft>(freshOnboardingDraft())
 const creating = ref(false)
@@ -87,10 +89,10 @@ const templatesState = ref<'loading' | 'ready' | 'error'>('loading')
 const showTeamErrors = ref(false)
 const leaving = ref(false)
 
-const steps = ONBOARDING_STEPS
-const wizardStepCount = steps.length - 1
-const activeIndex = computed(() => (phase.value === 'success' ? steps.length - 1 : draft.value.step))
-const currentStep = computed(() => steps[activeIndex.value] || steps[0]!)
+const steps = computed(() => localMode.value ? ONBOARDING_STEPS.filter((s) => s.id !== 'credentials') : ONBOARDING_STEPS)
+const wizardStepCount = computed(() => steps.value.length - 1)
+const activeIndex = computed(() => (phase.value === 'success' ? steps.value.length - 1 : draft.value.step))
+const currentStep = computed(() => steps.value[activeIndex.value] || steps.value[0]!)
 const languageOptions: { id: AppLocale; label: string; hint: string }[] = [
   { id: 'zh-CN', label: '简体中文', hint: 'Chinese (Simplified)' },
   { id: 'en', label: 'English', hint: '英语' },
@@ -116,18 +118,21 @@ async function refreshResources() {
     if (request !== resourceRequest || !props.open) return
     models.value = configs.items || []
     credentials.value = keys.items || []
+    if (localMode.value && !draft.value.modelConfigurationId && models.value.length) {
+      draft.value.modelConfigurationId = models.value[0]!.id
+    }
     const configurationId = draft.value.modelConfigurationId
     if (configurationId) {
       const configuration = models.value.find(model => model.id === configurationId)
       modelValid.value = !bindingProblem({ kind: 'configuration', configurationId }, configuration?.backend || '', services.items || [], keys.items || [], caps.items || [], models.value)
-      if (!modelValid.value && draft.value.step > steps.findIndex(step => step.id === 'model')) goToStep('model')
+      if (!modelValid.value && draft.value.step > steps.value.findIndex(step => step.id === 'model')) goToStep('model')
     }
     resourcesVersion.value++
   } catch (error) {
     if (request !== resourceRequest || !props.open) return
     resourcesError.value = String((error as Error).message || error)
     modelValid.value = false
-    if (draft.value.modelConfigurationId && draft.value.step > steps.findIndex(step => step.id === 'model')) goToStep('model')
+    if (draft.value.modelConfigurationId && draft.value.step > steps.value.findIndex(step => step.id === 'model')) goToStep('model')
   } finally {
     if (request === resourceRequest) resourcesLoading.value = false
   }
@@ -196,6 +201,10 @@ watch(
     if (!open) { resourceRequest++; return }
     const inheritAppLocale = false
     draft.value = freshOnboardingDraft({ inheritAppLocale })
+    if (localMode.value) {
+      if (!draft.value.gitUserName) draft.value.gitUserName = hostGitUser.value.name || 'local'
+      if (!draft.value.gitUserEmail) draft.value.gitUserEmail = hostGitUser.value.email || 'local@localhost'
+    }
     // Opening the wizard must not overwrite the user's saved locale with browser/OS.
     if (!inheritAppLocale) {
       void setLocale(draft.value.language)
@@ -274,6 +283,7 @@ function toggleBrowserMcp() {
 function validatePrefs(): boolean { return true }
 
 function validateCredentials(): boolean {
+  if (localMode.value) return true
   if (!resourcesLoading.value && !resourcesError.value && credentialsReady.value) return true
   toast.error(t('pages.onboarding.credentialsSetup.required'))
   return false
@@ -305,7 +315,7 @@ function memberIssue(id: OnboardingTemplateId) {
 }
 
 function goToStep(id: OnboardingStepId) {
-  draft.value.step = steps.findIndex((s) => s.id === id)
+  draft.value.step = steps.value.findIndex((s) => s.id === id)
   stepAnimKey.value++
 }
 
@@ -327,7 +337,7 @@ function goNext() {
     void submitBootstrap()
     return
   }
-  draft.value.step = Math.min(draft.value.step + 1, wizardStepCount - 1)
+  draft.value.step = Math.min(draft.value.step + 1, wizardStepCount.value - 1)
   stepAnimKey.value++
 }
 
@@ -744,6 +754,7 @@ function editWorkflow() {
                       <p v-if="repoDirName" class="onb-hint" data-testid="onboarding-repo-hint">
                         {{ t('pages.onboarding.repo.cloneTo', { dir: repoDirName }) }}
                       </p>
+                      <template v-if="!localMode">
                       <div class="mt-4">
                         <AgentGitCredentialPicker :key="resourcesVersion" v-model="draft.gitBindings" hide-manage-link :disabled="resourceEditing" @validity="gitValid = $event" />
                       </div>
@@ -757,6 +768,7 @@ function editWorkflow() {
                         </div>
                         <WorkspaceCredentialsPanel v-if="gitSetupOpen" id="onboarding-git-setup" class="mt-4" inline scope="git" @changed="refreshResources" @credential-saved="selectSavedGit" @editing="resourceEditing = $event" />
                       </div>
+                      </template>
                     </template>
                   </section>
                 </template>

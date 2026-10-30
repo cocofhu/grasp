@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/cocofhu/grasp/internal/execution"
 )
 
 // worktreeGitEnvKey excludes process-wide identities and Git configuration.
@@ -44,6 +46,26 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 	if err != nil {
 		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
 	}
+	home := filepath.Join(dir, "home")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
+	}
+	if execution.Local() {
+		// Filesystem roots come from the server-owned spec fields, never from
+		// the model/Agent environment map that this function also populates.
+		configRoot := strings.TrimSpace(spec.ConfigHome)
+		if configRoot == "" {
+			configRoot = strings.TrimSpace(spec.ConfigRoot)
+		}
+		prepareLocalProcessHome(home, env, configRoot, spec.ConfigHome)
+		if len(worktreeGitCredentials(spec)) == 0 {
+			if err := prepareLocalWorktreeGit(ctx, spec, home, env); err != nil {
+				return nil, err
+			}
+			failed = false
+			return cleanup, nil
+		}
+	}
 	source := filepath.Join(dir, "stage", "git")
 	if err := os.MkdirAll(source, 0o700); err != nil {
 		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
@@ -52,10 +74,6 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 		if err := os.WriteFile(filepath.Join(source, file.name), []byte(file.body), 0o600); err != nil {
 			return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
 		}
-	}
-	home := filepath.Join(dir, "home")
-	if err := os.Mkdir(home, 0o700); err != nil {
-		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
 	}
 	gitConfigPath := filepath.Join(home, ".gitconfig")
 	env["GIT_CONFIG_GLOBAL"] = gitConfigPath

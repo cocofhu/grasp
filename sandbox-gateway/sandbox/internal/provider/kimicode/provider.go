@@ -1,6 +1,6 @@
-// Package kimicode runs Kimi Code over ACP with a Coding Plan API key.
-// The key stays in the process environment. config.toml only names that
-// variable and the selected site.
+// Package kimicode runs Kimi Code over ACP with Coding Plan authorization.
+// Workspace keys stay in the process environment. Local execution uses saved
+// authorization in a private configuration and credential snapshot.
 package kimicode
 
 import (
@@ -86,7 +86,8 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	}
 	env := p.AuthEnv(prepared.Env)
 	secret := strings.TrimSpace(common.GetEnvValue(env, APIKeyEnv))
-	if secret == "" || strings.ContainsAny(secret, "\r\n\x00") {
+	localAuth := strings.TrimSpace(common.GetEnvValue(env, "GRASP_LOCAL_AUTH")) == "1"
+	if !localAuth && (secret == "" || strings.ContainsAny(secret, "\r\n\x00")) {
 		prepared.Cleanup()
 		return nil, fmt.Errorf("%s", MsgMissingKey)
 	}
@@ -126,7 +127,11 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 			cleanEnv = append(cleanEnv, item)
 		}
 	}
-	if err := writeConfigAt(home, baseURL, model, effort); err != nil {
+	writeConfig := func() error { return writeConfigAt(home, baseURL, model, effort) }
+	if localAuth {
+		writeConfig = func() error { return writeLocalConfigAt(root, home, baseURL, model, effort) }
+	}
+	if err := writeConfig(); err != nil {
 		cleanup()
 		return nil, fmt.Errorf("kimi config: %w", err)
 	}

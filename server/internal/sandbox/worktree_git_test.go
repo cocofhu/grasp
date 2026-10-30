@@ -271,3 +271,294 @@ func envValue(env []string, key string) string {
 	}
 	return ""
 }
+
+func TestLocalGitUsesPrivateHomeAndSSHSnapshot(t *testing.T) {
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv(execution.EnvMode, execution.ModeLocal)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(hostHome, ".gitconfig"))
+	t.Setenv("SSH_AUTH_SOCK", "/selected/ssh-agent.sock")
+	t.Setenv("SSH_AGENT_PID", "123")
+	t.Setenv("GITHUB_TOKEN", "unselected-github-token")
+	t.Setenv("GIT_SSH_COMMAND", "unselected-ssh")
+	hostSSH := filepath.Join(hostHome, ".ssh")
+	if err := os.Mkdir(hostSSH, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		".gitconfig":       "[user]\nname = Host Author\nemail = host@example.com\n[alias]\nlocal-auth-probe = status\n",
+		".ssh/id_ed25519":  "host-private-key",
+		".ssh/known_hosts": "host-known-hosts",
+		".ssh/config":      "Host local-auth-test\n HostName localhost\n IdentityFile ~/.ssh/id_ed25519\n UserKnownHostsFile ~/.ssh/known_hosts\n",
+		"unrelated-secret": "must-not-be-staged",
+	} {
+		if err := os.WriteFile(filepath.Join(hostHome, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := map[string]string{}
+	cleanup, err := prepareWorktreeGit(context.Background(), Spec{GitBindingsConfigured: true}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	privateHome := env["HOME"]
+	if privateHome == "" || privateHome == hostHome || envValue(envList(env), "HOME") != privateHome {
+		t.Fatal("local Git process inherited the host HOME")
+	}
+	if _, err := os.Stat(filepath.Join(privateHome, "unrelated-secret")); !os.IsNotExist(err) {
+		t.Fatal("local process staged unrelated host files")
+	}
+	for key, want := range map[string]string{"SSH_AUTH_SOCK": "/selected/ssh-agent.sock", "SSH_AGENT_PID": "123"} {
+		if envValue(envList(env), key) != want {
+			t.Fatalf("explicit local SSH agent was not forwarded: %s", key)
+		}
+	}
+	if strings.Contains(strings.Join(envList(env), "\n"), "unselected-") {
+		t.Fatal("local host Git inherited ambient tokens or SSH overrides")
+	}
+	cmd := exec.Command("git", "config", "--global", "--get", "alias.local-auth-probe")
+	cmd.Env = envList(env)
+	if out, err := cmd.Output(); err != nil || strings.TrimSpace(string(out)) != "status" {
+		t.Fatal("local Git did not retain host configuration")
+	}
+	cmd = exec.Command("git", "var", "GIT_AUTHOR_IDENT")
+	cmd.Env = envList(env)
+	if out, err := cmd.Output(); err != nil || !strings.Contains(string(out), "Host Author <host@example.com>") {
+		t.Fatalf("local Git did not retain the host author: %v", err)
+	}
+	if !strings.Contains(env["GIT_SSH_COMMAND"], filepath.Join(privateHome, ".ssh", "config")) {
+		t.Fatal("local Git SSH transport did not select the private config")
+	}
+	// Check OpenSSH's resolved paths without making a network connection.
+	sshProbe := exec.Command("sh", "-c", env["GIT_SSH_COMMAND"]+" -G local-auth-test")
+	sshProbe.Env = envList(env)
+	out, err := sshProbe.CombinedOutput()
+	if err != nil {
+		t.Fatalf("OpenSSH config probe failed: %v: %s", err, out)
+	}
+	resolved := map[string]string{}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
+		if key == "identityfile" || key == "userknownhostsfile" {
+			resolved[key] += value + "\n"
+		}
+	}
+	if !strings.Contains(resolved["identityfile"], filepath.Join(hostSSH, "id_ed25519")) {
+		t.Fatalf("OpenSSH did not use the host identity in place: %s", out)
+	}
+	if strings.TrimSpace(resolved["userknownhostsfile"]) != filepath.Join(privateHome, ".ssh", "known_hosts") {
+		t.Fatalf("OpenSSH known_hosts can write back to the host: %s", out)
+	}
+	if _, err := os.Lstat(filepath.Join(privateHome, ".ssh", "id_ed25519")); !os.IsNotExist(err) {
+		t.Fatal("local SSH private key was copied into the backend HOME")
+	}
+	privateKnownHosts := filepath.Join(privateHome, ".ssh", "known_hosts")
+	if info, err := os.Lstat(privateKnownHosts); err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+		t.Fatal("local known_hosts was not copied privately")
+	}
+	if err := os.WriteFile(privateKnownHosts, []byte("changed-by-ssh"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := os.ReadFile(filepath.Join(hostSSH, "known_hosts")); err != nil || string(body) != "host-known-hosts" {
+		t.Fatal("local SSH snapshot changed host known_hosts")
+	}
+	cleanup()
+	if _, err := os.Stat(privateHome); !os.IsNotExist(err) {
+		t.Fatal("stopping the backend kept the local auth snapshot")
+	}
+}
+
+func TestLocalProcessHomeStagesOnlySelectedProviderAuth(t *testing.T) {
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	hostData := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", hostData)
+	if err := os.MkdirAll(filepath.Join(hostData, "opencode"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostData, "opencode", "auth.json"), []byte("host-opencode-auth"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	privateHome := t.TempDir()
+	env := map[string]string{"AGENT_PROVIDER": "opencode", "CONFIG_ROOT": t.TempDir(), "GRASP_LOCAL_AUTH": "1"}
+	prepareLocalProcessHome(privateHome, env, env["CONFIG_ROOT"], "")
+	path := filepath.Join(env["XDG_DATA_HOME"], "opencode", "auth.json")
+	if body, err := os.ReadFile(path); err != nil || string(body) != "host-opencode-auth" {
+		t.Fatal("selected provider's XDG auth snapshot is missing")
+	}
+	if err := os.WriteFile(path, []byte("changed-by-cli"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := os.ReadFile(filepath.Join(hostData, "opencode", "auth.json")); err != nil || string(body) != "host-opencode-auth" {
+		t.Fatal("provider auth wrote back to the host")
+	}
+	cloudHome := t.TempDir()
+	prepareLocalProcessHome(cloudHome, map[string]string{"AGENT_PROVIDER": "opencode"}, t.TempDir(), "")
+	if _, err := os.Stat(filepath.Join(cloudHome, ".local", "share", "opencode", "auth.json")); !os.IsNotExist(err) {
+		t.Fatal("cloud binding received host native OpenCode auth")
+	}
+	otherHome := t.TempDir()
+	prepareLocalProcessHome(otherHome, map[string]string{"AGENT_PROVIDER": "codex"}, t.TempDir(), "")
+	if _, err := os.Stat(filepath.Join(otherHome, ".local", "share", "opencode", "auth.json")); !os.IsNotExist(err) {
+		t.Fatal("another provider received unrelated OpenCode auth")
+	}
+}
+
+func TestLocalProcessHomeStagesCursorXDGLogin(t *testing.T) {
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	hostConfig := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", hostConfig)
+	hostAuth := filepath.Join(hostConfig, "cursor", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(hostAuth), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hostAuth, []byte("host-cursor-login"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, localAuth := range []string{"1", ""} {
+		home := t.TempDir()
+		env := map[string]string{"AGENT_PROVIDER": "cursor", "GRASP_LOCAL_AUTH": localAuth}
+		prepareLocalProcessHome(home, env, t.TempDir(), "")
+		path := filepath.Join(env["XDG_CONFIG_HOME"], "cursor", "auth.json")
+		body, err := os.ReadFile(path)
+		if localAuth == "" {
+			if !os.IsNotExist(err) {
+				t.Fatal("cloud binding received the host Cursor login")
+			}
+			continue
+		}
+		if err != nil || string(body) != "host-cursor-login" {
+			t.Fatal("Cursor login was not staged where cursor-agent reads it")
+		}
+		if err := os.WriteFile(path, []byte("refreshed-by-cli"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if body, err := os.ReadFile(hostAuth); err != nil || string(body) != "host-cursor-login" {
+			t.Fatal("Cursor token refresh wrote back to the host login")
+		}
+	}
+}
+
+// Uses the real host login; set GRASP_CURSOR_NATIVE_CLI to the cursor-agent path.
+func TestNativeCursorLocalLoginInPrivateHome(t *testing.T) {
+	cli := os.Getenv("GRASP_CURSOR_NATIVE_CLI")
+	if cli == "" {
+		t.Skip("set GRASP_CURSOR_NATIVE_CLI to check the real cursor-agent login")
+	}
+	home := t.TempDir()
+	env := map[string]string{"AGENT_PROVIDER": "cursor", "GRASP_LOCAL_AUTH": "1"}
+	prepareLocalProcessHome(home, env, t.TempDir(), "")
+	cmd := exec.Command(cli, "status")
+	cmd.Env = envList(env)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "Logged in") {
+		t.Fatalf("cursor-agent is not logged in inside the private HOME: %v: %s", err, out)
+	}
+}
+
+func TestLocalTraeHistorySurvivesBackendHomeReplacement(t *testing.T) {
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	owned := t.TempDir()
+	stage := func() string {
+		t.Helper()
+		home := t.TempDir()
+		prepareLocalProcessHome(home, map[string]string{"AGENT_PROVIDER": "trae"}, owned, owned)
+		info, err := os.Lstat(filepath.Join(home, ".trae"))
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			t.Fatal("private Trae HOME did not select the owned config home")
+		}
+		return home
+	}
+	firstHome := stage()
+	if err := os.WriteFile(filepath.Join(firstHome, ".trae", "native-history.json"), []byte("original-native-history"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(firstHome); err != nil {
+		t.Fatal(err)
+	}
+	secondHome := stage()
+	if body, err := os.ReadFile(filepath.Join(secondHome, ".trae", "native-history.json")); err != nil || string(body) != "original-native-history" {
+		t.Fatal("backend HOME replacement lost Trae's native history")
+	}
+	hostTrae := filepath.Join(hostHome, ".trae")
+	if err := os.Mkdir(hostTrae, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostTrae, "auth.json"), []byte("host-login"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unownedHome := t.TempDir()
+	prepareLocalProcessHome(unownedHome, map[string]string{"AGENT_PROVIDER": "trae"}, hostTrae, hostTrae)
+	info, err := os.Lstat(filepath.Join(unownedHome, ".trae"))
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("host Trae login directory was linked instead of copied")
+	}
+	if err := os.WriteFile(filepath.Join(unownedHome, ".trae", "auth.json"), []byte("changed-by-cli"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := os.ReadFile(filepath.Join(hostTrae, "auth.json")); err != nil || string(body) != "host-login" {
+		t.Fatal("Trae's staged HOME changed host auth")
+	}
+}
+
+func TestLocalProcessFilesystemRootsIgnoreAgentEnvironment(t *testing.T) {
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	hostData := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", hostData)
+	if err := os.MkdirAll(filepath.Join(hostData, "opencode"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostData, "opencode", "auth.json"), []byte("native-opencode-login"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unrelated := t.TempDir()
+	if err := os.WriteFile(filepath.Join(unrelated, "auth.json"), []byte("unrelated-login"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range []string{"codex", "trae", "opencode"} {
+		t.Run(provider, func(t *testing.T) {
+			owned := t.TempDir()
+			if err := os.WriteFile(filepath.Join(owned, "auth.json"), []byte("selected-login"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			home := t.TempDir()
+			env := map[string]string{
+				"AGENT_PROVIDER": provider, "GRASP_LOCAL_AUTH": "1",
+				"CONFIG_ROOT": unrelated, "HOME": unrelated,
+				"XDG_DATA_HOME": unrelated, "XDG_CONFIG_HOME": unrelated,
+			}
+			prepareLocalProcessHome(home, env, owned, owned)
+			rel := "." + provider
+			if provider == "opencode" {
+				rel = ".config/opencode"
+			}
+			if body, err := os.ReadFile(filepath.Join(home, rel, "auth.json")); err != nil || string(body) != "selected-login" {
+				t.Fatal("Agent environment replaced the server-owned CLI config source")
+			}
+			if provider == "opencode" {
+				if body, err := os.ReadFile(filepath.Join(home, ".local", "share", "opencode", "auth.json")); err != nil || string(body) != "native-opencode-login" {
+					t.Fatal("Agent environment redirected the native auth destination")
+				}
+			}
+			if env["CONFIG_ROOT"] != owned || env["HOME"] != home || env["XDG_DATA_HOME"] != filepath.Join(home, ".local", "share") {
+				t.Fatal("Agent environment replaced the private process layout")
+			}
+			if provider == "trae" {
+				if target, err := os.Readlink(filepath.Join(home, ".trae")); err != nil || target != owned {
+					t.Fatal("Trae's private link did not select the server-owned config home")
+				}
+			}
+		})
+	}
+	if body, err := os.ReadFile(filepath.Join(unrelated, "auth.json")); err != nil || string(body) != "unrelated-login" {
+		t.Fatal("Agent environment caused a write to an unrelated directory")
+	}
+	if _, err := os.Stat(filepath.Join(unrelated, "opencode")); !os.IsNotExist(err) {
+		t.Fatal("Agent environment created auth directories outside the private HOME")
+	}
+}

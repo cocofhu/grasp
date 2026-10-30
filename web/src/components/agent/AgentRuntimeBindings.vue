@@ -5,6 +5,7 @@ import { api, type AgentGitBindings, type CredentialItem, type ModelBinding, typ
 import { ACP_BACKENDS, getRegionPolicy, normalizeRegions, setRegion, switchBackendRegions, type BackendId } from '@/lib/shared/regionPolicy'
 import { defaultConfigRootFor, kvToRec, recToKV } from '@/lib/agent/agentStudioDraft'
 import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -34,6 +35,7 @@ const props = withDefaults(defineProps<{
 }>(), { inheritance: false, collapseInherited: false, hideManageLink: false, section: 'all', disabled: false })
 const emit = defineEmits<{ modelValidity: [value: boolean]; gitValidity: [value: boolean]; defaultsLoaded: [value: SharedAgentConfig]; help: [] }>()
 const { t, locale } = useI18n()
+const { localMode } = useExecutionMode()
 const shared = ref<SharedAgentConfig>()
 const loading = ref(false)
 const error = ref('')
@@ -99,7 +101,7 @@ watch(modelCatalogRevision, loadDefaults)
           <template v-else>
             <ModelBindingEditor v-if="model?.configurationId" :model-value="model" summary :summary-source="inheritedFrom" :disabled="disabled" @validity="modelValid = $event" />
             <p v-else role="status" class="m-0 text-xs text-warn">{{ missingDefaultModel }}</p>
-            <AgentGitCredentialPicker :model-value="git" :items="items" summary compact :disabled="disabled" @validity="gitValid = $event" />
+            <AgentGitCredentialPicker v-if="!localMode" :model-value="git" :items="items" summary compact :disabled="disabled" @validity="gitValid = $event" />
           </template>
         </template>
         <div v-else class="flex min-w-0 items-center gap-2.5 py-1" data-testid="agent-inherit-custom-summary">
@@ -126,7 +128,7 @@ watch(modelCatalogRevision, loadDefaults)
         <span v-if="region.special" class="mt-1.5 block text-[11px] text-txt3" role="status">{{ t('pages.agentStudio.region.special', { value: region.region }) }}</span>
       </label>
     </section>
-    <section v-if="!collapsed && section !== 'model'" class="min-w-0 space-y-3" :class="section === 'all' ? 'border-t border-line pt-4' : ''">
+    <section v-if="!collapsed && section !== 'model' && !localMode" class="min-w-0 space-y-3" :class="section === 'all' ? 'border-t border-line pt-4' : ''">
       <p v-if="inheritGit && waiting" role="status" class="m-0 text-xs text-warn">{{ loading ? t('common.loading.inProgress') : unavailable }} <AppButton v-if="error" size="sm" @click="loadDefaults">{{ t('common.buttons.retry') }}</AppButton></p>
       <AgentGitCredentialPicker :model-value="git" :items="items" :summary="inheritGit" :hide-manage-link="collapseInherited || hideManageLink" :disabled="disabled" @update:model-value="draft.gitBindings = $event" @validity="gitValid = $event" @help="emit('help')">
         <template v-if="inheritance && !collapseInherited" #heading-actions>

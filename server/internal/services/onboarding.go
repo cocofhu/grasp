@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -316,6 +317,19 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 	configuration, err := s.Credentials.requireModelConfigurationSet(req.ModelConfigurationID, req.ModelConfigurationIDs)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
+	}
+	if execution.Local() && len(req.ModelConfigurationIDs) == 0 && s.Credentials != nil && s.Credentials.db != nil {
+		if items, err := NewModelConfigurationService(s.Credentials.db).List(); err == nil {
+			ids := []string{configuration.ID}
+			for _, item := range items {
+				if item.State == "active" && item.Binding.Kind == "local" && item.ID != configuration.ID {
+					ids = append(ids, item.ID)
+				}
+			}
+			if len(ids) > 1 {
+				req.ModelConfigurationIDs = ids
+			}
+		}
 	}
 	gitBindings, err := models.NormalizeGitBindings(req.GitBindings)
 	if err != nil {

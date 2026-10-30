@@ -3,6 +3,8 @@ package modelrouting
 import (
 	"fmt"
 	"strings"
+
+	"github.com/cocofhu/grasp/internal/execution"
 )
 
 type Evidence struct {
@@ -53,6 +55,9 @@ func Capabilities() []Capability {
 		case "codex", "deepseek_harness":
 			capabilities[i].RoleNames = []string{"main"}
 		}
+		if execution.Local() {
+			capabilities[i].Modes = append([]string{"local"}, capabilities[i].Modes...)
+		}
 	}
 	return capabilities
 }
@@ -85,6 +90,26 @@ func ValidateBinding(backend string, binding Binding, connection *Connection) er
 	}
 	if !allowed {
 		return fmt.Errorf("%s does not support %s model bindings", backend, binding.Kind)
+	}
+	if binding.Kind == "local" {
+		if binding.CredentialID != "" || binding.ConnectionID != "" {
+			return fmt.Errorf("local binding cannot specify a credential or connection reference")
+		}
+		if binding.ToolSettings.RouteProfile != "" {
+			return fmt.Errorf("local binding cannot specify a route profile")
+		}
+		if len(binding.ToolSettings.ModelRoles) != 0 {
+			return fmt.Errorf("local role mappings are not supported")
+		}
+		if len(binding.ToolSettings.ModelEfforts) != 0 {
+			if backend != "opencode" {
+				return fmt.Errorf("reasoning effort is only available for OpenCode")
+			}
+			if err := validateOpenCodeEfforts(binding); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	if binding.Kind == "platform" {
 		if binding.CredentialID == "" || binding.ConnectionID != "" {

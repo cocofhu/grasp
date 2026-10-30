@@ -86,7 +86,8 @@ func (codec) Args(opts provider.OpenOptions, prompt, resumeID string) []string {
 	}
 	// The bypass flag tells Codex an outer sandbox already exists. The worktree
 	// image has no outer sandbox, so the flag stays off there.
-	if opts.AutoPermission && os.Getenv("GRASP_EXECUTION_MODE") != "worktree" {
+	mode := os.Getenv("GRASP_EXECUTION_MODE")
+	if opts.AutoPermission && mode != "worktree" && mode != "local" {
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}
 	args = append(args, opts.CustomArgs...)

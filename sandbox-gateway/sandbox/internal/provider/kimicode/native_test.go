@@ -166,6 +166,84 @@ func TestNativeKimiReasoningRequests(t *testing.T) {
 	}
 }
 
+// Authenticate only to localhost with a saved key and no environment key.
+func TestNativeKimiLocalSavedKeyWithoutEnvironmentAuthentication(t *testing.T) {
+	cli := os.Getenv("GRASP_KIMI_NATIVE_CLI")
+	if cli == "" {
+		t.Skip("set GRASP_KIMI_NATIVE_CLI to test the real Kimi Code 2.4.0 CLI")
+	}
+	if !filepath.IsAbs(cli) {
+		t.Fatal("GRASP_KIMI_NATIVE_CLI must be an absolute path")
+	}
+	requests := make(chan map[string]any, 4)
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer synthetic-saved-kimi-key" {
+			http.Error(w, "saved local authorization was not used", http.StatusUnauthorized)
+			return
+		}
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		requests <- request
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"local-auth-regression\",\"object\":\"chat.completion.chunk\",\"model\":\"k3.1-pro\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"OK\"},\"finish_reason\":null}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"local-auth-regression\",\"object\":\"chat.completion.chunk\",\"model\":\"k3.1-pro\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer endpoint.Close()
+	root := t.TempDir()
+	saved := strings.ReplaceAll(savedLocalKimiConfig("api_key = \"synthetic-saved-kimi-key\""), intlBase, endpoint.URL+"/v1")
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	home, err := isolatedHome(root, endpoint.URL+"/v1", "k3.1-pro", "max")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = home.Close() }()
+	if err := writeLocalConfigAt(root, home, endpoint.URL+"/v1", "k3.1-pro", "max"); err != nil {
+		t.Fatal(err)
+	}
+	env := make([]string, 0)
+	for _, item := range os.Environ() {
+		key, _, _ := strings.Cut(item, "=")
+		if key != APIKeyEnv && !strings.HasPrefix(key, "KIMI_MODEL_") {
+			env = append(env, item)
+		}
+	}
+	for key, value := range map[string]string{"KIMI_CODE_HOME": home.Name(), "HOME": t.TempDir(), "KIMI_CODE_NO_AUTO_UPDATE": "1", "KIMI_DISABLE_TELEMETRY": "1"} {
+		env = common.UpsertEnv(env, key, value)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	cwd := t.TempDir()
+	panel, err := acp.NewPanel(ctx, ctx, []string{cli, "acp"}, env, cwd, cwd, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = panel.Close(); _ = panel.Conn().Wait() }()
+	if panel.AgentVersion != "2.4.0" {
+		t.Fatalf("native regression requires pinned 2.4.0, got %s", panel.AgentVersion)
+	}
+	if _, err := panel.Prompt(ctx, "Reply OK only.", nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case request := <-requests:
+		thinking, _ := request["thinking"].(map[string]any)
+		if request["model"] != "k3.1-pro" || thinking["effort"] != "max" {
+			t.Fatal("saved local auth changed the selected native model or effort")
+		}
+	case <-ctx.Done():
+		t.Fatal("native CLI did not authenticate to the local endpoint")
+	}
+}
+
 // Ensure shared native storage remains usable when the two configs are first
 // prepared at the same time, before either process has made its directories.
 func TestIsolatedHomeConcurrentCreation(t *testing.T) {

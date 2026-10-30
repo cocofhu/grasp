@@ -9,6 +9,7 @@ import { bindingProblem, connectionCapabilities, credentialUsable, isModelCreden
 import { effortChoices, validEffortToken } from '@/lib/agent/fixedEffort'
 import { mergeModelMetadata, modelInputMode, setModelInputMode, type ModelInputMode } from '@/lib/agent/modelCapabilities'
 import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { useToast } from '@/lib/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'
 import CredentialEditorSurface from './CredentialEditorSurface.vue'
@@ -25,6 +26,7 @@ const emit = defineEmits<{ (e: 'manageCredentials', backend?: string): void; (e:
 const c = useRoutingCopy()
 const { t } = useI18n()
 const toast = useToast()
+const { localMode } = useExecutionMode()
 const rows = ref<ModelConfiguration[]>([])
 const connections = ref<ModelConnection[]>([])
 const credentials = ref<CredentialItem[]>([])
@@ -45,7 +47,7 @@ const saving = ref(false)
 const editingId = ref('')
 const awaitingCredential = ref(false)
 watch(() => open.value || awaitingCredential.value || saving.value, (active) => emit('editing', active))
-const form = reactive({ name: '', backend: 'cursor', kind: 'platform' as 'platform' | 'connection', credentialId: '', connectionId: '', modelId: '', auxiliaryModelIds: [] as string[], state: 'active' as ModelConfiguration['state'], roles: {} as ModelRoles, routeProfile: '', efforts: {} as Record<string, string> })
+const form = reactive({ name: '', backend: 'cursor', kind: 'platform' as 'local' | 'platform' | 'connection', credentialId: '', connectionId: '', modelId: '', auxiliaryModelIds: [] as string[], state: 'active' as ModelConfiguration['state'], roles: {} as ModelRoles, routeProfile: '', efforts: {} as Record<string, string> })
 const cliModels = ref<CliCatalogModel[]>([])
 const cliReady = ref(false)
 const savedModelIds = ref<string[]>([])
@@ -110,11 +112,12 @@ const credentialChoice = computed<string>({
 const selectedCredential = computed(() => credentialOptions.value.find((option) => option.value === credentialChoice.value))
 type SlotOption = { value: string; label: string; hint?: string; vendor: string }
 const slotCatalog = computed<SlotOption[]>(() => {
-  if (form.kind === 'platform') return cliModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: modelVendor(model.id, model.name, model.vendor) }))
+  if (form.kind === 'platform' || form.kind === 'local') return cliModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: modelVendor(model.id, model.name, model.vendor) }))
   const vendor = selectedService.value?.providerId || ''
   return serviceModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: modelVendor(model.id, model.name, vendor) }))
 })
-const wizardSteps = computed(() => [c.value.chooseTool, c.value.chooseCredential, c.value.selectModel])
+const wizardSteps = computed(() => localMode.value ? [c.value.chooseTool, c.value.selectModel] : [c.value.chooseTool, c.value.chooseCredential, c.value.selectModel])
+const displayStep = computed(() => localMode.value && step.value === 3 ? 2 : step.value)
 const roleNames = computed(() => [...new Set(toolCaps.value.flatMap((item) => item.roleNames || []))].filter((role) => role !== 'main') as (keyof ModelRoles)[])
 const configurableImageInput = computed(() => form.kind === 'connection' && ['codebuddy', 'opencode', 'deepseek_harness'].includes(form.backend))
 const imageInputOptions = computed(() => [
@@ -155,7 +158,7 @@ const nativeRoute = computed(() => {
   if (form.backend !== 'deepseek_harness' || service?.providerId !== 'deepseek' || service.protocol !== 'anthropic-messages' || service.auth.scheme !== 'x-api-key') return false
   try { const url = new URL(service.baseUrl); return url.protocol === 'https:' && url.hostname === 'api.deepseek.com' && url.pathname.replace(/\/$/, '') === '/anthropic' } catch { return false }
 })
-const sourceValid = computed(() => form.kind === 'platform' ? platformAvailable.value && platformKeys.value.some((item) => item.id === form.credentialId) : connectionAvailable.value && !!selectedService.value)
+const sourceValid = computed(() => form.kind === 'local' ? true : form.kind === 'platform' ? platformAvailable.value && platformKeys.value.some((item) => item.id === form.credentialId) : connectionAvailable.value && !!selectedService.value)
 const auxiliaryProblem = computed(() => {
   const ids = form.auxiliaryModelIds.map((id) => id.trim())
   if (ids.some((id) => !id)) return c.value.duplicateModel
@@ -163,7 +166,7 @@ const auxiliaryProblem = computed(() => {
   return new Set(all).size === all.length ? '' : c.value.duplicateModel
 })
 const lockedFamily = computed(() => {
-  if (form.backend !== 'opencode' || form.kind !== 'platform') return ''
+  if (form.backend !== 'opencode' || (form.kind !== 'platform' && form.kind !== 'local')) return ''
   for (const id of [form.modelId, ...form.auxiliaryModelIds]) {
     const family = officialModelFamily(id)
     if (family) return family
@@ -176,14 +179,14 @@ const familyCatalog = computed(() => {
   return slotCatalog.value.filter((option) => option.vendor === family || officialModelFamily(option.value) === family)
 })
 const officialProblem = computed(() => {
-  if (form.backend !== 'opencode' || form.kind !== 'platform') return ''
+  if (form.backend !== 'opencode' || (form.kind !== 'platform' && form.kind !== 'local')) return ''
   const ids = [form.modelId, ...form.auxiliaryModelIds].map((id) => id.trim()).filter(Boolean)
   if (!ids.length) return ''
   const families = ids.map((id) => officialModelFamily(id))
   if (families.some((family) => !family)) return c.value.officialModelInvalid
   return new Set(families).size > 1 ? c.value.officialFamilyMixed : ''
 })
-const modelValid = computed(() => sourceValid.value && (form.kind === 'platform' || !!form.modelId.trim()) && !auxiliaryProblem.value && !officialProblem.value)
+const modelValid = computed(() => sourceValid.value && (form.kind === 'platform' || form.kind === 'local' || !!form.modelId.trim()) && !auxiliaryProblem.value && !officialProblem.value)
 const valid = computed(() => !!form.name.trim() && !!form.backend && modelValid.value)
 function takenIds(except: string) {
   const skip = except.trim()
@@ -239,8 +242,13 @@ async function load() {
   } catch (e) { error.value = String((e as Error).message || e) } finally { loading.value = false }
 }
 function resetSource() {
-  if (form.kind === 'platform' && !platformAvailable.value) form.kind = 'connection'
-  if (form.kind === 'connection' && !connectionAvailable.value && platformAvailable.value) form.kind = 'platform'
+  if (localMode.value) {
+    form.kind = 'local'
+  } else {
+    if (form.kind === 'local') form.kind = 'platform'
+    if (form.kind === 'platform' && !platformAvailable.value) form.kind = 'connection'
+    if (form.kind === 'connection' && !connectionAvailable.value && platformAvailable.value) form.kind = 'platform'
+  }
   form.credentialId = ''; form.connectionId = ''; form.modelId = ''; form.auxiliaryModelIds = []; form.roles = {}; form.routeProfile = ''; form.efforts = {}
   imageInputDrafts.clear()
 }
@@ -262,7 +270,7 @@ function start(row?: ModelConfiguration) {
   imageInputDrafts.clear()
   editingId.value = row?.id || ''
   savedModelIds.value = [row?.binding.modelId || '', ...(row?.binding.auxiliaryModelIds || [])].map((id) => id.trim()).filter(Boolean)
-  Object.assign(form, { name: row?.name || '', backend: row?.backend || 'cursor', kind: row?.binding.kind || 'platform', credentialId: row?.binding.kind === 'platform' ? row.binding.credentialId : '', connectionId: row?.binding.kind === 'connection' ? row.binding.connectionId : '', modelId: row?.binding.modelId || '', auxiliaryModelIds: [...(row?.binding.auxiliaryModelIds || [])], state: row?.state || 'active', roles: { ...row?.binding.toolSettings?.modelRoles }, routeProfile: row?.binding.toolSettings?.routeProfile || '', efforts: { ...(row?.binding.toolSettings?.modelEfforts || {}) } })
+  Object.assign(form, { name: row?.name || '', backend: row?.backend || 'cursor', kind: row?.binding.kind || (localMode.value ? 'local' : 'platform'), credentialId: row?.binding.kind === 'platform' ? row.binding.credentialId : '', connectionId: row?.binding.kind === 'connection' ? row.binding.connectionId : '', modelId: row?.binding.modelId || '', auxiliaryModelIds: [...(row?.binding.auxiliaryModelIds || [])], state: row?.state || 'active', roles: { ...row?.binding.toolSettings?.modelRoles }, routeProfile: row?.binding.toolSettings?.routeProfile || '', efforts: { ...(row?.binding.toolSettings?.modelEfforts || {}) } })
   if (!row) resetSource()
   step.value = 1; error.value = ''; open.value = true
 }
@@ -308,6 +316,7 @@ function concreteBinding(): ConcreteModelBinding {
   const settings = Object.keys(toolSettings).length ? { toolSettings } : {}
   const auxiliaryModelIds = form.auxiliaryModelIds.map((id) => id.trim()).filter(Boolean)
   const aux = auxiliaryModelIds.length ? { auxiliaryModelIds } : {}
+  if (form.kind === 'local') return { kind: 'local', ...(form.modelId ? { modelId: form.modelId } : {}), ...aux, ...settings }
   return form.kind === 'platform' ? { kind: 'platform', credentialId: form.credentialId, ...(form.modelId ? { modelId: form.modelId } : {}), ...aux, ...settings } : { kind: 'connection', connectionId: form.connectionId, modelId: form.modelId.trim(), ...aux, ...settings }
 }
 async function ensureModels(binding: ConcreteModelBinding) {
@@ -378,7 +387,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
     <AppButton v-else-if="setup && !error" size="sm" variant="primary" data-testid="model-configuration-resume-setup" @click="openSetup()">{{ t('pages.onboarding.toolSetup.start') }}</AppButton>
     <div v-else-if="!setup && !rows.length" class="configuration-empty">
       <p class="m-0 text-xs leading-6 text-txt3">{{ c.noConfigurations }}</p>
-      <AppButton v-if="allowCredentialCreation" size="sm" variant="ghost" data-testid="model-configuration-manage-credentials" @click="emit('manageCredentials')">{{ c.configureKeys }}</AppButton>
+      <AppButton v-if="allowCredentialCreation && !localMode" size="sm" variant="ghost" data-testid="model-configuration-manage-credentials" @click="emit('manageCredentials')">{{ c.configureKeys }}</AppButton>
     </div>
     <div v-else-if="!setup" class="configuration-list">
       <article v-for="row in rows" :key="row.id" class="configuration-row" :data-testid="`model-configuration-${row.id}`">
@@ -403,9 +412,9 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
     </div>
     </template>
     <CredentialEditorSurface :inline="props.inline" :open="open" :hide-heading="setup" :return-focus="!saving && !awaitingCredential" :title="setup ? t('pages.onboarding.toolSetup.title') : editingId ? c.editConfiguration : c.addConfiguration" :width="660" :close-on-esc="!saving" trap-focus :close-label="c.close" @close="!saving && (open = false)">
-      <ol class="configuration-steps">
-        <li v-for="(label, index) in wizardSteps" :key="index" :aria-current="step === index + 1 ? 'step' : undefined" :class="{ 'configuration-step--current': step === index + 1, 'configuration-step--done': step > index + 1 }">
-          <span class="configuration-step-number" aria-hidden="true"><Icon v-if="step > index + 1" name="check" :size="11" :interactive="false" /><template v-else>{{ index + 1 }}</template></span>
+      <ol class="configuration-steps" :style="localMode ? 'grid-template-columns: repeat(2, minmax(0, 1fr))' : undefined">
+        <li v-for="(label, index) in wizardSteps" :key="index" :aria-current="displayStep === index + 1 ? 'step' : undefined" :class="{ 'configuration-step--current': displayStep === index + 1, 'configuration-step--done': displayStep > index + 1 }">
+          <span class="configuration-step-number" aria-hidden="true"><Icon v-if="displayStep > index + 1" name="check" :size="11" :interactive="false" /><template v-else>{{ index + 1 }}</template></span>
           <span>{{ label }}</span>
         </li>
       </ol>
@@ -450,7 +459,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
           </div>
           <div class="model-slot" data-testid="model-configuration-primary">
             <div class="model-slot-top"><span>{{ c.primarySlot }}</span></div>
-            <CliModelSelect v-if="form.kind === 'platform'" v-model="form.modelId" :backend="form.backend" :exclude-ids="primaryExcludeIds" :allowed-vendors="lockedFamily ? [lockedFamily] : []" variant="compact" hide-command hide-auto-sub hide-reset />
+            <CliModelSelect v-if="form.kind === 'platform' || form.kind === 'local'" v-model="form.modelId" :backend="form.backend" :exclude-ids="primaryExcludeIds" :allowed-vendors="lockedFamily ? [lockedFamily] : []" variant="compact" hide-command hide-auto-sub hide-reset />
             <AppSelect v-else v-model="form.modelId" :options="optionsFor(form.modelId)" :aria-label="c.primarySlot" :placeholder="c.selectModel" :loading="catalogLoading" searchable allow-custom custom-position="last" data-testid="model-configuration-model-id">
               <template #leading><VendorMark :vendor="slotVendor(form.modelId)" :size="28" :unknown="slotUnavailable(form.modelId)" /></template>
               <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
@@ -474,7 +483,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
           <button type="button" class="model-add" data-testid="model-configuration-add-model" :disabled="!canAddModel" :title="canAddModel ? '' : c.noMoreModels" @click="addAuxiliary"><Icon name="plus" :size="14" />{{ c.addModel }}</button>
           <p v-if="auxiliaryProblem" class="mb-0 text-xs text-err">{{ auxiliaryProblem }}</p>
           <p v-if="officialProblem" class="mb-0 text-xs text-err" data-testid="model-configuration-official-problem">{{ officialProblem }}</p>
-          <template v-if="form.kind !== 'platform'">
+          <template v-if="form.kind !== 'platform' && form.kind !== 'local'">
             <p class="mb-0 text-xs leading-5 text-txt3">{{ c.manualModelHint }}</p>
             <p v-if="configurableImageInput && form.modelId.trim()" class="mb-0 text-xs leading-5 text-txt3">{{ c.imageInputSharedHint }}</p>
             <template v-if="roleNames.length">
@@ -494,7 +503,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
         </template>
         <p v-if="error" role="alert" class="break-words text-xs text-err" data-testid="model-configuration-error">{{ error }}</p>
       </div>
-      <template #footer><AppButton variant="ghost" :icon="step > 1 ? undefined : 'close'" :disabled="saving" data-testid="model-configuration-back" @click="step > 1 ? step-- : (open = false)">{{ step > 1 ? c.back : c.cancel }}</AppButton><AppButton v-if="step < 3" variant="primary" icon="arrow-right" :disabled="step === 1 ? !form.name.trim() : !sourceValid" data-testid="model-configuration-next" @click="step++">{{ c.next }}</AppButton><AppButton v-else variant="primary" :loading="saving" :disabled="!valid || saving" data-testid="model-configuration-save" @click="save">{{ c.save }}</AppButton></template>
+      <template #footer><AppButton variant="ghost" :icon="step > 1 ? undefined : 'close'" :disabled="saving" data-testid="model-configuration-back" @click="step > 1 ? (step = localMode && step === 3 ? 1 : step - 1) : (open = false)">{{ step > 1 ? c.back : c.cancel }}</AppButton><AppButton v-if="step < 3" variant="primary" icon="arrow-right" :disabled="step === 1 ? !form.name.trim() : !sourceValid" data-testid="model-configuration-next" @click="step = localMode && step === 1 ? 3 : step + 1">{{ c.next }}</AppButton><AppButton v-else variant="primary" :loading="saving" :disabled="!valid || saving" data-testid="model-configuration-save" @click="save">{{ c.save }}</AppButton></template>
     </CredentialEditorSurface>
   </section>
 </template>

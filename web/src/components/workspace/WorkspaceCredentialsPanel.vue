@@ -14,6 +14,7 @@ import { isModelCredential, modelProviderPreset, MODEL_PROTOCOLS, useRoutingCopy
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 import { api, type CredentialItem, type ModelConfiguration, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
 import { fmtTime } from '@/lib/shared/format'
+import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { useToast } from '@/lib/composables/useToast'
 import {
   CREDENTIAL_KINDS,
@@ -32,6 +33,7 @@ const emit = defineEmits<{ changed: []; credentialSaved: [credential: Credential
 const { t } = useI18n()
 const toast = useToast()
 const routingCopy = useRoutingCopy()
+const { localMode } = useExecutionMode()
 const addMenuOpen = ref(false)
 const addTrigger = ref<InstanceType<typeof AppButton> | null>(null)
 const addMenu = ref<HTMLElement | null>(null)
@@ -83,12 +85,13 @@ async function addFromMenu(kind: 'credential' | 'model') {
   if (kind === 'credential') openCreate()
   else { activeTab.value = 'models'; await nextTick(); await modelConfigurationManager.value?.openCreate() }
 }
-const activeTab = ref<'credentials' | 'models'>(props.view || (props.scope === 'model' ? 'models' : 'credentials'))
-watch(() => props.view, (view) => { if (view) activeTab.value = view })
+const activeTab = ref<'credentials' | 'models'>(localMode.value ? 'models' : props.view || (props.scope === 'model' ? 'models' : 'credentials'))
+watch(() => props.view, (view) => { if (view && !localMode.value) activeTab.value = view })
+watch(localMode, (isLocal) => { if (isLocal) activeTab.value = 'models' }, { immediate: true })
 const setupStarting = ref(false)
 const modelEditorOpen = ref(false)
 const connectionEditorOpen = ref(false)
-const tabs = computed(() => props.scope === 'git' ? ['credentials'] as const : ['credentials', 'models'] as const)
+const tabs = computed(() => localMode.value ? ['models'] as const : props.scope === 'git' ? ['credentials'] as const : ['credentials', 'models'] as const)
 const serviceConnections = ref<ModelConnection[]>([])
 const connectionManager = ref<InstanceType<typeof ModelConnectionEditor> | null>(null)
 const modelConfigurationManager = ref<InstanceType<typeof ModelConfigurationManager> | null>(null)
@@ -677,12 +680,13 @@ watch(showCreate, (open) => {
         <header v-show="!setup && (!inline || !editorActive)" class="credentials-header">
           <div class="flex min-w-0 items-center gap-3.5">
             <div class="min-w-0">
-              <h2 class="m-0 text-[20px] font-semibold tracking-tight text-txt">{{ view === 'credentials' ? routingCopy.credentials : scope === 'model' || view === 'models' ? routingCopy.modelsTab : scope === 'git' ? t('pages.workspace.credentials.sections.git') : t('pages.workspace.credentials.title') }}</h2>
+              <h2 class="m-0 text-[20px] font-semibold tracking-tight text-txt">{{ localMode ? routingCopy.modelsTab : view === 'credentials' ? routingCopy.credentials : scope === 'model' || view === 'models' ? routingCopy.modelsTab : scope === 'git' ? t('pages.workspace.credentials.sections.git') : t('pages.workspace.credentials.title') }}</h2>
+              <p v-if="localMode" class="mb-0 mt-2 text-[13px] leading-6 text-txt3" data-testid="workspace-local-mode-hint">{{ routingCopy.localModeHint }}</p>
             </div>
           </div>
-          <div v-if="inline || view" class="flex flex-wrap gap-2">
+          <div v-if="localMode || inline || view" class="flex flex-wrap gap-2">
             <AppButton v-if="scope !== 'git' && view !== 'credentials'" size="sm" variant="primary" icon="plus" data-testid="workspace-add-model" data-editor-trigger @click="openModelCreate">{{ t('pages.workspace.credentials.addModel') }}</AppButton>
-            <AppButton v-if="view !== 'models'" size="sm" :variant="scope === 'git' || view === 'credentials' ? 'primary' : 'outline'" icon="key" data-testid="workspace-add-credential" data-editor-trigger @click="openCreate">{{ t('pages.workspace.credentials.create') }}</AppButton>
+            <AppButton v-if="!localMode && view !== 'models'" size="sm" :variant="scope === 'git' || view === 'credentials' ? 'primary' : 'outline'" icon="key" data-testid="workspace-add-credential" data-editor-trigger @click="openCreate">{{ t('pages.workspace.credentials.create') }}</AppButton>
           </div>
           <AppButton
             v-else

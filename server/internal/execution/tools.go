@@ -12,8 +12,95 @@ import (
 var lookPath = defaultLookPath
 
 func defaultLookPath(name string) error {
-	_, err := exec.LookPath(name)
-	return err
+	if _, err := exec.LookPath(name); err == nil {
+		return nil
+	} else if !Local() {
+		return err
+	}
+	for _, dir := range localCLIDirs() {
+		cand := filepath.Join(dir, name)
+		if st, err := os.Stat(cand); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return nil
+		}
+	}
+	return exec.ErrNotFound
+}
+
+// Keep discovery and the launched backend's PATH on the same host directories.
+func localCLIDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	return []string{
+		filepath.Join(home, ".local", "bin"),
+		filepath.Join(home, ".cursor", "bin"),
+		filepath.Join(home, ".kimi", "bin"),
+		filepath.Join(home, ".npm-global", "bin"),
+	}
+}
+
+func appendLocalCLIPath(env map[string]string) {
+	if env == nil {
+		return
+	}
+	path, configured := env["PATH"]
+	if !configured {
+		path = os.Getenv("PATH")
+	}
+	dirs := filepath.SplitList(path)
+	seen := make(map[string]bool, len(dirs))
+	for _, dir := range dirs {
+		seen[dir] = true
+	}
+	for _, dir := range localCLIDirs() {
+		if !seen[dir] {
+			dirs = append(dirs, dir)
+			seen[dir] = true
+		}
+	}
+	env["PATH"] = strings.Join(dirs, string(os.PathListSeparator))
+}
+
+// KnownProviders is the canonical list of supported Agent CLI providers.
+var KnownProviders = []string{
+	"claude_code",
+	"codex",
+	"cursor",
+	"opencode",
+	"deepseek_harness",
+	"kimi_code",
+	"codebuddy",
+	"trae",
+}
+
+// InstalledProviders returns the subset of KnownProviders whose CLI binary is installed locally.
+func InstalledProviders() []string {
+	out := make([]string, 0, len(KnownProviders))
+	for _, p := range KnownProviders {
+		bin, ok := CLIForProvider(p)
+		if !ok {
+			continue
+		}
+		if err := lookPath(bin); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// HostGitIdentity reads the host user's global git user.name and user.email when running in Local mode.
+func HostGitIdentity() (name, email string) {
+	if !Local() {
+		return "", ""
+	}
+	if out, err := exec.Command("git", "config", "--global", "--get", "user.name").Output(); err == nil {
+		name = strings.TrimSpace(string(out))
+	}
+	if out, err := exec.Command("git", "config", "--global", "--get", "user.email").Output(); err == nil {
+		email = strings.TrimSpace(string(out))
+	}
+	return name, email
 }
 
 // SetLookPathForTest replaces CLI lookup. The returned function restores it.
@@ -65,6 +152,10 @@ func RequireTools(provider string, env map[string]string) error {
 	if err := lookPath(bin); err != nil {
 		return fmt.Errorf("工作树镜像缺少 CLI %s（%s），无法启动。不会改用沙箱容器", bin, name)
 	}
+	if Local() {
+		appendLocalCLIPath(env)
+		return nil
+	}
 	if !previewRequested(env) {
 		return nil
 	}
@@ -81,6 +172,25 @@ func RequireTools(provider string, env map[string]string) error {
 	}
 	return nil
 }
+
+// PreviewAvailable reports whether the local VNC/browser preview toolchain is installed.
+func PreviewAvailable() bool {
+	if err := lookPath("chrome-devtools-mcp"); err != nil {
+		return false
+	}
+	if !hasChromium() {
+		return false
+	}
+	for _, bin := range []string{"Xvfb", "x11vnc", "websockify", "socat"} {
+		if err := lookPath(bin); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// PreviewRequested reports whether env enables any browser/VNC preview.
+func PreviewRequested(env map[string]string) bool { return previewRequested(env) }
 
 func previewRequested(env map[string]string) bool {
 	for _, key := range []string{"BROWSER_MCP", "VNC_PREVIEW", "PREVIEW_DIRECT"} {

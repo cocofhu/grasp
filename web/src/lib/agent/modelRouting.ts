@@ -51,6 +51,7 @@ export function bindingProblem(binding: ModelBinding | ConcreteModelBinding | un
     return bindingProblem(configuration.binding, toolId, connections, credentials, capabilities)
   }
   if (!binding) return 'missingConfiguration'
+  if (binding.kind === 'local') return ''
   if (binding.kind === 'platform') return credentials.some((item) => item.id === binding.credentialId && credentialUsable(item) && isToolCredential(item, toolId)) ? '' : 'missingCredential'
   const connection = connections.find((item) => item.id === binding.connectionId)
   if (!connection || connection.state !== 'active') return 'missingConnection'
@@ -66,6 +67,7 @@ export function bindingProblem(binding: ModelBinding | ConcreteModelBinding | un
 }
 
 const zh = {
+  localModeHint: '本地模式复用本机 Agent CLI 登录和 Git 配置。请先在终端安装并登录所用工具，无需在此添加凭据。',
   allConfigurations: '继承所有已配置的模型组', allConfigurationsHint: '自动继承所有已启用的模型组，新增模型组和组内配置变更会同步生效。', startupDefault: '默认启动模型组',
   defaultGroup: '默认组', makeDefault: '设为默认', addGroup: '绑定其他模型组',
   imageInput: '图片输入', imageInputDefault: '未声明（使用工具默认值）', imageInputText: '仅文字', imageInputImage: '文字和图片', imageInputSharedHint: '图片能力设置会应用到使用同一 API 账号和模型的配置。',
@@ -76,6 +78,7 @@ const zh = {
   officialFamilyHint: 'OpenCode 与 OpenCode Go 是两套订阅。各存一把 OpenCode CLI 钥匙，用别名区分；一份模型配置只绑其中一把，主模型与辅助模型必须同属一家。官方模式可以使用 opencode/<模型> 或 opencode-go/<模型>。',
 }
 const en: Record<keyof typeof zh, string> = {
+  localModeHint: 'Local mode uses your CLI logins and Git settings on this computer. Install and sign in to each coding tool in your terminal; no workspace credentials are needed here.',
   allConfigurations: 'Inherit all configured model groups', allConfigurationsHint: 'Inherit every active model group. New groups and group configuration changes are included automatically.', startupDefault: 'Default startup model group',
   defaultGroup: 'Default', makeDefault: 'Make default', addGroup: 'Bind another model group',
   imageInput: 'Image input', imageInputDefault: 'Unspecified (tool default)', imageInputText: 'Text only', imageInputImage: 'Text and images', imageInputSharedHint: 'Image settings apply to configurations using the same API account and model.',

@@ -12,7 +12,11 @@ func TestModeDefaultsToSandbox(t *testing.T) {
 		t.Fatal("sandbox image must not take the worktree path")
 	}
 	t.Setenv(EnvMode, ModeWorktree)
-	if Mode() != ModeWorktree || !Worktree() {
+	if Mode() != ModeWorktree || !Worktree() || Local() {
 		t.Fatal("worktree image was not recognized")
+	}
+	t.Setenv(EnvMode, ModeLocal)
+	if Mode() != ModeLocal || !Worktree() || !Local() {
+		t.Fatal("local mode was not recognized as worktree + local")
 	}
 }

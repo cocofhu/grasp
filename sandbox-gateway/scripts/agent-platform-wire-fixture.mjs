@@ -42,8 +42,9 @@ const kimiDefaultEffort = (model) => kimiWireModel(model) === 'kimi-for-coding' 
 // Read only Grasp's generated TOML fields. This deliberately consumes the
 // native CLI config, never Grasp's desired session-effort environment variable.
 export function kimiConfiguration(config, secret) {
-  if (!secret) throw new Error('KIMI_CODE_API_KEY was not set')
-  if (!config.includes('api_key_env = "KIMI_CODE_API_KEY"') || config.includes(secret)) throw new Error('kimi config.toml must name the key variable and must not contain the key')
+  const localAuth = process.env.GRASP_LOCAL_AUTH === '1'
+  if (!secret && !localAuth) throw new Error('KIMI_CODE_API_KEY was not set')
+  if (!localAuth && (!config.includes('api_key_env = "KIMI_CODE_API_KEY"') || (secret && config.includes(secret)))) throw new Error('kimi config.toml must name the key variable and must not contain the key')
   if (!/base_url = "https:\/\/api\.kimi\.(?:com|ai)\/coding\/v1"/.test(config)) throw new Error('kimi config.toml site is not an official Kimi Code subscription endpoint')
   const tables = new Map([['', {}]])
   let table = tables.get('')
@@ -58,6 +59,7 @@ export function kimiConfiguration(config, secret) {
       if (field) table[field[1]] = JSON.parse(field[2])
     }
   }
+  if (localAuth && !(tables.get('providers.kimi')?.api_key || tables.get('providers.kimi.oauth')?.key)) throw new Error('local Kimi config.toml must contain saved login authentication')
   const model = tables.get('').default_model
   if (!kimiModels.includes(kimiWireModel(model))) throw new Error('unknown fixture Kimi model')
   const nativeModel = tables.get(`models."${model}"`) || tables.get(`models.${model}`) || {}

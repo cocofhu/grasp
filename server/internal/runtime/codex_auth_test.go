@@ -74,6 +74,24 @@ func TestPrepareAuthEnvCodexStripsKeyAndRequiresFile(t *testing.T) {
 	}
 }
 
+func TestPrepareAuthEnvLocalCodexStripsAPIKeys(t *testing.T) {
+	t.Setenv("GRASP_EXECUTION_MODE", "local")
+	out, err := PrepareAuthEnv(BackendCodex, map[string]string{
+		EnvLocalAuth:        "1",
+		"OPENAI_API_KEY":    "host-openai-key",
+		"CODEX_API_KEY":     "host-codex-key",
+		"ACP_CODEX_API_KEY": "host-acp-key",
+	}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"OPENAI_API_KEY", "CODEX_API_KEY", "ACP_CODEX_API_KEY"} {
+		if _, exists := out[key]; exists {
+			t.Fatalf("local Codex retained %s instead of using its staged login", key)
+		}
+	}
+}
+
 func TestMergeAuthEnvExistingBackendsUnchanged(t *testing.T) {
 	cases := []struct {
 		backend AcpBackend

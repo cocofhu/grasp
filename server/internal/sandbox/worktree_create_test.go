@@ -457,3 +457,50 @@ func gitWorktreeOut(t *testing.T, dir string, args ...string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+func TestSeedLocalAuthConfigHomeMergesAndCopiesHostConfigs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// 1. OpenCode: merge host opencode.json with Grasp's mcp entries.
+	hostOpenCode := filepath.Join(home, ".config", "opencode")
+	if err := os.MkdirAll(hostOpenCode, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostOpenCode, "opencode.json"), []byte(`{"model":"deepseek/deepseek-chat","provider":{"deepseek":{"options":{"baseURL":"https://api.deepseek.com/v1"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostOpenCode, "auth.json"), []byte(`{"deepseek":"token"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	openCodeRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(openCodeRoot, "opencode.json"), []byte(`{"$schema":"https://opencode.ai/config.json","mcp":{"artifact-store":{"type":"remote","url":"http://127.0.0.1:9999/mcp"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedLocalAuthConfigHome("opencode", openCodeRoot)
+	mergedJSON, err := os.ReadFile(filepath.Join(openCodeRoot, "opencode.json"))
+	if err != nil || !strings.Contains(string(mergedJSON), "deepseek/deepseek-chat") || !strings.Contains(string(mergedJSON), "artifact-store") {
+		t.Fatalf("opencode.json merge failed: %s %v", mergedJSON, err)
+	}
+	if _, err := os.Lstat(filepath.Join(openCodeRoot, "auth.json")); err != nil {
+		t.Fatalf("auth.json was not copied: %v", err)
+	}
+
+	// 2. Codex: merge host config.toml with Grasp's mcp_servers.
+	hostCodex := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(hostCodex, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostCodex, "config.toml"), []byte("model = \"gpt-5\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	codexRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(codexRoot, "config.toml"), []byte("[mcp_servers.artifact-store]\nurl = \"http://127.0.0.1:9999/mcp\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seedLocalAuthConfigHome("codex", codexRoot)
+	mergedTOML, err := os.ReadFile(filepath.Join(codexRoot, "config.toml"))
+	if err != nil || !strings.Contains(string(mergedTOML), "gpt-5") || !strings.Contains(string(mergedTOML), "artifact-store") {
+		t.Fatalf("config.toml merge failed: %s %v", mergedTOML, err)
+	}
+}

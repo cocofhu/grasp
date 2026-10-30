@@ -50,6 +50,7 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 		return nil, fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
 	}
 	provider := strings.TrimSpace(env["AGENT_PROVIDER"])
+	dropUnavailableLocalPreview(env)
 	if err := execution.RequireTools(provider, env); err != nil {
 		return nil, err
 	}
@@ -87,8 +88,11 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	if env["CODEX_HOME"] != "" || provider == "codex" {
 		env["CODEX_HOME"] = configRoot
 	}
+	if execution.Local() && strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" {
+		seedLocalAuthConfigHome(provider, configRoot)
+	}
 	env["WORKSPACE_DIR"] = launch.Root
-	env[execution.EnvMode] = execution.ModeWorktree
+	env[execution.EnvMode] = execution.Mode()
 	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
 	if err != nil {
 		return nil, err
@@ -192,6 +196,7 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 		return fmt.Errorf("sandbox spec missing %s", BridgePasswordEnv)
 	}
 	provider := strings.TrimSpace(env["AGENT_PROVIDER"])
+	dropUnavailableLocalPreview(env)
 	if err := execution.RequireTools(provider, env); err != nil {
 		return err
 	}
@@ -209,8 +214,11 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 	} else {
 		delete(env, "CODEX_HOME")
 	}
+	if execution.Local() && strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" {
+		seedLocalAuthConfigHome(provider, configRoot)
+	}
 	env["WORKSPACE_DIR"] = sb.WorkspaceDir
-	env[execution.EnvMode] = execution.ModeWorktree
+	env[execution.EnvMode] = execution.Mode()
 	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
 	if err != nil {
 		return err
@@ -257,19 +265,38 @@ func worktreeSessionStop(stop, cleanupGit func()) func() {
 	}
 }
 
+// A host without the preview toolchain still runs the Agent, without preview.
+func dropUnavailableLocalPreview(env map[string]string) {
+	if !execution.Local() || execution.PreviewAvailable() {
+		return
+	}
+	if execution.PreviewRequested(env) {
+		log.Warn().Str("provider", env["AGENT_PROVIDER"]).Msg("local browser preview requested but Chromium/VNC tools are not installed; running without preview")
+	}
+	for _, key := range []string{"BROWSER_MCP", "VNC_PREVIEW", "PREVIEW_DIRECT"} {
+		delete(env, key)
+	}
+}
+
 // authFromSpec copies the credentials this launch already resolved. An explicit
 // catalog does not fall back to host tokens or the legacy SSH key. A
 // repository-scoped catalog row outranks a broader one. Solo, workflow runs,
 // conversation tests, and the assistant all arrive through Create with those
 // fields set.
 func authFromSpec(spec Spec) execution.Auth {
-	auth := execution.Auth{Configured: spec.GitBindingsConfigured}
+	// Local's empty binding deliberately uses host Git authorization, but must
+	// not revive unrelated legacy credentials from Spec.Env or SSH fields.
+	if execution.Local() && len(spec.GitCredentials) == 0 && spec.GitBindingsConfigured {
+		return execution.Auth{}
+	}
+	configured := spec.GitBindingsConfigured
+	auth := execution.Auth{Configured: configured}
 	for _, cred := range spec.GitCredentials {
 		auth.Credentials = append(auth.Credentials, execution.Credential{
 			Kind: cred.Kind, Scope: cred.Scope, Secret: cred.Secret, KnownHosts: cred.KnownHosts,
 		})
 	}
-	if spec.GitBindingsConfigured {
+	if configured {
 		return auth
 	}
 	auth.SSHPrivateKey = spec.SSHPrivateKey
@@ -308,7 +335,10 @@ func envList(overlay map[string]string) []string {
 	}
 	for _, item := range base {
 		key, _, _ := strings.Cut(item, "=")
-		if skip[key] || worktreeGitEnvKey(key) || envauth.IsSecretEnvKey(key) || envauth.IsPlatformReservedEnvKey(key) {
+		if skip[key] || envauth.IsPlatformReservedEnvKey(key) {
+			continue
+		}
+		if worktreeGitEnvKey(key) || envauth.IsSecretEnvKey(key) {
 			continue
 		}
 		out = append(out, item)

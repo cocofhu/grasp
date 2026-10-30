@@ -12,6 +12,7 @@ import (
 
 	"backend/internal/acp"
 	"backend/internal/provider"
+	"github.com/pelletier/go-toml/v2"
 )
 
 func setupKimiFixture(t *testing.T, mode string) string {
@@ -153,8 +154,20 @@ func TestKimiACPProcess(t *testing.T) {
 		}
 	}
 	config, err := os.ReadFile(filepath.Join(os.Getenv("KIMI_CODE_HOME"), "config.toml"))
-	if err != nil || strings.Contains(string(config), os.Getenv(APIKeyEnv)) {
+	secret := os.Getenv(APIKeyEnv)
+	if err != nil || secret != "" && strings.Contains(string(config), secret) {
 		os.Exit(3)
+	}
+	if os.Getenv("GRASP_LOCAL_AUTH") == "1" {
+		var parsed struct {
+			Providers map[string]struct {
+				Key string `toml:"api_key"`
+				Env string `toml:"api_key_env"`
+			} `toml:"providers"`
+		}
+		if toml.Unmarshal(config, &parsed) != nil || parsed.Providers["kimi"].Key != "synthetic-saved-kimi-key" || parsed.Providers["kimi"].Env != "" {
+			os.Exit(8)
+		}
 	}
 	model := defaultModel
 	for line := range strings.SplitSeq(string(config), "\n") {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
@@ -325,5 +326,93 @@ func TestModelConfigurationDoesNotReportFailedWritesAsSaved(t *testing.T) {
 	stored, err := configurations.Get(configuration.ID)
 	if err != nil || stored.Name == "Unsaved change" || stored.Revision != 1 {
 		t.Fatalf("failed update changed persisted revision: %+v %v", stored, err)
+	}
+}
+
+func TestLocalModeModelConfigurationsAndConnections(t *testing.T) {
+	t.Setenv("GRASP_EXECUTION_MODE", "local")
+	t.Cleanup(execution.SetLookPathForTest(func(name string) error {
+		if name == "codex" || name == "dsh" {
+			return nil
+		}
+		return errors.New("not installed")
+	}))
+	db := newTestDB(t)
+	connections, configurations := NewModelConnectionService(db), NewModelConfigurationService(db)
+	items, err := configurations.List()
+	if err != nil || len(items) == 0 {
+		t.Fatalf("expected auto-seeded local configurations, got %+v %v", items, err)
+	}
+	if items[0].Binding.Kind != "local" || items[0].Binding.CredentialID != "" {
+		t.Fatalf("expected kind=local without credential, got %+v", items[0])
+	}
+	resolved, err := connections.Resolve(items[0].Backend, modelrouting.Binding{
+		Kind:            "configuration",
+		ConfigurationID: items[0].ID,
+	})
+	if err != nil || resolved.Binding.Kind != "local" || resolved.Secret != "" {
+		t.Fatalf("expected credential-free resolution in local mode, got %+v %v", resolved, err)
+	}
+	created, err := configurations.Create(modelrouting.Configuration{
+		Name:    "Custom Local Group",
+		Backend: "deepseek_harness",
+		Binding: modelrouting.Binding{Kind: "local", ModelID: "deepseek-flash"},
+	})
+	if err != nil || created.Binding.Kind != "local" || created.Binding.ModelID != "deepseek-flash" {
+		t.Fatalf("create local configuration failed: %+v %v", created, err)
+	}
+}
+
+func TestLocalDefaultsOnlySeedInstalledTools(t *testing.T) {
+	t.Setenv("GRASP_EXECUTION_MODE", "local")
+	installed := map[string]bool{}
+	t.Cleanup(execution.SetLookPathForTest(func(name string) error {
+		if installed[name] {
+			return nil
+		}
+		return errors.New("not installed")
+	}))
+	configurations := NewModelConfigurationService(newTestDB(t))
+	items, err := configurations.List()
+	if err != nil || len(items) != 0 {
+		t.Fatalf("uninstalled CLIs became selectable: %+v %v", items, err)
+	}
+	installed["codex"] = true
+	items, err = configurations.List()
+	if err != nil || len(items) != 1 || items[0].Backend != "codex" {
+		t.Fatalf("installed CLI was not discovered: %+v %v", items, err)
+	}
+	items, err = configurations.List()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("discovery was not idempotent: %+v %v", items, err)
+	}
+	if err := configurations.Delete(items[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if items, err = configurations.List(); err != nil || len(items) != 0 {
+		t.Fatalf("deleted default group was recreated: %+v %v", items, err)
+	}
+	installed["dsh"] = true
+	if items, err = configurations.List(); err != nil || len(items) != 1 || items[0].Backend != "deepseek_harness" {
+		t.Fatalf("a newly installed CLI was not discovered after a deletion: %+v %v", items, err)
+	}
+}
+
+func TestLocalBindingRequiresExplicitKindAndLocalExecution(t *testing.T) {
+	db := newTestDB(t)
+	configurations, connections := NewModelConfigurationService(db), NewModelConnectionService(db)
+	for _, mode := range []string{"sandbox", "worktree", "local"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv(execution.EnvMode, mode)
+			for _, kind := range []string{"", "platform", "local"} {
+				binding := modelrouting.Binding{Kind: kind}
+				_, createErr := configurations.Create(modelrouting.Configuration{Name: "Explicit source", Backend: "codex", Binding: binding})
+				_, resolveErr := connections.Resolve("codex", binding)
+				wantSuccess := mode == "local" && kind == "local"
+				if (createErr == nil) != wantSuccess || (resolveErr == nil) != wantSuccess {
+					t.Fatalf("mode=%s kind=%q: create=%v resolve=%v", mode, kind, createErr, resolveErr)
+				}
+			}
+		})
 	}
 }
