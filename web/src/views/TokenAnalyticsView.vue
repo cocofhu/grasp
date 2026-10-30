@@ -1001,7 +1001,6 @@ const fxCount = computed(() => fxChips.value.length)
             class="usage-primary-trend"
             data-testid="token-analytics-lines"
             :title="t('pages.tokenAnalytics.charts.lines')"
-            :hint="t('pages.tokenAnalytics.charts.linesHint')"
             :modes="lineModes"
             :mode="lineMode"
             @update:mode="lineMode = $event as TrendMode"
