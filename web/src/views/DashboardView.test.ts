@@ -896,6 +896,31 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
+  it('passes composer focus, typing and sendable submits to yume', async () => {
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const yume = wrapper.getComponent({ name: 'HomeYumeCharacter' })
+    const input = wrapper.get('[data-testid="home-composer-input"]')
+    expect(yume.props()).toMatchObject({ attentive: false, typingTick: 0, cheerTick: 0 })
+
+    await input.trigger('focus')
+    expect(yume.props('attentive')).toBe(true)
+
+    await wrapper.get('[data-testid="home-composer"]').trigger('submit')
+    await flushPromises()
+    expect(yume.props('cheerTick')).toBe(0)
+
+    await input.setValue('把登录做清楚')
+    expect(yume.props('typingTick')).toBe(1)
+    await wrapper.get('[data-testid="home-composer"]').trigger('submit')
+    await flushPromises()
+    expect(yume.props('cheerTick')).toBe(1)
+
+    await input.trigger('blur')
+    expect(yume.props('attentive')).toBe(false)
+    wrapper.unmount()
+  })
+
   // plan g1.1 / g2.2 — Ctrl/⌘+Enter submits; bare Enter / Shift+Enter do not
   it('Ctrl/Meta+Enter submits; bare Enter and Shift+Enter keep the draft for a new line', async () => {
     const wrapper = mountDashboard()

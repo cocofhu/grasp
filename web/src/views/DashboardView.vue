@@ -115,8 +115,11 @@ watch(homeMode, (m) => {
 
 const composerBusy = computed(() => (homeMode.value === 'solo' ? solo.creating.value : sending.value))
 const composerCanSend = computed(() => (homeMode.value === 'solo' ? solo.canStart.value : canSend.value))
+const typingTick = ref(0)
+const cheerTick = ref(0)
 
 async function submitComposer() {
+  if (composerCanSend.value && !composerBusy.value) cheerTick.value++
   if (homeMode.value !== 'solo') {
     await send()
     return
@@ -259,6 +262,7 @@ function autoGrow() {
 
 function onTextInput() {
   autoGrow()
+  typingTick.value++
 }
 
 function onComposerKeydown(e: KeyboardEvent) {
@@ -698,7 +702,7 @@ onBeforeUnmount(() => {
       :style="homeModeTopInset != null ? { '--home-mode-top-inset': `${homeModeTopInset}px` } : undefined"
     >
       <div ref="homeBrandBlockEl" class="home-brand-block" data-testid="home-brand-block">
-        <HomeYumeCharacter />
+        <HomeYumeCharacter :attentive="composerFocused" :typing-tick="typingTick" :cheer-tick="cheerTick" />
         <p class="home-hero-copy" data-testid="home-hero-copy">{{ heroCopy }}</p>
       </div>
 

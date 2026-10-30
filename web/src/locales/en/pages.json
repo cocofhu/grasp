@@ -89,7 +89,6 @@
       },
       "charts": {
         "lines": "Usage trend",
-        "linesHint": "Compare this period with the previous period, by model or cost. Click a point for its events.",
         "pies": "Share",
         "piesHint": "Click a slice for details",
         "bars": "Consumption ranking",
