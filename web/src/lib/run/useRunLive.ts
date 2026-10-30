@@ -115,6 +115,16 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   const composerLocked = computed(() => mode.value === 'chat' && handoff.value?.phase === 'done')
   let chatBusy = false
   const endState = ref<LiveEndState | null>(null)
+  /**
+   * The next automatic visit is chosen but has not started. The page stays
+   * and ClarifyChat shows its existing 准备中 / 等待下一节点开始 row.
+   */
+  const preparing = ref<{ nodeId: string; label: string; at: string } | null>(null)
+  const followTail = computed(() => {
+    const row = preparing.value
+    if (!row || ended.value) return null
+    return { kind: 'waiting' as const, ...(row.label ? { label: row.label } : {}), at: row.at }
+  })
 
   let ws: WebSocket | null = null
   let wsRun = ''
@@ -184,6 +194,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   /** The node on screen finished: stop streaming and stay on this page. */
   function finish() {
     if (ended.value) return
+    preparing.value = null
     ended.value = true
     stopping.value = false
     stop()
@@ -306,11 +317,14 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     if (shown && mode.value === 'chat' && chatBusy && d.kind === 'chat' && d.nodeId === nodeId.value) return
     run.value = r
     loadError.value = false
+    if (d.kind === 'wait') {
+      notePreparing(d)
+      if (!shown) applyWait(d, id)
+      return
+    }
+    preparing.value = null
     // Between nodes after a node was shown: stay and wait for the next one.
-    if (shown && !c && (
-      r.status === 'running' || r.status === 'queued' ||
-      (r.status === 'waiting_human' && r.currentNode?.state === 'entering')
-    )) return
+    if (shown && !c && (r.status === 'running' || r.status === 'queued')) return
     if (d.kind === 'chat') {
       if (!shown) return goToChat(d.nodeId)
       if (d.nodeId === nodeId.value) {
@@ -341,6 +355,38 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
     if (shown && nodeId.value !== d.nodeId) return continueTo(d.nodeId, 'observe', c)
     applyObserve(d, id)
+  }
+
+  /**
+   * Open the conversation on a visit that has not started. Do not seed a turn
+   * and do not leave for run detail — the waiting row is the status.
+   */
+  function applyWait(d: { nodeId: string; label: string }, id: string) {
+    const next = d.nodeId
+    if (next && nodeId.value !== next) {
+      nodeId.value = next
+      iteration.value = 1
+      seededKey = ''
+      seededSurface = null
+      seedRequest++
+      lastEvents = null
+      task.value = ''
+      completedEvents.value = null
+    }
+    if (d.label) nodeLabel.value = d.label
+    mode.value = 'observe'
+    const first = !shown
+    shown = true
+    if (next) syncUrlNode(next)
+    if (first) void loadChain()
+    connect(id)
+  }
+
+  function notePreparing(d: { nodeId: string; label: string }) {
+    const label = d.label.trim()
+    const prev = preparing.value
+    if (prev && prev.nodeId === d.nodeId && prev.label === label) return
+    preparing.value = { nodeId: d.nodeId, label, at: prev?.at ?? new Date().toISOString() }
   }
 
   /** Same node still streaming (a poll / snapshot after the page continued in place). */
@@ -422,7 +468,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     const id = runId.value
     const node = nodeId.value
     const iter = iteration.value
-    if (!node || !run.value || (run.value.id && run.value.id !== id) || ended.value) return
+    if (preparing.value || !node || !run.value || (run.value.id && run.value.id !== id) || ended.value) return
     const key = `${id}:${node}:${iter}`
     const surface = chat.value
     const seedMode = mode.value
@@ -751,6 +797,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     seededSurface = null
     lastEvents = null
     aheadEvents = null
+    preparing.value = null
     pollTimer = window.setInterval(poll, LIVE_POLL_MS)
     void load()
   }, { immediate: true, flush: 'sync' })
@@ -784,6 +831,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     handoff,
     composerLocked,
     confirmError,
+    followTail,
     takeover,
     send,
     confirm,

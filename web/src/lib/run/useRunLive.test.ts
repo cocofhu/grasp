@@ -869,6 +869,44 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     wrapper.unmount()
   })
 
+  it('opens an entering auto node on the conversation and does not leave for run detail', async () => {
+    mocks.getRun.mockResolvedValue({
+      id: 'r1',
+      status: 'waiting_human',
+      title: '当前时间数据与上一格',
+      currentNode: { ...cur('impl', 'agent', 'auto', 'entering'), name: '调研' },
+    })
+    const { live, router, surface, wrapper } = await setup()
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=impl')
+    expect(live().ended.value).toBe(false)
+    expect(live().nodeId.value).toBe('impl')
+    expect(live().followTail.value).toEqual(expect.objectContaining({ kind: 'waiting', label: '调研' }))
+    expect(surface.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_begin' }))
+    mocks.getRun.mockResolvedValue({
+      id: 'r1',
+      status: 'running',
+      currentNode: { ...cur('impl', 'agent', 'auto', 'running'), name: '调研', task: '对齐当前时间' },
+    })
+    await live().reload()
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=impl')
+    expect(live().ended.value).toBe(false)
+    expect(live().mode.value).toBe('observe')
+    expect(live().nodeId.value).toBe('impl')
+    expect(live().followTail.value).toBeNull()
+    expect(surface.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_begin', nodeId: 'impl' }))
+    wrapper.unmount()
+  })
+
+  it('still leaves the conversation when the run is already finished, failed, or cancelled', async () => {
+    for (const status of ['completed', 'failed', 'cancelled'] as const) {
+      mocks.getRun.mockResolvedValue({ id: 'r1', status })
+      const { router, wrapper } = await setup()
+      expect(router.currentRoute.value.fullPath).toBe('/runs/r1')
+      wrapper.unmount()
+    }
+  })
+
   it('waits for an entering successor while the run still reports waiting_human', async () => {
     const { live, surface, wrapper } = await setup()
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('verify', 'agent', 'auto', 'entering') })

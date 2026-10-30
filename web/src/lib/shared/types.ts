@@ -1083,7 +1083,7 @@ export type RunNodeMode = 'auto' | 'manual'
  * takeover > gate > clarify > review > agent. mode is auto only for kind=agent.
  * state busy = a manual session turn is running (offer Stop).
  * state entering = a confirm already settled on this automatic agent, and its
- * visit has not started. The sidebar counts it; the live page does not.
+ * visit has not started. The sidebar counts it. The live page waits on it.
  */
 export interface RunCurrentNode {
   id: string

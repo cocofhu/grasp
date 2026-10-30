@@ -2686,6 +2686,45 @@ describe('自动过程 grouping and flight', () => {
     vi.useRealTimers()
   })
 
+  it('left-click opens the live chat for an entering auto row, including on a narrow screen; workflow menu still opens the canvas', async () => {
+    breakpointMocks.isMobile.value = true
+    const wrapper = await show([
+      run('run-x', '当前时间数据与上一格', 'waiting_human', auto('research', '调研', 'entering')),
+      run('run-h', '等人', 'waiting_human', { id: 'clarify', name: '需求澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' }),
+    ])
+    expect(wrapper.get('[data-testid="nav-auto-rows"]').find('[data-key="run-x"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="nav-running-rows"]').find('[data-key="run-h"]').exists()).toBe(true)
+    routerMocks.push.mockClear()
+    await wrapper.get('[data-key="run-x"]').trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-x/live', query: { node: 'research' } })
+
+    wrapper.get('[data-key="run-x"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 40 }),
+    )
+    await nextTick()
+    routerMocks.push.mockClear()
+    ;(document.querySelector('[data-testid="nav-pending-menu-workflow"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-x', query: { view: 'canvas' } })
+
+    routerMocks.push.mockClear()
+    await wrapper.get('[data-testid="nav-running-rows"]').get('[data-key="run-h"]').trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-h/nodes/clarify' })
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('opens the live chat when a confirmed automatic handoff has no watchable node yet', async () => {
+    armSidebarHandoff('run-x', 'clarify', Date.now(), { nodeId: 'impl', name: '实现' })
+    const wrapper = await show([run('run-x', '登录', 'waiting_human')])
+    expect(wrapper.get('[data-testid="nav-auto-rows"]').find('[data-key="run-x"]').exists()).toBe(true)
+    routerMocks.push.mockClear()
+    await wrapper.get('[data-key="run-x"]').trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith('/runs/run-x/live')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('splits waiting, queued and Solo from automatic runs, and hides an empty group', async () => {
     apiMocks.listSoloSessions.mockResolvedValue({
       sessions: [{ id: 'solo-1', title: '单独', agentName: '需求澄清', status: 'running', restarts: 0, busy: false, waiting: 0, createdAt: 'T', updatedAt: 'T' }],

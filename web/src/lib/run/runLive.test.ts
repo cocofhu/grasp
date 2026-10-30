@@ -28,11 +28,14 @@ describe('decideLive (server currentNode)', () => {
     expect(decideLive(run('waiting_human', cur('gate', 'gate', 'waiting_human')), 'impl')).toEqual({ kind: 'chat', nodeId: 'gate' })
     expect(decideLive(run('waiting_human', cur('impl', 'review', 'waiting_human')), 'impl')).toEqual({ kind: 'chat', nodeId: 'impl' })
     expect(decideLive(run('completed', cur('impl', 'agent', 'running')), 'impl')).toEqual({ kind: 'detail' })
+    expect(decideLive(run('failed', cur('impl', 'agent', 'running')), 'impl')).toEqual({ kind: 'detail' })
     expect(decideLive(run('cancelled'), 'impl')).toEqual({ kind: 'detail' })
   })
-  it('stays put (keeping its iteration) while the engine routes between nodes', () => {
+  it('stays on the conversation while the engine routes, and waits when nothing is watchable yet', () => {
     expect(decideLive(run('running'), 'impl')).toEqual({ kind: 'observe', nodeId: 'impl' })
-    expect(decideLive(run('running'), '')).toEqual({ kind: 'detail' })
+    expect(decideLive(run('running'), '')).toEqual({ kind: 'wait', nodeId: '', label: '' })
+    expect(decideLive(run('waiting_human'), '')).toEqual({ kind: 'wait', nodeId: '', label: '' })
+    expect(decideLive(run('queued'), '')).toEqual({ kind: 'detail' })
   })
   it('runningAutoNode is only an auto agent that is running', () => {
     expect(runningAutoNode(run('running', cur('impl', 'agent', 'running')))?.id).toBe('impl')
@@ -40,12 +43,15 @@ describe('decideLive (server currentNode)', () => {
     expect(runningAutoNode(run('waiting_human', cur('gate', 'gate', 'waiting_human')))).toBeNull()
     expect(runningAutoNode(run('running'))).toBeNull()
   })
-  it('does not observe an automatic successor that has not started', () => {
+  it('waits on the conversation for an automatic successor that has not started', () => {
     const entering = cur('impl', 'agent', 'entering')
     expect(runningAutoNode(run('waiting_human', entering))).toBeNull()
     expect(runningAutoNode(run('running', entering))).toBeNull()
-    expect(decideLive(run('waiting_human', entering), 'clarify')).toEqual({ kind: 'detail' })
-    expect(decideLive(run('running', entering), 'impl')).toEqual({ kind: 'detail' })
+    expect(decideLive(run('waiting_human', entering), 'clarify')).toEqual({ kind: 'wait', nodeId: 'impl', label: 'impl' })
+    expect(decideLive(run('running', entering), 'impl')).toEqual({ kind: 'wait', nodeId: 'impl', label: 'impl' })
+    expect(decideLive(run('completed', entering), 'impl')).toEqual({ kind: 'detail' })
+    expect(decideLive(run('failed', entering), 'impl')).toEqual({ kind: 'detail' })
+    expect(decideLive(run('cancelled', entering), '')).toEqual({ kind: 'detail' })
   })
 })
 

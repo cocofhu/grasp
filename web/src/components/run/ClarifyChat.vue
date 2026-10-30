@@ -1676,7 +1676,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       </Transition>
       <Transition name="clarify-row">
         <div
-          v-if="handoffRow && followTail && followTailView"
+          v-if="followTail && followTailView && (handoffRow || followTail.kind === 'waiting')"
           :key="followTail.kind + ':' + (followTail.label || '') + ':' + (followTail.status || '')"
           class="clarify-handoff-step chat-meta flex w-full min-w-0"
           data-testid="clarify-follow-tail"

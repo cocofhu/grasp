@@ -236,6 +236,8 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     expect(tail().text()).toContain('就绪后可直接输入')
     expect(icon()).toBe('arc-spinner')
     await w.setProps({ followTail: { kind: 'waiting', at } })
+    expect(tail().text()).toContain('等待下一节点开始')
+    expect(tail().text()).toContain('就绪后可直接输入')
     await flushPromises()
     expect(tail().text()).toContain('等待下一节点开始')
     await w.setProps({ followTail: { kind: 'error', at } })
@@ -258,6 +260,19 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     await flushPromises()
     expect(tail().text()).toContain('运行已取消')
     expect(icon()).toBe('warn-pulse')
+    w.unmount()
+  })
+
+  it('shows the waiting copy on the live conversation without a handoff row', async () => {
+    const w = mountChat({ observe: true, followTail: { kind: 'waiting', label: '调研', at: '' } })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-handoff"]').exists()).toBe(false)
+    const tail = w.get('[data-testid="clarify-follow-tail"]')
+    expect(tail.text()).toContain('「调研」准备中')
+    expect(tail.text()).toContain('就绪后可直接输入')
+    await w.setProps({ followTail: { kind: 'waiting', at: '' } })
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).toContain('等待下一节点开始')
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).toContain('就绪后可直接输入')
     w.unmount()
   })
 
