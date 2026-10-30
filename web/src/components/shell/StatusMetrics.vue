@@ -259,7 +259,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
       <button
         ref="compactTokenTrigger"
         type="button"
-        class="sm-item sm-zone relative inline-flex flex-1 items-center gap-1.5 rounded-md border-0 bg-transparent px-1.5 py-1 text-inherit hover:bg-surface hover:text-txt focus-visible:bg-surface focus-visible:text-txt focus-visible:outline-none"
+        class="sm-item sm-zone relative inline-flex shrink-0 items-baseline gap-1.5 rounded-md border-0 bg-transparent px-2 py-1.5 text-inherit hover:bg-surface hover:text-txt focus-visible:bg-surface focus-visible:text-txt focus-visible:outline-none"
         data-testid="status-metrics-compact-token"
         :aria-label="tokenZoneAria()"
         @click="goToStats"
@@ -267,8 +267,11 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         @mouseenter="onCompactZoneEnter('token')"
         @focus="onCompactZoneEnter('token')"
       >
-        <Icon name="token" :size="14" class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" aria-hidden="true" />
-        <span class="sm-val text-[11px] font-semibold leading-none text-txt">{{ fmtCompactTokenCount(cumulative) }}</span>
+        <span
+          class="sm-val text-xs font-semibold leading-none"
+          :class="cumulative == null ? 'text-txt3' : 'text-txt'"
+        >{{ fmtCompactTokenCount(cumulative) }}</span>
+        <span class="sm-lab font-sans text-[11px] leading-none text-txt3">{{ t('shell.statusMetrics.cardTokenTitle') }}</span>
         <span
           v-if="!usePortaledCompactTip"
           class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[220px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
@@ -289,23 +292,44 @@ function onCompactStripFocusOut(ev: FocusEvent) {
           </div>
         </span>
       </button>
-      <span class="mx-0.5 h-3 w-px shrink-0 bg-line-strong opacity-90" aria-hidden="true" />
+      <span class="mx-1 h-3.5 w-px shrink-0 bg-line-strong" aria-hidden="true" />
       <button
         ref="compactRunTrigger"
         type="button"
-        class="sm-item sm-zone relative inline-flex flex-1 items-center gap-1.5 rounded-md border-0 bg-transparent px-1.5 py-1 text-inherit hover:bg-surface hover:text-txt focus-visible:bg-surface focus-visible:text-txt focus-visible:outline-none"
+        class="sm-item sm-zone relative inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-md border-0 bg-transparent px-2 py-1.5 text-inherit hover:bg-surface hover:text-txt focus-visible:bg-surface focus-visible:text-txt focus-visible:outline-none"
         data-testid="status-metrics-compact-run"
+        :data-active="running > 0 ? 'true' : 'false'"
         :aria-label="runZoneAria()"
         @click="goToRuns"
         @keydown="onActivateKey($event, 'runs')"
         @mouseenter="onCompactZoneEnter('run')"
         @focus="onCompactZoneEnter('run')"
       >
-        <Icon name="runs" :size="14" class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" aria-hidden="true" />
-        <span class="sm-val text-[11px] font-semibold leading-none text-txt">{{ running }}</span>
-        <span class="text-txt3">/</span>
-        <Icon name="queue" :size="14" class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" aria-hidden="true" />
-        <span class="sm-val text-[11px] font-semibold leading-none text-txt">{{ queued }}</span>
+        <span class="relative inline-flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
+          <span
+            v-if="running > 0"
+            class="absolute inset-0 animate-ping rounded-full bg-ok opacity-60 motion-reduce:animate-none"
+          />
+          <span
+            class="relative h-1.5 w-1.5 rounded-full"
+            :class="running > 0 ? 'bg-ok' : 'bg-txt3/40'"
+          />
+        </span>
+        <span class="inline-flex items-baseline gap-1 truncate">
+          <span
+            class="sm-val text-xs font-semibold leading-none"
+            :class="running > 0 ? 'text-txt' : 'text-txt2'"
+          >{{ running }}</span>
+          <span class="sm-lab font-sans text-[11px] leading-none text-txt3">{{ t('shell.statusMetrics.running') }}</span>
+        </span>
+        <span class="text-txt3/60" aria-hidden="true">·</span>
+        <span class="inline-flex items-baseline gap-1 truncate">
+          <span
+            class="sm-val text-xs font-semibold leading-none"
+            :class="queued > 0 ? 'text-txt' : 'text-txt2'"
+          >{{ queued }}</span>
+          <span class="sm-lab font-sans text-[11px] leading-none text-txt3">{{ t('shell.statusMetrics.queued') }}</span>
+        </span>
         <span
           v-if="!usePortaledCompactTip"
           class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[180px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
@@ -376,6 +400,10 @@ function onCompactStripFocusOut(ev: FocusEvent) {
 .sm-item:hover .sm-ico,
 .sm-item:focus-visible .sm-ico,
 .sm-item.tip-open .sm-ico {
+  color: rgb(var(--c-txt2));
+}
+.sm-item:hover .sm-lab,
+.sm-item:focus-visible .sm-lab {
   color: rgb(var(--c-txt2));
 }
 .sm-item:hover .sm-tip,
