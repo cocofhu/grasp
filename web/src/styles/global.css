@@ -67,16 +67,17 @@ html.light {
   --c-surface: 255 255 255;
   --c-elevated: 244 244 245;
   --c-overlay: 233 233 236;
-  --c-line: 229 229 232;
-  --c-line-strong: 212 212 216;
+  --c-line: 226 226 232;
+  --c-line-strong: 208 208 216;
   --c-txt: 24 24 27;
-  --c-txt2: 82 82 91;
-  --c-txt3: 161 161 170;
+  --c-txt2: 72 72 82;
+  /* ≥4.5:1 on surface and base; lighter greys read as washed out at 11–12px */
+  --c-txt3: 113 113 122;
   --c-accent: 123 97 255;
   --c-accent-2: 79 70 229;
   /* Solid accent button hover fill — brand purple hue (#5424D8), deeper than accent-2 */
   --c-accent-hover: 84 36 216;
-  --c-accent-dim: 238 240 255;
+  --c-accent-dim: 240 237 255;
   --c-ok: 22 163 74;
   --c-warn: 217 119 6;
   --c-err: 220 38 38;

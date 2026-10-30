@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（亮色主题文字对比度与首页背景）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`web/src/styles/global.css`、`web/src/views/DashboardView.vue`、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：亮色主题 `--c-txt3` 由 `161 161 170` 加深为 `113 113 122`，`--c-txt2` 由 `82 82 91` 调为 `72 72 82`；`--c-line`／`--c-line-strong` 略加深；`--c-accent-dim` 改为偏紫的 `240 237 255`。首页粒子背景在亮色下透明度由 0.2 降为 0.1；发送按钮亮色禁用态改用 `line-strong` 底色，暗色保持 `txt3`。
+- 为什么：反馈亮色界面整体发灰、沉闷；原 `txt3` 在白底对比度约 2.6:1，11–12px 次要文字发虚，粒子纹理也加重灰感。新 `txt3` 在 surface／base 上约 4.8:1。
+- 如何验证：本地起 server + Vite，亮色首页前后截图对比，次要文字、占位符与边框更清晰，暗色未变；DashboardView、styles、dashboard 组件相关 15 个测试文件 174 项通过，lint 与 vue-tsc 通过。
+
 ### 2026-10-30（对话轮次 panic 兜底与 Solo 静默忙碌核对）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。
