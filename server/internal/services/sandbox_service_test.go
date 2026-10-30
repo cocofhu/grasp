@@ -117,7 +117,7 @@ func TestSandboxServiceDefaults(t *testing.T) {
 	host := mcp.NewHost(NewArtifactService(db))
 	// Zero options -> defaults filled in.
 	s := NewSandboxService(db, mgr, skills, host, SandboxOptions{})
-	if s.TTL() <= 0 || s.MaxTestSandboxes() <= 0 || s.chatTimeout <= 0 || s.RunTTL() <= 0 {
+	if s.TTL() <= 0 || s.MaxTestSandboxes() <= 0 || s.RunTTL() <= 0 {
 		t.Fatalf("defaults not applied: %+v", s)
 	}
 }

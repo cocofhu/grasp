@@ -56,8 +56,6 @@ const (
 	// shutdownHTTPTimeout bounds how long shutdown waits for in-flight HTTP
 	// requests. It is also the grace shown on the draining banner.
 	shutdownHTTPTimeout = 10 * time.Second
-	// pmTurnDeadline caps one PM / channel / cron turn.
-	pmTurnDeadline = 630 * time.Second
 )
 
 func main() {
@@ -432,9 +430,6 @@ func main() {
 	}
 	pmTurns := services.NewPmTurnRunner(pmSvc, sbxSvc)
 	pmTurns.SetCitationDeps(runSvc, artifactSvc, wfSvc)
-	// Raise the per-turn deadline well above the legacy 90s so channel/cron and
-	// interactive PM turns are not truncated (aligns with the sandbox chat cap).
-	pmTurns.SetTurnDeadline(pmTurnDeadline)
 	sbxSvc.SetAgentSandboxDestroyHook(func(threadID, token string) {
 		mcpWire.unregister(token)
 		mcpWire.clearSandboxRef(threadID)
