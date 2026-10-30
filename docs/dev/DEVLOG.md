@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（对话轮次 panic 兜底与 Solo 静默忙碌核对）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`server/internal/chatsession/session{,_test}.go`、`web/src/lib/solo/useSoloChat{,.test}.ts`、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：`chatsession` 泵以 `guardTurn` 包住 `BeforeTurn`、`Execute`、`AfterTurn`，panic 记录堆栈后按普通轮次错误发布 `error` 帧并继续处理队列；`BeforeTurn` panic 时跳过 `Execute`。Solo 在 socket 正常、本地 busy 且 30 秒无任何帧时读取 `getSoloSession`，仅当服务端 `busy=false` 且读取期间无新帧时重新订阅，由订阅快照结算当前轮。
+- 为什么：泵运行在独立 goroutine，未恢复的 panic 会终止整个进程，所有对话都收不到结束帧。Solo 此前只在启动或断线时轮询，socket 正常时若结束帧未被处理会一直显示执行中直至刷新。桥接层 liveness 不转发给 Solo 页面，长工具调用本身可以静默，因此只读核对、确认空闲后才重订阅。PM 线程没有返回权威 busy 的 REST 接口，强制重连会在长工具调用期间反复进入恢复态，本次不改。
+- 如何验证：新增 Go 回归覆盖 `Execute` panic 后发布 error、下一项继续执行、`AfterTurn` 仍运行，以及 `BeforeTurn` panic 跳过执行；新增 Solo 回归覆盖服务端空闲时重订阅结算、服务端仍忙时保持原连接、读取期间新帧使结果作废，前两项在旧实现失败。server golangci-lint 2.12、vet、配置文档检查、全量测试、runtime 专项与核心覆盖率 90.6% 通过；Web lint（0 error）、vue-tsc、生产构建及 544 文件 6,000 项单测通过，Lines 91.83%，关键路径浏览器 266 项通过；actionlint 与 error-level shellcheck 通过。本机 Node 默认堆上限约 2.2GB，生产构建需 `NODE_OPTIONS=--max-old-space-size=8192`，与本次改动无关。
+
 ### 2026-10-30（运行记录悬停行留白）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。

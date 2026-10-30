@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Chat turn safety:** an unexpected failure inside one chat turn now ends that turn with an error and lets queued messages continue, instead of stopping the server. A Solo conversation that stays busy without updates checks the session and recovers a missed completion without a page reload; long silent tool calls keep their connection.
+
 ## 3.1.0 — 2026-10-30
 
 Agents can run Kimi Code, keep several model groups, and execute in a worktree image. Conversations stay on the same visit through reconnects, queues and workflow switches.
