@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（智能体页去掉 Agent 列表栏、标签行重做）
+
+- 日期：2026-10-30。
+- 范围：`web/src/components/agent/AgentSwitcher{,.test}.{vue,ts}`、`web/src/components/agent/StudioTabStrip{,.test}.{vue,ts}`、`web/src/components/workspace/WorkspaceSharedAgentPanel.vue`、`web/src/components/agent/AgentSidebar{,.test}.{vue,ts}`、`web/src/views/AgentStudioView{,.test}.{vue,ts}`、`web/src/lib/agent/useAgentStudio{,.test}.ts`、`web/src/locales/{zh-CN,en}/pages.json`、`web/src/locales/userFacingCopy.test.ts`、`web/e2e/{agent-defaults-pinned,workspace,workspace-shared-env,agent-studio-mobile-data}.spec.ts`。
+- 做了什么：桌面端 Agent 列表不再占一整栏，改为顶部名称栏的「名称 ▾」切换下拉（`AgentSwitcher`，内含原 `AgentSidebar` 的搜索、默认配置置顶项、新建、更多菜单与右键重命名／删除）。默认配置、团队创建进度与未选中状态也都放同一个切换入口。移除 Agent 列表收起状态（`agentListCollapsed`、本地存储键与 780px 容器查询），更新「从左侧列表选择」等文案。窄屏底部抽屉不变。用户主动切换智能体（下拉、窄屏抽屉、从默认配置切回）改走 `selectKeepingTab`，保留当前标签页与数据子标签，不再回到「工作目录」；新建、删除、改名等程序选中仍按原逻辑。智能体与默认配置的标签行改用新组件 `StudioTabStrip`：13px 字号、选中加粗、数量从文案「(n)」改为徽标、滑动下划线、悬停时浅灰下划线（不用底色块，与选中态同一视觉语言），`role="tab"` / `aria-selected` 取代以 `border-accent` 判断选中；默认配置一行保留 `toolbar-inline-row` 并用 `dense`（32px）。
+- 为什么：设置页同时出现图标栏、设置目录、Agent 列表、文件树、编辑器五栏，编辑区被挤窄；Agent 切换频率远低于文件编辑，不需要常驻一栏。切换智能体时标签页跳回「工作目录」打断对比多个智能体同一配置的操作；原标签行字号小、「(n)」计数与灰色悬停块显得粗糙。
+- 如何验证：Web lint（0 error）、vue-tsc、生产构建通过；全量 546 文件、6,003 项单测通过，Lines 91.85%；关键路径浏览器用例 `test:e2e:ci` 266 项全部通过。另跑 `agent-studio-mobile-data`，其中 768px 元信息 `/root/workspace` 占位符用例在改动前的代码上同样失败，与本次无关。actionlint、error-level shellcheck、docs 构建与 high/critical audit 通过。本地真实后端下截图确认页面变为四栏、下拉不截断名称、切换智能体保留标签页、标签悬停只显示浅灰下划线。
+
 ### 2026-10-30（工作流与审批排队消息只留在队列）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。

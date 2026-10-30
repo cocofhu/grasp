@@ -2163,18 +2163,17 @@
       "unsaved": "未保存",
       "saved": "已保存",
       "tabs": {
-        "files": "工作目录 ({n})",
-        "mcp": "MCP ({n})",
-        "env": "环境变量 ({n})",
+        "files": "工作目录",
+        "mcp": "MCP",
+        "env": "环境变量",
         "test": "对话测试",
         "meta": "元信息",
         "data": "数据",
         "capabilities": "能力"
       },
-      "agentList": {
-        "title": "Agents",
-        "collapse": "收起 Agent 列表",
-        "expand": "展开 Agent 列表"
+      "switcher": {
+        "trigger": "切换智能体",
+        "choose": "选择智能体"
       },
       "tree": {
         "newTeam": "创建 Agent 团队",
@@ -2198,8 +2197,8 @@
         "lockedHint": "工作流需要此 Agent，不能删除或重命名。",
         "contextRename": "重命名",
         "contextDelete": "删除",
-        "noSelection": "未选中 Agent。从左侧列表选择。",
-        "metaRenameHint": "名称请在左侧列表右键重命名。此处不可编辑身份名称。"
+        "noSelection": "未选中 Agent。",
+        "metaRenameHint": "名称请在顶部智能体切换菜单中右键重命名。此处不可编辑身份名称。"
       },
       "explorer": {
         "title": "资源管理器",

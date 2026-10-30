@@ -2163,18 +2163,17 @@
       "unsaved": "Unsaved",
       "saved": "Saved",
       "tabs": {
-        "files": "Workspace ({n})",
-        "mcp": "MCP ({n})",
-        "env": "Env vars ({n})",
+        "files": "Workspace",
+        "mcp": "MCP",
+        "env": "Env vars",
         "test": "Chat test",
         "meta": "Metadata",
         "data": "Data",
         "capabilities": "Capabilities"
       },
-      "agentList": {
-        "title": "Agents",
-        "collapse": "Collapse agent list",
-        "expand": "Expand agent list"
+      "switcher": {
+        "trigger": "Switch agent",
+        "choose": "Choose an agent"
       },
       "tree": {
         "newTeam": "Create Agent team",
@@ -2198,8 +2197,8 @@
         "lockedHint": "Workflows need this Agent. It cannot be deleted or renamed.",
         "contextRename": "Rename",
         "contextDelete": "Delete",
-        "noSelection": "No agent selected. Pick one from the list.",
-        "metaRenameHint": "Right-click the agent in the list to rename it. The identity name is not editable here."
+        "noSelection": "No agent selected.",
+        "metaRenameHint": "Right-click the agent in the agent switcher to rename it. The identity name is not editable here."
       },
       "explorer": {
         "title": "Explorer",

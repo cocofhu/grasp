@@ -6,6 +6,7 @@ import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
 import AgentEnvPanel from '@/components/agent/AgentEnvPanel.vue'
 import AgentRuntimeBindings from '@/components/agent/AgentRuntimeBindings.vue'
+import StudioTabStrip from '@/components/agent/StudioTabStrip.vue'
 import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
 import { api, type SharedAgentConfig } from '@/lib/api/api'
 import {
@@ -43,15 +44,12 @@ const dirty = computed(() => {
 })
 
 const subTabs = computed(() => {
-  if (!draft.value) return [] as { k: SubTab; l: string }[]
+  if (!draft.value) return [] as { k: SubTab; l: string; n?: number }[]
   const d = draft.value
   return [
-    { k: 'files' as const, l: t('pages.agentStudio.tabs.files', { n: d.files.length }) },
-    { k: 'mcp' as const, l: t('pages.agentStudio.tabs.mcp', { n: d.mcp.length }) },
-    {
-      k: 'env' as const,
-      l: t('pages.agentStudio.tabs.env', { n: d.env.filter((e) => !isManagedRegionKey(e.k)).length }),
-    },
+    { k: 'files' as const, l: t('pages.agentStudio.tabs.files'), n: d.files.length },
+    { k: 'mcp' as const, l: t('pages.agentStudio.tabs.mcp'), n: d.mcp.length },
+    { k: 'env' as const, l: t('pages.agentStudio.tabs.env'), n: d.env.filter((e) => !isManagedRegionKey(e.k)).length },
     { k: 'meta' as const, l: t('pages.agentStudio.tabs.meta') },
   ]
 })
@@ -171,22 +169,8 @@ defineExpose({ dirty, save })
             {{ t('pages.workspace.sharedAgent.extendHint') }}
           </p>
         </details>
-        <div class="scroll-area flex min-w-0 flex-1 gap-1 overflow-x-auto">
-          <button
-            v-for="tabItem in subTabs"
-            :key="tabItem.k"
-            type="button"
-            class="shrink-0 whitespace-nowrap px-2.5 py-1.5 text-[12px] transition"
-            :class="
-              subTab === tabItem.k
-                ? 'border-b-2 border-accent text-txt'
-                : 'text-txt3 hover:text-txt2'
-            "
-            :data-testid="`shared-agent-subtab-${tabItem.k}`"
-            @click="subTab = tabItem.k"
-          >
-            {{ tabItem.l }}
-          </button>
+        <div class="scroll-area flex min-w-0 flex-1 overflow-x-auto">
+          <StudioTabStrip v-model="subTab" :tabs="subTabs" :touch="isMobile" dense testid-prefix="shared-agent-subtab-" />
         </div>
         <AppButton
           size="sm"
