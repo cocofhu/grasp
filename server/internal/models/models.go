@@ -1080,6 +1080,7 @@ func AllModels() []any {
 		&LiveSession{},
 		&TokenUsageEvent{},
 		&Project{}, &SoloSession{}, &SoloMessage{},
+		&ChatPendingTurn{},
 	}
 }
 

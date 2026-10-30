@@ -52,7 +52,7 @@ type reviewQueueItem struct {
 	// PageSession is the page_* session id minted while this turn runs, and
 	// only when the sender is on the direct preview with page control open.
 	// Sent only in the agent prompt; never persisted or exposed in frames.
-	PageSession string
+	PageSession string `json:"-"`
 	// Live marks a Live variant request; persisted on the human message.
 	Live *models.LiveRef
 	// LiveChat snapshots the variant and knobs when the human sends a plain
@@ -113,10 +113,16 @@ func (e *Engine) newReviewSession(runID, producerID, lane, linkID string, kind s
 	if kind == sessionKindClarify {
 		fullMsg = "澄清消息队列已满,请稍候"
 	}
+	var persist func(*reviewQueueItem, bool, []*reviewQueueItem)
+	if lane == "" {
+		persist = chatsession.Persister(e.pendingTurns, pendingSurface(kind), e.reviewSessionKey(runID, producerID),
+			func(it *reviewQueueItem) string { return it.ID })
+	}
 	s.Session = chatsession.New(chatsession.Config[*reviewQueueItem]{
 		Capacity:   MaxReviewQueueItems,
 		FullError:  fullMsg,
 		View:       reviewItemView,
+		Persist:    persist,
 		FrameExtra: map[string]any{"kind": string(kind)},
 		Publish: func(event string, payload map[string]any) {
 			e.publishReviewLane(runID, producerID, lane, event, payload)

@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Queued messages survive a server restart:** messages waiting behind a running reply in Solo, clarification, review and gate revisions are stored, and after a restart they run in their original order instead of being lost. A reply the restart cut off is marked as interrupted, and workflow conversations offer a retry. Queued Live requests are marked failed so their card offers a retry; share-link visitor conversations are not covered yet.
+
 - **Workflow and approval queued messages:** in clarification, run details, review gates and shared approval links, a message sent while a reply is still running now appears only in the queue panel and enters the conversation when its own reply starts, matching Solo and the page after a reload.
 
 - **Conversation side panel memory:** each chat, including Solo conversations, remembers whether its right-hand panel was open and whether it showed Resources or Artifacts, and restores that when you return, also after a page reload. A chat you have not opened before follows the last state you used.
