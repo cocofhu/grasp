@@ -866,6 +866,53 @@ describe('AppSidebarNav', () => {
     expect(createAt).toBeGreaterThan(genericAt)
   })
 
+  it('uses body color for settings directory menu text and icons, and tertiary color for the back link', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    const style = src.slice(src.indexOf('<style scoped>'))
+    const block = (selector: string) => {
+      const found = style.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`, 's'))
+      expect(found, selector).not.toBeNull()
+      return found![0]
+    }
+
+    const settingsItem = block('\\.settings-directory \\.nav-item')
+    expect(settingsItem).toContain('color: rgb(var(--c-txt))')
+    expect(settingsItem).not.toContain('--c-txt2')
+    expect(settingsItem).toContain('font-weight: 400')
+    expect(settingsItem).toContain('--hover-ink-color: rgb(var(--c-txt) / .045)')
+
+    const settingsActive = block('\\.settings-directory \\.nav-item\\.active')
+    expect(settingsActive).toContain('color: rgb(var(--c-txt))')
+    expect(settingsActive).toContain('background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065))')
+    expect(settingsActive).toContain('font-weight: 500')
+
+    const settingsIcon = block('\\.settings-directory \\.nav-item :deep\\(svg\\)')
+    expect(settingsIcon).toContain('color: currentColor')
+    expect(settingsIcon).not.toContain('--c-txt2')
+    expect(settingsIcon).not.toContain('--c-txt)')
+
+    const backLink = block('\\.settings-directory \\.settings-back-link')
+    expect(backLink).toContain('color: rgb(var(--c-txt3))')
+    expect(style.indexOf('.settings-directory .settings-back-link')).toBeGreaterThan(
+      style.indexOf('.settings-directory .nav-item {'),
+    )
+
+    const heading = block('\\.settings-directory \\.settings-group-heading')
+    expect(heading).toContain('color: rgb(var(--c-txt3))')
+
+    expect(src).toContain('bg-accent')
+    expect(src).toContain('text-white')
+
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'),
+      'utf8',
+    )
+    expect(css).toMatch(/\.nav-item\s*\{[^}]*text-txt2/s)
+  })
+
   it('workspace and settings nav-items use v-hover-ink (plan g2.1 / g2.3)', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, join } = await import('node:path')

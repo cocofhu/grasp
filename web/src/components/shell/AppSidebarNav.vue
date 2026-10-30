@@ -1641,7 +1641,7 @@ const settingsItems = computed(() => (
   min-height: 34px;
   padding: 7px 10px;
   gap: 10px;
-  color: rgb(var(--c-txt2));
+  color: rgb(var(--c-txt));
   font-size: 13px;
   font-weight: 400;
   line-height: 20px;
@@ -1658,7 +1658,7 @@ const settingsItems = computed(() => (
 }
 .settings-directory .nav-item :deep(svg) {
   flex-shrink: 0;
-  color: rgb(var(--c-txt2));
+  color: currentColor;
   stroke-width: 1.65;
 }
 @media (max-width: 767px) {
