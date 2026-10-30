@@ -15,7 +15,10 @@ import (
 
 const (
 	defaultTurnIdle = 20 * time.Minute
-	defaultTurnMax  = 60 * time.Minute
+	// No total limit unless the platform sends chat.deadlineSec (workflow node
+	// budgets) or the operator sets SANDBOX_TURN_MAX_DURATION; long active
+	// turns are legitimate, stalled ones hit the idle watchdog.
+	defaultTurnMax = 0
 
 	envTurnIdle = "SANDBOX_TURN_IDLE_TIMEOUT"
 	envTurnMax  = "SANDBOX_TURN_MAX_DURATION"

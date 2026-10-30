@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Long Solo turns:** a Solo turn is no longer stopped after 60 minutes while the agent is still working. Solo and the sandbox now have no default total time limit for a turn; a turn that goes silent is still stopped by the no-activity limit, workflow nodes keep their node time limit, and operators can still set `SANDBOX_TURN_MAX_DURATION`.
+
 - **Solo queued messages:** a message sent while a reply is still running now waits only in the queue and enters the conversation when its turn begins, instead of also showing an early bubble with an empty reply that disappeared on reload.
 
 - **Light theme contrast:** secondary text, placeholders and borders are darker so small labels stay readable, and the home page background pattern is fainter.

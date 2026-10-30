@@ -580,6 +580,49 @@ func (c *imageChat) ChatWithTimeout(_ context.Context, _ uint, text string, imag
 
 func (c *imageChat) Cancel(uint) {}
 
+// deadlineChat records the total limit one Solo turn hands to the chat layer.
+type deadlineChat struct {
+	timeout     time.Duration
+	hasDeadline bool
+	done        chan struct{}
+}
+
+func (c *deadlineChat) ChatWithTimeout(ctx context.Context, _ uint, _ string, _ []models.PromptImage, timeout time.Duration, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+	c.timeout = timeout
+	_, c.hasDeadline = ctx.Deadline()
+	close(c.done)
+	return &models.TokenUsage{}, nil, nil
+}
+
+func (c *deadlineChat) Cancel(uint) {}
+
+func TestSoloTurnHasNoTotalDeadline(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, _ := newSoloFixture(t, port, 3)
+	v, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "sandbox ready", func() bool {
+		row, err := solo.Require(v.ID, "alice")
+		return err == nil && row.Status == models.SoloStatusRunning
+	})
+	chat := &deadlineChat{done: make(chan struct{})}
+	solo.SetChatterForTest(chat)
+	if _, err := solo.Send(v.ID, "alice", "a long coding task", nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-chat.done:
+	case <-time.After(8 * time.Second):
+		t.Fatal("timed out waiting for the Solo turn")
+	}
+	if chat.hasDeadline || chat.timeout != NoTurnDeadline {
+		t.Fatalf("Solo turn got a total limit: deadline=%v timeout=%s", chat.hasDeadline, chat.timeout)
+	}
+}
+
 func TestSoloSendExternalizesImages(t *testing.T) {
 	acp, port := fakeACPServer(t)
 	defer acp.Close()

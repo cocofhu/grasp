@@ -27,6 +27,18 @@ func TestParseTurnLimit(t *testing.T) {
 	}
 }
 
+func TestTurnLimitsDefaultToNoTotalLimit(t *testing.T) {
+	t.Setenv(envTurnIdle, "")
+	t.Setenv(envTurnMax, "")
+	if idle, max := turnLimitsFromEnv(); idle != defaultTurnIdle || max != 0 {
+		t.Fatalf("default limits idle=%s max=%s; an active turn must not stop on wall time alone", idle, max)
+	}
+	t.Setenv(envTurnMax, "90m")
+	if _, max := turnLimitsFromEnv(); max != 90*time.Minute {
+		t.Fatalf("operator total limit ignored: %s", max)
+	}
+}
+
 func errorText(f wsFrame) string {
 	var d struct {
 		Type string `json:"type"`
