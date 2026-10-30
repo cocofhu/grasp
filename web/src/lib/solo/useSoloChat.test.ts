@@ -341,7 +341,24 @@ describe('useSoloChat', () => {
     expect(chat.session.value?.waiting).toBe(1)
     ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [{ id: 'server-queued', text: 'queued', images: [] }] })
     expect(chat.queued.value.map(row => row.id)).toEqual(['server-queued'])
-    expect(chat.turns.value.filter(row => row.role === 'user' && row.text === 'queued')).toHaveLength(1)
+    expect(chat.turns.value.filter(row => row.role === 'user' && row.text === 'queued')).toHaveLength(0)
+    app.unmount()
+  })
+
+  it('keeps a send behind a running turn out of the transcript while the turn streams', async () => {
+    const { chat, app, ws } = await openChat()
+    const first = { id: 'srv-1', text: 'first', images: [] }
+    const second = { id: 'srv-2', text: 'second', images: [] }
+    await chat.send('first')
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [first] })
+    ws.emit({ type: 'session', event: 'turn_begin', item: first, activeItem: first })
+    ws.emit(acp('a1 '))
+    await chat.send('second')
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [second], activeItem: first, phase: 'running', userMsgId: 'srv-1' })
+    ws.emit(acp('a2'))
+    expect(chat.turns.value.map(row => row.id)).toEqual(['u:srv-1', 'live:srv-1'])
+    expect(chat.turns.value[1]).toMatchObject({ text: 'a1 a2', streaming: true })
+    expect(chat.queued.value.map(row => row.id)).toEqual(['srv-2'])
     app.unmount()
   })
 
@@ -382,7 +399,7 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
-  it('keeps pending transcript rows in send order when an earlier turn settles', async () => {
+  it('keeps sends behind a running turn in the queue, in send order, until they begin', async () => {
     const { chat, app, ws } = await openChat()
     await chat.send('one')
     ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'server-one', text: 'one', images: [] } })
@@ -395,7 +412,12 @@ describe('useSoloChat', () => {
     ])
     ws.emit({ type: 'session', event: 'turn_done' })
     await flushPromises()
-    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.text)).toEqual(['one', 'two', 'three'])
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.text)).toEqual(['one'])
+    expect(chat.queued.value.map(row => row.text)).toEqual(['two', 'three'])
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [{ id: 'server-two', text: 'two', images: [] }, { id: 'server-three', text: 'three', images: [] }] })
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'server-two', text: 'two', images: [] } })
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.text)).toEqual(['one', 'two'])
+    expect(chat.queued.value.map(row => row.text)).toEqual(['three'])
     app.unmount()
   })
 
@@ -485,8 +507,9 @@ describe('useSoloChat', () => {
     await chat.send('later')
     ws.onclose?.()
     await flushPromises()
-    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.text)).toEqual(['first', 'later'])
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.text)).toEqual(['first'])
     expect(chat.turns.value[1]?.text).toBe('first partial reply')
+    expect(chat.queued.value.map(row => row.text)).toEqual(['later'])
     app.unmount()
   })
 
@@ -577,7 +600,7 @@ describe('useSoloChat', () => {
       items: [{ id: 'queued-same', text: 'continue', images: [] }],
     })
     ws.emit(acp('first reply'))
-    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.id)).toEqual(['u:active-same', 'u:queued-same'])
+    expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.id)).toEqual(['u:active-same'])
     expect(chat.turns.value[1]?.text).toBe('first reply')
     expect(chat.queued.value.map(row => row.id)).toEqual(['queued-same'])
     app.unmount()
