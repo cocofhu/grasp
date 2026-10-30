@@ -56,6 +56,15 @@ func prepareLocalProcessHome(home string, env map[string]string, configRoot, own
 	if strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" && provider == "claude_code" {
 		snapshotLocalEntries(hostHome, home, []string{".claude.json"})
 	}
+	if strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" && provider == "cursor" {
+		// cursor-agent reads its login only from XDG_CONFIG_HOME/cursor, not
+		// from CURSOR_CONFIG_DIR or ~/.cursor.
+		hostConfig := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
+		if !filepath.IsAbs(hostConfig) {
+			hostConfig = filepath.Join(hostHome, ".config")
+		}
+		snapshotLocalEntries(filepath.Join(hostConfig, "cursor"), filepath.Join(home, ".config", "cursor"), []string{"auth.json"})
+	}
 	if strings.TrimSpace(env["GRASP_LOCAL_AUTH"]) == "1" && provider == "opencode" {
 		hostData := strings.TrimSpace(os.Getenv("XDG_DATA_HOME"))
 		if !filepath.IsAbs(hostData) {

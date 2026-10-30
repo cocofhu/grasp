@@ -406,6 +406,59 @@ func TestLocalProcessHomeStagesOnlySelectedProviderAuth(t *testing.T) {
 	}
 }
 
+func TestLocalProcessHomeStagesCursorXDGLogin(t *testing.T) {
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	hostConfig := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", hostConfig)
+	hostAuth := filepath.Join(hostConfig, "cursor", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(hostAuth), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hostAuth, []byte("host-cursor-login"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, localAuth := range []string{"1", ""} {
+		home := t.TempDir()
+		env := map[string]string{"AGENT_PROVIDER": "cursor", "GRASP_LOCAL_AUTH": localAuth}
+		prepareLocalProcessHome(home, env, t.TempDir(), "")
+		path := filepath.Join(env["XDG_CONFIG_HOME"], "cursor", "auth.json")
+		body, err := os.ReadFile(path)
+		if localAuth == "" {
+			if !os.IsNotExist(err) {
+				t.Fatal("cloud binding received the host Cursor login")
+			}
+			continue
+		}
+		if err != nil || string(body) != "host-cursor-login" {
+			t.Fatal("Cursor login was not staged where cursor-agent reads it")
+		}
+		if err := os.WriteFile(path, []byte("refreshed-by-cli"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if body, err := os.ReadFile(hostAuth); err != nil || string(body) != "host-cursor-login" {
+			t.Fatal("Cursor token refresh wrote back to the host login")
+		}
+	}
+}
+
+// Uses the real host login; set GRASP_CURSOR_NATIVE_CLI to the cursor-agent path.
+func TestNativeCursorLocalLoginInPrivateHome(t *testing.T) {
+	cli := os.Getenv("GRASP_CURSOR_NATIVE_CLI")
+	if cli == "" {
+		t.Skip("set GRASP_CURSOR_NATIVE_CLI to check the real cursor-agent login")
+	}
+	home := t.TempDir()
+	env := map[string]string{"AGENT_PROVIDER": "cursor", "GRASP_LOCAL_AUTH": "1"}
+	prepareLocalProcessHome(home, env, t.TempDir(), "")
+	cmd := exec.Command(cli, "status")
+	cmd.Env = envList(env)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "Logged in") {
+		t.Fatalf("cursor-agent is not logged in inside the private HOME: %v: %s", err, out)
+	}
+}
+
 func TestLocalTraeHistorySurvivesBackendHomeReplacement(t *testing.T) {
 	hostHome := t.TempDir()
 	t.Setenv("HOME", hostHome)

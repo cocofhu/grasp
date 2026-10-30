@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（PR #1040 本机 Cursor 登录位置）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`server/internal/sandbox/worktree_git_{local,test}.go`。
+- 做了什么：本机模式为 Cursor 复制 `$XDG_CONFIG_HOME/cursor/auth.json`（默认 `~/.config/cursor`）到私有 HOME 的同一相对位置；新增合成用例与默认跳过的真实 CLI 用例（`GRASP_CURSOR_NATIVE_CLI`）。
+- 为什么：用本机真实 cursor-agent 2026.10.22 实测，登录只从 `XDG_CONFIG_HOME/cursor` 读取，`~/.cursor/auth.json` 与 `CURSOR_CONFIG_DIR` 都不生效；原实现只复制 `~/.cursor`，私有 HOME 内显示 Not logged in。切换矩阵中 Cursor 使用协议夹具，因此 CI 未发现。该机 Cursor 登录为 API Key 换取的 `api_key_token`（access 与 refresh 相同），过期后凭 API Key 重新换取，不受 refresh token 轮换影响；机器上的 Claude Code、Codex 未登录，OAuth 轮换仍无法实测。
+- 如何验证：真实 cursor-agent 在私有 HOME 中 `status` 显示已登录，宿主 auth.json 未改动；sandbox 包全量单测通过。
+
 ### 2026-10-30（PR #1040 本机执行二次 review 修复）
 
 - 日期：2026-10-30（UTC）。
