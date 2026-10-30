@@ -56,6 +56,7 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import { useRunDetail } from './useRunDetail'
+import { REVIEW_RECOVERY_TIMEOUT_MS } from '@/lib/chat/reviewSessionState'
 
 function stubNode(partial: Partial<WFNode> & Pick<WFNode, 'id' | 'type'>): WFNode {
   return { label: partial.id, position: { x: 0, y: 0 }, config: {}, ...partial }
@@ -199,6 +200,7 @@ describe('useRunDetail', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -257,6 +259,34 @@ describe('useRunDetail', () => {
 
     app.unmount()
     await flushPromises()
+  })
+
+  it.each([true, false])('shows a retryable initial-load error after recovery deadline (read honors abort: %s)', async honorsAbort => {
+    vi.useFakeTimers()
+    const pending = deferred<Run>()
+    mocks.getRun.mockImplementationOnce((_id: string, options?: { signal?: AbortSignal }) => {
+      if (honorsAbort) options?.signal?.addEventListener('abort', () => pending.reject(options.signal?.reason), { once: true })
+      return pending.promise
+    })
+    const { detail, app } = await withRunDetail()
+    await flushPromises()
+    expect(detail.runLoading.value).toBe(true)
+    await vi.advanceTimersByTimeAsync(REVIEW_RECOVERY_TIMEOUT_MS + 1)
+    await flushPromises()
+    expect(detail.runLoading.value).toBe(false)
+    expect(detail.loadError.value).toBe(true)
+    expect(detail.loadErrorKind.value).toBe('network_or_server')
+
+    pending.resolve({ ...sampleRun(), workflowName: 'expired read' })
+    await flushPromises()
+    expect(detail.run.value.workflowName).not.toBe('expired read')
+    expect(detail.loadError.value).toBe(true)
+
+    mocks.getRun.mockResolvedValueOnce({ ...sampleRun(), workflowName: 'recovered run' })
+    await detail.loadRun(true)
+    expect(detail.loadError.value).toBe(false)
+    expect(detail.run.value.workflowName).toBe('recovered run')
+    app.unmount()
   })
 
   it('normalizes mobile view mode and timeline selection', async () => {
@@ -490,34 +520,67 @@ describe('useRunDetail', () => {
     app.unmount()
   })
 
-  it('lets only the latest getRun response and loading cleanup win', async () => {
+  it('busy-safe REST polling releases a retired FIFO even when transcript and local busy stay unchanged', async () => {
+    const clarify = { nodeId: 'n1', iteration: 1, done: false, turns: [
+      { role: 'human' as const, text: '我的选择', thought: '', at: 't' },
+      { role: 'agent' as const, text: '已记录', thought: '', at: 't' },
+    ] }
+    const busy = { ...sampleRun(), status: 'waiting_human', clarify, clarifyByNode: { n1: clarify },
+      reviewSessionGeneration: 5,
+      reactSessions: { n1: { sessionGeneration: 5, revision: 2, busy: true, waiting: 1,
+        activeItem: { id: 'choice', text: '我的选择' }, items: [{ id: 'correction', text: '仅修改前端' }] } },
+    } as Run
+    mocks.getRun.mockResolvedValue(busy)
+    const { detail, app } = await withRunDetail()
+    await flushPromises()
+    detail.selected.value = 'n1'
+    const applyReviewFrame = vi.fn()
+    detail.reviewChatRef.value = { applyReviewFrame, isSessionBusy: () => true }
+    await detail.wsApi.projectDialogueAfterLoad(busy)
+    expect(detail.isClarifySessionBusy()).toBe(true)
+    applyReviewFrame.mockClear()
+
+    // The server drops idle FIFOs from its registry; the rest of the run and
+    // saved transcript need not change when the final queue frame was missed.
+    mocks.getRun.mockResolvedValue({ ...busy, reactSessions: undefined })
+    await detail.patchRunChrome()
+    expect(detail.run.value.reactSessions?.n1?.busy).toBe(false)
+    expect(detail.run.value.reactSessions?.n1?.waiting).toBe(0)
+    expect(detail.live.liveBusy.n1).toBe(false)
+    expect(applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'queue_state', nodeId: 'n1', busy: false, waiting: 0, items: [],
+    }))
+    expect(applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'session_reset' }))
+    expect(detail.run.value.clarify?.turns).toEqual(clarify.turns)
+    app.unmount()
+  })
+
+  it('coalesces overlapping refreshes into the latest trailing request and loading owner', async () => {
     const { detail, app } = await withRunDetail()
     await flushPromises()
     mocks.getRun.mockClear()
     const older = deferred<Run>()
-    const newer = deferred<Run>()
     const newest = deferred<Run>()
     mocks.getRun
       .mockImplementationOnce(() => older.promise)
-      .mockImplementationOnce(() => newer.promise)
       .mockImplementationOnce(() => newest.promise)
 
     const oldLoad = detail.loadRun(false)
-    const newLoad = detail.loadRun(false)
-    newer.resolve({ ...sampleRun(), workflowName: '较新的运行快照', progress: 0.6 })
-    await newLoad
-    expect(detail.run.value.workflowName).toBe('较新的运行快照')
-
+    const replacedLoad = detail.loadRun(false)
     const newestLoad = detail.loadRun(false)
+    expect(mocks.getRun).toHaveBeenCalledTimes(1)
     expect(detail.refreshing.value).toBe(true)
+
     older.resolve({ ...sampleRun(), workflowName: '晚到的旧快照', progress: 0.1 })
-    await oldLoad
-    expect(detail.run.value.workflowName).toBe('较新的运行快照')
+    await flushPromises()
+    expect(mocks.getRun).toHaveBeenCalledTimes(2)
+    expect(detail.run.value.workflowName).not.toBe('晚到的旧快照')
     expect(detail.refreshing.value).toBe(true)
 
     newest.resolve({ ...sampleRun(), workflowName: '最终快照', progress: 0.9 })
-    await newestLoad
+    await Promise.all([oldLoad, replacedLoad, newestLoad])
     expect(detail.run.value.workflowName).toBe('最终快照')
+    expect(detail.run.value.progress).toBe(0.9)
     expect(detail.refreshing.value).toBe(false)
     app.unmount()
   })

@@ -484,8 +484,9 @@ describe('RunDetailView clarify session narrow update (g3.2)', () => {
     expect(src).toMatch(/if \(m\.type === 'artifact_edit'\) refreshArtifactPreview/)
     expect(src).toMatch(/void patchRunChrome/)
     expect(src).toMatch(/loadRun\(false, true\)/)
-    expect(src).toMatch(/liveBusy\[m\.nodeId\] = true/)
-    expect(src).toMatch(/m\.event === 'turn_begin'/)
+    expect(wsSrc).toMatch(/createReviewSessionState/)
+    expect(wsSrc).toMatch(/reviewState\.acceptServer\(m\)/)
+    expect(wsSrc).toMatch(/reviewState\.session\(m\.nodeId\)/)
   })
 })
 

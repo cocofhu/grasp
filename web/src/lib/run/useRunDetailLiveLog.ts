@@ -109,7 +109,7 @@ export function useRunDetailLiveLog(opts: {
   // (caller must not treat as hard failure).
   async function fetchNodeEvents(
     nodeId: string | null,
-    opts?: { signal?: AbortSignal },
+    opts?: { signal?: AbortSignal; isCurrent?: () => boolean },
   ): Promise<boolean> {
     if (!nodeId) return false
     const gen = (eventFetchGen[nodeId] = (eventFetchGen[nodeId] || 0) + 1)
@@ -119,6 +119,7 @@ export function useRunDetailLiveLog(opts: {
         signal: opts?.signal,
       })
       if (opts?.signal?.aborted) return false
+      if (opts?.isCurrent && !opts.isCurrent()) return false
       if (eventFetchGen[nodeId] !== gen) return false
       if (isNodeEventsUnavailable(r) && !(r.events?.length)) return false
       const prev = eventPages[nodeId]?.events || []

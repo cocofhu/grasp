@@ -287,9 +287,6 @@ func TestParkedClientDoesNotBufferBroadcasts(t *testing.T) {
 	if n := len(c.eventCh); n != 0 {
 		t.Fatalf("parked client buffered %d frames", n)
 	}
-	if n := c.dropped.Load(); n != 0 || c.lastDropLog.Load() != 0 {
-		t.Fatalf("parked client must not drop/warn, dropped=%d", n)
-	}
 
 	res, err := c.ChatStructured(context.Background(), "hi", nil)
 	if err != nil || res.Narration != "after park" {
@@ -297,26 +294,6 @@ func TestParkedClientDoesNotBufferBroadcasts(t *testing.T) {
 	}
 	if n := c.readers.Load(); n != 0 {
 		t.Fatalf("readers leaked: %d", n)
-	}
-}
-
-func TestNoteDroppedRateLimits(t *testing.T) {
-	c := NewACPClient("127.0.0.1", 1)
-	c.noteDropped()
-	first := c.lastDropLog.Load()
-	if first == 0 || c.dropped.Load() != 0 {
-		t.Fatalf("first drop should log and reset the counter: last=%d dropped=%d", first, c.dropped.Load())
-	}
-	for i := 0; i < 5; i++ {
-		c.noteDropped()
-	}
-	if c.lastDropLog.Load() != first || c.dropped.Load() != 5 {
-		t.Fatalf("drops inside the window should only count: last=%d dropped=%d", c.lastDropLog.Load(), c.dropped.Load())
-	}
-	c.lastDropLog.Store(time.Now().Add(-2 * dropLogEvery).UnixNano())
-	c.noteDropped()
-	if c.dropped.Load() != 0 {
-		t.Fatalf("drop after the window should log the backlog, dropped=%d", c.dropped.Load())
 	}
 }
 

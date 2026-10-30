@@ -11,7 +11,7 @@ import commonEn from '@/locales/en/common.json'
 import pagesEn from '@/locales/en/pages.json'
 import { i18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
-import type { ClarifyImage, ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
+import type { AcpEvent, AgentPart, ClarifyImage, ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
 import { acceptConfirmFlowDialog } from '@/test/acceptConfirmFlowDialog'
 import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
@@ -1177,6 +1177,31 @@ describe('ClarifyChat', () => {
     expect(wrapper.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
     expect(wrapper.findAll('.md.rounded-lg').length).toBe(0)
     expect(wrapper.text()).toMatch(/思考/)
+    wrapper.unmount()
+  })
+
+  it.each((['other-run', 'return-to-a'] as const).flatMap(destination =>
+    [true, false].map(accepted => ({ destination, accepted }))))('a previous visit sendRequest $accepted cannot change the $destination composer or its pending send', async ({ destination, accepted }) => {
+    let finishOld!: (accepted: boolean) => void
+    let finishCurrent!: (accepted: boolean) => void
+    const sendRequest = vi.fn().mockImplementationOnce(() => new Promise<boolean>(resolve => { finishOld = resolve }))
+      .mockImplementationOnce(() => new Promise<boolean>(resolve => { finishCurrent = resolve }))
+    const wrapper = mountChat({ draft: 'same text in separate visits', sendRequest })
+    await clickSend(wrapper)
+    await wrapper.setProps({ runId: 'run-b', draft: 'same text in separate visits' })
+    if (destination === 'return-to-a') await wrapper.setProps({ runId: 'run-1' })
+    await clickSend(wrapper)
+    const emitted = wrapper.emitted('update:draft')?.length ?? 0
+    finishOld(accepted)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="clarify-input"]').element).toHaveProperty('value', 'same text in separate visits')
+    expect(wrapper.emitted('update:draft')?.length ?? 0).toBe(emitted)
+    expect(wrapper.find('[data-testid="clarify-human-message"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="clarify-send-icon"]').attributes('aria-busy')).toBe('true')
+    finishCurrent(true)
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="clarify-human-message"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="clarify-human-message"]').text()).toContain('same text in separate visits')
     wrapper.unmount()
   })
 
@@ -2692,6 +2717,97 @@ describe('ClarifyChat', () => {
       const rows = wrapper.findAll('[data-testid="agent-tool-row"]')
       expect(rows.map((r) => r.attributes('data-state'))).toEqual(['done', 'failed'])
       expect(wrapper.find('[data-testid="clarify-agent-message"]').text()).toContain('复审完成')
+      wrapper.unmount()
+    })
+
+    it.each([
+      { field: 'output', value: 'line one\nline two', testId: 'agent-tool-output', expected: 'line two' },
+      { field: 'input', value: 'npm run test:changed', testId: 'agent-tool-input', expected: 'npm run test:changed' },
+      { field: 'summary', value: 'running changed tests', testId: 'agent-tool-summary', expected: 'running changed tests' },
+      { field: 'durationMs', value: 2500, testId: 'agent-tool-duration', expected: '2.5s' },
+    ])('updates a running tool when only its $field changes in the cumulative snapshot', async ({ field, value, testId, expected }) => {
+      const wrapper = mountChat()
+      const vm = wrapper.vm as unknown as {
+        applyReviewFrame: (frame: Record<string, unknown>) => void
+        applyAcpEvents: (events: AcpEvent[], nodeId?: string) => void
+      }
+      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'active', text: 'run the tests' } })
+      const initial: AgentPart = {
+        kind: 'tool', title: 'Shell', status: 'in_progress',
+        input: 'npm test', output: 'line one', summary: 'running tests', durationMs: 1000,
+      }
+      const snapshot = (part: AgentPart): AcpEvent[] => [
+        { kind: 'tool_call', title: 'Shell', status: 'in_progress' },
+        { kind: 'timeline', parts: [part] },
+      ]
+      vm.applyAcpEvents(snapshot(initial), 'react-1')
+      await flushPromises()
+      await wrapper.get('[data-testid="agent-tool-group-head"]').trigger('click')
+      await wrapper.get('[data-testid="agent-tool-row-toggle"]').trigger('click')
+      expect(wrapper.get('[data-testid="agent-tool-output"]').text()).toBe('line one')
+
+      vm.applyAcpEvents(snapshot({ ...initial, [field]: value }), 'react-1')
+      await flushPromises()
+      expect(wrapper.get(`[data-testid="${testId}"]`).text()).toContain(expected)
+      expect(wrapper.findAll('[data-testid="agent-tool-row"]')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="agent-tool-row"]').attributes('data-state')).toBe('running')
+      expect(wrapper.find('[data-testid="clarify-busy-status"]').exists()).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('keeps the current tool details and reply when a liveness-only snapshot arrives', async () => {
+      const wrapper = mountChat()
+      const vm = wrapper.vm as unknown as {
+        applyReviewFrame: (frame: Record<string, unknown>) => void
+        applyAcpEvents: (events: AcpEvent[], nodeId?: string) => boolean
+      }
+      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'active', text: 'run the tests' } })
+      const tool: AgentPart = { kind: 'tool', title: 'Shell', status: 'in_progress', input: 'npm test', output: 'line one' }
+      const snapshot: AcpEvent[] = [
+        { kind: 'message', text: 'The tests are running.' },
+        { kind: 'tool_call', title: 'Shell', status: 'in_progress' },
+        { kind: 'timeline', parts: [tool, { kind: 'message', text: 'The tests are running.' }] },
+      ]
+      vm.applyAcpEvents(snapshot, 'react-1')
+      await flushPromises()
+      await wrapper.get('[data-testid="agent-tool-group-head"]').trigger('click')
+      await wrapper.get('[data-testid="agent-tool-row-toggle"]').trigger('click')
+      expect(wrapper.get('[data-testid="agent-tool-output"]').text()).toBe('line one')
+
+      expect(vm.applyAcpEvents([{ kind: 'liveness' }], 'react-1')).toBe(true)
+      await flushPromises()
+      expect(wrapper.get('[data-testid="agent-tool-output"]').text()).toBe('line one')
+      expect(wrapper.get('[data-testid="agent-tool-input"]').text()).toBe('npm test')
+      expect(wrapper.findAll('[data-testid="agent-tool-row"]')).toHaveLength(1)
+      expect(wrapper.findAll('[data-testid="clarify-agent-message"]')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="clarify-agent-message"]').text()).toContain('The tests are running.')
+
+      vm.applyAcpEvents([
+        ...snapshot.slice(0, -1),
+        { kind: 'timeline', parts: [{ ...tool, output: 'line one\nline two' }, { kind: 'message', text: 'The tests are running.' }] },
+        { kind: 'liveness' },
+      ], 'react-1')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="agent-tool-output"]').text()).toContain('line two')
+      expect(wrapper.findAll('[data-testid="clarify-agent-message"]')).toHaveLength(1)
+      wrapper.unmount()
+    })
+
+    it.each(['unopened', 'idle', 'orphan'])('treats liveness as an observation without creating an agent in an %s session', async state => {
+      const wrapper = mountChat()
+      const vm = wrapper.vm as unknown as {
+        applyReviewFrame: (frame: Record<string, unknown>) => void
+        applyAcpEvents: (events: AcpEvent[], nodeId?: string) => boolean
+      }
+      if (state !== 'unopened') vm.applyReviewFrame({
+        event: 'queue_state', nodeId: 'react-1', waiting: 0, busy: false, items: [],
+        sandboxBusy: state === 'orphan', sandboxRunningOpId: state === 'orphan' ? 'native-active' : undefined,
+      })
+      expect(vm.applyAcpEvents([{ kind: 'liveness' }], 'react-1')).toBe(true)
+      await flushPromises()
+      expect(wrapper.findAll('[data-testid="clarify-agent-message"]')).toHaveLength(0)
+      expect(wrapper.findAll('[data-testid="clarify-busy-placeholder"]')).toHaveLength(0)
+      expect(wrapper.findAll('[data-testid="clarify-busy-status"]')).toHaveLength(0)
       wrapper.unmount()
     })
 

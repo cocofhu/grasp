@@ -2,9 +2,48 @@ package models
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestToolsFromEventsScopesSnapshotToCurrentReply(t *testing.T) {
+	tool := func(title string) AcpEvent { return AcpEvent{Kind: "tool_call", Title: title, Status: "completed"} }
+	timeline := AcpEvent{Kind: AcpKindTimeline}
+	prompt := AcpEvent{Kind: AcpKindPrompt}
+	end := AcpEvent{Kind: AcpKindTurnEnd}
+	for _, tc := range []struct {
+		name   string
+		events []AcpEvent
+		want   []ReactTool
+	}{
+		{"snapshot history", []AcpEvent{tool("old"), timeline, prompt, tool("current"), timeline, end}, []ReactTool{{"current", "completed"}}},
+		{"reply without tools", []AcpEvent{tool("old"), timeline, prompt, {Kind: "message", Text: "done"}, timeline, end}, nil},
+		{"hidden continuation belongs to same reply", []AcpEvent{tool("old"), timeline, prompt, tool("read"), timeline, end, prompt, tool("write"), timeline, end}, []ReactTool{{"read", "completed"}, {"write", "completed"}}},
+		{"silent wrap-up combined with full reply snapshot", []AcpEvent{prompt, tool("git_push"), timeline, end, tool("old_read"), timeline, tool("git_push"), timeline, prompt, tool("write"), timeline, end}, []ReactTool{{"git_push", "completed"}, {"write", "completed"}}},
+		{"legacy snapshot timelines", []AcpEvent{tool("old"), timeline, tool("current"), timeline}, []ReactTool{{"current", "completed"}}},
+		{"legacy last timeline without tools", []AcpEvent{tool("old"), timeline, {Kind: "message", Text: "done"}, timeline}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := append([]AcpEvent(nil), tc.events...)
+			if got := ToolsFromEvents(tc.events); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("tools = %+v, want %+v", got, tc.want)
+			}
+			if !reflect.DeepEqual(tc.events, before) {
+				t.Fatal("tool projection changed the full transcript")
+			}
+		})
+	}
+	// Historical tools must not use up the current reply's storage cap.
+	history := make([]AcpEvent, MaxReactTools)
+	for i := range history {
+		history[i] = tool("old")
+	}
+	events := append(history, prompt, tool("current"), end)
+	if got := ToolsFromEvents(events); !reflect.DeepEqual(got, []ReactTool{{"current", "completed"}}) {
+		t.Fatalf("history exhausted the current reply cap: %+v", got)
+	}
+}
 
 func TestToolsFromEventsKeepsOrderAndSkipsOtherKinds(t *testing.T) {
 	got := ToolsFromEvents([]AcpEvent{
@@ -63,6 +102,43 @@ func TestPartsForReplyUsesLastTimeline(t *testing.T) {
 	}
 	if PartsForReply([]AcpEvent{{Kind: "message", Text: "x"}}, "x") != nil {
 		t.Fatal("no timeline -> nil")
+	}
+}
+
+func TestPartsForReplyDoesNotRestoreSnapshotHistoryOnEmptyCurrentReply(t *testing.T) {
+	events := []AcpEvent{
+		{Kind: "tool_call", Title: "old tool"},
+		{Kind: AcpKindTimeline, Parts: []AcpPart{{Kind: "tool", Title: "old tool"}, {Kind: "message", Text: "old answer"}}},
+		{Kind: AcpKindPrompt, Text: "current request"},
+		{Kind: "message", Text: "current answer without a timeline"},
+		{Kind: AcpKindTurnEnd},
+	}
+	before := append([]AcpEvent(nil), events...)
+	if got := PartsForReply(events, "current answer without a timeline"); got != nil {
+		t.Fatalf("current reply borrowed old timeline: %+v", got)
+	}
+	if !reflect.DeepEqual(events, before) {
+		t.Fatal("reply projection changed the full transcript")
+	}
+}
+
+func TestPartsForReplySkipsEmbeddedSnapshotBetweenCurrentPrompts(t *testing.T) {
+	events := []AcpEvent{
+		{Kind: AcpKindPrompt, Text: "silent wrap-up"},
+		{Kind: AcpKindTimeline, Parts: []AcpPart{{Kind: "tool", Title: "git_push"}}},
+		{Kind: AcpKindTurnEnd},
+		{Kind: AcpKindTimeline, Parts: []AcpPart{{Kind: "tool", Title: "old_read"}, {Kind: "message", Text: "old answer"}}},
+		{Kind: AcpKindPrompt, Text: "main reply"},
+		{Kind: "message", Text: "done"},
+		{Kind: AcpKindTurnEnd},
+	}
+	before := append([]AcpEvent(nil), events...)
+	want := []AcpPart{{Kind: "tool", Title: "git_push"}, {Kind: "message", Text: "done"}}
+	if got := PartsForReply(events, "done"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("reply borrowed embedded historical timeline: %+v, want %+v", got, want)
+	}
+	if !reflect.DeepEqual(events, before) {
+		t.Fatal("reply projection changed the full transcript")
 	}
 }
 

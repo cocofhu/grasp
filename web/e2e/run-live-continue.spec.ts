@@ -322,6 +322,88 @@ test('live page: continued workflow chat reconciles a completion missed while di
   expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([`/runs/${RUN}/live?node=verify`])
 })
 
+test('live page: a healthy automatic observer recovers tool-output changes while watchdog snapshots repeat', async ({ page }) => {
+  const { state, send } = await setup(page)
+  const part = { kind: 'tool', title: 'Shell', status: 'in_progress', input: 'npm test', output: 'line one' }
+  const events = (output: string) => [
+    { kind: 'tool_call', t: 1, title: part.title, status: part.status },
+    { kind: 'timeline', t: 1, parts: [{ ...part, output }] },
+  ]
+  state.events.impl = events('line one')
+  send({ type: 'acp', nodeId: 'impl', busy: true, events: state.events.impl })
+  await expect(page.getByTestId('agent-tool-group-head')).toBeVisible()
+  await page.getByTestId('agent-tool-group-head').click()
+  await page.getByTestId('agent-tool-row-toggle').click()
+  await expect(page.getByTestId('agent-tool-output')).toContainText('line one')
+  const watchdog = () => send({ type: 'acp', nodeId: 'impl', busy: true, events: [...events('line one'),
+    { kind: 'liveness', t: 2, liveness: { active: true, cpuMs: 20, ioBytes: 30, idleSec: 0, limitSec: 300 } }] })
+  watchdog()
+  state.events.impl = events('line one\nline two')
+  send({ type: 'heartbeat' })
+  await expect(page.getByTestId('agent-tool-output')).toContainText('line two', { timeout: 10_000 })
+  expect(state.sockets).toHaveLength(1)
+  await expect(page.locator('[data-e2e-mount="1"]')).toHaveCount(1)
+  expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1)
+})
+
+test('live page: healthy socket recovers missing output and completion without losing queued sends or the draft', async ({ page }) => {
+  const { state, send } = await setup(page)
+  send(acp('impl', [{ kind: 'message', text: '实现结束，继续澄清验收。' }]))
+  await expect(page.getByText('实现结束，继续澄清验收。')).toBeVisible()
+  state.phase = 'verify'
+  const active = { id: 'active-reply', clientMessageId: 'client-active', text: '检查验收条件。' }
+  const waiting = { id: 'waiting-reply', clientMessageId: 'client-waiting', text: '只修改前端。' }
+  state.runPatch = {
+    status: 'waiting_human',
+    currentNode: { ...cur('verify'), kind: 'clarify', mode: 'manual', state: 'waiting_human' },
+    clarifyByNode: { verify: { nodeId: 'verify', iteration: 1, turns: [], done: false } },
+    reviewSessionGeneration: 40,
+    reactSessions: { verify: {
+      sessionGeneration: 40, revision: 3, busy: true, waiting: 1, items: [waiting], activeItem: active,
+    } },
+  }
+  send({ type: 'snapshot', run: { ...runFor(state.phase), ...state.runPatch } })
+  await expect(page.getByTestId('clarify-segment-divider')).toContainText('验证')
+  send({ type: 'review', event: 'queue_state', nodeId: 'verify',
+    sessionGeneration: 40, revision: 3, busy: true, waiting: 1, items: [waiting], activeItem: active })
+  await expect(page.getByTestId('clarify-review-queue')).toContainText(waiting.text)
+  send(acp('verify', [{ kind: 'message', text: '正在检查验收条件。' }]))
+  await expect(page.getByText('正在检查验收条件。')).toBeVisible()
+  await expect(page.getByTestId('clarify-review-queue')).toContainText(waiting.text)
+  const draft = page.getByTestId('clarify-input')
+  await draft.fill('还没有发送的补充说明')
+
+  // The socket stays healthy, but application output has stopped arriving.
+  // A read-only recovery must catch up the same active turn and keep B queued.
+  state.events.verify = flat([{ kind: 'message', text: '遗漏的实时输出已经从节点快照恢复。' }])
+  send({ type: 'heartbeat' })
+  await expect(page.getByText('遗漏的实时输出已经从节点快照恢复。')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByTestId('clarify-review-queue')).toContainText(waiting.text)
+  await expect(draft).toHaveValue('还没有发送的补充说明')
+  expect(state.sockets).toHaveLength(1)
+
+  // Both accepted sends finish server-side; neither terminal event reaches
+  // this viewer. A covering snapshot omits the now-retired FIFO entirely.
+  state.runPatch.reactSessions = {}
+  state.runPatch.clarifyByNode = { verify: {
+    nodeId: 'verify', iteration: 1, done: false,
+    turns: [
+      { role: 'human', text: active.text, clientMessageId: active.clientMessageId, at: at(15) },
+      { role: 'agent', text: '验收条件已检查。', clientMessageId: active.clientMessageId, at: at(20) },
+      { role: 'human', text: waiting.text, clientMessageId: waiting.clientMessageId, at: at(21) },
+      { role: 'agent', text: '已经确认只修改前端。', clientMessageId: waiting.clientMessageId, at: at(25) },
+    ],
+  } }
+  send({ type: 'heartbeat' })
+  await expect(page.getByText('已经确认只修改前端。')).toHaveCount(1, { timeout: 10_000 })
+  await expect(page.getByTestId('clarify-review-queue')).toHaveCount(0)
+  await expect(busy(page)).toHaveCount(0)
+  await expect(draft).toHaveValue('还没有发送的补充说明')
+  expect(state.sockets).toHaveLength(1)
+  await expect(page.locator('[data-e2e-mount="1"]')).toHaveCount(1)
+  expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1)
+})
+
 test('live page: switching A → B → A isolates same-node streams and deferred snapshots', async ({ page }) => {
   const A = 'run-switch-a'
   const B = 'run-switch-b'

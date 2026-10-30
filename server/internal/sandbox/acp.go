@@ -168,14 +168,18 @@ type ACPClient struct {
 
 	eventCh chan json.RawMessage
 	done    chan struct{}
+	// readStop is per connection and wakes a reader blocked on a full event
+	// buffer when Close or redial shuts down the socket.
+	readStop chan struct{}
 
 	// readers counts callers draining eventCh (handshake, turn, cancel wait).
 	// With none, frames are not queued: a parked client would otherwise fill
 	// the buffer with bridge broadcasts nobody reads.
-	readers atomic.Int32
-	// dropped counts frames lost to a full eventCh since the last warning.
-	dropped     atomic.Int64
-	lastDropLog atomic.Int64
+	readers  atomic.Int32
+	readerMu sync.Mutex
+	// readersDone closes when the last consumer releases its lease, so a
+	// full buffer cannot stop a parked client's queue-state mirror forever.
+	readersDone chan struct{}
 
 	// turnOpID is the opId of the chat currently in flight on this client
 	// ("" when none); lastDoneOpID the last one that ended with prompt_done.
@@ -427,8 +431,10 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 	c.conn = conn
 	c.done = make(chan struct{})
 	done := c.done
+	c.readStop = make(chan struct{})
+	stop := c.readStop
 	c.mu.Unlock()
-	go c.readLoop()
+	go c.readLoop(conn, done, stop)
 
 	connectMsg := map[string]any{
 		"op":             "connect",
@@ -474,6 +480,7 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 func (c *ACPClient) redial() {
 	c.mu.Lock()
 	old := c.done
+	c.stopReadLocked()
 	if c.conn != nil {
 		_ = c.conn.Close()
 		c.conn = nil
@@ -671,9 +678,22 @@ func (c *ACPClient) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.connected = false
+	c.stopReadLocked()
 	if c.conn != nil {
 		_ = c.conn.Close()
 		c.conn = nil
+	}
+}
+
+// stopReadLocked also interrupts bounded-buffer backpressure. Closing the
+// socket alone only wakes ReadMessage, not a send waiting for its consumer.
+func (c *ACPClient) stopReadLocked() {
+	if c.readStop != nil {
+		select {
+		case <-c.readStop:
+		default:
+			close(c.readStop)
+		}
 	}
 }
 
@@ -701,70 +721,66 @@ func (c *ACPClient) send(msg any) error {
 	return c.conn.WriteJSON(msg)
 }
 
-func (c *ACPClient) readLoop() {
-	defer close(c.done)
+func (c *ACPClient) readLoop(conn *websocket.Conn, done chan struct{}, stop <-chan struct{}) {
+	defer close(done)
 	// A panic in the read/decode path (e.g. a malformed frame tripping a
 	// dependency) must not take down the whole process; log it and let done
 	// close so waiters unblock and the session is treated as disconnected.
 	defer func() {
 		if r := recover(); r != nil {
 			c.lg.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("acp readLoop panicked")
-			c.mu.Lock()
-			c.connected = false
-			c.mu.Unlock()
 		}
+		c.mu.Lock()
+		if c.conn == conn {
+			c.connected = false
+		}
+		c.mu.Unlock()
 	}()
-	c.mu.Lock()
-	conn := c.conn
-	c.mu.Unlock()
-	if conn == nil {
-		return
-	}
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if !strings.Contains(err.Error(), "use of closed network connection") {
 				c.lg.Warn().Err(err).Msg("acp read error")
 			}
-			c.mu.Lock()
-			c.connected = false
-			c.mu.Unlock()
 			return
 		}
 		c.observeQueueState(message)
-		if c.readers.Load() == 0 {
+		c.readerMu.Lock()
+		readersDone := c.readersDone
+		reading := c.readers.Load() > 0
+		c.readerMu.Unlock()
+		if !reading {
 			continue
 		}
+		// Keep the fixed buffer, and let TCP backpressure slow the producer.
+		// Dropping a delta corrupts the reply; dropping prompt_done leaves the
+		// active platform turn and every queued message waiting indefinitely.
 		select {
 		case c.eventCh <- json.RawMessage(message):
-		default:
-			c.noteDropped()
+		case <-readersDone:
+		case <-stop:
+			return
 		}
 	}
 }
 
 // acquireReader marks a caller as draining eventCh until release is called.
 func (c *ACPClient) acquireReader() (release func()) {
-	c.readers.Add(1)
+	c.readerMu.Lock()
+	if c.readers.Add(1) == 1 {
+		c.readersDone = make(chan struct{})
+	}
+	c.readerMu.Unlock()
 	var once sync.Once
-	return func() { once.Do(func() { c.readers.Add(-1) }) }
-}
-
-// dropLogEvery rate-limits the full-channel warning.
-const dropLogEvery = time.Minute
-
-func (c *ACPClient) noteDropped() {
-	n := c.dropped.Add(1)
-	now := time.Now().UnixNano()
-	last := c.lastDropLog.Load()
-	if last != 0 && time.Duration(now-last) < dropLogEvery {
-		return
+	return func() {
+		once.Do(func() {
+			c.readerMu.Lock()
+			if c.readers.Add(-1) == 0 {
+				close(c.readersDone)
+			}
+			c.readerMu.Unlock()
+		})
 	}
-	if !c.lastDropLog.CompareAndSwap(last, now) {
-		return
-	}
-	c.dropped.Add(-n)
-	c.lg.Warn().Int64("dropped", n).Msg("acp event channel full, dropping messages")
 }
 
 func parseOpAndSession(raw json.RawMessage) (string, string) {

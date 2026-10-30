@@ -87,7 +87,17 @@ describe('useRunDetailLiveLog', () => {
     await Promise.resolve()
 
     expect(live.logEvents.value).toEqual([])
+    await live.fetchNodeEvents('a1')
     live.mergeLiveWsAcpPage('a1', [{ kind: 'message', text: 'hi', t: 1 }])
+    let current = true
+    let finish!: (value: { events: { kind: string; text: string; t: number }[] }) => void
+    vi.mocked(api.nodeEvents).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const staleRead = live.fetchNodeEvents('a1', { isCurrent: () => current })
+    live.mergeLiveWsAcpPage('a1', [{ kind: 'message', text: 'newer live reply', t: 2 }])
+    current = false
+    finish({ events: [{ kind: 'message', text: 'older REST reply should never enter this turn', t: 1 }] })
+    expect(await staleRead).toBe(false)
+    expect(live.eventPages.a1?.events).toEqual([expect.objectContaining({ kind: 'message', text: 'newer live reply', t: 2 })])
     live.syncAllMcpCallsFromRun()
     live.goSandboxLogTab()
     expect(nodeTab.value).toBe('sandbox')

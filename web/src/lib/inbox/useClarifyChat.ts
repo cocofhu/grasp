@@ -65,6 +65,7 @@ import {
 } from '@/lib/inbox/composerAutoGrow'
 import type { Ref } from 'vue'
 import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import { acpSemanticFingerprint } from '@/lib/chat/reviewSessionState'
 import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 import { replySpan } from '@/lib/inbox/turnSpan'
 import {
@@ -1157,12 +1158,15 @@ async function sendFromComposer(): Promise<boolean> {
     const item: QueueItem = { ...prepared }
     const localSend = registerLocalSend(item)
     const generation = conversationGeneration
+    const identity = [props.runId, props.nodeId, props.iteration] as const
+    const ownsRequest = () => generation === conversationGeneration &&
+      props.runId === identity[0] && props.nodeId === identity[1] && props.iteration === identity[2]
     let accepted = false
     try {
       const acknowledged = await props.sendRequest(prepared.text, prepared.images, prepared.annotations, item.clientMessageId)
       // The socket can prove acceptance even when the HTTP response was lost.
       if (!acknowledged && !localSend.begun) return false
-      if (generation !== conversationGeneration) return false
+      if (!ownsRequest()) return false
       accepted = true
       if (draft.value === originalDraft) draft.value = ''
       if (attachments.value === originalImages && JSON.stringify(attachments.value) === JSON.stringify(imgs)) attachments.value = []
@@ -1172,8 +1176,10 @@ async function sendFromComposer(): Promise<boolean> {
       if (!hasComposerDraft()) releaseStash()
       paintAcceptedUserTurn(localSend)
     } finally {
-      if (!accepted) removeLocalPendingPair(item)
-      if (generation === conversationGeneration) composerSending.value = false
+      if (ownsRequest()) {
+        if (!accepted) removeLocalPendingPair(item)
+        composerSending.value = false
+      }
     }
     return true
   }
@@ -2794,19 +2800,9 @@ function ensureOrphanSlot() {
 }
 
 function acpSnapshotSig(events: AcpEvent[]): string {
-  let msg = ''
-  let thought = ''
-  const tools: string[] = []
-  let parts = ''
-  for (const ev of events) {
-    if (ev.kind === 'message' && ev.text) msg = ev.text
-    else if (ev.kind === 'thought' && ev.text) thought = ev.text
-    else if (ev.kind === 'tool_call') tools.push(`${ev.title || ''}:${ev.status || ''}`)
-    else if (ev.kind === 'timeline' && ev.parts) {
-      parts = ev.parts.map((p) => `${p.kind}:${p.text || ''}:${p.title || ''}:${p.status || ''}`).join('|')
-    }
-  }
-  return `${thought}\n${msg}\n${tools.join(',')}\n${parts}`
+  // Use the same complete content identity as recovery. Tool details can keep
+  // growing while their status and the message/thought rails stay unchanged.
+  return acpSemanticFingerprint(events) ?? ''
 }
 
 function snapshotAlreadyOnAgent(agent: ClarifyTurn, events: AcpEvent[]): boolean {
@@ -2828,7 +2824,9 @@ function snapshotAlreadyOnAgent(agent: ClarifyTurn, events: AcpEvent[]): boolean
  * the slot open, so late thought and body land on the open page.
  */
 function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolean {
-  if (!events?.length) return true
+  // Watchdog observations carry no replacement timeline and must not open a
+  // reply slot or erase tool details already painted by a content snapshot.
+  if (!events?.some(event => event.kind !== 'liveness')) return true
   // Wrong node: not a readiness failure — do not buffer for another surface.
   if (nodeId && nodeId !== props.nodeId) return true
   if (liveAgentIdx.value < 0 && orphanTurnStillRunning()) ensureOrphanSlot()
