@@ -259,11 +259,15 @@ const humanPendingRows = computed(() => pendingRows.value.filter((it) => rowGrou
 const autoPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'auto'))
 const orderedHumanRows = computed(() => orderWithPins(humanPendingRows.value, (it) => it.runId, runPins.value))
 const orderedAutoRows = computed(() => orderWithPins(autoPendingRows.value, (it) => it.runId, runPins.value))
-/** Active Solo sandboxes share the same running section as workflow runs. */
+/**
+ * Active Solo sandboxes share the same running section as workflow runs.
+ * Ordered by start time (newest first) so activity never reshuffles the rows.
+ */
 const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
-  const aAt = Date.parse(a.lastActiveAt || a.updatedAt || a.createdAt)
-  const bAt = Date.parse(b.lastActiveAt || b.updatedAt || b.createdAt)
-  return (Number.isFinite(bAt) ? bAt : 0) - (Number.isFinite(aAt) ? aAt : 0)
+  const aAt = Date.parse(a.createdAt)
+  const bAt = Date.parse(b.createdAt)
+  const diff = (Number.isFinite(bAt) ? bAt : 0) - (Number.isFinite(aAt) ? aAt : 0)
+  return diff || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }))
 const orderedSoloRows = computed(() => orderWithPins(soloRows.value, soloRowKey, soloPins.value))
 const runningSectionCount = computed(() => orderedHumanRows.value.length + orderedSoloRows.value.length)

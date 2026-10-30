@@ -21,6 +21,7 @@ const (
 	KeyRunSandboxMaxRetH = "run_sandbox_max_retention_hours"
 	KeyTestSandboxTTLMin = "test_sandbox_ttl_minutes"
 	KeyMaxTestSandboxes  = "max_test_sandboxes"
+	KeyMaxSoloSandboxes  = "max_solo_sandboxes"
 	KeyNodeAutoRetryMax  = "node_auto_retry_max"
 	KeySandboxMemoryMB   = "sandbox_memory_mb"
 	KeyAgentIdleMin      = "agent_idle_timeout_minutes"
@@ -69,6 +70,12 @@ type RetentionTuner interface {
 	SetMaxRetention(d time.Duration)
 }
 
+// SoloLimitTuner is the optional slice of the sandbox service that accepts the
+// live Solo sandbox cap; fakes that don't implement it are skipped.
+type SoloLimitTuner interface {
+	SetMaxSoloSandboxes(n int)
+}
+
 // SettingsService is the DB override layer for platform scheduling params. It
 // resolves effective values (env > DB > config-file > default), persists UI
 // edits, and applies them to the running engine / sandbox service.
@@ -106,6 +113,8 @@ func knobs() []knob {
 			func(c *config.Config) int { return c.Sandbox.TestSandboxTTLMinutes }},
 		{KeyMaxTestSandboxes, "最大测试沙箱数", "", 1, 0, "",
 			func(c *config.Config) int { return c.Sandbox.MaxTestSandboxes }},
+		{KeyMaxSoloSandboxes, "最大 Solo 沙箱数", "", 1, 0, "",
+			func(c *config.Config) int { return c.Sandbox.MaxSoloSandboxes }},
 		{KeyNodeAutoRetryMax, "节点自动重试次数", "次", 0, 0, "GRASP_NODE_AUTO_RETRY",
 			func(c *config.Config) int { return c.Engine.NodeAutoRetryMax }},
 		{KeySandboxMemoryMB, "沙箱内存上限", "MiB", 1024, 0, "GRASP_SANDBOX_MEMORY_MB",
@@ -257,6 +266,9 @@ func (s *SettingsService) apply() {
 		s.sbx.SetMaxTestSandboxes(m[KeyMaxTestSandboxes])
 		if rt, ok := s.sbx.(RetentionTuner); ok {
 			rt.SetMaxRetention(time.Duration(m[KeyRunSandboxMaxRetH]) * time.Hour)
+		}
+		if st, ok := s.sbx.(SoloLimitTuner); ok {
+			st.SetMaxSoloSandboxes(m[KeyMaxSoloSandboxes])
 		}
 	}
 	sandbox.SetDefaultMemoryMB(m[KeySandboxMemoryMB])

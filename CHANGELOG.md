@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Solo sandbox limit and running order:** admins can change how many Solo sandboxes run at once under Settings → Capacity, applied immediately and kept across restarts. Solo sessions in the running list now stay in start order, newest first, instead of jumping to the top on every reply.
+
 - **Long agent turns:** a turn is no longer stopped while the agent is still working. Solo turns were cut off at 60 minutes, PM, channel and scheduled-task turns at about 10 minutes (scheduled tasks gave up waiting at 30 minutes), and Agent test chats at 10 minutes; none of them has a default total time limit now. A turn that goes silent is still stopped by the no-activity limit. Limits you set yourself still apply: the workflow node time limit, a channel's turn timeout and `SANDBOX_TURN_MAX_DURATION`.
 
 - **Agent studio layout:** the agent list no longer takes a column of its own. Click the agent name in the top bar to search, switch agents, open Agent defaults, create, import, export, rename or delete, which leaves more room for the file tree and editor. Switching agents keeps the current tab instead of jumping back to the workspace directory. Agent and Agent defaults tabs are larger, show counts as small badges instead of "(n)", and use a sliding underline.
