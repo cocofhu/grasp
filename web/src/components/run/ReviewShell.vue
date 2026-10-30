@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import ConversationWorkspace from '@/components/chat/ConversationWorkspace.vue'
 import ConfirmFlowOverlay from '@/components/run/ConfirmFlowOverlay.vue'
 import { provideConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
-import { ensureConversationDrawer, readArtifactPanelOpen, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
+import { ensureConversationDrawer, readArtifactPanelOpen, readRememberedPanelMode, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 import { provideConversationArtifacts } from '@/lib/chat/conversationArtifacts'
 import { stageLinksFor } from '@/lib/run/stageLinks'
 
@@ -18,17 +18,20 @@ const props = withDefaults(defineProps<{
   chatOnly?: boolean
   /** Conversation hosts the sandbox stage: resource and artifact icons share one drawer. */
   splitDrawer?: boolean
-  /** Workspace shells with an artifact panel read and write the page-session switch. */
+  /** Workspace shells with an artifact panel read and write the remembered drawer switch. */
   rememberArtifactPanel?: boolean
+  /** Chat the remembered switch belongs to. Defaults to the run. */
+  panelMemoryKey?: string
   /** Passed through to the conversation toolbar. Omit to keep 「对话」. */
   runName?: string
 }>(), { scopeKey: 'review-conversation', hostConfirmFlow: true, chatOnly: false, splitDrawer: false, rememberArtifactPanel: false })
 
 const { t } = useI18n()
 const remembersPanel = () => props.rememberArtifactPanel && !props.chatOnly
+const memoryKey = () => props.panelMemoryKey || props.runId
 function rememberedPanel(): { open: boolean; mode: 'resources' | 'artifacts' | null } {
-  const open = remembersPanel() && readArtifactPanelOpen()
-  return { open, mode: open && props.splitDrawer ? 'artifacts' : null }
+  const open = remembersPanel() && readArtifactPanelOpen(memoryKey())
+  return { open, mode: open && props.splitDrawer ? readRememberedPanelMode(memoryKey()) : null }
 }
 const initialPanel = rememberedPanel()
 const panelOpen = ref(initialPanel.open)
@@ -64,12 +67,11 @@ watch(() => props.chatOnly, (chatOnly) => {
   panelMode.value = null
   applyingSession = false
 })
-watch([panelOpen, panelMode], ([open, mode], [prevOpen, prevMode]) => {
+watch([panelOpen, panelMode], ([open, mode], [prevOpen]) => {
   if (applyingSession || !remembersPanel()) return
-  const shown = !!open && (!props.splitDrawer || mode === 'artifacts')
-  const wasShown = !!prevOpen && (!props.splitDrawer || prevMode === 'artifacts')
-  if (shown) writeArtifactPanelOpen(true)
-  else if (!open && (wasShown || !!prevOpen)) writeArtifactPanelOpen(false)
+  // A shell without split homes keeps the home a split shell last remembered.
+  if (open) writeArtifactPanelOpen(true, props.splitDrawer ? (mode === 'resources' ? 'resources' : 'artifacts') : undefined, memoryKey())
+  else if (prevOpen) writeArtifactPanelOpen(false, undefined, memoryKey())
 }, { flush: 'sync' })
 watch(
   () => [props.runId, props.splitDrawer, props.chatOnly, panelOpen.value, panelMode.value] as const,

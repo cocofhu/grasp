@@ -28,6 +28,14 @@
 - 为什么：与 Solo（#1054）同类，忙时发送的消息同时出现在对话与排队面板；服务端在 `turn_begin` 才持久化用户消息，刷新后只剩队列条目。`f4ac5af9` 起刻意保留等待行，各界面因此不一致；Agent 测试器原本即只在队列显示，PM 忙时不允许发送。
 - 如何验证：新增组件回归断言忙时发送在整页只出现一次（队列中）、开始后进入对话且离开队列，旧实现下该条出现两次而失败；审批回归断言等待项不在 `reactTranscriptTurns`，开始后进入。原断言等待行的 9 项单测改为断言队列中的身份、图片与标注，同文两条开始后各自挂上自己的回复。Web lint（0 error）、vue-tsc、生产构建及 544 文件 6,002 项单测通过，Lines 91.83%。关键路径浏览器用例中 `gates-typing-autoapply` 与 `clarify-session-ux` 按新行为改为断言等待项在队列、不在对话，其余通过；同时构建 Docker 镜像导致的两项超时单独复跑通过。CI 外的 `message-reliability` 同步更新后通过；`react-empty-fail` 与 `review-session-ux` 共 3 项在当前 main 上同样失败，与本次无关。
 
+### 2026-10-30（对话右侧产物/资源抽屉记住打开状态）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`web/src/lib/chat/conversationDrawer.ts`、`web/src/components/run/ReviewShell.vue`、`web/src/components/solo/SoloSessionPane.vue`、`web/src/components/run/ReviewShell.test.ts`。
+- 做了什么：抽屉开关改为按对话记忆（`ReviewShell` 新增 `panelMemoryKey`，默认 run id；Solo 用 `solo:<sessionId>`），同时记住开/关和停在「资源」还是「产物」；没有自己记录的对话沿用最近一次的状态。存 `localStorage` 的 `grasp.conversation.drawer`，整页刷新后仍恢复，最多保留最近 200 个对话（按数组存顺序，数字 run id 也按最近使用淘汰），每次读写都直接读存储以免覆盖其他标签页写入，坏数据忽略。不分栏的壳不覆盖记住的栏。Solo 对话接入（`remember-artifact-panel`）。
+- 为什么：回到对话时右侧资源/产物每次都被关掉；Solo 原本不记忆，`artifactRunId` 从 pending 变为真实 id 时也会关；运行视图只记产物且只存内存，刷新即丢。
+- 如何验证：`ReviewShell.test.ts` 新增按对话恢复（含刷新）、坏数据、数字 id 的淘汰顺序与跨标签页写入用例，并按新语义改写原会话用例；`npm run lint`（0 error）、`npx vue-tsc --noEmit`、`npm test -- --coverage` 全量 544 文件 / 6004 用例通过（Lines 91.84%），`npm run build` 通过。
+
 ### 2026-10-30（Solo 排队消息不提前进入对话）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。
