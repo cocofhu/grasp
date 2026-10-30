@@ -179,12 +179,17 @@ describe('useGateApproval actions', () => {
     expect(approval.reactTurns.value.map(turn => [turn.text, turn.streamText, turn.status])).toEqual([
       ['request A', 'response A', 'active'], ['request B', '', 'pending'],
     ])
+    // B is shown once, in the queue panel, until its own turn begins.
+    expect(approval.reactTranscriptTurns.value.map(turn => turn.text)).toEqual(['request A'])
+    expect(approval.reactQueued.value.map(item => item.text)).toContain('request B')
     approval.applyReviewFrame({ event: 'turn_done', nodeId: 'producer' })
     approval.applyReviewFrame({ event: 'turn_begin', nodeId: 'producer', item: { id: 'B', text: 'request B' } })
     approval.applyAcpEvents([{ kind: 'message', text: 'response B' }])
     expect(approval.reactTurns.value.map(turn => [turn.text, turn.streamText])).toEqual([
       ['request A', 'response A'], ['request B', 'response B'],
     ])
+    expect(approval.reactTranscriptTurns.value.map(turn => turn.text)).toEqual(['request A', 'request B'])
+    expect(approval.reactQueued.value.map(item => item.text)).not.toContain('request B')
     app.unmount()
   })
 

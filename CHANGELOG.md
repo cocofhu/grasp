@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Workflow and approval queued messages:** in clarification, run details, review gates and shared approval links, a message sent while a reply is still running now appears only in the queue panel and enters the conversation when its own reply starts, matching Solo and the page after a reload.
+
 - **Solo queued messages:** a message sent while a reply is still running now waits only in the queue and enters the conversation when its turn begins, instead of also showing an early bubble with an empty reply that disappeared on reload.
 
 - **Light theme contrast:** secondary text, placeholders and borders are darker so small labels stay readable, and the home page background pattern is fainter.

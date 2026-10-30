@@ -73,20 +73,17 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
 
     await page.getByTestId('sim-turn-stream').click()
     await expect(page.getByText('流式产出正文（非整轮一次性）。')).toBeVisible()
-    // After real pump order, the live stream binds to 甲. 乙 stays visible as the
-    // next accepted user row, not as the live human or an empty failure.
+    // After real pump order, the live stream binds to 甲. 乙 waits only in the
+    // queue panel: no user row and no empty failure until its own turn_begin.
     const scrollerAfterBegin = page.getByTestId('clarify-scroller')
     await expect(scrollerAfterBegin).toContainText('澄清意见甲（队列首条）')
-    await expect(scrollerAfterBegin).toContainText('澄清意见乙（仍在队列）')
+    await expect(scrollerAfterBegin).not.toContainText('澄清意见乙（仍在队列）')
     const beginText = await scrollerAfterBegin.innerText()
     expect(beginText.match(/澄清意见甲（队列首条）/g)?.length ?? 0).toBe(1)
-    expect(beginText.match(/澄清意见乙（仍在队列）/g)?.length ?? 0).toBe(1)
     await expect(scrollerAfterBegin.getByTestId('clarify-empty-fail')).toHaveCount(0)
     const jiaAt = beginText.indexOf('澄清意见甲（队列首条）')
     const streamAt = beginText.indexOf('流式产出正文')
-    const yiAt = beginText.indexOf('澄清意见乙（仍在队列）')
     expect(streamAt).toBeGreaterThan(jiaAt)
-    expect(yiAt).toBeGreaterThan(streamAt)
     await expect(queue).toContainText('澄清意见乙')
     await expect(queue).not.toContainText('澄清意见甲')
     // Host busy gate: react mid-turn must skip full refresh.
@@ -117,16 +114,12 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
 
     const scroller = page.getByTestId('clarify-scroller')
     await expect(scroller).toContainText('澄清意见甲（队列首条）')
-    await expect(scroller).toContainText('澄清意见乙（仍在队列）')
+    await expect(scroller).not.toContainText('澄清意见乙（仍在队列）')
     const text = await scroller.innerText()
     expect(text.match(/澄清意见甲（队列首条）/g)?.length ?? 0).toBe(1)
-    expect(text.match(/澄清意见乙（仍在队列）/g)?.length ?? 0).toBe(1)
     await expect(scroller.getByTestId('clarify-empty-fail')).toHaveCount(0)
     const jiaAt = text.indexOf('澄清意见甲（队列首条）')
-    const yiAt = text.indexOf('澄清意见乙（仍在队列）')
-    expect(yiAt).toBeGreaterThan(jiaAt)
     expect(text.indexOf('思考中')).toBeGreaterThan(jiaAt)
-    expect(text.indexOf('思考中')).toBeLessThan(yiAt)
     const queue = page.getByTestId('clarify-review-queue')
     await expect(queue).toContainText('澄清意见乙（仍在队列）')
     await expect(queue).not.toContainText('澄清意见甲')

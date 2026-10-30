@@ -168,7 +168,7 @@ describe('useClarifyChat actions', () => {
       chat.applyReviewFrame({ event: 'turn_begin', item })
       expect(chat.queued.value).toHaveLength(1)
       expect(chat.queued.value[0]?.annotations[0]?.selector).toBe('#second')
-      expect(chat.displayTurns.value.filter(turn => turn.role === 'human')).toHaveLength(2)
+      expect(chat.displayTurns.value.filter(turn => turn.role === 'human')).toHaveLength(1)
     } finally { app.unmount() }
   })
 
@@ -2037,7 +2037,7 @@ describe('accepted message reconciliation', () => {
     chat.discardLastQueued(ids[0])
     expect(chat.queued.value).toHaveLength(1)
     expect(chat.queued.value[0]?.clientMessageId).toBe(ids[1])
-    expect(chat.displayTurns.value.filter(turn => turn.role === 'human')).toHaveLength(2)
+    expect(chat.displayTurns.value.filter(turn => turn.role === 'human').map(turn => turn.text)).toEqual(['active'])
     expect(chat.displayTurns.value.find(turn => turn.text === 'active reply')?.streaming).toBe(true)
   })
 
@@ -2152,15 +2152,16 @@ describe('accepted message reconciliation', () => {
         expect(await chat.sendFromComposer()).toBe(true)
       }
       expect(emit.mock.calls.filter(([event]) => event === 'send')).toHaveLength(2)
-      expect(chat.displayTurns.value.filter((turn) => turn.role === 'human')).toHaveLength(3)
+      // Waiters stay in the queue until their own turn_begin.
+      expect(chat.displayTurns.value.filter((turn) => turn.role === 'human')).toHaveLength(1)
       expect(chat.displayTurns.value.filter((turn) => turn.role === 'agent')).toHaveLength(1)
+      expect(chat.queued.value).toHaveLength(2)
+      expect(new Set(chat.queued.value.map((item) => item.clientMessageId)).size).toBe(2)
       if (kind === 'image') {
-        expect(chat.displayTurns.value.filter((turn) => turn.role === 'human').slice(1).map((turn) => turn.images?.[0]?.name))
-          .toEqual(['shot-1.png', 'shot-2.png'])
+        expect(chat.queued.value.map((item) => item.images[0]?.name)).toEqual(['shot-1.png', 'shot-2.png'])
       }
       if (kind === 'annotation') {
-        expect(chat.displayTurns.value.filter((turn) => turn.role === 'human').slice(1).map((turn) => turn.annotations?.[0]?.selector))
-          .toEqual(['#item-1', '#item-2'])
+        expect(chat.queued.value.map((item) => item.annotations[0]?.selector)).toEqual(['#item-1', '#item-2'])
       }
       chat.applyReviewFrame({ event: 'turn_done' })
       for (let i = 1; i <= 2; i++) {
@@ -2241,8 +2242,8 @@ describe('accepted message reconciliation', () => {
     if (action === 'cancel') chat.cancelQueuedItem(0)
     else await chat.editQueuedItem(0)
     expect(chat.queued.value.map((item) => item.id)).toEqual(['second'])
-    expect(chat.displayTurns.value.filter((turn) => turn.role === 'human' && turn.text === 'same text')
-      .map((turn) => turn.images?.[0]?.name)).toEqual(['second.png'])
+    expect(chat.queued.value[0]?.images[0]?.name).toBe('second.png')
+    expect(chat.displayTurns.value.some((turn) => turn.text === 'same text')).toBe(false)
     if (action === 'edit') expect(models.attachments.value[0]?.name).toBe('first.png')
   })
 

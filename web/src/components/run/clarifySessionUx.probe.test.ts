@@ -80,8 +80,8 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
 
   it('real pump order: queue_state(remaining) then turn_begin(active) binds 甲 not 乙', async () => {
     // Server pump: queue_state items=剩余(不含 active) → turn_begin item=当前轮.
-    // Both accepted rows stay visible. The live stream binds to 甲; 乙 waits
-    // as a user row and is not drawn as an empty failure (review v1).
+    // The live stream binds to 甲; 乙 waits only in the queue panel and is
+    // neither a user row nor an empty failure until its own turn_begin.
     const w = mountClarify()
     await sendText(w, '澄清意见甲')
     await sendText(w, '澄清意见乙')
@@ -105,15 +105,14 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     const scroller = w.find('[data-testid="clarify-scroller"]')
     const humans = scroller.findAll('[data-testid="clarify-human-message"]').map((node) => node.text())
     expect(humans.filter((text) => text.includes('澄清意见甲'))).toHaveLength(1)
-    expect(humans.filter((text) => text.includes('澄清意见乙'))).toHaveLength(1)
+    expect(humans.filter((text) => text.includes('澄清意见乙'))).toHaveLength(0)
     expect(scroller.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
     const body = scroller.text()
     const jia = body.indexOf('澄清意见甲')
     const busy = body.indexOf('思考中')
-    const yi = body.indexOf('澄清意见乙')
     expect(jia).toBeGreaterThanOrEqual(0)
     expect(busy).toBeGreaterThan(jia)
-    expect(yi).toBeGreaterThan(busy)
+    expect(body).not.toContain('澄清意见乙')
     expect(w.find('[data-testid="clarify-review-queue"]').text()).toContain('澄清意见乙')
     expect(w.find('[data-testid="clarify-review-queue"]').text()).not.toContain('澄清意见甲')
     w.unmount()
