@@ -297,7 +297,9 @@ test('tool-only recovery survives watchdog traffic and three identical accepted 
     await expect.poll(() => accepted.length).toBe(count)
   }
   expect(new Set(accepted.map(item => item.clientMessageId)).size).toBe(3)
-  await expect(page.getByTestId('clarify-human-message').filter({ hasText: '继续检查' })).toHaveCount(3)
+  // Waiters behind the active reply stay in the queue panel only.
+  await expect(page.getByTestId('clarify-queue-item').filter({ hasText: '继续检查' })).toHaveCount(3)
+  await expect(page.getByTestId('clarify-human-message').filter({ hasText: '继续检查' })).toHaveCount(0)
   await input.fill('保留这段未发送的草稿')
 
   let release!: () => void

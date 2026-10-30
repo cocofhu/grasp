@@ -51,7 +51,7 @@ const producerConversation = computed(() => s.run?.clarifyByNode?.[s.gate.reactU
     :stream-tools="s.reactStreamTools"
     :interrupted="s.reactInterrupted"
     :stream-completed-at="s.reactStreamCompletedAt"
-    :gate-turns="s.reactTurns"
+    :gate-turns="s.reactTranscriptTurns"
     @send="s.onComposerReject"
     @finish="s.onComposerPass"
     @cancel="s.cancelReactRevise"

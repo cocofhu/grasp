@@ -88,7 +88,8 @@ test('持久化首段回复后，当前思考仍在排队用户前继续输出',
   const currentHuman = chat.getByTestId('clarify-human-message').filter({ hasText: '回复信息改成统计信息' })
   const nextHuman = chat.getByTestId('clarify-human-message').filter({ hasText: '暗色主题感觉不太行' })
   await expect(currentHuman).toHaveCount(1)
-  await expect(nextHuman).toHaveCount(1)
+  // The waiter stays in the queue panel until its own turn begins.
+  await expect(nextHuman).toHaveCount(0)
   await expect(chat.getByText('已把回复信息改成统计信息。', { exact: true })).toHaveCount(1)
   await expect(chat.getByTestId('agent-timeline-thought')).toContainText('继续检查统计信息的展示效果。')
   await expect(chat.getByTestId('clarify-busy-status')).toHaveCount(1)
@@ -97,7 +98,7 @@ test('持久化首段回复后，当前思考仍在排队用户前继续输出',
   await expect(chat.getByTestId('clarify-empty-fail')).toHaveCount(0)
   const text = await chat.getByTestId('clarify-scroller').innerText()
   expect(text.indexOf('继续检查统计信息的展示效果。')).toBeGreaterThan(text.indexOf('回复信息改成统计信息'))
-  expect(text.indexOf('暗色主题感觉不太行')).toBeGreaterThan(text.indexOf('继续检查统计信息的展示效果。'))
+  expect(text).not.toContain('暗色主题感觉不太行')
   await page.screenshot({ path: test.info().outputPath('sealed-segment-still-running.png'), fullPage: false })
 
   await page.getByTestId('sim-continue-segment').click()

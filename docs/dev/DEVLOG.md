@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（工作流与审批排队消息只留在队列）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/src/lib/inbox/useClarifyChat.ts`、`web/src/lib/inbox/useGateApproval.ts`、`web/src/components/run/gateApproval/{gateApprovalContext.ts,GateApprovalComposer.vue,GateApprovalContentFit.vue,GateApprovalMobileFill.vue}`、相关单测与 `web/e2e/clarify-session-ux.spec.ts`、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：`paintAcceptedUserTurn` 在已有活动回复时不再绘制等待中的用户行，等待项只在队列面板，`turn_begin` 再按既有路径建立它自己的用户行与回复；空闲时的首条发送仍立即绘制并由 `turn_begin` 接管。审批热修订新增 `reactTranscriptTurns`，对话只渲染已开始或当前激活的轮次，`reactTurns` 内部状态不变。公开审批页经 `ReviewComposer`/`ClarifyChat` 一并生效。
+- 为什么：与 Solo（#1054）同类，忙时发送的消息同时出现在对话与排队面板；服务端在 `turn_begin` 才持久化用户消息，刷新后只剩队列条目。`f4ac5af9` 起刻意保留等待行，各界面因此不一致；Agent 测试器原本即只在队列显示，PM 忙时不允许发送。
+- 如何验证：新增组件回归断言忙时发送在整页只出现一次（队列中）、开始后进入对话且离开队列，旧实现下该条出现两次而失败；审批回归断言等待项不在 `reactTranscriptTurns`，开始后进入。原断言等待行的 9 项单测改为断言队列中的身份、图片与标注，同文两条开始后各自挂上自己的回复。Web lint（0 error）、vue-tsc、生产构建及 544 文件 6,002 项单测通过，Lines 91.83%。关键路径浏览器用例中 `gates-typing-autoapply` 与 `clarify-session-ux` 按新行为改为断言等待项在队列、不在对话，其余通过；同时构建 Docker 镜像导致的两项超时单独复跑通过。CI 外的 `message-reliability` 同步更新后通过；`react-empty-fail` 与 `review-session-ux` 共 3 项在当前 main 上同样失败，与本次无关。
+
 ### 2026-10-30（对话右侧产物/资源抽屉记住打开状态）
 
 - 日期：2026-10-30（UTC）。

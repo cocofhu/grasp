@@ -139,6 +139,7 @@ export type GateApprovalState = {
   reactStreamText: string
   reactLiveHumanText: string
   reactTurns: GateReactTurn[]
+  reactTranscriptTurns: GateReactTurn[]
   reactStreamThought: string
   reactStreamTools: AgentTool[]
   reactInterrupted: boolean

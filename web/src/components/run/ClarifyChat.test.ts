@@ -1044,7 +1044,34 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('keeps every assistant segment before a pending user row, without a failure card for the waiter', async () => {
+  it('shows a send behind a running reply once, in the queue, until its turn begins', async () => {
+    const wrapper = mountChat({ draft: '排队中的请求' })
+    const vm = wrapper.vm as unknown as {
+      applyReviewFrame: (frame: Record<string, unknown>) => void
+      applyAcpEvents: (events: { kind: string; text?: string }[], node?: string) => void
+    }
+    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'active', text: '当前请求' } })
+    vm.applyAcpEvents([{ kind: 'message', text: '正在回复' }], 'react-1')
+    await clickSend(wrapper)
+    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', busy: true, waiting: 1, items: [{ id: 'queued', text: '排队中的请求' }], activeItem: { id: 'active', text: '当前请求' } })
+    await flushPromises()
+    const count = (text: string) => text.split('排队中的请求').length - 1
+    expect(count(wrapper.text())).toBe(1)
+    expect(count(wrapper.get('[data-testid="clarify-scroller"]').text())).toBe(0)
+    expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
+
+    vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'queued', text: '排队中的请求' } })
+    vm.applyAcpEvents([{ kind: 'message', text: '排队请求的回复' }], 'react-1')
+    await flushPromises()
+    expect(count(wrapper.get('[data-testid="clarify-scroller"]').text())).toBe(1)
+    expect(count(wrapper.text())).toBe(1)
+    expect(wrapper.findAll('[data-testid="clarify-human-message"]').map((node) => node.text()))
+      .toEqual(['当前请求', '排队中的请求'])
+    wrapper.unmount()
+  })
+
+  it('keeps every assistant segment while a waiter stays queued, without a failure card for it', async () => {
     const wrapper = mountChat({ draft: '下一条请求' })
     const vm = wrapper.vm as unknown as {
       applyReviewFrame: (frame: Record<string, unknown>) => void
@@ -1064,7 +1091,7 @@ describe('ClarifyChat', () => {
       .toEqual(['第一段回复', '第二段回复', '第三段回复'])
     expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
     const scroller = wrapper.get('[data-testid="clarify-scroller"]')
-    expect(scroller.text().indexOf('下一条请求')).toBeGreaterThan(scroller.text().indexOf('第三段回复'))
+    expect(scroller.text()).not.toContain('下一条请求')
 
     vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
     vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'waiting', text: '下一条请求' } })
