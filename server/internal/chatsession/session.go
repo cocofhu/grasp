@@ -38,6 +38,7 @@ type ItemView struct {
 	Text            string
 	Images          []models.PromptImage
 	Annotations     []models.ReactAnnotation
+	References      []models.MessageReference
 }
 
 // Frame renders the view in the queue_state / turn_begin item shape. Nil
@@ -59,6 +60,9 @@ func (v ItemView) Frame() map[string]any {
 	}
 	if v.ClientMessageID != "" {
 		out["clientMessageId"] = v.ClientMessageID
+	}
+	if len(v.References) > 0 {
+		out["references"] = v.References
 	}
 	return out
 }

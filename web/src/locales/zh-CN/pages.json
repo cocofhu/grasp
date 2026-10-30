@@ -4808,6 +4808,42 @@
         "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
         "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。"
+      },
+      "reference": {
+        "pickerLabel": "引用会话或 GitHub Issue/PR",
+        "tabs": {
+          "all": "全部",
+          "solo": "会话",
+          "issue": "Issue",
+          "pr": "PR"
+        },
+        "stateLabel": "状态筛选",
+        "state": {
+          "open": "Open",
+          "all": "全部"
+        },
+        "more": "查看更多{kind}",
+        "loadMore": "加载更多",
+        "loading": "加载中…",
+        "noMatch": "没有匹配的结果",
+        "full": "每条消息最多引用 {n} 个",
+        "githubSubtitle": "{repo} · {state} · {n} 条评论",
+        "sessionStatus": {
+          "running": "运行中",
+          "starting": "启动中",
+          "closed": "已关闭",
+          "error": "异常"
+        },
+        "remove": "移除引用 {label}",
+        "deleted": "引用的会话已被删除",
+        "denied": "无权访问：{reason}",
+        "unchecked": "发送时未能确认访问权限，Agent 会自行读取",
+        "pinned": "截至发送时 {n} 条消息",
+        "menu": {
+          "upload": "上传文件",
+          "session": "引用会话",
+          "github": "引用 Issue / PR"
+        }
       }
     },
     "projects": {

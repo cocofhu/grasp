@@ -105,6 +105,15 @@ The workspace lists and uses only credentials explicitly created with the curren
 
 Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires a selected model or explicit inheritance from Agent defaults. New Agents inherit by default. In Agent metadata, enabling inheritance uses the default model and Git settings and shows one compact inheritance card. Disabling it restores local selections. Git supports multiple saved authorizations with optional site or repository scopes. An omitted list grants no Git access unless inheritance is enabled. Shared workflow sandboxes replace authorizations when nodes change.
 
+## @ references in Solo
+
+Type `@` in the Solo composer, or choose **Reference a session** / **Reference an issue / PR** from the "+" menu, to hand one of these to the turn:
+
+- **Your other Solo sessions**, searched by title; closed sessions work too. The agent first sees a summary of the user's requests in that session and reads the full conversation page by page with the artifact-store `read_reference` tool. It sees the session as it was when the turn began; later messages there are not included.
+- **GitHub issues and pull requests** in the repositories mounted in the current session. You can also type `#number` or paste an issue or PR link. Grasp checks access with the same Git credential the sandbox uses, and the agent reads the latest text, comments and diff with `gh` inside the sandbox.
+
+Use `↑` `↓` to choose, `Enter` to confirm, `Tab` to switch between All, Sessions, Issues and PRs, and `Esc` to close. `Enter` with nothing highlighted sends the message as typed. A message can carry up to 5 references. They are shown above the composer; deleting the `@title` text or clicking × removes one. Referenced content is treated as material, not as instructions.
+
 ## Artifact contract and MCP
 
 Each run has an isolated artifact MCP. Agents call tools such as:

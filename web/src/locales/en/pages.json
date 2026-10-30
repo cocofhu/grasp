@@ -4808,6 +4808,42 @@
         "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
         "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level."
+      },
+      "reference": {
+        "pickerLabel": "Reference a session or GitHub issue/PR",
+        "tabs": {
+          "all": "All",
+          "solo": "Sessions",
+          "issue": "Issues",
+          "pr": "PRs"
+        },
+        "stateLabel": "State filter",
+        "state": {
+          "open": "Open",
+          "all": "All"
+        },
+        "more": "More {kind}",
+        "loadMore": "Load more",
+        "loading": "Loading…",
+        "noMatch": "No matches",
+        "full": "Up to {n} references per message",
+        "githubSubtitle": "{repo} · {state} · {n} comments",
+        "sessionStatus": {
+          "running": "Running",
+          "starting": "Starting",
+          "closed": "Closed",
+          "error": "Error"
+        },
+        "remove": "Remove reference {label}",
+        "deleted": "The referenced session was deleted",
+        "denied": "No access: {reason}",
+        "unchecked": "Access could not be checked at send time; the agent will read it itself",
+        "pinned": "{n} messages as of sending",
+        "menu": {
+          "upload": "Upload file",
+          "session": "Reference a session",
+          "github": "Reference an issue / PR"
+        }
       }
     },
     "projects": {

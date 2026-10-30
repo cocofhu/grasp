@@ -75,6 +75,8 @@ func formatMCPAuditAction(tool string, args map[string]any) string {
 		return "读取运行历史"
 	case "get_history":
 		return "读取当前会话历史"
+	case "read_reference":
+		return joinAudit("读取引用的会话", whitelistArg(args, "ref"))
 	case "get_history_detail":
 		return joinAudit("读取历史详情", whitelistArg(args, "node_id"))
 	case "set_preview":
@@ -131,7 +133,7 @@ func joinAudit(head, extra string) string {
 // whitelistArg reads a single scalar from the allow-listed keys only.
 func whitelistArg(args map[string]any, key string) string {
 	switch key {
-	case "name", "status", "error", "message", "port", "label", "node_id":
+	case "name", "status", "error", "message", "port", "label", "node_id", "ref":
 	default:
 		return ""
 	}
