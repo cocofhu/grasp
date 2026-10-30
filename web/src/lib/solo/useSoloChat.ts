@@ -756,23 +756,24 @@ export function useSoloChat(sessionId: Ref<string>) {
     const send: LocalSend = { localId: local.id, text: body, images, started: false }
     openSends.push(send)
     const started = new Date().toISOString()
-    const makeActive = !activeId.value
-    turns.value = [
-      ...turns.value,
-      {
-        id: `u:${local.id}`,
-        role: 'user',
-        text: body,
-        tools: [],
-        steps: [],
-        plan: [],
-        streaming: false,
-        images: images.length ? images : undefined,
-        createdAt: started,
-      },
-      emptyAgentTurn(`live:${local.id}`, makeActive, started),
-    ]
-    if (makeActive) {
+    // A send behind a running turn stays in the queue until its turn_begin,
+    // matching the persisted transcript a reload shows.
+    if (!activeId.value) {
+      turns.value = [
+        ...turns.value,
+        {
+          id: `u:${local.id}`,
+          role: 'user',
+          text: body,
+          tools: [],
+          steps: [],
+          plan: [],
+          streaming: false,
+          images: images.length ? images : undefined,
+          createdAt: started,
+        },
+        emptyAgentTurn(`live:${local.id}`, true, started),
+      ]
       activeId.value = local.id
       if (!phase.value) phase.value = 'preparing'
     }

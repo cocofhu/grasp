@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Solo queued messages:** a message sent while a reply is still running now waits only in the queue and enters the conversation when its turn begins, instead of also showing an early bubble with an empty reply that disappeared on reload.
+
 ## 3.1.0 — 2026-10-30
 
 Agents can run Kimi Code, keep several model groups, and execute in a worktree image. Conversations stay on the same visit through reconnects, queues and workflow switches.

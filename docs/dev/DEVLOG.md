@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-30（Solo 排队消息不提前进入对话）
+
+- 日期：2026-10-30（Asia/Hong_Kong）。
+- 范围：`web/src/lib/solo/useSoloChat.ts`、`web/src/lib/solo/useSoloChat.test.ts`、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：Solo 会话忙时 `send()` 只把消息放入本地队列，不再向对话追加用户气泡和非流式空回复占位；空闲发送仍立即显示用户消息与准备中的回复。排队消息的对话行由 `turn_begin` / 带 `activeItem` 的 `queue_state` 经 `beginTurn` 创建。新增忙时入队回归用例，并把依赖旧行为的四条断言改为消息留在队列、开始执行后才进入对话。
+- 为什么：忙时入队的消息同时出现在对话与排队面板，空回复被渲染为只有时间的已完成轮次；刷新后持久化历史不含未开始的消息，气泡消失，刷新前后不一致。
+- 如何验证：按服务端帧顺序（Enqueue 的 queue_state、pump 的 activeItem、turn_begin、忙时入队带 activeItem 的 queue_state、后续 ACP 输出）模拟，旧代码对话末尾多出 `u:srv-2` 与空 `live:srv-2`，修复后仅保留当前轮且流式输出持续；新用例在旧实现上失败。Web lint（0 error）、vue-tsc、全量 544 文件 5,998 项单测（Lines 91.83%）与生产构建通过。
+
 ### 2026-10-30（运行记录悬停行留白）
 
 - 日期：2026-10-30（Asia/Hong_Kong）。
