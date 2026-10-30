@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch, type CSSProperties } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, useId, type CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import ResourceList, { type ResourceListItem } from '@/components/ui/ResourceList.vue'
-const props = defineProps<{ nodes: ResourceListItem[]; pinned?: ResourceListItem[]; activeKey: string; collapsed: boolean; hideCreateTeam?: boolean }>()
+const props = defineProps<{ nodes: ResourceListItem[]; pinned?: ResourceListItem[]; activeKey: string; hideCreateTeam?: boolean }>()
 const emit = defineEmits<{
   (e: 'select', key: string): void
   (e: 'rename', agentName: string): void
@@ -12,7 +12,6 @@ const emit = defineEmits<{
   (e: 'create-agent'): void
   (e: 'create-team'): void
   (e: 'export-workspace'): void
-  (e: 'toggle-collapsed'): void
 }>()
 const { t } = useI18n()
 const context = ref<{ name: string; x: number; y: number } | null>(null)
@@ -65,7 +64,7 @@ async function openMore(last = false) {
   moreStyle.value = { visibility: 'hidden' }
   moreOpen.value = true
   await nextTick()
-  if (!moreOpen.value || props.collapsed) return
+  if (!moreOpen.value) return
   positionMore()
   const items = menuItems()
   items[last ? items.length - 1 : 0]?.focus()
@@ -76,7 +75,7 @@ async function closeMore(restoreFocus = false) {
   moreOpen.value = false
   if (restoreFocus) {
     await nextTick()
-    if (!props.collapsed) moreTrigger.value?.focus()
+    moreTrigger.value?.focus()
   }
 }
 
@@ -161,10 +160,12 @@ function runContextAction(action: 'rename' | 'delete') {
   else emit('delete', name)
 }
 
-watch(() => props.collapsed, () => {
+/** The switcher hides this list without unmounting it; its menus must not outlive it. */
+function closeMenus() {
   void closeMore()
   context.value = null
-})
+}
+defineExpose({ closeMenus })
 onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown)
   document.addEventListener('keydown', onDocumentKeydown)
@@ -179,13 +180,11 @@ onBeforeUnmount(() => {
 })
 </script>
 <template>
-  <div class="flex min-h-0 min-w-0 flex-col border-r border-line" data-testid="agent-resource-sidebar" @scroll.capture="onListScroll">
-    <button v-if="collapsed" type="button" :class="buttonClass" :aria-label="t('pages.agentStudio.agentList.expand')" @click="emit('toggle-collapsed')"><Icon name="chevron-right" :size="14" /></button>
-    <ResourceList v-else :nodes="nodes" :pinned="pinned" :active-key="activeKey" :title="t('pages.agentStudio.tree.title')" :total="nodes.length" :search-placeholder="t('pages.agentStudio.tree.searchPlaceholder')" :empty-text="t('pages.agentStudio.tree.empty')" :no-match-text="t('common.empty.noMatchingAgents')" @select="emit('select', $event)" @contextmenu="onContext">
+  <div class="flex min-h-0 min-w-0 flex-col" data-testid="agent-resource-sidebar" @scroll.capture="onListScroll">
+    <ResourceList :nodes="nodes" :pinned="pinned" :active-key="activeKey" :title="t('pages.agentStudio.tree.title')" :total="nodes.length" :search-placeholder="t('pages.agentStudio.tree.searchPlaceholder')" :empty-text="t('pages.agentStudio.tree.empty')" :no-match-text="t('common.empty.noMatchingAgents')" @select="emit('select', $event)" @contextmenu="onContext">
       <template #actions>
         <button type="button" data-testid="agent-tree-create-agent" :class="buttonClass" :title="t('common.buttons.newAgent')" :aria-label="t('common.buttons.newAgent')" @click="emit('create-agent')"><Icon name="plus" :size="12" /></button>
         <button :id="triggerId" ref="moreTrigger" type="button" data-testid="agent-tree-more" :class="buttonClass" :title="t('pages.agentStudio.tree.moreActions')" :aria-label="t('pages.agentStudio.tree.moreActions')" aria-haspopup="menu" :aria-expanded="moreOpen" :aria-controls="menuId" @click="moreOpen ? closeMore() : openMore()" @keydown="onTriggerKeydown"><Icon name="more" :size="15" /></button>
-        <button type="button" data-testid="agent-tree-collapse" :class="buttonClass" :title="t('pages.agentStudio.agentList.collapse')" :aria-label="t('pages.agentStudio.agentList.collapse')" @click="emit('toggle-collapsed')"><Icon :interactive="false" name="chevron-right" :size="14" class="rotate-180" /></button>
       </template>
     </ResourceList>
     <Teleport to="body">

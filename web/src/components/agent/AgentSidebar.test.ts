@@ -10,7 +10,7 @@ const wrappers: VueWrapper[] = []
 function mountSidebar(props: Record<string, unknown> = {}) {
   const wrapper = mount(AgentSidebar, {
     attachTo: document.body,
-    props: { nodes: [{ id: 'alpha', label: 'alpha' }, { id: 'beta', label: 'beta' }], activeKey: 'alpha', collapsed: false, ...props },
+    props: { nodes: [{ id: 'alpha', label: 'alpha' }, { id: 'beta', label: 'beta' }], activeKey: 'alpha', ...props },
     global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { Icon: true } },
   })
   wrappers.push(wrapper)
@@ -35,7 +35,7 @@ describe('Agent list sidebar', () => {
     expect(wrapper.findAll('[data-resource-key]')).toHaveLength(2)
     expect(wrapper.get('[data-testid="resource-list-title"]').attributes('title')).toBe('智能体')
     const header = wrapper.get('[data-testid="resource-list"]').element.firstElementChild!
-    expect(header.querySelectorAll('button')).toHaveLength(3)
+    expect(header.querySelectorAll('button')).toHaveLength(2)
     expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('搜索智能体')
     await wrapper.get('[data-resource-key="beta"]').trigger('click')
     expect(wrapper.emitted('select')).toEqual([['beta']])
@@ -59,19 +59,15 @@ describe('Agent list sidebar', () => {
     expect(wrapper.emitted('create-team')).toHaveLength(1)
     wrapper.unmount()
   })
-  it('hides team creation only for embedded callers and closes the popup when collapsed', async () => {
+  it('hides team creation only for embedded callers and closes its menus on request', async () => {
     const wrapper = mountSidebar({ hideCreateTeam: true })
     await wrapper.get('[data-testid="agent-tree-more"]').trigger('click')
     expect(document.querySelector('[data-testid="agent-tree-create-team"]')).toBeNull()
     expect(document.querySelector('[data-testid="agent-tree-manage"]')).toBeNull()
     expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(2)
-    await wrapper.get('[data-testid="agent-tree-collapse"]').trigger('click')
-    expect(wrapper.emitted('toggle-collapsed')).toEqual([[]])
-    await wrapper.setProps({ collapsed: true })
+    ;(wrapper.vm as unknown as { closeMenus: () => void }).closeMenus()
+    await flushPromises()
     expect(document.querySelector('[role="menu"]')).toBeNull()
-    expect(wrapper.find('[data-testid="resource-list"]').exists()).toBe(false)
-    await wrapper.get('button').trigger('click')
-    expect(wrapper.emitted('toggle-collapsed')).toHaveLength(2)
   })
 
   it('supports menu keyboard navigation and restores focus on Escape', async () => {

@@ -377,9 +377,9 @@ func (s *SandboxService) recordStudioUsage(id uint, usage *models.TokenUsage, by
 	})
 }
 
-// ChatWithTimeout is Chat with a per-call turn timeout override. timeout<=0
-// uses the service default (s.chatTimeout). Used by channel/cron turns that may
-// legitimately run longer than an interactive UI turn.
+// ChatWithTimeout is Chat with an optional total time limit. timeout<=0 sets
+// none: an active turn may run as long as it needs, and a stalled one ends on
+// the sandbox no-activity watchdog or ctx cancellation.
 //
 // Returns the turn's TokenUsage (+ optional by-model breakdown) from
 // prompt_done (nil = not reported), including failed turns. Provider failures
@@ -411,11 +411,10 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{"destroy_at": &at, "updated_at": time.Now()})
 	}()
 
-	turnTimeout := s.chatTimeout
+	chatCtx, cancel := context.WithCancel(ctx)
 	if timeout > 0 {
-		turnTimeout = timeout
+		chatCtx, cancel = context.WithTimeout(ctx, timeout)
 	}
-	chatCtx, cancel := context.WithTimeout(ctx, turnTimeout)
 	defer cancel()
 	result, err := ls.acp.ChatStream(chatCtx, text, images, onEvent)
 	s.noteLiveCodexAuth(id, result, err)

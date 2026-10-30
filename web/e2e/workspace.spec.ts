@@ -243,6 +243,7 @@ test('mobile settings tool navigation survives closing and reopening the drawer'
 for (const [lang, title] of [['zh-CN', '智能体'], ['en', 'Agents']]) test(`Agent list keeps its complete title and secondary actions (${lang})`, async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto(`/workspace.html?view=/agents&lang=${lang}`)
+  await page.getByTestId('agent-switcher-trigger').click()
   const sidebar = page.getByTestId('agent-resource-sidebar')
   const heading = sidebar.getByTestId('resource-list-title')
   await expect(heading).toHaveText(title)

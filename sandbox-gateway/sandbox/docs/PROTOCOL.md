@@ -156,7 +156,7 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 `prompt_done{stopReason:"timeout"}` 收尾。给用户看的说明不包含后台拉起命令。
 
 - `SANDBOX_TURN_IDLE_TIMEOUT`(默认 `20m`,可被 `chat.idleSec` 按轮覆盖):连续这么久没有任何活动;
-- `SANDBOX_TURN_MAX_DURATION`(默认 `60m`,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长,到点直接超时;
+- `SANDBOX_TURN_MAX_DURATION`(默认 `0` 不限,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长,到点直接超时;工作流节点通过 `deadlineSec` 传入节点时限,Solo 不传;
 - `SANDBOX_LIVENESS_CPU_MS`(默认 `300`)/ `SANDBOX_LIVENESS_IO_BYTES`(默认 `4096`):一个采样周期内算作有活动的 CPU / IO 阈值。
 - `SANDBOX_BG_TASK_GRACE`(默认 `2m`):cursor-agent `-p` 要等它起的所有后台 shell 结束才给出结果、退出,
   Agent 用后台任务起的常驻服务会让这一轮一直不结束。没有前台工具在跑、只剩后台 shell、输出也安静了这么久,

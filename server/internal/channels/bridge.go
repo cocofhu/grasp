@@ -283,15 +283,13 @@ func (b *ChannelBridge) waitReady(ctx context.Context, id uint) (*models.Sandbox
 }
 
 func (b *ChannelBridge) waitTurn(ctx context.Context, threadID string, turnTimeout time.Duration) error {
-	max := turnTimeout
-	if max <= 0 {
-		// Derive from the runner default so we never cancel a turn that the
-		// runner itself still considers live.
-		max = b.turns.DefaultDeadline()
+	// With no channel turn timeout the turn has no total limit: it ends on its
+	// own, on the sandbox no-activity watchdog, or when ctx is cancelled.
+	var deadline time.Time
+	if turnTimeout > 0 {
+		deadline = time.Now().Add(turnTimeout + time.Minute) // allow finalize/persist after the chat stream ends
 	}
-	max += time.Minute // allow finalize/persist after the chat stream ends
-	deadline := time.Now().Add(max)
-	for time.Now().Before(deadline) {
+	for deadline.IsZero() || time.Now().Before(deadline) {
 		if !b.turns.Active(threadID) {
 			return nil
 		}

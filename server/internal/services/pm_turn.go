@@ -17,9 +17,6 @@ import (
 
 const (
 	pmTurnBufferMax = 2048
-	// pmDefaultTurnDeadline is the fallback per-turn ctx deadline when the
-	// runner has no explicit deadline configured (see SetTurnDeadline).
-	pmDefaultTurnDeadline = 10 * time.Minute
 	// pmPrepareTimeout bounds sandbox boot for web turns; a cold image pull
 	// takes minutes and must not count against the chat deadline.
 	pmPrepareTimeout = 20 * time.Minute
@@ -72,9 +69,8 @@ type PmTurnRunner struct {
 	arts *ArtifactService
 	wf   *WorkflowService
 
-	mu           sync.Mutex
-	threads      map[string]*pmThread
-	turnDeadline time.Duration
+	mu      sync.Mutex
+	threads map[string]*pmThread
 }
 
 type pmThread struct {
@@ -94,14 +90,13 @@ type pmThread struct {
 	failKind  string
 }
 
-// NewPmTurnRunner builds a runner. The default per-turn deadline is
-// pmDefaultTurnDeadline; override at boot with SetTurnDeadline so long
-// channel/cron turns are not truncated.
+// NewPmTurnRunner builds a runner. Turns have no total time limit unless the
+// caller passes one (StartWithTimeout); stalled turns end on the sandbox
+// no-activity watchdog.
 func NewPmTurnRunner(pm *PmService, sbx *SandboxService) *PmTurnRunner {
 	r := &PmTurnRunner{
-		pm:           pm,
-		threads:      make(map[string]*pmThread),
-		turnDeadline: pmDefaultTurnDeadline,
+		pm:      pm,
+		threads: make(map[string]*pmThread),
 	}
 	if sbx != nil {
 		r.chat = sbx
@@ -112,34 +107,6 @@ func NewPmTurnRunner(pm *PmService, sbx *SandboxService) *PmTurnRunner {
 // SetChatterForTest replaces the sandbox chat backend.
 func (r *PmTurnRunner) SetChatterForTest(c pmChatter) {
 	r.chat = c
-}
-
-// SetTurnDeadline configures the default per-turn ctx deadline (values <= 0 are
-// ignored). Set from main at boot.
-func (r *PmTurnRunner) SetTurnDeadline(d time.Duration) {
-	if d <= 0 {
-		return
-	}
-	r.mu.Lock()
-	r.turnDeadline = d
-	r.mu.Unlock()
-}
-
-func (r *PmTurnRunner) defaultDeadline() time.Duration {
-	r.mu.Lock()
-	d := r.turnDeadline
-	r.mu.Unlock()
-	if d <= 0 {
-		return pmDefaultTurnDeadline
-	}
-	return d
-}
-
-// DefaultDeadline reports the runner's default per-turn ctx deadline. Callers
-// that poll for turn completion (e.g. the channel bridge) should derive their
-// wait budget from this so they never cancel a still-healthy turn.
-func (r *PmTurnRunner) DefaultDeadline() time.Duration {
-	return r.defaultDeadline()
 }
 
 func (r *PmTurnRunner) acquire(threadID string) *pmThread {
@@ -226,14 +193,14 @@ func (r *PmTurnRunner) Active(threadID string) bool {
 	return th != nil && !th.sess.Ready()
 }
 
-// Start queues a turn with the runner's default deadline.
+// Start queues a turn with no total time limit.
 func (r *PmTurnRunner) Start(threadID, userMsgID string, sandboxID uint, prompt string, images []models.PromptImage) error {
 	return r.StartWithTimeout(threadID, userMsgID, sandboxID, prompt, images, 0)
 }
 
-// StartWithTimeout is Start with a per-call turn deadline override. timeout<=0
-// uses the runner default (SetTurnDeadline). A positive timeout caps both the
-// turn ctx (timeout + buffer) and the sandbox chat turn (timeout).
+// StartWithTimeout is Start with a per-call total time limit. timeout<=0 sets
+// none. A positive timeout caps both the turn ctx (timeout + buffer) and the
+// sandbox chat turn (timeout).
 func (r *PmTurnRunner) StartWithTimeout(threadID, userMsgID string, sandboxID uint, prompt string, images []models.PromptImage, timeout time.Duration) error {
 	_, err := r.Enqueue(threadID, PmTurnRequest{
 		UserMsgID: userMsgID,
@@ -390,20 +357,17 @@ func (th *pmThread) execute(ctx context.Context, q *PmTurnRequest) (bool, error)
 		th.setPhase(PmPhaseRunning)
 	}
 
-	ctxTimeout := r.defaultDeadline()
-	var chatTimeout time.Duration
+	tctx, cancel := context.WithCancel(ctx)
 	if q.Timeout > 0 {
-		chatTimeout = q.Timeout
-		ctxTimeout = q.Timeout + 30*time.Second
+		tctx, cancel = context.WithTimeout(ctx, q.Timeout+30*time.Second)
 	}
-	tctx, cancel := context.WithTimeout(ctx, ctxTimeout)
 	defer cancel()
 
 	// The streaming draft marks an unfinished turn so a restart can fail it.
 	if _, err := r.pm.UpsertDraft(th.id, q.UserMsgID, "", PmDraftStreaming, 0, 0, sandboxID); err != nil {
 		log.Warn().Err(err).Str("thread", th.id).Str("op", "upsert_draft").Msg("pm turn persist failed")
 	}
-	usage, usageByModel, err := r.chat.ChatWithTimeout(tctx, sandboxID, prompt, q.Images, chatTimeout, th.onAcp)
+	usage, usageByModel, err := r.chat.ChatWithTimeout(tctx, sandboxID, prompt, q.Images, q.Timeout, th.onAcp)
 
 	th.mu.Lock()
 	partial := th.partial
