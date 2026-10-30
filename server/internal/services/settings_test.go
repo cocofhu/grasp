@@ -24,6 +24,7 @@ type fakeSbxTuner struct {
 	runTTL  time.Duration
 	testTTL time.Duration
 	maxTest int
+	maxSolo int
 }
 
 func (f *fakeSbxTuner) SetTTLs(run, test time.Duration) {
@@ -31,6 +32,7 @@ func (f *fakeSbxTuner) SetTTLs(run, test time.Duration) {
 	f.testTTL = test
 }
 func (f *fakeSbxTuner) SetMaxTestSandboxes(n int) { f.maxTest = n }
+func (f *fakeSbxTuner) SetMaxSoloSandboxes(n int) { f.maxSolo = n }
 
 func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	db, err := database.OpenSQLite(":memory:")
@@ -39,7 +41,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	}
 	cfg := &config.Config{
 		Engine:  config.EngineConfig{MaxConcurrentRuns: 5, NodeAutoRetryMax: 2},
-		Sandbox: config.SandboxConfig{RunSandboxTTLMinutes: 30, TestSandboxTTLMinutes: 10, MaxTestSandboxes: 2, MemoryMB: 8192, ChatIdleTimeoutSeconds: 1200},
+		Sandbox: config.SandboxConfig{RunSandboxTTLMinutes: 30, TestSandboxTTLMinutes: 10, MaxTestSandboxes: 2, MaxSoloSandboxes: 5, MemoryMB: 8192, ChatIdleTimeoutSeconds: 1200},
 	}
 	config.StoreConfig(cfg)
 	conc := &fakeConc{}
@@ -47,7 +49,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	svc := NewSettingsService(db, conc, sbx)
 
 	items := svc.Effective()
-	if len(items) != 8 {
+	if len(items) != 9 {
 		t.Fatalf("items: %d", len(items))
 	}
 	updated, err := svc.Update(map[string]int{
@@ -55,6 +57,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 		KeyRunSandboxTTLMin:  45,
 		KeyTestSandboxTTLMin: 15,
 		KeyMaxTestSandboxes:  4,
+		KeyMaxSoloSandboxes:  8,
 		KeyNodeAutoRetryMax:  3,
 		KeySandboxMemoryMB:   12288,
 		KeyAgentIdleMin:      30,
@@ -62,10 +65,10 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated) != 8 {
+	if len(updated) != 9 {
 		t.Fatalf("updated: %d", len(updated))
 	}
-	if conc.max != 7 || conc.ar != 3 || sbx.maxTest != 4 {
+	if conc.max != 7 || conc.ar != 3 || sbx.maxTest != 4 || sbx.maxSolo != 8 {
 		t.Fatalf("apply: conc=%+v sbx=%+v", conc, sbx)
 	}
 	if got := sandbox.DefaultMemoryMB(); got != 12288 {
@@ -83,6 +86,9 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	}
 	if _, err := svc.Update(map[string]int{KeyMaxConcurrentRuns: 0}); err == nil {
 		t.Fatal("expected min validation error")
+	}
+	if _, err := svc.Update(map[string]int{KeyMaxSoloSandboxes: 0}); err == nil {
+		t.Fatal("expected solo sandbox min validation error")
 	}
 	if _, err := svc.Update(map[string]int{KeySandboxMemoryMB: 512}); err == nil {
 		t.Fatal("expected sandbox memory min validation error")

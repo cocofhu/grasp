@@ -49,7 +49,7 @@ const groups = computed(() => {
       id: 'capacity',
       title: t('pages.settings.groups.capacity.title'),
       desc: t('pages.settings.groups.capacity.desc'),
-      keys: ['max_test_sandboxes'],
+      keys: ['max_test_sandboxes', 'max_solo_sandboxes'],
     },
     {
       id: 'resources',

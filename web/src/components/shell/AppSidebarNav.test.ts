@@ -403,6 +403,24 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
+  it('orders Solo rows by start time, not by last activity', async () => {
+    const solo = (id: string, createdAt: string, lastActiveAt: string) => ({
+      id, title: id, agentName: 'a', status: 'running', restarts: 0, busy: false, waiting: 0, createdAt, updatedAt: lastActiveAt, lastActiveAt,
+    })
+    apiMocks.listSoloSessions.mockResolvedValue({
+      sessions: [
+        solo('old', '2026-10-20T00:00:00Z', '2026-10-30T10:00:00Z'),
+        solo('new', '2026-10-22T00:00:00Z', '2026-10-22T00:00:00Z'),
+        solo('mid', '2026-10-21T00:00:00Z', '2026-10-29T00:00:00Z'),
+      ],
+      maxSandboxes: 5,
+    })
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(wrapper.findAll('[data-kind="solo"]').map((r) => r.attributes('data-key'))).toEqual(['new', 'mid', 'old'])
+    wrapper.unmount()
+  })
+
   it('keeps queued and waiting rows still while a confirmed running row remains busy', async () => {
     apiMocks.listRuns.mockResolvedValue({ items: [
       { id: 'queued', workflowId: 'wf', workflowName: 'w', title: '排队', status: 'queued', startedAt: 'T0' },

@@ -66,6 +66,8 @@ sandbox:
   test_sandbox_ttl_minutes: 30
   # 同时存活的交互式(对话测试)沙箱数量上限。
   max_test_sandboxes: 5
+  # 同时运行的 Solo 会话沙箱数量上限(Solo 沙箱没有空闲回收)。设置页可改。
+  max_solo_sandboxes: 5
   # 每个沙箱的内存上限(MiB),含 dockerd/浏览器/Agent 自身的构建与测试;
   # 过低会导致整个沙箱被 OOM 杀掉。设置页可改,不得超过网关 maxMemoryMB。
   sandbox_memory_mb: 8192
