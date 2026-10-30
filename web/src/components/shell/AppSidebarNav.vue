@@ -36,7 +36,7 @@ import {
   sidebarTrackedRunIds,
   type SidebarRunGroup,
 } from '@/lib/inbox/sidebarHandoff'
-import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget, runDetailPath } from '@/lib/run/recentRuns'
+import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   settingsItemActive,
@@ -878,13 +878,15 @@ function onPendingRow(it: InboxItem) {
     suppressPendingClick.value = false
     return
   }
-  if (isRunOnlyRow(it)) {
+  // 「自动过程」always opens the live conversation, including a visit that has
+  // not started and a confirmed handoff the snapshot has not caught up to.
+  // 「正在执行」still opens that node's own chat. Right-click stays on the menu.
+  const auto = rowGroup(it.runId) === 'auto'
+  if (auto || isRunOnlyRow(it)) {
     const run = runningById.value.get(it.runId)
-    if (run) {
-      void router.push(recentRunTarget(run, preservedListFilters()))
-    } else {
-      pushConversation(it.runId)
-    }
+    if (run) void router.push(recentRunTarget(run, preservedListFilters(), auto ? { awaitAuto: true } : undefined))
+    else if (auto) void router.push(runLivePath(it.runId))
+    else pushConversation(it.runId)
   } else {
     pushConversation(it.runId, it.nodeId)
   }

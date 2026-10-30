@@ -47,6 +47,7 @@ const {
   handoff,
   composerLocked,
   confirmError,
+  followTail,
   takeover,
   send,
   confirm,
@@ -148,6 +149,7 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
                   :prior-segments="priorSegments"
                   :node-label="nodeLabel || nodeId"
                   :handoff="handoff"
+                  :follow-tail="followTail"
                   :composer-locked="composerLocked"
                   :confirm-error="confirmError"
                   :model-switch="mode === 'chat' && !!liveAgentName"

@@ -44,11 +44,25 @@ describe('recentRunTarget goes straight into the chat', () => {
     expect(recentRunTarget(run(undefined, 'completed'))).toBe('/runs/r1')
     // Just taken over, auto call still unwinding: keep the stream (the chat opens once it waits).
     expect(recentRunTarget(run(cur('takeover', 'stopping', 'manual')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
-    // Chosen but not started: no live stream.
-    expect(recentRunTarget(run(cur('agent', 'entering'), 'waiting_human'))).toBe('/runs/r1')
+    // Chosen but not started: the live conversation, on any width. Not run detail.
+    expect(recentRunTarget(run(cur('agent', 'entering'), 'waiting_human'))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
+    expect(recentRunTarget(run(cur('agent', 'entering'), 'running'))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
     expect(recentRunMark(run(cur('agent', 'entering'), 'waiting_human'))).toEqual({
       icon: { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' },
     })
+    // A person waiting still opens that node's chat.
+    expect(recentRunTarget(run(cur('clarify', 'waiting_human', 'manual'), 'waiting_human'))).toEqual({ path: '/runs/r1/nodes/n1' })
+    // Confirmed automatic, snapshot has no watchable node: still the conversation.
+    expect(recentRunTarget(run(undefined, 'waiting_human'), undefined, { awaitAuto: true })).toBe('/runs/r1/live')
+    expect(recentRunTarget(run(undefined, 'running'), undefined, { awaitAuto: true })).toBe('/runs/r1/live')
+    // The same gap outside「自动过程」still opens run detail.
+    expect(recentRunTarget(run(undefined, 'waiting_human'))).toBe('/runs/r1')
+    // Finished runs leave, even if a stale entering node or an auto-row hint is attached.
+    expect(recentRunTarget(run(cur('agent', 'entering'), 'completed'))).toBe('/runs/r1')
+    expect(recentRunTarget(run(cur('agent', 'entering'), 'failed'))).toBe('/runs/r1')
+    expect(recentRunTarget(run(cur('agent', 'entering'), 'cancelled'))).toBe('/runs/r1')
+    expect(recentRunTarget(run(undefined, 'failed'), undefined, { awaitAuto: true })).toBe('/runs/r1')
+    expect(recentRunTarget(run(undefined, 'cancelled'), undefined, { awaitAuto: true })).toBe('/runs/r1')
   })
   it('marks the row active on its detail, live and chat pages', () => {
     const r = run(undefined)

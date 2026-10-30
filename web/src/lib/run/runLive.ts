@@ -1,5 +1,5 @@
 import type { Run, RunCurrentNode } from '@/lib/shared/types'
-import { isObservableNode, recentCurrentNode } from './recentRuns'
+import { enteringAutoNode, isObservableNode, recentCurrentNode } from './recentRuns'
 
 /** Pure helpers for the live (read-only) view of an auto node. */
 
@@ -12,13 +12,14 @@ export type LiveDecision =
   | { kind: 'observe'; nodeId: string; iteration?: number; stopping?: boolean; task?: string }
   | { kind: 'chat'; nodeId: string }
   | { kind: 'follow'; nodeId: string }
+  | { kind: 'wait'; nodeId: string; label: string }
   | { kind: 'detail' }
 
 /**
  * The auto node the run is on now (server currentNode: kind=agent, mode=auto,
  * state=running), or null. A confirm can name the next automatic agent before
- * its visit exists (state=entering). The sidebar counts that. This view does
- * not: only a visit that is already running is observable.
+ * its visit exists (state=entering). That visit is not observable yet; the
+ * live page waits for it instead of leaving.
  */
 export function runningAutoNode(run: Run): RunCurrentNode | null {
   const n = recentCurrentNode(run)
@@ -30,22 +31,17 @@ export function runningAutoNode(run: Run): RunCurrentNode | null {
  * from the server's run.currentNode (GET /runs/:id and the WS snapshot frame).
  * A taken-over node still unwinding (kind=takeover, state=stopping) keeps the
  * stream with the spinner; a node parked for a person goes to its chat; a
- * finished node follows the run to its next auto node; else run detail.
+ * finished node follows the run to its next auto node; a chosen visit that
+ * has not started waits on this page; a finished run leaves for detail.
  * useRunLive only acts on follow / detail / another node's chat while it is
  * still routing the page it was opened on; once a node is on screen, the
  * page stays put and shows that node as finished.
  */
 export function decideLive(run: Run, requested: string): LiveDecision {
-  const named = run.currentNode
-  if (
-    named &&
-    named.kind === 'agent' &&
-    named.mode === 'auto' &&
-    named.state === 'entering' &&
-    (run.status === 'running' || run.status === 'waiting_human')
-  ) {
-    // The successor is chosen but its visit has not started. Do not watch it.
-    return { kind: 'detail' }
+  const entering = enteringAutoNode(run)
+  if (entering) {
+    // Chosen, visit not started. Stay on the conversation and show 准备中.
+    return { kind: 'wait', nodeId: entering.id, label: entering.name?.trim() || '' }
   }
   const cur = recentCurrentNode(run)
   if (cur) {
@@ -63,8 +59,12 @@ export function decideLive(run: Run, requested: string): LiveDecision {
     // gate / clarify / review / takeover parked for a person (or busy in a manual turn).
     return { kind: 'chat', nodeId: cur.id }
   }
-  // Between nodes (the engine is routing): stay and let the next refresh decide.
+  // Between nodes (the engine is routing): keep a requested visit, otherwise
+  // wait on this page. An active run must not fall through to the canvas.
   if (requested && (run.status === 'running' || run.status === 'queued')) return { kind: 'observe', nodeId: requested }
+  if (run.status === 'running' || run.status === 'waiting_human') {
+    return { kind: 'wait', nodeId: requested, label: '' }
+  }
   return { kind: 'detail' }
 }
 
