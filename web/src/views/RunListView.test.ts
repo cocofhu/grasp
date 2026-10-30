@@ -192,7 +192,7 @@ describe('RunListView duration column layout (g1.1 / g1.2 / g2.1)', () => {
     expect(colgroup).toBeTruthy()
     // 运行 flexes; 状态 / 开始 / 耗时 / ⋯ are fixed so short columns never wrap.
     expect(colgroup!.match(/<col\b/g)).toHaveLength(5)
-    expect(colgroup).toMatch(/<col \/>\s*<col style="width: 216px" \/>\s*<col style="width: 112px" \/>\s*<col style="width: 88px" \/>\s*<col style="width: 44px" \/>/)
+    expect(colgroup).toMatch(/<col \/>\s*<col style="width: 216px" \/>\s*<col style="width: 112px" \/>\s*<col style="width: 88px" \/>\s*<col style="width: 56px" \/>/)
     const skelStart = desktopBlock.indexOf('v-if="initialLoading"')
     const skelEnd = desktopBlock.indexOf('<template v-else>', skelStart)
     const skeleton = desktopBlock.slice(skelStart, skelEnd)
