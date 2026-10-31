@@ -248,6 +248,7 @@
       "sessionRepos.ts",
       "soloErrors.ts",
       "soloPrefs.ts",
+      "useReferenceComposer.ts",
       "useReferenceSearch.ts",
       "useSessionModelCatalog.ts",
       "useSoloChat.ts",
@@ -278,7 +279,7 @@
     "pm": 7,
     "run": 71,
     "shared": 39,
-    "solo": 13,
+    "solo": 14,
     "workflow": 3,
     "workspace": 5
   }

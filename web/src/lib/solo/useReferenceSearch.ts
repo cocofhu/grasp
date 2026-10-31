@@ -6,11 +6,27 @@ export type ReferenceTab = 'all' | 'solo' | 'issue' | 'pr'
 export type GitHubStateFilter = 'open' | 'all'
 
 type LaneName = 'solo' | 'github'
+type SearchParams = { lane: LaneName; q: string; kind?: string; state?: string; page?: number }
+
+/** Where candidates come from: an open session, or the launch composer's picks. */
+export type ReferenceScope = { sessionId: string } | { agent: string; projects: string[] }
+
+function scopeKey(scope: ReferenceScope) {
+  return 'sessionId' in scope ? `s:${scope.sessionId}` : `l:${scope.agent}:${scope.projects.join(',')}`
+}
+
+function fetchLane(scope: ReferenceScope, params: SearchParams, signal: AbortSignal) {
+  return 'sessionId' in scope
+    ? api.searchSoloReferences<any>(scope.sessionId, params, signal)
+    : api.searchLaunchReferences<any>({ ...params, agent: scope.agent, projects: scope.projects }, signal)
+}
 export type LaneState<T> = {
   items: T[]
   loading: boolean
   paging: boolean
   skipped: boolean
+  /** True once any reply (or failure) has landed since the lane was last reset. */
+  settled: boolean
   error: string
   errorCode: string
   hint: string
@@ -23,15 +39,16 @@ const DEBOUNCE: Record<LaneName, number> = { solo: 120, github: 250 }
 const GITHUB_EXACT = /^(?:https?:\/\/github\.com\/|[\w.-]+\/[\w.-]+#\d+$|#\d+$)/i
 
 function emptyLane<T>(): LaneState<T> {
-  return { items: [], loading: false, paging: false, skipped: false, error: '', errorCode: '', hint: '' }
+  return { items: [], loading: false, paging: false, skipped: false, settled: false, error: '', errorCode: '', hint: '' }
 }
 
 /**
  * Picker search with one lane per source: debounced, cancelled when the query
  * moves on, sequence-checked so a slow reply never overwrites a newer one,
- * and cached per query for five minutes (stale results show while refreshing).
+ * and cached per query for five minutes. The previous results, hint or error
+ * stay on screen until the new reply lands, so typing does not flash.
  */
-export function useReferenceSearch(sessionId: Ref<string>) {
+export function useReferenceSearch(scope: Ref<ReferenceScope>) {
   const solo = reactive(emptyLane<SoloReferenceCandidate>()) as LaneState<SoloReferenceCandidate>
   const github = reactive(emptyLane<GitHubReferenceCandidate>()) as LaneState<GitHubReferenceCandidate>
   const lanes = { solo, github }
@@ -48,6 +65,7 @@ export function useReferenceSearch(sessionId: Ref<string>) {
     lane.hint = data.hint || ''
     lane.error = data.error?.message || ''
     lane.errorCode = data.error?.code || ''
+    lane.settled = true
   }
 
   function cancel(name: LaneName) {
@@ -60,7 +78,7 @@ export function useReferenceSearch(sessionId: Ref<string>) {
   function run(name: LaneName, params: { q: string; kind?: string; state?: string }, page = 1) {
     const lane = lanes[name] as LaneState<any>
     const c = control[name]
-    const key = `${sessionId.value}|${name}|${params.kind || ''}|${params.state || ''}|${params.q.toLowerCase()}`
+    const key = `${scopeKey(scope.value)}|${name}|${params.kind || ''}|${params.state || ''}|${params.q.toLowerCase()}`
     cancel(name)
     const my = c.seq
     lane.skipped = false
@@ -73,8 +91,6 @@ export function useReferenceSearch(sessionId: Ref<string>) {
         if (Date.now() - hit.at < CACHE_TTL) return
       } else {
         lane.loading = true
-        lane.error = ''
-        lane.hint = ''
       }
     } else {
       lane.paging = true
@@ -84,7 +100,7 @@ export function useReferenceSearch(sessionId: Ref<string>) {
       const abort = new AbortController()
       c.abort = abort
       try {
-        const data = await api.searchSoloReferences<any>(sessionId.value, { lane: name, ...params, page }, abort.signal)
+        const data = await fetchLane(scope.value, { lane: name, ...params, page }, abort.signal)
         if (my !== c.seq) return
         if (page === 1) cache.set(key, { at: Date.now(), data })
         apply(lane, data, page > 1)
@@ -93,6 +109,7 @@ export function useReferenceSearch(sessionId: Ref<string>) {
         if (page === 1) lane.items = []
         lane.error = String(e?.message || e)
         lane.errorCode = 'upstream'
+        lane.settled = true
       } finally {
         if (my === c.seq) {
           lane.loading = false

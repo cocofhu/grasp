@@ -60,6 +60,7 @@ type SoloCreateInput struct {
 	Title                  string               `json:"title"`
 	Text                   string               `json:"text"`
 	Images                 []models.PromptImage `json:"images"`
+	References             []ReferenceInput     `json:"references,omitempty"`
 	InitialModelID         string               `json:"initialModelId,omitempty"`
 	InitialConfigurationID string               `json:"initialConfigurationId,omitempty"`
 	ReasoningEffort        string               `json:"reasoningEffort,omitempty"`
@@ -425,6 +426,14 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 		row.ProjectSnapshot = projects[0]
 		row.Branch = snaps[0].Branch
 	}
+	// Checked before anything is created so a bad pick costs no sandbox.
+	references, err := s.prepareReferences(ctx, row, in.References)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Title) == "" && strings.TrimSpace(in.Text) == "" && len(references) > 0 {
+		row.Title = truncRunes("@"+references[0].Title, 30)
+	}
 	if err := s.db.Create(row).Error; err != nil {
 		return nil, err
 	}
@@ -439,8 +448,8 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	for _, p := range projects {
 		s.projects.Touch(p.ID)
 	}
-	if strings.TrimSpace(in.Text) != "" || len(in.Images) > 0 {
-		if _, err := s.Send(row.ID, user, in.Text, in.Images); err != nil {
+	if strings.TrimSpace(in.Text) != "" || len(in.Images) > 0 || len(references) > 0 {
+		if _, err := s.enqueueTurn(row.ID, in.Text, in.Images, references); err != nil {
 			log.Warn().Err(err).Str("session", row.ID).Msg("solo first message enqueue failed")
 		}
 	}
@@ -1211,7 +1220,12 @@ func (s *SoloService) SendWithReferences(id, user, text string, images []models.
 	if err != nil {
 		return 0, err
 	}
-	images, err = blob.IngestPromptImages(context.Background(), s.blobs, images)
+	return s.enqueueTurn(id, text, images, references)
+}
+
+// enqueueTurn queues a turn whose references are already validated.
+func (s *SoloService) enqueueTurn(id, text string, images []models.PromptImage, references []models.MessageReference) (int, error) {
+	images, err := blob.IngestPromptImages(context.Background(), s.blobs, images)
 	if err != nil {
 		return 0, fmt.Errorf("ingest attachments: %w", err)
 	}
@@ -1219,7 +1233,7 @@ func (s *SoloService) SendWithReferences(id, user, text string, images []models.
 		return 0, errors.New("solo chat unavailable")
 	}
 	c := s.acquire(id)
-	return c.sess.Enqueue(&soloTurn{ID: uuid.NewString(), Text: text, Images: images, References: references}, nil)
+	return c.sess.Enqueue(&soloTurn{ID: uuid.NewString(), Text: strings.TrimSpace(text), Images: images, References: references}, nil)
 }
 
 // Cancel stops the active turn and drops queued ones.

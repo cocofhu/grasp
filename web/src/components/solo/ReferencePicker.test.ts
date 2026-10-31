@@ -27,7 +27,7 @@ function respond(map: Record<string, (params: any) => object>) {
 
 function mountPicker(props: Partial<{ query: string; taken: string[]; full: boolean; initialTab: any }> = {}) {
   return mount(ReferencePicker, {
-    props: { sessionId: 'me', query: '', taken: [], full: false, ...props },
+    props: { scope: { sessionId: 'me' }, query: '', taken: [], full: false, ...props },
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': pages } })],
       stubs: { Icon: true },
@@ -148,5 +148,28 @@ describe('ReferencePicker', () => {
     await w.setProps({ query: 'fast' })
     await settle()
     expect(search.mock.calls.length).toBe(calls + 2)
+  })
+
+  it('shows a skeleton only on the first load and keeps old rows while a new query loads', async () => {
+    let release: () => void = () => {}
+    respond({ solo: () => sessions(2), github: () => gh([]) })
+    const w = mountPicker({ initialTab: 'solo' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(w.find('.ref-picker__skeleton').exists()).toBe(true)
+    expect(w.text()).not.toContain('没有匹配')
+    await settle()
+    expect(w.find('.ref-picker__skeleton').exists()).toBe(false)
+
+    search.mockImplementation(() => new Promise((r) => { release = () => r(sessions(0)) }))
+    await w.setProps({ query: 'zz' })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(w.find('.ref-picker__skeleton').exists()).toBe(false)
+    expect(w.find('[data-testid="solo-reference-option-s0"]').exists()).toBe(true)
+    expect(w.find('.ref-picker__list--stale').exists()).toBe(true)
+    release()
+    await flushPromises()
+    expect(w.find('[data-testid="solo-reference-option-s0"]').exists()).toBe(false)
+    expect(w.find('.ref-picker__list--stale').exists()).toBe(false)
+    expect(w.text()).toContain(pages.pages.solo.reference.noMatch)
   })
 })

@@ -361,3 +361,83 @@ func TestSearchReferences(t *testing.T) {
 		t.Fatalf("rate limited: %+v", res.Error)
 	}
 }
+
+func TestSoloCreateCarriesReferencesIntoTheFirstTurn(t *testing.T) {
+	solo, db, _, first := referenceFixture(t)
+	solo.SetModelAlignerForTest(&recordAligner{})
+	gate := newGateChat(false)
+	solo.SetChatterForTest(gate)
+	if err := db.Create(&models.SoloSession{ID: "older", UserID: "alice", Title: "登录重构", Status: models.SoloStatusClosed}).Error; err != nil {
+		t.Fatal(err)
+	}
+	seedSoloMessages(t, db, "older", time.Now().Add(-time.Hour), models.SoloMessage{ID: "y1", Role: "user", Content: "要求：保留圆角"})
+	var before int64
+	db.Model(&models.SoloSession{}).Count(&before)
+	if _, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA", Text: "x", References: []ReferenceInput{{Kind: "solo", Target: "bobs-or-missing"}}}); err == nil {
+		t.Fatal("bad reference accepted at create")
+	}
+	var after int64
+	db.Model(&models.SoloSession{}).Count(&after)
+	if after != before {
+		t.Fatal("a rejected create left a session behind")
+	}
+	// Closing the fixture session frees the sandbox slot for the new one.
+	if _, err := solo.Close(context.Background(), first, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	view, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA", References: []ReferenceInput{{Kind: "solo", Target: "older"}, {Kind: "github_pr", Target: "acme/web#7"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = solo.Close(context.Background(), view.ID, "alice") })
+	if view.Title != "@登录重构" {
+		t.Fatalf("title from first reference: %q", view.Title)
+	}
+	var msgs []models.SoloMessage
+	waitFor(t, "first turn", func() bool {
+		msgs, _ = solo.Messages(view.ID, "alice")
+		return len(msgs) > 0 && len(msgs[0].References) == 2
+	})
+	if msgs[0].References[0].Anchor != "y1" || msgs[0].References[1].Access != models.ReferenceAccessOK {
+		t.Fatalf("pinned refs: %+v", msgs[0].References)
+	}
+	waitFor(t, "prompt", func() bool {
+		gate.mu.Lock()
+		defer gate.mu.Unlock()
+		return len(gate.prompts) == 1 && strings.Contains(gate.prompts[0], "保留圆角") && strings.Contains(gate.prompts[0], "（见引用）")
+	})
+}
+
+func TestSearchLaunchReferences(t *testing.T) {
+	solo, db, gh, id := referenceFixture(t)
+	ctx := context.Background()
+	if err := db.Create(&models.SoloSession{ID: "bob1", UserID: "bob", Title: "bob 的", Status: models.SoloStatusClosed}).Error; err != nil {
+		t.Fatal(err)
+	}
+	res, err := solo.SearchLaunchReferences(ctx, "alice", "agentA", nil, ReferenceSearchQuery{Lane: "solo"})
+	items := res.Items.([]SoloReferenceItem)
+	if err != nil || len(items) != 1 || items[0].Target != id {
+		t.Fatalf("launch solo lane lists every own session: %+v %v", items, err)
+	}
+	res, _ = solo.SearchLaunchReferences(ctx, "alice", "agentA", nil, ReferenceSearchQuery{Lane: "github", Query: "bug"})
+	if res.Source != "none" || !strings.Contains(res.Hint, "没有选择 GitHub 仓库") {
+		t.Fatalf("no repos picked: %+v", res)
+	}
+	var p models.Project
+	if err := db.Where("name = ?", "web").First(&p).Error; err != nil {
+		t.Fatal(err)
+	}
+	res, err = solo.SearchLaunchReferences(ctx, "alice", "agentA", []string{" " + p.ID, ""}, ReferenceSearchQuery{Lane: "github", Query: "bug"})
+	if err != nil || res.Error != nil || res.Source != "search" {
+		t.Fatalf("picked repo: %+v %v", res, err)
+	}
+	if q := gh.queries[len(gh.queries)-1]; !strings.HasPrefix(q, "repo:acme/web ") {
+		t.Fatalf("scoped to picked repo: %q", q)
+	}
+	if _, err := solo.SearchLaunchReferences(ctx, "alice", "agentA", []string{"missing"}, ReferenceSearchQuery{Lane: "github"}); err == nil {
+		t.Fatal("unknown project accepted")
+	}
+	if _, err := solo.SearchLaunchReferences(ctx, "alice", "", nil, ReferenceSearchQuery{Lane: "nope"}); err == nil {
+		t.Fatal("unknown lane")
+	}
+}
