@@ -390,6 +390,7 @@
       "next": "下一步",
       "skip": "跳过",
       "later": "稍后再说",
+      "dismissedHint": "之后不会再自动弹出。需要时点「新建工作流」，再选「去完成指引」即可继续配置。",
       "generate": "生成配置",
       "generating": "正在生成…",
       "close": "关闭",
@@ -403,6 +404,7 @@
         "model": "配置编码工具",
         "key": "API Key",
         "git": "Git",
+        "gitCredentials": "Git 凭据",
         "team": "团队",
         "workflow": "工作流预览",
         "done": "完成",
@@ -446,12 +448,16 @@
         "vendorTitle": "模型厂商 API Key"
       },
       "git": {
-        "meta": "Agent 提交代码时需要署名；仓库和访问凭据可以现在填，也可以跳过。",
+        "meta": "Agent 提交代码时需要署名；仓库可以现在填，也可以跳过。",
         "repoCredSection": "仓库与访问凭据",
         "skip": "跳过",
         "unskip": "现在配置",
         "skippedHint": "已跳过：仓库可以在运行时再填，私有仓库的凭据之后到工作区「凭据」里补。",
         "foot": "凭据只保存在本工作区，导出 Agent 时不会带上。"
+      },
+      "gitCredentials": {
+        "meta": "私有仓库需要访问凭据：选择已有凭据，或在下方新建。公开仓库可以直接下一步。",
+        "invalid": "所选的 Git 凭据不可用，请重新选择"
       },
       "gitUser": {
         "section": "提交署名",
@@ -597,7 +603,8 @@
         "prefs": "语言、主题与预览能力",
         "model": "编码工具、凭据与模型",
         "key": "填写模型与密钥",
-        "git": "提交署名、仓库与凭据",
+        "git": "提交署名与仓库",
+        "gitCredentials": "连接 GitHub、GitLab 或 SSH",
         "team": "确认要创建的 Agent",
         "workflow": "预览将要发布的默认工作流",
         "done": "生成配置，开始第一次运行",
@@ -606,18 +613,12 @@
       "prefsMeta": "界面语言与主题，以及 Agent 可用的预览能力。",
       "prefsMetaCreate": "工作区名称，以及 Agent 可用的预览能力。",
       "ready": "已就绪",
-      "expandSetup": "开始配置",
-      "collapseSetup": "收起",
       "modelSetup": {
         "description": "使用上一步保存的凭据选择模型，也可以直接选择已有的模型配置。",
         "selected": "团队默认模型",
         "selectedHint": "四个 Agent 默认共用此模型，之后可单独调整。",
         "title": "添加模型",
         "hint": "选择编码工具与已保存的凭据，再选择模型。"
-      },
-      "gitSetup": {
-        "title": "添加 Git 凭据",
-        "hint": "在这里连接 GitHub、GitLab 或 SSH，保存后即可使用。"
       },
       "solo": {
         "emptyShort": "空白 Agent · Solo 专用",

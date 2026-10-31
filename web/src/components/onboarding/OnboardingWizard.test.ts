@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import OnboardingWizard from './OnboardingWizard.vue'
-import { isOnboardingSuppressed, suppressOnboarding, shouldAutoOpenOnboarding } from '@/lib/pm/onboardingWizard'
+import { isOnboardingSuppressed, shouldAutoOpenOnboarding } from '@/lib/pm/onboardingWizard'
 
 const mocks = vi.hoisted(() => ({
   listModelConfigurations: vi.fn(),
@@ -115,10 +115,15 @@ async function identity(w: Wrapper) {
   await w.get('[data-testid="onboarding-git-user-name"]').setValue('Ada Lovelace')
   await w.get('[data-testid="onboarding-git-user-email"]').setValue('ada@example.com')
 }
-async function toGit(w: Wrapper) {
+async function toGitCredentials(w: Wrapper) {
   await next(w)
   await next(w)
   await chooseModel(w)
+  await next(w)
+  expect(activeStep(w)).toBe('onboarding-rail-gitCredentials')
+}
+async function toGit(w: Wrapper) {
+  await toGitCredentials(w)
   await next(w)
   expect(activeStep(w)).toBe('onboarding-rail-git')
 }
@@ -175,7 +180,7 @@ describe('OnboardingWizard', () => {
   it('shows credentials before model configuration in one outer onboarding dialog', async () => {
     const w = await mountWizard()
     expect(activeStep(w)).toBe('onboarding-rail-prefs')
-    for (const id of ['prefs', 'credentials', 'model', 'git', 'team', 'workflow', 'done'])
+    for (const id of ['prefs', 'credentials', 'model', 'gitCredentials', 'git', 'team', 'workflow', 'done'])
       expect(w.find(`[data-testid="onboarding-rail-${id}"]`).exists()).toBe(true)
     expect(w.find('[data-testid="onboarding-rail-key"]').exists()).toBe(false)
     expect(w.findAll('[role="dialog"]')).toHaveLength(1)
@@ -211,7 +216,7 @@ describe('OnboardingWizard', () => {
     modelPanel.vm.$emit('modelSaved', modelRows[0])
     await flushPromises()
     expect((w.vm as any).draft.modelConfigurationId).toBe('model-main')
-    expect(activeStep(w)).toBe('onboarding-rail-git')
+    expect(activeStep(w)).toBe('onboarding-rail-gitCredentials')
     w.unmount()
   })
   it.each([
@@ -242,21 +247,23 @@ describe('OnboardingWizard', () => {
     expect(w.get('[data-testid="onboarding-prev"]').attributes('disabled')).toBeUndefined()
     w.unmount()
   })
-  it('adds a new Git credential in place without losing the repository or author', async () => {
+  it('adds Git credentials on their own step before the repository and author', async () => {
     const w = await mountWizard()
-    await toGit(w)
-    await identity(w)
-    await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
-    await w.get('[data-testid="onboarding-manage-git"]').trigger('click')
+    await toGitCredentials(w)
     const panel = w.getComponent(ResourcesPanel)
-    expect(panel.props()).toMatchObject({ inline: true, scope: 'git' })
+    expect(panel.props()).toMatchObject({ inline: true, scope: 'git', view: 'credentials' })
     expect(w.findAll('[role="dialog"]')).toHaveLength(1)
     const credential = { id: 'new-git', purpose: 'git', provider: 'github', type: 'git', secretKind: 'token', configured: true, enabled: true }
     panel.vm.$emit('credentialSaved', credential)
     await flushPromises()
     expect(w.findComponent(GitPicker).props('modelValue')).toEqual({ items: [{ credentialId: 'new-git' }] })
-    expect(w.get('[data-testid="onboarding-repo-url"]').element.value).toBe('https://github.com/team/repo.git')
-    expect(w.get('[data-testid="onboarding-git-user-name"]').element.value).toBe('Ada Lovelace')
+    await next(w)
+    expect(activeStep(w)).toBe('onboarding-rail-git')
+    expect(w.findComponent(GitPicker).exists()).toBe(false)
+    expect(w.findComponent(ResourcesPanel).exists()).toBe(false)
+    await w.get('[data-testid="onboarding-prev"]').trigger('click')
+    await flushPromises()
+    expect(w.findComponent(GitPicker).props('modelValue')).toEqual({ items: [{ credentialId: 'new-git' }] })
     w.unmount()
   })
   it('blocks missing or invalid model configuration before Git', async () => {
@@ -270,19 +277,21 @@ describe('OnboardingWizard', () => {
     expect(activeStep(w)).toBe('onboarding-rail-model')
     await chooseModel(w)
     await next(w)
-    expect(activeStep(w)).toBe('onboarding-rail-git')
+    expect(activeStep(w)).toBe('onboarding-rail-gitCredentials')
     w.unmount()
   })
-  it('requires Git identity and validates selected credentials even when cloning is optional', async () => {
+  it('validates selected credentials and requires Git identity even when cloning is optional', async () => {
     const w = await mountWizard()
-    await toGit(w)
+    await toGitCredentials(w)
+    w.findComponent(GitPicker).vm.$emit('validity', false)
+    await next(w)
+    expect(activeStep(w)).toBe('onboarding-rail-gitCredentials')
+    w.findComponent(GitPicker).vm.$emit('validity', true)
+    await next(w)
+    expect(activeStep(w)).toBe('onboarding-rail-git')
     await next(w)
     expect(activeStep(w)).toBe('onboarding-rail-git')
     await identity(w)
-    w.findComponent(GitPicker).vm.$emit('validity', false)
-    await next(w)
-    expect(activeStep(w)).toBe('onboarding-rail-git')
-    await w.get('[data-testid="onboarding-git-skip"]').trigger('click')
     await next(w)
     expect(activeStep(w)).toBe('onboarding-rail-team')
     w.unmount()
@@ -291,7 +300,7 @@ describe('OnboardingWizard', () => {
     'returns to model selection when the selected %s becomes unavailable in the resource manager',
     async (resource) => {
       const w = await mountWizard()
-      await toGit(w)
+      await toGitCredentials(w)
       if (resource === 'configuration')
         mocks.listModelConfigurations.mockResolvedValue({
           items: modelRows.map((model) => ({ ...model, state: 'disabled' })),
@@ -301,7 +310,6 @@ describe('OnboardingWizard', () => {
           items: [{ id: 'model-key', purpose: 'model_api', configured: true, enabled: false }],
         })
       if (resource === 'connection') mocks.listModelConnections.mockResolvedValue({ items: [] })
-      await w.get('[data-testid="onboarding-manage-git"]').trigger('click')
       const vm = w.vm as any
       const refreshing = vm.refreshResources()
       expect(vm.modelValid).toBe(false)
@@ -334,18 +342,20 @@ describe('OnboardingWizard', () => {
     await identity(w)
     expect(mocks.listCredentials).toHaveBeenCalledTimes(1)
     await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
-    await w.get('[data-testid="onboarding-manage-git"]').trigger('click')
+    await w.get('[data-testid="onboarding-prev"]').trigger('click')
+    await flushPromises()
     const vm = w.vm as any
     await vm.refreshResources()
     await flushPromises()
-    expect(activeStep(w)).toBe('onboarding-rail-git')
+    expect(activeStep(w)).toBe('onboarding-rail-gitCredentials')
     expect(vm.modelValid).toBe(true)
     expect(vm.draft.modelConfigurationId).toBe('model-main')
-    expect(w.get('[data-testid="onboarding-repo-url"]').element.value).toBe('https://github.com/team/repo.git')
-    expect(w.get('[data-testid="onboarding-git-user-name"]').element.value).toBe('Ada Lovelace')
+    expect(vm.draft.repoUrl).toBe('https://github.com/team/repo.git')
+    expect(vm.draft.gitUserName).toBe('Ada Lovelace')
     expect(mocks.listCredentials).toHaveBeenCalledTimes(2)
     expect(mocks.listModelConnections).toHaveBeenCalledTimes(2)
     expect(mocks.listToolCapabilities).toHaveBeenCalledTimes(2)
+    await next(w)
     await next(w)
     await next(w)
     await next(w)
@@ -354,9 +364,8 @@ describe('OnboardingWizard', () => {
   })
   it('blocks a previously valid model when resource refresh fails', async () => {
     const w = await mountWizard()
-    await toGit(w)
+    await toGitCredentials(w)
     mocks.listCredentials.mockRejectedValueOnce(new Error('offline'))
-    await w.get('[data-testid="onboarding-manage-git"]').trigger('click')
     const vm = w.vm as any
     await vm.refreshResources()
     await flushPromises()
@@ -369,12 +378,13 @@ describe('OnboardingWizard', () => {
   })
   it('submits configuration and multiple Git references without inline secrets', async () => {
     const w = await mountWizard()
-    await toGit(w)
-    await identity(w)
+    await toGitCredentials(w)
     const selected = {
       items: [{ credentialId: 'gh' }, { credentialId: 'gl', scope: 'git.example' }],
     }
     w.findComponent(GitPicker).vm.$emit('update:modelValue', selected)
+    await next(w)
+    await identity(w)
     await w.get('[data-testid="onboarding-repo-url"]').setValue('https://git.example/team/repo.git')
     await w.get('[data-testid="onboarding-repo-branch"]').setValue('main')
     await next(w)
@@ -404,14 +414,16 @@ describe('OnboardingWizard', () => {
   })
   it('skipping Git sends an empty selection and drops the clone request', async () => {
     const w = await mountWizard()
-    await toGit(w)
-    await identity(w)
+    await toGitCredentials(w)
     w.findComponent(GitPicker).vm.$emit('update:modelValue', {
       items: [{ credentialId: 'gh' }],
     })
+    await next(w)
+    await identity(w)
     await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
     await w.get('[data-testid="onboarding-git-skip"]').trigger('click')
     await next(w)
+    expect(activeStep(w)).toBe('onboarding-rail-team')
     await next(w)
     await next(w)
     const body = mocks.bootstrapOnboarding.mock.calls[0][0]
@@ -504,16 +516,36 @@ describe('OnboardingWizard', () => {
     expect(w.router.currentRoute.value.path).toBe('/workflows/wf-1/edit')
     w.unmount()
   })
-  it('closing or later never persists the test suppression flag', async () => {
+  it('closing or later stops automatic re-opening in this browser', async () => {
     for (const selector of ['onboarding-later', 'onboarding-backdrop', 'onboarding-close']) {
+      localStorage.clear()
       const w = await mountWizard()
       await w.get(`[data-testid="${selector}"]`).trigger('click')
       expect(w.emitted('close')).toHaveLength(1)
-      expect(isOnboardingSuppressed()).toBe(false)
+      expect(isOnboardingSuppressed()).toBe(true)
+      expect(shouldAutoOpenOnboarding([], [])).toBe(false)
       w.unmount()
     }
-    suppressOnboarding()
-    expect(shouldAutoOpenOnboarding([], [])).toBe(false)
+  })
+  it('closing from the success page does not write the dismissal flag', async () => {
+    const w = await mountWizard()
+    await complete(w)
+    await w.get('[data-testid="onboarding-success-close"]').trigger('click')
+    expect(w.emitted('close')).toHaveLength(1)
+    expect(isOnboardingSuppressed()).toBe(false)
+    w.unmount()
+  })
+  it('a blocked close does not write the dismissal flag', async () => {
+    const w = await mountWizard()
+    await toTeam(w)
+    await next(w)
+    mocks.bootstrapOnboarding.mockReturnValueOnce(new Promise(() => {}))
+    await w.get('[data-testid="onboarding-next"]').trigger('click')
+    await flushPromises()
+    await w.get('[data-testid="onboarding-backdrop"]').trigger('click')
+    expect(w.emitted('close')).toBeUndefined()
+    expect(isOnboardingSuppressed()).toBe(false)
+    w.unmount()
   })
   it('retry starts with preferences and keeps the selected model contract', async () => {
     const w = await mountWizard({ mode: 'retry' })
