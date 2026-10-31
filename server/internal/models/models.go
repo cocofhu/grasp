@@ -49,6 +49,7 @@ type Credential struct {
 	Target         string         `json:"target,omitempty"`
 	EnvKey         string         `gorm:"index" json:"envKey,omitempty"`
 	ValueEnc       string         `json:"-"`
+	KnownHosts     string         `gorm:"type:text" json:"knownHosts,omitempty"` // public OpenSSH known_hosts of an SSH key (purpose=ssh only)
 	BuiltinSlot    string         `json:"-"`
 	Metadata       map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
 	Enabled        bool           `json:"enabled"`

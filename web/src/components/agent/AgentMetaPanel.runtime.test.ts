@@ -110,11 +110,11 @@ describe('Agent saved configuration editing', () => {
  it('writes named model and multiple Git references independently', async () => {
   const { w, draft } = setup(); await flushPromises()
   w.getComponent(ModelBindingEditor).vm.$emit('update:modelValue', { kind: 'configuration', configurationId: 'replacement' })
-  w.getComponent(AgentGitCredentialPicker).vm.$emit('update:modelValue', { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }] })
+  w.getComponent(AgentGitCredentialPicker).vm.$emit('update:modelValue', { items: [{ credentialId: 'gh' }, { credentialId: 'ssh' }, { credentialId: 'ssh-2', scope: 'git@b.example:team/y' }] })
   const payload = fromDraft(draft)
   expect(payload.modelBinding).toEqual({ kind: 'configuration', configurationId: 'replacement' })
-  expect(payload.gitBindings?.items).toHaveLength(2)
-  expect(payload.gitBindings?.items).toEqual([{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }]); expect(payload.gitBindings).not.toHaveProperty('preferredCredentialId'); w.unmount()
+  expect(payload.gitBindings?.items).toHaveLength(3)
+  expect(payload.gitBindings?.items).toEqual([{ credentialId: 'gh' }, { credentialId: 'ssh' }, { credentialId: 'ssh-2', scope: 'git@b.example:team/y' }]); expect(payload.gitBindings).not.toHaveProperty('preferredCredentialId'); w.unmount()
  })
  it('retains a missing reference with a visible error until a replacement is explicitly selected', async () => {
   const { w, draft } = setup({ modelBinding: { kind: 'configuration', configurationId: 'missing' } }); await flushPromises()

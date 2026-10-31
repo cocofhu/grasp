@@ -38,7 +38,7 @@ describe('Agent creation data contract', () => {
  })
  it('serializes only a named model and explicit multi-Git references, excluding derived model and auth env', () => {
   const d = freshDraft(); d.name = 'configured'; d.modelBinding = { kind: 'configuration', configurationId: 'cfg', allConfigurations: true }
-  d.gitBindings = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }] }
+  d.gitBindings = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', scope: 'git@a.example:team/x' }, { credentialId: 'ssh-2' }] }
   d.env = [{ k: 'GITHUB_TOKEN', v: 'secret' }, { k: 'OPENAI_API_KEY', v: 'secret' }, { k: 'ACP_BRIDGE_MODEL', v: 'derived' }, { k: 'FEATURE', v: 'on' }]
   const p = assembleCreatePayload(d)
   expect(p.modelBinding).toEqual(d.modelBinding); expect(p.gitBindings).toEqual(d.gitBindings); expect(p.gitBindings).not.toBe(d.gitBindings)

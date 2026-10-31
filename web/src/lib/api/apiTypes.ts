@@ -219,7 +219,6 @@ export interface AgentGitBinding {
   credentialId: string
   /** Host or repository URL; empty uses the credential provider's default. */
   scope?: string
-  sshHostsCredentialId?: string
 }
 
 export interface AgentGitBindings {
@@ -270,7 +269,7 @@ export interface CredentialItem {
   purpose?: 'tool_auth' | 'model_api' | 'git' | 'ssh' | 'mcp' | 'custom'
   issuer?: string
   toolId?: string
-  secretKind?: 'api_key' | 'token' | 'login_file' | 'ssh_private_key' | 'ssh_known_hosts'
+  secretKind?: 'api_key' | 'token' | 'login_file' | 'ssh_private_key'
   secretRevision?: number
   hasSecret?: boolean
   state?: 'active' | 'cleared' | 'revoked'
@@ -285,6 +284,8 @@ export interface CredentialItem {
   /** Git hosting origin; HTTPS is assumed when no scheme is supplied. */
   host?: string
   envKey?: string
+  /** OpenSSH known_hosts of an SSH key; public host keys, absent when none are set. */
+  knownHosts?: string
   configured: boolean
   /** Masked display value (for example, a key prefix); never the plaintext secret. */
   masked?: string
@@ -316,6 +317,8 @@ export interface CredentialPutBody {
   envKey?: string
   /** Empty values keep an existing secret; clear/delete removes it. */
   value?: string
+  /** SSH keys only. Omitted keeps the stored text; an empty string clears it. */
+  knownHosts?: string
   metadata?: Record<string, unknown>
   enabled?: boolean
   clear?: boolean
