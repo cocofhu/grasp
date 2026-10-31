@@ -6,6 +6,8 @@ import AppModal from '@/components/ui/AppModal.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import SettingsSection from '@/components/settings/SettingsSection.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
+import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
+import type { SettingsStatItem } from '@/components/settings/settingsStats'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
@@ -47,6 +49,18 @@ const keyName = ref('')
 const newKeyPlain = ref('')
 const creatingKey = ref(false)
 const copied = ref('')
+
+const overviewStats = computed<SettingsStatItem[]>(() => [
+  {
+    key: 'connection',
+    icon: enabled.value ? 'check' : 'connector',
+    label: t('pages.settingsOverview.stats.mcpConnection'),
+    value: t(enabled.value ? 'pages.settingsOverview.stats.mcpEnabled' : 'pages.settingsOverview.stats.mcpDisabled'),
+    tone: enabled.value ? 'ok' : 'neutral',
+  },
+  { key: 'packs', icon: 'layers', label: t('pages.settingsOverview.stats.mcpPacks'), value: enabledPacks.value.length, total: PM_MCP_OPTIONS.length, tone: 'accent' },
+  { key: 'keys', icon: 'key', label: t('pages.settingsOverview.stats.mcpKeys'), value: loadingKeys.value ? undefined : keys.value.length },
+])
 
 const mcpBaseForHint = computed(() => mcpBaseUrl.value || `${window.location.origin}/mcp/workspace`)
 
@@ -158,19 +172,17 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-8" data-testid="workspace-external-mcp-panel">
-    <div class="space-y-2 text-[13px] leading-6 text-txt3">
-      <p>{{ t('pages.workspace.externalMcp.subtitle') }}</p>
-      <p>{{ t('pages.workspace.externalMcp.distinctHint') }}</p>
-    </div>
+  <div class="space-y-6" data-testid="workspace-external-mcp-panel">
+    <SettingsStatStrip :items="overviewStats" :loading="loading" data-testid="external-mcp-stats" />
+    <p class="m-0 text-[13px] leading-6 text-txt3">{{ t('pages.workspace.externalMcp.distinctHint') }}</p>
 
-    <SettingsSection :title="t('pages.workspace.externalMcp.connectionTitle')">
+    <SettingsSection icon="connector" :title="t('pages.workspace.externalMcp.connectionTitle')">
       <SettingsRow :label="t('pages.workspace.externalMcp.enable')" :description="t('pages.workspace.externalMcp.enableHint')" inline>
         <AppSwitch v-model="enabled" data-testid="external-mcp-enabled" :disabled="loading || saving" :aria-label="t('pages.workspace.externalMcp.enable')" />
       </SettingsRow>
     </SettingsSection>
 
-    <SettingsSection :title="t('pages.workspace.externalMcp.packsTitle')" :description="t('pages.workspace.externalMcp.packsHint')">
+    <SettingsSection icon="layers" :count="`${enabledPacks.length} / ${PM_MCP_OPTIONS.length}`" :title="t('pages.workspace.externalMcp.packsTitle')" :description="t('pages.workspace.externalMcp.packsHint')">
       <SettingsRow v-for="opt in PM_MCP_OPTIONS" :key="opt.id" :label="opt.id" :description="t(opt.labelKey)" inline>
         <AppSwitch :model-value="enabledPacks.includes(opt.id)" :disabled="loading || saving" :aria-label="opt.id" @update:model-value="togglePack(opt.id)" />
       </SettingsRow>
@@ -181,7 +193,7 @@ onMounted(async () => {
       </AppButton>
     </div>
 
-    <SettingsSection :title="t('pages.workspace.externalMcp.urlTitle')" :description="t('pages.workspace.externalMcp.urlHint')">
+    <SettingsSection icon="globe" :title="t('pages.workspace.externalMcp.urlTitle')" :description="t('pages.workspace.externalMcp.urlHint')">
       <div class="space-y-3 py-4">
         <div class="flex items-center gap-2 rounded-lg border border-line bg-base px-3 py-2.5 font-mono text-[12px]">
           <code class="min-w-0 flex-1 break-all text-txt2">{{ mcpBaseUrl || t('pages.workspace.externalMcp.urlPending') }}</code>
@@ -193,7 +205,7 @@ onMounted(async () => {
       </div>
     </SettingsSection>
 
-    <SettingsSection :title="t('pages.workspace.externalMcp.keysTitle')" :description="t('pages.workspace.externalMcp.keysHint')">
+    <SettingsSection icon="key" :count="loadingKeys ? undefined : keys.length" :title="t('pages.workspace.externalMcp.keysTitle')" :description="t('pages.workspace.externalMcp.keysHint')">
       <div class="space-y-3 py-4">
         <div class="flex justify-end">
           <AppButton size="sm" icon="plus" data-testid="external-mcp-create-key" @click="openCreateKey">{{ t('pages.workspace.externalMcp.createKey') }}</AppButton>
@@ -211,7 +223,7 @@ onMounted(async () => {
       </div>
     </SettingsSection>
 
-    <SettingsSection :title="t('pages.workspace.externalMcp.exampleTitle')" :description="t('pages.workspace.externalMcp.exampleHint')">
+    <SettingsSection icon="doc" :title="t('pages.workspace.externalMcp.exampleTitle')" :description="t('pages.workspace.externalMcp.exampleHint')">
       <div class="py-4">
         <div class="relative rounded-lg border border-line bg-base p-3">
           <button type="button" class="chip absolute right-2 top-2 text-[11px]" data-testid="external-mcp-copy-example" @click="copyText(mcpJsonExample, 'example')">

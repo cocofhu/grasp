@@ -786,3 +786,47 @@ describe('SettingsView execution mode', () => {
     }
   })
 })
+
+describe('SettingsView overview stats', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.updateSettings.mockResolvedValue(SETTINGS)
+    apiMocks.listSandboxes.mockResolvedValue([{ id: 'test-1', purpose: 'test', status: 'running' }])
+    apiMocks.dashboard.mockResolvedValue({ running: 2 })
+  })
+
+  it('summarises execution mode, running runs and sandbox capacity in sandbox mode', async () => {
+    apiMocks.getSettings.mockResolvedValue(SETTINGS)
+    const w = mountSettings()
+    await flushPromises()
+    const strip = w.get('[data-testid="settings-overview-stats"]')
+    const value = (key: string) => strip.get(`[data-testid="settings-stat-${key}"] [data-testid="settings-stat-value"]`).text()
+    expect(value('execution-mode')).toBe(pages.pages.settings.execution.sandbox)
+    expect(value('running-runs')).toBe('2')
+    expect(strip.get('[data-testid="settings-stat-running-runs"]').text()).toContain('/ 4')
+    expect(value('test-sandboxes')).toBe('1')
+    expect(value('sandbox-memory')).toBe('8192')
+    expect(strip.get('[data-testid="settings-stat-sandbox-memory"]').text()).toContain('MiB')
+    expect(w.get('[data-testid="settings-page-header"] h1').text()).toBe(pages.pages.settings.title)
+    w.unmount()
+  })
+
+  it('hides sandbox-only stats in worktree mode', async () => {
+    apiMocks.getSettings.mockResolvedValue({ ...SETTINGS, execution_mode: 'worktree' })
+    const w = mountSettings()
+    await flushPromises()
+    const strip = w.get('[data-testid="settings-overview-stats"]')
+    expect(strip.get('[data-testid="settings-stat-execution-mode"]').text()).toContain(pages.pages.settings.execution.worktree)
+    expect(strip.find('[data-testid="settings-stat-test-sandboxes"]').exists()).toBe(false)
+    expect(strip.find('[data-testid="settings-stat-sandbox-memory"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('does not render the stats when settings fail to load', async () => {
+    apiMocks.getSettings.mockRejectedValue(new Error('boom'))
+    const w = mountSettings()
+    await flushPromises()
+    expect(w.find('[data-testid="settings-overview-stats"]').exists()).toBe(false)
+    w.unmount()
+  })
+})

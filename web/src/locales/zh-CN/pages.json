@@ -1166,7 +1166,17 @@
         "failInterruptedDesc": "服务重启导致本轮生成中断，可点击重试。",
         "openSource": "跳转原文",
         "citationMissing": "引用目标不可用或无权限",
-        "citationInvalid": "引用无效或目标不存在"
+        "citationInvalid": "引用无效或目标不存在",
+        "setupBadgeDisabled": "未启用",
+        "setupBadgeUnavailable": "待配置",
+        "setupStepsLabel": "启用步骤",
+        "setupStep1": "在设置里选择一个已有 Agent",
+        "setupStep2": "打开「启用助手」并保存",
+        "setupStep3": "回到这里开始咨询，或在 QQ / 飞书 Channel 里提问",
+        "setupPreviewQ1": "这周有哪些运行卡住了？",
+        "setupPreviewA1": "2 个运行在等待审批，另有 1 个测试节点失败过一次。",
+        "setupPreviewQ2": "先处理哪个？",
+        "setupPreviewA2": "建议先看等待最久的那个，它阻塞了 3 个下游任务。"
       },
       "externalMcp": {
         "connectionTitle": "接入配置",
@@ -4882,6 +4892,67 @@
         "repoDirPlaceholder": "默认取仓库名",
         "repoDirHint": "仓库会克隆到沙箱的 /root/workspace/{dir}",
         "save": "保存"
+      }
+    },
+    "settingsOverview": {
+      "desc": {
+        "assistantSettings": "选择助手使用的 Agent，配置 Channel 接入与自动审批规则。",
+        "schedules": "按计划自动运行 Agent 任务，并把结果投递到 Channel。",
+        "audit": "查看工作区内 Agent 的工具调用与 MCP 访问记录。",
+        "notificationPolicy": "决定哪些事件需要通知，以及通过哪个 Channel 投递。",
+        "projects": "管理工作流运行时使用的代码仓库与默认分支。",
+        "variables": "为所有 Agent 运行注入共享的环境变量与配置。",
+        "general": "管理工作区信息、品牌文案、运行并发与沙箱资源。"
+      },
+      "stats": {
+        "credentialsTotal": "凭据总数",
+        "credentialsConfigured": "已配置",
+        "credentialsGitHosts": "代码仓库主机",
+        "credentialsPending": "待填写",
+        "modelsTotal": "模型组",
+        "modelsEnabled": "已启用",
+        "modelsTools": "覆盖编码工具",
+        "modelsProblems": "需要处理",
+        "toolUnit": "种",
+        "executionMode": "执行模式",
+        "runningRuns": "运行中 / 并发上限",
+        "testSandboxes": "测试沙箱占用",
+        "sandboxMemory": "沙箱内存上限",
+        "mcpConnection": "对外连接",
+        "mcpEnabled": "已启用",
+        "mcpDisabled": "未启用",
+        "mcpPacks": "已开放能力包",
+        "mcpKeys": "访问密钥",
+        "notifyChannels": "已接入 Channel",
+        "notifyStatus": "通知状态",
+        "notifyOn": "已开启",
+        "notifyOff": "已关闭",
+        "projectsTotal": "仓库",
+        "variablesTotal": "共享变量",
+        "schedulesTotal": "定时任务",
+        "schedulesEnabled": "已启用",
+        "notifyEvents": "已订阅事件",
+        "projectsUsed": "使用过",
+        "projectsHosts": "代码托管主机",
+        "variablesWithDefault": "已设默认值",
+        "variablesTypes": "变量类型",
+        "schedulesDeliver": "投递到 Channel"
+      },
+      "modelStatus": {
+        "available": "可用",
+        "disabled": "已停用",
+        "missingConfiguration": "模型组不可用",
+        "configurationBackendMismatch": "工具不匹配",
+        "missingCredential": "凭据缺失",
+        "missingConnection": "API 地址不可用",
+        "unsupported": "协议不支持",
+        "missingModel": "模型缺失",
+        "requiredRoles": "缺少辅助模型",
+        "fallback": "需要处理"
+      },
+      "credentialStatus": {
+        "configured": "已配置",
+        "pending": "待填写"
       }
     }
   }
