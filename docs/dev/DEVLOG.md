@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-31（内置实现/测试评审模板默认关闭复审）
+
+- 日期：2026-10-31。
+- 范围：`agents/{ImplementAgent,TestReviewAgent}/` 与 `server/internal/services/team_embed/{ImplementAgent,TestReviewAgent}/` 下的 `agent.json`、`workspace/AGENTS.md`、`server/internal/services/team_embed.go`、`server/internal/services/team_create_template_test.go`、`web/src/locales/zh-CN/pages.json`、`web/e2e/onboarding-wizard.spec.ts`、`docs/content/{,en/}guide/concepts.md`。
+- 做了什么：实现、测试评审模板的 `agent.json` 去掉 `"review": true`，交付模板本来就没有，需求澄清（`interaction=clarify`）不动。首次引导、PM 建团、Agent Studio 从模板创建都直接拷贝模板能力，代码逻辑不变。模板 `AGENTS.md` 的复审说明改为「开启复审时才适用」；`test_review` 的 Summary、zh-CN 引导页实现描述去掉暗示默认复审的措辞；concepts 中英文改为默认关闭、可在能力页开启。已存在的 Agent 不迁移。
+- 为什么：用户希望澄清确认后，默认工作流的实现、测试评审、交付自动跑完，中间不停下等人复审。副作用：auto 节点关闭复审后不再提供 Live 实时变体，属预期。
+- 如何验证：新增 `TestBuiltInTemplates_ReviewOffExceptClarify`（除 clarify 外模板与 `ApplyCreateTemplate` 结果 review 均为 false，clarify 仍是 clarify 交互）；server `go test ./...`、golangci-lint 通过；web vitest（`--maxWorkers=2`）通过；onboarding e2e mock 同步去掉 `review: true`。
+
 ### 2026-10-31（新建工作流默认共享沙箱）
 
 - 日期：2026-10-31。

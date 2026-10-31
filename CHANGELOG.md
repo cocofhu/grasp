@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Built-in agents run straight through:** newly created Implement and Test & review agents (from onboarding, the PM or Agent studio templates) now have human review off, so after you confirm the clarified requirement the default workflow runs implementation, test & review and delivery without stopping. Turn review on in an agent's capabilities page if you want it to wait for you. Existing agents keep their current setting.
+
 - **Shared sandbox on for new workflows:** workflows created in the editor, by onboarding, or with "Create from default baseline" now start with Shared sandbox turned on, so nodes in the same run share one sandbox and workspace without changing Workflow defaults first. You can still turn it off there. Existing workflows keep their current setting, and imported or copied workflows keep the defaults they came with.
 
 - **Model groups in Agent settings:** the option that includes every active model group is now called "Use all model groups" (「使用全部模型组」) instead of an "inherit" label, so it is no longer confused with "Inherit defaults". The model section now asks for the default startup model group first, then lets you choose between all model groups and selected groups with a segmented control. Switching only changes the panel below it. In selected mode, the default group appears as a fixed row. Reset now sits next to the section title. Saved settings are unchanged.
