@@ -85,6 +85,19 @@ import { getShareVisitorId } from '@/lib/inbox/gateShareLink'
 import ClarifyChat from '@/components/run/ClarifyChat.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import type { VueWrapper } from '@vue/test-utils'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { dialogueFrame, endedTurn, queuedTurn, runningTurn, type DialogueSpec } from '@/test/dialogueKit'
+
+/** The share page's dialogue state, as preview and the events socket carry it. */
+function pubDialogue(spec: DialogueSpec) {
+  return dialogueFrame('share', 'public-gate', spec)
+}
+
+function sentClientId(): string {
+  return (mocks.reply.mock.calls.at(-1)?.[0] as { clientMessageId?: string }).clientMessageId ?? ''
+}
+
+afterEach(() => clearDialogues())
 
 const mounted: VueWrapper[] = []
 
@@ -687,6 +700,15 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     expect(mocks.reply).toHaveBeenCalledWith(expect.objectContaining({ token: 'aa'.repeat(32), text: '改标题' }))
     expect(mocks.decide).not.toHaveBeenCalled()
+    const clientMessageId = sentClientId()
+    FakeWebSocket.instances.at(-1)!.emit(pubDialogue({
+      rows: [
+        { role: 'human', text: '改标题', at: '1', turnId: 't1', clientMessageId },
+        { role: 'agent', text: '标题已改', at: '2', turnId: 't1' },
+      ],
+      turns: [endedTurn('t1', 'ok', { clientMessageId })],
+    }))
+    await flushPromises()
     expect(w.find('[data-testid="public-gate-done"]').exists()).toBe(false)
     expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(true)
   })
@@ -778,6 +800,15 @@ describe('PublicGateApprovalView workbench', () => {
       activeItem: { text: '改标题' },
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
       turns: [{ role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' }],
+      dialogue: pubDialogue({
+        busy: true,
+        rows: [
+          { role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' },
+          { role: 'human', text: '改标题', at: '1', turnId: 't1' },
+          { role: 'agent', text: '', at: '2', turnId: 't1', streaming: true },
+        ],
+        turns: [runningTurn('t1', { text: '改标题' })],
+      }),
     })
     const w = mountView()
     await flushPromises()
@@ -789,7 +820,7 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.find('[data-testid="public-gate-done"]').exists()).toBe(false)
   })
 
-  it('applies preview liveEvents as streaming agent text (poll fallback)', async () => {
+  it('a preview dialogue with a running reply streams agent text (poll fallback)', async () => {
     window.location.hash = `#t=${'dd'.repeat(32)}`
     mocks.preview.mockResolvedValue({
       status: 'active',
@@ -801,7 +832,15 @@ describe('PublicGateApprovalView workbench', () => {
       activeItem: { text: '改成绿的' },
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
       turns: [{ role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' }],
-      liveEvents: [{ kind: 'message', text: '标题已改为绿色（#16a34a）' }],
+      dialogue: pubDialogue({
+        busy: true,
+        rows: [
+          { role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' },
+          { role: 'human', text: '改成绿的', at: '1', turnId: 't1' },
+          { role: 'agent', text: '标题已改为绿色（#16a34a）', at: '2', turnId: 't1', streaming: true },
+        ],
+        turns: [runningTurn('t1', { text: '改成绿的' })],
+      }),
     })
     const w = mountView()
     await flushPromises()
@@ -836,7 +875,7 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.text()).toContain('标题已改为绿色')
   })
 
-  it('public events WS auth then ACP frame streams into the chat', async () => {
+  it('public events WS auth then a dialogue frame streams into the chat', async () => {
     window.location.hash = `#t=${'dd'.repeat(32)}`
     mocks.preview.mockResolvedValue({
       status: 'active',
@@ -855,42 +894,32 @@ describe('PublicGateApprovalView workbench', () => {
     const sock = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
     expect(sock).toBeTruthy()
     expect(sock.sent.some((s) => s.includes('dd'.repeat(32)))).toBe(true)
-    sock.emit({
-      type: 'acp',
-      nodeId: 'public-gate',
-      events: [{ kind: 'message', text: '流式产出正文' }],
-    })
+    sock.emit(pubDialogue({
+      busy: true,
+      rows: [
+        { role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' },
+        { role: 'human', text: '改成绿的', at: '1', turnId: 't1' },
+        { role: 'agent', text: '流式产出正文', at: '2', turnId: 't1', streaming: true },
+      ],
+      turns: [runningTurn('t1', { text: '改成绿的' })],
+    }))
     await flushPromises()
     expect(w.text()).toContain('流式产出正文')
     expect(w.find('[data-testid="clarify-stream-caret"]').exists()).toBe(true)
   })
 
-  it('does not paint ACP buffered before a turn into that turn', async () => {
-    window.location.hash = `#t=${'de'.repeat(32)}`
-    mocks.preview.mockResolvedValue({
-      status: 'active',
-      kind: 'review',
-      nonce: 'n-stale',
-      reactSessionAlive: true,
-      actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
-      turns: [{ role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' }],
+  it('public poll/WS queued items keep annotations badge and refill on edit (plan g1/f4)', async () => {
+    const queuedAnnotated = () => pubDialogue({
+      busy: true,
+      rows: [{ role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' }],
+      turns: [
+        runningTurn('t-run', { text: '当前请求' }),
+        queuedTurn('pub-q-1', 0, {
+          text: '公共排队带标注',
+          annotations: [{ label: '公共点', selector: '#pub-hero', jsonPath: 'goals[0]' }],
+        }),
+      ],
     })
-    const w = mountView()
-    await flushPromises()
-    await flushPromises()
-    const sock = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
-    sock.emit({ type: 'acp', nodeId: 'public-gate', events: [{ kind: 'message', text: '上一轮的回复' }] })
-    await flushPromises()
-    sock.emit({ type: 'review', event: 'turn_begin', nodeId: 'public-gate', item: { id: 'i1', text: '新问题' } })
-    await flushPromises()
-    expect(w.text()).toContain('新问题')
-    expect(w.text()).not.toContain('上一轮的回复')
-    sock.emit({ type: 'acp', nodeId: 'public-gate', events: [{ kind: 'message', text: '这一轮的回复' }] })
-    await flushPromises()
-    expect(w.text()).toContain('这一轮的回复')
-  })
-
-  it('public poll/WS queueItems keep annotations badge and refill on edit (plan g1/f4)', async () => {
     window.location.hash = `#t=${'ee'.repeat(32)}`
     mocks.preview.mockResolvedValue({
       status: 'active',
@@ -899,15 +928,9 @@ describe('PublicGateApprovalView workbench', () => {
       reactSessionAlive: true,
       sessionBusy: false,
       waiting: 1,
-      queueItems: [
-        {
-          id: 'pub-q-1',
-          text: '公共排队带标注',
-          annotations: [{ label: '公共点', selector: '#pub-hero', jsonPath: 'goals[0]' }],
-        },
-      ],
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
       turns: [{ role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' }],
+      dialogue: queuedAnnotated(),
     })
     mocks.cancel.mockResolvedValue({})
     const w = mountView()
@@ -916,23 +939,10 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.text()).toMatch(/批注/)
     expect(w.text()).toContain('公共排队带标注')
 
-    // WS reconcile with annotations-only frame (no local hit) must keep badge.
+    // A later WS state of the same queue keeps the badge.
     const sock = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
     expect(sock).toBeTruthy()
-    sock.emit({
-      type: 'review',
-      event: 'queue_state',
-      nodeId: 'public-gate',
-      waiting: 1,
-      busy: false,
-      items: [
-        {
-          id: 'pub-q-1',
-          text: '公共排队带标注',
-          annotations: [{ label: '公共点', selector: '#pub-hero', jsonPath: 'goals[0]' }],
-        },
-      ],
-    })
+    sock.emit(queuedAnnotated())
     await flushPromises()
     expect(w.text()).toMatch(/批注/)
 
@@ -1454,7 +1464,7 @@ describe('PublicGateApprovalView workbench', () => {
     expect(w.get('[data-testid="public-gate-remaining"]').text()).not.toContain('1 分钟')
   })
 
-  it('identical silent polls do not drop visual or idle-apply queue (plan g3.1 / g3.2)', async () => {
+  it('identical silent polls do not drop visual or the composer draft (plan g3.1 / g3.2)', async () => {
     window.location.hash = `#t=${'aa'.repeat(32)}`
     const base = {
       status: 'active',
@@ -1476,8 +1486,6 @@ describe('PublicGateApprovalView workbench', () => {
     const w = mountView()
     await flushPromises()
     await w.get('[data-testid="clarify-input"]').setValue('idle-draft')
-    const chat = w.getComponent(ClarifyChat)
-    const applySpy = vi.spyOn(chat.vm as unknown as { applyQueueState: (...args: unknown[]) => void }, 'applyQueueState')
     for (let i = 1; i <= 8; i++) {
       mocks.preview.mockResolvedValue({
         ...base,
@@ -1491,8 +1499,6 @@ describe('PublicGateApprovalView workbench', () => {
     }
     expect(w.get('[data-testid="public-gate-visual"]').html()).toContain('stable')
     expect(w.get('[data-testid="clarify-input"]').element).toHaveProperty('value', 'idle-draft')
-    expect(applySpy).not.toHaveBeenCalled()
-    applySpy.mockRestore()
   })
 
   it('retries nonce once on reject as well as confirm (plan g4.2)', async () => {
@@ -1566,6 +1572,15 @@ describe('PublicGateApprovalView workbench', () => {
       activeItem: { text: '改成绿的' },
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
       turns: [{ role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' }],
+      dialogue: pubDialogue({
+        busy: true,
+        rows: [
+          { role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' },
+          { role: 'human', text: '改成绿的', at: '2026-08-01T00:01:00Z', turnId: 't1' },
+          { role: 'agent', text: '', at: '2', turnId: 't1', streaming: true },
+        ],
+        turns: [runningTurn('t1', { text: '改成绿的' })],
+      }),
     })
     const w = mountView()
     await flushPromises()
@@ -1590,6 +1605,14 @@ describe('PublicGateApprovalView workbench', () => {
         { role: 'human', text: '改成绿的', at: '2026-08-01T00:01:00Z' },
         { role: 'agent', text: '标题已改为绿色', at: '2026-08-01T00:02:00Z' },
       ],
+      dialogue: pubDialogue({
+        rows: [
+          { role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' },
+          { role: 'human', text: '改成绿的', at: '2026-08-01T00:01:00Z', turnId: 't1' },
+          { role: 'agent', text: '标题已改为绿色', at: '2026-08-01T00:02:00Z', turnId: 't1' },
+        ],
+        turns: [endedTurn('t1', 'ok')],
+      }),
     })
     await (w.vm as unknown as { loadPreview: (opts?: { silent?: boolean }) => Promise<void> }).loadPreview({
       silent: true,
@@ -1611,31 +1634,25 @@ describe('PublicGateApprovalView workbench', () => {
     expect((w.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('plan g4.3: ghost queued + turn_done synthesizes idle; confirm follows local busy', async () => {
+  it('plan g4.3: a send the server runs and ends returns confirm; confirm follows local busy', async () => {
     window.location.hash = `#t=${'ff'.repeat(32)}`
     mocks.reply.mockResolvedValue({ status: 'accepted' })
-    const base = {
+    mocks.preview.mockResolvedValue({
       status: 'active',
       kind: 'review',
       nonce: 'n-ws-idle',
       reactSessionAlive: true,
       sessionBusy: false,
       waiting: 0,
-      activeItem: null as null,
+      activeItem: null,
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
       turns: [{ role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' }],
-    }
-    mocks.preview.mockResolvedValue({ ...base })
+    })
     const w = mountView()
     await flushPromises()
     await flushPromises()
 
-    const chat = w.getComponent(ClarifyChat)
-    const vm = chat.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-      applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-      isSessionBusy: () => boolean
-    }
+    const vm = w.getComponent(ClarifyChat).vm as unknown as { isSessionBusy: () => boolean }
     await w.get('[data-testid="clarify-input"]').setValue('请改验收')
     const send = w.find('[data-testid="clarify-send-label"]')
     if (send.exists()) await send.trigger('click')
@@ -1643,39 +1660,27 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     expect(w.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
     expect(w.get('[data-testid="clarify-human-message"]').text()).toContain('请改验收')
-    expect(w.text()).toContain('思考中')
+    expect(w.text()).toContain('Agent 正在思考下一轮')
 
-    // Optimistic no-id ghost + turn_begin with id (no text fallback).
-    vm.applyReviewFrame({
-      event: 'turn_begin',
-      nodeId: 'public-gate',
-      item: { id: 'srv-p1', text: '请改验收' },
-    })
-    vm.applyAcpEvents([{ kind: 'message', text: '验收已更新' }], 'public-gate')
+    const clientMessageId = sentClientId()
+    const human = { role: 'human' as const, text: '请改验收', at: '1', turnId: 'srv-p1', clientMessageId }
+    const prompt = { role: 'agent' as const, text: '请复审', at: '2026-08-01T00:00:00Z' }
+    const sock = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    sock.emit(pubDialogue({
+      busy: true,
+      rows: [prompt, human, { role: 'agent', text: '验收已更新', at: '2', turnId: 'srv-p1', streaming: true }],
+      turns: [runningTurn('srv-p1', { text: '请改验收', clientMessageId }, { clientMessageId })],
+    }))
     await flushPromises()
-    vm.applyReviewFrame({ event: 'turn_done', nodeId: 'public-gate' })
+    expect(vm.isSessionBusy()).toBe(true)
+    sock.emit(pubDialogue({
+      rows: [prompt, human, { role: 'agent', text: '验收已更新', at: '2', turnId: 'srv-p1' }],
+      turns: [endedTurn('srv-p1', 'ok', { clientMessageId })],
+    }))
     await flushPromises()
     expect(vm.isSessionBusy()).toBe(false)
     expect(w.text()).not.toContain('Agent 正在思考下一轮')
     expect(w.find('[data-testid="clarify-review-cancel"]').exists()).toBe(false)
-
-    // Persist turns so pendingReplyText clears; WS turn_done refreshes parent localChatBusy.
-    mocks.preview.mockResolvedValue({
-      ...base,
-      nonce: 'n-ws-idle-2',
-      turns: [
-        { role: 'agent', text: '请复审', at: '2026-08-01T00:00:00Z' },
-        { role: 'human', text: '请改验收', at: '2026-08-01T00:01:00Z' },
-        { role: 'agent', text: '验收已更新', at: '2026-08-01T00:02:00Z' },
-      ],
-    })
-    const sock = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
-    sock.emit({ type: 'review', event: 'turn_done', nodeId: 'public-gate' })
-    await (w.vm as unknown as { loadPreview: (opts?: { silent?: boolean }) => Promise<void> }).loadPreview({
-      silent: true,
-    })
-    await flushPromises()
-
     expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(true)
     expect((w.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(false)
 
@@ -1685,6 +1690,7 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     expect((w.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(false)
   })
+
 })
 
 describe('PublicGateApprovalView chat-only drawer mode', () => {
@@ -1757,6 +1763,9 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
   })
 
   describe('drawer chat stays in sync after lost frames', () => {
+    const prompt = { role: 'agent' as const, text: '预览已就绪', at: '2026-08-01T00:00:00Z' }
+    const human = { role: 'human' as const, text: '改文案', at: '2026-08-01T00:01:00Z', turnId: 'p1' }
+    const reply = { role: 'agent' as const, text: '这是对文案和颜色的修改', thought: '先读源码', at: '2026-08-01T00:02:00Z', turnId: 'p1' }
     const busy = {
       status: 'active',
       kind: 'review',
@@ -1770,7 +1779,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
       actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
       turns: [{ role: 'agent', text: '预览已就绪', at: '2026-08-01T00:00:00Z' }],
     }
-    const idle = {
+    const idle = () => ({
       ...busy,
       sessionBusy: false,
       activeItem: null,
@@ -1779,7 +1788,8 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
         { role: 'human', text: '改文案', at: '2026-08-01T00:01:00Z' },
         { role: 'agent', text: '这是对文案和颜色的修改', thought: '先读源码', at: '2026-08-01T00:02:00Z' },
       ],
-    }
+      dialogue: pubDialogue({ rows: [prompt, human, reply], turns: [endedTurn('p1', 'ok')] }),
+    })
     const caret = '[data-testid="clarify-stream-caret"]'
 
     async function mountStreaming() {
@@ -1789,9 +1799,11 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
       await flushPromises()
       const sock = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
       sock.emit({ type: 'ready' })
-      sock.emit({ type: 'review', event: 'turn_begin', nodeId: 'public-gate', item: { id: 'p1', text: '改文案' } })
-      sock.emit({ type: 'acp', nodeId: 'public-gate', events: [{ kind: 'thought', text: '先读源码' }] })
-      sock.emit({ type: 'acp', nodeId: 'public-gate', events: [{ kind: 'message', text: '这是对文案和颜色的修改' }] })
+      sock.emit(pubDialogue({
+        busy: true,
+        rows: [prompt, human, { ...reply, streaming: true }],
+        turns: [runningTurn('p1', { text: '改文案' })],
+      }))
       await flushPromises()
       expect(w.find(caret).exists()).toBe(true)
       return { w, sock }
@@ -1804,7 +1816,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
 
     it('an idle poll ends the reply when turn_done never arrives', async () => {
       const { w } = await mountStreaming()
-      mocks.preview.mockResolvedValue(idle)
+      mocks.preview.mockResolvedValue(idle())
       await (w.vm as unknown as { loadPreview: (opts?: { silent?: boolean }) => Promise<void> }).loadPreview({ silent: true })
       await flushPromises()
       await flushPromises()
@@ -1814,7 +1826,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     it('a reconnected events socket re-reads the transcript', async () => {
       const { w, sock } = await mountStreaming()
       mocks.preview.mockClear()
-      mocks.preview.mockResolvedValue(idle)
+      mocks.preview.mockResolvedValue(idle())
       sock.emit({ type: 'ready' })
       await flushPromises()
       await flushPromises()
@@ -1829,7 +1841,7 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
         Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
         document.dispatchEvent(new Event('visibilitychange'))
         mocks.preview.mockClear()
-        mocks.preview.mockResolvedValue(idle)
+        mocks.preview.mockResolvedValue(idle())
         await vi.advanceTimersByTimeAsync(10_000)
         expect(mocks.preview).not.toHaveBeenCalled()
         await vi.advanceTimersByTimeAsync(15_000)

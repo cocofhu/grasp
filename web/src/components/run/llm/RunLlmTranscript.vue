@@ -31,8 +31,7 @@ defineEmits<{
 const { t, locale } = useI18n()
 
 const chatRef = ref<{
-  applyReviewFrame?: (frame: Record<string, unknown>) => boolean | void
-  applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  applyRequestRejected?: (frame: Record<string, unknown>) => void
   isSessionBusy?: () => boolean
   discardLastQueued?: () => void
 } | null>(null)
@@ -40,9 +39,7 @@ const chatRef = ref<{
 defineExpose({
   getNodeId: () => thread.value.conversational ? thread.value.current?.nodeId || '' : '',
   isChatReady: () => !!chatRef.value,
-  applyReviewFrame: (frame: Record<string, unknown>) => chatRef.value?.applyReviewFrame?.(frame) ?? false,
-  applyAcpEvents: (events: AcpEvent[] | undefined, nodeId?: string) =>
-    chatRef.value?.applyAcpEvents?.(events, nodeId) ?? false,
+  applyRequestRejected: (frame: Record<string, unknown>) => chatRef.value?.applyRequestRejected?.(frame),
   isSessionBusy: () => !!chatRef.value?.isSessionBusy?.(),
 })
 

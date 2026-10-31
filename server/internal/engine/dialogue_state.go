@@ -68,6 +68,7 @@ type DialogueState struct {
 	Type         string          `json:"type"`
 	RunID        string          `json:"runId"`
 	NodeID       string          `json:"nodeId"`
+	Lane         string          `json:"lane,omitempty"`
 	Iteration    int             `json:"iteration"`
 	Kind         string          `json:"kind,omitempty"`
 	Epoch        int64           `json:"epoch"`
@@ -117,6 +118,9 @@ const maxEndedTurns = 16
 func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (DialogueState, bool) {
 	st := DialogueState{Type: "dialogue", RunID: runID, NodeID: nodeID, Mode: "full",
 		Rows: []DialogueRow{}, Turns: []DialogueTurn{}}
+	if entry.lane != "" {
+		return e.buildLaneDialogue(entry, st), true
+	}
 
 	var conv *models.ReactConversation
 	var c models.ReactConversation
@@ -215,12 +219,7 @@ func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (Dial
 	if active != nil {
 		e.appendActiveTurn(entry, &st, active, view.LiveEvents, persisted, agentIdx)
 	}
-	for i, it := range view.Pending {
-		pos := i
-		v := reviewItemView(it)
-		st.Turns = append(st.Turns, DialogueTurn{TurnID: it.ID, ClientMessageID: it.ClientMessageID,
-			Phase: turnQueued, Position: &pos, Item: v.Frame()})
-	}
+	appendQueuedTurns(&st, view.Pending)
 	st.Busy = platformBusy
 
 	if conv != nil && !conv.Done {
@@ -230,6 +229,50 @@ func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (Dial
 		st.Turns = append(st.Turns, endedDialogueTurn(et, st.Rows))
 	}
 	return st, true
+}
+
+// buildLaneDialogue is a share visitor's own chat: its transcript (the node's
+// dialogue until the visitor first speaks) and its lane session. A lane has no
+// iterations, observed visits or orphan sandbox turns.
+func (e *Engine) buildLaneDialogue(entry *dialogueEntry, st DialogueState) DialogueState {
+	st.Lane = entry.lane
+	st.Kind = string(sessionKindReview)
+	var view chatsession.View[*reviewQueueItem]
+	if s := e.laneSession(entry.runID, entry.nodeID, entry.lane); s != nil {
+		view = s.View()
+		st.Kind = string(s.kind)
+		if s.linkID != "" {
+			entry.linkID = s.linkID
+		}
+	}
+	persisted := e.VisitorTurns(entry.linkID, entry.lane, entry.runID, entry.nodeID)
+	agentIdx := map[string]int{}
+	for i, m := range persisted {
+		row := DialogueRow{ReactMessage: m, Phase: rowSealed}
+		row.ID = dialogueRowID(0, i, m.TurnID, m.Role, agentIdx)
+		if m.Role == "agent" {
+			row.Outcome = models.ReplyOutcome(m)
+		}
+		st.Rows = append(st.Rows, row)
+	}
+	if view.HasActive {
+		e.appendActiveTurn(entry, &st, view.Active, view.LiveEvents, persisted, agentIdx)
+	}
+	appendQueuedTurns(&st, view.Pending)
+	st.Busy = view.HasActive || len(view.Pending) > 0
+	for _, et := range entry.ended {
+		st.Turns = append(st.Turns, endedDialogueTurn(et, st.Rows))
+	}
+	return st
+}
+
+func appendQueuedTurns(st *DialogueState, pending []*reviewQueueItem) {
+	for i, it := range pending {
+		pos := i
+		v := reviewItemView(it)
+		st.Turns = append(st.Turns, DialogueTurn{TurnID: it.ID, ClientMessageID: it.ClientMessageID,
+			Phase: turnQueued, Position: &pos, Item: v.Frame()})
+	}
 }
 
 // appendActiveTurn adds the running turn: its human row until the turn has

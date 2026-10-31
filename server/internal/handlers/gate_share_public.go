@@ -39,6 +39,9 @@ type publicReplyBody struct {
 	// a plain message while a Live session is open.
 	Live    *models.LiveEvent `json:"live"`
 	LiveCtx *models.LiveCtx   `json:"liveCtx"`
+	// ClientMessageID is the page's optional UUID for this turn; the dialogue
+	// state echoes it so the page can replace its optimistic row.
+	ClientMessageID string `json:"clientMessageId"`
 }
 
 type publicCancelBody struct {
@@ -189,6 +192,10 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
 		return
 	}
+	if !validClientMessageID(body.ClientMessageID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
+	}
 	token := strings.TrimSpace(body.Token)
 	if token == "" || !gateshare.ValidCredentialShape(token) {
 		c.JSON(http.StatusOK, gin.H{"status": "invalid"})
@@ -240,14 +247,14 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 	}
 	if kind == models.ShareLinkKindReview {
 		allowLive := gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionLive)
-		if err := h.Eng.ReactReplyLiveCtxWithPermissionAs(owner, lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations, body.LiveCtx, allowLive); err != nil {
+		if err := h.Eng.ReactReplyLiveCtxWithPermissionIDAs(owner, lookup.Link.RunID, lookup.Link.NodeID, body.ClientMessageID, text, body.Images, body.Annotations, body.LiveCtx, allowLive); err != nil {
 			h.writePublicReactErr(c, err)
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "accepted", "kind": models.ShareLinkKindReview})
 		return
 	}
-	if err := h.Eng.GateReactReviseAs(owner, lookup.Link.RunID, lookup.Link.NodeID, text, body.Images, body.Annotations); err != nil {
+	if err := h.Eng.GateReactReviseIDAs(owner, lookup.Link.RunID, lookup.Link.NodeID, body.ClientMessageID, text, body.Images, body.Annotations); err != nil {
 		h.writePublicReactErr(c, err)
 		return
 	}
@@ -258,7 +265,7 @@ func (h *Handlers) publicVisitorReply(c *gin.Context, lookup *gateshare.LookupRe
 	kind := publicShareKind(lookup)
 	t := engine.VisitorTarget{
 		LinkID: lookup.Link.ID, RunID: lookup.Link.RunID, Lane: lane, Owner: owner,
-		ProducerID: lookup.Link.NodeID, Source: "node",
+		ProducerID: lookup.Link.NodeID, Source: "node", ClientMessageID: body.ClientMessageID,
 	}
 	if kind != models.ShareLinkKindReview {
 		producerID, alive := h.Eng.GateReactInfo(lookup.Link.RunID, lookup.Link.NodeID)
@@ -746,7 +753,7 @@ func (h *Handlers) publicReviewExtras(lookup *gateshare.LookupResult, lane, visu
 		}
 	}
 	ex.Turns = h.publicLaneTurns(lookup, nodeID, lane)
-	ex.Dialogue = h.publicDialogueValue(runID, nodeID, lane)
+	ex.Dialogue = h.publicDialogueValue(runID, nodeID, lane, lookup.Link.ID)
 	ex.ReactSessionAlive = h.Eng != nil && h.Eng.HasLiveReviewSession(runID, nodeID)
 	if ex.ReactSessionAlive {
 		h.publicLaneSession(&ex, runID, nodeID, lane)
@@ -777,7 +784,7 @@ func (h *Handlers) publicGateExtras(lookup *gateshare.LookupResult, lane, visual
 	}
 	if producerID != "" {
 		ex.Turns = h.publicLaneTurns(lookup, producerID, lane)
-		ex.Dialogue = h.publicDialogueValue(runID, producerID, lane)
+		ex.Dialogue = h.publicDialogueValue(runID, producerID, lane, lookup.Link.ID)
 	}
 	ex.ReactSessionAlive = alive
 	if alive {

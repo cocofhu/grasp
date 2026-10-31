@@ -6,12 +6,16 @@
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, afterEach } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import ClarifyChat from './ClarifyChat.vue'
 import AnnotationChip from './AnnotationChip.vue'
 import type { ReactAnnotation } from '@/lib/shared/types'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { endedTurn, feedDialogue, queuedTurn, runningTurn, type DialogueSpec } from '@/test/dialogueKit'
+
+afterEach(() => clearDialogues())
 
 function mountClarify(nodeId = 'clarify') {
   const i18n = createI18n({
@@ -39,6 +43,14 @@ function mountClarify(nodeId = 'clarify') {
   })
 }
 
+function feed(spec: DialogueSpec) {
+  feedDialogue('run-1', 'clarify', spec)
+}
+
+function sentId(w: { emitted: (e: string) => unknown[][] | undefined }, n: number): string {
+  return w.emitted('send')![n]![3] as string
+}
+
 async function sendText(wrapper: ReturnType<typeof mountClarify>, text: string) {
   await wrapper.find('textarea').setValue(text)
   await wrapper.find('[data-testid="clarify-send-label"]').trigger('click')
@@ -59,49 +71,48 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     expect(queue.text()).toContain('澄清意见甲')
     expect(queue.text()).toContain('澄清意见乙')
 
-    const vm = w.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-      applyAcpEvents: (e: { kind: string; text: string }[]) => void
-    }
-    vm.applyReviewFrame({ event: 'turn_begin', item: { text: '澄清意见甲' }, nodeId: 'clarify' })
-    await nextTick()
-    vm.applyAcpEvents([{ kind: 'message', text: '流式正文增量' }])
-    await nextTick()
+    const [a, b] = [sentId(w, 0), sentId(w, 1)]
+    const human = { role: 'human' as const, text: '澄清意见甲', at: '1', turnId: 't-a', clientMessageId: a }
+    const waiting = queuedTurn('t-b', 0, { text: '澄清意见乙', clientMessageId: b }, { clientMessageId: b })
+    feed({
+      busy: true,
+      rows: [human, { role: 'agent', text: '流式正文增量', at: '2', turnId: 't-a', streaming: true }],
+      turns: [runningTurn('t-a', { text: '澄清意见甲', clientMessageId: a }, { clientMessageId: a }), waiting],
+    })
+    await flushPromises()
     expect(w.text()).toContain('流式正文增量')
 
     await w.find('[data-testid="clarify-review-cancel"]').trigger('click')
     await flushPromises()
+    expect(w.emitted('cancel')).toBeTruthy()
+    feed({
+      rows: [human, { role: 'agent', text: '流式正文增量', at: '2', turnId: 't-a', interrupted: true, outcome: 'interrupted' }],
+      turns: [endedTurn('t-a', 'interrupted', { clientMessageId: a }), waiting],
+    })
+    await flushPromises()
     // Demo: queue kept (乙 still pending); interrupted marker on current turn.
     expect(w.find('[data-testid="clarify-review-queue"]').text()).toContain('澄清意见乙')
     expect(w.find('[data-testid="clarify-interrupted"]').exists()).toBe(true)
-    expect(w.emitted('cancel')).toBeTruthy()
     w.unmount()
   })
 
-  it('real pump order: queue_state(remaining) then turn_begin(active) binds 甲 not 乙', async () => {
-    // Server pump: queue_state items=剩余(不含 active) → turn_begin item=当前轮.
-    // The live stream binds to 甲; 乙 waits only in the queue panel and is
-    // neither a user row nor an empty failure until its own turn_begin.
+  it('running 甲 with queued 乙: only 甲 is a transcript row, 乙 waits in the queue', async () => {
     const w = mountClarify()
     await sendText(w, '澄清意见甲')
     await sendText(w, '澄清意见乙')
-    const vm = w.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-    }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'clarify',
-      waiting: 1,
-      items: [{ text: '澄清意见乙' }],
+    const [a, b] = [sentId(w, 0), sentId(w, 1)]
+    feed({
       busy: true,
+      rows: [
+        { role: 'human', text: '澄清意见甲', at: '1', turnId: 't-a', clientMessageId: a },
+        { role: 'agent', text: '', at: '2', turnId: 't-a', streaming: true },
+      ],
+      turns: [
+        runningTurn('t-a', { text: '澄清意见甲', clientMessageId: a }, { clientMessageId: a }),
+        queuedTurn('t-b', 0, { text: '澄清意见乙', clientMessageId: b }, { clientMessageId: b }),
+      ],
     })
-    await nextTick()
-    vm.applyReviewFrame({
-      event: 'turn_begin',
-      nodeId: 'clarify',
-      item: { text: '澄清意见甲' },
-    })
-    await nextTick()
+    await flushPromises()
     const scroller = w.find('[data-testid="clarify-scroller"]')
     const humans = scroller.findAll('[data-testid="clarify-human-message"]').map((node) => node.text())
     expect(humans.filter((text) => text.includes('澄清意见甲'))).toHaveLength(1)
@@ -118,25 +129,16 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     w.unmount()
   })
 
-  it('refresh resume via queue_state busy+activeItem recreates live stream bubble', async () => {
+  it('refresh resume: a running turn in the loaded state shows its stream and the queue', async () => {
     const w = mountClarify()
-    const vm = w.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-      applyAcpEvents: (e: { kind: string; text: string }[]) => void
-    }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'clarify',
-      waiting: 1,
-      items: [{ text: '排队中的下一条' }],
-      busy: true,
-      activeItem: { text: '刷新前进行中的提问' },
-    })
-    await nextTick()
+    const human = { role: 'human' as const, text: '刷新前进行中的提问', at: '1', turnId: 't-a' }
+    const turns = [runningTurn('t-a', { text: '刷新前进行中的提问' }), queuedTurn('t-b', 0, { text: '排队中的下一条' })]
+    feed({ busy: true, rows: [human], turns })
+    await flushPromises()
     expect(w.text()).toContain('刷新前进行中的提问')
     expect(w.find('[data-testid="clarify-review-queue"]').text()).toContain('排队中的下一条')
-    vm.applyAcpEvents([{ kind: 'message', text: '续上的流式正文' }])
-    await nextTick()
+    feed({ busy: true, rows: [human, { role: 'agent', text: '续上的流式正文', at: '2', turnId: 't-a', streaming: true }], turns })
+    await flushPromises()
     expect(w.text()).toContain('续上的流式正文')
     w.unmount()
   })
@@ -175,19 +177,10 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     expect(w.text()).toContain(humanText)
     expect(w.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(false)
 
-    const vm = w.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-      applyAcpEvents: (e: { kind: string; text: string }[]) => void
-    }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'clarify',
-      waiting: 0,
-      items: [],
-      busy: true,
-      activeItem: { text: humanText },
-    })
-    await nextTick()
+    const human = { role: 'human' as const, text: humanText, at: '2026-09-09T01:00:00Z', turnId: 't-a' }
+    const turns = [runningTurn('t-a', { text: humanText })]
+    feed({ busy: true, rows: [human, { role: 'agent', text: '', at: '2', turnId: 't-a', streaming: true }], turns })
+    await flushPromises()
     // Live slot rebuilt despite human already in persisted turns.
     const placeholder = w.find('[data-testid="clarify-busy-placeholder"]')
     expect(placeholder.exists()).toBe(true)
@@ -196,8 +189,8 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     const humans = (w.text().match(new RegExp(humanText, 'g')) || []).length
     expect(humans).toBeGreaterThanOrEqual(1)
 
-    vm.applyAcpEvents([{ kind: 'message', text: '好的，我会按圆角口径把按钮和面板改掉…' }])
-    await nextTick()
+    feed({ busy: true, rows: [human, { role: 'agent', text: '好的，我会按圆角口径把按钮和面板改掉…', at: '2', turnId: 't-a', streaming: true }], turns })
+    await flushPromises()
     expect(w.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(false)
     expect(w.text()).toContain('好的，我会按圆角口径把按钮和面板改掉…')
     expect(w.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
@@ -205,36 +198,22 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     w.unmount()
   })
 
-  it('hard-refresh seed: thought-only then message after remount (g4.1)', async () => {
-    // Simulate host seed-then-live: rebuild slot → seed ACP after (re)mount.
+  it('hard-refresh: a thought-only reply shows the thought, then the message (g4.1)', async () => {
     const w = mountClarify()
-    const vm = w.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-      applyAcpEvents: (e: { kind: string; text: string }[]) => void
-    }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'clarify',
-      waiting: 0,
-      items: [],
-      busy: true,
-      activeItem: { text: '硬刷新前的提问' },
-    })
-    await nextTick()
+    const human = { role: 'human' as const, text: '硬刷新前的提问', at: '1', turnId: 't-a' }
+    const turns = [runningTurn('t-a', { text: '硬刷新前的提问' })]
+    feed({ busy: true, rows: [human, { role: 'agent', text: '', at: '2', turnId: 't-a', streaming: true }], turns })
+    await flushPromises()
     expect(w.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
 
-    // Seed thought recovered from LiveNodeEvents / pending ACP buffer.
-    vm.applyAcpEvents([{ kind: 'thought', text: '已恢复的思考增量' }])
-    await nextTick()
+    feed({ busy: true, rows: [human, { role: 'agent', text: '', thought: '已恢复的思考增量', at: '2', turnId: 't-a', streaming: true }], turns })
+    await flushPromises()
     expect(w.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(false)
     expect(w.find('[data-testid="agent-timeline-thought"]').text()).toContain('已恢复的思考增量')
     expect(w.find('[data-testid="clarify-busy-status"]').text()).toContain('思考中')
 
-    vm.applyAcpEvents([
-      { kind: 'thought', text: '已恢复的思考增量' },
-      { kind: 'message', text: '续流正文' },
-    ])
-    await nextTick()
+    feed({ busy: true, rows: [human, { role: 'agent', text: '续流正文', thought: '已恢复的思考增量', at: '2', turnId: 't-a', streaming: true }], turns })
+    await flushPromises()
     expect(w.text()).toContain('续流正文')
     expect(w.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
     expect(w.find('[data-testid="clarify-stream-caret"]').exists()).toBe(true)
@@ -256,75 +235,24 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     w.unmount()
   })
 
-  it('turn_begin prefers queue item id over duplicate text', async () => {
+  it('duplicate texts: the running item leaves the queue, its twin stays', async () => {
     const w = mountClarify()
-    // Two identical texts — text-only match would be ambiguous.
     await sendText(w, '同一文案')
     await sendText(w, '同一文案')
-    const vm = w.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-    }
-    // Authoritative reconcile assigns server ids before turn_begin.
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'clarify',
-      waiting: 2,
-      items: [
-        { id: 'id-a', text: '同一文案' },
-        { id: 'id-b', text: '同一文案' },
-      ],
-      busy: false,
-    })
-    await nextTick()
-    // Pump: remaining = id-b only, then turn_begin starts id-a (not in queue).
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'clarify',
-      waiting: 1,
-      items: [{ id: 'id-b', text: '同一文案' }],
+    const [a, b] = [sentId(w, 0), sentId(w, 1)]
+    feed({
       busy: true,
+      rows: [{ role: 'human', text: '同一文案', at: '1', turnId: 'id-a', clientMessageId: a }],
+      turns: [
+        runningTurn('id-a', { text: '同一文案', clientMessageId: a }, { clientMessageId: a }),
+        queuedTurn('id-b', 0, { text: '同一文案', clientMessageId: b }, { clientMessageId: b }),
+      ],
     })
-    await nextTick()
-    vm.applyReviewFrame({
-      event: 'turn_begin',
-      nodeId: 'clarify',
-      item: { id: 'id-a', text: '同一文案' },
-    })
-    await nextTick()
+    await flushPromises()
     const queue = w.find('[data-testid="clarify-review-queue"]')
     expect(queue.exists()).toBe(true)
-    // id-a was already trimmed; must NOT steal id-b via text fallback.
     expect(queue.findAll('[data-testid="clarify-queue-item"]').length).toBe(1)
     expect(queue.text()).toContain('同一文案')
-    w.unmount()
-  })
-
-  it('turn_begin removes matching id from local queue when still present', async () => {
-    const w = mountClarify()
-    await sendText(w, '同一文案')
-    await sendText(w, '同一文案')
-    const vm = w.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-    }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'clarify',
-      waiting: 2,
-      items: [
-        { id: 'id-a', text: '同一文案' },
-        { id: 'id-b', text: '同一文案' },
-      ],
-      busy: false,
-    })
-    await nextTick()
-    // turn_begin before trim (id still in local queue) — remove by id.
-    vm.applyReviewFrame({
-      event: 'turn_begin',
-      nodeId: 'clarify',
-      item: { id: 'id-a', text: '同一文案' },
-    })
-    await nextTick()
-    expect(w.findAll('[data-testid="clarify-queue-item"]').length).toBe(1)
     w.unmount()
   })
 
@@ -454,54 +382,6 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     cut.unmount()
   })
 
-  it('props.turns catching human while live streaming does not double human bubble', async () => {
-    const i18n = createI18n({
-      legacy: false,
-      locale: 'zh-CN',
-      messages: { 'zh-CN': { ...common, ...pages } },
-    })
-    const w = mount(ClarifyChat, {
-      props: {
-        runId: 'run-1',
-        nodeId: 'clarify',
-        iteration: 1,
-        turns: [],
-        done: false,
-        active: true,
-        reviewMode: false,
-        annotateEnabled: true,
-        hideFinish: true,
-        sendLabel: '发送澄清回复',
-      },
-      global: {
-        plugins: [i18n],
-        stubs: { Icon: true, ClarifyDemoFrame: true },
-      },
-    })
-    const vm = w.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-      applyAcpEvents: (e: { kind: string; text: string }[]) => void
-    }
-    vm.applyReviewFrame({
-      event: 'turn_begin',
-      item: { text: '澄清意见甲' },
-      nodeId: 'clarify',
-    })
-    await nextTick()
-    vm.applyAcpEvents([{ kind: 'message', text: '流式正文' }])
-    await nextTick()
-    // Host softRefresh/loadRun caught up with persisted human mid-stream.
-    await w.setProps({
-      turns: [{ role: 'human', text: '澄清意见甲', at: '2026-07-27T00:00:00Z' }],
-    })
-    await nextTick()
-    const body = w.find('[data-testid="clarify-scroller"]').text()
-    const matches = body.match(/澄清意见甲/g) || []
-    expect(matches.length).toBe(1)
-    expect(body).toContain('流式正文')
-    w.unmount()
-  })
-
   it('queue row cancel removes item without confirm dialog', async () => {
     const w = mountClarify()
     await sendText(w, '甲')
@@ -572,35 +452,20 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     w.unmount()
   })
 
-  it('applyQueueState prefers frame annotations without local hit (plan g1.2)', async () => {
+  it('a server queued item keeps its annotations and refills them on edit (plan g1.2)', async () => {
     const w = mountClarify()
-    const vm = w.vm as unknown as {
-      applyQueueState: (
-        waiting: number,
-        items: {
-          id?: string
-          text?: string
-          images?: { data: string; mimeType: string }[]
-          annotations?: ReactAnnotation[]
-        }[] | null,
-        busy?: boolean,
-        activeItem?: unknown,
-      ) => void
-    }
-    vm.applyQueueState(
-      1,
-      [
-        {
-          id: 'q-frame-1',
+    feed({
+      busy: true,
+      turns: [
+        runningTurn('t-a', { text: '当前请求' }),
+        queuedTurn('q-frame-1', 0, {
           text: '仅帧权威',
           annotations: [{ label: '字段', jsonPath: 'goals[0]', selector: '.goal' }],
           images: [],
-        },
+        }),
       ],
-      false,
-      null,
-    )
-    await nextTick()
+    })
+    await flushPromises()
     const queue = w.find('[data-testid="clarify-review-queue"]')
     expect(queue.exists()).toBe(true)
     expect(queue.text()).toContain('仅帧权威')
@@ -659,16 +524,25 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     w.unmount()
   })
 
-  it('drag reorder updates visible order', async () => {
+  it('drag reorder updates visible order and asks the server to reorder', async () => {
     const w = mountClarify()
-    await sendText(w, '第一条')
-    await sendText(w, '第二条')
+    feed({
+      busy: true,
+      turns: [
+        runningTurn('t-a', { text: '当前请求' }),
+        queuedTurn('q-1', 0, { text: '第一条' }),
+        queuedTurn('q-2', 1, { text: '第二条' }),
+      ],
+    })
+    await flushPromises()
     const vm = w.vm as unknown as { reorderQueuedItems: (from: number, to: number) => void }
     vm.reorderQueuedItems(0, 1)
     await nextTick()
     const rows = w.findAll('[data-testid="clarify-queue-item"]')
     expect(rows[0]?.text()).toContain('第二条')
     expect(rows[1]?.text()).toContain('第一条')
+    expect(w.emitted('queue-reorder')?.[0]).toEqual([['q-2', 'q-1']])
     w.unmount()
   })
+
 })

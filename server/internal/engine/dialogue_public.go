@@ -111,3 +111,16 @@ func (e *Engine) PublicDialogueSnapshot(runID, nodeID string) (PublicDialogueSta
 	}
 	return PublicDialogue(st), true
 }
+
+// PublicLaneDialogueSnapshot is a share visitor lane's dialogue; lane ""
+// is the node's own.
+func (e *Engine) PublicLaneDialogueSnapshot(runID, nodeID, lane, linkID string) (PublicDialogueState, bool) {
+	if lane == "" {
+		return e.PublicDialogueSnapshot(runID, nodeID)
+	}
+	st, ok := e.LaneDialogueSnapshot(runID, nodeID, lane, linkID)
+	if !ok {
+		return PublicDialogueState{}, false
+	}
+	return PublicDialogue(st), true
+}

@@ -34,6 +34,10 @@ type dialogueEntry struct {
 	mu     sync.Mutex
 	runID  string
 	nodeID string
+	// lane is a share visitor's own chat ("" for the node dialogue); linkID
+	// is the share link that lane belongs to.
+	lane   string
+	linkID string
 
 	cur       *DialogueState
 	curHash   [32]byte
@@ -56,7 +60,7 @@ type dialogueEntry struct {
 	sandboxDropped  bool
 }
 
-func dialogueKey(runID, nodeID string) string { return runID + "|" + nodeID }
+func dialogueKey(runID, nodeID, lane string) string { return runID + "|" + nodeID + "|" + lane }
 
 const dialogueEpochSetting = "dialogue.epoch"
 
@@ -87,14 +91,23 @@ func (e *Engine) dialogueHub() *dialogueHub {
 }
 
 func (e *Engine) dialogueEntry(runID, nodeID string) *dialogueEntry {
+	return e.laneDialogueEntry(runID, nodeID, "", "")
+}
+
+func (e *Engine) laneDialogueEntry(runID, nodeID, lane, linkID string) *dialogueEntry {
 	h := e.dialogueHub()
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	k := dialogueKey(runID, nodeID)
+	k := dialogueKey(runID, nodeID, lane)
 	en := h.entries[k]
 	if en == nil {
-		en = &dialogueEntry{runID: runID, nodeID: nodeID, started: map[string]string{}}
+		en = &dialogueEntry{runID: runID, nodeID: nodeID, lane: lane, started: map[string]string{}}
 		h.entries[k] = en
+	}
+	h.mu.Unlock()
+	if linkID != "" {
+		en.mu.Lock()
+		en.linkID = linkID
+		en.mu.Unlock()
 	}
 	return en
 }
@@ -106,7 +119,7 @@ func (e *Engine) knownDialogueNodes(runID string) []string {
 	defer h.mu.Unlock()
 	var out []string
 	for _, en := range h.entries {
-		if en.runID == runID {
+		if en.runID == runID && en.lane == "" {
 			out = append(out, en.nodeID)
 		}
 	}
@@ -151,9 +164,17 @@ func stampDialogue(en *dialogueEntry, st DialogueState) DialogueState {
 
 // DialogueSnapshot is the node's current full dialogue (REST and reconnect).
 func (e *Engine) DialogueSnapshot(runID, nodeID string) (DialogueState, bool) {
-	en := e.dialogueEntry(runID, nodeID)
+	return e.snapshotDialogue(e.dialogueEntry(runID, nodeID))
+}
+
+// LaneDialogueSnapshot is a share visitor lane's current full dialogue.
+func (e *Engine) LaneDialogueSnapshot(runID, nodeID, lane, linkID string) (DialogueState, bool) {
+	return e.snapshotDialogue(e.laneDialogueEntry(runID, nodeID, lane, linkID))
+}
+
+func (e *Engine) snapshotDialogue(en *dialogueEntry) (DialogueState, bool) {
 	en.mu.Lock()
-	st, ok := e.buildDialogue(en, runID, nodeID)
+	st, ok := e.buildDialogue(en, en.runID, en.nodeID)
 	if !ok {
 		en.mu.Unlock()
 		return DialogueState{}, false
@@ -230,10 +251,14 @@ func (e *Engine) SendDialogues(runID string, write func([]byte) error) error {
 // dialogueChanged schedules a publish of the node dialogue. urgent is for a
 // phase change (enqueue, start, end, orphan); content-only changes coalesce.
 func (e *Engine) dialogueChanged(runID, nodeID string, urgent bool) {
+	e.dialogueChangedLane(runID, nodeID, "", urgent)
+}
+
+func (e *Engine) dialogueChangedLane(runID, nodeID, lane string, urgent bool) {
 	if runID == "" || nodeID == "" {
 		return
 	}
-	en := e.dialogueEntry(runID, nodeID)
+	en := e.laneDialogueEntry(runID, nodeID, lane, "")
 	if urgent {
 		e.publishDialogue(en)
 		return
@@ -311,9 +336,9 @@ func dialogueFrame(prev *DialogueState, st DialogueState) DialogueState {
 
 // noteDialogueControl reacts to a session control frame: every one is a
 // phase change, and a turn that ends is remembered for turns without rows.
-func (e *Engine) noteDialogueControl(runID, nodeID, event string, payload map[string]any) {
+func (e *Engine) noteDialogueControl(runID, nodeID, lane, event string, payload map[string]any) {
 	if event == "turn_done" || event == "error" {
-		en := e.dialogueEntry(runID, nodeID)
+		en := e.laneDialogueEntry(runID, nodeID, lane, "")
 		item, _ := payload["item"].(map[string]any)
 		id, _ := item["id"].(string)
 		if id != "" {
@@ -333,7 +358,7 @@ func (e *Engine) noteDialogueControl(runID, nodeID, event string, payload map[st
 			en.mu.Unlock()
 		}
 	}
-	e.dialogueChanged(runID, nodeID, true)
+	e.dialogueChangedLane(runID, nodeID, lane, true)
 }
 
 // noteDialogueAcp routes a node's stream: onto the platform's running turn

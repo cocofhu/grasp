@@ -25,7 +25,7 @@ const RETRY = '[data-testid="clarify-empty-fail-retry"]'
 /** Trailing empty agent after a human — the only retryable shape. */
 const emptyFailTurns: ClarifyTurn[] = [
   { role: 'human', text: '这个按钮有问题', at: 't1' },
-  { role: 'agent', text: '', at: 't2' },
+  { role: 'agent', text: '', at: 't2', outcome: 'empty' },
 ]
 
 beforeAll(async () => {

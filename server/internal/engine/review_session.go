@@ -1018,9 +1018,7 @@ func (e *Engine) publishReviewLane(runID, nodeID, lane, event string, extra map[
 		return
 	}
 	e.broker.Publish(runID, msg)
-	if lane == "" {
-		e.noteDialogueControl(runID, nodeID, event, payload)
-	}
+	e.noteDialogueControl(runID, nodeID, lane, event, payload)
 }
 
 // clarifyVisitLive reports whether the clarify visit (runID, nodeID,

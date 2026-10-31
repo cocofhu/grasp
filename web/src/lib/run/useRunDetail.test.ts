@@ -534,11 +534,9 @@ describe('useRunDetail', () => {
     const { detail, app } = await withRunDetail()
     await flushPromises()
     detail.selected.value = 'n1'
-    const applyReviewFrame = vi.fn()
-    detail.reviewChatRef.value = { applyReviewFrame, isSessionBusy: () => true }
+    detail.reviewChatRef.value = { isSessionBusy: () => true }
     await detail.wsApi.projectDialogueAfterLoad(busy)
     expect(detail.isClarifySessionBusy()).toBe(true)
-    applyReviewFrame.mockClear()
 
     // The server drops idle FIFOs from its registry; the rest of the run and
     // saved transcript need not change when the final queue frame was missed.
@@ -547,10 +545,6 @@ describe('useRunDetail', () => {
     expect(detail.run.value.reactSessions?.n1?.busy).toBe(false)
     expect(detail.run.value.reactSessions?.n1?.waiting).toBe(0)
     expect(detail.live.liveBusy.n1).toBe(false)
-    expect(applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'queue_state', nodeId: 'n1', busy: false, waiting: 0, items: [],
-    }))
-    expect(applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'session_reset' }))
     expect(detail.run.value.clarify?.turns).toEqual(clarify.turns)
     app.unmount()
   })

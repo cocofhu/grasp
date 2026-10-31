@@ -5,9 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import type { ClarifyImage, ReactAnnotation, ReactQuestion } from '@/lib/shared/types'
+import type { ClarifyImage, ClarifyTurn, DialogueOutcome, ReactAnnotation, ReactQuestion } from '@/lib/shared/types'
 
 import { useClarifyChat } from './useClarifyChat'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import type { DialogueTurn } from '@/lib/chat/dialogueState'
+import { endedTurn, feedDialogue, orphanTurn, queuedTurn, runningTurn, type DialogueSpec, type RowInput } from '@/test/dialogueKit'
 import { putClarifyOutbox, takeClarifyOutbox } from './clarifyDraftStash'
 import { confirmFlowCeremonyKey, type ConfirmFlowCeremony } from './confirmFlowCeremony'
 import { __resetSidebarHandoffForTests, isSidebarConfirmWindowHeld } from './sidebarHandoff'
@@ -86,6 +89,45 @@ function scroller(top = 0) {
   return el
 }
 
+afterEach(() => clearDialogues())
+
+const feed = (spec: DialogueSpec) => feedDialogue('run-1', 'node-1', spec)
+
+function sentIds(emit: ReturnType<typeof vi.fn>): string[] {
+  return emit.mock.calls.filter((c) => c[0] === 'send').map((c) => c[4] as string)
+}
+
+type Human = { text: string; clientMessageId?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] }
+
+function turnRows(turnId: string, human: Human, replies: Partial<ClarifyTurn>[]): RowInput[] {
+  return [
+    { role: 'human', at: '1', turnId, ...human },
+    ...replies.map((r) => ({ role: 'agent' as const, text: '', at: '2', turnId, clientMessageId: human.clientMessageId, ...r })),
+  ]
+}
+
+/** The server running `turnId` with one streaming reply, then any waiters. */
+function running(turnId: string, human: Human, reply: Partial<ClarifyTurn> = {}, queue: DialogueTurn[] = []) {
+  const cmid = human.clientMessageId
+  feed({
+    busy: true,
+    rows: turnRows(turnId, human, [{ streaming: true, ...reply }]),
+    turns: [runningTurn(turnId, { text: human.text, clientMessageId: cmid }, { clientMessageId: cmid }), ...queue],
+  })
+}
+
+/** The server after `turnId` ended with `reply`, then any waiters. */
+function ended(turnId: string, human: Human, reply: Partial<ClarifyTurn>, outcome: DialogueOutcome = 'ok', queue: DialogueTurn[] = []) {
+  feed({
+    busy: queue.length > 0,
+    rows: turnRows(turnId, human, [{ outcome: outcome === 'ok' ? undefined : outcome, ...reply }]),
+    turns: [endedTurn(turnId, outcome, { clientMessageId: human.clientMessageId }), ...queue],
+  })
+}
+
+const waiter = (id: string, pos: number, item: Omit<Human, 'text'> & { text?: string }) =>
+  queuedTurn(id, pos, item, { clientMessageId: item.clientMessageId })
+
 describe('useClarifyChat actions', () => {
   beforeEach(() => {
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
@@ -121,51 +163,34 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
-  it.each([false, true])('dequeues an annotated send enriched by its host (queue acknowledged: %s)', (acknowledged) => {
-    const { chat, app } = withChat()
+  it('drops the local send once the server runs it with host-enriched annotations', () => {
+    const { chat, app, emit } = withChat()
     try {
       chat.sendMessage('hide these details', [], [annotation({ selector: '#details' })])
-      const item = {
-        id: 'annotated-send', text: 'hide these details', images: [],
+      const [cmid] = sentIds(emit)
+      running('annotated-send', {
+        text: 'hide these details',
+        clientMessageId: cmid,
         // The host appends the current preview selection before enqueueing.
         annotations: [annotation({ selector: '#details' }), annotation({ selector: '#preview-pick' })],
-      }
-      if (acknowledged) chat.applyReviewFrame({ event: 'queue_state', busy: true, waiting: 1, items: [item] })
-      chat.applyReviewFrame({ event: 'turn_begin', item })
-      chat.applyAcpEvents([{ kind: 'thought', text: 'already processing the annotated request' }])
+      }, { thought: 'already processing the annotated request' })
       expect(chat.queued.value).toHaveLength(0)
       expect(chat.displayTurns.value.filter(turn => turn.role === 'human')).toHaveLength(1)
       expect(chat.displayTurns.value.at(-1)?.thought).toBe('already processing the annotated request')
     } finally { app.unmount() }
   })
 
-  it('removes a delayed active queue copy on a duplicate opening frame without clearing its output', () => {
-    const { chat, app } = withChat()
-    try {
-      const item = { id: 'active', text: 'request' }
-      chat.sendMessage(item.text)
-      chat.applyReviewFrame({ event: 'turn_begin', item })
-      chat.applyAcpEvents([{ kind: 'message', text: 'still running' }])
-      // A delayed acknowledgement must not leave the already-running item editable.
-      chat.queued.value.push({ ...item, images: [], annotations: [] })
-      chat.applyReviewFrame({ event: 'turn_begin', item })
-      expect(chat.queued.value).toHaveLength(0)
-      expect(chat.displayTurns.value.at(-1)?.text).toBe('still running')
-      expect(chat.displayTurns.value.at(-1)?.streaming).toBe(true)
-    } finally { app.unmount() }
-  })
-
   it('keeps the distinct same-text annotated waiter when the enriched active send starts', () => {
-    const { chat, app } = withChat()
+    const { chat, app, emit } = withChat()
     try {
       chat.sendMessage('same request', [], [annotation({ selector: '#first' })])
       chat.sendMessage('same request', [], [annotation({ selector: '#second' })])
-      const item = {
-        id: 'first', text: 'same request', images: [],
+      const [first] = sentIds(emit)
+      running('first', {
+        text: 'same request',
+        clientMessageId: first,
         annotations: [annotation({ selector: '#first' }), annotation({ selector: '#staged' })],
-      }
-      chat.applyReviewFrame({ event: 'turn_begin', item })
-      chat.applyReviewFrame({ event: 'turn_begin', item })
+      })
       expect(chat.queued.value).toHaveLength(1)
       expect(chat.queued.value[0]?.annotations[0]?.selector).toBe('#second')
       expect(chat.displayTurns.value.filter(turn => turn.role === 'human')).toHaveLength(1)
@@ -300,10 +325,13 @@ describe('useClarifyChat actions', () => {
   it('cancels, reorders and edits queued items without sharing object references', async () => {
     vi.useFakeTimers()
     const { chat, app, emit, models } = withChat()
-    chat.applyQueueState(2, [
-      { id: 'a', text: 'first', images: [image('a.png')], annotations: [annotation()] },
-      { id: 'b', text: 'second', images: [], annotations: [] },
-    ])
+    feed({
+      busy: true,
+      turns: [
+        waiter('a', 0, { text: 'first', images: [image('a.png')], annotations: [annotation()] }),
+        waiter('b', 1, { text: 'second' }),
+      ],
+    })
     chat.reorderQueuedItems(0, 1)
     expect(chat.queued.value.map((q) => q.id)).toEqual(['b', 'a'])
     expect(emit).toHaveBeenCalledWith('queue-reorder', ['b', 'a'])
@@ -326,7 +354,7 @@ describe('useClarifyChat actions', () => {
 
   it('re-enqueues an existing composer draft before editing a queued item', () => {
     const { chat, app, emit, models } = withChat()
-    chat.applyQueueState(1, [{ id: 'server', text: 'server row' }])
+    feed({ busy: true, turns: [waiter('server', 0, { text: 'server row' })] })
     models.draft.value = 'local draft'
     models.annotations.value = [annotation()]
     chat.editQueuedItem(0)
@@ -448,6 +476,7 @@ describe('useClarifyChat actions', () => {
     chat.submitRecommended()
     expect(String(emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择环境 → 开发')
     app.unmount()
+    clearDialogues()
 
     const plain = question({
       id: 'plain',
@@ -577,6 +606,7 @@ describe('useClarifyChat actions', () => {
     expect(chat.isSelected(q.id, 'a')).toBe(false)
     expect(chat.selectedDemoForInteractive(q)?.id).toBe('b')
     app.unmount()
+    clearDialogues()
 
     const plain = question({
       id: 'plain',
@@ -619,229 +649,113 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
-  it('reconciles authoritative queue state and resumes an active item', () => {
-    const { chat, app } = withChat()
+  it('follows the server from queued to running to idle', () => {
+    const { chat, app, emit } = withChat()
     chat.sendMessage('optimistic', [image()], [annotation()])
-    chat.applyQueueState(1, [{ id: 'q1', text: 'optimistic' }], false)
-    expect(chat.queued.value[0]?.id).toBe('q1')
+    const [cmid] = sentIds(emit)
+    feed({ busy: true, turns: [waiter('q1', 0, { text: 'optimistic', clientMessageId: cmid, images: [image()] })] })
+    expect(chat.queued.value.map((q) => q.id)).toEqual(['q1'])
     expect(chat.queued.value[0]?.images).toHaveLength(1)
 
-    chat.applyQueueState(0, [], true, {
-      id: 'active',
-      text: 'running',
-      images: [image()],
-      annotations: [annotation()],
-    })
-    expect(chat.liveTurns.value.map((t) => t.role)).toEqual(['human', 'agent'])
+    const human = { text: 'optimistic', clientMessageId: cmid, images: [image()], annotations: [annotation()] }
+    running('q1', human)
+    expect(chat.displayTurns.value.map((t) => t.role)).toEqual(['human', 'agent'])
     expect(chat.liveAgentIdx.value).toBe(1)
     expect(chat.thinking.value).toBe(true)
+    expect(chat.queued.value).toEqual([])
 
-    chat.applyQueueState(0, [], false, null)
+    ended('q1', human, { text: 'done' })
     expect(chat.liveAgentIdx.value).toBe(-1)
     expect(chat.thinking.value).toBe(false)
     app.unmount()
   })
 
-  it('puts tool calls on the open agent segment only', () => {
+  it('shows each reply row of a turn with its own tools and timeline', () => {
     const { chat, app } = withChat()
-    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
-    chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'node-1', item: { id: 'item-1', text: 'hello' } })
-    expect(chat.applyAcpEvents([
-      { t: 0, kind: 'message', text: 'answer' },
-      { t: 1, kind: 'segment' },
-      { t: 2, kind: 'tool_call', title: 'read_file', status: 'completed' },
-      { t: 3, kind: 'message', text: 'second' },
-    ])).toBe(true)
-    const rows = chat.liveTurns.value.filter((x) => x.role === 'agent')
-    expect(rows.map((r) => r.text)).toEqual(['answer', 'second'])
-    expect(rows[0]!.tools).toBeUndefined()
-    expect(rows[1]!.tools).toEqual([{ title: 'read_file', status: 'completed' }])
-    app.unmount()
-  })
-
-  it('puts the ordered timeline on the open agent segment and drops it when absent', () => {
-    const { chat, app } = withChat()
-    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
-    chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'node-1', item: { id: 'item-1', text: 'hello' } })
     const parts = [
       { kind: 'thought' as const, text: 'look' },
       { kind: 'tool' as const, title: 'Shell', status: 'completed', summary: 'ls' },
       { kind: 'message' as const, text: 'second' },
     ]
-    expect(chat.applyAcpEvents([
-      { t: 0, kind: 'message', text: 'answer' },
-      { t: 0, kind: 'timeline', parts: [{ kind: 'message', text: 'answer' }] },
-      { t: 1, kind: 'segment' },
-      { t: 2, kind: 'thought', text: 'look' },
-      { t: 3, kind: 'tool_call', title: 'Shell', status: 'completed' },
-      { t: 4, kind: 'message', text: 'second' },
-      { t: 4, kind: 'timeline', parts },
-    ])).toBe(true)
-    let rows = chat.liveTurns.value.filter((x) => x.role === 'agent')
+    feed({
+      busy: true,
+      rows: turnRows('item-1', { text: 'hello' }, [
+        { text: 'answer', handoff: true },
+        { text: 'second', streaming: true, tools: [{ title: 'Shell', status: 'completed' }], parts },
+      ]),
+      turns: [runningTurn('item-1', { text: 'hello' })],
+    })
+    const rows = chat.displayTurns.value.filter((x) => x.role === 'agent')
+    expect(rows.map((r) => r.text)).toEqual(['answer', 'second'])
+    expect(rows[0]!.tools).toBeUndefined()
     expect(rows[0]!.parts).toBeUndefined()
+    expect(rows[1]!.tools).toEqual([{ title: 'Shell', status: 'completed' }])
     expect(rows[1]!.parts).toEqual(parts)
-    expect(chat.applyAcpEvents([
-      { t: 0, kind: 'message', text: 'answer' },
-      { t: 1, kind: 'segment' },
-      { t: 4, kind: 'message', text: 'second' },
-    ])).toBe(true)
-    rows = chat.liveTurns.value.filter((x) => x.role === 'agent')
-    expect(rows[1]!.parts).toBeUndefined()
     app.unmount()
   })
 
-  it('materializes websocket turns, streams ACP content, and settles completion', () => {
+  it('streams a running reply and settles it when the server interrupts the turn', () => {
     const { chat, app } = withChat()
-    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
-    chat.applyReviewFrame({
-      event: 'turn_begin',
-      nodeId: 'node-1',
-      item: { id: 'item-1', text: 'hello', images: [image()] },
-    })
+    const human = { text: 'hello', images: [image()] }
+    running('item-1', human, { thought: 'reasoning', text: 'answer' })
     expect(chat.liveAgentIdx.value).toBe(1)
-    expect(chat.applyAcpEvents([{ kind: 'thought', text: 'thinking' }], 'other')).toBe(true)
-    expect(chat.applyAcpEvents([
-      { kind: 'thought', text: 'reasoning' },
-      { kind: 'message', text: 'answer' },
-    ])).toBe(true)
-    const agent = chat.liveTurns.value[1]!
+    let agent = chat.displayTurns.value[1]!
     expect(agent.text).toBe('answer')
     expect(agent.thought).toBe('reasoning')
-    expect(chat.liveStreamHtml.value).toContain('answer')
-    expect(chat.liveStreamBlocks.value).toHaveLength(1)
-    expect(chat.liveStreamBlocks.value[0]).toContain('answer')
     expect(chat.agentHasMessage(agent)).toBe(true)
     expect(chat.agentThoughtDisplay(agent, 1)).toBe('reasoning')
     expect(agent.tools).toBeUndefined()
 
-
-    chat.applyReviewFrame({ event: 'turn_done', interrupted: true })
-    expect(agent.streaming).toBe(false)
+    ended('item-1', human, { text: 'answer', thought: 'reasoning', interrupted: true }, 'interrupted')
+    agent = chat.displayTurns.value[1]!
+    expect(agent.streaming).toBeFalsy()
     expect(agent.interrupted).toBe(true)
     expect(chat.liveAgentIdx.value).toBe(-1)
     expect(chat.showTurnCompleted(agent)).toBe(false)
-    expect(chat.applyAcpEvents([{ kind: 'message', text: 'late' }])).toBe(false)
     app.unmount()
   })
 
-  it('keeps painting when the platform goes idle but the sandbox turn is still running', () => {
+  it('keeps painting an orphan sandbox turn until the server seals it', () => {
     const { chat, app } = withChat()
-    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
-    chat.applyReviewFrame({
-      event: 'turn_begin',
-      nodeId: 'node-1',
-      item: { id: 'item-1', text: 'hello' },
-    })
-    expect(chat.applyAcpEvents([
-      { kind: 'message', text: '短回复' },
-    ])).toBe(true)
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'node-1',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxRunningOpId: 'q-d5d82a58-df0',
+    const human = { text: 'hello' }
+    const orphan = { runningOpId: 'q-d5d82a58-df0', desynced: false }
+    feed({
+      rows: turnRows('item-1', human, [{ text: '短回复', thought: '还在核对边界', streaming: true, phase: 'orphan' }]),
+      turns: [orphanTurn(orphan.runningOpId)],
+      orphan,
     })
     expect(chat.liveAgentIdx.value).toBeGreaterThanOrEqual(0)
-    expect(chat.thinking.value).toBe(true)
     expect(chat.showSandboxOrphanBanner.value).toBe(true)
-    expect(chat.liveTurns.value.find((t) => t.role === 'agent')?.streaming).toBe(true)
-
-    expect(chat.applyAcpEvents([
-      { kind: 'thought', text: '还在核对边界' },
-      { kind: 'message', text: '短回复' },
-    ])).toBe(true)
-    expect(chat.applyAcpEvents([
-      { kind: 'thought', text: '还在核对边界' },
-      { kind: 'message', text: '短回复' },
-    ])).toBe(true)
-    const agents = chat.displayTurns.value.filter((t) => t.role === 'agent' && t.text === '短回复')
+    const agents = chat.displayTurns.value.filter((t) => t.role === 'agent')
     expect(agents).toHaveLength(1)
-    expect(agents[0]?.thought).toBe('还在核对边界')
-    expect(agents[0]?.streaming).toBe(true)
-    expect(chat.thinking.value).toBe(true)
+    expect(agents[0]).toMatchObject({ text: '短回复', thought: '还在核对边界', streaming: true })
     expect(chat.showTurnCompleted(agents[0]!)).toBe(false)
-    expect(chat.showSandboxOrphanBanner.value).toBe(true)
 
-    chat.applyAcpEvents([
-      { kind: 'thought', text: '还在核对边界，并补上后续步骤' },
-      { kind: 'message', text: '短回复' },
-    ])
-    expect(chat.displayTurns.value.filter((t) => (t.thought || '').includes('后续步骤'))).toHaveLength(1)
-    expect(chat.thinking.value).toBe(true)
-
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'node-1',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: false,
-      sandboxDesynced: false,
-    })
-    const settled = chat.displayTurns.value.find((t) => t.role === 'agent' && t.text === '短回复')
-    expect(settled?.streaming).toBe(false)
+    ended('item-1', human, { text: '短回复', thought: '还在核对边界，并补上后续步骤' })
+    const settled = chat.displayTurns.value.find((t) => t.role === 'agent')
+    expect(settled?.streaming).toBeFalsy()
+    expect(settled?.thought).toContain('后续步骤')
     expect(chat.thinking.value).toBe(false)
     expect(chat.showTurnCompleted(settled!)).toBe(true)
     expect(chat.showSandboxOrphanBanner.value).toBe(false)
     app.unmount()
   })
 
-  it('paints a late thought after turn_done when the sandbox is still running', () => {
-    const { chat, app } = withChat()
-    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
-    chat.applyReviewFrame({
-      event: 'turn_begin',
-      nodeId: 'node-1',
-      item: { id: 'item-1', text: 'hello' },
-    })
-    chat.applyAcpEvents([{ kind: 'message', text: '短回复' }])
-    chat.applyReviewFrame({ event: 'turn_done', nodeId: 'node-1' })
-    expect(chat.liveAgentIdx.value).toBe(-1)
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'node-1',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxDesynced: true,
-      sandboxRunningOpId: 'q-d5d82a58-df0',
-    })
-    expect(chat.applyAcpEvents([{ kind: 'thought', text: '失跟之后的思考' }, { kind: 'message', text: '短回复' }])).toBe(true)
-    const agent = chat.displayTurns.value.find((t) => t.role === 'agent')
-    expect(agent?.thought).toBe('失跟之后的思考')
-    expect(agent?.text).toBe('短回复')
-    expect(agent?.streaming).toBe(true)
-    expect(chat.thinking.value).toBe(true)
-    expect(chat.showSandboxOrphanBanner.value).toBe(true)
-    expect(chat.displayTurns.value.filter((t) => t.text === '短回复')).toHaveLength(1)
-    app.unmount()
-  })
-
   it('splits one user message into two agent rows when the turn continues', () => {
     const { chat, app } = withChat()
-    chat.applyQueueState(1, [{ id: 'item-1', text: 'hello' }])
-    chat.applyReviewFrame({
-      event: 'turn_begin',
-      nodeId: 'node-1',
-      item: { id: 'item-1', text: 'hello' },
+    feed({
+      busy: true,
+      rows: turnRows('item-1', { text: 'hello' }, [
+        { text: '计划已经写好', thought: '先看现状', handoff: true },
+        { text: '已经继续做完', thought: '接着把服务放到后台', streaming: true },
+      ]),
+      turns: [runningTurn('item-1', { text: 'hello' })],
     })
-    expect(chat.applyAcpEvents([
-      { kind: 'thought', text: '先看现状' },
-      { kind: 'message', text: '计划已经写好' },
-      { kind: 'segment' },
-      { kind: 'thought', text: '接着把服务放到后台' },
-      { kind: 'message', text: '已经继续做完' },
-    ])).toBe(true)
-
-    const turns = chat.liveTurns.value
+    const turns = chat.displayTurns.value
     expect(turns.map((t) => t.role)).toEqual(['human', 'agent', 'agent'])
     expect(turns[1]?.text).toBe('计划已经写好')
     expect(turns[1]?.handoff).toBe(true)
-    expect(turns[1]?.streaming).toBe(false)
+    expect(turns[1]?.streaming).toBeFalsy()
     expect(chat.showTurnCompleted(turns[1]!)).toBe(false)
     expect(turns[2]?.text).toBe('已经继续做完')
     expect(turns[2]?.thought).toBe('接着把服务放到后台')
@@ -850,67 +764,32 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
-  it('handles streamed errors, cancellation, ghost settlement and authoritative idle', () => {
+  it('stops a running review turn and withdraws a failed local send', async () => {
     const { chat, app, emit } = withChat({ reviewMode: true })
-    chat.sendMessage('queued')
-    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'queued' } })
-    chat.applyReviewFrame({ event: 'error', message: 'failed', interrupted: true })
-    expect(chat.liveTurns.value[1]?.text).toBe('failed')
-
-    chat.sendMessage('next')
-    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'next' } })
+    running('t1', { text: 'next' })
     chat.cancelReview()
     expect(emit).toHaveBeenCalledWith('cancel')
-    expect(chat.liveTurns.value.at(-1)?.interrupted).toBe(true)
+    expect(chat.stopping.value).toBe(true)
+    ended('t1', { text: 'next' }, { text: '(已中断)', interrupted: true }, 'interrupted')
+    await nextTick()
+    expect(chat.displayTurns.value.at(-1)?.interrupted).toBe(true)
+    expect(chat.stopping.value).toBe(false)
     expect(chat.queued.value).toEqual([])
 
     chat.sendMessage('ghost')
+    expect(chat.thinking.value).toBe(true)
     chat.discardLastQueued()
     expect(chat.thinking.value).toBe(false)
-    chat.forceAuthoritativeIdle()
-    expect(chat.liveAgentIdx.value).toBe(-1)
-    app.unmount()
-  })
-
-  it('plan g2.1: completed turn refresh does not show the interrupt banner', () => {
-    const { chat, app } = withChat({
-      turns: [
-        { role: 'human', text: '继续', at: '1' },
-        { role: 'agent', text: '最新回复已落盘', at: '2', opId: 'g-00fccbf7-0f2' },
-      ],
-    })
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxDesynced: true,
-      sandboxRunningOpId: 'g-00fccbf7-0f2',
-    })
-    expect(chat.showSandboxOrphanBanner.value).toBe(false)
-    expect(chat.liveAgentIdx.value).toBe(-1)
-    const agent = chat.displayTurns.value.at(-1)!
-    expect(chat.showTurnCompleted(agent)).toBe(true)
-    expect(agent.interrupted).toBeFalsy()
-    expect(agent.text).toBe('最新回复已落盘')
+    expect(chat.queued.value).toEqual([])
     app.unmount()
   })
 
   it('plan g1.2: unnamed sandbox desync keeps abort after a completed turn', () => {
-    const { chat, app, emit } = withChat({
-      turns: [
-        { role: 'human', text: '继续', at: '1' },
-        { role: 'agent', text: '最新回复已落盘', at: '2', opId: 'g-00fccbf7-0f2' },
-      ],
-    })
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxDesynced: true,
+    const { chat, app, emit } = withChat()
+    feed({
+      rows: turnRows('t1', { text: '继续' }, [{ text: '最新回复已落盘', opId: 'g-00fccbf7-0f2' }]),
+      turns: [endedTurn('t1', 'ok'), orphanTurn()],
+      orphan: { runningOpId: '', desynced: true },
     })
     expect(chat.showSandboxOrphanBanner.value).toBe(true)
     expect(chat.sandboxOrphanOpLabel.value).toBe('')
@@ -923,19 +802,11 @@ describe('useClarifyChat actions', () => {
   })
 
   it('plan g2.2: another unfinished sandbox turn keeps abort and completed history', () => {
-    const { chat, app, emit } = withChat({
-      turns: [
-        { role: 'human', text: '继续', at: '1' },
-        { role: 'agent', text: '历史已完成', at: '2', opId: 'g-done' },
-      ],
-    })
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxRunningOpId: 'g-other',
+    const { chat, app, emit } = withChat()
+    feed({
+      rows: turnRows('t1', { text: '继续' }, [{ text: '历史已完成', opId: 'g-done' }]),
+      turns: [endedTurn('t1', 'ok'), orphanTurn('g-other')],
+      orphan: { runningOpId: 'g-other', desynced: false },
     })
     expect(chat.showSandboxOrphanBanner.value).toBe(true)
     expect(chat.sandboxOrphanOpLabel.value).toContain('g-other')
@@ -950,14 +821,7 @@ describe('useClarifyChat actions', () => {
 
   it('shows sandbox orphan banner when FIFO is idle but the bridge is busy', () => {
     const { chat, app, emit } = withChat()
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxRunningOpId: 'oid-stuck',
-    })
+    feed({ turns: [orphanTurn('oid-stuck')], orphan: { runningOpId: 'oid-stuck', desynced: false } })
     expect(chat.showSandboxOrphanBanner.value).toBe(true)
     expect(chat.sandboxOrphanOpLabel.value).toContain('oid-stuck')
     expect(chat.sessionBusy.value).toBe(false)
@@ -969,13 +833,10 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
-  it('paints thought, tools and body after the slot closes without forcing scroll', async () => {
-    const { chat, app, models } = withChat({
-      turns: [
-        { role: 'human', text: '继续', at: '1' },
-        { role: 'agent', text: '上一句', at: '2' },
-      ],
-    })
+  it('paints orphan thought, tools and body without forcing scroll or touching the draft', async () => {
+    const { chat, app, models } = withChat()
+    const history = turnRows('t0', { text: '继续' }, [{ text: '上一句' }])
+    feed({ rows: history, turns: [endedTurn('t0', 'ok')] })
     const el = scroller(20)
     chat.scroller.value = el
     chat.onScrollerScroll()
@@ -989,31 +850,23 @@ describe('useClarifyChat actions', () => {
     models.draft.value = '未发送草稿'
     models.attachments.value = [image()]
 
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    const orphanReply: RowInput = {
+      role: 'agent', text: '新的正文', thought: '还在想', at: '3', streaming: true, phase: 'orphan',
+      id: 'orphan:g-sess4c0e-8x8t:a0', tools: [{ title: 'read_file', status: 'completed' }],
+    }
+    feed({
+      rows: [...history, orphanReply],
+      turns: [endedTurn('t0', 'ok'), orphanTurn('g-sess4c0e-8x8t')],
+      orphan: { runningOpId: 'g-sess4c0e-8x8t', desynced: false },
     })
-    expect(chat.liveAgentIdx.value).toBe(-1)
-    expect(chat.showSandboxOrphanBanner.value).toBe(true)
-    expect(chat.applyAcpEvents([
-      { kind: 'thought', text: '还在想' },
-      { kind: 'tool_call', title: 'read_file', status: 'completed' },
-      { kind: 'message', text: '新的正文' },
-    ])).toBe(true)
     await flushPromises()
 
-    const agent = [...chat.liveTurns.value].reverse().find((t) => t.role === 'agent')
+    const agent = [...chat.displayTurns.value].reverse().find((t) => t.role === 'agent')
     expect(agent?.thought).toBe('还在想')
     expect(agent?.text).toBe('新的正文')
     expect(agent?.streaming).toBe(true)
     expect(agent?.tools).toEqual([{ title: 'read_file', status: 'completed' }])
-    expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
     expect(chat.liveAgentIdx.value).toBeGreaterThanOrEqual(0)
-    expect(chat.thinking.value).toBe(true)
     expect(chat.showSandboxOrphanBanner.value).toBe(true)
     expect(chat.stickToBottom.value).toBe(false)
     expect(el.scrollTop).toBe(20)
@@ -1022,126 +875,10 @@ describe('useClarifyChat actions', () => {
     expect(ta.selectionStart).toBe(2)
     expect(document.activeElement).toBe(ta)
 
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: false,
-      sandboxDesynced: false,
-    })
+    feed({ rows: [...history, { ...orphanReply, streaming: false, phase: 'sealed' }], turns: [endedTurn('t0', 'ok')] })
     expect(chat.showSandboxOrphanBanner.value).toBe(false)
     expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
     ta.remove()
-    app.unmount()
-  })
-
-  it('drops the idle narrative once the bridge is idle and the refresh snapshot arrives', async () => {
-    const { chat, app, props, models } = withChat({
-      turns: [
-        { role: 'human', text: '继续', at: '1' },
-        { role: 'agent', text: '上一句', at: '2' },
-      ],
-    })
-    const el = scroller(0)
-    chat.scroller.value = el
-    chat.onScrollerScroll()
-    const ta = document.createElement('textarea')
-    ta.value = '未发送草稿'
-    document.body.append(ta)
-    ta.focus()
-    ta.setSelectionRange(2, 5)
-    chat.textareaRef.value = ta
-    models.draft.value = '未发送草稿'
-
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxRunningOpId: 'g-sess4c0e-8x8t',
-    })
-    expect(chat.applyAcpEvents([
-      { kind: 'thought', text: '还在想滚动条以外的事' },
-      { kind: 'tool_call', title: 'read_file', status: 'completed' },
-      { kind: 'message', text: '新的正文已经写进当前对话' },
-    ])).toBe(true)
-    expect(chat.liveTurns.value.at(-1)?.streaming).toBe(true)
-    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
-
-    props.turns = [
-      { role: 'human', text: '继续', at: '1' },
-      { role: 'agent', text: '半截', at: '2' },
-    ]
-    await nextTick()
-    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
-
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: false,
-      sandboxDesynced: false,
-    })
-    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(false)
-    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '半截'])
-
-    props.turns = [
-      { role: 'human', text: '继续', at: '1' },
-      { role: 'agent', text: '已落盘正文', at: '3' },
-    ]
-    await nextTick()
-    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘正文'])
-    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(false)
-    expect(chat.showSandboxOrphanBanner.value).toBe(false)
-    expect(el.scrollTop).toBe(0)
-    expect(models.draft.value).toBe('未发送草稿')
-    expect(ta.selectionStart).toBe(2)
-    expect(ta.selectionEnd).toBe(5)
-    expect(document.activeElement).toBe(ta)
-    ta.remove()
-    app.unmount()
-  })
-
-  it('replaces an idle narrative when the snapshot arrives after the bridge is already idle', async () => {
-    const { chat, app, props } = withChat({
-      turns: [
-        { role: 'human', text: '继续', at: '1' },
-        { role: 'agent', text: '上一句', at: '2' },
-      ],
-    })
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxRunningOpId: 'g-sess4c0e-8x8t',
-    })
-    chat.applyAcpEvents([
-      { kind: 'thought', text: '还在想' },
-      { kind: 'tool_call', title: 'read_file', status: 'completed' },
-      { kind: 'message', text: '新的正文已经写进当前对话' },
-    ])
-    chat.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: false,
-      sandboxDesynced: false,
-    })
-    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
-
-    props.turns = [
-      { role: 'human', text: '继续', at: '1' },
-      { role: 'agent', text: '已落盘正文', at: '3' },
-    ]
-    await nextTick()
-    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘正文'])
-    expect(chat.liveTurns.value).toEqual([])
     app.unmount()
   })
 
@@ -1503,32 +1240,6 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
-  it('covers queue-state trimming, live completion, and wrong-node frames', () => {
-    const { chat, app } = withChat()
-    chat.sendMessage('one')
-    chat.sendMessage('two')
-    chat.sendMessage('three')
-    chat.applyQueueState(1, [{ id: 'one', text: 'one' }], true)
-    expect(chat.queued.value).toHaveLength(1)
-
-    const painted = chat.liveTurns.value.length
-    const paintedIdx = chat.liveAgentIdx.value
-    chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'wrong', item: { text: 'ignored' } })
-    expect(chat.liveTurns.value).toHaveLength(painted)
-    expect(chat.liveTurns.value.some((turn) => turn.text === 'ignored')).toBe(false)
-    expect(chat.liveAgentIdx.value).toBe(paintedIdx)
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'missing', text: 'active' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'complete' }])
-    chat.applyQueueState(0, [], false)
-    expect(chat.liveTurns.value.at(-1)?.streaming).toBe(false)
-    expect(chat.liveAgentIdx.value).toBe(-1)
-    expect(chat.showTurnCompleted(chat.liveTurns.value.at(-1)!)).toBe(true)
-
-    chat.forceAuthoritativeIdle()
-    chat.discardLastQueued()
-    app.unmount()
-  })
-
   it('handles clarify placeholders, done state and empty seed images', async () => {
     const { chat, app, props } = withChat({ seedHumanImages: [image()] })
     expect(chat.showClarifyEmptyHint.value).toBe(false)
@@ -1540,46 +1251,6 @@ describe('useClarifyChat actions', () => {
     await nextTick()
     expect(chat.thinking.value).toBe(false)
     expect(chat.validating.value).toBe(false)
-    app.unmount()
-  })
-
-  it('keeps the previous reply out of the next live bubble', () => {
-    const { chat, app } = withChat({
-      turns: [
-        { role: 'human', text: 'first', at: '1' },
-        { role: 'agent', text: '上一轮的回复', at: '2' },
-      ],
-    })
-    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'second' } })
-    const agent = chat.liveTurns.value.at(-1)!
-    chat.applyAcpEvents([
-      { kind: 'thought', text: '旧思考' },
-      { kind: 'message', text: '上一轮的回复' },
-    ])
-    expect(agent.text).toBe('')
-    expect(agent.thought).toBe('')
-
-    chat.applyAcpEvents([{ kind: 'thought', text: '新思考' }])
-    chat.applyAcpEvents([{ kind: 'message', text: '新回复' }])
-    chat.applyAcpEvents([{ kind: 'message', text: '上一轮的回复' }])
-    expect(agent.thought).toBe('新思考')
-    expect(agent.text).toBe('新回复')
-    app.unmount()
-  })
-
-  it('clears live bubbles when persisted turns catch up', async () => {
-    const { chat, app, props } = withChat()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'hello' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'answer' }])
-    expect(chat.liveTurns.value).toHaveLength(2)
-    props.turns = [
-      { role: 'human', text: 'hello', at: '1' },
-      { role: 'agent', text: 'answer', at: '2' },
-    ] as never
-    await nextTick()
-    expect(chat.liveTurns.value).toEqual([])
-    expect(chat.liveAgentIdx.value).toBe(-1)
-    expect(chat.thinking.value).toBe(false)
     app.unmount()
   })
 
@@ -1615,46 +1286,41 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
-  it('settles a non-empty live slot when queue authority becomes idle', () => {
+  it('settles a reply when the server ends its turn and keeps the waiter queued', () => {
     const { chat, app } = withChat()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'hello' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'answer' }])
-    chat.applyQueueState(1, [{ id: 'wait', text: 'wait' }], false)
-    expect(chat.liveTurns.value[1]?.text).toBe('answer')
-    expect(chat.liveTurns.value[1]?.streaming).toBe(false)
+    running('t1', { text: 'hello' }, { text: 'answer' })
+    ended('t1', { text: 'hello' }, { text: 'answer' }, 'ok', [waiter('wait', 0, { text: 'wait' })])
+    const agent = chat.displayTurns.value[1]!
+    expect(agent.text).toBe('answer')
+    expect(agent.streaming).toBeFalsy()
     expect(chat.liveAgentIdx.value).toBe(-1)
-
-    chat.queued.value.push({ text: 'ghost', images: [], annotations: [] })
-    chat.settleAfterTurnEnd()
     expect(chat.queued.value.map((q) => q.id)).toEqual(['wait'])
     app.unmount()
   })
 
-  it('keeps empty failed live slot on authoritative idle (plan g1.1)', () => {
+  it('keeps an empty reply as a failure once its turn ends (plan g1.1)', () => {
     const { chat, app } = withChat()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'goal' } })
-    chat.applyReviewFrame({ event: 'turn_done' })
-    expect(chat.liveTurns.value[1]?.text).toBe('')
-    expect(chat.liveTurns.value[1]?.streaming).toBe(false)
-    chat.applyQueueState(0, [], false)
-    expect(chat.liveTurns.value).toHaveLength(2)
-    expect(chat.isRetryableFailedAgent(chat.liveTurns.value[1]!)).toBe(true)
-    expect(chat.showTurnCompleted(chat.liveTurns.value[1]!)).toBe(false)
+    running('t1', { text: 'goal' })
+    ended('t1', { text: 'goal' }, { text: '' }, 'empty')
+    const agent = chat.displayTurns.value[1]!
+    expect(chat.displayTurns.value).toHaveLength(2)
+    expect(agent.text).toBe('')
+    expect(agent.streaming).toBeFalsy()
+    expect(chat.isRetryableFailedAgent(agent)).toBe(true)
+    expect(chat.showTurnCompleted(agent)).toBe(false)
     app.unmount()
   })
 
   it('retryLast emits retry-last without touching draft (plan g1.2)', async () => {
     const { chat, app, emit, models } = withChat()
     models.draft.value = 'keep-me'
-    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'goal' } })
-    chat.applyReviewFrame({ event: 'turn_done' })
-    chat.applyQueueState(0, [], false)
+    ended('t1', { text: 'goal' }, { text: '' }, 'empty')
     expect(chat.failRetryDisabled.value).toBe(false)
     chat.retryLastFailed()
     expect(emit).toHaveBeenCalledWith('retry-last')
     expect(models.draft.value).toBe('keep-me')
-    expect(chat.liveTurns.value[1]?.streaming).toBe(true)
-    expect(chat.liveTurns.value.filter((t) => t.role === 'human')).toHaveLength(1)
+    expect(chat.thinking.value).toBe(true)
+    expect(chat.displayTurns.value.filter((t) => t.role === 'human')).toHaveLength(1)
     app.unmount()
   })
 
@@ -1662,7 +1328,7 @@ describe('useClarifyChat actions', () => {
     const { chat, app, emit } = withChat({
       turns: [
         { role: 'human', text: '采用当前变体', at: '2026-09-30T00:00:00Z', live: { sid: 'live-1', op: 'accept', variant: 2 } },
-        { role: 'agent', text: '', at: '2026-09-30T00:00:01Z' },
+        { role: 'agent', text: '', at: '2026-09-30T00:00:01Z', outcome: 'empty' },
       ],
     })
     const failed = chat.displayTurns.value.at(-1)!
@@ -1670,26 +1336,25 @@ describe('useClarifyChat actions', () => {
     expect(chat.showFailRetry(failed, 1)).toBe(false)
     chat.retryLastFailed()
     expect(emit).not.toHaveBeenCalledWith('retry-last')
-    expect(chat.liveTurns.value).toHaveLength(0)
+    expect(chat.thinking.value).toBe(false)
     app.unmount()
   })
 
   it('does not show retry on success or interrupted turns (plan g2.3)', () => {
     const { chat, app } = withChat()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'ok' } })
-    chat.applyAcpEvents([{ kind: 'message', text: '正文' }])
-    chat.applyReviewFrame({ event: 'turn_done' })
-    expect(chat.showTurnCompleted(chat.liveTurns.value[1]!)).toBe(true)
-    expect(chat.showFailRetry(chat.liveTurns.value[1]!, 1)).toBe(false)
+    ended('t1', { text: 'ok' }, { text: '正文' })
+    const ok = chat.displayTurns.value[1]!
+    expect(chat.showTurnCompleted(ok)).toBe(true)
+    expect(chat.showFailRetry(ok, 1)).toBe(false)
 
-    chat.applyReviewFrame({ event: 'turn_begin', item: { text: 'cancel-me' } })
-    chat.cancelReview()
-    const agent = chat.liveTurns.value.at(-1)!
+    ended('t2', { text: 'cancel-me' }, { text: '(已中断)', interrupted: true }, 'interrupted')
+    const agent = chat.displayTurns.value.at(-1)!
     expect(agent.interrupted).toBe(true)
     expect(agent.text).toBe('(已中断)')
     expect(chat.isRetryableFailedAgent(agent)).toBe(false)
     app.unmount()
   })
+
 })
 
 describe('acknowledged composer transport', () => {
@@ -1776,7 +1441,7 @@ describe('acknowledged composer transport', () => {
 
   it('keeps a queued target and draft when the draft cannot be sent before editing', async () => {
     const { chat, models, app } = withChat({ sendRequest: vi.fn().mockResolvedValue(false) })
-    chat.applyQueueState(1, [{ id: 'target', text: 'queued' }], true)
+    feed({ busy: true, turns: [waiter('target', 0, { text: 'queued' })] })
     models.draft.value = 'keep draft'
     await chat.editQueuedItem(0)
     expect(models.draft.value).toBe('keep draft')
@@ -1787,13 +1452,13 @@ describe('acknowledged composer transport', () => {
   it('never edits a different queue item when the original was consumed during acknowledgement', async () => {
     let resolve!: (accepted: boolean) => void
     const { chat, models, emit, app } = withChat({ sendRequest: () => new Promise<boolean>((done) => { resolve = done }) })
-    chat.applyQueueState(2, [{ id: 'target', text: 'target' }, { id: 'other', text: 'other' }], true)
+    feed({ busy: true, turns: [waiter('target', 0, { text: 'target' }), waiter('other', 1, { text: 'other' })] })
     models.draft.value = 'new request'
     const editing = chat.editQueuedItem(0)
-    chat.applyQueueState(1, [{ id: 'other', text: 'other' }], true)
+    feed({ busy: true, turns: [endedTurn('target', 'ok'), waiter('other', 0, { text: 'other' })] })
     resolve(true)
     await editing
-    expect(chat.queued.value.map((item) => item.id)).toEqual(['other'])
+    expect(chat.queued.value.map((item) => item.id ?? item.text)).toEqual(['other', 'new request'])
     expect(models.draft.value).toBe('')
     expect(emit).not.toHaveBeenCalledWith('queue-remove', 'other', 0)
     app.unmount()
@@ -1856,13 +1521,13 @@ describe('confirm-flow dialog before clarify submit', () => {
     expect(play).not.toHaveBeenCalled()
 
     chat.finishEarly()
-    chat.thinking.value = true
+    running('t1', { text: 'busy' })
     chat.acceptConfirmFlow()
     expect(emit).not.toHaveBeenCalled()
     expect(play).not.toHaveBeenCalled()
     expect(chat.confirmFlowDialogOpen.value).toBe(false)
 
-    chat.thinking.value = false
+    ended('t1', { text: 'busy' }, { text: 'done' })
     chat.finishEarly()
     chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledExactlyOnceWith('finish')
@@ -1912,96 +1577,22 @@ describe('accepted message reconciliation', () => {
     sessionStorage.clear()
   })
 
-  it('keeps a newly identified same-text server send separate from an earlier empty failed turn', () => {
-    const { chat } = setup()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'first', text: 'continue', clientMessageId: 'first-send' } })
-    chat.applyReviewFrame({ event: 'turn_done' })
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'second', text: 'continue', clientMessageId: 'second-send' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'second reply' }])
-    expect(chat.displayTurns.value.filter(turn => turn.role === 'human').map(turn => turn.clientMessageId))
-      .toEqual(['first-send', 'second-send'])
-    expect(chat.displayTurns.value.at(-1)).toMatchObject({ text: 'second reply', clientMessageId: 'second-send' })
-  })
-
-  it.each(['turn_begin', 'queue_state'] as const)('recovers a changed active request through %s when the previous terminal was lost', (event) => {
-    const { chat } = setup()
-    chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'node-1', sessionGeneration: 1, revision: 2, item: { id: 'a', text: 'first' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'first reply' }])
-    const next = { id: 'b', text: 'second' }
-    chat.applyReviewFrame(event === 'turn_begin'
-      ? { event, nodeId: 'node-1', sessionGeneration: 1, revision: 5, item: next }
-      : { event, nodeId: 'node-1', sessionGeneration: 1, revision: 5, busy: true, waiting: 0, items: [], activeItem: next })
-    chat.applyAcpEvents([{ kind: 'message', text: 'second reply' }])
-    const agents = chat.displayTurns.value.filter(turn => turn.role === 'agent')
-    expect(agents).toHaveLength(2)
-    expect(agents[0]).toMatchObject({ text: 'first reply', streaming: false })
-    expect(agents[1]).toMatchObject({ text: 'second reply', streaming: true })
-    expect(chat.thinking.value).toBe(true)
-  })
-
-  it.each(['turn_done', 'error'] as const)('uses the full %s queue state when later queue snapshots are lost', (event) => {
-    const { chat } = setup()
-    const active = { id: 'a', text: 'active' }
-    chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'node-1', sessionGeneration: 1, revision: 2, item: active })
-    chat.applyAcpEvents([{ kind: 'message', text: 'active reply' }])
-    chat.applyReviewFrame({
-      event: 'queue_state', nodeId: 'node-1', sessionGeneration: 1, revision: 3,
-      waiting: 1, busy: true, activeItem: active, items: [{ id: 'removed', text: 'removed remotely' }],
-    })
-    chat.applyReviewFrame({
-      event, nodeId: 'node-1', sessionGeneration: 1, revision: 5, item: active,
-      waiting: 0, busy: false, items: [],
-    })
-    expect(chat.queued.value).toEqual([])
-    expect(chat.thinking.value).toBe(false)
-    expect(chat.displayTurns.value.at(-1)).toMatchObject({ text: 'active reply', streaming: false })
-  })
-
-  it('ignores an older enqueue snapshot published after all three queued turns finish', () => {
-    const { chat } = setup()
-    for (const [i, id] of ['a', 'b', 'c'].entries()) {
-      chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'node-1', sessionGeneration: 1, revision: i * 3 + 2, item: { id, text: id } })
-      chat.applyAcpEvents([{ kind: 'message', text: `reply ${id}` }])
-      chat.applyReviewFrame({ event: 'turn_done', nodeId: 'node-1', sessionGeneration: 1, revision: i * 3 + 3 })
-    }
-    // B's enqueue handler captured this snapshot before the pump completed B/C,
-    // then its publish callback was delayed behind their terminal frames.
-    chat.applyReviewFrame({
-      event: 'queue_state', nodeId: 'node-1', sessionGeneration: 1, revision: 4,
-      busy: true, waiting: 1, items: [{ id: 'b', text: 'b' }],
-    })
-    expect(chat.queued.value).toEqual([])
-    expect(chat.thinking.value).toBe(false)
-    expect(chat.displayTurns.value.filter(turn => turn.role === 'agent').map(turn => turn.text))
-      .toEqual(['reply a', 'reply b', 'reply c'])
-  })
-
-  it('ignores an older terminal frame after a new active turn has been restored', () => {
-    const { chat } = setup()
-    chat.applyReviewFrame({ event: 'turn_begin', nodeId: 'node-1', sessionGeneration: 2, revision: 8, item: { id: 'current', text: 'current' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'still generating' }])
-    chat.applyReviewFrame({ event: 'turn_done', nodeId: 'node-1', sessionGeneration: 2, revision: 6 })
-    expect(chat.thinking.value).toBe(true)
-    expect(chat.displayTurns.value.at(-1)).toMatchObject({ text: 'still generating', streaming: true })
-    chat.applyReviewFrame({ event: 'session_reset', nodeId: 'node-1' })
-    expect(chat.displayTurns.value.at(-1)).toMatchObject({ text: 'still generating', streaming: true })
-    chat.applyReviewFrame({ event: 'turn_done', nodeId: 'node-1', sessionGeneration: 1, revision: 1 })
-    expect(chat.thinking.value).toBe(false)
-  })
-
-  it('acknowledges only the sender ID whose reply completed across identical viewer messages', () => {
+  it('acknowledges only the sender ID whose reply completed across identical viewer messages', async () => {
     const { chat, emit } = setup()
     chat.sendMessage('continue')
-    const ownId = emit.mock.calls.find(call => call[0] === 'send')![4] as string
-    putClarifyOutbox('run-1', 'node-1', ownId, { text: 'continue', images: [], annotations: [] })
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'remote', text: 'continue', clientMessageId: 'remote-send' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'remote reply' }])
-    chat.applyReviewFrame({ event: 'turn_done' })
+    const [ownId] = sentIds(emit)
+    putClarifyOutbox('run-1', 'node-1', ownId!, { text: 'continue', images: [], annotations: [] })
+    const remote = { text: 'continue', clientMessageId: 'remote-send' }
+    const own = { text: 'continue', clientMessageId: ownId }
+    feed({ rows: turnRows('remote', remote, [{ text: 'remote reply' }]), turns: [endedTurn('remote', 'ok', { clientMessageId: 'remote-send' })] })
+    await nextTick()
     expect(takeClarifyOutbox('run-1', 'node-1', ownId, { own: true })?.text).toBe('continue')
-    putClarifyOutbox('run-1', 'node-1', ownId, { text: 'continue', images: [], annotations: [] })
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'own', text: 'continue', clientMessageId: ownId } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'own reply' }])
-    chat.applyReviewFrame({ event: 'turn_done' })
+    putClarifyOutbox('run-1', 'node-1', ownId!, { text: 'continue', images: [], annotations: [] })
+    feed({
+      rows: [...turnRows('remote', remote, [{ text: 'remote reply' }]), ...turnRows('own', own, [{ text: 'own reply' }])],
+      turns: [endedTurn('remote', 'ok', { clientMessageId: 'remote-send' }), endedTurn('own', 'ok', { clientMessageId: ownId })],
+    })
+    await nextTick()
     expect(takeClarifyOutbox('run-1', 'node-1', ownId, { own: true })).toBeNull()
     expect(chat.displayTurns.value.filter(turn => turn.role === 'human')).toHaveLength(2)
     expect(chat.displayTurns.value.filter(turn => turn.role === 'agent').map(turn => turn.text).sort())
@@ -2010,11 +1601,10 @@ describe('accepted message reconciliation', () => {
 
   it('restores only the refused send while a different turn is still generating', () => {
     const { chat, emit, models } = setup()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'active', text: 'same text', clientMessageId: 'other-viewer' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'active reply' }])
+    running('active', { text: 'same text', clientMessageId: 'other-viewer' }, { text: 'active reply' })
     chat.sendMessage('same text')
-    const ownId = emit.mock.calls.find(call => call[0] === 'send')![4] as string
-    chat.applyReviewFrame({ event: 'request_rejected', clientMessageId: ownId, message: 'queue full' })
+    const [ownId] = sentIds(emit)
+    chat.applyRequestRejected({ clientMessageId: ownId, message: 'queue full' })
     expect(models.draft.value).toBe('same text')
     expect(chat.queued.value).toEqual([])
     expect(chat.displayTurns.value.map(turn => turn.text)).toEqual(['same text', 'active reply'])
@@ -2022,18 +1612,17 @@ describe('accepted message reconciliation', () => {
     expect(chat.thinking.value).toBe(true)
     // Another viewer's refusal cannot refill our composer or finish the active turn.
     models.draft.value = ''
-    chat.applyReviewFrame({ event: 'request_rejected', clientMessageId: 'foreign-rejected', message: 'not ours' })
+    chat.applyRequestRejected({ clientMessageId: 'foreign-rejected', message: 'not ours' })
     expect(models.draft.value).toBe('')
     expect(chat.displayTurns.value.at(-1)?.streaming).toBe(true)
   })
 
   it('discards a failed concurrent HTTP send by its ID without removing a later waiter', () => {
     const { chat, emit } = setup()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'active', text: 'active' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'active reply' }])
+    running('active', { text: 'active' }, { text: 'active reply' })
     chat.sendMessage('same text')
     chat.sendMessage('same text')
-    const ids = emit.mock.calls.filter(call => call[0] === 'send').map(call => call[4] as string)
+    const ids = sentIds(emit)
     chat.discardLastQueued(ids[0])
     expect(chat.queued.value).toHaveLength(1)
     expect(chat.queued.value[0]?.clientMessageId).toBe(ids[1])
@@ -2048,15 +1637,19 @@ describe('accepted message reconciliation', () => {
     const { chat, models } = setup({ sendRequest })
     models.draft.value = 'continue'
     const sending = chat.sendFromComposer()
-    const ownId = sendRequest.mock.calls[0]![3]
+    const ownId = sendRequest.mock.calls[0]![3] as string
     expect(ownId).toEqual(expect.any(String))
     // A second viewer sent an identical payload while our request was pending.
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'remote', text: 'continue', clientMessageId: 'remote-send-id' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'remote reply' }])
+    const remote = { text: 'continue', clientMessageId: 'remote-send-id' }
     if (accepted) {
-      chat.applyReviewFrame({ event: 'turn_done' })
-      chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'local', text: 'continue', clientMessageId: ownId } })
-      chat.applyAcpEvents([{ kind: 'message', text: 'local reply' }])
+      const own = { text: 'continue', clientMessageId: ownId }
+      feed({
+        busy: true,
+        rows: [...turnRows('remote', remote, [{ text: 'remote reply' }]), ...turnRows('local', own, [{ text: 'local reply', streaming: true }])],
+        turns: [endedTurn('remote', 'ok', { clientMessageId: 'remote-send-id' }), runningTurn('local', own, { clientMessageId: ownId })],
+      })
+    } else {
+      running('remote', remote, { text: 'remote reply' })
     }
     acknowledge(false)
     expect(await sending).toBe(accepted)
@@ -2065,27 +1658,18 @@ describe('accepted message reconciliation', () => {
     expect(chat.displayTurns.value.at(-1)?.text).toBe(accepted ? 'local reply' : 'remote reply')
   })
 
-  it.each(['streaming', 'finished', 'persisted'] as const)(
+  it.each(['streaming', 'finished'] as const)(
     'does not duplicate or reopen a %s turn when the HTTP acknowledgement arrives last',
     async (stage) => {
       let acknowledge!: (ok: boolean) => void
-      const { chat, models, props } = setup({
-        sendRequest: () => new Promise<boolean>((resolve) => { acknowledge = resolve }),
-      })
+      const sendRequest = vi.fn((_text, _images, _annotations, _clientMessageId) =>
+        new Promise<boolean>((resolve) => { acknowledge = resolve }))
+      const { chat, models } = setup({ sendRequest })
       models.draft.value = 'acknowledged request'
       const sending = chat.sendFromComposer()
-      chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'accepted-1', text: 'acknowledged request' } })
-      chat.applyAcpEvents([{ kind: 'message', text: 'answer already arrived' }])
-      if (stage !== 'streaming') {
-        chat.applyReviewFrame({ event: 'turn_done' })
-        chat.applyReviewFrame({ event: 'queue_state', waiting: 0, busy: false, items: [] })
-      }
-      if (stage === 'persisted') {
-        props.turns = [
-          { role: 'human', text: 'acknowledged request', at: '1' },
-          { role: 'agent', text: 'answer already arrived', at: '2' },
-        ] as never
-      }
+      const human = { text: 'acknowledged request', clientMessageId: sendRequest.mock.calls[0]![3] as string }
+      if (stage === 'streaming') running('accepted-1', human, { text: 'answer already arrived' })
+      else ended('accepted-1', human, { text: 'answer already arrived' })
       await nextTick()
       acknowledge(true)
       expect(await sending).toBe(true)
@@ -2100,17 +1684,17 @@ describe('accepted message reconciliation', () => {
     },
   )
 
-  it('accepts a send confirmed by matching WebSocket output when its HTTP transport reports failure', async () => {
+  it('accepts a send confirmed by the server dialogue when its HTTP transport reports failure', async () => {
     let acknowledge!: (ok: boolean) => void
-    const { chat, models } = setup({
-      sendRequest: () => new Promise<boolean>((resolve) => { acknowledge = resolve }),
-    })
+    const sendRequest = vi.fn((_text, _images, _annotations, _clientMessageId) =>
+      new Promise<boolean>((resolve) => { acknowledge = resolve }))
+    const { chat, models } = setup({ sendRequest })
     models.draft.value = 'accepted despite HTTP failure'
     models.attachments.value = [image('accepted.png')]
     models.annotations.value = [annotation({ selector: '#accepted' })]
     const sending = chat.sendFromComposer()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'accepted', text: 'accepted despite HTTP failure' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'confirmed server answer' }])
+    running('accepted', { text: 'accepted despite HTTP failure', clientMessageId: sendRequest.mock.calls[0]![3] as string },
+      { text: 'confirmed server answer' })
     acknowledge(false)
     expect(await sending).toBe(true)
     expect(models.draft.value).toBe('')
@@ -2140,10 +1724,10 @@ describe('accepted message reconciliation', () => {
   })
 
   it.each(['text', 'image', 'annotation'] as const)(
-    'keeps distinct accepted %s sends with identical text, and attaches their own replies once',
+    'keeps distinct %s sends with identical text queued separately behind a running turn',
     async (kind) => {
       const { chat, models, emit } = setup()
-      chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'active', text: 'currently running' } })
+      running('active', { text: 'currently running' })
       const body = kind === 'text' ? '继续' : ''
       for (let i = 1; i <= 2; i++) {
         models.draft.value = body
@@ -2152,7 +1736,6 @@ describe('accepted message reconciliation', () => {
         expect(await chat.sendFromComposer()).toBe(true)
       }
       expect(emit.mock.calls.filter(([event]) => event === 'send')).toHaveLength(2)
-      // Waiters stay in the queue until their own turn_begin.
       expect(chat.displayTurns.value.filter((turn) => turn.role === 'human')).toHaveLength(1)
       expect(chat.displayTurns.value.filter((turn) => turn.role === 'agent')).toHaveLength(1)
       expect(chat.queued.value).toHaveLength(2)
@@ -2163,23 +1746,6 @@ describe('accepted message reconciliation', () => {
       if (kind === 'annotation') {
         expect(chat.queued.value.map((item) => item.annotations[0]?.selector)).toEqual(['#item-1', '#item-2'])
       }
-      chat.applyReviewFrame({ event: 'turn_done' })
-      for (let i = 1; i <= 2; i++) {
-        chat.applyReviewFrame({
-          event: 'turn_begin',
-          item: {
-            id: `queued-${i}`,
-            text: body,
-            images: kind === 'image' ? [image(`shot-${i}.png`)] : [],
-            annotations: kind === 'annotation' ? [annotation({ selector: `#item-${i}` })] : [],
-          },
-        })
-        chat.applyAcpEvents([{ kind: 'message', text: `reply ${i}` }])
-        chat.applyReviewFrame({ event: 'turn_done' })
-      }
-      expect(chat.displayTurns.value.filter((turn) => turn.role === 'human')).toHaveLength(3)
-      expect(chat.displayTurns.value.filter((turn) => turn.role === 'agent').map((turn) => turn.text))
-        .toEqual(['', 'reply 1', 'reply 2'])
     },
   )
 
@@ -2187,33 +1753,27 @@ describe('accepted message reconciliation', () => {
     'removes the accepted waiting row on %s without disturbing the active reply',
     async (action) => {
       const { chat, models, emit } = setup()
-      chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'active', text: 'active request' } })
-      chat.applyAcpEvents([{ kind: 'message', text: 'active reply' }])
+      const active = { text: 'active request' }
+      running('active', active, { text: 'active reply' })
       models.draft.value = 'waiting request'
       models.attachments.value = [image('waiting.png')]
       models.annotations.value = [annotation({ selector: '#waiting' })]
       await chat.sendFromComposer()
-      chat.applyReviewFrame({
-        event: 'queue_state',
-        waiting: 1,
-        busy: true,
-        activeItem: { id: 'active', text: 'active request' },
-        items: [{ id: 'waiting', text: 'waiting request', images: [image('waiting.png')], annotations: [annotation({ selector: '#waiting' })] }],
-      })
+      const [cmid] = sentIds(emit)
+      running('active', active, { text: 'active reply' }, [waiter('waiting', 0, {
+        text: 'waiting request', clientMessageId: cmid, images: [image('waiting.png')], annotations: [annotation({ selector: '#waiting' })],
+      })])
       if (action === 'cancel') chat.cancelQueuedItem(0)
       if (action === 'edit') await chat.editQueuedItem(0)
       if (action === 'refuse') chat.restoreUnsentQueued({ text: 'waiting request' }, 'visit ended')
       if (action === 'reject') chat.discardLastQueued()
-      chat.applyReviewFrame({
-        event: 'queue_state', waiting: 0, busy: true,
-        activeItem: { id: 'active', text: 'active request' }, items: [],
-      })
+      running('active', active, { text: 'active reply' })
       await nextTick()
 
       expect(chat.queued.value).toHaveLength(0)
       expect(chat.displayTurns.value.map((turn) => turn.text)).toEqual(['active request', 'active reply'])
-      expect(chat.liveTurns.value[chat.liveAgentIdx.value]?.text).toBe('active reply')
-      expect(chat.liveTurns.value[chat.liveAgentIdx.value]?.streaming).toBe(true)
+      expect(chat.displayTurns.value[chat.liveAgentIdx.value]?.text).toBe('active reply')
+      expect(chat.displayTurns.value[chat.liveAgentIdx.value]?.streaming).toBe(true)
       if (action === 'cancel' || action === 'edit') expect(emit).toHaveBeenCalledWith('queue-remove', 'waiting', 0)
       if (action === 'edit' || action === 'refuse') {
         expect(models.draft.value).toBe('waiting request')
@@ -2224,21 +1784,19 @@ describe('accepted message reconciliation', () => {
   )
 
   it.each(['cancel', 'edit'] as const)('identifies the selected same-text waiter on %s by its own queue item', async (action) => {
-    const { chat, models } = setup()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'active', text: 'active request' } })
+    const { chat, models, emit } = setup()
+    const active = { text: 'active request' }
+    running('active', active)
     for (const name of ['first.png', 'second.png']) {
       models.draft.value = 'same text'
       models.attachments.value = [image(name)]
       await chat.sendFromComposer()
     }
-    chat.applyReviewFrame({
-      event: 'queue_state', waiting: 2, busy: true,
-      activeItem: { id: 'active', text: 'active request' },
-      items: [
-        { id: 'first', text: 'same text', images: [image('first.png')] },
-        { id: 'second', text: 'same text', images: [image('second.png')] },
-      ],
-    })
+    const ids = sentIds(emit)
+    running('active', active, {}, [
+      waiter('first', 0, { text: 'same text', clientMessageId: ids[0], images: [image('first.png')] }),
+      waiter('second', 1, { text: 'same text', clientMessageId: ids[1], images: [image('second.png')] }),
+    ])
     if (action === 'cancel') chat.cancelQueuedItem(0)
     else await chat.editQueuedItem(0)
     expect(chat.queued.value.map((item) => item.id)).toEqual(['second'])
@@ -2256,8 +1814,12 @@ describe('accepted message reconciliation', () => {
       })
       models.draft.value = 'old request'
       const oldSending = chat.sendFromComposer()
-      chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'old-turn', text: 'old request' } })
-      chat.applyAcpEvents([{ kind: 'message', text: 'old session reply' }])
+      feed({
+        iteration: 5,
+        busy: true,
+        rows: turnRows('old-turn', { text: 'old request' }, [{ text: 'old session reply', streaming: true }]),
+        turns: [runningTurn('old-turn', { text: 'old request' })],
+      })
       if (identity === 'iteration') props.iteration += 1
       else props[identity] = `${props[identity]}-next`
       await nextTick()
@@ -2306,41 +1868,38 @@ describe('accepted message reconciliation', () => {
   })
 
   it('restores an image-only refused send from its original attachment after server queue binding', async () => {
-    const { chat, models } = setup()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'active', text: 'active request' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'active reply' }])
+    const { chat, models, emit } = setup()
+    const active = { text: 'active request' }
+    running('active', active, { text: 'active reply' })
     const originalImage = image('waiting.png')
     const storedImage = image('waiting.png', { data: 'blob:waiting-asset' })
     models.attachments.value = [originalImage]
     expect(await chat.sendFromComposer()).toBe(true)
-    chat.applyReviewFrame({
-      event: 'queue_state', waiting: 1, busy: true,
-      activeItem: { id: 'active', text: 'active request' },
-      items: [{ id: 'waiting-image', text: '', images: [storedImage] }],
-    })
+    const [cmid] = sentIds(emit)
+    running('active', active, { text: 'active reply' }, [waiter('waiting-image', 0, { text: '', clientMessageId: cmid, images: [storedImage] })])
     chat.restoreUnsentQueued({ text: '', images: [storedImage] }, 'visit ended')
+    running('active', active, { text: 'active reply' })
     await nextTick()
     expect(chat.queued.value).toHaveLength(0)
     expect(chat.displayTurns.value.map((turn) => turn.text)).toEqual(['active request', 'active reply'])
     expect(models.draft.value).toBe('')
     expect(models.attachments.value).toEqual([originalImage])
-    expect(chat.liveTurns.value[chat.liveAgentIdx.value]?.streaming).toBe(true)
+    expect(chat.displayTurns.value[chat.liveAgentIdx.value]?.streaming).toBe(true)
   })
 
   it('withdraws a server-confirmed waiter after remote cancellation without removing the interrupted active turn', async () => {
-    const { chat, models } = setup()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'active', text: 'active request' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'active partial reply' }])
+    const { chat, models, emit } = setup()
+    const active = { text: 'active request' }
+    running('active', active, { text: 'active partial reply' })
     models.draft.value = 'remotely cancelled waiter'
     await chat.sendFromComposer()
-    chat.applyReviewFrame({
-      event: 'queue_state', waiting: 1, busy: true,
-      activeItem: { id: 'active', text: 'active request' },
-      items: [{ id: 'waiting', text: 'remotely cancelled waiter' }],
-    })
+    const [cmid] = sentIds(emit)
+    running('active', active, { text: 'active partial reply' }, [waiter('waiting', 0, { text: 'remotely cancelled waiter', clientMessageId: cmid })])
     // Another viewer stops review: server clears its waiting FIFO and ends A.
-    chat.applyReviewFrame({ event: 'turn_done', interrupted: true })
-    chat.applyReviewFrame({ event: 'queue_state', waiting: 0, busy: false, items: [] })
+    feed({
+      rows: turnRows('active', active, [{ text: 'active partial reply', interrupted: true }]),
+      turns: [endedTurn('active', 'interrupted'), endedTurn('waiting', 'dropped', { clientMessageId: cmid })],
+    })
     await nextTick()
     expect(chat.queued.value).toHaveLength(0)
     expect(chat.displayTurns.value.map((turn) => turn.text)).toEqual(['active request', 'active partial reply'])
@@ -2348,26 +1907,21 @@ describe('accepted message reconciliation', () => {
   })
 
   it('retries an accepted send that failed without duplicating its user or replacing the draft', async () => {
-    const { chat, models, emit, props } = setup()
+    const { chat, models, emit } = setup()
     models.draft.value = 'request that fails'
     await chat.sendFromComposer()
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'failed', text: 'request that fails' } })
-    chat.applyReviewFrame({ event: 'error', message: '(澄清回复失败:provider unavailable)' })
-    chat.applyReviewFrame({ event: 'queue_state', waiting: 0, busy: false, items: [] })
-    props.turns = [
-      { role: 'human', text: 'request that fails', at: '1' },
-      { role: 'agent', text: '(澄清回复失败:provider unavailable)', at: '2' },
-    ] as never
+    const human = { text: 'request that fails', clientMessageId: sentIds(emit)[0] }
+    ended('failed', human, { text: '(澄清回复失败:provider unavailable)', error: 'provider unavailable' }, 'failed')
     await nextTick()
     models.draft.value = 'next request draft'
     expect(chat.failRetryDisabled.value).toBe(false)
     chat.retryLastFailed()
     expect(emit).toHaveBeenCalledWith('retry-last')
-    chat.applyReviewFrame({ event: 'turn_begin', item: { id: 'retry', text: 'request that fails' } })
-    chat.applyAcpEvents([{ kind: 'message', text: 'retry succeeded' }])
-    chat.applyReviewFrame({ event: 'turn_done' })
+    running('retry', human, { text: 'retry succeeded' })
+    ended('retry', human, { text: 'retry succeeded' })
     expect(chat.displayTurns.value.filter((turn) => turn.role === 'human')).toHaveLength(1)
     expect(chat.displayTurns.value.at(-1)?.text).toBe('retry succeeded')
     expect(models.draft.value).toBe('next request draft')
   })
+
 })

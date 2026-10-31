@@ -47,6 +47,17 @@ func ReplyOutcome(m ReactMessage) string {
 	return OutcomeOK
 }
 
+// WithReplyOutcomes returns msgs with every agent row's Outcome set by
+// ReplyOutcome, so clients never infer it from the text. msgs is not changed.
+func WithReplyOutcomes(msgs []ReactMessage) []ReactMessage {
+	out := make([]ReactMessage, len(msgs))
+	for i, m := range msgs {
+		m.Outcome = ReplyOutcome(m)
+		out[i] = m
+	}
+	return out
+}
+
 // RetryableReply reports an agent row the user may cover with "retry last".
 func RetryableReply(m ReactMessage) bool {
 	switch ReplyOutcome(m) {

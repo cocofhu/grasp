@@ -50,6 +50,8 @@ function isDialogue(v: unknown): v is DialogueState {
  */
 export function ingestDialogue(frame: unknown, key?: string): boolean {
   if (!isDialogue(frame)) return false
+  // A share visitor's lane is its own chat; only its page (explicit key) takes it.
+  if (key === undefined && frame.lane) return false
   const k = key ?? dialogueKey(frame.runId, frame.nodeId)
   const r = applyFrame(states.get(k) ?? null, frame)
   if (r.resync) {
@@ -84,6 +86,11 @@ export function getDialogue(key: string): DialogueState | null {
 
 export function hasDialogue(key: string): boolean {
   return states.has(key)
+}
+
+/** This page's sends for key that the server state does not list yet. */
+export function optimisticSends(key: string): OptimisticSend[] {
+  return optimistic.get(key) ?? []
 }
 
 export function addOptimisticSend(key: string, send: OptimisticSend) {
@@ -129,9 +136,9 @@ export function requestDialogueResync(key: string) {
 async function runResync(key: string, r: Resync) {
   r.inflight = true
   r.again = false
-  const [runId, nodeId] = splitKey(key)
   let ok = false
   try {
+    const [runId, nodeId] = splitKey(key)
     const fetcher = fetchers.get(key) ?? defaultFetcher
     const snap = await fetcher(runId, nodeId)
     if (resyncs.get(key) !== r) return

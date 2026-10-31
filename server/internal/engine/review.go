@@ -267,6 +267,12 @@ func (e *Engine) GateReactRevise(runID, gateNodeID, text string, images []models
 
 // GateReactReviseAs is GateReactRevise sent by owner (a pagebridge owner id).
 func (e *Engine) GateReactReviseAs(owner, runID, gateNodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) error {
+	return e.GateReactReviseIDAs(owner, runID, gateNodeID, "", text, images, annotations)
+}
+
+// GateReactReviseIDAs is GateReactReviseAs carrying the sender's optional
+// clientMessageID with the queued turn.
+func (e *Engine) GateReactReviseIDAs(owner, runID, gateNodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -285,7 +291,7 @@ func (e *Engine) GateReactReviseAs(owner, runID, gateNodeID, text string, images
 	if !ok || !rp.HasLiveSession(runID, producerID) {
 		return errors.New("上游会话已不存在,请改用普通打回(冷启动)")
 	}
-	_, err = e.EnqueueReviewTurnAs(owner, runID, producerID, text, images, annotations, "gate", gateNodeID)
+	_, err = e.enqueueReactTurn(runID, producerID, text, images, annotations, "gate", gateNodeID, sessionKindReview, false, owner, false, clientMessageID)
 	return err
 }
 

@@ -13,6 +13,7 @@ import { api } from '../src/lib/api/api'
 import { rememberShareUrl } from '../src/lib/inbox/gateShareLink'
 import type { ClarifyInboxItem, GateInboxItem, InboxItem } from '../src/lib/shared/types'
 import HtmlPreview from '../src/components/ui/HtmlPreview.vue'
+import { createDialogueServer, type FakeRow, type FakeTurn } from './helpers/dialogueServer'
 
 installIdleScrollbar()
 setTheme('dark')
@@ -67,11 +68,32 @@ let clarifyQueue: Array<{ id: string; text: string }> = []
 let clarifyConfirmUnfinished = false
 let clarifyLinkUsed = false
 
+const shareScene = new URLSearchParams(location.search).get('scene') || ''
+const seedRow: FakeRow = {
+  role: 'agent',
+  text: shareScene === 'public-clarify' ? '请补充验收标准' : '请复审 research.json',
+  at: '2026-08-01T00:00:00Z',
+}
+/** The share page's server dialogue: replies queue until the fixture goes idle. */
+const dialogue = createDialogueServer('public-share', 'public-gate', { rows: [seedRow] })
+let dialogueSent: FakeRow[] = []
+let dialogueQueued: Array<{ text: string; clientMessageId?: string }> = []
+function publishDialogue() {
+  const turns: FakeTurn[] = dialogueQueued.map((item, i) => ({ turnId: `q-${i + 1}`, phase: 'queued', item }))
+  dialogue.set({ rows: [seedRow, ...dialogueSent], turns })
+}
+
 ;(window as unknown as { __idleReview?: () => void }).__idleReview = () => {
   // Authoritative idle: clear busy + pending queue so public-clarify waiting=0
   // matches product poll (confirm gated on local !sessionBusy).
   reviewPreviewBusy = false
   clarifyQueue = []
+  dialogueSent = [
+    ...dialogueSent,
+    ...dialogueQueued.map((item, i) => ({ role: 'human' as const, turnId: `t-${dialogueSent.length + i + 1}`, at: '2026-08-01T00:02:00Z', ...item })),
+  ]
+  dialogueQueued = []
+  publishDialogue()
   reviewPreviewTurns = [
     { role: 'agent', text: '请复审 research.json', at: '2026-08-01T00:00:00Z' },
     { role: 'human', text: '请改标题', at: '2026-08-01T00:02:00Z' },
@@ -179,6 +201,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           turns: reviewPreviewTurns.length
             ? reviewPreviewTurns
             : [{ role: 'agent', text: '请补充验收标准', at: '2026-08-01T00:00:00Z' }],
+          dialogue: dialogue.frame(),
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
@@ -201,6 +224,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
           structured: { name: 'research.json', title: '调研摘要', doc: { title: '调研摘要' } },
           turns: reviewPreviewTurns,
+          dialogue: dialogue.frame(),
           upstream: { name: 'clarified_requirement.json', title: '澄清', summary: '已有澄清需求文档，可对照审阅当前主产物' },
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -293,6 +317,9 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const text = String(body.text || '').trim()
     if (text) {
       clarifyQueue = [...clarifyQueue, { id: `q-${clarifyQueue.length + 1}`, text }]
+      const clientMessageId = typeof body.clientMessageId === 'string' ? body.clientMessageId : undefined
+      dialogueQueued = [...dialogueQueued, { text, ...(clientMessageId ? { clientMessageId } : {}) }]
+      publishDialogue()
       reviewPreviewTurns = [
         ...reviewPreviewTurns,
         { role: 'human', text, at: new Date().toISOString() },

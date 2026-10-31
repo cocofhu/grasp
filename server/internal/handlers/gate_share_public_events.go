@@ -131,8 +131,8 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 			if !open {
 				return
 			}
-			if lane == "" && isDialogueFrameFor(msg, producerID) {
-				if out, ok := h.publicDialogueFrame(runID, producerID); ok {
+			if isDialogueFrameFor(msg, producerID, lane) {
+				if out, ok := h.publicDialogueFrame(runID, producerID, lane, lookup.Link.ID); ok {
 					if err := w.write(out); err != nil {
 						return
 					}
@@ -161,12 +161,12 @@ func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.Lo
 	runID := lookup.Link.RunID
 	base := h.publicDialogueImageBase(lookup, producerID, lane)
 	imageBase := func() int { return base }
+	if out, ok := h.publicDialogueFrame(runID, producerID, lane, lookup.Link.ID); ok {
+		_ = conn.WriteMessage(websocket.TextMessage, out)
+	}
 	if lane != "" {
 		h.seedVisitorDialogue(conn, runID, producerID, lane, imageBase)
 		return
-	}
-	if out, ok := h.publicDialogueFrame(runID, producerID); ok {
-		_ = conn.WriteMessage(websocket.TextMessage, out)
 	}
 	busy := false
 	if snap, ok := h.Eng.ReviewSessionSnapshotFor(runID, producerID); ok {
@@ -254,26 +254,28 @@ func (h *Handlers) publicDialogueImageBase(lookup *gateshare.LookupResult, produ
 	return len(gateshare.DialogueImageCatalog(h.publicLaneTurns(lookup, producerID, lane), nil, nil))
 }
 
-// isDialogueFrameFor peeks at a broker frame without decoding its rows.
-func isDialogueFrameFor(raw []byte, producerID string) bool {
+// isDialogueFrameFor peeks at a broker frame without decoding its rows: the
+// dialogue of producerID on this viewer's lane.
+func isDialogueFrameFor(raw []byte, producerID, lane string) bool {
 	if !bytes.Contains(raw, []byte(`"type":"dialogue"`)) {
 		return false
 	}
 	var head struct {
 		Type   string `json:"type"`
 		NodeID string `json:"nodeId"`
+		Lane   string `json:"lane"`
 	}
-	return json.Unmarshal(raw, &head) == nil && head.Type == "dialogue" && head.NodeID == producerID
+	return json.Unmarshal(raw, &head) == nil && head.Type == "dialogue" && head.NodeID == producerID && head.Lane == lane
 }
 
 // publicDialogueFrame is the node's current dialogue, redacted, as one full
 // frame. Tail frames are never forwarded: a viewer's image indexes and
 // fields come from the whole state.
-func (h *Handlers) publicDialogueFrame(runID, producerID string) ([]byte, bool) {
+func (h *Handlers) publicDialogueFrame(runID, producerID, lane, linkID string) ([]byte, bool) {
 	if h.Eng == nil {
 		return nil, false
 	}
-	st, ok := h.Eng.PublicDialogueSnapshot(runID, producerID)
+	st, ok := h.Eng.PublicLaneDialogueSnapshot(runID, producerID, lane, linkID)
 	if !ok {
 		return nil, false
 	}
@@ -281,13 +283,12 @@ func (h *Handlers) publicDialogueFrame(runID, producerID string) ([]byte, bool) 
 	return b, err == nil
 }
 
-// publicDialogueValue is the preview DTO's dialogue: the node's own lane only
-// (a visitor lane is a separate chat).
-func (h *Handlers) publicDialogueValue(runID, producerID, lane string) any {
-	if lane != "" || h.Eng == nil || producerID == "" {
+// publicDialogueValue is the preview DTO's dialogue on the viewer's lane.
+func (h *Handlers) publicDialogueValue(runID, producerID, lane, linkID string) any {
+	if h.Eng == nil || producerID == "" {
 		return nil
 	}
-	if st, ok := h.Eng.PublicDialogueSnapshot(runID, producerID); ok {
+	if st, ok := h.Eng.PublicLaneDialogueSnapshot(runID, producerID, lane, linkID); ok {
 		return st
 	}
 	return nil

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { LlmTranscriptResponse } from '@/lib/api/apiTypes'
-import type { AcpEvent, Run, WFNode } from '@/lib/shared/types'
+import type { Run, WFNode } from '@/lib/shared/types'
 
 const llmTranscript = vi.fn()
 const reactReply = vi.fn()
@@ -30,6 +30,8 @@ import RunLlmTranscript from './RunLlmTranscript.vue'
 import LiveLogPanel from '../LiveLogPanel.vue'
 import ClarifyChat from '../ClarifyChat.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { endedTurn, feedDialogue, runningTurn, type RowInput } from '@/test/dialogueKit'
 
 const transcriptSrc = readFileSync(join(process.cwd(), 'src/components/run/llm/RunLlmTranscript.vue'), 'utf8')
 const chatSrc = readFileSync(join(process.cwd(), 'src/components/run/ClarifyChat.vue'), 'utf8')
@@ -288,18 +290,27 @@ describe('RunLlmTranscript', () => {
         getNodeId: () => string
         isChatReady: () => boolean
         isSessionBusy: () => boolean
-        applyReviewFrame: (frame: Record<string, unknown>) => void
-        applyAcpEvents: (events: AcpEvent[], nodeId: string) => void
       }
       expect(vm.getNodeId()).toBe('b')
       expect(vm.isChatReady()).toBe(true)
-      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'b', item: { id: 'live-b', text: '新的要求' } })
-      vm.applyAcpEvents([{ kind: 'message', text: '实时回复' }], 'b')
+      const rows = (reply: RowInput) => [
+        { role: 'agent' as const, text: '请确认范围', at: '1' },
+        { role: 'human' as const, text: '新的要求', at: '2', turnId: 'live-b' },
+        reply,
+      ]
+      feedDialogue('r1', 'b', {
+        busy: true,
+        rows: rows({ role: 'agent', text: '实时回复', at: '3', turnId: 'live-b', streaming: true }),
+        turns: [runningTurn('live-b', { text: '新的要求' })],
+      })
       await flushPromises()
       expect(w.text()).toContain('新的要求')
       expect(w.text()).toContain('实时回复')
       expect(vm.isSessionBusy()).toBe(true)
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'b' })
+      feedDialogue('r1', 'b', {
+        rows: rows({ role: 'agent', text: '实时回复', at: '3', turnId: 'live-b' }),
+        turns: [endedTurn('live-b', 'ok')],
+      })
       await flushPromises()
       expect(vm.isSessionBusy()).toBe(false)
       const chat = w.getComponent(ClarifyChat)
@@ -315,7 +326,10 @@ describe('RunLlmTranscript', () => {
       chat.vm.$emit('retry-last')
       await flushPromises()
       expect(reactReply).toHaveBeenLastCalledWith('r1', 'b', '', [], false, [], true)
-    } finally { w.unmount() }
+    } finally {
+      w.unmount()
+      clearDialogues()
+    }
   })
 
   it('keeps angle brackets as text and folds a finished timeline into 用时', async () => {

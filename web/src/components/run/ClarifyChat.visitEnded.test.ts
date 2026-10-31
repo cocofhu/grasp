@@ -14,6 +14,11 @@ import {
   sweepClarifyStash,
 } from '@/lib/inbox/clarifyDraftStash'
 import ClarifyChat from './ClarifyChat.vue'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import type { DialogueItem } from '@/lib/chat/dialogueState'
+import { endedTurn, feedDialogue, runningTurn } from '@/test/dialogueKit'
+
+afterEach(() => clearDialogues())
 
 enableAutoUnmount(afterEach)
 // Ordinary tests run in a tab whose duplicate check is already done.
@@ -50,6 +55,30 @@ function outbox(id: string, text: string, images: ClarifyImage[] = [], annotatio
 }
 
 const RESEND = '运行已结束，这条消息没有发送；续跑后请重新发送'
+
+/** The server runs `turnId` for `item`, with an empty streaming reply. */
+function serverRuns(turnId: string, item: DialogueItem) {
+  const cmid = item.clientMessageId
+  feedDialogue('run-1', 'react-1', {
+    busy: true,
+    rows: [
+      { role: 'human', text: item.text ?? '', images: item.images, at: '1', turnId, clientMessageId: cmid },
+      { role: 'agent', text: '', at: '2', turnId, streaming: true },
+    ],
+    turns: [runningTurn(turnId, item, { clientMessageId: cmid })],
+  })
+}
+
+/** The server dropped `turnId` because the visit ended: its rows are gone. */
+function serverDrops(turnId: string, clientMessageId: string | undefined, autoRetryOnResume = false) {
+  feedDialogue('run-1', 'react-1', {
+    turns: [endedTurn(turnId, 'dropped', { clientMessageId, code: 'clarify_visit_ended', autoRetryOnResume })],
+  })
+}
+
+function sentId(wrapper: ReturnType<typeof mountHost>['wrapper']): string {
+  return wrapper.findComponent(ClarifyChat).emitted('send')!.at(-1)![3] as string
+}
 
 function mountHost(active = true) {
   const draft = ref('')
@@ -196,46 +225,31 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(AUTO)
   })
 
-  it('WS turn-start drop matching this tab\'s outbox: no error bubble, outbox text back in the composer', async () => {
-    const { wrapper, chat, draft } = mountHost()
+  it('dropped turn matching this tab\'s outbox: no error bubble, outbox text back in the composer', async () => {
+    const { wrapper, draft } = mountHost()
     await typeAndSend(wrapper, '排在后面的回复')
-    outbox('cm-1', '排在后面的回复')
-    chat.value!.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', waiting: 0, items: [], busy: true })
-    chat.value!.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'srv-1', text: '排在后面的回复' } })
+    const cmid = sentId(wrapper)
+    outbox(cmid, '排在后面的回复')
+    serverRuns('srv-1', { text: '排在后面的回复', clientMessageId: cmid })
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-scroller"]').text()).toContain('排在后面的回复')
-    chat.value!.applyReviewFrame({
-      event: 'error',
-      nodeId: 'react-1',
-      message: '运行已结束，这条消息没有发送',
-      code: 'clarify_visit_ended',
-      autoRetryOnResume: false,
-      interrupted: false,
-      iteration: 1,
-      clientMessageId: 'cm-1',
-    })
+    serverDrops('srv-1', cmid)
     await flushPromises()
     const scroller = wrapper.find('[data-testid="clarify-scroller"]').text()
     expect(scroller).not.toContain('运行已结束')
     expect(scroller).not.toContain('排在后面的回复')
     expect(draft.value).toBe('排在后面的回复')
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(RESEND)
-    // Consumed: a repeated frame cannot refill twice.
+    // Consumed: a repeated state cannot refill twice.
     expect(sessionStorage.getItem(OUTBOX_KEY)).toBeNull()
   })
 
-  it('WS drop for a message another tab/viewer sent: no refill, no stash, no notice', async () => {
-    const { wrapper, chat, draft } = mountHost()
+  it('dropped turn another tab/viewer sent: no refill, no stash, no notice', async () => {
+    const { wrapper, draft } = mountHost()
     outbox('cm-mine', '我自己的')
-    chat.value!.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'srv-9', text: '别人的回复' } })
+    serverRuns('srv-9', { text: '别人的回复', clientMessageId: 'cm-other' })
     await flushPromises()
-    chat.value!.applyReviewFrame({
-      event: 'error',
-      nodeId: 'react-1',
-      code: 'clarify_visit_ended',
-      autoRetryOnResume: false,
-      clientMessageId: 'cm-other',
-    })
+    serverDrops('srv-9', 'cm-other')
     await flushPromises()
     expect(draft.value).toBe('')
     expect(sessionStorage.getItem(STASH_KEY)).toBeNull()
@@ -244,86 +258,69 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain('别人的回复')
   })
 
-  it('WS frame without clientMessageId (older backend): never refills from a broadcast dropped', async () => {
-    const { wrapper, chat, draft } = mountHost()
-    chat.value!.applyReviewFrame({
-      event: 'error',
-      nodeId: 'react-1',
-      code: 'clarify_visit_ended',
-      dropped: { text: '从别处发出的回复', annotations: [] },
-    })
+  it('dropped turn without a clientMessageId never refills', async () => {
+    const { wrapper, draft } = mountHost()
+    serverRuns('srv-5', { text: '从别处发出的回复' })
+    await flushPromises()
+    serverDrops('srv-5', undefined)
     await flushPromises()
     expect(draft.value).toBe('')
     expect(sessionStorage.getItem(STASH_KEY)).toBeNull()
     expect(wrapper.find('[data-testid="clarify-send-notice"]').exists()).toBe(false)
   })
 
-  it('WS match with only an outbox copy (after refresh): ref-only attachments come back', async () => {
-    const { chat, draft, attachments } = mountHost()
+  it('dropped turn with only an outbox copy (after refresh): ref-only attachments come back', async () => {
+    const { draft, attachments } = mountHost()
     outbox('cm-2', '', [{ ref: 'blob:abc', mimeType: 'image/png', name: 'a.png' }])
-    chat.value!.applyReviewFrame({
-      type: 'review',
-      event: 'error',
-      nodeId: 'react-1',
-      code: 'clarify_visit_ended',
-      autoRetryOnResume: false,
-      interrupted: false,
-      iteration: 1,
-      clientMessageId: 'cm-2',
-    })
+    serverRuns('srv-2', { text: '', clientMessageId: 'cm-2', images: [{ ref: 'blob:abc', mimeType: 'image/png', name: 'a.png' }] })
+    await flushPromises()
+    serverDrops('srv-2', 'cm-2')
     await flushPromises()
     expect(draft.value).toBe('')
     expect(attachments.value).toEqual([{ ref: 'blob:abc', mimeType: 'image/png', name: 'a.png' }])
   })
 
-  it('WS match after turn_begin prefers the local image copy over the ref-only server item', async () => {
-    const { wrapper, chat, attachments } = mountHost()
+  it('dropped turn prefers the local image copy over the ref-only server item', async () => {
+    const { wrapper, attachments } = mountHost()
     const local: ClarifyImage = { data: 'aGk=', mimeType: 'image/png', name: 'a.png' }
     attachments.value = [local]
     await flushPromises()
     await typeAndSend(wrapper, '看图')
-    outbox('cm-3', '看图', [local])
-    chat.value!.applyReviewFrame({
-      event: 'turn_begin',
-      nodeId: 'react-1',
-      item: { id: 'srv-2', text: '看图', images: [{ ref: 'blob:abc', mimeType: 'image/png' }] },
-    })
-    chat.value!.applyReviewFrame({
-      event: 'error',
-      nodeId: 'react-1',
-      code: 'clarify_visit_ended',
-      autoRetryOnResume: false,
-      interrupted: false,
-      clientMessageId: 'cm-3',
-    })
+    const cmid = sentId(wrapper)
+    outbox(cmid, '看图', [local])
+    serverRuns('srv-2', { text: '看图', clientMessageId: cmid, images: [{ ref: 'blob:abc', mimeType: 'image/png' }] })
+    await flushPromises()
+    serverDrops('srv-2', cmid)
     await flushPromises()
     expect(attachments.value).toEqual([local])
   })
 
-  it('turn_done for an outbox message drops its outbox entry', async () => {
-    const { wrapper, chat } = mountHost()
+  it('an answered outbox message drops its outbox entry', async () => {
+    const { wrapper } = mountHost()
     await typeAndSend(wrapper, '正常回复')
-    outbox('cm-4', '正常回复')
-    chat.value!.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'srv-4', text: '正常回复' } })
-    chat.value!.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+    const cmid = sentId(wrapper)
+    outbox(cmid, '正常回复')
+    serverRuns('srv-4', { text: '正常回复', clientMessageId: cmid })
+    await flushPromises()
+    feedDialogue('run-1', 'react-1', {
+      rows: [
+        { role: 'human', text: '正常回复', at: '1', turnId: 'srv-4', clientMessageId: cmid },
+        { role: 'agent', text: '好的', at: '2', turnId: 'srv-4' },
+      ],
+      turns: [endedTurn('srv-4', 'ok', { clientMessageId: cmid })],
+    })
     await flushPromises()
     expect(sessionStorage.getItem(OUTBOX_KEY)).toBeNull()
   })
 
-  it('WS error frame for the system first message: removes its bubbles, restores nothing', async () => {
-    const { wrapper, chat, draft } = mountHost()
-    chat.value!.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { text: '做一个待办清单' } })
+  it('dropped system first message: removes its bubbles, restores nothing', async () => {
+    const { wrapper, draft } = mountHost()
+    serverRuns('srv-0', { text: '做一个待办清单' })
     await flushPromises()
-    chat.value!.applyReviewFrame({
-      event: 'error',
-      nodeId: 'react-1',
-      message: '运行已结束，这条消息没有发送',
-      code: 'clarify_visit_ended',
-      autoRetryOnResume: true,
-      dropped: {},
-    })
+    serverDrops('srv-0', undefined, true)
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain('运行已结束')
+    expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain('做一个待办清单')
     expect(draft.value).toBe('')
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(AUTO)
   })

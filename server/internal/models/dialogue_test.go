@@ -69,3 +69,18 @@ func TestLiveReplyRowsKeepsTheOpenRowAndSkipsFailureEchoes(t *testing.T) {
 		t.Fatalf("no events still has the open row: %+v", rows)
 	}
 }
+
+func TestWithReplyOutcomesFillsAgentRows(t *testing.T) {
+	in := []ReactMessage{{Role: "human", Text: "q"}, {Role: "agent"}, {Role: "agent", Text: "(澄清回复失败:boom)"}, {Role: "agent", Text: "ok"}}
+	out := WithReplyOutcomes(in)
+	got := []string{out[0].Outcome, out[1].Outcome, out[2].Outcome, out[3].Outcome}
+	want := []string{"", OutcomeEmpty, OutcomeFailed, OutcomeOK}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("row %d outcome %q, want %q", i, got[i], want[i])
+		}
+	}
+	if in[1].Outcome != "" {
+		t.Fatal("input changed")
+	}
+}

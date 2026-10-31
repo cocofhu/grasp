@@ -1176,6 +1176,8 @@ export interface Run {
     string,
     { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string; firstMessage?: string; currentConfigurationId?: string; currentModelId?: string; currentModelSet?: boolean; reasoningEffort?: string; modelNotice?: string }
   >
+  /** Server dialogue state per node (same as the WebSocket `dialogue` full frame). */
+  dialogueByNode?: Record<string, unknown>
   /** Authoritative busy/queue snapshots for refresh-resume (clarify + review). */
   reviewSessionGeneration?: number
   reactSessions?: Record<

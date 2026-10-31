@@ -17,6 +17,10 @@ import { confirmFlowCeremonyKey } from '@/lib/inbox/confirmFlowCeremony'
 import { beginBoot, bootKey, clearBootRecords, markBootLive, seedBoot } from '@/lib/run/bootRecord'
 import type { ClarifyTurn } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { feedDialogue, runningTurn } from '@/test/dialogueKit'
+
+afterEach(() => clearDialogues())
 
 beforeAll(async () => {
   const zh = await loadLocaleMessages('zh-CN')
@@ -835,11 +839,14 @@ describe('follow process stays on the confirmed conversation', () => {
   it('settles 思考中 and 生成中 once the confirmed turn has ended', async () => {
     const w = mountChat({ turns: [] })
     await flushPromises()
-    w.vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'implement', item: { text: '请确认' } })
-    w.vm.applyAcpEvents(
-      [{ kind: 'timeline', t: 1, parts: [{ kind: 'thought', text: '还在收尾' }] }],
-      'implement',
-    )
+    feedDialogue('run-1', 'implement', {
+      busy: true,
+      rows: [
+        { role: 'human', text: '请确认', at: '1', turnId: 't1' },
+        { role: 'agent', text: '', at: '2', turnId: 't1', streaming: true, parts: [{ kind: 'thought', text: '还在收尾' }] },
+      ],
+      turns: [runningTurn('t1', { text: '请确认' })],
+    })
     await flushPromises()
     expect(w.text()).toMatch(/思考中|生成中/)
     w.vm.settleConfirmedTurn()

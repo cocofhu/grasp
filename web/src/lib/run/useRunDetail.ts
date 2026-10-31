@@ -42,6 +42,7 @@ import { resolveHandoffProcessAuto, sidebarAutoTarget } from '@/lib/inbox/sideba
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import type { AcpEvent, NodeRun, NodeRunStatus, Run, Workflow } from '@/lib/shared/types'
 import { isClearlyInvalidRunRouteId } from '@/lib/pm/pmCitationShape'
+import { ingestDialogues } from '@/lib/chat/dialogueStore'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
 
 type RunLoadErrorKind = 'not_found' | 'network_or_server'
@@ -98,8 +99,7 @@ const manual = ref(false)
 
 /** ClarifyChat / ReviewComposer surface for review WS frames (queue/stream/Cancel). */
 const reviewChatRef = ref<{
-  applyReviewFrame?: (frame: any) => boolean | void
-  applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  applyRequestRejected?: (frame: any) => void
   discardLastQueued?: (clientMessageId?: string) => void
   releaseConfirmPending?: () => void
   restoreUnsentQueued?: import('@/lib/inbox/clarifyVisitEnded').RestoreUnsent
@@ -112,8 +112,7 @@ const reviewChatRef = ref<{
 const llmTranscriptRef = ref<{
   getNodeId?: () => string
   isChatReady?: () => boolean
-  applyReviewFrame?: (frame: any) => boolean | void
-  applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  applyRequestRejected?: (frame: any) => void
   isSessionBusy?: () => boolean
 } | null>(null)
 
@@ -386,6 +385,7 @@ async function patchRunChrome() {
     try {
       const incoming = await api.getRun(id, { signal })
       if (signal.aborted || generation !== runLoadGeneration || runId.value !== id) return
+      ingestDialogues(incoming.dialogueByNode, id)
       const snapshot = wsApi.reconcileReviewSnapshot(incoming, reviewCapture, false)
       if (!snapshot) return
       const prev = run.value
@@ -491,6 +491,7 @@ async function readRunData(generation: number, signal: AbortSignal): Promise<tru
   try {
     const incoming = await api.getRun(id, { signal })
     if (!isCurrent()) return true
+    ingestDialogues(incoming.dialogueByNode, id)
     const r = wsApi.reconcileReviewSnapshot(incoming, reviewCapture, false)
     if (!r) return true
     if (run.value.id === r.id && runSnapshotUnchanged(run.value, r)) {

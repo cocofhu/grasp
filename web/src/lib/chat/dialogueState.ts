@@ -42,6 +42,8 @@ export type DialogueState = {
   type: 'dialogue'
   runId: string
   nodeId: string
+  /** Set on a share visitor's own chat. */
+  lane?: string
   iteration: number
   kind?: string
   epoch: number
@@ -175,7 +177,7 @@ export function render(state: DialogueState | null, optimistic: readonly Optimis
     }))
   const pending = pendingOptimistic(state, optimistic)
   const busy = !!state?.busy
-  let thinking = turns.some((t) => t.phase === 'running' || t.phase === 'orphan')
+  let thinking = turns.some((t) => t.phase === 'running' || t.phase === 'orphan' || t.phase === 'queued')
   pending.forEach((o, i) => {
     if (i === 0 && !busy && !queue.length) {
       rows.push({
