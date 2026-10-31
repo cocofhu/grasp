@@ -24,6 +24,15 @@ const { workspace, reload } = useWorkspaceContext()
 const tool = computed(() => String(route.meta.workspaceTool || 'board'))
 const title = computed(() => String(route.meta.workspaceTitle || 'nav.board'))
 const documentTool = computed(() => ['assistantSettings', 'notificationPolicy', 'externalMcp'].includes(tool.value))
+const SETTINGS_HEADERS: Record<string, { icon: string; descriptionKey: string }> = {
+  assistant: { icon: 'chat', descriptionKey: 'pages.workspace.pm.scopeLabel' },
+  assistantSettings: { icon: 'chat', descriptionKey: 'pages.settingsOverview.desc.assistantSettings' },
+  schedules: { icon: 'clock', descriptionKey: 'pages.settingsOverview.desc.schedules' },
+  notificationPolicy: { icon: 'bell-settings', descriptionKey: 'pages.settingsOverview.desc.notificationPolicy' },
+  externalMcp: { icon: 'connector', descriptionKey: 'pages.workspace.externalMcp.subtitle' },
+  audit: { icon: 'history', descriptionKey: 'pages.settingsOverview.desc.audit' },
+}
+const settingsHeader = computed(() => SETTINGS_HEADERS[tool.value])
 const binding = ref<PmLeaderBinding | null>(null)
 const bindingLoading = ref(false)
 const bindingError = ref('')
@@ -50,11 +59,11 @@ onBeforeRouteLeave(() => drafts.value?.isDirty ? drafts.value.requestLeave() : t
 </script>
 
 <template>
-  <WorkspacePage :title-key="title" :layout="documentTool ? 'settings' : 'workspace'">
+  <WorkspacePage :title-key="title" :layout="documentTool ? 'settings' : 'workspace'" :icon="settingsHeader?.icon" :description-key="settingsHeader?.descriptionKey" :hide-header="tool === 'credentials'">
     <template #actions>
       <AppButton v-if="tool === 'assistantSettings'" icon="chat" @click="router.push('/assistant')">{{ t('nav.openAssistant') }}</AppButton>
     </template>
-    <div v-if="workspace" :key="tool" class="flex min-w-0 flex-col" :class="documentTool ? 'gap-8' : ['min-h-0 flex-1', { 'scroll-area overflow-y-auto': tool === 'schedules' }]" :data-testid="`workspace-tool-${tool}`">
+    <div v-if="workspace" :key="tool" class="flex min-w-0 flex-col" :class="documentTool ? 'gap-6' : ['min-h-0 flex-1', { 'scroll-area overflow-y-auto': tool === 'schedules' }]" :data-testid="`workspace-tool-${tool}`">
       <BoardView v-if="tool === 'board'" embedded class="min-h-0 flex-1" />
       <RequirementDraftsPanel v-else-if="tool === 'requirements'" ref="drafts" />
       <template v-else-if="tool === 'assistant'">

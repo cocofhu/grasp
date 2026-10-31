@@ -226,7 +226,8 @@ test('CodeBuddy offers Chat connections and filters unsupported Responses and Me
 test('create credentials, then save a reusable tool-credential-model configuration', async ({ page }) => {
   const state = await setup(page)
   await openCredentials(page)
-  await expect(page.getByRole('tab')).toHaveText(['凭据', '模型组'])
+  await expect(page.getByRole('tab').locator('.credentials-tab-label')).toHaveText(['凭据', '模型组'])
+  await expect(page.getByTestId('workspace-credential-stats').getByTestId('settings-stat-total')).toBeVisible()
   await page.getByTestId('workspace-credential-create').click()
   await page.getByTestId('workspace-add-credential').click()
   await page.getByTestId('credential-kind-model_api').click()

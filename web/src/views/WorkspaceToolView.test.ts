@@ -44,7 +44,7 @@ describe('every workspace tool page', () => {
     const { wrapper } = await setup(path)
     expect(wrapper.findAll('[data-panel]').map((node) => node.attributes('data-panel'))).toEqual([component])
     const root = wrapper.get('[data-testid^="workspace-tool-"]')
-    expect(root.classes().includes('gap-8')).toBe(layout === 'settings')
+    expect(root.classes().includes('gap-6')).toBe(layout === 'settings')
     expect(mocks.getPmLeader).toHaveBeenCalledTimes(path === '/assistant' ? 1 : 0)
     wrapper.unmount()
   })

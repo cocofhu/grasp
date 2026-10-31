@@ -11,6 +11,9 @@ import ModelProviderSelect from './ModelProviderSelect.vue'
 import ModelConfigurationManager from './ModelConfigurationManager.vue'
 import { isModelCredential, modelProviderPreset, MODEL_PROTOCOLS, useRoutingCopy } from '@/lib/agent/modelRouting'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
+import SettingsPageHeader from '@/components/settings/SettingsPageHeader.vue'
+import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
+import type { SettingsStatItem } from '@/components/settings/settingsStats'
 import { api, type CredentialItem, type ModelConfiguration, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
@@ -223,6 +226,24 @@ const credentialSections = computed(() => {
     sections.find((section) => section.id === sectionId)?.groups.push(group)
   }
   return sections.filter((section) => section.groups.length)
+})
+
+const standalone = computed(() => !props.inline && !props.view)
+const modelCount = ref<number | undefined>(undefined)
+function tabCount(tab: 'credentials' | 'models'): number | undefined {
+  return tab === 'credentials' ? orderedItems.value.length : modelCount.value
+}
+const credentialStats = computed<SettingsStatItem[]>(() => {
+  const list = orderedItems.value
+  const configured = list.filter((item) => item.configured).length
+  const hosts = new Set(list.filter((item) => kindOfItem(item)?.type === 'git').map((item) => displayHost(item)).filter(Boolean))
+  const pending = list.filter((item) => !item.configured && isWorkspaceEditable(item)).length
+  return [
+    { key: 'total', icon: 'key', label: t('pages.settingsOverview.stats.credentialsTotal'), value: list.length, tone: 'accent' },
+    { key: 'configured', icon: 'check', label: t('pages.settingsOverview.stats.credentialsConfigured'), value: configured, total: list.length, tone: 'ok' },
+    { key: 'git-hosts', icon: 'git', label: t('pages.settingsOverview.stats.credentialsGitHosts'), value: hosts.size },
+    { key: 'pending', icon: 'warning', label: t('pages.settingsOverview.stats.credentialsPending'), value: pending, tone: pending ? 'warn' : 'neutral' },
+  ]
 })
 
 function itemLabel(item: CredentialItem): string {
@@ -647,7 +668,7 @@ watch(showCreate, (open) => {
 <template>
   <div
     class="flex min-h-0 flex-1 flex-col"
-    :class="inline ? 'credentials-inline' : 'overflow-hidden'"
+    :class="inline ? 'credentials-inline' : 'credentials-page overflow-hidden'"
     data-testid="workspace-credentials-panel"
   >
     <div v-if="loading" class="flex flex-1 items-center justify-center text-[13px] text-txt3">
@@ -661,38 +682,49 @@ watch(showCreate, (open) => {
 
     <div v-else v-show="!(inline && showCreate)" class="credentials-scroll min-h-0 flex-1" :class="inline ? '' : 'scroll-area overflow-y-auto'">
       <div class="credentials-content w-full">
-        <header v-show="!setup && (!inline || !editorActive)" class="credentials-header">
+        <SettingsPageHeader
+          v-if="standalone"
+          v-show="!setup"
+          class="credentials-page-header"
+          icon="key"
+          :title="t('pages.workspace.credentials.title')"
+          :description="t('pages.workspace.credentials.description')"
+        >
+          <template #actions>
+            <AppButton
+              ref="addTrigger"
+              variant="primary"
+              icon="plus"
+              class="credentials-create shrink-0"
+              data-testid="workspace-credential-create"
+              aria-haspopup="menu"
+              :aria-expanded="addMenuOpen"
+              :aria-controls="addMenuOpen ? addMenuId : undefined"
+              @click="addMenuOpen ? closeAddMenu() : showAddMenu()"
+              @keydown="addTriggerKeydown"
+            >
+              {{ t('pages.workspace.credentials.add') }}
+              <Icon name="chevron-down" :size="14" :interactive="false" />
+            </AppButton>
+          </template>
+        </SettingsPageHeader>
+        <header v-else v-show="!setup && (!inline || !editorActive)" class="credentials-header">
           <div class="flex min-w-0 items-center gap-3.5">
             <div class="min-w-0">
               <h2 class="m-0 text-[20px] font-semibold tracking-tight text-txt">{{ view === 'credentials' ? routingCopy.credentials : scope === 'model' || view === 'models' ? routingCopy.modelsTab : scope === 'git' ? t('pages.workspace.credentials.sections.git') : t('pages.workspace.credentials.title') }}</h2>
             </div>
           </div>
-          <div v-if="inline || view" class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-2">
             <AppButton v-if="scope !== 'git' && view !== 'credentials'" size="sm" variant="primary" icon="plus" data-testid="workspace-add-model" data-editor-trigger @click="openModelCreate">{{ t('pages.workspace.credentials.addModel') }}</AppButton>
             <AppButton v-if="view !== 'models'" size="sm" :variant="scope === 'git' || view === 'credentials' ? 'primary' : 'outline'" icon="key" data-testid="workspace-add-credential" data-editor-trigger @click="openCreate">{{ t('pages.workspace.credentials.create') }}</AppButton>
           </div>
-          <AppButton
-            v-else
-            ref="addTrigger"
-            variant="primary"
-            icon="plus"
-            class="credentials-create shrink-0"
-            data-testid="workspace-credential-create"
-            aria-haspopup="menu"
-            :aria-expanded="addMenuOpen"
-            :aria-controls="addMenuOpen ? addMenuId : undefined"
-            @click="addMenuOpen ? closeAddMenu() : showAddMenu()"
-            @keydown="addTriggerKeydown"
-          >
-            {{ t('pages.workspace.credentials.add') }}
-            <Icon name="chevron-down" :size="14" :interactive="false" />
-          </AppButton>
         </header>
         <Teleport to="body"><div v-if="addMenuOpen" :id="addMenuId" ref="addMenu" role="menu" :aria-label="t('pages.workspace.credentials.add')" class="credentials-add-menu" :style="addMenuStyle" data-testid="workspace-add-menu" @keydown="addMenuKeydown"><button type="button" role="menuitem" tabindex="-1" data-testid="workspace-add-credential" @click="addFromMenu('credential')"><Icon name="key" :size="16" :interactive="false" />{{ t('pages.workspace.credentials.create') }}</button><button type="button" role="menuitem" tabindex="-1" data-testid="workspace-add-model" @click="addFromMenu('model')"><Icon name="sparkles" :size="16" :interactive="false" />{{ t('pages.workspace.credentials.addModel') }}</button></div></Teleport>
 
-        <nav v-if="!view" v-show="(!inline || !editorActive) && tabs.length > 1" class="mb-6 mt-5 flex flex-wrap gap-1 border-b border-line" role="tablist" :aria-label="routingCopy.credentials"><button v-for="tab in tabs" :key="tab" type="button" role="tab" class="border-b-2 px-3 py-3 text-[13px] transition" :class="activeTab === tab ? 'border-accent font-semibold text-accent-2' : 'border-transparent text-txt3 hover:text-txt'" :aria-selected="activeTab === tab" :data-testid="`credentials-tab-${tab}`" @click="activeTab = tab">{{ tab === 'credentials' ? routingCopy.credentials : routingCopy.modelsTab }}</button></nav>
+        <nav v-if="!view" v-show="(!inline || !editorActive) && tabs.length > 1" class="mb-6 mt-5 flex flex-wrap gap-1 border-b border-line" role="tablist" :aria-label="routingCopy.credentials"><button v-for="tab in tabs" :key="tab" type="button" role="tab" class="border-b-2 px-3 py-3 text-[13px] transition" :class="activeTab === tab ? 'border-accent font-semibold text-accent-2' : 'border-transparent text-txt3 hover:text-txt'" :aria-selected="activeTab === tab" :data-testid="`credentials-tab-${tab}`" @click="activeTab = tab"><span class="credentials-tab-label">{{ tab === 'credentials' ? routingCopy.credentials : routingCopy.modelsTab }}</span><span v-if="tabCount(tab) !== undefined" class="credentials-tab-count" :data-testid="`credentials-tab-count-${tab}`">{{ tabCount(tab) }}</span></button></nav>
         <div v-if="activeTab === 'credentials'">
         <div v-show="!inline || !connectionEditorOpen">
+        <SettingsStatStrip v-if="!inline" class="mb-6" :items="credentialStats" data-testid="workspace-credential-stats" />
         <div v-if="!orderedItems.length" class="credentials-empty">
           <Icon name="key" :size="28" class="mb-3 text-txt3" aria-hidden="true" />
           <p class="m-0 text-[13px] text-txt3">{{ t('pages.workspace.credentials.empty') }}</p>
@@ -848,7 +880,7 @@ watch(showCreate, (open) => {
         </div>
         <ModelConnectionEditor ref="connectionManager" :inline="inline" :credentials="items" @changed="configurationChanged" @editing="connectionEditorOpen = $event" @error="toast.error($event)" />
         </div>
-        <ModelConfigurationManager v-if="activeTab === 'models'" ref="modelConfigurationManager" :inline="inline" :allow-credential-creation="setup || view !== 'models'" :setup="setup" hide-create-button @manage-credentials="manageModelCredentials" @changed="configurationChanged" @saved="emit('modelSaved', $event)" @editing="modelEditorOpen = $event" />
+        <ModelConfigurationManager v-if="activeTab === 'models'" ref="modelConfigurationManager" :inline="inline" :allow-credential-creation="setup || view !== 'models'" :setup="setup" hide-create-button @loaded="modelCount = $event.length" @manage-credentials="manageModelCredentials" @changed="configurationChanged" @saved="emit('modelSaved', $event)" @editing="modelEditorOpen = $event" />
       </div>
     </div>
 
@@ -1049,6 +1081,39 @@ watch(showCreate, (open) => {
 .credentials-create {
   box-shadow: none;
 }
+.credentials-page .credentials-content { max-width: 960px; padding-top: 0; }
+.credentials-tab-count {
+  margin-left: 6px;
+  border-radius: 999px;
+  padding: 0 6px;
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+.credentials-page .credentials-section {
+  overflow: hidden;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+  background: rgb(var(--c-surface));
+}
+.credentials-page .credentials-section + .credentials-section { margin-top: 24px; }
+.credentials-page .credentials-section-heading {
+  margin-bottom: 0;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgb(var(--c-line) / .8);
+}
+.credentials-page .credentials-section-count {
+  border-radius: 999px;
+  padding: 0 7px;
+  background: rgb(var(--c-elevated));
+  line-height: 18px;
+}
+.credentials-page .credentials-list { border-block: 0; }
+.credentials-page .credential-row { padding-inline: 20px; }
+.credentials-page .credentials-empty { border-style: solid; background: rgb(var(--c-surface)); }
 .credentials-add-menu { position: fixed; z-index: 10000; overflow-y: auto; padding: 5px; border: 1px solid rgb(var(--c-line)); border-radius: 9px; background: rgb(var(--c-surface)); box-shadow: 0 8px 24px rgb(0 0 0 / .10); }
 .credentials-add-menu button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; border: 0; border-radius: 5px; padding: 7px 10px; background: transparent; color: rgb(var(--c-txt2)); text-align: left; font-size: 12px; cursor: pointer; }
 .credentials-add-menu button:hover, .credentials-add-menu button:focus-visible { background: rgb(var(--c-elevated)); }
@@ -1201,6 +1266,8 @@ watch(showCreate, (open) => {
   .credentials-create { margin-left: auto; }
   .credentials-summary { gap: 6px 18px; margin-bottom: 20px; }
   .credential-row { padding: 14px 0; }
+  .credentials-page .credential-row { padding-inline: 16px; }
+  .credentials-page .credentials-section-heading { padding-inline: 16px; }
   .credential-row-headline { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .credential-row-value { padding-left: 44px; }
   .credential-row-controls { grid-column: 1; grid-row: auto; padding-left: 44px; gap: 8px; }
