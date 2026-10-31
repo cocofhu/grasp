@@ -950,7 +950,15 @@ export interface ClarifyTurn extends ChatMessageMetadata {
    * auto phase. Absent when there are none.
    */
   events?: AcpEvent[]
+  /** Platform queue item that produced this row; a request and its replies share it. */
+  turnId?: string
+  /** How this reply's turn ended (agent rows, server-decided). */
+  outcome?: DialogueOutcome
+  /** Failure detail when outcome is failed. */
+  error?: string
 }
+
+export type DialogueOutcome = 'ok' | 'empty' | 'failed' | 'interrupted' | 'dropped'
 
 /** One tool call shown in the folded tool row of an agent turn. */
 export interface AgentTool {
