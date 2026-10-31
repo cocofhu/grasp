@@ -25,7 +25,7 @@ A workflow has one kind of Agent node. The node only sets three things: which Ag
 
 Every node that uses the same Agent has the same capabilities; nodes differ only by goal. If you need different permissions, create a second Agent. Behaviour rules live in the Agent workspace's `AGENTS.md` and skills; the platform keeps only a fixed common protocol.
 
-Three templates ship built in: **Clarify** (clarify; writes the requirement spec and plan), **Implement** (auto with review; writes the implementation result) and **Test & review** (auto with review; writes the test result and review verdict). All three can start a preview with `set_preview`. Onboarding creates the default workflow input → Clarify → Implement → Test & review; Pass goes to output and Fail goes back to Implement.
+Three templates ship built in: **Clarify** (clarify; writes the requirement spec and plan), **Implement** (auto; writes the implementation result) and **Test & review** (auto; writes the test result and review verdict). Implement and Test & review ship with review off, so they hand off as soon as they finish; turn review on in the Agent's capabilities page if you want them to wait for a person. All three can start a preview with `set_preview`. Onboarding creates the default workflow input → Clarify → Implement → Test & review; Pass goes to output and Fail goes back to Implement.
 
 A workflow with an unknown node type fails validation with "未知节点类型 X" (unknown node type) and its runs fail; an Agent without capabilities fails with "Agent X 未声明能力" (Agent has no capabilities).
 

@@ -33,7 +33,7 @@ const TeamPMEmbedName = "PMAgent"
 var TeamEngineerTemplates = []TeamRoleTemplate{
 	{ID: "clarify", EmbedName: "ClarifyAgent", RoleLabelZH: "需求澄清", Summary: "多轮对话澄清需求、写出计划;缺陷时查清根因,可启动应用演示"},
 	{ID: "implement", EmbedName: "ImplementAgent", RoleLabelZH: "实现", Summary: "按计划实现、测试、提交并推送工作分支"},
-	{ID: "test_review", EmbedName: "TestReviewAgent", RoleLabelZH: "测试评审", Summary: "执行测试并做代码评审,两项都通过才放行,测试后可启动应用复审"},
+	{ID: "test_review", EmbedName: "TestReviewAgent", RoleLabelZH: "测试评审", Summary: "执行测试并做代码评审,两项都通过才放行,可启动应用预览"},
 	{ID: "deliver", EmbedName: "DeliverAgent", RoleLabelZH: "交付", Summary: "测试评审通过后合入目标分支并创建或复用 MR/PR"},
 }
 

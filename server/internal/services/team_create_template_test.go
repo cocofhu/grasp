@@ -44,6 +44,40 @@ func TestAllCreateTemplates_BuiltInAgentsDeclareCapabilities(t *testing.T) {
 	}
 }
 
+func TestBuiltInTemplates_ReviewOffExceptClarify(t *testing.T) {
+	for _, r := range TeamEngineerTemplates {
+		tmpl, err := loadTeamAgentTemplate(r.EmbedName)
+		if err != nil {
+			t.Fatalf("%s: %v", r.ID, err)
+		}
+		caps := tmpl.Capabilities
+		if caps == nil {
+			t.Fatalf("%s: missing capabilities", r.ID)
+		}
+		if r.ID == "clarify" {
+			if caps.Interaction != models.InteractionClarify {
+				t.Fatalf("clarify interaction = %q, want clarify", caps.Interaction)
+			}
+			continue
+		}
+		if caps.Review {
+			t.Fatalf("%s: review must default to off", r.ID)
+		}
+		ag := Agent{Name: r.ID}
+		if err := ApplyCreateTemplate(r.ID, &ag); err != nil {
+			t.Fatalf("%s: %v", r.ID, err)
+		}
+		if ag.Capabilities == nil || ag.Capabilities.Review {
+			t.Fatalf("%s: created Agent must have review off: %+v", r.ID, ag.Capabilities)
+		}
+	}
+	for _, r := range AllCreateTemplates() {
+		if r.ID != "clarify" && r.Capabilities != nil && r.Capabilities.Review {
+			t.Fatalf("%s: listed template must have review off", r.ID)
+		}
+	}
+}
+
 func TestApplyCreateTemplate(t *testing.T) {
 	for _, r := range TeamEngineerTemplates {
 		ag := Agent{Name: "qa-1", AcpBackend: "cursor"}
