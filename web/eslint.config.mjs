@@ -18,6 +18,47 @@ export default defineConfigWithVueTs(
       'vue/no-mutating-props': 'off',
     },
   },
+  // The clarify chat draws only the server's dialogue state. These files must
+  // not go back to reading ACP / review frames or guessing a failed turn from
+  // empty text: a wrong chat is fixed in the server's state, not here.
+  // dialogueLintGate.test.ts checks this block still rejects such code.
+  {
+    files: [
+      'src/components/run/ClarifyChat.vue',
+      'src/lib/inbox/useClarifyChat.ts',
+      'src/lib/chat/dialogueState.ts',
+      'src/lib/chat/dialogueStore.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: '(^|/)(sessionQueue|reviewSessionState|acpUnpack|mergeAcpEvents|applyLiveWsAcpPage|dialogueAcpDelivery|pendingAcpBuffer|liveLogSnapshotCache|acpFailure|mergeClarifyLiveTurns)$',
+              message: 'The clarify chat reads only dialogueStore; do not consume session/ACP frames here.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "BinaryExpression[operator=/^[!=]==?$/] > Literal[value=/^(acp|queue_state|turn_begin|turn_done)$/]",
+          message: 'The clarify chat does not handle ACP / review frames; the server dialogue state already applied them.',
+        },
+        {
+          selector: "SwitchCase > Literal.test[value=/^(acp|queue_state|turn_begin|turn_done)$/]",
+          message: 'The clarify chat does not handle ACP / review frames; the server dialogue state already applied them.',
+        },
+        {
+          selector:
+            "LogicalExpression:has(UnaryExpression[operator='!'] > MemberExpression.argument[property.name='text']):has(UnaryExpression[operator='!'] > MemberExpression.argument[property.name='thought'])",
+          message: 'A failed or empty turn is row.outcome (empty / failed); do not infer it from missing text or thought.',
+        },
+      ],
+    },
+  },
   // Dead-symbol anti-churn: warn only under src/lib (not views). Keep as warn —
   // do not promote to error or enable for views/knip.
   {

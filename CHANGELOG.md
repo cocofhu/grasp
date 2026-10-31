@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Clarification and review chats follow the server:** in Inbox, run details and shared approval links, the conversation now shows exactly the state the server reports. A turn that is still running, was stopped, or is waiting in the queue is no longer shown as "no output this turn", and reconnecting or reloading no longer leaves duplicate or stuck turns. A stopped turn with no reply reads "(已中断)", and sending a new message replaces the retry button on a failed reply.
+
 - **@ references in Solo:** type `@` in a Solo message, including the home page composer when starting a new Solo session (or use the "+" menu), to reference another of your Solo sessions or a GitHub issue or pull request from the session's repositories. Typing `#number` or pasting an issue or PR link works too. The agent gets a summary of a referenced session and can read its full conversation as it was when the turn began. GitHub items are checked with the sandbox's Git credential and read by the agent with `gh`. A message can carry up to 5 references, shown as chips in the message and the queue.
 
 - **Solo sandbox limit and running order:** admins can change how many Solo sandboxes run at once under Settings → Capacity, applied immediately and kept across restarts. Solo sessions in the running list now stay in start order, newest first, instead of jumping to the top on every reply.
