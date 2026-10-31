@@ -9,6 +9,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"gorm.io/gorm"
 )
 
 // connectDialogues is what a browser tab receives on (re)connect: the full
@@ -34,8 +35,26 @@ func connectDialogues(t *testing.T, eng *Engine, runID, nodeID string) DialogueS
 	return got[0]
 }
 
-// tab mirrors dialogueState.ts applyFrame: it keeps the newest version, takes
-// full frames whole and tail frames only on a matching prefix.
+// waitPersistedHuman waits until the turn's human row is in the database.
+// DialogueSnapshot cannot tell: it synthesizes that row from the queue entry
+// before executeClarifyTurn saves it, and a restart only sees saved rows.
+func waitPersistedHuman(t *testing.T, db *gorm.DB, runID, nodeID, turnID string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var conv models.ReactConversation
+		if err := db.Where("run_id = ? AND node_id = ?", runID, nodeID).
+			Order("iteration desc, id desc").First(&conv).Error; err == nil && hasTurnHuman(conv.Messages, turnID) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("human row of turn %s never persisted", turnID)
+}
+
+// tab mirrors dialogueState.ts applyFrame, which is the authoritative
+// implementation: it keeps the newest version, takes full frames whole and
+// tail frames only on a matching prefix.
 type tab struct {
 	st     DialogueState
 	have   bool
@@ -200,7 +219,9 @@ func TestDialogueAcceptanceFlipReconnectRestart(t *testing.T) {
 
 // TestDialogueAcceptanceRestartMidTurn: the server restarts while a reply is
 // still streaming. The new process has no live events for that turn; the tab
-// must not be shown "本轮没有输出" for a reply that was never sealed.
+// must not be shown "本轮没有输出" for a reply that was never sealed. A turn
+// whose human row was not saved yet does not survive a restart, like a
+// queued turn.
 func TestDialogueAcceptanceRestartMidTurn(t *testing.T) {
 	eng, db, provider := setupEngineGraphP(t, reactOnlyGraph())
 	if err := eng.InitDialogueEpoch(); err != nil {
@@ -226,6 +247,7 @@ func TestDialogueAcceptanceRestartMidTurn(t *testing.T) {
 		t.Fatalf("enqueue: %v", err)
 	}
 	turnID := waitRunningTurn(t, eng, run.ID, "clarify")
+	waitPersistedHuman(t, db, run.ID, "clarify", turnID)
 	eng.publishAcp(run.ID, "clarify", msgEvents("一半"), true)
 	before := connectDialogues(t, eng, run.ID, "clarify")
 
