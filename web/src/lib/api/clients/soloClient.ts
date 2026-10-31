@@ -55,6 +55,15 @@ export const soloClient = {
     if (params.page && params.page > 1) qs.set('page', String(params.page))
     return req<ReferenceSearchResult<T>>(`/solo/sessions/${enc(id)}/references/search?${qs}`, { signal })
   },
+  /** Before a session exists: agent and picked projects stand in for it. */
+  searchLaunchReferences: <T>(params: { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number; agent: string; projects: string[] }, signal?: AbortSignal) => {
+    const qs = new URLSearchParams({ lane: params.lane, q: params.q, agent: params.agent })
+    if (params.projects.length) qs.set('projects', params.projects.join(','))
+    if (params.kind) qs.set('kind', params.kind)
+    if (params.state) qs.set('state', params.state)
+    if (params.page && params.page > 1) qs.set('page', String(params.page))
+    return req<ReferenceSearchResult<T>>(`/solo/references/search?${qs}`, { signal })
+  },
   cancelSoloTurn: (id: string) =>
     req<{ ok: boolean }>(`/solo/sessions/${enc(id)}/turns/cancel`, { method: 'POST' }),
   removeSoloQueued: (id: string, turnId: string) =>

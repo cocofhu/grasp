@@ -6,6 +6,20 @@ export type ReferenceTab = 'all' | 'solo' | 'issue' | 'pr'
 export type GitHubStateFilter = 'open' | 'all'
 
 type LaneName = 'solo' | 'github'
+type SearchParams = { lane: LaneName; q: string; kind?: string; state?: string; page?: number }
+
+/** Where candidates come from: an open session, or the launch composer's picks. */
+export type ReferenceScope = { sessionId: string } | { agent: string; projects: string[] }
+
+function scopeKey(scope: ReferenceScope) {
+  return 'sessionId' in scope ? `s:${scope.sessionId}` : `l:${scope.agent}:${scope.projects.join(',')}`
+}
+
+function fetchLane(scope: ReferenceScope, params: SearchParams, signal: AbortSignal) {
+  return 'sessionId' in scope
+    ? api.searchSoloReferences<any>(scope.sessionId, params, signal)
+    : api.searchLaunchReferences<any>({ ...params, agent: scope.agent, projects: scope.projects }, signal)
+}
 export type LaneState<T> = {
   items: T[]
   loading: boolean
@@ -31,7 +45,7 @@ function emptyLane<T>(): LaneState<T> {
  * moves on, sequence-checked so a slow reply never overwrites a newer one,
  * and cached per query for five minutes (stale results show while refreshing).
  */
-export function useReferenceSearch(sessionId: Ref<string>) {
+export function useReferenceSearch(scope: Ref<ReferenceScope>) {
   const solo = reactive(emptyLane<SoloReferenceCandidate>()) as LaneState<SoloReferenceCandidate>
   const github = reactive(emptyLane<GitHubReferenceCandidate>()) as LaneState<GitHubReferenceCandidate>
   const lanes = { solo, github }
@@ -60,7 +74,7 @@ export function useReferenceSearch(sessionId: Ref<string>) {
   function run(name: LaneName, params: { q: string; kind?: string; state?: string }, page = 1) {
     const lane = lanes[name] as LaneState<any>
     const c = control[name]
-    const key = `${sessionId.value}|${name}|${params.kind || ''}|${params.state || ''}|${params.q.toLowerCase()}`
+    const key = `${scopeKey(scope.value)}|${name}|${params.kind || ''}|${params.state || ''}|${params.q.toLowerCase()}`
     cancel(name)
     const my = c.seq
     lane.skipped = false
@@ -84,7 +98,7 @@ export function useReferenceSearch(sessionId: Ref<string>) {
       const abort = new AbortController()
       c.abort = abort
       try {
-        const data = await api.searchSoloReferences<any>(sessionId.value, { lane: name, ...params, page }, abort.signal)
+        const data = await fetchLane(scope.value, { lane: name, ...params, page }, abort.signal)
         if (my !== c.seq) return
         if (page === 1) cache.set(key, { at: Date.now(), data })
         apply(lane, data, page > 1)

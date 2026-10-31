@@ -27,7 +27,7 @@ function respond(map: Record<string, (params: any) => object>) {
 
 function mountPicker(props: Partial<{ query: string; taken: string[]; full: boolean; initialTab: any }> = {}) {
   return mount(ReferencePicker, {
-    props: { sessionId: 'me', query: '', taken: [], full: false, ...props },
+    props: { scope: { sessionId: 'me' }, query: '', taken: [], full: false, ...props },
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': pages } })],
       stubs: { Icon: true },
