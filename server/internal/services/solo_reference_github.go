@@ -423,7 +423,7 @@ func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (
 		return res, nil
 	}
 	if len(req.Repos) == 0 {
-		return githubSearchResult{Items: []githubItem{}, Source: "none", Hint: "当前会话没有挂载 GitHub 仓库；可以粘贴 issue/PR 链接"}, nil
+		return githubSearchResult{Items: []githubItem{}, Source: "none", Hint: "没有选择 GitHub 仓库；可以输入 owner/repo#编号 或粘贴 issue/PR 链接"}, nil
 	}
 	if query == "" {
 		return c.recent(ctx, req.Repos, want, tokenOf)

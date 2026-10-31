@@ -19,10 +19,9 @@ import SoloModelSelect from './SoloModelSelect.vue'
 import ReferencePicker from './ReferencePicker.vue'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
-import type { MessageReference } from '@/lib/api/apiTypes'
-import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, type ReferenceToken } from '@/lib/solo/referenceTokens'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
 import type { ReferenceTab } from '@/lib/solo/useReferenceSearch'
+import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
 import { chatImageSrc } from '@/lib/shared/compositeText'
 import { lastMessageText } from '@/lib/chat/messagePreview'
@@ -165,8 +164,7 @@ watch(
   () => props.sessionId,
   () => {
     followBottom.value = true
-    setComposer('', [])
-    trigger.value = null
+    mention.clear()
     attach.clearAttachments()
     soloArtifacts.value = []
     scrollDown(true)
@@ -213,79 +211,15 @@ function autoGrow() {
 watch(input, () => nextTick(autoGrow))
 
 // --- @ references -------------------------------------------------------------
-// Each picked reference owns its `@label` span in the text. Any edit touching
-// the span drops the reference, so what is sent always matches what is shown.
-const tokens = ref<ReferenceToken[]>([])
-const trigger = ref<{ start: number; query: string } | null>(null)
-const pickerTab = ref<ReferenceTab>('all')
-const picker = ref<InstanceType<typeof ReferencePicker> | null>(null)
 const plusOpen = ref(false)
-let dismissedAt = -1
-let tracked = ''
-const pickedRefs = computed(() => tokens.value.map((token) => token.ref))
-const pickedTargets = computed(() => pickedRefs.value.map((ref) => ref.target))
 const defaultRepo = computed(() => githubRepoOf(repos.value[0]?.repoUrl))
+const mention = useReferenceComposer({ input, textarea, composing, defaultRepo })
+const { tokens, trigger, pickerTab, picker } = mention
 const canSubmit = computed(() => !!input.value.trim() || !!attach.attachments.value.length || !!tokens.value.length)
 
-watch(input, (next) => {
-  tokens.value = applyEdit(tokens.value, tracked, next)
-  tracked = next
-})
-
-function setComposer(text: string, next: ReferenceToken[], caret?: number) {
-  tracked = text
-  input.value = text
-  tokens.value = next
-  if (caret === undefined) return
-  void nextTick(() => {
-    const el = textarea.value
-    if (!el) return
-    el.focus()
-    el.setSelectionRange(caret, caret)
-    updateTrigger()
-  })
-}
-
-function updateTrigger() {
-  const el = textarea.value
-  if (!el || composing.value || el.selectionStart !== el.selectionEnd || insideToken(tokens.value, el.selectionStart)) {
-    if (!composing.value) trigger.value = null
-    return
-  }
-  const next = activeTrigger(input.value, el.selectionStart)
-  if (!next || next.start !== dismissedAt) dismissedAt = -1
-  trigger.value = next && next.start !== dismissedAt ? next : null
-  if (!trigger.value) pickerTab.value = 'all'
-}
-
-function addToken(start: number, end: number, ref: MessageReference) {
-  if (tokens.value.length >= MAX_REFERENCES) return
-  const res = insertToken(input.value, start, end, ref, referenceLabel(ref, defaultRepo.value))
-  const kept = applyEdit(tokens.value, input.value, res.text)
-  setComposer(res.text, [...kept, res.token].sort((a, b) => a.start - b.start), res.caret)
-}
-
-function pickReference(ref: MessageReference) {
-  const at = trigger.value
-  if (!at) return
-  trigger.value = null
-  addToken(at.start, at.start + 1 + at.query.length, ref)
-}
-
-function dropReference(index: number) {
-  const res = removeToken(input.value, tokens.value, index)
-  setComposer(res.text, res.tokens)
-}
-
-/** "+" menu entries open the picker on a tab by typing the @ for the user. */
 function openPicker(tab: ReferenceTab) {
   plusOpen.value = false
-  const el = textarea.value
-  const caret = el ? el.selectionEnd : input.value.length
-  const text = input.value
-  const lead = caret > 0 && !/\s/.test(text[caret - 1]!) ? ' ' : ''
-  pickerTab.value = tab
-  setComposer(text.slice(0, caret) + lead + '@' + text.slice(caret), applyEdit(tokens.value, text, text.slice(0, caret) + lead + '@' + text.slice(caret)), caret + lead.length + 1)
+  mention.open(tab)
 }
 
 function pickFiles() {
@@ -295,64 +229,31 @@ function pickFiles() {
 
 function onPaste(e: ClipboardEvent) {
   attach.onPaste(e)
-  if (e.defaultPrevented) return
-  const parsed = parseGitHubReference(e.clipboardData?.getData('text/plain') || '')
-  const el = textarea.value
-  if (!parsed || !el || tokens.value.length >= MAX_REFERENCES || insideToken(tokens.value, el.selectionStart)) return
-  e.preventDefault()
-  addToken(el.selectionStart, el.selectionEnd, { ...parsed, title: '' })
+  mention.onPaste(e)
 }
 
 async function send() {
   const text = input.value.trim()
   const images = attach.attachments.value.slice()
-  const saved = { text: input.value, tokens: tokens.value.slice() }
-  const refs = pickedRefs.value
+  const refs = mention.refs.value
   if ((!text && !images.length && !refs.length) || !canSend.value || selectionInvalid.value) return
   if (attach.blockSendIfOversized(images)) return
-  trigger.value = null
-  setComposer('', [])
+  const restore = mention.snapshot()
+  mention.clear()
   attach.clearAttachments()
   followBottom.value = true
   const ok = await chat.send(text, images, refs)
   if (!ok) {
-    setComposer(saved.text, saved.tokens)
+    restore()
     attach.attachments.value = images
   }
   scrollDown(true)
 }
 
-function onPickerKey(e: KeyboardEvent): boolean {
-  const p = picker.value
-  if (!trigger.value || !p) return false
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') p.move(e.key === 'ArrowDown' ? 1 : -1)
-  else if (e.key === 'Tab') p.cycleTab(e.shiftKey ? -1 : 1)
-  else if (e.key === 'Escape') {
-    dismissedAt = trigger.value.start
-    trigger.value = null
-  } else if (e.key === 'Enter' && !e.shiftKey) {
-    if (!p.confirm()) return false
-  } else return false
-  e.preventDefault()
-  return true
-}
-
 function onKeydown(e: KeyboardEvent) {
-  if (composing.value || e.isComposing || e.keyCode === 229) return
-  if (onPickerKey(e)) return
-  const el = textarea.value
-  if (e.key === 'Backspace' && el && el.selectionStart === el.selectionEnd) {
-    const index = tokens.value.findIndex((token) => token.end === el.selectionStart)
-    if (index >= 0) {
-      e.preventDefault()
-      const start = tokens.value[index]!.start
-      const rest = tokens.value.filter((_, i) => i !== index)
-      const text = input.value.slice(0, start) + input.value.slice(el.selectionStart)
-      setComposer(text, applyEdit(rest, input.value, text), start)
-      return
-    }
-  }
+  if (mention.onKeydown(e)) return
   if (e.key !== 'Enter' || e.shiftKey) return
+  if (composing.value || e.isComposing || e.keyCode === 229) return
   e.preventDefault()
   void send()
 }
@@ -366,7 +267,7 @@ async function doClose() {
 
 async function pushThenStay() {
   confirmClose.value = false
-  setComposer('', [])
+  mention.clear()
   await chat.send(t('pages.solo.close.pushPrompt'))
   scrollDown(true)
 }
@@ -596,7 +497,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
           <p v-if="attach.notice.value" class="mb-2 text-[12px]" :class="attach.notice.value.kind === 'error' ? 'text-err' : 'text-ok'">{{ attach.notice.value.text }}</p>
           <div v-if="tokens.length" class="mb-2 flex flex-wrap gap-1.5" data-testid="solo-composer-references">
-            <ReferenceChip v-for="(tk, ti) in tokens" :key="tk.ref.target" :reference="tk.ref" :default-repo="defaultRepo" removable @remove="dropReference(ti)" />
+            <ReferenceChip v-for="(tk, ti) in tokens" :key="tk.ref.target" :reference="tk.ref" :default-repo="defaultRepo" removable @remove="mention.drop(ti)" />
           </div>
           <div v-if="attach.attachments.value.length" class="mb-2 flex flex-wrap gap-1.5">
             <div v-for="(im, ii) in attach.attachments.value" :key="ii" class="relative">
@@ -623,12 +524,12 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             <ReferencePicker
               v-if="trigger && canSend"
               ref="picker"
-              :session-id="props.sessionId"
+              :scope="{ sessionId: props.sessionId }"
               :query="trigger.query"
-              :taken="pickedTargets"
-              :full="tokens.length >= MAX_REFERENCES"
+              :taken="mention.targets.value"
+              :full="mention.full.value"
               :initial-tab="pickerTab"
-              @pick="pickReference"
+              @pick="mention.pick"
             />
             <input ref="fileInput" type="file" multiple class="hidden" @change="attach.onPickFiles" />
             <textarea
@@ -641,12 +542,12 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
               class="chat-input scroll-area max-h-[220px] min-h-[48px] min-w-0 flex-1 resize-none px-1 py-2 disabled:opacity-50"
               data-testid="solo-input"
               @keydown="onKeydown"
-              @input="updateTrigger"
-              @click="updateTrigger"
-              @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && updateTrigger()"
+              @input="mention.updateTrigger"
+              @click="mention.updateTrigger"
+              @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && mention.updateTrigger()"
               @blur="trigger = null"
               @compositionstart="composing = true"
-              @compositionend="composing = false; updateTrigger()"
+              @compositionend="composing = false; mention.updateTrigger()"
               @paste="onPaste"
             />
             <div class="chat-toolbar flex items-center justify-between gap-2">
