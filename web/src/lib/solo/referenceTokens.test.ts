@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MessageReference } from '@/lib/api/apiTypes'
-import { activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, type ReferenceToken } from './referenceTokens'
+import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
 import { githubRepoOf, referenceHref, referenceIcon } from './referenceDisplay'
 
 const solo: MessageReference = { kind: 'solo', target: 's2', title: '登录  重构' }
@@ -69,6 +69,38 @@ describe('token editing', () => {
     expect(activeTrigger('@a b', 4)).toBeNull()
     expect(insideToken([tok(2, 4)], 3)).toBe(true)
     expect(insideToken([tok(2, 4)], 2)).toBe(false)
+  })
+})
+
+describe('restoreTokens', () => {
+  const label = (ref: MessageReference) => referenceLabel(ref, 'acme/web')
+
+  it('claims each @label already in the text', () => {
+    const res = restoreTokens('看 @登录 重构 和 @#12，谢谢', [issue, solo], label)
+    expect(res.text).toBe('看 @登录 重构 和 @#12，谢谢')
+    expect(res.tokens).toEqual([{ ref: solo, start: 2, end: 8 }, { ref: issue, start: 11, end: 15 }])
+  })
+
+  it('appends a reference whose label is missing or only part of a longer word', () => {
+    expect(restoreTokens('', [issue], label)).toEqual({ text: '@#12 ', tokens: [{ ref: issue, start: 0, end: 4 }] })
+    const res = restoreTokens('see @#123 and a@#12', [issue], label)
+    expect(res.text).toBe('see @#123 and a@#12 @#12 ')
+    expect(res.tokens).toEqual([{ ref: issue, start: 20, end: 24 }])
+  })
+
+  it('gives repeated labels separate spans', () => {
+    const twin: MessageReference = { kind: 'solo', target: 's3', title: '登录 重构' }
+    const res = restoreTokens('@登录 重构 vs @登录 重构', [solo, twin], label)
+    expect(res.tokens).toEqual([{ ref: solo, start: 0, end: 6 }, { ref: twin, start: 10, end: 16 }])
+    const one = restoreTokens('@登录 重构', [solo, twin], label)
+    expect(one.text).toBe('@登录 重构 @登录 重构 ')
+    expect(one.tokens.map((t) => [t.ref.target, t.start])).toEqual([['s2', 0], ['s3', 7]])
+  })
+
+  it('keeps at most MAX_REFERENCES', () => {
+    const refs = Array.from({ length: MAX_REFERENCES + 2 }, (_, i): MessageReference => ({ kind: 'github_issue', target: `acme/web#${i + 1}`, title: '' }))
+    const res = restoreTokens(refs.map((r) => `@#${r.target.split('#')[1]}`).join(' '), refs, label)
+    expect(res.tokens.map((t) => t.ref.target)).toEqual(refs.slice(0, MAX_REFERENCES).map((r) => r.target))
   })
 })
 

@@ -1,6 +1,6 @@
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import type { MessageReference } from '@/lib/api/apiTypes'
-import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, type ReferenceToken } from './referenceTokens'
+import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
 import type { ReferenceTab } from './useReferenceSearch'
 
 /** What the composer needs from a mounted ReferencePicker. */
@@ -141,6 +141,13 @@ export function useReferenceComposer(opts: {
     return true
   }
 
+  /** Put a sent message back in the composer with its references as tokens. */
+  function load(text: string, references: MessageReference[]) {
+    trigger.value = null
+    const res = restoreTokens(text, references, (ref) => referenceLabel(ref, defaultRepo.value))
+    set(res.text, res.tokens, res.text.length)
+  }
+
   /** Snapshot for restoring the composer when a send fails. */
   function snapshot() {
     const text = input.value
@@ -148,5 +155,5 @@ export function useReferenceComposer(opts: {
     return () => set(text, saved)
   }
 
-  return { tokens, trigger, pickerTab, picker, refs, targets, full, set, clear, updateTrigger, pick, drop, open, onPaste, onKeydown, snapshot }
+  return { tokens, trigger, pickerTab, picker, refs, targets, full, set, clear, load, updateTrigger, pick, drop, open, onPaste, onKeydown, snapshot }
 }

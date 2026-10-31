@@ -47,6 +47,7 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     }),
     turns: box.turns,
     queued: box.queued,
+    displayQueued: box.queued,
     busy: ref(false),
     phase: ref(''),
     link: ref('open'),
@@ -196,7 +197,7 @@ describe('SoloSessionPane @ references', () => {
 
   it('renders reference chips on history turns and queued rows', async () => {
     box.turns!.value = [{ id: 'u1', role: 'user', text: '@登录重构', streaming: false, steps: [], plan: [], references: [{ id: 'ref-1', kind: 'solo', target: 's2', title: '登录重构', messages: 4 }] } as unknown as SoloTurn]
-    box.queued!.value = [{ id: 'q1', text: '', references: [{ kind: 'github_issue', target: 'acme/web#3', title: 'Bug', access: 'denied', error: 'forbidden' }] }]
+    box.queued!.value = [{ id: 'q1', text: '', images: [], references: [{ kind: 'github_issue', target: 'acme/web#3', title: 'Bug', access: 'denied', error: 'forbidden' }] }]
     const w = mountPane()
     await flushPromises()
     const chip = w.find('[data-testid="solo-turn-references"] [data-testid="solo-reference-chip"]')

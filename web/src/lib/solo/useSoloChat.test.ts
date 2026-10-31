@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   closeSoloSession: vi.fn(),
   renameSoloSession: vi.fn(),
   removeSoloQueued: vi.fn(),
+  reorderSoloQueue: vi.fn(),
   setSoloSessionModel: vi.fn(),
   setSoloSessionReasoningEffort: vi.fn(),
   soloChatWsUrl: vi.fn(() => 'ws://example.test/solo'),
@@ -1249,4 +1250,192 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  describe('queue reorder and withdraw', () => {
+    const qa = { id: 'qa', text: 'alpha', images: [] }
+    const qb = { id: 'qb', text: 'beta', images: [] }
+    const qc = { id: 'qc', text: 'gamma', images: [] }
+    const shownIds = (chat: ReturnType<typeof useSoloChat>) => chat.displayQueued.value.map(row => row.id)
+    function pending<T = unknown>() {
+      let resolve!: (value: T) => void
+      let reject!: (error: Error) => void
+      const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+      return { promise, resolve, reject }
+    }
+
+    it('attributes output before turn_begin to the server queue head while a drag is unconfirmed', async () => {
+      const { chat, app, ws } = await openChat()
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [qa, qb] })
+      const put = pending()
+      mocks.reorderSoloQueue.mockReturnValueOnce(put.promise)
+      void chat.reorderQueued(1, 0)
+      expect(mocks.reorderSoloQueue).toHaveBeenCalledWith('s1', ['qb', 'qa'])
+      expect(shownIds(chat)).toEqual(['qb', 'qa'])
+      expect(chat.queued.value.map(row => row.id)).toEqual(['qa', 'qb'])
+      expect(chat.session.value?.waiting).toBe(2)
+      // Queued sends stay out of the transcript until they begin (#1054).
+      expect(chat.turns.value.filter(row => row.role === 'user')).toEqual([])
+      ws.emit(acp('reply'))
+      expect(chat.turns.value.find(row => row.id === 'live:qa')?.text).toBe('reply')
+      expect(chat.turns.value.some(row => row.id === 'live:qb' || row.id === 'u:qb')).toBe(false)
+      put.resolve({ ok: true })
+      await flushPromises()
+      app.unmount()
+    })
+
+    it('shows the latest queue_state, not a pre-drag snapshot, when the reorder fails', async () => {
+      const { chat, app, ws } = await openChat()
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [qa, qb, qc] })
+      const put = pending()
+      mocks.reorderSoloQueue.mockReturnValueOnce(put.promise)
+      const reorder = chat.reorderQueued(2, 0)
+      expect(shownIds(chat)).toEqual(['qc', 'qa', 'qb'])
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [qb, qc] })
+      put.reject(new Error('item count mismatch'))
+      await reorder
+      expect(shownIds(chat)).toEqual(['qb', 'qc'])
+      expect(chat.queued.value.map(row => row.id)).toEqual(['qb', 'qc'])
+      expect(chat.actionError.value).toBe('')
+      app.unmount()
+    })
+
+    it('drops the display order when the reorder fails without a newer frame', async () => {
+      const { chat, app, ws } = await openChat()
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [qa, qb] })
+      mocks.reorderSoloQueue.mockRejectedValueOnce(new Error('item count mismatch'))
+      await chat.reorderQueued(1, 0)
+      expect(shownIds(chat)).toEqual(['qa', 'qb'])
+      app.unmount()
+    })
+
+    it('lets every queue_state replace the display order', async () => {
+      const { chat, app, ws } = await openChat()
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [qa, qb] })
+      mocks.reorderSoloQueue.mockResolvedValue({ ok: true })
+      await chat.reorderQueued(1, 0)
+      expect(shownIds(chat)).toEqual(['qb', 'qa'])
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [qb, qa] })
+      expect(shownIds(chat)).toEqual(['qb', 'qa'])
+      // Another viewer moved them back.
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [qa, qb] })
+      expect(shownIds(chat)).toEqual(['qa', 'qb'])
+      app.unmount()
+    })
+
+    it('keeps unacknowledged local sends at the tail and out of the submitted order', async () => {
+      const { chat, app, ws } = await openChat()
+      ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'active', text: 'first', images: [] } })
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [qa, qb] })
+      mocks.sendSoloTurn.mockReturnValueOnce(new Promise(() => {}))
+      void chat.send('local text')
+      const local = chat.displayQueued.value[2]!
+      expect(local.local).toBe(true)
+      mocks.reorderSoloQueue.mockResolvedValue({ ok: true })
+      await chat.reorderQueued(2, 0)
+      await chat.reorderQueued(0, 2)
+      expect(mocks.reorderSoloQueue).not.toHaveBeenCalled()
+      await chat.reorderQueued(1, 0)
+      expect(mocks.reorderSoloQueue).toHaveBeenCalledWith('s1', ['qb', 'qa'])
+      expect(shownIds(chat)).toEqual(['qb', 'qa', local.id])
+      expect(chat.session.value?.waiting).toBe(3)
+      app.unmount()
+    })
+
+    it('withdraws once when the removal queue_state precedes the HTTP response', async () => {
+      const { chat, app, ws } = await openChat()
+      ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'active', text: 'first', images: [] } })
+      const image = { mimeType: 'image/png', data: 'img', name: 'a.png' }
+      const ref = { kind: 'github_issue' as const, target: 'acme/web#3', title: 'Bug' }
+      await chat.send('edit me', [image], [ref])
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'srv-e', text: 'edit me', images: [image], references: [ref] }] })
+      const del = pending()
+      mocks.removeSoloQueued.mockReturnValueOnce(del.promise)
+      const taking = chat.takeQueued('srv-e')
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [] })
+      await flushPromises()
+      del.resolve({ ok: true })
+      expect(await taking).toEqual({ id: 'srv-e', text: 'edit me', images: [image], references: [ref] })
+      expect(mocks.removeSoloQueued).toHaveBeenCalledTimes(1)
+      expect(chat.queued.value).toEqual([])
+      expect(chat.turns.value.some(row => row.text === 'edit me')).toBe(false)
+      expect(chat.actionError.value).toBe('')
+      app.unmount()
+    })
+
+    it('does not hand back an item that began while it was being withdrawn', async () => {
+      const { chat, app, ws } = await openChat()
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [qa, qb] })
+      const del = pending()
+      mocks.removeSoloQueued.mockReturnValueOnce(del.promise)
+      const taking = chat.takeQueued('qa')
+      expect(shownIds(chat)).toEqual(['qb'])
+      ws.emit({ type: 'session', event: 'turn_begin', item: qa })
+      ws.emit(acp('started'))
+      del.reject(new Error('cannot remove active item'))
+      expect(await taking).toBeNull()
+      expect(chat.queued.value.map(row => row.id)).toEqual(['qb'])
+      expect(chat.turns.value.map(row => row.id)).toEqual(['u:qa', 'live:qa'])
+      expect(chat.turns.value[1]?.text).toBe('started')
+      app.unmount()
+    })
+
+    it('puts a failed withdrawal back in place and returns nothing', async () => {
+      const { chat, app, ws } = await openChat()
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [qa, qb] })
+      mocks.removeSoloQueued.mockRejectedValueOnce(new Error('排队消息不存在'))
+      expect(await chat.takeQueued('qa')).toBeNull()
+      expect(chat.queued.value.map(row => row.id)).toEqual(['qa', 'qb'])
+      expect(await chat.takeQueued('missing')).toBeNull()
+      expect(mocks.removeSoloQueued).toHaveBeenCalledTimes(1)
+      app.unmount()
+    })
+
+    it('never binds a resend of withdrawn content to the old server message', async () => {
+      const { chat, app, ws } = await openChat()
+      ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'active', text: 'first', images: [] } })
+      await chat.send('again')
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'srv-old', text: 'again', images: [] }] })
+      mocks.removeSoloQueued.mockResolvedValue({ ok: true })
+      const taken = await chat.takeQueued('srv-old')
+      expect(taken?.text).toBe('again')
+      await chat.send(taken!.text, taken!.images, taken!.references)
+      // A late frame still naming the withdrawn item must not acknowledge the resend.
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'srv-old', text: 'again', images: [] }] })
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'srv-new', text: 'again', images: [] }] })
+      expect(chat.queued.value.map(row => row.id)).toEqual(['srv-new'])
+      ws.emit({ type: 'session', event: 'turn_done' })
+      ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'srv-new', text: 'again', images: [] } })
+      ws.emit(acp('new reply'))
+      const users = chat.turns.value.filter(row => row.role === 'user' && row.text === 'again')
+      expect(users.map(row => row.id)).toEqual(['u:srv-new'])
+      expect(chat.turns.value.find(row => row.id === 'live:srv-new')?.text).toBe('new reply')
+      app.unmount()
+    })
+
+    it('ignores reorder and withdrawal results from a session the user left', async () => {
+      const { chat, app, id } = await openChat()
+      FakeSocket.all[0]!.emit({ type: 'session', event: 'queue_state', busy: true, items: [qa, qb] })
+      const put = pending()
+      const del = pending()
+      mocks.reorderSoloQueue.mockReturnValueOnce(put.promise)
+      mocks.removeSoloQueued.mockReturnValueOnce(del.promise)
+      void chat.reorderQueued(1, 0)
+      const taking = chat.takeQueued('qa')
+      mocks.getSoloSession.mockResolvedValue(session({ id: 's2' }))
+      id.value = 's2'
+      await flushPromises()
+      const next = FakeSocket.all.at(-1)!
+      next.open()
+      await flushPromises()
+      next.emit({ type: 'session', event: 'queue_state', busy: true, items: [{ id: 'x1', text: 'one', images: [] }, { id: 'x2', text: 'two', images: [] }] })
+      mocks.reorderSoloQueue.mockReturnValueOnce(new Promise(() => {}))
+      void chat.reorderQueued(1, 0)
+      put.reject(new Error('old session'))
+      del.resolve({ ok: true })
+      expect(await taking).toBeNull()
+      await flushPromises()
+      expect(shownIds(chat)).toEqual(['x2', 'x1'])
+      expect(chat.queued.value.map(row => row.id)).toEqual(['x1', 'x2'])
+      app.unmount()
+    })
+  })
 })
