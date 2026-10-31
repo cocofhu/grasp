@@ -1363,6 +1363,10 @@ html.light .home-shell :deep(.home-particle-mesh__canvas) {
   background: color-mix(in srgb, rgb(var(--c-base)) 35%, rgb(var(--c-surface)));
 }
 
+html.light .home-composer__toolbar {
+  background: rgb(var(--c-surface));
+}
+
 .home-mode-controls {
   flex: 0 1 auto;
 }
@@ -1623,7 +1627,7 @@ html.light .home-composer__send:disabled {
 }
 
 html.light .home-shell__card-top {
-  background: linear-gradient(155deg, rgb(var(--c-surface)), rgb(244, 244, 245));
+  background: rgb(var(--c-surface));
 }
 
 html.light .home-shell__card--selected .home-shell__card-top {

@@ -1619,7 +1619,12 @@ const settingsItems = computed(() => (
   min-height: 36px;
   padding: 8px 10px;
   font-size: 13px;
+  color: light-dark(#27272a, rgb(var(--c-txt2)));
   --hover-ink-color: rgb(var(--c-txt) / .04);
+}
+/* :where keeps specificity equal to the .settings-directory rules below so they still win */
+.sidebar-workspace-nav .nav-item:where(:hover, :focus-visible, .active) {
+  color: rgb(var(--c-txt));
 }
 .sidebar-workspace-nav .sidebar-tree-item > .nav-item {
   padding-left: 6px;
@@ -1699,7 +1704,7 @@ const settingsItems = computed(() => (
   justify-content: space-between;
   margin-bottom: 6px;
   padding: 0 10px;
-  color: color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)));
+  color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3))));
   font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0;
