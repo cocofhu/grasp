@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **SSH key credential (incompatible change):** the separate "SSH private key" and "SSH known hosts" credentials are merged into one "SSH key" credential with a required private key and optional known hosts, editable later on their own. An Agent can bind several SSH keys, and each key brings its own known hosts into the sandbox; a key without known hosts accepts new host keys on first connect as before. Existing standalone known-hosts credentials and the hosts choice on Agent Git bindings are removed on upgrade, so re-enter your known hosts on the matching SSH key.
+
 - **Settings pages redesign:** settings, credentials, model groups, external MCP, notifications, projects, variables, schedules and audit pages share a new header and card layout, and most show a summary strip (for example configured credentials, enabled model groups, running runs or sandbox usage) built from data the page already loads. Model group rows show their coding tool and whether they are available, disabled or need attention, and the credentials tabs show counts. When the workspace assistant is not set up, it now shows a short setup guide with the steps and what the assistant can do.
 
 - **Built-in agents run straight through:** newly created Implement and Test & review agents (from onboarding, the PM or Agent studio templates) now have human review off, so after you confirm the clarified requirement the default workflow runs implementation, test & review and delivery without stopping. Turn review on in an agent's capabilities page if you want it to wait for you. Existing agents keep their current setting.

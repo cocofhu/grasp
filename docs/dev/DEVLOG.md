@@ -20,6 +20,16 @@
 
 ## 记录
 
+### 2026-10-31（SSH 私钥与已知主机合并为「SSH 密钥」）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/models/{models,git_binding}.go`、`server/internal/services/{workspace_credentials,credential_domain}.go`、`server/internal/runtime/{credential_selection,git_bindings}.go`、`server/internal/database/{database,retired_credentials}.go`、`server/internal/handlers/workspace.go`、`web/src/lib/api/apiTypes.ts`、`web/src/lib/workspace/credentialKinds.ts`、`web/src/lib/agent/gitBindings.ts`、`web/src/components/workspace/{WorkspaceCredentialsPanel,CredentialProviderLogo}.vue`、`web/src/components/agent/AgentGitCredentialPicker.vue`、`web/src/locales/{zh-CN,en}/pages.json`、`web/e2e/cli-model-select-main.ts`，以及对应测试。
+- 做了什么：
+  - 后端：`purpose=ssh` 只接受 `ssh_private_key`。`Credential` 加明文列 `KnownHosts`（公开信息，不加密）。创建和更新的 `knownHosts` 用指针：不传表示不变，传空串表示清空；含 NUL 返回 400；换行统一为 `\n` 并去掉首尾空白；内容变化时 `SecretRevision` 加一，与换私钥同时发生时只加一次。`ResolveGitValue` 带出 `KnownHosts`，`git_bindings` 直接从同一凭据取，不再读 `sshHostsCredentialId`。启动时幂等删除旧的 `ssh_known_hosts` 行；`AgentGitBinding` 去掉 `SshHostsCredentialID`，旧 JSON 里的该键解码时丢弃。沙箱脚本、注入方式（每把密钥一个 `N.known_hosts`）和镜像都不变，不升 IMAGE_LEVEL。
+  - 前端：类型里去掉 `ssh_hosts`，名称改为「SSH 密钥」。新增向导第 2 步在私钥下面加可选的已知主机文本框，第 3 步显示行数或「未填写」；列表副标题显示「已配置/未配置已知主机」，编辑区可以只改已知主机。Agent Git 凭据选择器去掉主机下拉，副标题显示已知主机状态，可绑定多把 SSH 密钥；`cloneGitBindings` 只复制当前字段，保存时去掉旧键。样式只复用已有组件、类和 token，步骤滑动和高度过渡不变。
+- 为什么：私钥和它对应的已知主机本来就是一组，分成两个凭据要在 Agent 上额外配对，多把密钥时也无法各自对应。这是用户确认过的不兼容变更：旧的独立已知主机凭据和绑定会被移除，用户需要在对应 SSH 密钥上重新填写已知主机。
+- 如何验证：新增 Go 测试覆盖创建、列表、解析、只改已知主机、换私钥、清空、NUL 拒绝、非 SSH 拒绝、旧行清理幂等、旧绑定 JSON 解码、每把密钥各自注入已知主机和 HTTP 400；前端补充凭据面板向导与编辑、选择器多把 SSH 密钥、旧绑定丢弃和建 Agent 载荷的测试。在真实预览里用合成数据检查了亮色和暗色、1440/390/320 px 下的凭据列表、新增向导、编辑区和 Agent Git 选择器。全量门禁结果见提交说明。
+
 ### 2026-10-31（设置类页面视觉重设计）
 
 - 日期：2026-10-31。

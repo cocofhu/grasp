@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { kindById, kindOfItem, normalizeGitCredentialHost, defaultGitCredentialHost } from './credentialKinds'
+import { CREDENTIAL_KINDS, kindById, kindOfItem, normalizeGitCredentialHost, defaultGitCredentialHost } from './credentialKinds'
 describe('explicit credential domains', () => {
  it('classifies platform credentials only by purpose and tool ID', () => {
   expect(kindOfItem({ purpose: 'tool_auth', toolId: 'cursor', provider: 'custom', name: 'anything' })?.id).toBe('cursor')
@@ -18,7 +18,8 @@ describe('explicit credential domains', () => {
  it('classifies Git tokens and SSH material without reading display aliases', () => {
   expect(kindOfItem({ purpose: 'git', provider: 'github' })?.id).toBe('github')
   expect(kindOfItem({ purpose: 'ssh', secretKind: 'ssh_private_key', name: 'known hosts' })?.id).toBe('ssh_key')
-  expect(kindOfItem({ purpose: 'ssh', secretKind: 'ssh_known_hosts', name: 'private key' })?.id).toBe('ssh_hosts')
+  expect(kindOfItem({ purpose: 'ssh', secretKind: 'ssh_known_hosts', name: 'private key' })).toBeUndefined()
+  expect(CREDENTIAL_KINDS.filter((kind) => kind.type === 'ssh').map((kind) => kind.id)).toEqual(['ssh_key'])
   expect(kindOfItem({ purpose: 'ssh', name: 'known hosts', envKey: 'GIT_SSH_PRIVATE_KEY' })).toBeUndefined()
  })
 })

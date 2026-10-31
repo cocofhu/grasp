@@ -1275,6 +1275,11 @@
         "secretLoginFile": "Login file",
         "secretPrivateKey": "Private key",
         "secretKnownHosts": "Known hosts",
+        "knownHostsHint": "OpenSSH known_hosts format, one entry per line, e.g. github.com ssh-ed25519 AAAA…",
+        "knownHostsLines": "{count} line | {count} lines",
+        "knownHostsEmpty": "Not provided",
+        "knownHostsConfigured": "Known hosts configured",
+        "knownHostsNotConfigured": "No known hosts",
         "pickTitle": "Credential to use",
         "pickHint": "The title is the alias. A run injects only the selected one, and clearing it does not switch to another.",
         "codingPickHint": "When nothing is selected, the Agent uses the workspace default credential. When one is selected, only that one is used.",
@@ -1290,8 +1295,7 @@
           "opencode": "OpenCode CLI",
           "github": "GitHub",
           "gitlab": "GitLab",
-          "ssh_key": "SSH private key",
-          "ssh_hosts": "SSH known hosts",
+          "ssh_key": "SSH key",
           "deepseek_harness": "DeepSeek Harness",
           "kimi_code": "Kimi Code"
         },
@@ -2876,8 +2880,7 @@
         },
         "git": {
           "meta": "Pick GitHub / GitLab / SSH, or skip. Credentials already saved in the workspace can be selected here.",
-          "emptySkip": "No saved credential yet. Save one under workspace credentials, or skip this step.",
-          "hostsEmpty": "No saved known hosts yet. You can leave this unset."
+          "emptySkip": "No saved credential yet. Save one under workspace credentials, or skip this step."
         },
         "env": {
           "meta": "Environment variables injected into the sandbox. Region keys are managed by the Agent step; secrets stay in the Agent config."
@@ -3126,8 +3129,6 @@
         "scopePlaceholder": "e.g. git.example.com or a repository URL",
         "scopeHint": "Leave empty for the provider’s default site. Repository URLs take precedence over site scopes.",
         "scopeInvalid": "Use a valid host or repository URL that matches this credential’s host and protocol.",
-        "hosts": "SSH host verification",
-        "hostsNone": "No saved host verification",
         "unavailable": "Credential unavailable. Remove it or restore it in Credentials.",
         "inherited": "Using workspace defaults",
         "legacy": "Using existing authorization",

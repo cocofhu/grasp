@@ -43,12 +43,8 @@ func ResolveGitBindings(bindings *models.GitBindings, resolve GitCredentialFunc)
 			}
 		}
 		credential := sandbox.GitCredential{ID: item.CredentialID, Kind: kind, Scope: effectiveScope, Secret: secret}
-		if item.SshHostsCredentialID != "" {
-			hosts, ok := resolve(item.SshHostsCredentialID)
-			if kind != sandbox.RepoCredentialSSH || !ok || hosts.EnvKey != envauth.EnvGitSSHKnownHosts || strings.TrimSpace(hosts.Secret) == "" {
-				return nil, fmt.Errorf("Git known-hosts authorization %q is unavailable or has the wrong kind", item.SshHostsCredentialID)
-			}
-			credential.KnownHosts = hosts.Secret
+		if kind == sandbox.RepoCredentialSSH {
+			credential.KnownHosts = value.KnownHosts
 		}
 		out = append(out, credential)
 	}

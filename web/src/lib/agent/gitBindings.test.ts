@@ -5,7 +5,7 @@ import { assembleCreatePayload, buildReviewSummary, freshDraft } from './agentCr
 
 describe('multiple Git credential payloads', () => {
   it('deep-clones saved bindings and preserves an explicit empty selection', () => {
-    const bindings = { items: [{ credentialId: 'key', scope: 'host', sshHostsCredentialId: 'hosts' }], preferredCredentialId: 'key' } as Parameters<typeof cloneGitBindings>[0] & { preferredCredentialId?: string }
+    const bindings = { items: [{ credentialId: 'key', scope: 'host', sshHostsCredentialId: 'retired-hosts' }], preferredCredentialId: 'key' } as Parameters<typeof cloneGitBindings>[0] & { preferredCredentialId?: string }
     const draft = toDraft({ name: 'configured', acpBackend: 'opencode', gitBindings: bindings })
     draft.gitBindings!.items[0].scope = 'another-host'
     expect(bindings.items[0].scope).toBe('host')
@@ -15,7 +15,8 @@ describe('multiple Git credential payloads', () => {
     setDraftGitBindings(draft, { items: [] })
     expect(fromDraft(draft).gitBindings).toEqual({ items: [] })
     expect(cloneGitBindings({ items: [] })).toEqual({ items: [] })
-    expect(cloneGitBindings(bindings)).toEqual({ items: [{ credentialId: 'key', scope: 'host', sshHostsCredentialId: 'hosts' }] })
+    expect(cloneGitBindings(bindings)).toEqual({ items: [{ credentialId: 'key', scope: 'host' }] })
+    expect(cloneGitBindings({ items: [{ credentialId: 'bare' }] }).items[0]).not.toHaveProperty('scope')
     expect(cloneGitBindings(bindings)).not.toHaveProperty('preferredCredentialId')
   })
   it('creates with an explicit list, reviews aliases and preference, and never serializes secret material', () => {
