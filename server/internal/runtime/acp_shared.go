@@ -13,8 +13,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Shared run sandbox (sandbox mode "shared", off by default): every node of a
-// run reuses one container instead of getting its own. A node opening the
+// Shared run sandbox (sandbox mode "shared"; newly created workflows default to
+// it, an unset mode means per-node): every node of a run reuses one container
+// instead of getting its own. A node opening the
 // sandbox re-primes it when its env / config home / credentials differ from
 // the previous node's (reprime.sh restarts the backend with the new ones),
 // then connects a fresh agent session on the default bridge chat. Releasing
