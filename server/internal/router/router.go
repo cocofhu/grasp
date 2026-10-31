@@ -166,6 +166,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/solo/sessions/:id/messages", h.ListSoloMessages)
 		api.GET("/solo/sessions/:id/env", h.GetSoloEnv)
 		api.GET("/solo/sessions/:id/references/search", h.SearchSoloReferences)
+		api.GET("/solo/references/search", h.SearchLaunchReferences)
 		api.POST("/solo/sessions/:id/model", h.SetSoloSessionModel)
 		api.POST("/solo/sessions/:id/turns", h.StartSoloTurn)
 		api.POST("/solo/sessions/:id/turns/cancel", h.CancelSoloTurn)

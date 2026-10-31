@@ -740,6 +740,7 @@ export interface SoloCreateBody {
   title?: string
   text?: string
   images?: ClarifyImage[]
+  references?: ReferenceInput[]
 }
 
 export type ReferenceKind = 'solo' | 'github_issue' | 'github_pr'

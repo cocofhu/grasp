@@ -107,10 +107,10 @@ Model configurations are shared references: changing a configuration's credentia
 
 ## @ references in Solo
 
-Type `@` in the Solo composer, or choose **Reference a session** / **Reference an issue / PR** from the "+" menu, to hand one of these to the turn:
+Type `@` in the Solo composer (including the home page composer that starts a new session), or choose **Reference a session** / **Reference an issue / PR** from the "+" menu, to hand one of these to the turn:
 
 - **Your other Solo sessions**, searched by title; closed sessions work too. The agent first sees a summary of the user's requests in that session and reads the full conversation page by page with the artifact-store `read_reference` tool. It sees the session as it was when the turn began; later messages there are not included.
-- **GitHub issues and pull requests** in the repositories mounted in the current session. You can also type `#number` or paste an issue or PR link. Grasp checks access with the same Git credential the sandbox uses, and the agent reads the latest text, comments and diff with `gh` inside the sandbox.
+- **GitHub issues and pull requests** in the repositories mounted in the current session, or the repositories picked on the home page when starting one. You can also type `#number` or paste an issue or PR link. Grasp checks access with the same Git credential the sandbox uses, and the agent reads the latest text, comments and diff with `gh` inside the sandbox.
 
 Use `↑` `↓` to choose, `Enter` to confirm, `Tab` to switch between All, Sessions, Issues and PRs, and `Esc` to close. `Enter` with nothing highlighted sends the message as typed. A message can carry up to 5 references. They are shown above the composer; deleting the `@title` text or clicking × removes one. Referenced content is treated as material, not as instructions.
 
