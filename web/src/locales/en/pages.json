@@ -390,6 +390,7 @@
       "next": "Next",
       "skip": "Skip",
       "later": "Maybe later",
+      "dismissedHint": "It won't open automatically again. Click \"New workflow\", then \"Finish the guide\", whenever you're ready.",
       "generate": "Generate setup",
       "generating": "Generating…",
       "close": "Close",
@@ -403,6 +404,7 @@
         "model": "Configure coding tool",
         "key": "API key",
         "git": "Git",
+        "gitCredentials": "Git credentials",
         "team": "Team",
         "workflow": "Workflow preview",
         "done": "Done",
@@ -446,12 +448,16 @@
         "vendorTitle": "Model vendor API key"
       },
       "git": {
-        "meta": "Agents sign their commits; the repository and access credentials can be added now or skipped.",
+        "meta": "Agents sign their commits; add the repository now or skip it.",
         "repoCredSection": "Repository and access credentials",
         "skip": "Skip",
         "unskip": "Configure now",
         "skippedHint": "Skipped: pick the repository when you start a run, and add private-repo credentials later under Workspace credentials.",
         "foot": "Credentials stay in this workspace and are never included when an Agent is exported."
+      },
+      "gitCredentials": {
+        "meta": "Private repositories need access credentials: pick an existing one or create one below. For public repositories, just continue.",
+        "invalid": "The selected Git credential is unavailable. Pick another one."
       },
       "gitUser": {
         "section": "Commit signature",
@@ -598,6 +604,7 @@
         "model": "Coding tool, credential, and model",
         "key": "Model and key",
         "git": "Signature and repository",
+        "gitCredentials": "Connect GitHub, GitLab, or SSH",
         "team": "Agents to create",
         "workflow": "Default workflow to publish",
         "done": "Generate and run once",
@@ -606,18 +613,12 @@
       "prefsMeta": "Interface language and theme, plus the preview abilities Agents get.",
       "prefsMetaCreate": "Workspace name, plus the preview abilities Agents get.",
       "ready": "Ready",
-      "expandSetup": "Set up",
-      "collapseSetup": "Collapse",
       "modelSetup": {
         "description": "Choose a model using the credentials saved in the previous step, or select an existing model configuration.",
         "selected": "Default team model",
         "selectedHint": "All four Agents use this model by default. You can customize each later.",
         "title": "Add a model",
         "hint": "Choose a coding tool and a saved credential, then select the model."
-      },
-      "gitSetup": {
-        "title": "Add Git credentials",
-        "hint": "Connect GitHub, GitLab, or SSH here. Saved credentials are ready to use."
       },
       "solo": {
         "emptyShort": "Empty Agent for Solo",

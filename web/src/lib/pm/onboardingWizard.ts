@@ -80,7 +80,7 @@ export function onboardingRoleNames(lang: AppLocale): string[] {
 
 export type OnboardingMode = 'firstInstall' | 'retry'
 
-export type OnboardingStepId = 'prefs' | 'credentials' | 'model' | 'git' | 'team' | 'workflow' | 'done'
+export type OnboardingStepId = 'prefs' | 'credentials' | 'model' | 'git' | 'gitCredentials' | 'team' | 'workflow' | 'done'
 
 export type OnboardingStep = {
   id: OnboardingStepId
@@ -92,6 +92,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 'prefs', labelKey: 'pages.onboarding.steps.prefs' },
   { id: 'credentials', labelKey: 'pages.onboarding.steps.credentials' },
   { id: 'model', labelKey: 'pages.onboarding.steps.model' },
+  { id: 'gitCredentials', labelKey: 'pages.onboarding.steps.gitCredentials' },
   { id: 'git', labelKey: 'pages.onboarding.steps.git' },
   { id: 'team', labelKey: 'pages.onboarding.steps.team' },
   { id: 'workflow', labelKey: 'pages.onboarding.steps.workflow' },
@@ -253,9 +254,8 @@ export type OnboardingBootstrapResult = {
 }
 
 /**
- * Hard suppression for tests and local debugging only. The wizard's "later"
- * button deliberately does NOT write this: closing it is per-view, and a reload
- * re-opens the wizard until the default workflow exists (see needsOnboarding).
+ * Stops automatic first-install prompting in this browser. Written when the
+ * user dismisses the wizard; explicit entries (the create-workflow gate) ignore it.
  */
 export const ONBOARDING_SUPPRESS_KEY = 'grasp-onboarding-suppress'
 
