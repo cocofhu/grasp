@@ -1,6 +1,21 @@
 package services
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/cocofhu/grasp/internal/models"
+)
+
+func TestDefaultWorkflowEnvelopeUsesSharedSandbox(t *testing.T) {
+	env, err := loadDefaultWorkflowEnvelope()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := env.Defaults
+	if d == nil || d.Sandbox == nil || d.Sandbox.Mode != models.SandboxModeShared || !d.InheritWorkspace {
+		t.Fatalf("template defaults = %+v, want inheritWorkspace + shared sandbox", d)
+	}
+}
 
 func TestNormalizeBaselineRepos(t *testing.T) {
 	got := normalizeBaselineRepos([]BaselineRepo{

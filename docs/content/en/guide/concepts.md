@@ -83,7 +83,7 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 ## Real Docker sandboxes
 
-Open Workflow defaults in the workflow editor, enable Shared sandbox, and save. It is off by default, so each node gets its own sandbox. When enabled, nodes in the same run reuse the workspace, installed dependencies, and uncommitted changes; separate runs remain isolated. The selection applies to newly started runs without a platform-wide enable flag. Model and Git authorization are refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox or reuse is incompatible.
+Open Workflow defaults in the workflow editor to turn Shared sandbox on or off, then save. New workflows (created in the editor, by onboarding, or from the default baseline) have it on by default; existing workflows keep their setting, and without one each node gets its own sandbox. When enabled, nodes in the same run reuse the workspace, installed dependencies, and uncommitted changes; separate runs remain isolated. The selection applies to newly started runs without a platform-wide enable flag. Model and Git authorization are refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox or reuse is incompatible.
 
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 
