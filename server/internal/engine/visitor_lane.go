@@ -42,6 +42,8 @@ type VisitorTarget struct {
 	Owner      string
 	Source     string // "node" | "gate"
 	GateNodeID string
+	// ClientMessageID is the sender's optional UUID for the turn.
+	ClientMessageID string
 }
 
 type visitorLaneState struct {
@@ -94,6 +96,8 @@ func (e *Engine) EnqueueVisitorTurn(t VisitorTarget, text string, images []model
 		Source:      firstNonEmptyStr(t.Source, "node"),
 		GateNodeID:  t.GateNodeID,
 		Owner:       t.Owner,
+
+		ClientMessageID: t.ClientMessageID,
 	}
 	return e.enqueueLaneItem(t.RunID, t.ProducerID, t.Lane, t.LinkID, sessionKindReview, item)
 }
@@ -230,6 +234,7 @@ func (e *Engine) RetireVisitorLanesForTokenHashes(tokenHashes []string) {
 func (e *Engine) retireVisitorLane(st *visitorLaneState) {
 	_ = e.cancelLaneSession(st.runID, st.producerID, st.lane, true)
 	e.revokeLanePageSessions(st.runID, st.producerID, st.lane)
+	e.forgetDialogues(st.runID, st.producerID, st.lane)
 	if vp, ok := e.provider.(runtime.VisitorLaneProvider); ok {
 		vp.RetireVisitorLane(st.runID, st.producerID, st.lane)
 	}
@@ -347,10 +352,12 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 	conv.Messages = append(conv.Messages, models.ReactMessage{
 		Role: "human", Text: item.Text, At: time.Now().Format(time.RFC3339),
 		Images: item.Images, Annotations: item.Annotations,
+		TurnID: item.ID, ClientMessageID: item.ClientMessageID,
 	})
 	conv.LastActiveAt = time.Now()
 	logDB(e.db.Save(conv), s.runID, "save visitor human turn")
 	e.touchVisitorLane(s.runID, s.producerID, s.lane)
+	e.dialogueChangedLane(s.runID, s.producerID, s.lane, true)
 
 	s.SetLiveEvents(nil)
 	req := e.nodeReq(c, producer)
@@ -367,16 +374,19 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 	for _, text := range t.Handoffs {
 		conv.Messages = append(conv.Messages, models.ReactMessage{
 			Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Handoff: true,
+			TurnID: item.ID, ClientMessageID: item.ClientMessageID,
 		})
 	}
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
 		Interrupted: interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
+		TurnID: item.ID, ClientMessageID: item.ClientMessageID,
 	}
 	applyReplyMetadata(&agentMsg, t)
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" {
 		agentMsg.Text = "(已中断)"
 	}
+	agentMsg.Outcome = models.ReplyOutcome(agentMsg)
 	conv.Messages = append(conv.Messages, agentMsg)
 	conv.LastActiveAt = time.Now()
 	if ci, ok := e.provider.(visitorChatIDs); ok {
@@ -384,6 +394,7 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 	}
 	logDB(e.db.Save(conv), s.runID, "save visitor agent turn")
 	e.touchVisitorLane(s.runID, s.producerID, s.lane)
+	e.dialogueChangedLane(s.runID, s.producerID, s.lane, true)
 
 	e.flushMcpCalls(s.runID, s.producerID)
 	e.flushTokenUsage(s.runID, s.producerID, t.Usage, t.UsageByModel)
@@ -426,6 +437,9 @@ func (e *Engine) publishVisitorAcp(s *reviewSession, events []models.AcpEvent, b
 		return
 	}
 	e.broker.Publish(s.runID, msg)
+	if hasDialogueContent(events) || !busy {
+		e.dialogueChangedLane(s.runID, s.producerID, s.lane, !busy)
+	}
 }
 
 // visitorPrelude is sent once per fresh visitor chat so the new Agent context

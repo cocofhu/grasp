@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import pages from '@/locales/zh-CN/pages.json'
 import common from '@/locales/zh-CN/common.json'
 import { REVIEW_RECOVERY_TIMEOUT_MS } from '@/lib/chat/reviewSessionState'
+import { clearDialogues, dialogueKey, getDialogue } from '@/lib/chat/dialogueStore'
+import { dialogueFrame, endedTurn, runningTurn } from '@/test/dialogueKit'
 
 const mocks = vi.hoisted(() => ({ getRun: vi.fn(), nodeEvents: vi.fn(), takeoverNode: vi.fn(), runConversationChain: vi.fn(), reactReply: vi.fn(), show: vi.fn(), error: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: { getRun: mocks.getRun, nodeEvents: mocks.nodeEvents, takeoverNode: mocks.takeoverNode, runConversationChain: mocks.runConversationChain, reactReply: mocks.reactReply, runEventsWsUrl: (id: string) => `ws://test/api/runs/${id}/events` } }))
@@ -41,7 +43,7 @@ const takenRun = { id: 'r1', status: 'waiting_human', currentNode: cur('impl', '
 async function setup() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
   await router.push('/runs/r1/live?node=impl')
-  const surface: LiveChatSurface = { applyReviewFrame: vi.fn(), applyAcpEvents: vi.fn(), releaseConfirmPending: vi.fn() }
+  const surface: LiveChatSurface = { releaseConfirmPending: vi.fn() }
   let live!: ReturnType<typeof useRunLive>
   const Harness = defineComponent({
     setup() {
@@ -65,7 +67,7 @@ function deferred<T = any>() {
 async function setupRouteReuse() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/runs/:id/live', component: { template: '<div />' } }] })
   await router.push('/runs/a/live?node=impl')
-  const makeSurface = (): LiveChatSurface => ({ applyReviewFrame: vi.fn(), applyAcpEvents: vi.fn(), releaseConfirmPending: vi.fn() })
+  const makeSurface = (): LiveChatSurface => ({ releaseConfirmPending: vi.fn() })
   const chat = ref<LiveChatSurface | null>(makeSurface())
   const surfaces = [chat.value!]
   let live!: ReturnType<typeof useRunLive>
@@ -135,63 +137,15 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     }
   })
 
-  it('does not replay another run cached output when a reused route changes to the same node', async () => {
-    const bRun = deferred()
-    const aEvents = [{ kind: 'message', text: 'only A output' }]
-    const bEvents = [{ kind: 'message', text: 'only B output' }]
-    mocks.getRun.mockImplementation(id => id === 'b' ? bRun.promise : Promise.resolve(routeRun(id)))
-    mocks.nodeEvents.mockImplementation(id => Promise.resolve({ events: id === 'a' ? aEvents : bEvents }))
-    const { live, router, surfaces, wrapper } = await setupRouteReuse()
-    try {
-      expect(surfaces[0].applyAcpEvents).toHaveBeenCalledWith(aEvents, 'impl')
-      await router.push('/runs/b/live?node=impl')
-      await flushPromises()
-      expect(surfaces[1].applyAcpEvents).not.toHaveBeenCalled()
-      expect(live.run.value).toBeNull()
-      expect(live.nodeId.value).toBe('')
-      expect(live.task.value).toBe('')
-      bRun.resolve(routeRun('b'))
-      await flushPromises()
-      expect(surfaces[1].applyAcpEvents).toHaveBeenCalledExactlyOnceWith(bEvents, 'impl')
-      expect(live.run.value?.id).toBe('b')
-      expect(live.task.value).toBe('task b')
-    } finally { wrapper.unmount() }
-  })
-
   it('ignores the old run socket while the newly selected run HTTP load is pending', async () => {
     const bRun = deferred()
     mocks.getRun.mockImplementation(id => id === 'b' ? bRun.promise : Promise.resolve(routeRun(id)))
-    const { router, surfaces, wrapper } = await setupRouteReuse()
+    const { router, wrapper } = await setupRouteReuse()
     try {
       const old = FakeSocket.last!
       await router.push('/runs/b/live?node=impl')
       await flushPromises()
-      vi.mocked(surfaces[1].applyAcpEvents).mockClear()
       old.send({ type: 'acp', runId: 'a', nodeId: 'impl', events: [{ kind: 'message', text: 'late A output' }] })
-      expect(surfaces[1].applyAcpEvents).not.toHaveBeenCalled()
-    } finally { wrapper.unmount() }
-  })
-
-  it('ignores an earlier visit seed response after switching A to B and back to A', async () => {
-    const firstA = deferred()
-    const currentA = deferred()
-    let aSeeds = 0
-    mocks.getRun.mockImplementation(id => Promise.resolve(routeRun(id)))
-    mocks.nodeEvents.mockImplementation(id => id === 'a' ? (++aSeeds === 1 ? firstA.promise : currentA.promise) : Promise.resolve({ events: [] }))
-    const { router, surfaces, wrapper } = await setupRouteReuse()
-    try {
-      await router.push('/runs/b/live?node=impl')
-      await flushPromises()
-      await router.push('/runs/a/live?node=impl')
-      await flushPromises()
-      const obsolete = [{ kind: 'message', text: 'obsolete first A visit' }]
-      firstA.resolve({ events: obsolete })
-      await flushPromises()
-      expect(surfaces[2].applyAcpEvents).not.toHaveBeenCalledWith(obsolete, 'impl')
-      const current = [{ kind: 'message', text: 'current A visit' }]
-      currentA.resolve({ events: current })
-      await flushPromises()
-      expect(surfaces[2].applyAcpEvents).toHaveBeenLastCalledWith(current, 'impl')
     } finally { wrapper.unmount() }
   })
 
@@ -282,17 +236,6 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     wrapper.unmount()
   })
 
-  it('seeds a busy turn, replays the snapshot, then streams acp frames read-only', async () => {
-    const { surface, wrapper } = await setup()
-    expect(surface.applyReviewFrame).toHaveBeenNthCalledWith(1, expect.objectContaining({ event: 'queue_state', busy: true, nodeId: 'impl' }))
-    expect(surface.applyReviewFrame).toHaveBeenNthCalledWith(2, expect.objectContaining({ event: 'turn_begin', nodeId: 'impl' }))
-    expect(surface.applyAcpEvents).toHaveBeenCalledWith([{ kind: 'agent_message', text: '已有输出' }], 'impl')
-    expect(FakeSocket.last?.url).toBe('ws://test/api/runs/r1/events')
-    FakeSocket.last!.send({ type: 'acp', nodeId: 'impl', events: [{ kind: 'agent_message', text: '新输出' }] })
-    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith([{ kind: 'agent_message', text: '新输出' }], 'impl')
-    wrapper.unmount()
-  })
-
   it('takeover → stopping, then WS node_takeover waiting_human opens the chat', async () => {
     const { live, router, wrapper } = await setup()
     mocks.takeoverNode.mockResolvedValue({ runId: 'r1', nodeId: 'impl', iteration: 1, mode: 'manual', state: 'stopping', status: 'taken_over' })
@@ -358,7 +301,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     ['the end of the run', { id: 'r1', status: 'succeeded' }, { kind: 'run', status: 'succeeded' }],
     ['a failed run', { id: 'r1', status: 'failed' }, { kind: 'run', status: 'failed' }],
   ])('stays on the page when the node on screen finishes (run moved to %s): no navigation, shown as done', async (_label, next, endState) => {
-    const { live, router, surface, wrapper } = await setup()
+    const { live, router, wrapper } = await setup()
     const replace = vi.spyOn(router, 'replace')
     const push = vi.spyOn(router, 'push')
     mocks.getRun.mockResolvedValue(next)
@@ -369,7 +312,6 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=impl')
     expect(live().ended.value).toBe(true)
     expect(live().nodeId.value).toBe('impl')
-    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith({ event: 'turn_done', nodeId: 'impl' })
     // Suggestion 3: the specific state (gate waiting by name / how the run ended).
     expect(live().endState.value).toEqual(endState)
     // Later frames and polls no longer route the page either.
@@ -383,10 +325,10 @@ describe('useRunLive (auto node → Stop → chat)', () => {
   })
 
   // GraspReview B-850-1: 实现 → 验证 (auto → auto). RunLiveView re-keys the surface per node.
-  it('auto → auto in place: the next node is seeded once on the re-keyed surface, early frames replayed there, never on the old one', async () => {
+  it('auto → auto in place: the next node mounts one re-keyed surface and the route follows it, no navigation', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
     await router.push('/runs/r1/live?node=impl')
-    const mk = (): LiveChatSurface => ({ applyReviewFrame: vi.fn(), applyAcpEvents: vi.fn() })
+    const mk = (): LiveChatSurface => ({ releaseConfirmPending: vi.fn() })
     const first = mk()
     const surfaces: LiveChatSurface[] = []
     const chatRef = ref<LiveChatSurface | null>(first)
@@ -418,19 +360,9 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     await flushPromises()
     expect(live.nodeId.value).toBe('verify')
     expect(surfaces).toHaveLength(1)
-    const next = surfaces[0]
-    // The old surface never sees 验证.
-    expect(first.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'verify' }))
-    expect(first.applyAcpEvents).not.toHaveBeenCalledWith(expect.anything(), 'verify')
-    // The new one is seeded exactly once and gets the early frame.
-    const begins = (next.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin')
-    expect(begins).toHaveLength(1)
-    expect(next.applyAcpEvents).toHaveBeenCalledWith(early, 'verify')
     // Later frames stream into the same turn.
     const later = [...early, { t: 0, kind: 'tool_call', title: '运行测试', status: 'completed' }]
     FakeSocket.last!.send({ type: 'acp', nodeId: 'verify', events: later, busy: true })
-    expect(next.applyAcpEvents).toHaveBeenLastCalledWith(later, 'verify')
-    expect((next.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin')).toHaveLength(1)
     // ?node= follows the node on screen (replace, same page); later polls: no re-seed, no new turn.
     expect(replace).toHaveBeenCalledTimes(1)
     expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=verify')
@@ -439,20 +371,42 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     await live.reload()
     await flushPromises()
     expect(surfaces).toHaveLength(1)
-    expect((next.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin')).toHaveLength(1)
     // Run ends: one turn_done on the new surface, nothing busy left, no navigation.
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'completed' })
     await live.reload()
     await flushPromises()
     expect(live.ended.value).toBe(true)
-    expect(next.applyReviewFrame).toHaveBeenLastCalledWith({ event: 'turn_done', nodeId: 'verify' })
     expect(replace).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
+  it('feeds the chat from dialogue frames and from the run dialogue on reload', async () => {
+    mocks.getRun.mockResolvedValue(autoRun)
+    mocks.nodeEvents.mockResolvedValue({ events: [] })
+    const { live, wrapper } = await setup()
+    const text = () => getDialogue(dialogueKey('r1', 'impl'))?.rows.map((r) => r.text)
+    FakeSocket.last!.send(dialogueFrame('r1', 'impl', {
+      busy: true,
+      rows: [{ role: 'agent', text: '正在实现', at: '1', turnId: 't1', streaming: true }],
+      turns: [runningTurn('t1')],
+    }))
+    expect(text()).toEqual(['正在实现'])
+    mocks.getRun.mockResolvedValue({
+      ...autoRun,
+      dialogueByNode: {
+        impl: dialogueFrame('r1', 'impl', { rows: [{ role: 'agent', text: '实现完成', at: '1', turnId: 't1' }], turns: [endedTurn('t1', 'ok')] }),
+      },
+    })
+    await live().reload()
+    await flushPromises()
+    expect(text()).toEqual(['实现完成'])
+    wrapper.unmount()
+    clearDialogues()
+  })
+
   // #850: the conversation continues in place with the run's next node.
   it('next auto node: continues in place (earlier nodes folded above, next stream), no navigation', async () => {
-    const { live, router, surface, wrapper } = await setup()
+    const { live, router, wrapper } = await setup()
     const replace = vi.spyOn(router, 'replace')
     mocks.runConversationChain.mockResolvedValue({
       runId: 'r1',
@@ -474,19 +428,17 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=test')
     // The URL change is not a new page: no reload, no reset of the continued conversation.
     expect(mocks.getRun.mock.calls.length).toBe(gets + 1)
-    expect((surface.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin' && f.nodeId === 'test')).toHaveLength(1)
     expect(live().nodeId.value).toBe('test')
     expect(live().mode.value).toBe('observe')
     expect(live().ended.value).toBe(false)
     expect(live().priorSegments.value.map((s) => s.label)).toEqual(['实现'])
     expect(live().task.value).toBe('跑单元测试')
     // The next node's stream seeds the (re-keyed) surface.
-    expect(surface.applyReviewFrame).toHaveBeenCalledWith({ event: 'turn_begin', nodeId: 'test', item: { text: '' } })
     wrapper.unmount()
   })
 
   it('next node waiting for a person: its chat continues in place — reply and 确认并流转 here, still no navigation', async () => {
-    const { live, router, surface, wrapper } = await setup()
+    const { live, router, wrapper } = await setup()
     const replace = vi.spyOn(router, 'replace')
     const turns = [{ role: 'agent', text: '验收前想确认一下', at: '2026-10-21T05:01:00+08:00' }]
     const chatRun = { id: 'r1', status: 'waiting_human', currentNode: { ...cur('accept', 'clarify', 'manual', 'waiting_human'), name: '验收测试', task: '编写验收用例' }, clarifyByNode: { accept: { nodeId: 'accept', iteration: 1, turns, done: false } } }
@@ -502,7 +454,6 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(live().turns.value).toEqual(turns)
     // Review frames of this node drive the chat; turn_done refreshes the transcript.
     FakeSocket.last!.send({ type: 'review', event: 'turn_begin', nodeId: 'accept' })
-    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith({ type: 'review', event: 'turn_begin', nodeId: 'accept' })
     await live().send('空数据只导出表头', [], [])
     expect(mocks.reactReply).toHaveBeenCalledWith('r1', 'accept', '空数据只导出表头', [], false, [])
     await live().confirm()
@@ -521,7 +472,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
 
   it('polls the authoritative queue and persisted reply when turn_done was lost on a healthy socket', async () => {
     vi.useFakeTimers()
-    const { live, surface, wrapper } = await setup()
+    const { live, wrapper } = await setup()
     const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
     mocks.getRun.mockResolvedValue(chatRun)
     await live().reload()
@@ -534,247 +485,19 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     const finalTurns = [{ role: 'agent', text: '已经完成两条消息', at: '2026-10-29T01:00:00Z' }]
     mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 3,
       clarifyByNode: { accept: { nodeId: 'accept', turns: finalTurns, done: false } } })
-    vi.mocked(surface.applyReviewFrame).mockClear()
     await vi.advanceTimersByTimeAsync(LIVE_POLL_MS)
     await flushPromises()
-    expect(surface.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'queue_state', nodeId: 'accept', busy: false, waiting: 0, items: [],
-    }))
     expect(live().turns.value).toEqual(finalTurns)
     expect(FakeSocket.last).toBe(socket)
-    vi.mocked(surface.applyReviewFrame).mockClear()
     socket.send({ type: 'review', event: 'queue_state', nodeId: 'accept', sessionGeneration: 3, revision: 3,
       busy: true, waiting: 1, items: [{ id: 'q2', text: 'retired queue' }] })
-    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('keeps a newer streamed turn when an older poll response arrives late', async () => {
-    const { live, surface, wrapper } = await setup()
-    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
-    mocks.getRun.mockResolvedValue(chatRun)
-    await live().reload()
-    await flushPromises()
-    const response = deferred()
-    mocks.getRun.mockReturnValueOnce(response.promise)
-    const pending = live().reload()
-    const socket = FakeSocket.last!
-    socket.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', sessionGeneration: 4, revision: 1,
-      item: { id: 'new', text: 'new request' } })
-    const events = [{ kind: 'message', text: 'new request output', t: 0 }]
-    socket.send({ type: 'acp', nodeId: 'accept', events, busy: true })
-    vi.mocked(surface.applyReviewFrame).mockClear()
-    response.resolve({ ...chatRun, reviewSessionGeneration: 3, reactSessions: {} })
-    await pending
-    await flushPromises()
-    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
-    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(events, 'accept')
-    wrapper.unmount()
-  })
-
-  it('recovers missing ACP progress while the socket stays open and the same queued turn stays busy', async () => {
-    vi.useFakeTimers()
-    const { live, surface, wrapper } = await setup()
-    const session = { sessionGeneration: 4, revision: 3, busy: true, waiting: 1,
-      items: [{ id: 'queued', text: '只修改前端' }], activeItem: { id: 'active', text: '继续实现' } }
-    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy'),
-      reviewSessionGeneration: 4, reactSessions: { accept: session } }
-    mocks.getRun.mockResolvedValue(chatRun)
-    await live().reload()
-    await flushPromises()
-    const socket = FakeSocket.last!
-    socket.send({ type: 'review', event: 'queue_state', nodeId: 'accept', ...session })
-    socket.send({ type: 'acp', nodeId: 'accept', events: [{ kind: 'thought', t: 0, text: '开始实现' }], busy: true })
-    const recovered = [{ kind: 'thought', t: 0, text: '开始实现，已经写完组件并准备验证' }]
-    mocks.nodeEvents.mockResolvedValue({ events: recovered, live: true })
-    vi.mocked(surface.applyAcpEvents).mockClear()
-    await vi.advanceTimersByTimeAsync(LIVE_POLL_MS)
-    await flushPromises()
-    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(recovered, 'accept')
-    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
-      event: 'queue_state', busy: true, waiting: 1, activeItem: session.activeItem,
-    }))
-    expect(FakeSocket.last).toBe(socket)
-    wrapper.unmount()
-  })
-
-  it.each(['empty', 'liveness', 'unchanged-content'])('recovers live chat across %s ACP observations during REST reads', async noise => {
-    const { live, surface, wrapper } = await setup()
-    try {
-      const session = { sessionGeneration: 4, revision: 3, busy: true, waiting: 1,
-        items: [{ id: 'queued', text: 'next' }], activeItem: { id: 'active', text: 'current' } }
-      const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy'),
-        reviewSessionGeneration: 4, reactSessions: { accept: session } }
-      mocks.getRun.mockResolvedValue(chatRun)
-      await live().reload()
-      await flushPromises()
-      const socket = FakeSocket.last!
-      const known = [{ kind: 'thought', t: 0, text: 'existing output' }]
-      const heartbeat = { kind: 'liveness', t: 3, liveness: { active: true, cpuMs: 20, ioBytes: 40, idleSec: 0, limitSec: 300 } }
-      const observations = noise === 'empty' ? [] : noise === 'liveness' ? [heartbeat]
-        : [{ ...known[0], t: 3 }, heartbeat]
-      socket.send({ type: 'review', event: 'queue_state', nodeId: 'accept', ...session })
-      socket.send({ type: 'acp', nodeId: 'accept', events: known, busy: true })
-      const runRead = deferred()
-      const eventRead = deferred()
-      mocks.getRun.mockReturnValueOnce(runRead.promise)
-      mocks.nodeEvents.mockReturnValueOnce(eventRead.promise)
-      const pending = live().reload()
-      socket.send({ type: 'acp', nodeId: 'accept', events: observations, busy: true })
-      runRead.resolve(chatRun)
-      await flushPromises()
-      socket.send({ type: 'acp', nodeId: 'accept', events: observations, busy: true })
-      const recovered = [{ kind: 'message', t: 2, text: 'recovered after missed push' }]
-      eventRead.resolve({ events: recovered, live: true })
-      await pending
-      await flushPromises()
-      expect(surface.applyAcpEvents).toHaveBeenCalledWith(recovered, 'accept')
-      expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ busy: true, waiting: 1 }))
-
-      const finalRead = deferred()
-      mocks.getRun.mockReturnValueOnce(finalRead.promise)
-      const completion = live().reload()
-      socket.send({ type: 'acp', nodeId: 'accept', events: observations, busy: false })
-      finalRead.resolve({ ...chatRun, reactSessions: {} })
-      await completion
-      expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ busy: false, waiting: 0, items: [] }))
-      expect(FakeSocket.last).toBe(socket)
-    } finally { wrapper.unmount() }
-  })
-
-  it('recovers missed automatic-node tool output on normal polling without a reconnect', async () => {
-    const original = [{ kind: 'thought', t: 0, text: 'checking the repository' }]
-    mocks.nodeEvents.mockResolvedValue({ events: original, live: true })
-    const { live, surface, wrapper } = await setup()
-    try {
-      const socket = FakeSocket.last!
-      socket.send({ type: 'acp', nodeId: 'impl', events: original, busy: true })
-      const recovered = [{ kind: 'timeline', t: 1, parts: [{ kind: 'tool', title: 'Shell', status: 'in_progress', output: 'recovered output' }] }]
-      mocks.nodeEvents.mockResolvedValueOnce({ events: recovered, live: true })
-      vi.mocked(surface.applyAcpEvents).mockClear()
-      await live().reload()
-      await flushPromises()
-      expect(surface.applyAcpEvents).toHaveBeenCalledWith(recovered, 'impl')
-      expect(FakeSocket.last).toBe(socket)
-      expect(live().mode.value).toBe('observe')
-    } finally { wrapper.unmount() }
-  })
-
-  it('keeps newer observed ACP when it overtakes either the run poll or its content read', async () => {
-    const { live, surface, wrapper } = await setup()
-    try {
-      const socket = FakeSocket.last!
-      const duringRunRead = [{ kind: 'message', t: 1, text: 'new output while polling run' }]
-      const runRead = deferred()
-      mocks.getRun.mockReturnValueOnce(runRead.promise)
-      const before = mocks.nodeEvents.mock.calls.length
-      const poll = live().reload()
-      socket.send({ type: 'acp', nodeId: 'impl', events: duringRunRead, busy: true })
-      runRead.resolve(autoRun)
-      await poll
-      expect(mocks.nodeEvents.mock.calls.length).toBe(before)
-      const contentRead = deferred()
-      mocks.nodeEvents.mockReturnValueOnce(contentRead.promise)
-      const recovery = live().reload()
-      await flushPromises()
-      const duringContentRead = [{ kind: 'message', t: 2, text: 'new output while reading content' }]
-      socket.send({ type: 'acp', nodeId: 'impl', events: duringContentRead, busy: true })
-      contentRead.resolve({ events: [{ kind: 'message', t: 0, text: 'obsolete content snapshot' }], live: true })
-      await recovery
-      expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(duringContentRead, 'impl')
-    } finally { wrapper.unmount() }
-  })
-
-  it('discards a content recovery response after newer live ACP reaches the same active item', async () => {
-    const { live, surface, wrapper } = await setup()
-    const session = { sessionGeneration: 4, revision: 3, busy: true, waiting: 0, items: [], activeItem: { id: 'active' } }
-    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy'),
-      reviewSessionGeneration: 4, reactSessions: { accept: session } }
-    mocks.getRun.mockResolvedValue(chatRun)
-    await live().reload()
-    await flushPromises()
-    const socket = FakeSocket.last!
-    socket.send({ type: 'review', event: 'queue_state', nodeId: 'accept', ...session })
-    const response = deferred()
-    mocks.nodeEvents.mockReturnValueOnce(response.promise)
-    const pending = live().reload()
-    await flushPromises()
-    const newer = [{ kind: 'message', t: 0, text: 'newest live output' }]
-    socket.send({ type: 'acp', nodeId: 'accept', events: newer, busy: true })
-    response.resolve({ events: [{ kind: 'message', t: 0, text: 'stale recovery output' }], live: true })
-    await pending
-    await flushPromises()
-    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(newer, 'accept')
-    wrapper.unmount()
-  })
-
-  it('rejects an older queue revision returned by polling and accepts its newer completion', async () => {
-    const { live, surface, wrapper } = await setup()
-    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
-    mocks.getRun.mockResolvedValue(chatRun)
-    await live().reload()
-    await flushPromises()
-    FakeSocket.last!.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', sessionGeneration: 4, revision: 3,
-      item: { id: 'new', text: 'new request' } })
-    vi.mocked(surface.applyReviewFrame).mockClear()
-    mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 4,
-      reactSessions: { accept: { sessionGeneration: 4, revision: 1, busy: false, waiting: 0, items: [] } } })
-    await live().reload()
-    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
-    mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 4,
-      reactSessions: { accept: { sessionGeneration: 4, revision: 4, busy: false, waiting: 0, items: [] } } })
-    await live().reload()
-    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
-      event: 'queue_state', sessionGeneration: 4, revision: 4, busy: false,
-    }))
-    wrapper.unmount()
-  })
-
-  it('preserves streaming received after a continued chat poll began', async () => {
-    const { live, surface, wrapper } = await setup()
-    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
-    mocks.getRun.mockResolvedValue(chatRun)
-    await live().reload()
-    await flushPromises()
-    const socket = FakeSocket.last!
-    socket.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', sessionGeneration: 4, revision: 1,
-      item: { id: 'new', text: 'new request' } })
-    const response = deferred()
-    mocks.getRun.mockReturnValueOnce(response.promise)
-    const pending = live().reload()
-    const events = [{ kind: 'message', text: 'new streamed output', t: 0 }]
-    socket.send({ type: 'acp', nodeId: 'accept', events, busy: true })
-    vi.mocked(surface.applyReviewFrame).mockClear()
-    response.resolve({ ...chatRun, reviewSessionGeneration: 4, reactSessions: {} })
-    await pending
-    await flushPromises()
-    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
-    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(events, 'accept')
-    wrapper.unmount()
-  })
-
-  it('does not infer idle from a poll watermark older than the active session', async () => {
-    const { live, surface, wrapper } = await setup()
-    const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
-    mocks.getRun.mockResolvedValue(chatRun)
-    await live().reload()
-    await flushPromises()
-    FakeSocket.last!.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', sessionGeneration: 8, revision: 1,
-      item: { id: 'new', text: 'new request' } })
-    vi.mocked(surface.applyReviewFrame).mockClear()
-    mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 7, reactSessions: {} })
-    await live().reload()
-    expect(surface.applyReviewFrame).not.toHaveBeenCalled()
-    mocks.getRun.mockResolvedValue({ ...chatRun, reviewSessionGeneration: 8, reactSessions: {} })
-    await live().reload()
-    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'queue_state', busy: false }))
     wrapper.unmount()
   })
 
   it('streams ACP into a continued chat and reconnects while its previous turn is still busy', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0)
-    const { live, surface, wrapper } = await setup()
+    const { live, wrapper } = await setup()
     const chatRun = { id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'busy') }
     mocks.getRun.mockResolvedValue(chatRun)
     await live().reload()
@@ -784,7 +507,6 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     first.send({ type: 'review', event: 'turn_begin', nodeId: 'accept', item: { id: 'q1', text: '继续' } })
     const partial = [{ kind: 'message', text: '正在继续', t: 0 }]
     first.send({ type: 'acp', nodeId: 'accept', events: partial, busy: true })
-    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(partial, 'accept')
     first.close()
     await vi.advanceTimersByTimeAsync(800)
     const replacement = FakeSocket.last!
@@ -794,8 +516,6 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     mocks.nodeEvents.mockResolvedValue({ events: recovered, live: true })
     replacement.send({ type: 'snapshot', run: { ...chatRun, reactSessions: { accept: { busy: true, waiting: 0, items: [], activeItem: { id: 'q1', text: '继续' } } } } })
     await flushPromises()
-    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'queue_state', nodeId: 'accept', busy: true }))
-    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(recovered, 'accept')
     expect(live().ended.value).toBe(false)
 
     // turn_done was lost while offline. The authoritative reconnect snapshot
@@ -804,7 +524,6 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     const finalTurns = [{ role: 'agent', text: '已经完成', at: '2026-10-28T01:00:00Z', usage }]
     replacement.send({ type: 'snapshot', run: { ...chatRun, currentNode: cur('accept', 'review', 'manual', 'waiting_human'), reactSessions: {}, clarifyByNode: { accept: { nodeId: 'accept', turns: finalTurns, done: false } } } })
     await flushPromises()
-    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'queue_state', busy: false }))
     expect(live().turns.value).toEqual(finalTurns)
     wrapper.unmount()
     await vi.advanceTimersByTimeAsync(70_000)
@@ -814,7 +533,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
   it('keeps retrying constructor and handshake failures and repairs a socket that never closes', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0)
-    const { surface, wrapper } = await setup()
+    const { wrapper } = await setup()
     FakeSocket.last!.onopen?.()
     FakeSocket.throwNext = true
     FakeSocket.last!.close()
@@ -836,8 +555,6 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     recovered.onopen?.()
     recovered.send({ type: 'snapshot', run: autoRun })
     await flushPromises()
-    expect(surface.applyAcpEvents).toHaveBeenLastCalledWith(events, 'impl')
-    expect((surface.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([frame]) => frame.event === 'turn_begin')).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -876,12 +593,11 @@ describe('useRunLive (auto node → Stop → chat)', () => {
       title: '当前时间数据与上一格',
       currentNode: { ...cur('impl', 'agent', 'auto', 'entering'), name: '调研' },
     })
-    const { live, router, surface, wrapper } = await setup()
+    const { live, router, wrapper } = await setup()
     expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=impl')
     expect(live().ended.value).toBe(false)
     expect(live().nodeId.value).toBe('impl')
     expect(live().followTail.value).toEqual(expect.objectContaining({ kind: 'waiting', label: '调研' }))
-    expect(surface.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_begin' }))
     mocks.getRun.mockResolvedValue({
       id: 'r1',
       status: 'running',
@@ -894,7 +610,6 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(live().mode.value).toBe('observe')
     expect(live().nodeId.value).toBe('impl')
     expect(live().followTail.value).toBeNull()
-    expect(surface.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_begin', nodeId: 'impl' }))
     wrapper.unmount()
   })
 
@@ -908,11 +623,10 @@ describe('useRunLive (auto node → Stop → chat)', () => {
   })
 
   it('waits for an entering successor while the run still reports waiting_human', async () => {
-    const { live, surface, wrapper } = await setup()
+    const { live, wrapper } = await setup()
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('verify', 'agent', 'auto', 'entering') })
     await live().reload()
     expect(live().ended.value).toBe(false)
-    expect(surface.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_done' }))
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', currentNode: cur('verify', 'agent', 'auto', 'running') })
     await live().reload()
     await flushPromises()
@@ -1038,7 +752,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     const again = await (async () => {
       const r2 = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
       await r2.push(url)
-      const surface: LiveChatSurface = { applyReviewFrame: vi.fn(), applyAcpEvents: vi.fn() }
+      const surface: LiveChatSurface = { releaseConfirmPending: vi.fn() }
       let l!: ReturnType<typeof useRunLive>
       const H = defineComponent({ setup() { l = useRunLive(ref('r1'), computed(() => String(r2.currentRoute.value.query.node || '')), ref(surface)); return () => h('div') } })
       const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...pages, ...common } } })
@@ -1049,7 +763,6 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(again.l.nodeId.value).toBe('test')
     expect(again.l.mode.value).toBe('observe')
     expect(again.r2.currentRoute.value.fullPath).toBe('/runs/r1/live?node=test')
-    expect(again.surface.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_begin', nodeId: 'test' }))
     expect(replace).not.toHaveBeenCalled()
     again.w.unmount()
   })

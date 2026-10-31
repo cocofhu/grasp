@@ -121,6 +121,10 @@ type Engine struct {
 	// node-inline review, gate hot-revise and visitor lanes.
 	reviewSess chatsession.Registry[*reviewSession] // key: laneSessionKey
 
+	// dialogues is the per node versioned dialogue state (lazy).
+	dialogueOnce sync.Once
+	dialogues    *dialogueHub
+
 	// visitorMu guards visitorLanes: share-link visitor lanes holding (or
 	// about to hold) a sandbox chat, for the per-link cap and idle sweep.
 	visitorMu    sync.Mutex

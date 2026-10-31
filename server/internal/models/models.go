@@ -548,6 +548,14 @@ type ReactMessage struct {
 	// ClientMessageID groups this human request with all of its agent segments.
 	// Older messages and requests without a sender id keep it absent.
 	ClientMessageID string `json:"clientMessageId,omitempty"`
+	// TurnID is the platform queue item that produced this row; a human row
+	// and its replies share it. Absent on rows written before it existed.
+	TurnID string `json:"turnId,omitempty"`
+	// Outcome is how this reply's turn ended (ReplyOutcome); agent rows only.
+	// Older rows leave it empty and ReplyOutcome derives it.
+	Outcome string `json:"outcome,omitempty"`
+	// Error is the failure detail when Outcome is failed.
+	Error string `json:"error,omitempty"`
 	// Metadata belongs to this reply only; visit-wide StateRun totals must
 	// never be copied onto every historical assistant message.
 	Execution    *ChatExecution    `json:"execution,omitempty"`

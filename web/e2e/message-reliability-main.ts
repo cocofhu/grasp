@@ -8,6 +8,9 @@ import { initClarifyTab } from '../src/lib/inbox/clarifyDraftStash'
 import { usePmLeaderChat } from '../src/lib/pm/usePmLeaderChat'
 import type { ClarifyTurn } from '../src/lib/shared/types'
 import ClarifyChat from '../src/components/run/ClarifyChat.vue'
+import { ingestDialogue } from '../src/lib/chat/dialogueStore'
+import type { DialogueState, DialogueTurn } from '../src/lib/chat/dialogueState'
+import { dialogueFrame, endedTurn, queuedTurn, runningTurn, type DialogueSpec, type RowInput } from '../src/test/dialogueKit'
 import AgentChatTester from '../src/components/agent/AgentChatTester.vue'
 
 initLocale()
@@ -102,96 +105,123 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return json({})
 }
 
-type ClarifyExpose = {
-  applyReviewFrame: (frame: RawFrame) => void
-  applyAcpEvents: (events: { kind: string; text?: string }[]) => void
-}
-
 const hosts = ['inbox', 'public', 'embed'] as const
+type Host = (typeof hosts)[number]
 const clarifyTurns = Object.fromEntries(hosts.map((host) => [host, ref<ClarifyTurn[]>([
   { role: 'human', text: '继续', at: '2026-01-01T00:00:00Z' },
   { role: 'agent', text: '上一轮回答', at: '2026-01-01T00:00:01Z' },
-])])) as Record<(typeof hosts)[number], ReturnType<typeof ref<ClarifyTurn[]>>>
-const clarifyRefs = Object.fromEntries(hosts.map((host) => [host, ref<ClarifyExpose | null>(null)])) as Record<
-  (typeof hosts)[number],
-  ReturnType<typeof ref<ClarifyExpose | null>>
->
+])])) as Record<Host, ReturnType<typeof ref<ClarifyTurn[]>>>
+/** Sends each host's chat emitted (clientMessageId by text). */
+const sentIds: Record<Host, Map<string, string>> = { inbox: new Map(), public: new Map(), embed: new Map() }
 
+/** One host's dialogue state, as the platform pushes it (epoch = server process). */
+function frame(host: Host, spec: DialogueSpec, epoch = 1, seq?: number): DialogueState {
+  const f = dialogueFrame(`run-${host}`, 'clarify', spec)
+  return { ...f, epoch, seq: seq ?? f.seq }
+}
+const push = (f: DialogueState) => ingestDialogue(f)
+
+const earlier: RowInput[] = [
+  { role: 'human', text: '继续', at: '2026-01-01T00:00:00Z', turnId: 'prev' },
+  { role: 'agent', text: '上一轮回答', at: '2026-01-01T00:00:01Z', turnId: 'prev' },
+]
 async function startSameTextRound() {
   for (const host of hosts) {
-    const chat = clarifyRefs[host].value
-    chat?.applyReviewFrame({ event: 'queue_state', nodeId: 'clarify', waiting: 0, items: [], busy: true })
-    chat?.applyReviewFrame({ event: 'turn_begin', nodeId: 'clarify', item: { id: `next-${host}`, text: '继续' } })
-    chat?.applyAcpEvents([{ kind: 'message', text: '新同文回答' }])
+    const id = `next-${host}`
+    push(frame(host, {
+      busy: true,
+      rows: [...earlier, { role: 'human', text: '继续', at: '2026-01-01T00:00:02Z', turnId: id },
+        { role: 'agent', text: '新同文回答', at: '2026-01-01T00:00:03Z', turnId: id, streaming: true }],
+      turns: [runningTurn(id, { text: '继续' })],
+    }))
   }
   await nextTick()
 }
 
 const activeStats = { id: 'active-stats', text: '回复信息改成统计信息' }
-const queuedDark = { id: 'queued-dark', text: '暗色主题感觉不太行' }
 const sealedReply = '已把回复信息改成统计信息。'
 const activeThought = '继续检查统计信息的展示效果。'
-const segmentedEvents = [
-  { kind: 'message', text: sealedReply },
-  { kind: 'segment' },
-  { kind: 'thought', text: activeThought },
+const statsHistory: RowInput[] = [
+  { role: 'human', text: '之前的请求', at: '2026-10-28T13:30:00Z', turnId: 'before' },
+  { role: 'agent', text: '之前的回复', at: '2026-10-28T13:30:38Z', turnId: 'before' },
+  { role: 'human', text: activeStats.text, at: '2026-10-28T13:31:00Z', turnId: activeStats.id },
 ]
-function statsHistory(): ClarifyTurn[] {
-  return [
-    { role: 'human', text: '之前的请求', at: '2026-10-28T13:30:00Z' },
-    { role: 'agent', text: '之前的回复', at: '2026-10-28T13:30:38Z' },
-    { role: 'human', text: activeStats.text, at: '2026-10-28T13:31:00Z' },
+/** The running reply in two segments: a handed-off message, then an open thought. */
+function segmentedRows(tail = ''): RowInput[] {
+  return [...statsHistory,
+    { role: 'agent', text: sealedReply, at: '2026-10-28T13:31:10Z', turnId: activeStats.id, handoff: true, phase: 'running' },
+    { role: 'agent', text: tail, thought: activeThought, at: '2026-10-28T13:31:10Z', turnId: activeStats.id, streaming: true },
   ]
 }
+function queuedDark(): DialogueTurn[] {
+  const text = '暗色主题感觉不太行'
+  const clientMessageId = sentIds.inbox.get(text)
+  return [queuedTurn('queued-dark', 0, { text, clientMessageId }, { clientMessageId })]
+}
 async function startSegmentedReply() {
-  clarifyTurns.inbox.value = statsHistory()
-  await nextTick()
-  const chat = clarifyRefs.inbox.value
-  chat?.applyReviewFrame({ event: 'queue_state', nodeId: 'clarify', busy: true, waiting: 0, items: [], activeItem: activeStats })
-  chat?.applyAcpEvents(segmentedEvents)
+  push(frame('inbox', { busy: true, rows: segmentedRows(), turns: [runningTurn(activeStats.id, activeStats)] }))
 }
 async function persistSealedSegment() {
-  clarifyRefs.inbox.value?.applyReviewFrame({ event: 'queue_state', nodeId: 'clarify', busy: true, waiting: 1, items: [queuedDark], activeItem: activeStats })
-  // Only the first assistant segment is sealed. The same request still owns
-  // an open thought segment while the next accepted user waits behind it.
-  clarifyTurns.inbox.value = [...statsHistory(), { role: 'agent', text: sealedReply, at: '2026-10-28T13:31:10Z', handoff: true }]
+  // The same request still owns an open thought segment while the next
+  // accepted user waits behind it.
+  push(frame('inbox', { busy: true, rows: segmentedRows(), turns: [runningTurn(activeStats.id, activeStats), ...queuedDark()] }))
   await nextTick()
+}
+function continueSegment() {
+  push(frame('inbox', {
+    busy: true, rows: segmentedRows('统计信息检查还在继续，无需刷新。'), turns: [runningTurn(activeStats.id, activeStats), ...queuedDark()],
+  }))
 }
 
 const concurrentItems = ['a', 'b', 'c'].map((id) => ({
   id: `concurrent-${id}`, text: '继续检查', clientMessageId: `10000000-0000-4000-8000-00000000000${id === 'a' ? 1 : id === 'b' ? 2 : 3}`,
 }))
 const nextGenerationItem = { id: 'new-session-active', text: '继续检查', clientMessageId: '20000000-0000-4000-8000-000000000001' }
-function versionedFrame(event: string, revision: number, extra: RawFrame, sessionGeneration = 7) {
-  clarifyRefs.inbox.value?.applyReviewFrame({ event, nodeId: 'clarify', sessionGeneration, revision, ...extra })
-}
+const roundRows = (n: number): RowInput[] => concurrentItems.slice(0, n).flatMap((item, i): RowInput[] => [
+  { role: 'human', text: item.text, at: `2026-01-01T00:0${i}:00Z`, turnId: item.id, clientMessageId: item.clientMessageId },
+  { role: 'agent', text: `并发回合 ${i + 1} 已完成。`, at: `2026-01-01T00:0${i}:30Z`, turnId: item.id },
+])
+/** A's first state (B waiting), whose publish is delayed until after all three finish. */
+let delayed: DialogueState | null = null
 async function finishConcurrentRounds() {
   for (const [index, item] of concurrentItems.entries()) {
-    const revision = index === 0 ? 2 : index === 1 ? 6 : 8
-    versionedFrame('turn_begin', revision, { item })
-    clarifyRefs.inbox.value?.applyAcpEvents([{ kind: 'message', text: `并发回合 ${index + 1} 已完成。` }])
-    const waiting = concurrentItems.slice(index + 1)
-    versionedFrame('turn_done', index === 0 ? 5 : index === 1 ? 7 : 9, {
-      item, waiting: waiting.length, items: waiting, busy: false,
+    const waiting = concurrentItems.slice(index + 1).map((w, i) => queuedTurn(w.id, i, w, { clientMessageId: w.clientMessageId }))
+    const running = frame('inbox', {
+      busy: true,
+      rows: [...roundRows(index), { role: 'human', text: item.text, at: '2026-01-01T00:00:00Z', turnId: item.id, clientMessageId: item.clientMessageId },
+        { role: 'agent', text: `并发回合 ${index + 1} 已完成。`, at: '2026-01-01T00:00:00Z', turnId: item.id, streaming: true }],
+      turns: [runningTurn(item.id, item, { clientMessageId: item.clientMessageId }), ...waiting],
     })
+    if (index === 0) delayed = running
+    else push(running)
+    push(frame('inbox', {
+      rows: roundRows(index + 1),
+      turns: [endedTurn(item.id, 'ok', { clientMessageId: item.clientMessageId }), ...waiting],
+    }))
   }
   await nextTick()
 }
 function deliverDelayedQueue() {
-  // B's enqueue captured A active + B waiting. Its publish was delayed until
-  // all three requests finished; arrival order must not overwrite revision 9.
-  versionedFrame('queue_state', 3, {
-    busy: true, waiting: 1, activeItem: concurrentItems[0], items: [concurrentItems[1]],
-  })
+  if (delayed) push(delayed)
 }
+const newGenerationRows = (text: string): RowInput[] => [...roundRows(3),
+  { role: 'human', text: nextGenerationItem.text, at: '2026-01-01T00:05:00Z', turnId: nextGenerationItem.id, clientMessageId: nextGenerationItem.clientMessageId },
+  { role: 'agent', text, at: '2026-01-01T00:05:01Z', turnId: nextGenerationItem.id, streaming: true },
+]
 function startNewGeneration() {
-  versionedFrame('queue_state', 1, { busy: true, waiting: 0, items: [], activeItem: nextGenerationItem }, 8)
-  clarifyRefs.inbox.value?.applyAcpEvents([{ kind: 'message', text: '新会话正在继续检查。' }])
+  push(frame('inbox', {
+    busy: true, rows: newGenerationRows('新会话正在继续检查。'),
+    turns: [runningTurn(nextGenerationItem.id, nextGenerationItem, { clientMessageId: nextGenerationItem.clientMessageId })],
+  }, 2, 1))
 }
 function deliverRetiredFrames() {
   deliverDelayedQueue()
-  versionedFrame('turn_done', 999, { item: concurrentItems[2], busy: false, waiting: 0, items: [] })
-  clarifyRefs.inbox.value?.applyAcpEvents([{ kind: 'message', text: '新会话继续输出，旧快照没有打断。' }])
+  // The previous server process's last state: far higher seq, older epoch.
+  push(frame('inbox', { rows: roundRows(3), turns: [] }, 1, 999))
+  push(frame('inbox', {
+    busy: true, rows: newGenerationRows('新会话继续输出，旧快照没有打断。'),
+    turns: [runningTurn(nextGenerationItem.id, nextGenerationItem, { clientMessageId: nextGenerationItem.clientMessageId })],
+  }, 2, 2))
 }
 
 const segmentedScenario = new URLSearchParams(location.search).has('sealed-segment')
@@ -209,10 +239,9 @@ const App = defineComponent({
         h('button', { 'data-testid': 'sim-same-text', type: 'button', onClick: () => void startSameTextRound() }, '同文下一轮'),
         h('button', { 'data-testid': 'sim-segmented-reply', type: 'button', onClick: () => void startSegmentedReply() }, '分段回复'),
         h('button', { 'data-testid': 'sim-persist-segment', type: 'button', onClick: () => void persistSealedSegment() }, '持久化已封口片段'),
-        h('button', { 'data-testid': 'sim-continue-segment', type: 'button', onClick: () => clarifyRefs.inbox.value?.applyAcpEvents([...segmentedEvents, { kind: 'message', text: '统计信息检查还在继续，无需刷新。' }]) }, '继续当前回复'),
+        h('button', { 'data-testid': 'sim-continue-segment', type: 'button', onClick: continueSegment }, '继续当前回复'),
         ...hosts.map((host) => h('div', { 'data-testid': `clarify-host-${host}`, class: 'h-64 border border-line', style: segmentedScenario && host === 'inbox' ? { height: '650px' } : undefined }, [
           h(ClarifyChat, {
-            ref: clarifyRefs[host],
             runId: `run-${host}`,
             nodeId: 'clarify',
             iteration: 1,
@@ -221,7 +250,9 @@ const App = defineComponent({
             active: true,
             reviewMode: false,
             hideFinish: true,
-            onSend: () => {},
+            onSend: (text: string, _images: unknown, _annotations: unknown, clientMessageId: string) => {
+              sentIds[host].set(text, clientMessageId)
+            },
           }),
         ])),
       ]),

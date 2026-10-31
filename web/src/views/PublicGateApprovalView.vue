@@ -24,27 +24,21 @@ import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { isFeedbackArtifactName } from '@/lib/run/reactArtifactPreview'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
-import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
-import {
-  createBusySeedRetryController,
-  runBusySeedRetry,
-} from '@/lib/run/busySeedRetry'
-import { pickAcpRails } from '@/lib/run/pendingAcpBuffer'
+import { clearDialogues, dialogueKey, getDialogue, ingestDialogue, setDialogueFetcher } from '@/lib/chat/dialogueStore'
 import {
   formatRemainingSec,
   getShareVisitorId,
   mergePublicGatePreview,
+  mapPublicDialogue,
   mapPublicGateImages,
   parseShareTokenFromHash,
   publicGateApi,
   publicGateContentKey,
   remainingSecFromExpiresAt,
-  type PublicGateActiveItem,
   type PublicGateArtifactsResult,
   type PublicGateDecideResult,
   type PublicGatePreview,
   type PublicGatePreviewKnown,
-  type PublicGateQueueItem,
 } from '@/lib/inbox/gateShareLink'
 import type { CapsNode } from '@/lib/shared/clarifyInteractive'
 import {
@@ -60,28 +54,16 @@ import {
   type LiveView,
 } from '@/lib/inbox/liveVariants'
 import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
-import type { AcpEvent, Artifact, ClarifyImage, ClarifyTurn, NodeRun, NodeRunStatus, NodeType, ReactAnnotation, Run } from '@/lib/shared/types'
+import type { Artifact, ClarifyImage, ClarifyTurn, NodeRun, NodeRunStatus, NodeType, ReactAnnotation, Run } from '@/lib/shared/types'
 
 const PUBLIC_SHARE_RUN_ID = 'public-share'
-
-/** Queue rows after opaque indexes are mapped to token image URLs. */
-type PublicChatQueueItem = {
-  id?: string
-  text?: string
-  images?: ClarifyImage[]
-  annotations?: ReactAnnotation[]
-}
+const PUBLIC_CHAT_NODE_ID = 'public-gate'
+const PUBLIC_DIALOGUE_KEY = dialogueKey(PUBLIC_SHARE_RUN_ID, PUBLIC_CHAT_NODE_ID)
 
 type PublicChatRef = {
-  discardLastQueued?: () => void
-  applyQueueState?: (
-    waiting: number,
-    items: PublicChatQueueItem[] | null,
-    busy?: boolean,
-    activeItem?: PublicChatQueueItem | null,
-  ) => void
-  applyReviewFrame?: (frame: Record<string, unknown>) => boolean | void
-  applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  discardLastQueued?: (clientMessageId?: string) => void
+  applyRequestRejected?: (frame: Record<string, unknown>) => void
+  releaseConfirmPending?: () => void
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
 }
@@ -132,7 +114,10 @@ const token = ref('')
 const conversationInstance = useId().replace(/:/g, '')
 const conversationCredentialEpoch = ref(0)
 const publicConversationScope = computed(() => `${chatOnly.value ? 'embedded' : 'public'}-review:${conversationInstance}:${conversationCredentialEpoch.value}`)
-watch(token, () => { conversationCredentialEpoch.value++ }, { flush: 'sync' })
+watch(token, () => {
+  conversationCredentialEpoch.value++
+  clearDialogues({ key: PUBLIC_DIALOGUE_KEY })
+}, { flush: 'sync' })
 const preview = ref<PublicGatePreview | null>(null)
 const comment = ref('')
 const reviewerName = ref('')
@@ -155,7 +140,6 @@ const annotations = ref<ReactAnnotation[]>([])
 const chatRef = ref<PublicChatRef | null>(null)
 const shellRef = ref<{ playConfirmCeremony?: () => Promise<void> } | null>(null)
 const replyInFlight = ref(false)
-const pendingReplyText = ref('')
 const pageCandidateMode = ref(false)
 // A retry of the same request keeps its session ID when the HTTP result is unknown.
 let candidateAttempt: { fingerprint: string; sid: string } | null = null
@@ -163,7 +147,6 @@ let candidateAttempt: { fingerprint: string; sid: string } | null = null
 let publicWsWasReady = false
 let lastKeptNonce = ''
 let nonceIssuedAt = 0
-let lastAppliedIdleQueue = false
 let pollIntervalMs = POLL_MS
 let remainingTimer: ReturnType<typeof setInterval> | null = null
 
@@ -311,6 +294,11 @@ const inspectable = computed(
 )
 const usePublicArtifactStage = computed(() => isReview.value)
 const appPreviewPorts = computed(() => preview.value?.ports || [])
+/** ClarifyChat shows the store's state only for its own iteration (a lane has none). */
+const chatIteration = computed(() => {
+  const it = getDialogue(PUBLIC_DIALOGUE_KEY)?.iteration
+  return it && it > 0 ? it : 1
+})
 const turns = computed<ClarifyTurn[]>(() =>
   (preview.value?.turns || []).map((turn) => {
     const mapped: ClarifyTurn = {
@@ -623,6 +611,7 @@ async function loadPreview(opts?: { silent?: boolean; issueNonce?: boolean }) {
     const next = await publicGateApi.preview(tok, signal, known)
     if (attemptGen !== previewGen) return
     lastChatUpdateAt = Date.now()
+    if (next.dialogue) ingestPublicDialogue(next.dialogue)
     // Inbox mounts the composer first, then turns arrive, and the existing
     // question/form watch preselects recommendations and seeds form values.
     // This view only mounts the composer once loading ends, with turns already
@@ -645,7 +634,7 @@ async function loadPreview(opts?: { silent?: boolean; issueNonce?: boolean }) {
       // Content unchanged (often already idle) must still reconcile local sticky busy.
       if (attemptGen === previewGen) {
         await nextTick()
-        syncChatQueueFromPreview()
+        refreshLocalChatBusy()
         await loadPublicArtifacts({ silent: true })
       }
       return
@@ -677,7 +666,7 @@ async function loadPreview(opts?: { silent?: boolean; issueNonce?: boolean }) {
   }
   if (attemptGen !== previewGen) return
   await nextTick()
-  syncChatQueueFromPreview()
+  refreshLocalChatBusy()
   await loadPublicArtifacts({ silent: !!opts?.silent })
 }
 
@@ -733,163 +722,14 @@ function openUpstreamModal() {
   void loadUpstreamFull()
 }
 
-function turnsIncludeHumanText(text: string): boolean {
-  const want = text.trim()
-  if (!want) return false
-  return turns.value.some((turn) => turn.role === 'human' && (turn.text || '').trim() === want)
-}
+let publicWs: WebSocket | undefined
 
-function mapPublicQueueItem(
-  item: PublicGateQueueItem | PublicGateActiveItem | null | undefined,
-): PublicChatQueueItem | null {
-  if (!item) return null
-  return {
-    id: item.id,
-    text: item.text,
-    images: mapPublicGateImages(token.value, item.images),
-    annotations: item.annotations,
-  }
-}
-
-function syncChatQueueFromPreview() {
-  const chat = chatRef.value
-  const p = preview.value
-  if (!chat || !p || !isActive.value) return
-  const waiting = typeof p.waiting === 'number' ? p.waiting : 0
-  const items = (p.queueItems || []).map((it) => mapPublicQueueItem(it)!)
-  const activeItem = mapPublicQueueItem(p.activeItem || null)
-  // sessionBusy/waiting are authoritative; do not let a stale merged activeItem
-  // keep the chat sticky-busy after the server has gone idle.
-  const busy = !!p.sessionBusy || waiting > 0
-
-  if (busy) {
-    lastAppliedIdleQueue = false
-    chat.applyQueueState?.(waiting, items.length ? items : null, true, activeItem)
-    if (pendingReplyText.value && (turnsIncludeHumanText(pendingReplyText.value) || activeItem?.text?.trim() === pendingReplyText.value)) {
-      pendingReplyText.value = ''
-    }
-  } else if (!replyInFlight.value && !(pendingReplyText.value && !turnsIncludeHumanText(pendingReplyText.value))) {
-    if (pendingReplyText.value && turnsIncludeHumanText(pendingReplyText.value)) {
-      chat.discardLastQueued?.()
-      pendingReplyText.value = ''
-    }
-    // Re-apply when local still sticky-busy even if we already applied idle once.
-    if (!(lastAppliedIdleQueue && !chat.isSessionBusy?.())) {
-      lastAppliedIdleQueue = true
-      chat.applyQueueState?.(0, [], false, null)
-    }
-  }
-  applyPreviewLiveEvents()
-  flushPendingPublicAcp()
-  maybeStartPublicBusySeedRetry()
+/** The share page's dialogue, its opaque image refs resolved for this token. */
+function ingestPublicDialogue(frame: unknown) {
+  ingestDialogue(mapPublicDialogue(token.value, frame), PUBLIC_DIALOGUE_KEY)
   refreshLocalChatBusy()
 }
 
-function toAcpEvents(
-  events: { kind?: string; text?: string; parts?: AcpEvent['parts'] }[] | undefined,
-): AcpEvent[] {
-  if (!events?.length) return []
-  return events
-    .filter((e) => ((e.kind === 'message' || e.kind === 'thought') && e.text) || (e.kind === 'timeline' && e.parts?.length))
-    .map((e) => (e.kind === 'timeline' ? { t: 0, kind: 'timeline', parts: e.parts } : { t: 0, kind: e.kind as AcpEvent['kind'], text: e.text }))
-}
-
-let pendingPublicAcp: AcpEvent[] | null = null
-let publicWs: WebSocket | undefined
-/** Thought/message rails applied via seed or live — stops busy seed retry. */
-let publicRailsFilled = false
-let publicLiveIncremental = false
-const publicBusySeedRetry = createBusySeedRetryController()
-
-function markPublicRailsFromEvents(events: AcpEvent[] | undefined) {
-  const rails = pickAcpRails(events || [])
-  if (rails.thought || rails.message) {
-    publicRailsFilled = true
-  }
-}
-
-function publicSessionBusy(): boolean {
-  const p = preview.value
-  if (!p) return false
-  const waiting = typeof p.waiting === 'number' ? p.waiting : 0
-  return !!p.sessionBusy || waiting > 0 || !!chatRef.value?.isSessionBusy?.()
-}
-
-function startPublicBusySeedRetry() {
-  publicBusySeedRetry.start(async (signal) => {
-    await runBusySeedRetry({
-      signal,
-      isBusy: () => publicSessionBusy(),
-      hasContent: () => publicRailsFilled,
-      liveIncrementalReceived: () => publicLiveIncremental,
-      seed: async () => {
-        await loadPreview({ silent: true })
-        const events = toAcpEvents(preview.value?.liveEvents)
-        if (!events.length) return publicRailsFilled
-        const applied = deliverPublicAcp(events)
-        if (applied) markPublicRailsFromEvents(events)
-        return publicRailsFilled
-      },
-    })
-  })
-}
-
-/** Start busy-guarded seed when session busy and rails still empty (g2.2). */
-function maybeStartPublicBusySeedRetry() {
-  if (!publicSessionBusy()) {
-    publicBusySeedRetry.stop()
-    return
-  }
-  if (publicRailsFilled || publicLiveIncremental) {
-    publicBusySeedRetry.stop()
-    return
-  }
-  // Already looping — do not reset from silent poll / sync re-entry.
-  if (!publicBusySeedRetry.aborted) return
-  startPublicBusySeedRetry()
-}
-
-function deliverPublicAcp(events: AcpEvent[] | undefined): boolean {
-  if (!events?.length) return true
-  const chat = chatRef.value
-  if (!chat?.applyAcpEvents) {
-    pendingPublicAcp = events
-    return false
-  }
-  if (chat.applyAcpEvents(events) === false) {
-    pendingPublicAcp = events
-    return false
-  }
-  pendingPublicAcp = null
-  markPublicRailsFromEvents(events)
-  return true
-}
-
-function flushPendingPublicAcp() {
-  if (pendingPublicAcp) deliverPublicAcp(pendingPublicAcp)
-}
-
-function applyPreviewLiveEvents() {
-  deliverPublicAcp(toAcpEvents(preview.value?.liveEvents))
-}
-
-function rewritePublicFrameImages(frame: Record<string, unknown>): Record<string, unknown> {
-  const mapItem = (raw: unknown) => {
-    if (!raw || typeof raw !== 'object') return raw
-    const it = raw as PublicGateQueueItem
-    return {
-      ...it,
-      images: mapPublicGateImages(token.value, it.images as PublicGateQueueItem['images']),
-    }
-  }
-  const next = { ...frame }
-  if (next.item) next.item = mapItem(next.item)
-  if (next.activeItem) next.activeItem = mapItem(next.activeItem)
-  if (Array.isArray(next.items)) next.items = next.items.map(mapItem)
-  return next
-}
-
-const publicReviewCursor = createReviewStateCursor()
 function handlePublicWsMessage(raw: string) {
   let m: Record<string, unknown>
   try {
@@ -900,8 +740,6 @@ function handlePublicWsMessage(raw: string) {
   lastChatUpdateAt = Date.now()
   const typ = String(m.type || '')
   if (typ === 'ready') {
-    if (publicReviewCursor.hasVersion) chatRef.value?.applyReviewFrame?.({ event: 'session_reset', nodeId: 'public-gate' })
-    publicReviewCursor.reset()
     emit('events-ready')
     // Frames published while disconnected are gone (the server only seeds a
     // still-busy turn), so a reconnect re-reads the transcript like run detail.
@@ -919,22 +757,12 @@ function handlePublicWsMessage(raw: string) {
     if (session) emit('live-session', session)
     return
   }
-  if (typ === 'review') {
-    if (!publicReviewCursor.acceptServer(m)) return
-    // ACP buffered before this turn started belongs to an earlier turn.
-    if (m.event === 'turn_begin') pendingPublicAcp = null
-    chatRef.value?.applyReviewFrame?.(rewritePublicFrameImages(m))
-    flushPendingPublicAcp()
-    refreshLocalChatBusy()
+  if (typ === 'dialogue') {
+    ingestPublicDialogue(m)
     return
   }
-  if (typ === 'acp') {
-    const events = Array.isArray(m.events) ? (m.events as AcpEvent[]) : []
-    // ACP busy (if present) must not stop publicBusySeedRetry — platform sessionBusy is authority (g1.2).
-    if (deliverPublicAcp(events)) {
-      const rails = pickAcpRails(events)
-      if (rails.thought || rails.message) publicLiveIncremental = true
-    }
+  if (typ === 'review' && m.event === 'request_rejected') {
+    chatRef.value?.applyRequestRejected?.(m)
     refreshLocalChatBusy()
   }
 }
@@ -998,14 +826,10 @@ function connectPublicEvents() {
 function stopPublicEvents() {
   publicHeartbeat.stop()
   publicWsWasReady = false
-  publicBusySeedRetry.stop()
   publicWsReconnect.markIntentionalClose()
   const socket = publicWs
   publicWs = undefined
   socket?.close()
-  pendingPublicAcp = null
-  publicRailsFilled = false
-  publicLiveIncremental = false
 }
 
 function clearHash() {
@@ -1027,7 +851,7 @@ function auditReady(): boolean {
 
 function onComposerFinish() {
   if (!isReview.value && !auditReady()) {
-    chatRef.value?.applyQueueState?.(0, [], false, null)
+    chatRef.value?.releaseConfirmPending?.()
     return
   }
   void submitFinal('confirm')
@@ -1228,12 +1052,11 @@ async function submitFinal(kind: 'confirm' | 'reject', abortRunning = false) {
   }
 }
 
-async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[], candidateIntent = true): Promise<boolean> {
+async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[], candidateIntent = true, clientMessageId?: string): Promise<boolean> {
   if ((candidateIntent && replyInFlight.value) || linkInvalid.value) return false
   errorText.value = ''
   refreshLocalChatBusy()
   replyInFlight.value = true
-  pendingReplyText.value = text.trim()
   let candidate: LiveEvent | undefined
   let accepted = false
   try {
@@ -1258,7 +1081,7 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
       text,
       annotations: anns,
       images: images.map((im) => ({ data: im.data, mimeType: im.mimeType, name: im.name })),
-      ...(candidate ? { live: candidate } : { liveCtx }),
+      ...(candidate ? { live: candidate } : { liveCtx, ...(clientMessageId ? { clientMessageId } : {}) }),
     })
     if (result.status !== 'accepted') {
       if (['invalid', 'expired', 'revoked', 'used'].includes(result.status)) {
@@ -1290,7 +1113,6 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
       } catch { /* Preserve the same ID and draft until the caller retries. */ }
     }
     if (!accepted) {
-      pendingReplyText.value = ''
       errorText.value = (e as { body?: { error?: string } } | null)?.body?.error === 'visitors_full'
         ? t('pages.publicGate.visitorsFull')
         : e instanceof Error ? e.message : t('pages.publicGate.replyFailed')
@@ -1302,13 +1124,13 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
     }
     replyInFlight.value = false
     await nextTick()
-    syncChatQueueFromPreview()
+    refreshLocalChatBusy()
   }
   return accepted
 }
 
-async function onLegacySend(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) {
-  if (!await onSend(text, images, anns, false)) chatRef.value?.discardLastQueued?.()
+async function onLegacySend(text: string, images: ClarifyImage[], anns: ReactAnnotation[], clientMessageId?: string) {
+  if (!await onSend(text, images, anns, false, clientMessageId)) chatRef.value?.discardLastQueued?.(clientMessageId)
 }
 
 async function onCancel() {
@@ -1404,11 +1226,8 @@ function stopRemainingTick() {
     remainingTimer = null
   }
 }
-/** Same depth as hard load: re-seed liveEvents under busy guard (g2.2). */
+/** Re-read the preview, which carries the full dialogue state. */
 async function resyncChat(opts?: { issueNonce?: boolean }) {
-  publicRailsFilled = false
-  publicLiveIncremental = false
-  publicBusySeedRetry.stop()
   await loadPreview({ silent: true, issueNonce: opts?.issueNonce })
 }
 async function resumeFromForeground() {
@@ -1462,7 +1281,7 @@ watch(() => props.embedToken, (next, previous) => {
 })
 
 watch(chatRef, (chat) => {
-  if (chat) syncChatQueueFromPreview()
+  if (chat) refreshLocalChatBusy()
 })
 
 // When silent poll brings a new upstream summary, drop cached full doc.
@@ -1479,6 +1298,10 @@ watch(
 )
 
 onMounted(async () => {
+  setDialogueFetcher(async () => {
+    await loadPreview({ silent: true })
+    return null
+  }, PUBLIC_DIALOGUE_KEY)
   await applyPublicLocale()
   ready.value = true
   await loadPreview()
@@ -1490,6 +1313,8 @@ onMounted(async () => {
   chatWatchdog = setInterval(checkChatSilence, 5_000)
 })
 onUnmounted(() => {
+  setDialogueFetcher(null, PUBLIC_DIALOGUE_KEY)
+  clearDialogues({ key: PUBLIC_DIALOGUE_KEY })
   if (chatWatchdog) clearInterval(chatWatchdog)
   chatWatchdog = null
   clearRateLimitRetry()
@@ -1824,10 +1649,10 @@ defineExpose({
                   :key="publicConversationScope"
                   ref="chatRef"
                   :mode="composerMode"
-                  :send-request="chatOnly ? (text, images, anns) => onSend(text, images, anns) : undefined"
+                  :send-request="chatOnly ? (text, images, anns, clientMessageId) => onSend(text, images, anns, true, clientMessageId) : undefined"
                   run-id="public-share"
-                  node-id="public-gate"
-                  :iteration="1"
+                  :node-id="PUBLIC_CHAT_NODE_ID"
+                  :iteration="chatIteration"
                   v-model:draft="draft"
                   v-model:attachments="attachments"
                   v-model:annotations="annotations"

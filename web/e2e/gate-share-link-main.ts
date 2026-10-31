@@ -13,11 +13,15 @@ import { api } from '../src/lib/api/api'
 import { rememberShareUrl } from '../src/lib/inbox/gateShareLink'
 import type { ClarifyInboxItem, GateInboxItem, InboxItem } from '../src/lib/shared/types'
 import HtmlPreview from '../src/components/ui/HtmlPreview.vue'
+import { ingestDialogue } from '../src/lib/chat/dialogueStore'
+import { createDialogueServer, type FakeDialogue, type FakeRow, type FakeTurn } from './helpers/dialogueServer'
 
 installIdleScrollbar()
 setTheme('dark')
 
 /** Fixture WS: public workbench must not hit a real /events socket in e2e. */
+const publicSockets: E2ePublicWebSocket[] = []
+
 class E2ePublicWebSocket {
   url: string
   onopen: ((ev?: unknown) => void) | null = null
@@ -27,6 +31,7 @@ class E2ePublicWebSocket {
   readyState = 1
   constructor(url: string) {
     this.url = url
+    publicSockets.push(this)
     queueMicrotask(() => this.onopen?.())
   }
   send(data: string) {
@@ -67,11 +72,58 @@ let clarifyQueue: Array<{ id: string; text: string }> = []
 let clarifyConfirmUnfinished = false
 let clarifyLinkUsed = false
 
+const shareScene = new URLSearchParams(location.search).get('scene') || ''
+const seedRow: FakeRow = {
+  role: 'agent',
+  text: shareScene === 'public-clarify' ? '请补充验收标准' : '请复审 research.json',
+  at: '2026-08-01T00:00:00Z',
+}
+/** `?dialogue=empty`: the server already holds a reply that ended with no output (survives reload). */
+const emptyReplySeed: FakeDialogue = {
+  rows: [
+    seedRow,
+    { role: 'human', text: '做登录页', turnId: 't1' },
+    { role: 'agent', text: '', turnId: 't1', outcome: 'empty' },
+  ],
+  turns: [{ turnId: 't1', phase: 'ended', outcome: 'empty' }],
+}
+const seedEmpty = new URLSearchParams(location.search).get('dialogue') === 'empty'
+/** The share page's server dialogue: replies queue until the fixture goes idle. */
+const dialogue = createDialogueServer('public-share', 'public-gate', seedEmpty ? emptyReplySeed : { rows: [seedRow] })
+/** The inbox composer's node dialogue, delivered as the run socket would. */
+const inboxDialogue = createDialogueServer('run-e2e-clarify', 'react-e2e', seedEmpty ? emptyReplySeed : { rows: [seedRow] })
+if (shareScene === 'inbox-clarify') ingestDialogue(inboxDialogue.frame())
+
+/** Tests push a newer server dialogue (the seed row stays first). */
+;(window as unknown as { __pushDialogue?: (d: FakeDialogue) => void }).__pushDialogue = (d) => {
+  const next = { ...d, rows: [seedRow, ...d.rows] }
+  if (shareScene === 'inbox-clarify') {
+    inboxDialogue.set(next)
+    ingestDialogue(inboxDialogue.frame())
+    return
+  }
+  dialogue.set(next)
+  const data = JSON.stringify(dialogue.frame())
+  for (const ws of publicSockets) if (ws.readyState === 1) ws.onmessage?.({ data })
+}
+let dialogueSent: FakeRow[] = []
+let dialogueQueued: Array<{ text: string; clientMessageId?: string }> = []
+function publishDialogue() {
+  const turns: FakeTurn[] = dialogueQueued.map((item, i) => ({ turnId: `q-${i + 1}`, phase: 'queued', item }))
+  dialogue.set({ rows: [seedRow, ...dialogueSent], turns })
+}
+
 ;(window as unknown as { __idleReview?: () => void }).__idleReview = () => {
   // Authoritative idle: clear busy + pending queue so public-clarify waiting=0
   // matches product poll (confirm gated on local !sessionBusy).
   reviewPreviewBusy = false
   clarifyQueue = []
+  dialogueSent = [
+    ...dialogueSent,
+    ...dialogueQueued.map((item, i) => ({ role: 'human' as const, turnId: `t-${dialogueSent.length + i + 1}`, at: '2026-08-01T00:02:00Z', ...item })),
+  ]
+  dialogueQueued = []
+  publishDialogue()
   reviewPreviewTurns = [
     { role: 'agent', text: '请复审 research.json', at: '2026-08-01T00:00:00Z' },
     { role: 'human', text: '请改标题', at: '2026-08-01T00:02:00Z' },
@@ -179,6 +231,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           turns: reviewPreviewTurns.length
             ? reviewPreviewTurns
             : [{ role: 'agent', text: '请补充验收标准', at: '2026-08-01T00:00:00Z' }],
+          dialogue: dialogue.frame(),
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
@@ -201,6 +254,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
           structured: { name: 'research.json', title: '调研摘要', doc: { title: '调研摘要' } },
           turns: reviewPreviewTurns,
+          dialogue: dialogue.frame(),
           upstream: { name: 'clarified_requirement.json', title: '澄清', summary: '已有澄清需求文档，可对照审阅当前主产物' },
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -293,6 +347,9 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const text = String(body.text || '').trim()
     if (text) {
       clarifyQueue = [...clarifyQueue, { id: `q-${clarifyQueue.length + 1}`, text }]
+      const clientMessageId = typeof body.clientMessageId === 'string' ? body.clientMessageId : undefined
+      dialogueQueued = [...dialogueQueued, { text, ...(clientMessageId ? { clientMessageId } : {}) }]
+      publishDialogue()
       reviewPreviewTurns = [
         ...reviewPreviewTurns,
         { role: 'human', text, at: new Date().toISOString() },

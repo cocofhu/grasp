@@ -73,8 +73,7 @@ const reviewShellRef = ref<{
 } | null>(null)
 
 const reviewChatRef = ref<{
-  applyReviewFrame?: (frame: any) => boolean | void
-  applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
+  applyRequestRejected?: (frame: any) => void
   discardLastQueued?: (clientMessageId?: string) => void
   releaseConfirmPending?: () => void
   restoreUnsentQueued?: RestoreUnsent
@@ -90,9 +89,7 @@ const conversationRunName = useConversationToolbarRunName(() => ({
 }))
 
 defineExpose({
-  applyReviewFrame: (frame: any) => reviewChatRef.value?.applyReviewFrame?.(frame),
-  applyAcpEvents: (events: any[] | undefined, nodeId?: string) =>
-    reviewChatRef.value?.applyAcpEvents?.(events, nodeId),
+  applyRequestRejected: (frame: any) => reviewChatRef.value?.applyRequestRejected?.(frame),
   discardLastQueued: (clientMessageId?: string) => reviewChatRef.value?.discardLastQueued?.(clientMessageId),
   releaseConfirmPending: () => reviewChatRef.value?.releaseConfirmPending?.(),
   restoreUnsentQueued: (...args: Parameters<RestoreUnsent>) =>

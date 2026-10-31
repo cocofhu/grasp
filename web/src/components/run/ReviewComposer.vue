@@ -8,7 +8,7 @@ import ComposerShell from './ComposerShell.vue'
 import ParagraphInput from '../ui/ParagraphInput.vue'
 import GateReactStreamPanel from './GateReactStreamPanel.vue'
 import PendingSendQueuePanel, { type PendingQueueRow } from './PendingSendQueuePanel.vue'
-import type { AgentTool, ClarifyTurn, ClarifyImage, ReactAnnotation, AcpEvent } from '@/lib/shared/types'
+import type { AgentTool, ClarifyTurn, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import AnnotationChip from './AnnotationChip.vue'
 import PageControlStatus from './PageControlStatus.vue'
 import type { GateReactTurn } from './gateApproval/gateApprovalContext'
@@ -158,14 +158,7 @@ const emit = defineEmits<{
 const paragraphRef = ref<{ pickFiles?: () => void } | null>(null)
 
 const chatRef = ref<{
-  applyReviewFrame: (frame: any) => void
-  applyAcpEvents: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
-  applyQueueState: (
-    waiting: number,
-    items: any[] | null,
-    busy?: boolean,
-    activeItem?: any | null,
-  ) => void
+  applyRequestRejected: (frame: any) => void
   cancelReview: () => void
   discardLastQueued: (clientMessageId?: string) => void
   releaseConfirmPending?: () => void
@@ -176,26 +169,7 @@ const chatRef = ref<{
 } | null>(null)
 
 defineExpose({
-  /** Returns false when ClarifyChat is not mounted yet (hard-load race). */
-  applyReviewFrame: (frame: any): boolean => {
-    if (!chatRef.value?.applyReviewFrame) return false
-    chatRef.value.applyReviewFrame(frame)
-    return true
-  },
-  /**
-   * Pass through ClarifyChat apply result — false when slot not ready
-   * (must not return true merely because chatRef exists).
-   */
-  applyAcpEvents: (events: AcpEvent[] | undefined, nodeId?: string): boolean => {
-    if (!chatRef.value?.applyAcpEvents) return false
-    return chatRef.value.applyAcpEvents(events, nodeId) !== false
-  },
-  applyQueueState: (
-    waiting: number,
-    items: any[] | null,
-    busy?: boolean,
-    activeItem?: any | null,
-  ) => chatRef.value?.applyQueueState?.(waiting, items, busy, activeItem),
+  applyRequestRejected: (frame: any) => chatRef.value?.applyRequestRejected(frame),
   cancelReview: () => chatRef.value?.cancelReview(),
   discardLastQueued: (clientMessageId?: string) => chatRef.value?.discardLastQueued(clientMessageId),
   releaseConfirmPending: () => chatRef.value?.releaseConfirmPending?.(),

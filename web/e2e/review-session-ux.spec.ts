@@ -7,7 +7,7 @@ const shotDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.
 async function sendOpinion(page: import('@playwright/test').Page, text: string) {
   const box = page.locator('textarea').first()
   await box.fill(text)
-  await page.locator('button[class*="bg-accent"]').last().click()
+  await page.getByTestId('clarify-send-icon').click()
 }
 
 test.describe('ClarifyChat reviewMode 双面三项', () => {
@@ -24,7 +24,9 @@ test.describe('ClarifyChat reviewMode 双面三项', () => {
     await expect(queue).toContainText('待发送队列')
     await expect(queue).toContainText('视觉意见甲')
     await expect(queue).toContainText('视觉意见乙')
-    await expect(page.getByTestId('clarify-confirm-flow')).toBeDisabled()
+    // One primary action: while busy it is 停止, 确认并流转 returns when idle.
+    await expect(page.getByTestId('clarify-review-cancel')).toBeVisible()
+    await expect(page.getByTestId('clarify-confirm-flow')).toHaveCount(0)
     await expect(page.getByTestId('clarify-review-queue')).toBeVisible()
     await page.screenshot({ path: path.join(shotDir, '01-visual-queue.png'), fullPage: true })
 
