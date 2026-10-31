@@ -450,6 +450,7 @@ func (s *CredentialService) Clear(id string) error {
 		return ErrCredentialNotFound
 	}
 	row.ValueEnc = ""
+	row.Metadata = nil
 	row.SecretRevision = nextSecretRevision(row.SecretRevision)
 	row.RevokedAt = nil
 	row.Enabled = true

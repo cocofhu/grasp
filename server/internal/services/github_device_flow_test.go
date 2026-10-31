@@ -451,3 +451,78 @@ func TestGitHubDeviceFlowPrunesOwnerSessions(t *testing.T) {
 		t.Fatalf("sessions=%d", n)
 	}
 }
+
+// hookTransport runs onRequest before forwarding a request whose path matches.
+type hookTransport struct {
+	path      string
+	onRequest func()
+}
+
+func (h *hookTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.URL.Path == h.path {
+		h.onRequest()
+	}
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+func TestGitHubDeviceFlowCancelDuringPollDoesNotSave(t *testing.T) {
+	for _, path := range []string{"/login/oauth/access_token", "/user"} {
+		t.Run(path, func(t *testing.T) {
+			svc, creds, gh, clock := newDeviceFlowFixture(t, "cid")
+			ctx := context.Background()
+			start, err := svc.Start(ctx, "alice", "mine", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			svc.client.Transport = &hookTransport{path: path, onRequest: func() { svc.Cancel("alice", start.SessionID) }}
+			gh.setToken(successToken)
+			clock.add(5 * time.Second)
+			if poll, err := svc.Poll(ctx, "alice", start.SessionID); !errors.Is(err, ErrGitHubDeviceSessionNotFound) {
+				t.Fatalf("poll=%+v err=%v", poll, err)
+			}
+			list, err := creds.List()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(list) != 0 {
+				t.Fatalf("cancelled session saved a credential: %+v", list)
+			}
+		})
+	}
+}
+
+func TestGitHubDeviceFlowPollIgnoresRequestCancelForUserLookup(t *testing.T) {
+	svc, _, gh, clock := newDeviceFlowFixture(t, "cid")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	start, _ := svc.Start(ctx, "alice", "mine", "")
+	svc.client.Transport = &hookTransport{path: "/user", onRequest: cancel}
+	gh.setToken(successToken)
+	clock.add(5 * time.Second)
+	poll, err := svc.Poll(ctx, "alice", start.SessionID)
+	if err != nil || poll.Status != GitHubDeviceAuthorized || poll.GitHubLogin != "octocat" {
+		t.Fatalf("poll=%+v err=%v", poll, err)
+	}
+}
+
+func TestGitHubDeviceFlowClearDropsAccountMetadata(t *testing.T) {
+	svc, creds, gh, clock := newDeviceFlowFixture(t, "cid")
+	ctx := context.Background()
+	start, _ := svc.Start(ctx, "alice", "mine", "")
+	gh.setToken(successToken)
+	clock.add(5 * time.Second)
+	poll, err := svc.Poll(ctx, "alice", start.SessionID)
+	if err != nil || poll.Credential == nil {
+		t.Fatalf("poll=%+v err=%v", poll, err)
+	}
+	if err := creds.Clear(poll.Credential.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := creds.Get(poll.Credential.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Metadata) != 0 {
+		t.Fatalf("metadata kept after clear: %+v", got.Metadata)
+	}
+}

@@ -1214,6 +1214,7 @@ watch(showCreate, (open) => {
         >
           {{ t('pages.workspace.credentials.back') }}
         </AppButton>
+        <AppButton v-if="createStep === 2 && deviceLoginLocked && deviceLoginState !== 'authorized'" variant="ghost" data-testid="github-device-cancel" @click="closeCreate">{{ t('common.buttons.cancel') }}</AppButton>
         <AppButton v-if="createStep === 2 && deviceLoginActive && deviceLoginState === 'authorized'" variant="primary" data-testid="github-device-done" @click="closeCreate">{{ t('pages.workspace.credentials.githubDevice.done') }}</AppButton>
         <AppButton v-if="createStep === 2 && !deviceLoginActive" variant="primary" :disabled="creating || stepLock || !createAlias.trim() || !secretReady || !connectionReady || !createHostValid" data-testid="workspace-credential-review-next" @click="goNext">{{ routingCopy.next }}</AppButton>
         <AppButton

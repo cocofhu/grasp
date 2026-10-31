@@ -230,7 +230,7 @@ func (s *GitHubDeviceFlowService) Poll(ctx context.Context, owner, sessionID str
 		s.mu.Unlock()
 		return GitHubDevicePoll{}, ErrGitHubDeviceSessionNotFound
 	}
-	if !now.Before(sess.expiresAt) {
+	if !sess.busy && !now.Before(sess.expiresAt) {
 		delete(s.sessions, sessionID)
 		s.mu.Unlock()
 		return GitHubDevicePoll{Status: GitHubDeviceExpired}, nil
@@ -247,6 +247,11 @@ func (s *GitHubDeviceFlowService) Poll(ctx context.Context, owner, sessionID str
 	tok, err := s.requestToken(ctx, clientID, deviceCode)
 
 	s.mu.Lock()
+	if s.sessions[sessionID] != sess {
+		// Cancelled (or pruned) while the request was in flight.
+		s.mu.Unlock()
+		return GitHubDevicePoll{}, ErrGitHubDeviceSessionNotFound
+	}
 	sess.busy = false
 	sess.nextPoll = s.now().Add(sess.interval)
 	if err != nil {
@@ -288,15 +293,27 @@ func (s *GitHubDeviceFlowService) Poll(ctx context.Context, owner, sessionID str
 		s.mu.Unlock()
 		return GitHubDevicePoll{Status: GitHubDeviceError, Error: "invalid_response"}, nil
 	}
-	// The device code is single-use; drop the session before saving so a
-	// concurrent poll cannot store the token twice.
-	delete(s.sessions, sessionID)
+	// Stay busy during the account lookup so concurrent polls return pending
+	// and a Cancel in the meantime still prevents the save.
+	sess.busy = true
 	s.mu.Unlock()
 
-	login, scopes := s.fetchUser(ctx, tok.AccessToken)
+	userCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	login, scopes := s.fetchUser(userCtx, tok.AccessToken)
+	cancel()
 	if scopes == nil {
 		scopes = splitScopes(tok.Scope)
 	}
+
+	// The device code is single-use; drop the session before saving so a
+	// concurrent poll cannot store the token twice.
+	s.mu.Lock()
+	if s.sessions[sessionID] != sess {
+		s.mu.Unlock()
+		return GitHubDevicePoll{}, ErrGitHubDeviceSessionNotFound
+	}
+	delete(s.sessions, sessionID)
+	s.mu.Unlock()
 	return s.save(sess, tok.AccessToken, login, scopes), nil
 }
 

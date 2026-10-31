@@ -157,6 +157,20 @@ describe('WorkspaceCredentialsPanel GitHub device sign-in', () => {
     wrapper.unmount()
   })
 
+  it('the footer cancel button stops waiting and closes the dialog', async () => {
+    const wrapper = mountPanel()
+    await openGitHubDetails(wrapper)
+    await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('Mine')
+    expect(wrapper.find('[data-testid="github-device-cancel"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="github-device-start"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="github-device-cancel"]').trigger('click')
+    await flushPromises()
+    expect(mocks.cancel).toHaveBeenCalledWith('ghd-1')
+    expect(wrapper.find('[data-testid="github-device-card"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('offers re-login only for github.com credentials and starts it with the credential id', async () => {
     const wrapper = mountPanel([github, enterprise])
     await flushPromises()
