@@ -1,0 +1,193 @@
+{
+  "scenario": "retry",
+  "about": "retry covers the empty reply; the request row moves to the new turn",
+  "frames": [
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "clarify",
+      "iteration": 1,
+      "kind": "clarify",
+      "epoch": 1,
+      "seq": 1,
+      "mode": "full",
+      "rows": [
+        {
+          "role": "human",
+          "text": "做登录",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-1",
+          "id": "turn-1:h",
+          "phase": "sealed",
+          "rev": 1
+        },
+        {
+          "role": "agent",
+          "text": "",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-1",
+          "outcome": "empty",
+          "id": "turn-1:a0",
+          "phase": "sealed",
+          "rev": 1
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "turn-1",
+          "phase": "ended",
+          "outcome": "empty"
+        }
+      ],
+      "busy": false,
+      "done": false
+    },
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "clarify",
+      "iteration": 1,
+      "kind": "clarify",
+      "epoch": 1,
+      "seq": 2,
+      "mode": "full",
+      "rows": [
+        {
+          "role": "human",
+          "text": "做登录",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-2",
+          "id": "turn-2:h",
+          "phase": "sealed",
+          "rev": 2
+        },
+        {
+          "role": "agent",
+          "text": "",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-2",
+          "id": "turn-2:a0",
+          "phase": "running",
+          "rev": 2,
+          "streaming": true
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "turn-2",
+          "phase": "running",
+          "item": {
+            "annotations": [],
+            "id": "turn-2",
+            "images": [],
+            "text": "做登录"
+          }
+        },
+        {
+          "turnId": "turn-1",
+          "phase": "ended",
+          "outcome": "interrupted"
+        }
+      ],
+      "busy": true,
+      "done": false
+    },
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "clarify",
+      "iteration": 1,
+      "kind": "clarify",
+      "epoch": 1,
+      "seq": 3,
+      "mode": "tail",
+      "prefixLen": 1,
+      "prefixDigest": "1:9134ca6d",
+      "rows": [
+        {
+          "role": "agent",
+          "text": "请继续补充。",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-2",
+          "outcome": "ok",
+          "questions": [
+            {
+              "id": "q2",
+              "prompt": "还需要一点信息。",
+              "options": null
+            }
+          ],
+          "id": "turn-2:a0",
+          "phase": "sealed",
+          "rev": 3
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "turn-1",
+          "phase": "ended",
+          "outcome": "interrupted"
+        },
+        {
+          "turnId": "turn-2",
+          "phase": "ended",
+          "outcome": "ok"
+        }
+      ],
+      "busy": false,
+      "done": false
+    }
+  ],
+  "final": {
+    "type": "dialogue",
+    "runId": "run-fixture",
+    "nodeId": "clarify",
+    "iteration": 1,
+    "kind": "clarify",
+    "epoch": 1,
+    "seq": 3,
+    "mode": "full",
+    "rows": [
+      {
+        "role": "human",
+        "text": "做登录",
+        "at": "2026-01-01T00:00:00Z",
+        "turnId": "turn-2",
+        "id": "turn-2:h",
+        "phase": "sealed",
+        "rev": 2
+      },
+      {
+        "role": "agent",
+        "text": "请继续补充。",
+        "at": "2026-01-01T00:00:00Z",
+        "turnId": "turn-2",
+        "outcome": "ok",
+        "questions": [
+          {
+            "id": "q2",
+            "prompt": "还需要一点信息。",
+            "options": null
+          }
+        ],
+        "id": "turn-2:a0",
+        "phase": "sealed",
+        "rev": 3
+      }
+    ],
+    "turns": [
+      {
+        "turnId": "turn-1",
+        "phase": "ended",
+        "outcome": "interrupted"
+      },
+      {
+        "turnId": "turn-2",
+        "phase": "ended",
+        "outcome": "ok"
+      }
+    ],
+    "busy": false,
+    "done": false
+  }
+}

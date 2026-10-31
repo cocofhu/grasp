@@ -1,0 +1,211 @@
+{
+  "scenario": "queued",
+  "about": "a message waits behind a running turn, then both finish",
+  "frames": [
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "clarify",
+      "iteration": 1,
+      "kind": "clarify",
+      "epoch": 1,
+      "seq": 1,
+      "mode": "full",
+      "rows": [
+        {
+          "role": "human",
+          "text": "第一条",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-1",
+          "id": "turn-1:h",
+          "phase": "sealed",
+          "rev": 1
+        },
+        {
+          "role": "agent",
+          "text": "",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-1",
+          "id": "turn-1:a0",
+          "phase": "running",
+          "rev": 1,
+          "streaming": true
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "turn-1",
+          "phase": "running",
+          "item": {
+            "annotations": [],
+            "id": "turn-1",
+            "images": [],
+            "text": "第一条"
+          }
+        },
+        {
+          "turnId": "turn-2",
+          "phase": "queued",
+          "position": 0,
+          "item": {
+            "annotations": [],
+            "id": "turn-2",
+            "images": [],
+            "text": "第二条"
+          }
+        }
+      ],
+      "busy": true,
+      "done": false
+    },
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "clarify",
+      "iteration": 1,
+      "kind": "clarify",
+      "epoch": 1,
+      "seq": 2,
+      "mode": "tail",
+      "prefixLen": 1,
+      "prefixDigest": "1:74ec1651",
+      "rows": [
+        {
+          "role": "agent",
+          "text": "请继续补充。",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-1",
+          "outcome": "ok",
+          "questions": [
+            {
+              "id": "q2",
+              "prompt": "还需要一点信息。",
+              "options": null
+            }
+          ],
+          "id": "turn-1:a0",
+          "phase": "sealed",
+          "rev": 2
+        },
+        {
+          "role": "human",
+          "text": "第二条",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-2",
+          "id": "turn-2:h",
+          "phase": "sealed",
+          "rev": 2
+        },
+        {
+          "role": "agent",
+          "text": "请继续补充。",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-2",
+          "outcome": "ok",
+          "questions": [
+            {
+              "id": "q2",
+              "prompt": "还需要一点信息。",
+              "options": null
+            }
+          ],
+          "id": "turn-2:a0",
+          "phase": "sealed",
+          "rev": 2
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "turn-1",
+          "phase": "ended",
+          "outcome": "ok"
+        },
+        {
+          "turnId": "turn-2",
+          "phase": "ended",
+          "outcome": "ok"
+        }
+      ],
+      "busy": false,
+      "done": false
+    }
+  ],
+  "final": {
+    "type": "dialogue",
+    "runId": "run-fixture",
+    "nodeId": "clarify",
+    "iteration": 1,
+    "kind": "clarify",
+    "epoch": 1,
+    "seq": 2,
+    "mode": "full",
+    "rows": [
+      {
+        "role": "human",
+        "text": "第一条",
+        "at": "2026-01-01T00:00:00Z",
+        "turnId": "turn-1",
+        "id": "turn-1:h",
+        "phase": "sealed",
+        "rev": 1
+      },
+      {
+        "role": "agent",
+        "text": "请继续补充。",
+        "at": "2026-01-01T00:00:00Z",
+        "turnId": "turn-1",
+        "outcome": "ok",
+        "questions": [
+          {
+            "id": "q2",
+            "prompt": "还需要一点信息。",
+            "options": null
+          }
+        ],
+        "id": "turn-1:a0",
+        "phase": "sealed",
+        "rev": 2
+      },
+      {
+        "role": "human",
+        "text": "第二条",
+        "at": "2026-01-01T00:00:00Z",
+        "turnId": "turn-2",
+        "id": "turn-2:h",
+        "phase": "sealed",
+        "rev": 2
+      },
+      {
+        "role": "agent",
+        "text": "请继续补充。",
+        "at": "2026-01-01T00:00:00Z",
+        "turnId": "turn-2",
+        "outcome": "ok",
+        "questions": [
+          {
+            "id": "q2",
+            "prompt": "还需要一点信息。",
+            "options": null
+          }
+        ],
+        "id": "turn-2:a0",
+        "phase": "sealed",
+        "rev": 2
+      }
+    ],
+    "turns": [
+      {
+        "turnId": "turn-1",
+        "phase": "ended",
+        "outcome": "ok"
+      },
+      {
+        "turnId": "turn-2",
+        "phase": "ended",
+        "outcome": "ok"
+      }
+    ],
+    "busy": false,
+    "done": false
+  }
+}

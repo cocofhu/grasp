@@ -746,6 +746,7 @@ func (h *Handlers) publicReviewExtras(lookup *gateshare.LookupResult, lane, visu
 		}
 	}
 	ex.Turns = h.publicLaneTurns(lookup, nodeID, lane)
+	ex.Dialogue = h.publicDialogueValue(runID, nodeID, lane)
 	ex.ReactSessionAlive = h.Eng != nil && h.Eng.HasLiveReviewSession(runID, nodeID)
 	if ex.ReactSessionAlive {
 		h.publicLaneSession(&ex, runID, nodeID, lane)
@@ -776,6 +777,7 @@ func (h *Handlers) publicGateExtras(lookup *gateshare.LookupResult, lane, visual
 	}
 	if producerID != "" {
 		ex.Turns = h.publicLaneTurns(lookup, producerID, lane)
+		ex.Dialogue = h.publicDialogueValue(runID, producerID, lane)
 	}
 	ex.ReactSessionAlive = alive
 	if alive {

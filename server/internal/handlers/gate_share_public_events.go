@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -130,6 +131,14 @@ func (h *Handlers) PublicGateEvents(c *gin.Context) {
 			if !open {
 				return
 			}
+			if lane == "" && isDialogueFrameFor(msg, producerID) {
+				if out, ok := h.publicDialogueFrame(runID, producerID); ok {
+					if err := w.write(out); err != nil {
+						return
+					}
+				}
+				continue
+			}
 			out, ok := gateshare.FilterPublicLaneFrame(msg, producerID, lane, imageBase)
 			if !ok {
 				continue
@@ -155,6 +164,9 @@ func (h *Handlers) seedPublicDialogue(conn *websocket.Conn, lookup *gateshare.Lo
 	if lane != "" {
 		h.seedVisitorDialogue(conn, runID, producerID, lane, imageBase)
 		return
+	}
+	if out, ok := h.publicDialogueFrame(runID, producerID); ok {
+		_ = conn.WriteMessage(websocket.TextMessage, out)
 	}
 	busy := false
 	if snap, ok := h.Eng.ReviewSessionSnapshotFor(runID, producerID); ok {
@@ -240,4 +252,43 @@ func writeSeedFrame(conn *websocket.Conn, payload map[string]any, producerID str
 // dialogue turns already occupy, so WS queue/active frames continue the series.
 func (h *Handlers) publicDialogueImageBase(lookup *gateshare.LookupResult, producerID, lane string) int {
 	return len(gateshare.DialogueImageCatalog(h.publicLaneTurns(lookup, producerID, lane), nil, nil))
+}
+
+// isDialogueFrameFor peeks at a broker frame without decoding its rows.
+func isDialogueFrameFor(raw []byte, producerID string) bool {
+	if !bytes.Contains(raw, []byte(`"type":"dialogue"`)) {
+		return false
+	}
+	var head struct {
+		Type   string `json:"type"`
+		NodeID string `json:"nodeId"`
+	}
+	return json.Unmarshal(raw, &head) == nil && head.Type == "dialogue" && head.NodeID == producerID
+}
+
+// publicDialogueFrame is the node's current dialogue, redacted, as one full
+// frame. Tail frames are never forwarded: a viewer's image indexes and
+// fields come from the whole state.
+func (h *Handlers) publicDialogueFrame(runID, producerID string) ([]byte, bool) {
+	if h.Eng == nil {
+		return nil, false
+	}
+	st, ok := h.Eng.PublicDialogueSnapshot(runID, producerID)
+	if !ok {
+		return nil, false
+	}
+	b, err := json.Marshal(st)
+	return b, err == nil
+}
+
+// publicDialogueValue is the preview DTO's dialogue: the node's own lane only
+// (a visitor lane is a separate chat).
+func (h *Handlers) publicDialogueValue(runID, producerID, lane string) any {
+	if lane != "" || h.Eng == nil || producerID == "" {
+		return nil
+	}
+	if st, ok := h.Eng.PublicDialogueSnapshot(runID, producerID); ok {
+		return st
+	}
+	return nil
 }
