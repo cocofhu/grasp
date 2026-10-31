@@ -25,6 +25,8 @@ export type LaneState<T> = {
   loading: boolean
   paging: boolean
   skipped: boolean
+  /** True once any reply (or failure) has landed since the lane was last reset. */
+  settled: boolean
   error: string
   errorCode: string
   hint: string
@@ -37,13 +39,14 @@ const DEBOUNCE: Record<LaneName, number> = { solo: 120, github: 250 }
 const GITHUB_EXACT = /^(?:https?:\/\/github\.com\/|[\w.-]+\/[\w.-]+#\d+$|#\d+$)/i
 
 function emptyLane<T>(): LaneState<T> {
-  return { items: [], loading: false, paging: false, skipped: false, error: '', errorCode: '', hint: '' }
+  return { items: [], loading: false, paging: false, skipped: false, settled: false, error: '', errorCode: '', hint: '' }
 }
 
 /**
  * Picker search with one lane per source: debounced, cancelled when the query
  * moves on, sequence-checked so a slow reply never overwrites a newer one,
- * and cached per query for five minutes (stale results show while refreshing).
+ * and cached per query for five minutes. The previous results, hint or error
+ * stay on screen until the new reply lands, so typing does not flash.
  */
 export function useReferenceSearch(scope: Ref<ReferenceScope>) {
   const solo = reactive(emptyLane<SoloReferenceCandidate>()) as LaneState<SoloReferenceCandidate>
@@ -62,6 +65,7 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>) {
     lane.hint = data.hint || ''
     lane.error = data.error?.message || ''
     lane.errorCode = data.error?.code || ''
+    lane.settled = true
   }
 
   function cancel(name: LaneName) {
@@ -87,8 +91,6 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>) {
         if (Date.now() - hit.at < CACHE_TTL) return
       } else {
         lane.loading = true
-        lane.error = ''
-        lane.hint = ''
       }
     } else {
       lane.paging = true
@@ -107,6 +109,7 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>) {
         if (page === 1) lane.items = []
         lane.error = String(e?.message || e)
         lane.errorCode = 'upstream'
+        lane.settled = true
       } finally {
         if (my === c.seq) {
           lane.loading = false
