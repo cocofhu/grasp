@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, toRef, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import type { GitHubReferenceCandidate, MessageReference, SoloReferenceCandidate } from '@/lib/api/apiTypes'
-import { useReferenceSearch, type GitHubStateFilter, type ReferenceTab } from '@/lib/solo/useReferenceSearch'
+import { useReferenceSearch, type GitHubStateFilter, type ReferenceScope, type ReferenceTab } from '@/lib/solo/useReferenceSearch'
 import { referenceIcon } from '@/lib/solo/referenceDisplay'
 
 const props = defineProps<{
-  sessionId: string
+  /** An open session, or the launch composer's agent and projects. */
+  scope: ReferenceScope
   query: string
   /** Targets already picked in this message; hidden from the list. */
   taken: string[]
   full: boolean
   initialTab?: ReferenceTab
+  /** Opens above the composer by default; the home composer opens below. */
+  placement?: 'up' | 'down'
 }>()
 const emit = defineEmits<{ (e: 'pick', ref: MessageReference): void }>()
 const { t } = useI18n()
@@ -22,7 +25,7 @@ const ghState = ref<GitHubStateFilter>('open')
 /** -1 until the user moves: Enter without a highlight sends the text as typed. */
 const sel = ref(-1)
 const list = ref<HTMLElement | null>(null)
-const search = useReferenceSearch(toRef(props, 'sessionId'))
+const search = useReferenceSearch(computed(() => props.scope))
 const TABS: ReferenceTab[] = ['all', 'solo', 'issue', 'pr']
 const ALL_LIMIT = 5
 
@@ -97,7 +100,7 @@ function refresh() {
   sel.value = -1
   search.search(props.query, tab.value, ghState.value)
 }
-watch(() => [props.query, props.sessionId] as const, refresh, { immediate: true })
+watch(() => [props.query, JSON.stringify(props.scope)] as const, refresh, { immediate: true })
 watch([tab, ghState], refresh)
 
 function setTab(next: ReferenceTab) {
@@ -157,7 +160,7 @@ defineExpose({ move, confirm, cycleTab, setTab })
 </script>
 
 <template>
-  <div class="ref-picker" role="listbox" :aria-label="t('pages.solo.reference.pickerLabel')" data-testid="solo-reference-picker" @mousedown.prevent>
+  <div class="ref-picker" :class="{ 'ref-picker--down': placement === 'down' }" role="listbox" :aria-label="t('pages.solo.reference.pickerLabel')" data-testid="solo-reference-picker" @mousedown.prevent>
     <div class="ref-picker__tabs">
       <div class="flex min-w-0 flex-1 items-center gap-0.5">
         <button
@@ -246,6 +249,10 @@ defineExpose({ move, confirm, cycleTab, setTab })
   border-radius: 12px;
   background: rgb(var(--c-elevated));
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+}
+.ref-picker--down {
+  top: calc(100% + 8px);
+  bottom: auto;
 }
 .ref-picker__tabs {
   display: flex;

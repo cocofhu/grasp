@@ -28,6 +28,17 @@
 - 为什么：用户希望澄清确认后，默认工作流的实现、测试评审、交付自动跑完，中间不停下等人复审。副作用：auto 节点关闭复审后不再提供 Live 实时变体，属预期。
 - 如何验证：新增 `TestBuiltInTemplates_ReviewOffExceptClarify`（除 clarify 外模板与 `ApplyCreateTemplate` 结果 review 均为 false，clarify 仍是 clarify 交互）；server `go test ./...`、golangci-lint 通过；web vitest（`--maxWorkers=2`）通过；onboarding e2e mock 同步去掉 `review: true`。
 
+### 2026-10-31（首页 Solo 启动框也能 @ 引用）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/services/{solo,solo_reference_search,solo_reference_github}.go`、`server/internal/handlers/solo.go`、`server/internal/router/router.go`、`web/src/lib/solo/{useReferenceComposer,useReferenceSearch,useSoloLauncher}.ts`、`web/src/components/solo/{ReferencePicker,SoloSessionPane}.vue`、`web/src/views/DashboardView.vue`、`web/src/lib/api/{apiTypes.ts,clients/soloClient.ts}`、`web/LIB_DOMAIN_MAP.json`、`docs/content/{,en/}guide/concepts.md`，以及对应测试。
+- 做了什么：
+  - 后端：`SoloCreateInput` 加 `references`。创建时先校验引用，再入库、开沙箱，引用不合法时不留下会话也不占沙箱。首轮通过新的 `enqueueTurn` 带着引用入队，锚点仍在轮次开始时固定。只有引用、没有文字时，标题取「@第一个引用」。
+  - 新增 `GET /api/solo/references/search?lane=&agent=&projects=a,b`：用当前选中的 Agent 和仓库组成一条草稿会话，复用原有的搜索、凭据选择和 GitHub 查询；会话 lane 列出自己的全部会话。没有仓库时的提示改成中性说法，不再写「当前会话」。
+  - 前端：把会话面板里的 @ 逻辑抽成 `useReferenceComposer`，会话面板和首页共用。`ReferencePicker` 的输入从 `sessionId` 改为 `scope`（会话，或 agent 加 projects），新增 `placement="down"`，首页向下展开。首页只在 Solo 模式启用 @ 和「+」菜单（上传、引用会话、引用 Issue / PR），工作流模式下「+」仍直接选文件。切回工作流模式时保留文字、去掉引用；`#n` 简写以首个选中仓库为准。
+- 为什么：用户在首页直接开新 Solo 时也要能带上其他会话或 issue/PR，不必先开会话再补发。
+- 如何验证：新增 Go 测试，覆盖创建时带引用（非法引用不留下会话、首轮锚点和提示词、标题）、首页搜索（会话 lane、无仓库提示、按所选仓库限定、未知项目、非法 lane）和 handler 端点；新增 `DashboardView.references.test.ts`，覆盖首页 @ 搜索参数、键盘选择、创建请求带引用、「+」菜单、粘贴链接、切换模式。全量门禁结果见 PR。
+
 ### 2026-10-30（Solo @ 引用：其他会话与 GitHub issue/PR）
 
 - 日期：2026-10-30。

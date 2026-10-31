@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -292,17 +293,41 @@ func (h *Handlers) SearchSoloReferences(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, _ := strconv.Atoi(c.Query("page"))
-	q := services.ReferenceSearchQuery{Lane: c.Query("lane"), Query: c.Query("q"), State: c.Query("state"), Page: page}
-	if kind := c.Query("kind"); kind != "" {
-		q.Kinds = []string{kind}
-	}
-	res, err := h.Solo.SearchReferences(c.Request.Context(), c.Param("id"), user, q)
+	res, err := h.Solo.SearchReferences(c.Request.Context(), c.Param("id"), user, referenceQuery(c))
 	if err != nil {
 		writeSoloErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, res)
+}
+
+// SearchLaunchReferences handles GET /api/solo/references/search for the
+// launch composer: agent and projects (comma separated ids) stand in for the
+// session that does not exist yet.
+func (h *Handlers) SearchLaunchReferences(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	var projects []string
+	if raw := c.Query("projects"); raw != "" {
+		projects = strings.Split(raw, ",")
+	}
+	res, err := h.Solo.SearchLaunchReferences(c.Request.Context(), user, c.Query("agent"), projects, referenceQuery(c))
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+func referenceQuery(c *gin.Context) services.ReferenceSearchQuery {
+	page, _ := strconv.Atoi(c.Query("page"))
+	q := services.ReferenceSearchQuery{Lane: c.Query("lane"), Query: c.Query("q"), State: c.Query("state"), Page: page}
+	if kind := c.Query("kind"); kind != "" {
+		q.Kinds = []string{kind}
+	}
+	return q
 }
 
 // StartSoloTurn handles POST /api/solo/sessions/:id/turns.
