@@ -303,7 +303,13 @@ not a substitute for these gates.
    server's dialogue state (`engine/dialogue_state.go` → `dialogueStore`). Fix a
    wrong row, phase or 「本轮没有输出」 in the server state; do not add frontend
    special cases. ESLint rejects ACP / review frame handling and empty-text
-   failure guesses in `ClarifyChat.vue`, `useClarifyChat.ts` and `lib/chat/dialogue*.ts`.
+   failure guesses in `ClarifyChat.vue`, `useClarifyChat.ts`, `lib/chat/dialogue*.ts`
+   and `lib/inbox/clarifyReplyText.ts`. The only page-local state allowed on top
+   of it: optimistic sends (`dialogueState.ts`, dropped once the server lists the
+   message) and the short overlays in `lib/chat/dialogueOverlay.ts` (settle,
+   retry attempt, hidden / reordered queue rows, Stop pending, cancelled orphan),
+   each of which gives way as soon as a newer server state disagrees. `props.turns`
+   is read only for history that has no server dialogue state.
 
 ---
 

@@ -49,7 +49,7 @@ import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { applyPreviewArtifactName, inboxStageRemoteKind, isAppPreviewRemoteNode } from '@/lib/run/reactArtifactPreview'
 import { findGraphNode, isClarifyNode } from '@/lib/shared/clarifyInteractive'
 import { createPendingAcpBuffer } from '@/lib/run/pendingAcpBuffer'
-import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
+import { deliverOrBufferGateAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
   createBusySeedRetryController,
   runBusySeedRetry,
@@ -2337,16 +2337,11 @@ function applyOrBufferAcpFrame(m: {
   busy?: boolean
 }) {
   const events = Array.isArray(m.events) ? m.events : []
-  const nodeId = m.nodeId || ''
   // ClarifyChat draws the server dialogue state; only the gate still takes ACP.
-  const forClarify = false
   const forGate = active.value?.type === 'gate'
-  const result = deliverOrBufferDialogueAcp({
-    forClarify,
+  const result = deliverOrBufferGateAcp({
     forGate,
     events,
-    nodeId,
-    applyClarify: () => false,
     applyGate: (evs) => {
       if (!gateApprovalRef.value?.applyAcpEvents) return false
       return gateApprovalRef.value.applyAcpEvents(evs) !== false
@@ -2359,7 +2354,7 @@ function applyOrBufferAcpFrame(m: {
     }
   }
   // Hard-load / slot-not-ready: keep latest cumulative ACP for seed-then-live.
-  if (result === 'buffer' && (forClarify || forGate)) {
+  if (result === 'buffer' && forGate) {
     pendingAcpFrames.push({
       nodeId: m.nodeId,
       events,
@@ -2399,12 +2394,9 @@ async function readClarifyAcpFromNodeEventsOnce(
     if (isNodeEventsUnavailable(r)) return false
     if (!r.events?.length) return false
     if (!hasAcpContent(r.events)) return false
-    const result = deliverOrBufferDialogueAcp({
-      forClarify: false,
+    const result = deliverOrBufferGateAcp({
       forGate: true,
       events: r.events,
-      nodeId,
-      applyClarify: () => false,
       applyGate: (evs) => {
         if (!gateApprovalRef.value?.applyAcpEvents) return false
         return gateApprovalRef.value.applyAcpEvents(evs) !== false

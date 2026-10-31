@@ -147,7 +147,7 @@
             {
               "id": "q2",
               "prompt": "还需要一点信息。",
-              "options": null
+              "options": []
             }
           ],
           "id": "turn-1:a0",
@@ -195,7 +195,7 @@
           {
             "id": "q2",
             "prompt": "还需要一点信息。",
-            "options": null
+            "options": []
           }
         ],
         "id": "turn-1:a0",

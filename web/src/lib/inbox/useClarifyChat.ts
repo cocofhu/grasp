@@ -16,6 +16,7 @@ import {
   takeClarifyOutbox,
 } from '@/lib/inbox/clarifyDraftStash'
 import { emptyFailDisplayText, isRetryableFailedAgent } from '@/lib/inbox/clarifyEmptyFail'
+import { createReplyText, latestFormTurnIndex, latestQuestionTurnIndex, type ChoiceRow } from '@/lib/inbox/clarifyReplyText'
 import { relTime as formatRelTime } from '@/lib/shared/format'
 import { holdSidebarConfirmWindow, releaseSidebarConfirmWindow } from '@/lib/inbox/sidebarHandoff'
 import {
@@ -61,7 +62,11 @@ import {
   optimisticSends,
   rejectOptimisticSend,
 } from '@/lib/chat/dialogueStore'
-import { render, versionLess, type DialogueQueueRow, type DialogueRow, type DialogueVersion } from '@/lib/chat/dialogueState'
+import { render, type DialogueQueueRow, type DialogueRow, type DialogueVersion } from '@/lib/chat/dialogueState'
+import {
+  isSettled, isStopping, pruneQueueOverlay, retryAttemptRows, retryTakenOver, settleRows, visibleOrphan, visibleQueue,
+  type QueueOverlay,
+} from '@/lib/chat/dialogueOverlay'
 
 const CLARIFY_VISIT_ENDED = 'clarify_visit_ended'
 
@@ -163,13 +168,9 @@ const serverState = computed(() => {
 })
 const view = computed(() => render(serverState.value, optimisticSends(storeKey.value)))
 
-/** 确认并流转 closed the socket: nothing up to this version may keep streaming. */
+// Page-local overlays (dialogueOverlay.ts): each covers a click until the server state answers it.
 const settledAt = ref<DialogueVersion | null>(null)
-const forcedIdle = computed(() => {
-  if (!settledAt.value) return false
-  const st = serverState.value
-  return !st || !versionLess(settledAt.value, st)
-})
+const forcedIdle = computed(() => isSettled(settledAt.value, serverState.value))
 /** Retry was clicked; the failed reply shows as a new attempt until the server starts it. */
 const retryPending = ref(false)
 let retryPendingTimer = 0
@@ -178,15 +179,8 @@ const stoppingTurn = ref<string | null>(null)
 
 const sourceRows = computed<ClarifyTurn[]>(() => {
   const rows = serverState.value ? view.value.rows : [...(props.turns ?? []), ...view.value.rows]
-  let out = forcedIdle.value ? rows.map((r) => (r.streaming ? { ...r, streaming: false } : r)) : rows
-  const last = out[out.length - 1]
-  if (retryPending.value && isRetryableFailedAgent(last)) {
-    out = [...out.slice(0, -1), {
-      ...last!, text: '', thought: '', outcome: undefined, error: undefined,
-      parts: undefined, tools: undefined, questions: undefined, streaming: true, localPending: true,
-    }]
-  }
-  return out
+  const out = forcedIdle.value ? settleRows(rows) : rows
+  return retryPending.value ? retryAttemptRows(out) : out
 })
 
 function rowPhase(t: ClarifyTurn): DialogueRow['phase'] | undefined {
@@ -211,8 +205,6 @@ const thinking = computed(() => !props.done && !forcedIdle.value &&
 const validating = ref(false)
 /** Success overlay host from ReviewShell (g2.1); optional in unit mounts. */
 const confirmFlow = useConfirmFlowCeremony()
-/** True after we ran (or parent ran) the success ceremony for the current done cycle. */
-let confirmFlowPlayedForDone = false
 const confirmFlowPlaying = computed(() => !!confirmFlow?.playing.value)
 /**
  * Hand-off still in progress: the session is already marked done, but the
@@ -229,7 +221,6 @@ const showDoneChrome = computed(
 )
 
 async function playConfirmCeremony(): Promise<void> {
-  confirmFlowPlayedForDone = true
   if (!confirmFlow) return
   // Same click may play from finishEarly and again from parent force — keep one play (g1.1).
   if (confirmFlow.playing.value) return
@@ -237,33 +228,28 @@ async function playConfirmCeremony(): Promise<void> {
 }
 let conversationGeneration = 0
 
-/** Queue rows removed or reordered here, until the server's queue says the same. */
-const hiddenQueueIds = ref<string[]>([])
-const queueOrder = ref<string[] | null>(null)
+const queueOverlay = ref<QueueOverlay>({ hidden: [], order: null })
 const queued = computed<DialogueQueueRow[]>(() => {
-  let rows = view.value.queue.filter((q) => !q.id || !hiddenQueueIds.value.includes(q.id))
+  let rows = view.value.queue
   // A host-sent (@send) message stays cancellable in the queue until the server lists it.
   const head = props.sendRequest ? undefined : view.value.rows.find((r) => r.localPending && r.role === 'human')
   if (head) {
     rows = [{ clientMessageId: head.clientMessageId, text: head.text, images: head.images ?? [],
       annotations: head.annotations ?? [], local: true }, ...rows]
   }
-  const order = queueOrder.value
-  if (!order) return rows
-  const rank = (q: DialogueQueueRow) => {
-    const i = q.id ? order.indexOf(q.id) : -1
-    return i < 0 ? order.length : i
-  }
-  return rows.map((q, i) => ({ q, i })).sort((a, b) => rank(a.q) - rank(b.q) || a.i - b.i).map((x) => x.q)
+  return visibleQueue(rows, queueOverlay.value)
 })
 watch(
   () => view.value.queue.map((q) => q.id || '').join('|'),
   () => {
     const ids = view.value.queue.map((q) => q.id).filter((id): id is string => !!id)
-    hiddenQueueIds.value = hiddenQueueIds.value.filter((id) => ids.includes(id))
-    if (queueOrder.value && ids.join('|') === queueOrder.value.filter((id) => ids.includes(id)).join('|')) queueOrder.value = null
+    queueOverlay.value = pruneQueueOverlay(queueOverlay.value, ids)
   },
 )
+function hideQueueRow(id: string) {
+  const o = queueOverlay.value
+  if (!o.hidden.includes(id)) queueOverlay.value = { ...o, hidden: [...o.hidden, id] }
+}
 
 const showClarifyEmptyHint = computed(
   () =>
@@ -313,12 +299,12 @@ const liveAgentIdx = computed(() => {
 const runningTurnIds = computed(() => forcedIdle.value ? [] :
   (serverState.value?.turns ?? []).filter((t) => t.phase === 'running' || t.phase === 'orphan').map((t) => t.turnId))
 const turnRunning = computed(() => runningTurnIds.value.length > 0)
-const stopping = computed(() => !!stoppingTurn.value && runningTurnIds.value.includes(stoppingTurn.value))
+const stopping = computed(() => isStopping(stoppingTurn.value, runningTurnIds.value))
 watch(
   () => serverState.value,
   (st) => {
     if (!retryPending.value || !st) return
-    if (st.busy || !isRetryableFailedAgent(st.rows[st.rows.length - 1])) clearRetryPending()
+    if (retryTakenOver(st)) clearRetryPending()
   },
 )
 
@@ -451,107 +437,13 @@ onBeforeUnmount(() => {
   composerResizeObserver = null
 })
 
-/** Choice prefixes the UI and models.FormatChoiceReply emit. Both are recognized in either locale. */
-const CHOICE_PREFIX_ZH = '我的选择:'
-const CHOICE_PREFIX_EN = 'My choices:'
-const choicePrefix = computed(() => translate('pages.clarify.choicePrefix'))
-/** zh-CN form-summary prefix, recognized regardless of the viewer's locale. */
-const FORM_PREFIX_ZH = '我的填写:'
-const formPrefix = computed(() => translate('pages.clarify.formPrefix'))
-/** Skip-envelope first line (zh / en) — not a choice reply. */
-const SKIP_PREFIX_ZH = '回答已跳过'
-const SKIP_USER_LABEL_ZH = '用户回复'
-const SKIP_PREFIX_EN = 'Answers skipped'
-const SKIP_USER_LABEL_EN = 'User reply'
-const skipPrefix = computed(() => translate('pages.clarify.skipPrefix'))
-const skipUserReplyLabel = computed(() => translate('pages.clarify.skipUserReplyLabel'))
-
-function textHasChoicePrefix(text: string): boolean {
-  return text.startsWith(choicePrefix.value) || text.startsWith(CHOICE_PREFIX_ZH) || text.startsWith(CHOICE_PREFIX_EN)
-}
-
-function stripChoicePrefix(text: string): string {
-  if (text.startsWith(choicePrefix.value)) return text.slice(choicePrefix.value.length)
-  if (text.startsWith(CHOICE_PREFIX_ZH)) return text.slice(CHOICE_PREFIX_ZH.length)
-  if (text.startsWith(CHOICE_PREFIX_EN)) return text.slice(CHOICE_PREFIX_EN.length)
-  return text
-}
-
-function isChoiceReply(text: string): boolean {
-  return !!text && textHasChoicePrefix(text)
-}
-
-function textHasFormPrefix(text: string): boolean {
-  return text.startsWith(formPrefix.value) || text.startsWith(FORM_PREFIX_ZH)
-}
-
-function stripFormPrefix(text: string): string {
-  if (text.startsWith(formPrefix.value)) return text.slice(formPrefix.value.length)
-  if (text.startsWith(FORM_PREFIX_ZH)) return text.slice(FORM_PREFIX_ZH.length)
-  return text
-}
-
-function isFormReply(text: string): boolean {
-  return !!text && textHasFormPrefix(text)
-}
-
-function textHasSkipPrefix(text: string): boolean {
-  if (!text) return false
-  return (
-    text.startsWith(skipPrefix.value + '\n') ||
-    text.startsWith(SKIP_PREFIX_ZH + '\n') ||
-    text.startsWith(SKIP_PREFIX_EN + '\n')
-  )
-}
-
-function isSkipReply(text: string): boolean {
-  return textHasSkipPrefix(text)
-}
-
-/** Three-line skip envelope: label / user-label / original (may be empty or multiline). */
-function formatSkipReply(userText: string): string {
-  return `${skipPrefix.value}\n${skipUserReplyLabel.value}\n${userText}`
-}
-
-/**
- * A human turn / queue item that closes the current ask_question card:
- * structured choice, skip envelope, free text, or any attachment.
- */
-function closesQuestionRound(
-  text: string,
-  images?: ClarifyImage[] | null,
-  anns?: ReactAnnotation[] | null,
-): boolean {
-  if (isChoiceReply(text) || isFormReply(text) || isSkipReply(text)) return true
-  if ((images?.length || 0) > 0 || (anns?.length || 0) > 0) return true
-  return !!(text || '').trim()
-}
-
-/** Index of the latest agent turn that raised structured questions. */
-function latestQuestionTurnIndex(turnList: ClarifyTurn[]): number {
-  for (let i = turnList.length - 1; i >= 0; i--) {
-    const t = turnList[i]
-    if (t.role === 'agent' && t.questions?.length) return i
-  }
-  return -1
-}
-
-/** Index of the latest agent turn that raised ask_form forms. */
-function latestFormTurnIndex(turnList: ClarifyTurn[]): number {
-  for (let i = turnList.length - 1; i >= 0; i--) {
-    const t = turnList[i]
-    if (t.role === 'agent' && t.forms?.length) return i
-  }
-  return -1
-}
-
-function hasHumanReplyAfter(turnList: ClarifyTurn[], qIdx: number): boolean {
-  for (let i = qIdx + 1; i < turnList.length; i++) {
-    const t = turnList[i]
-    if (t.role === 'human' && closesQuestionRound(t.text, t.images, t.annotations)) return true
-  }
-  return false
-}
+const replyText = createReplyText(translate)
+const {
+  textHasChoicePrefix, stripChoicePrefix, isChoiceReply, textHasSkipPrefix, isSkipReply, formatSkipReply,
+  closesQuestionRound, hasHumanReplyAfter, parseChoiceSummary, parseFormSummary,
+} = replyText
+const choicePrefix = computed(() => replyText.choicePrefix())
+const formPrefix = computed(() => replyText.formPrefix())
 
 const latestQuestionIdx = computed(() => latestQuestionTurnIndex(persistedTurns.value))
 
@@ -673,7 +565,7 @@ function dropQueueRow(row: DialogueQueueRow) {
     rejectOptimisticSend(storeKey.value, row.clientMessageId)
     return
   }
-  if (row.id && !hiddenQueueIds.value.includes(row.id)) hiddenQueueIds.value = [...hiddenQueueIds.value, row.id]
+  if (row.id) hideQueueRow(row.id)
 }
 
 function cancelQueuedItem(index: number) {
@@ -699,7 +591,7 @@ function reorderQueuedItems(fromIndex: number, toIndex: number) {
   const [moved] = list.splice(fromIndex, 1)
   list.splice(toIndex, 0, moved!)
   const ids = list.map((q) => q.id).filter((id): id is string => !!id)
-  queueOrder.value = ids
+  queueOverlay.value = { ...queueOverlay.value, order: ids }
   showQueueToast(translate('pages.clarify.queueReordered'))
   if (ids.length === list.length && ids.length > 0) {
     emit('queue-reorder', ids)
@@ -800,8 +692,7 @@ watch(
   () => `${props.runId}.${props.nodeId}.${props.iteration}`,
   () => {
     conversationGeneration++
-    hiddenQueueIds.value = []
-    queueOrder.value = null
+    queueOverlay.value = { hidden: [], order: null }
     composerSending.value = false
     stoppingTurn.value = null
     cancelledOrphanOp.value = null
@@ -827,7 +718,6 @@ watch(
       // Overlay is owned by the click path (finishEarly / parent force). Never
       // auto-play on done/node_complete (plan g1.1) — that caused the #613 regression.
     } else {
-      confirmFlowPlayedForDone = false
       confirmFlow?.reset()
     }
   },
@@ -1133,27 +1023,6 @@ function submitForms() {
   sendMessage(text)
 }
 
-interface FormRow {
-  label: string
-  value: string
-}
-function parseFormSummary(text: string): FormRow[] | null {
-  if (!text || !textHasFormPrefix(text)) return null
-  const bodyText = stripFormPrefix(text)
-  const rows: FormRow[] = []
-  for (const raw of bodyText.split('\n')) {
-    const line = raw.trim()
-    if (!line.startsWith('- ')) continue
-    const body = line.slice(2)
-    const idx = body.indexOf('→')
-    if (idx === -1) continue
-    const label = body.slice(0, idx).trim()
-    const value = body.slice(idx + 1).trim()
-    if (label) rows.push({ label, value })
-  }
-  return rows.length ? rows : null
-}
-
 function isActiveTurn(i: number): boolean {
   return activeQuestions.value.length > 0 && i === latestQuestionIdx.value
 }
@@ -1276,46 +1145,6 @@ function submitChoices() {
   otherChecked.value = {}
   step.value = 0
   sendMessage(text)
-}
-
-// A submitted "我的选择:" / "My choices:" human turn is rendered as structured
-// cards instead of a raw markdown bullet list. A bullet may wrap: lines that
-// do not start another "- " stay in the same item, then the first "→" splits
-// the prompt from answers. Returns null for any other message.
-interface ChoiceRow {
-  q: string
-  answers: string[]
-}
-function parseChoiceSummary(text: string): ChoiceRow[] | null {
-  if (!text || !textHasChoicePrefix(text)) return null
-  const bodyText = stripChoicePrefix(text)
-  const chunks: string[] = []
-  let buf: string[] | null = null
-  for (const raw of bodyText.split('\n')) {
-    const line = raw.replace(/\r$/, '')
-    const trimmed = line.trim()
-    if (trimmed.startsWith('- ')) {
-      if (buf) chunks.push(buf.join('\n'))
-      buf = [trimmed.slice(2)]
-      continue
-    }
-    if (buf) buf.push(line)
-  }
-  if (buf) chunks.push(buf.join('\n'))
-
-  const rows: ChoiceRow[] = []
-  for (const chunk of chunks) {
-    const idx = chunk.indexOf('→')
-    if (idx === -1) continue
-    const q = chunk.slice(0, idx).trim()
-    const answers = chunk
-      .slice(idx + 1)
-      .split('、')
-      .map((a) => a.trim())
-      .filter(Boolean)
-    if (q) rows.push({ q, answers })
-  }
-  return rows.length ? rows : null
 }
 
 function choiceRowsForAgentTurn(turnIndex: number): ChoiceRow[] | null {
@@ -1672,9 +1501,7 @@ function restoreUnsentQueued(
     cmid = [...pending].reverse().find(same)?.clientMessageId ??
       [...view.value.queue].reverse().find((q) => !!q.clientMessageId && sentOrigins.has(q.clientMessageId) && same(q))?.clientMessageId
   }
-  if (!cmid && sent.clientId && !hiddenQueueIds.value.includes(sent.clientId)) {
-    hiddenQueueIds.value = [...hiddenQueueIds.value, sent.clientId]
-  }
+  if (!cmid && sent.clientId) hideQueueRow(sent.clientId)
   const local = cmid ? pending.find((o) => o.clientMessageId === cmid) : undefined
   const origin = cmid ? sentOrigins.get(cmid) : undefined
   if (cmid) rejectOptimisticSend(storeKey.value, cmid)
@@ -1789,11 +1616,8 @@ watch(
 /** A sandbox turn still running after the platform stopped tracking it (server-decided). */
 /** The orphan op Stop was clicked for; hidden until the server state drops it. */
 const cancelledOrphanOp = ref<string | null>(null)
-const sandboxOrphan = computed(() => {
-  const orphan = forcedIdle.value || props.done ? null : view.value.orphan
-  if (orphan && cancelledOrphanOp.value === orphan.runningOpId) return null
-  return orphan
-})
+const sandboxOrphan = computed(() =>
+  forcedIdle.value || props.done ? null : visibleOrphan(view.value.orphan, cancelledOrphanOp.value))
 watch(() => view.value.orphan, (orphan) => {
   if (!orphan) cancelledOrphanOp.value = null
 })
@@ -1932,12 +1756,8 @@ function retryLastFailed() {
     textHasChoicePrefix,
     stripChoicePrefix,
     isChoiceReply,
-    textHasSkipPrefix,
     isSkipReply,
-    formatSkipReply,
-    closesQuestionRound,
     latestQuestionTurnIndex,
-    latestFormTurnIndex,
     hasHumanReplyAfter,
     imagePreviewLabel,
     openImagePreview,
@@ -1947,7 +1767,6 @@ function retryLastFailed() {
     onPaste,
     removeAttachment,
     sendMessage,
-    prepareComposerSend,
     sendFromComposer,
     composerSending,
     onComposerKeydown,
@@ -1989,7 +1808,6 @@ function retryLastFailed() {
     discardLastQueued,
     restoreUnsentQueued,
     applyRequestRejected,
-    visitEndedNotice,
     sendNotice,
     stashNotice,
     agentHasMessage,
@@ -2031,25 +1849,10 @@ function retryLastFailed() {
     sessionBusy,
     AUTO_GROW_MIN,
     AUTO_GROW_MAX,
-    CHOICE_PREFIX_ZH,
     choicePrefix,
-    FORM_PREFIX_ZH,
-    formPrefix,
-    SKIP_PREFIX_ZH,
-    SKIP_USER_LABEL_ZH,
-    SKIP_PREFIX_EN,
-    SKIP_USER_LABEL_EN,
-    skipPrefix,
-    skipUserReplyLabel,
     latestQuestionIdx,
     latestQuestions,
     latestQuestionAnswered,
-    pendingQuestionsOpen,
-    latestFormIdx,
-    latestForms,
-    latestFormAnswered,
-    pendingFormsOpen,
-    pendingInteractiveOpen,
     displayTurns,
     outputBounds,
     attachNotice,

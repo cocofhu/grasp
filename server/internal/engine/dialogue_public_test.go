@@ -51,7 +51,7 @@ func TestPublicDialogueRedacts(t *testing.T) {
 				ID: "t1:h", Phase: rowSealed, Rev: 3},
 			{ReactMessage: models.ReactMessage{Role: "agent", Text: "好", TurnID: "t1", OpID: "op-secret",
 				Outcome: models.OutcomeFailed, Error: "dial tcp 10.0.0.3: secret",
-				Tools: []models.ReactTool{{Title: "Read /home/secret/a.go", Status: "completed"}},
+				Tools:     []models.ReactTool{{Title: "Read /home/secret/a.go", Status: "completed"}},
 				Execution: &models.ChatExecution{}},
 				ID: "t1:a0", Phase: rowSealed, Rev: 4},
 			{ReactMessage: models.ReactMessage{Role: "agent", TurnID: "orphan:op-secret"},

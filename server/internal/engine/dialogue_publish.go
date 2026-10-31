@@ -19,9 +19,14 @@ import (
 // dialogue. Phase changes are published at once.
 const dialogueThrottle = 150 * time.Millisecond
 
+// dialogueIdleTTL drops a dialogue entry nobody built or read for this long
+// while no session runs it. The next read rebuilds it under a newer version.
+const dialogueIdleTTL = 30 * time.Minute
+
 type dialogueHub struct {
-	mu      sync.Mutex
-	entries map[string]*dialogueEntry
+	mu        sync.Mutex
+	entries   map[string]*dialogueEntry
+	lastSweep time.Time
 }
 
 type rowStamp struct {
@@ -38,6 +43,10 @@ type dialogueEntry struct {
 	// is the share link that lane belongs to.
 	lane   string
 	linkID string
+	// used is when the entry was last looked up (guarded by dialogueHub.mu).
+	used time.Time
+	// evicted: the hub no longer holds this entry; it never publishes again.
+	evicted bool
 
 	cur       *DialogueState
 	curHash   [32]byte
@@ -54,10 +63,6 @@ type dialogueEntry struct {
 	// observed automatic visit, or an orphan sandbox turn.
 	idleEvents []models.AcpEvent
 	ended      []endedTurn
-
-	// Fault-injection bookkeeping (dialogueFaults.sandboxWhileBusy only).
-	sandboxSeenBusy bool
-	sandboxDropped  bool
 }
 
 func dialogueKey(runID, nodeID, lane string) string { return runID + "|" + nodeID + "|" + lane }
@@ -96,13 +101,19 @@ func (e *Engine) dialogueEntry(runID, nodeID string) *dialogueEntry {
 
 func (e *Engine) laneDialogueEntry(runID, nodeID, lane, linkID string) *dialogueEntry {
 	h := e.dialogueHub()
+	now := time.Now()
 	h.mu.Lock()
+	if now.Sub(h.lastSweep) > dialogueIdleTTL/6 {
+		h.lastSweep = now
+		e.sweepDialoguesLocked(h, now)
+	}
 	k := dialogueKey(runID, nodeID, lane)
 	en := h.entries[k]
 	if en == nil {
 		en = &dialogueEntry{runID: runID, nodeID: nodeID, lane: lane, started: map[string]string{}}
 		h.entries[k] = en
 	}
+	en.used = now
 	h.mu.Unlock()
 	if linkID != "" {
 		en.mu.Lock()
@@ -110,6 +121,62 @@ func (e *Engine) laneDialogueEntry(runID, nodeID, lane, linkID string) *dialogue
 		en.mu.Unlock()
 	}
 	return en
+}
+
+// sweepDialoguesLocked drops entries idle past dialogueIdleTTL whose session
+// is gone. Callers hold h.mu.
+func (e *Engine) sweepDialoguesLocked(h *dialogueHub, now time.Time) {
+	for k, en := range h.entries {
+		if !(en.used.IsZero() || now.Sub(en.used) > dialogueIdleTTL) || e.laneSession(en.runID, en.nodeID, en.lane) != nil {
+			continue
+		}
+		// An entry being built or published right now is in use.
+		if en.mu.TryLock() {
+			en.evictLocked()
+			en.mu.Unlock()
+			delete(h.entries, k)
+		}
+	}
+}
+
+// evictLocked retires en before the hub forgets it, so a frame it was about
+// to send cannot follow a newer one from its replacement. Callers hold en.mu.
+func (en *dialogueEntry) evictLocked() {
+	en.evicted = true
+	if en.timer != nil {
+		en.timer.Stop()
+		en.timer = nil
+	}
+}
+
+// forgetDialogues drops every dialogue entry of runID (lane "" too when lane
+// is "*", else only that lane). Versions stay monotonic: a rebuilt entry is
+// stamped from the process-wide counter.
+func (e *Engine) forgetDialogues(runID, nodeID, lane string) {
+	h := e.dialogueHub()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for k, en := range h.entries {
+		if en.runID == runID && (nodeID == "" || en.nodeID == nodeID) && (lane == "*" || en.lane == lane) {
+			en.mu.Lock()
+			en.evictLocked()
+			en.mu.Unlock()
+			delete(h.entries, k)
+		}
+	}
+}
+
+// expireDialogues lets the next sweep drop runID's entries (a finished run)
+// unless they are looked up again first.
+func (e *Engine) expireDialogues(runID string) {
+	h := e.dialogueHub()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, en := range h.entries {
+		if en.runID == runID {
+			en.used = time.Time{}
+		}
+	}
 }
 
 // knownDialogueNodes lists nodes of runID whose dialogue was built before.
@@ -129,6 +196,7 @@ func (e *Engine) knownDialogueNodes(runID string) []string {
 // stampDialogue assigns st a version: the current one when nothing changed,
 // a new one otherwise. Rows keep the revision of their last content change.
 func stampDialogue(en *dialogueEntry, st DialogueState) DialogueState {
+	normalizeDialogueQuestions(st.Rows)
 	hashes := make([][32]byte, len(st.Rows))
 	for i := range st.Rows {
 		st.Rows[i].Rev = 0
@@ -142,8 +210,8 @@ func stampDialogue(en *dialogueEntry, st DialogueState) DialogueState {
 		return *en.cur
 	}
 	v := chatsession.NextDialogueVersion()
-	if dialogueFaults.skipVersion.Load() && en.cur != nil {
-		v = en.cur.Version()
+	if h := dialogueStampHook.Load(); h != nil {
+		v = (*h)(en, v)
 	}
 	st.Epoch, st.Seq = v.Epoch, v.Seq
 	next := make(map[string]rowStamp, len(st.Rows))
@@ -160,6 +228,27 @@ func stampDialogue(en *dialogueEntry, st DialogueState) DialogueState {
 	cp := st
 	en.cur = &cp
 	return st
+}
+
+// normalizeDialogueQuestions sends a question without options as an empty
+// list, never null: the chat reads question.options as an array.
+func normalizeDialogueQuestions(rows []DialogueRow) {
+	for i := range rows {
+		qs := rows[i].Questions
+		for j := range qs {
+			if qs[j].Options != nil {
+				continue
+			}
+			cp := append([]models.ReactQuestion(nil), qs...)
+			for k := range cp {
+				if cp[k].Options == nil {
+					cp[k].Options = []models.ReactOption{}
+				}
+			}
+			rows[i].Questions = cp
+			break
+		}
+	}
 }
 
 // DialogueSnapshot is the node's current full dialogue (REST and reconnect).
@@ -289,6 +378,12 @@ func (e *Engine) dialogueChangedLane(runID, nodeID, lane string, urgent bool) {
 // sealed prefix moved, else the full state.
 func (e *Engine) publishDialogue(en *dialogueEntry) {
 	en.mu.Lock()
+	if en.evicted {
+		en.mu.Unlock()
+		// The change still has to reach viewers: through the current entry.
+		e.publishDialogue(e.laneDialogueEntry(en.runID, en.nodeID, en.lane, ""))
+		return
+	}
 	defer en.mu.Unlock()
 	st, ok := e.buildDialogue(en, en.runID, en.nodeID)
 	if !ok {

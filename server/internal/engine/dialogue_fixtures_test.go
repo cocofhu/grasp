@@ -248,6 +248,30 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 	}
 	{
 		c := newClarifyFixture(t)
+		c.script(runtime.ReactTurn{Msg: "字字字"})
+		c.holdTurns()
+		c.send(t, "做登录")
+		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		text := ""
+		for i := 1; i <= 3; i++ {
+			c.provider.mu.Lock()
+			c.provider.sandboxBusy = i%2 == 0
+			c.provider.sandboxRunningOp = fmt.Sprintf("op-%d", i)
+			c.provider.mu.Unlock()
+			text += "字"
+			c.acp(msg(text))
+			c.rec.snap(t)
+		}
+		c.provider.mu.Lock()
+		c.provider.sandboxBusy = false
+		c.provider.sandboxRunningOp = ""
+		c.provider.mu.Unlock()
+		c.release(t)
+		c.rec.snap(t)
+		out = append(out, fixtureFrom(t, "sandbox-flip", "the sandbox busy flag flips while the platform runs the turn: the reply keeps streaming", c.rec.snaps, false))
+	}
+	{
+		c := newClarifyFixture(t)
 		c.provider.mu.Lock()
 		c.provider.sandboxBusy = true
 		c.provider.sandboxRunningOp = "op-orphan"

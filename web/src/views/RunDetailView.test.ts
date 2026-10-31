@@ -272,7 +272,7 @@ describe('RunDetailView ACP log rehydrate state machine', () => {
     expect(src).toMatch(/applyOrBufferDialogueAcp/)
     expect(src).toMatch(/pendingDialogueAcp/)
     expect(src).toMatch(/projectDialogueAfterLoad/)
-    expect(src).toMatch(/deliverOrBufferDialogueAcp/)
+    expect(src).toMatch(/deliverOrBufferGateAcp/)
     // The clarify chat draws the server dialogue; ACP goes only to the gate.
     expect(src).not.toMatch(/chat\?\.applyAcpEvents/)
     // Gate apply must honor boolean return (not constant true) — g1.4.

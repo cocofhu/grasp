@@ -156,7 +156,7 @@ func randomDialogueRun(t *testing.T, seed int64, steps int) []string {
 	}
 	for step := 0; step < steps; step++ {
 		before := activeTurnID(eng, runID, "clarify")
-		switch rng.Intn(9) {
+		switch rng.Intn(11) {
 		case 0, 1:
 			_, _ = eng.EnqueueClarifyTurn(runID, "clarify", fmt.Sprintf("消息%d", step), nil, nil)
 		case 2, 3:
@@ -179,6 +179,12 @@ func randomDialogueRun(t *testing.T, seed int64, steps int) []string {
 			provider.mu.Lock()
 			provider.reactScript = append(provider.reactScript, runtime.ReactTurn{Msg: ""})
 			provider.mu.Unlock()
+		case 9:
+			// Session recycle: an idle session is dropped and rebuilt on the next send.
+			eng.dropLaneSessionIfIdle(runID, "clarify", "")
+		case 10:
+			// Dialogue entry eviction: the next build starts from no versioning state.
+			eng.forgetDialogues(runID, "", "*")
 		}
 		time.Sleep(time.Duration(rng.Intn(3)) * time.Millisecond)
 		st, ok := eng.DialogueSnapshot(runID, "clarify")
@@ -233,9 +239,9 @@ func TestDialogueInvariantsCatchInjectedFaults(t *testing.T) {
 		name string
 		on   func(bool)
 	}{
-		{"sandbox flag decides a busy turn", func(v bool) { dialogueFaults.sandboxWhileBusy.Store(v) }},
-		{"changed state keeps its version", func(v bool) { dialogueFaults.skipVersion.Store(v) }},
-		{"sealed reply gets a new row id", func(v bool) { dialogueFaults.resealRowID.Store(v) }},
+		{"sandbox flag decides a busy turn", faultSandboxWhileBusy},
+		{"changed state keeps its version", faultSkipVersion},
+		{"sealed reply gets a new row id", faultResealRowID},
 	}
 	for _, f := range faults {
 		t.Run(f.name, func(t *testing.T) {

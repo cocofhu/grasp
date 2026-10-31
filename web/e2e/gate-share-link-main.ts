@@ -13,12 +13,15 @@ import { api } from '../src/lib/api/api'
 import { rememberShareUrl } from '../src/lib/inbox/gateShareLink'
 import type { ClarifyInboxItem, GateInboxItem, InboxItem } from '../src/lib/shared/types'
 import HtmlPreview from '../src/components/ui/HtmlPreview.vue'
-import { createDialogueServer, type FakeRow, type FakeTurn } from './helpers/dialogueServer'
+import { ingestDialogue } from '../src/lib/chat/dialogueStore'
+import { createDialogueServer, type FakeDialogue, type FakeRow, type FakeTurn } from './helpers/dialogueServer'
 
 installIdleScrollbar()
 setTheme('dark')
 
 /** Fixture WS: public workbench must not hit a real /events socket in e2e. */
+const publicSockets: E2ePublicWebSocket[] = []
+
 class E2ePublicWebSocket {
   url: string
   onopen: ((ev?: unknown) => void) | null = null
@@ -28,6 +31,7 @@ class E2ePublicWebSocket {
   readyState = 1
   constructor(url: string) {
     this.url = url
+    publicSockets.push(this)
     queueMicrotask(() => this.onopen?.())
   }
   send(data: string) {
@@ -74,8 +78,34 @@ const seedRow: FakeRow = {
   text: shareScene === 'public-clarify' ? '请补充验收标准' : '请复审 research.json',
   at: '2026-08-01T00:00:00Z',
 }
+/** `?dialogue=empty`: the server already holds a reply that ended with no output (survives reload). */
+const emptyReplySeed: FakeDialogue = {
+  rows: [
+    seedRow,
+    { role: 'human', text: '做登录页', turnId: 't1' },
+    { role: 'agent', text: '', turnId: 't1', outcome: 'empty' },
+  ],
+  turns: [{ turnId: 't1', phase: 'ended', outcome: 'empty' }],
+}
+const seedEmpty = new URLSearchParams(location.search).get('dialogue') === 'empty'
 /** The share page's server dialogue: replies queue until the fixture goes idle. */
-const dialogue = createDialogueServer('public-share', 'public-gate', { rows: [seedRow] })
+const dialogue = createDialogueServer('public-share', 'public-gate', seedEmpty ? emptyReplySeed : { rows: [seedRow] })
+/** The inbox composer's node dialogue, delivered as the run socket would. */
+const inboxDialogue = createDialogueServer('run-e2e-clarify', 'react-e2e', seedEmpty ? emptyReplySeed : { rows: [seedRow] })
+if (shareScene === 'inbox-clarify') ingestDialogue(inboxDialogue.frame())
+
+/** Tests push a newer server dialogue (the seed row stays first). */
+;(window as unknown as { __pushDialogue?: (d: FakeDialogue) => void }).__pushDialogue = (d) => {
+  const next = { ...d, rows: [seedRow, ...d.rows] }
+  if (shareScene === 'inbox-clarify') {
+    inboxDialogue.set(next)
+    ingestDialogue(inboxDialogue.frame())
+    return
+  }
+  dialogue.set(next)
+  const data = JSON.stringify(dialogue.frame())
+  for (const ws of publicSockets) if (ws.readyState === 1) ws.onmessage?.({ data })
+}
 let dialogueSent: FakeRow[] = []
 let dialogueQueued: Array<{ text: string; clientMessageId?: string }> = []
 function publishDialogue() {

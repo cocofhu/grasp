@@ -234,6 +234,7 @@ func (e *Engine) RetireVisitorLanesForTokenHashes(tokenHashes []string) {
 func (e *Engine) retireVisitorLane(st *visitorLaneState) {
 	_ = e.cancelLaneSession(st.runID, st.producerID, st.lane, true)
 	e.revokeLanePageSessions(st.runID, st.producerID, st.lane)
+	e.forgetDialogues(st.runID, st.producerID, st.lane)
 	if vp, ok := e.provider.(runtime.VisitorLaneProvider); ok {
 		vp.RetireVisitorLane(st.runID, st.producerID, st.lane)
 	}

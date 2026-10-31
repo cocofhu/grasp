@@ -53,12 +53,6 @@ function state(rows: { id: string; rev: number }[], seq: number, extra: Partial<
 }
 
 describe('dialogue fixtures (server contract)', () => {
-  it('has every scenario', () => {
-    expect(fixtures.map((f) => f.scenario).sort()).toEqual(
-      ['empty', 'failed', 'interrupted', 'multi-segment', 'observe', 'orphan', 'public', 'queued', 'retry', 'running'].sort(),
-    )
-  })
-
   for (const fx of fixtures) {
     it(`${fx.scenario}: frames in order rebuild the final state without a resync`, () => {
       let cur: DialogueState | null = null

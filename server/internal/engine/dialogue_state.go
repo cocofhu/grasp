@@ -89,17 +89,13 @@ func (s DialogueState) Version() chatsession.DialogueVersion {
 	return chatsession.DialogueVersion{Epoch: s.Epoch, Seq: s.Seq}
 }
 
-// dialogueFaults are test-only switches that re-introduce known classes of
-// dialogue bugs, so the invariant tests can prove they catch them.
-var dialogueFaults struct {
-	// sandboxWhileBusy lets the bridge's busy flag end a turn the platform
-	// is still running (the "本轮没有输出" root cause).
-	sandboxWhileBusy atomic.Bool
-	// skipVersion reuses the previous seq for a changed state.
-	skipVersion atomic.Bool
-	// resealRowID gives a reply a new row id when it is persisted.
-	resealRowID atomic.Bool
-}
+// dialogueBuildHook and dialogueStampHook are nil outside tests; the
+// fault-injection tests set them to put known dialogue bugs back and prove
+// the invariant checks catch them.
+var (
+	dialogueBuildHook atomic.Pointer[func(e *Engine, en *dialogueEntry, st *DialogueState, platformBusy bool)]
+	dialogueStampHook atomic.Pointer[func(en *dialogueEntry, next chatsession.DialogueVersion) chatsession.DialogueVersion]
+)
 
 // endedTurn remembers how a recent turn ended for turns that left no row.
 type endedTurn struct {
@@ -206,16 +202,10 @@ func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (Dial
 		row.ID = dialogueRowID(conv.Iteration, i, turnID, m.Role, agentIdx)
 		if m.Role == "agent" {
 			row.Outcome = models.ReplyOutcome(m)
-			if dialogueFaults.resealRowID.Load() && turnID != "" {
-				row.ID += ":sealed"
-			}
 		}
 		st.Rows = append(st.Rows, row)
 	}
 
-	if dialogueFaults.sandboxWhileBusy.Load() && platformBusy {
-		e.faultProbeSandbox(entry, runID, nodeID)
-	}
 	if active != nil {
 		e.appendActiveTurn(entry, &st, active, view.LiveEvents, persisted, agentIdx)
 	}
@@ -227,6 +217,9 @@ func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (Dial
 	}
 	for _, et := range entry.ended {
 		st.Turns = append(st.Turns, endedDialogueTurn(et, st.Rows))
+	}
+	if h := dialogueBuildHook.Load(); h != nil {
+		(*h)(e, entry, &st, platformBusy)
 	}
 	return st, true
 }
@@ -302,18 +295,6 @@ func (e *Engine) appendActiveTurn(entry *dialogueEntry, st *DialogueState, activ
 		st.Turns = append(st.Turns, turn)
 		return
 	}
-	if dialogueFaults.sandboxWhileBusy.Load() && entry.sandboxDropped {
-		// Fault: the bridge's idle flag closed the platform's turn.
-		turn.Phase = turnEnded
-		turn.Outcome = models.OutcomeEmpty
-		st.Rows = append(st.Rows, DialogueRow{
-			ReactMessage: models.ReactMessage{Role: "agent", At: started, TurnID: active.ID,
-				ClientMessageID: active.ClientMessageID, Outcome: models.OutcomeEmpty},
-			ID: active.ID + ":a" + fmt.Sprint(agentIdx[active.ID]), Phase: rowSealed,
-		})
-		st.Turns = append(st.Turns, turn)
-		return
-	}
 	for _, r := range models.LiveReplyRows(live) {
 		k := agentIdx[active.ID]
 		agentIdx[active.ID] = k + 1
@@ -336,7 +317,6 @@ func (e *Engine) attachOrphan(entry *dialogueEntry, st *DialogueState, runID, no
 		entry.idleEvents = nil
 		return
 	}
-	entry.sandboxSeenBusy, entry.sandboxDropped = false, false
 	bs, ok := e.SandboxBridgeState(runID, nodeID)
 	if !ok {
 		entry.idleEvents = nil
@@ -369,17 +349,6 @@ func (e *Engine) attachOrphan(entry *dialogueEntry, st *DialogueState, runID, no
 				Handoff: r.Handoff, Tools: r.Tools, Parts: r.Parts},
 			ID: fmt.Sprintf("%s:a%d", turnID, k), Phase: rowOrphan, Thought: r.Thought, Streaming: !r.Handoff,
 		})
-	}
-}
-
-// faultProbeSandbox is the root-cause fault: it records the bridge flag while
-// the platform is busy, so a busy→idle flip can close the running turn.
-func (e *Engine) faultProbeSandbox(entry *dialogueEntry, runID, nodeID string) {
-	bs, ok := e.SandboxBridgeState(runID, nodeID)
-	if ok && (bs.Busy || bs.Desynced) {
-		entry.sandboxSeenBusy = true
-	} else if entry.sandboxSeenBusy {
-		entry.sandboxDropped = true
 	}
 }
 

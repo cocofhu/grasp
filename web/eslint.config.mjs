@@ -28,6 +28,8 @@ export default defineConfigWithVueTs(
       'src/lib/inbox/useClarifyChat.ts',
       'src/lib/chat/dialogueState.ts',
       'src/lib/chat/dialogueStore.ts',
+      'src/lib/chat/dialogueOverlay.ts',
+      'src/lib/inbox/clarifyReplyText.ts',
     ],
     rules: {
       'no-restricted-imports': [

@@ -4,7 +4,7 @@
 import { nextTick, watch, type ComputedRef, type Ref } from 'vue'
 import { api } from '@/lib/api/api'
 import { createPendingAcpBuffer } from '@/lib/run/pendingAcpBuffer'
-import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
+import { deliverOrBufferGateAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
   createBusySeedRetryController,
   runBusySeedRetry,
@@ -278,12 +278,9 @@ export function useRunDetailWs(opts: {
     if (!events?.length || !current()) return false
     if (!hasAcpContent(events)) return false
     const forGate = run.value.gate?.reactUpstreamNodeId === nodeId
-    const result = deliverOrBufferDialogueAcp({
-      forClarify: false,
+    const result = deliverOrBufferGateAcp({
       forGate,
       events,
-      nodeId,
-        applyClarify: () => false,
       applyGate: (evs) => {
         if (!gateApprovalRef.value?.applyAcpEvents) return false
         return gateApprovalRef.value.applyAcpEvents(evs) !== false
@@ -324,15 +321,12 @@ export function useRunDetailWs(opts: {
     const leftover: { nodeId?: string; events: AcpEvent[]; busy?: boolean }[] = []
     for (const frame of pendingDialogueAcp.takeAll()) {
       const nodeId = frame.nodeId || ''
-        const forGate =
+      const forGate =
         !!run.value.gate?.reactUpstreamNodeId &&
         (run.value.gate.reactUpstreamNodeId === nodeId || !nodeId)
-      const result = deliverOrBufferDialogueAcp({
-        forClarify: false,
+      const result = deliverOrBufferGateAcp({
         forGate,
         events: frame.events,
-        nodeId: nodeId || selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId || '',
-        applyClarify: () => false,
         applyGate: (events) => {
           if (!gateApprovalRef.value?.applyAcpEvents) return false
           return gateApprovalRef.value.applyAcpEvents(events) !== false
@@ -353,12 +347,9 @@ export function useRunDetailWs(opts: {
     busy?: boolean,
   ) {
     const forGate = run.value.gate?.reactUpstreamNodeId === nodeId
-    const result = deliverOrBufferDialogueAcp({
-      forClarify: false,
+    const result = deliverOrBufferGateAcp({
       forGate,
       events,
-      nodeId,
-        applyClarify: () => false,
       applyGate: (evs) => {
         if (!gateApprovalRef.value?.applyAcpEvents) return false
         return gateApprovalRef.value.applyAcpEvents(evs) !== false

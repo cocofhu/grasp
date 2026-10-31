@@ -491,8 +491,8 @@ func TestDialogueObservesAutomaticVisit(t *testing.T) {
 
 // The scenario must catch the root cause when it is put back.
 func TestDialogueSandboxFlipFaultIsCaught(t *testing.T) {
-	dialogueFaults.sandboxWhileBusy.Store(true)
-	t.Cleanup(func() { dialogueFaults.sandboxWhileBusy.Store(false) })
+	faultSandboxWhileBusy(true)
+	t.Cleanup(func() { faultSandboxWhileBusy(false) })
 	if bad := sandboxFlipScenario(t); len(bad) == 0 {
 		t.Fatal("sandboxWhileBusy fault went unnoticed")
 	}
