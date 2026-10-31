@@ -56,6 +56,37 @@ export function insertToken(text: string, start: number, end: number, ref: Messa
   return { text: next, token: { ref, start: tokenStart, end: tokenStart + mention.length }, caret: tokenStart + mention.length + 1 }
 }
 
+/**
+ * Rebuild tokens for a sent message: each reference claims the first free
+ * `@label` in the text; one without a match is appended so it is not lost.
+ */
+export function restoreTokens(text: string, refs: MessageReference[], labelOf: (ref: MessageReference) => string) {
+  let out = text
+  const tokens: ReferenceToken[] = []
+  const missing: { ref: MessageReference; label: string }[] = []
+  for (const ref of refs.slice(0, MAX_REFERENCES)) {
+    const label = labelOf(ref)
+    const mention = `@${label}`
+    let start = out.indexOf(mention)
+    while (start >= 0) {
+      const end = start + mention.length
+      const free = !tokens.some((t) => start < t.end && end > t.start)
+      const before = start === 0 || /\s/.test(out[start - 1]!)
+      const after = end === out.length || !/[\p{L}\p{N}_]/u.test(out[end]!)
+      if (free && before && after) break
+      start = out.indexOf(mention, start + 1)
+    }
+    if (start >= 0) tokens.push({ ref, start, end: start + mention.length })
+    else missing.push({ ref, label })
+  }
+  for (const { ref, label } of missing) {
+    const res = insertToken(out, out.length, out.length, ref, label)
+    out = res.text
+    tokens.push(res.token)
+  }
+  return { text: out, tokens: tokens.sort((a, b) => a.start - b.start) }
+}
+
 /** Remove one token's `@label` (and one following space) from the text. */
 export function removeToken(text: string, tokens: ReferenceToken[], index: number) {
   const token = tokens[index]

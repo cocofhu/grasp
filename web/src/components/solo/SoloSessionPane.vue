@@ -13,6 +13,7 @@ import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
+import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/PendingSendQueuePanel.vue'
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
@@ -44,7 +45,7 @@ const { worktreeMode } = useExecutionMode()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'))
-const { session, turns, queued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''))
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -248,6 +249,42 @@ async function send() {
     attach.attachments.value = images
   }
   scrollDown(true)
+}
+
+// --- queue ------------------------------------------------------------------
+const queueRows = computed<PendingQueueRow[]>(() =>
+  displayQueued.value.map((q) => ({ id: q.id, text: q.text, images: q.images, annotations: [], locked: !!q.local })),
+)
+
+function cancelQueued(index: number) {
+  const item = displayQueued.value[index]
+  if (item && !item.local) void chat.removeQueued(item.id)
+}
+
+let editingQueued = false
+/** Withdraw a queued message into the composer; an unsent draft is queued first. */
+async function editQueued(index: number) {
+  const target = displayQueued.value[index]
+  if (!target || target.local || editingQueued) return
+  editingQueued = true
+  try {
+    if (canSubmit.value) {
+      await send()
+      // A failed send restores its draft; a draft typed meanwhile stays with its author.
+      if (canSubmit.value) return
+    }
+    if (!queued.value.some((q) => q.id === target.id)) return
+    const item = await chat.takeQueued(target.id)
+    if (!item) return
+    // The item is already off the server queue, so keep anything typed during removal too.
+    const draft = input.value.trim()
+    const text = draft ? (item.text ? `${item.text}\n${draft}` : draft) : item.text
+    mention.load(text, [...(item.references || []), ...mention.refs.value])
+    attach.attachments.value = [...item.images, ...attach.attachments.value]
+    void nextTick(autoGrow)
+  } finally {
+    editingQueued = false
+  }
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -458,26 +495,21 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </div>
 
       <!-- queue -->
-      <div v-if="queued.length && !closed" class="solo-bottom border-t border-line py-2" data-testid="solo-queue">
+      <div v-if="queued.length && !closed" class="solo-bottom shrink-0 pt-3" data-testid="solo-queue">
         <div class="solo-column">
-          <div class="chat-meta mb-1 flex items-center gap-1.5"><Icon name="clock" :size="13" />{{ t('pages.solo.chat.queue', { n: queued.length }) }}</div>
-          <div v-for="(q, qi) in queued" :key="q.id" class="group flex min-w-0 items-center gap-2 py-1 text-[12px] text-txt2">
-            <span class="chat-meta flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line">{{ qi + 1 }}</span>
-            <span class="min-w-0 flex-1 truncate">{{ q.text || (q.references?.length ? '' : t('pages.solo.chat.imagesOnly')) }}</span>
-            <span v-if="q.references?.length" class="flex shrink-0 gap-1">
-              <ReferenceChip v-for="r in q.references" :key="r.target" :reference="r" :default-repo="defaultRepo" />
-            </span>
-            <button
-              v-if="!q.local"
-              type="button"
-              class="shrink-0 text-txt3 opacity-0 transition group-hover:opacity-100 hover:text-err focus-visible:opacity-100"
-              :aria-label="t('pages.solo.chat.removeQueued')"
-              :title="t('pages.solo.chat.removeQueued')"
-              @click="chat.removeQueued(q.id)"
-            >
-              <Icon name="close" :size="13" />
-            </button>
-          </div>
+          <PendingSendQueuePanel
+            :items="queueRows"
+            panel-test-id="solo-queue-panel"
+            @cancel="cancelQueued"
+            @edit="editQueued"
+            @reorder="(from: number, to: number) => chat.reorderQueued(from, to)"
+          >
+            <template #row-extra="{ index }">
+              <span v-if="displayQueued[index]?.references?.length" class="flex shrink-0 gap-1">
+                <ReferenceChip v-for="r in displayQueued[index]!.references" :key="r.target" :reference="r" :default-repo="defaultRepo" />
+              </span>
+            </template>
+          </PendingSendQueuePanel>
         </div>
       </div>
       </div>

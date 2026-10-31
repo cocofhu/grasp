@@ -54,6 +54,7 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     session: box.session,
     turns: box.turns,
     queued: ref([]),
+    displayQueued: ref([]),
     busy: ref(false),
     phase: box.phase,
     link: box.link,
