@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-31（模型区「使用全部模型组」文案与分段选择）
+
+- 日期：2026-10-31（Asia/Hong_Kong）。
+- 范围：`web/src/components/agent/{ModelBindingEditor,AgentRuntimeBindings}.vue` 及其单测、`web/src/components/ui/AppSelect.vue`、`web/src/lib/agent/modelRouting.ts`、`web/e2e/model-routing.spec.ts`、`CHANGELOG.md`。
+- 做了什么：全部模型组开关的文案由「继承…」改为「使用全部模型组」，说明改为「自动包含所有已启用的模型组，之后新增或修改的模型组也会同步生效。」，英文同步。模型区先放「默认启动模型组」（标题、说明、下拉，右侧弱化显示工具 · 主模型），再放「可用模型组」，标题行右侧是「全部模型组 / 指定模型组」radiogroup 分段（SlidingTabs，28px，方向键切换，容器窄于 480px 时换行拉满）。下方面板三态：全部（层叠图标和说明，不列组名）、指定（默认组为带「默认启动」徽标的固定行，其他组悬停或聚焦显示设为默认 / 移除，触屏常显，底部「添加模型组」）、未选默认组（引导说明）。「全部」在没有默认组或表单禁用时置灰，没有默认组时提示「先选择默认启动模型组」。默认配置页「重置」移到「模型」标题行右侧。`AppSelect` 增加可选 `trailing` 插槽。`allConfigurations` / `configurationIds` 发出值、手动组恢复与禁用条件不变；`allowAllConfigurations=false` 的向导不显示分段。
+- 为什么：默认配置是最上层，没有可继承对象，「继承」与 Agent 的「继承默认配置」混淆；旧开关在切换时让卡片和默认组标签时有时无，布局跳动，指定模式里下拉和列表重复显示默认组。
+- 如何验证：`src/components/{agent,workspace,ui/AppSelect}`、`src/lib/agent` 共 72 个文件、793 项单测通过；`vue-tsc --noEmit` 和相关文件 eslint 通过。Playwright 跑 `model-routing`、`agent-create-wizard`、`onboarding-wizard`，38 项通过；新用例断言 radio 角色与文案、切换前后分段和默认组下拉 y 坐标不变，1440 / 390 亮暗下不溢出，并保存截图。`git-help-run-tags-404` 在等待 `agent-wizard-backend-cursor` 时超时，未改动的 main 上同样失败，与本次无关。
+
 ### 2026-10-30（Solo @ 引用：其他会话与 GitHub issue/PR）
 
 - 日期：2026-10-30。
