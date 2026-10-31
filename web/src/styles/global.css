@@ -70,9 +70,9 @@ html.light {
   --c-line: 226 226 232;
   --c-line-strong: 208 208 216;
   --c-txt: 24 24 27;
-  --c-txt2: 72 72 82;
-  /* ≥4.5:1 on surface and base; lighter greys read as washed out at 11–12px */
-  --c-txt3: 113 113 122;
+  --c-txt2: 52 52 60;
+  /* ≈7.5:1 on surface and base; lighter greys read as washed out at 11–12px */
+  --c-txt3: 82 82 91;
   --c-accent: 123 97 255;
   --c-accent-2: 79 70 229;
   /* Solid accent button hover fill — brand purple hue (#5424D8), deeper than accent-2 */
