@@ -144,7 +144,7 @@ async function onHideNav() {
 
 <style scoped>
 .app-desktop-sidebar {
-  --sidebar-rail-bg: light-dark(#f6f6f6, rgb(var(--c-base)));
+  --sidebar-rail-bg: light-dark(#fcfcfc, rgb(var(--c-base)));
   --sidebar-panel-bg: light-dark(#fff, rgb(var(--c-surface)));
   border-radius: 16px;
   background: var(--sidebar-rail-bg);

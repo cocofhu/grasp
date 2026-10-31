@@ -106,7 +106,8 @@ describe('DashboardView light selectors survive scoped compile', () => {
 
     const targets: { className: string; body: RegExp }[] = [
       { className: '.home-composer__send', body: /#fff/ },
-      { className: '.home-shell__card-top', body: /244,\s*244,\s*245/ },
+      { className: '.home-shell__card-top', body: /^\s*background:\s*rgb\(var\(--c-surface\)\);?\s*$/ },
+      { className: '.home-composer__toolbar', body: /^\s*background:\s*rgb\(var\(--c-surface\)\);?\s*$/ },
     ]
     for (const target of targets) {
       const matched = rules.filter(
@@ -121,6 +122,22 @@ describe('DashboardView light selectors survive scoped compile', () => {
         expect(hasClass(rule.selector, target.className)).toBe(true)
       }
     }
+
+    const lightCardTops = rules.filter(
+      (rule) => rule.selector.includes('html.light') && hasClass(rule.selector, '.home-shell__card-top'),
+    )
+    for (const rule of lightCardTops) expect(rule.body).not.toMatch(/244,\s*244,\s*245/)
+    expect(
+      lightCardTops.some(
+        (rule) => rule.selector.includes('.home-shell__card--selected') && /--c-accent\)\s*\/\s*0\.055/.test(rule.body),
+      ),
+    ).toBe(true)
+
+    const toolbarBase = rules.find(
+      (rule) => !rule.selector.includes('html.light') && hasClass(rule.selector, '.home-composer__toolbar'),
+    )
+    expect(toolbarBase?.body).toMatch(/border-color:\s*rgb\(var\(--c-line\)\s*\/\s*0\.55\)/)
+    expect(toolbarBase?.body).toMatch(/color-mix\(in srgb, rgb\(var\(--c-base\)\) 35%, rgb\(var\(--c-surface\)\)\)/)
 
     const sharedSurfaces = rules.filter(
       (rule) =>

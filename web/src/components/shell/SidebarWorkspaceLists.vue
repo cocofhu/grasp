@@ -108,7 +108,7 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
 
 <style scoped>
 .workspace-lists { min-width: 0; font-size: 13px; }
-.workspace-list-heading { display: flex; align-items: center; justify-content: flex-start; gap: 1px; margin: 0 0 4px; padding: 0 10px; font-size: 11.5px; font-weight: 600; color: color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3))); transition: color 160ms ease; }
+.workspace-list-heading { display: flex; align-items: center; justify-content: flex-start; gap: 1px; margin: 0 0 4px; padding: 0 10px; font-size: 11.5px; font-weight: 600; color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)))); transition: color 160ms ease; }
 .workspace-list-heading:hover { color: rgb(var(--c-txt)); }
 .workspace-list-heading > a:first-child { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 30px; color: inherit; }
 .workspace-list-heading-icon { flex: none; }
@@ -119,7 +119,7 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
 .workspace-list-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 400; }
 .workspace-list-state { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 8px; color: rgb(var(--c-txt3)); font-size: 11px; }
 .workspace-list-state button { color: rgb(var(--c-accent-2)); }
-.workspace-recent-row { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 36px; margin-bottom: 2px; padding: 8px 10px; border-radius: 10px; font-size: 13px; color: rgb(var(--c-txt2)); --hover-ink-color: rgb(var(--c-txt) / .04); }
+.workspace-recent-row { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 36px; margin-bottom: 2px; padding: 8px 10px; border-radius: 10px; font-size: 13px; color: light-dark(#27272a, rgb(var(--c-txt2))); --hover-ink-color: rgb(var(--c-txt) / .04); }
 .sidebar-tree-item > .workspace-recent-row { padding-left: 6px; }
 .workspace-recent-row:hover { color: rgb(var(--c-txt)); }
 .workspace-recent-row.is-active, .workspace-recent-row.is-active:hover { color: rgb(var(--c-txt)); background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065)); }
