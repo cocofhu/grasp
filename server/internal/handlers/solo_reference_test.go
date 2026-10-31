@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -44,6 +45,13 @@ func TestSoloReferenceEndpoints(t *testing.T) {
 	}
 	if res := hn.do(http.MethodGet, "/api/solo/sessions/bob/references/search?lane=solo", nil); res.Code != http.StatusNotFound {
 		t.Fatalf("foreign session: %d", res.Code)
+	}
+
+	if res := hn.do(http.MethodGet, "/api/solo/references/search?lane=solo&agent=Solo", nil); res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"target":"cur"`) || strings.Contains(res.Body.String(), `"target":"bob"`) {
+		t.Fatalf("launch search: %d %s", res.Code, res.Body)
+	}
+	if res := hn.do(http.MethodGet, "/api/solo/references/search?lane=github&projects=missing,", nil); res.Code != http.StatusNotFound {
+		t.Fatalf("launch search unknown project: %d %s", res.Code, res.Body)
 	}
 
 	for target, code := range map[string]string{"cur": "self_reference", "bob": "reference_not_found"} {

@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { api } from '@/lib/api/api'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
-import type { Agent, CliCatalogModel, CredentialItem, ModelConfiguration, ModelConnection, Project, SoloSession } from '@/lib/api/apiTypes'
+import type { Agent, CliCatalogModel, CredentialItem, MessageReference, ModelConfiguration, ModelConnection, Project, SoloSession } from '@/lib/api/apiTypes'
 import type { ClarifyImage } from '@/lib/shared/types'
 import { boundModelChoices } from './configuredModels'
 import { parseModelRoute, boundConfigurationIds, effectiveModelAgent } from '@/lib/agent/modelBindings'
@@ -164,7 +164,7 @@ export function useSoloLauncher() {
   }
 
   /** Creates the session and opens it; the first message runs once the sandbox is up. */
-  async function start(text: string, images: ClarifyImage[] = [], title = ''): Promise<SoloSession | null> {
+  async function start(text: string, images: ClarifyImage[] = [], title = '', references: MessageReference[] = []): Promise<SoloSession | null> {
     if (!canStart.value) {
       if (!agent.value) error.value = t('pages.solo.home.noAgent')
       return null
@@ -195,6 +195,7 @@ export function useSoloLauncher() {
         title: title.trim() || undefined,
         text: text.trim() || undefined,
         images: images.length ? images : undefined,
+        references: references.length ? references.map(({ kind, target }) => ({ kind, target })) : undefined,
       })
       soloPrefs.setLastProjects(projectIds.value)
       store.upsert(s)

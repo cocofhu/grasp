@@ -4,7 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **@ references in Solo:** type `@` in a Solo message (or use the "+" menu) to reference another of your Solo sessions or a GitHub issue or pull request from the session's repositories. Typing `#number` or pasting an issue or PR link works too. The agent gets a summary of a referenced session and can read its full conversation as it was when the turn began. GitHub items are checked with the sandbox's Git credential and read by the agent with `gh`. A message can carry up to 5 references, shown as chips in the message and the queue.
+- **@ references in Solo:** type `@` in a Solo message, including the home page composer when starting a new Solo session (or use the "+" menu), to reference another of your Solo sessions or a GitHub issue or pull request from the session's repositories. Typing `#number` or pasting an issue or PR link works too. The agent gets a summary of a referenced session and can read its full conversation as it was when the turn began. GitHub items are checked with the sandbox's Git credential and read by the agent with `gh`. A message can carry up to 5 references, shown as chips in the message and the queue.
 
 - **Solo sandbox limit and running order:** admins can change how many Solo sandboxes run at once under Settings → Capacity, applied immediately and kept across restarts. Solo sessions in the running list now stay in start order, newest first, instead of jumping to the top on every reply.
 
