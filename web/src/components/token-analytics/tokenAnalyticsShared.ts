@@ -214,6 +214,14 @@ export function fmtPct(ratio: number | null | undefined, digits = 1): string {
   return `${((Number(ratio) || 0) * 100).toFixed(digits)}%`
 }
 
+/** Cache hit rate label; never rounds a ratio below 1 up to `100.0%`. */
+export function fmtHitRatePct(ratio: number | null | undefined, digits = 1): string {
+  const r = Number(ratio) || 0
+  const label = (r * 100).toFixed(digits)
+  if (r < 1 && Number(label) >= 100) return `${(100 - 10 ** -digits).toFixed(digits)}%`
+  return `${label}%`
+}
+
 export function fmtDeltaPct(d: number | null | undefined): string | null {
   if (d == null || !Number.isFinite(d)) return null
   return `${d >= 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(1)}%`

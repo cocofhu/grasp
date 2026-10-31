@@ -129,6 +129,35 @@ func TestGlobalTokenStatsLedgerDimensionsAndCost(t *testing.T) {
 	}
 }
 
+func TestGlobalTokenStatsCacheHitRateCountsCacheWrite(t *testing.T) {
+	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "ledger_cache_hit.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewWorkspaceService(db)
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+
+	empty, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{Window: TokenStatsWindow7d, Timezone: "UTC", Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.KPI.CacheHitRate != 0 {
+		t.Fatalf("empty window cacheHitRate=%v want 0", empty.KPI.CacheHitRate)
+	}
+
+	seedLedger(t, db,
+		models.TokenUsageEvent{CreatedAt: now.Add(-time.Hour), Source: "workflow", Status: "ok", ModelKey: "m",
+			InputTokens: 50, CacheReadTokens: 9_690, CacheWriteTokens: 260, OutputTokens: 100},
+	)
+	res, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{Window: TokenStatsWindow7d, Timezone: "UTC", Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := 9_690.0 / (50.0 + 9_690.0 + 260.0); !approxEqual(res.KPI.CacheHitRate, want) {
+		t.Fatalf("cacheHitRate=%v want %v", res.KPI.CacheHitRate, want)
+	}
+}
+
 func TestGlobalTokenStatsCustomRangeAndGranularity(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "ledger_range.db"))
 	if err != nil {

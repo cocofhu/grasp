@@ -67,7 +67,7 @@ type GlobalTokenStatsKPI struct {
 	ThreadCount      int      `json:"threadCount"`
 	ModelCount       int      `json:"modelCount"`
 	EventCount       int      `json:"eventCount"`
-	// CacheHitRate is cacheRead / (input + cacheRead), 0..1.
+	// CacheHitRate is cacheRead / (input + cacheRead + cacheWrite), 0..1.
 	CacheHitRate float64 `json:"cacheHitRate"`
 	// AvgPerRun is workflow tokens / distinct runs (0 when no runs).
 	AvgPerRun     float64  `json:"avgPerRun"`
@@ -1024,7 +1024,7 @@ func buildGlobalKPI(cur, prev *globalAgg) GlobalTokenStatsKPI {
 		Cost:             cur.cost,
 		UnpricedTotal:    cur.unpricedTot,
 	}
-	if denom := cur.composition.InputTokens + cur.composition.CacheReadTokens; denom > 0 {
+	if denom := cur.composition.InputTokens + cur.composition.CacheReadTokens + cur.composition.CacheWriteTokens; denom > 0 {
 		kpi.CacheHitRate = float64(cur.composition.CacheReadTokens) / float64(denom)
 	}
 	if n := len(cur.runSet); n > 0 {

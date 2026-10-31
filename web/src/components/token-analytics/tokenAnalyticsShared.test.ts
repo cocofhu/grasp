@@ -7,6 +7,8 @@ import {
   defaultTokenStatsFilters,
   filtersToParams,
   fmtCost,
+  fmtHitRatePct,
+  fmtPct,
   isDrillable,
   toCsv,
 } from './tokenAnalyticsShared'
@@ -62,6 +64,16 @@ describe('tokenAnalyticsShared', () => {
     expect(fmtCost(12_345, 'USD')).toBe('$12.3K')
     expect(toCsv(['a', 'b'], [['x,y', 'say "hi"'], [1, null]])).toBe('a,b\r\n"x,y","say ""hi"""\r\n1,')
   })
+
+  it('never rounds a cache hit rate below 1 up to 100%', () => {
+    expect(fmtHitRatePct(0.9996)).toBe('99.9%')
+    expect(fmtHitRatePct(0.9995)).toBe('99.9%')
+    expect(fmtHitRatePct(1)).toBe('100.0%')
+    expect(fmtHitRatePct(0.969)).toBe('96.9%')
+    expect(fmtHitRatePct(0)).toBe('0.0%')
+    expect(fmtHitRatePct(undefined)).toBe('0.0%')
+    expect(fmtPct(0.9996)).toBe('100.0%')
+  })
 })
 
 describe('tokenAnalyticsCharts', () => {
@@ -93,6 +105,19 @@ describe('tokenAnalyticsCharts', () => {
     expect(opt.series.map((s) => s.type)).toEqual(['bar', 'line'])
     expect(opt.series[1].yAxisIndex).toBe(1)
     expect(opt.series[1].data[0]).toBe(25)
+  })
+
+  it('formats the cost-mode cache-hit tooltip without reading 100% below a full hit', () => {
+    const nearFull = {
+      ...stats,
+      trend: [{ bucket: '2026-07-01', total: 100_000, inputTokens: 4, outputTokens: 0, cacheReadTokens: 99_996, cacheWriteTokens: 0, cost: 1 }],
+    } as unknown as GlobalTokenStats
+    type Param = { seriesIndex: number; dataIndex?: number; axisValueLabel: string; value: number; marker: string; seriesName: string }
+    const opt = trendChartOption(nearFull, 'cost', t) as { tooltip: { formatter: (p: Param[]) => string }; series: Array<{ data: unknown[] }> }
+    expect(opt.series[1].data[0]).toBe(100)
+    const line = { seriesIndex: 1, axisValueLabel: '07-01', marker: '', seriesName: 'hit' }
+    expect(opt.tooltip.formatter([{ ...line, dataIndex: 0, value: 100 }])).toContain('hit: 99.9%')
+    expect(opt.tooltip.formatter([{ ...line, value: 99.96 }])).toContain('hit: 99.9%')
   })
 
   it('computes cache hit ratio over all input-side tokens', () => {
