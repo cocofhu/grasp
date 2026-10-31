@@ -4,6 +4,7 @@
     "workspace": "工作区导航",
     "runningRuns": "正在执行",
     "autoProcess": "自动过程",
+    "queuedRuns": "排队中",
     "runHistory": "历史执行",
     "sectionCollapse": "折叠{name}",
     "sectionExpand": "展开{name}",

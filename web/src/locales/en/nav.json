@@ -4,6 +4,7 @@
     "workspace": "Workspace navigation",
     "runningRuns": "Running",
     "autoProcess": "Automatic",
+    "queuedRuns": "Queued",
     "runHistory": "History",
     "sectionCollapse": "Collapse {name}",
     "sectionExpand": "Expand {name}",
