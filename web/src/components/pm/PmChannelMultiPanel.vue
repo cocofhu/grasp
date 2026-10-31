@@ -97,15 +97,19 @@ const {
 </script>
 
 <template>
-  <div data-testid="pm-channel-multi">
+  <div class="pm-channel-card" data-testid="pm-channel-multi">
     <div class="mb-3 flex items-start justify-between gap-3">
-      <div class="min-w-0">
-        <h2 class="m-0 text-[15px] font-semibold leading-6 text-txt">
-          {{ t('pages.workspace.pm.channel.sectionTitle') }}
+      <div class="flex min-w-0 items-start gap-2.5">
+        <Icon name="connector" :size="16" :interactive="false" class="mt-1 shrink-0 text-txt3" />
+        <div class="min-w-0">
+        <h2 class="m-0 flex flex-wrap items-center gap-2 text-[14px] font-semibold leading-6 text-txt">
+          <span>{{ t('pages.workspace.pm.channel.sectionTitle') }}</span>
+          <span v-if="!loading" class="pm-channel-count" data-testid="pm-channel-count">{{ channelList.length }}</span>
         </h2>
-        <p class="m-0 mt-1 text-[13px] leading-5 text-txt3">
+        <p class="m-0 mt-0.5 text-[12px] leading-5 text-txt3">
           {{ t('pages.workspace.pm.channel.sectionHint') }}
         </p>
+        </div>
       </div>
     </div>
 
@@ -846,3 +850,26 @@ const {
     </div>
   </div>
 </template>
+
+<style scoped>
+.pm-channel-card {
+  min-width: 0;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+  padding: 16px 20px 20px;
+  background: rgb(var(--c-surface));
+}
+.pm-channel-count {
+  border-radius: 999px;
+  padding: 0 7px;
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+@media (max-width: 767px) {
+  .pm-channel-card { padding: 14px 16px 16px; }
+}
+</style>

@@ -218,9 +218,9 @@ func (h *Handlers) ClearCredential(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
 }
 
-// RemoveModelAPICredential deletes a workspace-owned API account. It does not
+// RemoveCredential deletes a workspace credential row of any kind. It does not
 // replace ClearCredential: DELETE without the /account suffix still only wipes the secret.
-func (h *Handlers) RemoveModelAPICredential(c *gin.Context) {
+func (h *Handlers) RemoveCredential(c *gin.Context) {
 	if h.Credentials == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "credentials unavailable"})
 		return
@@ -230,11 +230,11 @@ func (h *Handlers) RemoveModelAPICredential(c *gin.Context) {
 		writeCredentialErr(c, err)
 		return
 	}
-	if err := h.Credentials.RemoveModelAPI(credentialID); err != nil {
+	if err := h.Credentials.Remove(credentialID); err != nil {
 		writeCredentialErr(c, err)
 		return
 	}
-	h.recordAudit(services.AuditRecord{Actor: h.auditActorFromContext(c), Action: models.AuditActionWorkspaceConfig, ResourceType: "credential", ResourceID: credentialID, Outcome: models.AuditOutcomeOK, Summary: "remove model API account"})
+	h.recordAudit(services.AuditRecord{Actor: h.auditActorFromContext(c), Action: models.AuditActionWorkspaceConfig, ResourceType: "credential", ResourceID: credentialID, Outcome: models.AuditOutcomeOK, Summary: "remove credential"})
 	c.JSON(http.StatusOK, gin.H{"status": "removed"})
 }
 
@@ -259,9 +259,7 @@ func writeCredentialErr(c *gin.Context, err error) {
 			alias = taken.Alias
 		}
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "code": "alias_taken", "alias": alias})
-	case errors.Is(err, models.ErrGitCredentialHost), errors.Is(err, services.ErrCredentialPurpose), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget), errors.Is(err, services.ErrCredentialEnvKey), errors.Is(err, services.ErrKimiCodeAPIKeyOnly), errors.Is(err, runtime.ErrCodexLoginFileEmpty), errors.Is(err, runtime.ErrCodexLoginFileAPIKey):
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	case errors.Is(err, services.ErrCredentialNotRemovable):
+	case errors.Is(err, models.ErrGitCredentialHost), errors.Is(err, services.ErrCredentialPurpose), errors.Is(err, services.ErrCredentialKnownHosts), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget), errors.Is(err, services.ErrCredentialEnvKey), errors.Is(err, services.ErrKimiCodeAPIKeyOnly), errors.Is(err, runtime.ErrCodexLoginFileEmpty), errors.Is(err, runtime.ErrCodexLoginFileAPIKey):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrCredentialNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

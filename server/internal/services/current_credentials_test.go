@@ -44,6 +44,7 @@ func TestOnlyExplicitCurrentCredentialsAreVisibleAndUsable(t *testing.T) {
 		{ID: "old-model", Purpose: "model_api", Issuer: "deepseek", Type: "ai", Provider: "deepseek", SecretKind: "api_key", Name: "Missing revision"},
 		{ID: "old-git", Purpose: "git", Issuer: "gitlab", Type: "git", Provider: "gitlab", SecretKind: "token", SecretRevision: 1, Name: "Missing host", EnvKey: envauth.EnvGitLabToken},
 		{ID: "old-codex", Type: "ai", Provider: "codex", Name: "Codex", EnvKey: envauth.EnvCodexAuthFile},
+		{ID: "old-ssh-hosts", Purpose: "ssh", Type: "ssh", SecretKind: "ssh_known_hosts", SecretRevision: 1, Name: "Retired hosts", EnvKey: envauth.EnvGitSSHKnownHosts},
 		{ID: "unknown-domain", Purpose: "old-purpose", Type: "custom", SecretKind: "token", SecretRevision: 1, Name: "Old purpose", EnvKey: "ANOTHER_OLD_TOKEN"},
 	}
 	for i := range rows {

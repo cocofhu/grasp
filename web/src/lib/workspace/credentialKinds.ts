@@ -10,7 +10,6 @@ export type CredentialKindId =
   | 'github'
   | 'gitlab'
   | 'ssh_key'
-  | 'ssh_hosts'
 
 export type CredentialSecretKind = 'apiKey' | 'loginFile' | 'multiline'
 
@@ -21,7 +20,7 @@ export type CredentialKind = {
   envKey: string
   secret: CredentialSecretKind
   logoProvider?: string
-  icon?: 'key' | 'host'
+  icon?: 'key'
 }
 
 export const CREDENTIAL_KINDS: CredentialKind[] = [
@@ -36,7 +35,6 @@ export const CREDENTIAL_KINDS: CredentialKind[] = [
   { id: 'github', type: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', secret: 'apiKey', logoProvider: 'github' },
   { id: 'gitlab', type: 'git', provider: 'gitlab', envKey: 'GITLAB_TOKEN', secret: 'apiKey', logoProvider: 'gitlab' },
   { id: 'ssh_key', type: 'ssh', provider: 'ssh', envKey: 'GIT_SSH_PRIVATE_KEY', secret: 'multiline', icon: 'key' },
-  { id: 'ssh_hosts', type: 'ssh', provider: 'ssh', envKey: 'GIT_SSH_KNOWN_HOSTS', secret: 'multiline', icon: 'host' },
 ]
 
 type KindItem = {
@@ -61,10 +59,7 @@ export function kindById(id: string): CredentialKind | undefined {
 export function kindOfItem(item: KindItem): CredentialKind | undefined {
   if (item.purpose === 'tool_auth') return CREDENTIAL_KINDS.find(kind => kind.type === 'ai' && kind.id === item.toolId)
   if (item.purpose === 'git') return CREDENTIAL_KINDS.find(kind => kind.type === 'git' && kind.provider === item.provider)
-  if (item.purpose === 'ssh') {
-    if (item.secretKind === 'ssh_private_key') return kindById('ssh_key')
-    if (item.secretKind === 'ssh_known_hosts') return kindById('ssh_hosts')
-  }
+  if (item.purpose === 'ssh' && item.secretKind === 'ssh_private_key') return kindById('ssh_key')
   return undefined
 }
 

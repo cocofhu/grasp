@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import SettingsSection from '@/components/settings/SettingsSection.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
+import SettingsPageHeader from '@/components/settings/SettingsPageHeader.vue'
 import { BUILTIN_MCPS, type McpServer } from '@/data/mcp'
 
 const { t } = useI18n()
@@ -35,7 +36,7 @@ function availabilityBadgeKey(scope: McpServer['scope']): string {
 
 <template>
   <section data-testid="integrations-panel">
-    <header class="mb-8">
+    <div class="mb-6">
       <button
         v-if="selected"
         type="button"
@@ -46,9 +47,12 @@ function availabilityBadgeKey(scope: McpServer['scope']): string {
         <Icon name="chevron-left" :size="16" />
         {{ t('mcp.integrations.backToCatalog') }}
       </button>
-      <h1 class="m-0 text-2xl font-semibold tracking-tight text-txt">{{ selected ? selected.name : t('mcp.integrations.title') }}</h1>
-      <p class="mb-0 mt-2 text-[13px] leading-5 text-txt3">{{ selected ? t(selected.overviewKey || selected.descKey) : t('mcp.integrations.noConfigNeeded') }}</p>
-    </header>
+      <SettingsPageHeader
+        icon="integration"
+        :title="selected ? selected.name : t('mcp.integrations.title')"
+        :description="selected ? t(selected.overviewKey || selected.descKey) : t('mcp.integrations.noConfigNeeded')"
+      />
+    </div>
 
     <div data-testid="integrations-panel-content">
       <div v-if="!selected" data-testid="integrations-panel-catalog">
@@ -112,3 +116,10 @@ function availabilityBadgeKey(scope: McpServer['scope']): string {
     </div>
   </section>
 </template>
+
+<style scoped>
+.integration-catalog-row { width: calc(100% + 40px); margin-inline: -20px; padding-inline: 20px; }
+@media (max-width: 767px) {
+  .integration-catalog-row { width: calc(100% + 32px); margin-inline: -16px; padding-inline: 16px; }
+}
+</style>

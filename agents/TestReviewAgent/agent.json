@@ -16,7 +16,6 @@
   },
   "capabilities": {
     "interaction": "auto",
-    "review": true,
     "tools": [
       "set_preview"
     ],

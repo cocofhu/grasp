@@ -37,13 +37,11 @@ describe('CredentialProviderLogo', () => {
     wrapper.unmount()
   })
 
-  it('uses key and host icons for SSH credentials', () => {
+  it('uses the key icon for SSH keys', () => {
     const key = mount(CredentialProviderLogo, { props: { icon: 'key' } })
-    const host = mount(CredentialProviderLogo, { props: { icon: 'host' } })
     expect(key.get('[data-provider-logo="ssh-key"]').find('img').exists()).toBe(false)
-    expect(host.get('[data-provider-logo="ssh-host"]').attributes('aria-label')).toContain('known hosts')
+    expect(key.get('[data-provider-logo="ssh-key"]').attributes('aria-label')).toBe('SSH key')
     key.unmount()
-    host.unmount()
   })
 
   it('uses a neutral accessible logo for unknown providers', () => {

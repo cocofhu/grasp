@@ -12,7 +12,8 @@ import (
 
 // GitBindings is the complete set of Git authorizations for an Agent.
 // An omitted or empty set grants no Git authorization.
-// preferredCredentialId from older saves is accepted and then discarded.
+// preferredCredentialId and per-item sshHostsCredentialId from older saves are
+// accepted and then discarded; SSH known hosts come from the SSH key itself.
 type GitBindings struct {
 	Items                 []GitCredentialBinding `json:"items"`
 	PreferredCredentialID string                 `json:"-"`
@@ -21,9 +22,8 @@ type GitBindings struct {
 // GitCredentialBinding stores references and a routing scope, never secrets.
 // Scope is empty, a host (optionally with port), or a complete repository URL.
 type GitCredentialBinding struct {
-	CredentialID         string `json:"credentialId"`
-	Scope                string `json:"scope,omitempty"`
-	SshHostsCredentialID string `json:"sshHostsCredentialId,omitempty"`
+	CredentialID string `json:"credentialId"`
+	Scope        string `json:"scope,omitempty"`
 }
 
 var ErrGitBindings = errors.New("invalid Git bindings")
@@ -39,7 +39,6 @@ func NormalizeGitBindings(in *GitBindings) (*GitBindings, error) {
 	seen := make(map[string]bool, len(in.Items))
 	for _, item := range in.Items {
 		item.CredentialID = strings.TrimSpace(item.CredentialID)
-		item.SshHostsCredentialID = strings.TrimSpace(item.SshHostsCredentialID)
 		if item.CredentialID == "" || seen[item.CredentialID] {
 			return nil, fmt.Errorf("%w: credential ids must be non-empty and unique", ErrGitBindings)
 		}

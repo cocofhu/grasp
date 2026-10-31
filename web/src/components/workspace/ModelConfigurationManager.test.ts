@@ -1173,3 +1173,60 @@ describe('ModelConfigurationManager', () => {
     }
   })
 })
+
+describe('ModelConfigurationManager overview', () => {
+  const disabledCursor: ModelConfiguration = { id: 'cursor-off', name: 'Cursor paused', backend: 'cursor', binding: { kind: 'platform', credentialId: platformKey.id }, state: 'disabled', revision: 1 }
+  const brokenCursor: ModelConfiguration = { id: 'cursor-broken', name: 'Cursor broken', backend: 'cursor', binding: { kind: 'platform', credentialId: 'missing-key' }, state: 'active', revision: 1 }
+
+  it('summarises loaded groups and labels every row with its coding tool and status', async () => {
+    mocks.configurations.mockResolvedValue({ items: [configuration, disabledCursor, brokenCursor] })
+    const wrapper = setup()
+    await flushPromises()
+    const stat = (key: string) => wrapper.get(`[data-testid="settings-stat-${key}"]`)
+    expect(stat('total').get('[data-testid="settings-stat-value"]').text()).toBe('3')
+    expect(stat('enabled').text()).toContain('2')
+    expect(stat('enabled').text()).toContain('/ 3')
+    expect(stat('tools').get('[data-testid="settings-stat-value"]').text()).toBe('2')
+    expect(stat('problems').get('[data-testid="settings-stat-value"]').text()).toBe('1')
+    expect(stat('problems').classes()).toContain('settings-stat--warn')
+
+    expect(wrapper.get(`[data-testid="model-configuration-tool-${configuration.id}"]`).text()).toBe('OpenCode')
+    expect(wrapper.get(`[data-testid="model-configuration-tool-${disabledCursor.id}"]`).text()).toBe('Cursor')
+    const status = (id: string) => wrapper.get(`[data-testid="model-configuration-status-${id}"]`)
+    expect(status(configuration.id).attributes('data-status')).toBe('ok')
+    expect(status(configuration.id).text()).toBe('pages.settingsOverview.modelStatus.available')
+    expect(status(disabledCursor.id).attributes('data-status')).toBe('off')
+    expect(status(disabledCursor.id).text()).toBe('pages.settingsOverview.modelStatus.disabled')
+    expect(status(brokenCursor.id).attributes('data-status')).toBe('warn')
+    expect(status(brokenCursor.id).text()).toBe('pages.settingsOverview.modelStatus.missingCredential')
+    expect(wrapper.emitted('loaded')?.[0]?.[0]).toHaveLength(3)
+    wrapper.unmount()
+  })
+
+  it('shows a skeleton while loading and hides the overview when inline or after a load error', async () => {
+    let resolve!: (value: { items: ModelConfiguration[] }) => void
+    mocks.configurations.mockReturnValue(new Promise((done) => { resolve = done }))
+    const wrapper = setup()
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="settings-stat-skeleton"]').length).toBeGreaterThan(0)
+    expect(wrapper.find('[data-testid="settings-stat-total"]').exists()).toBe(false)
+    resolve({ items: [] })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="settings-stat-total"]').text()).toContain('0')
+    wrapper.unmount()
+
+    mocks.configurations.mockResolvedValue({ items: [configuration] })
+    const inline = setup({ inline: true })
+    await flushPromises()
+    expect(inline.find('[data-testid="model-configuration-stats"]').exists()).toBe(false)
+    expect(inline.find('.configuration-card').exists()).toBe(false)
+    inline.unmount()
+
+    mocks.configurations.mockRejectedValue(new Error('offline'))
+    const failed = setup()
+    await flushPromises()
+    expect(failed.find('[data-testid="model-configuration-stats"]').exists()).toBe(false)
+    expect(failed.text()).toContain('offline')
+    failed.unmount()
+  })
+})

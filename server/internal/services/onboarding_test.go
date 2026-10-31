@@ -80,7 +80,63 @@ func TestOnboardingBootstrapCreatesTeamAndDefaultWorkflow(t *testing.T) {
 	if !wf.ShowOnHome {
 		t.Fatal("default workflow should be visible on Home")
 	}
+	assertSharedSandbox(t, wf)
 	assertDefaultWorkflowGraph(t, wf.Graph)
+}
+
+func assertSharedSandbox(t *testing.T, wf models.WorkflowDef) {
+	t.Helper()
+	if wf.Defaults == nil || wf.Defaults.Sandbox == nil || wf.Defaults.Sandbox.Mode != models.SandboxModeShared {
+		t.Fatalf("defaults = %+v, want sandbox.mode=shared", wf.Defaults)
+	}
+	if !wf.Defaults.InheritWorkspace {
+		t.Fatalf("defaults.inheritWorkspace = false, want true")
+	}
+}
+
+func TestOnboardingBootstrapKeepsExistingWorkflowSandboxMode(t *testing.T) {
+	cases := []struct {
+		name     string
+		defaults *models.WorkflowDefaults
+	}{
+		{name: "unset", defaults: nil},
+		{name: "per_node", defaults: &models.WorkflowDefaults{InheritWorkspace: true, Sandbox: &models.WorkflowSandboxPolicy{Mode: models.SandboxModePerNode}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newOnboardingHarness(t)
+			req := services.OnboardingBootstrapRequest{ModelConfigurationID: "model-onboarding"}
+			r1, err := svc.Bootstrap(req)
+			if err != nil {
+				t.Fatalf("first: %v", err)
+			}
+			seed, _ := svc.WF.Get(r1.WorkflowID)
+			if err := svc.WF.Delete(seed.ID); err != nil {
+				t.Fatalf("delete seed: %v", err)
+			}
+			old := models.WorkflowDef{ID: "wf-old", Name: services.OnboardingWorkflowName, NeedsRepo: true, Graph: seed.Graph, Defaults: tc.defaults}
+			if err := svc.WF.Save(&old); err != nil {
+				t.Fatalf("save existing: %v", err)
+			}
+			r2, err := svc.Bootstrap(req)
+			if err != nil {
+				t.Fatalf("second: %v", err)
+			}
+			if r2.WorkflowID != old.ID {
+				t.Fatalf("bootstrap should reuse existing workflow, got %s", r2.WorkflowID)
+			}
+			wf, _ := svc.WF.Get(old.ID)
+			if tc.defaults == nil {
+				if wf.Defaults != nil {
+					t.Fatalf("defaults = %+v, want unset", wf.Defaults)
+				}
+				return
+			}
+			if wf.Defaults == nil || wf.Defaults.Sandbox == nil || wf.Defaults.Sandbox.Mode != models.SandboxModePerNode {
+				t.Fatalf("defaults = %+v, want per_node kept", wf.Defaults)
+			}
+		})
+	}
 }
 
 func reposVarValue(t *testing.T, graph models.Graph) []any {
@@ -529,6 +585,8 @@ func TestCreateFromBaselineDefaultsShowOnHome(t *testing.T) {
 	if stored.Status() != "published" || !stored.ShowOnHome {
 		t.Fatalf("persisted status=%s showOnHome=%v (plan g1.1)", stored.Status(), stored.ShowOnHome)
 	}
+	assertSharedSandbox(t, wf)
+	assertSharedSandbox(t, stored)
 
 	if _, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "首页可见工作流",

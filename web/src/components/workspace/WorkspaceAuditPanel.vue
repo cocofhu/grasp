@@ -1259,6 +1259,12 @@ onUnmounted(() => {
   background: rgb(var(--c-surface));
 }
 
+.table-wrap, .groups-wrap {
+  margin-top: 12px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+}
+
 .audit-column-labels {
   display: grid;
   grid-template-columns: 148px minmax(0,1fr) 96px;

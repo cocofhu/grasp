@@ -52,5 +52,6 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_SECRETS_KEY", YAML: "security.secrets_key", Type: "string", Sensitive: true, ZH: "凭据加密主密钥（base64 32 字节）；视作固定盐、请勿轮换。未设置时非 production 模式在 SQLite 库旁自动生成 secrets.key", EN: "Master AES key for encrypting credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate. When unset, non-production modes generate secrets.key next to the SQLite database"},
 		{Env: "GRASP_STORAGE_DRIVER", YAML: "storage.driver", Type: "enum", Default: "local", ZH: "附件存储驱动：local（预留 cos）", EN: "Attachment storage driver: local (cos reserved)"},
 		{Env: "GRASP_BLOBS_ROOT", YAML: "storage.blobs_root", Type: "path", Default: "data/blobs", ZH: "本地附件 blob 根目录", EN: "Local attachment blob root directory"},
+		{Env: "GRASP_GITHUB_OAUTH_CLIENT_ID", YAML: "github.oauth_client_id", Type: "string", Default: "", ZH: "GitHub OAuth App 的 Client ID（需勾选 Enable Device Flow）；设置后工作区可用「用 GitHub 登录」添加 github.com 凭据，不需要 client secret", EN: "Client ID of a GitHub OAuth App with Enable Device Flow checked; enables \"Sign in with GitHub\" for github.com workspace credentials (no client secret needed)"},
 	}
 }

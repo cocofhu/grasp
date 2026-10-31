@@ -48,6 +48,9 @@ type CredentialInput struct {
 	Metadata   map[string]any `json:"metadata"`
 	Enabled    *bool          `json:"enabled"`
 	Clear      bool           `json:"clear"`
+	// KnownHosts is accepted only for purpose=ssh. Nil keeps the stored text;
+	// an empty string clears it.
+	KnownHosts *string `json:"knownHosts"`
 }
 
 // CredentialView is safe for API/UI use. Masked is derived from the
@@ -67,6 +70,7 @@ type CredentialView struct {
 	TargetType     string         `json:"targetType,omitempty"`
 	TargetID       string         `json:"targetId,omitempty"`
 	EnvKey         string         `json:"envKey,omitempty"`
+	KnownHosts     string         `json:"knownHosts,omitempty"`
 	Masked         string         `json:"masked,omitempty"`
 	Source         string         `json:"source,omitempty"`
 	Configured     bool           `json:"configured"`
@@ -85,8 +89,7 @@ var (
 	ErrCredentialEnvKey     = errors.New("credential env key must be a valid identifier and not a platform-reserved key")
 	ErrCredentialAliasTaken = errors.New("credential alias already exists for this kind")
 	ErrCredentialPurpose    = errors.New("invalid credential purpose, tool or secret kind")
-	// ErrCredentialNotRemovable rejects deleting a row that is not a workspace model API account.
-	ErrCredentialNotRemovable = errors.New("only a workspace model API account can be removed")
+	ErrCredentialKnownHosts = errors.New("SSH known hosts must not contain NUL characters")
 )
 
 // CredentialAliasTakenError is returned when a new alias matches another
@@ -147,12 +150,21 @@ func defaultCredentialEnvKey(in CredentialInput) string {
 			return envauth.EnvGitLabToken
 		}
 	case "ssh":
-		if in.SecretKind == "ssh_known_hosts" {
-			return envauth.EnvGitSSHKnownHosts
-		}
 		return envauth.EnvGitSSHPrivateKey
 	}
 	return ""
+}
+
+// normalizeKnownHosts validates the optional known_hosts text of an SSH key.
+// Line endings become LF and surrounding blank space is dropped; lines are kept.
+func normalizeKnownHosts(purpose string, raw *string) (string, error) {
+	if purpose != "ssh" {
+		return "", ErrCredentialPurpose
+	}
+	if strings.ContainsRune(*raw, 0) {
+		return "", ErrCredentialKnownHosts
+	}
+	return strings.TrimSpace(strings.ReplaceAll(*raw, "\r\n", "\n")), nil
 }
 
 func credentialView(row models.Credential) CredentialView {
@@ -160,14 +172,14 @@ func credentialView(row models.Credential) CredentialView {
 	return CredentialView{
 		Purpose: purpose, Issuer: issuer, ToolID: tool, SecretKind: kind, Host: row.Host, SecretRevision: row.SecretRevision,
 		ID: row.ID, Type: row.Type, Provider: row.Provider,
-		Name: row.Name, Target: row.Target, TargetID: row.Target, EnvKey: row.EnvKey,
+		Name: row.Name, Target: row.Target, TargetID: row.Target, EnvKey: row.EnvKey, KnownHosts: row.KnownHosts,
 		Masked: func() string {
 			if strings.TrimSpace(row.ValueEnc) == "" {
 				return ""
 			}
 			return "••••••••"
 		}(), Source: "workspace", Configured: strings.TrimSpace(row.ValueEnc) != "",
-		Enabled: row.Enabled, RevokedAt: row.RevokedAt,
+		Enabled: row.Enabled, RevokedAt: row.RevokedAt, Metadata: row.Metadata,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
@@ -189,8 +201,13 @@ func (s *CredentialService) List() ([]CredentialView, error) {
 }
 
 // Create stores a new encrypted credential. Plaintext is accepted only on
-// write and is never returned by this service.
+// write and is never returned by this service. Client metadata is ignored;
+// only server-side sign-in flows record metadata.
 func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
+	return s.create(in, nil)
+}
+
+func (s *CredentialService) create(in CredentialInput, metadata map[string]any) (CredentialView, error) {
 	if err := normalizeCredentialDomainInput(&in); err != nil {
 		return CredentialView{}, err
 	}
@@ -223,6 +240,13 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	if strings.TrimSpace(in.Value) == "" {
 		return CredentialView{}, errors.New("credential value is required")
 	}
+	knownHosts := ""
+	if in.KnownHosts != nil {
+		var err error
+		if knownHosts, err = normalizeKnownHosts(in.Purpose, in.KnownHosts); err != nil {
+			return CredentialView{}, err
+		}
+	}
 	taken, ok, err := s.credentialAliasTaken(in.EnvKey, in.Name, "")
 	if err != nil {
 		return CredentialView{}, err
@@ -248,7 +272,7 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	row := models.Credential{ID: "cred-" + uuid.NewString()[:12],
 		Purpose: in.Purpose, Issuer: in.Issuer, ToolID: in.ToolID, SecretKind: in.SecretKind, Host: in.Host, SecretRevision: 1,
 		Type: in.Type, Provider: in.Provider, Name: in.Name, Target: target,
-		EnvKey: in.EnvKey, ValueEnc: enc,
+		EnvKey: in.EnvKey, ValueEnc: enc, KnownHosts: knownHosts, Metadata: metadata,
 		Enabled: in.Enabled == nil || *in.Enabled, CreatedAt: now, UpdatedAt: now}
 	if err := s.db.Create(&row).Error; err != nil {
 		return CredentialView{}, err
@@ -256,8 +280,14 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	return credentialView(row), nil
 }
 
-// Update edits metadata and optionally rotates/clears the secret.
+// Update edits metadata and optionally rotates/clears the secret. A rotated
+// or cleared secret drops sign-in metadata (e.g. the GitHub account), which
+// described the previous secret.
 func (s *CredentialService) Update(id string, in CredentialInput) (CredentialView, error) {
+	return s.update(id, in, nil)
+}
+
+func (s *CredentialService) update(id string, in CredentialInput, metadata map[string]any) (CredentialView, error) {
 	var row models.Credential
 	if err := s.db.Where("id = ?", strings.TrimSpace(id)).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -346,6 +376,15 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 	if row.Type == "custom" && strings.TrimSpace(row.EnvKey) == "" && strings.TrimSpace(row.Target) == "" {
 		return CredentialView{}, ErrCredentialTarget
 	}
+	knownHostsChanged := false
+	if in.KnownHosts != nil {
+		knownHosts, err := normalizeKnownHosts(row.Purpose, in.KnownHosts)
+		if err != nil {
+			return CredentialView{}, err
+		}
+		knownHostsChanged = knownHosts != row.KnownHosts
+		row.KnownHosts = knownHosts
+	}
 	if row.RevokedAt != nil && in.Enabled == nil && strings.TrimSpace(in.Value) != "" {
 		row.RevokedAt = nil
 		row.Enabled = true
@@ -361,12 +400,16 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 	if in.Clear {
 		row.ValueEnc = ""
 		row.SecretRevision = nextSecretRevision(row.SecretRevision)
+		row.Metadata = metadata
 	} else if strings.TrimSpace(in.Value) != "" {
 		enc, err := crypto.Encrypt(in.Value)
 		if err != nil {
 			return CredentialView{}, fmt.Errorf("encrypt credential: %w", err)
 		}
 		row.ValueEnc = enc
+		row.SecretRevision = nextSecretRevision(row.SecretRevision)
+		row.Metadata = metadata
+	} else if knownHostsChanged {
 		row.SecretRevision = nextSecretRevision(row.SecretRevision)
 	}
 	row.UpdatedAt = time.Now()
@@ -407,6 +450,7 @@ func (s *CredentialService) Clear(id string) error {
 		return ErrCredentialNotFound
 	}
 	row.ValueEnc = ""
+	row.Metadata = nil
 	row.SecretRevision = nextSecretRevision(row.SecretRevision)
 	row.RevokedAt = nil
 	row.Enabled = true
@@ -414,10 +458,11 @@ func (s *CredentialService) Clear(id string) error {
 	return s.db.Save(&row).Error
 }
 
-// RemoveModelAPI deletes a workspace-owned model_api account and the model
-// connections bound to it. Clear only wipes the secret and keeps the row.
-// Either the account and its connections all go, or a failure leaves both as they were.
-func (s *CredentialService) RemoveModelAPI(id string) error {
+// Remove deletes a credential row. For a model_api account the model
+// connections bound to it go in the same transaction; other references (model
+// configurations, Git bindings) are kept and fail closed when resolved.
+// Clear only wipes the secret and keeps the row.
+func (s *CredentialService) Remove(id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return ErrCredentialNotFound
@@ -433,12 +478,10 @@ func (s *CredentialService) RemoveModelAPI(id string) error {
 		if !currentCredential(row) {
 			return ErrCredentialNotFound
 		}
-		purpose, _, _, _ := credentialDomain(row)
-		if purpose != "model_api" {
-			return ErrCredentialNotRemovable
-		}
-		if err := tx.Where("credential_id = ?", id).Delete(&models.ModelConnection{}).Error; err != nil {
-			return err
+		if purpose, _, _, _ := credentialDomain(row); purpose == "model_api" {
+			if err := tx.Where("credential_id = ?", id).Delete(&models.ModelConnection{}).Error; err != nil {
+				return err
+			}
 		}
 		res := tx.Delete(&models.Credential{}, "id = ?", id)
 		if res.Error != nil {
@@ -592,7 +635,7 @@ func (s *CredentialService) ResolveSelectedValue(credentialID string) (string, s
 	return strings.TrimSpace(row.EnvKey), dec, true
 }
 
-// ResolveGitValue reads the secret and host together. A host is never inferred
+// ResolveGitValue reads the secret, host and SSH known_hosts together. A host is never inferred
 // from the Agent's scope or the repository that happened to request the token.
 func (s *CredentialService) ResolveGitValue(id string) (runtime.GitCredentialValue, bool) {
 	var value runtime.GitCredentialValue
@@ -615,6 +658,9 @@ func (s *CredentialService) ResolveGitValue(id string) (runtime.GitCredentialVal
 		return runtime.GitCredentialValue{}, false
 	}
 	value.EnvKey, value.Secret = row.EnvKey, secret
+	if row.Purpose == "ssh" {
+		value.KnownHosts = row.KnownHosts
+	}
 	return value, true
 }
 

@@ -267,6 +267,7 @@
       "credentialKinds.ts",
       "requirementDraftMarkdown.ts",
       "requirementDraftSchedule.ts",
+      "useGitHubDeviceLogin.ts",
       "useRequirementDrafts.ts",
       "useWorkflows.ts"
     ]
@@ -284,6 +285,6 @@
     "shared": 39,
     "solo": 14,
     "workflow": 3,
-    "workspace": 5
+    "workspace": 6
   }
 }

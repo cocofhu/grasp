@@ -126,6 +126,29 @@ func TestApplyEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestGitHubOAuthClientIDFromYAMLAndEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("github:\n  oauth_client_id: \" Ov23yaml \"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRASP_GITHUB_OAUTH_CLIENT_ID", "")
+	c, err := parse(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.GitHubOAuthClientID(); got != "Ov23yaml" {
+		t.Fatalf("yaml client id=%q", got)
+	}
+	t.Setenv("GRASP_GITHUB_OAUTH_CLIENT_ID", "Ov23env")
+	if c, err = parse(path); err != nil || c.GitHubOAuthClientID() != "Ov23env" {
+		t.Fatalf("env did not win: %v %v", c, err)
+	}
+	if (*Config)(nil).GitHubOAuthClientID() != "" {
+		t.Fatal("nil config must disable device login")
+	}
+}
+
 func TestApplyEnvOverridesEmptyDoesNotOverwrite(t *testing.T) {
 	c := &Config{Sandbox: SandboxConfig{GatewayAPIKey: "keep"}}
 	t.Setenv("GRASP_SANDBOX_GATEWAY_API_KEY", "")

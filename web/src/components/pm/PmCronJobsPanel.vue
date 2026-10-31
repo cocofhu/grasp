@@ -6,6 +6,8 @@ import AppButton from '@/components/ui/AppButton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Icon from '@/components/ui/Icon.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
+import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
+import type { SettingsStatItem } from '@/components/settings/settingsStats'
 import { api } from '@/lib/api/api'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
@@ -25,6 +27,11 @@ const loadDenied = ref(false)
 const togglingIds = ref<string[]>([])
 const deletingId = ref<string | null>(null)
 
+const overviewStats = computed<SettingsStatItem[]>(() => [
+  { key: 'total', icon: 'clock', label: t('pages.settingsOverview.stats.schedulesTotal'), value: items.value.length, tone: 'accent' },
+  { key: 'enabled', icon: 'check', label: t('pages.settingsOverview.stats.schedulesEnabled'), value: items.value.filter((job) => job.enabled).length, total: items.value.length, tone: 'ok' },
+  { key: 'deliver', icon: 'send', label: t('pages.settingsOverview.stats.schedulesDeliver'), value: items.value.filter((job) => job.deliverToChannel).length },
+])
 const showRefreshProgress = computed(
   () => loading.value && hasInitialLoaded.value && items.value.length > 0,
 )
@@ -115,10 +122,12 @@ onMounted(() => void load())
       <i class="admin-list-thin-bar bg-accent" />
     </div>
 
+    <SettingsStatStrip v-if="!loadFailed && !loadDenied" :items="overviewStats" :loading="showSkeleton" data-testid="cron-stats" />
+
     <div :class="showRefreshProgress ? 'opacity-[0.55]' : ''">
       <div
         v-if="showSkeleton"
-        class="overflow-x-auto border-y border-line/60"
+        class="overflow-x-auto rounded-xl border border-line bg-surface"
         data-testid="cron-table-skeleton"
         aria-hidden="true"
       >
@@ -178,7 +187,7 @@ onMounted(() => void load())
         :title="t('pages.workspace.cron.emptyTitle')"
         :desc="t('pages.workspace.cron.emptyDesc')"
       />
-      <div v-else class="overflow-hidden border-y border-line/60">
+      <div v-else class="overflow-hidden rounded-xl border border-line bg-surface">
         <div class="scroll-area overflow-x-auto">
           <table class="cron-table w-full min-w-[1380px] text-left text-sm" data-testid="cron-table">
             <thead class="bg-elevated text-xs text-txt3">

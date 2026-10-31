@@ -3,7 +3,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type AgentGitBinding, type AgentGitBindings, type CredentialItem } from '@/lib/api/api'
 import { cloneGitBindings, gitCredentialKind, usableGitCredential, validCredentialGitScope } from '@/lib/agent/gitBindings'
-import { credentialUsable } from '@/lib/agent/modelRouting'
 import { defaultGitCredentialHost, kindOfItem } from '@/lib/workspace/credentialKinds'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -37,11 +36,11 @@ function providerName(item?: CredentialItem) {
 function title(id: string) { return credential(id)?.name || id }
 function scopeValid(item: AgentGitBinding) { return validCredentialGitScope(item.scope || '', credential(item.credentialId)) }
 function isSsh(item: AgentGitBinding) { return kind(item.credentialId)?.id === 'ssh_key' }
-function hostsUsable(id: string) { const item = credential(id); return !!item && kindOfItem(item)?.id === 'ssh_hosts' && credentialUsable(item) }
-function unavailable(item: AgentGitBinding) { return !usableGitCredential(credential(item.credentialId)) || (!!item.sshHostsCredentialId && (!isSsh(item) || !hostsUsable(item.sshHostsCredentialId))) }
-function hostsOptions(item: AgentGitBinding) {
-  const rows = credentials.value.filter((row) => kindOfItem(row)?.id === 'ssh_hosts' && credentialUsable(row))
-  return [{ value: '', label: copy('hostsNone') }, ...rows.map((row) => ({ value: row.id, label: row.name })), ...(item.sshHostsCredentialId && !rows.some((row) => row.id === item.sshHostsCredentialId) ? [{ value: item.sshHostsCredentialId, label: `${title(item.sshHostsCredentialId)} · ${copy('unavailable')}` }] : [])]
+function unavailable(item: AgentGitBinding) { return !usableGitCredential(credential(item.credentialId)) }
+function subtitle(item: AgentGitBinding) {
+  const target = item.scope || providerName(credential(item.credentialId))
+  if (!isSsh(item)) return target
+  return `${target} · ${t(credential(item.credentialId)?.knownHosts ? 'pages.workspace.credentials.knownHostsConfigured' : 'pages.workspace.credentials.knownHostsNotConfigured')}`
 }
 function update(value: AgentGitBindings) { emit('update:modelValue', value) }
 function add(id: string) {
@@ -56,13 +55,13 @@ function remove(id: string) {
   next.items = next.items.filter((item) => item.credentialId !== id)
   update(next)
 }
-function change(id: string, field: 'scope' | 'sshHostsCredentialId', value: string) {
+function changeScope(id: string, value: string) {
   if (props.disabled || props.summary) return
   const next = cloneGitBindings(bindings.value)
   const item = next.items.find((row) => row.credentialId === id)
   if (!item) return
-  if (value) item[field] = value
-  else delete item[field]
+  if (value) item.scope = value
+  else delete item.scope
   update(next)
 }
 const valid = computed(() => !bindings.value.items.length || (!loading.value && !error.value && bindings.value.items.every((item) => !unavailable(item) && scopeValid(item))))
@@ -100,7 +99,7 @@ onMounted(() => { if (props.items === undefined) void load() })
           <CredentialProviderLogo :provider="kind(item.credentialId)?.logoProvider" :icon="kind(item.credentialId)?.icon" match="provider" aria-hidden="true" />
           <div class="min-w-0 flex-1">
             <div class="truncate text-xs font-medium text-txt" :title="title(item.credentialId)">{{ title(item.credentialId) }}</div>
-            <div class="truncate text-[11px] text-txt3">{{ item.scope || providerName(credential(item.credentialId)) }}</div>
+            <div class="truncate text-[11px] text-txt3" :data-testid="`git-credential-subtitle-${item.credentialId}`">{{ subtitle(item) }}</div>
           </div>
           <button v-if="!summary" type="button" class="grid h-7 w-7 shrink-0 place-items-center rounded-md text-txt3 hover:bg-elevated hover:text-err" :aria-label="`${copy('remove')} · ${title(item.credentialId)}`" :disabled="disabled" :data-testid="`git-remove-${item.credentialId}`" @click="remove(item.credentialId)"><Icon name="close" :size="14" /></button>
         </div>
@@ -109,9 +108,8 @@ onMounted(() => { if (props.items === undefined) void load() })
         <details v-if="!summary" class="mt-2" :data-testid="`git-options-${item.credentialId}`">
           <summary class="w-fit cursor-pointer text-[11px] text-txt3 hover:text-txt2">{{ copy('options') }}</summary>
           <div class="mt-3 space-y-3">
-            <label class="block"><span class="mb-1.5 block text-[11px] text-txt2">{{ copy('scope') }}</span><input :value="item.scope || ''" :placeholder="copy('scopePlaceholder')" :disabled="disabled" :aria-invalid="!scopeValid(item)" :data-testid="`git-scope-${item.credentialId}`" class="w-full min-w-0 rounded-md border border-line bg-base px-3 py-2 text-xs text-txt outline-none focus:border-accent" spellcheck="false" @input="change(item.credentialId, 'scope', ($event.target as HTMLInputElement).value)" /></label>
+            <label class="block"><span class="mb-1.5 block text-[11px] text-txt2">{{ copy('scope') }}</span><input :value="item.scope || ''" :placeholder="copy('scopePlaceholder')" :disabled="disabled" :aria-invalid="!scopeValid(item)" :data-testid="`git-scope-${item.credentialId}`" class="w-full min-w-0 rounded-md border border-line bg-base px-3 py-2 text-xs text-txt outline-none focus:border-accent" spellcheck="false" @input="changeScope(item.credentialId, ($event.target as HTMLInputElement).value)" /></label>
             <p class="m-0 text-[11px] leading-5" :class="scopeValid(item) ? 'text-txt3' : 'text-err'">{{ scopeValid(item) ? copy('scopeHint') : copy('scopeInvalid') }}</p>
-            <div v-if="isSsh(item)"><span class="mb-1.5 block text-[11px] text-txt2">{{ copy('hosts') }}</span><AppSelect :model-value="item.sshHostsCredentialId || ''" :options="hostsOptions(item)" :aria-label="`${copy('hosts')} · ${title(item.credentialId)}`" :disabled="disabled" :invalid="!!item.sshHostsCredentialId && !hostsUsable(item.sshHostsCredentialId)" searchable :data-testid="`git-hosts-${item.credentialId}`" @update:model-value="change(item.credentialId, 'sshHostsCredentialId', $event)"><template #leading><CredentialProviderLogo icon="host" /></template><template #option-leading="{ option }"><CredentialProviderLogo v-if="option.value" icon="host" /></template></AppSelect></div>
           </div>
         </details>
       </div>

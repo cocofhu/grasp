@@ -115,11 +115,11 @@ watch(modelCatalogRevision, loadDefaults)
           <span>{{ t('pages.agentStudio.cliModel.inheritDefault') }}</span>
           <AppSwitch v-model="draft.inheritModel" :disabled="disabled" :aria-label="`${t('pages.agentStudio.wizard.steps.apiKey')} · ${t('pages.agentStudio.cliModel.inheritDefault')}`" data-testid="agent-inherit-model" />
         </label>
+        <button v-if="!inheritance && model?.configurationId" type="button" class="rounded px-1.5 py-0.5 text-[11px] text-txt3 transition hover:bg-elevated hover:text-txt" data-testid="default-model-reset" @click="draft.modelBinding = undefined">{{ t('common.buttons.reset') }}</button>
       </div>
       <p v-if="inheritModel && waiting" role="status" class="m-0 text-xs text-warn">{{ loading ? t('common.loading.inProgress') : unavailable }} <AppButton v-if="error" size="sm" @click="loadDefaults">{{ t('common.buttons.retry') }}</AppButton></p>
       <p v-else-if="inheritModel && !model?.configurationId" role="status" class="m-0 text-xs text-warn">{{ missingDefaultModel }}</p>
       <ModelBindingEditor :model-value="model" :summary="inheritModel" :disabled="disabled" @update:model-value="draft.modelBinding = $event" @select-configuration="selectModel" @validity="modelValid = $event" />
-      <AppButton v-if="!inheritance && model?.configurationId" size="sm" variant="ghost" data-testid="default-model-reset" @click="draft.modelBinding = undefined">{{ t('common.buttons.reset') }}</AppButton>
       <label v-if="policy && !inheritModel" class="block max-w-xs">
         <span class="mb-1.5 block text-xs text-txt2">{{ t('pages.agentStudio.toolPicker.site') }}</span>
         <AppSelect :model-value="region.special ? '' : region.region" :placeholder="region.special ? region.region : ''" :options="regionOptions" :disabled="disabled" :aria-label="t('pages.agentStudio.region.title')" searchable data-testid="agent-model-region" @update:model-value="selectRegion" />

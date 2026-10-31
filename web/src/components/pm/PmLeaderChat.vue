@@ -155,6 +155,12 @@ const {
 // Keep old conversations readable even when sending is disabled or the default Agent is missing.
 const setupRequired = computed(() => !loading.value && !threadsLoadFailed.value && !threads.value.length && !canCreateThread.value)
 const suggestionIcons = ['chart', 'gate', 'alert']
+const setupSteps = computed(() => [1, 2, 3].map((n) => ({ n, label: t(`pages.workspace.pm.setupStep${n}`) })))
+const setupFeatures = [
+  { id: 'progress', icon: 'chart', tone: 'accent' },
+  { id: 'blockers', icon: 'flag', tone: 'warn' },
+  { id: 'risk', icon: 'alert', tone: 'err' },
+] as const
 const artifactOpen = ref(false)
 const artifactTarget = ref<ConversationArtifactTarget | null>(null)
 const conversationScope = computed(() => `pm:${activeId.value || 'new'}`)
@@ -215,12 +221,38 @@ function showConversationHistory() { workspace.value?.close() }
   </div>
 
   <section v-else-if="setupRequired" data-testid="pm-setup-state" class="scroll-area min-h-0 flex-1 overflow-y-auto">
-    <div class="pm-entry-content">
-      <p class="mb-3 text-xs font-medium text-txt3">{{ t('pages.workspace.pm.scopeLabel') }}</p>
-      <h2 class="text-xl font-semibold tracking-tight text-txt">{{ t(enabled ? 'pages.workspace.pm.unavailableTitle' : 'pages.workspace.pm.disabledTitle') }}</h2>
-      <p class="mt-3 max-w-lg text-sm leading-6 text-txt2">{{ t('pages.workspace.pm.disabledHint') }}</p>
-      <p v-if="binding?.agentError" class="mt-4 text-sm leading-6 text-err" role="alert">{{ binding.agentError }}</p>
-      <AppButton class="mt-6" variant="primary" icon="settings" data-testid="pm-setup-settings" @click="emit('openSettings')">{{ t('pages.workspace.pm.goSettings') }}</AppButton>
+    <div class="pm-setup">
+      <div class="pm-setup-hero">
+        <div class="pm-setup-copy">
+          <span class="pm-setup-badge" data-testid="pm-setup-badge">
+            <Icon name="sparkles" :size="12" :interactive="false" />
+            {{ t(enabled ? 'pages.workspace.pm.setupBadgeUnavailable' : 'pages.workspace.pm.setupBadgeDisabled') }}
+          </span>
+          <h2 class="mb-0 mt-3.5 text-2xl font-semibold tracking-tight text-txt">{{ t(enabled ? 'pages.workspace.pm.unavailableTitle' : 'pages.workspace.pm.disabledTitle') }}</h2>
+          <p class="mb-0 mt-2 max-w-lg text-sm leading-6 text-txt2">{{ t('pages.workspace.pm.disabledHint') }}</p>
+          <p v-if="binding?.agentError" class="mb-0 mt-3 text-sm leading-6 text-err" role="alert">{{ binding.agentError }}</p>
+          <ol class="pm-setup-steps" :aria-label="t('pages.workspace.pm.setupStepsLabel')" data-testid="pm-setup-steps">
+            <li v-for="step in setupSteps" :key="step.n">
+              <span class="pm-setup-step-number" aria-hidden="true">{{ step.n }}</span>
+              <span>{{ step.label }}</span>
+            </li>
+          </ol>
+          <AppButton variant="primary" icon="settings" data-testid="pm-setup-settings" @click="emit('openSettings')">{{ t('pages.workspace.pm.goSettings') }}</AppButton>
+        </div>
+        <div class="pm-setup-preview" aria-hidden="true" data-testid="pm-setup-preview">
+          <p class="pm-setup-bubble pm-setup-bubble--user">{{ t('pages.workspace.pm.setupPreviewQ1') }}</p>
+          <p class="pm-setup-bubble pm-setup-bubble--assistant">{{ t('pages.workspace.pm.setupPreviewA1') }}</p>
+          <p class="pm-setup-bubble pm-setup-bubble--user">{{ t('pages.workspace.pm.setupPreviewQ2') }}</p>
+          <p class="pm-setup-bubble pm-setup-bubble--assistant">{{ t('pages.workspace.pm.setupPreviewA2') }}</p>
+        </div>
+      </div>
+      <ul class="pm-setup-features" data-testid="pm-setup-features">
+        <li v-for="feature in setupFeatures" :key="feature.id" class="pm-setup-feature" :class="`pm-setup-feature--${feature.tone}`" :data-testid="`pm-setup-feature-${feature.id}`">
+          <span class="pm-setup-feature-icon" aria-hidden="true"><Icon :name="feature.icon" :size="16" :interactive="false" /></span>
+          <h3 class="m-0 text-sm font-semibold text-txt">{{ t(`pages.workspace.pm.features.${feature.id}.title`) }}</h3>
+          <p class="mb-0 mt-1 text-[13px] leading-5 text-txt3">{{ t(`pages.workspace.pm.features.${feature.id}.desc`) }}</p>
+        </li>
+      </ul>
     </div>
   </section>
 
@@ -855,6 +887,77 @@ function showConversationHistory() { workspace.value?.close() }
 <style scoped>
 .pm-entry-content { width: 100%; max-width: 640px; margin-inline: auto; padding: 36px 0 48px; }
 .pm-chat-layout { gap: 24px; }
+.pm-setup { width: 100%; max-width: 960px; margin-inline: auto; padding: 4px 0 48px; }
+.pm-setup-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 40px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 16px;
+  padding: 40px 44px;
+  background: rgb(var(--c-surface));
+}
+.pm-setup-hero::before {
+  position: absolute;
+  top: -80px;
+  right: -80px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(var(--c-accent) / .12), transparent 70%);
+  content: "";
+  pointer-events: none;
+}
+.pm-setup-copy { position: relative; min-width: 0; }
+.pm-setup-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: rgb(var(--c-accent-dim));
+  color: rgb(var(--c-accent-2));
+  font-size: 12px;
+  line-height: 18px;
+}
+.pm-setup-steps { display: flex; flex-direction: column; gap: 10px; margin: 20px 0 24px; padding: 0; list-style: none; }
+.pm-setup-steps li { display: flex; align-items: center; gap: 10px; color: rgb(var(--c-txt2)); font-size: 13px; line-height: 20px; }
+.pm-setup-step-number {
+  display: flex;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--c-line-strong));
+  border-radius: 50%;
+  color: rgb(var(--c-txt2));
+  font-size: 11px;
+  font-weight: 600;
+}
+.pm-setup-preview {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+  padding: 16px;
+  background: rgb(var(--c-base));
+}
+.pm-setup-bubble { max-width: 85%; margin: 0; border-radius: 12px; padding: 9px 12px; font-size: 12.5px; line-height: 19px; }
+.pm-setup-bubble--user { align-self: flex-end; border-bottom-right-radius: 4px; background: rgb(var(--c-accent)); color: white; }
+.pm-setup-bubble--assistant { border: 1px solid rgb(var(--c-line)); border-bottom-left-radius: 4px; background: rgb(var(--c-surface)); color: rgb(var(--c-txt2)); }
+.pm-setup-features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0 0; padding: 0; list-style: none; }
+.pm-setup-feature { min-width: 0; border: 1px solid rgb(var(--c-line)); border-radius: 12px; padding: 18px; background: rgb(var(--c-surface)); }
+.pm-setup-feature-icon { display: flex; width: 34px; height: 34px; align-items: center; justify-content: center; margin-bottom: 12px; border-radius: 9px; }
+.pm-setup-feature--accent .pm-setup-feature-icon { background: rgb(var(--c-accent-dim)); color: rgb(var(--c-accent-2)); }
+.pm-setup-feature--warn .pm-setup-feature-icon { background: rgb(var(--c-warn) / .12); color: rgb(var(--c-warn)); }
+.pm-setup-feature--err .pm-setup-feature-icon { background: rgb(var(--c-err) / .1); color: rgb(var(--c-err)); }
 .pm-header-action { min-height: 34px; border: 1px solid transparent; border-radius: 9px; padding-inline: 10px; }
 .pm-header-action :deep(.app-icon) { width: 16px; height: 16px; }
 .pm-header-action[aria-expanded="true"] { border-color: rgb(var(--c-accent) / .12); background: rgb(var(--c-accent-dim)); color: rgb(var(--c-accent-2)); }
@@ -877,6 +980,10 @@ function showConversationHistory() { workspace.value?.close() }
   .pm-header-action { min-height: 44px; }
   .pm-chat-layout { gap: 0; }
   .pm-entry-content { padding-block: 24px 40px; }
+  .pm-setup { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .pm-setup-hero { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 24px 20px; }
+  .pm-setup-preview { display: none; }
+  .pm-setup-features { grid-template-columns: minmax(0, 1fr); }
   .pm-composer-zone-welcome { padding-top: 28px; }
   /* Keep the active composer above the shell's floating navigation control. */
   .pm-composer-zone:not(.pm-composer-zone-welcome) { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }

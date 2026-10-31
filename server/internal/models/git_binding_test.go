@@ -16,9 +16,9 @@ func TestNormalizeGitBindingsExplicitSelection(t *testing.T) {
 	if err != nil || empty == nil || empty.Items == nil || len(empty.Items) != 0 {
 		t.Fatalf("explicit empty = %+v, %v", empty, err)
 	}
-	in := &GitBindings{Items: []GitCredentialBinding{{CredentialID: " a ", Scope: " GIT.Example.com:8443 ", SshHostsCredentialID: " hosts "}, {CredentialID: "b"}}, PreferredCredentialID: " b "}
+	in := &GitBindings{Items: []GitCredentialBinding{{CredentialID: " a ", Scope: " GIT.Example.com:8443 "}, {CredentialID: "b"}}, PreferredCredentialID: " b "}
 	out, err := NormalizeGitBindings(in)
-	if err != nil || out.PreferredCredentialID != "" || out.Items[0].CredentialID != "a" || out.Items[0].Scope != "git.example.com:8443" || out.Items[0].SshHostsCredentialID != "hosts" {
+	if err != nil || out.PreferredCredentialID != "" || out.Items[0].CredentialID != "a" || out.Items[0].Scope != "git.example.com:8443" {
 		t.Fatalf("normalized = %+v, %v", out, err)
 	}
 	if in.Items[0].CredentialID != " a " || in.PreferredCredentialID != " b " {
@@ -44,6 +44,13 @@ func TestNormalizeGitBindingsExplicitSelection(t *testing.T) {
 		if err != nil || got.PreferredCredentialID != "" || (len(legacy.Items) == 0 && len(got.Items) != 0) || (len(legacy.Items) > 0 && got.Items[0].CredentialID != "a") {
 			t.Fatalf("legacy preferred selection = %+v, %v", got, err)
 		}
+	}
+	var retired GitBindings
+	if err := json.Unmarshal([]byte(`{"items":[{"credentialId":"key","scope":"git@host:team/repo","sshHostsCredentialId":"hosts"}]}`), &retired); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := json.Marshal(retired); err != nil || strings.Contains(string(raw), "sshHosts") || retired.Items[0].CredentialID != "key" || retired.Items[0].Scope != "git@host:team/repo" {
+		t.Fatalf("retired known-hosts binding = %s, %v", raw, err)
 	}
 	for _, bad := range []*GitBindings{
 		{Items: []GitCredentialBinding{{CredentialID: " "}}},

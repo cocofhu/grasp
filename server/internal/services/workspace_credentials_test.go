@@ -335,7 +335,7 @@ func TestModelAPIKeyProviderAndMasking(t *testing.T) {
 	}
 }
 
-func TestRemoveModelAPIDropsBoundConnectionsAndKeepsConfigurationsUnavailable(t *testing.T) {
+func TestRemoveDropsBoundConnectionsAndKeepsConfigurationsUnavailable(t *testing.T) {
 	connections, configurations, key, connection, configuration := newModelConfigurationFixture(t)
 	credentials := NewCredentialService(configurations.db)
 	other := newModelKey(t, credentials, "Other account")
@@ -347,13 +347,19 @@ func TestRemoveModelAPIDropsBoundConnectionsAndKeepsConfigurationsUnavailable(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := credentials.RemoveModelAPI(git.ID); !errors.Is(err, ErrCredentialNotRemovable) {
-		t.Fatalf("non API account removed: %v", err)
+	if err := credentials.Remove(git.ID); err != nil {
+		t.Fatalf("git credential not removed: %v", err)
 	}
-	if _, err := credentials.Get(git.ID); err != nil {
-		t.Fatal("rejected delete changed the git account", err)
+	if _, err := credentials.Get(git.ID); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("removed git credential still readable: %v", err)
 	}
-	if err := credentials.RemoveModelAPI("missing-account"); !errors.Is(err, ErrCredentialNotFound) {
+	if got, err := connections.Get(connection.ID); err != nil || got.CredentialID != key.ID {
+		t.Fatalf("removing a git credential changed a model connection: %+v %v", got, err)
+	}
+	if err := credentials.Remove(git.ID); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("second remove: %v", err)
+	}
+	if err := credentials.Remove("missing-account"); !errors.Is(err, ErrCredentialNotFound) {
 		t.Fatalf("missing account: %v", err)
 	}
 	if err := credentials.Clear(key.ID); err != nil {
@@ -369,7 +375,7 @@ func TestRemoveModelAPIDropsBoundConnectionsAndKeepsConfigurationsUnavailable(t 
 	if _, err := connections.Get(connection.ID); err != nil {
 		t.Fatal("clear removed a model connection", err)
 	}
-	if err := credentials.RemoveModelAPI(key.ID); err != nil {
+	if err := credentials.Remove(key.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := credentials.Get(key.ID); !errors.Is(err, ErrCredentialNotFound) {
@@ -405,7 +411,7 @@ func TestRemoveModelAPIDropsBoundConnectionsAndKeepsConfigurationsUnavailable(t 
 	if err == nil || resolved.Secret != "" {
 		t.Fatalf("configuration did not fail closed: %+v %v", resolved, err)
 	}
-	if err := credentials.RemoveModelAPI(other.ID); err != nil {
+	if err := credentials.Remove(other.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, ok := credentials.ResolveSelectedValue(other.ID); ok {
@@ -416,7 +422,7 @@ func TestRemoveModelAPIDropsBoundConnectionsAndKeepsConfigurationsUnavailable(t 
 	}
 }
 
-func TestRemoveModelAPIRollsBackWhenAccountDeleteFails(t *testing.T) {
+func TestRemoveRollsBackWhenAccountDeleteFails(t *testing.T) {
 	connections, _, key, connection, _ := newModelConfigurationFixture(t)
 	credentials := NewCredentialService(connections.db)
 	const hook = "fail-model-api-account-delete"
@@ -428,7 +434,7 @@ func TestRemoveModelAPIRollsBackWhenAccountDeleteFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connections.db.Callback().Delete().Remove(hook) })
-	if err := credentials.RemoveModelAPI(key.ID); err == nil {
+	if err := credentials.Remove(key.ID); err == nil {
 		t.Fatal("expected account deletion to fail")
 	}
 	if _, err := credentials.Get(key.ID); err != nil {
