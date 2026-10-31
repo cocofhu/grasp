@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-31（新建工作流默认共享沙箱）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/services/team_embed/default-workflow.json`、`server/internal/services/onboarding.go`、`server/internal/runtime/acp_shared.go`（注释）、`web/src/views/WorkflowEditorView.vue`、`docs/content/{,en/}guide/concepts.md`，以及 `server/internal/services/onboarding{,_baseline}_test.go`、`web/src/views/WorkflowEditorView.test.ts`。
+- 做了什么：内置模板加 `defaults`（`inheritWorkspace: true`、`variables: []`、`sandbox.mode: shared`）。`upsertDefaultWorkflow` 只在新建分支写入模板 Defaults，已存在的默认流水线不动 Defaults（未设置或 per_node 都保留）；`CreateFromBaseline` 同样写入。编辑器 `/workflows/new/edit` 的初始 `wf` 带同一组 defaults，初始快照包含它，所以不会被判为未保存；编辑已有工作流不注入。
+- 为什么：用户希望新建的流水线开箱即用共享沙箱。只改新建入口，不迁移已有数据；Import / Copy 沿用源 defaults；后端 `SaveAs` 对空 Defaults 不注入默认值，API 直接创建不受影响；运行时共享沙箱逻辑不变。
+- 如何验证：`go test ./internal/services/...`、`golangci-lint run`；`vitest run src/views/WorkflowEditorView.test.ts`（`--maxWorkers=2`）与 `vue-tsc` 类型检查。新测试覆盖模板 defaults、首次 Bootstrap 与 CreateFromBaseline 为 shared、已有默认流水线（未设置 / per_node）再次 Bootstrap 后不变、编辑器新建保存 payload 为 shared、关掉后为 per_node、已有工作流不注入。
+
 ### 2026-10-31（@ 引用选择框：加载时不再闪烁）
 
 - 日期：2026-10-31。
