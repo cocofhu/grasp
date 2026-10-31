@@ -1050,6 +1050,22 @@ describe('PmLeaderChat settings entry', () => {
     wrapper.unmount()
   })
 
+  it('guides setup with a badge, three steps, a decorative preview and feature cards', async () => {
+    const wrapper = mountChat({ enabled: false, agentAvailable: false, agentConfigRef: '', aclNote: '' })
+    await flushPromises()
+    const entry = wrapper.get('[data-testid="pm-setup-state"]')
+    expect(entry.get('[data-testid="pm-setup-badge"]').text()).toBeTruthy()
+    expect(entry.get('h2').text()).toBe('工作区助手未启用')
+    expect(entry.findAll('[data-testid="pm-setup-steps"] li')).toHaveLength(3)
+    expect(entry.get('.pm-setup-preview').attributes('aria-hidden')).toBe('true')
+    const features = entry.get('[data-testid="pm-setup-features"]')
+    expect(['progress', 'blockers', 'risk'].map((key) => features.find(`[data-testid="pm-setup-feature-${key}"]`).exists())).toEqual([true, true, true])
+    expect(features.find('[tabindex]').exists()).toBe(false)
+    expect(features.find('[role="button"]').exists()).toBe(false)
+    expect(entry.findAll('button')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('keeps the composer instance when the first suggestion becomes a running conversation', async () => {
     const originalWs = globalThis.WebSocket
     vi.stubGlobal('WebSocket', MockWebSocket)

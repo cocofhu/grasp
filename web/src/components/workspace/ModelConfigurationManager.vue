@@ -19,9 +19,11 @@ import VendorMark from '@/components/agent/VendorMark.vue'
 import CredentialProviderLogo from './CredentialProviderLogo.vue'
 import ModelRecordActions from './ModelRecordActions.vue'
 import ModelEffortPicker from './ModelEffortPicker.vue'
+import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
+import type { SettingsStatItem } from '@/components/settings/settingsStats'
 
 const props = withDefaults(defineProps<{ hideCreateButton?: boolean; inline?: boolean; allowCredentialCreation?: boolean; setup?: boolean }>(), { hideCreateButton: false, inline: false, allowCredentialCreation: true, setup: false })
-const emit = defineEmits<{ (e: 'manageCredentials', backend?: string): void; (e: 'changed'): void; (e: 'saved', configuration: ModelConfiguration): void; (e: 'editing', active: boolean): void }>()
+const emit = defineEmits<{ (e: 'manageCredentials', backend?: string): void; (e: 'changed'): void; (e: 'saved', configuration: ModelConfiguration): void; (e: 'editing', active: boolean): void; (e: 'loaded', rows: ModelConfiguration[]): void }>()
 const c = useRoutingCopy()
 const { t } = useI18n()
 const toast = useToast()
@@ -223,6 +225,26 @@ function auxiliaryCountLabel(row: ModelConfiguration) { return c.value.auxiliary
 function toolLabel(id: string) { return ACP_BACKENDS.find((tool) => tool.id === id)?.label || id }
 function credentialProvider(value: string) { return credentialOptions.value.find((option) => option.value === value)?.provider || '' }
 function problem(row: ModelConfiguration) { return bindingProblem(row.binding, row.backend, connections.value, credentials.value, capabilities.value) }
+const carded = computed(() => !props.inline && !props.setup)
+const PROBLEM_LABELS = new Set(['missingConfiguration', 'configurationBackendMismatch', 'missingCredential', 'missingConnection', 'unsupported', 'missingModel', 'requiredRoles'])
+function rowStatus(row: ModelConfiguration): { tone: 'ok' | 'off' | 'warn'; label: string } {
+  if (row.state === 'disabled') return { tone: 'off', label: t('pages.settingsOverview.modelStatus.disabled') }
+  const reason = problem(row)
+  if (reason) return { tone: 'warn', label: t(`pages.settingsOverview.modelStatus.${PROBLEM_LABELS.has(reason) ? reason : 'fallback'}`) }
+  return { tone: 'ok', label: t('pages.settingsOverview.modelStatus.available') }
+}
+const stats = computed<SettingsStatItem[]>(() => {
+  const total = rows.value.length
+  const enabled = rows.value.filter((row) => row.state === 'active').length
+  const tools = new Set(rows.value.map((row) => row.backend)).size
+  const problems = rows.value.filter((row) => problem(row)).length
+  return [
+    { key: 'total', icon: 'sparkles', label: t('pages.settingsOverview.stats.modelsTotal'), value: total, tone: 'accent' },
+    { key: 'enabled', icon: 'check', label: t('pages.settingsOverview.stats.modelsEnabled'), value: enabled, total, tone: 'ok' },
+    { key: 'tools', icon: 'terminal', label: t('pages.settingsOverview.stats.modelsTools'), value: tools, unit: t('pages.settingsOverview.stats.toolUnit') },
+    { key: 'problems', icon: 'warning', label: t('pages.settingsOverview.stats.modelsProblems'), value: problems, tone: problems ? 'warn' : 'neutral' },
+  ]
+})
 function roleLabel(role: keyof ModelRoles) { return c.value[`role_${role}`] }
 function roleOptions(current: string) {
   const value = current.trim()
@@ -236,6 +258,7 @@ async function load() {
   try {
     const [configs, servicesResult, keys, caps] = await Promise.all([api.listModelConfigurations(), api.listModelConnections(), api.listCredentials(), api.listToolCapabilities()])
     rows.value = configs.items; connections.value = servicesResult.items; credentials.value = keys.items; capabilities.value = caps.items
+    emit('loaded', rows.value)
   } catch (e) { error.value = String((e as Error).message || e) } finally { loading.value = false }
 }
 function resetSource() {
@@ -364,17 +387,21 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
 <template>
   <section class="min-w-0" data-testid="model-configurations-manager">
     <template v-if="!inline || (!open && !awaitingCredential)">
+    <SettingsStatStrip v-if="carded && !error" class="mb-6" :items="stats" :loading="loading && !rows.length" data-testid="model-configuration-stats" />
+    <div :class="{ 'configuration-card': carded }">
     <div v-if="!setup" class="configuration-heading">
       <div class="min-w-0">
         <div class="flex items-center gap-2.5">
+          <Icon v-if="carded" name="sparkles" :size="16" :interactive="false" class="shrink-0 text-txt3" />
           <h3 class="m-0 text-[13px] font-semibold text-txt">{{ c.modelsTab }}</h3>
           <span v-if="!loading" class="configuration-count">{{ rows.length }}</span>
         </div>
+        <p v-if="carded" class="mb-0 mt-0.5 text-xs leading-5 text-txt3">{{ c.configurationHint }}</p>
       </div>
       <AppButton v-if="!hideCreateButton" icon="plus" size="sm" variant="primary" data-testid="model-configuration-add" :disabled="loading" @click="start()">{{ c.addConfiguration }}</AppButton>
     </div>
-    <p v-if="error && !open" role="alert" class="text-xs text-err">{{ error }} <AppButton size="sm" @click="load">{{ c.retry }}</AppButton></p>
-    <p v-if="loading" class="text-xs text-txt3">{{ c.loading }}</p>
+    <p v-if="error && !open" role="alert" class="configuration-note text-xs text-err">{{ error }} <AppButton size="sm" @click="load">{{ c.retry }}</AppButton></p>
+    <p v-if="loading" class="configuration-note text-xs text-txt3">{{ c.loading }}</p>
     <AppButton v-else-if="setup && !error" size="sm" variant="primary" data-testid="model-configuration-resume-setup" @click="openSetup()">{{ t('pages.onboarding.toolSetup.start') }}</AppButton>
     <div v-else-if="!setup && !rows.length" class="configuration-empty">
       <p class="m-0 text-xs leading-6 text-txt3">{{ c.noConfigurations }}</p>
@@ -395,11 +422,18 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
             <p class="configuration-model" :title="row.binding.modelId || c.autoShort"><span :class="row.binding.modelId ? 'font-mono' : ''">{{ row.binding.modelId || c.autoShort }}</span><span v-if="auxiliaryCount(row)"> · {{ auxiliaryCountLabel(row) }}</span></p>
           </div>
         </div>
+        <div class="configuration-meta">
+          <span class="configuration-tool-tag" :data-testid="`model-configuration-tool-${row.id}`">{{ toolLabel(row.backend) }}</span>
+          <span class="configuration-status" :class="`configuration-status--${rowStatus(row).tone}`" :data-status="rowStatus(row).tone" :data-testid="`model-configuration-status-${row.id}`">
+            <span class="configuration-status-dot" aria-hidden="true" />{{ rowStatus(row).label }}
+          </span>
+        </div>
         <div class="configuration-actions">
           <AppButton v-if="inline" size="sm" variant="ghost" icon="edit" :aria-label="c.edit" :data-testid="`model-configuration-edit-${row.id}`" @click="start(row)" />
           <ModelRecordActions v-else :name="row.name" :active="row.state === 'active'" prefix="model-configuration" :record-id="row.id" @edit="start(row)" @toggle="toggle(row)" @remove="remove(row)" />
         </div>
       </article>
+    </div>
     </div>
     </template>
     <CredentialEditorSurface :inline="props.inline" :open="open" :hide-heading="setup" :return-focus="!saving && !awaitingCredential" :title="setup ? t('pages.onboarding.toolSetup.title') : editingId ? c.editConfiguration : c.addConfiguration" :width="660" :close-on-esc="!saving" trap-focus :close-label="c.close" @close="!saving && (open = false)">
@@ -553,6 +587,61 @@ defineExpose({ openForTool, resumeWithCredential, openCreate, openSetup })
 }
 .configuration-actions {
   flex-shrink: 0;
+}
+.configuration-meta {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+}
+.configuration-tool-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: rgb(var(--c-accent) / .1);
+  color: rgb(var(--c-accent-2));
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.configuration-status {
+  display: inline-flex;
+  min-width: 72px;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.configuration-status-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: currentColor; }
+.configuration-status--ok { color: rgb(var(--c-ok)); }
+.configuration-status--warn { color: rgb(var(--c-warn)); }
+.configuration-status--off { color: rgb(var(--c-txt3)); }
+.configuration-status--off .configuration-status-dot { opacity: .5; }
+.configuration-card {
+  overflow: hidden;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+  background: rgb(var(--c-surface));
+}
+.configuration-card .configuration-heading {
+  margin-bottom: 0;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgb(var(--c-line) / .8);
+}
+.configuration-card .configuration-note { margin: 0; padding: 14px 20px; }
+.configuration-card .configuration-list { border-top: 0; }
+.configuration-card .configuration-row { padding: 12px 20px; }
+.configuration-card .configuration-row:last-child { border-bottom: 0; }
+.configuration-card .configuration-row:hover { background: rgb(var(--c-elevated) / .35); }
+.configuration-card .configuration-empty { border-block: 0; }
+@media (max-width: 639px) {
+  .configuration-row { flex-wrap: wrap; }
+  .configuration-meta { order: 3; width: 100%; padding-left: 44px; }
+  .configuration-card .configuration-heading,
+  .configuration-card .configuration-note,
+  .configuration-card .configuration-row { padding-inline: 16px; }
 }
 .configuration-steps {
   display: grid;

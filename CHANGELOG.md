@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Settings pages redesign:** settings, credentials, model groups, external MCP, notifications, projects, variables, schedules and audit pages share a new header and card layout, and most show a summary strip (for example configured credentials, enabled model groups, running runs or sandbox usage) built from data the page already loads. Model group rows show their coding tool and whether they are available, disabled or need attention, and the credentials tabs show counts. When the workspace assistant is not set up, it now shows a short setup guide with the steps and what the assistant can do.
+
 - **@ references in Solo:** type `@` in a Solo message (or use the "+" menu) to reference another of your Solo sessions or a GitHub issue or pull request from the session's repositories. Typing `#number` or pasting an issue or PR link works too. The agent gets a summary of a referenced session and can read its full conversation as it was when the turn began. GitHub items are checked with the sandbox's Git credential and read by the agent with `gh`. A message can carry up to 5 references, shown as chips in the message and the queue.
 
 - **Solo sandbox limit and running order:** admins can change how many Solo sandboxes run at once under Settings → Capacity, applied immediately and kept across restarts. Solo sessions in the running list now stay in start order, newest first, instead of jumping to the top on every reply.

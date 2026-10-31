@@ -1166,7 +1166,17 @@
         "failInterruptedDesc": "The server restarted while this reply was generating. Retry to run it again.",
         "openSource": "Open source",
         "citationMissing": "Citation target missing or inaccessible",
-        "citationInvalid": "Invalid citation or target does not exist"
+        "citationInvalid": "Invalid citation or target does not exist",
+        "setupBadgeDisabled": "Disabled",
+        "setupBadgeUnavailable": "Needs setup",
+        "setupStepsLabel": "Setup steps",
+        "setupStep1": "Choose an existing Agent in settings",
+        "setupStep2": "Turn on “Enable assistant” and save",
+        "setupStep3": "Come back here to ask, or ask from a QQ / Feishu Channel",
+        "setupPreviewQ1": "Which runs are stuck this week?",
+        "setupPreviewA1": "Two runs are waiting for approval, and one test node failed once.",
+        "setupPreviewQ2": "Which one first?",
+        "setupPreviewA2": "Start with the one that has waited longest; it blocks three downstream tasks."
       },
       "externalMcp": {
         "connectionTitle": "Connection",
@@ -4879,6 +4889,67 @@
         "repoDirPlaceholder": "Defaults to the repository name",
         "repoDirHint": "Cloned to /root/workspace/{dir} in the sandbox",
         "save": "Save"
+      }
+    },
+    "settingsOverview": {
+      "desc": {
+        "assistantSettings": "Choose the Agent behind the assistant, connect Channels and set automatic approval rules.",
+        "schedules": "Run Agent tasks on a schedule and deliver the results to a Channel.",
+        "audit": "Review tool calls and MCP access made by Agents in this workspace.",
+        "notificationPolicy": "Decide which events notify people and which Channel delivers them.",
+        "projects": "Manage the repositories and default branches that workflow runs use.",
+        "variables": "Inject shared environment variables and configuration into every Agent run.",
+        "general": "Manage workspace details, brand copy, run concurrency and sandbox resources."
+      },
+      "stats": {
+        "credentialsTotal": "Credentials",
+        "credentialsConfigured": "Configured",
+        "credentialsGitHosts": "Repository hosts",
+        "credentialsPending": "Needs a value",
+        "modelsTotal": "Model groups",
+        "modelsEnabled": "Enabled",
+        "modelsTools": "Coding tools",
+        "modelsProblems": "Need attention",
+        "toolUnit": "tools",
+        "executionMode": "Execution mode",
+        "runningRuns": "Running / limit",
+        "testSandboxes": "Test sandboxes",
+        "sandboxMemory": "Sandbox memory limit",
+        "mcpConnection": "External access",
+        "mcpEnabled": "On",
+        "mcpDisabled": "Off",
+        "mcpPacks": "Open packs",
+        "mcpKeys": "Access keys",
+        "notifyChannels": "Connected Channels",
+        "notifyStatus": "Notifications",
+        "notifyOn": "On",
+        "notifyOff": "Off",
+        "projectsTotal": "Repositories",
+        "variablesTotal": "Shared variables",
+        "schedulesTotal": "Schedules",
+        "schedulesEnabled": "Enabled",
+        "notifyEvents": "Subscribed events",
+        "projectsUsed": "Used",
+        "projectsHosts": "Repository hosts",
+        "variablesWithDefault": "With default",
+        "variablesTypes": "Types",
+        "schedulesDeliver": "Deliver to Channel"
+      },
+      "modelStatus": {
+        "available": "Available",
+        "disabled": "Disabled",
+        "missingConfiguration": "Group unavailable",
+        "configurationBackendMismatch": "Tool mismatch",
+        "missingCredential": "Credential missing",
+        "missingConnection": "API address unavailable",
+        "unsupported": "Protocol unsupported",
+        "missingModel": "Model missing",
+        "requiredRoles": "Helper model missing",
+        "fallback": "Needs attention"
+      },
+      "credentialStatus": {
+        "configured": "Configured",
+        "pending": "Needs a value"
       }
     }
   }

@@ -20,6 +20,18 @@
 
 ## 记录
 
+### 2026-10-31（设置类页面视觉重设计）
+
+- 日期：2026-10-31。
+- 范围：`web/src/components/settings/{SettingsPageHeader,SettingsStatStrip,SettingsSection}.vue`、`settingsStats.ts`、`IntegrationsPanel.vue`；`web/src/components/shell/WorkspacePage.vue`；`web/src/views/{SettingsView,WorkspaceToolView,ProjectsView,WorkspaceDefaultsView}.vue`；`web/src/components/workspace/{WorkspaceCredentialsPanel,ModelConfigurationManager,WorkspaceExternalMcpPanel,WorkspaceNotifyPanel,WorkspaceAuditPanel}.vue`；`web/src/components/pm/{PmLeaderChat,PmSettingsPanel,PmChannelMultiPanel,PmCronJobsPanel}.vue`；`web/src/locales/{zh-CN,en}/pages.json`。
+- 做了什么：
+  - 新增 `SettingsPageHeader`（图标徽标 + 标题 + 说明 + actions 插槽）和 `SettingsStatStrip`（`<dl>` 统计条，值为空的项不渲染，加载时显示骨架）；`SettingsSection` 改为卡片，新增可选 `icon` / `count`。
+  - `WorkspacePage` 新增 `icon` / `hideHeader`，设置类工具页统一用新页头；凭据页在面板内渲染页头，新增菜单按钮放进页头 actions，inline 嵌入不显示页头和统计条。
+  - 各页统计都由页面已加载的数据在前端计算，不加请求：凭据（总数 / 已配置 / 代码主机 / 待填写）、模型组（总数 / 已启用 / 编码工具 / 需处理，行内加工具标签与可用 / 已停用 / 原因状态，tab 显示数量）、常规（执行模式 / 运行中 / 测试沙箱 / 沙箱内存，工作树模式隐藏沙箱项）、外部 MCP（连接 / 能力包 / 密钥）、通知、项目、变量、定时任务。
+  - 助手未就绪时改为引导卡：状态标签、三步步骤、静态对话示意（aria-hidden）、三张能力卡；保留 `pm-setup-state` / `pm-setup-settings`。
+- 为什么：设置类页面版式不统一、信息密度低，用户看不出配置是否完整。
+- 如何验证：原有 Icon 清单前后对照只有新增；新增共用组件、模型组统计与状态、凭据统计、助手引导、常规页工作树模式单测；lint、vue-tsc、coverage、build、`test:e2e:ci`（含 icon-motion、theme-icon-vt，断言未改）串行通过。
+
 ### 2026-10-30（Solo @ 引用：其他会话与 GitHub issue/PR）
 
 - 日期：2026-10-30。

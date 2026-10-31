@@ -6,6 +6,9 @@ import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import SettingsPageHeader from '@/components/settings/SettingsPageHeader.vue'
+import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
+import type { SettingsStatItem } from '@/components/settings/settingsStats'
 import ProjectDrawer from '@/components/solo/ProjectDrawer.vue'
 import { api } from '@/lib/api/api'
 import type { Project } from '@/lib/api/apiTypes'
@@ -27,6 +30,22 @@ const deleting = ref<Project | null>(null)
 const deleteActive = ref(0)
 const deleteBusy = ref(false)
 const deleteError = ref('')
+
+const overviewStats = computed<SettingsStatItem[]>(() => {
+  const hosts = new Set(projects.value.map((p) => repoHost(p.repoUrl)).filter(Boolean))
+  return [
+    { key: 'total', icon: 'git', label: t('pages.settingsOverview.stats.projectsTotal'), value: projects.value.length, tone: 'accent' },
+    { key: 'used', icon: 'clock', label: t('pages.settingsOverview.stats.projectsUsed'), value: projects.value.filter((p) => !!p.lastUsedAt).length, total: projects.value.length },
+    { key: 'hosts', icon: 'globe', label: t('pages.settingsOverview.stats.projectsHosts'), value: hosts.size },
+  ]
+})
+
+function repoHost(url: string): string {
+  const raw = (url || '').trim()
+  const scp = /^[^@/\s]+@([^:/\s]+):/.exec(raw)
+  if (scp) return scp[1]!.toLowerCase()
+  try { return new URL(raw).hostname.toLowerCase() } catch { return '' }
+}
 
 const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -116,19 +135,16 @@ onMounted(load)
 
 <template>
   <div class="flex h-full min-h-0 flex-col" data-testid="projects-view">
-    <div class="mb-5 flex shrink-0 flex-col items-start gap-2.5 md:flex-row md:items-end md:justify-between">
-      <div class="min-w-0">
-        <h2 class="text-lg font-semibold text-txt">{{ t('pages.projects.title') }}</h2>
-        <p class="mt-1 text-[12.5px] text-txt3">{{ t('pages.projects.subtitle') }}</p>
-      </div>
-      <div class="flex items-center gap-2">
+    <SettingsPageHeader class="mb-5 shrink-0" icon="git" :title="t('pages.projects.title')" :description="t('pages.projects.subtitle')">
+      <template #actions>
         <div v-if="projects.length > 4" class="relative">
           <Icon name="search" :size="14" class="pointer-events-none absolute left-2.5 top-2.5 text-txt3" />
           <input v-model="query" class="input w-56 !pl-8 text-[13px]" :placeholder="t('pages.projects.search')" />
         </div>
         <AppButton variant="primary" icon="plus" data-testid="projects-new" @click="openNew">{{ t('pages.projects.new') }}</AppButton>
-      </div>
-    </div>
+      </template>
+    </SettingsPageHeader>
+    <SettingsStatStrip v-if="!error" class="mb-5 shrink-0" :items="overviewStats" :loading="loading" data-testid="projects-stats" />
 
     <p v-if="error" class="mb-3 border-l-2 border-err/40 py-2 pl-3 text-[13px] text-err">{{ error }}</p>
 
