@@ -342,7 +342,6 @@ async function boot() {
     aiCredentialId: backend === 'codex' ? 'c2' : 'c1',
     openCodeCredentialId: '',
     gitCredentialId: '',
-    sshHostsCredentialId: '',
     gitCredentialType: undefined,
     files: [],
     mcp: [],

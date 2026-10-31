@@ -12,8 +12,9 @@ const items: CredentialItem[] = [
   { id: 'gh-1', name: '团队 GitHub', type: 'git', purpose: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true },
   { id: 'gh-2', name: '个人 GitHub', type: 'git', purpose: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true },
   { id: 'gl-1', name: '公司 GitLab', type: 'git', purpose: 'git', provider: 'gitlab', envKey: 'GITLAB_TOKEN', configured: true },
-  { id: 'ssh-1', name: '部署私钥', type: 'ssh', provider: 'ssh', purpose: 'ssh', secretKind: 'ssh_private_key', envKey: 'GIT_SSH_PRIVATE_KEY', configured: true },
-  { id: 'hosts-1', name: '可信主机', type: 'ssh', provider: 'ssh', purpose: 'ssh', secretKind: 'ssh_known_hosts', envKey: 'GIT_SSH_KNOWN_HOSTS', configured: true },
+  { id: 'ssh-1', name: '部署私钥', type: 'ssh', provider: 'ssh', purpose: 'ssh', secretKind: 'ssh_private_key', envKey: 'GIT_SSH_PRIVATE_KEY', knownHosts: 'git.example.test ssh-ed25519 AAAA', configured: true },
+  { id: 'ssh-2', name: '镜像私钥', type: 'ssh', provider: 'ssh', purpose: 'ssh', secretKind: 'ssh_private_key', envKey: 'GIT_SSH_PRIVATE_KEY', configured: true },
+  { id: 'hosts-1', name: '可信主机', type: 'ssh', provider: 'ssh', purpose: 'ssh', secretKind: 'ssh_known_hosts' as CredentialItem['secretKind'], envKey: 'GIT_SSH_KNOWN_HOSTS', configured: true },
   { id: 'disabled', name: '已停用', type: 'git', purpose: 'git', provider: 'github', configured: true, enabled: false },
   { id: 'cleared', name: '已清空', type: 'git', purpose: 'git', provider: 'gitlab', configured: false },
   { id: 'old-gitlab', name: 'Old GitLab', type: 'git', provider: 'gitlab', configured: true },
@@ -86,17 +87,20 @@ describe('Agent Git credentials', () => {
     expect(value(wrapper)).toEqual({ items: [] })
     expect(wrapper.text()).toContain('尚未添加 Git 授权')
   })
-  it('pairs saved host verification with an SSH key and preserves per-key scope', async () => {
+  it('adds several SSH keys, each with its own scope and known-hosts status', async () => {
     const wrapper = setup()
     await choose(wrapper, 'git-credential-add', 'ssh-1')
+    await choose(wrapper, 'git-credential-add', 'ssh-2')
     await wrapper.get('[data-testid="git-scope-ssh-1"]').setValue('git@git.example.test:team/repo.git')
-    await choose(wrapper, 'git-hosts-ssh-1', 'hosts-1')
-    expect(value(wrapper)).toEqual({ items: [{ credentialId: 'ssh-1', scope: 'git@git.example.test:team/repo.git', sshHostsCredentialId: 'hosts-1' }] })
+    expect(value(wrapper)).toEqual({ items: [{ credentialId: 'ssh-1', scope: 'git@git.example.test:team/repo.git' }, { credentialId: 'ssh-2' }] })
+    expect(wrapper.get('[data-testid="git-credential-subtitle-ssh-1"]').text()).toBe('git@git.example.test:team/repo.git · 已配置已知主机')
+    expect(wrapper.get('[data-testid="git-credential-subtitle-ssh-2"]').text()).toBe('SSH · 未配置已知主机')
+    expect(wrapper.find('[data-testid^="git-hosts-"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('SSH 主机校验')
     await wrapper.get('[data-testid="git-scope-ssh-1"]').setValue('https://token:secret@git.example.test/team/repo')
     expect(wrapper.get('[data-testid="git-scope-ssh-1"]').attributes('aria-invalid')).toBe('true')
     expect(wrapper.emitted('validity')?.at(-1)).toEqual([false])
     await wrapper.get('[data-testid="git-scope-ssh-1"]').setValue('')
-    await choose(wrapper, 'git-hosts-ssh-1', '')
     expect(value(wrapper).items[0]).toEqual({ credentialId: 'ssh-1' })
   })
   it('retains missing and revoked references without choosing an alternative', async () => {
@@ -117,14 +121,15 @@ describe('Agent Git credentials', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect(wrapper.emitted('validity')?.at(-1)).toEqual([true])
   })
-  it('reports unavailable hosts without repairing them silently', async () => {
-    const wrapper = setup({ modelValue: { items: [{ credentialId: 'ssh-1', sshHostsCredentialId: 'lost-hosts' }] } })
-    expect(wrapper.text()).not.toContain('请选择一条可用的首选授权')
-    expect(wrapper.text()).not.toContain('首选')
-    expect(wrapper.get('[data-testid="git-hosts-ssh-1"] [data-test="app-select-trigger"]').text()).toContain('lost-hosts')
+  it('ignores a retired known-hosts binding and drops it on the next change', async () => {
+    const retired = { items: [{ credentialId: 'ssh-1', sshHostsCredentialId: 'lost-hosts' }] } as AgentGitBindings
+    const wrapper = setup({ modelValue: retired })
+    expect(wrapper.text()).not.toContain('授权不可用')
+    expect(wrapper.text()).not.toContain('lost-hosts')
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    await choose(wrapper, 'git-hosts-ssh-1', '')
     expect(wrapper.emitted('validity')?.at(-1)).toEqual([true])
+    await wrapper.get('[data-testid="git-scope-ssh-1"]').setValue('git.example.test')
+    expect(value(wrapper)).toEqual({ items: [{ credentialId: 'ssh-1', scope: 'git.example.test' }] })
   })
   it('loads, reports failure and retries without losing saved selections', async () => {
     mocks.listCredentials.mockRejectedValueOnce(new Error('offline'))

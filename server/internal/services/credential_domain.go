@@ -110,7 +110,7 @@ func normalizeCredentialDomainInput(in *CredentialInput) error {
 		if in.SecretKind == "" {
 			in.SecretKind = "ssh_private_key"
 		}
-		if in.SecretKind != "ssh_private_key" && in.SecretKind != "ssh_known_hosts" {
+		if in.SecretKind != "ssh_private_key" {
 			return ErrCredentialPurpose
 		}
 	case "mcp", "custom":

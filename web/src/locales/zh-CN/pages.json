@@ -1264,6 +1264,11 @@
         "secretLoginFile": "登录文件",
         "secretPrivateKey": "私钥",
         "secretKnownHosts": "已知主机",
+        "knownHostsHint": "OpenSSH known_hosts 格式，每行一条，例如 github.com ssh-ed25519 AAAA…",
+        "knownHostsLines": "已填写 {count} 行",
+        "knownHostsEmpty": "未填写",
+        "knownHostsConfigured": "已配置已知主机",
+        "knownHostsNotConfigured": "未配置已知主机",
         "pickTitle": "使用的授权",
         "pickHint": "主标题是别名。运行只注入选中的这一条，清空后不会改用另一条。",
         "codingPickHint": "未选择时使用工作区默认授权；已选择时只使用这一条。",
@@ -1279,8 +1284,7 @@
           "opencode": "OpenCode CLI",
           "github": "GitHub",
           "gitlab": "GitLab",
-          "ssh_key": "SSH 私钥",
-          "ssh_hosts": "SSH 已知主机",
+          "ssh_key": "SSH 密钥",
           "deepseek_harness": "DeepSeek Harness",
           "kimi_code": "Kimi Code"
         },
@@ -2863,8 +2867,7 @@
         },
         "git": {
           "meta": "点选 GitHub / GitLab / SSH 即可，也可跳过。已经配过的凭据可以直接选择。",
-          "emptySkip": "还没有已保存的授权。请先到工作区凭据保存，本步可以跳过。",
-          "hostsEmpty": "还没有已保存的已知主机，可以不选。"
+          "emptySkip": "还没有已保存的授权。请先到工作区凭据保存，本步可以跳过。"
         },
         "env": {
           "meta": "注入沙箱的环境变量。区域保留键由 Agent 步骤统一管理，密钥仅保存在 Agent 配置中。"
@@ -3113,8 +3116,6 @@
         "scopePlaceholder": "例如：git.example.com 或仓库 URL",
         "scopeHint": "留空使用服务商默认站点。仓库地址优先于站点范围。",
         "scopeInvalid": "请输入有效的主机或仓库地址，并与凭据的 Host、协议一致。",
-        "hosts": "SSH 主机校验",
-        "hostsNone": "不指定已保存的主机校验",
         "unavailable": "授权不可用，请移除或在凭据页恢复。",
         "inherited": "使用工作区默认授权",
         "legacy": "当前使用原有授权",

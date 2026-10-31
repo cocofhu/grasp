@@ -16,6 +16,8 @@ type GitCredentialValue struct {
 	EnvKey string `json:"envKey"`
 	Secret string `json:"-"`
 	Host   string `json:"host,omitempty"`
+	// KnownHosts belongs to the same SSH key row; empty means none configured.
+	KnownHosts string `json:"-"`
 }
 
 // GitCredentialFunc returns one selected Git/SSH credential with its metadata.

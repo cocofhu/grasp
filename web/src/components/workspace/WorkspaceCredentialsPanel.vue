@@ -136,7 +136,9 @@ const createKind = ref<CredentialKindId | 'model_api' | ''>('')
 const createAlias = ref('')
 const createSecret = ref('')
 const createHost = ref('')
+const createKnownHosts = ref('')
 const hostDrafts = reactive<Record<string, string>>({})
+const knownHostsDrafts = reactive<Record<string, string>>({})
 const revealSecret = ref(false)
 const aliasError = ref('')
 const createAttempted = ref(false)
@@ -166,6 +168,8 @@ const selectedKind = computed(() => (createKind.value ? kindById(createKind.valu
 const createSecretLabel = computed(() => createKind.value === 'model_api' ? routingCopy.value.secret : selectedKind.value ? secretLabel(selectedKind.value.id) : t('pages.workspace.credentials.value'))
 const createHasHost = computed(() => selectedKind.value?.type === 'git')
 const createHostValid = computed(() => !createHasHost.value || !!normalizeGitCredentialHost(createHost.value))
+const createHasKnownHosts = computed(() => selectedKind.value?.id === 'ssh_key')
+const createKnownHostsLines = computed(() => knownHostsLineCount(createKnownHosts.value))
 watch(createStep, async () => {
   await nextTick()
   if (!showCreate.value || !stepPane.value) return
@@ -236,7 +240,7 @@ function isCodexLogin(item: CredentialItem): boolean {
 }
 
 function isMultiline(item: CredentialItem): boolean {
-  return ['login_file', 'ssh_private_key', 'ssh_known_hosts'].includes(item.secretKind || '')
+  return ['login_file', 'ssh_private_key'].includes(item.secretKind || '')
 }
 
 function configuredText(item: CredentialItem): string {
@@ -266,8 +270,20 @@ function displayHost(item: CredentialItem): string {
 function hostChanged(item: CredentialItem): boolean {
   return hasGitHost(item) && normalizeGitCredentialHost(hostDrafts[item.id] || '') !== normalizeGitCredentialHost(item.host || defaultGitCredentialHost(item.provider || ''))
 }
+function hasKnownHosts(item: CredentialItem): boolean {
+  return kindOfItem(item)?.id === 'ssh_key'
+}
+function normalizeKnownHosts(text: string): string {
+  return text.replace(/\r\n/g, '\n').trim()
+}
+function knownHostsLineCount(text: string): number {
+  return text.split(/\r?\n/).filter((line) => line.trim()).length
+}
+function knownHostsChanged(item: CredentialItem): boolean {
+  return hasKnownHosts(item) && normalizeKnownHosts(knownHostsDrafts[item.id] || '') !== normalizeKnownHosts(item.knownHosts || '')
+}
 function canSave(item: CredentialItem): boolean {
-  return isWorkspaceEditable(item) && (!hasGitHost(item) || !!normalizeGitCredentialHost(hostDrafts[item.id] || '')) && (!!drafts[item.id]?.trim() || hostChanged(item))
+  return isWorkspaceEditable(item) && (!hasGitHost(item) || !!normalizeGitCredentialHost(hostDrafts[item.id] || '')) && (!!drafts[item.id]?.trim() || hostChanged(item) || knownHostsChanged(item))
 }
 
 function updateItems(next: CredentialItem) {
@@ -275,6 +291,7 @@ function updateItems(next: CredentialItem) {
   if (i < 0) items.value = [...items.value, next]
   else items.value = items.value.map((item, index) => (index === i ? next : item))
   hostDrafts[next.id] = displayHost(next)
+  knownHostsDrafts[next.id] = next.knownHosts || ''
   drafts[next.id] = ''
   editing[next.id] = false
 }
@@ -284,6 +301,7 @@ function setItems(next: CredentialItem[]) {
   for (const key of Object.keys(drafts)) delete drafts[key]
   for (const key of Object.keys(editing)) delete editing[key]
   for (const key of Object.keys(hostDrafts)) delete hostDrafts[key]
+  for (const key of Object.keys(knownHostsDrafts)) delete knownHostsDrafts[key]
   for (const item of next) drafts[item.id] = ''
 }
 
@@ -291,6 +309,7 @@ function startEdit(item: CredentialItem) {
   if (!isWorkspaceEditable(item)) return
   drafts[item.id] = ''
   hostDrafts[item.id] = displayHost(item)
+  knownHostsDrafts[item.id] = item.knownHosts || ''
   editing[item.id] = true
 }
 
@@ -302,6 +321,7 @@ function cancelEdit(item: CredentialItem) {
 
 function clearSecrets() {
   createSecret.value = ''
+  createKnownHosts.value = ''
   revealSecret.value = false
 
 }
@@ -423,7 +443,6 @@ function secretLabel(kindId: CredentialKindId): string {
   if (!kind) return t('pages.workspace.credentials.value')
   if (kind.secret === 'loginFile') return t('pages.workspace.credentials.secretLoginFile')
   if (kind.id === 'ssh_key') return t('pages.workspace.credentials.secretPrivateKey')
-  if (kind.id === 'ssh_hosts') return t('pages.workspace.credentials.secretKnownHosts')
   if (kind.id === 'opencode') return t('pages.workspace.credentials.secretOpenCodeKey')
   if (kind.id === 'deepseek_harness') return t('pages.workspace.credentials.secretDeepSeekKey')
   if (kind.id === 'kimi_code') return t('pages.workspace.credentials.secretKimiCodeKey')
@@ -454,10 +473,11 @@ async function create() {
       ...(createIssuer.value === 'custom' ? { provider: 'custom' } : {}),
     } : {
       ...(createHasHost.value ? { host: createHost.value.trim() } : {}),
+      ...(createHasKnownHosts.value && createKnownHosts.value.trim() ? { knownHosts: createKnownHosts.value } : {}),
       type: kind!.type, provider: kind!.provider, name: alias, envKey: kind!.envKey, value: createSecret.value,
       purpose: kind!.type === 'ai' ? 'tool_auth' : kind!.type,
       ...(kind!.type === 'ai' ? { toolId: kind!.id } : {}),
-      secretKind: kind!.secret === 'loginFile' ? 'login_file' : kind!.id === 'ssh_key' ? 'ssh_private_key' : kind!.id === 'ssh_hosts' ? 'ssh_known_hosts' : 'api_key',
+      secretKind: kind!.secret === 'loginFile' ? 'login_file' : kind!.id === 'ssh_key' ? 'ssh_private_key' : 'api_key',
     })
     savedCredential.value = created
     updateItems(created)
@@ -531,6 +551,7 @@ async function save(item: CredentialItem) {
       envKey: item.envKey,
       ...(value.trim() ? { value } : {}),
       ...(hasGitHost(item) ? { host: hostDrafts[item.id].trim() } : {}),
+      ...(knownHostsChanged(item) ? { knownHosts: knownHostsDrafts[item.id] || '' } : {}),
       metadata: item.metadata,
       enabled: item.enabled,
     })
@@ -574,6 +595,7 @@ async function removeAccount(item: CredentialItem) {
     delete drafts[item.id]
     delete editing[item.id]
     delete hostDrafts[item.id]
+    delete knownHostsDrafts[item.id]
     delete clearing[item.id]
     serviceConnections.value = serviceConnections.value.filter((service) => service.credentialId !== item.id)
     await loadServiceConnections({ keepOnError: true })
@@ -751,6 +773,7 @@ watch(showCreate, (open) => {
                           <h4 class="m-0 text-[13px] font-semibold leading-5 text-txt" :title="itemLabel(item)" data-testid="workspace-credential-alias">{{ itemLabel(item) }}</h4>
                           <p v-if="itemLabel(item) !== typeLabel(item)" class="m-0 mt-0.5 text-[11px] text-txt3" data-testid="workspace-credential-kind">{{ typeLabel(item) }}</p>
                           <p v-if="kindOfItem(item)?.type === 'git'" class="m-0 mt-0.5 truncate font-mono text-[11px] text-txt3" :data-testid="`workspace-credential-host-label-${item.id}`">{{ displayHost(item) }}</p>
+                          <p v-if="hasKnownHosts(item)" class="m-0 mt-0.5 text-[11px]" :class="item.knownHosts ? 'text-ok' : 'text-txt3'" :data-testid="`workspace-credential-known-hosts-label-${item.id}`">{{ t(item.knownHosts ? 'pages.workspace.credentials.knownHostsConfigured' : 'pages.workspace.credentials.knownHostsNotConfigured') }}</p>
                         </div>
                       </div>
                       <div class="credential-row-value">
@@ -852,6 +875,19 @@ watch(showCreate, (open) => {
                         :data-testid="`workspace-credential-input-${item.id}`"
                         autocomplete="new-password"
                       />
+                      <label v-if="hasKnownHosts(item)" class="block">
+                        <span class="label">{{ t('pages.workspace.credentials.secretKnownHosts') }}<span class="ml-1 text-txt3">({{ t('common.optional') }})</span></span>
+                        <textarea
+                          v-model="knownHostsDrafts[item.id]"
+                          rows="3"
+                          class="min-h-[80px] w-full min-w-0 resize-y rounded-lg border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none transition placeholder:text-txt3 focus:border-accent focus:ring-2 focus:ring-accent/15"
+                          placeholder="github.com ssh-ed25519 AAAA…"
+                          :data-testid="`workspace-credential-known-hosts-${item.id}`"
+                          autocomplete="off"
+                          spellcheck="false"
+                        />
+                        <p class="mb-0 mt-1 text-xs leading-5 text-txt3">{{ t('pages.workspace.credentials.knownHostsHint') }}</p>
+                      </label>
                       <div class="flex flex-wrap justify-end gap-2">
                         <AppButton size="sm" variant="ghost" :disabled="!!saving[item.id]" :data-testid="`workspace-credential-cancel-${item.id}`" @click="cancelEdit(item)">
                           {{ t('common.buttons.cancel') }}
@@ -983,6 +1019,20 @@ watch(showCreate, (open) => {
                 :placeholder="t('pages.workspace.credentials.valuePlaceholder')"
               />
             </label>
+            <label v-if="createHasKnownHosts" class="block">
+              <span class="label">{{ t('pages.workspace.credentials.secretKnownHosts') }}<span class="ml-1 text-txt3">({{ t('common.optional') }})</span></span>
+              <textarea
+                v-model="createKnownHosts"
+                :disabled="!!savedCredential"
+                rows="4"
+                class="input min-h-[120px] w-full resize-y font-mono"
+                data-testid="workspace-credential-create-known-hosts"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="github.com ssh-ed25519 AAAA…"
+              />
+              <p class="mb-0 mt-1 text-xs leading-5 text-txt3">{{ t('pages.workspace.credentials.knownHostsHint') }}</p>
+            </label>
             <p v-if="selectedKind?.id === 'opencode'" class="m-0 text-xs leading-5 text-txt3" data-testid="workspace-credential-opencode-family">{{ t('pages.workspace.credentials.opencodeFamilyHint') }}</p>
             <template v-if="createKind === 'model_api'">
               <label v-if="!modelCredentialBackend" :for="`${addMenuId}-connection`" class="flex items-center gap-2 text-xs font-medium text-txt2"><AppSwitch :id="`${addMenuId}-connection`" v-model="createConnectionAfter" :disabled="creating" :aria-label="routingCopy.configureConnectionNow" data-testid="model-credential-create-connection" />{{ routingCopy.configureConnectionNow }}</label>
@@ -997,7 +1047,7 @@ watch(showCreate, (open) => {
               <p v-else class="m-0 text-xs leading-5 text-txt3">{{ routingCopy.keyOnlyHint }}</p>
             </template>
           </div>
-          <div v-else key="review" ref="stepPane" class="credential-step-pane space-y-4"><dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border border-line p-4 text-xs"><dt class="text-txt3">{{ routingCopy.credentials }}</dt><dd class="m-0 text-txt">{{ createKind === 'model_api' ? routingCopy.modelKeys : selectedKind ? t(`pages.workspace.credentials.kinds.${selectedKind.id}`) : '' }}</dd><dt class="text-txt3">{{ routingCopy.name }}</dt><dd class="m-0 break-words text-txt">{{ createAlias }}</dd><template v-if="createKind === 'model_api'"><dt class="text-txt3">{{ routingCopy.issuer }}</dt><dd class="m-0 break-words text-txt">{{ providerLabel }} · {{ effectiveIssuer }}</dd><template v-if="inlineConnection"><dt class="text-txt3">{{ routingCopy.connectionName }}</dt><dd class="m-0 break-words text-txt">{{ connectionName }}</dd><dt class="text-txt3">API Base URL</dt><dd class="m-0 break-all font-mono text-txt">{{ connectionForm.baseUrl }}</dd><dt class="text-txt3">{{ routingCopy.protocol }}</dt><dd class="m-0 break-all text-txt">{{ connectionForm.protocol }} · {{ connectionForm.scheme }}</dd></template></template><template v-if="createHasHost"><dt class="text-txt3">Host</dt><dd class="m-0 break-all font-mono text-txt" data-testid="workspace-credential-review-host">{{ createHost }}</dd></template><dt class="text-txt3">{{ createSecretLabel }}</dt><dd class="m-0 font-mono text-txt">••••••••</dd></dl></div>
+          <div v-else key="review" ref="stepPane" class="credential-step-pane space-y-4"><dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border border-line p-4 text-xs"><dt class="text-txt3">{{ routingCopy.credentials }}</dt><dd class="m-0 text-txt">{{ createKind === 'model_api' ? routingCopy.modelKeys : selectedKind ? t(`pages.workspace.credentials.kinds.${selectedKind.id}`) : '' }}</dd><dt class="text-txt3">{{ routingCopy.name }}</dt><dd class="m-0 break-words text-txt">{{ createAlias }}</dd><template v-if="createKind === 'model_api'"><dt class="text-txt3">{{ routingCopy.issuer }}</dt><dd class="m-0 break-words text-txt">{{ providerLabel }} · {{ effectiveIssuer }}</dd><template v-if="inlineConnection"><dt class="text-txt3">{{ routingCopy.connectionName }}</dt><dd class="m-0 break-words text-txt">{{ connectionName }}</dd><dt class="text-txt3">API Base URL</dt><dd class="m-0 break-all font-mono text-txt">{{ connectionForm.baseUrl }}</dd><dt class="text-txt3">{{ routingCopy.protocol }}</dt><dd class="m-0 break-all text-txt">{{ connectionForm.protocol }} · {{ connectionForm.scheme }}</dd></template></template><template v-if="createHasHost"><dt class="text-txt3">Host</dt><dd class="m-0 break-all font-mono text-txt" data-testid="workspace-credential-review-host">{{ createHost }}</dd></template><dt class="text-txt3">{{ createSecretLabel }}</dt><dd class="m-0 font-mono text-txt">••••••••</dd><template v-if="createHasKnownHosts"><dt class="text-txt3">{{ t('pages.workspace.credentials.secretKnownHosts') }}</dt><dd class="m-0 text-txt" data-testid="workspace-credential-review-known-hosts">{{ createKnownHostsLines ? t('pages.workspace.credentials.knownHostsLines', createKnownHostsLines) : t('pages.workspace.credentials.knownHostsEmpty') }}</dd></template></dl></div>
         </Transition>
         <p v-if="createError" role="alert" class="mb-0 mt-4 text-xs leading-5 text-err" :data-testid="savedCredential ? 'model-credential-partial-error' : 'credential-create-error'"><template v-if="savedCredential">{{ routingCopy.keySavedConnectionFailed }}<br /></template>{{ createError }}</p>
       </div>

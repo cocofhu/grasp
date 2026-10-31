@@ -25,6 +25,7 @@ func TestCredentialPurposesAndRevisionLifecycle(t *testing.T) {
 		{Purpose: "tool_auth", ToolID: "cursor", SecretKind: "ssh_private_key", Name: "Bad", Value: "s"},
 		{Purpose: "git", SecretKind: "login_file", Name: "Bad", Value: "s"},
 		{Purpose: "ssh", SecretKind: "api_key", Name: "Bad", Value: "s"},
+		{Purpose: "ssh", SecretKind: "ssh_known_hosts", Name: "Retired hosts", Value: "s"},
 	} {
 		if _, err := service.Create(input); !errors.Is(err, ErrCredentialPurpose) {
 			t.Fatalf("invalid domain input accepted: %+v %v", input, err)
@@ -38,7 +39,6 @@ func TestCredentialPurposesAndRevisionLifecycle(t *testing.T) {
 		{Purpose: "tool_auth", ToolID: "kimi_code", Name: "Kimi", Value: "sk-kimi-test"},
 		{Purpose: "git", Provider: "github", Name: "Repository", Value: "s"},
 		{Purpose: "ssh", Name: "Private", Value: "s"},
-		{Purpose: "ssh", SecretKind: "ssh_known_hosts", Name: "Hosts", Value: "s"},
 	} {
 		created, err := service.Create(input)
 		if err != nil {
