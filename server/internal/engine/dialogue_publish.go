@@ -151,7 +151,10 @@ func (en *dialogueEntry) evictLocked() {
 
 // forgetDialogues drops every dialogue entry of runID (lane "" too when lane
 // is "*", else only that lane). Versions stay monotonic: a rebuilt entry is
-// stamped from the process-wide counter.
+// stamped from the process-wide counter. Ended turns without a persisted row
+// (dropped, visit_ended) live only in the entry, so a rebuilt state no longer
+// lists them. Viewers act on an ended turn when it first appears, and entries
+// are only dropped long after that.
 func (e *Engine) forgetDialogues(runID, nodeID, lane string) {
 	h := e.dialogueHub()
 	h.mu.Lock()

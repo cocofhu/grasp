@@ -98,7 +98,7 @@ async function mockServer(page: Page) {
     dialogue.set(next)
     sockets.at(-1)?.send(JSON.stringify(dialogue.frame()))
   }
-  return { push, sockets }
+  return { push, sockets, dialogue }
 }
 
 async function expectEmptyFail(page: Page) {
@@ -155,6 +155,62 @@ test('run detail LLM transcript: empty reply shows the failure card before and a
 
 test('run live page: empty reply shows the failure card before and after reload', async ({ page }) => {
   await streamEndEmptyReload(page, () => page.goto(shell(`/runs/${RUN}/live?node=${NODE}`)))
+})
+
+const streamingMore: FakeDialogue = {
+  rows: [human, { role: 'agent', text: '已确认需要验证码', turnId: 't1', streaming: true }],
+  turns: [{ turnId: 't1', phase: 'running', item: { text: human.text } }],
+}
+const sealedOk: FakeDialogue = {
+  rows: [human, { role: 'agent', text: '登录页需要账号密码与验证码', turnId: 't1', outcome: 'ok' }],
+  turns: [{ turnId: 't1', phase: 'ended', outcome: 'ok' }],
+}
+
+/**
+ * The socket drops mid-reply while the reply keeps going, then the server
+ * restarts (newer epoch, seq from 1) with the reply sealed. Each reconnect
+ * frame brings the page up to date without a reload or a failure card.
+ */
+async function dropRestartRecover(page: Page, open: () => Promise<void>) {
+  const { push, sockets, dialogue } = await mockServer(page)
+  await page.setViewportSize({ width: 1280, height: 860 })
+  await open()
+  await expect.poll(() => sockets.length).toBeGreaterThan(0)
+  push(running)
+  await expect(page.getByText('正在梳理登录需求')).toBeVisible({ timeout: 15_000 })
+  await page.evaluate(() => { (window as unknown as { __sameDocument: boolean }).__sameDocument = true })
+
+  let seen = sockets.length
+  dialogue.set(streamingMore)
+  await sockets.at(-1)!.close()
+  await expect.poll(() => sockets.length, { timeout: 20_000 }).toBeGreaterThan(seen)
+  await expect(page.getByText('已确认需要验证码')).toBeVisible()
+  await expect(page.getByTestId('clarify-empty-fail')).toHaveCount(0)
+
+  seen = sockets.length
+  dialogue.restart(sealedOk)
+  await sockets.at(-1)!.close()
+  await expect.poll(() => sockets.length, { timeout: 20_000 }).toBeGreaterThan(seen)
+  await expect(page.getByText('登录页需要账号密码与验证码')).toBeVisible()
+  await expect(page.getByText('已确认需要验证码')).toHaveCount(0)
+  await expect(page.getByTestId('clarify-stream-caret')).toHaveCount(0)
+  await expect(page.getByTestId('clarify-empty-fail')).toHaveCount(0)
+  expect(await page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument)).toBe(true)
+}
+
+test('inbox node conversation: socket drop and server restart recover without reload', async ({ page }) => {
+  await dropRestartRecover(page, () => page.goto(shell(`/runs/${RUN}/nodes/${NODE}`)))
+})
+
+test('run detail: socket drop and server restart recover without reload', async ({ page }) => {
+  await dropRestartRecover(page, async () => {
+    await page.goto(shell(`/runs/${RUN}?node=${NODE}`))
+    await page.getByRole('button', { name: 'Agent交互' }).click()
+  })
+})
+
+test('run live page: socket drop and server restart recover without reload', async ({ page }) => {
+  await dropRestartRecover(page, () => page.goto(shell(`/runs/${RUN}/live?node=${NODE}`)))
 })
 
 /**

@@ -31,6 +31,7 @@ export type FakeTurn =
 export type FakeDialogue = { rows: FakeRow[]; turns?: FakeTurn[]; done?: boolean; observe?: boolean }
 
 export function createDialogueServer(runId: string, nodeId: string, initial: FakeDialogue = { rows: [] }) {
+  let epoch = 1
   let seq = 1
   let current: FakeDialogue = initial
 
@@ -70,7 +71,7 @@ export function createDialogueServer(runId: string, nodeId: string, initial: Fak
       runId,
       nodeId,
       iteration: 1,
-      epoch: 1,
+      epoch,
       seq,
       mode: 'full',
       rows,
@@ -87,6 +88,12 @@ export function createDialogueServer(runId: string, nodeId: string, initial: Fak
     set(next: FakeDialogue) {
       current = next
       seq++
+    },
+    /** A server restart: a newer epoch while seq starts over. */
+    restart(next: FakeDialogue) {
+      current = next
+      epoch++
+      seq = 1
     },
     get: () => current,
     frame,
