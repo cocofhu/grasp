@@ -90,7 +90,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PUT("/workspace/credentials/:credentialId", h.UpdateCredential)
 		api.PATCH("/workspace/credentials/:credentialId", h.UpdateCredential)
 		api.DELETE("/workspace/credentials/:credentialId", h.ClearCredential)
-		api.DELETE("/workspace/credentials/:credentialId/account", h.RemoveModelAPICredential)
+		api.DELETE("/workspace/credentials/:credentialId/account", h.RemoveCredential)
 		api.POST("/workspace/credentials/:credentialId/revoke", h.RevokeCredential)
 		modelConnections := &handlers.ModelConnectionHandlers{Service: h.ModelConnections}
 		api.GET("/workspace/model-connections", modelConnections.List)
@@ -166,6 +166,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/solo/sessions/:id/messages", h.ListSoloMessages)
 		api.GET("/solo/sessions/:id/env", h.GetSoloEnv)
 		api.GET("/solo/sessions/:id/references/search", h.SearchSoloReferences)
+		api.GET("/solo/references/search", h.SearchLaunchReferences)
 		api.POST("/solo/sessions/:id/model", h.SetSoloSessionModel)
 		api.POST("/solo/sessions/:id/turns", h.StartSoloTurn)
 		api.POST("/solo/sessions/:id/turns/cancel", h.CancelSoloTurn)

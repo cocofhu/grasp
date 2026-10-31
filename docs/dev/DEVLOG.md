@@ -32,6 +32,53 @@
 - 为什么：设置类页面版式不统一、信息密度低，用户看不出配置是否完整。
 - 如何验证：原有 Icon 清单前后对照只有新增；新增共用组件、模型组统计与状态、凭据统计、助手引导、常规页工作树模式单测；lint、vue-tsc、coverage、build、`test:e2e:ci`（含 icon-motion、theme-icon-vt，断言未改）串行通过。
 
+### 2026-10-31（内置实现/测试评审模板默认关闭复审）
+
+- 日期：2026-10-31。
+- 范围：`agents/{ImplementAgent,TestReviewAgent}/` 与 `server/internal/services/team_embed/{ImplementAgent,TestReviewAgent}/` 下的 `agent.json`、`workspace/AGENTS.md`、`server/internal/services/team_embed.go`、`server/internal/services/team_create_template_test.go`、`web/src/locales/zh-CN/pages.json`、`web/e2e/onboarding-wizard.spec.ts`、`docs/content/{,en/}guide/concepts.md`。
+- 做了什么：实现、测试评审模板的 `agent.json` 去掉 `"review": true`，交付模板本来就没有，需求澄清（`interaction=clarify`）不动。首次引导、PM 建团、Agent Studio 从模板创建都直接拷贝模板能力，代码逻辑不变。模板 `AGENTS.md` 的复审说明改为「开启复审时才适用」；`test_review` 的 Summary、zh-CN 引导页实现描述去掉暗示默认复审的措辞；concepts 中英文改为默认关闭、可在能力页开启。已存在的 Agent 不迁移。
+- 为什么：用户希望澄清确认后，默认工作流的实现、测试评审、交付自动跑完，中间不停下等人复审。副作用：auto 节点关闭复审后不再提供 Live 实时变体，属预期。
+- 如何验证：新增 `TestBuiltInTemplates_ReviewOffExceptClarify`（除 clarify 外模板与 `ApplyCreateTemplate` 结果 review 均为 false，clarify 仍是 clarify 交互）；server `go test ./...`、golangci-lint 通过；web vitest（`--maxWorkers=2`）通过；onboarding e2e mock 同步去掉 `review: true`。
+
+### 2026-10-31（新建工作流默认共享沙箱）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/services/team_embed/default-workflow.json`、`server/internal/services/onboarding.go`、`server/internal/runtime/acp_shared.go`（注释）、`web/src/views/WorkflowEditorView.vue`、`docs/content/{,en/}guide/concepts.md`，以及 `server/internal/services/onboarding{,_baseline}_test.go`、`web/src/views/WorkflowEditorView.test.ts`。
+- 做了什么：内置模板加 `defaults`（`inheritWorkspace: true`、`variables: []`、`sandbox.mode: shared`）。`upsertDefaultWorkflow` 只在新建分支写入模板 Defaults，已存在的默认流水线不动 Defaults（未设置或 per_node 都保留）；`CreateFromBaseline` 同样写入。编辑器 `/workflows/new/edit` 的初始 `wf` 带同一组 defaults，初始快照包含它，所以不会被判为未保存；编辑已有工作流不注入。
+- 为什么：用户希望新建的流水线开箱即用共享沙箱。只改新建入口，不迁移已有数据；Import / Copy 沿用源 defaults；后端 `SaveAs` 对空 Defaults 不注入默认值，API 直接创建不受影响；运行时共享沙箱逻辑不变。
+- 如何验证：`go test ./internal/services/...`、`golangci-lint run`；`vitest run src/views/WorkflowEditorView.test.ts`（`--maxWorkers=2`）与 `vue-tsc` 类型检查。新测试覆盖模板 defaults、首次 Bootstrap 与 CreateFromBaseline 为 shared、已有默认流水线（未设置 / per_node）再次 Bootstrap 后不变、编辑器新建保存 payload 为 shared、关掉后为 per_node、已有工作流不注入。
+
+### 2026-10-31（@ 引用选择框：加载时不再闪烁）
+
+- 日期：2026-10-31。
+- 范围：`web/src/lib/solo/useReferenceSearch.ts`、`web/src/components/solo/ReferencePicker.vue` 及其测试。
+- 做了什么：
+  - 每次输入发起新请求时，不再清空该栏的提示和错误；栏位新增 `settled`（收到过回复）标记。
+  - 骨架块只在该栏还没收到过回复时出现，带延迟淡入和流光效果。之后的请求期间保留旧结果，列表延迟 180ms 再变淡；分组标题上的转圈也延迟淡入，转圈外包一层 span，避免盖掉它自带的旋转动画。
+  - 「无匹配」只在收到回复后才显示；「全部」tab 里的空分组不会在加载时冒出来又消失。
+  - 选择框弹出时加 140ms 淡入加轻微位移，上弹和下弹方向各自对应。开启「减少动态效果」时以上动画都关闭。
+- 为什么：原来每输入一个字，选择框都会在骨架块、转圈、「无匹配」和结果之间来回切，高度也跟着跳，看起来很闪。
+- 如何验证：`ReferencePicker.test.ts` 新增用例，覆盖首次加载显示骨架、再次查询时保留旧结果并淡化、回复后显示「无匹配」；solo 相关前端测试、vue-tsc、eslint 通过。
+
+### 2026-10-31（首页 Solo 启动框也能 @ 引用）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/services/{solo,solo_reference_search,solo_reference_github}.go`、`server/internal/handlers/solo.go`、`server/internal/router/router.go`、`web/src/lib/solo/{useReferenceComposer,useReferenceSearch,useSoloLauncher}.ts`、`web/src/components/solo/{ReferencePicker,SoloSessionPane}.vue`、`web/src/views/DashboardView.vue`、`web/src/lib/api/{apiTypes.ts,clients/soloClient.ts}`、`web/LIB_DOMAIN_MAP.json`、`docs/content/{,en/}guide/concepts.md`，以及对应测试。
+- 做了什么：
+  - 后端：`SoloCreateInput` 加 `references`。创建时先校验引用，再入库、开沙箱，引用不合法时不留下会话也不占沙箱。首轮通过新的 `enqueueTurn` 带着引用入队，锚点仍在轮次开始时固定。只有引用、没有文字时，标题取「@第一个引用」。
+  - 新增 `GET /api/solo/references/search?lane=&agent=&projects=a,b`：用当前选中的 Agent 和仓库组成一条草稿会话，复用原有的搜索、凭据选择和 GitHub 查询；会话 lane 列出自己的全部会话。没有仓库时的提示改成中性说法，不再写「当前会话」。
+  - 前端：把会话面板里的 @ 逻辑抽成 `useReferenceComposer`，会话面板和首页共用。`ReferencePicker` 的输入从 `sessionId` 改为 `scope`（会话，或 agent 加 projects），新增 `placement="down"`，首页向下展开。首页只在 Solo 模式启用 @ 和「+」菜单（上传、引用会话、引用 Issue / PR），工作流模式下「+」仍直接选文件。切回工作流模式时保留文字、去掉引用；`#n` 简写以首个选中仓库为准。
+- 为什么：用户在首页直接开新 Solo 时也要能带上其他会话或 issue/PR，不必先开会话再补发。
+- 如何验证：新增 Go 测试，覆盖创建时带引用（非法引用不留下会话、首轮锚点和提示词、标题）、首页搜索（会话 lane、无仓库提示、按所选仓库限定、未知项目、非法 lane）和 handler 端点；新增 `DashboardView.references.test.ts`，覆盖首页 @ 搜索参数、键盘选择、创建请求带引用、「+」菜单、粘贴链接、切换模式。全量门禁结果见 PR。
+
+### 2026-10-31（模型区「使用全部模型组」文案与分段选择）
+
+- 日期：2026-10-31（Asia/Hong_Kong）。
+- 范围：`web/src/components/agent/{ModelBindingEditor,AgentRuntimeBindings}.vue` 及其单测、`web/src/components/ui/AppSelect.vue`、`web/src/lib/agent/modelRouting.ts`、`web/e2e/model-routing.spec.ts`、`CHANGELOG.md`。
+- 做了什么：全部模型组开关的文案由「继承…」改为「使用全部模型组」，说明改为「自动包含所有已启用的模型组，之后新增或修改的模型组也会同步生效。」，英文同步。模型区先放「默认启动模型组」（标题、说明、下拉，右侧弱化显示工具 · 主模型），再放「可用模型组」，标题行右侧是「全部模型组 / 指定模型组」radiogroup 分段（SlidingTabs，28px，方向键切换，容器窄于 480px 时换行拉满）。下方面板三态：全部（层叠图标和说明，不列组名）、指定（默认组为带「默认启动」徽标的固定行，其他组悬停或聚焦显示设为默认 / 移除，触屏常显，底部「添加模型组」）、未选默认组（引导说明）。「全部」在没有默认组或表单禁用时置灰，没有默认组时提示「先选择默认启动模型组」。默认配置页「重置」移到「模型」标题行右侧。`AppSelect` 增加可选 `trailing` 插槽。`allConfigurations` / `configurationIds` 发出值、手动组恢复与禁用条件不变；`allowAllConfigurations=false` 的向导不显示分段。
+- 为什么：默认配置是最上层，没有可继承对象，「继承」与 Agent 的「继承默认配置」混淆；旧开关在切换时让卡片和默认组标签时有时无，布局跳动，指定模式里下拉和列表重复显示默认组。
+- 如何验证：`src/components/{agent,workspace,ui/AppSelect}`、`src/lib/agent` 共 72 个文件、793 项单测通过；`vue-tsc --noEmit` 和相关文件 eslint 通过。Playwright 跑 `model-routing`、`agent-create-wizard`、`onboarding-wizard`，38 项通过；新用例断言 radio 角色与文案、切换前后分段和默认组下拉 y 坐标不变，1440 / 390 亮暗下不溢出，并保存截图。`git-help-run-tags-404` 在等待 `agent-wizard-backend-cursor` 时超时，未改动的 main 上同样失败，与本次无关。
+
 ### 2026-10-30（Solo @ 引用：其他会话与 GitHub issue/PR）
 
 - 日期：2026-10-30。

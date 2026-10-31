@@ -33,6 +33,11 @@ import ProjectDrawer from '@/components/solo/ProjectDrawer.vue'
 import SoloLimitModal from '@/components/solo/SoloLimitModal.vue'
 import { soloPrefs, type HomeMode } from '@/lib/solo/soloPrefs'
 import { useSoloLauncher } from '@/lib/solo/useSoloLauncher'
+import ReferencePicker from '@/components/solo/ReferencePicker.vue'
+import ReferenceChip from '@/components/solo/ReferenceChip.vue'
+import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
+import { githubRepoOf } from '@/lib/solo/referenceDisplay'
+import type { ReferenceTab } from '@/lib/solo/useReferenceSearch'
 
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
@@ -124,9 +129,9 @@ async function submitComposer() {
     await send()
     return
   }
-  const started = await solo.start(draft.value, attachments.value.map((im) => ({ ...im })))
+  const started = await solo.start(draft.value, attachments.value.map((im) => ({ ...im })), '', mention.refs.value)
   if (started) {
-    draft.value = ''
+    mention.clear()
     attachments.value = []
   }
 }
@@ -139,6 +144,45 @@ function onProjectSaved(p: Parameters<typeof solo.onProjectSaved>[0]) {
 const composerFocused = ref(false)
 const composing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+
+// @ references: Solo mode only, scoped to the agent and repositories picked for the launch.
+const soloMode = computed(() => homeMode.value === 'solo')
+const soloDefaultRepo = computed(() => githubRepoOf(soloProjects.value.find((p) => p.id === soloProjectIds.value[0])?.repoUrl))
+const mention = useReferenceComposer({ input: draft, textarea: textareaRef, composing, defaultRepo: soloDefaultRepo, enabled: soloMode })
+const mentionPicker = mention.picker
+const mentionScope = computed(() => ({ agent: soloAgentName.value, projects: soloProjectIds.value }))
+const plusOpen = ref(false)
+watch(soloMode, (on) => {
+  if (!on) {
+    mention.trigger.value = null
+    mention.set(draft.value, [])
+  }
+  plusOpen.value = false
+})
+
+function onPlus() {
+  if (soloMode.value) plusOpen.value = !plusOpen.value
+  else openFilePicker()
+}
+
+function plusPickFiles() {
+  plusOpen.value = false
+  openFilePicker()
+}
+
+function plusReference(tab: ReferenceTab) {
+  plusOpen.value = false
+  mention.open(tab)
+}
+
+function onComposerPaste(e: ClipboardEvent) {
+  onPaste(e)
+  mention.onPaste(e)
+}
+
+function onComposerKeyup(e: KeyboardEvent) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') mention.updateTrigger()
+}
 const homeContentEl = ref<HTMLDivElement | null>(null)
 const homeBrandBlockEl = ref<HTMLDivElement | null>(null)
 const homeModeTopInset = ref<number | null>(null)
@@ -263,9 +307,11 @@ function autoGrow() {
 function onTextInput() {
   autoGrow()
   typingTick.value++
+  mention.updateTrigger()
 }
 
 function onComposerKeydown(e: KeyboardEvent) {
+  if (mention.onKeydown(e)) return
   // plan g1.1 — Ctrl/⌘+Enter sends; bare Enter / Shift+Enter insert newline
   if (e.key !== 'Enter') return
   if (composing.value || e.isComposing || e.keyCode === 229) return
@@ -280,6 +326,7 @@ function onComposerFocus() {
 
 function onComposerBlur() {
   composerFocused.value = false
+  mention.trigger.value = null
 }
 
 function goEditWorkflow(id: string) {
@@ -416,8 +463,9 @@ function editMenuWorkflow() {
   void router.push(`/workflows/${target.id}/edit`)
 }
 
-function onWindowPointerDown() {
+function onWindowPointerDown(e: PointerEvent) {
   if (workflowMenuOpen.value) closeWorkflowMenu()
+  if (plusOpen.value && !(e.target as HTMLElement | null)?.closest?.('[data-home-plus]')) plusOpen.value = false
 }
 
 function onWindowKeydown(e: KeyboardEvent) {
@@ -764,6 +812,37 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
+        <div
+          v-if="soloMode && mention.tokens.value.length"
+          class="mb-2 flex w-full min-w-0 flex-wrap gap-1.5"
+          data-testid="home-reference-chips"
+        >
+          <ReferenceChip
+            v-for="(tk, ti) in mention.tokens.value"
+            :key="tk.ref.target"
+            :reference="tk.ref"
+            :default-repo="soloDefaultRepo"
+            removable
+            @remove="mention.drop(ti)"
+          />
+        </div>
+        <div class="relative w-full">
+        <ReferencePicker
+          v-if="soloMode && mention.trigger.value"
+          ref="mentionPicker"
+          placement="down"
+          :scope="mentionScope"
+          :query="mention.trigger.value.query"
+          :taken="mention.targets.value"
+          :full="mention.full.value"
+          :initial-tab="mention.pickerTab.value"
+          @pick="mention.pick"
+        />
+        <div v-if="plusOpen" class="home-plus-menu" role="menu" data-testid="home-plus-menu" data-home-plus>
+          <button type="button" role="menuitem" class="home-plus-menu__item" @click="plusPickFiles"><Icon name="paperclip" :size="14" />{{ t('pages.solo.reference.menu.upload') }}</button>
+          <button type="button" role="menuitem" class="home-plus-menu__item" data-testid="home-plus-session" @click="plusReference('solo')"><Icon name="chat" :size="14" />{{ t('pages.solo.reference.menu.session') }}</button>
+          <button type="button" role="menuitem" class="home-plus-menu__item" data-testid="home-plus-github" @click="plusReference('issue')"><Icon name="branch" :size="14" />{{ t('pages.solo.reference.menu.github') }}</button>
+        </div>
         <form
           class="home-composer flex w-full flex-col overflow-hidden border"
           data-testid="home-composer"
@@ -793,7 +872,9 @@ onBeforeUnmount(() => {
               @keydown="onComposerKeydown"
               @compositionstart="composing = true"
               @compositionend="composing = false"
-              @paste="onPaste"
+              @paste="onComposerPaste"
+              @click="mention.updateTrigger"
+              @keyup="onComposerKeyup"
               @focus="onComposerFocus"
               @blur="onComposerBlur"
             />
@@ -817,7 +898,10 @@ onBeforeUnmount(() => {
               :disabled="composerBusy"
               :title="t('pages.clarify.addImage')"
               data-testid="home-composer-plus"
-              @click="openFilePicker"
+              data-home-plus
+              :aria-haspopup="soloMode ? 'menu' : undefined"
+              :aria-expanded="soloMode ? plusOpen : undefined"
+              @click="onPlus"
             >
               <Icon name="plus" :size="16" />
             </button>
@@ -884,6 +968,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </form>
+        </div>
       </div>
 
       <Transition name="home-mode-tail" mode="out-in">
@@ -1278,6 +1363,10 @@ html.light .home-shell :deep(.home-particle-mesh__canvas) {
   background: color-mix(in srgb, rgb(var(--c-base)) 35%, rgb(var(--c-surface)));
 }
 
+html.light .home-composer__toolbar {
+  background: rgb(var(--c-surface));
+}
+
 .home-mode-controls {
   flex: 0 1 auto;
 }
@@ -1335,6 +1424,33 @@ html.light .home-shell :deep(.home-particle-mesh__canvas) {
   vertical-align: -2px;
   background: rgb(var(--c-accent));
   animation: home-ph-caret 1s steps(1) infinite;
+}
+
+.home-plus-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 170px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 10px;
+  background: rgb(var(--c-elevated));
+  padding: 4px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+}
+.home-plus-menu__item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: rgb(var(--c-txt));
+  font-size: 12.5px;
+  text-align: left;
+}
+.home-plus-menu__item:hover {
+  background: rgb(var(--c-accent) / 0.07);
 }
 
 .home-composer__plus {
@@ -1511,7 +1627,7 @@ html.light .home-composer__send:disabled {
 }
 
 html.light .home-shell__card-top {
-  background: linear-gradient(155deg, rgb(var(--c-surface)), rgb(244, 244, 245));
+  background: rgb(var(--c-surface));
 }
 
 html.light .home-shell__card--selected .home-shell__card-top {

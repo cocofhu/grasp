@@ -32,7 +32,6 @@ const TEMPLATES = [
     summary: '按计划实现',
     capabilities: {
       interaction: 'auto',
-      review: true,
       tools: ['set_preview', 'update_plan_status'],
       reads: ['*'],
       writes: [{ schema: 'implementation_result', required: true }],
@@ -45,7 +44,6 @@ const TEMPLATES = [
     summary: '执行测试并做代码评审',
     capabilities: {
       interaction: 'auto',
-      review: true,
       tools: ['set_preview', 'update_plan_status'],
       reads: ['*'],
       writes: [

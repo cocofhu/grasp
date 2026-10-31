@@ -329,7 +329,7 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="model-connection-form"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="api-account-more-model-key"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="workspace-credential-clear-model-key"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-credential-delete-model-key"]').exists()).toBe(false)
     await wrapper.get('[data-testid="model-connection-base-url"]').setValue('https://updated.example.test/v1')
     await wrapper.get('[data-testid="model-connection-form"]').trigger('submit')
     await flushPromises()
@@ -476,12 +476,12 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.find('input, textarea').exists()).toBe(false)
     const cursor = rowByAlias(wrapper, 'Cursor API key')
     expect(cursor.get('[data-testid="workspace-credential-edit-cursor-api"]').attributes('aria-label')).toBe('编辑')
-    expect(cursor.get('[data-testid="workspace-credential-clear-cursor-api"]').attributes('aria-label')).toBe('清除')
+    expect(cursor.get('[data-testid="workspace-credential-delete-cursor-api"]').attributes('aria-label')).toBe('删除')
     expect(cursor.get('[data-testid="workspace-credential-status"]').text()).toContain('已配置')
     const github = rowByAlias(wrapper, 'GitHub token')
     expect(github.get('[data-testid="workspace-credential-actions"]').text()).toContain('填写')
     expect(github.get('[data-testid="workspace-credential-status"]').text()).toContain('未配置')
-    expect(github.find('[data-testid="workspace-credential-clear-github"]').exists()).toBe(false)
+    expect(github.get('[data-testid="workspace-credential-delete-github"]').attributes('aria-label')).toBe('删除')
     expect(github.find('[data-testid="workspace-credential-masked"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('secret-value')
     expect(wrapper.find('[data-provider-logo="cursor"]').exists()).toBe(true)
@@ -519,7 +519,8 @@ describe('WorkspaceCredentialsPanel', () => {
     wrapper.unmount()
   })
 
-  it('writes only on an explicit save and clears through DELETE', async () => {
+  it('writes only on an explicit save and deletes the whole row from the trash button', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.find('[data-testid="workspace-credential-input-github"]').exists()).toBe(false)
@@ -541,15 +542,14 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.find('[data-testid="workspace-credential-input-github"]').exists()).toBe(false)
     expect(rowByAlias(wrapper, 'GitHub token').get('[data-testid="workspace-credential-masked"]').text()).toContain('••••')
 
-    await wrapper.find('[data-testid="workspace-credential-clear-cursor-api"]').trigger('click')
+    await wrapper.find('[data-testid="workspace-credential-delete-cursor-api"]').trigger('click')
     await flushPromises()
-    expect(mocks.del).toHaveBeenCalledWith('cursor-api')
-    const cleared = rowByAlias(wrapper, 'Cursor API key')
-    expect(cleared.find('[data-testid="workspace-credential-masked"]').exists()).toBe(false)
-    expect(cleared.find('[data-testid="workspace-credential-fill-cursor-api"]').exists()).toBe(true)
-    expect(cleared.find('[data-testid="workspace-credential-clear-cursor-api"]').exists()).toBe(false)
-    expect(cleared.text()).not.toContain('sk-…1234')
+    expect(mocks.remove).toHaveBeenCalledWith('cursor-api')
+    expect(mocks.del).not.toHaveBeenCalled()
+    expect(wrapper.findAll('[data-testid="workspace-credential-alias"]').map((node) => node.text())).not.toContain('Cursor API key')
+    expect(wrapper.text()).not.toContain('sk-…1234')
     wrapper.unmount()
+    confirm.mockRestore()
   })
 
   it('opens an empty editor for one row and cancels without saving', async () => {
@@ -565,7 +565,7 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(editor.find('[data-testid="workspace-credential-save-cursor-api"]').exists()).toBe(true)
     expect(editor.find('[data-testid="workspace-credential-cancel-cursor-api"]').exists()).toBe(true)
     expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="workspace-credential-masked"]').text()).toContain('sk-…1234')
-    expect(wrapper.find('[data-testid="workspace-credential-clear-cursor-api"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="workspace-credential-delete-cursor-api"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="workspace-credential-fill-ssh"]').trigger('click')
     expect(wrapper.get('[data-testid="workspace-credential-input-ssh"]').element.tagName).toBe('TEXTAREA')
@@ -581,7 +581,8 @@ describe('WorkspaceCredentialsPanel', () => {
     wrapper.unmount()
   })
 
-  it('keeps the draft open when save fails and the mask when clear fails', async () => {
+  it('keeps the draft open when save fails and the row when delete fails', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     mocks.put.mockRejectedValueOnce(new Error('save failed'))
     const wrapper = mountPanel()
     await flushPromises()
@@ -594,12 +595,13 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="workspace-credential-masked"]').text()).toContain('sk-…1234')
     expect(mocks.error).toHaveBeenCalled()
 
-    mocks.del.mockRejectedValueOnce(new Error('clear failed'))
-    await wrapper.get('[data-testid="workspace-credential-clear-cursor-api"]').trigger('click')
+    mocks.remove.mockRejectedValueOnce(new Error('delete failed'))
+    await wrapper.get('[data-testid="workspace-credential-delete-cursor-api"]').trigger('click')
     await flushPromises()
     expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="workspace-credential-masked"]').text()).toContain('sk-…1234')
     expect(rowByAlias(wrapper, 'Cursor API key').text()).toContain('已配置')
     wrapper.unmount()
+    confirm.mockRestore()
   })
 
   it('leaves adapter-managed credentials read only', async () => {
@@ -619,7 +621,7 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(row.find('[data-testid="workspace-credential-edit-vault-key"]').exists()).toBe(false)
     expect(row.find('[data-testid="workspace-credential-fill-vault-key"]').exists()).toBe(false)
     expect(row.find('[data-testid="workspace-credential-input-vault-key"]').exists()).toBe(false)
-    expect(row.find('[data-testid="workspace-credential-clear-vault-key"]').exists()).toBe(false)
+    expect(row.find('[data-testid="workspace-credential-delete-vault-key"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -629,7 +631,7 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.get('h1').text()).toBe('Workspace credentials')
     expect(wrapper.get('[data-testid="workspace-credential-create"]').text()).toBe('Add')
     expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="workspace-credential-edit-cursor-api"]').attributes('aria-label')).toBe('Edit')
-    expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="workspace-credential-clear-cursor-api"]').attributes('aria-label')).toBe('Clear')
+    expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="workspace-credential-delete-cursor-api"]').attributes('aria-label')).toBe('Delete')
     expect(rowByAlias(wrapper, 'GitHub token').get('[data-testid="workspace-credential-actions"]').text()).toContain('Fill in')
     expect(wrapper.text()).not.toContain('Hidden')
     expect(wrapper.text()).not.toContain('Keys used by coding assistants and model calls.')
@@ -1050,7 +1052,8 @@ describe('WorkspaceCredentialsPanel', () => {
     wrapper.unmount()
   })
 
-  it('lists model-service keys as ordinary credential rows and allows replacement or clearing', async () => {
+  it('lists model-service keys as ordinary credential rows and allows replacement or deletion', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const opencode = { id: 'opencode', type: 'ai', name: 'DeepSeek', purpose: 'model_api', issuer: 'deepseek', secretKind: 'api_key', provider: 'custom', envKey: 'GRASP_MODEL_API_KEY', configured: true, masked: 'sk-…9999', metadata: { provider: 'deepseek', model: 'deepseek/deepseek-flash', vision: false } }
     const wrapper = mountPanel({ items: [...config.items, opencode] })
     await flushPromises()
@@ -1064,10 +1067,12 @@ describe('WorkspaceCredentialsPanel', () => {
     await wrapper.get('[data-testid="workspace-credential-save-opencode"]').trigger('click')
     await flushPromises()
     expect(mocks.put).toHaveBeenCalledWith('opencode', expect.objectContaining({ value: 'sk-new' }))
-    await wrapper.get('[data-testid="workspace-credential-clear-opencode"]').trigger('click')
+    await wrapper.get('[data-testid="workspace-credential-delete-opencode"]').trigger('click')
     await flushPromises()
-    expect(mocks.del).toHaveBeenCalledWith('opencode')
+    expect(mocks.remove).toHaveBeenCalledWith('opencode')
+    expect(mocks.del).not.toHaveBeenCalled()
     wrapper.unmount()
+    confirm.mockRestore()
   })
 
   it('shows only current workspace credentials when an empty Cursor slot exists beside CursorDefault', async () => {
@@ -1223,73 +1228,125 @@ describe('WorkspaceCredentialsPanel', () => {
     wrapper.unmount()
   })
 
-  it('deletes an unconfigured workspace API account after confirmation and keeps other sections unchanged', async () => {
+  it('deletes an unfilled Agent CLI credential from the trash button after confirmation', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    const foreign: CredentialItem = { id: 'foreign-api', type: 'ai', name: 'Imported', purpose: 'model_api', issuer: 'openai', configured: true, masked: 'sk-…1', source: 'vault' }
-    const empty: CredentialItem = { id: 'empty-api', type: 'ai', name: '1', purpose: 'model_api', issuer: 'deepseek', provider: 'deepseek', configured: false, source: 'workspace' }
-    const wrapper = mountPanel({ items: [...config.items, empty, serviceKey, foreign] })
+    const unfilled: CredentialItem = { id: 'cursor-empty', type: 'ai', name: '123123', purpose: 'tool_auth', toolId: 'cursor', provider: 'cursor', configured: false, source: 'workspace' }
+    const wrapper = mountPanel({ items: [...config.items, unfilled] })
     await flushPromises()
-    const row = rowByAlias(wrapper, '1')
-    expect(row.get('[data-testid="workspace-credential-fill-empty-api"]').text()).toContain('填写')
-    expect(row.find('[data-testid="workspace-credential-clear-empty-api"]').exists()).toBe(false)
-    expect(row.get('[data-testid="api-account-more-empty-api"]').attributes('aria-label')).toBe('更多操作 · 1')
-    expect(wrapper.get('[data-testid="workspace-credential-section-api"]').get('.credentials-section-count').text()).toBe('3')
-    for (const section of ['coding', 'git', 'ssh', 'other']) {
-      const group = wrapper.find(`[data-testid="workspace-credential-section-${section}"]`)
-      if (group.exists()) expect(group.find('[data-testid^="api-account-"]').exists()).toBe(false)
-    }
-    expect(rowByAlias(wrapper, 'Imported').find('[data-testid="api-account-more-foreign-api"]').exists()).toBe(false)
-    await openApiAccountMenu(wrapper, 'empty-api')
-    const remove = apiAccountDelete(wrapper, 'empty-api')
-    expect(remove.getAttribute('aria-label')).toBe('删除 · 1')
-    remove.click()
+    const row = rowByAlias(wrapper, '123123')
+    expect(row.get('[data-testid="workspace-credential-fill-cursor-empty"]').text()).toContain('填写')
+    expect(row.get('[data-testid="workspace-credential-delete-cursor-empty"]').attributes('aria-label')).toBe('删除')
+    expect(wrapper.get('[data-testid="workspace-credential-section-coding"]').get('.credentials-section-count').text()).toBe('2')
+
+    await deleteButton(wrapper, 'cursor-empty').trigger('click')
     await flushPromises()
     expect(confirm).toHaveBeenCalledTimes(1)
     const message = String(confirm.mock.calls[0]?.[0])
-    expect(message).toContain('使用此 API 账号的模型配置会失效')
-    expect(message).toContain('绑定这些配置的 Agent 将无法运行')
-    expect(message).toContain('「1」')
+    expect(message).toContain('「123123」')
+    expect(message).toContain('引用它的模型配置或 Git 绑定会失效')
     expect(mocks.remove).not.toHaveBeenCalled()
     expect(mocks.del).not.toHaveBeenCalled()
-    expect(rowByAlias(wrapper, '1').text()).toContain('尚未添加凭据')
+    expect(rowByAlias(wrapper, '123123').exists()).toBe(true)
 
     confirm.mockReturnValue(true)
-    await openApiAccountMenu(wrapper, 'empty-api')
-    apiAccountDelete(wrapper, 'empty-api').click()
+    await deleteButton(wrapper, 'cursor-empty').trigger('click')
     await flushPromises()
     expect(mocks.remove).toHaveBeenCalledTimes(1)
-    expect(mocks.remove).toHaveBeenCalledWith('empty-api')
+    expect(mocks.remove).toHaveBeenCalledWith('cursor-empty')
     expect(mocks.del).not.toHaveBeenCalled()
-    expect(wrapper.findAll('[data-testid="workspace-credential-alias"]').map((node) => node.text())).not.toContain('1')
-    expect(wrapper.get('[data-testid="workspace-credential-section-api"]').get('.credentials-section-count').text()).toBe('2')
-    expect(mocks.success).toHaveBeenCalledWith('API 账号已删除')
-    expect(wrapper.get('[data-testid="workspace-credential-section-coding"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="workspace-credential-alias"]').map((node) => node.text())).not.toContain('123123')
+    expect(wrapper.get('[data-testid="workspace-credential-section-coding"]').get('.credentials-section-count').text()).toBe('1')
+    expect(mocks.success).toHaveBeenCalledWith('凭据已删除')
+    expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(wrapper.get('[data-testid="workspace-credential-section-git"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="workspace-credential-section-ssh"]').exists()).toBe(true)
     wrapper.unmount()
     confirm.mockRestore()
   })
 
-  it('clears a configured API account in place and deletes the whole account only after confirmation', async () => {
+  it('offers the trash button on every workspace credential kind but not on adapter-managed rows or inline', async () => {
+    const custom: CredentialItem = { id: 'custom-env', type: 'custom', name: 'Custom env', purpose: 'custom', provider: 'custom', envKey: 'MY_TOKEN', configured: false }
+    const empty: CredentialItem = { id: 'empty-api', type: 'ai', name: '1', purpose: 'model_api', issuer: 'deepseek', provider: 'deepseek', configured: false, source: 'workspace' }
+    const foreign: CredentialItem = { id: 'foreign-api', type: 'ai', name: 'Imported', purpose: 'model_api', issuer: 'openai', configured: true, masked: 'sk-…1', source: 'vault' }
+    const rows = [...config.items, custom, empty, serviceKey, foreign]
+    const wrapper = mountPanel({ items: rows })
+    await flushPromises()
+    for (const id of ['cursor-api', 'github', 'ssh', 'custom-env', 'empty-api', 'model-key']) {
+      expect(wrapper.find(`[data-testid="workspace-credential-delete-${id}"]`).exists(), id).toBe(true)
+    }
+    expect(wrapper.find('[data-testid="workspace-credential-delete-foreign-api"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid^="api-account-more-"]').exists()).toBe(false)
+    wrapper.unmount()
+
+    const inline = mountPanel({ items: rows }, 'zh-CN', { inline: true })
+    await flushPromises()
+    expect(inline.find('[data-testid^="workspace-credential-delete-"]').exists()).toBe(false)
+    inline.unmount()
+  })
+
+  it('deletes a Git credential with the generic confirmation and English copy', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mountPanel(config, 'en')
+    await flushPromises()
+    await deleteButton(wrapper, 'github').trigger('click')
+    await flushPromises()
+    const message = String(confirm.mock.calls[0]?.[0])
+    expect(message).toContain('"GitHub token"')
+    expect(message).toContain('Git bindings that reference it will stop working')
+    expect(mocks.remove).toHaveBeenCalledWith('github')
+    expect(mocks.del).not.toHaveBeenCalled()
+    expect(mocks.success).toHaveBeenCalledWith('Credential deleted')
+    expect(wrapper.find('[data-testid="workspace-credential-section-git"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-credential-section-coding"]').exists()).toBe(true)
+    wrapper.unmount()
+    confirm.mockRestore()
+  })
+
+  it('deletes an unconfigured workspace API account with the API account warning', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const empty: CredentialItem = { id: 'empty-api', type: 'ai', name: '1', purpose: 'model_api', issuer: 'deepseek', provider: 'deepseek', configured: false, source: 'workspace' }
+    const wrapper = mountPanel({ items: [...config.items, empty, serviceKey] })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="workspace-credential-section-api"]').get('.credentials-section-count').text()).toBe('2')
+    await deleteButton(wrapper, 'empty-api').trigger('click')
+    await flushPromises()
+    const message = String(confirm.mock.calls[0]?.[0])
+    expect(message).toContain('使用此 API 账号的模型配置会失效')
+    expect(message).toContain('绑定这些配置的 Agent 将无法运行')
+    expect(message).toContain('「1」')
+    expect(mocks.remove).toHaveBeenCalledWith('empty-api')
+    expect(mocks.del).not.toHaveBeenCalled()
+    expect(mocks.success).toHaveBeenCalledWith('API 账号已删除')
+    expect(wrapper.get('[data-testid="workspace-credential-section-api"]').get('.credentials-section-count').text()).toBe('1')
+    wrapper.unmount()
+    confirm.mockRestore()
+  })
+
+  it('removes the configured API account row instead of clearing it in place', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const wrapper = mountPanel({ items: [...config.items, serviceKey] })
     await flushPromises()
-    await wrapper.get('[data-testid="workspace-credential-clear-model-key"]').trigger('click')
-    await flushPromises()
-    expect(mocks.del).toHaveBeenCalledWith('model-key')
-    expect(mocks.remove).not.toHaveBeenCalled()
-    const kept = rowByAlias(wrapper, 'Shared model key')
-    expect(kept.text()).toContain('尚未添加凭据')
-    expect(kept.find('[data-testid="workspace-credential-masked"]').exists()).toBe(false)
-    expect(kept.find('[data-testid="workspace-credential-clear-model-key"]').exists()).toBe(false)
-    expect(kept.get('[data-testid="workspace-credential-fill-model-key"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="workspace-credential-section-api"]').get('.credentials-section-count').text()).toBe('1')
-    await openApiAccountMenu(wrapper, 'model-key')
-    apiAccountDelete(wrapper, 'model-key').click()
+    await deleteButton(wrapper, 'model-key').trigger('click')
     await flushPromises()
     expect(mocks.remove).toHaveBeenCalledWith('model-key')
+    expect(mocks.del).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="workspace-credential-section-api"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="workspace-credential-section-git"]').exists()).toBe(true)
+    wrapper.unmount()
+    confirm.mockRestore()
+  })
+
+  it('drops the editing state of a credential that is deleted while its editor is open', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="workspace-credential-fill-github"]').trigger('click')
+    expect(wrapper.find('[data-testid="workspace-credential-editor-github"]').exists()).toBe(true)
+    expect(wrapper.emitted('editing')?.at(-1)).toEqual([true])
+    await deleteButton(wrapper, 'github').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="workspace-credential-editor-github"]').exists()).toBe(false)
+    expect(wrapper.emitted('editing')?.at(-1)).toEqual([false])
     wrapper.unmount()
     confirm.mockRestore()
   })
@@ -1299,11 +1356,9 @@ describe('WorkspaceCredentialsPanel', () => {
     mocks.connections.mockResolvedValue({ items: [modelService] })
     mocks.remove.mockRejectedValueOnce(new Error('delete failed'))
     const wrapper = mountPanel({ items: [...config.items, serviceKey] })
-    document.body.appendChild(wrapper.element)
     await flushPromises()
     const listed = mocks.connections.mock.calls.length
-    await openApiAccountMenu(wrapper, 'model-key')
-    apiAccountDelete(wrapper, 'model-key').click()
+    await deleteButton(wrapper, 'model-key').trigger('click')
     await flushPromises()
     expect(mocks.error).toHaveBeenCalledWith('删除 API 账号失败')
     expect(mocks.connections.mock.calls.length).toBe(listed)
@@ -1317,14 +1372,12 @@ describe('WorkspaceCredentialsPanel', () => {
     let release: (value: { status: string }) => void = () => {}
     mocks.remove.mockImplementation(() => new Promise((resolve) => { release = resolve }))
     const pendingPanel = mountPanel({ items: [serviceKey] })
-    document.body.appendChild(pendingPanel.element)
     await flushPromises()
-    await openApiAccountMenu(pendingPanel, 'model-key')
-    apiAccountDelete(pendingPanel, 'model-key').click()
+    await deleteButton(pendingPanel, 'model-key').trigger('click')
     await flushPromises()
     expect(mocks.remove).toHaveBeenCalledTimes(1)
-    await openApiAccountMenu(pendingPanel, 'model-key')
-    apiAccountDelete(pendingPanel, 'model-key').click()
+    expect(deleteButton(pendingPanel, 'model-key').attributes('disabled')).toBeDefined()
+    await deleteButton(pendingPanel, 'model-key').trigger('click')
     await flushPromises()
     expect(confirm).toHaveBeenCalledTimes(1)
     expect(mocks.remove).toHaveBeenCalledTimes(1)
@@ -1332,6 +1385,22 @@ describe('WorkspaceCredentialsPanel', () => {
     await flushPromises()
     expect(pendingPanel.find('[data-testid="workspace-credential-section-api"]').exists()).toBe(false)
     pendingPanel.unmount()
+    confirm.mockRestore()
+  })
+
+  it('keeps a non-API credential row and reports the generic error when deletion fails', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mocks.remove.mockRejectedValueOnce(new Error('delete failed'))
+    const wrapper = mountPanel()
+    await flushPromises()
+    const listed = mocks.connections.mock.calls.length
+    await deleteButton(wrapper, 'cursor-api').trigger('click')
+    await flushPromises()
+    expect(mocks.error).toHaveBeenCalledWith('删除凭据失败')
+    expect(mocks.connections.mock.calls.length).toBe(listed)
+    expect(rowByAlias(wrapper, 'Cursor API key').get('[data-testid="workspace-credential-masked"]').text()).toContain('sk-…1234')
+    expect(wrapper.emitted('changed')).toBeUndefined()
+    wrapper.unmount()
     confirm.mockRestore()
   })
 
@@ -1347,12 +1416,10 @@ describe('WorkspaceCredentialsPanel', () => {
       throw new Error('refresh failed')
     })
     const wrapper = mountPanel({ items: [serviceKey, other] })
-    document.body.appendChild(wrapper.element)
     await flushPromises()
     await wrapper.get('[data-testid="workspace-credential-edit-other-key"]').trigger('click')
     expect(wrapper.get('[data-testid="model-credential-service-other-service"]').text()).toContain('https://other.example.test/v1')
-    await openApiAccountMenu(wrapper, 'model-key')
-    apiAccountDelete(wrapper, 'model-key').click()
+    await deleteButton(wrapper, 'model-key').trigger('click')
     await flushPromises()
     expect(mocks.success).toHaveBeenCalledWith('API 账号已删除')
     expect(wrapper.findAll('[data-testid="workspace-credential-alias"]').map((node) => node.text())).not.toContain('Shared model key')
@@ -1361,45 +1428,10 @@ describe('WorkspaceCredentialsPanel', () => {
     wrapper.unmount()
     confirm.mockRestore()
   })
-
-  it('moves to the API account delete item with the keyboard and closes without deleting', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const empty: CredentialItem = { id: 'empty-api', type: 'ai', name: '1', purpose: 'model_api', issuer: 'deepseek', configured: false }
-    const wrapper = mountPanel({ items: [empty] })
-    document.body.appendChild(wrapper.element)
-    await flushPromises()
-    const trigger = wrapper.get('[data-testid="api-account-more-empty-api"]')
-    vi.spyOn(trigger.element as HTMLElement, 'getBoundingClientRect').mockReturnValue(new DOMRect(180, 20, 28, 28))
-    await trigger.trigger('keydown', { key: 'ArrowDown' })
-    await flushPromises()
-    const remove = apiAccountDelete(wrapper, 'empty-api')
-    expect(remove.getAttribute('role')).toBe('menuitem')
-    expect(remove.getAttribute('aria-label')).toContain('1')
-    const menu = document.querySelector<HTMLElement>('[data-testid="api-account-menu-empty-api"]')
-    expect(menu?.style.visibility).not.toBe('hidden')
-    expect(document.activeElement).toBe(remove)
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
-    await flushPromises()
-    expect(document.querySelector('[data-testid="api-account-delete-empty-api"]')).toBeNull()
-    expect(mocks.remove).not.toHaveBeenCalled()
-    expect(rowByAlias(wrapper, '1').exists()).toBe(true)
-    wrapper.unmount()
-    confirm.mockRestore()
-  })
 })
 
-function openApiAccountMenu(wrapper: ReturnType<typeof mountPanel>, id: string) {
-  const trigger = wrapper.get(`[data-testid="api-account-more-${id}"]`)
-  vi.spyOn(trigger.element as HTMLElement, 'getBoundingClientRect').mockReturnValue(new DOMRect(180, 20, 28, 28))
-  return trigger.trigger('click').then(() => flushPromises())
-}
-
-function apiAccountDelete(wrapper: ReturnType<typeof mountPanel>, id: string) {
-  const selector = `[data-testid="api-account-delete-${id}"]`
-  const found = wrapper.find(selector)
-  const button = (found.exists() ? found.element : document.querySelector(selector)) as HTMLButtonElement | null
-  if (!button) throw new Error(`missing API account delete ${id}`)
-  return button
+function deleteButton(wrapper: ReturnType<typeof mountPanel>, id: string) {
+  return wrapper.get(`[data-testid="workspace-credential-delete-${id}"]`)
 }
 
 describe('WorkspaceCredentialsPanel overview', () => {

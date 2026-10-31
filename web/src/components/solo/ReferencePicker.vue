@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, toRef, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import type { GitHubReferenceCandidate, MessageReference, SoloReferenceCandidate } from '@/lib/api/apiTypes'
-import { useReferenceSearch, type GitHubStateFilter, type ReferenceTab } from '@/lib/solo/useReferenceSearch'
+import { useReferenceSearch, type GitHubStateFilter, type ReferenceScope, type ReferenceTab } from '@/lib/solo/useReferenceSearch'
 import { referenceIcon } from '@/lib/solo/referenceDisplay'
 
 const props = defineProps<{
-  sessionId: string
+  /** An open session, or the launch composer's agent and projects. */
+  scope: ReferenceScope
   query: string
   /** Targets already picked in this message; hidden from the list. */
   taken: string[]
   full: boolean
   initialTab?: ReferenceTab
+  /** Opens above the composer by default; the home composer opens below. */
+  placement?: 'up' | 'down'
 }>()
 const emit = defineEmits<{ (e: 'pick', ref: MessageReference): void }>()
 const { t } = useI18n()
@@ -22,14 +25,14 @@ const ghState = ref<GitHubStateFilter>('open')
 /** -1 until the user moves: Enter without a highlight sends the text as typed. */
 const sel = ref(-1)
 const list = ref<HTMLElement | null>(null)
-const search = useReferenceSearch(toRef(props, 'sessionId'))
+const search = useReferenceSearch(computed(() => props.scope))
 const TABS: ReferenceTab[] = ['all', 'solo', 'issue', 'pr']
 const ALL_LIMIT = 5
 
 type Option =
   | { type: 'item'; key: string; ref: MessageReference; icon: string; tone: string; title: string; subtitle: string }
   | { type: 'action'; key: string; label: string; run: () => void }
-type Section = { key: string; title: string; options: Option[]; loading: boolean; note: string; error: boolean }
+type Section = { key: string; title: string; options: Option[]; loading: boolean; first: boolean; note: string; error: boolean }
 
 function soloOption(item: SoloReferenceCandidate): Option {
   const when = item.lastActiveAt ? new Date(item.lastActiveAt).toLocaleString() : ''
@@ -50,10 +53,10 @@ function githubOption(item: GitHubReferenceCandidate): Option {
   }
 }
 
-function laneNote(lane: { loading: boolean; error: string; hint: string; skipped: boolean }, count: number) {
+function laneNote(lane: { loading: boolean; settled: boolean; error: string; hint: string }, count: number) {
   if (lane.error) return lane.error
   if (lane.hint && !count) return lane.hint
-  if (!lane.loading && !count) return t('pages.solo.reference.noMatch')
+  if (lane.settled && !count) return t('pages.solo.reference.noMatch')
   return ''
 }
 
@@ -74,8 +77,9 @@ const sections = computed<Section[]>(() => {
       rows.push({ type: 'action', key: `load:${key}`, label: lane.paging ? t('pages.solo.reference.loading') : t('pages.solo.reference.loadMore'),
         run: () => search.loadMore(key === 'solo' ? 'solo' : 'github', props.query, tab.value, ghState.value) })
     }
-    if (tab.value === 'all' && !rows.length && !lane.loading && !lane.error && !lane.hint) return
-    out.push({ key, title, options: rows, loading: lane.loading, note: laneNote(lane, options.length), error: !!lane.error })
+    const first = lane.loading && !lane.settled
+    if (tab.value === 'all' && !rows.length && !first && !lane.error && !lane.hint) return
+    out.push({ key, title, options: rows, loading: lane.loading, first, note: laneNote(lane, options.length), error: !!lane.error })
   }
   if (tab.value === 'all' || tab.value === 'solo') add('solo', t('pages.solo.reference.tabs.solo'), soloItems, search.solo, !!search.solo.nextPage)
   const ghMore = !!search.github.nextPage
@@ -92,12 +96,13 @@ const sections = computed<Section[]>(() => {
 
 const options = computed(() => sections.value.flatMap((s) => s.options))
 const empty = computed(() => !props.full && !sections.value.length)
+const refreshing = computed(() => sections.value.some((s) => s.loading && !s.first))
 
 function refresh() {
   sel.value = -1
   search.search(props.query, tab.value, ghState.value)
 }
-watch(() => [props.query, props.sessionId] as const, refresh, { immediate: true })
+watch(() => [props.query, JSON.stringify(props.scope)] as const, refresh, { immediate: true })
 watch([tab, ghState], refresh)
 
 function setTab(next: ReferenceTab) {
@@ -157,7 +162,7 @@ defineExpose({ move, confirm, cycleTab, setTab })
 </script>
 
 <template>
-  <div class="ref-picker" role="listbox" :aria-label="t('pages.solo.reference.pickerLabel')" data-testid="solo-reference-picker" @mousedown.prevent>
+  <div class="ref-picker" :class="{ 'ref-picker--down': placement === 'down' }" role="listbox" :aria-label="t('pages.solo.reference.pickerLabel')" data-testid="solo-reference-picker" @mousedown.prevent>
     <div class="ref-picker__tabs">
       <div class="flex min-w-0 flex-1 items-center gap-0.5">
         <button
@@ -185,13 +190,13 @@ defineExpose({ move, confirm, cycleTab, setTab })
         >{{ t(`pages.solo.reference.state.${s}`) }}</button>
       </div>
     </div>
-    <div ref="list" class="ref-picker__list scroll-area">
+    <div ref="list" class="ref-picker__list scroll-area" :class="{ 'ref-picker__list--stale': refreshing }" :aria-busy="sections.some((s) => s.loading)">
       <p v-if="full" class="ref-picker__note">{{ t('pages.solo.reference.full', { n: 5 }) }}</p>
       <p v-else-if="empty" class="ref-picker__note">{{ t('pages.solo.reference.noMatch') }}</p>
       <template v-for="section in sections" :key="section.key">
         <h5 class="ref-picker__heading">
           {{ section.title }}
-          <Icon v-if="section.loading" name="spinner" :size="11" class="ml-auto" />
+          <span v-if="section.loading" class="ref-picker__spin ml-auto inline-flex"><Icon name="spinner" :size="11" /></span>
         </h5>
         <template v-for="option in section.options" :key="option.key">
           <div
@@ -223,7 +228,7 @@ defineExpose({ move, confirm, cycleTab, setTab })
             <span class="text-[12px] text-accent">{{ option.label }}</span>
           </div>
         </template>
-        <div v-if="section.loading && !section.options.length" class="ref-picker__skeleton" aria-hidden="true"><i /><i /></div>
+        <div v-if="section.first && !section.options.length" class="ref-picker__skeleton" aria-hidden="true"><i /><i /></div>
         <p v-else-if="section.note && !section.options.length" class="ref-picker__note" :class="{ 'text-err': section.error }">{{ section.note }}</p>
         <p v-else-if="section.error" class="ref-picker__note text-err">{{ section.note }}</p>
       </template>
@@ -246,6 +251,21 @@ defineExpose({ move, confirm, cycleTab, setTab })
   border-radius: 12px;
   background: rgb(var(--c-elevated));
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+  transform-origin: bottom center;
+  animation: ref-picker-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ref-picker-from: 4px;
+}
+.ref-picker--down {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform-origin: top center;
+  --ref-picker-from: -4px;
+}
+@keyframes ref-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--ref-picker-from)) scale(0.985);
+  }
 }
 .ref-picker__tabs {
   display: flex;
@@ -300,6 +320,21 @@ defineExpose({ move, confirm, cycleTab, setTab })
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 2px 6px 6px;
+  transition: opacity 160ms ease;
+}
+/* Delay the dim so replies that land quickly never flicker. */
+.ref-picker__list--stale {
+  opacity: 0.6;
+  transition-delay: 180ms;
+}
+.ref-picker__spin,
+.ref-picker__skeleton {
+  animation: ref-picker-fade 160ms ease 180ms backwards;
+}
+@keyframes ref-picker-fade {
+  from {
+    opacity: 0;
+  }
 }
 .ref-picker__heading {
   display: flex;
@@ -346,7 +381,27 @@ defineExpose({ move, confirm, cycleTab, setTab })
   display: block;
   height: 22px;
   border-radius: 6px;
-  background: rgb(var(--c-overlay));
+  background: linear-gradient(90deg, rgb(var(--c-overlay)) 0%, rgb(var(--c-overlay) / 0.45) 50%, rgb(var(--c-overlay)) 100%) 0 0 / 200% 100%;
+  animation: ref-picker-shimmer 1.2s linear infinite;
+}
+.ref-picker__skeleton i:last-child {
+  width: 70%;
+}
+@keyframes ref-picker-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ref-picker,
+  .ref-picker__spin,
+  .ref-picker__skeleton,
+  .ref-picker__skeleton i {
+    animation: none;
+  }
+  .ref-picker__list {
+    transition: none;
+  }
 }
 .ref-tone--open {
   color: rgb(var(--c-ok));
