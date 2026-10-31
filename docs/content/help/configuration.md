@@ -26,6 +26,24 @@ Agent 可绑定多个已保存的 GitHub、GitLab 或 SSH 授权。所选授权�
 
 GitHub / GitLab 凭据在同一表单配置 Host 与 Token，Host 默认是官方站点，也支持自建域名及端口；不再单独配置 GitLab URL。默认配置可保存多个模型组和多个 Git 授权；每个 Agent 用独立开关选择是否继承模型或 Git 授权，关闭时使用自己的选择，默认项失效时不会自动换用其他配置。
 
+### 用 GitHub 登录（设备码）
+
+配置后，新增 github.com 的 GitHub 凭据时可以选「用 GitHub 登录」：页面显示 8 位验证码，用户在 `https://github.com/login/device` 输入并授权后，平台自动保存 Token，不需要手动创建 PAT。结果是一条普通 GitHub 凭据（`GITHUB_TOKEN`，Host 为 `https://github.com`），绑定和注入方式与粘贴的 Token 相同；凭据行会显示 GitHub 账号，并可「重新登录」更换 Token，凭据 ID、别名和已有绑定不变。未配置时界面只有粘贴 Token。
+
+部署方需要：
+
+1. 在 GitHub 的 **Settings → Developer settings → OAuth Apps** 新建 OAuth App（个人或组织均可）。Homepage URL 填平台地址；设备码流程不用回调，Authorization callback URL 可填同一地址。
+2. 在 App 设置中勾选 **Enable Device Flow**。没勾选时登录会提示 Device Flow 未开启。
+3. 把 App 的 **Client ID** 配给服务端：环境变量 `GRASP_GITHUB_OAUTH_CLIENT_ID`，或 YAML `github.oauth_client_id`（环境变量优先），然后重启服务。不需要 client secret，也不要配置它。
+
+说明与限制：
+
+- 申请的 scope 固定为 `repo read:org workflow`。Token 对授权用户能访问的所有仓库都有 `repo` 权限；需要按仓库细分权限时，仍粘贴 fine-grained PAT。授权结果缺少 `repo` 时凭据照常保存，但会提示可能无法克隆私有仓库。
+- 组织开启了 OAuth App 访问限制时，需要组织管理员批准该 OAuth App，否则 Token 访问不到该组织的仓库。
+- 只支持 github.com。自建 GitHub Enterprise Server 继续粘贴 Token。
+- 授权会话保存在服务进程内存，有效期以 GitHub 返回为准（通常 15 分钟）。服务重启后进行中的登录失效，重新获取验证码即可；多实例部署需要粘性会话。
+- OAuth App 的 Token 一年未使用会被 GitHub 自动吊销，届时在凭据行「重新登录」。
+
 ### 多模型组与上下文接续
 
 Agent 可绑定不同编码工具的多个模型组，并指定一个默认组。首页、Solo 新建会话及会话内的模型选择包含全部已绑定组的主模型和辅助模型；同名模型会标明所属模型组和工具。未主动选择时使用默认组的主模型，工作流自动执行也使用默认组。

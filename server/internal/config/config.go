@@ -37,6 +37,24 @@ type Config struct {
 	Auth     AuthConfig     `yaml:"auth"`
 	Security SecurityConfig `yaml:"security"`
 	Storage  StorageConfig  `yaml:"storage"`
+	GitHub   GitHubConfig   `yaml:"github"`
+}
+
+// GitHubConfig enables "Sign in with GitHub" (OAuth device flow) for
+// github.com workspace credentials. The OAuth App must have "Enable Device
+// Flow" checked; the device flow needs no client secret.
+type GitHubConfig struct {
+	// OAuthClientID is the public client ID of the deployment's OAuth App.
+	// Empty hides the sign-in option; tokens are then pasted manually.
+	OAuthClientID string `yaml:"oauth_client_id"`
+}
+
+// GitHubOAuthClientID returns the trimmed device-flow client ID ("" = off).
+func (c *Config) GitHubOAuthClientID() string {
+	if c == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.GitHub.OAuthClientID)
 }
 
 // StorageConfig selects how attachment bytes are persisted (DB keeps refs only).
@@ -471,6 +489,9 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := env("GRASP_BLOBS_ROOT"); v != "" {
 		c.Storage.BlobsRoot = v
+	}
+	if v := env("GRASP_GITHUB_OAUTH_CLIENT_ID"); v != "" {
+		c.GitHub.OAuthClientID = v
 	}
 }
 

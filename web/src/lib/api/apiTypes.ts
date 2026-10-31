@@ -324,6 +324,34 @@ export interface CredentialPutBody {
   clear?: boolean
 }
 
+export interface GitHubDeviceLoginStatus {
+  enabled: boolean
+  host?: string
+  scopes?: string[]
+}
+
+export interface GitHubDeviceLoginSession {
+  sessionId: string
+  userCode: string
+  verificationUri: string
+  expiresIn: number
+  interval: number
+}
+
+export interface GitHubDeviceLoginPoll {
+  status: 'pending' | 'authorized' | 'denied' | 'expired' | 'error'
+  interval?: number
+  expiresIn?: number
+  credential?: CredentialItem
+  githubLogin?: string
+  scopes?: string[]
+  scopeWarning?: boolean
+  /** Error code, e.g. alias_taken, credential_unavailable, device_flow_disabled. */
+  error?: string
+  alias?: string
+  updated?: boolean
+}
+
 export type CreateSharedAgentTestPayload = {
   agentName: string
   repos?: AgentTestRepo[]

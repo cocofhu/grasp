@@ -4,7 +4,10 @@ import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import CredentialEditorSurface from './CredentialEditorSurface.vue'
+import GitHostField from './GitHostField.vue'
+import GitHubDeviceLoginCard from './GitHubDeviceLoginCard.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import Icon from '@/components/ui/Icon.vue'
 import ModelConnectionEditor from './ModelConnectionEditor.vue'
 import ModelProviderSelect from './ModelProviderSelect.vue'
@@ -14,7 +17,8 @@ import CredentialProviderLogo from '@/components/workspace/CredentialProviderLog
 import SettingsPageHeader from '@/components/settings/SettingsPageHeader.vue'
 import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
 import type { SettingsStatItem } from '@/components/settings/settingsStats'
-import { api, type CredentialItem, type ModelConfiguration, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
+import { api, type CredentialItem, type GitHubDeviceLoginPoll, type ModelConfiguration, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
+import { GITHUB_MARK, type GitHubDeviceLoginState } from '@/lib/workspace/useGitHubDeviceLogin'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
 import {
@@ -169,6 +173,19 @@ const selectedKind = computed(() => (createKind.value ? kindById(createKind.valu
 const createSecretLabel = computed(() => createKind.value === 'model_api' ? routingCopy.value.secret : selectedKind.value ? secretLabel(selectedKind.value.id) : t('pages.workspace.credentials.value'))
 const createHasHost = computed(() => selectedKind.value?.type === 'git')
 const createHostValid = computed(() => !createHasHost.value || !!normalizeGitCredentialHost(createHost.value))
+const GITHUB_ORIGIN = 'https://github.com'
+const deviceLoginEnabled = ref(false)
+const createAuthMode = ref<'login' | 'paste'>('paste')
+const deviceLoginState = ref<GitHubDeviceLoginState>('idle')
+const createHostIsGitHub = computed(() => normalizeGitCredentialHost(createHost.value) === GITHUB_ORIGIN)
+const deviceLoginOffered = computed(() => createKind.value === 'github' && deviceLoginEnabled.value)
+const deviceLoginActive = computed(() => deviceLoginOffered.value && createHostIsGitHub.value && createAuthMode.value === 'login')
+const deviceLoginLocked = computed(() => deviceLoginActive.value && ['starting', 'waiting', 'authorized'].includes(deviceLoginState.value))
+watch(createHostIsGitHub, (official) => { if (!official) createAuthMode.value = 'paste' })
+watch(deviceLoginEnabled, (enabled) => { if (enabled && createKind.value === 'github' && !createSecret.value) createAuthMode.value = 'login' })
+const reloginTarget = ref<CredentialItem | null>(null)
+const reloginState = ref<GitHubDeviceLoginState>('idle')
+let deviceCloseTimer = 0
 const createHasKnownHosts = computed(() => selectedKind.value?.id === 'ssh_key')
 const createKnownHostsLines = computed(() => knownHostsLineCount(createKnownHosts.value))
 watch(createStep, async () => {
@@ -286,6 +303,17 @@ function hasGitHost(item: CredentialItem): boolean {
 function displayHost(item: CredentialItem): string {
   return (item.host || defaultGitCredentialHost(item.provider || '')).replace(/^https:\/\//, '').replace(/\/$/, '')
 }
+function githubLogin(item: CredentialItem): string {
+  const login = item.metadata?.githubLogin
+  return typeof login === 'string' ? login : ''
+}
+function signedInWithGitHub(item: CredentialItem): boolean {
+  return item.metadata?.authMethod === 'device_flow'
+}
+function canRelogin(item: CredentialItem): boolean {
+  return deviceLoginEnabled.value && isWorkspaceEditable(item) && item.purpose === 'git' && item.provider === 'github' && !item.revokedAt &&
+    normalizeGitCredentialHost(item.host || defaultGitCredentialHost('github')) === GITHUB_ORIGIN
+}
 function hostChanged(item: CredentialItem): boolean {
   return hasGitHost(item) && normalizeGitCredentialHost(hostDrafts[item.id] || '') !== normalizeGitCredentialHost(item.host || defaultGitCredentialHost(item.provider || ''))
 }
@@ -395,6 +423,9 @@ function openCreate() {
   createKind.value = ''
   createAlias.value = ''
   createHost.value = ''
+  createAuthMode.value = 'paste'
+  deviceLoginState.value = 'idle'
+  window.clearTimeout(deviceCloseTimer)
   aliasError.value = ''
   createAttempted.value = false
   stepMotion.value = 'forward'
@@ -406,6 +437,7 @@ function openCreate() {
 
 async function closeCreate() {
   if (creating.value) return
+  window.clearTimeout(deviceCloseTimer)
   const resumeModel = !!modelCredentialBackend.value
   modelCredentialBackend.value = ''
   showCreate.value = false
@@ -417,7 +449,11 @@ async function closeCreate() {
 
 function selectKind(id: CredentialKindId | 'model_api') {
   if (stepLock.value || creating.value || createStep.value !== 1) return
-  if (createKind.value !== id) { clearSecrets(); createHost.value = defaultGitCredentialHost(id) }
+  if (createKind.value !== id) {
+    clearSecrets()
+    createHost.value = defaultGitCredentialHost(id)
+    createAuthMode.value = id === 'github' && deviceLoginEnabled.value ? 'login' : 'paste'
+  }
   createKind.value = id
   createConnectionAfter.value = id === 'model_api'
 }
@@ -446,6 +482,62 @@ function goNext() {
   createStep.value = createStep.value === 1 ? 2 : 3
   lockStep()
   void measurePane().then(observePane)
+}
+
+function validateDeviceAlias(): boolean {
+  const alias = createAlias.value.trim()
+  if (!aliasKey(alias)) { aliasError.value = t('pages.workspace.credentials.aliasRequired'); return false }
+  const kind = selectedKind.value
+  const taken = kind ? conflictingAlias(items.value, kind, alias) : ''
+  if (taken) { aliasError.value = t('pages.workspace.credentials.aliasTaken', { alias: taken }); return false }
+  aliasError.value = ''
+  return true
+}
+
+function deviceAliasTaken(alias: string) {
+  aliasError.value = t('pages.workspace.credentials.aliasTaken', { alias })
+}
+
+function resetCreateHost() {
+  if (createKind.value === 'github' && deviceLoginEnabled.value) createAuthMode.value = 'login'
+}
+
+function deviceCredentialSaved(out: GitHubDeviceLoginPoll) {
+  if (!out.credential) return
+  updateItems(out.credential)
+  emit('credentialSaved', out.credential)
+  emit('changed')
+  toast.success(t('pages.workspace.credentials.githubDevice.saved'))
+}
+
+function createDeviceAuthorized(out: GitHubDeviceLoginPoll) {
+  deviceCredentialSaved(out)
+  // Leave a scope warning on screen until the user dismisses it.
+  if (!out.scopeWarning) deviceCloseTimer = window.setTimeout(() => { if (showCreate.value) void closeCreate() }, 1200)
+}
+
+function openRelogin(item: CredentialItem) {
+  if (!canRelogin(item)) return
+  reloginState.value = 'idle'
+  reloginTarget.value = item
+}
+
+function closeRelogin() {
+  window.clearTimeout(deviceCloseTimer)
+  reloginTarget.value = null
+}
+
+function reloginAuthorized(out: GitHubDeviceLoginPoll) {
+  deviceCredentialSaved(out)
+  if (!out.scopeWarning) deviceCloseTimer = window.setTimeout(() => { if (reloginTarget.value) closeRelogin() }, 1200)
+}
+
+async function loadDeviceLogin() {
+  try {
+    deviceLoginEnabled.value = !!(await api.getGitHubDeviceLogin())?.enabled
+  } catch {
+    deviceLoginEnabled.value = false
+  }
 }
 
 function goBack() {
@@ -650,6 +742,7 @@ defineExpose({ openCreate, openModelCreate })
 
 async function initialize() {
   setupStarting.value = props.setup
+  void loadDeviceLogin()
   try {
     await load()
     if (props.setup && !loadError.value) {
@@ -671,6 +764,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.clearTimeout(stepTimer)
+  window.clearTimeout(deviceCloseTimer)
   disconnectPaneObserver()
   document.removeEventListener('pointerdown', dismissAddMenu)
   document.removeEventListener('keydown', escapeAddMenu)
@@ -702,7 +796,7 @@ watch(showCreate, (open) => {
       <AppButton size="sm" variant="outline" @click="retry">{{ t('common.buttons.retry') }}</AppButton>
     </div>
 
-    <div v-else v-show="!(inline && showCreate)" class="credentials-scroll min-h-0 flex-1" :class="inline ? '' : 'scroll-area overflow-y-auto'">
+    <div v-else v-show="!(inline && (showCreate || reloginTarget))" class="credentials-scroll min-h-0 flex-1" :class="inline ? '' : 'scroll-area overflow-y-auto'">
       <div class="credentials-content w-full">
         <SettingsPageHeader
           v-if="standalone"
@@ -789,7 +883,11 @@ watch(showCreate, (open) => {
                           :configured="item.configured"
                         />
                         <div class="min-w-0 flex-1">
-                          <h4 class="m-0 text-[13px] font-semibold leading-5 text-txt" :title="itemLabel(item)" data-testid="workspace-credential-alias">{{ itemLabel(item) }}</h4>
+                          <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <h4 class="m-0 text-[13px] font-semibold leading-5 text-txt" :title="itemLabel(item)" data-testid="workspace-credential-alias">{{ itemLabel(item) }}</h4>
+                            <span v-if="githubLogin(item)" class="credential-tag" :data-testid="`workspace-credential-github-login-${item.id}`">@{{ githubLogin(item) }}</span>
+                            <span v-if="signedInWithGitHub(item)" class="credential-tag">{{ t('pages.workspace.credentials.githubDevice.authMethodTag') }}</span>
+                          </div>
                           <p v-if="itemLabel(item) !== typeLabel(item)" class="m-0 mt-0.5 text-[11px] text-txt3" data-testid="workspace-credential-kind">{{ typeLabel(item) }}</p>
                           <p v-if="kindOfItem(item)?.type === 'git'" class="m-0 mt-0.5 truncate font-mono text-[11px] text-txt3" :data-testid="`workspace-credential-host-label-${item.id}`">{{ displayHost(item) }}</p>
                           <p v-if="hasKnownHosts(item)" class="m-0 mt-0.5 text-[11px]" :class="item.knownHosts ? 'text-ok' : 'text-txt3'" :data-testid="`workspace-credential-known-hosts-label-${item.id}`">{{ t(item.knownHosts ? 'pages.workspace.credentials.knownHostsConfigured' : 'pages.workspace.credentials.knownHostsNotConfigured') }}</p>
@@ -818,6 +916,15 @@ watch(showCreate, (open) => {
                         </span>
                         <div class="credential-row-buttons">
                           <template v-if="isWorkspaceEditable(item) && !editing[item.id]">
+                            <AppButton
+                              v-if="canRelogin(item)"
+                              size="sm"
+                              variant="outline"
+                              :data-testid="`workspace-credential-relogin-${item.id}`"
+                              :aria-label="t('pages.workspace.credentials.githubDevice.reloginLabel')"
+                              :title="t('pages.workspace.credentials.githubDevice.reloginLabel')"
+                              @click="openRelogin(item)"
+                            ><svg class="credential-github-mark" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" :d="GITHUB_MARK" /></svg>{{ t('pages.workspace.credentials.githubDevice.relogin') }}</AppButton>
                             <AppButton
                               v-if="item.configured"
                               size="sm"
@@ -985,22 +1092,48 @@ watch(showCreate, (open) => {
                 data-testid="workspace-credential-create-alias"
                 autofocus
                 autocomplete="off"
-                :disabled="!!savedCredential"
+                :disabled="!!savedCredential || deviceLoginLocked"
                 :placeholder="t('pages.workspace.credentials.aliasPlaceholder')"
                 @input="aliasError = ''"
               />
               <p v-if="aliasError" class="mb-0 mt-1 text-[12px] text-err" data-testid="workspace-credential-alias-error">{{ aliasError }}</p>
             </label>
-            <label v-if="createHasHost" class="block">
-              <span class="label">Host</span>
-              <input v-model="createHost" class="input w-full font-mono" data-testid="workspace-credential-create-host" :aria-invalid="!createHostValid" :placeholder="defaultGitCredentialHost(createKind)" autocomplete="url" spellcheck="false" />
-              <p v-if="!createHostValid" class="mb-0 mt-1 text-xs text-err">{{ t('pages.workspace.credentials.invalidHost') }}</p>
-            </label>
+            <GitHostField v-if="createHasHost && selectedKind" v-model="createHost" :provider="selectedKind.provider" :disabled="deviceLoginLocked" @reset="resetCreateHost" />
+            <div v-if="deviceLoginOffered">
+              <span class="label">{{ t('pages.workspace.credentials.githubDevice.authMethod') }}</span>
+              <SlidingTabs :value="createAuthMode" class="credential-auth-tabs" role="tablist" indicator-class="credential-auth-tabs__indicator" :aria-label="t('pages.workspace.credentials.githubDevice.authMethod')">
+                <button
+                  type="button"
+                  role="tab"
+                  :aria-selected="createAuthMode === 'login'"
+                  :disabled="!createHostIsGitHub || deviceLoginLocked"
+                  :title="createHostIsGitHub ? undefined : t('pages.workspace.credentials.githubDevice.loginOnlyGithubCom')"
+                  data-testid="credential-auth-login"
+                  @click="createAuthMode = 'login'"
+                ><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" :d="GITHUB_MARK" /></svg>{{ t('pages.workspace.credentials.githubDevice.tabLogin') }}</button>
+                <button
+                  type="button"
+                  role="tab"
+                  :aria-selected="createAuthMode === 'paste'"
+                  :disabled="deviceLoginLocked"
+                  data-testid="credential-auth-paste"
+                  @click="createAuthMode = 'paste'"
+                >{{ t('pages.workspace.credentials.githubDevice.tabPaste') }}</button>
+              </SlidingTabs>
+            </div>
+            <GitHubDeviceLoginCard
+              v-if="deviceLoginActive"
+              :name="createAlias"
+              :validate="validateDeviceAlias"
+              @state="deviceLoginState = $event"
+              @authorized="createDeviceAuthorized"
+              @alias-taken="deviceAliasTaken"
+            />
             <template v-if="createKind === 'model_api'">
               <label class="block"><span class="label">{{ routingCopy.provider }}</span><ModelProviderSelect :model-value="createIssuer" :disabled="!!savedCredential" data-testid="model-credential-issuer" @update:model-value="selectIssuer" /></label>
               <label v-if="createIssuer === 'custom'" class="block"><span class="label">{{ routingCopy.providerLabel }}</span><input v-model="customProviderLabel" :disabled="!!savedCredential" class="input w-full" data-testid="model-credential-provider-label" /></label>
             </template>
-            <label class="block">
+            <label v-if="!deviceLoginActive" class="block">
               <span class="label flex items-center justify-between gap-2">
                 <span>{{ createSecretLabel }}</span>
                 <button type="button" class="text-[11px] font-medium text-accent-2" data-testid="workspace-credential-secret-toggle" @click="revealSecret = !revealSecret">
@@ -1075,13 +1208,15 @@ watch(showCreate, (open) => {
         <AppButton
           v-if="createStep > 1"
           variant="ghost"
-          :disabled="creating || stepLock || (!!savedCredential && createStep === 2)"
+          :disabled="creating || stepLock || (!!savedCredential && createStep === 2) || (createStep === 2 && deviceLoginLocked)"
           data-testid="workspace-credential-create-back"
           @click="goBack"
         >
           {{ t('pages.workspace.credentials.back') }}
         </AppButton>
-        <AppButton v-if="createStep === 2" variant="primary" :disabled="creating || stepLock || !createAlias.trim() || !secretReady || !connectionReady || !createHostValid" data-testid="workspace-credential-review-next" @click="goNext">{{ routingCopy.next }}</AppButton>
+        <AppButton v-if="createStep === 2 && deviceLoginLocked && deviceLoginState !== 'authorized'" variant="ghost" data-testid="github-device-cancel" @click="closeCreate">{{ t('common.buttons.cancel') }}</AppButton>
+        <AppButton v-if="createStep === 2 && deviceLoginActive && deviceLoginState === 'authorized'" variant="primary" data-testid="github-device-done" @click="closeCreate">{{ t('pages.workspace.credentials.githubDevice.done') }}</AppButton>
+        <AppButton v-if="createStep === 2 && !deviceLoginActive" variant="primary" :disabled="creating || stepLock || !createAlias.trim() || !secretReady || !connectionReady || !createHostValid" data-testid="workspace-credential-review-next" @click="goNext">{{ routingCopy.next }}</AppButton>
         <AppButton
           v-if="createStep === 3"
           variant="primary"
@@ -1092,6 +1227,30 @@ watch(showCreate, (open) => {
         >
           {{ savedCredential && inlineConnection ? routingCopy.retryConnection : t('pages.workspace.credentials.create') }}
         </AppButton>
+      </template>
+    </CredentialEditorSurface>
+
+    <CredentialEditorSurface
+      :inline="inline"
+      :open="!!reloginTarget"
+      :title="t('pages.workspace.credentials.githubDevice.reloginTitle', { name: reloginTarget ? itemLabel(reloginTarget) : '' })"
+      :width="480"
+      close-on-esc
+      trap-focus
+      :close-label="t('common.buttons.close')"
+      @close="closeRelogin"
+    >
+      <GitHubDeviceLoginCard
+        v-if="reloginTarget"
+        :key="reloginTarget.id"
+        :credential-id="reloginTarget.id"
+        :name="itemLabel(reloginTarget)"
+        auto-start
+        @state="reloginState = $event"
+        @authorized="reloginAuthorized"
+      />
+      <template #footer>
+        <AppButton :variant="reloginState === 'authorized' ? 'primary' : 'ghost'" data-testid="workspace-credential-relogin-close" @click="closeRelogin">{{ reloginState === 'authorized' ? t('pages.workspace.credentials.githubDevice.done') : t('common.buttons.cancel') }}</AppButton>
       </template>
     </CredentialEditorSurface>
   </div>
@@ -1258,6 +1417,16 @@ watch(showCreate, (open) => {
 .credential-delete { color: rgb(var(--c-txt3)); }
 .credential-delete:hover { color: rgb(var(--c-err)); }
 .credential-row h4 { overflow-wrap: anywhere; }
+.credential-tag { display: inline-flex; height: 18px; align-items: center; border-radius: 999px; padding: 0 7px; background: rgb(var(--c-elevated)); color: rgb(var(--c-txt2)); font-size: 11px; line-height: 1; white-space: nowrap; }
+.credential-github-mark { width: 13px; height: 13px; flex: none; }
+.credential-auth-tabs { display: flex; padding: 4px; border-radius: 11px; background: rgb(var(--c-txt) / .05); }
+.credential-auth-tabs :deep(.credential-auth-tabs__indicator) { border: 1px solid rgb(var(--c-txt) / .03); border-radius: 8px; background: rgb(var(--c-surface)); box-shadow: 0 1px 3px rgb(24 24 27 / .04), 0 2px 5px rgb(24 24 27 / .024); }
+.credential-auth-tabs > button { display: inline-flex; height: 32px; flex: 1; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 7px; background: transparent; color: rgb(var(--c-txt3)); font-size: 13px; cursor: pointer; transition: color 180ms ease; }
+.credential-auth-tabs > button svg { width: 14px; height: 14px; flex: none; }
+.credential-auth-tabs > button[aria-selected="true"] { color: rgb(var(--c-txt)); font-weight: 500; }
+.credential-auth-tabs > button:not(:disabled):hover { color: rgb(var(--c-txt)); }
+.credential-auth-tabs > button:disabled { cursor: not-allowed; opacity: .38; }
+.credential-auth-tabs > button:focus-visible { outline: 2px solid rgb(var(--c-accent-2) / .5); outline-offset: -2px; }
 .credential-editor { margin-left: 44px; }
 .credential-wizard-progress {
   display: flex;

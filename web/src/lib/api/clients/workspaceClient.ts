@@ -14,6 +14,9 @@ import type {
   CredentialItem,
   CredentialPutBody,
   CredentialsResponse,
+  GitHubDeviceLoginPoll,
+  GitHubDeviceLoginSession,
+  GitHubDeviceLoginStatus,
   SharedAgentConfig,
   SandboxView,
   ModelConnection,
@@ -72,6 +75,24 @@ export const workspaceClient = {
   deleteCredential: (credentialId: string) =>
     req<{ status: string }>(
       `/workspace/credentials/${encodeURIComponent(credentialId)}`,
+      { method: 'DELETE' },
+    ),
+  /** "Sign in with GitHub" (OAuth device flow); the device code and token stay on the server. */
+  getGitHubDeviceLogin: () =>
+    req<GitHubDeviceLoginStatus>(`/workspace/credentials/github/device`),
+  startGitHubDeviceLogin: (body: { name?: string; credentialId?: string }) =>
+    req<GitHubDeviceLoginSession>(
+      `/workspace/credentials/github/device`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  pollGitHubDeviceLogin: (sessionId: string) =>
+    req<GitHubDeviceLoginPoll>(
+      `/workspace/credentials/github/device/${encodeURIComponent(sessionId)}/poll`,
+      { method: 'POST' },
+    ),
+  cancelGitHubDeviceLogin: (sessionId: string) =>
+    req<{ status: string }>(
+      `/workspace/credentials/github/device/${encodeURIComponent(sessionId)}`,
       { method: 'DELETE' },
     ),
   /** Removes a workspace-owned API account. DELETE without this suffix only clears the secret. */
