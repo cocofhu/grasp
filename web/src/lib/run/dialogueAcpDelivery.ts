@@ -3,26 +3,15 @@ import type { AcpEvent } from '../shared/types'
 export type DialogueAcpApplyResult = 'applied' | 'buffer'
 
 /**
- * Deliver cumulative ACP to clarify and/or gate surfaces.
- * `apply*` must return false when the inner chat/gate is not ready
- * (e.g. ReviewComposer wrapping ClarifyChat before mount); undefined/true = ok.
+ * Deliver cumulative ACP to the gate's visual-edit stream. ClarifyChat draws
+ * the server dialogue state and takes no ACP. `applyGate` returns false while
+ * the gate panel is not mounted yet; undefined/true = ok.
  */
-export function deliverOrBufferDialogueAcp(opts: {
-  forClarify: boolean
+export function deliverOrBufferGateAcp(opts: {
   forGate: boolean
   events: AcpEvent[]
-  nodeId: string
-  applyClarify?: (events: AcpEvent[], nodeId: string) => boolean | void
   applyGate?: (events: AcpEvent[]) => boolean | void
 }): DialogueAcpApplyResult {
-  const { forClarify, forGate, events, nodeId } = opts
-  if (!forClarify && !forGate) return 'buffer'
-  let applied = false
-  if (forClarify && opts.applyClarify) {
-    if (opts.applyClarify(events, nodeId) !== false) applied = true
-  }
-  if (forGate && opts.applyGate) {
-    if (opts.applyGate(events) !== false) applied = true
-  }
-  return applied ? 'applied' : 'buffer'
+  if (!opts.forGate || !opts.applyGate) return 'buffer'
+  return opts.applyGate(opts.events) !== false ? 'applied' : 'buffer'
 }

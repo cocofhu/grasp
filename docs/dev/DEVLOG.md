@@ -20,6 +20,17 @@
 
 ## 记录
 
+### 2026-10-31（澄清 / 复审对话改由服务端状态驱动，根治「本轮没有输出」误报）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/chatsession/dialogue_version.go`、`server/internal/engine/dialogue_{state,publish,public}.go`、`server/internal/handlers/{dialogue,ws,inbox_context,gate_share_public,gate_share_public_events}.go`、`server/internal/models/dialogue.go`；`web/src/lib/chat/{dialogueState,dialogueStore}.ts`、`web/src/components/run/ClarifyChat.vue`、`web/src/lib/inbox/useClarifyChat.ts`、`useGatesInbox.ts`、`web/src/lib/run/{useRunDetail,useRunDetailWs,useRunLive}.ts`、`web/src/views/PublicGateApprovalView.vue`、`web/eslint.config.mjs`，以及对应单测和 e2e。
+- 做了什么：
+  - 服务端：每个节点对话（含分享访客的独立对话）生成一份完整对话状态，包括行、轮次阶段、排队项、孤儿轮和是否忙。版本号为 `(epoch, seq)`，epoch 每次启动都会变大（毫秒）。状态通过 WS `dialogue` 帧推送，只追加尾部时发 tail，并附前缀摘要。REST 的 `GET /api/runs/:id/nodes/:node/dialogue`、Inbox 上下文的 `dialogueByNode`、运行详情和公开分享预览都带上这份状态。空输出被打断的轮次，回复文字直接写「(已中断)」。
+  - 前端：新增 `dialogueStore`，按版本只接收更新的状态；tail 帧的前缀不匹配时重新拉取。`ClarifyChat`、`useClarifyChat`，以及 Inbox、运行详情、公开分享页三处宿主一次性切到这份状态。乐观发送的消息出现在服务端状态里（按 `clientMessageId` 匹配）后才算落定。删除了前端对 ACP / 复审帧 / 队列帧的对账，以及 `mergeClarifyLiveTurns`。
+  - 门禁：ESLint 禁止上述文件引用旧的对账模块、比较 `acp` / `queue_state` / `turn_begin` / `turn_done` 帧类型，以及用「文字和思考都为空」来猜测失败。`dialogueLintGate.test.ts` 负责验证这几条规则确实生效。AGENTS.md 新增一条：对话显示问题先修服务端状态。
+- 为什么：前端根据多路帧自己猜测轮次状态，帧乱序或丢失时会误报「本轮没有输出」，或者出现重复、卡住的轮次。由服务端给出唯一可信的状态后，前端只负责渲染。
+- 如何验证：server 的 golangci-lint、`go vet`、gen-configdoc check、`go test -race ./...` 全部通过，覆盖率 90.7%；`TestVisitorLaneDialogueIsItsOwnState` 在 race 下发现的 linkID 竞争已修复。web 的 lint（0 error）、vue-tsc、`vitest --coverage`（5995 个用例，行覆盖 91.94%）、build、`test:e2e:ci` 全部通过。e2e 改用 `e2e/helpers/dialogueServer.ts` 模拟服务端对话状态。
+
 ### 2026-10-31（GitHub 凭据支持设备码登录）
 
 - 日期：2026-10-31。

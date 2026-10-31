@@ -193,6 +193,7 @@ func (e *Engine) finish(runID, status string) bool {
 	}
 	if status == "completed" || status == "failed" || status == "cancelled" {
 		e.forgetActivity(runID)
+		e.expireDialogues(runID)
 	}
 	if status == "failed" || status == "cancelled" {
 		e.finalizeActiveStateRuns(runID, status)

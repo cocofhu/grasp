@@ -1,13 +1,8 @@
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, toRaw } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { renderChatMarkdownBlocks, renderMarkdown, type MarkdownBlockCache } from '@/lib/shared/markdown'
-import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
-import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
-import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpTools'
+import { renderMarkdown } from '@/lib/shared/markdown'
 import { expandAutoPhase } from '@/lib/run/takeoverTimeline'
-import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman, sameClarifyRequest } from '@/lib/inbox/mergeClarifyLiveTurns'
 import {
-  ackClarifyOutboxText,
   dropClarifyOutbox,
   newClientMessageId,
   clarifyTabReady,
@@ -20,12 +15,8 @@ import {
   stashClarifyDraft,
   takeClarifyOutbox,
 } from '@/lib/inbox/clarifyDraftStash'
-import {
-  emptyFailDisplayText,
-  isEmptyFailedAgent,
-  isFailureAssistantText,
-  isRetryableFailedAgent,
-} from '@/lib/inbox/clarifyEmptyFail'
+import { emptyFailDisplayText, isRetryableFailedAgent } from '@/lib/inbox/clarifyEmptyFail'
+import { createReplyText, latestFormTurnIndex, latestQuestionTurnIndex, type ChoiceRow } from '@/lib/inbox/clarifyReplyText'
 import { relTime as formatRelTime } from '@/lib/shared/format'
 import { holdSidebarConfirmWindow, releaseSidebarConfirmWindow } from '@/lib/inbox/sidebarHandoff'
 import {
@@ -34,8 +25,6 @@ import {
   selectedDemoOption,
 } from '@/lib/inbox/clarifyDemo'
 import type {
-  AgentPart,
-  AgentTool,
   ClarifyTurn,
   ClarifyImage,
   ReactQuestion,
@@ -43,7 +32,6 @@ import type {
   ReactForm,
   ReactFormField,
   ReactAnnotation,
-  AcpEvent,
 } from '@/lib/shared/types'
 import {
   SITE_ATTACH_MAX_BYTES,
@@ -65,21 +53,30 @@ import {
 } from '@/lib/inbox/composerAutoGrow'
 import type { Ref } from 'vue'
 import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
-import { acpSemanticFingerprint } from '@/lib/chat/reviewSessionState'
 import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 import { replySpan } from '@/lib/inbox/turnSpan'
 import {
-  cloneAnnotations as cloneReactAnnotations,
-  cloneImages as cloneClarifyImages,
-  dropGhostItems,
-  createReviewStateCursor,
-  isAuthoritativeIdle,
-  reconcileQueue,
-  takeTurnBeginItem,
-  type SessionFrameItem,
-  type SessionQueueItem,
-} from '@/lib/chat/sessionQueue'
+  addOptimisticSend,
+  dialogueKey,
+  getDialogue,
+  optimisticSends,
+  rejectOptimisticSend,
+} from '@/lib/chat/dialogueStore'
+import { render, type DialogueQueueRow, type DialogueRow, type DialogueVersion } from '@/lib/chat/dialogueState'
+import {
+  isSettled, isStopping, pruneQueueOverlay, retryAttemptRows, retryTakenOver, settleRows, visibleOrphan, visibleQueue,
+  type QueueOverlay,
+} from '@/lib/chat/dialogueOverlay'
 
+const CLARIFY_VISIT_ENDED = 'clarify_visit_ended'
+
+function cloneReactAnnotations(anns?: ReactAnnotation[] | null): ReactAnnotation[] {
+  return anns?.length ? anns.map((a) => ({ ...a })) : []
+}
+
+function cloneClarifyImages(imgs?: ClarifyImage[] | null): ClarifyImage[] {
+  return imgs?.length ? imgs.map((im) => ({ ...im })) : []
+}
 export type ClarifyChatProps = {
   runId: string
   nodeId: string
@@ -143,7 +140,6 @@ const draft = models.draft
 const attachments = models.attachments
 const annotations = models.annotations
 
-type QueueItem = SessionQueueItem & { localKey?: number }
 
 // active: whether the run is still in an interactive state (queued/running/
 // waiting_human). When false (completed/failed/cancelled) the chat input is
@@ -160,16 +156,55 @@ const showAnnotationChips = computed(() => props.reviewMode || props.annotateEna
 
 const { t: translate, locale } = useI18n()
 
-// A takeover's opening turn carries the auto phase (turns[0].events): continue it.
-const persistedTurns = computed(() => expandAutoPhase(props.turns ?? []))
+// What is drawn comes from the server dialogue (dialogueStore) for this
+// visit plus this page's optimistic sends. Without a server dialogue (cold
+// history, unit mounts) the host's turns are shown as they are.
+const storeKey = computed(() => dialogueKey(props.runId, props.nodeId))
+const serverState = computed(() => {
+  const st = getDialogue(storeKey.value)
+  if (!st) return null
+  if (st.iteration && props.iteration && st.iteration !== props.iteration) return null
+  return st
+})
+const view = computed(() => render(serverState.value, optimisticSends(storeKey.value)))
 
-const thinking = ref(false)
+// Page-local overlays (dialogueOverlay.ts): each covers a click until the server state answers it.
+const settledAt = ref<DialogueVersion | null>(null)
+const forcedIdle = computed(() => isSettled(settledAt.value, serverState.value))
+/** Retry was clicked; the failed reply shows as a new attempt until the server starts it. */
+const retryPending = ref(false)
+let retryPendingTimer = 0
+/** The turn Stop was clicked on; it shows as stopping while the server still runs it. */
+const stoppingTurn = ref<string | null>(null)
+
+const sourceRows = computed<ClarifyTurn[]>(() => {
+  const rows = serverState.value ? view.value.rows : [...(props.turns ?? []), ...view.value.rows]
+  const out = forcedIdle.value ? settleRows(rows) : rows
+  return retryPending.value ? retryAttemptRows(out) : out
+})
+
+function rowPhase(t: ClarifyTurn): DialogueRow['phase'] | undefined {
+  return (t as Partial<DialogueRow>).phase
+}
+
+function rowId(t: ClarifyTurn | undefined): string | undefined {
+  return (t as Partial<DialogueRow> | undefined)?.id
+}
+
+// A takeover's opening turn carries the auto phase (turns[0].events): continue it.
+const persistedTurns = computed(() =>
+  expandAutoPhase(sourceRows.value.filter((t) => !t.localPending && rowPhase(t) !== 'running' && rowPhase(t) !== 'orphan')),
+)
+
+/** Only a sandbox turn the platform no longer runs: its banner offers Stop, the chat is idle. */
+const orphanOnly = computed(() => !!view.value.orphan &&
+  !(serverState.value?.turns ?? []).some((t) => t.phase === 'running') && !view.value.rows.some((r) => r.localPending))
+const thinking = computed(() => !props.done && !forcedIdle.value &&
+  ((view.value.thinking && !orphanOnly.value) || retryPending.value))
 /** Review confirm mid-state: re-validating product (not Agent thinking). */
 const validating = ref(false)
 /** Success overlay host from ReviewShell (g2.1); optional in unit mounts. */
 const confirmFlow = useConfirmFlowCeremony()
-/** True after we ran (or parent ran) the success ceremony for the current done cycle. */
-let confirmFlowPlayedForDone = false
 const confirmFlowPlaying = computed(() => !!confirmFlow?.playing.value)
 /**
  * Hand-off still in progress: the session is already marked done, but the
@@ -186,42 +221,40 @@ const showDoneChrome = computed(
 )
 
 async function playConfirmCeremony(): Promise<void> {
-  confirmFlowPlayedForDone = true
   if (!confirmFlow) return
   // Same click may play from finishEarly and again from parent force — keep one play (g1.1).
   if (confirmFlow.playing.value) return
   await confirmFlow.play()
 }
-// Pending sends stay in the bottom queue. Only a send with no active reply is
-// painted at once; turn_begin attaches to that row or opens the waiter's own.
-const queued = ref<QueueItem[]>([])
-/** In-flight turn bubbles (human + streaming agent) before props.turns catch up. */
-const liveTurns = ref<ClarifyTurn[]>([])
-/** Persisted index where the first live turn begins; older same-text turns cannot dedupe it. */
-let liveHistoryAnchor = 0
 let conversationGeneration = 0
-const reviewStateCursor = createReviewStateCursor()
 
-function anchorForNewLiveHuman(text: string): number {
-  const persisted = persistedTurns.value
-  const last = persisted[persisted.length - 1]
-  // A snapshot may contain this turn's human but not its agent yet. Restrict
-  // matching to that trailing human; a completed older pair is not this turn.
-  if (last?.role === 'human' && (last.text || '').trim() === (text || '').trim()) {
-    return persisted.length - 1
+const queueOverlay = ref<QueueOverlay>({ hidden: [], order: null })
+const queued = computed<DialogueQueueRow[]>(() => {
+  let rows = view.value.queue
+  // A host-sent (@send) message stays cancellable in the queue until the server lists it.
+  const head = props.sendRequest ? undefined : view.value.rows.find((r) => r.localPending && r.role === 'human')
+  if (head) {
+    rows = [{ clientMessageId: head.clientMessageId, text: head.text, images: head.images ?? [],
+      annotations: head.annotations ?? [], local: true }, ...rows]
   }
-  return persisted.length
+  return visibleQueue(rows, queueOverlay.value)
+})
+watch(
+  () => view.value.queue.map((q) => q.id || '').join('|'),
+  () => {
+    const ids = view.value.queue.map((q) => q.id).filter((id): id is string => !!id)
+    queueOverlay.value = pruneQueueOverlay(queueOverlay.value, ids)
+  },
+)
+function hideQueueRow(id: string) {
+  const o = queueOverlay.value
+  if (!o.hidden.includes(id)) queueOverlay.value = { ...o, hidden: [...o.hidden, id] }
 }
 
-/** Bridge-reported orphan turn (platform FIFO idle, sandbox still busy). */
-const sandboxOrphan = ref<{ runningOpId: string; desynced: boolean } | null>(null)
-/** Last queue_state said the platform FIFO is idle (not tracking a turn). */
-const platformQueueIdle = ref(false)
 const showClarifyEmptyHint = computed(
   () =>
     !props.reviewMode &&
-    persistedTurns.value.length === 0 &&
-    liveTurns.value.length === 0 &&
+    sourceRows.value.length === 0 &&
     queued.value.length === 0 &&
     !seedHumanTurn.value,
 )
@@ -256,90 +289,48 @@ function prependSeedHuman(list: ClarifyTurn[]): ClarifyTurn[] {
   }
   return [seed, ...list]
 }
-const liveAgentIdx = ref(-1)
-/** A delayed queue snapshot must not requeue the turn that just finished. */
-let lastCompletedItemId: string | undefined
-/**
- * Platform FIFO is idle (no waiting item, no active turn). Later ACP is the
- * turn that just lost its streaming slot — paint it, do not ask the host to
- * buffer until the next hard load. Stays false until the first idle
- * queue_state so a hard-load race still buffers.
- */
-let idleNarrativeOpen = false
-/** Last ACP snapshot written into the open slot, so a replay does not draw it twice. */
-let lastAppliedAcpSig = ''
-/**
- * paintIdleNarrative wrote a row after the streaming slot closed. A later
- * persisted snapshot is the refresh transcript: once the bridge is idle, that
- * snapshot replaces the idle row. While the bridge is still busy the row stays.
- */
-let idlePainted = false
-/** Persisted transcript changed after the idle row was painted. */
-let persistedMovedAfterIdlePaint = false
-type OutputClock = { text: string; startedAt: string; endedAt: string }
-/** Page-session wall clocks, kept after the live bubble is replaced by the transcript. */
-const outputClocks = ref<OutputClock[]>([])
-
-function rememberOutputClock(row: ClarifyTurn) {
-  if (row.role !== 'agent' || !row.startedAt || !row.endedAt) return
-  const text = row.text || ''
-  const same = outputClocks.value.find((c) => c.startedAt === row.startedAt && c.text === text)
-  if (same) {
-    same.endedAt = row.endedAt
-    return
+const liveAgentIdx = computed(() => {
+  const list = displayTurns.value
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]!.role === 'agent' && list[i]!.streaming) return i
   }
-  outputClocks.value.push({ text, startedAt: row.startedAt, endedAt: row.endedAt })
+  return -1
+})
+const runningTurnIds = computed(() => forcedIdle.value ? [] :
+  (serverState.value?.turns ?? []).filter((t) => t.phase === 'running' || t.phase === 'orphan').map((t) => t.turnId))
+const turnRunning = computed(() => runningTurnIds.value.length > 0)
+const stopping = computed(() => isStopping(stoppingTurn.value, runningTurnIds.value))
+watch(
+  () => serverState.value,
+  (st) => {
+    if (!retryPending.value || !st) return
+    if (retryTakenOver(st)) clearRetryPending()
+  },
+)
+
+function clearRetryPending() {
+  retryPending.value = false
+  clearTimeout(retryPendingTimer)
 }
 
-function markOutputStart(row: ClarifyTurn, reset = false) {
-  if (reset || !row.startedAt) row.startedAt = new Date().toISOString()
-  if (reset) delete row.endedAt
-}
-
-function markOutputEnd(row: ClarifyTurn) {
-  if (!row.endedAt) row.endedAt = new Date().toISOString()
-  rememberOutputClock(row)
-}
-/**
- * Coalesced per-block markdown HTML for the live streaming agent bubble.
- * Settled blocks keep their string (and DOM); only the open block re-renders.
- */
-const liveStreamBlocks = ref<string[]>([])
-const liveStreamHtml = computed(() => liveStreamBlocks.value.join(''))
-const streamBlockCache: MarkdownBlockCache = new Map()
-const streamPreview = createStreamMarkdownPreview<string[]>({
-  render: (src) => renderChatMarkdownBlocks(src, streamBlockCache),
-  empty: [],
-})
-const unsubStream = streamPreview.subscribe((blocks) => {
-  liveStreamBlocks.value = blocks
-})
-/** Coalesced thought text (rAF) — same cadence as message preview. */
-const liveThoughtText = ref('')
-const thoughtPreview = createStreamMarkdownPreview({ render: (s) => s })
-const unsubThought = thoughtPreview.subscribe((text) => {
-  liveThoughtText.value = text
-})
-/**
- * Smooth catch-up reveal (Demo) → then markdown/text coalesce.
- * Vitest uses sync so existing mid-stream assertions stay stable.
- */
-const syncReveal = Boolean(import.meta.env.VITEST)
-const messageReveal = createStreamTextReveal({
-  sync: syncReveal,
-  onReveal: (text) => {
-    streamPreview.setText(text)
-    // Vitest: flush markdown coalesce so mid-stream assertions see text without waiting rAF.
-    if (syncReveal) streamPreview.flush()
+type OutputClock = { startedAt: string; endedAt?: string }
+/** This page's wall clock for replies it saw running, by row id. */
+const rowClocks = ref<Record<string, OutputClock>>({})
+watch(
+  sourceRows,
+  (rows) => {
+    const now = new Date().toISOString()
+    for (const r of rows) {
+      const id = rowId(r)
+      if (!id || r.role !== 'agent') continue
+      const clock = rowClocks.value[id]
+      const open = !!r.streaming || rowPhase(r) === 'running' || rowPhase(r) === 'orphan'
+      if (open && !clock) rowClocks.value[id] = { startedAt: now }
+      else if (!open && clock && !clock.endedAt) clock.endedAt = now
+    }
   },
-})
-const thoughtReveal = createStreamTextReveal({
-  sync: syncReveal,
-  onReveal: (text) => {
-    thoughtPreview.setText(text)
-    if (syncReveal) thoughtPreview.flush()
-  },
-})
+  { immediate: true },
+)
 /**
  * Manual thought expand/collapse overrides (index → open).
  * Default: open while thought-only streaming; collapsed once message starts / done.
@@ -441,117 +432,18 @@ function relTime(iso: string): string {
 onBeforeUnmount(() => {
   releaseConfirmFlowWindow()
   clearInterval(relClockTimer)
+  clearTimeout(retryPendingTimer)
   composerResizeObserver?.disconnect()
   composerResizeObserver = null
-  unsubStream()
-  unsubThought()
-  messageReveal.reset()
-  thoughtReveal.reset()
-  streamPreview.reset()
-  thoughtPreview.reset()
 })
 
-/** Choice prefixes the UI and models.FormatChoiceReply emit. Both are recognized in either locale. */
-const CHOICE_PREFIX_ZH = '我的选择:'
-const CHOICE_PREFIX_EN = 'My choices:'
-const choicePrefix = computed(() => translate('pages.clarify.choicePrefix'))
-/** zh-CN form-summary prefix, recognized regardless of the viewer's locale. */
-const FORM_PREFIX_ZH = '我的填写:'
-const formPrefix = computed(() => translate('pages.clarify.formPrefix'))
-/** Skip-envelope first line (zh / en) — not a choice reply. */
-const SKIP_PREFIX_ZH = '回答已跳过'
-const SKIP_USER_LABEL_ZH = '用户回复'
-const SKIP_PREFIX_EN = 'Answers skipped'
-const SKIP_USER_LABEL_EN = 'User reply'
-const skipPrefix = computed(() => translate('pages.clarify.skipPrefix'))
-const skipUserReplyLabel = computed(() => translate('pages.clarify.skipUserReplyLabel'))
-
-function textHasChoicePrefix(text: string): boolean {
-  return text.startsWith(choicePrefix.value) || text.startsWith(CHOICE_PREFIX_ZH) || text.startsWith(CHOICE_PREFIX_EN)
-}
-
-function stripChoicePrefix(text: string): string {
-  if (text.startsWith(choicePrefix.value)) return text.slice(choicePrefix.value.length)
-  if (text.startsWith(CHOICE_PREFIX_ZH)) return text.slice(CHOICE_PREFIX_ZH.length)
-  if (text.startsWith(CHOICE_PREFIX_EN)) return text.slice(CHOICE_PREFIX_EN.length)
-  return text
-}
-
-function isChoiceReply(text: string): boolean {
-  return !!text && textHasChoicePrefix(text)
-}
-
-function textHasFormPrefix(text: string): boolean {
-  return text.startsWith(formPrefix.value) || text.startsWith(FORM_PREFIX_ZH)
-}
-
-function stripFormPrefix(text: string): string {
-  if (text.startsWith(formPrefix.value)) return text.slice(formPrefix.value.length)
-  if (text.startsWith(FORM_PREFIX_ZH)) return text.slice(FORM_PREFIX_ZH.length)
-  return text
-}
-
-function isFormReply(text: string): boolean {
-  return !!text && textHasFormPrefix(text)
-}
-
-function textHasSkipPrefix(text: string): boolean {
-  if (!text) return false
-  return (
-    text.startsWith(skipPrefix.value + '\n') ||
-    text.startsWith(SKIP_PREFIX_ZH + '\n') ||
-    text.startsWith(SKIP_PREFIX_EN + '\n')
-  )
-}
-
-function isSkipReply(text: string): boolean {
-  return textHasSkipPrefix(text)
-}
-
-/** Three-line skip envelope: label / user-label / original (may be empty or multiline). */
-function formatSkipReply(userText: string): string {
-  return `${skipPrefix.value}\n${skipUserReplyLabel.value}\n${userText}`
-}
-
-/**
- * A human turn / queue item that closes the current ask_question card:
- * structured choice, skip envelope, free text, or any attachment.
- */
-function closesQuestionRound(
-  text: string,
-  images?: ClarifyImage[] | null,
-  anns?: ReactAnnotation[] | null,
-): boolean {
-  if (isChoiceReply(text) || isFormReply(text) || isSkipReply(text)) return true
-  if ((images?.length || 0) > 0 || (anns?.length || 0) > 0) return true
-  return !!(text || '').trim()
-}
-
-/** Index of the latest agent turn that raised structured questions. */
-function latestQuestionTurnIndex(turnList: ClarifyTurn[]): number {
-  for (let i = turnList.length - 1; i >= 0; i--) {
-    const t = turnList[i]
-    if (t.role === 'agent' && t.questions?.length) return i
-  }
-  return -1
-}
-
-/** Index of the latest agent turn that raised ask_form forms. */
-function latestFormTurnIndex(turnList: ClarifyTurn[]): number {
-  for (let i = turnList.length - 1; i >= 0; i--) {
-    const t = turnList[i]
-    if (t.role === 'agent' && t.forms?.length) return i
-  }
-  return -1
-}
-
-function hasHumanReplyAfter(turnList: ClarifyTurn[], qIdx: number): boolean {
-  for (let i = qIdx + 1; i < turnList.length; i++) {
-    const t = turnList[i]
-    if (t.role === 'human' && closesQuestionRound(t.text, t.images, t.annotations)) return true
-  }
-  return false
-}
+const replyText = createReplyText(translate)
+const {
+  textHasChoicePrefix, stripChoicePrefix, isChoiceReply, textHasSkipPrefix, isSkipReply, formatSkipReply,
+  closesQuestionRound, hasHumanReplyAfter, parseChoiceSummary, parseFormSummary,
+} = replyText
+const choicePrefix = computed(() => replyText.choicePrefix())
+const formPrefix = computed(() => replyText.formPrefix())
 
 const latestQuestionIdx = computed(() => latestQuestionTurnIndex(persistedTurns.value))
 
@@ -561,12 +453,9 @@ const latestQuestions = computed<ReactQuestion[]>(() => {
   return persistedTurns.value[idx].questions ?? []
 })
 
-/** Persisted transcript plus in-flight live bubbles (no sessionStorage echo). */
+/** Transcript including the running turn and this page's pending send. */
 function answerTranscript(): ClarifyTurn[] {
-  if (liveTurns.value.length) {
-    return mergePersistedAndLiveTurns(persistedTurns.value, liveTurns.value, liveHistoryAnchor)
-  }
-  return persistedTurns.value
+  return sourceRows.value
 }
 
 const latestQuestionAnswered = computed(() => {
@@ -621,46 +510,18 @@ const inputPlaceholder = computed(() => {
   return translate('pages.clarify.clarifyInputPlaceholder')
 })
 
-const displayTurns = computed<ClarifyTurn[]>(() => {
-  const list = persistedTurns.value
-  // Session UX: live in-flight bubbles until persisted transcript catches up.
-  // Dedupe against persisted turns so mid-stream softRefresh/loadRun human does not double-render.
-  if (liveTurns.value.length) {
-    return prependSeedHuman(mergePersistedAndLiveTurns(list, liveTurns.value, liveHistoryAnchor))
-  }
-  return prependSeedHuman(list)
-})
+const displayTurns = computed<ClarifyTurn[]>(() => prependSeedHuman(expandAutoPhase(sourceRows.value)))
 
-/** Start/end for each visible agent reply: its own stamps, else this page's remembered clock. */
-const outputBoundsByIndex = computed(() => {
-  const turns = displayTurns.value
-  const pool = outputClocks.value.map((c) => ({ ...c }))
-  const out = new Map<number, { startedAt: string; endedAt: string }>()
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const t = turns[i]!
-    if (t.role !== 'agent') continue
-    if (t.startedAt && t.endedAt) {
-      out.set(i, { startedAt: t.startedAt, endedAt: t.endedAt })
-      const idx = pool.findIndex((c) => c.startedAt === t.startedAt && c.text === (t.text || ''))
-      if (idx >= 0) pool.splice(idx, 1)
-      continue
-    }
-    const text = t.text || ''
-    let c = pool.length - 1
-    while (c >= 0 && pool[c]!.text !== text) c--
-    if (c >= 0) {
-      out.set(i, { startedAt: pool[c]!.startedAt, endedAt: pool[c]!.endedAt })
-      pool.splice(c, 1)
-      continue
-    }
-    const span = replySpan(turns[i - 1], t)
-    if (span) out.set(i, span)
-  }
-  return out
-})
-
+/** Start/end for each visible agent reply: its own stamps, else this page's clock, else the turn span. */
 function outputBounds(index: number): { startedAt?: string; endedAt?: string } {
-  return outputBoundsByIndex.value.get(index) || {}
+  const turns = displayTurns.value
+  const t = turns[index]
+  if (!t || t.role !== 'agent') return {}
+  if (t.startedAt && t.endedAt) return { startedAt: t.startedAt, endedAt: t.endedAt }
+  const id = rowId(t)
+  const clock = id ? rowClocks.value[id] : undefined
+  if (clock) return { startedAt: t.startedAt || clock.startedAt, endedAt: t.endedAt || clock.endedAt }
+  return replySpan(turns[index - 1], t) || {}
 }
 
 /** Single-image lightbox for human history attachments (no gallery / Esc). */
@@ -698,42 +559,53 @@ function showQueueToast(msg: string) {
   }, 2200)
 }
 
-function syncQueueThinking() {
-  thinking.value = liveAgentIdx.value >= 0 || queued.value.length > 0
+/** Take a row out of the pending-send panel: a local send is withdrawn, a server one hidden until it leaves. */
+function dropQueueRow(row: DialogueQueueRow) {
+  if (row.local && row.clientMessageId) {
+    rejectOptimisticSend(storeKey.value, row.clientMessageId)
+    return
+  }
+  if (row.id) hideQueueRow(row.id)
 }
 
 function cancelQueuedItem(index: number) {
-  if (index < 0 || index >= queued.value.length) return
-  const removed = queued.value.splice(index, 1)[0]
-  removeLocalPendingPair(removed)
-  syncQueueThinking()
+  const removed = queued.value[index]
+  if (!removed) return
+  dropQueueRow(removed)
   const preview = truncateQueueText(removed.text || '', 18)
   showQueueToast(translate('pages.clarify.queueCancelled', { text: preview }))
   if (removed.id) emit('queue-remove', removed.id, index)
 }
 
 function reorderQueuedItems(fromIndex: number, toIndex: number) {
+  const list = [...queued.value]
   if (
     fromIndex < 0 ||
     toIndex < 0 ||
-    fromIndex >= queued.value.length ||
-    toIndex >= queued.value.length ||
+    fromIndex >= list.length ||
+    toIndex >= list.length ||
     fromIndex === toIndex
   ) {
     return
   }
-  const [moved] = queued.value.splice(fromIndex, 1)
-  queued.value.splice(toIndex, 0, moved)
+  const [moved] = list.splice(fromIndex, 1)
+  list.splice(toIndex, 0, moved!)
+  const ids = list.map((q) => q.id).filter((id): id is string => !!id)
+  queueOverlay.value = { ...queueOverlay.value, order: ids }
   showQueueToast(translate('pages.clarify.queueReordered'))
-  const ids = queued.value.map((q) => q.id).filter((id): id is string => !!id)
-  if (ids.length === queued.value.length && ids.length > 0) {
+  if (ids.length === list.length && ids.length > 0) {
     emit('queue-reorder', ids)
   }
 }
 
+function sameQueueRow(a: DialogueQueueRow, b: DialogueQueueRow): boolean {
+  if (a.id || b.id) return a.id === b.id
+  return !!a.clientMessageId && a.clientMessageId === b.clientMessageId
+}
+
 async function editQueuedItem(index: number) {
   if (index < 0 || index >= queued.value.length) return
-  const target = queued.value[index]
+  const target = queued.value[index]!
   queueNotice.value = null
 
   // Composer already has an unsent draft (text / attachments / annotation chips):
@@ -742,7 +614,7 @@ async function editQueuedItem(index: number) {
     if (!await sendFromComposer()) return
     // A new draft typed during acknowledgement must stay with its author.
     if (hasComposerDraft()) return
-    index = queued.value.findIndex((item) => target.id ? item.id === target.id : item === target)
+    index = queued.value.findIndex((item) => sameQueueRow(item, target))
     if (index < 0) return
   } else if (hasComposerDraft()) {
     const t = draft.value.trim()
@@ -758,13 +630,12 @@ async function editQueuedItem(index: number) {
     // Append keeps the target index stable.
   }
 
-  const item = queued.value.splice(index, 1)[0]
-  removeLocalPendingPair(item)
+  const item = queued.value[index]!
+  dropQueueRow(item)
   draft.value = item.text
   attachments.value = cloneClarifyImages(item.images)
   annotations.value = cloneReactAnnotations(item.annotations)
   attachNotice.value = null
-  syncQueueThinking()
   nextTick(autoGrow)
   textareaRef.value?.focus()
   showQueueToast(translate('pages.clarify.queueEditRefilled'))
@@ -787,57 +658,14 @@ function turnsSemanticKey(turnList: ClarifyTurn[]): string {
   return `${turnList.length}:${last.at}:${last.role}:${last.text}`
 }
 
-/** Later turns make a persisted live prefix historical, even if its rails differ. */
-function prunePersistedLiveHistory(persisted: ClarifyTurn[]) {
-  let keepFrom = 0
-  let nextAnchor = liveHistoryAnchor
-  while (keepFrom < liveTurns.value.length) {
-    const human = liveTurns.value[keepFrom]
-    const text = (human?.text || '').trim()
-    if (human?.role !== 'human' || !text) break
-    let persistedHuman = -1
-    for (let i = nextAnchor; i < persisted.length; i++) {
-      if (persisted[i].role === 'human' && sameClarifyRequest(persisted[i], human)) {
-        persistedHuman = i
-        break
-      }
-    }
-    if (persistedHuman < 0) break
-    const nextPersistedHuman = persisted.findIndex((turn, i) => i > persistedHuman && turn.role === 'human')
-    const persistedEnd = nextPersistedHuman < 0 ? persisted.length : nextPersistedHuman
-    const reply = persisted[persistedEnd - 1]
-    if (
-      reply?.role !== 'agent' || reply.streaming || reply.handoff ||
-      (!(reply.text || reply.thought) && !isRetryableFailedAgent(reply))
-    ) break
-    const nextHuman = liveTurns.value.findIndex((turn, i) => i > keepFrom && turn.role === 'human')
-    const persistedAdvanced = nextPersistedHuman >= 0
-    if (nextHuman < 0 && !persistedAdvanced) break
-    nextAnchor = persistedEnd
-    keepFrom = nextHuman < 0 ? liveTurns.value.length : nextHuman
-  }
-  if (!keepFrom) return
-  if (keepFrom === liveTurns.value.length) {
-    clearSettledLiveTurns()
-    return
-  }
-  liveHistoryAnchor = nextAnchor
-  liveTurns.value = liveTurns.value.slice(keepFrom)
-  liveAgentIdx.value = liveAgentIdx.value >= keepFrom ? liveAgentIdx.value - keepFrom : -1
-}
-
-// Real turns streamed back from the run: drop optimistic choice echo + clear
-// settled live bubbles. Scroll only when stuck to bottom.
+// New rows and a growing reply follow the bottom only while stuck to it.
 watch(
-  () => turnsSemanticKey(persistedTurns.value),
-  (key, prevKey) => {
-    if (prevKey !== undefined && key === prevKey) return
-    if (prevKey !== undefined && idlePainted) persistedMovedAfterIdlePaint = true
-    // While the sandbox is still writing, keep the open row even if a refresh
-    // snapshot already has the same short reply.
-    dropSettledLiveIfPersistedWins()
-    void scrollBottom()
+  () => {
+    const list = displayTurns.value
+    const last = list[list.length - 1]
+    return `${turnsSemanticKey(list)}:${last?.thought?.length ?? 0}:${last?.parts?.length ?? 0}:${last?.tools?.length ?? 0}`
   },
+  () => void scrollBottom(),
 )
 
 // Exact unread from props.turns length deltas (ignores optimistic pending / thinking).
@@ -864,20 +692,14 @@ watch(
   () => `${props.runId}.${props.nodeId}.${props.iteration}`,
   () => {
     conversationGeneration++
-    reviewStateCursor.reset()
-    queued.value = []
-    clearSettledLiveTurns()
-    localSends.splice(0)
-    knownServerIds.clear()
+    queueOverlay.value = { hidden: [], order: null }
     composerSending.value = false
-    liveTurnOrigin = null
-    idleNarrativeOpen = false
-    idlePainted = false
-    persistedMovedAfterIdlePaint = false
-    lastAppliedAcpSig = ''
-    platformQueueIdle.value = false
-    sandboxOrphan.value = null
-    lastCompletedItemId = undefined
+    stoppingTurn.value = null
+    cancelledOrphanOp.value = null
+    settledAt.value = null
+    clearRetryPending()
+    seenEndedTurns.clear()
+    endedTurnsPrimed = false
     void enterStickSequence()
   },
 )
@@ -892,12 +714,10 @@ watch(
   () => props.done,
   (d) => {
     if (d) {
-      thinking.value = false
       validating.value = false
       // Overlay is owned by the click path (finishEarly / parent force). Never
       // auto-play on done/node_complete (plan g1.1) — that caused the #613 regression.
     } else {
-      confirmFlowPlayedForDone = false
       confirmFlow?.reset()
     }
   },
@@ -914,7 +734,6 @@ watch(
     // back into a clickable 确认并流转 that then no-ops.
     if (props.handoff?.phase === 'pending') return
     validating.value = false
-    if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
   },
 )
 
@@ -967,117 +786,30 @@ function removeAttachment(i: number) {
   attachments.value.splice(i, 1)
 }
 
-/** Composer text behind an optimistic row (before any skip-envelope wrap). */
-const composerOrigin = new WeakMap<object, string>()
+/** What this page sent, by clientMessageId, so a refused send can go back into the composer as typed. */
+type SentOrigin = { text: string; composerText?: string; images: ClarifyImage[]; annotations: ReactAnnotation[] }
+const sentOrigins = new Map<string, SentOrigin>()
 
-type LocalSend = {
-  key: number
-  item: QueueItem
-  serverId?: string
-  previousIds: Set<string>
-  begun: boolean
-  human?: ClarifyTurn
-}
-let localSendSequence = 0
-const localSends: LocalSend[] = []
-const knownServerIds = new Set<string>()
-
-function registerLocalSend(item: QueueItem): LocalSend {
-  item.clientMessageId ??= newClientMessageId()
-  const send: LocalSend = { key: ++localSendSequence, item, begun: false, previousIds: new Set(knownServerIds) }
-  item.localKey = send.key
-  localSends.push(send)
-  return send
-}
-
-/** Bind each server item once; identical payloads still represent distinct sends. */
-function localSendForFrame(item?: SessionFrameItem | null): LocalSend | undefined {
-  if (!item) return undefined
-  if (item.id) {
-    const bound = localSends.find(send => send.serverId === item.id)
-    if (bound) return bound
-  }
-  if (item.id) knownServerIds.add(item.id)
-  // An identified send belongs to its originating tab even when another tab
-  // sent exactly the same text, images and annotations. Payload matching is
-  // only for older transports that do not expose the sender identity.
-  if (item.clientMessageId) {
-    const own = localSends.find(send => send.item.clientMessageId === item.clientMessageId)
-    if (own && item.id) own.serverId = item.id
-    return own
-  }
-  const send = localSends.find(send => !send.serverId && !send.begun && (!item.id || !send.previousIds.has(item.id)) &&
-    send.item.text === (item.text ?? '') &&
-    (!item.images || (send.item.images.length === item.images.length && send.item.images.every((image, i) => {
-      const other = item.images![i]!
-      return (!image.name || !other.name || image.name === other.name) &&
-        (!image.data || !other.data || image.data.startsWith('blob:') !== other.data.startsWith('blob:') || image.data === other.data) &&
-        (!image.ref || !other.ref || image.ref === other.ref)
-    }))) &&
-    // Hosts may append their staged preview selection before enqueueing.
-    // Match the original annotations as a prefix so the real turn can adopt
-    // its optimistic row even when turn_begin beats the queue acknowledgement.
-    (!item.annotations || (send.item.annotations.length <= item.annotations.length &&
-      send.item.annotations.every((ann, i) => ann.selector === item.annotations![i]?.selector &&
-        (!ann.url || !item.annotations![i]?.url || ann.url === item.annotations![i]?.url)))))
-  if (send && item.id) send.serverId = item.id
-  return send
-}
-
-function localSendForQueue(item: QueueItem): LocalSend | undefined {
-  return localSends.find(send => item.localKey ? send.key === item.localKey :
-    item.id ? send.serverId === item.id : toRaw(send.item) === toRaw(item))
-}
-
-function findLocalPendingPair(send?: LocalSend): number {
-  if (!send?.human) return -1
-  return liveTurns.value.findIndex(turn => toRaw(turn) === toRaw(send.human!))
-}
-
-/**
- * Paint this send once; an earlier WebSocket frame may already own its row.
- * A send behind an active reply stays in the queue until its turn_begin,
- * matching the persisted transcript a reload shows.
- */
-function paintAcceptedUserTurn(send: LocalSend) {
-  if (send.begun || findLocalPendingPair(send) >= 0 || liveAgentIdx.value >= 0) return
-  const { text, images, annotations } = send.item
-  if (!liveTurns.value.length) liveHistoryAnchor = anchorForNewLiveHuman(text)
-  const started = new Date().toISOString()
-  const human: ClarifyTurn = {
-    role: 'human', text, at: started, clientMessageId: send.item.clientMessageId,
-    images: images.length ? images : undefined,
-    annotations: annotations.length ? annotations : undefined,
-    localPending: true,
-  }
-  send.human = human
-  liveTurns.value.push(human)
-  liveAgentIdx.value = liveTurns.value.push({
-    role: 'agent', text: '', thought: '', at: started, startedAt: started,
-    clientMessageId: send.item.clientMessageId, streaming: true, localPending: true,
-  }) - 1
-  thinking.value = true
+function trackOptimisticSend(clientMessageId: string, origin: SentOrigin) {
+  sentOrigins.set(clientMessageId, origin)
+  addOptimisticSend(storeKey.value, {
+    clientMessageId,
+    text: origin.text,
+    images: origin.images,
+    annotations: origin.annotations,
+    at: new Date().toISOString(),
+  })
   stickToBottom.value = true
   unreadCount.value = 0
   void scrollBottom(true)
 }
 
-/** Withdraw only this not-yet-started send, never an older same-text reply. */
-function removeLocalPendingPair(item: QueueItem) {
-  const send = localSendForQueue(item)
-  if (!send || send.begun) return
-  const idx = findLocalPendingPair(send)
-  if (idx >= 0) {
-    const agent = liveTurns.value[idx + 1]
-    const count = agent?.role === 'agent' && !(agent.text || '').trim() &&
-      !(agent.thought || '').trim() && !agent.tools?.length && !agent.parts?.length ? 2 : 1
-    const removedLive = count === 2 && liveAgentIdx.value === idx + 1
-    liveTurns.value.splice(idx, count)
-    if (removedLive) liveAgentIdx.value = -1
-    else if (liveAgentIdx.value > idx) liveAgentIdx.value -= count
-    if (!liveTurns.value.length) liveHistoryAnchor = 0
-  }
-  localSends.splice(localSends.indexOf(send), 1)
+/** The server dialogue already lists this send (the socket can beat the HTTP answer). */
+function serverHasSend(clientMessageId: string): boolean {
+  const st = serverState.value
+  if (!st) return false
+  return st.rows.some((r) => r.clientMessageId === clientMessageId) ||
+    st.turns.some((t) => t.clientMessageId === clientMessageId || t.item?.clientMessageId === clientMessageId)
 }
 
 function sendMessage(
@@ -1090,18 +822,9 @@ function sendMessage(
   // (trim would collapse "回答已跳过\n用户回复\n" → two lines).
   const t = textHasSkipPrefix(text) ? text.replace(/^\s+/, '') : text.trim()
   if ((!t && imgs.length === 0 && anns.length === 0) || props.done || !props.active) return
-  // Busy may still enqueue. With no active reply the row is painted now and
-  // turn_begin attaches to it instead of opening a second human bubble.
-  const item: QueueItem = { text: t, images: imgs, annotations: cloneReactAnnotations(anns) }
-  if (composerText !== undefined) composerOrigin.set(item, composerText)
-  const send = registerLocalSend(item)
-  queued.value.push(item)
-  paintAcceptedUserTurn(send)
-  thinking.value = true
-  emit('send', t, imgs, anns, item.clientMessageId)
-  stickToBottom.value = true
-  unreadCount.value = 0
-  void scrollBottom(true)
+  const clientMessageId = newClientMessageId()
+  trackOptimisticSend(clientMessageId, { text: t, composerText, images: imgs, annotations: cloneReactAnnotations(anns) })
+  emit('send', t, imgs, anns, clientMessageId)
 }
 
 /**
@@ -1155,31 +878,27 @@ async function sendFromComposer(): Promise<boolean> {
     const originalImages = attachments.value
     const originalAnnotations = annotations.value
     composerSending.value = true
-    const item: QueueItem = { ...prepared }
-    const localSend = registerLocalSend(item)
+    const clientMessageId = newClientMessageId()
     const generation = conversationGeneration
     const identity = [props.runId, props.nodeId, props.iteration] as const
     const ownsRequest = () => generation === conversationGeneration &&
       props.runId === identity[0] && props.nodeId === identity[1] && props.iteration === identity[2]
-    let accepted = false
     try {
-      const acknowledged = await props.sendRequest(prepared.text, prepared.images, prepared.annotations, item.clientMessageId)
+      const acknowledged = await props.sendRequest(prepared.text, prepared.images, prepared.annotations, clientMessageId)
       // The socket can prove acceptance even when the HTTP response was lost.
-      if (!acknowledged && !localSend.begun) return false
+      if (!acknowledged && !serverHasSend(clientMessageId)) return false
       if (!ownsRequest()) return false
-      accepted = true
       if (draft.value === originalDraft) draft.value = ''
       if (attachments.value === originalImages && JSON.stringify(attachments.value) === JSON.stringify(imgs)) attachments.value = []
       if (annotations.value === originalAnnotations && JSON.stringify(annotations.value) === JSON.stringify(anns)) annotations.value = []
       attachNotice.value = null
       sendNotice.value = null
       if (!hasComposerDraft()) releaseStash()
-      paintAcceptedUserTurn(localSend)
+      trackOptimisticSend(clientMessageId, {
+        text: prepared.text, composerText: t, images: prepared.images, annotations: cloneReactAnnotations(prepared.annotations),
+      })
     } finally {
-      if (ownsRequest()) {
-        if (!accepted) removeLocalPendingPair(item)
-        composerSending.value = false
-      }
+      if (ownsRequest()) composerSending.value = false
     }
     return true
   }
@@ -1302,27 +1021,6 @@ function submitForms() {
   const text = formPrefix.value + '\n' + lines.join('\n')
   formValues.value = {}
   sendMessage(text)
-}
-
-interface FormRow {
-  label: string
-  value: string
-}
-function parseFormSummary(text: string): FormRow[] | null {
-  if (!text || !textHasFormPrefix(text)) return null
-  const bodyText = stripFormPrefix(text)
-  const rows: FormRow[] = []
-  for (const raw of bodyText.split('\n')) {
-    const line = raw.trim()
-    if (!line.startsWith('- ')) continue
-    const body = line.slice(2)
-    const idx = body.indexOf('→')
-    if (idx === -1) continue
-    const label = body.slice(0, idx).trim()
-    const value = body.slice(idx + 1).trim()
-    if (label) rows.push({ label, value })
-  }
-  return rows.length ? rows : null
 }
 
 function isActiveTurn(i: number): boolean {
@@ -1449,46 +1147,6 @@ function submitChoices() {
   sendMessage(text)
 }
 
-// A submitted "我的选择:" / "My choices:" human turn is rendered as structured
-// cards instead of a raw markdown bullet list. A bullet may wrap: lines that
-// do not start another "- " stay in the same item, then the first "→" splits
-// the prompt from answers. Returns null for any other message.
-interface ChoiceRow {
-  q: string
-  answers: string[]
-}
-function parseChoiceSummary(text: string): ChoiceRow[] | null {
-  if (!text || !textHasChoicePrefix(text)) return null
-  const bodyText = stripChoicePrefix(text)
-  const chunks: string[] = []
-  let buf: string[] | null = null
-  for (const raw of bodyText.split('\n')) {
-    const line = raw.replace(/\r$/, '')
-    const trimmed = line.trim()
-    if (trimmed.startsWith('- ')) {
-      if (buf) chunks.push(buf.join('\n'))
-      buf = [trimmed.slice(2)]
-      continue
-    }
-    if (buf) buf.push(line)
-  }
-  if (buf) chunks.push(buf.join('\n'))
-
-  const rows: ChoiceRow[] = []
-  for (const chunk of chunks) {
-    const idx = chunk.indexOf('→')
-    if (idx === -1) continue
-    const q = chunk.slice(0, idx).trim()
-    const answers = chunk
-      .slice(idx + 1)
-      .split('、')
-      .map((a) => a.trim())
-      .filter(Boolean)
-    if (q) rows.push({ q, answers })
-  }
-  return rows.length ? rows : null
-}
-
 function choiceRowsForAgentTurn(turnIndex: number): ChoiceRow[] | null {
   for (let j = turnIndex + 1; j < displayTurns.value.length; j++) {
     const turn = displayTurns.value[j]
@@ -1611,25 +1269,13 @@ function cancelReview() {
   // is false — still emit cancel so the host aborts the sandbox turn.
   if (!sessionBusy.value && !orphan) return
   // Review: clear local queue (matches CancelReviewSession clear-queue).
-  // Clarify: keep local queue; authoritative queue_state will reconcile (Demo).
+  // Clarify: keep the queue; the server state says what is left.
   if (props.reviewMode) {
-    for (const item of queued.value) removeLocalPendingPair(item)
-    queued.value = []
+    for (const o of optimisticSends(storeKey.value)) rejectOptimisticSend(storeKey.value, o.clientMessageId)
   }
-  if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
-    const row = liveTurns.value[liveAgentIdx.value]
-    row.streaming = false
-    row.interrupted = true
-    if (!row.text) row.text = '(已中断)'
-    markOutputEnd(row)
-  }
-  liveAgentIdx.value = -1
-  messageReveal.reset()
-  thoughtReveal.reset()
-  streamPreview.reset()
-  thoughtPreview.reset()
-  thinking.value = queued.value.length > 0
-  if (orphan) sandboxOrphan.value = null
+  clearRetryPending()
+  if (turnRunning.value) stoppingTurn.value = runningTurnIds.value[0]!
+  if (orphan) cancelledOrphanOp.value = sandboxOrphan.value!.runningOpId
   emit('cancel')
   void scrollBottom()
 }
@@ -1639,15 +1285,9 @@ function cancelReview() {
  * so the pending-send panel and FR4 confirm gate do not stick forever.
  */
 function discardLastQueued(clientMessageId?: string) {
-  const send = clientMessageId ? localSends.find(send => send.item.clientMessageId === clientMessageId) : undefined
-  const index = clientMessageId
-    ? queued.value.findIndex(item => item.clientMessageId === clientMessageId || (!!send && item.localKey === send.key))
-    : queued.value.length - 1
-  const item = index >= 0 ? queued.value.splice(index, 1)[0] : send?.item
-  if (item) removeLocalPendingPair(item)
-  if (queued.value.length === 0 && liveAgentIdx.value < 0) {
-    thinking.value = false
-  }
+  const list = optimisticSends(storeKey.value)
+  const target = clientMessageId ? list.find((o) => o.clientMessageId === clientMessageId) : list[list.length - 1]
+  if (target) rejectOptimisticSend(storeKey.value, target.clientMessageId)
 }
 
 /** The composer is on screen and accepts input. */
@@ -1850,35 +1490,27 @@ function restoreUnsentQueued(
   notice: string,
   opts: { autoRetryOnResume?: boolean } = {},
 ) {
-  // Local optimistic copy first: by id (clientId), then by text.
-  let idx = -1
-  const send = sent.clientMessageId
-    ? localSends.find(send => send.item.clientMessageId === sent.clientMessageId) : undefined
-  if (sent.clientMessageId) idx = queued.value.findIndex(q => q.clientMessageId === sent.clientMessageId || (!!send && q.localKey === send.key))
-  else if (sent.clientId) idx = queued.value.findIndex((q) => q.id === sent.clientId)
-  if (!sent.clientMessageId && idx < 0 && (sent.text || sent.images?.length || sent.annotations?.length)) {
-    for (let i = queued.value.length - 1; i >= 0; i--) {
-      const candidate = queued.value[i]
-      if (candidate.text === (sent.text ?? '') &&
-        (!sent.images || candidate.images.length === sent.images.length) &&
-        (!sent.annotations || candidate.annotations.length === sent.annotations.length)) {
-        idx = i
-        break
-      }
-    }
+  // This page's send first: by clientMessageId, then by content among its
+  // optimistic copies and the server queue rows it sent.
+  const pending = optimisticSends(storeKey.value)
+  let cmid = sent.clientMessageId
+  if (!cmid && (sent.text || sent.images?.length || sent.annotations?.length)) {
+    const same = (o: { text?: string; images?: unknown[]; annotations?: unknown[] }) => (o.text ?? '') === (sent.text ?? '') &&
+      (!sent.images || (o.images?.length ?? 0) === sent.images.length) &&
+      (!sent.annotations || (o.annotations?.length ?? 0) === sent.annotations.length)
+    cmid = [...pending].reverse().find(same)?.clientMessageId ??
+      [...view.value.queue].reverse().find((q) => !!q.clientMessageId && sentOrigins.has(q.clientMessageId) && same(q))?.clientMessageId
   }
-  const item = idx >= 0 ? queued.value.splice(idx, 1)[0] : null
-  const original = item ? localSendForQueue(item)?.item ?? item : send?.item
-  // The refused send was already painted. Take that row back with the queue item.
-  if (item || send) removeLocalPendingPair(item ?? send!.item)
-  if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
+  if (!cmid && sent.clientId) hideQueueRow(sent.clientId)
+  const local = cmid ? pending.find((o) => o.clientMessageId === cmid) : undefined
+  const origin = cmid ? sentOrigins.get(cmid) : undefined
+  if (cmid) rejectOptimisticSend(storeKey.value, cmid)
   sendNotice.value = notice
   if (opts.autoRetryOnResume) return
 
-  const origin = original ? composerOrigin.get(toRaw(original)) : undefined
-  const text = (origin ?? original?.text ?? sent.text ?? '').trim()
-  const imgs = original?.images ?? sent.images ?? []
-  const anns = original?.annotations ?? sent.annotations ?? []
+  const text = (origin?.composerText ?? origin?.text ?? local?.text ?? sent.text ?? '').trim()
+  const imgs = origin?.images ?? local?.images ?? sent.images ?? []
+  const anns = origin?.annotations ?? local?.annotations ?? sent.annotations ?? []
   if (!text && !imgs.length && !anns.length) return
   // Always stash (even with the composer open): a refresh or /gates dropping
   // this item before the user resends must not lose it. Cleared on send/clear.
@@ -1908,1007 +1540,98 @@ function visitEndedNotice(autoRetryOnResume: boolean | undefined): string {
 
 /**
  * 确认并流转 succeeded: the visit is over, and the socket that would have
- * delivered turn_done was closed at the click. Drop 思考中 / 生成中 on that
- * turn. Confirm failure must not call this.
+ * delivered the turn's end was closed at the click. Drop 思考中 / 生成中 on
+ * what is shown now. Confirm failure must not call this.
  */
 function settleConfirmedTurn() {
-  endLiveStreaming()
-  thinking.value = false
-}
-
-/** Idle is authoritative: no live turn may keep its caret, tracked or not. */
-function endLiveStreaming() {
-  let flushed = false
-  for (const turn of liveTurns.value) {
-    if (turn.role !== 'agent' || !turn.streaming) continue
-    turn.streaming = false
-    markOutputEnd(turn)
-    flushed = true
-  }
-  if (flushed) {
-    streamPreview.flush()
-    thoughtPreview.flush()
-  }
-  liveAgentIdx.value = -1
+  const st = serverState.value
+  settledAt.value = st ? { epoch: st.epoch, seq: st.seq } : { epoch: 0, seq: 0 }
+  clearRetryPending()
 }
 
 /**
- * Authoritative idle (waiting=0 ∧ !busy ∧ no activeItem): force-clear local
- * sticky busy — ghost queued, stop streaming on the live agent, and thinking.
- * Empty / failure agent slots stay in liveTurns as failure cards (plan g1.1);
- * do not wipe liveTurns=[] on empty.
+ * The server refused a send before it became a turn (WS request_rejected).
+ * Only this tab's own send is put back.
  */
-function forceAuthoritativeIdle() {
-  for (const send of [...localSends]) {
-    if (send.serverId && !send.begun) removeLocalPendingPair(send.item)
-  }
-  if (queued.value.length) queued.value = []
-  endLiveStreaming()
-  thinking.value = false
-}
-
-/**
- * After turn_done/error: drop the completed item and ghost optimistic rows.
- * Keep distinct authoritative waiters so multi-turn queue does not briefly
- * unlock confirm before the next queue_state. Empty after filter ⇒ idle.
- */
-function settleAfterTurnEnd(completedItem?: SessionFrameItem) {
-  const completedId = completedItem?.id ?? liveTurnOrigin?.id
-  if (completedId) {
-    lastCompletedItemId = completedId
-    queued.value = queued.value.filter((q) => q.id !== completedId)
-  }
-  if (queued.value.some((q) => !q.id)) {
-    queued.value = dropGhostItems(queued.value)
-  }
-  liveTurnOrigin = null
-  thinking.value = queued.value.length > 0 || liveAgentIdx.value >= 0
-}
-
-function applySandboxOrphan(frame: {
-  sandboxBusy?: boolean
-  sandboxDesynced?: boolean
-  sandboxRunningOpId?: string
+function applyRequestRejected(frame: {
+  clientMessageId?: string
+  code?: string
+  message?: string
+  autoRetryOnResume?: boolean
 }) {
-  const busy = !!frame.sandboxBusy || !!frame.sandboxDesynced
-  if (!busy) {
-    const wasOrphan = !!sandboxOrphan.value
-    sandboxOrphan.value = null
-    if (wasOrphan) {
-      endLiveStreaming()
-      if (queued.value.length === 0) thinking.value = false
+  const cmid = frame.clientMessageId
+  const own = !!cmid && (sentOrigins.has(cmid) || optimisticSends(storeKey.value).some((o) => o.clientMessageId === cmid))
+  const mine = takeClarifyOutbox(props.runId, props.nodeId, cmid, { own })
+  if (!own && !mine) return
+  restoreUnsentQueued({
+    clientMessageId: cmid,
+    text: mine?.text,
+    images: mine?.images,
+    annotations: mine?.annotations,
+    at: mine?.at,
+    imagesDropped: mine?.imagesDropped,
+  }, frame.code === CLARIFY_VISIT_ENDED
+    ? visitEndedNotice(frame.autoRetryOnResume)
+    : frame.message || 'error', { autoRetryOnResume: frame.autoRetryOnResume })
+}
+
+// Turns that ended while this chat was open: an answered send leaves the
+// outbox; a send dropped because the visit ended goes back to its author.
+const seenEndedTurns = new Set<string>()
+let endedTurnsPrimed = false
+watch(
+  () => serverState.value?.turns,
+  (turns) => {
+    if (!turns) return
+    for (const t of turns) {
+      if (t.phase !== 'ended' || seenEndedTurns.has(t.turnId)) continue
+      seenEndedTurns.add(t.turnId)
+      const cmid = t.clientMessageId
+      if (t.outcome !== 'dropped') {
+        if (cmid) dropClarifyOutbox(props.runId, props.nodeId, cmid)
+        continue
+      }
+      if (!endedTurnsPrimed || t.code !== CLARIFY_VISIT_ENDED) continue
+      if (t.autoRetryOnResume) {
+        restoreUnsentQueued({}, visitEndedNotice(true), { autoRetryOnResume: true })
+        continue
+      }
+      // Other viewers' sends carry nothing to put back here.
+      const mine = takeClarifyOutbox(props.runId, props.nodeId, cmid)
+      if (!mine) continue
+      restoreUnsentQueued({
+        clientMessageId: cmid,
+        text: mine.text,
+        images: mine.images,
+        annotations: mine.annotations,
+        at: mine.at,
+        imagesDropped: mine.imagesDropped,
+      }, visitEndedNotice(false))
     }
-    // The refresh snapshot may have landed while the bridge was still busy.
-    // Now that it is idle, drop the idle row the snapshot did not keep.
-    dropSettledLiveIfPersistedWins()
-    return
-  }
-  sandboxOrphan.value = {
-    runningOpId: String(frame.sandboxRunningOpId || ''),
-    desynced: !!frame.sandboxDesynced,
-  }
-}
+    endedTurnsPrimed = true
+  },
+  { immediate: true },
+)
 
-/**
- * Newest assistant bubble when it already finished normally.
- * A handoff row is skipped; a human tail or an interrupted/empty agent is not.
- */
-function latestNormallyCompletedTurn(): ClarifyTurn | null {
-  const list = displayTurns.value
-  for (let i = list.length - 1; i >= 0; i--) {
-    const t = list[i]
-    if (!t || t.role !== 'agent') return null
-    if (t.handoff) continue
-    return showTurnCompleted(t) ? t : null
-  }
-  return null
-}
-
-const showSandboxOrphanBanner = computed(() => {
-  if (!sandboxOrphan.value || !platformQueueIdle.value || props.done || queued.value.length > 0) {
-    return false
-  }
-  // A live slot for this orphan turn must not hide the banner: the platform
-  // already stopped tracking, and the transcript still has to keep growing.
-  const completed = latestNormallyCompletedTurn()
-  if (!completed) return true
-  const running = sandboxOrphan.value.runningOpId
-  const doneOp = completed.opId || ''
-  if (running !== '' && doneOp !== '' && running === doneOp) return false
-  return true
+/** A sandbox turn still running after the platform stopped tracking it (server-decided). */
+/** The orphan op Stop was clicked for; hidden until the server state drops it. */
+const cancelledOrphanOp = ref<string | null>(null)
+const sandboxOrphan = computed(() =>
+  forcedIdle.value || props.done ? null : visibleOrphan(view.value.orphan, cancelledOrphanOp.value))
+watch(() => view.value.orphan, (orphan) => {
+  if (!orphan) cancelledOrphanOp.value = null
 })
+
+const showSandboxOrphanBanner = computed(() => !!sandboxOrphan.value && queued.value.length === 0)
 
 const sandboxOrphanOpLabel = computed(() => {
   const id = sandboxOrphan.value?.runningOpId
   return id ? ` (${id})` : ''
 })
 
-/**
- * Reconcile local pending-send panel with platform-authoritative queue_state.
- * waiting===0 clears ghost rows after remote Cancel; items[] rebuilds/trims
- * while allowing at most one local-ahead item when no live turn (HTTP ack /
- * turn_begin in flight). busy+activeItem restores live bubble after refresh.
- */
-function syncIdleNarrative(
-  waiting: number,
-  busy?: boolean,
-  activeItem?: SessionFrameItem | null,
-) {
-  idleNarrativeOpen = waiting === 0 && !busy && !activeItem
-  platformQueueIdle.value = idleNarrativeOpen
-}
-
-/** Drop idle or settled live rows once the persisted transcript is the dialogue. */
-function clearSettledLiveTurns() {
-  // A pending HTTP acknowledgement still holds its own record; completed
-  // records no longer need to retain attachment data once history owns them.
-  for (let i = localSends.length - 1; i >= 0; i--) {
-    if (localSends[i]!.begun) localSends.splice(i, 1)
-  }
-  liveTurns.value = []
-  liveHistoryAnchor = 0
-  liveAgentIdx.value = -1
-  messageReveal.reset()
-  thoughtReveal.reset()
-  streamPreview.reset()
-  thoughtPreview.reset()
-  if (queued.value.length === 0) thinking.value = false
-  idlePainted = false
-  persistedMovedAfterIdlePaint = false
-  lastAppliedAcpSig = ''
-}
-
-function currentPersistedSuffix(persisted: ClarifyTurn[]): ClarifyTurn[] {
-  const anchor = Math.max(0, Math.min(liveHistoryAnchor, persisted.length))
-  return persisted.slice(anchor)
-}
-
-/** Live rails differ from this turn's persisted suffix, so a transcript refresh must not drop them. */
-function liveNarrativeAhead(persisted: ClarifyTurn[]): boolean {
-  const liveAgent = [...liveTurns.value].reverse().find((t) => t.role === 'agent')
-  if (!liveAgent) return false
-  const liveText = (liveAgent.text || '').trim()
-  const liveThought = (liveAgent.thought || '').trim()
-  if (!liveText && !liveThought && !liveAgent.tools?.length && !liveAgent.parts?.length) return false
-  const last = [...currentPersistedSuffix(persisted)].reverse().find((t) => t.role === 'agent' && !t.handoff)
-  if (!last) return true
-  if ((last.text || '').trim() !== liveText) return true
-  if ((last.thought || '').trim() !== liveThought) return true
-  if (!sameTools(last.tools, liveAgent.tools)) return true
-  if (!sameParts(last.parts, liveAgent.parts)) return true
-  return false
-}
-
-/**
- * Drop a settled live row once the persisted transcript is the dialogue.
- * While the sandbox orphan is still writing, the open row stays.
- */
-/** An accepted user row is still missing from this snapshot. */
-function localPendingStillOpen(suffix: ClarifyTurn[]): boolean {
-  for (let i = 0; i < liveTurns.value.length; i++) {
-    const human = liveTurns.value[i]
-    if (human?.role !== 'human' || !human.localPending) continue
-    const agent = liveTurns.value[i + 1]
-    const text = (human.text || '').trim()
-    // Queued behind the in-flight send: the user row has no agent slot yet.
-    if (!agent || agent.role !== 'agent') {
-      if (!text || !persistedCompletedLiveHuman(suffix, text, human.clientMessageId)) return true
-      continue
-    }
-    if (!text) {
-      if (!agent.streaming && !(agent.text || '').trim() && !(agent.thought || '').trim()) return true
-      continue
-    }
-    if (!persistedCompletedLiveHuman(suffix, text, human.clientMessageId)) return true
-  }
-  return false
-}
-
-function dropSettledLiveIfPersistedWins() {
-  if (sandboxOrphan.value) return
-  const turnList = persistedTurns.value
-  prunePersistedLiveHistory(turnList)
-  const liveHumanText = liveTurns.value[0]?.role === 'human' ? liveTurns.value[0].text || '' : ''
-  const suffix = currentPersistedSuffix(turnList)
-  // Older history, or an agent slot that has not started streaming, is not a
-  // reason to remove a user row the snapshot does not contain yet.
-  if (localPendingStillOpen(suffix)) return
-  const persistedCaughtUp = persistedCompletedLiveHuman(suffix, liveHumanText, liveTurns.value[0]?.clientMessageId)
-  const ahead = liveNarrativeAhead(turnList)
-  const snapshotWins =
-    idlePainted &&
-    persistedMovedAfterIdlePaint &&
-    liveAgentIdx.value < 0 &&
-    ahead
-  if (
-    liveTurns.value.length &&
-    (snapshotWins ||
-      (!ahead &&
-        (persistedCaughtUp || (suffix.length > 0 && !liveTurns.value.some((t) => t.streaming)))))
-  ) {
-    clearSettledLiveTurns()
-  }
-}
-
-function applyQueueState(
-  waiting: number,
-  items: SessionFrameItem[] | null,
-  busy?: boolean,
-  activeItem?: SessionFrameItem | null,
-  sandbox?: { busy?: boolean; desynced?: boolean; runningOpId?: string },
-) {
-  // A queue snapshot captured before completion can arrive after turn_done.
-  // Its busy bit describes the completed turn, so an otherwise empty snapshot
-  // must not reopen thinking. Distinct waiting items still belong to the queue.
-  if (
-    lastCompletedItemId &&
-    !liveTurnOrigin &&
-    liveAgentIdx.value < 0 &&
-    (activeItem?.id === lastCompletedItemId || items?.some((it) => it.id === lastCompletedItemId))
-  ) {
-    if (activeItem?.id === lastCompletedItemId) activeItem = null
-    if (items) items = items.filter((it) => it.id !== lastCompletedItemId)
-    if (!activeItem && (!items || items.length === 0)) return
-    if (items) waiting = items.length
-  }
-  if (activeItem) localSendForFrame(activeItem)
-  for (const item of items || []) localSendForFrame(item)
-  if (activeItem?.id && items) {
-    const present = new Set(items.map(item => item.id))
-    for (const send of [...localSends]) {
-      if (!send.begun && send.serverId && send.serverId !== activeItem.id && !present.has(send.serverId)) {
-        removeLocalPendingPair(send.item)
-      }
-    }
-  }
-  syncIdleNarrative(waiting, busy, activeItem ?? null)
-  if (isAuthoritativeIdle(waiting, busy, activeItem)) {
-    const row = liveAgentIdx.value >= 0 ? liveTurns.value[liveAgentIdx.value] : undefined
-    const keep =
-      !!row?.streaming &&
-      sandboxStillRunning(sandbox) &&
-      !orphanEchoesCompleted(sandbox?.runningOpId)
-    if (keep && row) {
-      if (queued.value.length) queued.value = []
-      thinking.value = true
-      if (
-        (row.text || '').trim() ||
-        (row.thought || '').trim() ||
-        row.tools?.length ||
-        row.parts?.length
-      ) {
-        idlePainted = true
-      }
-      return
-    }
-    forceAuthoritativeIdle()
-    return
-  }
-  // A delayed waiting snapshot may still list the item that turn_begin has
-  // already started. Keep that active item out of the pending queue; only a
-  // distinct server id can represent a waiter, including a same-text reply.
-  const activeId = (busy ? activeItem?.id : undefined) || liveTurnOrigin?.id
-  if (activeId) {
-    queued.value = queued.value.filter((q) => q.id !== activeId)
-    if (items) items = items.filter((it) => it.id !== activeId)
-  }
-  if (waiting === 0 && !busy) {
-    if (queued.value.length) queued.value = []
-    if (liveAgentIdx.value < 0) thinking.value = false
-  } else if (items) {
-    queued.value = reconcileQueue(queued.value, items, liveAgentIdx.value >= 0 || !!busy).map(item => {
-      const send = item.id ? localSends.find(send => send.serverId === item.id) : undefined
-      return send ? { ...item, localKey: send.key } : item
-    })
-  }
-  // Refresh resume: recreate streaming agent bubble from activeItem when busy.
-  // 有稳定 item id 时只检查当前锚点后的历史，旧同文完成回合不能阻止
-  // queue_state→ACP（无 turn_begin）的硬加载恢复。无 id 保留旧尾部判断。
-  const restoreText = activeItem?.text ?? ''
-  const restoreAnchor = activeItem?.id
-    ? liveTurnOrigin?.id === activeItem.id
-      ? liveHistoryAnchor
-      : anchorForNewLiveHuman(restoreText)
-    : 0
-  if (
-    busy &&
-    activeItem &&
-    (liveAgentIdx.value < 0 || (!!activeItem.id && activeItem.id !== liveTurnOrigin?.id)) &&
-    !persistedCompletedLiveHuman(persistedTurns.value.slice(restoreAnchor), restoreText, activeItem.clientMessageId)
-  ) {
-    applyReviewFrame({ event: 'turn_begin', nodeId: props.nodeId, item: activeItem })
-  }
-
-  // Authority idle / !busy: tear down streaming — keep empty/failure cards
-  // (plan g1.1); never wipe liveTurns=[] for empty agents.
-  if (!busy) endLiveStreaming()
-  thinking.value = liveAgentIdx.value >= 0 || queued.value.length > 0 || !!busy
-}
-
-/** What the live turn opened by the latest turn_begin carried (local copy). */
-let liveTurnOrigin: {
-  id?: string
-  clientMessageId?: string
-  text: string
-  images: ClarifyImage[]
-  annotations: ReactAnnotation[]
-  newHuman: boolean
-} | null = null
-
-/**
- * WS error frame with code clarify_visit_ended: the run ended, so the reply
- * was dropped (at turn start, or at WS enqueue). It is not an answer — never
- * write it into an agent bubble. Remove the turn it opened and hand the text
- * back (local optimistic copy first, `dropped` as fallback).
- */
-function applyVisitEndedFrame(frame: {
-  autoRetryOnResume?: boolean
-  clientMessageId?: string
-  item?: SessionFrameItem
-}) {
-  const auto = !!frame.autoRetryOnResume
-  // Broadcast frames carry no text and no `dropped`: the reply is ours to put
-  // back only when its clientMessageId is in this tab's outbox. Other viewers
-  // just lose the empty live slot (no refill, no stash, no notice).
-  const mine = auto ? null : takeClarifyOutbox(props.runId, props.nodeId, frame.clientMessageId)
-  const idx = liveAgentIdx.value
-  const origin = liveTurnOrigin
-  const sameActiveItem = !frame.item?.id || frame.item.id === origin?.id
-  const agent = sameActiveItem && idx >= 0 ? liveTurns.value[idx] : null
-  if (!sameActiveItem) endLiveStreaming()
-  let local: { text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] } | null = null
-  if (agent && !(agent.text || '').trim() && !(agent.thought || '').trim()) {
-    // Drop the empty agent slot and the human bubble this turn opened.
-    const human = idx > 0 ? liveTurns.value[idx - 1] : null
-    const removeHuman = !!origin?.newHuman && human?.role === 'human'
-    liveTurns.value.splice(removeHuman ? idx - 1 : idx, removeHuman ? 2 : 1)
-    if (removeHuman && origin) local = { text: origin.text, images: origin.images, annotations: origin.annotations }
-    liveAgentIdx.value = -1
-    messageReveal.reset()
-    thoughtReveal.reset()
-    streamPreview.reset()
-    thoughtPreview.reset()
-  } else if (agent) {
-    agent.streaming = false
-    markOutputEnd(agent)
-    liveAgentIdx.value = -1
-  }
-  if (auto) {
-    // System first message: resume resends it; nothing to put back.
-    restoreUnsentQueued({}, visitEndedNotice(true), { autoRetryOnResume: true })
-  } else if (mine) {
-    // Same text as the live bubble: its images still carry preview data.
-    const sameTurn = !!local && local.text.trim() === mine.text.trim()
-    restoreUnsentQueued(
-      {
-        clientMessageId: frame.clientMessageId,
-        text: mine.text,
-        images: sameTurn && local!.images.length ? local!.images : mine.images,
-        annotations: mine.annotations.length ? mine.annotations : (sameTurn ? local!.annotations : []),
-        at: mine.at,
-        // Same turn: the live bubble's images are complete, nothing was lost.
-        imagesDropped: sameTurn && local!.images.length ? 0 : mine.imagesDropped,
-      },
-      visitEndedNotice(false),
-    )
-  }
-  settleAfterTurnEnd(frame.item)
-}
-
-/** Parent feeds review/clarify WS frames here (shared session protocol). */
-function applyReviewFrame(frame: {
-  sessionGeneration?: number
-  revision?: number
-  event?: string
-  nodeId?: string
-  item?: SessionFrameItem
-  message?: string
-  interrupted?: boolean
-  waiting?: number
-  items?: SessionFrameItem[]
-  busy?: boolean
-  sandboxBusy?: boolean
-  sandboxDesynced?: boolean
-  sandboxRunningOpId?: string
-  activeItem?: SessionFrameItem
-  /** error: clarify_visit_ended (run ended; the reply was dropped, not answered). */
-  code?: string
-  autoRetryOnResume?: boolean
-  /** Echo of the request's clientMessageId (only when the request had one). */
-  clientMessageId?: string
-  dropped?: ClarifyDroppedPayload
-}) {
-  // Defense: ignore frames for other producer sessions on the same run.
-  if (frame.nodeId && frame.nodeId !== props.nodeId) return
-  if (frame.event === 'session_reset') {
-    reviewStateCursor.reset()
-    return
-  }
-  if (!reviewStateCursor.accept(frame)) return
-  switch (frame.event) {
-    case 'request_rejected': {
-      const send = frame.clientMessageId
-        ? localSends.find(send => send.item.clientMessageId === frame.clientMessageId) : undefined
-      const mine = takeClarifyOutbox(props.runId, props.nodeId, frame.clientMessageId, { own: !!send })
-      if (!send && !mine) return
-      restoreUnsentQueued({
-        clientMessageId: frame.clientMessageId,
-        text: send?.item.text ?? mine?.text,
-        images: send?.item.images ?? mine?.images,
-        annotations: send?.item.annotations ?? mine?.annotations,
-        at: mine?.at,
-        imagesDropped: mine?.imagesDropped,
-      }, frame.code === 'clarify_visit_ended'
-        ? visitEndedNotice(frame.autoRetryOnResume)
-        : frame.message || 'error', { autoRetryOnResume: frame.autoRetryOnResume })
-      break
-    }
-    case 'turn_begin': {
-      idleNarrativeOpen = false
-      idlePainted = false
-      persistedMovedAfterIdlePaint = false
-      lastAppliedAcpSig = ''
-      platformQueueIdle.value = false
-      // Pump order: queue_state(remaining, no active) → turn_begin(item=active).
-      // frame.item is server-authoritative; match-remove by id first, text fallback —
-      // never blind-shift (that would bind live human to the next waiter after trim).
-      const auth = frame.item
-      const localSend = localSendForFrame(auth)
-      const text = auth?.text ?? ''
-      const begun = takeTurnBeginItem(queued.value, auth)
-      queued.value = localSend
-        ? begun.queue.filter(item => (item as QueueItem).localKey !== localSend.key)
-        : begun.queue
-      // Duplicate opening frames still acknowledge/remove their own queue row.
-      // They must preserve any output already streamed into the active reply.
-      if (auth?.id && (auth.id === lastCompletedItemId ||
-        (auth.id === liveTurnOrigin?.id && liveAgentIdx.value >= 0))) return
-      if (localSend?.begun && liveTurnOrigin?.id === auth?.id) return
-      if (auth?.id && liveTurnOrigin?.id && auth.id !== liveTurnOrigin.id) endLiveStreaming()
-      const local = begun.taken ?? localSend?.item
-      const images =
-        auth?.images && auth.images.length > 0 ? auth.images : local?.images
-      const annotations =
-        auth?.annotations && auth.annotations.length > 0
-          ? auth.annotations
-          : local?.annotations
-      const humanText = text || local?.text || ''
-      const clientMessageId = auth?.clientMessageId ?? localSend?.item.clientMessageId
-      if (!liveTurns.value.length) liveHistoryAnchor = anchorForNewLiveHuman(humanText)
-      liveTurnOrigin = {
-        id: auth?.id,
-        clientMessageId: auth?.clientMessageId,
-        text: (local ? composerOrigin.get(toRaw(local)) : undefined) ?? humanText,
-        // Prefer the local copy: it still has inline data/preview, while the
-        // server item may already be ref-only (blob:…) after upload.
-        images: local?.images?.length ? local.images : (images ?? []),
-        annotations: local?.annotations?.length ? local.annotations : (annotations ?? []),
-        newHuman: false,
-      }
-      // Attach to the accepted row. Same text on an older finished turn does
-      // not count. Cover retry still reuses the trailing failed/empty slot.
-      const currentAgent = liveTurns.value[liveAgentIdx.value]
-      const currentHuman = liveTurns.value[liveAgentIdx.value - 1]
-      const pendingOwner = localSends.find(send => !send.begun && send.human &&
-        toRaw(send.human) === toRaw(currentHuman))
-      if (pendingOwner && pendingOwner !== localSend && currentAgent?.localPending &&
-        !(currentAgent.text || '').trim() && !(currentAgent.thought || '').trim() &&
-        !currentAgent.tools?.length && !currentAgent.parts?.length) {
-        liveTurns.value.splice(liveAgentIdx.value, 1)
-        liveAgentIdx.value = -1
-      }
-      const pendingAt = findLocalPendingPair(localSend)
-      if (localSend) localSend.begun = true
-      const last = liveTurns.value.length
-      const tailHuman = last >= 2 ? liveTurns.value[last - 2] : null
-      const tailAgent = last >= 2 ? liveTurns.value[last - 1] : null
-      const tailReusable =
-        pendingAt < 0 &&
-        tailHuman?.role === 'human' &&
-        tailAgent?.role === 'agent' &&
-        (!clientMessageId || !tailHuman.clientMessageId || tailHuman.clientMessageId === clientMessageId) &&
-        (tailHuman.text || '') === humanText &&
-        (isRetryableFailedAgent(tailAgent) ||
-          (!(tailAgent.text || '').trim() && !(tailAgent.thought || '').trim()))
-      const pairAt = pendingAt >= 0 ? pendingAt : tailReusable ? last - 2 : -1
-      if (pairAt >= 0) {
-        const existingHuman = liveTurns.value[pairAt]!
-        if (!liveTurns.value[pairAt + 1] || liveTurns.value[pairAt + 1]?.role !== 'agent') {
-          const started = new Date().toISOString()
-          liveTurns.value.splice(pairAt + 1, 0, {
-            role: 'agent',
-            clientMessageId,
-            text: '',
-            thought: '',
-            at: started,
-            startedAt: started,
-            streaming: true,
-            localPending: true,
-          })
-          if (liveAgentIdx.value >= pairAt + 1) liveAgentIdx.value += 1
-        }
-        const existingAgent = liveTurns.value[pairAt + 1]!
-        if (existingHuman.localPending) liveTurnOrigin.newHuman = true
-        existingHuman.clientMessageId = clientMessageId ?? existingHuman.clientMessageId
-        existingAgent.clientMessageId = existingHuman.clientMessageId
-        existingHuman.images = images ?? existingHuman.images
-        existingHuman.annotations = annotations ?? existingHuman.annotations
-        existingAgent.text = ''
-        existingAgent.thought = ''
-        delete existingAgent.tools
-        delete existingAgent.parts
-        existingAgent.questions = undefined
-        existingAgent.interrupted = false
-        existingAgent.streaming = true
-        markOutputStart(existingAgent, true)
-        existingAgent.at = existingAgent.startedAt || new Date().toISOString()
-        liveAgentIdx.value = pairAt + 1
-      } else {
-        const started = new Date().toISOString()
-        liveTurnOrigin.newHuman = true
-        const human: ClarifyTurn = { role: 'human', text: humanText, at: started, images, annotations, clientMessageId }
-        if (localSend) localSend.human = human
-        liveTurns.value.push(human)
-        liveAgentIdx.value =
-          liveTurns.value.push({
-            role: 'agent',
-            clientMessageId,
-            text: '',
-            thought: '',
-            at: started,
-            startedAt: started,
-            streaming: true,
-          }) - 1
-      }
-      thoughtOpenOverride.value = {}
-      messageReveal.reset()
-      thoughtReveal.reset()
-      streamPreview.reset()
-      thoughtPreview.reset()
-      thinking.value = true
-      break
-    }
-    case 'turn_done': {
-      // A full terminal snapshot may be newer than a missed turn_begin. Ack
-      // the request it names, never an older slot that happens to be visible.
-      const origin = !frame.item?.id || frame.item.id === liveTurnOrigin?.id ? liveTurnOrigin : null
-      const completedClientId = frame.item?.clientMessageId ?? origin?.clientMessageId
-      if (completedClientId) dropClarifyOutbox(props.runId, props.nodeId, completedClientId)
-      else if (origin?.text) ackClarifyOutboxText(props.runId, props.nodeId, origin.text)
-      if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
-        const agent = liveTurns.value[liveAgentIdx.value]
-        agent.streaming = false
-        agent.at = new Date().toISOString()
-        if (frame.interrupted) agent.interrupted = true
-        markOutputEnd(agent)
-        // Reveal flush before markdown flush (plan g1.2).
-        messageReveal.flush()
-        thoughtReveal.flush()
-        streamPreview.flush()
-        thoughtPreview.flush()
-      }
-      liveAgentIdx.value = -1
-      // Pump may omit idle queue_state; clear ghost optimistic rows only.
-      // Real id waiters stay busy until authoritative idle (review v1).
-      settleAfterTurnEnd(frame.item)
-      if (typeof frame.waiting === 'number' && Array.isArray(frame.items)) {
-        applyQueueState(frame.waiting, frame.items, frame.busy, frame.activeItem)
-      }
-      break
-    }
-    case 'error': {
-      if (frame.code === 'clarify_visit_ended') {
-        applyVisitEndedFrame(frame)
-        if (typeof frame.waiting === 'number' && Array.isArray(frame.items)) {
-          applyQueueState(frame.waiting, frame.items, frame.busy, frame.activeItem)
-        }
-        break
-      }
-      if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
-        const agent = liveTurns.value[liveAgentIdx.value]
-        agent.streaming = false
-        agent.text = agent.text || frame.message || 'error'
-        agent.at = new Date().toISOString()
-        if (frame.interrupted) agent.interrupted = true
-        markOutputEnd(agent)
-        messageReveal.flush()
-        thoughtReveal.flush()
-        streamPreview.flush()
-        thoughtPreview.flush()
-      }
-      liveAgentIdx.value = -1
-      // Same as turn_done: ghosts only; keep real remaining waiters.
-      settleAfterTurnEnd(frame.item)
-      if (typeof frame.waiting === 'number' && Array.isArray(frame.items)) {
-        applyQueueState(frame.waiting, frame.items, frame.busy, frame.activeItem)
-      }
-      break
-    }
-    case 'queue_state':
-      applyQueueState(
-        typeof frame.waiting === 'number' ? frame.waiting : 0,
-        Array.isArray(frame.items) ? frame.items : null,
-        frame.busy,
-        frame.activeItem ?? null,
-        {
-          busy: frame.sandboxBusy,
-          desynced: frame.sandboxDesynced,
-          runningOpId: frame.sandboxRunningOpId,
-        },
-      )
-      applySandboxOrphan(frame)
-      break
-  }
-  void scrollBottom()
-}
-
-/**
- * A snapshot with a segment marker is one user message and several agent rows.
- * Incremental single-message updates stay on the live row.
- */
-function agentSegments(events: AcpEvent[]): { thought: string; message: string }[] | null {
-  let multi = false
-  const segs: { thought: string; message: string }[] = [{ thought: '', message: '' }]
-  let sawMessage = false
-  for (const ev of events) {
-    if (ev.kind === 'segment') {
-      segs.push({ thought: '', message: '' })
-      sawMessage = false
-      multi = true
-      continue
-    }
-    if (ev.kind === 'thought' && ev.text) {
-      if (sawMessage) {
-        segs.push({ thought: ev.text, message: '' })
-        sawMessage = false
-        multi = true
-      } else {
-        segs[segs.length - 1]!.thought = ev.text
-      }
-      continue
-    }
-    if (ev.kind === 'message' && ev.text) {
-      if (
-        ev.text.startsWith('react reply chat failed') ||
-        ev.text.startsWith('review revise chat failed')
-      ) {
-        continue
-      }
-      if (sawMessage) {
-        segs.push({ thought: '', message: ev.text })
-        multi = true
-      } else {
-        segs[segs.length - 1]!.message = ev.text
-      }
-      sawMessage = true
-    }
-  }
-  return multi ? segs : null
-}
-
-/** Snapshot tools and steps live on the open (last) agent row, matching the persisted transcript. */
-function setRowTools(row: ClarifyTurn, tools: AgentTool[], parts?: AgentPart[]) {
-  if (!sameTools(row.tools, tools)) {
-    if (tools.length) row.tools = tools
-    else delete row.tools
-  }
-  if (sameParts(row.parts, parts)) return
-  if (parts?.length) row.parts = parts
-  else delete row.parts
-}
-
-function applyAgentSegments(segs: { thought: string; message: string }[], tools: AgentTool[], parts?: AgentPart[]) {
-  let first = liveAgentIdx.value
-  while (first > 0 && liveTurns.value[first - 1]?.role === 'agent') first--
-  let count = 0
-  while (liveTurns.value[first + count]?.role === 'agent') count++
-  while (count < segs.length) {
-    const started = new Date().toISOString()
-    liveTurns.value.splice(first + count, 0, {
-      role: 'agent', text: '', thought: '', at: started, startedAt: started, streaming: true,
-      clientMessageId: liveTurns.value[first]?.clientMessageId ?? liveTurns.value[first - 1]?.clientMessageId ?? liveTurnOrigin?.clientMessageId,
-    })
-    count++
-  }
-  segs.forEach((seg, i) => {
-    const row = liveTurns.value[first + i]
-    if (!row || row.role !== 'agent') return
-    const last = i === segs.length - 1
-    row.thought = seg.thought
-    row.text = seg.message
-    row.streaming = last
-    row.handoff = !last
-    if (!last) markOutputEnd(row)
-    setRowTools(row, last ? tools : [], last ? parts : undefined)
-    if (last) {
-      liveAgentIdx.value = first + i
-      messageReveal.setTarget(seg.message)
-      thoughtReveal.setTarget(seg.thought)
-    }
-  })
-}
-
-/**
- * Platform FIFO is idle and the streaming slot is gone. Write the snapshot
- * onto the closed agent row (or a new one) without reopening the slot, so the
- * orphan banner can stay while the text is visible. The row is settled: the
- * slot is closed, so it must not keep a streaming tail. Stick-gated scroll only.
- */
-function paintIdleNarrative(events: AcpEvent[]): boolean {
-  let idx = -1
-  for (let i = liveTurns.value.length - 1; i >= 0; i--) {
-    if (liveTurns.value[i]?.role === 'agent') {
-      idx = i
-      break
-    }
-  }
-  let created = false
-  if (idx < 0) {
-    if (idleSnapshotAlreadyVisible(events)) return true
-    const started = new Date().toISOString()
-    idx =
-      liveTurns.value.push({
-        role: 'agent',
-        clientMessageId: liveTurnOrigin?.clientMessageId ?? [...persistedTurns.value].reverse().find(turn => turn.role === 'human')?.clientMessageId,
-        text: '',
-        thought: '',
-        at: started,
-        startedAt: started,
-        streaming: false,
-      }) - 1
-    created = true
-  }
-  liveAgentIdx.value = idx
-  const applied = applyAcpEventsToSlot(events)
-  const row = liveTurns.value[idx]
-  liveAgentIdx.value = -1
-  if (queued.value.length === 0) thinking.value = false
-  const emptyCreated =
-    created &&
-    row &&
-    !(row.text || '').trim() &&
-    !(row.thought || '').trim() &&
-    !row.tools?.length &&
-    !row.parts?.length &&
-    liveTurns.value[liveTurns.value.length - 1] === row
-  if (emptyCreated) {
-    liveTurns.value.pop()
-  } else {
-    settleIdleNarrative()
-    const hasBody = liveTurns.value.some(
-      (t) =>
-        t.role === 'agent' &&
-        (!!(t.text || '').trim() || !!(t.thought || '').trim() || !!t.tools?.length || !!t.parts?.length),
-    )
-    if (hasBody) idlePainted = true
-  }
-  return applied
-}
-
-/** Slot is closed: show the written snapshot as a settled reply, not a live tail. */
-function settleIdleNarrative() {
-  for (const turn of liveTurns.value) {
-    if (turn.role !== 'agent' || !turn.streaming) continue
-    turn.streaming = false
-    if (!turn.handoff) markOutputEnd(turn)
-  }
-  messageReveal.flush()
-  thoughtReveal.flush()
-  streamPreview.flush()
-  thoughtPreview.flush()
-}
-
-/** This turn's persisted suffix already shows this cumulative snapshot — do not add an empty row. */
-function idleSnapshotAlreadyVisible(events: AcpEvent[]): boolean {
-  const last = [...currentPersistedSuffix(persistedTurns.value)].reverse().find((t) => t.role === 'agent' && !t.handoff)
-  if (!last) return false
-  let msg = ''
-  let thought = ''
-  for (const ev of events) {
-    if (ev.kind === 'message' && ev.text) msg = ev.text
-    if (ev.kind === 'thought' && ev.text) thought = ev.text
-  }
-  return (
-    (last.text || '') === msg &&
-    (last.thought || '') === thought &&
-    sameTools(last.tools, toolsFromAcp(events)) &&
-    sameParts(last.parts, partsFromAcp(events))
-  )
-}
-
-function sandboxStillRunning(sandbox?: { busy?: boolean; desynced?: boolean }): boolean {
-  return !!sandbox?.busy || !!sandbox?.desynced
-}
-
-/** Bridge is echoing a turn the transcript already finished normally. */
-function orphanEchoesCompleted(runningOpId?: string): boolean {
-  const running = (runningOpId || '').trim()
-  if (!running) return false
-  const completed = latestNormallyCompletedTurn()
-  if (!completed) return false
-  return (completed.opId || '') === running
-}
-
-/** Platform queue is idle, but the sandbox is still producing this turn. */
-function orphanTurnStillRunning(): boolean {
-  if (!sandboxOrphan.value || !platformQueueIdle.value) return false
-  return !orphanEchoesCompleted(sandboxOrphan.value.runningOpId)
-}
-
-function noteOrphanPainted() {
-  if (!sandboxOrphan.value) return
-  const hasBody = liveTurns.value.some(
-    (t) =>
-      t.role === 'agent' &&
-      (!!(t.text || '').trim() || !!(t.thought || '').trim() || !!t.tools?.length || !!t.parts?.length),
-  )
-  if (hasBody) idlePainted = true
-}
-
-/** Reopen the turn the platform stopped tracking so later frames still paint. */
-function ensureOrphanSlot() {
-  for (let i = liveTurns.value.length - 1; i >= 0; i--) {
-    const row = liveTurns.value[i]
-    if (row?.role !== 'agent') continue
-    row.streaming = true
-    row.interrupted = false
-    delete row.endedAt
-    liveAgentIdx.value = i
-    thinking.value = true
-    return
-  }
-  const persisted = persistedTurns.value
-  let human: ClarifyTurn | undefined
-  for (let i = persisted.length - 1; i >= 0; i--) {
-    const t = persisted[i]
-    if (!t) continue
-    if (t.role === 'human') {
-      human = t
-      break
-    }
-    if (t.role === 'agent' && !t.handoff) break
-  }
-  const started = new Date().toISOString()
-  const next: ClarifyTurn[] = []
-  if (human) {
-    next.push({
-      role: 'human',
-      clientMessageId: human.clientMessageId,
-      text: human.text || '',
-      at: human.at || started,
-      images: human.images,
-      annotations: human.annotations,
-    })
-  }
-  next.push({
-    role: 'agent',
-    clientMessageId: human?.clientMessageId,
-    text: '',
-    thought: '',
-    at: started,
-    startedAt: started,
-    streaming: true,
-  })
-  liveTurns.value = next
-  liveAgentIdx.value = next.length - 1
-  thinking.value = true
-  lastAppliedAcpSig = ''
-  messageReveal.reset()
-  thoughtReveal.reset()
-  streamPreview.reset()
-  thoughtPreview.reset()
-}
-
-function acpSnapshotSig(events: AcpEvent[]): string {
-  // Use the same complete content identity as recovery. Tool details can keep
-  // growing while their status and the message/thought rails stay unchanged.
-  return acpSemanticFingerprint(events) ?? ''
-}
-
-function snapshotAlreadyOnAgent(agent: ClarifyTurn, events: AcpEvent[]): boolean {
-  let msg = ''
-  let thought = ''
-  for (const ev of events) {
-    if (ev.kind === 'message' && ev.text) msg = ev.text
-    if (ev.kind === 'thought' && ev.text) thought = ev.text
-  }
-  return (agent.text || '') === msg && (agent.thought || '') === thought
-}
-
-/**
- * Consume publishAcp events for the streaming agent bubble (dialogue surface).
- * Returns false when mounted but streaming slot is not ready — host must buffer
- * (hard-load / remount race; never silent-noop as applied).
- * After an idle queue_state, the missing slot is intentional: paint anyway.
- * A sandbox that is still writing after the platform stopped tracking keeps
- * the slot open, so late thought and body land on the open page.
- */
-function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolean {
-  // Watchdog observations carry no replacement timeline and must not open a
-  // reply slot or erase tool details already painted by a content snapshot.
-  if (!events?.some(event => event.kind !== 'liveness')) return true
-  // Wrong node: not a readiness failure — do not buffer for another surface.
-  if (nodeId && nodeId !== props.nodeId) return true
-  if (liveAgentIdx.value < 0 && orphanTurnStillRunning()) ensureOrphanSlot()
-  if (liveAgentIdx.value < 0) {
-    if (!idleNarrativeOpen) return false
-    return paintIdleNarrative(events)
-  }
-  const applied = applyAcpEventsToSlot(events)
-  if (applied) noteOrphanPainted()
-  return applied
-}
-
-function applyAcpEventsToSlot(events: AcpEvent[]): boolean {
-  const agent = liveTurns.value[liveAgentIdx.value]
-  if (!agent) return false
-  const sig = acpSnapshotSig(events)
-  if (sig === lastAppliedAcpSig && snapshotAlreadyOnAgent(agent, events)) return true
-  const tools = toolsFromAcp(events)
-  const parts = partsFromAcp(events)
-  const segs = agentSegments(events)
-  if (segs) {
-    applyAgentSegments(segs, tools, parts)
-    lastAppliedAcpSig = sig
-    void scrollBottom()
-    return true
-  }
-  let msg = agent.text
-  let thought = agent.thought || ''
-  for (const ev of events) {
-    // Plan stays out of the dialogue; tool_call rows feed the folded tool group.
-    if (ev.kind === 'message' && ev.text) msg = ev.text
-    if (ev.kind === 'thought' && ev.text) thought = ev.text
-  }
-  // A different prompt can still be sitting on the previous turn's rail. The
-  // same prompt's identical reply is this turn and must be kept.
-  if (rejectsForeignSettledSnapshot(agent, msg)) return true
-  // Keep thought / message on separate rails — never msg||thought overwrite.
-  agent.thought = thought
-  agent.text = msg
-  setRowTools(agent, tools, parts)
-  lastAppliedAcpSig = sig
-  // Authority → reveal → markdown/text coalesce (not absolute snapshot → DOM).
-  messageReveal.setTarget(msg)
-  thoughtReveal.setTarget(thought)
-  // Stick-gated only — never force-drag while user scrolled up.
-  void scrollBottom()
-  return true
-}
-
-function lastSettledAgent(live: ClarifyTurn): ClarifyTurn | undefined {
-  const list = displayTurns.value
-  for (let i = list.length - 1; i >= 0; i--) {
-    const t = list[i]
-    if (!t || t.role !== 'agent' || t === live || t.streaming) continue
-    return t
-  }
-  return undefined
-}
-
-function humanTextBefore(agent: ClarifyTurn): string {
-  const list = displayTurns.value
-  const idx = list.indexOf(agent)
-  for (let i = idx - 1; i >= 0; i--) {
-    if (list[i]?.role === 'human') return (list[i]?.text || '').trim()
-  }
-  return ''
-}
-
-function rejectsForeignSettledSnapshot(agent: ClarifyTurn, msg: string): boolean {
-  const next = msg.trim()
-  const settled = lastSettledAgent(agent)
-  const settledText = (settled?.text || '').trim()
-  if (!next || next === (agent.text || '').trim() || next !== settledText || !settled) return false
-  const liveHuman = (liveTurns.value.find((t) => t.role === 'human')?.text || '').trim()
-  const settledHuman = humanTextBefore(settled)
-  if (liveHuman && settledHuman && liveHuman === settledHuman) return false
-  return true
-}
-
-/** Live agent bubble has visible message body (text or coalesced markdown). */
+/** Agent bubble has visible message body. */
 function agentHasMessage(t: ClarifyTurn): boolean {
-  return !!(t.text || (t.streaming && liveStreamHtml.value))
+  return !!t.text
 }
 
 /**
@@ -2927,11 +1650,8 @@ function agentTailOutputting(t: ClarifyTurn): boolean {
   return agentHasMessage(t)
 }
 
-/** Display thought (revealed while this live agent is streaming). */
-function agentThoughtDisplay(t: ClarifyTurn, idx: number): string {
-  if (t.streaming && idx === liveAgentIdx.value) {
-    return liveThoughtText.value
-  }
+/** Thought text to show for this agent row. */
+function agentThoughtDisplay(t: ClarifyTurn, _idx: number): string {
   return t.thought || ''
 }
 
@@ -2995,9 +1715,8 @@ const failRetryDisabled = computed(
 )
 
 /**
- * Cover-this-turn retry: emit retry-last; keep draft untouched; optimistically
- * re-open the failed agent as a streaming slot when it is still in liveTurns
- * (or seed live from the trailing persisted human + empty agent).
+ * Cover-this-turn retry: emit retry-last; keep draft untouched. The failed
+ * reply shows as a new attempt until the server's state takes over.
  */
 function retryLastFailed() {
   if (failRetryDisabled.value) return
@@ -3013,35 +1732,12 @@ function retryLastFailed() {
     }
   }
   if (!human || human.live) return
-
-  // Optimistic: put human + streaming agent into liveTurns (merge replaces
-  // persisted empty/failure for the same human).
-  liveTurns.value = [
-    {
-      role: 'human',
-      clientMessageId: human.clientMessageId,
-      text: human.text || '',
-      at: human.at || new Date().toISOString(),
-      images: human.images,
-      annotations: human.annotations,
-    },
-    {
-      role: 'agent',
-      clientMessageId: human.clientMessageId,
-      text: '',
-      thought: '',
-      at: new Date().toISOString(),
-      startedAt: new Date().toISOString(),
-      streaming: true,
-    },
-  ]
-  liveAgentIdx.value = 1
-  thinking.value = true
+  retryPending.value = true
+  clearTimeout(retryPendingTimer)
+  retryPendingTimer = window.setTimeout(() => {
+    retryPending.value = false
+  }, 15_000)
   thoughtOpenOverride.value = {}
-  messageReveal.reset()
-  thoughtReveal.reset()
-  streamPreview.reset()
-  thoughtPreview.reset()
   emit('retry-last')
   void scrollBottom()
 }
@@ -3060,12 +1756,8 @@ function retryLastFailed() {
     textHasChoicePrefix,
     stripChoicePrefix,
     isChoiceReply,
-    textHasSkipPrefix,
     isSkipReply,
-    formatSkipReply,
-    closesQuestionRound,
     latestQuestionTurnIndex,
-    latestFormTurnIndex,
     hasHumanReplyAfter,
     imagePreviewLabel,
     openImagePreview,
@@ -3075,7 +1767,6 @@ function retryLastFailed() {
     onPaste,
     removeAttachment,
     sendMessage,
-    prepareComposerSend,
     sendFromComposer,
     composerSending,
     onComposerKeydown,
@@ -3116,14 +1807,9 @@ function retryLastFailed() {
     cancelReview,
     discardLastQueued,
     restoreUnsentQueued,
-    visitEndedNotice,
+    applyRequestRejected,
     sendNotice,
     stashNotice,
-    forceAuthoritativeIdle,
-    settleAfterTurnEnd,
-    applyQueueState,
-    applyReviewFrame,
-    applyAcpEvents,
     agentHasMessage,
     agentTailOutputting,
     agentThoughtDisplay,
@@ -3131,8 +1817,6 @@ function retryLastFailed() {
     onThoughtToggle,
     showTurnCompleted,
     isRetryableFailedAgent,
-    isEmptyFailedAgent,
-    isFailureAssistantText,
     emptyFailDisplayText,
     showFailRetry,
     failRetryDisabled,
@@ -3145,22 +1829,12 @@ function retryLastFailed() {
     releaseConfirmPending,
     settleConfirmedTurn,
     queued,
-    liveTurns,
     showClarifyEmptyHint,
     seedHumanTurn,
     liveAgentIdx,
+    stopping,
     showSandboxOrphanBanner,
     sandboxOrphanOpLabel,
-    liveStreamHtml,
-    liveStreamBlocks,
-    streamPreview,
-    unsubStream,
-    liveThoughtText,
-    thoughtPreview,
-    unsubThought,
-    syncReveal,
-    messageReveal,
-    thoughtReveal,
     thoughtOpenOverride,
     scroller,
     fileInput,
@@ -3175,25 +1849,10 @@ function retryLastFailed() {
     sessionBusy,
     AUTO_GROW_MIN,
     AUTO_GROW_MAX,
-    CHOICE_PREFIX_ZH,
     choicePrefix,
-    FORM_PREFIX_ZH,
-    formPrefix,
-    SKIP_PREFIX_ZH,
-    SKIP_USER_LABEL_ZH,
-    SKIP_PREFIX_EN,
-    SKIP_USER_LABEL_EN,
-    skipPrefix,
-    skipUserReplyLabel,
     latestQuestionIdx,
     latestQuestions,
     latestQuestionAnswered,
-    pendingQuestionsOpen,
-    latestFormIdx,
-    latestForms,
-    latestFormAnswered,
-    pendingFormsOpen,
-    pendingInteractiveOpen,
     displayTurns,
     outputBounds,
     attachNotice,

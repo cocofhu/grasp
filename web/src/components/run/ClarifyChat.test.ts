@@ -11,14 +11,17 @@ import commonEn from '@/locales/en/common.json'
 import pagesEn from '@/locales/en/pages.json'
 import { i18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
-import type { AcpEvent, AgentPart, ClarifyImage, ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
+import type { AgentPart, ClarifyImage, ClarifyTurn, DialogueOutcome, ReactAnnotation } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
 import { acceptConfirmFlowDialog } from '@/test/acceptConfirmFlowDialog'
 import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { endedTurn, feedDialogue, orphanTurn, queuedTurn, runningTurn, type RowInput } from '@/test/dialogueKit'
 
 enableAutoUnmount(afterEach)
 afterEach(() => {
   document.body.replaceChildren()
+  clearDialogues()
 })
 
 function liveHost(state = 'ready'): LiveCardHost {
@@ -52,7 +55,7 @@ function mountChat(opts: {
   seedHumanImages?: { data: string; mimeType: string; name?: string }[]
   hideFinish?: boolean
   sendLabel?: string
-  sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) => Promise<boolean>
+  sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) => Promise<boolean>
   liveHost?: LiveCardHost
 } = {}) {
   const i18n = createI18n({
@@ -112,6 +115,37 @@ async function clickSend(wrapper: ReturnType<typeof mountChat>) {
   const sendBtn = wrapper.find('[data-testid="clarify-send-icon"], [data-testid="clarify-send-label"]')
   expect(sendBtn.exists()).toBe(true)
   await sendBtn.trigger('click')
+  await flushPromises()
+}
+
+function feed(spec: Parameters<typeof feedDialogue>[2]) {
+  return feedDialogue('run-1', 'react-1', spec)
+}
+
+/** clientMessageId of the nth @send this chat emitted. */
+function sentId(wrapper: ReturnType<typeof mountChat>, n = 0): string {
+  return wrapper.emitted('send')![n]![3] as string
+}
+
+/** Turn t1: the human `text` (this chat's first send, when there is one) and its reply rows. */
+function turnRows(wrapper: ReturnType<typeof mountChat>, text: string, agent: Partial<RowInput>[]): RowInput[] {
+  const clientMessageId = wrapper.emitted('send')?.[0]?.[3] as string | undefined
+  return [
+    { role: 'human', text, at: '2026-07-18T00:00:00Z', turnId: 't1', clientMessageId },
+    ...agent.map((a): RowInput => ({ role: 'agent', text: '', at: '2026-07-18T00:00:01Z', turnId: 't1', clientMessageId, ...a })),
+  ]
+}
+
+/** The server running turn t1 with these live reply rows (default: nothing written yet). */
+async function liveTurn(wrapper: ReturnType<typeof mountChat>, text: string, agent: Partial<RowInput>[] = [{ streaming: true }]) {
+  feed({ busy: true, rows: turnRows(wrapper, text, agent), turns: [runningTurn('t1', { text })] })
+  await flushPromises()
+}
+
+/** Turn t1 ended with outcome; its reply rows are sealed. */
+async function endTurn(wrapper: ReturnType<typeof mountChat>, text: string, agent: Partial<RowInput>[], outcome: DialogueOutcome = 'ok') {
+  const sealed = agent.map((a) => ({ ...a, streaming: false, phase: undefined, outcome: a.outcome ?? outcome }))
+  feed({ rows: turnRows(wrapper, text, sealed), turns: [endedTurn('t1', outcome)] })
   await flushPromises()
 }
 
@@ -716,15 +750,12 @@ describe('ClarifyChat', () => {
         { role: 'agent', text: '最新回复已落盘', at: '2', opId: 'g-00fccbf7-0f2' },
       ],
     })
-    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxDesynced: true,
-      sandboxRunningOpId: 'g-00fccbf7-0f2',
+    // The server drops a sandbox echo of the turn it already persisted.
+    feedDialogue('run-1', 'react-1', {
+      rows: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '最新回复已落盘', at: '2', opId: 'g-00fccbf7-0f2' },
+      ],
     })
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-sandbox-orphan"]').exists()).toBe(false)
@@ -742,14 +773,13 @@ describe('ClarifyChat', () => {
         { role: 'agent', text: '最新回复已落盘', at: '2', opId: 'g-00fccbf7-0f2' },
       ],
     })
-    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxDesynced: true,
+    feedDialogue('run-1', 'react-1', {
+      rows: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '最新回复已落盘', at: '2', opId: 'g-00fccbf7-0f2' },
+      ],
+      turns: [orphanTurn()],
+      orphan: { runningOpId: '', desynced: true },
     })
     await flushPromises()
     const banner = wrapper.find('[data-testid="clarify-sandbox-orphan"]')
@@ -770,14 +800,13 @@ describe('ClarifyChat', () => {
         { role: 'agent', text: '历史已完成', at: '2', opId: 'g-done' },
       ],
     })
-    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxRunningOpId: 'g-other',
+    feedDialogue('run-1', 'react-1', {
+      rows: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '历史已完成', at: '2', opId: 'g-done' },
+      ],
+      turns: [orphanTurn('g-other')],
+      orphan: { runningOpId: 'g-other', desynced: false },
     })
     await flushPromises()
     const banner = wrapper.find('[data-testid="clarify-sandbox-orphan"]')
@@ -793,14 +822,9 @@ describe('ClarifyChat', () => {
 
   it('review mode: orphan banner cancel emits cancel while FIFO is idle', async () => {
     const wrapper = mountChat({ reviewMode: true })
-    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      waiting: 0,
-      items: [],
-      busy: false,
-      sandboxBusy: true,
-      sandboxRunningOpId: 'oid-stuck',
+    feedDialogue('run-1', 'react-1', {
+      turns: [orphanTurn('oid-stuck')],
+      orphan: { runningOpId: 'oid-stuck', desynced: false },
     })
     await flushPromises()
     const banner = wrapper.find('[data-testid="clarify-sandbox-orphan"]')
@@ -1007,10 +1031,7 @@ describe('ClarifyChat', () => {
       wrapper.findAll('[data-testid="clarify-human-message"]').map((node) => node.text())
     expect(humanTexts()).toContain('直接回答')
 
-    const vm = wrapper.vm as unknown as {
-      discardLastQueued: () => void
-      applyReviewFrame: (frame: Record<string, unknown>) => void
-    }
+    const cmid = sentId(wrapper)
     await wrapper.setProps({
       turns: [
         { role: 'human', text: '上一句', at: '1' },
@@ -1021,9 +1042,9 @@ describe('ClarifyChat', () => {
     await flushPromises()
     expect(humanTexts().filter((text) => text.includes('直接回答'))).toHaveLength(1)
 
-    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', waiting: 0, items: [], busy: false })
-    await wrapper.setProps({
-      turns: [
+    // An idle server state that does not list the send yet keeps it on screen.
+    feed({
+      rows: [
         { role: 'human', text: '上一句', at: '1' },
         { role: 'agent', text: '上一句回复', at: '2-idle' },
       ],
@@ -1031,12 +1052,12 @@ describe('ClarifyChat', () => {
     await flushPromises()
     expect(humanTexts().filter((text) => text.includes('直接回答'))).toHaveLength(1)
 
-    await wrapper.setProps({
-      turns: [
+    feed({
+      rows: [
         { role: 'human', text: '上一句', at: '1' },
         { role: 'agent', text: '上一句回复', at: '2' },
-        { role: 'human', text: '直接回答', at: '3' },
-        { role: 'agent', text: '收到', at: '4' },
+        { role: 'human', text: '直接回答', at: '3', turnId: 't-direct', clientMessageId: cmid },
+        { role: 'agent', text: '收到', at: '4', turnId: 't-direct', clientMessageId: cmid },
       ],
     })
     await flushPromises()
@@ -1046,23 +1067,35 @@ describe('ClarifyChat', () => {
 
   it('shows a send behind a running reply once, in the queue, until its turn begins', async () => {
     const wrapper = mountChat({ draft: '排队中的请求' })
-    const vm = wrapper.vm as unknown as {
-      applyReviewFrame: (frame: Record<string, unknown>) => void
-      applyAcpEvents: (events: { kind: string; text?: string }[], node?: string) => void
-    }
-    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'active', text: '当前请求' } })
-    vm.applyAcpEvents([{ kind: 'message', text: '正在回复' }], 'react-1')
+    const active: RowInput[] = [
+      { role: 'human', text: '当前请求', at: '1', turnId: 'active' },
+      { role: 'agent', text: '正在回复', at: '1', turnId: 'active', streaming: true },
+    ]
+    feed({ busy: true, rows: active, turns: [runningTurn('active', { text: '当前请求' })] })
+    await flushPromises()
     await clickSend(wrapper)
-    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', busy: true, waiting: 1, items: [{ id: 'queued', text: '排队中的请求' }], activeItem: { id: 'active', text: '当前请求' } })
+    const cmid = sentId(wrapper)
+    feed({
+      busy: true,
+      rows: active,
+      turns: [runningTurn('active', { text: '当前请求' }), queuedTurn('queued', 0, { text: '排队中的请求', clientMessageId: cmid }, { clientMessageId: cmid })],
+    })
     await flushPromises()
     const count = (text: string) => text.split('排队中的请求').length - 1
     expect(count(wrapper.text())).toBe(1)
     expect(count(wrapper.get('[data-testid="clarify-scroller"]').text())).toBe(0)
     expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
 
-    vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
-    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'queued', text: '排队中的请求' } })
-    vm.applyAcpEvents([{ kind: 'message', text: '排队请求的回复' }], 'react-1')
+    feed({
+      busy: true,
+      rows: [
+        { role: 'human', text: '当前请求', at: '1', turnId: 'active' },
+        { role: 'agent', text: '正在回复', at: '2', turnId: 'active' },
+        { role: 'human', text: '排队中的请求', at: '3', turnId: 'queued', clientMessageId: cmid },
+        { role: 'agent', text: '排队请求的回复', at: '3', turnId: 'queued', clientMessageId: cmid, streaming: true },
+      ],
+      turns: [endedTurn('active', 'ok'), runningTurn('queued', { text: '排队中的请求', clientMessageId: cmid }, { clientMessageId: cmid })],
+    })
     await flushPromises()
     expect(count(wrapper.get('[data-testid="clarify-scroller"]').text())).toBe(1)
     expect(count(wrapper.text())).toBe(1)
@@ -1073,19 +1106,18 @@ describe('ClarifyChat', () => {
 
   it('keeps every assistant segment while a waiter stays queued, without a failure card for it', async () => {
     const wrapper = mountChat({ draft: '下一条请求' })
-    const vm = wrapper.vm as unknown as {
-      applyReviewFrame: (frame: Record<string, unknown>) => void
-      applyAcpEvents: (events: { kind: string; text?: string }[], node?: string) => void
-    }
-    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'active', text: '当前请求' } })
+    feed({ busy: true, rows: [{ role: 'human', text: '当前请求', at: '1', turnId: 'active' }], turns: [runningTurn('active', { text: '当前请求' })] })
+    await flushPromises()
     await clickSend(wrapper)
-    vm.applyAcpEvents([
-      { kind: 'message', text: '第一段回复' },
-      { kind: 'segment' },
-      { kind: 'message', text: '第二段回复' },
-      { kind: 'segment' },
-      { kind: 'message', text: '第三段回复' },
-    ], 'react-1')
+    const cmid = sentId(wrapper)
+    const waiter = queuedTurn('waiting', 0, { text: '下一条请求', clientMessageId: cmid }, { clientMessageId: cmid })
+    const segments: RowInput[] = [
+      { role: 'human', text: '当前请求', at: '1', turnId: 'active' },
+      { role: 'agent', text: '第一段回复', at: '1', turnId: 'active', handoff: true, phase: 'running' },
+      { role: 'agent', text: '第二段回复', at: '1', turnId: 'active', handoff: true, phase: 'running' },
+      { role: 'agent', text: '第三段回复', at: '1', turnId: 'active', streaming: true },
+    ]
+    feed({ busy: true, rows: segments, turns: [runningTurn('active', { text: '当前请求' }), waiter] })
     await flushPromises()
     expect(wrapper.findAll('[data-testid="clarify-agent-message"]').map((node) => node.text()))
       .toEqual(['第一段回复', '第二段回复', '第三段回复'])
@@ -1093,9 +1125,15 @@ describe('ClarifyChat', () => {
     const scroller = wrapper.get('[data-testid="clarify-scroller"]')
     expect(scroller.text()).not.toContain('下一条请求')
 
-    vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
-    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'waiting', text: '下一条请求' } })
-    vm.applyAcpEvents([{ kind: 'message', text: '下一轮的回复' }], 'react-1')
+    feed({
+      busy: true,
+      rows: [
+        ...segments.map((r) => ({ ...r, phase: undefined, streaming: false })),
+        { role: 'human', text: '下一条请求', at: '2', turnId: 'waiting', clientMessageId: cmid },
+        { role: 'agent', text: '下一轮的回复', at: '2', turnId: 'waiting', clientMessageId: cmid, streaming: true },
+      ],
+      turns: [endedTurn('active', 'ok'), runningTurn('waiting', { text: '下一条请求', clientMessageId: cmid }, { clientMessageId: cmid })],
+    })
     await flushPromises()
     expect(wrapper.findAll('[data-testid="clarify-human-message"]').map((node) => node.text()))
       .toEqual(['当前请求', '下一条请求'])
@@ -1109,22 +1147,24 @@ describe('ClarifyChat', () => {
       { role: 'human', text: '之前的请求', at: 't1' },
       { role: 'agent', text: '之前的回复', at: 't2', startedAt: '2026-10-28T13:30:00Z', endedAt: '2026-10-28T13:30:38Z' },
     ]
-    const currentHuman: ClarifyTurn = { role: 'human', text: '回复信息改成统计信息', at: 't3' }
+    const currentHuman: RowInput = { role: 'human', text: '回复信息改成统计信息', at: 't3', turnId: 'active-stats' }
     const wrapper = mountChat({ turns: [...saved, currentHuman], draft: '暗色主题感觉不太行' })
-    const vm = wrapper.vm as unknown as {
-      applyReviewFrame: (frame: Record<string, unknown>) => void
-      applyAcpEvents: (events: { kind: string; text?: string }[], node?: string) => void
-    }
-    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', busy: true, waiting: 0, items: [], activeItem: { id: 'active-stats', text: currentHuman.text } })
-    vm.applyAcpEvents([
-      { kind: 'message', text: '已把回复信息改成统计信息。' },
-      { kind: 'segment' },
-      { kind: 'thought', text: '继续检查统计信息的展示效果。' },
-    ], 'react-1')
+    const running = runningTurn('active-stats', { text: currentHuman.text })
+    const live = (sealedSegment: boolean): RowInput[] => [
+      ...saved,
+      currentHuman,
+      { role: 'agent', text: '已把回复信息改成统计信息。', at: 't4', turnId: 'active-stats', handoff: true, ...(sealedSegment ? {} : { phase: 'running' as const }) },
+      { role: 'agent', text: '', thought: '继续检查统计信息的展示效果。', at: 't4', turnId: 'active-stats', streaming: true },
+    ]
+    feed({ busy: true, rows: live(false), turns: [running] })
     await flushPromises()
     await clickSend(wrapper)
-    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', busy: true, waiting: 1, items: [{ id: 'queued-dark', text: '暗色主题感觉不太行' }], activeItem: { id: 'active-stats', text: currentHuman.text } })
-    await wrapper.setProps({ turns: [...saved, currentHuman, ...(persistedSegment ? [{ role: 'agent' as const, text: '已把回复信息改成统计信息。', at: 't4', handoff: true }] : [])] })
+    const cmid = sentId(wrapper)
+    feed({
+      busy: true,
+      rows: live(persistedSegment),
+      turns: [running, queuedTurn('queued-dark', 0, { text: '暗色主题感觉不太行', clientMessageId: cmid }, { clientMessageId: cmid })],
+    })
     await flushPromises()
     expect(wrapper.get('[data-testid="clarify-review-queue"]').text()).toContain('暗色主题感觉不太行')
     expect(wrapper.findAll('[data-testid="clarify-human-message"]').filter((node) => node.text().includes(currentHuman.text))).toHaveLength(1)
@@ -1169,18 +1209,20 @@ describe('ClarifyChat', () => {
   })
 
   it('sendRequest paints on success and leaves no row when the send is refused', async () => {
-    const accepted = mountChat({ draft: '普通消息', sendRequest: async () => true })
+    let cmid = ''
+    const accepted = mountChat({ draft: '普通消息', sendRequest: async (_t, _i, _a, id) => { cmid = id!; return true } })
     await clickSend(accepted)
     expect(accepted.find('[data-testid="clarify-human-message"]').text()).toContain('普通消息')
-    await accepted.setProps({
-      turns: [
-        { role: 'human', text: '普通消息', at: '1' },
-        { role: 'agent', text: '好', at: '2' },
+    feed({
+      rows: [
+        { role: 'human', text: '普通消息', at: '1', turnId: 't1', clientMessageId: cmid },
+        { role: 'agent', text: '好', at: '2', turnId: 't1', clientMessageId: cmid },
       ],
     })
     await flushPromises()
     expect(accepted.findAll('[data-testid="clarify-human-message"]')).toHaveLength(1)
     accepted.unmount()
+    clearDialogues()
 
     const refused = mountChat({ draft: '失败消息', sendRequest: async () => false })
     await clickSend(refused)
@@ -1310,20 +1352,11 @@ describe('ClarifyChat', () => {
     })
     expect(wrapper.find('[data-testid="clarify-history-image-thumb"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="clarify-history-file-chip"]').text()).toContain('brief.pdf')
-    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'react-1',
-      waiting: 0,
-      items: [],
-      busy: false,
-    })
+    feed({})
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-history-image-thumb"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="clarify-history-file-chip"]').text()).toContain('brief.pdf')
-    await wrapper.setProps({
-      turns: [{ role: 'human', text: '把登录做清楚', at: '2026-08-21T00:00:00Z' }],
-    })
+    feed({ rows: [{ role: 'human', text: '把登录做清楚', at: '2026-08-21T00:00:00Z' }] })
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-history-image-thumb"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="clarify-history-file-chip"]').text()).toContain('brief.pdf')
@@ -1544,7 +1577,7 @@ describe('ClarifyChat', () => {
     { accepted: false, result: 'rejected' },
   ])('updates confirm visibility after an $result send without losing a rejected draft', async ({ accepted }) => {
     let complete!: (ok: boolean) => void
-    const sendRequest = vi.fn(() => new Promise<boolean>((resolve) => { complete = resolve }))
+    const sendRequest = vi.fn((..._args: [string, ClarifyImage[], ReactAnnotation[], string?]) => new Promise<boolean>((resolve) => { complete = resolve }))
     const wrapper = mountChat({ draft: '1', sendRequest })
     expectConfirmHidden(wrapper)
     await clickSend(wrapper)
@@ -1567,8 +1600,14 @@ describe('ClarifyChat', () => {
       // The reply is already in the transcript, so the turn stays busy until it ends.
       expect(wrapper.get('[data-testid="clarify-human-message"]').text()).toContain('1')
       expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
-      const vm = wrapper.vm as unknown as { applyReviewFrame: (frame: Record<string, unknown>) => void }
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+      const cmid = sendRequest.mock.calls[0]![3] as string
+      feed({
+        rows: [
+          { role: 'human', text: '1', at: '1', turnId: 't1', clientMessageId: cmid },
+          { role: 'agent', text: '好', at: '2', turnId: 't1', clientMessageId: cmid },
+        ],
+        turns: [endedTurn('t1', 'ok', { clientMessageId: cmid })],
+      })
       await flushPromises()
       const confirm = wrapper.get('[data-testid="clarify-confirm-flow"]')
       expect(confirm.isVisible()).toBe(true)
@@ -1588,7 +1627,7 @@ describe('ClarifyChat', () => {
 
   it('keeps confirm hidden if the draft is cleared while its send request is pending', async () => {
     let complete!: (ok: boolean) => void
-    const sendRequest = vi.fn(() => new Promise<boolean>((resolve) => { complete = resolve }))
+    const sendRequest = vi.fn((..._args: [string, ClarifyImage[], ReactAnnotation[], string?]) => new Promise<boolean>((resolve) => { complete = resolve }))
     const wrapper = mountChat({ draft: '1', sendRequest })
     await clickSend(wrapper)
     await wrapper.get('[data-testid="clarify-input"]').setValue('')
@@ -1598,8 +1637,13 @@ describe('ClarifyChat', () => {
     complete(true)
     await flushPromises()
     expect(wrapper.get('[data-testid="clarify-human-message"]').text()).toContain('1')
-    const vm = wrapper.vm as unknown as { applyReviewFrame: (frame: Record<string, unknown>) => void }
-    vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+    const cmid = sendRequest.mock.calls[0]![3] as string
+    feed({
+      rows: [
+        { role: 'human', text: '1', at: '1', turnId: 't1', clientMessageId: cmid },
+        { role: 'agent', text: '好', at: '2', turnId: 't1', clientMessageId: cmid },
+      ],
+    })
     await flushPromises()
     const confirm = wrapper.get('[data-testid="clarify-confirm-flow"]')
     expect(confirm.isVisible()).toBe(true)
@@ -1674,7 +1718,7 @@ describe('ClarifyChat', () => {
 
     it('draft → 发送; send in flight → spinner 发送; busy → 停止; busy + draft → 发送; turn done → 确认并流转', async () => {
       let complete!: (ok: boolean) => void
-      const sendRequest = vi.fn(() => new Promise<boolean>((resolve) => { complete = resolve }))
+      const sendRequest = vi.fn((..._args: [string, ClarifyImage[], ReactAnnotation[], string?]) => new Promise<boolean>((resolve) => { complete = resolve }))
       const w = mountChat({ sendRequest })
       const el = w.get('.composer-primary').element
       await w.get('[data-testid="clarify-input"]').setValue('第一句')
@@ -1684,17 +1728,20 @@ describe('ClarifyChat', () => {
       expect(w.get('.composer-primary').attributes('aria-busy')).toBe('true')
       complete(true)
       await flushPromises()
-      const vm = w.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void; applyAcpEvents: (e: unknown[], n?: string) => void }
-      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { text: '第一句' } })
-      vm.applyAcpEvents([{ kind: 'message', text: '处理中' }], 'react-1')
+      const cmid = sendRequest.mock.calls[0]![3] as string
+      const human: RowInput = { role: 'human', text: '第一句', at: '1', turnId: 't1', clientMessageId: cmid }
+      feed({
+        busy: true,
+        rows: [human, { role: 'agent', text: '处理中', at: '1', turnId: 't1', streaming: true }],
+        turns: [runningTurn('t1', { text: '第一句' }, { clientMessageId: cmid })],
+      })
       await flushPromises()
       expect(kinds(w)).toEqual({ kind: 'stop', disabled: false })
       await w.get('[data-testid="clarify-input"]').setValue('再补一句')
       expect(kinds(w)).toEqual({ kind: 'send', disabled: false })
       await w.get('[data-testid="clarify-input"]').setValue('')
       expect(kinds(w)).toEqual({ kind: 'stop', disabled: false })
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
-      vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', waiting: 0, items: [], busy: false })
+      feed({ rows: [human, { role: 'agent', text: '处理中', at: '2', turnId: 't1' }], turns: [endedTurn('t1', 'ok', { clientMessageId: cmid })] })
       await flushPromises()
       expect(kinds(w)).toEqual({ kind: 'confirm', disabled: false })
       // Every state above reused one button element (morph, not swap).
@@ -2143,198 +2190,15 @@ describe('ClarifyChat', () => {
     vi.unstubAllGlobals()
   })
 
-  describe('ACP delivery contract (false applied / hard-refresh resume)', () => {
-    it('applyAcpEvents returns false when streaming slot not ready (g1.1)', async () => {
+  describe('running turn placeholder', () => {
+    it('shows the busy placeholder while a turn runs without output and drops it once idle', async () => {
       const wrapper = mountChat()
-      const vm = wrapper.vm as unknown as {
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => boolean
-      }
-      // Mounted but no turn_begin / queue_state busy slot yet.
-      expect(vm.applyAcpEvents([{ kind: 'thought', text: 'should buffer' }], 'react-1')).toBe(false)
-      expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(false)
-      wrapper.unmount()
-    })
-
-    it('applyAcpEvents returns true after queue_state rebuilds slot (g1.1 flush path)', async () => {
-      const wrapper = mountChat()
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => boolean
-      }
-      vm.applyReviewFrame({
-        event: 'queue_state',
-        nodeId: 'react-1',
-        waiting: 0,
-        items: [],
-        busy: true,
-        activeItem: { text: '硬刷新前的提问' },
-      })
-      await flushPromises()
+      await liveTurn(wrapper, '进行中')
       expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
-      expect(vm.applyAcpEvents([{ kind: 'thought', text: '已恢复的思考' }], 'react-1')).toBe(true)
-      await flushPromises()
-      expect(wrapper.find('[data-testid="agent-timeline-thought"]').text()).toContain('已恢复的思考')
-      wrapper.unmount()
-    })
-
-    it('authority idle tears down empty streaming placeholder (g2.2/f3)', async () => {
-      const wrapper = mountChat()
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-      }
-      vm.applyReviewFrame({
-        event: 'queue_state',
-        nodeId: 'react-1',
-        waiting: 0,
-        items: [],
-        busy: true,
-        activeItem: { text: '进行中' },
-      })
-      await flushPromises()
-      expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
-      vm.applyReviewFrame({
-        event: 'queue_state',
-        nodeId: 'react-1',
-        waiting: 0,
-        items: [],
-        busy: false,
-      })
+      expect(wrapper.findAll('[data-testid="clarify-human-message"]').map((n) => n.text())).toEqual(['进行中'])
+      feed({ rows: [{ role: 'human', text: '进行中', at: '2026-07-18T00:00:00Z', turnId: 't1' }], turns: [endedTurn('t1', 'interrupted')] })
       await flushPromises()
       expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(false)
-      wrapper.unmount()
-    })
-
-    it('does not duplicate human when persisted already completed the live turn', async () => {
-      const wrapper = mountChat({
-        reviewMode: true,
-        turns: [
-          { role: 'human', text: '改成绿的', at: '2026-08-01T00:01:00Z' },
-          { role: 'agent', text: '标题已改为绿色（#16a34a）', at: '2026-08-01T00:02:00Z' },
-        ],
-      })
-      const vm = wrapper.vm as unknown as {
-        applyQueueState: (
-          waiting: number,
-          items: unknown[] | null,
-          busy?: boolean,
-          activeItem?: { text?: string } | null,
-        ) => void
-      }
-      vm.applyQueueState(0, [], true, { text: '改成绿的' })
-      await flushPromises()
-      expect((wrapper.text().match(/改成绿的/g) || []).length).toBe(1)
-      expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(false)
-      expect(wrapper.text()).toContain('标题已改为绿色')
-      wrapper.unmount()
-    })
-
-    it('keeps a new same-text turn when only the previous turn is persisted', async () => {
-      const wrapper = mountChat({
-        turns: [
-          { role: 'human', text: '继续', at: 't1' },
-          { role: 'agent', text: '上一轮的完整回复', at: 't2' },
-        ],
-      })
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (events: { kind: string; text: string }[], nodeId?: string) => boolean
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { id: 'new-turn', text: '继续' },
-      })
-      expect(vm.applyAcpEvents([{ kind: 'message', text: '新回合回复' }], 'react-1')).toBe(true)
-      await flushPromises()
-      expect((wrapper.text().match(/继续/g) || []).length).toBe(2)
-      expect(wrapper.text()).toContain('上一轮的完整回复')
-      expect(wrapper.text()).toContain('新回合回复')
-      wrapper.unmount()
-    })
-
-    it('keeps a second identical human and reply when idle arrives before the snapshot', async () => {
-      const wrapper = mountChat({
-        turns: [
-          { role: 'human', text: '继续', at: 'old-1' },
-          { role: 'agent', text: '相同回复', at: 'old-2' },
-        ],
-      })
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (events: { kind: string; text: string }[], nodeId?: string) => boolean
-      }
-      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'new-turn', text: '继续' } })
-      expect(vm.applyAcpEvents([{ kind: 'message', text: '相同回复' }], 'react-1')).toBe(true)
-      await flushPromises()
-      expect(wrapper.findAll('[data-testid="clarify-human-message"]')).toHaveLength(2)
-      expect(wrapper.findAll('[data-testid="clarify-agent-message"]')).toHaveLength(2)
-
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
-      vm.applyReviewFrame({
-        event: 'queue_state',
-        nodeId: 'react-1',
-        waiting: 0,
-        items: [],
-        busy: false,
-        sandboxBusy: false,
-      })
-      await flushPromises()
-      expect(wrapper.findAll('[data-testid="clarify-human-message"]')).toHaveLength(2)
-      expect(wrapper.findAll('[data-testid="clarify-agent-message"]')).toHaveLength(2)
-      expect(wrapper.text().match(/相同回复/g) || []).toHaveLength(2)
-      wrapper.unmount()
-    })
-
-    it('restores a same-text active seed even when no turn_begin follows', async () => {
-      const wrapper = mountChat({
-        turns: [
-          { role: 'human', text: '继续', at: 't1' },
-          { role: 'agent', text: '上一轮的完整回复', at: 't2' },
-        ],
-      })
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (events: { kind: string; text: string }[], nodeId?: string) => boolean
-      }
-      vm.applyReviewFrame({
-        event: 'queue_state',
-        nodeId: 'react-1',
-        waiting: 0,
-        items: [],
-        busy: true,
-        activeItem: { id: 'seed-turn', text: '继续' },
-      })
-      expect(vm.applyAcpEvents([{ kind: 'message', text: '硬加载后的新回复' }], 'react-1')).toBe(true)
-      await flushPromises()
-      expect((wrapper.text().match(/继续/g) || []).length).toBe(2)
-      expect(wrapper.text()).toContain('硬加载后的新回复')
-      wrapper.unmount()
-    })
-
-    it('tears down streaming placeholder when persisted catches up mid-stream', async () => {
-      const wrapper = mountChat({ reviewMode: true, turns: [{ role: 'agent', text: '请复审', at: 't0' }] })
-      const vm = wrapper.vm as unknown as {
-        applyQueueState: (
-          waiting: number,
-          items: unknown[] | null,
-          busy?: boolean,
-          activeItem?: { text?: string } | null,
-        ) => void
-      }
-      vm.applyQueueState(0, [], true, { text: '改成绿的' })
-      await flushPromises()
-      expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
-      await wrapper.setProps({
-        turns: [
-          { role: 'agent', text: '请复审', at: 't0' },
-          { role: 'human', text: '改成绿的', at: 't1' },
-          { role: 'agent', text: '标题已改为绿色', at: 't2' },
-        ],
-      })
-      await flushPromises()
-      expect((wrapper.text().match(/改成绿的/g) || []).length).toBe(1)
-      expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(false)
-      expect(wrapper.text()).toContain('标题已改为绿色')
       wrapper.unmount()
     })
   })
@@ -2343,15 +2207,7 @@ describe('ClarifyChat', () => {
     it('turn_begin shows 思考中… + thinking lamp placeholder (no air bubble)', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请复审' },
-      })
-      await flushPromises()
+      await liveTurn(wrapper, '请复审')
 
       const placeholder = wrapper.find('[data-testid="clarify-busy-placeholder"]')
       expect(placeholder.exists()).toBe(true)
@@ -2367,18 +2223,8 @@ describe('ClarifyChat', () => {
     it('thought is visible and default-open; collapses when message starts', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请复审' },
-      })
-      await flushPromises()
-      vm.applyAcpEvents([{ kind: 'thought', text: '先核对边界与分轨' }], 'react-1')
-      await flushPromises()
+      await liveTurn(wrapper, '请复审')
+      await liveTurn(wrapper, '请复审', [{ thought: '先核对边界与分轨', streaming: true }])
 
       const thought = wrapper.find('[data-testid="agent-timeline-thought"]')
       expect(thought.exists()).toBe(true)
@@ -2391,14 +2237,7 @@ describe('ClarifyChat', () => {
       expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('思考中')
       expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(false)
 
-      vm.applyAcpEvents(
-        [
-          { kind: 'thought', text: '先核对边界与分轨' },
-          { kind: 'message', text: '已核对完成' },
-        ],
-        'react-1',
-      )
-      await flushPromises()
+      await liveTurn(wrapper, '请复审', [{ thought: '先核对边界与分轨', text: '已核对完成', streaming: true }])
 
       expect(wrapper.find('[data-testid="agent-timeline-thought"]').text()).toContain('先核对边界与分轨')
       // Demo: collapse thought once message streaming starts.
@@ -2420,18 +2259,7 @@ describe('ClarifyChat', () => {
       expect(new TextEncoder().encode(longThought).length).toBeGreaterThan(4000)
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请复审' },
-      })
-      await flushPromises()
-      vm.applyAcpEvents([{ kind: 'thought', text: longThought }], 'react-1')
-      await flushPromises()
+      await liveTurn(wrapper, '请复审', [{ thought: longThought, streaming: true }])
 
       const thoughtBody = wrapper.find('[data-testid="agent-timeline-thought"] .agent-thought-body')
       expect(thoughtBody.exists()).toBe(true)
@@ -2448,18 +2276,7 @@ describe('ClarifyChat', () => {
       expect(new TextEncoder().encode(longMessage).length).toBeGreaterThan(8000)
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请复审' },
-      })
-      await flushPromises()
-      vm.applyAcpEvents([{ kind: 'message', text: longMessage }], 'react-1')
-      await flushPromises()
+      await liveTurn(wrapper, '请复审', [{ text: longMessage, streaming: true }])
 
       expect(wrapper.find('[data-testid="agent-timeline"]').exists()).toBe(true)
       const bubble = wrapper.get('[data-testid="clarify-agent-message"]')
@@ -2505,27 +2322,11 @@ describe('ClarifyChat', () => {
     it('turn_done removes 输出中 status while keeping thought+message', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请复审' },
-      })
-      vm.applyAcpEvents(
-        [
-          { kind: 'thought', text: '思考内容' },
-          { kind: 'message', text: '正文内容' },
-        ],
-        'react-1',
-      )
-      await flushPromises()
+      const reply: Partial<RowInput>[] = [{ thought: '思考内容', text: '正文内容', streaming: true }]
+      await liveTurn(wrapper, '请复审', reply)
       expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
 
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
-      await flushPromises()
+      await endTurn(wrapper, '请复审', reply)
       expect(wrapper.find('[data-testid="clarify-busy-status"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-stream-caret"]').exists()).toBe(false)
       await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
@@ -2553,17 +2354,7 @@ describe('ClarifyChat', () => {
     it('streaming agent shows a tail status instead of bottom time / 已完成', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请复审' },
-      })
-      vm.applyAcpEvents([{ kind: 'message', text: '流式中正文' }], 'react-1')
-      await flushPromises()
+      await liveTurn(wrapper, '请复审', [{ text: '流式中正文', streaming: true }])
 
       expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-stream-caret"]').exists()).toBe(true)
@@ -2578,26 +2369,21 @@ describe('ClarifyChat', () => {
     it('mid-turn tools: tail shows 思考中… after the last step, no 已完成 / time until turn_done', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: Record<string, unknown>[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { text: '请复审' } })
-      const parts = [
+      const parts: AgentPart[] = [
         { kind: 'thought', text: '先读文件' },
         { kind: 'message', text: '先对齐需求。' },
         { kind: 'tool', title: '读取文件', status: 'completed' },
         { kind: 'thought', text: '再搜代码' },
         { kind: 'tool', title: '搜索代码', status: 'completed' },
       ]
-      vm.applyAcpEvents([
-        { kind: 'thought', text: '再搜代码' },
-        { kind: 'message', text: '先对齐需求。' },
-        { kind: 'tool_call', title: '读取文件', status: 'completed' },
-        { kind: 'tool_call', title: '搜索代码', status: 'completed' },
-        { kind: 'timeline', parts },
-      ], 'react-1')
-      await flushPromises()
+      const reply: Partial<RowInput>[] = [{
+        thought: '再搜代码',
+        text: '先对齐需求。',
+        tools: [{ title: '读取文件', status: 'completed' }, { title: '搜索代码', status: 'completed' }],
+        parts,
+        streaming: true,
+      }]
+      await liveTurn(wrapper, '请复审', reply)
       const agent = wrapper.get('[data-turn-role="agent"]')
       expect(agent.text()).not.toContain('已完成')
       expect(agent.find('[data-testid="clarify-turn-bottom-time"]').exists()).toBe(false)
@@ -2608,8 +2394,7 @@ describe('ClarifyChat', () => {
       const html = agent.html()
       expect(html.lastIndexOf('clarify-busy-status')).toBeGreaterThan(html.lastIndexOf('agent-tool-group'))
 
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
-      await flushPromises()
+      await endTurn(wrapper, '请复审', reply)
       const done = wrapper.get('[data-turn-role="agent"]')
       expect(done.find('[data-testid="clarify-busy-status"]').exists()).toBe(false)
       // Finished turn folds into the elapsed line (#843).
@@ -2620,24 +2405,7 @@ describe('ClarifyChat', () => {
     it('interrupted turn_done does not show 已完成 footnote', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请复审' },
-      })
-      vm.applyAcpEvents(
-        [
-          { kind: 'thought', text: '半截思考' },
-          { kind: 'message', text: '半截正文' },
-        ],
-        'react-1',
-      )
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1', interrupted: true })
-      await flushPromises()
+      await endTurn(wrapper, '请复审', [{ thought: '半截思考', text: '半截正文', interrupted: true }], 'interrupted')
       expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-interrupted"]').exists()).toBe(true)
       // interrupted is non-completed: keep bottom time (human + interrupted agent)
@@ -2652,24 +2420,7 @@ describe('ClarifyChat', () => {
       const failText = '(复审修改失败:acp chat idle timeout after 10m0s)'
       const wrapper = mountChat({ draft: '请复审', reviewMode: true })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请复审' },
-      })
-      vm.applyAcpEvents(
-        [
-          { kind: 'thought', text: '半截思考' },
-          { kind: 'message', text: failText },
-        ],
-        'react-1',
-      )
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1', interrupted: true })
-      await flushPromises()
+      await endTurn(wrapper, '请复审', [{ thought: '半截思考', text: failText, interrupted: true }], 'interrupted')
       expect(wrapper.find('[data-testid="clarify-agent-message"]').text()).toContain('复审修改失败')
       expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
       expect(wrapper.text()).not.toMatch(/\bDone\b/)
@@ -2706,18 +2457,8 @@ describe('ClarifyChat', () => {
     it('tool_call keeps 思考中… placeholder and shows the folded tool row (no air bubble)', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text?: string; title?: string; status?: string }[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请复审' },
-      })
-      await flushPromises()
-      vm.applyAcpEvents([{ kind: 'tool_call', title: 'read_file', status: 'running' }], 'react-1')
-      await flushPromises()
+      await liveTurn(wrapper, '请复审')
+      await liveTurn(wrapper, '请复审', [{ tools: [{ title: 'read_file', status: 'running' }], streaming: true }])
 
       expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').text()).toContain('思考中')
@@ -2728,15 +2469,11 @@ describe('ClarifyChat', () => {
       expect(wrapper.find('[data-testid="clarify-agent-message"]').exists()).toBe(false)
 
       // Cumulative snapshots replace the tool list; message lands beside it.
-      vm.applyAcpEvents(
-        [
-          { kind: 'tool_call', title: 'read_file', status: 'completed' },
-          { kind: 'tool_call', title: 'Shell', status: 'failed' },
-          { kind: 'message', text: '复审完成' },
-        ],
-        'react-1',
-      )
-      await flushPromises()
+      await liveTurn(wrapper, '请复审', [{
+        tools: [{ title: 'read_file', status: 'completed' }, { title: 'Shell', status: 'failed' }],
+        text: '复审完成',
+        streaming: true,
+      }])
       const after = wrapper.find('[data-testid="agent-tool-group"]')
       expect(after.attributes('data-state')).toBe('failed')
       expect(after.text()).toContain('使用了 2 个工具')
@@ -2754,87 +2491,23 @@ describe('ClarifyChat', () => {
       { field: 'durationMs', value: 2500, testId: 'agent-tool-duration', expected: '2.5s' },
     ])('updates a running tool when only its $field changes in the cumulative snapshot', async ({ field, value, testId, expected }) => {
       const wrapper = mountChat()
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (frame: Record<string, unknown>) => void
-        applyAcpEvents: (events: AcpEvent[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'active', text: 'run the tests' } })
       const initial: AgentPart = {
         kind: 'tool', title: 'Shell', status: 'in_progress',
         input: 'npm test', output: 'line one', summary: 'running tests', durationMs: 1000,
       }
-      const snapshot = (part: AgentPart): AcpEvent[] => [
-        { kind: 'tool_call', title: 'Shell', status: 'in_progress' },
-        { kind: 'timeline', parts: [part] },
+      const snapshot = (part: AgentPart): Partial<RowInput>[] => [
+        { tools: [{ title: 'Shell', status: 'in_progress' }], parts: [part], streaming: true },
       ]
-      vm.applyAcpEvents(snapshot(initial), 'react-1')
-      await flushPromises()
+      await liveTurn(wrapper, 'run the tests', snapshot(initial))
       await wrapper.get('[data-testid="agent-tool-group-head"]').trigger('click')
       await wrapper.get('[data-testid="agent-tool-row-toggle"]').trigger('click')
       expect(wrapper.get('[data-testid="agent-tool-output"]').text()).toBe('line one')
 
-      vm.applyAcpEvents(snapshot({ ...initial, [field]: value }), 'react-1')
-      await flushPromises()
+      await liveTurn(wrapper, 'run the tests', snapshot({ ...initial, [field]: value }))
       expect(wrapper.get(`[data-testid="${testId}"]`).text()).toContain(expected)
       expect(wrapper.findAll('[data-testid="agent-tool-row"]')).toHaveLength(1)
       expect(wrapper.get('[data-testid="agent-tool-row"]').attributes('data-state')).toBe('running')
       expect(wrapper.find('[data-testid="clarify-busy-status"]').exists()).toBe(true)
-      wrapper.unmount()
-    })
-
-    it('keeps the current tool details and reply when a liveness-only snapshot arrives', async () => {
-      const wrapper = mountChat()
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (frame: Record<string, unknown>) => void
-        applyAcpEvents: (events: AcpEvent[], nodeId?: string) => boolean
-      }
-      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'active', text: 'run the tests' } })
-      const tool: AgentPart = { kind: 'tool', title: 'Shell', status: 'in_progress', input: 'npm test', output: 'line one' }
-      const snapshot: AcpEvent[] = [
-        { kind: 'message', text: 'The tests are running.' },
-        { kind: 'tool_call', title: 'Shell', status: 'in_progress' },
-        { kind: 'timeline', parts: [tool, { kind: 'message', text: 'The tests are running.' }] },
-      ]
-      vm.applyAcpEvents(snapshot, 'react-1')
-      await flushPromises()
-      await wrapper.get('[data-testid="agent-tool-group-head"]').trigger('click')
-      await wrapper.get('[data-testid="agent-tool-row-toggle"]').trigger('click')
-      expect(wrapper.get('[data-testid="agent-tool-output"]').text()).toBe('line one')
-
-      expect(vm.applyAcpEvents([{ kind: 'liveness' }], 'react-1')).toBe(true)
-      await flushPromises()
-      expect(wrapper.get('[data-testid="agent-tool-output"]').text()).toBe('line one')
-      expect(wrapper.get('[data-testid="agent-tool-input"]').text()).toBe('npm test')
-      expect(wrapper.findAll('[data-testid="agent-tool-row"]')).toHaveLength(1)
-      expect(wrapper.findAll('[data-testid="clarify-agent-message"]')).toHaveLength(1)
-      expect(wrapper.get('[data-testid="clarify-agent-message"]').text()).toContain('The tests are running.')
-
-      vm.applyAcpEvents([
-        ...snapshot.slice(0, -1),
-        { kind: 'timeline', parts: [{ ...tool, output: 'line one\nline two' }, { kind: 'message', text: 'The tests are running.' }] },
-        { kind: 'liveness' },
-      ], 'react-1')
-      await flushPromises()
-      expect(wrapper.get('[data-testid="agent-tool-output"]').text()).toContain('line two')
-      expect(wrapper.findAll('[data-testid="clarify-agent-message"]')).toHaveLength(1)
-      wrapper.unmount()
-    })
-
-    it.each(['unopened', 'idle', 'orphan'])('treats liveness as an observation without creating an agent in an %s session', async state => {
-      const wrapper = mountChat()
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (frame: Record<string, unknown>) => void
-        applyAcpEvents: (events: AcpEvent[], nodeId?: string) => boolean
-      }
-      if (state !== 'unopened') vm.applyReviewFrame({
-        event: 'queue_state', nodeId: 'react-1', waiting: 0, busy: false, items: [],
-        sandboxBusy: state === 'orphan', sandboxRunningOpId: state === 'orphan' ? 'native-active' : undefined,
-      })
-      expect(vm.applyAcpEvents([{ kind: 'liveness' }], 'react-1')).toBe(true)
-      await flushPromises()
-      expect(wrapper.findAll('[data-testid="clarify-agent-message"]')).toHaveLength(0)
-      expect(wrapper.findAll('[data-testid="clarify-busy-placeholder"]')).toHaveLength(0)
-      expect(wrapper.findAll('[data-testid="clarify-busy-status"]')).toHaveLength(0)
       wrapper.unmount()
     })
 
@@ -2901,23 +2574,12 @@ describe('ClarifyChat', () => {
     it('keeps the same text while the reply is streaming and after it ends', async () => {
       const wrapper = mountChat({ draft: '请看日志' })
       await clickSend(wrapper)
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '请看日志' },
-      })
-      vm.applyAcpEvents([{ kind: 'message', text: reply }], 'react-1')
-      await flushPromises()
+      await liveTurn(wrapper, '请看日志', [{ text: reply, streaming: true }])
       expect(wrapper.find('[data-testid="agent-timeline"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
       expectReply(wrapper.get('[data-testid="clarify-agent-message"]'))
 
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
-      await flushPromises()
+      await endTurn(wrapper, '请看日志', [{ text: reply }])
       expect(wrapper.find('[data-testid="clarify-busy-status"]').exists()).toBe(false)
       expectReply(wrapper.get('[data-testid="clarify-agent-message"]'))
       wrapper.unmount()
@@ -3149,27 +2811,15 @@ describe('ClarifyChat', () => {
       expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
       expect(wrapper.get('[data-testid="clarify-human-message"]').text()).toContain('请按意见修改')
-      expect(wrapper.text()).toContain('思考中')
+      expect(wrapper.text()).toContain('Agent 正在思考下一轮')
 
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-        isSessionBusy: () => boolean
-      }
-      // Server id present → no text fallback; optimistic no-id row stays as ghost.
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { id: 'srv-1', text: '请按意见修改' },
-      })
-      vm.applyAcpEvents([{ kind: 'message', text: '已按意见改完' }], 'react-1')
-      await flushPromises()
+      const vm = wrapper.vm as unknown as { isSessionBusy: () => boolean }
+      await liveTurn(wrapper, '请按意见修改', [{ text: '已按意见改完', streaming: true }])
       expect(wrapper.text()).toContain('已按意见改完')
       // Live turn hides「思考下一轮」(condition requires liveAgentIdx < 0).
       expect(wrapper.text()).not.toContain('Agent 正在思考下一轮')
 
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
-      await flushPromises()
+      await endTurn(wrapper, '请按意见修改', [{ text: '已按意见改完' }])
 
       expect(wrapper.text()).not.toContain('Agent 正在思考下一轮')
       expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(false)
@@ -3181,25 +2831,11 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
-    it('applyQueueState idle tears down live slot with body even when streaming===false', async () => {
+    it('an idle server state after a reply with a body leaves the chat idle', async () => {
       const wrapper = mountChat({ reviewMode: true })
-      const vm = wrapper.vm as unknown as {
-        applyQueueState: (
-          waiting: number,
-          items: unknown[] | null,
-          busy?: boolean,
-          activeItem?: { text?: string } | null,
-        ) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => boolean
-        isSessionBusy: () => boolean
-      }
-      vm.applyQueueState(0, [], true, { text: '改标题' })
-      await flushPromises()
-      expect(vm.applyAcpEvents([{ kind: 'message', text: '标题已改' }], 'react-1')).toBe(true)
-      await flushPromises()
-      // Authoritative idle must clear live occupancy (incl. body + streaming===false path).
-      vm.applyQueueState(0, [], false, null)
-      await flushPromises()
+      const vm = wrapper.vm as unknown as { isSessionBusy: () => boolean }
+      await liveTurn(wrapper, '改标题', [{ text: '标题已改', streaming: true }])
+      await endTurn(wrapper, '改标题', [{ text: '标题已改' }])
       expect(wrapper.text()).not.toContain('Agent 正在思考下一轮')
       expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(false)
       expect(vm.isSessionBusy()).toBe(false)
@@ -3211,17 +2847,8 @@ describe('ClarifyChat', () => {
 
     it('real remaining queue via queue_state keeps busy (no false idle)', async () => {
       const wrapper = mountChat({ reviewMode: true })
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        isSessionBusy: () => boolean
-      }
-      vm.applyReviewFrame({
-        event: 'queue_state',
-        nodeId: 'react-1',
-        waiting: 1,
-        items: [{ id: 'q2', text: '第二条意见' }],
-        busy: false,
-      })
+      const vm = wrapper.vm as unknown as { isSessionBusy: () => boolean }
+      feed({ busy: true, turns: [queuedTurn('q2', 0, { text: '第二条意见' })] })
       await flushPromises()
       expect(wrapper.find('[data-testid="clarify-review-queue"]').text()).toContain('第二条意见')
       expect(wrapper.text()).toContain('Agent 正在思考下一轮')
@@ -3234,28 +2861,14 @@ describe('ClarifyChat', () => {
 
     it('real remaining id waiter + turn_done keeps busy until authoritative idle', async () => {
       const wrapper = mountChat({ reviewMode: true })
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyAcpEvents: (e: { kind: string; text: string }[], nodeId?: string) => void
-        isSessionBusy: () => boolean
-      }
-      // Seed next waiter with server id, then start current turn.
-      vm.applyReviewFrame({
-        event: 'queue_state',
-        nodeId: 'react-1',
-        waiting: 1,
-        items: [{ id: 'q2', text: '第二条意见' }],
-        busy: false,
-      })
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { id: 'srv-1', text: '第一条意见' },
-      })
-      vm.applyAcpEvents([{ kind: 'message', text: '第一轮已改完' }], 'react-1')
+      const vm = wrapper.vm as unknown as { isSessionBusy: () => boolean }
+      const waiter = queuedTurn('q2', 0, { text: '第二条意见' })
+      feed({ busy: true, rows: turnRows(wrapper, '第一条意见', [{ text: '第一轮已改完', streaming: true }]), turns: [runningTurn('t1'), waiter] })
       await flushPromises()
 
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+      // The first turn ended; the server still holds the waiter.
+      const settled = turnRows(wrapper, '第一条意见', [{ text: '第一轮已改完' }])
+      feed({ busy: true, rows: settled, turns: [endedTurn('t1', 'ok'), waiter] })
       await flushPromises()
 
       // Must NOT synthesize idle while real id waiter remains (review v1/v2).
@@ -3266,14 +2879,7 @@ describe('ClarifyChat', () => {
       // One primary only: busy shows 停止, so 确认并流转 is not rendered.
       expect(wrapper.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
 
-      vm.applyReviewFrame({
-        event: 'queue_state',
-        nodeId: 'react-1',
-        waiting: 0,
-        items: [],
-        busy: false,
-        activeItem: null,
-      })
+      feed({ rows: settled, turns: [endedTurn('t1', 'ok'), endedTurn('q2', 'dropped')] })
       await flushPromises()
       expect(wrapper.text()).not.toContain('Agent 正在思考下一轮')
       expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(false)
@@ -3368,16 +2974,12 @@ describe('ClarifyChat', () => {
       expect(submitChoices(wrapper)).toBeUndefined()
 
       const sent = String(wrapper.emitted('send')![0][0])
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        discardLastQueued: () => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { id: 'srv-choice', text: sent },
-      })
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+      const cmid = sentId(wrapper)
+      const human: RowInput = { role: 'human', text: sent, at: '2026-07-18T00:01:00Z', turnId: 'srv-choice', clientMessageId: cmid }
+      feed({ busy: true, rows: [deployQ, human, { role: 'agent', text: '', at: '2026-07-18T00:01:00Z', turnId: 'srv-choice', streaming: true }], turns: [runningTurn('srv-choice', { text: sent }, { clientMessageId: cmid })] })
+      await flushPromises()
+      expect(submitChoices(wrapper)).toBeUndefined()
+      feed({ rows: [deployQ, human], turns: [endedTurn('srv-choice', 'interrupted', { clientMessageId: cmid })] })
       await flushPromises()
       expect(submitChoices(wrapper)).toBeUndefined()
       wrapper.unmount()
@@ -3631,7 +3233,7 @@ describe('ClarifyChat', () => {
       const wrapper = mountChat({
         turns: [
           { role: 'human', text: '做登录', at: 't1' },
-          { role: 'agent', text: '', at: 't2' },
+          { role: 'agent', text: '', at: 't2', outcome: 'empty' },
         ],
       })
       expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(true)
@@ -3677,7 +3279,7 @@ describe('ClarifyChat', () => {
         done: true,
         turns: [
           { role: 'human', text: '做登录', at: 't1' },
-          { role: 'agent', text: '', at: 't2' },
+          { role: 'agent', text: '', at: 't2', outcome: 'empty' },
         ],
       })
       expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(true)
@@ -3689,7 +3291,7 @@ describe('ClarifyChat', () => {
       const wrapper = mountChat({
         turns: [
           { role: 'human', text: '做登录', at: 't1' },
-          { role: 'agent', text: '', at: 't2' },
+          { role: 'agent', text: '', at: 't2', outcome: 'empty' },
           { role: 'human', text: '下一条', at: 't3' },
           { role: 'agent', text: '好的，开始对齐。', at: 't4' },
         ],
@@ -3709,6 +3311,8 @@ describe('ClarifyChat', () => {
             role: 'agent',
             text: "(澄清回复失败:exit status 1; stderr: NonRetriableError: Provider Error We're having trouble.)",
             at: 't2',
+            outcome: 'failed',
+            error: "exit status 1; stderr: NonRetriableError: Provider Error We're having trouble.",
             tools: Array.from({ length: 50 }, () => ({ title: 'Read', status: 'completed' })),
             parts: [
               { kind: 'tool', title: 'Read', status: 'completed' },
@@ -3736,7 +3340,7 @@ describe('ClarifyChat', () => {
         draft: 'keep-draft',
         turns: [
           { role: 'human', text: '做登录', at: 't1' },
-          { role: 'agent', text: '(澄清回复失败:timeout)', at: 't2' },
+          { role: 'agent', text: '(澄清回复失败:timeout)', at: 't2', outcome: 'failed', error: 'timeout' },
         ],
       })
       expect(wrapper.find('[data-testid="clarify-empty-fail-title"]').text()).toBe('这一轮没有完成')
@@ -3748,23 +3352,24 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
-    it('turn_begin reuses the optimistic retry slot instead of duplicating the turn', async () => {
+    it('a retried turn keeps one human bubble and one live slot', async () => {
       const wrapper = mountChat({
         turns: [
           { role: 'human', text: '这个按钮有问题', at: 't1' },
-          { role: 'agent', text: '', at: 't2' },
+          { role: 'agent', text: '', at: 't2', outcome: 'empty' },
         ],
       })
       await wrapper.get('[data-testid="clarify-empty-fail-retry"]').trigger('click')
+      expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
 
-      // Pump answers the retry: queue_state(busy) then turn_begin for the same human.
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { id: 'q1', text: '这个按钮有问题' },
+      // The server reruns the request: its human row is the retried turn's.
+      feed({
+        busy: true,
+        rows: [
+          { role: 'human', text: '这个按钮有问题', at: 't1', turnId: 'q1' },
+          { role: 'agent', text: '', at: 't3', turnId: 'q1', streaming: true },
+        ],
+        turns: [runningTurn('q1', { text: '这个按钮有问题' })],
       })
       await flushPromises()
 
@@ -3776,22 +3381,8 @@ describe('ClarifyChat', () => {
 
     it('live empty turn_done keeps failure card (plan g1.1)', async () => {
       const wrapper = mountChat({ draft: '做登录' })
-      const vm = wrapper.vm as unknown as {
-        applyReviewFrame: (f: Record<string, unknown>) => void
-        applyQueueState: (
-          w: number,
-          items: unknown[],
-          busy?: boolean,
-        ) => void
-      }
-      vm.applyReviewFrame({
-        event: 'turn_begin',
-        nodeId: 'react-1',
-        item: { text: '做登录' },
-      })
-      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
-      vm.applyQueueState(0, [], false)
-      await flushPromises()
+      await liveTurn(wrapper, '做登录')
+      await endTurn(wrapper, '做登录', [{ text: '' }], 'empty')
       expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="clarify-empty-fail-retry"]').exists()).toBe(true)
       wrapper.unmount()

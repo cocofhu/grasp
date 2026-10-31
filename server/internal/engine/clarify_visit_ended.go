@@ -10,7 +10,9 @@ import (
 // visit already ended (run cancelled / failed / completed, or ResumeFrom opened
 // a newer visit). Match with errors.Is. HTTP maps it to 409 and WS to an error
 // frame, both with code "clarify_visit_ended".
-var ErrClarifyVisitEnded = errors.New("clarify_visit_ended")
+var ErrClarifyVisitEnded = errors.New(clarifyVisitEndedCode)
+
+const clarifyVisitEndedCode = "clarify_visit_ended"
 
 // ClarifyVisitEndedMessage is the fixed human-readable text. The frontend
 // builds the resend / auto-resend hint from AutoRetryOnResume.
@@ -71,7 +73,7 @@ func (e *ClarifyVisitEndedError) DroppedPayload() map[string]any {
 func (e *ClarifyVisitEndedError) FrameExtra(withDropped bool) map[string]any {
 	out := map[string]any{
 		"message":           ClarifyVisitEndedMessage,
-		"code":              "clarify_visit_ended",
+		"code":              clarifyVisitEndedCode,
 		"autoRetryOnResume": e.AutoRetryOnResume,
 		"iteration":         e.Iteration,
 	}

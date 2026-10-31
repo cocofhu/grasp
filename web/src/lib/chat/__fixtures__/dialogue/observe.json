@@ -1,0 +1,98 @@
+{
+  "scenario": "observe",
+  "about": "an automatic visit watched while it runs",
+  "frames": [
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "impl",
+      "iteration": 1,
+      "epoch": 1,
+      "seq": 1,
+      "mode": "full",
+      "rows": [
+        {
+          "role": "agent",
+          "text": "正在实现",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "auto:1",
+          "id": "auto:1:a0",
+          "phase": "running",
+          "rev": 1,
+          "streaming": true
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "auto:1",
+          "phase": "running"
+        }
+      ],
+      "busy": true,
+      "done": false,
+      "observe": true
+    },
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "impl",
+      "iteration": 1,
+      "epoch": 1,
+      "seq": 2,
+      "mode": "full",
+      "rows": [
+        {
+          "role": "agent",
+          "text": "正在实现",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "auto:1",
+          "outcome": "ok",
+          "id": "auto:1:a0",
+          "phase": "sealed",
+          "rev": 2
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "auto:1",
+          "phase": "ended",
+          "outcome": "ok"
+        }
+      ],
+      "busy": false,
+      "done": false,
+      "observe": true
+    }
+  ],
+  "final": {
+    "type": "dialogue",
+    "runId": "run-fixture",
+    "nodeId": "impl",
+    "iteration": 1,
+    "epoch": 1,
+    "seq": 2,
+    "mode": "full",
+    "rows": [
+      {
+        "role": "agent",
+        "text": "正在实现",
+        "at": "2026-01-01T00:00:00Z",
+        "turnId": "auto:1",
+        "outcome": "ok",
+        "id": "auto:1:a0",
+        "phase": "sealed",
+        "rev": 2
+      }
+    ],
+    "turns": [
+      {
+        "turnId": "auto:1",
+        "phase": "ended",
+        "outcome": "ok"
+      }
+    ],
+    "busy": false,
+    "done": false,
+    "observe": true
+  }
+}

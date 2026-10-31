@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { deliverOrBufferDialogueAcp } from './dialogueAcpDelivery'
+import { deliverOrBufferGateAcp } from './dialogueAcpDelivery'
 import { runBusySeedRetry } from './busySeedRetry'
 import { createWsReconnectController } from './wsReconnect'
 import { createReviewSessionState } from '@/lib/chat/reviewSessionState'
@@ -26,25 +26,8 @@ const sample: AcpEvent[] = [
 ]
 
 describe('stream resume acceptance (g5.2 three surfaces × four scenarios)', () => {
-  it('g1: false-applied → buffer on clarify/gate delivery helpers', () => {
-    expect(
-      deliverOrBufferDialogueAcp({
-        forClarify: true,
-        forGate: false,
-        events: sample,
-        nodeId: 'c1',
-        applyClarify: () => false,
-      }),
-    ).toBe('buffer')
-    expect(
-      deliverOrBufferDialogueAcp({
-        forClarify: false,
-        forGate: true,
-        events: sample,
-        nodeId: 'g1',
-        applyGate: () => false,
-      }),
-    ).toBe('buffer')
+  it('g1: false-applied → buffer on the gate delivery helper', () => {
+    expect(deliverOrBufferGateAcp({ forGate: true, events: sample, applyGate: () => false })).toBe('buffer')
   })
 
   it('g2.1: Inbox/Run restore order is queue_state → seed → flush', () => {
@@ -84,17 +67,14 @@ describe('stream resume acceptance (g5.2 three surfaces × four scenarios)', () 
     expect(gatePanel).not.toMatch(/正在恢复对话/)
   })
 
-  it('g2.1 multi-turn: seed writes absolute rails into live bubble only', () => {
+  it('g2.1 multi-turn: the clarify chat draws only the server dialogue', () => {
     const inbox = readSrc('lib/inbox/useGatesInbox.ts')
     const runWs = readSrc('lib/run/useRunDetailWs.ts')
     const clarify = readSrc('lib/inbox/useClarifyChat.ts')
     expect(inbox).toMatch(/current turn only/)
     expect(runWs).toMatch(/current-turn only/)
-    // Absolute snapshot assignment (not += / append onto prior text).
-    expect(clarify).toMatch(/if \(ev\.kind === 'message' && ev\.text\) msg = ev\.text/)
-    expect(clarify).toMatch(/if \(ev\.kind === 'thought' && ev\.text\) thought = ev\.text/)
-    expect(clarify).not.toMatch(/msg \+= /)
-    expect(clarify).not.toMatch(/thought \+= /)
+    expect(clarify).toMatch(/from '@\/lib\/chat\/dialogueStore'/)
+    expect(clarify).not.toMatch(/applyAcpEvents|applyReviewFrame|applyQueueState/)
   })
 
   it('g3: busy seed retry stops on content / idle', async () => {
@@ -186,29 +166,24 @@ describe('stream resume acceptance (g5.2 three surfaces × four scenarios)', () 
     expect(composer).toMatch(/chatRef\.value\?\.isSessionBusy/)
   })
 
-  it('g2.2: Public page wires busySeedRetry + foreground re-seed', () => {
+  it('g2.2: Public page re-reads the dialogue state on foreground return and reconnect', () => {
     const pub = readSrc('views/PublicGateApprovalView.vue')
-    expect(pub).toMatch(/createBusySeedRetryController/)
-    expect(pub).toMatch(/maybeStartPublicBusySeedRetry|startPublicBusySeedRetry/)
-    expect(pub).toMatch(/resumeFromForeground/)
+    expect(pub).toMatch(/ingestDialogue\(/)
+    expect(pub).toMatch(/setDialogueFetcher\(/)
     const resumeIdx = pub.indexOf('async function resumeFromForeground')
     expect(resumeIdx).toBeGreaterThan(-1)
     expect(pub.slice(resumeIdx, resumeIdx + 500)).toMatch(/resyncChat\(/)
-    // Foreground return and events-socket reconnect share the same re-seed.
     const resyncIdx = pub.indexOf('async function resyncChat')
     expect(resyncIdx).toBeGreaterThan(-1)
-    const resyncSlice = pub.slice(resyncIdx, resyncIdx + 500)
-    expect(resyncSlice).toMatch(/publicRailsFilled = false/)
-    expect(resyncSlice).toMatch(/publicBusySeedRetry\.stop/)
+    expect(pub.slice(resyncIdx, resyncIdx + 300)).toMatch(/loadPreview\(/)
   })
 
-  it('g2.3: applyAcpEvents false must buffer on all three surfaces', () => {
+  it('g2.3: applyAcpEvents false must buffer where ACP is still delivered', () => {
     const inbox = readSrc('lib/inbox/useGatesInbox.ts')
     const runWs = readSrc('lib/run/useRunDetailWs.ts')
     const pub = readSrc('views/PublicGateApprovalView.vue')
-    expect(inbox).toMatch(/deliverOrBufferDialogueAcp/)
-    expect(runWs).toMatch(/deliverOrBufferDialogueAcp/)
-    expect(pub).toMatch(/applyAcpEvents\(events\) === false/)
-    expect(pub).toMatch(/pendingPublicAcp = events/)
+    expect(inbox).toMatch(/deliverOrBufferGateAcp/)
+    expect(runWs).toMatch(/deliverOrBufferGateAcp/)
+    expect(pub).not.toMatch(/applyAcpEvents/)
   })
 })

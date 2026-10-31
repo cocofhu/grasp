@@ -65,6 +65,9 @@ type PreviewDTO struct {
 	// LiveEvents is a leak-free in-flight ACP snapshot (message/thought only)
 	// while sessionBusy. Poll fallback when the public events WS is down.
 	LiveEvents []PreviewLiveEvent `json:"liveEvents,omitempty"`
+	// Dialogue is the node's own versioned dialogue state, redacted
+	// (engine.PublicDialogueState); the same value the public WS sends.
+	Dialogue any `json:"dialogue,omitempty"`
 }
 
 // PreviewLiveEvent is a leak-free ACP rail for public streaming / poll seed.
@@ -106,6 +109,7 @@ type PreviewExtras struct {
 	ProductName       string
 	Ports             []PublicPreviewPort
 	LiveEvents        []models.AcpEvent
+	Dialogue          any
 }
 
 // BuildPreviewDTO builds a whitelist human_gate preview from lookup + artifacts.
@@ -249,6 +253,7 @@ func applyPreviewArtifacts(dto *PreviewDTO, visualHTML, structuredName, structur
 	dto.UpstreamHash = HashUpstream(dto.Upstream)
 	dto.StructuredHash = HashStructured(dto.Structured)
 	dto.TurnsHash = HashTurns(dto.Turns)
+	dto.Dialogue = extras.Dialogue
 }
 
 // ContentHash returns a stable hex digest for sparse field comparison.

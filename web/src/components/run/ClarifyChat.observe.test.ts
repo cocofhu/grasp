@@ -12,6 +12,10 @@ import type { ClarifyImage, ClarifyTurn, ReactAnnotation } from '@/lib/shared/ty
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import ClarifyChat from './ClarifyChat.vue'
 import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { feedDialogue, runningTurn } from '@/test/dialogueKit'
+
+afterEach(() => clearDialogues())
 
 enableAutoUnmount(afterEach)
 afterEach(() => {
@@ -307,13 +311,17 @@ describe('ClarifyChat takeover opening turn (turns[0].events = auto phase)', () 
   })
 
   it('a slow first manual turn (cold sandbox) keeps the existing busy placeholder, not a blank chat', async () => {
-    const wrapper = mountChat({
-      reviewMode: true,
-      turns: [{ role: 'agent', text: '已中断自动执行。', at: '2026-10-21T00:01:06Z', events: [{ t: 1, kind: 'message', text: '改了一半' }] }],
+    const opening: ClarifyTurn = { role: 'agent', text: '已中断自动执行。', at: '2026-10-21T00:01:06Z', events: [{ t: 1, kind: 'message', text: '改了一半' }] }
+    const wrapper = mountChat({ reviewMode: true, turns: [opening] })
+    feedDialogue('run-1', 'react-1', {
+      busy: true,
+      rows: [
+        opening,
+        { role: 'human', text: '主按钮改成保存', at: '2026-10-21T00:02:00Z', turnId: 't1' },
+        { role: 'agent', text: '', at: '2026-10-21T00:02:00Z', turnId: 't1', streaming: true },
+      ],
+      turns: [runningTurn('t1', { text: '主按钮改成保存' })],
     })
-    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
-    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', waiting: 0, items: [], busy: true })
-    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { text: '主按钮改成保存' } })
     await flushPromises()
     // No ACP yet (sandbox still cold-starting): pulse + 思考中… stays up.
     expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)

@@ -39,7 +39,7 @@ async function sendClarify(page: import('@playwright/test').Page, text: string) 
 }
 
 test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
-  test('提交选择遇到迟到的排队快照后，后续问题无需刷新即可继续选择', async ({ page }) => {
+  test('连续提交选择：每轮结束后下一题无需刷新即可继续选择', async ({ page }) => {
     await openHarness(page)
     await page.getByTestId('sim-choice-rounds').click()
     for (let round = 1; round <= 2; round++) {
@@ -73,8 +73,8 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
 
     await page.getByTestId('sim-turn-stream').click()
     await expect(page.getByText('流式产出正文（非整轮一次性）。')).toBeVisible()
-    // After real pump order, the live stream binds to 甲. 乙 waits only in the
-    // queue panel: no user row and no empty failure until its own turn_begin.
+    // The server runs 甲 while 乙 waits: 乙 is only in the queue panel, with
+    // no user row and no empty failure until its own turn runs.
     const scrollerAfterBegin = page.getByTestId('clarify-scroller')
     await expect(scrollerAfterBegin).toContainText('澄清意见甲（队列首条）')
     await expect(scrollerAfterBegin).not.toContainText('澄清意见乙（仍在队列）')
@@ -96,14 +96,15 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(page.getByTestId('clarify-review-queue')).toContainText('澄清意见乙')
     await page.screenshot({ path: path.join(shotDir, '03-clarify-cancel-keep.png'), fullPage: true })
 
-    // Refresh resume: busy + activeItem + continued stream.
+    // Refresh resume: the reloaded state shows 乙 running with its stream.
     await page.getByTestId('sim-refresh-resume').click()
     await expect(page.getByText('刷新后续上的流式正文。')).toBeVisible()
-    await expect(page.getByTestId('clarify-review-queue')).toContainText('澄清意见乙')
+    await expect(page.getByTestId('clarify-scroller')).toContainText('澄清意见乙（仍在队列）')
+    await expect(page.getByTestId('clarify-review-queue')).toHaveCount(0)
     await page.screenshot({ path: path.join(shotDir, '04-clarify-refresh-resume.png'), fullPage: true })
   })
 
-  test('真实泵帧序：queue_state→turn_begin 双消息不踩踏', async ({ page }) => {
+  test('甲运行、乙排队：两条消息不踩踏', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 900 })
     await page.goto('/clarify-session-ux.html')
     await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
@@ -141,7 +142,7 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await page.screenshot({ path: path.join(shotDir, '05-clarify-no-dup-human.png'), fullPage: true })
   })
 
-  test('硬刷新 ACP 竞态：延迟 seed 恢复 thought/message 并续流', async ({ page }) => {
+  test('硬刷新：运行中的轮次稍后恢复 thought/message 并续流', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 900 })
     await page.goto('/clarify-session-ux.html')
     await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })

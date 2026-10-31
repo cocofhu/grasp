@@ -76,6 +76,7 @@ func (e *Engine) publishAcp(runID, nodeID string, events []models.AcpEvent, busy
 		return
 	}
 	e.broker.Publish(runID, msg)
+	e.noteDialogueAcp(runID, nodeID, events, busy)
 }
 
 // startNodeRun appends a fresh in-flight StateRun (status=running) for the
@@ -106,6 +107,7 @@ func (e *Engine) startNodeRun(c *execCtx, node *models.Node) {
 	// The list can see this visit now. Drop the confirm-time successor mark
 	// so a later human visit of the node we left is not reported as automatic.
 	e.clearPendingAuto(c)
+	e.dialogueNodeEvent(c.run.ID, node.ID)
 }
 
 // execCtx is the in-memory execution context, rebuildable from the DB so a

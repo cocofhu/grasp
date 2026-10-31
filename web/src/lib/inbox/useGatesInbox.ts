@@ -49,7 +49,7 @@ import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { applyPreviewArtifactName, inboxStageRemoteKind, isAppPreviewRemoteNode } from '@/lib/run/reactArtifactPreview'
 import { findGraphNode, isClarifyNode } from '@/lib/shared/clarifyInteractive'
 import { createPendingAcpBuffer } from '@/lib/run/pendingAcpBuffer'
-import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
+import { deliverOrBufferGateAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
   createBusySeedRetryController,
   runBusySeedRetry,
@@ -83,6 +83,7 @@ import {
 import type GateApproval from '@/components/run/GateApproval.vue'
 import type { AcpEvent, AgentPart, Gate, GateInboxItem, GateShareInboxStatus, InboxItem, Run } from '@/lib/shared/types'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
+import { ingestDialogue, ingestDialogues } from '@/lib/chat/dialogueStore'
 import {
   activeSegment,
   clipTask,
@@ -195,8 +196,7 @@ const gateApprovalRef = ref<InstanceType<typeof GateApproval> | null>(null)
 /** ReviewShell hosts ConfirmFlowOverlay for run-detail panels; inbox plays page-level ceremony. */
 const reviewShellRef = ref<{ playConfirmCeremony?: () => Promise<void> } | null>(null)
 const reviewChatRef = ref<{
-  applyReviewFrame?: (frame: any) => boolean | void
-  applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
+  applyRequestRejected?: (frame: any) => void
   discardLastQueued?: (clientMessageId?: string) => void
   releaseConfirmPending?: () => void
   settleConfirmedTurn?: () => void
@@ -2310,6 +2310,12 @@ function closeActiveRunWs() {
   pendingSnapshotSessions = null
 }
 
+/** Inbox context carries the server dialogue of every node of the run. */
+function ingestContextDialogues(ctx: unknown, runId: string) {
+  if (isInboxLeftPending(ctx as never)) return
+  ingestDialogues((ctx as { dialogueByNode?: Record<string, unknown> }).dialogueByNode, runId)
+}
+
 /** Producer nodeId for busy session restore (clarify node or gate react upstream). */
 function activeDialogueNodeId(r?: Run | null): string | null {
   if (active.value?.type === 'clarify') return active.value.nodeId
@@ -2331,18 +2337,11 @@ function applyOrBufferAcpFrame(m: {
   busy?: boolean
 }) {
   const events = Array.isArray(m.events) ? m.events : []
-  const nodeId = m.nodeId || ''
-  const forClarify = active.value?.type === 'clarify'
+  // ClarifyChat draws the server dialogue state; only the gate still takes ACP.
   const forGate = active.value?.type === 'gate'
-  const result = deliverOrBufferDialogueAcp({
-    forClarify,
+  const result = deliverOrBufferGateAcp({
     forGate,
     events,
-    nodeId,
-    applyClarify: (evs, nid) => {
-      if (!reviewChatRef.value?.applyAcpEvents) return false
-      return reviewChatRef.value.applyAcpEvents(evs, nid)
-    },
     applyGate: (evs) => {
       if (!gateApprovalRef.value?.applyAcpEvents) return false
       return gateApprovalRef.value.applyAcpEvents(evs) !== false
@@ -2355,7 +2354,7 @@ function applyOrBufferAcpFrame(m: {
     }
   }
   // Hard-load / slot-not-ready: keep latest cumulative ACP for seed-then-live.
-  if (result === 'buffer' && (forClarify || forGate)) {
+  if (result === 'buffer' && forGate) {
     pendingAcpFrames.push({
       nodeId: m.nodeId,
       events,
@@ -2387,6 +2386,7 @@ async function readClarifyAcpFromNodeEventsOnce(
   isCurrent: () => boolean,
   signal: AbortSignal,
 ): Promise<boolean> {
+  if (active.value?.type !== 'gate') return false
   try {
     if (signal.aborted || !isCurrent()) return false
     const r = await api.nodeEvents(runId, nodeId, { limit: 50, signal })
@@ -2394,17 +2394,9 @@ async function readClarifyAcpFromNodeEventsOnce(
     if (isNodeEventsUnavailable(r)) return false
     if (!r.events?.length) return false
     if (!hasAcpContent(r.events)) return false
-    const forClarify = active.value?.type === 'clarify'
-    const forGate = active.value?.type === 'gate'
-    const result = deliverOrBufferDialogueAcp({
-      forClarify,
-      forGate,
+    const result = deliverOrBufferGateAcp({
+      forGate: true,
       events: r.events,
-      nodeId,
-      applyClarify: (evs, nid) => {
-        if (!reviewChatRef.value?.applyAcpEvents) return false
-        return reviewChatRef.value.applyAcpEvents(evs, nid)
-      },
       applyGate: (evs) => {
         if (!gateApprovalRef.value?.applyAcpEvents) return false
         return gateApprovalRef.value.applyAcpEvents(evs) !== false
@@ -2491,11 +2483,7 @@ function deliverReviewQueueFrame(frame: ReviewSessionFrame) {
     gateApprovalRef.value.applyReviewFrame(frame)
     delivered = true
   }
-  if (reviewChatRef.value?.applyReviewFrame) {
-    const ok = reviewChatRef.value.applyReviewFrame(frame)
-    if (ok !== false) delivered = true
-  }
-  if (!delivered) pendingReviewFrames.push(frame)
+  if (!delivered && active.value?.type === 'gate') pendingReviewFrames.push(frame)
 }
 
 function flushPendingReviewFrames() {
@@ -2505,7 +2493,6 @@ function flushPendingReviewFrames() {
   for (const frame of frames) {
     if (!reviewState.acceptServer(frame)) continue
     gateApprovalRef.value?.applyReviewFrame?.(frame)
-    reviewChatRef.value?.applyReviewFrame?.(frame)
   }
 }
 
@@ -2516,11 +2503,10 @@ function applyOrBufferReviewFrame(m: Record<string, unknown>) {
     gateApprovalRef.value.applyReviewFrame(m)
     applied = true
   }
-  if (reviewChatRef.value?.applyReviewFrame) {
-    const ok = reviewChatRef.value.applyReviewFrame(m)
-    if (ok !== false) applied = true
+  if (m.event === 'request_rejected' && active.value?.type === 'clarify' && m.nodeId === activeDialogueNodeId()) {
+    reviewChatRef.value?.applyRequestRejected?.(m)
   }
-  if (!applied && (active.value?.type === 'clarify' || active.value?.type === 'gate')) {
+  if (!applied && active.value?.type === 'gate') {
     pendingReviewFrames.push(m)
   }
 }
@@ -2644,6 +2630,10 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     try {
       m = JSON.parse(String(ev.data))
     } catch {
+      return
+    }
+    if (m.type === 'dialogue') {
+      ingestDialogue(m)
       return
     }
     if (m.type === 'heartbeat') {
@@ -2993,6 +2983,7 @@ async function recoverClarifySession(
   let readyCheckpoint: ReviewRecoveryCheckpoint | undefined
   try {
     const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
+    ingestContextDialogues(ctx, target.runId)
     if (!active.value || inboxTripleKey(active.value) !== triple) return
     if (signal.aborted) return
     if (activeRunWs === socket && reviewState.isStateCurrent(checkpoint, target.nodeId) &&
@@ -3095,6 +3086,7 @@ async function refreshActiveContext(
     reviewState.isCurrent(checkpoint, target.nodeId)
   try {
     const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
+    ingestContextDialogues(ctx, target.runId)
     if (!isCurrent()) return
     if (isProcessedTriple(target)) return
     if (isInboxLeftPending(ctx)) {
@@ -3171,6 +3163,7 @@ async function loadActiveRun(hard = true) {
     // this read too, so it cannot hold the lease against all later recovery.
     const read = await runWithTimeout(async readSignal => {
       const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal: readSignal })
+      ingestContextDialogues(ctx, target.runId)
       const adapted = readSignal.aborted || isInboxLeftPending(ctx) ? null
         : await ensureActiveGraphEdges(adaptInboxContextToRun(ctx, target.runId))
       return { ctx, adapted }

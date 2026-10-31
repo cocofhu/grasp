@@ -1,0 +1,69 @@
+{
+  "scenario": "orphan",
+  "about": "the sandbox keeps running after the platform went idle",
+  "frames": [
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "clarify",
+      "iteration": 1,
+      "kind": "clarify",
+      "epoch": 1,
+      "seq": 1,
+      "mode": "full",
+      "rows": [
+        {
+          "role": "agent",
+          "text": "沙箱还在说",
+          "at": "",
+          "turnId": "orphan:op-orphan",
+          "id": "orphan:op-orphan:a0",
+          "phase": "orphan",
+          "rev": 1,
+          "streaming": true
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "orphan:op-orphan",
+          "phase": "orphan",
+          "runningOpId": "op-orphan"
+        }
+      ],
+      "orphan": {
+        "runningOpId": "op-orphan",
+        "desynced": false
+      },
+      "busy": false,
+      "done": false
+    },
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "clarify",
+      "iteration": 1,
+      "kind": "clarify",
+      "epoch": 1,
+      "seq": 2,
+      "mode": "full",
+      "rows": [],
+      "turns": [],
+      "busy": false,
+      "done": false
+    }
+  ],
+  "final": {
+    "type": "dialogue",
+    "runId": "run-fixture",
+    "nodeId": "clarify",
+    "iteration": 1,
+    "kind": "clarify",
+    "epoch": 1,
+    "seq": 2,
+    "mode": "full",
+    "rows": [],
+    "turns": [],
+    "busy": false,
+    "done": false
+  }
+}

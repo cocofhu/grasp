@@ -106,6 +106,10 @@ import { beginInboxCancelDeparture, endInboxCancelDeparture } from '@/lib/inbox/
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { setHomeApproveHandoff, takeHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
 import { CLARIFY_CAPS, IMPLEMENT_CAPS } from '@/test/capsFixtures'
+import { clearDialogues, dialogueKey, getDialogue } from '@/lib/chat/dialogueStore'
+import { dialogueFrame, queuedTurn, runningTurn } from '@/test/dialogueKit'
+
+afterEach(() => clearDialogues())
 
 function paged(items: InboxItem[]) {
   return { items, total: items.length, page: 1, pageSize: 20 }
@@ -1493,7 +1497,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     wrapper.unmount()
   })
 
-  it('clarify hard load: early queue_state/snapshot still restores live+queue after mount (review v1)', async () => {
+  it('clarify hard load: an early dialogue frame is kept for the chat that mounts later (review v1)', async () => {
     const item = clarifyItem('resume')
     mocks.listGates.mockResolvedValue(paged([item]))
 
@@ -1526,16 +1530,17 @@ describe('GatesInboxView inbox-context lifecycle', () => {
         },
       },
     })
-    ws!.emit('review', {
-      event: 'queue_state',
-      nodeId: 'clarify-resume',
-      waiting: 1,
-      items: [{ id: 'q-b', text: '乙' }],
+    const { type: _type, ...frame } = dialogueFrame('run-resume', 'clarify-resume', {
       busy: true,
-      activeItem: { id: 'q-a', text: '甲' },
+      rows: [
+        { role: 'human', text: '甲', at: '1', turnId: 'q-a' },
+        { role: 'agent', text: '', at: '2', turnId: 'q-a', streaming: true },
+      ],
+      turns: [runningTurn('q-a', { text: '甲' }), queuedTurn('q-b', 0, { text: '乙' })],
     })
+    ws!.emit('dialogue', frame)
     await flushPromises()
-    expect(composerFrames.applied.length).toBe(0)
+    expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(false)
 
     releaseContext({
       type: 'clarify',
@@ -1566,97 +1571,9 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
 
     expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)
-    // REST restore and/or buffered WS frames projected after mount.
-    const queueFrames = composerFrames.applied.filter((f) => f.event === 'queue_state')
-    expect(queueFrames.length).toBeGreaterThanOrEqual(1)
-    const last = queueFrames[queueFrames.length - 1] as {
-      busy?: boolean
-      activeItem?: { text?: string }
-      items?: { text?: string }[]
-    }
-    expect(last.busy).toBe(true)
-    expect(last.activeItem?.text).toBe('甲')
-    expect(last.items?.some((it) => it.text === '乙')).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('clarify hard load: early ACP is buffered and seeded after mount (g4.2 hard gate)', async () => {
-    const item = clarifyItem('acp-race')
-    mocks.listGates.mockResolvedValue(paged([item]))
-    mocks.nodeEvents.mockResolvedValue({
-      events: [{ kind: 'thought', text: 'REST seed thought', t: 1 }],
-      live: true,
-    })
-
-    let releaseContext!: (v: unknown) => void
-    const hung = new Promise((resolve) => {
-      releaseContext = resolve
-    })
-    mocks.inboxContext.mockImplementationOnce(() => hung as Promise<unknown>)
-
-    const wrapper = mountInbox()
-    await flushPromises()
-    await nextTick()
-
-    const ws = FakeWebSocket.instances.find((w) => w.url.includes('run-acp-race'))
-    expect(ws).toBeTruthy()
-    expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(false)
-
-    // ACP arrives while chat unmounted — must buffer (not drop).
-    ws!.emit('acp', {
-      nodeId: 'clarify-acp-race',
-      busy: true,
-      events: [
-        { kind: 'thought', text: 'buffered thought', t: 1 },
-        { kind: 'message', text: 'buffered message', t: 2 },
-      ],
-    })
-    await flushPromises()
-    expect(composerFrames.acp.length).toBe(0)
-
-    releaseContext({
-      type: 'clarify',
-      status: 'waiting_human',
-      nodes: [{ id: 'clarify-acp-race', type: 'agent', caps: CLARIFY_CAPS, label: '澄清' }],
-      artifacts: [],
-      nodeExecutions: {},
-      reactSessions: {
-        'clarify-acp-race': {
-          kind: 'clarify',
-          waiting: 0,
-          busy: true,
-          items: [],
-          activeItem: { id: 'q-a', text: '硬刷新提问' },
-        },
-      },
-      clarify: {
-        nodeId: 'clarify-acp-race',
-        iteration: 1,
-        turns: [],
-        done: false,
-        label: '澄清',
-      },
-    })
-    await flushPromises()
-    await nextTick()
-    await flushPromises()
-    await nextTick()
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)
-    // REST seed and/or buffered WS ACP applied after busy slot rebuild.
-    expect(composerFrames.acp.length).toBeGreaterThanOrEqual(1)
-    const seeded = composerFrames.acp.some((a) => {
-      const ev = a.events as { kind?: string; text?: string }[] | undefined
-      if (!Array.isArray(ev)) return false
-      return ev.some(
-        (e) =>
-          (e.kind === 'thought' && (e.text === 'buffered thought' || e.text === 'REST seed thought')) ||
-          (e.kind === 'message' && e.text === 'buffered message'),
-      )
-    })
-    expect(seeded).toBe(true)
-    expect(mocks.nodeEvents).toHaveBeenCalledWith('run-acp-race', 'clarify-acp-race', expect.anything())
+    const state = getDialogue(dialogueKey('run-resume', 'clarify-resume'))
+    expect(state?.busy).toBe(true)
+    expect(state?.turns.map((turn) => [turn.item?.text, turn.phase])).toEqual([['甲', 'running'], ['乙', 'queued']])
     wrapper.unmount()
   })
 
