@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-31（侧栏「排队中」分组）
+
+- 日期：2026-10-31。
+- 范围：`web/src/lib/shared/sidebarSections.ts`、`web/src/components/shell/AppSidebarNav.vue`、`web/src/locales/{zh-CN,en}/nav.json`，以及对应测试。
+- 做了什么：`status=queued` 的 Run 从「正在执行」移到「自动过程」下方的新分组「排队中」（Queued），可折叠并沿用原 localStorage 键持久化，带计数与 `queue` 图标，组内支持置顶，无排队 Run 时隐藏；「正在执行」计数不再包含 queued。queued 行不写入 `paintedGroups`，进出排队中直接换位，不播放飞入动画。
+- 为什么：排队中的 Run 挤在「正在执行」顶部，和真正在跑的 Run 混在一起，计数也偏大。
+- 如何验证：`web/` 下 `vue-tsc --noEmit`、改动文件 eslint、vitest 全量（549 文件 / 6064 用例）通过；另在 `e2e/workspace-config.html` 宿主加 mock `/api/runs` 用 Playwright 验证分组顺序、计数、图标、折叠持久化、换组与空组隐藏、置顶、英文文案和移动端抽屉。
+
 ### 2026-10-30（Solo @ 引用：其他会话与 GitHub issue/PR）
 
 - 日期：2026-10-30。

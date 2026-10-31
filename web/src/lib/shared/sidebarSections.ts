@@ -1,8 +1,8 @@
 import { ref } from 'vue'
 
-export type SidebarSection = 'running' | 'auto' | 'history'
+export type SidebarSection = 'running' | 'auto' | 'queued' | 'history'
 
-const KNOWN_SECTIONS = new Set<SidebarSection>(['running', 'auto', 'history'])
+const KNOWN_SECTIONS = new Set<SidebarSection>(['running', 'auto', 'queued', 'history'])
 
 export const STORAGE_KEY = 'grasp-sidebar-collapsed-sections'
 
