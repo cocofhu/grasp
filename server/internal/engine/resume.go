@@ -585,7 +585,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		// opening one.
 		e.flushMcpCalls(runID, nodeID)
 		e.flushTokenUsage(runID, nodeID, t.Usage, t.UsageByModel)
-		e.broker.Publish(runID, jsonMsg("react", runID, nodeID))
+		e.publishReact(runID, nodeID)
 		if t.Interrupted {
 			return errConfirmTurnTimeout
 		}

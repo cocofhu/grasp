@@ -194,7 +194,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		logDB(e.db.Save(conv), runID, "reopen review after force validation failure")
 		e.clearPendingAuto(c)
 		e.host.SetActiveReview(runID, true)
-		e.broker.Publish(runID, jsonMsg("react", runID, nodeID))
+		e.publishReact(runID, nodeID)
 		errMsg := strings.TrimSpace(outcome.err)
 		if errMsg == "" {
 			errMsg = "复审确认校验失败"
@@ -213,7 +213,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 			logDB(e.db.Save(conv), runID, "reopen review after preview-issue lifecycle failure")
 			e.clearPendingAuto(c)
 			e.host.SetActiveReview(runID, true)
-			e.broker.Publish(runID, jsonMsg("react", runID, nodeID))
+			e.publishReact(runID, nodeID)
 			return lifeErr
 		}
 	}

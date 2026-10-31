@@ -233,6 +233,7 @@ func (e *Engine) saveState(c *execCtx, node *models.Node, o nodeOutcome) {
 	}
 	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "save state_run")
 	e.touchActivity(c.run.ID, true)
+	e.dialogueNodeEvent(c.run.ID, node.ID)
 }
 
 // flushMcpCalls appends the buffered built-in MCP tool-call trace onto a node's
