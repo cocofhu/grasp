@@ -9,7 +9,6 @@ import Icon from '@/components/ui/Icon.vue'
 import ModelConnectionEditor from './ModelConnectionEditor.vue'
 import ModelProviderSelect from './ModelProviderSelect.vue'
 import ModelConfigurationManager from './ModelConfigurationManager.vue'
-import ModelRecordActions from './ModelRecordActions.vue'
 import { isModelCredential, modelProviderPreset, MODEL_PROTOCOLS, useRoutingCopy } from '@/lib/agent/modelRouting'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 import { api, type CredentialItem, type ModelConfiguration, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
@@ -125,7 +124,6 @@ const items = ref<CredentialItem[]>([])
 const drafts = reactive<Record<string, string>>({})
 const editing = reactive<Record<string, boolean>>({})
 const saving = reactive<Record<string, boolean>>({})
-const clearing = reactive<Record<string, boolean>>({})
 const removing = reactive<Record<string, boolean>>({})
 const showCreate = ref(false)
 const creating = ref(false)
@@ -566,28 +564,15 @@ async function save(item: CredentialItem) {
   }
 }
 
-async function clear(item: CredentialItem) {
-  if (clearing[item.id] || !item.configured) return
-  clearing[item.id] = true
-  try {
-    await api.deleteCredential(item.id)
-    updateItems({ ...item, configured: false, masked: '', revokedAt: undefined, secretRevision: Math.max(2, (item.secretRevision || 1) + 1) })
-    toast.success(t('pages.workspace.credentials.cleared'))
-  } catch (e: unknown) {
-    toast.error(String((e as { message?: string })?.message || e))
-  } finally {
-    clearing[item.id] = false
-  }
+function canRemoveCredential(item: CredentialItem) {
+  return !props.inline && isWorkspaceOwned(item)
 }
 
-function canRemoveAccount(item: CredentialItem) {
-  return isWorkspaceOwned(item) && isModelCredential(item)
-}
-
-async function removeAccount(item: CredentialItem) {
-  if (!canRemoveAccount(item) || removing[item.id]) return
+async function removeCredentialRow(item: CredentialItem) {
+  if (!canRemoveCredential(item) || removing[item.id]) return
   const alias = itemLabel(item)
-  if (!window.confirm(t('pages.workspace.credentials.accountDeleteConfirm', { alias }))) return
+  const account = isModelCredential(item)
+  if (!window.confirm(t(account ? 'pages.workspace.credentials.accountDeleteConfirm' : 'pages.workspace.credentials.credentialDeleteConfirm', { alias }))) return
   removing[item.id] = true
   try {
     await api.removeCredential(item.id)
@@ -596,14 +581,16 @@ async function removeAccount(item: CredentialItem) {
     delete editing[item.id]
     delete hostDrafts[item.id]
     delete knownHostsDrafts[item.id]
-    delete clearing[item.id]
-    serviceConnections.value = serviceConnections.value.filter((service) => service.credentialId !== item.id)
-    await loadServiceConnections({ keepOnError: true })
-    toast.success(t('pages.workspace.credentials.accountDeleted'))
+    if (account) {
+      serviceConnections.value = serviceConnections.value.filter((service) => service.credentialId !== item.id)
+      await loadServiceConnections({ keepOnError: true })
+    }
+    emit('changed')
+    toast.success(t(account ? 'pages.workspace.credentials.accountDeleted' : 'pages.workspace.credentials.credentialDeleted'))
   } catch {
-    toast.error(t('pages.workspace.credentials.accountDeleteFailed'))
+    toast.error(t(account ? 'pages.workspace.credentials.accountDeleteFailed' : 'pages.workspace.credentials.credentialDeleteFailed'))
   } finally {
-    removing[item.id] = false
+    delete removing[item.id]
   }
 }
 
@@ -817,26 +804,17 @@ watch(showCreate, (open) => {
                             >{{ t('pages.workspace.credentials.fillIn') }}</AppButton>
                           </template>
                           <AppButton
-                            v-if="!inline && isWorkspaceOwned(item) && item.configured"
+                            v-if="canRemoveCredential(item)"
                             size="sm"
                             variant="ghost"
-                            class="credential-clear"
-                            :disabled="!!clearing[item.id]"
-                            :loading="!!clearing[item.id]"
-                            :data-testid="`workspace-credential-clear-${item.id}`"
-                            :aria-label="t('pages.workspace.credentials.clear')"
-                            :title="t('pages.workspace.credentials.clear')"
-                            @click="clear(item)"
+                            class="credential-delete"
+                            :disabled="!!removing[item.id]"
+                            :loading="!!removing[item.id]"
+                            :data-testid="`workspace-credential-delete-${item.id}`"
+                            :aria-label="t('pages.workspace.credentials.delete')"
+                            :title="t('pages.workspace.credentials.delete')"
+                            @click="removeCredentialRow(item)"
                           ><Icon name="trash" :size="14" /></AppButton>
-                          <ModelRecordActions
-                            v-if="!inline && canRemoveAccount(item)"
-                            :name="itemLabel(item)"
-                            prefix="api-account"
-                            :record-id="item.id"
-                            :show-edit="false"
-                            :show-toggle="false"
-                            @remove="removeAccount(item)"
-                          />
                         </div>
                       </div>
                     </div>
@@ -1212,8 +1190,8 @@ watch(showCreate, (open) => {
 .credential-service-link { display: inline-flex; max-width: 100%; align-items: center; gap: 5px; border: 0; padding: 0; background: transparent; color: rgb(var(--c-txt3)); font-size: 11px; line-height: 18px; text-align: left; cursor: pointer; }
 .credential-service-link:hover { color: rgb(var(--c-accent-2)); }
 .credential-service-link:focus-visible { outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px; }
-.credential-clear { color: rgb(var(--c-txt3)); }
-.credential-clear:hover { color: rgb(var(--c-err)); }
+.credential-delete { color: rgb(var(--c-txt3)); }
+.credential-delete:hover { color: rgb(var(--c-err)); }
 .credential-row h4 { overflow-wrap: anywhere; }
 .credential-editor { margin-left: 44px; }
 .credential-wizard-progress {

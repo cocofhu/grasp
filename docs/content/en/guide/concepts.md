@@ -25,7 +25,7 @@ A workflow has one kind of Agent node. The node only sets three things: which Ag
 
 Every node that uses the same Agent has the same capabilities; nodes differ only by goal. If you need different permissions, create a second Agent. Behaviour rules live in the Agent workspace's `AGENTS.md` and skills; the platform keeps only a fixed common protocol.
 
-Three templates ship built in: **Clarify** (clarify; writes the requirement spec and plan), **Implement** (auto with review; writes the implementation result) and **Test & review** (auto with review; writes the test result and review verdict). All three can start a preview with `set_preview`. Onboarding creates the default workflow input → Clarify → Implement → Test & review; Pass goes to output and Fail goes back to Implement.
+Three templates ship built in: **Clarify** (clarify; writes the requirement spec and plan), **Implement** (auto; writes the implementation result) and **Test & review** (auto; writes the test result and review verdict). Implement and Test & review ship with review off, so they hand off as soon as they finish; turn review on in the Agent's capabilities page if you want them to wait for a person. All three can start a preview with `set_preview`. Onboarding creates the default workflow input → Clarify → Implement → Test & review; Pass goes to output and Fail goes back to Implement.
 
 A workflow with an unknown node type fails validation with "未知节点类型 X" (unknown node type) and its runs fail; an Agent without capabilities fails with "Agent X 未声明能力" (Agent has no capabilities).
 
@@ -83,7 +83,7 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 ## Real Docker sandboxes
 
-Open Workflow defaults in the workflow editor, enable Shared sandbox, and save. It is off by default, so each node gets its own sandbox. When enabled, nodes in the same run reuse the workspace, installed dependencies, and uncommitted changes; separate runs remain isolated. The selection applies to newly started runs without a platform-wide enable flag. Model and Git authorization are refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox or reuse is incompatible.
+Open Workflow defaults in the workflow editor to turn Shared sandbox on or off, then save. New workflows (created in the editor, by onboarding, or from the default baseline) have it on by default; existing workflows keep their setting, and without one each node gets its own sandbox. When enabled, nodes in the same run reuse the workspace, installed dependencies, and uncommitted changes; separate runs remain isolated. The selection applies to newly started runs without a platform-wide enable flag. Model and Git authorization are refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox or reuse is incompatible.
 
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 

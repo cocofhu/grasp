@@ -90,8 +90,6 @@ var (
 	ErrCredentialAliasTaken = errors.New("credential alias already exists for this kind")
 	ErrCredentialPurpose    = errors.New("invalid credential purpose, tool or secret kind")
 	ErrCredentialKnownHosts = errors.New("SSH known hosts must not contain NUL characters")
-	// ErrCredentialNotRemovable rejects deleting a row that is not a workspace model API account.
-	ErrCredentialNotRemovable = errors.New("only a workspace model API account can be removed")
 )
 
 // CredentialAliasTakenError is returned when a new alias matches another
@@ -446,10 +444,11 @@ func (s *CredentialService) Clear(id string) error {
 	return s.db.Save(&row).Error
 }
 
-// RemoveModelAPI deletes a workspace-owned model_api account and the model
-// connections bound to it. Clear only wipes the secret and keeps the row.
-// Either the account and its connections all go, or a failure leaves both as they were.
-func (s *CredentialService) RemoveModelAPI(id string) error {
+// Remove deletes a credential row. For a model_api account the model
+// connections bound to it go in the same transaction; other references (model
+// configurations, Git bindings) are kept and fail closed when resolved.
+// Clear only wipes the secret and keeps the row.
+func (s *CredentialService) Remove(id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return ErrCredentialNotFound
@@ -465,12 +464,10 @@ func (s *CredentialService) RemoveModelAPI(id string) error {
 		if !currentCredential(row) {
 			return ErrCredentialNotFound
 		}
-		purpose, _, _, _ := credentialDomain(row)
-		if purpose != "model_api" {
-			return ErrCredentialNotRemovable
-		}
-		if err := tx.Where("credential_id = ?", id).Delete(&models.ModelConnection{}).Error; err != nil {
-			return err
+		if purpose, _, _, _ := credentialDomain(row); purpose == "model_api" {
+			if err := tx.Where("credential_id = ?", id).Delete(&models.ModelConnection{}).Error; err != nil {
+				return err
+			}
 		}
 		res := tx.Delete(&models.Credential{}, "id = ?", id)
 		if res.Error != nil {

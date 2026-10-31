@@ -21,6 +21,7 @@ const apiMocks = vi.hoisted(() => ({
   listWorkflowVersions: vi.fn(),
   getWorkflowVersionGraph: vi.fn(),
   restoreWorkflowVersion: vi.fn(),
+  listCredentials: vi.fn(),
 }))
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warn: vi.fn(), info: vi.fn(), show: vi.fn() }))
 const canvasSpy = vi.hoisted(() => ({ centerOn: vi.fn(), editor: null as CanvasEditor | null, props: {} as Record<string, unknown> }))
@@ -102,7 +103,7 @@ function workflow(over: Record<string, unknown> = {}) {
 
 const mounted: { unmount: () => void }[] = []
 
-async function mountEditor() {
+async function mountEditor(path = '/workflows/wf-1/edit') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -111,7 +112,7 @@ async function mountEditor() {
       { path: '/workflows/:id/edit', component: WorkflowEditorView },
     ],
   })
-  await router.push('/workflows/wf-1/edit')
+  await router.push(path)
   await router.isReady()
   const wrapper = mount(defineComponent({ setup: () => () => h(RouterView) }), {
     global: {
@@ -155,6 +156,7 @@ beforeEach(() => {
   apiMocks.listAgents.mockResolvedValue([{ name: '测试评审', capabilities: TEST_REVIEW_CAPS }])
   apiMocks.getWorkspace.mockResolvedValue({ name: '我的工作区' })
   apiMocks.listChannels.mockResolvedValue({ items: [] })
+  apiMocks.listCredentials.mockResolvedValue({ items: [] })
 })
 
 afterEach(() => {
@@ -315,6 +317,41 @@ describe('WorkflowEditorView', () => {
     expect(save().attributes('disabled')).toBeUndefined()
     expect(save().text()).not.toContain('保存中')
     expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(true)
+  })
+
+  it('starts a new workflow with the shared sandbox on and saves it', async () => {
+    const { wrapper } = await mountEditor('/workflows/new/edit')
+    expect(apiMocks.getWorkflow).not.toHaveBeenCalled()
+    expect(status(wrapper)).not.toBe('dirty')
+    await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="workflow-shared-sandbox-switch"]').attributes('aria-checked')).toBe('true')
+    expect(status(wrapper)).not.toBe('dirty')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true }))
+    await flushPromises()
+    expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1)
+    expect(apiMocks.saveWorkflow.mock.calls[0]![0]).toMatchObject({ defaults: { inheritWorkspace: true, variables: [], sandbox: { mode: 'shared' } } })
+  })
+
+  it('saves per_node when the shared sandbox is turned off on a new workflow', async () => {
+    const { wrapper } = await mountEditor('/workflows/new/edit')
+    await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="workflow-shared-sandbox-row"]').get('h3').trigger('click')
+    expect(wrapper.get('[data-testid="workflow-shared-sandbox-switch"]').attributes('aria-checked')).toBe('false')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true }))
+    await flushPromises()
+    expect(apiMocks.saveWorkflow.mock.calls[0]![0].defaults.sandbox).toEqual({ mode: 'per_node' })
+  })
+
+  it('does not inject sandbox defaults into an existing workflow', async () => {
+    const { wrapper } = await mountEditor()
+    expect(status(wrapper)).toBe('saved')
+    await wrapper.get('[data-testid="editor-name"]').setValue('renamed')
+    await wrapper.get('[data-testid="editor-save"]').trigger('click')
+    await flushPromises()
+    expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1)
+    expect(apiMocks.saveWorkflow.mock.calls[0]![0].defaults).toBeUndefined()
   })
 
   it('closes the defaults dialog without saving and keeps the in-memory change', async () => {
