@@ -179,7 +179,7 @@ func credentialView(row models.Credential) CredentialView {
 			}
 			return "••••••••"
 		}(), Source: "workspace", Configured: strings.TrimSpace(row.ValueEnc) != "",
-		Enabled: row.Enabled, RevokedAt: row.RevokedAt,
+		Enabled: row.Enabled, RevokedAt: row.RevokedAt, Metadata: row.Metadata,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
@@ -201,8 +201,13 @@ func (s *CredentialService) List() ([]CredentialView, error) {
 }
 
 // Create stores a new encrypted credential. Plaintext is accepted only on
-// write and is never returned by this service.
+// write and is never returned by this service. Client metadata is ignored;
+// only server-side sign-in flows record metadata.
 func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
+	return s.create(in, nil)
+}
+
+func (s *CredentialService) create(in CredentialInput, metadata map[string]any) (CredentialView, error) {
 	if err := normalizeCredentialDomainInput(&in); err != nil {
 		return CredentialView{}, err
 	}
@@ -267,7 +272,7 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	row := models.Credential{ID: "cred-" + uuid.NewString()[:12],
 		Purpose: in.Purpose, Issuer: in.Issuer, ToolID: in.ToolID, SecretKind: in.SecretKind, Host: in.Host, SecretRevision: 1,
 		Type: in.Type, Provider: in.Provider, Name: in.Name, Target: target,
-		EnvKey: in.EnvKey, ValueEnc: enc, KnownHosts: knownHosts,
+		EnvKey: in.EnvKey, ValueEnc: enc, KnownHosts: knownHosts, Metadata: metadata,
 		Enabled: in.Enabled == nil || *in.Enabled, CreatedAt: now, UpdatedAt: now}
 	if err := s.db.Create(&row).Error; err != nil {
 		return CredentialView{}, err
@@ -275,8 +280,14 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	return credentialView(row), nil
 }
 
-// Update edits metadata and optionally rotates/clears the secret.
+// Update edits metadata and optionally rotates/clears the secret. A rotated
+// or cleared secret drops sign-in metadata (e.g. the GitHub account), which
+// described the previous secret.
 func (s *CredentialService) Update(id string, in CredentialInput) (CredentialView, error) {
+	return s.update(id, in, nil)
+}
+
+func (s *CredentialService) update(id string, in CredentialInput, metadata map[string]any) (CredentialView, error) {
 	var row models.Credential
 	if err := s.db.Where("id = ?", strings.TrimSpace(id)).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -389,6 +400,7 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 	if in.Clear {
 		row.ValueEnc = ""
 		row.SecretRevision = nextSecretRevision(row.SecretRevision)
+		row.Metadata = metadata
 	} else if strings.TrimSpace(in.Value) != "" {
 		enc, err := crypto.Encrypt(in.Value)
 		if err != nil {
@@ -396,6 +408,7 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 		}
 		row.ValueEnc = enc
 		row.SecretRevision = nextSecretRevision(row.SecretRevision)
+		row.Metadata = metadata
 	} else if knownHostsChanged {
 		row.SecretRevision = nextSecretRevision(row.SecretRevision)
 	}

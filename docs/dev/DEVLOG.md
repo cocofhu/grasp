@@ -20,6 +20,16 @@
 
 ## 记录
 
+### 2026-10-31（GitHub 凭据支持设备码登录）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/config/{config,descriptor}.go`、`server/CONFIGURATION.md`、`server/config.example.yaml`、`.env.example`、`docker-compose.yml`、`server/internal/services/{github_device_flow,workspace_credentials}.go`、`server/internal/handlers/{github_device,handlers}.go`、`server/internal/router/router.go`、`server/cmd/server/main.go`、`web/src/lib/api/{apiTypes.ts,clients/workspaceClient.ts}`、`web/src/lib/workspace/useGitHubDeviceLogin.ts`、`web/src/components/workspace/{GitHubDeviceLoginCard,GitHostField,WorkspaceCredentialsPanel}.vue`、`web/src/locales/{zh-CN,en}/pages.json`、`docs/content/{,en/}help/configuration.md`，以及对应测试。
+- 做了什么：
+  - 后端：`github.oauth_client_id` / `GRASP_GITHUB_OAUTH_CLIENT_ID`。`GitHubDeviceFlowService` 在内存保存会话（绑定发起用户、按 GitHub 的 expires_in 过期、每用户最多 5 个），`Poll` 在 interval 内不请求 GitHub，`slow_down` 加 5 秒；网络错误视为 pending。成功后 `GET /user` 取 login 与 `X-OAuth-Scopes`（缺头时用 token 响应的 scope），新建或更新凭据并写 metadata `{authMethod, githubLogin, scopes}`。`CredentialService.Create/Update` 仍忽略客户端 metadata；手动换 Token 或清空时清掉 metadata。`CredentialView` 返回 metadata。四个路由：GET/POST `/workspace/credentials/github/device`、POST `…/:sessionId/poll`、DELETE `…/:sessionId`；成功时审计 `create|update credential (github device flow)`，不含 Token 与 device_code。
+  - 前端：`useGitHubDeviceLogin` 状态机（按服务端 interval 轮询、倒计时到 0 本地过期、取消/卸载时 DELETE 会话、旧会话的响应被忽略）。`GitHubDeviceLoginCard` 按 page.html 定稿：状态胶囊、逐字等宽验证码格、复制/打开 GitHub 按钮、进度条与剩余时间、scope 小标签、成功态账号与缺 repo 提示。新增向导的 Git Host 改为 `GitHostField`（站点、协议前缀、官方/自建/格式有误标签、恢复默认），GitHub 且 github.com 时出现滑动分段「用 GitHub 登录 / 粘贴 Token」，非 github.com 时登录项置灰并切到粘贴。凭据行显示 `@login` 与「GitHub 登录」标签，github.com 凭据有「重新登录」。
+- 为什么：手动创建 PAT 步骤多、容易选错权限；设备码流程不需要 client secret 和回调地址，适合自托管。
+- 如何验证：`go test ./internal/services -run GitHubDevice`、`./internal/handlers -run GitHubDevice`、`./internal/config`；`vitest` 跑 `useGitHubDeviceLogin.test.ts`、`WorkspaceCredentialsPanel.githubDevice.test.ts` 与原有 `WorkspaceCredentialsPanel.test.ts`；`vue-tsc --noEmit`、`npm run lint`；`go vet`、`gen-configdoc -check`、全量 `go test` 与全量 `vitest`。未做真机 GitHub 授权。
+
 ### 2026-10-31（SSH 私钥与已知主机合并为「SSH 密钥」）
 
 - 日期：2026-10-31。

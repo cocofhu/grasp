@@ -518,6 +518,7 @@ func main() {
 		ExternalMcp:         externalMcpSvc,
 		McpKeys:             mcpKeySvc,
 		Credentials:         credentialSvc,
+		GitHubDevice:        services.NewGitHubDeviceFlowService(credentialSvc, func() string { return config.GetConfig().GitHubOAuthClientID() }),
 		OpenCodeCatalog:     openCodeCatalog,
 		ModelConnections:    modelConnectionSvc,
 		ModelConfigurations: modelConfigurationSvc,
