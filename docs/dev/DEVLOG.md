@@ -129,7 +129,15 @@
 - 如何验证：
   - Server：`go vet`、`go test ./...` 与 `gen-configdoc -check` 通过；`cover-check-server.sh 90` 为 90.6%。新测试覆盖锚点快照、跨引用与跨版本游标拒绝、外部用户和伪造 ref、排队期间锚定、预算截断、GitHub 精确查询、缓存、304 与各错误码、搜索限定词与配额保护、凭据选择、搜索分页与 LIKE 转义、handler 端点。
   - Web：lint 0 error（12 个 warning 都在未改动的文件），`vue-tsc` 通过；全量 549 文件、6,039 项单测通过，Lines 91.94%；生产构建通过（本机需 `NODE_OPTIONS=--max-old-space-size=8192`，默认堆会 OOM）。新单测覆盖 token 运算、picker 分组、键盘、分页、错误与缓存、面板内 @ 选择、粘贴、Backspace、「+」菜单、chip 渲染，以及 `useSoloChat` 透传引用。
-  - 本地没有 golangci-lint，未跑。
+- 本地没有 golangci-lint，未跑。
+
+### 2026-10-30（排队消息在服务重启后恢复）
+
+- 日期：2026-10-30（UTC）。
+- 范围：`server/internal/chatsession/{session.go,pending.go}`、`server/internal/models/{chat_pending.go,models.go}`、`server/internal/services/solo.go`、`server/internal/engine/{engine.go,review_session.go,review_restore.go}`、`server/cmd/server/main.go`、相关测试、`CHANGELOG.md`、`docs/dev/DEVLOG.md`。
+- 做了什么：新增 `chat_pending_turns` 表。`chatsession.Config.Persist` 在入队、删除、重排、清空取消、开始与结束一轮时收到活动轮与等待项，按 revision 串行写入，不回退到旧状态；`Enqueue` 写完才返回。Solo 与工作流节点自身对话（澄清 / 复审 / 门禁热修订）接入，访客通道、Agent 测试器与 PM 不接入。启动时在 `ResumeInterrupted` 之后 `RestoreQueuedTurns`，按原顺序 `Restore` 回 FIFO（不再检查容量）。重启时正在执行的一轮：Solo 若用户消息已落库则标记 stopped 并补一条「服务重启，本轮回复已中断」；工作流按文本、clientMessageId 与入队时间找到已写入的人类消息，补一条可重试的失败回复。没写进对话的一轮直接重跑。已关闭或沙箱已失效的 Solo 会话、已结束的澄清访问丢弃其排队项；排队中的 Live 请求标记失败以便在卡片上重试。
+- 为什么：排队项只在进程内存里，用户消息要到 `turn_begin` 才落库；重启后服务端队列为空，前端也不补发，排队消息直接消失。正在执行的 Solo 轮还会留下一条没有回复也没有状态的用户消息。
+- 如何验证：`chatsession` 新增 Persist 顺序、Restore、不回退与 `PendingStore` 读写用例；Solo 与澄清各有用同一数据库重建服务模拟重启的用例（中断轮的处理、等待项按序执行、表清空），另覆盖未落库重跑、已结束会话丢弃、复审门禁标签与 `landedHumanIndex`；新用例 `-race -count=5` 稳定。本地真实服务 `kill -9` 后重启：澄清对话中断轮得到可重试回复，三条排队消息按序回答；Solo 中断轮标记 stopped，两条排队消息按序恢复执行（本地 worktree 模式下 Solo 沙箱不跨进程存活，故执行时报 not found，与本次无关）。golangci-lint 0 issues、`go vet`、gen-configdoc、`go test ./...`、server-core 覆盖率 90.6%、runtime 用例通过。
 
 ### 2026-10-30（智能体页去掉 Agent 列表栏、标签行重做）
 
