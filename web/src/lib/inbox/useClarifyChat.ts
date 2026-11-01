@@ -52,6 +52,7 @@ import {
   CLARIFY_AUTO_GROW_MIN,
 } from '@/lib/inbox/composerAutoGrow'
 import type { Ref } from 'vue'
+import type { MessageReference, ReferenceInput } from '@/lib/api/apiTypes'
 import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 import { replySpan } from '@/lib/inbox/turnSpan'
@@ -91,7 +92,7 @@ export type ClarifyChatProps = {
   finishDisabled?: boolean
   sendLabel?: string
   /** Optional adapter transport: retain the composer until the request is accepted. */
-  sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) => Promise<boolean>
+  sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]) => Promise<boolean>
   confirmError?: string | null
   /** Host set this after a 409 sandbox_busy so the error bar offers abort+confirm. */
   confirmCanAbort?: boolean
@@ -107,7 +108,7 @@ export type ClarifyChatProps = {
 }
 
 export type ClarifyChatEmit = {
-  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string): void
+  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]): void
   (e: 'retry-last'): void
   (e: 'finish'): void
   (e: 'finish-abort'): void
@@ -120,6 +121,11 @@ export type ClarifyChatModels = {
   draft: Ref<string>
   attachments: Ref<ClarifyImage[]>
   annotations: Ref<ReactAnnotation[]>
+  /** @ references held as tokens in `draft` (useReferenceComposer). */
+  mention?: {
+    refs: Ref<MessageReference[]>
+    load: (text: string, references: MessageReference[]) => void
+  }
 }
 
 /** Optional `dropped` payload of a clarify_visit_ended error (HTTP 409 / WS). */
@@ -139,6 +145,22 @@ export function useClarifyChat(
 const draft = models.draft
 const attachments = models.attachments
 const annotations = models.annotations
+const mention = models.mention
+
+function composerReferences(): MessageReference[] {
+  return mention ? mention.refs.value.map((r) => ({ ...r })) : []
+}
+
+/** Only kind and target travel; appended only when present so callers see the old arity. */
+function referenceArgs(refs: MessageReference[]): [ReferenceInput[]] | [] {
+  return refs.length ? [refs.map(({ kind, target }) => ({ kind, target }))] : []
+}
+
+/** Put text back into the composer with its references as tokens when it carried any. */
+function loadDraft(text: string, refs?: MessageReference[]) {
+  if (mention && refs?.length) mention.load(text, refs)
+  else draft.value = text
+}
 
 
 // active: whether the run is still in an interactive state (queued/running/
@@ -235,7 +257,7 @@ const queued = computed<DialogueQueueRow[]>(() => {
   const head = props.sendRequest ? undefined : view.value.rows.find((r) => r.localPending && r.role === 'human')
   if (head) {
     rows = [{ clientMessageId: head.clientMessageId, text: head.text, images: head.images ?? [],
-      annotations: head.annotations ?? [], local: true }, ...rows]
+      annotations: head.annotations ?? [], ...(head.references?.length ? { references: head.references } : {}), local: true }, ...rows]
   }
   return visibleQueue(rows, queueOverlay.value)
 })
@@ -622,17 +644,18 @@ async function editQueuedItem(index: number) {
     const anns = cloneReactAnnotations(annotations.value)
     const prepared = prepareComposerSend(t, imgs, anns)
     if (!prepared) return
+    const refs = composerReferences()
     draft.value = ''
     attachments.value = []
     annotations.value = []
     attachNotice.value = null
-    sendMessage(prepared.text, prepared.images, prepared.annotations, t)
+    sendMessage(prepared.text, prepared.images, prepared.annotations, t, refs)
     // Append keeps the target index stable.
   }
 
   const item = queued.value[index]!
   dropQueueRow(item)
-  draft.value = item.text
+  loadDraft(item.text, item.references)
   attachments.value = cloneClarifyImages(item.images)
   annotations.value = cloneReactAnnotations(item.annotations)
   attachNotice.value = null
@@ -787,7 +810,7 @@ function removeAttachment(i: number) {
 }
 
 /** What this page sent, by clientMessageId, so a refused send can go back into the composer as typed. */
-type SentOrigin = { text: string; composerText?: string; images: ClarifyImage[]; annotations: ReactAnnotation[] }
+type SentOrigin = { text: string; composerText?: string; images: ClarifyImage[]; annotations: ReactAnnotation[]; references?: MessageReference[] }
 const sentOrigins = new Map<string, SentOrigin>()
 
 function trackOptimisticSend(clientMessageId: string, origin: SentOrigin) {
@@ -797,6 +820,7 @@ function trackOptimisticSend(clientMessageId: string, origin: SentOrigin) {
     text: origin.text,
     images: origin.images,
     annotations: origin.annotations,
+    ...(origin.references?.length ? { references: origin.references } : {}),
     at: new Date().toISOString(),
   })
   stickToBottom.value = true
@@ -817,14 +841,15 @@ function sendMessage(
   imgs: ClarifyImage[] = [],
   anns: ReactAnnotation[] = [],
   composerText?: string,
+  refs: MessageReference[] = [],
 ) {
   // Skip envelopes keep a trailing newline so an empty third line stays present
   // (trim would collapse "回答已跳过\n用户回复\n" → two lines).
   const t = textHasSkipPrefix(text) ? text.replace(/^\s+/, '') : text.trim()
   if ((!t && imgs.length === 0 && anns.length === 0) || props.done || !props.active) return
   const clientMessageId = newClientMessageId()
-  trackOptimisticSend(clientMessageId, { text: t, composerText, images: imgs, annotations: cloneReactAnnotations(anns) })
-  emit('send', t, imgs, anns, clientMessageId)
+  trackOptimisticSend(clientMessageId, { text: t, composerText, images: imgs, annotations: cloneReactAnnotations(anns), references: refs })
+  emit('send', t, imgs, anns, clientMessageId, ...referenceArgs(refs))
 }
 
 /**
@@ -871,6 +896,7 @@ async function sendFromComposer(): Promise<boolean> {
   const anns = cloneReactAnnotations(annotations.value)
   const prepared = prepareComposerSend(t, imgs, anns)
   if (!prepared) return false
+  const refs = composerReferences()
   if (props.sendRequest) {
     // Keep drafts and attachment references until an acknowledgement arrives.
     // A new draft typed while awaiting the transport belongs to the next send.
@@ -884,7 +910,7 @@ async function sendFromComposer(): Promise<boolean> {
     const ownsRequest = () => generation === conversationGeneration &&
       props.runId === identity[0] && props.nodeId === identity[1] && props.iteration === identity[2]
     try {
-      const acknowledged = await props.sendRequest(prepared.text, prepared.images, prepared.annotations, clientMessageId)
+      const acknowledged = await props.sendRequest(prepared.text, prepared.images, prepared.annotations, clientMessageId, ...referenceArgs(refs))
       // The socket can prove acceptance even when the HTTP response was lost.
       if (!acknowledged && !serverHasSend(clientMessageId)) return false
       if (!ownsRequest()) return false
@@ -895,7 +921,7 @@ async function sendFromComposer(): Promise<boolean> {
       sendNotice.value = null
       if (!hasComposerDraft()) releaseStash()
       trackOptimisticSend(clientMessageId, {
-        text: prepared.text, composerText: t, images: prepared.images, annotations: cloneReactAnnotations(prepared.annotations),
+        text: prepared.text, composerText: t, images: prepared.images, annotations: cloneReactAnnotations(prepared.annotations), references: refs,
       })
     } finally {
       if (ownsRequest()) composerSending.value = false
@@ -909,7 +935,7 @@ async function sendFromComposer(): Promise<boolean> {
   sendNotice.value = null
   releaseStash()
   // Always forward cloned images/annotations — skip only rewrites text.
-  sendMessage(prepared.text, prepared.images, prepared.annotations, t)
+  sendMessage(prepared.text, prepared.images, prepared.annotations, t, refs)
   return true
 }
 
@@ -1287,7 +1313,13 @@ function cancelReview() {
 function discardLastQueued(clientMessageId?: string) {
   const list = optimisticSends(storeKey.value)
   const target = clientMessageId ? list.find((o) => o.clientMessageId === clientMessageId) : list[list.length - 1]
-  if (target) rejectOptimisticSend(storeKey.value, target.clientMessageId)
+  if (!target) return
+  rejectOptimisticSend(storeKey.value, target.clientMessageId)
+  // A referenced message is costly to rebuild: hand it back while the composer is still empty.
+  const origin = sentOrigins.get(target.clientMessageId)
+  if (origin?.references?.length && composerOpen() && !hasComposerDraft()) {
+    loadDraft(origin.composerText ?? origin.text, origin.references)
+  }
 }
 
 /** The composer is on screen and accepts input. */
@@ -1528,7 +1560,9 @@ function restoreUnsentQueued(
   // With the composer open the images are back in it; only say so when they are not.
   noteImagesDropped((composerOpen() ? 0 : r.imagesDropped) + (sent.imagesDropped ?? 0))
   stashLive = true
-  if (composerOpen()) mergeIntoComposer(text, imgs, anns, true, { at })
+  if (!composerOpen()) return
+  mergeIntoComposer(text, imgs, anns, true, { at })
+  if (origin?.references?.length && draft.value.trim() === text) loadDraft(text, origin.references)
 }
 
 /** Notice copy for a clarify_visit_ended refusal. */

@@ -323,6 +323,7 @@ func (s *RunService) Delete(id string) error {
 			&models.Artifact{},
 			&models.Gate{},
 			&models.ReactConversation{},
+			&models.RunReference{},
 			&models.PreviewIssue{},
 			&models.RunPreviewPort{},
 			&models.SandboxLog{},

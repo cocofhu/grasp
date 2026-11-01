@@ -1,4 +1,4 @@
-import type { AgentCapabilities } from '../api/apiTypes'
+import type { AgentCapabilities, MessageReference } from '../api/apiTypes'
 
 export type NodeType =
   | 'input'
@@ -911,6 +911,8 @@ export interface ClarifyTurn extends ChatMessageMetadata {
   forms?: ReactForm[]
   // Precise field/element annotations the human attached this review turn.
   annotations?: ReactAnnotation[]
+  /** Sessions / Issues / PRs the human @-referenced on this turn. */
+  references?: MessageReference[]
   /** Live variant request this human turn came from (preview page). */
   live?: { sid: string; op: string; variant?: number; prompt?: string; generated?: boolean }
   /** Agent turn stopped mid-stream by 轮级 Cancel; partial text retained. */

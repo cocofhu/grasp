@@ -258,11 +258,16 @@ func (h *Host) listedTools(runID string) []map[string]any {
 	h.mu.RLock()
 	hasConversationHistory := h.conversationHistory != nil
 	h.mu.RUnlock()
-	if hasConversationHistory && h.ActiveNode(runID) == "solo" {
-		out = append(out, conversationHistoryTool())
-		// Listed for every Solo run: CLIs rarely refetch tools/list, and the
-		// first @ may arrive turns after the CLI started.
-		if h.referenceReader() != nil {
+	if hasConversationHistory {
+		node := h.ActiveNode(runID)
+		solo := node == "solo"
+		if solo {
+			out = append(out, conversationHistoryTool())
+		}
+		// Listed for every Solo run and workflow node: CLIs rarely refetch
+		// tools/list, and the first @ may arrive turns after the CLI started.
+		// Workflow reads are limited to references pinned on the same run.
+		if h.referenceReader() != nil && node != "" && node != "mcp" {
 			out = append(out, referenceTool())
 		}
 	}

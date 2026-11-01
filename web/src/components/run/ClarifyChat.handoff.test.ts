@@ -970,6 +970,7 @@ describe('ClarifyChat locked composer while following the run (v3)', () => {
     const picker = w.get('input[type="file"]').element as HTMLInputElement
     const openPicker = vi.spyOn(picker, 'click').mockImplementation(() => {})
     await attach.trigger('click')
+    await w.get('[data-testid="clarify-plus-upload"]').trigger('click')
     expect(openPicker).toHaveBeenCalledOnce()
     openPicker.mockRestore()
     await input.setValue('补充目标描述')

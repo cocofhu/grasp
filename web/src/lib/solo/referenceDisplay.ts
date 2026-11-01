@@ -8,6 +8,14 @@ export function referenceIcon(ref: Pick<MessageReference, 'kind' | 'state' | 'ac
   return ref.state === 'closed' ? 'check' : 'circle'
 }
 
+/** Icon tone class: open green, merged accent, closed grey; sessions keep the text color. */
+export function referenceTone(ref: Pick<MessageReference, 'kind' | 'state' | 'access' | 'error'>): string {
+  if (ref.access === 'denied' || ref.error || ref.kind === 'solo') return ''
+  if (ref.state === 'merged') return 'ref-tone--merged'
+  if (ref.state === 'closed') return 'ref-tone--closed'
+  return 'ref-tone--open'
+}
+
 /** owner/repo of a github.com clone URL (https or ssh), or ''. */
 export function githubRepoOf(url: string | undefined): string {
   const m = (url || '').trim().match(/github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i)

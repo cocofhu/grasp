@@ -3,6 +3,7 @@
  * automatic visit). The server decides every row, turn phase and outcome; this
  * module only keeps the newest version and says when to refetch. No Vue.
  */
+import type { MessageReference } from '../api/apiTypes'
 import type { ClarifyImage, ClarifyTurn, DialogueOutcome, ReactAnnotation } from '../shared/types'
 
 export type DialogueRowPhase = 'running' | 'orphan' | 'sealed'
@@ -21,6 +22,7 @@ export type DialogueItem = {
   text?: string
   images?: ClarifyImage[]
   annotations?: ReactAnnotation[]
+  references?: MessageReference[]
 }
 
 export type DialogueTurn = {
@@ -111,6 +113,7 @@ export type OptimisticSend = {
   text: string
   images: ClarifyImage[]
   annotations: ReactAnnotation[]
+  references?: MessageReference[]
   at: string
 }
 
@@ -140,6 +143,7 @@ export type DialogueQueueRow = {
   text: string
   images: ClarifyImage[]
   annotations: ReactAnnotation[]
+  references?: MessageReference[]
   /** Sent from this page; the server has not listed it yet. */
   local?: boolean
 }
@@ -174,6 +178,7 @@ export function render(state: DialogueState | null, optimistic: readonly Optimis
       text: t.item?.text ?? '',
       images: t.item?.images ?? [],
       annotations: t.item?.annotations ?? [],
+      ...(t.item?.references?.length ? { references: t.item.references } : {}),
     }))
   const pending = pendingOptimistic(state, optimistic)
   const busy = !!state?.busy
@@ -189,13 +194,17 @@ export function render(state: DialogueState | null, optimistic: readonly Optimis
         text: o.text,
         images: o.images.length ? o.images : undefined,
         annotations: o.annotations.length ? o.annotations : undefined,
+        references: o.references?.length ? o.references : undefined,
         at: o.at,
         localPending: true,
       })
       thinking = true
       return
     }
-    queue.push({ clientMessageId: o.clientMessageId, text: o.text, images: o.images, annotations: o.annotations, local: true })
+    queue.push({
+      clientMessageId: o.clientMessageId, text: o.text, images: o.images, annotations: o.annotations,
+      ...(o.references?.length ? { references: o.references } : {}), local: true,
+    })
   })
   let streamingIndex = -1
   for (let i = rows.length - 1; i >= 0; i--) {

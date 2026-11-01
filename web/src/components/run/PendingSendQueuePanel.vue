@@ -2,13 +2,16 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
+import ReferenceChip from '@/components/solo/ReferenceChip.vue'
 import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
+import type { MessageReference } from '@/lib/api/apiTypes'
 
 export type PendingQueueRow = {
   id?: string
   text: string
   images: ClarifyImage[]
   annotations: ReactAnnotation[]
+  references?: MessageReference[]
   /** Not yet acknowledged: shown, but not draggable, editable or a drop target. */
   locked?: boolean
 }
@@ -114,6 +117,9 @@ function onDrop(toIndex: number, e: DragEvent) {
         >{{ qi + 1 }}</span>
         <span class="min-w-0 flex-1 truncate" :title="q.text">{{ q.text || (q.images.length || q.annotations.length ? '…' : '') }}</span>
         <slot name="row-extra" :item="q" :index="qi" />
+        <span v-if="q.references?.length" class="flex min-w-0 shrink-0 flex-wrap gap-1" data-testid="clarify-queue-references">
+          <ReferenceChip v-for="r in q.references" :key="r.target" :reference="r" />
+        </span>
         <span v-if="q.images.length" class="shrink-0 rounded-full border border-line px-1.5 text-[9px] text-txt3">
           {{ t('pages.clarify.queueAttachmentBadge', { n: q.images.length }) }}
         </span>

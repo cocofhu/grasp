@@ -75,7 +75,7 @@ import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { createClarifyChatAnchors, priorRailItems, revealRailTarget } from './clarifyChatAnchors'
-import { computed, inject, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { choiceEchoRows } from '@/lib/inbox/clarifyDemo'
 import {
   clampDemoWindow,
@@ -104,6 +104,12 @@ import { hasFailedTool } from '@/lib/run/acpTools'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import VisitModelSelect from './VisitModelSelect.vue'
+import ReferencePicker from '@/components/solo/ReferencePicker.vue'
+import ReferenceChip from '@/components/solo/ReferenceChip.vue'
+import ReferencePlusMenu from '@/components/solo/ReferencePlusMenu.vue'
+import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
+import type { ReferenceScope, ReferenceTab } from '@/lib/solo/useReferenceSearch'
+import type { MessageReference, ReferenceInput } from '@/lib/api/apiTypes'
 import { visitModelSelectVisible } from '@/lib/run/visitModel'
 
 defineOptions({ inheritAttrs: false })
@@ -124,9 +130,11 @@ const props = withDefaults(
     /** Host-level lock for the final confirmation action. */
     finishDisabled?: boolean
     sendLabel?: string
-    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) => Promise<boolean>
+    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]) => Promise<boolean>
     confirmError?: string | null
     confirmCanAbort?: boolean
+    /** @ references in the composer. Off where the viewer has no Solo sessions or search access (anonymous share). */
+    referencesEnabled?: boolean
     seedHumanText?: string
     seedHumanImages?: ClarifyImage[]
     /**
@@ -186,6 +194,7 @@ const props = withDefaults(
     stopping: false,
     nodeTask: '',
     systemNotes: () => [],
+    referencesEnabled: true,
   },
 )
 
@@ -295,7 +304,7 @@ function isEmptyLiveTurn(t: ClarifyTurn): boolean {
 }
 
 const emit = defineEmits<{
-  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string): void
+  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]): void
   (e: 'retry-last'): void
   (e: 'finish'): void
   (e: 'finish-abort'): void
@@ -309,7 +318,16 @@ const draft = defineModel<string>('draft', { default: '' })
 const attachments = defineModel<ClarifyImage[]>('attachments', { default: () => [] })
 const annotations = defineModel<ReactAnnotation[]>('annotations', { default: () => [] })
 
-const chat = useClarifyChat(props, emit, { draft, attachments, annotations })
+// The reference composer needs the textarea the chat owns, so the chat reads it lazily.
+const chat = useClarifyChat(props, emit, {
+  draft,
+  attachments,
+  annotations,
+  mention: {
+    refs: computed(() => mention.refs.value),
+    load: (text: string, refs: MessageReference[]) => mention.load(text, refs),
+  },
+})
 
 defineExpose({
   applyRequestRejected: chat.applyRequestRejected,
@@ -570,6 +588,57 @@ const showModelSelect = computed(() => visitModelSelectVisible({
   composerLocked: props.composerLocked,
 }))
 const composerInputLocked = computed(() => observeComposer.value || !!props.composerLocked)
+
+// @ references: the user's Solo sessions, and Issues / PRs in this run's repositories.
+const referencesOn = computed(() => props.referencesEnabled && !composerInputLocked.value && !props.done && props.active && !props.coldSession)
+const mention = useReferenceComposer({ input: draft, textarea: textareaRef, composing, defaultRepo: computed(() => ''), enabled: referencesOn })
+const mentionPicker = mention.picker
+const mentionScope = computed<ReferenceScope>(() => ({ runId: props.runId, nodeId: props.nodeId }))
+const plusOpen = ref(false)
+watch(referencesOn, (on) => {
+  if (on) return
+  mention.trigger.value = null
+  plusOpen.value = false
+})
+watch(() => `${props.runId}\0${props.nodeId}`, () => {
+  mention.trigger.value = null
+  if (mention.tokens.value.length) mention.set(draft.value, [])
+})
+
+function onPlus() {
+  if (referencesOn.value) plusOpen.value = !plusOpen.value
+  else fileInput.value?.click()
+}
+function plusPickFiles() {
+  plusOpen.value = false
+  fileInput.value?.click()
+}
+function plusReference(tab: ReferenceTab) {
+  plusOpen.value = false
+  mention.open(tab)
+}
+function onPlusOutside(e: PointerEvent) {
+  if (plusOpen.value && !(e.target as HTMLElement | null)?.closest?.('[data-clarify-plus]')) plusOpen.value = false
+}
+onMounted(() => document.addEventListener('pointerdown', onPlusOutside))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onPlusOutside))
+
+/** The picker takes ↑↓ Tab Esc, and Enter only while a row is highlighted; everything else is the chat's. */
+function onClarifyKeydown(e: KeyboardEvent) {
+  if (mention.onKeydown(e)) return
+  onComposerKeydown(e)
+}
+function onClarifyInput() {
+  onTextInput()
+  mention.updateTrigger()
+}
+function onClarifyKeyup(e: KeyboardEvent) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') mention.updateTrigger()
+}
+function onClarifyPaste(e: ClipboardEvent) {
+  onPaste(e)
+  mention.onPaste(e)
+}
 
 /**
  * The composer shows exactly one primary action (fix-post-launch/button-states.md):
@@ -1118,6 +1187,9 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :compact="liveCards.latest.get(t.live.sid) !== i || humanLiveCardLoading(t.live, i)"
             :loading="humanLiveCardLoading(t.live, i)"
           />
+          <div v-if="t.role === 'human' && t.references?.length" class="mb-1.5 flex flex-wrap justify-end gap-1.5" data-testid="clarify-turn-references">
+            <ReferenceChip v-for="r in t.references" :key="r.id || r.target" :reference="r" :link="!t.localPending" />
+          </div>
           <!-- annotation chips attached to this human review turn -->
           <div v-if="t.role === 'human' && t.annotations && t.annotations.length" class="mb-1.5 flex flex-wrap gap-1.5 justify-end">
             <AnnotationChip
@@ -1795,6 +1867,21 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         @edit="editQueuedItem"
         @reorder="reorderQueuedItems"
       />
+      <TransitionGroup
+        v-if="mention.tokens.value.length"
+        tag="div"
+        name="ref-chip"
+        class="mb-2 flex flex-wrap gap-1.5"
+        data-testid="clarify-reference-chips"
+      >
+        <ReferenceChip
+          v-for="(tk, ti) in mention.tokens.value"
+          :key="tk.ref.target"
+          :reference="tk.ref"
+          :removable="!composerInputLocked"
+          @remove="mention.drop(ti)"
+        />
+      </TransitionGroup>
       <div v-if="showAnnotationChips && annotations.length" class="mb-2 flex flex-wrap gap-1.5">
         <AnnotationChip
           v-for="(a, ai) in annotations"
@@ -1842,6 +1929,20 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           ><Icon name="close" :size="9" /></button>
         </div>
       </div>
+      <div class="relative">
+      <Transition name="ref-pop">
+        <ReferencePicker
+          v-if="referencesOn && mention.trigger.value"
+          ref="mentionPicker"
+          placement="up"
+          :scope="mentionScope"
+          :query="mention.trigger.value.query"
+          :taken="mention.targets.value"
+          :full="mention.full.value"
+          :initial-tab="mention.pickerTab.value"
+          @pick="mention.pick"
+        />
+      </Transition>
       <ComposerShell
         wrap-toolbar
         :show-footer="!hideFinish && reviewMode && !observeComposer"
@@ -1859,25 +1960,33 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :placeholder="observeComposer ? translate(stopping ? 'pages.clarify.observeStoppingPlaceholder' : 'pages.clarify.observeInputPlaceholder') : inputPlaceholder"
             :disabled="composerInputLocked"
             data-testid="clarify-input"
-            @input="onTextInput"
-            @keydown="onComposerKeydown"
+            @input="onClarifyInput"
+            @keydown="onClarifyKeydown"
+            @keyup="onClarifyKeyup"
+            @click="mention.updateTrigger"
+            @blur="mention.trigger.value = null"
             @compositionstart="composing = true"
-            @compositionend="composing = false"
-            @paste="onPaste"
+            @compositionend="composing = false; mention.updateTrigger()"
+            @paste="onClarifyPaste"
           />
         </template>
         <template #toolbar-start>
-          <button
-            type="button"
-            class="chat-action-button"
-            :title="translate('pages.clarify.addImage')"
-            :aria-label="translate('pages.clarify.addImage')"
-            data-testid="clarify-attach-btn"
-            :disabled="composerInputLocked"
-            @click="fileInput?.click()"
-          >
-            <Icon name="plus" :size="18" />
-          </button>
+          <div class="relative" data-clarify-plus>
+            <button
+              type="button"
+              class="chat-action-button"
+              :title="translate('pages.clarify.addImage')"
+              :aria-label="translate('pages.clarify.addImage')"
+              :aria-haspopup="referencesOn ? 'menu' : undefined"
+              :aria-expanded="referencesOn ? plusOpen : undefined"
+              data-testid="clarify-attach-btn"
+              :disabled="composerInputLocked"
+              @click="onPlus"
+            >
+              <Icon name="plus" :size="18" />
+            </button>
+            <ReferencePlusMenu :open="plusOpen" test-prefix="clarify-plus" @upload="plusPickFiles" @reference="plusReference" />
+          </div>
           <VisitModelSelect
             v-if="showModelSelect"
             :run-id="runId"
@@ -1926,6 +2035,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           </p>
         </template>
       </ComposerShell>
+      </div>
     </div>
     <!-- Confirm error sits below the composer; shrink-0 keeps it from being clipped (plan g1.2). -->
     <div

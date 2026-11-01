@@ -144,6 +144,8 @@ type fakeProvider struct {
 	// reactReplyCalls counts ReactReply invocations per node id (assert review
 	// force no longer routes through Agent wrap-up).
 	reactReplyCalls map[string]int
+	// reactHumans records the prompt text of every ReactReply call in order.
+	reactHumans []string
 	// reactConfirmSummary (test-only): the AgentSummary a force ReactReply
 	// returns, standing in for the real provider's hidden summary turn.
 	reactConfirmSummary string
@@ -540,6 +542,7 @@ func (f *fakeProvider) reactReply(ctx context.Context, req runtime.NodeReq, hist
 		f.reactReplyCalls = map[string]int{}
 	}
 	f.reactReplyCalls[req.NodeID]++
+	f.reactHumans = append(f.reactHumans, human)
 	pending := f.reactPending
 	if pending > 0 && !force {
 		f.reactPending--

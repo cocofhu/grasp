@@ -1,6 +1,7 @@
 /**
  * Run detail view orchestration (WS/live log/selection composed here).
  */
+import { replyTail } from '@/lib/run/replyTail'
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -736,6 +737,7 @@ async function onClarifySend(
   retryLast = false,
   abortRunning = false,
   sentClientMessageId?: string,
+  references: import('@/lib/api/apiTypes').ReferenceInput[] = [],
 ) {
   const conv = selClarify.value
   if (!conv || conv.done) {
@@ -776,7 +778,7 @@ async function onClarifySend(
         anns,
         false,
         abortRunning,
-        ...(clientMessageId ? [clientMessageId] : []),
+        ...replyTail(clientMessageId, references),
       )
     }
     sent = true

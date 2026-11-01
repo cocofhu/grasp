@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ReferenceInput } from '@/lib/api/apiTypes'
 import { computed, ref } from 'vue'
 import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
 import { useRoute } from 'vue-router'
@@ -70,11 +71,12 @@ const doneNote = computed(() => {
 const draft = ref('')
 const attachments = ref<ClarifyImage[]>([])
 const annotations = ref<ReactAnnotation[]>([])
-function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) {
+function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[], clientMessageId?: string, references: ReferenceInput[] = []) {
   draft.value = ''
   attachments.value = []
   annotations.value = []
-  void send(text, images, anns)
+  if (references.length) void send(text, images, anns, clientMessageId, references)
+  else void send(text, images, anns)
 }
 const stageNode = computed(() => findGraphNode(run.value?.nodes, nodeId.value) || null)
 const liveAgentName = computed(() => String(stageNode.value?.config?.agent_profile || '').trim())

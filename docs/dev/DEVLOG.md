@@ -20,6 +20,21 @@
 
 ## 记录
 
+### 2026-11-01（工作流首页与运行内对话支持 @ 引用，引用选择器动效升级）
+
+- 日期：2026-11-01。
+- 范围：`server/internal/models`（`MessageReference.UserID`、`RunReference`、`CompositeText.References`）、`server/internal/services/{solo_reference_scope,conversation_history}.go`、`server/internal/engine/{start_run,clarify_first_message,review,review_session,live,resume,dialogue_state}.go`、`server/internal/handlers/{run_references,gate,run}.go`、`server/internal/mcp/{outcome,reference}.go`、`router`；`web/src/lib/api/clients/{soloClient,runsClient}.ts`、`web/src/lib/solo/{useReferenceSearch,referenceDisplay}.ts`、`web/src/lib/chat/dialogueState.ts`、`web/src/lib/inbox/{useClarifyChat,useGateApproval,useGatesInbox}.ts`、`web/src/lib/run/{useHomeApproveChat,useRunDetail,useRunLive,replyTail}.ts`、`web/src/components/solo/{ReferencePicker,ReferenceChip,ReferencePlusMenu,SoloSessionPane}.vue`、`web/src/components/run/{ClarifyChat,ReviewComposer,PendingSendQueuePanel,RunClarifyPanel,RunReviewPanel}.vue`、`web/src/components/ui/ParagraphInput.vue`、`web/src/views/{DashboardView,RunLiveView,RunDetailView,GatesInboxView,PublicGateApprovalView}.vue`，以及对应测试和 `docs/content/{,en/}guide/concepts.md`。
+- 做了什么：
+  - 后端：新增 `GET /api/workflows/:id/references/search` 与 `GET /api/runs/:id/nodes/:nodeId/references/search`，复用 Solo 的引用搜索；作用域是「当前用户 + 节点 Agent + 仓库」的草稿会话（工作流取 `repos` 默认值和首个澄清节点 Agent，运行取 `vars.repos` 和该节点 Agent）。`startRun` 的 `firstMessage.references`、`reply` 和审批热修订的 `references` 在入队前校验，非法 4xx 且不建运行、不入队；live / retryLast 带引用返回 400 `reference_not_supported`。轮次开始时固定会话锚点，引用块拼在批注同一位置。`read_reference` 在有活跃节点的工作流运行上也列出，`get_history` 仍只给 Solo。
+  - 与计划的偏差：计划写「不新增表」，实际新增 `run_references` 表（AutoMigrate）保存运行侧引用及发送者，供 `read_reference` 按 refId 校验会话归属；`MessageReference.UserID` 不出现在 JSON 里，所以不能只靠轮次 JSON 保存发送者。
+  - 前端：首页工作流模式去掉 Solo 门控，作用域按模式切换，切换工作流 / 模式时清引用留文字，仅引用也能启动。`ClarifyChat` 接入 composer、picker、chip 和「+」菜单（`referencesEnabled`，节点结束 / 未激活 / 锁定 / 冷会话时关闭）；发送、队列编辑、撤回恢复都带引用。审批热修订（`ReviewComposer` gate 模式）在 `ParagraphInput` 根节点上监听冒泡事件接入同一 composer，`useGateApproval.onComposerReject` 把引用交给 `gateReactRevise`。匿名分享页和 boot gate harness 传 `referencesEnabled=false`。引用参数只在非空时追加，旧调用形状和测试不变。
+  - 视觉：`ReferencePicker` 改为按 key 复用行的 `TransitionGroup`，高亮块和标签底线按位置滑动，`↑` `↓` 越界平滑滚动，ResizeObserver 驱动列表高度，图标按状态着色（`ref-tone--*`），`prefers-reduced-motion` 下不做过渡。新增 `ReferencePlusMenu`，Solo、首页、运行内共用。
+  - 修复：#1070 让旧结果在加载时继续显示以免闪烁，但新结果落地后高亮仍停在原下标，可能指向另一条，`Enter` 会选中用户没选的项。现在高亮跟随同 key 的行，该行消失则清空。
+  - 浏览器核对时发现并修复：选项行外层是 `position: relative`，`offsetTop` 恒为 0，高亮块不随 `↑` `↓` 移动、列表也不滚动，改为从选项累加到列表内容的偏移；picker 图标的 scoped 颜色压过了全局 `ref-tone--*`，状态着色移到 picker 自己的样式里。
+  - 已知限制：引用只走 HTTP 回复；WS 聊天通道不带引用。审批热修订的本地排队项不显示引用 chip（服务端对话状态中的排队项会显示）。
+- 为什么：工作流的澄清、复审和审批对话同样需要引用 Solo 会话与仓库 issue / PR，且三处应与 Solo 的交互一致。
+- 如何验证：本地起 server + vite（拦截引用搜索返回样例数据）在首页 Solo 输入框核对 picker 高亮、标签底线、滚动、图标着色和 chip 底色。server `go vet ./...`、`go test ./... -count=1` 全部通过（本机没有 golangci-lint）。web `npm run lint`（0 error）、`npx vue-tsc --noEmit`、`vitest --maxWorkers=2 --coverage` 全部通过。新增 `handlers/run_references_test.go`、`engine/references_test.go`、`mcp/reference_test.go` 用例，`DashboardView.references`、`ClarifyChat.references`、`ReferencePicker.motion`、`replyTail` 测试，以及 runsClient、`useGateApproval`、`PendingSendQueuePanel` 的引用断言。
+
 ### 2026-10-31（澄清 / 复审对话改由服务端状态驱动，根治「本轮没有输出」误报）
 
 - 日期：2026-10-31。

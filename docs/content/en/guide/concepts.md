@@ -114,6 +114,11 @@ Type `@` in the Solo composer (including the home page composer that starts a ne
 
 Use `↑` `↓` to choose, `Enter` to confirm, `Tab` to switch between All, Sessions, Issues and PRs, and `Esc` to close. `Enter` with nothing highlighted sends the message as typed. A message can carry up to 5 references. They are shown above the composer; deleting the `@title` text or clicking × removes one. Referenced content is treated as material, not as instructions.
 
+Workflows support the same references:
+
+- **Home page Workflow composer**: after picking a workflow, type `@` or use the "+" menu. Issues and PRs are searched in the default repositories of the workflow's `repos` variable; without repositories only sessions can be referenced. A message with only references can start a run, which is then titled after the first reference. Switching workflows or back to Solo clears the picked references and keeps the text.
+- **Clarification and review chats and gate hot revisions inside a run**: issues and PRs are searched in the run's `repos` repositories. References go to the current node's agent and are read the same way as in Solo (`read_reference` for sessions, `gh` for GitHub). They are unavailable when the node is finished, inactive or its composer is locked, and the anonymous shared approval page does not offer them.
+
 ## Artifact contract and MCP
 
 Each run has an isolated artifact MCP. Agents call tools such as:

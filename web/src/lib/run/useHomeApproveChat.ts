@@ -29,7 +29,7 @@ import { nodeConversationPath } from '@/lib/run/nodeConversation'
 import { runTitleFromDraft } from '@/lib/run/runTitle'
 import { missingRequiredAskField, seedAskLaunchFields } from '@/lib/run/useWorkflowAskInputs'
 import type { ClarifyImage, Workflow } from '@/lib/shared/types'
-import type { Agent } from '@/lib/api/apiTypes'
+import type { Agent, ReferenceInput } from '@/lib/api/apiTypes'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
 
 /** Remember last selected home workflow across visits (plan g2.4). */
@@ -134,6 +134,7 @@ export function useHomeApproveChat() {
   const hidingWorkflowId = ref<string | null>(null)
   const pendingText = ref('')
   const pendingImages = ref<ClarifyImage[]>([])
+  const pendingReferences = ref<ReferenceInput[]>([])
 
   const launchOpen = ref(false)
   const launchTarget = ref<Workflow | null>(null)
@@ -188,6 +189,7 @@ export function useHomeApproveChat() {
   const launchFirstMessage = computed(() => ({
     text: pendingText.value,
     images: pendingImages.value,
+    references: pendingReferences.value,
   }))
   const canSend = computed(() => !!draft.value.trim() || attach.attachments.value.length > 0)
 
@@ -484,7 +486,8 @@ export function useHomeApproveChat() {
     await goGates(runId, knownNodeId || undefined)
   }
 
-  async function send() {
+  /** References come from the composer's @ tokens; their labels are already in the draft. */
+  async function send(references: ReferenceInput[] = []) {
     const wf = selected.value
     const text = draft.value.trim()
     const images = attach.attachments.value.map((im) => ({ ...im }))
@@ -492,7 +495,7 @@ export function useHomeApproveChat() {
       toast.warn(t('pages.dashboard.pickWorkflow'))
       return
     }
-    if (!text && images.length === 0) {
+    if (!text && images.length === 0 && references.length === 0) {
       toast.warn(t('pages.dashboard.needText'))
       return
     }
@@ -513,6 +516,7 @@ export function useHomeApproveChat() {
     sending.value = true
     pendingText.value = text
     pendingImages.value = images
+    pendingReferences.value = references.map(({ kind, target }) => ({ kind, target }))
     writeLastWorkflowId(wf.id)
     try {
       const missing = missingRequiredAskField(wf)
@@ -523,7 +527,7 @@ export function useHomeApproveChat() {
       }
       const res = await api.startRun(wf.id, {}, 'manual', launchPriority.value, [], {
         title: runTitleFromDraft(text, images),
-        firstMessage: { text, images },
+        firstMessage: { text, images, ...(references.length ? { references: pendingReferences.value } : {}) },
         publishedSnapshot: true,
         ...(launchModel ? { launchModel } : {}),
       })

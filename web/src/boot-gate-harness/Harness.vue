@@ -194,6 +194,7 @@ defineExpose({ run })
         :key="chatKey"
         run-id="run-1"
         node-id="implement"
+        :references-enabled="false"
         :iteration="1"
         :turns="turns"
         :done="false"

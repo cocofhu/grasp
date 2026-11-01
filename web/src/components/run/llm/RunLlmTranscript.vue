@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { replyTail } from '@/lib/run/replyTail'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ClarifyChat from '../ClarifyChat.vue'
 import ClarifyMessageThread from '../ClarifyMessageThread.vue'
@@ -11,6 +12,7 @@ import { llmTranscriptThread } from '@/lib/run/llmTranscriptThread'
 import { resolveNodeDisplayLabel } from '@/lib/run/resolveNodeDisplayLabel'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
 import type { AcpEvent, ClarifyImage, ReactAnnotation, Run, WFNode } from '@/lib/shared/types'
+import type { ReferenceInput } from '@/lib/api/apiTypes'
 import { useI18n } from 'vue-i18n'
 
 const POLL_MS = 4000
@@ -33,7 +35,7 @@ const { t, locale } = useI18n()
 const chatRef = ref<{
   applyRequestRejected?: (frame: Record<string, unknown>) => void
   isSessionBusy?: () => boolean
-  discardLastQueued?: () => void
+  discardLastQueued?: (clientMessageId?: string) => void
 } | null>(null)
 
 defineExpose({
@@ -170,11 +172,12 @@ function onMessageNavigate(id: string) {
   revealRailTarget(scroller.value, id)
 }
 
-async function sendRequest(text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) {
+async function sendRequest(text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references: ReferenceInput[] = []) {
   const current = thread.value.current
   if (!current) return false
   try {
-    if (clientMessageId) await api.reactReply(props.run.id, current.nodeId, text, images, false, annotations, false, false, clientMessageId)
+    const tail = replyTail(clientMessageId, references)
+    if (tail.length) await api.reactReply(props.run.id, current.nodeId, text, images, false, annotations, false, false, ...tail)
     else await api.reactReply(props.run.id, current.nodeId, text, images, false, annotations)
     return true
   } catch {
@@ -187,8 +190,8 @@ async function onFinish() {
   await api.reactReply(props.run.id, current.nodeId, '', [], true, [])
 }
 
-async function onSend(text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) {
-  if (!await sendRequest(text, images, annotations, clientMessageId)) chatRef.value?.discardLastQueued?.()
+async function onSend(text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references: ReferenceInput[] = []) {
+  if (!await sendRequest(text, images, annotations, clientMessageId, references)) chatRef.value?.discardLastQueued?.(clientMessageId)
 }
 
 async function onCancel() {

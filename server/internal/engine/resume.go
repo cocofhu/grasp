@@ -352,8 +352,8 @@ func (e *Engine) ReactReplyAs(owner, runID, nodeID, humanText string, images []m
 // ReactConfirmAs is ReactReplyAs(force=true). With abortRunning, an agent turn
 // the sandbox is still running outside the platform FIFO (ErrSandboxBusy) is
 // cancelled first instead of failing the confirm.
-func (e *Engine) ReactConfirmAs(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, abortRunning bool) error {
-	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, true, false, abortRunning, "")
+func (e *Engine) ReactConfirmAs(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, abortRunning bool, refs ...models.MessageReference) error {
+	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, true, false, abortRunning, "", refs...)
 }
 
 // ReactReplyRetryLast covers the last human turn after an empty/failed agent
@@ -367,7 +367,7 @@ func (e *Engine) ReactReplyRetryLastAs(owner, runID, nodeID string) error {
 	return e.reactReply(owner, runID, nodeID, "", nil, nil, false, true, false, "")
 }
 
-func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast, abortRunning bool, clientMessageID string) error {
+func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast, abortRunning bool, clientMessageID string, refs ...models.MessageReference) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -408,7 +408,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 					if convPeek.Done {
 						return errors.New("react already done")
 					}
-					_, err := e.enqueueReactTurn(runID, nodeID, humanText, images, annotations, "node", "", sessionKindReview, false, owner, false, clientMessageID)
+					_, err := e.enqueueReactTurn(runID, nodeID, humanText, images, annotations, "node", "", sessionKindReview, false, owner, false, clientMessageID, refs...)
 					return err
 				}
 				// Review force (确认并流转): only when ready (no active turn, empty queue).
@@ -436,7 +436,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 					_, err := e.enqueueClarifyRetryLast(owner, runID, nodeID)
 					return err
 				}
-				_, err := e.EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, clientMessageID, humanText, images, annotations)
+				_, err := e.EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, clientMessageID, humanText, images, annotations, refs...)
 				return err
 			} else if n.Caps.Clarify() && force {
 				// Clarify force finish: only when session idle (no in-flight / queue).
@@ -503,10 +503,11 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 			return errors.New("internal: review non-force must enqueue")
 		}
 		now := time.Now().Format(time.RFC3339)
+		refs, prompt := e.pinSyncReferences(runID, nodeID, refs, renderReviewHuman(humanText, annotations))
 		conv.Messages = append(conv.Messages, models.ReactMessage{Role: "human", Text: humanText, At: now,
-			Images: images, Annotations: annotations})
+			Images: images, Annotations: annotations, References: refs})
 		logDB(e.db.Save(&conv), runID, "save react human turn")
-		return e.reviewReply(c, node, &conv, renderReviewHuman(humanText, annotations), images, true)
+		return e.reviewReply(c, node, &conv, prompt, images, true)
 	}
 
 	// Classic clarify !force already returned via EnqueueClarifyTurn above.
@@ -516,9 +517,9 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	}
 
 	now := time.Now().Format(time.RFC3339)
-	effective := renderReviewHuman(humanText, annotations)
+	refs, effective := e.pinSyncReferences(runID, nodeID, refs, renderReviewHuman(humanText, annotations))
 	humanMsg := models.ReactMessage{Role: "human", Text: humanText, At: now,
-		Images: images, Annotations: annotations}
+		Images: images, Annotations: annotations, References: refs}
 	conv.Messages = append(conv.Messages, humanMsg)
 	logDB(e.db.Save(&conv), runID, "save react human turn")
 

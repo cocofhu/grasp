@@ -287,7 +287,7 @@ func (e *Engine) appendActiveTurn(entry *dialogueEntry, st *DialogueState, activ
 		st.Rows = append(st.Rows, DialogueRow{
 			ReactMessage: models.ReactMessage{Role: "human", Text: active.Text, At: started, TurnID: active.ID,
 				ClientMessageID: active.ClientMessageID, Images: active.Images, Annotations: active.Annotations,
-				Live: active.Live, GateNodeID: gateTagOf(active)},
+				References: active.References, Live: active.Live, GateNodeID: gateTagOf(active)},
 			ID: active.ID + ":h", Phase: rowSealed,
 		})
 	}

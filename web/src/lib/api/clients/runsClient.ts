@@ -18,6 +18,7 @@ import type {
   PaginatedResponse,
   PreviewIssue,
   PreviewPort,
+  ReferenceInput,
   SandboxView,
 } from '../apiTypes'
 
@@ -55,14 +56,20 @@ function startRunLaunchModel(
   }
 }
 
+/** Only kind and target travel; the server resolves the rest. */
+function referenceBody(refs: ReferenceInput[]): { references?: ReferenceInput[] } {
+  return refs.length ? { references: refs.map(({ kind, target }) => ({ kind, target })) } : {}
+}
+
 /** Body fragment for startRun's opening message; blank messages are omitted. */
 function startRunFirstMessage(
-  msg?: { text?: string; images?: ClarifyImage[] } | null,
-): { firstMessage: { text: string; images: ClarifyImage[] } } | null {
+  msg?: { text?: string; images?: ClarifyImage[]; references?: ReferenceInput[] } | null,
+): { firstMessage: { text: string; images: ClarifyImage[]; references?: ReferenceInput[] } } | null {
   const text = String(msg?.text ?? '').trim()
   const images = msg?.images ?? []
-  if (!text && !images.length) return null
-  return { firstMessage: { text, images } }
+  const refs = referenceBody(msg?.references ?? [])
+  if (!text && !images.length && !refs.references) return null
+  return { firstMessage: { text, images, ...refs } }
 }
 
 export const runsClient = {
@@ -133,7 +140,7 @@ export const runsClient = {
       env?: { key: string; value: string; secret?: boolean }[]
       title?: string
       /** Opening chat message; the engine delivers it once the approve node parks. */
-      firstMessage?: { text: string; images?: ClarifyImage[] }
+      firstMessage?: { text: string; images?: ClarifyImage[]; references?: ReferenceInput[] }
       /** Home page: execute the published snapshot instead of the draft head. */
       publishedSnapshot?: boolean
       /**
@@ -311,6 +318,7 @@ export const runsClient = {
     abortRunning = false,
     /** Per-send id echoed by clarify_visit_ended (409 and WS) to match this tab's outbox. */
     clientMessageId?: string,
+    references: ReferenceInput[] = [],
   ) =>
     req<{ status: string; waiting?: number }>(`/runs/${runId}/nodes/${nodeId}/reply`, {
       method: 'POST',
@@ -322,6 +330,7 @@ export const runsClient = {
         retryLast,
         abortRunning,
         ...(clientMessageId ? { clientMessageId } : {}),
+        ...referenceBody(references),
       }),
     }),
   /** 轮级 Cancel for node-inline review (clears FIFO + aborts active ACP turn). */
@@ -348,12 +357,13 @@ export const runsClient = {
     text: string,
     images: ClarifyImage[] = [],
     annotations: ReactAnnotation[] = [],
+    references: ReferenceInput[] = [],
   ) =>
     req<{ status: string; waiting?: number; producerNodeId?: string }>(
       `/runs/${runId}/nodes/${nodeId}/reply`,
       {
         method: 'POST',
-        body: JSON.stringify({ text, images, annotations }),
+        body: JSON.stringify({ text, images, annotations, ...referenceBody(references) }),
       },
     ),
   /** 轮级 Cancel for gate hot-revise (upstream producer session). */

@@ -1652,6 +1652,7 @@ defineExpose({
                   :send-request="chatOnly ? (text, images, anns, clientMessageId) => onSend(text, images, anns, true, clientMessageId) : undefined"
                   run-id="public-share"
                   :node-id="PUBLIC_CHAT_NODE_ID"
+                  :references-enabled="false"
                   :iteration="chatIteration"
                   v-model:draft="draft"
                   v-model:attachments="attachments"

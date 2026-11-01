@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import type { MessageReference } from '@/lib/api/apiTypes'
-import { referenceHref, referenceIcon } from '@/lib/solo/referenceDisplay'
+import { referenceHref, referenceIcon, referenceTone } from '@/lib/solo/referenceDisplay'
 import { referenceLabel } from '@/lib/solo/referenceTokens'
 
 const props = defineProps<{
@@ -19,6 +19,7 @@ const { t } = useI18n()
 
 const label = computed(() => referenceLabel(props.reference, props.defaultRepo))
 const icon = computed(() => referenceIcon(props.reference))
+const tone = computed(() => referenceTone(props.reference))
 const href = computed(() => (props.link ? referenceHref(props.reference) : ''))
 const external = computed(() => props.reference.kind !== 'solo')
 /** Only the attributes the chosen element needs: an explicit undefined href would override RouterLink's. */
@@ -48,7 +49,7 @@ const tip = computed(() => {
     :title="tip"
     data-testid="solo-reference-chip"
   >
-    <Icon :name="icon" :size="12" :interactive="false" />
+    <span class="ref-chip__icon" :class="tone" :data-icon="icon"><Icon :name="icon" :size="12" :interactive="false" /></span>
     <span class="truncate">{{ label }}</span>
     <button
       v-if="removable"
@@ -86,6 +87,37 @@ a.ref-chip:hover,
   background: rgb(var(--c-err) / 0.1);
   color: rgb(var(--c-txt2));
 }
+.ref-chip__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+}
+/* Parents list chips in <TransitionGroup name="ref-chip">. */
+.ref-chip-enter-active {
+  transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ref-chip-leave-active {
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+.ref-chip-enter-from,
+.ref-chip-leave-to {
+  opacity: 0;
+  transform: scale(0.86);
+}
+.ref-chip-move {
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ref-chip {
+  transform-origin: left center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ref-chip-enter-active,
+  .ref-chip-leave-active,
+  .ref-chip-move {
+    transition: none;
+  }
+}
 .ref-chip__x {
   display: grid;
   width: 14px;
@@ -94,9 +126,10 @@ a.ref-chip:hover,
   place-items: center;
   border-radius: 4px;
   color: rgb(var(--c-txt3));
+  transition: background 150ms ease, color 150ms ease;
 }
 .ref-chip__x:hover {
-  background: rgb(var(--c-overlay));
+  background: rgb(var(--c-txt) / 0.08);
   color: rgb(var(--c-txt));
 }
 </style>

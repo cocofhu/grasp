@@ -40,9 +40,14 @@ type reviewQueueItem struct {
 	Effective   string // annotations folded (sent to agent)
 	Images      []models.PromptImage
 	Annotations []models.ReactAnnotation
-	Source      string // "node" | "gate"
-	GateNodeID  string
-	Force       bool // clarify force wrap-up (rare via enqueue; normally sync)
+	// References are the validated @ picks; pinned when the turn begins.
+	References []models.MessageReference
+	// ReferenceUser is the sender References were validated for. Never
+	// exposed in frames.
+	ReferenceUser string
+	Source        string // "node" | "gate"
+	GateNodeID    string
+	Force         bool // clarify force wrap-up (rare via enqueue; normally sync)
 	// RetryLast re-runs the last human without inserting another human row
 	// (cover-this-turn after empty/failed agent).
 	RetryLast bool
@@ -69,7 +74,57 @@ type reviewQueueItem struct {
 }
 
 func reviewItemView(it *reviewQueueItem) chatsession.ItemView {
-	return chatsession.ItemView{ID: it.ID, ClientMessageID: it.ClientMessageID, Text: it.Text, Images: it.Images, Annotations: it.Annotations}
+	return chatsession.ItemView{ID: it.ID, ClientMessageID: it.ClientMessageID, Text: it.Text, Images: it.Images, Annotations: it.Annotations, References: it.References}
+}
+
+// referencesSender is the user the references were validated for; every
+// reference of one turn shares it.
+func referencesSender(refs []models.MessageReference) string {
+	for _, r := range refs {
+		if r.UserID != "" {
+			return r.UserID
+		}
+	}
+	return ""
+}
+
+// pinTurnReferences fixes the turn's reference snapshots now that it begins
+// and returns the agent prompt with the reference block in front, where
+// annotations go.
+func (e *Engine) pinTurnReferences(runID, nodeID string, item *reviewQueueItem) string {
+	if len(item.References) == 0 || e.refs == nil {
+		return item.Effective
+	}
+	item.References = e.refs.PinRunReferences(runID, nodeID, item.ReferenceUser, item.References)
+	return withReferenceBlock(e.refs.RenderReferenceBlock(item.References), item.Effective)
+}
+
+// pinSyncReferences is pinTurnReferences for the synchronous confirm path,
+// which runs its turn without a queue item.
+func (e *Engine) pinSyncReferences(runID, nodeID string, refs []models.MessageReference, prompt string) ([]models.MessageReference, string) {
+	item := &reviewQueueItem{References: refs, ReferenceUser: referencesSender(refs), Effective: prompt}
+	prompt = e.pinTurnReferences(runID, nodeID, item)
+	return item.References, prompt
+}
+
+// renderedReferences re-renders the block of references pinned earlier (a
+// retried turn keeps its original snapshot).
+func (e *Engine) renderedReferences(refs []models.MessageReference, prompt string) string {
+	if len(refs) == 0 || e.refs == nil {
+		return prompt
+	}
+	return withReferenceBlock(e.refs.RenderReferenceBlock(refs), prompt)
+}
+
+func withReferenceBlock(block, prompt string) string {
+	switch {
+	case block == "":
+		return prompt
+	case strings.TrimSpace(prompt) == "":
+		return block
+	default:
+		return block + "\n\n" + prompt
+	}
 }
 
 // reviewSession is one parked producer ACP session on the shared chatsession
@@ -355,14 +410,14 @@ func (e *Engine) EnqueueClarifyTurnAs(owner, runID, nodeID, text string, images 
 
 // EnqueueClarifyTurnWithIDAs is EnqueueClarifyTurnAs carrying the sender's
 // optional clientMessageID with the queued turn.
-func (e *Engine) EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
-	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner, false, clientMessageID)
+func (e *Engine) EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, refs ...models.MessageReference) (waiting int, err error) {
+	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner, false, clientMessageID, refs...)
 }
 
 // EnqueueClarifyFirstMessageAs queues Run.FirstMessage for a clarify visit.
 // AutoRetryOnResume is true so a visit-ended refusal tells the client resume
 // will redeliver this turn (see fireClarifyFirstMessage).
-func (e *Engine) EnqueueClarifyFirstMessageAs(owner, runID, nodeID, text string, images []models.PromptImage) (waiting int, err error) {
+func (e *Engine) EnqueueClarifyFirstMessageAs(owner, runID, nodeID, text string, images []models.PromptImage, refs ...models.MessageReference) (waiting int, err error) {
 	var conv models.ReactConversation
 	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
 		Order("iteration desc, id desc").First(&conv).Error; err != nil {
@@ -371,7 +426,7 @@ func (e *Engine) EnqueueClarifyFirstMessageAs(owner, runID, nodeID, text string,
 	if conv.Done {
 		return 0, errors.New("react already done")
 	}
-	return e.enqueueReactTurn(runID, nodeID, text, images, nil, "node", "", sessionKindClarify, false, owner, true, "")
+	return e.enqueueReactTurn(runID, nodeID, text, images, nil, "node", "", sessionKindClarify, false, owner, true, "", refs...)
 }
 
 // EnqueueClarifyRetryLast re-runs the latest human turn without inserting a new
@@ -429,11 +484,11 @@ func lastRetryableHuman(msgs []models.ReactMessage) (text string, images []model
 	}
 }
 
-func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string, autoRetryOnResume bool, clientMessageID string) (waiting int, err error) {
+func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string, autoRetryOnResume bool, clientMessageID string, refs ...models.MessageReference) (waiting int, err error) {
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
 	}
-	if !retryLast && strings.TrimSpace(text) == "" && len(images) == 0 && len(annotations) == 0 {
+	if !retryLast && strings.TrimSpace(text) == "" && len(images) == 0 && len(annotations) == 0 && len(refs) == 0 {
 		return 0, errors.New("text, images, or annotations required")
 	}
 	if kind == sessionKindClarify {
@@ -455,6 +510,8 @@ func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []model
 		Effective:         renderReviewHuman(text, annotations),
 		Images:            images,
 		Annotations:       annotations,
+		References:        refs,
+		ReferenceUser:     referencesSender(refs),
 		Source:            source,
 		GateNodeID:        gateNodeID,
 		RetryLast:         retryLast,
@@ -682,6 +739,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 
 	now := time.Now().Format(time.RFC3339)
 	var humanMsg models.ReactMessage
+	prompt := item.Effective
 	if item.RetryLast {
 		// Drop trailing empty/failed agent so the next agent reply overwrites it.
 		if n := len(conv.Messages); n > 0 && models.RetryableReply(conv.Messages[n-1]) {
@@ -695,11 +753,13 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		humanMsg = conv.Messages[len(conv.Messages)-1]
 		// Ensure Effective uses the persisted human (item already carries it).
 		logDB(e.db.Save(&conv), s.runID, "clarify retryLast drop failed agent")
+		prompt = e.renderedReferences(humanMsg.References, prompt)
 	} else {
+		prompt = e.pinTurnReferences(s.runID, s.producerID, item)
 		humanMsg = models.ReactMessage{
 			Role: "human", Text: item.Text, At: now, TurnID: item.ID,
 			ClientMessageID: item.ClientMessageID,
-			Images:          item.Images, Annotations: item.Annotations, Live: item.Live,
+			Images:          item.Images, Annotations: item.Annotations, References: item.References, Live: item.Live,
 		}
 		conv.Messages = append(conv.Messages, humanMsg)
 		logDB(e.db.Save(&conv), s.runID, "save clarify human turn (turn_begin)")
@@ -713,7 +773,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	if err := e.prepareLiveTurn(ctx, s.runID, s.producerID, item); err != nil {
 		t = runtime.ReactTurn{Msg: "Live 初始化失败: " + err.Error(), Err: err}
 	} else {
-		t = e.provider.ReactReply(ctx, req, conv.Messages, withPageSession(item.PageSession, item.Effective), item.Images, force)
+		t = e.provider.ReactReply(ctx, req, conv.Messages, withPageSession(item.PageSession, prompt), item.Images, force)
 	}
 
 	cancelled := s.CancelRequested() || ctx.Err() != nil
@@ -871,10 +931,11 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		gateTag = item.GateNodeID
 	}
 	now := time.Now().Format(time.RFC3339)
+	prompt := e.pinTurnReferences(s.runID, s.producerID, item)
 	conv.Messages = append(conv.Messages, models.ReactMessage{
 		Role: "human", Text: item.Text, At: now, TurnID: item.ID,
 		ClientMessageID: item.ClientMessageID,
-		Images:          item.Images, Annotations: item.Annotations, Live: item.Live,
+		Images:          item.Images, Annotations: item.Annotations, References: item.References, Live: item.Live,
 		GateNodeID: gateTag,
 	})
 	logDB(e.db.Save(&conv), s.runID, "save review human turn (turn_begin)")
@@ -896,7 +957,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	if err := e.prepareLiveTurn(ctx, s.runID, s.producerID, item); err != nil {
 		t = runtime.ReactTurn{Msg: "Live 初始化失败: " + err.Error(), Err: err}
 	} else {
-		t = rp.ReviseInPlace(ctx, req, conv.Messages, withPageSession(item.PageSession, item.Effective), item.Images)
+		t = rp.ReviseInPlace(ctx, req, conv.Messages, withPageSession(item.PageSession, prompt), item.Images)
 	}
 
 	cancelled := s.CancelRequested() || ctx.Err() != nil

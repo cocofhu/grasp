@@ -1116,3 +1116,14 @@ html.light .pending-attach-remove:disabled:is(:hover, :focus-visible) {
   background-color: #FFFFFF;
   color: #71717A;
 }
+
+/* @ reference icon tones (referenceTone): open green, merged accent, closed grey. */
+.ref-tone--open {
+  color: rgb(var(--c-ok));
+}
+.ref-tone--merged {
+  color: rgb(var(--c-accent));
+}
+.ref-tone--closed {
+  color: rgb(var(--c-txt3));
+}
