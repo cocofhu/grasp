@@ -136,6 +136,36 @@ describe('ReferencePicker motion', () => {
     expect(w.find('.ref-picker').classes()).not.toContain('ref-picker--still')
   })
 
+  it('measures the highlight from the list content when each row is its own offset parent', async () => {
+    const offsetParent = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetParent')
+    Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
+      configurable: true,
+      get(this: HTMLElement) {
+        if (this.dataset?.refIndex != null) return this.parentElement
+        if (this.classList?.contains('ref-picker__row')) return this.closest('.ref-picker__content')
+        return null
+      },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'offsetTop', {
+      configurable: true,
+      get(this: HTMLElement) {
+        const i = this.classList?.contains('ref-picker__row') ? this.querySelector<HTMLElement>('[data-ref-index]')?.dataset.refIndex : undefined
+        return i == null ? 0 : 40 + Number(i) * 30
+      },
+    })
+    try {
+      search.mockImplementation(async (_id: string, p: any) => (p.lane === 'solo' ? { lane: 'solo', items: [session(0), session(1), session(2)] } : { lane: 'github', items: [] }))
+      const w = mountPicker()
+      await settle()
+      const vm = w.vm as unknown as { move: (d: number) => void }
+      vm.move(-1)
+      await flushPromises()
+      expect(w.find('[data-testid="solo-reference-highlight"]').attributes('style')).toContain('translateY(100px)')
+    } finally {
+      if (offsetParent) Object.defineProperty(HTMLElement.prototype, 'offsetParent', offsetParent)
+    }
+  })
+
   it('drops transitions under prefers-reduced-motion', async () => {
     window.matchMedia = ((q: string) => ({ matches: q.includes('reduce'), media: q, addEventListener() {}, removeEventListener() {} })) as any
     search.mockImplementation(async (_id: string, p: any) => (p.lane === 'solo' ? { lane: 'solo', items: [session(0), session(1), session(2)] } : { lane: 'github', items: [] }))

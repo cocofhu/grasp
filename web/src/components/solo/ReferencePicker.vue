@@ -151,6 +151,13 @@ function optionEl(index: number) {
   return content.value?.querySelector<HTMLElement>(`[data-ref-index="${index}"]`) ?? null
 }
 
+/** Top of an option inside the list content; each row wrapper is its own offset parent. */
+function topInContent(el: HTMLElement) {
+  let top = 0
+  for (let n: HTMLElement | null = el; n && n !== content.value; n = n.offsetParent as HTMLElement | null) top += n.offsetTop
+  return top
+}
+
 /** Keyboard moves keep the highlighted row inside the scroll box. */
 function ensureVisible() {
   void nextTick(() => {
@@ -158,7 +165,7 @@ function ensureVisible() {
     const el = optionEl(sel.value)
     if (!box || !el) return
     const pad = 6
-    const top = el.offsetTop
+    const top = topInContent(el)
     const bottom = top + el.offsetHeight
     const behavior = still ? 'auto' : 'smooth'
     if (top < box.scrollTop + pad) box.scrollTo?.({ top: Math.max(0, top - pad), behavior })
@@ -219,7 +226,7 @@ function placeHighlight() {
     highlight.value = { ...highlight.value, on: false, jump: true }
     return
   }
-  highlight.value = { on: true, jump: !highlight.value.on, y: el.offsetTop, h: el.offsetHeight }
+  highlight.value = { on: true, jump: !highlight.value.on, y: topInContent(el), h: el.offsetHeight }
 }
 
 function placeInk() {
@@ -594,6 +601,15 @@ defineExpose({ move, confirm, cycleTab, setTab })
   border-radius: 7px;
   background: rgb(var(--c-overlay));
   color: rgb(var(--c-txt2));
+}
+.ref-picker__icon.ref-tone--open {
+  color: rgb(var(--c-ok));
+}
+.ref-picker__icon.ref-tone--merged {
+  color: rgb(var(--c-accent));
+}
+.ref-picker__icon.ref-tone--closed {
+  color: rgb(var(--c-txt3));
 }
 .ref-picker__opt--action .ref-picker__icon {
   background: none;
