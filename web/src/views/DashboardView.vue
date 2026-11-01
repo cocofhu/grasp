@@ -881,7 +881,7 @@ onBeforeUnmount(() => {
               @input="onTextInput"
               @keydown="onComposerKeydown"
               @compositionstart="composing = true"
-              @compositionend="composing = false"
+              @compositionend="composing = false; mention.updateTrigger()"
               @paste="onComposerPaste"
               @click="mention.updateTrigger"
               @keyup="onComposerKeyup"
