@@ -120,6 +120,8 @@ type Engine struct {
 	// reviewSess holds per parked producer session FIFO + single worker for
 	// node-inline review, gate hot-revise and visitor lanes.
 	reviewSess chatsession.Registry[*reviewSession] // key: laneSessionKey
+	// pendingTurns stores the node's own dialogue FIFOs for restart recovery.
+	pendingTurns *chatsession.PendingStore
 
 	// dialogues is the per node versioned dialogue state (lazy).
 	dialogueOnce sync.Once
@@ -168,6 +170,7 @@ func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.S
 		tokens: map[string]string{}, resumeLocks: map[string]*sync.Mutex{},
 		execRuns: map[string]bool{}, execGen: map[string]uint64{},
 		adoptedSandboxes: map[string]bool{},
+		pendingTurns:     chatsession.NewPendingStore(db),
 	}
 
 	if sink, ok := provider.(interface {

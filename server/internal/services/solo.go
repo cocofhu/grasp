@@ -113,6 +113,7 @@ type SoloService struct {
 	// modelAlign overrides the sandbox when tests need to record or fail a
 	// switch without calling the bridge. Nil uses the sandbox service.
 	modelAlign soloModelAligner
+	pending    *chatsession.PendingStore
 
 	mu     sync.Mutex
 	chats  map[string]*soloChat
@@ -161,7 +162,8 @@ type soloTurn struct {
 // NewSoloService builds the service. sbx may be nil in tests that only touch
 // persistence.
 func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, projects *ProjectService) *SoloService {
-	s := &SoloService{db: db, sbx: sbx, agents: agents, projects: projects, chats: map[string]*soloChat{}}
+	s := &SoloService{db: db, sbx: sbx, agents: agents, projects: projects, chats: map[string]*soloChat{},
+		pending: chatsession.NewPendingStore(db)}
 	if sbx != nil {
 		s.chat = sbx
 		sbx.SetSoloSandboxDestroyHook(s.onSandboxGone)
@@ -750,6 +752,7 @@ func (s *SoloService) newChat(id string) *soloChat {
 		},
 		Execute: c.execute,
 		Publish: c.publish,
+		Persist: chatsession.Persister(s.pending, soloPendingSurface, id, func(q *soloTurn) string { return q.ID }),
 		TurnBeginExtra: func(q *soloTurn) map[string]any {
 			return map[string]any{"userMsgId": q.ID}
 		},
@@ -1234,6 +1237,82 @@ func (s *SoloService) enqueueTurn(id, text string, images []models.PromptImage, 
 	}
 	c := s.acquire(id)
 	return c.sess.Enqueue(&soloTurn{ID: uuid.NewString(), Text: strings.TrimSpace(text), Images: images, References: references}, nil)
+}
+
+const (
+	soloPendingSurface = "solo"
+	soloRestartStopped = "服务重启，本轮回复已中断"
+)
+
+// RestoreQueuedTurns puts the turns that were still unfinished when the
+// previous process exited back into their sessions, in order. Call it once at
+// startup, after the sandbox hooks are wired.
+func (s *SoloService) RestoreQueuedTurns() {
+	if s.chat == nil {
+		return
+	}
+	sessions, keys, err := s.pending.Load(soloPendingSurface)
+	if err != nil {
+		log.Error().Err(err).Msg("solo: load queued turns failed")
+		return
+	}
+	for _, id := range keys {
+		s.restoreSession(id, sessions[id])
+	}
+}
+
+func (s *SoloService) restoreSession(id string, stored []chatsession.PendingTurn) {
+	row, err := s.load(id)
+	if err != nil || row.Status == models.SoloStatusClosed || row.Status == models.SoloStatusError {
+		// Closing a session or losing its sandbox drops its queue as well.
+		log.Info().Str("session", id).Int("turns", len(stored)).Msg("solo: queued turns dropped with an ended session")
+		if err := s.pending.Clear(soloPendingSurface, id); err != nil {
+			log.Warn().Err(err).Str("session", id).Msg("solo: clear queued turns failed")
+		}
+		return
+	}
+	var turns []*soloTurn
+	for _, t := range stored {
+		var q soloTurn
+		if err := json.Unmarshal(t.Payload, &q); err != nil || q.ID == "" {
+			log.Warn().Err(err).Str("session", id).Str("turn", t.ID).Msg("solo: unreadable queued turn skipped")
+			continue
+		}
+		if t.Started && s.settleInterruptedTurn(id, q.ID) {
+			continue
+		}
+		turns = append(turns, &q)
+	}
+	if len(turns) == 0 {
+		if err := s.pending.Clear(soloPendingSurface, id); err != nil {
+			log.Warn().Err(err).Str("session", id).Msg("solo: clear queued turns failed")
+		}
+		return
+	}
+	s.acquire(id).sess.Restore(turns)
+	log.Info().Str("session", id).Int("turns", len(turns)).Msg("solo: queued turns restored")
+}
+
+// settleInterruptedTurn closes a turn the restart cut off. It reports false
+// when the turn never reached the transcript, so it can simply run again.
+func (s *SoloService) settleInterruptedTurn(sessionID, turnID string) bool {
+	var user models.SoloMessage
+	if err := s.db.First(&user, "id = ? AND session_id = ?", turnID, sessionID).Error; err != nil {
+		return false
+	}
+	var replies int64
+	s.db.Model(&models.SoloMessage{}).
+		Where("session_id = ? AND role = ? AND created_at >= ?", sessionID, "assistant", user.CreatedAt).Count(&replies)
+	if replies > 0 || user.Status != "" {
+		return true
+	}
+	reply := models.SoloMessage{ID: uuid.NewString(), SessionID: sessionID, Role: "assistant",
+		Status: "stopped", Error: soloRestartStopped}
+	if err := s.db.Create(&reply).Error; err != nil {
+		log.Warn().Err(err).Str("session", sessionID).Msg("solo: record interrupted turn failed")
+	}
+	s.db.Model(&models.SoloMessage{}).Where("id = ?", turnID).Update("status", "stopped")
+	return true
 }
 
 // Cancel stops the active turn and drops queued ones.

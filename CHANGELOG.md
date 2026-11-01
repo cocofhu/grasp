@@ -24,6 +24,8 @@ All notable public-release changes are documented here.
 
 - **Sidebar queued group:** queued runs now sit in their own collapsible 排队中 / Queued group below 自动过程 instead of crowding the top of 正在执行; 正在执行 no longer counts them.
 
+- **Queued messages survive a server restart:** messages waiting behind a running reply in Solo, clarification, review and gate revisions are stored, and after a restart they run in their original order instead of being lost. A reply the restart cut off is marked as interrupted, and workflow conversations offer a retry. Queued Live requests are marked failed so their card offers a retry; share-link visitor conversations are not covered yet.
+
 - **Long agent turns:** a turn is no longer stopped while the agent is still working. Solo turns were cut off at 60 minutes, PM, channel and scheduled-task turns at about 10 minutes (scheduled tasks gave up waiting at 30 minutes), and Agent test chats at 10 minutes; none of them has a default total time limit now. A turn that goes silent is still stopped by the no-activity limit. Limits you set yourself still apply: the workflow node time limit, a channel's turn timeout and `SANDBOX_TURN_MAX_DURATION`.
 
 - **Agent studio layout:** the agent list no longer takes a column of its own. Click the agent name in the top bar to search, switch agents, open Agent defaults, create, import, export, rename or delete, which leaves more room for the file tree and editor. Switching agents keeps the current tab instead of jumping back to the workspace directory. Agent and Agent defaults tabs are larger, show counts as small badges instead of "(n)", and use a sliding underline.

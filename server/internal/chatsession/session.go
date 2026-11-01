@@ -99,6 +99,11 @@ type Config[T any] struct {
 	// ErrorExtra (optional) adds fields to the error frame for a failed turn,
 	// e.g. a machine-readable code. Its keys override message/interrupted.
 	ErrorExtra func(err error) map[string]any
+	// Persist (optional) receives the unfinished turns, the active one first,
+	// whenever they change. Calls are serialized and never regress to an older
+	// state. Enqueue returns only after its call, so an accepted turn survives
+	// a restart.
+	Persist func(active T, hasActive bool, pending []T)
 }
 
 // Session is one chat's FIFO and pump. Use New.
@@ -122,6 +127,17 @@ type Session[T any] struct {
 	// liveEvents is the in-flight stream kept for reconnect seeding by
 	// surfaces whose runtime does not hold one.
 	liveEvents []models.AcpEvent
+
+	persistMu    sync.Mutex
+	persistedRev uint64
+}
+
+// persistState is the unfinished set at one revision.
+type persistState[T any] struct {
+	revision  uint64
+	active    T
+	hasActive bool
+	pending   []T
 }
 
 // A generation distinguishes a discarded/re-created FIFO from its predecessor.
@@ -200,13 +216,38 @@ func (s *Session[T]) Enqueue(item T, admit Admit[T]) (int, error) {
 		s.pumping = true
 	}
 	frame := s.queueFrameLocked(true)
+	state := s.persistStateLocked()
 	s.mu.Unlock()
 
+	s.persist(state)
 	s.publish(frame)
 	if startPump {
 		go s.pump()
 	}
 	return waiting, nil
+}
+
+// Restore appends turns an earlier process had accepted and starts the pump.
+// They were admitted before, so capacity is not checked again.
+func (s *Session[T]) Restore(items []T) {
+	if len(items) == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.queue = append(s.queue, items...)
+	startPump := !s.pumping
+	if startPump {
+		s.pumping = true
+	}
+	frame := s.queueFrameLocked(true)
+	state := s.persistStateLocked()
+	s.mu.Unlock()
+
+	s.persist(state)
+	s.publish(frame)
+	if startPump {
+		go s.pump()
+	}
 }
 
 // Remove drops one pending (not active) item.
@@ -233,7 +274,9 @@ func (s *Session[T]) Remove(id string) error {
 	}
 	s.queue = append(s.queue[:idx], s.queue[idx+1:]...)
 	frame := s.queueFrameLocked(s.hasActive)
+	state := s.persistStateLocked()
 	s.mu.Unlock()
+	s.persist(state)
 	s.publish(frame)
 	return nil
 }
@@ -263,7 +306,9 @@ func (s *Session[T]) Reorder(ids []string) error {
 	}
 	s.queue = reordered
 	frame := s.queueFrameLocked(s.hasActive)
+	state := s.persistStateLocked()
 	s.mu.Unlock()
+	s.persist(state)
 	s.publish(frame)
 	return nil
 }
@@ -280,9 +325,13 @@ func (s *Session[T]) Cancel(clearQueue bool) {
 	}
 	s.cancelRequested = true
 	frame := s.queueFrameLocked(s.hasActive)
+	state := s.persistStateLocked()
 	cancelFn := s.cancelFn
 	s.mu.Unlock()
 
+	if len(dropped) > 0 {
+		s.persist(state)
+	}
 	// Settle removed items before cancellation releases the active turn's
 	// finalization (e.g. PM failure persistence against the same thread).
 	// Keep the transition gate, but never the state mutex, across callbacks.
@@ -461,9 +510,11 @@ func (s *Session[T]) pump() {
 		begin := s.snapshotLocked().QueueState()
 		begin["item"] = s.cfg.View(item).Frame()
 		beginFrame := s.frameLocked(EventTurnBegin, begin)
+		beginState := s.persistStateLocked()
 		s.mu.Unlock()
 		s.transitionMu.Unlock()
 
+		s.persist(beginState)
 		var interrupted bool
 		var err error
 		if s.cfg.BeforeTurn != nil {
@@ -507,9 +558,11 @@ func (s *Session[T]) pump() {
 			terminal["message"] = err.Error()
 		}
 		terminalFrame := s.frameLocked(terminalEvent, terminal)
+		terminalState := s.persistStateLocked()
 		s.mu.Unlock()
 		s.transitionMu.Unlock()
 
+		s.persist(terminalState)
 		if err != nil && !wasCancel {
 			if s.cfg.ErrorExtra != nil {
 				for k, v := range s.cfg.ErrorExtra(err) {
@@ -533,6 +586,29 @@ func guardTurn(fn func()) (err error) {
 	}()
 	fn()
 	return nil
+}
+
+// persistStateLocked captures the unfinished set at the current revision. Call
+// it after frameLocked so each mutation has its own revision.
+func (s *Session[T]) persistStateLocked() persistState[T] {
+	return persistState[T]{revision: s.revision, active: s.active, hasActive: s.hasActive,
+		pending: append([]T(nil), s.queue...)}
+}
+
+// persist hands st to Config.Persist unless a newer state was already stored.
+func (s *Session[T]) persist(st persistState[T]) {
+	if s.cfg.Persist == nil {
+		return
+	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+	if st.revision <= s.persistedRev {
+		return
+	}
+	s.persistedRev = st.revision
+	if err := guardTurn(func() { s.cfg.Persist(st.active, st.hasActive, st.pending) }); err != nil {
+		log.Error().Err(err).Msg("chat session persist panicked")
+	}
 }
 
 func (s *Session[T]) pumpExit() {
