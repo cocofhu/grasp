@@ -75,7 +75,7 @@ func TestClarifyQueuedTurnsSurviveRestart(t *testing.T) {
 		msgs[4].Text != "第三条" || msgs[4].ClientMessageID != "cm-3" || msgs[5].Role != "agent" {
 		t.Fatalf("dialogue = %s", dialogueSummary(msgs))
 	}
-	if !isRetryableEmptyOrFailedAgent(msgs[1]) {
+	if !models.RetryableReply(msgs[1]) {
 		t.Fatal("the cut-off turn's reply must offer a retry")
 	}
 	if left := storedDialogueTurns(t, next, run.ID); len(left) != 0 {
@@ -169,7 +169,7 @@ func TestReviewTurnCutOffByRestartGetsRetryableReply(t *testing.T) {
 	}
 	db.First(&conv, conv.ID)
 	last := conv.Messages[len(conv.Messages)-1]
-	if len(conv.Messages) != 3 || last.Text != reviewRestartStopped || last.GateNodeID != "gate1" || !isRetryableEmptyOrFailedAgent(last) {
+	if len(conv.Messages) != 3 || last.Text != reviewRestartStopped || last.GateNodeID != "gate1" || !models.RetryableReply(last) {
 		t.Fatalf("dialogue = %s (last %+v)", dialogueSummary(conv.Messages), last)
 	}
 	if eng.settleInterruptedReviewTurn("run-none", "design", sessionKindReview, it, enqueued) {
