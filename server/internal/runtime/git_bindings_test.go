@@ -34,7 +34,7 @@ func selectedGitTestValue(id string) (GitCredentialValue, bool) {
 	values := map[string][2]string{
 		"gh": {envauth.EnvGitHubToken, "gh-secret"}, "gh2": {envauth.EnvGitHubToken, "gh2-secret"},
 		"gl": {envauth.EnvGitLabToken, "gl-secret"}, "ssh": {envauth.EnvGitSSHPrivateKey, "SSH\nPRIVATE KEY"},
-		"hosts": {envauth.EnvGitSSHKnownHosts, "host ssh-ed25519 AAAA"}, "model": {envauth.EnvCursorAPIKey, "model-secret"},
+		"ssh2": {envauth.EnvGitSSHPrivateKey, "SECOND KEY"}, "ssh-bare": {envauth.EnvGitSSHPrivateKey, "BARE KEY"}, "model": {envauth.EnvCursorAPIKey, "model-secret"},
 		"empty": {envauth.EnvGitHubToken, " "}, "newline": {envauth.EnvGitHubToken, "token\nother"}, "nul": {envauth.EnvGitLabToken, "token\x00other"},
 	}
 	row, ok := values[id]
@@ -44,13 +44,13 @@ func selectedGitTestValue(id string) (GitCredentialValue, bool) {
 	} else if row[0] == envauth.EnvGitLabToken {
 		host = "https://gitlab.com"
 	}
-	return GitCredentialValue{EnvKey: row[0], Secret: row[1], Host: host}, ok
+	knownHosts := map[string]string{"ssh": "a.example ssh-ed25519 AAAA", "ssh2": "b.example ssh-ed25519 BBBB", "gh": "ignored for HTTPS"}[id]
+	return GitCredentialValue{EnvKey: row[0], Secret: row[1], Host: host, KnownHosts: knownHosts}, ok
 }
 
 func TestGitBindingsResolveAllAndClearGlobalAuthentication(t *testing.T) {
 	selection := gitSelection("gh", "gh2", "gl", "ssh")
 	selection.PreferredCredentialID = "gh2"
-	selection.Items[3].SshHostsCredentialID = "hosts"
 	env := map[string]string{"GITHUB_TOKEN": "unselected", "GITLAB_TOKEN": "unselected", "GH_TOKEN": "unselected", "GITLAB_URL": "https://old", "GIT_REPOS": "repo|https://github.com/a/b", "FEATURE": "keep"}
 	creds := map[string]string{"GIT_SSH_PRIVATE_KEY": "unselected", "GIT_SSH_KNOWN_HOSTS": "unselected", "GRASP_CURSOR_API_KEY": "keep-model"}
 	rows, err := ApplyGitBindings(env, creds, selection, selectedGitTestValue)
@@ -87,13 +87,27 @@ func TestGitBindingsResolveAllAndClearGlobalAuthentication(t *testing.T) {
 	if rows, err := ResolveGitBindings(&models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: "gh"}}}, selectedGitTestValue); err != nil || len(rows) != 1 || rows[0].ID != "gh" || rows[0].Preferred {
 		t.Fatalf("selection without a preferred credential = %+v, %v", rows, err)
 	}
-	for _, tc := range []struct{ id, scope, hosts string }{{"ssh", "https://host/repo", ""}, {"gh", "git@host:repo", ""}, {"ssh", "", "gone"}, {"ssh", "", "gh"}, {"gh", "", "hosts"}} {
+	for _, tc := range []struct{ id, scope string }{{"ssh", "https://host/repo"}, {"gh", "git@host:repo"}} {
 		selection := gitSelection(tc.id)
 		selection.Items[0].Scope = tc.scope
-		selection.Items[0].SshHostsCredentialID = tc.hosts
 		if _, err := ResolveGitBindings(selection, selectedGitTestValue); err == nil {
-			t.Fatalf("bad scope/hosts accepted: %+v", tc)
+			t.Fatalf("bad scope accepted: %+v", tc)
 		}
+	}
+}
+
+func TestGitBindingsSSHKnownHostsComeFromEachKey(t *testing.T) {
+	selection := gitSelection("ssh", "ssh2", "ssh-bare", "gh")
+	selection.Items[0].Scope = "git@a.example:team/x"
+	rows, err := ResolveGitBindings(selection, selectedGitTestValue)
+	if err != nil || len(rows) != 4 {
+		t.Fatalf("rows = %+v, %v", rows, err)
+	}
+	if rows[0].KnownHosts != "a.example ssh-ed25519 AAAA" || rows[1].KnownHosts != "b.example ssh-ed25519 BBBB" || rows[2].KnownHosts != "" || rows[2].Secret != "BARE KEY" {
+		t.Fatalf("known hosts mixed between SSH keys: %+v", rows)
+	}
+	if rows[3].KnownHosts != "" {
+		t.Fatal("HTTPS authorization received known hosts")
 	}
 }
 

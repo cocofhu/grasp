@@ -405,6 +405,7 @@ onBeforeUnmount(() => {
       <span class="min-w-0 flex-1 truncate" :class="isPlaceholder ? 'text-txt3' : ''">
         {{ selectedLabel }}
       </span>
+      <slot name="trailing" :value="modelValue" />
       <Icon :interactive="false"
         name="chevron-down"
         :size="14"

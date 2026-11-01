@@ -1,0 +1,128 @@
+{
+  "scenario": "failed",
+  "about": "the turn failed: outcome failed with its error",
+  "frames": [
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "clarify",
+      "iteration": 1,
+      "kind": "clarify",
+      "epoch": 1,
+      "seq": 1,
+      "mode": "full",
+      "rows": [
+        {
+          "role": "human",
+          "text": "做登录",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-1",
+          "id": "turn-1:h",
+          "phase": "sealed",
+          "rev": 1
+        },
+        {
+          "role": "agent",
+          "text": "",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-1",
+          "id": "turn-1:a0",
+          "phase": "running",
+          "rev": 1,
+          "streaming": true
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "turn-1",
+          "phase": "running",
+          "item": {
+            "annotations": [],
+            "id": "turn-1",
+            "images": [],
+            "text": "做登录"
+          }
+        }
+      ],
+      "busy": true,
+      "done": false
+    },
+    {
+      "type": "dialogue",
+      "runId": "run-fixture",
+      "nodeId": "clarify",
+      "iteration": 1,
+      "kind": "clarify",
+      "epoch": 1,
+      "seq": 2,
+      "mode": "tail",
+      "prefixLen": 1,
+      "prefixDigest": "1:74ec1651",
+      "rows": [
+        {
+          "role": "agent",
+          "text": "(澄清回复失败:sandbox gone)",
+          "at": "2026-01-01T00:00:00Z",
+          "turnId": "turn-1",
+          "outcome": "failed",
+          "error": "sandbox gone",
+          "id": "turn-1:a0",
+          "phase": "sealed",
+          "rev": 2
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "turn-1",
+          "phase": "ended",
+          "outcome": "failed",
+          "error": "sandbox gone"
+        }
+      ],
+      "busy": false,
+      "done": false
+    }
+  ],
+  "final": {
+    "type": "dialogue",
+    "runId": "run-fixture",
+    "nodeId": "clarify",
+    "iteration": 1,
+    "kind": "clarify",
+    "epoch": 1,
+    "seq": 2,
+    "mode": "full",
+    "rows": [
+      {
+        "role": "human",
+        "text": "做登录",
+        "at": "2026-01-01T00:00:00Z",
+        "turnId": "turn-1",
+        "id": "turn-1:h",
+        "phase": "sealed",
+        "rev": 1
+      },
+      {
+        "role": "agent",
+        "text": "(澄清回复失败:sandbox gone)",
+        "at": "2026-01-01T00:00:00Z",
+        "turnId": "turn-1",
+        "outcome": "failed",
+        "error": "sandbox gone",
+        "id": "turn-1:a0",
+        "phase": "sealed",
+        "rev": 2
+      }
+    ],
+    "turns": [
+      {
+        "turnId": "turn-1",
+        "phase": "ended",
+        "outcome": "failed",
+        "error": "sandbox gone"
+      }
+    ],
+    "busy": false,
+    "done": false
+  }
+}

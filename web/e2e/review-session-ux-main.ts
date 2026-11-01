@@ -4,6 +4,8 @@ import { i18n } from '../src/lib/shared/i18n'
 import { initLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import ClarifyChat from '../src/components/run/ClarifyChat.vue'
+import { ingestDialogue } from '../src/lib/chat/dialogueStore'
+import { dialogueFrame, endedTurn, queuedTurn, runningTurn, type RowInput } from '../src/test/dialogueKit'
 
 initLocale()
 setTheme('light')
@@ -12,10 +14,10 @@ const App = defineComponent({
   name: 'ReviewSessionUxHarness',
   setup() {
     const surface = ref<'visual' | 'research'>('visual')
-    const chatRef = ref<{
-      applyReviewFrame?: (f: Record<string, unknown>) => void
-      applyAcpEvents?: (e: { kind: string; text: string }[]) => void
-    } | null>(null)
+    const chatRef = ref<unknown>(null)
+    /** Sends on the current surface (host would POST them). */
+    let sent: { text: string; clientMessageId: string }[] = []
+    let running = false
 
     onMounted(async () => {
       await nextTick()
@@ -24,25 +26,44 @@ const App = defineComponent({
 
     function switchSurface(next: 'visual' | 'research') {
       surface.value = next
+      sent = []
       nextTick(() => {
         ;(window as unknown as { __reviewChat: typeof chatRef.value }).__reviewChat = chatRef.value
       })
     }
 
+    function human(i: number): RowInput {
+      return { role: 'human', text: sent[i]!.text, at: new Date().toISOString(), turnId: `t${i}`, clientMessageId: sent[i]!.clientMessageId }
+    }
+    function publish(spec: Parameters<typeof dialogueFrame>[2]) {
+      ingestDialogue(dialogueFrame('run-e2e', surface.value, spec))
+    }
+    /** The server runs the first send (the second waits) and streams its reply. */
     async function simTurnBeginStream() {
-      const c = chatRef.value
-      if (!c?.applyReviewFrame) return
-      const text =
-        surface.value === 'visual' ? '视觉意见甲（队列首条）' : '调研意见甲（队列首条）'
-      c.applyReviewFrame({
-        event: 'turn_begin',
-        item: { text },
-        nodeId: surface.value,
+      if (sent.length < 2) return
+      running = true
+      const turns = [
+        runningTurn('t0', sent[0], { clientMessageId: sent[0]!.clientMessageId }),
+        queuedTurn('t1', 0, sent[1]!, { clientMessageId: sent[1]!.clientMessageId }),
+      ]
+      const reply = (text: string, thought: string): RowInput =>
+        ({ role: 'agent', text, thought, at: new Date().toISOString(), turnId: 't0', streaming: true })
+      publish({ busy: true, rows: [human(0), reply('', '思考增量…')], turns })
+      await nextTick()
+      publish({ busy: true, rows: [human(0), reply('流式产出正文（非整轮一次性）。', '思考增量…')], turns })
+    }
+    /** Review Stop: the running turn is interrupted and the queue is cleared. */
+    function onCancel() {
+      if (!running) return
+      running = false
+      publish({
+        rows: [human(0), { role: 'agent', text: '流式产出正文（非整轮一次性）。', at: new Date().toISOString(), turnId: 't0',
+          interrupted: true, outcome: 'interrupted' }],
+        turns: [
+          endedTurn('t0', 'interrupted', { clientMessageId: sent[0]!.clientMessageId }),
+          endedTurn('t1', 'dropped', { clientMessageId: sent[1]!.clientMessageId }),
+        ],
       })
-      await nextTick()
-      c.applyAcpEvents?.([{ kind: 'thought', text: '思考增量…' }])
-      await nextTick()
-      c.applyAcpEvents?.([{ kind: 'message', text: '流式产出正文（非整轮一次性）。' }])
     }
 
     return () =>
@@ -94,6 +115,10 @@ const App = defineComponent({
           done: false,
           active: true,
           reviewMode: true,
+          onSend: (text: string, _images: unknown, _annotations: unknown, clientMessageId: string) => {
+            sent.push({ text, clientMessageId })
+          },
+          onCancel,
         }),
       ])
   },

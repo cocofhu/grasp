@@ -112,3 +112,9 @@ auth:
 # production 模式必须显式配置,否则无法保存凭据。./start.sh 会生成并写入 .env。
 security:
   secrets_key: ""
+
+# 可选:「用 GitHub 登录」(OAuth Device Flow)添加 github.com 工作区凭据。
+# 在 GitHub 注册自己的 OAuth App 并勾选 Enable Device Flow,填其 Client ID;
+# 无需 client secret。环境变量 GRASP_GITHUB_OAUTH_CLIENT_ID 优先。留空则只能粘贴 Token。
+github:
+  oauth_client_id: ""

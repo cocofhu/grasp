@@ -58,6 +58,27 @@ func (s *SoloService) SearchReferences(ctx context.Context, id, user string, q R
 	if err != nil {
 		return ReferenceSearchResult{}, err
 	}
+	return s.searchReferences(ctx, row, q)
+}
+
+// SearchLaunchReferences lists candidates before a session exists: GitHub
+// searches the repositories picked for the launch, with the chosen agent's
+// credential.
+func (s *SoloService) SearchLaunchReferences(ctx context.Context, user, agentName string, projectIDs []string, q ReferenceSearchQuery) (ReferenceSearchResult, error) {
+	choices := make([]SoloRepoChoice, 0, len(projectIDs))
+	for _, id := range projectIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			choices = append(choices, SoloRepoChoice{ProjectID: id})
+		}
+	}
+	repos, _, err := s.resolveSessionRepos(SoloCreateInput{Repos: choices})
+	if err != nil {
+		return ReferenceSearchResult{}, err
+	}
+	return s.searchReferences(ctx, &models.SoloSession{UserID: user, AgentName: strings.TrimSpace(agentName), Repos: repos}, q)
+}
+
+func (s *SoloService) searchReferences(ctx context.Context, row *models.SoloSession, q ReferenceSearchQuery) (ReferenceSearchResult, error) {
 	switch q.Lane {
 	case "solo":
 		return s.searchSoloReferences(row, q)

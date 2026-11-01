@@ -20,6 +20,96 @@
 
 ## 记录
 
+### 2026-10-31（澄清 / 复审对话改由服务端状态驱动，根治「本轮没有输出」误报）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/chatsession/dialogue_version.go`、`server/internal/engine/dialogue_{state,publish,public}.go`、`server/internal/handlers/{dialogue,ws,inbox_context,gate_share_public,gate_share_public_events}.go`、`server/internal/models/dialogue.go`；`web/src/lib/chat/{dialogueState,dialogueStore}.ts`、`web/src/components/run/ClarifyChat.vue`、`web/src/lib/inbox/useClarifyChat.ts`、`useGatesInbox.ts`、`web/src/lib/run/{useRunDetail,useRunDetailWs,useRunLive}.ts`、`web/src/views/PublicGateApprovalView.vue`、`web/eslint.config.mjs`，以及对应单测和 e2e。
+- 做了什么：
+  - 服务端：每个节点对话（含分享访客的独立对话）生成一份完整对话状态，包括行、轮次阶段、排队项、孤儿轮和是否忙。版本号为 `(epoch, seq)`，epoch 每次启动都会变大（毫秒）。状态通过 WS `dialogue` 帧推送，只追加尾部时发 tail，并附前缀摘要。REST 的 `GET /api/runs/:id/nodes/:node/dialogue`、Inbox 上下文的 `dialogueByNode`、运行详情和公开分享预览都带上这份状态。空输出被打断的轮次，回复文字直接写「(已中断)」。
+  - 前端：新增 `dialogueStore`，按版本只接收更新的状态；tail 帧的前缀不匹配时重新拉取。`ClarifyChat`、`useClarifyChat`，以及 Inbox、运行详情、公开分享页三处宿主一次性切到这份状态。乐观发送的消息出现在服务端状态里（按 `clientMessageId` 匹配）后才算落定。删除了前端对 ACP / 复审帧 / 队列帧的对账，以及 `mergeClarifyLiveTurns`。
+  - 门禁：ESLint 禁止上述文件引用旧的对账模块、比较 `acp` / `queue_state` / `turn_begin` / `turn_done` 帧类型，以及用「文字和思考都为空」来猜测失败。`dialogueLintGate.test.ts` 负责验证这几条规则确实生效。AGENTS.md 新增一条：对话显示问题先修服务端状态。
+- 为什么：前端根据多路帧自己猜测轮次状态，帧乱序或丢失时会误报「本轮没有输出」，或者出现重复、卡住的轮次。由服务端给出唯一可信的状态后，前端只负责渲染。
+- 如何验证：server 的 golangci-lint、`go vet`、gen-configdoc check、`go test -race ./...` 全部通过，覆盖率 90.7%；`TestVisitorLaneDialogueIsItsOwnState` 在 race 下发现的 linkID 竞争已修复。web 的 lint（0 error）、vue-tsc、`vitest --coverage`（5995 个用例，行覆盖 91.94%）、build、`test:e2e:ci` 全部通过。e2e 改用 `e2e/helpers/dialogueServer.ts` 模拟服务端对话状态。
+
+### 2026-10-31（GitHub 凭据支持设备码登录）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/config/{config,descriptor}.go`、`server/CONFIGURATION.md`、`server/config.example.yaml`、`.env.example`、`docker-compose.yml`、`server/internal/services/{github_device_flow,workspace_credentials}.go`、`server/internal/handlers/{github_device,handlers}.go`、`server/internal/router/router.go`、`server/cmd/server/main.go`、`web/src/lib/api/{apiTypes.ts,clients/workspaceClient.ts}`、`web/src/lib/workspace/useGitHubDeviceLogin.ts`、`web/src/components/workspace/{GitHubDeviceLoginCard,GitHostField,WorkspaceCredentialsPanel}.vue`、`web/src/locales/{zh-CN,en}/pages.json`、`docs/content/{,en/}help/configuration.md`，以及对应测试。
+- 做了什么：
+  - 后端：`github.oauth_client_id` / `GRASP_GITHUB_OAUTH_CLIENT_ID`。`GitHubDeviceFlowService` 在内存保存会话（绑定发起用户、按 GitHub 的 expires_in 过期、每用户最多 5 个），`Poll` 在 interval 内不请求 GitHub，`slow_down` 加 5 秒；网络错误视为 pending。成功后 `GET /user` 取 login 与 `X-OAuth-Scopes`（缺头时用 token 响应的 scope），新建或更新凭据并写 metadata `{authMethod, githubLogin, scopes}`。`CredentialService.Create/Update` 仍忽略客户端 metadata；手动换 Token 或清空时清掉 metadata。`CredentialView` 返回 metadata。四个路由：GET/POST `/workspace/credentials/github/device`、POST `…/:sessionId/poll`、DELETE `…/:sessionId`；成功时审计 `create|update credential (github device flow)`，不含 Token 与 device_code。
+  - 前端：`useGitHubDeviceLogin` 状态机（按服务端 interval 轮询、倒计时到 0 本地过期、取消/卸载时 DELETE 会话、旧会话的响应被忽略）。`GitHubDeviceLoginCard` 按 page.html 定稿：状态胶囊、逐字等宽验证码格、复制/打开 GitHub 按钮、进度条与剩余时间、scope 小标签、成功态账号与缺 repo 提示。新增向导的 Git Host 改为 `GitHostField`（站点、协议前缀、官方/自建/格式有误标签、恢复默认），GitHub 且 github.com 时出现滑动分段「用 GitHub 登录 / 粘贴 Token」，非 github.com 时登录项置灰并切到粘贴。凭据行显示 `@login` 与「GitHub 登录」标签，github.com 凭据有「重新登录」。
+- 为什么：手动创建 PAT 步骤多、容易选错权限；设备码流程不需要 client secret 和回调地址，适合自托管。
+- 如何验证：`go test ./internal/services -run GitHubDevice`、`./internal/handlers -run GitHubDevice`、`./internal/config`；`vitest` 跑 `useGitHubDeviceLogin.test.ts`、`WorkspaceCredentialsPanel.githubDevice.test.ts` 与原有 `WorkspaceCredentialsPanel.test.ts`；`vue-tsc --noEmit`、`npm run lint`；`go vet`、`gen-configdoc -check`、全量 `go test` 与全量 `vitest`。未做真机 GitHub 授权。
+
+### 2026-10-31（SSH 私钥与已知主机合并为「SSH 密钥」）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/models/{models,git_binding}.go`、`server/internal/services/{workspace_credentials,credential_domain}.go`、`server/internal/runtime/{credential_selection,git_bindings}.go`、`server/internal/database/{database,retired_credentials}.go`、`server/internal/handlers/workspace.go`、`web/src/lib/api/apiTypes.ts`、`web/src/lib/workspace/credentialKinds.ts`、`web/src/lib/agent/gitBindings.ts`、`web/src/components/workspace/{WorkspaceCredentialsPanel,CredentialProviderLogo}.vue`、`web/src/components/agent/AgentGitCredentialPicker.vue`、`web/src/locales/{zh-CN,en}/pages.json`、`web/e2e/cli-model-select-main.ts`，以及对应测试。
+- 做了什么：
+  - 后端：`purpose=ssh` 只接受 `ssh_private_key`。`Credential` 加明文列 `KnownHosts`（公开信息，不加密）。创建和更新的 `knownHosts` 用指针：不传表示不变，传空串表示清空；含 NUL 返回 400；换行统一为 `\n` 并去掉首尾空白；内容变化时 `SecretRevision` 加一，与换私钥同时发生时只加一次。`ResolveGitValue` 带出 `KnownHosts`，`git_bindings` 直接从同一凭据取，不再读 `sshHostsCredentialId`。启动时幂等删除旧的 `ssh_known_hosts` 行；`AgentGitBinding` 去掉 `SshHostsCredentialID`，旧 JSON 里的该键解码时丢弃。沙箱脚本、注入方式（每把密钥一个 `N.known_hosts`）和镜像都不变，不升 IMAGE_LEVEL。
+  - 前端：类型里去掉 `ssh_hosts`，名称改为「SSH 密钥」。新增向导第 2 步在私钥下面加可选的已知主机文本框，第 3 步显示行数或「未填写」；列表副标题显示「已配置/未配置已知主机」，编辑区可以只改已知主机。Agent Git 凭据选择器去掉主机下拉，副标题显示已知主机状态，可绑定多把 SSH 密钥；`cloneGitBindings` 只复制当前字段，保存时去掉旧键。样式只复用已有组件、类和 token，步骤滑动和高度过渡不变。
+- 为什么：私钥和它对应的已知主机本来就是一组，分成两个凭据要在 Agent 上额外配对，多把密钥时也无法各自对应。这是用户确认过的不兼容变更：旧的独立已知主机凭据和绑定会被移除，用户需要在对应 SSH 密钥上重新填写已知主机。
+- 如何验证：新增 Go 测试覆盖创建、列表、解析、只改已知主机、换私钥、清空、NUL 拒绝、非 SSH 拒绝、旧行清理幂等、旧绑定 JSON 解码、每把密钥各自注入已知主机和 HTTP 400；前端补充凭据面板向导与编辑、选择器多把 SSH 密钥、旧绑定丢弃和建 Agent 载荷的测试。在真实预览里用合成数据检查了亮色和暗色、1440/390/320 px 下的凭据列表、新增向导、编辑区和 Agent Git 选择器。全量门禁结果见提交说明。
+
+### 2026-10-31（设置类页面视觉重设计）
+
+- 日期：2026-10-31。
+- 范围：`web/src/components/settings/{SettingsPageHeader,SettingsStatStrip,SettingsSection}.vue`、`settingsStats.ts`、`IntegrationsPanel.vue`；`web/src/components/shell/WorkspacePage.vue`；`web/src/views/{SettingsView,WorkspaceToolView,ProjectsView,WorkspaceDefaultsView}.vue`；`web/src/components/workspace/{WorkspaceCredentialsPanel,ModelConfigurationManager,WorkspaceExternalMcpPanel,WorkspaceNotifyPanel,WorkspaceAuditPanel}.vue`；`web/src/components/pm/{PmLeaderChat,PmSettingsPanel,PmChannelMultiPanel,PmCronJobsPanel}.vue`；`web/src/locales/{zh-CN,en}/pages.json`。
+- 做了什么：
+  - 新增 `SettingsPageHeader`（图标徽标 + 标题 + 说明 + actions 插槽）和 `SettingsStatStrip`（`<dl>` 统计条，值为空的项不渲染，加载时显示骨架）；`SettingsSection` 改为卡片，新增可选 `icon` / `count`。
+  - `WorkspacePage` 新增 `icon` / `hideHeader`，设置类工具页统一用新页头；凭据页在面板内渲染页头，新增菜单按钮放进页头 actions，inline 嵌入不显示页头和统计条。
+  - 各页统计都由页面已加载的数据在前端计算，不加请求：凭据（总数 / 已配置 / 代码主机 / 待填写）、模型组（总数 / 已启用 / 编码工具 / 需处理，行内加工具标签与可用 / 已停用 / 原因状态，tab 显示数量）、常规（执行模式 / 运行中 / 测试沙箱 / 沙箱内存，工作树模式隐藏沙箱项）、外部 MCP（连接 / 能力包 / 密钥）、通知、项目、变量、定时任务。
+  - 助手未就绪时改为引导卡：状态标签、三步步骤、静态对话示意（aria-hidden）、三张能力卡；保留 `pm-setup-state` / `pm-setup-settings`。
+- 为什么：设置类页面版式不统一、信息密度低，用户看不出配置是否完整。
+- 如何验证：原有 Icon 清单前后对照只有新增；新增共用组件、模型组统计与状态、凭据统计、助手引导、常规页工作树模式单测；lint、vue-tsc、coverage、build、`test:e2e:ci`（含 icon-motion、theme-icon-vt，断言未改）串行通过。
+
+### 2026-10-31（内置实现/测试评审模板默认关闭复审）
+
+- 日期：2026-10-31。
+- 范围：`agents/{ImplementAgent,TestReviewAgent}/` 与 `server/internal/services/team_embed/{ImplementAgent,TestReviewAgent}/` 下的 `agent.json`、`workspace/AGENTS.md`、`server/internal/services/team_embed.go`、`server/internal/services/team_create_template_test.go`、`web/src/locales/zh-CN/pages.json`、`web/e2e/onboarding-wizard.spec.ts`、`docs/content/{,en/}guide/concepts.md`。
+- 做了什么：实现、测试评审模板的 `agent.json` 去掉 `"review": true`，交付模板本来就没有，需求澄清（`interaction=clarify`）不动。首次引导、PM 建团、Agent Studio 从模板创建都直接拷贝模板能力，代码逻辑不变。模板 `AGENTS.md` 的复审说明改为「开启复审时才适用」；`test_review` 的 Summary、zh-CN 引导页实现描述去掉暗示默认复审的措辞；concepts 中英文改为默认关闭、可在能力页开启。已存在的 Agent 不迁移。
+- 为什么：用户希望澄清确认后，默认工作流的实现、测试评审、交付自动跑完，中间不停下等人复审。副作用：auto 节点关闭复审后不再提供 Live 实时变体，属预期。
+- 如何验证：新增 `TestBuiltInTemplates_ReviewOffExceptClarify`（除 clarify 外模板与 `ApplyCreateTemplate` 结果 review 均为 false，clarify 仍是 clarify 交互）；server `go test ./...`、golangci-lint 通过；web vitest（`--maxWorkers=2`）通过；onboarding e2e mock 同步去掉 `review: true`。
+
+### 2026-10-31（新建工作流默认共享沙箱）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/services/team_embed/default-workflow.json`、`server/internal/services/onboarding.go`、`server/internal/runtime/acp_shared.go`（注释）、`web/src/views/WorkflowEditorView.vue`、`docs/content/{,en/}guide/concepts.md`，以及 `server/internal/services/onboarding{,_baseline}_test.go`、`web/src/views/WorkflowEditorView.test.ts`。
+- 做了什么：内置模板加 `defaults`（`inheritWorkspace: true`、`variables: []`、`sandbox.mode: shared`）。`upsertDefaultWorkflow` 只在新建分支写入模板 Defaults，已存在的默认流水线不动 Defaults（未设置或 per_node 都保留）；`CreateFromBaseline` 同样写入。编辑器 `/workflows/new/edit` 的初始 `wf` 带同一组 defaults，初始快照包含它，所以不会被判为未保存；编辑已有工作流不注入。
+- 为什么：用户希望新建的流水线开箱即用共享沙箱。只改新建入口，不迁移已有数据；Import / Copy 沿用源 defaults；后端 `SaveAs` 对空 Defaults 不注入默认值，API 直接创建不受影响；运行时共享沙箱逻辑不变。
+- 如何验证：`go test ./internal/services/...`、`golangci-lint run`；`vitest run src/views/WorkflowEditorView.test.ts`（`--maxWorkers=2`）与 `vue-tsc` 类型检查。新测试覆盖模板 defaults、首次 Bootstrap 与 CreateFromBaseline 为 shared、已有默认流水线（未设置 / per_node）再次 Bootstrap 后不变、编辑器新建保存 payload 为 shared、关掉后为 per_node、已有工作流不注入。
+
+### 2026-10-31（@ 引用选择框：加载时不再闪烁）
+
+- 日期：2026-10-31。
+- 范围：`web/src/lib/solo/useReferenceSearch.ts`、`web/src/components/solo/ReferencePicker.vue` 及其测试。
+- 做了什么：
+  - 每次输入发起新请求时，不再清空该栏的提示和错误；栏位新增 `settled`（收到过回复）标记。
+  - 骨架块只在该栏还没收到过回复时出现，带延迟淡入和流光效果。之后的请求期间保留旧结果，列表延迟 180ms 再变淡；分组标题上的转圈也延迟淡入，转圈外包一层 span，避免盖掉它自带的旋转动画。
+  - 「无匹配」只在收到回复后才显示；「全部」tab 里的空分组不会在加载时冒出来又消失。
+  - 选择框弹出时加 140ms 淡入加轻微位移，上弹和下弹方向各自对应。开启「减少动态效果」时以上动画都关闭。
+- 为什么：原来每输入一个字，选择框都会在骨架块、转圈、「无匹配」和结果之间来回切，高度也跟着跳，看起来很闪。
+- 如何验证：`ReferencePicker.test.ts` 新增用例，覆盖首次加载显示骨架、再次查询时保留旧结果并淡化、回复后显示「无匹配」；solo 相关前端测试、vue-tsc、eslint 通过。
+
+### 2026-10-31（首页 Solo 启动框也能 @ 引用）
+
+- 日期：2026-10-31。
+- 范围：`server/internal/services/{solo,solo_reference_search,solo_reference_github}.go`、`server/internal/handlers/solo.go`、`server/internal/router/router.go`、`web/src/lib/solo/{useReferenceComposer,useReferenceSearch,useSoloLauncher}.ts`、`web/src/components/solo/{ReferencePicker,SoloSessionPane}.vue`、`web/src/views/DashboardView.vue`、`web/src/lib/api/{apiTypes.ts,clients/soloClient.ts}`、`web/LIB_DOMAIN_MAP.json`、`docs/content/{,en/}guide/concepts.md`，以及对应测试。
+- 做了什么：
+  - 后端：`SoloCreateInput` 加 `references`。创建时先校验引用，再入库、开沙箱，引用不合法时不留下会话也不占沙箱。首轮通过新的 `enqueueTurn` 带着引用入队，锚点仍在轮次开始时固定。只有引用、没有文字时，标题取「@第一个引用」。
+  - 新增 `GET /api/solo/references/search?lane=&agent=&projects=a,b`：用当前选中的 Agent 和仓库组成一条草稿会话，复用原有的搜索、凭据选择和 GitHub 查询；会话 lane 列出自己的全部会话。没有仓库时的提示改成中性说法，不再写「当前会话」。
+  - 前端：把会话面板里的 @ 逻辑抽成 `useReferenceComposer`，会话面板和首页共用。`ReferencePicker` 的输入从 `sessionId` 改为 `scope`（会话，或 agent 加 projects），新增 `placement="down"`，首页向下展开。首页只在 Solo 模式启用 @ 和「+」菜单（上传、引用会话、引用 Issue / PR），工作流模式下「+」仍直接选文件。切回工作流模式时保留文字、去掉引用；`#n` 简写以首个选中仓库为准。
+- 为什么：用户在首页直接开新 Solo 时也要能带上其他会话或 issue/PR，不必先开会话再补发。
+- 如何验证：新增 Go 测试，覆盖创建时带引用（非法引用不留下会话、首轮锚点和提示词、标题）、首页搜索（会话 lane、无仓库提示、按所选仓库限定、未知项目、非法 lane）和 handler 端点；新增 `DashboardView.references.test.ts`，覆盖首页 @ 搜索参数、键盘选择、创建请求带引用、「+」菜单、粘贴链接、切换模式。全量门禁结果见 PR。
+
+### 2026-10-31（模型区「使用全部模型组」文案与分段选择）
+
+- 日期：2026-10-31（Asia/Hong_Kong）。
+- 范围：`web/src/components/agent/{ModelBindingEditor,AgentRuntimeBindings}.vue` 及其单测、`web/src/components/ui/AppSelect.vue`、`web/src/lib/agent/modelRouting.ts`、`web/e2e/model-routing.spec.ts`、`CHANGELOG.md`。
+- 做了什么：全部模型组开关的文案由「继承…」改为「使用全部模型组」，说明改为「自动包含所有已启用的模型组，之后新增或修改的模型组也会同步生效。」，英文同步。模型区先放「默认启动模型组」（标题、说明、下拉，右侧弱化显示工具 · 主模型），再放「可用模型组」，标题行右侧是「全部模型组 / 指定模型组」radiogroup 分段（SlidingTabs，28px，方向键切换，容器窄于 480px 时换行拉满）。下方面板三态：全部（层叠图标和说明，不列组名）、指定（默认组为带「默认启动」徽标的固定行，其他组悬停或聚焦显示设为默认 / 移除，触屏常显，底部「添加模型组」）、未选默认组（引导说明）。「全部」在没有默认组或表单禁用时置灰，没有默认组时提示「先选择默认启动模型组」。默认配置页「重置」移到「模型」标题行右侧。`AppSelect` 增加可选 `trailing` 插槽。`allConfigurations` / `configurationIds` 发出值、手动组恢复与禁用条件不变；`allowAllConfigurations=false` 的向导不显示分段。
+- 为什么：默认配置是最上层，没有可继承对象，「继承」与 Agent 的「继承默认配置」混淆；旧开关在切换时让卡片和默认组标签时有时无，布局跳动，指定模式里下拉和列表重复显示默认组。
+- 如何验证：`src/components/{agent,workspace,ui/AppSelect}`、`src/lib/agent` 共 72 个文件、793 项单测通过；`vue-tsc --noEmit` 和相关文件 eslint 通过。Playwright 跑 `model-routing`、`agent-create-wizard`、`onboarding-wizard`，38 项通过；新用例断言 radio 角色与文案、切换前后分段和默认组下拉 y 坐标不变，1440 / 390 亮暗下不溢出，并保存截图。`git-help-run-tags-404` 在等待 `agent-wizard-backend-cursor` 时超时，未改动的 main 上同样失败，与本次无关。
+
 ### 2026-10-31（侧栏「排队中」分组）
 
 - 日期：2026-10-31。

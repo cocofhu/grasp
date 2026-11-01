@@ -390,6 +390,7 @@
       "next": "下一步",
       "skip": "跳过",
       "later": "稍后再说",
+      "dismissedHint": "之后不会再自动弹出。需要时点「新建工作流」，再选「去完成指引」即可继续配置。",
       "generate": "生成配置",
       "generating": "正在生成…",
       "close": "关闭",
@@ -403,6 +404,7 @@
         "model": "配置编码工具",
         "key": "API Key",
         "git": "Git",
+        "gitCredentials": "Git 凭据",
         "team": "团队",
         "workflow": "工作流预览",
         "done": "完成",
@@ -446,12 +448,16 @@
         "vendorTitle": "模型厂商 API Key"
       },
       "git": {
-        "meta": "Agent 提交代码时需要署名；仓库和访问凭据可以现在填，也可以跳过。",
+        "meta": "Agent 提交代码时需要署名；仓库可以现在填，也可以跳过。",
         "repoCredSection": "仓库与访问凭据",
         "skip": "跳过",
         "unskip": "现在配置",
         "skippedHint": "已跳过：仓库可以在运行时再填，私有仓库的凭据之后到工作区「凭据」里补。",
         "foot": "凭据只保存在本工作区，导出 Agent 时不会带上。"
+      },
+      "gitCredentials": {
+        "meta": "私有仓库需要访问凭据：选择已有凭据，或在下方新建。公开仓库可以直接下一步。",
+        "invalid": "所选的 Git 凭据不可用，请重新选择"
       },
       "gitUser": {
         "section": "提交署名",
@@ -521,7 +527,7 @@
           },
           "implement": {
             "title": "实现",
-            "desc": "按计划实现、本地测试，提交并推送工作分支；实现后可启动应用供你复审。"
+            "desc": "按计划实现、本地测试，提交并推送工作分支；实现后可启动应用预览。"
           },
           "test_review": {
             "title": "测试评审",
@@ -597,7 +603,8 @@
         "prefs": "语言、主题与预览能力",
         "model": "编码工具、凭据与模型",
         "key": "填写模型与密钥",
-        "git": "提交署名、仓库与凭据",
+        "git": "提交署名与仓库",
+        "gitCredentials": "连接 GitHub、GitLab 或 SSH",
         "team": "确认要创建的 Agent",
         "workflow": "预览将要发布的默认工作流",
         "done": "生成配置，开始第一次运行",
@@ -606,18 +613,12 @@
       "prefsMeta": "界面语言与主题，以及 Agent 可用的预览能力。",
       "prefsMetaCreate": "工作区名称，以及 Agent 可用的预览能力。",
       "ready": "已就绪",
-      "expandSetup": "开始配置",
-      "collapseSetup": "收起",
       "modelSetup": {
         "description": "使用上一步保存的凭据选择模型，也可以直接选择已有的模型配置。",
         "selected": "团队默认模型",
         "selectedHint": "四个 Agent 默认共用此模型，之后可单独调整。",
         "title": "添加模型",
         "hint": "选择编码工具与已保存的凭据，再选择模型。"
-      },
-      "gitSetup": {
-        "title": "添加 Git 凭据",
-        "hint": "在这里连接 GitHub、GitLab 或 SSH，保存后即可使用。"
       },
       "solo": {
         "emptyShort": "空白 Agent · Solo 专用",
@@ -1166,7 +1167,17 @@
         "failInterruptedDesc": "服务重启导致本轮生成中断，可点击重试。",
         "openSource": "跳转原文",
         "citationMissing": "引用目标不可用或无权限",
-        "citationInvalid": "引用无效或目标不存在"
+        "citationInvalid": "引用无效或目标不存在",
+        "setupBadgeDisabled": "未启用",
+        "setupBadgeUnavailable": "待配置",
+        "setupStepsLabel": "启用步骤",
+        "setupStep1": "在设置里选择一个已有 Agent",
+        "setupStep2": "打开「启用助手」并保存",
+        "setupStep3": "回到这里开始咨询，或在 QQ / 飞书 Channel 里提问",
+        "setupPreviewQ1": "这周有哪些运行卡住了？",
+        "setupPreviewA1": "2 个运行在等待审批，另有 1 个测试节点失败过一次。",
+        "setupPreviewQ2": "先处理哪个？",
+        "setupPreviewA2": "建议先看等待最久的那个，它阻塞了 3 个下游任务。"
       },
       "externalMcp": {
         "connectionTitle": "接入配置",
@@ -1264,6 +1275,11 @@
         "secretLoginFile": "登录文件",
         "secretPrivateKey": "私钥",
         "secretKnownHosts": "已知主机",
+        "knownHostsHint": "OpenSSH known_hosts 格式，每行一条，例如 github.com ssh-ed25519 AAAA…",
+        "knownHostsLines": "已填写 {count} 行",
+        "knownHostsEmpty": "未填写",
+        "knownHostsConfigured": "已配置已知主机",
+        "knownHostsNotConfigured": "未配置已知主机",
         "pickTitle": "使用的授权",
         "pickHint": "主标题是别名。运行只注入选中的这一条，清空后不会改用另一条。",
         "codingPickHint": "未选择时使用工作区默认授权；已选择时只使用这一条。",
@@ -1279,8 +1295,7 @@
           "opencode": "OpenCode CLI",
           "github": "GitHub",
           "gitlab": "GitLab",
-          "ssh_key": "SSH 私钥",
-          "ssh_hosts": "SSH 已知主机",
+          "ssh_key": "SSH 密钥",
           "deepseek_harness": "DeepSeek Harness",
           "kimi_code": "Kimi Code"
         },
@@ -1308,14 +1323,67 @@
         "edit": "编辑",
         "fillIn": "填写",
         "save": "保存",
-        "clear": "清除",
+        "delete": "删除",
         "saved": "凭据已保存",
-        "cleared": "凭据已清除",
+        "credentialDeleteConfirm": "删除凭据「{alias}」后，引用它的模型配置或 Git 绑定会失效，相关 Agent 将无法使用此凭据。确认删除？",
+        "credentialDeleted": "凭据已删除",
+        "credentialDeleteFailed": "删除凭据失败",
         "accountDeleteConfirm": "删除 API 账号「{alias}」后，使用此 API 账号的模型配置会失效，绑定这些配置的 Agent 将无法运行。确认删除？",
         "accountDeleted": "API 账号已删除",
         "accountDeleteFailed": "删除 API 账号失败",
         "managedByAdapter": "由 {source} 专用设置管理，此处仅用于工作区范围查看。",
-        "updatedAt": "最近更新：{time}"
+        "updatedAt": "最近更新：{time}",
+        "githubDevice": {
+          "site": "站点",
+          "siteAside": "支持自建域名与端口",
+          "siteOfficial": "官方站点",
+          "siteCustom": "自建",
+          "siteInvalid": "格式有误",
+          "siteReset": "恢复默认",
+          "authMethod": "授权方式",
+          "tabLogin": "用 GitHub 登录",
+          "tabPaste": "粘贴 Token",
+          "loginOnlyGithubCom": "设备码登录仅支持 github.com",
+          "cardTitle": "在 GitHub 输入验证码",
+          "accountTitle": "GitHub 账号",
+          "badgeWaiting": "等待授权",
+          "badgeAuthorized": "已授权",
+          "badgeExpired": "已过期",
+          "badgeDenied": "已拒绝",
+          "badgeError": "未完成",
+          "idleHint": "获取一次性验证码，到 GitHub 输入并授权后自动保存，无需手动创建 Token。",
+          "getCode": "获取验证码",
+          "codeLabel": "验证码 {code}",
+          "copyCode": "复制验证码",
+          "copied": "已复制",
+          "copyFailed": "复制失败，请手动输入验证码",
+          "openGitHub": "打开 GitHub",
+          "autoSave": "授权后会自动保存，无需回到这里操作",
+          "remaining": "剩余 {time}",
+          "scopes": "申请权限",
+          "savedAs": "已保存为「{name}」，可在 Agent 中绑定",
+          "updatedAs": "「{name}」已换上新的 Token，已有绑定继续生效",
+          "scopeWarning": "本次授权没有包含 repo 权限，可能无法克隆私有仓库。",
+          "expired": "验证码已过期。请在 15 分钟内到 GitHub 完成授权。",
+          "denied": "你在 GitHub 拒绝了授权，未保存凭据。",
+          "retry": "重新获取验证码",
+          "done": "完成",
+          "saved": "已通过 GitHub 登录保存凭据",
+          "relogin": "重新登录",
+          "reloginLabel": "用 GitHub 重新登录",
+          "reloginTitle": "用 GitHub 重新登录 · {name}",
+          "authMethodTag": "GitHub 登录",
+          "errors": {
+            "device_flow_disabled": "GitHub OAuth App 未开启 Device Flow。请管理员在 App 设置中勾选 Enable Device Flow。",
+            "incorrect_client_credentials": "GitHub OAuth App 的 Client ID 无效。请管理员检查 GRASP_GITHUB_OAUTH_CLIENT_ID。",
+            "alias_taken": "别名「{alias}」已被占用，未保存凭据。请换个别名后重试。",
+            "credential_unavailable": "目标凭据已被删除或吊销，未保存。",
+            "session_not_found": "登录会话已失效（服务可能已重启），请重新获取验证码。",
+            "device_login_disabled": "当前部署未开启 GitHub 登录。",
+            "invalid_target": "只有 github.com 的 GitHub 凭据可以用 GitHub 重新登录。",
+            "unknown": "GitHub 登录未完成，请重试。"
+          }
+        }
       },
       "varName": "变量名",
       "varValue": "默认值",
@@ -2863,8 +2931,7 @@
         },
         "git": {
           "meta": "点选 GitHub / GitLab / SSH 即可，也可跳过。已经配过的凭据可以直接选择。",
-          "emptySkip": "还没有已保存的授权。请先到工作区凭据保存，本步可以跳过。",
-          "hostsEmpty": "还没有已保存的已知主机，可以不选。"
+          "emptySkip": "还没有已保存的授权。请先到工作区凭据保存，本步可以跳过。"
         },
         "env": {
           "meta": "注入沙箱的环境变量。区域保留键由 Agent 步骤统一管理，密钥仅保存在 Agent 配置中。"
@@ -3113,8 +3180,6 @@
         "scopePlaceholder": "例如：git.example.com 或仓库 URL",
         "scopeHint": "留空使用服务商默认站点。仓库地址优先于站点范围。",
         "scopeInvalid": "请输入有效的主机或仓库地址，并与凭据的 Host、协议一致。",
-        "hosts": "SSH 主机校验",
-        "hostsNone": "不指定已保存的主机校验",
         "unavailable": "授权不可用，请移除或在凭据页恢复。",
         "inherited": "使用工作区默认授权",
         "legacy": "当前使用原有授权",
@@ -4879,6 +4944,67 @@
         "repoDirPlaceholder": "默认取仓库名",
         "repoDirHint": "仓库会克隆到沙箱的 /root/workspace/{dir}",
         "save": "保存"
+      }
+    },
+    "settingsOverview": {
+      "desc": {
+        "assistantSettings": "选择助手使用的 Agent，配置 Channel 接入与自动审批规则。",
+        "schedules": "按计划自动运行 Agent 任务，并把结果投递到 Channel。",
+        "audit": "查看工作区内 Agent 的工具调用与 MCP 访问记录。",
+        "notificationPolicy": "决定哪些事件需要通知，以及通过哪个 Channel 投递。",
+        "projects": "管理工作流运行时使用的代码仓库与默认分支。",
+        "variables": "为所有 Agent 运行注入共享的环境变量与配置。",
+        "general": "管理工作区信息、品牌文案、运行并发与沙箱资源。"
+      },
+      "stats": {
+        "credentialsTotal": "凭据总数",
+        "credentialsConfigured": "已配置",
+        "credentialsGitHosts": "代码仓库主机",
+        "credentialsPending": "待填写",
+        "modelsTotal": "模型组",
+        "modelsEnabled": "已启用",
+        "modelsTools": "覆盖编码工具",
+        "modelsProblems": "需要处理",
+        "toolUnit": "种",
+        "executionMode": "执行模式",
+        "runningRuns": "运行中 / 并发上限",
+        "testSandboxes": "测试沙箱占用",
+        "sandboxMemory": "沙箱内存上限",
+        "mcpConnection": "对外连接",
+        "mcpEnabled": "已启用",
+        "mcpDisabled": "未启用",
+        "mcpPacks": "已开放能力包",
+        "mcpKeys": "访问密钥",
+        "notifyChannels": "已接入 Channel",
+        "notifyStatus": "通知状态",
+        "notifyOn": "已开启",
+        "notifyOff": "已关闭",
+        "projectsTotal": "仓库",
+        "variablesTotal": "共享变量",
+        "schedulesTotal": "定时任务",
+        "schedulesEnabled": "已启用",
+        "notifyEvents": "已订阅事件",
+        "projectsUsed": "使用过",
+        "projectsHosts": "代码托管主机",
+        "variablesWithDefault": "已设默认值",
+        "variablesTypes": "变量类型",
+        "schedulesDeliver": "投递到 Channel"
+      },
+      "modelStatus": {
+        "available": "可用",
+        "disabled": "已停用",
+        "missingConfiguration": "模型组不可用",
+        "configurationBackendMismatch": "工具不匹配",
+        "missingCredential": "凭据缺失",
+        "missingConnection": "API 地址不可用",
+        "unsupported": "协议不支持",
+        "missingModel": "模型缺失",
+        "requiredRoles": "缺少辅助模型",
+        "fallback": "需要处理"
+      },
+      "credentialStatus": {
+        "configured": "已配置",
+        "pending": "待填写"
       }
     }
   }

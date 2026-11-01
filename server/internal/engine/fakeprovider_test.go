@@ -173,6 +173,9 @@ type fakeProvider struct {
 	liveGuardCalls int
 	// reactHold (test-only): same for ReactReply / clarify session Cancel.
 	reactHold <-chan struct{}
+	// reactScript (test-only): replies returned, in order, by the next
+	// non-force ReactReply calls (after reactHold releases).
+	reactScript []runtime.ReactTurn
 	// reactUsage (test-only): when set, ReactReply returns this Usage delta so
 	// the visit a clarify turn's tokens land on can be asserted.
 	reactUsage *models.TokenUsage
@@ -566,6 +569,19 @@ func (f *fakeProvider) reactReply(ctx context.Context, req runtime.NodeReq, hist
 		case <-ctx.Done():
 			return runtime.ReactTurn{Msg: "(已中断)", Done: false, Err: ctx.Err(),
 				Events: []models.AcpEvent{{Kind: "message", Text: "clarify-cancelled"}}}
+		}
+	}
+	if !force {
+		f.mu.Lock()
+		var scripted *runtime.ReactTurn
+		if len(f.reactScript) > 0 {
+			s := f.reactScript[0]
+			f.reactScript = f.reactScript[1:]
+			scripted = &s
+		}
+		f.mu.Unlock()
+		if scripted != nil {
+			return *scripted
 		}
 	}
 	if stayOpen {

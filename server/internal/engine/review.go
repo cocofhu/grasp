@@ -194,7 +194,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		logDB(e.db.Save(conv), runID, "reopen review after force validation failure")
 		e.clearPendingAuto(c)
 		e.host.SetActiveReview(runID, true)
-		e.broker.Publish(runID, jsonMsg("react", runID, nodeID))
+		e.publishReact(runID, nodeID)
 		errMsg := strings.TrimSpace(outcome.err)
 		if errMsg == "" {
 			errMsg = "复审确认校验失败"
@@ -213,7 +213,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 			logDB(e.db.Save(conv), runID, "reopen review after preview-issue lifecycle failure")
 			e.clearPendingAuto(c)
 			e.host.SetActiveReview(runID, true)
-			e.broker.Publish(runID, jsonMsg("react", runID, nodeID))
+			e.publishReact(runID, nodeID)
 			return lifeErr
 		}
 	}
@@ -267,6 +267,12 @@ func (e *Engine) GateReactRevise(runID, gateNodeID, text string, images []models
 
 // GateReactReviseAs is GateReactRevise sent by owner (a pagebridge owner id).
 func (e *Engine) GateReactReviseAs(owner, runID, gateNodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) error {
+	return e.GateReactReviseIDAs(owner, runID, gateNodeID, "", text, images, annotations)
+}
+
+// GateReactReviseIDAs is GateReactReviseAs carrying the sender's optional
+// clientMessageID with the queued turn.
+func (e *Engine) GateReactReviseIDAs(owner, runID, gateNodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -285,7 +291,7 @@ func (e *Engine) GateReactReviseAs(owner, runID, gateNodeID, text string, images
 	if !ok || !rp.HasLiveSession(runID, producerID) {
 		return errors.New("上游会话已不存在,请改用普通打回(冷启动)")
 	}
-	_, err = e.EnqueueReviewTurnAs(owner, runID, producerID, text, images, annotations, "gate", gateNodeID)
+	_, err = e.enqueueReactTurn(runID, producerID, text, images, annotations, "gate", gateNodeID, sessionKindReview, false, owner, false, clientMessageID)
 	return err
 }
 

@@ -216,13 +216,14 @@ void load()
 </script>
 
 <template>
-  <div class="space-y-7" data-testid="pm-settings-panel" :aria-busy="loading">
+  <div class="space-y-6" data-testid="pm-settings-panel" :aria-busy="loading">
     <p v-if="loading" class="text-sm text-txt3" role="status">
       {{ t('common.buttons.loading') }}
     </p>
 
     <template v-else>
       <SettingsSection
+        icon="robot"
         :title="t('pages.workspace.pm.defaultAssistantSection')"
         :description="aclText"
       >
@@ -280,6 +281,8 @@ void load()
       </SettingsSection>
 
       <SettingsSection
+        icon="layers"
+        :count="`${enabledMcps.length} / ${PM_MCP_OPTIONS.length}`"
         :title="t('pages.workspace.pm.enabledMcps')"
         :description="t('pages.workspace.pm.enabledMcpsHint')"
       >
@@ -301,7 +304,7 @@ void load()
         </SettingsRow>
       </SettingsSection>
 
-      <SettingsSection :title="t('pages.workspace.pm.automaticApprovalSection')">
+      <SettingsSection icon="gate" :title="t('pages.workspace.pm.automaticApprovalSection')">
         <SettingsRow
           :label="t('pages.workspace.pm.gateAutoVar')"
           :description="t('pages.workspace.pm.gateAutoVarHint')"

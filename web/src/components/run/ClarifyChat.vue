@@ -312,9 +312,7 @@ const annotations = defineModel<ReactAnnotation[]>('annotations', { default: () 
 const chat = useClarifyChat(props, emit, { draft, attachments, annotations })
 
 defineExpose({
-  applyReviewFrame: chat.applyReviewFrame,
-  applyAcpEvents: chat.applyAcpEvents,
-  applyQueueState: chat.applyQueueState,
+  applyRequestRejected: chat.applyRequestRejected,
   cancelReview: chat.cancelReview,
   discardLastQueued: chat.discardLastQueued,
   releaseConfirmPending: chat.releaseConfirmPending,
@@ -385,11 +383,6 @@ const {
   confirmFlowPlaying,
   cancelReview,
   discardLastQueued,
-  forceAuthoritativeIdle,
-  settleAfterTurnEnd,
-  applyQueueState,
-  applyReviewFrame,
-  applyAcpEvents,
   agentHasMessage,
   agentTailOutputting,
   showTurnCompleted,
@@ -404,21 +397,12 @@ const {
   thinking,
   validating,
   queued,
-  liveTurns,
   showClarifyEmptyHint,
   seedHumanTurn,
   liveAgentIdx,
+  stopping: turnStopping,
   showSandboxOrphanBanner,
   sandboxOrphanOpLabel,
-  liveStreamHtml,
-  streamPreview,
-  unsubStream,
-  liveThoughtText,
-  thoughtPreview,
-  unsubThought,
-  syncReveal,
-  messageReveal,
-  thoughtReveal,
   thoughtOpenOverride,
   scroller,
   fileInput,
@@ -1725,9 +1709,17 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           />
         </div>
       </div>
-      <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootPending && !bootStarting" class="chat-meta grasp-status-host flex items-center gap-2 pl-9">
+      <div v-if="thinking && !turnStopping && !validating && liveAgentIdx < 0 && !bootPending && !bootStarting" class="chat-meta grasp-status-host flex items-center gap-2 pl-9">
         <Icon name="breath-dot" busy :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
         {{ translate('pages.clarify.thinking') }}
+      </div>
+      <div
+        v-else-if="turnStopping && !observe"
+        class="chat-meta grasp-status-host flex items-center gap-2 pl-9"
+        data-testid="clarify-turn-stopping"
+      >
+        <Icon name="breath-dot" busy :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
+        {{ translate('pages.clarify.observeStoppingPlaceholder') }}
       </div>
       </div>
     </div>

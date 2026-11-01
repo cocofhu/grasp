@@ -173,7 +173,7 @@ func cloneOutputs(outputs map[string]any) map[string]any {
 
 func reactConversationDTO(conv models.ReactConversation) gin.H {
 	out := gin.H{
-		"nodeId": conv.NodeID, "iteration": conv.Iteration, "turns": conv.Turns(), "done": conv.Done,
+		"nodeId": conv.NodeID, "iteration": conv.Iteration, "turns": models.WithReplyOutcomes(conv.Turns()), "done": conv.Done,
 	}
 	if name := strings.TrimSpace(conv.PreviewArtifact); name != "" {
 		out["previewArtifact"] = name

@@ -7,6 +7,10 @@ import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { ClarifyTurn } from '@/lib/shared/types'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { feedDialogue, runningTurn } from '@/test/dialogueKit'
+
+afterEach(() => clearDialogues())
 
 enableAutoUnmount(afterEach)
 function createChat(turns: ClarifyTurn[] = []) {
@@ -92,21 +96,24 @@ describe('Clarify conversation navigation', () => {
     expect(rail.props('items').some(item => item.id === id)).toBe(false)
   })
 
-  it('pauses automatic following before navigation so ACP output does not pull the reader to the bottom', async () => {
+  it('pauses automatic following before navigation so streamed output does not pull the reader to the bottom', async () => {
     const wrapper = createChat()
-    const vm = wrapper.vm as unknown as {
-      applyReviewFrame: (frame: Record<string, unknown>) => void
-      applyAcpEvents: (events: Array<{ kind: string; text: string }>, nodeId?: string) => boolean
-    }
-    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'node-1', waiting: 0, items: [], busy: true, activeItem: { text: '请检查发布' } })
+    const human = { role: 'human' as const, text: '请检查发布', at: '1', turnId: 't1' }
+    const reply = (text: string) => feedDialogue('run-1', 'node-1', {
+      busy: true,
+      rows: [human, { role: 'agent', text, at: '2', turnId: 't1', streaming: true }],
+      turns: [runningTurn('t1', { text: '请检查发布' })],
+    })
+    reply('')
     await flushPromises()
     const scroller = wrapper.get('[data-testid="clarify-scroller"]').element as HTMLElement
     Object.defineProperties(scroller, { scrollHeight: { configurable: true, value: 1400 }, clientHeight: { configurable: true, value: 400 } })
     scroller.scrollTop = 200
     const rail = wrapper.getComponent(ChatMessageRail)
     rail.vm.$emit('navigate', rail.props('items')[0]!.id)
-    expect(vm.applyAcpEvents([{ kind: 'message', text: '正在继续验证输出' }], 'node-1')).toBe(true)
+    reply('正在继续验证输出')
     await flushPromises()
+    expect(wrapper.text()).toContain('正在继续验证输出')
     expect(scroller.scrollTop).toBe(200)
     expect(wrapper.get('[data-testid="clarify-scroller"]').attributes()).toHaveProperty('data-conversation-scroll')
   })

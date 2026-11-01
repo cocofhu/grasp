@@ -866,6 +866,31 @@ describe('AppSidebarNav', () => {
     expect(createAt).toBeGreaterThan(genericAt)
   })
 
+  it('darkens light workspace rows and headings while hover/active and settings rows keep their colors', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    const style = src.slice(src.indexOf('<style scoped>'))
+    const block = (selector: string) => {
+      const found = style.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`, 's'))
+      expect(found, selector).not.toBeNull()
+      return found![0]
+    }
+
+    expect(block('\\.sidebar-workspace-nav \\.nav-item')).toContain('color: light-dark(#27272a, rgb(var(--c-txt2)))')
+    const interactive = block('\\.sidebar-workspace-nav \\.nav-item:where\\(:hover, :focus-visible, \\.active\\)')
+    expect(interactive).toContain('color: rgb(var(--c-txt))')
+    expect(block('\\.sidebar-workspace-nav \\.sidebar-section-heading')).toContain(
+      'color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3))))',
+    )
+
+    const interactiveAt = style.indexOf('.sidebar-workspace-nav .nav-item:where(')
+    expect(interactiveAt).toBeGreaterThan(style.indexOf('.sidebar-workspace-nav .nav-item {'))
+    expect(style.indexOf('.settings-directory .nav-item {')).toBeGreaterThan(interactiveAt)
+    expect(style.indexOf('.settings-directory .settings-back-link')).toBeGreaterThan(interactiveAt)
+  })
+
   it('uses body color for settings directory menu text and icons, and tertiary color for the back link', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, join } = await import('node:path')

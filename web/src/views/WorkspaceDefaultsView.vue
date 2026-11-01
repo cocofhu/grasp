@@ -6,6 +6,8 @@ import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import WorkspacePage from '@/components/shell/WorkspacePage.vue'
+import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
+import type { SettingsStatItem } from '@/components/settings/settingsStats'
 import { api } from '@/lib/api/api'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { useToast } from '@/lib/composables/useToast'
@@ -27,6 +29,17 @@ watch(workspace, (p, previous) => {
  }
  varRows.value = (p.variables || []).map((v) => ({ ...v }))
 }, { immediate: true, flush: 'sync' })
+const overviewStats = computed<SettingsStatItem[]>(() => [
+  { key: 'total', icon: 'variable', label: t('pages.settingsOverview.stats.variablesTotal'), value: varRows.value.length, tone: 'accent' },
+  {
+    key: 'with-default',
+    icon: 'check',
+    label: t('pages.settingsOverview.stats.variablesWithDefault'),
+    value: varRows.value.filter((row) => row.value !== undefined && row.value !== null && String(row.value) !== '').length,
+    total: varRows.value.length,
+  },
+  { key: 'types', icon: 'layers', label: t('pages.settingsOverview.stats.variablesTypes'), value: new Set(varRows.value.map((row) => row.type || 'string')).size },
+])
 const VAR_TYPES = computed(() => [
   { value: 'string', label: t('common.varTypes.string') },
   { value: 'paragraph', label: t('common.varTypes.paragraph') },
@@ -128,7 +141,8 @@ function onVarValueInput(row: WorkspaceVariable, raw: string, asNumber = false) 
 
 </script>
 <template>
-<WorkspacePage v-if="isVariables" title-key="nav.variables" layout="workspace">
+<WorkspacePage v-if="isVariables" title-key="nav.variables" description-key="pages.settingsOverview.desc.variables" icon="variable" layout="workspace">
+      <SettingsStatStrip class="mb-5 shrink-0" :items="overviewStats" data-testid="workspace-vars-stats" />
       <!-- Variables tab: fill remaining main area; no varsHint / merge-rules row -->
       <div class="workspace-variables flex min-h-0 min-w-0 flex-1 flex-col">
         <!-- Empty: same shell as sandbox tab -->
@@ -153,7 +167,7 @@ function onVarValueInput(row: WorkspaceVariable, raw: string, asNumber = false) 
         <!-- Data: head / scroll rows / foot stick to shell bottom -->
         <div
           v-else
-          class="flex min-h-0 flex-1 flex-col overflow-hidden border-y border-line/60"
+          class="workspace-vars-card flex min-h-0 flex-1 flex-col overflow-hidden"
           data-testid="workflow-vars-data-panel"
         >
           <div
@@ -325,6 +339,8 @@ function onVarValueInput(row: WorkspaceVariable, raw: string, asNumber = false) 
 <style scoped>
 .workspace-variables { container: workspace-variables / inline-size; }
 .workspace-var-header, .workspace-var-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 180px 32px; align-items: center; }
+.workspace-vars-card { border: 1px solid rgb(var(--c-line)); border-radius: 12px; padding-inline: 20px; background: rgb(var(--c-surface)); }
+@media (max-width: 767px) { .workspace-vars-card { padding-inline: 16px; } }
 .workspace-var-label { display: none; margin-bottom: 6px; color: rgb(var(--c-txt3)); font-size: 12px; line-height: 18px; }
 .workspace-var-name > input { width: 100%; }
 @container workspace-variables (max-width: 799px) {

@@ -16,6 +16,8 @@ import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppInlineError from '@/components/ui/AppInlineError.vue'
 import SettingsSection from '@/components/settings/SettingsSection.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
+import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
+import type { SettingsStatItem } from '@/components/settings/settingsStats'
 
 const props = defineProps<{
   workspace: Workspace
@@ -38,6 +40,7 @@ const failedTemplate = ref('')
 const completedTemplate = ref('')
 const templateKind = ref<RunNotifyKind>('waiting_human')
 const hasChannel = ref(false)
+const channelCount = ref<number | undefined>(undefined)
 const loadingChannel = ref(true)
 const channelError = ref<string | null>(null)
 const saving = ref(false)
@@ -77,16 +80,19 @@ async function loadChannel() {
       : []
     if (!ids.length) {
       hasChannel.value = false
+      channelCount.value = 0
       return
     }
     const res = await api.listChannels()
     const byId = new Map((res.items || []).map((c) => [c.id, c]))
-    hasChannel.value = ids.some((id) => {
+    channelCount.value = ids.filter((id) => {
       const ch = byId.get(id)
       return !!(ch && ch.enabled && String(ch.cronDeliverTarget || '').trim())
-    })
+    }).length
+    hasChannel.value = channelCount.value > 0
   } catch (err) {
     hasChannel.value = false
+    channelCount.value = undefined
     channelError.value =
       err instanceof Error && err.message
         ? err.message
@@ -115,6 +121,24 @@ const statusLabel = computed(() => {
 })
 
 const controlsDisabled = computed(() => loadingChannel.value || !!channelError.value || saving.value)
+
+const overviewStats = computed<SettingsStatItem[]>(() => [
+  {
+    key: 'status',
+    icon: 'bell',
+    label: t('pages.settingsOverview.stats.notifyStatus'),
+    value: statusLabel.value,
+    tone: !enabled.value ? 'neutral' : hasChannel.value ? 'ok' : 'warn',
+  },
+  { key: 'channels', icon: 'connector', label: t('pages.settingsOverview.stats.notifyChannels'), value: channelCount.value, tone: 'accent' },
+  {
+    key: 'events',
+    icon: 'check',
+    label: t('pages.settingsOverview.stats.notifyEvents'),
+    value: [waitingHuman.value, failed.value, completed.value].filter(Boolean).length,
+    total: 3,
+  },
+])
 
 const currentTemplate = computed({
   get() {
@@ -198,7 +222,8 @@ function goChannelSettings() {
 </script>
 
 <template>
-  <div class="space-y-7" data-testid="workspace-notify-panel" :aria-busy="loadingChannel || saving">
+  <div class="space-y-6" data-testid="workspace-notify-panel" :aria-busy="loadingChannel || saving">
+    <SettingsStatStrip v-if="!channelError" :items="overviewStats" :loading="loadingChannel" data-testid="notify-stats" />
     <div
       v-if="loadingChannel"
       class="space-y-3 py-4"
@@ -221,6 +246,7 @@ function goChannelSettings() {
 
     <template v-else>
       <SettingsSection
+        icon="bell"
         :title="t('pages.workspace.notify.deliverySection')"
         :description="t('pages.workspace.notify.lead')"
       >
@@ -268,6 +294,7 @@ function goChannelSettings() {
       </SettingsSection>
 
       <SettingsSection
+        icon="flag"
         :title="t('pages.workspace.notify.defaultEvents')"
         :description="t('pages.workspace.notify.defaultEventsHint')"
       >
@@ -310,6 +337,7 @@ function goChannelSettings() {
       </SettingsSection>
 
       <SettingsSection
+        icon="doc"
         :title="t('pages.workspace.notify.templatesTitle')"
         :description="t('pages.workspace.notify.templatesHint')"
         data-testid="notify-template-section"

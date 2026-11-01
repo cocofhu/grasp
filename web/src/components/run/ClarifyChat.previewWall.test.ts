@@ -13,6 +13,9 @@ import type { ClarifyTurn, ReactOption, ReactQuestion } from '@/lib/shared/types
 import { CLARIFY_DEMO_ESCAPE } from '@/lib/inbox/clarifyDemoWindow'
 import { EMBED_DEMO_PREVIEW_KEY } from '@/lib/inbox/embedDemoPreview'
 import ClarifyChat from './ClarifyChat.vue'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+
+afterEach(() => clearDialogues())
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PICK = readFileSync(join(here, '../../../public/preview-pick.js'), 'utf8')

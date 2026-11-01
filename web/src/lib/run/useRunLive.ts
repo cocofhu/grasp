@@ -28,11 +28,11 @@ import { createReviewSessionState, type ReviewRecoveryCheckpoint } from '@/lib/c
 import { splitTurns } from '@/lib/run/llmTranscript'
 import { clarifyTurnsFromLlm } from '@/lib/run/llmTranscriptThread'
 import type { AcpEvent, ClarifyImage, ClarifyTurn, ReactAnnotation, Run, RunCurrentNode } from '@/lib/shared/types'
+import { ingestDialogue, ingestDialogues } from '@/lib/chat/dialogueStore'
 
-/** The ReviewComposer / ClarifyChat surface this view drives. */
+/** The ReviewComposer / ClarifyChat surface this view drives. It draws the server dialogue itself. */
 export interface LiveChatSurface {
-  applyReviewFrame: (frame: Record<string, unknown>) => boolean | void
-  applyAcpEvents: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  applyRequestRejected?: (frame: Record<string, unknown>) => void
   releaseConfirmPending?: () => void
 }
 
@@ -198,7 +198,6 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     ended.value = true
     stopping.value = false
     stop()
-    chat.value?.applyReviewFrame({ event: 'turn_done', nodeId: nodeId.value })
     if (mode.value === 'observe') void refreshCompletedEvents()
     notifyRecentActivity()
   }
@@ -297,6 +296,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
    */
   function applyRun(r: Run, id: string, fromSnapshot = false, checkpoint?: ReviewRecoveryCheckpoint) {
     if (disposed || id !== runId.value || (r.id && r.id !== id) || ended.value) return
+    ingestDialogues(r.dialogueByNode, id)
     const d = decideLive(r, requestedNode.value)
     const c = recentCurrentNode(r)
     if (shown && mode.value === 'chat' && d.kind === 'chat' && d.nodeId === nodeId.value) {
@@ -310,7 +310,6 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
           .find(frame => frame.nodeId === nodeId.value)
         if (!frame) return
         chatBusy = !!frame.busy
-        chat.value?.applyReviewFrame(frame)
       }
     }
     // Mid-turn in the continued chat: keep the live stream (refresh on turn_done).
@@ -462,7 +461,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     return !!chat.value && seededSurface === chat.value && seededKey === `${runId.value}:${nodeId.value}:${iteration.value}`
   }
 
-  /** Open the live bubble, then seed it from the node's current turn snapshot. */
+  /** Read the node's current turn snapshot: its task, and the boot check's first output. */
   async function seed(force = false, signal?: AbortSignal) {
     const visit = visitEpoch
     const id = runId.value
@@ -477,11 +476,6 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     const request = ++seedRequest
     seededKey = key
     seededSurface = surface
-    if (mode.value === 'observe' && !alreadySeeded) {
-      surface.applyReviewFrame({ event: 'queue_state', nodeId: nodeId.value, waiting: 0, items: [], busy: true })
-      surface.applyReviewFrame({ event: 'turn_begin', nodeId: nodeId.value, item: { text: '' } })
-      if (lastEvents) surface.applyAcpEvents(lastEvents, nodeId.value)
-    }
     const checkpoint = reviewState.capture()
     try {
       const r = await api.nodeEvents(id, node, signal ? { signal } : undefined)
@@ -494,7 +488,6 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if (!task.value && typeof sent === 'string' && sent.trim()) task.value = sent.trim()
       if (r.events?.length && ((!lastEvents && !force) || (force && reviewState.isCurrent(checkpoint, node)))) {
         lastEvents = r.events
-        surface.applyAcpEvents(r.events, node)
       }
     } catch {
       /* stream frames still arrive over WS */
@@ -532,9 +525,12 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if (events.length) {
         // Snapshots are cumulative: keep the latest for a surface not seeded yet.
         lastEvents = events
-        if (mode.value === 'chat' || isSeeded()) chat.value?.applyAcpEvents(events, nodeId.value)
       }
       if (m.busy === false) scheduleRefresh()
+      return
+    }
+    if (m.type === 'dialogue') {
+      ingestDialogue(m)
       return
     }
     if (m.type === 'node_enter') {
@@ -558,7 +554,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       notifyRecentActivity()
       const session = reviewState.session(nodeId.value)
       if (session) chatBusy = !!session.busy
-      chat.value?.applyReviewFrame(f)
+      if (f.event === 'request_rejected') chat.value?.applyRequestRejected?.(f)
       if (f.event === 'turn_done' || f.event === 'error') {
         scheduleRefresh()
       }
@@ -607,10 +603,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
           receivedSnapshot = true
           const snapshot = (frame as { run?: Run }).run
           const sessions = snapshot?.reactSessions ?? {}
-          const versioned = reviewState.hasVersion || typeof snapshot?.reviewSessionGeneration === 'number' || Object.values(sessions).some(snap => typeof snap.sessionGeneration === 'number')
           reviewState.reset()
           reviewState.installSnapshot(sessions, snapshot?.reviewSessionGeneration)
-          if (versioned) chat.value?.applyReviewFrame({ event: 'session_reset', nodeId: nodeId.value })
         }
         onFrame(frame)
         if (recovering && frame.type === 'snapshot' && !ended.value) void seed(true)

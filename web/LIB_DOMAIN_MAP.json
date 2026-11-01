@@ -42,6 +42,9 @@
       "artifactUnread.ts",
       "conversationArtifacts.ts",
       "conversationDrawer.ts",
+      "dialogueOverlay.ts",
+      "dialogueState.ts",
+      "dialogueStore.ts",
       "messagePreview.ts",
       "reviewSessionState.ts",
       "sessionQueue.ts"
@@ -77,6 +80,7 @@
       "clarifyDraftStash.ts",
       "clarifyEmptyFail.ts",
       "clarifyInboxStage.ts",
+      "clarifyReplyText.ts",
       "clarifyVisitEnded.ts",
       "composerAutoGrow.ts",
       "confirmFlowCeremony.ts",
@@ -99,7 +103,6 @@
       "inboxStartingCards.ts",
       "listAllPendingGates.ts",
       "liveVariants.ts",
-      "mergeClarifyLiveTurns.ts",
       "reviewAnnotate.ts",
       "reviewLayoutBudget.ts",
       "reviewQuote.ts",
@@ -248,6 +251,7 @@
       "sessionRepos.ts",
       "soloErrors.ts",
       "soloPrefs.ts",
+      "useReferenceComposer.ts",
       "useReferenceSearch.ts",
       "useSessionModelCatalog.ts",
       "useSoloChat.ts",
@@ -263,6 +267,7 @@
       "credentialKinds.ts",
       "requirementDraftMarkdown.ts",
       "requirementDraftSchedule.ts",
+      "useGitHubDeviceLogin.ts",
       "useRequirementDrafts.ts",
       "useWorkflows.ts"
     ]
@@ -271,15 +276,15 @@
     "agent": 25,
     "api": 5,
     "artifacts": 1,
-    "chat": 6,
+    "chat": 9,
     "composables": 19,
     "icons": 2,
     "inbox": 43,
     "pm": 7,
     "run": 71,
     "shared": 39,
-    "solo": 13,
+    "solo": 14,
     "workflow": 3,
-    "workspace": 5
+    "workspace": 6
   }
 }

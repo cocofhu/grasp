@@ -4,15 +4,21 @@ import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import CredentialEditorSurface from './CredentialEditorSurface.vue'
+import GitHostField from './GitHostField.vue'
+import GitHubDeviceLoginCard from './GitHubDeviceLoginCard.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import Icon from '@/components/ui/Icon.vue'
 import ModelConnectionEditor from './ModelConnectionEditor.vue'
 import ModelProviderSelect from './ModelProviderSelect.vue'
 import ModelConfigurationManager from './ModelConfigurationManager.vue'
-import ModelRecordActions from './ModelRecordActions.vue'
 import { isModelCredential, modelProviderPreset, MODEL_PROTOCOLS, useRoutingCopy } from '@/lib/agent/modelRouting'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
-import { api, type CredentialItem, type ModelConfiguration, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
+import SettingsPageHeader from '@/components/settings/SettingsPageHeader.vue'
+import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
+import type { SettingsStatItem } from '@/components/settings/settingsStats'
+import { api, type CredentialItem, type GitHubDeviceLoginPoll, type ModelConfiguration, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
+import { GITHUB_MARK, type GitHubDeviceLoginState } from '@/lib/workspace/useGitHubDeviceLogin'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
 import {
@@ -125,7 +131,6 @@ const items = ref<CredentialItem[]>([])
 const drafts = reactive<Record<string, string>>({})
 const editing = reactive<Record<string, boolean>>({})
 const saving = reactive<Record<string, boolean>>({})
-const clearing = reactive<Record<string, boolean>>({})
 const removing = reactive<Record<string, boolean>>({})
 const showCreate = ref(false)
 const creating = ref(false)
@@ -136,7 +141,9 @@ const createKind = ref<CredentialKindId | 'model_api' | ''>('')
 const createAlias = ref('')
 const createSecret = ref('')
 const createHost = ref('')
+const createKnownHosts = ref('')
 const hostDrafts = reactive<Record<string, string>>({})
+const knownHostsDrafts = reactive<Record<string, string>>({})
 const revealSecret = ref(false)
 const aliasError = ref('')
 const createAttempted = ref(false)
@@ -166,6 +173,21 @@ const selectedKind = computed(() => (createKind.value ? kindById(createKind.valu
 const createSecretLabel = computed(() => createKind.value === 'model_api' ? routingCopy.value.secret : selectedKind.value ? secretLabel(selectedKind.value.id) : t('pages.workspace.credentials.value'))
 const createHasHost = computed(() => selectedKind.value?.type === 'git')
 const createHostValid = computed(() => !createHasHost.value || !!normalizeGitCredentialHost(createHost.value))
+const GITHUB_ORIGIN = 'https://github.com'
+const deviceLoginEnabled = ref(false)
+const createAuthMode = ref<'login' | 'paste'>('paste')
+const deviceLoginState = ref<GitHubDeviceLoginState>('idle')
+const createHostIsGitHub = computed(() => normalizeGitCredentialHost(createHost.value) === GITHUB_ORIGIN)
+const deviceLoginOffered = computed(() => createKind.value === 'github' && deviceLoginEnabled.value)
+const deviceLoginActive = computed(() => deviceLoginOffered.value && createHostIsGitHub.value && createAuthMode.value === 'login')
+const deviceLoginLocked = computed(() => deviceLoginActive.value && ['starting', 'waiting', 'authorized'].includes(deviceLoginState.value))
+watch(createHostIsGitHub, (official) => { if (!official) createAuthMode.value = 'paste' })
+watch(deviceLoginEnabled, (enabled) => { if (enabled && createKind.value === 'github' && !createSecret.value) createAuthMode.value = 'login' })
+const reloginTarget = ref<CredentialItem | null>(null)
+const reloginState = ref<GitHubDeviceLoginState>('idle')
+let deviceCloseTimer = 0
+const createHasKnownHosts = computed(() => selectedKind.value?.id === 'ssh_key')
+const createKnownHostsLines = computed(() => knownHostsLineCount(createKnownHosts.value))
 watch(createStep, async () => {
   await nextTick()
   if (!showCreate.value || !stepPane.value) return
@@ -227,6 +249,24 @@ const credentialSections = computed(() => {
   return sections.filter((section) => section.groups.length)
 })
 
+const standalone = computed(() => !props.inline && !props.view)
+const modelCount = ref<number | undefined>(undefined)
+function tabCount(tab: 'credentials' | 'models'): number | undefined {
+  return tab === 'credentials' ? orderedItems.value.length : modelCount.value
+}
+const credentialStats = computed<SettingsStatItem[]>(() => {
+  const list = orderedItems.value
+  const configured = list.filter((item) => item.configured).length
+  const hosts = new Set(list.filter((item) => kindOfItem(item)?.type === 'git').map((item) => displayHost(item)).filter(Boolean))
+  const pending = list.filter((item) => !item.configured && isWorkspaceEditable(item)).length
+  return [
+    { key: 'total', icon: 'key', label: t('pages.settingsOverview.stats.credentialsTotal'), value: list.length, tone: 'accent' },
+    { key: 'configured', icon: 'check', label: t('pages.settingsOverview.stats.credentialsConfigured'), value: configured, total: list.length, tone: 'ok' },
+    { key: 'git-hosts', icon: 'git', label: t('pages.settingsOverview.stats.credentialsGitHosts'), value: hosts.size },
+    { key: 'pending', icon: 'warning', label: t('pages.settingsOverview.stats.credentialsPending'), value: pending, tone: pending ? 'warn' : 'neutral' },
+  ]
+})
+
 function itemLabel(item: CredentialItem): string {
   return item.name || item.provider || item.id
 }
@@ -236,7 +276,7 @@ function isCodexLogin(item: CredentialItem): boolean {
 }
 
 function isMultiline(item: CredentialItem): boolean {
-  return ['login_file', 'ssh_private_key', 'ssh_known_hosts'].includes(item.secretKind || '')
+  return ['login_file', 'ssh_private_key'].includes(item.secretKind || '')
 }
 
 function configuredText(item: CredentialItem): string {
@@ -263,11 +303,34 @@ function hasGitHost(item: CredentialItem): boolean {
 function displayHost(item: CredentialItem): string {
   return (item.host || defaultGitCredentialHost(item.provider || '')).replace(/^https:\/\//, '').replace(/\/$/, '')
 }
+function githubLogin(item: CredentialItem): string {
+  const login = item.metadata?.githubLogin
+  return typeof login === 'string' ? login : ''
+}
+function signedInWithGitHub(item: CredentialItem): boolean {
+  return item.metadata?.authMethod === 'device_flow'
+}
+function canRelogin(item: CredentialItem): boolean {
+  return deviceLoginEnabled.value && isWorkspaceEditable(item) && item.purpose === 'git' && item.provider === 'github' && !item.revokedAt &&
+    normalizeGitCredentialHost(item.host || defaultGitCredentialHost('github')) === GITHUB_ORIGIN
+}
 function hostChanged(item: CredentialItem): boolean {
   return hasGitHost(item) && normalizeGitCredentialHost(hostDrafts[item.id] || '') !== normalizeGitCredentialHost(item.host || defaultGitCredentialHost(item.provider || ''))
 }
+function hasKnownHosts(item: CredentialItem): boolean {
+  return kindOfItem(item)?.id === 'ssh_key'
+}
+function normalizeKnownHosts(text: string): string {
+  return text.replace(/\r\n/g, '\n').trim()
+}
+function knownHostsLineCount(text: string): number {
+  return text.split(/\r?\n/).filter((line) => line.trim()).length
+}
+function knownHostsChanged(item: CredentialItem): boolean {
+  return hasKnownHosts(item) && normalizeKnownHosts(knownHostsDrafts[item.id] || '') !== normalizeKnownHosts(item.knownHosts || '')
+}
 function canSave(item: CredentialItem): boolean {
-  return isWorkspaceEditable(item) && (!hasGitHost(item) || !!normalizeGitCredentialHost(hostDrafts[item.id] || '')) && (!!drafts[item.id]?.trim() || hostChanged(item))
+  return isWorkspaceEditable(item) && (!hasGitHost(item) || !!normalizeGitCredentialHost(hostDrafts[item.id] || '')) && (!!drafts[item.id]?.trim() || hostChanged(item) || knownHostsChanged(item))
 }
 
 function updateItems(next: CredentialItem) {
@@ -275,6 +338,7 @@ function updateItems(next: CredentialItem) {
   if (i < 0) items.value = [...items.value, next]
   else items.value = items.value.map((item, index) => (index === i ? next : item))
   hostDrafts[next.id] = displayHost(next)
+  knownHostsDrafts[next.id] = next.knownHosts || ''
   drafts[next.id] = ''
   editing[next.id] = false
 }
@@ -284,6 +348,7 @@ function setItems(next: CredentialItem[]) {
   for (const key of Object.keys(drafts)) delete drafts[key]
   for (const key of Object.keys(editing)) delete editing[key]
   for (const key of Object.keys(hostDrafts)) delete hostDrafts[key]
+  for (const key of Object.keys(knownHostsDrafts)) delete knownHostsDrafts[key]
   for (const item of next) drafts[item.id] = ''
 }
 
@@ -291,6 +356,7 @@ function startEdit(item: CredentialItem) {
   if (!isWorkspaceEditable(item)) return
   drafts[item.id] = ''
   hostDrafts[item.id] = displayHost(item)
+  knownHostsDrafts[item.id] = item.knownHosts || ''
   editing[item.id] = true
 }
 
@@ -302,6 +368,7 @@ function cancelEdit(item: CredentialItem) {
 
 function clearSecrets() {
   createSecret.value = ''
+  createKnownHosts.value = ''
   revealSecret.value = false
 
 }
@@ -356,6 +423,9 @@ function openCreate() {
   createKind.value = ''
   createAlias.value = ''
   createHost.value = ''
+  createAuthMode.value = 'paste'
+  deviceLoginState.value = 'idle'
+  window.clearTimeout(deviceCloseTimer)
   aliasError.value = ''
   createAttempted.value = false
   stepMotion.value = 'forward'
@@ -367,6 +437,7 @@ function openCreate() {
 
 async function closeCreate() {
   if (creating.value) return
+  window.clearTimeout(deviceCloseTimer)
   const resumeModel = !!modelCredentialBackend.value
   modelCredentialBackend.value = ''
   showCreate.value = false
@@ -378,7 +449,11 @@ async function closeCreate() {
 
 function selectKind(id: CredentialKindId | 'model_api') {
   if (stepLock.value || creating.value || createStep.value !== 1) return
-  if (createKind.value !== id) { clearSecrets(); createHost.value = defaultGitCredentialHost(id) }
+  if (createKind.value !== id) {
+    clearSecrets()
+    createHost.value = defaultGitCredentialHost(id)
+    createAuthMode.value = id === 'github' && deviceLoginEnabled.value ? 'login' : 'paste'
+  }
   createKind.value = id
   createConnectionAfter.value = id === 'model_api'
 }
@@ -409,6 +484,62 @@ function goNext() {
   void measurePane().then(observePane)
 }
 
+function validateDeviceAlias(): boolean {
+  const alias = createAlias.value.trim()
+  if (!aliasKey(alias)) { aliasError.value = t('pages.workspace.credentials.aliasRequired'); return false }
+  const kind = selectedKind.value
+  const taken = kind ? conflictingAlias(items.value, kind, alias) : ''
+  if (taken) { aliasError.value = t('pages.workspace.credentials.aliasTaken', { alias: taken }); return false }
+  aliasError.value = ''
+  return true
+}
+
+function deviceAliasTaken(alias: string) {
+  aliasError.value = t('pages.workspace.credentials.aliasTaken', { alias })
+}
+
+function resetCreateHost() {
+  if (createKind.value === 'github' && deviceLoginEnabled.value) createAuthMode.value = 'login'
+}
+
+function deviceCredentialSaved(out: GitHubDeviceLoginPoll) {
+  if (!out.credential) return
+  updateItems(out.credential)
+  emit('credentialSaved', out.credential)
+  emit('changed')
+  toast.success(t('pages.workspace.credentials.githubDevice.saved'))
+}
+
+function createDeviceAuthorized(out: GitHubDeviceLoginPoll) {
+  deviceCredentialSaved(out)
+  // Leave a scope warning on screen until the user dismisses it.
+  if (!out.scopeWarning) deviceCloseTimer = window.setTimeout(() => { if (showCreate.value) void closeCreate() }, 1200)
+}
+
+function openRelogin(item: CredentialItem) {
+  if (!canRelogin(item)) return
+  reloginState.value = 'idle'
+  reloginTarget.value = item
+}
+
+function closeRelogin() {
+  window.clearTimeout(deviceCloseTimer)
+  reloginTarget.value = null
+}
+
+function reloginAuthorized(out: GitHubDeviceLoginPoll) {
+  deviceCredentialSaved(out)
+  if (!out.scopeWarning) deviceCloseTimer = window.setTimeout(() => { if (reloginTarget.value) closeRelogin() }, 1200)
+}
+
+async function loadDeviceLogin() {
+  try {
+    deviceLoginEnabled.value = !!(await api.getGitHubDeviceLogin())?.enabled
+  } catch {
+    deviceLoginEnabled.value = false
+  }
+}
+
 function goBack() {
   if (stepLock.value || creating.value || createStep.value === 1 || (savedCredential.value && createStep.value === 2)) return
   stepMotion.value = 'back'
@@ -423,7 +554,6 @@ function secretLabel(kindId: CredentialKindId): string {
   if (!kind) return t('pages.workspace.credentials.value')
   if (kind.secret === 'loginFile') return t('pages.workspace.credentials.secretLoginFile')
   if (kind.id === 'ssh_key') return t('pages.workspace.credentials.secretPrivateKey')
-  if (kind.id === 'ssh_hosts') return t('pages.workspace.credentials.secretKnownHosts')
   if (kind.id === 'opencode') return t('pages.workspace.credentials.secretOpenCodeKey')
   if (kind.id === 'deepseek_harness') return t('pages.workspace.credentials.secretDeepSeekKey')
   if (kind.id === 'kimi_code') return t('pages.workspace.credentials.secretKimiCodeKey')
@@ -454,10 +584,11 @@ async function create() {
       ...(createIssuer.value === 'custom' ? { provider: 'custom' } : {}),
     } : {
       ...(createHasHost.value ? { host: createHost.value.trim() } : {}),
+      ...(createHasKnownHosts.value && createKnownHosts.value.trim() ? { knownHosts: createKnownHosts.value } : {}),
       type: kind!.type, provider: kind!.provider, name: alias, envKey: kind!.envKey, value: createSecret.value,
       purpose: kind!.type === 'ai' ? 'tool_auth' : kind!.type,
       ...(kind!.type === 'ai' ? { toolId: kind!.id } : {}),
-      secretKind: kind!.secret === 'loginFile' ? 'login_file' : kind!.id === 'ssh_key' ? 'ssh_private_key' : kind!.id === 'ssh_hosts' ? 'ssh_known_hosts' : 'api_key',
+      secretKind: kind!.secret === 'loginFile' ? 'login_file' : kind!.id === 'ssh_key' ? 'ssh_private_key' : 'api_key',
     })
     savedCredential.value = created
     updateItems(created)
@@ -531,6 +662,7 @@ async function save(item: CredentialItem) {
       envKey: item.envKey,
       ...(value.trim() ? { value } : {}),
       ...(hasGitHost(item) ? { host: hostDrafts[item.id].trim() } : {}),
+      ...(knownHostsChanged(item) ? { knownHosts: knownHostsDrafts[item.id] || '' } : {}),
       metadata: item.metadata,
       enabled: item.enabled,
     })
@@ -545,28 +677,15 @@ async function save(item: CredentialItem) {
   }
 }
 
-async function clear(item: CredentialItem) {
-  if (clearing[item.id] || !item.configured) return
-  clearing[item.id] = true
-  try {
-    await api.deleteCredential(item.id)
-    updateItems({ ...item, configured: false, masked: '', revokedAt: undefined, secretRevision: Math.max(2, (item.secretRevision || 1) + 1) })
-    toast.success(t('pages.workspace.credentials.cleared'))
-  } catch (e: unknown) {
-    toast.error(String((e as { message?: string })?.message || e))
-  } finally {
-    clearing[item.id] = false
-  }
+function canRemoveCredential(item: CredentialItem) {
+  return !props.inline && isWorkspaceOwned(item)
 }
 
-function canRemoveAccount(item: CredentialItem) {
-  return isWorkspaceOwned(item) && isModelCredential(item)
-}
-
-async function removeAccount(item: CredentialItem) {
-  if (!canRemoveAccount(item) || removing[item.id]) return
+async function removeCredentialRow(item: CredentialItem) {
+  if (!canRemoveCredential(item) || removing[item.id]) return
   const alias = itemLabel(item)
-  if (!window.confirm(t('pages.workspace.credentials.accountDeleteConfirm', { alias }))) return
+  const account = isModelCredential(item)
+  if (!window.confirm(t(account ? 'pages.workspace.credentials.accountDeleteConfirm' : 'pages.workspace.credentials.credentialDeleteConfirm', { alias }))) return
   removing[item.id] = true
   try {
     await api.removeCredential(item.id)
@@ -574,14 +693,17 @@ async function removeAccount(item: CredentialItem) {
     delete drafts[item.id]
     delete editing[item.id]
     delete hostDrafts[item.id]
-    delete clearing[item.id]
-    serviceConnections.value = serviceConnections.value.filter((service) => service.credentialId !== item.id)
-    await loadServiceConnections({ keepOnError: true })
-    toast.success(t('pages.workspace.credentials.accountDeleted'))
+    delete knownHostsDrafts[item.id]
+    if (account) {
+      serviceConnections.value = serviceConnections.value.filter((service) => service.credentialId !== item.id)
+      await loadServiceConnections({ keepOnError: true })
+    }
+    emit('changed')
+    toast.success(t(account ? 'pages.workspace.credentials.accountDeleted' : 'pages.workspace.credentials.credentialDeleted'))
   } catch {
-    toast.error(t('pages.workspace.credentials.accountDeleteFailed'))
+    toast.error(t(account ? 'pages.workspace.credentials.accountDeleteFailed' : 'pages.workspace.credentials.credentialDeleteFailed'))
   } finally {
-    removing[item.id] = false
+    delete removing[item.id]
   }
 }
 
@@ -620,6 +742,7 @@ defineExpose({ openCreate, openModelCreate })
 
 async function initialize() {
   setupStarting.value = props.setup
+  void loadDeviceLogin()
   try {
     await load()
     if (props.setup && !loadError.value) {
@@ -641,6 +764,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.clearTimeout(stepTimer)
+  window.clearTimeout(deviceCloseTimer)
   disconnectPaneObserver()
   document.removeEventListener('pointerdown', dismissAddMenu)
   document.removeEventListener('keydown', escapeAddMenu)
@@ -660,7 +784,7 @@ watch(showCreate, (open) => {
 <template>
   <div
     class="flex min-h-0 flex-1 flex-col"
-    :class="inline ? 'credentials-inline' : 'overflow-hidden'"
+    :class="inline ? 'credentials-inline' : 'credentials-page overflow-hidden'"
     data-testid="workspace-credentials-panel"
   >
     <div v-if="loading" class="flex flex-1 items-center justify-center text-[13px] text-txt3">
@@ -672,40 +796,51 @@ watch(showCreate, (open) => {
       <AppButton size="sm" variant="outline" @click="retry">{{ t('common.buttons.retry') }}</AppButton>
     </div>
 
-    <div v-else v-show="!(inline && showCreate)" class="credentials-scroll min-h-0 flex-1" :class="inline ? '' : 'scroll-area overflow-y-auto'">
+    <div v-else v-show="!(inline && (showCreate || reloginTarget))" class="credentials-scroll min-h-0 flex-1" :class="inline ? '' : 'scroll-area overflow-y-auto'">
       <div class="credentials-content w-full">
-        <header v-show="!setup && (!inline || !editorActive)" class="credentials-header">
+        <SettingsPageHeader
+          v-if="standalone"
+          v-show="!setup"
+          class="credentials-page-header"
+          icon="key"
+          :title="t('pages.workspace.credentials.title')"
+          :description="t('pages.workspace.credentials.description')"
+        >
+          <template #actions>
+            <AppButton
+              ref="addTrigger"
+              variant="primary"
+              icon="plus"
+              class="credentials-create shrink-0"
+              data-testid="workspace-credential-create"
+              aria-haspopup="menu"
+              :aria-expanded="addMenuOpen"
+              :aria-controls="addMenuOpen ? addMenuId : undefined"
+              @click="addMenuOpen ? closeAddMenu() : showAddMenu()"
+              @keydown="addTriggerKeydown"
+            >
+              {{ t('pages.workspace.credentials.add') }}
+              <Icon name="chevron-down" :size="14" :interactive="false" />
+            </AppButton>
+          </template>
+        </SettingsPageHeader>
+        <header v-else v-show="!setup && (!inline || !editorActive)" class="credentials-header">
           <div class="flex min-w-0 items-center gap-3.5">
             <div class="min-w-0">
               <h2 class="m-0 text-[20px] font-semibold tracking-tight text-txt">{{ view === 'credentials' ? routingCopy.credentials : scope === 'model' || view === 'models' ? routingCopy.modelsTab : scope === 'git' ? t('pages.workspace.credentials.sections.git') : t('pages.workspace.credentials.title') }}</h2>
             </div>
           </div>
-          <div v-if="inline || view" class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-2">
             <AppButton v-if="scope !== 'git' && view !== 'credentials'" size="sm" variant="primary" icon="plus" data-testid="workspace-add-model" data-editor-trigger @click="openModelCreate">{{ t('pages.workspace.credentials.addModel') }}</AppButton>
             <AppButton v-if="view !== 'models'" size="sm" :variant="scope === 'git' || view === 'credentials' ? 'primary' : 'outline'" icon="key" data-testid="workspace-add-credential" data-editor-trigger @click="openCreate">{{ t('pages.workspace.credentials.create') }}</AppButton>
           </div>
-          <AppButton
-            v-else
-            ref="addTrigger"
-            variant="primary"
-            icon="plus"
-            class="credentials-create shrink-0"
-            data-testid="workspace-credential-create"
-            aria-haspopup="menu"
-            :aria-expanded="addMenuOpen"
-            :aria-controls="addMenuOpen ? addMenuId : undefined"
-            @click="addMenuOpen ? closeAddMenu() : showAddMenu()"
-            @keydown="addTriggerKeydown"
-          >
-            {{ t('pages.workspace.credentials.add') }}
-            <Icon name="chevron-down" :size="14" :interactive="false" />
-          </AppButton>
         </header>
         <Teleport to="body"><div v-if="addMenuOpen" :id="addMenuId" ref="addMenu" role="menu" :aria-label="t('pages.workspace.credentials.add')" class="credentials-add-menu" :style="addMenuStyle" data-testid="workspace-add-menu" @keydown="addMenuKeydown"><button type="button" role="menuitem" tabindex="-1" data-testid="workspace-add-credential" @click="addFromMenu('credential')"><Icon name="key" :size="16" :interactive="false" />{{ t('pages.workspace.credentials.create') }}</button><button type="button" role="menuitem" tabindex="-1" data-testid="workspace-add-model" @click="addFromMenu('model')"><Icon name="sparkles" :size="16" :interactive="false" />{{ t('pages.workspace.credentials.addModel') }}</button></div></Teleport>
 
-        <nav v-if="!view" v-show="(!inline || !editorActive) && tabs.length > 1" class="mb-6 mt-5 flex flex-wrap gap-1 border-b border-line" role="tablist" :aria-label="routingCopy.credentials"><button v-for="tab in tabs" :key="tab" type="button" role="tab" class="border-b-2 px-3 py-3 text-[13px] transition" :class="activeTab === tab ? 'border-accent font-semibold text-accent-2' : 'border-transparent text-txt3 hover:text-txt'" :aria-selected="activeTab === tab" :data-testid="`credentials-tab-${tab}`" @click="activeTab = tab">{{ tab === 'credentials' ? routingCopy.credentials : routingCopy.modelsTab }}</button></nav>
+        <nav v-if="!view" v-show="(!inline || !editorActive) && tabs.length > 1" class="mb-6 mt-5 flex flex-wrap gap-1 border-b border-line" role="tablist" :aria-label="routingCopy.credentials"><button v-for="tab in tabs" :key="tab" type="button" role="tab" class="border-b-2 px-3 py-3 text-[13px] transition" :class="activeTab === tab ? 'border-accent font-semibold text-accent-2' : 'border-transparent text-txt3 hover:text-txt'" :aria-selected="activeTab === tab" :data-testid="`credentials-tab-${tab}`" @click="activeTab = tab"><span class="credentials-tab-label">{{ tab === 'credentials' ? routingCopy.credentials : routingCopy.modelsTab }}</span><span v-if="tabCount(tab) !== undefined" class="credentials-tab-count" :data-testid="`credentials-tab-count-${tab}`">{{ tabCount(tab) }}</span></button></nav>
         <div v-if="activeTab === 'credentials'">
         <div v-show="!inline || !connectionEditorOpen">
+        <SettingsStatStrip v-if="!inline" class="mb-6" :items="credentialStats" data-testid="workspace-credential-stats" />
         <div v-if="!orderedItems.length" class="credentials-empty">
           <Icon name="key" :size="28" class="mb-3 text-txt3" aria-hidden="true" />
           <p class="m-0 text-[13px] text-txt3">{{ t('pages.workspace.credentials.empty') }}</p>
@@ -748,9 +883,14 @@ watch(showCreate, (open) => {
                           :configured="item.configured"
                         />
                         <div class="min-w-0 flex-1">
-                          <h4 class="m-0 text-[13px] font-semibold leading-5 text-txt" :title="itemLabel(item)" data-testid="workspace-credential-alias">{{ itemLabel(item) }}</h4>
+                          <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <h4 class="m-0 text-[13px] font-semibold leading-5 text-txt" :title="itemLabel(item)" data-testid="workspace-credential-alias">{{ itemLabel(item) }}</h4>
+                            <span v-if="githubLogin(item)" class="credential-tag" :data-testid="`workspace-credential-github-login-${item.id}`">@{{ githubLogin(item) }}</span>
+                            <span v-if="signedInWithGitHub(item)" class="credential-tag">{{ t('pages.workspace.credentials.githubDevice.authMethodTag') }}</span>
+                          </div>
                           <p v-if="itemLabel(item) !== typeLabel(item)" class="m-0 mt-0.5 text-[11px] text-txt3" data-testid="workspace-credential-kind">{{ typeLabel(item) }}</p>
                           <p v-if="kindOfItem(item)?.type === 'git'" class="m-0 mt-0.5 truncate font-mono text-[11px] text-txt3" :data-testid="`workspace-credential-host-label-${item.id}`">{{ displayHost(item) }}</p>
+                          <p v-if="hasKnownHosts(item)" class="m-0 mt-0.5 text-[11px]" :class="item.knownHosts ? 'text-ok' : 'text-txt3'" :data-testid="`workspace-credential-known-hosts-label-${item.id}`">{{ t(item.knownHosts ? 'pages.workspace.credentials.knownHostsConfigured' : 'pages.workspace.credentials.knownHostsNotConfigured') }}</p>
                         </div>
                       </div>
                       <div class="credential-row-value">
@@ -777,6 +917,15 @@ watch(showCreate, (open) => {
                         <div class="credential-row-buttons">
                           <template v-if="isWorkspaceEditable(item) && !editing[item.id]">
                             <AppButton
+                              v-if="canRelogin(item)"
+                              size="sm"
+                              variant="outline"
+                              :data-testid="`workspace-credential-relogin-${item.id}`"
+                              :aria-label="t('pages.workspace.credentials.githubDevice.reloginLabel')"
+                              :title="t('pages.workspace.credentials.githubDevice.reloginLabel')"
+                              @click="openRelogin(item)"
+                            ><svg class="credential-github-mark" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" :d="GITHUB_MARK" /></svg>{{ t('pages.workspace.credentials.githubDevice.relogin') }}</AppButton>
+                            <AppButton
                               v-if="item.configured"
                               size="sm"
                               variant="outline"
@@ -794,26 +943,17 @@ watch(showCreate, (open) => {
                             >{{ t('pages.workspace.credentials.fillIn') }}</AppButton>
                           </template>
                           <AppButton
-                            v-if="!inline && isWorkspaceOwned(item) && item.configured"
+                            v-if="canRemoveCredential(item)"
                             size="sm"
                             variant="ghost"
-                            class="credential-clear"
-                            :disabled="!!clearing[item.id]"
-                            :loading="!!clearing[item.id]"
-                            :data-testid="`workspace-credential-clear-${item.id}`"
-                            :aria-label="t('pages.workspace.credentials.clear')"
-                            :title="t('pages.workspace.credentials.clear')"
-                            @click="clear(item)"
+                            class="credential-delete"
+                            :disabled="!!removing[item.id]"
+                            :loading="!!removing[item.id]"
+                            :data-testid="`workspace-credential-delete-${item.id}`"
+                            :aria-label="t('pages.workspace.credentials.delete')"
+                            :title="t('pages.workspace.credentials.delete')"
+                            @click="removeCredentialRow(item)"
                           ><Icon name="trash" :size="14" /></AppButton>
-                          <ModelRecordActions
-                            v-if="!inline && canRemoveAccount(item)"
-                            :name="itemLabel(item)"
-                            prefix="api-account"
-                            :record-id="item.id"
-                            :show-edit="false"
-                            :show-toggle="false"
-                            @remove="removeAccount(item)"
-                          />
                         </div>
                       </div>
                     </div>
@@ -852,6 +992,19 @@ watch(showCreate, (open) => {
                         :data-testid="`workspace-credential-input-${item.id}`"
                         autocomplete="new-password"
                       />
+                      <label v-if="hasKnownHosts(item)" class="block">
+                        <span class="label">{{ t('pages.workspace.credentials.secretKnownHosts') }}<span class="ml-1 text-txt3">({{ t('common.optional') }})</span></span>
+                        <textarea
+                          v-model="knownHostsDrafts[item.id]"
+                          rows="3"
+                          class="min-h-[80px] w-full min-w-0 resize-y rounded-lg border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none transition placeholder:text-txt3 focus:border-accent focus:ring-2 focus:ring-accent/15"
+                          placeholder="github.com ssh-ed25519 AAAA…"
+                          :data-testid="`workspace-credential-known-hosts-${item.id}`"
+                          autocomplete="off"
+                          spellcheck="false"
+                        />
+                        <p class="mb-0 mt-1 text-xs leading-5 text-txt3">{{ t('pages.workspace.credentials.knownHostsHint') }}</p>
+                      </label>
                       <div class="flex flex-wrap justify-end gap-2">
                         <AppButton size="sm" variant="ghost" :disabled="!!saving[item.id]" :data-testid="`workspace-credential-cancel-${item.id}`" @click="cancelEdit(item)">
                           {{ t('common.buttons.cancel') }}
@@ -870,7 +1023,7 @@ watch(showCreate, (open) => {
         </div>
         <ModelConnectionEditor ref="connectionManager" :inline="inline" :credentials="items" @changed="configurationChanged" @editing="connectionEditorOpen = $event" @error="toast.error($event)" />
         </div>
-        <ModelConfigurationManager v-if="activeTab === 'models'" ref="modelConfigurationManager" :inline="inline" :allow-credential-creation="setup || view !== 'models'" :setup="setup" hide-create-button @manage-credentials="manageModelCredentials" @changed="configurationChanged" @saved="emit('modelSaved', $event)" @editing="modelEditorOpen = $event" />
+        <ModelConfigurationManager v-if="activeTab === 'models'" ref="modelConfigurationManager" :inline="inline" :allow-credential-creation="setup || view !== 'models'" :setup="setup" hide-create-button @loaded="modelCount = $event.length" @manage-credentials="manageModelCredentials" @changed="configurationChanged" @saved="emit('modelSaved', $event)" @editing="modelEditorOpen = $event" />
       </div>
     </div>
 
@@ -939,22 +1092,48 @@ watch(showCreate, (open) => {
                 data-testid="workspace-credential-create-alias"
                 autofocus
                 autocomplete="off"
-                :disabled="!!savedCredential"
+                :disabled="!!savedCredential || deviceLoginLocked"
                 :placeholder="t('pages.workspace.credentials.aliasPlaceholder')"
                 @input="aliasError = ''"
               />
               <p v-if="aliasError" class="mb-0 mt-1 text-[12px] text-err" data-testid="workspace-credential-alias-error">{{ aliasError }}</p>
             </label>
-            <label v-if="createHasHost" class="block">
-              <span class="label">Host</span>
-              <input v-model="createHost" class="input w-full font-mono" data-testid="workspace-credential-create-host" :aria-invalid="!createHostValid" :placeholder="defaultGitCredentialHost(createKind)" autocomplete="url" spellcheck="false" />
-              <p v-if="!createHostValid" class="mb-0 mt-1 text-xs text-err">{{ t('pages.workspace.credentials.invalidHost') }}</p>
-            </label>
+            <GitHostField v-if="createHasHost && selectedKind" v-model="createHost" :provider="selectedKind.provider" :disabled="deviceLoginLocked" @reset="resetCreateHost" />
+            <div v-if="deviceLoginOffered">
+              <span class="label">{{ t('pages.workspace.credentials.githubDevice.authMethod') }}</span>
+              <SlidingTabs :value="createAuthMode" class="credential-auth-tabs" role="tablist" indicator-class="credential-auth-tabs__indicator" :aria-label="t('pages.workspace.credentials.githubDevice.authMethod')">
+                <button
+                  type="button"
+                  role="tab"
+                  :aria-selected="createAuthMode === 'login'"
+                  :disabled="!createHostIsGitHub || deviceLoginLocked"
+                  :title="createHostIsGitHub ? undefined : t('pages.workspace.credentials.githubDevice.loginOnlyGithubCom')"
+                  data-testid="credential-auth-login"
+                  @click="createAuthMode = 'login'"
+                ><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" :d="GITHUB_MARK" /></svg>{{ t('pages.workspace.credentials.githubDevice.tabLogin') }}</button>
+                <button
+                  type="button"
+                  role="tab"
+                  :aria-selected="createAuthMode === 'paste'"
+                  :disabled="deviceLoginLocked"
+                  data-testid="credential-auth-paste"
+                  @click="createAuthMode = 'paste'"
+                >{{ t('pages.workspace.credentials.githubDevice.tabPaste') }}</button>
+              </SlidingTabs>
+            </div>
+            <GitHubDeviceLoginCard
+              v-if="deviceLoginActive"
+              :name="createAlias"
+              :validate="validateDeviceAlias"
+              @state="deviceLoginState = $event"
+              @authorized="createDeviceAuthorized"
+              @alias-taken="deviceAliasTaken"
+            />
             <template v-if="createKind === 'model_api'">
               <label class="block"><span class="label">{{ routingCopy.provider }}</span><ModelProviderSelect :model-value="createIssuer" :disabled="!!savedCredential" data-testid="model-credential-issuer" @update:model-value="selectIssuer" /></label>
               <label v-if="createIssuer === 'custom'" class="block"><span class="label">{{ routingCopy.providerLabel }}</span><input v-model="customProviderLabel" :disabled="!!savedCredential" class="input w-full" data-testid="model-credential-provider-label" /></label>
             </template>
-            <label class="block">
+            <label v-if="!deviceLoginActive" class="block">
               <span class="label flex items-center justify-between gap-2">
                 <span>{{ createSecretLabel }}</span>
                 <button type="button" class="text-[11px] font-medium text-accent-2" data-testid="workspace-credential-secret-toggle" @click="revealSecret = !revealSecret">
@@ -983,6 +1162,20 @@ watch(showCreate, (open) => {
                 :placeholder="t('pages.workspace.credentials.valuePlaceholder')"
               />
             </label>
+            <label v-if="createHasKnownHosts" class="block">
+              <span class="label">{{ t('pages.workspace.credentials.secretKnownHosts') }}<span class="ml-1 text-txt3">({{ t('common.optional') }})</span></span>
+              <textarea
+                v-model="createKnownHosts"
+                :disabled="!!savedCredential"
+                rows="4"
+                class="input min-h-[120px] w-full resize-y font-mono"
+                data-testid="workspace-credential-create-known-hosts"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="github.com ssh-ed25519 AAAA…"
+              />
+              <p class="mb-0 mt-1 text-xs leading-5 text-txt3">{{ t('pages.workspace.credentials.knownHostsHint') }}</p>
+            </label>
             <p v-if="selectedKind?.id === 'opencode'" class="m-0 text-xs leading-5 text-txt3" data-testid="workspace-credential-opencode-family">{{ t('pages.workspace.credentials.opencodeFamilyHint') }}</p>
             <template v-if="createKind === 'model_api'">
               <label v-if="!modelCredentialBackend" :for="`${addMenuId}-connection`" class="flex items-center gap-2 text-xs font-medium text-txt2"><AppSwitch :id="`${addMenuId}-connection`" v-model="createConnectionAfter" :disabled="creating" :aria-label="routingCopy.configureConnectionNow" data-testid="model-credential-create-connection" />{{ routingCopy.configureConnectionNow }}</label>
@@ -997,7 +1190,7 @@ watch(showCreate, (open) => {
               <p v-else class="m-0 text-xs leading-5 text-txt3">{{ routingCopy.keyOnlyHint }}</p>
             </template>
           </div>
-          <div v-else key="review" ref="stepPane" class="credential-step-pane space-y-4"><dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border border-line p-4 text-xs"><dt class="text-txt3">{{ routingCopy.credentials }}</dt><dd class="m-0 text-txt">{{ createKind === 'model_api' ? routingCopy.modelKeys : selectedKind ? t(`pages.workspace.credentials.kinds.${selectedKind.id}`) : '' }}</dd><dt class="text-txt3">{{ routingCopy.name }}</dt><dd class="m-0 break-words text-txt">{{ createAlias }}</dd><template v-if="createKind === 'model_api'"><dt class="text-txt3">{{ routingCopy.issuer }}</dt><dd class="m-0 break-words text-txt">{{ providerLabel }} · {{ effectiveIssuer }}</dd><template v-if="inlineConnection"><dt class="text-txt3">{{ routingCopy.connectionName }}</dt><dd class="m-0 break-words text-txt">{{ connectionName }}</dd><dt class="text-txt3">API Base URL</dt><dd class="m-0 break-all font-mono text-txt">{{ connectionForm.baseUrl }}</dd><dt class="text-txt3">{{ routingCopy.protocol }}</dt><dd class="m-0 break-all text-txt">{{ connectionForm.protocol }} · {{ connectionForm.scheme }}</dd></template></template><template v-if="createHasHost"><dt class="text-txt3">Host</dt><dd class="m-0 break-all font-mono text-txt" data-testid="workspace-credential-review-host">{{ createHost }}</dd></template><dt class="text-txt3">{{ createSecretLabel }}</dt><dd class="m-0 font-mono text-txt">••••••••</dd></dl></div>
+          <div v-else key="review" ref="stepPane" class="credential-step-pane space-y-4"><dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border border-line p-4 text-xs"><dt class="text-txt3">{{ routingCopy.credentials }}</dt><dd class="m-0 text-txt">{{ createKind === 'model_api' ? routingCopy.modelKeys : selectedKind ? t(`pages.workspace.credentials.kinds.${selectedKind.id}`) : '' }}</dd><dt class="text-txt3">{{ routingCopy.name }}</dt><dd class="m-0 break-words text-txt">{{ createAlias }}</dd><template v-if="createKind === 'model_api'"><dt class="text-txt3">{{ routingCopy.issuer }}</dt><dd class="m-0 break-words text-txt">{{ providerLabel }} · {{ effectiveIssuer }}</dd><template v-if="inlineConnection"><dt class="text-txt3">{{ routingCopy.connectionName }}</dt><dd class="m-0 break-words text-txt">{{ connectionName }}</dd><dt class="text-txt3">API Base URL</dt><dd class="m-0 break-all font-mono text-txt">{{ connectionForm.baseUrl }}</dd><dt class="text-txt3">{{ routingCopy.protocol }}</dt><dd class="m-0 break-all text-txt">{{ connectionForm.protocol }} · {{ connectionForm.scheme }}</dd></template></template><template v-if="createHasHost"><dt class="text-txt3">Host</dt><dd class="m-0 break-all font-mono text-txt" data-testid="workspace-credential-review-host">{{ createHost }}</dd></template><dt class="text-txt3">{{ createSecretLabel }}</dt><dd class="m-0 font-mono text-txt">••••••••</dd><template v-if="createHasKnownHosts"><dt class="text-txt3">{{ t('pages.workspace.credentials.secretKnownHosts') }}</dt><dd class="m-0 text-txt" data-testid="workspace-credential-review-known-hosts">{{ createKnownHostsLines ? t('pages.workspace.credentials.knownHostsLines', createKnownHostsLines) : t('pages.workspace.credentials.knownHostsEmpty') }}</dd></template></dl></div>
         </Transition>
         <p v-if="createError" role="alert" class="mb-0 mt-4 text-xs leading-5 text-err" :data-testid="savedCredential ? 'model-credential-partial-error' : 'credential-create-error'"><template v-if="savedCredential">{{ routingCopy.keySavedConnectionFailed }}<br /></template>{{ createError }}</p>
       </div>
@@ -1015,13 +1208,15 @@ watch(showCreate, (open) => {
         <AppButton
           v-if="createStep > 1"
           variant="ghost"
-          :disabled="creating || stepLock || (!!savedCredential && createStep === 2)"
+          :disabled="creating || stepLock || (!!savedCredential && createStep === 2) || (createStep === 2 && deviceLoginLocked)"
           data-testid="workspace-credential-create-back"
           @click="goBack"
         >
           {{ t('pages.workspace.credentials.back') }}
         </AppButton>
-        <AppButton v-if="createStep === 2" variant="primary" :disabled="creating || stepLock || !createAlias.trim() || !secretReady || !connectionReady || !createHostValid" data-testid="workspace-credential-review-next" @click="goNext">{{ routingCopy.next }}</AppButton>
+        <AppButton v-if="createStep === 2 && deviceLoginLocked && deviceLoginState !== 'authorized'" variant="ghost" data-testid="github-device-cancel" @click="closeCreate">{{ t('common.buttons.cancel') }}</AppButton>
+        <AppButton v-if="createStep === 2 && deviceLoginActive && deviceLoginState === 'authorized'" variant="primary" data-testid="github-device-done" @click="closeCreate">{{ t('pages.workspace.credentials.githubDevice.done') }}</AppButton>
+        <AppButton v-if="createStep === 2 && !deviceLoginActive" variant="primary" :disabled="creating || stepLock || !createAlias.trim() || !secretReady || !connectionReady || !createHostValid" data-testid="workspace-credential-review-next" @click="goNext">{{ routingCopy.next }}</AppButton>
         <AppButton
           v-if="createStep === 3"
           variant="primary"
@@ -1032,6 +1227,30 @@ watch(showCreate, (open) => {
         >
           {{ savedCredential && inlineConnection ? routingCopy.retryConnection : t('pages.workspace.credentials.create') }}
         </AppButton>
+      </template>
+    </CredentialEditorSurface>
+
+    <CredentialEditorSurface
+      :inline="inline"
+      :open="!!reloginTarget"
+      :title="t('pages.workspace.credentials.githubDevice.reloginTitle', { name: reloginTarget ? itemLabel(reloginTarget) : '' })"
+      :width="480"
+      close-on-esc
+      trap-focus
+      :close-label="t('common.buttons.close')"
+      @close="closeRelogin"
+    >
+      <GitHubDeviceLoginCard
+        v-if="reloginTarget"
+        :key="reloginTarget.id"
+        :credential-id="reloginTarget.id"
+        :name="itemLabel(reloginTarget)"
+        auto-start
+        @state="reloginState = $event"
+        @authorized="reloginAuthorized"
+      />
+      <template #footer>
+        <AppButton :variant="reloginState === 'authorized' ? 'primary' : 'ghost'" data-testid="workspace-credential-relogin-close" @click="closeRelogin">{{ reloginState === 'authorized' ? t('pages.workspace.credentials.githubDevice.done') : t('common.buttons.cancel') }}</AppButton>
       </template>
     </CredentialEditorSurface>
   </div>
@@ -1071,6 +1290,39 @@ watch(showCreate, (open) => {
 .credentials-create {
   box-shadow: none;
 }
+.credentials-page .credentials-content { max-width: 960px; padding-top: 0; }
+.credentials-tab-count {
+  margin-left: 6px;
+  border-radius: 999px;
+  padding: 0 6px;
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+.credentials-page .credentials-section {
+  overflow: hidden;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+  background: rgb(var(--c-surface));
+}
+.credentials-page .credentials-section + .credentials-section { margin-top: 24px; }
+.credentials-page .credentials-section-heading {
+  margin-bottom: 0;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgb(var(--c-line) / .8);
+}
+.credentials-page .credentials-section-count {
+  border-radius: 999px;
+  padding: 0 7px;
+  background: rgb(var(--c-elevated));
+  line-height: 18px;
+}
+.credentials-page .credentials-list { border-block: 0; }
+.credentials-page .credential-row { padding-inline: 20px; }
+.credentials-page .credentials-empty { border-style: solid; background: rgb(var(--c-surface)); }
 .credentials-add-menu { position: fixed; z-index: 10000; overflow-y: auto; padding: 5px; border: 1px solid rgb(var(--c-line)); border-radius: 9px; background: rgb(var(--c-surface)); box-shadow: 0 8px 24px rgb(0 0 0 / .10); }
 .credentials-add-menu button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; border: 0; border-radius: 5px; padding: 7px 10px; background: transparent; color: rgb(var(--c-txt2)); text-align: left; font-size: 12px; cursor: pointer; }
 .credentials-add-menu button:hover, .credentials-add-menu button:focus-visible { background: rgb(var(--c-elevated)); }
@@ -1162,9 +1414,19 @@ watch(showCreate, (open) => {
 .credential-service-link { display: inline-flex; max-width: 100%; align-items: center; gap: 5px; border: 0; padding: 0; background: transparent; color: rgb(var(--c-txt3)); font-size: 11px; line-height: 18px; text-align: left; cursor: pointer; }
 .credential-service-link:hover { color: rgb(var(--c-accent-2)); }
 .credential-service-link:focus-visible { outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px; }
-.credential-clear { color: rgb(var(--c-txt3)); }
-.credential-clear:hover { color: rgb(var(--c-err)); }
+.credential-delete { color: rgb(var(--c-txt3)); }
+.credential-delete:hover { color: rgb(var(--c-err)); }
 .credential-row h4 { overflow-wrap: anywhere; }
+.credential-tag { display: inline-flex; height: 18px; align-items: center; border-radius: 999px; padding: 0 7px; background: rgb(var(--c-elevated)); color: rgb(var(--c-txt2)); font-size: 11px; line-height: 1; white-space: nowrap; }
+.credential-github-mark { width: 13px; height: 13px; flex: none; }
+.credential-auth-tabs { display: flex; padding: 4px; border-radius: 11px; background: rgb(var(--c-txt) / .05); }
+.credential-auth-tabs :deep(.credential-auth-tabs__indicator) { border: 1px solid rgb(var(--c-txt) / .03); border-radius: 8px; background: rgb(var(--c-surface)); box-shadow: 0 1px 3px rgb(24 24 27 / .04), 0 2px 5px rgb(24 24 27 / .024); }
+.credential-auth-tabs > button { display: inline-flex; height: 32px; flex: 1; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 7px; background: transparent; color: rgb(var(--c-txt3)); font-size: 13px; cursor: pointer; transition: color 180ms ease; }
+.credential-auth-tabs > button svg { width: 14px; height: 14px; flex: none; }
+.credential-auth-tabs > button[aria-selected="true"] { color: rgb(var(--c-txt)); font-weight: 500; }
+.credential-auth-tabs > button:not(:disabled):hover { color: rgb(var(--c-txt)); }
+.credential-auth-tabs > button:disabled { cursor: not-allowed; opacity: .38; }
+.credential-auth-tabs > button:focus-visible { outline: 2px solid rgb(var(--c-accent-2) / .5); outline-offset: -2px; }
 .credential-editor { margin-left: 44px; }
 .credential-wizard-progress {
   display: flex;
@@ -1223,6 +1485,8 @@ watch(showCreate, (open) => {
   .credentials-create { margin-left: auto; }
   .credentials-summary { gap: 6px 18px; margin-bottom: 20px; }
   .credential-row { padding: 14px 0; }
+  .credentials-page .credential-row { padding-inline: 16px; }
+  .credentials-page .credentials-section-heading { padding-inline: 16px; }
   .credential-row-headline { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .credential-row-value { padding-left: 44px; }
   .credential-row-controls { grid-column: 1; grid-row: auto; padding-left: 44px; gap: 8px; }

@@ -3,6 +3,13 @@
   "name": "默认工作流",
   "description": "需求澄清 → 实现 → 测试评审 → 提交 MR/PR;测试评审未通过时回到实现。仓库在运行时填写。",
   "needsRepo": true,
+  "defaults": {
+    "inheritWorkspace": true,
+    "variables": [],
+    "sandbox": {
+      "mode": "shared"
+    }
+  },
   "graph": {
     "variables": [
       {

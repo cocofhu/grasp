@@ -6,10 +6,14 @@
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import ClarifyChat from './ClarifyChat.vue'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { endedTurn, feedDialogue, queuedTurn, runningTurn } from '@/test/dialogueKit'
+
+afterEach(() => clearDialogues())
 
 function mountReview(nodeId: string) {
   const i18n = createI18n({
@@ -32,6 +36,10 @@ function mountReview(nodeId: string) {
       stubs: { Icon: true, ClarifyDemoFrame: true },
     },
   })
+}
+
+function sentIds(wrapper: ReturnType<typeof mountReview>): string[] {
+  return (wrapper.emitted('send') ?? []).map((args) => args[3] as string)
 }
 
 async function sendText(wrapper: ReturnType<typeof mountReview>, text: string) {
@@ -68,15 +76,19 @@ describe('[approving] ClarifyChat reviewMode UX (visual/research shared)', () =>
     const w = mountReview('visual')
     await sendText(w, '视觉意见1')
     await sendText(w, '视觉意见2')
-    const vm = w.vm as unknown as {
-      applyReviewFrame: (f: Record<string, unknown>) => void
-      applyAcpEvents: (e: { kind: string; text: string }[]) => void
-    }
-    vm.applyReviewFrame({ event: 'turn_begin', item: { text: '视觉意见1' }, nodeId: 'visual' })
+    const [first, second] = sentIds(w)
+    const human = { role: 'human' as const, text: '视觉意见1', at: '1', turnId: 't1', clientMessageId: first }
+    const waiter = queuedTurn('t2', 0, { text: '视觉意见2', clientMessageId: second }, { clientMessageId: second })
+    const stream = (text: string) => feedDialogue('run-1', 'visual', {
+      busy: true,
+      rows: [human, { role: 'agent', text, at: '2', turnId: 't1', streaming: true }],
+      turns: [runningTurn('t1', { text: '视觉意见1', clientMessageId: first }, { clientMessageId: first }), waiter],
+    })
+    stream('')
     await nextTick()
     expect(w.find('[data-testid="clarify-review-queue"]').text()).toContain('视觉意见2')
     expect(w.text()).toContain('视觉意见1')
-    vm.applyAcpEvents([{ kind: 'message', text: '增量流式正文' }])
+    stream('增量流式正文')
     await nextTick()
     expect(w.text()).toContain('增量流式正文')
     const cancel = w.find('[data-testid="clarify-review-cancel"]')
@@ -86,6 +98,12 @@ describe('[approving] ClarifyChat reviewMode UX (visual/research shared)', () =>
     expect(cancel.text()).not.toContain('停止')
     expect(cancel.findComponent({ name: 'Icon' }).props('name')).toBe('chat-stop')
     await cancel.trigger('click')
+    expect(w.emitted('cancel')).toBeTruthy()
+    // The server stops the turn and clears the review queue.
+    feedDialogue('run-1', 'visual', {
+      rows: [human, { role: 'agent', text: '增量流式正文', at: '2', turnId: 't1', interrupted: true }],
+      turns: [endedTurn('t1', 'interrupted'), endedTurn('t2', 'dropped', { clientMessageId: second })],
+    })
     await flushPromises()
     expect(w.find('[data-testid="clarify-review-queue"]').exists()).toBe(false)
     expect(w.find('[data-testid="clarify-interrupted"]').exists()).toBe(true)
@@ -109,18 +127,15 @@ describe('[approving] ClarifyChat reviewMode UX (visual/research shared)', () =>
     w.unmount()
   })
 
-  it('remote Cancel via queue_state waiting=0 clears ghost queue (v2 FR5)', async () => {
+  it('remote Cancel: the server dropping the queue clears it here (v2 FR5)', async () => {
     const w = mountReview('visual')
     await sendText(w, '页A意见1')
     await sendText(w, '页A意见2')
     expect(w.find('[data-testid="clarify-review-queue"]').text()).toContain('页A意见1')
-    const vm = w.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
-    // Simulate another entry CancelReviewSession → queue_state waiting=0.
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'visual',
-      waiting: 0,
-      items: [],
+    const [first, second] = sentIds(w)
+    // Another entry cancelled the review session: both sends were dropped.
+    feedDialogue('run-1', 'visual', {
+      turns: [endedTurn('a', 'dropped', { clientMessageId: first }), endedTurn('b', 'dropped', { clientMessageId: second })],
     })
     await nextTick()
     expect(w.find('[data-testid="clarify-review-queue"]').exists()).toBe(false)
@@ -130,19 +145,14 @@ describe('[approving] ClarifyChat reviewMode UX (visual/research shared)', () =>
     w.unmount()
   })
 
-  it('ignores review frames for other nodeId (v3)', async () => {
+  it('ignores the dialogue of another node (v3)', async () => {
     const w = mountReview('research')
     await sendText(w, '本节点意见')
-    const vm = w.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
-    vm.applyReviewFrame({
-      event: 'queue_state',
-      nodeId: 'other-node',
-      waiting: 0,
-      items: [],
-    })
+    feedDialogue('run-1', 'other-node', { turns: [endedTurn('x', 'dropped', { clientMessageId: sentIds(w)[0] })] })
     await nextTick()
-    // Wrong nodeId must not clear this session's queue.
+    // Another node's state must not clear this session's queue.
     expect(w.find('[data-testid="clarify-review-queue"]').text()).toContain('本节点意见')
     w.unmount()
   })
+
 })

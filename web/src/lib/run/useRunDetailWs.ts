@@ -4,7 +4,7 @@
 import { nextTick, watch, type ComputedRef, type Ref } from 'vue'
 import { api } from '@/lib/api/api'
 import { createPendingAcpBuffer } from '@/lib/run/pendingAcpBuffer'
-import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
+import { deliverOrBufferGateAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
   createBusySeedRetryController,
   runBusySeedRetry,
@@ -15,12 +15,12 @@ import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
 import { createReviewSessionState, hasAcpContent, type ReviewRecoveryCheckpoint, type ReviewSessionFrame } from '@/lib/chat/reviewSessionState'
 import type { AcpEvent, Run } from '@/lib/shared/types'
+import { ingestDialogue } from '@/lib/chat/dialogueStore'
 import type { EventPageState } from '@/lib/run/useRunDetailLiveLog'
 
 type DialogueSurface = {
   getNodeId?: () => string
-  applyReviewFrame?: (frame: any) => boolean | void
-  applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  applyRequestRejected?: (frame: any) => void
   discardLastQueued?: () => void
   isSessionBusy?: () => boolean
   isChatReady?: () => boolean
@@ -160,11 +160,9 @@ export function useRunDetailWs(opts: {
       liveBusy[nodeId] = !!session.busy
       if (!session.busy) busySeedRetry.stop()
     }
-    if (restore) {
-      if (showsDialogue(nodeId)) dialogueChat(nodeId)?.applyReviewFrame?.(frame)
-    } else {
-      if (!selClarify.value || selClarify.value.nodeId === nodeId) reviewChatRef.value?.applyReviewFrame?.(frame)
-      llmTranscriptRef?.value?.applyReviewFrame?.(frame)
+    // ClarifyChat draws the dialogue state; only a refused send is its to handle.
+    if (!restore && frame.event === 'request_rejected' && showsDialogue(nodeId)) {
+      dialogueChat(nodeId)?.applyRequestRejected?.(frame)
     }
     if (!restore || run.value.gate?.reactUpstreamNodeId === nodeId) {
       gateApprovalRef.value?.applyReviewFrame?.(frame)
@@ -193,8 +191,7 @@ export function useRunDetailWs(opts: {
     const busyNodes: string[] = []
     for (const frame of frames) {
       projectReviewFrame(frame, true)
-      if (frame.busy && frame.nodeId && (showsDialogue(frame.nodeId) ||
-        run.value.gate?.reactUpstreamNodeId === frame.nodeId)) busyNodes.push(frame.nodeId)
+      if (frame.busy && frame.nodeId && run.value.gate?.reactUpstreamNodeId === frame.nodeId) busyNodes.push(frame.nodeId)
     }
     if (busyNodes.length) {
       void seedDialogueAcpAfterRestore(busyNodes)
@@ -261,6 +258,7 @@ export function useRunDetailWs(opts: {
   }
 
   async function seedDialogueNodeOnce(nodeId: string, isCurrent = () => true): Promise<boolean> {
+    if (run.value.gate?.reactUpstreamNodeId !== nodeId) return false
     const capture = captureReviewSnapshot()
     const current = () => isCurrent() && currentReviewRead(capture, nodeId)
     // Live seed rails are current-turn only (server AggregateLastTurnFrames /
@@ -279,18 +277,10 @@ export function useRunDetailWs(opts: {
     }
     if (!events?.length || !current()) return false
     if (!hasAcpContent(events)) return false
-    const forClarify = showsDialogue(nodeId)
     const forGate = run.value.gate?.reactUpstreamNodeId === nodeId
-    const result = deliverOrBufferDialogueAcp({
-      forClarify,
+    const result = deliverOrBufferGateAcp({
       forGate,
       events,
-      nodeId,
-      applyClarify: (evs, nid) => {
-        const chat = dialogueChat(nid || nodeId)
-        if (!chat?.applyAcpEvents) return false
-        return chat.applyAcpEvents(evs, nid)
-      },
       applyGate: (evs) => {
         if (!gateApprovalRef.value?.applyAcpEvents) return false
         return gateApprovalRef.value.applyAcpEvents(evs) !== false
@@ -331,20 +321,12 @@ export function useRunDetailWs(opts: {
     const leftover: { nodeId?: string; events: AcpEvent[]; busy?: boolean }[] = []
     for (const frame of pendingDialogueAcp.takeAll()) {
       const nodeId = frame.nodeId || ''
-      const forClarify = showsDialogue(nodeId)
       const forGate =
         !!run.value.gate?.reactUpstreamNodeId &&
         (run.value.gate.reactUpstreamNodeId === nodeId || !nodeId)
-      const result = deliverOrBufferDialogueAcp({
-        forClarify,
+      const result = deliverOrBufferGateAcp({
         forGate,
         events: frame.events,
-        nodeId: nodeId || selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId || '',
-        applyClarify: (events, nid) => {
-          const chat = dialogueChat(nid || nodeId)
-          if (!chat?.applyAcpEvents) return false
-          return chat.applyAcpEvents(events, nid)
-        },
         applyGate: (events) => {
           if (!gateApprovalRef.value?.applyAcpEvents) return false
           return gateApprovalRef.value.applyAcpEvents(events) !== false
@@ -364,18 +346,10 @@ export function useRunDetailWs(opts: {
     events: AcpEvent[],
     busy?: boolean,
   ) {
-    const forClarify = showsDialogue(nodeId)
     const forGate = run.value.gate?.reactUpstreamNodeId === nodeId
-    const result = deliverOrBufferDialogueAcp({
-      forClarify,
+    const result = deliverOrBufferGateAcp({
       forGate,
       events,
-      nodeId,
-      applyClarify: (evs, nid) => {
-        const chat = dialogueChat(nid || nodeId)
-        if (!chat?.applyAcpEvents) return false
-        return chat.applyAcpEvents(evs, nid)
-      },
       applyGate: (evs) => {
         if (!gateApprovalRef.value?.applyAcpEvents) return false
         return gateApprovalRef.value.applyAcpEvents(evs) !== false
@@ -531,6 +505,10 @@ export function useRunDetailWs(opts: {
       } catch {
         return
       }
+      if (m.type === 'dialogue') {
+        ingestDialogue(m)
+        return
+      }
       if (m.type === 'node_enter') {
         reviewState.noteVisit(m.nodeId || '')
         applySidebarEnter(runId.value, m, run.value?.nodes)
@@ -545,11 +523,8 @@ export function useRunDetailWs(opts: {
           const versioned = reviewState.hasVersion || typeof m.run.reviewSessionGeneration === 'number' || Object.values(sessions).some((snap: any) => typeof snap?.sessionGeneration === 'number')
           reviewState.reset()
           if (versioned) {
-            for (const nodeId of new Set([selClarify.value?.nodeId, llmTranscriptRef?.value?.getNodeId?.(), run.value.gate?.reactUpstreamNodeId])) {
-              if (!nodeId) continue
-              dialogueChat(nodeId)?.applyReviewFrame?.({ event: 'session_reset', nodeId })
-              if (run.value.gate?.reactUpstreamNodeId === nodeId) gateApprovalRef.value?.applyReviewFrame?.({ event: 'session_reset', nodeId })
-            }
+            const nodeId = run.value.gate?.reactUpstreamNodeId
+            if (nodeId) gateApprovalRef.value?.applyReviewFrame?.({ event: 'session_reset', nodeId })
           }
         }
         const restored = reviewState.reconcileSnapshot({ reactSessions: sessions,
