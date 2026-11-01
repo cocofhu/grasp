@@ -25,6 +25,7 @@ import type {
 import {
   TOKEN_LEDGER_SOURCE_COLORS,
   fmtCost,
+  fmtHitRatePct,
   paletteColor,
   type DrillTarget,
 } from './tokenAnalyticsShared'
@@ -134,10 +135,12 @@ export function trendChartOption(data: GlobalTokenStats | null, mode: TrendMode,
       grid: gridFor(n),
       tooltip: statsTooltip({
         trigger: 'axis',
-        formatter: (params: Array<{ seriesIndex: number; axisValueLabel: string; value: number; marker: string; seriesName: string }>) => {
+        formatter: (params: Array<{ seriesIndex: number; dataIndex?: number; axisValueLabel: string; value: number; marker: string; seriesName: string }>) => {
           const head = params[0]?.axisValueLabel ?? ''
           const lines = params.map((p) => {
-            const v = p.seriesIndex === 0 ? fmtCost(p.value, currency) : `${(p.value || 0).toFixed(1)}%`
+            // Line values are rounded to 2 decimals, so 99.996% would already read as 100; use the raw bucket when available.
+            const bucket = p.dataIndex == null ? undefined : data.trend[p.dataIndex]
+            const v = p.seriesIndex === 0 ? fmtCost(p.value, currency) : fmtHitRatePct(bucket ? cacheHitRatio(bucket) : (p.value || 0) / 100)
             return `${p.marker}${p.seriesName}: ${v}`
           })
           return [head, ...lines].join('<br/>')
