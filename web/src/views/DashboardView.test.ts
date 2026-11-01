@@ -993,6 +993,7 @@ describe('DashboardView home composer', () => {
     expect(fileInput.getAttribute('accept')).toBeNull()
     const clickSpy = vi.spyOn(fileInput, 'click')
     await plus.trigger('click')
+    await wrapper.get('[data-testid="home-plus-upload"]').trigger('click')
     expect(clickSpy).toHaveBeenCalled()
 
     const note = new File(['ABC'], 'note.txt', { type: 'text/plain' })

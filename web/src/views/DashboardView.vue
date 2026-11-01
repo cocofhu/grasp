@@ -35,9 +35,10 @@ import { soloPrefs, type HomeMode } from '@/lib/solo/soloPrefs'
 import { useSoloLauncher } from '@/lib/solo/useSoloLauncher'
 import ReferencePicker from '@/components/solo/ReferencePicker.vue'
 import ReferenceChip from '@/components/solo/ReferenceChip.vue'
+import ReferencePlusMenu from '@/components/solo/ReferencePlusMenu.vue'
 import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
-import type { ReferenceTab } from '@/lib/solo/useReferenceSearch'
+import type { ReferenceScope, ReferenceTab } from '@/lib/solo/useReferenceSearch'
 
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
@@ -126,7 +127,7 @@ const cheerTick = ref(0)
 async function submitComposer() {
   if (composerCanSend.value && !composerBusy.value) cheerTick.value++
   if (homeMode.value !== 'solo') {
-    await send()
+    await send(mention.refs.value)
     return
   }
   const started = await solo.start(draft.value, attachments.value.map((im) => ({ ...im })), '', mention.refs.value)
@@ -145,23 +146,30 @@ const composerFocused = ref(false)
 const composing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
-// @ references: Solo mode only, scoped to the agent and repositories picked for the launch.
+// @ references. Solo searches the picked agent and repositories; workflow
+// mode searches the selected workflow's default repos and clarify Agent.
 const soloMode = computed(() => homeMode.value === 'solo')
-const soloDefaultRepo = computed(() => githubRepoOf(soloProjects.value.find((p) => p.id === soloProjectIds.value[0])?.repoUrl))
-const mention = useReferenceComposer({ input: draft, textarea: textareaRef, composing, defaultRepo: soloDefaultRepo, enabled: soloMode })
+const workflowId = computed(() => selected.value?.id || '')
+const mentionEnabled = computed(() => soloMode.value || !!workflowId.value)
+const mentionDefaultRepo = computed(() =>
+  soloMode.value ? githubRepoOf(soloProjects.value.find((p) => p.id === soloProjectIds.value[0])?.repoUrl) : '',
+)
+const mention = useReferenceComposer({ input: draft, textarea: textareaRef, composing, defaultRepo: mentionDefaultRepo, enabled: mentionEnabled })
 const mentionPicker = mention.picker
-const mentionScope = computed(() => ({ agent: soloAgentName.value, projects: soloProjectIds.value }))
+const mentionScope = computed<ReferenceScope>(() =>
+  soloMode.value ? { agent: soloAgentName.value, projects: soloProjectIds.value } : { workflowId: workflowId.value },
+)
 const plusOpen = ref(false)
-watch(soloMode, (on) => {
-  if (!on) {
-    mention.trigger.value = null
-    mention.set(draft.value, [])
-  }
+// References are validated against the scope they were picked in, so a
+// switch keeps the text and drops the references.
+watch([homeMode, workflowId], () => {
+  mention.trigger.value = null
+  if (mention.tokens.value.length) mention.set(draft.value, [])
   plusOpen.value = false
 })
 
 function onPlus() {
-  if (soloMode.value) plusOpen.value = !plusOpen.value
+  if (mentionEnabled.value) plusOpen.value = !plusOpen.value
   else openFilePicker()
 }
 
@@ -812,8 +820,10 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
-        <div
-          v-if="soloMode && mention.tokens.value.length"
+        <TransitionGroup
+          v-if="mentionEnabled && mention.tokens.value.length"
+          tag="div"
+          name="ref-chip"
           class="mb-2 flex w-full min-w-0 flex-wrap gap-1.5"
           data-testid="home-reference-chips"
         >
@@ -821,27 +831,27 @@ onBeforeUnmount(() => {
             v-for="(tk, ti) in mention.tokens.value"
             :key="tk.ref.target"
             :reference="tk.ref"
-            :default-repo="soloDefaultRepo"
+            :default-repo="mentionDefaultRepo"
             removable
             @remove="mention.drop(ti)"
           />
-        </div>
+        </TransitionGroup>
         <div class="relative w-full">
-        <ReferencePicker
-          v-if="soloMode && mention.trigger.value"
-          ref="mentionPicker"
-          placement="down"
-          :scope="mentionScope"
-          :query="mention.trigger.value.query"
-          :taken="mention.targets.value"
-          :full="mention.full.value"
-          :initial-tab="mention.pickerTab.value"
-          @pick="mention.pick"
-        />
-        <div v-if="plusOpen" class="home-plus-menu" role="menu" data-testid="home-plus-menu" data-home-plus>
-          <button type="button" role="menuitem" class="home-plus-menu__item" @click="plusPickFiles"><Icon name="paperclip" :size="14" />{{ t('pages.solo.reference.menu.upload') }}</button>
-          <button type="button" role="menuitem" class="home-plus-menu__item" data-testid="home-plus-session" @click="plusReference('solo')"><Icon name="chat" :size="14" />{{ t('pages.solo.reference.menu.session') }}</button>
-          <button type="button" role="menuitem" class="home-plus-menu__item" data-testid="home-plus-github" @click="plusReference('issue')"><Icon name="branch" :size="14" />{{ t('pages.solo.reference.menu.github') }}</button>
+        <Transition name="ref-pop">
+          <ReferencePicker
+            v-if="mentionEnabled && mention.trigger.value"
+            ref="mentionPicker"
+            placement="down"
+            :scope="mentionScope"
+            :query="mention.trigger.value.query"
+            :taken="mention.targets.value"
+            :full="mention.full.value"
+            :initial-tab="mention.pickerTab.value"
+            @pick="mention.pick"
+          />
+        </Transition>
+        <div class="contents" data-home-plus>
+          <ReferencePlusMenu :open="plusOpen" placement="down" test-prefix="home-plus" @upload="plusPickFiles" @reference="plusReference" />
         </div>
         <form
           class="home-composer flex w-full flex-col overflow-hidden border"
@@ -899,8 +909,8 @@ onBeforeUnmount(() => {
               :title="t('pages.clarify.addImage')"
               data-testid="home-composer-plus"
               data-home-plus
-              :aria-haspopup="soloMode ? 'menu' : undefined"
-              :aria-expanded="soloMode ? plusOpen : undefined"
+              :aria-haspopup="mentionEnabled ? 'menu' : undefined"
+              :aria-expanded="mentionEnabled ? plusOpen : undefined"
               @click="onPlus"
             >
               <Icon name="plus" :size="16" />
@@ -1424,33 +1434,6 @@ html.light .home-composer__toolbar {
   vertical-align: -2px;
   background: rgb(var(--c-accent));
   animation: home-ph-caret 1s steps(1) infinite;
-}
-
-.home-plus-menu {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 6px);
-  z-index: 40;
-  min-width: 170px;
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 10px;
-  background: rgb(var(--c-elevated));
-  padding: 4px;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
-}
-.home-plus-menu__item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  border-radius: 7px;
-  padding: 7px 9px;
-  color: rgb(var(--c-txt));
-  font-size: 12.5px;
-  text-align: left;
-}
-.home-plus-menu__item:hover {
-  background: rgb(var(--c-accent) / 0.07);
 }
 
 .home-composer__plus {

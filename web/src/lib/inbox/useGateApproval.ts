@@ -32,6 +32,7 @@ import {
   type GatePrimaryProductRef,
 } from '@/lib/inbox/gateUpstream'
 import type { AcpEvent, AgentTool, ClarifyImage, Gate, GateShareInboxStatus, Run, ReactAnnotation } from '@/lib/shared/types'
+import type { ReferenceInput } from '@/lib/api/apiTypes'
 import { sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { REVERT_ACTION_IDS, POSITIVE_ACTION_IDS } from '@/components/run/gateApproval/gateApprovalActions'
@@ -1750,7 +1751,7 @@ async function recordFeedbackIssue() {
 }
 
 /** Non-preview ReviewComposer path: gateReactRevise only. */
-async function sendReactRevise() {
+async function sendReactRevise(references: ReferenceInput[] = []) {
   if (!props.run?.id || !canSubmitReact.value) return
   const body = reactText.value.trim()
   const images = cloneClarifyImages(reactImages.value)
@@ -1769,6 +1770,7 @@ async function sendReactRevise() {
       body,
       images,
       annotations,
+      ...(references.length ? [references] : []),
     )
     clearUnifiedDraft()
     emit('react-revised')
@@ -1825,7 +1827,7 @@ async function syncHotRejectHistory(anns: ReactAnnotation[]): Promise<boolean> {
  * When n_open≥1, allow send without extra draft. Empty send with n_open===0
  * still needs payload. On revise failure after history write, keep the draft.
  */
-async function sendHotReject() {
+async function sendHotReject(references: ReferenceInput[] = []) {
   if (!props.run?.id || reactSending.value) return
   const hasPayload =
     reactText.value.trim().length > 0 ||
@@ -1865,7 +1867,7 @@ async function sendHotReject() {
 
     // PreviewFeedbackChat now owns this human row (text, images and annotations).
     turn.historySynced = usesPreviewIssues.value
-    await api.gateReactRevise(props.run.id, props.gate.nodeId, body, reviseImages, anns)
+    await api.gateReactRevise(props.run.id, props.gate.nodeId, body, reviseImages, anns, ...(references.length ? [references] : []))
     clearUnifiedDraft()
     emit('react-revised')
   } catch (e: any) {
@@ -1950,14 +1952,17 @@ function onComposerPass() {
   })
 }
 
-/** PreviewIssues hot reject syncs history; non-preview uses draft-only revise. */
-function onComposerReject() {
+/**
+ * PreviewIssues hot reject syncs history; non-preview uses draft-only revise.
+ * The draft is read from state; only the composer's @ references ride along.
+ */
+function onComposerReject(_text?: string, _images?: ClarifyImage[], _annotations?: ReactAnnotation[], _clientMessageId?: string, references: ReferenceInput[] = []) {
   if (!showHotReject.value) return
   if (usesPreviewIssues.value) {
-    void sendHotReject()
+    void sendHotReject(references)
     return
   }
-  void sendReactRevise()
+  void sendReactRevise(references)
 }
 
 provide(gateApprovalKey, {

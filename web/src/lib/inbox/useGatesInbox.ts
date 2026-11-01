@@ -1,4 +1,5 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { replyTail } from '@/lib/run/replyTail'
 import { takeoverTask } from '@/lib/run/takeoverTimeline'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -3576,6 +3577,7 @@ async function onClarifySend(
   retryLast = false,
   abortRunning = false,
   sentClientMessageId?: string,
+  references: import('@/lib/api/apiTypes').ReferenceInput[] = [],
 ) {
   const it = active.value
   if (!it || it.type !== 'clarify' || it.done) {
@@ -3652,7 +3654,7 @@ async function onClarifySend(
         mergedAnnotations,
         false,
         abortRunning,
-        ...(clientMessageId ? [clientMessageId] : []),
+        ...replyTail(clientMessageId, references),
       )
     }
     if (!isCurrentVisit()) {

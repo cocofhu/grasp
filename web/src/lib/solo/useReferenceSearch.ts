@@ -8,17 +8,28 @@ export type GitHubStateFilter = 'open' | 'all'
 type LaneName = 'solo' | 'github'
 type SearchParams = { lane: LaneName; q: string; kind?: string; state?: string; page?: number }
 
-/** Where candidates come from: an open session, or the launch composer's picks. */
-export type ReferenceScope = { sessionId: string } | { agent: string; projects: string[] }
+/**
+ * Where candidates come from: an open session, the Solo launch composer's
+ * picks, a workflow about to start, or a running workflow node.
+ */
+export type ReferenceScope =
+  | { sessionId: string }
+  | { agent: string; projects: string[] }
+  | { workflowId: string }
+  | { runId: string; nodeId: string }
 
 function scopeKey(scope: ReferenceScope) {
-  return 'sessionId' in scope ? `s:${scope.sessionId}` : `l:${scope.agent}:${scope.projects.join(',')}`
+  if ('sessionId' in scope) return `s:${scope.sessionId}`
+  if ('workflowId' in scope) return `w:${scope.workflowId}`
+  if ('runId' in scope) return `r:${scope.runId}:${scope.nodeId}`
+  return `l:${scope.agent}:${scope.projects.join(',')}`
 }
 
 function fetchLane(scope: ReferenceScope, params: SearchParams, signal: AbortSignal) {
-  return 'sessionId' in scope
-    ? api.searchSoloReferences<any>(scope.sessionId, params, signal)
-    : api.searchLaunchReferences<any>({ ...params, agent: scope.agent, projects: scope.projects }, signal)
+  if ('sessionId' in scope) return api.searchSoloReferences<any>(scope.sessionId, params, signal)
+  if ('workflowId' in scope) return api.searchWorkflowReferences<any>(scope.workflowId, params, signal)
+  if ('runId' in scope) return api.searchRunNodeReferences<any>(scope.runId, scope.nodeId, params, signal)
+  return api.searchLaunchReferences<any>({ ...params, agent: scope.agent, projects: scope.projects }, signal)
 }
 export type LaneState<T> = {
   items: T[]

@@ -1847,6 +1847,7 @@ describe('ClarifyChat', () => {
     const picker = wrapper.get('input[type="file"]').element as HTMLInputElement
     const openPicker = vi.spyOn(picker, 'click').mockImplementation(() => {})
     await attach.trigger('click')
+    await wrapper.get('[data-testid="clarify-plus-upload"]').trigger('click')
     expect(openPicker).toHaveBeenCalledOnce()
     openPicker.mockRestore()
     const toolbar = wrapper.get('[data-testid="clarify-action-row"]')

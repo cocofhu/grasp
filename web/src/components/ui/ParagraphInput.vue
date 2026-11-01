@@ -103,7 +103,7 @@ function pickFiles() {
   fileInput.value?.click()
 }
 
-defineExpose({ pickFiles })
+defineExpose({ pickFiles, textarea: textareaRef })
 </script>
 
 <template>

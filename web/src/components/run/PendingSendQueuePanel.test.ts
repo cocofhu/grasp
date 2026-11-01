@@ -26,6 +26,13 @@ function drop(w: ReturnType<typeof mountPanel>, from: number, to: number) {
 }
 
 describe('PendingSendQueuePanel', () => {
+  it('shows reference chips on queued rows that carry them', () => {
+    const w = mountPanel({ items: [row('a', { references: [{ id: 'r1', kind: 'solo', target: 's1', title: '登录重构' }] }), row('b')] })
+    const rows = w.findAll('[data-testid="clarify-queue-item"]')
+    expect(rows[0]!.find('[data-testid="clarify-queue-references"]').text()).toContain('登录重构')
+    expect(rows[1]!.find('[data-testid="clarify-queue-references"]').exists()).toBe(false)
+  })
+
   it('renders unlocked rows with handle, edit and cancel, and emits each action', async () => {
     const w = mountPanel({ items: [row('a'), row('b')] })
     const rows = w.findAll('[data-testid="clarify-queue-item"]')

@@ -23,6 +23,7 @@ import {
 } from '@/lib/run/runSandboxEnv'
 import type { ClarifyImage } from '@/lib/shared/types'
 import type { HomeLaunchModel } from '@/lib/run/homeLaunchModel'
+import type { ReferenceInput } from '@/lib/api/apiTypes'
 
 export type InputField = {
   key: string
@@ -52,7 +53,7 @@ const props = defineProps<{
    * Opening chat message for an approve-first workflow (home chat). The engine
    * delivers it into the approve node's sandbox once that node parks.
    */
-  firstMessage?: { text: string; images?: ClarifyImage[] } | null
+  firstMessage?: { text: string; images?: ClarifyImage[]; references?: ReferenceInput[] } | null
   /**
    * Prefill segmented priority when the modal opens (home Composer path).
    * Unset / invalid values still default to normal (plan g2.2).

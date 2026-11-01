@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { RestoreUnsent } from '@/lib/inbox/clarifyVisitEnded'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
 import ClarifyChat, { type ClarifyFollowProcess, type ClarifyFollowTail, type ClarifyHandoff, type ClarifyPriorSegment } from './ClarifyChat.vue'
@@ -15,6 +15,12 @@ import type { GateReactTurn } from './gateApproval/gateApprovalContext'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
 import VisitModelSelect from './VisitModelSelect.vue'
 import { visitModelSelectVisible } from '@/lib/run/visitModel'
+import ReferencePicker from '@/components/solo/ReferencePicker.vue'
+import ReferenceChip from '@/components/solo/ReferenceChip.vue'
+import ReferencePlusMenu from '@/components/solo/ReferencePlusMenu.vue'
+import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
+import type { ReferenceScope, ReferenceTab } from '@/lib/solo/useReferenceSearch'
+import type { ReferenceInput } from '@/lib/api/apiTypes'
 
 /**
  * Thin mode wrapper around ClarifyChat / a gate-local composer.
@@ -27,7 +33,9 @@ import { visitModelSelectVisible } from '@/lib/run/visitModel'
 const props = withDefaults(
   defineProps<{
     mode: 'clarify' | 'review' | 'gate'
-    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string) => Promise<boolean>
+    sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]) => Promise<boolean>
+    /** @ references in the composer; off on the anonymous share page. */
+    referencesEnabled?: boolean
     runId?: string
     nodeId?: string
     iteration?: number
@@ -138,11 +146,12 @@ const props = withDefaults(
     liveHumanText: '',
     observe: false,
     stopping: false,
+    referencesEnabled: true,
   },
 )
 
 const emit = defineEmits<{
-  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string): void
+  (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]): void
   (e: 'retry-last'): void
   (e: 'finish'): void
   (e: 'finish-abort'): void
@@ -155,7 +164,7 @@ const emit = defineEmits<{
   (e: 'queue-reorder-indexes', fromIndex: number, toIndex: number): void
 }>()
 
-const paragraphRef = ref<{ pickFiles?: () => void } | null>(null)
+const paragraphRef = ref<{ pickFiles?: () => void; textarea?: HTMLTextAreaElement | null } | null>(null)
 
 const chatRef = ref<{
   applyRequestRejected: (frame: any) => void
@@ -253,9 +262,63 @@ function removeAnnotation(i: number) {
   annotations.value.splice(i, 1)
 }
 
+// Gate hot-revise: @ references in the local composer, searched against the gate's producer node.
+const gateComposing = ref(false)
+const gateReferencesOn = computed(() =>
+  props.mode === 'gate' && props.referencesEnabled && !props.coldSession && props.canReject && !props.rejecting && !!props.runId && !!props.nodeId,
+)
+const gateMention = useReferenceComposer({
+  input: draft,
+  textarea: computed(() => paragraphRef.value?.textarea ?? null),
+  composing: gateComposing,
+  defaultRepo: computed(() => ''),
+  enabled: gateReferencesOn,
+})
+const gateMentionPicker = gateMention.picker
+const gateMentionScope = computed<ReferenceScope>(() => ({ runId: props.runId || '', nodeId: props.nodeId || '' }))
+const gatePlusOpen = ref(false)
+watch(gateReferencesOn, (on) => {
+  if (on) return
+  gateMention.trigger.value = null
+  gatePlusOpen.value = false
+})
+
+function onGatePlus() {
+  if (gateReferencesOn.value) gatePlusOpen.value = !gatePlusOpen.value
+  else paragraphRef.value?.pickFiles?.()
+}
+function gatePlusFiles() {
+  gatePlusOpen.value = false
+  paragraphRef.value?.pickFiles?.()
+}
+function gatePlusReference(tab: ReferenceTab) {
+  gatePlusOpen.value = false
+  gateMention.open(tab)
+}
+function onGatePlusOutside(e: PointerEvent) {
+  if (gatePlusOpen.value && !(e.target as HTMLElement | null)?.closest?.('[data-gate-plus]')) gatePlusOpen.value = false
+}
+onMounted(() => document.addEventListener('pointerdown', onGatePlusOutside))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onGatePlusOutside))
+
+function onGateKeydown(e: KeyboardEvent) {
+  if (e.target === paragraphRef.value?.textarea) gateMention.onKeydown(e)
+}
+function onGateCaret(e: Event) {
+  if (e.target === paragraphRef.value?.textarea) gateMention.updateTrigger()
+}
+function onGateKeyup(e: KeyboardEvent) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') onGateCaret(e)
+}
+function onGatePaste(e: ClipboardEvent) {
+  if (e.target === paragraphRef.value?.textarea) gateMention.onPaste(e)
+}
+
 function onSend() {
   if (!canSubmitGate.value || !props.canReject) return
-  emit('send', draft.value, attachments.value, annotations.value)
+  const refs = gateMention.refs.value.map(({ kind, target }) => ({ kind, target }))
+  if (refs.length) emit('send', draft.value, attachments.value, annotations.value, undefined, refs)
+  else emit('send', draft.value, attachments.value, annotations.value)
 }
 function onConfirm() {
   if (!props.canPass || props.passDisabled) return
@@ -324,7 +387,8 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
       :follow-tail="followTail ?? null"
       :follow-process="followProcess ?? null"
       @takeover="emit('takeover')"
-      @send="(text, images, anns, clientMessageId) => emit('send', text, images, anns, clientMessageId)"
+      :references-enabled="referencesEnabled"
+      @send="(text, images, anns, clientMessageId, references) => emit('send', text, images, anns, clientMessageId, ...(references?.length ? [references] : []))"
       @retry-last="emit('retry-last')"
       @finish="emit('finish')"
       @finish-abort="emit('finish-abort')"
@@ -377,7 +441,36 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
           />
         </div>
         <div v-if="rejectError" class="mb-1.5 text-[11px] text-err">{{ rejectError }}</div>
+        <TransitionGroup
+          v-if="gateMention.tokens.value.length"
+          tag="div"
+          name="ref-chip"
+          class="mb-2 flex flex-wrap gap-1.5"
+          data-testid="review-reference-chips"
+        >
+          <ReferenceChip
+            v-for="(tk, ti) in gateMention.tokens.value"
+            :key="tk.ref.target"
+            :reference="tk.ref"
+            :removable="!rejecting"
+            @remove="gateMention.drop(ti)"
+          />
+        </TransitionGroup>
       </template>
+      <div class="relative">
+      <Transition name="ref-pop">
+        <ReferencePicker
+          v-if="gateReferencesOn && gateMention.trigger.value"
+          ref="gateMentionPicker"
+          placement="up"
+          :scope="gateMentionScope"
+          :query="gateMention.trigger.value.query"
+          :taken="gateMention.targets.value"
+          :full="gateMention.full.value"
+          :initial-tab="gateMention.pickerTab.value"
+          @pick="gateMention.pick"
+        />
+      </Transition>
       <ComposerShell :show-chrome="!coldSession" :show-footer="true" wrap-toolbar>
         <template v-if="!coldSession" #input>
           <ParagraphInput
@@ -389,21 +482,33 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
             :text-only="textOnly"
             :disabled="rejecting || !canReject"
             :placeholder="t('pages.gateApproval.reactRevise.placeholder')"
+            @keydown="onGateKeydown"
+            @keyup="onGateKeyup"
+            @input="onGateCaret"
+            @click="onGateCaret"
+            @paste="onGatePaste"
+            @focusout="gateMention.trigger.value = null"
+            @compositionstart="gateComposing = true"
+            @compositionend="(e: CompositionEvent) => { gateComposing = false; onGateCaret(e) }"
           />
         </template>
         <template v-if="!coldSession" #toolbar-start>
-          <button
-            v-if="!textOnly"
-            type="button"
-            class="chat-action-button"
-            data-testid="paragraph-input-attach"
-            :disabled="rejecting || !canReject"
-            :title="t('common.paragraphInput.addImage')"
-            :aria-label="t('common.paragraphInput.addImage')"
-            @click="paragraphRef?.pickFiles?.()"
-          >
-            <Icon name="plus" :size="18" />
-          </button>
+          <div v-if="!textOnly" class="relative" data-gate-plus>
+            <button
+              type="button"
+              class="chat-action-button"
+              data-testid="paragraph-input-attach"
+              :disabled="rejecting || !canReject"
+              :title="t('common.paragraphInput.addImage')"
+              :aria-label="t('common.paragraphInput.addImage')"
+              :aria-haspopup="gateReferencesOn ? 'menu' : undefined"
+              :aria-expanded="gateReferencesOn ? gatePlusOpen : undefined"
+              @click="onGatePlus"
+            >
+              <Icon name="plus" :size="18" />
+            </button>
+            <ReferencePlusMenu :open="gatePlusOpen" test-prefix="gate-plus" @upload="gatePlusFiles" @reference="gatePlusReference" />
+          </div>
           <VisitModelSelect
             v-if="showGateModel"
             :run-id="runId || ''"
@@ -462,6 +567,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
           </button>
         </template>
       </ComposerShell>
+      </div>
       <template v-if="!coldSession">
         <PendingSendQueuePanel
           v-if="gateQueued.length"

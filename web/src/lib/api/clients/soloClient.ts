@@ -14,6 +14,16 @@ import type {
 
 const enc = encodeURIComponent
 
+type ReferenceSearchParams = { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }
+
+function referenceQuery(params: ReferenceSearchParams) {
+  const qs = new URLSearchParams({ lane: params.lane, q: params.q })
+  if (params.kind) qs.set('kind', params.kind)
+  if (params.state) qs.set('state', params.state)
+  if (params.page && params.page > 1) qs.set('page', String(params.page))
+  return qs
+}
+
 export const soloClient = {
   listProjects: () => req<Project[]>('/projects'),
   getProject: (id: string) =>
@@ -48,13 +58,14 @@ export const soloClient = {
   getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),
   sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; references?: ReferenceInput[] }) =>
     req<{ waiting: number }>(`/solo/sessions/${enc(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
-  searchSoloReferences: <T>(id: string, params: { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }, signal?: AbortSignal) => {
-    const qs = new URLSearchParams({ lane: params.lane, q: params.q })
-    if (params.kind) qs.set('kind', params.kind)
-    if (params.state) qs.set('state', params.state)
-    if (params.page && params.page > 1) qs.set('page', String(params.page))
-    return req<ReferenceSearchResult<T>>(`/solo/sessions/${enc(id)}/references/search?${qs}`, { signal })
-  },
+  searchSoloReferences: <T>(id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
+    req<ReferenceSearchResult<T>>(`/solo/sessions/${enc(id)}/references/search?${referenceQuery(params)}`, { signal }),
+  /** Home workflow composer: the workflow's default repos and first clarify Agent. */
+  searchWorkflowReferences: <T>(workflowId: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
+    req<ReferenceSearchResult<T>>(`/workflows/${enc(workflowId)}/references/search?${referenceQuery(params)}`, { signal }),
+  /** Run-node chats: the run's repos and the node's Agent. */
+  searchRunNodeReferences: <T>(runId: string, nodeId: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
+    req<ReferenceSearchResult<T>>(`/runs/${enc(runId)}/nodes/${enc(nodeId)}/references/search?${referenceQuery(params)}`, { signal }),
   /** Before a session exists: agent and picked projects stand in for it. */
   searchLaunchReferences: <T>(params: { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number; agent: string; projects: string[] }, signal?: AbortSignal) => {
     const qs = new URLSearchParams({ lane: params.lane, q: params.q, agent: params.agent })

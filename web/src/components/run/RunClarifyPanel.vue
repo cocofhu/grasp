@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RestoreUnsent } from '@/lib/inbox/clarifyVisitEnded'
+import type { ReferenceInput } from '@/lib/api/apiTypes'
 import { takeoverTask } from '@/lib/run/takeoverTimeline'
 import { findGraphNode, isPreviewNode } from '@/lib/shared/clarifyInteractive'
 /**
@@ -64,7 +65,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:draft': [v: string]
   'update:attachments': [v: ClarifyImage[]]
-  send: [text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string]
+  send: [text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]]
   'retry-last': []
   finish: []
   'finish-abort': []
@@ -205,7 +206,7 @@ defineExpose({
         v-model:annotations="annotations"
         @update:draft="emit('update:draft', $event)"
         @update:attachments="emit('update:attachments', $event)"
-        @send="(text: string, images: ClarifyImage[], anns: ReactAnnotation[], clientMessageId?: string) => emit('send', text, images, anns, clientMessageId)"
+        @send="(text: string, images: ClarifyImage[], anns: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]) => emit('send', text, images, anns, clientMessageId, ...(references?.length ? [references] : []))"
         @retry-last="emit('retry-last')"
         @finish="emit('finish')"
         @finish-abort="emit('finish-abort')"

@@ -1,4 +1,5 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { replyTail } from '@/lib/run/replyTail'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
@@ -28,6 +29,7 @@ import { createReviewSessionState, type ReviewRecoveryCheckpoint } from '@/lib/c
 import { splitTurns } from '@/lib/run/llmTranscript'
 import { clarifyTurnsFromLlm } from '@/lib/run/llmTranscriptThread'
 import type { AcpEvent, ClarifyImage, ClarifyTurn, ReactAnnotation, Run, RunCurrentNode } from '@/lib/shared/types'
+import type { ReferenceInput } from '@/lib/api/apiTypes'
 import { ingestDialogue, ingestDialogues } from '@/lib/chat/dialogueStore'
 
 /** The ReviewComposer / ClarifyChat surface this view drives. It draws the server dialogue itself. */
@@ -659,14 +661,15 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   /** Reply in the continued chat (same API as /gates). */
-  async function send(text: string, images: ClarifyImage[] = [], annotations: ReactAnnotation[] = [], clientMessageId?: string) {
+  async function send(text: string, images: ClarifyImage[] = [], annotations: ReactAnnotation[] = [], clientMessageId?: string, references: ReferenceInput[] = []) {
     if (mode.value !== 'chat' || handoff.value) return
     const visit = visitEpoch
     const id = runId.value
     const node = nodeId.value
     const iter = iteration.value
     try {
-      if (clientMessageId) await api.reactReply(id, node, text, images, false, annotations, false, false, clientMessageId)
+      const tail = replyTail(clientMessageId, references)
+      if (tail.length) await api.reactReply(id, node, text, images, false, annotations, false, false, ...tail)
       else await api.reactReply(id, node, text, images, false, annotations)
     } catch (e) {
       if (!currentVisit(visit, id, node, iter)) return

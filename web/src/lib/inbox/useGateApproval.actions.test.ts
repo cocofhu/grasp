@@ -707,6 +707,15 @@ describe('useGateApproval actions', () => {
     expect(mocks.gateReactCancel).toHaveBeenCalledWith('run-1', 'gate-1')
     mocks.gateReactCancel.mockRejectedValueOnce(new Error('cancel failed'))
     await approval.cancelReactRevise()
+
+    mocks.gateReactRevise.mockClear()
+    approval.reactText.value = '@登录重构 参考这个'
+    approval.reactError.value = null
+    approval.onComposerReject('@登录重构 参考这个', [], [], undefined, [{ kind: 'solo', target: 'sess-1' }])
+    await flushPromises()
+    expect(mocks.gateReactRevise).toHaveBeenCalledWith('run-1', 'gate-1', '@登录重构 参考这个', expect.any(Array), expect.any(Array), [{ kind: 'solo', target: 'sess-1' }])
+    mocks.gateReactCancel.mockRejectedValueOnce(new Error('cancel failed'))
+    await approval.cancelReactRevise()
     expect(approval.reactError.value).toBe('cancel failed')
     app.unmount()
   })

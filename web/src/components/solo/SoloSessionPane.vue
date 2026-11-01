@@ -19,6 +19,7 @@ import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
 import ReferencePicker from './ReferencePicker.vue'
 import ReferenceChip from './ReferenceChip.vue'
+import ReferencePlusMenu from './ReferencePlusMenu.vue'
 import { api } from '@/lib/api/api'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
 import type { ReferenceTab } from '@/lib/solo/useReferenceSearch'
@@ -528,9 +529,9 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <p v-if="selectionInvalid && canSend" class="mb-2 text-[12px] text-warn" role="status" data-testid="solo-model-invalid-notice">{{ t('pages.solo.modelSelect.unavailableSelection') }}</p>
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
           <p v-if="attach.notice.value" class="mb-2 text-[12px]" :class="attach.notice.value.kind === 'error' ? 'text-err' : 'text-ok'">{{ attach.notice.value.text }}</p>
-          <div v-if="tokens.length" class="mb-2 flex flex-wrap gap-1.5" data-testid="solo-composer-references">
+          <TransitionGroup v-if="tokens.length" tag="div" name="ref-chip" class="mb-2 flex flex-wrap gap-1.5" data-testid="solo-composer-references">
             <ReferenceChip v-for="(tk, ti) in tokens" :key="tk.ref.target" :reference="tk.ref" :default-repo="defaultRepo" removable @remove="mention.drop(ti)" />
-          </div>
+          </TransitionGroup>
           <div v-if="attach.attachments.value.length" class="mb-2 flex flex-wrap gap-1.5">
             <div v-for="(im, ii) in attach.attachments.value" :key="ii" class="relative">
               <ChatImageThumb
@@ -553,16 +554,18 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             </div>
           </div>
           <div class="chat-composer relative flex min-w-0 flex-col gap-2 p-2.5">
-            <ReferencePicker
-              v-if="trigger && canSend"
-              ref="picker"
-              :scope="{ sessionId: props.sessionId }"
-              :query="trigger.query"
-              :taken="mention.targets.value"
-              :full="mention.full.value"
-              :initial-tab="pickerTab"
-              @pick="mention.pick"
-            />
+            <Transition name="ref-pop">
+              <ReferencePicker
+                v-if="trigger && canSend"
+                ref="picker"
+                :scope="{ sessionId: props.sessionId }"
+                :query="trigger.query"
+                :taken="mention.targets.value"
+                :full="mention.full.value"
+                :initial-tab="pickerTab"
+                @pick="mention.pick"
+              />
+            </Transition>
             <input ref="fileInput" type="file" multiple class="hidden" @change="attach.onPickFiles" />
             <textarea
               ref="textarea"
@@ -598,11 +601,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                   >
                     <Icon name="plus" :size="18" />
                   </button>
-                  <div v-if="plusOpen" class="solo-menu solo-menu--up" role="menu">
-                    <button type="button" role="menuitem" class="solo-menu__item" @click="pickFiles"><Icon name="paperclip" :size="14" />{{ t('pages.solo.reference.menu.upload') }}</button>
-                    <button type="button" role="menuitem" class="solo-menu__item" data-testid="solo-plus-session" @click="openPicker('solo')"><Icon name="chat" :size="14" />{{ t('pages.solo.reference.menu.session') }}</button>
-                    <button type="button" role="menuitem" class="solo-menu__item" data-testid="solo-plus-github" @click="openPicker('issue')"><Icon name="branch" :size="14" />{{ t('pages.solo.reference.menu.github') }}</button>
-                  </div>
+                  <ReferencePlusMenu :open="plusOpen" test-prefix="solo-plus" @upload="pickFiles" @reference="openPicker" />
                 </div>
                 <SoloModelSelect
                   class="min-w-0"
@@ -701,41 +700,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
   max-width: 780px;
   min-width: 0;
   margin-inline: auto;
-}
-.solo-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  min-width: 170px;
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 10px;
-  background: rgb(var(--c-elevated));
-  padding: 4px;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
-}
-.solo-menu--up {
-  top: auto;
-  right: auto;
-  left: 0;
-  bottom: calc(100% + 6px);
-}
-.solo-menu__item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  border-radius: 7px;
-  padding: 7px 9px;
-  color: rgb(var(--c-txt));
-  font-size: 12.5px;
-  text-align: left;
-}
-.solo-menu__item:hover {
-  background: rgb(var(--c-accent) / 0.07);
-}
-.solo-menu__item--danger {
-  color: rgb(var(--c-err));
 }
 .solo-error-link {
   display: inline-flex;
