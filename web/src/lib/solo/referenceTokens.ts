@@ -97,9 +97,13 @@ export function removeToken(text: string, tokens: ReferenceToken[], index: numbe
   return { text: next, tokens: applyEdit(rest, text, next) }
 }
 
-/** The `@query` being typed right before the caret, or null. */
+/**
+ * The `@query` being typed right before the caret, or null. The `@` must follow
+ * the start, whitespace, a Han character or CJK/fullwidth punctuation, so
+ * `a@b` (emails, handles) never opens the picker.
+ */
 export function activeTrigger(text: string, caret: number): { start: number; query: string } | null {
-  const m = text.slice(0, caret).match(/(^|\s)@([^\s@]*)$/)
+  const m = text.slice(0, caret).match(/(^|[\s\p{Script=Han}\u3000-\u303F\uFF00-\uFFEF])@([^\s@]*)$/u)
   if (!m) return null
   return { start: caret - m[2]!.length - 1, query: m[2]! }
 }

@@ -111,6 +111,41 @@ describe('home Solo composer @ references', () => {
     expect((ta.element as HTMLTextAreaElement).value).toBe('')
   })
 
+  it('opens the picker once an IME composition that typed @ ends', async () => {
+    const w = mountDashboard()
+    await flushPromises()
+    const ta = w.get('[data-testid="home-composer-input"]')
+    await ta.trigger('compositionstart')
+    await ta.setValue('参考 @')
+    ;(ta.element as HTMLTextAreaElement).setSelectionRange(4, 4)
+    await ta.trigger('input')
+    await new Promise((r) => setTimeout(r, 300))
+    await flushPromises()
+    expect(w.find('[data-testid="solo-reference-picker"]').exists()).toBe(false)
+
+    await ta.trigger('compositionend')
+    await new Promise((r) => setTimeout(r, 300))
+    await flushPromises()
+    expect(w.find('[data-testid="solo-reference-picker"]').exists()).toBe(true)
+  })
+
+  it('opens right after Chinese text and keeps the prefix when picking', async () => {
+    const w = mountDashboard()
+    await flushPromises()
+    await typeAt(w, '打完@')
+    expect(w.find('[data-testid="solo-reference-picker"]').exists()).toBe(true)
+    const ta = w.get('[data-testid="home-composer-input"]')
+    await ta.trigger('keydown', { key: 'ArrowDown' })
+    await ta.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect((ta.element as HTMLTextAreaElement).value).toBe('打完 @登录重构 ')
+    expect(w.findAll('[data-testid="home-reference-chips"] [data-testid="solo-reference-chip"]').length).toBe(1)
+
+    await w.get('[data-testid="home-composer"]').trigger('submit')
+    await flushPromises()
+    expect(mocks.createSoloSession).toHaveBeenCalledWith(expect.objectContaining({ text: '打完 @登录重构', references: [{ kind: 'solo', target: 's2' }] }))
+  })
+
   it('offers references from the + menu and turns pasted links into #n for the picked repo', async () => {
     const w = mountDashboard()
     await flushPromises()

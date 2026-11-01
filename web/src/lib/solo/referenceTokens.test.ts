@@ -70,6 +70,20 @@ describe('token editing', () => {
     expect(insideToken([tok(2, 4)], 3)).toBe(true)
     expect(insideToken([tok(2, 4)], 2)).toBe(false)
   })
+
+  it('opens right after Han characters and CJK or fullwidth punctuation', () => {
+    expect(activeTrigger('打完@', 3)).toEqual({ start: 2, query: '' })
+    expect(activeTrigger('打完@登录', 5)).toEqual({ start: 2, query: '登录' })
+    expect(activeTrigger('好，@x', 4)).toEqual({ start: 2, query: 'x' })
+    expect(activeTrigger('好）@x', 4)).toEqual({ start: 2, query: 'x' })
+    expect(activeTrigger('好。@x', 4)).toEqual({ start: 2, query: 'x' })
+  })
+
+  it('stays closed after ASCII letters, digits and punctuation', () => {
+    expect(activeTrigger('a@b', 3)).toBeNull()
+    expect(activeTrigger('1@b', 3)).toBeNull()
+    expect(activeTrigger('a.@b', 4)).toBeNull()
+  })
 })
 
 describe('restoreTokens', () => {
