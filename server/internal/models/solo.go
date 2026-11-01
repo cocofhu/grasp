@@ -140,6 +140,23 @@ type MessageReference struct {
 	Access    string    `json:"access,omitempty"`
 	Error     string    `json:"error,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+	// UserID is the sender on workflow run turns. Server only: it is carried
+	// in memory and persisted through RunReference, never in client JSON.
+	UserID string `json:"-"`
+}
+
+// RunReference is an @ reference pinned on a workflow run turn, with its
+// sender. It is the only authority read_reference accepts outside Solo.
+type RunReference struct {
+	ID        string `gorm:"primaryKey"`
+	RunID     string `gorm:"index"`
+	NodeID    string
+	UserID    string
+	Kind      string
+	Target    string
+	Title     string
+	Anchor    string
+	CreatedAt time.Time
 }
 
 // SoloMessage is one persisted turn of a Solo session. Agent turns keep the raw

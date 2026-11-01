@@ -327,11 +327,12 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionIDAs(owner, runID, nodeID, clien
 
 // ReactReplyLiveCtxWithIDAs is ReactReplyLiveCtxAs carrying the sender's
 // optional clientMessageID with the queued turn.
-func (e *Engine) ReactReplyLiveCtxWithIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx) error {
-	return e.reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text, images, annotations, ctx, true)
+// refs are validated @ references (see services.PrepareScopedReferences).
+func (e *Engine) ReactReplyLiveCtxWithIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, refs ...models.MessageReference) error {
+	return e.reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text, images, annotations, ctx, true, refs...)
 }
 
-func (e *Engine) reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, allowLive bool) error {
+func (e *Engine) reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, allowLive bool, refs ...models.MessageReference) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -347,9 +348,9 @@ func (e *Engine) reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text s
 		}
 	}
 	if sess == nil && allowLive {
-		return e.reactReply(owner, runID, nodeID, text, images, annotations, false, false, false, clientMessageID)
+		return e.reactReply(owner, runID, nodeID, text, images, annotations, false, false, false, clientMessageID, refs...)
 	}
-	if strings.TrimSpace(text) == "" && len(images) == 0 && len(annotations) == 0 {
+	if strings.TrimSpace(text) == "" && len(images) == 0 && len(annotations) == 0 && len(refs) == 0 {
 		return errors.New("text, images, or annotations required")
 	}
 	if err := e.reviewConvOpen(runID, nodeID); err != nil {
@@ -368,6 +369,7 @@ func (e *Engine) reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text s
 	effective := renderReviewHuman(text, annotations)
 	item := &reviewQueueItem{
 		ID: uuid.NewString(), Text: text, Images: images, Annotations: annotations,
+		References: refs, ReferenceUser: referencesSender(refs),
 		Source: "node", Owner: owner, LiveWritesDenied: !allowLive, ClientMessageID: clientMessageID,
 	}
 	if sess != nil {

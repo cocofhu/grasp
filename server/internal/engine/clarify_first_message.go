@@ -12,21 +12,36 @@ import (
 )
 
 // normalizeFirstMessage trims the opening message and externalizes its inline
-// image data. A blank message (no text, no images) collapses to nil so nothing
-// is persisted or delivered.
+// image data. A blank message (no text, no images, no references) collapses to
+// nil so nothing is persisted or delivered.
 func normalizeFirstMessage(ctx context.Context, store blob.Store, msg *models.CompositeText) (*models.CompositeText, error) {
-	if msg == nil {
-		return nil, nil
-	}
-	text := strings.TrimSpace(msg.Text)
-	if text == "" && len(msg.Images) == 0 {
+	if firstMessageBlank(msg) {
 		return nil, nil
 	}
 	images, err := blob.IngestPromptImages(ctx, store, msg.Images)
 	if err != nil {
 		return nil, err
 	}
-	return &models.CompositeText{Text: text, Images: images}, nil
+	refs := append([]models.MessageReference(nil), msg.References...)
+	user := msg.ReferenceUser
+	if user == "" {
+		user = referencesSender(refs)
+	}
+	return &models.CompositeText{Text: strings.TrimSpace(msg.Text), Images: images, References: refs, ReferenceUser: user}, nil
+}
+
+func firstMessageBlank(msg *models.CompositeText) bool {
+	return msg == nil || (strings.TrimSpace(msg.Text) == "" && len(msg.Images) == 0 && len(msg.References) == 0)
+}
+
+// firstMessageReferences restores the sender on the stored references; the
+// sender is kept beside them because references never serialize it.
+func firstMessageReferences(msg *models.CompositeText) []models.MessageReference {
+	refs := append([]models.MessageReference(nil), msg.References...)
+	for i := range refs {
+		refs[i].UserID = msg.ReferenceUser
+	}
+	return refs
 }
 
 // releaseClarifyFirstMessageLatch clears the delivery latch so a cancelled or
@@ -81,7 +96,7 @@ func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node) {
 		return
 	}
 	msg := c.run.FirstMessage
-	if msg == nil || (strings.TrimSpace(msg.Text) == "" && len(msg.Images) == 0) {
+	if firstMessageBlank(msg) {
 		return
 	}
 	now := time.Now()
@@ -100,6 +115,7 @@ func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node) {
 
 	text := msg.Text
 	images := append([]models.PromptImage(nil), msg.Images...)
+	refs := firstMessageReferences(msg)
 	claimedAt := now
 	go func() {
 		defer func() {
@@ -122,7 +138,7 @@ func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node) {
 		}
 		// Marked AutoRetryOnResume so a visit-ended refusal tells callers the
 		// latch will be released and ResumeFrom will redeliver.
-		if _, err := e.EnqueueClarifyFirstMessageAs("", runID, nodeID, text, images); err != nil {
+		if _, err := e.EnqueueClarifyFirstMessageAs("", runID, nodeID, text, images, refs...); err != nil {
 			// No client sent this turn, so broadcast the refusal for any open
 			// page ("续跑后会自动重新发送").
 			var ve *ClarifyVisitEndedError

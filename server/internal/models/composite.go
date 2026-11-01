@@ -10,6 +10,10 @@ import (
 type CompositeText struct {
 	Text   string        `json:"text"`
 	Images []PromptImage `json:"images,omitempty"`
+	// References and ReferenceUser are set only on Run.FirstMessage, after
+	// the launcher's @ picks were validated; ReferenceUser is the sender.
+	References    []MessageReference `json:"references,omitempty"`
+	ReferenceUser string             `json:"referenceUser,omitempty"`
 }
 
 // IsCompositeText reports whether v is a {text, images} map shape.

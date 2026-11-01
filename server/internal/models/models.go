@@ -581,6 +581,9 @@ type ReactMessage struct {
 	// visual page, each with an optional note. Rendered into the review prompt
 	// so the agent edits exactly the cited spot. Persisted for re-render.
 	Annotations []ReactAnnotation `json:"annotations,omitempty"`
+	// References are the @ contexts (Solo sessions, GitHub issues / PRs) the
+	// human attached to this turn, pinned when the turn began.
+	References []MessageReference `json:"references,omitempty"`
 	// Live marks a human turn produced by a Live variant request; the chat
 	// renders a Live card for it (state comes from the LiveSession row).
 	Live *LiveRef `json:"live,omitempty"`
@@ -1065,7 +1068,7 @@ func AllModels() []any {
 	return []any{
 		&Workspace{},
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
-		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &Gate{}, &ReactConversation{},
+		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &Gate{}, &ReactConversation{}, &RunReference{},
 		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
 		&RunPreviewPort{}, &PreviewIssue{}, &FeedbackEvent{},
 		&MemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},

@@ -272,7 +272,7 @@ func (e *Engine) GateReactReviseAs(owner, runID, gateNodeID, text string, images
 
 // GateReactReviseIDAs is GateReactReviseAs carrying the sender's optional
 // clientMessageID with the queued turn.
-func (e *Engine) GateReactReviseIDAs(owner, runID, gateNodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) error {
+func (e *Engine) GateReactReviseIDAs(owner, runID, gateNodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, refs ...models.MessageReference) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -291,7 +291,7 @@ func (e *Engine) GateReactReviseIDAs(owner, runID, gateNodeID, clientMessageID, 
 	if !ok || !rp.HasLiveSession(runID, producerID) {
 		return errors.New("上游会话已不存在,请改用普通打回(冷启动)")
 	}
-	_, err = e.enqueueReactTurn(runID, producerID, text, images, annotations, "gate", gateNodeID, sessionKindReview, false, owner, false, clientMessageID)
+	_, err = e.enqueueReactTurn(runID, producerID, text, images, annotations, "gate", gateNodeID, sessionKindReview, false, owner, false, clientMessageID, refs...)
 	return err
 }
 

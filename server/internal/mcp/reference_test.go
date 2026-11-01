@@ -86,8 +86,19 @@ func TestReadReferenceAlwaysListedForSolo(t *testing.T) {
 		t.Fatal("read_reference must be listed before the first @")
 	}
 	h.SetActiveNode("current", "workflow-node", nil)
-	if listed() {
-		t.Fatal("read_reference advertised outside Solo")
+	if !listed() {
+		t.Fatal("read_reference must be listed on workflow nodes")
+	}
+	for _, tool := range h.listedTools("current") {
+		if tool["name"] == "get_history" {
+			t.Fatal("get_history advertised outside Solo")
+		}
+	}
+	h.RegisterRun("idle")
+	for _, tool := range h.listedTools("idle") {
+		if tool["name"] == "read_reference" {
+			t.Fatal("read_reference advertised without an active node")
+		}
 	}
 	if got := FormatMCPAuditSummary("read_reference", map[string]any{"ref": "ref-1"}, "secret text", false); !strings.Contains(got, "读取引用的会话") || !strings.Contains(got, "ref-1") || strings.Contains(got, "secret") {
 		t.Fatalf("audit summary: %q", got)

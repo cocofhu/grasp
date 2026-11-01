@@ -187,6 +187,9 @@ func (s *ConversationHistoryService) ReadReference(runID, refID string, req mcp.
 	empty := mcp.ConversationHistoryPage{Messages: []mcp.ConversationHistoryMessage{}}
 	session, err := s.sessionForRun(runID)
 	if err != nil {
+		if page, handled, runErr := s.readRunReference(runID, refID, req); handled {
+			return page, runErr
+		}
 		return empty, err
 	}
 	ref, err := findAttachedReference(s.db, session.ID, refID)
@@ -202,6 +205,40 @@ func (s *ConversationHistoryService) ReadReference(runID, refID string, req mcp.
 	}
 	log.Debug().Str("session", session.ID).Str("ref", ref.ID).Str("target_session", target.ID).Msg("reference_read")
 	return s.readSession(historyScope{SessionID: target.ID, Title: target.Title, AnchorID: ref.Anchor, RefID: ref.ID}, req)
+}
+
+// readRunReference reads a reference attached to a workflow run turn. Only
+// references pinned on this run are readable, and a Solo target must still
+// belong to the user who sent it. handled is false when runID is not a
+// workflow run.
+func (s *ConversationHistoryService) readRunReference(runID, refID string, req mcp.ConversationHistoryRequest) (mcp.ConversationHistoryPage, bool, error) {
+	empty := mcp.ConversationHistoryPage{Messages: []mcp.ConversationHistoryMessage{}}
+	if s.db == nil || runID == "" {
+		return empty, false, nil
+	}
+	var run models.Run
+	if err := s.db.Select("id").Where("id = ?", runID).First(&run).Error; err != nil {
+		return empty, false, nil
+	}
+	refID = strings.TrimSpace(refID)
+	if refID == "" {
+		return empty, true, errors.New("ref is required")
+	}
+	var row models.RunReference
+	if err := s.db.Where("id = ? AND run_id = ?", refID, runID).First(&row).Error; err != nil {
+		return empty, true, errors.New("ref not attached to this run")
+	}
+	ref := models.MessageReference{ID: row.ID, Kind: row.Kind, Target: row.Target, Title: row.Title, Anchor: row.Anchor}
+	if ref.Kind != models.ReferenceKindSolo {
+		return empty, true, &mcp.ReferenceHintError{Hint: githubReferenceHint(ref)}
+	}
+	var target models.SoloSession
+	if row.UserID == "" || s.db.Where("id = ? AND user_id = ?", ref.Target, row.UserID).First(&target).Error != nil {
+		return empty, true, errors.New("引用的会话已被删除或不可用")
+	}
+	log.Debug().Str("run", runID).Str("ref", ref.ID).Str("target_session", target.ID).Msg("run_reference_read")
+	page, err := s.readSession(historyScope{SessionID: target.ID, Title: target.Title, AnchorID: ref.Anchor, RefID: ref.ID}, req)
+	return page, true, err
 }
 
 // findAttachedReference looks up refID among the references persisted on the

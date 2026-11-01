@@ -129,6 +129,8 @@ type reactReplyBody struct {
 	// ClientMessageID is an optional client-generated UUID for this turn,
 	// echoed on clarify_visit_ended so the sender can match its local copy.
 	ClientMessageID string `json:"clientMessageId"`
+	// References are the sender's @ picks, validated before the turn is queued.
+	References []services.ReferenceInput `json:"references"`
 }
 
 // validClientMessageID accepts "" (absent) or a UUID.
@@ -151,6 +153,14 @@ func (h *Handlers) ReactReply(c *gin.Context) {
 		return
 	}
 	runID, nodeID := c.Param("id"), c.Param("nodeId")
+	if len(b.References) > 0 && (b.Live != nil || b.RetryLast) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "references cannot be combined with live or retryLast", "code": "reference_not_supported"})
+		return
+	}
+	refs, ok := h.prepareRunReferences(c, runID, nodeID, b.References)
+	if !ok {
+		return
+	}
 	if b.Live != nil {
 		sess, err := h.Eng.ReactLiveWithAttachmentsAs(sessionTurnOwner(c), runID, nodeID, *b.Live, b.Images, b.Annotations)
 		if err != nil {
@@ -168,9 +178,9 @@ func (h *Handlers) ReactReply(c *gin.Context) {
 		}
 		err = h.Eng.ReactReplyRetryLastAs(sessionTurnOwner(c), runID, nodeID)
 	} else if b.Force {
-		err = h.Eng.ReactConfirmAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, b.AbortRunning)
+		err = h.Eng.ReactConfirmAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, b.AbortRunning, refs...)
 	} else {
-		err = h.Eng.ReactReplyLiveCtxWithIDAs(sessionTurnOwner(c), runID, nodeID, b.ClientMessageID, b.Text, b.Images, b.Annotations, b.LiveCtx)
+		err = h.Eng.ReactReplyLiveCtxWithIDAs(sessionTurnOwner(c), runID, nodeID, b.ClientMessageID, b.Text, b.Images, b.Annotations, b.LiveCtx, refs...)
 	}
 	if err != nil {
 		writeReactReplyError(c, err)
@@ -211,9 +221,10 @@ func (h *Handlers) ReactCancel(c *gin.Context) {
 }
 
 type gateReactReviseBody struct {
-	Text        string                   `json:"text"`
-	Images      []models.PromptImage     `json:"images"`
-	Annotations []models.ReactAnnotation `json:"annotations"`
+	Text        string                    `json:"text"`
+	Images      []models.PromptImage      `json:"images"`
+	Annotations []models.ReactAnnotation  `json:"annotations"`
+	References  []services.ReferenceInput `json:"references"`
 }
 
 // GateReactRevise issues a ReAct reject-and-annotate against a pending approval
@@ -226,12 +237,16 @@ func (h *Handlers) GateReactRevise(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if strings.TrimSpace(b.Text) == "" && len(b.Images) == 0 && len(b.Annotations) == 0 {
+	if strings.TrimSpace(b.Text) == "" && len(b.Images) == 0 && len(b.Annotations) == 0 && len(b.References) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "text, images, or annotations required"})
 		return
 	}
 	runID, gateNodeID := c.Param("id"), c.Param("nodeId")
-	if err := h.Eng.GateReactReviseAs(sessionTurnOwner(c), runID, gateNodeID, b.Text, b.Images, b.Annotations); err != nil {
+	refs, ok := h.prepareRunReferences(c, runID, gateNodeID, b.References)
+	if !ok {
+		return
+	}
+	if err := h.Eng.GateReactReviseIDAs(sessionTurnOwner(c), runID, gateNodeID, "", b.Text, b.Images, b.Annotations, refs...); err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

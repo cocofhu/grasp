@@ -485,6 +485,7 @@ func main() {
 
 	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
 	soloSvc.SetBlobStore(blobStore)
+	eng.SetReferencePinner(soloSvc)
 
 	h := &handlers.Handlers{
 		WF:                  wfSvc,

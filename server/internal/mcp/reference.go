@@ -7,7 +7,8 @@ import (
 )
 
 // ReferenceReader reads conversations the user explicitly attached to the
-// current Solo session with @. The provider authorizes every read.
+// current Solo session or workflow run with @. The provider authorizes every
+// read.
 type ReferenceReader interface {
 	ReadReference(runID, refID string, req ConversationHistoryRequest) (ConversationHistoryPage, error)
 }

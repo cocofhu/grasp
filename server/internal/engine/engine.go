@@ -148,10 +148,24 @@ type Engine struct {
 
 	// blobs externalizes PromptImage bytes (optional in unit tests).
 	blobs blob.Store
+
+	// refs pins and renders @ references on workflow turns (optional).
+	refs ReferencePinner
 }
 
 // SetBlobStore wires attachment externalization for StartRun / react turns.
 func (e *Engine) SetBlobStore(store blob.Store) { e.blobs = store }
+
+// ReferencePinner fixes @ reference snapshots when a workflow turn begins and
+// renders them for the prompt. Composition root injects *services.SoloService.
+type ReferencePinner interface {
+	PinRunReferences(runID, nodeID, userID string, refs []models.MessageReference) []models.MessageReference
+	RenderReferenceBlock(refs []models.MessageReference) string
+}
+
+// SetReferencePinner wires @ references for workflow turns. Without one,
+// references are kept on the turn but not rendered into the prompt.
+func (e *Engine) SetReferencePinner(p ReferencePinner) { e.refs = p }
 
 // SetPageHub wires the direct-preview hub consulted before a turn mints a
 // page session. Online means the sender is on that preview and has opened

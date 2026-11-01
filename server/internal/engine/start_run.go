@@ -182,6 +182,9 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 	if err != nil {
 		return nil, fmt.Errorf("ingest first message attachments: %w", err)
 	}
+	if strings.TrimSpace(titleOverride) == "" && firstMessage != nil && firstMessage.Text == "" && len(firstMessage.References) > 0 {
+		title = applyRunTitleOverride(title, "@"+firstMessage.References[0].Title)
+	}
 
 	run := models.Run{
 		ID: runID, WorkflowID: def.ID, WorkflowName: def.Name, WorkflowVersion: def.Version,

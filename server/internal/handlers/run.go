@@ -22,7 +22,7 @@ type startRunBody struct {
 	// FirstMessage is the opening chat message (text + attachments) for an
 	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once that node parks, so the caller can navigate away at once.
-	FirstMessage *models.CompositeText `json:"firstMessage"`
+	FirstMessage *firstMessageBody `json:"firstMessage"`
 	// PublishedSnapshot selects the home-page start: execute PublishedVersion
 	// instead of the latest saved head. Editor, home, and sidebar starts omit it.
 	PublishedSnapshot bool `json:"publishedSnapshot"`
@@ -33,6 +33,43 @@ type startRunBody struct {
 	LaunchConfigurationID *string `json:"launchConfigurationId"`
 	LaunchModelID         *string `json:"launchModelId"`
 	LaunchReasoningEffort *string `json:"launchReasoningEffort"`
+}
+
+// firstMessageBody is the opening message as a client sends it: references
+// are bare picks that the server validates and resolves.
+type firstMessageBody struct {
+	Text       string                    `json:"text"`
+	Images     []models.PromptImage      `json:"images,omitempty"`
+	References []services.ReferenceInput `json:"references,omitempty"`
+}
+
+// firstMessage validates the opening message's @ picks against the workflow
+// scope. It writes the error response and reports false on failure, so an
+// invalid pick never creates a run.
+func (h *Handlers) firstMessage(c *gin.Context, workflowID string, b *firstMessageBody) (*models.CompositeText, bool) {
+	if b == nil {
+		return nil, true
+	}
+	msg := &models.CompositeText{Text: b.Text, Images: b.Images}
+	if len(b.References) == 0 {
+		return msg, true
+	}
+	user, ok := h.soloReady(c)
+	if !ok {
+		return nil, false
+	}
+	scope, ok := h.workflowReferenceScope(user, workflowID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "workflow not found"})
+		return nil, false
+	}
+	refs, err := h.Solo.PrepareScopedReferences(c.Request.Context(), scope, b.References)
+	if err != nil {
+		writeSoloErr(c, err)
+		return nil, false
+	}
+	msg.References, msg.ReferenceUser = refs, user
+	return msg, true
 }
 
 func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
@@ -69,11 +106,15 @@ func (h *Handlers) StartRun(c *gin.Context) {
 		return
 	}
 	launch := launchChoiceFromBody(b)
+	firstMessage, ok := h.firstMessage(c, c.Param("id"), b.FirstMessage)
+	if !ok {
+		return
+	}
 	var run *models.Run
 	if b.PublishedSnapshot {
-		run, err = h.Eng.StartRunFromPublishedWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, b.FirstMessage, launch)
+		run, err = h.Eng.StartRunFromPublishedWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, firstMessage, launch)
 	} else {
-		run, err = h.Eng.StartRunWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, b.FirstMessage, launch)
+		run, err = h.Eng.StartRunWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, firstMessage, launch)
 	}
 	if err != nil {
 		_ = c.Error(err)

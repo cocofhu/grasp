@@ -70,6 +70,18 @@ type repoEntry struct {
 	Branch string `json:"branch,omitempty"`
 }
 
+// ReposVarURLs returns the clone URLs listed in a repos variable value, in
+// order, skipping entries without a URL.
+func ReposVarURLs(v any) []string {
+	var out []string
+	for _, r := range parseReposVar(v) {
+		if r.URL != "" {
+			out = append(out, r.URL)
+		}
+	}
+	return out
+}
+
 func parseReposVar(v any) []repoEntry {
 	if v == nil || models.IsBlankVar(v) {
 		return nil
