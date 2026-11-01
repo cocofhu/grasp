@@ -110,6 +110,14 @@
 - 为什么：默认配置是最上层，没有可继承对象，「继承」与 Agent 的「继承默认配置」混淆；旧开关在切换时让卡片和默认组标签时有时无，布局跳动，指定模式里下拉和列表重复显示默认组。
 - 如何验证：`src/components/{agent,workspace,ui/AppSelect}`、`src/lib/agent` 共 72 个文件、793 项单测通过；`vue-tsc --noEmit` 和相关文件 eslint 通过。Playwright 跑 `model-routing`、`agent-create-wizard`、`onboarding-wizard`，38 项通过；新用例断言 radio 角色与文案、切换前后分段和默认组下拉 y 坐标不变，1440 / 390 亮暗下不溢出，并保存截图。`git-help-run-tags-404` 在等待 `agent-wizard-backend-cursor` 时超时，未改动的 main 上同样失败，与本次无关。
 
+### 2026-10-31（侧栏「排队中」分组）
+
+- 日期：2026-10-31。
+- 范围：`web/src/lib/shared/sidebarSections.ts`、`web/src/components/shell/AppSidebarNav.vue`、`web/src/locales/{zh-CN,en}/nav.json`，以及对应测试。
+- 做了什么：`status=queued` 的 Run 从「正在执行」移到「自动过程」下方的新分组「排队中」（Queued），可折叠并沿用原 localStorage 键持久化，带计数与 `queue` 图标，组内支持置顶，无排队 Run 时隐藏；「正在执行」计数不再包含 queued。queued 行不写入 `paintedGroups`，进出排队中直接换位，不播放飞入动画。
+- 为什么：排队中的 Run 挤在「正在执行」顶部，和真正在跑的 Run 混在一起，计数也偏大。
+- 如何验证：`web/` 下 `vue-tsc --noEmit`、改动文件 eslint、vitest 全量（549 文件 / 6064 用例）通过；另在 `e2e/workspace-config.html` 宿主加 mock `/api/runs` 用 Playwright 验证分组顺序、计数、图标、折叠持久化、换组与空组隐藏、置顶、英文文案和移动端抽屉。
+
 ### 2026-10-30（Solo @ 引用：其他会话与 GitHub issue/PR）
 
 - 日期：2026-10-30。

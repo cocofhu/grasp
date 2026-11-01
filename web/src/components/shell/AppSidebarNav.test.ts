@@ -2538,7 +2538,8 @@ describe('AppSidebarNav cancel run', () => {
     expect(apiMocks.listRuns.mock.calls.length).toBe(callsAfterMount + 1)
     expect(routeState.path).toBe('/dashboard')
     expect(wrapper.get('[data-key="run-back"]').text()).toContain('切回来了')
-    expect(wrapper.get('[data-testid="nav-pending-approvals"]').text()).toContain('正在执行')
+    expect(wrapper.get('[data-testid="nav-queued"]').text()).toContain('排队中')
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -2687,7 +2688,8 @@ describe('自动过程 grouping and flight', () => {
     await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
     await flushPromises()
     expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
-    const queuedRow = wrapper.get('[data-testid="nav-running-rows"]').get('[data-key="chat"]')
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    const queuedRow = wrapper.get('[data-testid="nav-queued-rows"]').get('[data-key="chat"]')
     expect(queuedRow.classes()).toContain('active')
     expect(queuedRow.attributes('aria-current')).toBe('true')
     expect(queuedRow.find('[name="alert"]').exists()).toBe(false)
@@ -2766,17 +2768,90 @@ describe('自动过程 grouping and flight', () => {
     ])
     const running = wrapper.get('[data-testid="nav-running-rows"]').findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))
     const automatic = wrapper.get('[data-testid="nav-auto-rows"]').findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))
-    expect(running).toEqual(['wait', 'queue', 'boot', 'take', 'solo-1'])
+    const queued = wrapper.get('[data-testid="nav-queued-rows"]').findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))
+    expect(running).toEqual(['wait', 'boot', 'take', 'solo-1'])
     expect(automatic).toEqual(['go', 'stop', 'blank'])
-    expect(new Set([...running, ...automatic]).size).toBe(running.length + automatic.length)
-    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('5')
+    expect(queued).toEqual(['queue'])
+    expect(new Set([...running, ...automatic, ...queued]).size).toBe(running.length + automatic.length + queued.length)
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('4')
     expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('3')
+    expect(wrapper.get('[data-testid="nav-queued"] .sidebar-section-count').text()).toBe('1')
     expect(wrapper.get('[data-key="go"]').get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
     expect(wrapper.get('[data-key="stop"]').get('[data-testid="nav-auto-node-name"]').text()).toBe('测试')
     expect(wrapper.get('[data-key="blank"]').find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
     expect(wrapper.get('[data-key="go"]').attributes('data-flight')).toBeUndefined()
-    const headings = wrapper.findAll('[data-testid="nav-running-heading"], [data-testid="nav-auto-heading"]').map((el) => el.attributes('data-testid'))
-    expect(headings).toEqual(['nav-running-heading', 'nav-auto-heading'])
+    const headings = wrapper
+      .findAll('[data-testid="nav-running-heading"], [data-testid="nav-auto-heading"], [data-testid="nav-queued-heading"]')
+      .map((el) => el.attributes('data-testid'))
+    expect(headings).toEqual(['nav-running-heading', 'nav-auto-heading', 'nav-queued-heading'])
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('shows 排队中 below 自动过程 with its own count, icon and fold', async () => {
+    const wrapper = await show([
+      run('q1', '排队一', 'queued'),
+      run('wait', '等人', 'waiting_human'),
+      run('q2', '排队二', 'queued'),
+      run('go', '自动', 'running', auto('impl', '实现')),
+    ])
+    const sections = wrapper.findAll('.sidebar-run-section').map((el) => el.attributes('data-testid'))
+    expect(sections).toEqual(['nav-pending-approvals', 'nav-auto-process', 'nav-queued'])
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-testid="nav-queued"] .sidebar-section-count').text()).toBe('2')
+    expect(wrapper.get('[data-testid="nav-queued-heading"]').text()).toContain('排队中')
+    expect(wrapper.get('[data-testid="nav-queued-heading"] .sidebar-section-icon').attributes('name')).toBe('queue')
+    expect(wrapper.get('[data-testid="nav-pending-approvals"]').find('[data-key="q1"]').exists()).toBe(false)
+    expect(wrapper.get('[data-key="q1"]').attributes('data-section')).toBe('queued')
+    expect(wrapper.get('[data-key="q1"]').get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('queue')
+
+    const toggle = wrapper.get('[data-testid="nav-queued-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('[data-testid="nav-queued-rows"]').isVisible()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-running-rows"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="nav-auto-rows"]').isVisible()).toBe(true)
+    expect(JSON.parse(localStorage.getItem('grasp-sidebar-collapsed-sections') || '[]')).toEqual(['queued'])
+    await toggle.trigger('click')
+    expect(wrapper.get('[data-testid="nav-queued-rows"]').isVisible()).toBe(true)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('moves a run out of 排队中 once it starts, and drops the empty group', async () => {
+    const wrapper = await show([
+      run('a', '甲', 'queued'),
+      run('b', '乙', 'queued'),
+    ])
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-queued"] .sidebar-section-count').text()).toBe('2')
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [run('a', '甲', 'running', auto('impl', '实现')), run('b', '乙', 'waiting_human')],
+      total: 2,
+    })
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="nav-queued"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-auto-rows"]').find('[data-key="a"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="nav-running-rows"]').find('[data-key="b"]').exists()).toBe(true)
+    expect(wrapper.get('[data-key="a"]').attributes('data-flight')).toBeUndefined()
+    expect(wrapper.get('[data-key="b"]').attributes('data-flight')).toBeUndefined()
+    expect(wrapper.find('[data-testid="nav-flight-ghost"]').exists()).toBe(false)
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [run('a', '甲', 'queued'), run('b', '乙', 'waiting_human')],
+      total: 2,
+    })
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-queued-rows"]').find('[data-key="a"]').exists()).toBe(true)
+    expect(wrapper.get('[data-key="a"]').attributes('data-flight')).toBeUndefined()
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('1')
     wrapper.unmount()
     vi.useRealTimers()
   })

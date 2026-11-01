@@ -81,6 +81,7 @@ const { isMobile } = useBreakpoint()
 const soloStore = useSoloSessions()
 const runningCollapsed = computed(() => isSectionCollapsed('running'))
 const autoCollapsed = computed(() => isSectionCollapsed('auto'))
+const queuedCollapsed = computed(() => isSectionCollapsed('queued'))
 const navRoot = ref<HTMLElement | null>(null)
 
 let timer: number | undefined
@@ -106,7 +107,7 @@ const pendingItems = computed(() => {
 })
 const pendingRunIds = computed(() => new Set(pendingItems.value.map((it) => it.runId)))
 
-/** Unfinished runs (queued / running / waiting_human) for「正在执行」. */
+/** Unfinished runs (queued / running / waiting_human) for「正在执行」「自动过程」「排队中」. */
 const runningRuns = ref<Run[]>([])
 const runningById = computed(() => new Map(runningRuns.value.map((r) => [r.id, r])))
 /** A row is named after its run: the run's own title wins over whatever the pending item carries. */
@@ -236,18 +237,20 @@ const pendingRunTitles = computed(() => {
 const runPins = computed(() => pins.value.filter((p) => !p.itemKey.startsWith('solo:')).map((p) => ({ ...p, itemKey: pinRunId(p.itemKey) })))
 const soloPins = computed(() => pins.value.filter((p) => p.itemKey.startsWith('solo:')))
 const isRowPinned = (it: InboxItem) => runPins.value.some((p) => p.itemKey === it.runId)
-function rowGroup(runId: string): 'running' | 'auto' | 'left' {
+type RowGroup = 'running' | 'auto' | 'queued' | 'left'
+function rowGroup(runId: string): RowGroup {
   if (isSidebarRunDismissed(runId)) return 'left'
-  const natural = sidebarRunGroup(runningById.value.get(runId), readSidebarHandoff(runId))
   // This confirm's window is still up. Keep the row where it was painted in 正在执行,
   // even when the handoff or the snapshot already says 自动过程. A row already
   // painted in 自动过程 is not this handoff and must not be pulled back.
   if (isSidebarConfirmWindowHeld(runId) && paintedGroups.get(runId) !== 'auto') return 'running'
-  return natural
+  const run = runningById.value.get(runId)
+  if (run?.status === 'queued') return 'queued'
+  return sidebarRunGroup(run, readSidebarHandoff(runId))
 }
 const rowGroups = computed(() => {
   void sidebarHandoffEpoch.value
-  const groups = new Map<string, 'running' | 'auto' | 'left'>()
+  const groups = new Map<string, RowGroup>()
   for (const it of pendingRows.value) groups.set(it.runId, rowGroup(it.runId))
   return groups
 })
@@ -257,8 +260,10 @@ function autoNodeName(it: InboxItem): string {
 }
 const humanPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'running'))
 const autoPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'auto'))
+const queuedPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'queued'))
 const orderedHumanRows = computed(() => orderWithPins(humanPendingRows.value, (it) => it.runId, runPins.value))
 const orderedAutoRows = computed(() => orderWithPins(autoPendingRows.value, (it) => it.runId, runPins.value))
+const orderedQueuedRows = computed(() => orderWithPins(queuedPendingRows.value, (it) => it.runId, runPins.value))
 /**
  * Active Solo sandboxes share the same running section as workflow runs.
  * Ordered by start time (newest first) so activity never reshuffles the rows.
@@ -272,8 +277,9 @@ const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
 const orderedSoloRows = computed(() => orderWithPins(soloRows.value, soloRowKey, soloPins.value))
 const runningSectionCount = computed(() => orderedHumanRows.value.length + orderedSoloRows.value.length)
 const autoSectionCount = computed(() => orderedAutoRows.value.length)
+const queuedSectionCount = computed(() => orderedQueuedRows.value.length)
 
-type RunSectionId = 'running' | 'auto'
+type RunSectionId = 'running' | 'auto' | 'queued'
 const runSections = computed(() => {
   const sections: Array<{
     id: RunSectionId
@@ -282,7 +288,7 @@ const runSections = computed(() => {
     toggleTestId: string
     rowsTestId: string
     labelKey: string
-    icon: 'run-live' | 'arrow-flow'
+    icon: 'run-live' | 'arrow-flow' | 'queue'
     count: number
     collapsed: boolean
     rows: InboxItem[]
@@ -315,6 +321,21 @@ const runSections = computed(() => {
       count: autoSectionCount.value,
       collapsed: autoCollapsed.value,
       rows: orderedAutoRows.value,
+      solos: [],
+    })
+  }
+  if (queuedSectionCount.value > 0) {
+    sections.push({
+      id: 'queued',
+      testId: 'nav-queued',
+      headingTestId: 'nav-queued-heading',
+      toggleTestId: 'nav-queued-toggle',
+      rowsTestId: 'nav-queued-rows',
+      labelKey: 'nav.queuedRuns',
+      icon: 'queue',
+      count: queuedSectionCount.value,
+      collapsed: queuedCollapsed.value,
+      rows: orderedQueuedRows.value,
       solos: [],
     })
   }
@@ -1141,6 +1162,7 @@ function settleRunGroups() {
     if (mark?.confirmedAuto && !isSidebarRunDismissed(runId)) continue
     clearSidebarHandoff(runId)
   }
+  // Queued rows stay out of the painted groups, so moving in or out of 排队中 is a plain place.
   const next = new Map<string, SidebarRunGroup>()
   for (const it of orderedHumanRows.value) next.set(it.runId, 'running')
   for (const it of orderedAutoRows.value) next.set(it.runId, 'auto')
@@ -1183,7 +1205,8 @@ const placementKey = computed(() => {
   void sidebarHandoffEpoch.value
   const human = orderedHumanRows.value.map((it) => it.runId).join('\n')
   const auto = orderedAutoRows.value.map((it) => `${it.runId}\t${autoNodeName(it)}`).join('\n')
-  return `${human}\u0000${auto}`
+  const queued = orderedQueuedRows.value.map((it) => it.runId).join('\n')
+  return `${human}\u0000${auto}\u0000${queued}`
 })
 watch(placementKey, () => { captureRowRects() }, { flush: 'pre' })
 watch(placementKey, () => { settleRunGroups() }, { flush: 'post', immediate: true })

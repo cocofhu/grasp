@@ -11,7 +11,12 @@ import {
 
 describe('parseStoredSections', () => {
   it('keeps known sections and drops names this build does not know', () => {
-    expect(parseStoredSections(['running', 'nope', 'auto', 'history', 1, null])).toEqual(['running', 'auto', 'history'])
+    expect(parseStoredSections(['running', 'nope', 'auto', 'queued', 'history', 1, null])).toEqual([
+      'running',
+      'auto',
+      'queued',
+      'history',
+    ])
     expect(parseStoredSections('running')).toEqual([])
     expect(parseStoredSections(null)).toEqual([])
   })
@@ -33,5 +38,16 @@ describe('collapsed sidebar sections', () => {
     expect(collapsedSections.value).toEqual(['auto', 'running'])
     toggleSection('auto')
     expect(isSectionCollapsed('auto')).toBe(false)
+  })
+
+  it('remembers 排队中 without touching the other sections', () => {
+    toggleSection('queued')
+    expect(isSectionCollapsed('queued')).toBe(true)
+    expect(isSectionCollapsed('running')).toBe(false)
+    expect(isSectionCollapsed('auto')).toBe(false)
+    expect(isSectionCollapsed('history')).toBe(false)
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')).toEqual(['queued'])
+    toggleSection('queued')
+    expect(isSectionCollapsed('queued')).toBe(false)
   })
 })
