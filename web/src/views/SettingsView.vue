@@ -13,6 +13,9 @@ import Icon from '@/components/ui/Icon.vue'
 import IntegrationsPanel from '@/components/settings/IntegrationsPanel.vue'
 import SettingsSection from '@/components/settings/SettingsSection.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
+import SettingsPageHeader from '@/components/settings/SettingsPageHeader.vue'
+import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
+import type { SettingsStatItem } from '@/components/settings/settingsStats'
 import { setBrandSettings, setExecutionMode } from '@/lib/composables/useBrandSettings'
 
 const { t } = useI18n()
@@ -35,24 +38,28 @@ const groups = computed(() => {
   const all = [
     {
       id: 'concurrency',
+      icon: 'chart',
       title: t('pages.settings.groups.concurrency.title'),
       desc: t('pages.settings.groups.concurrency.desc'),
       keys: ['max_concurrent_runs'],
     },
     {
       id: 'recycle',
+      icon: 'refresh',
       title: t('pages.settings.groups.recycle.title'),
       desc: t('pages.settings.groups.recycle.desc'),
       keys: ['run_sandbox_ttl_minutes', 'run_sandbox_max_retention_hours', 'test_sandbox_ttl_minutes'],
     },
     {
       id: 'capacity',
+      icon: 'layers',
       title: t('pages.settings.groups.capacity.title'),
       desc: t('pages.settings.groups.capacity.desc'),
-      keys: ['max_test_sandboxes'],
+      keys: ['max_test_sandboxes', 'max_solo_sandboxes'],
     },
     {
       id: 'resources',
+      icon: 'server',
       title: t('pages.settings.groups.resources.title'),
       desc: worktreeMode.value
         ? t('pages.settings.execution.sectionDesc')
@@ -204,6 +211,33 @@ function barWidth(ratio: number): string {
   return `${Math.min(100, ratio * 100)}%`
 }
 
+const usageLoaded = ref(false)
+const overviewStats = computed<SettingsStatItem[]>(() => {
+  const stats: SettingsStatItem[] = [
+    { key: 'execution-mode', icon: 'terminal', label: t('pages.settingsOverview.stats.executionMode'), value: executionLabel.value, tone: 'accent' },
+    {
+      key: 'running-runs',
+      icon: 'chart',
+      label: t('pages.settingsOverview.stats.runningRuns'),
+      value: usageLoaded.value && itemOf('max_concurrent_runs') ? runCount.value : undefined,
+      total: runLimit.value,
+      tone: runRatio.value >= 1 ? 'warn' : 'neutral',
+    },
+  ]
+  if (worktreeMode.value) return stats
+  stats.push({
+    key: 'test-sandboxes',
+    icon: 'flask',
+    label: t('pages.settingsOverview.stats.testSandboxes'),
+    value: usageLoaded.value && itemOf('max_test_sandboxes') ? usage.value.testCount : undefined,
+    total: testLimit.value,
+    tone: testRatio.value >= 1 ? 'warn' : 'neutral',
+  })
+  const memory = itemOf('sandbox_memory_mb')
+  stats.push({ key: 'sandbox-memory', icon: 'server', label: t('pages.settingsOverview.stats.sandboxMemory'), value: memory?.value, unit: settingUnit('sandbox_memory_mb') })
+  return stats
+})
+
 async function loadSettings() {
   const localSeq = settingsSeq.beginListRequest()
   loading.value = true
@@ -239,6 +273,7 @@ async function pollSandboxes() {
     const [sb, dash] = await Promise.all([api.listSandboxes(), api.dashboard()])
     sandboxes.value = sb
     dashboard.value = dash
+    usageLoaded.value = true
     usageError.value = ''
   } catch (e: any) {
     usageError.value = e?.message || t('pages.settings.usageRefreshFailed')
@@ -410,10 +445,15 @@ onBeforeUnmount(() => {
     <Transition name="ui-fade" mode="out-in">
       <IntegrationsPanel v-if="showIntegrations" key="integrations" />
       <div v-else key="settings-main">
-        <header class="mb-8">
-          <h1 class="m-0 text-2xl font-semibold tracking-tight text-txt">{{ t('pages.settings.title') }}</h1>
-          <p class="mb-0 mt-2 text-[13px] leading-5 text-txt3">{{ t('pages.settings.subtitle') }}</p>
-        </header>
+        <SettingsPageHeader class="mb-6" icon="settings" :title="t('pages.settings.title')" :description="t('pages.settings.subtitle')" />
+
+        <SettingsStatStrip
+          v-if="!loadFailed && !loadDenied && !workspaceUnavailable"
+          class="mb-6"
+          :items="overviewStats"
+          :loading="showSkeleton"
+          data-testid="settings-overview-stats"
+        />
 
         <div
           v-if="error && items.length && !loadFailed && !loadDenied"
@@ -430,7 +470,7 @@ onBeforeUnmount(() => {
 
         <div
           v-if="showSkeleton"
-          class="border-y border-line/60"
+          class="settings-card px-5"
           data-testid="settings-form-skeleton"
           aria-hidden="true"
         >
@@ -447,7 +487,7 @@ onBeforeUnmount(() => {
           v-else-if="loadDenied"
           role="status"
           data-testid="settings-denied"
-          class="border-y border-line/60 py-10 text-center"
+          class="settings-card px-5 py-10 text-center"
         >
           <Icon name="lock" :size="22" class="mx-auto mb-3 text-txt3" />
           <h2 class="text-sm font-semibold text-txt">{{ t('common.asyncState.permissionDeniedTitle') }}</h2>
@@ -459,7 +499,7 @@ onBeforeUnmount(() => {
           v-else-if="loadFailed || workspaceUnavailable"
           role="status"
           data-testid="settings-failed"
-          class="border-y border-line/60 py-10 text-center"
+          class="settings-card px-5 py-10 text-center"
         >
           <h2 class="text-sm font-semibold text-txt">{{ t('common.asyncState.loadFailedTitle') }}</h2>
           <p class="mt-1 text-xs text-txt3">{{ t('common.asyncState.loadFailedDesc') }}</p>
@@ -468,7 +508,7 @@ onBeforeUnmount(() => {
 
         <template v-else>
           <div :class="showRefreshProgress ? 'opacity-[0.55]' : ''">
-            <SettingsSection :title="t('pages.workspace.metaTitle')" :description="t('pages.workspace.metaHint')" data-testid="workspace-info-section">
+            <SettingsSection icon="flag" :title="t('pages.workspace.metaTitle')" :description="t('pages.workspace.metaHint')" data-testid="workspace-info-section">
               <SettingsRow :label="t('pages.workspace.nameLabel')" for="workspace-meta-name">
                 <input
                   id="workspace-meta-name"
@@ -513,7 +553,7 @@ onBeforeUnmount(() => {
               </SettingsRow>
             </SettingsSection>
 
-            <SettingsSection :title="t('pages.settings.brand.title')" :description="t('pages.settings.brand.desc')" data-testid="brand-settings-group">
+            <SettingsSection icon="sparkles" :title="t('pages.settings.brand.title')" :description="t('pages.settings.brand.desc')" data-testid="brand-settings-group">
               <SettingsRow for="setting-brand-product-name" :label="t('pages.settings.brand.productName')" :description="t('pages.settings.brand.productNameHint')">
                 <input
                   id="setting-brand-product-name"
@@ -541,7 +581,7 @@ onBeforeUnmount(() => {
               <template v-if="!isAdmin" #footer>{{ t('pages.settings.brand.readOnly') }}</template>
             </SettingsSection>
 
-            <SettingsSection v-for="group in groups" :key="group.id" :title="group.title" :description="group.desc">
+            <SettingsSection v-for="group in groups" :key="group.id" :icon="group.icon" :title="group.title" :description="group.desc">
               <SettingsRow
                 v-if="group.id === 'resources'"
                 :label="t('pages.settings.execution.label')"
@@ -621,10 +661,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.settings-page { width: 100%; max-width: 860px; margin-inline: auto; padding-top: 44px; padding-bottom: 80px; }
+.settings-page { width: 100%; max-width: 960px; margin-inline: auto; padding-top: 36px; padding-bottom: 80px; }
+.settings-card { border: 1px solid rgb(var(--c-line)); border-radius: 12px; background: rgb(var(--c-surface)); }
 .settings-brand-input { width: 260px; max-width: 100%; }
 @media (max-width: 639px) {
-  .settings-page { padding-top: 28px; padding-bottom: 56px; }
+  .settings-page { padding-top: 24px; padding-bottom: 56px; }
   .settings-brand-input { width: 100%; }
 }
 

@@ -14,6 +14,8 @@ func projectReviewSessionsDTO(out gin.H, eng *engine.Engine, runID string) {
 	if byNode := reactSessionsDTO(eng.ReviewSessionsForRun(runID)); byNode != nil {
 		out["reactSessions"] = byNode
 	}
+	// The same versioned state the run WebSocket sends as type:"dialogue".
+	out["dialogueByNode"] = eng.DialoguesForRun(runID)
 }
 
 // reactSessionsDTO maps engine review/clarify session snapshots to the

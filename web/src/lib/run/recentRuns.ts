@@ -25,6 +25,18 @@ export function recentCurrentNode(run: RecentRun): RunCurrentNode | null {
 }
 
 /**
+ * Automatic agent already chosen, visit not started. The sidebar lists it
+ * under「自动过程」. It is not a live stream yet, but the click still opens
+ * the conversation and waits there.
+ */
+export function enteringAutoNode(run: RecentRun): RunCurrentNode | null {
+  const n = run.currentNode
+  if (!n?.id || n.kind !== 'agent' || n.mode !== 'auto' || n.state !== 'entering') return null
+  if (run.status !== 'running' && run.status !== 'waiting_human') return null
+  return n
+}
+
+/**
  * A visit the user can only watch (read-only stream + Stop): an auto agent
  * that is running, or one just taken over whose auto call is still unwinding
  * (server: kind=takeover, state=stopping; the chat opens once it waits).
@@ -40,15 +52,7 @@ export function isObservableNode(n: RunCurrentNode | null | undefined): boolean 
  * breath dot, and anyone waiting (approval included) is the person-hold mark.
  */
 export function recentRunMark(run: RecentRun): RecentRunMark | null {
-  const raw = run.currentNode
-  if (
-    raw &&
-    raw.id &&
-    raw.kind === 'agent' &&
-    raw.mode === 'auto' &&
-    raw.state === 'entering' &&
-    (run.status === 'running' || run.status === 'waiting_human')
-  ) {
+  if (enteringAutoNode(run)) {
     return { icon: { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' } }
   }
   const n = recentCurrentNode(run)
@@ -65,13 +69,27 @@ export function recentRunMark(run: RecentRun): RecentRunMark | null {
 export const runLivePath = (runId: string) => `/runs/${encodeURIComponent(runId)}/live`
 export const runDetailPath = (runId: string) => `/runs/${encodeURIComponent(runId)}`
 
-/** Click target: the node's chat (live stream for auto, inbox chat otherwise), else run detail. */
+/**
+ * Click target: the live conversation for an automatic process (including one
+ * that has not started), the node's chat for a person, else run detail.
+ * `awaitAuto` is the sidebar row already sitting in「自动过程」while the
+ * snapshot has no watchable node yet — still the conversation, not detail.
+ * Desktop and narrow screens share this target.
+ */
 export function recentRunTarget(
   run: RecentRun,
   filters?: { wf?: string; tag?: string },
+  options?: { awaitAuto?: boolean },
 ): RouteLocationRaw {
+  const entering = enteringAutoNode(run)
+  if (entering) return { path: runLivePath(run.id), query: { node: entering.id } }
   const n = recentCurrentNode(run)
-  if (!n) return runDetailPath(run.id)
+  if (!n) {
+    if (options?.awaitAuto && (run.status === 'running' || run.status === 'waiting_human')) {
+      return runLivePath(run.id)
+    }
+    return runDetailPath(run.id)
+  }
   if (isObservableNode(n)) return { path: runLivePath(run.id), query: { node: n.id } }
   const query: Record<string, string> = {}
   if (filters?.wf) query.wf = filters.wf

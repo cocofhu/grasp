@@ -144,6 +144,7 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 		Description: "从默认基线创建。仓库可在启动运行时调整。",
 		NeedsRepo:   true,
 		Graph:       envelope.Graph,
+		Defaults:    envelope.Defaults,
 	}
 	if err := s.WF.Save(&wf); err != nil {
 		return models.WorkflowDef{}, err
@@ -650,6 +651,8 @@ func (s *OnboardingService) upsertDefaultWorkflow(envelope models.ExportEnvelope
 		}
 	}
 	desc := strings.TrimSpace(envelope.Description)
+	// Template defaults only seed a new workflow; an existing one keeps the
+	// user's defaults (including an unset or per_node sandbox mode).
 	if existing != nil {
 		existing.Name = envelope.Name
 		existing.Description = desc
@@ -666,6 +669,7 @@ func (s *OnboardingService) upsertDefaultWorkflow(envelope models.ExportEnvelope
 		Description: desc,
 		NeedsRepo:   true,
 		Graph:       graph,
+		Defaults:    envelope.Defaults,
 	}
 	if err := s.WF.Save(&wf); err != nil {
 		return models.WorkflowDef{}, err

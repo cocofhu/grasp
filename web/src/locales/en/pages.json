@@ -89,7 +89,6 @@
       },
       "charts": {
         "lines": "Usage trend",
-        "linesHint": "Compare this period with the previous period, by model or cost. Click a point for its events.",
         "pies": "Share",
         "piesHint": "Click a slice for details",
         "bars": "Consumption ranking",
@@ -391,6 +390,7 @@
       "next": "Next",
       "skip": "Skip",
       "later": "Maybe later",
+      "dismissedHint": "It won't open automatically again. Click \"New workflow\", then \"Finish the guide\", whenever you're ready.",
       "generate": "Generate setup",
       "generating": "Generating…",
       "close": "Close",
@@ -404,6 +404,7 @@
         "model": "Configure coding tool",
         "key": "API key",
         "git": "Git",
+        "gitCredentials": "Git credentials",
         "team": "Team",
         "workflow": "Workflow preview",
         "done": "Done",
@@ -447,12 +448,16 @@
         "vendorTitle": "Model vendor API key"
       },
       "git": {
-        "meta": "Agents sign their commits; the repository and access credentials can be added now or skipped.",
+        "meta": "Agents sign their commits; add the repository now or skip it.",
         "repoCredSection": "Repository and access credentials",
         "skip": "Skip",
         "unskip": "Configure now",
         "skippedHint": "Skipped: pick the repository when you start a run, and add private-repo credentials later under Workspace credentials.",
         "foot": "Credentials stay in this workspace and are never included when an Agent is exported."
+      },
+      "gitCredentials": {
+        "meta": "Private repositories need access credentials: pick an existing one or create one below. For public repositories, just continue.",
+        "invalid": "The selected Git credential is unavailable. Pick another one."
       },
       "gitUser": {
         "section": "Commit signature",
@@ -599,6 +604,7 @@
         "model": "Coding tool, credential, and model",
         "key": "Model and key",
         "git": "Signature and repository",
+        "gitCredentials": "Connect GitHub, GitLab, or SSH",
         "team": "Agents to create",
         "workflow": "Default workflow to publish",
         "done": "Generate and run once",
@@ -607,18 +613,12 @@
       "prefsMeta": "Interface language and theme, plus the preview abilities Agents get.",
       "prefsMetaCreate": "Workspace name, plus the preview abilities Agents get.",
       "ready": "Ready",
-      "expandSetup": "Set up",
-      "collapseSetup": "Collapse",
       "modelSetup": {
         "description": "Choose a model using the credentials saved in the previous step, or select an existing model configuration.",
         "selected": "Default team model",
         "selectedHint": "All four Agents use this model by default. You can customize each later.",
         "title": "Add a model",
         "hint": "Choose a coding tool and a saved credential, then select the model."
-      },
-      "gitSetup": {
-        "title": "Add Git credentials",
-        "hint": "Connect GitHub, GitLab, or SSH here. Saved credentials are ready to use."
       },
       "solo": {
         "emptyShort": "Empty Agent for Solo",
@@ -1167,7 +1167,17 @@
         "failInterruptedDesc": "The server restarted while this reply was generating. Retry to run it again.",
         "openSource": "Open source",
         "citationMissing": "Citation target missing or inaccessible",
-        "citationInvalid": "Invalid citation or target does not exist"
+        "citationInvalid": "Invalid citation or target does not exist",
+        "setupBadgeDisabled": "Disabled",
+        "setupBadgeUnavailable": "Needs setup",
+        "setupStepsLabel": "Setup steps",
+        "setupStep1": "Choose an existing Agent in settings",
+        "setupStep2": "Turn on “Enable assistant” and save",
+        "setupStep3": "Come back here to ask, or ask from a QQ / Feishu Channel",
+        "setupPreviewQ1": "Which runs are stuck this week?",
+        "setupPreviewA1": "Two runs are waiting for approval, and one test node failed once.",
+        "setupPreviewQ2": "Which one first?",
+        "setupPreviewA2": "Start with the one that has waited longest; it blocks three downstream tasks."
       },
       "externalMcp": {
         "connectionTitle": "Connection",
@@ -1265,6 +1275,11 @@
         "secretLoginFile": "Login file",
         "secretPrivateKey": "Private key",
         "secretKnownHosts": "Known hosts",
+        "knownHostsHint": "OpenSSH known_hosts format, one entry per line, e.g. github.com ssh-ed25519 AAAA…",
+        "knownHostsLines": "{count} line | {count} lines",
+        "knownHostsEmpty": "Not provided",
+        "knownHostsConfigured": "Known hosts configured",
+        "knownHostsNotConfigured": "No known hosts",
         "pickTitle": "Credential to use",
         "pickHint": "The title is the alias. A run injects only the selected one, and clearing it does not switch to another.",
         "codingPickHint": "When nothing is selected, the Agent uses the workspace default credential. When one is selected, only that one is used.",
@@ -1280,8 +1295,7 @@
           "opencode": "OpenCode CLI",
           "github": "GitHub",
           "gitlab": "GitLab",
-          "ssh_key": "SSH private key",
-          "ssh_hosts": "SSH known hosts",
+          "ssh_key": "SSH key",
           "deepseek_harness": "DeepSeek Harness",
           "kimi_code": "Kimi Code"
         },
@@ -1309,14 +1323,67 @@
         "edit": "Edit",
         "fillIn": "Fill in",
         "save": "Save",
-        "clear": "Clear",
+        "delete": "Delete",
         "saved": "Credential saved",
-        "cleared": "Credential cleared",
+        "credentialDeleteConfirm": "After deleting credential \"{alias}\", model configurations or Git bindings that reference it will stop working, and Agents can no longer use it. Delete it?",
+        "credentialDeleted": "Credential deleted",
+        "credentialDeleteFailed": "Could not delete the credential",
         "accountDeleteConfirm": "After deleting API account \"{alias}\", model configurations using this API account will stop working, and Agents bound to those configurations will no longer run. Delete it?",
         "accountDeleted": "API account deleted",
         "accountDeleteFailed": "Could not delete the API account",
         "managedByAdapter": "Managed by the {source} settings and shown here for workspace visibility.",
-        "updatedAt": "Last updated: {time}"
+        "updatedAt": "Last updated: {time}",
+        "githubDevice": {
+          "site": "Site",
+          "siteAside": "Custom domains and ports are supported",
+          "siteOfficial": "Official",
+          "siteCustom": "Self-hosted",
+          "siteInvalid": "Invalid",
+          "siteReset": "Reset",
+          "authMethod": "Authorization",
+          "tabLogin": "Sign in with GitHub",
+          "tabPaste": "Paste a token",
+          "loginOnlyGithubCom": "Device sign-in only supports github.com",
+          "cardTitle": "Enter the code on GitHub",
+          "accountTitle": "GitHub account",
+          "badgeWaiting": "Waiting",
+          "badgeAuthorized": "Authorized",
+          "badgeExpired": "Expired",
+          "badgeDenied": "Denied",
+          "badgeError": "Not finished",
+          "idleHint": "Get a one-time code, enter it on GitHub and authorize. The credential is saved automatically; no token to create.",
+          "getCode": "Get code",
+          "codeLabel": "Code {code}",
+          "copyCode": "Copy code",
+          "copied": "Copied",
+          "copyFailed": "Copy failed. Type the code by hand.",
+          "openGitHub": "Open GitHub",
+          "autoSave": "Saved automatically once you authorize; no need to come back here",
+          "remaining": "{time} left",
+          "scopes": "Requested scopes",
+          "savedAs": "Saved as “{name}”. You can bind it to Agents.",
+          "updatedAs": "“{name}” has a new token. Existing bindings keep working.",
+          "scopeWarning": "This authorization does not include the repo scope, so private repositories may not clone.",
+          "expired": "The code expired. Authorize on GitHub within 15 minutes.",
+          "denied": "Authorization was denied on GitHub. Nothing was saved.",
+          "retry": "Get a new code",
+          "done": "Done",
+          "saved": "Credential saved with GitHub sign-in",
+          "relogin": "Sign in again",
+          "reloginLabel": "Sign in again with GitHub",
+          "reloginTitle": "Sign in again with GitHub · {name}",
+          "authMethodTag": "GitHub sign-in",
+          "errors": {
+            "device_flow_disabled": "The GitHub OAuth App does not have Device Flow enabled. Ask an admin to check Enable Device Flow in the App settings.",
+            "incorrect_client_credentials": "The GitHub OAuth App client ID is invalid. Ask an admin to check GRASP_GITHUB_OAUTH_CLIENT_ID.",
+            "alias_taken": "The alias “{alias}” is already used. Nothing was saved; pick another alias and try again.",
+            "credential_unavailable": "The target credential was deleted or revoked. Nothing was saved.",
+            "session_not_found": "The sign-in session ended (the server may have restarted). Get a new code.",
+            "device_login_disabled": "GitHub sign-in is not enabled on this deployment.",
+            "invalid_target": "Only a github.com GitHub credential can sign in again with GitHub.",
+            "unknown": "GitHub sign-in did not finish. Try again."
+          }
+        }
       },
       "varName": "Name",
       "varValue": "Default",
@@ -1971,6 +2038,7 @@
         "run_sandbox_max_retention_hours": "Run sandbox max retention",
         "test_sandbox_ttl_minutes": "Test sandbox idle TTL",
         "max_test_sandboxes": "Max test sandboxes",
+        "max_solo_sandboxes": "Max Solo sandboxes",
         "sandbox_memory_mb": "Sandbox memory limit",
         "agent_idle_timeout_minutes": "Agent no-activity limit"
       },
@@ -1980,6 +2048,7 @@
         "run_sandbox_max_retention_hours": "A finished run sandbox is kept while any retention reason (debug window, in use, preview, manual extension) holds; this is the hard ceiling counted from when its node finished. Run sandboxes are always cleaned up when the platform restarts; retention does not survive a restart.",
         "test_sandbox_ttl_minutes": "Idle TTL for test sandboxes.",
         "max_test_sandboxes": "Reject new test sandboxes when active count reaches this (min 1).",
+        "max_solo_sandboxes": "How many Solo session sandboxes can run at once. Solo sandboxes are never reclaimed when idle, so close a session to start a new one once this is reached (min 1).",
         "sandbox_memory_mb": "Memory per sandbox, shared by dockerd, the browser and the agent's builds/tests; exceeding it OOM-kills the whole sandbox. The agent prompt states this limit. Applies to newly created sandboxes (min 1024, must not exceed the gateway maxMemoryMB). Read-only when locked by GRASP_SANDBOX_MEMORY_MB.",
         "agent_idle_timeout_minutes": "When the agent shows no output, CPU or disk activity for this long, the sandbox tries to resume it once and, if it stays silent, stops the turn as stuck (the node retries once in a fresh sandbox). Agents running builds, tests or long reasoning keep CPU/IO busy and are not stopped. Applies from the next turn (2–120 minutes, default 20). Read-only when locked by GRASP_CHAT_IDLE_SEC."
       },
@@ -2862,8 +2931,7 @@
         },
         "git": {
           "meta": "Pick GitHub / GitLab / SSH, or skip. Credentials already saved in the workspace can be selected here.",
-          "emptySkip": "No saved credential yet. Save one under workspace credentials, or skip this step.",
-          "hostsEmpty": "No saved known hosts yet. You can leave this unset."
+          "emptySkip": "No saved credential yet. Save one under workspace credentials, or skip this step."
         },
         "env": {
           "meta": "Environment variables injected into the sandbox. Region keys are managed by the Agent step; secrets stay in the Agent config."
@@ -3112,8 +3180,6 @@
         "scopePlaceholder": "e.g. git.example.com or a repository URL",
         "scopeHint": "Leave empty for the provider’s default site. Repository URLs take precedence over site scopes.",
         "scopeInvalid": "Use a valid host or repository URL that matches this credential’s host and protocol.",
-        "hosts": "SSH host verification",
-        "hostsNone": "No saved host verification",
         "unavailable": "Credential unavailable. Remove it or restore it in Credentials.",
         "inherited": "Using workspace defaults",
         "legacy": "Using existing authorization",
@@ -4807,6 +4873,42 @@
         "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
         "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level."
+      },
+      "reference": {
+        "pickerLabel": "Reference a session or GitHub issue/PR",
+        "tabs": {
+          "all": "All",
+          "solo": "Sessions",
+          "issue": "Issues",
+          "pr": "PRs"
+        },
+        "stateLabel": "State filter",
+        "state": {
+          "open": "Open",
+          "all": "All"
+        },
+        "more": "More {kind}",
+        "loadMore": "Load more",
+        "loading": "Loading…",
+        "noMatch": "No matches",
+        "full": "Up to {n} references per message",
+        "githubSubtitle": "{repo} · {state} · {n} comments",
+        "sessionStatus": {
+          "running": "Running",
+          "starting": "Starting",
+          "closed": "Closed",
+          "error": "Error"
+        },
+        "remove": "Remove reference {label}",
+        "deleted": "The referenced session was deleted",
+        "denied": "No access: {reason}",
+        "unchecked": "Access could not be checked at send time; the agent will read it itself",
+        "pinned": "{n} messages as of sending",
+        "menu": {
+          "upload": "Upload file",
+          "session": "Reference a session",
+          "github": "Reference an issue / PR"
+        }
       }
     },
     "projects": {
@@ -4842,6 +4944,67 @@
         "repoDirPlaceholder": "Defaults to the repository name",
         "repoDirHint": "Cloned to /root/workspace/{dir} in the sandbox",
         "save": "Save"
+      }
+    },
+    "settingsOverview": {
+      "desc": {
+        "assistantSettings": "Choose the Agent behind the assistant, connect Channels and set automatic approval rules.",
+        "schedules": "Run Agent tasks on a schedule and deliver the results to a Channel.",
+        "audit": "Review tool calls and MCP access made by Agents in this workspace.",
+        "notificationPolicy": "Decide which events notify people and which Channel delivers them.",
+        "projects": "Manage the repositories and default branches that workflow runs use.",
+        "variables": "Inject shared environment variables and configuration into every Agent run.",
+        "general": "Manage workspace details, brand copy, run concurrency and sandbox resources."
+      },
+      "stats": {
+        "credentialsTotal": "Credentials",
+        "credentialsConfigured": "Configured",
+        "credentialsGitHosts": "Repository hosts",
+        "credentialsPending": "Needs a value",
+        "modelsTotal": "Model groups",
+        "modelsEnabled": "Enabled",
+        "modelsTools": "Coding tools",
+        "modelsProblems": "Need attention",
+        "toolUnit": "tools",
+        "executionMode": "Execution mode",
+        "runningRuns": "Running / limit",
+        "testSandboxes": "Test sandboxes",
+        "sandboxMemory": "Sandbox memory limit",
+        "mcpConnection": "External access",
+        "mcpEnabled": "On",
+        "mcpDisabled": "Off",
+        "mcpPacks": "Open packs",
+        "mcpKeys": "Access keys",
+        "notifyChannels": "Connected Channels",
+        "notifyStatus": "Notifications",
+        "notifyOn": "On",
+        "notifyOff": "Off",
+        "projectsTotal": "Repositories",
+        "variablesTotal": "Shared variables",
+        "schedulesTotal": "Schedules",
+        "schedulesEnabled": "Enabled",
+        "notifyEvents": "Subscribed events",
+        "projectsUsed": "Used",
+        "projectsHosts": "Repository hosts",
+        "variablesWithDefault": "With default",
+        "variablesTypes": "Types",
+        "schedulesDeliver": "Deliver to Channel"
+      },
+      "modelStatus": {
+        "available": "Available",
+        "disabled": "Disabled",
+        "missingConfiguration": "Group unavailable",
+        "configurationBackendMismatch": "Tool mismatch",
+        "missingCredential": "Credential missing",
+        "missingConnection": "API address unavailable",
+        "unsupported": "Protocol unsupported",
+        "missingModel": "Model missing",
+        "requiredRoles": "Helper model missing",
+        "fallback": "Needs attention"
+      },
+      "credentialStatus": {
+        "configured": "Configured",
+        "pending": "Needs a value"
       }
     }
   }

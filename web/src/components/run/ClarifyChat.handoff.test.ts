@@ -17,6 +17,10 @@ import { confirmFlowCeremonyKey } from '@/lib/inbox/confirmFlowCeremony'
 import { beginBoot, bootKey, clearBootRecords, markBootLive, seedBoot } from '@/lib/run/bootRecord'
 import type { ClarifyTurn } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { feedDialogue, runningTurn } from '@/test/dialogueKit'
+
+afterEach(() => clearDialogues())
 
 beforeAll(async () => {
   const zh = await loadLocaleMessages('zh-CN')
@@ -236,6 +240,8 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     expect(tail().text()).toContain('就绪后可直接输入')
     expect(icon()).toBe('arc-spinner')
     await w.setProps({ followTail: { kind: 'waiting', at } })
+    expect(tail().text()).toContain('等待下一节点开始')
+    expect(tail().text()).toContain('就绪后可直接输入')
     await flushPromises()
     expect(tail().text()).toContain('等待下一节点开始')
     await w.setProps({ followTail: { kind: 'error', at } })
@@ -258,6 +264,19 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     await flushPromises()
     expect(tail().text()).toContain('运行已取消')
     expect(icon()).toBe('warn-pulse')
+    w.unmount()
+  })
+
+  it('shows the waiting copy on the live conversation without a handoff row', async () => {
+    const w = mountChat({ observe: true, followTail: { kind: 'waiting', label: '调研', at: '' } })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-handoff"]').exists()).toBe(false)
+    const tail = w.get('[data-testid="clarify-follow-tail"]')
+    expect(tail.text()).toContain('「调研」准备中')
+    expect(tail.text()).toContain('就绪后可直接输入')
+    await w.setProps({ followTail: { kind: 'waiting', at: '' } })
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).toContain('等待下一节点开始')
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).toContain('就绪后可直接输入')
     w.unmount()
   })
 
@@ -820,11 +839,14 @@ describe('follow process stays on the confirmed conversation', () => {
   it('settles 思考中 and 生成中 once the confirmed turn has ended', async () => {
     const w = mountChat({ turns: [] })
     await flushPromises()
-    w.vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'implement', item: { text: '请确认' } })
-    w.vm.applyAcpEvents(
-      [{ kind: 'timeline', t: 1, parts: [{ kind: 'thought', text: '还在收尾' }] }],
-      'implement',
-    )
+    feedDialogue('run-1', 'implement', {
+      busy: true,
+      rows: [
+        { role: 'human', text: '请确认', at: '1', turnId: 't1' },
+        { role: 'agent', text: '', at: '2', turnId: 't1', streaming: true, parts: [{ kind: 'thought', text: '还在收尾' }] },
+      ],
+      turns: [runningTurn('t1', { text: '请确认' })],
+    })
     await flushPromises()
     expect(w.text()).toMatch(/思考中|生成中/)
     w.vm.settleConfirmedTurn()

@@ -60,6 +60,7 @@ type SoloCreateInput struct {
 	Title                  string               `json:"title"`
 	Text                   string               `json:"text"`
 	Images                 []models.PromptImage `json:"images"`
+	References             []ReferenceInput     `json:"references,omitempty"`
 	InitialModelID         string               `json:"initialModelId,omitempty"`
 	InitialConfigurationID string               `json:"initialConfigurationId,omitempty"`
 	ReasoningEffort        string               `json:"reasoningEffort,omitempty"`
@@ -114,8 +115,9 @@ type SoloService struct {
 	modelAlign soloModelAligner
 	pending    *chatsession.PendingStore
 
-	mu    sync.Mutex
-	chats map[string]*soloChat
+	mu     sync.Mutex
+	chats  map[string]*soloChat
+	github *githubRefClient
 }
 
 // soloModelAligner applies a model to the sandbox default chat. changed is
@@ -152,6 +154,9 @@ type soloTurn struct {
 	ID     string
 	Text   string
 	Images []models.PromptImage
+	// References were validated at send time; Solo anchors are pinned when
+	// the turn begins.
+	References []models.MessageReference `json:",omitempty"`
 }
 
 // NewSoloService builds the service. sbx may be nil in tests that only touch
@@ -423,6 +428,14 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 		row.ProjectSnapshot = projects[0]
 		row.Branch = snaps[0].Branch
 	}
+	// Checked before anything is created so a bad pick costs no sandbox.
+	references, err := s.prepareReferences(ctx, row, in.References)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Title) == "" && strings.TrimSpace(in.Text) == "" && len(references) > 0 {
+		row.Title = truncRunes("@"+references[0].Title, 30)
+	}
 	if err := s.db.Create(row).Error; err != nil {
 		return nil, err
 	}
@@ -437,8 +450,8 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	for _, p := range projects {
 		s.projects.Touch(p.ID)
 	}
-	if strings.TrimSpace(in.Text) != "" || len(in.Images) > 0 {
-		if _, err := s.Send(row.ID, user, in.Text, in.Images); err != nil {
+	if strings.TrimSpace(in.Text) != "" || len(in.Images) > 0 || len(references) > 0 {
+		if _, err := s.enqueueTurn(row.ID, in.Text, in.Images, references); err != nil {
 			log.Warn().Err(err).Str("session", row.ID).Msg("solo first message enqueue failed")
 		}
 	}
@@ -735,7 +748,7 @@ func (s *SoloService) newChat(id string) *soloChat {
 		Capacity:  soloQueueCapacity,
 		FullError: "Solo 会话排队已满，请稍候",
 		View: func(q *soloTurn) chatsession.ItemView {
-			return chatsession.ItemView{ID: q.ID, Text: q.Text, Images: q.Images}
+			return chatsession.ItemView{ID: q.ID, Text: q.Text, Images: q.Images, References: q.References}
 		},
 		Execute: c.execute,
 		Publish: c.publish,
@@ -1186,6 +1199,12 @@ func (s *SoloService) persistResolvedEffort(row *models.SoloSession, stored, res
 
 // Send queues a user turn. It returns the number of turns ahead of it.
 func (s *SoloService) Send(id, user, text string, images []models.PromptImage) (int, error) {
+	return s.SendWithReferences(id, user, text, images, nil)
+}
+
+// SendWithReferences queues a user turn with explicit @ picks. References
+// only come from refs; the text is never parsed for @.
+func (s *SoloService) SendWithReferences(id, user, text string, images []models.PromptImage, refs []ReferenceInput) (int, error) {
 	row, err := s.Require(id, user)
 	if err != nil {
 		return 0, err
@@ -1197,10 +1216,19 @@ func (s *SoloService) Send(id, user, text string, images []models.PromptImage) (
 		return 0, soloErr(http.StatusConflict, "session_error", "沙箱不可用，请重新启动会话")
 	}
 	text = strings.TrimSpace(text)
-	if text == "" && len(images) == 0 {
+	if text == "" && len(images) == 0 && len(refs) == 0 {
 		return 0, soloErr(http.StatusBadRequest, "content_required", "消息不能为空")
 	}
-	images, err = blob.IngestPromptImages(context.Background(), s.blobs, images)
+	references, err := s.prepareReferences(context.Background(), row, refs)
+	if err != nil {
+		return 0, err
+	}
+	return s.enqueueTurn(id, text, images, references)
+}
+
+// enqueueTurn queues a turn whose references are already validated.
+func (s *SoloService) enqueueTurn(id, text string, images []models.PromptImage, references []models.MessageReference) (int, error) {
+	images, err := blob.IngestPromptImages(context.Background(), s.blobs, images)
 	if err != nil {
 		return 0, fmt.Errorf("ingest attachments: %w", err)
 	}
@@ -1208,7 +1236,7 @@ func (s *SoloService) Send(id, user, text string, images []models.PromptImage) (
 		return 0, errors.New("solo chat unavailable")
 	}
 	c := s.acquire(id)
-	return c.sess.Enqueue(&soloTurn{ID: uuid.NewString(), Text: text, Images: images}, nil)
+	return c.sess.Enqueue(&soloTurn{ID: uuid.NewString(), Text: strings.TrimSpace(text), Images: images, References: references}, nil)
 }
 
 const (
@@ -1440,6 +1468,13 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	s := c.svc
 	started := time.Now()
 	userMsg := models.SoloMessage{ID: q.ID, SessionID: c.id, Role: "user", Content: q.Text, Images: q.Images}
+	if len(q.References) > 0 {
+		if row, err := s.load(c.id); err == nil {
+			userMsg.References = s.pinReferences(row, q.References)
+		} else {
+			userMsg.References = q.References
+		}
+	}
 	if err := s.db.Create(&userMsg).Error; err != nil {
 		return false, err
 	}
@@ -1488,8 +1523,13 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	}
 
 	prompt := q.Text
-	if prompt == "" {
+	if prompt == "" && len(q.Images) > 0 {
 		prompt = "（见附件）"
+	} else if prompt == "" {
+		prompt = "（见引用）"
+	}
+	if block := s.renderReferenceBlock(userMsg.References); block != "" {
+		prompt = block + "\n\n" + prompt
 	}
 	usedPreamble := false
 	// A recreated sandbox still uses the restart summary. A model switch only

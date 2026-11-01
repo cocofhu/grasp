@@ -18,7 +18,7 @@ test('settings keeps the app rail and a centered document without search', async
   const mainBox = await page.getByTestId('shell-page-scroll').boundingBox()
   const mainWidth = await page.getByTestId('shell-page-scroll').evaluate(el => el.clientWidth)
   expect(navBox!.width).toBe(360)
-  expect(formBox!.width).toBeLessThanOrEqual(860)
+  expect(formBox!.width).toBeLessThanOrEqual(960)
   expect(Math.abs(formBox!.x + formBox!.width / 2 - (mainBox!.x + mainWidth / 2))).toBeLessThan(2)
   const field = page.locator('#workspace-meta-name')
   await field.fill('清晰的设置布局')

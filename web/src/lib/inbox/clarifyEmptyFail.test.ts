@@ -4,72 +4,27 @@ import {
   emptyFailHeadline,
   failureDetailText,
   turnProcessParts,
-  isEmptyFailedAgent,
-  isFailureAssistantText,
   isRetryableFailedAgent,
 } from './clarifyEmptyFail'
 import type { ClarifyTurn } from '@/lib/shared/types'
 
 describe('clarifyEmptyFail', () => {
-  it('detects empty failed agents (plan g1.1)', () => {
-    expect(
-      isEmptyFailedAgent({ role: 'agent', text: '', at: 't' }),
-    ).toBe(true)
-    expect(
-      isEmptyFailedAgent({ role: 'agent', text: '', thought: 'x', at: 't' }),
-    ).toBe(false)
-    expect(
-      isEmptyFailedAgent({
-        role: 'agent',
-        text: '',
-        at: 't',
-        questions: [{ id: 'q', prompt: '?', options: [] }],
-      }),
-    ).toBe(false)
-    expect(
-      isEmptyFailedAgent({ role: 'agent', text: '', at: 't', interrupted: true }),
-    ).toBe(false)
-    expect(
-      isEmptyFailedAgent({ role: 'agent', text: '', at: 't', streaming: true }),
-    ).toBe(false)
-  })
-
-  it('treats failure banners as retryable (plan g1.2 / edge)', () => {
-    expect(isFailureAssistantText('(澄清回复失败:timeout)')).toBe(true)
-    expect(isFailureAssistantText('(澄清会话已失效,自动重建沙箱失败,请稍后重试)')).toBe(
-      true,
-    )
-    expect(isFailureAssistantText('(复审修改失败:acp chat idle timeout)')).toBe(true)
-    expect(isFailureAssistantText('正常回复')).toBe(false)
-    expect(
-      isRetryableFailedAgent({
-        role: 'agent',
-        text: '(澄清回复失败:x)',
-        at: 't',
-      }),
-    ).toBe(true)
-    expect(
-      isRetryableFailedAgent({
-        role: 'agent',
-        text: '(已中断)',
-        at: 't',
-        interrupted: true,
-      }),
-    ).toBe(false)
-    expect(
-      isRetryableFailedAgent({
-        role: 'agent',
-        text: '已完成正文',
-        at: 't',
-      }),
-    ).toBe(false)
+  it('retries only a reply the server ended empty or failed (plan g1.2)', () => {
+    expect(isRetryableFailedAgent({ role: 'agent', text: '', at: 't', outcome: 'empty' })).toBe(true)
+    expect(isRetryableFailedAgent({ role: 'agent', text: '(澄清回复失败:x)', at: 't', outcome: 'failed' })).toBe(true)
+    // The text alone never makes a failure.
+    expect(isRetryableFailedAgent({ role: 'agent', text: '(澄清回复失败:x)', at: 't', outcome: 'ok' })).toBe(false)
+    expect(isRetryableFailedAgent({ role: 'agent', text: '', at: 't' })).toBe(false)
+    expect(isRetryableFailedAgent({ role: 'agent', text: '(已中断)', at: 't', interrupted: true, outcome: 'interrupted' })).toBe(false)
+    expect(isRetryableFailedAgent({ role: 'agent', text: '', at: 't', outcome: 'empty', streaming: true })).toBe(false)
+    expect(isRetryableFailedAgent({ role: 'human', text: '', at: 't', outcome: 'empty' })).toBe(false)
   })
 
   it('prefers cleaned error text for failure card copy', () => {
-    const empty: ClarifyTurn = { role: 'agent', text: '', at: 't' }
+    const empty: ClarifyTurn = { role: 'agent', text: '', at: 't', outcome: 'empty' }
     expect(emptyFailDisplayText(empty, '本轮没有输出')).toBe('本轮没有输出')
     expect(emptyFailHeadline(empty, '本轮没有输出', '这一轮没有完成')).toBe('本轮没有输出')
-    const failed: ClarifyTurn = { role: 'agent', text: '(澄清回复失败:boom)', at: 't' }
+    const failed: ClarifyTurn = { role: 'agent', text: '(澄清回复失败:boom)', at: 't', outcome: 'failed' }
     expect(emptyFailDisplayText(failed, '本轮没有输出')).toBe('boom')
     expect(emptyFailHeadline(failed, '本轮没有输出', '这一轮没有完成')).toBe('这一轮没有完成')
     expect(
@@ -84,6 +39,7 @@ describe('clarifyEmptyFail', () => {
       role: 'agent',
       text: '(澄清回复失败:boom)',
       at: 't',
+      outcome: 'failed',
       tools: Array.from({ length: 50 }, () => ({ title: 'Read', status: 'completed' })),
       parts: [
         { kind: 'tool', title: 'Glob', status: 'completed' },

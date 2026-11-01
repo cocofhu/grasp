@@ -413,7 +413,7 @@ func lastRetryableHuman(msgs []models.ReactMessage) (text string, images []model
 	case "human":
 		return last.Text, last.Images, last.Annotations, true
 	case "agent":
-		if !isRetryableEmptyOrFailedAgent(last) {
+		if !models.RetryableReply(last) {
 			return "", nil, nil, false
 		}
 		if len(msgs) < 2 {
@@ -427,22 +427,6 @@ func lastRetryableHuman(msgs []models.ReactMessage) (text string, images []model
 	default:
 		return "", nil, nil, false
 	}
-}
-
-// isRetryableEmptyOrFailedAgent matches frontend empty/failure cards: no
-// questions, not interrupted, and either blank body or a known failure banner.
-func isRetryableEmptyOrFailedAgent(m models.ReactMessage) bool {
-	if m.Role != "agent" || m.Interrupted || len(m.Questions) > 0 {
-		return false
-	}
-	t := strings.TrimSpace(m.Text)
-	if t == "" {
-		return true
-	}
-	return strings.Contains(t, "澄清开场失败") ||
-		strings.Contains(t, "澄清回复失败") ||
-		strings.Contains(t, "澄清会话已失效") ||
-		strings.Contains(t, "复审修改失败")
 }
 
 func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string, autoRetryOnResume bool, clientMessageID string) (waiting int, err error) {
@@ -700,25 +684,27 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	var humanMsg models.ReactMessage
 	if item.RetryLast {
 		// Drop trailing empty/failed agent so the next agent reply overwrites it.
-		if n := len(conv.Messages); n > 0 && isRetryableEmptyOrFailedAgent(conv.Messages[n-1]) {
+		if n := len(conv.Messages); n > 0 && models.RetryableReply(conv.Messages[n-1]) {
 			conv.Messages = conv.Messages[:n-1]
 		}
 		if n := len(conv.Messages); n == 0 || conv.Messages[n-1].Role != "human" {
 			return false, errors.New("没有可重试的上一轮用户消息")
 		}
+		// The retried request now belongs to this turn: one human row per turn.
+		conv.Messages[len(conv.Messages)-1].TurnID = item.ID
 		humanMsg = conv.Messages[len(conv.Messages)-1]
 		// Ensure Effective uses the persisted human (item already carries it).
 		logDB(e.db.Save(&conv), s.runID, "clarify retryLast drop failed agent")
 	} else {
 		humanMsg = models.ReactMessage{
-			Role: "human", Text: item.Text, At: now,
+			Role: "human", Text: item.Text, At: now, TurnID: item.ID,
 			ClientMessageID: item.ClientMessageID,
 			Images:          item.Images, Annotations: item.Annotations, Live: item.Live,
 		}
 		conv.Messages = append(conv.Messages, humanMsg)
 		logDB(e.db.Save(&conv), s.runID, "save clarify human turn (turn_begin)")
 	}
-	e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
+	e.publishReact(s.runID, s.producerID)
 
 	req := e.nodeReq(c, node)
 	e.prepareVisitModel(ctx, &req, &conv, s.runID, s.producerID)
@@ -748,19 +734,21 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	for _, text := range t.Handoffs {
 		conv.Messages = append(conv.Messages, models.ReactMessage{
 			Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Handoff: true,
-			ClientMessageID: humanMsg.ClientMessageID,
+			ClientMessageID: humanMsg.ClientMessageID, TurnID: item.ID, Outcome: models.OutcomeOK,
 		})
 	}
+	body := models.ReplyRow(t.Events, t.Msg)
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
-		ClientMessageID: humanMsg.ClientMessageID,
-		Questions:       t.Questions, Forms: t.Forms, Interrupted: interrupted,
-		OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
+		ClientMessageID: humanMsg.ClientMessageID, TurnID: item.ID,
+		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
+		OpID: t.OpID, Tools: body.Tools, Parts: body.Parts,
 	}
 	applyReplyMetadata(&agentMsg, t)
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" {
 		agentMsg.Text = "(已中断)"
 	}
+	sealReplyOutcome(&agentMsg, t.Err)
 	conv.Messages = append(conv.Messages, agentMsg)
 	e.rememberTurnRoute(&conv, &req, t)
 	e.recordFeedback(e.clarifyFeedbackEvent(s, item, conv.Iteration, answered, humanMsg, agentMsg, interrupted, t.AgentSummary))
@@ -778,7 +766,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 			log.Info().Str("run_id", s.runID).Str("node", s.producerID).
 				Msg("clarify turn interrupted by Cancel; queue kept for next item")
 		}
-		e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
+		e.publishReact(s.runID, s.producerID)
 		return true, nil
 	}
 
@@ -786,7 +774,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		logDB(e.db.Save(&conv), s.runID, "save clarify conversation")
 		e.flushMcpCalls(s.runID, s.producerID)
 		e.flushTokenUsage(s.runID, s.producerID, t.Usage, t.UsageByModel)
-		e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
+		e.publishReact(s.runID, s.producerID)
 		return false, nil
 	}
 
@@ -884,7 +872,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	}
 	now := time.Now().Format(time.RFC3339)
 	conv.Messages = append(conv.Messages, models.ReactMessage{
-		Role: "human", Text: item.Text, At: now,
+		Role: "human", Text: item.Text, At: now, TurnID: item.ID,
 		ClientMessageID: item.ClientMessageID,
 		Images:          item.Images, Annotations: item.Annotations, Live: item.Live,
 		GateNodeID: gateTag,
@@ -898,7 +886,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	e.host.SetActiveReview(s.runID, true)
 
 	// Publish react so UIs that refetch on turn_begin see the human bubble.
-	e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
+	e.publishReact(s.runID, s.producerID)
 
 	// Snapshot before the agent edits so the ledger can state which products
 	// this specific push-back moved.
@@ -921,21 +909,23 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	for _, text := range t.Handoffs {
 		conv.Messages = append(conv.Messages, models.ReactMessage{
 			Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Handoff: true,
-			ClientMessageID: humanMsg.ClientMessageID,
-			GateNodeID:      gateTag,
+			ClientMessageID: humanMsg.ClientMessageID, TurnID: item.ID, Outcome: models.OutcomeOK,
+			GateNodeID: gateTag,
 		})
 	}
+	body := models.ReplyRow(t.Events, t.Msg)
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
-		ClientMessageID: humanMsg.ClientMessageID,
-		Questions:       t.Questions, Forms: t.Forms, Interrupted: interrupted,
-		OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
+		ClientMessageID: humanMsg.ClientMessageID, TurnID: item.ID,
+		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
+		OpID: t.OpID, Tools: body.Tools, Parts: body.Parts,
 		GateNodeID: gateTag,
 	}
 	applyReplyMetadata(&agentMsg, t)
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" && t.Err != nil {
 		agentMsg.Text = "(已中断)"
 	}
+	sealReplyOutcome(&agentMsg, t.Err)
 	conv.Messages = append(conv.Messages, agentMsg)
 	e.rememberTurnRoute(&conv, &req, t)
 	logDB(e.db.Save(&conv), s.runID, "save review agent turn")
@@ -958,7 +948,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		// targets, because nothing landed. Interrupted rounds usually omit
 		// agentSummary; empty field keeps the card summary section hidden.
 		e.recordFeedback(e.reviewFeedbackEvent(s, item, iter, humanMsg, agentMsg, nil, true, t.AgentSummary))
-		e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
+		e.publishReact(s.runID, s.producerID)
 		return true, nil
 	}
 
@@ -974,7 +964,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		e.refreshPendingGatesForProducer(c, s.producerID)
 		e.broker.Publish(s.runID, jsonMsg("artifact_edit", s.runID, s.producerID))
 	}
-	e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
+	e.publishReact(s.runID, s.producerID)
 	return false, nil
 }
 
@@ -1034,6 +1024,7 @@ func (e *Engine) publishReviewLane(runID, nodeID, lane, event string, extra map[
 		return
 	}
 	e.broker.Publish(runID, msg)
+	e.noteDialogueControl(runID, nodeID, lane, event, payload)
 }
 
 // clarifyVisitLive reports whether the clarify visit (runID, nodeID,

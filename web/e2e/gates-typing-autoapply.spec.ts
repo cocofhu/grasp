@@ -9,6 +9,7 @@ import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 import { routeApi } from './helpers/apiRoute'
 import { CLARIFY_CAPS } from '../src/test/capsFixtures'
+import { createDialogueServer, type FakeRow, type FakeTurn } from './helpers/dialogueServer'
 
 const NOW = '2026-10-21T01:00:00Z'
 const RUN = 'run-typing-hold'
@@ -142,36 +143,39 @@ test('a healthy socket recovers startup, missed ongoing output and a missed term
   const sockets: WebSocketRoute[] = []
   await page.routeWebSocket(new RegExp(`/api/runs/${RUN}/events`), ws => { sockets.push(ws) })
   const image = { data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j4e8AAAAASUVORK5CYII=', mimeType: 'image/png', name: 'opening.png' }
-  const opening = { id: 'opening', text: '检查这张图', images: [image] }
+  const opening = { text: '检查这张图', images: [image] }
+  const openingHuman: FakeRow = { role: 'human', ...opening, turnId: 'opening' }
   let starting = true
-  let revision = 2
-  let session: Record<string, unknown> | undefined
-  let events = [{ kind: 'thought', text: '已启动，正在检查图片。' }]
-  let turns: Record<string, unknown>[] = [{ role: 'human', text: opening.text, images: [image], at: NOW }]
+  const dialogue = createDialogueServer(RUN, NODE, { rows: [openingHuman] })
+  let queued: FakeTurn[] = []
   let acceptedId = ''
+  const running = (thought: string) => dialogue.set({
+    rows: [openingHuman, { role: 'agent', text: '', thought, turnId: 'opening', streaming: true }],
+    turns: [{ turnId: 'opening', phase: 'running', item: opening }, ...queued],
+  })
   await routeApi(page, '**/api/**', async route => {
     const request = route.request()
     const pathname = new URL(request.url()).pathname
     if (pathname === `/api/runs/${RUN}/nodes/${NODE}/context`) {
       await route.fulfill({ json: {
         type: 'clarify', status: 'waiting_human',
-        ...(starting ? {} : { reviewSessionGeneration: 4, reactSessions: session ? { [NODE]: session } : {} }),
+        ...(starting ? {} : { dialogueByNode: dialogue.byNode() }),
         nodes: [{ id: NODE, type: 'agent', caps: CLARIFY_CAPS, label: '需求澄清', config: {} }],
         artifacts: [], nodeExecutions: {},
-        clarify: { nodeId: NODE, iteration: 1, starting, done: false, label: '需求澄清', turns },
+        clarify: { nodeId: NODE, iteration: 1, starting, done: false, label: '需求澄清', turns: [] },
       } })
       return
     }
-    if (pathname === `/api/runs/${RUN}/nodes/${NODE}/events`) {
-      await route.fulfill({ json: { events, hasMore: false } })
+    if (pathname === `/api/runs/${RUN}/nodes/${NODE}/dialogue`) {
+      await route.fulfill({ json: dialogue.frame() })
       return
     }
     if (pathname === `/api/runs/${RUN}/nodes/${NODE}/reply` && request.method() === 'POST') {
       const body = request.postDataJSON() as { text: string; clientMessageId: string }
       acceptedId = body.clientMessageId
-      session = { ...session, revision: ++revision, waiting: 1,
-        items: [{ id: 'queued-next', text: body.text, clientMessageId: body.clientMessageId }] }
-      sockets.at(-1)!.send(JSON.stringify({ type: 'review', event: 'queue_state', nodeId: NODE, ...session }))
+      queued = [{ turnId: 'queued-next', phase: 'queued', item: { text: body.text, clientMessageId: body.clientMessageId } }]
+      dialogue.set({ ...dialogue.get(), turns: [...(dialogue.get().turns ?? []), ...queued] })
+      sockets.at(-1)!.send(JSON.stringify(dialogue.frame()))
       await route.fulfill({ json: { status: 'queued', waiting: 1 } })
       return
     }
@@ -181,11 +185,11 @@ test('a healthy socket recovers startup, missed ongoing output and a missed term
   await expect(page.getByTestId('clarify-boot-loader')).toBeVisible({ timeout: 15_000 })
   await expect.poll(() => sockets.length).toBeGreaterThan(0)
 
-  // Omit status/react transitions. The selected object still says starting
-  // while the server's current context and pending row have moved forward.
+  // Omit status pushes. The selected object still says starting while the
+  // server's current context and pending row have moved forward.
   starting = false
   state.items[0]!.state = 'replying'
-  session = { sessionGeneration: 4, revision, busy: true, waiting: 0, items: [], activeItem: opening }
+  running('已启动，正在检查图片。')
   sockets.at(-1)!.send(JSON.stringify({ type: 'heartbeat' }))
   await expect(page.getByTestId('clarify-input')).toBeVisible()
   await expect(page.getByTestId('agent-timeline-thought')).toContainText('已启动，正在检查图片。')
@@ -197,20 +201,23 @@ test('a healthy socket recovers startup, missed ongoing output and a missed term
   await input.press('Enter')
   await expect(page.getByTestId('clarify-review-queue')).toContainText('只修改前端')
   await input.fill('草稿保持不动')
-  events = [{ kind: 'thought', text: '工具已经完成，继续核对页面；这段输出的推送丢失了。' }]
+  // This state's push is lost; the heartbeat read brings it.
+  running('工具已经完成，继续核对页面；这段输出的推送丢失了。')
   sockets.at(-1)!.send(JSON.stringify({ type: 'heartbeat' }))
   await expect(page.getByTestId('agent-timeline-thought')).toContainText('工具已经完成，继续核对页面')
   await expect(page.getByTestId('clarify-review-queue')).toContainText('只修改前端')
   await expect(page.getByTestId('clarify-busy-status')).toBeVisible()
   await expect(input).toHaveValue('草稿保持不动')
 
-  // Both turns really finished on the server; their terminal pushes were lost.
-  session = undefined
-  turns = [...turns,
-    { role: 'agent', text: '图片已检查。', at: NOW },
-    { role: 'human', text: '只修改前端', clientMessageId: acceptedId, at: NOW },
-    { role: 'agent', text: '前端修改已完成。', at: NOW },
-  ]
+  // Both turns really finished on the server; their pushes were lost.
+  dialogue.set({
+    rows: [openingHuman,
+      { role: 'agent', text: '图片已检查。', turnId: 'opening' },
+      { role: 'human', text: '只修改前端', clientMessageId: acceptedId, turnId: 'queued-next' },
+      { role: 'agent', text: '前端修改已完成。', turnId: 'queued-next' },
+    ],
+    turns: [{ turnId: 'queued-next', phase: 'ended', outcome: 'ok', clientMessageId: acceptedId }],
+  })
   sockets.at(-1)!.send(JSON.stringify({ type: 'heartbeat' }))
   await expect(page.getByTestId('clarify-review-queue')).toHaveCount(0)
   await expect(page.getByTestId('clarify-busy-status')).toHaveCount(0)
@@ -220,21 +227,23 @@ test('a healthy socket recovers startup, missed ongoing output and a missed term
   expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1)
 })
 
-test('tool-only recovery survives watchdog traffic and three identical accepted sends settle once each', async ({ page }) => {
+test('tool-only recovery survives repeated identical states and three identical accepted sends settle once each', async ({ page }) => {
   test.setTimeout(45_000)
   await mockInbox(page, { items: [{ ...clarifyRow(RUN, '历史消息故障组合回归'), state: 'replying' }] })
   const sockets: WebSocketRoute[] = []
   await page.routeWebSocket(new RegExp(`/api/runs/${RUN}/events`), ws => { sockets.push(ws) })
-  const opening = { id: 'opening', clientMessageId: 'opening-client', text: '先检查代码' }
+  const opening = { clientMessageId: 'opening-client', text: '先检查代码' }
+  const openingHuman: FakeRow = { role: 'human', ...opening, turnId: 'opening' }
   const accepted: { id: string; clientMessageId: string; text: string }[] = []
-  let revision = 1
-  let session: Record<string, unknown> | undefined = { sessionGeneration: 50, revision, busy: true, waiting: 0, items: [], activeItem: opening }
-  let turns: Record<string, unknown>[] = [{ role: 'human', text: opening.text, clientMessageId: opening.clientMessageId, at: NOW }]
-  const toolSnapshot = (output: string) => [
-    { kind: 'tool_call', t: 1, title: 'Shell', status: 'in_progress' },
-    { kind: 'timeline', t: 1, parts: [{ kind: 'tool', title: 'Shell', status: 'in_progress', input: 'npm test', output }] },
-  ]
-  let events: Record<string, unknown>[] = toolSnapshot('line one')
+  const toolReply = (output: string): FakeRow => ({ role: 'agent', text: '', turnId: 'opening', streaming: true,
+    parts: [{ kind: 'tool', title: 'Shell', status: 'in_progress', input: 'npm test', output }] })
+  const dialogue = createDialogueServer(RUN, NODE)
+  const running = (output: string) => dialogue.set({
+    rows: [openingHuman, toolReply(output)],
+    turns: [{ turnId: 'opening', phase: 'running', item: opening },
+      ...accepted.map((a): FakeTurn => ({ turnId: a.id, phase: 'queued', item: { text: a.text, clientMessageId: a.clientMessageId } }))],
+  })
+  running('line one')
   let holdContext: Promise<void> | undefined
   let heldReads = 0
   await routeApi(page, '**/api/**', async route => {
@@ -244,7 +253,7 @@ test('tool-only recovery survives watchdog traffic and three identical accepted 
       await route.fulfill({ json: { runId: RUN, status: 'waiting_human',
         currentNode: { id: NODE, name: '需求澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' },
         segments: [{ nodeId: NODE, name: '需求澄清', iteration: 1, kind: 'clarify', status: 'waiting_human',
-          startedAt: NOW, turns, boot: { status: 'ready', readyAt: NOW } }],
+          startedAt: NOW, turns: [], boot: { status: 'ready', readyAt: NOW } }],
       } })
       return
     }
@@ -255,24 +264,24 @@ test('tool-only recovery survives watchdog traffic and three identical accepted 
     if (pathname === `/api/runs/${RUN}/nodes/${NODE}/context`) {
       if (holdContext) { heldReads++; await holdContext }
       await route.fulfill({ json: {
-        type: 'clarify', status: 'waiting_human', reviewSessionGeneration: 50,
-        reactSessions: session ? { [NODE]: session } : {},
+        type: 'clarify', status: 'waiting_human',
+        dialogueByNode: dialogue.byNode(),
         nodes: [{ id: NODE, type: 'agent', caps: CLARIFY_CAPS, label: '需求澄清', config: {} }],
         artifacts: [], nodeExecutions: {},
-        clarify: { nodeId: NODE, iteration: 1, done: false, label: '需求澄清', turns },
+        clarify: { nodeId: NODE, iteration: 1, done: false, label: '需求澄清', turns: [] },
       } })
       return
     }
-    if (pathname === `/api/runs/${RUN}/nodes/${NODE}/events`) {
-      await route.fulfill({ json: { events, hasMore: false } })
+    if (pathname === `/api/runs/${RUN}/nodes/${NODE}/dialogue`) {
+      await route.fulfill({ json: dialogue.frame() })
       return
     }
     if (pathname === `/api/runs/${RUN}/nodes/${NODE}/reply` && request.method() === 'POST') {
       const body = request.postDataJSON() as { text: string; clientMessageId: string }
       accepted.push({ id: `accepted-${accepted.length + 1}`, text: body.text, clientMessageId: body.clientMessageId })
-      session = { ...session, revision: ++revision, waiting: accepted.length, items: [...accepted] }
-      // The WebSocket acknowledgement deliberately overtakes the HTTP response.
-      sockets.at(-1)!.send(JSON.stringify({ type: 'review', event: 'queue_state', nodeId: NODE, ...session }))
+      running('line one')
+      // The WebSocket push deliberately overtakes the HTTP response.
+      sockets.at(-1)!.send(JSON.stringify(dialogue.frame()))
       await route.fulfill({ json: { status: 'queued', waiting: accepted.length } })
       return
     }
@@ -287,9 +296,9 @@ test('tool-only recovery survives watchdog traffic and three identical accepted 
   await expect(page.getByTestId('agent-tool-output')).toContainText('line one')
   const connections = sockets.length
   const push = (frame: unknown) => sockets.at(-1)!.send(JSON.stringify(frame))
-  const watchdog = () => push({ type: 'acp', nodeId: NODE, busy: true, events: [...toolSnapshot('line one'),
-    { kind: 'liveness', t: 4, liveness: { active: true, cpuMs: 20, ioBytes: 30, idleSec: 0, limitSec: 300 } }] })
-  watchdog()
+  // The same state arriving again changes nothing.
+  const repeat = () => push(dialogue.frame())
+  repeat()
   push({ type: 'heartbeat' })
   for (let count = 1; count <= 3; count++) {
     await input.fill('继续检查')
@@ -304,31 +313,33 @@ test('tool-only recovery survives watchdog traffic and three identical accepted 
 
   let release!: () => void
   holdContext = new Promise(resolve => { release = resolve })
-  events = toolSnapshot('line one\nline two')
-  watchdog()
+  const stale = dialogue.frame()
+  running('line one\nline two')
   push({ type: 'heartbeat' })
   await expect.poll(() => heldReads).toBeGreaterThan(0)
-  watchdog()
+  push(stale)
   holdContext = undefined
   release()
   await expect(page.getByTestId('agent-tool-output')).toContainText('line two')
   await expect(input).toHaveValue('保留这段未发送的草稿')
   await expect(page.getByTestId('clarify-review-queue')).toContainText('继续检查')
 
-  // All three same-text requests complete while this viewer misses begin/end.
-  session = undefined
-  turns = [...turns, { role: 'agent', text: '首轮检查完成', clientMessageId: opening.clientMessageId, at: NOW },
-    ...accepted.flatMap(item => [
-      { role: 'human', text: item.text, clientMessageId: item.clientMessageId, at: NOW },
-      { role: 'agent', text: '检查完成', clientMessageId: item.clientMessageId, at: NOW },
-    ])]
+  // All three same-text requests complete while this viewer misses their pushes.
+  dialogue.set({
+    rows: [openingHuman, { role: 'agent', text: '首轮检查完成', turnId: 'opening' },
+      ...accepted.flatMap((item): FakeRow[] => [
+        { role: 'human', text: item.text, clientMessageId: item.clientMessageId, turnId: item.id },
+        { role: 'agent', text: '检查完成', turnId: item.id },
+      ])],
+    turns: accepted.map((item): FakeTurn => ({ turnId: item.id, phase: 'ended', outcome: 'ok', clientMessageId: item.clientMessageId })),
+  })
   push({ type: 'heartbeat' })
   await expect(page.getByTestId('clarify-review-queue')).toHaveCount(0)
   await expect(page.getByTestId('clarify-human-message').filter({ hasText: '继续检查' })).toHaveCount(3)
   await expect(page.getByText('检查完成', { exact: true })).toHaveCount(3)
   await expect(page.getByTestId('clarify-busy-status')).toHaveCount(0)
-  push({ type: 'review', event: 'queue_state', nodeId: NODE, sessionGeneration: 50, revision: 2,
-    busy: true, waiting: 1, activeItem: opening, items: [accepted[0]] })
+  // A delayed older state cannot bring the queue back.
+  push(stale)
   await expect(page.getByTestId('clarify-review-queue')).toHaveCount(0)
   await expect(input).toHaveValue('保留这段未发送的草稿')
   expect(accepted).toHaveLength(3)

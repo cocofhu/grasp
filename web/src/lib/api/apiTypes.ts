@@ -219,7 +219,6 @@ export interface AgentGitBinding {
   credentialId: string
   /** Host or repository URL; empty uses the credential provider's default. */
   scope?: string
-  sshHostsCredentialId?: string
 }
 
 export interface AgentGitBindings {
@@ -270,7 +269,7 @@ export interface CredentialItem {
   purpose?: 'tool_auth' | 'model_api' | 'git' | 'ssh' | 'mcp' | 'custom'
   issuer?: string
   toolId?: string
-  secretKind?: 'api_key' | 'token' | 'login_file' | 'ssh_private_key' | 'ssh_known_hosts'
+  secretKind?: 'api_key' | 'token' | 'login_file' | 'ssh_private_key'
   secretRevision?: number
   hasSecret?: boolean
   state?: 'active' | 'cleared' | 'revoked'
@@ -285,6 +284,8 @@ export interface CredentialItem {
   /** Git hosting origin; HTTPS is assumed when no scheme is supplied. */
   host?: string
   envKey?: string
+  /** OpenSSH known_hosts of an SSH key; public host keys, absent when none are set. */
+  knownHosts?: string
   configured: boolean
   /** Masked display value (for example, a key prefix); never the plaintext secret. */
   masked?: string
@@ -316,9 +317,39 @@ export interface CredentialPutBody {
   envKey?: string
   /** Empty values keep an existing secret; clear/delete removes it. */
   value?: string
+  /** SSH keys only. Omitted keeps the stored text; an empty string clears it. */
+  knownHosts?: string
   metadata?: Record<string, unknown>
   enabled?: boolean
   clear?: boolean
+}
+
+export interface GitHubDeviceLoginStatus {
+  enabled: boolean
+  host?: string
+  scopes?: string[]
+}
+
+export interface GitHubDeviceLoginSession {
+  sessionId: string
+  userCode: string
+  verificationUri: string
+  expiresIn: number
+  interval: number
+}
+
+export interface GitHubDeviceLoginPoll {
+  status: 'pending' | 'authorized' | 'denied' | 'expired' | 'error'
+  interval?: number
+  expiresIn?: number
+  credential?: CredentialItem
+  githubLogin?: string
+  scopes?: string[]
+  scopeWarning?: boolean
+  /** Error code, e.g. alias_taken, credential_unavailable, device_flow_disabled. */
+  error?: string
+  alias?: string
+  updated?: boolean
 }
 
 export type CreateSharedAgentTestPayload = {
@@ -740,6 +771,58 @@ export interface SoloCreateBody {
   title?: string
   text?: string
   images?: ClarifyImage[]
+  references?: ReferenceInput[]
+}
+
+export type ReferenceKind = 'solo' | 'github_issue' | 'github_pr'
+
+/** What the composer submits; the server resolves everything else. */
+export interface ReferenceInput {
+  kind: ReferenceKind
+  target: string
+}
+
+/** A reference as stored on a user message (or shown on a queued/local one). */
+export interface MessageReference extends ReferenceInput {
+  id?: string
+  title: string
+  url?: string
+  messages?: number
+  state?: string
+  access?: 'ok' | 'denied' | 'unchecked'
+  error?: string
+}
+
+export interface SoloReferenceCandidate {
+  kind: 'solo'
+  target: string
+  title: string
+  status: string
+  lastActiveAt?: string
+}
+
+export interface GitHubReferenceCandidate {
+  kind: 'github_issue' | 'github_pr'
+  target: string
+  title: string
+  state: string
+  url: string
+  comments: number
+  updatedAt: string
+  repo: string
+  number: number
+}
+
+export interface ReferenceSearchResult<T> {
+  lane: 'solo' | 'github'
+  items: T[]
+  total?: number
+  nextPage?: number
+  incomplete?: boolean
+  source?: string
+  hint?: string
+  rateLimit?: { remaining: number; resetAt: string }
+  error?: { code: string; message: string; retryAfterMs?: number }
 }
 
 export interface SoloMessage {
@@ -748,6 +831,7 @@ export interface SoloMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   images?: ClarifyImage[]
+  references?: MessageReference[]
   /** Raw ACP frames of an assistant turn, replayed into the timeline. */
   events?: unknown[]
   status?: '' | 'ok' | 'failed' | 'stopped'

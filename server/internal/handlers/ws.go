@@ -90,6 +90,9 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 	if err := h.Eng.SendReviewSessions(runID, w.write); err != nil {
 		return
 	}
+	if err := h.Eng.SendDialogues(runID, w.write); err != nil {
+		return
+	}
 	if h.PageBridge != nil && owner != "" {
 		defer h.PageBridge.Watch(runID, owner, w.write)()
 	}

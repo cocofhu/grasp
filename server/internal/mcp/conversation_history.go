@@ -38,6 +38,7 @@ type ConversationHistoryToolResult struct {
 
 type ConversationHistoryPage struct {
 	ConversationID string                       `json:"conversationId"`
+	Ref            string                       `json:"ref,omitempty"`
 	HistoryVersion string                       `json:"history_version"`
 	Summary        string                       `json:"summary,omitempty"`
 	Messages       []ConversationHistoryMessage `json:"messages"`

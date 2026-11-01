@@ -1,10 +1,14 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, afterEach } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import ReviewComposer from './ReviewComposer.vue'
+import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { feedDialogue, runningTurn } from '@/test/dialogueKit'
+
+afterEach(() => clearDialogues())
 
 function gateGlobals() {
   const i18n = createI18n({
@@ -210,24 +214,15 @@ describe('ReviewComposer gate busy status (C-tier)', () => {
 })
 
 describe('ReviewComposer nested ClarifyChat delivery', () => {
-  it('applyAcpEvents returns false when ClarifyChat not mounted (gate mode)', async () => {
-    const wrapper = mountGate({ thinking: true })
+  it('reports no chat in gate mode and the nested ClarifyChat in clarify mode', async () => {
+    const gate = mountGate({ thinking: true })
     await flushPromises()
-    const vm = wrapper.vm as any
-    expect(vm.applyAcpEvents?.([{ kind: 'message', text: 'x' }])).toBe(false)
-    expect(vm.isChatReady?.()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('applyAcpEvents passes through false when inner slot not ready (g1.3)', async () => {
-    // Clarify mode mounts ClarifyChat; without queue_state/turn_begin, slot missing.
-    const wrapper = mountClarify()
+    expect((gate.vm as any).isChatReady?.()).toBe(false)
+    gate.unmount()
+    const clarify = mountClarify()
     await flushPromises()
-    const vm = wrapper.vm as any
-    expect(vm.isChatReady?.()).toBe(true)
-    // chatRef exists but liveAgentIdx < 0 → must not fake true.
-    expect(vm.applyAcpEvents?.([{ kind: 'thought', text: 'buffer me' }], 'react-1')).toBe(false)
-    wrapper.unmount()
+    expect((clarify.vm as any).isChatReady?.()).toBe(true)
+    clarify.unmount()
   })
 
   it('exposes isSessionBusy from nested ClarifyChat (g1.3)', async () => {
@@ -236,13 +231,13 @@ describe('ReviewComposer nested ClarifyChat delivery', () => {
     const vm = wrapper.vm as any
     expect(typeof vm.isSessionBusy).toBe('function')
     expect(vm.isSessionBusy()).toBe(false)
-    vm.applyReviewFrame?.({
-      event: 'queue_state',
-      nodeId: 'react-1',
-      waiting: 0,
-      items: [],
+    feedDialogue('run-1', 'react-1', {
       busy: true,
-      activeItem: { text: '还是有很多直角按钮和面板啊' },
+      rows: [
+        { role: 'human', text: '还是有很多直角按钮和面板啊', at: '1', turnId: 't1' },
+        { role: 'agent', text: '', at: '2', turnId: 't1', streaming: true },
+      ],
+      turns: [runningTurn('t1', { text: '还是有很多直角按钮和面板啊' })],
     })
     await flushPromises()
     expect(vm.isSessionBusy()).toBe(true)

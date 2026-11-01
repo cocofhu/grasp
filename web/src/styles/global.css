@@ -70,9 +70,9 @@ html.light {
   --c-line: 226 226 232;
   --c-line-strong: 208 208 216;
   --c-txt: 24 24 27;
-  --c-txt2: 72 72 82;
-  /* ≥4.5:1 on surface and base; lighter greys read as washed out at 11–12px */
-  --c-txt3: 113 113 122;
+  --c-txt2: 52 52 60;
+  /* ≈7.5:1 on surface and base; lighter greys read as washed out at 11–12px */
+  --c-txt3: 82 82 91;
   --c-accent: 123 97 255;
   --c-accent-2: 79 70 229;
   /* Solid accent button hover fill — brand purple hue (#5424D8), deeper than accent-2 */
@@ -723,7 +723,8 @@ html.light .app-sidebar-card {
 
 /*
  * Modal footer primary only (drawer footers are not .app-modal-footer).
- * Light fill #18181B, white label, ink #F4F4F5 (light wash on the black button).
+ * Light fill #18181B, white label. Hover ink is a translucent white wash so the
+ * black fill shows through; the white label stays on that dark composite.
  * Dark fill #EDEDF0, label #141417, ink #A1A1AA.
  * Zero --tw-shadow so shadow-glow drops, while the focus ring stays.
  * Label color is set here so text-white cannot pin icons or the spinner.
@@ -738,7 +739,7 @@ html.light .app-sidebar-card {
 html.light .app-modal-footer button.bg-accent {
   background-color: #18181b;
   color: #ffffff;
-  --hover-ink-color: #f4f4f5 !important;
+  --hover-ink-color: rgb(255 255 255 / 0.2) !important;
 }
 .app-modal-footer button.bg-accent .app-icon,
 .app-modal-footer button.bg-accent .app-spinner,

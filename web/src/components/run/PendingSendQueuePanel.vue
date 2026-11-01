@@ -9,6 +9,8 @@ export type PendingQueueRow = {
   text: string
   images: ClarifyImage[]
   annotations: ReactAnnotation[]
+  /** Not yet acknowledged: shown, but not draggable, editable or a drop target. */
+  locked?: boolean
 }
 
 const props = defineProps<{
@@ -29,7 +31,15 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const dragIndex = ref<number | null>(null)
 
+function locked(index: number) {
+  return !!props.items[index]?.locked
+}
+
 function onDragStart(index: number, e: DragEvent) {
+  if (locked(index)) {
+    e.preventDefault()
+    return
+  }
   dragIndex.value = index
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move'
@@ -53,6 +63,7 @@ function onDrop(toIndex: number, e: DragEvent) {
   Number.parseInt(e.dataTransfer?.getData('text/plain') || '', 10)
   dragIndex.value = null
   if (!Number.isFinite(from) || from === toIndex || from < 0 || from >= props.items.length) return
+  if (locked(from) || locked(toIndex)) return
   emit('reorder', from, toIndex)
 }
 </script>
@@ -82,14 +93,14 @@ function onDrop(toIndex: number, e: DragEvent) {
         data-testid="clarify-queue-item"
         class="flex min-w-0 flex-wrap items-center gap-2 rounded border border-line bg-surface px-2 py-1 text-[12px] text-txt2 transition-colors"
         :class="dragIndex === qi ? 'opacity-60 shadow-sm' : ''"
-        :draggable="!readonly"
+        :draggable="!readonly && !q.locked"
         @dragstart="onDragStart(qi, $event)"
         @dragend="onDragEnd"
         @dragover="onDragOver"
         @drop="onDrop(qi, $event)"
       >
         <button
-          v-if="!readonly"
+          v-if="!readonly && !q.locked"
           type="button"
           class="flex shrink-0 cursor-grab items-center p-0.5 text-txt3 active:cursor-grabbing"
           :title="t('pages.clarify.queueDragTitle')"
@@ -102,13 +113,14 @@ function onDrop(toIndex: number, e: DragEvent) {
           class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line text-[9px] text-txt3"
         >{{ qi + 1 }}</span>
         <span class="min-w-0 flex-1 truncate" :title="q.text">{{ q.text || (q.images.length || q.annotations.length ? '…' : '') }}</span>
+        <slot name="row-extra" :item="q" :index="qi" />
         <span v-if="q.images.length" class="shrink-0 rounded-full border border-line px-1.5 text-[9px] text-txt3">
           {{ t('pages.clarify.queueAttachmentBadge', { n: q.images.length }) }}
         </span>
         <span v-if="q.annotations.length" class="shrink-0 rounded-full border border-line px-1.5 text-[9px] text-txt3">
           {{ t('pages.clarify.queueAnnotationBadge') }}
         </span>
-        <span v-if="!readonly" class="flex shrink-0 gap-0.5">
+        <span v-if="!readonly && !q.locked" class="flex shrink-0 gap-0.5">
           <button
             type="button"
             class="flex h-6 w-6 items-center justify-center rounded-md text-txt3 hover:bg-base hover:text-txt"

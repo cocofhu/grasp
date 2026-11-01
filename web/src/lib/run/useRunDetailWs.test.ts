@@ -188,7 +188,7 @@ describe('useRunDetailWs', () => {
     })
     api.teardownRealtime()
   })
-  it('restores a late-mounted LLM conversation from current frames and buffered ACP', async () => {
+  it('tracks a late-mounted LLM conversation busy from current review frames', async () => {
     let socket!: { onmessage?: (event: { data: string }) => void; close: () => void }
     vi.stubGlobal('WebSocket', class {
       onmessage?: (event: { data: string }) => void
@@ -197,13 +197,9 @@ describe('useRunDetailWs', () => {
     })
     const run = ref({ id: 'r1', status: 'waiting_human', nodeRuns: {}, reactSessions: {} } as unknown as Run)
     const ready = ref(false)
-    const applyReviewFrame = vi.fn(() => ready.value)
-    const applyAcpEvents = vi.fn(() => ready.value)
     const llmTranscriptRef = ref<{
       getNodeId: () => string
       isChatReady: () => boolean
-      applyReviewFrame: typeof applyReviewFrame
-      applyAcpEvents: typeof applyAcpEvents
     } | null>(null)
     const scope = effectScope()
     const ws = scope.run(() => useRunDetailWs({
@@ -219,15 +215,12 @@ describe('useRunDetailWs', () => {
       ws.connectWs()
       socket.onmessage?.({ data: JSON.stringify({ type: 'review', event: 'turn_begin', nodeId: 'chat', item: { id: 'a', text: 'request' } }) })
       socket.onmessage?.({ data: JSON.stringify({ type: 'acp', nodeId: 'chat', events: sampleEvents, busy: true }) })
-      llmTranscriptRef.value = { getNodeId: () => 'chat', isChatReady: () => ready.value, applyReviewFrame, applyAcpEvents }
+      llmTranscriptRef.value = { getNodeId: () => 'chat', isChatReady: () => ready.value }
       await flushPromises()
       ready.value = true
       await flushPromises()
       expect(run.value.reactSessions?.chat?.busy).toBe(true)
-      expect(applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({ event: 'queue_state', nodeId: 'chat', busy: true, activeItem: { id: 'a', text: 'request' } }))
-      expect(applyAcpEvents).toHaveBeenCalledWith(sampleEvents, 'chat')
       socket.onmessage?.({ data: JSON.stringify({ type: 'review', event: 'turn_done', nodeId: 'chat' }) })
-      expect(applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_done', nodeId: 'chat' }))
       expect(run.value.reactSessions?.chat?.busy).toBe(false)
     } finally {
       ws.teardownRealtime()

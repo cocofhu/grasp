@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 import { computed, nextTick, ref } from 'vue'
-import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 
@@ -76,8 +75,6 @@ function harness(over: {
   const eventPages: Record<string, any> = over.eventPages ?? {}
   const nodeTab = ref(over.nodeTab ?? 'output')
   const review = {
-    applyReviewFrame: vi.fn((): boolean | void => true),
-    applyAcpEvents: vi.fn((): boolean | void => true),
     isSessionBusy: vi.fn(() => false),
   }
   const gate = {
@@ -159,7 +156,7 @@ describe('useRunDetailWs coverage', () => {
     vi.restoreAllMocks()
   })
 
-  it('restores valid clarify/gate sessions and seeds rails from cache or fetch', async () => {
+  it('restores busy from valid clarify/gate sessions', async () => {
     const h = harness({
       sessions: {
         n1: { busy: true, waiting: 2, items: ['x'], activeItem: 'x' },
@@ -171,24 +168,6 @@ describe('useRunDetailWs coverage', () => {
     })
     await h.api.projectDialogueAfterLoad({ reactSessions: h.run.value.reactSessions })
     expect(h.liveBusy.n1).toBe(true)
-    expect(h.review.applyReviewFrame).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'queue_state', nodeId: 'n1', waiting: 2 }),
-    )
-    expect(h.gate.applyReviewFrame).toHaveBeenCalledWith(
-      expect.objectContaining({ nodeId: 'gateNode' }),
-    )
-    expect(h.review.applyAcpEvents).toHaveBeenCalledWith(rails, 'n1')
-
-    h.eventPages.fetched = { events: [] }
-    h.fetchNodeEvents.mockImplementationOnce(async (id) => {
-      h.eventPages[id!] = { events: rails }
-      return true
-    })
-    h.clarifyNode.value = 'fetched'
-    await h.api.seedDialogueAcpAfterRestore(['fetched'])
-    expect(h.fetchNodeEvents).toHaveBeenCalledWith('fetched', expect.anything())
-    expect(h.review.applyAcpEvents).toHaveBeenCalledWith(rails, 'fetched')
-
     h.api.teardownRealtime()
   })
 
@@ -201,18 +180,10 @@ describe('useRunDetailWs coverage', () => {
       await h.api.projectDialogueAfterLoad({})
       expect(h.liveBusy.n1).toBe(true)
       expect(h.liveBusy.producer).toBe(true)
-      expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
-      expect(h.gate.applyReviewFrame).not.toHaveBeenCalled()
 
       await h.api.projectDialogueAfterLoad({ reactSessions: sessions })
       expect(h.liveBusy.n1).toBe(false)
       expect(h.liveBusy.producer).toBe(false)
-      expect(h.review.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
-        event: 'queue_state', nodeId: 'n1', busy: false, waiting: 0, items: [],
-      }))
-      expect(h.gate.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
-        event: 'queue_state', nodeId: 'producer', busy: false, waiting: 0, items: [],
-      }))
       if ('other' in sessions) expect(h.liveBusy.other).toBe(true)
       h.api.teardownRealtime()
     },
@@ -233,7 +204,6 @@ describe('useRunDetailWs coverage', () => {
       await nextTick()
       expect(h.liveBusy.n1).toBe(true)
       expect(h.loadRun).not.toHaveBeenCalled()
-      h.review.applyReviewFrame.mockClear()
 
       socket.message({ type: 'snapshot', run: {} })
       await nextTick()
@@ -252,9 +222,6 @@ describe('useRunDetailWs coverage', () => {
       await nextTick()
       await nextTick()
       expect(h.liveBusy.n1).toBe(false)
-      expect(h.review.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
-        event: 'queue_state', nodeId: 'n1', busy: false, waiting: 0, items: [],
-      }))
       expect(h.loadRun).toHaveBeenCalledExactlyOnceWith(false, true)
       h.api.teardownRealtime()
     },
@@ -270,8 +237,6 @@ describe('useRunDetailWs coverage', () => {
     await nextTick()
     // An empty cached map cannot clear the active turn before the server snapshot.
     expect(h.liveBusy.n1).toBe(true)
-    expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
-    h.review.applyReviewFrame.mockClear()
 
     socket.message({ type: 'snapshot', run: { reactSessions: {} } })
     socket.message({ type: 'review', event: 'turn_begin', nodeId: 'n1', item: { text: '新消息' } })
@@ -279,7 +244,6 @@ describe('useRunDetailWs coverage', () => {
     await nextTick()
     await nextTick()
     expect(h.liveBusy.n1).toBe(true)
-    expect(h.review.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'queue_state', busy: false }))
     expect(h.loadRun).not.toHaveBeenCalled()
     h.api.teardownRealtime()
   })
@@ -291,17 +255,13 @@ describe('useRunDetailWs coverage', () => {
     socket.open()
     socket.message({ type: 'review', event: 'queue_state', nodeId: 'n1', sessionGeneration: 3, revision: 12,
       busy: true, waiting: 0, items: [], activeItem: { id: 'c', text: 'current' } })
-    h.review.applyReviewFrame.mockClear()
     socket.message({ type: 'review', event: 'queue_state', nodeId: 'n1', sessionGeneration: 3, revision: 4,
       busy: false, waiting: 1, items: [{ id: 'b', text: 'completed earlier' }] })
     expect(h.liveBusy.n1).toBe(true)
-    expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
     socket.message({ type: 'review', event: 'turn_done', nodeId: 'n1', sessionGeneration: 3, revision: 13,
       item: { id: 'c' }, busy: false, waiting: 0, items: [] })
-    h.review.applyReviewFrame.mockClear()
     socket.message({ type: 'review', event: 'turn_begin', nodeId: 'n1', sessionGeneration: 3, revision: 8, item: { id: 'b' } })
     expect(h.liveBusy.n1).toBe(false)
-    expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
     h.api.teardownRealtime()
   })
 
@@ -313,15 +273,10 @@ describe('useRunDetailWs coverage', () => {
     socket.message({ type: 'review', nodeId: 'n1', event: 'turn_begin', sessionGeneration: 5, revision: 2,
       item: { id: 'finished', text: '我的选择' }, waiting: 1, items: [{ id: 'sent', text: '后续更正' }] })
     h.review.isSessionBusy.mockReturnValue(true)
-    h.review.applyReviewFrame.mockClear()
     socket.message({ type: 'heartbeat' })
     const capture = h.api.captureReviewSnapshot()
     await h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: {} } as Run, capture)
     expect(h.liveBusy.n1).toBe(false)
-    expect(h.review.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'queue_state', nodeId: 'n1', busy: false, waiting: 0, items: [],
-    }))
-    expect(h.review.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'session_reset' }))
     expect(h.run.value.reactSessions?.n1?.busy).not.toBe(true)
     h.api.teardownRealtime()
   })
@@ -336,124 +291,9 @@ describe('useRunDetailWs coverage', () => {
     const capture = h.api.captureReviewSnapshot()
     socket.message({ type: 'review', nodeId: 'n1', event: 'turn_begin', sessionGeneration: 6, revision: 1,
       item: { id: 'new', text: 'newer turn' }, waiting: 0, items: [] })
-    h.review.applyReviewFrame.mockClear()
     await h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: {} } as Run, capture)
     expect(h.liveBusy.n1).toBe(true)
     expect(h.run.value.reactSessions?.n1?.activeItem?.id).toBe('new')
-    expect(h.review.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ busy: false }))
-    h.api.teardownRealtime()
-  })
-
-  it('recovers missing ACP progress for the same busy turn without resetting it', async () => {
-    const h = harness({ clarifyBusy: true, eventPages: { n1: { events: [{ kind: 'thought', text: 'older', t: 0 }] } } })
-    h.api.connectWs()
-    const socket = MockWebSocket.instances.at(-1)!
-    socket.open()
-    const state = { sessionGeneration: 5, revision: 2, busy: true, waiting: 0, items: [], activeItem: { id: 'active', text: 'work' } }
-    socket.message({ type: 'review', nodeId: 'n1', event: 'queue_state', ...state })
-    h.review.applyReviewFrame.mockClear()
-    h.review.applyAcpEvents.mockClear()
-    h.fetchNodeEvents.mockImplementationOnce(async (nodeId) => {
-      h.eventPages[nodeId!] = { events: rails }
-      return true
-    })
-    const capture = h.api.captureReviewSnapshot()
-    await h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: { n1: state } } as Run, capture)
-    expect(h.fetchNodeEvents).toHaveBeenCalledWith('n1', expect.anything())
-    expect(h.review.applyAcpEvents).toHaveBeenCalledWith(rails, 'n1')
-    expect(h.liveBusy.n1).toBe(true)
-    expect(h.review.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'session_reset' }))
-    h.api.teardownRealtime()
-  })
-
-  it.each(['empty', 'liveness', 'unchanged-content'])('keeps detail recovery current across %s ACP observations', async noise => {
-    const h = harness()
-    try {
-      h.api.connectWs()
-      const socket = MockWebSocket.instances.at(-1)!
-      socket.open()
-      const state = { sessionGeneration: 5, revision: 2, busy: true, waiting: 1,
-        items: [{ id: 'next' }], activeItem: { id: 'active' } }
-      socket.message({ type: 'review', nodeId: 'n1', event: 'queue_state', ...state })
-      socket.message({ type: 'acp', nodeId: 'n1', events: rails, busy: true })
-      const heartbeat = { kind: 'liveness', t: 20, liveness: { active: true, cpuMs: 100, ioBytes: 200, idleSec: 0, limitSec: 300 } }
-      const observations = noise === 'empty' ? [] : noise === 'liveness' ? [heartbeat]
-        : [...rails.map(event => ({ ...event, t: 20 })), heartbeat]
-      const recovered: AcpEvent[] = [{ kind: 'message', t: 3, text: 'recovered content after missed push' }]
-      let finish!: () => void
-      let readCurrent!: () => boolean
-      h.fetchNodeEvents.mockImplementationOnce((_nodeId, options) => new Promise(resolve => {
-        readCurrent = options!.isCurrent!
-        finish = () => {
-          if (readCurrent()) h.eventPages.n1 = { events: recovered }
-          resolve(readCurrent())
-        }
-      }))
-      h.api.reconcileReviewSnapshot({ id: 'run-1', reactSessions: { n1: state } } as Run, h.api.captureReviewSnapshot())
-      socket.message({ type: 'acp', nodeId: 'n1', events: observations, busy: true })
-      expect(readCurrent()).toBe(true)
-      finish()
-      await flushPromises()
-      expect(h.review.applyAcpEvents).toHaveBeenCalledWith(recovered, 'n1')
-      expect(h.liveBusy.n1).toBe(true)
-
-      const capture = h.api.captureReviewSnapshot()
-      socket.message({ type: 'acp', nodeId: 'n1', events: observations, busy: false })
-      const settled = h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: {} } as Run, capture)
-      expect(settled).toBeDefined()
-      expect(h.review.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({ busy: false, waiting: 0, items: [] }))
-    } finally { h.api.teardownRealtime() }
-  })
-
-  it.each([
-    { events: [{ kind: 'tool_call', t: 1, title: 'read_file', status: 'running' }] },
-    { events: [{ kind: 'timeline', t: 1, parts: [{ kind: 'tool', title: 'Shell', status: 'in_progress', output: 'line one' }] }] },
-  ])('restores detail tool-only progress before thought/message: $events', async ({ events }) => {
-    const h = harness()
-    try {
-      h.api.connectWs()
-      const socket = MockWebSocket.instances.at(-1)!
-      socket.open()
-      const state = { sessionGeneration: 5, revision: 2, busy: true, waiting: 0, items: [], activeItem: { id: 'tools-first' } }
-      socket.message({ type: 'review', nodeId: 'n1', event: 'queue_state', ...state })
-      h.fetchNodeEvents.mockImplementationOnce(async nodeId => {
-        h.eventPages[nodeId!] = { events }
-        return true
-      })
-      h.api.reconcileReviewSnapshot({ id: 'run-1', reactSessions: { n1: state } } as Run, h.api.captureReviewSnapshot())
-      await flushPromises()
-      expect(h.review.applyAcpEvents).toHaveBeenCalledWith(events, 'n1')
-    } finally { h.api.teardownRealtime() }
-  })
-
-  it('discards delayed progress after newer ACP and rejects REST from a prior visit', async () => {
-    const h = harness()
-    h.api.connectWs()
-    const socket = MockWebSocket.instances.at(-1)!
-    socket.open()
-    const state = { sessionGeneration: 5, revision: 2, busy: true, waiting: 0, items: [], activeItem: { id: 'active', text: 'work' } }
-    socket.message({ type: 'review', nodeId: 'n1', event: 'queue_state', ...state })
-    let finish!: () => void
-    let readCurrent!: () => boolean
-    h.fetchNodeEvents.mockImplementationOnce((_nodeId, options) => new Promise((resolve) => {
-      readCurrent = options!.isCurrent!
-      finish = () => {
-        if (readCurrent()) h.eventPages.n1 = { events: [{ kind: 'thought', text: 'old response', t: 0 }] }
-        resolve(readCurrent())
-      }
-    }))
-    h.api.reconcileReviewSnapshot({ id: 'run-1', reactSessions: { n1: state } } as Run, h.api.captureReviewSnapshot())
-    socket.message({ type: 'acp', nodeId: 'n1', events: rails, busy: true })
-    expect(readCurrent()).toBe(false)
-    finish()
-    await nextTick()
-    expect(h.review.applyAcpEvents).toHaveBeenLastCalledWith(rails, 'n1')
-    expect(h.review.applyAcpEvents).not.toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ text: 'old response' })]), 'n1')
-
-    const previousVisit = h.api.captureReviewSnapshot()
-    h.run.value = { ...h.run.value, clarify: { nodeId: 'n1', iteration: 2, turns: [], done: false } }
-    expect(h.api.reconcileReviewSnapshot({ id: 'run-1', reviewSessionGeneration: 5, reactSessions: {} } as Run, previousVisit)).toBeUndefined()
-    expect(h.liveBusy.n1).toBe(true)
     h.api.teardownRealtime()
   })
 
@@ -478,7 +318,6 @@ describe('useRunDetailWs coverage', () => {
     h.api.reconcileReviewSnapshot({ id: 'run-1', reactSessions: { n1: state } } as Run)
     expect(h.fetchNodeEvents).not.toHaveBeenCalled()
     socket.message({ type: 'acp', nodeId: 'n1', events: rails, busy: true })
-    expect(h.review.applyAcpEvents).toHaveBeenCalledWith(rails, 'n1')
     releaseSnapshot()
     await recovery
     expect(h.fetchNodeEvents).toHaveBeenCalledTimes(1)
@@ -501,7 +340,6 @@ describe('useRunDetailWs coverage', () => {
     await nextTick()
     await nextTick()
     await nextTick()
-    h.review.applyReviewFrame.mockClear()
 
     // This viewer never saw generation 7 finish; its empty snapshot is enough.
     socket.message({ type: 'review', event: 'queue_state', nodeId: 'n1',
@@ -509,7 +347,6 @@ describe('useRunDetailWs coverage', () => {
       items: [{ id: 'already-completed', text: 'old request' }],
     })
     expect(h.liveBusy.n1).toBe(false)
-    expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
 
     // A session created after the snapshot must still be admitted.
     socket.message({ type: 'review', event: 'turn_begin', nodeId: 'n1',
@@ -517,9 +354,6 @@ describe('useRunDetailWs coverage', () => {
       item: { id: 'new-request', text: 'new request' },
     })
     expect(h.liveBusy.n1).toBe(true)
-    expect(h.review.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'turn_begin', sessionGeneration: 8,
-    }))
     h.api.teardownRealtime()
   })
 
@@ -538,41 +372,10 @@ describe('useRunDetailWs coverage', () => {
     await nextTick()
     await nextTick()
     await nextTick()
-    expect(h.review.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({ event: 'session_reset', nodeId: 'n1' }))
     expect(h.liveBusy.n1).toBe(false)
     socket.message({ type: 'review', event: 'turn_begin', nodeId: 'n1', sessionGeneration: 1, revision: 2, item: { id: 'after-restart' } })
     expect(h.liveBusy.n1).toBe(true)
     h.api.teardownRealtime()
-  })
-
-  it('handles empty, non-rail, failed, and unready seed paths', async () => {
-    const h = harness({ eventPages: { empty: { events: [] }, meta: { events: [{ kind: 'tool', t: 1 }] } } })
-    h.fetchNodeEvents.mockRejectedValueOnce(new Error('offline'))
-    await h.api.seedDialogueAcpAfterRestore(['empty'])
-    h.liveBusy.meta = false
-    await h.api.seedDialogueAcpAfterRestore(['meta'])
-
-    h.eventPages.n1 = { events: rails }
-    h.review.applyAcpEvents.mockReturnValue(false)
-    await h.api.seedDialogueAcpAfterRestore(['n1'])
-    expect(h.api.pendingDialogueAcp.size).toBe(1)
-
-    h.reviewChatRef.value = null
-    h.gateApprovalRef.value = null
-    h.api.applyOrBufferDialogueAcp('n1', rails, true)
-    expect(h.api.pendingDialogueAcp.size).toBe(1)
-    h.reviewChatRef.value = h.review
-    h.review.applyAcpEvents.mockReturnValue(true)
-    h.api.applyOrBufferDialogueAcp('other', rails)
-    h.api.pendingDialogueAcp.push({ nodeId: undefined, events: rails })
-    h.api.pendingDialogueAcp.push({ nodeId: 'n1', events: rails })
-
-    // A subsequent restore flushes anonymous/matching frames and retains unmatched ones.
-    await h.api.projectDialogueAfterLoad({ reactSessions: {} })
-    expect(h.review.applyAcpEvents).toHaveBeenCalled()
-    expect(h.api.pendingDialogueAcp.size).toBeGreaterThanOrEqual(1)
-    h.api.resetDialogueState()
-    expect(h.api.pendingDialogueAcp.size).toBe(0)
   })
 
   it('connects, reconnects with backoff, ignores stale sockets, and parses snapshots', async () => {
@@ -703,8 +506,6 @@ describe('useRunDetailWs coverage', () => {
     expect(h.liveBusy.n1).toBe(true)
     expect(h.liveNode.value).toBe('n1')
     expect(h.selected.value).toBe('n1')
-    expect(h.review.applyAcpEvents).toHaveBeenCalled()
-    expect(h.gate.applyAcpEvents).toHaveBeenCalled()
 
     h.manual.value = true
     h.selected.value = 'old'
@@ -719,16 +520,11 @@ describe('useRunDetailWs coverage', () => {
     socket.message({ type: 'review', nodeId: 'n1', event: 'turn_done' })
     socket.message({ type: 'review', nodeId: 'n1', event: 'error' })
     expect(h.loadRun).toHaveBeenCalledTimes(2)
-    expect(h.review.applyReviewFrame).toHaveBeenCalled()
-    expect(h.gate.applyReviewFrame).toHaveBeenCalled()
 
     h.clarifyNode.value = 'different'
-    h.review.applyReviewFrame.mockClear()
     socket.message({ type: 'review', nodeId: 'n1', event: 'noop' })
-    expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
     h.clarifyNode.value = null
     socket.message({ type: 'review', nodeId: 'n1', event: 'noop' })
-    expect(h.review.applyReviewFrame).toHaveBeenCalled()
 
     h.api.teardownRealtime()
   })

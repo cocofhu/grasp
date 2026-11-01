@@ -36,7 +36,7 @@ import {
   sidebarTrackedRunIds,
   type SidebarRunGroup,
 } from '@/lib/inbox/sidebarHandoff'
-import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget, runDetailPath } from '@/lib/run/recentRuns'
+import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   settingsItemActive,
@@ -259,11 +259,15 @@ const humanPendingRows = computed(() => pendingRows.value.filter((it) => rowGrou
 const autoPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'auto'))
 const orderedHumanRows = computed(() => orderWithPins(humanPendingRows.value, (it) => it.runId, runPins.value))
 const orderedAutoRows = computed(() => orderWithPins(autoPendingRows.value, (it) => it.runId, runPins.value))
-/** Active Solo sandboxes share the same running section as workflow runs. */
+/**
+ * Active Solo sandboxes share the same running section as workflow runs.
+ * Ordered by start time (newest first) so activity never reshuffles the rows.
+ */
 const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
-  const aAt = Date.parse(a.lastActiveAt || a.updatedAt || a.createdAt)
-  const bAt = Date.parse(b.lastActiveAt || b.updatedAt || b.createdAt)
-  return (Number.isFinite(bAt) ? bAt : 0) - (Number.isFinite(aAt) ? aAt : 0)
+  const aAt = Date.parse(a.createdAt)
+  const bAt = Date.parse(b.createdAt)
+  const diff = (Number.isFinite(bAt) ? bAt : 0) - (Number.isFinite(aAt) ? aAt : 0)
+  return diff || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }))
 const orderedSoloRows = computed(() => orderWithPins(soloRows.value, soloRowKey, soloPins.value))
 const runningSectionCount = computed(() => orderedHumanRows.value.length + orderedSoloRows.value.length)
@@ -874,13 +878,15 @@ function onPendingRow(it: InboxItem) {
     suppressPendingClick.value = false
     return
   }
-  if (isRunOnlyRow(it)) {
+  // 「自动过程」always opens the live conversation, including a visit that has
+  // not started and a confirmed handoff the snapshot has not caught up to.
+  // 「正在执行」still opens that node's own chat. Right-click stays on the menu.
+  const auto = rowGroup(it.runId) === 'auto'
+  if (auto || isRunOnlyRow(it)) {
     const run = runningById.value.get(it.runId)
-    if (run) {
-      void router.push(recentRunTarget(run, preservedListFilters()))
-    } else {
-      pushConversation(it.runId)
-    }
+    if (run) void router.push(recentRunTarget(run, preservedListFilters(), auto ? { awaitAuto: true } : undefined))
+    else if (auto) void router.push(runLivePath(it.runId))
+    else pushConversation(it.runId)
   } else {
     pushConversation(it.runId, it.nodeId)
   }
@@ -1613,7 +1619,12 @@ const settingsItems = computed(() => (
   min-height: 36px;
   padding: 8px 10px;
   font-size: 13px;
+  color: light-dark(#27272a, rgb(var(--c-txt2)));
   --hover-ink-color: rgb(var(--c-txt) / .04);
+}
+/* :where keeps specificity equal to the .settings-directory rules below so they still win */
+.sidebar-workspace-nav .nav-item:where(:hover, :focus-visible, .active) {
+  color: rgb(var(--c-txt));
 }
 .sidebar-workspace-nav .sidebar-tree-item > .nav-item {
   padding-left: 6px;
@@ -1637,7 +1648,7 @@ const settingsItems = computed(() => (
   min-height: 34px;
   padding: 7px 10px;
   gap: 10px;
-  color: rgb(var(--c-txt2));
+  color: rgb(var(--c-txt));
   font-size: 13px;
   font-weight: 400;
   line-height: 20px;
@@ -1654,7 +1665,7 @@ const settingsItems = computed(() => (
 }
 .settings-directory .nav-item :deep(svg) {
   flex-shrink: 0;
-  color: rgb(var(--c-txt2));
+  color: currentColor;
   stroke-width: 1.65;
 }
 @media (max-width: 767px) {
@@ -1693,7 +1704,7 @@ const settingsItems = computed(() => (
   justify-content: space-between;
   margin-bottom: 6px;
   padding: 0 10px;
-  color: color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)));
+  color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3))));
   font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0;

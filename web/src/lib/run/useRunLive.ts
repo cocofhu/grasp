@@ -28,11 +28,11 @@ import { createReviewSessionState, type ReviewRecoveryCheckpoint } from '@/lib/c
 import { splitTurns } from '@/lib/run/llmTranscript'
 import { clarifyTurnsFromLlm } from '@/lib/run/llmTranscriptThread'
 import type { AcpEvent, ClarifyImage, ClarifyTurn, ReactAnnotation, Run, RunCurrentNode } from '@/lib/shared/types'
+import { ingestDialogue, ingestDialogues } from '@/lib/chat/dialogueStore'
 
-/** The ReviewComposer / ClarifyChat surface this view drives. */
+/** The ReviewComposer / ClarifyChat surface this view drives. It draws the server dialogue itself. */
 export interface LiveChatSurface {
-  applyReviewFrame: (frame: Record<string, unknown>) => boolean | void
-  applyAcpEvents: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
+  applyRequestRejected?: (frame: Record<string, unknown>) => void
   releaseConfirmPending?: () => void
 }
 
@@ -115,6 +115,16 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   const composerLocked = computed(() => mode.value === 'chat' && handoff.value?.phase === 'done')
   let chatBusy = false
   const endState = ref<LiveEndState | null>(null)
+  /**
+   * The next automatic visit is chosen but has not started. The page stays
+   * and ClarifyChat shows its existing 准备中 / 等待下一节点开始 row.
+   */
+  const preparing = ref<{ nodeId: string; label: string; at: string } | null>(null)
+  const followTail = computed(() => {
+    const row = preparing.value
+    if (!row || ended.value) return null
+    return { kind: 'waiting' as const, ...(row.label ? { label: row.label } : {}), at: row.at }
+  })
 
   let ws: WebSocket | null = null
   let wsRun = ''
@@ -184,10 +194,10 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   /** The node on screen finished: stop streaming and stay on this page. */
   function finish() {
     if (ended.value) return
+    preparing.value = null
     ended.value = true
     stopping.value = false
     stop()
-    chat.value?.applyReviewFrame({ event: 'turn_done', nodeId: nodeId.value })
     if (mode.value === 'observe') void refreshCompletedEvents()
     notifyRecentActivity()
   }
@@ -286,6 +296,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
    */
   function applyRun(r: Run, id: string, fromSnapshot = false, checkpoint?: ReviewRecoveryCheckpoint) {
     if (disposed || id !== runId.value || (r.id && r.id !== id) || ended.value) return
+    ingestDialogues(r.dialogueByNode, id)
     const d = decideLive(r, requestedNode.value)
     const c = recentCurrentNode(r)
     if (shown && mode.value === 'chat' && d.kind === 'chat' && d.nodeId === nodeId.value) {
@@ -299,18 +310,20 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
           .find(frame => frame.nodeId === nodeId.value)
         if (!frame) return
         chatBusy = !!frame.busy
-        chat.value?.applyReviewFrame(frame)
       }
     }
     // Mid-turn in the continued chat: keep the live stream (refresh on turn_done).
     if (shown && mode.value === 'chat' && chatBusy && d.kind === 'chat' && d.nodeId === nodeId.value) return
     run.value = r
     loadError.value = false
+    if (d.kind === 'wait') {
+      notePreparing(d)
+      if (!shown) applyWait(d, id)
+      return
+    }
+    preparing.value = null
     // Between nodes after a node was shown: stay and wait for the next one.
-    if (shown && !c && (
-      r.status === 'running' || r.status === 'queued' ||
-      (r.status === 'waiting_human' && r.currentNode?.state === 'entering')
-    )) return
+    if (shown && !c && (r.status === 'running' || r.status === 'queued')) return
     if (d.kind === 'chat') {
       if (!shown) return goToChat(d.nodeId)
       if (d.nodeId === nodeId.value) {
@@ -341,6 +354,38 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
     if (shown && nodeId.value !== d.nodeId) return continueTo(d.nodeId, 'observe', c)
     applyObserve(d, id)
+  }
+
+  /**
+   * Open the conversation on a visit that has not started. Do not seed a turn
+   * and do not leave for run detail — the waiting row is the status.
+   */
+  function applyWait(d: { nodeId: string; label: string }, id: string) {
+    const next = d.nodeId
+    if (next && nodeId.value !== next) {
+      nodeId.value = next
+      iteration.value = 1
+      seededKey = ''
+      seededSurface = null
+      seedRequest++
+      lastEvents = null
+      task.value = ''
+      completedEvents.value = null
+    }
+    if (d.label) nodeLabel.value = d.label
+    mode.value = 'observe'
+    const first = !shown
+    shown = true
+    if (next) syncUrlNode(next)
+    if (first) void loadChain()
+    connect(id)
+  }
+
+  function notePreparing(d: { nodeId: string; label: string }) {
+    const label = d.label.trim()
+    const prev = preparing.value
+    if (prev && prev.nodeId === d.nodeId && prev.label === label) return
+    preparing.value = { nodeId: d.nodeId, label, at: prev?.at ?? new Date().toISOString() }
   }
 
   /** Same node still streaming (a poll / snapshot after the page continued in place). */
@@ -416,13 +461,13 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     return !!chat.value && seededSurface === chat.value && seededKey === `${runId.value}:${nodeId.value}:${iteration.value}`
   }
 
-  /** Open the live bubble, then seed it from the node's current turn snapshot. */
+  /** Read the node's current turn snapshot: its task, and the boot check's first output. */
   async function seed(force = false, signal?: AbortSignal) {
     const visit = visitEpoch
     const id = runId.value
     const node = nodeId.value
     const iter = iteration.value
-    if (!node || !run.value || (run.value.id && run.value.id !== id) || ended.value) return
+    if (preparing.value || !node || !run.value || (run.value.id && run.value.id !== id) || ended.value) return
     const key = `${id}:${node}:${iter}`
     const surface = chat.value
     const seedMode = mode.value
@@ -431,11 +476,6 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     const request = ++seedRequest
     seededKey = key
     seededSurface = surface
-    if (mode.value === 'observe' && !alreadySeeded) {
-      surface.applyReviewFrame({ event: 'queue_state', nodeId: nodeId.value, waiting: 0, items: [], busy: true })
-      surface.applyReviewFrame({ event: 'turn_begin', nodeId: nodeId.value, item: { text: '' } })
-      if (lastEvents) surface.applyAcpEvents(lastEvents, nodeId.value)
-    }
     const checkpoint = reviewState.capture()
     try {
       const r = await api.nodeEvents(id, node, signal ? { signal } : undefined)
@@ -448,7 +488,6 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if (!task.value && typeof sent === 'string' && sent.trim()) task.value = sent.trim()
       if (r.events?.length && ((!lastEvents && !force) || (force && reviewState.isCurrent(checkpoint, node)))) {
         lastEvents = r.events
-        surface.applyAcpEvents(r.events, node)
       }
     } catch {
       /* stream frames still arrive over WS */
@@ -486,9 +525,12 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if (events.length) {
         // Snapshots are cumulative: keep the latest for a surface not seeded yet.
         lastEvents = events
-        if (mode.value === 'chat' || isSeeded()) chat.value?.applyAcpEvents(events, nodeId.value)
       }
       if (m.busy === false) scheduleRefresh()
+      return
+    }
+    if (m.type === 'dialogue') {
+      ingestDialogue(m)
       return
     }
     if (m.type === 'node_enter') {
@@ -512,7 +554,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       notifyRecentActivity()
       const session = reviewState.session(nodeId.value)
       if (session) chatBusy = !!session.busy
-      chat.value?.applyReviewFrame(f)
+      if (f.event === 'request_rejected') chat.value?.applyRequestRejected?.(f)
       if (f.event === 'turn_done' || f.event === 'error') {
         scheduleRefresh()
       }
@@ -561,10 +603,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
           receivedSnapshot = true
           const snapshot = (frame as { run?: Run }).run
           const sessions = snapshot?.reactSessions ?? {}
-          const versioned = reviewState.hasVersion || typeof snapshot?.reviewSessionGeneration === 'number' || Object.values(sessions).some(snap => typeof snap.sessionGeneration === 'number')
           reviewState.reset()
           reviewState.installSnapshot(sessions, snapshot?.reviewSessionGeneration)
-          if (versioned) chat.value?.applyReviewFrame({ event: 'session_reset', nodeId: nodeId.value })
         }
         onFrame(frame)
         if (recovering && frame.type === 'snapshot' && !ended.value) void seed(true)
@@ -751,6 +791,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     seededSurface = null
     lastEvents = null
     aheadEvents = null
+    preparing.value = null
     pollTimer = window.setInterval(poll, LIVE_POLL_MS)
     void load()
   }, { immediate: true, flush: 'sync' })
@@ -784,6 +825,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     handoff,
     composerLocked,
     confirmError,
+    followTail,
     takeover,
     send,
     confirm,

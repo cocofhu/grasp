@@ -2,7 +2,7 @@ import { parseModelRoute } from '@/lib/agent/modelBindings'
 import { computed, onBeforeUnmount, ref, shallowRef, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
-import type { SoloMessage, SoloSession } from '@/lib/api/apiTypes'
+import type { MessageReference, SoloMessage, SoloSession } from '@/lib/api/apiTypes'
 import type { ChatExecution, ClarifyImage } from '@/lib/shared/types'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
@@ -10,7 +10,7 @@ import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './ac
 import { soloErrorText } from './soloErrors'
 import { useSoloSessions } from './useSoloSessions'
 
-export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; local?: boolean }
+export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; references?: MessageReference[]; local?: boolean }
 export type SoloPhase = '' | 'preparing' | 'running'
 export type SoloLink = 'idle' | 'connecting' | 'open' | 'reconnecting'
 
@@ -37,6 +37,7 @@ function queueItem(raw: any): SoloQueueItem {
     id: String(raw?.id ?? ''),
     text: String(raw?.text ?? ''),
     images: Array.isArray(raw?.images) ? raw.images : [],
+    ...(Array.isArray(raw?.references) && raw.references.length ? { references: raw.references } : {}),
   }
 }
 
@@ -57,6 +58,18 @@ export function useSoloChat(sessionId: Ref<string>) {
   const session = shallowRef<SoloSession | null>(null)
   const turns = ref<SoloTurn[]>([])
   const queued = ref<SoloQueueItem[]>([])
+  // A drag only reorders the display. queued stays the server order, which
+  // output arriving before turn_begin is attributed to, until queue_state.
+  const orderOverlay = ref<string[] | null>(null)
+  let overlaySeq = 0
+  const displayQueued = computed(() => {
+    const order = orderOverlay.value
+    if (!order) return queued.value
+    const rank = new Map(order.map((id, i) => [id, i]))
+    const server = queued.value.filter((item) => !item.local)
+    const ranked = server.filter((item) => rank.has(item.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
+    return [...ranked, ...server.filter((item) => !rank.has(item.id)), ...queued.value.filter((item) => item.local)]
+  })
   const busy = ref(false)
   const sessionStateCursor = createReviewStateCursor()
   const phase = ref<SoloPhase>('')
@@ -96,6 +109,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     serverId?: string
     text: string
     images: ClarifyImage[]
+    references: MessageReference[]
     started: boolean
   }
   // The local identity survives HTTP, queue acknowledgement and turn_begin.
@@ -210,6 +224,8 @@ export function useSoloChat(sessionId: Ref<string>) {
   const sendKey = (send: LocalSend) => send.serverId || send.localId
 
   function samePayload(send: LocalSend, item: SoloQueueItem): boolean {
+    const refs = item.references || []
+    if (refs.length && (refs.length !== send.references.length || refs.some((ref, i) => ref.target !== send.references[i]!.target))) return false
     return send.text === item.text && send.images.length === item.images.length && send.images.every((image, i) => {
       const other = item.images[i]!
       if (image.mimeType !== other.mimeType) return false
@@ -390,7 +406,10 @@ export function useSoloChat(sessionId: Ref<string>) {
     const existing = turns.value.find((x) => x.id === `live:${id}`)
     if (existing) {
       activeId.value = id
-      if (!turns.value.some((x) => x.id === `u:${id}`)) {
+      const shown = turns.value.find((x) => x.id === `u:${id}`)
+      // The server copy carries the send-time access check; prefer it over the optimistic one.
+      if (shown && item.references?.length) shown.references = item.references
+      if (!shown) {
         const started = existing.startedAt || new Date().toISOString()
         const user = {
           id: `u:${id}`,
@@ -401,6 +420,7 @@ export function useSoloChat(sessionId: Ref<string>) {
           plan: [],
           streaming: false,
           images: item.images.length ? item.images : undefined,
+          references: item.references,
           createdAt: started,
         }
         const idx = turns.value.findIndex((x) => x.id === existing.id)
@@ -418,7 +438,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     const next = turns.value.filter((x) => x.id !== `u:${id}` && x.id !== `live:${id}`)
     const firstPending = next.findIndex((turn) => openSends.some((row) => !row.started && turn.id === `u:${sendKey(row)}`))
     next.splice(firstPending < 0 ? next.length : firstPending, 0,
-      { id: `u:${id}`, role: 'user', text: item.text, tools: [], steps: [], plan: [], streaming: false, images: item.images.length ? item.images : undefined, createdAt: started },
+      { id: `u:${id}`, role: 'user', text: item.text, tools: [], steps: [], plan: [], streaming: false, images: item.images.length ? item.images : undefined, references: item.references, createdAt: started },
       emptyAgentTurn(`live:${id}`, true, started),
     )
     turns.value = next
@@ -603,6 +623,7 @@ export function useSoloChat(sessionId: Ref<string>) {
         }
         const locals = queued.value.filter((item) => item.local && openSends.some((send) => send.localId === item.id && !send.serverId))
         queued.value = [...serverItems, ...locals]
+        orderOverlay.value = null
         busy.value = !!frame.busy
         patchSession({ busy: busy.value, waiting: queued.value.length })
         if (subscriptionSnapshot) applyResumeSnapshot(frame)
@@ -750,6 +771,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     sessionStateCursor.reset()
     turns.value = []
     queued.value = []
+    orderOverlay.value = null
     openSends.splice(0, openSends.length)
     knownServerIds.clear()
     missingQueuedIds.clear()
@@ -786,14 +808,15 @@ export function useSoloChat(sessionId: Ref<string>) {
     return `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   }
 
-  async function send(text: string, images: ClarifyImage[] = []) {
+  async function send(text: string, images: ClarifyImage[] = [], references: MessageReference[] = []) {
     const id = sessionId.value
     const epoch = chatEpoch
-    if (!id || disposed || !canSend.value || (!text.trim() && !images.length)) return false
+    if (!id || disposed || !canSend.value || (!text.trim() && !images.length && !references.length)) return false
     actionError.value = ''
     const body = text.trim()
-    const local: SoloQueueItem = { id: newLocalId(), text: body, images, local: true }
-    const send: LocalSend = { localId: local.id, text: body, images, started: false }
+    const refs = references.length ? references : undefined
+    const local: SoloQueueItem = { id: newLocalId(), text: body, images, references: refs, local: true }
+    const send: LocalSend = { localId: local.id, text: body, images, references, started: false }
     openSends.push(send)
     const started = new Date().toISOString()
     // A send behind a running turn stays in the queue until its turn_begin,
@@ -810,6 +833,7 @@ export function useSoloChat(sessionId: Ref<string>) {
           plan: [],
           streaming: false,
           images: images.length ? images : undefined,
+          references: refs,
           createdAt: started,
         },
         emptyAgentTurn(`live:${local.id}`, true, started),
@@ -820,7 +844,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     queued.value = [...queued.value, local]
     patchSession({ waiting: queued.value.length, busy: true })
     try {
-      await api.sendSoloTurn(id, { text: body, images })
+      await api.sendSoloTurn(id, { text: body, images, ...(refs ? { references: refs.map(({ kind, target }) => ({ kind, target })) } : {}) })
       return !disposed && epoch === chatEpoch && id === sessionId.value
     } catch (e: any) {
       if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
@@ -910,18 +934,21 @@ export function useSoloChat(sessionId: Ref<string>) {
     patchSession({ waiting: 0, busy: false })
   }
 
-  async function removeQueued(turnId: string) {
+  /** True only when the server removed the item for this still-current session. */
+  async function dropQueued(turnId: string): Promise<boolean> {
     const id = sessionId.value
     const epoch = chatEpoch
     const before = queued.value
     queued.value = before.filter((q) => q.id !== turnId)
+    let ok = false
     try {
       await api.removeSoloQueued(id, turnId)
-      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return
+      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
       const send = openSends.find((row) => sendKey(row) === turnId)
       if (send && !send.started) forgetSend(send)
+      ok = true
     } catch {
-      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return
+      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
       const removed = before.find((row) => row.id === turnId)
       if (removed && activeId.value !== turnId && !queued.value.some((row) => row.id === turnId)) {
         const next = queued.value.slice()
@@ -930,6 +957,50 @@ export function useSoloChat(sessionId: Ref<string>) {
       }
     }
     patchSession({ waiting: queued.value.length, busy: busy.value || queued.value.length > 0 })
+    return ok
+  }
+
+  async function removeQueued(turnId: string) {
+    await dropQueued(turnId)
+  }
+
+  /**
+   * Withdraw a queued item for editing. Returns its content only once the
+   * server removed it; an item that already began is never handed back.
+   */
+  async function takeQueued(turnId: string): Promise<SoloQueueItem | null> {
+    const target = queued.value.find((q) => q.id === turnId)
+    if (!target || target.local) return null
+    const copy: SoloQueueItem = {
+      id: target.id,
+      text: target.text,
+      images: target.images.map((image) => ({ ...image })),
+      ...(target.references?.length ? { references: target.references.map((ref) => ({ ...ref })) } : {}),
+    }
+    return (await dropQueued(turnId)) ? copy : null
+  }
+
+  /** Indices are positions in displayQueued; unacknowledged local items never move. */
+  async function reorderQueued(fromIndex: number, toIndex: number) {
+    const id = sessionId.value
+    const epoch = chatEpoch
+    const shown = displayQueued.value
+    const moved = shown[fromIndex]
+    const target = shown[toIndex]
+    if (!id || fromIndex === toIndex || !moved || !target || moved.local || target.local) return
+    const ids = shown.filter((item) => !item.local).map((item) => item.id)
+    const to = ids.indexOf(target.id)
+    ids.splice(ids.indexOf(moved.id), 1)
+    ids.splice(to, 0, moved.id)
+    const seq = ++overlaySeq
+    orderOverlay.value = ids
+    try {
+      await api.reorderSoloQueue(id, ids)
+    } catch {
+      // The server order stays authoritative; a newer queue_state may already be shown.
+      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return
+      if (seq === overlaySeq) orderOverlay.value = null
+    }
   }
 
   async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
@@ -977,6 +1048,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     session,
     turns,
     queued,
+    displayQueued,
     busy,
     phase,
     link,
@@ -996,6 +1068,8 @@ export function useSoloChat(sessionId: Ref<string>) {
     setCurrentReasoningEffort,
     cancel,
     removeQueued,
+    takeQueued,
+    reorderQueued,
     close,
     rename,
     refreshSession,

@@ -36,6 +36,7 @@ import {
   filtersToParams,
   fmtCost,
   fmtDeltaPct,
+  fmtHitRatePct,
   fmtPct,
   paletteColor,
   toCsv,
@@ -972,7 +973,7 @@ const fxCount = computed(() => fxChips.value.length)
                 :title="`${fmtTokenCount(data.kpi.cacheReadTokens)} / ${fmtTokenCount(data.kpi.cacheWriteTokens)}`"
               >
                 <div class="text-[11px] text-txt3">{{ t('pages.tokenAnalytics.cacheHit') }}</div>
-                <div class="mt-1 text-[26px] font-semibold tracking-tight tabular-nums">{{ fmtPct(data.kpi.cacheHitRate) }}</div>
+                <div class="mt-1 text-[26px] font-semibold tracking-tight tabular-nums">{{ fmtHitRatePct(data.kpi.cacheHitRate) }}</div>
                 <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-elevated">
                   <div class="h-full rounded-full bg-[#22a6b3]" :style="{ width: `${Math.min(100, (data.kpi.cacheHitRate || 0) * 100)}%` }" />
                 </div>
@@ -1001,7 +1002,6 @@ const fxCount = computed(() => fxChips.value.length)
             class="usage-primary-trend"
             data-testid="token-analytics-lines"
             :title="t('pages.tokenAnalytics.charts.lines')"
-            :hint="t('pages.tokenAnalytics.charts.linesHint')"
             :modes="lineModes"
             :mode="lineMode"
             @update:mode="lineMode = $event as TrendMode"

@@ -236,6 +236,9 @@ func main() {
 		WriteBackCodexLoginFile: credentialSvc.WriteBackCodexLoginCredential,
 	})
 	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
+	if err := eng.InitDialogueEpoch(); err != nil {
+		log.Fatal().Err(err).Msg("init dialogue epoch")
+	}
 	eng.SetBlobStore(blobStore)
 	eng.SetWorkspaceVarsLookup(func(workflowID string) []models.WorkspaceVariable {
 		return workspaceSvc.VariablesForWorkflow(workflowID)
@@ -518,6 +521,7 @@ func main() {
 		ExternalMcp:         externalMcpSvc,
 		McpKeys:             mcpKeySvc,
 		Credentials:         credentialSvc,
+		GitHubDevice:        services.NewGitHubDeviceFlowService(credentialSvc, func() string { return config.GetConfig().GitHubOAuthClientID() }),
 		OpenCodeCatalog:     openCodeCatalog,
 		ModelConnections:    modelConnectionSvc,
 		ModelConfigurations: modelConfigurationSvc,

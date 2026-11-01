@@ -13,7 +13,7 @@ describe('settings-family narrow-screen stacking (g3)', () => {
   it('Settings uses a natural-height single column with mobile control stacking', () => {
     const src = read('SettingsView.vue')
     const row = readFileSync(join(dir, '../components/settings/SettingsRow.vue'), 'utf8')
-    expect(src).toMatch(/max-width: 860px/)
+    expect(src).toMatch(/max-width: 960px/)
     expect(src).not.toMatch(/overflow-y-auto/)
     expect(src).toMatch(/min-h-11 sm:min-h-9/)
     expect(row).toMatch(/@media \(max-width: 639px\)/)

@@ -48,11 +48,11 @@ test.describe('ClarifyChat 完成态相对时间单通道', () => {
 
     await expect(page.getByTestId('clarify-turn-completed')).toHaveCount(0)
     await expect(page.getByTestId('clarify-stream-caret')).toBeVisible()
-    // Both accepted user requests stay visible, including the request queued
-    // behind this stream. Each keeps its own time; live Agent rows have no footer.
+    // The running request keeps its time; live Agent rows have no footer.
     const humans = page.locator('[data-turn-role="human"]')
-    await expect(humans).toHaveCount(2)
-    await expect(humans.getByTestId('clarify-turn-bottom-time')).toHaveCount(2)
+    await expect(humans).toHaveCount(1)
+    await expect(humans).toContainText('流式探测')
+    await expect(humans.getByTestId('clarify-turn-bottom-time')).toHaveCount(1)
     const agents = page.locator('[data-turn-role="agent"]')
     await expect(agents.getByTestId('clarify-turn-bottom-time')).toHaveCount(0)
     await expect(agents.getByTestId('chat-message-meta')).toHaveCount(0)

@@ -365,6 +365,8 @@ export type PublicGatePreview = {
   interaction?: AgentInteraction
   /** In-flight ACP rails (message/thought) while sessionBusy — poll fallback. */
   liveEvents?: PublicGateLiveEvent[]
+  /** The viewer's dialogue state (public view: opaque image refs, no run id). */
+  dialogue?: unknown
 }
 
 export type PublicGateLiveEvent = {
@@ -601,6 +603,24 @@ export function mapPublicGateImages(
   return out
 }
 
+/** A public dialogue frame with its opaque image refs resolved to share URLs. */
+export function mapPublicDialogue(token: string, frame: unknown): unknown {
+  const f = frame as { type?: string; rows?: unknown[]; turns?: unknown[] } | null
+  if (!f || f.type !== 'dialogue' || !Array.isArray(f.rows)) return frame
+  const withImages = <T extends { images?: unknown }>(o: T): T =>
+    Array.isArray(o.images) && o.images.length
+      ? { ...o, images: mapPublicGateImages(token, o.images as PublicGatePreviewImage[]) }
+      : o
+  return {
+    ...f,
+    rows: f.rows.map((r) => withImages(r as { images?: unknown })),
+    turns: (f.turns || []).map((t) => {
+      const turn = t as { item?: { images?: unknown } }
+      return turn.item ? { ...turn, item: withImages(turn.item) } : turn
+    }),
+  }
+}
+
 export const publicGateApi = {
   eventsWsUrl(): string {
     return window.location.origin.replace(/^http/, 'ws') + '/public/approvals/events'
@@ -698,6 +718,8 @@ export const publicGateApi = {
     images?: Array<{ data?: string; mimeType?: string; name?: string }>
     live?: LiveEvent
     liveCtx?: LiveCtx | null
+    /** Echoed in the dialogue state so the page can replace its optimistic row. */
+    clientMessageId?: string
   }): Promise<PublicGateReplyResult> {
     return fetch('/public/approvals/reply', {
       method: 'POST',

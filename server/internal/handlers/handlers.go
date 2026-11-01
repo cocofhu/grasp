@@ -62,6 +62,7 @@ type Handlers struct {
 	ExternalMcp         *services.ExternalMcpService
 	McpKeys             *services.WorkspaceMcpApiKeyService
 	Credentials         *services.CredentialService
+	GitHubDevice        *services.GitHubDeviceFlowService
 	ModelConnections    *services.ModelConnectionService
 	ModelConfigurations *services.ModelConfigurationService
 	Onboarding          *services.OnboardingService

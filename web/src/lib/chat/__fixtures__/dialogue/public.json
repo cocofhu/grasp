@@ -1,0 +1,154 @@
+{
+  "scenario": "public",
+  "about": "the share-link form: redacted, full frames only",
+  "frames": [
+    {
+      "type": "dialogue",
+      "nodeId": "public-gate",
+      "iteration": 1,
+      "epoch": 1,
+      "seq": 1,
+      "mode": "full",
+      "rows": [
+        {
+          "role": "human",
+          "text": "按钮改大",
+          "at": "2026-01-01T00:00:00Z",
+          "images": [
+            {
+              "mimeType": "image/png",
+              "name": "shot.png",
+              "index": 0
+            }
+          ],
+          "id": "turn-1:h",
+          "turnId": "turn-1",
+          "phase": "sealed",
+          "rev": 1
+        },
+        {
+          "role": "agent",
+          "text": "好的",
+          "at": "2026-01-01T00:00:00Z",
+          "id": "turn-1:a0",
+          "turnId": "turn-1",
+          "phase": "running",
+          "rev": 1,
+          "streaming": true
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "turn-1",
+          "phase": "running"
+        }
+      ],
+      "busy": true,
+      "done": false
+    },
+    {
+      "type": "dialogue",
+      "nodeId": "public-gate",
+      "iteration": 1,
+      "epoch": 1,
+      "seq": 2,
+      "mode": "full",
+      "rows": [
+        {
+          "role": "human",
+          "text": "按钮改大",
+          "at": "2026-01-01T00:00:00Z",
+          "images": [
+            {
+              "mimeType": "image/png",
+              "name": "shot.png",
+              "index": 0
+            }
+          ],
+          "id": "turn-1:h",
+          "turnId": "turn-1",
+          "phase": "sealed",
+          "rev": 1
+        },
+        {
+          "role": "agent",
+          "text": "请继续补充。",
+          "at": "2026-01-01T00:00:00Z",
+          "questions": [
+            {
+              "id": "q2",
+              "prompt": "还需要一点信息。",
+              "options": []
+            }
+          ],
+          "id": "turn-1:a0",
+          "turnId": "turn-1",
+          "phase": "sealed",
+          "rev": 2,
+          "outcome": "ok"
+        }
+      ],
+      "turns": [
+        {
+          "turnId": "turn-1",
+          "phase": "ended",
+          "outcome": "ok"
+        }
+      ],
+      "busy": false,
+      "done": false
+    }
+  ],
+  "final": {
+    "type": "dialogue",
+    "nodeId": "public-gate",
+    "iteration": 1,
+    "epoch": 1,
+    "seq": 2,
+    "mode": "full",
+    "rows": [
+      {
+        "role": "human",
+        "text": "按钮改大",
+        "at": "2026-01-01T00:00:00Z",
+        "images": [
+          {
+            "mimeType": "image/png",
+            "name": "shot.png",
+            "index": 0
+          }
+        ],
+        "id": "turn-1:h",
+        "turnId": "turn-1",
+        "phase": "sealed",
+        "rev": 1
+      },
+      {
+        "role": "agent",
+        "text": "请继续补充。",
+        "at": "2026-01-01T00:00:00Z",
+        "questions": [
+          {
+            "id": "q2",
+            "prompt": "还需要一点信息。",
+            "options": []
+          }
+        ],
+        "id": "turn-1:a0",
+        "turnId": "turn-1",
+        "phase": "sealed",
+        "rev": 2,
+        "outcome": "ok"
+      }
+    ],
+    "turns": [
+      {
+        "turnId": "turn-1",
+        "phase": "ended",
+        "outcome": "ok"
+      }
+    ],
+    "busy": false,
+    "done": false
+  }
+}

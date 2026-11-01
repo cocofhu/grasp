@@ -11,6 +11,66 @@ import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 
+type Rgb = { r: number; g: number; b: number; a: number }
+
+function channelByte(raw: string): number {
+  const text = raw.trim()
+  if (text.endsWith('%')) return (Number(text.slice(0, -1)) / 100) * 255
+  return Number(text)
+}
+
+/** Parses a hex or rgb()/rgba() declaration from the stylesheet. */
+function parseCssColor(input: string): Rgb {
+  const value = input.trim().toLowerCase()
+  const hex = value.match(/^#([0-9a-f]{3,8})$/)
+  if (hex) {
+    let h = hex[1]
+    if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join('')
+    return {
+      r: parseInt(h.slice(0, 2), 16),
+      g: parseInt(h.slice(2, 4), 16),
+      b: parseInt(h.slice(4, 6), 16),
+      a: h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1,
+    }
+  }
+  const modern = value.match(
+    /^rgba?\(\s*([0-9.]+%?)\s+([0-9.]+%?)\s+([0-9.]+%?)(?:\s*\/\s*([0-9.]+%?))?\s*\)$/,
+  )
+  const legacy = value.match(
+    /^rgba?\(\s*([0-9.]+%?)\s*,\s*([0-9.]+%?)\s*,\s*([0-9.]+%?)(?:\s*,\s*([0-9.]+%?))?\s*\)$/,
+  )
+  const match = modern || legacy
+  if (!match) throw new Error(`unparsed color ${input}`)
+  const alphaRaw = match[4]
+  const a = alphaRaw ? (alphaRaw.endsWith('%') ? Number(alphaRaw.slice(0, -1)) / 100 : Number(alphaRaw)) : 1
+  return { r: channelByte(match[1]), g: channelByte(match[2]), b: channelByte(match[3]), a }
+}
+
+function compositeOver(fg: Rgb, bg: Rgb): Rgb {
+  return {
+    r: bg.r * (1 - fg.a) + fg.r * fg.a,
+    g: bg.g * (1 - fg.a) + fg.g * fg.a,
+    b: bg.b * (1 - fg.a) + fg.b * fg.a,
+    a: 1,
+  }
+}
+
+function linearChannel(channel: number): number {
+  const s = channel / 255
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+}
+
+function relativeLuminance(color: Rgb): number {
+  return 0.2126 * linearChannel(color.r) + 0.7152 * linearChannel(color.g) + 0.0722 * linearChannel(color.b)
+}
+
+function contrastRatio(a: Rgb, b: Rgb): number {
+  const l1 = relativeLuminance(a)
+  const l2 = relativeLuminance(b)
+  const [hi, lo] = l1 >= l2 ? [l1, l2] : [l2, l1]
+  return (hi + 0.05) / (lo + 0.05)
+}
+
 function mountModal(props: Record<string, unknown> = {}, body = '<p data-testid="body">内容</p>') {
   const i18n = createI18n({
     legacy: false,
@@ -244,9 +304,27 @@ describe('AppModal', () => {
 
   it('neutralizes footer primary only, and leaves page primary purple', () => {
     const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'), 'utf8')
-    expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*background-color:\s*#18181b/i)
-    expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*color:\s*#ffffff/i)
-    expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*--hover-ink-color:\s*#f4f4f5/i)
+    const light = css.match(/html\.light \.app-modal-footer button\.bg-accent\s*\{([^}]*)\}/)
+    expect(light, 'light footer primary rule').toBeTruthy()
+    const lightBlock = light![1]
+    expect(lightBlock).toMatch(/background-color:\s*#18181b/i)
+    expect(lightBlock).toMatch(/color:\s*#ffffff/i)
+    const inkDecl = lightBlock.match(/--hover-ink-color:\s*([^;]+)/i)
+    expect(inkDecl, 'light hover ink').toBeTruthy()
+    expect(inkDecl![1]).toMatch(/!important/i)
+    const wash = parseCssColor(inkDecl![1].replace(/!important/i, ''))
+    expect(wash.r).toBeGreaterThanOrEqual(250)
+    expect(wash.g).toBeGreaterThanOrEqual(250)
+    expect(wash.b).toBeGreaterThanOrEqual(250)
+    expect(wash.a).toBeGreaterThan(0)
+    expect(wash.a).toBeLessThan(1)
+    const black = { r: 0x18, g: 0x18, b: 0x1b, a: 1 }
+    const white = { r: 255, g: 255, b: 255, a: 1 }
+    const filled = compositeOver(wash, black)
+    expect(contrastRatio(white, filled)).toBeGreaterThanOrEqual(4.5)
+    const lift = (filled.r + filled.g + filled.b) / 3 - (black.r + black.g + black.b) / 3
+    expect(lift).toBeGreaterThanOrEqual(20)
+    expect(Math.max(filled.r, filled.g, filled.b)).toBeLessThan(110)
     expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*background-color:\s*#ededf0/i)
     expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*color:\s*#141417/i)
     expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*--hover-ink-color:\s*#a1a1aa/i)

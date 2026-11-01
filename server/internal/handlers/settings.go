@@ -15,6 +15,7 @@ type updateSettingsBody struct {
 	RunSandboxMaxRetH *int    `json:"run_sandbox_max_retention_hours"`
 	TestSandboxTTLMin *int    `json:"test_sandbox_ttl_minutes"`
 	MaxTestSandboxes  *int    `json:"max_test_sandboxes"`
+	MaxSoloSandboxes  *int    `json:"max_solo_sandboxes"`
 	NodeAutoRetryMax  *int    `json:"node_auto_retry_max"`
 	SandboxMemoryMB   *int    `json:"sandbox_memory_mb"`
 	AgentIdleMin      *int    `json:"agent_idle_timeout_minutes"`
@@ -46,6 +47,7 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		services.KeyRunSandboxMaxRetH: body.RunSandboxMaxRetH,
 		services.KeyTestSandboxTTLMin: body.TestSandboxTTLMin,
 		services.KeyMaxTestSandboxes:  body.MaxTestSandboxes,
+		services.KeyMaxSoloSandboxes:  body.MaxSoloSandboxes,
 		services.KeyNodeAutoRetryMax:  body.NodeAutoRetryMax,
 		services.KeySandboxMemoryMB:   body.SandboxMemoryMB,
 		services.KeyAgentIdleMin:      body.AgentIdleMin,

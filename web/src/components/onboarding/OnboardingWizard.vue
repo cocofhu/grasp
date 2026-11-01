@@ -31,6 +31,7 @@ import {
   gitIdentityConfigured,
   repoConfigured,
   repoNameFromUrl,
+  suppressOnboarding,
   teamNameIssues,
   teamValid,
   type OnboardingBootstrapResult,
@@ -70,7 +71,6 @@ const result = ref<OnboardingBootstrapResult | null>(null)
 const stepAnimKey = ref(0)
 const modelValid = ref(false)
 const gitValid = ref(true)
-const gitSetupOpen = ref(false)
 const resourceEditing = ref(false)
 const resourcesLoading = ref(false)
 const resourcesError = ref('')
@@ -136,7 +136,7 @@ function selectSavedModel(model: ModelConfiguration) {
   models.value = [...models.value.filter(row => row.id !== model.id), model]
   modelBinding.value = { kind: 'configuration', configurationId: model.id }
   resourceEditing.value = false
-  if (props.open && currentStep.value.id === 'model') goToStep('git')
+  if (props.open && currentStep.value.id === 'model') goToStep('gitCredentials')
   void refreshResources()
 }
 function completeCredentialStep(credential: CredentialItem) {
@@ -207,7 +207,6 @@ watch(
     modelValid.value = false
     gitValid.value = true
     showTeamErrors.value = false
-    gitSetupOpen.value = false
     resourceEditing.value = false
     leaving.value = false
     applyDefaultTeamNames(draft.value.team, defaultAgentNames.value)
@@ -234,9 +233,13 @@ function templateFor(id: OnboardingTemplateId): AgentTemplate | undefined {
   return templates.value.find((x) => x.id === id)
 }
 
-/** Closes for this view only; a reload re-opens it until the default workflow exists. */
+/** Dismissing stops automatic re-opening in this browser; the create-workflow gate still opens it. */
 function closeWizard() {
   if (creating.value || resourceEditing.value) return
+  if (phase.value === 'wizard') {
+    suppressOnboarding()
+    toast.show(t('pages.onboarding.dismissedHint'))
+  }
   emit('close')
 }
 
@@ -286,8 +289,14 @@ function validateModel(): boolean {
 }
 
 function validateGit(): boolean {
-  if (gitIdentityConfigured(draft.value) && (draft.value.gitSkipped || gitValid.value)) return true
+  if (gitIdentityConfigured(draft.value)) return true
   toast.error(t('pages.onboarding.toastNeedGitUser'))
+  return false
+}
+
+function validateGitCredentials(): boolean {
+  if (draft.value.gitSkipped || gitValid.value) return true
+  toast.error(t('pages.onboarding.gitCredentials.invalid'))
   return false
 }
 
@@ -322,6 +331,7 @@ function goNext() {
   if (id === 'credentials' && !validateCredentials()) return
   if (id === 'model' && !validateModel()) return
   if (id === 'git' && !validateGit()) return
+  if (id === 'gitCredentials' && !validateGitCredentials()) return
   if (id === 'team' && !validateTeam()) return
   if (id === 'workflow') {
     void submitBootstrap()
@@ -344,6 +354,7 @@ async function submitBootstrap() {
     ['prefs', validatePrefs],
     ['credentials', validateCredentials],
     ['model', validateModel],
+    ['gitCredentials', validateGitCredentials],
     ['git', validateGit],
     ['team', validateTeam],
   ]
@@ -431,7 +442,7 @@ function editWorkflow() {
                 <Icon v-if="i < activeIndex" name="check" :size="13" />
                 <span v-else>{{ i + 1 }}</span>
               </div>
-              <div class="min-w-0 pb-5">
+              <div class="min-w-0 pb-6">
                 <div class="onb-step-title">{{ t(s.labelKey) }}</div>
                 <div class="onb-step-desc">
                   {{ t(`pages.onboarding.railDesc.${s.id}`) }}
@@ -744,21 +755,16 @@ function editWorkflow() {
                       <p v-if="repoDirName" class="onb-hint" data-testid="onboarding-repo-hint">
                         {{ t('pages.onboarding.repo.cloneTo', { dir: repoDirName }) }}
                       </p>
-                      <div class="mt-4">
-                        <AgentGitCredentialPicker :key="resourcesVersion" v-model="draft.gitBindings" hide-manage-link :disabled="resourceEditing" @validity="gitValid = $event" />
-                      </div>
-                      <div class="mt-5 border-t border-line pt-5">
-                        <div class="flex items-center justify-between gap-3">
-                          <div>
-                            <h2 class="onb-card-title">{{ t('pages.onboarding.gitSetup.title') }}</h2>
-                            <p class="onb-card-desc">{{ t('pages.onboarding.gitSetup.hint') }}</p>
-                          </div>
-                          <AppButton size="sm" variant="outline" :disabled="resourceEditing" :aria-expanded="gitSetupOpen" aria-controls="onboarding-git-setup" data-testid="onboarding-manage-git" @click="gitSetupOpen = !gitSetupOpen">{{ t(gitSetupOpen ? 'pages.onboarding.collapseSetup' : 'pages.onboarding.expandSetup') }}</AppButton>
-                        </div>
-                        <WorkspaceCredentialsPanel v-if="gitSetupOpen" id="onboarding-git-setup" class="mt-4" inline scope="git" @changed="refreshResources" @credential-saved="selectSavedGit" @editing="resourceEditing = $event" />
-                      </div>
                     </template>
                   </section>
+                </template>
+
+                <template v-else-if="currentStep.id === 'gitCredentials'">
+                  <p class="onb-lede">{{ t('pages.onboarding.gitCredentials.meta') }}</p>
+                  <section v-show="!resourceEditing" class="mt-6" data-testid="onboarding-section-git-credentials">
+                    <AgentGitCredentialPicker :key="resourcesVersion" v-model="draft.gitBindings" hide-manage-link :disabled="resourceEditing" @validity="gitValid = $event" />
+                  </section>
+                  <WorkspaceCredentialsPanel class="mt-6" inline scope="git" view="credentials" @changed="refreshResources" @credential-saved="selectSavedGit" @editing="resourceEditing = $event" />
                 </template>
 
                 <template v-else-if="currentStep.id === 'team'">
@@ -879,7 +885,7 @@ function editWorkflow() {
 }
 .onb-dialog {
   width: min(1040px, 100%);
-  height: min(720px, 92vh);
+  height: min(800px, 92vh);
   border-radius: 18px;
   border: 1px solid rgb(var(--c-line));
   background: rgb(var(--c-surface));

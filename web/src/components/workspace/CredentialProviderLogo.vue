@@ -37,8 +37,8 @@ const props = withDefaults(
     selected?: boolean
     /** provider: ignore alias/name so a model-vendor row is not mistaken for a brand in the alias. */
     match?: 'any' | 'provider'
-    /** SSH kinds have no brand mark. key is a private key, host is known hosts. */
-    icon?: '' | 'key' | 'host'
+    /** SSH keys have no brand mark. */
+    icon?: '' | 'key'
   }>(),
   { provider: '', name: '', type: '', envKey: '', configured: false, selected: false, match: 'any', icon: '' },
 )
@@ -186,13 +186,12 @@ const imageClasses = computed(() => ({
     :class="[
       selected ? 'border-accent bg-surface' : 'border-line bg-surface',
     ]"
-    :data-provider-logo="icon === 'key' ? 'ssh-key' : icon === 'host' ? 'ssh-host' : logoKey"
+    :data-provider-logo="icon === 'key' ? 'ssh-key' : logoKey"
     role="img"
-    :aria-label="icon === 'key' ? 'SSH private key' : icon === 'host' ? 'SSH known hosts' : `${label} logo`"
-    :title="icon === 'key' ? 'SSH private key' : icon === 'host' ? 'SSH known hosts' : `${label} logo`"
+    :aria-label="icon === 'key' ? 'SSH key' : `${label} logo`"
+    :title="icon === 'key' ? 'SSH key' : `${label} logo`"
   >
     <Icon v-if="icon === 'key'" name="key" :size="17" class="text-txt2" aria-hidden="true" />
-    <Icon v-else-if="icon === 'host'" name="server" :size="17" class="text-txt2" aria-hidden="true" />
     <img
       v-else-if="asset"
       :src="asset"

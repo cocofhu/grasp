@@ -38,6 +38,7 @@ type ItemView struct {
 	Text            string
 	Images          []models.PromptImage
 	Annotations     []models.ReactAnnotation
+	References      []models.MessageReference
 }
 
 // Frame renders the view in the queue_state / turn_begin item shape. Nil
@@ -59,6 +60,9 @@ func (v ItemView) Frame() map[string]any {
 	}
 	if v.ClientMessageID != "" {
 		out["clientMessageId"] = v.ClientMessageID
+	}
+	if len(v.References) > 0 {
+		out["references"] = v.References
 	}
 	return out
 }
@@ -395,6 +399,39 @@ func (s *Session[T]) SetLiveEvents(events []models.AcpEvent) {
 	s.mu.Lock()
 	s.liveEvents = events
 	s.mu.Unlock()
+}
+
+// SetLiveEventsIfActive records events as the active turn's stream and
+// reports true; with no active turn it records nothing and reports false.
+func (s *Session[T]) SetLiveEventsIfActive(events []models.AcpEvent) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.hasActive {
+		return false
+	}
+	s.liveEvents = events
+	return true
+}
+
+// View is one consistent read of a session: its active item and stream and
+// the pending items, taken under one lock.
+type View[T any] struct {
+	Active     T
+	HasActive  bool
+	Pending    []T
+	LiveEvents []models.AcpEvent
+	Pumping    bool
+}
+
+// View returns the session's current state.
+func (s *Session[T]) View() View[T] {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v := View[T]{Active: s.active, HasActive: s.hasActive, Pending: append([]T(nil), s.queue...), Pumping: s.pumping}
+	if s.hasActive {
+		v.LiveEvents = append([]models.AcpEvent(nil), s.liveEvents...)
+	}
+	return v
 }
 
 // LiveEvents returns the active turn's recorded stream (nil when idle).

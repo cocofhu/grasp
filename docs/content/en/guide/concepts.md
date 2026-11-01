@@ -25,7 +25,7 @@ A workflow has one kind of Agent node. The node only sets three things: which Ag
 
 Every node that uses the same Agent has the same capabilities; nodes differ only by goal. If you need different permissions, create a second Agent. Behaviour rules live in the Agent workspace's `AGENTS.md` and skills; the platform keeps only a fixed common protocol.
 
-Three templates ship built in: **Clarify** (clarify; writes the requirement spec and plan), **Implement** (auto with review; writes the implementation result) and **Test & review** (auto with review; writes the test result and review verdict). All three can start a preview with `set_preview`. Onboarding creates the default workflow input → Clarify → Implement → Test & review; Pass goes to output and Fail goes back to Implement.
+Three templates ship built in: **Clarify** (clarify; writes the requirement spec and plan), **Implement** (auto; writes the implementation result) and **Test & review** (auto; writes the test result and review verdict). Implement and Test & review ship with review off, so they hand off as soon as they finish; turn review on in the Agent's capabilities page if you want them to wait for a person. All three can start a preview with `set_preview`. Onboarding creates the default workflow input → Clarify → Implement → Test & review; Pass goes to output and Fail goes back to Implement.
 
 A workflow with an unknown node type fails validation with "未知节点类型 X" (unknown node type) and its runs fail; an Agent without capabilities fails with "Agent X 未声明能力" (Agent has no capabilities).
 
@@ -83,7 +83,7 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 ## Real Docker sandboxes
 
-Open Workflow defaults in the workflow editor, enable Shared sandbox, and save. It is off by default, so each node gets its own sandbox. When enabled, nodes in the same run reuse the workspace, installed dependencies, and uncommitted changes; separate runs remain isolated. The selection applies to newly started runs without a platform-wide enable flag. Model and Git authorization are refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox or reuse is incompatible.
+Open Workflow defaults in the workflow editor to turn Shared sandbox on or off, then save. New workflows (created in the editor, by onboarding, or from the default baseline) have it on by default; existing workflows keep their setting, and without one each node gets its own sandbox. When enabled, nodes in the same run reuse the workspace, installed dependencies, and uncommitted changes; separate runs remain isolated. The selection applies to newly started runs without a platform-wide enable flag. Model and Git authorization are refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox or reuse is incompatible.
 
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 
@@ -104,6 +104,15 @@ First configure a preset or custom service’s API base and key in Credentials, 
 The workspace lists and uses only credentials explicitly created with the current data structure. It does not generate empty credential slots. Close and reopen long-lived sandboxes after changing their model or authorization.
 
 Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires a selected model or explicit inheritance from Agent defaults. New Agents inherit by default. In Agent metadata, enabling inheritance uses the default model and Git settings and shows one compact inheritance card. Disabling it restores local selections. Git supports multiple saved authorizations with optional site or repository scopes. An omitted list grants no Git access unless inheritance is enabled. Shared workflow sandboxes replace authorizations when nodes change.
+
+## @ references in Solo
+
+Type `@` in the Solo composer (including the home page composer that starts a new session), or choose **Reference a session** / **Reference an issue / PR** from the "+" menu, to hand one of these to the turn:
+
+- **Your other Solo sessions**, searched by title; closed sessions work too. The agent first sees a summary of the user's requests in that session and reads the full conversation page by page with the artifact-store `read_reference` tool. It sees the session as it was when the turn began; later messages there are not included.
+- **GitHub issues and pull requests** in the repositories mounted in the current session, or the repositories picked on the home page when starting one. You can also type `#number` or paste an issue or PR link. Grasp checks access with the same Git credential the sandbox uses, and the agent reads the latest text, comments and diff with `gh` inside the sandbox.
+
+Use `↑` `↓` to choose, `Enter` to confirm, `Tab` to switch between All, Sessions, Issues and PRs, and `Esc` to close. `Enter` with nothing highlighted sends the message as typed. A message can carry up to 5 references. They are shown above the composer; deleting the `@title` text or clicking × removes one. Referenced content is treated as material, not as instructions.
 
 ## Artifact contract and MCP
 

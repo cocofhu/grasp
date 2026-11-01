@@ -6,6 +6,7 @@ import type {
   ReactAnnotation,
   NodeTakeoverResult,
 } from '../../shared/types'
+import type { DialogueState } from '../../chat/dialogueState'
 import type { InboxContextResponse, InboxLeftPending } from '../../inbox/inboxContext'
 import type { RunChainResponse } from '../../inbox/runConversationChain'
 import type { EmbedTicket } from '../../inbox/embedChat'
@@ -107,6 +108,8 @@ export const runsClient = {
   runConversationChain: (id: string, init?: { signal?: AbortSignal }) =>
     req<RunChainResponse>(`/runs/${id}/conversation-chain`, init),
   runArtifacts: (id: string) => req<Artifact[]>(`/runs/${id}/artifacts`),
+  nodeDialogue: (runId: string, nodeId: string) =>
+    req<DialogueState>(`/runs/${runId}/nodes/${encodeURIComponent(nodeId)}/dialogue`),
   inboxContext: (
     runId: string,
     nodeId: string,

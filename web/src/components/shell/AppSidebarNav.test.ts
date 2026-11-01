@@ -403,6 +403,24 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
+  it('orders Solo rows by start time, not by last activity', async () => {
+    const solo = (id: string, createdAt: string, lastActiveAt: string) => ({
+      id, title: id, agentName: 'a', status: 'running', restarts: 0, busy: false, waiting: 0, createdAt, updatedAt: lastActiveAt, lastActiveAt,
+    })
+    apiMocks.listSoloSessions.mockResolvedValue({
+      sessions: [
+        solo('old', '2026-10-20T00:00:00Z', '2026-10-30T10:00:00Z'),
+        solo('new', '2026-10-22T00:00:00Z', '2026-10-22T00:00:00Z'),
+        solo('mid', '2026-10-21T00:00:00Z', '2026-10-29T00:00:00Z'),
+      ],
+      maxSandboxes: 5,
+    })
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(wrapper.findAll('[data-kind="solo"]').map((r) => r.attributes('data-key'))).toEqual(['new', 'mid', 'old'])
+    wrapper.unmount()
+  })
+
   it('keeps queued and waiting rows still while a confirmed running row remains busy', async () => {
     apiMocks.listRuns.mockResolvedValue({ items: [
       { id: 'queued', workflowId: 'wf', workflowName: 'w', title: '排队', status: 'queued', startedAt: 'T0' },
@@ -846,6 +864,78 @@ describe('AppSidebarNav', () => {
     const createAt = style.indexOf('.sidebar-workspace-nav .nav-create-action.active')
     expect(genericAt).toBeGreaterThanOrEqual(0)
     expect(createAt).toBeGreaterThan(genericAt)
+  })
+
+  it('darkens light workspace rows and headings while hover/active and settings rows keep their colors', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    const style = src.slice(src.indexOf('<style scoped>'))
+    const block = (selector: string) => {
+      const found = style.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`, 's'))
+      expect(found, selector).not.toBeNull()
+      return found![0]
+    }
+
+    expect(block('\\.sidebar-workspace-nav \\.nav-item')).toContain('color: light-dark(#27272a, rgb(var(--c-txt2)))')
+    const interactive = block('\\.sidebar-workspace-nav \\.nav-item:where\\(:hover, :focus-visible, \\.active\\)')
+    expect(interactive).toContain('color: rgb(var(--c-txt))')
+    expect(block('\\.sidebar-workspace-nav \\.sidebar-section-heading')).toContain(
+      'color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3))))',
+    )
+
+    const interactiveAt = style.indexOf('.sidebar-workspace-nav .nav-item:where(')
+    expect(interactiveAt).toBeGreaterThan(style.indexOf('.sidebar-workspace-nav .nav-item {'))
+    expect(style.indexOf('.settings-directory .nav-item {')).toBeGreaterThan(interactiveAt)
+    expect(style.indexOf('.settings-directory .settings-back-link')).toBeGreaterThan(interactiveAt)
+  })
+
+  it('uses body color for settings directory menu text and icons, and tertiary color for the back link', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    const style = src.slice(src.indexOf('<style scoped>'))
+    const block = (selector: string) => {
+      const found = style.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`, 's'))
+      expect(found, selector).not.toBeNull()
+      return found![0]
+    }
+
+    const settingsItem = block('\\.settings-directory \\.nav-item')
+    expect(settingsItem).toContain('color: rgb(var(--c-txt))')
+    expect(settingsItem).not.toContain('--c-txt2')
+    expect(settingsItem).toContain('font-weight: 400')
+    expect(settingsItem).toContain('--hover-ink-color: rgb(var(--c-txt) / .045)')
+
+    const settingsActive = block('\\.settings-directory \\.nav-item\\.active')
+    expect(settingsActive).toContain('color: rgb(var(--c-txt))')
+    expect(settingsActive).toContain('background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065))')
+    expect(settingsActive).toContain('font-weight: 500')
+
+    const settingsIcon = block('\\.settings-directory \\.nav-item :deep\\(svg\\)')
+    expect(settingsIcon).toContain('color: currentColor')
+    expect(settingsIcon).not.toContain('--c-txt2')
+    expect(settingsIcon).not.toContain('--c-txt)')
+
+    const backLink = block('\\.settings-directory \\.settings-back-link')
+    expect(backLink).toContain('color: rgb(var(--c-txt3))')
+    expect(style.indexOf('.settings-directory .settings-back-link')).toBeGreaterThan(
+      style.indexOf('.settings-directory .nav-item {'),
+    )
+
+    const heading = block('\\.settings-directory \\.settings-group-heading')
+    expect(heading).toContain('color: rgb(var(--c-txt3))')
+
+    expect(src).toContain('bg-accent')
+    expect(src).toContain('text-white')
+
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'),
+      'utf8',
+    )
+    expect(css).toMatch(/\.nav-item\s*\{[^}]*text-txt2/s)
   })
 
   it('workspace and settings nav-items use v-hover-ink (plan g2.1 / g2.3)', async () => {
@@ -2617,6 +2707,45 @@ describe('自动过程 grouping and flight', () => {
     expect(entering.classes()).toContain('active')
     expect(entering.find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
     expect(entering.get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('breath-dot')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('left-click opens the live chat for an entering auto row, including on a narrow screen; workflow menu still opens the canvas', async () => {
+    breakpointMocks.isMobile.value = true
+    const wrapper = await show([
+      run('run-x', '当前时间数据与上一格', 'waiting_human', auto('research', '调研', 'entering')),
+      run('run-h', '等人', 'waiting_human', { id: 'clarify', name: '需求澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' }),
+    ])
+    expect(wrapper.get('[data-testid="nav-auto-rows"]').find('[data-key="run-x"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="nav-running-rows"]').find('[data-key="run-h"]').exists()).toBe(true)
+    routerMocks.push.mockClear()
+    await wrapper.get('[data-key="run-x"]').trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-x/live', query: { node: 'research' } })
+
+    wrapper.get('[data-key="run-x"]').element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 40 }),
+    )
+    await nextTick()
+    routerMocks.push.mockClear()
+    ;(document.querySelector('[data-testid="nav-pending-menu-workflow"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-x', query: { view: 'canvas' } })
+
+    routerMocks.push.mockClear()
+    await wrapper.get('[data-testid="nav-running-rows"]').get('[data-key="run-h"]').trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-h/nodes/clarify' })
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('opens the live chat when a confirmed automatic handoff has no watchable node yet', async () => {
+    armSidebarHandoff('run-x', 'clarify', Date.now(), { nodeId: 'impl', name: '实现' })
+    const wrapper = await show([run('run-x', '登录', 'waiting_human')])
+    expect(wrapper.get('[data-testid="nav-auto-rows"]').find('[data-key="run-x"]').exists()).toBe(true)
+    routerMocks.push.mockClear()
+    await wrapper.get('[data-key="run-x"]').trigger('click')
+    expect(routerMocks.push).toHaveBeenCalledWith('/runs/run-x/live')
     wrapper.unmount()
     vi.useRealTimers()
   })

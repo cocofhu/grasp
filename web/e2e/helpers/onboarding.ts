@@ -6,8 +6,7 @@ export const ONBOARDING_SUPPRESS_KEY = 'grasp-onboarding-suppress'
 /**
  * Seed dismiss flag before navigation so stubs without the default workflow do
  * not auto-open the onboarding overlay and intercept pointer events in
- * unrelated e2e suites. This storage key is the only hard suppression left —
- * the wizard's own "later" button closes it for the current view only.
+ * unrelated e2e suites. Dismissing the wizard writes the same key.
  */
 export async function seedOnboardingDismissed(page: Page): Promise<void> {
   await page.addInitScript((key: string) => {
