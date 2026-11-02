@@ -37,6 +37,7 @@ func (p *fakePage) Goto(u string) error {
 	p.url = u
 	return nil
 }
+func (p *fakePage) OpenTab(string) error { return nil }
 func (p *fakePage) URL(context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

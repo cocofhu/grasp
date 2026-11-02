@@ -44,6 +44,8 @@ const props = withDefaults(
     compact?: boolean
     /** Console mode: show 取点标注 (sandbox-vnc already proxies inspect/pick). */
     inspectable?: boolean
+    /** Opens url in a new desktop tab; a new seq opens it again. */
+    openRequest?: { url: string; seq: number } | null
   }>(),
   { console: false, fill: false, compact: false, inspectable: false },
 )
@@ -287,6 +289,23 @@ function sendCtrl(obj: unknown) {
   }
 }
 
+/** Held until the desktop is ready, so a link clicked while it connects still opens. */
+let pendingOpenUrl = ''
+function flushOpenRequest() {
+  if (!pendingOpenUrl || status.value !== 'live' || !channel || channel.readyState !== WebSocket.OPEN) return
+  sendCtrl({ type: 'navigate', action: 'open', url: pendingOpenUrl })
+  pendingOpenUrl = ''
+}
+watch(
+  () => props.openRequest?.seq,
+  () => {
+    if (!props.openRequest?.url) return
+    pendingOpenUrl = props.openRequest.url
+    flushOpenRequest()
+  },
+  { immediate: true },
+)
+
 function fail(m: string) {
   clearConnectTimer()
   clearPreviewWarnTimer()
@@ -335,6 +354,7 @@ function handleCtrlText(data: string) {
       reconnectAttempt.value = 0
       reconnecting.value = false
       if (typeof msg.url === 'string' && msg.url) address.value = msg.url
+      flushOpenRequest()
       break
     case 'picked':
       inlineTip.value = null

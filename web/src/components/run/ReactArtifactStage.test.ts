@@ -125,8 +125,8 @@ const stubs = {
   Icon: true,
   HtmlPreview: true,
   NovncPreviewPanel: defineComponent({
-    props: { sandboxId: Number, inspectable: Boolean },
-    template: '<div data-testid="novnc-stub" :data-inspectable="inspectable ? \'1\' : \'0\'" />',
+    props: { sandboxId: Number, inspectable: Boolean, openRequest: Object },
+    template: '<div data-testid="novnc-stub" :data-inspectable="inspectable ? \'1\' : \'0\'" :data-open-url="openRequest?.url" :data-open-seq="openRequest?.seq" />',
   }),
   ArtifactPreview: defineComponent({
     props: {
@@ -240,6 +240,32 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.get('[data-testid="react-artifact-tab-research.json"]').attributes('aria-selected')).toBe('true')
     wrapper.unmount()
     expect(stageLinksFor('run-links')).toBeNull()
+  })
+
+  it('opens a chat url in a new tab of the sandbox browser', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: { artifacts: [], runId: 'run-open-url', sandbox: { id: 7 } },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    const links = stageLinksFor('run-open-url')!
+    expect(links.openUrl?.('http://127.0.0.1:5173/')).toBe(true)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-browser"]').attributes('aria-selected')).toBe('true')
+    const novnc = wrapper.get('[data-testid="react-artifact-preview-browser"] [data-testid="novnc-stub"]')
+    expect(novnc.attributes('data-open-url')).toBe('http://127.0.0.1:5173/')
+    links.openUrl?.('http://127.0.0.1:5173/')
+    await flushPromises()
+    expect(novnc.attributes('data-open-seq')).toBe('2')
+    wrapper.unmount()
+
+    const hidden = mount(ReactArtifactStage, {
+      props: { artifacts: [], runId: 'run-open-url-off', sandbox: { id: 7 }, hideAppPreview: true },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(stageLinksFor('run-open-url-off')!.openUrl?.('http://127.0.0.1:5173/')).toBe(false)
+    hidden.unmount()
   })
 
   it('keeps workflow artifact cards compact instead of stretching the row (g1.1 / g1.2 / g2.2)', async () => {

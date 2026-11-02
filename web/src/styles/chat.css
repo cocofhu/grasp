@@ -91,6 +91,13 @@ html.light :is(.chat-thread, .chat-composer) {
   text-underline-offset: 3px;
 }
 .chat-thread .chat-prose a:hover { text-decoration-color: currentColor; }
+.chat-thread .chat-prose a.ref-chip,
+.chat-prose .ref-chip {
+  color: rgb(var(--c-txt));
+  text-decoration: none;
+  overflow-wrap: normal;
+  word-break: normal;
+}
 .chat-thread .chat-prose code {
   border: 1px solid rgb(var(--c-line) / .6);
   border-radius: 6px;

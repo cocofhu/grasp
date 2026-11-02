@@ -11,6 +11,22 @@ export interface StageLinks {
   openArtifact(name: string): void
   canOpenPreview(): boolean
   openPreview(): void
+  /** Opens url in a new tab of the sandbox browser; false when there is none. */
+  openUrl?(url: string): boolean
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]'])
+
+/** True for an http(s) URL on loopback, which only resolves inside the sandbox. */
+export function isLoopbackUrl(href: string): boolean {
+  try {
+    const u = new URL(href)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+    const host = u.hostname.toLowerCase()
+    return LOOPBACK_HOSTS.has(host) || host.endsWith('.localhost') || /^127(\.\d{1,3}){3}$/.test(host)
+  } catch {
+    return false
+  }
 }
 
 const stages = shallowReactive(new Map<symbol, { runId: string; links: StageLinks }>())

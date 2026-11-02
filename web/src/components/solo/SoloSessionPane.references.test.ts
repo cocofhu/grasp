@@ -196,13 +196,19 @@ describe('SoloSessionPane @ references', () => {
   })
 
   it('renders reference chips on history turns and queued rows', async () => {
-    box.turns!.value = [{ id: 'u1', role: 'user', text: '@登录重构', streaming: false, steps: [], plan: [], references: [{ id: 'ref-1', kind: 'solo', target: 's2', title: '登录重构', messages: 4 }] } as unknown as SoloTurn]
+    box.turns!.value = [{
+      id: 'u1', role: 'user', text: '看看 @登录重构', streaming: false, steps: [], plan: [],
+      references: [{ id: 'ref-1', kind: 'solo', target: 's2', title: '登录重构', messages: 4 }, { id: 'ref-2', kind: 'github_pr', target: 'acme/web#9', title: 'Fix', state: 'open' }],
+    } as unknown as SoloTurn]
     box.queued!.value = [{ id: 'q1', text: '', images: [], references: [{ kind: 'github_issue', target: 'acme/web#3', title: 'Bug', access: 'denied', error: 'forbidden' }] }]
     const w = mountPane()
     await flushPromises()
-    const chip = w.find('[data-testid="solo-turn-references"] [data-testid="solo-reference-chip"]')
+    const chip = w.find('.chat-user-message [data-testid="solo-reference-chip"]')
     expect(chip.attributes('href')).toBe('/solo/s2')
     expect(chip.attributes('title')).toContain('4 条消息')
+    expect(w.find('.chat-user-message').text()).toBe('看看 登录重构')
+    const aside = w.findAll('[data-testid="solo-turn-references"] [data-testid="solo-reference-chip"]')
+    expect(aside.map((c) => c.text())).toEqual(['#9'])
     const queued = w.find('[data-testid="solo-queue"] [data-testid="solo-reference-chip"]')
     expect(queued.text()).toContain('#3')
     expect(queued.attributes('title')).toContain('无权访问')

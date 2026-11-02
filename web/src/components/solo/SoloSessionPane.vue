@@ -22,6 +22,7 @@ import ReferenceChip from './ReferenceChip.vue'
 import ReferencePlusMenu from './ReferencePlusMenu.vue'
 import { api } from '@/lib/api/api'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
+import { inlineReferences, referenceLabel } from '@/lib/solo/referenceTokens'
 import type { ReferenceTab } from '@/lib/solo/useReferenceSearch'
 import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
@@ -37,6 +38,7 @@ import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { sessionRepos } from '@/lib/solo/sessionRepos'
 import { isSoloLimitError, soloErrorText } from '@/lib/solo/soloErrors'
 import type { Artifact } from '@/lib/shared/types'
+import type { MessageReference } from '@/lib/api/apiTypes'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
 const props = defineProps<{ sessionId: string }>()
@@ -217,6 +219,12 @@ const plusOpen = ref(false)
 const defaultRepo = computed(() => githubRepoOf(repos.value[0]?.repoUrl))
 const mention = useReferenceComposer({ input, textarea, composing, defaultRepo })
 const { tokens, trigger, pickerTab, picker } = mention
+/** References whose `@label` is not in the text; the bubble shows the rest in place. */
+function asideReferences(turn: { text?: string; references?: MessageReference[] }) {
+  const refs = turn.references || []
+  if (!refs.length || !turn.text) return refs
+  return inlineReferences(turn.text, refs, (r) => referenceLabel(r, defaultRepo.value)).rest
+}
 const canSubmit = computed(() => !!input.value.trim() || !!attach.attachments.value.length || !!tokens.value.length)
 
 function openPicker(tab: ReferenceTab) {
@@ -454,10 +462,10 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                     </div>
                   </template>
                 </div>
-                <div v-if="turn.references?.length" class="flex flex-wrap justify-end gap-1.5" data-testid="solo-turn-references">
-                  <ReferenceChip v-for="r in turn.references" :key="r.id || r.target" :reference="r" :default-repo="defaultRepo" link />
+                <div v-if="asideReferences(turn).length" class="flex flex-wrap justify-end gap-1.5" data-testid="solo-turn-references">
+                  <ReferenceChip v-for="r in asideReferences(turn)" :key="r.id || r.target" :reference="r" :default-repo="defaultRepo" link />
                 </div>
-                <ChatUserMessage v-if="turn.text" :text="turn.text" :created-at="turn.createdAt" />
+                <ChatUserMessage v-if="turn.text" :text="turn.text" :created-at="turn.createdAt" :references="turn.references" :default-repo="defaultRepo" />
               </div>
             </div>
             <div v-else class="min-w-0 space-y-3">

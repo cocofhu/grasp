@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MessageReference } from '@/lib/api/apiTypes'
-import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
+import { MAX_REFERENCES, activeTrigger, applyEdit, inlineReferences, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
 import { githubRepoOf, referenceHref, referenceIcon } from './referenceDisplay'
 
 const solo: MessageReference = { kind: 'solo', target: 's2', title: '登录  重构' }
@@ -115,6 +115,18 @@ describe('restoreTokens', () => {
     const refs = Array.from({ length: MAX_REFERENCES + 2 }, (_, i): MessageReference => ({ kind: 'github_issue', target: `acme/web#${i + 1}`, title: '' }))
     const res = restoreTokens(refs.map((r) => `@#${r.target.split('#')[1]}`).join(' '), refs, label)
     expect(res.tokens.map((t) => t.ref.target)).toEqual(refs.slice(0, MAX_REFERENCES).map((r) => r.target))
+  })
+})
+
+describe('inlineReferences', () => {
+  const label = (ref: MessageReference) => referenceLabel(ref, 'acme/web')
+
+  it('splits references into in-text spans and the rest, without editing the text', () => {
+    const pr: MessageReference = { kind: 'github_pr', target: 'acme/web#9', title: 'Fix' }
+    const res = inlineReferences('看 @#12 和 @登录', [issue, pr, solo], label)
+    expect(res.inline).toEqual([{ ref: issue, start: 2, end: 6 }])
+    expect(res.rest).toEqual([pr, solo])
+    expect(inlineReferences('', [issue], label)).toEqual({ inline: [], rest: [issue] })
   })
 })
 

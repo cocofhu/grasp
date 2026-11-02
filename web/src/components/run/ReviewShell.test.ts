@@ -167,6 +167,63 @@ describe('ReviewShell conversation layout', () => {
   })
 })
 
+describe('ReviewShell chat links', () => {
+  const mountWithLinks = (props: { runId?: string; chatOnly?: boolean } = {}) =>
+    mount(ReviewShell, {
+      props: { scopeKey: 'run:node:1', runId: 'run-1', splitDrawer: true, ...props },
+      slots: {
+        sidebar: () => h('div', { class: 'chat-prose' }, [
+          h('a', { href: 'http://127.0.0.1:5173/login', 'data-testid': 'local' }, 'local'),
+          h('a', { href: 'https://github.com/acme/web/pull/1', 'data-testid': 'remote' }, 'remote'),
+        ]),
+        stage: () => h('div', { 'data-testid': 'stage-slot' }),
+      },
+      attachTo: document.body,
+      global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })] },
+    })
+
+  it('opens a loopback link in the sandbox browser on the right and leaves other links alone', async () => {
+    const openUrl = vi.fn(() => true)
+    const unregister = registerStageLinks('run-1', { hasArtifact: () => false, openArtifact: vi.fn(), canOpenPreview: () => true, openPreview: vi.fn(), openUrl })
+    const popup = vi.spyOn(window, 'open').mockImplementation(() => null)
+    try {
+      const wrapper = mountWithLinks()
+      const local = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+      wrapper.get('[data-testid="local"]').element.dispatchEvent(local)
+      await flushPromises()
+      expect(local.defaultPrevented).toBe(true)
+      expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:5173/login')
+      expect(wrapper.get('[data-testid="conversation-artifact-panel"]').attributes('data-drawer-mode')).toBe('resources')
+
+      const remote = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+      wrapper.get('[data-testid="remote"]').element.dispatchEvent(remote)
+      expect(remote.defaultPrevented).toBe(false)
+      expect(openUrl).toHaveBeenCalledTimes(1)
+      expect(popup).not.toHaveBeenCalled()
+    } finally {
+      unregister()
+      popup.mockRestore()
+    }
+  })
+
+  it('falls back to a new window when no stage can open the url', async () => {
+    const popup = vi.spyOn(window, 'open').mockImplementation(() => null)
+    try {
+      const wrapper = mountWithLinks()
+      const local = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+      wrapper.get('[data-testid="local"]').element.dispatchEvent(local)
+      await flushPromises()
+      expect(popup).toHaveBeenCalledWith('http://127.0.0.1:5173/login', '_blank', 'noopener,noreferrer')
+      const embedded = mountWithLinks({ chatOnly: true })
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+      embedded.get('[data-testid="local"]').element.dispatchEvent(click)
+      expect(click.defaultPrevented).toBe(false)
+    } finally {
+      popup.mockRestore()
+    }
+  })
+})
+
 describe('ReviewShell artifact panel session', () => {
   it('stays open across pending and recent scopes, stays closed after the user closes, and does not open the previous file', async () => {
     const openArtifact = vi.fn()

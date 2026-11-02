@@ -311,6 +311,23 @@ describe('NovncPreviewPanel', () => {
     wrapper.unmount()
   })
 
+  it('opens a requested url in a new desktop tab, holding it until the desktop is ready', async () => {
+    const opens = () =>
+      MockWebSocket.instances.flatMap((ws) =>
+        ws.sent
+          .map((s) => JSON.parse(s) as { type?: string; action?: string; url?: string })
+          .filter((m) => m.type === 'navigate' && m.action === 'open')
+          .map((m) => m.url),
+      )
+    const wrapper = mountNovnc({ console: true, openRequest: { url: 'http://127.0.0.1:5173/', seq: 1 } })
+    await flushPromises()
+    expect(opens()).toEqual(['http://127.0.0.1:5173/'])
+    await wrapper.setProps({ openRequest: { url: 'http://127.0.0.1:5173/', seq: 2 } })
+    await flushPromises()
+    expect(opens()).toEqual(['http://127.0.0.1:5173/', 'http://127.0.0.1:5173/'])
+    wrapper.unmount()
+  })
+
   it('switching to the port the desktop already shows does not navigate', async () => {
     MockWebSocket.readyUrl = 'http://127.0.0.1:8080/orders/7'
     const wrapper = mountNovnc({ targetPort: 5173 })

@@ -814,6 +814,14 @@ func (rp *rodPage) Goto(url string) error {
 	return rp.page.Navigate(url)
 }
 
+func (rp *rodPage) OpenTab(url string) error {
+	res, err := proto.TargetCreateTarget{URL: url}.Call(rp.engine.browser)
+	if err != nil {
+		return err
+	}
+	return proto.TargetActivateTarget{TargetID: res.TargetID}.Call(rp.engine.browser)
+}
+
 func (rp *rodPage) Close() error {
 	rp.desktopMu.Lock()
 	if rp.desktopStop != nil {

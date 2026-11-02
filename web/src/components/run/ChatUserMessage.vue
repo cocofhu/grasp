@@ -4,15 +4,64 @@
  * both render user text through this one element. Same chat markdown as
  * assistant replies, so tags stay visible and never execute.
  */
+import { computed, getCurrentInstance, h, onBeforeUnmount, ref, render, watch } from 'vue'
+import ReferenceChip from '@/components/solo/ReferenceChip.vue'
+import type { MessageReference } from '@/lib/api/apiTypes'
+import { inlineReferences, referenceLabel } from '@/lib/solo/referenceTokens'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { fmtTime } from '@/lib/shared/format'
 
-defineProps<{
+const props = defineProps<{
   text: string
   /** Omit on history rows that are not the live human bubble. */
   testId?: string
   createdAt?: string
+  /** `@label` spans of these references render as chips in place. */
+  references?: MessageReference[]
+  defaultRepo?: string
 }>()
+
+const appContext = getCurrentInstance()!.appContext
+const prose = ref<HTMLElement | null>(null)
+
+const inline = computed(() =>
+  props.references?.length ? inlineReferences(props.text, props.references, (r) => referenceLabel(r, props.defaultRepo)).inline : [],
+)
+
+/** Private-use markers survive markdown untouched, then become chip slots. */
+const html = computed(() => {
+  if (!inline.value.length) return renderChatMarkdown(props.text)
+  let src = ''
+  let at = 0
+  inline.value.forEach((token, i) => {
+    src += `${props.text.slice(at, token.start)}\uE000${i}\uE001`
+    at = token.end
+  })
+  src += props.text.slice(at)
+  return renderChatMarkdown(src).replace(/\uE000(\d+)\uE001/g, '<span class="chat-ref-slot" data-ref-slot="$1"></span>')
+})
+
+let mounted: HTMLElement[] = []
+function unmountChips() {
+  for (const el of mounted) render(null, el)
+  mounted = []
+}
+watch(
+  [html, inline, () => props.defaultRepo, prose],
+  () => {
+    unmountChips()
+    prose.value?.querySelectorAll<HTMLElement>('[data-ref-slot]').forEach((el) => {
+      const token = inline.value[Number(el.dataset.refSlot)]
+      if (!token) return
+      const vnode = h(ReferenceChip, { reference: token.ref, defaultRepo: props.defaultRepo, link: true })
+      vnode.appContext = appContext
+      render(vnode, el)
+      mounted.push(el)
+    })
+  },
+  { flush: 'post' },
+)
+onBeforeUnmount(unmountChips)
 </script>
 
 <template>
@@ -21,6 +70,6 @@ defineProps<{
     :data-testid="testId || undefined"
     :title="createdAt && Number.isFinite(Date.parse(createdAt)) ? fmtTime(createdAt) : undefined"
   >
-    <div class="chat-prose md" v-html="renderChatMarkdown(text)" />
+    <div ref="prose" class="chat-prose md" v-html="html" />
   </div>
 </template>

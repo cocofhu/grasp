@@ -1,4 +1,4 @@
-import { Marked, marked } from 'marked'
+import { Marked, Renderer, marked } from 'marked'
 import DOMPurify from 'dompurify'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -167,13 +167,19 @@ chatMarked.use({
     html({ text }) {
       return escapeHtmlText(text)
     },
+    link(token) {
+      return Renderer.prototype.link.call(this, token).replace(/^<a /, '<a target="_blank" rel="noopener noreferrer" ')
+    },
   },
   extensions: [
     {
       name: 'tightHeading',
       level: 'block',
+      // marked passes the paragraph minus its first char; a heading may only
+      // interrupt it at a line start, never mid-line as in `@#815`.
       start(src) {
-        return /^ {0,3}#{1,6}[^\s#]/.test(src) ? 0 : undefined
+        const m = /\n {0,3}#{1,6}[^\s#]/.exec(src)
+        return m ? m.index + 1 : undefined
       },
       tokenizer(src) {
         const cap = /^ {0,3}(#{1,6})([^\s#].*?)(?:\n+|$)/.exec(src)
@@ -195,6 +201,9 @@ chatMarked.use({
   ],
 })
 
+/** Raw HTML is already text here, so `target` can only come from the link renderer. */
+const CHAT_SANITIZE = { ADD_ATTR: ['target'] }
+
 /**
  * ReAct assistant markdown. Script, style, iframe, noscript and xmp keep
  * their inner text instead of being deleted with the tag.
@@ -209,7 +218,7 @@ export function renderChatMarkdown(src: string): string {
   }
   parseCount += 1
   const raw = chatMarked.parse(key, { async: false }) as string
-  const html = DOMPurify.sanitize(raw)
+  const html = DOMPurify.sanitize(raw, CHAT_SANITIZE)
   chatHtmlCache.set(key, html)
   if (chatHtmlCache.size > CACHE_MAX) {
     const oldest = chatHtmlCache.keys().next().value
@@ -230,7 +239,7 @@ export function renderChatMarkdownBlocks(src: string, cache: MarkdownBlockCache)
     if (html === undefined) {
       parseCount += 1
       const list = Object.assign([tok], { links: tokens.links }) as unknown as Parameters<typeof chatMarked.parser>[0]
-      html = DOMPurify.sanitize(chatMarked.parser(list) as string)
+      html = DOMPurify.sanitize(chatMarked.parser(list) as string, CHAT_SANITIZE)
       cache.set(key, html)
     }
     used.add(key)

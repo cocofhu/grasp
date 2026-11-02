@@ -88,6 +88,9 @@ type Page interface {
 	Navigate(action string) error
 	// Goto navigates the tab to url (e.g. about:blank or http://…).
 	Goto(url string) error
+	// OpenTab opens url in a new tab of the same window and brings it to the
+	// front. This Page stays bound to its own tab (pick, address, goto).
+	OpenTab(url string) error
 	// URL returns the tab's current URL; an error means the tab is gone.
 	URL(ctx context.Context) (string, error)
 	Close() error

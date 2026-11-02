@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
+import { createI18n } from 'vue-i18n'
 import ChatUserMessage from './ChatUserMessage.vue'
 
 describe('ChatUserMessage markdown', () => {
@@ -60,6 +62,24 @@ describe('ChatUserMessage markdown', () => {
       expect(w.element.querySelector(tag)).toBeNull()
       w.unmount()
     }
+  })
+
+  it('renders referenced @labels as chips in place', async () => {
+    const references = [
+      { kind: 'github_issue' as const, target: 'acme/web#815', title: 'Bug', url: 'https://github.com/acme/web/issues/815', state: 'open' },
+      { kind: 'github_pr' as const, target: 'acme/web#814', title: 'Fix', url: 'https://github.com/acme/web/pull/814', state: 'open' },
+    ]
+    const w = mount(ChatUserMessage, {
+      props: { text: '@#815 @#814 这两个看看', references, defaultRepo: 'acme/web' },
+      global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: {} })] },
+    })
+    await nextTick()
+    expect(w.find('h1').exists()).toBe(false)
+    const chips = w.findAll('[data-testid="solo-reference-chip"]')
+    expect(chips.map((c) => c.text())).toEqual(['#815', '#814'])
+    expect(chips[1]!.attributes('href')).toBe('https://github.com/acme/web/pull/814')
+    expect(w.text()).toBe('#815 #814 这两个看看')
+    w.unmount()
   })
 
   it('keeps tag-like characters inside a fenced code block', () => {
