@@ -405,8 +405,9 @@ func wantKinds(kinds []string) map[string]bool {
 	return want
 }
 
-// Search: an exact target is one GET; an empty query lists recently updated
-// open items without search quota; otherwise one page of the search API.
+// Search: an exact target is one GET; an empty query for both kinds lists
+// recently updated items without search quota; otherwise one page of the
+// search API. Counts come with the first page only.
 func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (githubSearchResult, error) {
 	want := wantKinds(req.Kinds)
 	tokenOf := req.TokenOf
@@ -439,21 +440,6 @@ func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (
 		return githubSearchResult{}, &githubError{Code: githubErrInvalid, Msg: fmt.Sprintf("最多翻到第 %d 条，请换更具体的关键词", githubMaxDepth)}
 	}
 	token := tokenOf(req.Repos[0])
-	if query == "" {
-		res, err := c.recent(ctx, req.Repos, req.State, page, want, tokenOf)
-		if err != nil {
-			return githubSearchResult{}, err
-		}
-		res.Counts = c.counts(ctx, req.Repos, req.State, nil, "", token, nil)
-		return res, nil
-	}
-	terms, qualifiers, err := splitGitHubQuery(query)
-	if err != nil {
-		return githubSearchResult{}, err
-	}
-	if len([]rune(terms)) < 2 && len(qualifiers) == 0 {
-		return githubSearchResult{Items: []githubItem{}, Source: "none", Hint: "至少输入 2 个字符搜索 GitHub；或输入 #编号、粘贴链接"}, nil
-	}
 	kind := ""
 	if len(want) == 1 {
 		kind = models.ReferenceKindGitHubIssue
@@ -461,9 +447,38 @@ func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (
 			kind = models.ReferenceKindGitHubPR
 		}
 	}
-	if c.searchExhausted(token) {
-		r, _ := c.rateLimit(token, "search")
-		return githubSearchResult{}, githubRateLimited(r.ResetAt.Sub(c.now()))
+	var (
+		terms      string
+		qualifiers []string
+		sortParam  string
+	)
+	if query == "" {
+		// The issues endpoint mixes both kinds, so one kind can be missing
+		// from every page we may load; a single kind lists through search.
+		if kind == "" || c.searchExhausted(token) {
+			res, err := c.recent(ctx, req.Repos, req.State, page, want, tokenOf)
+			if err != nil {
+				return githubSearchResult{}, err
+			}
+			if page == 1 {
+				res.Counts = c.counts(ctx, req.Repos, req.State, nil, "", token, nil)
+			}
+			return res, nil
+		}
+		sortParam = "&sort=updated&order=desc"
+	} else {
+		var err error
+		terms, qualifiers, err = splitGitHubQuery(query)
+		if err != nil {
+			return githubSearchResult{}, err
+		}
+		if len([]rune(terms)) < 2 && len(qualifiers) == 0 {
+			return githubSearchResult{Items: []githubItem{}, Source: "none", Hint: "至少输入 2 个字符搜索 GitHub；或输入 #编号、粘贴链接"}, nil
+		}
+		if c.searchExhausted(token) {
+			r, _ := c.rateLimit(token, "search")
+			return githubSearchResult{}, githubRateLimited(r.ResetAt.Sub(c.now()))
+		}
 	}
 	var body struct {
 		TotalCount        int           `json:"total_count"`
@@ -471,7 +486,7 @@ func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (
 		Items             []githubIssue `json:"items"`
 	}
 	q := strings.Join(githubSearchParts(req.Repos, req.State, kind, qualifiers, terms), " ")
-	path := fmt.Sprintf("/search/issues?q=%s&per_page=%d&page=%d", url.QueryEscape(q), githubPageSize, page)
+	path := fmt.Sprintf("/search/issues?q=%s%s&per_page=%d&page=%d", url.QueryEscape(q), sortParam, githubPageSize, page)
 	if err := c.get(ctx, path, token, &body); err != nil {
 		return githubSearchResult{}, err
 	}
@@ -488,11 +503,13 @@ func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (
 	if page*githubPageSize < min(body.TotalCount, githubMaxDepth) {
 		res.NextPage = page + 1
 	}
-	var known map[string]int
-	if kind != "" {
-		known = map[string]int{kind: body.TotalCount}
+	if page == 1 {
+		var known map[string]int
+		if kind != "" {
+			known = map[string]int{kind: body.TotalCount}
+		}
+		res.Counts = c.counts(ctx, req.Repos, req.State, qualifiers, terms, token, known)
 	}
-	res.Counts = c.counts(ctx, req.Repos, req.State, qualifiers, terms, token, known)
 	if r, ok := c.rateLimit(token, "search"); ok {
 		res.RateLimit = &r
 	}
