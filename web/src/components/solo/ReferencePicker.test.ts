@@ -89,7 +89,7 @@ describe('ReferencePicker', () => {
   })
 
   it('jumps from "more" to the tab and filters by state', async () => {
-    respond({ solo: () => sessions(6), github: () => gh([issue(3)], { total: 9, nextPage: 2 }) })
+    respond({ solo: () => sessions(6), github: () => gh([issue(3)], { total: 9, nextPage: 2, counts: { issue: 4, pr: 9 } }) })
     const w = mountPicker()
     await settle()
     const more = w.findAll('[role="option"]').find((o) => o.text().includes('查看更多'))!
@@ -102,6 +102,37 @@ describe('ReferencePicker', () => {
     await w.findAll('[role="radio"]')[1]!.trigger('click')
     await settle()
     expect(search).toHaveBeenLastCalledWith('me', expect.objectContaining({ kind: 'github_pr', state: 'all' }), expect.anything())
+  })
+
+  it('shows the real GitHub counts on every tab, whatever tab asked', async () => {
+    respond({
+      solo: () => sessions(1),
+      github: (p) => gh([issue(1), issue(2, 'github_pr')], { counts: p.state === 'all' ? { issue: 16, pr: 15 } : { issue: 6, pr: 5 } }),
+    })
+    const w = mountPicker({ taken: ['acme/web#1'] })
+    const badge = (key: string) => w.find(`[data-testid="solo-reference-tab-${key}"] .ref-picker__count`)
+    await settle()
+    for (const key of ['issue', 'pr', 'all', 'issue']) {
+      await w.find(`[data-testid="solo-reference-tab-${key}"]`).trigger('click')
+      await settle()
+      expect([badge('issue').text(), badge('pr').text()]).toEqual(['6', '5'])
+    }
+    await w.findAll('[role="radio"]')[1]!.trigger('click')
+    await settle()
+    expect(search).toHaveBeenLastCalledWith('me', expect.objectContaining({ lane: 'github', q: '', kind: 'github_issue', state: 'all' }), expect.anything())
+    expect([badge('issue').text(), badge('pr').text()]).toEqual(['16', '15'])
+  })
+
+  it('without counts, counts only the kind the reply was asked for', async () => {
+    respond({ solo: () => sessions(1), github: (p) => gh(p.kind === 'github_pr' ? [issue(2, 'github_pr')] : [issue(1), issue(2, 'github_pr')], { nextPage: 2 }) })
+    const w = mountPicker({ initialTab: 'pr' })
+    const badge = (key: string) => w.find(`[data-testid="solo-reference-tab-${key}"] .ref-picker__count`)
+    await settle()
+    expect(badge('pr').text()).toBe('1+')
+    expect(badge('issue').exists()).toBe(false)
+    await w.find('[data-testid="solo-reference-tab-all"]').trigger('click')
+    await settle()
+    expect([badge('issue').text(), badge('pr').text()]).toEqual(['1+', '1+'])
   })
 
   it('shows lane errors and hints without failing the other lane', async () => {

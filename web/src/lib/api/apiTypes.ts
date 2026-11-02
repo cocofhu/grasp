@@ -822,6 +822,8 @@ export interface ReferenceSearchResult<T> {
   source?: string
   hint?: string
   rateLimit?: { remaining: number; resetAt: string }
+  /** GitHub only: matches per kind for the repos, state and query, whatever kind was asked. */
+  counts?: { issue?: number; pr?: number }
   error?: { code: string; message: string; retryAfterMs?: number }
 }
 

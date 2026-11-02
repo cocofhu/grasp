@@ -373,6 +373,14 @@ type githubSearchRequest struct {
 	TokenOf func(githubRepo) string
 }
 
+// githubCounts is how many issues and pull requests match the repositories,
+// state and query, whatever kind the picker shows. A missing field means the
+// count could not be fetched.
+type githubCounts struct {
+	Issue *int `json:"issue,omitempty"`
+	PR    *int `json:"pr,omitempty"`
+}
+
 type githubSearchResult struct {
 	Items      []githubItem     `json:"items"`
 	Total      *int             `json:"total"`
@@ -381,6 +389,7 @@ type githubSearchResult struct {
 	Source     string           `json:"source"`
 	Hint       string           `json:"hint,omitempty"`
 	RateLimit  *githubRateLimit `json:"rateLimit,omitempty"`
+	Counts     *githubCounts    `json:"counts,omitempty"`
 }
 
 func wantKinds(kinds []string) map[string]bool {
@@ -396,8 +405,9 @@ func wantKinds(kinds []string) map[string]bool {
 	return want
 }
 
-// Search: an exact target is one GET; an empty query lists recently updated
-// open items without search quota; otherwise one page of the search API.
+// Search: an exact target is one GET; an empty query for both kinds lists
+// recently updated items without search quota; otherwise one page of the
+// search API. Counts come with the first page only.
 func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (githubSearchResult, error) {
 	want := wantKinds(req.Kinds)
 	tokenOf := req.TokenOf
@@ -425,51 +435,58 @@ func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (
 	if len(req.Repos) == 0 {
 		return githubSearchResult{Items: []githubItem{}, Source: "none", Hint: "没有选择 GitHub 仓库；可以输入 owner/repo#编号 或粘贴 issue/PR 链接"}, nil
 	}
-	if query == "" {
-		return c.recent(ctx, req.Repos, want, tokenOf)
-	}
-	terms, qualifiers, err := splitGitHubQuery(query)
-	if err != nil {
-		return githubSearchResult{}, err
-	}
-	if len([]rune(terms)) < 2 && len(qualifiers) == 0 {
-		return githubSearchResult{Items: []githubItem{}, Source: "none", Hint: "至少输入 2 个字符搜索 GitHub；或输入 #编号、粘贴链接"}, nil
-	}
-	page := req.Page
-	if page < 1 {
-		page = 1
-	}
+	page := max(req.Page, 1)
 	if (page-1)*githubPageSize >= githubMaxDepth {
 		return githubSearchResult{}, &githubError{Code: githubErrInvalid, Msg: fmt.Sprintf("最多翻到第 %d 条，请换更具体的关键词", githubMaxDepth)}
 	}
-	parts := make([]string, 0, len(req.Repos)+4)
-	for _, r := range req.Repos {
-		parts = append(parts, "repo:"+r.Owner+"/"+r.Repo)
-	}
-	if req.State != "all" {
-		parts = append(parts, "is:open")
-	}
+	token := tokenOf(req.Repos[0])
+	kind := ""
 	if len(want) == 1 {
+		kind = models.ReferenceKindGitHubIssue
 		if want[models.ReferenceKindGitHubPR] {
-			parts = append(parts, "is:pr")
-		} else {
-			parts = append(parts, "is:issue")
+			kind = models.ReferenceKindGitHubPR
 		}
 	}
-	parts = append(parts, qualifiers...)
-	if terms != "" {
-		parts = append(parts, terms)
-	}
-	token := tokenOf(req.Repos[0])
-	if r, ok := c.rateLimit(token, "search"); ok && r.Remaining < githubSearchReserve && r.ResetAt.After(c.now()) {
-		return githubSearchResult{}, githubRateLimited(r.ResetAt.Sub(c.now()))
+	var (
+		terms      string
+		qualifiers []string
+		sortParam  string
+	)
+	if query == "" {
+		// The issues endpoint mixes both kinds, so one kind can be missing
+		// from every page we may load; a single kind lists through search.
+		if kind == "" || c.searchExhausted(token) {
+			res, err := c.recent(ctx, req.Repos, req.State, page, want, tokenOf)
+			if err != nil {
+				return githubSearchResult{}, err
+			}
+			if page == 1 {
+				res.Counts = c.counts(ctx, req.Repos, req.State, nil, "", token, nil)
+			}
+			return res, nil
+		}
+		sortParam = "&sort=updated&order=desc"
+	} else {
+		var err error
+		terms, qualifiers, err = splitGitHubQuery(query)
+		if err != nil {
+			return githubSearchResult{}, err
+		}
+		if len([]rune(terms)) < 2 && len(qualifiers) == 0 {
+			return githubSearchResult{Items: []githubItem{}, Source: "none", Hint: "至少输入 2 个字符搜索 GitHub；或输入 #编号、粘贴链接"}, nil
+		}
+		if c.searchExhausted(token) {
+			r, _ := c.rateLimit(token, "search")
+			return githubSearchResult{}, githubRateLimited(r.ResetAt.Sub(c.now()))
+		}
 	}
 	var body struct {
 		TotalCount        int           `json:"total_count"`
 		IncompleteResults bool          `json:"incomplete_results"`
 		Items             []githubIssue `json:"items"`
 	}
-	path := fmt.Sprintf("/search/issues?q=%s&per_page=%d&page=%d", url.QueryEscape(strings.Join(parts, " ")), githubPageSize, page)
+	q := strings.Join(githubSearchParts(req.Repos, req.State, kind, qualifiers, terms), " ")
+	path := fmt.Sprintf("/search/issues?q=%s%s&per_page=%d&page=%d", url.QueryEscape(q), sortParam, githubPageSize, page)
 	if err := c.get(ctx, path, token, &body); err != nil {
 		return githubSearchResult{}, err
 	}
@@ -486,28 +503,107 @@ func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (
 	if page*githubPageSize < min(body.TotalCount, githubMaxDepth) {
 		res.NextPage = page + 1
 	}
+	if page == 1 {
+		var known map[string]int
+		if kind != "" {
+			known = map[string]int{kind: body.TotalCount}
+		}
+		res.Counts = c.counts(ctx, req.Repos, req.State, qualifiers, terms, token, known)
+	}
 	if r, ok := c.rateLimit(token, "search"); ok {
 		res.RateLimit = &r
 	}
 	return res, nil
 }
 
-func (c *githubRefClient) recent(ctx context.Context, repos []githubRepo, want map[string]bool, tokenOf func(githubRepo) string) (githubSearchResult, error) {
-	items := []githubItem{}
+// githubSearchParts builds the search query; kind "" matches both issues and
+// pull requests. Listing and counting share it so their numbers agree.
+func githubSearchParts(repos []githubRepo, state, kind string, qualifiers []string, terms string) []string {
+	parts := make([]string, 0, len(repos)+len(qualifiers)+3)
+	for _, r := range repos {
+		parts = append(parts, "repo:"+r.Owner+"/"+r.Repo)
+	}
+	if state != "all" {
+		parts = append(parts, "is:open")
+	}
+	switch kind {
+	case models.ReferenceKindGitHubIssue:
+		parts = append(parts, "is:issue")
+	case models.ReferenceKindGitHubPR:
+		parts = append(parts, "is:pr")
+	}
+	parts = append(parts, qualifiers...)
+	if terms != "" {
+		parts = append(parts, terms)
+	}
+	return parts
+}
+
+func (c *githubRefClient) searchExhausted(token string) bool {
+	r, ok := c.rateLimit(token, "search")
+	return ok && r.Remaining < githubSearchReserve && r.ResetAt.After(c.now())
+}
+
+// counts asks the search API for each kind's total_count, one result per
+// page. Kinds in known are already counted. Counts are best effort: a low
+// search quota or a failed request leaves that kind out instead of failing
+// the lane.
+func (c *githubRefClient) counts(ctx context.Context, repos []githubRepo, state string, qualifiers []string, terms, token string, known map[string]int) *githubCounts {
+	kinds := []string{models.ReferenceKindGitHubIssue, models.ReferenceKindGitHubPR}
+	totals := make([]*int, len(kinds))
+	var wg sync.WaitGroup
+	for i, kind := range kinds {
+		if n, ok := known[kind]; ok {
+			totals[i] = &n
+			continue
+		}
+		if c.searchExhausted(token) {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, kind string) {
+			defer wg.Done()
+			var body struct {
+				TotalCount int `json:"total_count"`
+			}
+			q := strings.Join(githubSearchParts(repos, state, kind, qualifiers, terms), " ")
+			if err := c.get(ctx, fmt.Sprintf("/search/issues?q=%s&per_page=1", url.QueryEscape(q)), token, &body); err == nil {
+				totals[i] = &body.TotalCount
+			}
+		}(i, kind)
+	}
+	wg.Wait()
+	if totals[0] == nil && totals[1] == nil {
+		return nil
+	}
+	return &githubCounts{Issue: totals[0], PR: totals[1]}
+}
+
+// recent lists recently updated items without search quota; the issues
+// endpoint returns issues and pull requests together.
+func (c *githubRefClient) recent(ctx context.Context, repos []githubRepo, state string, page int, want map[string]bool, tokenOf func(githubRepo) string) (githubSearchResult, error) {
+	if state != "all" {
+		state = "open"
+	}
+	res := githubSearchResult{Items: []githubItem{}, Source: "recent"}
 	for _, r := range repos[:min(len(repos), 3)] {
 		var body []githubIssue
-		path := fmt.Sprintf("/repos/%s/%s/issues?state=open&sort=updated&direction=desc&per_page=10", url.PathEscape(r.Owner), url.PathEscape(r.Repo))
+		path := fmt.Sprintf("/repos/%s/%s/issues?state=%s&sort=updated&direction=desc&per_page=%d&page=%d",
+			url.PathEscape(r.Owner), url.PathEscape(r.Repo), state, githubPageSize, page)
 		if err := c.get(ctx, path, tokenOf(r), &body); err != nil {
 			return githubSearchResult{}, err
 		}
+		if len(body) >= githubPageSize && page*githubPageSize < githubMaxDepth {
+			res.NextPage = page + 1
+		}
 		for _, it := range body {
 			if item := it.item(githubTarget{Owner: r.Owner, Repo: r.Repo, Number: it.Number}); want[item.Kind] {
-				items = append(items, item)
+				res.Items = append(res.Items, item)
 			}
 		}
 	}
-	sort.SliceStable(items, func(i, j int) bool { return items[i].UpdatedAt > items[j].UpdatedAt })
-	return githubSearchResult{Items: items[:min(len(items), 10)], Source: "recent"}, nil
+	sort.SliceStable(res.Items, func(i, j int) bool { return res.Items[i].UpdatedAt > res.Items[j].UpdatedAt })
+	return res, nil
 }
 
 func targetFromRepositoryURL(repositoryURL string, number int) (githubTarget, bool) {
