@@ -197,6 +197,8 @@ func TestApplyVncMsgOpenTab(t *testing.T) {
 	p := &vncRecPage{}
 	h.applyVncMsg(p, decodeVnc(t, `{"type":"navigate","action":"open","url":"http://127.0.0.1:5173/"}`), nil)
 	h.applyVncMsg(p, decodeVnc(t, `{"type":"navigate","action":"open"}`), nil)
+	h.applyVncMsg(p, decodeVnc(t, `{"type":"navigate","action":"open","url":"javascript:alert(1)"}`), nil)
+	h.applyVncMsg(p, decodeVnc(t, `{"type":"navigate","action":"open","url":"file:///etc/passwd"}`), nil)
 	if len(p.tabs) != 1 || p.tabs[0] != "http://127.0.0.1:5173/" || len(p.gotos) != 0 {
 		t.Fatalf("open should only open a new tab: tabs=%v gotos=%v", p.tabs, p.gotos)
 	}

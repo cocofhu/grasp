@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -226,8 +227,8 @@ func (h *Handlers) applyVncMsg(page browser.Page, m vncClientMsg, pushJSON func(
 		}
 	case "navigate":
 		if m.Action == "open" {
-			if m.URL != "" {
-				if err := page.OpenTab(m.URL); err != nil {
+			if u, err := url.Parse(strings.TrimSpace(m.URL)); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+				if err := page.OpenTab(u.String()); err != nil {
 					log.Warn().Err(err).Str("url", m.URL).Msg("desktop vnc OpenTab failed")
 				}
 			}

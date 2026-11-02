@@ -322,6 +322,7 @@ describe('NovncPreviewPanel', () => {
     const wrapper = mountNovnc({ console: true, openRequest: { url: 'http://127.0.0.1:5173/', seq: 1 } })
     await flushPromises()
     expect(opens()).toEqual(['http://127.0.0.1:5173/'])
+    expect(wrapper.emitted('open-sent')).toHaveLength(1)
     await wrapper.setProps({ openRequest: { url: 'http://127.0.0.1:5173/', seq: 2 } })
     await flushPromises()
     expect(opens()).toEqual(['http://127.0.0.1:5173/', 'http://127.0.0.1:5173/'])
