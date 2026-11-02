@@ -35,6 +35,11 @@ function mountPicker(props: Partial<{ query: string; taken: string[]; full: bool
   })
 }
 
+const badge = (w: ReturnType<typeof mountPicker>, key: string) => w.find(`[data-testid="solo-reference-tab-${key}"] .ref-picker__count`)
+const COUNTED = ['solo', 'issue', 'pr']
+const counts = (w: ReturnType<typeof mountPicker>) => COUNTED.map((key) => badge(w, key).text())
+const states = (w: ReturnType<typeof mountPicker>) => COUNTED.map((key) => badge(w, key).attributes('data-state'))
+
 async function settle() {
   await vi.advanceTimersByTimeAsync(300)
   await flushPromises()
@@ -74,11 +79,11 @@ describe('ReferencePicker', () => {
     expect(w.emitted('pick')![0]![0]).toMatchObject({ kind: 'solo', target: 's0', title: '会话 0' })
   })
 
-  it('switches tabs, skips the other lane and pages with load more', async () => {
-    respond({ solo: (p) => sessions(2, p.page === 1), github: () => gh([]) })
+  it('switches tabs, lists only the tab lane and pages with load more', async () => {
+    respond({ solo: (p) => sessions(2, p.page === 1), github: () => gh([issue(1)]) })
     const w = mountPicker({ initialTab: 'solo' })
     await settle()
-    expect(search.mock.calls.every((c) => c[1].lane === 'solo')).toBe(true)
+    expect(w.find('[data-testid="solo-reference-option-acme/web#1"]').exists()).toBe(false)
     await w.findAll('[role="option"]').at(-1)!.trigger('click')
     await settle()
     expect(search).toHaveBeenLastCalledWith('me', expect.objectContaining({ lane: 'solo', page: 2 }), expect.anything())
@@ -110,29 +115,112 @@ describe('ReferencePicker', () => {
       github: (p) => gh([issue(1), issue(2, 'github_pr')], { counts: p.state === 'all' ? { issue: 16, pr: 15 } : { issue: 6, pr: 5 } }),
     })
     const w = mountPicker({ taken: ['acme/web#1'] })
-    const badge = (key: string) => w.find(`[data-testid="solo-reference-tab-${key}"] .ref-picker__count`)
     await settle()
-    for (const key of ['issue', 'pr', 'all', 'issue']) {
+    for (const key of ['issue', 'pr', 'all', 'solo', 'issue']) {
       await w.find(`[data-testid="solo-reference-tab-${key}"]`).trigger('click')
       await settle()
-      expect([badge('issue').text(), badge('pr').text()]).toEqual(['6', '5'])
+      expect([badge(w, 'issue').text(), badge(w, 'pr').text()]).toEqual(['6', '5'])
     }
     await w.findAll('[role="radio"]')[1]!.trigger('click')
     await settle()
     expect(search).toHaveBeenLastCalledWith('me', expect.objectContaining({ lane: 'github', q: '', kind: 'github_issue', state: 'all' }), expect.anything())
-    expect([badge('issue').text(), badge('pr').text()]).toEqual(['16', '15'])
+    expect([badge(w, 'issue').text(), badge(w, 'pr').text()]).toEqual(['16', '15'])
   })
 
-  it('without counts, counts only the kind the reply was asked for', async () => {
-    respond({ solo: () => sessions(1), github: (p) => gh(p.kind === 'github_pr' ? [issue(2, 'github_pr')] : [issue(1), issue(2, 'github_pr')], { nextPage: 2 }) })
-    const w = mountPicker({ initialTab: 'pr' })
-    const badge = (key: string) => w.find(`[data-testid="solo-reference-tab-${key}"] .ref-picker__count`)
+  it('keeps a count slot on every tab but "all"', async () => {
+    respond({ solo: () => sessions(3), github: () => gh([], { counts: { issue: 4, pr: 2 } }) })
+    const w = mountPicker()
     await settle()
-    expect(badge('pr').text()).toBe('1+')
-    expect(badge('issue').exists()).toBe(false)
+    for (const key of ['all', 'solo', 'issue', 'pr', 'all']) {
+      await w.find(`[data-testid="solo-reference-tab-${key}"]`).trigger('click')
+      await settle()
+      expect(badge(w, 'all').exists()).toBe(false)
+      expect(counts(w)).toEqual(['3', '4', '2'])
+    }
+  })
+
+  it('on the sessions tab asks GitHub like "all" does, counts it and lists no GitHub rows', async () => {
+    respond({ solo: () => sessions(2), github: () => gh([issue(1), issue(2, 'github_pr')], { counts: { issue: 6, pr: 5 } }) })
+    const w = mountPicker({ initialTab: 'solo' })
+    await settle()
+    const ghCall = search.mock.calls.find((c) => c[1].lane === 'github')!
+    expect(ghCall[1]).toMatchObject({ q: '', state: 'open' })
+    expect(ghCall[1].kind).toBeUndefined()
+    expect(counts(w)).toEqual(['2', '6', '5'])
+    expect(w.text()).not.toContain('#1 T1')
+    expect(w.text()).not.toContain('#2 T2')
+    const calls = search.mock.calls.length
     await w.find('[data-testid="solo-reference-tab-all"]').trigger('click')
     await settle()
-    expect([badge('issue').text(), badge('pr').text()]).toEqual(['1+', '1+'])
+    expect(search.mock.calls.length).toBe(calls)
+  })
+
+  it('on the Issue tab asks for sessions, counts them and lists no session rows', async () => {
+    respond({ solo: () => sessions(3, true), github: () => gh([issue(1)], { counts: { issue: 1, pr: 0 } }) })
+    const w = mountPicker({ initialTab: 'issue' })
+    await settle()
+    expect(search.mock.calls.some((c) => c[1].lane === 'solo')).toBe(true)
+    expect(counts(w)).toEqual(['3+', '1', '0'])
+    expect(w.find('[data-testid="solo-reference-option-s0"]').exists()).toBe(false)
+    expect(w.text()).toContain('#1 T1')
+  })
+
+  it('spins until the first counts land, then keeps the old numbers while refreshing', async () => {
+    const held: (() => void)[] = []
+    const release = () => held.splice(0).forEach((r) => r())
+    search.mockImplementation(async (_id: string, p: any) => {
+      await new Promise<void>((r) => held.push(r))
+      return p.lane === 'solo' ? sessions(2) : gh([], { counts: { issue: 7, pr: 8 } })
+    })
+    const w = mountPicker()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(states(w)).toEqual(['loading', 'loading', 'loading'])
+    expect(badge(w, 'solo').attributes('aria-label')).toBe(pages.pages.solo.reference.countLoading)
+    release()
+    await flushPromises()
+    expect(states(w)).toEqual(['value', 'value', 'value'])
+    expect(counts(w)).toEqual(['2', '7', '8'])
+
+    await w.setProps({ query: 'next' })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(held.length).toBe(2)
+    expect(states(w)).toEqual(['value', 'value', 'value'])
+    expect(counts(w)).toEqual(['2', '7', '8'])
+    release()
+    await flushPromises()
+  })
+
+  it('shows a dash when a count cannot be known', async () => {
+    respond({ solo: () => sessions(1), github: () => gh([], { error: { code: 'rate_limited', message: 'GitHub 限流' } }) })
+    const w = mountPicker()
+    await settle()
+    expect(states(w)).toEqual(['value', 'na', 'na'])
+    expect(counts(w)).toEqual(['1', '—', '—'])
+    expect(badge(w, 'issue').attributes('aria-label')).toBe(pages.pages.solo.reference.countUnavailable)
+
+    respond({ solo: () => sessions(1), github: () => gh([issue(1)], { nextPage: 2 }) })
+    await w.setProps({ query: 'no-counts' })
+    await settle()
+    expect(states(w)).toEqual(['value', 'na', 'na'])
+
+    respond({ solo: () => sessions(1), github: () => gh([issue(5)], { counts: { issue: 1, pr: 0 } }) })
+    await w.setProps({ query: '#5' })
+    await settle()
+    expect(states(w)).toEqual(['na', 'value', 'value'])
+  })
+
+  it('caps counts at 99+', async () => {
+    let n = 99
+    respond({ solo: () => sessions(1), github: () => gh([], { counts: { issue: n, pr: n } }) })
+    const w = mountPicker()
+    await settle()
+    expect(counts(w).slice(1)).toEqual(['99', '99'])
+    for (const [q, next] of [['a', 100], ['b', 1234]] as const) {
+      n = next
+      await w.setProps({ query: q })
+      await settle()
+      expect(counts(w).slice(1)).toEqual(['99+', '99+'])
+    }
   })
 
   it('shows lane errors and hints without failing the other lane', async () => {
@@ -191,7 +279,7 @@ describe('ReferencePicker', () => {
     await settle()
     expect(w.find('.ref-picker__skeleton').exists()).toBe(false)
 
-    search.mockImplementation(() => new Promise((r) => { release = () => r(sessions(0)) }))
+    search.mockImplementation((_id: string, p: any) => p.lane === 'github' ? Promise.resolve(gh([])) : new Promise((r) => { release = () => r(sessions(0)) }))
     await w.setProps({ query: 'zz' })
     await vi.advanceTimersByTimeAsync(300)
     expect(w.find('.ref-picker__skeleton').exists()).toBe(false)

@@ -4887,6 +4887,8 @@
         "more": "查看更多{kind}",
         "loadMore": "加载更多",
         "loading": "加载中…",
+        "countLoading": "数量加载中",
+        "countUnavailable": "暂无法获取数量",
         "noMatch": "没有匹配的结果",
         "full": "每条消息最多引用 {n} 个",
         "githubSubtitle": "{repo} · {state} · {n} 条评论",

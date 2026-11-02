@@ -143,13 +143,17 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>) {
     Object.assign(lanes[name], emptyLane(), { skipped: true })
   }
 
-  /** Query every lane the tab shows. A leading # searches GitHub only. */
+  /**
+   * Query both lanes on every tab so each tab can show its count; the list
+   * still shows only the tab's own lanes. The sessions tab asks GitHub the
+   * same way "all" does, so the two share a cache entry. A leading # searches
+   * GitHub only.
+   */
   function search(q: string, tab: ReferenceTab, state: GitHubStateFilter) {
     const query = q.trim()
-    if (tab === 'issue' || tab === 'pr' || query.startsWith('#')) skip('solo')
+    if (query.startsWith('#')) skip('solo')
     else run('solo', { q: query })
-    if (tab === 'solo') skip('github')
-    else run('github', { q: query, state, kind: tab === 'issue' ? 'github_issue' : tab === 'pr' ? 'github_pr' : undefined })
+    run('github', { q: query, state, kind: tab === 'issue' ? 'github_issue' : tab === 'pr' ? 'github_pr' : undefined })
   }
 
   function loadMore(name: LaneName, q: string, tab: ReferenceTab, state: GitHubStateFilter) {

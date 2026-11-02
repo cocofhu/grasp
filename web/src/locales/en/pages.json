@@ -4887,6 +4887,8 @@
         "more": "More {kind}",
         "loadMore": "Load more",
         "loading": "Loading…",
+        "countLoading": "Loading count",
+        "countUnavailable": "Count unavailable",
         "noMatch": "No matches",
         "full": "Up to {n} references per message",
         "githubSubtitle": "{repo} · {state} · {n} comments",
