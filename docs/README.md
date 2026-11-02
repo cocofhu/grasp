@@ -13,7 +13,7 @@ Static HTML homepage + Markdown help, built to `public/` and published by
 | `scripts/build.mjs` | Copy `site/` → `public/`, render Markdown → HTML. Does not read `agent/` or `dev/` |
 | `public/` | Build output (gitignored) |
 | `agent/` | In-repo agent handbook ([`agent/README.md`](agent/README.md)). Not published to `public/` |
-| `dev/` | In-repo notes and the development log ([`dev/DEVLOG.md`](dev/DEVLOG.md)). Not published to `public/` |
+| `dev/` | In-repo notes and the development log ([`dev/devlog/`](dev/devlog/README.md), one file per entry). Not published to `public/` |
 
 ## Local commands
 

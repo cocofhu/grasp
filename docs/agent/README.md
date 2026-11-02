@@ -17,16 +17,18 @@ are **not** published to the public help site.
 | [`docs/agent/README.md`](README.md) (this file) | Boundaries between those documents, and when to write the internal log | A second copy of commands or thresholds |
 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | Environment, layout, and the full contribution flow | The hard command and gate checklist (that stays in root `AGENTS.md`) |
 | `agents/<Role>/workspace/AGENTS.md` | Platform role-pack mission and the single delivery contract for that role | Repository contribution rules. Do not replace or rewrite the root `AGENTS.md` with a role pack. Embedded copies under `server/internal/services/team_embed` and `first_install_embed` are the same texts — leave them alone unless the task is the role pack itself |
-| [`docs/dev/DEVLOG.md`](../dev/DEVLOG.md) | Internal development log (Chinese). Newest entry on top | Public release notes |
+| [`docs/dev/devlog/`](../dev/devlog/README.md) | Internal development log (Chinese). One file per entry, `YYYY-MM/YYYY-MM-DD-<slug>.md` | Public release notes |
 
 Same filename, different jobs: root `AGENTS.md` is the repo rule. A role-pack
 `AGENTS.md` is not.
 
 ## Development log
 
-After a change worth a later reader, append one entry at the top of
-[`docs/dev/DEVLOG.md`](../dev/DEVLOG.md). Use the template in that file. Each
-entry needs:
+After a change worth a later reader, add one new file
+`docs/dev/devlog/YYYY-MM/YYYY-MM-DD-<slug>.md`. Use the template and naming
+rules in [`docs/dev/devlog/README.md`](../dev/devlog/README.md). Never edit
+another entry's file, so parallel PRs do not conflict on the log. Each entry
+needs:
 
 - **日期** — the day the note was written, not a schedule
 - **范围** — paths touched
