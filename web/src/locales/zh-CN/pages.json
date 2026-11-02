@@ -1539,8 +1539,7 @@
           "gotoDefault": "(按连线条件路由,用 action 判断)",
           "requireForm": "须填写表单",
           "requireFormHint": "开启后,选此动作(如「拒绝/退回」)必须填完表单意见才能提交",
-          "add": "添加动作",
-          "help": "设置<b class=\"text-txt2\">跳转到</b>则该动作直达目标节点(类似分支),也可在画布上从该动作右侧的连接点<b class=\"text-txt2\">直接拉线</b>到目标节点;留空则回落到底部出口的 <code class=\"text-info\">when</code> 条件(用 <code class=\"text-info\">action == \"id\"</code> 判断)。所选动作 id 会赋值给「输出变量」。"
+          "add": "添加动作"
         },
         "conditional": {
           "whenVar": "当变量",
@@ -1562,8 +1561,7 @@
           "insert": "插入:",
           "goto": "跳转到",
           "selectTarget": "选择目标节点…",
-          "addElseIf": "添加 ELSE IF 分支",
-          "help": "支持函数:<code class=\"text-info\">exists(\"file\")</code> 判断产物是否存在;<code class=\"text-info\">json(\"file.json\").path</code> 取 JSON 值;以及 <code class=\"text-info\">vars.x</code>、<code class=\"text-info\">nodes.x.outputs.y</code>。每个分支可跳转到任意节点,实现多路由。"
+          "addElseIf": "添加 ELSE IF 分支"
         },
         "variables": {
           "namePlaceholder": "变量名 如 feature",
@@ -1578,7 +1576,7 @@
           "locked": "锁定",
           "lockedTitle": "启动时锁定为默认值",
           "add": "添加变量",
-          "help": "所有节点共享、引擎逐步持久化;在任意节点用 <code class=\"text-info\">{syntax}</code> 引用,用「赋值」节点修改。勾选<b class=\"text-txt2\">启动时填写</b>的变量即运行入参(如仓库列表用 <code class=\"text-info\">repos</code>)。"
+          "help": "所有节点共享、引擎逐步持久化;在任意节点用 {syntax} 引用,用「赋值」节点修改。勾选{askAtLaunch}的变量即运行入参(如仓库列表用 {repos})。"
         },
         "repos": {
           "itemLabel": "仓库 {n}",
@@ -1751,7 +1749,6 @@
     },
     "gatesInbox": {
       "title": "待办",
-      "subtitleHtml": "<strong class=\"font-medium text-warn\">运筹帷幄之中</strong> <em class=\"not-italic text-n-clarify\">决胜千里之外</em>",
       "processedBanner": "该项已被处理 — 当前选中项已从待审批列表移除，您的表单/草稿已保留。",
       "gateType": "人工门禁",
       "clarifyType": "待澄清",
@@ -2451,7 +2448,7 @@
         "schemeHttps": "HTTPS",
         "schemeSsh": "SSH",
         "repoUrlLabel": "全局变量 repos（只读示例）",
-        "repoUrlHint": "在工作流全局变量中配置 repos（每个仓 clone 到 /root/workspace/<name>/）；沙箱 startup.sh 据此 clone 并选择凭据方案",
+        "repoUrlHint": "在工作流全局变量中配置 repos（每个仓 clone 到 /root/workspace/<仓库名>/）；沙箱 startup.sh 据此 clone 并选择凭据方案",
         "recommendedEnv": "推荐环境变量",
         "applyRecommended": "添加推荐变量",
         "applyRecommendedDone": "已添加推荐变量",
@@ -4336,7 +4333,7 @@
         },
         "clone": {
           "title": "克隆仓库",
-          "desc": "配置 Git 仓库列表，多仓平级 clone 到 /root/workspace/<name>/。"
+          "desc": "配置 Git 仓库列表，多仓平级 clone 到 /root/workspace/<仓库名>/。"
         }
       },
       "repos": {

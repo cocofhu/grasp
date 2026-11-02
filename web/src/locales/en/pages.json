@@ -1269,7 +1269,7 @@
         "hideSecret": "Hide",
         "secretApiKey": "API Key",
         "secretOpenCodeKey": "OpenCode key",
-        "opencodeFamilyHint": "This key matches the official family you select. Official mode can use opencode/<model> or opencode-go/<model>. Save one OpenCode CLI key for OpenCode and another for OpenCode Go, and tell them apart by alias. One model configuration uses one key.",
+        "opencodeFamilyHint": "This key matches the official family you select. Official mode can use opencode/MODEL or opencode-go/MODEL. Save one OpenCode CLI key for OpenCode and another for OpenCode Go, and tell them apart by alias. One model configuration uses one key.",
         "secretDeepSeekKey": "DeepSeek key",
         "secretKimiCodeKey": "Kimi Code subscription key",
         "secretLoginFile": "Login file",
@@ -1539,8 +1539,7 @@
           "gotoDefault": "(Route by when / action)",
           "requireForm": "Require form",
           "requireFormHint": "When enabled, this action requires the form before submit",
-          "add": "Add action",
-          "help": "Set <b class=\"text-txt2\">Go to</b> for direct routing, or drag from the action handle on canvas; otherwise use outgoing <code class=\"text-info\">when</code> with <code class=\"text-info\">action == \"id\"</code>. Action id is stored in the output variable."
+          "add": "Add action"
         },
         "conditional": {
           "whenVar": "When variable",
@@ -1562,8 +1561,7 @@
           "insert": "Insert:",
           "goto": "Go to",
           "selectTarget": "Select target…",
-          "addElseIf": "Add ELSE IF branch",
-          "help": "Use <code class=\"text-info\">exists(\"file\")</code>, <code class=\"text-info\">json(\"file.json\").path</code>, <code class=\"text-info\">vars.x</code>, <code class=\"text-info\">nodes.x.outputs.y</code>. Each branch may jump to any node."
+          "addElseIf": "Add ELSE IF branch"
         },
         "variables": {
           "namePlaceholder": "Variable name e.g. feature",
@@ -1578,7 +1576,7 @@
           "locked": "Locked",
           "lockedTitle": "Locked to default at launch",
           "add": "Add variable",
-          "help": "Shared across nodes; reference with <code class=\"text-info\">{syntax}</code>; modify with Set variable. <b class=\"text-txt2\">Ask at launch</b> makes a run input (e.g. <code class=\"text-info\">repos</code>)."
+          "help": "Shared across nodes; reference with {syntax}; modify with Set variable. {askAtLaunch} makes a run input (e.g. {repos})."
         },
         "repos": {
           "itemLabel": "Repository {n}",
@@ -1751,7 +1749,6 @@
     },
     "gatesInbox": {
       "title": "Needs attention",
-      "subtitleHtml": "<strong class=\"font-medium text-warn\">Plot within the tent</strong>, <em class=\"not-italic text-n-clarify\">win a thousand miles away</em>",
       "processedBanner": "Item already processed — removed from inbox; your draft/form is preserved.",
       "gateType": "Human gate",
       "clarifyType": "Needs clarify",
@@ -1945,7 +1942,7 @@
     },
     "integrations": {
       "title": "Integrations",
-      "subtitle": "Built-in MCP always available · repo/CI secrets (e.g. GITLAB_TOKEN) can only be configured in Workspace credentials; env values can reference {'${vars.<name>}'}",
+      "subtitle": "Built-in MCP always available · repo/CI secrets (e.g. GITLAB_TOKEN) can only be configured in Workspace credentials; env values can reference {'${vars.NAME}'}",
       "sectionTitle": "Built-in MCP · run-scoped injection",
       "noConfigNeeded": "No setup required",
       "alwaysAvailable": "Always available"
@@ -2332,7 +2329,7 @@
         "runScopeTag": "run",
         "artifactUrl": "run-scoped artifact MCP endpoint",
         "artifactToken": "run-bound access token",
-        "globalVar": "{'${vars.<name>}'} — workflow global, e.g. {'${vars.feature}'}",
+        "globalVar": "{'${vars.NAME}'} — workflow global, e.g. {'${vars.feature}'}",
         "addArtifactStore": "+ Add artifact store",
         "agentVarsTitle": "Agent platform MCPs",
         "agentScopeTag": "agent",
@@ -2378,7 +2375,7 @@
         "parseError": "Invalid MCP JSON:"
       },
       "env": {
-        "hint": "Ordinary environment variables are injected into the Agent sandbox. Secrets (ACP keys, Git tokens, SSH) can only be configured in Workspace credentials. Values support run-scoped and {'${vars.<name>}'} globals.",
+        "hint": "Ordinary environment variables are injected into the Agent sandbox. Secrets (ACP keys, Git tokens, SSH) can only be configured in Workspace credentials. Values support run-scoped and {'${vars.NAME}'} globals.",
         "backendAuthTitle": "Auth credential for current backend",
         "backendAuthCredentialsBody": "This secret can only be configured in Workspace credentials and is injected into the sandbox at runtime; env vars must not contain it.",
         "backendAuthIntro": "When acpBackend={backend}, configure the matching key in Workspace credentials (values are not shown in plain text):",
@@ -2451,7 +2448,7 @@
         "schemeHttps": "HTTPS",
         "schemeSsh": "SSH",
         "repoUrlLabel": "Global repos (read-only example)",
-        "repoUrlHint": "Configure repos in workflow globals (each clones to /root/workspace/<name>/); sandbox startup.sh clones and picks credentials from it",
+        "repoUrlHint": "Configure repos in workflow globals (each clones to /root/workspace/NAME/); sandbox startup.sh clones and picks credentials from it",
         "recommendedEnv": "Recommended env vars",
         "applyRecommended": "Add recommended vars",
         "applyRecommendedDone": "Recommended vars added",
@@ -4336,7 +4333,7 @@
         },
         "clone": {
           "title": "Clone repositories",
-          "desc": "Configure git repos; each is cloned flat under /root/workspace/<name>/."
+          "desc": "Configure git repos; each is cloned flat under /root/workspace/NAME/."
         }
       },
       "repos": {

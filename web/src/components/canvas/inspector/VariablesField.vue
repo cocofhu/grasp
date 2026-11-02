@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { I18nT, useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import AppButton from '../../ui/AppButton.vue'
 
@@ -105,6 +105,10 @@ function asRepos(v: any): any[] {
       </div>
     </div>
     <AppButton size="sm" variant="subtle" icon="plus" @click="addVariable">{{ t('pages.workflowEditor.inspector.variables.add') }}</AppButton>
-    <p class="text-[10.5px] leading-4 text-txt3" v-html="t('pages.workflowEditor.inspector.variables.help', { syntax: VAR_SYNTAX })" />
+    <I18nT keypath="pages.workflowEditor.inspector.variables.help" tag="p" class="text-[10.5px] leading-4 text-txt3">
+      <template #syntax><code class="text-info">{{ VAR_SYNTAX }}</code></template>
+      <template #askAtLaunch><b class="text-txt2">{{ t('pages.workflowEditor.inspector.variables.askAtLaunch') }}</b></template>
+      <template #repos><code class="text-info">repos</code></template>
+    </I18nT>
   </div>
 </template>
