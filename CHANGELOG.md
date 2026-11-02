@@ -4,7 +4,11 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **@ references in workflows:** the home page Workflow composer, clarification and review chats inside a run, and gate hot revisions now accept the same `@` references as Solo: your own Solo sessions, and GitHub issues and PRs from the workflow's or run's `repos` repositories. The agent of that node reads them as in Solo. A Workflow launch can carry only references, and switching workflows clears them. The reference picker and chips also look and move differently, in Solo too: the highlight and tab underline slide, rows keep their place while results refresh, icons are tinted by state, and motion is reduced when the system asks for it. The anonymous shared approval page does not offer references.
+## 3.2.0 — 2026-11-02
+
+Solo and workflow chats support `@` references to Solo sessions and GitHub issues/PRs, clarify and review chats render directly from server-side dialogue state, queued chat turns persist across server restarts, Git credentials add GitHub device-flow login and unified SSH keys, and settings and Agent Studio layouts are refreshed.
+
+- **@ references in workflows:** the home page Workflow composer, clarification and review chats inside a run, and gate hot revisions now accept the same `@` references as Solo: your own Solo sessions, and GitHub issues and PRs from the workflow's or run's `repos` repositories. The agent of that node reads them as in Solo. A Workflow launch can carry only references, and switching workflows clears them. The reference picker and chips also look and move differently, in Solo too: the highlight and tab underline slide, rows keep their place while results refresh, icons are tinted by state, and motion is reduced when the system asks for it. Typing `@` after Chinese text or IME input also opens the picker directly. The anonymous shared approval page does not offer references.
 
 - **Clarification and review chats follow the server:** in Inbox, run details and shared approval links, the conversation now shows exactly the state the server reports. A turn that is still running, was stopped, or is waiting in the queue is no longer shown as "no output this turn", and reconnecting or reloading no longer leaves duplicate or stuck turns. A stopped turn with no reply reads "(已中断)", and sending a new message replaces the retry button on a failed reply.
 
@@ -36,11 +40,17 @@ All notable public-release changes are documented here.
 
 - **Conversation side panel memory:** each chat, including Solo conversations, remembers whether its right-hand panel was open and whether it showed Resources or Artifacts, and restores that when you return, also after a page reload. A chat you have not opened before follows the last state you used.
 
-- **Solo queued messages:** a message sent while a reply is still running now waits only in the queue and enters the conversation when its turn begins, instead of also showing an early bubble with an empty reply that disappeared on reload.
+- **Solo queued messages:** a message sent while a reply is still running now waits only in the queue and enters the conversation when its turn begins, instead of also showing an early bubble with an empty reply that disappeared on reload. Solo also shares the workflow pending queue panel, supporting drag reorder, withdraw-to-edit (preserving text, images and `@` references) and removal.
 
-- **Light theme contrast:** secondary text, placeholders and borders are darker so small labels stay readable, and the home page background pattern is fainter.
+- **Onboarding and credential management:** closing the first-run wizard remembers dismissal so it no longer reopens on every login, and splits Git credentials into a dedicated step before repository setup. Every workspace credential can now be deleted directly from its row.
+
+- **Token analytics cache hit rate:** the KPI cache hit rate now includes cache writes in its denominator (matching the trend chart) and caps ratios below 100% at `99.9%` so partial misses never display as a false `100.0%`.
+
+- **Light theme, sidebar and mascot polish:** light-theme secondary text, placeholders, borders, sidebar rows and modal hover labels have stronger contrast on white surfaces; sidebar status metrics are labeled; and the home mascot and brand mark add idle, tap-combo and composer-reactive animations (respecting `prefers-reduced-motion`).
 
 - **Chat turn safety:** an unexpected failure inside one chat turn now ends that turn with an error and lets queued messages continue, instead of stopping the server. A Solo conversation that stays busy without updates checks the session and recovers a missed completion without a page reload; long silent tool calls keep their connection.
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:3.2.0`.
 
 ## 3.1.0 — 2026-10-30
 
