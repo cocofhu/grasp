@@ -18,7 +18,7 @@ setup and layout.
 |------|------|
 | Commands, gates, pitfalls, do-not-touch | This file |
 | Which document to edit, and when to log | [`docs/agent/README.md`](docs/agent/README.md) |
-| Internal development log | [`docs/dev/DEVLOG.md`](docs/dev/DEVLOG.md) |
+| Internal development log | [`docs/dev/devlog/`](docs/dev/devlog/README.md) |
 | Environment and full contribution flow | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 
 Boundaries only — do not copy command blocks into the handbook. See
@@ -26,9 +26,11 @@ Boundaries only — do not copy command blocks into the handbook. See
 
 ## Development log (hard rule)
 
-When a change is worth a later reader, append one entry at the **top** of
-[`docs/dev/DEVLOG.md`](docs/dev/DEVLOG.md): date, scope (paths), what, why, how
-verified. Do not paste that journal into this file.
+When a change is worth a later reader, add **one new file**
+`docs/dev/devlog/YYYY-MM/YYYY-MM-DD-<slug>.md` (template and naming in
+[`docs/dev/devlog/README.md`](docs/dev/devlog/README.md)): date, scope (paths),
+what, why, how verified. Do not edit other entries, and do not paste that
+journal into this file.
 
 If the change has **no** user-visible behavior, do **not** edit
 [`CHANGELOG.md`](CHANGELOG.md). If it does, still write the DEVLOG entry and

@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { baseCompile, CompileErrorCodes } from '@intlify/message-compiler'
+import { baseCompile, CompileErrorCodes, detectHtmlTag } from '@intlify/message-compiler'
 
 const LOCALES_ROOT = dirname(fileURLToPath(import.meta.url))
 const LOCALE_DIRS = ['zh-CN', 'en'] as const
@@ -80,6 +80,14 @@ describe('locale message-compiler scan', () => {
     }
 
     expect(failures, JSON.stringify(failures, null, 2)).toEqual([])
+  })
+
+  it('has no message vue-i18n would warn about as HTML', () => {
+    // vue-i18n logs "Detected HTML in ... message" for any `<word>` shape, placeholders like `<name>` included.
+    const flagged = loadAllLocaleLeaves()
+      .filter((leaf) => detectHtmlTag(leaf.value))
+      .map((leaf) => leaf.keyPath)
+    expect(flagged).toEqual([])
   })
 
   it('memoryStore.convention uses literal interpolation and still displays ${GRASP_MEMORY_URL/TOKEN}', async () => {

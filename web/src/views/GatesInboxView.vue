@@ -269,7 +269,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
       class="mb-3 flex shrink-0 items-center gap-2.5 rounded-md border border-warn/35 bg-warn/10 px-3.5 py-2.5 text-sm text-warn"
     >
       <Icon name="alert" :size="18" class="shrink-0" />
-      <span v-html="t('pages.gatesInbox.processedBanner')" />
+      <span>{{ t('pages.gatesInbox.processedBanner') }}</span>
     </div>
 
     <!-- Mobile list view -->
