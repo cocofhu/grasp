@@ -209,9 +209,14 @@ function tabCount(key: ReferenceTab) {
   if (lane.skipped) return ''
   const taken = new Set(props.taken)
   if (key === 'solo') return String(lane.items.filter((i) => !taken.has(i.target)).length) + (lane.nextPage ? '+' : '')
+  // GitHub counts are the same on every tab; without them only the loaded
+  // rows of a reply that asked for this kind can be counted.
+  const gh = search.github
+  const total = gh.counts?.[key]
+  if (typeof total === 'number') return String(total)
   const kind = key === 'issue' ? 'github_issue' : 'github_pr'
-  if (tab.value === key && typeof search.github.total === 'number') return String(search.github.total)
-  return String(search.github.items.filter((i) => i.kind === kind && !taken.has(i.target)).length) + (search.github.nextPage ? '+' : '')
+  if (!gh.settled || gh.error || (gh.kind && gh.kind !== kind)) return ''
+  return String(gh.items.filter((i) => i.kind === kind && !taken.has(i.target)).length) + (gh.nextPage ? '+' : '')
 }
 
 // Sliding pieces: the highlight block and the tab ink move by transform, and

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ type fakeGitHub struct {
 	hits     map[string]int
 	auth     []string
 	queries  []string
+	counted  []string
 	searchRL string
 	handler  func(w http.ResponseWriter, r *http.Request) bool
 }
@@ -54,7 +56,11 @@ func newFakeGitHub(t *testing.T) (*fakeGitHub, *httptest.Server) {
 			_, _ = fmt.Fprint(w, `[{"number":1,"title":"API","state":"open","updated_at":"2026-10-05"}]`)
 		case r.URL.Path == "/search/issues":
 			f.mu.Lock()
-			f.queries = append(f.queries, r.URL.Query().Get("q"))
+			if r.URL.Query().Get("per_page") == "1" {
+				f.counted = append(f.counted, r.URL.Query().Get("q"))
+			} else {
+				f.queries = append(f.queries, r.URL.Query().Get("q"))
+			}
 			rl := f.searchRL
 			f.mu.Unlock()
 			w.Header().Set("X-Ratelimit-Resource", "search")
@@ -301,6 +307,161 @@ func TestGitHubSearchModes(t *testing.T) {
 	}
 	if _, err := c2.Search(ctx, githubSearchRequest{Query: "bug", Repos: web}); err == nil {
 		t.Fatal("search error")
+	}
+}
+
+func TestGitHubSearchCountsAndRecentPaging(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		lists    []string
+		counted  []string
+		main     []string
+		fullPage bool
+		countErr bool
+		searchRL = "29"
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/repos/acme/web/issues":
+			lists = append(lists, r.URL.RawQuery)
+			n := 2
+			if fullPage {
+				n = githubPageSize
+			}
+			items := make([]string, n)
+			for i := range items {
+				pr := ""
+				if i%2 == 1 {
+					pr = `,"pull_request":{}`
+				}
+				items[i] = fmt.Sprintf(`{"number":%d,"title":"T","state":"open","updated_at":"2026-10-%02d"%s}`, i+1, i+1, pr)
+			}
+			_, _ = fmt.Fprint(w, "["+strings.Join(items, ",")+"]")
+		case "/search/issues":
+			q := r.URL.Query().Get("q")
+			w.Header().Set("X-Ratelimit-Resource", "search")
+			w.Header().Set("X-Ratelimit-Remaining", searchRL)
+			w.Header().Set("X-Ratelimit-Reset", fmt.Sprint(time.Now().Add(time.Minute).Unix()))
+			if r.URL.Query().Get("per_page") != "1" {
+				main = append(main, q)
+				_, _ = fmt.Fprint(w, `{"total_count":3,"items":[{"number":9,"title":"PR","state":"open","repository_url":"https://api.github.com/repos/acme/web","pull_request":{}}]}`)
+				return
+			}
+			counted = append(counted, q)
+			if countErr {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			n := 6
+			if strings.Contains(q, "is:pr") {
+				n = 5
+			}
+			if strings.Contains(q, "bug") {
+				n = 1
+			}
+			if !strings.Contains(q, "is:open") {
+				n += 10
+			}
+			_, _ = fmt.Fprintf(w, `{"total_count":%d,"items":[]}`, n)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	reset := func() {
+		mu.Lock()
+		lists, counted, main = nil, nil, nil
+		mu.Unlock()
+	}
+	ctx := context.Background()
+	web := []githubRepo{{"acme", "web"}}
+	c := newGitHubRefClient(srv.URL, srv.Client())
+	countsOf := func(res githubSearchResult) string {
+		if res.Counts == nil {
+			return "nil"
+		}
+		s := func(p *int) string {
+			if p == nil {
+				return "-"
+			}
+			return fmt.Sprint(*p)
+		}
+		return s(res.Counts.Issue) + "/" + s(res.Counts.PR)
+	}
+
+	res, err := c.Search(ctx, githubSearchRequest{Repos: web, State: "open", Kinds: []string{models.ReferenceKindGitHubPR}})
+	if err != nil || res.Source != "recent" || countsOf(res) != "6/5" || res.NextPage != 0 || len(res.Items) != 1 {
+		t.Fatalf("recent open: %+v %v", res, err)
+	}
+	sort.Strings(counted)
+	if strings.Join(counted, ",") != "repo:acme/web is:open is:issue,repo:acme/web is:open is:pr" {
+		t.Fatalf("count queries: %q", counted)
+	}
+	if len(lists) != 1 || lists[0] != "state=open&sort=updated&direction=desc&per_page=20&page=1" {
+		t.Fatalf("recent path: %q", lists)
+	}
+
+	reset()
+	if _, err := c.Search(ctx, githubSearchRequest{Repos: web, State: "open", Kinds: []string{models.ReferenceKindGitHubPR}}); err != nil || len(lists)+len(counted) != 0 {
+		t.Fatalf("cached within ttl: %q %q %v", lists, counted, err)
+	}
+
+	res, _ = c.Search(ctx, githubSearchRequest{Repos: web, State: "all"})
+	sort.Strings(counted)
+	if countsOf(res) != "16/15" || strings.Join(counted, ",") != "repo:acme/web is:issue,repo:acme/web is:pr" || !strings.HasPrefix(lists[0], "state=all&") {
+		t.Fatalf("recent all: %s %q %q", countsOf(res), counted, lists)
+	}
+
+	reset()
+	res, err = c.Search(ctx, githubSearchRequest{Query: "bug", Repos: web, Kinds: []string{models.ReferenceKindGitHubPR}})
+	if err != nil || countsOf(res) != "1/3" || len(counted) != 1 || counted[0] != "repo:acme/web is:open is:issue bug" || main[0] != "repo:acme/web is:open is:pr bug" {
+		t.Fatalf("single kind search reuses total: %s %q %q %v", countsOf(res), counted, main, err)
+	}
+	if res, _ := c.Search(ctx, githubSearchRequest{Query: "#3", Repos: web}); res.Counts != nil {
+		t.Fatal("exact has no counts")
+	}
+	if res, _ := c.Search(ctx, githubSearchRequest{Query: "x", Repos: web}); res.Counts != nil {
+		t.Fatal("hint has no counts")
+	}
+
+	mu.Lock()
+	fullPage = true
+	mu.Unlock()
+	reset()
+	c = newGitHubRefClient(srv.URL, srv.Client())
+	res, _ = c.Search(ctx, githubSearchRequest{Repos: web})
+	if res.NextPage != 2 || len(res.Items) != githubPageSize || res.Items[0].UpdatedAt != "2026-10-20" {
+		t.Fatalf("full page: next=%d items=%d", res.NextPage, len(res.Items))
+	}
+	res, _ = c.Search(ctx, githubSearchRequest{Repos: web, Page: 2})
+	if lists[1] != "state=open&sort=updated&direction=desc&per_page=20&page=2" || res.NextPage != 3 {
+		t.Fatalf("page 2: %q next=%d", lists, res.NextPage)
+	}
+	res, _ = c.Search(ctx, githubSearchRequest{Repos: web, Page: githubMaxDepth / githubPageSize})
+	if res.NextPage != 0 {
+		t.Fatalf("depth cap: next=%d", res.NextPage)
+	}
+
+	mu.Lock()
+	countErr = true
+	mu.Unlock()
+	c = newGitHubRefClient(srv.URL, srv.Client())
+	res, err = c.Search(ctx, githubSearchRequest{Repos: web})
+	if err != nil || res.Counts != nil || len(res.Items) == 0 {
+		t.Fatalf("count failure is soft: %+v %v", res, err)
+	}
+
+	mu.Lock()
+	countErr, searchRL = false, "1"
+	mu.Unlock()
+	c = newGitHubRefClient(srv.URL, srv.Client())
+	_, _ = c.Search(ctx, githubSearchRequest{Query: "bug", Repos: web, Kinds: []string{models.ReferenceKindGitHubIssue}})
+	reset()
+	res, err = c.Search(ctx, githubSearchRequest{Repos: web})
+	if err != nil || res.Counts != nil || len(counted) != 0 {
+		t.Fatalf("low quota skips counts: %+v %q %v", res, counted, err)
 	}
 }
 

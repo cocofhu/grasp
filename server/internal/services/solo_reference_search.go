@@ -47,6 +47,7 @@ type ReferenceSearchResult struct {
 	Source     string                `json:"source,omitempty"`
 	Hint       string                `json:"hint,omitempty"`
 	RateLimit  *githubRateLimit      `json:"rateLimit,omitempty"`
+	Counts     *githubCounts         `json:"counts,omitempty"`
 	Error      *ReferenceSearchError `json:"error,omitempty"`
 }
 
@@ -141,5 +142,5 @@ func (s *SoloService) searchGitHubReferences(ctx context.Context, row *models.So
 		return res
 	}
 	return ReferenceSearchResult{Lane: "github", Items: found.Items, Total: found.Total, NextPage: found.NextPage, Incomplete: found.Incomplete,
-		Source: found.Source, Hint: found.Hint, RateLimit: found.RateLimit}
+		Source: found.Source, Hint: found.Hint, RateLimit: found.RateLimit, Counts: found.Counts}
 }

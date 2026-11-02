@@ -43,6 +43,9 @@ export type LaneState<T> = {
   hint: string
   total?: number
   nextPage?: number
+  counts?: { issue?: number; pr?: number }
+  /** The kind the shown items were asked for; empty means every kind. */
+  kind?: string
 }
 
 const CACHE_TTL = 5 * 60_000
@@ -69,10 +72,12 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>) {
   }
   const cache = new Map<string, { at: number; data: ReferenceSearchResult<any> }>()
 
-  function apply<T>(lane: LaneState<T>, data: ReferenceSearchResult<T>, append = false) {
+  function apply<T>(lane: LaneState<T>, data: ReferenceSearchResult<T>, kind: string | undefined, append = false) {
     lane.items = append ? [...lane.items, ...data.items] : data.items
     lane.total = data.total
     lane.nextPage = data.nextPage
+    lane.counts = data.counts ?? (append ? lane.counts : undefined)
+    lane.kind = kind
     lane.hint = data.hint || ''
     lane.error = data.error?.message || ''
     lane.errorCode = data.error?.code || ''
@@ -97,7 +102,7 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>) {
     if (page === 1) {
       c.key = key
       if (hit) {
-        apply(lane, hit.data)
+        apply(lane, hit.data, params.kind)
         lane.loading = false
         if (Date.now() - hit.at < CACHE_TTL) return
       } else {
@@ -114,10 +119,13 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>) {
         const data = await fetchLane(scope.value, { lane: name, ...params, page }, abort.signal)
         if (my !== c.seq) return
         if (page === 1) cache.set(key, { at: Date.now(), data })
-        apply(lane, data, page > 1)
+        apply(lane, data, params.kind, page > 1)
       } catch (e: any) {
         if (abort.signal.aborted || my !== c.seq) return
-        if (page === 1) lane.items = []
+        if (page === 1) {
+          lane.items = []
+          lane.counts = undefined
+        }
         lane.error = String(e?.message || e)
         lane.errorCode = 'upstream'
         lane.settled = true
