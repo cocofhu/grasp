@@ -203,20 +203,44 @@ function cycleTab(delta: number) {
   setTab(TABS[(i + delta + TABS.length) % TABS.length]!)
 }
 
-function tabCount(key: ReferenceTab) {
-  if (key === 'all') return ''
-  const lane = key === 'solo' ? search.solo : search.github
-  if (lane.skipped) return ''
-  const taken = new Set(props.taken)
-  if (key === 'solo') return String(lane.items.filter((i) => !taken.has(i.target)).length) + (lane.nextPage ? '+' : '')
-  // GitHub counts are the same on every tab; without them only the loaded
-  // rows of a reply that asked for this kind can be counted.
+type TabCount = { state: 'value' | 'loading' | 'na'; text: string }
+
+/** Never wider than three characters, so the tab keeps its width. */
+function countText(n: number, more = false) {
+  return n > 99 ? '99+' : String(n) + (more ? '+' : '')
+}
+
+/**
+ * Every tab but "all" always shows a count slot: the number once known (an
+ * older number stays while a new one loads), a spinner until the first one
+ * lands, and a dash when it cannot be known.
+ */
+function tabCount(key: ReferenceTab): TabCount | null {
+  if (key === 'all') return null
+  const loading: TabCount = { state: 'loading', text: '' }
+  const na: TabCount = { state: 'na', text: '—' }
+  if (key === 'solo') {
+    const lane = search.solo
+    if (lane.skipped) return na
+    if (lane.error) return lane.loading ? loading : na
+    if (!lane.settled) return loading
+    const taken = new Set(props.taken)
+    return { state: 'value', text: countText(lane.items.filter((i) => !taken.has(i.target)).length, !!lane.nextPage) }
+  }
+  // GitHub counts are the same on every tab; loaded rows are never a stand-in.
   const gh = search.github
+  if (gh.error) return gh.loading ? loading : na
   const total = gh.counts?.[key]
-  if (typeof total === 'number') return String(total)
-  const kind = key === 'issue' ? 'github_issue' : 'github_pr'
-  if (!gh.settled || gh.error || (gh.kind && gh.kind !== kind)) return ''
-  return String(gh.items.filter((i) => i.kind === kind && !taken.has(i.target)).length) + (gh.nextPage ? '+' : '')
+  if (typeof total === 'number') return { state: 'value', text: countText(total) }
+  return gh.loading ? loading : na
+}
+
+const tabCounts = computed(() => Object.fromEntries(TABS.map((key) => [key, tabCount(key)])) as Record<ReferenceTab, TabCount | null>)
+
+function countLabel(count: TabCount) {
+  if (count.state === 'loading') return t('pages.solo.reference.countLoading')
+  if (count.state === 'na') return t('pages.solo.reference.countUnavailable')
+  return undefined
 }
 
 // Sliding pieces: the highlight block and the tab ink move by transform, and
@@ -250,17 +274,27 @@ watch([sel, rows], () => void nextTick(placeHighlight), { flush: 'post' })
 watch(tab, () => void nextTick(placeInk), { flush: 'post' })
 
 let resize: ResizeObserver | null = null
+let tabResize: ResizeObserver | null = null
 onMounted(() => {
   placeInk()
   measureList()
-  if (typeof ResizeObserver === 'undefined' || !content.value) return
-  resize = new ResizeObserver(() => {
-    measureList()
-    placeHighlight()
-  })
-  resize.observe(content.value)
+  if (typeof ResizeObserver === 'undefined') return
+  if (content.value) {
+    resize = new ResizeObserver(() => {
+      measureList()
+      placeHighlight()
+    })
+    resize.observe(content.value)
+  }
+  // A tab can change width while it stays selected (a font landing, the
+  // locale changing); the ink follows it.
+  tabResize = new ResizeObserver(() => placeInk())
+  tabbar.value?.querySelectorAll('button').forEach((el) => tabResize!.observe(el))
 })
-onBeforeUnmount(() => resize?.disconnect())
+onBeforeUnmount(() => {
+  resize?.disconnect()
+  tabResize?.disconnect()
+})
 
 /** New rows fade in a beat after each other. */
 let staggered = 0
@@ -306,7 +340,17 @@ defineExpose({ move, confirm, cycleTab, setTab })
           @click="setTab(key)"
         >
           {{ t(`pages.solo.reference.tabs.${key}`) }}
-          <span v-if="tabCount(key)" class="ref-picker__count">{{ tabCount(key) }}</span>
+          <span
+            v-if="tabCounts[key]"
+            class="ref-picker__count"
+            :class="`ref-picker__count--${tabCounts[key]!.state}`"
+            :data-state="tabCounts[key]!.state"
+            :aria-label="countLabel(tabCounts[key]!)"
+            :title="countLabel(tabCounts[key]!)"
+          >
+            <Icon v-if="tabCounts[key]!.state === 'loading'" name="spinner" :size="9" />
+            <template v-else>{{ tabCounts[key]!.text }}</template>
+          </span>
         </button>
       </div>
       <div v-if="tab !== 'solo'" class="ref-picker__seg" role="radiogroup" :aria-label="t('pages.solo.reference.stateLabel')">
@@ -465,10 +509,21 @@ defineExpose({ move, confirm, cycleTab, setTab })
   font-weight: 600;
 }
 .ref-picker__count {
+  display: inline-flex;
+  width: 3ch;
+  flex: none;
+  align-items: center;
+  justify-content: center;
   color: rgb(var(--c-txt3));
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
   font-weight: 400;
+}
+.ref-picker__count--na {
+  opacity: 0.6;
+}
+.ref-picker__count--loading :deep(svg) {
+  animation: ref-picker-spin 0.9s linear infinite;
 }
 .ref-picker__seg {
   display: inline-flex;
