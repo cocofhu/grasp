@@ -6,7 +6,7 @@ import ConfirmFlowOverlay from '@/components/run/ConfirmFlowOverlay.vue'
 import { provideConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { ensureConversationDrawer, readArtifactPanelOpen, readRememberedPanelMode, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 import { provideConversationArtifacts } from '@/lib/chat/conversationArtifacts'
-import { stageLinksFor } from '@/lib/run/stageLinks'
+import { isLoopbackUrl, stageLinksFor } from '@/lib/run/stageLinks'
 
 const props = withDefaults(defineProps<{
   /** Run + node + iteration (or public scene); resets a previous panel selection. */
@@ -104,6 +104,22 @@ provideConversationArtifacts({
   },
 })
 
+/** Loopback links in chat only resolve inside the sandbox: open them in its browser on the right. */
+async function onSidebarClick(e: MouseEvent) {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  if (props.chatOnly || !props.runId) return
+  const link = (e.target as Element | null)?.closest?.('.chat-prose a[href]')
+  if (!(link instanceof HTMLAnchorElement) || !isLoopbackUrl(link.href)) return
+  e.preventDefault()
+  const url = link.href
+  const scope = props.scopeKey
+  if (splitToolbar()) panelMode.value = 'resources'
+  panelOpen.value = true
+  await nextTick()
+  if (scope !== props.scopeKey) return
+  if (!stageLinksFor(props.runId)?.openUrl?.(url)) window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 defineExpose({
   playConfirmCeremony: () => confirmFlow?.play() ?? Promise.resolve(),
   confirmFlowCeremony: confirmFlow,
@@ -124,7 +140,7 @@ defineExpose({
       :show-toolbar="!chatOnly"
       class="min-h-0 min-w-0 flex-1"
     >
-      <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="review-shell-sidebar">
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="review-shell-sidebar" @click="onSidebarClick">
         <slot name="sidebar" />
       </div>
       <template #panel>

@@ -18,6 +18,7 @@ type vncRecPage struct {
 	offErr     error
 	navs       []string
 	gotos      []string
+	tabs       []string
 	url        string
 	urlErr     error
 }
@@ -41,6 +42,7 @@ func (p *vncRecPage) OnInspectCanceled(func())  {}
 func (p *vncRecPage) OnDescribeFailed(func())   {}
 func (p *vncRecPage) Navigate(a string) error   { p.navs = append(p.navs, a); return nil }
 func (p *vncRecPage) Goto(u string) error       { p.gotos = append(p.gotos, u); return nil }
+func (p *vncRecPage) OpenTab(u string) error    { p.tabs = append(p.tabs, u); return nil }
 func (p *vncRecPage) Close() error              { return nil }
 func (p *vncRecPage) URL(context.Context) (string, error) {
 	return p.url, p.urlErr
@@ -75,6 +77,9 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 		{vncClientMsg{Type: "navigate", Action: "goto", URL: "about:blank"}, false},
 		{vncClientMsg{Type: "navigate", Action: "goto"}, false},
 		{vncClientMsg{Type: "navigate", URL: "http://127.0.0.1.evil.com/"}, false},
+		{vncClientMsg{Type: "navigate", Action: "open", URL: "http://localhost:3000/"}, true},
+		{vncClientMsg{Type: "navigate", Action: "open", URL: "https://github.com/"}, false},
+		{vncClientMsg{Type: "navigate", Action: "open"}, false},
 	}
 	for _, c := range cases {
 		if got := publicVncMsgAllowed(c.m); got != c.want {
@@ -184,6 +189,16 @@ func TestApplyVncMsgGoto(t *testing.T) {
 	h.applyVncMsg(p, decodeVnc(t, `{"type":"navigate","action":"goto"}`), nil)
 	if len(p.gotos) != 2 || p.gotos[1] != "about:blank" {
 		t.Fatalf("empty goto should open about:blank: %v", p.gotos)
+	}
+}
+
+func TestApplyVncMsgOpenTab(t *testing.T) {
+	h := &Handlers{}
+	p := &vncRecPage{}
+	h.applyVncMsg(p, decodeVnc(t, `{"type":"navigate","action":"open","url":"http://127.0.0.1:5173/"}`), nil)
+	h.applyVncMsg(p, decodeVnc(t, `{"type":"navigate","action":"open"}`), nil)
+	if len(p.tabs) != 1 || p.tabs[0] != "http://127.0.0.1:5173/" || len(p.gotos) != 0 {
+		t.Fatalf("open should only open a new tab: tabs=%v gotos=%v", p.tabs, p.gotos)
 	}
 }
 

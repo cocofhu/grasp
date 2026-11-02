@@ -46,8 +46,8 @@ func (t *vncToucher) mark() {
 type vncClientMsg struct {
 	Type   string `json:"type"`   // "inspect" | "navigate" | "ping"
 	On     bool   `json:"on"`     // inspect
-	Action string `json:"action"` // navigate: "reload"|"back"|"forward"|"goto"
-	URL    string `json:"url"`    // navigate goto target (about:blank / http…)
+	Action string `json:"action"` // navigate: "reload"|"back"|"forward"|"goto"|"open" (new tab)
+	URL    string `json:"url"`    // navigate goto/open target (about:blank / http…)
 }
 
 // desktopVNCOptions adapts the one sandbox desktop proxy to a caller.
@@ -225,6 +225,14 @@ func (h *Handlers) applyVncMsg(page browser.Page, m vncClientMsg, pushJSON func(
 			}
 		}
 	case "navigate":
+		if m.Action == "open" {
+			if m.URL != "" {
+				if err := page.OpenTab(m.URL); err != nil {
+					log.Warn().Err(err).Str("url", m.URL).Msg("desktop vnc OpenTab failed")
+				}
+			}
+			return
+		}
 		if m.Action == "goto" || m.URL != "" {
 			url := m.URL
 			if url == "" {

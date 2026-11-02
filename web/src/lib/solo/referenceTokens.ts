@@ -87,6 +87,17 @@ export function restoreTokens(text: string, refs: MessageReference[], labelOf: (
   return { text: out, tokens: tokens.sort((a, b) => a.start - b.start) }
 }
 
+/**
+ * Split a sent message's references into those whose `@label` appears in the
+ * text (shown in place) and the rest (shown beside the message).
+ */
+export function inlineReferences(text: string, refs: MessageReference[], labelOf: (ref: MessageReference) => string) {
+  const { tokens } = restoreTokens(text, refs, labelOf)
+  const inline = tokens.filter((t) => t.end <= text.length)
+  const rest = refs.filter((ref) => !inline.some((t) => t.ref === ref))
+  return { inline, rest }
+}
+
 /** Remove one token's `@label` (and one following space) from the text. */
 export function removeToken(text: string, tokens: ReferenceToken[], index: number) {
   const token = tokens[index]

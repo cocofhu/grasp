@@ -116,6 +116,20 @@ describe('renderChatMarkdown', () => {
     expect(renderChatMarkdown('##上游交接')).toMatch(/<h2[^>]*>上游交接<\/h2>/)
   })
 
+  it('opens chat links in a new window', () => {
+    const html = renderChatMarkdown('见 [#1087](https://github.com/acme/web/pull/1087) 和 http://127.0.0.1:5173/')
+    expect(html).toContain('<a target="_blank" rel="noopener noreferrer" href="https://github.com/acme/web/pull/1087">#1087</a>')
+    expect(html).toContain('<a target="_blank" rel="noopener noreferrer" href="http://127.0.0.1:5173/">')
+    expect(renderMarkdown('[x](https://example.com)')).not.toContain('target=')
+  })
+
+  it('only starts a tight heading at a line start', () => {
+    const mention = renderChatMarkdown('@#815 @#814 这两个看看')
+    expect(mention).not.toContain('<h')
+    expect(mention).toContain('@#815 @#814 这两个看看')
+    expect(renderChatMarkdown('正文\n#标题')).toMatch(/<p>正文<\/p>\s*<h1[^>]*>标题<\/h1>/)
+  })
+
   it('keeps fenced code characters that look like tags', () => {
     const html = renderChatMarkdown('```html\n<script>alert(1)</script>\n```')
     expect(html).toContain('language-html')
@@ -138,7 +152,7 @@ const SCREENSHOT_SENTENCE =
   `${SCREENSHOT_URL}（中文）。这是模拟会话，不是真实后端。交付时不要把会话环境入口加回更多菜单、错误卡或空态。`
 
 function anchors(html: string): { href: string; text: string }[] {
-  return [...html.matchAll(/<a href="([^"]*)">([^<]*)<\/a>/g)].map((match) => ({
+  return [...html.matchAll(/<a (?:target="_blank" rel="noopener noreferrer" )?href="([^"]*)">([^<]*)<\/a>/g)].map((match) => ({
     href: match[1].replace(/&amp;/g, '&'),
     text: match[2].replace(/&amp;/g, '&'),
   }))
