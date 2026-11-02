@@ -180,6 +180,7 @@ const fixedMounted = ref<Record<string, boolean>>({})
 const newTabOpen = ref(false)
 /** Latest chat link to open in a new tab of the sandbox browser; seq repeats the same url. */
 const browserOpenRequest = ref<{ url: string; seq: number } | null>(null)
+let browserOpenSeq = 0
 for (const id of fixedOpen.value) fixedMounted.value[id] = true
 const sandboxView = ref<{ id: number; hasCodeServer?: boolean } | null>(null)
 const sandboxLoadingState = ref(false)
@@ -1110,7 +1111,7 @@ watch(
         openUrl: (url) => {
           if (!showFixedCards.value || (!sandboxId.value && !sandboxLoadingState.value)) return false
           openFixed('browser')
-          browserOpenRequest.value = { url, seq: (browserOpenRequest.value?.seq || 0) + 1 }
+          browserOpenRequest.value = { url, seq: ++browserOpenSeq }
           return true
         },
       }),
@@ -1524,6 +1525,7 @@ onBeforeUnmount(() => {
         fill
         :inspectable="annotatable"
         :open-request="browserOpenRequest"
+        @open-sent="browserOpenRequest = null"
         @pick="onRemotePick"
       />
       <div

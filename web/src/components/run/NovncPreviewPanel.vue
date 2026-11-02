@@ -25,6 +25,8 @@ const emit = defineEmits<{
   (e: 'staged-pick', payload: AppPreviewPickPayload | null): void
   /** Public ticket channel: parent must re-exchange ticket before reconnecting. */
   (e: 'reconnect-request'): void
+  /** openRequest went out; the parent drops it so a remount does not open it again. */
+  (e: 'open-sent'): void
 }>()
 
 const props = withDefaults(
@@ -295,6 +297,7 @@ function flushOpenRequest() {
   if (!pendingOpenUrl || status.value !== 'live' || !channel || channel.readyState !== WebSocket.OPEN) return
   sendCtrl({ type: 'navigate', action: 'open', url: pendingOpenUrl })
   pendingOpenUrl = ''
+  emit('open-sent')
 }
 watch(
   () => props.openRequest?.seq,

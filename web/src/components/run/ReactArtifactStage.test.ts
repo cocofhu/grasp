@@ -257,6 +257,9 @@ describe('ReactArtifactStage', () => {
     links.openUrl?.('http://127.0.0.1:5173/')
     await flushPromises()
     expect(novnc.attributes('data-open-seq')).toBe('2')
+    wrapper.findComponent(stubs.NovncPreviewPanel).vm.$emit('open-sent')
+    await flushPromises()
+    expect(novnc.attributes('data-open-url')).toBeUndefined()
     wrapper.unmount()
 
     const hidden = mount(ReactArtifactStage, {
