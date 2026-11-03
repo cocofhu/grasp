@@ -420,14 +420,5 @@ func gateBindsProducer(gate *models.Gate, gateNode *models.Node, producerID stri
 // renderReviewHuman folds review annotations into the human instruction text
 // sent to the agent, so the agent edits exactly the cited fields/elements.
 func renderReviewHuman(text string, anns []models.ReactAnnotation) string {
-	block := models.RenderAnnotations(anns)
-	text = strings.TrimSpace(text)
-	switch {
-	case block != "" && text != "":
-		return block + "\n" + text
-	case block != "":
-		return block + "\n(按上述标注修改)"
-	default:
-		return text
-	}
+	return models.RenderAnnotatedPrompt(text, anns)
 }

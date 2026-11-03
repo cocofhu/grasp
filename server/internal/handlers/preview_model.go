@@ -119,17 +119,25 @@ func (h *Handlers) SoloEmbedModelCatalog(c *gin.Context) {
 	h.writePreviewModelCatalog(c, agent, found)
 }
 
-// AuthorizeEmbedVisitModel grants the existing visit selection handlers to
-// the owner drawer bound to this exact node. Public approval tickets are separate.
-func (h *Handlers) AuthorizeEmbedVisitModel(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
+func (h *Handlers) ownerEmbedUser(token, runID, nodeID string) (string, bool) {
 	if h.Embed != nil {
-		claims, ok := h.Embed.LookupSession(bearer(c.GetHeader("Authorization")))
-		if ok && claims.Kind == models.EmbedKindSession && claims.RunID == c.Param("id") && claims.NodeID == c.Param("nodeId") {
-			return
+		claims, ok := h.Embed.LookupSession(token)
+		if ok && claims.Kind == models.EmbedKindSession && claims.RunID == runID && claims.NodeID == nodeID && claims.Username != "" {
+			return claims.Username, true
 		}
 	}
-	c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_session"})
+	return "", false
+}
+
+// AuthorizeEmbedNode restricts drawer operations to the owner's exact node.
+func (h *Handlers) AuthorizeEmbedNode(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	user, ok := h.ownerEmbedUser(bearer(c.GetHeader("Authorization")), c.Param("id"), c.Param("nodeId"))
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_session"})
+		return
+	}
+	c.Set(soloEmbedUserKey, user)
 }
 
 func (h *Handlers) EmbedVisitModelCatalog(c *gin.Context) {

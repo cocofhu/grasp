@@ -5,6 +5,7 @@ import type {
   ChatExecution,
   McpCall,
   NodeRunStatus,
+  ReactAnnotation,
   TokenUsage,
   TokenUsageByModel,
 } from '../shared/types'
@@ -841,6 +842,7 @@ export interface SoloMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   images?: ClarifyImage[]
+  annotations?: ReactAnnotation[]
   references?: MessageReference[]
   /** Raw ACP frames of an assistant turn, replayed into the timeline. */
   events?: unknown[]

@@ -1,6 +1,6 @@
 import { contentText, flattenUpdate, normalizeKind } from '@/lib/run/acpUnpack'
 import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
-import type { AgentPart, ChatMessageMetadata, ClarifyImage } from '@/lib/shared/types'
+import type { AgentPart, ChatMessageMetadata, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import type { MessageReference, SoloMessage } from '@/lib/api/apiTypes'
 
 export type SoloTool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
@@ -16,6 +16,7 @@ export type SoloTurn = ChatMessageMetadata & {
   plan: { content: string; status: string }[]
   streaming: boolean
   images?: ClarifyImage[]
+  annotations?: ReactAnnotation[]
   /** User turn: contexts explicitly picked with @. */
   references?: MessageReference[]
   /** User turn: failed | stopped when its reply did not complete. */
@@ -164,6 +165,7 @@ export function turnsFromMessages(messages: SoloMessage[], label: ToolLabeler, t
         plan: [],
         streaming: false,
         images: m.images?.length ? m.images : undefined,
+        annotations: m.annotations,
         references: m.references?.length ? m.references : undefined,
         status: m.status || undefined,
         createdAt: m.createdAt,

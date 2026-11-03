@@ -25,7 +25,7 @@ import zaiLogo from '@/assets/provider-logos/zai.svg'
 import geminiLogo from '@/assets/provider-logos/gemini.svg'
 import hunyuanLogo from '@/assets/provider-logos/hunyuan.svg'
 import qianfanLogo from '@/assets/provider-logos/qianfan.svg'
-import { theme } from '@/lib/shared/theme'
+import { renderedTheme } from '@/lib/shared/theme'
 
 const props = withDefaults(
   defineProps<{
@@ -174,9 +174,9 @@ const logoKey = computed<LogoKey>(() => {
 })
 
 const label = computed(() => logoLabels[logoKey.value])
-const asset = computed(() => logoKey.value === 'kimi' && theme.value === 'dark' ? kimiDarkLogo : logoAssets[logoKey.value] ?? '')
+const asset = computed(() => logoKey.value === 'kimi' && renderedTheme.value === 'dark' ? kimiDarkLogo : logoAssets[logoKey.value] ?? '')
 const imageClasses = computed(() => ({
-  'provider-logo-image--invert': monochromeLogos.has(logoKey.value) && theme.value === 'dark',
+  'provider-logo-image--invert': monochromeLogos.has(logoKey.value) && renderedTheme.value === 'dark',
 }))
 </script>
 

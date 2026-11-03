@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,7 +16,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const maxPreviewChatText = 8 << 10
+const (
+	maxPreviewChatText       = 8 << 10
+	maxPreviewAttachmentData = ((50 << 20) + 2) / 3 * 4
+	maxPreviewChatRequest    = maxPreviewAttachmentData + (128 << 10)
+)
 
 // ManageAppPreviewShare mints or revokes a link to one registered app. Solo
 // scope comes from the owned session, never from a caller-supplied run ID.
@@ -189,7 +194,7 @@ func (h *Handlers) PublicAppPreviewSession(c *gin.Context) {
 	if !h.publicRateLimit(c, gateshare.RateBucketTicket) {
 		return
 	}
-	link, _ := h.publicAppShare(c)
+	link, sb := h.publicAppShare(c)
 	if link == nil {
 		return
 	}
@@ -214,24 +219,52 @@ func (h *Handlers) PublicAppPreviewSession(c *gin.Context) {
 		ticket = issued
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"ticket": ticket, "chatMode": link.PreviewChatMode,
+		"ticket": ticket, "chatMode": link.PreviewChatMode, "agentName": sb.Profile,
 		"iframePath": fmt.Sprintf("/public/approvals/preview-api/%s/", ticket),
 	})
 }
 
-func (h *Handlers) workflowPreviewDialogue(runID, nodeID string) (engine.PublicDialogueState, bool) {
+func (h *Handlers) workflowPreviewDialogue(runID, nodeID string) (engine.DialogueState, bool) {
 	run, ok := h.Runs.Get(runID)
 	if h.Eng == nil || !ok || run.Status != "waiting_human" || !services.IsShareableReviewSession(h.Runs.EffectiveNode(run, nodeID)) {
-		return engine.PublicDialogueState{}, false
+		return engine.DialogueState{}, false
 	}
-	state, ok := h.Eng.PublicDialogueSnapshot(runID, nodeID)
+	state, ok := h.Eng.DialogueSnapshot(runID, nodeID)
 	return state, ok && !state.Done && !state.Observe && state.Iteration > 0
 }
 
 type sharedPreviewRow struct {
-	ID   string `json:"id"`
-	Role string `json:"role"`
-	Text string `json:"text"`
+	ID          string                        `json:"id"`
+	Role        string                        `json:"role"`
+	Text        string                        `json:"text"`
+	At          string                        `json:"at,omitempty"`
+	Streaming   bool                          `json:"streaming,omitempty"`
+	Annotations []gateshare.PreviewAnnotation `json:"annotations,omitempty"`
+	Images      []models.PromptImage          `json:"images,omitempty"`
+	References  []models.MessageReference     `json:"references,omitempty"`
+}
+
+type previewChatMessage struct {
+	Text        string                    `json:"text"`
+	Annotations []models.ReactAnnotation  `json:"annotations"`
+	Images      []models.PromptImage      `json:"images"`
+	References  []services.ReferenceInput `json:"references"`
+}
+
+func (m *previewChatMessage) normalize() bool {
+	m.Text = strings.TrimSpace(m.Text)
+	m.Annotations = models.NormalizePreviewPicks(m.Annotations, 4)
+	total := 0
+	for _, image := range m.Images {
+		length := len(image.Data)
+		padding := length - len(strings.TrimRight(image.Data, "="))
+		if image.Ref != "" || length == 0 || length%4 != 0 || padding > 2 {
+			return false
+		}
+		total += base64.StdEncoding.DecodedLen(length) - padding
+	}
+	return total <= 50<<20 && len(m.Images) <= 16 && len(m.References) <= 5 &&
+		len(m.Text) <= maxPreviewChatText && (m.Text != "" || len(m.Annotations)+len(m.Images)+len(m.References) > 0)
 }
 
 // PublicAppPreviewMainChat shares the original transcript and turn queue.
@@ -249,7 +282,7 @@ func (h *Handlers) PublicAppPreviewMainChat(c *gin.Context) {
 		return
 	}
 	solo := sb.Purpose == services.SandboxPurposeSolo
-	var state engine.PublicDialogueState
+	var state engine.DialogueState
 	if !solo {
 		var active bool
 		state, active = h.workflowPreviewDialogue(link.RunID, link.NodeID)
@@ -271,12 +304,27 @@ func (h *Handlers) PublicAppPreviewMainChat(c *gin.Context) {
 				return
 			}
 			for _, row := range messages {
-				rows = append(rows, sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Content})
+				item := sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Content,
+					Streaming: strings.HasPrefix(row.ID, "live:"), Annotations: gateshare.SanitizeAnnotations(row.Annotations)}
+				if !row.CreatedAt.IsZero() {
+					item.At = row.CreatedAt.Format(time.RFC3339Nano)
+				}
+				if row.PreviewShared {
+					item.Images = previewAttachmentMetadata(row.Images)
+					item.References = row.References
+				}
+				rows = append(rows, item)
 			}
 			busy = active
 		} else {
-			for _, row := range state.Rows {
-				rows = append(rows, sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Text})
+			public := engine.PublicDialogue(state)
+			for i, row := range public.Rows {
+				item := sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Text, At: row.At, Streaming: row.Streaming, Annotations: row.Annotations}
+				if source := state.Rows[i]; source.PreviewShared {
+					item.Images = previewAttachmentMetadata(source.Images)
+					item.References = source.References
+				}
+				rows = append(rows, item)
 			}
 			busy = state.Busy
 		}
@@ -287,28 +335,30 @@ func (h *Handlers) PublicAppPreviewMainChat(c *gin.Context) {
 		c.JSON(http.StatusOK, result)
 		return
 	}
-	var body struct {
-		Text string `json:"text"`
-	}
+	var body previewChatMessage
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPreviewChatRequest)
 	if c.ShouldBindJSON(&body) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
 		return
 	}
-	text := strings.TrimSpace(body.Text)
-	if text == "" || len(text) > maxPreviewChatText {
+	if !body.normalize() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_message"})
 		return
 	}
-	var err error
 	if h.Shutdown != nil && h.Shutdown.IsDraining() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "unavailable"})
 		return
 	}
+	refs, err := h.prepareAppPreviewReferences(c.Request.Context(), link, sb, body.References)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if solo {
-		_, err = h.Solo.Send(sb.ThreadID, link.CreatedBy, text, nil)
+		err = h.Solo.SendPreview(sb.ThreadID, link.CreatedBy, body.Text, body.Images, refs, body.Annotations)
 	} else {
 		owner := pagebridge.TokenOwner("preview", link.TokenHash)
-		err = h.Eng.EnqueuePreviewShareTurn(owner, link.RunID, link.NodeID, text, link.Iteration)
+		err = h.Eng.EnqueuePreviewShareTurn(owner, link.RunID, link.NodeID, body.Text, body.Images, body.Annotations, refs, link.Iteration)
 	}
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "message not queued"})

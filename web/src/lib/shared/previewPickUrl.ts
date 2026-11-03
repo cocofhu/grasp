@@ -61,3 +61,44 @@ export function previewPickAnnotation(payload: AppPreviewPickPayload): ReactAnno
     outerHTML: clip(payload.outerHTML, PICK_HTML_MAX),
   }
 }
+
+
+export function appendPreviewPick(picks: ReactAnnotation[], payload: AppPreviewPickPayload, limit: number) {
+  if (picks.length >= limit) return
+  const pick = previewPickAnnotation({
+    ...payload,
+    selector: payload.selector.trim().slice(0, 1024),
+    url: payload.url?.slice(0, 2048),
+    tagName: payload.tagName.slice(0, 32),
+  })
+  if (pick.selector && !picks.some(row => row.selector === pick.selector && row.url === pick.url)) picks.push(pick)
+}
+
+/** Old preview clients saved a machine-generated footer inside the user's text. */
+export function readPreviewMessage(text: string, annotations?: ReactAnnotation[]) {
+  const message = { text, annotations: annotations || [] }
+  if (annotations?.length) return message
+  const marker = 'Selected page elements:\n'
+  const offset = text.lastIndexOf(marker)
+  if (offset < 0 || (offset > 0 && text.slice(offset - 2, offset) !== '\n\n')) return message
+  const lines = text.slice(offset + marker.length).trim().split('\n')
+  if (lines.length > 8) return message
+  const picks: ReactAnnotation[] = []
+  for (const line of lines) {
+    if (line.startsWith('{')) {
+      try {
+        const { selector, label } = JSON.parse(line) as ReactAnnotation
+        if (typeof selector !== 'string' || !selector || typeof label !== 'string') return message
+        picks.push({ selector, label })
+      } catch {
+        return message
+      }
+    } else {
+      const separator = line.startsWith('/') ? line.indexOf(' · ') : -1
+      const selector = (separator >= 0 ? line.slice(separator + 3) : line).trim()
+      if (!/^(?:[#.\[]\S|(?:body|html)(?:$|[.# >]))/.test(selector)) return message
+      picks.push({ selector, label: line })
+    }
+  }
+  return { text: text.slice(0, offset).trimEnd(), annotations: picks }
+}

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -18,7 +19,8 @@ import (
 )
 
 func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
-	bridge, _ := fakeACPServerFrames(t, providerTurnFrames("end_turn", "", "guest reply")...)
+	wireTurns := make(chan []byte, 2)
+	bridge, _ := fakeACPServerFramesOnChat(t, func(turn []byte) { wireTurns <- turn }, providerTurnFrames("end_turn", "", "guest reply")...)
 	defer bridge.Close()
 	target, err := url.Parse(bridge.URL)
 	if err != nil {
@@ -78,10 +80,20 @@ func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
 		if got := <-modelWrites; got != expected {
 			t.Fatalf("switched %q, want %q", got, expected)
 		}
-		result, err := client.ChatStreamResult(ctx, "guest prompt", nil, nil)
+		file := models.PromptImage{MimeType: "text/plain", Name: "guest.txt", Data: "Z3Vlc3Q="}
+		result, err := ChatPreviewGuestTurn(ctx, client, "guest prompt", []models.PromptImage{file}, nil)
 		closeChat()
 		if err != nil || result == nil || result.Narration != "guest reply" {
 			t.Fatalf("guest reply: %+v, %v", result, err)
+		}
+		var turn struct {
+			Images []models.PromptImage `json:"images"`
+		}
+		if err := json.Unmarshal(<-wireTurns, &turn); err != nil {
+			t.Fatal(err)
+		}
+		if len(turn.Images) != 1 || turn.Images[0].Data != file.Data || turn.Images[0].Name != file.Name || turn.Images[0].MimeType != file.MimeType {
+			t.Fatalf("bridge attachments: %+v", turn.Images)
 		}
 		if got := <-connected; got != expected {
 			t.Fatalf("connected to %q, want %q", got, expected)

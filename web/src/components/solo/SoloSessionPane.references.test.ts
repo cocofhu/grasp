@@ -141,7 +141,7 @@ describe('SoloSessionPane @ references', () => {
 
     await key(w, 'Enter')
     await flushPromises()
-    expect(box.send).toHaveBeenCalledWith('看看 @登录重构', [], [{ kind: 'solo', target: 's2', title: '登录重构' }])
+    expect(box.send).toHaveBeenCalledWith('看看 @登录重构', [], [{ kind: 'solo', target: 's2', title: '登录重构' }], [])
     expect(ta.value).toBe('')
   })
 
@@ -154,7 +154,7 @@ describe('SoloSessionPane @ references', () => {
     expect(w.find('[data-testid="solo-reference-picker"]').exists()).toBe(false)
     await key(w, 'Enter')
     await flushPromises()
-    expect(box.send).toHaveBeenCalledWith('a @b', [], [])
+    expect(box.send).toHaveBeenCalledWith('a @b', [], [], [])
   })
 
   it('turns a pasted GitHub URL into a short #n token and drops it on edit', async () => {

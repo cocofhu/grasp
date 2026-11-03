@@ -3543,6 +3543,7 @@
         "emptyChat": "可以从一条修改建议开始。",
         "message": "输入消息",
         "messageTooLong": "请缩短消息或移除部分取点。",
+        "attachmentLimit": "最多可添加 16 个附件，总大小不超过 50 MiB。",
         "chatUnavailable": "聊天暂时未连接。",
         "sendFailed": "这条消息未完成，请重试。",
         "loading": "正在打开共享预览…",

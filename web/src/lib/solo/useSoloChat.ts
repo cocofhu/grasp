@@ -3,14 +3,14 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch, type Ref } from 'vue
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import type { MessageReference, SoloMessage, SoloSession } from '@/lib/api/apiTypes'
-import type { ChatExecution, ClarifyImage } from '@/lib/shared/types'
+import type { ChatExecution, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './acpTurn'
 import { soloErrorText } from './soloErrors'
 import { useSoloSessions } from './useSoloSessions'
 
-export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; references?: MessageReference[]; local?: boolean }
+export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: MessageReference[]; local?: boolean }
 export type SoloPhase = '' | 'preparing' | 'running'
 export type SoloLink = 'idle' | 'connecting' | 'open' | 'reconnecting'
 
@@ -37,6 +37,7 @@ function queueItem(raw: any): SoloQueueItem {
     id: String(raw?.id ?? ''),
     text: String(raw?.text ?? ''),
     images: Array.isArray(raw?.images) ? raw.images : [],
+    ...(Array.isArray(raw?.annotations) && raw.annotations.length ? { annotations: raw.annotations } : {}),
     ...(Array.isArray(raw?.references) && raw.references.length ? { references: raw.references } : {}),
   }
 }
@@ -115,6 +116,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     text: string
     images: ClarifyImage[]
     references: MessageReference[]
+    annotations: ReactAnnotation[]
     started: boolean
   }
   // The local identity survives HTTP, queue acknowledgement and turn_begin.
@@ -232,6 +234,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   function samePayload(send: LocalSend, item: SoloQueueItem): boolean {
     const refs = item.references || []
     if (refs.length && (refs.length !== send.references.length || refs.some((ref, i) => ref.target !== send.references[i]!.target))) return false
+    const annotations = item.annotations || []
+    if (annotations.length !== send.annotations.length || annotations.some((pick, i) => pick.selector !== send.annotations[i]?.selector || pick.url !== send.annotations[i]?.url)) return false
     return send.text === item.text && send.images.length === item.images.length && send.images.every((image, i) => {
       const other = item.images[i]!
       if (image.mimeType !== other.mimeType) return false
@@ -308,7 +312,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const history = persistedHistory.slice()
     for (const user of history) {
       if (user.role !== 'user') continue
-      const send = adoptLocalSend({ id: user.id.slice(2), text: user.text, images: user.images || [] })
+      const send = adoptLocalSend({ id: user.id.slice(2), text: user.text, images: user.images || [], annotations: user.annotations })
       if (send) send.started = true
     }
     // A queue item can be removed in another viewer. Confirm its absence
@@ -415,6 +419,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       const shown = turns.value.find((x) => x.id === `u:${id}`)
       // The server copy carries the send-time access check; prefer it over the optimistic one.
       if (shown && item.references?.length) shown.references = item.references
+      if (shown && item.annotations?.length) shown.annotations = item.annotations
       if (!shown) {
         const started = existing.startedAt || new Date().toISOString()
         const user = {
@@ -427,6 +432,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
           streaming: false,
           images: item.images.length ? item.images : undefined,
           references: item.references,
+          annotations: item.annotations,
           createdAt: started,
         }
         const idx = turns.value.findIndex((x) => x.id === existing.id)
@@ -444,7 +450,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const next = turns.value.filter((x) => x.id !== `u:${id}` && x.id !== `live:${id}`)
     const firstPending = next.findIndex((turn) => openSends.some((row) => !row.started && turn.id === `u:${sendKey(row)}`))
     next.splice(firstPending < 0 ? next.length : firstPending, 0,
-      { id: `u:${id}`, role: 'user', text: item.text, tools: [], steps: [], plan: [], streaming: false, images: item.images.length ? item.images : undefined, references: item.references, createdAt: started },
+      { id: `u:${id}`, role: 'user', text: item.text, tools: [], steps: [], plan: [], streaming: false, images: item.images.length ? item.images : undefined, references: item.references, annotations: item.annotations, createdAt: started },
       emptyAgentTurn(`live:${id}`, true, started),
     )
     turns.value = next
@@ -814,15 +820,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     return `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   }
 
-  async function send(text: string, images: ClarifyImage[] = [], references: MessageReference[] = []) {
+  async function send(text: string, images: ClarifyImage[] = [], references: MessageReference[] = [], annotations: ReactAnnotation[] = []) {
     const id = sessionId.value
     const epoch = chatEpoch
-    if (!id || disposed || !canSend.value || (!text.trim() && !images.length && !references.length)) return false
+    if (!id || disposed || !canSend.value || (!text.trim() && !images.length && !references.length && !annotations.length)) return false
     actionError.value = ''
     const body = text.trim()
     const refs = references.length ? references : undefined
-    const local: SoloQueueItem = { id: newLocalId(), text: body, images, references: refs, local: true }
-    const send: LocalSend = { localId: local.id, text: body, images, references, started: false }
+    const local: SoloQueueItem = { id: newLocalId(), text: body, images, references: refs, annotations, local: true }
+    const send: LocalSend = { localId: local.id, text: body, images, references, annotations, started: false }
     openSends.push(send)
     const started = new Date().toISOString()
     // A send behind a running turn stays in the queue until its turn_begin,
@@ -840,6 +846,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
           streaming: false,
           images: images.length ? images : undefined,
           references: refs,
+          annotations,
           createdAt: started,
         },
         emptyAgentTurn(`live:${local.id}`, true, started),
@@ -850,7 +857,11 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     queued.value = [...queued.value, local]
     patchSession({ waiting: queued.value.length, busy: true })
     try {
-      await transport.sendSoloTurn(id, { text: body, images, ...(refs ? { references: refs.map(({ kind, target }) => ({ kind, target })) } : {}) })
+      await transport.sendSoloTurn(id, {
+        text: body, images,
+        ...(refs ? { references: refs.map(({ kind, target }) => ({ kind, target })) } : {}),
+        ...(annotations.length ? { annotations } : {}),
+      })
       return !disposed && epoch === chatEpoch && id === sessionId.value
     } catch (e: any) {
       if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
@@ -981,6 +992,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       id: target.id,
       text: target.text,
       images: target.images.map((image) => ({ ...image })),
+      ...(target.annotations?.length ? { annotations: target.annotations.map(pick => ({ ...pick })) } : {}),
       ...(target.references?.length ? { references: target.references.map((ref) => ({ ...ref })) } : {}),
     }
     return (await dropQueued(turnId)) ? copy : null

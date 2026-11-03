@@ -2,6 +2,8 @@ import { onBeforeUnmount, reactive, type Ref } from 'vue'
 import { api } from '@/lib/api/api'
 import type { GitHubReferenceCandidate, ReferenceSearchResult, SoloReferenceCandidate } from '@/lib/api/apiTypes'
 
+export type ScopedReferenceSearch = typeof api.searchSoloReferences
+
 export type ReferenceTab = 'all' | 'solo' | 'issue' | 'pr'
 export type GitHubStateFilter = 'open' | 'all'
 
@@ -25,8 +27,9 @@ function scopeKey(scope: ReferenceScope) {
   return `l:${scope.agent}:${scope.projects.join(',')}`
 }
 
-function fetchLane(scope: ReferenceScope, params: SearchParams, signal: AbortSignal, searchSolo: typeof api.searchSoloReferences) {
-  if ('sessionId' in scope) return searchSolo<any>(scope.sessionId, params, signal)
+function fetchLane(scope: ReferenceScope, params: SearchParams, signal: AbortSignal, scopedSearch?: ScopedReferenceSearch) {
+  if (scopedSearch) return scopedSearch<any>('sessionId' in scope ? scope.sessionId : '', params, signal)
+  if ('sessionId' in scope) return api.searchSoloReferences<any>(scope.sessionId, params, signal)
   if ('workflowId' in scope) return api.searchWorkflowReferences<any>(scope.workflowId, params, signal)
   if ('runId' in scope) return api.searchRunNodeReferences<any>(scope.runId, scope.nodeId, params, signal)
   return api.searchLaunchReferences<any>({ ...params, agent: scope.agent, projects: scope.projects }, signal)
@@ -62,7 +65,7 @@ function emptyLane<T>(): LaneState<T> {
  * and cached per query for five minutes. The previous results, hint or error
  * stay on screen until the new reply lands, so typing does not flash.
  */
-export function useReferenceSearch(scope: Ref<ReferenceScope>, searchSolo = api.searchSoloReferences) {
+export function useReferenceSearch(scope: Ref<ReferenceScope>, scopedSearch?: ScopedReferenceSearch, allowSolo = true) {
   const solo = reactive(emptyLane<SoloReferenceCandidate>()) as LaneState<SoloReferenceCandidate>
   const github = reactive(emptyLane<GitHubReferenceCandidate>()) as LaneState<GitHubReferenceCandidate>
   const lanes = { solo, github }
@@ -116,7 +119,7 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>, searchSolo = api.
       const abort = new AbortController()
       c.abort = abort
       try {
-        const data = await fetchLane(scope.value, { lane: name, ...params, page }, abort.signal, searchSolo)
+        const data = await fetchLane(scope.value, { lane: name, ...params, page }, abort.signal, scopedSearch)
         if (my !== c.seq) return
         if (page === 1) cache.set(key, { at: Date.now(), data })
         apply(lane, data, params.kind, page > 1)
@@ -151,7 +154,7 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>, searchSolo = api.
    */
   function search(q: string, tab: ReferenceTab, state: GitHubStateFilter) {
     const query = q.trim()
-    if (query.startsWith('#')) skip('solo')
+    if (!allowSolo || query.startsWith('#')) skip('solo')
     else run('solo', { q: query })
     run('github', { q: query, state, kind: tab === 'issue' ? 'github_issue' : tab === 'pr' ? 'github_pr' : undefined })
   }

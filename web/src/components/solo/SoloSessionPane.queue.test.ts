@@ -159,7 +159,9 @@ describe('SoloSessionPane queue', () => {
     expect(box.removeQueued).toHaveBeenCalledWith('qb')
   })
 
-  it('withdraws a queued message into the composer with its text, images and references', async () => {
+  it('withdraws a queued message into the composer with its text, images, references and picks', async () => {
+    const pick = { selector: '#headline', label: 'Headline' }
+    box.takeQueued.mockResolvedValueOnce({ id: 'qa', text: '修一下 @#3', images: [image], references: [issue], annotations: [pick] })
     const w = mountPane()
     await flushPromises()
     await rows(w)[1]!.find('[data-testid="clarify-queue-edit"]').trigger('click')
@@ -169,9 +171,10 @@ describe('SoloSessionPane queue', () => {
     expect(textarea(w).value).toBe('修一下 @#3')
     expect(w.findAll('[data-testid="solo-composer-references"] [data-testid="solo-reference-chip"]')).toHaveLength(1)
     expect(w.find('.pending-attach-remove').exists()).toBe(true)
+    expect(w.get('[data-testid="solo-preview-pick"]').text()).toBe('#headline')
     await w.find('[data-testid="solo-send"]').trigger('click')
     await flushPromises()
-    expect(box.send).toHaveBeenCalledWith('修一下 @#3', [image], [issue])
+    expect(box.send).toHaveBeenCalledWith('修一下 @#3', [image], [issue], [pick])
   })
 
   it('queues an unsent draft before withdrawing the target', async () => {

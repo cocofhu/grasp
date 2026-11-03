@@ -9,6 +9,7 @@ import (
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/textutil"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -17,7 +18,7 @@ import (
 const appPreviewGuestProtocol = "grasp-preview-guest"
 
 type previewGuestRequest struct {
-	Text            string  `json:"text"`
+	previewChatMessage
 	ModelID         *string `json:"modelId"`
 	ReasoningEffort string  `json:"reasoningEffort"`
 }
@@ -64,7 +65,7 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	conn.SetReadLimit(32 << 10)
+	conn.SetReadLimit(maxPreviewChatRequest)
 	configureEventHeartbeat(conn, eventPongWait)
 	ctx, cancel := context.WithDeadline(c.Request.Context(), link.ExpiresAt)
 	requests := make(chan previewGuestRequest, 1)
@@ -124,18 +125,27 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 				}
 				continue
 			}
-			prompt := request.Text
+			refs, err := h.prepareAppPreviewReferences(ctx, link, sb, request.References)
+			if err != nil {
+				writePreviewGuestUnavailable(conn, request)
+				continue
+			}
+			instruction := models.RenderAnnotatedPrompt(request.Text, request.Annotations)
+			if len(refs) > 0 {
+				instruction = h.Solo.RenderReferenceBlock(refs) + "\n\n" + instruction
+			}
+			prompt := instruction
 			if restoreHistory && len(history) > 0 {
 				prompt = "Earlier messages in this preview chat (context only):\n" +
 					strings.Join(history, "\n\n") + "\n\nCurrent user message:\n" + prompt
 			}
-			narration, completed, sent := writePreviewGuestTurn(ctx, cancel, conn, client, prompt)
+			narration, completed, sent := writePreviewGuestTurn(ctx, cancel, conn, client, prompt, request.Images)
 			if !sent {
 				return
 			}
 			if completed {
 				restoreHistory = false
-				history = append(history, "User: "+textutil.TruncateBytes(request.Text, 2048, "…")+
+				history = append(history, "User: "+textutil.TruncateBytes(instruction, 2048, "…")+
 					"\nAgent: "+textutil.TruncateBytes(narration, 2048, "…"))
 				if len(history) > 8 {
 					history = history[len(history)-8:]
@@ -160,12 +170,11 @@ func readPreviewGuestRequests(ctx context.Context, cancel context.CancelFunc, co
 		if err := conn.ReadJSON(&frame); err != nil {
 			return
 		}
-		frame.Text = strings.TrimSpace(frame.Text)
 		if frame.ModelID == nil {
-			if frame.Text == "" || len(frame.Text) > maxPreviewChatText {
+			if !frame.normalize() {
 				return
 			}
-		} else if frame.Text != "" || len(*frame.ModelID) > 512 || len(frame.ReasoningEffort) > 64 {
+		} else if frame.Text != "" || len(frame.Annotations)+len(frame.Images)+len(frame.References) != 0 || len(*frame.ModelID) > 512 || len(frame.ReasoningEffort) > 64 {
 			return
 		}
 		select {
@@ -196,9 +205,9 @@ func (h *Handlers) watchPreviewGuest(ctx context.Context, cancel context.CancelF
 	}
 }
 
-func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, client *sandbox.ACPClient, text string) (string, bool, bool) {
+func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, client *sandbox.ACPClient, text string, images []models.PromptImage) (string, bool, bool) {
 	last := time.Time{}
-	result, err := client.ChatStreamResult(ctx, text, nil, func(progress *sandbox.ChatResult) {
+	result, err := services.ChatPreviewGuestTurn(ctx, client, text, images, func(progress *sandbox.ChatResult) {
 		if time.Since(last) < 125*time.Millisecond {
 			return
 		}

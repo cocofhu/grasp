@@ -12,6 +12,7 @@ import (
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
+	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,10 +32,11 @@ type publicDecideBody struct {
 }
 
 type publicReplyBody struct {
-	Token       string                   `json:"token"`
-	Text        string                   `json:"text"`
-	Annotations []models.ReactAnnotation `json:"annotations"`
-	Images      []models.PromptImage     `json:"images"`
+	Token       string                    `json:"token"`
+	Text        string                    `json:"text"`
+	Annotations []models.ReactAnnotation  `json:"annotations"`
+	Images      []models.PromptImage      `json:"images"`
+	References  []services.ReferenceInput `json:"references"`
 	// Live is a Live variant request from the preview page; LiveCtx rides on
 	// a plain message while a Live session is open.
 	Live    *models.LiveEvent `json:"live"`
@@ -219,6 +221,19 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 	}
 	owner := h.publicTurnOwner(token, lane)
 	kind := publicShareKind(lookup)
+	var refs []models.MessageReference
+	if len(body.References) > 0 {
+		user, allowed := h.ownerEmbedUser(token, lookup.Link.RunID, lookup.Link.NodeID)
+		if !allowed || body.Live != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "reference_scope_unavailable"})
+			return
+		}
+		c.Set(soloEmbedUserKey, user)
+		refs, ok = h.prepareRunReferences(c, lookup.Link.RunID, lookup.Link.NodeID, body.References)
+		if !ok {
+			return
+		}
+	}
 	if body.Live != nil {
 		if !gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionLive) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许操作 Live 变体"})
@@ -237,7 +252,7 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 		return
 	}
 	text := strings.TrimSpace(body.Text)
-	if text == "" && len(body.Annotations) == 0 && len(body.Images) == 0 {
+	if text == "" && len(body.Annotations) == 0 && len(body.Images) == 0 && len(refs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty_reply", "message": "请填写修订意见或标注后再发送"})
 		return
 	}
@@ -247,14 +262,14 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 	}
 	if kind == models.ShareLinkKindReview {
 		allowLive := gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionLive)
-		if err := h.Eng.ReactReplyLiveCtxWithPermissionIDAs(owner, lookup.Link.RunID, lookup.Link.NodeID, body.ClientMessageID, text, body.Images, body.Annotations, body.LiveCtx, allowLive); err != nil {
+		if err := h.Eng.ReactReplyLiveCtxWithPermissionIDAs(owner, lookup.Link.RunID, lookup.Link.NodeID, body.ClientMessageID, text, body.Images, body.Annotations, body.LiveCtx, allowLive, refs...); err != nil {
 			h.writePublicReactErr(c, err)
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "accepted", "kind": models.ShareLinkKindReview})
 		return
 	}
-	if err := h.Eng.GateReactReviseIDAs(owner, lookup.Link.RunID, lookup.Link.NodeID, body.ClientMessageID, text, body.Images, body.Annotations); err != nil {
+	if err := h.Eng.GateReactReviseIDAs(owner, lookup.Link.RunID, lookup.Link.NodeID, body.ClientMessageID, text, body.Images, body.Annotations, refs...); err != nil {
 		h.writePublicReactErr(c, err)
 		return
 	}

@@ -375,15 +375,16 @@ func (h *Handlers) StartSoloTurn(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Text       string                    `json:"text"`
-		Images     []models.PromptImage      `json:"images"`
-		References []services.ReferenceInput `json:"references"`
+		Text        string                    `json:"text"`
+		Images      []models.PromptImage      `json:"images"`
+		Annotations []models.ReactAnnotation  `json:"annotations"`
+		References  []services.ReferenceInput `json:"references"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	waiting, err := h.Solo.SendWithReferences(c.Param("id"), user, body.Text, body.Images, body.References)
+	waiting, err := h.Solo.SendWithReferences(c.Param("id"), user, body.Text, body.Images, body.References, body.Annotations...)
 	if err != nil {
 		var se *services.SoloError
 		if errors.As(err, &se) {

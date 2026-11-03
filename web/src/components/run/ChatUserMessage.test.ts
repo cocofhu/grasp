@@ -82,6 +82,27 @@ describe('ChatUserMessage markdown', () => {
     w.unmount()
   })
 
+  it.each([
+    { text: '调整标题', annotations: [{ selector: '#title' }] },
+    { text: '调整标题\n\nSelected page elements:\n/page · #title' },
+    { text: '调整标题\n\nSelected page elements:\n{"selector":"#title","label":"/page · #title"}' },
+  ])('renders structured and legacy picks as separate chips', (props) => {
+    const w = mount(ChatUserMessage, {
+      props,
+      global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: {} })] },
+    })
+    expect(w.get('.chat-prose').text()).toBe('调整标题')
+    expect(w.get('[data-testid="chat-message-annotations"]').text()).toBe('#title')
+    w.unmount()
+  })
+
+  it('preserves a similar heading written as normal message text', () => {
+    const w = mount(ChatUserMessage, { props: { text: 'Selected page elements:\nA normal sentence' } })
+    expect(w.get('.chat-prose').text()).toContain('Selected page elements:')
+    expect(w.find('[data-testid="chat-message-annotations"]').exists()).toBe(false)
+    w.unmount()
+  })
+
   it('keeps tag-like characters inside a fenced code block', () => {
     const w = mount(ChatUserMessage, {
       props: { text: '```html\n<script>alert(1)</script>\n```' },

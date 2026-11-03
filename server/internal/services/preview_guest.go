@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
@@ -40,4 +41,19 @@ func (s *SandboxService) OpenPreviewGuest(ctx context.Context, row models.Sandbo
 		return nil, nil, err
 	}
 	return client, closeChat, nil
+}
+
+// ChatPreviewGuestTurn uses transient attachment storage for one visitor turn.
+func ChatPreviewGuestTurn(ctx context.Context, client *sandbox.ACPClient, prompt string, files []models.PromptImage, onProgress func(*sandbox.ChatResult)) (*sandbox.ChatResult, error) {
+	if len(files) > 0 {
+		store := blob.NewMemory()
+		var err error
+		files, err = blob.IngestPromptImages(ctx, store, files)
+		if err != nil {
+			return nil, err
+		}
+		client.WithBlobs(store)
+		defer client.WithBlobs(nil)
+	}
+	return client.ChatStreamResult(ctx, prompt, files, onProgress)
 }

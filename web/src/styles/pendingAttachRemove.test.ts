@@ -56,10 +56,10 @@ describe('pending attachment remove button colors', () => {
         click: '@click.stop="removeAttachment(ii)"',
       },
       {
-        file: 'components/solo/SoloSessionPane.vue',
+        file: 'components/chat/ChatAttachments.vue',
         radius: 'rounded-full',
         forbiddenRadius: ['rounded-none'],
-        click: '@click="attach.removeAttachment(ii)"',
+        click: '@click="$emit(\'remove\', index)"',
       },
       {
         file: 'components/pm/PmLeaderChat.vue',

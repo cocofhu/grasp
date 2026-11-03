@@ -268,8 +268,15 @@ func conversationMessage(row models.SoloMessage) mcp.ConversationHistoryMessage 
 	for i := range images {
 		images[i].Data = ""
 	}
-	return mcp.ConversationHistoryMessage{ID: row.ID, Role: row.Role, Content: row.Content, Status: row.Status,
+	return mcp.ConversationHistoryMessage{ID: row.ID, Role: row.Role, Content: soloHistoryContent(row), Status: row.Status,
 		Error: row.Error, Images: images, CreatedAt: row.CreatedAt, ToolResults: conversationTools(row.Events)}
+}
+
+func soloHistoryContent(row models.SoloMessage) string {
+	if len(row.Annotations) == 0 {
+		return row.Content
+	}
+	return models.RenderAnnotatedPrompt(row.Content, row.Annotations)
 }
 
 // Read only visible tool text/status from ACP updates, not the provider's raw
@@ -367,7 +374,7 @@ func renderUserInstructions(rows []models.SoloMessage, budget int, via string) s
 			omitted = i + 1
 			break
 		}
-		part := fmt.Sprintf("[用户要求 · %s] %s\n\n", row.ID, historyExcerpt(row.Content, min(2000, budget-200), via))
+		part := fmt.Sprintf("[用户要求 · %s] %s\n\n", row.ID, historyExcerpt(soloHistoryContent(row), min(2000, budget-200), via))
 		parts = append(parts, part)
 		budget -= len([]rune(part))
 	}
@@ -424,7 +431,7 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header stri
 			break
 		}
 		var part strings.Builder
-		content := historyExcerpt(strings.TrimSpace(row.Content), min(budget-200, 8000), ownHistoryTool)
+		content := historyExcerpt(strings.TrimSpace(soloHistoryContent(row)), min(budget-200, 8000), ownHistoryTool)
 		role := "用户"
 		if row.Role == "assistant" {
 			role = "助手"

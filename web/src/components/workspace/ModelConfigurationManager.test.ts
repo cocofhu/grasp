@@ -5,7 +5,7 @@ import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CredentialItem, ModelConfiguration, ModelConnection, ModelConnectionBody, ToolCapability } from '@/lib/api/api'
 import { vHoverInk } from '@/lib/shared/hoverInkDirective'
-import { theme } from '@/lib/shared/theme'
+import { renderedTheme, setThemeOverride } from '@/lib/shared/theme'
 import openaiLogo from '@/assets/provider-logos/openai.svg'
 import claudeLogo from '@/assets/provider-logos/claude.svg'
 import geminiLogo from '@/assets/provider-logos/gemini.svg'
@@ -689,7 +689,7 @@ describe('ModelConfigurationManager', () => {
 
   it('shows each API model brand in its options and selected primary and auxiliary slots', async () => {
     services = [{ ...service, providerId: 'tokenhub', models: [] }]
-    const initialKimiAsset = theme.value === 'dark' ? kimiDarkLogo : kimiLogo
+    const initialKimiAsset = renderedTheme.value === 'dark' ? kimiDarkLogo : kimiLogo
     const brands = [
       { id: 'gpt-5.5', name: 'GPT 5.5', vendor: 'openai', asset: openaiLogo },
       { id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro', vendor: 'kimi', asset: initialKimiAsset },
@@ -705,9 +705,8 @@ describe('ModelConfigurationManager', () => {
       const option = field.get(`[data-test="app-select-option-${brand.id}"]`)
       expect(option.get(`[data-vendor-mark="${brand.vendor}"] img`).attributes('src')).toBe(brand.asset)
     }
-    const previousTheme = theme.value
     try {
-      theme.value = 'dark'
+      setThemeOverride('dark')
       await flushPromises()
       expect(field.get('[data-vendor-mark="openai"] img').classes()).toContain('invert')
       expect(field.get('[data-vendor-mark="kimi"] img').attributes('src')).toBe(kimiDarkLogo)
@@ -718,7 +717,7 @@ describe('ModelConfigurationManager', () => {
         expect(mark.get('img').classes()).not.toContain('invert')
       }
     } finally {
-      theme.value = previousTheme
+      setThemeOverride(null)
     }
     await field.get('[data-test="app-select-option-gpt-5.5"]').trigger('click')
     expect(field.get('[data-test="app-select-trigger"] [data-vendor-mark="openai"] img').attributes('src')).toBe(openaiLogo)

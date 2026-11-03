@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Memory is an in-process Store for tests.
+// Memory is an in-process Store for transient data.
 type Memory struct {
 	mu   sync.Mutex
 	data map[string]memBlob

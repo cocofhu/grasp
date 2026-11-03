@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ReferenceInput } from '@/lib/api/apiTypes'
+import type { ScopedReferenceSearch } from '@/lib/solo/useReferenceSearch'
 import type { VisitModelTransport } from '@/components/run/VisitModelSelect.vue'
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -73,6 +75,7 @@ const props = defineProps<{
   /** Chat-only drawer mode: the credential comes from the embed session instead of `#t=`. */
   embedToken?: string
   modelTransport?: VisitModelTransport
+  referenceSearch?: ScopedReferenceSearch
   pageControlEnabled?: boolean
   requestPageContext?: () => Promise<EmbedLiveContext>
 }>()
@@ -1054,7 +1057,7 @@ async function submitFinal(kind: 'confirm' | 'reject', abortRunning = false) {
   }
 }
 
-async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[], candidateIntent = true, clientMessageId?: string): Promise<boolean> {
+async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[], candidateIntent = true, clientMessageId?: string, references?: ReferenceInput[]): Promise<boolean> {
   if ((candidateIntent && replyInFlight.value) || linkInvalid.value) return false
   errorText.value = ''
   refreshLocalChatBusy()
@@ -1068,7 +1071,7 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
       if (!showPageCandidateMode.value) throw new Error(t('pages.embedChat.live.previewUnavailable'))
       if (liveCtx && live.store.sessions[liveCtx.sid]?.state !== 'ready') throw new Error(t('pages.embedChat.live.pendingCandidates'))
     }
-    if (candidateIntent && chatOnly.value && pageCandidateMode.value && !liveCtx) {
+    if (candidateIntent && chatOnly.value && pageCandidateMode.value && !liveCtx && !references?.length) {
       const open = Object.values(live.store.sessions).filter((session) => session.mode !== 'steer' && isLiveOpen(session.state))
       if (open.some((session) => isLiveBusy(session.state))) throw new Error(t('pages.embedChat.live.candidatesBusy'))
       if (Array.from(text).length > 2000) throw new Error(t('pages.embedChat.live.promptTooLong'))
@@ -1083,6 +1086,7 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
       text,
       annotations: anns,
       images: images.map((im) => ({ data: im.data, mimeType: im.mimeType, name: im.name })),
+      ...(references?.length ? { references } : {}),
       ...(candidate ? { live: candidate } : { liveCtx, ...(clientMessageId ? { clientMessageId } : {}) }),
     })
     if (result.status !== 'accepted') {
@@ -1131,8 +1135,8 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
   return accepted
 }
 
-async function onLegacySend(text: string, images: ClarifyImage[], anns: ReactAnnotation[], clientMessageId?: string) {
-  if (!await onSend(text, images, anns, false, clientMessageId)) chatRef.value?.discardLastQueued?.(clientMessageId)
+async function onLegacySend(text: string, images: ClarifyImage[], anns: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]) {
+  if (!await onSend(text, images, anns, false, clientMessageId, references)) chatRef.value?.discardLastQueued?.(clientMessageId)
 }
 
 async function onCancel() {
@@ -1651,10 +1655,11 @@ defineExpose({
                   :key="publicConversationScope"
                   ref="chatRef"
                   :mode="composerMode"
-                  :send-request="chatOnly ? (text, images, anns, clientMessageId) => onSend(text, images, anns, true, clientMessageId) : undefined"
+                  :send-request="chatOnly ? (text, images, anns, clientMessageId, references) => onSend(text, images, anns, true, clientMessageId, references) : undefined"
                   run-id="public-share"
                   :node-id="PUBLIC_CHAT_NODE_ID"
-                  :references-enabled="false"
+                  :references-enabled="chatOnly && !!referenceSearch"
+                  :reference-search="referenceSearch"
                   :iteration="chatIteration"
                   v-model:draft="draft"
                   v-model:attachments="attachments"

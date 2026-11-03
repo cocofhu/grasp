@@ -25,7 +25,7 @@ import qianfanLogo from '@/assets/provider-logos/qianfan.svg'
 import openrouterLogo from '@/assets/provider-logos/openrouter.svg'
 import Icon from '@/components/ui/Icon.vue'
 import { monogramColor, vendorLabel, vendorLogoProvider } from '@/lib/agent/cliModelView'
-import { theme } from '@/lib/shared/theme'
+import { renderedTheme } from '@/lib/shared/theme'
 
 const props = withDefaults(
   defineProps<{
@@ -82,7 +82,7 @@ const assetKey = computed(() => (props.backend ? props.vendor : vendorLogoProvid
 const providerMonogram = computed(() => !props.backend && (props.vendor === 'opencode' || props.vendor === 'opencode-go'))
 const asset = computed(() => {
   if (props.unknown || providerMonogram.value) return ''
-  if ((assetKey.value === 'kimi' || assetKey.value === 'kimi_code') && theme.value === 'dark') return kimiDarkLogo
+  if ((assetKey.value === 'kimi' || assetKey.value === 'kimi_code') && renderedTheme.value === 'dark') return kimiDarkLogo
   return ASSETS[assetKey.value] || ''
 })
 const colorAsset = computed(() => COLOR_ASSETS.has(assetKey.value))
@@ -109,7 +109,7 @@ const radius = computed(() => (props.size >= 28 ? 9 : props.size >= 20 ? 6 : 4))
       alt=""
       aria-hidden="true"
       class="shrink-0 object-contain"
-      :class="[flat ? 'max-w-none' : '', theme === 'dark' && !colorAsset && assetKey !== 'kimi' ? 'invert' : '']"
+      :class="{ 'max-w-none': flat, invert: renderedTheme === 'dark' && !colorAsset && asset !== kimiDarkLogo }"
       :style="{ width: `${markPx}px`, height: `${markPx}px` }"
     />
     <span

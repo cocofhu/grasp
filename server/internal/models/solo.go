@@ -168,10 +168,12 @@ type SoloMessage struct {
 	ID        string `gorm:"primaryKey" json:"id"`
 	SessionID string `gorm:"index" json:"sessionId"`
 	// Role: user | assistant | system (system marks restarts).
-	Role    string            `json:"role"`
-	Content string            `json:"content"`
-	Images  []PromptImage     `gorm:"serializer:json" json:"images,omitempty"`
-	Events  []json.RawMessage `gorm:"serializer:json" json:"events,omitempty"`
+	Role          string            `json:"role"`
+	Content       string            `json:"content"`
+	Images        []PromptImage     `gorm:"serializer:json" json:"images,omitempty"`
+	Annotations   []ReactAnnotation `gorm:"serializer:json" json:"annotations,omitempty"`
+	PreviewShared bool              `json:"-"`
+	Events        []json.RawMessage `gorm:"serializer:json" json:"events,omitempty"`
 	// References are the contexts the user explicitly picked for this turn.
 	// They are the only authority read_reference accepts.
 	References []MessageReference `gorm:"column:message_references;serializer:json" json:"references,omitempty"`

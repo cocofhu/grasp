@@ -2096,10 +2096,10 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
         // Keep the pending ticket until the drawer reports a live session.
         // A login redirect destroys this page before the iframe can redeem it.
         startDrawer(
-          { origin: v.origin, run: frag.run, node: frag.node, open: !frag.shared, theme: frag.theme, lang: frag.lang || lang, shared: frag.shared },
+          { origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme, lang: frag.lang || lang, shared: frag.shared },
           frag.ticket,
         );
-        setDrawerOpen(!frag.shared);
+        setDrawerOpen(true);
       })
       .catch(recover);
   }

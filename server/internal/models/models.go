@@ -565,6 +565,8 @@ type ReactMessage struct {
 	// Images are optional base64 attachments the human sent with this turn.
 	// Persisted so the run detail can re-render thumbnails after a refresh.
 	Images []PromptImage `json:"images,omitempty"`
+	// PreviewShared permits attachment replay through the main preview share.
+	PreviewShared bool `json:"previewShared,omitempty"`
 	// Questions are structured multiple-choice questions the agent raised this
 	// turn via the ask_question MCP tool (clarify-only). Persisted so the UI can
 	// render selectable choices and re-render them after a refresh. Empty on a
@@ -701,6 +703,42 @@ func writePickContext(b *strings.Builder, a ReactAnnotation) {
 		html = clipRunes(strings.Join(strings.Fields(html), " "), annotationHTMLMaxRunes)
 		fmt.Fprintf(b, "   HTML: %s\n", html)
 	}
+}
+
+// NormalizePreviewPicks keeps only bounded DOM-pick fields from a preview chat.
+func NormalizePreviewPicks(picks []ReactAnnotation, limit int) []ReactAnnotation {
+	var out []ReactAnnotation
+	for _, pick := range picks {
+		selector := strings.TrimSpace(pick.Selector)
+		if selector == "" {
+			continue
+		}
+		out = append(out, ReactAnnotation{
+			Selector:  clipRunes(selector, 1024),
+			URL:       clipRunes(strings.TrimSpace(pick.URL), 2048),
+			Label:     clipRunes(strings.TrimSpace(pick.Label), 1024),
+			TagName:   clipRunes(strings.TrimSpace(pick.TagName), 32),
+			Text:      clipRunes(strings.Join(strings.Fields(pick.Text), " "), annotationTextMaxRunes),
+			OuterHTML: clipRunes(strings.TrimSpace(pick.OuterHTML), annotationHTMLMaxRunes),
+		})
+		if len(out) == limit {
+			break
+		}
+	}
+	return out
+}
+
+// RenderAnnotatedPrompt combines the display text and the Agent's pick context.
+func RenderAnnotatedPrompt(text string, anns []ReactAnnotation) string {
+	block := RenderAnnotations(anns)
+	text = strings.TrimSpace(text)
+	if block == "" {
+		return text
+	}
+	if text == "" {
+		return block + "\n(按上述标注修改)"
+	}
+	return block + "\n" + text
 }
 
 // RenderAnnotations renders review annotations into a structured prompt block

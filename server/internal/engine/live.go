@@ -321,8 +321,8 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text st
 
 // ReactReplyLiveCtxWithPermissionIDAs is ReactReplyLiveCtxWithPermissionAs
 // carrying the sender's optional clientMessageID with the queued turn.
-func (e *Engine) ReactReplyLiveCtxWithPermissionIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, allowLive bool) error {
-	return e.reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text, images, annotations, ctx, allowLive)
+func (e *Engine) ReactReplyLiveCtxWithPermissionIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, allowLive bool, refs ...models.MessageReference) error {
+	return e.reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text, images, annotations, ctx, allowLive, refs...)
 }
 
 // ReactReplyLiveCtxWithIDAs is ReactReplyLiveCtxAs carrying the sender's

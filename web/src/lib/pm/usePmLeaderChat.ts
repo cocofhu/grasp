@@ -1,3 +1,4 @@
+import { isChatNearBottom } from '@/lib/chat/chatScroll'
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
@@ -100,7 +101,7 @@ const historyLoadFailed = ref(false)
 let historyRetryNeedsScrollAway = false
 
 function isNearBottom(el: HTMLElement) {
-  return el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD
+  return isChatNearBottom(el, STICK_THRESHOLD)
 }
 
 function onScrollerScroll() {

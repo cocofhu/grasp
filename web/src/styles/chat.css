@@ -293,3 +293,14 @@ html.light :is(.chat-thread, .chat-composer) {
   .chat-thread .animate-spin, .chat-typing i { animation: none !important; }
   .chat-typing i { opacity: .65; }
 }
+
+
+/* Solo and app-preview drawers share the same conversation measure and inset. */
+.chat-pane { container: chat-pane / inline-size; }
+.chat-pane-column { width: 100%; max-width: 780px; min-width: 0; margin-inline: auto; }
+.chat-pane-transcript { padding: 24px 20px 32px; overflow-anchor: none; }
+.chat-pane-composer { padding-inline: 20px; }
+@container chat-pane (max-width: 640px) {
+  .chat-pane-transcript { padding: 18px 12px 24px; }
+  .chat-pane-composer { padding-inline: 12px; }
+}

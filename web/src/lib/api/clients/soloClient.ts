@@ -1,4 +1,4 @@
-import type { ClarifyImage } from '../../shared/types'
+import type { ClarifyImage, ReactAnnotation } from '../../shared/types'
 import { req, wsUrl } from '../httpCore'
 import type {
   Project,
@@ -16,9 +16,9 @@ import type { EmbedTicket } from '../../inbox/embedChat'
 
 const enc = encodeURIComponent
 
-type ReferenceSearchParams = { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }
+export type ReferenceSearchParams = { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }
 
-function referenceQuery(params: ReferenceSearchParams) {
+export function referenceQuery(params: ReferenceSearchParams) {
   const qs = new URLSearchParams({ lane: params.lane, q: params.q })
   if (params.kind) qs.set('kind', params.kind)
   if (params.state) qs.set('state', params.state)
@@ -37,7 +37,7 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
     setSoloSessionReasoningEffort: (id: string, reasoningEffort: string) =>
       req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
     listSoloMessages: (id: string) => req<SoloMessage[]>(`${path(id)}/messages`),
-    sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; references?: ReferenceInput[] }) =>
+    sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: ReferenceInput[] }) =>
       req<{ waiting: number }>(`${path(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
     searchSoloReferences: <T>(id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
       req<ReferenceSearchResult<T>>(`${path(id)}/references/search?${referenceQuery(params)}`, { signal }),
