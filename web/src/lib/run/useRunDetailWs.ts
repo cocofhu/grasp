@@ -3,6 +3,7 @@
  */
 import { nextTick, watch, type ComputedRef, type Ref } from 'vue'
 import { api } from '@/lib/api/api'
+import { applyRunLiveFrame, refreshRunLive } from '@/lib/run/runLiveCards'
 import { createPendingAcpBuffer } from '@/lib/run/pendingAcpBuffer'
 import { deliverOrBufferGateAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
@@ -488,6 +489,7 @@ export function useRunDetailWs(opts: {
       wsConnected = true
       wsReconnect.markOpened()
       heartbeat.touch()
+      if (opts?.fromReconnect) void refreshRunLive(id)
     }
     socket.onclose = () => {
       if (ws !== socket) return
@@ -507,6 +509,10 @@ export function useRunDetailWs(opts: {
       }
       if (m.type === 'dialogue') {
         ingestDialogue(m)
+        return
+      }
+      if (m.type === 'live') {
+        applyRunLiveFrame(m)
         return
       }
       if (m.type === 'node_enter') {

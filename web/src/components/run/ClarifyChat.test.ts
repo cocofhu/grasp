@@ -3390,3 +3390,228 @@ describe('ClarifyChat', () => {
     })
   })
 })
+
+describe('ClarifyChat read-only Live cards (main app chat)', () => {
+  const at = '2026-11-03T10:00:00Z'
+  const HINT = '[data-testid="live-variant-readonly-hint"]'
+
+  function readOnlyLive(sessions: Record<string, unknown>[] = []) {
+    const live = createLiveStore()
+    for (const s of sessions) live.apply(s)
+    const host = { store: live.store, interactive: false, command: vi.fn(), ensure: vi.fn() }
+    return { live, host }
+  }
+  const human = (text: string, live: NonNullable<ClarifyTurn['live']>): ClarifyTurn => ({ role: 'human', text, at, live })
+  const agent = (text: string, extra: Partial<ClarifyTurn> = {}): ClarifyTurn => ({ role: 'agent', text, at, ...extra })
+  const cards = (w: ReturnType<typeof mountChat>) => w.findAll('[data-testid="live-variant-card"]')
+  const head = (c: ReturnType<ReturnType<typeof mountChat>['find']>) => c.get('[data-testid="live-variant-headline"]').text()
+  const humanRows = (w: ReturnType<typeof mountChat>) => w.findAll('[data-testid="clarify-scroller"] [data-turn-role="human"]')
+  const agentCard = (w: ReturnType<typeof mountChat>) => w.find('[data-testid="live-variant-card"][data-side="agent"]')
+  const stateOf = (c: ReturnType<ReturnType<typeof mountChat>['find']>) => c.get('[data-testid="live-variant-state"]').text()
+
+  it('shows a card for every Live operation instead of hiding the message', () => {
+    const { host } = readOnlyLive([
+      { sid: 'gen001', state: 'ready', summary: 'div', count: 3, variants: [{ n: 1 }, { n: 2 }, { n: 3 }] },
+      { sid: 'gen002', state: 'ready', summary: 'button「提交」', count: 2 },
+      { sid: 'page01', state: 'generating', summary: '页面候选', count: 3 },
+      { sid: 'ins001', state: 'ready', mode: 'insert', summary: 'section「Hero」', count: 2 },
+      { sid: 'str001', state: 'refining', mode: 'steer', prompt: '整体更紧凑' },
+      { sid: 'ref001', state: 'refining', summary: 'div', variants: [{ n: 1 }, { n: 2 }] },
+      { sid: 'ref002', state: 'refining', summary: 'div', variants: [{ n: 1 }] },
+      { sid: 'acc001', state: 'accepting', variants: [{ n: 1, label: '卡片式' }] },
+      { sid: 'dis001', state: 'discarding' },
+      { sid: 'mnt001', state: 'failed', error: 'not mounted' },
+      { sid: 'mnt002', state: 'failed', mountAutoReported: true },
+    ])
+    const turns: ClarifyTurn[] = [
+      human('Live · 自由发挥 · 3 个变体 · div', { sid: 'gen001', op: 'generate', generated: true }),
+      human('Live · 自由发挥 · 2 个变体 · button「提交」:更活泼一点', { sid: 'gen002', op: 'generate', prompt: '更活泼一点', generated: true }),
+      human('首页加点动效', { sid: 'page01', op: 'generate' }),
+      human('Live · 在 section「Hero」 之后插入 · 2 个候选', { sid: 'ins001', op: 'insert', generated: true }),
+      human('Live · 整页调整:整体更紧凑', { sid: 'str001', op: 'steer', prompt: '整体更紧凑', generated: true }),
+      human('Live · 继续改变体 2:标题再大一点', { sid: 'ref001', op: 'refine', variant: 2, prompt: '标题再大一点', generated: true }),
+      human('Live · 再来 2 个变体', { sid: 'ref002', op: 'refine', generated: true }),
+      human('Live · 采用变体 1', { sid: 'acc001', op: 'accept', variant: 1, generated: true }),
+      human('Live · 放弃变体,恢复原样', { sid: 'dis001', op: 'discard', generated: true }),
+      human('Live · 页面没有渲染出变体', { sid: 'mnt001', op: 'mount_failed', generated: true }),
+      human('Live · 页面没有渲染出变体', { sid: 'mnt002', op: 'mount_failed', generated: true }),
+    ]
+    const w = mountChat({ turns, liveHost: host })
+    expect(humanRows(w)).toHaveLength(turns.length)
+    expect(cards(w).map(head)).toEqual([
+      '为div出 3 个候选',
+      '为「提交」出 2 个候选',
+      '为页面出 3 个候选',
+      '在「Hero」旁边插入 2 个候选',
+      '整页调整',
+      '继续改候选 2',
+      '再来几个候选',
+      '采用候选 1 · 卡片式',
+      '放弃候选，恢复原样',
+      '候选没有显示在页面上',
+      '候选没有显示在页面上',
+    ])
+    expect(w.text()).not.toContain('Live · ')
+    for (const prompt of ['更活泼一点', '整体更紧凑', '标题再大一点']) expect(w.text()).toContain(prompt)
+    expect(w.get('[data-testid="clarify-human-message"]').text()).toContain('首页加点动效')
+    w.unmount()
+  })
+
+  it('follows the session live: loading request, then a read-only result card under the reply', async () => {
+    const { live, host } = readOnlyLive([{ sid: 'gen001', state: 'generating', summary: 'div', count: 3 }])
+    const request = human('Live · 自由发挥 · 3 个变体 · div', { sid: 'gen001', op: 'generate', generated: true })
+    const w = mountChat({ turns: [request, agent('已生成 3 个候选')], liveHost: host })
+    expect(cards(w)).toHaveLength(1)
+    expect(stateOf(cards(w)[0])).toBe('生成中…')
+    expect(cards(w)[0].find(HINT).exists()).toBe(true)
+
+    live.apply({ sid: 'gen001', state: 'ready', summary: 'div', count: 3, mode: 'replace', variants: [{ n: 1, label: '卡片式' }, { n: 2, label: '紧凑列表' }, { n: 3, label: '分步引导' }] })
+    await flushPromises()
+    const result = agentCard(w)
+    expect(result.exists()).toBe(true)
+    expect(stateOf(result)).toBe('可以挑选')
+    const chips = result.findAll('[data-testid="live-variant-chip"]')
+    expect(chips.map((c) => c.text())).toEqual(['1 · 卡片式', '2 · 紧凑列表', '3 · 分步引导'])
+    expect(chips.every((c) => c.attributes('disabled') !== undefined)).toBe(true)
+    expect(result.get(HINT).text()).toBe('在预览页切换、采用或放弃候选')
+    for (const id of ['prev', 'next', 'mode', 'accept', 'discard']) expect(result.find(`[data-testid="live-variant-${id}"]`).exists()).toBe(false)
+    for (const b of result.findAll('button')) await b.trigger('click')
+    expect(host.command).not.toHaveBeenCalled()
+    expect(cards(w).filter((c) => c.find(HINT).exists())).toHaveLength(1)
+    w.unmount()
+
+    const streaming = mountChat({ turns: [request, agent('已生成', { streaming: true })], liveHost: host })
+    expect(agentCard(streaming).exists()).toBe(false)
+    streaming.unmount()
+  })
+
+  it('shows the adopted candidate after an accept, without a result card', () => {
+    const { host } = readOnlyLive([{ sid: 'gen001', state: 'accepted', selected: 2, summary: 'div', variants: [{ n: 1 }, { n: 2, label: '紧凑列表' }] }])
+    const w = mountChat({
+      turns: [
+        human('Live · 自由发挥 · 3 个变体 · div', { sid: 'gen001', op: 'generate', generated: true }),
+        agent('已生成 2 个候选'),
+        human('Live · 采用变体 2', { sid: 'gen001', op: 'accept', variant: 2, generated: true }),
+        agent('已把候选 2 写回源码'),
+      ],
+      liveHost: host,
+    })
+    expect(agentCard(w).exists()).toBe(false)
+    const [gen, acc] = cards(w)
+    expect(gen.text()).toContain('最终采用了候选 2')
+    expect(head(acc)).toBe('采用候选 2 · 紧凑列表')
+    expect(stateOf(acc)).toBe('已写入代码')
+    expect(w.find(HINT).exists()).toBe(false)
+    w.unmount()
+  })
+
+  describe('discard entries', () => {
+    const gen = (sid: string) => human('Live · 自由发挥 · 3 个变体 · div', { sid, op: 'generate', generated: true })
+    const discard = (sid: string) => human('Live · 放弃变体,恢复原样', { sid, op: 'discard', generated: true })
+
+    it('a single discard (card or page overlay) updates from restoring to restored', async () => {
+      const { live, host } = readOnlyLive([{ sid: 'gen001', state: 'discarding', summary: 'div', variants: [{ n: 1 }, { n: 2 }] }])
+      const w = mountChat({ turns: [gen('gen001'), agent('已生成 2 个候选'), discard('gen001')], liveHost: host })
+      expect(cards(w)).toHaveLength(2)
+      const card = () => cards(w)[1]
+      expect(head(card())).toBe('放弃候选，恢复原样')
+      expect(stateOf(card())).toBe('正在恢复原样…')
+      expect(agentCard(w).exists()).toBe(false)
+      expect(cards(w)[0].find('[data-testid="live-variant-chip"]').exists()).toBe(false)
+      live.apply({ sid: 'gen001', state: 'discarded', summary: 'div' })
+      await flushPromises()
+      expect(stateOf(card())).toBe('已恢复原样')
+      expect(w.find(HINT).exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('discard all shows one card per session with its own state', async () => {
+      const { live, host } = readOnlyLive([
+        { sid: 'genA01', state: 'discarding', summary: 'div' },
+        { sid: 'genB01', state: 'discarding', summary: 'div' },
+      ])
+      const w = mountChat({
+        turns: [gen('genA01'), agent('A 好了'), gen('genB01'), agent('B 好了'), discard('genA01'), discard('genB01')],
+        liveHost: host,
+      })
+      const discards = () => cards(w).filter((c) => head(c) === '放弃候选，恢复原样')
+      expect(discards()).toHaveLength(2)
+      live.apply({ sid: 'genA01', state: 'discarded', summary: 'div' })
+      await flushPromises()
+      expect(discards().map(stateOf)).toEqual(['已恢复原样', '正在恢复原样…'])
+      expect(agentCard(w).exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('regenerating from the original shows the automatic discard before the new request', () => {
+      const { host } = readOnlyLive([
+        { sid: 'page01', state: 'discarded', summary: '页面候选' },
+        { sid: 'page02', state: 'generating', summary: '页面候选', count: 3 },
+      ])
+      const w = mountChat({
+        turns: [
+          human('首页加点动效', { sid: 'page01', op: 'generate' }),
+          agent('已生成 3 个候选'),
+          discard('page01'),
+          human('再换一版', { sid: 'page02', op: 'generate' }),
+        ],
+        liveHost: host,
+      })
+      const rows = humanRows(w)
+      expect(rows).toHaveLength(3)
+      expect(head(rows[1].get('[data-testid="live-variant-card"]'))).toBe('放弃候选，恢复原样')
+      expect(rows[2].text()).toContain('再换一版')
+      expect(head(rows[2].get('[data-testid="live-variant-card"]'))).toBe('为页面出 3 个候选')
+      w.unmount()
+    })
+
+    it('closing a failed page adjustment only changes the card state', async () => {
+      const { live, host } = readOnlyLive([{ sid: 'str001', state: 'failed', mode: 'steer', prompt: '整体更紧凑', error: 'compile failed' }])
+      const w = mountChat({
+        turns: [human('Live · 整页调整:整体更紧凑', { sid: 'str001', op: 'steer', prompt: '整体更紧凑', generated: true }), agent('编译失败')],
+        liveHost: host,
+      })
+      expect(cards(w)).toHaveLength(2)
+      expect(agentCard(w).find(HINT).exists()).toBe(true)
+      live.apply({ sid: 'str001', state: 'discarded', mode: 'steer', prompt: '整体更紧凑' })
+      await flushPromises()
+      expect(humanRows(w)).toHaveLength(1)
+      expect(cards(w)).toHaveLength(2)
+      expect(agentCard(w).attributes('data-state')).toBe('discarded')
+      expect(stateOf(agentCard(w))).toBe('已恢复原样')
+      expect(w.find(HINT).exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('a failed discard shows the error and points to the preview page', () => {
+      const { host } = readOnlyLive([{ sid: 'gen001', state: 'failed', summary: 'div', error: '放弃后源码里仍有预览标记' }])
+      const w = mountChat({ turns: [gen('gen001'), agent('已生成'), discard('gen001')], liveHost: host })
+      const card = cards(w)[1]
+      expect(stateOf(card)).toBe('没有完成')
+      expect(card.get('[data-testid="live-variant-error"]').text()).toContain('放弃后源码里仍有预览标记')
+      expect(card.find(HINT).exists()).toBe(true)
+      w.unmount()
+    })
+  })
+
+  it('still shows cards when the sessions are not loaded', () => {
+    const { host } = readOnlyLive()
+    const w = mountChat({
+      turns: [
+        human('Live · 自由发挥 · 3 个变体 · div', { sid: 'gen001', op: 'generate', generated: true }),
+        agent('已生成'),
+        human('Live · 采用变体 1', { sid: 'gen002', op: 'accept', variant: 1, generated: true }),
+        human('Live · 放弃变体,恢复原样', { sid: 'gen003', op: 'discard', generated: true }),
+      ],
+      liveHost: host,
+    })
+    expect(humanRows(w)).toHaveLength(3)
+    expect(cards(w).map(head)).toEqual(['为页面出 3 个候选', '采用候选 1', '放弃候选，恢复原样'])
+    expect(w.find('[data-testid="live-variant-state"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('Live · ')
+    expect(host.ensure).toHaveBeenCalledWith('gen001')
+    expect(host.ensure).toHaveBeenCalledWith('gen002')
+    expect(host.ensure).toHaveBeenCalledWith('gen003')
+    w.unmount()
+  })
+})

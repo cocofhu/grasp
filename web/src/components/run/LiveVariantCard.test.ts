@@ -113,7 +113,7 @@ describe('LiveVariantCard', () => {
     const live = readyStore()
     const w = mountCard({ sid: 'sid001', op: 'generate' }, { store: live.store, interactive: false, command: vi.fn() })
     expect(w.find('[data-testid="live-variant-accept"]').exists()).toBe(false)
-    expect(w.text()).toContain('在预览页中')
+    expect(w.get('[data-testid="live-variant-readonly-hint"]').text()).toBe('在预览页切换、采用或放弃候选')
     live.apply({ sid: 'sid001', state: 'failed', error: 'no source' })
     await w.vm.$nextTick()
     expect(w.get('[data-testid="live-variant-error"]').text()).toContain('no source')
@@ -217,5 +217,120 @@ describe('LiveVariantCard', () => {
     expect(head(page)).toBe('为页面出 4 个候选')
     expect(page.get('[data-testid="live-variant-state"]').text()).toBe('正在写入代码…')
     page.unmount()
+  })
+
+  describe('read-only host (main app chat)', () => {
+    const HINT = '[data-testid="live-variant-readonly-hint"]'
+
+    function readOnly(live = readyStore()) {
+      return { store: live.store, interactive: false, command: vi.fn(), ensure: vi.fn() }
+    }
+
+    it('disables candidates and the original and never sends a command', async () => {
+      const live = readyStore()
+      live.apply({ sid: 'sid001', state: 'ready', mode: 'replace', summary: 'section「Dispatch」', variants: [{ n: 1 }, { n: 2 }] })
+      live.setView('sid001', { current: 1, mode: 'inplace' })
+      const host = readOnly(live)
+      const w = mountCard({ sid: 'sid001', op: 'generate' }, host)
+      const chips = w.findAll('[data-testid="live-variant-chip"]')
+      expect(chips).toHaveLength(2)
+      expect(chips.every((c) => c.attributes('disabled') !== undefined)).toBe(true)
+      expect(w.get('[data-testid="live-variant-original"]').attributes('disabled')).toBeDefined()
+      for (const el of w.findAll('button')) await el.trigger('click')
+      expect(host.command).not.toHaveBeenCalled()
+      for (const id of ['prev', 'next', 'mode', 'accept', 'discard', 'retry', 'retry-accept']) {
+        expect(w.find(`[data-testid="live-variant-${id}"]`).exists()).toBe(false)
+      }
+      expect(w.get(HINT).text()).toBe('在预览页切换、采用或放弃候选')
+      w.unmount()
+    })
+
+    it('shows the hint only while the session is open', async () => {
+      const live = readyStore()
+      const w = mountCard({ sid: 'sid001', op: 'generate' }, readOnly(live))
+      for (const state of ['generating', 'ready', 'refining', 'failed']) {
+        live.apply({ sid: 'sid001', state, summary: 'section「Dispatch」' })
+        await w.vm.$nextTick()
+        expect(w.find(HINT).exists(), state).toBe(true)
+      }
+      for (const state of ['accepted', 'discarded', 'done']) {
+        live.apply({ sid: 'sid001', state, summary: 'section「Dispatch」' })
+        await w.vm.$nextTick()
+        expect(w.find(HINT).exists(), state).toBe(false)
+      }
+      w.unmount()
+    })
+
+    it('keeps accept and discard cards quiet unless they failed', async () => {
+      const live = readyStore()
+      for (const op of ['accept', 'discard']) {
+        live.apply({ sid: 'sid001', state: op === 'accept' ? 'accepting' : 'discarding' })
+        const w = mountCard({ sid: 'sid001', op, variant: 1 }, readOnly(live))
+        expect(w.find(HINT).exists(), op).toBe(false)
+        live.apply({ sid: 'sid001', state: 'failed', error: '放弃后源码里仍有预览标记' })
+        await w.vm.$nextTick()
+        expect(w.get('[data-testid="live-variant-state"]').text()).toBe('没有完成')
+        expect(w.get('[data-testid="live-variant-error"]').text()).toContain('放弃后源码里仍有预览标记')
+        expect(w.find(HINT).exists(), op).toBe(true)
+        expect(w.find('[data-testid="live-variant-retry-accept"]').exists()).toBe(false)
+        w.unmount()
+      }
+    })
+
+    it('hides the hint on compact cards but keeps it on the loading request', () => {
+      const live = readyStore()
+      live.apply({ sid: 'sid001', state: 'generating' })
+      const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
+      const mountWith = (props: Record<string, unknown>) =>
+        mount(LiveVariantCard, {
+          props: { liveRef: { sid: 'sid001', op: 'generate' }, ...props },
+          global: { plugins: [i18n], provide: { [LIVE_CARD_HOST as symbol]: readOnly(live) } },
+        })
+      const compact = mountWith({ compact: true })
+      expect(compact.find(HINT).exists()).toBe(false)
+      compact.unmount()
+      const loading = mountWith({ compact: true, loading: true })
+      expect(loading.find(HINT).exists()).toBe(true)
+      loading.unmount()
+    })
+
+    it('asks the host for a missing session and falls back to the request headline', async () => {
+      const live = createLiveStore()
+      const host = readOnly(live)
+      const heads: Record<string, string> = {
+        generate: '为页面出 3 个候选',
+        insert: '在页面旁边插入 3 个候选',
+        steer: '整页调整',
+        refine: '继续改候选 2',
+        accept: '采用候选 2',
+        discard: '放弃候选，恢复原样',
+        mount_failed: '候选没有显示在页面上',
+      }
+      for (const [op, head] of Object.entries(heads)) {
+        const w = mountCard({ sid: 'miss01', op, variant: 2 }, host)
+        expect(w.get('[data-testid="live-variant-headline"]').text()).toBe(head)
+        expect(w.find('[data-testid="live-variant-state"]').exists()).toBe(false)
+        expect(w.find(HINT).exists()).toBe(false)
+        w.unmount()
+      }
+      expect(host.ensure).toHaveBeenCalledWith('miss01')
+      host.ensure.mockClear()
+      const w = mountCard({ sid: 'miss01', op: 'generate' }, host)
+      live.apply({ sid: 'miss01', state: 'ready', variants: [{ n: 1 }] })
+      await w.vm.$nextTick()
+      expect(w.get('[data-testid="live-variant-state"]').text()).toBe('可以挑选')
+      expect(host.ensure).toHaveBeenCalledTimes(1)
+      w.unmount()
+    })
+
+    it('does not ask the drawer host or a present session', () => {
+      const host = readOnly()
+      const w = mountCard({ sid: 'sid001', op: 'generate' }, host)
+      expect(host.ensure).not.toHaveBeenCalled()
+      w.unmount()
+      const drawer = mountCard({ sid: 'miss01', op: 'generate' }, { store: createLiveStore().store, interactive: true, command: vi.fn() })
+      expect(drawer.find(HINT).exists()).toBe(false)
+      drawer.unmount()
+    })
   })
 })

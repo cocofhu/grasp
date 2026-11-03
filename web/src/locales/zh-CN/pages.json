@@ -4580,7 +4580,7 @@
         "retryAccept": "重试采用",
         "steerPartial": "关闭失败请求会保留已有改动。",
         "goto": "跳到候选 {n}",
-        "openInPreview": "在预览页中切换、采用或放弃这组候选。",
+        "readOnlyHint": "在预览页切换、采用或放弃候选",
         "discardAll": "全部放弃",
         "cleanupAll": "清理未完成请求",
         "discardAllDone": "已请求清理 {n} 个 Live 请求",

@@ -464,6 +464,9 @@ export const runsClient = {
     req<{ status: string }>(`/runs/${runId}/nodes/${nodeId}/preview-issues/${issueId}`, {
       method: 'DELETE',
     }),
+  /** Node Live variant sessions (newest first); raw sessions, parse with parseLiveSession. */
+  liveSessions: (runId: string, nodeId: string) =>
+    req<{ enabled?: boolean; sessions?: unknown[] }>(`/runs/${runId}/nodes/${encodeURIComponent(nodeId)}/live-sessions`),
   /** One-shot ticket for the direct-preview chat drawer (see lib/inbox/embedChat). */
   embedTicket: (runId: string, nodeId: string) =>
     req<EmbedTicket>(`/runs/${runId}/nodes/${nodeId}/embed-ticket`, { method: 'POST' }),

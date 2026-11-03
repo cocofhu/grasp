@@ -286,7 +286,7 @@ function isLiveCardText(t: ClarifyTurn): boolean {
   return !!t.live && (t.live.generated === true || /^Live · /.test(t.text || ''))
 }
 
-/** Only the preview drawer can drive candidates; elsewhere Live cards are not shown. */
+/** The preview drawer drives candidates; main app chats get a read-only host; share pages have none. */
 const liveHost = inject(LIVE_CARD_HOST, null)
 
 /** Human bubble text: generated Live text falls back to the user's prompt without a card. */

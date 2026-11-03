@@ -18,6 +18,7 @@ import ReactConnectingState from '@/components/run/ReactConnectingState.vue'
 import { addClarifyAnnotation } from '@/lib/inbox/useClarifyDraft'
 import { useToast } from '@/lib/composables/useToast'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { useRunLiveCardHost } from '@/lib/run/runLiveCards'
 import type {
   ClarifyImage,
   ClarifyTurn,
@@ -78,6 +79,7 @@ const annotations = defineModel<ReactAnnotation[]>('annotations', { default: () 
 
 const { t } = useI18n()
 const toast = useToast()
+useRunLiveCardHost(() => props.runId, () => props.clarify?.nodeId || props.nodeId)
 
 const reviewShellRef = ref<{
   playConfirmCeremony?: () => Promise<void>

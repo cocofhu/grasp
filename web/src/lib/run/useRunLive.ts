@@ -3,6 +3,7 @@ import { replyTail } from '@/lib/run/replyTail'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
+import { applyRunLiveFrame, refreshRunLive } from '@/lib/run/runLiveCards'
 import { useToast } from '@/lib/composables/useToast'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { nodeConversationPath } from '@/lib/run/nodeConversation'
@@ -535,6 +536,10 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       ingestDialogue(m)
       return
     }
+    if (m.type === 'live') {
+      applyRunLiveFrame(m)
+      return
+    }
     if (m.type === 'node_enter') {
       const frame = m as { nodeId?: string; name?: string; mode?: string }
       reviewState.noteVisit(frame.nodeId ?? nodeId.value)
@@ -595,6 +600,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if (ws !== socket || !currentVisit(visit, id)) return
       reconnect.markOpened()
       heartbeat.touch()
+      if (recovering) void refreshRunLive(id)
     }
     socket.onmessage = (ev) => {
       if (ws !== socket || !currentVisit(visit, id)) return

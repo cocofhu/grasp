@@ -4,6 +4,7 @@ import { takeoverTask } from '@/lib/run/takeoverTimeline'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
+import { applyRunLiveFrame, refreshRunLive } from '@/lib/run/runLiveCards'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { readClarifyStash } from '@/lib/inbox/clarifyDraftStash'
 import { beginClarifySend, failClarifySend, handleClarifyVisitEnded } from '@/lib/inbox/clarifyVisitEnded'
@@ -451,7 +452,7 @@ let followSawNodeEnter = false
 const followReconnect = createWsReconnectController({
   connect: () => {
     const id = followTail.value?.runId
-    if (id) openFollowWs(id)
+    if (id) openFollowWs(id, undefined, true)
   },
   shouldReconnect: () => {
     const ft = followTail.value
@@ -486,7 +487,7 @@ function followWsLive(runId: string): boolean {
 }
 /** Graph captured when the handoff socket opens, so a later enter can skip plumbing after the inbox run is cleared. */
 let followGraphNodes: Parameters<typeof applySidebarEnter>[2]
-function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter>[2]) {
+function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter>[2], fromReconnect = false) {
   if (nodes) followGraphNodes = nodes
   if (followWsLive(runId)) return
   closeFollowWs()
@@ -506,6 +507,7 @@ function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter
     if (followWs !== ws) return
     followReconnect.markOpened()
     followHeartbeat.touch()
+    if (fromReconnect) void refreshRunLive(runId)
   }
   ws.onmessage = (ev) => {
     if (followWs !== ws) return
@@ -528,7 +530,8 @@ function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter
     } catch {
       return
     }
-    if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
+    if (m.type === 'live') applyRunLiveFrame(m)
+    else if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
     else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
     else if (m.type === 'status') {
       noteSidebarRunStatus(runId, (m as { status?: unknown }).status)
@@ -2608,6 +2611,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     if (activeRunWs !== socket) return
     activeRunHeartbeat.touch()
     activeRunWsReconnect.markOpened()
+    if (opts?.fromReconnect) void refreshRunLive(runId)
   }
   socket.onmessage = (ev) => {
     if (activeRunWs !== socket) return
@@ -2635,6 +2639,10 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     }
     if (m.type === 'dialogue') {
       ingestDialogue(m)
+      return
+    }
+    if (m.type === 'live') {
+      applyRunLiveFrame(m)
       return
     }
     if (m.type === 'heartbeat') {
