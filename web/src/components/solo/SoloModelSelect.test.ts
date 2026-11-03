@@ -10,7 +10,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import type { ConfiguredModelChoice } from '@/lib/solo/configuredModels'
 import kimiLogo from '@/assets/provider-logos/kimi.svg'
 import kimiDarkLogo from '@/assets/provider-logos/kimi-dark.svg'
-import { theme } from '@/lib/shared/theme'
+import { renderedTheme } from '@/lib/shared/theme'
 import SoloModelSelect from './SoloModelSelect.vue'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -54,7 +54,7 @@ describe('SoloModelSelect', () => {
     const wrapper = mountSelect()
     expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).toContain('Kimi')
     expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).not.toContain('kimi-k3.1-pro')
-    const asset = theme.value === 'dark' ? kimiDarkLogo : kimiLogo
+    const asset = renderedTheme.value === 'dark' ? kimiDarkLogo : kimiLogo
     expect(wrapper.get('[data-testid="solo-model-select-trigger"] [data-vendor-mark="kimi"] img').attributes('src')).toBe(asset)
     await open(wrapper)
     expect(element('solo-model-option-kimi-k3.1-pro')?.textContent).toContain('Kimi')

@@ -9,7 +9,7 @@ const previewModelCatalog = {
     id: 'shared-config', name: 'Shared models', state: 'active', backend: 'claude_code',
     binding: { kind: 'platform', modelId: 'model-a', auxiliaryModelIds: ['model-b'] },
   }],
-  cliModels: { claude_code: [{ id: 'model-a', name: 'Model A' }, { id: 'model-b', name: 'Model B' }] },
+  cliModels: { claude_code: [{ id: 'model-a', name: 'Model A', vendor: 'anthropic' }, { id: 'model-b', name: 'Model B', vendor: 'google' }] },
 }
 const previewIssue = { kind: 'github_issue' as const, target: 'acme/web#12', title: 'Improve the heading', number: 12, repo: 'acme/web', url: 'https://github.com/acme/web/issues/12', state: 'open' }
 
@@ -189,6 +189,7 @@ test('a signed-in workflow preview uses the regular chat model and reference pic
   const key = 'entry-model-picker'
   const runId = 'live-e2e-' + key
   const modelPath = grasp + '/embed-api/runs/' + runId + '/nodes/preview'
+  await page.addInitScript(() => localStorage.setItem('grasp-theme', 'dark'))
   await page.request.post(`${grasp}/__e2e/live/reset?key=${key}&caps=review`)
   await page.route(grasp + '/embed-api/session', async (route) => {
     const response = await route.fetch()
@@ -214,7 +215,24 @@ test('a signed-in workflow preview uses the regular chat model and reference pic
   await page.goto(`${grasp}/live-variants.html?key=${key}`)
   const chat = page.frameLocator('grasp-preview-pick [data-role="drawer"] iframe')
   await expect(chat.getByTestId('clarify-attach-btn')).toBeVisible({ timeout: 15_000 })
-  await choosePreviewModel(chat, 'model-b', 'Model B')
+  const picker = chat.getByTestId('solo-model-select')
+  await picker.getByRole('button', { name: 'Model A' }).click()
+  const claudeTrigger = picker.locator('[data-vendor-mark="anthropic"] img')
+  const claudeOption = chat.getByTestId('solo-model-option-model-a').locator('img')
+  const geminiOption = chat.getByTestId('solo-model-option-model-b')
+  const themeButton = page.locator('grasp-preview-pick [data-role="drawer-theme"]')
+  await expect(chat.locator('html')).not.toHaveClass(/\blight\b/)
+  await themeButton.click()
+  await expect(chat.locator('html')).toHaveClass(/\blight\b/)
+  await expect(claudeTrigger).toHaveCSS('filter', 'none')
+  await expect(claudeOption).toHaveCSS('filter', 'none')
+  await expect(geminiOption.locator('img')).toHaveCSS('filter', 'none')
+  await themeButton.click()
+  await expect(claudeTrigger).toHaveCSS('filter', 'invert(1)')
+  await expect(claudeOption).toHaveCSS('filter', 'invert(1)')
+  await expect(geminiOption.locator('img')).toHaveCSS('filter', 'none')
+  await geminiOption.click()
+  await expect(picker).toContainText('Model B')
   expect(saved).toEqual({ iteration: 1, configurationId: 'shared-config', modelId: 'model-b', reasoningEffort: '' })
   const input = chat.getByTestId('clarify-input')
   await input.fill('Please check @')

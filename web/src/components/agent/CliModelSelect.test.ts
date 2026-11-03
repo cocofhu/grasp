@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { CliCatalogModel } from '@/lib/api/apiTypes'
-import { theme } from '@/lib/shared/theme'
+import { setThemeOverride } from '@/lib/shared/theme'
 import claudeLogo from '@/assets/provider-logos/claude.svg'
 import geminiLogo from '@/assets/provider-logos/gemini.svg'
 import CliModelSelect from './CliModelSelect.vue'
@@ -330,14 +330,13 @@ const opencodeCatalog: CliCatalogModel[] = [
 describe('CliModelSelect OpenCode family marks', () => {
   it('uses model family marks and a letter for an unfamiliar OpenCode id', async () => {
     mocks.load.mockResolvedValue(opencodeCatalog)
-    const previous = theme.value
     const w = await mountSelect({ variant: 'compact', modelValue: 'opencode/gemini-3.5-flash', backend: 'opencode' })
     try {
       const triggerMark = w.get('[data-testid="cli-model-trigger"] [data-vendor-mark="google"]')
       expect(triggerMark.get('img').attributes('src')).toBe(geminiLogo)
       expect(triggerMark.classes()).toContain('vendor-mark--color')
       for (const mode of ['light', 'dark'] as const) {
-        theme.value = mode
+        setThemeOverride(mode)
         await flushPromises()
         expect(triggerMark.get('img').classes()).not.toContain('invert')
       }
@@ -358,7 +357,7 @@ describe('CliModelSelect OpenCode family marks', () => {
       expect(q('[data-testid="cli-model-inline-detail"]')).toBeNull()
       expect(gemini.textContent).toContain('opencode/gemini-3.5-flash')
     } finally {
-      theme.value = previous
+      setThemeOverride(null)
     }
   })
 

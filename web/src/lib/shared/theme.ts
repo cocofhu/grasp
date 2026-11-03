@@ -1,4 +1,4 @@
-import { nextTick, ref } from 'vue'
+import { nextTick, readonly, ref } from 'vue'
 
 export type ThemeName = 'dark' | 'light'
 
@@ -19,6 +19,9 @@ function initial(): ThemeName {
 }
 
 export const theme = ref<ThemeName>(initial())
+const paintedTheme = ref(theme.value)
+/** Theme applied to the page, including preview drawer and public overrides. */
+export const renderedTheme = readonly(paintedTheme)
 
 /**
  * Synchronous choice for the shell toggle.
@@ -49,10 +52,14 @@ let swallowThemeClick = false
 let override: ThemeName | null = null
 
 function apply(t: ThemeName) {
-  t = override ?? t
+  paintChrome(override ?? t)
+}
+
+function paintChrome(t: ThemeName) {
   const root = document.documentElement
   root.classList.toggle('light', t === 'light')
   root.style.colorScheme = t
+  paintedTheme.value = t
 }
 
 function prefersReducedMotion(): boolean {
@@ -260,9 +267,7 @@ export function toggleTheme() {
  * persisted theme is not polluted.
  */
 export function applyPublicLightChrome(): void {
-  const root = document.documentElement
-  root.classList.add('light')
-  root.style.colorScheme = 'light'
+  paintChrome('light')
 }
 
 /**
