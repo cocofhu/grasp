@@ -8,7 +8,7 @@ export function soloEmbedClient(runId: string, token: string, onExpired?: () => 
   const base = `/embed-api/solo/${encodeURIComponent(runId)}`
   const request = previewSessionRequest(base, token, onExpired)
   return {
-    ...createSoloChatClient(request, rootWsUrl, () => ''),
+    ...createSoloChatClient(request, path => rootWsUrl(base + path), () => ''),
     listArtifacts: (signal?: AbortSignal) => request<{ artifacts: Artifact[] | null }>('/artifacts', { signal }),
     attachment: (messageId: string, id: string, signal: AbortSignal) =>
       request<Blob>(`/messages/${encodeURIComponent(messageId)}/blobs/${encodeURIComponent(id)}`, { signal }, res => res.blob()),
