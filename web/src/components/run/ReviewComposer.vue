@@ -21,6 +21,7 @@ import ReferencePlusMenu from '@/components/solo/ReferencePlusMenu.vue'
 import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
 import type { ReferenceScope, ReferenceTab } from '@/lib/solo/useReferenceSearch'
 import type { ReferenceInput } from '@/lib/api/apiTypes'
+import { useRunLiveCardHost } from '@/lib/run/runLiveCards'
 
 /**
  * Thin mode wrapper around ClarifyChat / a gate-local composer.
@@ -151,6 +152,8 @@ const props = withDefaults(
     referencesEnabled: true,
   },
 )
+
+useRunLiveCardHost(() => props.runId, () => (props.mode === 'gate' ? '' : props.nodeId))
 
 const emit = defineEmits<{
   (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]): void

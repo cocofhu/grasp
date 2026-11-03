@@ -353,6 +353,8 @@ export type LiveCardHost = {
   /** Card buttons drive the preview page (drawer only). */
   interactive: boolean
   command: (sid: string, cmd: LiveCmd, variant?: number) => void
+  /** A card whose session the store lacks asks the host to load it (read-only hosts). */
+  ensure?: (sid: string) => void
 }
 
 export const LIVE_CARD_HOST: InjectionKey<LiveCardHost> = Symbol('live-card-host')

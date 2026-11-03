@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
 import { LIVE_CARD_HOST, isLiveBusy, isLiveOpen, type LiveCmd } from '@/lib/inbox/liveVariants'
 
 /**
  * Chat card for a Live variant request. State comes from the host's Live
- * store (the preview drawer). `compact` keeps only the request headline;
+ * store: the preview drawer, or a read-only host in the main app chat.
+ * `compact` keeps only the request headline;
  * `agent` places the card on the agent side, under the reply. `loading`
  * shows skeleton rows while the agent works on the request.
  */
@@ -24,6 +25,13 @@ const { t } = useI18n()
 const host = inject(LIVE_CARD_HOST, null)
 
 const session = computed(() => host?.store.sessions[props.liveRef.sid] ?? null)
+watch(
+  () => (host && !session.value ? props.liveRef.sid : ''),
+  (sid) => {
+    if (sid) host?.ensure?.(sid)
+  },
+  { immediate: true },
+)
 const view = computed(() => host?.store.views[props.liveRef.sid] ?? null)
 const variants = computed(() => session.value?.variants ?? [])
 const state = computed(() => session.value?.state ?? '')
@@ -73,6 +81,15 @@ const isLatestTurn = computed(() => !props.compact && props.liveRef.op !== 'acce
 const showPicker = computed(() => !!session.value && isLatestTurn.value && variants.value.length > 0 && isLiveOpen(state.value))
 const showAccepted = computed(() => !!session.value && isLatestTurn.value && variants.value.length > 0 && state.value === 'accepted')
 const showActions = computed(() => !!session.value && isLatestTurn.value && isLiveOpen(state.value))
+/** Where the drawer shows controls (or a failed accept / discard to redo), a read-only host points to the preview page. */
+const showReadOnlyHint = computed(
+  () =>
+    !!host &&
+    !host.interactive &&
+    !!session.value &&
+    isLiveOpen(state.value) &&
+    (props.loading || (!props.compact && (isLatestTurn.value || state.value === 'failed'))),
+)
 
 function send(cmd: LiveCmd, variant?: number) {
   host?.command(props.liveRef.sid, cmd, variant)
@@ -232,7 +249,7 @@ const arrowBtn = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md b
         </button>
       </span>
     </div>
-    <p v-else-if="showActions" class="m-0 text-[11px] text-txt3">{{ t('pages.embedChat.live.openInPreview') }}</p>
+    <p v-if="showReadOnlyHint" class="m-0 text-[11px] text-txt3" data-testid="live-variant-readonly-hint">{{ t('pages.embedChat.live.readOnlyHint') }}</p>
   </div>
 </template>
 

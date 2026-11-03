@@ -4580,7 +4580,7 @@
         "retryAccept": "Retry adoption",
         "steerPartial": "Dismiss clears the failure; any page changes already made are kept.",
         "goto": "Go to candidate {n}",
-        "openInPreview": "Switch, accept or discard these candidates on the preview page.",
+        "readOnlyHint": "Switch, accept or discard candidates on the preview page",
         "discardAll": "Discard all",
         "cleanupAll": "Clear unfinished requests",
         "discardAllDone": "Requested cleanup of {n} Live request(s)",
