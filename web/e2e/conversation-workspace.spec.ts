@@ -1,4 +1,5 @@
 import { test, expect, type FrameLocator, type Page } from '@playwright/test'
+import type { SoloMessage } from '../src/lib/api/apiTypes'
 import type { PreviewChatRow } from '../src/lib/inbox/appPreviewShare'
 import { routeApi } from './helpers/apiRoute'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
@@ -73,7 +74,7 @@ test('Solo opens a registered app and the pinned HTML from its thumbnail', async
   await expect(page.getByTestId('react-artifact-preview-demo.html').frameLocator('iframe:visible').getByText('Solo preview smoke')).toBeVisible()
 })
 
-test('a direct Solo preview opens the same chat and sends a picked element with the message', async ({ page, context }) => {
+test('a direct Solo preview streams the reply to a message with a picked element', async ({ page, context }) => {
   test.setTimeout(60_000)
   await installWorkspaceApiDefaults(page)
   const grasp = 'http://127.0.0.1:5174'
@@ -84,6 +85,8 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   const token = 'solo-preview-token'
   const shareBodies: unknown[] = []
   const modelBodies: unknown[] = []
+  let savedTurn: SoloMessage[] = []
+  let publish: ((frame: object) => void) | undefined
   const previewUrl = direct + '/solo-preview-fixture'
   const port = { runId, nodeId: 'solo', kind: 'port', port: 8899, label: 'Demo app', mode: 'direct', directUrl: previewUrl, healthy: true }
   await routeApi(page, '**/api/solo/sessions**', async (route) => {
@@ -122,7 +125,7 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
     if (path.endsWith('/messages')) return route.fulfill({ json: [{
       id: 'existing', role: 'user', content: 'Previous Solo message',
       images: [{ mimeType: 'image/png', name: 'preview.png', ref: 'blob:fixture-image' }],
-    }, { id: 'legacy', role: 'user', content: 'Legacy text\n\nSelected page elements:\n/ · #old' }] })
+    }, { id: 'legacy', role: 'user', content: 'Legacy text\n\nSelected page elements:\n/ · #old' }, ...savedTurn] })
     if (path.endsWith('/messages/existing/blobs/fixture-image')) return route.fulfill({
       contentType: 'image/png',
       body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/7fkAAAAASUVORK5CYII=', 'base64'),
@@ -136,9 +139,10 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
     }
     return route.fulfill({ json: session })
   })
-  await context.routeWebSocket('**/embed-api/solo/*/chat*', (ws) => ws.send(JSON.stringify({
-    type: 'session', event: 'queue_state', busy: false, items: [], status: 'running', sandboxId: session.sandboxId,
-  })))
+  await context.routeWebSocket(`**/embed-api/solo/${runId}/chat*`, (ws) => {
+    publish = frame => ws.send(JSON.stringify(frame))
+    publish({ type: 'session', event: 'queue_state', seq: 0, busy: false, items: [], status: 'running', sandboxId: session.sandboxId })
+  })
 
   await page.setViewportSize({ width: 1440, height: 950 })
   await page.goto(`${grasp}/workspace-config.html?view=/solo/${session.id}`)
@@ -181,6 +185,33 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   const transcript = drawer.getByTestId('solo-transcript')
   await expect(transcript.getByTestId('chat-message-annotations')).toHaveText(['#old', '#feature'])
   await expect(transcript.getByText('Selected page elements:')).toHaveCount(0)
+  const activity = transcript.getByTestId('solo-agent-activity')
+  await expect(activity).toContainText('等待沙箱就绪')
+  const item = { id: 'submitted', text: body.text, images: [], annotations: body.annotations }
+  publish?.({ type: 'session', event: 'turn_begin', seq: 1, item, userMsgId: item.id })
+  publish?.({ type: 'session', event: 'phase', seq: 2, phase: 'running' })
+  await expect(activity).toContainText('Agent 正在处理')
+  const reply = 'The heading has been updated.'
+  publish?.({
+    type: 'acp',
+    seq: 3,
+    data: {
+      op: 'event',
+      data: {
+        type: 'session_update',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: reply } },
+      },
+    },
+  })
+  await expect(transcript.getByTestId('solo-agent-message')).toHaveText(reply)
+  const createdAt = new Date().toISOString()
+  savedTurn = [
+    { id: item.id, sessionId: session.id, role: 'user', content: item.text, annotations: item.annotations, createdAt },
+    { id: 'reply', sessionId: session.id, role: 'assistant', content: reply, status: 'ok', createdAt },
+  ]
+  publish?.({ type: 'session', event: 'turn_done', seq: 4, userMsgId: item.id })
+  await expect(activity).toHaveCount(0)
+  await expect(transcript.getByTestId('solo-agent-message')).toHaveText(reply)
 })
 
 test('a signed-in workflow preview uses the regular chat model and reference pickers', async ({ page }) => {
