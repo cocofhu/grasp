@@ -1,5 +1,6 @@
-import { test, expect, type FrameLocator, type Locator, type Page } from '@playwright/test'
+import { test, expect, type FrameLocator, type Page } from '@playwright/test'
 import type { PreviewChatRow } from '../src/lib/inbox/appPreviewShare'
+import type { Locator } from '@playwright/test'
 import { routeApi } from './helpers/apiRoute'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 

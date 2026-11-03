@@ -4,8 +4,6 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- The chat message navigation rail has a clear gap from the transcript in narrow panels and preview drawers.
-
 - Model and provider icons follow the preview drawer's current light or dark theme. Monochrome marks stay legible and color marks retain their original colors.
 
 - **Preview chat messages:** Direct and shared app previews open with the same floating chat. The composer shares attachment, model, and @ controls. Guests can reference public GitHub issues and pull requests. Picked elements appear as annotation chips while the Agent receives their context.
@@ -21,6 +19,8 @@ All notable public-release changes are documented here.
 - **Solo previews:** new preview-enabled Solo sandboxes can register an app on a separate port and open it from Resources. Solo artifact pins appear in the Artifacts drawer, and clicking an HTML thumbnail opens its preview. The Agent's Solo tool list hides actions that require a workflow, and failed preview registration identifies missing port mappings.
 
 - **Live review previews:** the chat stays in sync with the selected candidate when a WebSocket update arrives ahead of the request acknowledgement.
+
+- The chat message navigation rail has a clear gap from the transcript in narrow panels and preview drawers.
 
 - **Chat references and links:** a sent message shows each `@` reference as a chip where it was typed instead of only above the bubble, and a message starting with `@#815` no longer turns into a large heading. Links in chat open in a new window. Links to `localhost` or `127.0.0.1` open the resources panel and load in a new tab of the sandbox browser, since those addresses only resolve inside the sandbox; without a sandbox they open in a new window.
 
