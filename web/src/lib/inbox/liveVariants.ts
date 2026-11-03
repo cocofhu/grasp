@@ -1,4 +1,4 @@
-import { reactive, type InjectionKey } from 'vue'
+import { reactive, toRaw, type InjectionKey } from 'vue'
 import type { LiveMark, LivePoint } from '../../liveoverlay/annotations'
 
 /**
@@ -308,7 +308,9 @@ export function createLiveStore() {
       const s = parseLiveSession(raw)
       if (!s) return null
       const prev = store.sessions[s.sid]
-      if (prev?.updatedAt && s.updatedAt && prev.updatedAt > s.updatedAt) return prev
+      // A socket update can beat the HTTP acknowledgement. Return the newer
+      // session as plain data so the drawer can post it to the preview page.
+      if (prev?.updatedAt && s.updatedAt && prev.updatedAt > s.updatedAt) return toRaw(prev)
       store.sessions[s.sid] = s
       if (!isLiveOpen(s.state)) delete store.views[s.sid]
       return s

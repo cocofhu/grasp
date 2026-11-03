@@ -41,7 +41,6 @@ type snapRecorder struct {
 
 func (r *snapRecorder) snap(t *testing.T) {
 	t.Helper()
-	time.Sleep(10 * time.Millisecond)
 	st, ok := r.eng.DialogueSnapshot(r.runID, r.nodeID)
 	if !ok {
 		t.Fatal("no dialogue to snapshot")
@@ -129,11 +128,12 @@ func fixtureFrom(t *testing.T, scenario, about string, snaps []DialogueState, pu
 }
 
 type clarifyFixtureEnv struct {
-	eng      *Engine
-	provider *fakeProvider
-	runID    string
-	hold     chan struct{}
-	rec      *snapRecorder
+	eng        *Engine
+	provider   *fakeProvider
+	runID      string
+	hold       chan struct{}
+	replyCalls int
+	rec        *snapRecorder
 }
 
 func newClarifyFixture(t *testing.T) *clarifyFixtureEnv {
@@ -146,7 +146,25 @@ func (c *clarifyFixtureEnv) holdTurns() {
 	c.hold = make(chan struct{})
 	c.provider.mu.Lock()
 	c.provider.reactHold = c.hold
+	c.replyCalls = c.provider.reactReplyCalls[c.rec.nodeID]
 	c.provider.mu.Unlock()
+}
+
+func (c *clarifyFixtureEnv) waitReplyStarted(t *testing.T) {
+	t.Helper()
+	// The queue can report a running turn before its human row is persisted.
+	// The held provider is reached after that write.
+	deadline := time.Now().Add(waitPollTimeout)
+	for time.Now().Before(deadline) {
+		c.provider.mu.Lock()
+		started := c.provider.reactReplyCalls[c.rec.nodeID] > c.replyCalls
+		c.provider.mu.Unlock()
+		if started {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("fixture reply never entered the provider")
 }
 
 func (c *clarifyFixtureEnv) script(turns ...runtime.ReactTurn) {
@@ -171,10 +189,21 @@ func (c *clarifyFixtureEnv) release(t *testing.T) {
 		close(c.hold)
 		c.hold = nil
 	}
-	time.Sleep(20 * time.Millisecond)
-	if err := c.eng.waitReviewReadyForTest(c.runID, "clarify", 5*time.Second); err != nil {
-		t.Fatal(err)
+	c.waitIdle(t)
+}
+
+func (c *clarifyFixtureEnv) waitIdle(t *testing.T) {
+	t.Helper()
+	// Ready can become true before the pump publishes the terminal frame that
+	// adds the ended turn to the dialogue. Idle also waits for that frame.
+	deadline := time.Now().Add(waitPollTimeout)
+	for time.Now().Before(deadline) {
+		if s := c.eng.laneSession(c.runID, c.rec.nodeID, ""); s == nil || s.Idle() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
+	t.Fatal("fixture reply pump did not settle")
 }
 
 func (c *clarifyFixtureEnv) acp(events ...models.AcpEvent) {
@@ -189,7 +218,7 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c := newClarifyFixture(t)
 		c.holdTurns()
 		c.send(t, "第一条")
-		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		c.waitReplyStarted(t)
 		c.send(t, "第二条")
 		c.rec.snap(t)
 		c.release(t)
@@ -200,7 +229,7 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c := newClarifyFixture(t)
 		c.holdTurns()
 		c.send(t, "做登录")
-		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		c.waitReplyStarted(t)
 		c.rec.snap(t)
 		c.acp(models.AcpEvent{Kind: "thought", Text: "先看需求"})
 		c.rec.snap(t)
@@ -215,7 +244,7 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.script(runtime.ReactTurn{Msg: ""})
 		c.holdTurns()
 		c.send(t, "做登录")
-		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		c.waitReplyStarted(t)
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
@@ -226,7 +255,7 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.script(runtime.ReactTurn{Msg: "(澄清回复失败:sandbox gone)", Err: errors.New("sandbox gone")})
 		c.holdTurns()
 		c.send(t, "做登录")
-		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		c.waitReplyStarted(t)
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
@@ -236,12 +265,14 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c := newClarifyFixture(t)
 		c.holdTurns()
 		c.send(t, "做登录")
-		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		c.waitReplyStarted(t)
 		c.acp(msg("说到一半"))
 		c.rec.snap(t)
 		if err := c.eng.CancelClarifyTurn(c.runID, "clarify"); err != nil {
 			t.Fatal(err)
 		}
+		// Let cancellation unblock the provider before closing the normal reply gate.
+		c.waitIdle(t)
 		c.release(t)
 		c.rec.snap(t)
 		out = append(out, fixtureFrom(t, "interrupted", "the user stopped a streaming turn", c.rec.snaps, false))
@@ -251,7 +282,7 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.script(runtime.ReactTurn{Msg: "字字字"})
 		c.holdTurns()
 		c.send(t, "做登录")
-		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		c.waitReplyStarted(t)
 		text := ""
 		for i := 1; i <= 3; i++ {
 			c.provider.mu.Lock()
@@ -292,7 +323,7 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.script(runtime.ReactTurn{Msg: "第二段", Handoffs: []string{"第一段"}, Events: events})
 		c.holdTurns()
 		c.send(t, "做登录")
-		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		c.waitReplyStarted(t)
 		c.acp(events[:2]...)
 		c.rec.snap(t)
 		c.acp(events...)
@@ -311,7 +342,7 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		if err := c.eng.ReactReplyRetryLast(c.runID, "clarify"); err != nil {
 			t.Fatal(err)
 		}
-		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		c.waitReplyStarted(t)
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
@@ -321,7 +352,7 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c := newClarifyFixture(t)
 		c.holdTurns()
 		c.send(t, "按钮改大", models.PromptImage{Ref: "blob:fixture", MimeType: "image/png", Name: "shot.png"})
-		waitRunningTurn(t, c.eng, c.runID, "clarify")
+		c.waitReplyStarted(t)
 		c.acp(msg("好的"))
 		c.rec.snap(t)
 		c.release(t)

@@ -148,7 +148,7 @@ describe('createLiveStore', () => {
     expect(live.apply({ bad: true })).toBeNull()
     live.apply({ sid: 'sid001', state: 'ready', updatedAt: '2026-09-30T10:00:02Z', variants: [{ n: 1 }] })
     const stale = live.apply({ sid: 'sid001', state: 'generating', updatedAt: '2026-09-30T10:00:01Z' })
-    expect(stale?.state).toBe('ready')
+    expect(structuredClone(stale)).toMatchObject({ state: 'ready', variants: [{ n: 1 }] })
     expect(live.activeCtx()).toBeNull()
     live.setView('sid001', { current: 1, mode: 'inplace' })
     expect(live.activeCtx()).toEqual({ sid: 'sid001', current: 1 })
