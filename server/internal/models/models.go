@@ -703,6 +703,42 @@ func writePickContext(b *strings.Builder, a ReactAnnotation) {
 	}
 }
 
+// NormalizePreviewPicks keeps only bounded DOM-pick fields from a preview chat.
+func NormalizePreviewPicks(picks []ReactAnnotation, limit int) []ReactAnnotation {
+	var out []ReactAnnotation
+	for _, pick := range picks {
+		selector := strings.TrimSpace(pick.Selector)
+		if selector == "" {
+			continue
+		}
+		out = append(out, ReactAnnotation{
+			Selector:  clipRunes(selector, 1024),
+			URL:       clipRunes(strings.TrimSpace(pick.URL), 2048),
+			Label:     clipRunes(strings.TrimSpace(pick.Label), 1024),
+			TagName:   clipRunes(strings.TrimSpace(pick.TagName), 32),
+			Text:      clipRunes(strings.Join(strings.Fields(pick.Text), " "), annotationTextMaxRunes),
+			OuterHTML: clipRunes(strings.TrimSpace(pick.OuterHTML), annotationHTMLMaxRunes),
+		})
+		if len(out) == limit {
+			break
+		}
+	}
+	return out
+}
+
+// RenderAnnotatedPrompt combines the display text and the Agent's pick context.
+func RenderAnnotatedPrompt(text string, anns []ReactAnnotation) string {
+	block := RenderAnnotations(anns)
+	text = strings.TrimSpace(text)
+	if block == "" {
+		return text
+	}
+	if text == "" {
+		return block + "\n(按上述标注修改)"
+	}
+	return block + "\n" + text
+}
+
 // RenderAnnotations renders review annotations into a structured prompt block
 // the agent can act on precisely, or "" when there are none.
 func RenderAnnotations(anns []ReactAnnotation) string {

@@ -405,15 +405,16 @@ func (e *Engine) EnqueueClarifyTurn(runID, nodeID, text string, images []models.
 	return e.EnqueueClarifyTurnAs("", runID, nodeID, text, images, annotations)
 }
 
-// EnqueuePreviewShareTurn adds a plain-text guest turn to the existing
+// EnqueuePreviewShareTurn adds a guest turn to the existing
 // conversation and binds it to the workflow visit the owner shared.
-func (e *Engine) EnqueuePreviewShareTurn(owner, runID, nodeID, text string, iteration int) error {
+func (e *Engine) EnqueuePreviewShareTurn(owner, runID, nodeID, text string, annotations []models.ReactAnnotation, iteration int) error {
 	kind := sessionKindReview
 	if e.nodeIsClarify(runID, nodeID) {
 		kind = sessionKindClarify
 	}
 	_, err := e.enqueueReviewItem(runID, nodeID, kind, &reviewQueueItem{
-		ID: uuid.NewString(), Text: text, Effective: text, Source: "node", Owner: owner,
+		ID: uuid.NewString(), Text: text, Effective: renderReviewHuman(text, annotations),
+		Annotations: annotations, Source: "node", Owner: owner,
 		PreviewIteration: iteration, LiveWritesDenied: true,
 	})
 	return err

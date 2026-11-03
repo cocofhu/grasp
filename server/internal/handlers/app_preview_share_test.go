@@ -68,16 +68,25 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			picks := []models.ReactAnnotation{{Selector: "#heading", URL: "https://preview.example.test/hidden", OuterHTML: "<h1>private-markup</h1>"}}
 			if solo {
 				hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
 				if err := hn.db.Create(&models.SoloSession{ID: sb.ThreadID, UserID: "admin", AgentName: sb.Profile, SandboxID: sb.ID, Status: models.SoloStatusRunning}).Error; err != nil {
 					t.Fatal(err)
 				}
-				if err := hn.db.Create(&models.SoloMessage{ID: "solo-history", SessionID: sb.ThreadID, Role: "user", Content: mainHistory}).Error; err != nil {
+				if err := hn.db.Create(&models.SoloMessage{ID: "solo-history", SessionID: sb.ThreadID, Role: "user", Content: mainHistory, Annotations: picks}).Error; err != nil {
 					t.Fatal(err)
 				}
 			}
 			if !solo {
+				var conv models.ReactConversation
+				if err := hn.db.First(&conv, "run_id = ? AND node_id = ?", runID, nodeID).Error; err != nil {
+					t.Fatal(err)
+				}
+				conv.Messages = append(conv.Messages, models.ReactMessage{Role: "human", Text: "Adjust heading", Annotations: picks})
+				if err := hn.db.Save(&conv).Error; err != nil {
+					t.Fatal(err)
+				}
 				var run models.Run
 				if err := hn.db.First(&run, "id = ?", runID).Error; err != nil {
 					t.Fatal(err)
@@ -154,7 +163,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			if w := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, headers("isolated")); w.Code != http.StatusForbidden {
 				t.Fatalf("isolated link can read main chat: %d", w.Code)
 			}
-			if w := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, headers("main")); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), mainHistory) {
+			if w := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, headers("main")); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), mainHistory) ||
+				!strings.Contains(w.Body.String(), `"selector":"#heading"`) ||
+				strings.Contains(w.Body.String(), "preview.example.test") || strings.Contains(w.Body.String(), "private-markup") {
 				t.Fatalf("main history: %d %s", w.Code, w.Body)
 			}
 			mainHeaders := headers("main-drawer")

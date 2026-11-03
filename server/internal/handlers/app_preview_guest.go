@@ -17,7 +17,7 @@ import (
 const appPreviewGuestProtocol = "grasp-preview-guest"
 
 type previewGuestRequest struct {
-	Text            string  `json:"text"`
+	previewChatMessage
 	ModelID         *string `json:"modelId"`
 	ReasoningEffort string  `json:"reasoningEffort"`
 }
@@ -124,7 +124,8 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 				}
 				continue
 			}
-			prompt := request.Text
+			instruction := models.RenderAnnotatedPrompt(request.Text, request.Annotations)
+			prompt := instruction
 			if restoreHistory && len(history) > 0 {
 				prompt = "Earlier messages in this preview chat (context only):\n" +
 					strings.Join(history, "\n\n") + "\n\nCurrent user message:\n" + prompt
@@ -135,7 +136,7 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 			}
 			if completed {
 				restoreHistory = false
-				history = append(history, "User: "+textutil.TruncateBytes(request.Text, 2048, "…")+
+				history = append(history, "User: "+textutil.TruncateBytes(instruction, 2048, "…")+
 					"\nAgent: "+textutil.TruncateBytes(narration, 2048, "…"))
 				if len(history) > 8 {
 					history = history[len(history)-8:]
@@ -160,12 +161,11 @@ func readPreviewGuestRequests(ctx context.Context, cancel context.CancelFunc, co
 		if err := conn.ReadJSON(&frame); err != nil {
 			return
 		}
-		frame.Text = strings.TrimSpace(frame.Text)
 		if frame.ModelID == nil {
-			if frame.Text == "" || len(frame.Text) > maxPreviewChatText {
+			if !frame.normalize() {
 				return
 			}
-		} else if frame.Text != "" || len(*frame.ModelID) > 512 || len(frame.ReasoningEffort) > 64 {
+		} else if frame.Text != "" || len(frame.Annotations) != 0 || len(*frame.ModelID) > 512 || len(frame.ReasoningEffort) > 64 {
 			return
 		}
 		select {

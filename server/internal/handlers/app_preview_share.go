@@ -229,9 +229,21 @@ func (h *Handlers) workflowPreviewDialogue(runID, nodeID string) (engine.PublicD
 }
 
 type sharedPreviewRow struct {
-	ID   string `json:"id"`
-	Role string `json:"role"`
-	Text string `json:"text"`
+	ID          string                        `json:"id"`
+	Role        string                        `json:"role"`
+	Text        string                        `json:"text"`
+	Annotations []gateshare.PreviewAnnotation `json:"annotations,omitempty"`
+}
+
+type previewChatMessage struct {
+	Text        string                   `json:"text"`
+	Annotations []models.ReactAnnotation `json:"annotations"`
+}
+
+func (m *previewChatMessage) normalize() bool {
+	m.Text = strings.TrimSpace(m.Text)
+	m.Annotations = models.NormalizePreviewPicks(m.Annotations, 4)
+	return len(m.Text) <= maxPreviewChatText && (m.Text != "" || len(m.Annotations) > 0)
 }
 
 // PublicAppPreviewMainChat shares the original transcript and turn queue.
@@ -271,12 +283,12 @@ func (h *Handlers) PublicAppPreviewMainChat(c *gin.Context) {
 				return
 			}
 			for _, row := range messages {
-				rows = append(rows, sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Content})
+				rows = append(rows, sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Content, Annotations: gateshare.SanitizeAnnotations(row.Annotations)})
 			}
 			busy = active
 		} else {
 			for _, row := range state.Rows {
-				rows = append(rows, sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Text})
+				rows = append(rows, sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Text, Annotations: row.Annotations})
 			}
 			busy = state.Busy
 		}
@@ -287,15 +299,13 @@ func (h *Handlers) PublicAppPreviewMainChat(c *gin.Context) {
 		c.JSON(http.StatusOK, result)
 		return
 	}
-	var body struct {
-		Text string `json:"text"`
-	}
+	var body previewChatMessage
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 	if c.ShouldBindJSON(&body) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
 		return
 	}
-	text := strings.TrimSpace(body.Text)
-	if text == "" || len(text) > maxPreviewChatText {
+	if !body.normalize() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_message"})
 		return
 	}
@@ -305,10 +315,10 @@ func (h *Handlers) PublicAppPreviewMainChat(c *gin.Context) {
 		return
 	}
 	if solo {
-		_, err = h.Solo.Send(sb.ThreadID, link.CreatedBy, text, nil)
+		_, err = h.Solo.SendWithReferences(sb.ThreadID, link.CreatedBy, body.Text, nil, nil, body.Annotations...)
 	} else {
 		owner := pagebridge.TokenOwner("preview", link.TokenHash)
-		err = h.Eng.EnqueuePreviewShareTurn(owner, link.RunID, link.NodeID, text, link.Iteration)
+		err = h.Eng.EnqueuePreviewShareTurn(owner, link.RunID, link.NodeID, body.Text, body.Annotations, link.Iteration)
 	}
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "message not queued"})

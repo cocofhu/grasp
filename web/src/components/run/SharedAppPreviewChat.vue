@@ -11,7 +11,8 @@ import ComposerPrimaryAction from './ComposerPrimaryAction.vue'
 import ParagraphInput from '@/components/ui/ParagraphInput.vue'
 import VisitModelSelect, { type VisitModelTransport } from './VisitModelSelect.vue'
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
-import { previewPickLabel, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import type { ReactAnnotation } from '@/lib/shared/types'
+import { appendPreviewPick, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { publicAppPreviewClient, type PreviewChatRow, type PreviewShareSession } from '@/lib/inbox/appPreviewShare'
 
 const { t } = useI18n()
@@ -23,7 +24,7 @@ const session = ref<PreviewShareSession>()
 const rows = ref<PreviewChatRow[]>([])
 const mainChoice = ref<VisitModelChoice>()
 const input = ref('')
-const picks = ref<{ selector: string; label: string }[]>([])
+const picks = ref<ReactAnnotation[]>([])
 const messageError = ref('')
 const pageError = ref<'inactive' | 'network' | ''>('')
 const busy = ref(false)
@@ -199,12 +200,7 @@ function connectGuest() {
 }
 
 function addPick(payload: AppPreviewPickPayload) {
-  const selector = payload.selector.slice(0, 120)
-  const label = previewPickLabel(payload.url, selector, payload.tagName)
-  const context = label.length <= 120 ? label : selector
-  if (picks.value.length < 4 && !picks.value.some(pick => pick.label === context)) {
-    picks.value.push({ selector, label: context })
-  }
+  appendPreviewPick(picks.value, payload, 4)
 }
 defineExpose({ addPick })
 
@@ -212,9 +208,7 @@ async function submit() {
   const draft = input.value.trim()
   const selected = picks.value.slice()
   if ((!draft && !selected.length) || !chatReady.value || sending.value || guestModelChanging.value || !session.value) return
-  const context = selected.map(pick => pick.label).join('\n')
-  const text = context ? [draft, `Selected page elements:\n${context}`].filter(Boolean).join('\n\n') : draft
-  if (new TextEncoder().encode(text).byteLength > 8192) {
+  if (new TextEncoder().encode(draft).byteLength > 8192) {
     messageError.value = t('pages.appPreview.share.messageTooLong')
     return
   }
@@ -224,16 +218,16 @@ async function submit() {
     const id = ++messageNumber
     guestReplyId = `assistant-${id}`
     followChat()
-    rows.value.push({ id: `user-${id}`, role: 'user', text }, { id: guestReplyId, role: 'assistant', text: '' })
+    rows.value.push({ id: `user-${id}`, role: 'user', text: draft, annotations: selected }, { id: guestReplyId, role: 'assistant', text: '' })
     input.value = ''
     picks.value = []
     busy.value = true
-    socket.send(JSON.stringify({ text }))
+    socket.send(JSON.stringify({ text: draft, annotations: selected }))
     return
   }
   sending.value = true
   try {
-    await client.send(text, controller.signal)
+    await client.send(draft, selected, controller.signal)
     if (input.value.trim() === draft) input.value = ''
     picks.value = picks.value.filter(pick => !selected.includes(pick))
     busy.value = true
@@ -269,12 +263,14 @@ onBeforeUnmount(() => {
       <span class="mr-1 font-medium text-txt">{{ t(`pages.appPreview.share.${session.chatMode}`) }}</span>
       {{ t(`pages.appPreview.share.${session.chatMode}GuestHint`) }}
     </div>
-    <div ref="transcript" class="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto p-4" role="log">
+    <div ref="transcript" class="chat-thread scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto p-4" role="log">
       <p v-if="!rows.length && !messageError" class="text-sm text-txt3">
         {{ t(chatReady ? 'pages.appPreview.share.emptyChat' : 'pages.embedChat.connecting') }}
       </p>
       <template v-for="row in rows" :key="row.id">
-        <ChatUserMessage v-if="row.role === 'user' || row.role === 'human'" :text="row.text" />
+        <div v-if="row.role === 'user' || row.role === 'human'" class="flex justify-end">
+          <ChatUserMessage class="min-w-0 max-w-[88%]" :text="row.text" :annotations="row.annotations" />
+        </div>
         <AgentTimeline v-else-if="row.role === 'assistant' || row.role === 'agent'" :text="row.text" />
         <p v-else class="text-xs text-txt3">{{ row.text }}</p>
       </template>

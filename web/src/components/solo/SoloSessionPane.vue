@@ -15,7 +15,7 @@ import AnnotationChip from '@/components/run/AnnotationChip.vue'
 import ComposerPrimaryAction from '@/components/run/ComposerPrimaryAction.vue'
 import ComposerShell from '@/components/run/ComposerShell.vue'
 import type { soloEmbedClient } from '@/lib/solo/soloEmbedClient'
-import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { appendPreviewPick, readPreviewMessage, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/PendingSendQueuePanel.vue'
@@ -31,7 +31,7 @@ import { inlineReferences, referenceLabel } from '@/lib/solo/referenceTokens'
 import type { ReferenceTab } from '@/lib/solo/useReferenceSearch'
 import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
-import type { ClarifyImage } from '@/lib/shared/types'
+import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import { chatImageSrc } from '@/lib/shared/compositeText'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
@@ -193,7 +193,9 @@ const messageRailItems = computed(() => {
       const text = lastMessageText(reply.steps, reply.text)
       if (text.trim()) preview = text
     }
-    const title = turn.text || turn.images?.map((im, ii) => attachmentDisplayName(im, ii)).join(', ') || ''
+    const message = readPreviewMessage(turn.text, turn.annotations)
+    const title = message.text || turn.images?.map((im, ii) => attachmentDisplayName(im, ii)).join(', ')
+      || message.annotations.map(pick => pick.label || pick.selector).join(', ')
     return [{ id: turn.id, title, preview }]
   })
 })
@@ -260,19 +262,11 @@ function asideReferences(turn: { text?: string; references?: MessageReference[] 
   if (!refs.length || !turn.text) return refs
   return inlineReferences(turn.text, refs, (r) => referenceLabel(r, defaultRepo.value)).rest
 }
-const picks = ref<ReturnType<typeof previewPickAnnotation>[]>([])
+const picks = ref<ReactAnnotation[]>([])
 const canSubmit = computed(() => !!input.value.trim() || !!attach.attachments.value.length || !!tokens.value.length || !!picks.value.length)
 
 function addPick(payload: AppPreviewPickPayload) {
-  const pick = previewPickAnnotation({
-    ...payload,
-    selector: payload.selector.trim().slice(0, 1024),
-    url: payload.url?.slice(0, 2048),
-    tagName: payload.tagName.slice(0, 32),
-  })
-  if (picks.value.length < 8 && !picks.value.some(p => p.selector === pick.selector && p.url === pick.url)) {
-    picks.value.push(pick)
-  }
+  appendPreviewPick(picks.value, payload, 8)
 }
 defineExpose({ addPick })
 
@@ -303,8 +297,7 @@ async function send() {
   attach.clearAttachments()
   followBottom.value = true
   picks.value = []
-  const context = selected.length ? 'Selected page elements:\n' + selected.map(pick => JSON.stringify(pick)).join('\n') : ''
-  const ok = await chat.send([text, context].filter(Boolean).join('\n\n'), images, refs)
+  const ok = await chat.send(text, images, refs, selected)
   if (!ok) {
     restore()
     attach.attachments.value = images
@@ -315,7 +308,7 @@ async function send() {
 
 // --- queue ------------------------------------------------------------------
 const queueRows = computed<PendingQueueRow[]>(() =>
-  displayQueued.value.map((q) => ({ id: q.id, text: q.text, images: q.images, annotations: [], locked: !!q.local })),
+  displayQueued.value.map((q) => ({ id: q.id, ...readPreviewMessage(q.text, q.annotations), images: q.images, locked: !!q.local })),
 )
 
 function cancelQueued(index: number) {
@@ -339,8 +332,10 @@ async function editQueued(index: number) {
     const item = await chat.takeQueued(target.id)
     if (!item) return
     // The item is already off the server queue, so keep anything typed during removal too.
+    const itemMessage = readPreviewMessage(item.text, item.annotations)
     const draft = input.value.trim()
-    const text = draft ? (item.text ? `${item.text}\n${draft}` : draft) : item.text
+    const text = [itemMessage.text, draft].filter(Boolean).join('\n')
+    picks.value = [...itemMessage.annotations, ...picks.value].slice(0, 8)
     mention.load(text, [...(item.references || []), ...mention.refs.value])
     attach.attachments.value = [...item.images, ...attach.attachments.value]
     void nextTick(autoGrow)
@@ -519,7 +514,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <div v-if="asideReferences(turn).length" class="flex flex-wrap justify-end gap-1.5" data-testid="solo-turn-references">
                   <ReferenceChip v-for="r in asideReferences(turn)" :key="r.id || r.target" :reference="r" :default-repo="defaultRepo" link />
                 </div>
-                <ChatUserMessage v-if="turn.text" :text="turn.text" :created-at="turn.createdAt" :references="turn.references" :default-repo="defaultRepo" />
+                <ChatUserMessage v-if="turn.text || turn.annotations?.length" :text="turn.text" :annotations="turn.annotations" :created-at="turn.createdAt" :references="turn.references" :default-repo="defaultRepo" />
               </div>
             </div>
             <div v-else class="min-w-0 space-y-3">

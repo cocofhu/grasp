@@ -1,4 +1,5 @@
 import { test, expect, type FrameLocator, type Page } from '@playwright/test'
+import type { PreviewChatRow } from '../src/lib/inbox/appPreviewShare'
 import { routeApi } from './helpers/apiRoute'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 
@@ -108,7 +109,7 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
     if (path.endsWith('/messages')) return route.fulfill({ json: [{
       id: 'existing', role: 'user', content: 'Previous Solo message',
       images: [{ mimeType: 'image/png', name: 'preview.png', ref: 'blob:fixture-image' }],
-    }] })
+    }, { id: 'legacy', role: 'user', content: 'Legacy text\n\nSelected page elements:\n/ · #old' }] })
     if (path.endsWith('/messages/existing/blobs/fixture-image')) return route.fulfill({
       contentType: 'image/png',
       body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/7fkAAAAASUVORK5CYII=', 'base64'),
@@ -161,8 +162,11 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   const submitted = preview.waitForRequest(request => request.url().endsWith('/' + runId + '/turns'))
   await drawer.getByTestId('solo-send').click()
   const body = (await submitted).postDataJSON()
-  expect(body.text).toContain('Update this heading')
-  expect(body.text).toContain('"selector":"#feature"')
+  expect(body.text).toBe('Update this heading')
+  expect(body.annotations).toEqual([expect.objectContaining({ selector: '#feature' })])
+  const transcript = drawer.getByTestId('solo-transcript')
+  await expect(transcript.getByTestId('chat-message-annotations')).toHaveText(['#old', '#feature'])
+  await expect(transcript.getByText('Selected page elements:')).toHaveCount(0)
 })
 
 test('a signed-in workflow preview uses the regular chat model picker', async ({ page }) => {
@@ -245,12 +249,14 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       expect([mainSession, guestSession]).toContain(token)
       return route.fulfill({ json: { ticket: 'guest-chat-ticket', chatMode: token === mainSession ? 'main' : 'isolated' } })
     })
-    const mainRows = [{ id: 'main-history', role: 'user', text: 'Original main conversation' }]
+    const mainRows: PreviewChatRow[] = [{ id: 'main-history', role: 'user', text: 'Original main conversation' }]
     await anonymous.route(url + '/main-chat', (route) => {
       expect(route.request().headers()['x-gate-share-token']).toBe(mainSession)
       if (route.request().method() === 'POST') {
-        const { text } = route.request().postDataJSON()
-        mainRows.push({ id: 'main-new', role: 'user', text })
+        const { text, annotations } = route.request().postDataJSON()
+        expect(text).toBe('A message for the main conversation')
+        expect(annotations).toEqual([expect.objectContaining({ selector: '#app-title' })])
+        mainRows.push({ id: 'main-new', role: 'user', text, annotations })
         return route.fulfill({ json: { ok: true } })
       }
       return route.fulfill({ json: { rows: mainRows, busy: false } })
@@ -283,7 +289,8 @@ test('anonymous shares open the direct app and use its floating chat in both mod
         ws.send(JSON.stringify({ type: 'model', ok: true }))
         return
       }
-      expect(body).toEqual({ text: 'A separate idea\n\nSelected page elements:\n/shared-app-fixture · #app-title' })
+      expect(body.text).toBe('A separate idea')
+      expect(body.annotations).toEqual([expect.objectContaining({ selector: '#app-title' })])
       ws.send(JSON.stringify({ type: 'done', text: 'Visitor-only reply' }))
     }))
 
@@ -314,9 +321,14 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await expect(mainDrawer.getByText('Original main conversation')).toBeVisible()
     await choosePreviewModel(mainDrawer, 'model-b', 'Model B')
     await expect.poll(() => modelWrites).toEqual(['main:model-b'])
+    await mainToolbar.locator('[data-role="toggle"]').click()
+    await main.getByRole('heading', { name: 'Shared app fixture' }).click()
+    await expect(mainDrawer.getByTestId('shared-app-chat-pick')).toContainText('#app-title')
     await mainDrawer.getByTestId('shared-app-chat-input').getByRole('textbox').fill('A message for the main conversation')
     await mainDrawer.getByTestId('shared-app-chat-send').click()
     await expect(mainDrawer.getByText('A message for the main conversation')).toBeVisible()
+    await expect(mainDrawer.getByTestId('chat-message-annotations')).toHaveText('#app-title')
+    await expect(mainDrawer.getByText('Selected page elements:')).toHaveCount(0)
     await mainToolbar.locator('[data-role="chat"]').click()
     await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()
 
@@ -334,6 +346,8 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await guestDrawer.getByTestId('shared-app-chat-input').getByRole('textbox').fill('A separate idea')
     await guestDrawer.getByTestId('shared-app-chat-send').click()
     await expect(guestDrawer.getByText('Visitor-only reply')).toBeVisible()
+    await expect(guestDrawer.getByTestId('chat-message-annotations')).toHaveText('#app-title')
+    await expect(guestDrawer.getByText('Selected page elements:')).toHaveCount(0)
     await guest.reload()
     await expect(guestDrawer.getByTestId('shared-app-chat-input')).toBeVisible()
     await expect(guestDrawer.getByText('Visitor-only reply')).toHaveCount(0)

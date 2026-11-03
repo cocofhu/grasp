@@ -5,6 +5,9 @@
  * assistant replies, so tags stay visible and never execute.
  */
 import { computed, getCurrentInstance, h, onBeforeUnmount, ref, render, watch } from 'vue'
+import AnnotationChip from './AnnotationChip.vue'
+import { readPreviewMessage } from '@/lib/shared/previewPickUrl'
+import type { ReactAnnotation } from '@/lib/shared/types'
 import ReferenceChip from '@/components/solo/ReferenceChip.vue'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { inlineReferences, referenceLabel } from '@/lib/solo/referenceTokens'
@@ -19,25 +22,27 @@ const props = defineProps<{
   /** `@label` spans of these references render as chips in place. */
   references?: MessageReference[]
   defaultRepo?: string
+  annotations?: ReactAnnotation[]
 }>()
 
 const appContext = getCurrentInstance()!.appContext
 const prose = ref<HTMLElement | null>(null)
+const message = computed(() => readPreviewMessage(props.text, props.annotations))
 
 const inline = computed(() =>
-  props.references?.length ? inlineReferences(props.text, props.references, (r) => referenceLabel(r, props.defaultRepo)).inline : [],
+  props.references?.length ? inlineReferences(message.value.text, props.references, (r) => referenceLabel(r, props.defaultRepo)).inline : [],
 )
 
 /** Private-use markers survive markdown untouched, then become chip slots. */
 const html = computed(() => {
-  if (!inline.value.length) return renderChatMarkdown(props.text)
+  if (!inline.value.length) return renderChatMarkdown(message.value.text)
   let src = ''
   let at = 0
   inline.value.forEach((token, i) => {
-    src += `${props.text.slice(at, token.start)}\uE000${i}\uE001`
+    src += `${message.value.text.slice(at, token.start)}\uE000${i}\uE001`
     at = token.end
   })
-  src += props.text.slice(at)
+  src += message.value.text.slice(at)
   return renderChatMarkdown(src).replace(/\uE000(\d+)\uE001/g, '<span class="chat-ref-slot" data-ref-slot="$1"></span>')
 })
 
@@ -70,6 +75,9 @@ onBeforeUnmount(unmountChips)
     :data-testid="testId || undefined"
     :title="createdAt && Number.isFinite(Date.parse(createdAt)) ? fmtTime(createdAt) : undefined"
   >
-    <div ref="prose" class="chat-prose md" v-html="html" />
+    <div v-if="message.annotations.length" class="flex flex-wrap gap-1.5" :class="{ 'mb-1.5': message.text }" data-testid="chat-message-annotations">
+      <AnnotationChip v-for="(annotation, index) in message.annotations" :key="index" :ann="annotation" />
+    </div>
+    <div v-if="message.text" ref="prose" class="chat-prose md" v-html="html" />
   </div>
 </template>

@@ -391,7 +391,7 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		if role == "agent" {
 			turn.Narration = m.Narration
 		}
-		if anns := sanitizeAnnotations(m.Annotations); len(anns) > 0 {
+		if anns := SanitizeAnnotations(m.Annotations); len(anns) > 0 {
 			turn.Annotations = anns
 		}
 		if imgs := sanitizePromptImages(m.Images, &idx); len(imgs) > 0 {
@@ -559,7 +559,7 @@ func DialogueImageCatalog(turns []models.ReactMessage, active map[string]any, qu
 func annotationsFromAny(v any) []PreviewAnnotation {
 	switch anns := v.(type) {
 	case []models.ReactAnnotation:
-		return sanitizeAnnotations(anns)
+		return SanitizeAnnotations(anns)
 	case []PreviewAnnotation:
 		if len(anns) == 0 {
 			return nil
@@ -574,7 +574,7 @@ func annotationsFromAny(v any) []PreviewAnnotation {
 				Quote:    a.Quote,
 			})
 		}
-		return sanitizeAnnotations(parsed)
+		return SanitizeAnnotations(parsed)
 	case []any:
 		parsed := make([]models.ReactAnnotation, 0, len(anns))
 		for _, raw := range anns {
@@ -590,7 +590,7 @@ func annotationsFromAny(v any) []PreviewAnnotation {
 				Quote:    stringMapField(am, "quote"),
 			})
 		}
-		return sanitizeAnnotations(parsed)
+		return SanitizeAnnotations(parsed)
 	default:
 		return nil
 	}
@@ -689,7 +689,8 @@ func stringMapField(m map[string]any, key string) string {
 	return strings.TrimSpace(s)
 }
 
-func sanitizeAnnotations(anns []models.ReactAnnotation) []PreviewAnnotation {
+// SanitizeAnnotations projects only the display fields of conversation annotations.
+func SanitizeAnnotations(anns []models.ReactAnnotation) []PreviewAnnotation {
 	if len(anns) == 0 {
 		return nil
 	}

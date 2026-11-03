@@ -105,6 +105,30 @@ func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxS
 	return NewSoloService(db, sbx, skills, NewProjectService(db)), sbx, fg, db
 }
 
+func TestSoloPreviewPickStaysOutOfMessageText(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, _ := newSoloFixture(t, port, 3)
+	gate := newGateChat(false)
+	solo.SetChatterForTest(gate)
+	view, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pick := models.ReactAnnotation{Selector: "#heading", OuterHTML: "<h1>Old title</h1>"}
+	if _, err := solo.SendWithReferences(view.ID, "alice", "", nil, nil, pick); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "picked turn", func() bool { return gate.count() == 1 })
+	if prompt := gate.snapshot()[0]; !strings.Contains(prompt, "#heading") || !strings.Contains(prompt, "Old title") {
+		t.Fatalf("Agent prompt missing pick: %q", prompt)
+	}
+	messages, err := solo.Messages(view.ID, "alice")
+	if err != nil || len(messages) == 0 || messages[0].Content != "" || len(messages[0].Annotations) != 1 || messages[0].Annotations[0].Selector != "#heading" {
+		t.Fatalf("persisted pick: %+v, %v", messages, err)
+	}
+}
+
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(8 * time.Second)

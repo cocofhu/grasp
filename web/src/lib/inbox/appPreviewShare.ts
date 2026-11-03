@@ -2,13 +2,14 @@ import { req, rootWsUrl } from '@/lib/api/httpCore'
 import { GATE_SHARE_REQUEST_HEADER, GATE_SHARE_TOKEN_HEADER } from '@/lib/inbox/gateShareLink'
 import type { ScopedSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
+import type { ReactAnnotation } from '@/lib/shared/types'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
 
 export type PreviewChatMode = 'isolated' | 'main'
 export type PreviewShareScope = { runId: string; nodeId: string; soloSessionId?: string; port: number }
 export type PreviewShareLink = { url: string; expiresAt: string }
 export type PreviewShareSession = { ticket: string; chatMode: PreviewChatMode }
-export type PreviewChatRow = { id: string; role: string; text: string }
+export type PreviewChatRow = { id: string; role: string; text: string; annotations?: ReactAnnotation[] }
 
 function managementPath(scope: PreviewShareScope) {
   const enc = encodeURIComponent
@@ -57,7 +58,8 @@ export function publicAppPreviewClient(token: string) {
     getModel: (signal: AbortSignal) => request<VisitModelChoice>('/model', signal),
     setModel: (signal: AbortSignal, body: object) => request<VisitModelChoice>('/model', signal, body),
     history: (signal: AbortSignal) => request<{ rows: PreviewChatRow[]; busy: boolean; model?: VisitModelChoice }>('/main-chat', signal),
-    send: (text: string, signal: AbortSignal) => request<{ ok: boolean }>('/main-chat', signal, { text }),
+    send: (text: string, annotations: ReactAnnotation[], signal: AbortSignal) =>
+      request<{ ok: boolean }>('/main-chat', signal, { text, annotations }),
     connectGuest: (ticket: string) => new WebSocket(rootWsUrl(publicPath + '/guest-chat'), ['grasp-preview-guest', ticket]),
   }
 }

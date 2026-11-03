@@ -1,4 +1,4 @@
-import type { ClarifyImage } from '../../shared/types'
+import type { ClarifyImage, ReactAnnotation } from '../../shared/types'
 import { req, wsUrl } from '../httpCore'
 import type {
   Project,
@@ -37,7 +37,7 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
     setSoloSessionReasoningEffort: (id: string, reasoningEffort: string) =>
       req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
     listSoloMessages: (id: string) => req<SoloMessage[]>(`${path(id)}/messages`),
-    sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; references?: ReferenceInput[] }) =>
+    sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: ReferenceInput[] }) =>
       req<{ waiting: number }>(`${path(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
     searchSoloReferences: <T>(id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
       req<ReferenceSearchResult<T>>(`${path(id)}/references/search?${referenceQuery(params)}`, { signal }),
