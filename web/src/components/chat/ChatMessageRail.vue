@@ -308,15 +308,15 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
 </template>
 
 <style scoped>
-.chat-message-rail { position: absolute; z-index: 5; inset-block: 18px; left: 0; width: 26px; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+.chat-message-rail { position: absolute; z-index: 5; inset-block: 18px; left: 0; width: var(--chat-message-rail-width); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
 .chat-message-rail-track { display: flex; min-height: 0; max-height: min(420px, 100%); flex-direction: column; gap: 2px; overflow-y: auto; padding-block: 5px; scrollbar-width: none; pointer-events: auto; }
 .chat-message-rail-track::-webkit-scrollbar { display: none; }
-.chat-message-rail-mark { display: flex; width: 26px; min-height: 18px; flex: none; align-items: center; justify-content: flex-start; padding-left: 7px; outline: none; }
+.chat-message-rail-mark { display: flex; width: var(--chat-message-rail-width); min-height: 18px; flex: none; align-items: center; justify-content: flex-start; padding-left: 7px; outline: none; }
 .chat-message-rail-mark > span { width: 8px; height: 1.5px; border-radius: 1px; background: rgb(var(--c-txt3) / .4); transition: width 160ms ease, background 160ms ease; }
 .chat-message-rail-mark.is-pointed > span { width: 12px; background: rgb(var(--c-txt2)); }
 .chat-message-rail-mark.is-active > span { width: 16px; background: rgb(var(--c-txt)); }
 .chat-message-rail-mark:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: -2px; border-radius: 4px; }
-.chat-message-rail-earlier { display: flex; width: 26px; min-height: 26px; flex: none; align-items: center; justify-content: center; color: rgb(var(--c-txt3)); pointer-events: auto; }
+.chat-message-rail-earlier { display: flex; width: var(--chat-message-rail-width); min-height: 26px; flex: none; align-items: center; justify-content: center; color: rgb(var(--c-txt3)); pointer-events: auto; }
 .chat-message-rail-earlier:hover { color: rgb(var(--c-txt)); }
 .chat-message-rail-earlier:disabled { opacity: .5; }
 .chat-message-rail-card { position: fixed; z-index: 90; display: flex; max-height: calc(100vh - 24px); flex-direction: column; overflow: hidden; padding: 6px; border: 1px solid rgb(var(--c-line) / .8); border-radius: 12px; background: rgb(var(--c-surface)); color: rgb(var(--c-txt)); box-shadow: 0 8px 28px rgb(var(--c-txt) / .08), 0 2px 6px rgb(var(--c-txt) / .04); }
