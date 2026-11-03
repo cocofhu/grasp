@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"testing"
 	"time"
 
@@ -67,6 +68,7 @@ func normalizeSnaps(t *testing.T, snaps []DialogueState) []DialogueState {
 	revs := map[string]uint64{}
 	content := map[string][32]byte{}
 	for k, st := range snaps {
+		st.Rows = slices.Clone(st.Rows)
 		for i := range st.Rows {
 			st.Rows[i].Execution = nil
 		}
@@ -210,11 +212,10 @@ func (c *clarifyFixtureEnv) acp(events ...models.AcpEvent) {
 	c.eng.publishAcp(c.runID, "clarify", events, true)
 }
 
-func buildDialogueFixtures(t *testing.T) []dialogueFixture {
-	var out []dialogueFixture
+func TestDialogueContractFixtures(t *testing.T) {
 	msg := func(s string) models.AcpEvent { return models.AcpEvent{Kind: "message", Text: s} }
 
-	{
+	t.Run("queued", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		c.holdTurns()
 		c.send(t, "第一条")
@@ -223,9 +224,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "queued", "a message waits behind a running turn, then both finish", c.rec.snaps, false))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "queued", "a message waits behind a running turn, then both finish", c.rec.snaps, false))
+	})
+	t.Run("running", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		c.holdTurns()
 		c.send(t, "做登录")
@@ -237,9 +238,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "running", "a reply streams into one row that is sealed in place", c.rec.snaps, false))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "running", "a reply streams into one row that is sealed in place", c.rec.snaps, false))
+	})
+	t.Run("empty", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		c.script(runtime.ReactTurn{Msg: ""})
 		c.holdTurns()
@@ -248,9 +249,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "empty", "the agent really answered nothing: outcome empty", c.rec.snaps, false))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "empty", "the agent really answered nothing: outcome empty", c.rec.snaps, false))
+	})
+	t.Run("failed", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		c.script(runtime.ReactTurn{Msg: "(澄清回复失败:sandbox gone)", Err: errors.New("sandbox gone")})
 		c.holdTurns()
@@ -259,9 +260,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "failed", "the turn failed: outcome failed with its error", c.rec.snaps, false))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "failed", "the turn failed: outcome failed with its error", c.rec.snaps, false))
+	})
+	t.Run("interrupted", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		c.holdTurns()
 		c.send(t, "做登录")
@@ -275,9 +276,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.waitIdle(t)
 		c.release(t)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "interrupted", "the user stopped a streaming turn", c.rec.snaps, false))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "interrupted", "the user stopped a streaming turn", c.rec.snaps, false))
+	})
+	t.Run("sandbox-flip", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		c.script(runtime.ReactTurn{Msg: "字字字"})
 		c.holdTurns()
@@ -299,9 +300,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.provider.mu.Unlock()
 		c.release(t)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "sandbox-flip", "the sandbox busy flag flips while the platform runs the turn: the reply keeps streaming", c.rec.snaps, false))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "sandbox-flip", "the sandbox busy flag flips while the platform runs the turn: the reply keeps streaming", c.rec.snaps, false))
+	})
+	t.Run("orphan", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		c.provider.mu.Lock()
 		c.provider.sandboxBusy = true
@@ -315,9 +316,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.provider.mu.Unlock()
 		c.eng.publishAcp(c.runID, "clarify", nil, false)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "orphan", "the sandbox keeps running after the platform went idle", c.rec.snaps, false))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "orphan", "the sandbox keeps running after the platform went idle", c.rec.snaps, false))
+	})
+	t.Run("multi-segment", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		events := []models.AcpEvent{msg("第一段"), {Kind: "segment"}, msg("第二段")}
 		c.script(runtime.ReactTurn{Msg: "第二段", Handoffs: []string{"第一段"}, Events: events})
@@ -330,9 +331,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "multi-segment", "one message answered by two rows keeps both row ids", c.rec.snaps, false))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "multi-segment", "one message answered by two rows keeps both row ids", c.rec.snaps, false))
+	})
+	t.Run("retry", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		c.script(runtime.ReactTurn{Msg: ""})
 		c.send(t, "做登录")
@@ -346,9 +347,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "retry", "retry covers the empty reply; the request row moves to the new turn", c.rec.snaps, false))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "retry", "retry covers the empty reply; the request row moves to the new turn", c.rec.snaps, false))
+	})
+	t.Run("public", func(t *testing.T) {
 		c := newClarifyFixture(t)
 		c.holdTurns()
 		c.send(t, "按钮改大", models.PromptImage{Ref: "blob:fixture", MimeType: "image/png", Name: "shot.png"})
@@ -357,9 +358,9 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		c.rec.snap(t)
 		c.release(t)
 		c.rec.snap(t)
-		out = append(out, fixtureFrom(t, "public", "the share-link form: redacted, full frames only", c.rec.snaps, true))
-	}
-	{
+		checkDialogueFixture(t, fixtureFrom(t, "public", "the share-link form: redacted, full frames only", c.rec.snaps, true))
+	})
+	t.Run("observe", func(t *testing.T) {
 		env := setupTakeoverEngine(t, takeoverPlainGraph(capsPlain))
 		run, err := env.eng.StartRun("wf", nil, "test")
 		if err != nil {
@@ -372,32 +373,29 @@ func buildDialogueFixtures(t *testing.T) []dialogueFixture {
 		env.provider.releaseHold("impl")
 		waitRunStatus(t, env.db, run.ID, "completed")
 		rec.snap(t)
-		out = append(out, fixtureFrom(t, "observe", "an automatic visit watched while it runs", rec.snaps, false))
-	}
-	return out
+		checkDialogueFixture(t, fixtureFrom(t, "observe", "an automatic visit watched while it runs", rec.snaps, false))
+	})
 }
 
-func TestDialogueContractFixtures(t *testing.T) {
-	fixtures := buildDialogueFixtures(t)
-	for _, fx := range fixtures {
-		b, err := json.MarshalIndent(fx, "", "  ")
-		if err != nil {
+func checkDialogueFixture(t *testing.T, fx dialogueFixture) {
+	t.Helper()
+	b, err := json.MarshalIndent(fx, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = append(b, '\n')
+	path := filepath.Join(dialogueFixtureDir, fx.Scenario+".json")
+	if *updateDialogueFixtures {
+		if err := os.MkdirAll(dialogueFixtureDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		b = append(b, '\n')
-		path := filepath.Join(dialogueFixtureDir, fx.Scenario+".json")
-		if *updateDialogueFixtures {
-			if err := os.MkdirAll(dialogueFixtureDir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, b, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			continue
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			t.Fatal(err)
 		}
-		got, err := os.ReadFile(path)
-		if err != nil || !bytes.Equal(got, b) {
-			t.Errorf("%s is stale; rerun with -update-dialogue-fixtures (err=%v)", path, err)
-		}
+		return
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(got, b) {
+		t.Errorf("%s is stale; rerun with -update-dialogue-fixtures (err=%v)", path, err)
 	}
 }
