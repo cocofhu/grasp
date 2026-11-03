@@ -6,6 +6,7 @@ import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { isUrlPreview, previewTabKey, previewTabLabel } from '@/lib/shared/previewTabKey'
 import NovncPreviewPanel from './NovncPreviewPanel.vue'
 import DirectPreviewLauncher from './DirectPreviewLauncher.vue'
+import AppPreviewShareButton from './AppPreviewShareButton.vue'
 import ExternalUrlPreviewFrame from './ExternalUrlPreviewFrame.vue'
 import PreviewFeedbackChat from './PreviewFeedbackChat.vue'
 import RefreshStrip from './RefreshStrip.vue'
@@ -22,6 +23,7 @@ const props = withDefaults(
     showFeedback?: boolean
     /** Standalone conversations provide their own sandbox and preview list. */
     registeredPreviews?: PreviewPort[]
+    soloSessionId?: string
     residentSandboxId?: number | null
   }>(),
   { compact: false, fill: false, showFeedback: true },
@@ -223,6 +225,12 @@ function selectPreview(key: string) {
   activeKey.value = key
   syncActivePort()
 }
+
+function issueDirectTicket() {
+  return props.soloSessionId
+    ? api.soloEmbedTicket(props.soloSessionId)
+    : api.embedTicket(props.runId, props.nodeId)
+}
 </script>
 
 <template>
@@ -300,12 +308,17 @@ function selectPreview(key: string) {
           @pick="onPick"
           @staged-pick="onStagedPick"
         >
-          <template v-if="activeDirectUrl" #toolbar-extra>
+          <template v-if="activePort" #toolbar-extra>
             <DirectPreviewLauncher
+              v-if="activeDirectUrl"
               :key="activeDirectUrl"
               compact
               :direct-url="activeDirectUrl"
-              :issue-ticket="registeredPreviews === undefined ? () => api.embedTicket(runId, nodeId) : undefined"
+              :issue-ticket="issueDirectTicket"
+            />
+            <AppPreviewShareButton
+              :key="`${runId}:${nodeId}:${activePort}`"
+              :scope="{ runId, nodeId, soloSessionId, port: activePort }"
             />
           </template>
         </NovncPreviewPanel>

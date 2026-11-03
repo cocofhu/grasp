@@ -169,6 +169,9 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/solo/sessions/:id/restart", h.RestartSoloSession)
 		api.GET("/solo/sessions/:id/messages", h.ListSoloMessages)
 		api.GET("/solo/sessions/:id/resources", h.GetSoloResources)
+		api.POST("/solo/sessions/:id/embed-ticket", h.CreateSoloEmbedTicket)
+		api.POST("/solo/sessions/:id/preview-share", h.ManageAppPreviewShare)
+		api.DELETE("/solo/sessions/:id/preview-share", h.ManageAppPreviewShare)
 		api.GET("/solo/sessions/:id/env", h.GetSoloEnv)
 		api.GET("/solo/sessions/:id/references/search", h.SearchSoloReferences)
 		api.GET("/solo/references/search", h.SearchLaunchReferences)
@@ -222,6 +225,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/runs/:id/nodes/:nodeId/takeover", h.TakeoverNode)
 		api.GET("/runs/:id/nodes/:nodeId/previews", h.ListNodePreviews)
 		api.POST("/runs/:id/nodes/:nodeId/embed-ticket", h.CreateEmbedTicket)
+		api.POST("/runs/:id/nodes/:nodeId/preview-share", h.ManageAppPreviewShare)
+		api.DELETE("/runs/:id/nodes/:nodeId/preview-share", h.ManageAppPreviewShare)
 		api.GET("/runs/:id/nodes/:nodeId/live-sessions", h.LiveSessions)
 		api.POST("/runs/:id/nodes/:nodeId/live-sessions/discard-all", h.LiveDiscardAll)
 		api.GET("/runs/:id/nodes/:nodeId/preview-issues", h.ListPreviewIssues)
@@ -307,6 +312,13 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.GET("/embed/runs/:runId/nodes/:nodeId/image", h.EmbedChatPage)
 	r.GET("/embed/runs/:runId/nodes/:nodeId/demo", h.EmbedChatPage)
 	r.POST("/embed-api/session", h.RedeemEmbedSession)
+	r.GET("/embed-api/solo/:runId/chat", h.SoloEmbedChat)
+	soloEmbed := r.Group("/embed-api/solo/:runId", h.AuthorizeSoloEmbed)
+	soloEmbed.GET("", h.GetSoloSession)
+	soloEmbed.GET("/messages", h.ListSoloMessages)
+	soloEmbed.GET("/artifacts", h.SoloEmbedArtifacts)
+	soloEmbed.POST("/turns", h.StartSoloTurn)
+	soloEmbed.POST("/turns/cancel", h.CancelSoloTurn)
 
 	// PM MCP hosts (outside /api).
 	r.POST("/mcp/pm/:mcpId", h.PMMCPRPC)
@@ -382,6 +394,11 @@ func New(h *handlers.Handlers) *gin.Engine {
 	{
 		pub.GET("", h.PublicGateApprovalPage)
 		pub.GET("/", h.PublicGateApprovalPage)
+		pub.GET("/app", h.PublicGateApprovalPage)
+		pub.POST("/app/session", h.PublicAppPreviewSession)
+		pub.GET("/app/main-chat", h.PublicAppPreviewMainChat)
+		pub.POST("/app/main-chat", h.PublicAppPreviewMainChat)
+		pub.GET("/app/guest-chat", h.PublicAppPreviewGuestChat)
 		pub.GET("/preview", h.PublicGatePreview)
 		pub.GET("/images/:index", h.PublicGateImage)
 		pub.GET("/artifacts", h.PublicGateArtifacts)
@@ -516,7 +533,7 @@ func publicGateMiddleware() gin.HandlerFunc {
 		c.Writer.Header().Del("Access-Control-Allow-Origin")
 		c.Writer.Header().Del("Access-Control-Allow-Methods")
 		c.Writer.Header().Del("Access-Control-Allow-Headers")
-		if c.Request.Method == http.MethodOptions {
+		if c.Request.Method == http.MethodOptions && !strings.Contains(c.Request.URL.Path, "/preview-api/") {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}

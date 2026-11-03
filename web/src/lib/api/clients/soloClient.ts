@@ -12,6 +12,7 @@ import type {
   SoloSession,
   SoloSessionList,
 } from '../apiTypes'
+import type { EmbedTicket } from '../../inbox/embedChat'
 
 const enc = encodeURIComponent
 
@@ -43,6 +44,8 @@ export const soloClient = {
   getSoloSession: (id: string) => req<SoloSession>(`/solo/sessions/${enc(id)}`),
   getSoloResources: (id: string, signal?: AbortSignal) =>
     req<SoloResources>(`/solo/sessions/${enc(id)}/resources`, { signal }),
+  soloEmbedTicket: (id: string) =>
+    req<EmbedTicket>(`/solo/sessions/${enc(id)}/embed-ticket`, { method: 'POST' }),
   renameSoloSession: (id: string, title: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
   deleteSoloSession: (id: string) =>

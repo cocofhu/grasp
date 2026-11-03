@@ -41,9 +41,10 @@ export type EmbedTicket = {
 export type EmbedSession = {
   token: string
   expiresAt: string
+  kind?: 'solo'
 }
 
-type RedeemResponse = EmbedSession & { kind?: string; runId?: string; nodeId?: string; error?: string }
+type RedeemResponse = Omit<EmbedSession, 'kind'> & { kind?: string; runId?: string; nodeId?: string; error?: string }
 
 /** Drawer page path; the ticket rides in the fragment so it never reaches a server log. */
 export function embedChatPath(runId: string, nodeId: string): string {
@@ -156,7 +157,7 @@ export function loadEmbedSession(runId: string, nodeId: string, now = Date.now()
       clearEmbedSession(runId, nodeId)
       return null
     }
-    return { token: s.token, expiresAt: s.expiresAt }
+    return { token: s.token, expiresAt: s.expiresAt, ...(s.kind === 'solo' ? { kind: s.kind } : {}) }
   } catch {
     return null
   }
@@ -204,7 +205,7 @@ export async function redeemEmbedTicket(ticket: string, runId: string, nodeId: s
   if (!res.ok) throw Object.assign(new Error(`${res.status}`), { status: res.status })
   const body = (await res.json()) as RedeemResponse
   if (!body.token || body.runId !== runId || body.nodeId !== nodeId) return null
-  return { token: body.token, expiresAt: body.expiresAt }
+  return { token: body.token, expiresAt: body.expiresAt, ...(body.kind === 'solo' ? { kind: body.kind } : {}) }
 }
 
 export type EmbedControlMessage = { caps?: string[]; tab?: string; stop?: boolean }

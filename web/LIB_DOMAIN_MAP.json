@@ -75,6 +75,7 @@
       "runtime.ts"
     ],
     "inbox": [
+      "appPreviewShare.ts",
       "clarifyDemo.ts",
       "clarifyDemoWindow.ts",
       "clarifyDraftStash.ts",
@@ -250,6 +251,7 @@
       "referenceDisplay.ts",
       "referenceTokens.ts",
       "sessionRepos.ts",
+      "soloEmbedClient.ts",
       "soloErrors.ts",
       "soloPrefs.ts",
       "useReferenceComposer.ts",
@@ -280,11 +282,11 @@
     "chat": 9,
     "composables": 19,
     "icons": 2,
-    "inbox": 43,
+    "inbox": 44,
     "pm": 7,
     "run": 72,
     "shared": 39,
-    "solo": 14,
+    "solo": 15,
     "workflow": 3,
     "workspace": 6
   }

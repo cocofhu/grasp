@@ -4,8 +4,9 @@ import "time"
 
 // Share-link kinds (one table; gate vs review sessions must not mix).
 const (
-	ShareLinkKindHumanGate = "human_gate"
-	ShareLinkKindReview    = "review"
+	ShareLinkKindHumanGate  = "human_gate"
+	ShareLinkKindReview     = "review"
+	ShareLinkKindAppPreview = "app_preview"
 )
 
 // GateShareLink is a one-shot external credential bound to a single human_gate
@@ -19,8 +20,12 @@ type GateShareLink struct {
 	NodeID    string `gorm:"index:idx_gsl_instance,priority:2;index:idx_gsl_kind_instance,priority:3;size:128" json:"nodeId"`
 	Iteration int    `gorm:"index:idx_gsl_instance,priority:3;index:idx_gsl_kind_instance,priority:4" json:"iteration"`
 	GateID    *uint  `gorm:"index" json:"gateId,omitempty"`
-	CreatedBy string `gorm:"size:128" json:"createdBy"`
-	TTLTier   string `gorm:"size:8" json:"ttlTier"`
+	// A preview share is scoped to one registered app and sandbox generation.
+	PreviewPort      int    `json:"-"`
+	PreviewSandboxID uint   `json:"-"`
+	PreviewChatMode  string `gorm:"size:16" json:"-"`
+	CreatedBy        string `gorm:"size:128" json:"createdBy"`
+	TTLTier          string `gorm:"size:8" json:"ttlTier"`
 	// PermissionPreset is the link-level capability preset (full|react_only).
 	PermissionPreset string     `gorm:"size:32;not null" json:"permissionPreset"`
 	ExpiresAt        time.Time  `gorm:"index" json:"expiresAt"`
@@ -63,6 +68,11 @@ func (c GateShareVisitorConversation) Turns() []ReactMessage {
 const (
 	SharePermissionFull      = "full"
 	SharePermissionReactOnly = "react_only"
+)
+
+const (
+	PreviewChatIsolated = "isolated"
+	PreviewChatMain     = "main"
 )
 
 // Share-link TTL tiers (product: default 24h).

@@ -136,6 +136,19 @@ func (s *TicketStore) Lookup(ticket string) (*PreviewTicketClaims, bool) {
 	}, true
 }
 
+// Refresh extends the same app URL while its holder still has the share
+// credential. Rotating the iframe URL would reload the app on every renewal.
+func (s *TicketStore) Refresh(ticket, tokenHash string) bool {
+	if len(ticket) != previewTicketHexBytes*2 || tokenHash == "" {
+		return false
+	}
+	now := time.Now()
+	res := s.db.Model(&models.GateSharePreviewTicket{}).
+		Where("ticket = ? AND token_hash = ? AND purpose = ? AND expires_at > ?", ticket, tokenHash, PreviewPurposeAPI, now).
+		Update("expires_at", now.Add(previewTicketTTL))
+	return res.Error == nil && res.RowsAffected == 1
+}
+
 // InvalidateByTokenHash deletes all tickets for a share-link token hash.
 func (s *TicketStore) InvalidateByTokenHash(tokenHash string) {
 	if s == nil || s.db == nil || strings.TrimSpace(tokenHash) == "" {

@@ -658,6 +658,22 @@ func (s *SoloService) Messages(id, user string) ([]models.SoloMessage, error) {
 	return rows, err
 }
 
+// PreviewTranscript combines saved messages with the current text stream for
+// the explicit main-conversation share. Its caller projects text fields only.
+func (s *SoloService) PreviewTranscript(id, user string) ([]models.SoloMessage, bool, error) {
+	messages, err := s.Messages(id, user)
+	c := s.lookup(id)
+	if err != nil || c == nil || c.sess.Ready() {
+		return messages, false, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n := len(messages); n > 0 && messages[n-1].ID == c.turnID && len(c.events) > 0 && c.text.Len() > 0 {
+		messages = append(messages, models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.text.String()})
+	}
+	return messages, true, nil
+}
+
 // Env returns the injected env keys and their sources (never values).
 func (s *SoloService) Env(id, user string) ([]SoloEnvEntry, error) {
 	row, err := s.Require(id, user)

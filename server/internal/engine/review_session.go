@@ -65,6 +65,8 @@ type reviewQueueItem struct {
 	LiveChat *models.LiveCtx
 	// LiveWritesDenied is server-derived share permission, never client input.
 	LiveWritesDenied bool
+	// Preview shares authorize a particular visit, even while a turn waits.
+	PreviewIteration int
 	// AutoRetryOnResume marks the system first-message turn that ResumeFrom
 	// will redeliver. Surfaced on ClarifyVisitEndedError for the frontend.
 	AutoRetryOnResume bool
@@ -403,6 +405,20 @@ func (e *Engine) EnqueueClarifyTurn(runID, nodeID, text string, images []models.
 	return e.EnqueueClarifyTurnAs("", runID, nodeID, text, images, annotations)
 }
 
+// EnqueuePreviewShareTurn adds a plain-text guest turn to the existing
+// conversation and binds it to the workflow visit the owner shared.
+func (e *Engine) EnqueuePreviewShareTurn(owner, runID, nodeID, text string, iteration int) error {
+	kind := sessionKindReview
+	if e.nodeIsClarify(runID, nodeID) {
+		kind = sessionKindClarify
+	}
+	_, err := e.enqueueReviewItem(runID, nodeID, kind, &reviewQueueItem{
+		ID: uuid.NewString(), Text: text, Effective: text, Source: "node", Owner: owner,
+		PreviewIteration: iteration, LiveWritesDenied: true,
+	})
+	return err
+}
+
 // EnqueueClarifyTurnAs is EnqueueClarifyTurn sent by owner (a pagebridge owner id).
 func (e *Engine) EnqueueClarifyTurnAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
 	return e.EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, "", text, images, annotations)
@@ -709,6 +725,9 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	if conv.Done {
 		return false, errors.New("react already done")
 	}
+	if item.PreviewIteration != 0 && item.PreviewIteration != conv.Iteration {
+		return false, ErrClarifyVisitEnded
+	}
 	// A turn queued or started during a visit that has since ended (run
 	// cancelled / failed, or a ResumeFrom opened a new visit) must not touch
 	// that visit's conversation or the run.
@@ -906,6 +925,9 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	iter := c.iter[s.producerID]
 	if iter < 1 {
 		iter = 1
+	}
+	if item.PreviewIteration != 0 && item.PreviewIteration != iter {
+		return false, errors.New("shared review visit ended")
 	}
 	var conv models.ReactConversation
 	cerr := e.db.Where("run_id = ? AND node_id = ? AND iteration = ?", s.runID, s.producerID, iter).

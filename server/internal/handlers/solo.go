@@ -15,7 +15,10 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
+
+const soloEmbedUserKey = "solo_embed_user"
 
 func writeSoloErr(c *gin.Context, err error) {
 	var se *services.SoloError
@@ -35,6 +38,9 @@ func (h *Handlers) soloReady(c *gin.Context) (string, bool) {
 	if h.Solo == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "solo unavailable"})
 		return "", false
+	}
+	if user := c.GetString(soloEmbedUserKey); user != "" {
+		return user, true
 	}
 	return h.sessionUser(c)
 }
@@ -473,6 +479,10 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 	if !ok {
 		return
 	}
+	h.serveSoloChat(c, user, upgrader, time.Time{}, 0)
+}
+
+func (h *Handlers) serveSoloChat(c *gin.Context, user string, socketUpgrader websocket.Upgrader, expiresAt time.Time, sandboxID uint) {
 	id := c.Param("id")
 	after := -1
 	if v, err := strconv.Atoi(c.Query("after")); err == nil {
@@ -485,11 +495,15 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 	}
 	defer unsub()
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := socketUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return
 	}
 	defer func() { _ = conn.Close() }()
+	if !expiresAt.IsZero() {
+		expiry := time.AfterFunc(time.Until(expiresAt), func() { _ = conn.Close() })
+		defer expiry.Stop()
+	}
 
 	_ = conn.SetReadDeadline(time.Now().Add(soloPongWait))
 	conn.SetPongHandler(func(string) error {
@@ -501,7 +515,15 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 		defer close(writeDone)
 		ping := time.NewTicker(soloPingPeriod)
 		defer ping.Stop()
-		pumpChatSubscription(conn, ch, func(v any) error { return writeChatJSON(conn, v) }, ping.C)
+		pumpChatSubscription(conn, ch, func(v any) error {
+			if sandboxID != 0 {
+				frame, _ := v.(map[string]any)
+				if id, ok := frame["sandboxId"].(uint); ok && (id != sandboxID || frame["status"] != models.SoloStatusRunning) {
+					return errors.New("Solo preview sandbox changed")
+				}
+			}
+			return writeChatJSON(conn, v)
+		}, ping.C)
 	}()
 
 	for {
@@ -516,7 +538,7 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 		if json.Unmarshal(data, &m) != nil {
 			continue
 		}
-		if m.Type == "cancel" {
+		if m.Type == "cancel" && expiresAt.IsZero() {
 			_ = h.Solo.Cancel(id, user)
 		}
 	}

@@ -513,7 +513,7 @@ func (s *Service) LookupByToken(token string) (*LookupResult, string, error) {
 		}
 		return nil, models.ShareLinkStateNone, err
 	}
-	if !EqualHash(link.TokenHash, hash) {
+	if !EqualHash(link.TokenHash, hash) || link.Kind == models.ShareLinkKindAppPreview {
 		return nil, models.ShareLinkStateNone, ErrTokenInvalid
 	}
 	st := linkState(&link, time.Now())

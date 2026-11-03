@@ -11,8 +11,8 @@ export const GATE_SHARE_PERMISSION_PRESETS = ['full', 'react_only'] as const
 export type GateSharePermissionPreset = (typeof GATE_SHARE_PERMISSION_PRESETS)[number]
 export const DEFAULT_GATE_SHARE_PERMISSION: GateSharePermissionPreset = 'full'
 
-const GATE_SHARE_TOKEN_HEADER = 'X-Gate-Share-Token'
-const GATE_SHARE_REQUEST_HEADER = 'X-Gate-Share-Requested'
+export const GATE_SHARE_TOKEN_HEADER = 'X-Gate-Share-Token'
+export const GATE_SHARE_REQUEST_HEADER = 'X-Gate-Share-Requested'
 /** Must match server handlers.headerShareVisitor. */
 const GATE_SHARE_VISITOR_HEADER = 'X-Gate-Share-Visitor'
 const SHARE_VISITOR_STORAGE_KEY = 'grasp.gateShareVisitor'

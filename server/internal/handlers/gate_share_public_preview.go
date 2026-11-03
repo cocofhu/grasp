@@ -200,9 +200,36 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 		c.String(http.StatusUnauthorized, "invalid ticket")
 		return
 	}
-	if !h.publicTicketLinkActive(claims.TokenHash) {
+	link := h.activePreviewLink(claims.TokenHash)
+	if link == nil {
 		c.String(http.StatusForbidden, "share link inactive")
 		return
+	}
+	sharedApp := link.Kind == models.ShareLinkKindAppPreview
+	opaqueOrigin := c.GetHeader("Origin") == "null"
+	if sharedApp {
+		if active, _ := h.activeAppPreviewTicket(claims); active == nil {
+			c.String(http.StatusGone, "share link inactive")
+			return
+		}
+		path := c.Param("path")
+		if path == "/__grasp" || strings.HasPrefix(path, "/__grasp/") {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		if c.Request.Method == http.MethodOptions && opaqueOrigin {
+			c.Header("Access-Control-Allow-Origin", "null")
+			c.Header("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Content-Type")
+			c.Status(http.StatusNoContent)
+			return
+		}
+		proxyCtx, stopProxy := context.WithDeadline(c.Request.Context(), link.ExpiresAt)
+		defer stopProxy()
+		if websocket.IsWebSocketUpgrade(c.Request) || strings.Contains(c.GetHeader("Accept"), "text/event-stream") {
+			go h.watchSharedAppProxy(proxyCtx, stopProxy, claims)
+		}
+		c.Request = c.Request.WithContext(proxyCtx)
 	}
 
 	runID, nodeID, port := claims.RunID, claims.NodeID, claims.Port
@@ -248,6 +275,27 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = 100 * time.Millisecond
 	proxy.ModifyResponse = publicPreviewAPIModifyResponse(prefix)
+	if sharedApp {
+		modify := proxy.ModifyResponse
+		proxy.ModifyResponse = func(resp *http.Response) error {
+			if err := modify(resp); err != nil {
+				return err
+			}
+			// App code never runs with the Grasp origin, even if someone opens
+			// the opaque iframe URL as a top-level tab.
+			resp.Header.Add("Content-Security-Policy", "sandbox allow-scripts allow-forms")
+			resp.Header.Del("Set-Cookie")
+			resp.Header.Del("Access-Control-Allow-Origin")
+			resp.Header.Del("Access-Control-Allow-Credentials")
+			if opaqueOrigin {
+				resp.Header.Set("Access-Control-Allow-Origin", "null")
+			}
+			return nil
+		}
+		for _, header := range []string{"Cookie", "Authorization", "X-Gate-Share-Token", "X-Forwarded-Host", "Referer"} {
+			c.Request.Header.Del(header)
+		}
+	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		log.Warn().Err(err).Int("port", port).Msg("public preview-api upstream unreachable")
 		w.WriteHeader(http.StatusBadGateway)
@@ -282,6 +330,22 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 	}
 	c.Request.Header.Del("Forwarded")
 	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+func (h *Handlers) watchSharedAppProxy(ctx context.Context, stop context.CancelFunc, claims *gateshare.PreviewTicketClaims) {
+	defer stop()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if link, _ := h.activeAppPreviewTicket(claims); link == nil {
+				return
+			}
+		}
+	}
 }
 
 func (h *Handlers) publicAppPreviewPorts(runID, nodeID string) []gateshare.PublicPreviewPort {
@@ -320,14 +384,18 @@ func (h *Handlers) publicAppPreviewPorts(runID, nodeID string) []gateshare.Publi
 }
 
 func (h *Handlers) publicTicketLinkActive(tokenHash string) bool {
+	return h.activePreviewLink(tokenHash) != nil
+}
+
+func (h *Handlers) activePreviewLink(tokenHash string) *models.GateShareLink {
 	if h.GateShare == nil || strings.TrimSpace(tokenHash) == "" {
-		return false
+		return nil
 	}
 	link, err := h.GateShare.LoadLinkByTokenHash(tokenHash)
-	if err != nil || link == nil {
-		return false
+	if err != nil || link == nil || link.UsedAt != nil || link.RevokedAt != nil || !time.Now().Before(link.ExpiresAt) {
+		return nil
 	}
-	return link.UsedAt == nil && link.RevokedAt == nil && time.Now().Before(link.ExpiresAt)
+	return link
 }
 
 func (h *Handlers) watchPublicPreviewLink(

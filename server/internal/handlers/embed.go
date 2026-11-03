@@ -110,18 +110,22 @@ func (h *Handlers) CreateEmbedTicket(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	ticket, exp, err := h.Embed.IssueTicket(embed.Claims{
+	h.issueEmbedTicket(c, embed.Claims{
 		Kind:        models.EmbedKindSession,
 		RunID:       runID,
 		NodeID:      nodeID,
 		Username:    user,
 		GraspOrigin: h.embedGraspOrigin(c),
 	})
+}
+
+func (h *Handlers) issueEmbedTicket(c *gin.Context, claims embed.Claims) {
+	ticket, exp, err := h.Embed.IssueTicket(claims)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "issue failed"})
 		return
 	}
-	c.JSON(http.StatusOK, embedTicketResponse{Ticket: ticket, RunID: runID, NodeID: nodeID, ExpiresAt: exp})
+	c.JSON(http.StatusOK, embedTicketResponse{Ticket: ticket, RunID: claims.RunID, NodeID: claims.NodeID, ExpiresAt: exp})
 }
 
 // PublicEmbedTicket mints a drawer ticket for a review share link.
