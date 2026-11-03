@@ -160,7 +160,8 @@ type Host struct {
 	// Nil ⇒ no-op. Must not call back into WriteArtifact.
 	afterWrite AfterWriteFunc
 	// artifactPreview pins a run artifact onto the react conversation (set_artifact_preview).
-	artifactPreview ArtifactPreviewFunc
+	artifactPreview     ArtifactPreviewFunc
+	soloArtifactPreview ArtifactPreviewFunc
 	// auditHook records structured, redacted MCP tool calls into the workspace audit log.
 	// Nil ⇒ no audit (debug McpCalls still recorded separately).
 	auditHook AuditHook
@@ -244,6 +245,13 @@ func (h *Host) SetAfterWriteArtifact(fn AfterWriteFunc) {
 func (h *Host) SetArtifactPreviewHook(fn ArtifactPreviewFunc) {
 	h.mu.Lock()
 	h.artifactPreview = fn
+	h.mu.Unlock()
+}
+
+// SetSoloArtifactPreviewHook wires artifact pinning for resident Solo sandboxes.
+func (h *Host) SetSoloArtifactPreviewHook(fn ArtifactPreviewFunc) {
+	h.mu.Lock()
+	h.soloArtifactPreview = fn
 	h.mu.Unlock()
 }
 

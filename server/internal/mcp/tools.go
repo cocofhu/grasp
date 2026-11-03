@@ -18,6 +18,10 @@ import (
 // records the trace). Splitting dispatch from transport keeps every tool's
 // in/out observable in one place.
 func (h *Host) runTool(runID, token, name string, args map[string]any) (string, bool) {
+	solo := strings.HasPrefix(runID, models.SoloArtifactRunPrefix)
+	if solo && workflowOnlyTool(name) {
+		return "unknown tool: " + name, true
+	}
 	if isPageTool(name) {
 		return h.runPageTool(runID, token, name, args)
 	}
@@ -340,11 +344,16 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 		nodeID := h.ActiveNode(runID)
 		h.mu.RLock()
 		hook := h.artifactPreview
+		if solo {
+			hook = h.soloArtifactPreview
+		}
 		h.mu.RUnlock()
 		if hook != nil {
 			if err := hook(runID, nodeID, aname); err != nil {
 				return "set_artifact_preview failed: " + err.Error(), true
 			}
+		} else if solo {
+			return "set_artifact_preview failed: Solo 产物预览不可用", true
 		}
 		return fmt.Sprintf("ok: 已设置产物预览 %q", aname), false
 	case "node_complete":
@@ -1240,7 +1249,7 @@ func artifactTools() []map[string]any {
 		getTool("get_preflight", "读取本次运行的环境确认清单(preflight.json)。"),
 		{
 			"name": "set_preview",
-			"description": "仅授予了 set_preview 的 Agent 可用(澄清对话中,或自动运行与复审阶段):注册沙箱内应用预览端口或外部 http(s) URL。" +
+			"description": "仅授予了 set_preview 的 Agent 可用(包括 Solo 会话、工作流澄清、自动运行及复审):注册沙箱内应用预览端口或外部 http(s) URL。" +
 				"参数 port? 与 url? 二选一(恰好其一);label(可选)用于 UI 标签。只登记审批人要看的前端页面;后端 API、数据库等端口不要登记(页面会自己调用,登记后没有取点,还会让前端失去取点),除非用户明确要求。沙箱自带服务的端口会被拒绝。端口不必是 $PREVIEW_PORT:IP 直连时平台会把对外入口 $PREVIEW_PORT 接到该端口并注入取点脚本;每个沙箱同一时刻只有最后登记的端口带取点,多个前端时只登记当前要审的那个。同 port 或同规范化 url 再次调用可更新 label。登记端口后平台把沙箱桌面浏览器(用户远程桌面里看到的那块屏幕,也是 chrome-devtools MCP 操作的浏览器)切到 http://127.0.0.1:<port>/;自测用这个地址,不要用 $PREVIEW_PORT。外部 URL 由浏览器 iframe 直连,不做服务端探测,取点可能降级。" +
 				"这是可选预览,不是完成条件,成功后不会结束本节点。",
 			"inputSchema": map[string]any{
@@ -1254,7 +1263,7 @@ func artifactTools() []map[string]any {
 		},
 		{
 			"name": "set_artifact_preview",
-			"description": "仅澄清(react)、Grasp、环境确认(preflight)节点,或可复审 Agent 节点的复审阶段可用:把已写入的产物钉到 ReAct 界面预览 Tab。" +
+			"description": "把已写入的产物钉到当前 Solo 会话或工作流对话的预览界面。Solo Agent 必须授予 set_artifact_preview;工作流可用于澄清(react)、Grasp、环境确认(preflight)节点及可复审 Agent 的复审阶段。" +
 				"参数 name 为 list_artifacts / write_artifact 中的产物名,必须已存在。可多次调用切换预览;同名再次 write_artifact 后预览会热更新。" +
 				"与 ask_question.demoHtml 分工:选项级并排对比用 demoHtml;独立成稿、需热更新或取点标注用本工具。",
 			"inputSchema": map[string]any{

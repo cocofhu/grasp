@@ -122,6 +122,11 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	defer acp.Close()
 	solo, sbx, fg, db := newSoloFixture(t, port, 3)
 	ctx := context.Background()
+	agent, _ := solo.agents.Get("agentA")
+	agent.Capabilities = &models.AgentCapabilities{Interaction: models.InteractionAuto, Tools: []string{models.ToolSetPreview}}
+	if err := solo.agents.Save(agent); err != nil {
+		t.Fatal(err)
+	}
 
 	p, err := solo.Projects().Create(ProjectInput{
 		Name: "app", RepoURL: "https://github.com/acme/app.git", DefaultBranch: "main",
@@ -184,6 +189,9 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	}
 
 	env := fg.LastCreateEnv()
+	if env["PREVIEW_DIRECT"] != "1" || env["PREVIEW_AUTO_INJECT"] != "1" || env["VNC_PREVIEW"] != "1" || env["BROWSER_MCP"] != "1" {
+		t.Fatal("preview-capable Solo sandbox was created without preview configuration")
+	}
 	if env["GIT_REPOS"] != "app|https://github.com/acme/app.git|main" {
 		t.Fatalf("GIT_REPOS = %q", env["GIT_REPOS"])
 	}

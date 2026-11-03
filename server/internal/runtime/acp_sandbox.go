@@ -543,7 +543,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		env["GRASP_RUN_ID"] = req.RunID
 		env["GRASP_LAUNCH_KIND"] = "run"
 	}
-	applyPreviewEnv(env, req.Caps)
+	ApplyPreviewEnv(env, req.Caps)
 
 	for k, v := range vars {
 		if strings.HasPrefix(k, "vars.") || v == "" {
@@ -587,12 +587,12 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	return spec, nil
 }
 
-// applyPreviewEnv asks the gateway to 1:1-map a PREVIEW_PORT for Agents
+// ApplyPreviewEnv asks the gateway to 1:1-map a PREVIEW_PORT for Agents
 // granted set_preview: previews are IP-direct, with the pick script injected
 // by the in-sandbox proxy at a same-origin path. Those Agents also get the
 // headed desktop browser and chrome-devtools MCP on it, so the VNC preview
 // shows the Agent's own screen; an explicit VNC_PREVIEW / BROWSER_MCP wins.
-func applyPreviewEnv(env map[string]string, caps *models.AgentCapabilities) {
+func ApplyPreviewEnv(env map[string]string, caps *models.AgentCapabilities) {
 	if env == nil || !caps.CanPreview() {
 		return
 	}

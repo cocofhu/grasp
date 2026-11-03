@@ -242,15 +242,25 @@ func (h *Host) hideNodeComplete(runID string) bool {
 	return !h.OutcomeAllowed(runID)
 }
 
+func workflowOnlyTool(name string) bool {
+	switch name {
+	case "ask_question", "ask_form", "node_complete", "list_run_history", "get_history_detail", liveUpdateTool:
+		return true
+	default:
+		return isPageTool(name)
+	}
+}
+
 // listedTools returns the MCP tools/list payload: only the tools the active
 // Agent may call, and no node_complete before a clarify dialogue is confirmed.
 func (h *Host) listedTools(runID string) []map[string]any {
 	caps := h.ActiveCaps(runID)
+	solo := strings.HasPrefix(runID, models.SoloArtifactRunPrefix)
 	hideOutcome := h.hideNodeComplete(runID)
 	var out []map[string]any
 	for _, t := range artifactTools() {
 		name, _ := t["name"].(string)
-		if (name == "node_complete" && hideOutcome) || !toolListed(caps, name) {
+		if (solo && workflowOnlyTool(name)) || (name == "node_complete" && hideOutcome) || !toolListed(caps, name) {
 			continue
 		}
 		out = append(out, t)
@@ -260,8 +270,7 @@ func (h *Host) listedTools(runID string) []map[string]any {
 	h.mu.RUnlock()
 	if hasConversationHistory {
 		node := h.ActiveNode(runID)
-		solo := node == "solo"
-		if solo {
+		if solo && node == "solo" {
 			out = append(out, conversationHistoryTool())
 		}
 		// Listed for every Solo run and workflow node: CLIs rarely refetch
@@ -271,10 +280,10 @@ func (h *Host) listedTools(runID string) []map[string]any {
 			out = append(out, referenceTool())
 		}
 	}
-	if h.pageToolsListed(runID) {
+	if !solo && h.pageToolsListed(runID) {
 		out = append(out, pageTools()...)
 	}
-	if h.liveToolListed(runID) {
+	if !solo && h.liveToolListed(runID) {
 		out = append(out, liveTools()...)
 	}
 	return out

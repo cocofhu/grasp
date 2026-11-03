@@ -47,9 +47,8 @@ func TestLookupPreviewAndResolveDesktop(t *testing.T) {
 	}).Error
 
 	h := &Handlers{MCP: hostMCP, Preview: preview, Sbx: sbx}
-	gotHost, gotName := h.lookupPreviewRegistration("r1", "n1", 3000)
-	if gotHost == "" || gotName != "sb1" {
-		t.Fatalf("lookup = %q %q", gotHost, gotName)
+	if reg := h.lookupPreviewRegistration("r1", "n1", 3000); reg.Host == "" || reg.SandboxName != "sb1" {
+		t.Fatalf("lookup = %+v", reg)
 	}
 
 	ip, code, msg := h.resolveDesktopSandbox(context.Background(), "sb1")

@@ -102,6 +102,10 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 	}
 	env = merged
 	track.mark(env, EnvSourceCredential)
+	if extra.LaunchKind == "solo" {
+		runtime.ApplyPreviewEnv(env, agent.Capabilities)
+		track.mark(env, EnvSourceSystem)
+	}
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
 		BaseWorkDirSrc:       sharedWorkDir,
 		WorkDirSrc:           s.skills.WorkDir(profile),

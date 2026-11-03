@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func (c *closeNotifyRecorder) CloseNotify() <-chan bool { return c.notify }
 
 func TestPreviewProxySuccess(t *testing.T) {
 	hn := newHarness(t)
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<!doctype html><html><head></head><body><a href="/x">x</a></body></html>`))
 	}))
@@ -46,6 +47,38 @@ func TestPreviewProxySuccess(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `/preview/run-px/n1/9090/`) {
 		t.Fatalf("expected rewritten html: %s", w.Body.String())
+	}
+}
+
+func TestPreviewProxyUsesRegisteredInjectorPort(t *testing.T) {
+	hn := newHarness(t)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Grasp-Upstream", "8899")
+		_, _ = w.Write([]byte("demo"))
+	}))
+	defer up.Close()
+
+	preview := services.NewPreviewService(hn.db, hn.h.Sbx.Manager())
+	hn.h.Preview = preview
+	hn.host.SetPreviewStore(preview)
+	hn.fg.RequirePublishedPort = true
+	hn.fg.Seed("sb-solo")
+	hn.fg.SetEndpoints("sb-solo", map[string]string{"18081": up.Listener.Addr().String()})
+	for injectorPort, host := range map[int]string{0: up.URL, 18081: "http://127.0.0.1:1"} {
+		runID := "solo-session-" + strconv.Itoa(injectorPort)
+		if err := preview.UpsertPreviewPort(mcp.PreviewPort{
+			RunID: runID, NodeID: "solo", Port: 8899, InjectorPort: injectorPort,
+			Host: host, SandboxName: "sb-solo", Healthy: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder(), notify: make(chan bool)}
+		req := httptest.NewRequest(http.MethodGet, "/preview/"+runID+"/solo/8899/", nil)
+		req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
+		hn.r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK || w.Body.String() != "demo" {
+			t.Fatalf("proxy with injector port %d: %d %s", injectorPort, w.Code, w.Body)
+		}
 	}
 }
 

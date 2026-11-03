@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
+import { routeApi } from './helpers/apiRoute'
+import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 
 async function openConversation(page: Page, width = 1440, theme = 'light') {
   await page.setViewportSize({ width, height: 960 })
@@ -6,6 +8,41 @@ async function openConversation(page: Page, width = 1440, theme = 'light') {
   await page.getByTestId('pm-threads-aside').getByRole('button', { name: /本周研发进展/ }).click()
   await expect(page.getByTestId('chat-message-rail-mark')).toHaveCount(10)
 }
+
+test('Solo opens a registered app and the pinned HTML from its thumbnail', async ({ page }) => {
+  await installWorkspaceApiDefaults(page)
+  const session = { id: 'preview-check', title: 'Solo preview', agentName: 'Demo', status: 'running', artifactRunId: 'solo-preview-check', sandboxId: 42 }
+  const runId = session.artifactRunId
+  const content = '<!doctype html><html><body><h1>Solo preview smoke</h1></body></html>'
+  const artifact = { id: 'art-demo', runId, nodeId: 'solo', name: 'demo.html', kind: 'html', sizeBytes: content.length, revision: 1, createdAt: '2026-11-03T00:00:00Z' }
+  const port = { runId, nodeId: 'solo', kind: 'port', port: 8899, label: 'Demo app', proxyUrl: '/preview/solo-preview-check/solo/8899/', healthy: true }
+  await routeApi(page, '**/api/solo/sessions**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
+    if (path.endsWith('/messages')) return route.fulfill({ json: [] })
+    if (path.endsWith('/resources')) return route.fulfill({
+      json: { runId, previewArtifact: artifact.name, artifacts: [artifact], ports: [port, { ...port, port: 5173, label: 'Second app' }] },
+    })
+    await route.fulfill({ json: session })
+  })
+  await routeApi(page, '**/api/artifacts/art-demo/content', (route) => route.fulfill({ json: { ...artifact, content } }))
+  await routeApi(page, '**/api/artifacts/art-demo/versions', (route) => route.fulfill({ json: [] }))
+  await page.routeWebSocket('**/api/solo/sessions/*/chat*', (ws) => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))
+  await page.routeWebSocket('**/sandbox-vnc/42/ws', (ws) => ws.send(JSON.stringify({ type: 'ready', url: 'http://127.0.0.1:8899/' })))
+
+  await page.setViewportSize({ width: 1440, height: 950 })
+  await page.goto(`/workspace-config.html?view=/solo/${session.id}`)
+  await page.getByTestId('conversation-resource-toggle').click()
+  await page.getByTestId('react-artifact-card-app').click()
+  await expect(page.getByTestId('app-preview').getByRole('button', { name: 'Demo app' })).toBeVisible()
+
+  await page.getByTestId('conversation-panel-toggle').click()
+  const card = page.getByTestId('react-artifact-card-demo.html')
+  await expect(card.locator('iframe')).toBeVisible()
+  await card.locator('.artifact-card-cover').click()
+  await expect(page.getByTestId('react-artifact-tab-demo.html')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('react-artifact-preview-demo.html').frameLocator('iframe:visible').getByText('Solo preview smoke')).toBeVisible()
+})
 
 for (const theme of ['light', 'dark']) {
   test(`desktop ${theme}: artifact references open beside chat, with deliberate file provenance and preserved draft`, async ({ page }) => {

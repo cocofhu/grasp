@@ -143,17 +143,19 @@ func TestSetPreviewUnreachableNamesListenAddress(t *testing.T) {
 		name  string
 		addrs []string
 		err   error
+		up    string
 		want  []string
 	}{
-		{"loopback", []string{"127.0.0.1:3000", "[::1]:3000"}, nil, []string{"只监听在 127.0.0.1:3000, [::1]:3000", "0.0.0.0:3000"}},
-		{"none", nil, nil, []string{"没有进程在监听"}},
-		{"wildcard", []string{"0.0.0.0:3000"}, nil, []string{"已在 0.0.0.0:3000 监听", "没有响应"}},
-		{"inspect error", nil, errors.New("ssh down"), []string{"不可达", "0.0.0.0:3000"}},
+		{"loopback", []string{"127.0.0.1:3000", "[::1]:3000"}, nil, "", []string{"只监听在 127.0.0.1:3000, [::1]:3000", "0.0.0.0:3000"}},
+		{"none", nil, nil, "", []string{"没有进程在监听"}},
+		{"wildcard", []string{"0.0.0.0:3000"}, nil, "http://example.test:3000", []string{"已在 0.0.0.0:3000 监听", "没有响应"}},
+		{"unpublished", []string{"0.0.0.0:3000"}, nil, "", []string{"网关没有可用的端口映射"}},
+		{"inspect error", nil, errors.New("ssh down"), "", []string{"不可达", "0.0.0.0:3000"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := NewHost(&memStore{})
-			h.SetPreviewSandboxOps(&listenPreviewOps{fakePreviewOps: &fakePreviewOps{name: "sb", ok: true}, addrs: tc.addrs, err: tc.err})
+			h.SetPreviewSandboxOps(&listenPreviewOps{fakePreviewOps: &fakePreviewOps{name: "sb", ok: true, up: tc.up}, addrs: tc.addrs, err: tc.err})
 			_, err := h.setPreviewPort("r", "n", 3000, "")
 			if err == nil {
 				t.Fatal("want error")

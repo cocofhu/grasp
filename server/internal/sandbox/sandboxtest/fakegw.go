@@ -46,6 +46,8 @@ type FakeGateway struct {
 	FailList   bool // GET /sandboxes returns 500
 	FailGet    bool // GET /sandboxes/:id returns 500
 	FailLogs   bool // GET /sandboxes/:id/logs returns 500
+	// RequirePublishedPort makes host resolution return 404 for unmapped ports.
+	RequirePublishedPort bool
 
 	ListCalls int // number of GET /sandboxes (list) calls served
 }
@@ -295,12 +297,16 @@ func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
 func (fg *FakeGateway) hostForPort(w http.ResponseWriter, id, port string) {
 	fg.mu.Lock()
 	rec := fg.recs[id]
+	addr := "127.0.0.1:" + port
+	if rec != nil && fg.RequirePublishedPort {
+		addr = rec.endpoints[port]
+	}
 	fg.mu.Unlock()
-	if rec == nil {
+	if rec == nil || addr == "" {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]string{"address": "127.0.0.1:" + port})
+	writeJSON(w, map[string]string{"address": addr})
 }
 
 func (fg *FakeGateway) logs(w http.ResponseWriter, id string) {

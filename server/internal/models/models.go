@@ -933,6 +933,8 @@ type Sandbox struct {
 	WorkflowName string `json:"workflowName,omitempty"`
 	NodeID       string `json:"nodeId,omitempty"`
 	ThreadID     string `json:"threadId,omitempty"`
+	// PreviewArtifact is the pinned artifact in this Solo sandbox's run namespace.
+	PreviewArtifact string `json:"-"`
 	// Shared marks a run sandbox that serves every node of its run (sandbox
 	// mode "shared"). NodeID then names the node that last used it.
 	Shared bool   `json:"shared,omitempty"`
@@ -1036,6 +1038,8 @@ type RunPreviewPort struct {
 	// a standalone service that only reads the DB (or a control-plane API).
 	Host    string `json:"-"`
 	Healthy bool   `json:"healthy"`
+	// InjectorPort is the published upstream when it differs from the app port.
+	InjectorPort int `json:"-"`
 	// KeepalivePID is the setsid-detached listener pid recorded by KeepalivePort
 	// so Cancel/Abort session cleanup can whitelist it (sandbox Destroy still
 	// reclaims the whole container with the Run/gate lifecycle).

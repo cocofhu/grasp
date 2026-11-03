@@ -5,8 +5,11 @@ import { createI18n } from 'vue-i18n'
 import { describe, expect, it, vi } from 'vitest'
 import type { SoloTurn } from '@/lib/solo/acpTurn'
 import { turnsFromMessages } from '@/lib/solo/acpTurn'
+import type { SoloResources } from '@/lib/api/apiTypes'
+import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 
 const box = vi.hoisted(() => ({
+  getResources: vi.fn<(id: string, signal: AbortSignal) => Promise<SoloResources>>(),
   turns: undefined as undefined | import('vue').Ref<SoloTurn[]>,
   session: undefined as undefined | import('vue').Ref<{
     id: string
@@ -40,7 +43,7 @@ vi.mock('vue-router', () => ({
 }))
 vi.mock('@/lib/api/api', () => ({
   api: {
-    runArtifacts: vi.fn(async () => []),
+    getSoloResources: box.getResources,
     getSoloEnv: vi.fn(async () => []),
     listAgents: vi.fn(async () => []),
     listModelConfigurations: vi.fn(async () => ({ items: [] })),
@@ -108,7 +111,7 @@ function mountPane(messages: object = {}) {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': messages } })],
       stubs: {
         Icon: true,
-        ReviewShell: { template: '<div><slot name="actions" /><slot name="sidebar" /></div>' },
+        ReviewShell: { template: '<div><slot name="actions" /><slot name="stage" /><slot name="sidebar" /></div>' },
         ReactArtifactStage: true,
         AgentTimeline: true,
         SoloStartupCard: true,
@@ -126,6 +129,34 @@ function turn(id: string, role: SoloTurn['role'], text: string): SoloTurn {
 }
 
 describe('SoloSessionPane', () => {
+  it('passes only the current sandbox generation’s preview resources to the stage', async () => {
+    const initial = sessionState.value
+    let finishOld!: (value: SoloResources) => void
+    const oldRequest = new Promise<SoloResources>((resolve) => { finishOld = resolve })
+    const port = { runId: 'solo-new', nodeId: 'solo', kind: 'port', port: 8899, proxyUrl: '/preview/new/', healthy: true }
+    box.getResources
+      .mockReturnValueOnce(oldRequest)
+      .mockResolvedValueOnce({ runId: 'solo-new', artifacts: [], previewArtifact: 'demo.html', ports: [port] })
+    sessionState.value = { ...initial, artifactRunId: 'solo-old' }
+    const wrapper = mountPane(pages)
+    try {
+      await flushPromises()
+      sessionState.value = { ...initial, artifactRunId: 'solo-new' }
+      await flushPromises()
+      finishOld({ runId: 'solo-old', artifacts: [], previewArtifact: 'old.html', ports: [] })
+      await flushPromises()
+      expect(box.getResources.mock.calls[0]?.[1].aborted).toBe(true)
+      const stage = wrapper.getComponent(ReactArtifactStage)
+      expect(stage.props('nodeId')).toBe('solo')
+      expect(stage.props('previewArtifact')).toBe('demo.html')
+      expect(stage.props('registeredPreviews')).toEqual([port])
+    } finally {
+      wrapper.unmount()
+      sessionState.value = initial
+      box.getResources.mockReset()
+    }
+  })
+
   it('leaves a running empty transcript blank with the composer available', async () => {
     turns.value = []
     statusState.value = 'running'

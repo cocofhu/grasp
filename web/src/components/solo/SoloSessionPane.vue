@@ -37,7 +37,7 @@ import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { sessionRepos } from '@/lib/solo/sessionRepos'
 import { isSoloLimitError, soloErrorText } from '@/lib/solo/soloErrors'
-import type { Artifact } from '@/lib/shared/types'
+import type { SoloResources } from '@/lib/api/apiTypes'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
@@ -101,8 +101,7 @@ const moreOpen = ref(false)
 const limitOpen = ref(false)
 const closing = ref(false)
 const restarting = ref(false)
-const soloArtifacts = ref<Artifact[]>([])
-let artifactPoll: number | undefined
+const resources = ref<SoloResources>()
 
 watch(session, (s) => s && store.upsert(s))
 
@@ -170,36 +169,34 @@ watch(
     followBottom.value = true
     mention.clear()
     attach.clearAttachments()
-    soloArtifacts.value = []
     scrollDown(true)
   },
 )
 
-async function loadSoloArtifacts() {
-  const runId = session.value?.artifactRunId
-  if (!runId) {
-    soloArtifacts.value = []
-    return
-  }
-  try {
-    const next = await api.runArtifacts(runId)
-    if (session.value?.artifactRunId === runId) soloArtifacts.value = next
-  } catch {
-    if (session.value?.artifactRunId === runId) soloArtifacts.value = []
-  }
-}
-
 watch(
-  [() => session.value?.artifactRunId, status],
-  ([runId, currentStatus], _, onCleanup) => {
-    if (artifactPoll) window.clearInterval(artifactPoll)
-    artifactPoll = undefined
-    void loadSoloArtifacts()
-    if (!runId || currentStatus === 'closed') return
-    artifactPoll = window.setInterval(() => void loadSoloArtifacts(), 2500)
+  [() => props.sessionId, () => session.value?.artifactRunId, status],
+  ([id, runId, currentStatus], _, onCleanup) => {
+    if (resources.value?.runId !== runId) resources.value = undefined
+    if (!runId) return
+    const controller = new AbortController()
+    let loading = false
+    async function refresh() {
+      if (loading) return
+      loading = true
+      try {
+        const next = await api.getSoloResources(id, controller.signal)
+        if (!controller.signal.aborted && next.runId === runId) resources.value = next
+      } catch {
+        // Keep the last successful read across transient polling failures.
+      } finally {
+        loading = false
+      }
+    }
+    void refresh()
+    const timer = currentStatus === 'closed' ? undefined : window.setInterval(refresh, 2500)
     onCleanup(() => {
-      if (artifactPoll) window.clearInterval(artifactPoll)
-      artifactPoll = undefined
+      controller.abort()
+      window.clearInterval(timer)
     })
   },
   { immediate: true },
@@ -353,10 +350,6 @@ function onDocPointer(e: Event) {
 }
 onMounted(() => document.addEventListener('pointerdown', onDocPointer))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointer))
-onBeforeUnmount(() => {
-  if (artifactPoll) window.clearInterval(artifactPoll)
-  artifactPoll = undefined
-})
 
 function turnInterrupted(turn: { status?: string; error?: string; streaming: boolean }) {
   return !turn.streaming && (turn.status === 'stopped' || turn.status === 'failed' || !!turn.error)
@@ -386,8 +379,11 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
     >
       <template #stage>
         <ReactArtifactStage
-          :artifacts="soloArtifacts"
+          :artifacts="resources?.artifacts || []"
+          :preview-artifact="resources?.previewArtifact"
+          :registered-previews="status === 'running' ? resources?.ports || [] : []"
           :run-id="session.artifactRunId || ''"
+          node-id="solo"
           :sandbox="sandboxResource"
           :sandbox-loading="sandboxResourceLoading"
           :sandbox-log-id="sandboxId"

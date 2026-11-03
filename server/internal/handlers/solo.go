@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -169,6 +170,29 @@ func (h *Handlers) GetSoloSession(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, v)
+}
+
+// GetSoloResources returns the artifacts and preview registrations for the
+// current sandbox of an owned Solo session.
+func (h *Handlers) GetSoloResources(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	sb, err := h.Solo.ResourceSandbox(c.Param("id"), user)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	artifacts := []models.Artifact{}
+	ports := []mcp.PreviewPort{}
+	if sb.RunID != "" {
+		artifacts = append(artifacts, h.Arts.ByRun(sb.RunID)...)
+		if sb.Status == "running" && h.MCP != nil {
+			ports = append(ports, h.MCP.ListPreviewPorts(sb.RunID, "solo")...)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"runId": sb.RunID, "artifacts": artifacts, "previewArtifact": sb.PreviewArtifact, "ports": ports})
 }
 
 // PatchSoloSession handles PATCH /api/solo/sessions/:id (rename).

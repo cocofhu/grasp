@@ -33,6 +33,8 @@ type PreviewPort struct {
 	// "http://172.17.0.5:9090"), persisted so the proxy needn't re-resolve the
 	// container IP through the sandbox manager on every request.
 	Host string `json:"-"`
+	// InjectorPort is the published upstream when it differs from the app port.
+	InjectorPort int `json:"-"`
 	// Mode is "direct" for an IP-direct preview; empty/vnc otherwise.
 	Mode string `json:"mode,omitempty"`
 	// DirectURL is the browser-facing http://IP:port/ when Mode=direct.
@@ -121,6 +123,9 @@ func previewUnreachableError(ctx context.Context, ops PreviewSandboxOps, sandbox
 	list := strings.Join(addrs, ", ")
 	if allLoopback(addrs) {
 		return fmt.Errorf("预览端口 %d 只监听在 %s，平台访问不到：请改为监听 0.0.0.0:%d，然后重试 set_preview", port, list, port)
+	}
+	if _, ok := ops.PreviewUpstream(ctx, sandboxName, port); !ok {
+		return fmt.Errorf("预览端口 %d 已在 %s 监听，但网关没有可用的端口映射：请使用沙箱已映射的端口后重试 set_preview", port, list)
 	}
 	return fmt.Errorf("预览端口 %d 已在 %s 监听，但平台请求没有响应（服务可能还在启动或卡住）：确认服务能正常返回后重试 set_preview", port, list)
 }
@@ -552,7 +557,7 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	if base, ok := ops.PreviewUpstream(ctx, sandboxName, port); ok && base != "" {
 		host = base
 	}
-	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, label, host, keepalivePID)
+	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, 0, label, host, keepalivePID)
 	if err != nil {
 		return PreviewRegistration{}, err
 	}
@@ -596,7 +601,7 @@ func (h *Host) registerSwitchedPreview(ctx context.Context, ops PreviewSandboxOp
 	if host != "" {
 		h.releaseDisplacedPreviews(ctx, ops, runID, nodeID, sandboxName, port, host)
 	}
-	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, label, host, keepalivePID)
+	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, previewPort, label, host, keepalivePID)
 	if err != nil {
 		return PreviewRegistration{}, err
 	}
@@ -622,6 +627,7 @@ func (h *Host) releaseDisplacedPreviews(ctx context.Context, ops PreviewSandboxO
 			continue
 		}
 		p.Host = ""
+		p.InjectorPort = 0
 		if base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port); ok && base != host {
 			p.Host = base
 		}
@@ -650,7 +656,7 @@ func (h *Host) keepalivePreview(ctx context.Context, ops PreviewSandboxOps, runI
 	return keepalivePID, nil
 }
 
-func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int, label, host string, keepalivePID int) (PreviewRegistration, error) {
+func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName string, port, injectorPort int, label, host string, keepalivePID int) (PreviewRegistration, error) {
 	h.mu.RLock()
 	store := h.previewStore
 	h.mu.RUnlock()
@@ -659,7 +665,7 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 		RunID: runID, NodeID: nodeID, Kind: PreviewKindPort,
 		ItemKey: previewItemKey(PreviewKindPort, port, ""),
 		Port:    port, Label: strings.TrimSpace(label),
-		ProxyURL: proxyURL, SandboxName: sandboxName, Host: host, Healthy: true,
+		ProxyURL: proxyURL, SandboxName: sandboxName, Host: host, InjectorPort: injectorPort, Healthy: true,
 		KeepalivePID: keepalivePID, RegisteredAt: time.Now(),
 	}
 	h.mu.Lock()

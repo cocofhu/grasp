@@ -1,5 +1,6 @@
 import type {
   AcpEvent,
+  Artifact,
   ClarifyImage,
   ChatExecution,
   McpCall,
@@ -746,6 +747,13 @@ export interface SoloSession {
   model?: string
   artifactRunId?: string
   capabilities?: AgentCapabilities
+}
+
+export interface SoloResources {
+  runId: string
+  artifacts: Artifact[]
+  previewArtifact: string
+  ports: PreviewPort[]
 }
 
 export interface SoloSessionList {

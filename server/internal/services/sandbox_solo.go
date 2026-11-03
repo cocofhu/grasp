@@ -133,13 +133,11 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		snapshots = []models.SessionRepo{sessionRepoFromProject(opts.Project, opts.Branch, 0)}
 	}
 	repos := SoloRepoSpecsList(snapshots)
-	runID := "solo-" + sanitizeID(sessionID) + "-" + randID()
+	runID := models.SoloArtifactRunPrefix + sanitizeID(sessionID) + "-" + randID()
 	token := uuid.NewString()
 	if s.host != nil {
 		token = s.host.RegisterRun(runID)
-		if agent.Capabilities != nil {
-			s.host.SetActiveNode(runID, "solo", agent.Capabilities.Clone())
-		}
+		s.host.SetActiveNode(runID, "solo", agent.Capabilities.Clone())
 	}
 	platformSpecs := []sandbox.MCPServerSpec{}
 	if base := strings.TrimRight(config.ResolveMCPAdvertise(s.mcpEndpoint), "/"); base != "" {
