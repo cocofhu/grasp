@@ -129,6 +129,53 @@ describe('runLiveCards', () => {
     w.unmount()
   })
 
+  it('fetches once on mount when a card asks for a session the first response carries', async () => {
+    let resolve!: (v: unknown) => void
+    mocks.liveSessions.mockReturnValueOnce(new Promise((r) => (resolve = r)))
+    const w = mountHost(() => 'run-1', () => 'clarify')
+    seen!.ensure!('sidA01')
+    resolve({ enabled: true, sessions: [session('sidA01', 'ready')] })
+    await flushPromises()
+    expect(mocks.liveSessions).toHaveBeenCalledTimes(1)
+    expect(seen!.store.sessions.sidA01?.state).toBe('ready')
+    w.unmount()
+  })
+
+  it('refetches once after mount when the first response lacks the asked session', async () => {
+    let resolve!: (v: unknown) => void
+    mocks.liveSessions.mockReturnValueOnce(new Promise((r) => (resolve = r)))
+    const w = mountHost(() => 'run-1', () => 'clarify')
+    seen!.ensure!('sidA01')
+    resolve({ enabled: true, sessions: [] })
+    await flushPromises()
+    expect(mocks.liveSessions).toHaveBeenCalledTimes(2)
+    seen!.ensure!('sidA01')
+    await flushPromises()
+    expect(mocks.liveSessions).toHaveBeenCalledTimes(2)
+    w.unmount()
+  })
+
+  it('shares one fetch between sockets reconnecting together', async () => {
+    const w = mountHost(() => 'run-1', () => 'clarify')
+    await flushPromises()
+    await Promise.all([refreshRunLive('run-1'), refreshRunLive('run-1')])
+    expect(mocks.liveSessions).toHaveBeenCalledTimes(2)
+    w.unmount()
+  })
+
+  it('refetches when a reconnect lands while the mount fetch is still out', async () => {
+    let resolve!: (v: unknown) => void
+    mocks.liveSessions.mockReturnValueOnce(new Promise((r) => (resolve = r)))
+    const w = mountHost(() => 'run-1', () => 'clarify')
+    const refreshed = refreshRunLive('run-1')
+    void refreshRunLive('run-1')
+    resolve({ enabled: true, sessions: [] })
+    await refreshed
+    await flushPromises()
+    expect(mocks.liveSessions).toHaveBeenCalledTimes(2)
+    w.unmount()
+  })
+
   it('survives a failed fetch', async () => {
     mocks.liveSessions.mockRejectedValue(new Error('boom'))
     const w = mountHost(() => 'run-1', () => 'clarify')

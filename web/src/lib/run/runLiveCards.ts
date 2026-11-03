@@ -15,10 +15,17 @@ type Entry = {
   live: LiveStoreApi
   users: number
   inflight: Promise<void> | null
+  /** The request in flight was sent after the latest reconnect asked for fresh data. */
+  fresh: boolean
   again: boolean
+  againFresh: boolean
   /** Sessions a card already asked for, so a missing one costs one fetch. */
   asked: Set<string>
+  /** Sessions asked for while a request was in flight; refetched only if its response lacks them. */
+  pending: Set<string>
 }
+
+type LoadReason = 'mount' | 'refresh' | 'ensure'
 
 /** Share pages have no login session; their drawer brings its own host. */
 const PUBLIC_SHARE_RUN_ID = 'public-share'
@@ -27,14 +34,18 @@ const entries = new Map<string, Entry>()
 
 const keyOf = (runId: string, nodeId: string) => `${runId}:${nodeId}`
 
-function load(entry: Entry): Promise<void> {
+function load(entry: Entry, reason: LoadReason): Promise<void> {
   if (entry.inflight) {
-    entry.again = true
+    // A request sent before the socket dropped may miss frames; one sent after it does not.
+    if (reason === 'refresh' && !entry.fresh) entry.again = entry.againFresh = true
     return entry.inflight
   }
+  entry.againFresh = reason === 'refresh'
   entry.inflight = (async () => {
     do {
-      entry.again = false
+      entry.fresh = entry.againFresh
+      entry.again = entry.againFresh = false
+      entry.pending.clear()
       try {
         const res = await api.liveSessions(entry.runId, entry.nodeId)
         if (entries.get(entry.key) !== entry) return
@@ -44,9 +55,12 @@ function load(entry: Entry): Promise<void> {
       } catch {
         // Cards fall back to what the message itself carries.
       }
+      for (const sid of entry.pending) if (!entry.live.store.sessions[sid]) entry.again = true
     } while (entry.again && entries.get(entry.key) === entry)
   })().finally(() => {
     entry.inflight = null
+    entry.fresh = false
+    entry.pending.clear()
   })
   return entry.inflight
 }
@@ -58,9 +72,9 @@ function acquire(runId: string, nodeId: string): Entry {
     found.users++
     return found
   }
-  const entry: Entry = { key, runId, nodeId, live: createLiveStore(), users: 1, inflight: null, again: false, asked: new Set() }
+  const entry: Entry = { key, runId, nodeId, live: createLiveStore(), users: 1, inflight: null, fresh: false, again: false, againFresh: false, asked: new Set(), pending: new Set() }
   entries.set(key, entry)
-  void load(entry)
+  void load(entry, 'mount')
   return entry
 }
 
@@ -81,7 +95,7 @@ export function applyRunLiveFrame(frame: unknown): boolean {
 /** Reload every node of the run on screen (after a socket reconnect). */
 export function refreshRunLive(runId: string): Promise<void> {
   const loads: Promise<void>[] = []
-  for (const entry of entries.values()) if (entry.runId === runId) loads.push(load(entry))
+  for (const entry of entries.values()) if (entry.runId === runId) loads.push(load(entry, 'refresh'))
   return Promise.all(loads).then(() => undefined)
 }
 
@@ -107,7 +121,8 @@ export function useRunLiveCardHost(runId: MaybeRefOrGetter<string | undefined>, 
       const entry = current.value
       if (!entry || entry.live.store.sessions[sid] || entry.asked.has(sid)) return
       entry.asked.add(sid)
-      void load(entry)
+      if (entry.inflight) entry.pending.add(sid)
+      void load(entry, 'ensure')
     },
   }
   provide(LIVE_CARD_HOST, host)

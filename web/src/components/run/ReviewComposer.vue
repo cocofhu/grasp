@@ -153,6 +153,7 @@ const props = withDefaults(
   },
 )
 
+// Gate mode renders no ClarifyChat, so it has no Live cards to feed.
 useRunLiveCardHost(() => props.runId, () => (props.mode === 'gate' ? '' : props.nodeId))
 
 const emit = defineEmits<{
