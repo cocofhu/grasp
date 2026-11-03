@@ -388,6 +388,15 @@ test.describe('Live entry on Grasp direct previews', () => {
       const key = `entry-${nodeType}`
       await page.setViewportSize({ width: 1440, height: 1000 })
       await page.request.post(`${origin}/__e2e/live/reset?key=${key}&caps=${nodeType}`)
+      if (nodeType === 'review') {
+        // Deliver the ready socket update before the older generate response.
+        await page.route('**/public/approvals/reply', async (route) => {
+          if (route.request().postDataJSON()?.live?.op !== 'generate') return route.continue()
+          const response = await route.fetch()
+          await expect(overlay(page).locator('[data-act="next"]')).toBeVisible()
+          await route.fulfill({ response })
+        })
+      }
       const configured = await state(page, key)
       expect(configured.node).toEqual({ type: 'agent', caps: LIVE_CAPS[nodeType] })
       const capability = page.waitForResponse((response) => response.url().endsWith('/public/approvals/live-sessions'))

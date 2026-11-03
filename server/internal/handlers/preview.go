@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
@@ -70,7 +71,8 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	host, sandboxName := h.lookupPreviewRegistration(runID, nodeID, port)
+	reg := h.lookupPreviewRegistration(runID, nodeID, port)
+	host, sandboxName := reg.Host, reg.SandboxName
 
 	// When co-located with the sandbox manager, enforce liveness + health and
 	// refresh a stale/empty upstream host (container IP changes across restarts).
@@ -81,7 +83,7 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 				return
 			}
 			h.Sbx.TouchActivityByName(sandboxName)
-			healthy := h.Preview.ProbeHTTPPort(ctx, sandboxName, port)
+			fresh, healthy := h.Preview.ProbeRegisteredPort(ctx, reg)
 			if err := h.Preview.UpdatePreviewHealth(runID, nodeID, port, healthy); err != nil {
 				log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
 					Msg("persist preview health failed")
@@ -90,13 +92,11 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 				c.String(http.StatusServiceUnavailable, "preview service unavailable")
 				return
 			}
-			if fresh, ok := h.Preview.PreviewUpstream(ctx, sandboxName, port); ok && fresh != "" {
-				if fresh != host {
-					host = fresh
-					if err := h.Preview.UpdatePreviewHost(runID, nodeID, port, host); err != nil {
-						log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
-							Msg("persist preview host failed")
-					}
+			if fresh != host {
+				host = fresh
+				if err := h.Preview.UpdatePreviewHost(runID, nodeID, port, host); err != nil {
+					log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
+						Msg("persist preview host failed")
 				}
 			}
 		}
@@ -226,29 +226,30 @@ func isRootAbsolute(p string) bool {
 
 // lookupPreviewRegistration finds the upstream host and sandbox name from MCP
 // memory / DB without talking to the sandbox manager.
-func (h *Handlers) lookupPreviewRegistration(runID, nodeID string, port int) (host, sandboxName string) {
+func (h *Handlers) lookupPreviewRegistration(runID, nodeID string, port int) mcp.PreviewPort {
+	reg := mcp.PreviewPort{RunID: runID, NodeID: nodeID, Port: port}
 	if h.MCP != nil {
 		for _, p := range h.MCP.ListPreviewPorts(runID, nodeID) {
 			if p.Port == port {
-				host, sandboxName = p.Host, p.SandboxName
+				reg = p
 				break
 			}
 		}
 	}
-	if (host == "" || sandboxName == "") && h.Preview != nil {
+	if (reg.Host == "" || reg.SandboxName == "") && h.Preview != nil {
 		if rec, okRec := h.Preview.GetPreviewPort(runID, nodeID, port); okRec {
-			if host == "" {
-				host = rec.Host
+			if reg.Host == "" {
+				reg.Host, reg.InjectorPort = rec.Host, rec.InjectorPort
 			}
-			if sandboxName == "" {
-				sandboxName = rec.SandboxName
+			if reg.SandboxName == "" {
+				reg.SandboxName = rec.SandboxName
 			}
 		}
 	}
-	if sandboxName == "" && h.Preview != nil {
+	if reg.SandboxName == "" && h.Preview != nil {
 		if name, okName := h.Preview.SandboxForRunNode(runID, nodeID); okName {
-			sandboxName = name
+			reg.SandboxName = name
 		}
 	}
-	return host, sandboxName
+	return reg
 }

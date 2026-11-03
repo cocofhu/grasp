@@ -392,6 +392,7 @@ func main() {
 		return row, ok
 	}))
 	wireArtifactMCPPersistence(host, db, runSvc, previewSvc)
+	host.SetSoloArtifactPreviewHook(previewSvc.PinSoloArtifact)
 	previewSvc.SetBrowser(browserSvc)
 	previewSvc.SetSandboxLeases(sbxSvc)
 	host.SetPreviewStore(previewSvc)

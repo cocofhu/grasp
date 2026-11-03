@@ -208,14 +208,15 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 	runID, nodeID, port := claims.RunID, claims.NodeID, claims.Port
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	host, sandboxName := h.lookupPreviewRegistration(runID, nodeID, port)
+	reg := h.lookupPreviewRegistration(runID, nodeID, port)
+	host, sandboxName := reg.Host, reg.SandboxName
 	if h.Sbx != nil {
 		if mgr := h.Sbx.Manager(); mgr != nil && sandboxName != "" {
 			if mgr.Status(ctx, sandboxName) != "running" {
 				c.String(http.StatusGone, "sandbox recycled")
 				return
 			}
-			healthy := h.Preview.ProbeHTTPPort(ctx, sandboxName, port)
+			fresh, healthy := h.Preview.ProbeRegisteredPort(ctx, reg)
 			if err := h.Preview.UpdatePreviewHealth(runID, nodeID, port, healthy); err != nil {
 				log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
 					Msg("persist preview health failed")
@@ -224,13 +225,11 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 				c.String(http.StatusServiceUnavailable, "preview service unavailable")
 				return
 			}
-			if fresh, ok := h.Preview.PreviewUpstream(ctx, sandboxName, port); ok && fresh != "" {
-				if fresh != host {
-					host = fresh
-					if err := h.Preview.UpdatePreviewHost(runID, nodeID, port, host); err != nil {
-						log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
-							Msg("persist preview host failed")
-					}
+			if fresh != host {
+				host = fresh
+				if err := h.Preview.UpdatePreviewHost(runID, nodeID, port, host); err != nil {
+					log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
+						Msg("persist preview host failed")
 				}
 			}
 		}

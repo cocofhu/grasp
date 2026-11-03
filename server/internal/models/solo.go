@@ -31,6 +31,9 @@ const (
 	SoloStatusError    = "error"
 )
 
+// SoloArtifactRunPrefix reserves the run namespace used by resident Solo sandboxes.
+const SoloArtifactRunPrefix = "solo-"
+
 // SessionRepo is one repository frozen into a Solo session at start. It is
 // stored inside the session, not as its own table, and only records what to
 // clone. Agent permissions and environment are resolved again on each start.

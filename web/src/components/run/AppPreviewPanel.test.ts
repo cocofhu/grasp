@@ -45,7 +45,7 @@ const FeedbackStub = defineComponent({
   template: '<div data-testid="feedback-stub" />',
 })
 
-function mountPanel(opts: { compact?: boolean; fill?: boolean } = {}) {
+function mountPanel(opts: Partial<InstanceType<typeof AppPreviewPanel>['$props']> = {}) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
@@ -55,8 +55,7 @@ function mountPanel(opts: { compact?: boolean; fill?: boolean } = {}) {
     props: {
       runId: 'run-1',
       nodeId: 'preview-1',
-      compact: opts.compact ?? false,
-      fill: opts.fill ?? false,
+      ...opts,
     },
     global: {
       plugins: [i18n],
@@ -88,6 +87,24 @@ describe('AppPreviewPanel', () => {
     expect(wrapper.text()).toContain('前端')
     expect(wrapper.find('[data-testid="novnc-stub"]').exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  it('uses Solo registrations and the resident sandbox without workflow requests', async () => {
+    const port = { runId: 'solo-session', nodeId: 'solo', kind: 'port', port: 8899, proxyUrl: '/preview/solo/', healthy: true }
+    const wrapper = mountPanel({ runId: 'solo-session', nodeId: 'solo', registeredPreviews: [port], residentSandboxId: 42 })
+    try {
+      await flushPromises()
+      expect(apiMocks.nodePreviews).not.toHaveBeenCalled()
+      expect(apiMocks.getRunNodeSandbox).not.toHaveBeenCalled()
+      expect(wrapper.get('[data-testid="novnc-stub"]').attributes()).toMatchObject({
+        'data-sandbox-id': '42',
+        'data-target-port': '8899',
+      })
+      await wrapper.setProps({ registeredPreviews: [{ ...port, port: 5173 }] })
+      expect(wrapper.get('[data-testid="novnc-stub"]').attributes('data-target-port')).toBe('5173')
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('switches active port tab', async () => {

@@ -2048,6 +2048,38 @@ describe('ReactArtifactStage split drawer', () => {
     resetStageOpenStateForTests(':run-')
   })
 
+  it('opens a registered Solo app and surfaces its explicit artifact pin in the artifact drawer', async () => {
+    const runId = 'solo-preview'
+    const entry = ensureConversationDrawer(runId)!
+    entry.split = true
+    entry.mode = 'resources'
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        runId,
+        nodeId: 'solo',
+        sandbox: { id: 42 },
+        artifacts: [art({ id: 'demo', name: 'demo.html', kind: 'html', nodeId: 'solo', runId, content: '<p>Demo</p>' })],
+        registeredPreviews: [],
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    try {
+      const card = '[data-testid="react-artifact-card-app"]'
+      expect(wrapper.find(card).exists()).toBe(false)
+      await wrapper.setProps({ registeredPreviews: [{ runId, nodeId: 'solo', port: 8899, kind: 'port', proxyUrl: '/preview/solo/', healthy: true }] })
+      await wrapper.get(card).trigger('click')
+      expect(wrapper.get('[data-testid="react-artifact-tab-novnc"]').attributes('aria-selected')).toBe('true')
+      expect(wrapper.get('[data-testid="app-preview-stub"]').exists()).toBe(true)
+      entry.mode = 'artifacts'
+      await flushPromises()
+      await wrapper.setProps({ previewArtifact: 'demo.html' })
+      expect(wrapper.get('[data-testid="react-artifact-tab-demo.html"]').attributes('aria-selected')).toBe('true')
+    } finally {
+      wrapper.unmount()
+      resetStageOpenStateForTests(runId)
+    }
+  })
+
   it('shows a read-only timeline and artifact cards without a second product title', async () => {
     const wrapper = mountSplit('artifacts')
     await flushPromises()

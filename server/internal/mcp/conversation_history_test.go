@@ -65,10 +65,11 @@ func TestGetHistoryAuthorizesScopeAndValidatesInput(t *testing.T) {
 
 func TestGetHistoryIsListedOnlyForSoloWithProvider(t *testing.T) {
 	h := NewHost(&memStore{})
-	h.RegisterRun("current")
-	h.SetActiveNode("current", "solo", nil)
+	const runID = "solo-current"
+	h.RegisterRun(runID)
+	h.SetActiveNode(runID, "solo", nil)
 	listed := func() bool {
-		for _, tool := range h.listedTools("current") {
+		for _, tool := range h.listedTools(runID) {
 			if tool["name"] == "get_history" {
 				annotations, _ := tool["annotations"].(map[string]any)
 				if annotations["readOnlyHint"] != true || annotations["destructiveHint"] != false || annotations["idempotentHint"] != true || annotations["openWorldHint"] != false {
@@ -86,7 +87,7 @@ func TestGetHistoryIsListedOnlyForSoloWithProvider(t *testing.T) {
 	if !listed() {
 		t.Fatal("Solo cannot discover history")
 	}
-	h.SetActiveNode("current", "workflow-node", nil)
+	h.SetActiveNode(runID, "workflow-node", nil)
 	if listed() {
 		t.Fatal("Solo-only history advertised to workflow")
 	}

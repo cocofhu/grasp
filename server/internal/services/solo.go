@@ -219,6 +219,20 @@ func (s *SoloService) Require(id, user string) (*models.SoloSession, error) {
 	return row, nil
 }
 
+// ResourceSandbox resolves the current artifact namespace of an owned session.
+func (s *SoloService) ResourceSandbox(id, user string) (models.Sandbox, error) {
+	var sb models.Sandbox
+	row, err := s.Require(id, user)
+	if err != nil || row.SandboxID == 0 {
+		return sb, err
+	}
+	err = s.db.First(&sb, "id = ? AND thread_id = ? AND purpose = ?", row.SandboxID, row.ID, SandboxPurposeSolo).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return sb, nil
+	}
+	return sb, err
+}
+
 // acceptInitialModel checks a Solo start selection against the Agent's current
 // model configuration. Empty means the primary model. The configuration itself
 // is never updated.

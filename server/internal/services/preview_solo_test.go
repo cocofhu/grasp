@@ -237,7 +237,7 @@ func TestPreviewServiceSoloSetPreview(t *testing.T) {
 		t.Fatalf("preview did not switch injector and preserve listener: switched=%v keptAlive=%v", switched, keptAlive)
 	}
 	rec, ok := svc.GetPreviewPort(runID, "solo", 3080)
-	if !ok || !rec.Healthy || rec.Host != app.URL || rec.SandboxName != sb.Name || rec.KeepalivePID != 4242 {
+	if !ok || !rec.Healthy || rec.Host != app.URL || rec.SandboxName != sb.Name || rec.KeepalivePID != 4242 || rec.InjectorPort != 18081 {
 		t.Fatalf("persisted preview = %+v, %v", rec, ok)
 	}
 

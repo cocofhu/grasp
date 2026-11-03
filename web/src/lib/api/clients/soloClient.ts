@@ -8,6 +8,7 @@ import type {
   SoloCreateBody,
   SoloEnvEntry,
   SoloMessage,
+  SoloResources,
   SoloSession,
   SoloSessionList,
 } from '../apiTypes'
@@ -40,6 +41,8 @@ export const soloClient = {
   createSoloSession: (body: SoloCreateBody) =>
     req<SoloSession>('/solo/sessions', { method: 'POST', body: JSON.stringify(body) }),
   getSoloSession: (id: string) => req<SoloSession>(`/solo/sessions/${enc(id)}`),
+  getSoloResources: (id: string, signal?: AbortSignal) =>
+    req<SoloResources>(`/solo/sessions/${enc(id)}/resources`, { signal }),
   renameSoloSession: (id: string, title: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
   deleteSoloSession: (id: string) =>

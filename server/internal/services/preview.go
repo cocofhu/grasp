@@ -62,7 +62,7 @@ func (s *PreviewService) UpsertPreviewPort(rec mcp.PreviewPort) error {
 	row := models.RunPreviewPort{
 		RunID: rec.RunID, NodeID: rec.NodeID, ItemKey: itemKey,
 		Kind: rec.Kind, Port: rec.Port, ExternalURL: rec.URL, Label: rec.Label,
-		ProxyURL: rec.ProxyURL, SandboxName: rec.SandboxName, Host: rec.Host, Healthy: rec.Healthy,
+		ProxyURL: rec.ProxyURL, SandboxName: rec.SandboxName, Host: rec.Host, InjectorPort: rec.InjectorPort, Healthy: rec.Healthy,
 		KeepalivePID: rec.KeepalivePID, RegisteredAt: rec.RegisteredAt,
 	}
 	if strings.TrimSpace(row.Kind) == "" {
@@ -106,7 +106,7 @@ func (s *PreviewService) ListPreviewPorts(runID, nodeID string) ([]mcp.PreviewPo
 		out = append(out, mcp.PreviewPort{
 			RunID: r.RunID, NodeID: r.NodeID, Kind: kind, ItemKey: itemKey,
 			Port: r.Port, URL: r.ExternalURL, Label: r.Label,
-			ProxyURL: r.ProxyURL, SandboxName: r.SandboxName, Host: r.Host, Healthy: r.Healthy,
+			ProxyURL: r.ProxyURL, SandboxName: r.SandboxName, Host: r.Host, InjectorPort: r.InjectorPort, Healthy: r.Healthy,
 			KeepalivePID: r.KeepalivePID, RegisteredAt: r.RegisteredAt,
 		})
 	}
@@ -121,7 +121,7 @@ func (s *PreviewService) GetPreviewPort(runID, nodeID string, port int) (*mcp.Pr
 	rec := mcp.PreviewPort{
 		RunID: row.RunID, NodeID: row.NodeID, Kind: row.Kind, ItemKey: row.ItemKey,
 		Port: row.Port, URL: row.ExternalURL, Label: row.Label,
-		ProxyURL: row.ProxyURL, SandboxName: row.SandboxName, Host: row.Host, Healthy: row.Healthy,
+		ProxyURL: row.ProxyURL, SandboxName: row.SandboxName, Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
 		KeepalivePID: row.KeepalivePID, RegisteredAt: row.RegisteredAt,
 	}
 	return &rec, true
@@ -182,12 +182,32 @@ func (s *PreviewService) soloPreviewSandbox(runID, nodeID string) (models.Sandbo
 	if s.db == nil || runID == "" || nodeID != "solo" {
 		return row, false
 	}
-	err := s.db.Model(&models.Sandbox{}).
+	err := s.soloPreviewSandboxes(runID).Order("sandboxes.updated_at desc").First(&row).Error
+	return row, err == nil && strings.TrimSpace(row.Name) != ""
+}
+
+func (s *PreviewService) soloPreviewSandboxes(runID string) *gorm.DB {
+	return s.db.Model(&models.Sandbox{}).
 		Joins("JOIN solo_sessions ON solo_sessions.sandbox_id = sandboxes.id AND solo_sessions.id = sandboxes.thread_id AND solo_sessions.agent_name = sandboxes.profile").
 		Where("sandboxes.run_id = ? AND sandboxes.purpose = ? AND sandboxes.node_id IN ? AND solo_sessions.status = ?",
-			runID, SandboxPurposeSolo, []string{"", "solo"}, models.SoloStatusRunning).
-		Order("sandboxes.updated_at desc").First(&row).Error
-	return row, err == nil && strings.TrimSpace(row.Name) != ""
+			runID, SandboxPurposeSolo, []string{"", "solo"}, models.SoloStatusRunning)
+}
+
+// PinSoloArtifact persists the pin only for the session's current sandbox.
+func (s *PreviewService) PinSoloArtifact(runID, nodeID, name string) error {
+	if nodeID != "solo" {
+		return errors.New("Solo sandbox is not active")
+	}
+	result := s.db.Model(&models.Sandbox{}).
+		Where("status = ? AND id IN (?)", "running", s.soloPreviewSandboxes(runID).Select("sandboxes.id")).
+		UpdateColumn("preview_artifact", name)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("Solo sandbox is not active")
+	}
+	return nil
 }
 
 // SoloMCPBinding resolves a running Solo session's current sandbox and Agent
@@ -267,9 +287,10 @@ func (s *PreviewService) ProbeHTTPPort(ctx context.Context, sandboxName string, 
 		return false
 	}
 	base, ok := s.PreviewUpstream(ctx, sandboxName, port)
-	if !ok {
-		return false
-	}
+	return ok && probePreviewHTTP(ctx, base, 0)
+}
+
+func probePreviewHTTP(ctx context.Context, base string, wantUpstream int) bool {
 	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, base+"/", nil)
@@ -284,7 +305,21 @@ func (s *PreviewService) ProbeHTTPPort(ctx context.Context, sandboxName string, 
 	// Any HTTP response means the proxy's dial will succeed; the proxy passes
 	// non-2xx through unchanged (only a failed dial becomes 502), so a reachable
 	// server — whatever its status — counts as healthy.
-	return true
+	return wantUpstream == 0 || resp.Header.Get(injectUpstreamHeader) == strconv.Itoa(wantUpstream)
+}
+
+// ProbeRegisteredPort checks the registered transport and resolves its current address.
+func (s *PreviewService) ProbeRegisteredPort(ctx context.Context, rec mcp.PreviewPort) (string, bool) {
+	port, want := rec.Port, 0
+	if rec.InjectorPort > 0 {
+		port, want = rec.InjectorPort, rec.Port
+	}
+	if base, ok := s.PreviewUpstream(ctx, rec.SandboxName, port); ok {
+		return base, probePreviewHTTP(ctx, base, want)
+	}
+	// Older registrations only saved the injector address. Require its
+	// upstream marker before trusting that it still serves the registered app.
+	return rec.Host, want == 0 && rec.Host != "" && probePreviewHTTP(ctx, rec.Host, rec.Port)
 }
 
 // injectScript is the runtime bundle's injector script (symlink to the
@@ -343,21 +378,7 @@ func (s *PreviewService) ProbeInjectUpstream(ctx context.Context, sandboxName st
 		return false
 	}
 	base, ok := s.PreviewUpstream(ctx, sandboxName, previewPort)
-	if !ok {
-		return false
-	}
-	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, base+"/", nil)
-	if err != nil {
-		return false
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	_ = resp.Body.Close()
-	return resp.Header.Get(injectUpstreamHeader) == strconv.Itoa(want)
+	return ok && probePreviewHTTP(ctx, base, want)
 }
 
 // injectUpstreamHeader mirrors previewinject.UpstreamHeader in the sandbox.

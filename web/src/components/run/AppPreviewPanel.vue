@@ -20,6 +20,9 @@ const props = withDefaults(
     fill?: boolean
     /** When false, hide PreviewFeedbackChat (review ReAct is the primary dialogue). */
     showFeedback?: boolean
+    /** Standalone conversations provide their own sandbox and preview list. */
+    registeredPreviews?: PreviewPort[]
+    residentSandboxId?: number | null
   }>(),
   { compact: false, fill: false, showFeedback: true },
 )
@@ -73,6 +76,14 @@ function syncActivePort() {
   activePort.value = current && !isUrlPreview(current) ? current.port : null
   if (activeVnc.value) vncTargetPort.value = activeVnc.value.port
   else if (!vncPorts.value.some((p) => p.port === vncTargetPort.value)) vncTargetPort.value = null
+}
+
+function applyPorts(next: PreviewPort[]) {
+  ports.value = next
+  if (!next.some((p) => previewTabKey(p) === activeKey.value)) {
+    activeKey.value = next[0] ? previewTabKey(next[0]) : null
+  }
+  syncActivePort()
 }
 
 function sandboxNumericId(id: unknown): number | null {
@@ -138,16 +149,7 @@ async function loadPorts(opts?: { silent?: boolean }) {
       loadSandbox(gen),
     ])
     if (gen !== portsGen) return
-    ports.value = r.ports || []
-    if (ports.value.length && activeKey.value == null) {
-      activeKey.value = previewTabKey(ports.value[0])
-    } else if (
-      activeKey.value != null &&
-      !ports.value.some((p) => previewTabKey(p) === activeKey.value)
-    ) {
-      activeKey.value = ports.value[0] ? previewTabKey(ports.value[0]) : null
-    }
-    syncActivePort()
+    applyPorts(r.ports || [])
     if (silent) loadError.value = null
   } catch (e: any) {
     if (gen !== portsGen || isAbortError(e) || portsAbort.signal.aborted) return
@@ -176,10 +178,21 @@ function stopEmptyPoll() {
 watch(
   () => [props.runId, props.nodeId],
   () => {
+    if (props.registeredPreviews !== undefined) return
     stopEmptyPoll()
     sandboxId.value = null
     sandboxPhase.value = null
     void loadPorts()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [props.registeredPreviews, props.residentSandboxId] as const,
+  ([previews, id]) => {
+    if (previews === undefined) return
+    applySandboxView(id ? { id } : null)
+    applyPorts(previews)
   },
   { immediate: true },
 )
@@ -292,7 +305,7 @@ function selectPreview(key: string) {
               :key="activeDirectUrl"
               compact
               :direct-url="activeDirectUrl"
-              :issue-ticket="() => api.embedTicket(runId, nodeId)"
+              :issue-ticket="registeredPreviews === undefined ? () => api.embedTicket(runId, nodeId) : undefined"
             />
           </template>
         </NovncPreviewPanel>

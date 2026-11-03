@@ -12,7 +12,7 @@ import PublicAppPreviewPanel from '@/components/run/PublicAppPreviewPanel.vue'
 import SandboxStageSurface from '@/components/run/SandboxStageSurface.vue'
 import ResourceCardIllustration from '@/components/run/ResourceCardIllustration.vue'
 import StageWorkflow from '@/components/run/StageWorkflow.vue'
-import { api } from '@/lib/api/api'
+import { api, type PreviewPort } from '@/lib/api/api'
 import { publicGateApi } from '@/lib/inbox/gateShareLink'
 import type { PublicPreviewPort } from '@/lib/inbox/gateShareLink'
 import { relTime } from '@/lib/shared/format'
@@ -95,6 +95,8 @@ const props = withDefaults(
     sandboxLogId?: number
     /** Review stage of a non-clarify node: show the app tab once set_preview registers. */
     probeRegisteredPreview?: boolean
+    /** Standalone conversations already fetch registrations with their artifacts. */
+    registeredPreviews?: PreviewPort[]
   }>(),
   {
     previewArtifact: '',
@@ -262,6 +264,7 @@ watch(
 
 const effectiveRemoteKind = computed(() => {
   if (props.hideAppPreview) return 'off'
+  if (props.registeredPreviews?.length) return 'app'
   if (clarifyPreview.value) {
     if (resolvedRemoteKind.value === 'public') return props.ports?.length ? 'public' : 'off'
     return clarifyStageRemoteKind(previewRegistered.value)
@@ -280,14 +283,17 @@ const effectivePin = computed(() =>
   }),
 )
 const autoPinEnabled = computed(() => isAutoPinStageNode(resolvedNode.value))
-const gridArtifacts = computed(() =>
-  stageGridArtifactsForNode(
+const gridArtifacts = computed(() => {
+  const artifacts = stageGridArtifactsForNode(
     stageArtifacts.value,
     props.run,
     effectivePin.value,
     resolvedNode.value,
-  ),
-)
+  )
+  if (props.registeredPreviews === undefined || !effectivePin.value) return artifacts
+  const pinned = artifacts.find((a) => a.name === effectivePin.value)
+  return pinned ? [pinned, ...artifacts.filter((a) => a !== pinned)] : artifacts
+})
 const showingNovnc = computed(() => activeTab.value === REACT_STAGE_TAB_NOVNC)
 /** Artifact-only embed keeps the grid free of sandbox and app cards. */
 const showFixedCards = computed(() => !props.hideAppPreview)
@@ -777,10 +783,9 @@ watch(
       false,
     )
     if (!pinEvent) return
-    // Split homes stay on the workflow until the user opens a card, or the
-    // conversation asks for a named artifact. An automatic pin must not
-    // replace that home or the preview this mode already remembers.
-    if (splitActive.value) return
+    // Keep split homes in place. Standalone explicit pins can open inside an
+    // already visible artifact drawer.
+    if (splitActive.value && (props.registeredPreviews === undefined || drawerMode.value !== 'artifacts')) return
     const canFocus = shouldFocusPinnedOrAutoTab({
       userMoved: userMoved.value,
       activeTab: activeTab.value,
@@ -1039,6 +1044,7 @@ watch(
       sandboxLoadingState.value = false
       return
     }
+    if (props.registeredPreviews !== undefined) return
     const rid = String(props.runId || '').trim()
     const nid = String(props.nodeId || '').trim()
     if (!rid || !nid) return
@@ -1411,13 +1417,13 @@ onBeforeUnmount(() => {
                 class="mt-1.5 line-clamp-4 text-[11px] leading-snug text-txt2"
               >{{ textThumb(a)?.summary }}</div>
             </div>
-            <HtmlPreview
+            <div
               v-else-if="htmlThumbContent(a)"
-              :html="htmlThumbContent(a) || ''"
-              mode="demo"
-              :enlargeable="false"
               class="pointer-events-none h-full w-full"
-            />
+              inert
+            >
+              <HtmlPreview :html="htmlThumbContent(a) || ''" mode="demo" :enlargeable="false" />
+            </div>
             <div v-else class="flex h-full items-center justify-center text-txt3">
               <Icon :name="kindIcon[a.kind] || 'artifact'" :size="28" class="opacity-50" />
             </div>
@@ -1547,6 +1553,8 @@ onBeforeUnmount(() => {
         v-if="effectiveRemoteKind === 'app'"
         :run-id="runId"
         :node-id="nodeId"
+        :registered-previews="registeredPreviews"
+        :resident-sandbox-id="sandboxId"
         fill
         :show-feedback="false"
         @pick="onRemotePick"
