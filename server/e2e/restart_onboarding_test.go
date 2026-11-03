@@ -96,7 +96,7 @@ func TestRestartReattachOnboardingContract(t *testing.T) {
 	s := &stack{t: t, api: server.URL, client: server.Client()}
 	const secret = "restart-fixture-secret-never-in-model-or-agent"
 	const model = "deepseek-fixture-raw-model"
-	s.onboard(secret, model)
+	s.onboard(restartModel{apiKey: secret, provider: "deepseek", baseURL: "https://api.deepseek.com/v1", id: model})
 
 	mu.Lock()
 	seen := append([]recordedRequest(nil), requests...)
