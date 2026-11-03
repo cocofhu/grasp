@@ -344,6 +344,8 @@ func (s *stack) configureRestartFixture(endpoint string, markers ...string) rest
 				"id": "restart", "reply": marker,
 				"actions": []map[string]any{
 					{"kind": "shell", "command": command, "expect": []string{marker}},
+					{"kind": "tool", "name": "artifact-store_set_implementation_result", "expect": []string{"已写入实现结果"},
+						"arguments": map[string]string{"summary": marker}},
 					{"kind": "tool", "name": "artifact-store_node_complete", "expect": []string{marker},
 						"arguments": map[string]string{"status": "success", "summary": marker, "handoff": marker}},
 				},
@@ -432,8 +434,8 @@ func (s *stack) onboard(model restartModel) {
 func (s *stack) createWorkflow(fixture bool) string {
 	prompt := fmt.Sprintf("Use your shell tool to run exactly this one command and wait for it to finish:\n\n"+
 		"sleep %d && echo {{vars.marker}} > /tmp/e2e-marker.txt && cat /tmp/e2e-marker.txt\n\n"+
-		"Do not run anything else. When it has printed the marker, call node_complete with status "+
-		"\"success\" and a summary that contains the printed marker text.", sleepSeconds)
+		"Do not run any other shell commands. Record the printed marker as the summary in set_implementation_result, "+
+		"then call node_complete with status \"success\" and the same marker as the summary and handoff.", sleepSeconds)
 	if fixture {
 		prompt = "[GRASP_MOCK run={{vars.marker}} turn=restart]\n" + prompt
 	}
