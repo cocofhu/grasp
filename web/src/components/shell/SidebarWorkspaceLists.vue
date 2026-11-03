@@ -9,10 +9,13 @@ import { api } from '@/lib/api/api'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { displayRunTitle } from '@/lib/run/runTitle'
 import type { Run } from '@/lib/shared/types'
+import type { SoloSession } from '@/lib/api/apiTypes'
 import { HISTORY_RUN_STATUSES } from '@/lib/inbox/sidebarRunRows'
+import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import {
   RECENT_POLL_MS,
   createRecentHold,
+  historyEntries,
   onRecentActivity,
   recentRunActive,
   recentRunTarget,
@@ -38,6 +41,14 @@ const recentListEl = ref<{ $el?: HTMLElement } | null>(null)
 const runsFailed = ref(false)
 let runsRequest: AbortController | null = null
 const runTitle = (run: Run) => displayRunTitle(props.runTitles?.[run.id] ?? run.title) || run.workflowName || run.id
+const soloStore = useSoloSessions()
+const solos = ref<SoloSession[]>([])
+let heldSolos: SoloSession[] | null = null
+const soloTitle = (session: SoloSession) => session.title?.trim() || t('pages.solo.untitled')
+const soloPath = (session: SoloSession) => `/solo/${encodeURIComponent(session.id)}`
+const soloActive = (session: SoloSession) => route.path === soloPath(session)
+const soloSignature = (list: SoloSession[]) => list.map((s) => [s.id, soloTitle(s), s.status, s.closedAt, s.lastActiveAt, s.updatedAt].join('\u0001')).join('\u0002')
+const entries = computed(() => historyEntries(runs.value, solos.value, SIDEBAR_HISTORY_RUN_LIMIT))
 
 async function loadRuns() {
   runsRequest?.abort()
@@ -45,6 +56,7 @@ async function loadRuns() {
   runsRequest = controller
   try {
     if (!await ensureLoaded() || runsRequest !== controller) return
+    if (!soloStore.loaded.value) void soloStore.refresh()
     const result = await api.listRuns({
       page: 1,
       pageSize: SIDEBAR_HISTORY_RUN_LIMIT,
@@ -69,12 +81,21 @@ function applyRuns(next: Run[]) {
   if (sameRecentRows(runs.value, next, runTitle)) return
   runs.value = next
 }
-function flushHeldRuns() {
-  if (heldRuns && !recentHold.isHeld()) applyRuns(heldRuns)
+function applySolos(next: SoloSession[]) {
+  if (recentHold.isHeld()) { heldSolos = next; return }
+  heldSolos = null
+  if (soloSignature(solos.value) === soloSignature(next)) return
+  solos.value = next
 }
+function flushHeld() {
+  if (recentHold.isHeld()) return
+  if (heldRuns) applyRuns(heldRuns)
+  if (heldSolos) applySolos(heldSolos)
+}
+watch(() => soloStore.ended.value, (next) => applySolos([...next]), { immediate: true })
 watch(recentListEl, (comp) => {
   const el = comp?.$el
-  if (el instanceof HTMLElement) recentHold.attach(el, flushHeldRuns)
+  if (el instanceof HTMLElement) recentHold.attach(el, flushHeld)
   else recentHold.detach()
 })
 
@@ -95,10 +116,10 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
       <h3 class="workspace-list-heading grasp-status-host" data-icon-motion-span="history-title"><RouterLink to="/runs" class="grasp-status-host" data-testid="sidebar-recent-heading" @click="emit('navigate')"><Icon name="history-back" :size="14" class="workspace-list-heading-icon grasp-status" aria-hidden="true" /><span>{{ t('nav.runHistory') }}</span></RouterLink><button type="button" class="workspace-list-toggle" data-testid="sidebar-recent-toggle" :aria-expanded="!historyCollapsed" :aria-label="t(historyCollapsed ? 'nav.sectionExpand' : 'nav.sectionCollapse', { name: t('nav.runHistory') })" @click="toggleSection('history')"><Icon :interactive="false" name="chevron-down" :size="12" class="workspace-list-chevron" :class="{ 'is-collapsed': historyCollapsed }" aria-hidden="true" /></button></h3>
       <div v-show="!historyCollapsed" data-testid="sidebar-recent-body">
       <div v-if="runsFailed" class="workspace-list-state" role="alert"><span>{{ t('nav.workspaceLoadFailed') }}</span><button type="button" @click="loadRuns">{{ t('nav.workspaceRetry') }}</button></div>
-      <p v-else-if="!runs.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
+      <p v-else-if="!entries.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
       <div v-else class="sidebar-tree">
         <RecentReorderList ref="recentListEl">
-          <div v-for="run in runs" :key="run.id" class="sidebar-tree-item"><RouterLink v-hover-ink :to="recentRunTarget(run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(run, route) }" :aria-current="recentRunActive(run, route) ? 'page' : undefined" :title="runTitle(run)" data-testid="sidebar-recent-run" :data-run-id="run.id" :data-status="run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(run) }}</span><Icon v-if="run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
+          <div v-for="entry in entries" :key="entry.key" class="sidebar-tree-item"><RouterLink v-hover-ink v-if="entry.kind === 'solo'" :to="soloPath(entry.session)" class="workspace-recent-row" :class="{ 'is-active': soloActive(entry.session) }" :aria-current="soloActive(entry.session) ? 'page' : undefined" :title="soloTitle(entry.session)" data-testid="sidebar-recent-solo" :data-solo-id="entry.session.id" :data-status="entry.session.status" @click="emit('navigate')"><span class="workspace-list-title">{{ soloTitle(entry.session) }}</span><Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink><RouterLink v-hover-ink v-else :to="recentRunTarget(entry.run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(entry.run, route) }" :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined" :title="runTitle(entry.run)" data-testid="sidebar-recent-run" :data-run-id="entry.run.id" :data-status="entry.run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(entry.run) }}</span><Icon v-if="entry.run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="entry.run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
         </RecentReorderList>
       </div>
       </div>

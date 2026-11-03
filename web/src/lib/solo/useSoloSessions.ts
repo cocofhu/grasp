@@ -13,6 +13,11 @@ export function isSoloActive(s: Pick<SoloSession, 'status'>): boolean {
   return s.status === 'starting' || s.status === 'running'
 }
 
+/** Closed (cancelled) or failed sessions; the sidebar lists them under「历史执行」. */
+export function isSoloEnded(s: Pick<SoloSession, 'status'>): boolean {
+  return s.status === 'closed' || s.status === 'error'
+}
+
 /** Workspace-wide Solo session list shared by the sidebar, home and /solo. */
 export function useSoloSessions() {
   async function refresh() {
@@ -47,6 +52,7 @@ export function useSoloSessions() {
   }
 
   const active = computed(() => sessions.value.filter(isSoloActive))
+  const ended = computed(() => sessions.value.filter(isSoloEnded))
 
-  return { sessions, active, maxSandboxes, loaded, loading, error, refresh, upsert, remove }
+  return { sessions, active, ended, maxSandboxes, loaded, loading, error, refresh, upsert, remove }
 }

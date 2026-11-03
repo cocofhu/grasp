@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Run, RunCurrentNode } from '@/lib/shared/types'
+import type { SoloSession } from '@/lib/api/apiTypes'
 import {
   RECENT_RELAY_DEBOUNCE_MS,
   createRecentHold,
+  historyEntries,
   notifyRecentActivity,
   onRecentActivity,
   resetRecentActivityRelayForTests,
@@ -164,5 +166,50 @@ describe('local activity relay', () => {
     off()
     vi.clearAllTimers()
     vi.useRealTimers()
+  })
+})
+
+describe('historyEntries merges finished runs with ended Solo sessions', () => {
+  const hr = (id: string, at: Partial<Pick<Run, 'lastActivityAt' | 'startedAt' | 'createdAt'>> = {}) =>
+    ({ id, status: 'completed', ...at }) as unknown as Run
+  const hs = (id: string, at: Partial<Pick<SoloSession, 'closedAt' | 'lastActiveAt' | 'updatedAt'>> = {}) =>
+    ({ id, title: id, status: 'closed', ...at }) as unknown as SoloSession
+  const keys = (list: ReturnType<typeof historyEntries>) => list.map((e) => e.key)
+
+  it('interleaves both kinds newest first', () => {
+    const runs = [hr('r3', { lastActivityAt: '2026-11-03T10:00:00Z' }), hr('r1', { lastActivityAt: '2026-11-03T08:00:00Z' })]
+    const solos = [hs('s0', { closedAt: '2026-11-03T07:00:00Z' }), hs('s2', { closedAt: '2026-11-03T09:00:00Z' })]
+    const out = historyEntries(runs, solos, 20)
+    expect(keys(out)).toEqual(['r3', 'solo:s2', 'r1', 'solo:s0'])
+    expect(out[1]).toMatchObject({ kind: 'solo', session: solos[1] })
+    expect(out[0]).toMatchObject({ kind: 'run', run: runs[0] })
+  })
+
+  it('falls back lastActivityAt → startedAt → createdAt and closedAt → lastActiveAt → updatedAt', () => {
+    const runs = [hr('rs', { startedAt: '2026-11-03T06:00:00Z' }), hr('rc', { createdAt: '2026-11-03T02:00:00Z' })]
+    const solos = [
+      hs('sl', { lastActiveAt: '2026-11-03T05:00:00Z', updatedAt: '2026-11-03T12:00:00Z' }),
+      hs('su', { updatedAt: '2026-11-03T03:00:00Z' }),
+      hs('sc', { closedAt: '2026-11-03T07:00:00Z', lastActiveAt: '2026-11-03T01:00:00Z' }),
+    ]
+    expect(keys(historyEntries(runs, solos, 20))).toEqual(['solo:sc', 'rs', 'solo:sl', 'solo:su', 'rc'])
+  })
+
+  it('sorts a missing or unparseable time last and keeps equal times stable', () => {
+    const solos = [hs('b', { closedAt: 'not a date' }), hs('a'), hs('c', { closedAt: '2026-11-03T01:00:00Z' })]
+    expect(keys(historyEntries([], solos, 20))).toEqual(['solo:c', 'solo:a', 'solo:b'])
+    const same = '2026-11-03T01:00:00Z'
+    const tie = historyEntries([hr('r', { lastActivityAt: same })], [hs('s', { closedAt: same })], 20)
+    expect(keys(tie)).toEqual(['r', 'solo:s'])
+  })
+
+  it('keeps the server run order and caps the merged list', () => {
+    const runs = Array.from({ length: 20 }, (_, i) => hr(`r${i}`))
+    const solos = Array.from({ length: 5 }, (_, i) => hs(`s${i}`, { closedAt: `2026-11-03T0${i}:00:00Z` }))
+    const out = historyEntries(runs, solos, 20)
+    expect(out).toHaveLength(20)
+    expect(keys(out).slice(0, 5)).toEqual(['solo:s4', 'solo:s3', 'solo:s2', 'solo:s1', 'solo:s0'])
+    expect(keys(out).slice(5)).toEqual(runs.slice(0, 15).map((r) => r.id))
+    expect(historyEntries(runs, solos, 0)).toEqual([])
   })
 })

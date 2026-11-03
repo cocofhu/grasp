@@ -421,6 +421,43 @@ describe('AppSidebarNav', () => {
     wrapper.unmount()
   })
 
+  describe('pinned rows lead 正在执行 whatever their kind', () => {
+    async function runningKeys(pins: Array<{ itemKey: string; pinnedAt: number }>) {
+      useAuth().setUser({ username: 'alice', expiresAt: '2099-01-01T00:00:00Z' })
+      localStorage.setItem('grasp.sidebarPendingPins.alice', JSON.stringify(pins))
+      apiMocks.listRuns.mockResolvedValue({ items: [
+        { id: 'A', workflowId: 'wf', workflowName: 'w', title: '工作流 A', status: 'waiting_human', startedAt: 'T0' },
+        { id: 'B', workflowId: 'wf', workflowName: 'w', title: '工作流 B', status: 'waiting_human', startedAt: 'T0' },
+      ] })
+      apiMocks.listSoloSessions.mockResolvedValue({
+        sessions: [{ id: 'S', title: 'Solo S', agentName: 'a', status: 'running', restarts: 0, busy: false, waiting: 0, createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z' }],
+        maxSandboxes: 5,
+      })
+      const wrapper = mountNav()
+      await flushPromises()
+      const section = wrapper.get('[data-testid="nav-running-rows"]')
+      const keys = section.findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))
+      const pinned = section.findAll('[data-testid="nav-pending-row"]').filter((r) => r.find('[data-testid="nav-pending-pin"]').exists()).map((r) => r.attributes('data-key'))
+      expect(section.findAll('.sidebar-tree-item').every((item) => item.findAll('[data-testid="nav-pending-row"]').length === 1)).toBe(true)
+      expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('3')
+      expect(section.get('[data-key="S"]').attributes('data-kind')).toBe('solo')
+      wrapper.unmount()
+      return { keys, pinned }
+    }
+
+    it('a Solo pinned after the workflow comes first', async () => {
+      expect(await runningKeys([{ itemKey: 'A', pinnedAt: 10 }, { itemKey: 'solo:S', pinnedAt: 20 }])).toEqual({ keys: ['S', 'A', 'B'], pinned: ['S', 'A'] })
+    })
+
+    it('a workflow pinned after the Solo comes first, both above unpinned rows', async () => {
+      expect(await runningKeys([{ itemKey: 'solo:S', pinnedAt: 10 }, { itemKey: 'A', pinnedAt: 20 }])).toEqual({ keys: ['A', 'S', 'B'], pinned: ['A', 'S'] })
+    })
+
+    it('without pins keeps workflow rows before Solo rows', async () => {
+      expect(await runningKeys([])).toEqual({ keys: ['A', 'B', 'S'], pinned: [] })
+    })
+  })
+
   it('keeps queued and waiting rows still while a confirmed running row remains busy', async () => {
     apiMocks.listRuns.mockResolvedValue({ items: [
       { id: 'queued', workflowId: 'wf', workflowName: 'w', title: '排队', status: 'queued', startedAt: 'T0' },
