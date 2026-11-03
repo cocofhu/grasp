@@ -172,6 +172,29 @@ type ServerConfig struct {
 	// and Run→QQ notification deep links (/runs/{id}). Empty defaults to
 	// http://localhost:<port>; QQ clients cannot open relative /runs paths.
 	PublicAdvertise string `yaml:"public_advertise"`
+	// FrameAncestors lists the origins (space or comma separated) that may
+	// embed workspace pages in an iframe. Empty forbids embedding.
+	FrameAncestors string `yaml:"frame_ancestors"`
+}
+
+// FrameAncestorOrigins returns the valid http(s) origins in FrameAncestors
+// and the entries that are not origins.
+func (s ServerConfig) FrameAncestorOrigins() (origins, invalid []string) {
+	seen := map[string]bool{}
+	for _, raw := range strings.FieldsFunc(s.FrameAncestors, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
+		u, err := url.Parse(raw)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			u.User != nil || strings.ContainsAny(u.Host, "*") || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			invalid = append(invalid, raw)
+			continue
+		}
+		origin := strings.ToLower(u.Scheme + "://" + u.Host)
+		if !seen[origin] {
+			seen[origin] = true
+			origins = append(origins, origin)
+		}
+	}
+	return origins, invalid
 }
 
 type DatabaseConfig struct {
@@ -411,6 +434,9 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_PUBLIC_ADVERTISE"); v != "" {
 		c.Server.PublicAdvertise = v
 	}
+	if v := env("GRASP_FRAME_ANCESTORS"); v != "" {
+		c.Server.FrameAncestors = v
+	}
 	if v := env("GRASP_DB"); v != "" {
 		c.Database.Path = v
 	}
@@ -604,6 +630,9 @@ func setDefaults(c *Config) {
 	}
 	warnUnsafeAuth(c)
 	warnDeprecated(c)
+	if _, invalid := c.Server.FrameAncestorOrigins(); len(invalid) > 0 {
+		log.Warn().Strs("frame_ancestors", invalid).Msg("ignoring frame_ancestors entries that are not http(s) origins")
+	}
 }
 
 func warnDeprecated(c *Config) {

@@ -488,6 +488,7 @@ func main() {
 	soloSvc.SetBlobStore(blobStore)
 	eng.SetReferencePinner(soloSvc)
 
+	frameAncestors, _ := cfg.Server.FrameAncestorOrigins()
 	h := &handlers.Handlers{
 		WF:                  wfSvc,
 		Workspace:           workspaceSvc,
@@ -535,6 +536,7 @@ func main() {
 		GateShareSessions:   gateShareSessions,
 		GateShareLimiter:    gateshare.NewIPLimiter(),
 		PublicAdvertise:     cfg.Server.PublicAdvertise,
+		FrameAncestors:      frameAncestors,
 		InjectBundles:       injectStore,
 		Blobs:               blobStore,
 		Onboarding:          services.NewOnboardingService(agentSvc, sharedAgentSvc, wfSvc, credentialSvc),

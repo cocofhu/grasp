@@ -3,6 +3,8 @@ package router
 
 import (
 	"net/http"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +37,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.Static("/assets", "./web/dist/assets")
 	r.Static("/fonts", "./web/dist/fonts")
 	r.StaticFile("/favicon.ico", "./web/dist/favicon.ico")
+	serveWorkspaceSPA := workspaceSPA(h.FrameAncestors)
 	r.GET("/", serveWorkspaceSPA)
 	r.HEAD("/", serveWorkspaceSPA)
 
@@ -479,10 +482,34 @@ func New(h *handlers.Handlers) *gin.Engine {
 	return r
 }
 
-func serveWorkspaceSPA(c *gin.Context) {
-	c.Header("X-Frame-Options", "DENY")
-	c.Header("Content-Security-Policy", "frame-ancestors 'none'")
-	c.File("./web/dist/index.html")
+// workspaceFramingMeta tells the SPA that a framed workspace page is allowed;
+// without it, a framed document renders only preview routes.
+const workspaceFramingMeta = `<meta name="grasp-workspace-framing" content="allowed">`
+
+var reWorkspaceHeadOpen = regexp.MustCompile(`(?i)<head[^>]*>`)
+
+func workspaceSPA(frameAncestors []string) gin.HandlerFunc {
+	if len(frameAncestors) == 0 {
+		return func(c *gin.Context) {
+			c.Header("X-Frame-Options", "DENY")
+			c.Header("Content-Security-Policy", "frame-ancestors 'none'")
+			c.File("./web/dist/index.html")
+		}
+	}
+	policy := "frame-ancestors " + strings.Join(frameAncestors, " ")
+	return func(c *gin.Context) {
+		c.Header("Content-Security-Policy", policy)
+		page, err := os.ReadFile("./web/dist/index.html")
+		if err != nil {
+			c.File("./web/dist/index.html")
+			return
+		}
+		html := string(page)
+		if loc := reWorkspaceHeadOpen.FindStringIndex(html); loc != nil {
+			html = html[:loc[1]] + workspaceFramingMeta + html[loc[1]:]
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+	}
 }
 
 // errorLogger centralizes server-side visibility for failed requests. Handlers
@@ -530,7 +557,7 @@ func isRetiredPublicGatePath(p string) bool {
 func cors() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		p := c.Request.URL.Path
-		if isPublicApprovalPath(p) || isRetiredPublicGatePath(p) || strings.HasPrefix(p, "/embed-api/") || strings.HasPrefix(p, "/embed/") {
+		if isPublicApprovalPath(p) || isRetiredPublicGatePath(p) || strings.HasPrefix(p, "/embed-api/") || strings.HasPrefix(p, "/embed/") || strings.HasPrefix(p, "/preview/") {
 			c.Next()
 			return
 		}

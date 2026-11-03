@@ -96,19 +96,27 @@ func TestSessionBrowserOriginCompatibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		name, origin, site string
-		want               int
+		name, target, origin, site string
+		want                       int
 	}{
-		{"native client", "", "", http.StatusOK},
-		{"same origin", "http://grasp.test:8080", "", http.StatusOK},
-		{"dev proxy", "http://grasp.test:5173", "same-origin", http.StatusOK},
-		{"different port", "http://grasp.test:9090", "", http.StatusForbidden},
-		{"different scheme", "https://grasp.test:8080", "", http.StatusForbidden},
-		{"opaque preview", "null", "", http.StatusForbidden},
-		{"cross origin metadata", "", "same-site", http.StatusForbidden},
+		{"native client", "", "", "", http.StatusOK},
+		{"same origin", "", "http://grasp.test:8080", "", http.StatusOK},
+		{"dev proxy", "", "http://grasp.test:5173", "same-origin", http.StatusOK},
+		{"tls proxy without forwarded proto", "http://grasp.test/api/protected", "https://grasp.test", "", http.StatusOK},
+		{"explicit default port", "http://grasp.test:443/api/protected", "https://grasp.test", "", http.StatusOK},
+		{"ipv6 host", "http://[::1]:8080/api/protected", "http://[::1]:8080", "", http.StatusOK},
+		{"different port", "", "http://grasp.test:9090", "", http.StatusForbidden},
+		{"preview port behind default port", "http://grasp.test/api/protected", "http://grasp.test:9090", "", http.StatusForbidden},
+		{"non-http origin", "", "file://grasp.test:8080", "", http.StatusForbidden},
+		{"opaque preview", "", "null", "", http.StatusForbidden},
+		{"cross origin metadata", "", "", "same-site", http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "http://grasp.test:8080/api/protected", nil)
+			target := tc.target
+			if target == "" {
+				target = "http://grasp.test:8080/api/protected"
+			}
+			req := httptest.NewRequest(http.MethodGet, target, nil)
 			req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: session.ID})
 			req.Header.Set("Origin", tc.origin)
 			req.Header.Set("Sec-Fetch-Site", tc.site)
@@ -118,6 +126,78 @@ func TestSessionBrowserOriginCompatibility(t *testing.T) {
 				t.Fatalf("got %d, want %d", w.Code, tc.want)
 			}
 		})
+	}
+}
+
+func TestSessionIgnoresPlantedCookies(t *testing.T) {
+	svc, r := setupAuthHTTP(t)
+	victim, err := svc.Login("admin", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := svc.Login("admin", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(path string, tokens ...string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		for _, token := range tokens {
+			req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+
+	if w := request("/api/protected", "planted-invalid", victim.ID); w.Code != http.StatusOK {
+		t.Fatalf("an invalid planted cookie hid the real session: %d", w.Code)
+	}
+	if w := request("/api/protected", victim.ID, victim.ID); w.Code != http.StatusOK {
+		t.Fatalf("a repeated cookie value was treated as two sessions: %d", w.Code)
+	}
+
+	w := request("/api/protected", other.ID, victim.ID)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("two valid sessions must not authenticate: %d", w.Code)
+	}
+	cleared := map[string]bool{}
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == auth.CookieName && ck.MaxAge < 0 {
+			cleared[ck.Path+"|"+ck.Domain] = true
+		}
+	}
+	for _, key := range []string{"/|", "/api|", "/api/|", "/api/protected|", "/api|example.com"} {
+		if !cleared[key] {
+			t.Errorf("cookie copy %q was not expired: %v", key, cleared)
+		}
+	}
+
+	if w := request("/sandbox/1/", other.ID, victim.ID); w.Code != http.StatusFound {
+		t.Fatalf("sandbox proxy accepted two sessions: %d", w.Code)
+	}
+	if w := request("/ws", other.ID, victim.ID); w.Code != http.StatusUnauthorized {
+		t.Fatalf("websocket accepted two sessions: %d", w.Code)
+	}
+}
+
+func TestLogoutDeletesEverySessionCookie(t *testing.T) {
+	svc, r := setupAuthHTTP(t)
+	first, err := svc.Login("admin", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.Login("admin", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: first.ID})
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: second.ID})
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	for _, id := range []string{first.ID, second.ID} {
+		if _, err := svc.ValidateSession(id); err == nil {
+			t.Fatal("logout left a session alive")
+		}
 	}
 }
 

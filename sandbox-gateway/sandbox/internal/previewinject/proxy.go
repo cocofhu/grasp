@@ -27,6 +27,7 @@ var liveOverlayScript []byte
 var errUnsupportedEncoding = errors.New("unsupported content-encoding")
 
 const flushInterval = 100 * time.Millisecond
+// graspSessionCookie must match auth.CookieName in the Grasp server.
 const graspSessionCookie = "cf_session"
 
 // NewHandler reverse-proxies to upstream and injects preview-pick.js into

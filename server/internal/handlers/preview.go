@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -61,6 +62,11 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	port, err := strconv.Atoi(c.Param("port"))
 	if err != nil || port <= 0 {
 		c.String(http.StatusBadRequest, "bad port")
+		return
+	}
+	writePreviewCORS(c)
+	if c.Request.Method == http.MethodOptions && c.GetHeader("Access-Control-Request-Method") != "" {
+		c.Status(http.StatusNoContent)
 		return
 	}
 	if h.MCP == nil || h.Preview == nil {
@@ -116,10 +122,14 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = 100 * time.Millisecond
-	rewritePreview := previewModifyResponse(prefix)
+	rewritePreview := rewritePreviewResponse(prefix, previewStorageShim)
 	proxy.ModifyResponse = func(resp *http.Response) error {
-		resp.Header.Del("Set-Cookie")
-		resp.Header.Add("Content-Security-Policy", "sandbox allow-scripts allow-forms")
+		dropSessionSetCookie(resp.Header)
+		resp.Header.Del("Access-Control-Allow-Origin")
+		resp.Header.Del("Access-Control-Allow-Credentials")
+		// App code must never run with the Grasp origin, even as a top-level tab.
+		// allow-popups-to-escape-sandbox and allow-same-origin would undo that.
+		resp.Header.Add("Content-Security-Policy", previewSandboxCSP)
 		return rewritePreview(resp)
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -138,8 +148,7 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	// Ask upstream for identity encoding so ModifyResponse can rewrite HTML
 	// bodies (a gzipped body can't be sub_filtered without decoding first).
 	c.Request.Header.Set("Accept-Encoding", "identity")
-	c.Request.Header.Del("Cookie")
-	c.Request.Header.Del("Authorization")
+	forwardCookiesToUpstream(c.Request)
 
 	publicHost := c.Request.Host
 	if fh := c.GetHeader("X-Forwarded-Host"); fh != "" {
@@ -175,6 +184,12 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 // once the entry HTML points at the right asset URLs, Vite/webpack chunks load
 // relative to their own module URL and resolve correctly.
 func previewModifyResponse(prefix string) func(*http.Response) error {
+	return rewritePreviewResponse(prefix, "")
+}
+
+// rewritePreviewResponse is previewModifyResponse plus headHTML placed at the
+// start of every HTML document, ahead of the app's own scripts.
+func rewritePreviewResponse(prefix, headHTML string) func(*http.Response) error {
 	return func(resp *http.Response) error {
 		// Never touch a protocol switch (WebSocket/HMR upgrade).
 		if resp.StatusCode == http.StatusSwitchingProtocols {
@@ -205,14 +220,17 @@ func previewModifyResponse(prefix string) func(*http.Response) error {
 		html = reRootAbsDbl.ReplaceAllString(html, dblRepl)
 		html = reRootAbsSgl.ReplaceAllString(html, sglRepl)
 
+		head := headHTML
 		if !reHasBase.MatchString(html) {
-			baseTag := `<base href="` + prefix + `">`
+			head = `<base href="` + prefix + `">` + head
+		}
+		if head != "" {
 			if loc := reHeadOpen.FindStringIndex(html); loc != nil {
-				html = html[:loc[1]] + baseTag + html[loc[1]:]
+				html = html[:loc[1]] + head + html[loc[1]:]
 			} else if loc := reHtmlOpen.FindStringIndex(html); loc != nil {
-				html = html[:loc[1]] + baseTag + html[loc[1]:]
+				html = html[:loc[1]] + head + html[loc[1]:]
 			} else {
-				html = baseTag + html
+				html = head + html
 			}
 		}
 
@@ -222,6 +240,56 @@ func previewModifyResponse(prefix string) func(*http.Response) error {
 		resp.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
 		resp.Header.Del("Content-Encoding")
 		return nil
+	}
+}
+
+const previewSandboxCSP = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+
+// previewStorageShim keeps apps that touch Web Storage or document.cookie at
+// startup working in the opaque origin, where those APIs throw. Values live
+// for the page only.
+const previewStorageShim = `<script>(function(){` +
+	`function mem(){var d={};return{get length(){return Object.keys(d).length},` +
+	`key:function(i){var k=Object.keys(d);return i<k.length?k[i]:null},` +
+	`getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},` +
+	`setItem:function(k,v){d[String(k)]=String(v)},removeItem:function(k){delete d[String(k)]},clear:function(){d={}}}}` +
+	`["localStorage","sessionStorage"].forEach(function(n){try{window[n]}catch(e){` +
+	`try{Object.defineProperty(window,n,{value:mem(),configurable:true})}catch(_){}}});` +
+	`try{document.cookie}catch(e){var j={};try{Object.defineProperty(document,"cookie",{configurable:true,` +
+	`get:function(){return Object.keys(j).map(function(k){return k+"="+j[k]}).join("; ")},` +
+	`set:function(v){v=String(v);var p=v.split(";")[0],i=p.indexOf("=");if(i<1)return;var k=p.slice(0,i).trim();` +
+	`if(/;\s*max-age=(0|-)|;\s*expires=thu, 01 jan 1970/i.test(v))delete j[k];else j[k]=p.slice(i+1).trim()}})}catch(_){}}` +
+	`})()</script>`
+
+// writePreviewCORS answers for the opaque origin the sandboxed preview runs
+// in: the app's requests to its own paths arrive with Origin: null.
+func writePreviewCORS(c *gin.Context) {
+	header := c.Writer.Header()
+	if c.GetHeader("Origin") == "null" {
+		header.Set("Access-Control-Allow-Origin", "null")
+		header.Set("Access-Control-Allow-Credentials", "true")
+		header.Add("Vary", "Origin")
+	} else {
+		header.Set("Access-Control-Allow-Origin", "*")
+	}
+	header.Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
+	allowed := c.GetHeader("Access-Control-Request-Headers")
+	if allowed == "" {
+		allowed = "Content-Type, Authorization"
+	}
+	header.Set("Access-Control-Allow-Headers", allowed)
+}
+
+// dropSessionSetCookie keeps the app's cookies but never lets it set
+// cf_session, which would share this host with the workspace.
+func dropSessionSetCookie(header http.Header) {
+	values := header.Values("Set-Cookie")
+	header.Del("Set-Cookie")
+	for _, v := range values {
+		name, _, _ := strings.Cut(v, "=")
+		if strings.TrimSpace(name) != auth.CookieName {
+			header.Add("Set-Cookie", v)
+		}
 	}
 }
 

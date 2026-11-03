@@ -2,8 +2,13 @@ import type { Router } from 'vue-router'
 import { authApi } from '@/lib/api/api'
 import { authRedirectPath, getAuthState, markAuthReady, useAuth } from '@/lib/composables/useAuth'
 
+/**
+ * True when this document is framed and may render only preview routes.
+ * The server marks workspace pages that configured origins may embed.
+ */
 export function isFramed(): boolean {
-  return typeof window !== 'undefined' && window.self !== window.top
+  if (typeof window === 'undefined' || window.self === window.top) return false
+  return document.querySelector('meta[name="grasp-workspace-framing"][content="allowed"]') === null
 }
 
 /**

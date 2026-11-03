@@ -147,7 +147,8 @@ flowchart LR
 
 - API Key 与 Git 凭据请仅在工作区凭据设置配置，切勿提交到代码仓库。
 - 生产环境建议通过 digest 固定镜像版本，参见 [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke)。
-- 使用反向代理时需保留原始 `Host` 请求头（例如 nginx 配置 `proxy_set_header Host $host`），临时审批链接依赖该字段生成，详见 [SECURITY.md](SECURITY.md)。
+- 使用反向代理时需保留原始 `Host` 请求头，非默认端口也要保留（例如 nginx 配置 `proxy_set_header Host $http_host`）。临时审批链接和登录请求的来源校验都依赖该字段，详见 [SECURITY.md](SECURITY.md)。
+- 工作区页面默认禁止被 iframe 嵌入。需要嵌入门户时，把门户来源写进 `GRASP_FRAME_ANCESTORS`，详见 [CONFIGURATION.md](server/CONFIGURATION.md)。
 - SQLite 数据库（`./.localdata/db`）与附件目录（`./.localdata/app-data`）分别挂载，备份与清理时需同步处理，否则已有运行记录中的 `blob:` 附件引用会返回 404。
 
 ## 文档

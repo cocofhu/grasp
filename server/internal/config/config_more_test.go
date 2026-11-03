@@ -174,3 +174,20 @@ func TestAuthConfigDurations(t *testing.T) {
 		t.Fatal("bad session fallback")
 	}
 }
+
+func TestFrameAncestorOrigins(t *testing.T) {
+	s := ServerConfig{FrameAncestors: "https://Portal.example, http://10.0.0.5:8080/ https://portal.example *.example https://x.example/path javascript:alert(1)"}
+	origins, invalid := s.FrameAncestorOrigins()
+	if len(origins) != 2 || origins[0] != "https://portal.example" || origins[1] != "http://10.0.0.5:8080" {
+		t.Fatalf("origins: %v", origins)
+	}
+	if len(invalid) != 3 {
+		t.Fatalf("invalid: %v", invalid)
+	}
+	t.Setenv("GRASP_FRAME_ANCESTORS", "https://env.example")
+	c := &Config{}
+	applyEnvOverrides(c)
+	if c.Server.FrameAncestors != "https://env.example" {
+		t.Fatalf("env override: %q", c.Server.FrameAncestors)
+	}
+}
