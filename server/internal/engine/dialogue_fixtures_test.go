@@ -395,7 +395,10 @@ func checkDialogueFixture(t *testing.T, fx dialogueFixture) {
 		return
 	}
 	got, err := os.ReadFile(path)
-	if err != nil || !bytes.Equal(got, b) {
-		t.Errorf("%s is stale; rerun with -update-dialogue-fixtures (err=%v)", path, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, b) {
+		t.Errorf("%s is stale; rerun with -update-dialogue-fixtures. Generated fixture:\n%s", path, b)
 	}
 }

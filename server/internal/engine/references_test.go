@@ -94,6 +94,13 @@ func TestFirstMessageReferencesReachTheClarifyTurn(t *testing.T) {
 		t.Fatalf("first turn references: %+v", turn.References)
 	}
 	waitRunStatus(t, db, run.ID, "waiting_human")
+	// The human row is saved before the provider is called, and the run
+	// stays parked during the reply. Let the pump finish before asserting the
+	// prompt and simulating redelivery to the parked node.
+	waitAdmissionUntil(t, func() bool {
+		session := eng.laneSession(run.ID, "predev", "")
+		return session == nil || session.Idle()
+	}, waitPollTimeout)
 	if prompts := fp.humanPrompts(); len(prompts) != 1 || prompts[0] != "[引用块 ref-1]" {
 		t.Fatalf("first prompt: %q", prompts)
 	}
@@ -108,7 +115,7 @@ func TestFirstMessageReferencesReachTheClarifyTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng.fireClarifyFirstMessage(c, c.graph.FindNode("predev"))
+	eng.fireClarifyFirstMessage(c, c.graph.FindNode("predev"), nil)
 	time.Sleep(80 * time.Millisecond)
 	if got := humanTurns(t, db, run.ID, "predev", 1); len(got) != 1 {
 		t.Fatalf("human turns after re-fire = %d", len(got))

@@ -53,19 +53,25 @@ func (e *Engine) releaseClarifyFirstMessageLatch(runID string) {
 
 // visitHumanTurns reports whether the visit's dialogue has a human turn, and
 // whether its last message is a human turn still waiting for an answer.
-func (e *Engine) visitHumanTurns(runID, nodeID string, iter int) (has, unanswered bool) {
+func (e *Engine) visitHumanTurns(runID, nodeID string, iter int) (has bool, unanswered *models.ReactMessage) {
 	var conv models.ReactConversation
 	if err := e.db.Where("run_id = ? AND node_id = ? AND iteration = ?", runID, nodeID, iter).
 		Order("id desc").First(&conv).Error; err != nil {
-		return false, false
+		return false, nil
 	}
 	for _, m := range conv.Messages {
 		if m.Role == "human" {
 			has = true
 		}
 	}
-	n := len(conv.Messages)
-	return has, n > 0 && conv.Messages[n-1].Role == "human"
+	return has, unansweredClarifyMessage(conv.Messages)
+}
+
+func unansweredClarifyMessage(messages []models.ReactMessage) *models.ReactMessage {
+	if n := len(messages); n > 0 && messages[n-1].Role == "human" {
+		return &messages[n-1]
+	}
+	return nil
 }
 
 // fireClarifyFirstMessage delivers Run.FirstMessage into a clarify node's
@@ -77,7 +83,7 @@ func (e *Engine) visitHumanTurns(runID, nodeID string, iter int) (has, unanswere
 // delivers. A failed delivery releases the latch so a later pause of the same
 // node (loop-back / resume) can retry. Cancel / ResumeFrom also release the
 // latch so a new visit with an empty transcript can re-claim.
-func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node) {
+func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node, resume *models.ReactMessage) {
 	if c == nil || c.run == nil || node == nil || !node.Caps.Clarify() {
 		return
 	}
@@ -85,7 +91,8 @@ func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node) {
 	if has, unanswered := e.visitHumanTurns(runID, nodeID, c.iter[nodeID]); has {
 		// The dialogue carried over from an interrupted visit already has it;
 		// a reply the interruption left unanswered is answered now.
-		if unanswered {
+		if resume != nil && unanswered != nil && unanswered.TurnID == resume.TurnID &&
+			unanswered.At == resume.At && unanswered.Text == resume.Text {
 			go func() {
 				if _, err := e.EnqueueClarifyRetryLast(runID, nodeID); err != nil {
 					log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).

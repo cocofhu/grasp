@@ -36,6 +36,9 @@ type nodeOutcome struct {
 	retryable bool
 	// takeover marks the paused outcome of a user-interrupted auto visit.
 	takeover bool
+	// clarifyReplyToResume is the unanswered human message already present
+	// when the visit opened. New submissions are handled by the live queue.
+	clarifyReplyToResume *models.ReactMessage
 }
 
 // executeNode dispatches to the per-type executor via the node registry.

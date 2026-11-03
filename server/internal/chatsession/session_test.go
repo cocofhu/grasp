@@ -151,8 +151,10 @@ func TestSessionPanickingTurnPublishesErrorAndKeepsPumping(t *testing.T) {
 	h := newHarness()
 	cfg := h.config()
 	execute := cfg.Execute
+	failFirst := make(chan struct{})
 	cfg.Execute = func(ctx context.Context, it *testItem) (bool, error) {
 		if it.id == "a" {
+			<-failFirst
 			panic("boom")
 		}
 		return execute(ctx, it)
@@ -167,6 +169,7 @@ func TestSessionPanickingTurnPublishesErrorAndKeepsPumping(t *testing.T) {
 	if _, err := s.Enqueue(&testItem{"b", "second"}, nil); err != nil {
 		t.Fatal(err)
 	}
+	close(failFirst)
 	close(gate)
 	h.waitIdle(t)
 
