@@ -27,6 +27,13 @@ const routes: RouteRecordRaw[] = [
     meta: { titleKey: 'route.embedChat', public: true, bare: true },
   },
   {
+    path: '/embed/runs/:runId/nodes/:nodeId/shared-chat',
+    name: 'embed-shared-preview-chat',
+    component: () => import('@/views/EmbedNodeChatView.vue'),
+    props: { shared: true },
+    meta: { titleKey: 'route.embedChat', public: true, bare: true },
+  },
+  {
     path: '/embed/runs/:runId/nodes/:nodeId/artifacts',
     name: 'embed-node-artifacts',
     component: () => import('@/views/EmbedNodeArtifactsView.vue'),

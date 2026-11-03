@@ -1,10 +1,11 @@
 import { req, rootWsUrl } from '@/lib/api/httpCore'
 import { GATE_SHARE_REQUEST_HEADER, GATE_SHARE_TOKEN_HEADER } from '@/lib/inbox/gateShareLink'
+import type { EmbedTicket } from '@/lib/inbox/embedChat'
 
 export type PreviewChatMode = 'isolated' | 'main'
 export type PreviewShareScope = { runId: string; nodeId: string; soloSessionId?: string; port: number }
 export type PreviewShareLink = { url: string; expiresAt: string }
-export type PreviewShareSession = { ticket: string; iframePath: string; chatMode: PreviewChatMode }
+export type PreviewShareSession = { ticket: string; chatMode: PreviewChatMode }
 export type PreviewChatRow = { id: string; role: string; text: string }
 
 function managementPath(scope: PreviewShareScope) {
@@ -45,6 +46,7 @@ export function publicAppPreviewClient(token: string) {
     return response.json()
   }
   return {
+    open: (signal: AbortSignal) => request<EmbedTicket & { directUrl: string }>('/open', signal, {}),
     session: (ticket: string, signal: AbortSignal) => request<PreviewShareSession>('/session', signal, { ticket }),
     history: (signal: AbortSignal) => request<{ rows: PreviewChatRow[]; busy: boolean }>('/main-chat', signal),
     send: (text: string, signal: AbortSignal) => request<{ ok: boolean }>('/main-chat', signal, { text }),

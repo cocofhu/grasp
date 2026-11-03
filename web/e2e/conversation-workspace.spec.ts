@@ -131,27 +131,60 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   expect(body.text).toContain('"selector":"#feature"')
 })
 
-test('anonymous preview visitors can switch panels and chat in the shared mode', async ({ browser }) => {
+test('anonymous shares open the direct app and use its floating chat in both modes', async ({ browser }) => {
   const anonymous = await browser.newContext({ viewport: { width: 390, height: 820 }, locale: 'zh-CN' })
   try {
     const grasp = 'http://127.0.0.1:5174'
+    const direct = 'http://127.0.0.1:19084'
+    const previewUrl = direct + '/shared-app-fixture'
     const url = grasp + '/public/approvals/app'
+    const runId = 'run-shared-app'
     const mainToken = 'a'.repeat(64)
     const guestToken = 'b'.repeat(64)
-    const frame = '/public/approvals/preview-api/guest-frame/'
+    const mainSession = 'drawer-main'
+    const guestSession = 'drawer-isolated'
+    const expiresAt = '2099-01-01T00:00:00Z'
     await anonymous.route(url, async (route) => {
       await route.fulfill({ response: await route.fetch({ url: grasp + '/live-entry-chat.html' }) })
     })
-    await anonymous.route(grasp + frame, (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Shared app fixture</h1>' }))
-    await anonymous.route(url + '/session', (route) => {
+    await anonymous.route(url + '/open', (route) => {
       const headers = route.request().headers()
       expect(headers.cookie).toBeUndefined()
       expect(headers['x-gate-share-requested']).toBe('1')
-      return route.fulfill({ json: { ticket: 'guest-frame', iframePath: frame, chatMode: headers['x-gate-share-token'] === mainToken ? 'main' : 'isolated' } })
+      expect([mainToken, guestToken]).toContain(headers['x-gate-share-token'])
+      const ticket = headers['x-gate-share-token'] === mainToken ? 'one-use-main' : 'one-use-guest'
+      return route.fulfill({ json: { directUrl: previewUrl, ticket, expiresAt, runId, nodeId: 'solo' } })
+    })
+    await anonymous.route(previewUrl, (route) => route.fulfill({
+      contentType: 'text/html',
+      body: '<h1 id="app-title">Shared app fixture</h1><script defer src="/__grasp/preview-pick.js"></script>',
+    }))
+    await anonymous.route(direct + '/__grasp/preview-pick.js', async (route) => {
+      await route.fulfill({ response: await route.fetch({ url: grasp + '/preview-pick.js' }) })
+    })
+    await anonymous.route(direct + '/__grasp/embed-origin?*', (route) => {
+      const params = new URL(route.request().url()).searchParams
+      expect(['one-use-main', 'one-use-guest']).toContain(params.get('ticket'))
+      expect(params.get('node')).toBe('solo')
+      return route.fulfill({ json: { origin: grasp, runId, nodeId: 'solo', kind: 'app-preview' } })
+    })
+    await anonymous.route(grasp + '/embed/runs/' + runId + '/nodes/solo/shared-chat', async (route) => {
+      await route.fulfill({ response: await route.fetch({ url: grasp + '/live-entry-chat.html' }) })
+    })
+    await anonymous.route(grasp + '/embed-api/session', (route) => {
+      const { ticket } = route.request().postDataJSON()
+      return route.fulfill({ json: {
+        kind: 'app-preview', token: ticket === 'one-use-main' ? mainSession : guestSession, runId, nodeId: 'solo', expiresAt,
+      } })
+    })
+    await anonymous.route(url + '/session', (route) => {
+      const token = route.request().headers()['x-gate-share-token']
+      expect([mainSession, guestSession]).toContain(token)
+      return route.fulfill({ json: { ticket: 'guest-chat-ticket', chatMode: token === mainSession ? 'main' : 'isolated' } })
     })
     const mainRows = [{ id: 'main-history', role: 'user', text: 'Original main conversation' }]
     await anonymous.route(url + '/main-chat', (route) => {
-      expect(route.request().headers()['x-gate-share-token']).toBe(mainToken)
+      expect(route.request().headers()['x-gate-share-token']).toBe(mainSession)
       if (route.request().method() === 'POST') {
         const { text } = route.request().postDataJSON()
         mainRows.push({ id: 'main-new', role: 'user', text })
@@ -160,29 +193,42 @@ test('anonymous preview visitors can switch panels and chat in the shared mode',
       return route.fulfill({ json: { rows: mainRows, busy: false } })
     })
     await anonymous.routeWebSocket('**/public/approvals/app/guest-chat', (ws) => ws.onMessage((data) => {
-      expect(JSON.parse(String(data))).toEqual({ text: 'A separate idea' })
+      expect(JSON.parse(String(data))).toEqual({ text: 'A separate idea\n\nSelected page elements:\n/shared-app-fixture · #app-title' })
       ws.send(JSON.stringify({ type: 'done', text: 'Visitor-only reply' }))
     }))
+
     const main = await anonymous.newPage()
     await main.goto(url + '#t=' + mainToken)
-    const mainPreview = main.locator('iframe')
-    await expect(mainPreview).toHaveAttribute('sandbox', 'allow-scripts allow-forms')
-    await expect(main.frameLocator('iframe').getByText('Shared app fixture')).toBeVisible()
-    await main.getByRole('button', { name: '聊天', exact: true }).click()
-    await expect(main.getByText('Original main conversation')).toBeVisible()
-    await main.getByTestId('shared-app-chat-input').fill('A message for the main conversation')
-    await main.getByRole('button', { name: '发送', exact: true }).click()
-    await expect(main.getByText('A message for the main conversation')).toBeVisible()
-    await main.getByRole('button', { name: '预览', exact: true }).click()
-    await expect(main.frameLocator('iframe').getByText('Shared app fixture')).toBeVisible()
+    await expect(main).toHaveURL(previewUrl)
+    await expect(main.getByRole('heading', { name: 'Shared app fixture' })).toBeVisible()
+    const mainToolbar = main.locator('grasp-preview-pick')
+    const mainDrawer = mainToolbar.frameLocator('[data-role="drawer"] iframe')
+    await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()
+    await expect(mainToolbar.locator('[data-role="artifact"]')).toBeHidden()
+    await mainToolbar.locator('[data-role="chat"]').click()
+    await expect(mainDrawer.getByText('Original main conversation')).toBeVisible()
+    await mainDrawer.getByTestId('shared-app-chat-input').fill('A message for the main conversation')
+    await mainDrawer.locator('button[type="submit"]').click()
+    await expect(mainDrawer.getByText('A message for the main conversation')).toBeVisible()
+    await mainToolbar.locator('[data-role="chat"]').click()
+    await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()
 
     const guest = await anonymous.newPage()
     await guest.goto(url + '#t=' + guestToken)
-    await guest.getByRole('button', { name: '聊天', exact: true }).click()
-    await expect(guest.getByText('Original main conversation')).toHaveCount(0)
-    await guest.getByTestId('shared-app-chat-input').fill('A separate idea')
-    await guest.getByRole('button', { name: '发送', exact: true }).click()
-    await expect(guest.getByText('Visitor-only reply')).toBeVisible()
+    await expect(guest).toHaveURL(previewUrl)
+    const guestToolbar = guest.locator('grasp-preview-pick')
+    await guestToolbar.locator('[data-role="toggle"]').click()
+    await guest.getByRole('heading', { name: 'Shared app fixture' }).click()
+    const guestDrawer = guestToolbar.frameLocator('[data-role="drawer"] iframe')
+    await expect(guestDrawer.getByTestId('shared-app-chat-pick')).toContainText('#app-title')
+    await expect(guestDrawer.getByText('Original main conversation')).toHaveCount(0)
+    await guestDrawer.getByTestId('shared-app-chat-input').fill('A separate idea')
+    await guestDrawer.locator('button[type="submit"]').click()
+    await expect(guestDrawer.getByText('Visitor-only reply')).toBeVisible()
+    await guest.reload()
+    await expect(guestDrawer.getByTestId('shared-app-chat-input')).toBeVisible()
+    await expect(guestDrawer.getByText('Visitor-only reply')).toHaveCount(0)
+    await expect(guestDrawer.getByText('Original main conversation')).toHaveCount(0)
   } finally {
     await anonymous.close()
   }

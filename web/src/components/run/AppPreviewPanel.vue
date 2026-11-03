@@ -317,6 +317,7 @@ function issueDirectTicket() {
               :issue-ticket="issueDirectTicket"
             />
             <AppPreviewShareButton
+              v-if="activeDirectUrl"
               :key="`${runId}:${nodeId}:${activePort}`"
               :scope="{ runId, nodeId, soloSessionId, port: activePort }"
             />

@@ -114,6 +114,19 @@ describe('embedChat', () => {
     await expect(redeemEmbedTicket('tk', 'r', 'n')).rejects.toThrow('502')
   })
 
+  it('keeps anonymous drawer sessions separate from saved owner sessions', () => {
+    const now = Date.parse('2026-09-01T00:00:00Z')
+    const expiresAt = '2026-09-01T01:00:00Z'
+    saveEmbedSession('r', 'n', { token: 'owner', expiresAt, kind: 'solo' })
+    expect(loadEmbedSession('r', 'n', now, true)).toBeNull()
+    saveEmbedSession('r', 'n', { token: 'guest', expiresAt, kind: 'app-preview' })
+    expect(loadEmbedSession('r', 'n', now, true)?.token).toBe('guest')
+    expect(loadEmbedSession('r', 'n', now)?.token).toBe('owner')
+    clearEmbedSession('r', 'n', true)
+    expect(loadEmbedSession('r', 'n', now, true)).toBeNull()
+    expect(loadEmbedSession('r', 'n', now)?.token).toBe('owner')
+  })
+
   it('accepts only well-formed pick messages', () => {
     expect(parseEmbedPickMessage({ type: EMBED_PICK_MESSAGE, payload: { selector: 'a.x', tagName: 'A', outerHTML: '<a>', url: 'http://h/p', extra: 1 } })).toEqual({
       selector: 'a.x',

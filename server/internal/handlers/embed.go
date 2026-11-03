@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -254,6 +255,23 @@ func (h *Handlers) RedeemEmbedSession(c *gin.Context) {
 func (h *Handlers) EmbedChatPage(c *gin.Context) {
 	ancestors := "'none'"
 	if origins := h.directPreviewOrigins(c.Param("runId"), c.Param("nodeId")); len(origins) > 0 {
+		// The launcher substitutes the Grasp hostname when a preview port is
+		// published on loopback and Grasp is reached from another machine.
+		page, _ := url.Parse("http://" + c.Request.Host)
+		if page != nil && page.Hostname() != "" && !loopbackPreviewHost(page.Hostname()) {
+			for _, o := range origins {
+				u, _ := url.Parse(o)
+				if loopbackPreviewHost(u.Hostname()) {
+					host := page.Hostname()
+					if port := u.Port(); port != "" {
+						host = net.JoinHostPort(host, port)
+					} else if strings.Contains(host, ":") {
+						host = "[" + host + "]"
+					}
+					origins = append(origins, u.Scheme+"://"+host)
+				}
+			}
+		}
 		ancestors = strings.Join(origins, " ")
 	}
 	c.Header("Cache-Control", "no-store")
@@ -268,6 +286,10 @@ func (h *Handlers) EmbedChatPage(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", b)
 }
 
+func loopbackPreviewHost(host string) bool {
+	return strings.EqualFold(host, "localhost") || host == "127.0.0.1" || host == "::1"
+}
+
 // MCPEmbedOrigin lets the sandbox learn which Grasp origin serves the drawer
 // for a ticket, without consuming it.
 // GET /mcp/runs/:runId/embed-origin?ticket=&nodeId=
@@ -277,6 +299,23 @@ func (h *Handlers) MCPEmbedOrigin(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	h.writeEmbedTicketOrigin(c, runID, strings.TrimSpace(c.Query("nodeId")))
+}
+
+// EmbedTicketOrigin supports the sandbox injector when no artifact MCP
+// credential was provisioned. The one-shot ticket is already a bearer for
+// the drawer. This endpoint only reads its origin, scoped to the run and node.
+func (h *Handlers) EmbedTicketOrigin(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	nodeID := strings.TrimSpace(c.Query("nodeId"))
+	if nodeID == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "invalid_ticket"})
+		return
+	}
+	h.writeEmbedTicketOrigin(c, c.Param("runId"), nodeID)
+}
+
+func (h *Handlers) writeEmbedTicketOrigin(c *gin.Context, runID, nodeID string) {
 	if h.Embed == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "embed unavailable"})
 		return
@@ -286,7 +325,7 @@ func (h *Handlers) MCPEmbedOrigin(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "invalid_ticket"})
 		return
 	}
-	if nodeID := strings.TrimSpace(c.Query("nodeId")); nodeID != "" && nodeID != claims.NodeID {
+	if nodeID != "" && nodeID != claims.NodeID {
 		c.JSON(http.StatusNotFound, gin.H{"error": "invalid_ticket"})
 		return
 	}
@@ -294,5 +333,6 @@ func (h *Handlers) MCPEmbedOrigin(c *gin.Context) {
 		"origin": claims.GraspOrigin,
 		"runId":  claims.RunID,
 		"nodeId": claims.NodeID,
+		"kind":   claims.Kind,
 	})
 }

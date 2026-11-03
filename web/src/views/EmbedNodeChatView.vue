@@ -7,6 +7,7 @@ import AppSwitch from '@/components/ui/AppSwitch.vue'
 import PageControlStatus from '@/components/run/PageControlStatus.vue'
 import PublicGateApprovalView from '@/views/PublicGateApprovalView.vue'
 import SoloPreviewChat from '@/components/solo/SoloPreviewChat.vue'
+import SharedAppPreviewChat from '@/components/run/SharedAppPreviewChat.vue'
 import {
   EMBED_LANG_MESSAGE,
   EMBED_READY_MESSAGE,
@@ -54,6 +55,7 @@ type ChatRef = {
 }
 
 const { t } = useI18n()
+const props = defineProps<{ shared?: boolean }>()
 const route = useRoute()
 const runId = String(route.params.runId || '')
 const nodeId = String(route.params.nodeId || '')
@@ -62,6 +64,7 @@ const phase = ref<'connecting' | 'ready' | 'expired' | 'network'>('connecting')
 const token = ref('')
 const solo = ref(false)
 const soloChat = ref<InstanceType<typeof SoloPreviewChat> | null>(null)
+const sharedChat = ref<InstanceType<typeof SharedAppPreviewChat> | null>(null)
 const chatRef = ref<ChatRef | null>(null)
 let announced = false
 
@@ -173,9 +176,10 @@ async function connect() {
   if (theme) setThemeOverride(theme)
   const ticket = parseEmbedTicketFromHash(hash)
   if (ticket) {
+    if (props.shared) clearEmbedSession(runId, nodeId, true)
     try {
       const s = await redeemEmbedTicket(ticket, runId, nodeId)
-      if (s) {
+      if (s && (s.kind === 'app-preview') === !!props.shared) {
         saveEmbedSession(runId, nodeId, s)
         solo.value = s.kind === 'solo'
         token.value = s.token
@@ -183,13 +187,13 @@ async function connect() {
         return
       }
     } catch {
-      if (!loadEmbedSession(runId, nodeId)) {
+      if (!loadEmbedSession(runId, nodeId, Date.now(), props.shared)) {
         phase.value = 'network'
         return
       }
     }
   }
-  const stored = loadEmbedSession(runId, nodeId)
+  const stored = loadEmbedSession(runId, nodeId, Date.now(), props.shared)
   if (stored) {
     solo.value = stored.kind === 'solo'
     token.value = stored.token
@@ -211,14 +215,14 @@ function onStatus(status: string) {
     announced = true
     window.parent.postMessage({ type: EMBED_READY_MESSAGE }, parentOrigin())
     postLang()
-    if (!solo.value) {
+    if (!solo.value && !props.shared) {
       pageControl.awaitHello()
       void syncLive()
     }
   }
   if (status === 'invalid' || status === 'expired' || status === 'revoked') {
     pageControl.reset()
-    clearEmbedSession(runId, nodeId)
+    clearEmbedSession(runId, nodeId, props.shared)
     token.value = ''
     markExpired()
   }
@@ -271,7 +275,8 @@ function onMessage(e: MessageEvent) {
   }
   const pick = parseEmbedPickMessage(e.data)
   if (pick) {
-    if (solo.value) soloChat.value?.addPick(pick)
+    if (props.shared) sharedChat.value?.addPick(pick)
+    else if (solo.value) soloChat.value?.addPick(pick)
     else chatRef.value?.addPick?.(pick)
   }
 }
@@ -313,8 +318,14 @@ onUnmounted(() => {
         {{ t(hasFailedSteer ? 'pages.embedChat.live.cleanupAll' : 'pages.embedChat.live.discardAll') }}
       </button>
     </div>
+    <SharedAppPreviewChat
+      v-if="phase === 'ready' && token && shared"
+      ref="sharedChat"
+      :token="token"
+      @status="onStatus"
+    />
     <SoloPreviewChat
-      v-if="phase === 'ready' && token && solo"
+      v-else-if="phase === 'ready' && token && solo"
       ref="soloChat"
       :run-id="runId"
       :token="token"

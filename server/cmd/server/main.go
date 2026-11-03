@@ -256,7 +256,7 @@ func main() {
 	embedStore := embed.NewStore(db)
 	gateShareSvc.SetEmbedLookup(func(token string) (gateshare.EmbedRef, bool) {
 		c, ok := embedStore.LookupSession(token)
-		if !ok || c.Kind == models.EmbedKindSolo {
+		if !ok || (c.Kind != models.EmbedKindSession && c.Kind != models.EmbedKindShare) {
 			return gateshare.EmbedRef{}, false
 		}
 		ref := gateshare.EmbedRef{RunID: c.RunID, NodeID: c.NodeID, ExpiresAt: c.ExpiresAt}

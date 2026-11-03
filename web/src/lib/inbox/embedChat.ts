@@ -41,7 +41,7 @@ export type EmbedTicket = {
 export type EmbedSession = {
   token: string
   expiresAt: string
-  kind?: 'solo'
+  kind?: 'solo' | 'app-preview'
 }
 
 type RedeemResponse = Omit<EmbedSession, 'kind'> & { kind?: string; runId?: string; nodeId?: string; error?: string }
@@ -112,10 +112,11 @@ export function directPreviewReachableUrl(directUrl: string, pageHost?: string):
 }
 
 /** Direct preview URL carrying a drawer ticket for the in-page pick script (preview-pick.js). */
-export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName, lang?: string): string {
+export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName, lang?: string, shared = false): string {
   const base = directPreviewReachableUrl(directUrl).split('#')[0]
   const q = new URLSearchParams({ run: t.runId, node: t.nodeId, ticket: t.ticket, theme })
   if (lang) q.set('lang', lang)
+  if (shared) q.set('shared', '1')
   return `${base}#__grasp_embed&${q.toString()}`
 }
 
@@ -145,19 +146,20 @@ function storageKey(runId: string, nodeId: string): string {
   return `${STORAGE_PREFIX}${runId}.${nodeId}`
 }
 
-export function loadEmbedSession(runId: string, nodeId: string, now = Date.now()): EmbedSession | null {
+export function loadEmbedSession(runId: string, nodeId: string, now = Date.now(), shared = false): EmbedSession | null {
   try {
     // localStorage, not sessionStorage: a new tab at the same preview address
     // reuses the drawer session instead of needing a fresh ticket.
-    const raw = localStorage.getItem(storageKey(runId, nodeId))
+    const raw = (shared ? sessionStorage : localStorage).getItem(storageKey(runId, nodeId))
     if (!raw) return null
     const s = JSON.parse(raw) as Partial<EmbedSession>
     if (typeof s.token !== 'string' || !s.token || typeof s.expiresAt !== 'string') return null
     if (Date.parse(s.expiresAt) <= now) {
-      clearEmbedSession(runId, nodeId)
+      clearEmbedSession(runId, nodeId, shared)
       return null
     }
-    return { token: s.token, expiresAt: s.expiresAt, ...(s.kind === 'solo' ? { kind: s.kind } : {}) }
+    if (shared !== (s.kind === 'app-preview')) return null
+    return { token: s.token, expiresAt: s.expiresAt, ...embedKind(s.kind) }
   } catch {
     return null
   }
@@ -165,15 +167,17 @@ export function loadEmbedSession(runId: string, nodeId: string, now = Date.now()
 
 export function saveEmbedSession(runId: string, nodeId: string, s: EmbedSession): void {
   try {
-    localStorage.setItem(storageKey(runId, nodeId), JSON.stringify(s))
+    const storage = s.kind === 'app-preview' ? sessionStorage : localStorage
+    storage.setItem(storageKey(runId, nodeId), JSON.stringify(s))
   } catch {
     // Storage blocked (third-party iframe policy): the session lasts until reload.
   }
 }
 
-export function clearEmbedSession(runId: string, nodeId: string): void {
+export function clearEmbedSession(runId: string, nodeId: string, shared = false): void {
   try {
-    localStorage.removeItem(storageKey(runId, nodeId))
+    const storage = shared ? sessionStorage : localStorage
+    storage.removeItem(storageKey(runId, nodeId))
   } catch {
     // ignore
   }
@@ -205,7 +209,11 @@ export async function redeemEmbedTicket(ticket: string, runId: string, nodeId: s
   if (!res.ok) throw Object.assign(new Error(`${res.status}`), { status: res.status })
   const body = (await res.json()) as RedeemResponse
   if (!body.token || body.runId !== runId || body.nodeId !== nodeId) return null
-  return { token: body.token, expiresAt: body.expiresAt, ...(body.kind === 'solo' ? { kind: body.kind } : {}) }
+  return { token: body.token, expiresAt: body.expiresAt, ...embedKind(body.kind) }
+}
+
+function embedKind(kind?: string): Pick<EmbedSession, 'kind'> {
+  return kind === 'solo' || kind === 'app-preview' ? { kind } : {}
 }
 
 export type EmbedControlMessage = { caps?: string[]; tab?: string; stop?: boolean }

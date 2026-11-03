@@ -166,6 +166,7 @@ func TestEmbedChatPageFrameAncestors(t *testing.T) {
 
 	for _, path := range []string{
 		"/embed/runs/run-emb-page/nodes/ap1/chat",
+		"/embed/runs/run-emb-page/nodes/ap1/shared-chat",
 		"/embed/runs/run-emb-page/nodes/ap1/artifacts",
 		"/embed/runs/run-emb-page/nodes/ap1/image",
 		"/embed/runs/run-emb-page/nodes/ap1/demo",
@@ -174,7 +175,7 @@ func TestEmbedChatPageFrameAncestors(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s page: %d", path, w.Code)
 		}
-		if csp := w.Header().Get("Content-Security-Policy"); csp != "frame-ancestors http://127.0.0.1:18080" {
+		if csp := w.Header().Get("Content-Security-Policy"); csp != "frame-ancestors http://127.0.0.1:18080 http://"+publicHost+":18080" {
 			t.Fatalf("%s csp: %q", path, csp)
 		}
 		if w.Header().Get("X-Frame-Options") != "" {

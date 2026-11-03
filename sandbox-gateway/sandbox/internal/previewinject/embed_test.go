@@ -98,3 +98,23 @@ func TestEmbedOriginWithoutRunCredentials(t *testing.T) {
 		t.Fatalf("code=%d called=%v", code, called)
 	}
 }
+
+func TestEmbedOriginUsesRuntimeServerForExistingSoloSandbox(t *testing.T) {
+	grasp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/embed-api/origin/solo-run" || r.URL.Query().Get("nodeId") != "solo" ||
+			r.URL.Query().Get("ticket") != "tk" || r.Header.Get("Authorization") != "" {
+			t.Errorf("unexpected origin lookup: %s", r.URL)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(embedOrigin{Origin: "https://grasp.example", RunID: "solo-run", NodeID: "solo", Kind: "app-preview"})
+	}))
+	defer grasp.Close()
+	lookup := EmbedLookup{RuntimeURL: grasp.URL + "/sandbox-inject/bootstrap.tgz", RunID: "solo-run"}
+	injector := httptest.NewServer(http.HandlerFunc(lookup.serve))
+	defer injector.Close()
+	code, got := getEmbed(t, injector.URL, "?ticket=tk&node=solo")
+	if code != http.StatusOK || got.Kind != "app-preview" || got.Origin != "https://grasp.example" {
+		t.Fatalf("runtime origin: code=%d got=%+v", code, got)
+	}
+}

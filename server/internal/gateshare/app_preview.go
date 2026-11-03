@@ -65,7 +65,10 @@ func (s *Service) LookupAppPreview(token string) (*models.GateShareLink, bool) {
 	if !ValidTokenShape(token) {
 		return nil, false
 	}
-	hash := HashToken(token)
+	return s.LookupAppPreviewByHash(HashToken(token))
+}
+
+func (s *Service) LookupAppPreviewByHash(hash string) (*models.GateShareLink, bool) {
 	link, err := s.LoadLinkByTokenHash(hash)
 	if err != nil || link == nil || link.Kind != models.ShareLinkKindAppPreview ||
 		!EqualHash(link.TokenHash, hash) || linkState(link, time.Now()) != models.ShareLinkStateActive {
