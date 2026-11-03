@@ -1,7 +1,8 @@
 //go:build e2ereal
 
 // Package e2e holds end-to-end tests that drive a real Grasp stack (gateway +
-// control plane + sandbox containers) through Docker Compose and a real model.
+// control plane + sandbox containers) through Docker Compose and OpenCode.
+// CI runs the local model fixture. Set DEEPSEEK_API_KEY for a live model run.
 //
 // Build both images from the same checkout so the sandbox IMAGE_LEVEL satisfies
 // the runtime bundle shipped in the control plane image.
@@ -23,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,9 +53,10 @@ type stack struct {
 }
 
 func TestRestartReattach(t *testing.T) {
+	fixtureURL := os.Getenv("GRASP_RESTART_MODEL_URL")
 	apiKey := os.Getenv("DEEPSEEK_API_KEY")
-	if apiKey == "" {
-		t.Skip("DEEPSEEK_API_KEY not set")
+	if fixtureURL == "" && apiKey == "" {
+		t.Skip("set GRASP_RESTART_MODEL_URL or DEEPSEEK_API_KEY")
 	}
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not available")
@@ -61,12 +64,17 @@ func TestRestartReattach(t *testing.T) {
 	s := newStack(t)
 	s.up()
 
-	model := s.pickModel()
-	t.Logf("using deepseek model %s", model)
-	s.onboard(apiKey, model)
-	wfID := s.createWorkflow()
-
 	marker := "E2E-" + randHex(6)
+	var model restartModel
+	if fixtureURL != "" {
+		model = s.configureRestartFixture(fixtureURL, marker, marker+"-B")
+	} else {
+		model = restartModel{apiKey: apiKey, provider: "deepseek", baseURL: "https://api.deepseek.com/v1", id: s.pickModel()}
+	}
+	t.Logf("using %s model %s", model.provider, model.id)
+	s.onboard(model)
+	wfID := s.createWorkflow(fixtureURL != "")
+
 	runA := s.startRun(wfID, marker)
 	runB := s.startRun(wfID, marker+"-B")
 
@@ -315,7 +323,55 @@ func (s *stack) pickModel() string {
 	return "deepseek-chat"
 }
 
-func (s *stack) onboard(apiKey, model string) {
+type restartModel struct {
+	apiKey, provider, baseURL, id string
+}
+
+// configureRestartFixture tells the local endpoint which real OpenCode tool
+// calls must execute before the first run can finish.
+func (s *stack) configureRestartFixture(endpoint string, markers ...string) restartModel {
+	s.t.Helper()
+	base, err := url.Parse(endpoint)
+	if err != nil || base.Scheme != "http" || base.Hostname() != "127.0.0.1" || base.Port() == "" {
+		s.t.Fatal("restart model fixture must listen on an explicit loopback port")
+	}
+	scenarios := make([]map[string]any, 0, len(markers))
+	for _, marker := range markers {
+		command := fmt.Sprintf("sleep %d && echo %s > /tmp/e2e-marker.txt && cat /tmp/e2e-marker.txt", sleepSeconds, marker)
+		scenarios = append(scenarios, map[string]any{
+			"id": marker,
+			"turns": []map[string]any{{
+				"id": "restart", "reply": marker,
+				"actions": []map[string]any{
+					{"kind": "shell", "command": command, "expect": []string{marker}},
+					{"kind": "tool", "name": "artifact-store_set_implementation_result", "expect": []string{"已写入实现结果"},
+						"arguments": map[string]string{"summary": marker}},
+					{"kind": "tool", "name": "artifact-store_node_complete", "expect": []string{marker},
+						"arguments": map[string]string{"status": "success", "summary": marker, "handoff": marker}},
+				},
+			}},
+		})
+	}
+	payload, err := json.Marshal(scenarios)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(strings.TrimRight(endpoint, "/")+"/__mock/scenarios", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		s.t.Fatalf("register restart model scenarios: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		s.t.Fatalf("register restart model scenarios: HTTP %d", resp.StatusCode)
+	}
+	return restartModel{
+		apiKey: "local-restart-fixture", provider: "openai", id: "gpt-5",
+		baseURL: "http://host.docker.internal:" + base.Port() + "/v1",
+	}
+}
+
+func (s *stack) onboard(model restartModel) {
 	s.t.Helper()
 	var credential, connection, configuration struct {
 		ID string `json:"id"`
@@ -323,7 +379,7 @@ func (s *stack) onboard(apiKey, model string) {
 	// Create the same reference chain as the credentials/model configuration UI.
 	// Only the credential request carries the API key; failures must not print it.
 	if code, err := s.do(http.MethodPost, "/api/workspace/credentials", map[string]any{
-		"purpose": "model_api", "issuer": "deepseek", "name": "E2E DeepSeek key", "value": apiKey,
+		"purpose": "model_api", "issuer": model.provider, "name": "E2E model key", "value": model.apiKey,
 	}, &credential); err != nil {
 		s.t.Fatalf("create model credential failed with status %d", code)
 	}
@@ -331,17 +387,17 @@ func (s *stack) onboard(apiKey, model string) {
 		s.t.Fatal("created model credential has no id")
 	}
 	s.mustDo(http.MethodPost, "/api/workspace/model-connections", map[string]any{
-		"name": "E2E DeepSeek service", "providerId": "deepseek",
-		"protocol": "openai-chat-completions", "baseUrl": "https://api.deepseek.com/v1",
+		"name": "E2E model service", "providerId": model.provider,
+		"protocol": "openai-chat-completions", "baseUrl": model.baseURL,
 		"credentialId": credential.ID, "auth": map[string]any{"scheme": "bearer"},
-		"models": []map[string]any{{"id": model, "source": "manual"}},
+		"models": []map[string]any{{"id": model.id, "source": "manual", "capabilities": map[string]bool{"toolCalls": true}}},
 	}, &connection)
 	if connection.ID == "" {
 		s.t.Fatal("created model connection has no id")
 	}
 	s.mustDo(http.MethodPost, "/api/workspace/model-configurations", map[string]any{
 		"name": "E2E OpenCode model", "backend": "opencode",
-		"binding": map[string]any{"kind": "connection", "connectionId": connection.ID, "modelId": model},
+		"binding": map[string]any{"kind": "connection", "connectionId": connection.ID, "modelId": model.id},
 	}, &configuration)
 	if configuration.ID == "" {
 		s.t.Fatal("created model configuration has no id")
@@ -375,11 +431,14 @@ func (s *stack) onboard(apiKey, model string) {
 	s.mustDo(http.MethodPut, "/api/agents/Implement", agent, nil)
 }
 
-func (s *stack) createWorkflow() string {
+func (s *stack) createWorkflow(fixture bool) string {
 	prompt := fmt.Sprintf("Use your shell tool to run exactly this one command and wait for it to finish:\n\n"+
 		"sleep %d && echo {{vars.marker}} > /tmp/e2e-marker.txt && cat /tmp/e2e-marker.txt\n\n"+
-		"Do not run anything else. When it has printed the marker, call node_complete with status "+
-		"\"success\" and a summary that contains the printed marker text.", sleepSeconds)
+		"Do not run any other shell commands. Record the printed marker as the summary in set_implementation_result, "+
+		"then call node_complete with status \"success\" and the same marker as the summary and handoff.", sleepSeconds)
+	if fixture {
+		prompt = "[GRASP_MOCK run={{vars.marker}} turn=restart]\n" + prompt
+	}
 	wf := map[string]any{
 		"name":      "e2e-restart-" + randHex(3),
 		"variables": []map[string]any{{"name": "marker", "type": "string", "ask": true, "required": true, "editable": true}},
