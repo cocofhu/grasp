@@ -28,11 +28,16 @@ func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
 	var created atomic.Int32
 	connected := make(chan string, 2)
 	deleted := make(chan string, 2)
+	modelWrites := make(chan string, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/chats":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = fmt.Fprintf(w, `{"id":"guest-%d"}`, created.Add(1))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/models":
+			_, _ = fmt.Fprint(w, `{"configured":true,"models":[{"id":"guest-model"}],"reasoningEffort":""}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/model":
+			modelWrites <- r.URL.Query().Get("chat")
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/chats/"):
 			deleted <- strings.TrimPrefix(r.URL.Path, "/api/chats/")
 		default:
@@ -63,6 +68,15 @@ func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
 		client, closeChat, err := s.OpenPreviewGuest(ctx, row)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if changed, err := client.SetIndependentModelSettings(ctx, "unlisted-model", ""); changed || err == nil {
+			t.Fatalf("unlisted model: changed=%v err=%v", changed, err)
+		}
+		if changed, err := client.SetIndependentModelSettings(ctx, "guest-model", ""); !changed || err != nil {
+			t.Fatalf("guest model: changed=%v err=%v", changed, err)
+		}
+		if got := <-modelWrites; got != expected {
+			t.Fatalf("switched %q, want %q", got, expected)
 		}
 		result, err := client.ChatStreamResult(ctx, "guest prompt", nil, nil)
 		closeChat()

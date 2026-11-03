@@ -658,6 +658,21 @@ func (s *SoloService) Messages(id, user string) ([]models.SoloMessage, error) {
 	return rows, err
 }
 
+// MessageHasAttachment checks the attachment against the specific persisted
+// message in the caller's already authorized Solo session.
+func (s *SoloService) MessageHasAttachment(sessionID, messageID, ref string) bool {
+	var message models.SoloMessage
+	if s.db.Select("images").Where("session_id = ? AND id = ?", sessionID, messageID).First(&message).Error != nil {
+		return false
+	}
+	for _, image := range message.Images {
+		if image.Ref == ref {
+			return true
+		}
+	}
+	return false
+}
+
 // PreviewTranscript combines saved messages with the current text stream for
 // the explicit main-conversation share. Its caller projects text fields only.
 func (s *SoloService) PreviewTranscript(id, user string) ([]models.SoloMessage, bool, error) {

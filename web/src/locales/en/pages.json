@@ -3539,7 +3539,7 @@
         "failed": "The operation failed. Try again.",
         "mainUnavailable": "This node has no shareable main conversation. Choose a separate conversation.",
         "isolatedGuestHint": "This page has its own chat. Visitors see the same app. Reloading starts a new separate conversation.",
-        "mainGuestHint": "You are in the main conversation. Other participants can see your messages.",
+        "mainGuestHint": "You are in the main conversation. Messages and model changes are shared with other participants.",
         "emptyChat": "Start with a change you would like to see.",
         "message": "Enter a message",
         "messageTooLong": "Shorten the message or remove a selected element.",

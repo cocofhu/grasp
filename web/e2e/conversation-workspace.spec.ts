@@ -1,6 +1,22 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type FrameLocator, type Page } from '@playwright/test'
 import { routeApi } from './helpers/apiRoute'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
+
+const previewModelCatalog = {
+  agent: { name: 'Demo', modelBinding: { kind: 'configuration', configurationId: 'shared-config' } },
+  configurations: [{
+    id: 'shared-config', name: 'Shared models', state: 'active', backend: 'claude_code',
+    binding: { kind: 'platform', modelId: 'model-a', auxiliaryModelIds: ['model-b'] },
+  }],
+  cliModels: { claude_code: [{ id: 'model-a', name: 'Model A' }, { id: 'model-b', name: 'Model B' }] },
+}
+
+async function choosePreviewModel(chat: FrameLocator, id: string, name: string) {
+  const picker = chat.getByTestId('solo-model-select')
+  await picker.getByRole('button', { name: 'Model A' }).click()
+  await chat.getByTestId(`solo-model-option-${id}`).click()
+  await expect(picker).toContainText(name)
+}
 
 async function openConversation(page: Page, width = 1440, theme = 'light') {
   await page.setViewportSize({ width, height: 960 })
@@ -53,6 +69,7 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   const ticket = { ticket: 'solo-preview-ticket', runId, nodeId: 'solo', expiresAt: '2099-01-01T00:00:00Z' }
   const token = 'solo-preview-token'
   const shareBodies: unknown[] = []
+  const modelBodies: unknown[] = []
   const previewUrl = direct + '/solo-preview-fixture'
   const port = { runId, nodeId: 'solo', kind: 'port', port: 8899, label: 'Demo app', mode: 'direct', directUrl: previewUrl, healthy: true }
   await routeApi(page, '**/api/solo/sessions**', async (route) => {
@@ -88,8 +105,21 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   await context.route(grasp + '/embed-api/solo/' + runId + '**', (route) => {
     expect(route.request().headers().authorization).toBe(`Bearer ${token}`)
     const path = new URL(route.request().url()).pathname
-    if (path.endsWith('/messages')) return route.fulfill({ json: [{ id: 'existing', role: 'user', content: 'Previous Solo message' }] })
+    if (path.endsWith('/messages')) return route.fulfill({ json: [{
+      id: 'existing', role: 'user', content: 'Previous Solo message',
+      images: [{ mimeType: 'image/png', name: 'preview.png', ref: 'blob:fixture-image' }],
+    }] })
+    if (path.endsWith('/messages/existing/blobs/fixture-image')) return route.fulfill({
+      contentType: 'image/png',
+      body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/7fkAAAAASUVORK5CYII=', 'base64'),
+    })
     if (path.endsWith('/turns')) return route.fulfill({ json: { waiting: 1 } })
+    if (path.endsWith('/model-catalog')) return route.fulfill({ json: previewModelCatalog })
+    if (path.endsWith('/model')) {
+      const body = route.request().postDataJSON()
+      modelBodies.push(body)
+      return route.fulfill({ json: { ...session, currentModelId: body.modelId, currentModelSet: true } })
+    }
     return route.fulfill({ json: session })
   })
   await context.routeWebSocket('**/embed-api/solo/*/chat*', (ws) => ws.send(JSON.stringify({
@@ -120,15 +150,48 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   const toolbar = preview.locator('grasp-preview-pick')
   const drawer = toolbar.frameLocator('[data-role="drawer"] iframe')
   await expect(drawer.getByText('Previous Solo message')).toBeVisible()
+  await expect(drawer.getByRole('img', { name: 'preview.png' })).toHaveAttribute('src', /^blob:/)
+  await choosePreviewModel(drawer, 'model-b', 'Model B')
+  expect(modelBodies).toEqual([{ modelId: 'model-b' }])
+  await expect(drawer.getByTestId('solo-plus')).toBeVisible()
   await toolbar.locator('[data-role="toggle"]').click()
   await preview.getByRole('heading', { name: 'Feature to edit' }).click()
   await expect(drawer.getByTestId('solo-preview-pick')).toContainText('#feature')
-  await drawer.getByTestId('solo-preview-input').fill('Update this heading')
+  await drawer.getByTestId('solo-input').fill('Update this heading')
   const submitted = preview.waitForRequest(request => request.url().endsWith('/' + runId + '/turns'))
-  await drawer.locator('button[type="submit"]').click()
+  await drawer.getByTestId('solo-send').click()
   const body = (await submitted).postDataJSON()
   expect(body.text).toContain('Update this heading')
   expect(body.text).toContain('"selector":"#feature"')
+})
+
+test('a signed-in workflow preview uses the regular chat model picker', async ({ page }) => {
+  const grasp = 'http://127.0.0.1:5174'
+  const key = 'entry-model-picker'
+  const runId = 'live-e2e-' + key
+  const modelPath = grasp + '/embed-api/runs/' + runId + '/nodes/preview'
+  await page.request.post(`${grasp}/__e2e/live/reset?key=${key}&caps=review`)
+  await page.route(grasp + '/embed-api/session', async (route) => {
+    const response = await route.fetch()
+    await route.fulfill({ response, json: { ...await response.json(), kind: 'session' } })
+  })
+  await page.route(modelPath + '/model-catalog', (route) => {
+    expect(route.request().headers().authorization).toBe(`Bearer ${runId}`)
+    return route.fulfill({ json: previewModelCatalog })
+  })
+  let saved: unknown
+  await page.route(new RegExp(modelPath + '/model(?:\\?.*)?$'), (route) => {
+    if (route.request().method() === 'POST') {
+      saved = route.request().postDataJSON()
+      return route.fulfill({ json: { currentModelSet: true, currentConfigurationId: 'shared-config', currentModelId: 'model-b' } })
+    }
+    return route.fulfill({ json: { currentModelSet: false } })
+  })
+  await page.goto(`${grasp}/live-variants.html?key=${key}`)
+  const chat = page.frameLocator('grasp-preview-pick [data-role="drawer"] iframe')
+  await expect(chat.getByTestId('clarify-attach-btn')).toBeVisible()
+  await choosePreviewModel(chat, 'model-b', 'Model B')
+  expect(saved).toEqual({ iteration: 1, configurationId: 'shared-config', modelId: 'model-b', reasoningEffort: '' })
 })
 
 test('anonymous shares open the direct app and use its floating chat in both modes', async ({ browser }) => {
@@ -192,8 +255,35 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       }
       return route.fulfill({ json: { rows: mainRows, busy: false } })
     })
+    let mainChoice = { currentModelSet: false, currentConfigurationId: 'shared-config', currentModelId: '' }
+    const modelWrites: string[] = []
+    await anonymous.route(url + '/model-catalog', (route) => {
+      const token = route.request().headers()['x-gate-share-token']
+      if (token === mainSession) return route.fulfill({ json: previewModelCatalog })
+      expect(token).toBe(guestSession)
+      return route.fulfill({ json: { runtime: {
+        default: 'model-a', models: [{ id: 'model-a', name: 'Model A' }, { id: 'model-b', name: 'Model B' }],
+      } } })
+    })
+    await anonymous.route(url + '/model', (route) => {
+      expect(route.request().headers()['x-gate-share-token']).toBe(mainSession)
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON()
+        expect(body.configurationId).toBe('shared-config')
+        mainChoice = { ...mainChoice, currentModelSet: true, currentModelId: body.modelId }
+        modelWrites.push('main:' + body.modelId)
+      }
+      return route.fulfill({ json: mainChoice })
+    })
     await anonymous.routeWebSocket('**/public/approvals/app/guest-chat', (ws) => ws.onMessage((data) => {
-      expect(JSON.parse(String(data))).toEqual({ text: 'A separate idea\n\nSelected page elements:\n/shared-app-fixture · #app-title' })
+      const body = JSON.parse(String(data))
+      if ('modelId' in body) {
+        expect(body).toEqual({ modelId: 'model-b', reasoningEffort: '' })
+        modelWrites.push('guest:' + body.modelId)
+        ws.send(JSON.stringify({ type: 'model', ok: true }))
+        return
+      }
+      expect(body).toEqual({ text: 'A separate idea\n\nSelected page elements:\n/shared-app-fixture · #app-title' })
       ws.send(JSON.stringify({ type: 'done', text: 'Visitor-only reply' }))
     }))
 
@@ -202,13 +292,30 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await expect(main).toHaveURL(previewUrl)
     await expect(main.getByRole('heading', { name: 'Shared app fixture' })).toBeVisible()
     const mainToolbar = main.locator('grasp-preview-pick')
+    const bar = mainToolbar.locator('[data-role="bar"]')
+    const grip = mainToolbar.locator('[data-role="bar-grip"]')
+    const original = (await bar.boundingBox())!
+    const handle = (await grip.boundingBox())!
+    await main.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await main.mouse.down()
+    await main.mouse.move(handle.x - 70, handle.y - 130, { steps: 5 })
+    await main.mouse.up()
+    const moved = (await bar.boundingBox())!
+    expect(moved.x).toBeLessThan(original.x - 50)
+    expect(moved.y).toBeLessThan(original.y - 100)
+    await main.reload()
+    await expect.poll(() => bar.boundingBox()).toEqual(moved)
+    await grip.press('ArrowDown')
+    await expect.poll(async () => (await bar.boundingBox())?.y).toBe(moved.y + 16)
     const mainDrawer = mainToolbar.frameLocator('[data-role="drawer"] iframe')
     await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()
     await expect(mainToolbar.locator('[data-role="artifact"]')).toBeHidden()
     await mainToolbar.locator('[data-role="chat"]').click()
     await expect(mainDrawer.getByText('Original main conversation')).toBeVisible()
-    await mainDrawer.getByTestId('shared-app-chat-input').fill('A message for the main conversation')
-    await mainDrawer.locator('button[type="submit"]').click()
+    await choosePreviewModel(mainDrawer, 'model-b', 'Model B')
+    await expect.poll(() => modelWrites).toEqual(['main:model-b'])
+    await mainDrawer.getByTestId('shared-app-chat-input').getByRole('textbox').fill('A message for the main conversation')
+    await mainDrawer.getByTestId('shared-app-chat-send').click()
     await expect(mainDrawer.getByText('A message for the main conversation')).toBeVisible()
     await mainToolbar.locator('[data-role="chat"]').click()
     await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()
@@ -221,9 +328,11 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await guest.getByRole('heading', { name: 'Shared app fixture' }).click()
     const guestDrawer = guestToolbar.frameLocator('[data-role="drawer"] iframe')
     await expect(guestDrawer.getByTestId('shared-app-chat-pick')).toContainText('#app-title')
+    await choosePreviewModel(guestDrawer, 'model-b', 'Model B')
+    await expect.poll(() => modelWrites).toEqual(['main:model-b', 'guest:model-b'])
     await expect(guestDrawer.getByText('Original main conversation')).toHaveCount(0)
-    await guestDrawer.getByTestId('shared-app-chat-input').fill('A separate idea')
-    await guestDrawer.locator('button[type="submit"]').click()
+    await guestDrawer.getByTestId('shared-app-chat-input').getByRole('textbox').fill('A separate idea')
+    await guestDrawer.getByTestId('shared-app-chat-send').click()
     await expect(guestDrawer.getByText('Visitor-only reply')).toBeVisible()
     await guest.reload()
     await expect(guestDrawer.getByTestId('shared-app-chat-input')).toBeVisible()

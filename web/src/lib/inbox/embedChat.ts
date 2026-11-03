@@ -41,7 +41,7 @@ export type EmbedTicket = {
 export type EmbedSession = {
   token: string
   expiresAt: string
-  kind?: 'solo' | 'app-preview'
+  kind?: 'solo' | 'app-preview' | 'session' | 'share'
 }
 
 type RedeemResponse = Omit<EmbedSession, 'kind'> & { kind?: string; runId?: string; nodeId?: string; error?: string }
@@ -213,7 +213,7 @@ export async function redeemEmbedTicket(ticket: string, runId: string, nodeId: s
 }
 
 function embedKind(kind?: string): Pick<EmbedSession, 'kind'> {
-  return kind === 'solo' || kind === 'app-preview' ? { kind } : {}
+  return kind === 'solo' || kind === 'app-preview' || kind === 'session' || kind === 'share' ? { kind } : {}
 }
 
 export type EmbedControlMessage = { caps?: string[]; tab?: string; stop?: boolean }
@@ -290,5 +290,21 @@ export function parseEmbedPickMessage(data: unknown): AppPreviewPickPayload | nu
     outerHTML: str(p.outerHTML) || '',
     text: str(p.text),
     url: str(p.url),
+  }
+}
+
+export function previewSessionRequest(base: string, token: string, onExpired?: () => void) {
+  return async function request<T>(path: string, init?: RequestInit, decode: (res: Response) => Promise<T> = res => res.json()): Promise<T> {
+    const res = await fetch(base + path, {
+      ...init,
+      credentials: 'omit',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    })
+    if (res.status === 401) onExpired?.()
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      throw Object.assign(new Error(body?.error || String(res.status)), { status: res.status, code: body?.code })
+    }
+    return decode(res)
   }
 }

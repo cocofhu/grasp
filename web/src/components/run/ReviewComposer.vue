@@ -13,7 +13,7 @@ import AnnotationChip from './AnnotationChip.vue'
 import PageControlStatus from './PageControlStatus.vue'
 import type { GateReactTurn } from './gateApproval/gateApprovalContext'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
-import VisitModelSelect from './VisitModelSelect.vue'
+import VisitModelSelect, { type VisitModelTransport } from './VisitModelSelect.vue'
 import { visitModelSelectVisible } from '@/lib/run/visitModel'
 import ReferencePicker from '@/components/solo/ReferencePicker.vue'
 import ReferenceChip from '@/components/solo/ReferenceChip.vue'
@@ -106,6 +106,7 @@ const props = withDefaults(
     followProcess?: ClarifyFollowProcess[] | null
     /** Member composer may switch this visit's model. */
     modelSwitch?: boolean
+    modelTransport?: VisitModelTransport
     agentName?: string
     modelNodeId?: string
     modelIteration?: number
@@ -375,6 +376,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
       :node-label="nodeLabel"
       :composer-locked="!!composerLocked"
       :model-switch="modelSwitch"
+      :model-transport="modelTransport"
       :agent-name="agentName"
       :model-node-id="modelNodeId || nodeId"
       :model-iteration="modelIteration || iteration"
@@ -515,6 +517,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
             :node-id="modelNodeId || nodeId || ''"
             :iteration="modelIteration || iteration"
             :agent-name="agentName || ''"
+            :transport="modelTransport"
             :current-configuration-id="currentConfigurationId"
             :current-model-id="currentModelId"
             :current-model-set="currentModelSet"

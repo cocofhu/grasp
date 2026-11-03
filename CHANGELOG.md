@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Preview chat:** Solo direct previews use the full Solo chat. Workflow previews and both anonymous sharing modes use the regular chat composer and model picker. Shared main chats apply model choices to the original conversation. Independent chats switch within the app sandbox's active model group. Drag the floating toolbar or move it with the arrow keys, and it keeps its position when the page reloads.
+
 - **Sandbox preview:** The back, forward, and reload icons render in the app preview and sandbox browser toolbars, and the Vue console stops repeating missing-icon warnings.
 
 - **App preview sharing:** Solo and workflow previews can copy a link that lets guests open the app and chat without signing in. Choose a separate guest chat or explicitly share the main conversation's text history and message queue. Solo's signed-in direct preview Chat now opens its existing conversation.

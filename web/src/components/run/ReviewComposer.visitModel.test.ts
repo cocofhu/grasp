@@ -80,8 +80,8 @@ describe('ReviewComposer visit model select', () => {
     }
   })
 
-  it('does not offer switching on the visitor share page', () => {
+  it('requires a scoped embed transport to offer switching in public approval chat', () => {
     const src = readFileSync(join(here, '../../views/PublicGateApprovalView.vue'), 'utf8')
-    expect(src).not.toMatch(/model-switch|modelSwitch/)
+    expect(src).toContain(':model-switch="chatOnly && !!modelTransport"')
   })
 })

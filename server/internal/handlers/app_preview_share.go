@@ -280,7 +280,11 @@ func (h *Handlers) PublicAppPreviewMainChat(c *gin.Context) {
 			}
 			busy = state.Busy
 		}
-		c.JSON(http.StatusOK, gin.H{"rows": rows, "busy": busy})
+		result := gin.H{"rows": rows, "busy": busy}
+		if choice, err := h.mainPreviewModel(link, sb); err == nil {
+			result["model"] = choice
+		}
+		c.JSON(http.StatusOK, result)
 		return
 	}
 	var body struct {

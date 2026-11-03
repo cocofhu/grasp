@@ -6,8 +6,12 @@ import Icon from '@/components/ui/Icon.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import PageControlStatus from '@/components/run/PageControlStatus.vue'
 import PublicGateApprovalView from '@/views/PublicGateApprovalView.vue'
-import SoloPreviewChat from '@/components/solo/SoloPreviewChat.vue'
+import SoloSessionPane from '@/components/solo/SoloSessionPane.vue'
+import { soloEmbedClient } from '@/lib/solo/soloEmbedClient'
 import SharedAppPreviewChat from '@/components/run/SharedAppPreviewChat.vue'
+import type { VisitModelTransport } from '@/components/run/VisitModelSelect.vue'
+import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
+import type { ScopedSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import {
   EMBED_LANG_MESSAGE,
   EMBED_READY_MESSAGE,
@@ -18,6 +22,7 @@ import {
   parseEmbedControlMessage,
   parseEmbedPickMessage,
   parseEmbedThemeFromHash,
+  previewSessionRequest,
   parseEmbedThemeMessage,
   parseEmbedTicketFromHash,
   redeemEmbedTicket,
@@ -62,8 +67,29 @@ const nodeId = String(route.params.nodeId || '')
 
 const phase = ref<'connecting' | 'ready' | 'expired' | 'network'>('connecting')
 const token = ref('')
-const solo = ref(false)
-const soloChat = ref<InstanceType<typeof SoloPreviewChat> | null>(null)
+const solo = ref<ReturnType<typeof soloEmbedClient>>()
+const workflowModel = ref<VisitModelTransport>()
+
+function useSession(session: { token: string; kind?: string }) {
+  solo.value = session.kind === 'solo' ? soloEmbedClient(runId, session.token, () => onStatus('invalid')) : undefined
+  token.value = session.token
+  // Old stored sessions may have no kind. The scoped endpoint still checks the ticket.
+  if (!props.shared && (session.kind === 'session' || !session.kind)) {
+    const request = previewSessionRequest(`/embed-api/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}`, session.token)
+    const modelCatalog = () => request<ScopedSessionModelCatalog>('/model-catalog')
+    const transport: VisitModelTransport = {
+      modelCatalog,
+      getVisitModel: (_run, _node, iteration = 1) => request<VisitModelChoice>(`/model?iteration=${iteration}`),
+      setVisitModel: (_run, _node, body) => request<VisitModelChoice>('/model', { method: 'POST', body: JSON.stringify(body) }),
+    }
+    if (session.kind) workflowModel.value = transport
+    else void modelCatalog().then(catalog => {
+      if (token.value === session.token) workflowModel.value = { ...transport, modelCatalog: async () => catalog }
+    }).catch(() => undefined)
+  }
+  phase.value = 'ready'
+}
+const soloChat = ref<InstanceType<typeof SoloSessionPane> | null>(null)
 const sharedChat = ref<InstanceType<typeof SharedAppPreviewChat> | null>(null)
 const chatRef = ref<ChatRef | null>(null)
 let announced = false
@@ -181,9 +207,7 @@ async function connect() {
       const s = await redeemEmbedTicket(ticket, runId, nodeId)
       if (s && (s.kind === 'app-preview') === !!props.shared) {
         saveEmbedSession(runId, nodeId, s)
-        solo.value = s.kind === 'solo'
-        token.value = s.token
-        phase.value = 'ready'
+        useSession(s)
         return
       }
     } catch {
@@ -195,9 +219,7 @@ async function connect() {
   }
   const stored = loadEmbedSession(runId, nodeId, Date.now(), props.shared)
   if (stored) {
-    solo.value = stored.kind === 'solo'
-    token.value = stored.token
-    phase.value = 'ready'
+    useSession(stored)
     return
   }
   markExpired()
@@ -324,18 +346,19 @@ onUnmounted(() => {
       :token="token"
       @status="onStatus"
     />
-    <SoloPreviewChat
+    <SoloSessionPane
       v-else-if="phase === 'ready' && token && solo"
       ref="soloChat"
-      :run-id="runId"
-      :token="token"
-      @status="onStatus"
+      :session-id="runId"
+      :embedded="solo"
+      @ready="onStatus('active')"
     />
     <PublicGateApprovalView
       v-else-if="phase === 'ready' && token"
       ref="chatRef"
       class="min-h-0 flex-1"
       :embed-token="token"
+      :model-transport="workflowModel"
       :request-page-context="pageContext.request"
       :page-control-enabled="pageControlOn"
       @status="onStatus"

@@ -15,12 +15,23 @@ import (
 // agent before it answers, which is slower than a plain chat-list call.
 const chatModelTimeout = 2 * time.Minute
 
-// ChatModelSettings is the default chat's explicit, session-local selection.
+type ChatModelOption struct {
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Vendor           string   `json:"vendor,omitempty"`
+	Unavailable      bool     `json:"unavailable,omitempty"`
+	ReasoningEfforts []string `json:"reasoningEfforts,omitempty"`
+}
+
+// ChatModelSettings contains one chat's explicit model and the configured options.
 // A nil effort is an older runtime that does not expose this capability.
 type ChatModelSettings struct {
-	Selected         string   `json:"selected"`
-	ReasoningEffort  *string  `json:"reasoningEffort"`
-	ReasoningEfforts []string `json:"reasoningEfforts"`
+	Models           []ChatModelOption `json:"models"`
+	Configured       bool              `json:"configured"`
+	Default          string            `json:"default"`
+	Selected         string            `json:"selected"`
+	ReasoningEffort  *string           `json:"reasoningEffort"`
+	ReasoningEfforts []string          `json:"reasoningEfforts"`
 }
 
 func chatQuery(chat string) string {
@@ -55,6 +66,30 @@ func GetChatModelSettingsFor(ctx context.Context, host string, port int, passwor
 		settings.ReasoningEffort = &value
 	}
 	return settings, nil
+}
+
+// SetIndependentModelSettings changes only the non-default chat this client owns.
+func (c *ACPClient) SetIndependentModelSettings(ctx context.Context, model, effort string) (bool, error) {
+	if c.chatID == "" || c.chatID == "default" {
+		return false, fmt.Errorf("independent chat required")
+	}
+	settings, err := GetChatModelSettingsFor(ctx, c.host, c.port, c.password, c.chatID)
+	if err != nil {
+		return false, err
+	}
+	if model != "" {
+		selectable := false
+		for _, option := range settings.Models {
+			selectable = selectable || option.ID == model && !option.Unavailable
+		}
+		if !settings.Configured || !selectable {
+			return false, fmt.Errorf("model is outside the active preview configuration")
+		}
+	}
+	if settings.Selected == model && settings.ReasoningEffort != nil && *settings.ReasoningEffort == effort {
+		return false, nil
+	}
+	return true, SetChatModelSettingsFor(ctx, c.host, c.port, c.password, c.chatID, model, effort)
 }
 
 // GetChatModel reads the default chat's explicit model. Empty means the
