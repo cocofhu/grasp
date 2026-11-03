@@ -79,3 +79,12 @@ func (h *Handlers) SoloEmbedArtifacts(c *gin.Context) {
 	runID := c.Param("runId")
 	c.JSON(http.StatusOK, gin.H{"artifacts": h.Arts.ByRunWithContent(runID)})
 }
+
+func (h *Handlers) SoloEmbedAttachment(c *gin.Context) {
+	id := c.Param("blobId")
+	if !h.Solo.MessageHasAttachment(c.Param("id"), c.Param("messageId"), "blob:"+id) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "attachment not found"})
+		return
+	}
+	h.serveBlob(c, id)
+}

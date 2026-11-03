@@ -17,11 +17,15 @@ import (
 // Image responses sniff magic bytes for Content-Type (no charset) so nosniff
 // browsers can decode mislabeled history blobs. Storage bytes/meta are not rewritten.
 func (h *Handlers) GetBlob(c *gin.Context) {
+	h.serveBlob(c, c.Param("id"))
+}
+
+func (h *Handlers) serveBlob(c *gin.Context, id string) {
 	if h.Blobs == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "blob store unavailable"})
 		return
 	}
-	id := strings.TrimSpace(c.Param("id"))
+	id = strings.TrimSpace(id)
 	ref, err := blob.ParseRef("blob:" + id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid blob id"})

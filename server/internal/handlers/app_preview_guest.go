@@ -9,11 +9,36 @@ import (
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/textutil"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
 
 const appPreviewGuestProtocol = "grasp-preview-guest"
+
+type previewGuestRequest struct {
+	Text            string  `json:"text"`
+	ModelID         *string `json:"modelId"`
+	ReasoningEffort string  `json:"reasoningEffort"`
+}
+
+func (h *Handlers) writePreviewGuestModelCatalog(c *gin.Context, sb models.Sandbox) {
+	if h.Sbx == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "model catalog unavailable"})
+		return
+	}
+	settings, err := h.Sbx.ChatModelSettings(c.Request.Context(), sb.ID)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "model catalog unavailable"})
+		return
+	}
+	models := []sandbox.ChatModelOption{}
+	if settings.Configured {
+		models = append(models, settings.Models...)
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{"runtime": gin.H{"models": models, "default": settings.Default}})
+}
 
 // PublicAppPreviewGuestChat owns one independent bridge chat per open page.
 // Only narration crosses this socket. Each turn is scoped to the shared app.
@@ -42,11 +67,14 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 	conn.SetReadLimit(32 << 10)
 	configureEventHeartbeat(conn, eventPongWait)
 	ctx, cancel := context.WithDeadline(c.Request.Context(), link.ExpiresAt)
-	prompts := make(chan string, 1)
-	go readPreviewGuestPrompts(ctx, cancel, conn, prompts)
+	requests := make(chan previewGuestRequest, 1)
+	go readPreviewGuestRequests(ctx, cancel, conn, requests)
 	go h.watchPreviewGuest(ctx, cancel, conn, claims)
 	var client *sandbox.ACPClient
 	var closeChat func()
+	var history []string
+	var restoreHistory bool
+	var selection *previewGuestRequest
 	defer func() {
 		cancel()
 		_ = conn.Close()
@@ -58,46 +86,90 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case text := <-prompts:
+		case request := <-requests:
 			if active, _ := h.activeAppPreviewTicket(claims); active == nil {
 				return
 			}
 			if h.Shutdown != nil && h.Shutdown.IsDraining() {
-				_ = writeChatJSON(conn, gin.H{"type": "error", "code": "unavailable"})
+				writePreviewGuestUnavailable(conn, request)
 				continue
 			}
 			if client == nil || !client.IsConnected() {
 				if closeChat != nil {
 					closeChat()
 				}
+				restoreHistory = len(history) > 0
 				client, closeChat, err = h.Sbx.OpenPreviewGuest(ctx, sb)
 				if err != nil {
-					_ = writeChatJSON(conn, gin.H{"type": "error", "code": "unavailable"})
+					writePreviewGuestUnavailable(conn, request)
 					continue
 				}
+				if selection != nil && request.ModelID == nil {
+					if _, err := client.SetIndependentModelSettings(ctx, *selection.ModelID, selection.ReasoningEffort); err != nil {
+						closeChat()
+						client, closeChat = nil, nil
+						writePreviewGuestUnavailable(conn, request)
+						continue
+					}
+				}
 			}
-			if !writePreviewGuestTurn(ctx, cancel, conn, client, text) {
+			if request.ModelID != nil {
+				restarted, err := client.SetIndependentModelSettings(ctx, *request.ModelID, request.ReasoningEffort)
+				restoreHistory = restoreHistory || restarted
+				if err == nil {
+					selection = &request
+				}
+				if writeChatJSON(conn, gin.H{"type": "model", "ok": err == nil}) != nil {
+					return
+				}
+				continue
+			}
+			prompt := request.Text
+			if restoreHistory && len(history) > 0 {
+				prompt = "Earlier messages in this preview chat (context only):\n" +
+					strings.Join(history, "\n\n") + "\n\nCurrent user message:\n" + prompt
+			}
+			narration, completed, sent := writePreviewGuestTurn(ctx, cancel, conn, client, prompt)
+			if !sent {
 				return
+			}
+			if completed {
+				restoreHistory = false
+				history = append(history, "User: "+textutil.TruncateBytes(request.Text, 2048, "…")+
+					"\nAgent: "+textutil.TruncateBytes(narration, 2048, "…"))
+				if len(history) > 8 {
+					history = history[len(history)-8:]
+				}
 			}
 		}
 	}
 }
 
-func readPreviewGuestPrompts(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, prompts chan<- string) {
+func writePreviewGuestUnavailable(conn *websocket.Conn, request previewGuestRequest) {
+	if request.ModelID != nil {
+		_ = writeChatJSON(conn, gin.H{"type": "model", "ok": false})
+		return
+	}
+	_ = writeChatJSON(conn, gin.H{"type": "error", "code": "unavailable"})
+}
+
+func readPreviewGuestRequests(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, requests chan<- previewGuestRequest) {
 	defer cancel()
 	for ctx.Err() == nil {
-		var frame struct {
-			Text string `json:"text"`
-		}
+		var frame previewGuestRequest
 		if err := conn.ReadJSON(&frame); err != nil {
 			return
 		}
-		text := strings.TrimSpace(frame.Text)
-		if text == "" || len(text) > maxPreviewChatText {
+		frame.Text = strings.TrimSpace(frame.Text)
+		if frame.ModelID == nil {
+			if frame.Text == "" || len(frame.Text) > maxPreviewChatText {
+				return
+			}
+		} else if frame.Text != "" || len(*frame.ModelID) > 512 || len(frame.ReasoningEffort) > 64 {
 			return
 		}
 		select {
-		case prompts <- text:
+		case requests <- frame:
 		default:
 			return
 		}
@@ -124,7 +196,7 @@ func (h *Handlers) watchPreviewGuest(ctx context.Context, cancel context.CancelF
 	}
 }
 
-func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, client *sandbox.ACPClient, text string) bool {
+func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, client *sandbox.ACPClient, text string) (string, bool, bool) {
 	last := time.Time{}
 	result, err := client.ChatStreamResult(ctx, text, nil, func(progress *sandbox.ChatResult) {
 		if time.Since(last) < 125*time.Millisecond {
@@ -136,7 +208,8 @@ func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn 
 		}
 	})
 	failed := err != nil || result == nil || result.Failed || result.Interrupted || result.ErrorText != ""
-	return writeChatJSON(conn, gin.H{"type": "done", "text": previewGuestNarration(result), "failed": failed}) == nil
+	narration := previewGuestNarration(result)
+	return narration, !failed, writeChatJSON(conn, gin.H{"type": "done", "text": narration, "failed": failed}) == nil
 }
 
 func previewGuestNarration(result *sandbox.ChatResult) string {

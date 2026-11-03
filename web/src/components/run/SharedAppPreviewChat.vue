@@ -5,6 +5,12 @@ import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
 import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
+import AnnotationChip from './AnnotationChip.vue'
+import ComposerShell from './ComposerShell.vue'
+import ComposerPrimaryAction from './ComposerPrimaryAction.vue'
+import ParagraphInput from '@/components/ui/ParagraphInput.vue'
+import VisitModelSelect, { type VisitModelTransport } from './VisitModelSelect.vue'
+import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import { previewPickLabel, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { publicAppPreviewClient, type PreviewChatRow, type PreviewShareSession } from '@/lib/inbox/appPreviewShare'
 
@@ -15,14 +21,63 @@ const client = publicAppPreviewClient(props.token)
 const controller = new AbortController()
 const session = ref<PreviewShareSession>()
 const rows = ref<PreviewChatRow[]>([])
+const mainChoice = ref<VisitModelChoice>()
 const input = ref('')
-const picks = ref<string[]>([])
+const picks = ref<{ selector: string; label: string }[]>([])
 const messageError = ref('')
 const pageError = ref<'inactive' | 'network' | ''>('')
 const busy = ref(false)
 const sending = ref(false)
 const loading = ref(true)
 const chatReady = ref(false)
+const guestModelChanging = ref(false)
+const guestConnection = ref(0)
+let guestModelReply: ((ok: boolean) => void) | undefined
+let guestChoice: VisitModelChoice = {}
+let mainModelRevision = 0
+
+const modelTransport: VisitModelTransport = {
+  modelCatalog: () => client.modelCatalog(controller.signal).catch(error => {
+    handleError(error)
+    throw error
+  }),
+  getVisitModel: async () => session.value?.chatMode === 'isolated' ? guestChoice : client.getModel(controller.signal),
+  setVisitModel: async (_run, _node, body) => {
+    if (session.value?.chatMode !== 'isolated') {
+      ++mainModelRevision
+      try {
+        const choice = await client.setModel(controller.signal, body)
+        mainChoice.value = choice
+        return choice
+      } catch (error) {
+        if ((error as { status?: number }).status === 410) expire()
+        throw error
+      } finally {
+        ++mainModelRevision
+      }
+    }
+    if (socket?.readyState !== WebSocket.OPEN || busy.value || guestModelChanging.value) {
+      throw new Error(t('pages.appPreview.share.chatUnavailable'))
+    }
+    const activeSocket = socket
+    guestModelChanging.value = true
+    try {
+      await new Promise<void>((resolve, reject) => {
+        guestModelReply = (ok) => {
+          guestModelReply = undefined
+          if (ok) resolve()
+          else reject(new Error(t('pages.solo.errors.model_switch_failed')))
+        }
+        activeSocket.send(JSON.stringify({ modelId: body.modelId || '', reasoningEffort: body.reasoningEffort || '' }))
+      })
+      guestChoice = { currentModelId: body.modelId, currentModelSet: true, reasoningEffort: body.reasoningEffort }
+      return guestChoice
+    } finally {
+      guestModelReply = undefined
+      guestModelChanging.value = false
+    }
+  },
+}
 const transcript = ref<HTMLElement | null>(null)
 let renew: ReturnType<typeof setTimeout> | undefined
 let poll: ReturnType<typeof setTimeout> | undefined
@@ -44,6 +99,7 @@ function expire() {
   chatReady.value = false
   clearTimeout(renew)
   clearTimeout(poll)
+  guestModelReply?.(false)
   socket?.close()
 }
 
@@ -84,12 +140,14 @@ async function pollMain() {
   if (!session.value || controller.signal.aborted || readingMain) return
   clearTimeout(poll)
   readingMain = true
+  const modelRevision = mainModelRevision
   try {
     const next = await client.history(controller.signal)
     if (!session.value || controller.signal.aborted) return
     followChat()
     rows.value = next.rows
     busy.value = next.busy
+    if (next.model && modelRevision === mainModelRevision) mainChoice.value = next.model
     if (!chatReady.value) messageError.value = ''
     chatReady.value = true
   } catch (error) {
@@ -109,12 +167,18 @@ async function retryGuest() {
 function connectGuest() {
   if (!session.value || socket?.readyState === WebSocket.CONNECTING || socket?.readyState === WebSocket.OPEN) return
   messageError.value = ''
+  guestChoice = {}
+  guestConnection.value++
   const current = client.connectGuest(session.value.ticket)
   socket = current
   current.onopen = () => { if (socket === current) chatReady.value = true }
   current.onmessage = (event) => {
     if (socket !== current || typeof event.data !== 'string') return
-    const message = JSON.parse(event.data) as { type?: string; text?: string; failed?: boolean }
+    const message = JSON.parse(event.data) as { type?: string; text?: string; failed?: boolean; ok?: boolean }
+    if (message.type === 'model') {
+      guestModelReply?.(message.ok === true)
+      return
+    }
     if (message.type === 'reply' || message.type === 'done') {
       const row = rows.value.find(row => row.id === guestReplyId)
       followChat()
@@ -127,6 +191,7 @@ function connectGuest() {
   }
   current.onclose = () => {
     if (socket !== current || controller.signal.aborted) return
+    guestModelReply?.(false)
     chatReady.value = false
     busy.value = false
     messageError.value = t('pages.appPreview.share.chatUnavailable')
@@ -137,15 +202,17 @@ function addPick(payload: AppPreviewPickPayload) {
   const selector = payload.selector.slice(0, 120)
   const label = previewPickLabel(payload.url, selector, payload.tagName)
   const context = label.length <= 120 ? label : selector
-  if (picks.value.length < 4 && !picks.value.includes(context)) picks.value.push(context)
+  if (picks.value.length < 4 && !picks.value.some(pick => pick.label === context)) {
+    picks.value.push({ selector, label: context })
+  }
 }
 defineExpose({ addPick })
 
 async function submit() {
   const draft = input.value.trim()
   const selected = picks.value.slice()
-  if ((!draft && !selected.length) || !chatReady.value || sending.value || !session.value) return
-  const context = selected.join('\n')
+  if ((!draft && !selected.length) || !chatReady.value || sending.value || guestModelChanging.value || !session.value) return
+  const context = selected.map(pick => pick.label).join('\n')
   const text = context ? [draft, `Selected page elements:\n${context}`].filter(Boolean).join('\n\n') : draft
   if (new TextEncoder().encode(text).byteLength > 8192) {
     messageError.value = t('pages.appPreview.share.messageTooLong')
@@ -191,6 +258,7 @@ onBeforeUnmount(() => {
   controller.abort()
   clearTimeout(renew)
   clearTimeout(poll)
+  guestModelReply?.(false)
   socket?.close()
 })
 </script>
@@ -212,7 +280,7 @@ onBeforeUnmount(() => {
       </template>
       <p v-if="busy" role="status" class="text-xs text-txt3">{{ t('pages.solo.phase.running') }}</p>
     </div>
-    <form class="shrink-0 space-y-2 border-t border-line p-3" @submit.prevent="submit">
+    <div class="shrink-0 space-y-2 border-t border-line p-3">
       <div v-if="messageError" class="flex items-center gap-2 text-xs text-err" role="alert">
         <span class="flex-1">{{ messageError }}</span>
         <AppButton v-if="!chatReady && session.chatMode === 'isolated'" size="sm" type="button" @click="retryGuest">
@@ -220,31 +288,50 @@ onBeforeUnmount(() => {
         </AppButton>
       </div>
       <div v-if="picks.length" class="flex flex-wrap gap-1">
-        <button
+        <AnnotationChip
           v-for="(pick, i) in picks"
-          :key="pick"
-          type="button"
-          class="max-w-full truncate rounded border border-line bg-overlay px-2 py-1 text-xs"
-          data-testid="shared-app-chat-pick"
-          @click="picks.splice(i, 1)"
-        >{{ pick }} ×</button>
+          :key="i"
+          :ann="pick"
+          removable
+          test-id="shared-app-chat-pick"
+          @remove="picks.splice(i, 1)"
+        />
       </div>
-      <textarea
-        v-model="input"
-        rows="2"
-        maxlength="2500"
-        :aria-label="t('pages.appPreview.share.message')"
-        :placeholder="t('pages.appPreview.share.message')"
-        class="w-full resize-y rounded-lg border border-line bg-base p-2.5 text-sm focus:border-accent focus:outline-none"
-        data-testid="shared-app-chat-input"
-        @keydown="onInputKey"
-      />
-      <div class="flex justify-end">
-        <AppButton type="submit" variant="primary" icon="chat-send" :loading="sending" :disabled="!chatReady || (!input.trim() && !picks.length) || (session.chatMode === 'isolated' && busy)">
-          {{ t('pages.solo.chat.send') }}
-        </AppButton>
-      </div>
-    </form>
+      <ComposerShell compact wrap-toolbar :show-footer="false">
+        <template #input>
+          <ParagraphInput
+            v-model:text="input"
+            compact embedded text-only
+            :placeholder="t('pages.appPreview.share.message')"
+            data-testid="shared-app-chat-input"
+            @keydown="onInputKey"
+          />
+        </template>
+        <template #toolbar-start>
+          <VisitModelSelect
+            :key="guestConnection"
+            run-id="" node-id="" agent-name=""
+            :transport="modelTransport"
+            :current-model-set="mainChoice?.currentModelSet"
+            :current-model-id="mainChoice?.currentModelId"
+            :current-configuration-id="mainChoice?.currentConfigurationId"
+            :reasoning-effort="mainChoice?.reasoningEffort"
+            :model-notice="mainChoice?.modelNotice"
+            :disabled="!chatReady || (session.chatMode === 'isolated' && busy)"
+          />
+        </template>
+        <template #toolbar-end>
+          <ComposerPrimaryAction
+            kind="send"
+            :label="t('pages.solo.chat.send')"
+            :busy="sending"
+            :disabled="!chatReady || sending || guestModelChanging || (!input.trim() && !picks.length) || (session.chatMode === 'isolated' && busy)"
+            testid="shared-app-chat-send"
+            @click="submit"
+          />
+        </template>
+      </ComposerShell>
+    </div>
   </section>
   <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center" role="status">
     <Icon :name="loading ? 'spinner' : 'alert'" :size="26" class="text-accent" />

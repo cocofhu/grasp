@@ -103,7 +103,7 @@ import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
 import { hasFailedTool } from '@/lib/run/acpTools'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
-import VisitModelSelect from './VisitModelSelect.vue'
+import VisitModelSelect, { type VisitModelTransport } from './VisitModelSelect.vue'
 import ReferencePicker from '@/components/solo/ReferencePicker.vue'
 import ReferenceChip from '@/components/solo/ReferenceChip.vue'
 import ReferencePlusMenu from '@/components/solo/ReferencePlusMenu.vue'
@@ -168,6 +168,7 @@ const props = withDefaults(
     systemNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
     /** Member composer may switch this visit's model. Off for visitors and observers. */
     modelSwitch?: boolean
+    modelTransport?: VisitModelTransport
     agentName?: string
     modelNodeId?: string
     modelIteration?: number
@@ -1993,6 +1994,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :node-id="modelNodeId || nodeId"
             :iteration="modelIteration || iteration"
             :agent-name="agentName || ''"
+            :transport="modelTransport"
             :current-configuration-id="currentConfigurationId"
             :current-model-id="currentModelId"
             :current-model-set="currentModelSet"

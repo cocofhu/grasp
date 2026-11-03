@@ -4,11 +4,26 @@ import { cliCatalogFailed, loadCliModels } from '@/lib/agent/cliCatalog'
 import type { Agent, CliCatalogModel, CredentialItem, ModelConfiguration, ModelConnection } from '@/lib/api/apiTypes'
 import { boundConfigurationIds, effectiveModelAgent, parseModelRoute } from '@/lib/agent/modelBindings'
 import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
-import { boundModelChoices } from './configuredModels'
+import { boundModelChoices, type ConfiguredModelChoice } from './configuredModels'
+
+export type ScopedSessionModelCatalog = {
+  agent?: Pick<Agent, 'name' | 'modelBinding'>
+  configurations?: ModelConfiguration[]
+  connections?: ModelConnection[]
+  cliModels?: Record<string, CliCatalogModel[]>
+  cliFailed?: boolean
+  efforts?: Record<string, Record<string, string[] | null>>
+  unavailableConfigurationIds?: string[]
+  runtime?: {
+    default: string
+    models: { id: string; name: string; vendor?: string; unavailable?: boolean; reasoningEfforts?: string[] }[]
+  }
+}
 
 /** One reactive directory for every group bound to the session's Agent. */
-export function useSessionModelCatalog(agentName: Ref<string>) {
+export function useSessionModelCatalog(agentName: Ref<string>, scopedSource?: () => Promise<ScopedSessionModelCatalog>) {
   const agents = ref<Agent[]>([])
+  const scope = ref<ScopedSessionModelCatalog>()
   const configurations = ref<ModelConfiguration[]>([])
   const connections = ref<ModelConnection[]>([])
   const credentials = ref<CredentialItem[]>()
@@ -19,21 +34,38 @@ export function useSessionModelCatalog(agentName: Ref<string>) {
   const connectionLoaded = ref(false)
   let loadGeneration = 0
   let cliGeneration = 0
-  const agent = computed(() => agents.value.find(item => item.name === agentName.value) ?? null)
+  const agent = computed(() => scope.value?.agent ?? agents.value.find(item => item.name === agentName.value) ?? null)
   const bound = computed(() => boundConfigurationIds(agent.value?.modelBinding, configurations.value))
   const active = computed(() => bound.value.map(id => configurations.value.find(row => row.id === id && row.state === 'active')).filter((row): row is ModelConfiguration => !!row))
   const hasConnections = computed(() => active.value.some(row => row.binding.kind === 'connection'))
   const hasPlatform = computed(() => active.value.some(row => row.binding.kind === 'platform'))
   const catalogConfirmed = computed(() => listState.value === 'ok' && (!hasConnections.value || connectionLoaded.value) && (!hasPlatform.value || cliReady.value && !cliFailed.value))
-  const choices = computed(() => boundModelChoices({
-    binding: agent.value?.modelBinding, configurations: configurations.value, connections: connections.value,
-    cliModels: cliModels.value, cliReady: cliReady.value && !cliFailed.value, connectionReady: connectionLoaded.value, credentials: credentials.value,
-  }))
+  const choices = computed<ConfiguredModelChoice[]>(() => {
+    const runtime = scope.value?.runtime
+    if (runtime) {
+      const ordered = [...runtime.models].sort((a, b) => Number(b.id === runtime.default) - Number(a.id === runtime.default))
+      return ordered.map(row => ({
+        id: row.id, name: row.name || row.id, hint: row.id, vendor: row.vendor || '', backend: !row.vendor,
+        unavailable: !!row.unavailable, efforts: row.reasoningEfforts,
+      }))
+    }
+    const rows = boundModelChoices({
+      binding: agent.value?.modelBinding, configurations: configurations.value, connections: connections.value,
+      cliModels: cliModels.value, cliReady: cliReady.value && !cliFailed.value, connectionReady: connectionLoaded.value, credentials: credentials.value,
+    })
+    if (!scope.value) return rows
+    return rows.map(row => ({
+      ...row,
+      efforts: scope.value?.efforts?.[row.configurationId || '']?.[row.modelId || ''] || [],
+      unavailable: row.unavailable || !!scope.value?.unavailableConfigurationIds?.includes(row.configurationId || ''),
+    }))
+  })
   const ready = computed(() => catalogConfirmed.value)
   const configLoaded = computed(() => listState.value === 'ok')
-  const blocked = computed(() => !!agentName.value && (listState.value === 'error' || listState.value === 'ok' && (hasConnections.value && !connectionLoaded.value || hasPlatform.value && cliFailed.value)))
+  const blocked = computed(() => (!!agentName.value || !!scopedSource) && (listState.value === 'error' || listState.value === 'ok' && (hasConnections.value && !connectionLoaded.value || hasPlatform.value && cliFailed.value)))
 
   watch(() => active.value.map(row => row.backend).join('|'), async (backends) => {
+    if (scopedSource) return
     const generation = ++cliGeneration
     cliReady.value = false
     cliFailed.value = false
@@ -48,6 +80,19 @@ export function useSessionModelCatalog(agentName: Ref<string>) {
     const generation = ++loadGeneration
     listState.value = 'loading'
     try {
+      if (scopedSource) {
+        const data = await scopedSource()
+        if (generation !== loadGeneration) return
+        scope.value = data
+        configurations.value = data.configurations || []
+        connections.value = data.connections || []
+        cliModels.value = data.cliModels || {}
+        cliFailed.value = !!data.cliFailed
+        cliReady.value = true
+        connectionLoaded.value = true
+        listState.value = 'ok'
+        return
+      }
       const [listed, configs, services, keys] = await Promise.all([
         api.listAgents(), api.listModelConfigurations(),
         api.listModelConnections().then(value => ({ ok: true, items: value.items })).catch(() => ({ ok: false, items: [] as ModelConnection[] })),
@@ -66,9 +111,13 @@ export function useSessionModelCatalog(agentName: Ref<string>) {
       // A failed read preserves the last known directory and the selected route.
     }
   }
-  ensureModelCatalogEvents()
-  watch(modelCatalogRevision, () => void load())
-  watch(agentName, () => void load(), { immediate: true })
+  if (scopedSource) {
+    void load()
+  } else {
+    ensureModelCatalogEvents()
+    watch(modelCatalogRevision, () => void load())
+    watch(agentName, () => void load(), { immediate: true })
+  }
 
   /** Null means the server directory has not safely confirmed membership. */
   function modelInConfiguration(id: string, configurationId?: string): boolean | null {

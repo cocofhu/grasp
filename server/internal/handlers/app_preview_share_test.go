@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 )
@@ -50,10 +51,24 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			if err := hn.db.Create(&sb).Error; err != nil {
 				t.Fatal(err)
 			}
-			if solo {
-				if err := hn.h.Agents.Save(services.Agent{Name: sb.Profile, AcpBackend: services.AcpBackendCursor, Capabilities: testPreviewCaps}); err != nil {
+			hn.h.ModelConfigurations = services.NewModelConfigurationService(hn.db)
+			hn.h.ModelConnections = services.NewModelConnectionService(hn.db)
+			binding := modelrouting.Binding{
+				Kind: "platform", CredentialID: "private-key-id",
+				ModelID: "primary-model", AuxiliaryModelIDs: []string{"preview-model", "next-model"},
+			}
+			for _, id := range []string{"preview-model-group", "unrelated-model-group"} {
+				if err := hn.db.Create(&models.ModelConfiguration{ID: id, State: "active", Backend: services.AcpBackendCursor, Binding: binding}).Error; err != nil {
 					t.Fatal(err)
 				}
+			}
+			if err := hn.h.Agents.Save(services.Agent{
+				Name: sb.Profile, AcpBackend: services.AcpBackendCursor, Capabilities: testPreviewCaps,
+				ModelBinding: modelrouting.ConfigurationReference("preview-model-group"),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if solo {
 				hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
 				if err := hn.db.Create(&models.SoloSession{ID: sb.ThreadID, UserID: "admin", AgentName: sb.Profile, SandboxID: sb.ID, Status: models.SoloStatusRunning}).Error; err != nil {
 					t.Fatal(err)
@@ -63,7 +78,26 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				}
 			}
 			if !solo {
+				var run models.Run
+				if err := hn.db.First(&run, "id = ?", runID).Error; err != nil {
+					t.Fatal(err)
+				}
+				run.Graph.FindNode(nodeID).Config = map[string]any{models.AgentProfileKey: sb.Profile}
+				if err := hn.db.Save(&run).Error; err != nil {
+					t.Fatal(err)
+				}
 				seedDirectPreview(t, hn, runID, nodeID)
+				owner := redeem(t, hn, issueSessionTicket(t, hn, runID, nodeID))["token"].(string)
+				modelPath := "/embed-api/runs/" + runID + "/nodes/"
+				w := hn.doEmbed(http.MethodPost, modelPath+nodeID+"/model", map[string]any{
+					"iteration": 1, "modelId": "preview-model",
+				}, bearerHeader(owner))
+				if w.Code != http.StatusOK || parseJSON(t, w)["currentModelId"] != "preview-model" {
+					t.Fatalf("owner drawer model: %d %s", w.Code, w.Body)
+				}
+				if w := hn.doEmbed(http.MethodGet, modelPath+"other/model-catalog", nil, bearerHeader(owner)); w.Code != http.StatusUnauthorized {
+					t.Fatalf("owner drawer token reached another node: %d", w.Code)
+				}
 			}
 			if err := hn.h.Preview.UpsertPreviewPort(mcp.PreviewPort{RunID: runID, NodeID: nodeID, Port: 8080, Host: app.URL, Healthy: true}); err != nil {
 				t.Fatal(err)
@@ -122,6 +156,27 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			}
 			if w := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, headers("main")); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), mainHistory) {
 				t.Fatalf("main history: %d %s", w.Code, w.Body)
+			}
+			mainHeaders := headers("main-drawer")
+			catalog := hn.doEmbed(http.MethodGet, path+"/model-catalog", nil, mainHeaders)
+			if catalog.Code != http.StatusOK || !strings.Contains(catalog.Body.String(), "preview-model") ||
+				strings.Contains(catalog.Body.String(), "private-key-id") || strings.Contains(catalog.Body.String(), "unrelated-model-group") {
+				t.Fatalf("scoped catalog: %d %s", catalog.Code, catalog.Body)
+			}
+			body := map[string]any{"iteration": 99, "modelId": "next-model"}
+			if w := hn.doEmbed(http.MethodPost, path+"/model", body, headers("isolated-drawer")); w.Code != http.StatusForbidden {
+				t.Fatalf("independent link can switch the main chat model: %d", w.Code)
+			}
+			w := hn.doEmbed(http.MethodPost, path+"/model", body, mainHeaders)
+			if w.Code != http.StatusOK || parseJSON(t, w)["currentModelId"] != "next-model" {
+				t.Fatalf("shared main model: %d %s", w.Code, w.Body)
+			}
+			w = hn.doEmbed(http.MethodGet, path+"/model", nil, mainHeaders)
+			if w.Code != http.StatusOK || parseJSON(t, w)["currentModelId"] != "next-model" {
+				t.Fatalf("shared main persisted model: %d %s", w.Code, w.Body)
+			}
+			if w := hn.doEmbed(http.MethodPost, path+"/model", map[string]any{"modelId": "unlisted-model"}, mainHeaders); w.Code != http.StatusBadRequest {
+				t.Fatalf("model outside bound group accepted: %d %s", w.Code, w.Body)
 			}
 			session := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, headers("isolated"))
 			if session.Code != http.StatusOK {

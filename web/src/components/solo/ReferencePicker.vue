@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { api } from '@/lib/api/api'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import type { GitHubReferenceCandidate, MessageReference, SoloReferenceCandidate } from '@/lib/api/apiTypes'
@@ -9,6 +10,7 @@ import { referenceIcon, referenceTone } from '@/lib/solo/referenceDisplay'
 const props = defineProps<{
   /** An open session, the launch composer's picks, a workflow, or a run node. */
   scope: ReferenceScope
+  searchSolo?: typeof api.searchSoloReferences
   query: string
   /** Targets already picked in this message; hidden from the list. */
   taken: string[]
@@ -27,7 +29,7 @@ const sel = ref(-1)
 const list = ref<HTMLElement | null>(null)
 const content = ref<HTMLElement | null>(null)
 const tabbar = ref<HTMLElement | null>(null)
-const search = useReferenceSearch(computed(() => props.scope))
+const search = useReferenceSearch(computed(() => props.scope), props.searchSolo)
 const TABS: ReferenceTab[] = ['all', 'solo', 'issue', 'pr']
 const ALL_LIMIT = 5
 /** Tallest the list grows before it scrolls. */

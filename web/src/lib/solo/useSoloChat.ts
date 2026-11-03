@@ -46,7 +46,8 @@ function queueItem(raw: any): SoloQueueItem {
  * active turn streamed over the session WebSocket (which replays the running
  * turn on reconnect, so a dropped socket only pauses the view).
  */
-type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMessages' | 'sendSoloTurn' | 'cancelSoloTurn' | 'soloChatWsUrl'> & {
+export type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMessages' | 'sendSoloTurn' | 'cancelSoloTurn' | 'soloChatWsUrl'
+  | 'setSoloSessionModel' | 'setSoloSessionReasoningEffort' | 'removeSoloQueued' | 'reorderSoloQueue'> & {
   soloChatProtocols?: string[]
 }
 
@@ -152,7 +153,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   function setSession(v: SoloSession) {
-    if (v.id !== sessionId.value) return
+    // The embed transport is bound to the preview run ID by its bearer.
+    if (!transport.soloChatProtocols && v.id !== sessionId.value) return
     const preserveSelection = pendingSettings > 0 && session.value
     const next = preserveSelection ? { ...v, ...modelSettings(session.value!) } : v
     session.value = next
@@ -887,14 +889,14 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
           if (latest() && confirmedSettings) patchSession(confirmedSettings)
           return false
         }
-        let row = kind === 'model' ? configurationId === undefined ? await api.setSoloSessionModel(id, next) : await api.setSoloSessionModel(id, next, undefined, configurationId) : await api.setSoloSessionReasoningEffort(id, next)
+        let row = kind === 'model' ? configurationId === undefined ? await transport.setSoloSessionModel(id, next) : await transport.setSoloSessionModel(id, next, undefined, configurationId) : await transport.setSoloSessionReasoningEffort(id, next)
         if (!isCurrentSession() || row.id !== id) return false
         // A model switch clears an effort the new model does not offer. The
         // selector shows that gap as the highest level, so persist that token.
         if (kind === 'model' && latest() && !row.reasoningEffort?.trim()) {
           const highest = listedEfforts(row.reasoningEfforts).at(-1)
           if (highest) {
-            row = await api.setSoloSessionReasoningEffort(id, highest)
+            row = await transport.setSoloSessionReasoningEffort(id, highest)
             if (!isCurrentSession() || row.id !== id) return false
           }
         }
@@ -946,7 +948,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     queued.value = before.filter((q) => q.id !== turnId)
     let ok = false
     try {
-      await api.removeSoloQueued(id, turnId)
+      await transport.removeSoloQueued(id, turnId)
       if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
       const send = openSends.find((row) => sendKey(row) === turnId)
       if (send && !send.started) forgetSend(send)
@@ -999,7 +1001,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const seq = ++overlaySeq
     orderOverlay.value = ids
     try {
-      await api.reorderSoloQueue(id, ids)
+      await transport.reorderSoloQueue(id, ids)
     } catch {
       // The server order stays authoritative; a newer queue_state may already be shown.
       if (disposed || epoch !== chatEpoch || id !== sessionId.value) return

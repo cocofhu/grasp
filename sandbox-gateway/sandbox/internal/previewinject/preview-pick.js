@@ -117,6 +117,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
       closeDemo: '关闭',
       chat: '对话',
       chatTitle: 'Grasp · Agent 对话',
+      moveBar: '移动工具条（拖动或使用方向键）',
       needTicket: '需要从预览页跳转重新获得票据',
       brand: 'Page Harness CoCo',
       close: '收起对话',
@@ -142,6 +143,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
       closeDemo: 'Close',
       chat: 'Chat',
       chatTitle: 'Grasp · Agent chat',
+      moveBar: 'Move toolbar (drag or use arrow keys)',
       needTicket: 'Reopen from the preview page in Grasp to get a new ticket.',
       brand: 'Page Harness CoCo',
       close: 'Hide chat',
@@ -355,16 +357,20 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
   var imageDrag = null;
   var demoBox = null;
   var demoDrag = null;
+  var barPositionKey = '__grasp_preview_toolbar_position';
+  var barPosition = null;
 
   var BAR_CSS =
     ':host{all:initial}' +
-    '.bar{position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:min(520px,calc(100vw - 24px));' +
+    '.bar{position:fixed;right:16px;bottom:16px;z-index:2147483647;width:max-content;max-width:min(520px,calc(100vw - 24px));' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#e5e7eb;' +
     'background:rgba(17,24,39,.94);border:1px solid rgba(148,163,184,.28);border-radius:16px;' +
     'box-shadow:0 12px 32px rgba(15,23,42,.32),0 2px 8px rgba(15,23,42,.18);padding:5px;' +
     'backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}' +
     '.row{display:flex;align-items:center;gap:4px}' +
     '.bar>.row{flex-wrap:wrap}.bar [data-role="gate"]{flex-wrap:nowrap;min-width:0}' +
+    '.bar-grip{padding:4px 2px;cursor:grab;touch-action:none;user-select:none}' +
+    '.bar-grip[data-icon-dragging]{cursor:grabbing;transform:none}' +
     'button{font:inherit;color:inherit;background:transparent;border:1px solid transparent;cursor:pointer;border-radius:10px;' +
     'min-height:32px;padding:5px 10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;' +
     'transition:background .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease,transform .16s ease}' +
@@ -511,6 +517,61 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
 
   function finiteNum(v) {
     return typeof v === 'number' && isFinite(v) ? v : null;
+  }
+
+  function positionBar(position) {
+    var v = viewport();
+    var right = Math.max(4, Math.min(position.right, v.vw - ui.bar.offsetWidth - 4));
+    var bottom = Math.max(4, Math.min(position.bottom, v.vh - ui.bar.offsetHeight - 4));
+    ui.bar.style.right = right + 'px';
+    ui.bar.style.bottom = bottom + 'px';
+    return { right: right, bottom: bottom };
+  }
+
+  function setupBarGrip() {
+    var grip = ui.grip;
+    var start;
+    try {
+      var saved = JSON.parse(sessionStorage.getItem(barPositionKey) || 'null');
+      if (saved && finiteNum(saved.right) !== null && finiteNum(saved.bottom) !== null) barPosition = saved;
+    } catch (e) {}
+
+    function save() {
+      try { sessionStorage.setItem(barPositionKey, JSON.stringify(barPosition)); } catch (e) {}
+    }
+    function currentPosition() {
+      var v = viewport();
+      var bounds = ui.bar.getBoundingClientRect();
+      return { right: v.vw - bounds.right, bottom: v.vh - bounds.bottom };
+    }
+    grip.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== 0 || start) return;
+      start = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, position: currentPosition() };
+      grip.setPointerCapture(ev.pointerId);
+      grip.setAttribute('data-icon-dragging', '');
+    });
+    grip.addEventListener('pointermove', function (ev) {
+      if (!start || ev.pointerId !== start.id) return;
+      barPosition = positionBar({
+        right: start.position.right - (ev.clientX - start.x),
+        bottom: start.position.bottom - (ev.clientY - start.y),
+      });
+    });
+    grip.addEventListener('lostpointercapture', function () {
+      start = null;
+      grip.removeAttribute('data-icon-dragging');
+      if (barPosition) save();
+    });
+    grip.addEventListener('keydown', function (ev) {
+      var moves = { ArrowLeft: [1, 0], ArrowRight: [-1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+      var move = moves[ev.key];
+      if (!move) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var position = currentPosition();
+      barPosition = positionBar({ right: position.right + move[0] * 16, bottom: position.bottom + move[1] * 16 });
+      save();
+    });
   }
 
   function clampBox(b) {
@@ -702,7 +763,9 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
   }
 
   function onViewportResize() {
-    if (!ui || drag || artifactDrag || imageDrag || demoDrag) return;
+    if (!ui) return;
+    if (barPosition) positionBar(barPosition);
+    if (drag || artifactDrag || imageDrag || demoDrag) return;
     // Pull the window into the current viewport for display only. The size
     // written on pointerup stays in the session, so a larger viewport can restore it.
     box = drawer ? boxFromEmbed(drawer.embed) : clampBox(box);
@@ -1303,6 +1366,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
       '<button type="button" data-role="agent-stop"></button></div>' +
       '<div class="bar" part="bar" data-role="bar">' +
       '<div class="row">' +
+      '<button type="button" class="bar-grip" data-icon-host data-role="bar-grip">' + ICON_GRIP + '</button>' +
       '<span class="row" data-role="gate">' +
       '<span class="tip" data-role="ticket-tip" role="tooltip" id="grasp-ticket-tip" hidden></span>' +
       '<button type="button" class="toggle" data-role="toggle" aria-pressed="false"></button>' +
@@ -1317,6 +1381,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
     ui = {
       shadow: shadow,
       bar: shadow.querySelector('[data-role="bar"]'),
+      grip: shadow.querySelector('[data-role="bar-grip"]'),
       gate: shadow.querySelector('[data-role="gate"]'),
       tip: shadow.querySelector('[data-role="ticket-tip"]'),
       toggle: shadow.querySelector('[data-role="toggle"]'),
@@ -1342,6 +1407,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
       drawerTitle: shadow.querySelector('[data-role="drawer-title"]'),
       drawerClose: shadow.querySelector('[data-role="drawer-close"]'),
     };
+    setupBarGrip();
     ui.agentStop.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -1475,6 +1541,8 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
 
   function applyStaticLabels() {
     if (!ui) return;
+    ui.grip.setAttribute('aria-label', T.moveBar);
+    ui.grip.title = T.moveBar;
     ui.drawerTitle.textContent = T.brand;
     ui.drawerTitle.title = T.brand;
     ui.artifactTitle.textContent = T.artifactTitle;
@@ -1567,6 +1635,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
     ui.theme.innerHTML = light ? ICON_MOON : ICON_SUN;
     ui.theme.setAttribute('aria-label', light ? T.toDark : T.toLight);
     ui.theme.title = light ? T.toDark : T.toLight;
+    if (barPosition) positionBar(barPosition);
   }
 
   function notice(text, ok) {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -12,11 +13,20 @@ import (
 // mode merges provider opencode and opencode-go from the shared catalog; other
 // tools have a shipped shortlist. Unknown backends yield an empty list.
 func (h *Handlers) ListCliBackendModels(c *gin.Context) {
-	if strings.ToLower(strings.TrimSpace(c.Param("backend"))) == "opencode" && h.OpenCodeCatalog != nil {
+	models, err := h.cliBackendModels(c.Request.Context(), c.Param("backend"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"models": models, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"models": models})
+}
+
+func (h *Handlers) cliBackendModels(ctx context.Context, backend string) ([]clicatalog.Model, error) {
+	if strings.ToLower(strings.TrimSpace(backend)) == "opencode" && h.OpenCodeCatalog != nil {
 		out := make([]clicatalog.Model, 0)
 		var failure error
 		for _, providerID := range []string{"opencode", "opencode-go"} {
-			models, err := h.OpenCodeCatalog.Models(c.Request.Context(), providerID)
+			models, err := h.OpenCodeCatalog.Models(ctx, providerID)
 			if err != nil && failure == nil {
 				failure = err
 			}
@@ -28,12 +38,7 @@ func (h *Handlers) ListCliBackendModels(c *gin.Context) {
 				out = append(out, clicatalog.Model{ID: providerID + "/" + id, Name: model.Name, Vendor: providerID})
 			}
 		}
-		if failure != nil {
-			c.JSON(http.StatusOK, gin.H{"models": out, "error": failure.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"models": out})
-		return
+		return out, failure
 	}
-	c.JSON(http.StatusOK, gin.H{"models": clicatalog.Models(c.Param("backend"))})
+	return clicatalog.Models(backend), nil
 }

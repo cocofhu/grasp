@@ -1,3 +1,12 @@
+<script lang="ts">
+import type { api as visitModelApi } from '@/lib/api/api'
+import type { ScopedSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
+
+export type VisitModelTransport = Pick<typeof visitModelApi, 'getVisitModel' | 'setVisitModel'> & {
+  modelCatalog: () => Promise<ScopedSessionModelCatalog>
+}
+</script>
+
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -14,6 +23,8 @@ const props = withDefaults(
     nodeId: string
     iteration?: number
     agentName: string
+    transport?: VisitModelTransport
+    disabled?: boolean
     currentConfigurationId?: string
     currentModelId?: string
     currentModelSet?: boolean
@@ -24,7 +35,8 @@ const props = withDefaults(
 )
 
 const { t, te, locale } = useI18n()
-const catalog = useSessionModelCatalog(computed(() => props.agentName))
+const catalog = useSessionModelCatalog(computed(() => props.agentName), props.transport?.modelCatalog)
+const transport = props.transport || api
 const configurationId = ref(props.currentConfigurationId)
 const modelId = ref(props.currentModelSet ? props.currentModelId : '')
 const modelSet = ref(props.currentModelSet)
@@ -45,7 +57,7 @@ function apply(choice: VisitModelChoice) {
 async function reload() {
   const token = ++generation
   try {
-    const choice = await api.getVisitModel(props.runId, props.nodeId, props.iteration)
+    const choice = await transport.getVisitModel(props.runId, props.nodeId, props.iteration)
     if (token !== generation || saving.value) return
     apply(choice)
   } catch (err) {
@@ -106,7 +118,7 @@ async function save(nextConfiguration: string, nextModel: string, nextEffort: st
   const token = ++generation
   saving.value = true
   try {
-    const choice = await api.setVisitModel(props.runId, props.nodeId, {
+    const choice = await transport.setVisitModel(props.runId, props.nodeId, {
       iteration: props.iteration,
       configurationId: nextConfiguration,
       modelId: nextModel,
@@ -132,7 +144,7 @@ function chooseModel(value: string) {
   const changesGroup = !!choice?.configurationId && !!currentGroup.value && choice.configurationId !== currentGroup.value
   const encoded = choice?.configurationId && (grouped || changesGroup) ? modelRouteValue(choice.configurationId, choice.modelId || '') : value
   const route = parseModelRoute(encoded)
-  void save(route.configurationId || choice?.configurationId || currentGroup.value, route.modelId || '', effort.value)
+  void save(route.configurationId || choice?.configurationId || currentGroup.value, route.modelId || '', choice?.efforts?.includes(effort.value) ? effort.value : '')
 }
 
 function chooseEffort(value: string) {
@@ -147,7 +159,7 @@ function chooseEffort(value: string) {
       :models="shownModels"
       :model-value="currentSelection"
       :reasoning-effort="effort"
-      :disabled="saving || !catalog.ready.value"
+      :disabled="disabled || saving || !catalog.ready.value"
       :empty-as-label="catalog.ready.value && !shownModels.length && !modelSet"
       @update:model-value="chooseModel"
       @update:reasoning-effort="chooseEffort"

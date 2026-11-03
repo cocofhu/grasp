@@ -1,5 +1,7 @@
 import { req, rootWsUrl } from '@/lib/api/httpCore'
 import { GATE_SHARE_REQUEST_HEADER, GATE_SHARE_TOKEN_HEADER } from '@/lib/inbox/gateShareLink'
+import type { ScopedSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
+import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
 
 export type PreviewChatMode = 'isolated' | 'main'
@@ -42,13 +44,19 @@ export function publicAppPreviewClient(token: string) {
       headers: { [GATE_SHARE_REQUEST_HEADER]: '1', [GATE_SHARE_TOKEN_HEADER]: token, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     })
-    if (!response.ok) throw Object.assign(new Error(String(response.status)), { status: response.status })
+    if (!response.ok) {
+      const error = await response.json().catch(() => null)
+      throw Object.assign(new Error(error?.error || String(response.status)), { status: response.status, code: error?.code })
+    }
     return response.json()
   }
   return {
     open: (signal: AbortSignal) => request<EmbedTicket & { directUrl: string }>('/open', signal, {}),
     session: (ticket: string, signal: AbortSignal) => request<PreviewShareSession>('/session', signal, { ticket }),
-    history: (signal: AbortSignal) => request<{ rows: PreviewChatRow[]; busy: boolean }>('/main-chat', signal),
+    modelCatalog: (signal: AbortSignal) => request<ScopedSessionModelCatalog>('/model-catalog', signal),
+    getModel: (signal: AbortSignal) => request<VisitModelChoice>('/model', signal),
+    setModel: (signal: AbortSignal, body: object) => request<VisitModelChoice>('/model', signal, body),
+    history: (signal: AbortSignal) => request<{ rows: PreviewChatRow[]; busy: boolean; model?: VisitModelChoice }>('/main-chat', signal),
     send: (text: string, signal: AbortSignal) => request<{ ok: boolean }>('/main-chat', signal, { text }),
     connectGuest: (ticket: string) => new WebSocket(rootWsUrl(publicPath + '/guest-chat'), ['grasp-preview-guest', ticket]),
   }

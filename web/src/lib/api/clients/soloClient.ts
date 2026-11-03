@@ -26,7 +26,34 @@ function referenceQuery(params: ReferenceSearchParams) {
   return qs
 }
 
+/** The Solo page and the bearer-scoped drawer use the same chat contract. */
+export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) => Promise<T>, wsUrl: (path: string) => string, path: (id: string) => string) {
+  return {
+    getSoloSession: (id: string) => req<SoloSession>(path(id)),
+    /** Empty modelId selects the primary model. The sandbox changes on the next turn. */
+    setSoloSessionModel: (id: string, modelId: string, reasoningEffort?: string, configurationId?: string) =>
+      req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ modelId, ...(reasoningEffort === undefined ? {} : { reasoningEffort }), ...(configurationId === undefined ? {} : { configurationId }) }) }),
+    /** Omit modelId so changing effort preserves the selected model. */
+    setSoloSessionReasoningEffort: (id: string, reasoningEffort: string) =>
+      req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
+    listSoloMessages: (id: string) => req<SoloMessage[]>(`${path(id)}/messages`),
+    sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; references?: ReferenceInput[] }) =>
+      req<{ waiting: number }>(`${path(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
+    searchSoloReferences: <T>(id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
+      req<ReferenceSearchResult<T>>(`${path(id)}/references/search?${referenceQuery(params)}`, { signal }),
+    cancelSoloTurn: (id: string) =>
+      req<{ ok: boolean }>(`${path(id)}/turns/cancel`, { method: 'POST' }),
+    removeSoloQueued: (id: string, turnId: string) =>
+      req<{ ok: boolean }>(`${path(id)}/queue/${enc(turnId)}`, { method: 'DELETE' }),
+    reorderSoloQueue: (id: string, ids: string[]) =>
+      req<{ ok: boolean }>(`${path(id)}/queue`, { method: 'PUT', body: JSON.stringify({ ids }) }),
+    soloChatWsUrl: (id: string, afterSeq?: number) =>
+      wsUrl(`${path(id)}/chat${afterSeq != null && afterSeq >= 0 ? `?after=${afterSeq}` : ''}`),
+  }
+}
+
 export const soloClient = {
+  ...createSoloChatClient(req, wsUrl, id => `/solo/sessions/${enc(id)}`),
   listProjects: () => req<Project[]>('/projects'),
   getProject: (id: string) =>
     req<{ project: Project; activeSessions: number }>(`/projects/${enc(id)}`),
@@ -41,7 +68,6 @@ export const soloClient = {
     req<SoloSessionList>(`/solo/sessions${params?.status ? `?status=${params.status}` : ''}`),
   createSoloSession: (body: SoloCreateBody) =>
     req<SoloSession>('/solo/sessions', { method: 'POST', body: JSON.stringify(body) }),
-  getSoloSession: (id: string) => req<SoloSession>(`/solo/sessions/${enc(id)}`),
   getSoloResources: (id: string, signal?: AbortSignal) =>
     req<SoloResources>(`/solo/sessions/${enc(id)}/resources`, { signal }),
   soloEmbedTicket: (id: string) =>
@@ -54,18 +80,7 @@ export const soloClient = {
     req<SoloSession>(`/solo/sessions/${enc(id)}/close`, { method: 'POST' }),
   restartSoloSession: (id: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}/restart`, { method: 'POST' }),
-  /** Empty modelId selects the primary model. The sandbox changes on the next turn. */
-  setSoloSessionModel: (id: string, modelId: string, reasoningEffort?: string, configurationId?: string) =>
-    req<SoloSession>(`/solo/sessions/${enc(id)}/model`, { method: 'POST', body: JSON.stringify({ modelId, ...(reasoningEffort === undefined ? {} : { reasoningEffort }), ...(configurationId === undefined ? {} : { configurationId }) }) }),
-  /** Omit modelId so changing effort preserves the selected model. */
-  setSoloSessionReasoningEffort: (id: string, reasoningEffort: string) =>
-    req<SoloSession>(`/solo/sessions/${enc(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
-  listSoloMessages: (id: string) => req<SoloMessage[]>(`/solo/sessions/${enc(id)}/messages`),
   getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),
-  sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; references?: ReferenceInput[] }) =>
-    req<{ waiting: number }>(`/solo/sessions/${enc(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
-  searchSoloReferences: <T>(id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
-    req<ReferenceSearchResult<T>>(`/solo/sessions/${enc(id)}/references/search?${referenceQuery(params)}`, { signal }),
   /** Home workflow composer: the workflow's default repos and first clarify Agent. */
   searchWorkflowReferences: <T>(workflowId: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
     req<ReferenceSearchResult<T>>(`/workflows/${enc(workflowId)}/references/search?${referenceQuery(params)}`, { signal }),
@@ -81,12 +96,4 @@ export const soloClient = {
     if (params.page && params.page > 1) qs.set('page', String(params.page))
     return req<ReferenceSearchResult<T>>(`/solo/references/search?${qs}`, { signal })
   },
-  cancelSoloTurn: (id: string) =>
-    req<{ ok: boolean }>(`/solo/sessions/${enc(id)}/turns/cancel`, { method: 'POST' }),
-  removeSoloQueued: (id: string, turnId: string) =>
-    req<{ ok: boolean }>(`/solo/sessions/${enc(id)}/queue/${enc(turnId)}`, { method: 'DELETE' }),
-  reorderSoloQueue: (id: string, ids: string[]) =>
-    req<{ ok: boolean }>(`/solo/sessions/${enc(id)}/queue`, { method: 'PUT', body: JSON.stringify({ ids }) }),
-  soloChatWsUrl: (id: string, afterSeq?: number) =>
-    wsUrl(`/solo/sessions/${enc(id)}/chat${afterSeq != null && afterSeq >= 0 ? `?after=${afterSeq}` : ''}`),
 }

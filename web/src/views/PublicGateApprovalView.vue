@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { VisitModelTransport } from '@/components/run/VisitModelSelect.vue'
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HtmlPreview from '@/components/ui/HtmlPreview.vue'
@@ -71,6 +72,7 @@ type PublicChatRef = {
 const props = defineProps<{
   /** Chat-only drawer mode: the credential comes from the embed session instead of `#t=`. */
   embedToken?: string
+  modelTransport?: VisitModelTransport
   pageControlEnabled?: boolean
   requestPageContext?: () => Promise<EmbedLiveContext>
 }>()
@@ -1660,6 +1662,8 @@ defineExpose({
                   :turns="turns"
                   :done="false"
                   :active="canReply"
+                  :model-switch="chatOnly && !!modelTransport"
+                  :model-transport="modelTransport"
                   :cold-session="!chatOnly && !canReply"
                   :can-pass="!chatOnly && (showConfirm || linkInvalid)"
                   :pass-disabled="confirmDisabled"

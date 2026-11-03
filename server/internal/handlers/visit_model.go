@@ -52,16 +52,30 @@ func (h *Handlers) SetVisitModel(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
 		return
 	}
-	profile := models.AgentProfile(node.Config)
-	agent, found := h.Agents.Get(profile)
-	if profile == "" || !found {
+	agent, found := h.previewModelAgent(models.AgentProfile(node.Config))
+	if !found {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Agent 不存在", "code": "agent_not_found"})
 		return
 	}
-	choice, err := services.SetVisitModel(h.Runs.DB(), h.Agents.Effective(agent), runID, nodeID, body.Iteration, body.ConfigurationID, body.ModelID, body.ReasoningEffort)
+	choice, err := services.SetVisitModel(h.Runs.DB(), agent, runID, nodeID, body.Iteration, body.ConfigurationID, body.ModelID, body.ReasoningEffort)
 	if err != nil {
 		writeSoloErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, choice)
+}
+
+func (h *Handlers) visitModelAgent(runID, nodeID string) (services.Agent, bool) {
+	if h.Agents == nil || h.Runs == nil {
+		return services.Agent{}, false
+	}
+	run, ok := h.Runs.Get(runID)
+	if !ok {
+		return services.Agent{}, false
+	}
+	node := run.Graph.FindNode(nodeID)
+	if node == nil {
+		return services.Agent{}, false
+	}
+	return h.previewModelAgent(models.AgentProfile(node.Config))
 }

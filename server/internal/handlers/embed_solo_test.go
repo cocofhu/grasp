@@ -1,12 +1,14 @@
 package handlers_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
@@ -34,8 +36,18 @@ func TestSoloEmbedBindsToCurrentOwnedSandbox(t *testing.T) {
 	if err := hn.db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := hn.db.Create(&models.SoloMessage{ID: "history", SessionID: sessionID, Role: "user", Content: "existing Solo history"}).Error; err != nil {
+	hn.h.Blobs = blob.NewMemory()
+	attachment, err := hn.h.Blobs.Put(context.Background(), strings.NewReader("attached content"), blob.Meta{MimeType: "text/plain"})
+	if err != nil {
 		t.Fatal(err)
+	}
+	for id, owner := range map[string]string{"history": sessionID, "unrelated-history": "unrelated-session"} {
+		if err := hn.db.Create(&models.SoloMessage{
+			ID: id, SessionID: owner, Role: "user", Content: "existing Solo history",
+			Images: []models.PromptImage{{Ref: attachment.String()}},
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := hn.h.Preview.UpsertPreviewPort(mcp.PreviewPort{
 		RunID: runID, NodeID: "solo", Port: 8899, Host: strings.TrimRight(embedDirectURL, "/"), Healthy: true,
@@ -79,6 +91,14 @@ func TestSoloEmbedBindsToCurrentOwnedSandbox(t *testing.T) {
 	}
 	if w := hn.doEmbed(http.MethodGet, "/embed-api/solo/another-run/messages", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
 		t.Fatalf("another run: %d", w.Code)
+	}
+
+	attachmentPath := "/blobs/" + strings.TrimPrefix(attachment.String(), "blob:")
+	if w := hn.doEmbed(http.MethodGet, path+"/messages/history"+attachmentPath, nil, bearerHeader(token)); w.Code != http.StatusOK || w.Body.String() != "attached content" {
+		t.Fatalf("authorized attachment: %d %s", w.Code, w.Body)
+	}
+	if w := hn.doEmbed(http.MethodGet, path+"/messages/unrelated-history"+attachmentPath, nil, bearerHeader(token)); w.Code != http.StatusNotFound {
+		t.Fatalf("unrelated attachment: %d", w.Code)
 	}
 
 	server := httptest.NewServer(hn.r)

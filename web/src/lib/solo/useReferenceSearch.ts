@@ -25,8 +25,8 @@ function scopeKey(scope: ReferenceScope) {
   return `l:${scope.agent}:${scope.projects.join(',')}`
 }
 
-function fetchLane(scope: ReferenceScope, params: SearchParams, signal: AbortSignal) {
-  if ('sessionId' in scope) return api.searchSoloReferences<any>(scope.sessionId, params, signal)
+function fetchLane(scope: ReferenceScope, params: SearchParams, signal: AbortSignal, searchSolo: typeof api.searchSoloReferences) {
+  if ('sessionId' in scope) return searchSolo<any>(scope.sessionId, params, signal)
   if ('workflowId' in scope) return api.searchWorkflowReferences<any>(scope.workflowId, params, signal)
   if ('runId' in scope) return api.searchRunNodeReferences<any>(scope.runId, scope.nodeId, params, signal)
   return api.searchLaunchReferences<any>({ ...params, agent: scope.agent, projects: scope.projects }, signal)
@@ -62,7 +62,7 @@ function emptyLane<T>(): LaneState<T> {
  * and cached per query for five minutes. The previous results, hint or error
  * stay on screen until the new reply lands, so typing does not flash.
  */
-export function useReferenceSearch(scope: Ref<ReferenceScope>) {
+export function useReferenceSearch(scope: Ref<ReferenceScope>, searchSolo = api.searchSoloReferences) {
   const solo = reactive(emptyLane<SoloReferenceCandidate>()) as LaneState<SoloReferenceCandidate>
   const github = reactive(emptyLane<GitHubReferenceCandidate>()) as LaneState<GitHubReferenceCandidate>
   const lanes = { solo, github }
@@ -116,7 +116,7 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>) {
       const abort = new AbortController()
       c.abort = abort
       try {
-        const data = await fetchLane(scope.value, { lane: name, ...params, page }, abort.signal)
+        const data = await fetchLane(scope.value, { lane: name, ...params, page }, abort.signal, searchSolo)
         if (my !== c.seq) return
         if (page === 1) cache.set(key, { at: Date.now(), data })
         apply(lane, data, params.kind, page > 1)
