@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Icon from '@/components/ui/Icon.vue'
 import { api } from '@/lib/api/api'
 import { PreviewVncChannel } from '@/lib/shared/previewVncChannel'
 import { createPreviewFpsCounter } from '@/lib/shared/previewFps'

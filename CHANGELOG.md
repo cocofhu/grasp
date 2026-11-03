@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Sandbox preview:** The back, forward, and reload icons render in the app preview and sandbox browser toolbars, and the Vue console stops repeating missing-icon warnings.
+
 - **App preview sharing:** Solo and workflow previews can copy a link that lets guests open the app and chat without signing in. Choose a separate guest chat or explicitly share the main conversation's text history and message queue. Solo's signed-in direct preview Chat now opens its existing conversation.
 
 - **Solo previews:** new preview-enabled Solo sandboxes can register an app on a separate port and open it from Resources. Solo artifact pins appear in the Artifacts drawer, and clicking an HTML thumbnail opens its preview. The Agent's Solo tool list hides actions that require a workflow, and failed preview registration identifies missing port mappings.

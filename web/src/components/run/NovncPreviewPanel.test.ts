@@ -151,7 +151,7 @@ function mountNovnc(props: Record<string, unknown> = {}, locale: 'zh-CN' | 'en' 
       compact: false,
       ...props,
     },
-    global: { plugins: [i18n], stubs: { Icon: true } },
+    global: { plugins: [i18n] },
     attachTo: document.body,
   })
 }
@@ -246,6 +246,17 @@ describe('NovncPreviewPanel', () => {
       Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => h })
     }
   }
+
+  it.each([false, true])('renders navigation icons in the noVNC toolbar (console=%s)', async (consoleMode) => {
+    const wrapper = mountNovnc({ console: consoleMode })
+    try {
+      await flushPromises()
+      const icons = wrapper.findAll('button > svg[data-icon]').map(icon => icon.attributes('data-icon'))
+      expect(icons).toEqual(['arrow-left', 'arrow-right', 'refresh'])
+    } finally {
+      wrapper.unmount()
+    }
+  })
 
   it('sets aria-busy while connecting', async () => {
     const wrapper = mountNovnc()
