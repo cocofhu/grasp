@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- The chat message navigation rail has a clear gap from the transcript in narrow panels and preview drawers.
+
 - Model and provider icons follow the preview drawer's current light or dark theme. Monochrome marks stay legible and color marks retain their original colors.
 
 - **Preview chat messages:** Direct and shared app previews open with the same floating chat. The composer shares attachment, model, and @ controls. Guests can reference public GitHub issues and pull requests. Picked elements appear as annotation chips while the Agent receives their context.

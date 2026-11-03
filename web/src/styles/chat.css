@@ -18,6 +18,13 @@ html.light :is(.chat-thread, .chat-composer) {
   accent-color: rgb(var(--c-accent));
 }
 
+:root { --chat-message-rail-width: 26px; }
+
+/* The absolute rail sits beside the transcript. Reserve its hit area and a gutter. */
+nav.chat-message-rail + .scroll-area {
+  padding-left: calc(var(--chat-message-rail-width) + 14px);
+}
+
 .chat-prose.md,
 .chat-thread .chat-prose,
 .chat-prose .md {

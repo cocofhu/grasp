@@ -1,4 +1,4 @@
-import { test, expect, type FrameLocator, type Page } from '@playwright/test'
+import { test, expect, type FrameLocator, type Locator, type Page } from '@playwright/test'
 import type { PreviewChatRow } from '../src/lib/inbox/appPreviewShare'
 import { routeApi } from './helpers/apiRoute'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
@@ -29,6 +29,12 @@ async function expectChatComposerInsets(chat: FrameLocator, inputTestId: string)
     return [Math.round(rect.left - box.left), Math.round(rect.top - box.top)]
   })
   expect(insets).toEqual([17, 17])
+}
+
+async function expectMessageRailGap(rail: Locator, content: Locator) {
+  await expect(rail).toBeVisible()
+  const [railBox, contentBox] = await Promise.all([rail.boundingBox(), content.boundingBox()])
+  expect(contentBox!.x - (railBox!.x + railBox!.width)).toBeGreaterThanOrEqual(14)
 }
 
 async function openConversation(page: Page, width = 1440, theme = 'light') {
@@ -164,6 +170,7 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   const toolbar = preview.locator('grasp-preview-pick')
   const drawer = toolbar.frameLocator('[data-role="drawer"] iframe')
   await expect(drawer.getByText('Previous Solo message')).toBeVisible()
+  await expectMessageRailGap(drawer.getByTestId('chat-message-rail-mark').first(), drawer.locator('[data-testid="solo-transcript"] > .chat-pane-column'))
   await expect(drawer.getByRole('img', { name: 'preview.png' })).toHaveAttribute('src', /^blob:/)
   await choosePreviewModel(drawer, 'model-b', 'Model B')
   expect(modelBodies).toEqual([{ modelId: 'model-b' }])
@@ -483,6 +490,7 @@ test('navigation previews question and answer, jumps and retains anchor identity
 for (const width of [390, 768]) {
   test(`${width}px: preview returns to mounted chat and draft, with modal focus containment`, async ({ page }) => {
     await openConversation(page, width)
+    await expectMessageRailGap(page.getByTestId('chat-message-rail-mark').first(), page.getByTestId('pm-message-scroller').locator('[data-chat-anchor]').first())
     const input = page.getByTestId('pm-chat-section').locator('textarea')
     await input.fill('返回后继续编辑')
     await input.evaluate(el => { el.dataset.retained = 'yes' })
