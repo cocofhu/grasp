@@ -276,6 +276,18 @@ const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
 }))
 const orderedSoloRows = computed(() => orderWithPins(soloRows.value, soloRowKey, soloPins.value))
 const runningSectionCount = computed(() => orderedHumanRows.value.length + orderedSoloRows.value.length)
+
+type SidebarSectionEntry =
+  | { kind: 'run'; key: string; row: InboxItem }
+  | { kind: 'solo'; key: string; session: SoloSession }
+const runEntry = (row: InboxItem): SidebarSectionEntry => ({ kind: 'run', key: row.runId, row })
+const soloEntry = (session: SoloSession): SidebarSectionEntry => ({ kind: 'solo', key: soloRowKey(session), session })
+/** One pin order across workflow and Solo rows, so a pinned row of either kind sits above every unpinned one. */
+const runningEntries = computed(() => orderWithPins(
+  [...humanPendingRows.value.map(runEntry), ...soloRows.value.map(soloEntry)],
+  (e) => e.key,
+  [...runPins.value, ...soloPins.value],
+))
 const autoSectionCount = computed(() => orderedAutoRows.value.length)
 const queuedSectionCount = computed(() => orderedQueuedRows.value.length)
 
@@ -291,8 +303,7 @@ const runSections = computed(() => {
     icon: 'run-live' | 'arrow-flow' | 'queue'
     count: number
     collapsed: boolean
-    rows: InboxItem[]
-    solos: SoloSession[]
+    entries: SidebarSectionEntry[]
   }> = []
   if (runningSectionCount.value > 0) {
     sections.push({
@@ -305,8 +316,7 @@ const runSections = computed(() => {
       icon: 'run-live',
       count: runningSectionCount.value,
       collapsed: runningCollapsed.value,
-      rows: orderedHumanRows.value,
-      solos: orderedSoloRows.value,
+      entries: runningEntries.value,
     })
   }
   if (autoSectionCount.value > 0) {
@@ -320,8 +330,7 @@ const runSections = computed(() => {
       icon: 'arrow-flow',
       count: autoSectionCount.value,
       collapsed: autoCollapsed.value,
-      rows: orderedAutoRows.value,
-      solos: [],
+      entries: orderedAutoRows.value.map(runEntry),
     })
   }
   if (queuedSectionCount.value > 0) {
@@ -335,8 +344,7 @@ const runSections = computed(() => {
       icon: 'queue',
       count: queuedSectionCount.value,
       collapsed: queuedCollapsed.value,
-      rows: orderedQueuedRows.value,
-      solos: [],
+      entries: orderedQueuedRows.value.map(runEntry),
     })
   }
   return sections
@@ -1338,22 +1346,23 @@ const settingsItems = computed(() => (
         <span class="sidebar-section-count">{{ section.count }}</span>
       </div>
       <div v-show="!section.collapsed" class="sidebar-tree" :data-testid="section.rowsTestId">
-      <div v-for="it in section.rows" :key="it.runId" class="sidebar-tree-item">
+      <div v-for="entry in section.entries" :key="entry.key" class="sidebar-tree-item">
+        <template v-if="entry.kind === 'run'">
         <div
-          v-if="editingKey === it.runId"
+          v-if="editingKey === entry.row.runId"
           class="nav-item grasp-status-host mb-0.5 w-full min-w-0 cursor-text text-start"
-          :class="{ active: isPendingActive(it) }"
+          :class="{ active: isPendingActive(entry.row) }"
           data-testid="nav-pending-row"
-          :data-key="it.runId"
-          :data-node-id="it.nodeId"
-          :data-motion="rowMotion(it) || undefined"
+          :data-key="entry.row.runId"
+          :data-node-id="entry.row.nodeId"
+          :data-motion="rowMotion(entry.row) || undefined"
           data-editing="true"
-          :aria-current="isPendingActive(it) ? 'true' : undefined"
+          :aria-current="isPendingActive(entry.row) ? 'true' : undefined"
           @click.stop
           @contextmenu.prevent
         >
           <span
-            v-if="isRowPinned(it)"
+            v-if="isRowPinned(entry.row)"
             class="flex shrink-0 text-accent"
             data-testid="nav-pending-pin"
             aria-hidden="true"
@@ -1369,15 +1378,15 @@ const settingsItems = computed(() => (
             :aria-label="t('nav.pendingRenameLabel')"
             :readonly="saving"
             @click.stop
-            @keydown.enter.prevent="commitRename(it)"
+            @keydown.enter.prevent="commitRename(entry.row)"
             @keydown.esc.prevent.stop="onRenameEscape"
-            @blur="onRenameBlur(it)"
+            @blur="onRenameBlur(entry.row)"
           />
-          <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
-          <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
+          <InboxMotionMark v-if="rowMotion(entry.row) === 'spin'" kind="spin" />
+          <InboxMotionMark v-else-if="rowMotion(entry.row) === 'pulse'" kind="pulse" />
           <template v-else>
             <Icon
-              v-for="mark in pendingTypeMarks(it)"
+              v-for="mark in pendingTypeMarks(entry.row)"
               :key="mark.name"
               :name="mark.name"
               :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
@@ -1395,37 +1404,37 @@ const settingsItems = computed(() => (
           v-hover-ink
           type="button"
           class="nav-item grasp-status-host mb-0.5 w-full min-w-0 text-start"
-          :class="{ active: isPendingActive(it), 'sidebar-flight-source': rowFlightHidden(it.runId) }"
+          :class="{ active: isPendingActive(entry.row), 'sidebar-flight-source': rowFlightHidden(entry.row.runId) }"
           data-testid="nav-pending-row"
-          :data-key="it.runId"
-          :data-node-id="it.nodeId"
+          :data-key="entry.row.runId"
+          :data-node-id="entry.row.nodeId"
           :data-section="section.id"
-          :data-motion="rowMotion(it) || undefined"
-          :data-flight="rowFlight(it.runId)"
-          :data-flight-landing="rowFlightLanding(it.runId)"
-          :title="pendingTooltip(it)"
-          :aria-current="isPendingActive(it) ? 'true' : undefined"
-          @click="onPendingRow(it)"
-          @contextmenu="onPendingContextMenu($event, it)"
-          @pointerdown="onPendingPointerDown($event, it)"
-          @keydown.f2.prevent="beginRename(it)"
+          :data-motion="rowMotion(entry.row) || undefined"
+          :data-flight="rowFlight(entry.row.runId)"
+          :data-flight-landing="rowFlightLanding(entry.row.runId)"
+          :title="pendingTooltip(entry.row)"
+          :aria-current="isPendingActive(entry.row) ? 'true' : undefined"
+          @click="onPendingRow(entry.row)"
+          @contextmenu="onPendingContextMenu($event, entry.row)"
+          @pointerdown="onPendingPointerDown($event, entry.row)"
+          @keydown.f2.prevent="beginRename(entry.row)"
         >
           <span
-            v-if="isRowPinned(it)"
+            v-if="isRowPinned(entry.row)"
             class="flex shrink-0 text-accent"
             data-testid="nav-pending-pin"
             aria-hidden="true"
           >
             <Icon name="pin" :size="12" />
           </span>
-          <span v-if="rowTitle(it)" class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(it) }}</span>
+          <span v-if="rowTitle(entry.row)" class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(entry.row) }}</span>
           <span v-else class="nav-row-title-skeleton min-w-0 flex-1" data-testid="nav-pending-title-skeleton" aria-hidden="true"><span /></span>
-          <span v-if="autoNodeName(it)" class="nav-auto-node-name min-w-0 truncate" data-testid="nav-auto-node-name">{{ autoNodeName(it) }}</span>
-          <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
-          <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
+          <span v-if="autoNodeName(entry.row)" class="nav-auto-node-name min-w-0 truncate" data-testid="nav-auto-node-name">{{ autoNodeName(entry.row) }}</span>
+          <InboxMotionMark v-if="rowMotion(entry.row) === 'spin'" kind="spin" />
+          <InboxMotionMark v-else-if="rowMotion(entry.row) === 'pulse'" kind="pulse" />
           <template v-else>
             <Icon
-              v-for="mark in pendingTypeMarks(it)"
+              v-for="mark in pendingTypeMarks(entry.row)"
               :key="mark.name"
               :name="mark.name"
               :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
@@ -1438,20 +1447,20 @@ const settingsItems = computed(() => (
             />
           </template>
         </button>
-      </div>
-      <div v-for="session in section.solos" :key="soloRowKey(session)" class="sidebar-tree-item">
+        </template>
+        <template v-else>
       <div
-        v-if="editingKey === soloRowKey(session)"
+        v-if="editingKey === soloRowKey(entry.session)"
         class="nav-item grasp-status-host mb-0.5 w-full min-w-0 cursor-text text-start"
-        :class="{ active: isSoloRowActive(session) }"
+        :class="{ active: isSoloRowActive(entry.session) }"
         data-testid="nav-pending-row"
-        :data-key="session.id"
+        :data-key="entry.session.id"
         data-kind="solo"
         data-editing="true"
         @click.stop
         @contextmenu.prevent
       >
-        <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
+        <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(entry.session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
         <input
           :ref="setRenameInput"
           v-model="renameDraft"
@@ -1461,34 +1470,35 @@ const settingsItems = computed(() => (
           :aria-label="t('nav.pendingRenameLabel')"
           :readonly="saving"
           @click.stop
-          @keydown.enter.prevent="commitSoloRename(session)"
+          @keydown.enter.prevent="commitSoloRename(entry.session)"
           @keydown.esc.prevent.stop="onRenameEscape"
-          @blur="onSoloRenameBlur(session)"
+          @blur="onSoloRenameBlur(entry.session)"
         />
-        <InboxMotionMark v-if="soloRowMotion(session) === 'spin'" kind="spin" />
-        <InboxMotionMark v-else-if="soloRowMotion(session) === 'pulse'" kind="pulse" />
+        <InboxMotionMark v-if="soloRowMotion(entry.session) === 'spin'" kind="spin" />
+        <InboxMotionMark v-else-if="soloRowMotion(entry.session) === 'pulse'" kind="pulse" />
       </div>
       <button
         v-else
         v-hover-ink
         type="button"
         class="nav-item grasp-status-host mb-0.5 w-full min-w-0 text-start"
-        :class="{ active: isSoloRowActive(session) }"
+        :class="{ active: isSoloRowActive(entry.session) }"
         data-testid="nav-pending-row"
-        :data-key="session.id"
+        :data-key="entry.session.id"
         data-kind="solo"
-        :data-status="session.status"
-        :data-motion="soloRowMotion(session) || undefined"
-        :title="soloRowTitle(session)"
-        :aria-current="isSoloRowActive(session) ? 'page' : undefined"
-        @click="onSoloRow(session)"
-        @contextmenu="onSoloContextMenu($event, session)"
+        :data-status="entry.session.status"
+        :data-motion="soloRowMotion(entry.session) || undefined"
+        :title="soloRowTitle(entry.session)"
+        :aria-current="isSoloRowActive(entry.session) ? 'page' : undefined"
+        @click="onSoloRow(entry.session)"
+        @contextmenu="onSoloContextMenu($event, entry.session)"
       >
-        <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
-        <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ soloRowTitle(session) }}</span>
-        <InboxMotionMark v-if="soloRowMotion(session) === 'spin'" kind="spin" />
-        <InboxMotionMark v-else-if="soloRowMotion(session) === 'pulse'" kind="pulse" />
+        <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(entry.session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
+        <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ soloRowTitle(entry.session) }}</span>
+        <InboxMotionMark v-if="soloRowMotion(entry.session) === 'spin'" kind="spin" />
+        <InboxMotionMark v-else-if="soloRowMotion(entry.session) === 'pulse'" kind="pulse" />
       </button>
+        </template>
       </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import type { RouteLocationRaw } from 'vue-router'
 import { nodeConversationPath, nodeConversationRunId } from '@/lib/run/nodeConversation'
+import type { SoloSession } from '@/lib/api/apiTypes'
 import type { Run, RunCurrentNode } from '@/lib/shared/types'
 
 /**
@@ -117,6 +118,43 @@ export function sameRecentRows(a: RecentRun[], b: RecentRun[], titleOf: (r: Rece
     if (rowSignature(a[i], titleOf(a[i])) !== rowSignature(b[i], titleOf(b[i]))) return false
   }
   return true
+}
+
+/** One row of the sidebar「历史执行」: a finished workflow run or an ended Solo session. */
+export type HistoryEntry =
+  | { kind: 'run'; key: string; at: number; run: RecentRun }
+  | { kind: 'solo'; key: string; at: number; session: SoloSession }
+
+/** First parseable timestamp in order; 0 (oldest) when none parses. */
+function firstTime(...values: Array<string | undefined>): number {
+  for (const v of values) {
+    if (!v) continue
+    const at = Date.parse(v)
+    if (Number.isFinite(at)) return at
+  }
+  return 0
+}
+
+/**
+ * Finished runs and ended Solo sessions, newest first, capped at `limit`.
+ * Runs keep the server's last-activity order; Solo sessions are sorted by time
+ * (ties by id) and merged in, a tie going to the run, so the order is stable
+ * across polls.
+ */
+export function historyEntries(runs: readonly RecentRun[], solos: readonly SoloSession[], limit: number): HistoryEntry[] {
+  const runEntries = runs.map((run): HistoryEntry => ({ kind: 'run', key: run.id, at: firstTime(run.lastActivityAt, run.startedAt, run.createdAt), run }))
+  const soloEntries = solos
+    .map((session): HistoryEntry => ({ kind: 'solo', key: `solo:${session.id}`, at: firstTime(session.closedAt, session.lastActiveAt, session.updatedAt), session }))
+    .sort((a, b) => (b.at - a.at) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+  const max = Math.max(0, limit)
+  const out: HistoryEntry[] = []
+  let i = 0
+  let j = 0
+  while (out.length < max && (i < runEntries.length || j < soloEntries.length)) {
+    if (j >= soloEntries.length || (i < runEntries.length && runEntries[i].at >= soloEntries[j].at)) out.push(runEntries[i++])
+    else out.push(soloEntries[j++])
+  }
+  return out
 }
 
 /**
