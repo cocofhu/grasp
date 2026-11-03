@@ -22,9 +22,13 @@ defineEmits<{ preview: [src: string, label: string]; remove: [index: number] }>(
         :alt="attachmentDisplayName(image, index)"
         @preview="$emit('preview', chatImageSrc(image), attachmentDisplayName(image, index))"
       />
-      <div v-else class="chat-file-chip flex h-14 max-w-[160px] items-center gap-1.5 rounded-lg border border-line bg-elevated px-2">
+      <div
+        v-else
+        class="chat-file-chip flex items-center border border-line bg-elevated px-2"
+        :class="sent ? 'max-w-[200px] gap-2 rounded-md py-1.5' : 'h-14 max-w-[160px] gap-1.5 rounded-lg'"
+      >
         <Icon name="artifact" :size="15" class="shrink-0 text-txt2" />
-        <span class="min-w-0 truncate text-[12px] text-txt2">{{ attachmentDisplayName(image, index) }}</span>
+        <span class="min-w-0 truncate text-[12px]" :class="sent ? 'text-txt' : 'text-txt2'">{{ attachmentDisplayName(image, index) }}</span>
       </div>
       <button v-if="!sent" type="button" class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full pending-attach-remove" @click="$emit('remove', index)">
         <Icon name="close" :size="9" />
