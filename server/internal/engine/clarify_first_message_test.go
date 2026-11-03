@@ -88,7 +88,7 @@ func TestClarifyFirstMessageDeliveredOnPark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadCtx: %v", err)
 	}
-	eng.fireClarifyFirstMessage(c, c.graph.FindNode("predev"))
+	eng.fireClarifyFirstMessage(c, c.graph.FindNode("predev"), nil)
 	time.Sleep(80 * time.Millisecond)
 	var conv models.ReactConversation
 	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "predev").First(&conv).Error; err != nil {

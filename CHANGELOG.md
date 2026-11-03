@@ -12,6 +12,8 @@ All notable public-release changes are documented here.
 
 - **Chat references and links:** a sent message shows each `@` reference as a chip where it was typed instead of only above the bubble, and a message starting with `@#815` no longer turns into a large heading. Links in chat open in a new window. Links to `localhost` or `127.0.0.1` open the resources panel and load in a new tab of the sandbox browser, since those addresses only resolve inside the sandbox; without a sandbox they open in a new window.
 
+- **Workflow clarification:** A message sent while a clarification node is opening is processed once. Resuming an interrupted visit still retries its unanswered message.
+
 ## 3.2.0 — 2026-11-02
 
 Solo and workflow chats support `@` references to Solo sessions and GitHub issues/PRs, clarify and review chats render directly from server-side dialogue state, queued chat turns persist across server restarts, Git credentials add GitHub device-flow login and unified SSH keys, and settings and Agent Studio layouts are refreshed.

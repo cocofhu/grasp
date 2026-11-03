@@ -424,7 +424,7 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 						e.publishTakeover(runID, node.ID, c.iter[node.ID], NodeStateWaitingHuman)
 					}
 					e.fireGateAutoInvoke(c, node)
-					e.fireClarifyFirstMessage(c, node)
+					e.fireClarifyFirstMessage(c, node, outcome.clarifyReplyToResume)
 					e.fireRunNotify(c, node, models.NotifyKindWaitingHuman)
 				}
 			}

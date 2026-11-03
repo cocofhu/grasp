@@ -74,9 +74,11 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 				return e.finalizeAgent(c, node, r)
 			})
 		}
-		return nodeOutcome{status: "paused", outputMd: "等待人工回复(ReAct 澄清)…", events: t.Events, usage: t.Usage, usageByModel: t.UsageByModel}
+		return nodeOutcome{status: "paused", outputMd: "等待人工回复(ReAct 澄清)…", events: t.Events, usage: t.Usage, usageByModel: t.UsageByModel,
+			clarifyReplyToResume: unansweredClarifyMessage(msgs)}
 	}
-	return nodeOutcome{status: "paused", outputMd: "等待人工回复(ReAct 澄清)…"}
+	return nodeOutcome{status: "paused", outputMd: "等待人工回复(ReAct 澄清)…",
+		clarifyReplyToResume: unansweredClarifyMessage(conv.Messages)}
 }
 
 // interruptedDialogue is the open dialogue of this node's previous visit when
