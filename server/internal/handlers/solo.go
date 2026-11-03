@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -190,6 +192,12 @@ func (h *Handlers) GetSoloResources(c *gin.Context) {
 		artifacts = append(artifacts, h.Arts.ByRun(sb.RunID)...)
 		if sb.Status == "running" && h.MCP != nil {
 			ports = append(ports, h.MCP.ListPreviewPorts(sb.RunID, "solo")...)
+			slices.SortFunc(ports, func(a, b mcp.PreviewPort) int {
+				if order := cmp.Compare(a.Port, b.Port); order != 0 {
+					return order
+				}
+				return cmp.Compare(a.URL, b.URL)
+			})
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"runId": sb.RunID, "artifacts": artifacts, "previewArtifact": sb.PreviewArtifact, "ports": ports})

@@ -35,6 +35,7 @@ func TestSoloResourcesUseCurrentOwnedSandbox(t *testing.T) {
 	if err := preview.UpsertPreviewPort(mcp.PreviewPort{RunID: runID, NodeID: "solo", Port: 8899, Healthy: true}); err != nil {
 		t.Fatal(err)
 	}
+	hn.host.PutPreviewPortForTest(runID, "solo", 5173, "second app")
 
 	pin := func() bool {
 		t.Helper()
@@ -64,7 +65,7 @@ func TestSoloResourcesUseCurrentOwnedSandbox(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &resources); err != nil || res.Code != http.StatusOK ||
 		resources.RunID != runID || resources.PreviewArtifact != "demo.html" ||
 		len(resources.Artifacts) != 1 || resources.Artifacts[0].Name != "demo.html" ||
-		len(resources.Ports) != 1 || resources.Ports[0].Port != 8899 {
+		len(resources.Ports) != 2 || resources.Ports[0].Port != 5173 || resources.Ports[1].Port != 8899 {
 		t.Fatalf("resources: %d %s (%v)", res.Code, res.Body, err)
 	}
 
