@@ -7,6 +7,7 @@ import "time"
 const (
 	EmbedKindSession = "session"
 	EmbedKindShare   = "share"
+	EmbedKindSolo    = "solo"
 )
 
 // EmbedTicket is a one-shot credential placed in the preview page URL

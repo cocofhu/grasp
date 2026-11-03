@@ -382,6 +382,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           :artifacts="resources?.artifacts || []"
           :preview-artifact="resources?.previewArtifact"
           :registered-previews="status === 'running' ? resources?.ports || [] : []"
+          :solo-session-id="props.sessionId"
           :run-id="session.artifactRunId || ''"
           node-id="solo"
           :sandbox="sandboxResource"

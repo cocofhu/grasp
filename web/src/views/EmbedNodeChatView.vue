@@ -6,6 +6,7 @@ import Icon from '@/components/ui/Icon.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import PageControlStatus from '@/components/run/PageControlStatus.vue'
 import PublicGateApprovalView from '@/views/PublicGateApprovalView.vue'
+import SoloPreviewChat from '@/components/solo/SoloPreviewChat.vue'
 import {
   EMBED_LANG_MESSAGE,
   EMBED_READY_MESSAGE,
@@ -59,6 +60,8 @@ const nodeId = String(route.params.nodeId || '')
 
 const phase = ref<'connecting' | 'ready' | 'expired' | 'network'>('connecting')
 const token = ref('')
+const solo = ref(false)
+const soloChat = ref<InstanceType<typeof SoloPreviewChat> | null>(null)
 const chatRef = ref<ChatRef | null>(null)
 let announced = false
 
@@ -174,6 +177,7 @@ async function connect() {
       const s = await redeemEmbedTicket(ticket, runId, nodeId)
       if (s) {
         saveEmbedSession(runId, nodeId, s)
+        solo.value = s.kind === 'solo'
         token.value = s.token
         phase.value = 'ready'
         return
@@ -187,6 +191,7 @@ async function connect() {
   }
   const stored = loadEmbedSession(runId, nodeId)
   if (stored) {
+    solo.value = stored.kind === 'solo'
     token.value = stored.token
     phase.value = 'ready'
     return
@@ -206,8 +211,10 @@ function onStatus(status: string) {
     announced = true
     window.parent.postMessage({ type: EMBED_READY_MESSAGE }, parentOrigin())
     postLang()
-    pageControl.awaitHello()
-    void syncLive()
+    if (!solo.value) {
+      pageControl.awaitHello()
+      void syncLive()
+    }
   }
   if (status === 'invalid' || status === 'expired' || status === 'revoked') {
     pageControl.reset()
@@ -263,7 +270,10 @@ function onMessage(e: MessageEvent) {
     return
   }
   const pick = parseEmbedPickMessage(e.data)
-  if (pick) chatRef.value?.addPick?.(pick)
+  if (pick) {
+    if (solo.value) soloChat.value?.addPick(pick)
+    else chatRef.value?.addPick?.(pick)
+  }
 }
 
 onMounted(() => {
@@ -303,8 +313,15 @@ onUnmounted(() => {
         {{ t(hasFailedSteer ? 'pages.embedChat.live.cleanupAll' : 'pages.embedChat.live.discardAll') }}
       </button>
     </div>
+    <SoloPreviewChat
+      v-if="phase === 'ready' && token && solo"
+      ref="soloChat"
+      :run-id="runId"
+      :token="token"
+      @status="onStatus"
+    />
     <PublicGateApprovalView
-      v-if="phase === 'ready' && token"
+      v-else-if="phase === 'ready' && token"
       ref="chatRef"
       class="min-h-0 flex-1"
       :embed-token="token"

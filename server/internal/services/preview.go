@@ -154,24 +154,27 @@ func (s *PreviewService) ContainerIP(ctx context.Context, sandboxName string) (s
 
 // SandboxForRunNode returns the docker container name for a run/node sandbox.
 func (s *PreviewService) SandboxForRunNode(runID, nodeID string) (string, bool) {
+	row, ok := s.PreviewSandbox(runID, nodeID)
+	return row.Name, ok
+}
+
+// PreviewSandbox resolves the current sandbox of a workflow node or Solo app.
+func (s *PreviewService) PreviewSandbox(runID, nodeID string) (models.Sandbox, bool) {
 	if s.db == nil || runID == "" || nodeID == "" {
-		return "", false
+		return models.Sandbox{}, false
 	}
 	row, err := runNodeSandboxRow(s.db, runID, nodeID)
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", false
+			return models.Sandbox{}, false
 		}
 		var ok bool
 		row, ok = s.soloPreviewSandbox(runID, nodeID)
 		if !ok {
-			return "", false
+			return models.Sandbox{}, false
 		}
 	}
-	if strings.TrimSpace(row.Name) == "" {
-		return "", false
-	}
-	return row.Name, true
+	return row, strings.TrimSpace(row.Name) != ""
 }
 
 // soloPreviewSandbox resolves only the current sandbox of a running Solo
@@ -191,6 +194,17 @@ func (s *PreviewService) soloPreviewSandboxes(runID string) *gorm.DB {
 		Joins("JOIN solo_sessions ON solo_sessions.sandbox_id = sandboxes.id AND solo_sessions.id = sandboxes.thread_id AND solo_sessions.agent_name = sandboxes.profile").
 		Where("sandboxes.run_id = ? AND sandboxes.purpose = ? AND sandboxes.node_id IN ? AND solo_sessions.status = ?",
 			runID, SandboxPurposeSolo, []string{"", "solo"}, models.SoloStatusRunning)
+}
+
+// SoloPreviewSession resolves the current Solo session for a direct preview
+// and checks its owner before a drawer can use it.
+func (s *PreviewService) SoloPreviewSession(runID, user string) (models.Sandbox, bool) {
+	if s.db == nil || runID == "" || user == "" {
+		return models.Sandbox{}, false
+	}
+	var sb models.Sandbox
+	err := s.soloPreviewSandboxes(runID).Where("solo_sessions.user_id = ? AND sandboxes.status = ?", user, "running").First(&sb).Error
+	return sb, err == nil
 }
 
 // PinSoloArtifact persists the pin only for the session's current sandbox.

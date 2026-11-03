@@ -46,7 +46,11 @@ function queueItem(raw: any): SoloQueueItem {
  * active turn streamed over the session WebSocket (which replays the running
  * turn on reconnect, so a dropped socket only pauses the view).
  */
-export function useSoloChat(sessionId: Ref<string>) {
+type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMessages' | 'sendSoloTurn' | 'cancelSoloTurn' | 'soloChatWsUrl'> & {
+  soloChatProtocols?: string[]
+}
+
+export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport = api) {
   const { t, te, locale } = useI18n()
   const label = (key: string) => {
     const k = `pages.agentChatTester.tools.${key}`
@@ -214,7 +218,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     const generation = sessionGeneration
     const sequence = settingSequence
     try {
-      const row = await api.getSoloSession(id)
+      const row = await transport.getSoloSession(id)
       if (generation === sessionGeneration && sequence === settingSequence) setSession(row)
     } catch {
       schedulePoll()
@@ -359,7 +363,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     const epoch = chatEpoch
     const seq = ++refetchSeq
     try {
-      const messages = await api.listSoloMessages(id)
+      const messages = await transport.listSoloMessages(id)
       if (!disposed && epoch === chatEpoch && seq === refetchSeq && id === sessionId.value) applyMessages(messages)
     } catch {
       /* keep the current transcript */
@@ -552,7 +556,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     const frames = frameCount
     const sock = ws
     try {
-      const row = await api.getSoloSession(id)
+      const row = await transport.getSoloSession(id)
       if (disposed || generation !== sessionGeneration || ws !== sock || frames !== frameCount) return
       if (!row.busy && busy.value) {
         resubscribe()
@@ -701,7 +705,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     const id = sessionId.value
     if (!id || disposed) return
     link.value = link.value === 'idle' ? 'connecting' : 'reconnecting'
-    const sock = new WebSocket(api.soloChatWsUrl(id, ackedSeq >= 0 ? ackedSeq : undefined))
+    const sock = new WebSocket(transport.soloChatWsUrl(id, ackedSeq >= 0 ? ackedSeq : undefined), transport.soloChatProtocols)
     ws = sock
     held = []
     let firstFrame = true
@@ -719,7 +723,7 @@ export function useSoloChat(sessionId: Ref<string>) {
       // and also accept the subscribe snapshot below.
       void refreshSession()
       try {
-        const messages = await api.listSoloMessages(id)
+        const messages = await transport.listSoloMessages(id)
         if (ws === sock) applyMessages(messages)
       } catch {
         /* live frames still render */
@@ -792,7 +796,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     if (!id) return
     loading.value = true
     try {
-      const v = await api.getSoloSession(id)
+      const v = await transport.getSoloSession(id)
       if (id !== sessionId.value || generation !== sessionGeneration || disposed) return
       setSession(v)
       if (v.modelNotice) showModelNotice(v.modelNotice)
@@ -844,7 +848,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     queued.value = [...queued.value, local]
     patchSession({ waiting: queued.value.length, busy: true })
     try {
-      await api.sendSoloTurn(id, { text: body, images, ...(refs ? { references: refs.map(({ kind, target }) => ({ kind, target })) } : {}) })
+      await transport.sendSoloTurn(id, { text: body, images, ...(refs ? { references: refs.map(({ kind, target }) => ({ kind, target })) } : {}) })
       return !disposed && epoch === chatEpoch && id === sessionId.value
     } catch (e: any) {
       if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
@@ -926,8 +930,8 @@ export function useSoloChat(sessionId: Ref<string>) {
     const id = sessionId.value
     const epoch = chatEpoch
     if (!id) return
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'cancel' }))
-    else await api.cancelSoloTurn(id).catch(() => undefined)
+    if (!transport.soloChatProtocols && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'cancel' }))
+    else await transport.cancelSoloTurn(id).catch(() => undefined)
     if (disposed || epoch !== chatEpoch || id !== sessionId.value) return
     dropQueuedSends()
     queued.value = []

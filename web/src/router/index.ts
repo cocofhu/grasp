@@ -15,6 +15,12 @@ const routes: RouteRecordRaw[] = [
     meta: { titleKey: 'route.publicGateApproval', public: true, bare: true },
   },
   {
+    path: '/public/approvals/app',
+    name: 'public-app-preview',
+    component: () => import('@/views/PublicAppPreviewView.vue'),
+    meta: { titleKey: 'pages.appPreview.share.title', public: true, bare: true },
+  },
+  {
     path: '/embed/runs/:runId/nodes/:nodeId/chat',
     name: 'embed-node-chat',
     component: () => import('@/views/EmbedNodeChatView.vue'),

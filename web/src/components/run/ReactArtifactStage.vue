@@ -97,6 +97,7 @@ const props = withDefaults(
     probeRegisteredPreview?: boolean
     /** Standalone conversations already fetch registrations with their artifacts. */
     registeredPreviews?: PreviewPort[]
+    soloSessionId?: string
   }>(),
   {
     previewArtifact: '',
@@ -1554,6 +1555,7 @@ onBeforeUnmount(() => {
         :run-id="runId"
         :node-id="nodeId"
         :registered-previews="registeredPreviews"
+        :solo-session-id="soloSessionId"
         :resident-sandbox-id="sandboxId"
         fill
         :show-feedback="false"

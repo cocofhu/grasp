@@ -17,6 +17,7 @@ import { publicGateApi, type PublicGatePreview } from '@/lib/inbox/gateShareLink
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { isFeedbackArtifactName } from '@/lib/run/reactArtifactPreview'
 import { setThemeOverride } from '@/lib/shared/theme'
+import { soloEmbedClient } from '@/lib/solo/soloEmbedClient'
 import type { Artifact, NodeType, Run } from '@/lib/shared/types'
 
 const PUBLIC_SHARE_RUN_ID = 'public-share'
@@ -29,6 +30,7 @@ const nodeId = String(route.params.nodeId || '')
 
 const phase = ref<'connecting' | 'ready' | 'expired' | 'network'>('connecting')
 const token = ref('')
+const solo = ref(false)
 const preview = ref<PublicGatePreview | null>(null)
 const artifacts = ref<Artifact[]>([])
 const runGraph = ref<Run | null>(null)
@@ -64,6 +66,7 @@ async function connect() {
       const s = await redeemEmbedTicket(ticket, runId, nodeId)
       if (s) {
         saveEmbedSession(runId, nodeId, s)
+        solo.value = s.kind === 'solo'
         token.value = s.token
         phase.value = 'ready'
         await refresh({ silent: false })
@@ -79,6 +82,7 @@ async function connect() {
   }
   const stored = loadEmbedSession(runId, nodeId)
   if (stored) {
+    solo.value = stored.kind === 'solo'
     token.value = stored.token
     phase.value = 'ready'
     await refresh({ silent: false })
@@ -107,19 +111,34 @@ function abortLoads() {
   previewAbort = null
 }
 
+function expire() {
+  clearEmbedSession(runId, nodeId)
+  token.value = ''
+  phase.value = 'expired'
+  stopPoll()
+}
+
 async function refresh(opts: { silent: boolean }) {
   if (!token.value) return
   previewAbort?.abort()
   previewAbort = new AbortController()
   const previewSignal = previewAbort.signal
+  if (solo.value) {
+    try {
+      const res = await soloEmbedClient(runId, token.value, expire).listArtifacts(previewSignal)
+      if (previewSignal.aborted) return
+      artifacts.value = res.artifacts || []
+      loadErr.value = ''
+    } catch (e) {
+      if (!isAbortError(e) && !previewSignal.aborted && !opts.silent) loadErr.value = t('pages.embedArtifacts.loadError')
+    }
+    return
+  }
   try {
     const next = await publicGateApi.preview(token.value, previewSignal, { silent: opts.silent })
     if (previewSignal.aborted) return
     if (next.status === 'invalid' || next.status === 'expired' || next.status === 'revoked' || next.status === 'used') {
-      clearEmbedSession(runId, nodeId)
-      token.value = ''
-      phase.value = 'expired'
-      stopPoll()
+      expire()
       return
     }
     preview.value = next
@@ -224,7 +243,8 @@ onUnmounted(() => {
       :node-id="nodeId"
       remote-kind="off"
       hide-app-preview
-      :token="token"
+      :token="solo ? '' : token"
+      :inline-content="solo"
       :annotatable="false"
     />
     <div
