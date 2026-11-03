@@ -25,6 +25,7 @@ const chatReady = ref(false)
 const transcript = ref<HTMLElement | null>(null)
 let renew: ReturnType<typeof setTimeout> | undefined
 let poll: ReturnType<typeof setTimeout> | undefined
+let readingMain = false
 let socket: WebSocket | undefined
 let messageNumber = 0
 let guestReplyId = ''
@@ -39,6 +40,7 @@ function expire() {
   pageError.value = 'inactive'
   session.value = undefined
   chatReady.value = false
+  clearTimeout(renew)
   clearTimeout(poll)
   socket?.close()
 }
@@ -77,7 +79,9 @@ async function loadSession() {
 }
 
 async function pollMain() {
-  if (!session.value || controller.signal.aborted) return
+  if (!session.value || controller.signal.aborted || readingMain) return
+  clearTimeout(poll)
+  readingMain = true
   try {
     const next = await client.history(controller.signal)
     if (!session.value || controller.signal.aborted) return
@@ -90,6 +94,7 @@ async function pollMain() {
     handleError(error)
     chatReady.value = false
   } finally {
+    readingMain = false
     if (session.value && !controller.signal.aborted) poll = setTimeout(pollMain, 1_800)
   }
 }
@@ -146,6 +151,7 @@ async function submit() {
     await client.send(text, controller.signal)
     if (input.value.trim() === text) input.value = ''
     busy.value = true
+    void pollMain()
   } catch (error) {
     if ((error as { status?: number }).status === 410) expire()
     else if (!controller.signal.aborted) messageError.value = t('pages.appPreview.share.sendFailed')
@@ -209,7 +215,9 @@ onBeforeUnmount(() => {
           {{ t(`pages.appPreview.share.${session.chatMode}GuestHint`) }}
         </div>
         <div ref="transcript" class="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto p-4" role="log">
-          <p v-if="!rows.length" class="text-sm text-txt3">{{ t('pages.appPreview.share.emptyChat') }}</p>
+          <p v-if="!rows.length && !messageError" class="text-sm text-txt3">
+            {{ t(chatReady ? 'pages.appPreview.share.emptyChat' : 'pages.embedChat.connecting') }}
+          </p>
           <template v-for="row in rows" :key="row.id">
             <ChatUserMessage v-if="row.role === 'user' || row.role === 'human'" :text="row.text" />
             <AgentTimeline v-else-if="row.role === 'assistant' || row.role === 'agent'" :text="row.text" />

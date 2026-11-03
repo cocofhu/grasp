@@ -121,8 +121,10 @@ async function revoke() {
     </fieldset>
     <p class="mt-3 text-xs leading-relaxed text-txt3">{{ t('pages.appPreview.share.duration') }}</p>
     <p v-if="localAddress" class="mt-1 text-xs leading-relaxed text-txt3">{{ t('pages.appPreview.share.loopback') }}</p>
-    <p v-if="error" role="alert" class="mt-3 text-sm text-err">{{ error }}</p>
-    <p v-if="notice" role="status" class="mt-3 text-sm text-txt2">{{ notice }}</p>
+    <div class="mt-3 min-h-5 text-sm">
+      <p v-if="error" role="alert" class="text-err">{{ error }}</p>
+      <p v-else role="status" class="text-txt2">{{ notice }}</p>
+    </div>
     <input
       v-if="manual && currentLink"
       :value="currentLink.url"
