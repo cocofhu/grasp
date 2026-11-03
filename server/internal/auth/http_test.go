@@ -89,6 +89,38 @@ func TestLoginHandlerSuccess(t *testing.T) {
 	}
 }
 
+func TestSessionBrowserOriginCompatibility(t *testing.T) {
+	svc, r := setupAuthHTTP(t)
+	session, err := svc.Login("admin", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, origin, site string
+		want               int
+	}{
+		{"native client", "", "", http.StatusOK},
+		{"same origin", "http://grasp.test:8080", "", http.StatusOK},
+		{"dev proxy", "http://grasp.test:5173", "same-origin", http.StatusOK},
+		{"different port", "http://grasp.test:9090", "", http.StatusForbidden},
+		{"different scheme", "https://grasp.test:8080", "", http.StatusForbidden},
+		{"opaque preview", "null", "", http.StatusForbidden},
+		{"cross origin metadata", "", "same-site", http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://grasp.test:8080/api/protected", nil)
+			req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: session.ID})
+			req.Header.Set("Origin", tc.origin)
+			req.Header.Set("Sec-Fetch-Site", tc.site)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tc.want {
+				t.Fatalf("got %d, want %d", w.Code, tc.want)
+			}
+		})
+	}
+}
+
 func TestLoginHandlerInvalidJSON(t *testing.T) {
 	_, r := setupAuthHTTP(t)
 	w := httptest.NewRecorder()

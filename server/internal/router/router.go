@@ -35,7 +35,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.Static("/assets", "./web/dist/assets")
 	r.Static("/fonts", "./web/dist/fonts")
 	r.StaticFile("/favicon.ico", "./web/dist/favicon.ico")
-	r.StaticFile("/", "./web/dist/index.html")
+	r.GET("/", serveWorkspaceSPA)
+	r.HEAD("/", serveWorkspaceSPA)
 
 	api := r.Group("/api")
 	api.Use(drainMiddleware(h))
@@ -465,16 +466,23 @@ func New(h *handlers.Handlers) *gin.Engine {
 			strings.HasPrefix(p, "/sandbox-vnc/") ||
 			strings.HasPrefix(p, "/preview/") ||
 			strings.HasPrefix(p, "/preview-vnc/") ||
+			strings.HasPrefix(p, "/embed/") ||
 			strings.HasPrefix(p, "/embed-api/") ||
 			isPublicApprovalPath(p) || isRetiredPublicGatePath(p) {
 			// /mcp/ covers both /mcp/runs/ and /mcp/pm/
 			c.String(http.StatusNotFound, "not found: %s", p)
 			return
 		}
-		c.File("./web/dist/index.html")
+		serveWorkspaceSPA(c)
 	})
 
 	return r
+}
+
+func serveWorkspaceSPA(c *gin.Context) {
+	c.Header("X-Frame-Options", "DENY")
+	c.Header("Content-Security-Policy", "frame-ancestors 'none'")
+	c.File("./web/dist/index.html")
 }
 
 // errorLogger centralizes server-side visibility for failed requests. Handlers

@@ -19,6 +19,7 @@ const runsFail = params.get('scene') === 'fail-runs'
 window.fetch = async (input: RequestInfo | URL) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (url.includes('/auth/me')) {
+    document.documentElement.dataset.authRequested = 'true'
     return new Response(
       JSON.stringify({ username: 'e2e', expires_at: '2099-01-01T00:00:00Z', is_admin: true }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -103,6 +104,14 @@ async function bootstrap() {
       { path: '/', redirect: '/dashboard' },
       { path: '/dashboard', name: 'dashboard', component: DashboardPage, meta: { titleKey: 'route.dashboard' } },
       { path: '/runs', name: 'runs', component: RunsPage, meta: { titleKey: 'route.runs' } },
+      {
+        path: '/embed/runs/test/nodes/solo/chat',
+        component: async () => {
+          await new Promise(resolve => setTimeout(resolve, 150))
+          return defineComponent({ setup: () => () => h('div', { 'data-testid': 'preview-frame-content' }, 'Preview chat') })
+        },
+        meta: { public: true, bare: true, previewFrame: true },
+      },
       ...extraRoutes,
     ],
   })
@@ -110,10 +119,19 @@ async function bootstrap() {
   installRoutePendingGuards(router)
   installAuthGuard(router)
 
-  const start = params.get('start') === 'runs' ? '/runs' : '/dashboard'
-  await router.push(start)
-
-  createApp(App).use(createPinia()).use(i18n).use(router).mount('#app')
+  const mode = params.get('start')
+  const start = mode === 'runs' ? '/runs' : mode === 'preview-frame' ? '/embed/runs/test/nodes/solo/chat' : '/dashboard'
+  const framedTest = mode === 'preview-frame' || mode === 'workspace-frame'
+  const app = createApp(App).use(createPinia()).use(i18n)
+  if (framedTest) app.use(router)
+  const pending = router.push(start)
+  if (!framedTest) {
+    await pending
+    app.use(router)
+  }
+  app.mount('#app')
+  await pending
+  document.documentElement.dataset.navigationSettled = 'true'
 }
 
 void bootstrap()

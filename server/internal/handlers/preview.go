@@ -116,7 +116,12 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = 100 * time.Millisecond
-	proxy.ModifyResponse = previewModifyResponse(prefix)
+	rewritePreview := previewModifyResponse(prefix)
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		resp.Header.Del("Set-Cookie")
+		resp.Header.Add("Content-Security-Policy", "sandbox allow-scripts allow-forms")
+		return rewritePreview(resp)
+	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
 			Msg("preview upstream unreachable")
@@ -133,6 +138,8 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	// Ask upstream for identity encoding so ModifyResponse can rewrite HTML
 	// bodies (a gzipped body can't be sub_filtered without decoding first).
 	c.Request.Header.Set("Accept-Encoding", "identity")
+	c.Request.Header.Del("Cookie")
+	c.Request.Header.Del("Authorization")
 
 	publicHost := c.Request.Host
 	if fh := c.GetHeader("X-Forwarded-Host"); fh != "" {

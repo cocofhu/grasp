@@ -24,7 +24,11 @@ func (c *closeNotifyRecorder) CloseNotify() <-chan bool { return c.notify }
 
 func TestPreviewProxySuccess(t *testing.T) {
 	hn := newHarness(t)
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != "" {
+			t.Error("the preview app received workspace credentials")
+		}
+		http.SetCookie(w, &http.Cookie{Name: auth.CookieName, Value: "preview-fixture", Path: "/"})
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<!doctype html><html><head></head><body><a href="/x">x</a></body></html>`))
 	}))
@@ -41,12 +45,16 @@ func TestPreviewProxySuccess(t *testing.T) {
 	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder(), notify: make(chan bool)}
 	req := httptest.NewRequest(http.MethodGet, "/preview/run-px/n1/9090/", nil)
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
+	req.Header.Set("Authorization", "Bearer preview-test")
 	hn.r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("proxy: %d %s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), `/preview/run-px/n1/9090/`) {
 		t.Fatalf("expected rewritten html: %s", w.Body.String())
+	}
+	if w.Header().Get("Set-Cookie") != "" || w.Header().Get("Content-Security-Policy") != "sandbox allow-scripts allow-forms" {
+		t.Fatal("the preview response was not isolated from the workspace origin")
 	}
 }
 

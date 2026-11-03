@@ -8,6 +8,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/router"
+	"github.com/gorilla/websocket"
 )
 
 // g4.1: production paths registered by router.New(). /sandbox-vnc/:id/ws is
@@ -56,6 +57,57 @@ func TestProductionSandboxVNCValidSessionEntersHandler(t *testing.T) {
 		t.Fatalf("want 404/503 business response, got %d %s", w.Code, w.Body.String())
 	}
 	assertNoWSUpgrade(t, w)
+}
+
+func TestProductionPreviewOriginCannotUseWorkspaceCookie(t *testing.T) {
+	hn := newHarness(t)
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/auth/me"},
+		{http.MethodGet, "/api/runs/other-run/events"},
+		{http.MethodGet, "/api/sandboxes/1/terminal"},
+		{http.MethodGet, "/sandbox-vnc/1/ws"},
+		{http.MethodPost, "/api/auth/logout"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			req := wsUpgradeRequest(tc.path)
+			req.Method = tc.method
+			req.Host = "127.0.0.1:5173"
+			req.Header.Set("Origin", "http://127.0.0.1:19000")
+			req.Header.Set("Sec-Fetch-Site", "same-site")
+			req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
+			w := httptest.NewRecorder()
+			hn.r.ServeHTTP(w, req)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("cross-origin session request got %d, want 403", w.Code)
+			}
+			assertNoWSUpgrade(t, w)
+		})
+	}
+}
+
+func TestProductionWorkspaceSocketRejectsPreviewOrigin(t *testing.T) {
+	hn := newHarness(t)
+	srv := httptest.NewServer(hn.r)
+	defer srv.Close()
+	address := "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/runs/other-run/events"
+	headers := http.Header{
+		"Origin": {"http://127.0.0.1:19000"},
+		"Cookie": {(&http.Cookie{Name: auth.CookieName, Value: hn.cookie}).String()},
+	}
+	conn, resp, err := websocket.DefaultDialer.Dial(address, headers)
+	if conn != nil {
+		_ = conn.Close()
+		t.Fatal("a preview origin upgraded an authenticated workspace socket")
+	}
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected cross-origin upgrade to return 403, got %v", err)
+	}
 }
 
 func TestProductionPerPortPreviewVNCRouteRemoved(t *testing.T) {

@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Preview frames load only preview views. Preview proxies filter workspace session cookies, and workspace endpoints check the origin of cookie-authenticated requests.
+
 - Solo chat in a new-tab app preview streams replies and updates turn status without a page reload.
 
 - Model and provider icons follow the preview drawer's current light or dark theme. Monochrome marks stay legible and color marks retain their original colors.

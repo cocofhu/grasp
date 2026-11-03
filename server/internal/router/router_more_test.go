@@ -67,6 +67,22 @@ func TestNewLiveAndNodeRegistry(t *testing.T) {
 	}
 }
 
+func TestWorkspacePagesCannotBeFramed(t *testing.T) {
+	r := New(&handlers.Handlers{})
+	for _, path := range []string{"/", "/dashboard", "/settings/credentials"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Header().Get("X-Frame-Options") != "DENY" || w.Header().Get("Content-Security-Policy") != "frame-ancestors 'none'" {
+			t.Errorf("workspace page can be framed: %s", path)
+		}
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/embed/runs/run/nodes/solo/wrong-view", nil))
+	if w.Code != http.StatusNotFound || !strings.HasPrefix(w.Body.String(), "not found:") {
+		t.Fatal("unknown embed route fell back to the workspace")
+	}
+}
+
 func TestErrorLogger5xx(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

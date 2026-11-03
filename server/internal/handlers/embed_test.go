@@ -222,6 +222,7 @@ func TestEmbedTicketRecordsBrowserOrigin(t *testing.T) {
 	seedDirectPreview(t, hn, "run-emb-origin", "ap1")
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/run-emb-origin/nodes/ap1/embed-ticket", nil)
 	req.Header.Set("Origin", "http://localhost:5173")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.AddCookie(&http.Cookie{Name: "cf_session", Value: hn.cookie})
 	w := httptest.NewRecorder()
 	hn.r.ServeHTTP(w, req)

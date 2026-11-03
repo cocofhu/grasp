@@ -2,12 +2,17 @@ import type { Router } from 'vue-router'
 import { authApi } from '@/lib/api/api'
 import { authRedirectPath, getAuthState, markAuthReady, useAuth } from '@/lib/composables/useAuth'
 
+export function isFramed(): boolean {
+  return typeof window !== 'undefined' && window.self !== window.top
+}
+
 /**
  * Auth navigation guard. Protected `/me` is non-blocking so the shell can paint;
  * unauthenticated redirect semantics stay the same. Login remains non-blocking.
  */
 export function installAuthGuard(router: Router) {
   router.beforeEach(async (to) => {
+    if (isFramed() && !to.meta.previewFrame) return false
     if (to.meta.public) {
       if (to.name === 'login') {
         const { user, setUser } = useAuth()
