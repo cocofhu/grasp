@@ -6,11 +6,12 @@ import type { ReferenceTab } from '@/lib/solo/useReferenceSearch'
 /** The composer "+" menu: upload a file, or open the @ picker on a tab. */
 withDefaults(defineProps<{
   open: boolean
+  allowSolo?: boolean
   /** Opens above the button by default; the home composer opens below. */
   placement?: 'up' | 'down'
   /** data-testid prefix: `<prefix>-menu`, `-upload`, `-session`, `-github`. */
   testPrefix: string
-}>(), { placement: 'up' })
+}>(), { placement: 'up', allowSolo: true })
 const emit = defineEmits<{ (e: 'upload'): void; (e: 'reference', tab: ReferenceTab): void }>()
 const { t } = useI18n()
 </script>
@@ -27,7 +28,7 @@ const { t } = useI18n()
       <button type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-upload`" @click="emit('upload')">
         <Icon name="paperclip" :size="14" />{{ t('pages.solo.reference.menu.upload') }}
       </button>
-      <button type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-session`" @click="emit('reference', 'solo')">
+      <button v-if="allowSolo !== false" type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-session`" @click="emit('reference', 'solo')">
         <Icon name="chat" :size="14" />{{ t('pages.solo.reference.menu.session') }}
       </button>
       <button type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-github`" @click="emit('reference', 'issue')">

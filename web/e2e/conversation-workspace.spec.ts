@@ -11,12 +11,24 @@ const previewModelCatalog = {
   }],
   cliModels: { claude_code: [{ id: 'model-a', name: 'Model A' }, { id: 'model-b', name: 'Model B' }] },
 }
+const previewIssue = { kind: 'github_issue' as const, target: 'acme/web#12', title: 'Improve the heading', number: 12, repo: 'acme/web', url: 'https://github.com/acme/web/issues/12', state: 'open' }
 
 async function choosePreviewModel(chat: FrameLocator, id: string, name: string) {
   const picker = chat.getByTestId('solo-model-select')
   await picker.getByRole('button', { name: 'Model A' }).click()
   await chat.getByTestId(`solo-model-option-${id}`).click()
   await expect(picker).toContainText(name)
+}
+
+async function expectChatComposerInsets(chat: FrameLocator, inputTestId: string) {
+  const input = chat.getByTestId(inputTestId)
+  await expect(input).toBeVisible()
+  const insets = await input.evaluate(el => {
+    const box = el.closest('.chat-composer')!.getBoundingClientRect()
+    const rect = el.getBoundingClientRect()
+    return [Math.round(rect.left - box.left), Math.round(rect.top - box.top)]
+  })
+  expect(insets).toEqual([17, 17])
 }
 
 async function openConversation(page: Page, width = 1440, theme = 'light') {
@@ -155,6 +167,7 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   await choosePreviewModel(drawer, 'model-b', 'Model B')
   expect(modelBodies).toEqual([{ modelId: 'model-b' }])
   await expect(drawer.getByTestId('solo-plus')).toBeVisible()
+  await expectChatComposerInsets(drawer, 'solo-input')
   await toolbar.locator('[data-role="toggle"]').click()
   await preview.getByRole('heading', { name: 'Feature to edit' }).click()
   await expect(drawer.getByTestId('solo-preview-pick')).toContainText('#feature')
@@ -169,7 +182,8 @@ test('a direct Solo preview opens the same chat and sends a picked element with 
   await expect(transcript.getByText('Selected page elements:')).toHaveCount(0)
 })
 
-test('a signed-in workflow preview uses the regular chat model picker', async ({ page }) => {
+test('a signed-in workflow preview uses the regular chat model and reference pickers', async ({ page }) => {
+  test.setTimeout(45_000)
   const grasp = 'http://127.0.0.1:5174'
   const key = 'entry-model-picker'
   const runId = 'live-e2e-' + key
@@ -183,6 +197,11 @@ test('a signed-in workflow preview uses the regular chat model picker', async ({
     expect(route.request().headers().authorization).toBe(`Bearer ${runId}`)
     return route.fulfill({ json: previewModelCatalog })
   })
+  await page.route(modelPath + '/references/search?*', (route) => {
+    expect(route.request().headers().authorization).toBe(`Bearer ${runId}`)
+    const lane = new URL(route.request().url()).searchParams.get('lane')
+    return route.fulfill({ json: { lane, items: lane === 'github' ? [previewIssue] : [] } })
+  })
   let saved: unknown
   await page.route(new RegExp(modelPath + '/model(?:\\?.*)?$'), (route) => {
     if (route.request().method() === 'POST') {
@@ -193,12 +212,19 @@ test('a signed-in workflow preview uses the regular chat model picker', async ({
   })
   await page.goto(`${grasp}/live-variants.html?key=${key}`)
   const chat = page.frameLocator('grasp-preview-pick [data-role="drawer"] iframe')
-  await expect(chat.getByTestId('clarify-attach-btn')).toBeVisible()
+  await expect(chat.getByTestId('clarify-attach-btn')).toBeVisible({ timeout: 15_000 })
   await choosePreviewModel(chat, 'model-b', 'Model B')
   expect(saved).toEqual({ iteration: 1, configurationId: 'shared-config', modelId: 'model-b', reasoningEffort: '' })
+  const input = chat.getByTestId('clarify-input')
+  await input.fill('Please check @')
+  await chat.getByTestId('solo-reference-option-acme/web#12').click()
+  const sent = page.waitForRequest(request => request.url().endsWith('/public/approvals/reply'))
+  await input.press('Enter')
+  expect((await sent).postDataJSON().references).toEqual([{ kind: 'github_issue', target: 'acme/web#12' }])
 })
 
 test('anonymous shares open the direct app and use its floating chat in both modes', async ({ browser }) => {
+  test.setTimeout(60_000)
   const anonymous = await browser.newContext({ viewport: { width: 390, height: 820 }, locale: 'zh-CN' })
   try {
     const grasp = 'http://127.0.0.1:5174'
@@ -247,16 +273,22 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await anonymous.route(url + '/session', (route) => {
       const token = route.request().headers()['x-gate-share-token']
       expect([mainSession, guestSession]).toContain(token)
-      return route.fulfill({ json: { ticket: 'guest-chat-ticket', chatMode: token === mainSession ? 'main' : 'isolated' } })
+      return route.fulfill({ json: { ticket: 'guest-chat-ticket', chatMode: token === mainSession ? 'main' : 'isolated', agentName: 'Demo' } })
+    })
+    await anonymous.route(url + '/references/search?*', route => {
+      expect(new URL(route.request().url()).searchParams.get('lane')).toBe('github')
+      return route.fulfill({ json: { lane: 'github', items: [previewIssue] } })
     })
     const mainRows: PreviewChatRow[] = [{ id: 'main-history', role: 'user', text: 'Original main conversation' }]
     await anonymous.route(url + '/main-chat', (route) => {
       expect(route.request().headers()['x-gate-share-token']).toBe(mainSession)
       if (route.request().method() === 'POST') {
-        const { text, annotations } = route.request().postDataJSON()
-        expect(text).toBe('A message for the main conversation')
+        const { text, annotations, images, references } = route.request().postDataJSON()
+        expect(text).toContain('A message for the main conversation')
         expect(annotations).toEqual([expect.objectContaining({ selector: '#app-title' })])
-        mainRows.push({ id: 'main-new', role: 'user', text, annotations })
+        expect(references).toEqual([{ kind: 'github_issue', target: 'acme/web#12' }])
+        expect(images).toEqual([expect.objectContaining({ name: 'main-notes.txt', data: Buffer.from('Main notes').toString('base64') })])
+        mainRows.push({ id: 'main-new', role: 'user', text, annotations, images: [{ name: 'main-notes.txt', mimeType: 'text/plain' }], references: [previewIssue] })
         return route.fulfill({ json: { ok: true } })
       }
       return route.fulfill({ json: { rows: mainRows, busy: false } })
@@ -289,8 +321,10 @@ test('anonymous shares open the direct app and use its floating chat in both mod
         ws.send(JSON.stringify({ type: 'model', ok: true }))
         return
       }
-      expect(body.text).toBe('A separate idea')
+      expect(body.text).toContain('A separate idea')
       expect(body.annotations).toEqual([expect.objectContaining({ selector: '#app-title' })])
+      expect(body.references).toEqual([{ kind: 'github_issue', target: 'acme/web#12' }])
+      expect(body.images).toEqual([expect.objectContaining({ name: 'guest-notes.txt', data: Buffer.from('Guest notes').toString('base64') })])
       ws.send(JSON.stringify({ type: 'done', text: 'Visitor-only reply' }))
     }))
 
@@ -315,20 +349,30 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await grip.press('ArrowDown')
     await expect.poll(async () => (await bar.boundingBox())?.y).toBe(moved.y + 16)
     const mainDrawer = mainToolbar.frameLocator('[data-role="drawer"] iframe')
-    await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()
     await expect(mainToolbar.locator('[data-role="artifact"]')).toBeHidden()
-    await mainToolbar.locator('[data-role="chat"]').click()
     await expect(mainDrawer.getByText('Original main conversation')).toBeVisible()
     await choosePreviewModel(mainDrawer, 'model-b', 'Model B')
     await expect.poll(() => modelWrites).toEqual(['main:model-b'])
     await mainToolbar.locator('[data-role="toggle"]').click()
     await main.getByRole('heading', { name: 'Shared app fixture' }).click()
     await expect(mainDrawer.getByTestId('shared-app-chat-pick')).toContainText('#app-title')
-    await mainDrawer.getByTestId('shared-app-chat-input').getByRole('textbox').fill('A message for the main conversation')
+    await expectChatComposerInsets(mainDrawer, 'shared-app-chat-input')
+    const mainInput = mainDrawer.getByTestId('shared-app-chat-input')
+    await mainInput.fill('A message for the main conversation @')
+    await mainDrawer.getByTestId('solo-reference-option-acme/web#12').click()
+    await mainDrawer.getByTestId('shared-app-chat-plus').click()
+    await expect(mainDrawer.getByTestId('shared-app-chat-plus-upload')).toBeVisible()
+    await expect(mainDrawer.getByTestId('shared-app-chat-plus-session')).toHaveCount(0)
+    await mainDrawer.locator('input[type="file"]').setInputFiles({ name: 'main-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Main notes') })
+    await expect(mainDrawer.getByText('main-notes.txt')).toBeVisible()
     await mainDrawer.getByTestId('shared-app-chat-send').click()
     await expect(mainDrawer.getByText('A message for the main conversation')).toBeVisible()
-    await expect(mainDrawer.getByTestId('chat-message-annotations')).toHaveText('#app-title')
+    const sentBubble = mainDrawer.locator('.chat-user-message').filter({ hasText: 'A message for the main conversation' })
+    await expect(sentBubble.getByTestId('chat-message-annotations')).toHaveText('#app-title')
     await expect(mainDrawer.getByText('Selected page elements:')).toHaveCount(0)
+    await main.reload()
+    await expect(sentBubble.getByTestId('chat-message-annotations')).toHaveText('#app-title')
+    await expect(mainDrawer.getByText('main-notes.txt')).toBeVisible()
     await mainToolbar.locator('[data-role="chat"]').click()
     await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()
 
@@ -343,7 +387,10 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await choosePreviewModel(guestDrawer, 'model-b', 'Model B')
     await expect.poll(() => modelWrites).toEqual(['main:model-b', 'guest:model-b'])
     await expect(guestDrawer.getByText('Original main conversation')).toHaveCount(0)
-    await guestDrawer.getByTestId('shared-app-chat-input').getByRole('textbox').fill('A separate idea')
+    await guestDrawer.getByTestId('shared-app-chat-input').fill('A separate idea @')
+    await guestDrawer.getByTestId('solo-reference-option-acme/web#12').click()
+    await guestDrawer.locator('input[type="file"]').setInputFiles({ name: 'guest-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Guest notes') })
+    await expect(guestDrawer.getByText('guest-notes.txt')).toBeVisible()
     await guestDrawer.getByTestId('shared-app-chat-send').click()
     await expect(guestDrawer.getByText('Visitor-only reply')).toBeVisible()
     await expect(guestDrawer.getByTestId('chat-message-annotations')).toHaveText('#app-title')

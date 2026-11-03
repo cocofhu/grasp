@@ -10,6 +10,9 @@ import SoloSessionPane from '@/components/solo/SoloSessionPane.vue'
 import { soloEmbedClient } from '@/lib/solo/soloEmbedClient'
 import SharedAppPreviewChat from '@/components/run/SharedAppPreviewChat.vue'
 import type { VisitModelTransport } from '@/components/run/VisitModelSelect.vue'
+import { referenceQuery, type ReferenceSearchParams } from '@/lib/api/clients/soloClient'
+import type { ReferenceSearchResult } from '@/lib/api/apiTypes'
+import type { ScopedReferenceSearch } from '@/lib/solo/useReferenceSearch'
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import type { ScopedSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import {
@@ -69,6 +72,7 @@ const phase = ref<'connecting' | 'ready' | 'expired' | 'network'>('connecting')
 const token = ref('')
 const solo = ref<ReturnType<typeof soloEmbedClient>>()
 const workflowModel = ref<VisitModelTransport>()
+const workflowReferences = ref<ScopedReferenceSearch>()
 
 function useSession(session: { token: string; kind?: string }) {
   solo.value = session.kind === 'solo' ? soloEmbedClient(runId, session.token, () => onStatus('invalid')) : undefined
@@ -82,9 +86,15 @@ function useSession(session: { token: string; kind?: string }) {
       getVisitModel: (_run, _node, iteration = 1) => request<VisitModelChoice>(`/model?iteration=${iteration}`),
       setVisitModel: (_run, _node, body) => request<VisitModelChoice>('/model', { method: 'POST', body: JSON.stringify(body) }),
     }
-    if (session.kind) workflowModel.value = transport
-    else void modelCatalog().then(catalog => {
-      if (token.value === session.token) workflowModel.value = { ...transport, modelCatalog: async () => catalog }
+    const scopedSearch = <T,>(_id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
+      request<ReferenceSearchResult<T>>(`/references/search?${referenceQuery(params)}`, { signal })
+    if (session.kind) {
+      workflowModel.value = transport
+      workflowReferences.value = scopedSearch
+    } else void modelCatalog().then(catalog => {
+      if (token.value !== session.token) return
+      workflowModel.value = { ...transport, modelCatalog: async () => catalog }
+      workflowReferences.value = scopedSearch
     }).catch(() => undefined)
   }
   phase.value = 'ready'
@@ -359,6 +369,7 @@ onUnmounted(() => {
       class="min-h-0 flex-1"
       :embed-token="token"
       :model-transport="workflowModel"
+      :reference-search="workflowReferences"
       :request-page-context="pageContext.request"
       :page-control-enabled="pageControlOn"
       @status="onStatus"

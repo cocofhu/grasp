@@ -407,14 +407,18 @@ func (e *Engine) EnqueueClarifyTurn(runID, nodeID, text string, images []models.
 
 // EnqueuePreviewShareTurn adds a guest turn to the existing
 // conversation and binds it to the workflow visit the owner shared.
-func (e *Engine) EnqueuePreviewShareTurn(owner, runID, nodeID, text string, annotations []models.ReactAnnotation, iteration int) error {
+func (e *Engine) EnqueuePreviewShareTurn(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, refs []models.MessageReference, iteration int) error {
 	kind := sessionKindReview
 	if e.nodeIsClarify(runID, nodeID) {
 		kind = sessionKindClarify
 	}
-	_, err := e.enqueueReviewItem(runID, nodeID, kind, &reviewQueueItem{
+	images, err := blob.IngestPromptImages(context.Background(), e.blobs, images)
+	if err != nil {
+		return err
+	}
+	_, err = e.enqueueReviewItem(runID, nodeID, kind, &reviewQueueItem{
 		ID: uuid.NewString(), Text: text, Effective: renderReviewHuman(text, annotations),
-		Annotations: annotations, Source: "node", Owner: owner,
+		Images: images, Annotations: annotations, References: refs, Source: "node", Owner: owner,
 		PreviewIteration: iteration, LiveWritesDenied: true,
 	})
 	return err
@@ -780,6 +784,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 			Role: "human", Text: item.Text, At: now, TurnID: item.ID,
 			ClientMessageID: item.ClientMessageID,
 			Images:          item.Images, Annotations: item.Annotations, References: item.References, Live: item.Live,
+			PreviewShared: item.PreviewIteration > 0,
 		}
 		conv.Messages = append(conv.Messages, humanMsg)
 		logDB(e.db.Save(&conv), s.runID, "save clarify human turn (turn_begin)")
@@ -959,7 +964,8 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		Role: "human", Text: item.Text, At: now, TurnID: item.ID,
 		ClientMessageID: item.ClientMessageID,
 		Images:          item.Images, Annotations: item.Annotations, References: item.References, Live: item.Live,
-		GateNodeID: gateTag,
+		PreviewShared: item.PreviewIteration > 0,
+		GateNodeID:    gateTag,
 	})
 	logDB(e.db.Save(&conv), s.runID, "save review human turn (turn_begin)")
 

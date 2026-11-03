@@ -565,6 +565,8 @@ type ReactMessage struct {
 	// Images are optional base64 attachments the human sent with this turn.
 	// Persisted so the run detail can re-render thumbnails after a refresh.
 	Images []PromptImage `json:"images,omitempty"`
+	// PreviewShared permits attachment replay through the main preview share.
+	PreviewShared bool `json:"previewShared,omitempty"`
 	// Questions are structured multiple-choice questions the agent raised this
 	// turn via the ask_question MCP tool (clarify-only). Persisted so the UI can
 	// render selectable choices and re-render them after a refresh. Empty on a

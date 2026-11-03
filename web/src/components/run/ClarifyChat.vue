@@ -135,6 +135,7 @@ const props = withDefaults(
     confirmCanAbort?: boolean
     /** @ references in the composer. Off where the viewer has no Solo sessions or search access (anonymous share). */
     referencesEnabled?: boolean
+    referenceSearch?: import('@/lib/solo/useReferenceSearch').ScopedReferenceSearch
     seedHumanText?: string
     seedHumanImages?: ClarifyImage[]
     /**
@@ -1937,6 +1938,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           ref="mentionPicker"
           placement="up"
           :scope="mentionScope"
+          :scoped-search="referenceSearch"
           :query="mention.trigger.value.query"
           :taken="mention.targets.value"
           :full="mention.full.value"

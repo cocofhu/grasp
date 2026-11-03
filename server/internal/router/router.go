@@ -327,10 +327,11 @@ func New(h *handlers.Handlers) *gin.Engine {
 	soloEmbed.GET("/artifacts", h.SoloEmbedArtifacts)
 	soloEmbed.POST("/turns", h.StartSoloTurn)
 	soloEmbed.POST("/turns/cancel", h.CancelSoloTurn)
-	embedVisit := r.Group("/embed-api/runs/:id/nodes/:nodeId", h.AuthorizeEmbedVisitModel)
+	embedVisit := r.Group("/embed-api/runs/:id/nodes/:nodeId", h.AuthorizeEmbedNode)
 	embedVisit.GET("/model-catalog", h.EmbedVisitModelCatalog)
 	embedVisit.GET("/model", h.GetVisitModel)
 	embedVisit.POST("/model", h.SetVisitModel)
+	embedVisit.GET("/references/search", h.SearchRunNodeReferences)
 
 	// PM MCP hosts (outside /api).
 	r.POST("/mcp/pm/:mcpId", h.PMMCPRPC)
@@ -413,6 +414,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.GET("/app/model", h.PublicAppPreviewModel)
 		pub.POST("/app/model", h.PublicAppPreviewModel)
 		pub.GET("/app/main-chat", h.PublicAppPreviewMainChat)
+		pub.GET("/app/references/search", h.PublicAppPreviewReferences)
+		pub.GET("/app/images/:messageId/:index", h.PublicAppPreviewImage)
 		pub.POST("/app/main-chat", h.PublicAppPreviewMainChat)
 		pub.GET("/app/guest-chat", h.PublicAppPreviewGuestChat)
 		pub.GET("/preview", h.PublicGatePreview)

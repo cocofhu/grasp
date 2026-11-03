@@ -3543,6 +3543,7 @@
         "emptyChat": "Start with a change you would like to see.",
         "message": "Enter a message",
         "messageTooLong": "Shorten the message or remove a selected element.",
+        "attachmentLimit": "Attach up to 16 files with a combined size of 50 MiB.",
         "chatUnavailable": "Chat is currently disconnected.",
         "sendFailed": "The message could not be completed. Try again.",
         "loading": "Opening the shared preview…",

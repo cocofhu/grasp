@@ -4,7 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **Preview chat messages:** Picked page elements appear as annotation chips in sent messages and history. The Agent still receives the element context, and the conversation displays the user's message in the regular chat bubble.
+- **Preview chat messages:** Direct and shared app previews open with the same floating chat. The composer shares attachment, model, and @ controls. Guests can reference public GitHub issues and pull requests. Picked elements appear as annotation chips while the Agent receives their context.
 
 - **Preview chat:** Solo direct previews use the full Solo chat. Workflow previews and both anonymous sharing modes use the regular chat composer and model picker. Shared main chats apply model choices to the original conversation. Independent chats switch within the app sandbox's active model group. Drag the floating toolbar or move it with the arrow keys, and it keeps its position when the page reloads.
 

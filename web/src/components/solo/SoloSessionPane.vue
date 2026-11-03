@@ -11,30 +11,26 @@ import AgentTimeline from '@/components/run/AgentTimeline.vue'
 import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
-import AnnotationChip from '@/components/run/AnnotationChip.vue'
 import ComposerPrimaryAction from '@/components/run/ComposerPrimaryAction.vue'
-import ComposerShell from '@/components/run/ComposerShell.vue'
 import type { soloEmbedClient } from '@/lib/solo/soloEmbedClient'
 import { appendPreviewPick, readPreviewMessage, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import ReviewShell from '@/components/run/ReviewShell.vue'
+import { useChatTailScroll } from '@/lib/chat/chatScroll'
+import ChatComposer from '@/components/chat/ChatComposer.vue'
+import { useChatComposerDraft } from '@/lib/chat/useChatComposerDraft'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/PendingSendQueuePanel.vue'
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
-import ReferencePicker from './ReferencePicker.vue'
 import ReferenceChip from './ReferenceChip.vue'
-import ReferencePlusMenu from './ReferencePlusMenu.vue'
 import { api } from '@/lib/api/api'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
 import { inlineReferences, referenceLabel } from '@/lib/solo/referenceTokens'
-import type { ReferenceTab } from '@/lib/solo/useReferenceSearch'
-import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
 import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import { chatImageSrc } from '@/lib/shared/compositeText'
 import { lastMessageText } from '@/lib/chat/messagePreview'
-import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { partsOf } from '@/lib/solo/acpTurn'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
@@ -92,8 +88,10 @@ function chooseSessionModel(value: string) {
   const changesGroup = !!choice?.configurationId && !!currentGroup.value && choice.configurationId !== currentGroup.value
   return setCurrentModel(choice?.configurationId && (grouped || changesGroup) ? modelRouteValue(choice.configurationId, choice.modelId || '') : value)
 }
-const attach = useImageAttachments()
-const fileInput = attach.fileInput
+const repos = computed(() => sessionRepos(session.value))
+const defaultRepo = computed(() => githubRepoOf(repos.value[0]?.repoUrl))
+const draft = useChatComposerDraft(defaultRepo)
+const { input, attach, mention, textareaComponent } = draft
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
 // A preview iframe may not have the login cookie. Fetch only images attached
@@ -126,11 +124,7 @@ function transcriptImageSrc(image: ClarifyImage) {
   return chatImageSrc(image)
 }
 
-const input = ref('')
-const composing = ref(false)
-const scroller = ref<HTMLElement | null>(null)
-const textarea = ref<HTMLTextAreaElement | null>(null)
-const followBottom = ref(true)
+const { scroller, followBottom, onScroll, scrollDown } = useChatTailScroll()
 const confirmClose = ref(false)
 const confirmDelete = ref(false)
 const moreOpen = ref(false)
@@ -143,7 +137,6 @@ watch(session, (s) => { if (s && !props.embedded) store.upsert(s) })
 watch(canSend, (ready) => { if (ready) emit('ready') })
 
 const title = computed(() => session.value?.title || t('pages.solo.untitled'))
-const repos = computed(() => sessionRepos(session.value))
 const editTargets = computed(() => {
   const seen = new Set<string>()
   const out: { id: string; name: string }[] = []
@@ -169,16 +162,6 @@ const sandboxResourceLoading = computed(() => status.value === 'starting' && !sa
 const showStartup = computed(() => status.value === 'starting' && !!session.value)
 
 // --- transcript scroll ----------------------------------------------------
-function scrollDown(force = false) {
-  void nextTick(() => {
-    const el = scroller.value
-    if (el && (force || followBottom.value)) el.scrollTop = el.scrollHeight
-  })
-}
-function onScroll() {
-  const el = scroller.value
-  if (el) followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-}
 watch(turns, () => scrollDown(), { deep: true })
 
 // --- message rail: one tick per user turn, previewing the last agent reply ----
@@ -243,19 +226,7 @@ watch(
 )
 
 // --- composer ---------------------------------------------------------------
-function autoGrow() {
-  const el = textarea.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = `${Math.min(Math.max(el.scrollHeight, 48), 220)}px`
-}
-watch(input, () => nextTick(autoGrow))
-
 // --- @ references -------------------------------------------------------------
-const plusOpen = ref(false)
-const defaultRepo = computed(() => githubRepoOf(repos.value[0]?.repoUrl))
-const mention = useReferenceComposer({ input, textarea, composing, defaultRepo })
-const { tokens, trigger, pickerTab, picker } = mention
 /** References whose `@label` is not in the text; the bubble shows the rest in place. */
 function asideReferences(turn: { text?: string; references?: MessageReference[] }) {
   const refs = turn.references || []
@@ -263,27 +234,12 @@ function asideReferences(turn: { text?: string; references?: MessageReference[] 
   return inlineReferences(turn.text, refs, (r) => referenceLabel(r, defaultRepo.value)).rest
 }
 const picks = ref<ReactAnnotation[]>([])
-const canSubmit = computed(() => !!input.value.trim() || !!attach.attachments.value.length || !!tokens.value.length || !!picks.value.length)
+const canSubmit = computed(() => !!input.value.trim() || !!attach.attachments.value.length || !!mention.refs.value.length || !!picks.value.length)
 
 function addPick(payload: AppPreviewPickPayload) {
   appendPreviewPick(picks.value, payload, 8)
 }
 defineExpose({ addPick })
-
-function openPicker(tab: ReferenceTab) {
-  plusOpen.value = false
-  mention.open(tab)
-}
-
-function pickFiles() {
-  plusOpen.value = false
-  fileInput.value?.click()
-}
-
-function onPaste(e: ClipboardEvent) {
-  attach.onPaste(e)
-  mention.onPaste(e)
-}
 
 async function send() {
   const text = input.value.trim()
@@ -338,18 +294,10 @@ async function editQueued(index: number) {
     picks.value = [...itemMessage.annotations, ...picks.value].slice(0, 8)
     mention.load(text, [...(item.references || []), ...mention.refs.value])
     attach.attachments.value = [...item.images, ...attach.attachments.value]
-    void nextTick(autoGrow)
+    void nextTick(() => textareaComponent.value?.resize())
   } finally {
     editingQueued = false
   }
-}
-
-function onKeydown(e: KeyboardEvent) {
-  if (mention.onKeydown(e)) return
-  if (e.key !== 'Enter' || e.shiftKey) return
-  if (composing.value || e.isComposing || e.keyCode === 229) return
-  e.preventDefault()
-  void send()
 }
 
 async function doClose() {
@@ -397,7 +345,6 @@ async function doDelete() {
 function onDocPointer(e: Event) {
   const el = e.target as HTMLElement
   if (moreOpen.value && !el.closest?.('[data-solo-more]')) moreOpen.value = false
-  if (plusOpen.value && !el.closest?.('[data-solo-plus]')) plusOpen.value = false
 }
 onMounted(() => document.addEventListener('pointerdown', onDocPointer))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointer))
@@ -408,7 +355,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 </script>
 
 <template>
-  <div class="solo-pane flex min-h-0 min-w-0 flex-1 flex-col" data-testid="solo-session-pane">
+  <div class="chat-pane solo-pane flex min-h-0 min-w-0 flex-1 flex-col" data-testid="solo-session-pane">
     <div v-if="loading && !session" class="flex flex-1 items-center justify-center text-txt3">
       <Icon name="spinner" :size="18" />
     </div>
@@ -457,8 +404,8 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         :scope-key="`solo:${props.sessionId}`"
         @navigate="onMessageNavigate"
       />
-      <div ref="scroller" class="solo-transcript scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="solo-transcript" @scroll.passive="onScroll">
-        <div class="solo-column space-y-6">
+      <div ref="scroller" class="chat-pane-transcript scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="solo-transcript" @scroll.passive="onScroll">
+        <div class="chat-pane-column space-y-6">
           <SoloStartupCard v-if="showStartup" :session="session" />
 
           <div v-if="status === 'error'" class="solo-errcard" data-testid="solo-error-card">
@@ -553,8 +500,8 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </div>
 
       <!-- queue -->
-      <div v-if="queued.length && !closed" class="solo-bottom shrink-0 pt-3" data-testid="solo-queue">
-        <div class="solo-column">
+      <div v-if="queued.length && !closed" class="chat-pane-composer shrink-0 pt-3" data-testid="solo-queue">
+        <div class="chat-pane-column">
           <PendingSendQueuePanel
             :items="queueRows"
             panel-test-id="solo-queue-panel"
@@ -573,139 +520,62 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </div>
 
       <!-- composer / closed bar -->
-      <div v-if="closed" class="solo-bottom py-3" data-testid="solo-closed-bar">
-        <div class="solo-column solo-closed">
+      <div v-if="closed" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
+        <div class="chat-pane-column solo-closed">
           <Icon name="lock" :size="15" class="mt-0.5 shrink-0 text-txt3" />
           <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">{{ t('pages.solo.closedBar.text') }}</p>
           <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting" @click="doRestart">{{ t('pages.solo.closedBar.restart') }}</AppButton>
         </div>
       </div>
-      <div v-else class="solo-bottom shrink-0 py-3">
-        <div class="solo-column">
+      <div v-else class="chat-pane-composer shrink-0 py-3">
+        <div class="chat-pane-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
           <p v-if="selectionInvalid && canSend" class="mb-2 text-[12px] text-warn" role="status" data-testid="solo-model-invalid-notice">{{ t('pages.solo.modelSelect.unavailableSelection') }}</p>
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
-          <p v-if="attach.notice.value" class="mb-2 text-[12px]" :class="attach.notice.value.kind === 'error' ? 'text-err' : 'text-ok'">{{ attach.notice.value.text }}</p>
-          <TransitionGroup v-if="tokens.length" tag="div" name="ref-chip" class="mb-2 flex flex-wrap gap-1.5" data-testid="solo-composer-references">
-            <ReferenceChip v-for="(tk, ti) in tokens" :key="tk.ref.target" :reference="tk.ref" :default-repo="defaultRepo" removable @remove="mention.drop(ti)" />
-          </TransitionGroup>
-          <div v-if="attach.attachments.value.length" class="mb-2 flex flex-wrap gap-1.5">
-            <div v-for="(im, ii) in attach.attachments.value" :key="ii" class="relative">
-              <ChatImageThumb
-                v-if="isImageAttachment(im)"
-                mode="previewable"
-                size="sm"
-                thumb-class="rounded-md"
-                :src="chatImageSrc(im)"
-                :label="attachmentDisplayName(im, ii)"
-                :alt="attachmentDisplayName(im, ii)"
-                @preview="openChatImagePreview(chatImageSrc(im), attachmentDisplayName(im, ii))"
+          <ChatComposer
+            :draft="draft"
+            :picks="picks"
+            :placeholder="t('pages.solo.chat.placeholder', { agent: session.agentName })"
+            :scope="{ sessionId: props.sessionId }"
+            :scoped-search="embedded?.searchSoloReferences"
+            :disabled="!canSend"
+            test-prefix="solo"
+            pick-test-id="solo-preview-pick"
+            @send="send"
+            @remove-pick="picks.splice($event, 1)"
+            @preview="openChatImagePreview"
+          >
+            <template #model>
+              <SoloModelSelect
+                class="min-w-0"
+                flat
+                :model-value="currentSelection"
+                :reasoning-effort="currentReasoningEffort"
+                :models="shownModels"
+                :disabled="!canSend || !modelCatalogReady"
+                :empty-as-label="modelCatalogReady && !modelChoices.length"
+                @update:model-value="chooseSessionModel"
+                @update:reasoning-effort="setCurrentReasoningEffort"
               />
-              <div v-else class="chat-file-chip flex h-14 max-w-[160px] items-center gap-1.5 rounded-lg border border-line bg-elevated px-2">
-                <Icon name="artifact" :size="15" class="shrink-0 text-txt2" />
-                <span class="min-w-0 truncate text-[12px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
-              </div>
-              <button type="button" class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full pending-attach-remove" @click="attach.removeAttachment(ii)">
-                <Icon name="close" :size="9" />
-              </button>
-            </div>
-          </div>
-          <div v-if="picks.length" class="mb-2 flex flex-wrap gap-1.5">
-            <AnnotationChip
-              v-for="(pick, i) in picks"
-              :key="i"
-              :ann="pick"
-              removable
-              test-id="solo-preview-pick"
-              @remove="picks.splice(i, 1)"
-            />
-          </div>
-          <div class="relative">
-            <ComposerShell :show-footer="false" :compact="!!embedded" :wrap-toolbar="!!embedded">
-              <template #input>
-                <Transition name="ref-pop">
-                  <ReferencePicker
-                    v-if="trigger && canSend"
-                    ref="picker"
-                    :scope="{ sessionId: props.sessionId }"
-                    :search-solo="embedded?.searchSoloReferences"
-                    :query="trigger.query"
-                    :taken="mention.targets.value"
-                    :full="mention.full.value"
-                    :initial-tab="pickerTab"
-                    @pick="mention.pick"
-                  />
-                </Transition>
-                <input ref="fileInput" type="file" multiple class="hidden" @change="attach.onPickFiles" />
-                <textarea
-                  ref="textarea"
-                  v-model="input"
-                  rows="2"
-                  :disabled="!canSend"
-                  :placeholder="t('pages.solo.chat.placeholder', { agent: session.agentName })"
-                  :aria-label="t('pages.solo.chat.placeholder', { agent: session.agentName })"
-                  class="chat-input scroll-area block max-h-[220px] min-h-[48px] w-full min-w-0 resize-none py-1 disabled:opacity-50"
-                  data-testid="solo-input"
-                  @keydown="onKeydown"
-                  @input="mention.updateTrigger"
-                  @click="mention.updateTrigger"
-                  @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && mention.updateTrigger()"
-                  @blur="trigger = null"
-                  @compositionstart="composing = true"
-                  @compositionend="composing = false; mention.updateTrigger()"
-                  @paste="onPaste"
-                />
-              </template>
-              <template #toolbar-start>
-                <div class="flex min-w-0 items-center gap-2">
-                  <div class="relative" data-solo-plus>
-                    <button
-                      type="button"
-                      class="chat-action-button"
-                      :disabled="!canSend"
-                      :aria-label="t('pages.solo.chat.attach')"
-                      :title="t('pages.solo.chat.attach')"
-                      aria-haspopup="menu"
-                      :aria-expanded="plusOpen"
-                      data-testid="solo-plus"
-                      @click="plusOpen = !plusOpen"
-                    >
-                      <Icon name="plus" :size="18" />
-                    </button>
-                    <ReferencePlusMenu :open="plusOpen" test-prefix="solo-plus" @upload="pickFiles" @reference="openPicker" />
-                  </div>
-                  <SoloModelSelect
-                    class="min-w-0"
-                    flat
-                    :model-value="currentSelection"
-                    :reasoning-effort="currentReasoningEffort"
-                    :models="shownModels"
-                    :disabled="!canSend || !modelCatalogReady"
-                    :empty-as-label="modelCatalogReady && !modelChoices.length"
-                    @update:model-value="chooseSessionModel"
-                    @update:reasoning-effort="setCurrentReasoningEffort"
-                  />
-                  <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
-                </div>
-              </template>
-              <template #toolbar-end>
-                <ComposerPrimaryAction
-                  v-if="busy"
-                  kind="stop"
-                  :label="t('pages.solo.chat.stop')"
-                  testid="solo-stop"
-                  @click="chat.cancel()"
-                />
-                <ComposerPrimaryAction
-                  kind="send"
-                  :disabled="!canSend || selectionInvalid || !canSubmit"
-                  :label="t('pages.solo.chat.send')"
-                  testid="solo-send"
-                  @click="send"
-                />
-              </template>
-            </ComposerShell>
-          </div>
+              <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
+            </template>
+            <template #actions>
+              <ComposerPrimaryAction
+                v-if="busy"
+                kind="stop"
+                :label="t('pages.solo.chat.stop')"
+                testid="solo-stop"
+                @click="chat.cancel()"
+              />
+              <ComposerPrimaryAction
+                kind="send"
+                :disabled="!canSend || selectionInvalid || !canSubmit"
+                :label="t('pages.solo.chat.send')"
+                testid="solo-send"
+                @click="send"
+              />
+            </template>
+          </ChatComposer>
         </div>
       </div>
 
@@ -754,16 +624,9 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 
 <style scoped>
 .solo-pane {
-  container: solo-pane / inline-size;
 }
 .solo-workspace {
   background: rgb(var(--c-surface));
-}
-.solo-column {
-  width: 100%;
-  max-width: 780px;
-  min-width: 0;
-  margin-inline: auto;
 }
 .solo-error-link {
   display: inline-flex;
@@ -790,13 +653,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
   padding: 4px 12px;
   color: rgb(var(--c-warn));
   font-size: 11.5px;
-}
-.solo-transcript {
-  padding: 24px 20px 32px;
-  overflow-anchor: none;
-}
-.solo-bottom {
-  padding-inline: 20px;
 }
 .solo-errcard {
   border: 1px solid rgb(var(--c-err) / 0.3);
@@ -839,13 +695,5 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 .solo-push-hint:hover {
   border-color: rgb(var(--c-accent) / 0.4);
   background: rgb(var(--c-accent) / 0.05);
-}
-@container solo-pane (max-width: 640px) {
-  .solo-transcript {
-    padding: 18px 12px 24px;
-  }
-  .solo-bottom {
-    padding-inline: 12px;
-  }
 }
 </style>

@@ -68,13 +68,21 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			guestFile := models.PromptImage{MimeType: "text/plain", Name: "guest-notes.txt", Data: "Z3Vlc3Qgbm90ZXM="}
+			ownerFile := models.PromptImage{MimeType: "text/plain", Name: "owner-private.txt", Data: "cHJpdmF0ZQ=="}
 			picks := []models.ReactAnnotation{{Selector: "#heading", URL: "https://preview.example.test/hidden", OuterHTML: "<h1>private-markup</h1>"}}
 			if solo {
 				hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
 				if err := hn.db.Create(&models.SoloSession{ID: sb.ThreadID, UserID: "admin", AgentName: sb.Profile, SandboxID: sb.ID, Status: models.SoloStatusRunning}).Error; err != nil {
 					t.Fatal(err)
 				}
-				if err := hn.db.Create(&models.SoloMessage{ID: "solo-history", SessionID: sb.ThreadID, Role: "user", Content: mainHistory, Annotations: picks}).Error; err != nil {
+				if err := hn.db.Create(&models.SoloMessage{ID: "solo-history", SessionID: sb.ThreadID, Role: "user", Content: mainHistory, Annotations: picks, Images: []models.PromptImage{ownerFile}}).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := hn.db.Create(&models.SoloMessage{
+					ID: "visitor-upload", SessionID: sb.ThreadID, Role: "user", Content: "Visitor upload",
+					PreviewShared: true, Images: []models.PromptImage{guestFile},
+				}).Error; err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -83,7 +91,10 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				if err := hn.db.First(&conv, "run_id = ? AND node_id = ?", runID, nodeID).Error; err != nil {
 					t.Fatal(err)
 				}
-				conv.Messages = append(conv.Messages, models.ReactMessage{Role: "human", Text: "Adjust heading", Annotations: picks})
+				conv.Messages = append(conv.Messages,
+					models.ReactMessage{Role: "human", Text: "Owner attachment", Annotations: picks, Images: []models.PromptImage{ownerFile}},
+					models.ReactMessage{Role: "human", Text: "Visitor upload", PreviewShared: true, Images: []models.PromptImage{guestFile}},
+				)
 				if err := hn.db.Save(&conv).Error; err != nil {
 					t.Fatal(err)
 				}
@@ -169,6 +180,39 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				t.Fatalf("main history: %d %s", w.Code, w.Body)
 			}
 			mainHeaders := headers("main-drawer")
+			history := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, mainHeaders)
+			if !strings.Contains(history.Body.String(), "guest-notes.txt") || strings.Contains(history.Body.String(), "owner-private.txt") ||
+				strings.Contains(history.Body.String(), guestFile.Data) {
+				t.Fatalf("attachment metadata: %d %s", history.Code, history.Body)
+			}
+			var guestID, ownerID string
+			for _, raw := range parseJSON(t, history)["rows"].([]any) {
+				row := raw.(map[string]any)
+				switch row["text"] {
+				case "Visitor upload":
+					guestID = row["id"].(string)
+				case mainHistory, "Owner attachment":
+					ownerID = row["id"].(string)
+				}
+			}
+			if guestID == "" || ownerID == "" {
+				t.Fatal("missing history message IDs")
+			}
+			if w := hn.doEmbed(http.MethodGet, path+"/images/"+guestID+"/0", nil, mainHeaders); w.Code != http.StatusOK || w.Body.String() != "guest notes" {
+				t.Fatalf("visitor attachment: %d %s", w.Code, w.Body)
+			}
+			if w := hn.doEmbed(http.MethodGet, path+"/images/"+ownerID+"/0", nil, mainHeaders); w.Code != http.StatusNotFound {
+				t.Fatalf("owner attachment exposed: %d", w.Code)
+			}
+			if w := hn.doEmbed(http.MethodGet, path+"/images/"+guestID+"/0", nil, headers("isolated-drawer")); w.Code != http.StatusNotFound {
+				t.Fatalf("independent link accessed shared attachment: %d", w.Code)
+			}
+			if w := hn.doEmbed(http.MethodGet, path+"/references/search?lane=solo", nil, mainHeaders); w.Code != http.StatusBadRequest {
+				t.Fatalf("private Solo lookup accepted: %d", w.Code)
+			}
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat", map[string]any{"images": []models.PromptImage{{Ref: "blob:someone-elses-file"}}}, mainHeaders); w.Code != http.StatusBadRequest {
+				t.Fatalf("arbitrary attachment reference accepted: %d", w.Code)
+			}
 			catalog := hn.doEmbed(http.MethodGet, path+"/model-catalog", nil, mainHeaders)
 			if catalog.Code != http.StatusOK || !strings.Contains(catalog.Body.String(), "preview-model") ||
 				strings.Contains(catalog.Body.String(), "private-key-id") || strings.Contains(catalog.Body.String(), "unrelated-model-group") {

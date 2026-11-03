@@ -16,9 +16,9 @@ import type { EmbedTicket } from '../../inbox/embedChat'
 
 const enc = encodeURIComponent
 
-type ReferenceSearchParams = { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }
+export type ReferenceSearchParams = { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }
 
-function referenceQuery(params: ReferenceSearchParams) {
+export function referenceQuery(params: ReferenceSearchParams) {
   const qs = new URLSearchParams({ lane: params.lane, q: params.q })
   if (params.kind) qs.set('kind', params.kind)
   if (params.state) qs.set('state', params.state)

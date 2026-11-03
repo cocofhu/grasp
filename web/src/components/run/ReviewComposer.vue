@@ -36,6 +36,7 @@ const props = withDefaults(
     sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]) => Promise<boolean>
     /** @ references in the composer; off on the anonymous share page. */
     referencesEnabled?: boolean
+    referenceSearch?: import('@/lib/solo/useReferenceSearch').ScopedReferenceSearch
     runId?: string
     nodeId?: string
     iteration?: number
@@ -390,6 +391,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
       :follow-process="followProcess ?? null"
       @takeover="emit('takeover')"
       :references-enabled="referencesEnabled"
+      :reference-search="referenceSearch"
       @send="(text, images, anns, clientMessageId, references) => emit('send', text, images, anns, clientMessageId, ...(references?.length ? [references] : []))"
       @retry-last="emit('retry-last')"
       @finish="emit('finish')"
@@ -466,6 +468,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
           ref="gateMentionPicker"
           placement="up"
           :scope="gateMentionScope"
+          :scoped-search="referenceSearch"
           :query="gateMention.trigger.value.query"
           :taken="gateMention.targets.value"
           :full="gateMention.full.value"

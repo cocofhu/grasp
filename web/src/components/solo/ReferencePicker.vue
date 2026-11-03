@@ -7,10 +7,11 @@ import type { GitHubReferenceCandidate, MessageReference, SoloReferenceCandidate
 import { useReferenceSearch, type GitHubStateFilter, type ReferenceScope, type ReferenceTab } from '@/lib/solo/useReferenceSearch'
 import { referenceIcon, referenceTone } from '@/lib/solo/referenceDisplay'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /** An open session, the launch composer's picks, a workflow, or a run node. */
   scope: ReferenceScope
-  searchSolo?: typeof api.searchSoloReferences
+  scopedSearch?: typeof api.searchSoloReferences
+  allowSolo?: boolean
   query: string
   /** Targets already picked in this message; hidden from the list. */
   taken: string[]
@@ -18,7 +19,7 @@ const props = defineProps<{
   initialTab?: ReferenceTab
   /** Opens above the composer by default; the home composer opens below. */
   placement?: 'up' | 'down'
-}>()
+}>(), { allowSolo: true })
 const emit = defineEmits<{ (e: 'pick', ref: MessageReference): void }>()
 const { t } = useI18n()
 
@@ -29,8 +30,8 @@ const sel = ref(-1)
 const list = ref<HTMLElement | null>(null)
 const content = ref<HTMLElement | null>(null)
 const tabbar = ref<HTMLElement | null>(null)
-const search = useReferenceSearch(computed(() => props.scope), props.searchSolo)
-const TABS: ReferenceTab[] = ['all', 'solo', 'issue', 'pr']
+const search = useReferenceSearch(computed(() => props.scope), props.scopedSearch, props.allowSolo !== false)
+const TABS: ReferenceTab[] = props.allowSolo === false ? ['all', 'issue', 'pr'] : ['all', 'solo', 'issue', 'pr']
 const ALL_LIMIT = 5
 /** Tallest the list grows before it scrolls. */
 const MAX_LIST = 270

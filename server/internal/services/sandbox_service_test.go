@@ -1196,6 +1196,11 @@ func fakeACPServer(t *testing.T) (*httptest.Server, int) {
 // the real ACP client's WebSocket and dispatch path.
 func fakeACPServerFrames(t *testing.T, frames ...map[string]any) (*httptest.Server, int) {
 	t.Helper()
+	return fakeACPServerFramesOnChat(t, nil, frames...)
+}
+
+func fakeACPServerFramesOnChat(t *testing.T, onChat func([]byte), frames ...map[string]any) (*httptest.Server, int) {
+	t.Helper()
 	up := websocket.Upgrader{}
 	mux := http.NewServeMux()
 	// Mirror the real bridge's unified-auth login: hand out a session cookie so
@@ -1225,6 +1230,9 @@ func fakeACPServerFrames(t *testing.T, frames ...map[string]any) (*httptest.Serv
 			case "connect":
 				c.WriteJSON(map[string]any{"op": "connected", "sessionId": "sess-1"})
 			case "chat":
+				if onChat != nil {
+					onChat(msg)
+				}
 				for _, frame := range frames {
 					if err := c.WriteJSON(map[string]any{"op": "event", "opId": m.OpID, "data": frame}); err != nil {
 						return

@@ -2,14 +2,32 @@ import { req, rootWsUrl } from '@/lib/api/httpCore'
 import { GATE_SHARE_REQUEST_HEADER, GATE_SHARE_TOKEN_HEADER } from '@/lib/inbox/gateShareLink'
 import type { ScopedSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
-import type { ReactAnnotation } from '@/lib/shared/types'
+import { referenceQuery, type ReferenceSearchParams } from '@/lib/api/clients/soloClient'
+import type { MessageReference, ReferenceInput, ReferenceSearchResult } from '@/lib/api/apiTypes'
+import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
 
 export type PreviewChatMode = 'isolated' | 'main'
 export type PreviewShareScope = { runId: string; nodeId: string; soloSessionId?: string; port: number }
 export type PreviewShareLink = { url: string; expiresAt: string }
-export type PreviewShareSession = { ticket: string; chatMode: PreviewChatMode }
-export type PreviewChatRow = { id: string; role: string; text: string; annotations?: ReactAnnotation[] }
+export type PreviewShareSession = { ticket: string; chatMode: PreviewChatMode; agentName?: string }
+export type PreviewChatRow = {
+  id: string
+  role: string
+  text: string
+  at?: string
+  streaming?: boolean
+  annotations?: ReactAnnotation[]
+  images?: ClarifyImage[]
+  references?: MessageReference[]
+}
+
+export type PreviewChatMessage = {
+  text: string
+  annotations: ReactAnnotation[]
+  images: ClarifyImage[]
+  references: ReferenceInput[]
+}
 
 function managementPath(scope: PreviewShareScope) {
   const enc = encodeURIComponent
@@ -36,7 +54,7 @@ export function revokePreviewShare(scope: PreviewShareScope, chatMode: PreviewCh
 const publicPath = '/public/approvals/app'
 
 export function publicAppPreviewClient(token: string) {
-  async function request<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
+  async function request<T>(path: string, signal: AbortSignal, body?: object, decode: (response: Response) => Promise<T> = res => res.json()): Promise<T> {
     const response = await fetch(publicPath + path, {
       method: body ? 'POST' : 'GET',
       credentials: 'omit',
@@ -49,7 +67,7 @@ export function publicAppPreviewClient(token: string) {
       const error = await response.json().catch(() => null)
       throw Object.assign(new Error(error?.error || String(response.status)), { status: response.status, code: error?.code })
     }
-    return response.json()
+    return decode(response)
   }
   return {
     open: (signal: AbortSignal) => request<EmbedTicket & { directUrl: string }>('/open', signal, {}),
@@ -58,8 +76,12 @@ export function publicAppPreviewClient(token: string) {
     getModel: (signal: AbortSignal) => request<VisitModelChoice>('/model', signal),
     setModel: (signal: AbortSignal, body: object) => request<VisitModelChoice>('/model', signal, body),
     history: (signal: AbortSignal) => request<{ rows: PreviewChatRow[]; busy: boolean; model?: VisitModelChoice }>('/main-chat', signal),
-    send: (text: string, annotations: ReactAnnotation[], signal: AbortSignal) =>
-      request<{ ok: boolean }>('/main-chat', signal, { text, annotations }),
+    send: (message: PreviewChatMessage, signal: AbortSignal) =>
+      request<{ ok: boolean }>('/main-chat', signal, message),
+    searchReferences: <T>(params: ReferenceSearchParams, signal: AbortSignal) =>
+      request<ReferenceSearchResult<T>>(`/references/search?${referenceQuery(params)}`, signal),
+    image: (messageId: string, index: number, signal: AbortSignal) =>
+      request<Blob>(`/images/${encodeURIComponent(messageId)}/${index}`, signal, undefined, res => res.blob()),
     connectGuest: (ticket: string) => new WebSocket(rootWsUrl(publicPath + '/guest-chat'), ['grasp-preview-guest', ticket]),
   }
 }

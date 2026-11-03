@@ -1,7 +1,7 @@
 import type { LiveCtx, LiveEvent } from '@/lib/inbox/liveVariants'
 import type { AgentPart, Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem, ReactForm, ReactQuestion } from '@/lib/shared/types'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
-import type { AgentInteraction } from '@/lib/api/apiTypes'
+import type { AgentInteraction, ReferenceInput } from '@/lib/api/apiTypes'
 
 export const GATE_SHARE_TTL_TIERS = ['1h', '8h', '24h', '72h', '7d'] as const
 export type GateShareTTLTier = (typeof GATE_SHARE_TTL_TIERS)[number]
@@ -716,6 +716,7 @@ export const publicGateApi = {
       quote?: string
     }>
     images?: Array<{ data?: string; mimeType?: string; name?: string }>
+    references?: ReferenceInput[]
     live?: LiveEvent
     liveCtx?: LiveCtx | null
     /** Echoed in the dialogue state so the page can replace its optimistic row. */

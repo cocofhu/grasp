@@ -664,7 +664,7 @@ func splitGitHubQuery(query string) (string, []string, error) {
 // use for owner/repo: an exact repository scope beats a host scope; the first
 // equal match wins. Empty means anonymous.
 func (s *SoloService) githubToken(row *models.SoloSession, owner, repo string) string {
-	if s.sbx == nil || s.sbx.gitCredential == nil {
+	if row.AgentName == "" || s.sbx == nil || s.sbx.gitCredential == nil {
 		return ""
 	}
 	agent, err := s.sessionAgent(row)

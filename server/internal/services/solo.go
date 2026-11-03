@@ -151,10 +151,11 @@ type soloChat struct {
 }
 
 type soloTurn struct {
-	ID          string
-	Text        string
-	Images      []models.PromptImage
-	Annotations []models.ReactAnnotation `json:",omitempty"`
+	ID            string
+	Text          string
+	Images        []models.PromptImage
+	Annotations   []models.ReactAnnotation `json:",omitempty"`
+	PreviewShared bool                     `json:",omitempty"`
 	// References were validated at send time; Solo anchors are pinned when
 	// the turn begins.
 	References []models.MessageReference `json:",omitempty"`
@@ -466,7 +467,7 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 		s.projects.Touch(p.ID)
 	}
 	if strings.TrimSpace(in.Text) != "" || len(in.Images) > 0 || len(references) > 0 {
-		if _, err := s.enqueueTurn(row.ID, in.Text, in.Images, references); err != nil {
+		if _, err := s.enqueueTurn(row.ID, &soloTurn{Text: in.Text, Images: in.Images, References: references}); err != nil {
 			log.Warn().Err(err).Str("session", row.ID).Msg("solo first message enqueue failed")
 		}
 	}
@@ -672,6 +673,15 @@ func (s *SoloService) MessageHasAttachment(sessionID, messageID, ref string) boo
 		}
 	}
 	return false
+}
+
+// PreviewMessageAttachments reads attachments explicitly submitted to the shared chat.
+func (s *SoloService) PreviewMessageAttachments(sessionID, messageID string) []models.PromptImage {
+	var message models.SoloMessage
+	if s.db.Select("images").Where("session_id = ? AND id = ? AND preview_shared = ?", sessionID, messageID, true).First(&message).Error != nil {
+		return nil
+	}
+	return message.Images
 }
 
 // PreviewTranscript combines saved messages with the current text stream for
@@ -1255,35 +1265,54 @@ func (s *SoloService) SendWithReferences(id, user, text string, images []models.
 	if err != nil {
 		return 0, err
 	}
+	return s.sendSoloTurn(row, &soloTurn{Text: text, Images: images, Annotations: picks}, refs)
+}
+
+// SendPreview queues a share turn with references already validated without the owner's credentials.
+func (s *SoloService) SendPreview(id, user, text string, images []models.PromptImage, refs []models.MessageReference, picks []models.ReactAnnotation) error {
+	row, err := s.Require(id, user)
+	if err != nil {
+		return err
+	}
+	_, err = s.sendSoloTurn(row, &soloTurn{Text: text, Images: images, References: refs, Annotations: picks, PreviewShared: true}, nil)
+	return err
+}
+
+func (s *SoloService) sendSoloTurn(row *models.SoloSession, turn *soloTurn, inputs []ReferenceInput) (int, error) {
 	if row.Status == models.SoloStatusClosed {
 		return 0, soloErr(http.StatusConflict, "session_closed", "会话已关闭，请先重新启动")
 	}
 	if row.Status == models.SoloStatusError {
 		return 0, soloErr(http.StatusConflict, "session_error", "沙箱不可用，请重新启动会话")
 	}
-	text = strings.TrimSpace(text)
-	annotations := models.NormalizePreviewPicks(picks, 8)
-	if text == "" && len(images) == 0 && len(refs) == 0 && len(annotations) == 0 {
+	turn.Text = strings.TrimSpace(turn.Text)
+	turn.Annotations = models.NormalizePreviewPicks(turn.Annotations, 8)
+	if turn.Text == "" && len(turn.Images) == 0 && len(turn.References) == 0 && len(turn.Annotations) == 0 && len(inputs) == 0 {
 		return 0, soloErr(http.StatusBadRequest, "content_required", "消息不能为空")
 	}
-	references, err := s.prepareReferences(context.Background(), row, refs)
-	if err != nil {
-		return 0, err
+	if len(inputs) > 0 {
+		references, err := s.prepareReferences(context.Background(), row, inputs)
+		if err != nil {
+			return 0, err
+		}
+		turn.References = references
 	}
-	return s.enqueueTurn(id, text, images, references, annotations...)
+	return s.enqueueTurn(row.ID, turn)
 }
 
 // enqueueTurn queues a turn whose references are already validated.
-func (s *SoloService) enqueueTurn(id, text string, images []models.PromptImage, references []models.MessageReference, annotations ...models.ReactAnnotation) (int, error) {
-	images, err := blob.IngestPromptImages(context.Background(), s.blobs, images)
+func (s *SoloService) enqueueTurn(id string, turn *soloTurn) (int, error) {
+	images, err := blob.IngestPromptImages(context.Background(), s.blobs, turn.Images)
 	if err != nil {
 		return 0, fmt.Errorf("ingest attachments: %w", err)
 	}
 	if s.chat == nil {
 		return 0, errors.New("solo chat unavailable")
 	}
-	c := s.acquire(id)
-	return c.sess.Enqueue(&soloTurn{ID: uuid.NewString(), Text: strings.TrimSpace(text), Images: images, Annotations: annotations, References: references}, nil)
+	turn.ID = uuid.NewString()
+	turn.Text = strings.TrimSpace(turn.Text)
+	turn.Images = images
+	return s.acquire(id).sess.Enqueue(turn, nil)
 }
 
 const (
@@ -1514,7 +1543,7 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	s := c.svc
 	started := time.Now()
-	userMsg := models.SoloMessage{ID: q.ID, SessionID: c.id, Role: "user", Content: q.Text, Images: q.Images, Annotations: q.Annotations}
+	userMsg := models.SoloMessage{ID: q.ID, SessionID: c.id, Role: "user", Content: q.Text, Images: q.Images, Annotations: q.Annotations, PreviewShared: q.PreviewShared}
 	if len(q.References) > 0 {
 		if row, err := s.load(c.id); err == nil {
 			userMsg.References = s.pinReferences(row, q.References)
