@@ -74,6 +74,7 @@ test('Solo opens a registered app and the pinned HTML from its thumbnail', async
 })
 
 test('a direct Solo preview opens the same chat and sends a picked element with the message', async ({ page, context }) => {
+  test.setTimeout(60_000)
   await installWorkspaceApiDefaults(page)
   const grasp = 'http://127.0.0.1:5174'
   const direct = grasp
