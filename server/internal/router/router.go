@@ -308,10 +308,12 @@ func New(h *handlers.Handlers) *gin.Engine {
 	// no cf_session, which a cross-site iframe never carries). A ticket is redeemed for
 	// a run/node-bound bearer that the /public/approvals chat endpoints accept.
 	r.GET("/embed/runs/:runId/nodes/:nodeId/chat", h.EmbedChatPage)
+	r.GET("/embed/runs/:runId/nodes/:nodeId/shared-chat", h.EmbedChatPage)
 	r.GET("/embed/runs/:runId/nodes/:nodeId/artifacts", h.EmbedChatPage)
 	r.GET("/embed/runs/:runId/nodes/:nodeId/image", h.EmbedChatPage)
 	r.GET("/embed/runs/:runId/nodes/:nodeId/demo", h.EmbedChatPage)
 	r.POST("/embed-api/session", h.RedeemEmbedSession)
+	r.GET("/embed-api/origin/:runId", h.EmbedTicketOrigin)
 	r.GET("/embed-api/solo/:runId/chat", h.SoloEmbedChat)
 	soloEmbed := r.Group("/embed-api/solo/:runId", h.AuthorizeSoloEmbed)
 	soloEmbed.GET("", h.GetSoloSession)
@@ -395,6 +397,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.GET("", h.PublicGateApprovalPage)
 		pub.GET("/", h.PublicGateApprovalPage)
 		pub.GET("/app", h.PublicGateApprovalPage)
+		pub.POST("/app/open", h.PublicAppPreviewOpen)
 		pub.POST("/app/session", h.PublicAppPreviewSession)
 		pub.GET("/app/main-chat", h.PublicAppPreviewMainChat)
 		pub.POST("/app/main-chat", h.PublicAppPreviewMainChat)

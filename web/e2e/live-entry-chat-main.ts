@@ -15,6 +15,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/embed/runs/:runId/nodes/:nodeId/chat', component: EmbedNodeChatView },
+    { path: '/embed/runs/:runId/nodes/:nodeId/shared-chat', component: EmbedNodeChatView, props: { shared: true } },
     { path: '/public/approvals/app', component: () => import('../src/views/PublicAppPreviewView.vue') },
   ],
 })

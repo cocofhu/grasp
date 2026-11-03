@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
@@ -65,6 +66,10 @@ func (h *Handlers) ManageAppPreviewShare(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
+	if h.directAppPreviewURL(runID, nodeID, body.Port) == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "no direct preview"})
+		return
+	}
 	iteration := 0
 	if body.ChatMode == models.PreviewChatMain && sb.Purpose != services.SandboxPurposeSolo {
 		state, active := h.workflowPreviewDialogue(runID, nodeID)
@@ -80,6 +85,15 @@ func (h *Handlers) ManageAppPreviewShare(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handlers) directAppPreviewURL(runID, nodeID string, port int) string {
+	for _, reg := range h.MCP.ListPreviewPorts(runID, nodeID) {
+		if reg.Port == port && reg.Mode == "direct" && originOf(reg.DirectURL) != "" {
+			return reg.DirectURL
+		}
+	}
+	return ""
 }
 
 func (h *Handlers) appPreviewSandbox(runID, nodeID string, port int) (models.Sandbox, bool) {
@@ -115,7 +129,14 @@ func (h *Handlers) publicAppShare(c *gin.Context) (*models.GateShareLink, models
 		c.JSON(http.StatusForbidden, gin.H{"error": "unavailable"})
 		return nil, models.Sandbox{}
 	}
-	link, ok := h.GateShare.LookupAppPreview(c.GetHeader(headerShareToken))
+	token := c.GetHeader(headerShareToken)
+	link, ok := h.GateShare.LookupAppPreview(token)
+	if !ok && h.Embed != nil {
+		if claims, found := h.Embed.LookupSession(token); found && claims.Kind == models.EmbedKindAppPreview {
+			link, ok = h.GateShare.LookupAppPreviewByHash(claims.ShareTokenHash)
+			ok = ok && link.RunID == claims.RunID && link.NodeID == claims.NodeID
+		}
+	}
 	if ok {
 		if sb, active := h.sharedAppPreviewSandbox(link); active {
 			return link, sb
@@ -123,6 +144,45 @@ func (h *Handlers) publicAppShare(c *gin.Context) (*models.GateShareLink, models
 	}
 	c.JSON(http.StatusGone, gin.H{"error": "share link inactive"})
 	return nil, models.Sandbox{}
+}
+
+// PublicAppPreviewOpen exchanges the share link for a one-shot drawer ticket.
+// Only the short-lived ticket crosses to the app origin.
+func (h *Handlers) PublicAppPreviewOpen(c *gin.Context) {
+	if !h.publicRateLimit(c, gateshare.RateBucketTicket) {
+		return
+	}
+	if h.GateShare == nil || h.Embed == nil || !h.checkPublicCSRF(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "unavailable"})
+		return
+	}
+	link, ok := h.GateShare.LookupAppPreview(c.GetHeader(headerShareToken))
+	if !ok {
+		c.JSON(http.StatusGone, gin.H{"error": "share link inactive"})
+		return
+	}
+	if _, active := h.sharedAppPreviewSandbox(link); !active {
+		c.JSON(http.StatusGone, gin.H{"error": "share link inactive"})
+		return
+	}
+	direct := h.directAppPreviewURL(link.RunID, link.NodeID, link.PreviewPort)
+	if direct == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "no direct preview"})
+		return
+	}
+	claims := embed.Claims{
+		Kind: models.EmbedKindAppPreview, RunID: link.RunID, NodeID: link.NodeID,
+		ShareTokenHash: link.TokenHash, GraspOrigin: h.embedGraspOrigin(c),
+	}
+	ticket, exp, err := h.Embed.IssueTicket(claims)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "issue failed"})
+		return
+	}
+	c.JSON(http.StatusOK, struct {
+		embedTicketResponse
+		DirectURL string `json:"directUrl"`
+	}{embedTicketResponse{Ticket: ticket, RunID: claims.RunID, NodeID: claims.NodeID, ExpiresAt: exp}, direct})
 }
 
 func (h *Handlers) PublicAppPreviewSession(c *gin.Context) {

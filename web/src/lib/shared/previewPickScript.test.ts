@@ -296,6 +296,15 @@ describe('preview-pick.js chat drawer', () => {
     expect(next.drawerOpen()).toBe(true)
   })
 
+  it('does not fall back to a saved owner drawer when a shared ticket fails', async () => {
+    const savedEmbed = JSON.stringify({ origin: GRASP, run: 'run-1', node: 'ap1', open: true })
+    const p = openPage(body, { hash: hash + '&shared=1', embedReply: null, savedEmbed })
+    await settle()
+    expect(p.frame()).toBeNull()
+    expect(p.win.localStorage.getItem('__grasp_embed')).toBe(savedEmbed)
+    expect(p.win.sessionStorage.getItem('__grasp_embed')).toBe('null')
+  })
+
   it('stays without a drawer when Grasp does not vouch for the ticket', async () => {
     for (const bad of [null, { ...reply, runId: 'run-2' }, { ...reply, origin: 'https://grasp.example/x' }]) {
       const p = openPage(body, { hash, embedReply: bad })

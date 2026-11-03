@@ -11,30 +11,41 @@ import (
 
 // EmbedOriginPath lets the pick script learn which Grasp origin a chat-drawer
 // ticket belongs to. The ticket arrives in the page URL, so it cannot vouch
-// for its own origin; the answer comes from Grasp over the run's MCP
-// credentials instead.
+// for its own origin; the answer comes from the Grasp server configured by
+// the sandbox bootstrap.
 const EmbedOriginPath = "/__grasp/embed-origin"
 
 const embedLookupTimeout = 5 * time.Second
 
-// EmbedLookup resolves drawer tickets against Grasp. A zero value (no run
-// credentials in the sandbox) answers 404, and the script runs without a
-// drawer.
+// EmbedLookup resolves drawer tickets against Grasp. A zero value answers 404.
 type EmbedLookup struct {
 	// RunURL is GRASP_ARTIFACT_URL: <grasp>/mcp/runs/<runId>.
 	RunURL string
 	Token  string
-	Client *http.Client
+	// Solo sandboxes can have artifact MCP configured only inside the agent.
+	// The runtime download URL still identifies the Grasp server.
+	RuntimeURL string
+	RunID      string
+	Client     *http.Client
 }
 
 type embedOrigin struct {
 	Origin string `json:"origin"`
 	RunID  string `json:"runId"`
 	NodeID string `json:"nodeId"`
+	Kind   string `json:"kind,omitempty"`
 }
 
-func (l EmbedLookup) configured() bool {
-	return strings.TrimSpace(l.RunURL) != "" && strings.TrimSpace(l.Token) != ""
+func (l EmbedLookup) endpoint() (target, token string) {
+	if run, token := strings.TrimSpace(l.RunURL), strings.TrimSpace(l.Token); run != "" && token != "" {
+		return strings.TrimRight(run, "/") + "/embed-origin", token
+	}
+	runtime, err := url.Parse(strings.TrimSpace(l.RuntimeURL))
+	runID := strings.TrimSpace(l.RunID)
+	if err != nil || runtime.Host == "" || (runtime.Scheme != "http" && runtime.Scheme != "https") || runID == "" {
+		return "", ""
+	}
+	return runtime.Scheme + "://" + runtime.Host + "/embed-api/origin/" + url.PathEscape(runID), ""
 }
 
 func (l EmbedLookup) serve(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +56,7 @@ func (l EmbedLookup) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	ticket := strings.TrimSpace(r.URL.Query().Get("ticket"))
 	node := strings.TrimSpace(r.URL.Query().Get("node"))
-	if !l.configured() || ticket == "" || node == "" {
+	if ticket == "" || node == "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -59,13 +70,18 @@ func (l EmbedLookup) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (l EmbedLookup) lookup(r *http.Request, ticket, node string) (embedOrigin, bool) {
+	target, token := l.endpoint()
+	if target == "" {
+		return embedOrigin{}, false
+	}
 	q := url.Values{"ticket": {ticket}, "nodeId": {node}}
-	target := strings.TrimRight(strings.TrimSpace(l.RunURL), "/") + "/embed-origin?" + q.Encode()
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target+"?"+q.Encode(), nil)
 	if err != nil {
 		return embedOrigin{}, false
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(l.Token))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	client := l.Client
 	if client == nil {
 		client = &http.Client{Timeout: embedLookupTimeout}
@@ -82,7 +98,7 @@ func (l EmbedLookup) lookup(r *http.Request, ticket, node string) (embedOrigin, 
 	if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&got) != nil {
 		return embedOrigin{}, false
 	}
-	if got.NodeID != node || !validOrigin(got.Origin) {
+	if got.NodeID != node || (l.RunID != "" && got.RunID != l.RunID) || !validOrigin(got.Origin) {
 		return embedOrigin{}, false
 	}
 	return got, true

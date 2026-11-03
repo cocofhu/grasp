@@ -20,7 +20,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			hn := newHarness(t)
 			hn.h.Preview = services.NewPreviewService(hn.db, nil)
+			hn.h.Preview.SetAgents(hn.h.Agents)
 			hn.host.SetPreviewStore(hn.h.Preview)
+			hn.host.SetPreviewSandboxOps(hn.h.Preview)
 			// Use a plain HTTP app upstream. Gateway health is covered by the
 			// registered preview proxy integration tests.
 			hn.h.Sbx = nil
@@ -49,6 +51,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				t.Fatal(err)
 			}
 			if solo {
+				if err := hn.h.Agents.Save(services.Agent{Name: sb.Profile, AcpBackend: services.AcpBackendCursor, Capabilities: testPreviewCaps}); err != nil {
+					t.Fatal(err)
+				}
 				hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
 				if err := hn.db.Create(&models.SoloSession{ID: sb.ThreadID, UserID: "admin", AgentName: sb.Profile, SandboxID: sb.ID, Status: models.SoloStatusRunning}).Error; err != nil {
 					t.Fatal(err)
@@ -56,6 +61,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				if err := hn.db.Create(&models.SoloMessage{ID: "solo-history", SessionID: sb.ThreadID, Role: "user", Content: mainHistory}).Error; err != nil {
 					t.Fatal(err)
 				}
+			}
+			if !solo {
+				seedDirectPreview(t, hn, runID, nodeID)
 			}
 			if err := hn.h.Preview.UpsertPreviewPort(mcp.PreviewPort{RunID: runID, NodeID: nodeID, Port: 8080, Host: app.URL, Healthy: true}); err != nil {
 				t.Fatal(err)
@@ -76,6 +84,39 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				return map[string]string{headerShareToken: tokens[mode], headerShareRequest: "1", "Origin": "http://" + publicHost}
 			}
 			const path = "/public/approvals/app"
+			for _, mode := range []string{"isolated", "main"} {
+				w := hn.doEmbed(http.MethodPost, path+"/open", map[string]any{}, headers(mode))
+				opened := parseJSON(t, w)
+				ticket, _ := opened["ticket"].(string)
+				if w.Code != http.StatusOK || opened["directUrl"] != app.URL+"/" || ticket == "" || strings.Contains(w.Body.String(), tokens[mode]) {
+					t.Fatalf("open %s: %d %s", mode, w.Code, w.Body)
+				}
+				res := redeem(t, hn, ticket)
+				token, _ := res["token"].(string)
+				if token == "" || res["kind"] != models.EmbedKindAppPreview {
+					t.Fatalf("share drawer claims: %v", res)
+				}
+				header := headers(mode)
+				header[headerShareToken] = token
+				session := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, header)
+				if session.Code != http.StatusOK || parseJSON(t, session)["chatMode"] != mode {
+					t.Fatalf("drawer session: %d %s", session.Code, session.Body)
+				}
+				want := http.StatusForbidden
+				if mode == "main" {
+					want = http.StatusOK
+				}
+				if w := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, header); w.Code != want {
+					t.Fatalf("drawer history %s: %d", mode, w.Code)
+				}
+				if w := hn.doEmbed(http.MethodPost, path+"/open", map[string]any{}, header); w.Code != http.StatusGone {
+					t.Fatalf("drawer token minted a new ticket: %d", w.Code)
+				}
+				if w := hn.doEmbed(http.MethodGet, "/embed-api/solo/"+runID+"/messages", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
+					t.Fatalf("share token reached owner history: %d", w.Code)
+				}
+				tokens[mode+"-drawer"] = token
+			}
 			if w := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, headers("isolated")); w.Code != http.StatusForbidden {
 				t.Fatalf("isolated link can read main chat: %d", w.Code)
 			}
@@ -108,6 +149,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			}
 			if w := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, headers("isolated")); w.Code != http.StatusGone {
 				t.Fatalf("revoked exchange: %d", w.Code)
+			}
+			if w := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, headers("isolated-drawer")); w.Code != http.StatusGone {
+				t.Fatalf("revoked drawer: %d", w.Code)
 			}
 			if w := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, headers("main")); w.Code != http.StatusOK {
 				t.Fatalf("revoking isolated affected main: %d", w.Code)

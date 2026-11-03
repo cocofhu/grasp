@@ -35,8 +35,10 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "preview-inject: listen %s → %s (switch file %q) script %s\n", opt.Listen, opt.Upstream, opt.UpstreamFile, opt.ScriptURL)
 	h := previewinject.NewSwitchableHandler(upstream, opt.UpstreamFile, opt.ScriptURL, previewinject.EmbedLookup{
-		RunURL: os.Getenv("GRASP_ARTIFACT_URL"),
-		Token:  os.Getenv("GRASP_ARTIFACT_TOKEN"),
+		RunURL:     os.Getenv("GRASP_ARTIFACT_URL"),
+		Token:      os.Getenv("GRASP_ARTIFACT_TOKEN"),
+		RuntimeURL: os.Getenv("GRASP_RUNTIME_URL"),
+		RunID:      os.Getenv("GRASP_RUN_ID"),
 	})
 	if err := http.ListenAndServe(opt.Listen, h); err != nil {
 		fmt.Fprintf(os.Stderr, "preview-inject: %v\n", err)

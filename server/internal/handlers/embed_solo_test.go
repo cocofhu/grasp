@@ -57,9 +57,15 @@ func TestSoloEmbedBindsToCurrentOwnedSandbox(t *testing.T) {
 		t.Fatalf("ticket: %d %s", issued.Code, issued.Body)
 	}
 	ticket, _ := parseJSON(t, issued)["ticket"].(string)
-	runToken := hn.host.RegisterRun(runID)
-	origin := hn.doEmbed(http.MethodGet, "/mcp/runs/"+runID+"/embed-origin?nodeId=solo&ticket="+ticket, nil, bearerHeader(runToken))
-	if origin.Code != http.StatusOK {
+	originPath := "/embed-api/origin/" + runID
+	for _, path := range []string{originPath + "?ticket=" + ticket, originPath + "?nodeId=other&ticket=" + ticket,
+		"/embed-api/origin/other?nodeId=solo&ticket=" + ticket} {
+		if w := hn.doEmbed(http.MethodGet, path, nil, nil); w.Code != http.StatusNotFound {
+			t.Fatalf("unscoped injector lookup: %d", w.Code)
+		}
+	}
+	origin := hn.doEmbed(http.MethodGet, originPath+"?nodeId=solo&ticket="+ticket, nil, nil)
+	if origin.Code != http.StatusOK || parseJSON(t, origin)["kind"] != models.EmbedKindSolo {
 		t.Fatalf("injector origin: %d %s", origin.Code, origin.Body)
 	}
 	claims := redeem(t, hn, ticket)

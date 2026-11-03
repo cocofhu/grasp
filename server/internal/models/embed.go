@@ -5,9 +5,10 @@ import "time"
 // Embed credential kinds. A session embed acts as the logged-in user who
 // issued the ticket; a share embed acts within one gate/review share link.
 const (
-	EmbedKindSession = "session"
-	EmbedKindShare   = "share"
-	EmbedKindSolo    = "solo"
+	EmbedKindSession    = "session"
+	EmbedKindShare      = "share"
+	EmbedKindSolo       = "solo"
+	EmbedKindAppPreview = "app-preview"
 )
 
 // EmbedTicket is a one-shot credential placed in the preview page URL

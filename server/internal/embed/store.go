@@ -94,7 +94,7 @@ func validClaims(c Claims) bool {
 	switch c.Kind {
 	case models.EmbedKindSession, models.EmbedKindSolo:
 		return strings.TrimSpace(c.Username) != ""
-	case models.EmbedKindShare:
+	case models.EmbedKindShare, models.EmbedKindAppPreview:
 		return strings.TrimSpace(c.ShareTokenHash) != ""
 	default:
 		return false
