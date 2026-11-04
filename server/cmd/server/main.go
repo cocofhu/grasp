@@ -623,6 +623,7 @@ func main() {
 	// client makes the in-flight turn fail and discard its sandbox, while the
 	// next process reattaches running agent sandboxes and resumes their nodes.
 	stopSweeper()
+	codexLoginMgr.Stop()
 	channelMgr.StopAll()
 	browserSvc.Stop()
 

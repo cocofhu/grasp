@@ -111,7 +111,7 @@ func (a *AuthFile) ApplyTokens(t Tokens, now time.Time) {
 
 // Encode renders auth.json the way the Codex CLI writes it (indented JSON).
 func (a *AuthFile) Encode() (string, error) {
-	top := make(map[string]json.RawMessage, len(a.top)+1)
+	top := make(map[string]json.RawMessage, len(a.top))
 	for k, v := range a.top {
 		top[k] = v
 	}

@@ -19,6 +19,14 @@ func modelBindingFingerprint(agent Agent, env map[string]string) string {
 	if agent.ModelBinding == nil {
 		return ""
 	}
+	secret := env[runtime.EnvModelAPIKey] + env[runtime.CredentialEnvKeyForBackend(agent.AcpBackend)]
+	if runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendCodex && env[runtime.EnvModelConnection] == "" && env[runtime.EnvModelCredentialID] != "" {
+		// The hub aligns this credential's login before every turn, including
+		// platform renewals and user re-logins. Its rotating tokens are not a
+		// route change. Resolution still rejects revoked/cleared credentials,
+		// and the credential ID, model and configuration remain fingerprinted.
+		secret = ""
+	}
 	data, _ := json.Marshal(struct {
 		Backend    string                `json:"backend"`
 		Binding    *modelrouting.Binding `json:"binding"`
@@ -29,7 +37,7 @@ func modelBindingFingerprint(agent Agent, env map[string]string) string {
 		Secret     string                `json:"secret"`
 	}{agent.AcpBackend, agent.ModelBinding, env[runtime.EnvModelConnection], env[runtime.EnvModelCredentialID], env[runtime.EnvACPBridgeModel],
 		env[runtime.EnvConfiguredModels],
-		env[runtime.EnvModelAPIKey] + env[runtime.CredentialEnvKeyForBackend(agent.AcpBackend)]})
+		secret})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }

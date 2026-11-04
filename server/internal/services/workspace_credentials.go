@@ -296,6 +296,20 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 }
 
 func (s *CredentialService) update(id string, in CredentialInput, metadata map[string]any) (CredentialView, error) {
+	// A renewal can rotate the secret after this request reads it. Rebuild the
+	// edit from the current row on conflict instead of restoring the old login.
+	for range 5 {
+		view, err := s.updateOnce(id, in, metadata)
+		if !errors.Is(err, errCredentialUpdateConflict) {
+			return view, err
+		}
+	}
+	return CredentialView{}, errCredentialUpdateConflict
+}
+
+var errCredentialUpdateConflict = errors.New("credential changed during update; please retry")
+
+func (s *CredentialService) updateOnce(id string, in CredentialInput, metadata map[string]any) (CredentialView, error) {
 	var row models.Credential
 	if err := s.db.Where("id = ?", strings.TrimSpace(id)).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -306,6 +320,7 @@ func (s *CredentialService) update(id string, in CredentialInput, metadata map[s
 	if !currentCredential(row) {
 		return CredentialView{}, ErrCredentialNotFound
 	}
+	previousValue, previousRevision := row.ValueEnc, row.SecretRevision
 	if in.Purpose != "" || row.Purpose != "" {
 		purpose, issuer, tool, kind := credentialDomain(row)
 		if in.Purpose != "" && in.Purpose != purpose {
@@ -422,8 +437,14 @@ func (s *CredentialService) update(id string, in CredentialInput, metadata map[s
 		row.SecretRevision = nextSecretRevision(row.SecretRevision)
 	}
 	row.UpdatedAt = time.Now()
-	if err := s.db.Save(&row).Error; err != nil {
-		return CredentialView{}, err
+	result := s.db.Model(&models.Credential{}).
+		Where("id = ? AND value_enc = ? AND secret_revision = ?", row.ID, previousValue, previousRevision).
+		Select("*").Omit("id", "created_at").Updates(&row)
+	if result.Error != nil {
+		return CredentialView{}, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return CredentialView{}, errCredentialUpdateConflict
 	}
 	s.notifyCodexLogin(row, row.SecretRevision != revision)
 	return credentialView(row), nil
@@ -460,14 +481,15 @@ func (s *CredentialService) Clear(id string) error {
 	if !currentCredential(row) {
 		return ErrCredentialNotFound
 	}
-	row.ValueEnc = ""
-	row.Metadata = nil
-	row.SecretRevision = nextSecretRevision(row.SecretRevision)
-	row.RevokedAt = nil
-	row.Enabled = true
-	row.UpdatedAt = time.Now()
-	if err := s.db.Save(&row).Error; err != nil {
-		return err
+	result := s.db.Model(&models.Credential{}).Where("id = ?", id).Updates(map[string]any{
+		"value_enc": "", "metadata": nil, "secret_revision": gorm.Expr("secret_revision + 1"),
+		"revoked_at": nil, "enabled": true, "updated_at": time.Now(),
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrCredentialNotFound
 	}
 	s.forgetCodexLogin(id)
 	return nil

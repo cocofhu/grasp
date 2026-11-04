@@ -135,13 +135,16 @@ const editing = reactive<Record<string, boolean>>({})
 const saving = reactive<Record<string, boolean>>({})
 const removing = reactive<Record<string, boolean>>({})
 const showCreate = ref(false)
+const reloginTarget = ref<CredentialItem | null>(null)
+const panel = ref<HTMLElement | null>(null)
 const creating = ref(false)
-const editorActive = computed(() => setupStarting.value || showCreate.value || modelEditorOpen.value || connectionEditorOpen.value || Object.values(editing).some(Boolean))
+const editorActive = computed(() => setupStarting.value || showCreate.value || !!reloginTarget.value || modelEditorOpen.value || connectionEditorOpen.value || Object.values(editing).some(Boolean))
 watch(editorActive, (active) => emit('editing', active))
 const createStep = ref<1 | 2 | 3>(1)
 const createKind = ref<CredentialKindId | 'model_api' | ''>('')
 const createAlias = ref('')
 const createSecret = ref('')
+const createSecretElement = ref<HTMLInputElement | HTMLTextAreaElement | null>(null)
 const createHost = ref('')
 const createKnownHosts = ref('')
 const hostDrafts = reactive<Record<string, string>>({})
@@ -193,7 +196,6 @@ const codexDeviceLocked = computed(() => codexDeviceActive.value && ['starting',
 watch(codexDeviceEnabled, (enabled) => { if (enabled && createKind.value === 'codex' && !createSecret.value) createAuthMode.value = 'login' })
 const anyDeviceActive = computed(() => deviceLoginActive.value || codexDeviceActive.value)
 const anyDeviceLocked = computed(() => deviceLoginLocked.value || codexDeviceLocked.value)
-const reloginTarget = ref<CredentialItem | null>(null)
 const reloginState = ref<GitHubDeviceLoginState | CodexDeviceLoginState>('idle')
 const reloginIsCodex = computed(() => !!reloginTarget.value && isCodexLogin(reloginTarget.value))
 const reloginDone = computed(() => reloginState.value === 'authorized' || reloginState.value === 'success')
@@ -548,6 +550,21 @@ function closeRelogin() {
   reloginTarget.value = null
 }
 
+async function pasteCodexLogin() {
+  createAuthMode.value = 'paste'
+  await nextTick()
+  createSecretElement.value?.focus()
+}
+
+async function pasteCodexRelogin() {
+  const item = reloginTarget.value
+  closeRelogin()
+  if (!item) return
+  startEdit(item)
+  await nextTick()
+  panel.value?.querySelector<HTMLElement>(`[data-testid="workspace-credential-input-${item.id}"]`)?.focus()
+}
+
 function reloginAuthorized(out: GitHubDeviceLoginPoll) {
   deviceCredentialSaved(out)
   if (!out.scopeWarning) deviceCloseTimer = window.setTimeout(() => { if (reloginTarget.value) closeRelogin() }, 1200)
@@ -723,6 +740,7 @@ async function save(item: CredentialItem) {
       enabled: item.enabled,
     })
     updateItems(saved)
+    if (isCodexLogin(saved)) void refreshCodexStatus()
     emit('credentialSaved', saved)
     emit('changed')
     toast.success(t('pages.workspace.credentials.saved'))
@@ -839,6 +857,7 @@ watch(showCreate, (open) => {
 
 <template>
   <div
+    ref="panel"
     class="flex min-h-0 flex-1 flex-col"
     :class="inline ? 'credentials-inline' : 'credentials-page overflow-hidden'"
     data-testid="workspace-credentials-panel"
@@ -895,7 +914,7 @@ watch(showCreate, (open) => {
 
         <nav v-if="!view" v-show="(!inline || !editorActive) && tabs.length > 1" class="mb-6 mt-5 flex flex-wrap gap-1 border-b border-line" role="tablist" :aria-label="routingCopy.credentials"><button v-for="tab in tabs" :key="tab" type="button" role="tab" class="border-b-2 px-3 py-3 text-[13px] transition" :class="activeTab === tab ? 'border-accent font-semibold text-accent-2' : 'border-transparent text-txt3 hover:text-txt'" :aria-selected="activeTab === tab" :data-testid="`credentials-tab-${tab}`" @click="activeTab = tab"><span class="credentials-tab-label">{{ tab === 'credentials' ? routingCopy.credentials : routingCopy.modelsTab }}</span><span v-if="tabCount(tab) !== undefined" class="credentials-tab-count" :data-testid="`credentials-tab-count-${tab}`">{{ tabCount(tab) }}</span></button></nav>
         <div v-if="activeTab === 'credentials'">
-        <div v-show="!inline || !connectionEditorOpen">
+        <div v-show="!inline || (!connectionEditorOpen && !reloginTarget)">
         <SettingsStatStrip v-if="!inline" class="mb-6" :items="credentialStats" data-testid="workspace-credential-stats" />
         <div v-if="!orderedItems.length" class="credentials-empty">
           <Icon name="key" :size="28" class="mb-3 text-txt3" aria-hidden="true" />
@@ -1195,6 +1214,7 @@ watch(showCreate, (open) => {
               @state="codexDeviceState = $event"
               @success="createCodexSuccess"
               @alias-taken="deviceAliasTaken"
+              @paste="pasteCodexLogin"
             />
             <template v-if="createKind === 'model_api'">
               <label class="block"><span class="label">{{ routingCopy.provider }}</span><ModelProviderSelect :model-value="createIssuer" :disabled="!!savedCredential" data-testid="model-credential-issuer" @update:model-value="selectIssuer" /></label>
@@ -1209,6 +1229,7 @@ watch(showCreate, (open) => {
               </span>
               <textarea
                 v-if="selectedKind && (selectedKind.secret === 'multiline' || selectedKind.secret === 'loginFile')"
+                ref="createSecretElement"
                 v-model="createSecret"
                 :disabled="!!savedCredential"
                 rows="6"
@@ -1220,6 +1241,7 @@ watch(showCreate, (open) => {
               />
               <input
                 v-else
+                ref="createSecretElement"
                 v-model="createSecret"
                 :disabled="!!savedCredential"
                 :type="revealSecret ? 'text' : 'password'"
@@ -1318,6 +1340,7 @@ watch(showCreate, (open) => {
         auto-start
         @state="reloginState = $event"
         @success="reloginCodexSuccess"
+        @paste="pasteCodexRelogin"
       />
       <GitHubDeviceLoginCard
         v-else-if="reloginTarget"

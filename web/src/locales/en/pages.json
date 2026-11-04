@@ -1411,7 +1411,7 @@
           "denied": "Sign-in was denied; no credential was saved.",
           "notEnabled": "Device-code sign-in is off for this ChatGPT account. Turn it on in ChatGPT security settings, or paste the login file instead.",
           "retry": "Get a new code",
-          "footer": "The platform keeps the full login and renews it; sandboxes only get a copy without the refresh_token.",
+          "footer": "Your login is stored encrypted in this workspace and used only by the selected Codex model configuration.",
           "saved": "Codex credential saved with device-code sign-in",
           "pasteHint": "Paste the full contents of ~/.codex/auth.json on your computer (it must include refresh_token). The platform renews it after saving; stop using this login for codex on your computer to avoid renewal conflicts.",
           "authMethodTag": "Device-code sign-in",

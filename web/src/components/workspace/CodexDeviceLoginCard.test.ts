@@ -94,6 +94,27 @@ describe('CodexDeviceLoginCard', () => {
     wrapper.unmount()
   })
 
+  it('clears copy feedback when a retry issues a different code', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) }, configurable: true })
+    mocks.poll.mockResolvedValueOnce({ status: 'expired' })
+    const wrapper = mountCard()
+    await wrapper.get('[data-testid="codex-device-start"]').trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(4500)
+    await wrapper.get('[data-testid="codex-device-copy"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="codex-device-copy"]').text()).toContain('Copy failed')
+    // Expiry arrives before the two-second clipboard feedback timer finishes.
+    await vi.advanceTimersByTimeAsync(500)
+    mocks.start.mockResolvedValueOnce({ ...session, userCode: 'WXYZ-5678' })
+    await wrapper.get('[data-testid="codex-device-retry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="codex-device-code"]').text()).toBe('WXYZ5678')
+    expect(wrapper.get('[data-testid="codex-device-copy"]').text()).toBe(pages.pages.workspace.credentials.codexDevice.copyCode)
+    wrapper.unmount()
+  })
+
   it.each([
     [{ status: 'expired' }, 'expired'],
     [{ status: 'denied' }, 'denied'],

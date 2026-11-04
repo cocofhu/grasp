@@ -81,14 +81,16 @@ type CodexLoginManager struct {
 	interval time.Duration
 	now      func() time.Time
 
-	mu      sync.Mutex
-	flights map[string]*codexFlight
-	states  map[string]*codexLoginState
-	unsaved map[string]codexUnsaved
+	mu       sync.Mutex
+	flights  map[string]*codexFlight
+	states   map[string]*codexLoginState
+	unsaved  map[string]codexUnsaved
+	stopping bool
 
-	bg     sync.WaitGroup
-	cancel context.CancelFunc
-	loop   sync.WaitGroup
+	bg        sync.WaitGroup
+	refreshes sync.WaitGroup
+	cancel    context.CancelFunc
+	loop      sync.WaitGroup
 }
 
 // NewCodexLoginManager wires the manager as the hub's login source and the
@@ -116,9 +118,15 @@ func newCodexLoginManager(creds *CredentialService, hub *runtime.CodexLoginHub, 
 
 // Start runs the renewal loop until Stop or ctx ends.
 func (m *CodexLoginManager) Start(ctx context.Context) {
+	m.mu.Lock()
+	if m.stopping || m.cancel != nil {
+		m.mu.Unlock()
+		return
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
 	m.loop.Add(1)
+	m.mu.Unlock()
 	go func() {
 		defer m.loop.Done()
 		t := time.NewTicker(m.interval)
@@ -134,13 +142,30 @@ func (m *CodexLoginManager) Start(ctx context.Context) {
 	}()
 }
 
-// Stop ends the loop and waits for background pushes.
+// Stop stops admitting renewals, ends the loop and waits for rotated tokens
+// to be saved and pushed. Cancelling a caller must never abandon a renewal.
 func (m *CodexLoginManager) Stop() {
-	if m.cancel != nil {
-		m.cancel()
+	m.mu.Lock()
+	m.stopping = true
+	cancel := m.cancel
+	m.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 	m.loop.Wait()
+	m.refreshes.Wait()
 	m.bg.Wait()
+	// A database outage may have ended just before shutdown. With renewals
+	// drained, retry pending saves once without risking another rotation.
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.unsaved))
+	for id := range m.unsaved {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+	for _, id := range ids {
+		m.saveUnsaved(id)
+	}
 }
 
 // Tick renews every login that is due and not waiting out a backoff or a
@@ -241,8 +266,12 @@ func (m *CodexLoginManager) CodexLoginSaved(credentialID string) {
 	m.mu.Lock()
 	delete(m.states, credentialID)
 	delete(m.unsaved, credentialID)
-	m.mu.Unlock()
+	if m.stopping {
+		m.mu.Unlock()
+		return
+	}
 	m.bg.Add(1)
+	m.mu.Unlock()
 	go func() {
 		defer m.bg.Done()
 		// A renewal that saved before the user's login broadcasts its copy;
@@ -367,6 +396,10 @@ func (m *CodexLoginManager) record(credentialID string, revision uint64, err err
 func (m *CodexLoginManager) renew(ctx context.Context, credentialID string, force bool, stale string) (string, string, error) {
 	for {
 		m.mu.Lock()
+		if m.stopping {
+			m.mu.Unlock()
+			return "", "", context.Canceled
+		}
 		f := m.flights[credentialID]
 		if f == nil {
 			f = m.startFlight(ctx, credentialID, false, func(rctx context.Context) (string, string, error) {
@@ -390,8 +423,10 @@ func (m *CodexLoginManager) renew(ctx context.Context, credentialID string, forc
 func (m *CodexLoginManager) startFlight(ctx context.Context, credentialID string, saveOnly bool, fn func(context.Context) (string, string, error)) *codexFlight {
 	f := &codexFlight{done: make(chan struct{}), saveOnly: saveOnly}
 	m.flights[credentialID] = f
+	m.refreshes.Add(1)
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), codexRefreshTimeout)
 	go func() {
+		defer m.refreshes.Done()
 		defer cancel()
 		f.copy, f.version, f.err = fn(rctx)
 		m.mu.Lock()
@@ -493,6 +528,10 @@ func (m *CodexLoginManager) save(prev codexStoredLogin, content string) (uint64,
 func (m *CodexLoginManager) retryUnsaved(ctx context.Context) {
 	var flights []*codexFlight
 	m.mu.Lock()
+	if m.stopping {
+		m.mu.Unlock()
+		return
+	}
 	for id := range m.unsaved {
 		if m.flights[id] != nil {
 			continue

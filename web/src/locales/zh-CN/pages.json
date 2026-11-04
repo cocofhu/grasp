@@ -1411,7 +1411,7 @@
           "denied": "登录被拒绝，未保存凭据。",
           "notEnabled": "这个 ChatGPT 账号未开启设备码登录。请在 ChatGPT 安全设置中开启，或改用粘贴登录文件。",
           "retry": "重新获取验证码",
-          "footer": "平台保存完整登录并自动续期；沙箱只拿到不含 refresh_token 的副本。",
+          "footer": "登录凭据会加密保存在工作区，仅用于所选的 Codex 模型配置。",
           "saved": "已通过设备码登录保存 Codex 凭据",
           "pasteHint": "粘贴本机 ~/.codex/auth.json 的完整内容（必须含 refresh_token）。保存后由平台自动续期，本机不要再用这份登录运行 codex，以免续期冲突。",
           "authMethodTag": "设备码登录",

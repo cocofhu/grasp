@@ -40,10 +40,12 @@ const codex: CredentialItem = {
   codexLogin: { email: 'team@example.com', lastRefresh: '2026-11-01T08:00:00Z', status: 'needs_relogin' },
 }
 
-function mountPanel(items: CredentialItem[] = []) {
+function mountPanel(items: CredentialItem[] = [], props: Record<string, unknown> = {}) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   mocks.list.mockResolvedValue({ items })
   return mount(WorkspaceCredentialsPanel, {
+    props,
+    attachTo: document.body,
     global: { plugins: [i18n], stubs: { Icon: true, Teleport: true, RouterLink: { template: '<a><slot /></a>' } } },
   })
 }
@@ -181,6 +183,51 @@ describe('WorkspaceCredentialsPanel Codex device sign-in', () => {
     await flushPromises()
     await wrapper.get('[data-testid="workspace-credential-relogin-close"]').trigger('click')
     await flushPromises()
+    expect(mocks.cancel).toHaveBeenCalledWith('cdx-1')
+    wrapper.unmount()
+  })
+
+  it('can switch a failed new sign-in to paste without losing the alias', async () => {
+    mocks.start.mockRejectedValueOnce(Object.assign(new Error('not enabled'), { code: 'not_enabled' }))
+    const wrapper = mountPanel()
+    await openCodexDetails(wrapper)
+    await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('My ChatGPT')
+    await wrapper.get('[data-testid="codex-device-start"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="codex-device-paste"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="workspace-credential-create-alias"]').element).toHaveProperty('value', 'My ChatGPT')
+    expect(wrapper.get('[data-testid="credential-auth-paste"]').attributes('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="workspace-credential-create-value"]').element)
+    wrapper.unmount()
+  })
+
+  it('can replace an existing login with a pasted file after device sign-in fails', async () => {
+    mocks.start.mockRejectedValueOnce(Object.assign(new Error('not enabled'), { code: 'not_enabled' }))
+    const wrapper = mountPanel([codex])
+    await flushPromises()
+    await wrapper.get('[data-testid="workspace-credential-relogin-cx-1"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="codex-device-paste"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="codex-device-card"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="workspace-credential-input-cx-1"]').element)
+    expect(wrapper.get('[data-testid="workspace-credential-input-cx-1"]').element).toHaveProperty('value', '')
+    wrapper.unmount()
+  })
+
+  it('uses the inline editor for re-login and returns to the credential list on cancel', async () => {
+    const wrapper = mountPanel([codex], { inline: true, view: 'credentials' })
+    await flushPromises()
+    await wrapper.get('[data-testid="workspace-credential-relogin-cx-1"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('editing')?.at(-1)).toEqual([true])
+    expect(wrapper.get('[data-testid="workspace-credential-section-coding"]').isVisible()).toBe(false)
+    expect(wrapper.get('[data-testid="credential-inline-editor"]').isVisible()).toBe(true)
+    await wrapper.get('[data-testid="workspace-credential-relogin-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('editing')?.at(-1)).toEqual([false])
+    expect(wrapper.get('[data-testid="workspace-credential-section-coding"]').isVisible()).toBe(true)
     expect(mocks.cancel).toHaveBeenCalledWith('cdx-1')
     wrapper.unmount()
   })

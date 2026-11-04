@@ -425,7 +425,7 @@ func (c *acpProvider) codexTurn(ctx context.Context, req NodeReq, send func() (*
 		return send()
 	}
 	if err := hub.BeforeTurn(ctx, key); err != nil {
-		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).Msg("align Codex login before turn failed")
+		return nil, fmt.Errorf("align Codex login before turn: %w", err)
 	}
 	seenVersion, seenAccess := hub.Snapshot(key)
 	res, err := send()

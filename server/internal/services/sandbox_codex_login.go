@@ -49,7 +49,9 @@ func (s *SandboxService) codexLiveTurn(ctx context.Context, id uint, send func()
 	if !hub.Registered(key) {
 		return send()
 	}
-	_ = hub.BeforeTurn(ctx, key)
+	if err := hub.BeforeTurn(ctx, key); err != nil {
+		return nil, fmt.Errorf("align Codex login before turn: %w", err)
+	}
 	seenVersion, seenAccess := hub.Snapshot(key)
 	result, err := send()
 	if ctx.Err() != nil || !liveCodexRefused(result, err) {
