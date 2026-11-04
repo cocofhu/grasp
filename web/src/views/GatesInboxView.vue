@@ -421,6 +421,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
             <ArtifactLoadingPane v-else-if="activeRunLoading" message-key="pages.gatesInbox.loadingRun" />
             <ReactArtifactStage
               v-else
+              editable
               :artifacts="activeRun?.artifacts || []"
               :preview-artifact="activeClarify?.previewArtifact"
               :run-id="active.runId"
@@ -557,6 +558,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                 <ArtifactLoadingPane v-else-if="activeRunLoading" message-key="pages.gatesInbox.loadingRun" />
                 <ReactArtifactStage
                   v-else
+                  editable
                   :artifacts="activeRun?.artifacts || []"
                   :preview-artifact="activeClarify?.previewArtifact"
                   :run-id="active.runId"

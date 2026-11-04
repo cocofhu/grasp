@@ -104,6 +104,9 @@ import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
 import { hasFailedTool } from '@/lib/run/acpTools'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
+import AppModal from '@/components/ui/AppModal.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import { artifactFriendlyNameKey } from '@/lib/run/reactArtifactPreview'
 import VisitModelSelect, { type VisitModelTransport } from './VisitModelSelect.vue'
 import ReferencePicker from '@/components/solo/ReferencePicker.vue'
 import ReferenceChip from '@/components/solo/ReferenceChip.vue'
@@ -395,6 +398,12 @@ const {
   finishAbort,
   confirmFlowDialogOpen,
   confirmFlowDiscard,
+  sendGuardOpen,
+  sendGuardSaving,
+  sendGuardNames,
+  sendGuardSaveAndSend,
+  sendGuardSendAnyway,
+  sendGuardCancel,
   acceptConfirmFlow,
   dismissConfirmFlow,
   releaseConfirmFlowWindow,
@@ -2136,6 +2145,31 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
     @confirm="onFlowConfirm"
     @visual-close="releaseConfirmFlowWindow"
   />
+  <AppModal
+    :open="sendGuardOpen"
+    :title="translate('pages.artifactEditor.sendGuardTitle')"
+    :width="440"
+    @close="sendGuardCancel"
+  >
+    <p class="text-[13px] text-txt2">{{ translate('pages.artifactEditor.sendGuardBody') }}</p>
+    <ul class="mt-2 space-y-1 text-[13px] text-txt" data-testid="clarify-send-guard-names">
+      <li v-for="name in sendGuardNames" :key="name" class="flex items-center gap-2">
+        <span class="ed-dirty-dot" aria-hidden="true" />
+        <span>{{ artifactFriendlyNameKey(name) ? `${translate(artifactFriendlyNameKey(name)!)} · ${name}` : name }}</span>
+      </li>
+    </ul>
+    <template #footer>
+      <AppButton variant="ghost" :disabled="sendGuardSaving" data-testid="clarify-send-guard-cancel" @click="sendGuardCancel">
+        {{ translate('common.buttons.cancel') }}
+      </AppButton>
+      <AppButton variant="outline" :disabled="sendGuardSaving" data-testid="clarify-send-guard-send" @click="sendGuardSendAnyway">
+        {{ translate('pages.artifactEditor.sendGuardSendAnyway') }}
+      </AppButton>
+      <AppButton variant="primary" :loading="sendGuardSaving" data-testid="clarify-send-guard-save" @click="sendGuardSaveAndSend">
+        {{ translate('pages.artifactEditor.sendGuardSaveAndSend') }}
+      </AppButton>
+    </template>
+  </AppModal>
 </template>
 
 <style scoped>

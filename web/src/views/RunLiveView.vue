@@ -124,6 +124,7 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
             >
               <template #stage>
                 <ReactArtifactStage
+                  editable
                   :artifacts="run?.artifacts || []"
                   :run-id="runId"
                   :run="run || undefined"

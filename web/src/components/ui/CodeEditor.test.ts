@@ -6,6 +6,7 @@ vi.mock('monaco-editor/esm/vs/editor/contrib/find/browser/findController', () =>
 vi.mock('monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution', () => ({}))
 vi.mock('monaco-editor/esm/vs/basic-languages/shell/shell.contribution', () => ({}))
 vi.mock('monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution', () => ({}))
+vi.mock('monaco-editor/esm/vs/basic-languages/html/html.contribution', () => ({}))
 vi.mock('monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution', () => ({}))
 vi.mock('monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution', () => ({}))
 vi.mock('monaco-editor/esm/vs/basic-languages/python/python.contribution', () => ({}))

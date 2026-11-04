@@ -798,6 +798,29 @@ export interface Artifact {
   content?: string
 }
 
+/** Why a run's artifacts are read-only right now ('' when editable). */
+export type ArtifactEditReason = '' | 'run_running' | 'run_ended' | 'session_busy'
+
+/** GET /api/runs/:id artifactEdit: whether humans may edit run artifacts now. */
+export interface RunArtifactEditState {
+  editable: boolean
+  reason: ArtifactEditReason
+}
+
+/** PUT /api/runs/:id/artifacts/:name response. changed=false keeps the current revision. */
+export interface RunArtifactSaveResult {
+  id: string
+  name: string
+  kind: Artifact['kind']
+  sizeBytes: number
+  updatedAt: string
+  etag: string
+  nodeId: string
+  content: string
+  revision: number
+  changed: boolean
+}
+
 /** One workflow bucket in GET /api/artifacts/tree. */
 export interface ArtifactTreeWorkflow {
   workflowId: string
@@ -1156,6 +1179,8 @@ export interface Run {
   // 每个节点的「全部执行历史」(由旧到新),用于「第 N 次执行」切换与追溯。
   nodeExecutions?: Record<string, NodeRun[]>
   artifacts: Artifact[]
+  /** Detail only: whether run artifacts can be edited by a human now. */
+  artifactEdit?: RunArtifactEditState
   gate?: Gate
   clarify?: {
     nodeId: string

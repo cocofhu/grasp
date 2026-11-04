@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Run artifacts can be edited by hand while the run waits for a person with an idle session, or after it fails. Structured artifacts open in a form with a JSON view, other text artifacts in a code editor, and `page.html` can switch to a live preview. Each changed save becomes a new version under the original node. Concurrent edits are detected, and unsaved edits are guarded when switching views, leaving the page or sending a clarification message. Shared, embedded and Solo views stay read-only.
+
 - Shared main-chat Stop targets the turn the visitor saw and rejects stale requests without changing the queue. Sharing hints explain that Solo and review Stop clear everyone's queued messages, while clarification keeps them.
 
 - Shared main-chat connections keep their retry backoff when a snapshot is immediately followed by an error, and reset it after five seconds of healthy streaming.
