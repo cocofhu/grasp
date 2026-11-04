@@ -18,6 +18,7 @@ import {
   loadEmbedSession,
   parseEmbedPickMessage,
   parseEmbedThemeFromHash,
+  parseEmbedLocaleFromHash,
   parseEmbedThemeMessage,
   parseEmbedTicketFromHash,
   redeemEmbedTicket,
@@ -69,6 +70,10 @@ describe('embedChat', () => {
     expect(parseEmbedThemeMessage({ type: EMBED_THEME_MESSAGE, theme: 'light' })).toBe('light')
     expect(parseEmbedThemeMessage({ type: EMBED_THEME_MESSAGE, theme: 'x' })).toBeNull()
     expect(parseEmbedThemeMessage({ type: EMBED_PICK_MESSAGE, theme: 'light' })).toBeNull()
+    expect(parseEmbedLocaleFromHash('#ticket=a&lang=zh-CN')).toBe('zh-CN')
+    expect(parseEmbedLocaleFromHash('#lang=en')).toBe('en')
+    expect(parseEmbedLocaleFromHash('#lang=unknown')).toBeNull()
+    expect(parseEmbedLocaleFromHash('#ticket=a')).toBeNull()
   })
 
   it('keeps the drawer token per run/node and drops it once expired', () => {

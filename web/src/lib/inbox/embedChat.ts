@@ -1,6 +1,7 @@
 import { isLoopbackHostname } from '@/lib/inbox/gateShareLink'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import type { ThemeName } from '@/lib/shared/theme'
+import type { AppLocale } from '@/lib/shared/locale'
 
 /** Must match server handlers.headerEmbedRequest. */
 const EMBED_REQUEST_HEADER = 'X-Grasp-Embed'
@@ -134,6 +135,11 @@ function asTheme(v: unknown): ThemeName | null {
 
 export function parseEmbedThemeFromHash(hash: string): ThemeName | null {
   return asTheme(hashParams(hash).get('theme'))
+}
+
+export function parseEmbedLocaleFromHash(hash: string): AppLocale | null {
+  const lang = hashParams(hash).get('lang')
+  return lang === 'zh-CN' || lang === 'en' ? lang : null
 }
 
 export function parseEmbedThemeMessage(data: unknown): ThemeName | null {

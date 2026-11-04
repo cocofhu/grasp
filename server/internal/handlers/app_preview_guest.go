@@ -42,7 +42,7 @@ func (h *Handlers) writePreviewGuestModelCatalog(c *gin.Context, sb models.Sandb
 }
 
 // PublicAppPreviewGuestChat owns one independent bridge chat per open page.
-// Only narration crosses this socket. Each turn is scoped to the shared app.
+// Each turn and its sanitized timeline are scoped to the shared app.
 func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 	if !h.publicRateLimit(c, gateshare.RateBucketTicket) {
 		return
@@ -70,7 +70,7 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 	ctx, cancel := context.WithDeadline(c.Request.Context(), link.ExpiresAt)
 	requests := make(chan previewGuestRequest, 1)
 	go readPreviewGuestRequests(ctx, cancel, conn, requests)
-	go h.watchPreviewGuest(ctx, cancel, conn, claims)
+	go h.watchAppPreviewChat(ctx, cancel, conn, claims)
 	var client *sandbox.ACPClient
 	var closeChat func()
 	var history []string
@@ -185,7 +185,7 @@ func readPreviewGuestRequests(ctx context.Context, cancel context.CancelFunc, co
 	}
 }
 
-func (h *Handlers) watchPreviewGuest(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, claims *gateshare.PreviewTicketClaims) {
+func (h *Handlers) watchAppPreviewChat(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, claims *gateshare.PreviewTicketClaims) {
 	defer cancel()
 	defer func() { _ = conn.Close() }()
 	ticker := time.NewTicker(10 * time.Second)
@@ -207,18 +207,47 @@ func (h *Handlers) watchPreviewGuest(ctx context.Context, cancel context.CancelF
 
 func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, client *sandbox.ACPClient, text string, images []models.PromptImage) (string, bool, bool) {
 	last := time.Time{}
+	lastSteps, lastSegments := -1, -1
+	var lastTools []sandbox.ACPToolCall
+	started := time.Now()
+	frame := func(kind string, result *sandbox.ChatResult) gin.H {
+		narration := previewGuestNarration(result)
+		return gin.H{"type": kind, "text": narration,
+			"parts":     gateshare.SanitizeParts(models.PartsForReply(result.AcpEvents(), narration)),
+			"startedAt": started.Format(time.RFC3339Nano)}
+	}
 	result, err := services.ChatPreviewGuestTurn(ctx, client, text, images, func(progress *sandbox.ChatResult) {
-		if time.Since(last) < 125*time.Millisecond {
+		if progress == nil {
+			return
+		}
+		// Text bursts may coalesce, but a tool can run silently for seconds:
+		// never throttle a step boundary or a changed tool status.
+		changed := len(progress.Timeline) != lastSteps || len(progress.Segments) != lastSegments || len(progress.ToolCalls) != len(lastTools)
+		if !changed {
+			for i, tool := range progress.ToolCalls {
+				if tool.Title != lastTools[i].Title || tool.Status != lastTools[i].Status {
+					changed = true
+					break
+				}
+			}
+		}
+		if !changed && time.Since(last) < 125*time.Millisecond {
 			return
 		}
 		last = time.Now()
-		if writeChatJSON(conn, gin.H{"type": "reply", "text": previewGuestNarration(progress)}) != nil {
+		lastSteps, lastSegments = len(progress.Timeline), len(progress.Segments)
+		lastTools = append(lastTools[:0], progress.ToolCalls...)
+		if writeChatJSON(conn, frame("reply", progress)) != nil {
 			cancel()
 		}
 	})
 	failed := err != nil || result == nil || result.Failed || result.Interrupted || result.ErrorText != ""
 	narration := previewGuestNarration(result)
-	return narration, !failed, writeChatJSON(conn, gin.H{"type": "done", "text": narration, "failed": failed}) == nil
+	done := frame("done", result)
+	done["failed"] = failed
+	done["interrupted"] = result != nil && result.Interrupted
+	done["endedAt"] = time.Now().Format(time.RFC3339Nano)
+	return narration, !failed, writeChatJSON(conn, done) == nil
 }
 
 func previewGuestNarration(result *sandbox.ChatResult) string {

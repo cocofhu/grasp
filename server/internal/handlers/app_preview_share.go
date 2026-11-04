@@ -239,6 +239,12 @@ type sharedPreviewRow struct {
 	Text        string                        `json:"text"`
 	At          string                        `json:"at,omitempty"`
 	Streaming   bool                          `json:"streaming,omitempty"`
+	Thought     string                        `json:"thought,omitempty"`
+	Tools       []models.ReactTool            `json:"tools,omitempty"`
+	Parts       []models.AcpPart              `json:"parts,omitempty"`
+	StartedAt   string                        `json:"startedAt,omitempty"`
+	EndedAt     string                        `json:"endedAt,omitempty"`
+	Interrupted bool                          `json:"interrupted,omitempty"`
 	Annotations []gateshare.PreviewAnnotation `json:"annotations,omitempty"`
 	Images      []models.PromptImage          `json:"images,omitempty"`
 	References  []models.MessageReference     `json:"references,omitempty"`
@@ -295,42 +301,10 @@ func (h *Handlers) PublicAppPreviewMainChat(c *gin.Context) {
 		return
 	}
 	if c.Request.Method == http.MethodGet {
-		rows := []sharedPreviewRow{}
-		var busy bool
-		if solo {
-			messages, active, err := h.Solo.PreviewTranscript(sb.ThreadID, link.CreatedBy)
-			if err != nil {
-				writeSoloErr(c, err)
-				return
-			}
-			for _, row := range messages {
-				item := sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Content,
-					Streaming: strings.HasPrefix(row.ID, "live:"), Annotations: gateshare.SanitizeAnnotations(row.Annotations)}
-				if !row.CreatedAt.IsZero() {
-					item.At = row.CreatedAt.Format(time.RFC3339Nano)
-				}
-				if row.PreviewShared {
-					item.Images = previewAttachmentMetadata(row.Images)
-					item.References = row.References
-				}
-				rows = append(rows, item)
-			}
-			busy = active
-		} else {
-			public := engine.PublicDialogue(state)
-			for i, row := range public.Rows {
-				item := sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Text, At: row.At, Streaming: row.Streaming, Annotations: row.Annotations}
-				if source := state.Rows[i]; source.PreviewShared {
-					item.Images = previewAttachmentMetadata(source.Images)
-					item.References = source.References
-				}
-				rows = append(rows, item)
-			}
-			busy = state.Busy
-		}
-		result := gin.H{"rows": rows, "busy": busy}
-		if choice, err := h.mainPreviewModel(link, sb); err == nil {
-			result["model"] = choice
+		result, err := h.appPreviewMainHistory(link, sb)
+		if err != nil {
+			writeSoloErr(c, err)
+			return
 		}
 		c.JSON(http.StatusOK, result)
 		return

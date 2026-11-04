@@ -5,18 +5,20 @@ import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { parseShareTokenFromHash } from '@/lib/inbox/gateShareLink'
 import { publicAppPreviewClient } from '@/lib/inbox/appPreviewShare'
-import { directPreviewEmbedUrl } from '@/lib/inbox/embedChat'
-import { locale } from '@/lib/shared/locale'
+import { directPreviewEmbedUrl, parseEmbedLocaleFromHash } from '@/lib/inbox/embedChat'
+import { applyPublicLocale, locale } from '@/lib/shared/locale'
 import { theme } from '@/lib/shared/theme'
 
 const { t } = useI18n()
 const client = publicAppPreviewClient(parseShareTokenFromHash(window.location.hash))
+const sharedLocale = parseEmbedLocaleFromHash(window.location.hash)
 const controller = new AbortController()
 const status = ref<'loading' | 'inactive' | 'directUnavailable' | 'network'>('loading')
 
 async function openPreview() {
   status.value = 'loading'
   try {
+    await applyPublicLocale(sharedLocale)
     const target = await client.open(controller.signal)
     if (!controller.signal.aborted) {
       window.location.replace(directPreviewEmbedUrl(target.directUrl, target, theme.value, locale.value, true))

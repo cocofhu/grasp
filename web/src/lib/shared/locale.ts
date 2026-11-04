@@ -20,6 +20,14 @@ function readLocaleStorage(): string | null {
   }
 }
 
+function saveLocale(loc: AppLocale) {
+  try {
+    localStorage.setItem(STORAGE_KEY, loc)
+  } catch {
+    // A preview iframe may have storage blocked; its language still applies.
+  }
+}
+
 export function detectLocale(): AppLocale {
   const saved = readLocaleStorage()
   if (saved === 'zh-CN' || saved === 'en') return saved
@@ -36,10 +44,13 @@ function detectPublicLocale(): AppLocale {
   return 'en'
 }
 
-export async function applyPublicLocale(): Promise<void> {
+export async function applyPublicLocale(preferred?: string | null): Promise<void> {
+  const sequence = ++localeChangeSequence
   const saved = readLocaleStorage()
-  const next = saved === 'zh-CN' || saved === 'en' ? saved : detectPublicLocale()
+  const next = preferred === 'zh-CN' || preferred === 'en' ? preferred
+    : saved === 'zh-CN' || saved === 'en' ? saved : detectPublicLocale()
   const messages = await loadLocaleMessages(next)
+  if (sequence !== localeChangeSequence) return
   i18n.global.setLocaleMessage(next, messages)
   i18n.global.locale.value = next
   locale.value = next
@@ -55,8 +66,8 @@ function applyHtmlLocale(loc: AppLocale) {
 
 export async function setLocale(next: AppLocale): Promise<void> {
   const sequence = ++localeChangeSequence
-  if (locale.value === next && i18n.global.locale.value === next) {
-    localStorage.setItem(STORAGE_KEY, next)
+  if (locale.value === next && i18n.global.locale.value === next && i18n.global.te('shell.appName', next)) {
+    saveLocale(next)
     applyHtmlLocale(next)
     return
   }
@@ -67,7 +78,7 @@ export async function setLocale(next: AppLocale): Promise<void> {
   i18n.global.setLocaleMessage(next, messages)
   i18n.global.locale.value = next
   locale.value = next
-  localStorage.setItem(STORAGE_KEY, next)
+  saveLocale(next)
   applyHtmlLocale(next)
   prefetchLocale(otherLocale(next))
 }

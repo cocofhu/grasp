@@ -101,6 +101,17 @@ func TestSanitizeTurnsKeepsOpaqueImageIndexes(t *testing.T) {
 	}
 }
 
+func TestSanitizeTurnsKeepsProcessBeforeNarration(t *testing.T) {
+	turns := SanitizeTurns([]models.ReactMessage{
+		{Role: "agent", Parts: []models.AcpPart{{Kind: "thought", Text: "Still checking"}}},
+		{Role: "agent", Parts: []models.AcpPart{{Kind: "tool", Title: "read_file /private/path", Status: "in_progress", Input: "hidden"}}},
+	})
+	if len(turns) != 2 || len(turns[0].Parts) != 1 || turns[0].Parts[0].Text != "Still checking" ||
+		turns[1].Parts[0].Title != "read_file" || turns[1].Parts[0].Input != "" {
+		t.Fatalf("process-only turns: %+v", turns)
+	}
+}
+
 func TestSanitizeTurnsKeepsLiveCardFields(t *testing.T) {
 	turns := SanitizeTurns([]models.ReactMessage{{Role: "human", Text: "Live · 继续改变体 2:按钮再大一点",
 		Live: &models.LiveRef{SID: "sid001", Op: models.LiveOpRefine, Variant: 2, Prompt: "按钮再大一点", Generated: true}}})

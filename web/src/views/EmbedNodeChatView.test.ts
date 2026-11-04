@@ -42,6 +42,18 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('EmbedNodeChatView', () => {
+  it('applies the opening language before announcing the chat, including after refresh', async () => {
+    await setLocale('en')
+    saveEmbedSession('run-1', 'ap1', { token: 'gse_a', expiresAt: '2099-01-01T00:00:00Z' })
+    history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/chat#theme=light&lang=zh-CN')
+    const w = mountView()
+    await flushPromises()
+    expect(locale.value).toBe('zh-CN')
+    expect(document.documentElement.lang).toBe('zh-CN')
+    expect(w.get('[data-testid="chat-stub"]').attributes('data-token')).toBe('gse_a')
+    w.unmount()
+  })
+
   it('redeems the fragment ticket, strips it from the URL and keeps the token', async () => {
     history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/chat#ticket=tk1')
     mocks.redeem.mockResolvedValue({ token: 'gse_a', expiresAt: '2099-01-01T00:00:00Z' })

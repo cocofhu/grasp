@@ -25,6 +25,7 @@ import {
   parseEmbedControlMessage,
   parseEmbedPickMessage,
   parseEmbedThemeFromHash,
+  parseEmbedLocaleFromHash,
   previewSessionRequest,
   parseEmbedThemeMessage,
   parseEmbedTicketFromHash,
@@ -210,6 +211,8 @@ async function connect() {
   const hash = takeHash()
   const theme = parseEmbedThemeFromHash(hash)
   if (theme) setThemeOverride(theme)
+  const lang = parseEmbedLocaleFromHash(hash)
+  if (lang) await setLocale(lang)
   const ticket = parseEmbedTicketFromHash(hash)
   if (ticket) {
     if (props.shared) clearEmbedSession(runId, nodeId, true)

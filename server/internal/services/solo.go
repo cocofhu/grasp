@@ -684,8 +684,8 @@ func (s *SoloService) PreviewMessageAttachments(sessionID, messageID string) []m
 	return message.Images
 }
 
-// PreviewTranscript combines saved messages with the current text stream for
-// the explicit main-conversation share. Its caller projects text fields only.
+// PreviewTranscript combines saved messages with the current turn for the
+// explicit main-conversation share. Callers must sanitize its event timeline.
 func (s *SoloService) PreviewTranscript(id, user string) ([]models.SoloMessage, bool, error) {
 	messages, err := s.Messages(id, user)
 	c := s.lookup(id)
@@ -694,8 +694,29 @@ func (s *SoloService) PreviewTranscript(id, user string) ([]models.SoloMessage, 
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if n := len(messages); n > 0 && messages[n-1].ID == c.turnID && len(c.events) > 0 && c.text.Len() > 0 {
-		messages = append(messages, models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.text.String()})
+	if len(c.events) == 0 {
+		return messages, true, nil
+	}
+	for i, message := range messages {
+		if message.ID != c.turnID {
+			continue
+		}
+		// The finished reply may already be saved while the queue is settling.
+		for _, next := range messages[i+1:] {
+			if next.Role == "assistant" {
+				return messages, true, nil
+			}
+		}
+		events := make([]json.RawMessage, len(c.events))
+		for j, event := range c.events {
+			events[j] = append(json.RawMessage(nil), event...)
+		}
+		live := models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.text.String(), Events: events, Execution: c.execution}
+		// Later system messages must not hide the active reply.
+		messages = append(messages, models.SoloMessage{})
+		copy(messages[i+2:], messages[i+1:])
+		messages[i+1] = live
+		break
 	}
 	return messages, true, nil
 }

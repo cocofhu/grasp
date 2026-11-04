@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type MsgTree = Record<string, unknown>
 
@@ -58,6 +58,7 @@ import { loadLocaleMessages, prefetchLocale } from './loadLocaleMessages'
 import { i18n } from './i18n'
 
 describe('locale', () => {
+  afterEach(() => vi.restoreAllMocks())
   beforeEach(() => {
     localStorage.clear()
     document.documentElement.lang = ''
@@ -97,6 +98,24 @@ describe('locale', () => {
     expect(document.documentElement.lang).toBe('en')
   })
 
+  it('loads the current language when the preview opens before initialization finishes', async () => {
+    locale.value = 'zh-CN'
+    i18n.global.locale.value = 'zh-CN'
+    i18n.global.setLocaleMessage('zh-CN', {})
+    await setLocale('zh-CN')
+    expect(loadLocaleMessages).toHaveBeenCalledWith('zh-CN')
+    expect(i18n.global.t('route.login')).toBe('登录')
+  })
+
+  it('applies the preview language when browser storage is blocked', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Blocked', 'SecurityError') })
+    await setLocale('en')
+    expect(locale.value).toBe('en')
+    expect(document.documentElement.lang).toBe('en')
+    await setLocale('en')
+    expect(document.documentElement.lang).toBe('en')
+  })
+
   it('public locale preserves a saved choice before browser detection', async () => {
     Object.defineProperty(navigator, 'language', { configurable: true, value: 'en-US' })
     localStorage.setItem('grasp-locale', 'zh-CN')
@@ -108,6 +127,17 @@ describe('locale', () => {
     await applyPublicLocale()
     expect(locale.value).toBe('en')
     expect(document.documentElement.lang).toBe('en')
+  })
+
+  it('applies a shared language before saved and browser preferences without replacing the saved preference', async () => {
+    localStorage.setItem('grasp-locale', 'en')
+    Object.defineProperty(navigator, 'language', { configurable: true, value: 'en-US' })
+    await applyPublicLocale('zh-CN')
+    expect(locale.value).toBe('zh-CN')
+    expect(document.documentElement.lang).toBe('zh-CN')
+    expect(localStorage.getItem('grasp-locale')).toBe('en')
+    await applyPublicLocale('invalid')
+    expect(locale.value).toBe('en')
   })
 
   it('updateDocumentTitle skips writing i18n keys when messages are empty', () => {

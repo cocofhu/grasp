@@ -418,6 +418,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.GET("/app/model", h.PublicAppPreviewModel)
 		pub.POST("/app/model", h.PublicAppPreviewModel)
 		pub.GET("/app/main-chat", h.PublicAppPreviewMainChat)
+		pub.GET("/app/main-events", h.PublicAppPreviewMainEvents)
 		pub.GET("/app/references/search", h.PublicAppPreviewReferences)
 		pub.GET("/app/images/:messageId/:index", h.PublicAppPreviewImage)
 		pub.POST("/app/main-chat", h.PublicAppPreviewMainChat)
