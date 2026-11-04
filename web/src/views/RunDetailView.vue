@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
@@ -20,6 +20,7 @@ import RunOutputPanel from '@/components/run/RunOutputPanel.vue'
 import StateTracePanel from '@/components/run/StateTracePanel.vue'
 import VariablesPanel from '@/components/run/VariablesPanel.vue'
 import ArtifactPanel from '@/components/run/ArtifactPanel.vue'
+import { useArtifactEditor } from '@/lib/run/useArtifactEditor'
 import RunSandboxEnvPanel from '@/components/run/RunSandboxEnvPanel.vue'
 import ExecutionTimeline from '@/components/run/ExecutionTimeline.vue'
 import ExecutionStatsPanel from '@/components/run/ExecutionStatsPanel.vue'
@@ -229,6 +230,27 @@ const {
   onLiveLogBootSession,
 } = useRunDetail()
 const { worktreeMode } = useExecutionMode()
+
+const artifactPanelRef = ref<InstanceType<typeof ArtifactPanel> | null>(null)
+const artifactEditor = useArtifactEditor(() => run.value?.id)
+
+function releaseArtifactDraft(): boolean {
+  return artifactPanelRef.value?.releaseActive() ?? true
+}
+
+function selectDetailTab(tab: string) {
+  if (tab === detailTab.value) return
+  if (detailTab.value === 'artifacts' && !releaseArtifactDraft()) return
+  detailTab.value = tab
+}
+
+function closeDetailDrawer() {
+  if (detailTab.value === 'artifacts' && !releaseArtifactDraft()) return
+  showDetail.value = false
+}
+
+onBeforeRouteLeave(() => artifactEditor.confirmLeave())
+onBeforeRouteUpdate((to, from) => to.path === from.path || artifactEditor.confirmLeave())
 
 const followCanvas = ref(true)
 const runRepos = computed(() => formatRepoNames(runRepoNames(run.value.vars)))
@@ -946,9 +968,9 @@ onMounted(() => {
       </div>
     </div>
 
-    <AppDrawer :open="showDetail" :title="t('pages.runDetail.detailTitle')" :width="480" @close="showDetail = false">
+    <AppDrawer :open="showDetail" :title="t('pages.runDetail.detailTitle')" :width="480" @close="closeDetailDrawer">
       <div class="flex h-full flex-col">
-        <div class="px-3 pt-2"><AppTabs :tabs="detailTabs" v-model="detailTab" /></div>
+        <div class="px-3 pt-2"><AppTabs :tabs="detailTabs" :model-value="detailTab" @update:model-value="selectDetailTab" /></div>
         <div class="min-h-0 flex-1">
           <Transition name="ui-fade" mode="out-in">
             <StateTracePanel v-if="detailTab === 'trace'" key="trace" :trace="run.trace || []" />
@@ -961,7 +983,10 @@ onMounted(() => {
             <ArtifactPanel
               v-else-if="detailTab === 'artifacts'"
               key="artifacts"
+              ref="artifactPanelRef"
               :artifacts="run.artifacts"
+              :run="run"
+              editable
               @deleted="onArtifactDeleted"
             />
           </Transition>

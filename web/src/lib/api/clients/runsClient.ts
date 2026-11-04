@@ -1,6 +1,7 @@
 import type {
   Run,
   Artifact,
+  RunArtifactSaveResult,
   GateShareInboxStatus,
   ClarifyImage,
   ReactAnnotation,
@@ -255,6 +256,16 @@ export const runsClient = {
       nodeId: string
       content: string
     }>(`/runs/${runId}/nodes/${nodeId}/artifacts/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ content }),
+    })
+  },
+  /** Human edit of any text artifact in a paused / failed run; errors carry code (+ revision / field). */
+  saveRunArtifact: (runId: string, name: string, content: string, ifMatch?: string) => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (ifMatch) headers['If-Match'] = ifMatch
+    return req<RunArtifactSaveResult>(`/runs/${runId}/artifacts/${encodeURIComponent(name)}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({ content }),

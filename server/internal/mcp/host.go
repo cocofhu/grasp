@@ -745,6 +745,10 @@ func (h *Host) FreshThisVisit(runID, nodeID, name string) bool {
 	return false
 }
 
+// MarkVisitWrite records name as written by the noted visit of nodeID even when
+// the save went through a path other than WriteArtifact (human edits).
+func (h *Host) MarkVisitWrite(runID, nodeID, name string) { h.markVisitWrite(runID, nodeID, name) }
+
 func (h *Host) markVisitWrite(runID, nodeID, name string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

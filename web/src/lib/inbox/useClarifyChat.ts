@@ -54,6 +54,7 @@ import {
 import type { Ref } from 'vue'
 import type { MessageReference, ReferenceInput } from '@/lib/api/apiTypes'
 import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import { setArtifactSessionBusy, useArtifactEditor } from '@/lib/run/useArtifactEditor'
 import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 import { replySpan } from '@/lib/inbox/turnSpan'
 import {
@@ -377,6 +378,9 @@ const unreadFabLabel = computed(() =>
 const sessionBusy = computed(
   () => thinking.value || queued.value.length > 0 || liveAgentIdx.value >= 0,
 )
+
+// Artifact editors of this run disable saving while the agent's turn is open.
+const artifactEditor = useArtifactEditor(() => props.runId)
 
 function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD
@@ -1036,6 +1040,13 @@ function submitForms() {
     return
   }
   formNotice.value = null
+  if (guardSend(commitForms)) return
+  commitForms()
+}
+
+function commitForms() {
+  const forms = activeForms.value
+  if (!forms.length) return
   const lines: string[] = []
   forms.forEach((form, fi) => {
     for (const f of form.fields || []) {
@@ -1158,6 +1169,13 @@ function pick(q: ReactQuestion, oid: string) {
 function submitChoices() {
   const qs = activeQuestions.value
   if (!qs.length || !someAnswered.value || thinking.value) return
+  if (guardSend(commitChoices)) return
+  commitChoices()
+}
+
+function commitChoices() {
+  const qs = activeQuestions.value
+  if (!qs.length || !someAnswered.value) return
   // Skipped questions are omitted; only answered ones are summarized.
   const lines = qs.filter(answered).map((q) => {
     const picked = q.options.filter((o) => (sel.value[q.id] || []).includes(o.id)).map((o) => o.label)
@@ -1197,8 +1215,59 @@ function selectedDemoForInteractive(q: ReactQuestion): ReactOption | null {
   return q.options.find((o) => isSelected(q.id, o.id) && !!o.demoHtml?.trim()) ?? null
 }
 
+const sendGuardOpen = ref(false)
+const sendGuardSaving = ref(false)
+const sendGuardNames = computed(() => artifactEditor.dirtyNames.value)
+
+let pendingSend: (() => unknown) | null = null
+
+// Every outgoing message (composer, question cards, form cards) must pass here
+// so the Agent never reads a stale artifact while the user has unsaved edits.
+function guardSend(fn: () => unknown): boolean {
+  if (!artifactEditor.hasDirty.value) return false
+  pendingSend = fn
+  sendGuardOpen.value = true
+  return true
+}
+
+function runPendingSend() {
+  const fn = pendingSend
+  pendingSend = null
+  if (fn) void fn()
+}
+
 function send() {
+  if (guardSend(sendFromComposer)) return
   sendFromComposer()
+}
+
+async function sendGuardSaveAndSend() {
+  if (sendGuardSaving.value) return
+  sendGuardSaving.value = true
+  try {
+    const r = await artifactEditor.saveAll()
+    sendGuardOpen.value = false
+    if (!r.ok) {
+      pendingSend = null
+      if (r.failed) artifactEditor.requestFocus(r.failed)
+      sendNotice.value = translate('pages.artifactEditor.sendGuardSaveFailed', { name: r.failed || '' })
+      return
+    }
+    runPendingSend()
+  } finally {
+    sendGuardSaving.value = false
+  }
+}
+
+function sendGuardSendAnyway() {
+  sendGuardOpen.value = false
+  runPendingSend()
+}
+
+function sendGuardCancel() {
+  if (sendGuardSaving.value) return
+  sendGuardOpen.value = false
+  pendingSend = null
 }
 
 const confirmFlowDialogOpen = ref(false)
@@ -1220,7 +1289,7 @@ function requestFlowConfirm(kind: 'finish' | 'abort') {
   if (confirmFlowDialogOpen.value) return
   pendingFlowConfirm = kind
   // Clarify keeps a hidden cold-session draft; confirm does not discard it.
-  confirmFlowDiscard.value = 'none'
+  confirmFlowDiscard.value = artifactEditor.hasDirty.value ? 'edits' : 'none'
   confirmFlowDialogOpen.value = true
 }
 
@@ -1234,6 +1303,7 @@ function acceptConfirmFlow() {
   const kind = pendingFlowConfirm
   confirmFlowDialogOpen.value = false
   pendingFlowConfirm = null
+  if (confirmFlowDiscard.value === 'edits') artifactEditor.discardAll()
   if (kind === 'abort') commitFinishAbort()
   else commitFinishEarly()
 }
@@ -1777,6 +1847,17 @@ function retryLastFailed() {
 }
 
 
+const busyKey = () => `chat:${props.nodeId || ''}`
+watch(
+  () => [props.runId, busyKey(), sessionBusy.value] as const,
+  ([runId, key, busy], prev) => {
+    if (prev && (prev[0] !== runId || prev[1] !== key)) setArtifactSessionBusy(prev[0], prev[1], null)
+    setArtifactSessionBusy(runId, key, busy)
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => setArtifactSessionBusy(props.runId, busyKey(), null))
+
   return {
     humanMatchesSeed,
     prependSeedHuman,
@@ -1831,6 +1912,12 @@ function retryLastFailed() {
     finishAbort,
     confirmFlowDialogOpen,
     confirmFlowDiscard,
+    sendGuardOpen,
+    sendGuardSaving,
+    sendGuardNames,
+    sendGuardSaveAndSend,
+    sendGuardSendAnyway,
+    sendGuardCancel,
     acceptConfirmFlow,
     dismissConfirmFlow,
     releaseConfirmFlowWindow,

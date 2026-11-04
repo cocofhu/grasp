@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from '../ui/Icon.vue'
 import AppModal from '../ui/AppModal.vue'
 import AppButton from '../ui/AppButton.vue'
@@ -16,6 +16,19 @@ import {
   artifactTechnicalDisplayName,
 } from '@/lib/run/reactArtifactPreview'
 import type { ArtifactPreviewProps, ArtifactPreviewEmit } from '@/lib/run/useArtifactPreview'
+import type { ArtifactVersionChoice } from '@/lib/run/reactArtifactPreview'
+import SlidingTabs from '../ui/SlidingTabs.vue'
+import ArtifactEditor from './editor/ArtifactEditor.vue'
+import './editor/artifactEditor.css'
+import { useArtifactEditor } from '@/lib/run/useArtifactEditor'
+import { artifactFormFor, type ArtifactEditorMode } from '@/lib/run/artifactForms'
+import {
+  countArtifactChanges,
+  editReasonKey,
+  isEditableArtifact,
+  jsonErrorLocation,
+  resolveRunEditState,
+} from '@/lib/run/artifactEdit'
 
 const props = withDefaults(defineProps<ArtifactPreviewProps>(), {
   scope: 'run',
@@ -31,8 +44,16 @@ const props = withDefaults(defineProps<ArtifactPreviewProps>(), {
   annotatable: false,
   shareToken: '',
   previewActive: true,
+  editable: false,
+  editState: null,
+  startInEdit: false,
 })
 const emit = defineEmits<ArtifactPreviewEmit>()
+
+const editor = useArtifactEditor(() => props.runId || props.artifact?.runId || '')
+const editName = computed(() => props.artifact?.name || '')
+const draft = computed(() => (editName.value ? editor.draft(editName.value) : undefined))
+const editing = computed(() => !!draft.value)
 
 const {
   t,
@@ -101,7 +122,133 @@ const {
   confirmDelete,
   renderMarkdown,
   fmtTime,
-} = useArtifactPreview(props, emit)
+} = useArtifactPreview(props, emit, { annotateSuspended: () => editing.value })
+
+const editableArtifact = computed(
+  () => !!props.editable && !props.shareToken && !!editor.runId.value && isEditableArtifact(props.artifact),
+)
+const showEditEntry = computed(() => editableArtifact.value && !viewingHistorical.value && !editing.value)
+const effectiveEditState = computed(() => {
+  if (props.editState) return props.editState
+  return resolveRunEditState(props.run ?? null, editor.sessionBusy.value)
+})
+const editBlockedReason = computed(() =>
+  effectiveEditState.value.editable ? '' : t(editReasonKey(effectiveEditState.value.reason)),
+)
+const hasForm = computed(() => !!artifactFormFor(editName.value))
+const editorMode = ref<ArtifactEditorMode>('form')
+const dirty = computed(() => editor.isDirty(editName.value))
+const draftJsonError = computed(() =>
+  draft.value && draft.value.kind === 'json' && !draft.value.loading ? jsonErrorLocation(draft.value.content) : null,
+)
+const changeCount = computed(() => {
+  const d = draft.value
+  return d && !d.loading ? countArtifactChanges(d.kind, d.base, d.content) : 0
+})
+const externalRevision = computed(() => {
+  const d = draft.value
+  const live = Number(props.artifact?.revision || 0)
+  return d && !d.loading && !d.conflict && live > d.baseRevision ? live : 0
+})
+const saveDisabled = computed(() => {
+  const d = draft.value
+  return !d || d.loading || d.saving || d.missing || !dirty.value || !effectiveEditState.value.editable || !!draftJsonError.value
+})
+const savedNote = ref('')
+let savedNoteTimer: ReturnType<typeof setTimeout> | null = null
+
+function flashSavedNote(text: string) {
+  savedNote.value = text
+  if (savedNoteTimer) clearTimeout(savedNoteTimer)
+  savedNoteTimer = setTimeout(() => {
+    savedNote.value = ''
+    savedNoteTimer = null
+  }, 3000)
+}
+
+async function enterEdit() {
+  const a = props.artifact
+  if (!a || !showEditEntry.value || !effectiveEditState.value.editable) return
+  editorMode.value = hasForm.value ? 'form' : 'json'
+  savedNote.value = ''
+  emit('edit-start', a.name)
+  await editor.begin(a)
+}
+
+function cancelEdit() {
+  if (!editing.value) return
+  if (dirty.value && !window.confirm(t('pages.artifactEditor.discardConfirm'))) return
+  editor.discard(editName.value)
+}
+
+async function saveEdit(force = false) {
+  const d = draft.value
+  if (!d || (!force && saveDisabled.value) || d.saving) return
+  const r = await editor.save(d.name, { force })
+  if (!r.ok) return
+  contentCache.value[r.result.id] = r.result.content
+  flashSavedNote(
+    r.result.changed
+      ? t('pages.artifactEditor.savedAs', { n: r.result.revision })
+      : t('pages.artifactEditor.unchanged', { n: r.result.revision }),
+  )
+  emit('saved', { name: r.result.name, revision: r.result.revision, changed: r.result.changed })
+}
+
+function setEditorMode(mode: ArtifactEditorMode) {
+  if (mode === editorMode.value) return
+  if (mode === 'form' && draft.value && jsonErrorLocation(draft.value.content)) {
+    toast.error(t('pages.artifactEditor.fixJsonFirst'))
+    return
+  }
+  editorMode.value = mode
+}
+
+function onEditorContent(v: string) {
+  editor.update(editName.value, v)
+}
+
+function onSelectVersion(choice: ArtifactVersionChoice) {
+  if (editing.value && !choice.latest) {
+    if (!editor.confirmLeave([editName.value])) return
+    editor.discard(editName.value)
+  }
+  void selectVersion(choice)
+}
+
+const rootEl = ref<HTMLElement | null>(null)
+
+/** Window-level so the shortcut still works after focus leaves (e.g. a removed item). */
+function onEditKeydown(e: KeyboardEvent) {
+  if (!editing.value || !props.previewActive) return
+  const target = e.target as HTMLElement | null
+  const inside = !!target && !!rootEl.value?.contains(target)
+  if (!inside && target && target !== document.body && target !== document.documentElement) return
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 's') {
+    e.preventDefault()
+    void saveEdit()
+    return
+  }
+  if (e.key === 'Escape' && !e.defaultPrevented) {
+    if (target?.closest?.('.monaco-editor, [role="listbox"]')) return
+    e.preventDefault()
+    cancelEdit()
+  }
+}
+
+watch(
+  () => [props.startInEdit, props.artifact?.id, editableArtifact.value] as const,
+  ([start]) => {
+    if (start && !editing.value) void enterEdit()
+  },
+  { immediate: true },
+)
+
+onMounted(() => window.addEventListener('keydown', onEditKeydown))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onEditKeydown)
+  if (savedNoteTimer) clearTimeout(savedNoteTimer)
+})
 
 const friendlyName = computed(() => {
   const key = artifactFriendlyNameKey(displayArtifact.value?.name)
@@ -124,8 +271,13 @@ const htmlCanvasOverlay = computed(
 </script>
 
 <template>
-  <div class="artifact-preview flex h-full min-h-0 min-w-0 flex-1 flex-col" data-testid="artifact-preview">
-    <div v-if="displayArtifact && !activeIsHtml" class="artifact-preview-header" data-testid="artifact-preview-identity-bar">
+  <div
+    ref="rootEl"
+    class="artifact-preview artifact-edit-shell flex h-full min-h-0 min-w-0 flex-1 flex-col"
+    :class="{ 'is-editing': editing }"
+    data-testid="artifact-preview"
+  >
+    <div v-if="displayArtifact && (!activeIsHtml || editing)" class="artifact-preview-header" data-testid="artifact-preview-identity-bar">
       <div v-if="!hideFileRow" class="artifact-preview-file-row" data-testid="artifact-preview-file-row">
         <Icon name="doc" :size="17" class="shrink-0 text-txt3" />
         <div class="min-w-0 flex-1">
@@ -144,17 +296,61 @@ const htmlCanvasOverlay = computed(
             menu-test-id="artifact-preview-version-menu"
             option-test-id-prefix="artifact-preview-version-option-v"
             :label-for="versionChipLabel"
-            @select="selectVersion"
+            @select="onSelectVersion"
           />
           <span v-if="viewingHistorical" class="artifact-preview-readonly" data-testid="artifact-preview-historical-readonly">{{ t('pages.reactArtifactStage.readonlyBadge') }}</span>
         </div>
       </div>
-      <div class="artifact-preview-toolbar" data-testid="artifact-preview-toolbar">
+      <div v-if="editing" class="artifact-edit-toolbar" data-testid="artifact-edit-toolbar">
+        <SlidingTabs
+          v-if="hasForm"
+          class="ed-switch"
+          :value="editorMode"
+          role="group"
+          :aria-label="t('pages.artifactEditor.modeAria')"
+        >
+          <button type="button" class="ed-switch__btn" :aria-pressed="editorMode === 'form'" data-testid="artifact-edit-mode-form" @click="setEditorMode('form')">{{ t('pages.artifactEditor.modeForm') }}</button>
+          <button type="button" class="ed-switch__btn" :aria-pressed="editorMode === 'json'" data-testid="artifact-edit-mode-json" @click="setEditorMode('json')">{{ t('pages.artifactEditor.modeJson') }}</button>
+        </SlidingTabs>
+        <span class="artifact-edit-summary" :class="{ 'is-dirty': dirty }" data-testid="artifact-edit-summary" aria-live="polite">
+          <span v-if="dirty" class="ed-dirty-dot" aria-hidden="true" />
+          {{ dirty ? t('pages.artifactEditor.changedCount', { n: changeCount }) : t('pages.artifactEditor.noChanges') }}
+        </span>
+        <div class="artifact-edit-actions">
+          <AppButton size="sm" variant="ghost" :disabled="draft?.saving" data-testid="artifact-edit-cancel" @click="cancelEdit">
+            {{ t('common.buttons.cancel') }}
+          </AppButton>
+          <AppButton
+            size="sm"
+            variant="primary"
+            :glow="false"
+            :disabled="saveDisabled"
+            :loading="draft?.saving"
+            :title="effectiveEditState.editable ? t('pages.artifactEditor.saveShortcut') : editBlockedReason"
+            data-testid="artifact-edit-save"
+            @click="saveEdit()"
+          >
+            {{ draft?.saving ? t('pages.artifactEditor.saving') : t('pages.artifactEditor.save') }}
+          </AppButton>
+        </div>
+      </div>
+      <div v-else class="artifact-preview-toolbar" data-testid="artifact-preview-toolbar">
+        <span v-if="savedNote" class="artifact-edit-saved" role="status" data-testid="artifact-edit-saved-note">{{ savedNote }}</span>
         <div v-if="isStructuredPreview" class="artifact-preview-view-options" data-testid="artifact-preview-mode-toggle" role="group" :aria-label="t('pages.artifactPreview.modeToggleAria')">
           <button type="button" :class="{ 'is-selected': structuredMode === 'structured' }" :aria-pressed="structuredMode === 'structured'" data-testid="artifact-preview-mode-structured" @click="structuredMode = 'structured'">{{ t('pages.artifactPreview.modeStructured') }}</button>
           <button type="button" :class="{ 'is-selected': structuredMode === 'raw' }" :aria-pressed="structuredMode === 'raw'" data-testid="artifact-preview-mode-raw" @click="structuredMode = 'raw'">{{ t('pages.artifactPreview.modeRaw') }}</button>
         </div>
         <div class="artifact-preview-actions" data-testid="artifact-preview-actions" role="group" :aria-label="t('common.table.actions')">
+          <button
+            v-if="showEditEntry"
+            type="button"
+            class="artifact-preview-text-action artifact-preview-edit-action"
+            :class="{ 'is-blocked': !effectiveEditState.editable }"
+            :aria-disabled="!effectiveEditState.editable ? 'true' : undefined"
+            :title="editBlockedReason || t('pages.artifactEditor.editTitle')"
+            data-testid="artifact-preview-edit"
+            @click="enterEdit"
+          ><Icon name="edit" :size="14" aria-hidden="true" />{{ t('pages.artifactEditor.edit') }}</button>
           <button v-if="!hideZoom" type="button" class="artifact-preview-icon-action" :title="t('pages.artifactPreview.enlarge')" :aria-label="t('pages.artifactPreview.enlarge')" data-testid="artifact-preview-zoom" @click="zoom = true"><Icon name="expand" :size="15" /></button>
           <button v-if="!hideCopy" type="button" class="artifact-preview-icon-action" :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :disabled="copying" :aria-busy="copying ? 'true' : undefined" data-testid="artifact-preview-copy" @click="copyContent"><Icon :name="copying ? 'spinner' : 'copy'" :size="15" aria-hidden="true" /></button>
           <button type="button" class="artifact-preview-icon-action" :title="t('pages.artifactPreview.downloadRawTitle')" :aria-label="t('pages.artifactPreview.downloadRawTitle')" data-testid="artifact-preview-download-raw" @click="download"><Icon name="download" :size="15" /></button>
@@ -168,9 +364,46 @@ const htmlCanvasOverlay = computed(
       ref="stageEl"
       class="flex-1 overflow-hidden"
       data-review-annotate-stage
-      :class="activeIsHtml ? 'flex min-h-0 flex-col' : 'scroll-area overflow-y-auto p-4'"
+      :class="activeIsHtml || editing ? 'flex min-h-0 flex-col' : 'scroll-area overflow-y-auto p-4'"
     >
-      <template v-if="displayArtifact && isImageBranch">
+      <div v-if="editing && draft" class="artifact-edit-body" data-testid="artifact-edit-body">
+        <div v-if="draft.conflict" class="ed-banner ed-banner--warn" role="alert" data-testid="artifact-edit-conflict">
+          <span>{{ t('pages.artifactEditor.conflict', { n: draft.conflict.revision }) }}</span>
+          <span class="ed-banner__actions">
+            <AppButton size="sm" variant="outline" data-testid="artifact-edit-reload" @click="editor.reloadLatest(draft.name)">{{ t('pages.artifactEditor.reloadLatest') }}</AppButton>
+            <AppButton size="sm" variant="danger" :disabled="!effectiveEditState.editable || draft.saving" data-testid="artifact-edit-force" @click="saveEdit(true)">{{ t('pages.artifactEditor.saveAnyway') }}</AppButton>
+          </span>
+        </div>
+        <div v-else-if="draft.error" class="ed-banner ed-banner--err" role="alert" data-testid="artifact-edit-error">
+          {{ t('pages.artifactEditor.saveFailed', { message: draft.error }) }}
+        </div>
+        <div v-if="draft.missing" class="ed-banner ed-banner--err" role="alert" data-testid="artifact-edit-missing">
+          {{ t('pages.artifactEditor.missing') }}
+        </div>
+        <div v-if="!effectiveEditState.editable" class="ed-banner ed-banner--info" role="status" data-testid="artifact-edit-blocked">
+          {{ t('pages.artifactEditor.blockedKeepDraft', { reason: editBlockedReason }) }}
+        </div>
+        <div v-if="externalRevision" class="ed-banner ed-banner--info" role="status" data-testid="artifact-edit-external">
+          <span>{{ t('pages.artifactEditor.externalUpdate', { n: externalRevision }) }}</span>
+          <span class="ed-banner__actions">
+            <AppButton size="sm" variant="outline" @click="editor.reloadLatest(draft.name)">{{ t('pages.artifactEditor.reloadLatest') }}</AppButton>
+          </span>
+        </div>
+        <div v-if="draft.loading" class="flex flex-1 items-center justify-center text-[12px] text-txt3">
+          {{ t('pages.artifactPreview.loading') }}
+        </div>
+        <ArtifactEditor
+          v-else
+          :name="draft.name"
+          :kind="draft.kind"
+          :content="draft.content"
+          :mode="hasForm ? editorMode : 'json'"
+          :field-errors="draft.fieldErrors"
+          :disabled="draft.saving"
+          @update:content="onEditorContent"
+        />
+      </div>
+      <template v-else-if="displayArtifact && isImageBranch">
         <div v-if="loadErr" class="flex h-full items-center justify-center text-center text-[12px] text-err" role="alert">
           {{ t('pages.artifactPreview.loadFailed') }}
         </div>
@@ -239,6 +472,17 @@ const htmlCanvasOverlay = computed(
           @pick="onHtmlPick"
         >
           <template #toolbar-actions>
+            <span v-if="savedNote" class="artifact-edit-saved" role="status" data-testid="artifact-edit-saved-note">{{ savedNote }}</span>
+            <button
+              v-if="showEditEntry"
+              type="button"
+              class="flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-txt3 hover:bg-overlay hover:text-txt"
+              :class="{ 'opacity-50 cursor-not-allowed': !effectiveEditState.editable }"
+              :aria-disabled="!effectiveEditState.editable ? 'true' : undefined"
+              :title="editBlockedReason || t('pages.artifactEditor.editTitle')"
+              data-testid="artifact-preview-edit"
+              @click="enterEdit"
+            ><Icon name="edit" :size="14" aria-hidden="true" />{{ t('pages.artifactEditor.edit') }}</button>
             <ArtifactVersionSelect
               v-if="showVersionChip"
               :choices="versionChoices"
@@ -250,7 +494,7 @@ const htmlCanvasOverlay = computed(
               menu-test-id="artifact-preview-version-menu"
               option-test-id-prefix="artifact-preview-version-option-v"
               :label-for="versionChipLabel"
-              @select="selectVersion"
+              @select="onSelectVersion"
             />
             <span
               v-if="viewingHistorical"
@@ -517,6 +761,15 @@ const htmlCanvasOverlay = computed(
 .artifact-preview-toolbar button:hover { background: rgb(var(--c-txt) / .04); color: rgb(var(--c-txt)); }
 .artifact-preview-toolbar button:disabled { cursor: not-allowed; opacity: .45; }
 .artifact-preview-delete-action { margin-left: 5px; }
+.artifact-preview-edit-action { display: inline-flex; align-items: center; gap: 4px; }
+.artifact-preview-toolbar .artifact-preview-edit-action.is-blocked { cursor: not-allowed; opacity: .45; }
+.artifact-edit-saved { color: var(--ed-ok); font-size: 11px; white-space: nowrap; }
+.artifact-edit-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; }
+.artifact-edit-summary { display: inline-flex; align-items: center; gap: 6px; color: var(--ed-muted); font-size: 11px; white-space: nowrap; }
+.artifact-edit-summary.is-dirty { color: var(--ed-ink); }
+.artifact-edit-actions { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.artifact-edit-body { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 8px; overflow: auto; padding: 8px 4px 4px; }
+.artifact-edit-body > .ed-banner { margin-inline: 8px; }
 .artifact-preview-toolbar .artifact-preview-delete-action:hover { color: rgb(var(--c-err)); }
 .artifact-preview :deep([data-testid="html-preview-toolbar"]) { padding-block: 10px; border-color: rgb(var(--c-line) / .7); background: transparent; }
 @media (max-width: 767px) {

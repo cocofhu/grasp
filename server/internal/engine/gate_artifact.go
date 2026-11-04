@@ -237,23 +237,7 @@ func (e *Engine) syncUpstreamOutputs(c *execCtx, gate *models.Gate, gateNode *mo
 	if outs == nil {
 		outs = map[string]any{}
 	}
-	outKey := norm.OutKey
-	if outKey == "" {
-		outKey = gatenode.ArtifactToOutputKey[norm.Name]
-	}
-	if outKey == "page" || norm.Name == "page.html" {
-		outs["page"] = norm.Content
-	} else if outKey != "" {
-		outs[outKey] = norm.Rendered
-		jsonKey := norm.JSONKey
-		if jsonKey == "" {
-			jsonKey = outKey + "_json"
-		}
-		outs[jsonKey] = norm.Content
-	} else {
-		// Freeform named artifact: stash under a stable key for debugging.
-		outs["artifact_"+norm.Name] = norm.Content
-	}
+	applyHumanArtifactOutputs(outs, norm)
 	sr.Outputs = outs
 	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "sync upstream outputs after human artifact edit")
 	c.nodeOutputs[upNodeID] = outs

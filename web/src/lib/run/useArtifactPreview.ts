@@ -21,7 +21,7 @@ import { publicGateApi } from '@/lib/inbox/gateShareLink'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { useToast } from '@/lib/composables/useToast'
 import { exportStructuredArtifact, type StructuredExportFormat } from '@/lib/run/exportStructuredArtifact'
-import type { Artifact, Run } from '@/lib/shared/types'
+import type { Artifact, Run, RunArtifactEditState } from '@/lib/shared/types'
 
 export interface ArtifactPreviewProps {
   artifact: Artifact | null
@@ -45,12 +45,36 @@ export interface ArtifactPreviewProps {
    * The HTML frame reloads once the tab is shown again.
    */
   previewActive?: boolean
+  /** Logged-in hosts that allow editing run artifacts pass true. */
+  editable?: boolean
+  /** Whether the run accepts edits right now; derived from `run` when omitted. */
+  editState?: RunArtifactEditState | null
+  /** Open straight into edit mode (stage card quick edit). */
+  startInEdit?: boolean
 }
 
-export type ArtifactPreviewEmit = { (e: 'deleted', id: string): void }
+export interface ArtifactSavedPayload {
+  name: string
+  revision: number
+  changed: boolean
+}
 
+export type ArtifactPreviewEmit = {
+  (e: 'deleted', id: string): void
+  (e: 'saved', payload: ArtifactSavedPayload): void
+  (e: 'edit-start', name: string): void
+}
 
-export function useArtifactPreview(props: ArtifactPreviewProps, emit: ArtifactPreviewEmit) {
+export interface ArtifactPreviewOptions {
+  /** True while the editor is open: annotation is off. */
+  annotateSuspended?: () => boolean
+}
+
+export function useArtifactPreview(
+  props: ArtifactPreviewProps,
+  emit: ArtifactPreviewEmit,
+  opts: ArtifactPreviewOptions = {},
+) {
 
 const { t } = useI18n()
 const toast = useToast()
@@ -192,7 +216,11 @@ const isImageBranch = computed(() => previewBranch.value.kind === 'image')
 
 /** Historical snapshots are always view-only (g2.2). */
 const canAnnotate = computed(
-  () => !!props.annotatable && !!annotateChannel?.enabled && !viewingHistorical.value,
+  () =>
+    !!props.annotatable &&
+    !!annotateChannel?.enabled &&
+    !viewingHistorical.value &&
+    !opts.annotateSuspended?.(),
 )
 const quoteAnnotate = computed(
   () => canAnnotate.value && !isImageBranch.value && previewBranch.value.kind !== 'html',

@@ -123,6 +123,7 @@ defineExpose({
       <ReactConnectingState v-if="!clarify" mode="stage" hide-home-tab />
       <ReactArtifactStage
         v-else
+        editable
         :artifacts="run.artifacts || []"
         :preview-artifact="clarify?.previewArtifact"
         :run-id="run.id"

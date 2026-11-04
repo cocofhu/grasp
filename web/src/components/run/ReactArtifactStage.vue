@@ -67,6 +67,10 @@ import {
 import { useArtifactVersions } from '@/lib/run/useArtifactVersions'
 import { registerStageLinks } from '@/lib/run/stageLinks'
 import { peekConversationDrawer } from '@/lib/chat/conversationDrawer'
+import { useArtifactEditor } from '@/lib/run/useArtifactEditor'
+import { editReasonKey, isEditableArtifact, resolveRunEditState } from '@/lib/run/artifactEdit'
+import type { ArtifactSavedPayload } from '@/lib/run/useArtifactPreview'
+import '@/components/run/editor/artifactEditor.css'
 
 const props = withDefaults(
   defineProps<{
@@ -98,8 +102,14 @@ const props = withDefaults(
     /** Standalone conversations already fetch registrations with their artifacts. */
     registeredPreviews?: PreviewPort[]
     soloSessionId?: string
+    /** Logged-in run hosts: allow editing run artifacts from cards and tabs. */
+    editable?: boolean
+    /** Live conversation busy flag from the host; null when the host has no chat. */
+    sessionBusy?: boolean | null
   }>(),
   {
+    editable: false,
+    sessionBusy: null,
     previewArtifact: '',
     runId: '',
     run: null,
@@ -382,6 +392,79 @@ function artifactAnnotatable(a: Artifact | null): boolean {
   return canAnnotateStageArtifact(!!props.annotatable, a, props.nodeId)
 }
 
+const artifactEditor = useArtifactEditor(() => props.runId)
+const stageEditState = computed(() =>
+  resolveRunEditState(props.run, props.sessionBusy ?? artifactEditor.sessionBusy.value),
+)
+const stageEditReason = computed(() =>
+  stageEditState.value.editable ? '' : t(editReasonKey(stageEditState.value.reason)),
+)
+/** Name whose preview should open straight into edit mode (card quick edit). */
+const quickEditName = ref('')
+const flashChipNames = ref<Record<string, boolean>>({})
+
+function stageArtifactEditable(a: Artifact | null | undefined): boolean {
+  if (!props.editable || !a || props.token || !props.runId) return false
+  const sel = selectedVersion(a)
+  if (sel && !sel.latest) return false
+  return isEditableArtifact(a)
+}
+
+function tabDirty(name: string): boolean {
+  return props.editable && artifactEditor.isDirty(name)
+}
+
+/** Leaving a tab or version drops its draft; ask first when it has edits. */
+function releaseDraft(name: string): boolean {
+  if (!props.editable || !artifactEditor.draft(name)) return true
+  if (!artifactEditor.confirmLeave([name])) return false
+  artifactEditor.discard(name)
+  return true
+}
+
+function quickEdit(a: Artifact) {
+  if (!stageEditState.value.editable || !stageArtifactEditable(a)) return
+  markUserMoved()
+  newTabOpen.value = false
+  quickEditName.value = a.name
+  activatePreview(a.name)
+}
+
+watch(
+  () => artifactEditor.focusRequest.value?.seq,
+  (seq) => {
+    const name = artifactEditor.focusRequest.value?.name
+    if (!seq || !name || !props.editable) return
+    const a = artifactByName(name)
+    if (a) quickEdit(a)
+  },
+)
+
+function onPreviewEditStart(name: string) {
+  if (quickEditName.value === name) quickEditName.value = ''
+}
+
+function onArtifactSaved(p: ArtifactSavedPayload) {
+  if (p.name in selectedVersionIndex.value) {
+    const next = { ...selectedVersionIndex.value }
+    delete next[p.name]
+    selectedVersionIndex.value = next
+  }
+  const a = artifactByName(p.name)
+  if (a?.id) void versions.ensureVersions(a.id, undefined, true)
+  if (!p.changed) return
+  flashChipNames.value = { ...flashChipNames.value, [p.name]: true }
+  setTimeout(() => {
+    const next = { ...flashChipNames.value }
+    delete next[p.name]
+    flashChipNames.value = next
+  }, 1300)
+}
+
+function cardReadonly(a: Artifact): boolean {
+  return props.editable ? !stageArtifactEditable(a) : artifactReadonly(a)
+}
+
 function artifactReadonly(a: Artifact): boolean {
   const sel = selectedVersion(a)
   if (sel && !sel.latest) return true
@@ -429,6 +512,7 @@ function resolvedArtifact(a: Artifact | null): Artifact | null {
 
 async function selectVersion(a: Artifact, choice: ArtifactVersionChoice) {
   if (!choice.available) return
+  if (!choice.latest && !releaseDraft(a.name)) return
   if (!choice.latest) {
     try {
       await versions.ensureVersionContent(a.id, choice.revision)
@@ -595,6 +679,7 @@ function neighborTab(closedId: string, ids: string[]): string {
 }
 
 function closePreview(name: string) {
+  if (!releaseDraft(name)) return
   markUserMoved()
   if (splitActive.value) {
     const before = splitModeTabIds()
@@ -1192,13 +1277,20 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
-          :aria-label="t('pages.reactArtifactStage.closeTab')"
-          :title="t('pages.reactArtifactStage.closeTab')"
+          class="react-tab-close mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+          :class="{ 'is-dirty': tabDirty(name) }"
+          :aria-label="tabDirty(name) ? `${t('pages.reactArtifactStage.closeTab')} · ${t('pages.artifactEditor.dirtyTab')}` : t('pages.reactArtifactStage.closeTab')"
+          :title="tabDirty(name) ? t('pages.artifactEditor.dirtyTab') : t('pages.reactArtifactStage.closeTab')"
           :data-testid="'react-artifact-tab-close-' + name"
           @click.stop="closePreview(name)"
         >
-          <Icon name="close" :size="12" />
+          <span
+            v-if="tabDirty(name)"
+            class="ed-dirty-dot react-tab-close__dot"
+            aria-hidden="true"
+            :data-testid="'react-artifact-tab-dirty-' + name"
+          />
+          <Icon name="close" :size="12" class="react-tab-close__x" />
         </button>
       </div>
       <div
@@ -1404,6 +1496,21 @@ onBeforeUnmount(() => {
               data-testid="react-artifact-kind-badge"
             >{{ t('pages.reactArtifactStage.artifactBadge') }}</span>
             <span class="artifact-paper-corner" aria-hidden="true" />
+            <button
+              v-if="stageArtifactEditable(a)"
+              type="button"
+              class="artifact-card-edit"
+              :class="{ 'is-blocked': !stageEditState.editable }"
+              :aria-label="t('pages.artifactEditor.cardEdit', { name: artifactTitle(a) })"
+              :aria-disabled="!stageEditState.editable ? 'true' : undefined"
+              :title="stageEditReason || t('pages.artifactEditor.cardEdit', { name: artifactTitle(a) })"
+              :data-testid="'react-artifact-card-edit-' + a.name"
+              @click.stop="quickEdit(a)"
+              @keydown.enter.stop
+              @keydown.space.stop
+            >
+              <Icon name="edit" :size="14" aria-hidden="true" />
+            </button>
             <div
               v-if="textThumb(a)"
               class="artifact-card-summary pointer-events-none h-full overflow-hidden border-b border-line px-3 pb-2 pt-7"
@@ -1433,7 +1540,7 @@ onBeforeUnmount(() => {
             <div class="flex items-center gap-1.5">
               <div class="artifact-card-title min-w-0 truncate text-[12px] font-medium text-txt" :title="artifactTitle(a)">{{ artifactTitle(a) }}</div>
               <span
-                v-if="artifactReadonly(a)"
+                v-if="cardReadonly(a)"
                 class="shrink-0 rounded border border-line px-1 py-px text-[10px] text-txt3"
                 data-testid="react-artifact-card-readonly"
               >{{ t('pages.reactArtifactStage.readonlyBadge') }}</span>
@@ -1451,6 +1558,7 @@ onBeforeUnmount(() => {
                 menu-test-id="react-artifact-version-menu"
                 option-test-id-prefix="react-artifact-version-option-v"
                 :label-for="versionChipLabel"
+                :class="{ 'ed-chip-flash': flashChipNames[a.name] }"
                 @select="selectVersion(a, $event)"
               />
             </div>
@@ -1487,7 +1595,12 @@ onBeforeUnmount(() => {
         :share-token="token"
         :annotatable="artifactAnnotatable(artifactByName(name))"
         :preview-active="activePreviewName === name"
+        :editable="stageArtifactEditable(artifactByName(name))"
+        :edit-state="stageEditState"
+        :start-in-edit="quickEditName === name"
         class="min-h-0 flex-1"
+        @saved="onArtifactSaved"
+        @edit-start="onPreviewEditStart"
       />
     </div>
 
@@ -1593,6 +1706,52 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.artifact-card-edit {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ra-line);
+  border-radius: 8px;
+  background: var(--ra-surface);
+  color: var(--ra-ink);
+  box-shadow: 0 2px 6px var(--ra-shadow);
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity .15s ease, transform .15s var(--ra-ease);
+}
+.artifact-card:hover .artifact-card-edit,
+.artifact-card:focus-within .artifact-card-edit,
+.artifact-card-edit:focus-visible {
+  opacity: 1;
+  transform: none;
+}
+.artifact-card-edit:hover:not(.is-blocked),
+.artifact-card-edit:focus-visible {
+  border-color: var(--ra-accent);
+  color: var(--ra-accent);
+  outline: none;
+}
+.artifact-card-edit.is-blocked {
+  cursor: not-allowed;
+  color: var(--ra-muted);
+}
+@media (hover: none) {
+  .artifact-card-edit { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .artifact-card-edit { transition: none; transform: none; }
+}
+.react-tab-close.is-dirty .react-tab-close__x { display: none; }
+.react-tab-close.is-dirty:hover .react-tab-close__x,
+.react-tab-close.is-dirty:focus-visible .react-tab-close__x { display: inline-block; }
+.react-tab-close.is-dirty:hover .react-tab-close__dot,
+.react-tab-close.is-dirty:focus-visible .react-tab-close__dot { display: none; }
 .artifact-stage-surface {
   --ra-bg: light-dark(#f8f9fc, #181a21);
   --ra-surface: light-dark(#fff, #242630);

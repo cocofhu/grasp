@@ -223,6 +223,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/variables", h.RunVariables)
 		api.GET("/runs/:id/artifacts", h.RunArtifacts)
 		api.GET("/runs/:id/artifacts/pack", h.PackRunArtifacts)
+		api.PUT("/runs/:id/artifacts/:name", h.SaveRunArtifact)
 		api.GET("/runs/:id/logs/export", h.ExportRunLogs)
 		api.GET("/runs/:id/llm-transcript", h.RunLlmTranscript)
 		api.GET("/runs/:id/nodes/:nodeId/events", h.NodeEvents)
