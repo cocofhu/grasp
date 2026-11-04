@@ -229,7 +229,7 @@ func truncateForLog(b []byte, n int) string {
 
 // codexLoginRepaste is the user-facing text when ChatGPT login is rejected or
 // cannot be refreshed. Keep it identical to the server-side message.
-const codexLoginRepaste = "Codex 登录已失效或无法刷新，请重新粘贴登录文件（~/.codex/auth.json）"
+const codexLoginRepaste = "Codex 登录已失效或无法刷新，请在工作区凭据中用设备码重新登录 ChatGPT，或请重新粘贴登录文件（~/.codex/auth.json）"
 
 func rewriteCodexAuthError(message string) string {
 	if codexAuthRejected(message) {
@@ -255,6 +255,11 @@ func codexAuthRejected(text string) bool {
 		"unable to refresh", "invalid_grant", "re-authenticate", "reauthenticate",
 		"authentication required", "authentication failed", "login required",
 		"missing bearer",
+		// The platform renews the login; a sandbox copy has no refresh token,
+		// so Codex reports rotation or a missing token instead of renewing.
+		"refresh_token_reused", "refresh_token_expired", "refresh_token_invalidated",
+		"could not be refreshed", "sign in again", "log in again",
+		"token data is not available",
 	} {
 		if strings.Contains(s, p) {
 			return true

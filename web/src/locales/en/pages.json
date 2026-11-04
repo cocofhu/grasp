@@ -440,7 +440,7 @@
         "hint": "Stored only in this workspace, never shown in logs or artifacts.",
         "howTo": "How to get it",
         "placeholder": "Paste your API key",
-        "codexMeta": "Paste the ChatGPT login file produced by codex login on your computer. This is required.",
+        "codexMeta": "Signing in to ChatGPT with a device code in workspace credentials is recommended; you can also paste the login file produced by codex login on your computer (it must include refresh_token). This is required.",
         "codexLabel": "ChatGPT login file",
         "codexPlaceholder": "Paste the full contents of ~/.codex/auth.json",
         "codexRequired": "Paste the Codex login file first.",
@@ -1382,6 +1382,57 @@
             "device_login_disabled": "GitHub sign-in is not enabled on this deployment.",
             "invalid_target": "Only a github.com GitHub credential can sign in again with GitHub.",
             "unknown": "GitHub sign-in did not finish. Try again."
+          }
+        },
+        "codexDevice": {
+          "tabLogin": "Sign in to ChatGPT with a code",
+          "tabPaste": "Paste login file",
+          "cardTitle": "Enter the code on the OpenAI page",
+          "accountTitle": "ChatGPT account",
+          "badgeWaiting": "Waiting for sign-in",
+          "badgeSuccess": "Signed in",
+          "badgeExpired": "Expired",
+          "badgeDenied": "Denied",
+          "badgeError": "Not finished",
+          "idleHint": "Get a one-time code, sign in to ChatGPT on the OpenAI page and enter it; the login is saved automatically. The platform renews it from then on, so you never paste the login file again.",
+          "getCode": "Get code",
+          "step1": "Open the OpenAI sign-in page and sign in with your ChatGPT account",
+          "step2": "Enter the code below and confirm",
+          "codeLabel": "Code {code}",
+          "copyCode": "Copy code",
+          "copied": "Copied",
+          "copyFailed": "Copy failed; type the code manually",
+          "openPage": "Open OpenAI sign-in",
+          "autoSave": "The login is saved as soon as you finish; no need to come back here",
+          "remaining": "{time} left",
+          "savedAs": "Saved as \"{name}\"; choose it in a model configuration",
+          "updatedAs": "\"{name}\" has the new login; running sandboxes switch automatically",
+          "expired": "The code expired. Finish signing in within 15 minutes.",
+          "denied": "Sign-in was denied; no credential was saved.",
+          "notEnabled": "Device-code sign-in is off for this ChatGPT account. Turn it on in ChatGPT security settings, or paste the login file instead.",
+          "retry": "Get a new code",
+          "footer": "The platform keeps the full login and renews it; sandboxes only get a copy without the refresh_token.",
+          "saved": "Codex credential saved with device-code sign-in",
+          "pasteHint": "Paste the full contents of ~/.codex/auth.json on your computer (it must include refresh_token). The platform renews it after saving; stop using this login for codex on your computer to avoid renewal conflicts.",
+          "authMethodTag": "Device-code sign-in",
+          "reloginLabel": "Sign in to ChatGPT again with a code",
+          "reloginTitle": "Sign in to ChatGPT again · {name}",
+          "lastRefresh": "renewed {time}",
+          "status": {
+            "ok": "Auto-renewal OK",
+            "needs_relogin": "Login expired; sign in again",
+            "network_error": "Renewal failed for now; retrying automatically"
+          },
+          "errors": {
+            "alias_taken": "The alias \"{alias}\" is taken; no credential was saved. Choose another alias and try again.",
+            "credential_unavailable": "The target credential was deleted or revoked; nothing was saved.",
+            "session_not_found": "The sign-in session ended (the server may have restarted). Get a new code.",
+            "device_login_disabled": "Codex device-code sign-in is not available on this deployment.",
+            "invalid_target": "Only a Codex login credential can be signed in again with a code.",
+            "upstream_error": "Could not reach the OpenAI sign-in service. Check the network or proxy and try again.",
+            "exchange_failed": "Exchanging the sign-in for tokens failed. Try again.",
+            "invalid_response": "OpenAI returned incomplete sign-in data. Try again.",
+            "unknown": "Codex sign-in did not finish. Try again."
           }
         }
       },
@@ -2847,7 +2898,7 @@
             "codebuddySite": "Keys are bound to a site; apply in the console that matches the site chosen in the Agent step.",
             "traeToken": "Official CLI login tokens must start with trae-lt- (Enterprise plan).",
             "opencode": "Starts with a model vendor API key; you can set the model and the service address.",
-            "codex": "Codex uses a ChatGPT login file, not an API key. To call OpenAI with an API key, use OpenCode. A run may update this file; do not share it with a Codex login that is still in use on your computer.",
+            "codex": "Codex uses a ChatGPT login, not an API key. To call OpenAI with an API key, use OpenCode. Signing in with a device code in workspace credentials is recommended; the platform renews the login and sandboxes never get the refresh_token.",
             "deepseek": "Use a DeepSeek platform API key. It is stored in workspace credentials; choose the model separately.",
             "kimi": "Use an API key created in the Kimi Code subscription console. China connects to api.kimi.com and International to api.kimi.ai. Leave the model empty to use K3.1 Pro; available models depend on your subscription."
           },
@@ -2878,10 +2929,10 @@
               "step3": "Paste the key and pick a model"
             },
             "codex": {
-              "step1": "On a computer that can open a browser, run codex login and finish the ChatGPT login",
-              "step2": "Copy the entire contents of ~/.codex/auth.json",
+              "step1": "Recommended: choose Codex in workspace credentials and sign in to ChatGPT with a device code; no file to copy",
+              "step2": "Or run codex login on a computer that can open a browser and copy the entire contents of ~/.codex/auth.json (it must include refresh_token)",
               "step3": "If the login lives only in the system keychain, switch to file storage, log in again, then copy that file",
-              "step4": "Paste the file contents below"
+              "step4": "Paste the file contents below; stop using this login on your computer to avoid renewal conflicts"
             },
             "deepseek": {
               "step1": "Sign in to the DeepSeek platform.",

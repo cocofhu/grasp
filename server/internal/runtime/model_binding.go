@@ -203,8 +203,8 @@ func InstallBoundCodexLoginFile(backend AcpBackend, home, body string, env map[s
 	return InstallCodexLoginFile(backend, home, body)
 }
 
-// ModelCredentialIDForWriteBack keeps refreshed login material attached to the
-// exact resolved credential, from the selected model configuration.
-func ModelCredentialIDForWriteBack(env map[string]string) string {
+// CodexLoginCredentialID is the workspace credential that supplied the Codex
+// login, from the selected model configuration.
+func CodexLoginCredentialID(env map[string]string) string {
 	return strings.TrimSpace(env[EnvModelCredentialID])
 }

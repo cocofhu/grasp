@@ -14,6 +14,9 @@ import type {
   CredentialItem,
   CredentialPutBody,
   CredentialsResponse,
+  CodexDeviceLoginPoll,
+  CodexDeviceLoginSession,
+  CodexDeviceLoginStatus,
   GitHubDeviceLoginPoll,
   GitHubDeviceLoginSession,
   GitHubDeviceLoginStatus,
@@ -93,6 +96,24 @@ export const workspaceClient = {
   cancelGitHubDeviceLogin: (sessionId: string) =>
     req<{ status: string }>(
       `/workspace/credentials/github/device/${encodeURIComponent(sessionId)}`,
+      { method: 'DELETE' },
+    ),
+  /** Codex ChatGPT device-code sign-in; the device auth ID and tokens stay on the server. */
+  getCodexDeviceLogin: () =>
+    req<CodexDeviceLoginStatus>(`/workspace/credentials/codex/device`),
+  startCodexDeviceLogin: (body: { name?: string; credentialId?: string }) =>
+    req<CodexDeviceLoginSession>(
+      `/workspace/credentials/codex/device`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  pollCodexDeviceLogin: (sessionId: string) =>
+    req<CodexDeviceLoginPoll>(
+      `/workspace/credentials/codex/device/${encodeURIComponent(sessionId)}/poll`,
+      { method: 'POST' },
+    ),
+  cancelCodexDeviceLogin: (sessionId: string) =>
+    req<{ status: string }>(
+      `/workspace/credentials/codex/device/${encodeURIComponent(sessionId)}`,
       { method: 'DELETE' },
     ),
   /** Removes a workspace-owned API account. DELETE without this suffix only clears the secret. */

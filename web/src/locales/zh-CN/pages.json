@@ -440,7 +440,7 @@
         "hint": "只保存在本工作区，不会出现在日志或产物里。",
         "howTo": "如何获取",
         "placeholder": "粘贴你的 API Key",
-        "codexMeta": "粘贴本机 codex login 产生的 ChatGPT 登录文件，这一项必填。",
+        "codexMeta": "推荐在工作区凭据中用设备码登录 ChatGPT；也可以粘贴本机 codex login 产生的登录文件（须含 refresh_token），这一项必填。",
         "codexLabel": "ChatGPT 登录文件",
         "codexPlaceholder": "粘贴 ~/.codex/auth.json 的全部内容",
         "codexRequired": "请先粘贴 Codex 登录文件。",
@@ -1382,6 +1382,57 @@
             "device_login_disabled": "当前部署未开启 GitHub 登录。",
             "invalid_target": "只有 github.com 的 GitHub 凭据可以用 GitHub 重新登录。",
             "unknown": "GitHub 登录未完成，请重试。"
+          }
+        },
+        "codexDevice": {
+          "tabLogin": "用设备码登录 ChatGPT",
+          "tabPaste": "粘贴登录文件",
+          "cardTitle": "在 OpenAI 页面输入验证码",
+          "accountTitle": "ChatGPT 账号",
+          "badgeWaiting": "等待登录",
+          "badgeSuccess": "已登录",
+          "badgeExpired": "已过期",
+          "badgeDenied": "已拒绝",
+          "badgeError": "未完成",
+          "idleHint": "获取一次性验证码，在 OpenAI 页面登录 ChatGPT 并输入后自动保存。之后由平台自动续期，无需再粘贴登录文件。",
+          "getCode": "获取验证码",
+          "step1": "打开 OpenAI 登录页，用 ChatGPT 账号登录",
+          "step2": "输入下面的验证码并确认",
+          "codeLabel": "验证码 {code}",
+          "copyCode": "复制验证码",
+          "copied": "已复制",
+          "copyFailed": "复制失败，请手动输入验证码",
+          "openPage": "打开 OpenAI 登录页",
+          "autoSave": "登录后会自动保存，无需回到这里操作",
+          "remaining": "剩余 {time}",
+          "savedAs": "已保存为「{name}」，可在模型配置中选择",
+          "updatedAs": "「{name}」已换上新的登录，正在运行的沙箱会自动切换",
+          "expired": "验证码已过期。请在 15 分钟内完成登录。",
+          "denied": "登录被拒绝，未保存凭据。",
+          "notEnabled": "这个 ChatGPT 账号未开启设备码登录。请在 ChatGPT 安全设置中开启，或改用粘贴登录文件。",
+          "retry": "重新获取验证码",
+          "footer": "平台保存完整登录并自动续期；沙箱只拿到不含 refresh_token 的副本。",
+          "saved": "已通过设备码登录保存 Codex 凭据",
+          "pasteHint": "粘贴本机 ~/.codex/auth.json 的完整内容（必须含 refresh_token）。保存后由平台自动续期，本机不要再用这份登录运行 codex，以免续期冲突。",
+          "authMethodTag": "设备码登录",
+          "reloginLabel": "用设备码重新登录 ChatGPT",
+          "reloginTitle": "重新登录 ChatGPT · {name}",
+          "lastRefresh": "上次续期 {time}",
+          "status": {
+            "ok": "自动续期正常",
+            "needs_relogin": "登录已失效，请重新登录",
+            "network_error": "续期暂时失败，将自动重试"
+          },
+          "errors": {
+            "alias_taken": "别名「{alias}」已被占用，未保存凭据。请换个别名后重试。",
+            "credential_unavailable": "目标凭据已被删除或吊销，未保存。",
+            "session_not_found": "登录会话已失效（服务可能已重启），请重新获取验证码。",
+            "device_login_disabled": "当前部署未开启 Codex 设备码登录。",
+            "invalid_target": "只有 Codex 登录凭据可以用设备码重新登录。",
+            "upstream_error": "连接 OpenAI 登录服务失败，请检查网络或代理后重试。",
+            "exchange_failed": "换取登录令牌失败，请重试。",
+            "invalid_response": "OpenAI 返回的登录信息不完整，请重试。",
+            "unknown": "Codex 登录未完成，请重试。"
           }
         }
       },
@@ -2847,7 +2898,7 @@
             "codebuddySite": "Key 与站点绑定；请到与 Agent 步所选站点一致的控制台申请。",
             "traeToken": "官方 CLI 登录令牌须含 trae-lt- 前缀（旗舰版）。",
             "opencode": "用模型厂商的 API Key 启动，可以指定模型和接口地址。",
-            "codex": "Codex 使用 ChatGPT 登录文件，不使用 API Key。用 API Key 接 OpenAI 请改用 OpenCode。运行会更新这份文件，不要和正在使用的本机登录共用同一份。",
+            "codex": "Codex 使用 ChatGPT 登录，不使用 API Key。用 API Key 接 OpenAI 请改用 OpenCode。推荐在工作区凭据中用设备码登录；登录由平台自动续期，沙箱拿不到 refresh_token。",
             "deepseek": "使用 DeepSeek 平台的 API Key。密钥保存在工作区凭据中，模型单独选择。",
             "kimi": "使用 Kimi Code 订阅控制台创建的 API Key。国内站连接 api.kimi.com，国际站连接 api.kimi.ai。模型可留空，默认使用 K3.1 Pro；可用模型取决于订阅权益。"
           },
@@ -2878,10 +2929,10 @@
               "step3": "粘贴 Key，并选择模型"
             },
             "codex": {
-              "step1": "在能打开浏览器的电脑上执行 codex login，完成 ChatGPT 登录",
-              "step2": "复制 ~/.codex/auth.json 的全部内容",
+              "step1": "推荐：在工作区凭据中选择 Codex，用设备码登录 ChatGPT，无需复制文件",
+              "step2": "或在能打开浏览器的电脑上执行 codex login，复制 ~/.codex/auth.json 的全部内容（须含 refresh_token）",
               "step3": "如果登录只在系统钥匙串里，先改成文件存储并重新登录，再复制该文件",
-              "step4": "把文件内容粘贴到下方"
+              "step4": "把文件内容粘贴到下方；之后本机不要再用这份登录，以免续期冲突"
             },
             "deepseek": {
               "step1": "打开 DeepSeek 开放平台并登录账号。",

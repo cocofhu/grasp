@@ -11,7 +11,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
@@ -45,67 +44,6 @@ func (s *SandboxService) invokeAgentDestroyHook(threadID, token string) {
 // SetTestSchedulerHooks registers purpose=test read-only scheduler injection.
 func (s *SandboxService) SetTestSchedulerHooks(h TestSchedulerHooks) {
 	s.testScheduler = h
-}
-
-// SetCodexLoginWriteBack registers the workspace-credential update used when a
-// Codex sandbox's auth.json changes. The callback must not log the file body.
-func (s *SandboxService) SetCodexLoginWriteBack(fn func(credentialID, content string) error) {
-	s.codexLoginWriteBack = fn
-}
-
-func codexLiveAuthPath(backend runtime.AcpBackend, configRoot string) string {
-	if runtime.NormalizeBackend(string(backend)) != runtime.BackendCodex {
-		return ""
-	}
-	return runtime.CodexAuthPath(configRoot)
-}
-
-// writeBackLiveCodex reads auth.json before the container is destroyed. A read
-// failure, an unchanged file, or a confirmed login refusal keeps the previous
-// credential. The body is not logged.
-func (s *SandboxService) writeBackLiveCodex(ctx context.Context, id uint) {
-	if s.codexLoginWriteBack == nil {
-		return
-	}
-	s.mu.Lock()
-	ls := s.live[id]
-	rejected := false
-	if ls != nil {
-		rejected = ls.codexAuthRejected
-	}
-	s.mu.Unlock()
-	if ls == nil || ls.sb == nil || ls.codexAuthPath == "" || ls.codexAuthCredentialID == "" {
-		return
-	}
-	body, err := ls.sb.ReadFile(ctx, ls.codexAuthPath)
-	next, ok := runtime.ShouldWriteBackCodexLogin(err, string(body), ls.codexAuthInjected, rejected)
-	if !ok {
-		if err != nil {
-			log.Warn().Err(err).Uint("sandbox", id).Msg("codex login writeback skipped; sandbox file unreadable")
-		}
-		return
-	}
-	if werr := s.codexLoginWriteBack(ls.codexAuthCredentialID, next); werr != nil {
-		log.Warn().Err(werr).Uint("sandbox", id).Msg("codex login writeback failed")
-	}
-}
-
-// noteLiveCodexAuth records whether the latest turn's CLI error refused the
-// login. A later successful turn clears the flag so a refreshed auth.json can
-// still be written back. Narration and tool output are not consulted.
-func (s *SandboxService) noteLiveCodexAuth(id uint, result *sandbox.ChatResult, err error) {
-	errorText := ""
-	failed := false
-	if result != nil {
-		errorText = result.ErrorText
-		failed = result.Failed
-	}
-	rejected := runtime.CodexTurnAuthRejected(err, errorText, failed)
-	s.mu.Lock()
-	if ls := s.live[id]; ls != nil && ls.codexAuthPath != "" {
-		ls.codexAuthRejected = rejected
-	}
-	s.mu.Unlock()
 }
 
 func (s *SandboxService) registerTestScheduler(profile, runID, token string) {
@@ -326,8 +264,8 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		return
 	}
 	spec, specs, backend := prepared.spec, prepared.specs, prepared.backend
-	home, modelFingerprint, codexLogin := spec.ConfigHome, prepared.modelFingerprint, prepared.codexLogin
-	env, configRoot, gitCredentials := spec.Env, spec.ConfigRoot, spec.GitCredentials
+	home, modelFingerprint := spec.ConfigHome, prepared.modelFingerprint
+	configRoot, gitCredentials := spec.ConfigRoot, spec.GitCredentials
 
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
@@ -384,11 +322,9 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		prepared: prepared, soloRouteAgent: &agent,
 		modelBindingFingerprint: modelFingerprint,
 		gitBindingsFingerprint:  gitBindingsFingerprint(gitCredentials),
-		codexAuthInjected:       codexLogin,
-		codexAuthCredentialID:   runtime.ModelCredentialIDForWriteBack(env),
-		codexAuthPath:           codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()
+	s.registerLiveCodex(id, sb, prepared.codexCredentialID, codexLiveAuthPath(backend, configRoot), prepared.codexVersion)
 	log.Info().Str("name", sb.Name).Str("profile", profile).Str("thread", threadID).
 		Uint("id", id).Bool("resident", extra.Resident).Msg("agent sandbox opened")
 	if extra.OnReady != nil {

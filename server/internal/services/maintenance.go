@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/runtime"
 	"os"
 	"path/filepath"
 )
@@ -52,26 +51,6 @@ func (s *SandboxService) PrepareWorkspaceMaintenance(ctx context.Context) error 
 	for _, row := range rows {
 		if s.isBusyRow(&row) {
 			return fmt.Errorf("sandbox %d still busy", row.ID)
-		}
-		s.mu.Lock()
-		ls := s.live[row.ID]
-		s.mu.Unlock()
-		if ls != nil && ls.sb != nil && ls.codexAuthPath != "" {
-			body, err := ls.sb.ReadFile(ctx, ls.codexAuthPath)
-			if err != nil {
-				return fmt.Errorf("read Codex login before retiring sandbox %d: %w", row.ID, err)
-			}
-			if next, ok := runtime.ShouldWriteBackCodexLogin(nil, string(body), ls.codexAuthInjected, ls.codexAuthRejected); ok {
-				if ls.codexAuthCredentialID == "" {
-					return fmt.Errorf("cannot identify Codex credential for sandbox %d", row.ID)
-				}
-				if s.codexLoginWriteBack == nil {
-					return fmt.Errorf("Codex login writeback unavailable for sandbox %d", row.ID)
-				}
-				if err := s.codexLoginWriteBack(ls.codexAuthCredentialID, next); err != nil {
-					return fmt.Errorf("persist Codex login before retiring sandbox %d: %w", row.ID, err)
-				}
-			}
 		}
 		if row.HomeDir != "" {
 			if _, err := os.Stat(row.HomeDir); err == nil {

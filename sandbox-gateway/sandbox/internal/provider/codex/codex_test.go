@@ -276,3 +276,15 @@ func hasArgPair(args []string, flag, value string) bool {
 	}
 	return false
 }
+
+func TestCodexAuthRejectedPlatformRefreshPhrases(t *testing.T) {
+	for _, text := range []string{
+		"refresh_token_reused: Your refresh token has already been used",
+		"Your access token could not be refreshed. Please sign in again.",
+		"Token data is not available.",
+	} {
+		if !codexAuthRejected(text) {
+			t.Fatalf("not recognized: %q", text)
+		}
+	}
+}

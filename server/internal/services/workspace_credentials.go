@@ -56,29 +56,30 @@ type CredentialInput struct {
 // CredentialView is safe for API/UI use. Masked is derived from the
 // encrypted value and never contains any plaintext.
 type CredentialView struct {
-	Purpose        string         `json:"purpose,omitempty"`
-	Issuer         string         `json:"issuer,omitempty"`
-	ToolID         string         `json:"toolId,omitempty"`
-	SecretKind     string         `json:"secretKind,omitempty"`
-	Host           string         `json:"host,omitempty"`
-	SecretRevision uint64         `json:"secretRevision"`
-	ID             string         `json:"id"`
-	Type           string         `json:"type"`
-	Provider       string         `json:"provider,omitempty"`
-	Name           string         `json:"name"`
-	Target         string         `json:"target,omitempty"`
-	TargetType     string         `json:"targetType,omitempty"`
-	TargetID       string         `json:"targetId,omitempty"`
-	EnvKey         string         `json:"envKey,omitempty"`
-	KnownHosts     string         `json:"knownHosts,omitempty"`
-	Masked         string         `json:"masked,omitempty"`
-	Source         string         `json:"source,omitempty"`
-	Configured     bool           `json:"configured"`
-	Enabled        bool           `json:"enabled"`
-	RevokedAt      *time.Time     `json:"revokedAt,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
+	Purpose        string          `json:"purpose,omitempty"`
+	Issuer         string          `json:"issuer,omitempty"`
+	ToolID         string          `json:"toolId,omitempty"`
+	SecretKind     string          `json:"secretKind,omitempty"`
+	Host           string          `json:"host,omitempty"`
+	SecretRevision uint64          `json:"secretRevision"`
+	ID             string          `json:"id"`
+	Type           string          `json:"type"`
+	Provider       string          `json:"provider,omitempty"`
+	Name           string          `json:"name"`
+	Target         string          `json:"target,omitempty"`
+	TargetType     string          `json:"targetType,omitempty"`
+	TargetID       string          `json:"targetId,omitempty"`
+	EnvKey         string          `json:"envKey,omitempty"`
+	KnownHosts     string          `json:"knownHosts,omitempty"`
+	Masked         string          `json:"masked,omitempty"`
+	Source         string          `json:"source,omitempty"`
+	Configured     bool            `json:"configured"`
+	Enabled        bool            `json:"enabled"`
+	RevokedAt      *time.Time      `json:"revokedAt,omitempty"`
+	Metadata       map[string]any  `json:"metadata,omitempty"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
+	CodexLogin     *CodexLoginInfo `json:"codexLogin,omitempty"`
 }
 
 var (
@@ -101,7 +102,10 @@ func (e *CredentialAliasTakenError) Unwrap() error { return ErrCredentialAliasTa
 
 // CredentialService persists encrypted workspace credentials and resolves
 // UI values for runtime injection.
-type CredentialService struct{ db *gorm.DB }
+type CredentialService struct {
+	db         *gorm.DB
+	codexHooks CodexLoginHooks
+}
 
 func NewCredentialService(db *gorm.DB) *CredentialService {
 	return &CredentialService{db: db}
@@ -195,6 +199,9 @@ func (s *CredentialService) List() ([]CredentialView, error) {
 			continue
 		}
 		v := credentialView(row)
+		if s.codexHooks != nil && codexLoginUsable(row) {
+			v.CodexLogin = s.codexHooks.CodexLoginInfo(row.ID)
+		}
 		out = append(out, v)
 	}
 	return out, nil
@@ -277,6 +284,7 @@ func (s *CredentialService) create(in CredentialInput, metadata map[string]any) 
 	if err := s.db.Create(&row).Error; err != nil {
 		return CredentialView{}, err
 	}
+	s.notifyCodexLogin(row, true)
 	return credentialView(row), nil
 }
 
@@ -397,6 +405,7 @@ func (s *CredentialService) update(id string, in CredentialInput, metadata map[s
 			return CredentialView{}, err
 		}
 	}
+	revision := row.SecretRevision
 	if in.Clear {
 		row.ValueEnc = ""
 		row.SecretRevision = nextSecretRevision(row.SecretRevision)
@@ -416,6 +425,7 @@ func (s *CredentialService) update(id string, in CredentialInput, metadata map[s
 	if err := s.db.Save(&row).Error; err != nil {
 		return CredentialView{}, err
 	}
+	s.notifyCodexLogin(row, row.SecretRevision != revision)
 	return credentialView(row), nil
 }
 
@@ -432,6 +442,7 @@ func (s *CredentialService) Revoke(id string) error {
 	if res.RowsAffected == 0 {
 		return ErrCredentialNotFound
 	}
+	s.forgetCodexLogin(id)
 	return nil
 }
 
@@ -455,7 +466,11 @@ func (s *CredentialService) Clear(id string) error {
 	row.RevokedAt = nil
 	row.Enabled = true
 	row.UpdatedAt = time.Now()
-	return s.db.Save(&row).Error
+	if err := s.db.Save(&row).Error; err != nil {
+		return err
+	}
+	s.forgetCodexLogin(id)
+	return nil
 }
 
 // Remove deletes a credential row. For a model_api account the model
@@ -467,7 +482,7 @@ func (s *CredentialService) Remove(id string) error {
 	if id == "" {
 		return ErrCredentialNotFound
 	}
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var row models.Credential
 		if err := tx.Where("id = ?", id).First(&row).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -492,6 +507,10 @@ func (s *CredentialService) Remove(id string) error {
 		}
 		return nil
 	})
+	if err == nil {
+		s.forgetCodexLogin(id)
+	}
+	return err
 }
 
 // Get returns one credential view. The secret is never included.
@@ -538,40 +557,6 @@ func (s *CredentialService) ResolveEnv() map[string]string {
 		}
 	}
 	return out
-}
-
-// WriteBackCodexLoginCredential refreshes precisely the injected credential.
-// Revocation, clearing and deletion while a sandbox runs are never undone.
-func (s *CredentialService) WriteBackCodexLoginCredential(credentialID, content string) error {
-	if err := runtime.ValidateCodexLoginFile(content); err != nil {
-		return err
-	}
-	var row models.Credential
-	if err := s.db.Where("id = ? AND env_key = ? AND enabled = ? AND revoked_at IS NULL AND value_enc <> ''", credentialID, envauth.EnvCodexAuthFile, true).First(&row).Error; err != nil {
-		return err
-	}
-	if !currentCredential(row) || row.Purpose != "tool_auth" || row.ToolID != "codex" {
-		return ErrCredentialNotFound
-	}
-	previous, err := crypto.Decrypt(row.ValueEnc)
-	if err != nil {
-		return err
-	}
-	if previous == content {
-		return nil
-	}
-	enc, err := crypto.Encrypt(content)
-	if err != nil {
-		return err
-	}
-	result := s.db.Model(&models.Credential{}).Where("id = ? AND value_enc = ? AND enabled = ? AND revoked_at IS NULL", row.ID, row.ValueEnc, true).Updates(map[string]any{"value_enc": enc, "updated_at": time.Now(), "secret_revision": nextSecretRevision(row.SecretRevision)})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return errors.New("Codex login credential changed during writeback")
-	}
-	return nil
 }
 
 func credentialAliasKey(name string) string {
