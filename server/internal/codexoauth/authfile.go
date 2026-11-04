@@ -130,7 +130,9 @@ func (a *AuthFile) Encode() (string, error) {
 }
 
 // SandboxCopy is auth.json with an empty refresh token: a sandbox can call the
-// model with the access token but can never rotate the platform's login.
+// model with the access token but can never rotate the platform's login. It
+// must be "" rather than null or absent: codex-cli 0.164 then reports a 401 as
+// "Failed to refresh token", which the platform recognizes and recovers from.
 func (a *AuthFile) SandboxCopy() (string, error) {
 	c := a.clone()
 	if len(c.tokens) > 0 {

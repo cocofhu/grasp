@@ -168,6 +168,9 @@ func TestCodexRotationFailuresAreLoginRejections(t *testing.T) {
 		"ChatGPT auth is missing a refresh token",
 		"No more recovery steps available.",
 		"Your access token could not be refreshed because you have since logged out or signed in to another account. Please sign in again.",
+		// Observed from codex-cli 0.164 running a sandbox copy against a 401.
+		"ERROR: Failed to refresh token: 400 Bad Request",
+		"unexpected status 401 Unauthorized: {\"detail\":\"Unauthorized\"}, url: https://chatgpt.com/backend-api/codex/responses",
 	} {
 		if !CodexTurnAuthRejected(nil, text, true) {
 			t.Errorf("%q must be a login refusal", text)
@@ -178,6 +181,9 @@ func TestCodexRotationFailuresAreLoginRejections(t *testing.T) {
 	}
 	if CodexTurnAuthRejected(nil, "", false) || IsCodexAuthRejectionText("") {
 		t.Fatal("empty text is not a refusal")
+	}
+	if IsCodexAuthRejectionText("unexpected status 401 Unauthorized, url: https://api.github.com/user") {
+		t.Fatal("a 401 from an unrelated host is not a Codex login refusal")
 	}
 }
 

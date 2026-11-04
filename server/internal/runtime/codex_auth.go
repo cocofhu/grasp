@@ -311,9 +311,9 @@ func IsCodexAuthRejectionText(text string) bool {
 		"sign in again",
 		"log in again",
 		"token data is not available",
-		// codex-cli 0.164 auth-recovery messages for a sandbox copy whose
-		// refresh token is empty ("ChatGPT auth is missing a refresh token")
-		// and for an exhausted 401 recovery.
+		// Other codex-cli 0.164 auth-recovery messages. A sandbox copy (empty
+		// refresh token) that hits a 401 ends with "Failed to refresh token:
+		// 400 Bad Request", matched above.
 		"chatgpt auth is missing",
 		"no more recovery steps available",
 	}
@@ -323,8 +323,10 @@ func IsCodexAuthRejectionText(text string) bool {
 		}
 	}
 	// codex-cli 0.160.1 reports a missing or rejected ChatGPT login as
-	// "401 Unauthorized" against api.openai.com, not "please log in".
-	if strings.Contains(s, "401 unauthorized") && strings.Contains(s, "api.openai.com") {
+	// "401 Unauthorized" against api.openai.com, not "please log in"; 0.164
+	// with a null refresh token reports it against chatgpt.com/backend-api.
+	if strings.Contains(s, "401 unauthorized") &&
+		(strings.Contains(s, "api.openai.com") || strings.Contains(s, "chatgpt.com/backend-api")) {
 		return true
 	}
 	return false

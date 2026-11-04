@@ -267,8 +267,10 @@ func codexAuthRejected(text string) bool {
 		}
 	}
 	// codex-cli 0.160.1 reports a missing or rejected ChatGPT login as
-	// "401 Unauthorized" against api.openai.com, not "please log in".
-	if strings.Contains(s, "401 unauthorized") && strings.Contains(s, "api.openai.com") {
+	// "401 Unauthorized" against api.openai.com, not "please log in"; 0.164
+	// with a null refresh token reports it against chatgpt.com/backend-api.
+	if strings.Contains(s, "401 unauthorized") &&
+		(strings.Contains(s, "api.openai.com") || strings.Contains(s, "chatgpt.com/backend-api")) {
 		return true
 	}
 	return false
