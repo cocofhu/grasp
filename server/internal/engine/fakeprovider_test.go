@@ -129,26 +129,32 @@ type fakeProvider struct {
 	// retired records nodes whose parked session was released.
 	reviseCalls map[string]int
 	retired     map[string]bool
-	// wrapUpCalls counts OfferCommitOnConfirm per node id; wrapUpAfterRetire
-	// is set if wrap-up ran after RetireSession (ordering bug).
+	// wrapUpCalls counts CheckGit per node id; wrapUpAfterRetire is set if
+	// the git check ran after RetireSession (ordering bug).
 	wrapUpCalls       map[string]int
 	wrapUpAfterRetire bool
 	wrapUpMsg         string
-	// reconcileCalls counts ReconcileOnConfirm per node id; wrapUpBeforeReconcile
-	// is set if the git wrap-up ran first (ordering bug: reconcile must land the
-	// product edits before anything is committed).
-	reconcileCalls        map[string]int
-	wrapUpBeforeReconcile bool
-	reconcileMsg          string
-	reconcileSummary      string
+	// confirmCalls counts review confirm finalize turns (ReviseInPlace with
+	// ReviewConfirmFinalize) per node id; wrapUpBeforeConfirm is set if a git
+	// check ran on a review node before its finalize turn (ordering bug: the
+	// product edits must land before anything is committed). confirmMsg is
+	// that turn's narration; confirmSkipOutcome makes it skip node_complete.
+	confirmCalls        map[string]int
+	wrapUpBeforeConfirm bool
+	confirmMsg          string
+	confirmSkipOutcome  bool
+	// handoffChecks counts EnsureHandoff per node id; handoffCheckMsg is its
+	// narration and handoffCheckOutcome makes it leave a fresh node_complete.
+	handoffChecks       map[string]int
+	handoffCheckMsg     string
+	handoffCheckOutcome bool
+	// handoffText (test-only) overrides the handoff node_complete carries.
+	handoffText string
 	// reactReplyCalls counts ReactReply invocations per node id (assert review
 	// force no longer routes through Agent wrap-up).
 	reactReplyCalls map[string]int
 	// reactHumans records the prompt text of every ReactReply call in order.
 	reactHumans []string
-	// reactConfirmSummary (test-only): the AgentSummary a force ReactReply
-	// returns, standing in for the real provider's hidden summary turn.
-	reactConfirmSummary string
 	// reviseErr (test-only): when set, ReviseInPlace returns this error (and
 	// optionally skips writing products when reviseSkipWrite is true).
 	reviseErr       error
@@ -245,9 +251,13 @@ func (f *fakeProvider) emitOutcome(req runtime.NodeReq, outputs map[string]any) 
 		skip = true
 	}
 	failed := f.outcomeFailed
+	handoff := f.handoffText
 	f.mu.Unlock()
 	if skip {
 		return
+	}
+	if handoff == "" {
+		handoff = "fake handoff from " + req.NodeID
 	}
 	status := "success"
 	args := map[string]any{"status": status, "summary": "fake ok"}
@@ -260,7 +270,7 @@ func (f *fakeProvider) emitOutcome(req runtime.NodeReq, outputs map[string]any) 
 		args["outputs"] = outputs
 	}
 	if len(req.Downstream) > 0 {
-		args["handoff"] = "fake handoff from " + req.NodeID
+		args["handoff"] = handoff
 	}
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -634,13 +644,8 @@ func (f *fakeProvider) reactReply(ctx context.Context, req runtime.NodeReq, hist
 	}
 	f.host.SetOutcomeAllowed(req.RunID, true)
 	f.emitOutcome(req, nil)
-	turn := runtime.ReactTurn{Msg: "信息已充分。", Done: true,
+	return runtime.ReactTurn{Msg: "信息已充分。", Done: true,
 		Result: runtime.NodeResult{OutputMd: content, Outputs: out}}
-	// Only the confirm turn runs the hidden summary turn.
-	f.mu.Lock()
-	turn.AgentSummary = f.reactConfirmSummary
-	f.mu.Unlock()
-	return turn
 }
 
 // writeClarifyProducts writes a clarify Agent's products: the requirement
@@ -684,6 +689,9 @@ func (f *fakeProvider) writeClarifyProducts(req runtime.NodeReq, human string) (
 func (f *fakeProvider) parkKey(runID, nodeID string) string { return runID + "|" + nodeID }
 
 func (f *fakeProvider) ReviseInPlace(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage, human string, images []models.PromptImage) runtime.ReactTurn {
+	if strings.HasPrefix(human, models.ReviewConfirmFinalize) {
+		return f.confirmFinalize(req)
+	}
 	f.mu.Lock()
 	skipWrite := f.reviseSkipWrite
 	revErr := f.reviseErr
@@ -734,14 +742,38 @@ func (f *fakeProvider) ReviseInPlace(ctx context.Context, req runtime.NodeReq, h
 		Events: []models.AcpEvent{{Kind: "message", Text: "revise-in-place"}}}
 }
 
-func (f *fakeProvider) OfferCommitOnConfirm(ctx context.Context, req runtime.NodeReq) runtime.ReactTurn {
+// confirmFinalize mirrors the review confirm finalize turn: the agent keeps
+// its products and ends the node with node_complete (handoff included).
+func (f *fakeProvider) confirmFinalize(req runtime.NodeReq) runtime.ReactTurn {
+	f.mu.Lock()
+	if f.confirmCalls == nil {
+		f.confirmCalls = map[string]int{}
+	}
+	f.confirmCalls[req.NodeID]++
+	msg, skip := f.confirmMsg, f.confirmSkipOutcome
+	f.mu.Unlock()
+	if !skip {
+		f.emitOutcome(req, nil)
+	}
+	if msg == "" {
+		msg = "已按聊天记录核对产物。"
+	}
+	return runtime.ReactTurn{Msg: msg, Events: []models.AcpEvent{{Kind: "message", Text: "confirm-finalize"}}}
+}
+
+func (f *fakeProvider) CheckGit(ctx context.Context, req runtime.NodeReq) runtime.ReactTurn {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// Mirror the real policy for clarify Agents: only adopted Live edits are
+	// committable. Other Agents stand in for a dirty committing workspace.
+	if req.Caps.Clarify() && !req.LiveEdits {
+		return runtime.ReactTurn{}
+	}
 	if f.retired[f.parkKey(req.RunID, req.NodeID)] {
 		f.wrapUpAfterRetire = true
 	}
-	if f.reconcileCalls[req.NodeID] == 0 {
-		f.wrapUpBeforeReconcile = true
+	if req.Caps.ReviewEnabled() && f.confirmCalls[req.NodeID] == 0 {
+		f.wrapUpBeforeConfirm = true
 	}
 	if f.wrapUpCalls == nil {
 		f.wrapUpCalls = map[string]int{}
@@ -750,22 +782,18 @@ func (f *fakeProvider) OfferCommitOnConfirm(ctx context.Context, req runtime.Nod
 	return runtime.ReactTurn{Msg: f.wrapUpMsg}
 }
 
-// ReconcileOnConfirm mirrors the real provider's confirm-time pair: it reports a
-// narration for the transcript plus the AgentSummary the hidden summary turn
-// produced, and (like the real reconcile) may rewrite the structured product.
-func (f *fakeProvider) ReconcileOnConfirm(ctx context.Context, req runtime.NodeReq) runtime.ReactTurn {
+func (f *fakeProvider) EnsureHandoff(ctx context.Context, req runtime.NodeReq) runtime.ReactTurn {
 	f.mu.Lock()
-	if f.reconcileCalls == nil {
-		f.reconcileCalls = map[string]int{}
+	if f.handoffChecks == nil {
+		f.handoffChecks = map[string]int{}
 	}
-	f.reconcileCalls[req.NodeID]++
-	msg, summary := f.reconcileMsg, f.reconcileSummary
+	f.handoffChecks[req.NodeID]++
+	msg, emit := f.handoffCheckMsg, f.handoffCheckOutcome
 	f.mu.Unlock()
-	if msg == "" {
-		msg = "已按聊天记录核对产物。"
+	if emit {
+		f.emitOutcome(req, nil)
 	}
-	return runtime.ReactTurn{Msg: msg, AgentSummary: summary,
-		Events: []models.AcpEvent{{Kind: "message", Text: "confirm-reconcile"}}}
+	return runtime.ReactTurn{Msg: msg}
 }
 
 func (f *fakeProvider) HasLiveSession(runID, nodeID string) bool {

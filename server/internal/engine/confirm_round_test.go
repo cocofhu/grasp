@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -9,35 +8,20 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-// Ordinary ReAct turns are pure narration now, so「确认并流转」is the only round
-// that can carry an induction of the dialogue — which makes recording that round
-// the single place the ledger summary can land.
-func TestClarifyConfirmRoundCarriesAgentSummary(t *testing.T) {
+// Force wrap-up stays on the synchronous path, so the clarify confirm round
+// is recorded there: the human's words paired with the agent's reply.
+func TestClarifyConfirmRoundPairsHumanAndAgent(t *testing.T) {
 	eng, db := setupEngine(t)
-	provider := eng.provider.(*fakeProvider)
-	provider.reactConfirmSummary = "用户确认按截图保留视觉,去掉下拉与紫色选中。"
 
 	run := runToGate(t, eng, db)
 
-	rounds := feedbackArtifactsOfKind(db, run.ID, "clarify")
-	if len(rounds) != 1 {
+	if rounds := feedbackArtifactsOfKind(db, run.ID, "clarify"); len(rounds) != 1 {
 		t.Fatalf("want one clarify product, got %d: %+v", len(rounds), rounds)
 	}
-	var doc map[string]any
-	if err := json.Unmarshal([]byte(rounds[0].Content), &doc); err != nil {
-		t.Fatalf("clarify product is not valid JSON: %v", err)
-	}
-	if doc["agentSummary"] != provider.reactConfirmSummary {
-		t.Fatalf("agentSummary = %v, want %q", doc["agentSummary"], provider.reactConfirmSummary)
-	}
-
 	var row models.FeedbackEvent
 	if err := db.Where("run_id = ? AND kind = ?", run.ID, models.FeedbackKindClarify).
 		First(&row).Error; err != nil {
 		t.Fatalf("load row: %v", err)
-	}
-	if row.AgentSummary != provider.reactConfirmSummary {
-		t.Fatalf("row AgentSummary = %q", row.AgentSummary)
 	}
 	if row.Text != "就这样" {
 		t.Fatalf("confirm round must keep the human's verbatim text, got %q", row.Text)
@@ -69,40 +53,12 @@ func TestSilentClarifyConfirmRecordsNoRound(t *testing.T) {
 	}
 }
 
-// The same silent confirm DOES get recorded once the summary turn produced
-// something: the induction has nowhere else to live.
-func TestSilentClarifyConfirmKeptWhenSummaryExists(t *testing.T) {
-	eng, db := setupEngine(t)
-	provider := eng.provider.(*fakeProvider)
-	provider.reactConfirmSummary = "用户全程未提出异议,按开场目标定稿。"
-
-	run, err := eng.StartRun("clarify-to-design", map[string]any{"idea": "做个登录"}, "test")
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	waitReactPause(t, db, run.ID, "clarify")
-	if err := eng.ReactReply(run.ID, "clarify", "", nil, nil, true); err != nil {
-		t.Fatalf("finish clarify: %v", err)
-	}
-	waitGatePending(t, db, run.ID, "approve")
-
-	var row models.FeedbackEvent
-	if err := db.Where("run_id = ? AND kind = ?", run.ID, models.FeedbackKindClarify).
-		First(&row).Error; err != nil {
-		t.Fatalf("load row: %v", err)
-	}
-	if row.AgentSummary != provider.reactConfirmSummary {
-		t.Fatalf("row AgentSummary = %q", row.AgentSummary)
-	}
-}
-
-// Review force reconciles the products against the transcript BEFORE the git
-// wrap-up commits anything, and the reconcile narration plus its summary are
-// what the ledger keeps for the confirm round.
-func TestReviewConfirmReconcilesBeforeWrapUpAndRecordsSummary(t *testing.T) {
+// Review confirm finalizes the products against the transcript BEFORE the git
+// check commits anything, and the finalize narration is what the ledger keeps
+// for the confirm round.
+func TestReviewConfirmFinalizesBeforeGitCheck(t *testing.T) {
 	eng, db, provider := setupReviewEngine(t)
-	provider.reconcileMsg = "已按聊天记录把第 3 条结论补上原始链接。"
-	provider.reconcileSummary = "用户要求补齐证据链,已落到 research.json。"
+	provider.confirmMsg = "已按聊天记录把第 3 条结论补上原始链接。"
 	provider.wrapUpMsg = "已提交 src/a.go,跳过 tmp.log"
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
@@ -117,28 +73,28 @@ func TestReviewConfirmReconcilesBeforeWrapUpAndRecordsSummary(t *testing.T) {
 	}
 	waitRunStatus(t, db, run.ID, "completed")
 
-	if provider.reconcileCalls["prop"] != 1 {
-		t.Fatalf("expected one ReconcileOnConfirm, got %d", provider.reconcileCalls["prop"])
+	if provider.confirmCalls["prop"] != 1 {
+		t.Fatalf("expected one confirm finalize turn, got %d", provider.confirmCalls["prop"])
 	}
-	if provider.wrapUpBeforeReconcile {
-		t.Fatal("git wrap-up must not run before the product reconcile")
+	if provider.wrapUpBeforeConfirm {
+		t.Fatal("git check must not run before the finalize turn")
 	}
 
 	var conv models.ReactConversation
 	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "prop").First(&conv).Error; err != nil {
 		t.Fatalf("load conv: %v", err)
 	}
-	var sawReconcile, sawWrapUp bool
-	for _, m := range conv.Messages {
+	finalizeAt, wrapUpAt := -1, -1
+	for i, m := range conv.Messages {
 		switch {
-		case m.Role == "agent" && m.Text == provider.reconcileMsg:
-			sawReconcile = true
+		case m.Role == "agent" && m.Text == provider.confirmMsg:
+			finalizeAt = i
 		case m.Role == "agent" && m.Text == provider.wrapUpMsg:
-			sawWrapUp = true
+			wrapUpAt = i
 		}
 	}
-	if !sawReconcile || !sawWrapUp {
-		t.Fatalf("reconcile / wrap-up narration missing from the transcript: %+v", conv.Messages)
+	if finalizeAt < 0 || wrapUpAt < finalizeAt {
+		t.Fatalf("finalize / git narration missing or out of order: %+v", conv.Messages)
 	}
 
 	var row models.FeedbackEvent
@@ -146,23 +102,16 @@ func TestReviewConfirmReconcilesBeforeWrapUpAndRecordsSummary(t *testing.T) {
 		Order("seq desc").First(&row).Error; err != nil {
 		t.Fatalf("load row: %v", err)
 	}
-	if row.AgentSummary != provider.reconcileSummary {
-		t.Fatalf("row AgentSummary = %q", row.AgentSummary)
-	}
 	if row.Action != "revise" {
 		t.Fatalf("review confirm round action = %q", row.Action)
 	}
-	product := feedbackArtifactsOfKind(db, run.ID, "review")
-	if len(product) != 1 || !strings.Contains(product[0].Content, provider.reconcileSummary) {
-		t.Fatalf("cumulative review product missing the summary: %+v", product)
+	if len(row.Turns) != 2 || row.Turns[1].Text != provider.confirmMsg {
+		t.Fatalf("confirm round must pair the human with the finalize reply: %+v", row.Turns)
 	}
 }
 
-// The confirm round is not a place to invent content: an agent that answered
-// with prose instead of the JSON contract yields no summary at all.
-func TestConfirmRoundWithoutSummaryStillKeepsWrittenFeedback(t *testing.T) {
-	eng, db, provider := setupReviewEngine(t)
-	provider.reconcileSummary = ""
+func TestConfirmRoundKeepsWrittenFeedback(t *testing.T) {
+	eng, db, _ := setupReviewEngine(t)
 
 	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
 	if err != nil {
@@ -181,11 +130,8 @@ func TestConfirmRoundWithoutSummaryStillKeepsWrittenFeedback(t *testing.T) {
 		Order("seq desc").First(&row).Error; err != nil {
 		t.Fatalf("load row: %v", err)
 	}
-	if row.AgentSummary != "" {
-		t.Fatalf("unparseable summary turn must not be substituted, got %q", row.AgentSummary)
-	}
 	if !strings.Contains(row.Text, "下轮要补压测") {
-		t.Fatalf("written feedback must survive without a summary, got %q", row.Text)
+		t.Fatalf("written feedback must be kept, got %q", row.Text)
 	}
 }
 
@@ -195,8 +141,8 @@ func TestConfirmRoundFeedbackEventShape(t *testing.T) {
 	agent := models.ReactMessage{Role: "agent", Text: "已核对产物。"}
 
 	clarify := eng.confirmRoundFeedbackEvent("run-1", "c1", models.FeedbackKindClarify, 2,
-		human, agent, "  归纳  ")
-	if clarify.Action != "answer" || clarify.Iteration != 2 || clarify.AgentSummary != "归纳" {
+		human, agent)
+	if clarify.Action != "answer" || clarify.Iteration != 2 {
 		t.Fatalf("clarify confirm round = %+v", clarify)
 	}
 	if clarify.Detail["confirm"] != true {
@@ -207,26 +153,15 @@ func TestConfirmRoundFeedbackEventShape(t *testing.T) {
 	}
 
 	review := eng.confirmRoundFeedbackEvent("run-1", "p1", models.FeedbackKindReview, 1,
-		human, agent, "")
+		human, agent)
 	if review.Action != "revise" {
 		t.Fatalf("review confirm round action = %q", review.Action)
 	}
 
-	// Silent confirm with nothing to induce ⇒ zero value, which recordFeedback skips.
+	// Silent confirm ⇒ zero value, which recordFeedback skips.
 	silent := eng.confirmRoundFeedbackEvent("run-1", "c1", models.FeedbackKindClarify, 1,
-		models.ReactMessage{Role: "human"}, agent, " ")
+		models.ReactMessage{Role: "human"}, agent)
 	if silent.RunID != "" {
 		t.Fatalf("silent confirm must yield the zero value, got %+v", silent)
-	}
-
-	// Silent confirm whose only payload is the hidden summary must still pass
-	// HasSubstance — even when reconcile narration is empty too.
-	summaryOnly := eng.confirmRoundFeedbackEvent("run-1", "c1", models.FeedbackKindClarify, 1,
-		models.ReactMessage{Role: "human"}, models.ReactMessage{Role: "agent"}, "用户全程未提出异议。")
-	if summaryOnly.RunID == "" || summaryOnly.AgentSummary != "用户全程未提出异议。" {
-		t.Fatalf("summary-only confirm must be kept: %+v", summaryOnly)
-	}
-	if !summaryOnly.HasSubstance() {
-		t.Fatal("AgentSummary alone must qualify as substance for the confirm round")
 	}
 }

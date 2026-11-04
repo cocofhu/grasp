@@ -13,14 +13,12 @@ import (
 
 const reviewDirtyFileCap = 80
 
-// OfferCommitOnConfirm asks the parked agent to decide whether leftover dirty
-// files should be committed (skipping temp files), then pushes already-committed
-// working branches. No-op when the node does not touch repos, no session is
-// parked, or the tree is clean and already pushed. Never fails the confirm.
-// Clarify Agents get the offer for adopted Live edits; other Agents only when
-// they commit code.
-func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) (out ReactTurn) {
-	if req.Caps == nil || (!req.Caps.Clarify() && !req.Caps.CommitsCode()) {
+// CheckGit asks the parked agent to decide whether leftover dirty files should
+// be committed (skipping temp files), then pushes already-committed working
+// branches. No-op when the node may not commit, no session is parked, or the
+// tree is clean and already pushed. Never fails the node.
+func (c *acpProvider) CheckGit(ctx context.Context, req NodeReq) (out ReactTurn) {
+	if req.Caps == nil || (!req.Caps.CommitsCode() && !(req.Caps.Clarify() && req.LiveEdits)) {
 		// Agents that never commit keep review demos and Live trials in this
 		// node's sandbox; downstream clones fresh.
 		return ReactTurn{}
@@ -58,11 +56,13 @@ func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) (ou
 			cancel()
 			if err != nil {
 				log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
-					Msg("review confirm git wrap-up chat failed")
+					Msg("git check commit chat failed")
 			} else {
 				absorbChat(&usage, &usageByModel, &events, res)
 				narration = res.Narration
 				c.host.TakePendingQuestions(req.RunID, req.NodeID)
+				// Commits change what the handoff describes.
+				c.host.NoteNodeChange(req.RunID, req.NodeID)
 			}
 		}
 	}
@@ -70,10 +70,37 @@ func (c *acpProvider) OfferCommitOnConfirm(ctx context.Context, req NodeReq) (ou
 	log.Info().Str("run", req.RunID).Str("node", req.NodeID).
 		Bool("dirty", dirty).Bool("unpushed", unpushed).
 		Bool("asked_agent", narration != "").
-		Msg("review confirm git wrap-up")
+		Msg("git check")
 
 	c.pushWorkingBranches(ctx, sess.sb, req)
 	return ReactTurn{Msg: narration, Events: events, Usage: usage, UsageByModel: usageByModel}
+}
+
+// EnsureHandoff re-prompts the parked agent for node_complete when the mark is
+// missing or older than the node's last product / code change. The stale mark
+// (and its audit artifact) is cleared first so it cannot be adopted again.
+// No-op without a connected parked session.
+func (c *acpProvider) EnsureHandoff(ctx context.Context, req NodeReq) (out ReactTurn) {
+	c.mu.Lock()
+	sess := c.sessions[reactKey(req)]
+	c.mu.Unlock()
+	if sess == nil || sess.acp == nil || !sess.acp.IsConnected() {
+		return ReactTurn{}
+	}
+	if c.host.OutcomeCurrent(req.RunID, req.NodeID) {
+		return ReactTurn{}
+	}
+	defer finishChatTurn(&out, sess.acp, time.Now())
+	c.host.ClearOutcome(req.RunID, req.NodeID)
+	var usage *models.TokenUsage
+	var usageByModel models.TokenUsageByModel
+	var events []models.AcpEvent
+	if _, err := c.ensureOutcome(ctx, req, sess.acp, &events, &usage, &usageByModel); err != nil {
+		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
+			Msg("handoff check re-prompt failed")
+	}
+	_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
+	return ReactTurn{Events: events, Usage: usage, UsageByModel: usageByModel}
 }
 
 // reviewGitNeedsWrapUp reports whether the change report has an uncommitted

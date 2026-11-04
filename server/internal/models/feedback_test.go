@@ -17,8 +17,6 @@ func TestFeedbackEventHasSubstance(t *testing.T) {
 		{"blank text only", FeedbackEvent{Text: "   \n\t "}, false},
 		{"empty turns", FeedbackEvent{Turns: []ReactMessage{{Role: "agent", Text: "  "}}}, false},
 		{"opinion text", FeedbackEvent{Text: "证据不足"}, true},
-		{"agent summary only", FeedbackEvent{AgentSummary: "用户确认按截图定稿。"}, true},
-		{"blank agent summary", FeedbackEvent{AgentSummary: "   \n\t "}, false},
 		{"annotation", FeedbackEvent{Annotations: []ReactAnnotation{{JSONPath: "$.a"}}}, true},
 		{"attachment", FeedbackEvent{Attachments: []PromptImage{{Ref: "blob:x"}}}, true},
 		{"react turn", FeedbackEvent{Turns: []ReactMessage{{Role: "human", Text: "改这里"}}}, true},

@@ -131,6 +131,10 @@ func TestReviewConfirmPlatformFallbackHandoff(t *testing.T) {
 	run, _ := eng.StartRun("wf", nil, "test")
 	waitReactPause(t, db, run.ID, "impl")
 	waitRunStatus(t, db, run.ID, "waiting_human")
+	// The confirm finalize turn leaves no node_complete either.
+	p.mu.Lock()
+	p.confirmSkipOutcome = true
+	p.mu.Unlock()
 
 	// Simulate a pause row that carries no handoff (e.g. agent never handed off).
 	var sr models.StateRun

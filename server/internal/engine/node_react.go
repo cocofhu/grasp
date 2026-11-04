@@ -70,9 +70,7 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 				return nodeOutcome{status: "failed", err: t.Err.Error(), outputMd: t.Msg,
 					retryable: true, events: t.Events, usage: t.Usage, usageByModel: t.UsageByModel}
 			}
-			return e.finishAgentOutcome(c, node, t.Result, func(r runtime.NodeResult) nodeOutcome {
-				return e.finalizeAgent(c, node, r)
-			})
+			return nodeOutcome{status: "completed", result: &t.Result}
 		}
 		return nodeOutcome{status: "paused", outputMd: "等待人工回复(ReAct 澄清)…", events: t.Events, usage: t.Usage, usageByModel: t.UsageByModel,
 			clarifyReplyToResume: unansweredClarifyMessage(msgs)}

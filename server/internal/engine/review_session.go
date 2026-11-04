@@ -844,7 +844,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	sealReplyOutcome(&agentMsg, t.Err)
 	conv.Messages = append(conv.Messages, agentMsg)
 	e.rememberTurnRoute(&conv, &req, t)
-	e.recordFeedback(e.clarifyFeedbackEvent(s, item, conv.Iteration, answered, humanMsg, agentMsg, interrupted, t.AgentSummary))
+	e.recordFeedback(e.clarifyFeedbackEvent(s, item, conv.Iteration, answered, humanMsg, agentMsg, interrupted))
 
 	if interrupted {
 		logDB(e.db.Save(&conv), s.runID, "save clarify agent turn (interrupted)")
@@ -874,45 +874,18 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	conv.Done = true
 	logDB(e.db.Save(&conv), s.runID, "finish clarify conversation")
 
+	outcome := nodeOutcome{status: "completed", result: &t.Result}
+	detail := "react 完成"
 	if t.Err != nil {
-		outcome := nodeOutcome{status: "failed", err: t.Err.Error(), outputMd: t.Msg,
+		outcome = nodeOutcome{status: "failed", err: t.Err.Error(), outputMd: t.Msg,
 			retryable: true, events: t.Events, usage: t.Usage, usageByModel: t.UsageByModel}
-		e.saveState(c, node, outcome)
-		e.appendTrace(c, models.TraceEntry{NodeID: s.producerID, Event: "resume", Detail: "react 失败"})
-		next := e.routeFailure(c, node, outcome)
-		if next == "" {
-			e.finish(s.runID, "failed")
-			return false, nil
-		}
-		go e.resumeAdmitted(s.runID, next)
-		return false, nil
+		detail = "react 失败"
 	}
-
-	outcome := e.finishAgentOutcome(c, node, t.Result, func(r runtime.NodeResult) nodeOutcome {
-		return e.finalizeAgent(c, node, r)
-	})
-	e.saveState(c, node, outcome)
-	e.appendTrace(c, models.TraceEntry{NodeID: s.producerID, Event: "resume", Detail: "react 完成"})
-
-	if outcome.status == "failed" {
-		next := e.routeFailure(c, node, outcome)
-		if next == "" {
-			e.finish(s.runID, "failed")
-			return false, nil
-		}
-		go e.resumeAdmitted(s.runID, next)
-		return false, nil
+	r := e.finishNode(c, node, outcome,
+		finishOpts{trigger: triggerConfirm, retire: true, conv: &conv, resumeDetail: detail})
+	if r.next != "" {
+		go e.resumeAdmitted(s.runID, r.next)
 	}
-
-	c.nodeOutputs[s.producerID] = t.Result.Outputs
-	e.appendTrace(c, models.TraceEntry{NodeID: s.producerID, Event: "exit"})
-
-	next := e.routeSuccess(c, node, outcome)
-	if next == "" {
-		e.finish(s.runID, "completed")
-		return false, nil
-	}
-	go e.resumeAdmitted(s.runID, next)
 	return false, nil
 }
 
@@ -1043,16 +1016,15 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 				Msg("review revise turn failed (session kept for retry)")
 		}
 		// The opinion was still given, so the round is recorded — only without
-		// targets, because nothing landed. Interrupted rounds usually omit
-		// agentSummary; empty field keeps the card summary section hidden.
-		e.recordFeedback(e.reviewFeedbackEvent(s, item, iter, humanMsg, agentMsg, nil, true, t.AgentSummary))
+		// targets, because nothing landed.
+		e.recordFeedback(e.reviewFeedbackEvent(s, item, iter, humanMsg, agentMsg, nil, true))
 		e.publishReact(s.runID, s.producerID)
 		return true, nil
 	}
 
 	e.refreshProducerOutputs(c, producer)
 	e.recordFeedback(e.reviewFeedbackEvent(s, item, iter, humanMsg, agentMsg,
-		diffDigests(beforeDigests, e.artifactDigests(s.runID, s.producerID)), false, t.AgentSummary))
+		diffDigests(beforeDigests, e.artifactDigests(s.runID, s.producerID)), false))
 	if item.Source == "gate" && item.GateNodeID != "" {
 		e.refreshGateBodyAfterRevise(c, item.GateNodeID)
 		e.appendTrace(c, models.TraceEntry{NodeID: item.GateNodeID, Event: "resume",

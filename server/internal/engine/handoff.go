@@ -12,8 +12,9 @@ import (
 func passThroughNode(t string) bool { return t == "branch" || t == "set_var" }
 
 // handoffTargets lists the nodes that consume node's handoff: each outgoing
-// edge's target, looking through branch / set_var nodes, ignoring the
-// terminal output sink. Outlet is the first hop's handle (or edge kind).
+// edge's target, looking through branch / set_var nodes and past approval
+// gates (which are listed themselves), ignoring the terminal output sink.
+// Outlet is the first hop's handle (or edge kind).
 func handoffTargets(g models.Graph, node *models.Node) []models.HandoffTarget {
 	if node == nil {
 		return nil
@@ -48,6 +49,15 @@ func handoffTargets(g models.Graph, node *models.Node) []models.HandoffTarget {
 			}
 			seen[key] = true
 			out = append(out, models.HandoffTarget{NodeID: tn.ID, Label: tn.Label, Type: tn.Type, Outlet: o})
+			// An approval gate forwards the result it judged: the nodes it
+			// releases consume the handoff too.
+			if tn.Type == "human_gate" {
+				next := map[string]bool{tn.ID: true}
+				for k := range visited {
+					next[k] = true
+				}
+				walk(tn.ID, o, next)
+			}
 		}
 	}
 	walk(node.ID, "", map[string]bool{node.ID: true})
@@ -81,18 +91,30 @@ func routedFrom(c *execCtx, nodeID string) string {
 
 // upstreamHandoff loads the handoff the routing upstream node left on its
 // latest execution (failed executions included, so a fail edge still carries
-// the explanation).
+// the explanation), looking past approval gates.
 func (e *Engine) upstreamHandoff(c *execCtx, node *models.Node) *models.UpstreamHandoff {
+	if e.db == nil {
+		return nil
+	}
 	src := routedFrom(c, node.ID)
-	if src == "" || e.db == nil {
-		return nil
-	}
 	var sr models.StateRun
-	if err := e.db.Where("run_id = ? AND node_id = ?", c.run.ID, src).
-		Order("iteration desc, id desc").First(&sr).Error; err != nil {
-		return nil
+	var text string
+	// An approval gate leaves no handoff of its own: look past it to the
+	// node whose result it released.
+	for hops := 0; src != "" && hops < 16; hops++ {
+		sr = models.StateRun{}
+		if err := e.db.Where("run_id = ? AND node_id = ?", c.run.ID, src).
+			Order("iteration desc, id desc").First(&sr).Error; err != nil {
+			return nil
+		}
+		if text = strings.TrimSpace(str(sr.Outputs[models.OutputHandoff])); text != "" {
+			break
+		}
+		if n := c.graph.FindNode(src); n == nil || n.Type != "human_gate" {
+			return nil
+		}
+		src = routedFrom(c, src)
 	}
-	text := strings.TrimSpace(str(sr.Outputs[models.OutputHandoff]))
 	if text == "" {
 		return nil
 	}

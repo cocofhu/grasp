@@ -198,9 +198,9 @@ func (r *ProviderRegistry) ReviseInPlace(ctx context.Context, req NodeReq, histo
 	return rp.ReviseInPlace(ctx, req, history, human, images)
 }
 
-// OfferCommitOnConfirm forwards confirm-time git wrap-up to the backend that
-// owns the parked session (same agent_profile routing as ReviseInPlace).
-func (r *ProviderRegistry) OfferCommitOnConfirm(ctx context.Context, req NodeReq) ReactTurn {
+// CheckGit forwards the end-of-node git check to the backend that owns the
+// parked session (same agent_profile routing as ReviseInPlace).
+func (r *ProviderRegistry) CheckGit(ctx context.Context, req NodeReq) ReactTurn {
 	p, err := r.providerFor(req)
 	if err != nil {
 		return ReactTurn{}
@@ -209,12 +209,12 @@ func (r *ProviderRegistry) OfferCommitOnConfirm(ctx context.Context, req NodeReq
 	if !ok {
 		return ReactTurn{}
 	}
-	return rp.OfferCommitOnConfirm(ctx, req)
+	return rp.CheckGit(ctx, req)
 }
 
-// ReconcileOnConfirm forwards the confirm-time reconcile + summary pair to the
-// backend that owns the parked session (same routing as OfferCommitOnConfirm).
-func (r *ProviderRegistry) ReconcileOnConfirm(ctx context.Context, req NodeReq) ReactTurn {
+// EnsureHandoff forwards the end-of-node node_complete check to the backend
+// that owns the parked session (same routing as CheckGit).
+func (r *ProviderRegistry) EnsureHandoff(ctx context.Context, req NodeReq) ReactTurn {
 	p, err := r.providerFor(req)
 	if err != nil {
 		return ReactTurn{}
@@ -223,7 +223,7 @@ func (r *ProviderRegistry) ReconcileOnConfirm(ctx context.Context, req NodeReq) 
 	if !ok {
 		return ReactTurn{}
 	}
-	return rp.ReconcileOnConfirm(ctx, req)
+	return rp.EnsureHandoff(ctx, req)
 }
 
 // HasLiveSession reports whether any backend holds a parked review session for

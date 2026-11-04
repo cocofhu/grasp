@@ -378,6 +378,41 @@ func (h *Host) storeOutcome(runID, nodeID string, o NodeOutcome) {
 		h.outcomes[runID] = map[string]NodeOutcome{}
 	}
 	h.outcomes[runID][nodeID] = o
+	if h.markSeq == nil {
+		h.markSeq = map[string]uint64{}
+	}
+	h.seq++
+	h.markSeq[runID+"|"+nodeID] = h.seq
+}
+
+// NoteNodeChange records that nodeID changed its products or code, so any
+// node_complete mark buffered before now is stale (see OutcomeCurrent).
+func (h *Host) NoteNodeChange(runID, nodeID string) {
+	if h == nil || runID == "" || nodeID == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.changeSeq == nil {
+		h.changeSeq = map[string]uint64{}
+	}
+	h.seq++
+	h.changeSeq[runID+"|"+nodeID] = h.seq
+}
+
+// OutcomeCurrent reports whether a node_complete mark is buffered for the
+// node and no product or code change was noted after it.
+func (h *Host) OutcomeCurrent(runID, nodeID string) bool {
+	if h == nil {
+		return false
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if _, ok := h.outcomes[runID][nodeID]; !ok {
+		return false
+	}
+	key := runID + "|" + nodeID
+	return h.markSeq[key] > h.changeSeq[key]
 }
 
 // ValidateOutcome runs the chained validator (Default then optional RPC).

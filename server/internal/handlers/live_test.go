@@ -140,10 +140,10 @@ func (p *livePermissionProvider) ReactReply(ctx context.Context, req runtime.Nod
 	return p.ReviseInPlace(ctx, req, history, human, images)
 }
 
-func (*livePermissionProvider) OfferCommitOnConfirm(context.Context, runtime.NodeReq) runtime.ReactTurn {
+func (*livePermissionProvider) CheckGit(context.Context, runtime.NodeReq) runtime.ReactTurn {
 	return runtime.ReactTurn{}
 }
-func (*livePermissionProvider) ReconcileOnConfirm(context.Context, runtime.NodeReq) runtime.ReactTurn {
+func (*livePermissionProvider) EnsureHandoff(context.Context, runtime.NodeReq) runtime.ReactTurn {
 	return runtime.ReactTurn{}
 }
 func (*livePermissionProvider) HasLiveSession(string, string) bool { return true }
