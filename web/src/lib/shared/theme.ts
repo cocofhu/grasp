@@ -49,7 +49,13 @@ let vtUpdatePending = false
 let themeVtActive = false
 let swallowThemeClick = false
 
-let override: ThemeName | null = null
+function bootEmbedTheme(): ThemeName | null {
+  if (!window.location.pathname.startsWith('/embed/')) return null
+  const value = document.documentElement.getAttribute('data-grasp-embed-theme')
+  return value === 'light' || value === 'dark' ? value : null
+}
+
+let override: ThemeName | null = bootEmbedTheme()
 
 function apply(t: ThemeName) {
   paintChrome(override ?? t)
@@ -276,6 +282,13 @@ export function applyPublicLightChrome(): void {
  */
 export function setThemeOverride(t: ThemeName | null): void {
   override = t
+  if (window.location.pathname.startsWith('/embed/')) {
+    const root = document.documentElement
+    if (t) {
+      root.setAttribute('data-grasp-embed-theme', t)
+      try { sessionStorage.setItem('grasp-embed-theme:' + window.location.pathname, t) } catch { /* Storage can be blocked in a preview iframe. */ }
+    } else root.removeAttribute('data-grasp-embed-theme')
+  }
   apply(theme.value)
 }
 

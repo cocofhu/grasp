@@ -1,4 +1,32 @@
 import { test, expect } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`preview boot shell applies ${theme} before the application loads and after reload`, async ({ page }) => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+    const preference = theme === 'light' ? 'dark' : 'light'
+    await page.addInitScript(value => localStorage.setItem('grasp-theme', value), preference)
+    // Leave the production HTML on screen: the application cannot fix its colors.
+    await page.route('**/src/main.ts', route => route.abort())
+    await page.route('**/embed/runs/boot-theme/nodes/*/shared-chat', route => route.fulfill({ contentType: 'text/html', body: html }))
+    await page.goto(`/embed/runs/boot-theme/nodes/solo/shared-chat#theme=${theme}`)
+    const shell = page.locator('[data-boot-shell]')
+    await expect(shell).toBeVisible()
+    const color = theme === 'light' ? 'rgb(250, 250, 251)' : 'rgb(10, 10, 11)'
+    await expect(page.locator('body')).toHaveCSS('background-color', color)
+    await expect(page.locator('html')).toHaveCSS('color-scheme', theme)
+    expect(await page.evaluate(() => localStorage.getItem('grasp-theme'))).toBe(preference)
+    await page.evaluate(() => history.replaceState(null, '', location.pathname))
+    await page.reload()
+    await expect(shell).toBeVisible()
+    await expect(page.locator('body')).toHaveCSS('background-color', color)
+    await expect(page.locator('html')).toHaveCSS('color-scheme', theme)
+    expect(await page.evaluate(() => localStorage.getItem('grasp-theme'))).toBe(preference)
+    await page.goto('/embed/runs/boot-theme/nodes/other/shared-chat')
+    const fallback = preference === 'light' ? 'rgb(250, 250, 251)' : 'rgb(10, 10, 11)'
+    await expect(page.locator('body')).toHaveCSS('background-color', fallback)
+  })
+}
 
 test.describe('shell loading infra', () => {
   test('route switch succeeds with non-empty main', async ({ page }) => {
