@@ -146,6 +146,70 @@ func TestEnsureHandoffWithoutSessionIsNoOp(t *testing.T) {
 	}
 }
 
+// A node_complete the engine already took still answers the handoff check
+// until the node changes again.
+func TestEnsureHandoffAfterTakenMark(t *testing.T) {
+	restore := sandbox.SetExecHook(func(context.Context, string, int, string, io.Reader) ([]byte, error) {
+		return []byte(""), nil
+	})
+	defer restore()
+
+	store := newMemStore()
+	host := mcp.NewHost(store)
+	runID, nodeID := "handoff-run", "impl"
+	tok := host.RegisterRun(runID)
+	t.Cleanup(func() { host.UnregisterRun(runID) })
+	mgr := newFakeManager(t, host, runID, nodeID, tok, func(int) chatFunc {
+		return func(turn int) turnAction {
+			if turn == 0 {
+				return turnAction{narration: "implemented", produces: map[string]string{
+					mcp.ImplementationResultArtifactName: `{"summary":"done"}`,
+					mcp.NodeOutcomeArtifactName:          `{"status":"success"}`,
+				}}
+			}
+			return turnAction{narration: "handoff again", produces: map[string]string{
+				mcp.NodeOutcomeArtifactName: `{"status":"success"}`,
+			}}
+		}
+	})
+	p, _ := newTestProvider(t, host, testOpts(), mgr)
+	req := reqWithProfile(NodeReq{
+		RunID: runID, NodeID: nodeID, NodeType: "agent", Caps: testImplementCaps, Token: tok,
+		KeepAliveForReview: true,
+		Config:             map[string]any{"prompt": "build"},
+	})
+	if _, err := p.RunAgent(context.Background(), req); err != nil {
+		t.Fatalf("RunAgent: %v", err)
+	}
+	if !p.HasLiveSession(runID, nodeID) {
+		t.Fatal("expected parked session")
+	}
+	prompts := func() int {
+		n := 0
+		for mgr.bridge(0).promptAt(n) != "" {
+			n++
+		}
+		return n
+	}
+	if _, ok := host.TakeOutcome(runID, nodeID); !ok {
+		t.Fatal("expected a buffered node_complete")
+	}
+	before := prompts()
+	p.EnsureHandoff(context.Background(), req)
+	if got := prompts(); got != before {
+		t.Fatalf("unchanged node re-prompted for node_complete: %d → %d", before, got)
+	}
+
+	host.NoteNodeChange(runID, nodeID)
+	p.EnsureHandoff(context.Background(), req)
+	if got := prompts(); got != before+1 {
+		t.Fatalf("a change after node_complete must re-prompt once: %d → %d", before, got)
+	}
+	if !host.OutcomeCurrent(runID, nodeID) {
+		t.Fatal("the re-prompted node_complete must be current")
+	}
+}
+
 func dirtyGitReport() string {
 	return strings.Join([]string{
 		"VCS\tgit",

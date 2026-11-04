@@ -3,6 +3,7 @@ package engine
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
@@ -160,6 +161,33 @@ func TestFinishNodeReviewConfirmWithoutMarkKeepsPassedResult(t *testing.T) {
 	}
 }
 
+// node_complete status=failed left by the review confirm is the node's verdict:
+// it routes as a fail (here: no failure edge, the run fails) instead of
+// reopening the dialogue.
+func TestFinishNodeReviewConfirmFailedMarkIsVerdict(t *testing.T) {
+	eng, db, p := setupEngineGraphP(t, handoffReviewGraph())
+	run, _ := eng.StartRun("wf", nil, "test")
+	waitReactPause(t, db, run.ID, "impl")
+	waitRunStatus(t, db, run.ID, "waiting_human")
+
+	p.mu.Lock()
+	p.outcomeFailed = true
+	p.mu.Unlock()
+	if err := eng.ReactReply(run.ID, "impl", "确认并流转", nil, nil, true); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "failed")
+
+	if sr := latestStateRun(t, eng, run.ID, "impl"); sr.Status != "failed" {
+		t.Fatalf("impl status = %q", sr.Status)
+	}
+	var conv models.ReactConversation
+	db.Where("run_id = ? AND node_id = ?", run.ID, "impl").First(&conv)
+	if !conv.Done {
+		t.Fatal("a failing verdict must not reopen the dialogue")
+	}
+}
+
 // Clarify confirm is the end of the clarify execution: a failed check fails
 // the node (no reopen), and the session is retired.
 func TestFinishNodeClarifyConfirmCheckFailFails(t *testing.T) {
@@ -222,8 +250,9 @@ func TestFinishNodeConfirmFailureDoesNotAutoRetry(t *testing.T) {
 	}
 }
 
-// The approval gate's upstream producer still runs its handoff check when the
-// gate resolves, and a refreshed handoff is written back onto its execution.
+// An approval gate's upstream producer that was revised while the gate waited
+// is asked for node_complete again when the gate resolves, and the refreshed
+// handoff is written back onto its execution.
 func TestFinishNodeGateUpstreamWritesBackHandoff(t *testing.T) {
 	eng, db, p := setupGateReactEngine(t)
 	run, err := eng.StartRun("gate-react-wf", map[string]any{"idea": "登录"}, "test")
@@ -233,6 +262,12 @@ func TestFinishNodeGateUpstreamWritesBackHandoff(t *testing.T) {
 	waitGatePending(t, db, run.ID, "select")
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
+	if err := eng.GateReactRevise(run.ID, "select", "按意见改", nil, nil); err != nil {
+		t.Fatalf("GateReactRevise: %v", err)
+	}
+	if err := eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
 	p.mu.Lock()
 	p.handoffCheckOutcome = true
 	p.handoffText = "审批前已按意见修改"
@@ -246,8 +281,69 @@ func TestFinishNodeGateUpstreamWritesBackHandoff(t *testing.T) {
 	if sr.Outputs[models.OutputHandoff] != "审批前已按意见修改" {
 		t.Fatalf("gate upstream handoff not written back: %+v", sr.Outputs)
 	}
+	p.mu.Lock()
+	prompts := p.handoffPrompts["prop"]
+	p.mu.Unlock()
+	if prompts != 1 {
+		t.Fatalf("a revised producer must be asked for node_complete once, got %d", prompts)
+	}
 	if !p.retired[p.parkKey(run.ID, "prop")] {
 		t.Fatal("producer session must be retired after the gate resolves")
+	}
+}
+
+// Resolving an approval gate whose upstream producer was not touched while
+// the gate waited costs no model turn: the producer's node_complete is still
+// current, and its handoff is kept.
+func TestFinishNodeGateUpstreamUnchangedSkipsHandoffPrompt(t *testing.T) {
+	eng, db, p := setupGateReactEngine(t)
+	run, err := eng.StartRun("gate-react-wf", map[string]any{"idea": "登录"}, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitGatePending(t, db, run.ID, "select")
+	waitRunStatus(t, db, run.ID, "waiting_human")
+	before := latestStateRun(t, eng, run.ID, "prop")
+
+	p.mu.Lock()
+	p.handoffCheckOutcome = true
+	p.handoffText = "不应出现"
+	p.mu.Unlock()
+	if err := eng.ResumeGate(run.ID, "select", "approve", nil); err != nil {
+		t.Fatalf("ResumeGate: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "completed")
+
+	p.mu.Lock()
+	prompts := p.handoffPrompts["prop"]
+	p.mu.Unlock()
+	if prompts != 0 {
+		t.Fatalf("an unchanged producer must not be re-prompted, got %d", prompts)
+	}
+	sr := latestStateRun(t, eng, run.ID, "prop")
+	if sr.Outputs[models.OutputHandoff] != before.Outputs[models.OutputHandoff] {
+		t.Fatalf("handoff changed: %v → %v", before.Outputs[models.OutputHandoff], sr.Outputs[models.OutputHandoff])
+	}
+}
+
+// An auto run of a review-enabled node that fails its check has nothing to
+// hand off: no wrap-up turn is sent to its still-parked session.
+func TestFinishNodeDecidedFailureSkipsWrapUpTurns(t *testing.T) {
+	eng, db, p := setupReviewEngine(t)
+	p.skipOutcome = true
+	run, err := eng.StartRun("review-wf", map[string]any{"idea": "登录"}, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "failed")
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n := p.handoffChecks["prop"]; n != 0 {
+		t.Fatalf("handoff check on a failed run: %d", n)
+	}
+	if n := p.wrapUpCalls["prop"]; n != 0 {
+		t.Fatalf("git check on a failed run: %d", n)
 	}
 }
 

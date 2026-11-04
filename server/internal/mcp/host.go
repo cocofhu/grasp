@@ -503,6 +503,13 @@ func (h *Host) UnregisterRun(runID string) {
 			delete(h.downstream, key)
 		}
 	}
+	for _, m := range []map[string]uint64{h.markSeq, h.changeSeq} {
+		for key := range m {
+			if strings.HasPrefix(key, runID+"|") {
+				delete(m, key)
+			}
+		}
+	}
 	h.mu.Unlock()
 }
 

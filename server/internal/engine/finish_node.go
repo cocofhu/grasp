@@ -67,9 +67,15 @@ type finishResult struct {
 // whether the visit already held a passed result, trigger and out edges.
 func (e *Engine) finishNode(c *execCtx, node *models.Node, oc nodeOutcome, opts finishOpts) finishResult {
 	held := e.hasPassedResult(c, node)
-	wrapEvents := e.stepGit(c, node, opts.conv)
-	oc, handoffEvents := e.stepHandoff(c, node, oc, held, opts.conv)
-	wrapEvents = append(wrapEvents, handoffEvents...)
+	var wrapEvents []models.AcpEvent
+	// An execution that already failed (agent error, rejected run) has no
+	// result to hand off: the wrap-up turns would only cost the model a round.
+	if oc.result != nil {
+		wrapEvents = e.stepGit(c, node, opts.conv)
+		var handoffEvents []models.AcpEvent
+		oc, handoffEvents = e.stepHandoff(c, node, oc, held, opts.conv)
+		wrapEvents = append(wrapEvents, handoffEvents...)
+	}
 	if oc.status == "cancelled" {
 		return finishResult{abandoned: true}
 	}

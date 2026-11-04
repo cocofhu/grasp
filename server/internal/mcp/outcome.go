@@ -189,6 +189,7 @@ func (h *Host) ClearOutcome(runID, nodeID string) {
 			delete(byNode, nodeID)
 		}
 	}
+	delete(h.markSeq, runID+"|"+nodeID)
 	h.mu.Unlock()
 	if ok {
 		log.Info().Str("run_id", runID).Str("node_id", nodeID).
@@ -400,19 +401,18 @@ func (h *Host) NoteNodeChange(runID, nodeID string) {
 	h.changeSeq[runID+"|"+nodeID] = h.seq
 }
 
-// OutcomeCurrent reports whether a node_complete mark is buffered for the
-// node and no product or code change was noted after it.
+// OutcomeCurrent reports whether the node called node_complete in this visit
+// and no product or code change was noted after it. A mark the engine already
+// took still counts; ClearOutcome forgets it.
 func (h *Host) OutcomeCurrent(runID, nodeID string) bool {
 	if h == nil {
 		return false
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	if _, ok := h.outcomes[runID][nodeID]; !ok {
-		return false
-	}
 	key := runID + "|" + nodeID
-	return h.markSeq[key] > h.changeSeq[key]
+	mark := h.markSeq[key]
+	return mark > 0 && mark > h.changeSeq[key]
 }
 
 // ValidateOutcome runs the chained validator (Default then optional RPC).

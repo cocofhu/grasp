@@ -143,9 +143,12 @@ type fakeProvider struct {
 	wrapUpBeforeConfirm bool
 	confirmMsg          string
 	confirmSkipOutcome  bool
-	// handoffChecks counts EnsureHandoff per node id; handoffCheckMsg is its
-	// narration and handoffCheckOutcome makes it leave a fresh node_complete.
+	// handoffChecks counts EnsureHandoff per node id and handoffPrompts the
+	// calls that re-prompted (no current node_complete); handoffCheckMsg is the
+	// re-prompt's narration and handoffCheckOutcome makes it leave a fresh
+	// node_complete.
 	handoffChecks       map[string]int
+	handoffPrompts      map[string]int
 	handoffCheckMsg     string
 	handoffCheckOutcome bool
 	// handoffText (test-only) overrides the handoff node_complete carries.
@@ -689,6 +692,7 @@ func (f *fakeProvider) writeClarifyProducts(req runtime.NodeReq, human string) (
 func (f *fakeProvider) parkKey(runID, nodeID string) string { return runID + "|" + nodeID }
 
 func (f *fakeProvider) ReviseInPlace(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage, human string, images []models.PromptImage) runtime.ReactTurn {
+	f.host.NoteNodeChange(req.RunID, req.NodeID)
 	if strings.HasPrefix(human, models.ReviewConfirmFinalize) {
 		return f.confirmFinalize(req)
 	}
@@ -788,6 +792,14 @@ func (f *fakeProvider) EnsureHandoff(ctx context.Context, req runtime.NodeReq) r
 		f.handoffChecks = map[string]int{}
 	}
 	f.handoffChecks[req.NodeID]++
+	if f.host.OutcomeCurrent(req.RunID, req.NodeID) {
+		f.mu.Unlock()
+		return runtime.ReactTurn{}
+	}
+	if f.handoffPrompts == nil {
+		f.handoffPrompts = map[string]int{}
+	}
+	f.handoffPrompts[req.NodeID]++
 	msg, emit := f.handoffCheckMsg, f.handoffCheckOutcome
 	f.mu.Unlock()
 	if emit {

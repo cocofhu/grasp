@@ -76,8 +76,9 @@ func (c *acpProvider) CheckGit(ctx context.Context, req NodeReq) (out ReactTurn)
 	return ReactTurn{Msg: narration, Events: events, Usage: usage, UsageByModel: usageByModel}
 }
 
-// EnsureHandoff re-prompts the parked agent for node_complete when the mark is
-// missing or older than the node's last product / code change. The stale mark
+// EnsureHandoff re-prompts the parked agent for node_complete when the visit
+// has none, or only one older than the node's last product / code change (a
+// mark the engine already took still counts). The stale mark
 // (and its audit artifact) is cleared first so it cannot be adopted again.
 // No-op without a connected parked session.
 func (c *acpProvider) EnsureHandoff(ctx context.Context, req NodeReq) (out ReactTurn) {
