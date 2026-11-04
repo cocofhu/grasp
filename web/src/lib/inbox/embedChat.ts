@@ -1,6 +1,7 @@
 import { isLoopbackHostname } from '@/lib/inbox/gateShareLink'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import type { ThemeName } from '@/lib/shared/theme'
+import type { AppLocale } from '@/lib/shared/locale'
 
 /** Must match server handlers.headerEmbedRequest. */
 const EMBED_REQUEST_HEADER = 'X-Grasp-Embed'
@@ -42,6 +43,7 @@ export type EmbedSession = {
   token: string
   expiresAt: string
   kind?: 'solo' | 'app-preview' | 'session' | 'share'
+  locale?: AppLocale
 }
 
 type RedeemResponse = Omit<EmbedSession, 'kind'> & { kind?: string; runId?: string; nodeId?: string; error?: string }
@@ -136,6 +138,11 @@ export function parseEmbedThemeFromHash(hash: string): ThemeName | null {
   return asTheme(hashParams(hash).get('theme'))
 }
 
+export function parseEmbedLocaleFromHash(hash: string): AppLocale | null {
+  const lang = hashParams(hash).get('lang')
+  return lang === 'zh-CN' || lang === 'en' ? lang : null
+}
+
 export function parseEmbedThemeMessage(data: unknown): ThemeName | null {
   if (!data || typeof data !== 'object') return null
   const m = data as { type?: unknown; theme?: unknown }
@@ -159,7 +166,8 @@ export function loadEmbedSession(runId: string, nodeId: string, now = Date.now()
       return null
     }
     if (shared !== (s.kind === 'app-preview')) return null
-    return { token: s.token, expiresAt: s.expiresAt, ...embedKind(s.kind) }
+    return { token: s.token, expiresAt: s.expiresAt, ...embedKind(s.kind),
+      ...(s.locale === 'zh-CN' || s.locale === 'en' ? { locale: s.locale } : {}) }
   } catch {
     return null
   }

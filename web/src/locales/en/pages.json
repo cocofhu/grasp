@@ -3530,7 +3530,7 @@
         "main": "Main conversation",
         "recommended": "Recommended",
         "isolatedHint": "Visitors start with a blank chat in this workspace. Their messages stay out of the main conversation.",
-        "mainHint": "Visitors can read the main conversation’s text history and send messages to that same conversation.",
+        "mainHint": "Visitors can read the main conversation’s history, thoughts and tool calls, and send messages to that same conversation. Thoughts may include file paths or code snippets.",
         "duration": "Links are valid for 24 hours. Creating another link of the same type replaces the previous one.",
         "copied": "Link copied. You can send it to your visitors.",
         "manual": "Copy the link below manually.",

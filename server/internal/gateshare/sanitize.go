@@ -414,7 +414,7 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		}
 		// Keep a text-less turn when it still carries a choice card, a form,
 		// or a takeover opening's narration.
-		if turn.Text == "" && strings.TrimSpace(turn.Narration) == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 {
+		if turn.Text == "" && strings.TrimSpace(turn.Narration) == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 && len(turn.Parts) == 0 && len(turn.Tools) == 0 {
 			continue
 		}
 		out = append(out, turn)

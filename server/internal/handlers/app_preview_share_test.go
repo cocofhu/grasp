@@ -1,15 +1,20 @@
 package handlers_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
+	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
 func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
@@ -71,12 +76,25 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			guestFile := models.PromptImage{MimeType: "text/plain", Name: "guest-notes.txt", Data: "Z3Vlc3Qgbm90ZXM="}
 			ownerFile := models.PromptImage{MimeType: "text/plain", Name: "owner-private.txt", Data: "cHJpdmF0ZQ=="}
 			picks := []models.ReactAnnotation{{Selector: "#heading", URL: "https://preview.example.test/hidden", OuterHTML: "<h1>private-markup</h1>"}}
+			parts := []models.AcpPart{{Kind: "thought", Text: "Inspect the heading"},
+				{Kind: "tool", Title: "read_file /private/notes", Status: "completed", Input: "private-tool-input", Output: "private-tool-output"},
+				{Kind: "message", Text: "Preview timeline reply"}}
 			if solo {
 				hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
 				if err := hn.db.Create(&models.SoloSession{ID: sb.ThreadID, UserID: "admin", AgentName: sb.Profile, SandboxID: sb.ID, Status: models.SoloStatusRunning}).Error; err != nil {
 					t.Fatal(err)
 				}
 				if err := hn.db.Create(&models.SoloMessage{ID: "solo-history", SessionID: sb.ThreadID, Role: "user", Content: mainHistory, Annotations: picks, Images: []models.PromptImage{ownerFile}}).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := hn.db.Create(&models.SoloMessage{
+					ID: "timeline-reply", SessionID: sb.ThreadID, Role: "assistant", Content: "Preview timeline reply",
+					DurationMs: 2000, Events: []json.RawMessage{
+						json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_thought_chunk","content":{"text":"Inspect the heading"}}}`),
+						json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"private-id","title":"read_file /private/notes","status":"completed","rawInput":{"path":"private-tool-input"},"rawOutput":"private-tool-output"}}`),
+						json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_message_chunk","content":{"text":"Preview timeline reply"}}}`),
+					},
+				}).Error; err != nil {
 					t.Fatal(err)
 				}
 				if err := hn.db.Create(&models.SoloMessage{
@@ -92,6 +110,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 					t.Fatal(err)
 				}
 				conv.Messages = append(conv.Messages,
+					models.ReactMessage{Role: "agent", Text: "Preview timeline reply", Parts: parts, At: time.Now().Format(time.RFC3339Nano), DurationMs: 2000},
 					models.ReactMessage{Role: "human", Text: "Owner attachment", Annotations: picks, Images: []models.PromptImage{ownerFile}},
 					models.ReactMessage{Role: "human", Text: "Visitor upload", PreviewShared: true, Images: []models.PromptImage{guestFile}},
 				)
@@ -153,6 +172,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				header := headers(mode)
 				header[headerShareToken] = token
 				session := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, header)
+				tokens[mode+"-api"] = parseJSON(t, session)["ticket"].(string)
 				if session.Code != http.StatusOK || parseJSON(t, session)["chatMode"] != mode {
 					t.Fatalf("drawer session: %d %s", session.Code, session.Body)
 				}
@@ -184,6 +204,75 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			}
 			mainHeaders := headers("main-drawer")
 			history := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, mainHeaders)
+			if !strings.Contains(history.Body.String(), `"kind":"thought","text":"Inspect the heading"`) ||
+				!strings.Contains(history.Body.String(), `"kind":"tool","title":"read_file","status":"completed"`) ||
+				!strings.Contains(history.Body.String(), `"startedAt"`) || !strings.Contains(history.Body.String(), `"endedAt"`) ||
+				strings.Contains(history.Body.String(), "private-tool-") || strings.Contains(history.Body.String(), "/private/notes") {
+				t.Fatalf("shared timeline: %d %s", history.Code, history.Body)
+			}
+			// Both main backends seed the public stream with the same timeline;
+			// independent tickets and cross-origin sockets cannot subscribe.
+			if solo {
+				service := hn.h.Solo
+				hn.h.Solo = nil
+				header := map[string]string{"Origin": "http://" + publicHost, "Sec-WebSocket-Protocol": "grasp-preview-main, " + tokens["main-api"]}
+				unavailable := hn.doEmbed(http.MethodGet, path+"/main-events", nil, header)
+				hn.h.Solo = service
+				if unavailable.Code != http.StatusServiceUnavailable {
+					t.Fatalf("missing Solo service: %d %s", unavailable.Code, unavailable.Body)
+				}
+			}
+			var historyReads atomic.Int32
+			if err := hn.db.Callback().Query().After("gorm:query").Register("preview-history-count", func(query *gorm.DB) {
+				if query.Statement.Table == "solo_messages" && len(query.Statement.Selects) == 0 {
+					historyReads.Add(1)
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			streamServer := httptest.NewServer(hn.r)
+			defer streamServer.Close()
+			dial := func(ticket, origin string) (*websocket.Conn, *http.Response, error) {
+				d := websocket.Dialer{Subprotocols: []string{"grasp-preview-main", ticket}}
+				return d.Dial(wsURL(streamServer.URL, path+"/main-events"), http.Header{"Origin": []string{origin}})
+			}
+			for _, tc := range []struct{ ticket, origin string }{
+				{tokens["isolated-api"], streamServer.URL}, {tokens["main-api"], "https://other.example.test"},
+			} {
+				conn, response, err := dial(tc.ticket, tc.origin)
+				if conn != nil {
+					_ = conn.Close()
+				}
+				if err == nil || response == nil || response.StatusCode != http.StatusUnauthorized {
+					t.Fatalf("unauthorized stream: %v %+v", err, response)
+				}
+			}
+			stream, _, err := dial(tokens["main-api"], streamServer.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			_ = stream.SetReadDeadline(time.Now().Add(3 * time.Second))
+			_, seed, err := stream.ReadMessage()
+			if err != nil || !strings.Contains(string(seed), `"type":"snapshot"`) || !strings.Contains(string(seed), "Inspect the heading") || strings.Contains(string(seed), "private-tool-") {
+				t.Fatalf("main stream seed: %s %v", seed, err)
+			}
+			viewers := []*websocket.Conn{stream}
+			for i := 0; i < 7; i++ {
+				viewer, _, err := dial(tokens["main-api"], streamServer.URL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer viewer.Close()
+				viewers = append(viewers, viewer)
+				_ = viewer.SetReadDeadline(time.Now().Add(3 * time.Second))
+				if _, initial, err := viewer.ReadMessage(); err != nil || !strings.Contains(string(initial), `"type":"snapshot"`) {
+					t.Fatalf("additional viewer seed: %s %v", initial, err)
+				}
+			}
+			if solo && (historyReads.Load() < 1 || historyReads.Load() > 2) {
+				t.Fatalf("eight viewers rebuilt history %d times; want one shared source", historyReads.Load())
+			}
 			if !strings.Contains(history.Body.String(), "guest-notes.txt") || strings.Contains(history.Body.String(), "owner-private.txt") ||
 				strings.Contains(history.Body.String(), guestFile.Data) {
 				t.Fatalf("attachment metadata: %d %s", history.Code, history.Body)
@@ -191,6 +280,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			var guestID, ownerID string
 			for _, raw := range parseJSON(t, history)["rows"].([]any) {
 				row := raw.(map[string]any)
+				if (row["role"] == "human" || row["role"] == "user") && (row["startedAt"] != nil || row["endedAt"] != nil) {
+					t.Fatalf("user row carries agent timing: %+v", row)
+				}
 				switch row["text"] {
 				case "Visitor upload":
 					guestID = row["id"].(string)
@@ -232,6 +324,24 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			w = hn.doEmbed(http.MethodGet, path+"/model", nil, mainHeaders)
 			if w.Code != http.StatusOK || parseJSON(t, w)["currentModelId"] != "next-model" {
 				t.Fatalf("shared main persisted model: %d %s", w.Code, w.Body)
+			}
+			if !solo {
+				hn.h.Eng.Broker().Publish(runID, []byte(`{"type":"dialogue","nodeId":"`+nodeID+`"}`))
+			}
+			for _, viewer := range viewers {
+				_ = viewer.SetReadDeadline(time.Now().Add(3 * time.Second))
+				for {
+					_, pushed, err := viewer.ReadMessage()
+					if err != nil {
+						t.Fatalf("main stream did not update: %v", err)
+					}
+					if strings.Contains(string(pushed), `"currentModelId":"next-model"`) {
+						if !strings.Contains(string(pushed), `"type":"tail"`) || strings.Contains(string(pushed), mainHistory) {
+							t.Fatalf("update resent unchanged history: %s", pushed)
+						}
+						break
+					}
+				}
 			}
 			if w := hn.doEmbed(http.MethodPost, path+"/model", map[string]any{"modelId": "unlisted-model"}, mainHeaders); w.Code != http.StatusBadRequest {
 				t.Fatalf("model outside bound group accepted: %d %s", w.Code, w.Body)

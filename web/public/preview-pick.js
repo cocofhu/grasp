@@ -1917,6 +1917,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
     var q = new URLSearchParams();
     if (ticket) q.set('ticket', ticket);
     q.set('theme', e.theme === 'light' ? 'light' : 'dark');
+    if (normLang(e.lang)) q.set('lang', normLang(e.lang));
     return src + '#' + q.toString();
   }
 
@@ -2096,7 +2097,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
         // Keep the pending ticket until the drawer reports a live session.
         // A login redirect destroys this page before the iframe can redeem it.
         startDrawer(
-          { origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme, lang: frag.lang || lang, shared: frag.shared },
+          { origin: v.origin, run: frag.run, node: frag.node, open: true, theme: frag.theme, lang: frag.lang, shared: frag.shared },
           frag.ticket,
         );
         setDrawerOpen(true);

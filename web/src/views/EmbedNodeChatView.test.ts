@@ -22,14 +22,17 @@ vi.mock('@/views/PublicGateApprovalView.vue', () => ({
     },
   }),
 }))
+vi.mock('@/components/run/SharedAppPreviewChat.vue', () => ({
+  default: defineComponent({ props: ['token'], template: '<div data-testid="shared-chat-stub" :data-token="token" />' }),
+}))
 
 import EmbedNodeChatView from './EmbedNodeChatView.vue'
 import { loadEmbedSession, saveEmbedSession } from '@/lib/inbox/embedChat'
 import { LOCALE_STORAGE_KEY, locale, setLocale } from '@/lib/shared/locale'
 
-function mountView() {
+function mountView(props: { shared?: boolean } = {}) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
-  return mount(EmbedNodeChatView, { global: { plugins: [i18n] } })
+  return mount(EmbedNodeChatView, { props, global: { plugins: [i18n] } })
 }
 
 beforeEach(() => {
@@ -42,6 +45,43 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('EmbedNodeChatView', () => {
+  it('keeps shared language in the embed session without changing the account preference', async () => {
+    await setLocale('en')
+    history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/shared-chat#ticket=shared&lang=zh-CN')
+    mocks.redeem.mockResolvedValue({ token: 'public-preview', kind: 'app-preview', expiresAt: '2099-01-01T00:00:00Z' })
+    const first = mountView({ shared: true })
+    // Locale bundles load asynchronously; wait until the chat is connected.
+    await vi.waitFor(() => expect(first.get('[data-testid="shared-chat-stub"]').attributes('data-token')).toBe('public-preview'))
+    expect(locale.value).toBe('zh-CN')
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
+    expect(loadEmbedSession('run-1', 'ap1', Date.now(), true)?.locale).toBe('zh-CN')
+    expect(loadEmbedSession('other-run', 'ap1', Date.now(), true)).toBeNull()
+    first.unmount()
+    await setLocale('en')
+    const refreshed = mountView({ shared: true })
+    await vi.waitFor(() => expect(refreshed.get('[data-testid="shared-chat-stub"]').attributes('data-token')).toBe('public-preview'))
+    expect(locale.value).toBe('zh-CN')
+    expect(document.documentElement.lang).toBe('zh-CN')
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
+    window.dispatchEvent(new StorageEvent('storage', { key: LOCALE_STORAGE_KEY, newValue: 'en' }))
+    await flushPromises()
+    expect(locale.value).toBe('zh-CN')
+    expect(mocks.redeem).toHaveBeenCalledTimes(1)
+    refreshed.unmount()
+  })
+
+  it('applies the opening language before announcing the chat, including after refresh', async () => {
+    await setLocale('en')
+    saveEmbedSession('run-1', 'ap1', { token: 'gse_a', expiresAt: '2099-01-01T00:00:00Z' })
+    history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/chat#theme=light&lang=zh-CN')
+    const w = mountView()
+    await vi.waitFor(() => expect(w.get('[data-testid="chat-stub"]').attributes('data-token')).toBe('gse_a'))
+    expect(locale.value).toBe('zh-CN')
+    expect(document.documentElement.lang).toBe('zh-CN')
+    expect(w.get('[data-testid="chat-stub"]').attributes('data-token')).toBe('gse_a')
+    w.unmount()
+  })
+
   it('redeems the fragment ticket, strips it from the URL and keeps the token', async () => {
     history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/chat#ticket=tk1')
     mocks.redeem.mockResolvedValue({ token: 'gse_a', expiresAt: '2099-01-01T00:00:00Z' })

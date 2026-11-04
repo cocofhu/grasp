@@ -684,20 +684,54 @@ func (s *SoloService) PreviewMessageAttachments(sessionID, messageID string) []m
 	return message.Images
 }
 
-// PreviewTranscript combines saved messages with the current text stream for
-// the explicit main-conversation share. Its caller projects text fields only.
+// PreviewTranscript combines saved messages with the current turn for the
+// explicit main-conversation share. Callers must sanitize its event timeline.
 func (s *SoloService) PreviewTranscript(id, user string) ([]models.SoloMessage, bool, error) {
 	messages, err := s.Messages(id, user)
-	c := s.lookup(id)
-	if err != nil || c == nil || c.sess.Ready() {
+	if err != nil {
 		return messages, false, err
+	}
+	live, busy := s.PreviewLiveReply(id)
+	if live == nil {
+		return messages, busy, nil
+	}
+	for i, message := range messages {
+		if "live:"+message.ID != live.ID {
+			continue
+		}
+		// The finished reply may already be saved while the queue is settling.
+		for _, next := range messages[i+1:] {
+			if next.Role == "assistant" {
+				return messages, busy, nil
+			}
+		}
+		// Later system messages must not hide the active reply.
+		messages = append(messages, models.SoloMessage{})
+		copy(messages[i+2:], messages[i+1:])
+		messages[i+1] = *live
+		break
+	}
+	return messages, busy, nil
+}
+
+// PreviewLiveReply snapshots only the active turn, without reading persisted
+// history. Callers must authorize the session before subscribing and sanitize
+// its event timeline before sending it to public viewers.
+func (s *SoloService) PreviewLiveReply(id string) (*models.SoloMessage, bool) {
+	c := s.lookup(id)
+	if c == nil || c.sess.Ready() {
+		return nil, false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if n := len(messages); n > 0 && messages[n-1].ID == c.turnID && len(c.events) > 0 && c.text.Len() > 0 {
-		messages = append(messages, models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.text.String()})
+	if c.turnID == "" || len(c.events) == 0 {
+		return nil, true
 	}
-	return messages, true, nil
+	events := make([]json.RawMessage, len(c.events))
+	for i, event := range c.events {
+		events[i] = append(json.RawMessage(nil), event...)
+	}
+	return &models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.text.String(), Events: events, Execution: c.execution}, true
 }
 
 // Env returns the injected env keys and their sources (never values).

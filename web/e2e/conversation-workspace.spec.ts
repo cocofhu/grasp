@@ -1,4 +1,4 @@
-import { test, expect, type FrameLocator, type Page } from '@playwright/test'
+import { test, expect, type FrameLocator, type Page, type WebSocketRoute } from '@playwright/test'
 import type { SoloMessage } from '../src/lib/api/apiTypes'
 import type { PreviewChatRow } from '../src/lib/inbox/appPreviewShare'
 import type { Locator } from '@playwright/test'
@@ -161,11 +161,11 @@ test('a direct Solo preview streams the reply to a message with a picked element
   await expect(dialog.getByRole('radio', { name: /独立会话/ })).toBeChecked()
   await dialog.getByRole('button', { name: '复制分享链接' }).click()
   await expect(dialog.getByRole('status')).toContainText('链接已复制')
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${grasp}/public/approvals/app#t=isolated`)
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${grasp}/public/approvals/app#t=isolated&lang=zh-CN`)
   await dialog.getByRole('radio', { name: /^主会话/ }).check()
   await dialog.getByRole('button', { name: '复制分享链接' }).click()
   await expect(dialog.getByRole('status')).toContainText('链接已复制')
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${grasp}/public/approvals/app#t=main`)
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${grasp}/public/approvals/app#t=main&lang=zh-CN`)
   expect(shareBodies).toEqual([{ port: 8899, chatMode: 'isolated' }, { port: 8899, chatMode: 'main' }])
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
@@ -283,8 +283,9 @@ test('a signed-in workflow preview uses the regular chat model and reference pic
 
 test('anonymous shares open the direct app and use its floating chat in both modes', async ({ browser }) => {
   test.setTimeout(60_000)
-  const anonymous = await browser.newContext({ viewport: { width: 390, height: 820 }, locale: 'zh-CN' })
+  const anonymous = await browser.newContext({ viewport: { width: 390, height: 820 }, locale: 'en-US' })
   try {
+    await anonymous.addInitScript(() => { if (!localStorage.getItem('grasp-locale')) localStorage.setItem('grasp-locale', 'en') })
     const grasp = 'http://127.0.0.1:5174'
     const direct = 'http://127.0.0.1:19084'
     const previewUrl = direct + '/shared-app-fixture'
@@ -338,6 +339,24 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       return route.fulfill({ json: { lane: 'github', items: [previewIssue] } })
     })
     const mainRows: PreviewChatRow[] = [{ id: 'main-history', role: 'user', text: 'Original main conversation' }]
+    const mainSockets = new Map<WebSocketRoute, PreviewChatRow[] | undefined>()
+    let mainBusy = false
+    const publishMain = () => {
+      for (const [ws, previous] of mainSockets) {
+        if (!previous) ws.send(JSON.stringify({ type: 'snapshot', history: { rows: mainRows, busy: mainBusy } }))
+        else {
+          let start = 0
+          while (start < previous.length && start < mainRows.length && JSON.stringify(previous[start]) === JSON.stringify(mainRows[start])) start++
+          ws.send(JSON.stringify({ type: 'tail', start, rows: mainRows.slice(start), busy: mainBusy }))
+        }
+        mainSockets.set(ws, structuredClone(mainRows))
+      }
+    }
+    await anonymous.routeWebSocket('**/public/approvals/app/main-events', ws => {
+      mainSockets.set(ws, undefined)
+      ws.onClose(() => { mainSockets.delete(ws) })
+      publishMain()
+    })
     await anonymous.route(url + '/main-chat', (route) => {
       expect(route.request().headers()['x-gate-share-token']).toBe(mainSession)
       if (route.request().method() === 'POST') {
@@ -347,9 +366,10 @@ test('anonymous shares open the direct app and use its floating chat in both mod
         expect(references).toEqual([{ kind: 'github_issue', target: 'acme/web#12' }])
         expect(images).toEqual([expect.objectContaining({ name: 'main-notes.txt', data: Buffer.from('Main notes').toString('base64') })])
         mainRows.push({ id: 'main-new', role: 'user', text, annotations, images: [{ name: 'main-notes.txt', mimeType: 'text/plain' }], references: [previewIssue] })
+        publishMain()
         return route.fulfill({ json: { ok: true } })
       }
-      return route.fulfill({ json: { rows: mainRows, busy: false } })
+      return route.fulfill({ json: { rows: mainRows, busy: mainBusy } })
     })
     let mainChoice = { currentModelSet: false, currentConfigurationId: 'shared-config', currentModelId: '' }
     const modelWrites: string[] = []
@@ -371,6 +391,7 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       }
       return route.fulfill({ json: mainChoice })
     })
+    let guestSocket: WebSocketRoute | undefined
     await anonymous.routeWebSocket('**/public/approvals/app/guest-chat', (ws) => ws.onMessage((data) => {
       const body = JSON.parse(String(data))
       if ('modelId' in body) {
@@ -383,11 +404,12 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       expect(body.annotations).toEqual([expect.objectContaining({ selector: '#app-title' })])
       expect(body.references).toEqual([{ kind: 'github_issue', target: 'acme/web#12' }])
       expect(body.images).toEqual([expect.objectContaining({ name: 'guest-notes.txt', data: Buffer.from('Guest notes').toString('base64') })])
-      ws.send(JSON.stringify({ type: 'done', text: 'Visitor-only reply' }))
+      guestSocket = ws
+      ws.send(JSON.stringify({ type: 'reply', text: '', parts: [{ kind: 'thought', text: 'Check the selected heading' }], startedAt: '2026-11-04T02:00:00Z' }))
     }))
 
     const main = await anonymous.newPage()
-    await main.goto(url + '#t=' + mainToken)
+    await main.goto(url + '#t=' + mainToken + '&lang=zh-CN')
     await expect(main).toHaveURL(previewUrl)
     await expect(main.getByRole('heading', { name: 'Shared app fixture' })).toBeVisible()
     const mainToolbar = main.locator('grasp-preview-pick')
@@ -407,6 +429,10 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await grip.press('ArrowDown')
     await expect.poll(async () => (await bar.boundingBox())?.y).toBe(moved.y + 16)
     const mainDrawer = mainToolbar.frameLocator('[data-role="drawer"] iframe')
+    await expect(mainToolbar.locator('[data-role="chat"]')).toHaveText('对话')
+    await expect(mainDrawer.locator('html')).toHaveAttribute('lang', 'zh-CN')
+    expect(await mainDrawer.locator('html').evaluate(() => localStorage.getItem('grasp-locale'))).toBe('en')
+    await expect(mainDrawer.getByTestId('shared-app-chat-input')).toHaveAttribute('placeholder', /给 Demo 发消息/)
     await expect(mainToolbar.locator('[data-role="artifact"]')).toBeHidden()
     await expect(mainDrawer.getByText('Original main conversation')).toBeVisible()
     await choosePreviewModel(mainDrawer, 'model-b', 'Model B')
@@ -428,19 +454,50 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     const sentBubble = mainDrawer.locator('.chat-user-message').filter({ hasText: 'A message for the main conversation' })
     await expect(sentBubble.getByTestId('chat-message-annotations')).toHaveText('#app-title')
     await expect(mainDrawer.getByText('Selected page elements:')).toHaveCount(0)
+    const mainReply: PreviewChatRow = {
+      id: 'main-streaming', role: 'assistant', text: '', streaming: true, startedAt: '2026-11-04T02:00:00Z',
+      parts: [{ kind: 'thought', text: 'Inspecting the page' }],
+    }
+    mainRows.push(mainReply)
+    mainBusy = true
+    publishMain()
+    await expect(mainDrawer.getByTestId('agent-timeline-thought')).toContainText('Inspecting the page')
+    mainReply.parts!.push({ kind: 'tool', title: 'read_file', status: 'in_progress' })
+    publishMain()
+    await expect(mainDrawer.getByTestId('agent-tool-group')).toBeVisible()
+    mainReply.text = 'The heading is being updated'
+    mainReply.parts!.push({ kind: 'message', text: mainReply.text })
+    publishMain()
+    await expect(mainDrawer.getByText(mainReply.text, { exact: true })).toBeVisible()
+    mainReply.text = 'The heading is now updated'
+    mainReply.parts![1]!.status = 'completed'
+    mainReply.parts![2]!.text = mainReply.text
+    mainReply.streaming = false
+    mainReply.at = mainReply.endedAt = '2026-11-04T02:00:46Z'
+    mainBusy = false
+    publishMain()
+    await expect(mainDrawer.getByText(mainReply.text, { exact: true })).toBeVisible()
+    await expect(mainDrawer.getByTestId('agent-timeline-elapsed')).toContainText('46s')
+    await mainDrawer.getByTestId('agent-timeline-elapsed').click()
+    await expect(mainDrawer.getByTestId('agent-tool-group')).toBeVisible()
     await main.reload()
     await expect(sentBubble.getByTestId('chat-message-annotations')).toHaveText('#app-title')
     await expect(mainDrawer.getByText('main-notes.txt')).toBeVisible()
+    await expect(mainDrawer.locator('html')).toHaveAttribute('lang', 'zh-CN')
+    expect(await mainDrawer.locator('html').evaluate(() => localStorage.getItem('grasp-locale'))).toBe('en')
+    await expect(mainDrawer.getByTestId('agent-timeline-elapsed')).toContainText('46s')
     await mainToolbar.locator('[data-role="chat"]').click()
     await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()
 
     const guest = await anonymous.newPage()
-    await guest.goto(url + '#t=' + guestToken)
+    await guest.goto(url + '#t=' + guestToken + '&lang=en')
     await expect(guest).toHaveURL(previewUrl)
     const guestToolbar = guest.locator('grasp-preview-pick')
     await guestToolbar.locator('[data-role="toggle"]').click()
     await guest.getByRole('heading', { name: 'Shared app fixture' }).click()
     const guestDrawer = guestToolbar.frameLocator('[data-role="drawer"] iframe')
+    await expect(guestToolbar.locator('[data-role="chat"]')).toHaveText('Chat')
+    await expect(guestDrawer.locator('html')).toHaveAttribute('lang', 'en')
     await expect(guestDrawer.getByTestId('shared-app-chat-pick')).toContainText('#app-title')
     await choosePreviewModel(guestDrawer, 'model-b', 'Model B')
     await expect.poll(() => modelWrites).toEqual(['main:model-b', 'guest:model-b'])
@@ -450,11 +507,23 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await guestDrawer.locator('input[type="file"]').setInputFiles({ name: 'guest-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Guest notes') })
     await expect(guestDrawer.getByText('guest-notes.txt')).toBeVisible()
     await guestDrawer.getByTestId('shared-app-chat-send').click()
+    await expect(guestDrawer.getByTestId('agent-timeline-thought')).toContainText('Check the selected heading')
+    const guestParts = [{ kind: 'thought' as const, text: 'Check the selected heading' }, { kind: 'tool' as const, title: 'edit_file', status: 'in_progress' }]
+    guestSocket!.send(JSON.stringify({ type: 'reply', text: '', parts: guestParts }))
+    await expect(guestDrawer.getByTestId('agent-tool-group')).toBeVisible()
+    guestSocket!.send(JSON.stringify({ type: 'reply', text: 'Visitor-only', parts: [...guestParts, { kind: 'message', text: 'Visitor-only' }] }))
+    await expect(guestDrawer.getByText('Visitor-only', { exact: true })).toBeVisible()
+    guestParts[1]!.status = 'completed'
+    guestSocket!.send(JSON.stringify({ type: 'done', text: 'Visitor-only reply', parts: [...guestParts, { kind: 'message', text: 'Visitor-only reply' }], endedAt: '2026-11-04T02:00:46Z' }))
     await expect(guestDrawer.getByText('Visitor-only reply')).toBeVisible()
+    await expect(guestDrawer.getByTestId('agent-timeline-elapsed')).toContainText('46s')
+    await guestDrawer.getByTestId('agent-timeline-elapsed').click()
+    await expect(guestDrawer.getByTestId('agent-tool-group')).toBeVisible()
     await expect(guestDrawer.getByTestId('chat-message-annotations')).toHaveText('#app-title')
     await expect(guestDrawer.getByText('Selected page elements:')).toHaveCount(0)
     await guest.reload()
     await expect(guestDrawer.getByTestId('shared-app-chat-input')).toBeVisible()
+    await expect(guestDrawer.locator('html')).toHaveAttribute('lang', 'en')
     await expect(guestDrawer.getByText('Visitor-only reply')).toHaveCount(0)
     await expect(guestDrawer.getByText('Original main conversation')).toHaveCount(0)
   } finally {

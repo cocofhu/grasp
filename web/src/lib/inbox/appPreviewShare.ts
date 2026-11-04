@@ -4,8 +4,9 @@ import type { ScopedSessionModelCatalog } from '@/lib/solo/useSessionModelCatalo
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import { referenceQuery, type ReferenceSearchParams } from '@/lib/api/clients/soloClient'
 import type { MessageReference, ReferenceInput, ReferenceSearchResult } from '@/lib/api/apiTypes'
-import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
+import type { AgentPart, AgentTool, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
+import { locale, type AppLocale } from '@/lib/shared/locale'
 
 export type PreviewChatMode = 'isolated' | 'main'
 export type PreviewShareScope = { runId: string; nodeId: string; soloSessionId?: string; port: number }
@@ -17,9 +18,25 @@ export type PreviewChatRow = {
   text: string
   at?: string
   streaming?: boolean
+  thought?: string
+  tools?: AgentTool[]
+  parts?: AgentPart[]
+  startedAt?: string
+  endedAt?: string
+  interrupted?: boolean
   annotations?: ReactAnnotation[]
   images?: ClarifyImage[]
   references?: MessageReference[]
+}
+
+export type PreviewChatHistory = { rows: PreviewChatRow[]; busy: boolean; model?: VisitModelChoice }
+
+export function previewShareURL(raw: string, lang: AppLocale = locale.value) {
+  const url = new URL(raw, window.location.origin)
+  const fragment = new URLSearchParams(url.hash.slice(1))
+  fragment.set('lang', lang)
+  // The API may be behind Vite, whose upstream Host differs from the browser.
+  return window.location.origin + url.pathname + url.search + '#' + fragment.toString()
 }
 
 export type PreviewChatMessage = {
@@ -37,12 +54,11 @@ function managementPath(scope: PreviewShareScope) {
 }
 
 export async function createPreviewShare(scope: PreviewShareScope, chatMode: PreviewChatMode) {
+  const lang = locale.value
   const link = await req<PreviewShareLink>(managementPath(scope), {
     method: 'POST', body: JSON.stringify({ port: scope.port, chatMode }),
   })
-  const url = new URL(link.url, window.location.origin)
-  // The API may be behind Vite, whose upstream Host differs from the browser.
-  return { ...link, url: window.location.origin + url.pathname + url.hash }
+  return { ...link, url: previewShareURL(link.url, lang) }
 }
 
 export function revokePreviewShare(scope: PreviewShareScope, chatMode: PreviewChatMode) {
@@ -75,7 +91,7 @@ export function publicAppPreviewClient(token: string) {
     modelCatalog: (signal: AbortSignal) => request<ScopedSessionModelCatalog>('/model-catalog', signal),
     getModel: (signal: AbortSignal) => request<VisitModelChoice>('/model', signal),
     setModel: (signal: AbortSignal, body: object) => request<VisitModelChoice>('/model', signal, body),
-    history: (signal: AbortSignal) => request<{ rows: PreviewChatRow[]; busy: boolean; model?: VisitModelChoice }>('/main-chat', signal),
+    history: (signal: AbortSignal) => request<PreviewChatHistory>('/main-chat', signal),
     send: (message: PreviewChatMessage, signal: AbortSignal) =>
       request<{ ok: boolean }>('/main-chat', signal, message),
     searchReferences: <T>(params: ReferenceSearchParams, signal: AbortSignal) =>
@@ -83,5 +99,6 @@ export function publicAppPreviewClient(token: string) {
     image: (messageId: string, index: number, signal: AbortSignal) =>
       request<Blob>(`/images/${encodeURIComponent(messageId)}/${index}`, signal, undefined, res => res.blob()),
     connectGuest: (ticket: string) => new WebSocket(rootWsUrl(publicPath + '/guest-chat'), ['grasp-preview-guest', ticket]),
+    connectMain: (ticket: string) => new WebSocket(rootWsUrl(publicPath + '/main-events'), ['grasp-preview-main', ticket]),
   }
 }

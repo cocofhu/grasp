@@ -402,6 +402,7 @@ describe('preview-pick.js language', () => {
     expect(toggleText(p)).toBe('取点')
     await settle()
     expect(JSON.parse(p.win.localStorage.getItem('__grasp_embed') || '{}').lang).toBe('zh-CN')
+    expect(new URL(p.frame()!.src).hash).toContain('lang=zh-CN')
   })
 
   it('falls back to the browser language without a Grasp language', () => {

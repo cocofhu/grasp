@@ -6,7 +6,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { isLoopbackShareHost } from '@/lib/inbox/gateShareLink'
-import { createPreviewShare, revokePreviewShare, type PreviewChatMode, type PreviewShareLink, type PreviewShareScope } from '@/lib/inbox/appPreviewShare'
+import { createPreviewShare, previewShareURL, revokePreviewShare, type PreviewChatMode, type PreviewShareLink, type PreviewShareScope } from '@/lib/inbox/appPreviewShare'
 
 const props = defineProps<{ scope: PreviewShareScope }>()
 const { t } = useI18n()
@@ -46,6 +46,7 @@ async function copy() {
       link = await createPreviewShare(props.scope, selected)
       links.value[selected] = link
     }
+    link.url = previewShareURL(link.url)
     const copied = await copyToClipboard(link.url)
     notice.value = t(copied ? 'pages.appPreview.share.copied' : 'pages.appPreview.share.manual')
     manual.value = !copied

@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Shared previews keep the opening language within that preview instead of changing the recipient's Grasp preference. Main-chat reconnections back off and stop when the conversation is unavailable; viewers share one live snapshot and receive only changed transcript tails.
+
+- Shared app chats stream thoughts, tool activity and replies with the regular chat timeline and elapsed time. Shared links and direct previews carry the opening language into the app toolbar and chat, including after a reload.
+
 - Preview frames load only preview views. Preview proxies filter workspace session cookies, and workspace endpoints check the origin of cookie-authenticated requests. A request that carries two valid session cookies is signed out instead of picking one.
 
 - Workspace pages refuse to load in an iframe. Set `GRASP_FRAME_ANCESTORS` to the origins that may embed them.

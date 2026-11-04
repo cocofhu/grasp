@@ -18,6 +18,7 @@ import {
   loadEmbedSession,
   parseEmbedPickMessage,
   parseEmbedThemeFromHash,
+  parseEmbedLocaleFromHash,
   parseEmbedThemeMessage,
   parseEmbedTicketFromHash,
   redeemEmbedTicket,
@@ -69,6 +70,10 @@ describe('embedChat', () => {
     expect(parseEmbedThemeMessage({ type: EMBED_THEME_MESSAGE, theme: 'light' })).toBe('light')
     expect(parseEmbedThemeMessage({ type: EMBED_THEME_MESSAGE, theme: 'x' })).toBeNull()
     expect(parseEmbedThemeMessage({ type: EMBED_PICK_MESSAGE, theme: 'light' })).toBeNull()
+    expect(parseEmbedLocaleFromHash('#ticket=a&lang=zh-CN')).toBe('zh-CN')
+    expect(parseEmbedLocaleFromHash('#lang=en')).toBe('en')
+    expect(parseEmbedLocaleFromHash('#lang=unknown')).toBeNull()
+    expect(parseEmbedLocaleFromHash('#ticket=a')).toBeNull()
   })
 
   it('keeps the drawer token per run/node and drops it once expired', () => {
@@ -119,8 +124,10 @@ describe('embedChat', () => {
     const expiresAt = '2026-09-01T01:00:00Z'
     saveEmbedSession('r', 'n', { token: 'owner', expiresAt, kind: 'solo' })
     expect(loadEmbedSession('r', 'n', now, true)).toBeNull()
-    saveEmbedSession('r', 'n', { token: 'guest', expiresAt, kind: 'app-preview' })
+    saveEmbedSession('r', 'n', { token: 'guest', expiresAt, kind: 'app-preview', locale: 'zh-CN' })
     expect(loadEmbedSession('r', 'n', now, true)?.token).toBe('guest')
+    expect(loadEmbedSession('r', 'n', now, true)?.locale).toBe('zh-CN')
+    expect(loadEmbedSession('r', 'other', now, true)).toBeNull()
     expect(loadEmbedSession('r', 'n', now)?.token).toBe('owner')
     clearEmbedSession('r', 'n', true)
     expect(loadEmbedSession('r', 'n', now, true)).toBeNull()

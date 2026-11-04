@@ -20,7 +20,7 @@ import VisitModelSelect, { type VisitModelTransport } from './VisitModelSelect.v
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import type { ReactAnnotation } from '@/lib/shared/types'
 import { appendPreviewPick, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
-import { publicAppPreviewClient, type PreviewChatMessage, type PreviewChatRow, type PreviewShareSession } from '@/lib/inbox/appPreviewShare'
+import { publicAppPreviewClient, type PreviewChatHistory, type PreviewChatMessage, type PreviewChatRow, type PreviewShareSession } from '@/lib/inbox/appPreviewShare'
 
 const { t } = useI18n()
 const props = defineProps<{ token: string }>()
@@ -44,6 +44,13 @@ const guestConnection = ref(0)
 let guestModelReply: ((ok: boolean) => void) | undefined
 let guestChoice: VisitModelChoice = {}
 let mainModelRevision = 0
+let pendingMainModels = 0
+let mainStreamRevision = 0
+let mainSocket: WebSocket | undefined
+let mainStreamReady = false
+let reconnectMain: ReturnType<typeof setTimeout> | undefined
+let mainReconnectDelay = 1_000
+let mainStopped = false
 
 const modelTransport: VisitModelTransport = {
   modelCatalog: () => client.modelCatalog(controller.signal).catch(error => {
@@ -54,6 +61,7 @@ const modelTransport: VisitModelTransport = {
   setVisitModel: async (_run, _node, body) => {
     if (session.value?.chatMode !== 'isolated') {
       ++mainModelRevision
+      ++pendingMainModels
       try {
         const choice = await client.setModel(controller.signal, body)
         mainChoice.value = choice
@@ -62,6 +70,7 @@ const modelTransport: VisitModelTransport = {
         if ((error as { status?: number }).status === 410) expire()
         throw error
       } finally {
+        --pendingMainModels
         ++mainModelRevision
       }
     }
@@ -121,14 +130,34 @@ let messageNumber = 0
 let guestReplyId = ''
 
 function expire() {
+  mainStopped = true
   pageError.value = 'inactive'
   emit('status', 'expired')
   session.value = undefined
   chatReady.value = false
   clearTimeout(renew)
   clearTimeout(poll)
+  clearTimeout(reconnectMain)
+  mainSocket?.close()
   guestModelReply?.(false)
   socket?.close()
+}
+
+function handleMainUnavailable(error: unknown): boolean {
+  const status = (error as { status?: number }).status
+  if (status !== 409 && status !== 410) return false
+  mainStopped = true
+  mainStreamReady = false
+  chatReady.value = false
+  busy.value = false
+  clearTimeout(reconnectMain)
+  clearTimeout(poll)
+  const current = mainSocket
+  mainSocket = undefined
+  current?.close()
+  if (status === 410) expire()
+  else messageError.value = t('pages.appPreview.share.chatUnavailable')
+  return true
 }
 
 function handleError(error: unknown) {
@@ -153,6 +182,7 @@ async function loadSession() {
     if (next.chatMode === 'isolated') {
       if (!old) connectGuest()
     } else if (!old) {
+      connectMain()
       void pollMain()
     }
     renew = setTimeout(loadSession, 55_000)
@@ -165,26 +195,83 @@ async function loadSession() {
 }
 
 async function pollMain() {
-  if (!session.value || controller.signal.aborted || readingMain) return
+  if (!session.value || mainStopped || controller.signal.aborted || readingMain) return
   clearTimeout(poll)
   readingMain = true
   const modelRevision = mainModelRevision
+  const streamRevision = mainStreamRevision
   try {
+    if (mainStreamReady) {
+      // Workflow model settings can change without publishing dialogue rows.
+      const choice = await client.getModel(controller.signal).catch(error => {
+        handleMainUnavailable(error)
+        return undefined
+      })
+      if (choice && session.value && !controller.signal.aborted && modelRevision === mainModelRevision && streamRevision === mainStreamRevision) mainChoice.value = choice
+      return
+    }
     const next = await client.history(controller.signal)
     if (!session.value || controller.signal.aborted) return
-    rows.value = next.rows
-    loadImages(next.rows)
-    busy.value = next.busy
-    if (next.model && modelRevision === mainModelRevision) mainChoice.value = next.model
-    if (!chatReady.value) messageError.value = ''
-    chatReady.value = true
+    if (streamRevision === mainStreamRevision) applyMainHistory(next, modelRevision === mainModelRevision)
   } catch (error) {
-    handleError(error)
-    chatReady.value = false
+    if (!handleMainUnavailable(error) && streamRevision === mainStreamRevision) {
+      handleError(error)
+      chatReady.value = false
+    }
   } finally {
     readingMain = false
-    if (session.value && !controller.signal.aborted) poll = setTimeout(pollMain, 1_800)
+    if (session.value && !mainStopped && !controller.signal.aborted) poll = setTimeout(pollMain, 1_800)
   }
+}
+
+function applyMainHistory(next: PreviewChatHistory, applyModel: boolean) {
+  rows.value = next.rows
+  loadImages(next.rows)
+  busy.value = next.busy
+  if (next.model && applyModel) mainChoice.value = next.model
+  if (!chatReady.value) messageError.value = ''
+  chatReady.value = true
+}
+
+function connectMain() {
+  if (!session.value || mainStopped || controller.signal.aborted || mainSocket?.readyState === WebSocket.CONNECTING || mainSocket?.readyState === WebSocket.OPEN) return
+  clearTimeout(reconnectMain)
+  const current = client.connectMain(session.value.ticket)
+  mainSocket = current
+  current.onmessage = event => {
+    if (mainSocket !== current || mainStopped || controller.signal.aborted || !session.value || typeof event.data !== 'string') return
+    let frame: { type?: string; history?: PreviewChatHistory; start?: number; rows?: PreviewChatRow[]; busy?: boolean; model?: VisitModelChoice; status?: number }
+    try { frame = JSON.parse(event.data) } catch { return }
+    if (!frame || typeof frame !== 'object') return
+    if (frame.type === 'error') {
+      if (!handleMainUnavailable({ status: frame.status })) current.close()
+      return
+    }
+    let next: PreviewChatHistory
+    if (frame.type === 'snapshot' && Array.isArray(frame.history?.rows)) next = frame.history!
+    else if (frame.type === 'tail') {
+      if (!mainStreamReady || !Number.isInteger(frame.start) || frame.start! < 0 || frame.start! > rows.value.length || !Array.isArray(frame.rows)) {
+        current.close()
+        return
+      }
+      next = { rows: [...rows.value.slice(0, frame.start), ...frame.rows], busy: frame.busy === true, model: frame.model }
+    } else return
+    mainStreamReady = true
+    mainReconnectDelay = 1_000
+    mainStreamRevision++
+    applyMainHistory(next, pendingMainModels === 0)
+  }
+  current.onclose = () => {
+    if (mainSocket !== current) return
+    mainStreamReady = false
+    if (controller.signal.aborted || mainStopped || !session.value) return
+    void pollMain().finally(() => {
+      if (controller.signal.aborted || mainStopped || !session.value) return
+      reconnectMain = setTimeout(connectMain, mainReconnectDelay)
+      mainReconnectDelay = Math.min(mainReconnectDelay * 2, 30_000)
+    })
+  }
+  current.onerror = () => current.close()
 }
 
 async function retryGuest() {
@@ -202,7 +289,8 @@ function connectGuest() {
   current.onopen = () => { if (socket === current) chatReady.value = true }
   current.onmessage = (event) => {
     if (socket !== current || typeof event.data !== 'string') return
-    const message = JSON.parse(event.data) as { type?: string; text?: string; failed?: boolean; ok?: boolean }
+    let message: Partial<PreviewChatRow> & { type?: string; failed?: boolean; ok?: boolean }
+    try { message = JSON.parse(event.data) } catch { return }
     if (message.type === 'model') {
       guestModelReply?.(message.ok === true)
       return
@@ -210,8 +298,12 @@ function connectGuest() {
     const reply = rows.value.find(row => row.id === guestReplyId)
     if (reply && (message.type === 'reply' || message.type === 'done')) {
       reply.text = message.text || ''
+      if (Array.isArray(message.parts)) reply.parts = message.parts
+      if (message.startedAt) reply.startedAt = message.startedAt
+      reply.endedAt = message.endedAt
+      reply.interrupted = message.interrupted
       reply.streaming = message.type === 'reply'
-      if (message.type === 'done') reply.at = new Date().toISOString()
+      if (message.type === 'done') reply.at = message.endedAt || new Date().toISOString()
     }
     if (message.type === 'done' || message.type === 'error') {
       if (reply) reply.streaming = false
@@ -267,7 +359,7 @@ async function submit() {
     guestReplyId = `assistant-${id}`
     rows.value.push(
       { id: `user-${id}`, role: 'user', text: draft, annotations: selected, images, references, at: new Date().toISOString() },
-      { id: guestReplyId, role: 'assistant', text: '', streaming: true },
+      { id: guestReplyId, role: 'assistant', text: '', streaming: true, startedAt: new Date().toISOString() },
     )
     scrollDown(true)
     mention.clear()
@@ -301,6 +393,8 @@ onBeforeUnmount(() => {
   for (const url of imageURLs.values()) URL.revokeObjectURL(url)
   clearTimeout(renew)
   clearTimeout(poll)
+  clearTimeout(reconnectMain)
+  mainSocket?.close()
   guestModelReply?.(false)
   socket?.close()
 })
@@ -328,8 +422,14 @@ onBeforeUnmount(() => {
           <AgentTimeline
             v-else-if="row.role === 'assistant' || row.role === 'agent'"
             :text="row.text"
+            :thought="row.thought"
+            :tools="row.tools"
+            :parts="row.parts"
             :streaming="row.streaming"
-            :completed="!row.streaming"
+            :completed="!row.streaming && !row.interrupted"
+            :interrupted="row.interrupted"
+            :started-at="row.startedAt"
+            :ended-at="row.endedAt"
             :metadata="row.at ? { createdAt: row.at } : undefined"
             @reveal="scrollDown()"
           />

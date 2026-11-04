@@ -16,6 +16,8 @@ const (
 	RateBucketPreview = "preview"
 	RateBucketDecide  = "decide"
 	RateBucketTicket  = "ticket"
+	// Reconnecting viewers must not consume the ticket issuance/renewal quota.
+	RateBucketPreviewEvents = "preview_events"
 )
 
 type ipWindow struct {
