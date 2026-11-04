@@ -293,6 +293,39 @@ func TestCodexLoginHubRecover(t *testing.T) {
 	}
 }
 
+func TestCodexLoginHubRecoverUsesLatestWhenFileUnreadable(t *testing.T) {
+	src := &fakeCodexSource{}
+	h := NewCodexLoginHub(src)
+	v0 := CodexCopyVersion(codexCopy(0))
+	// Registered before the copy was cached: the version is known but not
+	// the access token, and the sandbox file cannot be read.
+	f := &fakeCodexFile{readErr: errors.New("gone")}
+	h.Register("cred", "k", f, "/p", v0)
+	if _, _, err := h.Prepare(context.Background(), "cred", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !h.Recover(context.Background(), "k", v0, "") || len(src.stales) != 1 || src.stales[0] != "at-0" {
+		t.Fatalf("stale must come from the cached copy: %v", src.stales)
+	}
+
+	// A newer copy that never reached the sandbox is installed without a refresh.
+	g := &fakeCodexFile{readErr: errors.New("gone")}
+	h.Register("cred", "g", g, "/p", v0)
+	g.setFail(true)
+	c2 := codexCopy(2)
+	h.Broadcast("cred", c2, CodexCopyVersion(c2))
+	if h.Recover(context.Background(), "g", v0, "") {
+		t.Fatal("a failed install must not retry")
+	}
+	g.setFail(false)
+	if !h.Recover(context.Background(), "g", v0, "") || len(src.stales) != 1 {
+		t.Fatalf("newer cached copy must retry without refresh: %v", src.stales)
+	}
+	if body, _ := g.state(); body != c2 {
+		t.Fatalf("installed %q", body)
+	}
+}
+
 func TestCodexLoginHubConcurrentRecoverRefreshesOnce(t *testing.T) {
 	src := &fakeCodexSource{}
 	h := NewCodexLoginHub(src)

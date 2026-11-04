@@ -165,6 +165,9 @@ func TestCodexRotationFailuresAreLoginRejections(t *testing.T) {
 		"refresh_token_invalidated: revoked",
 		"Your access token could not be refreshed. Please sign in again.",
 		"Token data is not available.",
+		"ChatGPT auth is missing a refresh token",
+		"No more recovery steps available.",
+		"Your access token could not be refreshed because you have since logged out or signed in to another account. Please sign in again.",
 	} {
 		if !CodexTurnAuthRejected(nil, text, true) {
 			t.Errorf("%q must be a login refusal", text)

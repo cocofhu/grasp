@@ -282,6 +282,8 @@ func TestCodexAuthRejectedPlatformRefreshPhrases(t *testing.T) {
 		"refresh_token_reused: Your refresh token has already been used",
 		"Your access token could not be refreshed. Please sign in again.",
 		"Token data is not available.",
+		"ChatGPT auth is missing a refresh token",
+		"No more recovery steps available.",
 	} {
 		if !codexAuthRejected(text) {
 			t.Fatalf("not recognized: %q", text)

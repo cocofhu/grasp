@@ -260,6 +260,7 @@ func codexAuthRejected(text string) bool {
 		"refresh_token_reused", "refresh_token_expired", "refresh_token_invalidated",
 		"could not be refreshed", "sign in again", "log in again",
 		"token data is not available",
+		"chatgpt auth is missing", "no more recovery steps available",
 	} {
 		if strings.Contains(s, p) {
 			return true

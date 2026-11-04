@@ -304,6 +304,23 @@ func (h *CodexLoginHub) Recover(ctx context.Context, key, seenVersion, seenAcces
 			stale = codexCopyAccess(string(body))
 		}
 	}
+	if stale == "" && seenVersion != "" {
+		h.mu.Lock()
+		l, ok := h.latest[reg.credID]
+		h.mu.Unlock()
+		switch {
+		case ok && l.version == seenVersion:
+			stale = l.access
+		case ok && l.version != "":
+			wctx, cancel := context.WithTimeout(ctx, codexHubWriteTimeout)
+			defer cancel()
+			if err := reg.write(wctx, l); err != nil {
+				log.Warn().Err(err).Str("credential", reg.credID).Str("sandbox", key).Msg("install latest Codex login failed")
+				return false
+			}
+			return true
+		}
+	}
 	out, version, err := source.ForceRefresh(ctx, reg.credID, stale)
 	if err != nil {
 		log.Warn().Err(err).Str("credential", reg.credID).Str("sandbox", key).Msg("Codex login recovery failed")

@@ -311,6 +311,11 @@ func IsCodexAuthRejectionText(text string) bool {
 		"sign in again",
 		"log in again",
 		"token data is not available",
+		// codex-cli 0.164 auth-recovery messages for a sandbox copy whose
+		// refresh token is empty ("ChatGPT auth is missing a refresh token")
+		// and for an exhausted 401 recovery.
+		"chatgpt auth is missing",
+		"no more recovery steps available",
 	}
 	for _, p := range phrases {
 		if strings.Contains(s, p) {
