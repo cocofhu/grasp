@@ -30,7 +30,7 @@ export type PreviewChatRow = ChatMessageMetadata & {
 }
 
 export type PreviewChatQueueItem = Pick<PreviewChatRow, 'id' | 'text' | 'images' | 'annotations'>
-export type PreviewChatHistory = { rows: PreviewChatRow[]; queue?: PreviewChatQueueItem[]; busy: boolean; model?: VisitModelChoice }
+export type PreviewChatHistory = { rows: PreviewChatRow[]; queue?: PreviewChatQueueItem[]; busy: boolean; activeTurnId?: string; model?: VisitModelChoice }
 
 export function previewShareURL(raw: string, lang: AppLocale = locale.value) {
   const url = new URL(raw, window.location.origin)
@@ -95,7 +95,7 @@ export function publicAppPreviewClient(token: string) {
     history: (signal: AbortSignal) => request<PreviewChatHistory>('/main-chat', signal),
     send: (message: PreviewChatMessage, signal: AbortSignal) =>
       request<{ ok: boolean }>('/main-chat', signal, message),
-    cancelMain: (signal: AbortSignal) => request<{ ok: boolean }>('/main-chat/cancel', signal, {}),
+    cancelMain: (turnId: string, signal: AbortSignal) => request<{ ok: boolean }>('/main-chat/cancel', signal, { turnId }),
     searchReferences: <T>(params: ReferenceSearchParams, signal: AbortSignal) =>
       request<ReferenceSearchResult<T>>(`/references/search?${referenceQuery(params)}`, signal),
     image: (messageId: string, index: number, signal: AbortSignal) =>

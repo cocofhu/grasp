@@ -354,13 +354,14 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     const queueSent = new WeakMap<WebSocketRoute, string>()
     const mainSockets = new Map<WebSocketRoute, PreviewChatRow[] | undefined>()
     let mainBusy = false
+    const activeMainTurn = () => mainRows.find(row => row.streaming)?.id || ''
     const publishMain = () => {
       for (const [ws, previous] of mainSockets) {
-        if (!previous) ws.send(JSON.stringify({ type: 'snapshot', history: { rows: mainRows, queue: mainQueue, busy: mainBusy } }))
+        if (!previous) ws.send(JSON.stringify({ type: 'snapshot', history: { rows: mainRows, queue: mainQueue, busy: mainBusy, activeTurnId: activeMainTurn() } }))
         else {
           let start = 0
           while (start < previous.length && start < mainRows.length && JSON.stringify(previous[start]) === JSON.stringify(mainRows[start])) start++
-          ws.send(JSON.stringify({ type: 'tail', start, rows: mainRows.slice(start), busy: mainBusy,
+          ws.send(JSON.stringify({ type: 'tail', start, rows: mainRows.slice(start), busy: mainBusy, activeTurnId: activeMainTurn(),
             queue: queueSent.get(ws) !== JSON.stringify(mainQueue) ? mainQueue : undefined }))
         }
         mainSockets.set(ws, structuredClone(mainRows))
@@ -368,9 +369,25 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       }
     }
     let mainStops = 0
+    let rejectStaleStop = false
+    const mainCancelTargets: string[] = []
     await anonymous.route(url + '/main-chat/cancel', route => {
       expect(route.request().headers()['x-gate-share-token']).toBe(mainSession)
       expect(route.request().method()).toBe('POST')
+      const { turnId } = route.request().postDataJSON()
+      mainCancelTargets.push(turnId)
+      expect(turnId).toBe(activeMainTurn())
+      if (rejectStaleStop) {
+        rejectStaleStop = false
+        const old = mainRows.find(row => row.streaming)!
+        old.streaming = false
+        old.endedAt = new Date().toISOString()
+        mainRows.push({ id: 'owner-next-user', role: 'user', text: 'Next owner request' },
+          { id: 'owner-next', role: 'assistant', text: 'Next owner reply', streaming: true, startedAt: new Date().toISOString() })
+        // The viewer has not received the new turn yet; the Stop response
+        // must trigger a history refresh without cancelling its replacement.
+        return route.fulfill({ status: 409, json: { error: 'turn_changed', code: 'turn_changed' } })
+      }
       mainStops++
       for (const row of mainRows) {
         if (!row.streaming) continue
@@ -400,7 +417,7 @@ test('anonymous shares open the direct app and use its floating chat in both mod
         publishMain()
         return route.fulfill({ json: { ok: true } })
       }
-      return route.fulfill({ json: { rows: mainRows, queue: mainQueue, busy: mainBusy } })
+      return route.fulfill({ json: { rows: mainRows, queue: mainQueue, busy: mainBusy, activeTurnId: activeMainTurn() } })
     })
     let mainChoice = { currentModelSet: false, currentConfigurationId: 'shared-config', currentModelId: '' }
     const modelWrites: string[] = []
@@ -586,11 +603,18 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     mainRows.push({ id: 'owner-current', role: 'user', text: 'Owner request to cancel' },
       { id: 'owner-partial', role: 'assistant', text: 'Owner partial reply', streaming: true, startedAt: new Date().toISOString() })
     mainBusy = true
+    rejectStaleStop = true
     publishMain()
     await mainInput.fill('Keep this draft after stopping')
+    await expect(mainDrawer.getByText(/停止 Solo 或评审回复会清空所有人的排队消息/)).toBeVisible()
     await expect(mainDrawer.getByTestId('shared-app-chat-stop')).toBeEnabled()
     await mainDrawer.getByTestId('shared-app-chat-stop').click()
+    await expect(mainDrawer.getByText('Next owner reply', { exact: true })).toBeVisible()
+    expect(mainStops).toBe(0)
+    await expect(mainInput).toHaveValue('Keep this draft after stopping')
+    await mainDrawer.getByTestId('shared-app-chat-stop').click()
     await expect.poll(() => mainStops).toBe(1)
+    expect(mainCancelTargets).toEqual(['owner-partial', 'owner-next'])
     await expect(mainDrawer.getByTestId('shared-app-chat-stop')).toHaveCount(0)
     await expect(mainInput).toHaveValue('Keep this draft after stopping')
     await expect(mainDrawer.getByText('Owner partial reply', { exact: true })).toBeVisible()

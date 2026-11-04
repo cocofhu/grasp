@@ -84,7 +84,7 @@ describe('shared main chat recovery', () => {
     client.cancelMain.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
     const w = mountChat()
     await flushPromises()
-    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true } })
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true, activeTurnId: 'turn-a' } })
     await flushPromises()
     const composer = w.getComponent({ name: 'ChatComposer' })
     composer.props('draft').input.value = 'Keep this draft'
@@ -93,6 +93,7 @@ describe('shared main chat recovery', () => {
     stop()!.vm.$emit('click', 'stop')
     await flushPromises()
     expect(client.cancelMain).toHaveBeenCalledOnce()
+    expect(client.cancelMain).toHaveBeenCalledWith('turn-a', expect.any(AbortSignal))
     expect(stop()!.props('disabled')).toBe(true)
     finish({ ok: true })
     await flushPromises()
@@ -108,13 +109,46 @@ describe('shared main chat recovery', () => {
     client.cancelMain.mockRejectedValueOnce({ status: 503 })
     const w = mountChat()
     await flushPromises()
-    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true } })
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true, activeTurnId: 'turn-a' } })
     await flushPromises()
     const stop = w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')!
     stop.vm.$emit('click', 'stop')
     await flushPromises()
     expect(w.get('[role="alert"]').text()).toContain('Could not stop the reply')
     expect(stop.props('disabled')).toBe(false)
+  })
+
+  it('refreshes a changed turn without retrying Stop against the next reply or expiring the share', async () => {
+    const w = mountChat()
+    await flushPromises()
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true, activeTurnId: 'old' } })
+    await flushPromises()
+    client.cancelMain.mockRejectedValueOnce({ status: 409, code: 'turn_changed' })
+    client.history.mockResolvedValue({ rows: [{ id: 'next-reply', role: 'assistant', text: 'Next reply', streaming: true }], busy: true, activeTurnId: 'next' })
+    const stop = () => w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')!
+    stop().vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(client.cancelMain).toHaveBeenCalledTimes(1)
+    expect(client.cancelMain).toHaveBeenLastCalledWith('old', expect.any(AbortSignal))
+    expect(w.get('[role="alert"]').text()).toContain('That reply has ended or changed')
+    expect(w.getComponent({ name: 'AgentTimeline' }).props('text')).toBe('Next reply')
+    expect(client.connectMain).toHaveBeenCalledOnce()
+    expect(stop().props('disabled')).toBe(false)
+    stop().vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(client.cancelMain).toHaveBeenLastCalledWith('next', expect.any(AbortSignal))
+  })
+
+  it('does not guess a cancel target when a busy snapshot has no active turn ID', async () => {
+    const w = mountChat()
+    await flushPromises()
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true } })
+    await flushPromises()
+    const stop = w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')!
+    expect(stop.props('disabled')).toBe(true)
+    stop.vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(client.cancelMain).not.toHaveBeenCalled()
   })
 
   it('cancels only the current independent turn, preserves partial content and can send again on the same socket', async () => {

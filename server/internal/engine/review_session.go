@@ -654,6 +654,14 @@ func (e *Engine) CancelClarifyTurn(runID, nodeID string) error {
 	return e.cancelReactSession(runID, nodeID, false)
 }
 
+// CancelPreviewShareTurn stops the turn the public viewer actually observed,
+// preserving the node's existing queue policy. It never creates an orphan
+// session or falls back to cancelling whichever native turn is running now.
+func (e *Engine) CancelPreviewShareTurn(runID, nodeID, turnID string) bool {
+	s := e.laneSession(runID, nodeID, "")
+	return s != nil && s.CancelActive(turnID, s.kind != sessionKindClarify)
+}
+
 // cancelReactSession aborts the active turn. When clearQueue is true (review),
 // pending items are dropped; when false (clarify), they remain and the pump continues.
 func (e *Engine) cancelReactSession(runID, producerID string, clearQueue bool) error {

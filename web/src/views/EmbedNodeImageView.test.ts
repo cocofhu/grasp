@@ -34,6 +34,26 @@ afterEach(() => {
 })
 
 describe('EmbedNodeImageView', () => {
+  it('learns the real parent origin for Escape when ancestorOrigins is unavailable', async () => {
+    const parent = { postMessage: vi.fn() }
+    const ancestor = Object.getOwnPropertyDescriptor(window.location, 'ancestorOrigins')
+    Object.defineProperty(window.location, 'ancestorOrigins', { configurable: true, value: undefined })
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent })
+    const w = mount(EmbedNodeImageView, { global: { plugins: [i18n()] } })
+    try {
+      window.dispatchEvent(new MessageEvent('message', { source: window, origin: 'https://wrong.example', data: { type: 'grasp-embed:image', action: 'open' } }))
+      window.dispatchEvent(new MessageEvent('message', { source: parent as never, origin: 'https://preview.example', data: { type: 'grasp-embed:image', action: 'open' } }))
+      window.dispatchEvent(new MessageEvent('message', { source: parent as never, origin: 'https://wrong.example', data: { type: 'grasp-embed:image', action: 'open' } }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      expect(parent.postMessage).toHaveBeenCalledWith({ type: 'grasp-embed:image', action: 'close' }, 'https://preview.example')
+    } finally {
+      w.unmount()
+      Object.defineProperty(window, 'parent', { configurable: true, value: window })
+      if (ancestor) Object.defineProperty(window.location, 'ancestorOrigins', ancestor)
+      else Reflect.deleteProperty(window.location, 'ancestorOrigins')
+    }
+  })
+
   it('inherits the shared language without changing account preference and closes through the host', async () => {
     await setLocale('en')
     history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/image#theme=light&lang=zh-CN')

@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Shared main-chat Stop targets the turn the visitor saw and rejects stale requests without changing the queue. Sharing hints explain that Solo and review Stop clear everyone's queued messages, while clarification keeps them.
+
 - Shared main-chat connections keep their retry backoff when a snapshot is immediately followed by an error, and reset it after five seconds of healthy streaming.
 
 - Shared main and independent preview chats can stop the active reply. Interrupted replies keep their partial content, drafts survive stopping, and independent chats can continue on the same connection.

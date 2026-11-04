@@ -32,10 +32,11 @@ func writePreviewMainError(c *gin.Context, err error) {
 }
 
 type previewMainHistory struct {
-	Rows  []sharedPreviewRow  `json:"rows"`
-	Queue []previewQueuedItem `json:"queue"`
-	Busy  bool                `json:"busy"`
-	Model any                 `json:"model,omitempty"`
+	Rows         []sharedPreviewRow  `json:"rows"`
+	Queue        []previewQueuedItem `json:"queue"`
+	Busy         bool                `json:"busy"`
+	Model        any                 `json:"model,omitempty"`
+	ActiveTurnID string              `json:"activeTurnId,omitempty"`
 }
 
 // Public reply facts deliberately omit model-configuration and operation IDs.
@@ -107,6 +108,7 @@ func (h *Handlers) appPreviewMainHistory(link *models.GateShareLink, sb models.S
 			return nil, err
 		}
 		out.Busy = busy
+		out.ActiveTurnID = h.Solo.PreviewActiveTurnID(sb.ThreadID)
 		for _, item := range h.Solo.PreviewPending(sb.ThreadID) {
 			out.Queue = append(out.Queue, previewPending(item))
 		}
@@ -119,6 +121,12 @@ func (h *Handlers) appPreviewMainHistory(link *models.GateShareLink, sb models.S
 			return nil, errPreviewMainUnavailable
 		}
 		out.Busy = state.Busy
+		for _, turn := range state.Turns {
+			if turn.Phase == "running" {
+				out.ActiveTurnID = turn.TurnID
+				break
+			}
+		}
 		public := engine.PublicDialogue(state)
 		out.Queue = previewWorkflowQueue(public)
 		for i, row := range public.Rows {

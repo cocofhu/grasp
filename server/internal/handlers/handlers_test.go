@@ -58,7 +58,7 @@ type harness struct {
 	fg     *sandboxtest.FakeGateway
 }
 
-func newHarness(t *testing.T) *harness {
+func newHarness(t *testing.T, providers ...runtime.ExecProvider) *harness {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db, err := database.OpenSQLiteTest(t.TempDir() + "/h.db")
@@ -80,7 +80,11 @@ func newHarness(t *testing.T) *harness {
 			return modelrouting.Resolved{Backend: backend, Binding: modelrouting.Binding{Kind: "platform", CredentialID: "handler-model-key", ModelID: "auto"}, CredentialID: "handler-model-key", Secret: "test-key"}, nil
 		},
 	})
-	eng := engine.New(db, fakeProvider{}, host, arts, 5)
+	var provider runtime.ExecProvider = fakeProvider{}
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
+	eng := engine.New(db, provider, host, arts, 5)
 	auditSvc := services.NewAuditService(db)
 	eng.SetAuditRecorder(func(rec services.AuditRecord) {
 		auditSvc.Record(rec)

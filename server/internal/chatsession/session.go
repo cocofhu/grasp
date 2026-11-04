@@ -316,8 +316,24 @@ func (s *Session[T]) Reorder(ids []string) error {
 // Cancel stops the active turn. With clearQueue the pending items are dropped
 // too; otherwise the pump moves on to the next one.
 func (s *Session[T]) Cancel(clearQueue bool) {
+	s.cancel(clearQueue, "")
+}
+
+// CancelActive cancels only the named active turn. The comparison and native
+// cancel share the pump's transition gate, so a stale request cannot affect a
+// later turn or clear its queue. Empty IDs never authorize cancellation.
+func (s *Session[T]) CancelActive(turnID string, clearQueue bool) bool {
+	return turnID != "" && s.cancel(clearQueue, turnID)
+}
+
+func (s *Session[T]) cancel(clearQueue bool, turnID string) bool {
 	s.transitionMu.Lock()
 	s.mu.Lock()
+	if turnID != "" && (!s.hasActive || s.cfg.View(s.active).ID != turnID) {
+		s.mu.Unlock()
+		s.transitionMu.Unlock()
+		return false
+	}
 	var dropped []T
 	if clearQueue {
 		dropped = s.queue
@@ -348,6 +364,7 @@ func (s *Session[T]) Cancel(clearQueue bool) {
 	}
 	s.transitionMu.Unlock()
 	s.publish(frame)
+	return true
 }
 
 // Snapshot returns the current queue view.

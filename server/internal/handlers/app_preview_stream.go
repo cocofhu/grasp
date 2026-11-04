@@ -64,6 +64,9 @@ func (s *previewMainSnapshot) withLive(live *models.SoloMessage, busy bool) (*pr
 		}
 		history := *s.history
 		history.Busy = busy
+		if !busy {
+			history.ActiveTurnID = ""
+		}
 		return &previewMainSnapshot{history: &history, rows: s.rows, queue: s.queue}, nil
 	}
 	index, insert := -1, false
@@ -98,6 +101,9 @@ func (s *previewMainSnapshot) withLive(live *models.SoloMessage, busy bool) (*pr
 	}
 	history := *s.history
 	history.Busy = busy
+	if !busy {
+		history.ActiveTurnID = ""
+	}
 	history.Rows = append([]sharedPreviewRow(nil), history.Rows...)
 	rows := append([]json.RawMessage(nil), s.rows...)
 	if insert {
@@ -118,7 +124,8 @@ func (s *previewMainSnapshot) frameAfter(previous *previewMainSnapshot) gin.H {
 	for start < len(s.rows) && start < len(previous.rows) && bytes.Equal(s.rows[start], previous.rows[start]) {
 		start++
 	}
-	frame := gin.H{"type": "tail", "start": start, "rows": s.rows[start:], "busy": s.history.Busy, "model": s.history.Model}
+	frame := gin.H{"type": "tail", "start": start, "rows": s.rows[start:], "busy": s.history.Busy, "model": s.history.Model,
+		"activeTurnId": s.history.ActiveTurnID}
 	if !bytes.Equal(s.queue, previous.queue) {
 		frame["queue"] = s.history.Queue
 	}

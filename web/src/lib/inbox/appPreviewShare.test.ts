@@ -9,9 +9,9 @@ describe('preview share language', () => {
   it('stops the shared main conversation with its scoped credential', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"ok":true}', { status: 200 }))
     const signal = new AbortController().signal
-    await publicAppPreviewClient('preview-session').cancelMain(signal)
+    await publicAppPreviewClient('preview-session').cancelMain('observed-turn', signal)
     expect(fetch).toHaveBeenCalledWith('/public/approvals/app/main-chat/cancel', expect.objectContaining({
-      method: 'POST', signal, credentials: 'omit', body: '{}',
+      method: 'POST', signal, credentials: 'omit', body: '{"turnId":"observed-turn"}',
       headers: expect.objectContaining({ 'X-Gate-Share-Token': 'preview-session', 'X-Gate-Share-Requested': '1' }),
     }))
   })

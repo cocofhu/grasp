@@ -22,6 +22,11 @@ const missing = ref(false)
 
 let channel: BroadcastChannel | null = null
 let openingLocale: AppLocale | null = null
+let knownParentOrigin = ''
+
+function parentOrigin(): string {
+  return window.location.ancestorOrigins?.[0] || knownParentOrigin || '*'
+}
 
 function takeHash(): string {
   const hash = window.location.hash
@@ -44,8 +49,9 @@ function onFrameMessage(ev: MessageEvent) {
 
 function onMessage(e: MessageEvent) {
   if (window.parent === window || e.source !== window.parent) return
-  const origin = window.location.ancestorOrigins?.[0]
-  if (origin && e.origin !== origin) return
+  const origin = parentOrigin()
+  if (origin !== '*' && e.origin !== origin) return
+  if (e.origin && e.origin !== 'null') knownParentOrigin = e.origin
   const theme = parseEmbedThemeMessage(e.data)
   if (theme) {
     setThemeOverride(theme)
@@ -68,7 +74,7 @@ function onStorage(e: StorageEvent) {
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape' || window.parent === window) return
   e.preventDefault()
-  window.parent.postMessage({ type: EMBED_IMAGE_MESSAGE, action: 'close' }, window.location.ancestorOrigins?.[0] || '*')
+  window.parent.postMessage({ type: EMBED_IMAGE_MESSAGE, action: 'close' }, parentOrigin())
 }
 
 function onBlobMissing(blobId: string) {

@@ -24,22 +24,29 @@ func (h *Handlers) PublicAppPreviewMainCancel(c *gin.Context) {
 		return
 	}
 	var err error
+	var body struct {
+		TurnID string `json:"turnId"`
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+	if c.ShouldBindJSON(&body) != nil || body.TurnID == "" || len(body.TurnID) > 256 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_turn"})
+		return
+	}
 	if sb.Purpose == services.SandboxPurposeSolo {
 		if h.Solo == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "unavailable"})
 			return
 		}
-		err = h.Solo.Cancel(sb.ThreadID, link.CreatedBy)
+		err = h.Solo.CancelPreviewTurn(sb.ThreadID, link.CreatedBy, body.TurnID)
 	} else {
 		state, active := h.workflowPreviewDialogue(link.RunID, link.NodeID)
 		if !active || state.Iteration != link.Iteration {
 			c.JSON(http.StatusConflict, gin.H{"error": "main conversation unavailable"})
 			return
 		}
-		if state.Kind == "clarify" {
-			err = h.Eng.CancelClarifyTurn(link.RunID, link.NodeID)
-		} else {
-			err = h.Eng.CancelReviewSession(link.RunID, link.NodeID)
+		if !h.Eng.CancelPreviewShareTurn(link.RunID, link.NodeID, body.TurnID) {
+			c.JSON(http.StatusConflict, gin.H{"error": "turn_changed", "code": "turn_changed"})
+			return
 		}
 	}
 	if err != nil {

@@ -111,6 +111,40 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 }
 
+func TestSessionCancelActiveRejectsStaleTargetsBeforeQueueAndRuntime(t *testing.T) {
+	h := newHarness()
+	h.hold("a")
+	h.hold("b")
+	var native atomic.Int32
+	cfg := h.config()
+	cfg.CancelTurn = func() { native.Add(1) }
+	s := New(cfg)
+	if s.CancelActive("", true) || s.CancelActive("a", true) {
+		t.Fatal("inactive session accepted a cancel")
+	}
+	_, _ = s.Enqueue(&testItem{id: "a"}, nil)
+	waitFor(t, func() bool { return s.Snapshot().Busy })
+	_, _ = s.Enqueue(&testItem{id: "b"}, nil)
+	_, _ = s.Enqueue(&testItem{id: "c"}, nil)
+	if s.CancelActive("old", true) || s.Snapshot().Waiting != 2 || native.Load() != 0 {
+		t.Fatal("stale cancel changed the queue or called the runtime")
+	}
+	if !s.CancelActive("a", false) {
+		t.Fatal("current turn was not cancelled")
+	}
+	waitFor(t, func() bool { active, ok := s.Active(); return ok && active.id == "b" })
+	if s.CancelActive("a", true) || s.Snapshot().Waiting != 1 || native.Load() != 1 {
+		t.Fatal("late cancel affected the next active turn or its queue")
+	}
+	if !s.CancelActive("b", true) {
+		t.Fatal("second turn was not cancelled")
+	}
+	h.waitIdle(t)
+	if native.Load() != 2 || s.Snapshot().Waiting != 0 {
+		t.Fatal("matched cancellation did not preserve the clear-queue policy")
+	}
+}
+
 func TestSessionRunsInOrderAndPublishesFrames(t *testing.T) {
 	h := newHarness()
 	gate := h.hold("a")

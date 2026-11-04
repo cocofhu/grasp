@@ -41,6 +41,7 @@ const picks = ref<ReactAnnotation[]>([])
 const messageError = ref('')
 const pageError = ref<'inactive' | 'network' | ''>('')
 const busy = ref(false)
+const mainActiveTurnID = ref('')
 const sending = ref(false)
 const stopping = ref(false)
 const loading = ref(true)
@@ -56,6 +57,7 @@ let mainSocket: WebSocket | undefined
 let mainStreamReady = false
 let reconnectMain: ReturnType<typeof setTimeout> | undefined
 let mainReconnectDelay = 1_000
+const MAIN_CONNECTION_HEALTH_MS = 5_000
 let mainStopped = false
 
 const modelTransport: VisitModelTransport = {
@@ -206,14 +208,14 @@ async function loadSession() {
   }
 }
 
-async function pollMain() {
+async function pollMain(forceHistory = false) {
   if (!session.value || mainStopped || controller.signal.aborted || readingMain) return
   clearTimeout(poll)
   readingMain = true
   const modelRevision = mainModelRevision
   const streamRevision = mainStreamRevision
   try {
-    if (mainStreamReady) {
+    if (mainStreamReady && !forceHistory) {
       // Workflow model settings can change without publishing dialogue rows.
       const choice = await client.getModel(controller.signal).catch(error => {
         handleMainUnavailable(error)
@@ -241,6 +243,7 @@ function applyMainHistory(next: PreviewChatHistory, applyModel: boolean) {
   queued.value = next.queue || []
   loadImages(next.rows)
   busy.value = next.busy
+  mainActiveTurnID.value = next.activeTurnId || ''
   if (next.model && applyModel) mainChoice.value = next.model
   if (!chatReady.value) messageError.value = ''
   chatReady.value = true
@@ -254,7 +257,7 @@ function connectMain() {
   mainSocket = current
   current.onmessage = event => {
     if (mainSocket !== current || mainStopped || controller.signal.aborted || !session.value || typeof event.data !== 'string') return
-    let frame: { type?: string; history?: PreviewChatHistory; start?: number; rows?: PreviewChatRow[]; queue?: PreviewChatQueueItem[]; busy?: boolean; model?: VisitModelChoice; status?: number }
+    let frame: { type?: string; history?: PreviewChatHistory; start?: number; rows?: PreviewChatRow[]; queue?: PreviewChatQueueItem[]; busy?: boolean; activeTurnId?: string; model?: VisitModelChoice; status?: number }
     try { frame = JSON.parse(event.data) } catch { return }
     if (!frame || typeof frame !== 'object') return
     if (frame.type === 'error') {
@@ -268,7 +271,7 @@ function connectMain() {
         current.close()
         return
       }
-      next = { rows: [...rows.value.slice(0, frame.start), ...frame.rows], queue: frame.queue ?? queued.value, busy: frame.busy === true, model: frame.model }
+      next = { rows: [...rows.value.slice(0, frame.start), ...frame.rows], queue: frame.queue ?? queued.value, busy: frame.busy === true, activeTurnId: frame.activeTurnId, model: frame.model }
     } else return
     mainStreamReady = true
     healthySince ??= performance.now()
@@ -280,7 +283,7 @@ function connectMain() {
     mainStreamReady = false
     if (controller.signal.aborted || mainStopped || !session.value) return
     // A snapshot followed by an immediate stream error must keep backing off.
-    if (healthySince !== undefined && performance.now() - healthySince >= 5_000) mainReconnectDelay = 1_000
+    if (healthySince !== undefined && performance.now() - healthySince >= MAIN_CONNECTION_HEALTH_MS) mainReconnectDelay = 1_000
     void pollMain().finally(() => {
       if (controller.signal.aborted || mainStopped || !session.value) return
       reconnectMain = setTimeout(connectMain, mainReconnectDelay)
@@ -412,6 +415,8 @@ async function submit() {
 
 async function cancelTurn() {
   if (!busy.value || !chatReady.value || stopping.value || !session.value) return
+  const turnID = mainActiveTurnID.value
+  if (session.value.chatMode === 'main' && !turnID) return
   messageError.value = ''
   stopping.value = true
   if (session.value.chatMode === 'isolated') {
@@ -426,10 +431,13 @@ async function cancelTurn() {
     return
   }
   try {
-    await client.cancelMain(controller.signal)
+    await client.cancelMain(turnID, controller.signal)
     void pollMain()
   } catch (error) {
-    if (!handleMainUnavailable(error) && !controller.signal.aborted) messageError.value = t('pages.appPreview.share.cancelFailed')
+    if ((error as { status?: number; code?: string }).status === 409 && (error as { code?: string }).code === 'turn_changed') {
+      messageError.value = t('pages.appPreview.share.cancelChanged')
+      void pollMain(true)
+    } else if (!handleMainUnavailable(error) && !controller.signal.aborted) messageError.value = t('pages.appPreview.share.cancelFailed')
   } finally {
     stopping.value = false
   }
@@ -531,7 +539,7 @@ onBeforeUnmount(() => {
             v-if="busy"
             kind="stop"
             :label="t('pages.solo.chat.stop')"
-            :disabled="!chatReady || stopping"
+            :disabled="!chatReady || stopping || (session.chatMode === 'main' && !mainActiveTurnID)"
             testid="shared-app-chat-stop"
             @click="cancelTurn"
           />

@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,16 +13,34 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
+type heldPreviewProvider struct {
+	fakeProvider
+	started chan string
+	release chan struct{}
+}
+
+func (p *heldPreviewProvider) ReactReply(ctx context.Context, _ runtime.NodeReq, _ []models.ReactMessage, human string, _ []models.PromptImage, _ bool) runtime.ReactTurn {
+	p.started <- human
+	select {
+	case <-ctx.Done():
+	case <-p.release:
+	}
+	return runtime.ReactTurn{Interrupted: true, Msg: "Stopped"}
+}
+
 func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 	for _, name := range []string{"solo", "workflow", "clarify"} {
 		solo := name == "solo"
 		t.Run(name, func(t *testing.T) {
-			hn := newHarness(t)
+			provider := &heldPreviewProvider{started: make(chan string, 2), release: make(chan struct{})}
+			defer close(provider.release)
+			hn := newHarness(t, provider)
 			hn.h.Preview = services.NewPreviewService(hn.db, nil)
 			hn.h.Preview.SetAgents(hn.h.Agents)
 			hn.host.SetPreviewStore(hn.h.Preview)
@@ -234,7 +253,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 					t.Fatalf("missing Solo service: %d %s", unavailable.Code, unavailable.Body)
 				}
 				hn.h.Solo = nil
-				unavailable = hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, mainHeaders)
+				unavailable = hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, mainHeaders)
 				hn.h.Solo = service
 				if unavailable.Code != http.StatusServiceUnavailable {
 					t.Fatalf("cancel without Solo: %d %s", unavailable.Code, unavailable.Body)
@@ -364,25 +383,68 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			if w := hn.doEmbed(http.MethodPost, path+"/model", map[string]any{"modelId": "unlisted-model"}, mainHeaders); w.Code != http.StatusBadRequest {
 				t.Fatalf("model outside bound group accepted: %d %s", w.Code, w.Body)
 			}
-			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, headers("isolated-drawer")); w.Code != http.StatusForbidden {
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, headers("isolated-drawer")); w.Code != http.StatusForbidden {
 				t.Fatalf("isolated drawer cancelled main chat: %d %s", w.Code, w.Body)
 			}
 			crossOrigin := headers("main-drawer")
 			crossOrigin["Origin"] = "https://other.example.test"
-			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, crossOrigin); w.Code != http.StatusForbidden {
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, crossOrigin); w.Code != http.StatusForbidden {
 				t.Fatalf("cross-origin cancel: %d %s", w.Code, w.Body)
 			}
 			for _, tokenKind := range []string{"main", "main-drawer"} {
-				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, headers(tokenKind)); w.Code != http.StatusOK {
+				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, headers(tokenKind)); w.Code != http.StatusConflict || parseJSON(t, w)["code"] != "turn_changed" {
 					t.Fatalf("cancel with %s: %d %s", tokenKind, w.Code, w.Body)
 				}
 			}
 			if !solo {
 				hn.db.Model(&models.ReactConversation{}).Where("run_id = ? AND node_id = ?", runID, nodeID).Update("iteration", 2)
-				w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, mainHeaders)
+				w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, mainHeaders)
 				hn.db.Model(&models.ReactConversation{}).Where("run_id = ? AND node_id = ?", runID, nodeID).Update("iteration", 1)
 				if w.Code != http.StatusConflict {
 					t.Fatalf("stale workflow visit cancelled: %d %s", w.Code, w.Body)
+				}
+			}
+			if name == "clarify" {
+				if _, err := hn.h.Eng.EnqueueClarifyTurn(runID, nodeID, "first cancellable", nil, nil); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-provider.started:
+				case <-time.After(3 * time.Second):
+					t.Fatal("clarify did not start")
+				}
+				if _, err := hn.h.Eng.EnqueueClarifyTurn(runID, nodeID, "next cancellable", nil, nil); err != nil {
+					t.Fatal(err)
+				}
+				getTurn := func() string {
+					w := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, mainHeaders)
+					id, _ := parseJSON(t, w)["activeTurnId"].(string)
+					if id == "" {
+						t.Fatalf("active turn ID missing: %s", w.Body)
+					}
+					return id
+				}
+				first := getTurn()
+				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": first}, mainHeaders); w.Code != http.StatusOK {
+					t.Fatalf("cancel active: %d %s", w.Code, w.Body)
+				}
+				select {
+				case <-provider.started:
+				case <-time.After(3 * time.Second):
+					t.Fatal("clarify queue was cleared")
+				}
+				next := getTurn()
+				if next == first {
+					t.Fatal("active turn did not advance")
+				}
+				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": first}, mainHeaders); w.Code != http.StatusConflict {
+					t.Fatalf("late cancel: %d %s", w.Code, w.Body)
+				}
+				if getTurn() != next {
+					t.Fatal("late cancel changed current turn")
+				}
+				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": next}, mainHeaders); w.Code != http.StatusOK {
+					t.Fatalf("cancel next: %d %s", w.Code, w.Body)
 				}
 			}
 			session := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, headers("isolated"))
@@ -419,7 +481,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				t.Fatalf("revoking isolated affected main: %d", w.Code)
 			}
 			hn.do(http.MethodDelete, manage, map[string]any{"port": 8080, "chatMode": "main"})
-			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, mainHeaders); w.Code != http.StatusGone {
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, mainHeaders); w.Code != http.StatusGone {
 				t.Fatalf("revoked main share cancelled: %d %s", w.Code, w.Body)
 			}
 		})
