@@ -285,9 +285,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		events = c.snapshotEvents(ctx, sess.sb, events)
 		return withHandoffs(ReactTurn{Msg: narration, Done: false, Events: events, Usage: usage, UsageByModel: usageByModel})
 	}
-	// The reconcile turn above closed the human dialogue, so the wrap-up may end
-	// with the hidden turn that induces the transcript into the ledger summary.
-	done := c.finishReact(ctx, req, key, sess, narration, history, events, usage, usageByModel, true)
+	done := c.finishReact(ctx, req, key, sess, narration, history, events, usage, usageByModel)
 	return withHandoffs(done)
 }
 
@@ -348,6 +346,9 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
 	prompt := reviewTurnPrompt(req, history, human, rehydrated)
+	// A revise turn may edit code without writing a product; only a
+	// node_complete made during or after it reflects the edit.
+	c.host.NoteNodeChange(req.RunID, req.NodeID)
 	var res *sandbox.ChatResult
 	var err error
 	restarted := false
@@ -506,82 +507,6 @@ func (c *acpProvider) AbortSessionTurn(runID, nodeID string) bool {
 	return ok
 }
 
-// ReconcileOnConfirm runs the confirm-time pair against a review producer's
-// parked session: one visible turn reconciling the structured products with the
-// whole transcript, then the hidden summary turn. Clarify Agents get the
-// same pair inside ReactReply(force=true) instead, because their reconcile
-// prompt must also require node_complete.
-//
-// Best-effort like OfferCommitOnConfirm: a dead session or a failed chat only
-// yields an empty turn, never a failed confirm.
-func (c *acpProvider) ReconcileOnConfirm(ctx context.Context, req NodeReq) (out ReactTurn) {
-	c.mu.Lock()
-	sess := c.sessions[reactKey(req)]
-	c.mu.Unlock()
-	if sess == nil || sess.acp == nil || !sess.acp.IsConnected() {
-		log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
-			Msg("confirm reconcile skipped: no live session")
-		return ReactTurn{}
-	}
-	defer finishChatTurn(&out, sess.acp, time.Now())
-
-	var usage *models.TokenUsage
-	var usageByModel models.TokenUsageByModel
-	var events []models.AcpEvent
-
-	prompt := models.ReviewConfirmReconcile
-	chatCtx, cancel := c.turnCtx(ctx, req)
-	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
-	cancel()
-	if err != nil {
-		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
-			Msg("confirm reconcile chat failed")
-		return ReactTurn{}
-	}
-	absorbChat(&usage, &usageByModel, &events, res)
-	_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
-
-	agentSummary := c.confirmSummaryTurn(ctx, req, sess, &events, &usage, &usageByModel)
-	events = c.snapshotEvents(ctx, sess.sb, events)
-	return ReactTurn{Msg: res.Narration, AgentSummary: agentSummary, Done: false,
-		Events: events, Usage: usage, UsageByModel: usageByModel}
-}
-
-// confirmSummaryTurn sends the hidden induction turn and returns the parsed
-// agentSummary. Its narration never reaches the transcript — only the ACP
-// events land on the timeline — so an unparseable answer yields "" instead of
-// promoting prose the agent did not mean as a summary.
-//
-// Best-effort throughout: this runs after the human already confirmed, so a
-// failure must cost the ledger a summary rather than block the transition.
-func (c *acpProvider) confirmSummaryTurn(ctx context.Context, req NodeReq, sess *reactSession,
-	events *[]models.AcpEvent, usage **models.TokenUsage, usageByModel *models.TokenUsageByModel) string {
-	if sess == nil || sess.acp == nil || !sess.acp.IsConnected() {
-		return ""
-	}
-	prompt := models.ConfirmSummaryContract
-	chatCtx, cancel := c.turnCtx(ctx, req)
-	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
-	cancel()
-	if err != nil {
-		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
-			Msg("confirm summary chat failed")
-		return ""
-	}
-	absorbChat(usage, usageByModel, events, res)
-	// The summary turn must not resurrect the dialogue: a stray ask_question
-	// here would otherwise leak into the next node's pending questions.
-	_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
-
-	agentSummary := parseAgentSummary(res.Narration)
-	if agentSummary == "" {
-		// The response can quote user feedback, so only the miss is recorded.
-		log.Debug().Str("run", req.RunID).Str("node", req.NodeID).Str("node_type", req.NodeType).
-			Msg("confirm summary missing or unparseable")
-	}
-	return agentSummary
-}
-
 // reactConfirmPrefix is the confirm-turn instruction prepended to the human
 // message; when the required products are already settled it also appends
 // the skip-rewrite note.
@@ -734,15 +659,12 @@ func (c *acpProvider) enforcePreflightGate(ctx context.Context, req NodeReq, ses
 
 // finishReact runs the shared completion path for a react node: ensure the
 // declared produces artifact exists (re-prompting the agent to write it),
-// snapshot the event log, capture any code changes, tear the session down and
-// return a Done ReactTurn. If the agent raises ask_question during ensure*,
-// the session stays open and Questions are returned (Done=false) so the
-// engine can auto_clarify or wait for a human — never OutcomeRetry-mis-fail.
-// wantSummary asks for the hidden confirm-time induction turn. It deliberately
-// runs at the very end — after products and node_complete are confirmed present
-// — so it can neither delay nor derail a confirm that is about to be rejected,
-// and cannot come between the reconcile turn and the outcome gate.
-func (c *acpProvider) finishReact(ctx context.Context, req NodeReq, key string, sess *reactSession, narration string, history []models.ReactMessage, events []models.AcpEvent, usage *models.TokenUsage, usageByModel models.TokenUsageByModel, wantSummary bool) ReactTurn {
+// snapshot the event log, capture any code changes and return a Done
+// ReactTurn with the session still parked. A failed ensure* tears the session
+// down. If the agent raises ask_question during ensure*, the session stays
+// open and Questions are returned (Done=false) so the engine can auto_clarify
+// or wait for a human — never OutcomeRetry-mis-fail.
+func (c *acpProvider) finishReact(ctx context.Context, req NodeReq, key string, sess *reactSession, narration string, history []models.ReactMessage, events []models.AcpEvent, usage *models.TokenUsage, usageByModel models.TokenUsageByModel) ReactTurn {
 
 	if pending, err := c.ensureRequiredProducts(ctx, req, sess.acp, &events, &usage, &usageByModel); pending.any() {
 		msg := narration
@@ -778,17 +700,12 @@ func (c *acpProvider) finishReact(ctx context.Context, req NodeReq, key string, 
 		return ReactTurn{Done: true, Err: err, Msg: err.Error(), Events: events, Usage: usage,
 			Result: NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}}
 	}
-	// The node is definitely finishing from here on, so the induction turn can
-	// no longer influence the outcome — only the ledger summary.
-	var agentSummary string
-	if wantSummary {
-		agentSummary = c.confirmSummaryTurn(ctx, req, sess, &events, &usage, &usageByModel)
-	}
 	events = c.snapshotEvents(ctx, sess.sb, events)
 	out := map[string]any{"clarified_requirement": narration, "content": narration, "transcript": renderTranscript(history)}
 	git := c.captureChanges(ctx, sess.sb, req, out)
-	c.closeSession(key)
-	return ReactTurn{Msg: narration, Done: true, AgentSummary: agentSummary, Events: events, Usage: usage,
+	// The session stays parked: the engine's end-of-node git and handoff
+	// checks still run in it, then retire it.
+	return ReactTurn{Msg: narration, Done: true, Events: events, Usage: usage,
 		Result: NodeResult{OutputMd: narration, Outputs: out, Events: events, Git: git, Usage: usage, UsageByModel: usageByModel}}
 }
 

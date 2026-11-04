@@ -192,57 +192,13 @@ func TestAppendTruncatesOversizeText(t *testing.T) {
 	}
 }
 
-func TestMarshalRoundJSONWritesAgentSummaryWhenPresent(t *testing.T) {
-	at := time.Date(2026, 8, 13, 15, 7, 22, 0, time.UTC)
-	cur := models.FeedbackEvent{
-		RunID: "run-1", Kind: models.FeedbackKindReview, NodeID: "research-1", Iteration: 1, Round: 1, Seq: 1,
-		OccurredAt: at, Action: "revise", Text: "除了聊天记录上面需要总结一下",
-		AgentSummary: "用户希望在单轮卡片最前增加 Agent 对反馈的总结。",
-		Turns:        []models.ReactMessage{{Role: "human", Text: "需要总结"}, {Role: "agent", Text: "已加总结区"}},
-	}
-	body, err := MarshalRoundJSON(cur, nil, "run-1", NodeRef{Label: "调研", Type: "agent"})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var doc map[string]any
-	if err := json.Unmarshal([]byte(body), &doc); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if doc["agentSummary"] != "用户希望在单轮卡片最前增加 Agent 对反馈的总结。" {
-		t.Fatalf("agentSummary = %v", doc["agentSummary"])
-	}
-	// Must not confuse with index gist (FeedbackSummary).
-	if FeedbackSummary(cur) == doc["agentSummary"] {
-		t.Fatal("agentSummary must stay distinct from FeedbackSummary gist")
-	}
-}
-
-func TestMarshalRoundJSONOmitsEmptyAgentSummary(t *testing.T) {
-	at := time.Now()
-	cur := models.FeedbackEvent{
-		RunID: "run-1", Kind: models.FeedbackKindClarify, NodeID: "c1", Iteration: 1, Round: 1, Seq: 1,
-		OccurredAt: at, Text: "选 Redis",
-	}
-	body, err := MarshalRoundJSON(cur, nil, "run-1", NodeRef{})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var doc map[string]any
-	if err := json.Unmarshal([]byte(body), &doc); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if _, ok := doc["agentSummary"]; ok {
-		t.Fatalf("empty agentSummary must be omitted, got %v", doc["agentSummary"])
-	}
-}
-
 func TestMarshalFeedbackSummaryJSONCoversAllRoundsWithoutTranscript(t *testing.T) {
 	at := time.Date(2026, 8, 13, 15, 7, 22, 0, time.UTC)
 	events := []models.FeedbackEvent{
 		{RunID: "run-1", Kind: models.FeedbackKindReview, NodeID: "research-1", Iteration: 1, Round: 1,
 			OccurredAt: at, Text: "补充竞品对比", Turns: []models.ReactMessage{{Role: "human", Text: "补充竞品对比"}}},
 		{RunID: "run-1", Kind: models.FeedbackKindReview, NodeID: "research-1", Iteration: 1, Round: 2,
-			OccurredAt: at.Add(time.Minute), AgentSummary: "图表改为柱状图"},
+			OccurredAt: at.Add(time.Minute), Text: "图表改为柱状图"},
 	}
 	body, err := MarshalFeedbackSummaryJSON(events, "run-1", NodeRef{Label: "调研", Type: "agent"})
 	if err != nil {
@@ -266,43 +222,18 @@ func TestMarshalFeedbackSummaryJSONCoversAllRoundsWithoutTranscript(t *testing.T
 	}
 }
 
-// Ordinary ReAct turns carry no summary; the confirm round is the one that
-// does, so the cumulative product must surface it at the top level for the
-// card's「Agent 总结」section — and must stay silent when no round produced one.
-func TestMarshalFeedbackSummaryJSONSurfacesConfirmRoundSummary(t *testing.T) {
+// The cumulative product is built from the rounds' own gists, the confirm
+// round included.
+func TestMarshalFeedbackSummaryJSONKeepsEveryRoundGist(t *testing.T) {
 	at := time.Date(2026, 8, 13, 15, 7, 22, 0, time.UTC)
-	rounds := []models.FeedbackEvent{
+	doc := decodeSummaryDoc(t, []models.FeedbackEvent{
 		{RunID: "run-1", Kind: models.FeedbackKindClarify, NodeID: "approve-1", Iteration: 1, Round: 1,
 			OccurredAt: at, Text: "视觉跟截图"},
 		{RunID: "run-1", Kind: models.FeedbackKindClarify, NodeID: "approve-1", Iteration: 1, Round: 2,
-			OccurredAt: at.Add(time.Minute), Text: "就这样",
-			AgentSummary: "用户确认按截图保留视觉,去掉下拉与紫色选中。",
-			Detail:       map[string]any{"confirm": true}},
-	}
-	doc := decodeSummaryDoc(t, rounds)
-	if doc["agentSummary"] != "用户确认按截图保留视觉,去掉下拉与紫色选中。" {
-		t.Fatalf("agentSummary = %v", doc["agentSummary"])
-	}
-	// The per-round gists remain the body, so the dialogue is still readable.
-	if s, _ := doc["summary"].(string); !strings.Contains(s, "视觉跟截图") {
+			OccurredAt: at.Add(time.Minute), Text: "就这样", Detail: map[string]any{"confirm": true}},
+	})
+	if s, _ := doc["summary"].(string); !strings.Contains(s, "视觉跟截图") || !strings.Contains(s, "就这样") {
 		t.Fatalf("summary must keep every round's gist: %s", s)
-	}
-
-	// An interrupted round appended after the confirm must not hide the summary.
-	rounds = append(rounds, models.FeedbackEvent{RunID: "run-1", Kind: models.FeedbackKindClarify,
-		NodeID: "approve-1", Iteration: 1, Round: 3, OccurredAt: at.Add(2 * time.Minute),
-		Text: "再看一眼", Interrupted: true})
-	if got := decodeSummaryDoc(t, rounds)["agentSummary"]; got != "用户确认按截图保留视觉,去掉下拉与紫色选中。" {
-		t.Fatalf("agentSummary lost behind a later round: %v", got)
-	}
-
-	// No round produced one (summary turn skipped / unparseable) ⇒ no key, so
-	// the card hides the section instead of showing an invented induction.
-	plain := decodeSummaryDoc(t, []models.FeedbackEvent{{RunID: "run-1",
-		Kind: models.FeedbackKindClarify, NodeID: "approve-1", Iteration: 1, Round: 1,
-		OccurredAt: at, Text: "视觉跟截图"}})
-	if _, ok := plain["agentSummary"]; ok {
-		t.Fatalf("empty agentSummary must be omitted, got %v", plain["agentSummary"])
 	}
 }
 
@@ -319,19 +250,16 @@ func decodeSummaryDoc(t *testing.T, events []models.FeedbackEvent) map[string]an
 	return doc
 }
 
-func TestMarshalIndexJSONStillUsesFeedbackSummaryNotAgentSummary(t *testing.T) {
+func TestMarshalIndexJSONUsesFeedbackSummary(t *testing.T) {
 	at := time.Now()
 	events := []models.FeedbackEvent{{
 		Seq: 1, Round: 1, Kind: models.FeedbackKindReview, NodeID: "n1", Iteration: 1, OccurredAt: at,
-		Text: "第一行正文\n第二行", AgentSummary: "这是卡片 Agent 总结,不应进索引",
+		Text:         "第一行正文\n第二行",
 		ArtifactName: "feedback.review.n1.i1r1.json",
 	}}
 	body, err := MarshalIndexJSON("run-1", events)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
-	}
-	if strings.Contains(body, "这是卡片 Agent 总结") {
-		t.Fatalf("index must keep FeedbackSummary gist, not agentSummary:\n%s", body)
 	}
 	if !strings.Contains(body, "第一行正文") {
 		t.Fatalf("index gist missing:\n%s", body)

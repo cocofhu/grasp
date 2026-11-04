@@ -276,3 +276,22 @@ func hasArgPair(args []string, flag, value string) bool {
 	}
 	return false
 }
+
+func TestCodexAuthRejectedPlatformRefreshPhrases(t *testing.T) {
+	for _, text := range []string{
+		"refresh_token_reused: Your refresh token has already been used",
+		"Your access token could not be refreshed. Please sign in again.",
+		"Token data is not available.",
+		"ChatGPT auth is missing a refresh token",
+		"No more recovery steps available.",
+		"ERROR: Failed to refresh token: 400 Bad Request",
+		"unexpected status 401 Unauthorized: {\"detail\":\"Unauthorized\"}, url: https://chatgpt.com/backend-api/codex/responses",
+	} {
+		if !codexAuthRejected(text) {
+			t.Fatalf("not recognized: %q", text)
+		}
+	}
+	if codexAuthRejected("unexpected status 401 Unauthorized, url: https://api.github.com/user") {
+		t.Fatal("a 401 from an unrelated host is not a Codex login refusal")
+	}
+}

@@ -94,10 +94,10 @@ type Options struct {
 	RunSandboxEnvForRun func(runID string) []models.EnvEntry
 	// PublicAdvertise is the browser-facing base URL (preview proxy / pick.js).
 	PublicAdvertise string
-	// WriteBackCodexLoginFile replaces the workspace Codex login file when a
-	// run's auth.json changed. Nil skips write-back (tests). The callback must
-	// not log the file body.
-	WriteBackCodexLoginFile func(credentialID, content string) error
+	// CodexLogins installs and keeps current the sandbox copy of a workspace
+	// Codex login (no refresh token). Nil strips the refresh token without
+	// platform renewal (tests).
+	CodexLogins *CodexLoginHub
 }
 
 // SharedAgentView is the runtime-facing slice of the shared Agent config
@@ -172,6 +172,10 @@ type NodeReq struct {
 	// ResetToDefaultModel clears a shared sandbox back to this node's primary
 	// model before an automatic turn or a visit that never switched.
 	ResetToDefaultModel bool
+	// LiveEdits marks a visit that ran Live sessions. A clarify Agent's
+	// adopted Live source edits are committable at CheckGit even though the
+	// Agent never commits code otherwise.
+	LiveEdits bool
 }
 
 // ChatRoute is one visit's model choice. It is not an Agent binding.
@@ -230,11 +234,6 @@ type ReactTurn struct {
 	Done      bool
 	Result    NodeResult        // populated when Done (outputs/git)
 	Events    []models.AcpEvent // this turn's event log (live/persisted timeline)
-	// AgentSummary is the induction of the whole human dialogue, produced by
-	// the hidden summary turn that only runs on「确认并流转」. Distinct from Msg
-	// (transcript narration) and empty on every ordinary ReAct turn — callers
-	// must not fall back to FeedbackSummary / first line / bubble text.
-	AgentSummary string
 	// Usage is this provider call's token delta (open/reply/finish chats).
 	// Engine adds it onto the StateRun so mid-turn pauses still surface usage.
 	Usage *models.TokenUsage
@@ -307,20 +306,19 @@ type ReviewProvider interface {
 	// returned turn is never Done — finishing is a separate force step handled
 	// by ReactReply.
 	ReviseInPlace(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage) ReactTurn
-	// OfferCommitOnConfirm inspects the parked sandbox working trees before
-	// RetireSession. If any repo is dirty it prompts the agent to selectively
-	// commit meaningful changes (skip temp files) and then pushes already-
-	// committed working branches. Best-effort: never fails the confirm.
-	// Msg is non-empty only when the agent was actually asked to decide.
-	OfferCommitOnConfirm(ctx context.Context, req NodeReq) ReactTurn
-	// ReconcileOnConfirm runs the confirm-time pair on the parked session: one
-	// visible turn asking the agent to reconcile its structured products with
-	// the whole transcript, then a hidden turn inducing that transcript into
-	// AgentSummary for the feedback ledger. Msg is the reconcile narration.
-	// Best-effort: a dead session or failed chat returns an empty turn rather
-	// than failing the confirm. Approve/clarify get the same pair inside
-	// ReactReply(force=true).
-	ReconcileOnConfirm(ctx context.Context, req NodeReq) ReactTurn
+	// CheckGit settles the parked session's working trees once the node's
+	// execution ended. When the node may commit (Caps.CommitsCode, or a
+	// clarify Agent with LiveEdits) and a repo is dirty, the agent is asked once to commit what
+	// matters (temp files stay untracked); already-committed working branches
+	// are then pushed. Best-effort: never fails the node. Msg is non-empty
+	// only when the agent was actually asked.
+	CheckGit(ctx context.Context, req NodeReq) ReactTurn
+	// EnsureHandoff makes sure the node's node_complete mark is newer than its
+	// last product or code change. A stale or missing mark is cleared and the
+	// agent is re-prompted (with the handoff requirement when the node has a
+	// downstream). No-op without a parked session. Best-effort: the engine
+	// decides what a still-missing mark means.
+	EnsureHandoff(ctx context.Context, req NodeReq) ReactTurn
 	// HasLiveSession reports whether a parked session is currently held for
 	// (runID, nodeID) — used to decide whether an approval gate can offer the
 	// ReAct reject entry (upstream session still alive).

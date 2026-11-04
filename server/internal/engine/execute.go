@@ -411,9 +411,8 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			return
 		}
 
-		ensureHandoff(c, node, &outcome)
-		switch outcome.status {
-		case "paused":
+		switch {
+		case outcome.status == "paused":
 
 			e.saveState(c, node, outcome)
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "pause", Detail: outcome.outputMd})
@@ -429,51 +428,32 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 				}
 			}
 			return
-		case "failed":
+		case outcome.status == "failed" && outcome.sandboxSetup:
+			// The dialogue never opened: no execution to finish, the run fails.
+			ensureHandoff(c, node, &outcome)
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).Str("err", outcome.err).Msg("node failed")
 			e.saveState(c, node, outcome)
-
-			if node.Caps.Clarify() && outcome.sandboxSetup {
-				if outcome.err != "" {
-					c.setVar("last_error", outcome.err)
-					e.persistVar(runID, "last_error", outcome.err)
-				}
-				e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "sandbox setup failed"})
-				e.refreshProgress(c)
-				if e.finish(runID, "failed") {
-					e.fireRunNotify(c, node, models.NotifyKindFailed)
-				}
-				return
-			}
-
 			if outcome.err != "" {
 				c.setVar("last_error", outcome.err)
 				e.persistVar(runID, "last_error", outcome.err)
 			}
-			next := e.routeFailure(c, node, outcome)
-			if next == "" {
-
-				if e.tryAutoRetry(c, node, outcome) {
-					cur = node.ID
-					break
-				}
-				e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "no failure transition; run failed"})
-				if e.finish(runID, "failed") {
-					e.fireRunNotify(c, node, models.NotifyKindFailed)
-				}
+			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "sandbox setup failed"})
+			e.refreshProgress(c)
+			if e.finish(runID, "failed") {
+				e.fireRunNotify(c, node, models.NotifyKindFailed)
+			}
+			return
+		default:
+			r := e.finishNode(c, node, outcome, finishOpts{trigger: triggerAuto})
+			if r.abandoned {
+				e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "lost exec ownership; drop late outcome"})
 				return
 			}
-			e.rememberHandoffTarget(c, next)
-			cur = next
-		default:
-			e.saveState(c, node, outcome)
-			c.nodeOutputs[node.ID] = outcome.outputs
-			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit"})
-			next := e.routeSuccess(c, node, outcome)
-			e.rememberHandoffTarget(c, next)
-			cur = next
+			if r.ended || r.reopen != nil {
+				return
+			}
+			cur = r.next
 		}
-		e.refreshProgress(c)
 	}
 	// FSM drained to a terminal point. Normally status is still "running" and we
 	// promote to completed. Under a resume/pause race (CI flake class), a late

@@ -182,15 +182,15 @@ func TestProviderRegistryReviewProviderForwarding(t *testing.T) {
 		t.Fatal("expected a revise turn message or error when no session exists")
 	}
 
-	wrap := reg.OfferCommitOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n"})
+	wrap := reg.CheckGit(context.Background(), NodeReq{RunID: "r", NodeID: "n"})
 	if wrap.Done {
-		t.Fatal("OfferCommitOnConfirm must not mark Done")
+		t.Fatal("CheckGit must not mark Done")
 	}
 
-	// Without a parked session the confirm-time reconcile is a best-effort
-	// no-op: the human already confirmed, so it must not fail the transition.
-	rec := reg.ReconcileOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n"})
-	if rec.Done || rec.Msg != "" || rec.AgentSummary != "" || rec.Err != nil {
-		t.Fatalf("ReconcileOnConfirm without a session must be an empty turn, got %+v", rec)
+	// Without a parked session the handoff check is a best-effort no-op: the
+	// engine still judges the node from what it already has.
+	ho := reg.EnsureHandoff(context.Background(), NodeReq{RunID: "r", NodeID: "n"})
+	if ho.Done || ho.Msg != "" || ho.Err != nil {
+		t.Fatalf("EnsureHandoff without a session must be an empty turn, got %+v", ho)
 	}
 }

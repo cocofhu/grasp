@@ -51,15 +51,17 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 	// bounded by the bridge's no-activity limit only, not the node budget.
 	chatCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	res, err := vl.acp.ChatStreamResult(chatCtx, prompt, images, func(r *sandbox.ChatResult) {
-		if onProgress == nil {
-			return
-		}
-		busy := true
-		if r.BusySet {
-			busy = r.Busy
-		}
-		onProgress(chatResultToEvents(r), busy)
+	res, err := c.codexTurn(chatCtx, req, func() (*sandbox.ChatResult, error) {
+		return vl.acp.ChatStreamResult(chatCtx, prompt, images, func(r *sandbox.ChatResult) {
+			if onProgress == nil {
+				return
+			}
+			busy := true
+			if r.BusySet {
+				busy = r.Busy
+			}
+			onProgress(chatResultToEvents(r), busy)
+		})
 	})
 	// Visitor turns never answer the node's own pending ask_question.
 	_ = takeClarifyPending(c.host, req.RunID, req.NodeID)

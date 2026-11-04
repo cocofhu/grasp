@@ -60,7 +60,7 @@ func TestApplyModelBindingKeepsSecretSeparateAndClearsPreviousSource(t *testing.
 	if _, err := PrepareBoundAuth(BackendCodex, env, ""); err != nil {
 		t.Fatalf("connection mode required a platform login: %v", err)
 	}
-	if id := ModelCredentialIDForWriteBack(env); id != "key-a" {
+	if id := CodexLoginCredentialID(env); id != "key-a" {
 		t.Fatalf("credential owner = %s", id)
 	}
 }
@@ -189,7 +189,7 @@ func TestCodexConnectionAuthErrorDoesNotRequestPlatformLogin(t *testing.T) {
 		t.Fatal("connection error was rewritten as a platform login error")
 	}
 	upstream := errors.New(result.ErrorText)
-	if err := c.settleCodexLogin(req, nil, upstream, nil); err != upstream {
+	if err := c.settleCodexLogin(req, upstream, nil); err != upstream {
 		t.Fatalf("connection error changed: %v", err)
 	}
 	if _, exists := codexConnectionRuns.Load(key); exists {

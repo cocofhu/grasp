@@ -92,9 +92,8 @@ func TestOnlyExplicitCurrentCredentialsAreVisibleAndUsable(t *testing.T) {
 	if _, err := NewModelConnectionService(db).Create(connectionInput("old-model")); err == nil {
 		t.Fatal("model connection accepted incomplete credential metadata")
 	}
-	login := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"new"}}`
-	if err := s.WriteBackCodexLoginCredential("old-codex", login); err == nil {
-		t.Fatal("login refresh converted an old credential")
+	if _, err := s.codexLogin("old-codex"); err == nil {
+		t.Fatal("login refresh read an old credential")
 	}
 	var after []models.Credential
 	if err := db.Order("id").Find(&after).Error; err != nil {

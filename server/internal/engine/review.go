@@ -118,10 +118,10 @@ func isReviewNode(node *models.Node) bool {
 	return node != nil && node.Caps.ReviewEnabled()
 }
 
-// reviewReply finalizes a post-run review dialogue when force=true: if the
-// parked sandbox still has uncommitted code, the agent decides what to commit
-// (skipping temp files); then the store snapshot is re-validated and the FSM
-// advances (Done+RetireSession+routeSuccess, or keep paused on failure).
+// reviewReply ends a post-run review dialogue when force=true: the agent
+// finalizes its products against the transcript (and leaves node_complete),
+// then finishNode commits, refreshes the handoff, judges and routes — or
+// reopens the dialogue when the revised result fails its checks.
 // Non-force revise turns are handled by EnqueueReviewTurn / pumpReviewSession
 // (platform FIFO + turn_begin materialization). The caller (ReactReply) already
 // appended the human turn to conv and holds the per-conversation lock.
@@ -136,12 +136,10 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		return errors.New("internal: review non-force must use EnqueueReviewTurn")
 	}
 
-	// Force finish: leave the pending inbox immediately (same as clarify force /
-	// ResumeGate), then optional git wrap-up, retire session, finalize, and
-	// roll back Done on validation failure so the item re-enters the inbox.
-	// Must not call ReactReply / finishAgentOutcome / TakeOutcome / routeFailure.
-	// Human turn is already persisted by ReactReply.
-	// Ready-gate is enforced by ReactReply before taking the lock.
+	// Leave the pending inbox immediately (same as clarify force /
+	// ResumeGate); finishNode rolls Done back when the result fails its
+	// checks so the item re-enters the inbox. The human turn is already
+	// persisted and the ready-gate enforced by ReactReply.
 	conv.Done = true
 	logDB(e.db.Save(conv), runID, "confirm leave pending (review force)")
 	// Same window as clarify force: the wrap-up has not finished, so record
@@ -150,108 +148,38 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 
 	humanMsg := lastHumanMessage(conv.Messages)
 
-	if rp, ok := e.provider.(runtime.ReviewProvider); ok {
-		// Reconcile the products against the whole transcript (plus the hidden
-		// summary turn) before the git wrap-up retires the session.
-		rec := rp.ReconcileOnConfirm(context.Background(), req)
-		agentMsg := models.ReactMessage{Role: "agent", Text: rec.Msg, At: time.Now().Format(time.RFC3339), OpID: rec.OpID,
-			Tools: models.ToolsFromEvents(rec.Events), Parts: models.PartsForReply(rec.Events, rec.Msg)}
-		applyReplyMetadata(&agentMsg, rec)
-		if strings.TrimSpace(rec.Msg) != "" {
+	if rp, ok := e.provider.(runtime.ReviewProvider); ok && rp.HasLiveSession(runID, nodeID) {
+		// Best effort: a failed finalize turn keeps the products as they are
+		// and finishNode still judges them.
+		t := rp.ReviseInPlace(context.Background(), req, conv.Messages, models.ReviewConfirmFinalize, nil)
+		agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339), OpID: t.OpID,
+			Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg)}
+		applyReplyMetadata(&agentMsg, t)
+		if t.Err != nil {
+			log.Warn().Err(t.Err).Str("run_id", runID).Str("node_id", nodeID).Msg("review confirm finalize turn failed")
+			agentMsg = models.ReactMessage{}
+		} else if strings.TrimSpace(t.Msg) != "" {
 			conv.Messages = append(conv.Messages, agentMsg)
-			logDB(e.db.Save(conv), runID, "save review confirm reconcile")
-		}
-		e.flushMcpCalls(runID, nodeID)
-		e.flushTokenUsage(runID, nodeID, rec.Usage, rec.UsageByModel)
-		e.recordFeedback(e.confirmRoundFeedbackEvent(runID, nodeID, models.FeedbackKindReview,
-			conv.Iteration, humanMsg, agentMsg, rec.AgentSummary))
-
-		t := rp.OfferCommitOnConfirm(context.Background(), req)
-		if strings.TrimSpace(t.Msg) != "" {
-			message := models.ReactMessage{
-				Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339), OpID: t.OpID,
-				Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
-			}
-			applyReplyMetadata(&message, t)
-			conv.Messages = append(conv.Messages, message)
-			logDB(e.db.Save(conv), runID, "save review git wrap-up")
+			logDB(e.db.Save(conv), runID, "save review confirm finalize")
 		}
 		e.flushMcpCalls(runID, nodeID)
 		e.flushTokenUsage(runID, nodeID, t.Usage, t.UsageByModel)
-		rp.RetireSession(runID, nodeID)
+		e.recordFeedback(e.confirmRoundFeedbackEvent(runID, nodeID, models.FeedbackKindReview,
+			conv.Iteration, humanMsg, agentMsg))
 	}
 
-	outcome := e.finalizeAgent(c, node, runtime.NodeResult{})
-	outcome = e.afterDefaultChecks(c, node, outcome)
-	// The rebuild above starts from an empty NodeResult, so carry the node's
-	// pre-review handoff forward (and platform-fallback when still missing)
-	// before saveState below replaces this StateRun's outputs.
-	e.retainHandoff(c, node, &outcome)
-	verdictFailed := outcome.status == "failed" && outcome.handle == handleFail
-	if outcome.status == "failed" && !verdictFailed {
-		// Keep paused/waiting_human so the reviewer can fix and retry.
-		conv.Done = false
-		logDB(e.db.Save(conv), runID, "reopen review after force validation failure")
-		e.clearPendingAuto(c)
-		e.host.SetActiveReview(runID, true)
-		e.publishReact(runID, nodeID)
-		errMsg := strings.TrimSpace(outcome.err)
-		if errMsg == "" {
-			errMsg = "复审确认校验失败"
-		}
-		log.Warn().Str("run_id", runID).Str("node_id", nodeID).Str("err", errMsg).
-			Msg("review force confirm failed validation; staying in review")
-		return errors.New(errMsg)
+	r := e.finishNode(c, node, nodeOutcome{status: "completed", result: &runtime.NodeResult{}},
+		finishOpts{trigger: triggerConfirm, retire: true, conv: conv, resumeDetail: "复审完成"})
+	if r.reopen != nil {
+		return r.reopen
 	}
-
-	// Confirming the review accepts the previewed result: the node's open
-	// preview issues are settled and must not leak into downstream prompts.
-	if node.Caps.CanPreview() {
-		e.forceClearPreviewIssueVars(c, runID)
-		if lifeErr := e.markPreviewIssuesResolvedByNode(runID, nodeID); lifeErr != nil {
-			conv.Done = false
-			logDB(e.db.Save(conv), runID, "reopen review after preview-issue lifecycle failure")
-			e.clearPendingAuto(c)
-			e.host.SetActiveReview(runID, true)
-			e.publishReact(runID, nodeID)
-			return lifeErr
-		}
-	}
-
-	logDB(e.db.Save(conv), runID, "finish review conversation")
 	if e.shareRevoker != nil {
 		e.shareRevoker.RevokeUnusedForGate(runID, nodeID, conv.Iteration)
 	}
 	e.host.SetActiveReview(runID, false)
-	if rp, ok := e.provider.(runtime.ReviewProvider); ok {
-		rp.RetireSession(runID, nodeID) // idempotent
+	if r.next != "" {
+		go e.resumeAdmitted(runID, r.next)
 	}
-
-	e.saveState(c, node, outcome)
-	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: "复审完成"})
-	c.nodeOutputs[nodeID] = outcome.outputs
-	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "exit"})
-	if verdictFailed {
-		c.setVar("last_error", outcome.err)
-		e.persistVar(runID, "last_error", outcome.err)
-		next := e.routeFailure(c, node, outcome)
-		if next == "" {
-			e.clearPendingAuto(c)
-			e.finish(runID, "failed")
-			return nil
-		}
-		e.keepPendingAutoOnly(c, next)
-		go e.resumeAdmitted(runID, next)
-		return nil
-	}
-	next := e.routeSuccess(c, node, outcome)
-	if next == "" {
-		e.clearPendingAuto(c)
-		e.finish(runID, "completed")
-		return nil
-	}
-	e.keepPendingAutoOnly(c, next)
-	go e.resumeAdmitted(runID, next)
 	return nil
 }
 
@@ -318,8 +246,8 @@ func (e *Engine) GateReactInfo(runID, gateNodeID string) (producerID string, ali
 
 // retireGateUpstreamSession releases the parked review session of a gate's
 // upstream producer once the gate is resolved (approve/select/reject decided).
-// If the producer still has uncommitted code, the agent decides what to commit
-// first so gate-ReAct edits are not dropped with the sandbox.
+// Gate-ReAct edits are committed and the handoff refreshed first, so neither
+// is dropped with the sandbox.
 func (e *Engine) retireGateUpstreamSession(c *execCtx, gateNode *models.Node) {
 	rp, ok := e.provider.(runtime.ReviewProvider)
 	if !ok {
@@ -330,10 +258,14 @@ func (e *Engine) retireGateUpstreamSession(c *execCtx, gateNode *models.Node) {
 		return
 	}
 	if producer := c.graph.FindNode(producerID); producer != nil {
-		req := e.nodeReq(c, producer)
-		t := rp.OfferCommitOnConfirm(context.Background(), req)
-		e.flushMcpCalls(c.run.ID, producerID)
-		e.flushTokenUsage(c.run.ID, producerID, t.Usage, t.UsageByModel)
+		// The producer's execution already routed into the gate; its git and
+		// handoff steps still run before the session goes, and a refreshed
+		// handoff is written back onto the producer's execution.
+		e.stepGit(c, producer, nil)
+		oc, _ := e.stepHandoff(c, producer, nodeOutcome{status: "completed", result: &runtime.NodeResult{}}, true, nil)
+		if oc.result != nil {
+			e.writeBackHandoff(c, producer, oc.result.Outputs)
+		}
 	}
 	rp.RetireSession(c.run.ID, producerID)
 }

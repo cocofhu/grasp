@@ -928,11 +928,10 @@ func TestReactApproveFirstForceInjectsReadyNoteWhenAlreadySettled(t *testing.T) 
 	}
 }
 
-// The summary contract is gone from ordinary ReAct turns: those now carry the
-// human's message verbatim, and only「确认并流转」appends the reconcile
-// instruction plus a hidden summary turn whose JSON never reaches the bubble.
-func TestReactSummaryOnlyRunsOnConfirmTurn(t *testing.T) {
-	const summary = "用户确认按截图保留视觉,去掉下拉与紫色选中。"
+// Ordinary ReAct turns carry the human's message verbatim, and「确认并流转」
+// appends the reconcile instruction only: no hidden turn follows it, and the
+// session stays parked for the engine's git and handoff checks.
+func TestReactConfirmRunsNoExtraTurn(t *testing.T) {
 	p, _, _, mgr, req := approveSetup(t, func(int) chatFunc {
 		return func(turn int) turnAction {
 			switch turn {
@@ -942,7 +941,7 @@ func TestReactSummaryOnlyRunsOnConfirmTurn(t *testing.T) {
 				return turnAction{narration: "已按聊天记录补齐产物",
 					produces: approveProduces(), outcome: true}
 			default:
-				return turnAction{narration: "```json\n{\"agentSummary\":\"" + summary + "\"}\n```"}
+				return turnAction{narration: "unexpected extra turn"}
 			}
 		}
 	})
@@ -954,9 +953,6 @@ func TestReactSummaryOnlyRunsOnConfirmTurn(t *testing.T) {
 
 	hist = append(hist, models.ReactMessage{Role: "human", Text: "去掉下拉"})
 	idle := p.ReactReply(context.Background(), req, hist, "去掉下拉", nil, false)
-	if idle.AgentSummary != "" {
-		t.Fatalf("ordinary ReAct turns must not produce a summary, got %q", idle.AgentSummary)
-	}
 	if got := mgr.bridge(0).promptAt(1); got != "去掉下拉" {
 		t.Fatalf("ordinary turn must send the human message verbatim, got:\n%s", got)
 	}
@@ -966,14 +962,11 @@ func TestReactSummaryOnlyRunsOnConfirmTurn(t *testing.T) {
 		models.ReactMessage{Role: "human", Text: "确认并流转"},
 	)
 	force := p.ReactReply(context.Background(), req, hist, "确认并流转", nil, true)
-	if force.Err != nil {
-		t.Fatalf("force: %v", force.Err)
-	}
-	if force.AgentSummary != summary {
-		t.Fatalf("confirm summary = %q, want %q", force.AgentSummary, summary)
+	if force.Err != nil || !force.Done {
+		t.Fatalf("force: %+v", force)
 	}
 	if force.Msg != "已按聊天记录补齐产物" {
-		t.Fatalf("the summary turn must stay out of the bubble, got %q", force.Msg)
+		t.Fatalf("confirm narration = %q", force.Msg)
 	}
 	reconcile := mgr.bridge(0).promptAt(2)
 	for _, want := range []string{"确认流转", "完整聊天记录", "set_plan", "确认并流转"} {
@@ -981,87 +974,11 @@ func TestReactSummaryOnlyRunsOnConfirmTurn(t *testing.T) {
 			t.Fatalf("reconcile prompt missing %q:\n%s", want, reconcile)
 		}
 	}
-	if strings.Contains(reconcile, "agentSummary") {
-		t.Fatalf("the reconcile turn must not carry the summary contract:\n%s", reconcile)
+	if extra := mgr.bridge(0).promptAt(3); extra != "" {
+		t.Fatalf("confirm must not send another turn after node_complete:\n%s", extra)
 	}
-	summaryPrompt := mgr.bridge(0).promptAt(3)
-	for _, want := range []string{"agentSummary", "只输出一个 fenced JSON"} {
-		if !strings.Contains(summaryPrompt, want) {
-			t.Fatalf("summary prompt missing %q:\n%s", want, summaryPrompt)
-		}
-	}
-}
-
-// A confirm the platform is about to REJECT (agent still has open questions)
-// must not spend a summary turn: the induction only makes sense once the node is
-// really finishing, and running it earlier both delays the rejection and risks
-// coming between the reconcile turn and the node_complete gate.
-func TestReactRejectedConfirmSkipsSummaryTurn(t *testing.T) {
-	qs := samplePendingQuestion()
-	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
-		return func(turn int) turnAction {
-			if turn == 0 {
-				return turnAction{narration: "need info", questions: qs}
-			}
-			// Confirm turn + every ensure re-prompt keeps asking, so finishReact
-			// returns Questions/Done=false.
-			return turnAction{narration: "still clarifying", questions: qs}
-		}
-	})
-	_ = p.ReactOpen(context.Background(), req)
-	hist := []models.ReactMessage{{Role: "human", Text: "做登录"}}
-	force := p.ReactReply(context.Background(), req, hist, "确认并流转", nil, true)
-	if force.Done {
-		t.Fatalf("a confirm with open questions must stay open: %+v", force)
-	}
-	if force.AgentSummary != "" {
-		t.Fatalf("rejected confirm must not carry a summary, got %q", force.AgentSummary)
-	}
-	for i := 0; ; i++ {
-		prompt := mgr.bridge(0).promptAt(i)
-		if prompt == "" {
-			break
-		}
-		if strings.Contains(prompt, "只输出一个 fenced JSON") {
-			t.Fatalf("summary turn must not run on a rejected confirm (prompt %d):\n%s", i, prompt)
-		}
-	}
-}
-
-// A summary turn that answers with prose instead of the JSON contract costs the
-// ledger its summary; it must never block the transition.
-func TestReactConfirmSurvivesUnparseableSummary(t *testing.T) {
-	p, host, _, _, req := approveSetup(t, func(int) chatFunc {
-		return func(turn int) turnAction {
-			switch turn {
-			case 0:
-				return turnAction{narration: "aligned", produces: approveProduces()}
-			case 1:
-				return turnAction{narration: "已核对产物", produces: approveProduces(), outcome: true}
-			default:
-				return turnAction{narration: "本轮没有可归纳的内容。"}
-			}
-		}
-	})
-	_ = p.ReactOpen(context.Background(), req)
-	hist := []models.ReactMessage{{Role: "human", Text: "做登录"}}
-	idle := p.ReactReply(context.Background(), req, hist, "做登录", nil, false)
-	hist = append(hist,
-		models.ReactMessage{Role: "agent", Text: idle.Msg},
-		models.ReactMessage{Role: "human", Text: "确认并流转"},
-	)
-	force := p.ReactReply(context.Background(), req, hist, "确认并流转", nil, true)
-	if force.Err != nil {
-		t.Fatalf("force: %v", force.Err)
-	}
-	if !force.Done {
-		t.Fatalf("an unparseable summary must not hold the node open: %+v", force)
-	}
-	if force.AgentSummary != "" {
-		t.Fatalf("prose must not be promoted to a summary, got %q", force.AgentSummary)
-	}
-	if !host.HasOutcome(req.RunID, req.NodeID) {
-		t.Fatal("force path must keep node_complete mark")
+	if !p.HasLiveSession(req.RunID, req.NodeID) {
+		t.Fatal("a finished confirm keeps the session parked until the engine retires it")
 	}
 }
 

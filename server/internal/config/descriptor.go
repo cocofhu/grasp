@@ -54,5 +54,8 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_STORAGE_DRIVER", YAML: "storage.driver", Type: "enum", Default: "local", ZH: "附件存储驱动：local（预留 cos）", EN: "Attachment storage driver: local (cos reserved)"},
 		{Env: "GRASP_BLOBS_ROOT", YAML: "storage.blobs_root", Type: "path", Default: "data/blobs", ZH: "本地附件 blob 根目录", EN: "Local attachment blob root directory"},
 		{Env: "GRASP_GITHUB_OAUTH_CLIENT_ID", YAML: "github.oauth_client_id", Type: "string", Default: "", ZH: "GitHub OAuth App 的 Client ID（需勾选 Enable Device Flow）；设置后工作区可用「用 GitHub 登录」添加 github.com 凭据，不需要 client secret", EN: "Client ID of a GitHub OAuth App with Enable Device Flow checked; enables \"Sign in with GitHub\" for github.com workspace credentials (no client secret needed)"},
+		{Env: "GRASP_CODEX_LOGIN_REFRESH_LEAD", YAML: "codex_login.refresh_lead", Type: "duration", Default: "96h", ZH: "Codex ChatGPT 登录在 access token 到期前多久由平台续期", EN: "How long before the access token expires the platform renews a Codex ChatGPT login"},
+		{Env: "GRASP_CODEX_LOGIN_CHECK_INTERVAL", YAML: "codex_login.check_interval", Type: "duration", Default: "10m", ZH: "平台检查 Codex 登录是否需要续期的间隔", EN: "How often the platform checks whether Codex logins need renewal"},
+		{Env: "GRASP_CODEX_LOGIN_AUTH_BASE_URL", YAML: "codex_login.auth_base_url", Type: "URL", Default: "https://auth.openai.com", ZH: "OpenAI 登录服务地址，用于 Codex 登录续期和设备码登录；请求遵循 HTTPS_PROXY", EN: "OpenAI auth server for Codex login renewal and device-code sign-in; requests honor HTTPS_PROXY"},
 	}
 }

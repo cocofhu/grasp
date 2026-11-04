@@ -7,6 +7,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
+	"github.com/cocofhu/grasp/internal/runtime"
 
 	"github.com/rs/zerolog/log"
 )
@@ -39,6 +40,12 @@ type nodeOutcome struct {
 	// clarifyReplyToResume is the unanswered human message already present
 	// when the visit opened. New submissions are handled by the live queue.
 	clarifyReplyToResume *models.ReactMessage
+	// result is an Agent execution result finishNode still has to drain
+	// node_complete into and judge. nil: the outcome is already judged.
+	result *runtime.NodeResult
+	// verdict marks a failure the node concluded itself (node_complete
+	// status=failed), as opposed to a failed check.
+	verdict bool
 }
 
 // executeNode dispatches to the per-type executor via the node registry.

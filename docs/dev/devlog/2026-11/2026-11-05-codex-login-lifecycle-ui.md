@@ -1,0 +1,7 @@
+# 2026-11-05（Codex 登录续期、并发保存和界面交互修复）
+
+- 日期：2026-11-05
+- 范围：`server/internal/services/{codex_login_manager,codex_login_lifecycle_test,sandbox_bindings,sandbox_codex_login,workspace_credentials}.go`、`server/internal/runtime/codex_auth.go`、`server/internal/codexoauth/authfile.go`、`server/cmd/server/main.go`；`web/src/components/workspace/{CodexDeviceLoginCard,WorkspaceCredentialsPanel}*`、中英文本地化、`web/e2e/workspace-credentials.spec.ts`；`CHANGELOG.md`。
+- 做了什么：Codex 平台登录的路由指纹保留凭据 ID、模型配置和模型信息，不再包含自动轮换的令牌；回合必须成功同步当前登录副本才会调用 CLI。凭据编辑用密文与修订号做 CAS，冲突后重新读取并应用原编辑，清空操作只更新清空所需字段。停机先停止接收续期请求，等待独立刷新与后台推送完成，再重试暂存的落库；服务退出接入该流程。登录卡片复用 AppButton 和主题色，统一 8px 控件圆角、36px 高度和点击反馈；验证码可在窄屏收缩，长邮箱与别名可换行；支持键盘焦点延续、复制反馈朗读与新验证码反馈重置。失败后可直接切换到粘贴登录文件，保留别名并聚焦输入；内联重新登录遵循凭据编辑器的进入、取消和返回列表流程。
+- 为什么：修复续期成功后聊天被授权指纹拦截、普通凭据编辑写回已被消费的 refresh token，以及正常停机丢失正在刷新的新令牌。补齐设备码登录与项目现有控件、主题、键盘和移动布局的一致性。去掉 auth.json 编码时 map 容量多余的 `+1`，消除本 PR 的 CodeQL 分配容量溢出告警。
+- 如何验证：Go 1.26.10 下 server 的 golangci-lint v2.12（0 issues）、vet、configdoc、全量测试、核心覆盖率门槛（90.6%）及 RunAgent/React 子集通过；Codex 登录与长驻沙箱相关测试的 `-race` 通过。新增回归覆盖首轮续期、继续聊天、重新登录和授权变更拦截，并发别名编辑／重新登录／清空，以及停机等待刷新、保存暂存令牌和拒绝新刷新。Web lint、vue-tsc、全部 574 个测试文件／6285 个测试通过（行覆盖率 91.89%），生产构建通过；关键路径 Playwright 298 个测试全部通过，新增 Codex 场景覆盖失败后粘贴、键盘焦点、内联取消、中英、浅深主题、320/390px 窄屏与减少动画，并检查浏览器截图。Agent E2E 的 45 个 Node 测试、9 个 Python 测试，以及真实 server/runtime 的完整矩阵通过（8 个工具、56 个有向切换组合、84 个场景）；原生 CLI 与 Cursor／Trae／Kimi 的 wire fixture 边界遵循现有矩阵，不声称这些 fixture 覆盖供应商推理。actionlint、shellcheck、docs 构建及官方 registry audit 通过。不使用真实 ChatGPT 账号或供应商密钥，设备码真实账号登录仍待实测。

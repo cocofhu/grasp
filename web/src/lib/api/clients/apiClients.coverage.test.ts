@@ -34,6 +34,20 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
     expect(options?.method || 'GET').toBe('GET')
   })
 
+  it('drives the Codex device sign-in endpoints with encoded session IDs', async () => {
+    await workspaceClient.getCodexDeviceLogin()
+    await workspaceClient.startCodexDeviceLogin({ credentialId: 'cred-1' })
+    await workspaceClient.pollCodexDeviceLogin('cdx/1')
+    await workspaceClient.cancelCodexDeviceLogin('cdx/1')
+    const calls = vi.mocked(fetch).mock.calls.map(([url, options]) => [String(url), options?.method || 'GET', options?.body])
+    expect(calls).toEqual([
+      ['/api/workspace/credentials/codex/device', 'GET', undefined],
+      ['/api/workspace/credentials/codex/device', 'POST', JSON.stringify({ credentialId: 'cred-1' })],
+      ['/api/workspace/credentials/codex/device/cdx%2F1/poll', 'POST', undefined],
+      ['/api/workspace/credentials/codex/device/cdx%2F1', 'DELETE', undefined],
+    ])
+  })
+
   it('workspaceClient builds audit/credential/draft URLs and issues req', async () => {
     await workspaceClient.getWorkspace()
     await workspaceClient.getWorkspace()

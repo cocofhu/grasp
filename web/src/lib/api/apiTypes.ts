@@ -297,6 +297,15 @@ export interface CredentialItem {
   createdAt?: string
   updatedAt?: string
   revokedAt?: string
+  /** Codex ChatGPT login state kept by the platform; never carries tokens. */
+  codexLogin?: CodexLoginInfo
+}
+
+/** The platform renews Codex logins; needs_relogin means the user must sign in again. */
+export interface CodexLoginInfo {
+  email?: string
+  lastRefresh?: string
+  status: 'ok' | 'needs_relogin' | 'network_error'
 }
 
 export interface CredentialsResponse {
@@ -349,6 +358,30 @@ export interface GitHubDeviceLoginPoll {
   scopes?: string[]
   scopeWarning?: boolean
   /** Error code, e.g. alias_taken, credential_unavailable, device_flow_disabled. */
+  error?: string
+  alias?: string
+  updated?: boolean
+}
+
+export interface CodexDeviceLoginStatus {
+  enabled: boolean
+}
+
+export interface CodexDeviceLoginSession {
+  sessionId: string
+  userCode: string
+  verificationUri: string
+  expiresIn: number
+  interval: number
+}
+
+export interface CodexDeviceLoginPoll {
+  status: 'pending' | 'success' | 'denied' | 'expired' | 'not_enabled' | 'error'
+  interval?: number
+  expiresIn?: number
+  credential?: CredentialItem
+  email?: string
+  /** Error code, e.g. alias_taken, credential_unavailable, exchange_failed. */
   error?: string
   alias?: string
   updated?: boolean

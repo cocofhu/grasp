@@ -96,32 +96,117 @@ func TestPushWorkingBranchesOmitsGitAdd(t *testing.T) {
 	}
 }
 
-func TestOfferCommitOnConfirmNoSessionOrNonRepoNode(t *testing.T) {
+func TestCheckGitNoSessionOrNonRepoNode(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)
-	if t0 := p.OfferCommitOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testImplementCaps}); t0.Msg != "" {
+	if t0 := p.CheckGit(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testImplementCaps}); t0.Msg != "" {
 		t.Fatalf("no session: %+v", t0)
 	}
 	p.sessions["r|n"] = &reactSession{sb: &sandbox.Sandbox{Name: "sb"}}
-	if t1 := p.OfferCommitOnConfirm(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch)}); t1.Msg != "" {
+	if t1 := p.CheckGit(context.Background(), NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch)}); t1.Msg != "" {
 		t.Fatalf("research: %+v", t1)
 	}
 }
 
-func TestReconcileOnConfirmWithoutSessionIsNoOp(t *testing.T) {
+func TestCheckGitClarifyCommitsOnlyLiveEdits(t *testing.T) {
+	var probed atomic.Bool
+	restore := sandbox.SetExecHook(func(context.Context, string, int, string, io.Reader) ([]byte, error) {
+		probed.Store(true)
+		return []byte(""), nil
+	})
+	defer restore()
+	host := mcp.NewHost(newMemStore())
+	p := newACPProvider(host, Options{}).(*acpProvider)
+	clarify := &models.AgentCapabilities{Interaction: models.InteractionClarify}
+	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: clarify,
+		Vars: map[string]any{"repos": `[{"name":"app","url":"https://h/app.git"}]`}}
+	p.sessions[reactKey(req)] = &reactSession{sb: &sandbox.Sandbox{Name: "sb", WorkspaceDir: "/root/workspace"}}
+	p.CheckGit(context.Background(), req)
+	if probed.Load() {
+		t.Fatal("a clarify Agent without Live edits must not touch git")
+	}
+	req.LiveEdits = true
+	p.CheckGit(context.Background(), req)
+	if !probed.Load() {
+		t.Fatal("adopted Live edits must reach the git check")
+	}
+}
+
+func TestEnsureHandoffWithoutSessionIsNoOp(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)
 	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testCapsWriting(models.SchemaResearch)}
-	if turn := p.ReconcileOnConfirm(context.Background(), req); turn.Msg != "" || turn.AgentSummary != "" {
+	if turn := p.EnsureHandoff(context.Background(), req); turn.Msg != "" || len(turn.Events) != 0 {
 		t.Fatalf("no session: %+v", turn)
 	}
 	// A parked session whose ACP died must not chat either.
 	p.sessions[reactKey(req)] = &reactSession{sb: &sandbox.Sandbox{Name: "sb"}}
-	if turn := p.ReconcileOnConfirm(context.Background(), req); turn.Msg != "" {
+	if turn := p.EnsureHandoff(context.Background(), req); turn.Msg != "" || len(turn.Events) != 0 {
 		t.Fatalf("disconnected ACP: %+v", turn)
 	}
-	if got := p.confirmSummaryTurn(context.Background(), req, nil, nil, nil, nil); got != "" {
-		t.Fatalf("nil session must yield no summary, got %q", got)
+}
+
+// A node_complete the engine already took still answers the handoff check
+// until the node changes again.
+func TestEnsureHandoffAfterTakenMark(t *testing.T) {
+	restore := sandbox.SetExecHook(func(context.Context, string, int, string, io.Reader) ([]byte, error) {
+		return []byte(""), nil
+	})
+	defer restore()
+
+	store := newMemStore()
+	host := mcp.NewHost(store)
+	runID, nodeID := "handoff-run", "impl"
+	tok := host.RegisterRun(runID)
+	t.Cleanup(func() { host.UnregisterRun(runID) })
+	mgr := newFakeManager(t, host, runID, nodeID, tok, func(int) chatFunc {
+		return func(turn int) turnAction {
+			if turn == 0 {
+				return turnAction{narration: "implemented", produces: map[string]string{
+					mcp.ImplementationResultArtifactName: `{"summary":"done"}`,
+					mcp.NodeOutcomeArtifactName:          `{"status":"success"}`,
+				}}
+			}
+			return turnAction{narration: "handoff again", produces: map[string]string{
+				mcp.NodeOutcomeArtifactName: `{"status":"success"}`,
+			}}
+		}
+	})
+	p, _ := newTestProvider(t, host, testOpts(), mgr)
+	req := reqWithProfile(NodeReq{
+		RunID: runID, NodeID: nodeID, NodeType: "agent", Caps: testImplementCaps, Token: tok,
+		KeepAliveForReview: true,
+		Config:             map[string]any{"prompt": "build"},
+	})
+	if _, err := p.RunAgent(context.Background(), req); err != nil {
+		t.Fatalf("RunAgent: %v", err)
+	}
+	if !p.HasLiveSession(runID, nodeID) {
+		t.Fatal("expected parked session")
+	}
+	prompts := func() int {
+		n := 0
+		for mgr.bridge(0).promptAt(n) != "" {
+			n++
+		}
+		return n
+	}
+	if _, ok := host.TakeOutcome(runID, nodeID); !ok {
+		t.Fatal("expected a buffered node_complete")
+	}
+	before := prompts()
+	p.EnsureHandoff(context.Background(), req)
+	if got := prompts(); got != before {
+		t.Fatalf("unchanged node re-prompted for node_complete: %d → %d", before, got)
+	}
+
+	host.NoteNodeChange(runID, nodeID)
+	p.EnsureHandoff(context.Background(), req)
+	if got := prompts(); got != before+1 {
+		t.Fatalf("a change after node_complete must re-prompt once: %d → %d", before, got)
+	}
+	if !host.OutcomeCurrent(runID, nodeID) {
+		t.Fatal("the re-prompted node_complete must be current")
 	}
 }
 
@@ -141,7 +226,7 @@ func dirtyGitReport() string {
 	}, "\n")
 }
 
-func TestOfferCommitOnConfirmDirtyWithoutACPStillPushes(t *testing.T) {
+func TestCheckGitDirtyWithoutACPStillPushes(t *testing.T) {
 	var add, push atomic.Bool
 	restore := sandbox.SetExecHook(func(_ context.Context, _ string, _ int, command string, stdin io.Reader) ([]byte, error) {
 		body := execHookBody(command, stdin)
@@ -164,7 +249,7 @@ func TestOfferCommitOnConfirmDirtyWithoutACPStillPushes(t *testing.T) {
 	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testImplementCaps,
 		Vars: map[string]any{"repos": `[{"name":"app","url":"https://h/app.git"}]`}}
 	p.sessions[reactKey(req)] = &reactSession{sb: sb}
-	turn := p.OfferCommitOnConfirm(context.Background(), req)
+	turn := p.CheckGit(context.Background(), req)
 	if turn.Msg != "" {
 		t.Fatalf("disconnected ACP should not chat, got %q", turn.Msg)
 	}
@@ -226,7 +311,7 @@ func TestRunAgentReviewConfirmGitWrapUp(t *testing.T) {
 		t.Fatal("expected parked session")
 	}
 	parked.Store(true)
-	turn := p.OfferCommitOnConfirm(context.Background(), req)
+	turn := p.CheckGit(context.Background(), req)
 	if !strings.Contains(turn.Msg, "skipped tmp.log") {
 		t.Fatalf("wrap-up narration=%q", turn.Msg)
 	}

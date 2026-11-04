@@ -137,6 +137,12 @@ type Host struct {
 	// outcomes buffers node_complete marks keyed runID -> nodeID. The engine
 	// drains them via TakeOutcome after the agent turn (destructive).
 	outcomes map[string]map[string]NodeOutcome
+	// markSeq / changeSeq order node_complete marks against product and code
+	// changes (keyed runID|nodeID, stamped from seq), so a mark left before
+	// the node changed again reads as stale.
+	markSeq   map[string]uint64
+	changeSeq map[string]uint64
+	seq       uint64
 	// outcomeAllowed gates clarify-dialogue visibility of node_complete: while
 	// the active Agent is a clarify Agent and this flag is false, tools/list
 	// omits the tool and tools/call treats it as unknown. Auto Agents ignore it.
@@ -497,6 +503,13 @@ func (h *Host) UnregisterRun(runID string) {
 			delete(h.downstream, key)
 		}
 	}
+	for _, m := range []map[string]uint64{h.markSeq, h.changeSeq} {
+		for key := range m {
+			if strings.HasPrefix(key, runID+"|") {
+				delete(m, key)
+			}
+		}
+	}
 	h.mu.Unlock()
 }
 
@@ -557,6 +570,9 @@ func (h *Host) WriteArtifact(runID, token, nodeID, name, content, kind string) (
 		return "", err
 	}
 	h.markVisitWrite(runID, nodeID, name)
+	if name != NodeOutcomeArtifactName {
+		h.NoteNodeChange(runID, nodeID)
+	}
 	h.mu.RLock()
 	hook := h.afterWrite
 	h.mu.RUnlock()
