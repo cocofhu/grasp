@@ -1,6 +1,6 @@
 import { test, expect, type FrameLocator, type Page, type WebSocketRoute } from '@playwright/test'
 import type { SoloMessage } from '../src/lib/api/apiTypes'
-import type { PreviewChatRow } from '../src/lib/inbox/appPreviewShare'
+import type { PreviewChatQueueItem, PreviewChatRow } from '../src/lib/inbox/appPreviewShare'
 import type { Locator } from '@playwright/test'
 import { routeApi } from './helpers/apiRoute'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
@@ -323,6 +323,11 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await anonymous.route(grasp + '/embed/runs/' + runId + '/nodes/solo/shared-chat', async (route) => {
       await route.fulfill({ response: await route.fetch({ url: grasp + '/live-entry-chat.html' }) })
     })
+    await anonymous.route(grasp + '/embed/runs/' + runId + '/nodes/solo/image', async route => {
+      await route.fulfill({ response: await route.fetch({ url: grasp + '/live-entry-chat.html' }) })
+    })
+    await anonymous.route(url + '/images/main-image/0', route => route.fulfill({ contentType: 'image/png',
+      body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') }))
     await anonymous.route(grasp + '/embed-api/session', (route) => {
       const { ticket } = route.request().postDataJSON()
       return route.fulfill({ json: {
@@ -338,18 +343,24 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       expect(new URL(route.request().url()).searchParams.get('lane')).toBe('github')
       return route.fulfill({ json: { lane: 'github', items: [previewIssue] } })
     })
-    const mainRows: PreviewChatRow[] = [{ id: 'main-history', role: 'user', text: 'Original main conversation' }]
+    const mainRows: PreviewChatRow[] = [{ id: 'main-history', role: 'user', text: 'Original main conversation' },
+      { id: 'main-image', role: 'user', text: 'Shared screenshot', images: [{ mimeType: 'image/png', name: 'Shared.png' }] }]
+    let mainQueue: PreviewChatQueueItem[] = [{ id: 'queued-first', text: 'First waiting message', images: [{ mimeType: 'image/png' }] },
+      { id: 'queued-second', text: 'Second waiting message' }]
+    const queueSent = new WeakMap<WebSocketRoute, string>()
     const mainSockets = new Map<WebSocketRoute, PreviewChatRow[] | undefined>()
     let mainBusy = false
     const publishMain = () => {
       for (const [ws, previous] of mainSockets) {
-        if (!previous) ws.send(JSON.stringify({ type: 'snapshot', history: { rows: mainRows, busy: mainBusy } }))
+        if (!previous) ws.send(JSON.stringify({ type: 'snapshot', history: { rows: mainRows, queue: mainQueue, busy: mainBusy } }))
         else {
           let start = 0
           while (start < previous.length && start < mainRows.length && JSON.stringify(previous[start]) === JSON.stringify(mainRows[start])) start++
-          ws.send(JSON.stringify({ type: 'tail', start, rows: mainRows.slice(start), busy: mainBusy }))
+          ws.send(JSON.stringify({ type: 'tail', start, rows: mainRows.slice(start), busy: mainBusy,
+            queue: queueSent.get(ws) !== JSON.stringify(mainQueue) ? mainQueue : undefined }))
         }
         mainSockets.set(ws, structuredClone(mainRows))
+        queueSent.set(ws, JSON.stringify(mainQueue))
       }
     }
     await anonymous.routeWebSocket('**/public/approvals/app/main-events', ws => {
@@ -369,7 +380,7 @@ test('anonymous shares open the direct app and use its floating chat in both mod
         publishMain()
         return route.fulfill({ json: { ok: true } })
       }
-      return route.fulfill({ json: { rows: mainRows, busy: mainBusy } })
+      return route.fulfill({ json: { rows: mainRows, queue: mainQueue, busy: mainBusy } })
     })
     let mainChoice = { currentModelSet: false, currentConfigurationId: 'shared-config', currentModelId: '' }
     const modelWrites: string[] = []
@@ -435,6 +446,36 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await expect(mainDrawer.getByTestId('shared-app-chat-input')).toHaveAttribute('placeholder', /给 Demo 发消息/)
     await expect(mainToolbar.locator('[data-role="artifact"]')).toBeHidden()
     await expect(mainDrawer.getByText('Original main conversation')).toBeVisible()
+    const queuePanel = mainDrawer.getByTestId('shared-app-chat-queue')
+    await expect(queuePanel.getByTestId('clarify-queue-item')).toHaveCount(2)
+    await expect(queuePanel.getByTestId('clarify-queue-item').first()).toContainText('First waiting message')
+    await expect(queuePanel.getByTestId('clarify-queue-edit')).toHaveCount(0)
+    mainQueue = [...mainQueue].reverse()
+    publishMain()
+    await expect(queuePanel.getByTestId('clarify-queue-item').first()).toContainText('Second waiting message')
+    await main.reload()
+    await expect(queuePanel.getByTestId('clarify-queue-item').first()).toContainText('Second waiting message')
+    mainQueue = []
+    publishMain()
+    await expect(queuePanel).toHaveCount(0)
+    await mainDrawer.getByRole('button', { name: /Shared\.png/ }).click()
+    const imageModal = mainToolbar.locator('[data-role="image-modal"]')
+    await expect(imageModal).toBeVisible()
+    const picture = imageModal.frameLocator('iframe')
+    await expect(picture.getByTestId('embed-image-preview-img')).toBeVisible()
+    await expect(picture.locator('html')).toHaveAttribute('lang', 'zh-CN')
+    expect(await mainToolbar.locator('[data-role="artifact-mask"]').evaluate(el => Number(getComputedStyle(el).zIndex))).toBeGreaterThan(
+      await mainToolbar.locator('[data-role="drawer"]').evaluate(el => Number(getComputedStyle(el).zIndex)))
+    const phoneImage = (await imageModal.boundingBox())!
+    expect(phoneImage.x).toBeCloseTo(16)
+    expect(phoneImage.width).toBeCloseTo(358)
+    await main.setViewportSize({ width: 1440, height: 1000 })
+    await expect.poll(async () => (await imageModal.boundingBox())?.width).toBe(960)
+    expect((await imageModal.boundingBox())!.x).toBeCloseTo(240)
+    await picture.locator('body').press('Escape')
+    await expect(imageModal).toBeHidden()
+    await expect(mainToolbar.locator('[data-role="drawer"]')).toBeVisible()
+    await main.setViewportSize({ width: 390, height: 820 })
     await choosePreviewModel(mainDrawer, 'model-b', 'Model B')
     await expect.poll(() => modelWrites).toEqual(['main:model-b'])
     await mainToolbar.locator('[data-role="toggle"]').click()
@@ -474,10 +515,19 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     mainReply.parts![2]!.text = mainReply.text
     mainReply.streaming = false
     mainReply.at = mainReply.endedAt = '2026-11-04T02:00:46Z'
+    mainReply.execution = { agentName: 'Recorded Agent', backend: 'opencode', modelId: 'recorded-model', startedAt: mainReply.startedAt }
+    mainReply.usage = { inputTokens: 123, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0 }
+    mainReply.durationMs = 46000
     mainBusy = false
     publishMain()
     await expect(mainDrawer.getByText(mainReply.text, { exact: true })).toBeVisible()
     await expect(mainDrawer.getByTestId('agent-timeline-elapsed')).toContainText('46s')
+    await mainDrawer.getByTestId('chat-message-info').click()
+    const info = mainDrawer.getByTestId('chat-message-info-panel')
+    await expect(info.locator('[data-info-row="agent"] dd')).toHaveText('Recorded Agent')
+    await expect(info.locator('[data-info-row="model"] dd')).toHaveText('recorded-model')
+    await expect(info.getByTestId('chat-message-token-total')).toHaveText('168')
+    await mainDrawer.locator('body').press('Escape')
     await mainDrawer.getByTestId('agent-timeline-elapsed').click()
     await expect(mainDrawer.getByTestId('agent-tool-group')).toBeVisible()
     await main.reload()
@@ -514,9 +564,17 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     guestSocket!.send(JSON.stringify({ type: 'reply', text: 'Visitor-only', parts: [...guestParts, { kind: 'message', text: 'Visitor-only' }] }))
     await expect(guestDrawer.getByText('Visitor-only', { exact: true })).toBeVisible()
     guestParts[1]!.status = 'completed'
-    guestSocket!.send(JSON.stringify({ type: 'done', text: 'Visitor-only reply', parts: [...guestParts, { kind: 'message', text: 'Visitor-only reply' }], endedAt: '2026-11-04T02:00:46Z' }))
+    guestSocket!.send(JSON.stringify({ type: 'done', text: 'Visitor-only reply', parts: [...guestParts, { kind: 'message', text: 'Visitor-only reply' }], endedAt: '2026-11-04T02:00:46Z',
+      execution: { agentName: 'Recorded Guest', backend: 'opencode', modelId: 'guest-recorded-model' }, durationMs: 46000,
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }))
     await expect(guestDrawer.getByText('Visitor-only reply')).toBeVisible()
     await expect(guestDrawer.getByTestId('agent-timeline-elapsed')).toContainText('46s')
+    await guestDrawer.getByTestId('chat-message-info').click()
+    const guestInfo = guestDrawer.getByTestId('chat-message-info-panel')
+    await expect(guestInfo.locator('[data-info-row="agent"] dd')).toHaveText('Recorded Guest')
+    await expect(guestInfo.locator('[data-info-row="model"] dd')).toHaveText('guest-recorded-model')
+    await expect(guestInfo.getByTestId('chat-message-token-total')).toHaveText('0')
+    await guestDrawer.locator('body').press('Escape')
     await guestDrawer.getByTestId('agent-timeline-elapsed').click()
     await expect(guestDrawer.getByTestId('agent-tool-group')).toBeVisible()
     await expect(guestDrawer.getByTestId('chat-message-annotations')).toHaveText('#app-title')

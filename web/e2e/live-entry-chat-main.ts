@@ -2,6 +2,7 @@ import '../src/styles/global.css'
 import { createApp } from 'vue'
 import { createRouter, createWebHistory, RouterView } from 'vue-router'
 import EmbedNodeChatView from '../src/views/EmbedNodeChatView.vue'
+import EmbedNodeImageView from '../src/views/EmbedNodeImageView.vue'
 import { i18n } from '../src/lib/shared/i18n'
 import { initLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
@@ -16,6 +17,7 @@ const router = createRouter({
   routes: [
     { path: '/embed/runs/:runId/nodes/:nodeId/chat', component: EmbedNodeChatView },
     { path: '/embed/runs/:runId/nodes/:nodeId/shared-chat', component: EmbedNodeChatView, props: { shared: true } },
+    { path: '/embed/runs/:runId/nodes/:nodeId/image', component: EmbedNodeImageView },
     { path: '/public/approvals/app', component: () => import('../src/views/PublicAppPreviewView.vue') },
   ],
 })

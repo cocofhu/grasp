@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/en/common.json'
 import pages from '@/locales/en/pages.json'
 import type { PreviewChatHistory } from '@/lib/inbox/appPreviewShare'
+import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 
 const client = vi.hoisted(() => ({
   session: vi.fn(), history: vi.fn(), getModel: vi.fn(), connectMain: vi.fn(), connectGuest: vi.fn(),
@@ -35,10 +36,10 @@ class Socket {
 
 let sockets: Socket[]
 const wrappers: ReturnType<typeof shallowMount>[] = []
-function mountChat() {
+function mountChat(provide: Record<string | symbol, unknown> = {}) {
   const w = shallowMount(SharedAppPreviewChat, {
     props: { token: 'shared-app' },
-    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: { ...common, ...pages } } })] },
+    global: { provide, plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: { ...common, ...pages } } })] },
   })
   wrappers.push(w)
   return w
@@ -64,6 +65,52 @@ afterEach(() => {
 })
 
 describe('shared main chat recovery', () => {
+  it('synchronizes the pending queue across seeds, token tails, reorders and removals', async () => {
+    let finishSeed!: (history: PreviewChatHistory) => void
+    client.history.mockReturnValueOnce(new Promise<PreviewChatHistory>(resolve => { finishSeed = resolve }))
+    const w = mountChat()
+    await flushPromises()
+    const queue = [{ id: 'q1', text: 'First', images: [{ mimeType: 'image/png' }] }, { id: 'q2', text: 'Second' }]
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], queue, busy: true } })
+    await flushPromises()
+    const panel = () => w.getComponent({ name: 'PendingSendQueuePanel' })
+    expect(panel().props('items').map((item: { id: string }) => item.id)).toEqual(['q1', 'q2'])
+    expect(panel().props('items')[0].images).toHaveLength(1)
+    expect(panel().props('readonly')).toBe(true)
+    sockets[0]!.receive({ type: 'tail', start: 0, rows: [], busy: true })
+    await flushPromises()
+    expect(panel().props('items')).toHaveLength(2)
+    sockets[0]!.receive({ type: 'tail', start: 0, rows: [], queue: [...queue].reverse(), busy: true })
+    finishSeed({ rows: [], queue: [], busy: false })
+    await flushPromises()
+    expect(panel().props('items').map((item: { id: string }) => item.id)).toEqual(['q2', 'q1'])
+    sockets[0]!.receive({ type: 'tail', start: 0, rows: [], queue: [], busy: false })
+    await flushPromises()
+    expect(w.findComponent({ name: 'PendingSendQueuePanel' }).exists()).toBe(false)
+  })
+
+  it('passes recorded reply statistics through without using current model settings', async () => {
+    const recorded = { id: 'a', role: 'assistant', text: 'Historical reply', at: '2026-11-04T07:00:34Z',
+      execution: { agentName: 'Recorded Agent', backend: 'opencode', modelId: 'old-model' },
+      usage: { inputTokens: 123, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0 }, durationMs: 34000 }
+    client.history.mockResolvedValue({ rows: [recorded], busy: false, model: { currentModelId: 'new-model' } })
+    const w = mountChat()
+    await flushPromises()
+    expect(w.getComponent({ name: 'AgentTimeline' }).props('metadata')).toEqual(recorded)
+  })
+
+  it('opens attachments through the host preview instead of a modal inside the chat frame', async () => {
+    const host = { open: vi.fn(), close: vi.fn() }
+    client.image.mockResolvedValue(new Blob(['picture'], { type: 'image/png' }))
+    client.history.mockResolvedValue({ rows: [{ id: 'u', role: 'user', text: 'Image', images: [{ mimeType: 'image/png', name: 'Screenshot.png' }] }], busy: false })
+    const w = mountChat({ [EMBED_IMAGE_PREVIEW_KEY as symbol]: host })
+    await flushPromises()
+    w.getComponent({ name: 'ChatAttachments' }).vm.$emit('preview', 'blob:picture', 'Screenshot.png')
+    await flushPromises()
+    expect(host.open).toHaveBeenCalledWith('blob:picture', 'Screenshot.png')
+    expect(w.getComponent({ name: 'ChatImagePreviewModal' }).props('open')).toBe(false)
+  })
+
   it('backs off failed connections up to thirty seconds without blocking ticket renewal', async () => {
     mountChat()
     await flushPromises()
@@ -144,13 +191,14 @@ describe('shared main chat recovery', () => {
   })
 
   it('stops on a terminal stream error without waiting for another HTTP poll', async () => {
-    mountChat()
+    const w = mountChat()
     await flushPromises()
-    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: false } })
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], queue: [{ id: 'queued', text: 'Waiting' }], busy: true } })
     sockets[0]!.receive({ type: 'error', status: 409 })
     await vi.advanceTimersByTimeAsync(60_000)
     expect(client.connectMain).toHaveBeenCalledTimes(1)
     expect(client.getModel).not.toHaveBeenCalled()
+    expect(w.findComponent({ name: 'PendingSendQueuePanel' }).exists()).toBe(false)
   })
 
   it('keeps streamed tails ahead of a delayed HTTP seed and supports truncation', async () => {

@@ -405,6 +405,10 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
     '.notice{margin-top:4px;padding:3px 7px;color:#fbbf24}' +
     '.notice.ok{color:#6ee7b7}' +
     '.mask{position:fixed;inset:0;z-index:2147483645;background:rgba(0,0,0,.45)}' +
+    '.mask.shared-image{z-index:2147483647;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}' +
+    '.mask.shared-image~.drawer,.mask.shared-image~.bar{z-index:2147483646}' +
+    '.mask.shared-image [data-role="image-modal"] .edge,.mask.shared-image [data-role="image-grip"]{display:none}' +
+    '.mask.shared-image [data-role="image-head"]{cursor:default}' +
     '.modal{position:fixed;display:flex;flex-direction:column;overflow:hidden;min-width:0;' +
     'background:#f3f3f5;color:#18181b;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.4);' +
     'font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}' +
@@ -990,6 +994,10 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
     return clampArtifactBox({ x: x, y: y, w: w, h: ARTIFACT_DEFAULT_H });
   }
 
+  function sharedImageModal() {
+    return !!(imageOpen && drawer && drawer.embed.shared);
+  }
+
   function nudgePeer(b) {
     return clampArtifactBox({ x: b.x + PEER_NUDGE, y: b.y + PEER_NUDGE, w: b.w, h: b.h });
   }
@@ -1043,6 +1051,12 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
   function applyImageBox() {
     if (!ui || !ui.imageModal) return;
     var b = clampArtifactBox(imageBox || imageDefaultBox());
+    if (sharedImageModal()) {
+      var v = viewport();
+      var w = Math.max(1, Math.min(960, v.vw - 32));
+      var h = Math.max(1, Math.min(800, v.vh - 32));
+      b = { x: (v.vw - w) / 2, y: (v.vh - h) / 2, w: w, h: h };
+    }
     ui.imageModal.style.left = b.x + 'px';
     ui.imageModal.style.top = b.y + 'px';
     ui.imageModal.style.width = b.w + 'px';
@@ -1120,12 +1134,14 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
   }
 
   function onImageHeadPointerDown(ev) {
+    if (sharedImageModal()) return;
     var t = ev.target;
     if (t && t.closest && t.closest('button')) return;
     beginImageDrag(ev, 'move', '');
   }
 
   function onImageEdgePointerDown(ev) {
+    if (sharedImageModal()) return;
     var dir = ev.currentTarget && ev.currentTarget.getAttribute ? ev.currentTarget.getAttribute('data-dir') : '';
     beginImageDrag(ev, 'resize', dir || '');
   }
@@ -1478,7 +1494,10 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
       ev.stopPropagation();
       setArtifactOpen(false);
     });
-    // Keep the mask for dimming; do not close on outside click (explicit close / bar toggle only).
+    // Shared pictures are full-page modals; owner peer windows keep explicit close.
+    ui.artifactMask.addEventListener('click', function (ev) {
+      if (sharedImageModal() && ev.target === ui.artifactMask) setImageOpen(false);
+    });
     ui.chat.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -1630,7 +1649,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
     var light = drawerTheme() === 'light';
     ui.drawer.className = light ? 'drawer light' : 'drawer';
     ui.bar.className = 'bar' + (light ? ' light' : '');
-    ui.artifactMask.className = light ? 'mask light' : 'mask';
+    ui.artifactMask.className = (light ? 'mask light' : 'mask') + (sharedImageModal() ? ' shared-image' : '');
     applyBox();
     ui.theme.innerHTML = light ? ICON_MOON : ICON_SUN;
     ui.theme.setAttribute('aria-label', light ? T.toDark : T.toLight);
@@ -1749,6 +1768,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
     }
     render();
     applyImageTitle();
+    if (sharedImageModal()) ui.imageClose.focus();
   }
 
   function setDemoOpen(on) {
@@ -1960,6 +1980,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
       '/image';
     var q = new URLSearchParams();
     q.set('theme', e.theme === 'light' ? 'light' : 'dark');
+    if (e.shared && normLang(e.lang)) q.set('lang', normLang(e.lang));
     return src + '#' + q.toString();
   }
 
@@ -2140,6 +2161,12 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
   }
 
   function onKeydown(ev) {
+    if (sharedImageModal() && (ev.key === 'Escape' || ev.key === 'Esc')) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setImageOpen(false);
+      return;
+    }
     if (!pickActive()) return;
     if (ev.key !== 'Escape' && ev.key !== 'Esc') return;
     ev.preventDefault();
@@ -2428,6 +2455,10 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
   }
 
   window.addEventListener('message', function (ev) {
+    if (drawer && ev.origin === drawer.origin && imageFrame && ev.source === imageFrame.contentWindow) {
+      if (sharedImageModal() && ev.data && ev.data.type === EMBED_IMAGE && ev.data.action === 'close') setImageOpen(false);
+      return;
+    }
     if (!drawer || ev.source !== drawer.frame.contentWindow || ev.origin !== drawer.origin) return;
     var data = ev.data;
     if (!data || typeof data !== 'object') return;

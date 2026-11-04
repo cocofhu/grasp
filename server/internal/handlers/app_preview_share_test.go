@@ -79,6 +79,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			parts := []models.AcpPart{{Kind: "thought", Text: "Inspect the heading"},
 				{Kind: "tool", Title: "read_file /private/notes", Status: "completed", Input: "private-tool-input", Output: "private-tool-output"},
 				{Kind: "message", Text: "Preview timeline reply"}}
+			execution := &models.ChatExecution{AgentName: "Recorded Agent", Backend: "opencode", ModelID: "recorded-model",
+				ConfigurationID: "private-recorded-configuration", StartedAt: time.Now().Add(-2 * time.Second)}
+			usage := &models.TokenUsage{InputTokens: 123, OutputTokens: 45}
 			if solo {
 				hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
 				if err := hn.db.Create(&models.SoloSession{ID: sb.ThreadID, UserID: "admin", AgentName: sb.Profile, SandboxID: sb.ID, Status: models.SoloStatusRunning}).Error; err != nil {
@@ -89,6 +92,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				}
 				if err := hn.db.Create(&models.SoloMessage{
 					ID: "timeline-reply", SessionID: sb.ThreadID, Role: "assistant", Content: "Preview timeline reply",
+					Execution: execution, Usage: usage,
 					DurationMs: 2000, Events: []json.RawMessage{
 						json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_thought_chunk","content":{"text":"Inspect the heading"}}}`),
 						json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"private-id","title":"read_file /private/notes","status":"completed","rawInput":{"path":"private-tool-input"},"rawOutput":"private-tool-output"}}`),
@@ -110,7 +114,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 					t.Fatal(err)
 				}
 				conv.Messages = append(conv.Messages,
-					models.ReactMessage{Role: "agent", Text: "Preview timeline reply", Parts: parts, At: time.Now().Format(time.RFC3339Nano), DurationMs: 2000},
+					models.ReactMessage{Role: "agent", Text: "Preview timeline reply", Parts: parts, At: time.Now().Format(time.RFC3339Nano), DurationMs: 2000, Execution: execution, Usage: usage},
 					models.ReactMessage{Role: "human", Text: "Owner attachment", Annotations: picks, Images: []models.PromptImage{ownerFile}},
 					models.ReactMessage{Role: "human", Text: "Visitor upload", PreviewShared: true, Images: []models.PromptImage{guestFile}},
 				)
@@ -209,6 +213,14 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				!strings.Contains(history.Body.String(), `"startedAt"`) || !strings.Contains(history.Body.String(), `"endedAt"`) ||
 				strings.Contains(history.Body.String(), "private-tool-") || strings.Contains(history.Body.String(), "/private/notes") {
 				t.Fatalf("shared timeline: %d %s", history.Code, history.Body)
+			}
+			for _, recorded := range []string{"Recorded Agent", `"modelId":"recorded-model"`, `"inputTokens":123`, `"durationMs":2000`, `"queue":[]`} {
+				if !strings.Contains(history.Body.String(), recorded) {
+					t.Fatalf("missing recorded field %s: %s", recorded, history.Body)
+				}
+			}
+			if strings.Contains(history.Body.String(), "private-recorded-configuration") {
+				t.Fatal("execution configuration leaked")
 			}
 			// Both main backends seed the public stream with the same timeline;
 			// independent tickets and cross-origin sockets cannot subscribe.

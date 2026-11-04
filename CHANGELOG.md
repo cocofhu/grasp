@@ -6,6 +6,8 @@ All notable public-release changes are documented here.
 
 - Shared main-chat connections keep their retry backoff when a snapshot is immediately followed by an error, and reset it after five seconds of healthy streaming.
 
+- Shared main chats show the live pending-send queue and recorded reply statistics. Image previews open above the full Page Harness card, inherit the sharing language, and close with Escape or the backdrop.
+
 - Shared previews keep the opening language within that preview instead of changing the recipient's Grasp preference. Main-chat reconnections back off and stop when the conversation is unavailable; viewers share one live snapshot and receive only changed transcript tails.
 
 - Shared app chats stream thoughts, tool activity and replies with the regular chat timeline and elapsed time. Shared links and direct previews carry the opening language into the app toolbar and chat, including after a reload.

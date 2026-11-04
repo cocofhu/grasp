@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/gorilla/websocket"
 )
@@ -54,12 +55,13 @@ func TestPreviewGuestStreamsSanitizedProcessAndFinalTimeline(t *testing.T) {
 					"title": "read_file /private/path", "status": status, "rawInput": map[string]any{"path": "private-input"}, "rawOutput": "private-output"})
 			}
 			update(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"text": "Page updated"}})
-			send(map[string]any{"type": "prompt_done", "stopReason": "end_turn"})
+			send(map[string]any{"type": "prompt_done", "stopReason": "end_turn", "usage": map[string]any{"guest-model": map[string]any{"inputTokens": 123, "outputTokens": 45}}})
 		}
 	}))
 	defer bridge.Close()
 	address := bridge.Listener.Addr().(*net.TCPAddr)
 	client := sandbox.NewACPClient("127.0.0.1", address.Port).WithPassword("fixture")
+	client.WithExecution(&models.ChatExecution{AgentName: "Recorded Guest", Backend: "opencode", ModelID: "guest-model", ConfigurationID: "private-guest-config"})
 	if err := client.Connect(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -108,6 +110,10 @@ func TestPreviewGuestStreamsSanitizedProcessAndFinalTimeline(t *testing.T) {
 	}
 	if done["type"] != "done" || done["text"] != "Page updated" || done["failed"] != false || done["endedAt"] == nil || len(done["parts"].([]any)) != 3 {
 		t.Fatalf("final catches throttled chunks: %+v", done)
+	}
+	execution := done["execution"].(map[string]any)
+	if execution["agentName"] != "Recorded Guest" || execution["modelId"] != "guest-model" || execution["configurationId"] != nil || done["durationMs"] == nil || done["usage"] == nil {
+		t.Fatalf("guest statistics missing or leaked configuration: %+v", done)
 	}
 	if !<-completed {
 		t.Fatal("guest turn did not complete")

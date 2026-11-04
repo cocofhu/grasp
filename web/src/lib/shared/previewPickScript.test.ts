@@ -1663,6 +1663,34 @@ describe('preview-pick.js image preview window', () => {
     expect(g.y + g.h).toBeLessThanOrEqual(900)
   })
 
+  it('centers shared pictures above the entire chat card and closes on backdrop or Escape', async () => {
+    const p = openPage(body, { hash: hash + '&shared=1', embedReply: { ...reply, kind: 'app-preview' } })
+    await settle()
+    expect(p.frame()?.src).toContain('/shared-chat')
+    p.drawerReady()
+    setView(p, 1600, 900)
+    openImage(p, 'Shared.png')
+    expect(imageShown(p)).toBe(true)
+    expect(p.artifactMask().classList.contains('shared-image')).toBe(true)
+    expect(imageGeom(p)).toEqual({ x: 320, y: 50, w: 960, h: 800 })
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    expect(Number(p.win.getComputedStyle(p.artifactMask()).zIndex)).toBeGreaterThan(Number(p.win.getComputedStyle(drawer).zIndex))
+    const frame = p.shadow.querySelector('[data-role="image-modal"] iframe') as HTMLIFrameElement
+    expect(new URL(frame.src).hash).toContain('lang=zh-CN')
+    p.artifactMask().dispatchEvent(new p.win.MouseEvent('click', { bubbles: true }))
+    expect(imageShown(p)).toBe(false)
+    openImage(p, 'Shared.png')
+    p.win.document.dispatchEvent(new p.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(imageShown(p)).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
+    openImage(p, 'Shared.png')
+    p.win.dispatchEvent(new p.win.MessageEvent('message', { data: { type: 'grasp-embed:image', action: 'close' }, origin: 'https://evil.example', source: frame.contentWindow as never }))
+    expect(imageShown(p)).toBe(true)
+    p.win.dispatchEvent(new p.win.MessageEvent('message', { data: { type: 'grasp-embed:image', action: 'close' }, origin: GRASP, source: frame.contentWindow as never }))
+    expect(imageShown(p)).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
+  })
+
   it('keeps the chat usable: mask clicks do nothing, close leaves the drawer, hiding chat leaves the picture', async () => {
     const p = await ready()
     openImage(p, 'image.png')

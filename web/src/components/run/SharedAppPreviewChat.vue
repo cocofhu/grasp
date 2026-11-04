@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -14,13 +14,15 @@ import { useChatComposerDraft } from '@/lib/chat/useChatComposerDraft'
 import ChatAttachments from '@/components/chat/ChatAttachments.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
+import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
+import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
 import { attachmentByteLength, isImageAttachment, SITE_ATTACH_MAX_BYTES } from '@/lib/shared/attachments'
 import type { ReferenceSearchParams } from '@/lib/api/clients/soloClient'
 import VisitModelSelect, { type VisitModelTransport } from './VisitModelSelect.vue'
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import type { ReactAnnotation } from '@/lib/shared/types'
-import { appendPreviewPick, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
-import { publicAppPreviewClient, type PreviewChatHistory, type PreviewChatMessage, type PreviewChatRow, type PreviewShareSession } from '@/lib/inbox/appPreviewShare'
+import { appendPreviewPick, readPreviewMessage, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { publicAppPreviewClient, type PreviewChatHistory, type PreviewChatMessage, type PreviewChatQueueItem, type PreviewChatRow, type PreviewShareSession } from '@/lib/inbox/appPreviewShare'
 
 const { t } = useI18n()
 const props = defineProps<{ token: string }>()
@@ -29,6 +31,9 @@ const client = publicAppPreviewClient(props.token)
 const controller = new AbortController()
 const session = ref<PreviewShareSession>()
 const rows = ref<PreviewChatRow[]>([])
+const queued = ref<PreviewChatQueueItem[]>([])
+const queueRows = computed(() => queued.value.map(item => ({ id: item.id,
+  ...readPreviewMessage(item.text, item.annotations), images: item.images || [] })))
 const mainChoice = ref<VisitModelChoice>()
 const draft = useChatComposerDraft()
 const { input, textarea, attach, mention } = draft
@@ -98,6 +103,11 @@ const modelTransport: VisitModelTransport = {
 }
 const { scroller, onScroll, scrollDown } = useChatTailScroll()
 const imagePreview = useChatImagePreview()
+const embedImagePreview = inject(EMBED_IMAGE_PREVIEW_KEY, null)
+function openImagePreview(src: string, label: string) {
+  if (embedImagePreview) embedImagePreview.open(src, label)
+  else imagePreview.openChatImagePreview(src, label)
+}
 const referenceScope = { sessionId: 'shared-app-preview' }
 const searchReferences = <T,>(_id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
   client.searchReferences<T>(params, signal ?? controller.signal)
@@ -148,6 +158,7 @@ function handleMainUnavailable(error: unknown): boolean {
   if (status !== 409 && status !== 410) return false
   mainStopped = true
   mainStreamReady = false
+  queued.value = []
   chatReady.value = false
   busy.value = false
   clearTimeout(reconnectMain)
@@ -226,6 +237,7 @@ async function pollMain() {
 
 function applyMainHistory(next: PreviewChatHistory, applyModel: boolean) {
   rows.value = next.rows
+  queued.value = next.queue || []
   loadImages(next.rows)
   busy.value = next.busy
   if (next.model && applyModel) mainChoice.value = next.model
@@ -241,7 +253,7 @@ function connectMain() {
   mainSocket = current
   current.onmessage = event => {
     if (mainSocket !== current || mainStopped || controller.signal.aborted || !session.value || typeof event.data !== 'string') return
-    let frame: { type?: string; history?: PreviewChatHistory; start?: number; rows?: PreviewChatRow[]; busy?: boolean; model?: VisitModelChoice; status?: number }
+    let frame: { type?: string; history?: PreviewChatHistory; start?: number; rows?: PreviewChatRow[]; queue?: PreviewChatQueueItem[]; busy?: boolean; model?: VisitModelChoice; status?: number }
     try { frame = JSON.parse(event.data) } catch { return }
     if (!frame || typeof frame !== 'object') return
     if (frame.type === 'error') {
@@ -255,7 +267,7 @@ function connectMain() {
         current.close()
         return
       }
-      next = { rows: [...rows.value.slice(0, frame.start), ...frame.rows], busy: frame.busy === true, model: frame.model }
+      next = { rows: [...rows.value.slice(0, frame.start), ...frame.rows], queue: frame.queue ?? queued.value, busy: frame.busy === true, model: frame.model }
     } else return
     mainStreamReady = true
     healthySince ??= performance.now()
@@ -303,6 +315,10 @@ function connectGuest() {
       reply.text = message.text || ''
       if (Array.isArray(message.parts)) reply.parts = message.parts
       if (message.startedAt) reply.startedAt = message.startedAt
+      if (message.execution) reply.execution = message.execution
+      if ('usage' in message) reply.usage = message.usage
+      if ('usageByModel' in message) reply.usageByModel = message.usageByModel
+      if (message.durationMs !== undefined) reply.durationMs = message.durationMs
       reply.endedAt = message.endedAt
       reply.interrupted = message.interrupted
       reply.streaming = message.type === 'reply'
@@ -417,7 +433,7 @@ onBeforeUnmount(() => {
         <template v-for="row in rows" :key="row.id">
           <div v-if="row.role === 'user' || row.role === 'human'" class="flex justify-end">
             <div class="min-w-0 max-w-[85%]">
-              <ChatAttachments v-if="row.images?.length" :images="shownAttachments(row)" sent @preview="imagePreview.openChatImagePreview" />
+              <ChatAttachments v-if="row.images?.length" :images="shownAttachments(row)" sent @preview="openImagePreview" />
               <ChatUserMessage v-if="row.text || row.annotations?.length" :text="row.text" :annotations="row.annotations" :references="row.references" :created-at="row.at" />
               <div v-if="row.at" class="chat-meta mt-1.5 text-right">{{ relTime(row.at) }}</div>
             </div>
@@ -433,7 +449,7 @@ onBeforeUnmount(() => {
             :interrupted="row.interrupted"
             :started-at="row.startedAt"
             :ended-at="row.endedAt"
-            :metadata="row.at ? { createdAt: row.at } : undefined"
+            :metadata="row"
             @reveal="scrollDown()"
           />
           <p v-else class="text-xs text-txt3">{{ row.text }}</p>
@@ -444,6 +460,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div class="chat-pane-composer shrink-0 space-y-2 py-3">
+      <div v-if="queueRows.length" class="chat-pane-column">
+        <PendingSendQueuePanel :items="queueRows" readonly panel-test-id="shared-app-chat-queue" />
+      </div>
       <div v-if="messageError" class="flex items-center gap-2 text-xs text-err" role="alert">
         <span class="flex-1">{{ messageError }}</span>
         <AppButton v-if="!chatReady && session.chatMode === 'isolated'" size="sm" type="button" @click="retryGuest">
@@ -463,7 +482,7 @@ onBeforeUnmount(() => {
         pick-test-id="shared-app-chat-pick"
         @send="submit"
         @remove-pick="picks.splice($event, 1)"
-        @preview="imagePreview.openChatImagePreview"
+        @preview="openImagePreview"
       >
         <template #model>
           <VisitModelSelect

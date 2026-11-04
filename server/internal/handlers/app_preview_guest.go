@@ -210,11 +210,15 @@ func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn 
 	lastSteps, lastSegments := -1, -1
 	var lastTools []sandbox.ACPToolCall
 	started := time.Now()
+	execution := client.Execution()
+	if execution != nil {
+		execution.StartedAt = started
+	}
 	frame := func(kind string, result *sandbox.ChatResult) gin.H {
 		narration := previewGuestNarration(result)
 		return gin.H{"type": kind, "text": narration,
 			"parts":     gateshare.SanitizeParts(models.PartsForReply(result.AcpEvents(), narration)),
-			"startedAt": started.Format(time.RFC3339Nano)}
+			"startedAt": started.Format(time.RFC3339Nano), "execution": previewExecution(execution)}
 	}
 	result, err := services.ChatPreviewGuestTurn(ctx, client, text, images, func(progress *sandbox.ChatResult) {
 		if progress == nil {
@@ -247,6 +251,10 @@ func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn 
 	done["failed"] = failed
 	done["interrupted"] = result != nil && result.Interrupted
 	done["endedAt"] = time.Now().Format(time.RFC3339Nano)
+	done["durationMs"] = time.Since(started).Milliseconds()
+	if result != nil {
+		done["usage"], done["usageByModel"] = result.Usage, result.UsageByModel
+	}
 	return narration, !failed, writeChatJSON(conn, done) == nil
 }
 
