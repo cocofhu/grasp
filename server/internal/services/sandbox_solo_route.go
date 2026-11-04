@@ -305,11 +305,8 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 	ls.acp, ls.prepared, ls.home = acp, prepared, prepared.spec.ConfigHome
 	ls.soloRouteAgent = &agent
 	ls.modelBindingFingerprint = modelFingerprint
-	ls.codexAuthInjected = prepared.codexLogin
-	ls.codexAuthCredentialID = runtime.ModelCredentialIDForWriteBack(prepared.spec.Env)
-	ls.codexAuthPath = codexLiveAuthPath(prepared.backend, prepared.spec.ConfigRoot)
-	ls.codexAuthRejected = false
 	s.mu.Unlock()
+	s.registerLiveCodex(id, ls.sb, prepared.codexCredentialID, codexLiveAuthPath(prepared.backend, prepared.spec.ConfigRoot), prepared.codexVersion)
 	if oldHome != "" && oldHome != ls.home {
 		_ = os.RemoveAll(oldHome)
 	}

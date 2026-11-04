@@ -292,3 +292,32 @@ func TestParseRejectsDeepSeekSecretAliases(t *testing.T) {
 		})
 	}
 }
+func TestCodexLoginConfigFromYAMLEnvAndDefaults(t *testing.T) {
+	for _, k := range []string{"GRASP_CODEX_LOGIN_REFRESH_LEAD", "GRASP_CODEX_LOGIN_CHECK_INTERVAL", "GRASP_CODEX_LOGIN_AUTH_BASE_URL"} {
+		t.Setenv(k, "")
+	}
+	c := &Config{}
+	if c.CodexRefreshLead() != 96*time.Hour || c.CodexCheckInterval() != 10*time.Minute || c.CodexAuthBaseURL() != "https://auth.openai.com" {
+		t.Fatalf("defaults %v %v %q", c.CodexRefreshLead(), c.CodexCheckInterval(), c.CodexAuthBaseURL())
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("codex_login:\n  refresh_lead: 5d\n  check_interval: 1m\n  auth_base_url: https://mirror.example/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := parse(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.CodexRefreshLead() != 120*time.Hour || c.CodexCheckInterval() != time.Minute || c.CodexAuthBaseURL() != "https://mirror.example" {
+		t.Fatalf("yaml %v %v %q", c.CodexRefreshLead(), c.CodexCheckInterval(), c.CodexAuthBaseURL())
+	}
+	t.Setenv("GRASP_CODEX_LOGIN_REFRESH_LEAD", "48h")
+	t.Setenv("GRASP_CODEX_LOGIN_CHECK_INTERVAL", "bogus")
+	t.Setenv("GRASP_CODEX_LOGIN_AUTH_BASE_URL", "http://127.0.0.1:9")
+	if c, err = parse(path); err != nil {
+		t.Fatal(err)
+	}
+	if c.CodexRefreshLead() != 48*time.Hour || c.CodexCheckInterval() != 10*time.Minute || c.CodexAuthBaseURL() != "http://127.0.0.1:9" {
+		t.Fatalf("env %v %v %q", c.CodexRefreshLead(), c.CodexCheckInterval(), c.CodexAuthBaseURL())
+	}
+}

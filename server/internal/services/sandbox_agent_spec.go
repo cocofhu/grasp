@@ -19,7 +19,10 @@ type preparedAgentContainer struct {
 	specs            []sandbox.MCPServerSpec
 	backend          runtime.AcpBackend
 	modelFingerprint string
-	codexLogin       string
+	// codexCredentialID and codexVersion identify the installed Codex login
+	// copy; empty when the platform does not manage the login.
+	codexCredentialID string
+	codexVersion      string
 }
 
 func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedToken, name string, platformSpecs []sandbox.MCPServerSpec, agent Agent, extra agentContainerExtra) (*preparedAgentContainer, error) {
@@ -120,7 +123,8 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 	if err != nil {
 		return nil, fmt.Errorf("build cursor home: %w", err)
 	}
-	if err := runtime.InstallBoundCodexLoginFile(backend, home, codexLogin, env); err != nil {
+	codexCredentialID, codexVersion, err := s.installCodexLogin(backend, home, codexLogin, env)
+	if err != nil {
 		_ = os.RemoveAll(home)
 		return nil, err
 	}
@@ -169,5 +173,5 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 		WorkspaceDir:          agent.Layout.WorkspaceDir,
 	}
 
-	return &preparedAgentContainer{spec: spec, specs: specs, backend: backend, modelFingerprint: modelFingerprint, codexLogin: codexLogin}, nil
+	return &preparedAgentContainer{spec: spec, specs: specs, backend: backend, modelFingerprint: modelFingerprint, codexCredentialID: codexCredentialID, codexVersion: codexVersion}, nil
 }

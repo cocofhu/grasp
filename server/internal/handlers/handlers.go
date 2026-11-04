@@ -63,6 +63,7 @@ type Handlers struct {
 	McpKeys             *services.WorkspaceMcpApiKeyService
 	Credentials         *services.CredentialService
 	GitHubDevice        *services.GitHubDeviceFlowService
+	CodexDevice         *services.CodexDeviceFlowService
 	ModelConnections    *services.ModelConnectionService
 	ModelConfigurations *services.ModelConfigurationService
 	Onboarding          *services.OnboardingService

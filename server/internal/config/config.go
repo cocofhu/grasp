@@ -38,6 +38,44 @@ type Config struct {
 	Security SecurityConfig `yaml:"security"`
 	Storage  StorageConfig  `yaml:"storage"`
 	GitHub   GitHubConfig   `yaml:"github"`
+	// CodexLogin tunes the platform renewal of workspace Codex ChatGPT logins.
+	CodexLogin CodexLoginConfig `yaml:"codex_login"`
+}
+
+// CodexLoginConfig controls how the platform renews Codex ChatGPT logins. The
+// platform is the only holder of the refresh token; sandboxes get copies
+// without it.
+type CodexLoginConfig struct {
+	// RefreshLead renews a login this long before its access token expires.
+	RefreshLead string `yaml:"refresh_lead"`
+	// CheckInterval is how often logins are checked.
+	CheckInterval string `yaml:"check_interval"`
+	// AuthBaseURL is the OpenAI auth server (token renewal and device login).
+	AuthBaseURL string `yaml:"auth_base_url"`
+}
+
+// CodexRefreshLead returns codex_login.refresh_lead (default 96h).
+func (c *Config) CodexRefreshLead() time.Duration {
+	if d := parseDuration(c.CodexLogin.RefreshLead, 0); d > 0 {
+		return d
+	}
+	return 96 * time.Hour
+}
+
+// CodexCheckInterval returns codex_login.check_interval (default 10m).
+func (c *Config) CodexCheckInterval() time.Duration {
+	if d := parseDuration(c.CodexLogin.CheckInterval, 0); d > 0 {
+		return d
+	}
+	return 10 * time.Minute
+}
+
+// CodexAuthBaseURL returns codex_login.auth_base_url (default https://auth.openai.com).
+func (c *Config) CodexAuthBaseURL() string {
+	if v := strings.TrimRight(strings.TrimSpace(c.CodexLogin.AuthBaseURL), "/"); v != "" {
+		return v
+	}
+	return "https://auth.openai.com"
 }
 
 // GitHubConfig enables "Sign in with GitHub" (OAuth device flow) for
@@ -518,6 +556,15 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := env("GRASP_GITHUB_OAUTH_CLIENT_ID"); v != "" {
 		c.GitHub.OAuthClientID = v
+	}
+	if v := env("GRASP_CODEX_LOGIN_REFRESH_LEAD"); v != "" {
+		c.CodexLogin.RefreshLead = v
+	}
+	if v := env("GRASP_CODEX_LOGIN_CHECK_INTERVAL"); v != "" {
+		c.CodexLogin.CheckInterval = v
+	}
+	if v := env("GRASP_CODEX_LOGIN_AUTH_BASE_URL"); v != "" {
+		c.CodexLogin.AuthBaseURL = v
 	}
 }
 

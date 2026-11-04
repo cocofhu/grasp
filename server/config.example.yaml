@@ -118,3 +118,11 @@ security:
 # 无需 client secret。环境变量 GRASP_GITHUB_OAUTH_CLIENT_ID 优先。留空则只能粘贴 Token。
 github:
   oauth_client_id: ""
+
+# Codex ChatGPT 登录由平台统一续期:平台是唯一持有 refresh_token 的地方,
+# 沙箱只拿到去掉 refresh_token 的副本。到 auth_base_url 的请求遵循 HTTPS_PROXY。
+# 环境变量 GRASP_CODEX_LOGIN_REFRESH_LEAD / _CHECK_INTERVAL / _AUTH_BASE_URL 优先。
+codex_login:
+  refresh_lead: 96h
+  check_interval: 10m
+  auth_base_url: https://auth.openai.com

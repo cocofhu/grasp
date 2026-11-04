@@ -185,7 +185,9 @@ func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, re
 	started := time.Now()
 	c.setInflightPrompt(req, prompt, len(images), started)
 	defer c.clearInflightPrompt(req)
-	res, err := c.runChat(ctx, acp, req, prompt, images)
+	res, err := c.codexTurn(ctx, req, func() (*sandbox.ChatResult, error) {
+		return c.runChat(ctx, acp, req, prompt, images)
+	})
 	c.budgets.add(reactKey(req), time.Since(started))
 	if berr := budgetErr(ctx); berr != nil && err != nil && errors.Is(err, context.DeadlineExceeded) {
 		err = berr

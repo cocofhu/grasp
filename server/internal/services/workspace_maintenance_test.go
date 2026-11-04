@@ -91,7 +91,7 @@ func TestCodexRefreshTargetsSelectedCredentialAndCannotReviveIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.WriteBackCodexLoginCredential(second.ID, refreshed); err != nil {
+	if err = saveCodexLoginForTest(svc, second.ID, refreshed); err != nil {
 		t.Fatal(err)
 	}
 	_, got, ok := svc.ResolveSelectedValue(first.ID)
@@ -105,13 +105,13 @@ func TestCodexRefreshTargetsSelectedCredentialAndCannotReviveIt(t *testing.T) {
 	if err = svc.Revoke(second.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.WriteBackCodexLoginCredential(second.ID, login); err == nil {
+	if err = saveCodexLoginForTest(svc, second.ID, login); err == nil {
 		t.Fatal("revoked credential revived")
 	}
 	if err = svc.Clear(first.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.WriteBackCodexLoginCredential(first.ID, refreshed); err == nil {
+	if err = saveCodexLoginForTest(svc, first.ID, refreshed); err == nil {
 		t.Fatal("cleared credential revived")
 	}
 }
@@ -156,4 +156,13 @@ func TestWorkflowGatePolicyUsesOrdinaryOverrideAndStopsAdmission(t *testing.T) {
 	if svc.PendingMaintenance() != 0 {
 		t.Fatal("maintenance accepted new gate task")
 	}
+}
+
+func saveCodexLoginForTest(svc *CredentialService, id, content string) error {
+	prev, err := svc.codexLogin(id)
+	if err != nil {
+		return err
+	}
+	_, err = svc.saveCodexLogin(prev, content)
+	return err
 }

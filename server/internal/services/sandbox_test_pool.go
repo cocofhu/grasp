@@ -252,7 +252,8 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		fail(fmt.Errorf("build cursor home: %w", err))
 		return
 	}
-	if err := runtime.InstallBoundCodexLoginFile(backend, home, codexLogin, env); err != nil {
+	codexCredentialID, codexVersion, err := s.installCodexLogin(backend, home, codexLogin, env)
+	if err != nil {
 		_ = os.RemoveAll(home)
 		fail(err)
 		return
@@ -338,11 +339,9 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		sb: sb, acp: acp, home: home,
 		modelBindingFingerprint: modelFingerprint,
 		gitBindingsFingerprint:  gitBindingsFingerprint(gitCredentials),
-		codexAuthInjected:       codexLogin,
-		codexAuthCredentialID:   runtime.ModelCredentialIDForWriteBack(env),
-		codexAuthPath:           codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()
+	s.registerLiveCodex(id, sb, codexCredentialID, codexLiveAuthPath(backend, configRoot), codexVersion)
 	log.Info().Str("name", sb.Name).Str("profile", profile).Uint("id", id).Msg("test sandbox opened")
 }
 
@@ -416,8 +415,9 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 		chatCtx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	defer cancel()
-	result, err := ls.acp.ChatStream(chatCtx, text, images, onEvent)
-	s.noteLiveCodexAuth(id, result, err)
+	result, err := s.codexLiveTurn(chatCtx, id, func() (*sandbox.ChatResult, error) {
+		return ls.acp.ChatStream(chatCtx, text, images, onEvent)
+	})
 	_ = row
 	if result == nil {
 		return nil, nil, err
@@ -552,15 +552,9 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		acp.Close()
 		return nil, nil, fmt.Errorf("reconnect acp: %w", err)
 	}
-	injected := ""
-	credentialID := ""
-	rejected := false
 	var prepared *preparedAgentContainer
 	home := ""
 	if ls != nil {
-		injected = ls.codexAuthInjected
-		credentialID = ls.codexAuthCredentialID
-		rejected = ls.codexAuthRejected
 		prepared, home = ls.prepared, ls.home
 	}
 	ls = &liveSandbox{
@@ -568,14 +562,17 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		soloRouteAgent:          &agent,
 		modelBindingFingerprint: modelFingerprint,
 		gitBindingsFingerprint:  gitFingerprint,
-		codexAuthInjected:       injected,
-		codexAuthCredentialID:   credentialID,
-		codexAuthPath:           codexLiveAuthPath(runtime.NormalizeBackend(agent.AcpBackend), agent.Layout.ConfigRoot),
-		codexAuthRejected:       rejected,
 	}
 	s.mu.Lock()
 	s.live[id] = ls
 	s.mu.Unlock()
+	if !s.codexLogins.Registered(liveCodexKey(id)) {
+		backend := runtime.NormalizeBackend(agent.AcpBackend)
+		credentialID := runtime.CodexLoginCredentialForBinding(backend, agent.ModelBinding, s.modelBinding)
+		s.registerLiveCodex(id, sb, credentialID, codexLiveAuthPath(backend, agent.Layout.ConfigRoot), "")
+	} else {
+		s.codexLogins.Bind(liveCodexKey(id), sb)
+	}
 	return ls, &row, nil
 }
 
@@ -588,7 +585,6 @@ func (s *SandboxService) Stop(ctx context.Context, id uint) error {
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法停止")
 	}
-	s.writeBackLiveCodex(ctx, id)
 	s.teardownLive(id)
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
@@ -605,7 +601,6 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法销毁")
 	}
-	s.writeBackLiveCodex(ctx, id)
 	s.teardownLive(id)
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
@@ -698,7 +693,6 @@ func (s *SandboxService) ShutdownAllTestSandboxes(ctx context.Context, force boo
 		if force {
 			s.Cancel(row.ID)
 		}
-		s.writeBackLiveCodex(ctx, row.ID)
 		s.teardownLive(row.ID)
 		s.archiveLog(ctx, row.Name)
 		_ = s.mgr.DestroyByName(ctx, row.Name)
@@ -861,7 +855,6 @@ func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sa
 // destroyLocalSandbox tears down the gateway instance (by Name and by
 // grasp.name correlation) then deletes the local list row.
 func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sandbox) {
-	s.writeBackLiveCodex(ctx, row.ID)
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
 	// Placeholder Name cannot address the real gateway id; also destroy by
@@ -900,6 +893,7 @@ func (s *SandboxService) teardownLive(id uint) {
 	ls := s.live[id]
 	delete(s.live, id)
 	s.mu.Unlock()
+	s.codexLogins.Unregister(liveCodexKey(id))
 	if ls != nil {
 		if ls.acp != nil {
 			ls.acp.Close()

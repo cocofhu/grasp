@@ -4,6 +4,12 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Codex device-code sign-in consistently reports upstream connection loss and truncated responses as retryable sign-in service errors.
+
+- Codex ChatGPT sessions continue after platform renewal or re-login. Credential edits preserve concurrent token refreshes, and graceful shutdown waits for renewals to be saved. Device-code sign-in follows the shared UI controls and themes, fits narrow screens, and supports keyboard navigation and a direct fallback to pasting a login file.
+
+- Grasp now renews Codex ChatGPT logins itself. Codex credentials can be added or re-logged with a ChatGPT device code, and pasted `auth.json` files must contain a `refresh_token`. Sandboxes receive a copy without the `refresh_token`, updated whenever Grasp renews; a turn rejected for its login is renewed and retried once. The credential list shows the account email, last renewal and renewal status. Configure with `codex_login.refresh_lead`, `codex_login.check_interval` and `codex_login.auth_base_url`.
+
 - Shared main-chat Stop targets the turn the visitor saw and rejects stale requests without changing the queue. Sharing hints explain that Solo and review Stop clear everyone's queued messages, while clarification keeps them.
 
 - Shared main-chat connections keep their retry backoff when a snapshot is immediately followed by an error, and reset it after five seconds of healthy streaming.
