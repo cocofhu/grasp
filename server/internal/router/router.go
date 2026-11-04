@@ -422,6 +422,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.GET("/app/references/search", h.PublicAppPreviewReferences)
 		pub.GET("/app/images/:messageId/:index", h.PublicAppPreviewImage)
 		pub.POST("/app/main-chat", h.PublicAppPreviewMainChat)
+		pub.POST("/app/main-chat/cancel", h.PublicAppPreviewMainCancel)
 		pub.GET("/app/guest-chat", h.PublicAppPreviewGuestChat)
 		pub.GET("/preview", h.PublicGatePreview)
 		pub.GET("/images/:index", h.PublicGateImage)

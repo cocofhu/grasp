@@ -6,6 +6,8 @@ All notable public-release changes are documented here.
 
 - Shared main-chat connections keep their retry backoff when a snapshot is immediately followed by an error, and reset it after five seconds of healthy streaming.
 
+- Shared main and independent preview chats can stop the active reply. Interrupted replies keep their partial content, drafts survive stopping, and independent chats can continue on the same connection.
+
 - Preview chat composers offer Pick an element in the "+" menu. Picking returns the selected element to chat, and Escape cancels while preserving the draft and attachments.
 
 - Preview frames apply the host theme before the loading screen is painted and retain it on reload without changing the account theme preference.

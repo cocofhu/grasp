@@ -367,6 +367,22 @@ test('anonymous shares open the direct app and use its floating chat in both mod
         queueSent.set(ws, JSON.stringify(mainQueue))
       }
     }
+    let mainStops = 0
+    await anonymous.route(url + '/main-chat/cancel', route => {
+      expect(route.request().headers()['x-gate-share-token']).toBe(mainSession)
+      expect(route.request().method()).toBe('POST')
+      mainStops++
+      for (const row of mainRows) {
+        if (!row.streaming) continue
+        row.streaming = false
+        row.interrupted = true
+        row.endedAt = new Date().toISOString()
+      }
+      mainBusy = false
+      mainQueue = []
+      publishMain()
+      return route.fulfill({ json: { ok: true } })
+    })
     await anonymous.routeWebSocket('**/public/approvals/app/main-events', ws => {
       mainSockets.set(ws, undefined)
       ws.onClose(() => { mainSockets.delete(ws) })
@@ -407,21 +423,38 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       return route.fulfill({ json: mainChoice })
     })
     let guestSocket: WebSocketRoute | undefined
-    await anonymous.routeWebSocket('**/public/approvals/app/guest-chat', (ws) => ws.onMessage((data) => {
-      const body = JSON.parse(String(data))
-      if ('modelId' in body) {
-        expect(body).toEqual({ modelId: 'model-b', reasoningEffort: '' })
-        modelWrites.push('guest:' + body.modelId)
-        ws.send(JSON.stringify({ type: 'model', ok: true }))
-        return
-      }
-      expect(body.text).toContain('A separate idea')
-      expect(body.annotations).toEqual([expect.objectContaining({ selector: '#app-title' })])
-      expect(body.references).toEqual([{ kind: 'github_issue', target: 'acme/web#12' }])
-      expect(body.images).toEqual([expect.objectContaining({ name: 'guest-notes.txt', data: Buffer.from('Guest notes').toString('base64') })])
-      guestSocket = ws
-      ws.send(JSON.stringify({ type: 'reply', text: '', parts: [{ kind: 'thought', text: 'Check the selected heading' }], startedAt: '2026-11-04T02:00:00Z' }))
-    }))
+    let guestConnections = 0, guestTurns = 0, guestStops = 0, guestTurnId = ''
+    await anonymous.routeWebSocket('**/public/approvals/app/guest-chat', (ws) => {
+      guestConnections++
+      ws.onMessage((data) => {
+        const body = JSON.parse(String(data))
+        if (body.type === 'cancel') {
+          expect(body.id).toBe(guestTurnId)
+          guestStops++
+          ws.send(JSON.stringify({ type: 'done', text: 'Reply before cancellation', interrupted: true, failed: true, endedAt: new Date().toISOString() }))
+          return
+        }
+        if ('modelId' in body) {
+          expect(body).toEqual({ modelId: 'model-b', reasoningEffort: '' })
+          modelWrites.push('guest:' + body.modelId)
+          ws.send(JSON.stringify({ type: 'model', ok: true }))
+          return
+        }
+        guestTurns++
+        guestTurnId = body.id
+        expect(guestTurnId).toBeTruthy()
+        expect(body.text).toContain('A separate idea')
+        if (guestTurns > 1) {
+          ws.send(JSON.stringify({ type: guestTurns === 2 ? 'reply' : 'done', text: guestTurns === 2 ? 'Reply before cancellation' : 'Reply after cancellation' }))
+          return
+        }
+        expect(body.annotations).toEqual([expect.objectContaining({ selector: '#app-title' })])
+        expect(body.references).toEqual([{ kind: 'github_issue', target: 'acme/web#12' }])
+        expect(body.images).toEqual([expect.objectContaining({ name: 'guest-notes.txt', data: Buffer.from('Guest notes').toString('base64') })])
+        guestSocket = ws
+        ws.send(JSON.stringify({ type: 'reply', text: '', parts: [{ kind: 'thought', text: 'Check the selected heading' }], startedAt: '2026-11-04T02:00:00Z' }))
+      })
+    })
 
     const main = await anonymous.newPage()
     await main.goto(url + '#t=' + mainToken + '&lang=zh-CN')
@@ -550,6 +583,17 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await expect(mainDrawer.locator('html')).toHaveAttribute('lang', 'zh-CN')
     expect(await mainDrawer.locator('html').evaluate(() => localStorage.getItem('grasp-locale'))).toBe('en')
     await expect(mainDrawer.getByTestId('agent-timeline-elapsed')).toContainText('46s')
+    mainRows.push({ id: 'owner-current', role: 'user', text: 'Owner request to cancel' },
+      { id: 'owner-partial', role: 'assistant', text: 'Owner partial reply', streaming: true, startedAt: new Date().toISOString() })
+    mainBusy = true
+    publishMain()
+    await mainInput.fill('Keep this draft after stopping')
+    await expect(mainDrawer.getByTestId('shared-app-chat-stop')).toBeEnabled()
+    await mainDrawer.getByTestId('shared-app-chat-stop').click()
+    await expect.poll(() => mainStops).toBe(1)
+    await expect(mainDrawer.getByTestId('shared-app-chat-stop')).toHaveCount(0)
+    await expect(mainInput).toHaveValue('Keep this draft after stopping')
+    await expect(mainDrawer.getByText('Owner partial reply', { exact: true })).toBeVisible()
     await mainToolbar.locator('[data-role="chat"]').click()
     await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()
 
@@ -596,6 +640,21 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await expect(guestDrawer.getByTestId('agent-tool-group')).toBeVisible()
     await expect(guestDrawer.getByTestId('chat-message-annotations')).toHaveText('#app-title')
     await expect(guestDrawer.getByText('Selected page elements:')).toHaveCount(0)
+    const guestInput = guestDrawer.getByTestId('shared-app-chat-input')
+    await guestInput.fill('A separate idea to cancel')
+    await guestDrawer.getByTestId('shared-app-chat-send').click()
+    await expect(guestDrawer.getByText('Reply before cancellation', { exact: true })).toBeVisible()
+    await guestInput.fill('Keep the guest draft')
+    await guestDrawer.getByTestId('shared-app-chat-stop').click()
+    await expect.poll(() => guestStops).toBe(1)
+    await expect(guestDrawer.getByTestId('shared-app-chat-stop')).toHaveCount(0)
+    await expect(guestInput).toHaveValue('Keep the guest draft')
+    await expect(guestDrawer.getByText('Reply before cancellation', { exact: true })).toBeVisible()
+    await expect(guestDrawer.getByRole('alert')).toHaveCount(0)
+    await guestInput.fill('A separate idea after stopping')
+    await guestDrawer.getByTestId('shared-app-chat-send').click()
+    await expect(guestDrawer.getByText('Reply after cancellation', { exact: true })).toBeVisible()
+    expect(guestConnections).toBe(1)
     await guest.reload()
     await expect(guestDrawer.getByTestId('shared-app-chat-input')).toBeVisible()
     await expect(guestDrawer.locator('html')).toHaveAttribute('lang', 'en')

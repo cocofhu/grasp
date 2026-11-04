@@ -42,6 +42,7 @@ const messageError = ref('')
 const pageError = ref<'inactive' | 'network' | ''>('')
 const busy = ref(false)
 const sending = ref(false)
+const stopping = ref(false)
 const loading = ref(true)
 const chatReady = ref(false)
 const guestModelChanging = ref(false)
@@ -327,7 +328,8 @@ function connectGuest() {
     if (message.type === 'done' || message.type === 'error') {
       if (reply) reply.streaming = false
       busy.value = false
-      if (message.failed || message.type === 'error') messageError.value = t('pages.appPreview.share.sendFailed')
+      stopping.value = false
+      if ((message.failed && !message.interrupted) || message.type === 'error') messageError.value = t('pages.appPreview.share.sendFailed')
     }
   }
   current.onclose = () => {
@@ -335,6 +337,7 @@ function connectGuest() {
     guestModelReply?.(false)
     chatReady.value = false
     busy.value = false
+    stopping.value = false
     const reply = rows.value.find(row => row.id === guestReplyId)
     if (reply) reply.streaming = false
     messageError.value = t('pages.appPreview.share.chatUnavailable')
@@ -351,7 +354,7 @@ async function submit() {
   const selected = picks.value.slice()
   const images = attach.attachments.value.slice()
   const references = mention.refs.value
-  if (!canSubmit.value || !chatReady.value || sending.value || guestModelChanging.value || !session.value) return
+  if (!canSubmit.value || !chatReady.value || sending.value || stopping.value || guestModelChanging.value || !session.value) return
   if (attach.blockSendIfOversized(images)) return
   if (images.length > 16 || images.reduce((total, image) => total + attachmentByteLength(image), 0) > SITE_ATTACH_MAX_BYTES) {
     messageError.value = t('pages.appPreview.share.attachmentLimit')
@@ -368,14 +371,15 @@ async function submit() {
   messageError.value = ''
   if (session.value.chatMode === 'isolated') {
     if (busy.value || socket?.readyState !== WebSocket.OPEN) return
+    const id = ++messageNumber
+    const replyId = `assistant-${id}`
     try {
-      socket.send(JSON.stringify(message))
+      socket.send(JSON.stringify({ ...message, id: replyId }))
     } catch {
       messageError.value = t('pages.appPreview.share.sendFailed')
       return
     }
-    const id = ++messageNumber
-    guestReplyId = `assistant-${id}`
+    guestReplyId = replyId
     rows.value.push(
       { id: `user-${id}`, role: 'user', text: draft, annotations: selected, images, references, at: new Date().toISOString() },
       { id: guestReplyId, role: 'assistant', text: '', streaming: true, startedAt: new Date().toISOString() },
@@ -403,6 +407,31 @@ async function submit() {
     else if (!controller.signal.aborted) messageError.value = error instanceof Error && error.message ? error.message : t('pages.appPreview.share.sendFailed')
   } finally {
     sending.value = false
+  }
+}
+
+async function cancelTurn() {
+  if (!busy.value || !chatReady.value || stopping.value || !session.value) return
+  messageError.value = ''
+  stopping.value = true
+  if (session.value.chatMode === 'isolated') {
+    try {
+      if (socket?.readyState !== WebSocket.OPEN) throw new Error('disconnected')
+      socket.send(JSON.stringify({ type: 'cancel', id: guestReplyId }))
+    } catch {
+      stopping.value = false
+      messageError.value = t('pages.appPreview.share.cancelFailed')
+    }
+    // The terminal frame confirms interruption; keep the partial reply visible.
+    return
+  }
+  try {
+    await client.cancelMain(controller.signal)
+    void pollMain()
+  } catch (error) {
+    if (!handleMainUnavailable(error) && !controller.signal.aborted) messageError.value = t('pages.appPreview.share.cancelFailed')
+  } finally {
+    stopping.value = false
   }
 }
 
@@ -499,10 +528,18 @@ onBeforeUnmount(() => {
         </template>
         <template #actions>
           <ComposerPrimaryAction
+            v-if="busy"
+            kind="stop"
+            :label="t('pages.solo.chat.stop')"
+            :disabled="!chatReady || stopping"
+            testid="shared-app-chat-stop"
+            @click="cancelTurn"
+          />
+          <ComposerPrimaryAction
             kind="send"
             :label="t('pages.solo.chat.send')"
             :busy="sending"
-            :disabled="!chatReady || sending || guestModelChanging || !canSubmit || (session.chatMode === 'isolated' && busy)"
+            :disabled="!chatReady || sending || stopping || guestModelChanging || !canSubmit || (session.chatMode === 'isolated' && busy)"
             testid="shared-app-chat-send"
             @click="submit"
           />

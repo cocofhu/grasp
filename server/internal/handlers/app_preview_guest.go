@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/gateshare"
@@ -12,6 +14,7 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/textutil"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -19,8 +22,52 @@ const appPreviewGuestProtocol = "grasp-preview-guest"
 
 type previewGuestRequest struct {
 	previewChatMessage
+	Type            string  `json:"type,omitempty"`
+	ID              string  `json:"id,omitempty"`
 	ModelID         *string `json:"modelId"`
 	ReasoningEffort string  `json:"reasoningEffort"`
+	ctx             context.Context
+	finish          context.CancelFunc
+}
+
+// Register before enqueueing so even a cancel sent immediately after a message
+// reaches that turn. IDs keep a late cancel from aborting the next reply.
+type previewGuestTurns struct {
+	mu      sync.Mutex
+	cancels map[string]context.CancelFunc
+}
+
+func (t *previewGuestTurns) prepare(ctx context.Context, request *previewGuestRequest) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if request.ID == "" {
+		request.ID = uuid.NewString() // Older clients do not supply turn IDs.
+	}
+	if _, exists := t.cancels[request.ID]; exists {
+		return false
+	}
+	if t.cancels == nil {
+		t.cancels = make(map[string]context.CancelFunc)
+	}
+	turnCtx, cancel := context.WithCancel(ctx)
+	id := request.ID
+	t.cancels[id] = cancel
+	request.ctx = turnCtx
+	request.finish = func() {
+		t.mu.Lock()
+		delete(t.cancels, id)
+		t.mu.Unlock()
+		cancel()
+	}
+	return true
+}
+
+func (t *previewGuestTurns) cancel(id string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if cancel := t.cancels[id]; cancel != nil {
+		cancel()
+	}
 }
 
 func (h *Handlers) writePreviewGuestModelCatalog(c *gin.Context, sb models.Sandbox) {
@@ -69,44 +116,58 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 	configureEventHeartbeat(conn, eventPongWait)
 	ctx, cancel := context.WithDeadline(c.Request.Context(), link.ExpiresAt)
 	requests := make(chan previewGuestRequest, 1)
-	go readPreviewGuestRequests(ctx, cancel, conn, requests)
+	go readPreviewGuestRequests(ctx, cancel, conn, requests, &previewGuestTurns{})
 	go h.watchAppPreviewChat(ctx, cancel, conn, claims)
 	var client *sandbox.ACPClient
 	var closeChat func()
 	var history []string
 	var restoreHistory bool
 	var selection *previewGuestRequest
+	var finishTurn context.CancelFunc
 	defer func() {
 		cancel()
+		if finishTurn != nil {
+			finishTurn()
+		}
 		_ = conn.Close()
 		if closeChat != nil {
 			closeChat()
 		}
 	}()
 	for {
+		if finishTurn != nil {
+			finishTurn()
+			finishTurn = nil
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case request := <-requests:
+			finishTurn = request.finish
+			turnCtx := request.ctx
 			if active, _ := h.activeAppPreviewTicket(claims); active == nil {
 				return
+			}
+			if turnCtx.Err() != nil {
+				writePreviewGuestUnavailable(conn, request)
+				continue
 			}
 			if h.Shutdown != nil && h.Shutdown.IsDraining() {
 				writePreviewGuestUnavailable(conn, request)
 				continue
 			}
-			if client == nil || !client.IsConnected() {
+			if client == nil || !client.IsConnected() || client.BridgeState().Desynced {
 				if closeChat != nil {
 					closeChat()
 				}
 				restoreHistory = len(history) > 0
-				client, closeChat, err = h.Sbx.OpenPreviewGuest(ctx, sb)
+				client, closeChat, err = h.Sbx.OpenPreviewGuest(turnCtx, sb)
 				if err != nil {
 					writePreviewGuestUnavailable(conn, request)
 					continue
 				}
 				if selection != nil && request.ModelID == nil {
-					if _, err := client.SetIndependentModelSettings(ctx, *selection.ModelID, selection.ReasoningEffort); err != nil {
+					if _, err := client.SetIndependentModelSettings(turnCtx, *selection.ModelID, selection.ReasoningEffort); err != nil {
 						closeChat()
 						client, closeChat = nil, nil
 						writePreviewGuestUnavailable(conn, request)
@@ -115,7 +176,7 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 				}
 			}
 			if request.ModelID != nil {
-				restarted, err := client.SetIndependentModelSettings(ctx, *request.ModelID, request.ReasoningEffort)
+				restarted, err := client.SetIndependentModelSettings(turnCtx, *request.ModelID, request.ReasoningEffort)
 				restoreHistory = restoreHistory || restarted
 				if err == nil {
 					selection = &request
@@ -125,7 +186,7 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 				}
 				continue
 			}
-			refs, err := h.prepareAppPreviewReferences(ctx, link, sb, request.References)
+			refs, err := h.prepareAppPreviewReferences(turnCtx, link, sb, request.References)
 			if err != nil {
 				writePreviewGuestUnavailable(conn, request)
 				continue
@@ -139,14 +200,18 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 				prompt = "Earlier messages in this preview chat (context only):\n" +
 					strings.Join(history, "\n\n") + "\n\nCurrent user message:\n" + prompt
 			}
-			narration, completed, sent := writePreviewGuestTurn(ctx, cancel, conn, client, prompt, request.Images)
+			narration, completed, sent := writePreviewGuestTurn(turnCtx, cancel, conn, client, prompt, request.Images)
 			if !sent {
 				return
 			}
-			if completed {
+			if completed || errors.Is(turnCtx.Err(), context.Canceled) {
 				restoreHistory = false
+				role := "Agent: "
+				if !completed {
+					role = "Agent (interrupted): "
+				}
 				history = append(history, "User: "+textutil.TruncateBytes(instruction, 2048, "…")+
-					"\nAgent: "+textutil.TruncateBytes(narration, 2048, "…"))
+					"\n"+role+textutil.TruncateBytes(narration, 2048, "…"))
 				if len(history) > 8 {
 					history = history[len(history)-8:]
 				}
@@ -156,6 +221,10 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 }
 
 func writePreviewGuestUnavailable(conn *websocket.Conn, request previewGuestRequest) {
+	if request.ctx != nil && errors.Is(request.ctx.Err(), context.Canceled) && request.ModelID == nil {
+		_ = writeChatJSON(conn, gin.H{"type": "done", "interrupted": true, "endedAt": time.Now().Format(time.RFC3339Nano)})
+		return
+	}
 	if request.ModelID != nil {
 		_ = writeChatJSON(conn, gin.H{"type": "model", "ok": false})
 		return
@@ -163,11 +232,24 @@ func writePreviewGuestUnavailable(conn *websocket.Conn, request previewGuestRequ
 	_ = writeChatJSON(conn, gin.H{"type": "error", "code": "unavailable"})
 }
 
-func readPreviewGuestRequests(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, requests chan<- previewGuestRequest) {
+func readPreviewGuestRequests(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, requests chan<- previewGuestRequest, turns *previewGuestTurns) {
 	defer cancel()
 	for ctx.Err() == nil {
 		var frame previewGuestRequest
 		if err := conn.ReadJSON(&frame); err != nil {
+			return
+		}
+		if len(frame.ID) > 128 {
+			return
+		}
+		if frame.Type == "cancel" {
+			if frame.ID == "" || frame.ModelID != nil || frame.Text != "" || frame.ReasoningEffort != "" || len(frame.Annotations)+len(frame.Images)+len(frame.References) != 0 {
+				return
+			}
+			turns.cancel(frame.ID)
+			continue
+		}
+		if frame.Type != "" {
 			return
 		}
 		if frame.ModelID == nil {
@@ -177,9 +259,13 @@ func readPreviewGuestRequests(ctx context.Context, cancel context.CancelFunc, co
 		} else if frame.Text != "" || len(frame.Annotations)+len(frame.Images)+len(frame.References) != 0 || len(*frame.ModelID) > 512 || len(frame.ReasoningEffort) > 64 {
 			return
 		}
+		if !turns.prepare(ctx, &frame) {
+			return
+		}
 		select {
 		case requests <- frame:
 		default:
+			frame.finish()
 			return
 		}
 	}
@@ -249,7 +335,7 @@ func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn 
 	narration := previewGuestNarration(result)
 	done := frame("done", result)
 	done["failed"] = failed
-	done["interrupted"] = result != nil && result.Interrupted
+	done["interrupted"] = (result != nil && result.Interrupted) || errors.Is(ctx.Err(), context.Canceled)
 	done["endedAt"] = time.Now().Format(time.RFC3339Nano)
 	done["durationMs"] = time.Since(started).Milliseconds()
 	if result != nil {

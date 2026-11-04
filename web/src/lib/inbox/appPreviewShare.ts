@@ -95,6 +95,7 @@ export function publicAppPreviewClient(token: string) {
     history: (signal: AbortSignal) => request<PreviewChatHistory>('/main-chat', signal),
     send: (message: PreviewChatMessage, signal: AbortSignal) =>
       request<{ ok: boolean }>('/main-chat', signal, message),
+    cancelMain: (signal: AbortSignal) => request<{ ok: boolean }>('/main-chat/cancel', signal, {}),
     searchReferences: <T>(params: ReferenceSearchParams, signal: AbortSignal) =>
       request<ReferenceSearchResult<T>>(`/references/search?${referenceQuery(params)}`, signal),
     image: (messageId: string, index: number, signal: AbortSignal) =>

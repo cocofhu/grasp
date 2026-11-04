@@ -18,11 +18,8 @@ import (
 )
 
 func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
-	for _, solo := range []bool{true, false} {
-		name := "workflow"
-		if solo {
-			name = "solo"
-		}
+	for _, name := range []string{"solo", "workflow", "clarify"} {
+		solo := name == "solo"
 		t.Run(name, func(t *testing.T) {
 			hn := newHarness(t)
 			hn.h.Preview = services.NewPreviewService(hn.db, nil)
@@ -50,6 +47,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				sb.RunID, sb.NodeID, sb.Purpose, sb.ThreadID = runID, "", services.SandboxPurposeSolo, "share-solo"
 				manage = "/api/solo/sessions/" + sb.ThreadID + "/preview-share"
 				mainHistory = "Private Solo main history"
+			} else if name == "clarify" {
+				seedInboxClarify(t, hn, runID, nodeID)
+				mainHistory = "请补充验收标准"
 			} else {
 				seedInboxReview(t, hn, runID, nodeID, false)
 			}
@@ -233,6 +233,12 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				if unavailable.Code != http.StatusServiceUnavailable {
 					t.Fatalf("missing Solo service: %d %s", unavailable.Code, unavailable.Body)
 				}
+				hn.h.Solo = nil
+				unavailable = hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, mainHeaders)
+				hn.h.Solo = service
+				if unavailable.Code != http.StatusServiceUnavailable {
+					t.Fatalf("cancel without Solo: %d %s", unavailable.Code, unavailable.Body)
+				}
 			}
 			var historyReads atomic.Int32
 			if err := hn.db.Callback().Query().After("gorm:query").Register("preview-history-count", func(query *gorm.DB) {
@@ -358,6 +364,27 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			if w := hn.doEmbed(http.MethodPost, path+"/model", map[string]any{"modelId": "unlisted-model"}, mainHeaders); w.Code != http.StatusBadRequest {
 				t.Fatalf("model outside bound group accepted: %d %s", w.Code, w.Body)
 			}
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, headers("isolated-drawer")); w.Code != http.StatusForbidden {
+				t.Fatalf("isolated drawer cancelled main chat: %d %s", w.Code, w.Body)
+			}
+			crossOrigin := headers("main-drawer")
+			crossOrigin["Origin"] = "https://other.example.test"
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, crossOrigin); w.Code != http.StatusForbidden {
+				t.Fatalf("cross-origin cancel: %d %s", w.Code, w.Body)
+			}
+			for _, tokenKind := range []string{"main", "main-drawer"} {
+				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, headers(tokenKind)); w.Code != http.StatusOK {
+					t.Fatalf("cancel with %s: %d %s", tokenKind, w.Code, w.Body)
+				}
+			}
+			if !solo {
+				hn.db.Model(&models.ReactConversation{}).Where("run_id = ? AND node_id = ?", runID, nodeID).Update("iteration", 2)
+				w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, mainHeaders)
+				hn.db.Model(&models.ReactConversation{}).Where("run_id = ? AND node_id = ?", runID, nodeID).Update("iteration", 1)
+				if w.Code != http.StatusConflict {
+					t.Fatalf("stale workflow visit cancelled: %d %s", w.Code, w.Body)
+				}
+			}
 			session := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, headers("isolated"))
 			if session.Code != http.StatusOK {
 				t.Fatalf("exchange: %d %s", session.Code, session.Body)
@@ -390,6 +417,10 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			}
 			if w := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, headers("main")); w.Code != http.StatusOK {
 				t.Fatalf("revoking isolated affected main: %d", w.Code)
+			}
+			hn.do(http.MethodDelete, manage, map[string]any{"port": 8080, "chatMode": "main"})
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{}, mainHeaders); w.Code != http.StatusGone {
+				t.Fatalf("revoked main share cancelled: %d %s", w.Code, w.Body)
 			}
 		})
 	}

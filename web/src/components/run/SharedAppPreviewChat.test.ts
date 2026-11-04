@@ -9,7 +9,7 @@ import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 
 const client = vi.hoisted(() => ({
   session: vi.fn(), history: vi.fn(), getModel: vi.fn(), connectMain: vi.fn(), connectGuest: vi.fn(),
-  modelCatalog: vi.fn(), setModel: vi.fn(), searchReferences: vi.fn(), image: vi.fn(), send: vi.fn(),
+  modelCatalog: vi.fn(), setModel: vi.fn(), searchReferences: vi.fn(), image: vi.fn(), send: vi.fn(), cancelMain: vi.fn(),
 }))
 vi.mock('@/lib/inbox/appPreviewShare', () => ({ publicAppPreviewClient: () => client }))
 
@@ -23,6 +23,12 @@ class Socket {
   onmessage?: (event: { data: string }) => void
   onclose?: () => void
   onerror?: () => void
+  onopen?: () => void
+  send = vi.fn()
+  open() {
+    this.readyState = Socket.OPEN
+    this.onopen?.()
+  }
   close() {
     if (this.readyState === Socket.CLOSED) return
     this.readyState = Socket.CLOSED
@@ -39,7 +45,9 @@ const wrappers: ReturnType<typeof shallowMount>[] = []
 function mountChat(provide: Record<string | symbol, unknown> = {}) {
   const w = shallowMount(SharedAppPreviewChat, {
     props: { token: 'shared-app' },
-    global: { provide, plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: { ...common, ...pages } } })] },
+    global: { provide,
+      stubs: { ChatComposer: { name: 'ChatComposer', props: ['draft'], emits: ['send'], template: '<div><slot name="actions" /></div>' } },
+      plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: { ...common, ...pages } } })] },
   })
   wrappers.push(w)
   return w
@@ -52,7 +60,13 @@ beforeEach(() => {
   client.session.mockResolvedValue({ ticket: 'ticket', chatMode: 'main' })
   client.history.mockResolvedValue({ rows: [], busy: false })
   client.getModel.mockResolvedValue({})
+  client.cancelMain.mockResolvedValue({ ok: true })
   client.connectMain.mockImplementation(() => {
+    const socket = new Socket()
+    sockets.push(socket)
+    return socket
+  })
+  client.connectGuest.mockImplementation(() => {
     const socket = new Socket()
     sockets.push(socket)
     return socket
@@ -65,6 +79,77 @@ afterEach(() => {
 })
 
 describe('shared main chat recovery', () => {
+  it('stops the main conversation without discarding a draft or assuming it has already stopped', async () => {
+    let finish!: (value: object) => void
+    client.cancelMain.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const w = mountChat()
+    await flushPromises()
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true } })
+    await flushPromises()
+    const composer = w.getComponent({ name: 'ChatComposer' })
+    composer.props('draft').input.value = 'Keep this draft'
+    const stop = () => w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')
+    expect(stop()!.props('disabled')).toBe(false)
+    stop()!.vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(client.cancelMain).toHaveBeenCalledOnce()
+    expect(stop()!.props('disabled')).toBe(true)
+    finish({ ok: true })
+    await flushPromises()
+    expect(stop()).toBeDefined() // The authoritative stream still reports busy.
+    expect(composer.props('draft').input.value).toBe('Keep this draft')
+    sockets[0]!.receive({ type: 'tail', start: 0, rows: [], queue: [], busy: false })
+    await flushPromises()
+    expect(stop()).toBeUndefined()
+    expect(composer.props('draft').input.value).toBe('Keep this draft')
+  })
+
+  it('keeps a failed main stop retryable', async () => {
+    client.cancelMain.mockRejectedValueOnce({ status: 503 })
+    const w = mountChat()
+    await flushPromises()
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true } })
+    await flushPromises()
+    const stop = w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')!
+    stop.vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(w.get('[role="alert"]').text()).toContain('Could not stop the reply')
+    expect(stop.props('disabled')).toBe(false)
+  })
+
+  it('cancels only the current independent turn, preserves partial content and can send again on the same socket', async () => {
+    client.session.mockResolvedValue({ ticket: 'guest', chatMode: 'isolated' })
+    const w = mountChat()
+    await flushPromises()
+    const socket = sockets[0]!
+    socket.open()
+    const composer = w.getComponent({ name: 'ChatComposer' })
+    composer.props('draft').input.value = 'First request'
+    composer.vm.$emit('send')
+    await flushPromises()
+    const request = JSON.parse(socket.send.mock.calls[0]![0])
+    socket.receive({ type: 'reply', text: 'Partial reply' })
+    const stop = () => w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')
+    await flushPromises()
+    composer.props('draft').input.value = 'Next request'
+    stop()!.vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(JSON.parse(socket.send.mock.calls[1]![0])).toEqual({ type: 'cancel', id: request.id })
+    expect(stop()!.props('disabled')).toBe(true)
+    socket.receive({ type: 'done', text: 'Partial reply', interrupted: true, failed: true })
+    await flushPromises()
+    expect(stop()).toBeUndefined()
+    expect(w.find('[role="alert"]').exists()).toBe(false)
+    expect(w.getComponent({ name: 'AgentTimeline' }).props()).toMatchObject({ text: 'Partial reply', interrupted: true, streaming: false })
+    expect(composer.props('draft').input.value).toBe('Next request')
+    composer.vm.$emit('send')
+    await flushPromises()
+    const next = JSON.parse(socket.send.mock.calls[2]![0])
+    expect(next.text).toBe('Next request')
+    expect(next.id).not.toBe(request.id)
+    expect(client.connectGuest).toHaveBeenCalledOnce()
+  })
+
   it('synchronizes the pending queue across seeds, token tails, reorders and removals', async () => {
     let finishSeed!: (history: PreviewChatHistory) => void
     client.history.mockReturnValueOnce(new Promise<PreviewChatHistory>(resolve => { finishSeed = resolve }))
