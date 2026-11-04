@@ -92,7 +92,7 @@ describe('ServiceCommitBadge is unused on bare layouts', () => {
     const dir = dirname(fileURLToPath(import.meta.url))
     const app = readFileSync(join(dir, '../../App.vue'), 'utf8')
     expect(app).toMatch(/<AppShell v-if="!bareLayout">/)
-    expect(app).toMatch(/<router-view v-else \/>/)
+    expect(app).toContain('<router-view v-else-if="!framed || route.meta.previewFrame" />')
     expect(app).toMatch(/<ToastHost \/>/)
   })
 })

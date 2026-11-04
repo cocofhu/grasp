@@ -3,6 +3,8 @@ package router
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +65,45 @@ func TestNewLiveAndNodeRegistry(t *testing.T) {
 		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestWorkspacePagesCannotBeFramed(t *testing.T) {
+	r := New(&handlers.Handlers{})
+	for _, path := range []string{"/", "/dashboard", "/settings/credentials"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Header().Get("X-Frame-Options") != "DENY" || w.Header().Get("Content-Security-Policy") != "frame-ancestors 'none'" {
+			t.Errorf("workspace page can be framed: %s", path)
+		}
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/embed/runs/run/nodes/solo/wrong-view", nil))
+	if w.Code != http.StatusNotFound || !strings.HasPrefix(w.Body.String(), "not found:") {
+		t.Fatal("unknown embed route fell back to the workspace")
+	}
+}
+
+func TestWorkspaceFramingCanBeAllowedForConfiguredOrigins(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "web", "dist"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	page := `<!doctype html><html><head><title>Grasp</title></head><body></body></html>`
+	if err := os.WriteFile(filepath.Join(dir, "web", "dist", "index.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	r := New(&handlers.Handlers{FrameAncestors: []string{"https://portal.example"}})
+	for _, path := range []string{"/", "/dashboard"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Header().Get("X-Frame-Options") != "" || w.Header().Get("Content-Security-Policy") != "frame-ancestors https://portal.example" {
+			t.Fatalf("%s framing headers: %v", path, w.Header())
+		}
+		if !strings.Contains(w.Body.String(), `<head><meta name="grasp-workspace-framing" content="allowed"><title>`) {
+			t.Fatalf("%s did not tell the SPA it may render framed: %s", path, w.Body.String())
 		}
 	}
 }

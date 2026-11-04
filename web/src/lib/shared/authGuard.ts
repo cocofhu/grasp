@@ -3,11 +3,21 @@ import { authApi } from '@/lib/api/api'
 import { authRedirectPath, getAuthState, markAuthReady, useAuth } from '@/lib/composables/useAuth'
 
 /**
+ * True when this document is framed and may render only preview routes.
+ * The server marks workspace pages that configured origins may embed.
+ */
+export function isFramed(): boolean {
+  if (typeof window === 'undefined' || window.self === window.top) return false
+  return document.querySelector('meta[name="grasp-workspace-framing"][content="allowed"]') === null
+}
+
+/**
  * Auth navigation guard. Protected `/me` is non-blocking so the shell can paint;
  * unauthenticated redirect semantics stay the same. Login remains non-blocking.
  */
 export function installAuthGuard(router: Router) {
   router.beforeEach(async (to) => {
+    if (isFramed() && !to.meta.previewFrame) return false
     if (to.meta.public) {
       if (to.name === 'login') {
         const { user, setUser } = useAuth()

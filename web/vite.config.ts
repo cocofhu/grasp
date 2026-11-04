@@ -74,8 +74,8 @@ export default defineConfig(({ command }) => {
       // same-origin without needing VITE_API_BASE. Override the target via env if
       // your backend runs elsewhere.
       proxy: {
-        // ws: true so WebSocket upgrades (live logs, agent chat tester) also proxy.
-        '/api': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
+        // Preserve the browser Host so session origin checks work for WebSockets.
+        '/api': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', ws: true },
         // Sandbox code-server IDE reverse-proxy lives at /sandbox/:id/* (outside
         // /api). Without this, the dev SPA server swallows the iframe request and
         // returns index.html instead of the in-container IDE. ws:true because
@@ -83,12 +83,12 @@ export default defineConfig(({ command }) => {
         // NOTE: the trailing slash is required — key "/sandbox" is a prefix match
         // and would also capture the SPA routes under "/sandboxes/*", breaking
         // the sandbox console page. "/sandbox/" only matches the IDE proxy.
-        '/sandbox/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
+        '/sandbox/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', ws: true },
         // Sandbox acp-bridge native UI reverse-proxy lives at /sandbox-bridge/:id/*.
-        '/sandbox-bridge/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
+        '/sandbox-bridge/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', ws: true },
         // Desktop noVNC is /sandbox-vnc/:id/ws, outside /api. Without this proxy the
         // dev server never upgrades the socket, so the preview stays on "connecting".
-        '/sandbox-vnc/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },
+        '/sandbox-vnc/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', ws: true },
         // App preview reverse-proxy lives at /preview/:runId/:nodeId/:port/* (outside
         // /api). Without this, Vite dev swallows iframe requests and returns SPA HTML.
         '/preview/': { target: process.env.VITE_API_PROXY || 'http://localhost:8080', changeOrigin: true, ws: true },

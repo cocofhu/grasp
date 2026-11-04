@@ -28,6 +28,9 @@ var errUnsupportedEncoding = errors.New("unsupported content-encoding")
 
 const flushInterval = 100 * time.Millisecond
 
+// graspSessionCookie must match auth.CookieName in the Grasp server.
+const graspSessionCookie = "cf_session"
+
 // NewHandler reverse-proxies to upstream and injects preview-pick.js into
 // text/html. Host is preserved (Vite allowedHosts / HMR). WebSocket 101 and
 // non-HTML bodies are passed through. Location is not rewritten (direct
@@ -68,8 +71,10 @@ func NewSwitchableHandler(upstream *url.URL, upstreamFile, scriptURL string, emb
 			r.SetURL(sel.pick())
 			r.Out.Host = inHost
 			r.Out.Header.Set("Accept-Encoding", "identity")
+			stripGraspSessionCookie(r.Out.Header, "Cookie", ";")
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			stripGraspSessionCookie(resp.Header, "Set-Cookie", "")
 			if resp.Request != nil {
 				resp.Header.Set(UpstreamHeader, resp.Request.URL.Port())
 			}
@@ -97,6 +102,29 @@ func NewSwitchableHandler(upstream *url.URL, upstreamFile, scriptURL string, emb
 		}
 		proxy.ServeHTTP(w, r)
 	})
+}
+
+// Strip the Grasp cookie in both directions while leaving app cookies intact.
+// Cookies are host scoped, so the browser can send it to a different port.
+func stripGraspSessionCookie(header http.Header, field, separator string) {
+	values := header.Values(field)
+	header.Del(field)
+	for _, value := range values {
+		parts := []string{value}
+		if separator != "" {
+			parts = strings.Split(value, separator)
+		}
+		kept := parts[:0]
+		for _, part := range parts {
+			name, _, _ := strings.Cut(part, "=")
+			if strings.TrimSpace(name) != graspSessionCookie {
+				kept = append(kept, part)
+			}
+		}
+		if len(kept) > 0 {
+			header.Add(field, strings.TrimSpace(strings.Join(kept, separator)))
+		}
+	}
 }
 
 func serveScript(w http.ResponseWriter, body []byte) {

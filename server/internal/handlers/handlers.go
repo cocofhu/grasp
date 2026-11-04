@@ -80,7 +80,9 @@ type Handlers struct {
 	// compares Origin/Referer to this request's Host (never client
 	// X-Forwarded-Host; advertise host is not used for CSRF).
 	PublicAdvertise string
-	Team            *services.TeamService
+	// FrameAncestors are the origins allowed to embed workspace pages.
+	FrameAncestors []string
+	Team           *services.TeamService
 	// CanViewAudit optionally overrides the default audit ACL
 	// (is_admin OR authenticated user who can UpdateWorkspace). Tests use this
 	// to simulate a read-only member denial while production keeps the hook nil.

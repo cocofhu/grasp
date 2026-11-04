@@ -50,8 +50,13 @@ func (s *Service) LoginHandler(c *gin.Context) {
 
 // LogoutHandler handles POST /api/auth/logout (idempotent).
 func (s *Service) LogoutHandler(c *gin.Context) {
-	token := SessionToken(c)
-	_ = s.DeleteSession(token)
+	tokens := SessionTokens(c)
+	for _, token := range tokens {
+		_ = s.DeleteSession(token)
+	}
+	if len(tokens) > 1 {
+		clearSessionCookieCopies(c)
+	}
 	ClearSessionCookie(c)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

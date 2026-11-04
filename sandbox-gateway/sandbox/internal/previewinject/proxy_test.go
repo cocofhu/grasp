@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -24,6 +25,48 @@ func testProxy(t *testing.T, upstream http.Handler) (*httptest.Server, *url.URL)
 	proxy := httptest.NewServer(NewHandler(u, scriptURL))
 	t.Cleanup(proxy.Close)
 	return proxy, u
+}
+
+func TestDirectPreviewReservesGraspSessionCookie(t *testing.T) {
+	login := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "cf_session", Value: "login-fixture", Path: "/", HttpOnly: true})
+		http.SetCookie(w, &http.Cookie{Name: "app_session", Value: "app-fixture", Path: "/"})
+	}))
+	defer login.Close()
+	proxy, _ := testProxy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := r.Cookie("cf_session"); err != http.ErrNoCookie {
+			t.Error("the app received the platform login cookie")
+		}
+		if cookie, err := r.Cookie("app_session"); err != nil || cookie.Value != "app-fixture" {
+			t.Error("the app did not receive its own cookie")
+		}
+		http.SetCookie(w, &http.Cookie{Name: "cf_session", Value: "overwrite-fixture", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "app_session", Value: "app-updated", Path: "/"})
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar}
+	for _, address := range []string{login.URL, proxy.URL} {
+		resp, err := client.Get(address)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+	}
+	loginURL, err := url.Parse(login.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookies := map[string]string{}
+	for _, cookie := range jar.Cookies(loginURL) {
+		cookies[cookie.Name] = cookie.Value
+	}
+	if cookies["cf_session"] != "login-fixture" || cookies["app_session"] != "app-updated" {
+		t.Fatal("the preview must update only its own cookie")
+	}
 }
 
 func TestProxy_InjectsHTML(t *testing.T) {

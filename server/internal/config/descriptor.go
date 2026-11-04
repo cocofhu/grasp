@@ -20,6 +20,7 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_DEPLOYMENT_MODE", YAML: "server.deployment_mode", Type: "string", Default: "development", ZH: "部署信任边界；local-demo 仅限 loopback", EN: "Deployment trust boundary; local-demo is loopback-only"},
 		{Env: "GRASP_MCP_ADVERTISE", YAML: "server.mcp_advertise", Type: "URL", Default: "derived", ZH: "沙箱回连 artifact-store MCP 的 API 基址", EN: "API base URL used by sandboxes for artifact-store MCP"},
 		{Env: "GRASP_PUBLIC_ADVERTISE", YAML: "server.public_advertise", Type: "URL", Default: "derived", ZH: "浏览器预览代理与 Run→QQ 深链的公开基址（不用于门禁分享铸造）", EN: "Public base URL for browser preview proxy and Run→QQ deep links (not used to mint gate share URLs)"},
+		{Env: "GRASP_FRAME_ANCESTORS", YAML: "server.frame_ancestors", Type: "origin list", Default: "", ZH: "允许用 iframe 嵌入工作区页面的来源（空格或逗号分隔，如 https://portal.example.com）；留空禁止嵌入", EN: "Origins allowed to embed workspace pages in an iframe (space or comma separated, e.g. https://portal.example.com); empty forbids embedding"},
 		{Env: "GRASP_DB", YAML: "database.path", Type: "path", Default: "grasp.db", ZH: "SQLite 数据库文件", EN: "SQLite database file"},
 		{Env: "GRASP_DB_DRIVER", YAML: "database.driver", Type: "enum", Default: "sqlite", ZH: "数据库驱动：sqlite 或 mysql", EN: "Database driver: sqlite or mysql"},
 		{Env: "GRASP_DB_DSN", YAML: "database.dsn", Type: "string", Sensitive: true, ZH: "MySQL DSN", EN: "MySQL DSN"},

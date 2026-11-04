@@ -147,7 +147,8 @@ Service configuration precedence: environment variables > mounted config file > 
 
 - Store API keys and Git credentials only in the workspace credentials settings; never commit them to the repository.
 - Pin images by digest in production; see [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke).
-- Preserve the original `Host` header behind a reverse proxy (e.g. nginx `proxy_set_header Host $host`); temporary approval share links are generated from it. See [SECURITY.md](SECURITY.md).
+- Preserve the original `Host` header, including a non-default port, behind a reverse proxy (e.g. nginx `proxy_set_header Host $http_host`). Temporary approval share links and the origin check for signed-in requests use it. See [SECURITY.md](SECURITY.md).
+- Workspace pages cannot be embedded in an iframe. To embed them in a portal, list its origin in `GRASP_FRAME_ANCESTORS`; see [CONFIGURATION.md](server/CONFIGURATION.md).
 - SQLite (`./.localdata/db`) and attachments (`./.localdata/app-data`) are mounted separately. Back them up and clean them up together so existing runs do not end up with broken `blob:` references.
 
 ## Docs

@@ -15,6 +15,7 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_DEPLOYMENT_MODE` | `server.deployment_mode` | string | `development` | Public | Deployment trust boundary; local-demo is loopback-only |
 | `GRASP_MCP_ADVERTISE` | `server.mcp_advertise` | URL | `derived` | Public | API base URL used by sandboxes for artifact-store MCP |
 | `GRASP_PUBLIC_ADVERTISE` | `server.public_advertise` | URL | `derived` | Public | Public base URL for browser preview proxy and Run→QQ deep links (not used to mint gate share URLs) |
+| `GRASP_FRAME_ANCESTORS` | `server.frame_ancestors` | origin list | `Not set` | Public | Origins allowed to embed workspace pages in an iframe (space or comma separated, e.g. https://portal.example.com); empty forbids embedding |
 | `GRASP_DB` | `database.path` | path | `grasp.db` | Public | SQLite database file |
 | `GRASP_DB_DRIVER` | `database.driver` | enum | `sqlite` | Public | Database driver: sqlite or mysql |
 | `GRASP_DB_DSN` | `database.dsn` | string | `Not set` | Sensitive | MySQL DSN |

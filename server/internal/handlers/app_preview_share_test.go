@@ -169,6 +169,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				if w := hn.doEmbed(http.MethodGet, "/embed-api/solo/"+runID+"/messages", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
 					t.Fatalf("share token reached owner history: %d", w.Code)
 				}
+				if w := hn.doEmbed(http.MethodGet, "/api/workspace", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
+					t.Fatalf("share token reached the workspace API: %d", w.Code)
+				}
 				tokens[mode+"-drawer"] = token
 			}
 			if w := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, headers("isolated")); w.Code != http.StatusForbidden {

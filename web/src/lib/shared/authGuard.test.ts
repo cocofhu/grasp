@@ -2,7 +2,7 @@
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { flushPromises } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getAuthState, useAuth } from '../composables/useAuth'
 
 const me = vi.fn()
@@ -13,7 +13,7 @@ vi.mock('@/lib/api/api', () => ({
   },
 }))
 
-import { installAuthGuard } from './authGuard'
+import { installAuthGuard, isFramed } from './authGuard'
 
 function resetAuth() {
   const s = getAuthState()
@@ -87,5 +87,47 @@ describe('installAuthGuard', () => {
     await router.push('/login')
     expect(router.currentRoute.value.path).toBe('/login')
     expect(getAuthState().ready).toBe(false)
+  })
+})
+
+describe('isFramed', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.head.querySelector('meta[name="grasp-workspace-framing"]')?.remove()
+  })
+
+  it('limits a framed document to preview routes unless the server allows workspace framing', () => {
+    expect(isFramed()).toBe(false)
+    vi.spyOn(window, 'top', 'get').mockReturnValue({} as Window)
+    expect(isFramed()).toBe(true)
+    const meta = document.createElement('meta')
+    meta.name = 'grasp-workspace-framing'
+    meta.content = 'allowed'
+    document.head.appendChild(meta)
+    expect(isFramed()).toBe(false)
+  })
+
+  it('blocks workspace navigation only in a restricted frame', async () => {
+    vi.spyOn(window, 'top', 'get').mockReturnValue({} as Window)
+    me.mockResolvedValue({ username: 'u', expires_at: '2099-01-01T00:00:00Z', is_admin: false })
+    const routes = [
+      { path: '/dashboard', name: 'dashboard', component: defineComponent({ template: '<div />' }) },
+      { path: '/embed/chat', name: 'embed', component: defineComponent({ template: '<div />' }), meta: { public: true, bare: true, previewFrame: true } },
+    ]
+    const restricted = createRouter({ history: createMemoryHistory(), routes })
+    installAuthGuard(restricted)
+    await restricted.push('/dashboard')
+    expect(restricted.currentRoute.value.path).toBe('/')
+    await restricted.push('/embed/chat')
+    expect(restricted.currentRoute.value.path).toBe('/embed/chat')
+
+    const meta = document.createElement('meta')
+    meta.name = 'grasp-workspace-framing'
+    meta.content = 'allowed'
+    document.head.appendChild(meta)
+    const allowed = createRouter({ history: createMemoryHistory(), routes })
+    installAuthGuard(allowed)
+    await allowed.push('/dashboard')
+    expect(allowed.currentRoute.value.path).toBe('/dashboard')
   })
 })

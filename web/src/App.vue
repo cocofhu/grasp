@@ -17,9 +17,11 @@ import { useAuth } from '@/lib/composables/useAuth'
 import { useDelayedBusy } from '@/lib/composables/useDelayedBusy'
 import { routeViewTransition, useRoutePending } from '@/lib/shared/routePending'
 import { useLoadingAnnouncer } from '@/lib/shared/loadingAnnouncer'
+import { isFramed } from '@/lib/shared/authGuard'
 
 const route = useRoute()
-const bareLayout = computed(() => !!route.meta.bare)
+const framed = isFramed()
+const bareLayout = computed(() => framed || !!route.meta.bare)
 const auth = useAuth()
 const routePending = useRoutePending()
 const { liveMessage } = useLoadingAnnouncer()
@@ -68,7 +70,7 @@ watch(
       </div>
     </router-view>
   </AppShell>
-  <router-view v-else />
+  <router-view v-else-if="!framed || route.meta.previewFrame" />
   <OnboardingWizard
     v-if="!bareLayout"
     :open="onboardingOpen"
