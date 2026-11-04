@@ -46,6 +46,10 @@ var terminalCodes = []string{
 // auth.json instead.
 var ErrDeviceNotEnabled = errors.New("Codex device code login is not enabled")
 
+// ErrTransport marks a failed request or response read, including EOFs that
+// do not implement net.Error. The underlying cause remains available via Is.
+var ErrTransport = errors.New("openai auth transport failure")
+
 // Error is a non-2xx answer from the auth service. Message never carries
 // tokens: it is the service's error code or a truncated description.
 type Error struct {
@@ -267,12 +271,12 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) (int, [
 func (c *Client) do(req *http.Request) (int, []byte, error) {
 	res, err := c.http.Do(req)
 	if err != nil {
-		return 0, nil, fmt.Errorf("openai auth request: %w", scrubURLError(err))
+		return 0, nil, fmt.Errorf("%w: request: %w", ErrTransport, scrubURLError(err))
 	}
 	defer func() { _ = res.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(res.Body, responseLimit))
 	if err != nil {
-		return 0, nil, fmt.Errorf("openai auth response: %w", err)
+		return 0, nil, fmt.Errorf("%w: response: %w", ErrTransport, err)
 	}
 	return res.StatusCode, body, nil
 }

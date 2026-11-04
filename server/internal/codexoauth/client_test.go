@@ -325,3 +325,41 @@ func TestScrubURLError(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+type transportFunc func(*http.Request) (*http.Response, error)
+
+func (f transportFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+type failedBody struct{ err error }
+
+func (b failedBody) Read([]byte) (int, error) { return 0, b.err }
+func (failedBody) Close() error               { return nil }
+
+func TestTransportFailuresRemainTransientAndPreserveCause(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		body bool
+	}{
+		{name: "request EOF", err: io.EOF},
+		{name: "request cancelled", err: context.Canceled},
+		{name: "response truncated", err: io.ErrUnexpectedEOF, body: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewClient("https://auth.example.test")
+			c.http.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+				if tc.body {
+					return &http.Response{StatusCode: http.StatusOK, Body: failedBody{err: tc.err}}, nil
+				}
+				return nil, tc.err
+			})
+			_, err := c.Refresh(context.Background(), "rt-secret")
+			if !errors.Is(err, ErrTransport) || !errors.Is(err, tc.err) || IsTerminal(err) {
+				t.Fatalf("transport error lost its classification or cause: %v", err)
+			}
+			if strings.Contains(err.Error(), c.BaseURL()) || strings.Contains(err.Error(), "rt-secret") {
+				t.Fatalf("transport error contains request material: %v", err)
+			}
+		})
+	}
+}

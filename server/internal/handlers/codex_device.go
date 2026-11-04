@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"net"
 	"net/http"
 
 	"github.com/cocofhu/grasp/internal/codexoauth"
@@ -100,10 +99,5 @@ func writeCodexDeviceErr(c *gin.Context, err error) {
 
 func isCodexAuthErr(err error) bool {
 	var oe *codexoauth.Error
-	return errors.As(err, &oe) || isNetErr(err)
-}
-
-func isNetErr(err error) bool {
-	var ne net.Error
-	return errors.As(err, &ne)
+	return errors.As(err, &oe) || errors.Is(err, codexoauth.ErrTransport)
 }

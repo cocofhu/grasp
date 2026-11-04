@@ -141,3 +141,32 @@ func TestCodexLoginPasteValidationIs400(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexDeviceRoutesUpstreamDisconnect(t *testing.T) {
+	for _, failure := range []string{"request EOF", "truncated response"} {
+		t.Run(failure, func(t *testing.T) {
+			setSecretsKey(t)
+			hn := newHarness(t)
+			hn.h.Credentials = services.NewCredentialService(hn.db)
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if failure == "truncated response" {
+					w.Header().Set("Content-Length", "128")
+					_, _ = w.Write([]byte("{"))
+					return
+				}
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				_ = conn.Close()
+			}))
+			t.Cleanup(api.Close)
+			hn.h.CodexDevice = services.NewCodexDeviceFlowService(hn.h.Credentials, api.URL)
+			w := hn.do(http.MethodPost, "/api/workspace/credentials/codex/device", map[string]any{"name": "ChatGPT"})
+			if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"code":"upstream_error"`) {
+				t.Fatalf("%s: upstream=%d %s", failure, w.Code, w.Body.String())
+			}
+		})
+	}
+}
