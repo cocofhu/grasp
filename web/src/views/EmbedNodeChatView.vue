@@ -79,7 +79,8 @@ let activeSession: EmbedSession | undefined
 
 async function activateSession(session: EmbedSession, openingLocale: AppLocale | null) {
   if (props.shared) {
-    await applyPublicLocale(openingLocale || session.locale)
+    // connect already applied an explicit language, including for error pages.
+    if (!openingLocale) await applyPublicLocale(session.locale)
     session = { ...session, locale: locale.value }
   }
   activeSession = session

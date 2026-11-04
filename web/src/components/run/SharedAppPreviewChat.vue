@@ -237,6 +237,7 @@ function connectMain() {
   if (!session.value || mainStopped || controller.signal.aborted || mainSocket?.readyState === WebSocket.CONNECTING || mainSocket?.readyState === WebSocket.OPEN) return
   clearTimeout(reconnectMain)
   const current = client.connectMain(session.value.ticket)
+  let healthySince: number | undefined
   mainSocket = current
   current.onmessage = event => {
     if (mainSocket !== current || mainStopped || controller.signal.aborted || !session.value || typeof event.data !== 'string') return
@@ -257,7 +258,7 @@ function connectMain() {
       next = { rows: [...rows.value.slice(0, frame.start), ...frame.rows], busy: frame.busy === true, model: frame.model }
     } else return
     mainStreamReady = true
-    mainReconnectDelay = 1_000
+    healthySince ??= performance.now()
     mainStreamRevision++
     applyMainHistory(next, pendingMainModels === 0)
   }
@@ -265,6 +266,8 @@ function connectMain() {
     if (mainSocket !== current) return
     mainStreamReady = false
     if (controller.signal.aborted || mainStopped || !session.value) return
+    // A snapshot followed by an immediate stream error must keep backing off.
+    if (healthySince !== undefined && performance.now() - healthySince >= 5_000) mainReconnectDelay = 1_000
     void pollMain().finally(() => {
       if (controller.signal.aborted || mainStopped || !session.value) return
       reconnectMain = setTimeout(connectMain, mainReconnectDelay)
