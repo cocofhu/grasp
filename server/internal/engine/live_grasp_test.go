@@ -21,9 +21,9 @@ type graspLiveProvider struct {
 	wrap  *runtime.ReactTurn
 }
 
-func (p *graspLiveProvider) OfferCommitOnConfirm(ctx context.Context, req runtime.NodeReq) runtime.ReactTurn {
-	t := p.fakeProvider.OfferCommitOnConfirm(ctx, req)
-	if p.wrap != nil {
+func (p *graspLiveProvider) CheckGit(ctx context.Context, req runtime.NodeReq) runtime.ReactTurn {
+	t := p.fakeProvider.CheckGit(ctx, req)
+	if p.wrap != nil && req.LiveEdits {
 		return *p.wrap
 	}
 	return t
@@ -183,7 +183,7 @@ func TestGraspLiveFailedAcceptKeepsSnapshot(t *testing.T) {
 	}
 }
 
-func TestGraspLiveConfirmWrapsEditsBeforeFinishing(t *testing.T) {
+func TestGraspLiveConfirmChecksGitOnlyAfterFinishing(t *testing.T) {
 	for _, used := range []bool{false, true} {
 		t.Run(fmt.Sprintf("used=%v", used), func(t *testing.T) {
 			eng, db, p := setupEngineGraphP(t, liveGraph(capsClarify))
@@ -196,27 +196,44 @@ func TestGraspLiveConfirmWrapsEditsBeforeFinishing(t *testing.T) {
 				db.Create(&models.LiveSession{ID: "adopted1", RunID: run.ID, NodeID: "preview", State: models.LiveStateAccepted})
 			}
 			p.wrapUpMsg = "已提交并推送 Live 改动"
-			called := false
-			eng.provider = &graspLiveProvider{fakeProvider: p, reply: func(runtime.NodeReq, string) runtime.ReactTurn {
-				called = true
-				p.mu.Lock()
-				count := p.wrapUpCalls["preview"]
-				retired := p.wrapUpAfterRetire
-				p.mu.Unlock()
-				want := 0
-				if used {
-					want = 1
-				}
-				if count != want || retired {
-					t.Errorf("wrap-up must precede forced finish only when Live was used: count=%d want=%d retired=%v", count, want, retired)
+			finish := false
+			eng.provider = &graspLiveProvider{fakeProvider: p, reply: func(req runtime.NodeReq, human string) runtime.ReactTurn {
+				if finish {
+					return p.ReactReply(context.Background(), req, nil, human, nil, true)
 				}
 				// Missing required deliverables must still keep Grasp open.
 				return runtime.ReactTurn{Msg: "需补齐澄清与计划", Done: false}
 			}}
-			if err := eng.ReactConfirmAs("user:test", run.ID, "preview", "", nil, nil, false); err == nil || !called {
-				t.Fatalf("normal force contract bypassed: %v called=%v", err, called)
+			if err := eng.ReactConfirmAs("user:test", run.ID, "preview", "", nil, nil, false); err == nil {
+				t.Fatal("normal force contract bypassed")
+			}
+			p.mu.Lock()
+			count := p.wrapUpCalls["preview"]
+			p.mu.Unlock()
+			if count != 0 {
+				t.Fatalf("a confirm that stays open must not reach the git check, got %d", count)
 			}
 			var conv models.ReactConversation
+			db.Where("run_id = ? AND node_id = ?", run.ID, "preview").First(&conv)
+			if conv.Done {
+				t.Fatal("a confirm that stays open must leave the dialogue open")
+			}
+
+			finish = true
+			if err := eng.ReactConfirmAs("user:test", run.ID, "preview", "", nil, nil, false); err != nil {
+				t.Fatal(err)
+			}
+			waitRunStatus(t, db, run.ID, "completed")
+			p.mu.Lock()
+			count, retired := p.wrapUpCalls["preview"], p.wrapUpAfterRetire
+			p.mu.Unlock()
+			want := 0
+			if used {
+				want = 1
+			}
+			if count != want || retired {
+				t.Fatalf("git check only for adopted Live edits, before retire: count=%d want=%d retired=%v", count, want, retired)
+			}
 			db.Where("run_id = ? AND node_id = ?", run.ID, "preview").First(&conv)
 			found := false
 			for _, m := range conv.Messages {
@@ -224,8 +241,8 @@ func TestGraspLiveConfirmWrapsEditsBeforeFinishing(t *testing.T) {
 					found = true
 				}
 			}
-			if found != used || conv.Done {
-				t.Fatalf("wrap-up narration/normal confirmation state: found=%v used=%v done=%v", found, used, conv.Done)
+			if found != used {
+				t.Fatalf("git check narration: found=%v used=%v", found, used)
 			}
 		})
 	}

@@ -32,10 +32,10 @@ type laneProvider struct {
 func (p *laneProvider) ReviseInPlace(context.Context, runtime.NodeReq, []models.ReactMessage, string, []models.PromptImage) runtime.ReactTurn {
 	return runtime.ReactTurn{Msg: "node reply"}
 }
-func (*laneProvider) OfferCommitOnConfirm(context.Context, runtime.NodeReq) runtime.ReactTurn {
+func (*laneProvider) CheckGit(context.Context, runtime.NodeReq) runtime.ReactTurn {
 	return runtime.ReactTurn{}
 }
-func (*laneProvider) ReconcileOnConfirm(context.Context, runtime.NodeReq) runtime.ReactTurn {
+func (*laneProvider) EnsureHandoff(context.Context, runtime.NodeReq) runtime.ReactTurn {
 	return runtime.ReactTurn{}
 }
 func (*laneProvider) HasLiveSession(string, string) bool { return true }

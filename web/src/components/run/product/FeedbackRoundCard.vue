@@ -47,12 +47,6 @@ export type FeedbackRoundDoc = {
   summary?: string
   roundCount?: number
   latestRound?: number
-  /**
-   * Agent-authored induction of the whole dialogue, produced once at
-   * 「确认并流转」. Absent on legacy rounds and whenever the summary turn was
-   * skipped or unparseable.
-   */
-  agentSummary?: string
   feedback?: {
     text?: string
     annotations?: FeedbackAnnotation[]
@@ -80,7 +74,6 @@ const props = defineProps<{ doc: FeedbackRoundDoc }>()
 
 const { t } = useI18n()
 
-const agentSummary = computed(() => (props.doc.agentSummary || '').trim())
 const body = computed(() => (props.doc.summary || props.doc.feedback?.text || '').trim())
 const annotations = computed(() => props.doc.feedback?.annotations || [])
 const attachments = computed(() => props.doc.feedback?.attachments || [])
@@ -109,27 +102,8 @@ function turnBody(text: string | undefined): string {
 
 <template>
   <div class="space-y-3">
-    <!-- Order (Demo): Agent 总结 → 全文 → 附件/受影响产物 → 本轮对话 → 此前各轮 -->
-    <section
-      v-if="agentSummary"
-      data-testid="feedback-agent-summary"
-      class="report-section"
-    >
-      <div class="mb-1.5 flex flex-wrap items-center gap-2">
-        <h3 class="report-heading font-semibold text-txt3">
-          {{ t('pages.product.feedback.agentSummary') }}
-        </h3>
-        <span class="rounded-md border border-info/40 bg-info/10 px-1.5 py-0.5 text-[11px] text-info">
-          {{ t('pages.product.feedback.agentSummaryTag') }}
-        </span>
-      </div>
-      <p class="whitespace-pre-wrap text-[13px] leading-relaxed text-txt">{{ agentSummary }}</p>
-    </section>
-
+    <!-- Order (Demo): 全文 → 附件/受影响产物 → 本轮对话 → 此前各轮 -->
     <section v-if="body || annotations.length" class="report-section">
-      <h3 v-if="agentSummary && body" class="report-heading mb-1.5 font-semibold text-txt3">
-        {{ t('pages.product.feedback.fullText') }}
-      </h3>
       <div
         v-if="body"
         class="md break-words text-[13px] leading-relaxed text-txt"

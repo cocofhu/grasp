@@ -189,6 +189,7 @@ func (h *Host) ClearOutcome(runID, nodeID string) {
 			delete(byNode, nodeID)
 		}
 	}
+	delete(h.markSeq, runID+"|"+nodeID)
 	h.mu.Unlock()
 	if ok {
 		log.Info().Str("run_id", runID).Str("node_id", nodeID).
@@ -378,6 +379,40 @@ func (h *Host) storeOutcome(runID, nodeID string, o NodeOutcome) {
 		h.outcomes[runID] = map[string]NodeOutcome{}
 	}
 	h.outcomes[runID][nodeID] = o
+	if h.markSeq == nil {
+		h.markSeq = map[string]uint64{}
+	}
+	h.seq++
+	h.markSeq[runID+"|"+nodeID] = h.seq
+}
+
+// NoteNodeChange records that nodeID changed its products or code, so any
+// node_complete mark buffered before now is stale (see OutcomeCurrent).
+func (h *Host) NoteNodeChange(runID, nodeID string) {
+	if h == nil || runID == "" || nodeID == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.changeSeq == nil {
+		h.changeSeq = map[string]uint64{}
+	}
+	h.seq++
+	h.changeSeq[runID+"|"+nodeID] = h.seq
+}
+
+// OutcomeCurrent reports whether the node called node_complete in this visit
+// and no product or code change was noted after it. A mark the engine already
+// took still counts; ClearOutcome forgets it.
+func (h *Host) OutcomeCurrent(runID, nodeID string) bool {
+	if h == nil {
+		return false
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	key := runID + "|" + nodeID
+	mark := h.markSeq[key]
+	return mark > 0 && mark > h.changeSeq[key]
 }
 
 // ValidateOutcome runs the chained validator (Default then optional RPC).

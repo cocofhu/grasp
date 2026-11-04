@@ -54,13 +54,11 @@ const (
 	OutcomeRetryHandoff = "本节点的下游是 %s,这次调用必须同时填写 `handoff`(给下游的交接说明,失败也要写)。\n"
 	OutcomeRetry        = "【必须完成】你尚未调用 `node_complete` 标记本节点完成结果,这是强制要求。现在立即调用 `node_complete(status=\"success\"|\"failed\", summary?, error?, outputs?)`,不要再提问或输出其它内容——只需完成这次调用。summary 只写已实际完成的事,未完成的如实说明,不得写占位结论。\n"
 
-	// ReviewConfirmReconcile is the review-side confirm turn: node_complete
-	// already happened in the production phase, so it only reconciles products.
-	ReviewConfirmReconcile = "【确认流转】用户已点击「确认并流转」,复审到此结束。请通读本节点的完整聊天记录,据此补充或修正你已写入的结构化产物:用对应的 `set_*` / `write_artifact` 工具重新写入完整内容,把历次人工反馈已确认的结论落进产物,清掉与对话相矛盾的旧内容。\n- 不要提问、不要调用 ask_question。\n- 不要调用 `node_complete`(本节点的完成由平台在流转时处理)。\n- 若核对后确认无需修改,回一句说明即可,不要空写产物。"
-	// ConfirmSummaryContract is the hidden turn after the reconcile turn. Its
-	// output never reaches the transcript, so it asks for the JSON alone.
-	ConfirmSummaryContract = "【流转摘要】产物已核对完毕,现在只做最后一件事:通读本节点的完整聊天记录(每一轮人工反馈以及你的处理),归纳出一段面向反馈账本的「Agent 总结」。\n\n**只输出一个 fenced JSON 代码块**,格式严格为:\n" + "```json\n" + `{"agentSummary":"对整段对话中人工反馈意图与要点的归纳"}` + "\n```" + "\n规则:\n- 不要输出 JSON 之外的任何叙述、解释、前缀或后缀。\n- agentSummary 归纳用户在本节点提出的意图、要点及其落点,不要复述你的叙述回复,也不要照抄某一轮反馈原文。\n- 不要调用任何工具,不要提问,不要调用 `node_complete`。\n- 确实无法归纳时输出 `{\"agentSummary\":\"\"}`;禁止模板占位或空泛套话。"
-	ReviewCommitWrapUp     = "【流转收尾】用户已确认本节点,即将进入下一步。工作区仍有未提交改动:\n{files}\n\n以上列表可能含已相对基线提交的文件,请以各仓 `git status` 为准,只处理未暂存/未提交的内容。\n\n请你自行决定要不要提交:\n- 有意义的源码/配置改动:按仓 `cd` 进 `/root/workspace/<name>/`,用 `git add` **点名文件**(禁止 `git add -A` / `git add .`),再 `git commit`(写清 why)并 `git push` 当前工作分支。下游节点在全新克隆里工作,不推送就拿不到这些改动。\n- 临时文件、日志、缓存、构建产物、本地密钥、调试垃圾:**不要提交**,保持未跟踪即可。\n- 若全部都是临时文件:什么都不要做,不要空提交。\n- 禁止在 main/master/develop/release-* 上提交或推送。\n- 不要提问、不要改产物、不要调用 node_complete。做完后用一两句话说明提交了什么、跳过了什么即可。\n"
+	// ReviewConfirmFinalize is the review-side confirm turn: settle the
+	// products against the whole transcript, then node_complete with a fresh
+	// handoff, because the production-phase one no longer describes the edits.
+	ReviewConfirmFinalize = "【确认流转】用户已点击「确认并流转」,复审到此结束。请按顺序做两件事:\n1. 通读本节点的完整聊天记录,据此定稿你已写入的结构化产物:需要修改时用对应的 `set_*` / `write_artifact` 工具重新写入完整内容,把历次人工反馈已确认的结论落进产物,清掉与对话相矛盾的旧内容;若核对后确认无需修改,不要空写产物。\n2. **在本回合内**最后调用 `node_complete` 结束本节点;有下游时必须填写 `handoff`,写清复审中改了什么、下游要注意什么。\n\n不要提问、不要调用 ask_question。"
+	ReviewCommitWrapUp    = "【流转收尾】用户已确认本节点,即将进入下一步。工作区仍有未提交改动:\n{files}\n\n以上列表可能含已相对基线提交的文件,请以各仓 `git status` 为准,只处理未暂存/未提交的内容。\n\n请你自行决定要不要提交:\n- 有意义的源码/配置改动:按仓 `cd` 进 `/root/workspace/<name>/`,用 `git add` **点名文件**(禁止 `git add -A` / `git add .`),再 `git commit`(写清 why)并 `git push` 当前工作分支。下游节点在全新克隆里工作,不推送就拿不到这些改动。\n- 临时文件、日志、缓存、构建产物、本地密钥、调试垃圾:**不要提交**,保持未跟踪即可。\n- 若全部都是临时文件:什么都不要做,不要空提交。\n- 禁止在 main/master/develop/release-* 上提交或推送。\n- 不要提问、不要改产物、不要调用 node_complete。做完后用一两句话说明提交了什么、跳过了什么即可。\n"
 
 	reviewCapabilityCommon = "\n\n## 复审能力(平台协议)\n本节点已进入人工复审。在继续满足本 Agent 原有交付的前提下,复审期间你还可以按用户要求:\n" +
 		"- `ask_question`:存在真实分歧需要用户拍板时提问。\n" +

@@ -534,32 +534,8 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	e.notePendingAuto(c, node)
 
 	req := e.nodeReq(c, node)
-	var liveWrap runtime.ReactTurn
-	// Adopted Live edits must reach the working branch before ReactReply's
-	// forced finish retires the clarify sandbox. Ordinary clarification never
-	// enters this source-edit wrap-up. checkLiveClosed already ran above.
-	if node.Caps.Clarify() && len(e.LiveSessions(runID, nodeID, false)) > 0 {
-		if rp, ok := e.provider.(runtime.ReviewProvider); ok {
-			liveWrap = rp.OfferCommitOnConfirm(context.Background(), req)
-			e.flushMcpCalls(runID, nodeID)
-			e.flushTokenUsage(runID, nodeID, liveWrap.Usage, liveWrap.UsageByModel)
-			if strings.TrimSpace(liveWrap.Msg) != "" {
-				message := models.ReactMessage{Role: "agent", Text: liveWrap.Msg,
-					At: time.Now().Format(time.RFC3339), OpID: liveWrap.OpID, Tools: models.ToolsFromEvents(liveWrap.Events), Parts: models.PartsForReply(liveWrap.Events, liveWrap.Msg)}
-				applyReplyMetadata(&message, liveWrap)
-				conv.Messages = append(conv.Messages, message)
-				logDB(e.db.Save(&conv), runID, "save Grasp Live git wrap-up")
-			}
-		}
-	}
 	t := e.provider.ReactReply(context.Background(), req, conv.Messages, effective, images, force)
 	replyEvents := t.Events
-	t.Events = append(append([]models.AcpEvent(nil), liveWrap.Events...), t.Events...)
-	t.Result.Events = append(append([]models.AcpEvent(nil), liveWrap.Events...), t.Result.Events...)
-	// A persisted wrap-up message already carries its own tools.
-	if strings.TrimSpace(liveWrap.Msg) == "" {
-		replyEvents = t.Events
-	}
 	agentMsg := models.ReactMessage{Role: "agent", Text: t.Msg,
 		At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
 		Interrupted: t.Interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(replyEvents), Parts: models.PartsForReply(replyEvents, t.Msg)}
@@ -598,44 +574,19 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 
 	logDB(e.db.Save(&conv), runID, "finish react conversation")
 
-	// The confirm round is the one that carries the dialogue's AgentSummary,
-	// and it is recorded here rather than in the FIFO pump because force
-	// wrap-up stays on this synchronous path.
+	// Force wrap-up stays on this synchronous path, so its confirm round is
+	// recorded here rather than in the FIFO pump.
 	e.recordFeedback(e.confirmRoundFeedbackEvent(runID, nodeID, models.FeedbackKindClarify,
-		conv.Iteration, humanMsg, agentMsg, t.AgentSummary))
+		conv.Iteration, humanMsg, agentMsg))
 
-	// Finalize: require node_complete, enforce produces, then optional RPC.
-	outcome := e.finishAgentOutcome(c, node, t.Result, func(r runtime.NodeResult) nodeOutcome {
-		return e.finalizeAgent(c, node, r)
-	})
-	e.saveState(c, node, outcome)
-	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: "react 完成"})
-
-	if outcome.status == "failed" {
-		next := e.routeFailure(c, node, outcome)
-		if next == "" {
-			e.clearPendingAuto(c)
-			e.finish(runID, "failed")
-			return nil
-		}
-		e.keepPendingAutoOnly(c, next)
-		e.rememberHandoffTarget(c, next)
-		go e.resumeAdmitted(runID, next)
-		return nil
+	r := e.finishNode(c, node, nodeOutcome{status: "completed", result: &t.Result},
+		finishOpts{trigger: triggerConfirm, retire: true, conv: &conv, resumeDetail: "react 完成"})
+	if r.reopen != nil {
+		return r.reopen
 	}
-
-	c.nodeOutputs[nodeID] = t.Result.Outputs
-	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "exit"})
-
-	next := e.routeSuccess(c, node, outcome)
-	if next == "" {
-		e.clearPendingAuto(c)
-		e.finish(runID, "completed")
-		return nil
+	if r.next != "" {
+		go e.resumeAdmitted(runID, r.next)
 	}
-	e.keepPendingAutoOnly(c, next)
-	e.rememberHandoffTarget(c, next)
-	go e.resumeAdmitted(runID, next)
 	return nil
 }
 

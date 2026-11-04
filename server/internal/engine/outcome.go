@@ -48,6 +48,12 @@ func (e *Engine) consumeNodeOutcome(c *execCtx, node *models.Node, res *runtime.
 			retryable: retryable,
 		}, false
 	}
+	return applyNodeOutcome(res, o)
+}
+
+// applyNodeOutcome merges a drained node_complete mark into res. A mark with
+// status=failed yields the node's failing verdict.
+func applyNodeOutcome(res *runtime.NodeResult, o mcp.NodeOutcome) (nodeOutcome, bool) {
 	res.Outputs = mcp.MergeOutcomeOutputs(res.Outputs, o)
 	if o.Status == mcp.OutcomeFailed {
 		errMsg := strings.TrimSpace(o.Error)
@@ -68,6 +74,7 @@ func (e *Engine) consumeNodeOutcome(c *execCtx, node *models.Node, res *runtime.
 			outputs:  res.Outputs,
 			events:   res.Events,
 			usage:    res.Usage, usageByModel: res.UsageByModel,
+			verdict: true,
 		}, false
 	}
 	return nodeOutcome{}, true
@@ -160,45 +167,6 @@ func (e *Engine) afterDefaultChecks(c *execCtx, node *models.Node, oc nodeOutcom
 			oc.outputs[k] = v
 		}
 	}
-	return oc
-}
-
-// withOutcome consumes node_complete then runs next (platform DefaultChecks).
-// Callers that apply additional gates must invoke afterDefaultChecks themselves
-// after those gates; otherwise use finishAgentOutcome.
-func (e *Engine) withOutcome(c *execCtx, node *models.Node, res runtime.NodeResult, next func(runtime.NodeResult) nodeOutcome) nodeOutcome {
-	// Ownership before TakeOutcome: a Cancel/ResumeFrom zombie that returns from
-	// RunAgent after a newer driver claimed the slot must not drain the fresh
-	// visit's node_complete mark (host outcomes are keyed only by run+node).
-	if c.execGen != 0 && !e.isExecOwner(c.run.ID, c.execGen) {
-		return nodeOutcome{
-			status:   "cancelled",
-			err:      "lost exec ownership",
-			outputMd: "dropped late outcome: lost exec ownership",
-			events:   res.Events,
-			usage:    res.Usage, usageByModel: res.UsageByModel,
-		}
-	}
-	if fail, ok := e.consumeNodeOutcome(c, node, &res); !ok {
-		return fail
-	}
-	oc := next(res)
-	if oc.usage == nil {
-		oc.usage = res.Usage
-	}
-	if oc.usageByModel == nil {
-		oc.usageByModel = res.UsageByModel
-	}
-	return oc
-}
-
-// finishAgentOutcome runs withOutcome then afterDefaultChecks (Default→RPC).
-func (e *Engine) finishAgentOutcome(c *execCtx, node *models.Node, res runtime.NodeResult, next func(runtime.NodeResult) nodeOutcome) nodeOutcome {
-	oc := e.withOutcome(c, node, res, next)
-	oc = e.afterDefaultChecks(c, node, oc)
-	// Clarify/review resume paths rebuild the outcome here; keep the handoff the
-	// node left at node_complete so a resume cannot silently drop it.
-	e.retainHandoff(c, node, &oc)
 	return oc
 }
 

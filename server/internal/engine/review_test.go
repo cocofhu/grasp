@@ -114,10 +114,10 @@ func TestReviewEnterReviseFinish(t *testing.T) {
 		t.Fatal("expected RetireSession on review force success")
 	}
 	if provider.wrapUpCalls["prop"] != 1 {
-		t.Fatalf("expected OfferCommitOnConfirm once before retire, got %d", provider.wrapUpCalls["prop"])
+		t.Fatalf("expected CheckGit once before retire, got %d", provider.wrapUpCalls["prop"])
 	}
 	if provider.wrapUpAfterRetire {
-		t.Fatal("OfferCommitOnConfirm must run before RetireSession")
+		t.Fatal("CheckGit must run before RetireSession")
 	}
 	waitRunStatus(t, db, run.ID, "completed")
 
@@ -132,7 +132,7 @@ func TestReviewEnterReviseFinish(t *testing.T) {
 	}
 }
 
-// TestReviewForcePersistsGitWrapUp: confirm-time OfferCommitOnConfirm narration
+// TestReviewForcePersistsGitWrapUp: confirm-time CheckGit narration
 // is stored as the agent turn answering the human「确认」.
 func TestReviewForcePersistsGitWrapUp(t *testing.T) {
 	eng, db, provider := setupReviewEngine(t)

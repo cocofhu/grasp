@@ -33,8 +33,13 @@ func (e *Engine) execAgent(c *execCtx, node *models.Node) nodeOutcome {
 		return e.execClarifyEnter(c, node)
 	}
 	oc := e.runAutoAgent(c, node)
-	if oc.status == "completed" && node.Caps.ReviewEnabled() {
-		return e.enterReview(c, node, oc)
+	if oc.result != nil && node.Caps.ReviewEnabled() {
+		// Only a passing first run opens the review; anything else ends the
+		// execution through finishNode like any auto node.
+		oc, _ = e.stepJudge(c, node, e.takeMark(c, node, oc, false), false)
+		if oc.status == "completed" {
+			return e.enterReview(c, node, oc)
+		}
 	}
 	return oc
 }
@@ -66,9 +71,8 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 		return nodeOutcome{status: "failed", err: err.Error(),
 			outputMd: "Agent 执行失败:" + err.Error(), retryable: true, events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
 	}
-	return e.finishAgentOutcome(c, node, res, func(r runtime.NodeResult) nodeOutcome {
-		return e.finalizeAgent(c, node, r)
-	})
+	return nodeOutcome{status: "completed", result: &res,
+		events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
 }
 
 func agentProfile(node *models.Node) string {

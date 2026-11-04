@@ -18,7 +18,7 @@ import (
 // for the node execution; the feedback index remains the append-only timeline.
 //
 // It writes nothing at all when the event carries no substance — no opinion,
-// no annotation, no attachment, no ReAct turn, no AgentSummary. A gate approval
+// no annotation, no attachment, no ReAct turn. A gate approval
 // clicked through with an empty form is exactly that case, and flooding a run
 // with empty shells would make the ledger useless.
 //
@@ -145,7 +145,7 @@ func priorRoundsFor(events []models.FeedbackEvent, i int) []models.FeedbackEvent
 // The enqueue path (WS review_chat) carries no identity today, so the round is
 // recorded as unattributable rather than inventing a reviewer name.
 func (e *Engine) reviewFeedbackEvent(s *reviewSession, item *reviewQueueItem, iteration int,
-	human, agent models.ReactMessage, targets []models.FeedbackTarget, interrupted bool, agentSummary string) models.FeedbackEvent {
+	human, agent models.ReactMessage, targets []models.FeedbackTarget, interrupted bool) models.FeedbackEvent {
 	ev := models.FeedbackEvent{
 		RunID:          s.runID,
 		Kind:           models.FeedbackKindReview,
@@ -155,7 +155,6 @@ func (e *Engine) reviewFeedbackEvent(s *reviewSession, item *reviewQueueItem, it
 		Unattributable: true,
 		Action:         "revise",
 		Text:           item.Text,
-		AgentSummary:   strings.TrimSpace(agentSummary),
 		Annotations:    item.Annotations,
 		Attachments:    item.Images,
 		Turns:          []models.ReactMessage{human, withoutParts(agent)},
@@ -176,7 +175,7 @@ func (e *Engine) reviewFeedbackEvent(s *reviewSession, item *reviewQueueItem, it
 // The questions being answered ride along in Detail so the round is readable on
 // its own instead of as a dangling reply.
 func (e *Engine) clarifyFeedbackEvent(s *reviewSession, item *reviewQueueItem, iteration int,
-	answered []models.ReactQuestion, human, agent models.ReactMessage, interrupted bool, agentSummary string) models.FeedbackEvent {
+	answered []models.ReactQuestion, human, agent models.ReactMessage, interrupted bool) models.FeedbackEvent {
 	ev := models.FeedbackEvent{
 		RunID:          s.runID,
 		Kind:           models.FeedbackKindClarify,
@@ -186,7 +185,6 @@ func (e *Engine) clarifyFeedbackEvent(s *reviewSession, item *reviewQueueItem, i
 		Unattributable: true,
 		Action:         "answer",
 		Text:           item.Text,
-		AgentSummary:   strings.TrimSpace(agentSummary),
 		Annotations:    item.Annotations,
 		Attachments:    item.Images,
 		Turns:          []models.ReactMessage{human, withoutParts(agent)},
@@ -199,22 +197,20 @@ func (e *Engine) clarifyFeedbackEvent(s *reviewSession, item *reviewQueueItem, i
 	return ev
 }
 
-// confirmRoundFeedbackEvent assembles the「确认并流转」round, the only round that
-// carries an AgentSummary: ordinary ReAct turns are pure narration, and the
-// induction of the whole dialogue is produced once, by the hidden summary turn
-// that runs after the human confirmed.
+// confirmRoundFeedbackEvent assembles the「确认并流转」round: the human text sent
+// with the confirm and the agent turn that answered it.
 //
 // Unlike clarifyFeedbackEvent / reviewFeedbackEvent this takes no
 // *reviewSession, because both confirm paths (clarify force in ReactReply,
 // review force in reviewReply) run synchronously outside the FIFO pump.
 func (e *Engine) confirmRoundFeedbackEvent(runID, nodeID, kind string, iteration int,
-	human, agent models.ReactMessage, agentSummary string) models.FeedbackEvent {
-	// A silent confirm is a click, not feedback. Without written input and
-	// without a summary the round would carry nothing but the agent's own
-	// narration — exactly the empty shell recordFeedback exists to refuse — so
-	// the zero value is returned for it to skip.
+	human, agent models.ReactMessage) models.FeedbackEvent {
+	// A silent confirm is a click, not feedback. Without written input the
+	// round would carry nothing but the agent's own narration — exactly the
+	// empty shell recordFeedback exists to refuse — so the zero value is
+	// returned for it to skip.
 	if strings.TrimSpace(human.Text) == "" && len(human.Annotations) == 0 &&
-		len(human.Images) == 0 && strings.TrimSpace(agentSummary) == "" {
+		len(human.Images) == 0 {
 		return models.FeedbackEvent{}
 	}
 	action := "answer"
@@ -230,7 +226,6 @@ func (e *Engine) confirmRoundFeedbackEvent(runID, nodeID, kind string, iteration
 		Unattributable: true,
 		Action:         action,
 		Text:           human.Text,
-		AgentSummary:   strings.TrimSpace(agentSummary),
 		Annotations:    human.Annotations,
 		Attachments:    human.Images,
 		Turns:          []models.ReactMessage{human, withoutParts(agent)},

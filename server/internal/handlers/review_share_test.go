@@ -34,8 +34,10 @@ func seedInboxReview(t *testing.T, h *harness, runID, nodeID string, withArtifac
 		RunID: runID, NodeID: nodeID, Iteration: 1, Done: false,
 		Messages: []models.ReactMessage{{Role: "agent", Text: "请复审 research.json", At: now.Format(time.RFC3339)}},
 	})
+	// A review visit only exists after its first run passed.
 	h.db.Create(&models.StateRun{
 		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human", NodeType: "agent",
+		Outputs: map[string]any{"outcome_status": "success"},
 	})
 	h.db.Create(&models.Gate{
 		RunID: runID, NodeID: "hg-r", Iteration: 1, WorkflowID: "wf-" + runID, WorkflowName: "review-" + runID,
@@ -349,8 +351,10 @@ func seedAppPreviewReview(t *testing.T, h *harness, runID, nodeID string) {
 		RunID: runID, NodeID: nodeID, Iteration: 1, Done: false,
 		Messages: []models.ReactMessage{{Role: "agent", Text: "应用预览已就绪", At: now.Format(time.RFC3339)}},
 	})
+	// A review visit only exists after its first run passed.
 	h.db.Create(&models.StateRun{
 		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human", NodeType: "agent",
+		Outputs: map[string]any{"outcome_status": "success"},
 	})
 }
 
@@ -461,8 +465,10 @@ func seedInboxClarify(t *testing.T, h *harness, runID, nodeID string) {
 		RunID: runID, NodeID: nodeID, Iteration: 1, Done: false,
 		Messages: []models.ReactMessage{{Role: "agent", Text: "请补充验收标准", At: now.Format(time.RFC3339)}},
 	})
+	// A review visit only exists after its first run passed.
 	h.db.Create(&models.StateRun{
 		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human", NodeType: "agent",
+		Outputs: map[string]any{"outcome_status": "success"},
 	})
 }
 

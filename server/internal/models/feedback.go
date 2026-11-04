@@ -47,10 +47,6 @@ type FeedbackEvent struct {
 	Action string `json:"action,omitempty"`
 	// Text is the human's verbatim opinion.
 	Text string `json:"text,omitempty"`
-	// AgentSummary is an optional Agent-authored induction of this round's
-	// feedback, distinct from FeedbackSummary (index gist) and from any
-	// transcript bubble. Empty means the round has no card-level summary.
-	AgentSummary string `json:"agentSummary,omitempty"`
 	// Interrupted marks a revise turn whose agent reply was cancelled or
 	// failed. The opinion was still given, so the round is kept — only its
 	// Targets are absent because nothing landed.
@@ -94,20 +90,13 @@ type FeedbackTarget struct {
 func (e FeedbackEvent) WantsArtifact() bool { return !e.IndexOnly }
 
 // HasSubstance reports whether the event carries content worth persisting: an
-// opinion, an annotation, an attachment, a ReAct turn, or an AgentSummary.
-//
-// AgentSummary alone qualifies because「确认并流转」may produce an induction of
-// the dialogue with no new human prose and an empty reconcile narration — that
-// summary still has nowhere else to live in the ledger.
+// opinion, an annotation, an attachment, or a ReAct turn.
 //
 // This is the single gate on the whole feature. A gate approval clicked through
 // with an empty form has none of the above and must not produce a row or a
 // product — otherwise bulk sign-off floods the run with empty shells.
 func (e FeedbackEvent) HasSubstance() bool {
 	if strings.TrimSpace(e.Text) != "" {
-		return true
-	}
-	if strings.TrimSpace(e.AgentSummary) != "" {
 		return true
 	}
 	if len(e.Annotations) > 0 || len(e.Attachments) > 0 {

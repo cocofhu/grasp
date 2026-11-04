@@ -18,10 +18,9 @@ import (
 // keeps what they wrote, the product keeps a bounded version so one verbose
 // round cannot dominate the ledger or an Agent's context window.
 const (
-	feedbackTextMax         = 8 * 1024
-	feedbackTurnMax         = 4 * 1024
-	feedbackSummaryMax      = 240
-	feedbackAgentSummaryMax = 4 * 1024
+	feedbackTextMax    = 8 * 1024
+	feedbackTurnMax    = 4 * 1024
+	feedbackSummaryMax = 240
 )
 
 // ErrFeedbackNoSubstance is returned by Append when the event carries no human
@@ -91,7 +90,6 @@ func (s *FeedbackService) Events(runID string) []models.FeedbackEvent {
 // refs only (never base64), and free text is bounded.
 func normalizeFeedbackEvent(ev *models.FeedbackEvent) {
 	ev.Text = truncateStr(strings.TrimSpace(ev.Text), feedbackTextMax)
-	ev.AgentSummary = truncateStr(strings.TrimSpace(ev.AgentSummary), feedbackAgentSummaryMax)
 	ev.Attachments = stripAttachmentData(ev.Attachments)
 	for i := range ev.Turns {
 		ev.Turns[i].Text = truncateStr(strings.TrimSpace(ev.Turns[i].Text), feedbackTurnMax)
@@ -179,10 +177,6 @@ func MarshalRoundJSON(ev models.FeedbackEvent, prior []models.FeedbackEvent, run
 	if ev.Interrupted {
 		payload["interrupted"] = true
 	}
-	// agentSummary is Agent-authored card copy, never FeedbackSummary (index gist).
-	if s := strings.TrimSpace(ev.AgentSummary); s != "" {
-		payload["agentSummary"] = s
-	}
 
 	fb := map[string]any{"text": ev.Text}
 	if len(ev.Annotations) > 0 {
@@ -230,11 +224,7 @@ func MarshalFeedbackSummaryJSON(events []models.FeedbackEvent, runID string, nod
 	var annotations []models.ReactAnnotation
 	var attachments []models.PromptImage
 	for _, ev := range events {
-		part := strings.TrimSpace(ev.AgentSummary)
-		if part == "" {
-			part = FeedbackSummary(ev)
-		}
-		conclusions = append(conclusions, fmt.Sprintf("第%d轮：%s", ev.Round, part))
+		conclusions = append(conclusions, fmt.Sprintf("第%d轮：%s", ev.Round, FeedbackSummary(ev)))
 		annotations = append(annotations, ev.Annotations...)
 		attachments = append(attachments, ev.Attachments...)
 	}
@@ -248,12 +238,6 @@ func MarshalFeedbackSummaryJSON(events []models.FeedbackEvent, runID string, nod
 		"at":          latest.OccurredAt.Format(time.RFC3339),
 		"index":       FeedbackIndexArtifactName,
 		"summary":     "截至第" + fmt.Sprint(latest.Round) + "轮的归纳结论：" + strings.Join(conclusions, "；"),
-	}
-	// The confirm round is the only one that carries an AgentSummary, and it is
-	// the last event of the execution — so the latest non-empty one is the
-	// induction of the whole dialogue, shown as the card's「Agent 总结」.
-	if s := latestAgentSummary(events); s != "" {
-		payload["agentSummary"] = s
 	}
 	if latest.Interrupted {
 		payload["interrupted"] = true
@@ -273,18 +257,6 @@ func MarshalFeedbackSummaryJSON(events []models.FeedbackEvent, runID string, nod
 		return "", err
 	}
 	return string(b), nil
-}
-
-// latestAgentSummary returns the newest Agent-authored induction in the chain.
-// It scans backwards rather than reading only the last event so an interrupted
-// or index-only round appended after the confirm turn cannot hide the summary.
-func latestAgentSummary(events []models.FeedbackEvent) string {
-	for i := len(events) - 1; i >= 0; i-- {
-		if s := strings.TrimSpace(events[i].AgentSummary); s != "" {
-			return s
-		}
-	}
-	return ""
 }
 
 // NodeRef carries the display metadata for the node a round belongs to.

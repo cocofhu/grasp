@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Feedback rounds no longer show the "Agent summary" block, and confirming a dialogue no longer runs the hidden summary turn. Older rounds that carry a summary display without it.
+
 - Codex device-code sign-in consistently reports upstream connection loss and truncated responses as retryable sign-in service errors.
 
 - Codex ChatGPT sessions continue after platform renewal or re-login. Credential edits preserve concurrent token refreshes, and graceful shutdown waits for renewals to be saved. Device-code sign-in follows the shared UI controls and themes, fits narrow screens, and supports keyboard navigation and a direct fallback to pasting a login file.
