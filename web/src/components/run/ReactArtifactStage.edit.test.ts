@@ -126,6 +126,17 @@ describe('ReactArtifactStage editing', () => {
     w.unmount()
   })
 
+  it('opens the draft a failed save-and-send points at', async () => {
+    const w = mountStage({ editable: true })
+    await flushPromises()
+    expect(w.find('[data-testid="react-artifact-tab-plan.json"]').exists()).toBe(false)
+    useArtifactEditor('run-edit').requestFocus('plan.json')
+    await flushPromises()
+    expect(w.get('[data-testid="react-artifact-tab-plan.json"]').attributes('aria-selected')).toBe('true')
+    expect(w.get('[data-testid="artifact-preview"]').attributes('data-start-edit')).toBe('1')
+    w.unmount()
+  })
+
   it('blocks quick edit with a reason when the run or session is not editable', async () => {
     const w = mountStage({ editable: true, run: waiting({ status: 'completed' }) })
     await flushPromises()

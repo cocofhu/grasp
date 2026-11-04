@@ -130,6 +130,71 @@ describe('useClarifyChat unsaved artifact guard', () => {
     app.unmount()
   })
 
+  const questionTurns = [{
+    role: 'agent',
+    text: 'pick',
+    questions: [{ id: 'q1', prompt: '范围？', options: [{ id: 'a', label: '只做 A', recommended: true }, { id: 'b', label: 'B' }] }],
+  }]
+  const formTurns = [{
+    role: 'agent',
+    text: 'fill',
+    forms: [{ id: 'f1', title: '信息', fields: [{ name: 'repo', label: '仓库' }] }],
+  }]
+
+  it('question card answers wait for the guard and send after saving', async () => {
+    await dirtyPlan()
+    apiMocks.saveRunArtifact.mockResolvedValue({ name: 'plan.json', revision: 4, changed: true, content: '' })
+    const { chat, emit, app } = withChat({ turns: questionTurns })
+    await nextTick()
+    chat.submitChoices()
+    expect(chat.sendGuardOpen.value).toBe(true)
+    expect(sends(emit)).toHaveLength(0)
+    await chat.sendGuardSaveAndSend()
+    expect(sends(emit)).toHaveLength(1)
+    expect(String(sends(emit)[0][1])).toContain('只做 A')
+    app.unmount()
+  })
+
+  it('submit recommended is guarded; cancel sends nothing and keeps the picks', async () => {
+    await dirtyPlan()
+    const { chat, emit, app } = withChat({ turns: questionTurns })
+    await nextTick()
+    chat.submitRecommended()
+    expect(chat.sendGuardOpen.value).toBe(true)
+    chat.sendGuardCancel()
+    expect(sends(emit)).toHaveLength(0)
+    expect(chat.isSelected('q1', 'a')).toBe(true)
+    chat.sendGuardSendAnyway()
+    expect(sends(emit)).toHaveLength(0)
+    app.unmount()
+  })
+
+  it('form card submit is guarded; send anyway sends the answers', async () => {
+    await dirtyPlan()
+    const { chat, emit, app } = withChat({ turns: formTurns })
+    await nextTick()
+    chat.formValues.value = { [chat.formFieldKey(0, 'repo')]: 'grasp' }
+    chat.submitForms()
+    expect(chat.sendGuardOpen.value).toBe(true)
+    expect(sends(emit)).toHaveLength(0)
+    chat.sendGuardSendAnyway()
+    expect(sends(emit)).toHaveLength(1)
+    expect(String(sends(emit)[0][1])).toContain('grasp')
+    app.unmount()
+  })
+
+  it('a failed save-and-send asks the stage to show the failing draft', async () => {
+    const ed = await dirtyPlan()
+    apiMocks.saveRunArtifact.mockRejectedValue(Object.assign(new Error('bad'), { status: 400 }))
+    const { chat, emit, app } = withChat({ turns: questionTurns })
+    await nextTick()
+    chat.submitChoices()
+    await chat.sendGuardSaveAndSend()
+    expect(sends(emit)).toHaveLength(0)
+    expect(ed.focusRequest.value?.name).toBe('plan.json')
+    app.unmount()
+  })
+
   it('confirm flow warns about and discards unsaved edits', async () => {
     const ed = await dirtyPlan()
     const { chat, emit, app } = withChat()

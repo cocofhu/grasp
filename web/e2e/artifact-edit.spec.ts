@@ -64,6 +64,27 @@ test.describe('run artifact editing', () => {
     await removeG2AndSave(page)
   })
 
+  test('run detail drawer width: list collapses and the form stacks to one column', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/artifact-edit.html?surface=detail&width=480')
+    await expect(page.getByTestId('artifact-panel-list')).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('artifact-preview-edit').click()
+    await expect(page.getByTestId('artifact-editor-form')).toBeVisible()
+    await expect(page.getByTestId('artifact-panel-list')).toBeHidden()
+
+    const row = page.locator('.ed-row[data-field-path="title"]').first()
+    const lb = await row.locator('.ed-row__label').boundingBox()
+    const cb = await row.locator('.ed-row__control').boundingBox()
+    expect(lb && cb && cb.y >= lb.y + lb.height - 1).toBe(true)
+    expect(cb!.width).toBeGreaterThan(380)
+    const sub = page.locator('.ed-row[data-field-path="goals[0].subgoals[0].title"] .ed-row__control').first()
+    expect((await sub.boundingBox())!.width).toBeGreaterThan(300)
+    await page.screenshot({ path: path.join(shotDir, 'detail-drawer-form.png'), animations: 'disabled' })
+
+    await removeG2AndSave(page)
+    await expect(page.getByTestId('artifact-panel-list')).toBeVisible()
+  })
+
   test('dark theme and narrow layout render the editor', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 800 })
     await page.goto('/artifact-edit.html?surface=detail&theme=dark')

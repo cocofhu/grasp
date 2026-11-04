@@ -1040,6 +1040,13 @@ function submitForms() {
     return
   }
   formNotice.value = null
+  if (guardSend(commitForms)) return
+  commitForms()
+}
+
+function commitForms() {
+  const forms = activeForms.value
+  if (!forms.length) return
   const lines: string[] = []
   forms.forEach((form, fi) => {
     for (const f of form.fields || []) {
@@ -1162,6 +1169,13 @@ function pick(q: ReactQuestion, oid: string) {
 function submitChoices() {
   const qs = activeQuestions.value
   if (!qs.length || !someAnswered.value || thinking.value) return
+  if (guardSend(commitChoices)) return
+  commitChoices()
+}
+
+function commitChoices() {
+  const qs = activeQuestions.value
+  if (!qs.length || !someAnswered.value) return
   // Skipped questions are omitted; only answered ones are summarized.
   const lines = qs.filter(answered).map((q) => {
     const picked = q.options.filter((o) => (sel.value[q.id] || []).includes(o.id)).map((o) => o.label)
@@ -1205,11 +1219,25 @@ const sendGuardOpen = ref(false)
 const sendGuardSaving = ref(false)
 const sendGuardNames = computed(() => artifactEditor.dirtyNames.value)
 
+let pendingSend: (() => unknown) | null = null
+
+// Every outgoing message (composer, question cards, form cards) must pass here
+// so the Agent never reads a stale artifact while the user has unsaved edits.
+function guardSend(fn: () => unknown): boolean {
+  if (!artifactEditor.hasDirty.value) return false
+  pendingSend = fn
+  sendGuardOpen.value = true
+  return true
+}
+
+function runPendingSend() {
+  const fn = pendingSend
+  pendingSend = null
+  if (fn) void fn()
+}
+
 function send() {
-  if (artifactEditor.hasDirty.value) {
-    sendGuardOpen.value = true
-    return
-  }
+  if (guardSend(sendFromComposer)) return
   sendFromComposer()
 }
 
@@ -1220,10 +1248,12 @@ async function sendGuardSaveAndSend() {
     const r = await artifactEditor.saveAll()
     sendGuardOpen.value = false
     if (!r.ok) {
+      pendingSend = null
+      if (r.failed) artifactEditor.requestFocus(r.failed)
       sendNotice.value = translate('pages.artifactEditor.sendGuardSaveFailed', { name: r.failed || '' })
       return
     }
-    void sendFromComposer()
+    runPendingSend()
   } finally {
     sendGuardSaving.value = false
   }
@@ -1231,11 +1261,13 @@ async function sendGuardSaveAndSend() {
 
 function sendGuardSendAnyway() {
   sendGuardOpen.value = false
-  void sendFromComposer()
+  runPendingSend()
 }
 
 function sendGuardCancel() {
-  if (!sendGuardSaving.value) sendGuardOpen.value = false
+  if (sendGuardSaving.value) return
+  sendGuardOpen.value = false
+  pendingSend = null
 }
 
 const confirmFlowDialogOpen = ref(false)

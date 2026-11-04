@@ -74,6 +74,51 @@ func TestSaveRunArtifactRejectsNonEditableRuns(t *testing.T) {
 	}
 }
 
+func TestSaveRunArtifactRejectsBusySession(t *testing.T) {
+	eng, db, provider := setupEngineGraphP(t, reactOnlyGraph())
+	hold := make(chan struct{})
+	provider.reactHold = hold
+	provider.reactPending = 10
+
+	run, err := eng.StartRun("wf", nil, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "clarify")
+	if _, err := eng.store.Save(run.ID, "clarify", "notes.md", "markdown", "v1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := eng.ArtifactEditState(run.ID); !got.Editable {
+		t.Fatalf("idle session should be editable: %+v", got)
+	}
+
+	if _, err := eng.EnqueueClarifyTurn(run.ID, "clarify", "第一条", nil, nil); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, thinking := eng.ReviewSessionState(run.ID, "clarify"); thinking {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := eng.ArtifactEditState(run.ID); got != (ArtifactEditState{Reason: ArtifactEditReasonSessionBusy}) {
+		t.Fatalf("busy session: got %+v", got)
+	}
+	_, err = eng.SaveRunArtifact(run.ID, "notes.md", "v2", "", "alice")
+	if ae, ok := AsArtifactEditError(err); !ok || ae.Code != ArtifactEditCodeSessionBusy {
+		t.Fatalf("busy save: err=%v", err)
+	}
+	if content, _ := eng.store.Get(run.ID, "notes.md"); content != "v1" {
+		t.Fatalf("busy save changed content to %q", content)
+	}
+
+	provider.mu.Lock()
+	provider.reactHold = nil
+	provider.mu.Unlock()
+	close(hold)
+}
+
 func TestSaveRunArtifactRevisionsOwnershipAndSync(t *testing.T) {
 	eng, db := setupEngine(t)
 	runID := "run-edit-save"

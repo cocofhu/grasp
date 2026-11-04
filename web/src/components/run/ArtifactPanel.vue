@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import ArtifactList from './ArtifactList.vue'
 import ArtifactPreview from './ArtifactPreview.vue'
 import type { Artifact, Run } from '@/lib/shared/types'
@@ -25,6 +25,8 @@ const active = ref<Artifact | null>(null)
 const preferNextIndex = ref<number | null>(null)
 
 const editor = useArtifactEditor(() => props.run?.id || active.value?.runId || '')
+/** The drawer is narrow; while editing the form gets the full width. */
+const editingActive = computed(() => props.editable && !!active.value && !!editor.draft(active.value.name))
 
 /** Drop the open draft (asking first when it has edits); false keeps the user here. */
 function releaseActive(): boolean {
@@ -75,7 +77,11 @@ watch(
 
 <template>
   <div class="flex h-full">
-    <div class="flex w-[40%] min-w-[180px] flex-col border-r border-line">
+    <div
+      v-show="!editingActive"
+      class="flex w-[40%] min-w-[180px] flex-col border-r border-line"
+      data-testid="artifact-panel-list"
+    >
       <ArtifactList
         :artifacts="artifacts"
         :active-id="active?.id"

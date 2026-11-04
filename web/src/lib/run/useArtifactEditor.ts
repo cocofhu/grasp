@@ -32,6 +32,8 @@ interface RunEditorState {
   drafts: Record<string, ArtifactDraft>
   /** Conversation busy flags published by mounted chats (key: nodeId). */
   busy: Record<string, boolean>
+  /** Latest request for a stage to show a draft (e.g. after a failed save-all). */
+  focus: { name: string; seq: number } | null
 }
 
 const states = new Map<string, RunEditorState>()
@@ -39,7 +41,7 @@ const states = new Map<string, RunEditorState>()
 function stateFor(runId: string): RunEditorState {
   let s = states.get(runId)
   if (!s) {
-    s = reactive({ drafts: {}, busy: {} }) as RunEditorState
+    s = reactive({ drafts: {}, busy: {}, focus: null }) as RunEditorState
     states.set(runId, s)
   }
   return s
@@ -245,12 +247,21 @@ export function useArtifactEditor(runIdSource: MaybeRefOrGetter<string | null | 
     if (s) delete s.busy[key]
   }
 
+  const focusRequest = computed(() => state.value?.focus ?? null)
+
+  function requestFocus(name: string) {
+    const s = state.value
+    if (s) s.focus = { name, seq: (s.focus?.seq ?? 0) + 1 }
+  }
+
   return {
     runId,
     drafts,
     dirtyNames,
     hasDirty,
     sessionBusy,
+    focusRequest,
+    requestFocus,
     draft,
     isDirty,
     begin,

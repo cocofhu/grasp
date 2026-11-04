@@ -10,6 +10,8 @@ import { api } from '../src/lib/api/api'
 
 const params = new URLSearchParams(location.search)
 const surface = params.get('surface') || 'stage'
+/** Run detail drawer width (px); unset keeps the wide harness. */
+const hostWidth = Number(params.get('width') || 0)
 setTheme(params.get('theme') === 'dark' ? 'dark' : 'light')
 initLocale()
 
@@ -95,7 +97,11 @@ const run = { id: RUN_ID, status: 'waiting_human', nodes: [], artifactEdit: { ed
 const App = defineComponent({
   setup() {
     return () =>
-      h('div', { class: 'mx-auto flex h-[760px] max-w-5xl flex-col border border-line bg-surface', 'data-testid': 'artifact-edit-harness' }, [
+      h('div', {
+        class: 'mx-auto flex h-[760px] max-w-5xl flex-col border border-line bg-surface',
+        style: hostWidth ? { width: `${hostWidth}px` } : undefined,
+        'data-testid': 'artifact-edit-harness',
+      }, [
         surface === 'detail'
           ? h(ArtifactPanel, { artifacts: artifacts.value, run, editable: true })
           : h(ReactArtifactStage, {

@@ -430,6 +430,16 @@ function quickEdit(a: Artifact) {
   activatePreview(a.name)
 }
 
+watch(
+  () => artifactEditor.focusRequest.value?.seq,
+  (seq) => {
+    const name = artifactEditor.focusRequest.value?.name
+    if (!seq || !name || !props.editable) return
+    const a = artifactByName(name)
+    if (a) quickEdit(a)
+  },
+)
+
 function onPreviewEditStart(name: string) {
   if (quickEditName.value === name) quickEditName.value = ''
 }

@@ -59,6 +59,27 @@ describe('ArtifactPanel editing', () => {
     expect(ed.draft('review.json')).toBeUndefined()
   })
 
+  it('hides the list while the active artifact is being edited', async () => {
+    const run = { id: 'run-p', status: 'failed' } as Run
+    const w = mount(ArtifactPanel, {
+      props: { artifacts: [a('1', 'plan.json'), a('2', 'review.json')], editable: true, run },
+      global: { stubs },
+    })
+    await flushPromises()
+    const list = () => (w.get('[data-testid="artifact-panel-list"]').element as HTMLElement).style.display
+    expect(list()).toBe('')
+    const ed = useArtifactEditor('run-p')
+    await ed.begin(a('2', 'review.json'))
+    await flushPromises()
+    expect(list()).toBe('')
+    await ed.begin(a('1', 'plan.json'))
+    await flushPromises()
+    expect(list()).toBe('none')
+    ed.discard('plan.json')
+    await flushPromises()
+    expect(list()).toBe('')
+  })
+
   it('stays read-only by default', async () => {
     const w = mount(ArtifactPanel, { props: { artifacts: [a('1', 'plan.json')] }, global: { stubs } })
     await flushPromises()
@@ -75,8 +96,9 @@ describe('artifact editor styles', () => {
     expect(css).toMatch(/--ed-surface: rgb\(var\(--c-surface\)\)/)
   })
 
-  it('collapses to one column on narrow screens and honors reduced motion', () => {
-    expect(css).toMatch(/@media \(max-width: 560px\)[\s\S]*\.ed-row \{\s*grid-template-columns: minmax\(0, 1fr\);/)
+  it('collapses to one column when the editor itself is narrow and honors reduced motion', () => {
+    expect(css).toMatch(/\.artifact-editor \{[^}]*container: ed-editor \/ inline-size;/)
+    expect(css).toMatch(/@container ed-editor \(max-width: 560px\)[\s\S]*\.ed-row \{\s*grid-template-columns: minmax\(0, 1fr\);/)
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.ed-chip-flash \{\s*animation: none;/)
   })
 })
