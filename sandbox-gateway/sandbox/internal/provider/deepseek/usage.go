@@ -49,6 +49,8 @@ type usageTracker struct {
 	turn   map[string]provider.TokenUsage
 	begins int
 	warned bool
+	// sleep waits between cache reads; nil means time.Sleep.
+	sleep func(time.Duration)
 }
 
 // newUsageTracker 返回一个可用 tracker；home/sessionID 不合法时返回禁用实例，
@@ -148,7 +150,11 @@ func (t *usageTracker) readAfterPrompt() usageSnapshot {
 		if attempt >= usageCacheRetryAttempts {
 			return snap
 		}
-		time.Sleep(usageCacheRetryDelay)
+		if t.sleep != nil {
+			t.sleep(usageCacheRetryDelay)
+		} else {
+			time.Sleep(usageCacheRetryDelay)
+		}
 	}
 }
 

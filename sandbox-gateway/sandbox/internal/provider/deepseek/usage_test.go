@@ -77,12 +77,18 @@ func TestUsageTrackerWaitsForAsyncCacheWrite(t *testing.T) {
 	tracker := newUsageTracker(home, "session-2", "m")
 	tracker.begin()
 
-	go func() {
-		time.Sleep(30 * time.Millisecond)
-		writeUsageCache(t, home, "session-2", 20, usageTotals{80, 15, 15, 0})
-	}()
+	waits := 0
+	tracker.sleep = func(time.Duration) {
+		waits++
+		if waits == 2 {
+			writeUsageCache(t, home, "session-2", 20, usageTotals{80, 15, 15, 0})
+		}
+	}
 	if got := tracker.promptDone(); got["m"] != (provider.TokenUsage{InputTokens: 30, OutputTokens: 5, CacheReadTokens: 10}) {
 		t.Fatalf("async usage not picked up: %+v", got)
+	}
+	if waits != 2 {
+		t.Fatalf("promptDone kept waiting after the cache changed: %d waits", waits)
 	}
 }
 
