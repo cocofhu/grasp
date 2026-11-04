@@ -305,8 +305,17 @@ func TestCodexLoginManagerTerminalFailureNeedsRelogin(t *testing.T) {
 		t.Fatalf("unexpired login must still be served: %v", err)
 	}
 	fx.m.now = func() time.Time { return time.Now().Add(300 * time.Hour) }
-	if _, _, err := fx.m.EnsureFresh(context.Background(), fx.id); !errors.Is(err, runtime.ErrCodexLoginRejected) {
-		t.Fatalf("expired login after terminal failure: %v", err)
+	for range 3 {
+		if _, _, err := fx.m.EnsureFresh(context.Background(), fx.id); !errors.Is(err, runtime.ErrCodexLoginRejected) {
+			t.Fatalf("expired login after terminal failure: %v", err)
+		}
+	}
+	fx.hub.Forget(fx.id)
+	if err := fx.hub.BeforeTurn(context.Background(), "sb-0"); !errors.Is(err, runtime.ErrCodexLoginRejected) {
+		t.Fatalf("before turn without a cached copy: %v", err)
+	}
+	if n := fx.api.calls.Load(); n != 1 {
+		t.Fatalf("calls = %d after the access token expired, want 1", n)
 	}
 	// A new paste resets the state and is pushed to running sandboxes.
 	fx.m.now = time.Now
@@ -459,7 +468,7 @@ func TestCodexLoginManagerUnsavedRenewalIsRetried(t *testing.T) {
 	if _, auth, err := fx.m.load(fx.id); err != nil || auth.RefreshToken() != "rt-7" {
 		t.Fatalf("load must prefer the unsaved renewal: %v", err)
 	}
-	fx.m.retryUnsaved()
+	fx.m.retryUnsaved(context.Background())
 	if rt := fx.stored(t).RefreshToken(); rt != "rt-7" {
 		t.Fatalf("stored %q", rt)
 	}
@@ -469,6 +478,109 @@ func TestCodexLoginManagerUnsavedRenewalIsRetried(t *testing.T) {
 	if left != 0 {
 		t.Fatal("saved renewal kept pending")
 	}
+}
+
+func (fx *codexMgrFixture) setUnsaved(t *testing.T, access, refresh string) {
+	t.Helper()
+	prev, err := fx.creds.codexLogin(fx.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.m.mu.Lock()
+	fx.m.unsaved[fx.id] = codexUnsaved{prev: prev, content: testCodexLogin(t, access, refresh)}
+	fx.m.mu.Unlock()
+}
+
+func TestCodexLoginManagerRetryUnsavedDuringRenewalKeepsRotatedToken(t *testing.T) {
+	fx := newCodexMgrFixture(t, testAccess(0, time.Now().Add(time.Hour)))
+	stale := testAccess(7, time.Now().Add(240*time.Hour))
+	fx.setUnsaved(t, stale, "rt-7")
+	fx.api.set(func(f *fakeOpenAI) { f.during = func() { fx.m.retryUnsaved(context.Background()) } })
+	out, _, err := fx.m.ForceRefresh(context.Background(), fx.id, stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := fx.stored(t)
+	if auth.RefreshToken() != "rt-1" || fx.api.seenRT[0] != "rt-7" {
+		t.Fatalf("stored %q, sent %v", auth.RefreshToken(), fx.api.seenRT)
+	}
+	assertSandboxCopy(t, out, auth.AccessToken())
+	fx.m.mu.Lock()
+	left := len(fx.m.unsaved)
+	fx.m.mu.Unlock()
+	if left != 0 {
+		t.Fatal("stored renewal kept pending")
+	}
+}
+
+func TestCodexLoginManagerRenewalWaitsForPendingSave(t *testing.T) {
+	fx := newCodexMgrFixture(t, testAccess(0, time.Now().Add(240*time.Hour)))
+	stale := testAccess(7, time.Now().Add(240*time.Hour))
+	fx.setUnsaved(t, stale, "rt-7")
+	release := make(chan struct{})
+	fx.m.mu.Lock()
+	saving := fx.m.startFlight(context.Background(), fx.id, true, func(context.Context) (string, string, error) {
+		<-release
+		fx.m.saveUnsaved(fx.id)
+		return "", "", nil
+	})
+	fx.m.mu.Unlock()
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, _, err := fx.m.ForceRefresh(context.Background(), fx.id, stale)
+		done <- result{out, err}
+	}()
+	time.Sleep(20 * time.Millisecond)
+	if fx.api.calls.Load() != 0 {
+		t.Fatal("renewal ran while the pending save was in flight")
+	}
+	close(release)
+	<-saving.done
+	r := <-done
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	auth := fx.stored(t)
+	if fx.api.calls.Load() != 1 || auth.RefreshToken() != "rt-1" || fx.api.seenRT[0] != "rt-7" {
+		t.Fatalf("calls %d stored %q sent %v", fx.api.calls.Load(), auth.RefreshToken(), fx.api.seenRT)
+	}
+	assertSandboxCopy(t, r.out, auth.AccessToken())
+}
+
+func TestCodexLoginManagerRetryUnsavedSkipsWhenGone(t *testing.T) {
+	fx := newCodexMgrFixture(t, testAccess(0, time.Now().Add(240*time.Hour)))
+	fx.m.saveUnsaved(fx.id)
+	if fx.stored(t).RefreshToken() != "rt-0" {
+		t.Fatal("nothing pending must leave the login alone")
+	}
+}
+
+func TestCodexLoginManagerSavedLoginPushedAfterRenewal(t *testing.T) {
+	fx := newCodexMgrFixture(t, testAccess(0, time.Now().Add(240*time.Hour)))
+	files := fx.sandboxes(t, 1)
+	release := make(chan struct{})
+	renewed := testAccess(5, time.Now().Add(240*time.Hour))
+	fx.m.mu.Lock()
+	f := fx.m.startFlight(context.Background(), fx.id, false, func(context.Context) (string, string, error) {
+		<-release
+		out := testCodexLogin(t, renewed, "")
+		fx.hub.Broadcast(fx.id, out, runtime.CodexCopyVersion(out))
+		return out, runtime.CodexCopyVersion(out), nil
+	})
+	fx.m.mu.Unlock()
+	user := testAccess(42, time.Now().Add(240*time.Hour))
+	if _, err := fx.creds.Update(fx.id, CredentialInput{Value: testCodexLogin(t, user, "rt-user")}); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	<-f.done
+	fx.m.bg.Wait()
+	body, _ := files[0].get()
+	assertSandboxCopy(t, body, user)
 }
 
 func TestCodexErrSummary(t *testing.T) {

@@ -53,10 +53,13 @@ type codexLoginState struct {
 }
 
 type codexFlight struct {
-	done    chan struct{}
-	copy    string
-	version string
-	err     error
+	done chan struct{}
+	// saveOnly flights store a pending renewal without calling OpenAI; a
+	// renewal that finds one waits for it and then runs its own.
+	saveOnly bool
+	copy     string
+	version  string
+	err      error
 }
 
 // codexUnsaved is a renewed login the database refused to store. OpenAI has
@@ -143,7 +146,7 @@ func (m *CodexLoginManager) Stop() {
 // Tick renews every login that is due and not waiting out a backoff or a
 // re-login.
 func (m *CodexLoginManager) Tick(ctx context.Context) {
-	m.retryUnsaved()
+	m.retryUnsaved(ctx)
 	ids, err := m.creds.codexLoginIDs()
 	if err != nil {
 		log.Warn().Err(err).Msg("list Codex logins for renewal failed")
@@ -242,6 +245,9 @@ func (m *CodexLoginManager) CodexLoginSaved(credentialID string) {
 	m.bg.Add(1)
 	go func() {
 		defer m.bg.Done()
+		// A renewal that saved before the user's login broadcasts its copy;
+		// pushing the user's login after it keeps the sandboxes on the stored one.
+		m.awaitFlight(credentialID)
 		login, auth, err := m.load(credentialID)
 		if err != nil {
 			return
@@ -359,27 +365,50 @@ func (m *CodexLoginManager) record(credentialID string, revision uint64, err err
 // renew runs one renewal per login however many callers ask at once. The
 // renewal outlives a cancelled caller: a rotated refresh token must be saved.
 func (m *CodexLoginManager) renew(ctx context.Context, credentialID string, force bool, stale string) (string, string, error) {
+	for {
+		m.mu.Lock()
+		f := m.flights[credentialID]
+		if f == nil {
+			f = m.startFlight(ctx, credentialID, false, func(rctx context.Context) (string, string, error) {
+				return m.renewOnce(rctx, credentialID, force, stale)
+			})
+		}
+		m.mu.Unlock()
+		select {
+		case <-f.done:
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		}
+		if !f.saveOnly {
+			return f.copy, f.version, f.err
+		}
+	}
+}
+
+// startFlight runs fn as the login's single in-flight operation. m.mu must be
+// held.
+func (m *CodexLoginManager) startFlight(ctx context.Context, credentialID string, saveOnly bool, fn func(context.Context) (string, string, error)) *codexFlight {
+	f := &codexFlight{done: make(chan struct{}), saveOnly: saveOnly}
+	m.flights[credentialID] = f
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), codexRefreshTimeout)
+	go func() {
+		defer cancel()
+		f.copy, f.version, f.err = fn(rctx)
+		m.mu.Lock()
+		delete(m.flights, credentialID)
+		m.mu.Unlock()
+		close(f.done)
+	}()
+	return f
+}
+
+// awaitFlight waits for the login's in-flight operation, if any.
+func (m *CodexLoginManager) awaitFlight(credentialID string) {
 	m.mu.Lock()
 	f := m.flights[credentialID]
-	if f == nil {
-		f = &codexFlight{done: make(chan struct{})}
-		m.flights[credentialID] = f
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), codexRefreshTimeout)
-		go func() {
-			defer cancel()
-			f.copy, f.version, f.err = m.renewOnce(rctx, credentialID, force, stale)
-			m.mu.Lock()
-			delete(m.flights, credentialID)
-			m.mu.Unlock()
-			close(f.done)
-		}()
-	}
 	m.mu.Unlock()
-	select {
-	case <-f.done:
-		return f.copy, f.version, f.err
-	case <-ctx.Done():
-		return "", "", ctx.Err()
+	if f != nil {
+		<-f.done
 	}
 }
 
@@ -393,6 +422,10 @@ func (m *CodexLoginManager) renewOnce(ctx context.Context, credentialID string, 
 	}
 	if force && stale != "" && auth.AccessToken() != stale || !force && !m.needsRefresh(auth) {
 		return sandboxCopy(auth)
+	}
+	if m.state(credentialID, login.Revision) == CodexLoginNeedsRelogin {
+		// OpenAI already refused this refresh token; only a new sign-in helps.
+		return "", "", runtime.ErrCodexLoginRejected
 	}
 	tokens, err := m.client.Refresh(ctx, auth.RefreshToken())
 	if err != nil {
@@ -453,27 +486,47 @@ func (m *CodexLoginManager) save(prev codexStoredLogin, content string) (uint64,
 	return 0, err
 }
 
-func (m *CodexLoginManager) retryUnsaved() {
+// retryUnsaved stores pending renewals inside the login's flight, so a
+// concurrent renewal cannot rotate the refresh token underneath the save. A
+// login with a renewal already running is skipped: that renewal starts from
+// the pending content and stores its own result.
+func (m *CodexLoginManager) retryUnsaved(ctx context.Context) {
+	var flights []*codexFlight
 	m.mu.Lock()
-	pending := make(map[string]codexUnsaved, len(m.unsaved))
-	for id, u := range m.unsaved {
-		pending[id] = u
-	}
-	m.mu.Unlock()
-	for id, u := range pending {
-		revision, err := m.creds.saveCodexLogin(u.prev, u.content)
-		if err != nil && !errors.Is(err, errCodexLoginConflict) {
-			log.Error().Err(err).Str("credential", id).Msg("save renewed Codex login failed again")
+	for id := range m.unsaved {
+		if m.flights[id] != nil {
 			continue
 		}
-		m.mu.Lock()
-		if cur, ok := m.unsaved[id]; ok && cur.content == u.content {
-			delete(m.unsaved, id)
-		}
-		m.mu.Unlock()
-		if err == nil {
-			m.record(id, revision, nil)
-		}
+		flights = append(flights, m.startFlight(ctx, id, true, func(context.Context) (string, string, error) {
+			m.saveUnsaved(id)
+			return "", "", nil
+		}))
+	}
+	m.mu.Unlock()
+	for _, f := range flights {
+		<-f.done
+	}
+}
+
+func (m *CodexLoginManager) saveUnsaved(credentialID string) {
+	m.mu.Lock()
+	u, ok := m.unsaved[credentialID]
+	m.mu.Unlock()
+	if !ok {
+		return
+	}
+	revision, err := m.creds.saveCodexLogin(u.prev, u.content)
+	if err != nil && !errors.Is(err, errCodexLoginConflict) {
+		log.Error().Err(err).Str("credential", credentialID).Msg("save renewed Codex login failed again")
+		return
+	}
+	m.mu.Lock()
+	if cur, ok := m.unsaved[credentialID]; ok && cur.content == u.content {
+		delete(m.unsaved, credentialID)
+	}
+	m.mu.Unlock()
+	if err == nil {
+		m.record(credentialID, revision, nil)
 	}
 }
 
