@@ -79,7 +79,22 @@ describe('shared main chat recovery', () => {
     expect(client.session).toHaveBeenCalledTimes(2)
   })
 
-  it('resets the delay only after receiving a usable snapshot', async () => {
+  it('keeps backing off when each snapshot is immediately followed by a stream error', async () => {
+    mountChat()
+    await flushPromises()
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]) {
+      const count = sockets.length
+      sockets.at(-1)!.receive({ type: 'snapshot', history: { rows: [], busy: false } })
+      sockets.at(-1)!.receive({ type: 'error', status: 503 })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(delay - 1)
+      expect(sockets).toHaveLength(count)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(sockets).toHaveLength(count + 1)
+    }
+  })
+
+  it('resets the delay only after five healthy seconds, including across streamed updates', async () => {
     mountChat()
     await flushPromises()
     sockets[0]!.close()
@@ -87,9 +102,35 @@ describe('shared main chat recovery', () => {
     sockets[1]!.close()
     await vi.advanceTimersByTimeAsync(2_000)
     sockets[2]!.receive({ type: 'snapshot', history: { rows: [], busy: false } })
+    await vi.advanceTimersByTimeAsync(4_999)
     sockets[2]!.close()
-    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.advanceTimersByTimeAsync(3_999)
+    expect(sockets).toHaveLength(3)
+    await vi.advanceTimersByTimeAsync(1)
     expect(sockets).toHaveLength(4)
+    sockets[3]!.receive({ type: 'snapshot', history: { rows: [], busy: false } })
+    await vi.advanceTimersByTimeAsync(2_500)
+    sockets[3]!.receive({ type: 'tail', start: 0, rows: [], busy: false })
+    await vi.advanceTimersByTimeAsync(2_500)
+    sockets[3]!.close()
+    await vi.advanceTimersByTimeAsync(999)
+    expect(sockets).toHaveLength(4)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(sockets).toHaveLength(5)
+  })
+
+  it('does not count time before a usable snapshot as a healthy connection', async () => {
+    mountChat()
+    await flushPromises()
+    sockets[0]!.close()
+    await vi.advanceTimersByTimeAsync(1_000)
+    sockets[1]!.receive({ type: 'keepalive' })
+    await vi.advanceTimersByTimeAsync(10_000)
+    sockets[1]!.close()
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(sockets).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(sockets).toHaveLength(3)
   })
 
   it.each([409, 410])('stops reconnecting and polling after HTTP %s', async status => {

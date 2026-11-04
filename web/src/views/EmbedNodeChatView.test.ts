@@ -29,6 +29,7 @@ vi.mock('@/components/run/SharedAppPreviewChat.vue', () => ({
 import EmbedNodeChatView from './EmbedNodeChatView.vue'
 import { loadEmbedSession, saveEmbedSession } from '@/lib/inbox/embedChat'
 import { LOCALE_STORAGE_KEY, locale, setLocale } from '@/lib/shared/locale'
+import * as localeSettings from '@/lib/shared/locale'
 
 function mountView(props: { shared?: boolean } = {}) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
@@ -47,6 +48,7 @@ afterEach(() => vi.restoreAllMocks())
 describe('EmbedNodeChatView', () => {
   it('keeps shared language in the embed session without changing the account preference', async () => {
     await setLocale('en')
+    const applyLocale = vi.spyOn(localeSettings, 'applyPublicLocale')
     history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/shared-chat#ticket=shared&lang=zh-CN')
     mocks.redeem.mockResolvedValue({ token: 'public-preview', kind: 'app-preview', expiresAt: '2099-01-01T00:00:00Z' })
     const first = mountView({ shared: true })
@@ -56,6 +58,7 @@ describe('EmbedNodeChatView', () => {
     expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
     expect(loadEmbedSession('run-1', 'ap1', Date.now(), true)?.locale).toBe('zh-CN')
     expect(loadEmbedSession('other-run', 'ap1', Date.now(), true)).toBeNull()
+    expect(applyLocale).toHaveBeenCalledTimes(1)
     first.unmount()
     await setLocale('en')
     const refreshed = mountView({ shared: true })
@@ -67,7 +70,22 @@ describe('EmbedNodeChatView', () => {
     await flushPromises()
     expect(locale.value).toBe('zh-CN')
     expect(mocks.redeem).toHaveBeenCalledTimes(1)
+    expect(applyLocale).toHaveBeenCalledTimes(2)
     refreshed.unmount()
+  })
+
+  it.each(['expired', 'network'] as const)('keeps the shared language on the %s page without a usable session', async phase => {
+    await setLocale('en')
+    const applyLocale = vi.spyOn(localeSettings, 'applyPublicLocale')
+    history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/shared-chat#ticket=spent&lang=zh-CN')
+    if (phase === 'expired') mocks.redeem.mockResolvedValue(null)
+    else mocks.redeem.mockRejectedValue(new Error('502'))
+    const w = mountView({ shared: true })
+    await vi.waitFor(() => expect(w.find(`[data-testid="embed-chat-${phase}"]`).exists()).toBe(true))
+    expect(document.documentElement.lang).toBe('zh-CN')
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
+    expect(applyLocale).toHaveBeenCalledTimes(1)
+    w.unmount()
   })
 
   it('applies the opening language before announcing the chat, including after refresh', async () => {
