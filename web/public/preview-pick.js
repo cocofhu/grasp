@@ -6,6 +6,7 @@
 
   // Drawer page protocol (web/src/lib/inbox/embedChat.ts).
   var EMBED_PICK = 'grasp-embed:pick';
+  var EMBED_PICK_REQUEST = 'grasp-embed:pick-request';
   var EMBED_READY = 'grasp-embed:ready';
   var EMBED_SESSION = 'grasp-embed:session';
   var EMBED_THEME = 'grasp-embed:theme';
@@ -187,6 +188,7 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
   var T = stringsFor(lang);
 
   var enabled = false;
+  var pickingFromChat = false;
   var hoverEl = null;
   var styleEl = null;
   var items = loadItems();
@@ -1690,6 +1692,20 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
   function exitPick() {
     setEnabled(false);
     if (live.api) live.api.setPickMode(false);
+    if (pickingFromChat) {
+      pickingFromChat = false;
+      setDrawerOpen(true);
+    }
+  }
+
+  function startChatPick() {
+    if (!usable() || !drawerReady) return;
+    setEnabled(true);
+    if (!enabled) return;
+    pickingFromChat = true;
+    setDrawerOpen(false);
+    // Keyboard events do not bubble out of the chat iframe, even when hidden.
+    ui.toggle.focus();
   }
 
   function setEnabled(on) {
@@ -2146,6 +2162,11 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
     ev.preventDefault();
     ev.stopPropagation();
     clearHover();
+    if (pickingFromChat) {
+      exitPick();
+      pickToChat(t);
+      return;
+    }
     if (liveUsable()) {
       setEnabled(false);
       live.api.offer(t);
@@ -2474,10 +2495,13 @@ var GraspRuntimeIcons=(function(d){"use strict";const Y={copy:{body:'<rect class
       });
     } else if (data.type === EMBED_LANG) {
       setLang(data.lang);
+    } else if (data.type === EMBED_PICK_REQUEST) {
+      startChatPick();
     } else if (data.type === EMBED_SESSION && data.ok === false) {
       sessionDead = true;
       clearPending();
       drawerReady = false;
+      pickingFromChat = false;
       setEnabled(false);
       setControl(false);
       setDrawerOpen(false);

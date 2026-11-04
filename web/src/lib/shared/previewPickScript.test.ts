@@ -7,6 +7,7 @@ import {
   EMBED_CMD_RESULT_MESSAGE,
   EMBED_CONTROL_MESSAGE,
   EMBED_PICK_MESSAGE,
+  EMBED_PICK_REQUEST_MESSAGE,
   EMBED_READY_MESSAGE,
   EMBED_SESSION_MESSAGE,
   EMBED_THEME_MESSAGE,
@@ -54,7 +55,7 @@ class TestChannel extends BroadcastChannel {
   }
 }
 
-type EmbedReply = { origin: string; runId: string; nodeId: string; ticket?: string } | null
+type EmbedReply = { origin: string; runId: string; nodeId: string; ticket?: string; kind?: string } | null
 
 function openPage(
   body: string,
@@ -245,6 +246,49 @@ describe('preview-pick.js chat drawer', () => {
   const body = '<main><h2>Plan</h2><button id="buy">Buy</button></main>'
   const hash = '#__grasp_embed&run=run-1&node=ap1&ticket=tk1'
   const reply = { origin: GRASP, runId: 'run-1', nodeId: 'ap1' }
+
+  it.each([false, true])('picks once from the composer, restoring the same drawer on selection or Escape (shared=%s)', async shared => {
+    const p = openPage(body, { hash: hash + (shared ? '&shared=1' : ''), embedReply: { ...reply, kind: shared ? 'app-preview' : 'session' } })
+    await settle()
+    const inbox = p.drawerReady()
+    const frame = p.frame()
+    const request = () => p.win.dispatchEvent(new p.win.MessageEvent('message', {
+      origin: GRASP, source: frame!.contentWindow as never, data: { type: EMBED_PICK_REQUEST_MESSAGE },
+    }))
+    request()
+    expect(p.drawerOpen()).toBe(false)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(true)
+    p.win.document.dispatchEvent(new p.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    expect(inbox.filter(m => m.type === EMBED_PICK_MESSAGE)).toEqual([])
+    request()
+    p.click('#buy')
+    expect(p.frame()).toBe(frame)
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    expect(inbox.filter(m => m.type === EMBED_PICK_MESSAGE)).toEqual([
+      expect.objectContaining({ payload: expect.objectContaining({ selector: '#buy' }), target: GRASP }),
+    ])
+  })
+
+  it('accepts composer pick requests only from the ready, active drawer', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const request = (origin = GRASP, source: unknown = p.frame()!.contentWindow, type = EMBED_PICK_REQUEST_MESSAGE) =>
+      p.win.dispatchEvent(new p.win.MessageEvent('message', { origin, source: source as never, data: { type, ok: false } }))
+    request()
+    expect(p.drawerOpen()).toBe(true)
+    p.drawerReady()
+    request('https://evil.example')
+    request(GRASP, p.win)
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    request(GRASP, p.frame()!.contentWindow, EMBED_SESSION_MESSAGE)
+    request()
+    expect(p.drawerOpen()).toBe(false)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+  })
 
   it('has no chat without a ticket or a saved drawer', async () => {
     const p = openPage(body)
@@ -1165,6 +1209,9 @@ describe('preview-pick.js page control', () => {
     const toggle = p.shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement
     expect(toggle.getAttribute('aria-pressed')).toBe('false')
     expect(toggle.disabled).toBe(true)
+    send({ type: EMBED_PICK_REQUEST_MESSAGE })
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
 
     created[0].hideOwnUi(true)
     expect((p.win.document.querySelector('grasp-preview-pick') as unknown as HTMLElement).style.display).toBe('none')
@@ -1439,6 +1486,17 @@ describe('preview-pick.js Live overlay hook', () => {
       expect.objectContaining({ payload: expect.objectContaining({ selector: '#card', tagName: 'section' }), target: GRASP }),
     ])
     expect(p.drawerOpen()).toBe(true)
+  })
+
+  it('quotes composer picks directly even when Live is enabled', async () => {
+    const { p, send, fake, inbox } = await liveReady()
+    send({ type: EMBED_PICK_REQUEST_MESSAGE })
+    p.click('#card')
+    expect(fake.offered).toEqual([])
+    expect(p.drawerOpen()).toBe(true)
+    expect(inbox.filter(m => m.type === EMBED_PICK_MESSAGE)).toEqual([
+      expect.objectContaining({ payload: expect.objectContaining({ selector: '#card' }) }),
+    ])
   })
 
   it('opens one pick mode that spans select and insert, and drives the eye', async () => {

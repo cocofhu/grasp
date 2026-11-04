@@ -14,6 +14,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import ClarifyChat from './ClarifyChat.vue'
 import ReviewComposer from './ReviewComposer.vue'
 import { clearDialogues } from '@/lib/chat/dialogueStore'
+import { EMBED_PAGE_PICK_KEY } from '@/lib/inbox/embedChat'
 
 enableAutoUnmount(afterEach)
 afterEach(() => {
@@ -34,11 +35,11 @@ function i18n() {
   return createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { ...common, ...pages } } })
 }
 
-function mountChat(props: Record<string, unknown> = {}) {
+function mountChat(props: Record<string, unknown> = {}, pick?: () => void) {
   return mount(ClarifyChat, {
     attachTo: document.body,
     props: { runId: 'run-1', nodeId: 'react-1', iteration: 1, turns: [], done: false, active: true, draft: '', ...props },
-    global: { plugins: [i18n()], stubs: { Icon: true, ClarifyDemoFrame: true, AppModal: true, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } },
+    global: { plugins: [i18n()], provide: pick ? { [EMBED_PAGE_PICK_KEY as symbol]: pick } : {}, stubs: { Icon: true, ClarifyDemoFrame: true, AppModal: true, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } },
   })
 }
 
@@ -60,6 +61,18 @@ async function pickSession(w: VueWrapper<any>, selector: string) {
 }
 
 describe('ClarifyChat @ references', () => {
+  it('opens the preview pick menu without requiring reference access and preserves the draft', async () => {
+    const pick = vi.fn()
+    const w = mountChat({ referencesEnabled: false, draft: '保留这段草稿' }, pick)
+    await w.get('[data-testid="clarify-attach-btn"]').trigger('click')
+    expect(w.get('[data-testid="clarify-plus-menu"]').exists()).toBe(true)
+    expect(w.find('[data-testid="clarify-plus-github"]').exists()).toBe(false)
+    await w.get('[data-testid="clarify-plus-pick"]').trigger('click')
+    expect(pick).toHaveBeenCalledOnce()
+    expect(w.find('[data-testid="clarify-plus-menu"]').exists()).toBe(false)
+    expect((w.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('保留这段草稿')
+  })
+
   it('searches the run node and sends the picked reference', async () => {
     const w = mountChat()
     await pickSession(w, '[data-testid="clarify-input"]')

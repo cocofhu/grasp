@@ -4935,6 +4935,7 @@
         "unchecked": "发送时未能确认访问权限，Agent 会自行读取",
         "pinned": "截至发送时 {n} 条消息",
         "menu": {
+          "pick": "取点",
           "upload": "上传文件",
           "session": "引用会话",
           "github": "引用 Issue / PR"

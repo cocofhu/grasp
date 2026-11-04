@@ -4935,6 +4935,7 @@
         "unchecked": "Access could not be checked at send time; the agent will read it itself",
         "pinned": "{n} messages as of sending",
         "menu": {
+          "pick": "Pick an element",
           "upload": "Upload file",
           "session": "Reference a session",
           "github": "Reference an issue / PR"

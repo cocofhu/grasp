@@ -2,12 +2,16 @@ import { isLoopbackHostname } from '@/lib/inbox/gateShareLink'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import type { ThemeName } from '@/lib/shared/theme'
 import type { AppLocale } from '@/lib/shared/locale'
+import type { InjectionKey } from 'vue'
 
 /** Must match server handlers.headerEmbedRequest. */
 const EMBED_REQUEST_HEADER = 'X-Grasp-Embed'
 const STORAGE_PREFIX = 'grasp.embed.'
 
 export const EMBED_PICK_MESSAGE = 'grasp-embed:pick'
+/** Preview composers can ask their host page to pick an element as chat context. */
+export const EMBED_PICK_REQUEST_MESSAGE = 'grasp-embed:pick-request'
+export const EMBED_PAGE_PICK_KEY: InjectionKey<() => void> = Symbol('embed-page-pick')
 export const EMBED_READY_MESSAGE = 'grasp-embed:ready'
 export const EMBED_THEME_MESSAGE = 'grasp-embed:theme'
 /** Drawer → page: Grasp UI language (`zh-CN` | `en`) so the page toolbar matches the app. */
