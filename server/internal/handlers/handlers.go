@@ -93,7 +93,9 @@ type Handlers struct {
 	Blobs blob.Store
 	// OpenCodeCatalog backs the OpenCode provider / model pickers. Nil disables
 	// the endpoints, leaving the UI on hand-typed ids.
-	OpenCodeCatalog *opencodecatalog.Store
-	doctorMu        sync.Mutex
-	doctorSessions  map[string]doctorArtifactSession
+	OpenCodeCatalog    *opencodecatalog.Store
+	doctorMu           sync.Mutex
+	doctorSessions     map[string]doctorArtifactSession
+	previewMainMu      sync.Mutex
+	previewMainStreams map[previewMainStreamKey]*previewMainStream
 }

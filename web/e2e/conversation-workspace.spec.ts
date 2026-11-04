@@ -285,6 +285,7 @@ test('anonymous shares open the direct app and use its floating chat in both mod
   test.setTimeout(60_000)
   const anonymous = await browser.newContext({ viewport: { width: 390, height: 820 }, locale: 'en-US' })
   try {
+    await anonymous.addInitScript(() => { if (!localStorage.getItem('grasp-locale')) localStorage.setItem('grasp-locale', 'en') })
     const grasp = 'http://127.0.0.1:5174'
     const direct = 'http://127.0.0.1:19084'
     const previewUrl = direct + '/shared-app-fixture'
@@ -338,13 +339,21 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       return route.fulfill({ json: { lane: 'github', items: [previewIssue] } })
     })
     const mainRows: PreviewChatRow[] = [{ id: 'main-history', role: 'user', text: 'Original main conversation' }]
-    const mainSockets = new Set<WebSocketRoute>()
+    const mainSockets = new Map<WebSocketRoute, PreviewChatRow[] | undefined>()
     let mainBusy = false
     const publishMain = () => {
-      for (const ws of mainSockets) ws.send(JSON.stringify({ type: 'snapshot', history: { rows: mainRows, busy: mainBusy } }))
+      for (const [ws, previous] of mainSockets) {
+        if (!previous) ws.send(JSON.stringify({ type: 'snapshot', history: { rows: mainRows, busy: mainBusy } }))
+        else {
+          let start = 0
+          while (start < previous.length && start < mainRows.length && JSON.stringify(previous[start]) === JSON.stringify(mainRows[start])) start++
+          ws.send(JSON.stringify({ type: 'tail', start, rows: mainRows.slice(start), busy: mainBusy }))
+        }
+        mainSockets.set(ws, structuredClone(mainRows))
+      }
     }
     await anonymous.routeWebSocket('**/public/approvals/app/main-events', ws => {
-      mainSockets.add(ws)
+      mainSockets.set(ws, undefined)
       ws.onClose(() => { mainSockets.delete(ws) })
       publishMain()
     })
@@ -422,6 +431,7 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     const mainDrawer = mainToolbar.frameLocator('[data-role="drawer"] iframe')
     await expect(mainToolbar.locator('[data-role="chat"]')).toHaveText('对话')
     await expect(mainDrawer.locator('html')).toHaveAttribute('lang', 'zh-CN')
+    expect(await mainDrawer.locator('html').evaluate(() => localStorage.getItem('grasp-locale'))).toBe('en')
     await expect(mainDrawer.getByTestId('shared-app-chat-input')).toHaveAttribute('placeholder', /给 Demo 发消息/)
     await expect(mainToolbar.locator('[data-role="artifact"]')).toBeHidden()
     await expect(mainDrawer.getByText('Original main conversation')).toBeVisible()
@@ -474,6 +484,7 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await expect(sentBubble.getByTestId('chat-message-annotations')).toHaveText('#app-title')
     await expect(mainDrawer.getByText('main-notes.txt')).toBeVisible()
     await expect(mainDrawer.locator('html')).toHaveAttribute('lang', 'zh-CN')
+    expect(await mainDrawer.locator('html').evaluate(() => localStorage.getItem('grasp-locale'))).toBe('en')
     await expect(mainDrawer.getByTestId('agent-timeline-elapsed')).toContainText('46s')
     await mainToolbar.locator('[data-role="chat"]').click()
     await expect(mainToolbar.locator('[data-role="drawer"]')).toBeHidden()

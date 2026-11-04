@@ -43,6 +43,7 @@ export type EmbedSession = {
   token: string
   expiresAt: string
   kind?: 'solo' | 'app-preview' | 'session' | 'share'
+  locale?: AppLocale
 }
 
 type RedeemResponse = Omit<EmbedSession, 'kind'> & { kind?: string; runId?: string; nodeId?: string; error?: string }
@@ -165,7 +166,8 @@ export function loadEmbedSession(runId: string, nodeId: string, now = Date.now()
       return null
     }
     if (shared !== (s.kind === 'app-preview')) return null
-    return { token: s.token, expiresAt: s.expiresAt, ...embedKind(s.kind) }
+    return { token: s.token, expiresAt: s.expiresAt, ...embedKind(s.kind),
+      ...(s.locale === 'zh-CN' || s.locale === 'en' ? { locale: s.locale } : {}) }
   } catch {
     return null
   }

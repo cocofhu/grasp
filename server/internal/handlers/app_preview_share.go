@@ -303,7 +303,7 @@ func (h *Handlers) PublicAppPreviewMainChat(c *gin.Context) {
 	if c.Request.Method == http.MethodGet {
 		result, err := h.appPreviewMainHistory(link, sb)
 		if err != nil {
-			writeSoloErr(c, err)
+			writePreviewMainError(c, err)
 			return
 		}
 		c.JSON(http.StatusOK, result)

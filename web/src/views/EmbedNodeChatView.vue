@@ -31,10 +31,11 @@ import {
   parseEmbedTicketFromHash,
   redeemEmbedTicket,
   saveEmbedSession,
+  type EmbedSession,
 } from '@/lib/inbox/embedChat'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { setThemeOverride } from '@/lib/shared/theme'
-import { LOCALE_STORAGE_KEY, locale, setLocale } from '@/lib/shared/locale'
+import { applyPublicLocale, LOCALE_STORAGE_KEY, locale, setLocale, type AppLocale } from '@/lib/shared/locale'
 import { createEmbedImagePreview, EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { createEmbedDemoPreview, EMBED_DEMO_PREVIEW_KEY } from '@/lib/inbox/embedDemoPreview'
 import { createEmbedLiveContext } from '@/lib/inbox/embedLiveContext'
@@ -74,6 +75,17 @@ const token = ref('')
 const solo = ref<ReturnType<typeof soloEmbedClient>>()
 const workflowModel = ref<VisitModelTransport>()
 const workflowReferences = ref<ScopedReferenceSearch>()
+let activeSession: EmbedSession | undefined
+
+async function activateSession(session: EmbedSession, openingLocale: AppLocale | null) {
+  if (props.shared) {
+    await applyPublicLocale(openingLocale || session.locale)
+    session = { ...session, locale: locale.value }
+  }
+  activeSession = session
+  saveEmbedSession(runId, nodeId, session)
+  useSession(session)
+}
 
 function useSession(session: { token: string; kind?: string }) {
   solo.value = session.kind === 'solo' ? soloEmbedClient(runId, session.token, () => onStatus('invalid')) : undefined
@@ -212,15 +224,14 @@ async function connect() {
   const theme = parseEmbedThemeFromHash(hash)
   if (theme) setThemeOverride(theme)
   const lang = parseEmbedLocaleFromHash(hash)
-  if (lang) await setLocale(lang)
+  if (lang) await (props.shared ? applyPublicLocale(lang) : setLocale(lang))
   const ticket = parseEmbedTicketFromHash(hash)
   if (ticket) {
     if (props.shared) clearEmbedSession(runId, nodeId, true)
     try {
       const s = await redeemEmbedTicket(ticket, runId, nodeId)
       if (s && (s.kind === 'app-preview') === !!props.shared) {
-        saveEmbedSession(runId, nodeId, s)
-        useSession(s)
+        await activateSession(s, lang)
         return
       }
     } catch {
@@ -232,13 +243,14 @@ async function connect() {
   }
   const stored = loadEmbedSession(runId, nodeId, Date.now(), props.shared)
   if (stored) {
-    useSession(stored)
+    await activateSession(stored, lang)
     return
   }
   markExpired()
 }
 
 function markExpired() {
+  activeSession = undefined
   phase.value = 'expired'
   // The page greys out Pick and Chat until it is reopened with a new ticket.
   if (window.parent !== window) window.parent.postMessage({ type: EMBED_SESSION_MESSAGE, ok: false }, parentOrigin())
@@ -272,13 +284,17 @@ function postLang() {
 }
 
 watch(locale, () => {
+  if (props.shared && activeSession) {
+    activeSession = { ...activeSession, locale: locale.value }
+    saveEmbedSession(runId, nodeId, activeSession)
+  }
   if (announced) postLang()
 })
 
-// The main Grasp tab shares this origin's localStorage, so a language switch
-// there reaches the drawer (and through it, the page toolbar) without a reload.
+// Owner previews follow the main tab. Anonymous shares keep their own language
+// in the embed session instead of changing or following the account preference.
 function onStorage(e: StorageEvent) {
-  if (e.key !== LOCALE_STORAGE_KEY) return
+  if (props.shared || e.key !== LOCALE_STORAGE_KEY) return
   if (e.newValue === 'zh-CN' || e.newValue === 'en') void setLocale(e.newValue)
 }
 

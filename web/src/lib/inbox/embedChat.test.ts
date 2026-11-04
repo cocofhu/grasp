@@ -124,8 +124,10 @@ describe('embedChat', () => {
     const expiresAt = '2026-09-01T01:00:00Z'
     saveEmbedSession('r', 'n', { token: 'owner', expiresAt, kind: 'solo' })
     expect(loadEmbedSession('r', 'n', now, true)).toBeNull()
-    saveEmbedSession('r', 'n', { token: 'guest', expiresAt, kind: 'app-preview' })
+    saveEmbedSession('r', 'n', { token: 'guest', expiresAt, kind: 'app-preview', locale: 'zh-CN' })
     expect(loadEmbedSession('r', 'n', now, true)?.token).toBe('guest')
+    expect(loadEmbedSession('r', 'n', now, true)?.locale).toBe('zh-CN')
+    expect(loadEmbedSession('r', 'other', now, true)).toBeNull()
     expect(loadEmbedSession('r', 'n', now)?.token).toBe('owner')
     clearEmbedSession('r', 'n', true)
     expect(loadEmbedSession('r', 'n', now, true)).toBeNull()

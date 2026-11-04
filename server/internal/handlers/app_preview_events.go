@@ -2,10 +2,9 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
-	"time"
 
-	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
@@ -15,10 +14,10 @@ import (
 
 const appPreviewMainProtocol = "grasp-preview-main"
 
-// PublicAppPreviewMainEvents pushes the same sanitized snapshot as main-chat.
+// PublicAppPreviewMainEvents serves a shared snapshot followed by changed tails.
 // A main-mode ticket grants no access to raw Solo or workflow event streams.
 func (h *Handlers) PublicAppPreviewMainEvents(c *gin.Context) {
-	if !h.publicRateLimit(c, gateshare.RateBucketTicket) {
+	if !h.publicRateLimit(c, gateshare.RateBucketPreviewEvents) {
 		return
 	}
 	protocols := websocket.Subprotocols(c.Request)
@@ -33,28 +32,28 @@ func (h *Handlers) PublicAppPreviewMainEvents(c *gin.Context) {
 		c.Status(http.StatusUnauthorized)
 		return
 	}
-
-	// Subscribe before taking the seed so a turn cannot disappear between them.
-	var soloEvents <-chan chatsession.Event
-	var workflowEvents <-chan []byte
-	var unsubscribe func()
-	if sb.Purpose == services.SandboxPurposeSolo && h.Solo != nil {
-		var err error
-		soloEvents, unsubscribe, err = h.Solo.Subscribe(sb.ThreadID, link.CreatedBy, -1)
-		if err != nil {
-			c.Status(http.StatusConflict)
-			return
-		}
-	} else if h.Eng != nil {
-		workflowEvents, unsubscribe = h.Eng.Broker().Subscribe(link.RunID)
-	} else {
-		c.Status(http.StatusServiceUnavailable)
+	if (sb.Purpose == services.SandboxPurposeSolo && h.Solo == nil) || (sb.Purpose != services.SandboxPurposeSolo && h.Eng == nil) {
+		writePreviewMainError(c, errPreviewMainServiceUnavailable)
 		return
 	}
+	ctx, cancel := context.WithDeadline(c.Request.Context(), link.ExpiresAt)
+	defer cancel()
+	updates, unsubscribe := h.subscribePreviewMain(link, sb)
 	defer unsubscribe()
-	seed, err := h.appPreviewMainHistory(link, sb)
-	if err != nil {
-		c.Status(http.StatusConflict)
+	var first previewMainUpdate
+	select {
+	case <-ctx.Done():
+		c.Status(http.StatusGone)
+		return
+	case update, open := <-updates:
+		if !open {
+			writePreviewMainError(c, errPreviewMainServiceUnavailable)
+			return
+		}
+		first = update
+	}
+	if first.err != nil {
+		writePreviewMainError(c, first.err)
 		return
 	}
 	u := upgrader
@@ -64,10 +63,16 @@ func (h *Handlers) PublicAppPreviewMainEvents(c *gin.Context) {
 		return
 	}
 	defer func() { _ = conn.Close() }()
+	// Revocation cuts the socket immediately; the watcher also checks ticket
+	// validity every ten seconds. No token/database lookup belongs on each tick.
+	if h.GateShareSessions != nil {
+		defer h.GateShareSessions.Register(link.TokenHash, conn)()
+	}
+	if active, _ := h.activeAppPreviewTicket(claims); active == nil {
+		return
+	}
 	conn.SetReadLimit(1024)
 	configureEventHeartbeat(conn, eventPongWait)
-	ctx, cancel := context.WithDeadline(c.Request.Context(), link.ExpiresAt)
-	defer cancel()
 	go h.watchAppPreviewChat(ctx, cancel, conn, claims)
 	go func() {
 		defer cancel()
@@ -77,45 +82,30 @@ func (h *Handlers) PublicAppPreviewMainEvents(c *gin.Context) {
 			}
 		}
 	}()
-	write := func(history *previewMainHistory) error {
-		return writeChatJSON(conn, gin.H{"type": "snapshot", "history": history})
-	}
-	if write(seed) != nil {
+	previous := first.snapshot
+	if writeChatJSON(conn, previous.frameAfter(nil)) != nil {
 		return
 	}
-	// Coalesce token bursts without losing tool-only/thought-only updates or
-	// the final snapshot. A dropped subscription closes the socket for recovery.
-	tick := time.NewTicker(125 * time.Millisecond)
-	defer tick.Stop()
-	dirty := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case _, open := <-soloEvents:
+		case update, open := <-updates:
 			if !open {
 				return
 			}
-			dirty = true
-		case raw, open := <-workflowEvents:
-			if !open {
+			if update.err != nil {
+				status := http.StatusServiceUnavailable
+				if errors.Is(update.err, errPreviewMainUnavailable) {
+					status = http.StatusConflict
+				}
+				_ = writeChatJSON(conn, gin.H{"type": "error", "status": status})
 				return
 			}
-			if isDialogueFrameFor(raw, link.NodeID, "") {
-				dirty = true
-			}
-		case <-tick.C:
-			if !dirty {
-				continue
-			}
-			if active, _ := h.activeAppPreviewTicket(claims); active == nil {
+			if writeChatJSON(conn, update.snapshot.frameAfter(previous)) != nil {
 				return
 			}
-			history, err := h.appPreviewMainHistory(link, sb)
-			if err != nil || write(history) != nil {
-				return
-			}
-			dirty = false
+			previous = update.snapshot
 		}
 	}
 }

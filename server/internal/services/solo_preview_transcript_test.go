@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"gorm.io/gorm"
 )
 
 func TestSoloPreviewTranscriptKeepsLiveProcessBeforeTextAndQueue(t *testing.T) {
@@ -42,6 +44,17 @@ func TestSoloPreviewTranscriptKeepsLiveProcessBeforeTextAndQueue(t *testing.T) {
 	again, _, _ := solo.PreviewTranscript(view.ID, "alice")
 	if again[1].Events[0][0] == '!' {
 		t.Fatal("snapshot mutated the active turn")
+	}
+	var queries atomic.Int32
+	if err := db.Callback().Query().After("gorm:query").Register("preview-live-query-count", func(*gorm.DB) { queries.Add(1) }); err != nil {
+		t.Fatal(err)
+	}
+	live, active := solo.PreviewLiveReply(view.ID)
+	if live == nil || !active || len(live.Events) != 2 || queries.Load() != 0 {
+		t.Fatalf("live snapshot read persisted history: active=%v queries=%d reply=%+v", active, queries.Load(), live)
+	}
+	if err := db.Callback().Query().Remove("preview-live-query-count"); err != nil {
+		t.Fatal(err)
 	}
 	if err := db.Create(&models.SoloMessage{ID: "saved-reply", SessionID: view.ID, Role: "assistant", Content: "Saved"}).Error; err != nil {
 		t.Fatal(err)

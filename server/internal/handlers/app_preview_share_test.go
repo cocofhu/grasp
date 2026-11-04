@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
 func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
@@ -210,6 +212,24 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			}
 			// Both main backends seed the public stream with the same timeline;
 			// independent tickets and cross-origin sockets cannot subscribe.
+			if solo {
+				service := hn.h.Solo
+				hn.h.Solo = nil
+				header := map[string]string{"Origin": "http://" + publicHost, "Sec-WebSocket-Protocol": "grasp-preview-main, " + tokens["main-api"]}
+				unavailable := hn.doEmbed(http.MethodGet, path+"/main-events", nil, header)
+				hn.h.Solo = service
+				if unavailable.Code != http.StatusServiceUnavailable {
+					t.Fatalf("missing Solo service: %d %s", unavailable.Code, unavailable.Body)
+				}
+			}
+			var historyReads atomic.Int32
+			if err := hn.db.Callback().Query().After("gorm:query").Register("preview-history-count", func(query *gorm.DB) {
+				if query.Statement.Table == "solo_messages" && len(query.Statement.Selects) == 0 {
+					historyReads.Add(1)
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
 			streamServer := httptest.NewServer(hn.r)
 			defer streamServer.Close()
 			dial := func(ticket, origin string) (*websocket.Conn, *http.Response, error) {
@@ -237,6 +257,22 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			if err != nil || !strings.Contains(string(seed), `"type":"snapshot"`) || !strings.Contains(string(seed), "Inspect the heading") || strings.Contains(string(seed), "private-tool-") {
 				t.Fatalf("main stream seed: %s %v", seed, err)
 			}
+			viewers := []*websocket.Conn{stream}
+			for i := 0; i < 7; i++ {
+				viewer, _, err := dial(tokens["main-api"], streamServer.URL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer viewer.Close()
+				viewers = append(viewers, viewer)
+				_ = viewer.SetReadDeadline(time.Now().Add(3 * time.Second))
+				if _, initial, err := viewer.ReadMessage(); err != nil || !strings.Contains(string(initial), `"type":"snapshot"`) {
+					t.Fatalf("additional viewer seed: %s %v", initial, err)
+				}
+			}
+			if solo && (historyReads.Load() < 1 || historyReads.Load() > 2) {
+				t.Fatalf("eight viewers rebuilt history %d times; want one shared source", historyReads.Load())
+			}
 			if !strings.Contains(history.Body.String(), "guest-notes.txt") || strings.Contains(history.Body.String(), "owner-private.txt") ||
 				strings.Contains(history.Body.String(), guestFile.Data) {
 				t.Fatalf("attachment metadata: %d %s", history.Code, history.Body)
@@ -244,6 +280,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			var guestID, ownerID string
 			for _, raw := range parseJSON(t, history)["rows"].([]any) {
 				row := raw.(map[string]any)
+				if (row["role"] == "human" || row["role"] == "user") && (row["startedAt"] != nil || row["endedAt"] != nil) {
+					t.Fatalf("user row carries agent timing: %+v", row)
+				}
 				switch row["text"] {
 				case "Visitor upload":
 					guestID = row["id"].(string)
@@ -289,13 +328,19 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			if !solo {
 				hn.h.Eng.Broker().Publish(runID, []byte(`{"type":"dialogue","nodeId":"`+nodeID+`"}`))
 			}
-			for {
-				_, pushed, err := stream.ReadMessage()
-				if err != nil {
-					t.Fatalf("main stream did not update: %v", err)
-				}
-				if strings.Contains(string(pushed), `"currentModelId":"next-model"`) {
-					break
+			for _, viewer := range viewers {
+				_ = viewer.SetReadDeadline(time.Now().Add(3 * time.Second))
+				for {
+					_, pushed, err := viewer.ReadMessage()
+					if err != nil {
+						t.Fatalf("main stream did not update: %v", err)
+					}
+					if strings.Contains(string(pushed), `"currentModelId":"next-model"`) {
+						if !strings.Contains(string(pushed), `"type":"tail"`) || strings.Contains(string(pushed), mainHistory) {
+							t.Fatalf("update resent unchanged history: %s", pushed)
+						}
+						break
+					}
 				}
 			}
 			if w := hn.doEmbed(http.MethodPost, path+"/model", map[string]any{"modelId": "unlisted-model"}, mainHeaders); w.Code != http.StatusBadRequest {

@@ -37,6 +37,24 @@ func TestIPLimiterBucketsIndependent(t *testing.T) {
 	}
 }
 
+func TestPreviewEventReconnectsCannotExhaustTicketBudget(t *testing.T) {
+	limiter := NewIPLimiter()
+	const ip = "10.1.2.7"
+	for i := 0; i < publicRateMax; i++ {
+		if !limiter.AllowBucket(ip, RateBucketPreviewEvents) {
+			t.Fatal("connection budget exhausted early")
+		}
+	}
+	if limiter.AllowBucket(ip, RateBucketPreviewEvents) {
+		t.Fatal("connection budget should remain bounded")
+	}
+	for i := 0; i < publicRateMax; i++ {
+		if !limiter.AllowBucket(ip, RateBucketTicket) {
+			t.Fatal("reconnections consumed the ticket renewal/issuance budget")
+		}
+	}
+}
+
 func TestIPLimiterPreviewFitsPollingButDecideStaysTight(t *testing.T) {
 	l := NewIPLimiter()
 	ip := "10.1.2.5"
