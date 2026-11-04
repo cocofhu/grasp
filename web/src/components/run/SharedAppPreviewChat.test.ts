@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/en/common.json'
 import pages from '@/locales/en/pages.json'
 import type { PreviewChatHistory } from '@/lib/inbox/appPreviewShare'
+import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 
 const client = vi.hoisted(() => ({
   session: vi.fn(), history: vi.fn(), getModel: vi.fn(), connectMain: vi.fn(), connectGuest: vi.fn(),
-  modelCatalog: vi.fn(), setModel: vi.fn(), searchReferences: vi.fn(), image: vi.fn(), send: vi.fn(),
+  modelCatalog: vi.fn(), setModel: vi.fn(), searchReferences: vi.fn(), image: vi.fn(), send: vi.fn(), cancelMain: vi.fn(),
 }))
 vi.mock('@/lib/inbox/appPreviewShare', () => ({ publicAppPreviewClient: () => client }))
 
@@ -22,6 +23,12 @@ class Socket {
   onmessage?: (event: { data: string }) => void
   onclose?: () => void
   onerror?: () => void
+  onopen?: () => void
+  send = vi.fn()
+  open() {
+    this.readyState = Socket.OPEN
+    this.onopen?.()
+  }
   close() {
     if (this.readyState === Socket.CLOSED) return
     this.readyState = Socket.CLOSED
@@ -35,10 +42,12 @@ class Socket {
 
 let sockets: Socket[]
 const wrappers: ReturnType<typeof shallowMount>[] = []
-function mountChat() {
+function mountChat(provide: Record<string | symbol, unknown> = {}) {
   const w = shallowMount(SharedAppPreviewChat, {
     props: { token: 'shared-app' },
-    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: { ...common, ...pages } } })] },
+    global: { provide,
+      stubs: { ChatComposer: { name: 'ChatComposer', props: ['draft'], emits: ['send'], template: '<div><slot name="actions" /></div>' } },
+      plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: { ...common, ...pages } } })] },
   })
   wrappers.push(w)
   return w
@@ -51,7 +60,13 @@ beforeEach(() => {
   client.session.mockResolvedValue({ ticket: 'ticket', chatMode: 'main' })
   client.history.mockResolvedValue({ rows: [], busy: false })
   client.getModel.mockResolvedValue({})
+  client.cancelMain.mockResolvedValue({ ok: true })
   client.connectMain.mockImplementation(() => {
+    const socket = new Socket()
+    sockets.push(socket)
+    return socket
+  })
+  client.connectGuest.mockImplementation(() => {
     const socket = new Socket()
     sockets.push(socket)
     return socket
@@ -64,6 +79,157 @@ afterEach(() => {
 })
 
 describe('shared main chat recovery', () => {
+  it('stops the main conversation without discarding a draft or assuming it has already stopped', async () => {
+    let finish!: (value: object) => void
+    client.cancelMain.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const w = mountChat()
+    await flushPromises()
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true, activeTurnId: 'turn-a' } })
+    await flushPromises()
+    const composer = w.getComponent({ name: 'ChatComposer' })
+    composer.props('draft').input.value = 'Keep this draft'
+    const stop = () => w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')
+    expect(stop()!.props('disabled')).toBe(false)
+    stop()!.vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(client.cancelMain).toHaveBeenCalledOnce()
+    expect(client.cancelMain).toHaveBeenCalledWith('turn-a', expect.any(AbortSignal))
+    expect(stop()!.props('disabled')).toBe(true)
+    finish({ ok: true })
+    await flushPromises()
+    expect(stop()).toBeDefined() // The authoritative stream still reports busy.
+    expect(composer.props('draft').input.value).toBe('Keep this draft')
+    sockets[0]!.receive({ type: 'tail', start: 0, rows: [], queue: [], busy: false })
+    await flushPromises()
+    expect(stop()).toBeUndefined()
+    expect(composer.props('draft').input.value).toBe('Keep this draft')
+  })
+
+  it('keeps a failed main stop retryable', async () => {
+    client.cancelMain.mockRejectedValueOnce({ status: 503 })
+    const w = mountChat()
+    await flushPromises()
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true, activeTurnId: 'turn-a' } })
+    await flushPromises()
+    const stop = w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')!
+    stop.vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(w.get('[role="alert"]').text()).toContain('Could not stop the reply')
+    expect(stop.props('disabled')).toBe(false)
+  })
+
+  it('refreshes a changed turn without retrying Stop against the next reply or expiring the share', async () => {
+    const w = mountChat()
+    await flushPromises()
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true, activeTurnId: 'old' } })
+    await flushPromises()
+    client.cancelMain.mockRejectedValueOnce({ status: 409, code: 'turn_changed' })
+    client.history.mockResolvedValue({ rows: [{ id: 'next-reply', role: 'assistant', text: 'Next reply', streaming: true }], busy: true, activeTurnId: 'next' })
+    const stop = () => w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')!
+    stop().vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(client.cancelMain).toHaveBeenCalledTimes(1)
+    expect(client.cancelMain).toHaveBeenLastCalledWith('old', expect.any(AbortSignal))
+    expect(w.get('[role="alert"]').text()).toContain('That reply has ended or changed')
+    expect(w.getComponent({ name: 'AgentTimeline' }).props('text')).toBe('Next reply')
+    expect(client.connectMain).toHaveBeenCalledOnce()
+    expect(stop().props('disabled')).toBe(false)
+    stop().vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(client.cancelMain).toHaveBeenLastCalledWith('next', expect.any(AbortSignal))
+  })
+
+  it('does not guess a cancel target when a busy snapshot has no active turn ID', async () => {
+    const w = mountChat()
+    await flushPromises()
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: true } })
+    await flushPromises()
+    const stop = w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')!
+    expect(stop.props('disabled')).toBe(true)
+    stop.vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(client.cancelMain).not.toHaveBeenCalled()
+  })
+
+  it('cancels only the current independent turn, preserves partial content and can send again on the same socket', async () => {
+    client.session.mockResolvedValue({ ticket: 'guest', chatMode: 'isolated' })
+    const w = mountChat()
+    await flushPromises()
+    const socket = sockets[0]!
+    socket.open()
+    const composer = w.getComponent({ name: 'ChatComposer' })
+    composer.props('draft').input.value = 'First request'
+    composer.vm.$emit('send')
+    await flushPromises()
+    const request = JSON.parse(socket.send.mock.calls[0]![0])
+    socket.receive({ type: 'reply', text: 'Partial reply' })
+    const stop = () => w.findAllComponents({ name: 'ComposerPrimaryAction' }).find(button => button.props('kind') === 'stop')
+    await flushPromises()
+    composer.props('draft').input.value = 'Next request'
+    stop()!.vm.$emit('click', 'stop')
+    await flushPromises()
+    expect(JSON.parse(socket.send.mock.calls[1]![0])).toEqual({ type: 'cancel', id: request.id })
+    expect(stop()!.props('disabled')).toBe(true)
+    socket.receive({ type: 'done', text: 'Partial reply', interrupted: true, failed: true })
+    await flushPromises()
+    expect(stop()).toBeUndefined()
+    expect(w.find('[role="alert"]').exists()).toBe(false)
+    expect(w.getComponent({ name: 'AgentTimeline' }).props()).toMatchObject({ text: 'Partial reply', interrupted: true, streaming: false })
+    expect(composer.props('draft').input.value).toBe('Next request')
+    composer.vm.$emit('send')
+    await flushPromises()
+    const next = JSON.parse(socket.send.mock.calls[2]![0])
+    expect(next.text).toBe('Next request')
+    expect(next.id).not.toBe(request.id)
+    expect(client.connectGuest).toHaveBeenCalledOnce()
+  })
+
+  it('synchronizes the pending queue across seeds, token tails, reorders and removals', async () => {
+    let finishSeed!: (history: PreviewChatHistory) => void
+    client.history.mockReturnValueOnce(new Promise<PreviewChatHistory>(resolve => { finishSeed = resolve }))
+    const w = mountChat()
+    await flushPromises()
+    const queue = [{ id: 'q1', text: 'First', images: [{ mimeType: 'image/png' }] }, { id: 'q2', text: 'Second' }]
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], queue, busy: true } })
+    await flushPromises()
+    const panel = () => w.getComponent({ name: 'PendingSendQueuePanel' })
+    expect(panel().props('items').map((item: { id: string }) => item.id)).toEqual(['q1', 'q2'])
+    expect(panel().props('items')[0].images).toHaveLength(1)
+    expect(panel().props('readonly')).toBe(true)
+    sockets[0]!.receive({ type: 'tail', start: 0, rows: [], busy: true })
+    await flushPromises()
+    expect(panel().props('items')).toHaveLength(2)
+    sockets[0]!.receive({ type: 'tail', start: 0, rows: [], queue: [...queue].reverse(), busy: true })
+    finishSeed({ rows: [], queue: [], busy: false })
+    await flushPromises()
+    expect(panel().props('items').map((item: { id: string }) => item.id)).toEqual(['q2', 'q1'])
+    sockets[0]!.receive({ type: 'tail', start: 0, rows: [], queue: [], busy: false })
+    await flushPromises()
+    expect(w.findComponent({ name: 'PendingSendQueuePanel' }).exists()).toBe(false)
+  })
+
+  it('passes recorded reply statistics through without using current model settings', async () => {
+    const recorded = { id: 'a', role: 'assistant', text: 'Historical reply', at: '2026-11-04T07:00:34Z',
+      execution: { agentName: 'Recorded Agent', backend: 'opencode', modelId: 'old-model' },
+      usage: { inputTokens: 123, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0 }, durationMs: 34000 }
+    client.history.mockResolvedValue({ rows: [recorded], busy: false, model: { currentModelId: 'new-model' } })
+    const w = mountChat()
+    await flushPromises()
+    expect(w.getComponent({ name: 'AgentTimeline' }).props('metadata')).toEqual(recorded)
+  })
+
+  it('opens attachments through the host preview instead of a modal inside the chat frame', async () => {
+    const host = { open: vi.fn(), close: vi.fn() }
+    client.image.mockResolvedValue(new Blob(['picture'], { type: 'image/png' }))
+    client.history.mockResolvedValue({ rows: [{ id: 'u', role: 'user', text: 'Image', images: [{ mimeType: 'image/png', name: 'Screenshot.png' }] }], busy: false })
+    const w = mountChat({ [EMBED_IMAGE_PREVIEW_KEY as symbol]: host })
+    await flushPromises()
+    w.getComponent({ name: 'ChatAttachments' }).vm.$emit('preview', 'blob:picture', 'Screenshot.png')
+    await flushPromises()
+    expect(host.open).toHaveBeenCalledWith('blob:picture', 'Screenshot.png')
+    expect(w.getComponent({ name: 'ChatImagePreviewModal' }).props('open')).toBe(false)
+  })
+
   it('backs off failed connections up to thirty seconds without blocking ticket renewal', async () => {
     mountChat()
     await flushPromises()
@@ -144,13 +310,14 @@ describe('shared main chat recovery', () => {
   })
 
   it('stops on a terminal stream error without waiting for another HTTP poll', async () => {
-    mountChat()
+    const w = mountChat()
     await flushPromises()
-    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], busy: false } })
+    sockets[0]!.receive({ type: 'snapshot', history: { rows: [], queue: [{ id: 'queued', text: 'Waiting' }], busy: true } })
     sockets[0]!.receive({ type: 'error', status: 409 })
     await vi.advanceTimersByTimeAsync(60_000)
     expect(client.connectMain).toHaveBeenCalledTimes(1)
     expect(client.getModel).not.toHaveBeenCalled()
+    expect(w.findComponent({ name: 'PendingSendQueuePanel' }).exists()).toBe(false)
   })
 
   it('keeps streamed tails ahead of a delayed HTTP seed and supports truncation', async () => {

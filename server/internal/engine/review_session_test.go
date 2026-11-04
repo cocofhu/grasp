@@ -101,8 +101,12 @@ func TestReviewSessionQueueAndCancel(t *testing.T) {
 		t.Fatal("expected not ready while queued/thinking")
 	}
 
-	if err := eng.CancelReviewSession(run.ID, "prop"); err != nil {
-		t.Fatalf("cancel: %v", err)
+	active, ok := eng.laneSession(run.ID, "prop", "").Active()
+	if !ok || eng.CancelPreviewShareTurn(run.ID, "prop", "stale") {
+		t.Fatal("stale preview cancelled an active review")
+	}
+	if !eng.CancelPreviewShareTurn(run.ID, "prop", active.ID) {
+		t.Fatal("preview did not cancel the observed review turn")
 	}
 	close(hold)
 	if err := eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second); err != nil {

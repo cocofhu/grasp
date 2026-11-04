@@ -37,6 +37,7 @@ type previewMainUpdate struct {
 type previewMainSnapshot struct {
 	history *previewMainHistory
 	rows    []json.RawMessage
+	queue   json.RawMessage
 }
 
 func newPreviewMainSnapshot(history *previewMainHistory) (*previewMainSnapshot, error) {
@@ -48,6 +49,11 @@ func newPreviewMainSnapshot(history *previewMainHistory) (*previewMainSnapshot, 
 		}
 		snapshot.rows[i] = encoded
 	}
+	var err error
+	snapshot.queue, err = json.Marshal(history.Queue)
+	if err != nil {
+		return nil, err
+	}
 	return snapshot, nil
 }
 
@@ -58,7 +64,10 @@ func (s *previewMainSnapshot) withLive(live *models.SoloMessage, busy bool) (*pr
 		}
 		history := *s.history
 		history.Busy = busy
-		return &previewMainSnapshot{history: &history, rows: s.rows}, nil
+		if !busy {
+			history.ActiveTurnID = ""
+		}
+		return &previewMainSnapshot{history: &history, rows: s.rows, queue: s.queue}, nil
 	}
 	index, insert := -1, false
 	for i, row := range s.history.Rows {
@@ -92,6 +101,9 @@ func (s *previewMainSnapshot) withLive(live *models.SoloMessage, busy bool) (*pr
 	}
 	history := *s.history
 	history.Busy = busy
+	if !busy {
+		history.ActiveTurnID = ""
+	}
 	history.Rows = append([]sharedPreviewRow(nil), history.Rows...)
 	rows := append([]json.RawMessage(nil), s.rows...)
 	if insert {
@@ -101,7 +113,7 @@ func (s *previewMainSnapshot) withLive(live *models.SoloMessage, busy bool) (*pr
 		copy(rows[index+1:], rows[index:])
 	}
 	history.Rows[index], rows[index] = row, encoded
-	return &previewMainSnapshot{history: &history, rows: rows}, nil
+	return &previewMainSnapshot{history: &history, rows: rows, queue: s.queue}, nil
 }
 
 func (s *previewMainSnapshot) frameAfter(previous *previewMainSnapshot) gin.H {
@@ -112,7 +124,12 @@ func (s *previewMainSnapshot) frameAfter(previous *previewMainSnapshot) gin.H {
 	for start < len(s.rows) && start < len(previous.rows) && bytes.Equal(s.rows[start], previous.rows[start]) {
 		start++
 	}
-	return gin.H{"type": "tail", "start": start, "rows": s.rows[start:], "busy": s.history.Busy, "model": s.history.Model}
+	frame := gin.H{"type": "tail", "start": start, "rows": s.rows[start:], "busy": s.history.Busy, "model": s.history.Model,
+		"activeTurnId": s.history.ActiveTurnID}
+	if !bytes.Equal(s.queue, previous.queue) {
+		frame["queue"] = s.history.Queue
+	}
+	return frame
 }
 
 // One source subscription and one coalescing loop serve every viewer of a

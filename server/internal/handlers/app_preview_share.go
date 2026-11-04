@@ -234,20 +234,24 @@ func (h *Handlers) workflowPreviewDialogue(runID, nodeID string) (engine.Dialogu
 }
 
 type sharedPreviewRow struct {
-	ID          string                        `json:"id"`
-	Role        string                        `json:"role"`
-	Text        string                        `json:"text"`
-	At          string                        `json:"at,omitempty"`
-	Streaming   bool                          `json:"streaming,omitempty"`
-	Thought     string                        `json:"thought,omitempty"`
-	Tools       []models.ReactTool            `json:"tools,omitempty"`
-	Parts       []models.AcpPart              `json:"parts,omitempty"`
-	StartedAt   string                        `json:"startedAt,omitempty"`
-	EndedAt     string                        `json:"endedAt,omitempty"`
-	Interrupted bool                          `json:"interrupted,omitempty"`
-	Annotations []gateshare.PreviewAnnotation `json:"annotations,omitempty"`
-	Images      []models.PromptImage          `json:"images,omitempty"`
-	References  []models.MessageReference     `json:"references,omitempty"`
+	ID           string                        `json:"id"`
+	Role         string                        `json:"role"`
+	Text         string                        `json:"text"`
+	At           string                        `json:"at,omitempty"`
+	Streaming    bool                          `json:"streaming,omitempty"`
+	Thought      string                        `json:"thought,omitempty"`
+	Tools        []models.ReactTool            `json:"tools,omitempty"`
+	Parts        []models.AcpPart              `json:"parts,omitempty"`
+	StartedAt    string                        `json:"startedAt,omitempty"`
+	EndedAt      string                        `json:"endedAt,omitempty"`
+	Interrupted  bool                          `json:"interrupted,omitempty"`
+	Annotations  []gateshare.PreviewAnnotation `json:"annotations,omitempty"`
+	Images       []models.PromptImage          `json:"images,omitempty"`
+	References   []models.MessageReference     `json:"references,omitempty"`
+	Execution    *previewReplyExecution        `json:"execution,omitempty"`
+	Usage        *models.TokenUsage            `json:"usage,omitempty"`
+	UsageByModel models.TokenUsageByModel      `json:"usageByModel,omitempty"`
+	DurationMs   int64                         `json:"durationMs,omitempty"`
 }
 
 type previewChatMessage struct {

@@ -7,8 +7,8 @@ import {
   parseEmbedImageFrameMessage,
   type EmbedImageFrameMessage,
 } from '@/lib/inbox/embedImagePreview'
-import { EMBED_IMAGE_MESSAGE, parseEmbedThemeFromHash, parseEmbedThemeMessage } from '@/lib/inbox/embedChat'
-import { LOCALE_STORAGE_KEY, setLocale } from '@/lib/shared/locale'
+import { EMBED_IMAGE_MESSAGE, parseEmbedLocaleFromHash, parseEmbedThemeFromHash, parseEmbedThemeMessage } from '@/lib/inbox/embedChat'
+import { applyPublicLocale, LOCALE_STORAGE_KEY, setLocale, type AppLocale } from '@/lib/shared/locale'
 import { setThemeOverride } from '@/lib/shared/theme'
 
 const route = useRoute()
@@ -21,6 +21,12 @@ const label = ref('')
 const missing = ref(false)
 
 let channel: BroadcastChannel | null = null
+let openingLocale: AppLocale | null = null
+let knownParentOrigin = ''
+
+function parentOrigin(): string {
+  return window.location.ancestorOrigins?.[0] || knownParentOrigin || '*'
+}
 
 function takeHash(): string {
   const hash = window.location.hash
@@ -43,8 +49,9 @@ function onFrameMessage(ev: MessageEvent) {
 
 function onMessage(e: MessageEvent) {
   if (window.parent === window || e.source !== window.parent) return
-  const origin = window.location.ancestorOrigins?.[0]
-  if (origin && e.origin !== origin) return
+  const origin = parentOrigin()
+  if (origin !== '*' && e.origin !== origin) return
+  if (e.origin && e.origin !== 'null') knownParentOrigin = e.origin
   const theme = parseEmbedThemeMessage(e.data)
   if (theme) {
     setThemeOverride(theme)
@@ -59,8 +66,15 @@ function onMessage(e: MessageEvent) {
 }
 
 function onStorage(e: StorageEvent) {
+  if (openingLocale) return
   if (e.key !== LOCALE_STORAGE_KEY) return
   if (e.newValue === 'zh-CN' || e.newValue === 'en') void setLocale(e.newValue)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || window.parent === window) return
+  e.preventDefault()
+  window.parent.postMessage({ type: EMBED_IMAGE_MESSAGE, action: 'close' }, parentOrigin())
 }
 
 function onBlobMissing(blobId: string) {
@@ -69,7 +83,10 @@ function onBlobMissing(blobId: string) {
 }
 
 onMounted(() => {
-  const theme = parseEmbedThemeFromHash(takeHash())
+  const hash = takeHash()
+  const theme = parseEmbedThemeFromHash(hash)
+  openingLocale = parseEmbedLocaleFromHash(hash)
+  if (openingLocale) void applyPublicLocale(openingLocale)
   if (theme) setThemeOverride(theme)
   try {
     channel = new BroadcastChannel(embedImageChannelName(runId, nodeId))
@@ -82,6 +99,7 @@ onMounted(() => {
   }
   window.addEventListener('message', onMessage)
   window.addEventListener('storage', onStorage)
+  window.addEventListener('keydown', onKeydown)
 })
 
 onUnmounted(() => {
@@ -90,6 +108,7 @@ onUnmounted(() => {
   channel = null
   window.removeEventListener('message', onMessage)
   window.removeEventListener('storage', onStorage)
+  window.removeEventListener('keydown', onKeydown)
   setThemeOverride(null)
 })
 </script>

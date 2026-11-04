@@ -22,6 +22,24 @@ func previewHistoryFixture(size int) *previewMainHistory {
 	return history
 }
 
+func TestPreviewMainTailCarriesActiveTurnChangesAndClearsItWhenIdle(t *testing.T) {
+	first, err := newPreviewMainSnapshot(&previewMainHistory{Busy: true, ActiveTurnID: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := newPreviewMainSnapshot(&previewMainHistory{Busy: true, ActiveTurnID: "next"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.frameAfter(first)["activeTurnId"] != "next" {
+		t.Fatal("active target change missing from tail")
+	}
+	idle, err := next.withLive(nil, false)
+	if err != nil || idle.frameAfter(next)["activeTurnId"] != "" || next.history.ActiveTurnID != "next" {
+		t.Fatalf("idle did not clear target immutably: %v", err)
+	}
+}
+
 func TestPreviewMainTailKeepsHistoryImmutableAndSkipsUnchangedPrefix(t *testing.T) {
 	seed, err := newPreviewMainSnapshot(previewHistoryFixture(1000))
 	if err != nil {

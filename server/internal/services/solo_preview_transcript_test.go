@@ -53,8 +53,30 @@ func TestSoloPreviewTranscriptKeepsLiveProcessBeforeTextAndQueue(t *testing.T) {
 	if live == nil || !active || len(live.Events) != 2 || queries.Load() != 0 {
 		t.Fatalf("live snapshot read persisted history: active=%v queries=%d reply=%+v", active, queries.Load(), live)
 	}
+	pending := solo.PreviewPending(view.ID)
+	if len(pending) != 1 || pending[0].Content != "queued" || queries.Load() != 0 {
+		t.Fatalf("queue read history or lost the pending turn: %+v queries=%d", pending, queries.Load())
+	}
 	if err := db.Callback().Query().Remove("preview-live-query-count"); err != nil {
 		t.Fatal(err)
+	}
+	if err := solo.RemoveQueued(view.ID, "alice", pending[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(solo.PreviewPending(view.ID)) != 0 {
+		t.Fatal("removed turn remained in public queue")
+	}
+	for _, text := range []string{"first queued", "second queued"} {
+		if _, err := solo.Send(view.ID, "alice", text, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pending = solo.PreviewPending(view.ID)
+	if err := solo.ReorderQueued(view.ID, "alice", []string{pending[1].ID, pending[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	if got := solo.PreviewPending(view.ID); len(got) != 2 || got[0].Content != "second queued" || got[1].Content != "first queued" {
+		t.Fatalf("public queue lost the server order: %+v", got)
 	}
 	if err := db.Create(&models.SoloMessage{ID: "saved-reply", SessionID: view.ID, Role: "assistant", Content: "Saved"}).Error; err != nil {
 		t.Fatal(err)

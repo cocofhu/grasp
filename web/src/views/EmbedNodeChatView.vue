@@ -16,6 +16,8 @@ import type { ScopedReferenceSearch } from '@/lib/solo/useReferenceSearch'
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import type { ScopedSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import {
+  EMBED_PAGE_PICK_KEY,
+  EMBED_PICK_REQUEST_MESSAGE,
   EMBED_LANG_MESSAGE,
   EMBED_READY_MESSAGE,
   EMBED_SESSION_MESSAGE,
@@ -139,6 +141,12 @@ const liveNotice = ref('')
 
 function postToPage(msg: Record<string, unknown>) {
   if (window.parent !== window) window.parent.postMessage(msg, parentOrigin())
+}
+
+if (window.parent !== window) {
+  provide(EMBED_PAGE_PICK_KEY, () => {
+    if (phase.value === 'ready') postToPage({ type: EMBED_PICK_REQUEST_MESSAGE })
+  })
 }
 
 const embedImagePreview = createEmbedImagePreview({

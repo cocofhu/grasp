@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -14,13 +14,15 @@ import { useChatComposerDraft } from '@/lib/chat/useChatComposerDraft'
 import ChatAttachments from '@/components/chat/ChatAttachments.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
+import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
+import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
 import { attachmentByteLength, isImageAttachment, SITE_ATTACH_MAX_BYTES } from '@/lib/shared/attachments'
 import type { ReferenceSearchParams } from '@/lib/api/clients/soloClient'
 import VisitModelSelect, { type VisitModelTransport } from './VisitModelSelect.vue'
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import type { ReactAnnotation } from '@/lib/shared/types'
-import { appendPreviewPick, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
-import { publicAppPreviewClient, type PreviewChatHistory, type PreviewChatMessage, type PreviewChatRow, type PreviewShareSession } from '@/lib/inbox/appPreviewShare'
+import { appendPreviewPick, readPreviewMessage, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
+import { publicAppPreviewClient, type PreviewChatHistory, type PreviewChatMessage, type PreviewChatQueueItem, type PreviewChatRow, type PreviewShareSession } from '@/lib/inbox/appPreviewShare'
 
 const { t } = useI18n()
 const props = defineProps<{ token: string }>()
@@ -29,6 +31,9 @@ const client = publicAppPreviewClient(props.token)
 const controller = new AbortController()
 const session = ref<PreviewShareSession>()
 const rows = ref<PreviewChatRow[]>([])
+const queued = ref<PreviewChatQueueItem[]>([])
+const queueRows = computed(() => queued.value.map(item => ({ id: item.id,
+  ...readPreviewMessage(item.text, item.annotations), images: item.images || [] })))
 const mainChoice = ref<VisitModelChoice>()
 const draft = useChatComposerDraft()
 const { input, textarea, attach, mention } = draft
@@ -36,7 +41,9 @@ const picks = ref<ReactAnnotation[]>([])
 const messageError = ref('')
 const pageError = ref<'inactive' | 'network' | ''>('')
 const busy = ref(false)
+const mainActiveTurnID = ref('')
 const sending = ref(false)
+const stopping = ref(false)
 const loading = ref(true)
 const chatReady = ref(false)
 const guestModelChanging = ref(false)
@@ -50,6 +57,7 @@ let mainSocket: WebSocket | undefined
 let mainStreamReady = false
 let reconnectMain: ReturnType<typeof setTimeout> | undefined
 let mainReconnectDelay = 1_000
+const MAIN_CONNECTION_HEALTH_MS = 5_000
 let mainStopped = false
 
 const modelTransport: VisitModelTransport = {
@@ -98,6 +106,11 @@ const modelTransport: VisitModelTransport = {
 }
 const { scroller, onScroll, scrollDown } = useChatTailScroll()
 const imagePreview = useChatImagePreview()
+const embedImagePreview = inject(EMBED_IMAGE_PREVIEW_KEY, null)
+function openImagePreview(src: string, label: string) {
+  if (embedImagePreview) embedImagePreview.open(src, label)
+  else imagePreview.openChatImagePreview(src, label)
+}
 const referenceScope = { sessionId: 'shared-app-preview' }
 const searchReferences = <T,>(_id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
   client.searchReferences<T>(params, signal ?? controller.signal)
@@ -148,6 +161,7 @@ function handleMainUnavailable(error: unknown): boolean {
   if (status !== 409 && status !== 410) return false
   mainStopped = true
   mainStreamReady = false
+  queued.value = []
   chatReady.value = false
   busy.value = false
   clearTimeout(reconnectMain)
@@ -194,14 +208,14 @@ async function loadSession() {
   }
 }
 
-async function pollMain() {
+async function pollMain(forceHistory = false) {
   if (!session.value || mainStopped || controller.signal.aborted || readingMain) return
   clearTimeout(poll)
   readingMain = true
   const modelRevision = mainModelRevision
   const streamRevision = mainStreamRevision
   try {
-    if (mainStreamReady) {
+    if (mainStreamReady && !forceHistory) {
       // Workflow model settings can change without publishing dialogue rows.
       const choice = await client.getModel(controller.signal).catch(error => {
         handleMainUnavailable(error)
@@ -226,8 +240,10 @@ async function pollMain() {
 
 function applyMainHistory(next: PreviewChatHistory, applyModel: boolean) {
   rows.value = next.rows
+  queued.value = next.queue || []
   loadImages(next.rows)
   busy.value = next.busy
+  mainActiveTurnID.value = next.activeTurnId || ''
   if (next.model && applyModel) mainChoice.value = next.model
   if (!chatReady.value) messageError.value = ''
   chatReady.value = true
@@ -241,7 +257,7 @@ function connectMain() {
   mainSocket = current
   current.onmessage = event => {
     if (mainSocket !== current || mainStopped || controller.signal.aborted || !session.value || typeof event.data !== 'string') return
-    let frame: { type?: string; history?: PreviewChatHistory; start?: number; rows?: PreviewChatRow[]; busy?: boolean; model?: VisitModelChoice; status?: number }
+    let frame: { type?: string; history?: PreviewChatHistory; start?: number; rows?: PreviewChatRow[]; queue?: PreviewChatQueueItem[]; busy?: boolean; activeTurnId?: string; model?: VisitModelChoice; status?: number }
     try { frame = JSON.parse(event.data) } catch { return }
     if (!frame || typeof frame !== 'object') return
     if (frame.type === 'error') {
@@ -255,7 +271,7 @@ function connectMain() {
         current.close()
         return
       }
-      next = { rows: [...rows.value.slice(0, frame.start), ...frame.rows], busy: frame.busy === true, model: frame.model }
+      next = { rows: [...rows.value.slice(0, frame.start), ...frame.rows], queue: frame.queue ?? queued.value, busy: frame.busy === true, activeTurnId: frame.activeTurnId, model: frame.model }
     } else return
     mainStreamReady = true
     healthySince ??= performance.now()
@@ -267,7 +283,7 @@ function connectMain() {
     mainStreamReady = false
     if (controller.signal.aborted || mainStopped || !session.value) return
     // A snapshot followed by an immediate stream error must keep backing off.
-    if (healthySince !== undefined && performance.now() - healthySince >= 5_000) mainReconnectDelay = 1_000
+    if (healthySince !== undefined && performance.now() - healthySince >= MAIN_CONNECTION_HEALTH_MS) mainReconnectDelay = 1_000
     void pollMain().finally(() => {
       if (controller.signal.aborted || mainStopped || !session.value) return
       reconnectMain = setTimeout(connectMain, mainReconnectDelay)
@@ -303,6 +319,10 @@ function connectGuest() {
       reply.text = message.text || ''
       if (Array.isArray(message.parts)) reply.parts = message.parts
       if (message.startedAt) reply.startedAt = message.startedAt
+      if (message.execution) reply.execution = message.execution
+      if ('usage' in message) reply.usage = message.usage
+      if ('usageByModel' in message) reply.usageByModel = message.usageByModel
+      if (message.durationMs !== undefined) reply.durationMs = message.durationMs
       reply.endedAt = message.endedAt
       reply.interrupted = message.interrupted
       reply.streaming = message.type === 'reply'
@@ -311,7 +331,8 @@ function connectGuest() {
     if (message.type === 'done' || message.type === 'error') {
       if (reply) reply.streaming = false
       busy.value = false
-      if (message.failed || message.type === 'error') messageError.value = t('pages.appPreview.share.sendFailed')
+      stopping.value = false
+      if ((message.failed && !message.interrupted) || message.type === 'error') messageError.value = t('pages.appPreview.share.sendFailed')
     }
   }
   current.onclose = () => {
@@ -319,6 +340,7 @@ function connectGuest() {
     guestModelReply?.(false)
     chatReady.value = false
     busy.value = false
+    stopping.value = false
     const reply = rows.value.find(row => row.id === guestReplyId)
     if (reply) reply.streaming = false
     messageError.value = t('pages.appPreview.share.chatUnavailable')
@@ -335,7 +357,7 @@ async function submit() {
   const selected = picks.value.slice()
   const images = attach.attachments.value.slice()
   const references = mention.refs.value
-  if (!canSubmit.value || !chatReady.value || sending.value || guestModelChanging.value || !session.value) return
+  if (!canSubmit.value || !chatReady.value || sending.value || stopping.value || guestModelChanging.value || !session.value) return
   if (attach.blockSendIfOversized(images)) return
   if (images.length > 16 || images.reduce((total, image) => total + attachmentByteLength(image), 0) > SITE_ATTACH_MAX_BYTES) {
     messageError.value = t('pages.appPreview.share.attachmentLimit')
@@ -352,14 +374,15 @@ async function submit() {
   messageError.value = ''
   if (session.value.chatMode === 'isolated') {
     if (busy.value || socket?.readyState !== WebSocket.OPEN) return
+    const id = ++messageNumber
+    const replyId = `assistant-${id}`
     try {
-      socket.send(JSON.stringify(message))
+      socket.send(JSON.stringify({ ...message, id: replyId }))
     } catch {
       messageError.value = t('pages.appPreview.share.sendFailed')
       return
     }
-    const id = ++messageNumber
-    guestReplyId = `assistant-${id}`
+    guestReplyId = replyId
     rows.value.push(
       { id: `user-${id}`, role: 'user', text: draft, annotations: selected, images, references, at: new Date().toISOString() },
       { id: guestReplyId, role: 'assistant', text: '', streaming: true, startedAt: new Date().toISOString() },
@@ -390,6 +413,36 @@ async function submit() {
   }
 }
 
+async function cancelTurn() {
+  if (!busy.value || !chatReady.value || stopping.value || !session.value) return
+  const turnID = mainActiveTurnID.value
+  if (session.value.chatMode === 'main' && !turnID) return
+  messageError.value = ''
+  stopping.value = true
+  if (session.value.chatMode === 'isolated') {
+    try {
+      if (socket?.readyState !== WebSocket.OPEN) throw new Error('disconnected')
+      socket.send(JSON.stringify({ type: 'cancel', id: guestReplyId }))
+    } catch {
+      stopping.value = false
+      messageError.value = t('pages.appPreview.share.cancelFailed')
+    }
+    // The terminal frame confirms interruption; keep the partial reply visible.
+    return
+  }
+  try {
+    await client.cancelMain(turnID, controller.signal)
+    void pollMain()
+  } catch (error) {
+    if ((error as { status?: number; code?: string }).status === 409 && (error as { code?: string }).code === 'turn_changed') {
+      messageError.value = t('pages.appPreview.share.cancelChanged')
+      void pollMain(true)
+    } else if (!handleMainUnavailable(error) && !controller.signal.aborted) messageError.value = t('pages.appPreview.share.cancelFailed')
+  } finally {
+    stopping.value = false
+  }
+}
+
 onMounted(loadSession)
 onBeforeUnmount(() => {
   controller.abort()
@@ -417,7 +470,7 @@ onBeforeUnmount(() => {
         <template v-for="row in rows" :key="row.id">
           <div v-if="row.role === 'user' || row.role === 'human'" class="flex justify-end">
             <div class="min-w-0 max-w-[85%]">
-              <ChatAttachments v-if="row.images?.length" :images="shownAttachments(row)" sent @preview="imagePreview.openChatImagePreview" />
+              <ChatAttachments v-if="row.images?.length" :images="shownAttachments(row)" sent @preview="openImagePreview" />
               <ChatUserMessage v-if="row.text || row.annotations?.length" :text="row.text" :annotations="row.annotations" :references="row.references" :created-at="row.at" />
               <div v-if="row.at" class="chat-meta mt-1.5 text-right">{{ relTime(row.at) }}</div>
             </div>
@@ -433,7 +486,7 @@ onBeforeUnmount(() => {
             :interrupted="row.interrupted"
             :started-at="row.startedAt"
             :ended-at="row.endedAt"
-            :metadata="row.at ? { createdAt: row.at } : undefined"
+            :metadata="row"
             @reveal="scrollDown()"
           />
           <p v-else class="text-xs text-txt3">{{ row.text }}</p>
@@ -444,6 +497,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div class="chat-pane-composer shrink-0 space-y-2 py-3">
+      <div v-if="queueRows.length" class="chat-pane-column">
+        <PendingSendQueuePanel :items="queueRows" readonly panel-test-id="shared-app-chat-queue" />
+      </div>
       <div v-if="messageError" class="flex items-center gap-2 text-xs text-err" role="alert">
         <span class="flex-1">{{ messageError }}</span>
         <AppButton v-if="!chatReady && session.chatMode === 'isolated'" size="sm" type="button" @click="retryGuest">
@@ -463,7 +519,7 @@ onBeforeUnmount(() => {
         pick-test-id="shared-app-chat-pick"
         @send="submit"
         @remove-pick="picks.splice($event, 1)"
-        @preview="imagePreview.openChatImagePreview"
+        @preview="openImagePreview"
       >
         <template #model>
           <VisitModelSelect
@@ -480,10 +536,18 @@ onBeforeUnmount(() => {
         </template>
         <template #actions>
           <ComposerPrimaryAction
+            v-if="busy"
+            kind="stop"
+            :label="t('pages.solo.chat.stop')"
+            :disabled="!chatReady || stopping || (session.chatMode === 'main' && !mainActiveTurnID)"
+            testid="shared-app-chat-stop"
+            @click="cancelTurn"
+          />
+          <ComposerPrimaryAction
             kind="send"
             :label="t('pages.solo.chat.send')"
             :busy="sending"
-            :disabled="!chatReady || sending || guestModelChanging || !canSubmit || (session.chatMode === 'isolated' && busy)"
+            :disabled="!chatReady || sending || stopping || guestModelChanging || !canSubmit || (session.chatMode === 'isolated' && busy)"
             testid="shared-app-chat-send"
             @click="submit"
           />

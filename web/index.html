@@ -4,6 +4,33 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
+    <script data-boot-theme>
+      ;(function () {
+        var root = document.documentElement
+        var previewTheme = null
+        function valid(value) { return value === 'light' || value === 'dark' }
+        if (location.pathname.indexOf('/embed/') === 0) {
+          try { previewTheme = new URLSearchParams(location.hash.slice(1)).get('theme') } catch (_) {}
+          var key = 'grasp-embed-theme:' + location.pathname
+          if (!valid(previewTheme)) {
+            try { previewTheme = sessionStorage.getItem(key) } catch (_) {}
+          }
+          if (valid(previewTheme)) {
+            root.setAttribute('data-grasp-embed-theme', previewTheme)
+            try { sessionStorage.setItem(key, previewTheme) } catch (_) {}
+          }
+        }
+        var chosen = previewTheme
+        if (!valid(chosen)) {
+          try { chosen = localStorage.getItem('grasp-theme') } catch (_) {}
+        }
+        if (!valid(chosen)) chosen = 'dark'
+        root.classList.toggle('light', chosen === 'light')
+        root.classList.toggle('dark', chosen === 'dark')
+        root.style.colorScheme = chosen
+        document.querySelector('meta[name="color-scheme"]').content = chosen
+      })()
+    </script>
     <title>Grasp · 开发工作流编排</title>
     <link rel="icon" type="image/x-icon" sizes="16x16 24x24 32x32 48x48 64x64 128x128 256x256" href="/favicon.ico?v=grasp-character" />
     <!-- Brand-critical Inter 600: discover font before CSS/JS (same URL as @font-face) -->
@@ -16,13 +43,15 @@
     />
     <style>
       /* Critical boot shell: paint brand before Vue mount (replaced on #app mount) */
+      :root { --boot-bg: #0a0a0b; --boot-txt: #ededf0; --boot-muted: #6e6e78; }
+      html.light { --boot-bg: #fafafb; --boot-txt: #18181b; --boot-muted: #52525b; }
       html,
       body,
       #app {
         height: 100%;
         margin: 0;
-        background: #0a0a0b;
-        color: #ededf0;
+        background: var(--boot-bg);
+        color: var(--boot-txt);
         font-family: Inter, ui-sans-serif, system-ui, sans-serif;
       }
       .boot-shell {
@@ -34,7 +63,7 @@
         box-sizing: border-box;
         background:
           radial-gradient(ellipse 80% 60% at 50% 0%, rgba(123, 97, 255, 0.08), transparent),
-          #0a0a0b;
+          var(--boot-bg);
       }
       .boot-shell .brand-logo {
         display: flex;
@@ -57,7 +86,7 @@
       }
       .boot-shell .brand-logo__tagline {
         font-size: 12px;
-        color: #6e6e78;
+        color: var(--boot-muted);
       }
     </style>
   </head>

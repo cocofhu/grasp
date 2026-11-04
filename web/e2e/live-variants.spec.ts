@@ -497,6 +497,29 @@ test.describe('production Chat composer page candidates', () => {
     await expect(drawer(page).getByTestId('clarify-draft-image-thumb')).toBeVisible()
   }
 
+  test('workflow composer picks a page element and preserves its draft and attachment', async ({ page }) => {
+    await entry(page, 'entry-composer-pick')
+    const chat = drawer(page)
+    const input = chat.getByTestId('clarify-input')
+    await input.fill('Keep this draft while picking')
+    await attachReference(page)
+    await chat.getByTestId('clarify-attach-btn').click()
+    await chat.getByTestId('clarify-plus-pick').click()
+    await expect(bar(page, 'drawer')).toBeHidden()
+    await page.keyboard.press('Escape')
+    await expect(input).toBeVisible()
+    await expect(input).toHaveValue('Keep this draft while picking')
+    await expect(chat.getByTestId('clarify-draft-image-thumb')).toBeVisible()
+    await chat.getByTestId('clarify-attach-btn').click()
+    await chat.getByTestId('clarify-plus-pick').click()
+    await page.locator('#newsletter').click({ position: { x: 15, y: 15 } })
+    await expect(chat.getByTestId('clarify-annotation-chip')).toContainText('#newsletter')
+    await expect(input).toHaveValue('Keep this draft while picking')
+    await expect(chat.getByTestId('clarify-draft-image-thumb')).toBeVisible()
+    await expect(chat.getByTestId('clarify-plus-menu')).toHaveCount(0)
+    await expect(page.locator('html')).not.toHaveClass(/__hp-inspecting/)
+  })
+
   test('Chat switch generates 3 candidates without picking, syncs selection 2 and waits for Chat adoption', async ({ page }, testInfo) => {
     const key = 'entry-composer'
     await entry(page, key)

@@ -613,6 +613,9 @@ describe('PmLeaderChat loading states S1–S5', () => {
   })
 
   it('S2: switching threads clears old messages and shows loadingHistory', async () => {
+    const messagesB = { items: [{ id: 'u2', role: 'user', content: 'B-only', status: 'ok' }] }
+    let finishB!: (messages: typeof messagesB) => void
+    const pendingB = new Promise<typeof messagesB>(resolve => { finishB = resolve })
     apiMocks.listPmThreads.mockResolvedValue({
       items: [
         { id: 'thr-a', agentAvailable: true, title: '会话A' },
@@ -623,8 +626,7 @@ describe('PmLeaderChat loading states S1–S5', () => {
       if (tid === 'thr-a') {
         return { items: [{ id: 'u1', role: 'user', content: 'A-only', status: 'ok' }] }
       }
-      await new Promise((r) => setTimeout(r, 30))
-      return { items: [{ id: 'u2', role: 'user', content: 'B-only', status: 'ok' }] }
+      return pendingB
     })
 
     const wrapper = mountChat()
@@ -639,6 +641,7 @@ describe('PmLeaderChat loading states S1–S5', () => {
     expect(wrapper.text()).not.toContain('A-only')
     expect(wrapper.find('[data-testid="pm-messages-loading"]').exists()).toBe(true)
 
+    finishB(messagesB)
     await vi.waitFor(() => {
       expect(wrapper.text()).toContain('B-only')
     })

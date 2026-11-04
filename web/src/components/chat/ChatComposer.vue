@@ -132,7 +132,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
               >
                 <Icon name="plus" :size="18" />
               </button>
-              <ReferencePlusMenu :open="plusOpen" :allow-solo="allowSolo" :test-prefix="`${testPrefix}-plus`" @upload="pickFiles" @reference="openPicker" />
+              <ReferencePlusMenu :open="plusOpen" :allow-solo="allowSolo" :test-prefix="`${testPrefix}-plus`" @upload="pickFiles" @reference="openPicker" @pick="plusOpen = false" />
             </div>
             <slot name="model" />
           </div>

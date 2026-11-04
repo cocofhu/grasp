@@ -89,6 +89,7 @@ import {
 } from '@/lib/inbox/clarifyDemoWindow'
 import { EMBED_DEMO_PREVIEW_KEY } from '@/lib/inbox/embedDemoPreview'
 import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
+import { EMBED_PAGE_PICK_KEY } from '@/lib/inbox/embedChat'
 import { LIVE_CARD_HOST, isLiveBusy } from '@/lib/inbox/liveVariants'
 import type {
   AgentPart,
@@ -593,6 +594,8 @@ const composerInputLocked = computed(() => observeComposer.value || !!props.comp
 
 // @ references: the user's Solo sessions, and Issues / PRs in this run's repositories.
 const referencesOn = computed(() => props.referencesEnabled && !composerInputLocked.value && !props.done && props.active && !props.coldSession)
+const pickPageElement = inject(EMBED_PAGE_PICK_KEY, null)
+const plusMenuOn = computed(() => referencesOn.value || !!pickPageElement)
 const mention = useReferenceComposer({ input: draft, textarea: textareaRef, composing, defaultRepo: computed(() => ''), enabled: referencesOn })
 const mentionPicker = mention.picker
 const mentionScope = computed<ReferenceScope>(() => ({ runId: props.runId, nodeId: props.nodeId }))
@@ -608,7 +611,7 @@ watch(() => `${props.runId}\0${props.nodeId}`, () => {
 })
 
 function onPlus() {
-  if (referencesOn.value) plusOpen.value = !plusOpen.value
+  if (plusMenuOn.value) plusOpen.value = !plusOpen.value
   else fileInput.value?.click()
 }
 function plusPickFiles() {
@@ -1980,15 +1983,15 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               class="chat-action-button"
               :title="translate('pages.clarify.addImage')"
               :aria-label="translate('pages.clarify.addImage')"
-              :aria-haspopup="referencesOn ? 'menu' : undefined"
-              :aria-expanded="referencesOn ? plusOpen : undefined"
+              :aria-haspopup="plusMenuOn ? 'menu' : undefined"
+              :aria-expanded="plusMenuOn ? plusOpen : undefined"
               data-testid="clarify-attach-btn"
               :disabled="composerInputLocked"
               @click="onPlus"
             >
               <Icon name="plus" :size="18" />
             </button>
-            <ReferencePlusMenu :open="plusOpen" test-prefix="clarify-plus" @upload="plusPickFiles" @reference="plusReference" />
+            <ReferencePlusMenu :open="plusOpen" :allow-references="referencesOn" test-prefix="clarify-plus" @upload="plusPickFiles" @reference="plusReference" @pick="plusOpen = false" />
           </div>
           <VisitModelSelect
             v-if="showModelSelect"

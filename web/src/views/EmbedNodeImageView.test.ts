@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import { markMissing, resetBlobMissingCacheForTests } from '@/lib/shared/blobMissingCache'
 import { embedImageChannelName } from '@/lib/inbox/embedImagePreview'
+import { LOCALE_STORAGE_KEY, setLocale } from '@/lib/shared/locale'
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { runId: 'run-1', nodeId: 'ap1' } }),
@@ -33,6 +34,46 @@ afterEach(() => {
 })
 
 describe('EmbedNodeImageView', () => {
+  it('learns the real parent origin for Escape when ancestorOrigins is unavailable', async () => {
+    const parent = { postMessage: vi.fn() }
+    const ancestor = Object.getOwnPropertyDescriptor(window.location, 'ancestorOrigins')
+    Object.defineProperty(window.location, 'ancestorOrigins', { configurable: true, value: undefined })
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent })
+    const w = mount(EmbedNodeImageView, { global: { plugins: [i18n()] } })
+    try {
+      window.dispatchEvent(new MessageEvent('message', { source: window, origin: 'https://wrong.example', data: { type: 'grasp-embed:image', action: 'open' } }))
+      window.dispatchEvent(new MessageEvent('message', { source: parent as never, origin: 'https://preview.example', data: { type: 'grasp-embed:image', action: 'open' } }))
+      window.dispatchEvent(new MessageEvent('message', { source: parent as never, origin: 'https://wrong.example', data: { type: 'grasp-embed:image', action: 'open' } }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      expect(parent.postMessage).toHaveBeenCalledWith({ type: 'grasp-embed:image', action: 'close' }, 'https://preview.example')
+    } finally {
+      w.unmount()
+      Object.defineProperty(window, 'parent', { configurable: true, value: window })
+      if (ancestor) Object.defineProperty(window.location, 'ancestorOrigins', ancestor)
+      else Reflect.deleteProperty(window.location, 'ancestorOrigins')
+    }
+  })
+
+  it('inherits the shared language without changing account preference and closes through the host', async () => {
+    await setLocale('en')
+    history.replaceState(null, '', '/embed/runs/run-1/nodes/ap1/image#theme=light&lang=zh-CN')
+    const parent = { postMessage: vi.fn() }
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent })
+    const w = mount(EmbedNodeImageView, { global: { plugins: [i18n()] } })
+    try {
+      await vi.waitFor(() => expect(document.documentElement.lang).toBe('zh-CN'))
+      expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
+      window.dispatchEvent(new StorageEvent('storage', { key: LOCALE_STORAGE_KEY, newValue: 'en' }))
+      await flushPromises()
+      expect(document.documentElement.lang).toBe('zh-CN')
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      expect(parent.postMessage).toHaveBeenCalledWith({ type: 'grasp-embed:image', action: 'close' }, expect.any(String))
+    } finally {
+      w.unmount()
+      Object.defineProperty(window, 'parent', { configurable: true, value: window })
+    }
+  })
+
   it('paints a usable picture inside the frame and not in a dialog', async () => {
     const { ch, seen } = listen()
     const w = mount(EmbedNodeImageView, { global: { plugins: [i18n()] }, attachTo: document.body })

@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,19 +13,34 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
+type heldPreviewProvider struct {
+	fakeProvider
+	started chan string
+	release chan struct{}
+}
+
+func (p *heldPreviewProvider) ReactReply(ctx context.Context, _ runtime.NodeReq, _ []models.ReactMessage, human string, _ []models.PromptImage, _ bool) runtime.ReactTurn {
+	p.started <- human
+	select {
+	case <-ctx.Done():
+	case <-p.release:
+	}
+	return runtime.ReactTurn{Interrupted: true, Msg: "Stopped"}
+}
+
 func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
-	for _, solo := range []bool{true, false} {
-		name := "workflow"
-		if solo {
-			name = "solo"
-		}
+	for _, name := range []string{"solo", "workflow", "clarify"} {
+		solo := name == "solo"
 		t.Run(name, func(t *testing.T) {
-			hn := newHarness(t)
+			provider := &heldPreviewProvider{started: make(chan string, 2), release: make(chan struct{})}
+			defer close(provider.release)
+			hn := newHarness(t, provider)
 			hn.h.Preview = services.NewPreviewService(hn.db, nil)
 			hn.h.Preview.SetAgents(hn.h.Agents)
 			hn.host.SetPreviewStore(hn.h.Preview)
@@ -50,6 +66,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				sb.RunID, sb.NodeID, sb.Purpose, sb.ThreadID = runID, "", services.SandboxPurposeSolo, "share-solo"
 				manage = "/api/solo/sessions/" + sb.ThreadID + "/preview-share"
 				mainHistory = "Private Solo main history"
+			} else if name == "clarify" {
+				seedInboxClarify(t, hn, runID, nodeID)
+				mainHistory = "请补充验收标准"
 			} else {
 				seedInboxReview(t, hn, runID, nodeID, false)
 			}
@@ -79,6 +98,9 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			parts := []models.AcpPart{{Kind: "thought", Text: "Inspect the heading"},
 				{Kind: "tool", Title: "read_file /private/notes", Status: "completed", Input: "private-tool-input", Output: "private-tool-output"},
 				{Kind: "message", Text: "Preview timeline reply"}}
+			execution := &models.ChatExecution{AgentName: "Recorded Agent", Backend: "opencode", ModelID: "recorded-model",
+				ConfigurationID: "private-recorded-configuration", StartedAt: time.Now().Add(-2 * time.Second)}
+			usage := &models.TokenUsage{InputTokens: 123, OutputTokens: 45}
 			if solo {
 				hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
 				if err := hn.db.Create(&models.SoloSession{ID: sb.ThreadID, UserID: "admin", AgentName: sb.Profile, SandboxID: sb.ID, Status: models.SoloStatusRunning}).Error; err != nil {
@@ -89,6 +111,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				}
 				if err := hn.db.Create(&models.SoloMessage{
 					ID: "timeline-reply", SessionID: sb.ThreadID, Role: "assistant", Content: "Preview timeline reply",
+					Execution: execution, Usage: usage,
 					DurationMs: 2000, Events: []json.RawMessage{
 						json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_thought_chunk","content":{"text":"Inspect the heading"}}}`),
 						json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"private-id","title":"read_file /private/notes","status":"completed","rawInput":{"path":"private-tool-input"},"rawOutput":"private-tool-output"}}`),
@@ -110,7 +133,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 					t.Fatal(err)
 				}
 				conv.Messages = append(conv.Messages,
-					models.ReactMessage{Role: "agent", Text: "Preview timeline reply", Parts: parts, At: time.Now().Format(time.RFC3339Nano), DurationMs: 2000},
+					models.ReactMessage{Role: "agent", Text: "Preview timeline reply", Parts: parts, At: time.Now().Format(time.RFC3339Nano), DurationMs: 2000, Execution: execution, Usage: usage},
 					models.ReactMessage{Role: "human", Text: "Owner attachment", Annotations: picks, Images: []models.PromptImage{ownerFile}},
 					models.ReactMessage{Role: "human", Text: "Visitor upload", PreviewShared: true, Images: []models.PromptImage{guestFile}},
 				)
@@ -210,6 +233,14 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				strings.Contains(history.Body.String(), "private-tool-") || strings.Contains(history.Body.String(), "/private/notes") {
 				t.Fatalf("shared timeline: %d %s", history.Code, history.Body)
 			}
+			for _, recorded := range []string{"Recorded Agent", `"modelId":"recorded-model"`, `"inputTokens":123`, `"durationMs":2000`, `"queue":[]`} {
+				if !strings.Contains(history.Body.String(), recorded) {
+					t.Fatalf("missing recorded field %s: %s", recorded, history.Body)
+				}
+			}
+			if strings.Contains(history.Body.String(), "private-recorded-configuration") {
+				t.Fatal("execution configuration leaked")
+			}
 			// Both main backends seed the public stream with the same timeline;
 			// independent tickets and cross-origin sockets cannot subscribe.
 			if solo {
@@ -220,6 +251,12 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				hn.h.Solo = service
 				if unavailable.Code != http.StatusServiceUnavailable {
 					t.Fatalf("missing Solo service: %d %s", unavailable.Code, unavailable.Body)
+				}
+				hn.h.Solo = nil
+				unavailable = hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, mainHeaders)
+				hn.h.Solo = service
+				if unavailable.Code != http.StatusServiceUnavailable {
+					t.Fatalf("cancel without Solo: %d %s", unavailable.Code, unavailable.Body)
 				}
 			}
 			var historyReads atomic.Int32
@@ -346,6 +383,70 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			if w := hn.doEmbed(http.MethodPost, path+"/model", map[string]any{"modelId": "unlisted-model"}, mainHeaders); w.Code != http.StatusBadRequest {
 				t.Fatalf("model outside bound group accepted: %d %s", w.Code, w.Body)
 			}
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, headers("isolated-drawer")); w.Code != http.StatusForbidden {
+				t.Fatalf("isolated drawer cancelled main chat: %d %s", w.Code, w.Body)
+			}
+			crossOrigin := headers("main-drawer")
+			crossOrigin["Origin"] = "https://other.example.test"
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, crossOrigin); w.Code != http.StatusForbidden {
+				t.Fatalf("cross-origin cancel: %d %s", w.Code, w.Body)
+			}
+			for _, tokenKind := range []string{"main", "main-drawer"} {
+				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, headers(tokenKind)); w.Code != http.StatusConflict || parseJSON(t, w)["code"] != "turn_changed" {
+					t.Fatalf("cancel with %s: %d %s", tokenKind, w.Code, w.Body)
+				}
+			}
+			if !solo {
+				hn.db.Model(&models.ReactConversation{}).Where("run_id = ? AND node_id = ?", runID, nodeID).Update("iteration", 2)
+				w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, mainHeaders)
+				hn.db.Model(&models.ReactConversation{}).Where("run_id = ? AND node_id = ?", runID, nodeID).Update("iteration", 1)
+				if w.Code != http.StatusConflict {
+					t.Fatalf("stale workflow visit cancelled: %d %s", w.Code, w.Body)
+				}
+			}
+			if name == "clarify" {
+				if _, err := hn.h.Eng.EnqueueClarifyTurn(runID, nodeID, "first cancellable", nil, nil); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-provider.started:
+				case <-time.After(3 * time.Second):
+					t.Fatal("clarify did not start")
+				}
+				if _, err := hn.h.Eng.EnqueueClarifyTurn(runID, nodeID, "next cancellable", nil, nil); err != nil {
+					t.Fatal(err)
+				}
+				getTurn := func() string {
+					w := hn.doEmbed(http.MethodGet, path+"/main-chat", nil, mainHeaders)
+					id, _ := parseJSON(t, w)["activeTurnId"].(string)
+					if id == "" {
+						t.Fatalf("active turn ID missing: %s", w.Body)
+					}
+					return id
+				}
+				first := getTurn()
+				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": first}, mainHeaders); w.Code != http.StatusOK {
+					t.Fatalf("cancel active: %d %s", w.Code, w.Body)
+				}
+				select {
+				case <-provider.started:
+				case <-time.After(3 * time.Second):
+					t.Fatal("clarify queue was cleared")
+				}
+				next := getTurn()
+				if next == first {
+					t.Fatal("active turn did not advance")
+				}
+				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": first}, mainHeaders); w.Code != http.StatusConflict {
+					t.Fatalf("late cancel: %d %s", w.Code, w.Body)
+				}
+				if getTurn() != next {
+					t.Fatal("late cancel changed current turn")
+				}
+				if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": next}, mainHeaders); w.Code != http.StatusOK {
+					t.Fatalf("cancel next: %d %s", w.Code, w.Body)
+				}
+			}
 			session := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, headers("isolated"))
 			if session.Code != http.StatusOK {
 				t.Fatalf("exchange: %d %s", session.Code, session.Body)
@@ -378,6 +479,10 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			}
 			if w := hn.doEmbed(http.MethodPost, path+"/session", map[string]any{}, headers("main")); w.Code != http.StatusOK {
 				t.Fatalf("revoking isolated affected main: %d", w.Code)
+			}
+			hn.do(http.MethodDelete, manage, map[string]any{"port": 8080, "chatMode": "main"})
+			if w := hn.doEmbed(http.MethodPost, path+"/main-chat/cancel", map[string]any{"turnId": "stale"}, mainHeaders); w.Code != http.StatusGone {
+				t.Fatalf("revoked main share cancelled: %d %s", w.Code, w.Body)
 			}
 		})
 	}

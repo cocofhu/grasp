@@ -734,6 +734,34 @@ func (s *SoloService) PreviewLiveReply(id string) (*models.SoloMessage, bool) {
 	return &models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.text.String(), Events: events, Execution: c.execution}, true
 }
 
+// PreviewPending reads the authoritative FIFO without querying stored history.
+// Callers must authorize the session and redact attachments before publication.
+func (s *SoloService) PreviewPending(id string) []models.SoloMessage {
+	c := s.lookup(id)
+	if c == nil {
+		return nil
+	}
+	pending := c.sess.View().Pending
+	out := make([]models.SoloMessage, 0, len(pending))
+	for _, item := range pending {
+		out = append(out, models.SoloMessage{ID: item.ID, Role: "user", Content: item.Text,
+			Images:      append([]models.PromptImage(nil), item.Images...),
+			Annotations: append([]models.ReactAnnotation(nil), item.Annotations...)})
+	}
+	return out
+}
+
+// PreviewActiveTurnID reads the active FIFO item without querying history.
+// Callers must authorize the preview before publishing this opaque identifier.
+func (s *SoloService) PreviewActiveTurnID(id string) string {
+	if c := s.lookup(id); c != nil {
+		if active, ok := c.sess.Active(); ok {
+			return active.ID
+		}
+	}
+	return ""
+}
+
 // Env returns the injected env keys and their sources (never values).
 func (s *SoloService) Env(id, user string) ([]SoloEnvEntry, error) {
 	row, err := s.Require(id, user)
@@ -1434,6 +1462,18 @@ func (s *SoloService) Cancel(id, user string) error {
 		c.sess.Cancel(true)
 	}
 	return nil
+}
+
+// CancelPreviewTurn preserves Solo's clear-queue policy, but refuses stale
+// public requests before either the queue or the runtime can be affected.
+func (s *SoloService) CancelPreviewTurn(id, user, turnID string) error {
+	if _, err := s.Require(id, user); err != nil {
+		return err
+	}
+	if c := s.lookup(id); c != nil && c.sess.CancelActive(turnID, true) {
+		return nil
+	}
+	return soloErr(http.StatusConflict, "turn_changed", "当前回复已变化，请重试")
 }
 
 // RemoveQueued drops one pending turn.

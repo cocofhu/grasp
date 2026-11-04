@@ -4,7 +4,7 @@ import type { ScopedSessionModelCatalog } from '@/lib/solo/useSessionModelCatalo
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import { referenceQuery, type ReferenceSearchParams } from '@/lib/api/clients/soloClient'
 import type { MessageReference, ReferenceInput, ReferenceSearchResult } from '@/lib/api/apiTypes'
-import type { AgentPart, AgentTool, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
+import type { AgentPart, AgentTool, ChatMessageMetadata, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
 import { locale, type AppLocale } from '@/lib/shared/locale'
 
@@ -12,7 +12,7 @@ export type PreviewChatMode = 'isolated' | 'main'
 export type PreviewShareScope = { runId: string; nodeId: string; soloSessionId?: string; port: number }
 export type PreviewShareLink = { url: string; expiresAt: string }
 export type PreviewShareSession = { ticket: string; chatMode: PreviewChatMode; agentName?: string }
-export type PreviewChatRow = {
+export type PreviewChatRow = ChatMessageMetadata & {
   id: string
   role: string
   text: string
@@ -29,7 +29,8 @@ export type PreviewChatRow = {
   references?: MessageReference[]
 }
 
-export type PreviewChatHistory = { rows: PreviewChatRow[]; busy: boolean; model?: VisitModelChoice }
+export type PreviewChatQueueItem = Pick<PreviewChatRow, 'id' | 'text' | 'images' | 'annotations'>
+export type PreviewChatHistory = { rows: PreviewChatRow[]; queue?: PreviewChatQueueItem[]; busy: boolean; activeTurnId?: string; model?: VisitModelChoice }
 
 export function previewShareURL(raw: string, lang: AppLocale = locale.value) {
   const url = new URL(raw, window.location.origin)
@@ -94,6 +95,7 @@ export function publicAppPreviewClient(token: string) {
     history: (signal: AbortSignal) => request<PreviewChatHistory>('/main-chat', signal),
     send: (message: PreviewChatMessage, signal: AbortSignal) =>
       request<{ ok: boolean }>('/main-chat', signal, message),
+    cancelMain: (turnId: string, signal: AbortSignal) => request<{ ok: boolean }>('/main-chat/cancel', signal, { turnId }),
     searchReferences: <T>(params: ReferenceSearchParams, signal: AbortSignal) =>
       request<ReferenceSearchResult<T>>(`/references/search?${referenceQuery(params)}`, signal),
     image: (messageId: string, index: number, signal: AbortSignal) =>

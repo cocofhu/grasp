@@ -7,6 +7,7 @@ import {
   EMBED_CMD_RESULT_MESSAGE,
   EMBED_CONTROL_MESSAGE,
   EMBED_PICK_MESSAGE,
+  EMBED_PICK_REQUEST_MESSAGE,
   EMBED_READY_MESSAGE,
   EMBED_SESSION_MESSAGE,
   EMBED_THEME_MESSAGE,
@@ -54,7 +55,7 @@ class TestChannel extends BroadcastChannel {
   }
 }
 
-type EmbedReply = { origin: string; runId: string; nodeId: string; ticket?: string } | null
+type EmbedReply = { origin: string; runId: string; nodeId: string; ticket?: string; kind?: string } | null
 
 function openPage(
   body: string,
@@ -245,6 +246,49 @@ describe('preview-pick.js chat drawer', () => {
   const body = '<main><h2>Plan</h2><button id="buy">Buy</button></main>'
   const hash = '#__grasp_embed&run=run-1&node=ap1&ticket=tk1'
   const reply = { origin: GRASP, runId: 'run-1', nodeId: 'ap1' }
+
+  it.each([false, true])('picks once from the composer, restoring the same drawer on selection or Escape (shared=%s)', async shared => {
+    const p = openPage(body, { hash: hash + (shared ? '&shared=1' : ''), embedReply: { ...reply, kind: shared ? 'app-preview' : 'session' } })
+    await settle()
+    const inbox = p.drawerReady()
+    const frame = p.frame()
+    const request = () => p.win.dispatchEvent(new p.win.MessageEvent('message', {
+      origin: GRASP, source: frame!.contentWindow as never, data: { type: EMBED_PICK_REQUEST_MESSAGE },
+    }))
+    request()
+    expect(p.drawerOpen()).toBe(false)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(true)
+    p.win.document.dispatchEvent(new p.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    expect(inbox.filter(m => m.type === EMBED_PICK_MESSAGE)).toEqual([])
+    request()
+    p.click('#buy')
+    expect(p.frame()).toBe(frame)
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    expect(inbox.filter(m => m.type === EMBED_PICK_MESSAGE)).toEqual([
+      expect.objectContaining({ payload: expect.objectContaining({ selector: '#buy' }), target: GRASP }),
+    ])
+  })
+
+  it('accepts composer pick requests only from the ready, active drawer', async () => {
+    const p = openPage(body, { hash, embedReply: reply })
+    await settle()
+    const request = (origin = GRASP, source: unknown = p.frame()!.contentWindow, type = EMBED_PICK_REQUEST_MESSAGE) =>
+      p.win.dispatchEvent(new p.win.MessageEvent('message', { origin, source: source as never, data: { type, ok: false } }))
+    request()
+    expect(p.drawerOpen()).toBe(true)
+    p.drawerReady()
+    request('https://evil.example')
+    request(GRASP, p.win)
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+    request(GRASP, p.frame()!.contentWindow, EMBED_SESSION_MESSAGE)
+    request()
+    expect(p.drawerOpen()).toBe(false)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
+  })
 
   it('has no chat without a ticket or a saved drawer', async () => {
     const p = openPage(body)
@@ -1165,6 +1209,9 @@ describe('preview-pick.js page control', () => {
     const toggle = p.shadow.querySelector('[data-role="toggle"]') as HTMLButtonElement
     expect(toggle.getAttribute('aria-pressed')).toBe('false')
     expect(toggle.disabled).toBe(true)
+    send({ type: EMBED_PICK_REQUEST_MESSAGE })
+    expect(p.drawerOpen()).toBe(true)
+    expect(p.win.document.documentElement.classList.contains('__hp-inspecting')).toBe(false)
 
     created[0].hideOwnUi(true)
     expect((p.win.document.querySelector('grasp-preview-pick') as unknown as HTMLElement).style.display).toBe('none')
@@ -1441,6 +1488,17 @@ describe('preview-pick.js Live overlay hook', () => {
     expect(p.drawerOpen()).toBe(true)
   })
 
+  it('quotes composer picks directly even when Live is enabled', async () => {
+    const { p, send, fake, inbox } = await liveReady()
+    send({ type: EMBED_PICK_REQUEST_MESSAGE })
+    p.click('#card')
+    expect(fake.offered).toEqual([])
+    expect(p.drawerOpen()).toBe(true)
+    expect(inbox.filter(m => m.type === EMBED_PICK_MESSAGE)).toEqual([
+      expect.objectContaining({ payload: expect.objectContaining({ selector: '#card' }) }),
+    ])
+  })
+
   it('opens one pick mode that spans select and insert, and drives the eye', async () => {
     const { p, fake, btn } = await liveReady()
     p.toggle()
@@ -1661,6 +1719,34 @@ describe('preview-pick.js image preview window', () => {
     expect(g.h).toBe(640)
     expect(g.x + g.w).toBeLessThanOrEqual(drawerLeft - 16)
     expect(g.y + g.h).toBeLessThanOrEqual(900)
+  })
+
+  it('centers shared pictures above the entire chat card and closes on backdrop or Escape', async () => {
+    const p = openPage(body, { hash: hash + '&shared=1', embedReply: { ...reply, kind: 'app-preview' } })
+    await settle()
+    expect(p.frame()?.src).toContain('/shared-chat')
+    p.drawerReady()
+    setView(p, 1600, 900)
+    openImage(p, 'Shared.png')
+    expect(imageShown(p)).toBe(true)
+    expect(p.artifactMask().classList.contains('shared-image')).toBe(true)
+    expect(imageGeom(p)).toEqual({ x: 320, y: 50, w: 960, h: 800 })
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    expect(Number(p.win.getComputedStyle(p.artifactMask()).zIndex)).toBeGreaterThan(Number(p.win.getComputedStyle(drawer).zIndex))
+    const frame = p.shadow.querySelector('[data-role="image-modal"] iframe') as HTMLIFrameElement
+    expect(new URL(frame.src).hash).toContain('lang=zh-CN')
+    p.artifactMask().dispatchEvent(new p.win.MouseEvent('click', { bubbles: true }))
+    expect(imageShown(p)).toBe(false)
+    openImage(p, 'Shared.png')
+    p.win.document.dispatchEvent(new p.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(imageShown(p)).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
+    openImage(p, 'Shared.png')
+    p.win.dispatchEvent(new p.win.MessageEvent('message', { data: { type: 'grasp-embed:image', action: 'close' }, origin: 'https://evil.example', source: frame.contentWindow as never }))
+    expect(imageShown(p)).toBe(true)
+    p.win.dispatchEvent(new p.win.MessageEvent('message', { data: { type: 'grasp-embed:image', action: 'close' }, origin: GRASP, source: frame.contentWindow as never }))
+    expect(imageShown(p)).toBe(false)
+    expect(p.drawerOpen()).toBe(true)
   })
 
   it('keeps the chat usable: mask clicks do nothing, close leaves the drawer, hiding chat leaves the picture', async () => {

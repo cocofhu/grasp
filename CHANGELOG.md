@@ -4,7 +4,17 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Shared main-chat Stop targets the turn the visitor saw and rejects stale requests without changing the queue. Sharing hints explain that Solo and review Stop clear everyone's queued messages, while clarification keeps them.
+
 - Shared main-chat connections keep their retry backoff when a snapshot is immediately followed by an error, and reset it after five seconds of healthy streaming.
+
+- Shared main and independent preview chats can stop the active reply. Interrupted replies keep their partial content, drafts survive stopping, and independent chats can continue on the same connection.
+
+- Preview chat composers offer Pick an element in the "+" menu. Picking returns the selected element to chat, and Escape cancels while preserving the draft and attachments.
+
+- Preview frames apply the host theme before the loading screen is painted and retain it on reload without changing the account theme preference.
+
+- Shared main chats show the live pending-send queue and recorded reply statistics. Image previews open above the full Page Harness card, inherit the sharing language, and close with Escape or the backdrop.
 
 - Shared previews keep the opening language within that preview instead of changing the recipient's Grasp preference. Main-chat reconnections back off and stop when the conversation is unavailable; viewers share one live snapshot and receive only changed transcript tails.
 
