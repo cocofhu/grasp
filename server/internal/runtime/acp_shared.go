@@ -244,13 +244,13 @@ func (c *acpProvider) reuseSharedSandbox(ctx context.Context, req NodeReq, ss *s
 	}
 	spec, err := c.spec(req)
 	if err != nil {
-		c.forgetCodexLogin(codexLoginKey(req))
+		c.unregisterCodexLogin(req)
 		return nil, nil, fmt.Errorf("%w: %v", errSandboxConfig, err)
 	}
 	// Everything the sandbox needs from it is packed into the re-prime bundle.
 	defer removeHome(spec.ConfigHome)
 	if spec.WorkspaceDir != "" && sb.WorkspaceDir != "" && spec.WorkspaceDir != sb.WorkspaceDir {
-		c.forgetCodexLogin(codexLoginKey(req))
+		c.unregisterCodexLogin(req)
 		return nil, nil, errSharedIncompatible
 	}
 	fp := sandbox.SpecFingerprint(spec)
@@ -258,15 +258,15 @@ func (c *acpProvider) reuseSharedSandbox(ctx context.Context, req NodeReq, ss *s
 	if reprime {
 		rp, ok := c.mgr.(sandboxReprimer)
 		if !ok {
-			c.forgetCodexLogin(codexLoginKey(req))
+			c.unregisterCodexLogin(req)
 			return nil, nil, fmt.Errorf("%w: sandbox manager cannot re-prime", errSandboxSetup)
 		}
 		if err := rp.Reprime(ctx, sb, spec, ss.envKeys); err != nil {
-			c.forgetCodexLogin(codexLoginKey(req))
+			c.unregisterCodexLogin(req)
 			return nil, nil, fmt.Errorf("%w: %v", errSandboxSetup, err)
 		}
 		if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, reprimeReadyWait); err != nil {
-			c.forgetCodexLogin(codexLoginKey(req))
+			c.unregisterCodexLogin(req)
 			return nil, nil, fmt.Errorf("%w: acp not ready after re-prime: %v", errSandboxSetup, err)
 		}
 		c.shared.update(ss, func(s *sharedRunSandbox) {
@@ -280,12 +280,13 @@ func (c *acpProvider) reuseSharedSandbox(ctx context.Context, req NodeReq, ss *s
 		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"]).
 		WithExecution(c.executionForEnvironment(req, spec.Env))
 	if err := acp.Connect(ctx); err != nil {
-		c.forgetCodexLogin(codexLoginKey(req))
+		c.unregisterCodexLogin(req)
 		acp.Close()
 		return nil, nil, fmt.Errorf("%w: acp connect: %v", errSandboxSetup, err)
 	}
 	c.shared.update(ss, func(s *sharedRunSandbox) { s.owner = reactKey(req) })
 	c.registerSharedRunSandbox(req, sb, ss.home)
+	c.opts.CodexLogins.Bind(c.codexHubKey(req), sb)
 	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", sb.Name).
 		Bool("reprimed", reprime).Msg("node reuses shared run sandbox")
 	return sb, acp, nil

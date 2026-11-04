@@ -163,7 +163,7 @@ func TestWorkspaceCredentialEnvKeysIgnoreEmptySlots(t *testing.T) {
 
 }
 
-func TestCodexLoginFileCredentialMaskRejectAndWriteBack(t *testing.T) {
+func TestCodexLoginFileCredentialMaskRejectAndSave(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
 	_, err := NewWorkspaceService(db).CreateFixture("Codex login", "", nil)
@@ -206,32 +206,21 @@ func TestCodexLoginFileCredentialMaskRejectAndWriteBack(t *testing.T) {
 	if afterReject.ValueEnc != before.ValueEnc || !afterReject.UpdatedAt.Equal(before.UpdatedAt) {
 		t.Fatal("rejected paste overwrote the login file")
 	}
-	if err := s.WriteBackCodexLoginCredential(slot.ID, login); err != nil {
-		t.Fatal(err)
-	}
-	var same models.Credential
-	if err := db.First(&same, "id = ?", slot.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if same.ValueEnc != before.ValueEnc || !same.UpdatedAt.Equal(before.UpdatedAt) {
-		t.Fatal("unchanged writeback touched the credential")
+	stored, err := s.codexLogin(slot.ID)
+	if err != nil || stored.Body != login {
+		t.Fatalf("load login: %v", err)
 	}
 	refreshed := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"rt2"}}`
-	if err := s.WriteBackCodexLoginCredential(slot.ID, refreshed); err != nil {
-		t.Fatal(err)
+	rev, err := s.saveCodexLogin(stored, refreshed)
+	if err != nil || rev != stored.Revision+1 {
+		t.Fatalf("save renewed login: rev=%d err=%v", rev, err)
 	}
 	later := `{"auth_mode":"chatgpt","tokens":{"access_token":"later","refresh_token":"rt3"}}`
-	if err := s.WriteBackCodexLoginCredential(slot.ID, later); err != nil {
-		t.Fatal(err)
+	if _, err := s.saveCodexLogin(stored, later); !errors.Is(err, errCodexLoginConflict) {
+		t.Fatalf("stale save must lose to the stored login: %v", err)
 	}
-	if _, got, ok := s.ResolveSelectedValue(slot.ID); !ok || got != later {
-		t.Fatalf("last writeback=%q", got)
-	}
-	if err := s.WriteBackCodexLoginCredential(slot.ID, "sk-nope"); !errors.Is(err, runtime.ErrCodexLoginFileAPIKey) {
-		t.Fatalf("invalid writeback: %v", err)
-	}
-	if _, got, ok := s.ResolveSelectedValue(slot.ID); !ok || got != later {
-		t.Fatalf("invalid writeback overwrote %q", got)
+	if _, got, ok := s.ResolveSelectedValue(slot.ID); !ok || got != refreshed {
+		t.Fatalf("stored login=%q", got)
 	}
 	listed, err := s.List()
 	if err != nil {

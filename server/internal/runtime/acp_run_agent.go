@@ -106,7 +106,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		if parked {
 			return
 		}
-		err = c.settleCodexLogin(req, sb, err, res.Events)
+		err = c.settleCodexLogin(req, err, res.Events)
 		if keepForDebug {
 			c.retireRunSandbox(sb, acp, home)
 		} else {
@@ -649,6 +649,7 @@ func (c *acpProvider) closeSession(key string) {
 	if c.timeline != nil && runID != "" && nodeID != "" {
 		c.timeline.stop(runID, nodeID)
 	}
+	c.opts.CodexLogins.Unregister(c.backendKey(key))
 	c.retireVisitorLanes(key + "|")
 	if sess != nil {
 

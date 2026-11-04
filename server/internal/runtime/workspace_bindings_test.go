@@ -31,10 +31,10 @@ func TestCredentialBindingsDoNotFallBackAndPreserveUnboundDefaults(t *testing.T)
 }
 
 func TestModelWriteBackIdentityRequiresResolvedConfiguration(t *testing.T) {
-	if ModelCredentialIDForWriteBack(nil) != "" {
+	if CodexLoginCredentialID(nil) != "" {
 		t.Fatal("unresolved model acquired credential identity")
 	}
-	if ModelCredentialIDForWriteBack(map[string]string{EnvModelCredentialID: "selected"}) != "selected" {
+	if CodexLoginCredentialID(map[string]string{EnvModelCredentialID: "selected"}) != "selected" {
 		t.Fatal("resolved model identity lost")
 	}
 }

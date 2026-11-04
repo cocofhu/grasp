@@ -1142,7 +1142,7 @@ describe('useRunDetail actions', () => {
     mocks.getRun.mockResolvedValue(
       sampleRun({
         status: 'failed',
-        error: 'Codex 登录已失效或无法刷新，请重新粘贴登录文件（~/.codex/auth.json）',
+        error: 'Codex 登录已失效或无法刷新，请在工作区凭据中用设备码重新登录 ChatGPT，或请重新粘贴登录文件（~/.codex/auth.json）',
       } as Partial<Run>),
     )
     const { detail, app } = await withRunDetail()

@@ -29,7 +29,9 @@ func TestValidateCodexLoginFile(t *testing.T) {
 		{"api_key mode", `{"auth_mode":"api_key"}`, ErrCodexLoginFileAPIKey, true},
 		{"openai only", `{"OPENAI_API_KEY":"sk-live"}`, ErrCodexLoginFileAPIKey, true},
 		{"chatgpt", chatgptLogin, nil, false},
-		{"other text", "not-json-but-not-a-key", nil, false},
+		{"other text", "not-json-but-not-a-key", ErrCodexLoginFileInvalid, false},
+		{"no refresh token", `{"auth_mode":"chatgpt","tokens":{"access_token":"at","refresh_token":""}}`, ErrCodexLoginFileNoRefreshToken, false},
+		{"no tokens", `{"auth_mode":"chatgpt"}`, ErrCodexLoginFileNoRefreshToken, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -46,7 +48,7 @@ func TestValidateCodexLoginFile(t *testing.T) {
 
 func TestPrepareAuthEnvCodexStripsKeyAndRequiresFile(t *testing.T) {
 	_, err := PrepareAuthEnv(BackendCodex, map[string]string{"OPENAI_API_KEY": "sk-nope"}, "")
-	if !errors.Is(err, ErrCodexLoginFileMissing) || !strings.Contains(err.Error(), "缺少 Codex 登录文件") {
+	if !errors.Is(err, ErrCodexLoginFileMissing) || !strings.Contains(err.Error(), "缺少 Codex 登录") {
 		t.Fatalf("missing file: %v", err)
 	}
 
@@ -99,28 +101,6 @@ func TestMergeAuthEnvExistingBackendsUnchanged(t *testing.T) {
 	}
 }
 
-func TestDecideCodexWriteBack(t *testing.T) {
-	if _, ok := DecideCodexWriteBack(errors.New("gone"), "x", chatgptLogin); ok {
-		t.Fatal("read error must not write")
-	}
-	if _, ok := DecideCodexWriteBack(nil, chatgptLogin, chatgptLogin); ok {
-		t.Fatal("unchanged body must not write")
-	}
-	next, ok := DecideCodexWriteBack(nil, chatgptLogin+"\n", chatgptLogin)
-	if !ok || next != chatgptLogin+"\n" {
-		t.Fatalf("changed body: ok=%v next=%q", ok, next)
-	}
-	if _, ok := ShouldWriteBackCodexLogin(nil, chatgptLogin+"\n", chatgptLogin, true); ok {
-		t.Fatal("auth rejection must not write")
-	}
-	if _, ok := DecideCodexWriteBack(nil, "sk-new", chatgptLogin); ok {
-		t.Fatal("API key body must not write")
-	}
-	if _, ok := DecideCodexWriteBack(nil, "   ", chatgptLogin); ok {
-		t.Fatal("blank body must not write")
-	}
-}
-
 func TestCodexAuthRejectedRewrite(t *testing.T) {
 	if !CodexAuthRejected(errors.New("failed to refresh token"), nil) {
 		t.Fatal("error text should reject")
@@ -159,11 +139,7 @@ func TestCodexAuthRejectionIgnoresRefreshMention(t *testing.T) {
 		}},
 	}}
 	if CodexAuthRejected(nil, events) {
-		t.Fatal("narration and tool output must not block writeback")
-	}
-	next, ok := ShouldWriteBackCodexLogin(nil, chatgptLogin+"\n", chatgptLogin, CodexAuthRejected(nil, events))
-	if !ok || next != chatgptLogin+"\n" {
-		t.Fatalf("changed file must write back: ok=%v next=%q", ok, next)
+		t.Fatal("narration and tool output must not count as a login refusal")
 	}
 	fail := []models.AcpEvent{{
 		Kind:   models.AcpKindTurnEnd,
@@ -173,14 +149,41 @@ func TestCodexAuthRejectionIgnoresRefreshMention(t *testing.T) {
 	if !CodexAuthRejected(nil, fail) {
 		t.Fatal("turn failure 401 must reject")
 	}
-	if _, ok := ShouldWriteBackCodexLogin(nil, chatgptLogin+"\n", chatgptLogin, true); ok {
-		t.Fatal("confirmed rejection must not write")
-	}
 	if !CodexTurnAuthRejected(nil, raw401(), true) {
 		t.Fatal("live turn error text must reject")
 	}
 	if CodexTurnAuthRejected(nil, text, false) {
 		t.Fatal("successful live turn must not reject")
+	}
+}
+
+func TestCodexRotationFailuresAreLoginRejections(t *testing.T) {
+	for _, text := range []string{
+		"Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.",
+		"refresh_token_reused",
+		"error: refresh_token_expired",
+		"refresh_token_invalidated: revoked",
+		"Your access token could not be refreshed. Please sign in again.",
+		"Token data is not available.",
+		"ChatGPT auth is missing a refresh token",
+		"No more recovery steps available.",
+		"Your access token could not be refreshed because you have since logged out or signed in to another account. Please sign in again.",
+		// Observed from codex-cli 0.164 running a sandbox copy against a 401.
+		"ERROR: Failed to refresh token: 400 Bad Request",
+		"unexpected status 401 Unauthorized: {\"detail\":\"Unauthorized\"}, url: https://chatgpt.com/backend-api/codex/responses",
+	} {
+		if !CodexTurnAuthRejected(nil, text, true) {
+			t.Errorf("%q must be a login refusal", text)
+		}
+		if CodexTurnAuthRejected(nil, "", false) {
+			t.Fatal("empty successful turn")
+		}
+	}
+	if CodexTurnAuthRejected(nil, "", false) || IsCodexAuthRejectionText("") {
+		t.Fatal("empty text is not a refusal")
+	}
+	if IsCodexAuthRejectionText("unexpected status 401 Unauthorized, url: https://api.github.com/user") {
+		t.Fatal("a 401 from an unrelated host is not a Codex login refusal")
 	}
 }
 
@@ -212,15 +215,15 @@ func TestCodexSpecInstallsLoginFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		p.forgetCodexLogin(codexLoginKey(req))
+		p.unregisterCodexLogin(req)
 		removeHome(sp.ConfigHome)
 	})
 	body, err := os.ReadFile(filepath.Join(sp.ConfigHome, "auth.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(body) != chatgptLogin {
-		t.Fatalf("auth.json=%q", body)
+	if strings.Contains(string(body), `"rt"`) || !strings.Contains(string(body), `"access_token": "at"`) || !strings.Contains(string(body), `"refresh_token": ""`) {
+		t.Fatalf("auth.json must be the sandbox copy without refresh token: %q", body)
 	}
 	if sp.ConfigRoot != CodexConfigRoot || sp.Env["CODEX_HOME"] != CodexConfigRoot {
 		t.Fatalf("root=%q CODEX_HOME=%q", sp.ConfigRoot, sp.Env["CODEX_HOME"])

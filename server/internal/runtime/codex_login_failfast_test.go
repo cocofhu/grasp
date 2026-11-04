@@ -3,8 +3,12 @@ package runtime
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 const codex401 = "failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.com/v1/responses"
@@ -114,11 +118,87 @@ func TestAsCodexLoginErr(t *testing.T) {
 func TestSettleCodexLoginWrapsRejectedError(t *testing.T) {
 	p := &acpProvider{backend: BackendCodex}
 	req := NodeReq{RunID: "r", NodeID: "n"}
-	err := p.settleCodexLogin(req, nil, errors.New("agent chat: "+codex401), nil)
+	err := p.settleCodexLogin(req, errors.New("agent chat: "+codex401), nil)
 	if !errors.Is(err, ErrCodexLoginRejected) {
 		t.Fatalf("err = %v, want ErrCodexLoginRejected", err)
 	}
-	if err := p.settleCodexLogin(req, nil, nil, nil); err != nil {
+	if err := p.settleCodexLogin(req, nil, nil); err != nil {
 		t.Fatalf("no error and no rejection must stay nil: %v", err)
 	}
+}
+
+// codexHubSetup wires a hub whose source renews the login once per stale token
+// and records every auth.json write the hub sends to the sandbox.
+func codexHubSetup(t *testing.T, turn func(int) turnAction) (*acpProvider, *fakeManager, NodeReq, *fakeCodexSource, *atomic.Int32) {
+	t.Helper()
+	var writes atomic.Int32
+	restore := sandbox.SetExecHook(func(_ context.Context, _ string, _ int, command string, stdin io.Reader) ([]byte, error) {
+		if strings.Contains(execHookBody(command, stdin), "base64 -d") {
+			writes.Add(1)
+		}
+		return nil, nil
+	})
+	t.Cleanup(restore)
+	p, mgr, req := codexSetup(t, turn)
+	src := &fakeCodexSource{}
+	hub := NewCodexLoginHub(src)
+	src.hub = hub
+	p.opts.CodexLogins = hub
+	return p, mgr, req, src, &writes
+}
+
+func TestRunAgentCodexLoginRenewedAndRetriedOnce(t *testing.T) {
+	p, mgr, req, src, writes := codexHubSetup(t, func(turn int) turnAction {
+		if turn == 0 {
+			return turnAction{errorText: codex401, failed: true}
+		}
+		return turnAction{narration: "done", produces: map[string]string{"report.md": "ok"}, outcome: true}
+	})
+	if _, err := p.RunAgent(context.Background(), req); err != nil {
+		t.Fatalf("turn must succeed after the platform renews the login: %v", err)
+	}
+	if src.refreshes != 1 || src.ensures != 1 {
+		t.Fatalf("refreshes=%d ensures=%d", src.refreshes, src.ensures)
+	}
+	if n := mgr.bridge(0).turnCount(); n < 2 {
+		t.Fatalf("turns = %d, want the refused turn plus a retry", n)
+	}
+	if writes.Load() != 1 {
+		t.Fatalf("auth.json writes = %d, want 1", writes.Load())
+	}
+	if p.opts.CodexLogins.Registered(p.codexHubKey(req)) {
+		t.Fatal("finished node must unregister")
+	}
+}
+
+func TestRunAgentCodexLoginRetryStillRefusedFailsFast(t *testing.T) {
+	p, mgr, req, src, _ := codexHubSetup(t, func(int) turnAction { return turnAction{errorText: codex401, failed: true} })
+	_, err := p.RunAgent(context.Background(), req)
+	if !errors.Is(err, ErrCodexLoginRejected) {
+		t.Fatalf("err = %v", err)
+	}
+	if n := mgr.bridge(0).turnCount(); n != 2 || src.refreshes != 1 {
+		t.Fatalf("turns=%d refreshes=%d, want one retry and one refresh", n, src.refreshes)
+	}
+}
+
+func TestRunAgentCodexLoginTerminalRefreshFailsFast(t *testing.T) {
+	p, mgr, req, src, _ := codexHubSetup(t, func(int) turnAction { return turnAction{errorText: codex401, failed: true} })
+	src.mu.Lock()
+	src.gen = 0
+	src.mu.Unlock()
+	p.opts.CodexLogins.SetSource(&terminalSource{fakeCodexSource: src})
+	_, err := p.RunAgent(context.Background(), req)
+	if !errors.Is(err, ErrCodexLoginRejected) {
+		t.Fatalf("err = %v", err)
+	}
+	if n := mgr.bridge(0).turnCount(); n != 1 {
+		t.Fatalf("turns = %d, a terminal renewal failure must not retry", n)
+	}
+}
+
+type terminalSource struct{ *fakeCodexSource }
+
+func (s *terminalSource) ForceRefresh(context.Context, string, string) (string, string, error) {
+	return "", "", ErrCodexLoginRejected
 }

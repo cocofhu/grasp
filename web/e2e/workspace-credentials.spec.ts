@@ -414,3 +414,152 @@ test('GitLab Host is configured with its token and can be changed without enteri
   await expect(page.getByTestId('workspace-credential-masked')).toHaveText('gl-…1234')
   await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('private-example-token')
 })
+
+async function mockCodexDevice(page: Page, rows: Record<string, unknown>[], pollReply: (body: Record<string, unknown>) => Record<string, unknown>) {
+  const starts: Record<string, unknown>[] = []
+  const cancels: string[] = []
+  await installWorkspaceApiDefaults(page)
+  await mockModelConnections(page)
+  await routeApi(page, '**/api/workspace/credentials', async (route) => route.fulfill({ json: { items: rows } }))
+  await routeApi(page, '**/api/workspace/credentials/codex/device', async (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { enabled: true } })
+    const body = route.request().postDataJSON()
+    starts.push(body)
+    await route.fulfill({ json: { sessionId: 'cdx-e2e', userCode: 'ABCD-1234', verificationUri: 'https://auth.openai.com/codex/device', expiresIn: 900, interval: 3 } })
+  })
+  await routeApi(page, '**/api/workspace/credentials/codex/device/cdx-e2e/poll', async (route) => route.fulfill({ json: pollReply(starts[starts.length - 1] ?? {}) }))
+  await routeApi(page, '**/api/workspace/credentials/codex/device/cdx-e2e', async (route) => {
+    cancels.push('cdx-e2e')
+    await route.fulfill({ json: { status: 'cancelled' } })
+  })
+  return { starts, cancels }
+}
+
+test('Codex device-code sign-in saves a new credential and shows its renewal status', async ({ page }) => {
+  const rows: Record<string, unknown>[] = []
+  const saved = { id: 'codex-new', purpose: 'tool_auth', toolId: 'codex', secretKind: 'login_file', issuer: 'codex', enabled: true, type: 'ai', name: 'Team ChatGPT', provider: 'codex', envKey: 'GRASP_CODEX_AUTH_JSON', configured: true, masked: '••••••••', metadata: { authMethod: 'device_code' } }
+  const { starts } = await mockCodexDevice(page, rows, () => {
+    rows.splice(0, rows.length, { ...saved, codexLogin: { email: 'team@example.com', status: 'ok', lastRefresh: '2026-11-04T08:00:00Z' } })
+    return { status: 'success', credential: saved, email: 'team@example.com' }
+  })
+  await page.goto('/workspace-config.html?view=/settings/credentials')
+  await openAddCredential(page)
+  await page.getByTestId('credential-kind-codex').click()
+  await page.getByTestId('workspace-credential-create-next').click()
+  await expect(page.getByTestId('credential-auth-login')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('workspace-credential-create-value')).toHaveCount(0)
+  await page.getByTestId('workspace-credential-create-alias').fill('Team ChatGPT')
+  await page.getByTestId('codex-device-start').click()
+  await expect(page.getByTestId('codex-device-code')).toHaveText('ABCD1234')
+  await expect(page.getByTestId('codex-device-open')).toHaveAttribute('href', 'https://auth.openai.com/codex/device')
+  expect(starts).toEqual([{ name: 'Team ChatGPT' }])
+  await expect(page.getByTestId('codex-device-email')).toHaveText('team@example.com', { timeout: 10_000 })
+  await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 10_000 })
+  await expect(page.getByTestId('workspace-credential-codex-email-codex-new')).toHaveText('team@example.com')
+  await expect(page.getByTestId('workspace-credential-codex-status-codex-new')).toContainText('自动续期正常')
+})
+
+test('an expired Codex device code offers a retry, and closing the dialog drops the session', async ({ page }) => {
+  const { cancels } = await mockCodexDevice(page, [], () => ({ status: 'expired' }))
+  await page.goto('/workspace-config.html?view=/settings/credentials')
+  await openAddCredential(page)
+  await page.getByTestId('credential-kind-codex').click()
+  await page.getByTestId('workspace-credential-create-next').click()
+  await page.getByTestId('workspace-credential-create-alias').fill('Expiring login')
+  await page.getByTestId('codex-device-start').click()
+  await expect(page.getByTestId('codex-device-failed')).toContainText('验证码已过期', { timeout: 10_000 })
+  await expect(page.getByTestId('codex-device-badge')).toHaveText('已过期')
+  await page.getByTestId('codex-device-retry').click()
+  await expect(page.getByTestId('codex-device-code')).toBeVisible()
+  await page.getByTestId('codex-device-cancel').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect.poll(() => cancels.length).toBeGreaterThan(0)
+})
+
+test('a Codex credential that needs a new login can be re-logged in place', async ({ page }) => {
+  const stale = { id: 'codex-login', purpose: 'tool_auth', toolId: 'codex', secretKind: 'login_file', issuer: 'codex', enabled: true, type: 'ai', name: codexAlias, provider: 'codex', envKey: 'GRASP_CODEX_AUTH_JSON', configured: true, masked: '••••••••', codexLogin: { email: 'team@example.com', status: 'needs_relogin' } }
+  const rows: Record<string, unknown>[] = [stale]
+  const { starts } = await mockCodexDevice(page, rows, () => {
+    rows.splice(0, 1, { ...stale, codexLogin: { email: 'team@example.com', status: 'ok' } })
+    return { status: 'success', credential: { ...stale, codexLogin: undefined }, email: 'team@example.com', updated: true }
+  })
+  await page.goto('/workspace-config.html?view=/settings/credentials')
+  await expect(page.getByTestId('workspace-credential-codex-status-codex-login')).toContainText('登录已失效')
+  await page.getByTestId('workspace-credential-relogin-codex-login').click()
+  await expect(page.getByTestId('codex-device-code')).toHaveText('ABCD1234')
+  expect(starts).toEqual([{ credentialId: 'codex-login' }])
+  await expect(page.getByTestId('workspace-credential-codex-status-codex-login')).toContainText('自动续期正常', { timeout: 10_000 })
+  await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('refresh_token')
+})
+
+for (const scenario of [
+  { width: 320, theme: 'light', lang: 'zh-CN', reduced: true },
+  { width: 390, theme: 'dark', lang: 'en', reduced: false },
+  { width: 1280, theme: 'dark', lang: 'zh-CN', reduced: false },
+  { width: 1440, theme: 'light', lang: 'en', reduced: true },
+]) {
+  test(`Codex login follows theme, keyboard and layout conventions (${scenario.width}px ${scenario.theme} ${scenario.lang})`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: scenario.width, height: 900 })
+    await page.emulateMedia({ reducedMotion: scenario.reduced ? 'reduce' : 'no-preference' })
+    let reply: Record<string, unknown> = { status: 'pending', interval: 3 }
+    await mockCodexDevice(page, [], () => reply)
+    await page.goto(`/workspace-config.html?view=/settings/credentials&theme=${scenario.theme}&lang=${scenario.lang}`)
+    await openAddCredential(page)
+    await page.getByTestId('credential-kind-codex').click()
+    await page.getByTestId('workspace-credential-create-next').click()
+    await page.getByTestId('workspace-credential-create-alias').fill(codexAlias)
+    const start = page.getByTestId('codex-device-start')
+    await start.focus()
+    await start.press('Enter')
+    const card = page.getByTestId('codex-device-card')
+    const copy = page.getByTestId('codex-device-copy')
+    const open = page.getByTestId('codex-device-open')
+    await expect(copy).toBeFocused()
+    await expect(page.getByTestId('workspace-credential-create-alias')).toBeDisabled()
+    await expect(page.getByTestId('credential-auth-paste')).toBeDisabled()
+    await expect(card).not.toContainText('refresh_token')
+    for (const element of [card, copy, open, page.getByTestId('codex-device-code')]) {
+      await expectWithinViewport(element, page)
+      expect(await element.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    }
+    const controls = await copy.evaluate((el) => ({ height: el.clientHeight, radius: getComputedStyle(el).borderRadius }))
+    expect(controls.height).toBe(34) // 36px shared button, minus its two borders.
+    expect(controls.radius).toBe('8px')
+    const primary = await open.evaluate(el => ({
+      color: getComputedStyle(el).backgroundColor,
+      accent: `rgb(${getComputedStyle(document.documentElement).getPropertyValue('--c-accent').trim().split(/\s+/).join(', ')})`,
+      radius: getComputedStyle(el).borderRadius,
+    }))
+    expect(primary.color).toBe(primary.accent)
+    expect(primary.radius).toBe(controls.radius)
+    await copy.press('Tab')
+    await expect(open).toBeFocused()
+    if (scenario.reduced) {
+      expect(await card.locator('.cx-device__lamp i').evaluate(el => getComputedStyle(el).animationName)).toBe('none')
+      expect(await card.locator('.cx-device__bar i').evaluate(el => getComputedStyle(el).transitionDuration)).toBe('0s')
+    }
+    await page.screenshot({ path: testInfo.outputPath('codex-device-waiting.png'), fullPage: true })
+    reply = { status: 'expired' }
+    await expect(page.getByTestId('codex-device-retry')).toBeFocused({ timeout: 10_000 })
+    await page.getByTestId('codex-device-paste').click()
+    await expect(page.getByTestId('workspace-credential-create-value')).toBeFocused()
+    await expect(page.getByTestId('workspace-credential-create-alias')).toHaveValue(codexAlias)
+    await expect(page.getByTestId('workspace-credential-create-alias')).toBeEnabled()
+    await expectNoHorizontalOverflow(page)
+  })
+}
+
+test('a failed Codex re-login can move directly to a focused login-file editor', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 })
+  const stale = { id: 'codex-login', purpose: 'tool_auth', toolId: 'codex', secretKind: 'login_file', issuer: 'codex', enabled: true, type: 'ai', name: 'Team Codex', provider: 'codex', envKey: 'GRASP_CODEX_AUTH_JSON', configured: true, masked: '••••••••' }
+  const { cancels } = await mockCodexDevice(page, [stale], () => ({ status: 'not_enabled' }))
+  await page.goto('/workspace-config.html?view=/settings/credentials')
+  await page.getByTestId('workspace-credential-relogin-codex-login').click()
+  await expect(page.getByTestId('codex-device-paste')).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('codex-device-paste').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByTestId('workspace-credential-input-codex-login')).toBeFocused()
+  await expect(page.getByTestId('workspace-credential-input-codex-login')).toHaveValue('')
+  await expectNoHorizontalOverflow(page)
+  expect(cancels).toEqual([]) // A terminal poll already released its session.
+})

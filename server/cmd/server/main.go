@@ -143,6 +143,10 @@ func main() {
 	externalMcpSvc := services.NewExternalMcpService(db)
 	mcpKeySvc := services.NewWorkspaceMcpApiKeyService(db)
 	credentialSvc := services.NewCredentialService(db)
+	codexLogins := runtime.NewCodexLoginHub(nil)
+	codexLoginMgr := services.NewCodexLoginManager(credentialSvc, codexLogins, services.CodexLoginManagerConfig{
+		RefreshLead: cfg.CodexRefreshLead(), CheckInterval: cfg.CodexCheckInterval(), AuthBaseURL: cfg.CodexAuthBaseURL(),
+	})
 	sharedAgentSvc := services.NewSharedAgentService(services.DefaultSharedAgentRoot(cfg.Engine.ProfilesRoot))
 	modelConnectionSvc := services.NewModelConnectionService(db)
 	modelConfigurationSvc := services.NewModelConfigurationService(db)
@@ -232,8 +236,8 @@ func main() {
 			}
 			return run.SandboxEnv
 		},
-		PublicAdvertise:         cfg.Server.PublicAdvertise,
-		WriteBackCodexLoginFile: credentialSvc.WriteBackCodexLoginCredential,
+		PublicAdvertise: cfg.Server.PublicAdvertise,
+		CodexLogins:     codexLogins,
 	})
 	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
 	if err := eng.InitDialogueEpoch(); err != nil {
@@ -356,7 +360,7 @@ func main() {
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
 		GitCredential:        credentialSvc.ResolveGitValue,
 	})
-	sbxSvc.SetCodexLoginWriteBack(credentialSvc.WriteBackCodexLoginCredential)
+	sbxSvc.SetCodexLogins(codexLogins)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
@@ -367,6 +371,7 @@ func main() {
 	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
 	go sbxSvc.RunSweeper(sweeperCtx)
+	codexLoginMgr.Start(sweeperCtx)
 
 	// In-sandbox VNC preview: dials each preview-capable sandbox's CDP/websockify.
 	browserSvc := browser.New(sbxMgr, browser.Config{
@@ -525,6 +530,7 @@ func main() {
 		McpKeys:             mcpKeySvc,
 		Credentials:         credentialSvc,
 		GitHubDevice:        services.NewGitHubDeviceFlowService(credentialSvc, func() string { return config.GetConfig().GitHubOAuthClientID() }),
+		CodexDevice:         services.NewCodexDeviceFlowService(credentialSvc, cfg.CodexAuthBaseURL()),
 		OpenCodeCatalog:     openCodeCatalog,
 		ModelConnections:    modelConnectionSvc,
 		ModelConfigurations: modelConfigurationSvc,
@@ -617,6 +623,7 @@ func main() {
 	// client makes the in-flight turn fail and discard its sandbox, while the
 	// next process reattaches running agent sandboxes and resumes their nodes.
 	stopSweeper()
+	codexLoginMgr.Stop()
 	channelMgr.StopAll()
 	browserSvc.Stop()
 

@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1058,6 +1059,76 @@ func (s *Sandbox) WriteFile(ctx context.Context, path string, content []byte) er
 	out, err := s.creds().runInput(ctx, 20*time.Second, teeCmd, strings.NewReader(string(content)))
 	if err != nil {
 		return fmt.Errorf("write %s: %w: %s", path, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// WriteFileAtomic replaces path with content (mode 0600) so readers see either
+// the old or the new file, never a partial one. The content travels base64
+// encoded on the script's stdin, so it is neither on a command line nor echoed
+// into errors.
+func (s *Sandbox) WriteFileAtomic(ctx context.Context, path string, content []byte) error {
+	resolved := s.resolvePath(path)
+	if s.local != nil {
+		return writeLocalAtomic(resolved, content)
+	}
+	if err := validateShellArg(resolved); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	dir := resolved
+	if i := strings.LastIndex(resolved, "/"); i > 0 {
+		dir = resolved[:i]
+	}
+	script := "set -e\numask 077\n" +
+		"f=" + shellQuote(resolved) + "\n" +
+		"t=\"$f.tmp.$$\"\n" +
+		"mkdir -p " + shellQuote(dir) + "\n" +
+		"trap 'rm -f \"$t\"' EXIT\n" +
+		"base64 -d > \"$t\" <<'GRASP_EOF'\n" +
+		base64.StdEncoding.EncodeToString(content) + "\n" +
+		"GRASP_EOF\n" +
+		"chmod 600 \"$t\"\n" +
+		"mv -f \"$t\" \"$f\"\n" +
+		"trap - EXIT\n"
+	sc, err := newSafeCmd("bash", "-s")
+	if err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if out, err := s.creds().runInput(ctx, 20*time.Second, sc, strings.NewReader(script)); err != nil {
+		return fmt.Errorf("write %s: %w: %s", path, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func writeLocalAtomic(path string, content []byte) (err error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	if err = tmp.Chmod(0o600); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if _, err = tmp.Write(content); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err = tmp.Sync(); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err = os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }

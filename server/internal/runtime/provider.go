@@ -94,10 +94,10 @@ type Options struct {
 	RunSandboxEnvForRun func(runID string) []models.EnvEntry
 	// PublicAdvertise is the browser-facing base URL (preview proxy / pick.js).
 	PublicAdvertise string
-	// WriteBackCodexLoginFile replaces the workspace Codex login file when a
-	// run's auth.json changed. Nil skips write-back (tests). The callback must
-	// not log the file body.
-	WriteBackCodexLoginFile func(credentialID, content string) error
+	// CodexLogins installs and keeps current the sandbox copy of a workspace
+	// Codex login (no refresh token). Nil strips the refresh token without
+	// platform renewal (tests).
+	CodexLogins *CodexLoginHub
 }
 
 // SharedAgentView is the runtime-facing slice of the shared Agent config

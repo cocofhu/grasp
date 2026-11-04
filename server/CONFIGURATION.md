@@ -49,3 +49,6 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_STORAGE_DRIVER` | `storage.driver` | enum | `local` | Public | Attachment storage driver: local (cos reserved) |
 | `GRASP_BLOBS_ROOT` | `storage.blobs_root` | path | `data/blobs` | Public | Local attachment blob root directory |
 | `GRASP_GITHUB_OAUTH_CLIENT_ID` | `github.oauth_client_id` | string | `Not set` | Public | Client ID of a GitHub OAuth App with Enable Device Flow checked; enables "Sign in with GitHub" for github.com workspace credentials (no client secret needed) |
+| `GRASP_CODEX_LOGIN_REFRESH_LEAD` | `codex_login.refresh_lead` | duration | `96h` | Public | How long before the access token expires the platform renews a Codex ChatGPT login |
+| `GRASP_CODEX_LOGIN_CHECK_INTERVAL` | `codex_login.check_interval` | duration | `10m` | Public | How often the platform checks whether Codex logins need renewal |
+| `GRASP_CODEX_LOGIN_AUTH_BASE_URL` | `codex_login.auth_base_url` | URL | `https://auth.openai.com` | Public | OpenAI auth server for Codex login renewal and device-code sign-in; requests honor HTTPS_PROXY |
