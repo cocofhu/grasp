@@ -2,7 +2,10 @@ package config
 
 import (
 	"fmt"
+	"math"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -18,15 +21,15 @@ func (c *Config) FinalizeTimeout() time.Duration {
 
 // Config is the gateway's runtime configuration. It is loaded from a YAML file
 // and then overlaid with SBGW_* environment variables (env wins). A gateway
-// instance runs exactly one driver (Driver): "docker" for local testing or
-// "kubernetes" for production. The two are deployed separately.
+// instance runs exactly one driver (Driver): docker, kubernetes, or e2b.
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
-	Driver   string         `yaml:"driver"` // "docker" | "kubernetes"
+	Driver   string         `yaml:"driver"` // "docker" | "kubernetes" | "e2b"
 	Database DBConfig       `yaml:"database"`
 	Image    ImageConfig    `yaml:"image"`
 	Docker   DockerConfig   `yaml:"docker"`
 	K8s      K8sConfig      `yaml:"kubernetes"`
+	E2B      E2BConfig      `yaml:"e2b"`
 	Auth     AuthConfig     `yaml:"auth"`
 	OrphanGC OrphanGCConfig `yaml:"orphanGC"`
 }
@@ -155,6 +158,32 @@ type DockerConfig struct {
 	ShmSize string `yaml:"shmSize"`
 }
 
+// E2BConfig maps approved sandbox image identities to prebuilt E2B templates.
+// CPU and memory belong to the template, not the create request. Templates are
+// explicit YAML configuration; there is no inferred or public base-template fallback.
+type E2BConfig struct {
+	APIURL               string              `yaml:"apiURL"`
+	SandboxURL           string              `yaml:"sandboxURL"`
+	Domain               string              `yaml:"domain"`
+	APIKey               string              `yaml:"apiKey" json:"-"`
+	OwnerID              string              `yaml:"ownerID"`
+	StateDir             string              `yaml:"stateDir"`
+	BootTimeoutSeconds   int                 `yaml:"bootTimeoutSeconds"`
+	LeaseSeconds         int                 `yaml:"leaseSeconds"`
+	RenewIntervalSeconds int                 `yaml:"renewIntervalSeconds"`
+	Templates            []E2BTemplateConfig `yaml:"templates"`
+}
+
+type E2BTemplateConfig struct {
+	Image      string  `yaml:"image"`
+	TemplateID string  `yaml:"templateID"`
+	CPUCores   float64 `yaml:"cpuCores"`
+	MemoryMB   int64   `yaml:"memoryMB"`
+	// DiskGi is minimum initially available workspace capacity verified in the
+	// guest, not a resizable per-create PVC or a disk-usage quota.
+	DiskGi int64 `yaml:"diskGi"`
+}
+
 // K8sConfig configures the production Kubernetes driver and default/max
 // resource limits applied when creating sandboxes (per-request overrides).
 type K8sConfig struct {
@@ -200,6 +229,24 @@ type ResourceDefaults struct {
 // ResourceDefaults returns the sandbox resource policy from kubernetes config
 // (also used as defaults for the docker driver).
 func (c *Config) ResourceDefaults() ResourceDefaults {
+	if c.Driver == "e2b" {
+		result := ResourceDefaults{}
+		for _, template := range c.E2B.Templates {
+			if template.Image == c.Image.Ref {
+				result.DefaultCPUCores = template.CPUCores
+				result.DefaultMemoryMB = template.MemoryMB
+				result.DefaultDiskGi = template.DiskGi
+			}
+			result.MaxCPUCores = math.Max(result.MaxCPUCores, template.CPUCores)
+			if template.MemoryMB > result.MaxMemoryMB {
+				result.MaxMemoryMB = template.MemoryMB
+			}
+			if template.DiskGi > result.MaxDiskGi {
+				result.MaxDiskGi = template.DiskGi
+			}
+		}
+		return result
+	}
 	return ResourceDefaults{
 		DefaultCPUCores: c.K8s.CPUCores,
 		DefaultMemoryMB: c.K8s.MemoryMB,
@@ -343,6 +390,12 @@ func Default() *Config {
 			NamePrefix: "sbx-",
 			ShmSize:    "1g",
 		},
+		E2B: E2BConfig{
+			Domain:               "e2b.app",
+			BootTimeoutSeconds:   600,
+			LeaseSeconds:         3600,
+			RenewIntervalSeconds: 300,
+		},
 		K8s: K8sConfig{
 			Namespace:          "sandboxes",
 			NamePrefix:         "sbx-",
@@ -449,17 +502,75 @@ func normalizeResourcePolicy(c *Config) {
 
 func (c *Config) validate() error {
 	switch c.Driver {
-	case "docker", "kubernetes":
+	case "docker", "kubernetes", "e2b":
 	default:
-		return fmt.Errorf("invalid driver %q (want docker|kubernetes)", c.Driver)
+		return fmt.Errorf("invalid driver %q (want docker|kubernetes|e2b)", c.Driver)
 	}
 	if c.Image.Ref == "" {
 		return fmt.Errorf("image.ref is required")
+	}
+	if c.Driver == "e2b" {
+		if err := c.validateE2B(); err != nil {
+			return err
+		}
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Database.Driver)) {
 	case "", "sqlite", "mysql":
 	default:
 		return fmt.Errorf("invalid database.driver %q (want sqlite|mysql)", c.Database.Driver)
+	}
+	return nil
+}
+
+func (c *Config) validateE2B() error {
+	if strings.TrimSpace(c.E2B.APIKey) == "" || strings.ContainsAny(c.E2B.APIKey, "\r\n") {
+		return fmt.Errorf("e2b.apiKey is required and must be a valid header value")
+	}
+	if strings.TrimSpace(c.E2B.OwnerID) == "" || strings.ContainsAny(c.E2B.OwnerID, "\r\n\x00") {
+		return fmt.Errorf("e2b.ownerID is required and must be stable for this deployment")
+	}
+	if !filepath.IsAbs(c.E2B.StateDir) || filepath.Clean(c.E2B.StateDir) == "/" || strings.ContainsRune(c.E2B.StateDir, '\x00') {
+		return fmt.Errorf("e2b.stateDir must be an explicit absolute persistent directory")
+	}
+	for _, origin := range []string{c.E2B.APIURL, c.E2B.SandboxURL} {
+		if origin == "" {
+			continue
+		}
+		u, err := url.Parse(origin)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+			u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return fmt.Errorf("e2b origins must be HTTP(S) origins without credentials, paths or query strings")
+		}
+		if port := u.Port(); port != "" {
+			number, err := strconv.Atoi(port)
+			if err != nil || number < 1 || number > 65535 {
+				return fmt.Errorf("e2b origin port is invalid")
+			}
+		}
+	}
+	if c.E2B.BootTimeoutSeconds <= 0 || c.E2B.LeaseSeconds < 30 || c.E2B.RenewIntervalSeconds <= 0 ||
+		int64(c.E2B.RenewIntervalSeconds) >= (int64(c.E2B.LeaseSeconds)+1)/2 ||
+		int64(c.E2B.BootTimeoutSeconds) > math.MaxInt64/int64(time.Second) ||
+		int64(c.E2B.LeaseSeconds) > math.MaxInt64/int64(time.Second) {
+		return fmt.Errorf("e2b requires positive timeouts, leaseSeconds at least 30 and renewal before half the lease")
+	}
+	if len(c.E2B.Templates) == 0 {
+		return fmt.Errorf("e2b.templates must explicitly map image identities to prepared templates")
+	}
+	seen := make(map[string]bool)
+	defaultFound := false
+	for _, template := range c.E2B.Templates {
+		if strings.TrimSpace(template.Image) == "" || strings.TrimSpace(template.TemplateID) == "" ||
+			seen[template.Image] || template.CPUCores <= 0 || math.IsNaN(template.CPUCores) ||
+			math.IsInf(template.CPUCores, 0) || math.Trunc(template.CPUCores) != template.CPUCores ||
+			template.MemoryMB <= 0 || template.DiskGi <= 0 || template.DiskGi > 1<<30 {
+			return fmt.Errorf("e2b.templates require unique images, explicit template IDs and positive whole CPUs/memoryMB/diskGi")
+		}
+		seen[template.Image] = true
+		defaultFound = defaultFound || template.Image == c.Image.Ref
+	}
+	if !defaultFound {
+		return fmt.Errorf("image.ref must match an explicit e2b.templates image")
 	}
 	return nil
 }
@@ -516,6 +627,29 @@ func applyEnv(c *Config) {
 	}
 	if v := os.Getenv("SBGW_DOCKER_NETWORK"); v != "" {
 		c.Docker.Network = v
+	}
+	// E2B. Template/resource profiles are deliberately YAML-only.
+	for key, destination := range map[string]*string{
+		"SBGW_E2B_API_KEY": &c.E2B.APIKey, "SBGW_E2B_API_URL": &c.E2B.APIURL,
+		"SBGW_E2B_SANDBOX_URL": &c.E2B.SandboxURL, "SBGW_E2B_DOMAIN": &c.E2B.Domain,
+		"SBGW_E2B_OWNER_ID": &c.E2B.OwnerID, "SBGW_E2B_STATE_DIR": &c.E2B.StateDir,
+	} {
+		if value := os.Getenv(key); value != "" {
+			*destination = value
+		}
+	}
+	for key, destination := range map[string]*int{
+		"SBGW_E2B_BOOT_TIMEOUT_SEC":   &c.E2B.BootTimeoutSeconds,
+		"SBGW_E2B_LEASE_SEC":          &c.E2B.LeaseSeconds,
+		"SBGW_E2B_RENEW_INTERVAL_SEC": &c.E2B.RenewIntervalSeconds,
+	} {
+		if value := os.Getenv(key); value != "" {
+			if number, err := strconv.Atoi(value); err == nil {
+				*destination = number
+			} else {
+				*destination = 0 // validateE2B rejects malformed E2B duration overrides.
+			}
+		}
 	}
 	// Kubernetes
 	if v := os.Getenv("SBGW_K8S_IN_CLUSTER"); v != "" {

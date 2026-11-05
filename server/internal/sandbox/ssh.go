@@ -363,6 +363,27 @@ func (c sshCreds) waitReady(ctx context.Context, maxWait time.Duration) error {
 	}
 }
 
+// sshOutputBuffer merges SSH's independently copied stdout and stderr. Expose
+// only Write: bytes.Buffer.ReadFrom can wait for stderr EOF while a concurrent
+// stdout copy writes, then overwrite the buffer length with its stale value.
+// Snapshots also stay safe when cancellation returns before copying finishes.
+type sshOutputBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *sshOutputBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *sshOutputBuffer) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return bytes.Clone(b.buf.Bytes())
+}
+
 // run executes a validated safeCmd on the sandbox and returns combined
 // stdout+stderr. A non-zero exit is returned as an error carrying the output.
 func (c sshCreds) run(ctx context.Context, timeout time.Duration, cmd safeCmd) ([]byte, error) {
@@ -386,7 +407,7 @@ func (c sshCreds) run(ctx context.Context, timeout time.Duration, cmd safeCmd) (
 	}
 	defer func() { _ = sess.Close() }()
 
-	var buf bytes.Buffer
+	var buf sshOutputBuffer
 	sess.Stdout = &buf
 	sess.Stderr = &buf
 
@@ -434,7 +455,7 @@ func (c sshCreds) runInput(ctx context.Context, timeout time.Duration, cmd safeC
 	}
 	defer func() { _ = sess.Close() }()
 
-	var buf bytes.Buffer
+	var buf sshOutputBuffer
 	sess.Stdout = &buf
 	sess.Stderr = &buf
 	sess.Stdin = r

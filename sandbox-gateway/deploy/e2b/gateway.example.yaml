@@ -1,0 +1,44 @@
+# E2B-only gateway config for compose.e2b.yaml. Copy outside the checkout,
+# replace templateID, and set E2B_GATEWAY_CONFIG to the absolute copy path.
+# Secrets/owner/state-directory overrides come from the Compose environment.
+server:
+  listen: "127.0.0.1:8899"
+  finalizeTimeoutSeconds: 1200
+driver: e2b
+database:
+  driver: sqlite
+  path: /data/gateway.db
+image:
+  ref: universal-sandbox:e2b
+  ports:
+    session: 8765
+    codeServer: 8744
+    ssh: 22
+    cdp: 9222
+    novnc: 6080
+    # All E2B endpoints, including these, bind only to host loopback.
+    # set_preview publishes additional registered ports on demand.
+    app: [18080]
+e2b:
+  # Cloud defaults use https://api.e2b.app and provider sandbox domains.
+  # Embed/custom deployments set E2B_API_URL and E2B_SANDBOX_URL in Compose.
+  domain: e2b.app
+  ownerID: replace-with-stable-unique-deployment-id
+  stateDir: /data/e2b
+  bootTimeoutSeconds: 600
+  leaseSeconds: 3600
+  renewIntervalSeconds: 300
+  templates:
+    - image: universal-sandbox:e2b
+      templateID: replace-with-resolved-template-id
+      cpuCores: 2
+      memoryMB: 3072
+      # Minimum available workspace at create, NOT PVC size or a disk quota.
+      diskGi: 20
+auth:
+  # Required SANDBOX_GATEWAY_API_KEY is supplied as SBGW_API_KEYS by Compose.
+  apiKeys: []
+orphanGC:
+  enabled: true
+  intervalSeconds: 300
+  minAgeSeconds: 600
