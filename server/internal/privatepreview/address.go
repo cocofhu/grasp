@@ -42,6 +42,7 @@ func Parse(raw string) (Base, error) {
 		if err != nil || n < 1 || n > 65535 {
 			return Base{}, fmt.Errorf("preview_advertise requires a valid HTTP port")
 		}
+		port = canonicalPort(u.Scheme, port)
 	}
 	u.Host = host
 	if port != "" {
@@ -117,7 +118,7 @@ func (b Base) Ticket(authority string) (string, bool) {
 	}
 	host, port := authorityParts(authority)
 	ticket := strings.TrimSuffix(host, "."+b.origin.Hostname())
-	return ticket, ValidTicket(ticket) && port == b.origin.Port()
+	return ticket, ValidTicket(ticket) && canonicalPort(b.origin.Scheme, port) == b.origin.Port()
 }
 
 // ValidTicket checks the 128-bit opaque host label's canonical encoding.
@@ -162,4 +163,16 @@ func (b Base) OwnsURL(raw string) bool {
 func authorityParts(authority string) (string, string) {
 	u := &url.URL{Host: strings.ToLower(strings.TrimSpace(authority))}
 	return strings.TrimRight(u.Hostname(), "."), u.Port()
+}
+
+// Browsers canonicalize numeric ports and omit the scheme default from Host
+// and Origin. Match that representation for configured and incoming origins.
+func canonicalPort(scheme, port string) string {
+	if n, err := strconv.Atoi(port); err == nil {
+		port = strconv.Itoa(n)
+	}
+	if scheme == "https" && port == "443" || scheme == "http" && port == "80" {
+		return ""
+	}
+	return port
 }

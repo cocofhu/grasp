@@ -156,6 +156,28 @@ func (d *Driver) lookup(id string) (*entry, error) {
 	}
 	return e, nil
 }
+
+// currentEntry is called with e.mu held. A lookup or maintenance snapshot can
+// outlive a destroy/reinstall, so acquiring the old entry's lock alone does not
+// authorize touching the replacement's journal or provider resources.
+func (d *Driver) currentEntry(e *entry) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.entries[e.record.ID] == e
+}
+
+func (d *Driver) lockEntry(id string) (*entry, error) {
+	e, err := d.lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	e.mu.Lock()
+	if !d.currentEntry(e) {
+		e.mu.Unlock()
+		return nil, ErrNotFound
+	}
+	return e, nil
+}
 func randomKey() (string, error) {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -275,12 +297,12 @@ func (d *Driver) Create(parent context.Context, spec driver.Spec) (result *drive
 		d.mu.Lock()
 		e.cancel = nil
 		d.mu.Unlock()
-		if err != nil {
+		if err != nil && d.currentEntry(e) {
 			e.record.Phase = "deleting"
 			_ = d.save(&e.record)
 			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cleanupCancel()
-			_ = d.cleanup(cleanupCtx, &e.record)
+			_ = d.cleanup(cleanupCtx, e)
 		}
 	}()
 	if err = d.save(&e.record); err != nil {
@@ -526,23 +548,21 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 }
 
 func (d *Driver) Get(ctx context.Context, id string) (*driver.Handle, error) {
-	e, err := d.lookup(id)
+	e, err := d.lockEntry(id)
 	if err != nil {
 		return nil, err
 	}
-	e.mu.Lock()
 	defer e.mu.Unlock()
 	return d.refresh(ctx, &e.record)
 }
 func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
-	e, err := d.lookup(id)
+	e, err := d.lockEntry(id)
 	if errors.Is(err, ErrNotFound) {
 		return driver.StatusNotFound, nil
 	}
 	if err != nil {
 		return driver.StatusError, err
 	}
-	e.mu.Lock()
 	defer e.mu.Unlock()
 	// Every private preview asset checks sandbox liveness. Bound remote probes
 	// to once per two seconds while retaining immediate local lifecycle changes.
@@ -595,11 +615,10 @@ func (d *Driver) PublishPort(ctx context.Context, id string, port int) error {
 	if !validTunnelPort(port) {
 		return errors.New("invalid or reserved E2B port")
 	}
-	e, err := d.lookup(id)
+	e, err := d.lockEntry(id)
 	if err != nil {
 		return err
 	}
-	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.record.Phase != "running" {
 		return errors.New("E2B sandbox is not running")
@@ -621,11 +640,10 @@ func (d *Driver) PublishPort(ctx context.Context, id string, port int) error {
 }
 
 func (d *Driver) Stop(ctx context.Context, id string) error {
-	e, err := d.lookup(id)
+	e, err := d.lockEntry(id)
 	if err != nil {
 		return err
 	}
-	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.record.Phase == "deleting" {
 		return ErrNotFound
@@ -647,11 +665,10 @@ func (d *Driver) Stop(ctx context.Context, id string) error {
 	return d.save(&e.record)
 }
 func (d *Driver) Start(ctx context.Context, id string) error {
-	e, err := d.lookup(id)
+	e, err := d.lockEntry(id)
 	if err != nil {
 		return err
 	}
-	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.record.Phase == "running" {
 		h, err := d.refresh(ctx, &e.record)
@@ -701,7 +718,11 @@ func (d *Driver) Start(ctx context.Context, id string) error {
 	return d.save(&e.record)
 }
 
-func (d *Driver) cleanup(ctx context.Context, r *record) error {
+func (d *Driver) cleanup(ctx context.Context, e *entry) error {
+	if !d.currentEntry(e) {
+		return nil
+	}
+	r := &e.record
 	_ = d.tunnels.Close(r.Provider.ID)
 	// A timed-out POST may have created a sandbox before its response was
 	// received. Discover only our reserved owner+gateway metadata to retire it.
@@ -735,12 +756,17 @@ func (d *Driver) cleanup(ctx context.Context, r *record) error {
 			}
 		}
 	}
+	// Entry identity and journal retirement are one operation with respect to
+	// Create. Never unlink a replacement's journal after an old snapshot ran.
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.entries[r.ID] != e {
+		return nil
+	}
 	if err := os.Remove(d.statePath(r.ID)); err != nil && !os.IsNotExist(err) {
 		return errors.New("cannot remove E2B recovery record")
 	}
-	d.mu.Lock()
 	delete(d.entries, r.ID)
-	d.mu.Unlock()
 	return nil
 }
 func (d *Driver) Destroy(ctx context.Context, id string) error {
@@ -755,9 +781,12 @@ func (d *Driver) Destroy(ctx context.Context, id string) error {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if !d.currentEntry(e) {
+		return nil
+	}
 	e.record.Phase = "deleting"
 	saveErr := d.save(&e.record)
-	cleanupErr := d.cleanup(ctx, &e.record)
+	cleanupErr := d.cleanup(ctx, e)
 	return errors.Join(saveErr, cleanupErr)
 }
 func (d *Driver) Reinstall(ctx context.Context, spec driver.Spec, preserveData bool) error {
@@ -774,11 +803,10 @@ func (d *Driver) Reinstall(ctx context.Context, spec driver.Spec, preserveData b
 	return err
 }
 func (d *Driver) Logs(ctx context.Context, id string, tail int) (string, error) {
-	e, err := d.lookup(id)
+	e, err := d.lockEntry(id)
 	if err != nil {
 		return "", err
 	}
-	e.mu.Lock()
 	defer e.mu.Unlock()
 	current, getErr := d.client.Get(ctx, e.record.Provider.ID)
 	if getErr != nil {
@@ -837,26 +865,34 @@ func (d *Driver) sweep(ctx context.Context) {
 	}
 	d.mu.Unlock()
 	for _, e := range entries {
-		if !e.mu.TryLock() {
-			continue
+		d.sweepEntry(ctx, e)
+	}
+}
+
+// sweepEntry also accepts snapshots that became stale while another entry was
+// being maintained. A retired generation must neither delete nor renew a new
+// provider guest that reused its gateway ID.
+func (d *Driver) sweepEntry(ctx context.Context, e *entry) {
+	if !e.mu.TryLock() {
+		return
+	}
+	defer e.mu.Unlock()
+	if !d.currentEntry(e) {
+		return
+	}
+	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if e.record.Phase == "deleting" {
+		if err := d.cleanup(bounded, e); err != nil {
+			log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B deletion pending retry")
 		}
-		func() {
-			defer e.mu.Unlock()
-			bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
-			defer cancel()
-			if e.record.Phase == "deleting" {
-				if err := d.cleanup(bounded, &e.record); err != nil {
-					log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B deletion pending retry")
-				}
-			} else if e.record.Phase == "running" {
-				s, err := d.client.Get(bounded, e.record.Provider.ID)
-				if err == nil && d.owns(s, e.record.ID) && s.State != "paused" && s.State != "stopped" {
-					err = d.client.SetTimeout(bounded, s.ID, int(d.opts.Lease/time.Second))
-					if err != nil {
-						log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B lease renewal failed; provider expiry remains in force")
-					}
-				}
+	} else if e.record.Phase == "running" {
+		s, err := d.client.Get(bounded, e.record.Provider.ID)
+		if err == nil && d.owns(s, e.record.ID) && s.State != "paused" && s.State != "stopped" {
+			err = d.client.SetTimeout(bounded, s.ID, int(d.opts.Lease/time.Second))
+			if err != nil {
+				log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B lease renewal failed; provider expiry remains in force")
 			}
-		}()
+		}
 	}
 }

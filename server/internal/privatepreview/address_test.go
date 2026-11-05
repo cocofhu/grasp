@@ -97,3 +97,34 @@ func TestRejectInvalidPreviewBase(t *testing.T) {
 		t.Fatal("invalid ticket accepted")
 	}
 }
+
+func TestPreviewOriginMatchesBrowserCanonicalPorts(t *testing.T) {
+	ticket := strings.Repeat("a", 32)
+	for _, tc := range []struct{ configured, canonical, authority string }{
+		{"https://preview.example.net:443", "https://preview.example.net", "preview.example.net"},
+		{"http://preview.example.net:80", "http://preview.example.net", "preview.example.net"},
+		{"https://preview.example.net:0443", "https://preview.example.net", "preview.example.net"},
+		{"http://preview.example.net:0080", "http://preview.example.net", "preview.example.net"},
+		{"https://preview.example.net:08443", "https://preview.example.net:8443", "preview.example.net:8443"},
+	} {
+		t.Run(tc.configured, func(t *testing.T) {
+			base, err := Parse(tc.configured)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if base.Origin() != tc.canonical {
+				t.Fatalf("origin %q, browser uses %q", base.Origin(), tc.canonical)
+			}
+			public := strings.Replace(tc.canonical, "://", "://"+ticket+".", 1) + "/"
+			if base.URL(ticket) != public || !base.OwnsURL(public) {
+				t.Fatalf("invalid browser URL: %q", base.URL(ticket))
+			}
+			if got, ok := base.Ticket(ticket + "." + tc.authority); !ok || got != ticket {
+				t.Fatal("browser normalized Host rejected")
+			}
+			if _, ok := base.Ticket(ticket + ".preview.example.net:1234"); ok {
+				t.Fatal("wrong port accepted")
+			}
+		})
+	}
+}
