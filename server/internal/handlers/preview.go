@@ -57,6 +57,12 @@ var (
 // it additionally enforces liveness/health and self-heals a stale host after a
 // container restart.
 func (h *Handlers) PreviewProxy(c *gin.Context) {
+	// Private registrations are served exclusively on isolated origins. A
+	// same-origin path would let sandbox HTML use the platform's login cookie.
+	if h.MCP != nil && h.MCP.PrivatePreviews() {
+		c.String(http.StatusNotFound, "preview not found")
+		return
+	}
 	runID := c.Param("runId")
 	nodeID := c.Param("nodeId")
 	port, err := strconv.Atoi(c.Param("port"))

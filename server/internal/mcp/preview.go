@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/privatepreview"
 	"github.com/rs/zerolog/log"
 )
 
@@ -262,6 +263,21 @@ func (h *Host) SetPreviewBaseURL(base string) {
 	h.mu.Lock()
 	h.previewBase = strings.TrimRight(strings.TrimSpace(base), "/")
 	h.mu.Unlock()
+}
+
+// SetPrivatePreviewBase enables isolated browser origins for private gateway
+// endpoints. The deployment validates this wildcard origin before wiring it.
+func (h *Host) SetPrivatePreviewBase(base privatepreview.Base) {
+	h.mu.Lock()
+	h.privatePreviewBase = base
+	h.mu.Unlock()
+}
+
+// PrivatePreviews reports whether gateway endpoints are server-only.
+func (h *Host) PrivatePreviews() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.privatePreviewBase.Origin() != ""
 }
 
 // SetPreviewStore wires DB persistence for preview ports.
@@ -599,7 +615,7 @@ func (h *Host) registerSwitchedPreview(ctx context.Context, ops PreviewSandboxOp
 		host = base
 	}
 	if host != "" {
-		h.releaseDisplacedPreviews(ctx, ops, runID, nodeID, sandboxName, port, host)
+		h.releaseDisplacedPreviews(ctx, ops, runID, nodeID, sandboxName, port, previewPort, host)
 	}
 	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, previewPort, label, host, keepalivePID)
 	if err != nil {
@@ -618,12 +634,18 @@ func (h *Host) resetInjectUpstream(ctx context.Context, sw previewInjectSwitcher
 // releaseDisplacedPreviews points earlier registrations that shared host
 // (PREVIEW_PORT's address) back at their own address: the injector now serves
 // port, so their new-tab link would open the wrong app.
-func (h *Host) releaseDisplacedPreviews(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int, host string) {
+func (h *Host) releaseDisplacedPreviews(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port, injectorPort int, host string) {
 	h.mu.RLock()
 	store := h.previewStore
 	h.mu.RUnlock()
 	for _, p := range h.ListPreviewPorts(runID, nodeID) {
-		if previewPortKind(p) != PreviewKindPort || p.Port == port || p.Host != host {
+		sameUpstream := p.Host == host
+		if h.PrivatePreviews() && p.InjectorPort != 0 {
+			// Private loopback ports can be republished after a gateway
+			// restart; the guest port is the durable injector identity.
+			sameUpstream = p.InjectorPort == injectorPort
+		}
+		if previewPortKind(p) != PreviewKindPort || p.Port == port || !sameUpstream {
 			continue
 		}
 		p.Host = ""
@@ -659,8 +681,27 @@ func (h *Host) keepalivePreview(ctx context.Context, ops PreviewSandboxOps, runI
 func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName string, port, injectorPort int, label, host string, keepalivePID int) (PreviewRegistration, error) {
 	h.mu.RLock()
 	store := h.previewStore
+	privateBase := h.privatePreviewBase
 	h.mu.RUnlock()
 	proxyURL := h.previewProxyURL(runID, nodeID, port)
+	if privateBase.Origin() != "" {
+		// Re-registering during a Live edit must not invalidate the open
+		// page's origin or its embed session. Rotate only for a new sandbox
+		// generation, a different port, or a new configured preview origin.
+		for _, existing := range h.ListPreviewPorts(runID, nodeID) {
+			if existing.Port == port && existing.SandboxName == sandboxName && privateBase.OwnsURL(existing.ProxyURL) {
+				proxyURL = existing.ProxyURL
+				break
+			}
+		}
+		if !privateBase.OwnsURL(proxyURL) {
+			var err error
+			proxyURL, err = privateBase.NewURL()
+			if err != nil {
+				return PreviewRegistration{}, err
+			}
+		}
+	}
 	rec := PreviewPort{
 		RunID: runID, NodeID: nodeID, Kind: PreviewKindPort,
 		ItemKey: previewItemKey(PreviewKindPort, port, ""),
@@ -687,6 +728,9 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 	reg := PreviewRegistration{ProxyURL: proxyURL}
 	if h.previewDirect(runID, nodeID) && host != "" {
 		reg.PublicURL = strings.TrimRight(host, "/") + "/"
+		if privateBase.Origin() != "" {
+			reg.PublicURL = proxyURL
+		}
 	}
 	return reg, nil
 }
@@ -771,10 +815,19 @@ func (h *Host) annotatePreviewTransport(runID, nodeID string, ports []PreviewPor
 	}
 	out := make([]PreviewPort, len(ports))
 	copy(out, ports)
+	h.mu.RLock()
+	privateBase := h.privatePreviewBase
+	h.mu.RUnlock()
 	for i := range out {
 		out[i].Mode = "direct"
 		if out[i].Host != "" {
 			out[i].DirectURL = strings.TrimRight(out[i].Host, "/") + "/"
+			if privateBase.Origin() != "" {
+				out[i].DirectURL = ""
+				if privateBase.OwnsURL(out[i].ProxyURL) {
+					out[i].DirectURL = out[i].ProxyURL
+				}
+			}
 		}
 	}
 	return out

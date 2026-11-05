@@ -1,0 +1,2 @@
+# Build/probe tooling only. The running Grasp gateway uses its native Go client.
+e2b==2.49.1

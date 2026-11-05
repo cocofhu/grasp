@@ -127,6 +127,21 @@ func (s *PreviewService) GetPreviewPort(runID, nodeID string, port int) (*mcp.Pr
 	return &rec, true
 }
 
+// PrivatePreviewByURL resolves an opaque browser capability from persisted
+// registrations, including after a server restart. No endpoint is inferred
+// from a hostname or caller-supplied port.
+func (s *PreviewService) PrivatePreviewByURL(rawURL string) (*mcp.PreviewPort, bool) {
+	var row models.RunPreviewPort
+	if s.db == nil || s.db.Where("proxy_url = ? AND kind = ?", rawURL, mcp.PreviewKindPort).First(&row).Error != nil {
+		return nil, false
+	}
+	return &mcp.PreviewPort{
+		RunID: row.RunID, NodeID: row.NodeID, Kind: row.Kind, ItemKey: row.ItemKey,
+		Port: row.Port, ProxyURL: row.ProxyURL, SandboxName: row.SandboxName,
+		Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
+	}, true
+}
+
 func (s *PreviewService) UpdatePreviewHealth(runID, nodeID string, port int, healthy bool) error {
 	return s.db.Model(&models.RunPreviewPort{}).
 		Where("run_id = ? AND node_id = ? AND port = ?", runID, nodeID, port).

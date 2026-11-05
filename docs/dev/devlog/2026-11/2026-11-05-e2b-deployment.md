@@ -1,0 +1,8 @@
+# 2026-11-05（E2B 独立第三种沙箱部署方式）
+
+- 日期：2026-11-05。
+- 范围：`sandbox-gateway/gateway/internal/driver/e2b/`、gateway 配置/注册及依赖、`sandbox-gateway/deploy/e2b/`、`compose.e2b.yaml`；server 启动时序及 `server/internal/{privatepreview,config,handlers,mcp,models,router,services,sandbox}/` 的私有预览与就绪适配、测试和配置文档；根部署文档及 CHANGELOG。
+- 做了什么：新增原生 Go E2B API/envd 客户端、私有 guest relay 与 loopback TCP 桥接。预制模板严格匹配镜像身份/CPU/内存/初始可用磁盘容量；root 私有日志原子持久化凭据、转发端口和删除意图，支持重启接回、租约续期、取消创建及删除重试。E2B 显式启用独立预览站点，每个预览使用持久化随机子域名，保留应用根路径和 WS，同时隔离平台凭据、登录/API 路由。原有 Docker/Kubernetes 实现和启动文件未改；运行时包/Agent 协议/前端未改。另提供不含测试替身的生产模板构建及容量探针工具。
+- 为什么：让第三种部署复用现有 SSH、ACP、IDE、noVNC/CDP、预览/Pick/PageControl/Live 产品路径，不向浏览器暴露 E2B 私有流量凭据；跨进程恢复和故障清理不能依赖临时内存。显式 pause/resume 仍受 provider 路由恢复能力约束，不启用自动暂停；保数据重装需快照迁移，当前明确拒绝。
+- 如何验证：gateway 全量 test/vet/lint、E2B/config/main race 通过；核心覆盖率 91.8%、E2B 包 92.8%。server 全量 test/vet/lint、私有预览/就绪 race、配置文档检查、指定 runtime 子集及核心覆盖率 90.8% 通过。三个 Go 模块 govulncheck 均无已调用漏洞；docs build/audit、actionlint、shellcheck、品牌检查和 Compose 校验通过，gateway 镜像构建通过。专用 KVM/E2B Embed 真机完成 84/84 轮和 56/56 有序 Agent 切换（5 个原生可配置 CLI，Cursor/Trae/Kimi 明确为 wire fixture，不宣称厂商推理）；实际浏览器 11/11 项覆盖 Pick/PageControl、终端、IDE WS、noVNC 像素/输入/CDP、Live 生成/细化/接受/丢弃；另验 stock Vite 根路径/module/HMR。重启保留同 guest、进程、工作区及 28 个端点；独立续租实际延长到期时间；显式 memory pause 约 0.17 秒、resume 约 21 秒，boot/backend 身份及端点不变，服务可访问。真实 SSH 双向 1 MiB 全字节二进制校验通过；10 组实际 DTO/页面/脚本/日志样本未含 E2B 凭据。
+- 验收边界：完整 Grasp 冷就绪约 52 秒；不承诺端到端亚秒启动。首次切换预览曾出现 SSH 脚本空返回，同 guest 正常 scoped 回复重试及后续完整 UI 验收通过，保留首次失败记录。直接 Docker 镜像拉取发生 TLS 握手超时，不将其记为拉取成功。server 重启后的 `per_node` 冷会话行为沿用原逻辑，热会话不自动恢复且回复可能新建 guest，部署说明明确此边界。

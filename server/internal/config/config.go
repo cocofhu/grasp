@@ -23,6 +23,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/execution"
+	"github.com/cocofhu/grasp/internal/privatepreview"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
@@ -210,6 +211,11 @@ type ServerConfig struct {
 	// and Run→QQ notification deep links (/runs/{id}). Empty defaults to
 	// http://localhost:<port>; QQ clients cannot open relative /runs paths.
 	PublicAdvertise string `yaml:"public_advertise"`
+	// PreviewAdvertise is the separate browser origin whose wildcard subdomains
+	// route to this server for private sandbox previews. Only used when
+	// sandbox.private_endpoints is enabled; never use the platform origin.
+	// Production additionally requires a different registrable cookie site.
+	PreviewAdvertise string `yaml:"preview_advertise"`
 	// FrameAncestors lists the origins (space or comma separated) that may
 	// embed workspace pages in an iframe. Empty forbids embedding.
 	FrameAncestors string `yaml:"frame_ancestors"`
@@ -275,6 +281,10 @@ type SandboxConfig struct {
 	// GatewayAPIKey is the optional bearer token for the gateway (empty when
 	// the gateway runs with auth disabled).
 	GatewayAPIKey string `yaml:"gateway_api_key"`
+	// PrivateEndpoints exposes preview registrations through isolated Grasp
+	// origins rather than gateway endpoints. Enable for the E2B driver's
+	// same-host loopback transport; Docker/Kubernetes keep their direct defaults.
+	PrivateEndpoints bool `yaml:"private_endpoints"`
 	// OpenCodeCatalogURL overrides where the OpenCode model catalog is read from
 	// (models.dev by default). Point it at a mirror when egress is restricted.
 	OpenCodeCatalogURL string `yaml:"opencode_catalog_url"`
@@ -436,10 +446,24 @@ func parse(path string) (*Config, error) {
 	default:
 		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
+	if value := env("GRASP_SANDBOX_PRIVATE_ENDPOINTS"); value != "" {
+		if _, err := strconv.ParseBool(value); err != nil {
+			return nil, fmt.Errorf("GRASP_SANDBOX_PRIVATE_ENDPOINTS must be a boolean")
+		}
+	}
 	applyEnvOverrides(c)
 	setDefaults(c)
 	if err := rejectSandboxSecretEnv(c); err != nil {
 		return nil, err
+	}
+	if c.Sandbox.PrivateEndpoints {
+		base, err := privatepreview.Parse(c.Server.PreviewAdvertise)
+		if err != nil {
+			return nil, err
+		}
+		if err := base.ValidatePlatformOrigin(c.Server.PublicAdvertise, strings.EqualFold(strings.TrimSpace(c.Server.DeploymentMode), "production")); err != nil {
+			return nil, err
+		}
 	}
 	return c, nil
 }
@@ -502,6 +526,12 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := env("GRASP_SANDBOX_GATEWAY_API_KEY"); v != "" {
 		c.Sandbox.GatewayAPIKey = v
+	}
+	if v := env("GRASP_SANDBOX_PRIVATE_ENDPOINTS"); v != "" {
+		c.Sandbox.PrivateEndpoints, _ = strconv.ParseBool(v)
+	}
+	if v := env("GRASP_PREVIEW_ADVERTISE"); v != "" {
+		c.Server.PreviewAdvertise = v
 	}
 	if v := env("GRASP_OPENCODE_CATALOG_URL"); v != "" {
 		c.Sandbox.OpenCodeCatalogURL = v

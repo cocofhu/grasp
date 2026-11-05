@@ -145,6 +145,8 @@ flowchart LR
 
 ## 部署注意事项
 
+- **E2B（第三种沙箱部署方式）**：按 [E2B 部署指南](sandbox-gateway/deploy/e2b/README.md) 使用独立的 `compose.e2b.yaml`，连接 E2B Cloud 或兼容的自托管控制面。需要预制环境模板、持久化网关状态和独立的预览泛域名；现有 Docker、Kubernetes 部署保持默认行为。
+
 - API Key 与 Git 凭据请仅在工作区凭据设置配置，切勿提交到代码仓库。
 - 生产环境建议通过 digest 固定镜像版本，参见 [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke)。
 - 使用反向代理时需保留原始 `Host` 请求头，非默认端口也要保留（例如 nginx 配置 `proxy_set_header Host $http_host`）。临时审批链接和登录请求的来源校验都依赖该字段，详见 [SECURITY.md](SECURITY.md)。
