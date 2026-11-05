@@ -35,7 +35,7 @@ jobs:
       run:
         working-directory: server
     env:
-      GOPROXY: https://proxy.golang.org,direct
+      GOPROXY: https://proxy.golang.org|direct
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

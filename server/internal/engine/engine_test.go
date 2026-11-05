@@ -119,6 +119,8 @@ func waitRunErrorArtifact(t *testing.T, db *gorm.DB, runID string) string {
 	return ""
 }
 
+// waitReactPause waits for the conversation, which can precede the run's
+// waiting_human status. Call waitRunStatus too when asserting a parked run.
 func waitReactPause(t *testing.T, db *gorm.DB, runID, nodeID string) {
 	t.Helper()
 	deadline := time.Now().Add(waitPollTimeout)

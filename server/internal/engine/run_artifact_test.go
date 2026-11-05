@@ -84,7 +84,21 @@ func TestSaveRunArtifactRejectsBusySession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
+	t.Cleanup(func() {
+		provider.mu.Lock()
+		provider.reactHold = nil
+		provider.mu.Unlock()
+		close(hold)
+		if err := eng.waitReviewReadyForTest(run.ID, "clarify", waitPollTimeout); err != nil {
+			t.Error(err)
+		}
+		waitDriversIdle(t, eng)
+	})
 	waitReactPause(t, db, run.ID, "clarify")
+	// The conversation exists before the opening driver parks the run. Artifact
+	// editing requires the run's committed pause, not just an open conversation.
+	waitRunStatus(t, db, run.ID, "waiting_human")
+	waitDriversIdle(t, eng)
 	if _, err := eng.store.Save(run.ID, "clarify", "notes.md", "markdown", "v1"); err != nil {
 		t.Fatal(err)
 	}
@@ -95,13 +109,10 @@ func TestSaveRunArtifactRejectsBusySession(t *testing.T) {
 	if _, err := eng.EnqueueClarifyTurn(run.ID, "clarify", "第一条", nil, nil); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, thinking := eng.ReviewSessionState(run.ID, "clarify"); thinking {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitAdmissionUntil(t, func() bool {
+		_, thinking := eng.ReviewSessionState(run.ID, "clarify")
+		return thinking
+	}, waitPollTimeout)
 	if got := eng.ArtifactEditState(run.ID); got != (ArtifactEditState{Reason: ArtifactEditReasonSessionBusy}) {
 		t.Fatalf("busy session: got %+v", got)
 	}
@@ -112,11 +123,6 @@ func TestSaveRunArtifactRejectsBusySession(t *testing.T) {
 	if content, _ := eng.store.Get(run.ID, "notes.md"); content != "v1" {
 		t.Fatalf("busy save changed content to %q", content)
 	}
-
-	provider.mu.Lock()
-	provider.reactHold = nil
-	provider.mu.Unlock()
-	close(hold)
 }
 
 func TestSaveRunArtifactRevisionsOwnershipAndSync(t *testing.T) {

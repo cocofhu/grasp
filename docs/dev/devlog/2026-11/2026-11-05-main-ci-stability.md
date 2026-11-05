@@ -1,0 +1,9 @@
+# 2026-11-05（修复主干 CI 的异步等待与网络故障处理）
+
+- 日期：2026-11-05。
+- 范围：`server/internal/engine/*_test.go`、`.github/workflows/`、`.github/scripts/publish-pages.sh`、`.github/scripts/retry-network.sh`、`.github/scripts/test-publish-pages.py`、`AGENTS.md`。
+- 做了什么：产物编辑测试等待运行提交 `waiting_human` 且初始 driver 退出后再断言；清理阶段始终释放模拟 Agent，并等待会话和 driver 结束。共享的 `waitReviewReadyForTest` 改等整个 pump 空闲，确保完成事件已经发布。`go-race (server-core)` 对五个关键异步回归重复 20 次。Go 工作流统一使用 `https://proxy.golang.org|direct`，代理传输错误和 5xx 也能回退。Pages 的 host-key 扫描、远端查询、clone 和 push 最多尝试三次；SSH 使用非交互模式和连接超时；只有成功查询且无匹配引用才进入新分支路径，认证失败不再被当成分支不存在。always-on gate 新增七个离线发布回归，使用真实本地 Git 仓库注入网络失败；永久错误仍失败，覆盖率等原有质量门槛保持不变。
+- 为什么：核对主干最近 400 次工作流运行（UTC 2026-10-28 至 2026-11-04），其中 `ci` 73 次、失败 13 次；fan-in 的失败和它依赖的失败不能重复算成不同根因。最新失败中的 conversation 写入早于 run 暂停，原测试在 `-race -count=100` 下失败 55 次。全量竞态检查还复现了 `TestDialogueSandboxFlipKeepsTurnRunning` 的 `final turn <nil>`：`Ready` 早于 terminal frame，需等 `Idle`。历史首消息引用、聊天 panic、对话 fixture、DeepSeek 异步缓存和重启 E2E 故障已有后续主干修复，本次保留并重复验证相关覆盖。另有一次 Go proxy HTTP/2 `INTERNAL_ERROR` 和一次 Pages clone 的 `Permission denied (publickey)`，需要针对外部操作容错，而不是重跑或跳过失败测试。
+- 如何验证：Go 1.26.10 下，修复后的产物编辑和沙箱忙闲测试各重复 100 次并开启竞态检测通过；与 CI 完全相同的五项异步回归重复 20 次通过；server 全量测试、完整 server-core 竞态组合、golangci-lint（0 issues）、vet、配置文档检查、RunAgent/React 子集通过；核心覆盖率 90.5%，通过既有 90% 门槛。历史聊天 panic 用例重复 1000 次，首消息引用、确认前后竞争与对话 fixtures 组合重复 50 次，PM 排队重试重复 20 次，均通过。七个 Pages 本地 Git 故障注入场景通过，验证短暂失败恢复、永久错误保留非零退出码、不创建错误 orphan tree、空仓库／缺少分支、CNAME 保留和内容不变时不推送。用本地 503 HTTP 代理和文件代理验证 Go 的逗号配置失败、竖线配置成功回退；没有改变生产 checksum 校验。Node 24 下 docs 构建与官方 registry audit、actionlint、错误级 shellcheck、品牌检查、`git diff --check` 通过。未读取或修改部署密钥，未向真实 Pages 仓库发布。
+
+故障证据：[最新产物编辑竞态](https://github.com/cocofhu/grasp/actions/runs/41919064629)、[Pages SSH 失败](https://github.com/cocofhu/grasp/actions/runs/41818110477)、[Go 代理传输失败](https://github.com/cocofhu/grasp/actions/runs/40956203591)。Go 回退语义见[官方模块参考](https://go.dev/ref/mod#goproxy-protocol)。

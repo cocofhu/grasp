@@ -62,7 +62,7 @@ jobs:
       - name: Manual Go build (fallback when autobuild is skipped)
         if: matrix.build-mode == 'manual'
         env:
-          GOPROXY: https://proxy.golang.org,direct
+          GOPROXY: https://proxy.golang.org|direct
         run: |
           set -euo pipefail
           (cd server && go build ./...)
@@ -127,7 +127,7 @@ jobs:
           go-version: "1.26.10"
       - name: govulncheck (server, gateway, sandbox)
         env:
-          GOPROXY: https://proxy.golang.org,direct
+          GOPROXY: https://proxy.golang.org|direct
         run: ./.github/scripts/govulncheck-check.sh
 
   gitleaks:

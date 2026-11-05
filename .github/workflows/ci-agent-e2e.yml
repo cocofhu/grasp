@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
-      GOPROXY: https://proxy.golang.org,direct
+      GOPROXY: https://proxy.golang.org|direct
       GIT_CONFIG_GLOBAL: /dev/null
       GIT_CONFIG_SYSTEM: /dev/null
       GIT_CONFIG_NOSYSTEM: '1'

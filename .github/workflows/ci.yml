@@ -25,7 +25,8 @@ concurrency:
 
 env:
   GO_VERSION: "1.26.10"
-  GOPROXY: https://proxy.golang.org,direct
+  # Pipe also falls back on proxy transport / 5xx errors; comma only does on 404/410.
+  GOPROXY: https://proxy.golang.org|direct
 
 jobs:
   gate:
@@ -43,6 +44,8 @@ jobs:
         run: ./.github/scripts/actionlint.sh
       - name: shellcheck (error)
         run: ./.github/scripts/shellcheck-error.sh
+      - name: Docs publish transport regressions
+        run: python3 .github/scripts/test-publish-pages.py
 
   changes:
     runs-on: ubuntu-latest
@@ -180,6 +183,12 @@ jobs:
           fi
           # shellcheck disable=SC2086 # PKGS is a space-separated package list
           go test -race -count=1 -timeout 25m $PKGS
+      - name: Repeat asynchronous chat regressions
+        if: needs.changes.outputs[matrix.key] == 'true' && matrix.name == 'server-core'
+        run: >-
+          go test -race -count=20 -timeout 5m
+          -run '^(TestSaveRunArtifactRejectsBusySession|TestSessionPanickingTurnPublishesErrorAndKeepsPumping|TestFirstMessageReferencesReachTheClarifyTurn|TestDialogueContractFixtures|TestDialogueSandboxFlipKeepsTurnRunning)$'
+          ./internal/engine ./internal/chatsession
 
   # Build-only of the Grasp server+web image (same context/file as
   # publish-image). No push, no secrets, so fork PRs run it too.
