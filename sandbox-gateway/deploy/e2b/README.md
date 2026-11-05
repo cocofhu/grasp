@@ -104,6 +104,6 @@ gateway 的显式 stop/start 对应 E2B 全内存 pause/resume；自动暂停和
 
 续租只延长 provider 允许范围内的到期时间，不能突破 provider 对单次 guest 生命周期的硬上限；这与 Grasp 的空闲回收期限是两项独立策略。运维必须将目标 provider 的最长运行时长配置为足以覆盖预期的长任务和 Solo 会话，并在目标部署核对续租后实际返回的到期时间。续租请求成功不代表到期时间一定继续延后，本模式不承诺 guest 无限期运行。
 
-pause/resume 仍需在目标 provider 版本上单独验收。gateway 对恢复阶段的 provider 5xx 和 private relay 发布竞态，会在同一个 provider guest 上做有界重试；仍必须在目标部署检查应用、SSH、IDE、CDP 和 Docker，而不能只看 “provider running”。失败应保留安全状态证据并处理本部署拥有的 guest，不自动降级成新建空白 guest。
+pause/resume 仍需在目标 provider 版本上单独验收。gateway 对恢复阶段的 provider 5xx、临时控制面传输失败和 private relay 发布竞态，会在同一个 provider guest 上做有界重试；启动恢复与显式 start 共用这条路径。仍必须在目标部署检查应用、SSH、IDE、CDP 和 Docker，而不能只看 “provider running”。失败应保留安全状态证据并处理本部署拥有的 guest，不自动降级成新建空白 guest。
 
 不支持 `preserveData` 的 reinstall；需要保留数据的重装必须先有明确的快照/迁移流程。普通无保留 reinstall 会销毁后重建。此模式也不接受宿主路径挂载，应使用原有 bundle 注入机制；不要把此限制包装成与 PVC 相同的持久化保证。

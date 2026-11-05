@@ -418,6 +418,9 @@ func TestDriverLifecyclePrivateStateAndStableRestart(t *testing.T) {
 		t.Error("gateway Close destroyed provider guest")
 	}
 	f.mu.Unlock()
+	f.mu.Lock()
+	f.publishFailures = 1
+	f.mu.Unlock()
 	d2 := openLifecycleDriver(t, opts)
 	restored, err := d2.Endpoints(t.Context(), spec.ID)
 	if err != nil || !reflect.DeepEqual(restored, endpoints) {

@@ -71,8 +71,10 @@ const resumeReadyAttempts = 3
 // connectForResume tolerates a provider returning a transient 5xx while a
 // paused Embed guest is becoming reachable again. A connect request only
 // resumes the existing provider ID; retrying it cannot create another guest.
-// Client/transport errors and 4xx responses remain fail-fast so credentials,
-// ownership and cancellation errors are not hidden.
+// Cancellation and 4xx responses remain fail-fast so credentials, ownership
+// and caller cancellation errors are not hidden. A transport failure can be
+// transient while Embed reconnects its private control route, so it receives
+// the same bounded retry as a provider 5xx.
 func (d *Driver) connectForResume(ctx context.Context, providerID string) (*Sandbox, error) {
 	for attempt := 0; attempt < resumeConnectAttempts; attempt++ {
 		s, err := d.client.Connect(ctx, providerID, int(d.opts.Lease/time.Second))
@@ -80,7 +82,13 @@ func (d *Driver) connectForResume(ctx context.Context, providerID string) (*Sand
 			return s, nil
 		}
 		var apiErr *APIError
-		if !errors.As(err, &apiErr) || apiErr.HTTPStatus < http.StatusInternalServerError || apiErr.HTTPStatus > 599 || attempt+1 >= resumeConnectAttempts {
+		retry := true
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			retry = false
+		} else if errors.As(err, &apiErr) {
+			retry = apiErr.HTTPStatus >= http.StatusInternalServerError && apiErr.HTTPStatus <= 599
+		}
+		if !retry || attempt+1 >= resumeConnectAttempts {
 			return nil, err
 		}
 		delay := resumeConnectBackoff * time.Duration(1<<attempt)
@@ -603,10 +611,7 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 	if r.Phase == "creating" {
 		return handle(r, nil, driver.StatusPending), nil
 	}
-	if err = d.waitHealthy(ctx, r, false); err != nil {
-		return nil, err
-	}
-	if err = d.publish(ctx, r); err != nil {
+	if err = d.convergeResumed(ctx, r); err != nil {
 		return nil, err
 	}
 	if r.Phase != "running" {
