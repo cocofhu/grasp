@@ -17,6 +17,7 @@ PAGES_SOURCE_DIR="${PAGES_SOURCE_DIR:-docs/public}"
 : "${PAGES_DEPLOY_KEY:?PAGES_DEPLOY_KEY is required}"
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+retry_network="${repo_root}/.github/scripts/retry-network.sh"
 src="${repo_root}/${PAGES_SOURCE_DIR}"
 
 if [[ ! -d "$src" ]]; then
@@ -38,21 +39,19 @@ printf '%s\n' "$PAGES_DEPLOY_KEY" >"${ssh_dir}/id_ed25519"
 # GitHub secrets sometimes strip the trailing newline; OpenSSH requires it.
 [[ "$(tail -c1 "${ssh_dir}/id_ed25519")" == $'\n' ]] || printf '\n' >>"${ssh_dir}/id_ed25519"
 chmod 600 "${ssh_dir}/id_ed25519"
-ssh-keyscan -t ed25519,rsa github.com >"${ssh_dir}/known_hosts" 2>/dev/null
-export GIT_SSH_COMMAND="ssh -i ${ssh_dir}/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=${ssh_dir}/known_hosts -o StrictHostKeyChecking=yes"
+"$retry_network" ssh-keyscan -t ed25519,rsa github.com >"${ssh_dir}/known_hosts" 2>/dev/null
+export GIT_SSH_COMMAND="ssh -i ${ssh_dir}/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15 -o IdentitiesOnly=yes -o UserKnownHostsFile=${ssh_dir}/known_hosts -o StrictHostKeyChecking=yes"
 
 clone_url="git@github.com:${PAGES_REPO}.git"
 
-# Prefer existing branch; if the target repo is empty / branch missing, init orphan.
-if git ls-remote --exit-code --heads "$clone_url" "$PAGES_BRANCH" >/dev/null 2>&1; then
-  git clone --depth 1 --branch "$PAGES_BRANCH" "$clone_url" "$work"
+# An empty successful result means a missing branch. Authentication / transport
+# errors must exhaust retries and fail, rather than creating a publish tree.
+remote_refs="$("$retry_network" git ls-remote --heads "$clone_url" "refs/heads/${PAGES_BRANCH}")"
+if [[ -n "$remote_refs" ]]; then
+  "$retry_network" git clone --depth 1 --branch "$PAGES_BRANCH" "$clone_url" "$work"
 else
   echo "branch ${PAGES_BRANCH} not found on ${PAGES_REPO}; creating orphan publish tree"
-  git clone --depth 1 "$clone_url" "$work" 2>/dev/null || {
-    mkdir -p "$work"
-    git -C "$work" init
-    git -C "$work" remote add origin "$clone_url"
-  }
+  "$retry_network" git clone --depth 1 "$clone_url" "$work"
   git -C "$work" checkout --orphan "$PAGES_BRANCH" 2>/dev/null || git -C "$work" checkout -B "$PAGES_BRANCH"
 fi
 
@@ -86,5 +85,5 @@ fi
 
 sha="${GITHUB_SHA:-local}"
 git commit -m "deploy: approving site from ${sha}"
-git push -u origin "HEAD:${PAGES_BRANCH}"
+"$retry_network" git push -u origin "HEAD:${PAGES_BRANCH}"
 echo "published ${PAGES_REPO}@${PAGES_BRANCH}"

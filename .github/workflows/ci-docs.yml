@@ -9,11 +9,15 @@ on:
       - "docs/**"
       - ".github/workflows/ci-docs.yml"
       - ".github/scripts/publish-pages.sh"
+      - ".github/scripts/retry-network.sh"
+      - ".github/scripts/test-publish-pages.py"
   pull_request:
     paths:
       - "docs/**"
       - ".github/workflows/ci-docs.yml"
       - ".github/scripts/publish-pages.sh"
+      - ".github/scripts/retry-network.sh"
+      - ".github/scripts/test-publish-pages.py"
 
 permissions:
   contents: read

@@ -51,9 +51,9 @@ add a separate `Unreleased` bullet in `CHANGELOG.md`.
 | `docs/` | Project site (static HTML) + help (Markdown → HTML); CI publishes to `cocofhu/approving-pages` |
 
 Always-on branch-protection job: `.github/workflows/ci.yml` (`gate`). It runs
-the brand-text assert, pinned `actionlint` v1.7.12, and error-level
-`shellcheck`. It does **not** run module lint, tests, or coverage. Module
-suites are path-filtered.
+the brand-text assert, pinned `actionlint` v1.7.12, error-level `shellcheck`,
+and offline docs-publish transport regressions. It does **not** run module lint,
+module tests or coverage. Module suites are path-filtered.
 
 ---
 
@@ -68,11 +68,16 @@ No path filter. From the repo root:
 ```bash
 ./.github/scripts/actionlint.sh          # actionlint v1.7.12, all .github/workflows
 ./.github/scripts/shellcheck-error.sh    # shellcheck v0.11.0, --severity=error
+python3 .github/scripts/test-publish-pages.py  # local Git; no deploy key or network
 ```
 
 `shellcheck-error.sh` covers repo-root `*.sh`, `server/scripts`, `scripts`,
 `sandbox-gateway`, and `.github/scripts`. Warnings do not fail. This job is
 not module proof.
+
+The `go-race (server-core)` job also repeats the artifact-edit, panic recovery,
+first-message reference, dialogue-fixture and sandbox busy/idle regressions
+20 times under `-race`.
 
 ### `server/**` or root `.golangci.yml` → `ci-server`
 
