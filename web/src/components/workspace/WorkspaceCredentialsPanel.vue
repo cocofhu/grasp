@@ -556,7 +556,22 @@ async function pasteCodexLogin() {
   createSecretElement.value?.focus()
 }
 
+async function pasteGitHubLogin() {
+  createAuthMode.value = 'paste'
+  await nextTick()
+  createSecretElement.value?.focus()
+}
+
 async function pasteCodexRelogin() {
+  const item = reloginTarget.value
+  closeRelogin()
+  if (!item) return
+  startEdit(item)
+  await nextTick()
+  panel.value?.querySelector<HTMLElement>(`[data-testid="workspace-credential-input-${item.id}"]`)?.focus()
+}
+
+async function pasteGitHubRelogin() {
   const item = reloginTarget.value
   closeRelogin()
   if (!item) return
@@ -1198,6 +1213,7 @@ watch(showCreate, (open) => {
                   @click="createAuthMode = 'paste'"
                 >{{ t(codexDeviceOffered ? 'pages.workspace.credentials.codexDevice.tabPaste' : 'pages.workspace.credentials.githubDevice.tabPaste') }}</button>
               </SlidingTabs>
+              <p v-if="deviceLoginOffered && !createHostIsGitHub" class="mb-0 mt-2 text-xs leading-5 text-txt3" data-testid="credential-auth-login-hint">{{ t('pages.workspace.credentials.githubDevice.loginOnlyGithubCom') }}</p>
             </div>
             <GitHubDeviceLoginCard
               v-if="deviceLoginActive"
@@ -1206,6 +1222,7 @@ watch(showCreate, (open) => {
               @state="deviceLoginState = $event"
               @authorized="createDeviceAuthorized"
               @alias-taken="deviceAliasTaken"
+              @paste="pasteGitHubLogin"
             />
             <CodexDeviceLoginCard
               v-if="codexDeviceActive"
@@ -1350,6 +1367,7 @@ watch(showCreate, (open) => {
         auto-start
         @state="reloginState = $event"
         @authorized="reloginAuthorized"
+        @paste="pasteGitHubRelogin"
       />
       <template #footer>
         <AppButton :variant="reloginDone ? 'primary' : 'ghost'" data-testid="workspace-credential-relogin-close" @click="closeRelogin">{{ reloginDone ? t('pages.workspace.credentials.githubDevice.done') : t('common.buttons.cancel') }}</AppButton>

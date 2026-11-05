@@ -78,21 +78,33 @@ func (c *Config) CodexAuthBaseURL() string {
 	return "https://auth.openai.com"
 }
 
+// DefaultGitHubOAuthClientID is the public client ID of Grasp's own GitHub
+// OAuth App. Device Flow is enabled on that App. It is not a secret, and the
+// device flow does not use a client secret. Deployments that set
+// github.oauth_client_id or GRASP_GITHUB_OAUTH_CLIENT_ID use that App instead.
+//
+// Filled once the App exists. An empty value keeps device sign-in off rather
+// than sending a placeholder client ID to GitHub.
+const DefaultGitHubOAuthClientID = ""
+
 // GitHubConfig enables "Sign in with GitHub" (OAuth device flow) for
 // github.com workspace credentials. The OAuth App must have "Enable Device
 // Flow" checked; the device flow needs no client secret.
 type GitHubConfig struct {
-	// OAuthClientID is the public client ID of the deployment's OAuth App.
-	// Empty hides the sign-in option; tokens are then pasted manually.
+	// OAuthClientID overrides Grasp's built-in public client ID. Empty uses
+	// DefaultGitHubOAuthClientID.
 	OAuthClientID string `yaml:"oauth_client_id"`
 }
 
-// GitHubOAuthClientID returns the trimmed device-flow client ID ("" = off).
+// GitHubOAuthClientID returns the device-flow client ID. A deployment override
+// wins; otherwise the built-in public client ID is used.
 func (c *Config) GitHubOAuthClientID() string {
-	if c == nil {
-		return ""
+	if c != nil {
+		if v := strings.TrimSpace(c.GitHub.OAuthClientID); v != "" {
+			return v
+		}
 	}
-	return strings.TrimSpace(c.GitHub.OAuthClientID)
+	return strings.TrimSpace(DefaultGitHubOAuthClientID)
 }
 
 // StorageConfig selects how attachment bytes are persisted (DB keeps refs only).

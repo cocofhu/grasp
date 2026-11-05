@@ -26,20 +26,20 @@ An Agent can bind multiple saved GitHub, GitLab or SSH credentials. All selected
 
 GitHub and GitLab credentials configure Host and Token together. Host defaults to the official service and supports self-hosted sites and ports; there is no separate GitLab URL credential. Agent defaults can select multiple model groups and Git authorizations. Each Agent independently opts into model or Git inheritance; turning a switch off uses its local selection, and unavailable defaults never fall back to another account or model.
 
-### Sign in with GitHub (device code)
+### Add a GitHub credential with a device code
 
-When configured, adding a github.com GitHub credential offers "Sign in with GitHub": the page shows an 8-character code, the user enters it at `https://github.com/login/device` and authorizes, and the platform saves the token. No personal access token has to be created. The result is a regular GitHub credential (`GITHUB_TOKEN`, Host `https://github.com`) that binds and injects like a pasted token. The credential row shows the GitHub account and offers "Sign in again" to replace the token while keeping the credential ID, alias and existing bindings. Without configuration only token pasting is shown.
+Adding a github.com GitHub credential defaults to a device code: the page shows a verification code, the user enters it at `https://github.com/login/device` and authorizes, and the platform saves the token. No personal access token and no Client ID are required first. The result is a regular GitHub credential (`GITHUB_TOKEN`, Host `https://github.com`) that binds and injects like a pasted token. The credential row shows the GitHub account and offers "Sign in again" to replace the token while keeping the credential ID, alias and existing bindings.
 
-To enable it:
+When the Client ID is empty, device sign-in uses Grasp's built-in public OAuth client ID (`DefaultGitHubOAuthClientID`). That constant must be Grasp's own App with Device Flow enabled, not a placeholder. While it is empty, device sign-in stays off and tokens are pasted. To use the deployment's own OAuth App instead:
 
 1. In GitHub, open **Settings → Developer settings → OAuth Apps** and create an OAuth App (personal or organization). Use the platform URL as Homepage URL; the device flow does not use the callback, so the Authorization callback URL can be the same address.
 2. Check **Enable Device Flow** in the App settings. Without it, sign-in reports that Device Flow is disabled.
-3. Give the App's **Client ID** to the server through the `GRASP_GITHUB_OAUTH_CLIENT_ID` environment variable or YAML `github.oauth_client_id` (the environment variable wins), then restart. No client secret is needed; do not configure one.
+3. Give the App's **Client ID** to the server through the `GRASP_GITHUB_OAUTH_CLIENT_ID` environment variable or YAML `github.oauth_client_id` (the environment variable wins), then restart. No client secret is needed; do not configure one. A filled value wins over the built-in public client ID.
 
 Notes and limits:
 
-- The requested scopes are fixed to `repo read:org workflow`. The token has `repo` access to every repository the user can reach; for per-repository permissions, paste a fine-grained PAT instead. If the grant lacks `repo`, the credential is still saved with a warning that private repositories may not clone.
-- Organizations with OAuth App access restrictions must approve the OAuth App, otherwise the token cannot reach their repositories.
+- The requested scopes stay `repo read:org workflow`. The device-code card does not list them. The token has `repo` access to every repository the user can reach; for per-repository permissions, paste a fine-grained PAT instead. If the grant lacks `repo`, the credential is still saved with a warning that private repositories may not clone.
+- Organizations with OAuth App access restrictions must approve the App in use (Grasp's built-in App, or the deployment's override). Otherwise the token cannot reach that organization's private repositories. The credential can still be saved.
 - Only github.com is supported. GitHub Enterprise Server keeps using pasted tokens.
 - Sign-in sessions live in server memory for the lifetime GitHub returns (usually 15 minutes). A restart drops sessions in progress; get a new code. Multi-instance deployments need sticky sessions.
 - GitHub revokes OAuth App tokens unused for a year; use "Sign in again" on the credential row.

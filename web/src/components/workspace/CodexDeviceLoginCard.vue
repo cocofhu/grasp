@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import type { CodexDeviceLoginPoll } from '@/lib/api/api'
+import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { CODEX_DEVICE_URL, useCodexDeviceLogin, type CodexDeviceLoginState } from '@/lib/workspace/useCodexDeviceLogin'
 
 const props = withDefaults(defineProps<{
@@ -83,12 +84,8 @@ async function start() {
 }
 
 async function copyCode() {
-  try {
-    await navigator.clipboard.writeText(login.userCode.value)
-    copyState.value = 'copied'
-  } catch {
-    copyState.value = 'failed'
-  }
+  const ok = await copyToClipboard(login.userCode.value)
+  copyState.value = ok ? 'copied' : 'failed'
   if (copiedTimer !== undefined) clearTimeout(copiedTimer)
   copiedTimer = setTimeout(() => { copyState.value = 'idle' }, 2000)
 }

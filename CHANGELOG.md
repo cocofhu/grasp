@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- GitHub device-code sign-in resolves its client ID from the environment, then YAML, then the built-in public client ID. A configured value wins, and no client secret is stored. The built-in ID is still empty, so an unconfigured deployment keeps device sign-in off until Grasp's own Device Flow client ID is filled in. The card matches the Codex device-code steps, copy, countdown and press motion, and no longer lists the requested scopes. Missing `repo` still warns after a successful save. Codex and GitHub verification codes copy through the shared clipboard helper, so an intranet HTTP page can copy the full code.
+
 - Agent model settings distinguish the default model configuration from the configurations allowed for switching. "All active configurations" explicitly includes configurations across coding tools and those added later, with matching Chinese and English labels, hints, and inherited summaries.
 
 - Run artifacts can be edited by hand while the run waits for a person with an idle session, or after it fails. Structured artifacts open in a form with a JSON view, other text artifacts in a code editor, and `page.html` can switch to a live preview. Each changed save becomes a new version under the original node. Concurrent edits are detected, and unsaved edits are guarded when switching views, leaving the page or sending a clarification message. Shared, embedded and Solo views stay read-only.

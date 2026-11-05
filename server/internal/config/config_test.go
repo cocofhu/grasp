@@ -144,8 +144,18 @@ func TestGitHubOAuthClientIDFromYAMLAndEnv(t *testing.T) {
 	if c, err = parse(path); err != nil || c.GitHubOAuthClientID() != "Ov23env" {
 		t.Fatalf("env did not win: %v %v", c, err)
 	}
-	if (*Config)(nil).GitHubOAuthClientID() != "" {
-		t.Fatal("nil config must disable device login")
+	if err := os.WriteFile(path, []byte("github:\n  oauth_client_id: \"   \"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRASP_GITHUB_OAUTH_CLIENT_ID", "")
+	if c, err = parse(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.GitHubOAuthClientID(); got != DefaultGitHubOAuthClientID {
+		t.Fatalf("blank config=%q want built-in %q", got, DefaultGitHubOAuthClientID)
+	}
+	if (*Config)(nil).GitHubOAuthClientID() != DefaultGitHubOAuthClientID {
+		t.Fatal("nil config must use the built-in client ID")
 	}
 }
 

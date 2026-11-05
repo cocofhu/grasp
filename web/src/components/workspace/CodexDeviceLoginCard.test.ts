@@ -22,9 +22,15 @@ function mountCard(props: Record<string, unknown> = {}) {
   return mount(CodexDeviceLoginCard, { props: { name: 'Mine', ...props }, global: { plugins: [i18n], stubs: { Icon: true, AppSpinner: true } } })
 }
 
+function stubSecureContext(value: boolean) {
+  Object.defineProperty(window, 'isSecureContext', { configurable: true, get: () => value })
+}
+
 describe('CodexDeviceLoginCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    stubSecureContext(true)
+    Object.defineProperty(document, 'execCommand', { configurable: true, writable: true, value: vi.fn().mockReturnValue(false) })
     mocks.start.mockResolvedValue(session)
     mocks.poll.mockResolvedValue({ status: 'pending', interval: 5 })
     mocks.cancel.mockResolvedValue({ status: 'cancelled' })
@@ -56,6 +62,7 @@ describe('CodexDeviceLoginCard', () => {
     await wrapper.get('[data-testid="codex-device-copy"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="codex-device-copy"]').text()).toBe(pages.pages.workspace.credentials.codexDevice.copyFailed)
+    expect(document.execCommand).toHaveBeenCalledWith('copy')
 
     const credential = { id: 'cred-1', type: 'ai', name: 'Mine', configured: true }
     mocks.poll.mockResolvedValueOnce({ status: 'success', credential, email: 'dev@example.com', updated: true })
@@ -64,6 +71,30 @@ describe('CodexDeviceLoginCard', () => {
     expect(wrapper.get('[data-testid="codex-device-email"]').text()).toBe('dev@example.com')
     expect(wrapper.get('[data-testid="codex-device-success"]').text()).toContain('Mine')
     expect(wrapper.emitted('success')?.[0]?.[0]).toMatchObject({ credential })
+    wrapper.unmount()
+  })
+
+  it('copies the full code when the page is not a secure context', async () => {
+    stubSecureContext(false)
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    let copied = ''
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => {
+        copied = document.querySelector('textarea')?.value ?? ''
+        return true
+      }),
+    })
+    const wrapper = mountCard()
+    await wrapper.get('[data-testid="codex-device-start"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="codex-device-copy"]').trigger('click')
+    await flushPromises()
+    expect(writeText).not.toHaveBeenCalled()
+    expect(copied).toBe('ABCD-1234')
+    expect(wrapper.get('[data-testid="codex-device-copy"]').text()).toBe(pages.pages.workspace.credentials.codexDevice.copied)
     wrapper.unmount()
   })
 

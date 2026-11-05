@@ -40,6 +40,7 @@ function mountPanel(items: CredentialItem[] = []) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   mocks.list.mockResolvedValue({ items })
   return mount(WorkspaceCredentialsPanel, {
+    attachTo: document.body,
     global: { plugins: [i18n], stubs: { Icon: true, Teleport: true, RouterLink: { template: '<a><slot /></a>' } } },
   })
 }
@@ -92,6 +93,7 @@ describe('WorkspaceCredentialsPanel GitHub device sign-in', () => {
     await host.setValue('https://github.example.com:8443')
     expect((host.element as HTMLInputElement).value).toBe('github.example.com:8443')
     expect(wrapper.get('[data-testid="workspace-credential-host-status"]').text()).toBe('自建')
+    expect(wrapper.get('[data-testid="credential-auth-login-hint"]').text()).toBe('设备码登录仅支持 github.com')
     const loginTab = wrapper.get('[data-testid="credential-auth-login"]')
     expect(loginTab.attributes('disabled')).toBeDefined()
     expect(loginTab.attributes('title')).toBe('设备码登录仅支持 github.com')
@@ -120,6 +122,8 @@ describe('WorkspaceCredentialsPanel GitHub device sign-in', () => {
     await flushPromises()
     expect(mocks.start).toHaveBeenCalledWith({ name: 'Mine' })
     expect(wrapper.get('[data-testid="github-device-code"]').text()).toBe('WDJBMJHT')
+    expect(wrapper.get('[data-testid="github-device-card"]').text()).toContain('打开 GitHub，登录要授权的账号')
+    expect(wrapper.get('[data-testid="github-device-card"]').text()).not.toContain('申请权限')
     expect(wrapper.get('[data-testid="github-device-open"]').attributes('href')).toBe('https://github.com/login/device')
     expect(wrapper.get('[data-testid="github-device-badge"]').text()).toBe('等待授权')
     expect(wrapper.get('[data-testid="workspace-credential-create-alias"]').attributes('disabled')).toBeDefined()
@@ -183,6 +187,40 @@ describe('WorkspaceCredentialsPanel GitHub device sign-in', () => {
     await wrapper.get('[data-testid="workspace-credential-relogin-close"]').trigger('click')
     await flushPromises()
     expect(mocks.cancel).toHaveBeenCalledWith('ghd-1')
+    wrapper.unmount()
+  })
+
+  it('keeps the alias and focuses the token field when a failure switches to paste', async () => {
+    mocks.start.mockRejectedValueOnce(Object.assign(new Error('GitHub: access_denied'), { status: 502, code: 'access_denied' }))
+    const wrapper = mountPanel()
+    await openGitHubDetails(wrapper)
+    const alias = wrapper.get('[data-testid="workspace-credential-create-alias"]')
+    await alias.setValue('Mine')
+    await wrapper.get('[data-testid="github-device-start"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="github-device-paste"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.get('[data-testid="workspace-credential-create-alias"]').element as HTMLInputElement).value).toBe('Mine')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="workspace-credential-create-value"]').element)
+    expect(wrapper.get('[data-testid="credential-auth-paste"]').attributes('aria-selected')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('re-login paste keeps the credential and focuses its token field', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountPanel([github])
+    await flushPromises()
+    await wrapper.get('[data-testid="workspace-credential-relogin-gh-1"]').trigger('click')
+    await flushPromises()
+    mocks.poll.mockResolvedValueOnce({ status: 'denied' })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    await wrapper.get('[data-testid="github-device-paste"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="github-device-card"]').exists()).toBe(false)
+    const token = wrapper.get('[data-testid="workspace-credential-input-gh-1"]')
+    expect(document.activeElement).toBe(token.element)
+    expect(wrapper.get('[data-testid="workspace-credential-github-login-gh-1"]').text()).toBe('@cocofhu')
     wrapper.unmount()
   })
 

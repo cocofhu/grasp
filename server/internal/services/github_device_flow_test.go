@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cocofhu/grasp/internal/config"
 )
 
 // fakeGitHubOAuth serves the device-flow endpoints. tokenReplies is consumed one
@@ -106,6 +108,35 @@ func newDeviceFlowFixture(t *testing.T, clientID string) (*GitHubDeviceFlowServi
 }
 
 var successToken = map[string]any{"access_token": "gho_synthetic_token", "token_type": "bearer", "scope": "repo,read:org,workflow"}
+
+func TestGitHubDeviceFlowEmptyConfigUsesBuiltinClientID(t *testing.T) {
+	id := (&config.Config{}).GitHubOAuthClientID()
+	if id != strings.TrimSpace(config.DefaultGitHubOAuthClientID) {
+		t.Fatalf("empty config resolved %q", id)
+	}
+	svc, _, gh, _ := newDeviceFlowFixture(t, id)
+	if id == "" {
+		if svc.Enabled() {
+			t.Fatal("blank built-in client ID must keep device flow off")
+		}
+		if _, err := svc.Start(context.Background(), "alice", "mine", ""); !errors.Is(err, ErrGitHubDeviceFlowDisabled) {
+			t.Fatalf("start err=%v", err)
+		}
+		if d, tk := gh.calls(); d != 0 || tk != 0 {
+			t.Fatalf("GitHub was called: device=%d token=%d", d, tk)
+		}
+		return
+	}
+	if !svc.Enabled() {
+		t.Fatal("built-in client ID must enable device flow")
+	}
+	if _, err := svc.Start(context.Background(), "alice", "mine", ""); err != nil {
+		t.Fatal(err)
+	}
+	if gh.forms[0]["client_id"] != id || gh.forms[0]["scope"] != GitHubDeviceScopes {
+		t.Fatalf("device request=%v", gh.forms[0])
+	}
+}
 
 func TestGitHubDeviceFlowDisabledDoesNotCallGitHub(t *testing.T) {
 	svc, _, gh, _ := newDeviceFlowFixture(t, "  ")
