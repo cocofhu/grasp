@@ -34,6 +34,8 @@ type lifecycleProvider struct {
 	env                                                                                                                         map[string]string
 	command                                                                                                                     string
 	created, deleted, connected, paused, renewed                                                                                int
+	connectFailures                                                                                                             int
+	publishFailures                                                                                                             int
 	createStatus, getStatus, deleteStatus, uploadStatus, processStatus, pauseStatus, connectStatus, healthStatus, publishStatus int
 	ready                                                                                                                       bool
 	capacity                                                                                                                    int64
@@ -137,6 +139,11 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 			f.paused++
 			w.WriteHeader(204)
 		case "connect":
+			if f.connectFailures > 0 {
+				f.connectFailures--
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			if f.connectStatus != 0 {
 				w.WriteHeader(f.connectStatus)
 				return
@@ -251,6 +258,11 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"marker": marker, "bootstrapExit": f.bootstrapExit, "ports": map[string]bool{"22": f.ready, "8765": f.ready, "8744": f.ready}, "workspace": map[string]int64{"availableBytes": f.capacity}})
 	case "/_bridge/ports":
+		if f.publishFailures > 0 {
+			f.publishFailures--
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		if f.publishStatus != 0 {
 			w.WriteHeader(f.publishStatus)
 			return
@@ -369,6 +381,10 @@ func TestDriverLifecyclePrivateStateAndStableRestart(t *testing.T) {
 	if status, err := d.Status(t.Context(), spec.ID); err != nil || status != driver.StatusStopped {
 		t.Fatalf("paused status %s: %v", status, err)
 	}
+	f.mu.Lock()
+	f.connectFailures = 1
+	f.publishFailures = 1
+	f.mu.Unlock()
 	if _, err := d.Endpoints(t.Context(), spec.ID); err == nil {
 		t.Fatal("paused guest advertised endpoints")
 	}

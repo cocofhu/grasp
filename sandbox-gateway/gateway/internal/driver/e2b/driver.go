@@ -59,6 +59,77 @@ type Driver struct {
 	closeErr  error
 }
 
+const resumeConnectAttempts = 3
+
+var resumeConnectBackoff = 250 * time.Millisecond
+
+// resumeReadyAttempts covers the short interval in which Embed has accepted
+// resume but its private relay route is not serving yet. It retries only the
+// health/publish convergence on the same provider guest.
+const resumeReadyAttempts = 3
+
+// connectForResume tolerates a provider returning a transient 5xx while a
+// paused Embed guest is becoming reachable again. A connect request only
+// resumes the existing provider ID; retrying it cannot create another guest.
+// Client/transport errors and 4xx responses remain fail-fast so credentials,
+// ownership and cancellation errors are not hidden.
+func (d *Driver) connectForResume(ctx context.Context, providerID string) (*Sandbox, error) {
+	for attempt := 0; attempt < resumeConnectAttempts; attempt++ {
+		s, err := d.client.Connect(ctx, providerID, int(d.opts.Lease/time.Second))
+		if err == nil {
+			return s, nil
+		}
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.HTTPStatus < http.StatusInternalServerError || apiErr.HTTPStatus > 599 || attempt+1 >= resumeConnectAttempts {
+			return nil, err
+		}
+		delay := resumeConnectBackoff * time.Duration(1<<attempt)
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return nil, ctx.Err()
+		}
+	}
+	return nil, errors.New("E2B resume connect attempts exhausted")
+}
+
+func (d *Driver) convergeResumed(ctx context.Context, r *record) error {
+	var last error
+	for attempt := 0; attempt < resumeReadyAttempts; attempt++ {
+		if err := d.waitHealthy(ctx, r, false); err != nil {
+			last = err
+		} else if err := d.publish(ctx, r); err != nil {
+			last = err
+		} else {
+			return nil
+		}
+		if attempt+1 >= resumeReadyAttempts {
+			break
+		}
+		delay := resumeConnectBackoff * time.Duration(1<<attempt)
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return ctx.Err()
+		}
+	}
+	return last
+}
+
 var _ driver.Driver = (*Driver)(nil)
 
 func New(opts Options) (*Driver, error) {
@@ -690,7 +761,7 @@ func (d *Driver) Start(ctx context.Context, id string) error {
 	if !d.owns(current, id) {
 		return errors.New("E2B provider ownership mismatch")
 	}
-	s, err := d.client.Connect(ctx, e.record.Provider.ID, int(d.opts.Lease/time.Second))
+	s, err := d.connectForResume(ctx, e.record.Provider.ID)
 	if s != nil {
 		if s.EnvdAccessToken != "" {
 			e.record.Provider.EnvdAccessToken = s.EnvdAccessToken
@@ -708,10 +779,7 @@ func (d *Driver) Start(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if err = d.waitHealthy(ctx, &e.record, false); err != nil {
-		return err
-	}
-	if err = d.publish(ctx, &e.record); err != nil {
+	if err = d.convergeResumed(ctx, &e.record); err != nil {
 		return err
 	}
 	e.record.Phase = "running"
