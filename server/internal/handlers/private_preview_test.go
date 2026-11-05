@@ -58,6 +58,7 @@ func TestPrivatePreviewRootPathsAndCredentialIsolation(t *testing.T) {
 	const html = `<!doctype html><html><head><script type="module" src="/@vite/client"></script></head><body><script src="/__grasp/preview-pick.js"></script></body></html>`
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen <- r.Clone(r.Context())
+		w.Header().Set("X-Grasp-Upstream", "5174")
 		w.Header().Set("E2b-Traffic-Access-Token", "provider-secret")
 		if r.URL.Path == "/" {
 			w.Header().Set("Content-Type", "text/html")
@@ -137,6 +138,7 @@ func TestPrivatePreviewRedirectsAndPersistedBinding(t *testing.T) {
 		if r.URL.Path == "/absolute" {
 			location = upstream + "/login?next=%2Fapp"
 		}
+		w.Header().Set("X-Grasp-Upstream", "5174")
 		w.Header().Set("Location", location)
 		w.WriteHeader(http.StatusFound)
 	}))
@@ -180,11 +182,12 @@ func TestPrivatePreviewWebSocketAndStoppedGuest(t *testing.T) {
 	hn := newHarness(t)
 	upgrader := websocket.Upgrader{} // Exercise the real default same-origin check.
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Grasp-Upstream", "5174")
 		if r.URL.RequestURI() != "/vite-hmr?session=synthetic" || r.Header.Get("E2b-Traffic-Access-Token") != "" {
 			http.Error(w, "wrong private route", http.StatusBadRequest)
 			return
 		}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := upgrader.Upgrade(w, r, http.Header{"X-Grasp-Upstream": {"5174"}})
 		if err != nil {
 			return
 		}
@@ -240,6 +243,7 @@ func TestPrivatePreviewWebSocketAndStoppedGuest(t *testing.T) {
 func TestPrivatePreviewPreservesAppAuthorizationHeaders(t *testing.T) {
 	hn := newHarness(t)
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Grasp-Upstream", "5174")
 		for _, key := range []string{"Authorization", "X-Api-Key", "X-Access-Token"} {
 			if r.Header.Get(key) != "app-"+key {
 				http.Error(w, "app authentication missing", http.StatusUnauthorized)
@@ -291,7 +295,7 @@ func TestPrivatePreviewPreservesAppAuthorizationHeaders(t *testing.T) {
 	}
 }
 
-func TestPrivatePreviewPreservesOnlyCanonicalUpstreamDiagnostic(t *testing.T) {
+func TestPrivatePreviewDirectPortPreservesOnlyCanonicalUpstreamDiagnostic(t *testing.T) {
 	hn := newHarness(t)
 	cases := []struct {
 		name   string
@@ -330,6 +334,12 @@ func TestPrivatePreviewPreservesOnlyCanonicalUpstreamDiagnostic(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 	public := seedPrivatePreview(t, hn, up.URL)
+	// A direct app has no injector identity requirement. Its optional public
+	// diagnostic must still be sanitized, without blocking ordinary responses.
+	if err := hn.db.Model(&models.RunPreviewPort{}).Where("proxy_url = ?", public).Update("injector_port", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+	hn.fg.SetEndpoints("private-sandbox", map[string]string{"5174": strings.TrimPrefix(up.URL, "http://")})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, public+tc.name, nil)

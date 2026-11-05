@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -97,14 +98,21 @@ func (h *Handlers) privatePreviewProxy(c *gin.Context) {
 		},
 		FlushInterval: 100 * time.Millisecond,
 		ModifyResponse: func(resp *http.Response) error {
-			upstreamPorts := resp.Header.Values("X-Grasp-Upstream")
+			upstreamPort := privatePreviewUpstreamHeader(resp.Header)
+			// A switched injector can fall back to PREVIEW_PORT when its app
+			// stops. Check the response actually being forwarded, including a
+			// WebSocket handshake, so this capability never serves another app.
+			// The four fixed runtime routes are served by the injector itself
+			// and never upgrade to WebSockets.
+			runtimeResponse := privatePreviewRuntimePath(c.Request.URL.Path) && resp.StatusCode != http.StatusSwitchingProtocols
+			if rec.InjectorPort > 0 && !runtimeResponse && upstreamPort != strconv.Itoa(rec.Port) {
+				return errors.New("preview upstream does not match registration")
+			}
 			stripPrivateReservedHeaders(resp.Header)
 			// The injector's public diagnostic contains only one canonical app
 			// port, never a platform credential. Keep its existing contract.
-			if len(upstreamPorts) == 1 {
-				if port, err := strconv.Atoi(upstreamPorts[0]); err == nil && port >= 1 && port <= 65535 && strconv.Itoa(port) == upstreamPorts[0] {
-					resp.Header.Set("X-Grasp-Upstream", upstreamPorts[0])
-				}
+			if upstreamPort != "" {
+				resp.Header.Set("X-Grasp-Upstream", upstreamPort)
 			}
 			cookies := resp.Header.Values("Set-Cookie")
 			resp.Header.Del("Set-Cookie")
@@ -135,6 +143,26 @@ func (h *Handlers) privatePreviewProxy(c *gin.Context) {
 	// The five-second deadline above bounds control-plane lookup only. The
 	// proxied request retains its original context for streams and WebSockets.
 	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+func privatePreviewUpstreamHeader(header http.Header) string {
+	values := header.Values("X-Grasp-Upstream")
+	if len(values) != 1 {
+		return ""
+	}
+	port, err := strconv.Atoi(values[0])
+	if err != nil || port < 1 || port > 65535 || strconv.Itoa(port) != values[0] {
+		return ""
+	}
+	return values[0]
+}
+
+func privatePreviewRuntimePath(path string) bool {
+	switch path {
+	case "/__grasp/preview-pick.js", "/__grasp/page-control.js", "/__grasp/live-overlay.js", "/__grasp/embed-origin":
+		return true
+	}
+	return false
 }
 
 func stripPrivatePreviewHeaders(req *http.Request) {
