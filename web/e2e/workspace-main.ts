@@ -91,6 +91,8 @@ window.fetch = async (input, init) => {
   else if (/^\/artifacts\/[^/]+$/.test(path) && method === 'DELETE') { const index = artifactFiles.findIndex(file => file.id === path.split('/')[2]); if (index >= 0) artifactFiles.splice(index, 1); return new Response(null, { status: 204 }) }
   else if (path === '/pending-nodes') data = { items: [], total: 0, page: 1, pageSize: 20 }
   else if (path === '/agents') data = [{ name: 'manager', description: '协调团队与执行工作流', acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace', env: {}, mcp: [], capabilities: { outlets: [] } }]
+  else if (path === '/projects') data = []
+  else if (path === '/solo/sessions') data = { sessions: [], maxSandboxes: 5 }
   else if (path === '/workspace/requirement-drafts') {
     if (method === 'POST') {
       data = { id: `new-draft-${requirementDrafts.length + 1}`, title: '未命名草稿', bodyMarkdown: '', status: 'open', kind: 'requirement', startAt: '', dueAt: '', progress: 0, parentId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...body }

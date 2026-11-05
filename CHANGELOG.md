@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 移动端表单控件在窄屏保持至少 16px，避免 iOS Safari 聚焦输入框时触发整页自动放大；新增 Chromium/WebKit 的全路由缩放与溢出回归验证。
+
 - Agent model settings distinguish the default model configuration from the configurations allowed for switching. "All active configurations" explicitly includes configurations across coding tools and those added later, with matching Chinese and English labels, hints, and inherited summaries.
 
 - Run artifacts can be edited by hand while the run waits for a person with an idle session, or after it fails. Structured artifacts open in a form with a JSON view, other text artifacts in a code editor, and `page.html` can switch to a live preview. Each changed save becomes a new version under the original node. Concurrent edits are detected, and unsaved edits are guarded when switching views, leaving the page or sending a clarification message. Shared, embedded and Solo views stay read-only.

@@ -154,6 +154,13 @@ body,
   height: 100%;
   background: rgb(var(--c-base));
 }
+
+/* Keep mobile text metrics stable when the browser changes orientation or
+   applies its own text inflation. This does not disable user pinch zoom. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 /* Clip to the viewport. 100vh (h-screen) can leave a strip of body background
    under the shell when it doesn't match the layout height. */
 #app {
@@ -297,6 +304,24 @@ html.light .app-sidebar-card {
     @apply w-full rounded-md border border-line bg-base px-3 py-2 text-sm text-txt
       placeholder:text-txt3 outline-none transition
       focus:border-accent focus:ring-2 focus:ring-accent/30;
+  }
+
+  /*
+   * iOS Safari zooms the page when a text control is focused below 16px.
+   * The app intentionally uses compact 11–14px controls on desktop, so keep
+   * that density there and raise only editable mobile controls. Checkboxes,
+   * radios, ranges, file inputs and hidden inputs are excluded because their
+   * text metrics do not trigger the focus zoom and their visual size is
+   * controlled by the native control.
+   */
+  @media (max-width: 767px) {
+    :where(
+      input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='hidden']),
+      textarea,
+      select
+    ) {
+      font-size: max(16px, 1em) !important;
+    }
   }
   .input::placeholder {
     color: var(--placeholder);

@@ -1,4 +1,6 @@
-import { defineConfig } from '@playwright/test'
+import { defineConfig, devices } from '@playwright/test'
+
+const MOBILE_CRITICAL_TESTS = /(?:mobile-browser-contract|gate-mobile-fill|run-detail-mobile|run-detail-mobile-panel|agent-studio-mobile-data|board-workspace|workspace-(?:credentials|shared-env|external-mcp|audit)|desktop-sidebar-hide|shell-loading|artifacts-page-version)\.spec\.ts/
 
 export default defineConfig({
   testDir: './e2e',
@@ -15,6 +17,36 @@ export default defineConfig({
     locale: 'zh-CN',
     trace: 'retain-on-failure',
   },
+  // Keep the existing desktop suite on its current browser while running the
+  // mobile contract against both Chromium and WebKit. The mobile project is
+  // intentionally limited to the contract spec so the full desktop suite is
+  // not multiplied by every device profile.
+  projects: [
+    {
+      name: 'desktop',
+      testIgnore: /mobile-browser-contract\.spec\.ts/,
+    },
+    {
+      name: 'mobile-chromium',
+      testMatch: /mobile-browser-contract\.spec\.ts/,
+      use: { ...devices['Pixel 7'] },
+    },
+    {
+      name: 'mobile-webkit',
+      testMatch: /mobile-browser-contract\.spec\.ts/,
+      use: { ...devices['iPhone 13'] },
+    },
+    {
+      name: 'mobile-chromium-critical',
+      testMatch: MOBILE_CRITICAL_TESTS,
+      use: { ...devices['Pixel 7'] },
+    },
+    {
+      name: 'mobile-webkit-critical',
+      testMatch: MOBILE_CRITICAL_TESTS,
+      use: { ...devices['iPhone 13'] },
+    },
+  ],
   webServer: {
     command: 'npx vite --config vite.e2e.config.ts',
     port: 5174,
