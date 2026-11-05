@@ -92,7 +92,7 @@ docker compose --env-file /absolute/private/grasp-e2b.env -f compose.e2b.yaml co
 docker compose --env-file /absolute/private/grasp-e2b.env -f compose.e2b.yaml up -d --build
 ```
 
-不要使用会展开输出全部环境变量的 `docker compose config` 作为公开诊断。首次部署须通过新建会话实测 SSH/终端、文件、真实 Agent/MCP 往返、IDE HTTP/WS、预览根路径/HMR、Pick/Page Control/Live、noVNC/CDP，并确认浏览器响应和服务日志没有 E2B 流量凭据。测试完成后销毁自建 guest 并核对 provider 列表。
+不要使用会展开输出全部环境变量的 `docker compose config` 作为公开诊断。首次部署须通过新建会话实测 SSH/终端、文件、真实 Agent/MCP 往返、IDE HTTP/WS、预览根路径/HMR、Pick/Page Control/Live、noVNC/CDP，并确认浏览器响应和服务日志没有 E2B 流量凭据。Agent 只有在 capability 中授予 `set_preview` 时才能注册平台预览；在沙箱内启动 HTTP 服务并返回 200 不等于预览已注册，应同时检查 Solo resources 中的预览端口。测试完成后销毁自建 guest 并核对 provider 列表。
 
 ## 状态与生命周期
 
