@@ -233,6 +233,13 @@ watch(modelCatalogRevision, load)
   }
   .model-binding-scope {
     width: 100%;
+    height: auto;
+    min-height: 28px;
+  }
+  .model-binding-scope-option {
+    padding: 4px 6px;
+    line-height: 14px;
+    white-space: normal;
   }
   .model-binding-configuration-meta {
     display: none;
