@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Agent model settings distinguish the default model configuration from the configurations allowed for switching. "All active configurations" explicitly includes configurations across coding tools and those added later, with matching Chinese and English labels, hints, and inherited summaries.
+
 - Run artifacts can be edited by hand while the run waits for a person with an idle session, or after it fails. Structured artifacts open in a form with a JSON view, other text artifacts in a code editor, and `page.html` can switch to a live preview. Each changed save becomes a new version under the original node. Concurrent edits are detected, and unsaved edits are guarded when switching views, leaving the page or sending a clarification message. Shared, embedded and Solo views stay read-only.
 
 - Feedback rounds no longer show the "Agent summary" block, and confirming a dialogue no longer runs the hidden summary turn. Older rounds that carry a summary display without it.
