@@ -2,6 +2,8 @@
 
 E2B 是 sandbox-gateway 的第三种显式驱动，适用于 E2B Cloud 或自托管 E2B/Embed。使用仓库根目录的 [compose.e2b.yaml](../../../compose.e2b.yaml) 启动；原有 Docker、Kubernetes、`start.sh` 和其他 Compose 配置不读取本目录，默认行为不变。
 
+当前完整真机验收针对自托管 E2B/Embed。Cloud 的控制面与私有流量协议有接口回归覆盖，尚未使用 Cloud 账号做端到端验收；接入 Cloud 时仍须执行下述相同的产品验收。
+
 本标准部署要求 **Linux amd64/x86-64** 宿主机与同架构的 OCI/E2B 模板。服务端镜像构建的 runtime bundle 必须与 guest 架构一致；不宣称此 Compose 在 Arm 宿主机开箱即用。定制架构部署须自行提供与 guest 匹配的运行时包并完成同等验收。
 
 运行时 gateway 使用原生 Go 客户端，不依赖宿主机 Python SDK。Python 仅用于这里的模板构建与依赖探针。已有兼容性实测及上游限制见 [方案 issue #1111](https://github.com/cocofhu/grasp/issues/1111)；它不代替当前部署的验收。
