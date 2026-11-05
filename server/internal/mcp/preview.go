@@ -536,6 +536,13 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	sw := InjectSwitch{}
 	switcher, canSwitch := ops.(previewInjectSwitcher)
 	if direct && canSwitch {
+		// A registration that currently uses the injector must have its own
+		// published port before the injector is pointed at another app.  Doing
+		// this before the switch keeps the old preview reachable if the gateway
+		// cannot publish or probe that port.
+		if err := h.prepareDisplacedPreviews(ctx, ops, runID, nodeID, sandboxName, port); err != nil {
+			return PreviewRegistration{}, err
+		}
 		res, err := switcher.SwitchInjectUpstream(ctx, sandboxName, port)
 		if err != nil {
 			log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
@@ -587,6 +594,32 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 		}
 	}
 	return reg, nil
+}
+
+// prepareDisplacedPreviews makes the old app ports independently reachable
+// before the shared injector is switched to a new app. Without this barrier,
+// releasing the old InjectorPort can leave a healthy registration with no
+// Host when that app was not published at sandbox creation time.
+func (h *Host) prepareDisplacedPreviews(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int) error {
+	for _, p := range h.ListPreviewPorts(runID, nodeID) {
+		if previewPortKind(p) != PreviewKindPort || p.Port == port || p.InjectorPort == 0 {
+			continue
+		}
+		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
+		if !ok || strings.TrimSpace(base) == "" {
+			pub, canPublish := ops.(previewPortPublisher)
+			if !canPublish {
+				return fmt.Errorf("无法切换预览：旧端口 %d 没有独立发布能力", p.Port)
+			}
+			if base, ok = pub.EnsurePublishedPort(ctx, sandboxName, p.Port); !ok || strings.TrimSpace(base) == "" {
+				return fmt.Errorf("无法切换预览：旧端口 %d 发布失败，当前预览保持不变", p.Port)
+			}
+		}
+		if !probePreviewPort(ctx, ops, sandboxName, p.Port) {
+			return fmt.Errorf("无法切换预览：旧端口 %d 发布后不可达，当前预览保持不变", p.Port)
+		}
+	}
+	return nil
 }
 
 // registerSwitchedPreview finishes a set_preview whose port now sits behind
@@ -648,11 +681,28 @@ func (h *Host) releaseDisplacedPreviews(ctx context.Context, ops PreviewSandboxO
 		if previewPortKind(p) != PreviewKindPort || p.Port == port || !sameUpstream {
 			continue
 		}
-		p.Host = ""
-		p.InjectorPort = 0
-		if base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port); ok && base != host {
-			p.Host = base
+		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
+		// Keep this idempotent with prepareDisplacedPreviews. The fallback
+		// handles registrations restored from durable state or a gateway
+		// restart, while avoiding a second publish request in the normal path.
+		if !ok {
+			if pub, canPublish := ops.(previewPortPublisher); canPublish {
+				_, _ = pub.EnsurePublishedPort(ctx, sandboxName, p.Port)
+				base, ok = ops.PreviewUpstream(ctx, sandboxName, p.Port)
+			}
 		}
+		if !ok || strings.TrimSpace(base) == "" || base == host {
+			log.Warn().Str("run_id", runID).Int("port", p.Port).
+				Msg("displaced preview has no independent upstream; retaining registration")
+			continue
+		}
+		if !probePreviewPort(ctx, ops, sandboxName, p.Port) {
+			log.Warn().Str("run_id", runID).Int("port", p.Port).
+				Msg("displaced preview independent upstream is not reachable; retaining registration")
+			continue
+		}
+		p.Host = base
+		p.InjectorPort = 0
 		p.Mode, p.DirectURL = "", ""
 		h.mu.Lock()
 		h.upsertPreviewMem(runID, nodeID, p)

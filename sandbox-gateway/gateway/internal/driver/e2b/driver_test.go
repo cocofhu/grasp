@@ -824,8 +824,12 @@ func TestDriverHealthRetriesDeadlineAndBootstrapSuccess(t *testing.T) {
 		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		if f.deleted != 1 {
-			t.Fatal("deadline left owned provider guest")
+		// A very short boot deadline may expire before the provider accepts the
+		// create request. In that case there is no guest to clean up; when the
+		// request did land, every guest accepted by this test provider must have
+		// been deleted by Create's failure path.
+		if f.deleted != f.created {
+			t.Fatalf("deadline cleanup mismatch: created=%d deleted=%d", f.created, f.deleted)
 		}
 	})
 }

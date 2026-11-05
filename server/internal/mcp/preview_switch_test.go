@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -16,6 +17,7 @@ type switchPreviewOps struct {
 	injectOK    bool
 	injectCalls []int
 	published   []int
+	events      []string
 	upFor       map[int]string
 }
 
@@ -29,6 +31,7 @@ func newSwitchOps(res InjectSwitch) *switchPreviewOps {
 }
 
 func (s *switchPreviewOps) SwitchInjectUpstream(_ context.Context, _ string, port int) (InjectSwitch, error) {
+	s.events = append(s.events, "switch:"+strconv.Itoa(port))
 	s.switches = append(s.switches, port)
 	if len(s.switches) > 1 {
 		return InjectSwitch{Result: InjectReset, PreviewPort: s.res.PreviewPort}, nil
@@ -42,8 +45,14 @@ func (s *switchPreviewOps) ProbeInjectUpstream(_ context.Context, _ string, prev
 }
 
 func (s *switchPreviewOps) EnsurePublishedPort(_ context.Context, _ string, port int) (string, bool) {
+	s.events = append(s.events, "publish:"+strconv.Itoa(port))
 	s.published = append(s.published, port)
-	return "", false
+	if base, ok := s.upFor[port]; ok {
+		return base, true
+	}
+	base := "http://10.0.0.8:" + strconv.Itoa(49150+port%100)
+	s.upFor[port] = base
+	return base, true
 }
 
 func (s *switchPreviewOps) PreviewUpstream(_ context.Context, _ string, port int) (string, bool) {
@@ -152,6 +161,45 @@ func TestSetPreviewSwitchReleasesDisplacedRegistration(t *testing.T) {
 	}
 	if byPort[5173].Host != "http://10.0.0.8:18081" {
 		t.Fatalf("5173=%+v", byPort[5173])
+	}
+}
+
+func TestSetPreviewSwitchPublishesDisplacedPortBeforeInjectorSwitch(t *testing.T) {
+	fastPreviewProbe(t)
+	h := NewHost(&memStore{})
+	store := &memPreviewStore{ports: []PreviewPort{{
+		RunID: "r", NodeID: "n", Kind: PreviewKindPort, Port: 3001,
+		ProxyURL: "/preview/r/n/3001/", Host: "http://10.0.0.8:18081", InjectorPort: 18081, Healthy: true,
+	}}}
+	h.SetPreviewStore(store)
+	ops := newSwitchOps(InjectSwitch{Result: InjectSwitched, PreviewPort: 18081})
+	delete(ops.upFor, 3001) // reproduce an app port absent from the initial publish set
+	h.SetPreviewSandboxOps(ops)
+
+	if _, err := h.setPreviewPort("r", "n", 5173, "new"); err != nil {
+		t.Fatal(err)
+	}
+	byPort := map[int]PreviewPort{}
+	for _, p := range store.ports {
+		byPort[p.Port] = p
+	}
+	if got := byPort[3001].Host; got == "" || got == "http://10.0.0.8:18081" {
+		t.Fatalf("displaced app was not independently published: %+v", byPort[3001])
+	}
+	if byPort[3001].InjectorPort != 0 {
+		t.Fatalf("displaced app still records the injector: %+v", byPort[3001])
+	}
+	publish, sw := -1, -1
+	for i, event := range ops.events {
+		if event == "publish:3001" && publish < 0 {
+			publish = i
+		}
+		if event == "switch:5173" && sw < 0 {
+			sw = i
+		}
+	}
+	if publish < 0 || sw < 0 || publish >= sw {
+		t.Fatalf("old port must publish before injector switch: events=%v", ops.events)
 	}
 }
 

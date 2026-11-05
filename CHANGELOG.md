@@ -6,6 +6,8 @@ All notable public-release changes are documented here.
 
 - **Optional E2B sandbox deployment:** a separate `compose.e2b.yaml` and native Go gateway driver connect Grasp to prepared E2B Cloud/self-hosted templates through private endpoints. Includes persistent connection recovery, lease renewal, deletion retries and isolated preview origins for root paths, WebSockets and page tools. Enable it explicitly; Docker and Kubernetes defaults are unchanged. See the E2B deployment guide for template resource constraints and pause/reinstall limitations.
 
+- E2B preview switching republishes and probes displaced application ports before changing the shared injector, keeping earlier previews reachable. Its deadline cleanup regression test now follows the provider's actual create count and no longer depends on a fixed wall-clock stage.
+
 - SSH commands retain stdout when an empty stderr stream closes concurrently, preventing successful sandbox scripts from occasionally returning empty results.
 
 - Agent model settings distinguish the default model configuration from the configurations allowed for switching. "All active configurations" explicitly includes configurations across coding tools and those added later, with matching Chinese and English labels, hints, and inherited summaries.
