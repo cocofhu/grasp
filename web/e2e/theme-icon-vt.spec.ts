@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test'
 
+type ThemeTransitionProbe = {
+  transitions: ViewTransition[]
+  trustedPointers: boolean[]
+}
+
 /**
  * plan g1.2 / review v1 — Chromium 149.
  * The browser captures the old snapshot before the update callback. At that
@@ -148,7 +153,7 @@ test.describe('theme icon view transition (plan g1.2 review v1)', () => {
     expect(await page.evaluate(() => localStorage.getItem('grasp-theme'))).toBe('light')
   })
 
-  test('two clicks within 100ms return to the starting theme', async ({ page }) => {
+  test('a second pointer click during the view transition returns to the starting theme', async ({ page }) => {
     test.setTimeout(90_000)
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.addInitScript(() => {
@@ -165,26 +170,66 @@ test.describe('theme icon view transition (plan g1.2 review v1)', () => {
     const y = box!.y + box!.height / 2
 
     await page.evaluate(() => {
-      const times: number[] = []
+      const probe: ThemeTransitionProbe = { transitions: [], trustedPointers: [] }
+      ;(window as Window & { __themeTransitionProbe: ThemeTransitionProbe }).__themeTransitionProbe = probe
       document.addEventListener(
         'pointerdown',
-        () => {
-          times.push(performance.now())
+        (event) => {
+          probe.trustedPointers.push(event.isTrusted)
         },
         true,
       )
-      ;(window as unknown as { __themePointerDowns: number[] }).__themePointerDowns = times
+      const start = document.startViewTransition.bind(document)
+      document.startViewTransition = (update) => {
+        const transition = start(update)
+        probe.transitions.push(transition)
+        void transition.ready.then(() => {
+          // Keep the real snapshot overlay hit-testing while the next mouse
+          // command travels to the browser, regardless of CI scheduling delay.
+          for (const animation of document.getAnimations()) {
+            const effect = animation.effect as KeyframeEffect | null
+            if (effect?.pseudoElement?.includes('view-transition')) animation.pause()
+          }
+        }, () => { /* A later toggle can skip an earlier transition. */ })
+        return transition
+      }
     })
 
     await page.mouse.click(x, y)
-    await page.waitForTimeout(50)
+    const held = await page.evaluate(async ({ x, y }) => {
+      const probe = (window as Window & { __themeTransitionProbe: ThemeTransitionProbe }).__themeTransitionProbe
+      await probe.transitions[0].ready
+      const animations = document.getAnimations().filter((animation) => {
+        const effect = animation.effect as KeyframeEffect | null
+        return effect?.pseudoElement?.includes('view-transition')
+      })
+      return {
+        overlayInterceptsPointer: document.elementFromPoint(x, y) === document.documentElement,
+        animations: animations.length,
+        paused: animations.every((animation) => animation.playState === 'paused'),
+      }
+    }, { x, y })
+    expect(held.overlayInterceptsPointer).toBe(true)
+    expect(held.animations).toBeGreaterThan(0)
+    expect(held.paused).toBe(true)
+    await expect(page.locator('html')).toHaveClass(/light/)
+
     await page.mouse.click(x, y)
-    const gap = await page.evaluate(() => {
-      const times = (window as unknown as { __themePointerDowns: number[] }).__themePointerDowns
-      return times.length >= 2 ? times[1] - times[0] : Number.POSITIVE_INFINITY
+    await expect.poll(() => page.evaluate(() => (
+      window as Window & { __themeTransitionProbe: ThemeTransitionProbe }
+    ).__themeTransitionProbe.transitions.length)).toBe(2)
+    const trustedPointers = await page.evaluate(async () => {
+      const probe = (window as Window & { __themeTransitionProbe: ThemeTransitionProbe }).__themeTransitionProbe
+      const transition = probe.transitions[1]
+      await transition.ready
+      for (const animation of document.getAnimations()) {
+        const effect = animation.effect as KeyframeEffect | null
+        if (effect?.pseudoElement?.includes('view-transition')) animation.play()
+      }
+      await transition.finished
+      return probe.trustedPointers
     })
-    expect(gap, `pointerdown gap ${gap}ms`).toBeLessThan(100)
-    await page.waitForTimeout(400)
+    expect(trustedPointers).toEqual([true, true])
 
     await expect(page.locator('html')).not.toHaveClass(/light/)
     await expect(page.getByTestId('shell-theme-icon-sun')).toHaveClass(/is-active/)
