@@ -154,7 +154,7 @@ func InferArtifactKind(name string) string {
 // not be edited or saved via the gate product editor.
 func IsReadonlyArtifactKind(kind string) bool {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "image":
+	case "image", "video", "audio", "pdf", "file":
 		return true
 	default:
 		return false

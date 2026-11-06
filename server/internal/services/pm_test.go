@@ -9,6 +9,7 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -17,6 +18,9 @@ func setupPmDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:pm_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.Attach(db, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {

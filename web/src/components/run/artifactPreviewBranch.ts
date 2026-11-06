@@ -1,4 +1,4 @@
-import { inferArtifactKind, isReadonlyArtifactKind } from '@/lib/inbox/gateUpstream'
+import { inferArtifactKind } from '@/lib/inbox/gateUpstream'
 import { isJsonArtifact } from '@/lib/shared/highlightJson'
 import { isStructuredArtifactName } from './StructuredArtifactView.vue'
 
@@ -9,9 +9,10 @@ export type ArtifactPreviewBranch =
   | { kind: 'image' }
   | { kind: 'markdown' }
   | { kind: 'empty' }
+  | { kind: 'video' | 'audio' | 'pdf' | 'file' }
 
 export function isImagePreviewArtifact(name: string, kind?: string | null): boolean {
-  return isReadonlyArtifactKind(kind ?? undefined) || inferArtifactKind(name) === 'image'
+  return kind === 'image' || inferArtifactKind(name) === 'image'
 }
 
 /**
@@ -24,6 +25,7 @@ export function resolveArtifactPreviewBranch(input: {
   kind?: string | null
   content: string
 }): ArtifactPreviewBranch {
+  if (['video', 'audio', 'pdf', 'file'].includes(input.kind || '')) return { kind: input.kind as 'video' | 'audio' | 'pdf' | 'file' }
   const isHtml = input.kind === 'html'
   const content = input.content
   if (isHtml && content) return { kind: 'html' }

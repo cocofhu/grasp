@@ -65,13 +65,13 @@ type FeedbackEvent struct {
 	Annotations []ReactAnnotation `gorm:"serializer:json" json:"annotations,omitempty"`
 	// Attachments must only carry blob refs; PromptImage.Data is cleared before
 	// persistence so base64 never reaches the DB or the rendered artifact.
-	Attachments []PromptImage `gorm:"serializer:json" json:"attachments,omitempty"`
+	Attachments []PromptImage `gorm:"serializer:filejson" json:"attachments,omitempty"`
 	// Turns is this round's incremental dialogue, not the whole conversation.
-	Turns   []ReactMessage   `gorm:"serializer:json" json:"turns,omitempty"`
+	Turns   []ReactMessage   `gorm:"serializer:filejson" json:"turns,omitempty"`
 	Targets []FeedbackTarget `gorm:"serializer:json" json:"targets,omitempty"`
 	// Detail carries kind-specific fields: gate stores form / goto / external;
 	// preview stores each issue's selector / port.
-	Detail map[string]any `gorm:"serializer:json" json:"detail,omitempty"`
+	Detail map[string]any `gorm:"serializer:filejson" json:"detail,omitempty"`
 
 	OccurredAt time.Time `json:"at"`
 }

@@ -102,6 +102,8 @@ type StorageConfig struct {
 	Driver string `yaml:"driver"`
 	// BlobsRoot is the LocalFS directory for blob:{id} objects.
 	BlobsRoot string `yaml:"blobs_root"`
+	// MaxFileBytes limits one Agent file import (default 128 MiB).
+	MaxFileBytes int64 `yaml:"max_file_bytes"`
 }
 
 // SecurityConfig holds cross-cutting secrets. SecretsKey is the master key used
@@ -584,6 +586,9 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_BLOBS_ROOT"); v != "" {
 		c.Storage.BlobsRoot = v
 	}
+	if v := env("GRASP_MAX_FILE_BYTES"); v != "" {
+		c.Storage.MaxFileBytes, _ = strconv.ParseInt(v, 10, 64)
+	}
 	if v := env("GRASP_GITHUB_OAUTH_CLIENT_ID"); v != "" {
 		c.GitHub.OAuthClientID = v
 	}
@@ -633,6 +638,9 @@ func setDefaults(c *Config) {
 	c.Storage.Driver = strings.ToLower(strings.TrimSpace(c.Storage.Driver))
 	if c.Storage.BlobsRoot == "" {
 		c.Storage.BlobsRoot = "data/blobs"
+	}
+	if c.Storage.MaxFileBytes <= 0 {
+		c.Storage.MaxFileBytes = 128 << 20
 	}
 	if c.Engine.NodeAutoRetryMax == 0 {
 		c.Engine.NodeAutoRetryMax = 3

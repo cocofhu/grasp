@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
@@ -27,6 +28,9 @@ func persistenceDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "persistence.db")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.Attach(db, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&models.Run{}, &models.Sandbox{}, &models.SoloSession{}, &models.SoloMessage{}, &models.Artifact{}, &models.ArtifactVersion{}, &models.StateRun{}, &models.Gate{}); err != nil {

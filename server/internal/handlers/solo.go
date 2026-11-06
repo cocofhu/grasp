@@ -192,10 +192,18 @@ func (h *Handlers) GetSoloResources(c *gin.Context) {
 		writeSoloErr(c, err)
 		return
 	}
-	artifacts := []models.Artifact{}
+	artifacts := h.Arts.BySession(c.Param("id"))
 	ports := []mcp.PreviewPort{}
 	if sb.RunID != "" {
-		artifacts = append(artifacts, h.Arts.ByRun(sb.RunID)...)
+		seen := make(map[string]bool, len(artifacts))
+		for _, a := range artifacts {
+			seen[a.ID] = true
+		}
+		for _, a := range h.Arts.ByRun(sb.RunID) {
+			if !seen[a.ID] {
+				artifacts = append(artifacts, a)
+			}
+		}
 		if sb.Status == "running" && h.MCP != nil {
 			ports = append(ports, h.MCP.ListPreviewPorts(sb.RunID, "solo")...)
 			slices.SortFunc(ports, func(a, b mcp.PreviewPort) int {

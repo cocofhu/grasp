@@ -19,6 +19,7 @@ type ConversationHistoryRequest struct {
 // ConversationHistoryMessage deliberately excludes raw ACP events and inline
 // attachment bytes. Tool and file activity remains in the original transcript.
 type ConversationHistoryMessage struct {
+	Files       []models.ArtifactAttachment     `json:"files,omitempty"`
 	ID          string                          `json:"id"`
 	Role        string                          `json:"role"`
 	Content     string                          `json:"content"`

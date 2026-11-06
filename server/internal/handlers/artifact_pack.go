@@ -2,9 +2,10 @@ package handlers
 
 import (
 	"archive/zip"
-	"bytes"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 
@@ -34,51 +35,70 @@ func (h *Handlers) PackRunArtifacts(c *gin.Context) {
 	}
 	downloadName := dirName + "-artifacts.zip"
 
-	arts := h.Arts.ByRunWithContent(runID)
-	raw, err := buildRunArtifactsZIP(dirName, arts)
+	// Spool the ZIP to a temporary file: memory remains bounded, and a missing
+	// member can still return an error before sending a successful response.
+	archive, err := os.CreateTemp("", "grasp-artifacts-*.zip")
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "artifact_pack_unavailable"})
+		return
+	}
+	defer func() { _ = archive.Close(); _ = os.Remove(archive.Name()) }()
+	arts := h.Arts.ByRun(runID)
+	err = h.writeRunArtifactsZIP(c, archive, dirName, arts)
 	if err != nil {
 		_ = c.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "artifact_pack_unavailable"})
 		return
 	}
 
 	c.Header("Content-Type", "application/zip")
 	c.Header("Content-Disposition", contentDispositionAttachment(downloadName))
-	c.Data(http.StatusOK, "application/zip", raw)
+	if _, err = archive.Seek(0, io.SeekStart); err != nil {
+		_ = c.Error(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	http.ServeContent(c.Writer, c.Request, downloadName, run.StartedAt, archive)
 }
 
-// buildRunArtifactsZIP writes one top-level directory with one file per artifact.
-// Member bytes match DownloadArtifact (including image base64 decode). Paths are
-// sanitized to block traversal while preserving original basenames/extensions.
-func buildRunArtifactsZIP(dirName string, arts []models.Artifact) ([]byte, error) {
-	buf := &bytes.Buffer{}
-	zw := zip.NewWriter(buf)
+func (h *Handlers) writeRunArtifactsZIP(c *gin.Context, dest io.Writer, dir string, arts []models.Artifact) error {
+	zw := zip.NewWriter(dest)
 	used := map[string]int{}
-
 	for _, a := range arts {
-		body, _ := decodeArtifactDownloadBody(a)
-		base := zipMemberBaseName(a.Name)
-		name := base
-		if n := used[base]; n > 0 {
-			name = fmt.Sprintf("%s_%d", base, n)
+		if err := c.Request.Context().Err(); err != nil {
+			_ = zw.Close()
+			return err
 		}
-		used[base]++
-
-		entry := safeZipEntry(dirName, name)
-		w, err := zw.Create(entry)
+		file, err := h.Arts.OpenFile(c.Request.Context(), a.ID, a.Revision)
 		if err != nil {
 			_ = zw.Close()
-			return nil, err
+			return err
 		}
-		if _, err := w.Write(body); err != nil {
+		base := zipMemberBaseName(a.Name)
+		name := base
+		if used[base] > 0 {
+			name = fmt.Sprintf("%s_%d", base, used[base])
+		}
+		used[base]++
+		header := &zip.FileHeader{Name: safeZipEntry(dir, name), Method: zip.Deflate}
+		if a.Kind == "video" || a.Kind == "audio" || a.Kind == "image" || a.Kind == "file" {
+			header.Method = zip.Store
+		}
+		member, err := zw.CreateHeader(header)
+		if err == nil {
+			_, err = io.Copy(member, file.Reader)
+		}
+		closeErr := file.Reader.Close()
+		if err != nil {
 			_ = zw.Close()
-			return nil, err
+			return err
+		}
+		if closeErr != nil {
+			_ = zw.Close()
+			return closeErr
 		}
 	}
-	if err := zw.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return zw.Close()
 }
 
 // zipMemberBaseName keeps the artifact basename (incl. extension) but strips

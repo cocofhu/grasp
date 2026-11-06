@@ -1,6 +1,6 @@
 import { contentText, flattenUpdate, normalizeKind } from '@/lib/run/acpUnpack'
 import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
-import type { AgentPart, ChatMessageMetadata, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
+import type { ArtifactAttachment, AgentPart, ChatMessageMetadata, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import type { MessageReference, SoloMessage } from '@/lib/api/apiTypes'
 
 export type SoloTool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
@@ -8,6 +8,7 @@ export type SoloTool = { id: string; title: string; status: string; summary?: st
 export type SoloStep = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
 
 export type SoloTurn = ChatMessageMetadata & {
+  files?: ArtifactAttachment[]
   id: string
   role: 'user' | 'agent' | 'system'
   text: string
@@ -176,6 +177,7 @@ export function turnsFromMessages(messages: SoloMessage[], label: ToolLabeler, t
       const turn = emptyAgentTurn(`a:${m.id}`, false, m.execution?.startedAt || addMs(m.createdAt, m.durationMs))
       turn.endedAt = m.createdAt
       turn.createdAt = m.createdAt
+      turn.files = m.files
       turn.execution = m.execution
       turn.usage = m.usage
       turn.usageByModel = m.usageByModel

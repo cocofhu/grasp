@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/platformmcp"
 	"github.com/cocofhu/grasp/internal/services"
@@ -17,6 +18,9 @@ func setupContextDB(t *testing.T) (*gorm.DB, *services.PmService, models.Workspa
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:contextmcp_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.Attach(db, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {

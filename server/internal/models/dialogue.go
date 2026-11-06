@@ -34,7 +34,7 @@ func ReplyOutcome(m ReactMessage) string {
 	case OutcomeFailed, OutcomeDropped, OutcomeInterrupted:
 		return m.Outcome
 	}
-	if m.Handoff || len(m.Questions) > 0 || len(m.Forms) > 0 {
+	if m.Handoff || len(m.Questions) > 0 || len(m.Forms) > 0 || len(m.Files) > 0 {
 		return OutcomeOK
 	}
 	t := strings.TrimSpace(m.Text)

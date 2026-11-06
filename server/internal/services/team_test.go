@@ -13,6 +13,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -20,6 +21,9 @@ import (
 func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:team_boot_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.Attach(db, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
@@ -170,6 +174,9 @@ func TestCreateAgentFromTemplate_Conflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := filestore.Attach(db, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
@@ -234,6 +241,9 @@ func (f *fakeTeamSandbox) GetView(ctx context.Context, id uint) (*SandboxView, e
 func TestFinishBootstrap_WaitsForPullingBeforeReady(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:team_pull_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.Attach(db, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
@@ -312,6 +322,9 @@ func TestFinishBootstrap_WaitsForPullingBeforeReady(t *testing.T) {
 func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:team_err_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.Attach(db, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {

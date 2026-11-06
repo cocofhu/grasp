@@ -56,10 +56,14 @@ func (h *Handlers) ArtifactContent(c *gin.Context) {
 	}
 
 	content := a.Content
+	if a.Kind == "video" || a.Kind == "audio" || a.Kind == "pdf" || a.Kind == "file" {
+		content = ""
+	}
 	etag := engine.ArtifactETag(content, a.SizeBytes, a.UpdatedAt)
 	out := gin.H{
 		"id": a.ID, "runId": a.RunID, "nodeId": a.NodeID, "workflowId": a.WorkflowID, "workflowName": a.WorkflowName,
 		"name": a.Name, "kind": a.Kind, "sizeBytes": a.SizeBytes,
+		"mimeType": a.MimeType, "sha256": a.SHA256,
 		"createdAt": a.CreatedAt, "content": content, "etag": etag,
 	}
 	rev := a.Revision
@@ -101,11 +105,16 @@ func (h *Handlers) ArtifactVersionContent(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
+	if ver.Kind == "video" || ver.Kind == "audio" || ver.Kind == "pdf" || ver.Kind == "file" {
+		ver.Content = ""
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"artifactId": ver.ArtifactID,
 		"revision":   ver.Revision,
 		"nodeId":     ver.NodeID,
 		"kind":       ver.Kind,
+		"mimeType":   ver.MimeType,
+		"sha256":     ver.SHA256,
 		"sizeBytes":  ver.SizeBytes,
 		"createdAt":  ver.CreatedAt,
 		"content":    ver.Content,
@@ -113,14 +122,7 @@ func (h *Handlers) ArtifactVersionContent(c *gin.Context) {
 }
 
 func (h *Handlers) DownloadArtifact(c *gin.Context) {
-	a, ok := h.Arts.GetByID(c.Param("id"))
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-		return
-	}
-	body, mime := decodeArtifactDownloadBody(a)
-	c.Header("Content-Disposition", "attachment; filename="+a.Name)
-	c.Data(http.StatusOK, mime, body)
+	h.serveArtifactFile(c, true)
 }
 
 // DeleteArtifact hard-deletes one artifact by id. Success is 204 No Content

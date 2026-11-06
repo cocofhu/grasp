@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ArtifactFileAttachments from '@/components/chat/ArtifactFileAttachments.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, useRouter } from 'vue-router'
@@ -477,6 +478,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 quiet-thought
                 message-test-id="solo-agent-message"
               />
+              <ArtifactFileAttachments :files="turn.files" />
               <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
                 <div class="chat-meta mb-1">{{ t('pages.solo.chat.plan') }}</div>
                 <div v-for="(p, pi) in turn.plan" :key="pi" class="flex items-center gap-2 text-txt2">

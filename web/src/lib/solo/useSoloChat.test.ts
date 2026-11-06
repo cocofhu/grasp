@@ -99,6 +99,32 @@ describe('useSoloChat', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
+  it('deduplicates file delivery, rejects another turn and retains files after reload', async () => {
+    const file = { artifactId: 'artifact-1', revision: 2, name: 'report.pdf', kind: 'pdf', sizeBytes: 100 }
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const socket = FakeSocket.all[0]!
+    socket.open()
+    await flushPromises()
+    socket.emit({ type: 'session', event: 'turn_begin', userMsgId: 'user-1', text: 'report', images: [] })
+    socket.emit({ type: 'session', event: 'artifact', userMsgId: 'other', file: { ...file, artifactId: 'wrong' } })
+    socket.emit({ type: 'session', event: 'artifact', userMsgId: 'user-1', file })
+    socket.emit({ type: 'session', event: 'artifact', userMsgId: 'user-1', file })
+    expect(chat.turns.value.find(turn => turn.role === 'agent')?.files).toEqual([file])
+    app.unmount()
+    mocks.listSoloMessages.mockResolvedValue([
+      { id: 'user-1', role: 'user', content: 'report', createdAt: '' },
+      { id: 'reply:user-1', turnId: 'user-1', role: 'assistant', content: '', files: [file], createdAt: '' },
+    ])
+    const next = mountChat()
+    await flushPromises()
+    FakeSocket.all.at(-1)!.open()
+    await flushPromises()
+    expect(next.chat.turns.value.filter(turn => turn.role === 'agent')).toHaveLength(1)
+    expect(next.chat.turns.value.find(turn => turn.role === 'agent')?.files).toEqual([file])
+    next.app.unmount()
+  })
+
   it.each(['turn_done', 'error'] as const)('rejects an older busy queue snapshot after %s', async (event) => {
     const { chat, app } = mountChat()
     await flushPromises()

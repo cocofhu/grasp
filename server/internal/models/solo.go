@@ -165,15 +165,17 @@ type RunReference struct {
 // SoloMessage is one persisted turn of a Solo session. Agent turns keep the raw
 // ACP frames so the UI can replay thoughts and tool calls.
 type SoloMessage struct {
-	ID        string `gorm:"primaryKey" json:"id"`
-	SessionID string `gorm:"index" json:"sessionId"`
+	TurnID    string               `gorm:"index" json:"turnId,omitempty"`
+	Files     []ArtifactAttachment `gorm:"serializer:json" json:"files,omitempty"`
+	ID        string               `gorm:"primaryKey" json:"id"`
+	SessionID string               `gorm:"index" json:"sessionId"`
 	// Role: user | assistant | system (system marks restarts).
 	Role          string            `json:"role"`
-	Content       string            `json:"content"`
-	Images        []PromptImage     `gorm:"serializer:json" json:"images,omitempty"`
-	Annotations   []ReactAnnotation `gorm:"serializer:json" json:"annotations,omitempty"`
+	Content       string            `gorm:"serializer:filetext" json:"content"`
+	Images        []PromptImage     `gorm:"serializer:filejson" json:"images,omitempty"`
+	Annotations   []ReactAnnotation `gorm:"serializer:filejson" json:"annotations,omitempty"`
 	PreviewShared bool              `json:"-"`
-	Events        []json.RawMessage `gorm:"serializer:json" json:"events,omitempty"`
+	Events        []json.RawMessage `gorm:"serializer:filejson" json:"events,omitempty"`
 	// References are the contexts the user explicitly picked for this turn.
 	// They are the only authority read_reference accepts.
 	References []MessageReference `gorm:"column:message_references;serializer:json" json:"references,omitempty"`

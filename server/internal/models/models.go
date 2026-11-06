@@ -7,6 +7,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	_ "github.com/cocofhu/grasp/internal/filestore" // registers file-backed payload serializers
 )
 
 // EnvEntry is one run-scoped sandbox OS environment variable (key/value + secret flag).
@@ -198,7 +200,7 @@ type Run struct {
 	WorkflowVersion int            `json:"workflowVersion"`
 	Status          string         `json:"status"` // queued|running|waiting_human|completed|failed|cancelled
 	Trigger         string         `json:"trigger"`
-	Inputs          map[string]any `gorm:"serializer:json" json:"inputs"`
+	Inputs          map[string]any `gorm:"serializer:filejson" json:"inputs"`
 	Tags            []string       `gorm:"serializer:json" json:"tags"`
 	// Priority is the admission weight: high=3, normal=2, low=1 (default 2).
 	// API/frontend expose string labels; claim sorts by Priority DESC then
@@ -222,7 +224,7 @@ type Run struct {
 	// sandbox once the node parks, so the caller does not have to poll for the
 	// pause and re-send. FirstMessageDeliveredAt is the delivery latch: a
 	// conditional UPDATE on it guarantees exactly-once delivery.
-	FirstMessage            *CompositeText `gorm:"serializer:json" json:"-"`
+	FirstMessage            *CompositeText `gorm:"serializer:filejson" json:"-"`
 	FirstMessageDeliveredAt *time.Time     `json:"-"`
 	// Launch* is the home composer's model choice for this run. It is copied
 	// only onto the first clarify visit that does not yet have a human turn.
@@ -239,7 +241,7 @@ type Run struct {
 	Trace                 []TraceEntry `gorm:"serializer:json" json:"trace"`
 	// Checkpoints holds variable snapshots keyed by checkpoint node id, used
 	// to restore state on rollback.
-	Checkpoints map[string]map[string]any `gorm:"serializer:json" json:"-"`
+	Checkpoints map[string]map[string]any `gorm:"serializer:filejson" json:"-"`
 	Graph       Graph                     `gorm:"serializer:json" json:"-"`
 	StartedAt   time.Time                 `json:"startedAt"`
 	DurationSec int                       `json:"durationSec"`
@@ -342,28 +344,30 @@ func CloneTokenUsage(src *TokenUsage) *TokenUsage {
 // execution's output, events, and duration instead of overwriting them.
 // Iteration is the 1-based per-node execution index (1 = first visit).
 type StateRun struct {
-	ID        uint           `gorm:"primaryKey" json:"-"`
-	RunID     string         `gorm:"index" json:"runId"`
-	NodeID    string         `json:"nodeId"`
-	NodeType  string         `json:"nodeType"`
-	Iteration int            `json:"iteration"`
-	Status    string         `json:"status"`
-	OutputMd  string         `json:"outputMd"`
-	Outputs   map[string]any `gorm:"serializer:json" json:"outputs"`
+	Files             []ArtifactAttachment `gorm:"-" json:"files,omitempty"`
+	HasFileDeliveries bool                 `gorm:"->" json:"-"`
+	ID                uint                 `gorm:"primaryKey" json:"-"`
+	RunID             string               `gorm:"index" json:"runId"`
+	NodeID            string               `json:"nodeId"`
+	NodeType          string               `json:"nodeType"`
+	Iteration         int                  `json:"iteration"`
+	Status            string               `json:"status"`
+	OutputMd          string               `gorm:"serializer:filetext" json:"outputMd"`
+	Outputs           map[string]any       `gorm:"serializer:filejson" json:"outputs"`
 	// VarsSnapshot is the global-variable state captured when this execution
 	// finished (post-node), so the run timeline can show each card's variables
 	// at that moment for debugging.
-	VarsSnapshot map[string]any `gorm:"serializer:json" json:"varsSnapshot,omitempty"`
+	VarsSnapshot map[string]any `gorm:"serializer:filejson" json:"varsSnapshot,omitempty"`
 	// VarsBefore is the global-variable state captured when this execution
 	// STARTED (pre-node). A manual resume restores it so a re-run of the node
 	// sees exactly the state it had at that time, rather than values that later
 	// nodes have since mutated.
-	VarsBefore map[string]any `gorm:"serializer:json" json:"varsBefore,omitempty"`
-	Events     []AcpEvent     `gorm:"serializer:json" json:"events"`
+	VarsBefore map[string]any `gorm:"serializer:filejson" json:"varsBefore,omitempty"`
+	Events     []AcpEvent     `gorm:"serializer:filejson" json:"events"`
 	// McpCalls records the built-in MCP tool invocations made during this
 	// execution (tool name + truncated in/out), so the run timeline can show
 	// what the agent asked the platform to do — for debugging.
-	McpCalls []McpCall `gorm:"serializer:json" json:"mcpCalls,omitempty"`
+	McpCalls []McpCall `gorm:"serializer:filejson" json:"mcpCalls,omitempty"`
 	// Usage is the per-execution token total accumulated from prompt_done.usage
 	// across chat turns in this StateRun. nil = provider never reported usage.
 	Usage *TokenUsage `gorm:"serializer:json" json:"usage,omitempty"`
@@ -413,7 +417,7 @@ type RunVariable struct {
 	RunID string `gorm:"index" json:"runId"`
 	Name  string `json:"name"`
 	Type  string `json:"type"`
-	Value any    `gorm:"serializer:json" json:"value"`
+	Value any    `gorm:"serializer:filejson" json:"value"`
 	// Secret is carried over from a workspace variable flagged secret, so
 	// display-only derivations (task previews) can mask
 	// the value. Execution still sees the real value.
@@ -422,16 +426,23 @@ type RunVariable struct {
 
 // Artifact is a platform-stored run product written via the artifact-store MCP.
 type Artifact struct {
-	ID           string    `gorm:"primaryKey" json:"id"`
-	RunID        string    `gorm:"index" json:"runId"`
-	NodeID       string    `json:"nodeId"`
-	WorkflowID   string    `gorm:"index" json:"workflowId"`
-	WorkflowName string    `json:"workflowName"`
-	Name         string    `json:"name"`
-	Kind         string    `json:"kind"`
-	SizeBytes    int       `json:"sizeBytes"`
-	Content      string    `json:"-"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID           string `gorm:"primaryKey" json:"id"`
+	RunID        string `gorm:"index" json:"runId"`
+	NodeID       string `json:"nodeId"`
+	WorkflowID   string `gorm:"index" json:"workflowId"`
+	WorkflowName string `json:"workflowName"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	SizeBytes    int    `json:"sizeBytes"`
+	Content      string `gorm:"serializer:filetext" json:"-"`
+	MimeType     string `json:"mimeType,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	SessionID    string `gorm:"index;size:191" json:"sessionId,omitempty"`
+	// Imported files are private to authenticated users. Existing run-wide
+	// public shares must never gain arbitrary sandbox files implicitly.
+	PrivateFile bool      `json:"-"`
+	PathRef     string    `gorm:"-" json:"-"`
+	CreatedAt   time.Time `json:"createdAt"`
 	// UpdatedAt bumps on every Save upsert so clients can detect external edits
 	// (ETag / concurrency banners) without a content hash round-trip.
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -452,7 +463,10 @@ type ArtifactVersion struct {
 	Revision  int    `gorm:"index:idx_artver_art_rev,priority:2" json:"revision"`
 	Kind      string `json:"kind"`
 	SizeBytes int    `json:"sizeBytes"`
-	Content   string `json:"-"`
+	Content   string `gorm:"serializer:filetext" json:"-"`
+	MimeType  string `json:"mimeType,omitempty"`
+	SHA256    string `json:"sha256,omitempty"`
+	PathRef   string `gorm:"-" json:"-"`
 	// CreatedAt is when this version was superseded (the old row's UpdatedAt).
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -469,7 +483,7 @@ type Gate struct {
 	WorkflowID   string       `gorm:"index" json:"workflowId"`
 	WorkflowName string       `json:"workflowName"`
 	Title        string       `json:"title"`
-	BodyMd       string       `json:"bodyMd"`
+	BodyMd       string       `gorm:"serializer:filetext" json:"bodyMd"`
 	Actions      []GateAction `gorm:"serializer:json" json:"actions"`
 	Form         []GateField  `gorm:"serializer:json" json:"form"`
 	// UpstreamNodeID + UpstreamIteration bind the gate preview to the upstream
@@ -501,14 +515,15 @@ type GateField struct {
 // ReactConversation persists a react node's platform-native multi-turn
 // dialogue (replaces auto-coder's host @bot mechanism).
 type ReactConversation struct {
-	ID     uint   `gorm:"primaryKey" json:"-"`
-	RunID  string `gorm:"index" json:"runId"`
-	NodeID string `json:"nodeId"`
+	HasFileDeliveries bool   `gorm:"->" json:"-"`
+	ID                uint   `gorm:"primaryKey" json:"-"`
+	RunID             string `gorm:"index" json:"runId"`
+	NodeID            string `json:"nodeId"`
 	// Iteration is the per-node execution index this dialogue belongs to, so a
 	// loop-back onto the same react node opens a fresh conversation each visit.
 	Iteration int            `json:"iteration"`
 	Done      bool           `json:"done"`
-	Messages  []ReactMessage `gorm:"serializer:json" json:"turns"`
+	Messages  []ReactMessage `gorm:"serializer:filejson" json:"turns"`
 	// PreviewArtifact is the artifact name pinned by set_artifact_preview for the ReAct UI.
 	PreviewArtifact string `json:"previewArtifact,omitempty"`
 	// Takeover marks a manual session opened by interrupting an auto visit;
@@ -542,9 +557,10 @@ func (c ReactConversation) Turns() []ReactMessage {
 
 // ReactMessage is one turn in a react conversation.
 type ReactMessage struct {
-	Role string `json:"role"` // agent | human
-	Text string `json:"text"`
-	At   string `json:"at"`
+	Files []ArtifactAttachment `json:"files,omitempty"`
+	Role  string               `json:"role"` // agent | human
+	Text  string               `json:"text"`
+	At    string               `json:"at"`
 	// ClientMessageID groups this human request with all of its agent segments.
 	// Older messages and requests without a sender id keep it absent.
 	ClientMessageID string `json:"clientMessageId,omitempty"`
@@ -1022,7 +1038,7 @@ type SandboxLog struct {
 	RunID     string    `gorm:"index" json:"runId,omitempty"`
 	NodeID    string    `json:"nodeId,omitempty"`
 	Profile   string    `json:"profile,omitempty"`
-	Content   string    `json:"content"` // captured docker logs (tail-capped)
+	Content   string    `gorm:"serializer:filetext" json:"content"` // captured docker logs (tail-capped)
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -1100,7 +1116,7 @@ type PreviewIssue struct {
 	Body         string        `json:"body"`
 	Selector     string        `json:"selector,omitempty"`
 	Port         int           `json:"port,omitempty"`
-	Images       []PromptImage `gorm:"serializer:json" json:"images,omitempty"`
+	Images       []PromptImage `gorm:"serializer:filejson" json:"images,omitempty"`
 	Status       string        `json:"status"` // open | resolved
 	CreatedAt    time.Time     `json:"createdAt"`
 }
@@ -1110,7 +1126,7 @@ func AllModels() []any {
 	return []any{
 		&Workspace{},
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
-		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &Gate{}, &ReactConversation{}, &RunReference{},
+		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &ArtifactDelivery{}, &Gate{}, &ReactConversation{}, &RunReference{},
 		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
 		&RunPreviewPort{}, &PreviewIssue{}, &FeedbackEvent{},
 		&MemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},

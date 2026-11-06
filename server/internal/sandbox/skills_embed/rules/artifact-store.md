@@ -11,6 +11,11 @@ alwaysApply: true
 - `write_artifact(name, content, kind?)`:把内容写入平台产物存储,返回 artifact_id。
 - `read_artifact(name)`:读取本次运行内上游节点产出的产物。
 - `list_artifacts()`:列出本次运行已有产物。
+- `send_file(path, name?, caption?)`：把沙箱工作区文件发送到当前对话。平台复制到持久存储并显示可下载附件；常用图片、音视频、PDF、文本可预览。只传路径，不要把文件转成 base64 填入工具参数。
+- `upload_file_artifact(path, name?)`：仅导入文件，返回产物 ID、版本和元数据；不会发消息。
+- `send_artifact(artifact_id, revision?, caption?)`：发送本次运行内有权读取的已有产物；消息固定引用该版本。同轮同版本重复发送会去重。没有活动对话时不能发送。
+
+文件导入默认上限 128 MiB（管理员可配置）。工作流结构化产物仍须使用对应 `set_*` 工具；任意文件不会替代节点产出契约。导入文件只供登录后的 WebUI 访问，不会自动加入公开分享。工具未出现在列表时不能调用。
 
 ## Solo 会话历史
 

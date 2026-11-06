@@ -298,6 +298,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const thoughts = (turn: SoloTurn) => turn.steps.flatMap((step) => step.kind === 'thought' ? [step.text] : []).join('')
     if (!thoughts(saved).startsWith(thoughts(live))) return false
     if (live.plan.length && !saved.plan.length) return false
+    if (live.files?.some(file => !saved.files?.some(other => other.artifactId === file.artifactId && other.revision === file.revision))) return false
     return live.tools.every((tool) => saved.tools.some((other) => other.id === tool.id &&
       (!['completed', 'failed'].includes(tool.status) || other.status === tool.status) &&
       (!tool.input || (other.input || '').startsWith(tool.input)) &&
@@ -332,6 +333,14 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         if (user) history.push(user)
         if (agent) history.push(agent)
       } else if (agent) {
+        const saved = history[index + 1]
+        if (saved?.role === 'agent' && saved.files?.length) {
+          const files = [...(agent.files ?? [])]
+          for (const file of saved.files) {
+            if (!files.some(other => other.artifactId === file.artifactId && other.revision === file.revision)) files.push(file)
+          }
+          agent.files = files
+        }
         if (history[index + 1]?.role === 'agent') history.splice(index + 1, 1, agent)
         else history.splice(index + 1, 0, agent)
       }
@@ -655,6 +664,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       case 'phase':
         phase.value = frame.phase || ''
         break
+      case 'artifact': {
+        if (!frame.userMsgId || frame.userMsgId !== activeId.value) break
+        const turn = activeTurn.value
+        if (turn && frame.userMsgId === activeId.value && frame.file?.artifactId && frame.file?.revision > 0) {
+          const files = turn.files ?? []
+          if (!files.some(file => file.artifactId === frame.file.artifactId && file.revision === frame.file.revision)) turn.files = [...files, frame.file]
+        }
+        break
+      }
       case 'execution':
         applyExecution(frame)
         break

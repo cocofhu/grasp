@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -1725,13 +1726,22 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		status, ledger, errText = "failed", models.TokenLedgerStatusFailed, truncErr(err)
 	}
 	reply := models.SoloMessage{
-		ID: uuid.NewString(), SessionID: c.id, Role: "assistant", Content: text, Events: events,
+		ID: "reply:" + q.ID, TurnID: q.ID, SessionID: c.id, Role: "assistant", Content: text, Events: events,
 		Status: status, Error: errText, Usage: usage, UsageByModel: byModel,
 		Execution:  execution,
 		DurationMs: time.Since(started).Milliseconds(),
 	}
-	if text != "" || len(events) > 0 || err != nil {
-		if perr := s.db.Create(&reply).Error; perr != nil {
+	var deliveries []models.ArtifactDelivery
+	if perr := s.db.Where("session_id = ? AND turn_id = ?", c.id, q.ID).Order("created_at,id").Find(&deliveries).Error; perr != nil {
+		log.Warn().Err(perr).Msg("read delivered files")
+	}
+	for _, file := range deliveries {
+		reply.Files = append(reply.Files, file.ArtifactAttachment)
+	}
+	if text != "" || len(events) > 0 || err != nil || len(reply.Files) > 0 {
+		// Delivery owns the placeholder's files. A tool may finish between the
+		// delivery query above and this upsert; never overwrite its attachments.
+		if perr := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"content", "events", "status", "error", "usage", "usage_by_model", "execution", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
 			log.Warn().Err(perr).Str("session", c.id).Msg("solo reply persist failed")
 		}
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 
 	"github.com/rs/zerolog/log"
@@ -32,6 +33,23 @@ func Open(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	default:
 		return OpenSQLite(cfg.Path)
 	}
+}
+
+// OpenWithFiles binds payload storage before any application writes. All
+// replicas must use the same persistent root as the database they share.
+func OpenWithFiles(cfg config.DatabaseConfig, root string) (*gorm.DB, error) {
+	db, err := Open(cfg)
+	if err != nil {
+		return nil, err
+	}
+	// Rebind the initial SQLite default before querying payload-bearing rows.
+	if err = filestore.Rebind(db, root); err != nil {
+		if conn, closeErr := db.DB(); closeErr == nil {
+			_ = conn.Close()
+		}
+		return nil, err
+	}
+	return db, nil
 }
 
 // OpenSQLite opens (or creates) the SQLite database at path. WAL + a busy
@@ -176,6 +194,16 @@ func openSQLiteConn(path string) (*gorm.DB, error) {
 	// Serialize writes: SQLite allows only one writer; a single connection
 	// avoids "database is locked" stalls under concurrent runs.
 	sqlDB.SetMaxOpenConns(1)
+	root := filepath.Join(filepath.Dir(strings.Split(path, "?")[0]), "payloads")
+	if path == ":memory:" || strings.HasPrefix(path, "file:") {
+		root, err = os.MkdirTemp("", "grasp-payloads-*")
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err = filestore.Attach(db, root); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -197,6 +225,9 @@ func openMySQL(dsn string) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(20)
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(time.Hour)
+	if err = filestore.Attach(db, "data/payloads"); err != nil {
+		return nil, err
+	}
 	return finalize(db)
 }
 

@@ -748,6 +748,7 @@ export interface ChatMessageMetadata {
 }
 
 export interface NodeRun {
+	files?: ArtifactAttachment[]
   nodeId: string
   // 该节点的第几次执行(1 起)。循环回边/门禁退回会让同一节点执行多次,
   // 每次都是独立记录。
@@ -777,10 +778,25 @@ export interface NodeRun {
   takenOverAt?: string
 }
 
+export type ArtifactKind = 'markdown' | 'json' | 'yaml' | 'html' | 'image' | 'text' | 'video' | 'audio' | 'pdf' | 'file'
+
+export interface ArtifactAttachment {
+  artifactId: string
+  revision: number
+  name: string
+  kind: ArtifactKind
+  mimeType?: string
+  sizeBytes: number
+  caption?: string
+}
+
 export interface Artifact {
   id: string
   name: string
-  kind: 'markdown' | 'json' | 'yaml' | 'html' | 'image' | 'text'
+  kind: ArtifactKind
+  mimeType?: string
+  sha256?: string
+  sessionId?: string
   nodeId: string
   runId: string
   runTitle?: string
@@ -920,6 +936,7 @@ export interface ReactAnnotation {
 }
 
 export interface ClarifyTurn extends ChatMessageMetadata {
+  files?: ArtifactAttachment[]
   /** Sender identity shared by the live request and its persisted reply group. */
   clientMessageId?: string
   role: 'agent' | 'human'

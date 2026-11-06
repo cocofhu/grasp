@@ -30,7 +30,7 @@ func (h *Handlers) PublicGateArtifacts(c *gin.Context) {
 	arts := make([]gin.H, 0)
 	if h.Arts != nil {
 		for _, a := range h.Arts.ByRun(lookup.Link.RunID) {
-			if mcp.IsFeedbackArtifactName(a.Name) {
+			if a.PrivateFile || mcp.IsFeedbackArtifactName(a.Name) {
 				continue
 			}
 			arts = append(arts, publicArtifactMetaDTO(a))
@@ -106,7 +106,7 @@ func (h *Handlers) PublicGateArtifactContent(c *gin.Context) {
 	}
 	// The feedback ledger stays internal; answer as if it did not exist.
 	a, ok := h.Arts.GetRecord(lookup.Link.RunID, name)
-	if !ok || mcp.IsFeedbackArtifactName(a.Name) {
+	if !ok || a.PrivateFile || mcp.IsFeedbackArtifactName(a.Name) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}

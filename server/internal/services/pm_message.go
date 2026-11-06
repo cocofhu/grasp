@@ -250,11 +250,32 @@ func (s *PmService) SearchMessages(agentName, userID, q string, limit int) ([]ma
 		ids[i] = t.ID
 		titleBy[t.ID] = t.Title
 	}
+	// Bodies live in the file store, so SQL LIKE would search reference keys.
+	// Read only authorized message bodies in bounded, stable batches.
 	var msgs []models.ChatMessage
-	like := "%" + EscapeLike(q) + "%"
-	if err := s.db.Where("thread_id IN ? AND content LIKE ? ESCAPE ?", ids, like, `\`).
-		Order("created_at desc").Limit(limit).Find(&msgs).Error; err != nil {
-		return nil, err
+	var cursor *models.ChatMessage
+	needle := strings.ToLower(q)
+	for len(msgs) < limit {
+		query := s.db.Select("id", "thread_id", "role", "content", "created_at").Where("thread_id IN ?", ids)
+		if cursor != nil {
+			query = query.Where("created_at < ? OR (created_at = ? AND id < ?)", cursor.CreatedAt, cursor.CreatedAt, cursor.ID)
+		}
+		var batch []models.ChatMessage
+		if err := query.Order("created_at desc, id desc").Limit(64).Find(&batch).Error; err != nil {
+			return nil, err
+		}
+		for _, m := range batch {
+			if strings.Contains(strings.ToLower(m.Content), needle) {
+				msgs = append(msgs, m)
+				if len(msgs) == limit {
+					break
+				}
+			}
+		}
+		if len(batch) < 64 {
+			break
+		}
+		cursor = &batch[len(batch)-1]
 	}
 	out := make([]map[string]any, 0, len(msgs))
 	for _, m := range msgs {

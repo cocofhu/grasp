@@ -737,7 +737,7 @@ func (h *Handlers) publicReviewArtifacts(lookup *gateshare.LookupResult) (visual
 			continue
 		}
 		a, ok := h.Arts.GetRecord(lookup.Link.RunID, name)
-		if !ok {
+		if !ok || a.PrivateFile {
 			continue
 		}
 		if sc.Name == models.SchemaPage {
@@ -867,7 +867,7 @@ func (h *Handlers) publicUpstreamArtifact(runID, primaryName string) (name, cont
 		return "", ""
 	}
 	a, ok := h.Arts.GetRecord(runID, upstreamName)
-	if !ok || strings.TrimSpace(a.Content) == "" {
+	if !ok || a.PrivateFile || strings.TrimSpace(a.Content) == "" {
 		return "", ""
 	}
 	return upstreamName, a.Content
@@ -886,7 +886,7 @@ func (h *Handlers) publicGateArtifacts(lookup *gateshare.LookupResult) (visualHT
 	}
 	for _, it := range items {
 		a, ok := h.Arts.GetRecord(lookup.Link.RunID, it.Name)
-		if !ok {
+		if !ok || a.PrivateFile {
 			continue
 		}
 		kind := strings.ToLower(strings.TrimSpace(it.Kind))

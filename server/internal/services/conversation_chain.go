@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/models/nodereg"
 )
@@ -13,13 +14,14 @@ import (
 // structured detail the fold renders (questions, tools, parts, forms).
 // Images and the raw ACP event log stay off this payload.
 type ChainTurn struct {
-	Role      string                 `json:"role"`
-	Text      string                 `json:"text"`
-	At        string                 `json:"at"`
-	Questions []models.ReactQuestion `json:"questions,omitempty"`
-	Tools     []models.ReactTool     `json:"tools,omitempty"`
-	Parts     []models.AcpPart       `json:"parts,omitempty"`
-	Forms     []models.ReactForm     `json:"forms,omitempty"`
+	Role      string                      `json:"role"`
+	Text      string                      `json:"text"`
+	At        string                      `json:"at"`
+	Questions []models.ReactQuestion      `json:"questions,omitempty"`
+	Tools     []models.ReactTool          `json:"tools,omitempty"`
+	Parts     []models.AcpPart            `json:"parts,omitempty"`
+	Forms     []models.ReactForm          `json:"forms,omitempty"`
+	Files     []models.ArtifactAttachment `json:"files,omitempty"`
 }
 
 // ChainSegment is one node execution (nodeId, iteration) of a run's
@@ -114,6 +116,11 @@ func (s *RunService) chainEventCounts(runID string) map[uint]int {
 		fn = "json_array_length"
 	case "mysql":
 		fn = "JSON_LENGTH"
+	}
+	if _, err := filestore.FromDB(s.db); err == nil {
+		// SQL JSON functions cannot inspect a file reference. The typed
+		// fallback resolves both migrated and legacy event arrays.
+		fn = ""
 	}
 	out := map[uint]int{}
 	if fn != "" {
@@ -315,7 +322,7 @@ func chainTurns(msgs []models.ReactMessage) *[]ChainTurn {
 	for _, m := range msgs {
 		turns = append(turns, ChainTurn{
 			Role: m.Role, Text: m.Text, At: m.At,
-			Questions: m.Questions, Tools: m.Tools, Parts: m.Parts, Forms: m.Forms,
+			Questions: m.Questions, Tools: m.Tools, Parts: m.Parts, Forms: m.Forms, Files: m.Files,
 		})
 	}
 	return &turns

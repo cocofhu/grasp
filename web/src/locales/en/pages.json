@@ -1,5 +1,14 @@
 {
   "pages": {
+    "artifactFiles": {
+      "loading": "Loading file…",
+      "unavailable": "Preview unavailable. The file may have been deleted or its format is unsupported.",
+      "retry": "Retry",
+      "download": "Download original",
+      "preview": "Preview",
+      "downloadOnly": "Preview is not available for this format. Download the original file to view it.",
+      "truncated": "Preview shows the first 2 MB. Download the file for the full content."
+    },
     "dashboard": {
       "title": "Start a pre-dev clarification in one sentence",
       "subtitle": "Pick a Grasp workflow; the first message becomes the Run title",

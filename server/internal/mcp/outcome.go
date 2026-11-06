@@ -268,7 +268,11 @@ func (h *Host) listedTools(runID string) []map[string]any {
 	}
 	h.mu.RLock()
 	hasConversationHistory := h.conversationHistory != nil
+	hasFiles := h.artifactFiles != nil
 	h.mu.RUnlock()
+	if hasFiles {
+		out = append(out, fileTools()...)
+	}
 	if hasConversationHistory {
 		node := h.ActiveNode(runID)
 		if solo && node == "solo" {

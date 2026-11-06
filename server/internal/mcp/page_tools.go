@@ -200,14 +200,17 @@ func writePageState(b *strings.Builder, st map[string]any) {
 
 // redactToolArgs keeps typed page text and page session ids out of traces and audit.
 func redactToolArgs(name string, args map[string]any) map[string]any {
-	if !isPageTool(name) {
+	if !isPageTool(name) && name != "upload_image_artifact" && name != "write_artifact" {
 		return args
 	}
 	out := make(map[string]any, len(args))
 	for k, v := range args {
 		out[k] = v
 	}
-	if _, ok := out["session_id"]; ok {
+	if content, ok := out["content"].(string); ok {
+		out["content"] = fmt.Sprintf("[file body omitted: %d bytes]", len(content))
+	}
+	if _, ok := out["session_id"]; ok && isPageTool(name) {
 		out["session_id"] = "[redacted]"
 	}
 	if _, ok := out["text"]; ok && name == "page_input" {

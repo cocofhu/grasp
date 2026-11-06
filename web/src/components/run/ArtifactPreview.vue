@@ -19,6 +19,7 @@ import type { ArtifactPreviewProps, ArtifactPreviewEmit } from '@/lib/run/useArt
 import type { ArtifactVersionChoice } from '@/lib/run/reactArtifactPreview'
 import SlidingTabs from '../ui/SlidingTabs.vue'
 import ArtifactEditor from './editor/ArtifactEditor.vue'
+import ArtifactFilePreview from './ArtifactFilePreview.vue'
 import './editor/artifactEditor.css'
 import { useArtifactEditor } from '@/lib/run/useArtifactEditor'
 import { artifactFormFor, type ArtifactEditorMode } from '@/lib/run/artifactForms'
@@ -123,6 +124,12 @@ const {
   renderMarkdown,
   fmtTime,
 } = useArtifactPreview(props, emit, { annotateSuspended: () => editing.value })
+
+const isMediaFile = computed(() => ['video', 'audio', 'pdf', 'file'].includes(displayArtifact.value?.kind || ''))
+const mediaFile = computed(() => {
+  const file = displayArtifact.value
+  return file ? { artifactId: file.id, revision: selectedChoice.value?.revision || file.revision || 1, name: file.name, kind: file.kind, mimeType: file.mimeType, sizeBytes: file.sizeBytes } : null
+})
 
 const editableArtifact = computed(
   () => !!props.editable && !props.shareToken && !!editor.runId.value && isEditableArtifact(props.artifact),
@@ -403,6 +410,7 @@ const htmlCanvasOverlay = computed(
           @update:content="onEditorContent"
         />
       </div>
+      <ArtifactFilePreview v-else-if="isMediaFile && mediaFile" :file="mediaFile" />
       <template v-else-if="displayArtifact && isImageBranch">
         <div v-if="loadErr" class="flex h-full items-center justify-center text-center text-[12px] text-err" role="alert">
           {{ t('pages.artifactPreview.loadFailed') }}
@@ -638,6 +646,7 @@ const htmlCanvasOverlay = computed(
         {{ t('pages.artifactPreview.contentEmpty') }}
       </div>
     </div>
+    <ArtifactFilePreview v-else-if="isMediaFile && mediaFile" :file="mediaFile" />
     <div
       v-else-if="displayArtifact && previewBranch.kind === 'image'"
       class="flex min-h-[280px] items-center justify-center"

@@ -50,7 +50,7 @@ type GateShareVisitorConversation struct {
 	ChatID string `gorm:"size:64" json:"-"`
 	// Messages opens with a snapshot of the node's own dialogue taken when the
 	// visitor first spoke (HistoryLen turns), followed by the visitor's turns.
-	Messages     []ReactMessage `gorm:"serializer:json" json:"turns"`
+	Messages     []ReactMessage `gorm:"serializer:filejson" json:"turns"`
 	HistoryLen   int            `json:"-"`
 	LastActiveAt time.Time      `json:"-"`
 	CreatedAt    time.Time      `json:"-"`
