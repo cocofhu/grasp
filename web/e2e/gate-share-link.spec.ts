@@ -1,8 +1,13 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { acceptConfirmFlow } from './helpers/confirmFlow'
 
+async function openSharePanel(page: Page) {
+  await page.getByTestId('conversation-menu').click()
+  await page.getByRole('menuitem', { name: '分享审批' }).click()
+}
+
 test.describe('human_gate 临时审批链接', () => {
-  test('Inbox 复制临时链接打开管理面板且桌面按钮不高于花粒', async ({ page }) => {
+  test('会话菜单打开分享管理且默认界面不展示链接状态', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'clipboard', {
         configurable: true,
@@ -16,16 +21,9 @@ test.describe('human_gate 临时审批链接', () => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=inbox')
     await expect(page.getByTestId('gate-share-e2e-root')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('gate-share-copy-btn')).toBeVisible()
-    await expect(page.getByTestId('gate-share-status')).toContainText('尚未创建')
-    const btnBox = await page.getByTestId('gate-share-copy-btn').boundingBox()
-    const chipBox = await page.getByTestId('gate-share-status').boundingBox()
-    const wrapBox = await page.getByTestId('gate-share-hit-wrap').boundingBox()
-    expect(btnBox && chipBox && wrapBox).toBeTruthy()
-    expect(btnBox!.height).toBeLessThanOrEqual(chipBox!.height + 8)
-    // desktop: click box == visible box, not forced to 44px
-    expect(Math.abs(wrapBox!.height - btnBox!.height)).toBeLessThanOrEqual(2)
-    expect(wrapBox!.height).toBeLessThan(44)
+    await expect(page.getByTestId('conversation-menu')).toBeVisible()
+    await expect(page.getByTestId('gate-share-status')).toHaveCount(0)
+    await expect(page.getByTestId('gate-share-copy-btn')).toHaveCount(0)
     const shareTb = page.getByTestId('html-preview-share-link').first()
     const inspectTb = page.getByTestId('html-preview-inspect-toggle').first()
     await expect(shareTb).toBeVisible()
@@ -33,7 +31,7 @@ test.describe('human_gate 临时审批链接', () => {
     const inspectH = (await inspectTb.boundingBox())?.height ?? 0
     expect(shareH).toBeGreaterThan(0)
     expect(Math.abs(shareH - inspectH)).toBeLessThanOrEqual(4)
-    await page.getByTestId('gate-share-copy-btn').click()
+    await openSharePanel(page)
     await expect(page.getByTestId('gate-share-panel-body')).toBeVisible()
     await expect(page.getByTestId('gate-share-panel-body')).toContainText('信任')
     await expect(page.getByTestId('gate-share-panel-body')).toContainText('审批工作台')
@@ -79,7 +77,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=inbox')
     await expect(page.getByTestId('gate-share-e2e-root')).toBeVisible({ timeout: 10_000 })
-    await page.getByTestId('gate-share-copy-btn').click()
+    await openSharePanel(page)
     await expect(page.getByTestId('gate-share-panel-body')).toBeVisible()
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toHaveValue(/#t=••••/)
@@ -110,7 +108,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=inbox')
     await expect(page.getByTestId('gate-share-e2e-root')).toBeVisible({ timeout: 10_000 })
-    await page.getByTestId('gate-share-copy-btn').click()
+    await openSharePanel(page)
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toHaveValue(/#t=[0-9a-f]{64}/)
     await expect(page.getByTestId('toast-host')).toContainText('无法写入剪贴板，请全选下方链接手动复制')
@@ -140,7 +138,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=inbox')
     await expect(page.getByTestId('gate-share-e2e-root')).toBeVisible({ timeout: 10_000 })
-    await page.getByTestId('gate-share-copy-btn').click()
+    await openSharePanel(page)
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toBeVisible()
     await page.getByTestId('gate-share-regen').click()
@@ -167,7 +165,7 @@ test.describe('human_gate 临时审批链接', () => {
     // shareHost=loopback → fixture mints 127.0.0.1 (plan g2.2 / g2.3)
     await page.goto('/gate-share-link.html?scene=inbox&shareHost=loopback')
     await expect(page.getByTestId('gate-share-e2e-root')).toBeVisible({ timeout: 10_000 })
-    await page.getByTestId('gate-share-copy-btn').click()
+    await openSharePanel(page)
     await expect(page.getByTestId('gate-share-panel-body')).toBeVisible()
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toBeVisible()
@@ -236,22 +234,17 @@ test.describe('human_gate 临时审批链接', () => {
     await expect(page.getByTestId('public-gate-done')).toContainText('已驳回')
   })
 
-  test('移动端 Inbox 复制临时链接贴齐花粒且 hit 区 ≥44', async ({ page }) => {
+  test('移动端通过会话菜单管理分享，菜单按钮可触达', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/gate-share-link.html?scene=inbox')
-    await expect(page.getByTestId('gate-share-e2e-root')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('gate-share-copy-btn')).toBeVisible()
-    await expect(page.getByTestId('gate-share-status')).toContainText('尚未创建')
-    const btnBox = await page.getByTestId('gate-share-copy-btn').boundingBox()
-    const chipBox = await page.getByTestId('gate-share-status').boundingBox()
-    const wrapBox = await page.getByTestId('gate-share-hit-wrap').boundingBox()
-    expect(btnBox && chipBox && wrapBox).toBeTruthy()
-    expect(btnBox!.height).toBeLessThanOrEqual(chipBox!.height + 8)
-    expect(wrapBox!.width).toBeGreaterThanOrEqual(44)
-    expect(wrapBox!.height).toBeGreaterThanOrEqual(44)
-    await page.getByTestId('gate-share-status').click()
+    const menu = page.getByTestId('conversation-menu')
+    await expect(menu).toBeVisible()
+    const box = await menu.boundingBox()
+    expect(box!.width).toBeGreaterThanOrEqual(44)
+    expect(box!.height).toBeGreaterThanOrEqual(44)
+    await expect(page.getByTestId('gate-share-status')).toHaveCount(0)
     await expect(page.getByTestId('gate-share-panel-body')).toHaveCount(0)
-    await page.getByTestId('gate-share-copy-btn').click()
+    await openSharePanel(page)
     await expect(page.getByTestId('gate-share-panel-body')).toBeVisible()
   })
 
@@ -268,8 +261,8 @@ test.describe('human_gate 临时审批链接', () => {
     })
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=inbox-review')
-    await expect(page.getByTestId('gate-share-copy-btn')).toBeVisible({ timeout: 10_000 })
-    await page.getByTestId('gate-share-copy-btn').click()
+    await expect(page.getByTestId('conversation-menu')).toBeVisible({ timeout: 10_000 })
+    await openSharePanel(page)
     await expect(page.getByTestId('gate-share-panel-body')).toBeVisible()
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toBeVisible()
@@ -319,7 +312,7 @@ test.describe('human_gate 临时审批链接', () => {
     await expect(page.getByTestId('clarify-confirm-flow')).toHaveCount(0)
   })
 
-  test('应用预览 Inbox 卡片可打开 review 分享面板', async ({ page }) => {
+  test('应用预览会话菜单可打开 review 分享面板', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'clipboard', {
         configurable: true,
@@ -332,8 +325,8 @@ test.describe('human_gate 临时审批链接', () => {
     })
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=inbox-app-preview')
-    await expect(page.getByTestId('gate-share-copy-btn')).toBeVisible({ timeout: 10_000 })
-    await page.getByTestId('gate-share-copy-btn').click()
+    await expect(page.getByTestId('conversation-menu')).toBeVisible({ timeout: 10_000 })
+    await openSharePanel(page)
     await expect(page.getByTestId('gate-share-panel-body')).toBeVisible()
     await page.getByTestId('gate-share-create').click()
     await expect(page.getByTestId('gate-share-url')).toBeVisible()
@@ -341,7 +334,7 @@ test.describe('human_gate 临时审批链接', () => {
     expect(copied).toContain('https://approving.example.com/public/approvals#t=')
   })
 
-  test('待澄清 Inbox 两处入口可生成临时链接', async ({ page }) => {
+  test('待澄清会话通过菜单生成临时链接，默认界面没有复制入口', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'clipboard', {
         configurable: true,
@@ -354,11 +347,11 @@ test.describe('human_gate 临时审批链接', () => {
     })
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=inbox-clarify')
-    await expect(page.getByTestId('gate-share-copy-btn')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('gate-share-copy-btn-detail')).toBeVisible()
+    await expect(page.getByTestId('conversation-menu')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('gate-share-copy-btn-detail')).toHaveCount(0)
     await expect(page.getByTestId('review-composer-open-share')).toHaveCount(0)
     await expect(page.getByTestId('html-preview-share-link')).toHaveCount(0)
-    await page.getByTestId('gate-share-copy-btn').click()
+    await openSharePanel(page)
     await expect(page.getByTestId('gate-share-panel-body')).toBeVisible()
     await expect(page.getByTestId('gate-share-ttl')).toHaveCount(5)
     await page.getByTestId('gate-share-create').click()

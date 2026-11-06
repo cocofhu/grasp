@@ -203,11 +203,11 @@ describe('GatesInboxView visit model select', () => {
     wrapper.unmount()
   })
 
-  it('passes the same switch into the desktop and narrow composers, and into the live run chat', () => {
+  it('passes the switch into the shared composer and the live run chat', () => {
     const inbox = readFileSync(join(here, 'GatesInboxView.vue'), 'utf8')
     const live = readFileSync(join(here, 'RunLiveView.vue'), 'utf8')
-    expect(inbox.match(/:model-switch="!!inboxAgentName"/g)?.length).toBe(2)
-    expect(inbox.match(/:agent-name="inboxAgentName"/g)?.length).toBe(2)
+    expect(inbox.match(/:model-switch="!!inboxAgentName"/g)?.length).toBe(1)
+    expect(inbox.match(/:agent-name="inboxAgentName"/g)?.length).toBe(1)
     expect(live).toMatch(/:model-switch="mode === 'chat' && !!liveAgentName"/)
     expect(live).toMatch(/:agent-name="liveAgentName"/)
   })

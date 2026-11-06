@@ -95,6 +95,5 @@ describe('mobile scroll contract — shell single-exit lock (plan g3.2)', () => 
     const artifactComponents = join(dir, '../components/run')
     expect(readFileSync(join(artifactComponents, 'ArtifactList.vue'), 'utf8')).toMatch(/overflow-y-auto/)
     expect(readFileSync(join(artifactComponents, 'ArtifactPreview.vue'), 'utf8')).toMatch(/overflow-y-auto/)
-    expect(read('GatesInboxView.vue')).toMatch(/overflow-y-auto/)
   })
 })

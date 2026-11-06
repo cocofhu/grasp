@@ -4,7 +4,6 @@ import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import { setTheme } from '../src/lib/shared/theme'
-import InboxPendingCard from '../src/components/inbox/InboxPendingCard.vue'
 import GateShareLinkPanel from '../src/components/run/GateShareLinkPanel.vue'
 import ReviewComposer from '../src/components/run/ReviewComposer.vue'
 import PublicGateApprovalView from '../src/views/PublicGateApprovalView.vue'
@@ -487,6 +486,7 @@ const Fixture = defineComponent({
   setup() {
     const scene = new URLSearchParams(location.search).get('scene') || 'inbox'
     const open = ref(false)
+    const menuOpen = ref(false)
     const item = ref<InboxItem>(
       scene === 'inbox-review'
         ? { ...reviewItem }
@@ -515,29 +515,23 @@ const Fixture = defineComponent({
     return () =>
       h('div', { class: 'mx-auto max-w-md p-4', 'data-testid': 'gate-share-e2e-root' }, [
         h(ToastHost),
-        h(InboxPendingCard, {
-          item: item.value,
-          active: true,
-          onSelect: () => {},
-          onOpenShare: () => {
-            open.value = true
-          },
-        }),
+        h('div', { class: 'flex items-center justify-between' }, [
+          h('span', '测试会话'),
+          h('button', {
+            type: 'button', class: 'min-h-11 min-w-11', 'aria-label': '会话操作',
+            'data-testid': 'conversation-menu',
+            onClick: () => { menuOpen.value = !menuOpen.value },
+          }, '⋯'),
+          menuOpen.value ? h('div', { role: 'menu' }, [
+            h('button', {
+              type: 'button', role: 'menuitem', class: 'min-h-11 px-3',
+              onClick: () => { menuOpen.value = false; open.value = true },
+            }, '分享审批'),
+          ]) : null,
+        ]),
         scene === 'inbox' ? h(ToolbarHost) : null,
         scene === 'inbox-clarify'
           ? h('div', { class: 'mt-3 flex flex-col gap-2' }, [
-              h(
-                'button',
-                {
-                  type: 'button',
-                  class: 'text-xs text-accent-2',
-                  'data-testid': 'gate-share-copy-btn-detail',
-                  onClick: () => {
-                    open.value = true
-                  },
-                },
-                '复制临时链接',
-              ),
               h(ReviewComposer, {
                 mode: 'clarify',
                 runId: item.value.runId,

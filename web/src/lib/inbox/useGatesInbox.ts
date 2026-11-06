@@ -16,11 +16,9 @@ import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { addClarifyAnnotation, useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
-import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { beginBoot, bootKey, getBootRecord, markBootLive, observeBootSandbox } from '@/lib/run/bootRecord'
 import {
   applyInboxReplyingState,
-  inboxSecondaryLine,
   isStartingInboxItem,
   currentInboxStateEpoch,
   mergeInboxReplyingFromRemote,
@@ -136,18 +134,15 @@ const {
   ariaBusy,
 } = usePendingGates()
 const PAGE_SIZE = 20
-const SKELETON_CARDS = 6
 const listItems = ref<InboxItem[]>([])
 /** Snapshot before the latest list mutation — used for neighbor active selection. */
 let listSnapshotForNeighbor: InboxItem[] = []
 const listTotal = ref(0)
-const listPage = ref(1)
 /** true on first paint so EmptyState cannot flash before onMounted loadList (plan g2.1). */
 const listLoading = ref(true)
 const listLoadError = ref<string | null>(null)
 /** Monotonic generation: stale listGates responses must not overwrite local converge. */
 let listLoadGeneration = 0
-const { isMobile } = useBreakpoint()
 const active = ref<InboxItem | null>(null)
 // Async actions belong to one selection visit, even when A → B → A returns
 // to the same run/node/iteration. Badge and startup row updates keep the visit.
@@ -191,9 +186,6 @@ const activeQueuedFirstMessage = computed(() => {
   if (!it) return ''
   return activeHomeSeed.value?.text?.trim() || queuedFirstMessages.value[it.runId] || ''
 })
-const mobileView = ref<'list' | 'detail'>('list')
-const listScrollTop = ref(0)
-const listEl = ref<HTMLElement | null>(null)
 const gateApprovalRef = ref<InstanceType<typeof GateApproval> | null>(null)
 /** ReviewShell hosts ConfirmFlowOverlay for run-detail panels; inbox plays page-level ceremony. */
 const reviewShellRef = ref<{ playConfirmCeremony?: () => Promise<void> } | null>(null)
@@ -1092,20 +1084,6 @@ const pendingAcpFrames = createPendingAcpBuffer()
 let pendingSnapshotSessions: Run['reactSessions'] | null = null
 const { selected } = useWorkflowFilter()
 const { selectedTags } = useTagFilter()
-const workflowFilterOpen = ref(false)
-const tagFilterOpen = ref(false)
-
-watch(workflowFilterOpen, (v) => {
-  if (v) {
-    tagFilterOpen.value = false
-  }
-})
-watch(tagFilterOpen, (v) => {
-  if (v) {
-    workflowFilterOpen.value = false
-  }
-})
-
 const showProcessedBanner = ref(false)
 const manualRefreshing = ref(false)
 /** First-screen skeleton when loading with no rows yet (plan g2.1). */
@@ -1817,7 +1795,6 @@ function selectActiveAfterRemove(prevList: InboxItem[], removedKey: string) {
   if (holdsCancelledConversation()) return
   active.value = pickNextActiveAfterRemove(prevList, removedKey, itemKey)
   showProcessedBanner.value = false
-  if (isMobile.value && !listItems.value.length) mobileView.value = 'list'
 }
 
 /** Quietly converge when inbox-context says the item left pending. */
@@ -1848,7 +1825,7 @@ async function loadList({
   if (showLoading) listLoading.value = true
   try {
     const data = await api.listGates({
-      page: listPage.value,
+      page: 1,
       pageSize: PAGE_SIZE,
       wf: selected.value || undefined,
       tag: selectedTags.value.join(',') || undefined,
@@ -1911,15 +1888,10 @@ watch(active, (_cur, prev) => {
 })
 
 watch(selected, () => {
-  listPage.value = 1
   loadList({ showLoading: true })
 })
 
-watch(listPage, () => {
-  loadList({ showLoading: true })
-})
 watch(() => route.query.tag, () => {
-  listPage.value = 1
   loadList({ showLoading: true })
 })
 
@@ -2080,7 +2052,6 @@ function syncActiveAfterApply(list: InboxItem[], prevKey: string | null) {
         : list
   active.value = pickNextActiveAfterRemove(prevList, key, itemKey)
   showProcessedBanner.value = false
-  if (isMobile.value && !list.length) mobileView.value = 'list'
 }
 
 function checkProcessedWhileEditing() {
@@ -2143,7 +2114,6 @@ async function syncListAfterAutoApply() {
   const gen = ++autoApplyGen
   const restoreFocus = captureFocus()
   const prevKey = active.value ? itemKey(active.value) : null
-  const scrollTop = listEl.value?.scrollTop ?? null
   await loadList({ keepActive: true })
   if (gen !== autoApplyGen) return
   // The user may have started typing while listGates was in flight: keep the
@@ -2152,9 +2122,6 @@ async function syncListAfterAutoApply() {
   else checkProcessedWhileEditing()
   await nextTick()
   restoreFocus?.()
-  if (scrollTop != null) {
-    if (listEl.value && listEl.value.scrollTop !== scrollTop) listEl.value.scrollTop = scrollTop
-  }
 }
 
 // Peek/poll may only change state=replying on existing keys. Merge onto the
@@ -2173,10 +2140,6 @@ watch(remoteItems, (remote) => {
 watch(isEditing, (editing) => {
   if (!editing) showProcessedBanner.value = false
   else checkProcessedWhileEditing()
-})
-
-watch(isMobile, (mobile) => {
-  if (!mobile) mobileView.value = 'list'
 })
 
 watch(
@@ -2230,10 +2193,6 @@ watch(
   },
   { immediate: true },
 )
-
-function isActive(it: InboxItem) {
-  return active.value !== null && itemKey(active.value) === itemKey(it)
-}
 
 const activeRun = ref<Run | null>(null)
 watch(activeRun, (run) => {
@@ -3470,12 +3429,11 @@ function patchShareStatus(it: InboxItem, status: GateShareInboxStatus) {
   shareTarget.value = next
 }
 
-function openSharePanel(it: InboxItem, alsoOpenDetail = false) {
+function openSharePanel(it: InboxItem) {
   if (processingLock.value || !isShareableInboxItem(it)) return
   selectItem(it)
   shareTarget.value = it
   sharePanelOpen.value = true
-  if (alsoOpenDetail) openDetail(it)
 }
 
 function queryText(value: unknown): string {
@@ -3561,20 +3519,6 @@ function selectItem(it: InboxItem) {
   clarifyConfirmError.value = null
   clarifyConfirmCanAbort.value = false
   active.value = it
-}
-
-function openDetail(it: InboxItem) {
-  if (isItemCardDisabled(it)) return
-  if (listEl.value) listScrollTop.value = listEl.value.scrollTop
-  selectItem(it)
-  mobileView.value = 'detail'
-}
-
-function backToList() {
-  mobileView.value = 'list'
-  nextTick(() => {
-    if (listEl.value) listEl.value.scrollTop = listScrollTop.value
-  })
 }
 
 async function onClarifySend(
@@ -3933,14 +3877,6 @@ onUnmounted(() => {
   knownInboxProcessingLock.value = false
 })
 
-function itemTitle(it: InboxItem) {
-  return it.type === 'gate' ? it.title : it.label
-}
-
-function itemSecondary(it: InboxItem) {
-  return inboxSecondaryLine(it)
-}
-
   return {
     addProcessingIntent,
     removeProcessingIntent,
@@ -3987,7 +3923,6 @@ function itemSecondary(it: InboxItem) {
     mergeStagedAppPreviewPick,
     syncActiveAfterApply,
     checkProcessedWhileEditing,
-    isActive,
     isClarifySoftRefreshBlocked,
     closeActiveRunWs,
     activeDialogueNodeId,
@@ -4011,8 +3946,6 @@ function itemSecondary(it: InboxItem) {
     patchShareStatus,
     openSharePanel,
     selectItem,
-    openDetail,
-    backToList,
     onClarifySend,
     onClarifyRetryLast,
     onClarifyFinish,
@@ -4022,16 +3955,12 @@ function itemSecondary(it: InboxItem) {
     onClarifyQueueReorder,
     onFocus,
     onVisible,
-    itemTitle,
-    itemSecondary,
     router,
     route,
     toast,
     PAGE_SIZE,
-    SKELETON_CARDS,
     listItems,
     listTotal,
-    listPage,
     listLoading,
     listLoadError,
     listErrorMessage,
@@ -4043,9 +3972,6 @@ function itemSecondary(it: InboxItem) {
     incomingArmed,
     activeHomeSeed,
     activeQueuedFirstMessage,
-    mobileView,
-    listScrollTop,
-    listEl,
     gateApprovalRef,
     reviewShellRef,
     reviewChatRef,
@@ -4062,8 +3988,6 @@ function itemSecondary(it: InboxItem) {
     inboxConfirmFlowReduce: inboxConfirmFlow.reduceMotion,
     inboxConfirmFlowToken: inboxConfirmFlow.playToken,
     pendingAcpFrames,
-    workflowFilterOpen,
-    tagFilterOpen,
     showProcessedBanner,
     manualRefreshing,
     showListSkeleton,
@@ -4136,7 +4060,6 @@ function itemSecondary(it: InboxItem) {
     itemKey,
     patchVisibleCardBusy,
     ariaBusy,
-    isMobile,
     selected,
     selectedTags,
     clarifyDraft,

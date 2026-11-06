@@ -17,7 +17,7 @@
     "board": "看板",
     "workflows": "工作流",
     "runs": "运行",
-    "gates": "待办",
+    "gates": "对话",
     "pendingApprovals": "待审批",
     "pendingWorkflowView": "工作流视图",
     "pendingPin": "置顶",

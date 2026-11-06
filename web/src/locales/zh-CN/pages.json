@@ -1799,7 +1799,7 @@
       }
     },
     "gatesInbox": {
-      "title": "待办",
+      "title": "对话",
       "processedBanner": "该项已被处理 — 当前选中项已从待审批列表移除，您的表单/草稿已保留。",
       "gateType": "人工门禁",
       "clarifyType": "待澄清",
@@ -1812,8 +1812,7 @@
       "startFailedDesc": "该审批的沙箱没有启动成功，运行已中止。可在运行详情里查看失败原因。",
       "startFailedDismiss": "移除此项",
       "loadingRun": "加载运行详情…",
-      "listLoadingHint": "列表加载后可选择一项",
-      "detailPane": "详情",
+      "listLoadingHint": "正在加载会话…",
       "reviewFinished": "已确认并流转",
       "reviewFinishedPending": "已提交确认并流转，列表尚未更新，请稍后刷新",
       "reviewFinishFailed": "确认并流转失败，请重试",

@@ -6,7 +6,7 @@
     "workflowEditor": "Canvas editor",
     "runs": "Run history",
     "runDetail": "Run detail",
-    "gates": "Needs attention",
+    "gates": "Conversation",
     "artifacts": "Artifacts",
     "notifications": "Notifications",
     "agents": "Agent studio",

@@ -104,19 +104,19 @@ describe('user-facing copy remediation keys', () => {
     expect(enRoute.route.runs).toBe('Run history')
   })
 
-  it('uses New request and Needs attention consistently in navigation and page titles', () => {
+  it('uses New request and Conversation consistently in navigation and page titles', () => {
     expect(zhNav.nav.dashboard).toBe('新需求')
     expect(zhRoute.route.dashboard).toBe('新需求')
     expect(zhNav.nav.dashboard).toBe(zhRoute.route.dashboard)
-    expect(zhNav.nav.gates).toBe('待办')
-    expect(zhRoute.route.gates).toBe('待办')
-    expect(zh.global.t('pages.gatesInbox.title')).toBe('待办')
+    expect(zhNav.nav.gates).toBe('对话')
+    expect(zhRoute.route.gates).toBe('对话')
+    expect(zh.global.t('pages.gatesInbox.title')).toBe('对话')
     expect(enNav.nav.dashboard).toBe('New request')
     expect(enRoute.route.dashboard).toBe('New request')
     expect(enNav.nav.dashboard).toBe(enRoute.route.dashboard)
-    expect(enNav.nav.gates).toBe('Needs attention')
-    expect(enRoute.route.gates).toBe('Needs attention')
-    expect(en.global.t('pages.gatesInbox.title')).toBe('Needs attention')
+    expect(enNav.nav.gates).toBe('Conversation')
+    expect(enRoute.route.gates).toBe('Conversation')
+    expect(en.global.t('pages.gatesInbox.title')).toBe('Conversation')
   })
 
   it('uses 智能体 for zh-CN agent nav/route/page title and points empty copy at the switcher', () => {
@@ -146,12 +146,10 @@ describe('user-facing copy remediation keys', () => {
   })
 
   it('inbox first-load hint is distinct from empty and run-loading copy', () => {
-    expect(zh.global.t('pages.gatesInbox.listLoadingHint')).toBe('列表加载后可选择一项')
-    expect(en.global.t('pages.gatesInbox.listLoadingHint')).toBe('Select an item after the list loads')
+    expect(zh.global.t('pages.gatesInbox.listLoadingHint')).toBe('正在加载会话…')
+    expect(en.global.t('pages.gatesInbox.listLoadingHint')).toBe('Loading conversation…')
     expect(zh.global.t('pages.gatesInbox.listLoadingHint')).not.toBe(zh.global.t('common.empty.noPendingGates'))
     expect(zh.global.t('pages.gatesInbox.listLoadingHint')).not.toBe(zh.global.t('pages.gatesInbox.loadingRun'))
-    expect(zh.global.t('pages.gatesInbox.detailPane')).toBe('详情')
-    expect(en.global.t('pages.gatesInbox.detailPane')).toBe('Details')
     expect(zh.global.t('common.empty.noPendingGates')).toBe('没有待审批项')
     expect(zh.global.t('common.empty.noPendingGatesForWorkflow')).toBe('该工作流没有待审批项')
     expect(zh.global.t('common.empty.noPendingGatesDesc')).toBe(

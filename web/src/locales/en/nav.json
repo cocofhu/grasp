@@ -17,7 +17,7 @@
     "board": "Board",
     "workflows": "Workflows",
     "runs": "Runs",
-    "gates": "Needs attention",
+    "gates": "Conversation",
     "pendingApprovals": "Pending",
     "pendingWorkflowView": "Workflow view",
     "pendingPin": "Pin",

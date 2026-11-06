@@ -1015,10 +1015,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
 
     // Engine advances: second Approve enters the list during the lock window.
     list = [approve2]
-    const vm = wrapper.vm as { listPage?: number }
-    vm.listPage = 2
-    await flushPromises()
-    await nextTick()
+    await reloadInboxList()
     expect(listLoads).toBeGreaterThan(1)
 
     await selectByQuery(runId, 'clarify-approve-2')

@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Mobile workflow conversations use the existing chat interface directly, including deep links and reloads, and keep the chat mounted when resizing. The old pending-card page and return-to-list navigation are removed. Approval sharing remains available through the conversation menu and preview toolbar.
+
 - 移动端表单控件在窄屏保持至少 16px，避免 iOS Safari 聚焦输入框时触发整页自动放大；新增 Chromium/WebKit 的全路由缩放与溢出回归验证。
 
 - **Optional E2B sandbox deployment:** a separate `compose.e2b.yaml` and native Go gateway driver connect Grasp to prepared E2B Cloud/self-hosted templates through private endpoints. Includes persistent connection recovery, lease renewal, deletion retries and isolated preview origins for root paths, WebSockets and page tools. Enable it explicitly; Docker and Kubernetes defaults are unchanged. See the E2B deployment guide for template resource constraints and pause/reinstall limitations.
