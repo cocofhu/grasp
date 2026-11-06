@@ -312,8 +312,6 @@ describe('useGatesInbox actions', () => {
     expect(inbox.listItems.value).toHaveLength(2)
     expect(inbox.listTotal.value).toBe(2)
     expect(inbox.active.value?.runId).toBe('run-gate')
-    expect(inbox.itemTitle(inbox.active.value!)).toContain('Gate')
-    expect(inbox.isActive(inbox.active.value!)).toBe(true)
     expect(inbox.showListSkeleton.value).toBe(false)
     expect(inbox.showListError.value).toBe(false)
     // plan g1.2: successful loadList syncs peek baseline from visible listItems
@@ -331,11 +329,6 @@ describe('useGatesInbox actions', () => {
       tag: 'urgent',
     }))
 
-    inbox.workflowFilterOpen.value = true
-    await nextTick()
-    inbox.tagFilterOpen.value = true
-    await nextTick()
-    expect(inbox.workflowFilterOpen.value).toBe(false)
     app.unmount()
   })
 
@@ -1323,7 +1316,6 @@ describe('useGatesInbox actions', () => {
     await flushPromises()
     expect(mocks.reactReply).toHaveBeenCalled()
     await inbox.onReactRevised()
-    expect(typeof inbox.itemSecondary(inbox.active.value!)).toBe('string')
 
     inbox.active.value = gateItem()
     await inbox.onClarifyCancel()
@@ -1332,31 +1324,17 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
-  it('handles mobile detail navigation, sharing and card guards', async () => {
-    shared.isMobile.value = true
+  it('opens sharing from the conversation menu and respects processing guards', async () => {
     const { inbox, app } = await withInbox()
-    const list = document.createElement('div')
-    Object.defineProperty(list, 'scrollTop', { value: 45, writable: true })
-    inbox.listEl.value = list
     const second = inbox.listItems.value[1]!
-    inbox.openDetail(second)
-    expect(inbox.mobileView.value).toBe('detail')
-    expect(inbox.listScrollTop.value).toBe(45)
-    inbox.backToList()
-    await nextTick()
-    expect(inbox.mobileView.value).toBe('list')
-    expect(list.scrollTop).toBe(45)
-
-    inbox.openSharePanel(second, true)
+    inbox.openSharePanel(second)
     expect(inbox.sharePanelOpen.value).toBe(true)
     expect(inbox.shareTarget.value?.runId).toBe('run-chat')
     inbox.patchShareStatus(second, { enabled: true, token: 'abc' } as never)
     expect(inbox.shareTarget.value?.shareLink).toEqual(expect.objectContaining({ enabled: true }))
-
     inbox.markProcessed(second)
     expect(inbox.isItemCardDisabled(second)).toBe(true)
     inbox.selectItem(second)
-    inbox.openDetail(second)
     expect(inbox.isProcessedTriple(second)).toBe(true)
     inbox.unmarkProcessed(second)
     expect(inbox.isProcessedTriple(second)).toBe(false)

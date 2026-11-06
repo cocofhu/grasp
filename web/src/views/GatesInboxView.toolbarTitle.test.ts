@@ -10,6 +10,9 @@ import { sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import type { InboxItem } from '@/lib/shared/types'
 import { CLARIFY_CAPS } from '@/test/capsFixtures'
+import { INBOX_SHARE_INTENT_QUERY, INBOX_SHARE_INTENT_VALUE } from '@/lib/inbox/inboxShareIntent'
+import ReviewShell from '@/components/run/ReviewShell.vue'
+import GateApproval from '@/components/run/GateApproval.vue'
 
 const mocks = vi.hoisted(() => ({
   listGates: vi.fn(),
@@ -19,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 const routeState = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.hoisted runs before ESM imports
   const { reactive: makeReactive } = require('vue') as typeof import('vue')
-  return makeReactive({ query: {} as Record<string, string>, mobile: false })
+  return makeReactive({ query: {} as Record<string, string>, params: {} as Record<string, string>, mobile: false })
 })
 
 vi.mock('@/lib/api/api', async () => {
@@ -43,7 +46,7 @@ vi.mock('@/lib/api/api', async () => {
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  useRoute: () => ({ query: routeState.query, params: {} }),
+  useRoute: () => ({ query: routeState.query, params: routeState.params }),
 }))
 
 vi.mock('@/lib/composables/useBreakpoint', async () => {
@@ -88,6 +91,7 @@ function clarifyItem(runTitle: string, workflowName = '产品迭代'): InboxItem
 
 beforeEach(async () => {
   routeState.query = {}
+  routeState.params = {}
   routeState.mobile = false
   vi.stubGlobal('WebSocket', FakeWebSocket)
   mocks.listGates.mockReset()
@@ -180,7 +184,7 @@ describe('GatesInboxView conversation toolbar', () => {
 })
 
 
-describe('GatesInboxView mobile toolbar navigation', () => {
+describe('GatesInboxView mobile conversations', () => {
   function mountMobile() {
     return mount(GatesInboxView, {
       global: {
@@ -189,71 +193,83 @@ describe('GatesInboxView mobile toolbar navigation', () => {
       },
     })
   }
-  async function seed(items: InboxItem[], context: Record<string, unknown>) {
+  async function seedChat() {
     routeState.mobile = true
-    mocks.listGates.mockResolvedValue({ items, total: items.length, page: 1, pageSize: 20 })
+    routeState.params = { runId: 'run-1', nodeId: 'c1' }
+    const item = { ...clarifyItem('当前会话'), kind: 'clarify' } as InboxItem
+    mocks.listGates.mockResolvedValue({ items: [item], total: 1, page: 1, pageSize: 100 })
     await usePendingGates().refresh({ mode: 'force' })
-    mocks.inboxContext.mockResolvedValue(context)
+    mocks.inboxContext.mockResolvedValue({
+      type: 'clarify', status: 'waiting_human',
+      nodes: [{ id: 'c1', type: 'agent', caps: CLARIFY_CAPS, label: '澄清' }],
+      artifacts: [], nodeExecutions: {},
+      clarify: { nodeId: 'c1', iteration: 1, turns: [], done: false, label: '澄清' },
+    })
   }
 
-  it('keeps share, navigation and resources in one chat toolbar and restores the list scroll', async () => {
-    const longTitle = '这是一段需要省略但保留完整提示的会话标题'.repeat(6)
-    const item = { ...clarifyItem(longTitle), kind: 'clarify' } as InboxItem
-    await seed([item], { type: 'clarify', status: 'waiting_human', nodes: [{ id: 'c1', type: 'agent', caps: CLARIFY_CAPS, label: '澄清' }], artifacts: [], nodeExecutions: {}, clarify: { nodeId: 'c1', iteration: 1, turns: [], done: false, label: '澄清' } })
+  it('opens a mobile deep link and a refreshed conversation directly in chat', async () => {
+    await seedChat()
+    for (let visit = 0; visit < 2; visit++) {
+      const wrapper = mountMobile()
+      await flushPromises()
+      expect(wrapper.get('[data-testid="conversation-title"]').text()).toBe('当前会话')
+      expect(wrapper.get('[data-testid="inbox-active-detail"]').attributes('data-run-id')).toBe('run-1')
+      expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="inbox-mobile-chat-back"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="gate-share-copy-btn-detail"]').exists()).toBe(false)
+      expect(wrapper.getComponent(GateShareLinkPanel).props('open')).toBe(false)
+      wrapper.unmount()
+    }
+  })
+
+  it('keeps the same conversation mounted when the screen size changes', async () => {
+    await seedChat()
     const wrapper = mountMobile()
     await flushPromises()
-    const scroll = wrapper.get('[data-testid="inbox-list-fade"]').element.closest('.scroll-area') as HTMLElement
-    scroll.scrollTop = 73
-    await wrapper.get('[data-testid="inbox-item-card"] > button').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="inbox-mobile-detail-header"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-testid="conversation-title"]')).toHaveLength(1)
-    const title = wrapper.get('[data-testid="conversation-title"]')
-    expect(title.text()).toBe(longTitle)
-    expect(title.attributes('title')).toBe(longTitle)
-    expect(title.classes()).toContain('truncate')
-    const back = wrapper.get('.conversation-toolbar [data-testid="inbox-mobile-chat-back"]')
-    expect(back.attributes('aria-label')).toBe('返回列表')
-    const toolbar = wrapper.get('.conversation-toolbar')
-    expect(wrapper.findAll('.conversation-toolbar')).toHaveLength(1)
-    expect(toolbar.find('[data-testid="conversation-resource-toggle"]').exists()).toBe(true)
-    expect(toolbar.find('[data-testid="conversation-panel-toggle"]').exists()).toBe(true)
-    expect(wrapper.findAll('[data-testid="gate-share-copy-btn-detail"]')).toHaveLength(1)
-    const share = toolbar.get('[data-testid="gate-share-copy-btn-detail"]')
-    expect(share.attributes('aria-label')).toBe(pages.pages.gatesInbox.share.copyLinkAria)
-    expect(share.text()).toBe('')
-    await share.trigger('click')
-    await flushPromises()
-    const sharePanel = wrapper.getComponent(GateShareLinkPanel)
-    expect(sharePanel.props('open')).toBe(true)
-    expect(sharePanel.props('target')).toMatchObject({ runId: item.runId, nodeId: item.nodeId })
-    expect(sharePanel.props('kind')).toBe('review')
-    sharePanel.vm.$emit('close')
-    await flushPromises()
-    await back.trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="inbox-active-detail"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-testid="inbox-item-card"]')).toHaveLength(1)
-    const restored = wrapper.get('[data-testid="inbox-list-fade"]').element.closest('.scroll-area') as HTMLElement
-    expect(restored.scrollTop).toBe(73)
+    const chat = wrapper.getComponent(ReviewShell).element
+    routeState.mobile = false
+    await nextTick()
+    expect(wrapper.getComponent(ReviewShell).element).toBe(chat)
+    routeState.mobile = true
+    await nextTick()
+    expect(wrapper.getComponent(ReviewShell).element).toBe(chat)
+    expect(wrapper.get('[data-testid="conversation-title"]').text()).toBe('当前会话')
     wrapper.unmount()
   })
 
-  it('preserves the existing separate header and return action for a regular approval', async () => {
-    const gate = { type: 'gate', nodeType: 'human_gate', runId: 'run-gate', nodeId: 'gate', workflowName: '审批工作流', title: '发布审批', bodyMd: '', actions: [{ id: 'approve', label: '通过' }], requestedAt: '2026-08-12T00:00:00Z' } as InboxItem
-    await seed([gate], { type: 'gate', status: 'waiting_human', nodes: [], artifacts: [], nodeExecutions: {} })
+  it('opens sharing only for the sidebar menu intent', async () => {
+    await seedChat()
+    routeState.query = { [INBOX_SHARE_INTENT_QUERY]: INBOX_SHARE_INTENT_VALUE }
     const wrapper = mountMobile()
     await flushPromises()
-    await wrapper.get('[data-testid="inbox-item-card"] > button').trigger('click')
+    const panel = wrapper.getComponent(GateShareLinkPanel)
+    expect(panel.props('open')).toBe(true)
+    expect(panel.props('target')).toMatchObject({ runId: 'run-1', nodeId: 'c1' })
+    expect(panel.props('kind')).toBe('review')
+    panel.vm.$emit('close')
+    await nextTick()
+    expect(panel.props('open')).toBe(false)
+    expect(wrapper.find('[data-testid="conversation-title"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('opens a regular human approval directly without the old list navigation', async () => {
+    routeState.mobile = true
+    routeState.params = { runId: 'run-gate', nodeId: 'gate' }
+    const gate = { type: 'gate', nodeType: 'human_gate', runId: 'run-gate', nodeId: 'gate', workflowName: '审批工作流', title: '发布审批', bodyMd: '', actions: [{ id: 'approve', label: '通过' }], requestedAt: '2026-08-12T00:00:00Z' } as InboxItem
+    mocks.listGates.mockResolvedValue({ items: [gate], total: 1 })
+    mocks.inboxContext.mockResolvedValue({ type: 'gate', status: 'waiting_human', nodes: [], artifacts: [], nodeExecutions: {} })
+    const wrapper = mountMobile()
     await flushPromises()
-    const header = wrapper.get('[data-testid="inbox-mobile-detail-header"]')
-    expect(header.text()).toContain('发布审批')
-    expect(wrapper.find('[data-testid="inbox-mobile-chat-back"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="gate-share-copy-btn-detail"]').text()).toBe(pages.pages.gatesInbox.share.copyLink)
-    await header.get('button').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="inbox-active-detail"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(true)
+    expect(wrapper.getComponent(GateApproval).props('gate')).toMatchObject({ runId: 'run-gate', title: '发布审批' })
+    expect(wrapper.getComponent(GateApproval).props('fillPreview')).toBe(true)
+    expect(wrapper.getComponent(GateApproval).props('shareLink')).toEqual({ state: 'none' })
+    wrapper.getComponent(GateApproval).vm.$emit('open-share')
+    await nextTick()
+    expect(wrapper.getComponent(GateShareLinkPanel).props('open')).toBe(true)
+    expect(wrapper.getComponent(GateShareLinkPanel).props('kind')).toBe('human_gate')
+    expect(wrapper.find('[data-testid="inbox-mobile-detail-header"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

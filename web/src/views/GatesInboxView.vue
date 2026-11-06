@@ -3,7 +3,6 @@ import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import GateApproval from '@/components/run/GateApproval.vue'
 import GateShareLinkPanel from '@/components/run/GateShareLinkPanel.vue'
-import InboxPendingCard from '@/components/inbox/InboxPendingCard.vue'
 import InboxStartFailedPane from '@/components/inbox/InboxStartFailedPane.vue'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ReviewComposer from '@/components/run/ReviewComposer.vue'
@@ -12,84 +11,22 @@ import ArtifactLoadingPane from '@/components/run/ArtifactLoadingPane.vue'
 import ClarifyProductStage from '@/components/run/ClarifyProductStage.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReactConnectingState from '@/components/run/ReactConnectingState.vue'
-import RefreshStrip from '@/components/run/RefreshStrip.vue'
 import AppInlineError from '@/components/ui/AppInlineError.vue'
-import Pagination from '@/components/ui/Pagination.vue'
 import { computed } from 'vue'
 import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
 import { isInboxCancelDeparture } from '@/lib/inbox/inboxCancelDeparture'
 import { useGatesInbox } from '@/lib/inbox/useGatesInbox'
 
 const {
-  addProcessingIntent,
-  removeProcessingIntent,
-  isProcessingIntent,
-  isItemCardDisabled,
-  markProcessed,
-  unmarkProcessed,
-  isProcessedTriple,
-  abortInboxContext,
-  acquireInboxContextSignal,
-  releaseInboxContextSignal,
-  beginProcessingIntent,
-  rollbackProcessingIntent,
-  endProcessingIntent,
-  isActiveStillInList,
-  shouldFetchActiveInboxContext,
-  invalidateListLoads,
-  removeListItemLocally,
-  restoreListItemLocally,
-  incomingTarget,
-  mergeIncomingGhost,
-  confirmIncomingGhostStillNeeded,
-  seedIncomingIfNeeded,
-  isIncomingContextPending,
-  rebindActiveFromList,
-  mergeFailedStarting,
-  confirmStartingVanished,
-  detectStartingFailures,
   dismissStartFailure,
-  stopStartingPoll,
-  startStartingPoll,
-  selectFromQuery,
-  applyHomeHandoff,
-  selectFromHandoff,
-  waitForQueryItem,
-  ensureValidActive,
-  reconcileProcessedWithList,
-  selectActiveAfterRemove,
-  handleLeftInboxContext,
-  loadList,
   retryListLoad,
   onAppPreviewStagedPick,
   onAppPreviewReviewPick,
-  mergeStagedAppPreviewPick,
-  syncActiveAfterApply,
-  checkProcessedWhileEditing,
-  isActive,
-  isClarifySoftRefreshBlocked,
-  closeActiveRunWs,
-  activeDialogueNodeId,
-  applyOrBufferAcpFrame,
-  flushPendingAcpFrames,
-  seedClarifyAcpFromNodeEventsOnce,
-  startBusySeedRetry,
-  restoreReactSessions,
-  flushPendingReviewFrames,
-  applyOrBufferReviewFrame,
-  projectClarifySessionAfterLoad,
-  reseedAfterWsReconnect,
-  connectActiveRunWs,
-  patchActiveRunArtifacts,
-  softRefreshActiveRun,
-  loadActiveRun,
   retryActiveRun,
   onReactRevised,
   onResolve,
   patchShareStatus,
   openSharePanel,
-  openDetail,
-  backToList,
   onClarifySend,
   onClarifyRetryLast,
   onClarifyFinish,
@@ -97,30 +34,12 @@ const {
   onClarifyCancel,
   onClarifyQueueRemove,
   onClarifyQueueReorder,
-  onFocus,
-  onVisible,
-  itemTitle,
-  itemSecondary,
-  route,
-  toast,
-  PAGE_SIZE,
-  SKELETON_CARDS,
-  listItems,
-  listTotal,
-  listPage,
-  listLoading,
   listErrorMessage,
-  listLoadGeneration,
+  listTotal,
+  listItems,
   active,
-  homeSeed,
-  incomingGhost,
-  startFailedItem,
-  incomingArmed,
   activeHomeSeed,
   activeQueuedFirstMessage,
-  mobileView,
-  listScrollTop,
-  listEl,
   gateApprovalRef,
   reviewChatRef,
   reviewShellRef,
@@ -128,42 +47,21 @@ const {
   inboxConfirmFlowPhase,
   inboxConfirmFlowReduce,
   inboxConfirmFlowToken,
-  pendingAcpFrames,
   showProcessedBanner,
+  isEditing,
   showListSkeleton,
   showListError,
   showListRefresh,
   listPanelBusy,
   clarifyConfirmError,
   clarifyConfirmCanAbort,
-  processedTriples,
-  confirmedAbsentTriples,
-  inboxContextAborts,
-  processingIntentKeys,
-  processingLock,
   startFailedActive,
   activeStarting,
   startingSandboxPhase,
   startingBootKey,
-  incomingGhostConfirmInFlight,
-  STARTING_POLL_MS,
-  STARTING_POLL_MAX_TICKS,
-  queryWaitGen,
-  isGateEditing,
-  lastStagedAppPreviewPick,
-  isClarifyEditing,
-  isEditing,
   activeRun,
   activeRunLoading,
-  activeRunLoadError,
-  activeRunWsRunId,
-  clarifyLiveBusy,
-  dialogueRailsFilled,
-  dialogueLiveIncremental,
-  busySeedRetry,
-  activeRunWsReconnect,
   activeClarify,
-  inboxAppPreviewActive,
   inboxRemoteKind,
   inboxStageNode,
   showClarifyReviewShell,
@@ -181,40 +79,21 @@ const {
   followStopping,
   takeoverFollow,
   inboxClarifyStageKind,
-  inboxReviewState,
-  reviewActive,
   composerMode,
   activeGate,
   clarifyInputActive,
   sharePanelOpen,
   shareTarget,
   t,
-  displayedItems,
-  remoteItems,
-  totalCount,
-  refresh,
-  peek,
-  removeItemLocally,
-  restoreItemLocally,
-  lastPeekAt,
-  itemKey,
-  ariaBusy,
-  isMobile,
-  selected,
-  selectedTags,
   clarifyDraft,
   clarifyAttachments,
   clarifyAnnotations,
-  isShareableInboxItem,
-  isHumanGateInboxItem,
   inboxShareKind,
+  isHumanGateInboxItem,
   pageControlByNode,
 } = useGatesInbox()
 
-/**
- * Sidebar is cancelling this conversation and will open the new-request page.
- * Keep the conversation on screen so the pending-empty state cannot flash.
- */
+/** Keep the current conversation while the sidebar finishes cancelling it. */
 const holdingCancelledConversation = computed(
   () => !!active.value && isInboxCancelDeparture(active.value.runId),
 )
@@ -224,11 +103,6 @@ const inboxPageControl = computed(() => {
   const map = pageControlByNode.value
   return map[clarifyComposerNodeId.value || ''] ?? Object.values(map)[0] ?? undefined
 })
-
-/** Whole-list fade when filter/page changes (g3.2). */
-const listFadeKey = computed(() =>
-  [listPage.value, selectedTags.value.slice().sort().join(',')].join('|'),
-)
 
 const inboxAgentName = computed(() => String(inboxStageNode.value?.config?.agent_profile || '').trim())
 
@@ -246,23 +120,6 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     data-testid="gates-inbox-view"
     :aria-busy="listPanelBusy ? 'true' : 'false'"
   >
-    <!-- Mobile detail header -->
-    <div v-if="isMobile && mobileView === 'detail' && !showClarifyReviewShell" class="mb-3 flex shrink-0 items-center gap-2" data-testid="inbox-mobile-detail-header">
-      <button
-        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt"
-        :aria-label="t('shell.aria.backToList')"
-        @click="backToList"
-      >
-        <Icon name="arrow-left" :size="18" />
-      </button>
-      <div class="min-w-0 flex-1">
-        <h2 class="truncate text-base font-semibold text-txt">{{ active ? itemTitle(active) : '' }}</h2>
-        <p class="truncate text-[11px] text-txt3" :title="active ? itemSecondary(active) : undefined">
-          {{ active ? itemSecondary(active) : '' }}
-        </p>
-      </div>
-    </div>
-
     <!-- f6: processed while editing -->
     <div
       v-if="showProcessedBanner && isEditing"
@@ -272,245 +129,9 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
       <span>{{ t('pages.gatesInbox.processedBanner') }}</span>
     </div>
 
-    <!-- Mobile list view -->
-    <template v-if="isMobile && mobileView === 'list' && !holdingCancelledConversation">
-      <RefreshStrip v-if="showListRefresh" data-testid="gates-inbox-refresh-strip" />
-      <div
-        v-if="showListSkeleton"
-        class="flex min-h-0 flex-1 flex-col gap-2"
-        data-testid="inbox-list-skeleton"
-        aria-hidden="true"
-      >
-        <div
-          v-for="n in SKELETON_CARDS"
-          :key="'skel-m-' + n"
-          class="flex w-full shrink-0 flex-col gap-2 rounded-lg border border-line bg-surface p-3"
-          data-testid="inbox-pending-card-skeleton"
-        >
-          <div class="flex items-start gap-3">
-            <div class="h-9 w-9 shrink-0 bg-elevated animate-pulse" />
-            <div class="min-w-0 flex-1 space-y-2">
-              <div class="h-3.5 w-2/3 bg-elevated animate-pulse" />
-              <div class="h-2.5 w-full bg-elevated animate-pulse" />
-            </div>
-          </div>
-        </div>
-      </div>
-      <div
-        v-else-if="showListError"
-        class="card flex min-h-0 flex-1 flex-col items-stretch justify-center overflow-auto p-4"
-        data-testid="inbox-list-failed"
-      >
-        <AppInlineError
-          :title="t('common.asyncState.loadFailedTitle')"
-          :message="listErrorMessage"
-          retry-testid="inbox-list-retry"
-          @retry="retryListLoad"
-        />
-      </div>
-      <div
-        v-else-if="listItems.length"
-        class="flex min-h-0 flex-1 flex-col"
-        :class="showListRefresh ? 'opacity-[0.55]' : ''"
-      >
-        <!-- plan g2.1: py-0.5 so list-card-lift hover translateY(-1px) top border is not clipped -->
-        <div ref="listEl" class="scroll-area flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto py-0.5">
-        <Transition name="ui-fade" mode="out-in">
-        <div :key="listFadeKey" class="flex flex-col gap-2" data-testid="inbox-list-fade">
-        <InboxPendingCard
-          v-for="it in listItems"
-          :key="itemKey(it)"
-          :item="it"
-          :active="isActive(it)"
-          :disabled="isItemCardDisabled(it)"
-          show-chevron
-          @select="openDetail(it)"
-          @open-share="openSharePanel(it, true)"
-        />
-        </div>
-        </Transition>
-        </div>
-        <Pagination v-if="listTotal > PAGE_SIZE" v-model:page="listPage" :page-size="PAGE_SIZE" :total="listTotal" />
-      </div>
-      <div v-else class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto">
-        <EmptyState
-          icon="gate"
-          :title="listTotal ? t('common.empty.noPendingGatesForWorkflow') : t('common.empty.noPendingGates')"
-          :desc="
-            listTotal
-              ? t('common.empty.noPendingGatesWorkflowDesc')
-              : t('common.empty.noPendingGatesDesc')
-          "
-        />
-      </div>
-    </template>
-
-    <!-- Mobile detail view -->
-    <div v-else-if="isMobile && (mobileView === 'detail' || holdingCancelledConversation) && (active || confirmFlowDeskHold)" class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface"
-      data-testid="inbox-active-detail" :data-run-id="active?.runId || ''" :data-node-id="active?.nodeId || ''">
-      <div v-if="active && isShareableInboxItem(active) && !showClarifyReviewShell" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
-        <button
-          type="button"
-          class="inline-flex min-h-11 items-center text-xs text-accent-2 hover:underline"
-          data-testid="gate-share-copy-btn-detail"
-          :aria-label="t('pages.gatesInbox.share.copyLinkAria')"
-          @click="openSharePanel(active)"
-        >
-          {{ t('pages.gatesInbox.share.copyLink') }}
-        </button>
-      </div>
-      <div class="relative flex min-h-0 flex-1 flex-col">
-        <template v-if="active">
-        <ArtifactLoadingPane v-if="activeRunLoading && active.type === 'gate'" message-key="pages.gatesInbox.loadingRun" />
-            <GateApproval
-          v-else-if="active.type === 'gate'"
-          ref="gateApprovalRef"
-          :key="active.runId + active.nodeId"
-          :gate="activeGate!"
-          :run="activeRun || undefined"
-          :fill-preview="true"
-          :share-link="isHumanGateInboxItem(active) ? active.shareLink ?? { state: 'none' } : null"
-          @resolve="onResolve"
-          @react-revised="onReactRevised"
-          @open-share="openSharePanel(active)"
-        />
-        <InboxStartFailedPane v-else-if="startFailedActive" @dismiss="dismissStartFailure" />
-        <ReviewShell
-          :scope-key="`inbox:${active.runId}:${active.nodeId}:${clarifyComposerIteration}`"
-          :run-id="active.runId"
-          :run-name="inboxConversationRunName"
-          v-else-if="showClarifyReviewShell"
-          ref="reviewShellRef"
-          :key="active.runId"
-          class="min-h-0 flex-1"
-          :host-confirm-flow="false"
-          split-drawer
-          remember-artifact-panel
-        >
-          <template #leading>
-            <button
-              type="button"
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt"
-              :aria-label="t('shell.aria.backToList')"
-              data-testid="inbox-mobile-chat-back"
-              @click="backToList"
-            >
-              <Icon name="arrow-left" :size="18" />
-            </button>
-          </template>
-          <template v-if="isShareableInboxItem(active)" #actions>
-            <button
-              type="button"
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-elevated hover:text-txt focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
-              data-testid="gate-share-copy-btn-detail"
-              :aria-label="t('pages.gatesInbox.share.copyLinkAria')"
-              :title="t('pages.gatesInbox.share.copyLink')"
-              @click="openSharePanel(active)"
-            >
-              <Icon name="copy" :size="16" aria-hidden="true" />
-            </button>
-          </template>
-          <template #stage>
-            <ReactConnectingState
-              v-if="activeStarting"
-              mode="stage"
-              hide-home-tab
-              :sandbox-phase="startingSandboxPhase"
-              :boot-key="startingBootKey"
-            />
-            <ArtifactLoadingPane v-else-if="activeRunLoading" message-key="pages.gatesInbox.loadingRun" />
-            <ReactArtifactStage
-              v-else
-              editable
-              :artifacts="activeRun?.artifacts || []"
-              :preview-artifact="activeClarify?.previewArtifact"
-              :run-id="active.runId"
-              :run="activeRun || undefined"
-              :node-id="active.nodeId"
-              :node="inboxStageNode"
-              :annotatable="clarifyInputActive"
-              :remote-kind="inboxRemoteKind"
-              :probe-registered-preview="composerMode === 'review'"
-              @pick="onAppPreviewReviewPick"
-              @staged-pick="onAppPreviewStagedPick"
-            />
-          </template>
-          <template #sidebar>
-            <ReactConnectingState
-              v-if="activeStarting"
-              :sandbox-phase="startingSandboxPhase"
-              :boot-key="startingBootKey"
-              :seed-text="activeQueuedFirstMessage"
-            />
-            <ReviewComposer
-              v-else
-              :key="`${active.runId}:${active.nodeId}`"
-              ref="reviewChatRef"
-              :mode="composerMode"
-              :run-id="active.runId"
-              :node-id="clarifyComposerNodeId"
-              :iteration="clarifyComposerIteration"
-              v-model:draft="clarifyDraft"
-              v-model:attachments="clarifyAttachments"
-              v-model:annotations="clarifyAnnotations"
-              :turns="clarifyComposerTurns"
-              :node-task="activeNodeTask"
-              :seed-human-text="activeHomeSeed?.text"
-              :seed-human-images="activeHomeSeed?.images ?? []"
-              :done="clarifyComposerDone"
-              :handoff="activeHandoff"
-              :prior-segments="activeChainSegments"
-              :node-label="active?.type === 'clarify' ? active.label : undefined"
-              :follow-tail="activeFollowTail"
-              :follow-process="activeFollowProcess"
-              :observe="followObserving"
-              :stopping="followStopping"
-              :composer-locked="clarifyComposerLocked"
-              :active="clarifyInputActive"
-              :model-switch="!!inboxAgentName"
-              :agent-name="inboxAgentName"
-              :current-configuration-id="activeClarify?.currentConfigurationId"
-              :current-model-id="activeClarify?.currentModelId"
-              :current-model-set="activeClarify?.currentModelSet"
-              :reasoning-effort="activeClarify?.reasoningEffort"
-              :model-notice="activeClarify?.modelNotice"
-              :confirm-error="clarifyConfirmError"
-              :confirm-can-abort="clarifyConfirmCanAbort"
-              :page-control="inboxPageControl"
-              @send="(text, images, anns, clientMessageId, references) => onClarifySend(text, images, anns, false, false, false, clientMessageId, references)"
-              @retry-last="onClarifyRetryLast"
-              @finish="onClarifyFinish"
-              @finish-abort="onClarifyFinishAbort"
-              @cancel="onClarifyCancel"
-              @takeover="takeoverFollow"
-              @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
-              @queue-reorder="onClarifyQueueReorder"
-            />
-          </template>
-        </ReviewShell>
-        <ClarifyProductStage
-          v-else-if="active.type === 'clarify'"
-          :product-nodes="[]"
-          :selected-product-id="null"
-          :stage-kind="inboxClarifyStageKind"
-          :selected-node="null"
-          :selected-node-run="null"
-          :run="null"
-          :loading="activeRunLoading"
-          @retry="retryActiveRun"
-        />
-        </template>
-        <ConfirmFlowOverlay
-          :phase="inboxConfirmFlowPhase"
-          :reduce-motion="inboxConfirmFlowReduce"
-          :play-token="inboxConfirmFlowToken"
-        />
-      </div>
-    </div>
-
-    <!-- Desktop: existing panel only. Pending rows live in the sidebar. -->
+    <!-- One conversation on every screen size; selection lives in the sidebar. -->
     <div
-      v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail || holdingCancelledConversation)"
+      v-if="listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail || holdingCancelledConversation"
       class="flex min-h-0 flex-1 items-stretch"
       :class="showListRefresh ? 'opacity-[0.55]' : ''"
     >
@@ -536,10 +157,10 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
             />
             <InboxStartFailedPane v-else-if="startFailedActive" @dismiss="dismissStartFailure" />
             <ReviewShell
+              v-else-if="showClarifyReviewShell"
               :scope-key="`inbox:${active.runId}:${active.nodeId}:${clarifyComposerIteration}`"
               :run-id="active.runId"
               :run-name="inboxConversationRunName"
-              v-else-if="showClarifyReviewShell"
               ref="reviewShellRef"
               :key="active.runId"
               class="min-h-0 flex-1"
@@ -549,12 +170,12 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
             >
               <template #stage>
                 <ReactConnectingState
-              v-if="activeStarting"
-              mode="stage"
-              hide-home-tab
-              :sandbox-phase="startingSandboxPhase"
-              :boot-key="startingBootKey"
-            />
+                  v-if="activeStarting"
+                  mode="stage"
+                  hide-home-tab
+                  :sandbox-phase="startingSandboxPhase"
+                  :boot-key="startingBootKey"
+                />
                 <ArtifactLoadingPane v-else-if="activeRunLoading" message-key="pages.gatesInbox.loadingRun" />
                 <ReactArtifactStage
                   v-else
@@ -647,9 +268,9 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
       </div>
     </div>
 
-    <!-- Desktop loading: panel hint only. The card rail moved to the sidebar. -->
+    <!-- Loading and errors stay in the conversation area. -->
     <div
-      v-else-if="!isMobile && showListSkeleton"
+      v-else-if="showListSkeleton"
       class="flex min-h-0 flex-1 items-stretch"
       data-testid="inbox-list-skeleton"
     >
@@ -663,7 +284,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     </div>
 
     <div
-      v-else-if="!isMobile && showListError"
+      v-else-if="showListError"
       class="card flex min-h-0 flex-1 flex-col items-stretch justify-center overflow-auto p-4"
       data-testid="inbox-list-failed"
     >
@@ -675,15 +296,11 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
       />
     </div>
 
-    <div v-else-if="!isMobile" class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto">
+    <div v-else class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto">
       <EmptyState
         icon="gate"
         :title="listTotal ? t('common.empty.noPendingGatesForWorkflow') : t('common.empty.noPendingGates')"
-        :desc="
-          listTotal
-            ? t('common.empty.noPendingGatesWorkflowDesc')
-            : t('common.empty.noPendingGatesDesc')
-        "
+        :desc="listTotal ? t('common.empty.noPendingGatesWorkflowDesc') : t('common.empty.noPendingGatesDesc')"
       />
     </div>
 
@@ -702,12 +319,3 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     />
   </div>
 </template>
-
-<style scoped>
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-}
-</style>

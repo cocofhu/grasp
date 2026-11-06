@@ -4,6 +4,63 @@ import type { PreviewChatQueueItem, PreviewChatRow } from '../src/lib/inbox/appP
 import type { Locator } from '@playwright/test'
 import { routeApi } from './helpers/apiRoute'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
+import { createDialogueServer } from './helpers/dialogueServer'
+
+test('mobile workflow links reopen chat after refresh and preserve drafts when resizing', async ({ page }) => {
+  await installWorkspaceApiDefaults(page)
+  const runId = 'mobile-conversation'
+  const nodeId = 'clarify'
+  const caps = { interaction: 'clarify', tools: ['ask_question'] }
+  const item = {
+    type: 'clarify', kind: 'clarify', runId, nodeId, iteration: 1, done: false,
+    workflowName: '默认工作流', runTitle: '继续当前需求', label: '需求澄清',
+    requestedAt: '2026-11-06T00:00:00Z', updatedAt: '2026-11-06T00:00:00Z',
+  }
+  const run = {
+    id: runId, title: item.runTitle, workflowId: 'workflow-mobile', workflowName: item.workflowName,
+    status: 'waiting_human', startedAt: item.requestedAt, artifacts: [], edges: [],
+    nodes: [{ id: nodeId, type: 'agent', label: item.label, config: {}, caps }],
+    nodeRuns: {}, nodeExecutions: {},
+    clarifyByNode: { [nodeId]: { nodeId, iteration: 1, turns: [], done: false } },
+  }
+  const dialogue = createDialogueServer(runId, nodeId, {
+    rows: [{ role: 'agent', text: '请补充验收标准', at: item.updatedAt }],
+  })
+  await routeApi(page, '**/api/pending-nodes**', route => route.fulfill({ json: { items: [item], total: 1, hasMore: false } }))
+  await routeApi(page, '**/api/runs/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/context')) return route.fulfill({ json: {
+      ...run, type: 'clarify', clarify: run.clarifyByNode[nodeId],
+    } })
+    if (path.endsWith('/conversation-chain')) return route.fulfill({ status: 404, json: {} })
+    if (path.endsWith('/artifacts')) return route.fulfill({ json: [] })
+    if (path.endsWith('/events')) return route.fulfill({ json: { events: [], live: false } })
+    return route.fulfill({ json: run })
+  })
+  await page.routeWebSocket('**/api/runs/*/events*', ws => ws.send(JSON.stringify(dialogue.frame())))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent(`/runs/${runId}/nodes/${nodeId}`)}`)
+  const input = page.getByTestId('clarify-input')
+  await expect(page.getByTestId('conversation-title')).toHaveText(item.runTitle)
+  await expect(input).toBeVisible()
+  await expect(page.getByTestId('inbox-item-card')).toHaveCount(0)
+  await expect(page.getByTestId('inbox-mobile-chat-back')).toHaveCount(0)
+  await expect(page.getByTestId('gate-share-copy-btn-detail')).toHaveCount(0)
+  await expect(page).toHaveTitle(/对话/)
+
+  await page.reload()
+  await expect(page.getByTestId('conversation-title')).toHaveText(item.runTitle)
+  await expect(input).toBeVisible()
+  await expect(page.getByText('请补充验收标准', { exact: true })).toBeVisible()
+  await input.fill('保留这份未发送的草稿')
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    await expect(input).toBeVisible()
+    await expect(input).toHaveValue('保留这份未发送的草稿')
+  }
+  await expect(page.getByTestId('inbox-item-card')).toHaveCount(0)
+  await page.screenshot({ path: 'test-results/mobile-workflow-chat.png' })
+})
 
 const previewModelCatalog = {
   agent: { name: 'Demo', modelBinding: { kind: 'configuration', configurationId: 'shared-config' } },

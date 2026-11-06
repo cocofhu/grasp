@@ -212,14 +212,14 @@ test.describe('Inbox empty fill layout (plan g2.3)', () => {
 })
 
 test.describe('Inbox first-load skeleton / fail (plan g3.3)', () => {
-  test('delayed GET /api/pending-nodes shows 6 skeletons and never flashes empty copy (g3.3)', async ({ page }) => {
+  test('delayed GET /api/pending-nodes shows the conversation loading state without flashing empty copy', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await mockApi(page, { gatesDelayMs: 1800 })
     await page.goto('/inbox-empty-fill.html?theme=light')
     await expect(page.getByTestId('gates-inbox-view')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('inbox-list-skeleton')).toBeVisible()
     await expect(page.getByTestId('inbox-pending-card-skeleton')).toHaveCount(0)
-    await expect(page.getByText('列表加载后可选择一项')).toBeVisible()
+    await expect(page.getByText('正在加载会话…')).toBeVisible()
     await expect(page.getByText('没有待审批项')).toHaveCount(0)
     await expect(page.getByText('该工作流没有待审批项')).toHaveCount(0)
     await expect(page.getByRole('heading', { name: '待办' })).toHaveCount(0)

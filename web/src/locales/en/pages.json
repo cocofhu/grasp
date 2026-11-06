@@ -1799,7 +1799,7 @@
       }
     },
     "gatesInbox": {
-      "title": "Needs attention",
+      "title": "Conversation",
       "processedBanner": "Item already processed — removed from inbox; your draft/form is preserved.",
       "gateType": "Human gate",
       "clarifyType": "Needs clarify",
@@ -1812,8 +1812,7 @@
       "startFailedDesc": "This approval's sandbox never came up and the run stopped. Open the run detail to see why.",
       "startFailedDismiss": "Dismiss",
       "loadingRun": "Loading run details…",
-      "listLoadingHint": "Select an item after the list loads",
-      "detailPane": "Details",
+      "listLoadingHint": "Loading conversation…",
       "reviewFinished": "Confirmed and advanced",
       "reviewFinishedPending": "Confirmed and advanced; list not updated yet — refresh shortly",
       "reviewFinishFailed": "Failed to confirm and advance; please retry",
