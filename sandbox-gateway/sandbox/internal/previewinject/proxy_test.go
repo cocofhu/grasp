@@ -278,25 +278,31 @@ func TestProxy_LeavesLocation(t *testing.T) {
 	}
 }
 
-func TestProxy_RelaxesCSP(t *testing.T) {
+func TestProxy_DropsCSP(t *testing.T) {
 	proxy, _ := testProxy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'")
-		_, _ = w.Write([]byte("<body></body>"))
+		w.Header().Set("Content-Security-Policy-Report-Only", "style-src 'self'")
+		_, _ = w.Write([]byte(`<head><meta http-equiv="Content-Security-Policy" content="style-src 'self'"></head><body></body>`))
 	}))
-	resp, err := http.Get(proxy.URL + "/")
+	resp, err := http.Get(proxy.URL + "/demo/")
 	if err != nil {
 		t.Fatal(err)
 	}
+	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	csp := resp.Header.Get("Content-Security-Policy")
-	if !strings.Contains(csp, "http://app.example") {
-		t.Fatalf("csp: %s", csp)
+	for _, h := range []string{"Content-Security-Policy", "Content-Security-Policy-Report-Only"} {
+		if v := resp.Header.Get(h); v != "" {
+			t.Fatalf("%s kept: %s", h, v)
+		}
+	}
+	if strings.Contains(string(body), "http-equiv") || !strings.Contains(string(body), "preview-pick.js") {
+		t.Fatalf("body: %s", body)
 	}
 }
 
 func TestProxy_SkipsWebsocketUpgrade(t *testing.T) {
-	modify := modifyResponse(scriptURL, ScriptOrigin(scriptURL))
+	modify := modifyResponse(scriptURL)
 	resp := &http.Response{
 		StatusCode: http.StatusSwitchingProtocols,
 		Header:     http.Header{"Content-Type": []string{"text/html"}},

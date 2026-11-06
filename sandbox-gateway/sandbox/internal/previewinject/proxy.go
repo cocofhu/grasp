@@ -32,7 +32,7 @@ const flushInterval = 100 * time.Millisecond
 const graspSessionCookie = "cf_session"
 
 // NewHandler reverse-proxies to upstream and injects preview-pick.js into
-// text/html. Host is preserved (Vite allowedHosts / HMR). WebSocket 101 and
+// text/html, dropping the page's CSP (header and <meta>). Host is preserved (Vite allowedHosts / HMR). WebSocket 101 and
 // non-HTML bodies are passed through. Location is not rewritten (direct
 // preview has no /preview prefix).
 //
@@ -61,9 +61,8 @@ func NewSwitchableHandler(upstream *url.URL, upstreamFile, scriptURL string, emb
 		panic("previewinject: nil upstream")
 	}
 	scriptURL = ResolveScriptURL(scriptURL)
-	token := CSPToken(scriptURL)
 	sel := newUpstreamSelector(upstream, upstreamFile)
-	inject := modifyResponse(scriptURL, token)
+	inject := modifyResponse(scriptURL)
 
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -145,7 +144,7 @@ func closeOnUpstreamError(w http.ResponseWriter, _ *http.Request, _ error) {
 	w.WriteHeader(http.StatusBadGateway)
 }
 
-func modifyResponse(scriptURL, cspToken string) func(*http.Response) error {
+func modifyResponse(scriptURL string) func(*http.Response) error {
 	return func(resp *http.Response) error {
 		if resp.StatusCode == http.StatusSwitchingProtocols {
 			return nil
@@ -167,14 +166,10 @@ func modifyResponse(scriptURL, cspToken string) func(*http.Response) error {
 			return err
 		}
 
-		rewritten := InjectHTML(body, scriptURL)
-		if cspToken != "" {
-			for _, h := range []string{"Content-Security-Policy", "Content-Security-Policy-Report-Only"} {
-				if csp := resp.Header.Get(h); csp != "" {
-					resp.Header.Set(h, RelaxCSP(csp, cspToken))
-				}
-			}
-		}
+		rewritten := InjectHTML(StripMetaCSP(body), scriptURL)
+		// See StripMetaCSP: the page's own policy would block preview-pick.js.
+		resp.Header.Del("Content-Security-Policy")
+		resp.Header.Del("Content-Security-Policy-Report-Only")
 
 		resp.Body = io.NopCloser(bytes.NewReader(rewritten))
 		resp.ContentLength = int64(len(rewritten))

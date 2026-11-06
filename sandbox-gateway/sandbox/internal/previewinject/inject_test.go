@@ -7,38 +7,6 @@ import (
 
 const scriptURL = "http://app.example/preview-pick.js"
 
-func TestCSPToken(t *testing.T) {
-	t.Parallel()
-	if got := CSPToken(ScriptPath); got != "'self'" {
-		t.Fatalf("same-origin token=%q", got)
-	}
-	if got := CSPToken("http://app.example/preview-pick.js"); got != "http://app.example" {
-		t.Fatalf("absolute token=%q", got)
-	}
-	if got := CSPToken(""); got != "" {
-		t.Fatalf("empty token=%q", got)
-	}
-}
-
-func TestScriptOrigin(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in, want string
-	}{
-		{"http://app.example/preview-pick.js", "http://app.example"},
-		{"https://app.example:8443/preview-pick.js", "https://app.example:8443"},
-		{"  http://h/x.js  ", "http://h"},
-		{"", ""},
-		{"not-a-url", ""},
-		{"/preview-pick.js", ""},
-	}
-	for _, tc := range cases {
-		if got := ScriptOrigin(tc.in); got != tc.want {
-			t.Errorf("ScriptOrigin(%q)=%q want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestInjectHTML_BeforeBody(t *testing.T) {
 	t.Parallel()
 	in := []byte("<html><body><h1>hi</h1></body></html>")
@@ -109,43 +77,17 @@ func TestInjectHTML_EscapesURL(t *testing.T) {
 	}
 }
 
-func TestRelaxCSP_ScriptSrc(t *testing.T) {
+func TestStripMetaCSP(t *testing.T) {
 	t.Parallel()
-	got := RelaxCSP("default-src 'self'; script-src 'self'", "http://app.example")
-	if !strings.Contains(got, "script-src 'self' http://app.example") {
-		t.Fatalf("script-src: %s", got)
+	in := []byte(`<head><meta charset="utf-8">
+<META HTTP-EQUIV='Content-Security-Policy' content="default-src 'self'; style-src 'self'">
+<meta http-equiv=content-security-policy content="connect-src 'none'">
+<meta name="referrer" content="no-referrer"></head>`)
+	got := string(StripMetaCSP(in))
+	if strings.Contains(strings.ToLower(got), "content-security-policy") {
+		t.Fatalf("meta csp kept: %s", got)
 	}
-	if strings.Count(got, "http://app.example") != 1 {
-		t.Fatalf("origin once: %s", got)
-	}
-	again := RelaxCSP(got, "http://app.example")
-	if strings.Count(again, "http://app.example") != 1 {
-		t.Fatalf("idempotent csp: %s", again)
-	}
-}
-
-func TestRelaxCSP_DefaultSrcOnly(t *testing.T) {
-	t.Parallel()
-	got := RelaxCSP("default-src 'self'", "http://app.example")
-	if !strings.Contains(got, "script-src 'self' http://app.example") {
-		t.Fatalf("must copy default-src into script-src: %s", got)
-	}
-}
-
-func TestRelaxCSP_NoDirectives(t *testing.T) {
-	t.Parallel()
-	got := RelaxCSP("frame-ancestors 'none'", "http://app.example")
-	if !strings.Contains(got, "script-src http://app.example") {
-		t.Fatalf("add script-src: %s", got)
-	}
-}
-
-func TestRelaxCSP_Empty(t *testing.T) {
-	t.Parallel()
-	if RelaxCSP("", "http://x") != "" {
-		t.Fatal("empty policy")
-	}
-	if RelaxCSP("script-src 'self'", "") != "script-src 'self'" {
-		t.Fatal("empty origin")
+	if !strings.Contains(got, `<meta charset="utf-8">`) || !strings.Contains(got, `<meta name="referrer" content="no-referrer">`) {
+		t.Fatalf("other meta removed: %s", got)
 	}
 }

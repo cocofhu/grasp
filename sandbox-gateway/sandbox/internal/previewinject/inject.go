@@ -4,7 +4,6 @@ package previewinject
 
 import (
 	"html"
-	"net/url"
 	"regexp"
 	"strings"
 )
@@ -31,8 +30,7 @@ var (
 	reBodyClose      = regexp.MustCompile(`(?i)</body>`)
 	reHTMLClose      = regexp.MustCompile(`(?i)</html>`)
 	reSameOriginPick = regexp.MustCompile(`(?i)__grasp/preview-pick\.js`)
-	reScriptSrc      = regexp.MustCompile(`(?i)^script-src\b`)
-	reDefaultSrc     = regexp.MustCompile(`(?i)^default-src\b`)
+	reMetaCSP        = regexp.MustCompile(`(?is)<meta\b[^>]*\bhttp-equiv\s*=\s*["']?content-security-policy\b[^>]*>`)
 )
 
 // ResolveScriptURL returns scriptURL, or ScriptPath when empty.
@@ -50,25 +48,11 @@ func AlreadyHasPickScript(html []byte) bool {
 	return reSameOriginPick.Match(html)
 }
 
-// ScriptOrigin returns scheme://host[:port] for scriptURL, or empty if unusable.
-func ScriptOrigin(scriptURL string) string {
-	u, err := url.Parse(strings.TrimSpace(scriptURL))
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ""
-	}
-	return u.Scheme + "://" + u.Host
-}
-
-// CSPToken is the CSP source to allow for scriptURL: an absolute origin, or
-// 'self' for a same-origin path.
-func CSPToken(scriptURL string) string {
-	if o := ScriptOrigin(scriptURL); o != "" {
-		return o
-	}
-	if strings.HasPrefix(strings.TrimSpace(scriptURL), "/") {
-		return "'self'"
-	}
-	return ""
+// StripMetaCSP removes <meta http-equiv="Content-Security-Policy"> tags.
+// preview-pick.js needs inline styles, a same-origin fetch and frames on the
+// Grasp origin, which is only known at runtime, so no allowlist can be added.
+func StripMetaCSP(doc []byte) []byte {
+	return reMetaCSP.ReplaceAll(doc, nil)
 }
 
 // InjectHTML inserts <script src="scriptURL"> before </body> (else </html>,
@@ -101,62 +85,4 @@ func concat(parts ...[]byte) []byte {
 		out = append(out, p...)
 	}
 	return out
-}
-
-// RelaxCSP adds scriptOrigin to Content-Security-Policy so the injected
-// preview-pick.js is allowed. If script-src is absent but default-src is
-// present, a script-src is added that copies default-src tokens (a bare
-// script-src would replace default-src for scripts).
-//
-// nonce / strict-dynamic pages still block the tag; those stay on the
-// Agent fallback. Empty policy or origin is returned unchanged.
-func RelaxCSP(policy, scriptOrigin string) string {
-	policy = strings.TrimSpace(policy)
-	scriptOrigin = strings.TrimSpace(scriptOrigin)
-	if policy == "" || scriptOrigin == "" {
-		return policy
-	}
-
-	parts := strings.Split(policy, ";")
-	out := make([]string, 0, len(parts)+1)
-	hasScriptSrc := false
-	defaultSrc := ""
-	for _, raw := range parts {
-		d := strings.TrimSpace(raw)
-		if d == "" {
-			continue
-		}
-		switch {
-		case reScriptSrc.MatchString(d):
-			hasScriptSrc = true
-			if !directiveHasToken(d, scriptOrigin) {
-				d = d + " " + scriptOrigin
-			}
-		case reDefaultSrc.MatchString(d):
-			defaultSrc = d
-		}
-		out = append(out, d)
-	}
-	if !hasScriptSrc {
-		if defaultSrc != "" {
-			rest := strings.TrimSpace(reDefaultSrc.ReplaceAllString(defaultSrc, ""))
-			if rest != "" {
-				out = append(out, "script-src "+rest+" "+scriptOrigin)
-			} else {
-				out = append(out, "script-src "+scriptOrigin)
-			}
-		} else {
-			out = append(out, "script-src "+scriptOrigin)
-		}
-	}
-	return strings.Join(out, "; ")
-}
-
-func directiveHasToken(directive, token string) bool {
-	for _, f := range strings.Fields(directive) {
-		if strings.EqualFold(f, token) {
-			return true
-		}
-	}
-	return false
 }
