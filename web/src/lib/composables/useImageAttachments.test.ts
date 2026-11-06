@@ -36,6 +36,21 @@ describe('useImageAttachments', () => {
     expect(attach.attachments.value).toHaveLength(2)
     expect(attach.notice.value?.text).toContain('failed.txt')
     expect(attach.blockSendIfOversized()).toBe(false)
+    // A dynamic draft ref can switch chats before the file finishes reading.
+    attach.clearAttachments()
+    attach.addFiles([new File(['E'], 'previous-chat.txt')])
+    const previousDraft = attach.attachments.value
+    attach.attachments.value = []
+    attach.addFiles([new File(['F'], 'current-chat.txt')])
+    expect(attach.blockSendIfOversized()).toBe(true)
+    readers[4]!.onload?.()
+    expect(attach.attachments.value[0]?.name).toBe('current-chat.txt')
+    expect(previousDraft[0]).toMatchObject({ name: 'previous-chat.txt', data: 'QQ==' })
+    expect(previousDraft[0]?.readState).toBeUndefined()
+    expect(attach.notice.value?.text).toContain('正在读取')
+    readers[5]!.onload?.()
+    expect(attach.blockSendIfOversized()).toBe(false)
+    expect(attach.notice.value).toBeNull()
     vi.unstubAllGlobals()
   })
   it('adds any file type with name and rejects oversized at select', async () => {

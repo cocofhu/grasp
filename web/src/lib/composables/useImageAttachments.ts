@@ -11,6 +11,7 @@ import {
   attachmentDisplayName,
   readFilesAsAttachments,
   attachmentsReading,
+  type ReadAttachment,
 } from '@/lib/shared/attachments'
 
 export type AttachNotice = { kind: 'error' | 'ok'; text: string } | null
@@ -34,23 +35,32 @@ export function useImageAttachments(opts?: { maxBytes?: number; maxMiB?: number;
   function addFiles(files: ArrayLike<File> | null | undefined) {
     if (!files) return
     if (files.length) clearNotice()
+    const targets = new WeakMap<ReadAttachment, ClarifyImage[]>()
     const { rejected } = readFilesAsAttachments(files, {
       maxBytes,
-      onStart: pending => attachments.value.push(pending),
+      onStart: pending => {
+        targets.set(pending, attachments.value)
+        attachments.value.push(pending)
+      },
       onRead: (ready, pending) => {
-        const index = attachments.value.indexOf(pending)
-        // Removing an in-flight file (or clearing/changing chat) must not add it back.
-        if (index >= 0) {
+        const target = targets.get(pending)
+        targets.delete(pending)
+        const index = target?.indexOf(pending) ?? -1
+        // Complete the original draft if the user switched chats in the meantime.
+        // Removed/cleared files stay removed and never appear in another draft.
+        if (target && index >= 0) {
           const { data, mimeType, name, sizeBytes } = ready
-          attachments.value[index] = { data, mimeType, name, sizeBytes }
-          if (opts?.retainUrl) attachments.value[index]!.url = ready.url
-          if (!attachmentsReading(attachments.value) && notice.value?.text === i18n.global.t('common.attachments.reading')) clearNotice()
+          target[index] = { data, mimeType, name, sizeBytes }
+          if (opts?.retainUrl) target[index]!.url = ready.url
+          if (target === attachments.value && !attachmentsReading(target) && notice.value?.text === i18n.global.t('common.attachments.reading')) clearNotice()
         }
       },
       onError: (name, pending) => {
-        const index = attachments.value.indexOf(pending)
-        if (index < 0) return
-        attachments.value.splice(index, 1)
+        const target = targets.get(pending)
+        targets.delete(pending)
+        const index = target?.indexOf(pending) ?? -1
+        if (!target || index < 0) return
+        target.splice(index, 1)
         setNotice('error', i18n.global.t('common.attachments.readFailed', { name }))
       },
     })
