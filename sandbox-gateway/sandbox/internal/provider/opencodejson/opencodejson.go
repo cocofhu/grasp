@@ -67,6 +67,11 @@ func (d *codec) Args(opts provider.OpenOptions, prompt, resumeID string) []strin
 	if d.c.ResumeFlag != "" && resumeID != "" {
 		args = append(args, d.c.ResumeFlag, resumeID)
 	}
+	if d.c.AgentName == provider.OpenCode {
+		// Grasp owns the displayed conversation title. Supplying a native
+		// title avoids OpenCode's separate, unreported title-generation call.
+		args = append(args, "--title", "Grasp")
+	}
 	args = append(args, opts.CustomArgs...)
 	args = append(args, prompt) // positional prompt, last
 	return args

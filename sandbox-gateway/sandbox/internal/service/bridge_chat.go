@@ -248,6 +248,10 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 	}
 	if th.recover.Load() {
 		log.Printf("prompt %s oid=%s: 空闲后续跑一次", b.AgentLogPrefix(), oid)
+		b.turnMu.Lock()
+		th.carriedUsage = res.Usage
+		th.carriedPartial = res.UsagePartial
+		b.turnMu.Unlock()
 		res, err = b.continueAfterStall(p, item, th)
 		stopReason = res.StopReason
 		if finishedBeforeExit(stopReason, err) {
@@ -268,10 +272,12 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 			}
 			b.Broadcast(eventEnvelope(map[string]any{"op": "raw", "type": "error_text", "text": text, "opId": oid}, oid))
 			b.Broadcast(eventEnvelope(map[string]any{
-				"type":       "prompt_done",
-				"sessionId":  p.SessionID(),
-				"stopReason": provider.TimeoutStopReason(th.lastErr),
-				"opId":       oid,
+				"type":         "prompt_done",
+				"sessionId":    p.SessionID(),
+				"stopReason":   provider.TimeoutStopReason(th.lastErr),
+				"usage":        res.Usage,
+				"usagePartial": res.UsagePartial,
+				"opId":         oid,
 			}, oid))
 		}
 		return
@@ -295,13 +301,19 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 		// for transports that return cancel without a stop reason (ACP Call).
 		if stopReason == "" && th.fromUserStop.Load() {
 			b.Broadcast(eventEnvelope(map[string]any{
-				"type":       "prompt_done",
-				"sessionId":  p.SessionID(),
-				"stopReason": "cancelled",
-				"opId":       oid,
+				"type":         "prompt_done",
+				"sessionId":    p.SessionID(),
+				"stopReason":   "cancelled",
+				"usage":        res.Usage,
+				"usagePartial": res.UsagePartial,
+				"opId":         oid,
 			}, oid))
 		}
 		return
+	}
+	if stopReason == "" && len(res.Usage) > 0 {
+		b.Broadcast(eventEnvelope(map[string]any{"type": "error_text", "text": err.Error()}, oid))
+		b.Broadcast(eventEnvelope(map[string]any{"type": "prompt_done", "stopReason": "failed", "usage": res.Usage, "usagePartial": res.UsagePartial}, oid))
 	}
 	low := strings.ToLower(err.Error())
 	if strings.Contains(low, "connection closed") || strings.Contains(low, "broken pipe") ||

@@ -218,6 +218,7 @@ export interface TokenStatsBucket {
   pmTotal?: number
   /** Agent Studio chat-test portion (global stats only). */
   studioTotal?: number
+  soloTotal?: number
   /** Usage from failed/cancelled calls (global stats only). */
   failedTotal?: number
   /** Estimated spend for the bucket (global stats only). */
@@ -284,6 +285,7 @@ export interface GlobalTokenStatsKPI {
   workflowTotal: number
   pmTotal: number
   studioTotal?: number
+  soloTotal?: number
   /** Usage from failed/cancelled calls. */
   failedTotal?: number
   runCount: number
@@ -353,11 +355,19 @@ export interface GlobalTokenStatsFilterOption {
   name: string
 }
 
-export type TokenLedgerSource = 'workflow' | 'pm' | 'studio'
+export type TokenLedgerSource = 'workflow' | 'pm' | 'studio' | 'solo'
+
+export interface TokenAccountingStatus {
+  incomplete: boolean
+  incompleteTurns: number
+  pendingReports: number
+  legacyUnverified?: boolean
+}
 export type TokenLedgerStatus = 'ok' | 'failed' | 'cancelled'
 export type TokenStatsGranularity = 'hour' | 'day' | 'week'
 
 export interface GlobalTokenStats {
+  accounting?: TokenAccountingStatus
   window: TokenStatsWindow | 'custom' | string
   bucketWidth: 'hour' | 'day' | 'week' | string
   timezone: string

@@ -436,7 +436,8 @@ func (c *acpProvider) codexTurn(ctx context.Context, req NodeReq, send func() (*
 		return res, err
 	}
 	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Msg("Codex login renewed by the platform; retrying the turn once")
-	return send()
+	retried, retryErr := send()
+	return sandbox.MergeAttemptUsage(res, retried), retryErr
 }
 
 // codexTurnRefused reports a turn the CLI failed because the login was refused.

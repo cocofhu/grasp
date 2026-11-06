@@ -19,7 +19,7 @@ function drillPath(node: GlobalTokenStatsTreeNode, parents: DrillTarget[] = []):
   let step: DrillTarget | undefined
   if (node.kind === 'workflow' && node.key && !node.key.startsWith('_')) {
     step = { dim: 'workflow', key: node.key, name: node.name }
-  } else if (node.kind === 'pm' || node.kind === 'studio') {
+  } else if (node.kind === 'pm' || node.kind === 'studio' || node.kind === 'solo') {
     step = { dim: 'source', key: node.kind, name: sourceLabel(t, node.kind) }
   } else if (node.kind === 'nodeType' && node.key && node.key !== 'unknown' && !node.key.startsWith('_')) {
     step = { dim: 'nodeType', key: node.key, name: node.name }
@@ -35,7 +35,7 @@ const rows = computed(() => positiveNodes(props.tree).map((node) => {
   const drill = drillPath(node)
   return {
     ...node,
-    name: node.kind === 'pm' || node.kind === 'studio' ? sourceLabel(t, node.kind) : node.name,
+    name: node.kind === 'pm' || node.kind === 'studio' || node.kind === 'solo' ? sourceLabel(t, node.kind) : node.name,
     drill,
     children: positiveNodes(node.children || []).map((child) => ({ ...child, drill: drillPath(child, drill) })),
   }

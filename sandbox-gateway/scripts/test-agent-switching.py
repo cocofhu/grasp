@@ -283,14 +283,27 @@ class E2E:
             if index and not history_tool_completed(message):
                 raise AssertionError('native MCP history result did not pass through the runtime event parser')
             case = {'from': self.plan[index-1]['backend'] if index else None, 'to': step['backend'], 'kind': step['kind'], 'effort': step.get('effort'), 'model': step.get('model'), 'mode': next(tool['mode'] for tool in self.tools if tool['id'] == step['backend']), 'sessionId': session_id, 'sandboxId': sandbox_id, 'turn': step['id'], 'status': 'passed', 'execution': execution, 'usage': message.get('usage'), 'durationMs': message.get('durationMs')}
+            self.verify_native_usage(step, case, self.request('/__mock/report', base=self.model))
             self.cases.append(case)
             print(json.dumps(case), flush=True)
         pairs = {(case['from'], case['to']) for case in self.cases if case['from'] and case['kind'] == 'switch'}
         if pairs != set(itertools.permutations(names, 2)):
             raise AssertionError('directed switch coverage is incomplete')
+        # Reconcile actual native/fixture turn reports with both public token
+        # summaries. Switching must neither lose consumption nor ledger it twice.
+        parts = ('inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens')
+        expected = sum(sum((case.get('usage') or {}).get(part, 0) for part in parts) for case in self.cases)
+        platform = self.request('/api/stats/platform-status?timezone=UTC')
+        global_stats = self.request('/api/stats/token?window=all&timezone=UTC')
+        if platform['cumulativeTokens'] != expected or global_stats['kpi']['total'] != expected:
+            raise AssertionError(f'token accounting mismatch: turns={expected}, platform={platform}, global={global_stats["kpi"]}')
+        unreported = sum(case.get('usage') is None for case in self.cases)
+        if platform['accounting']['incompleteTurns'] < unreported or platform['accounting']['pendingReports']:
+            raise AssertionError(f'missing accounting coverage: unreported={unreported}, accounting={platform["accounting"]}')
         report = self.request('/__mock/report', base=self.model)
         for step in self.plan:
             observed = [request for request in report['requests'] if request.get('run') == self.run and request.get('turn') == step['id']]
+            self.verify_native_usage(step, next(case for case in self.cases if case['turn'] == step['id']), report)
             if not any(request.get('completed') for request in observed):
                 raise AssertionError('missing real native model request completion evidence for '+step['id'])
             model = step.get('model') or next(tool['model'] for tool in self.tools if tool['id'] == step['backend'])
@@ -338,6 +351,17 @@ class E2E:
                             raise
                     else:
                         raise AssertionError('unsupported reasoning strength was silently accepted for '+tool['id']+'/'+effort)
+
+    def verify_native_usage(self, step, case, report):
+        tool = next(tool for tool in self.tools if tool['id'] == step['backend'])
+        if tool['mode'] != 'native-cli':
+            return
+        parts = ('inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens')
+        observed = [request for request in report['requests'] if request.get('run') == self.run and request.get('turn') == step['id']]
+        upstream = {part: sum(request.get('usage', {}).get(part, 0) for request in observed) for part in parts}
+        recorded = {part: (case.get('usage') or {}).get(part, 0) for part in parts}
+        if recorded != upstream:
+            raise AssertionError(f'native token accounting mismatch for {step["backend"]}/{step["id"]}: upstream={upstream}, recorded={recorded}')
 
     def save_report(self, error=None):
         report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}

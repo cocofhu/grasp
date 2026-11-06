@@ -147,7 +147,7 @@ func (c *ACPClient) observeQueueState(raw []byte) {
 }
 
 func newTurnOpID() string {
-	return "g-" + uuid.NewString()[:12]
+	return "g-" + uuid.NewString()
 }
 
 type turnFrame struct {
@@ -257,7 +257,7 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 					result.appendErrorText("沙箱连接已断开，本轮未完成")
 					return result, nil
 				}
-				return nil, fmt.Errorf("%w during chat", ErrConnClosed)
+				return result, fmt.Errorf("%w during chat", ErrConnClosed)
 			}
 		}
 		f := parseTurnFrame(raw)
@@ -313,7 +313,7 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 			if hasContent(result) {
 				return result, nil
 			}
-			return nil, fmt.Errorf("acp error: %s", errMsg)
+			return result, fmt.Errorf("acp error: %s", errMsg)
 		}
 	}
 }
@@ -338,7 +338,7 @@ func (c *ACPClient) finishTurn(result *ChatResult) (*ChatResult, error) {
 			result.appendErrorText("沙箱回合超时，已被终止")
 		}
 		if !hasContent(result) {
-			return nil, fmt.Errorf("%w: %s", ErrSandboxTurnTimeout, result.ErrorText)
+			return result, fmt.Errorf("%w: %s", ErrSandboxTurnTimeout, result.ErrorText)
 		}
 	}
 	return result, nil
@@ -348,7 +348,12 @@ func (c *ACPClient) finishTurn(result *ChatResult) (*ChatResult, error) {
 // marks the result interrupted. An unacknowledged cancel flags the client as
 // desynced so callers stop assuming the sandbox is idle.
 func (c *ACPClient) abortTurn(result *ChatResult, reason string, cause error) (*ChatResult, error) {
-	if !c.CancelTurnAndWait(result.OpID, cancelAckWait) {
+	if !c.cancelTurnAndWait(result.OpID, cancelAckWait, func(raw json.RawMessage) {
+		f := parseTurnFrame(raw)
+		if f.Op == "event" && f.OpID == result.OpID {
+			c.dispatchEventData(raw, result)
+		}
+	}) {
 		c.lg.Warn().Str("op_id", result.OpID).Msg("acp cancel not acknowledged; sandbox marked desynced")
 		c.setDesynced()
 	}
@@ -357,7 +362,7 @@ func (c *ACPClient) abortTurn(result *ChatResult, reason string, cause error) (*
 	if hasContent(result) {
 		return result, nil
 	}
-	return nil, cause
+	return result, cause
 }
 
 // CancelTurnAndWait asks the bridge to cancel turn opID (empty = whatever is
@@ -367,6 +372,10 @@ func (c *ACPClient) abortTurn(result *ChatResult, reason string, cause error) (*
 // It consumes the client's event stream, so it must not run concurrently with
 // a chat on the same client.
 func (c *ACPClient) CancelTurnAndWait(opID string, wait time.Duration) bool {
+	return c.cancelTurnAndWait(opID, wait, nil)
+}
+
+func (c *ACPClient) cancelTurnAndWait(opID string, wait time.Duration, onFrame func(json.RawMessage)) bool {
 	if !c.IsConnected() {
 		return false
 	}
@@ -384,6 +393,9 @@ func (c *ACPClient) CancelTurnAndWait(opID string, wait time.Duration) bool {
 	for {
 		select {
 		case raw := <-c.eventCh:
+			if onFrame != nil {
+				onFrame(raw)
+			}
 			if c.cancelConfirmed(parseTurnFrame(raw), opID) {
 				return true
 			}

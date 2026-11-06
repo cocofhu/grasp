@@ -72,7 +72,7 @@ const { user } = useAuth()
 const isAdmin = computed(() => !!user.value?.isAdmin)
 
 const WINDOWS: TokenStatsWindow[] = ['24h', '7d', '30d', '90d', 'all']
-const SOURCES: TokenSourceFilter[] = ['all', 'workflow', 'pm', 'studio']
+const SOURCES: TokenSourceFilter[] = ['all', 'workflow', 'pm', 'studio', 'solo']
 
 const filters = ref<TokenStatsFilters>(defaultTokenStatsFilters())
 const lineMode = ref<TrendMode>('total')
@@ -209,6 +209,7 @@ const pieSlices = computed(() => {
         { key: 'workflow', name: 'workflow', total: d.kpi.workflowTotal },
         { key: 'pm', name: 'pm', total: d.kpi.pmTotal },
         { key: 'studio', name: 'studio', total: d.kpi.studioTotal || 0 },
+        { key: 'solo', name: 'solo', total: d.kpi.soloTotal || 0 },
       ]
   return {
     source: namedSlices(sources, (k) => sourceLabel(t, k), TOKEN_LEDGER_SOURCE_COLORS, 'source'),
@@ -660,7 +661,7 @@ function fxOptions(key: FxKey) {
   return src.map((o) => (o.value ? o : { value: '', label: t('pages.tokenAnalytics.fxAll') }))
 }
 function sourceName(s: TokenSourceFilter) {
-  return s === 'all' ? t('pages.tokenAnalytics.fxAllSources') : s === 'workflow' ? t('pages.tokenAnalytics.sourceWorkflow') : s === 'pm' ? t('pages.tokenAnalytics.sourcePm') : t('pages.tokenAnalytics.sourceStudio')
+  return s === 'all' ? t('pages.tokenAnalytics.fxAllSources') : sourceLabel(t, s)
 }
 const fxChips = computed(() => {
   const out: { key: string; label: string; clear: () => void }[] = []
@@ -702,6 +703,10 @@ const fxCount = computed(() => fxChips.value.length)
             </AppButton>
           </div>
         </header>
+
+        <p v-if="data?.accounting?.incomplete" class="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-txt2" role="status" data-testid="token-accounting-incomplete">
+          {{ t('pages.tokenAnalytics.accountingIncomplete') }}
+        </p>
 
         <section class="usage-toolbar" :aria-label="t('pages.tokenAnalytics.analysisRange')" data-testid="token-analytics-controls">
           <div class="usage-toolbar-row">

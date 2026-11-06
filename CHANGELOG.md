@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复 Token 计量与汇总：状态栏、工作区和统计页统一纳入 Solo / Studio；校正缓存与恢复会话的重复计数，保留重试和中断时已报告的消耗，并通过持久化重放避免数据库短暂故障造成丢失或重复。未完整上报、待入库和无法核验的历史记录会明确提示；执行中计数包含启动中与运行中的 Solo 会话。
+
 - Mobile workflow conversations use the existing chat interface directly, including deep links and reloads, and keep the chat mounted when resizing. The old pending-card page and return-to-list navigation are removed. Approval sharing remains available through the conversation menu and preview toolbar.
 
 - 移动端表单控件在窄屏保持至少 16px，避免 iOS Safari 聚焦输入框时触发整页自动放大；新增 Chromium/WebKit 的全路由缩放与溢出回归验证。

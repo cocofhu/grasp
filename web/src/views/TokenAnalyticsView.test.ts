@@ -100,6 +100,19 @@ const sampleData = {
 }
 
 describe('TokenAnalyticsView', () => {
+  it('shows incomplete usage on an empty result and allows filtering Solo', async () => {
+    vi.mocked(api.getGlobalTokenStats).mockResolvedValueOnce({
+      ...sampleData, empty: true,
+      accounting: { incomplete: true, incompleteTurns: 1, pendingReports: 0 },
+    })
+    const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="token-accounting-incomplete"]').text()).toContain('用量缺失')
+    await wrapper.get('[data-testid="token-analytics-source-solo"]').trigger('click')
+    await flushPromises()
+    expect(vi.mocked(api.getGlobalTokenStats).mock.lastCall?.[0]).toMatchObject({ source: 'solo' })
+    wrapper.unmount()
+  })
   beforeEach(() => {
     pushMock.mockClear()
     vi.mocked(api.getGlobalTokenStats).mockResolvedValue(sampleData)

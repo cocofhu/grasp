@@ -58,6 +58,7 @@
       "listAria": "本次运行产物列表"
     },
     "statusMetrics": {
+      "accountingIncomplete": "部分回合的用量缺失、尚未同步或来自未核验的历史记录，当前仅显示已记录的 Token。",
       "aria": "平台状态指标",
       "tokens": "累计 Token",
       "today": "今日 Token",

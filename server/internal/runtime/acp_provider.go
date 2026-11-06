@@ -186,7 +186,9 @@ func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, re
 	c.setInflightPrompt(req, prompt, len(images), started)
 	defer c.clearInflightPrompt(req)
 	res, err := c.codexTurn(ctx, req, func() (*sandbox.ChatResult, error) {
-		return c.runChat(ctx, acp, req, prompt, images)
+		res, err := c.runChat(ctx, acp, req, prompt, images)
+		c.recordChatUsage(req, res, err)
+		return res, err
 	})
 	c.budgets.add(reactKey(req), time.Since(started))
 	if berr := budgetErr(ctx); berr != nil && err != nil && errors.Is(err, context.DeadlineExceeded) {
@@ -200,6 +202,16 @@ func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, re
 		c.recordRecentTurn(req, transcriptTurnEvents(res))
 	}
 	return res, err
+}
+
+func (c *acpProvider) recordChatUsage(req NodeReq, res *sandbox.ChatResult, err error) {
+	if c.opts.RecordUsage == nil || res == nil || res.OpID == "" {
+		return
+	}
+	c.opts.RecordUsage(req, res, err)
+	if res.Usage != nil {
+		res.Usage.LedgerRecorded = true
+	}
 }
 
 func (c *acpProvider) runChat(ctx context.Context, acp *sandbox.ACPClient, req NodeReq, prompt string, images []models.PromptImage) (*sandbox.ChatResult, error) {

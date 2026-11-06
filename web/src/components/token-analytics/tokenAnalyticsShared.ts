@@ -24,6 +24,7 @@ export const TOKEN_LEDGER_SOURCE_COLORS: Record<string, string> = {
   workflow: '#6d5cff',
   pm: '#8b9cf7',
   studio: '#22a6b3',
+  solo: '#f59e0b',
 }
 
 export const TOKEN_LEDGER_STATUS_COLORS: Record<string, string> = {
@@ -38,7 +39,7 @@ export const TOKEN_LEDGER_PHASE_COLORS: Record<string, string> = {
   chat: '#22a6b3',
 }
 
-export type TokenSourceFilter = 'all' | 'workflow' | 'pm' | 'studio'
+export type TokenSourceFilter = 'all' | 'workflow' | 'pm' | 'studio' | 'solo'
 export type TokenStatusFilter = '' | 'ok' | 'failed' | 'cancelled'
 export type TokenPhaseFilter = '' | 'production' | 'interactive' | 'chat'
 export type TokenGranularityFilter = '' | 'hour' | 'day' | 'week'

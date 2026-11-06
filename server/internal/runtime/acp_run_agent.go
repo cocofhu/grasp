@@ -175,6 +175,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 
 	if reattach {
 		chatRes, err = c.reattachTurn(chatCtx, sb, acp)
+		c.recordChatUsage(req, chatRes, err)
 	}
 	if !reattach || (err == nil && chatRes == nil) {
 		chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded), req.PromptImages)

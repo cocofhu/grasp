@@ -92,6 +92,7 @@ func parseGeminiLine(line []byte) oneshot.ParseResult {
 			res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: text})
 		}
 		if ev.Stats != nil {
+			res.UsageIsTotal = true
 			res.Usage = make(map[string]provider.TokenUsage, len(ev.Stats.Models)+1)
 			for model, usage := range ev.Stats.Models {
 				res.Usage[model] = usage.tokens()

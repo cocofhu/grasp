@@ -72,7 +72,8 @@ type TokenUsage struct {
 
 // TurnResult summarizes one completed prompt turn.
 type TurnResult struct {
-	StopReason string
+	StopReason   string
+	UsagePartial bool
 	// Usage is keyed by modelID; nil when the transport does not report usage.
 	Usage map[string]TokenUsage
 }

@@ -123,16 +123,16 @@ func (s *WorkspaceService) VariablesForWorkflow(workflowID string) []models.Work
 	return vars
 }
 
-// WorkspaceTokenBreakdown is the workspace Token card summary: workflow
-// history + PM usage. Any nil field means that source has never reported
-// usage (UI "—"); a non-nil 0 means reported and totals to zero.
+// WorkspaceTokenBreakdown summarizes all ledger usage with workflow and PM
+// subtotals. A nil field means no usage was reported for that scope (UI "—");
+// a non-nil 0 means reported and totals to zero.
 type WorkspaceTokenBreakdown struct {
-	Total    *int64 // workflow + pm (nil when neither source reported)
+	Total    *int64 // All sources (nil when no source reported).
 	Workflow *int64
 	PM       *int64
 }
 
-// TokenBreakdown sums the workflow and PM ledger sources.
+// TokenBreakdown sums every ledger source, matching GlobalTokenStats.
 func (s *WorkspaceService) TokenBreakdown() WorkspaceTokenBreakdown {
 	type row struct {
 		Source string
@@ -140,16 +140,16 @@ func (s *WorkspaceService) TokenBreakdown() WorkspaceTokenBreakdown {
 	}
 	var rows []row
 	s.db.Model(&models.TokenUsageEvent{}).
-		Select("source, SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS total").
-		Where("source IN ?", []string{models.TokenLedgerSourceWorkflow, models.TokenLedgerSourcePM}).
+		Select("source, SUM(" + ledgerTotalSQL + ") AS total").
 		Group("source").Scan(&rows)
 	var out WorkspaceTokenBreakdown
 	for _, r := range rows {
 		v := r.Total
-		if r.Source == models.TokenLedgerSourcePM {
-			out.PM = &v
-		} else {
+		switch r.Source {
+		case models.TokenLedgerSourceWorkflow:
 			out.Workflow = &v
+		case models.TokenLedgerSourcePM:
+			out.PM = &v
 		}
 		if out.Total == nil {
 			out.Total = new(int64)

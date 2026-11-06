@@ -538,16 +538,17 @@ func TestDSHProcess(t *testing.T) {
 				"tokenUsage": map[string]any{
 					"ver": 2,
 					"seq": usageCalls * 10,
-					"val": map[string]any{"totals": map[string]any{
+					"val": map[string]any{"last": map[string]any{"turn": usageCalls}, "totals": map[string]any{
 						"uncachedInputTokens": usageCalls * 100,
 						"outputTokens":        usageCalls * 20,
 						"cacheReadTokens":     usageCalls * 30,
 						"cacheWriteTokens":    usageCalls * 5,
 					}},
 				},
-				"title":       map[string]any{"ver": 1, "seq": usageCalls * 10, "val": "fixture"},
-				"sandboxMode": map[string]any{"ver": 1, "seq": usageCalls * 10, "val": "workspace-write"},
-				"todos":       map[string]any{"ver": 2, "seq": usageCalls * 10, "val": nil},
+				"turnBoundary": map[string]any{"ver": 2, "seq": usageCalls * 10, "val": map[string]any{"openTurnStartSeq": nil, "lastTurn": usageCalls}},
+				"title":        map[string]any{"ver": 1, "seq": usageCalls * 10, "val": "fixture"},
+				"sandboxMode":  map[string]any{"ver": 1, "seq": usageCalls * 10, "val": "workspace-write"},
+				"todos":        map[string]any{"ver": 2, "seq": usageCalls * 10, "val": nil},
 			}},
 		}
 		encoded, err := json.Marshal(record)

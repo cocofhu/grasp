@@ -1,8 +1,6 @@
 package services
 
 import (
-	"sync"
-
 	"github.com/cocofhu/grasp/internal/models"
 
 	"gorm.io/gorm"
@@ -13,13 +11,6 @@ import (
 type DashboardService struct {
 	db        *gorm.DB
 	workspace *WorkspaceService
-
-	// Process-local cache for today token totals (platform-status hot path).
-	statusMu       sync.Mutex
-	statusCache    map[string]platformStatusCacheEntry
-	statusInflight map[string]*platformStatusCall
-	// loadPlatformUsageHook is optional; tests inject to observe singleflight.
-	loadPlatformUsageHook func()
 }
 
 // NewDashboardService builds the service. workspace may be nil (Token fields stay null).
