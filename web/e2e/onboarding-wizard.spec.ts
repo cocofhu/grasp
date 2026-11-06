@@ -147,7 +147,7 @@ async function mockOnboardingApi(page: Page, empty = false) {
  return state
 }
 
-test.use({ viewport: { width: 1280, height: 800 }, baseURL: 'http://127.0.0.1:5174' })
+test.use({ viewport: { width: 1280, height: 800 } })
 const next = (page: Page) => page.getByTestId('onboarding-next').click()
 const step = (page: Page, id: string) => expect(page.getByTestId(`onboarding-rail-${id}`)).toHaveAttribute('data-active', '1')
 async function cancelToolSetup(page: Page) {

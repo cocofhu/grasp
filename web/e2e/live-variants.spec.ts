@@ -1,7 +1,6 @@
 import { expect, test, type FrameLocator, type Page } from '@playwright/test'
 import { LIVE_CAPS, LIVE_ORIGINAL } from './live-variants-mock'
 
-const origin = 'http://127.0.0.1:5174'
 const overlay = (page: Page) => page.locator('grasp-live-overlay')
 const drawer = (page: Page) => page.frameLocator('grasp-preview-pick [data-role="drawer"] iframe')
 const bar = (page: Page, role: string) => page.locator(`grasp-preview-pick [data-role="${role}"]`)
@@ -14,13 +13,13 @@ async function pickForDesign(page: Page) {
 }
 
 async function state(page: Page, key: string) {
-  return (await page.request.get(`${origin}/__e2e/live/state?key=${key}`)).json()
+  return (await page.request.get(`/__e2e/live/state?key=${key}`)).json()
 }
 
 async function open(page: Page, key: string) {
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await page.request.post(`${origin}/__e2e/live/reset?key=${key}`)
-  await page.goto(`${origin}/live-variants.html?key=${key}`)
+  await page.request.post(`/__e2e/live/reset?key=${key}`)
+  await page.goto(`/live-variants.html?key=${key}`)
   await expect(drawer(page).getByTestId('live-drawer')).toBeVisible()
   // Pick only gets its Live tooltip once the overlay is loaded and usable.
   await expect(bar(page, 'toggle')).toHaveAttribute('title', /.+/)
@@ -387,7 +386,7 @@ test.describe('Live entry on Grasp direct previews', () => {
     test(`${nodeType} Agent with set_preview supports pick, annotate, generate and Chat adopt`, async ({ page }, testInfo) => {
       const key = `entry-${nodeType}`
       await page.setViewportSize({ width: 1440, height: 1000 })
-      await page.request.post(`${origin}/__e2e/live/reset?key=${key}&caps=${nodeType}`)
+      await page.request.post(`/__e2e/live/reset?key=${key}&caps=${nodeType}`)
       if (nodeType === 'review') {
         // Deliver the ready socket update before the older generate response.
         await page.route('**/public/approvals/reply', async (route) => {
@@ -400,7 +399,7 @@ test.describe('Live entry on Grasp direct previews', () => {
       const configured = await state(page, key)
       expect(configured.node).toEqual({ type: 'agent', caps: LIVE_CAPS[nodeType] })
       const capability = page.waitForResponse((response) => response.url().endsWith('/public/approvals/live-sessions'))
-      await page.goto(`${origin}/live-variants.html?key=${key}`)
+      await page.goto(`/live-variants.html?key=${key}`)
       await expect(drawer(page).getByTestId('embed-chat-root')).toBeVisible({ timeout: 15_000 })
       expect(await (await capability).json()).toMatchObject({ status: 'active', enabled: true, sessions: [] })
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
@@ -464,9 +463,9 @@ test.describe('Live entry on Grasp direct previews', () => {
   {
     test('an Agent without set_preview hides Live while retaining Chat', async ({ page }) => {
       const key = 'entry-disabled-no-preview'
-      await page.request.post(`${origin}/__e2e/live/reset?key=${key}&caps=no-preview`)
+      await page.request.post(`/__e2e/live/reset?key=${key}&caps=no-preview`)
       const capability = page.waitForResponse((response) => response.url().endsWith('/public/approvals/live-sessions'))
-      await page.goto(`${origin}/live-variants.html?key=${key}`)
+      await page.goto(`/live-variants.html?key=${key}`)
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
       expect(await (await capability).json()).toMatchObject({ enabled: false })
       await expect(bar(page, 'eye')).toBeHidden()
@@ -480,8 +479,8 @@ test.describe('production Chat composer page candidates', () => {
   async function entry(page: Page, key: string, options = '') {
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.evaluate(() => localStorage.removeItem('__grasp_embed')).catch(() => {})
-    await page.request.post(`${origin}/__e2e/live/reset?key=${key}${options}`)
-    await page.goto(`${origin}/live-variants.html?key=${key}&tab=layout`)
+    await page.request.post(`/__e2e/live/reset?key=${key}${options}`)
+    await page.goto(`/live-variants.html?key=${key}&tab=layout`)
     await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
   }
 
@@ -548,7 +547,7 @@ test.describe('production Chat composer page candidates', () => {
     const body = (await request).postDataJSON()
     expect(body).toMatchObject({
       text: '保留订阅交互，生成三个整页设计候选供我挑选',
-      live: { op: 'generate', scope: 'page', count: 3, url: `${origin}/live-variants.html?key=${key}&tab=layout` },
+      live: { op: 'generate', scope: 'page', count: 3, url: page.url() },
       images: [{ name: 'reference.png', mimeType: 'image/png' }],
       annotations: [{ selector: 'section#newsletter h2' }],
     })

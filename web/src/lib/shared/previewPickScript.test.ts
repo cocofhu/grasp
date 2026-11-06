@@ -316,7 +316,7 @@ describe('preview-pick.js chat drawer', () => {
       ticket: 'tk1',
     })
     await settle()
-    expect(p.fetched).toEqual(['/__grasp/embed-origin?ticket=tk1&node=ap1'])
+    expect(p.fetched).toEqual(['http://10.0.0.5:5173/__grasp/embed-origin?ticket=tk1&node=ap1'])
     expect(p.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=dark`)
     expect(p.chatButton().hidden).toBe(false)
     expect(p.drawerOpen()).toBe(true)
@@ -335,7 +335,7 @@ describe('preview-pick.js chat drawer', () => {
     const next = openPage(body, { pending: pending || '', embedReply: reply })
     await settle()
     expect(next.win.location.hash).toBe('')
-    expect(next.fetched).toEqual(['/__grasp/embed-origin?ticket=tk1&node=ap1'])
+    expect(next.fetched).toEqual(['http://10.0.0.5:5173/__grasp/embed-origin?ticket=tk1&node=ap1'])
     expect(next.frame()?.getAttribute('src')).toBe(`${GRASP}/embed/runs/run-1/nodes/ap1/chat#ticket=tk1&theme=dark`)
     expect(next.drawerOpen()).toBe(true)
   })

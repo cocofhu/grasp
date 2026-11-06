@@ -220,7 +220,7 @@ test.describe('Agent Studio 窄屏数据 Tab', () => {
 
 test('768px Settings keeps Agent configuration fields usable beside the application directory', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 960 })
-  await page.goto('http://127.0.0.1:5174/workspace.html?view=/agents&theme=light')
+  await page.goto('/workspace.html?view=/agents&theme=light')
   await expect(page.getByTestId('app-desktop-sidebar')).toHaveCSS('width', '360px')
   const tabs = page.locator('[data-test="studio-tabs"]')
   await page.getByTestId('agent-switcher-trigger').click()

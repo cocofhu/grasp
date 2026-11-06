@@ -3,10 +3,13 @@
 package previewinject
 
 import (
-	"html"
-	"net/url"
-	"regexp"
+	"bytes"
+	stdhtml "html"
+	"io"
 	"strings"
+
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 // ListenPort is the in-sandbox forwarder port. It sits below the preview
@@ -27,14 +30,6 @@ const PageControlPath = "/__grasp/page-control.js"
 // from its own directory once the drawer reports Live is on.
 const LiveOverlayPath = "/__grasp/live-overlay.js"
 
-var (
-	reBodyClose      = regexp.MustCompile(`(?i)</body>`)
-	reHTMLClose      = regexp.MustCompile(`(?i)</html>`)
-	reSameOriginPick = regexp.MustCompile(`(?i)__grasp/preview-pick\.js`)
-	reScriptSrc      = regexp.MustCompile(`(?i)^script-src\b`)
-	reDefaultSrc     = regexp.MustCompile(`(?i)^default-src\b`)
-)
-
 // ResolveScriptURL returns scriptURL, or ScriptPath when empty.
 func ResolveScriptURL(scriptURL string) string {
 	if s := strings.TrimSpace(scriptURL); s != "" {
@@ -43,120 +38,128 @@ func ResolveScriptURL(scriptURL string) string {
 	return ScriptPath
 }
 
-// AlreadyHasPickScript reports whether html already has the same-origin
-// inject path. A leftover Agent tag like http://localhost:8080/preview-pick.js
-// does not count — that URL is unreachable from the reviewer's browser.
-func AlreadyHasPickScript(html []byte) bool {
-	return reSameOriginPick.Match(html)
+type htmlTag struct {
+	start, end int
+	token      html.Token
 }
 
-// ScriptOrigin returns scheme://host[:port] for scriptURL, or empty if unusable.
-func ScriptOrigin(scriptURL string) string {
-	u, err := url.Parse(strings.TrimSpace(scriptURL))
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ""
-	}
-	return u.Scheme + "://" + u.Host
+type previewHTML struct {
+	insertAt int
+	script   *htmlTag
+	policies []htmlTag
 }
 
-// CSPToken is the CSP source to allow for scriptURL: an absolute origin, or
-// 'self' for a same-origin path.
-func CSPToken(scriptURL string) string {
-	if o := ScriptOrigin(scriptURL); o != "" {
-		return o
+func scanHTML(doc []byte, origin string) previewHTML {
+	page := previewHTML{insertAt: len(doc)}
+	tokens := html.NewTokenizer(bytes.NewReader(doc))
+	offset, templates := 0, 0
+	for kind := tokens.Next(); kind != html.ErrorToken; kind = tokens.Next() {
+		start := offset
+		offset += len(tokens.Raw())
+		switch kind {
+		case html.StartTagToken, html.SelfClosingTagToken:
+			token := tokens.Token()
+			if token.DataAtom == atom.Template {
+				templates++
+			}
+			if templates > 0 {
+				continue
+			}
+			switch token.DataAtom {
+			case atom.Meta:
+				equiv := attribute(token, "http-equiv")
+				if equiv >= 0 && strings.EqualFold(token.Attr[equiv].Val, cspHeader) && attribute(token, "content") >= 0 {
+					page.policies = append(page.policies, htmlTag{start, offset, token})
+				}
+			case atom.Script:
+				src := attribute(token, "src")
+				if page.script == nil && src >= 0 {
+					path := strings.TrimSpace(token.Attr[src].Val)
+					path, _, _ = strings.Cut(path, "?")
+					path, _, _ = strings.Cut(path, "#")
+					if path == ScriptPath || path == origin+ScriptPath {
+						page.script = &htmlTag{start, offset, token}
+					}
+				}
+			}
+		case html.EndTagToken:
+			switch tokens.Token().DataAtom {
+			case atom.Template:
+				if templates > 0 {
+					templates--
+				}
+			case atom.Body, atom.Html:
+				if templates == 0 && page.insertAt == len(doc) {
+					page.insertAt = start
+				}
+			}
+		}
 	}
-	if strings.HasPrefix(strings.TrimSpace(scriptURL), "/") {
-		return "'self'"
+	// An incomplete tag is still in the source. Keep the insertion ahead of
+	// those bytes so they cannot absorb the injected script.
+	if tokens.Err() == io.EOF && page.insertAt == len(doc) {
+		page.insertAt = offset
 	}
-	return ""
+	return page
 }
 
-// InjectHTML inserts <script src="scriptURL"> before </body> (else </html>,
-// else append). Empty scriptURL becomes ScriptPath. It is a no-op only when
-// the document already has the same-origin ScriptPath tag. A leftover
-// localhost Grasp URL does not count. Paths and <base> are left untouched.
+func attribute(token html.Token, key string) int {
+	for i, attr := range token.Attr {
+		if attr.Key == key {
+			return i
+		}
+	}
+	return -1
+}
+
+func (p previewHTML) rewrite(doc []byte, scriptURL string, csp previewCSP) []byte {
+	var out bytes.Buffer
+	at := 0
+	write := func(start, end int, text string) {
+		out.Write(doc[at:start])
+		out.WriteString(text)
+		at = end
+	}
+	writeScript := func() {
+		if p.script == nil {
+			tag := `<script src="` + stdhtml.EscapeString(scriptURL) + `"`
+			if csp.nonce != "" {
+				tag += ` nonce="` + csp.nonce + `"`
+			}
+			write(p.insertAt, p.insertAt, tag+`></script>`)
+		} else if csp.nonce != "" && attribute(p.script.token, "nonce") < 0 {
+			token := p.script.token
+			token.Attr = append(token.Attr, html.Attribute{Key: "nonce", Val: csp.nonce})
+			write(p.script.start, p.script.end, token.String())
+		}
+	}
+	scriptAt := p.insertAt
+	if p.script != nil {
+		scriptAt = p.script.start
+	}
+	scriptWritten := false
+	for _, meta := range p.policies {
+		if !scriptWritten && scriptAt < meta.start {
+			writeScript()
+			scriptWritten = true
+		}
+		token := meta.token
+		content := attribute(token, "content")
+		old := token.Attr[content].Val
+		if policy := csp.rewritePolicy(old); policy != old {
+			token.Attr[content].Val = policy
+			write(meta.start, meta.end, token.String())
+		}
+	}
+	if !scriptWritten {
+		writeScript()
+	}
+	out.Write(doc[at:])
+	return out.Bytes()
+}
+
+// InjectHTML inserts preview-pick before </body>, </html>, or the end of the
+// document. An actual same-origin pick script is kept if the app supplied it.
 func InjectHTML(doc []byte, scriptURL string) []byte {
-	scriptURL = ResolveScriptURL(scriptURL)
-	if AlreadyHasPickScript(doc) {
-		return doc
-	}
-	tag := []byte(`<script src="` + html.EscapeString(scriptURL) + `"></script>`)
-	if loc := reBodyClose.FindIndex(doc); loc != nil {
-		return concat(doc[:loc[0]], tag, doc[loc[0]:])
-	}
-	if loc := reHTMLClose.FindIndex(doc); loc != nil {
-		return concat(doc[:loc[0]], tag, doc[loc[0]:])
-	}
-	out := make([]byte, 0, len(doc)+len(tag))
-	return append(append(out, doc...), tag...)
-}
-
-func concat(parts ...[]byte) []byte {
-	n := 0
-	for _, p := range parts {
-		n += len(p)
-	}
-	out := make([]byte, 0, n)
-	for _, p := range parts {
-		out = append(out, p...)
-	}
-	return out
-}
-
-// RelaxCSP adds scriptOrigin to Content-Security-Policy so the injected
-// preview-pick.js is allowed. If script-src is absent but default-src is
-// present, a script-src is added that copies default-src tokens (a bare
-// script-src would replace default-src for scripts).
-//
-// nonce / strict-dynamic pages still block the tag; those stay on the
-// Agent fallback. Empty policy or origin is returned unchanged.
-func RelaxCSP(policy, scriptOrigin string) string {
-	policy = strings.TrimSpace(policy)
-	scriptOrigin = strings.TrimSpace(scriptOrigin)
-	if policy == "" || scriptOrigin == "" {
-		return policy
-	}
-
-	parts := strings.Split(policy, ";")
-	out := make([]string, 0, len(parts)+1)
-	hasScriptSrc := false
-	defaultSrc := ""
-	for _, raw := range parts {
-		d := strings.TrimSpace(raw)
-		if d == "" {
-			continue
-		}
-		switch {
-		case reScriptSrc.MatchString(d):
-			hasScriptSrc = true
-			if !directiveHasToken(d, scriptOrigin) {
-				d = d + " " + scriptOrigin
-			}
-		case reDefaultSrc.MatchString(d):
-			defaultSrc = d
-		}
-		out = append(out, d)
-	}
-	if !hasScriptSrc {
-		if defaultSrc != "" {
-			rest := strings.TrimSpace(reDefaultSrc.ReplaceAllString(defaultSrc, ""))
-			if rest != "" {
-				out = append(out, "script-src "+rest+" "+scriptOrigin)
-			} else {
-				out = append(out, "script-src "+scriptOrigin)
-			}
-		} else {
-			out = append(out, "script-src "+scriptOrigin)
-		}
-	}
-	return strings.Join(out, "; ")
-}
-
-func directiveHasToken(directive, token string) bool {
-	for _, f := range strings.Fields(directive) {
-		if strings.EqualFold(f, token) {
-			return true
-		}
-	}
-	return false
+	return scanHTML(doc, "").rewrite(doc, ResolveScriptURL(scriptURL), previewCSP{})
 }
