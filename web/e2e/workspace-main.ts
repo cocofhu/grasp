@@ -11,6 +11,7 @@ import { createAppRouter } from '../src/router'
 import App from '../src/App.vue'
 
 const params = new URLSearchParams(window.location.search)
+const view = params.get('view') || '/workflows'
 const assistantMode = params.get('assistant') || 'ready'
 const settingsItems = [
   ['max_concurrent_runs', 6, 1, 64], ['run_sandbox_ttl_minutes', 30, 0, 1440],
@@ -137,6 +138,7 @@ window.fetch = async (input, init) => {
   else if (path === '/workspace/channels') data = { items: [], freeAgents: ['manager'], secretsKeyConfigured: true }
   else if (path.startsWith('/workspace/')) data = { items: [], total: 0, page: 1, pageSize: 20 }
   else if (path === '/stats/dashboard') data = { total: runs.length, running: 1, waitingHuman: 1, completed: 4, failed: 0, totalWorkflows: workflows.length }
+  else if (path === '/auth/me' && view === '/login') return new Response(null, { status: 401 })
   else if (path === '/auth/me') data = { username: 'workspace-preview', expires_at: '2099-01-01T00:00:00Z', is_admin: true }
   else if (path === '/health') data = { status: 'ok', accepting: true }
   return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -147,9 +149,9 @@ async function bootstrap() {
   await initLocale()
   await setLocale(params.get('lang') === 'en' ? 'en' : 'zh-CN')
   setTheme(params.get('theme') === 'dark' ? 'dark' : 'light')
-  useAuth().setUser({ username: 'workspace-preview', expiresAt: '2099-01-01T00:00:00Z', isAdmin: true })
+  if (view !== '/login') useAuth().setUser({ username: 'workspace-preview', expiresAt: '2099-01-01T00:00:00Z', isAdmin: true })
   const router = createAppRouter(createMemoryHistory())
-  await router.push(params.get('view') || '/workflows')
+  await router.push(view)
   await router.isReady()
   createApp(App).directive('hover-ink', vHoverInk).use(i18n).use(router).mount('#app')
 }

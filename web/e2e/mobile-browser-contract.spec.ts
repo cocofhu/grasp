@@ -40,7 +40,10 @@ const TEXT_CONTROL = [
 async function waitForWorkspace(page: Page, view: string) {
   await page.goto(`/workspace.html?view=${encodeURIComponent(view)}`, { waitUntil: 'domcontentloaded' })
   await expect(page.locator('#app')).toBeVisible()
-  await page.waitForTimeout(250)
+  if (view === '/login') {
+    await expect(page.locator('#username')).toBeVisible()
+    await expect(page.locator('#password')).toBeVisible()
+  }
 }
 
 async function assertViewportContract(page: Page) {

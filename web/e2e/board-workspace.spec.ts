@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test'
 
-test.use({ baseURL: 'http://127.0.0.1:5174' })
-
 test('board starts with active work and keeps usage in its own page', async ({ page }) => {
   await page.goto('/workspace.html?view=/board')
   const board = page.getByTestId('board-view')

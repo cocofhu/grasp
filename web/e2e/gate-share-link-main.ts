@@ -56,7 +56,7 @@ const TOKEN = 'ab'.repeat(32)
 /** Non-loopback mint: covers auto-copy / clipboard assertions (g2.3 / g3.1). */
 const SHARE_URL_REACHABLE = `https://approving.example.com/public/approvals#t=${TOKEN}`
 /** Loopback mint: covers warning + disabled copy (no clipboard write). */
-const SHARE_URL_LOOPBACK = `http://127.0.0.1:5174/public/approvals#t=${TOKEN}`
+const SHARE_URL_LOOPBACK = `${window.location.origin}/public/approvals#t=${TOKEN}`
 
 function fixtureShareUrl(token = TOKEN): string {
   const host = new URLSearchParams(location.search).get('shareHost')

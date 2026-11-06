@@ -876,7 +876,7 @@ test('Solo uses real model names and sends exact model IDs and advertised effort
   await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))
   await page.addInitScript(() => localStorage.setItem('grasp.home.mode', 'solo'))
   await page.setViewportSize({ width: 1280, height: 900 })
-  await page.goto('http://127.0.0.1:5174/workspace-config.html?view=/dashboard')
+  await page.goto('/workspace-config.html?view=/dashboard')
   const trigger = page.getByTestId('solo-model-select-trigger')
   const expectModelPill = async (framed = true) => {
     await expect(trigger.locator('[data-vendor-mark="kimi"] img')).toBeVisible()

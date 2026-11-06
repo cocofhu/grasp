@@ -129,8 +129,10 @@ toolbars) run both mobile engines locally:
 cd web && npm run test:e2e:mobile:critical
 ```
 
-Full suite remains `npm run test:e2e` (not run in PR CI). On `web-e2e`
-failure, Actions uploads `playwright-report/` and `test-results/` artifacts.
+Run the full desktop suite with `npm run test:e2e`. Set `E2E_PORT` to use a
+different local port for any of these commands, for example
+`E2E_PORT=5184 npm run test:e2e`. The `web-e2e` job runs the critical subset
+and uploads `playwright-report/` and `test-results/` artifacts on failure.
 Do **not** put the full suite or whole `project-detail.spec.ts` into
 `test:e2e:ci`.
 

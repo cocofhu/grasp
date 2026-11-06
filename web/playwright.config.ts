@@ -1,5 +1,12 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const e2ePort = Number(process.env.E2E_PORT ?? '5174')
+if (!Number.isInteger(e2ePort) || e2ePort < 1 || e2ePort > 65535) {
+  throw new Error('E2E_PORT must be an integer between 1 and 65535')
+}
+
+const baseURL = `http://127.0.0.1:${e2ePort}`
+
 const MOBILE_CRITICAL_TESTS = /(?:mobile-browser-contract|gate-mobile-fill|run-detail-mobile|run-detail-mobile-panel|agent-studio-mobile-data|board-workspace|workspace-(?:credentials|shared-env|external-mcp|audit)|desktop-sidebar-hide|shell-loading|artifacts-page-version)\.spec\.ts/
 
 export default defineConfig({
@@ -13,6 +20,7 @@ export default defineConfig({
   // CI uploads html report + traces on failure (see ci-web web-e2e job).
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
+    baseURL,
     headless: true,
     locale: 'zh-CN',
     trace: 'retain-on-failure',
@@ -48,8 +56,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx vite --config vite.e2e.config.ts',
-    port: 5174,
+    command: `npx vite --config vite.e2e.config.ts --port ${e2ePort}`,
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
   },
 })
