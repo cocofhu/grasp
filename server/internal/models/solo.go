@@ -86,6 +86,9 @@ type SoloSession struct {
 	// ModelContextPending survives a cancelled switch after the coding tool was
 	// restarted, so the next turn still receives the existing task history.
 	ModelContextPending bool `json:"-"`
+	// ResumeContextPending restores dialogue context after a cold start while
+	// accurately retaining the workspace and uncommitted changes.
+	ResumeContextPending bool `json:"-"`
 	// Repos is the ordered repository snapshot. Empty means an empty workspace
 	// when ProjectSnapshot is also empty. Legacy rows leave this empty and are
 	// read as a one-element list built from ProjectSnapshot.

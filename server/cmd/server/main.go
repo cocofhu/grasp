@@ -374,6 +374,11 @@ func main() {
 		GitCredential:        credentialSvc.ResolveGitValue,
 	})
 	sbxSvc.SetCodexLogins(codexLogins)
+	// Register resident teardown before any startup reconciliation can report a
+	// missing sandbox. Older releases could leave active sessions dangling.
+	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
+	soloSvc.SetBlobStore(blobStore)
+	eng.SetReferencePinner(soloSvc)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
@@ -382,6 +387,7 @@ func main() {
 	// Reconcile DB ↔ gateway on boot and start the idle-TTL sweeper. The
 	// gateway owns image lifecycle now, so there is no local image pre-pull.
 	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
+	soloSvc.ReconcileSandboxReferences()
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
 	go sbxSvc.RunSweeper(sweeperCtx)
 	codexLoginMgr.Start(sweeperCtx)
@@ -508,10 +514,6 @@ func main() {
 	runNotifySvc.SetDeliverer(channelMgr)
 	cronSched.Start(sweeperCtx)
 
-	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
-	soloSvc.SetBlobStore(blobStore)
-	eng.SetReferencePinner(soloSvc)
-
 	frameAncestors, _ := cfg.Server.FrameAncestorOrigins()
 	h := &handlers.Handlers{
 		WF:                  wfSvc,
@@ -620,12 +622,20 @@ func main() {
 			log.Fatal().Err(err).Msg("server exited")
 		}
 	}()
+	// Resume cold residents only after their bootstrap/MCP URLs are reachable.
+	// Recovery must not delay workflow resume or shutdown signal handling.
+	go func() {
+		sbxSvc.RecoverSoloSandboxes(sweeperCtx)
+		if sweeperCtx.Err() == nil {
+			soloSvc.RestoreQueuedTurns()
+		}
+		sbxSvc.RunSoloRecovery(sweeperCtx)
+	}()
 	// Every provider hook is wired now; continue agent nodes whose sandboxes
 	// survived the previous process.
 	eng.ResumeInterrupted()
 	// Put back dialogue turns that were still queued when it exited.
 	eng.RestoreQueuedTurns()
-	soloSvc.RestoreQueuedTurns()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)

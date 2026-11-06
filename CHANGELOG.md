@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo sandboxes retain their workspace after host or Docker restarts. Startup reconciliation resumes the original stopped container, preserves data on status or recovery failures, retries recovery and queued messages, and reports genuinely missing sandboxes clearly. Existing Docker containers receive the updated bootstrap during recovery.
+
 - Mobile workflow conversations use the existing chat interface directly, including deep links and reloads, and keep the chat mounted when resizing. The old pending-card page and return-to-list navigation are removed. Approval sharing remains available through the conversation menu and preview toolbar.
 
 - 移动端表单控件在窄屏保持至少 16px，避免 iOS Safari 聚焦输入框时触发整页自动放大；新增 Chromium/WebKit 的全路由缩放与溢出回归验证。

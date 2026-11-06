@@ -116,7 +116,7 @@ echo 1 >"$GRASP_IMAGE_LEVEL_FILE"
 pass "invalid bundles rejected"
 
 # --- fetch: URL required, Bearer header, exec startup.sh, token never logged.
-rc=0; env -u GRASP_RUNTIME_URL bash "$BOOTSTRAP" fetch 2>"$TMP/err" || rc=$?
+rc=0; GRASP_BOOTSTRAP_FORCE_FETCH=1 env -u GRASP_RUNTIME_URL bash "$BOOTSTRAP" fetch 2>"$TMP/err" || rc=$?
 [ "$rc" = 1 ] && grep -q GRASP_RUNTIME_URL "$TMP/err" || fail "fetch without URL exit=$rc"
 
 PORT="$(free_port)"
@@ -128,18 +128,36 @@ wait_port "$PORT" || fail "runtime server did not start"
 URL="http://127.0.0.1:$PORT/sandbox-inject/abc.tgz"
 
 rc=0
-GRASP_RUNTIME_URL="$URL" SANDBOX_INJECT_HEADERS="Authorization: Bearer wrong" GRASP_BOOTSTRAP_ATTEMPTS=1 \
+GRASP_BOOTSTRAP_FORCE_FETCH=1 GRASP_RUNTIME_URL="$URL" SANDBOX_INJECT_HEADERS="Authorization: Bearer wrong" GRASP_BOOTSTRAP_ATTEMPTS=1 \
   bash "$BOOTSTRAP" fetch >/dev/null 2>&1 || rc=$?
 [ "$rc" = 1 ] || fail "wrong token exit=$rc"
 [ "$(bash "$BOOTSTRAP" version)" = "$V3" ] || fail "failed fetch changed current"
 
-out="$(GRASP_RUNTIME_URL="$URL" SANDBOX_INJECT_HEADERS="Authorization: Bearer $TOKEN" bash "$BOOTSTRAP" fetch 2>&1)"
+out="$(GRASP_BOOTSTRAP_FORCE_FETCH=1 GRASP_RUNTIME_URL="$URL" SANDBOX_INJECT_HEADERS="Authorization: Bearer $TOKEN" bash "$BOOTSTRAP" fetch 2>&1)"
 grep -q "STARTUP-OK four" <<<"$out" || fail "fetch did not exec startup.sh: $out"
 ! grep -q "$TOKEN" <<<"$out" || fail "token leaked into fetch output"
 [ "$(bash "$BOOTSTRAP" version)" = "$V4" ] || fail "fetch did not install v4"
-out="$(GRASP_RUNTIME_URL="$URL" SANDBOX_INJECT_HEADERS="Authorization: Bearer $TOKEN" GRASP_BOOTSTRAP_NO_EXEC=1 bash "$BOOTSTRAP" fetch 2>&1)"
+out="$(GRASP_BOOTSTRAP_FORCE_FETCH=1 GRASP_RUNTIME_URL="$URL" SANDBOX_INJECT_HEADERS="Authorization: Bearer $TOKEN" GRASP_BOOTSTRAP_NO_EXEC=1 bash "$BOOTSTRAP" fetch 2>&1)"
 ! grep -q "STARTUP-OK" <<<"$out" || fail "GRASP_BOOTSTRAP_NO_EXEC still exec'd"
 pass "fetch"
+
+# A stopped container can resume with an expired/unreachable first-boot URL.
+out="$(GRASP_RUNTIME_URL="http://127.0.0.1:1/expired.tgz" GRASP_BOOTSTRAP_ATTEMPTS=1 bash "$BOOTSTRAP" fetch 2>&1)"
+grep -q "STARTUP-OK four" <<<"$out" || fail "cached resume did not start: $out"
+! grep -q "下载运行时包" <<<"$out" || fail "cached resume tried the expired URL"
+pass "resume uses verified installed runtime without first-boot credentials"
+
+# Corrupt cache must not execute. Failed recovery keeps workspace data intact.
+mkdir -p "$TMP/resident-workspace"
+echo "uncommitted output" >"$TMP/resident-workspace/output.txt"
+echo "# corruption" >>"$GRASP_RUNTIME_ROOT/current/scripts/startup.sh"
+rc=0
+GRASP_RUNTIME_URL="http://127.0.0.1:1/expired.tgz" GRASP_BOOTSTRAP_ATTEMPTS=1 \
+  bash "$BOOTSTRAP" fetch >"$TMP/failed-resume" 2>&1 || rc=$?
+[ "$rc" = 1 ] || fail "corrupt cached runtime was executed"
+! grep -q "STARTUP-OK" "$TMP/failed-resume" || fail "corrupt startup executed"
+[ "$(cat "$TMP/resident-workspace/output.txt")" = "uncommitted output" ] || fail "failed resume damaged workspace"
+pass "invalid cache fails without deleting workspace"
 
 # --- services.sh with a fake backend that answers /api/runtime/busy.
 mkdir -p "$TMP/bin" "$TMP/share/web" "$TMP/run" "$TMP/ws"

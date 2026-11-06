@@ -84,7 +84,26 @@ install_tgz() {
   echo "$version"
 }
 
+# Resume uses the installed bundle, independently of the short-lived first-boot
+# URL. Verify it before executing; a partial/corrupt install must not be trusted.
+cached_runtime_valid() {
+  local installed="$ROOT/current" version arch min level
+  [ -f "$installed/MANIFEST" ] && [ -x "$installed/scripts/startup.sh" ] || return 1
+  version="$(manifest_get "$installed" version)"
+  arch="$(manifest_get "$installed" arch)"
+  min="$(manifest_get "$installed" min_image)"
+  level="$(tr -d '[:space:]' <"$LEVEL_FILE" 2>/dev/null || true)"
+  [[ "$version" =~ ^[0-9a-f]{64}$ ]] && [[ "$min" =~ ^[0-9]+$ ]] && [[ "$level" =~ ^[0-9]+$ ]] || return 1
+  [ "$arch" = "$(machine_arch)" ] && [ "$level" -ge "$min" ] || return 1
+  [ "$(runtime_digest "$installed")" = "$version" ]
+}
+
 fetch() {
+  if [ "${GRASP_BOOTSTRAP_FORCE_FETCH:-}" != "1" ] && cached_runtime_valid; then
+    log "复用已安装的运行时"
+    [ "${GRASP_BOOTSTRAP_NO_EXEC:-}" = "1" ] && return 0
+    exec "$ROOT/current/scripts/startup.sh"
+  fi
   local url="${GRASP_RUNTIME_URL:-}" delay=1 attempt rc=0 h
   local attempts="${GRASP_BOOTSTRAP_ATTEMPTS:-5}"
   if [ -z "$url" ]; then

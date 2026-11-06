@@ -46,6 +46,8 @@ type FakeGateway struct {
 	FailList   bool // GET /sandboxes returns 500
 	FailGet    bool // GET /sandboxes/:id returns 500
 	FailLogs   bool // GET /sandboxes/:id/logs returns 500
+	FailStatus bool // GET /sandboxes/:id/status returns 503
+	FailStart  bool // POST /sandboxes/:id/start returns 500
 	// RequirePublishedPort makes host resolution return 404 for unmapped ports.
 	RequirePublishedPort bool
 
@@ -271,6 +273,10 @@ func (fg *FakeGateway) delete(w http.ResponseWriter, id string) {
 }
 
 func (fg *FakeGateway) status(w http.ResponseWriter, id string) {
+	if fg.FailStatus {
+		http.Error(w, "status temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	fg.mu.Lock()
 	rec := fg.recs[id]
 	fg.mu.Unlock()
@@ -282,6 +288,10 @@ func (fg *FakeGateway) status(w http.ResponseWriter, id string) {
 }
 
 func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
+	if action == "start" && fg.FailStart {
+		http.Error(w, "resume failed", http.StatusInternalServerError)
+		return
+	}
 	fg.mu.Lock()
 	if rec := fg.recs[id]; rec != nil {
 		if action == "stop" {

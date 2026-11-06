@@ -582,6 +582,9 @@ func (s *SandboxService) Stop(ctx context.Context, id uint) error {
 	if err != nil {
 		return err
 	}
+	if row.Purpose == SandboxPurposeSolo {
+		return fmt.Errorf("Solo 沙箱请通过关闭会话释放")
+	}
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法停止")
 	}
@@ -597,6 +600,16 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	row, err := s.Get(id)
 	if err != nil {
 		return err
+	}
+	if row.Purpose == SandboxPurposeSolo {
+		unlock, lockErr := s.lockSoloRecovery(ctx, id)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlock()
+		if row, err = s.Get(id); err != nil {
+			return err
+		}
 	}
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法销毁")
@@ -740,6 +753,10 @@ func (s *SandboxService) sweepOnce(ctx context.Context) {
 func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 	now := time.Now()
 	for i := range rows {
+		if rows[i].Purpose == SandboxPurposeSolo {
+			// Residents never expire, including legacy rows with a stale TTL.
+			continue
+		}
 		if s.isBusyRow(&rows[i]) {
 			continue
 		}
@@ -786,6 +803,10 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 			s.reconcileRunSandbox(ctx, row, adopted[row.Name], tracked)
 			continue
 		}
+		if row.Purpose == SandboxPurposeSolo {
+			s.reconcileSoloSandbox(ctx, row, tracked, protectedCorr)
+			continue
+		}
 		// Young creating rows still use a placeholder Name; the gateway id is
 		// adopted only after Create succeeds. Keep them and protect the
 		// correlated gateway sandbox from the orphan sweep.
@@ -794,7 +815,16 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 			protectedCorr[row.Name] = true
 			continue
 		}
-		switch s.mgr.Status(ctx, row.Name) {
+		status, err := s.mgr.ProbeStatus(ctx, row.Name)
+		if sandbox.GatewayRecordMissing(err) {
+			status, err = "not_found", nil // retain the existing non-resident cleanup policy
+		}
+		if err != nil {
+			tracked[row.Name], protectedCorr[row.Name] = true, true
+			log.Warn().Err(err).Str("name", row.Name).Msg("sandbox status unavailable; retaining sandbox")
+			continue
+		}
+		switch status {
 		case "running":
 			tracked[row.Name] = true
 			if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
@@ -835,7 +865,16 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 // persisted leases (debug window, preview) or is retired like a finished node.
 // Missing or stopped containers are dropped.
 func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sandbox, adopted bool, tracked map[string]bool) {
-	if s.mgr.Status(ctx, row.Name) != "running" {
+	status, err := s.mgr.ProbeStatus(ctx, row.Name)
+	if sandbox.GatewayRecordMissing(err) {
+		status, err = "not_found", nil
+	}
+	if err != nil {
+		tracked[row.Name] = true
+		log.Warn().Err(err).Str("name", row.Name).Msg("run sandbox status unavailable; retaining sandbox")
+		return
+	}
+	if status != "running" {
 		s.destroyLocalSandbox(ctx, row)
 		return
 	}
