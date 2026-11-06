@@ -1,6 +1,7 @@
 import { createExecutor, type PageCommand, type PageResult } from './executor'
 
 export type PageControlOptions = {
+  styleNonce?: string
   /** Hides the preview-pick UI (bar, drawer) while the page is read. */
   hideOwnUi?: (hidden: boolean) => void
 }
@@ -34,13 +35,14 @@ const MASK_CSS =
  * overlay that blocks user input while an action runs. PageController signals
  * pointer moves, clicks and hit-test pass-through via window events.
  */
-function createMask() {
+function createMask(styleNonce?: string) {
   const host = document.createElement('grasp-page-control')
   host.setAttribute('data-page-agent-not-interactive', '')
   const shadow = host.attachShadow({ mode: 'open' })
   shadow.innerHTML =
     `<style>${MASK_CSS}</style><div class="mask" hidden></div>` +
     '<div class="cursor" hidden><div class="ripple"></div><div class="fill"></div><div class="border"></div></div>'
+  if (styleNonce) shadow.querySelector('style')!.nonce = styleNonce
   const mask = shadow.querySelector('.mask') as HTMLElement
   const cursor = shadow.querySelector('.cursor') as HTMLElement
   const pos = { x: 0, y: 0, tx: 0, ty: 0 }
@@ -117,7 +119,7 @@ function createMask() {
 }
 
 export function create(opts: PageControlOptions = {}) {
-  const mask = createMask()
+  const mask = createMask(opts.styleNonce)
   const executor = createExecutor({
     hideOwnUi(hidden) {
       mask.host.style.display = hidden ? 'none' : ''

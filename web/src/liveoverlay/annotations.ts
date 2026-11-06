@@ -19,7 +19,7 @@ const CSS = '.live-marks{position:fixed;z-index:2147483644;pointer-events:none;o
   '.live-mark-note textarea{font:12px/1.4 system-ui;color:#fafafa;background:#18181b;border:1px solid #52525b;border-radius:6px;padding:6px;width:180px;max-width:35vw;resize:vertical;min-height:38px}'
 
 /** Marks live only in the shadow overlay; source/preview DOM is never painted. */
-export function createAnnotations(layer: HTMLElement, initialStrings: Strings, changed: () => void) {
+export function createAnnotations(layer: HTMLElement, initialStrings: Strings, changed: () => void, styleNonce?: string) {
   let T = initialStrings
   let target: Element | null = null
   let marks: LiveMark[] = []
@@ -27,6 +27,7 @@ export function createAnnotations(layer: HTMLElement, initialStrings: Strings, c
   let active: LiveMark | null = null
   let pointerID: number | null = null
   layer.innerHTML = `<style>${CSS}</style><div class="live-marks" hidden><svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="${T.markCanvas}"></svg><div data-mark-notes></div></div>`
+  if (styleNonce) layer.querySelector('style')!.nonce = styleNonce
   const box = layer.querySelector<HTMLElement>('.live-marks')!
   const svg = layer.querySelector<SVGSVGElement>('svg')!
   const notes = layer.querySelector<HTMLElement>('[data-mark-notes]')!

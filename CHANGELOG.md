@@ -60,6 +60,8 @@ All notable public-release changes are documented here.
 
 - **Direct shared previews:** Shared app links open the full app with the same floating Chat and Pick controls as a direct preview. Solo's preview can resolve chat tickets in sandboxes where artifact MCP credentials are only configured inside the Agent.
 
+- Direct app previews can render the floating toolbar and open chat on pages with restrictive style, connection, and frame policies. App CSP protections, including sandboxing and frame-ancestor restrictions, stay in force.
+
 - **Solo previews:** new preview-enabled Solo sandboxes can register an app on a separate port and open it from Resources. Solo artifact pins appear in the Artifacts drawer, and clicking an HTML thumbnail opens its preview. The Agent's Solo tool list hides actions that require a workflow, and failed preview registration identifies missing port mappings.
 
 - **Live review previews:** the chat stays in sync with the selected candidate when a WebSocket update arrives ahead of the request acknowledgement.

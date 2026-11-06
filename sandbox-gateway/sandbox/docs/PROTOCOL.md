@@ -351,8 +351,11 @@ iframe 内嵌它。跨源页面无法由 Grasp 注入脚本,参考实现在**沙
   (就绪时也发一次)。抽屉页只跟随显示,不改用户在 Grasp 里保存的主题。
 - 语言反过来由抽屉决定:就绪时和 Grasp 界面语言变化时,抽屉向页面发 `{type:'grasp-embed:lang', lang}`,
   操作条和 Live 浮层随之切换中英文。没有收到时依次用片段里的 `lang`、已存的抽屉记录、浏览器语言。
-- 抽屉只能对话,不能确认/驳回;这些仍在 Grasp 页面完成。应用自带 CSP 的 `frame-src`
-  不允许 Grasp origin 时抽屉加载不出来。
+- 抽屉只能对话,不能确认/驳回;这些仍在 Grasp 页面完成。
+- 对改写的 HTML,注入层保留 CSP 响应头和页面内的 CSP `<meta>`。新增许可限于预览脚本、
+  带 nonce 的 Grasp 样式、同域 `/__grasp/embed-origin` 和当前运行的 `/embed/runs/<runId>/nodes/` iframe 路径。
+  浏览器所用的 Grasp 域由票据校验。应用的 `frame-ancestors` 等指令及报告策略继续生效。
+  CSP 响应头含 `sandbox` 或有效策略明确禁用脚本时,注入层跳过该 HTML。
 - 回环(应用 ← 注入进程)走 OUTPUT,不进 PREROUTING,不会环。
 - 注入进程**不得**听 `PREVIEW_PORT`(平台 `KeepalivePort` 按该口找应用进程)。
 - 进程挂了必须拆规则或立刻拉起:箱外 `ProbeHTTPPort` 打的是发布口,会走 REDIRECT;
