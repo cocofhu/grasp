@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-test.use({ baseURL: 'http://127.0.0.1:5174', viewport: { width: 1280, height: 800 } })
+test.use({ viewport: { width: 1280, height: 800 } })
 
 interface ConfirmLeaveWindow extends Window {
   __confirmLeave?: {

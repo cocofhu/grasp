@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test'
 
-test.use({ baseURL: 'http://127.0.0.1:5174' })
-
 test('settings keeps the app rail and a centered document without search', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 })
   await page.goto('/workspace.html?view=/settings/workspace')

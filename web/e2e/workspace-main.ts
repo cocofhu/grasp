@@ -11,6 +11,7 @@ import { createAppRouter } from '../src/router'
 import App from '../src/App.vue'
 
 const params = new URLSearchParams(window.location.search)
+const view = params.get('view') || '/workflows'
 const assistantMode = params.get('assistant') || 'ready'
 const settingsItems = [
   ['max_concurrent_runs', 6, 1, 64], ['run_sandbox_ttl_minutes', 30, 0, 1440],
@@ -91,6 +92,8 @@ window.fetch = async (input, init) => {
   else if (/^\/artifacts\/[^/]+$/.test(path) && method === 'DELETE') { const index = artifactFiles.findIndex(file => file.id === path.split('/')[2]); if (index >= 0) artifactFiles.splice(index, 1); return new Response(null, { status: 204 }) }
   else if (path === '/pending-nodes') data = { items: [], total: 0, page: 1, pageSize: 20 }
   else if (path === '/agents') data = [{ name: 'manager', description: '协调团队与执行工作流', acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace', env: {}, mcp: [], capabilities: { outlets: [] } }]
+  else if (path === '/projects') data = []
+  else if (path === '/solo/sessions') data = { sessions: [], maxSandboxes: 5 }
   else if (path === '/workspace/requirement-drafts') {
     if (method === 'POST') {
       data = { id: `new-draft-${requirementDrafts.length + 1}`, title: '未命名草稿', bodyMarkdown: '', status: 'open', kind: 'requirement', startAt: '', dueAt: '', progress: 0, parentId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...body }
@@ -135,6 +138,7 @@ window.fetch = async (input, init) => {
   else if (path === '/workspace/channels') data = { items: [], freeAgents: ['manager'], secretsKeyConfigured: true }
   else if (path.startsWith('/workspace/')) data = { items: [], total: 0, page: 1, pageSize: 20 }
   else if (path === '/stats/dashboard') data = { total: runs.length, running: 1, waitingHuman: 1, completed: 4, failed: 0, totalWorkflows: workflows.length }
+  else if (path === '/auth/me' && view === '/login') return new Response(null, { status: 401 })
   else if (path === '/auth/me') data = { username: 'workspace-preview', expires_at: '2099-01-01T00:00:00Z', is_admin: true }
   else if (path === '/health') data = { status: 'ok', accepting: true }
   return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -145,9 +149,9 @@ async function bootstrap() {
   await initLocale()
   await setLocale(params.get('lang') === 'en' ? 'en' : 'zh-CN')
   setTheme(params.get('theme') === 'dark' ? 'dark' : 'light')
-  useAuth().setUser({ username: 'workspace-preview', expiresAt: '2099-01-01T00:00:00Z', isAdmin: true })
+  if (view !== '/login') useAuth().setUser({ username: 'workspace-preview', expiresAt: '2099-01-01T00:00:00Z', isAdmin: true })
   const router = createAppRouter(createMemoryHistory())
-  await router.push(params.get('view') || '/workflows')
+  await router.push(view)
   await router.isReady()
   createApp(App).directive('hover-ink', vHoverInk).use(i18n).use(router).mount('#app')
 }

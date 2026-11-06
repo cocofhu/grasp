@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test'
 
-test.use({ baseURL: 'http://127.0.0.1:5174' })
-
 for (const theme of ['light', 'dark']) for (const width of [1440, 1024, 768, 390]) {
   test(`artifact browser adapts to its canvas (${theme}, ${width})`, async ({ page }) => {
     const errors: string[] = []

@@ -81,10 +81,10 @@ test('Solo opens a registered app and the pinned HTML from its thumbnail', async
   await expect(page.getByTestId('react-artifact-preview-demo.html').frameLocator('iframe:visible').getByText('Solo preview smoke')).toBeVisible()
 })
 
-test('a direct Solo preview streams the reply to a message with a picked element', async ({ page, context }) => {
+test('a direct Solo preview streams the reply to a message with a picked element', async ({ page, context, baseURL }) => {
   test.setTimeout(60_000)
   await installWorkspaceApiDefaults(page)
-  const grasp = 'http://127.0.0.1:5174'
+  const grasp = new URL(baseURL!).origin
   const direct = grasp
   const session = { id: 'solo-chat-check', title: 'Solo preview', agentName: 'Demo', status: 'running', artifactRunId: 'solo-preview-chat-check', sandboxId: 42 }
   const runId = session.artifactRunId
@@ -226,9 +226,9 @@ test('a direct Solo preview streams the reply to a message with a picked element
   await expect(transcript.getByTestId('solo-agent-message')).toHaveText(reply)
 })
 
-test('a signed-in workflow preview uses the regular chat model and reference pickers', async ({ page }) => {
+test('a signed-in workflow preview uses the regular chat model and reference pickers', async ({ page, baseURL }) => {
   test.setTimeout(45_000)
-  const grasp = 'http://127.0.0.1:5174'
+  const grasp = new URL(baseURL!).origin
   const key = 'entry-model-picker'
   const runId = 'live-e2e-' + key
   const modelPath = grasp + '/embed-api/runs/' + runId + '/nodes/preview'
@@ -285,12 +285,12 @@ test('a signed-in workflow preview uses the regular chat model and reference pic
   expect((await sent).postDataJSON().references).toEqual([{ kind: 'github_issue', target: 'acme/web#12' }])
 })
 
-test('anonymous shares open the direct app and use its floating chat in both modes', async ({ browser }) => {
+test('anonymous shares open the direct app and use its floating chat in both modes', async ({ browser, baseURL }) => {
   test.setTimeout(60_000)
   const anonymous = await browser.newContext({ viewport: { width: 390, height: 820 }, locale: 'en-US' })
   try {
     await anonymous.addInitScript(() => { if (!localStorage.getItem('grasp-locale')) localStorage.setItem('grasp-locale', 'en') })
-    const grasp = 'http://127.0.0.1:5174'
+    const grasp = new URL(baseURL!).origin
     const direct = 'http://127.0.0.1:19084'
     const previewUrl = direct + '/shared-app-fixture'
     const url = grasp + '/public/approvals/app'
