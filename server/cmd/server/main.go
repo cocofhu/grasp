@@ -41,6 +41,7 @@ import (
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
 	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/pmmcp"
+	"github.com/cocofhu/grasp/internal/privatepreview"
 	"github.com/cocofhu/grasp/internal/router"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -74,6 +75,18 @@ func main() {
 		log.Fatal().Err(err).Str("path", cfgPath).Msg("load config failed")
 	}
 	cfg := config.GetConfig()
+	if cfg.Sandbox.PrivateEndpoints {
+		// E2B restores private endpoints before the gateway starts listening.
+		// Wait before opening the DB/engine: startup reconciliation must never
+		// mistake an unavailable gateway for destroyed provider guests.
+		log.Info().Msg("waiting for private sandbox gateway readiness")
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
+		err := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey).WaitReady(ctx, "e2b")
+		cancel()
+		if err != nil {
+			log.Fatal().Err(err).Msg("private sandbox gateway not ready; startup reconciliation skipped")
+		}
+	}
 
 	// At-rest secret encryption reads its key from the live config (security.
 	// secrets_key, with GRASP_SECRETS_KEY env override) so channel credentials
@@ -403,6 +416,12 @@ func main() {
 	host.SetPreviewStore(previewSvc)
 	host.SetPreviewSandboxOps(previewSvc)
 	host.SetPreviewBaseURL(cfg.Server.PublicAdvertise)
+	var privatePreviewBase privatepreview.Base
+	if cfg.Sandbox.PrivateEndpoints {
+		// Config parsing already validated the isolated wildcard origin.
+		privatePreviewBase, _ = privatepreview.Parse(cfg.Server.PreviewAdvertise)
+		host.SetPrivatePreviewBase(privatePreviewBase)
+	}
 
 	// Preview feedback: humans report problems from the preview UI (one-way).
 	// The engine snapshots them into the preview_issues run variable at gate
@@ -542,6 +561,7 @@ func main() {
 		GateShareSessions:   gateShareSessions,
 		GateShareLimiter:    gateshare.NewIPLimiter(),
 		PublicAdvertise:     cfg.Server.PublicAdvertise,
+		PrivatePreviewBase:  privatePreviewBase,
 		FrameAncestors:      frameAncestors,
 		InjectBundles:       injectStore,
 		Blobs:               blobStore,

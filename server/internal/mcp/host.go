@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/privatepreview"
 )
 
 // ErrUnauthorized is returned when a token does not match the run scope.
@@ -124,10 +125,11 @@ type Host struct {
 	// Nil ⇒ no fallback. See ActiveCaps.
 	activeSrc ActiveNodeSource
 	// Preview port registrations (set_preview); keyed runID|nodeID.
-	previewMem   map[string][]PreviewPort
-	previewBase  string
-	previewStore PreviewStore
-	previewOps   PreviewSandboxOps
+	previewMem         map[string][]PreviewPort
+	previewBase        string
+	privatePreviewBase privatepreview.Base
+	previewStore       PreviewStore
+	previewOps         PreviewSandboxOps
 	// previewReady signals healthy set_preview completion (keyed runID|nodeID).
 	// Closed channel = ready; absent entry = not yet signaled.
 	previewReady map[string]chan struct{}

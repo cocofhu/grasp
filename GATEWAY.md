@@ -34,6 +34,24 @@ pulls on first create (`status=pulling`). Use `./start.sh pull` to warm it.
 Dev mode may build `universal-sandbox:local` from `sandbox-gateway/sandbox`
 on first run (slow).
 
+## E2B deployment
+
+`driver: e2b` is an independent opt-in deployment alongside Docker and Kubernetes.
+It implements this gateway API with prepared E2B templates and private loopback
+TCP tunnels, so Grasp keeps using SSH, ACP, IDE and browser protocols. Run Grasp
+and the gateway on the same Linux host/network namespace; remote clients use
+the Grasp proxies and an isolated wildcard preview site. The dedicated
+[deployment guide](sandbox-gateway/deploy/e2b/README.md) covers template profiles,
+callback routing, credentials, leases and recovery. `compose.e2b.yaml` does not
+change either existing startup path.
+
+E2B template CPU/memory and minimum initial available workspace capacity must
+match a configured profile; disk capacity is not a resizable PVC or hard quota.
+The gateway Stop/Start operations explicitly pause/resume with memory; provider
+routing must pass readiness again. Automatic pause/resume is disabled. Grasp
+Stop still destroys its sandbox. Reinstall with `preserveData=true` reports an
+unsupported operation; snapshot migration is outside this gateway contract.
+
 ## Minimum compatible API
 
 | Capability | Contract |

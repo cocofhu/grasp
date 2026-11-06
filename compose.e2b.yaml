@@ -1,0 +1,65 @@
+# Independent E2B deployment. Existing start.sh/Compose/Kubernetes modes do not
+# read this file. Linux host networking lets Grasp use private loopback tunnels.
+# Setup and wildcard preview routing: sandbox-gateway/deploy/e2b/README.md.
+name: grasp-e2b
+services:
+  gateway:
+    build:
+      context: ./sandbox-gateway
+      dockerfile: Dockerfile
+    network_mode: host
+    environment:
+      SBGW_CONFIG: /etc/sandbox-gateway/config.yaml
+      SBGW_DRIVER: e2b
+      SBGW_LISTEN: "127.0.0.1:${GRASP_GATEWAY_PORT:-8899}"
+      SBGW_DB_PATH: /data/gateway.db
+      SBGW_E2B_STATE_DIR: /data/e2b
+      SBGW_E2B_API_KEY: ${E2B_API_KEY:?Set E2B_API_KEY}
+      SBGW_E2B_OWNER_ID: ${E2B_GATEWAY_OWNER_ID:?Set a stable unique E2B_GATEWAY_OWNER_ID}
+      SBGW_E2B_API_URL: ${E2B_API_URL:-}
+      SBGW_E2B_SANDBOX_URL: ${E2B_SANDBOX_URL:-}
+      SBGW_E2B_DOMAIN: ${E2B_DOMAIN:-e2b.app}
+      SBGW_API_KEYS: ${SANDBOX_GATEWAY_API_KEY:?Set SANDBOX_GATEWAY_API_KEY}
+    volumes:
+      - ${E2B_GATEWAY_CONFIG:?Set E2B_GATEWAY_CONFIG to the prepared profile YAML}:/etc/sandbox-gateway/config.yaml:ro
+      - e2b-gateway-data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/sandbox-gateway", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      start_period: 600s
+      retries: 3
+    restart: unless-stopped
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    network_mode: host
+    environment:
+      GRASP_PORT: ${GRASP_PORT:-8080}
+      GRASP_DB: /data/grasp.db
+      GRASP_DEPLOYMENT_MODE: production
+      GRASP_AUTH_USERS: ${GRASP_AUTH_USERS:?Set GRASP_AUTH_USERS with password hashes}
+      GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:?Set GRASP_SECRETS_KEY}
+      GRASP_PUBLIC_ADVERTISE: ${GRASP_PUBLIC_ADVERTISE:?Set the browser-facing HTTPS origin}
+      GRASP_MCP_ADVERTISE: ${GRASP_MCP_ADVERTISE:?Set the sandbox-reachable callback origin}
+      GRASP_PREVIEW_ADVERTISE: ${GRASP_PREVIEW_ADVERTISE:?Set the wildcard preview base origin on a separate site}
+      GRASP_SANDBOX_PRIVATE_ENDPOINTS: "true"
+      GRASP_SANDBOX_GATEWAY_URL: http://127.0.0.1:${GRASP_GATEWAY_PORT:-8899}
+      GRASP_SANDBOX_GATEWAY_API_KEY: ${SANDBOX_GATEWAY_API_KEY}
+      # Must match the chosen prepared profile. No implicit OCI conversion.
+      GRASP_SANDBOX_IMAGE: ${GRASP_SANDBOX_IMAGE:-universal-sandbox:e2b}
+      GRASP_SANDBOX_MEMORY_MB: ${GRASP_SANDBOX_MEMORY_MB:-3072}
+      GRASP_SANDBOX_RUNTIME_BUNDLE: /app/sandbox-runtime/sandbox-runtime.tgz
+      GRASP_SANDBOX_WORK_DIR: /data/sandbox-home
+      GRASP_PROFILES_ROOT: /app/data/profiles
+    volumes:
+      - e2b-server-data:/data
+      - ${GRASP_DATA_DIR:-./data}:/app/data
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  e2b-gateway-data:
+  e2b-server-data:

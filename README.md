@@ -145,6 +145,8 @@ Service configuration precedence: environment variables > mounted config file > 
 
 ## Deployment notes
 
+- **E2B (third sandbox deployment):** use the independent [E2B deployment guide](sandbox-gateway/deploy/e2b/README.md) and `compose.e2b.yaml` for E2B Cloud or a compatible self-hosted control plane. It requires prepared environment templates, persistent gateway state and a separate wildcard preview site. Existing Docker and Kubernetes deployments keep their defaults.
+
 - Store API keys and Git credentials only in the workspace credentials settings; never commit them to the repository.
 - Pin images by digest in production; see [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke).
 - Preserve the original `Host` header, including a non-default port, behind a reverse proxy (e.g. nginx `proxy_set_header Host $http_host`). Temporary approval share links and the origin check for signed-in requests use it. See [SECURITY.md](SECURITY.md).
