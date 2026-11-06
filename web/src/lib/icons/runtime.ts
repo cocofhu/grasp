@@ -29,10 +29,11 @@ export function hydrateRuntimeIcons(root: ParentNode): void {
 }
 
 /** One delegated controller per DOM/shadow root. Pointer and keyboard ownership share one play. */
-export function installRuntimeIconMotion(root: Document | ShadowRoot | HTMLElement): () => void {
+export function installRuntimeIconMotion(root: Document | ShadowRoot | HTMLElement, styleNonce?: string): () => void {
   const doc = root.ownerDocument || root as Document
   const win = doc.defaultView!
   const style = doc.createElement('style')
+  if (styleNonce) style.nonce = styleNonce
   style.dataset.graspIconMotion = ''
   style.textContent = '.app-icon{vertical-align:middle;flex:none;overflow:visible}.app-icon[data-icon-busy="true"]{transform-origin:center}' + motionCSS
   if (root.nodeType === 9) (root as Document).head.appendChild(style)

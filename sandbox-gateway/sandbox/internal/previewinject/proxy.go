@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"context"
+	"crypto/rand"
 	_ "embed"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -26,15 +29,20 @@ var liveOverlayScript []byte
 
 var errUnsupportedEncoding = errors.New("unsupported content-encoding")
 
+var cspAuthority = regexp.MustCompile(`^[A-Za-z0-9.-]+(:[0-9]{1,5})?$`)
+
+type previewOriginKey struct{}
+
 const flushInterval = 100 * time.Millisecond
 
 // graspSessionCookie must match auth.CookieName in the Grasp server.
 const graspSessionCookie = "cf_session"
 
 // NewHandler reverse-proxies to upstream and injects preview-pick.js into
-// text/html, dropping the page's CSP (header and <meta>). Host is preserved (Vite allowedHosts / HMR). WebSocket 101 and
-// non-HTML bodies are passed through. Location is not rewritten (direct
-// preview has no /preview prefix).
+// text/html, allowing the preview resources in the app's CSP. Host is
+// preserved (Vite allowedHosts / HMR). WebSocket 101 and non-HTML bodies
+// are passed through. Location is not rewritten (direct preview has no
+// /preview prefix).
 //
 // Accept-Encoding is forced to identity so HTML can be rewritten. If the
 // upstream still sends gzip/deflate, the body is decoded. brotli/zstd are
@@ -62,7 +70,7 @@ func NewSwitchableHandler(upstream *url.URL, upstreamFile, scriptURL string, emb
 	}
 	scriptURL = ResolveScriptURL(scriptURL)
 	sel := newUpstreamSelector(upstream, upstreamFile)
-	inject := modifyResponse(scriptURL)
+	inject := modifyResponse(scriptURL, embed.frameSource())
 
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -70,6 +78,13 @@ func NewSwitchableHandler(upstream *url.URL, upstreamFile, scriptURL string, emb
 			r.SetURL(sel.pick())
 			r.Out.Host = inHost
 			r.Out.Header.Set("Accept-Encoding", "identity")
+			if r.In.Method == http.MethodGet && strings.Contains(r.In.Header.Get("Accept"), "text/html") {
+				// Validators from an earlier injector version cannot revalidate
+				// an HTML representation with a different CSP or nonce.
+				r.Out.Header.Del("If-None-Match")
+				r.Out.Header.Del("If-Modified-Since")
+			}
+			r.Out = r.Out.WithContext(context.WithValue(r.Out.Context(), previewOriginKey{}, browserOrigin(r.In)))
 			stripGraspSessionCookie(r.Out.Header, "Cookie", ";")
 		},
 		ModifyResponse: func(resp *http.Response) error {
@@ -144,9 +159,31 @@ func closeOnUpstreamError(w http.ResponseWriter, _ *http.Request, _ error) {
 	w.WriteHeader(http.StatusBadGateway)
 }
 
-func modifyResponse(scriptURL string) func(*http.Response) error {
+func browserOrigin(r *http.Request) string {
+	// The platform's private preview proxy sends the browser authority
+	// separately to keep the upstream Host compatible with app dev servers.
+	if origin := cspOrigin(r.Header.Get("X-Forwarded-Proto"), r.Header.Get("X-Forwarded-Host")); origin != "" {
+		return origin
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return cspOrigin(scheme, r.Host)
+}
+
+func cspOrigin(scheme, host string) string {
+	if (scheme == "http" || scheme == "https") && cspAuthority.MatchString(host) {
+		return scheme + "://" + host
+	}
+	return ""
+}
+
+func modifyResponse(scriptURL, frameSource string) func(*http.Response) error {
 	return func(resp *http.Response) error {
-		if resp.StatusCode == http.StatusSwitchingProtocols {
+		if resp.StatusCode < http.StatusOK || resp.StatusCode == http.StatusNoContent ||
+			resp.StatusCode == http.StatusPartialContent || resp.StatusCode == http.StatusNotModified ||
+			resp.Request != nil && resp.Request.Method == http.MethodHead {
 			return nil
 		}
 		if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
@@ -157,6 +194,14 @@ func modifyResponse(scriptURL string) func(*http.Response) error {
 		if unsupportedEncoding(enc) {
 			return nil
 		}
+		policies := resp.Header.Values(cspHeader)
+		for _, value := range policies {
+			for _, policy := range strings.Split(value, ",") {
+				if cspBlocksInjection(policy, true) {
+					return nil
+				}
+			}
+		}
 
 		body, err := readDecodableBody(resp)
 		if err != nil {
@@ -166,17 +211,51 @@ func modifyResponse(scriptURL string) func(*http.Response) error {
 			return err
 		}
 
-		rewritten := InjectHTML(StripMetaCSP(body), scriptURL)
-		// See StripMetaCSP: the page's own policy would block preview-pick.js.
-		resp.Header.Del("Content-Security-Policy")
-		resp.Header.Del("Content-Security-Policy-Report-Only")
+		var origin, nonce string
+		if resp.Request != nil {
+			origin, _ = resp.Request.Context().Value(previewOriginKey{}).(string)
+		}
+		page := scanHTML(body, origin)
+		for _, meta := range page.policies {
+			policy := meta.token.Attr[attribute(meta.token, "content")].Val
+			if cspBlocksInjection(policy, false) {
+				setDecodedBody(resp, body)
+				return nil
+			}
+		}
+		if (len(policies) > 0 || len(page.policies) > 0) &&
+			(page.script == nil || attribute(page.script.token, "nonce") < 0) {
+			nonce = rand.Text()
+		}
+		csp := newPreviewCSP(scriptURL, origin, frameSource, nonce)
+		// Header.Values returns the original slice, so each policy stays in
+		// its own header field and keeps its order.
+		for i, policy := range policies {
+			policies[i] = csp.rewritePolicies(policy)
+		}
+		injectURL := scriptURL
+		if scriptURL == ScriptPath && origin != "" && nonce != "" {
+			injectURL = origin + ScriptPath
+		}
+		rewritten := page.rewrite(body, injectURL, csp)
 
-		resp.Body = io.NopCloser(bytes.NewReader(rewritten))
-		resp.ContentLength = int64(len(rewritten))
-		resp.Header.Set("Content-Length", strconv.Itoa(len(rewritten)))
-		resp.Header.Del("Content-Encoding")
+		setDecodedBody(resp, rewritten)
+		if !bytes.Equal(body, rewritten) {
+			resp.Header.Del("ETag")
+			resp.Header.Del("Last-Modified")
+		}
+		if nonce != "" {
+			resp.Header.Set("Cache-Control", "no-store")
+		}
 		return nil
 	}
+}
+
+func setDecodedBody(resp *http.Response, body []byte) {
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	resp.ContentLength = int64(len(body))
+	resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	resp.Header.Del("Content-Encoding")
 }
 
 func unsupportedEncoding(enc string) bool {

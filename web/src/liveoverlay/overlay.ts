@@ -8,6 +8,7 @@ import { dropView, getView, putView, type Mode, type SessionView } from './viewS
 
 /** What preview-pick.js hands the overlay. */
 export type HostOpts = {
+  styleNonce?: string
   /** Post to the chat drawer; false when the drawer is not ready. */
   post: (msg: Record<string, unknown>) => boolean
   /** Chat drawer theme: `light` or `dark`. Empty when the drawer has no theme yet. */
@@ -177,11 +178,13 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     `<style>${OVERLAY_CSS}</style><div class="root">` +
     '<div data-layer="frames"></div><div data-layer="switchers"></div>' +
     '<div data-layer="annotations"></div><div data-layer="panel"></div><div data-layer="dock"></div></div>'
-  const stopIconMotion = installRuntimeIconMotion(shadow)
+  if (opts.styleNonce) shadow.querySelector('style')!.nonce = opts.styleNonce
+  const stopIconMotion = installRuntimeIconMotion(shadow, opts.styleNonce)
   const root = shadow.querySelector('.root') as HTMLElement
   const layer = (name: string) => shadow.querySelector(`[data-layer="${name}"]`) as HTMLElement
-  const annotations = createAnnotations(layer('annotations'), T, () => renderPanel())
+  const annotations = createAnnotations(layer('annotations'), T, () => renderPanel(), opts.styleNonce)
   const pageStyle = document.createElement('style')
+  if (opts.styleNonce) pageStyle.nonce = opts.styleNonce
   pageStyle.setAttribute('data-grasp-live-overlay', '')
   pageStyle.textContent = PAGE_CSS
 

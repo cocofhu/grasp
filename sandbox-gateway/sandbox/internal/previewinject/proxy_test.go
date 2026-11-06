@@ -278,11 +278,14 @@ func TestProxy_LeavesLocation(t *testing.T) {
 	}
 }
 
-func TestProxy_DropsCSP(t *testing.T) {
+func TestProxy_ExtendsCSPWithoutDroppingProtection(t *testing.T) {
+	reportOnly := "default-src 'none'; report-uri /csp-report"
 	proxy, _ := testProxy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'")
-		w.Header().Set("Content-Security-Policy-Report-Only", "style-src 'self'")
+		w.Header().Add(cspHeader, "default-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'")
+		w.Header().Add(cspHeader, "script-src 'self'; style-src 'unsafe-inline'; connect-src 'none', img-src 'none'")
+		w.Header().Set("Content-Security-Policy-Report-Only", reportOnly)
+		w.Header().Set("ETag", `"upstream"`)
 		_, _ = w.Write([]byte(`<head><meta http-equiv="Content-Security-Policy" content="style-src 'self'"></head><body></body>`))
 	}))
 	resp, err := http.Get(proxy.URL + "/demo/")
@@ -291,18 +294,97 @@ func TestProxy_DropsCSP(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	for _, h := range []string{"Content-Security-Policy", "Content-Security-Policy-Report-Only"} {
-		if v := resp.Header.Get(h); v != "" {
-			t.Fatalf("%s kept: %s", h, v)
-		}
+	policies := resp.Header.Values(cspHeader)
+	if len(policies) != 2 ||
+		!strings.Contains(policies[0], "frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'") ||
+		!strings.Contains(policies[0], "script-src 'self'") ||
+		!strings.Contains(policies[0], "script-src-elem 'self' "+scriptURL) ||
+		!strings.Contains(policies[1], "style-src 'unsafe-inline';connect-src "+proxy.URL+EmbedOriginPath+";") ||
+		!strings.HasSuffix(policies[1], ", img-src 'none'") ||
+		strings.Contains(policies[1], "style-src-elem") {
+		t.Fatalf("policies: %q", policies)
 	}
-	if strings.Contains(string(body), "http-equiv") || !strings.Contains(string(body), "preview-pick.js") {
+	if resp.Header.Get("Content-Security-Policy-Report-Only") != reportOnly ||
+		resp.Header.Get("Cache-Control") != "no-store" || resp.Header.Get("ETag") != "" {
+		t.Fatalf("headers: %v", resp.Header)
+	}
+	_, nonceWithEnd, ok := strings.Cut(string(body), ` nonce="`)
+	nonce, _, _ := strings.Cut(nonceWithEnd, `"`)
+	if !ok || nonce == "" || !strings.Contains(string(body), "style-src-elem &#39;self&#39; &#39;nonce-"+nonce+"&#39;") ||
+		!strings.Contains(policies[0], "'nonce-"+nonce+"'") {
 		t.Fatalf("body: %s", body)
 	}
 }
 
+func TestProxy_LeavesHTMLIntactWhenCSPProhibitsInjection(t *testing.T) {
+	for _, tc := range []struct{ name, policy, meta string }{
+		{"sandbox header", "script-src 'self', sandbox; default-src 'none'", "style-src 'none'"},
+		{"script deny header", "default-src 'self'; script-src-elem 'none'", "style-src 'none'"},
+		{"script deny meta", "default-src 'self'; connect-src 'none'", "script-src 'none'"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `<head><meta http-equiv=Content-Security-Policy content="` + tc.meta + `"></head><body>upload</body>`
+			proxy, _ := testProxy(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				w.Header().Set(cspHeader, tc.policy)
+				_, _ = io.WriteString(w, body)
+			}))
+			resp, err := http.Get(proxy.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			got, err := io.ReadAll(resp.Body)
+			if err != nil || string(got) != body || resp.Header.Get(cspHeader) != tc.policy {
+				t.Fatalf("protected HTML changed: %s, %v, %v", got, resp.Header, err)
+			}
+		})
+	}
+}
+
+func TestProxy_LimitsFrameAndConnectSources(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set(cspHeader, "default-src 'none'; script-src 'self'; child-src 'self'; frame-ancestors 'none'")
+		_, _ = io.WriteString(w, "<body>app</body>")
+	}))
+	defer up.Close()
+	u, err := url.Parse(up.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httptest.NewServer(NewHandlerWithEmbed(u, ScriptPath, EmbedLookup{
+		RunID: "run-1", RuntimeURL: "http://internal.example/sandbox-inject/runtime",
+	}))
+	defer proxy.Close()
+	req, err := http.NewRequest(http.MethodGet, proxy.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Forwarded-Host", "app.preview.example")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	policy := resp.Header.Get(cspHeader)
+	for _, want := range []string{
+		"script-src 'self'", "child-src 'self'", "frame-ancestors 'none'",
+		"connect-src https://app.preview.example" + EmbedOriginPath,
+		"frame-src 'self' http://*:*/embed/runs/run-1/nodes/",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("policy %q lacks %q", policy, want)
+		}
+	}
+	if strings.Contains(policy, "internal.example") {
+		t.Fatalf("unexpected source: %s", policy)
+	}
+}
+
 func TestProxy_SkipsWebsocketUpgrade(t *testing.T) {
-	modify := modifyResponse(scriptURL)
+	modify := modifyResponse(scriptURL, "")
 	resp := &http.Response{
 		StatusCode: http.StatusSwitchingProtocols,
 		Header:     http.Header{"Content-Type": []string{"text/html"}},

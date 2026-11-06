@@ -77,17 +77,28 @@ func TestInjectHTML_EscapesURL(t *testing.T) {
 	}
 }
 
-func TestStripMetaCSP(t *testing.T) {
+func TestRewriteHTMLOnlyChangesCSPMetaElements(t *testing.T) {
 	t.Parallel()
-	in := []byte(`<head><meta charset="utf-8">
-<META HTTP-EQUIV='Content-Security-Policy' content="default-src 'self'; style-src 'self'">
-<meta http-equiv=content-security-policy content="connect-src 'none'">
-<meta name="referrer" content="no-referrer"></head>`)
-	got := string(StripMetaCSP(in))
-	if strings.Contains(strings.ToLower(got), "content-security-policy") {
-		t.Fatalf("meta csp kept: %s", got)
+	unchanged := []string{
+		`<meta charset="utf-8">`,
+		`<meta name="description" content="http-equiv='content-security-policy'">`,
+		`<!-- <meta http-equiv=content-security-policy content="style-src 'none'"> -->`,
+		`<template><meta http-equiv=content-security-policy content="style-src 'none'"></template>`,
+		`<script>const re = /<meta http-equiv="Content-Security-Policy">/.test('x');</script>`,
+		`<textarea><meta http-equiv=content-security-policy content="style-src 'none'"></textarea>`,
 	}
-	if !strings.Contains(got, `<meta charset="utf-8">`) || !strings.Contains(got, `<meta name="referrer" content="no-referrer">`) {
-		t.Fatalf("other meta removed: %s", got)
+	meta := `<META data-note="a > b" HTTP-EQUIV=content-security&#45;policy content="style-src 'self'; object-src 'none'">`
+	in := []byte("<head>" + strings.Join(unchanged, "") + meta + "</head><body></body>")
+	csp := newPreviewCSP(ScriptPath, "http://127.0.0.1:3000", "", "test-nonce")
+	got := string(scanHTML(in, "").rewrite(in, ScriptPath, csp))
+	for _, value := range unchanged {
+		if !strings.Contains(got, value) {
+			t.Errorf("rewrote unrelated content %s in %s", value, got)
+		}
+	}
+	if !strings.Contains(got, `style-src-elem &#39;self&#39; &#39;nonce-test-nonce&#39;`) ||
+		!strings.Contains(got, `object-src &#39;none&#39;`) ||
+		!strings.Contains(got, `<script src="/__grasp/preview-pick.js" nonce="test-nonce"></script></body>`) {
+		t.Fatalf("expected scoped meta rewrite and injection: %s", got)
 	}
 }
