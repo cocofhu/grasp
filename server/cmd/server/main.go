@@ -115,6 +115,7 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("open database failed")
 	}
+	defer func() { _ = database.Close(db) }()
 
 	artifactSvc := services.NewArtifactService(db)
 	artifactSvc.SetFileSizeLimit(cfg.Storage.MaxFileBytes)

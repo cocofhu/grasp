@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const Prefix = "fileref:v1/"
@@ -27,7 +28,35 @@ const (
 	Bytes  = "bytes"
 )
 
-type Store struct{ Root string }
+type Store struct {
+	Root   string
+	mu     sync.Mutex
+	closed bool
+}
+
+var ErrClosed = errors.New("file payload store is closed")
+
+// Close prevents further namespace mutations, including a late import's
+// publication. It waits for any in-progress rename, not for a blocked source
+// reader. An already-open temporary file may finish copying but cannot publish.
+func (s *Store) Close() {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
+}
+
+func (s *Store) createTemp() (*os.File, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, ErrClosed
+	}
+	dir := filepath.Join(s.Root, "tmp")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	return os.CreateTemp(dir, "upload-*")
+}
 
 func New(root string) (*Store, error) {
 	if strings.TrimSpace(root) == "" {
@@ -120,11 +149,7 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 	if err = ctx.Err(); err != nil {
 		return "", 0, err
 	}
-	tmpDir := filepath.Join(s.Root, "tmp")
-	if err = os.MkdirAll(tmpDir, 0o700); err != nil {
-		return "", 0, err
-	}
-	f, err := os.CreateTemp(tmpDir, "upload-*")
+	f, err := s.createTemp()
 	if err != nil {
 		return "", 0, err
 	}
@@ -145,6 +170,11 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 	}
 	digest := hex.EncodeToString(h.Sum(nil))
 	dest := s.path(digest)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return "", 0, ErrClosed
+	}
 	if err = os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return "", 0, err
 	}

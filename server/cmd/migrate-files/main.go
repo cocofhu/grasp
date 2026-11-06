@@ -35,11 +35,7 @@ func run(path string) error {
 	if err != nil {
 		return err
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = sqlDB.Close() }()
+	defer func() { _ = database.Close(db) }()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	report, err := filestore.Migrate(ctx, db, models.AllModels()...)

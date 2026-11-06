@@ -9,6 +9,7 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
 
+	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/filestore"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -26,6 +27,7 @@ func setupPmDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = database.Close(db) })
 	return db
 }
 

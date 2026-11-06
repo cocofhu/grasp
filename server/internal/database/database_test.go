@@ -32,14 +32,12 @@ func TestConfiguredPayloadRootSurvivesDatabaseReopen(t *testing.T) {
 	if err = db.Create(&models.Artifact{ID: "restart", Kind: "markdown", Content: "persistent report"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	conn, _ := db.DB()
-	_ = conn.Close()
+	_ = Close(db)
 	db, err = OpenWithFiles(cfg, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, _ = db.DB()
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { _ = Close(db) })
 	var artifact models.Artifact
 	if err = db.First(&artifact, "id = ?", "restart").Error; err != nil || artifact.Content != "persistent report" {
 		t.Fatalf("reopen=%+v err=%v", artifact, err)

@@ -52,9 +52,7 @@ func cleanupEngineDB(t *testing.T, eng *Engine, db *gorm.DB) {
 	t.Helper()
 	t.Cleanup(func() {
 		eng.Close()
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = database.Close(db)
 	})
 }
 

@@ -19,9 +19,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = database.Close(db)
 	})
 	return db
 }

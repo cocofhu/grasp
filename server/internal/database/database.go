@@ -35,6 +35,20 @@ func Open(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	}
 }
 
+// Close fences file publications before releasing the database. Background
+// jobs may still settle after admission stops; they must not recreate storage
+// directories after the caller has closed and removed the database workspace.
+func Close(db *gorm.DB) error {
+	if store, err := filestore.FromDB(db); err == nil {
+		store.Close()
+	}
+	conn, err := db.DB()
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
 // OpenWithFiles binds payload storage before any application writes. All
 // replicas must use the same persistent root as the database they share.
 func OpenWithFiles(cfg config.DatabaseConfig, root string) (*gorm.DB, error) {
@@ -44,9 +58,7 @@ func OpenWithFiles(cfg config.DatabaseConfig, root string) (*gorm.DB, error) {
 	}
 	// Rebind the initial SQLite default before querying payload-bearing rows.
 	if err = filestore.Rebind(db, root); err != nil {
-		if conn, closeErr := db.DB(); closeErr == nil {
-			_ = conn.Close()
-		}
+		_ = Close(db)
 		return nil, err
 	}
 	return db, nil
@@ -123,7 +135,8 @@ var (
 )
 
 // OpenSQLiteTest opens a migrated SQLite DB at path by cloning a process-wide
-// schema template. Unit tests that open a fresh DB per case should prefer this
+// schema template. Call Close before cleaning up its storage directory. Unit
+// tests that open a fresh DB per case should prefer this
 // over OpenSQLite: AutoMigrate of the full model set is multi-second on cold
 // disks and routinely pushes engine/handlers packages near the default 10m
 // go-test timeout when every case pays that cost.
