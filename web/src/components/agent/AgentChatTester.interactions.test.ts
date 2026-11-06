@@ -413,7 +413,7 @@ describe('AgentChatTester interactions', () => {
     await flushPromises()
     expect(preventDefault).toHaveBeenCalled()
     expect(vm.attachments).toEqual([
-      { data: 'UA==', mimeType: 'image/png', url: 'data:image/png;base64,UA==', name: 'shot.png' },
+      { data: 'UA==', mimeType: 'image/png', url: 'data:image/png;base64,UA==', name: 'shot.png', sizeBytes: 1 },
     ])
     expect(vm.errorMsg).toContain('huge.dat')
     w.unmount()

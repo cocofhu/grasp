@@ -1,4 +1,5 @@
-import { ref } from 'vue'
+import { ref, type Ref } from 'vue'
+import { i18n } from '@/lib/shared/i18n'
 import type { ClarifyImage } from '@/lib/shared/types'
 import {
   SITE_ATTACH_MAX_BYTES,
@@ -9,15 +10,16 @@ import {
   formatSendRejectMessage,
   attachmentDisplayName,
   readFilesAsAttachments,
+  attachmentsReading,
 } from '@/lib/shared/attachments'
 
 export type AttachNotice = { kind: 'error' | 'ok'; text: string } | null
 
 /** Shared paste/upload/preview/delete attachment logic (any type + 50 MiB gate). */
-export function useImageAttachments(opts?: { maxBytes?: number; maxMiB?: number }) {
+export function useImageAttachments(opts?: { maxBytes?: number; maxMiB?: number; attachments?: Ref<ClarifyImage[]>; retainUrl?: boolean }) {
   const maxBytes = opts?.maxBytes ?? SITE_ATTACH_MAX_BYTES
   const maxMiB = opts?.maxMiB ?? SITE_ATTACH_MAX_MIB
-  const attachments = ref<ClarifyImage[]>([])
+  const attachments = opts?.attachments ?? ref<ClarifyImage[]>([])
   const fileInput = ref<HTMLInputElement | null>(null)
   const notice = ref<AttachNotice>(null)
 
@@ -31,15 +33,31 @@ export function useImageAttachments(opts?: { maxBytes?: number; maxMiB?: number 
 
   function addFiles(files: ArrayLike<File> | null | undefined) {
     if (!files) return
-    const { rejected, accepted } = readFilesAsAttachments(files, {
+    if (files.length) clearNotice()
+    const { rejected } = readFilesAsAttachments(files, {
       maxBytes,
-      onRead: ({ data, mimeType, name }) => attachments.value.push({ data, mimeType, name }),
+      onStart: pending => attachments.value.push(pending),
+      onRead: (ready, pending) => {
+        const index = attachments.value.indexOf(pending)
+        // Removing an in-flight file (or clearing/changing chat) must not add it back.
+        if (index >= 0) {
+          const { data, mimeType, name, sizeBytes } = ready
+          attachments.value[index] = { data, mimeType, name, sizeBytes }
+          if (opts?.retainUrl) attachments.value[index]!.url = ready.url
+          if (!attachmentsReading(attachments.value) && notice.value?.text === i18n.global.t('common.attachments.reading')) clearNotice()
+        }
+      },
+      onError: (name, pending) => {
+        const index = attachments.value.indexOf(pending)
+        if (index < 0) return
+        attachments.value.splice(index, 1)
+        setNotice('error', i18n.global.t('common.attachments.readFailed', { name }))
+      },
     })
     if (rejected.length) {
       setNotice('error', formatSelectRejectMessage(rejected, maxMiB))
       return
     }
-    if (accepted) clearNotice()
   }
 
   function onPickFiles(e: Event) {
@@ -75,6 +93,10 @@ export function useImageAttachments(opts?: { maxBytes?: number; maxMiB?: number 
   }
 
   function blockSendIfOversized(images: ClarifyImage[] = attachments.value): boolean {
+    if (attachmentsReading(images)) {
+      setNotice('error', i18n.global.t('common.attachments.reading'))
+      return true
+    }
     const names = validateForSend(images)
     if (!names.length) return false
     setNotice('error', formatSendRejectMessage(names, maxMiB))

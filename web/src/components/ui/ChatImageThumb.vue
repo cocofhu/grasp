@@ -218,6 +218,9 @@ function onPreviewClick() {
       class="pointer-events-none absolute inset-x-0 bottom-0 bg-black/55 px-1 py-0.5 text-center text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
       :class="hintClass"
     >{{ t('common.chatImage.clickToEnlarge') }}</span>
+    <span class="pointer-events-none absolute left-1 top-1 rounded bg-black/45 p-0.5 text-white" aria-hidden="true">
+      <Icon name="image" :size="size === 'xs' ? 8 : 12" :interactive="false" />
+    </span>
   </button>
   <div
     v-else
@@ -236,5 +239,8 @@ function onPreviewClick() {
     <span
       class="pointer-events-none absolute inset-x-0 bottom-0 bg-black/45 px-0.5 py-0.5 text-center text-[9px] leading-tight text-txt2"
     >{{ t('common.chatImage.previewUnavailable') }}</span>
+    <span class="pointer-events-none absolute left-1 top-1 rounded bg-black/45 p-0.5 text-white" aria-hidden="true">
+      <Icon name="image" :size="size === 'xs' ? 8 : 12" :interactive="false" />
+    </span>
   </div>
 </template>

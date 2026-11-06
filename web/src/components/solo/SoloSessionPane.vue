@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, useRouter } from 'vue-router'
@@ -94,7 +95,7 @@ const draft = useChatComposerDraft(defaultRepo)
 const { input, attach, mention, textareaComponent } = draft
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
-// A preview iframe may not have the login cookie. Fetch only images attached
+// A preview iframe may not have the login cookie. Fetch only attachments belonging
 // to this session's messages with the drawer's existing bearer.
 const transcriptImageURLs = shallowReactive(new Map<string, string>())
 const attachmentRequests = new Set<string>()
@@ -106,7 +107,7 @@ if (embedded) {
       if (turn.role !== 'user' || !turn.id.startsWith('u:')) continue
       for (const image of turn.images || []) {
         const id = image.ref?.startsWith('blob:') ? image.ref.slice(5) : ''
-        if (!id || !isImageAttachment(image) || attachmentRequests.has(id)) continue
+        if (!id || attachmentRequests.has(id)) continue
         attachmentRequests.add(id)
         void embedded.attachment(turn.id.slice(2), id, attachmentController.signal).then(blob => {
           if (!attachmentController.signal.aborted) transcriptImageURLs.set(id, URL.createObjectURL(blob))
@@ -443,7 +444,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <div v-if="turn.images?.length" class="flex flex-wrap justify-end gap-1.5">
                   <template v-for="(im, ii) in turn.images" :key="ii">
                     <ChatImageThumb
-                      v-if="isImageAttachment(im)"
+                      v-if="isImageAttachment(im) && im.readState !== 'reading'"
                       mode="previewable"
                       size="md"
                       thumb-class="rounded-md"
@@ -452,10 +453,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                       :alt="attachmentDisplayName(im, ii)"
                       @preview="openChatImagePreview(transcriptImageSrc(im), attachmentDisplayName(im, ii))"
                     />
-                    <div v-else class="chat-file-chip flex max-w-[200px] items-center gap-2 rounded-md border border-line bg-elevated px-2 py-1.5">
-                      <Icon name="artifact" :size="15" class="shrink-0 text-txt2" />
-                      <span class="min-w-0 truncate text-[12px] text-txt">{{ attachmentDisplayName(im, ii) }}</span>
-                    </div>
+                    <ChatFileAttachment v-else :attachment="im" :src="transcriptImageSrc(im)" />
                   </template>
                 </div>
                 <div v-if="asideReferences(turn).length" class="flex flex-wrap justify-end gap-1.5" data-testid="solo-turn-references">

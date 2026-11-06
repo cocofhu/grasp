@@ -270,6 +270,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/artifacts/:id/download", h.DownloadArtifact)
 		api.DELETE("/artifacts/:id", h.DeleteArtifact)
 		api.GET("/blobs/:id", h.GetBlob)
+		api.HEAD("/blobs/:id", h.GetBlob)
 
 		api.GET("/agents", h.ListAgents)
 		api.POST("/agents", h.CreateAgent)
@@ -592,7 +593,7 @@ func publicGateMiddleware() gin.HandlerFunc {
 		// Do not apply DENY / frame-ancestors 'none' on that path.
 		if !strings.Contains(c.Request.URL.Path, "/preview-api/") {
 			c.Header("X-Frame-Options", "DENY")
-			c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+			c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
 		}
 		c.Writer.Header().Del("Access-Control-Allow-Origin")
 		c.Writer.Header().Del("Access-Control-Allow-Methods")

@@ -16,7 +16,7 @@ import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
-import { attachmentByteLength, isImageAttachment, SITE_ATTACH_MAX_BYTES } from '@/lib/shared/attachments'
+import { attachmentByteLength, SITE_ATTACH_MAX_BYTES } from '@/lib/shared/attachments'
 import type { ReferenceSearchParams } from '@/lib/api/clients/soloClient'
 import VisitModelSelect, { type VisitModelTransport } from './VisitModelSelect.vue'
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
@@ -126,7 +126,7 @@ function loadImages(next: PreviewChatRow[]) {
   for (const row of next) {
     for (const [index, image] of (row.images || []).entries()) {
       const key = imageKey(row, index)
-      if (!isImageAttachment(image) || imageRequests.has(key)) continue
+      if (imageRequests.has(key)) continue
       imageRequests.add(key)
       void client.image(row.id, index, controller.signal).then(blob => {
         if (!controller.signal.aborted) imageURLs.set(key, URL.createObjectURL(blob))

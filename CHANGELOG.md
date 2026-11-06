@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 聊天支持拖拽添加多个附件，展示文件名称、类型和大小；图片、音频、视频使用对应类型图标并支持在线查看或播放，保留下载与失败提示。文件分段读取沿用现有登录、分享和嵌入权限校验。
+
 - Mobile workflow conversations use the existing chat interface directly, including deep links and reloads, and keep the chat mounted when resizing. The old pending-card page and return-to-list navigation are removed. Approval sharing remains available through the conversation menu and preview toolbar.
 
 - 移动端表单控件在窄屏保持至少 16px，避免 iOS Safari 聚焦输入框时触发整页自动放大；新增 Chromium/WebKit 的全路由缩放与溢出回归验证。

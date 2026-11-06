@@ -11,10 +11,11 @@ import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import type { AgentTool, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import type { GateReactTurn } from './gateApproval/gateApprovalContext'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { imgSrc } from '@/lib/shared/compositeText'
-import { attachmentDisplayName } from '@/lib/shared/attachments'
+import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
 import AnnotationChip from './AnnotationChip.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import ThinkingBusyCue from './ThinkingBusyCue.vue'
@@ -176,15 +177,17 @@ function onThoughtToggle(e: Event) {
       <div class="max-w-[88%] space-y-2 rounded-lg bg-elevated px-3 py-2 text-[13px] text-txt">
         <div v-if="userText" class="whitespace-pre-wrap break-words">{{ userText }}</div>
         <div v-if="userImages.length" class="flex flex-wrap gap-1.5">
+          <template v-for="(im, index) in userImages" :key="index">
           <ChatImageThumb
-            v-for="(im, index) in userImages"
-            :key="index"
+            v-if="isImageAttachment(im)"
             :src="imgSrc(im)"
             :label="attachmentDisplayName(im, index)"
             size="sm"
             test-id="gate-live-human-image"
             @preview="openChatImagePreview(imgSrc(im), attachmentDisplayName(im, index))"
           />
+          <ChatFileAttachment v-else :attachment="im" />
+          </template>
         </div>
         <div v-if="userAnnotations.length" class="flex flex-wrap gap-1.5">
           <AnnotationChip v-for="(ann, index) in userAnnotations" :key="index" :ann="ann" />

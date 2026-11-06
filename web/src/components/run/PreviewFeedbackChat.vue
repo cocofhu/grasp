@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 import { ref, watch, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type PreviewIssue } from '@/lib/api/api'
@@ -8,7 +9,7 @@ import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import { imgSrc } from '@/lib/shared/compositeText'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
-import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
+import { attachmentDisplayName, isImageAttachment, attachmentsReading } from '@/lib/shared/attachments'
 import type { ClarifyImage } from '@/lib/shared/types'
 
 const props = withDefaults(
@@ -90,7 +91,7 @@ const hasElementShot = computed(() => {
 })
 
 const canSubmit = computed(() => {
-  if (sending.value) return false
+  if (sending.value || attachmentsReading(attachments.value)) return false
   const body = text.value.trim()
   if (props.requireElement) {
     return !!body && !!props.selector?.trim() && hasElementShot.value
@@ -173,6 +174,10 @@ function clearDraft() {
  * placeholder from GateApproval) and bypasses the normal canSubmit gate when non-empty.
  */
 async function send(opts?: { body?: string }): Promise<boolean> {
+  if (attachmentsReading(attachments.value)) {
+    loadError.value = t('common.attachments.reading')
+    return false
+  }
   const images = collectImages()
   const body = (opts?.body !== undefined ? opts.body : text.value).trim()
   if (opts?.body === undefined) {
@@ -325,6 +330,7 @@ defineExpose({
               test-id="preview-issue-image-thumb"
               @preview="openChatImagePreview(imgSrc(im), attachmentDisplayName(im, ii))"
             />
+            <ChatFileAttachment v-else :attachment="im" />
           </template>
         </div>
       </div>

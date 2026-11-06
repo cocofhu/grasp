@@ -1,4 +1,5 @@
 import type { ClarifyImage } from '@/lib/shared/types'
+import { i18n } from './i18n'
 
 /** Site / platform ACP single-file limit (clarified: 50 MiB). */
 export const SITE_ATTACH_MAX_BYTES = 50 * 1024 * 1024
@@ -40,11 +41,63 @@ export function inferImageMimeFromUrl(url: string): string {
 export function isImageAttachment(
   im: Pick<ClarifyImage, 'mimeType' | 'name'> | { mimeType?: string; name?: string; url?: string },
 ): boolean {
-  const mime = (im.mimeType || '').toLowerCase()
+  const mime = (im.mimeType || '').split(';')[0]!.trim().toLowerCase()
   if (mime.startsWith('image/')) return true
+  if (mime && mime !== 'application/octet-stream') return false
   const name = (im.name || '').toLowerCase()
   if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name)) return true
   return isLikelyImageUrl('url' in im ? String(im.url || '') : '')
+}
+
+export type AttachmentKind = 'image' | 'audio' | 'video' | 'file'
+
+const MEDIA_MIME: Record<string, string> = {
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg',
+  m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac', opus: 'audio/ogg',
+  mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', ogv: 'video/ogg',
+  mov: 'video/quicktime', avi: 'video/x-msvideo', mkv: 'video/x-matroska',
+}
+
+/** Browser/file-manager MIME can be empty or generic, especially for dragged files. */
+export function attachmentMime(im: { mimeType?: string; name?: string }): string {
+  const mime = (im.mimeType || '').split(';')[0]!.trim().toLowerCase()
+  if (mime && mime !== 'application/octet-stream') return mime
+  const ext = (im.name || '').split('.').pop()?.toLowerCase() || ''
+  return MEDIA_MIME[ext] || mime || 'application/octet-stream'
+}
+
+export function attachmentKind(im: { mimeType?: string; name?: string; url?: string }): AttachmentKind {
+  const mime = attachmentMime(im)
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime.startsWith('video/')) return 'video'
+  if (isImageAttachment(im)) return 'image'
+  return 'file'
+}
+
+export function attachmentSizeLabel(im: ClarifyImage): string {
+  const bytes = attachmentByteLength(im)
+  if (!bytes && im.sizeBytes === undefined) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
+}
+
+export function attachmentDetails(im: ClarifyImage): string {
+  return [i18n.global.t(`common.attachments.${attachmentKind(im)}`), attachmentSizeLabel(im)].filter(Boolean).join(' · ')
+}
+
+export function attachmentsReading(images: ClarifyImage[]): boolean {
+  return images.some(im => im.readState === 'reading')
+}
+
+/** Download links accept the attachment transports, never executable URL schemes. */
+export function attachmentDownloadUrl(src: string): string {
+  try {
+    const protocol = new URL(src, 'https://attachment.invalid').protocol
+    return src.trim() && ['http:', 'https:', 'blob:', 'data:'].includes(protocol) ? src : ''
+  } catch {
+    return ''
+  }
 }
 
 /** Display label: original name, else fallback. */
@@ -83,7 +136,7 @@ export function findOversizedAttachments(
   return images.filter((im) => isOversizedAttachment(im, maxBytes))
 }
 
-export type ReadAttachment = { data: string; mimeType: string; url: string; name: string }
+export type ReadAttachment = ClarifyImage & { data: string; mimeType: string; url: string; name: string }
 
 /**
  * Size-gate then read each file as a data URL. `onRead` fires asynchronously per
@@ -91,7 +144,12 @@ export type ReadAttachment = { data: string; mimeType: string; url: string; name
  */
 export function readFilesAsAttachments(
   files: ArrayLike<File>,
-  opts: { maxBytes?: number; onRead: (att: ReadAttachment) => void },
+  opts: {
+    maxBytes?: number
+    onStart?: (att: ReadAttachment) => void
+    onRead: (att: ReadAttachment, pending: ReadAttachment) => void
+    onError?: (name: string, pending: ReadAttachment) => void
+  },
 ): { rejected: string[]; accepted: number } {
   const maxBytes = opts.maxBytes ?? SITE_ATTACH_MAX_BYTES
   const rejected: string[] = []
@@ -102,14 +160,30 @@ export function readFilesAsAttachments(
       rejected.push(name)
       return
     }
-    const mimeType = f.type || 'application/octet-stream'
+    const mimeType = attachmentMime({ mimeType: f.type, name })
     const reader = new FileReader()
+    const pending: ReadAttachment = { data: '', url: '', mimeType, name, sizeBytes: f.size, readState: 'reading' }
+    opts.onStart?.(pending)
+    let settled = false
+    const fail = () => {
+      if (settled) return
+      settled = true
+      opts.onError?.(name, pending)
+    }
     reader.onload = () => {
+      if (settled) return
+      settled = true
       const url = String(reader.result || '')
       const comma = url.indexOf(',')
-      opts.onRead({ data: comma >= 0 ? url.slice(comma + 1) : url, mimeType, url, name })
+      opts.onRead({ data: comma >= 0 ? url.slice(comma + 1) : url, mimeType, url, name, sizeBytes: f.size }, pending)
     }
-    reader.readAsDataURL(f)
+    reader.onerror = fail
+    reader.onabort = fail
+    try {
+      reader.readAsDataURL(f)
+    } catch {
+      fail()
+    }
     accepted++
   })
   return { rejected, accepted }

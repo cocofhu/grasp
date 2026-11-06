@@ -76,13 +76,14 @@ type PreviewFormField struct {
 	Why         string `json:"why,omitempty"`
 }
 
-// PreviewImage is a leak-free image hint: mime, optional name, and an opaque
+// PreviewImage is a leak-free attachment hint: mime, optional name/size, and an opaque
 // dialogue-scoped index used by the public token image route. No blob refs,
 // /api/blobs paths, internal hosts, or raw base64.
 type PreviewImage struct {
-	MimeType string `json:"mimeType,omitempty"`
-	Name     string `json:"name,omitempty"`
-	Index    int    `json:"index"`
+	MimeType  string `json:"mimeType,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Index     int    `json:"index"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
 }
 
 // PreviewAnnotation is a leak-free annotation chip (no blob URLs).
@@ -652,13 +653,8 @@ func sanitizePromptImages(imgs []models.PromptImage, idx *int) []PreviewImage {
 		if mime == "" {
 			mime = "image/png"
 		}
-		// Skip clearly non-image attachments from the public ReAct strip.
-		if !strings.HasPrefix(strings.ToLower(mime), "image/") {
-			*idx++
-			continue
-		}
 		name := safeImageName(im.Name)
-		out = append(out, PreviewImage{MimeType: mime, Name: name, Index: *idx})
+		out = append(out, PreviewImage{MimeType: mime, Name: name, Index: *idx, SizeBytes: im.SizeBytes})
 		*idx++
 	}
 	if len(out) == 0 {

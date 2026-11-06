@@ -3,10 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/base64"
-	"fmt"
-	"io"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -100,38 +97,14 @@ func (h *Handlers) writePublicPromptImage(c *gin.Context, img models.PromptImage
 		}
 		defer func() { _ = rc.Close() }()
 
-		header := make([]byte, 512)
-		n, readErr := io.ReadFull(rc, header)
-		if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "blob read failed"})
-			return
+		if meta.MimeType == "" {
+			meta.MimeType = img.MimeType
 		}
-		header = header[:n]
-
-		mime := blob.StripContentTypeParams(meta.MimeType)
-		if sniffed := blob.SniffSupportedImageMIME(header); sniffed != "" {
-			mime = sniffed
+		if meta.Name == "" {
+			meta.Name = img.Name
 		}
-		if mime == "" {
-			mime = strings.TrimSpace(img.MimeType)
-		}
-		if mime == "" {
-			mime = "application/octet-stream"
-		}
-		c.Header("Content-Type", mime)
 		c.Header("Cache-Control", "private, max-age=60")
-		name := strings.TrimSpace(meta.Name)
-		if name == "" {
-			name = strings.TrimSpace(img.Name)
-		}
-		if name != "" {
-			c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%q", filepath.Base(name)))
-		}
-		if meta.Size > 0 {
-			c.Header("Content-Length", fmt.Sprintf("%d", meta.Size))
-		}
-		c.Status(http.StatusOK)
-		_, _ = io.Copy(c.Writer, io.MultiReader(bytes.NewReader(header), rc))
+		writeAttachmentContent(c, rc, meta)
 		return
 	}
 
@@ -145,19 +118,6 @@ func (h *Handlers) writePublicPromptImage(c *gin.Context, img models.PromptImage
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}
-	mime := strings.TrimSpace(img.MimeType)
-	if sniffed := blob.SniffSupportedImageMIME(raw); sniffed != "" {
-		mime = sniffed
-	}
-	if mime == "" {
-		mime = "image/png"
-	}
-	c.Header("Content-Type", mime)
 	c.Header("Cache-Control", "private, max-age=60")
-	if name := strings.TrimSpace(img.Name); name != "" {
-		c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%q", filepath.Base(name)))
-	}
-	c.Header("Content-Length", fmt.Sprintf("%d", len(raw)))
-	c.Status(http.StatusOK)
-	_, _ = c.Writer.Write(raw)
+	writeAttachmentContent(c, bytes.NewReader(raw), blob.Meta{MimeType: img.MimeType, Name: img.Name, Size: int64(len(raw))})
 }
