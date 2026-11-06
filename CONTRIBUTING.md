@@ -111,15 +111,28 @@ in [`web/package.json`](web/package.json). This is a subset of the full suite
   previews, and responsive HTML preview toolbar actions
 - `desktop-sidebar-hide.spec.ts` — hide/reopen persistence and mobile drawer
   behavior when returning to desktop
+- `mobile-browser-contract.spec.ts` — every production workspace route plus the
+  public approval shell at mobile Chromium and WebKit widths, with viewport
+  overflow, load-time scale, and focused-form scale assertions
 
 Reproduce locally (same entry as CI):
 
 ```bash
-cd web && npm ci && npx playwright install chromium && npm run test:e2e:ci
+cd web && npm ci && npx playwright install chromium webkit && npm run test:e2e:ci
 ```
 
-Full suite remains `npm run test:e2e` (not run in PR CI). On `web-e2e`
-failure, Actions uploads `playwright-report/` and `test-results/` artifacts.
+For the broader mobile interaction matrix (Agent Studio, gates, run detail,
+workspace settings, audit, credentials, preview shell and responsive artifact
+toolbars) run both mobile engines locally:
+
+```bash
+cd web && npm run test:e2e:mobile:critical
+```
+
+Run the full desktop suite with `npm run test:e2e`. Set `E2E_PORT` to use a
+different local port for any of these commands, for example
+`E2E_PORT=5184 npm run test:e2e`. The `web-e2e` job runs the critical subset
+and uploads `playwright-report/` and `test-results/` artifacts on failure.
 Do **not** put the full suite or whole `project-detail.spec.ts` into
 `test:e2e:ci`.
 

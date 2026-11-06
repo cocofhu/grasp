@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 移动端表单控件在窄屏保持至少 16px，避免 iOS Safari 聚焦输入框时触发整页自动放大；新增 Chromium/WebKit 的全路由缩放与溢出回归验证。
+
 - **Optional E2B sandbox deployment:** a separate `compose.e2b.yaml` and native Go gateway driver connect Grasp to prepared E2B Cloud/self-hosted templates through private endpoints. Includes persistent connection recovery, lease renewal, deletion retries and isolated preview origins for root paths, WebSockets and page tools. Enable it explicitly; Docker and Kubernetes defaults are unchanged. See the E2B deployment guide for template resource constraints and pause/reinstall limitations.
 
 - E2B preview switching republishes and probes displaced application ports before changing the shared injector, keeping earlier previews reachable. Its deadline cleanup regression test now follows the provider's actual create count and no longer depends on a fixed wall-clock stage.

@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test'
 
-test.use({ baseURL: 'http://127.0.0.1:5174' })
-
 test('artifact cold loading shows skeletons without an empty-state flash', async ({ page }) => {
   await page.goto('/artifacts-page-loading.html?scenario=pending&delay=2000')
   await expect(page.getByTestId('artifacts-surface')).toHaveAttribute('aria-busy', 'true')
