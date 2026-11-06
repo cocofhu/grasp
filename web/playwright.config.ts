@@ -32,6 +32,8 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop',
+      // Preserve the snapshot names from the original unnamed desktop project.
+      snapshotPathTemplate: '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-snapshotSuffix}{ext}',
       testIgnore: /mobile-browser-contract\.spec\.ts/,
     },
     {
