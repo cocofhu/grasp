@@ -150,14 +150,45 @@ class E2E:
         self.wait(lambda: self.request('/health', base=self.model), 'mock model')
         fixture_bin = self.data/'platform-wire-bin'
         fixture_bin.mkdir()
+        native_bin = self.data/'native-usage-bin'
+        native_bin.mkdir()
         for tool in self.tools:
             if tool['mode'] == 'platform-wire-fixture':
                 script = fixture_bin/tool['bin']
                 script.write_text('#!/bin/sh\nexec node '+shlex.quote(str(HERE/'agent-platform-wire-fixture.mjs'))+' '+shlex.quote(tool['id'])+' "$@"\n')
                 script.chmod(0o755)
-            elif not shutil.which(tool['bin']):
-                raise AssertionError(f'required real CLI missing: {tool["id"]} ({tool["bin"]}); no skip or fake fallback is permitted')
-        env.update({'PATH': str(fixture_bin)+os.pathsep+env['PATH'], 'GRASP_EXECUTION_MODE': 'worktree', 'GRASP_WORKTREE_ROOT': str(self.data/'launches'), 'GRASP_WORKTREE_BACKEND': str(Path(self.args.runtime).resolve()/'bin/backend'), 'GRASP_BLOBS_ROOT': str(self.data/'blobs'), 'GIT_ASKPASS': '/bin/false', 'GIT_TERMINAL_PROMPT': '0'})
+            else:
+                binary = shutil.which(tool['bin'])
+                if not binary:
+                    raise AssertionError(f'required real CLI missing: {tool["id"]} ({tool["bin"]}); no skip or fake fallback is permitted')
+                if tool['id'] == 'codebuddy':
+                    # Keep independent native counters for diagnosing delayed
+                    # snapshots. The real CLI still handles every request;
+                    # stdout is forwarded unchanged, and prompts are not logged.
+                    wrapper = native_bin/tool['bin']
+                    wrapper.write_text('''#!/usr/bin/env python3
+import json, subprocess, sys
+child = subprocess.Popen([NATIVE_BINARY, *sys.argv[1:]], stdin=sys.stdin.buffer, stdout=subprocess.PIPE)
+with open(USAGE_TRACE, 'a') as trace:
+    for line in child.stdout:
+        try:
+            event = json.loads(line)
+            if isinstance(event, dict):
+                sample = {key: event[key] for key in ('type', 'usage', 'modelUsage') if key in event}
+                message = event.get('message')
+                if isinstance(message, dict) and 'usage' in message:
+                    sample['messageUsage'] = message['usage']
+                if len(sample) > 1:
+                    trace.write(json.dumps(sample) + '\\n')
+                    trace.flush()
+        except (ValueError, TypeError):
+            pass
+        sys.stdout.buffer.write(line)
+        sys.stdout.buffer.flush()
+sys.exit(child.wait())
+'''.replace('NATIVE_BINARY', repr(binary)).replace('USAGE_TRACE', repr(str(self.output/'codebuddy-usage.jsonl'))))
+                    wrapper.chmod(0o755)
+        env.update({'PATH': os.pathsep.join([str(native_bin), str(fixture_bin), env['PATH']]), 'GRASP_EXECUTION_MODE': 'worktree', 'GRASP_WORKTREE_ROOT': str(self.data/'launches'), 'GRASP_WORKTREE_BACKEND': str(Path(self.args.runtime).resolve()/'bin/backend'), 'GRASP_BLOBS_ROOT': str(self.data/'blobs'), 'GIT_ASKPASS': '/bin/false', 'GIT_TERMINAL_PROMPT': '0'})
         port = int(self.base.rsplit(':', 1)[1])
         config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': self.base, 'public_advertise': self.base}, 'database': {'path': str(self.data/'grasp.db')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
         config_path = self.data/'config.json'
