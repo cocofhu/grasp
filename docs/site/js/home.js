@@ -8,6 +8,14 @@
     ? {
         heroTitles: ["Self-improve · Orchestration", "Delivery · Orchestration", "Visual review · Orchestration"],
         heroTitleIdle: "Delivery · Orchestration",
+        heroLive: {
+          idle: "● idle",
+          running: "● running",
+          waiting: "● waiting",
+          revise: "● revise",
+          approved: "● approved",
+          done: "● done",
+        },
         parAsk: "Run sign-in, billing, and notifications in parallel — start now.",
         parReply: "Got it. Parallel workflows for the three requirements are up and running.",
         pmPlaceholder: "Say the next thing to GraspPM…",
@@ -91,6 +99,14 @@
     : {
         heroTitles: ["自我迭代 · 编排", "需求交付 · 编排", "视觉评审 · 编排"],
         heroTitleIdle: "需求交付 · 编排",
+        heroLive: {
+          idle: "● 待机",
+          running: "● 运行中",
+          waiting: "● 待审批",
+          revise: "● 退回修改",
+          approved: "● 已批准",
+          done: "● 完成",
+        },
         parAsk: "并行推进登录鉴权、计费结算、消息通知这三个需求，现在启动。",
         parReply: "收到。已按三条需求拉起并行工作流，开始执行。",
         pmPlaceholder: "跟 GraspPM 说下一句…",
@@ -215,7 +231,7 @@
       edgeIds.forEach((id) => setEdge(id, null));
       actions.forEach((id) => setAction(id, false));
       loop?.classList.remove("is-show", "is-active");
-      setLive("● idle");
+      setLive(COPY.heroLive.idle);
     };
 
     const runNode = async (id, ms, waiting = false) => {
@@ -231,7 +247,7 @@
       await sleep(jitter(260, 0.2));
       if (signal.aborted) break;
 
-      setLive("● running");
+      setLive(COPY.heroLive.running);
       setEdge("e1", "active");
       await runNode("research", jitter(700));
       if (signal.aborted) break;
@@ -247,7 +263,7 @@
       if (signal.aborted) break;
       setEdge("e3", "done");
 
-      setLive("● waiting");
+      setLive(COPY.heroLive.waiting);
       setNode("gate", "waiting");
       await sleep(jitter(900, 0.25));
       if (signal.aborted) break;
@@ -255,7 +271,7 @@
       if (Math.random() > 0.45) {
         setAction("revise", true);
         loop?.classList.add("is-show", "is-active");
-        setLive("● revise");
+        setLive(COPY.heroLive.revise);
         await sleep(jitter(850, 0.2));
         if (signal.aborted) break;
 
@@ -271,14 +287,14 @@
         setEdge("e3", "done");
 
         setNode("gate", "waiting");
-        setLive("● waiting");
+        setLive(COPY.heroLive.waiting);
         await sleep(jitter(680, 0.25));
         if (signal.aborted) break;
         loop?.classList.remove("is-show");
       }
 
       setAction("approve", true);
-      setLive("● approved");
+      setLive(COPY.heroLive.approved);
       await sleep(jitter(420, 0.2));
       if (signal.aborted) break;
       setAction("approve", false);
@@ -289,7 +305,7 @@
       if (signal.aborted) break;
       setEdge("e4", "done");
 
-      setLive("● done");
+      setLive(COPY.heroLive.done);
       await sleep(jitter(1400, 0.25));
     }
   }
@@ -325,7 +341,7 @@
     const titleEl = within(heroFlow, "[data-hero-title]");
     const liveEl = within(heroFlow, "[data-hero-live]");
     if (titleEl) titleEl.textContent = COPY.heroTitleIdle;
-    if (liveEl) liveEl.textContent = "● done";
+    if (liveEl) liveEl.textContent = COPY.heroLive.done;
     ["research", "clarify", "visual", "gate", "plan"].forEach((id) => {
       within(heroFlow, `[data-hf="${id}"]`)?.classList.add("is-done");
     });
