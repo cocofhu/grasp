@@ -120,22 +120,24 @@ type queuedPrompt struct {
 type PromptImage = acp.PromptImage
 
 type promptTurn struct {
-	cancel       context.CancelFunc
-	cancelCause  context.CancelCauseFunc // 看门狗以 provider.ErrTurnTimeout 为 cause 终止回合
-	fromUserStop atomic.Bool             // true 表示由 Stop 触发，而非新消息顶替或 Agent 退出
-	timedOut     atomic.Bool             // true 表示由看门狗超时终止
-	recover      atomic.Bool             // true 表示这次空闲只杀进程、同会话再续跑一次
-	continued    atomic.Bool             // true 表示已经续跑过，下一次空闲才是真正超时
-	lastCause    string                  // 最近一次看门狗取消原因，写在 cancel 之前
-	lastErr      error                   // 同 lastCause 的 error 形式（区分 stuck / timeout）
-	loopRecover  atomic.Bool             // true 表示这次续跑是因为原地打转（同一工具调用反复执行）
-	loop         toolLoop                // 连续相同工具调用计数
-	loopC        chan struct{}           // 检测到原地打转时通知看门狗
-	lastActivity atomic.Int64            // 最近一次 provider 事件（UnixNano），看门狗 idle 计时用
-	started      time.Time               // 本轮用户消息开始时间；续跑不重置总时长
-	opID         string                  // 与 ws oid= / queue_entries 对齐，供 queue_state.running 展示
-	userText     string                  // 当前 session/prompt 的用户文案快照（仅 UI）
-	imageCount   int                     // 附带的图片数量（仅 UI 展示）
+	carriedUsage   map[string]provider.TokenUsage // spent before watchdog continuation; protected by turnMu
+	carriedPartial bool
+	cancel         context.CancelFunc
+	cancelCause    context.CancelCauseFunc // 看门狗以 provider.ErrTurnTimeout 为 cause 终止回合
+	fromUserStop   atomic.Bool             // true 表示由 Stop 触发，而非新消息顶替或 Agent 退出
+	timedOut       atomic.Bool             // true 表示由看门狗超时终止
+	recover        atomic.Bool             // true 表示这次空闲只杀进程、同会话再续跑一次
+	continued      atomic.Bool             // true 表示已经续跑过，下一次空闲才是真正超时
+	lastCause      string                  // 最近一次看门狗取消原因，写在 cancel 之前
+	lastErr        error                   // 同 lastCause 的 error 形式（区分 stuck / timeout）
+	loopRecover    atomic.Bool             // true 表示这次续跑是因为原地打转（同一工具调用反复执行）
+	loop           toolLoop                // 连续相同工具调用计数
+	loopC          chan struct{}           // 检测到原地打转时通知看门狗
+	lastActivity   atomic.Int64            // 最近一次 provider 事件（UnixNano），看门狗 idle 计时用
+	started        time.Time               // 本轮用户消息开始时间；续跑不重置总时长
+	opID           string                  // 与 ws oid= / queue_entries 对齐，供 queue_state.running 展示
+	userText       string                  // 当前 session/prompt 的用户文案快照（仅 UI）
+	imageCount     int                     // 附带的图片数量（仅 UI 展示）
 }
 
 func NewBridge() *Bridge {

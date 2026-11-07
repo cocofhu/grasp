@@ -306,6 +306,11 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	s.usage.begin()
 	res, err := s.Session.Prompt(ctx, text, images)
 	res.Usage = s.usage.turnUsage()
+	// A failed/cancelled ACP call may still have consumed tokens. Panel's
+	// normal completion hook did not run, so recover the native cache delta.
+	if err != nil {
+		res.Usage = s.usage.promptDone()
+	}
 	return res, err
 }
 

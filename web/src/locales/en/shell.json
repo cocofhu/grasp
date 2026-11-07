@@ -58,6 +58,7 @@
       "listAria": "Artifacts from this run"
     },
     "statusMetrics": {
+      "accountingIncomplete": "Some usage is incomplete, pending or from unverified historical records. Values show recorded usage.",
       "aria": "Platform status metrics",
       "tokens": "Cumulative tokens",
       "today": "Today's tokens",

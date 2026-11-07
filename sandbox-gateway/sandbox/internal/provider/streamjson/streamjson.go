@@ -289,6 +289,8 @@ type wireUsage struct {
 	OutputTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	TotalTokens         int64
+	reported            bool
 }
 
 func (u *wireUsage) UnmarshalJSON(b []byte) error {
@@ -313,6 +315,7 @@ func (u *wireUsage) UnmarshalJSON(b []byte) error {
 			}
 			var n int64
 			if json.Unmarshal(v, &n) == nil {
+				u.reported = true
 				return n
 			}
 		}
@@ -322,6 +325,9 @@ func (u *wireUsage) UnmarshalJSON(b []byte) error {
 	u.OutputTokens = pick("output_tokens", "outputTokens")
 	u.CacheReadTokens = pick("cache_read_input_tokens", "cacheReadTokens", "cache_read_tokens", "cacheReadInputTokens")
 	u.CacheCreationTokens = pick("cache_creation_input_tokens", "cacheWriteTokens", "cache_creation_tokens", "cacheCreationInputTokens")
+	reported := u.reported
+	u.TotalTokens = pick("total_tokens", "totalTokens")
+	u.reported = reported
 	return nil
 }
 
@@ -352,7 +358,7 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 	res.SessionID = ev.SessionID
 
 	addUsage := func(u *wireUsage, model string) {
-		if u == nil || (u.InputTokens == 0 && u.OutputTokens == 0 && u.CacheReadTokens == 0 && u.CacheCreationTokens == 0) {
+		if u == nil || !u.reported {
 			return
 		}
 		if model == "" {
@@ -366,6 +372,13 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 			OutputTokens:     u.OutputTokens,
 			CacheReadTokens:  u.CacheReadTokens,
 			CacheWriteTokens: u.CacheCreationTokens,
+		}
+		// Qwen's input_tokens includes cached input (its total_tokens is
+		// input_tokens + output_tokens). Keep our four buckets disjoint.
+		if u.TotalTokens > 0 && u.TotalTokens == u.InputTokens+u.OutputTokens {
+			value := res.Usage[model]
+			value.InputTokens = max(value.InputTokens-value.CacheReadTokens-value.CacheWriteTokens, 0)
+			res.Usage[model] = value
 		}
 	}
 
@@ -400,6 +413,7 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 			}
 		}
 		addUsage(ev.Message.Usage, ev.Message.Model)
+		res.UsagePartial = len(res.Usage) > 0
 	case "user":
 		if ev.Message == nil {
 			break

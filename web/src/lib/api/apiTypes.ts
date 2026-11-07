@@ -9,6 +9,7 @@ import type {
   ReactAnnotation,
   TokenUsage,
   TokenUsageByModel,
+  TokenAccountingStatus,
 } from '../shared/types'
 import type { BackendId } from '../shared/regionPolicy'
 
@@ -499,6 +500,7 @@ export interface DashboardStats {
 
 /** GET /stats/platform-status — StatusMetrics snapshot (shell chrome). */
 export interface PlatformStatusMetrics {
+  accounting?: TokenAccountingStatus
   /** Platform cumulative tokens; null = never reported (UI "—"). */
   cumulativeTokens: number | null
   /** Client-timezone calendar-day token sum; null when unavailable. */

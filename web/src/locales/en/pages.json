@@ -49,6 +49,8 @@
       }
     },
     "tokenAnalytics": {
+      "sourceSolo": "Solo",
+      "accountingIncomplete": "Some usage is incomplete, pending or from unverified historical records. These totals show recorded usage and may differ from actual consumption.",
       "title": "Token usage",
       "subtitle": "Analyze token consumption, model usage and estimated costs across workflows, the assistant and Agent Studio.",
       "analysisRange": "Analysis scope",

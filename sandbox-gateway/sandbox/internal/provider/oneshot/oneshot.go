@@ -61,7 +61,11 @@ type ParseResult struct {
 	// UsageIsTotal marks an authoritative per-turn snapshot. A nonempty total
 	// replaces prior streamed samples, which may use different model aliases.
 	UsageIsTotal bool
-	StopReason   string
+	// UsageIsSessionTotal is an authoritative cumulative native-session report,
+	// as returned by Codex exec resume. It must be differenced across turns.
+	UsageIsSessionTotal bool
+	UsagePartial        bool
+	StopReason          string
 }
 
 // Codec captures the per-CLI specifics: how to launch it and how to parse its
@@ -263,10 +267,12 @@ type engine struct {
 	cleanup      func()
 	displayModel string
 
-	mu        sync.Mutex
-	sessionID string
-	cumUsage  map[string]provider.TokenUsage
-	curCancel context.CancelFunc
+	mu            sync.Mutex
+	sessionID     string
+	cumUsage      map[string]provider.TokenUsage
+	usageSession  string
+	usageBaseline map[string]provider.TokenUsage
+	curCancel     context.CancelFunc
 	// agentPID is the running CLI's pid (0 between turns), for the bridge's
 	// CPU / IO liveness sampling.
 	agentPID atomic.Int64
@@ -346,18 +352,22 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	// Resume fallback: if a resume attempt failed before establishing a
 	// session, retry once from scratch (rescues a stale resume pointer).
 	if err != nil && resumeID != "" && res.newSessionID == "" && !errors.Is(err, context.Canceled) {
+		spent := res.usage
+		spentPartial := res.usagePartial
 		log.Printf("oneshot: resume 失败，回退为全新会话重试一次: %v", e.safeError(err))
 		e.mu.Lock()
 		e.sessionID = ""
 		e.mu.Unlock()
 		res, err = e.runOnce(ctx, text, images, "")
+		res.usage = mergeUsage(spent, res.usage)
+		res.usagePartial = res.usagePartial || spentPartial
 	}
 	if cause := context.Cause(ctx); err != nil && errors.Is(cause, provider.ErrTurnRecover) {
 		// First idle: the bridge will prompt again. Do not close the user turn.
 		if res.stopReason == "end_turn" {
 			err = nil
 		} else {
-			return provider.TurnResult{StopReason: "recover"}, cause
+			return provider.TurnResult{StopReason: "recover", Usage: res.usage, UsagePartial: res.usagePartial}, cause
 		}
 	}
 	if cause := context.Cause(ctx); err != nil && errors.Is(cause, provider.ErrTurnTimeout) {
@@ -394,11 +404,12 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 			e.emitError(err)
 		}
 	}
-	e.emitPromptDone(res.stopReason, res.usage)
-	return provider.TurnResult{StopReason: res.stopReason, Usage: res.usage}, err
+	e.emitPromptDone(res.stopReason, res.usage, res.usagePartial)
+	return provider.TurnResult{StopReason: res.stopReason, Usage: res.usage, UsagePartial: res.usagePartial}, err
 }
 
 type turnOutcome struct {
+	usagePartial bool
 	stopReason   string
 	usage        map[string]provider.TokenUsage
 	newSessionID string
@@ -539,6 +550,8 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	}
 
 	turnUsage := map[string]provider.TokenUsage{}
+	var usagePartial bool
+	var usageIsSessionTotal bool
 	var newSID, stop string
 	var diagnostics []Msg
 	var hasText bool
@@ -554,7 +567,18 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 			e.mu.Unlock()
 		}
 		if pr.UsageIsTotal && len(pr.Usage) > 0 {
-			turnUsage = make(map[string]provider.TokenUsage, len(pr.Usage))
+			if zeroUsage(pr.Usage) && !zeroUsage(turnUsage) {
+				// A terminal zero cannot invalidate already observed nonzero
+				// consumption. Retain it as a provisional measurement.
+				pr.Usage = nil
+				usagePartial = true
+			} else {
+				turnUsage = make(map[string]provider.TokenUsage, len(pr.Usage))
+				usagePartial = pr.UsagePartial
+				usageIsSessionTotal = pr.UsageIsSessionTotal
+			}
+		} else if len(pr.Usage) > 0 {
+			usagePartial = usagePartial || pr.UsagePartial
 		}
 		for model, u := range pr.Usage {
 			turnUsage[model] = addUsage(turnUsage[model], u)
@@ -669,6 +693,15 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 		}
 	}
 
+	if usageIsSessionTotal {
+		sid := newSID
+		if sid == "" {
+			sid = resumeID
+		}
+		var uncertain bool
+		turnUsage, uncertain = e.sessionUsageDelta(sid, turnUsage)
+		usagePartial = usagePartial || uncertain
+	}
 	e.mergeCumulative(turnUsage)
 	if stop == "" {
 		if waitErr != nil || streamErr != nil {
@@ -677,7 +710,7 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 			stop = "end_turn"
 		}
 	}
-	out := turnOutcome{stopReason: stop, usage: nonEmptyUsage(turnUsage), newSessionID: newSID, diagnostics: diagnostics, hasText: hasText}
+	out := turnOutcome{stopReason: stop, usage: nonEmptyUsage(turnUsage), usagePartial: usagePartial, newSessionID: newSID, diagnostics: diagnostics, hasText: hasText}
 	if waitErr != nil {
 		if streamErr != nil && !errors.Is(waitErr, context.Canceled) {
 			return out, fmt.Errorf("%v; %w; stderr: %s", streamErr, waitErr, tail.String())
@@ -818,10 +851,13 @@ func (e *engine) emitUpdate(m Msg) {
 	e.emit(map[string]any{"type": "session_update", "sessionId": e.SessionID(), "update": update})
 }
 
-func (e *engine) emitPromptDone(stopReason string, usage map[string]provider.TokenUsage) {
+func (e *engine) emitPromptDone(stopReason string, usage map[string]provider.TokenUsage, partial ...bool) {
 	frame := map[string]any{"type": "prompt_done", "sessionId": e.SessionID(), "stopReason": stopReason}
 	if e.c.ReportsUsage() && len(usage) > 0 {
 		frame["usage"] = usage
+		if len(partial) > 0 && partial[0] {
+			frame["usagePartial"] = true
+		}
 	}
 	e.emit(frame)
 }
@@ -940,11 +976,60 @@ func addUsage(a, b provider.TokenUsage) provider.TokenUsage {
 	}
 }
 
+func (e *engine) sessionUsageDelta(session string, current map[string]provider.TokenUsage) (map[string]provider.TokenUsage, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delta := make(map[string]provider.TokenUsage, len(current))
+	var reset bool
+	for model, u := range current {
+		previous := provider.TokenUsage{}
+		if session != "" && session == e.usageSession {
+			previous = e.usageBaseline[model]
+		}
+		if u.InputTokens < previous.InputTokens || u.OutputTokens < previous.OutputTokens || u.CacheReadTokens < previous.CacheReadTokens || u.CacheWriteTokens < previous.CacheWriteTokens {
+			reset = true
+		}
+		delta[model] = provider.TokenUsage{InputTokens: u.InputTokens - previous.InputTokens, OutputTokens: u.OutputTokens - previous.OutputTokens, CacheReadTokens: u.CacheReadTokens - previous.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens - previous.CacheWriteTokens}
+	}
+	e.usageSession = session
+	e.usageBaseline = make(map[string]provider.TokenUsage, len(current))
+	for model, u := range current {
+		e.usageBaseline[model] = u
+	}
+	if reset {
+		return current, true
+	}
+	return delta, false
+}
+
+func mergeUsage(a, b map[string]provider.TokenUsage) map[string]provider.TokenUsage {
+	if len(a) == 0 {
+		return b
+	}
+	out := make(map[string]provider.TokenUsage, len(a)+len(b))
+	for model, usage := range a {
+		out[model] = usage
+	}
+	for model, usage := range b {
+		out[model] = addUsage(out[model], usage)
+	}
+	return out
+}
+
 func nonEmptyUsage(u map[string]provider.TokenUsage) map[string]provider.TokenUsage {
 	if len(u) == 0 {
 		return nil
 	}
 	return u
+}
+
+func zeroUsage(usage map[string]provider.TokenUsage) bool {
+	for _, u := range usage {
+		if u.InputTokens != 0 || u.OutputTokens != 0 || u.CacheReadTokens != 0 || u.CacheWriteTokens != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // stderrTail is a bounded ring buffer capturing the last N bytes of stderr so

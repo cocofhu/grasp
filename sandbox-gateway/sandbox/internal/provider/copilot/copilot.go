@@ -81,6 +81,7 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 type turn struct {
 	activeModel string
 	deltaSeen   map[string]bool // messageId -> already streamed via deltas
+	usageSeen   map[string]int64
 }
 
 func (t *turn) ParseLine(line []byte) oneshot.ParseResult {
@@ -126,7 +127,16 @@ func (t *turn) ParseLine(line []byte) oneshot.ParseResult {
 			r.Msgs = append(r.Msgs, oneshot.Msg{Kind: oneshot.KindThinking, Text: m.ReasoningText})
 		}
 		if m.OutputTokens > 0 {
-			r.Usage = map[string]provider.TokenUsage{t.model(): {OutputTokens: m.OutputTokens}}
+			delta := m.OutputTokens
+			if m.MessageID != "" {
+				if t.usageSeen == nil {
+					t.usageSeen = map[string]int64{}
+				}
+				delta = max(m.OutputTokens-t.usageSeen[m.MessageID], 0)
+				t.usageSeen[m.MessageID] = max(m.OutputTokens, t.usageSeen[m.MessageID])
+			}
+			r.Usage = map[string]provider.TokenUsage{t.model(): {OutputTokens: delta}}
+			r.UsagePartial = true
 		}
 		for _, tr := range m.ToolRequests {
 			r.Msgs = append(r.Msgs, oneshot.Msg{

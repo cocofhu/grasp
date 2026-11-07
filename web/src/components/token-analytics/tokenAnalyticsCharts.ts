@@ -55,6 +55,7 @@ export function sourceLabel(t: Translate, key: string): string {
   if (key === 'workflow') return t('pages.board.tokenStats.workflow')
   if (key === 'pm') return t('pages.board.tokenStats.pm')
   if (key === 'studio') return t('pages.tokenAnalytics.sourceStudio')
+  if (key === 'solo') return t('pages.tokenAnalytics.sourceSolo')
   return key
 }
 
@@ -262,6 +263,7 @@ export function areaChartOption(data: GlobalTokenStats | null, mode: AreaMode, t
       ['workflow', (b) => b.workflowTotal || 0],
       ['pm', (b) => b.pmTotal || 0],
       ['studio', (b) => b.studioTotal || 0],
+      ['solo', (b) => b.soloTotal || 0],
     ]
     series = parts
       .filter(([, pick]) => data.trend.some((b) => pick(b) > 0))

@@ -75,6 +75,9 @@ func TestParseQwenFixture(t *testing.T) {
 	if lastUsage.InputTokens == 0 || lastUsage.OutputTokens == 0 {
 		t.Fatalf("usage not parsed: %+v", lastUsage)
 	}
+	if lastUsage.InputTokens != 4639 || lastUsage.InputTokens+lastUsage.OutputTokens+lastUsage.CacheReadTokens+lastUsage.CacheWriteTokens != 46698 {
+		t.Fatalf("cached input counted twice in captured fixture: %+v", lastUsage)
+	}
 }
 
 func containsStr(list []string, s string) bool {
@@ -84,6 +87,15 @@ func containsStr(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func TestUsageZeroIsReportedOnlyForExplicitCounters(t *testing.T) {
+	c := &codec{}
+	zero := c.ParseLine([]byte(`{"type":"result","subtype":"success","usage":{"input_tokens":0,"output_tokens":0}}`))
+	missing := c.ParseLine([]byte(`{"type":"result","subtype":"success","usage":{}}`))
+	if len(zero.Usage) != 1 || !zero.UsageIsTotal || len(missing.Usage) != 0 {
+		t.Fatalf("zero=%+v missing=%+v", zero, missing)
+	}
 }
 
 func TestParseAssistantText(t *testing.T) {

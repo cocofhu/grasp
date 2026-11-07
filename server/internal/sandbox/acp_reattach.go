@@ -137,7 +137,7 @@ func (c *ACPClient) ReplayTurn(frames []json.RawMessage) (*ChatResult, error) {
 			result.appendErrorText("沙箱回合超时，已被终止")
 		}
 		if !hasContent(result) {
-			return nil, fmt.Errorf("%w: %s", ErrSandboxTurnTimeout, result.ErrorText)
+			return result, fmt.Errorf("%w: %s", ErrSandboxTurnTimeout, result.ErrorText)
 		}
 	}
 	return result, nil

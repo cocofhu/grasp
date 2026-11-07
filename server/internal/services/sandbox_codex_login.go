@@ -60,7 +60,8 @@ func (s *SandboxService) codexLiveTurn(ctx context.Context, id uint, send func()
 	if !hub.Recover(ctx, key, seenVersion, seenAccess) {
 		return result, err
 	}
-	return send()
+	retried, retryErr := send()
+	return sandbox.MergeAttemptUsage(result, retried), retryErr
 }
 
 func liveCodexRefused(result *sandbox.ChatResult, err error) bool {

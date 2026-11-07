@@ -28,6 +28,7 @@ func visitorKey(runID, nodeID, lane string) string {
 // VisitorTurn runs one visitor turn on its own bridge chat. The chat shares
 // the parked session's sandbox (and so its workspace) but not its Agent context.
 func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelude, human string, images []models.PromptImage, onProgress func([]models.AcpEvent, bool)) (out ReactTurn) {
+	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	vl, err := c.openVisitorLane(ctx, req, lane)
 	if err != nil {
 		if errors.Is(err, ErrVisitorsFull) {
@@ -52,7 +53,7 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 	chatCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	res, err := c.codexTurn(chatCtx, req, func() (*sandbox.ChatResult, error) {
-		return vl.acp.ChatStreamResult(chatCtx, prompt, images, func(r *sandbox.ChatResult) {
+		res, err := vl.acp.ChatStreamResult(chatCtx, prompt, images, func(r *sandbox.ChatResult) {
 			if onProgress == nil {
 				return
 			}
@@ -62,20 +63,22 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 			}
 			onProgress(chatResultToEvents(r), busy)
 		})
+		c.recordChatUsage(req, res, err)
+		return res, err
 	})
 	// Visitor turns never answer the node's own pending ask_question.
 	_ = takeClarifyPending(c.host, req.RunID, req.NodeID)
-	if err != nil {
-		if !vl.acp.IsConnected() {
-			c.RetireVisitorLane(req.RunID, req.NodeID, lane)
-		}
-		return ReactTurn{Msg: "(访客对话失败:" + err.Error() + ")", Err: err, Interrupted: isTurnTimeoutErr(err)}
-	}
-	vl.primed = true
 	var usage *models.TokenUsage
 	var usageByModel models.TokenUsageByModel
 	var events []models.AcpEvent
 	absorbChat(&usage, &usageByModel, &events, res)
+	if err != nil {
+		if !vl.acp.IsConnected() {
+			c.RetireVisitorLane(req.RunID, req.NodeID, lane)
+		}
+		return ReactTurn{Msg: "(访客对话失败:" + err.Error() + ")", Err: err, Interrupted: isTurnTimeoutErr(err), Usage: usage, UsageByModel: usageByModel, Events: events}
+	}
+	vl.primed = true
 	out = ReactTurn{Msg: res.Narration, Events: events, Usage: usage, UsageByModel: usageByModel,
 		Handoffs: handoffNarrations(res), OpID: res.OpID}
 	if fail := chatFailure(res); fail != "" {

@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复 Token 计量的故障恢复：日志目录仍不可写时，也会在 SQL 恢复后将内存中的待处理用量写入账本。
+
+- 修复 Token 计量与汇总：状态栏、工作区和统计页统一纳入 Solo / Studio；校正缓存与恢复会话的重复计数，保留重试和中断时已报告的消耗，并通过持久化重放避免数据库短暂故障造成丢失或重复。未完整上报、待入库和无法核验的历史记录会明确提示；执行中计数包含启动中与运行中的 Solo 会话。
+
 - Mobile workflow conversations use the existing chat interface directly, including deep links and reloads, and keep the chat mounted when resizing. The old pending-card page and return-to-list navigation are removed. Approval sharing remains available through the conversation menu and preview toolbar.
 
 - Agents can send workspace files as versioned chat attachments, with original downloads and previews for common images, audio, video, PDF and text. Artifact bodies and message payloads now use persistent file references instead of SQL blobs/base64; existing data remains readable during a resumable, verified migration. Back up the database together with the file directory; imported files remain private to authenticated WebUI users.

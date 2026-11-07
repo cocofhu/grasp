@@ -3,18 +3,25 @@
 package tokenledger
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Entry is one usage report to be recorded. Usage / ByModel are the delta for
 // this report (not a running total). Missing snapshot fields (workflow, run
 // title) are resolved from RunID / ThreadID at write time.
 type Entry struct {
+	// ID identifies the actual ACP operation, retained across replay/retries.
+	ID           string
+	Partial      bool // the bridge has not confirmed a final measurement yet
 	At           time.Time
 	Source       string
 	Phase        string
@@ -35,6 +42,14 @@ type Entry struct {
 // per-model breakdown does not cover the flattened total, the remainder is
 // attributed to the unknown bucket so totals are never lost.
 func Rows(e Entry) []models.TokenUsageEvent {
+	if e.Usage != nil && !e.Usage.Valid() {
+		return nil
+	}
+	for _, bucket := range e.ByModel {
+		if !bucket.AsTokenUsage().Valid() {
+			return nil
+		}
+	}
 	buckets := models.CloneTokenUsageByModel(e.ByModel)
 	if buckets == nil {
 		buckets = models.TokenUsageByModel{}
@@ -97,7 +112,7 @@ func Rows(e Entry) []models.TokenUsageEvent {
 			CacheWriteTokens: b.CacheWriteTokens,
 		})
 	}
-	if len(out) == 0 && e.Usage != nil {
+	if len(out) == 0 && (e.Usage != nil || len(e.ByModel) > 0) {
 		// An explicit all-zero report still marks usage as reported (UI shows 0, not —).
 		out = append(out, models.TokenUsageEvent{
 			CreatedAt: at, Source: e.Source, Phase: e.Phase, Status: status,
@@ -116,24 +131,113 @@ func positive(v int64) int64 {
 	return v
 }
 
-// Record resolves snapshot metadata and appends the entry's rows. Errors are
-// logged, never returned: accounting must not fail the LLM call that produced it.
+// Record records one actual operation. The production recorder journals reports
+// before writing SQL and replays uncommitted reports after an outage/restart.
 func Record(db *gorm.DB, e Entry) {
-	if db == nil || (e.Usage == nil && len(e.ByModel) == 0) {
+	if db == nil || e.Usage != nil && e.Usage.LedgerRecorded || (e.ID == "" && e.Usage == nil && len(e.ByModel) == 0) {
 		return
 	}
+	if e.At.IsZero() {
+		e.At = time.Now().UTC()
+	}
+	if e.ID == "" {
+		e.ID = uuid.NewString()
+	}
+	id := fmt.Sprintf("%x", sha256.Sum256([]byte(e.Source+"\x00"+e.ID)))
 	rows := Rows(e)
-	if len(rows) == 0 {
-		return
-	}
-	resolve(db, &e)
 	for i := range rows {
 		applyMeta(&rows[i], e)
+		rows[i].ReportID = id
 	}
-	if err := db.Create(&rows).Error; err != nil {
-		log.Warn().Err(err).Str("run_id", e.RunID).Str("thread_id", e.ThreadID).
-			Str("source", e.Source).Msg("token ledger write failed")
+	report := pendingReport{Receipt: models.TokenUsageReport{
+		ID: id, CreatedAt: e.At, Source: e.Source, Phase: e.Phase, Status: e.Status,
+		RunID: e.RunID, NodeID: e.NodeID, ThreadID: e.ThreadID, Reported: len(rows) > 0, Partial: e.Partial,
+		WorkflowID: e.WorkflowID, NodeType: e.NodeType,
+	}, Rows: rows}
+	for _, row := range rows {
+		report.Receipt.Total += row.Total()
 	}
+	if recorder, ok := db.Config.Plugins[recorderName].(*Recorder); ok {
+		recorder.record(report)
+		return
+	}
+	if err := commitReport(db, report); err != nil {
+		log.Error().Err(err).Str("report_id", id).Msg("token ledger write failed (recorder not installed)")
+	}
+}
+
+type pendingReport struct {
+	Receipt models.TokenUsageReport  `json:"receipt"`
+	Rows    []models.TokenUsageEvent `json:"rows"`
+}
+
+// commitReport is atomic and idempotent, including concurrent replay. An
+// earlier unavailable measurement may be upgraded when its final usage arrives.
+func commitReport(db *gorm.DB, report pendingReport) error {
+	// Optional name enrichment happens after write-ahead journaling. A slow or
+	// unavailable SQL store must never delay making the measurement durable.
+	metadata := Entry{RunID: report.Receipt.RunID, WorkflowID: report.Receipt.WorkflowID}
+	if len(report.Rows) > 0 {
+		metadata.WorkflowName = report.Rows[0].WorkflowName
+		metadata.RunTitle = report.Rows[0].RunTitle
+	}
+	resolve(db, &metadata)
+	report.Receipt.WorkflowID = metadata.WorkflowID
+	if len(report.Rows) > 0 {
+		report.Rows = append([]models.TokenUsageEvent(nil), report.Rows...)
+		for i := range report.Rows {
+			applyMeta(&report.Rows[i], metadata)
+		}
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&report.Receipt)
+		if result.Error != nil {
+			return result.Error
+		}
+		var old models.TokenUsageReport
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&old, "id = ?", report.Receipt.ID).Error; err != nil {
+			return err
+		}
+		if old.Committed {
+			if !replaceReport(old, report.Receipt) {
+				return nil
+			}
+			// Only provisional measurements may be replaced by their final
+			// snapshot; completed reports remain immutable across replay.
+			if err := tx.Model(&old).Updates(map[string]any{
+				"reported": report.Receipt.Reported, "partial": report.Receipt.Partial,
+				"total": report.Receipt.Total, "status": report.Receipt.Status,
+				"created_at": report.Receipt.CreatedAt, "workflow_id": report.Receipt.WorkflowID,
+				"node_type": report.Receipt.NodeType,
+			}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("report_id = ?", old.ID).Delete(&models.TokenUsageEvent{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&old).Update("committed", true).Error; err != nil {
+			return err
+		}
+		if len(report.Rows) == 0 {
+			return nil
+		}
+		// Reset database-generated ids when replaying a report after an
+		// uncertain commit; receipt uniqueness decides whether to insert.
+		rows := append([]models.TokenUsageEvent(nil), report.Rows...)
+		for i := range rows {
+			rows[i].ID = 0
+			rows[i].ReportID = report.Receipt.ID
+		}
+		return tx.Create(&rows).Error
+	})
+}
+
+func replaceReport(old, next models.TokenUsageReport) bool {
+	if old.Reported && !next.Reported {
+		return false
+	}
+	return !old.Reported && next.Reported || old.Partial && (!next.Partial || next.Total > old.Total)
 }
 
 func applyMeta(r *models.TokenUsageEvent, e Entry) {

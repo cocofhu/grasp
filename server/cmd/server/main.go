@@ -49,6 +49,7 @@ import (
 	"github.com/cocofhu/grasp/internal/schedulermcp"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/shutdown"
+	"github.com/cocofhu/grasp/internal/tokenledger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -116,6 +117,10 @@ func main() {
 		log.Fatal().Err(err).Msg("open database failed")
 	}
 	defer func() { _ = database.Close(db) }()
+	ledgerRecorder, err := tokenledger.Start(db, filepath.Join(cfg.Storage.BlobsRoot, "token-ledger"))
+	if err != nil {
+		log.Fatal().Err(err).Msg("open token ledger journal failed")
+	}
 
 	artifactSvc := services.NewArtifactService(db)
 	artifactSvc.SetFileSizeLimit(cfg.Storage.MaxFileBytes)
@@ -204,6 +209,18 @@ func main() {
 		return row.Token
 	}
 	provider := runtime.NewProvider(host, runtime.Options{
+		RecordUsage: func(req runtime.NodeReq, result *sandbox.ChatResult, err error) {
+			phase := req.UsagePhase
+			if phase == "" {
+				phase = models.TokenLedgerPhaseProduction
+			}
+			tokenledger.Record(db, tokenledger.Entry{
+				ID: result.OpID, At: result.EndedAt, Source: models.TokenLedgerSourceWorkflow,
+				Partial: result.StopReason == "" || result.UsagePartial, WorkflowID: req.WorkflowID, WorkflowName: req.WorkflowName,
+				RunID: req.RunID, NodeID: req.NodeID, NodeType: req.NodeType, Phase: phase, Status: result.UsageStatus(err),
+				Usage: result.Usage, ByModel: result.UsageByModel,
+			})
+		},
 		SandboxImage:         cfg.Sandbox.Image,
 		SandboxImages:        cfg.Sandbox.Images,
 		GatewayURL:           cfg.Sandbox.GatewayURL,
@@ -679,6 +696,7 @@ func main() {
 	// Exit without unwinding: node goroutines must not get a chance to record
 	// failures for work the next process is about to resume.
 	log.Info().Msg("exit")
+	ledgerRecorder.Close()
 	os.Exit(0)
 }
 
