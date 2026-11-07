@@ -150,3 +150,50 @@ func TestIdempotencyDoesNotDependOnDriverRowsAffected(t *testing.T) {
 	tokenledger.Record(db, entry)
 	assertLedgerTotal(t, db, 1, 12)
 }
+
+func TestRecorderRetriesMemoryReportsWhenOnlySQLRecovers(t *testing.T) {
+	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "memory-recovery.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(t.TempDir(), "journal")
+	r, err := tokenledger.Start(db, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	// A non-directory deterministically prevents journal writes, even as root.
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(journal, []byte("unavailable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var blocked atomic.Bool
+	blocked.Store(true)
+	if err := db.Callback().Create().Before("gorm:create").Register("memory-accounting-outage", func(tx *gorm.DB) {
+		if blocked.Load() && tx.Statement.Table == "token_usage_events" {
+			tx.AddError(errors.New("database unavailable"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entry := tokenledger.Entry{ID: "memory-operation", Source: "solo", Usage: &models.TokenUsage{InputTokens: 23}}
+	tokenledger.Record(db, entry)
+	assertLedgerTotal(t, db, 0, 0)
+	blocked.Store(false)
+	r.Flush()
+	assertLedgerTotal(t, db, 1, 23)
+	r.Flush()
+	tokenledger.Record(db, entry)
+	assertLedgerTotal(t, db, 1, 23)
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(journal, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := tokenledger.Pending(db); got != 0 {
+		t.Fatalf("pending after SQL recovery=%d", got)
+	}
+}

@@ -140,6 +140,10 @@ func (r *Recorder) Flush() {
 	for id, report := range r.unsaved {
 		if err := r.journal(filepath.Join(r.dir, id+".json"), report); err == nil {
 			delete(r.unsaved, id)
+		} else if err := r.commit(report); err == nil {
+			// SQL may recover while the journal is still unavailable. Make
+			// memory-only reports durable as soon as either store is writable.
+			delete(r.unsaved, id)
 		}
 	}
 	files, err := os.ReadDir(r.dir)
