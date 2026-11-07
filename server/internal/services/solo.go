@@ -115,6 +115,10 @@ type SoloService struct {
 	// switch without calling the bridge. Nil uses the sandbox service.
 	modelAlign soloModelAligner
 	pending    *chatsession.PendingStore
+	restoreMu  sync.Mutex
+	// deferredRestores holds persisted queues until their resident is ready.
+	deferredRestores map[string]bool
+	restoreEnabled   bool
 
 	mu     sync.Mutex
 	chats  map[string]*soloChat
@@ -167,9 +171,18 @@ type soloTurn struct {
 func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, projects *ProjectService) *SoloService {
 	s := &SoloService{db: db, sbx: sbx, agents: agents, projects: projects, chats: map[string]*soloChat{},
 		pending: chatsession.NewPendingStore(db)}
+	// Protect saved queues before HTTP accepts messages. They must not be
+	// overwritten by a newly opened in-memory FIFO while residents recover.
+	if _, keys, err := s.pending.Load(soloPendingSurface); err == nil {
+		s.deferredRestores = map[string]bool{}
+		for _, id := range keys {
+			s.deferredRestores[id] = true
+		}
+	}
 	if sbx != nil {
 		s.chat = sbx
 		sbx.SetSoloSandboxDestroyHook(s.onSandboxGone)
+		sbx.SetSoloSandboxRecoveredHook(s.onSandboxRecovered)
 	}
 	if err := s.pinLegacyConfigurationIDs(); err != nil {
 		log.Error().Err(err).Msg("pin existing Solo model group selections")
@@ -516,18 +529,49 @@ func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) 
 	return s.rememberAppliedRoute(sid, chatConfigurationID(row), model, row.CurrentReasoningEffort)
 }
 
+func (s *SoloService) onSandboxRecovered(sandboxID uint) {
+	var rows []models.SoloSession
+	s.db.Where("sandbox_id = ? AND status = ?", sandboxID, models.SoloStatusStarting).Find(&rows)
+	for _, row := range rows {
+		result := s.db.Model(&models.SoloSession{}).Where("id = ? AND status = ?", row.ID, models.SoloStatusStarting).
+			Updates(map[string]any{"status": models.SoloStatusRunning, "error": ""})
+		if result.Error == nil && result.RowsAffected > 0 {
+			s.publishStatus(row.ID)
+		}
+	}
+	s.retryDeferredRestores(sandboxID)
+}
+
 // onSandboxGone marks sessions whose sandbox was destroyed outside Close.
 func (s *SoloService) onSandboxGone(sandboxID uint) {
 	var rows []models.SoloSession
 	s.db.Where("sandbox_id = ? AND status IN ?", sandboxID,
 		[]string{models.SoloStatusStarting, models.SoloStatusRunning}).Find(&rows)
 	for _, r := range rows {
-		s.db.Model(&models.SoloSession{}).Where("id = ?", r.ID).
-			Updates(map[string]any{"status": models.SoloStatusError, "error": "沙箱已被销毁，可重新启动会话"})
+		result := s.db.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND status IN ?", r.ID, sandboxID,
+			[]string{models.SoloStatusStarting, models.SoloStatusRunning}).
+			Updates(map[string]any{"status": models.SoloStatusError, "sandbox_id": 0, "error": "沙箱已被销毁，可重新启动会话"})
+		if result.Error != nil || result.RowsAffected == 0 {
+			continue
+		}
 		if c := s.lookup(r.ID); c != nil {
 			c.sess.Cancel(true)
 		}
+		s.clearDeferredQueue(r.ID)
 		s.publishStatus(r.ID)
+	}
+}
+
+// ReconcileSandboxReferences repairs dangling bindings left by older startup
+// reconciliation, even when there is no sandbox row left to invoke its hook.
+func (s *SoloService) ReconcileSandboxReferences() {
+	var rows []models.SoloSession
+	s.db.Where("status IN ? AND sandbox_id <> 0", []string{models.SoloStatusStarting, models.SoloStatusRunning}).Find(&rows)
+	for _, row := range rows {
+		var count int64
+		if err := s.db.Model(&models.Sandbox{}).Where("id = ?", row.SandboxID).Count(&count).Error; err == nil && count == 0 {
+			s.onSandboxGone(row.SandboxID)
+		}
 	}
 }
 
@@ -584,6 +628,7 @@ func (s *SoloService) Close(ctx context.Context, id, user string) (*SoloSessionV
 	if c := s.lookup(id); c != nil {
 		c.sess.Cancel(true)
 	}
+	s.clearDeferredQueue(id)
 	s.destroySandbox(ctx, row.SandboxID)
 	s.appendSystem(id, "会话已关闭，沙箱已释放")
 	s.publishStatus(id)
@@ -1365,6 +1410,11 @@ func (s *SoloService) sendSoloTurn(row *models.SoloSession, turn *soloTurn, inpu
 
 // enqueueTurn queues a turn whose references are already validated.
 func (s *SoloService) enqueueTurn(id string, turn *soloTurn) (int, error) {
+	s.restoreMu.Lock()
+	defer s.restoreMu.Unlock()
+	if s.deferredRestores[id] {
+		return 0, soloErr(http.StatusServiceUnavailable, "session_recovering", "工作区和消息队列正在恢复，请稍后重试")
+	}
 	images, err := blob.IngestPromptImages(context.Background(), s.blobs, turn.Images)
 	if err != nil {
 		return 0, fmt.Errorf("ingest attachments: %w", err)
@@ -1387,6 +1437,8 @@ const (
 // previous process exited back into their sessions, in order. Call it once at
 // startup, after the sandbox hooks are wired.
 func (s *SoloService) RestoreQueuedTurns() {
+	s.restoreMu.Lock()
+	defer s.restoreMu.Unlock()
 	if s.chat == nil {
 		return
 	}
@@ -1396,13 +1448,18 @@ func (s *SoloService) RestoreQueuedTurns() {
 		return
 	}
 	for _, id := range keys {
-		s.restoreSession(id, sessions[id])
+		if !s.deferredRestores[id] {
+			continue // accepted after this process started; already in its live FIFO
+		}
+		s.restoreSessionLocked(id, sessions[id])
 	}
+	s.restoreEnabled = true
 }
 
-func (s *SoloService) restoreSession(id string, stored []chatsession.PendingTurn) {
+func (s *SoloService) restoreSessionLocked(id string, stored []chatsession.PendingTurn) {
 	row, err := s.load(id)
 	if err != nil || row.Status == models.SoloStatusClosed || row.Status == models.SoloStatusError {
+		delete(s.deferredRestores, id)
 		// Closing a session or losing its sandbox drops its queue as well.
 		log.Info().Str("session", id).Int("turns", len(stored)).Msg("solo: queued turns dropped with an ended session")
 		if err := s.pending.Clear(soloPendingSurface, id); err != nil {
@@ -1410,6 +1467,16 @@ func (s *SoloService) restoreSession(id string, stored []chatsession.PendingTurn
 		}
 		return
 	}
+	if s.sbx != nil && row.SandboxID != 0 {
+		if sb, getErr := s.sbx.Get(row.SandboxID); getErr == nil && sb.Status != "running" {
+			if s.deferredRestores == nil {
+				s.deferredRestores = map[string]bool{}
+			}
+			s.deferredRestores[id] = true
+			return
+		}
+	}
+	delete(s.deferredRestores, id)
 	var turns []*soloTurn
 	for _, t := range stored {
 		var q soloTurn
@@ -1430,6 +1497,36 @@ func (s *SoloService) restoreSession(id string, stored []chatsession.PendingTurn
 	}
 	s.acquire(id).sess.Restore(turns)
 	log.Info().Str("session", id).Int("turns", len(turns)).Msg("solo: queued turns restored")
+}
+
+func (s *SoloService) retryDeferredRestores(sandboxID uint) {
+	s.restoreMu.Lock()
+	defer s.restoreMu.Unlock()
+	if !s.restoreEnabled || len(s.deferredRestores) == 0 {
+		return
+	}
+	var sessions []models.SoloSession
+	s.db.Where("sandbox_id = ?", sandboxID).Find(&sessions)
+	for _, session := range sessions {
+		if !s.deferredRestores[session.ID] {
+			continue
+		}
+		stored, _, err := s.pending.Load(soloPendingSurface)
+		if err == nil {
+			s.restoreSessionLocked(session.ID, stored[session.ID])
+		}
+	}
+}
+
+func (s *SoloService) clearDeferredQueue(id string) {
+	s.restoreMu.Lock()
+	defer s.restoreMu.Unlock()
+	if s.deferredRestores[id] {
+		delete(s.deferredRestores, id)
+		if err := s.pending.Clear(soloPendingSurface, id); err != nil {
+			log.Warn().Err(err).Str("session", id).Msg("solo: clear deferred queue failed")
+		}
+	}
 }
 
 // settleInterruptedTurn closes a turn the restart cut off. It reports false
@@ -1462,6 +1559,7 @@ func (s *SoloService) Cancel(id, user string) error {
 	if c := s.lookup(id); c != nil {
 		c.sess.Cancel(true)
 	}
+	s.clearDeferredQueue(id)
 	return nil
 }
 
@@ -1600,6 +1698,11 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 			return 0, nil, errors.New("沙箱启动失败")
 		}
 		if row.SandboxID != 0 {
+			if row.Status == models.SoloStatusRunning && s.modelAlign == nil {
+				if err := s.sbx.EnsureSoloRunning(ctx, row.SandboxID); err != nil {
+					return 0, nil, err
+				}
+			}
 			if err := s.sbx.WaitReady(ctx, row.SandboxID, nil); err != nil {
 				return 0, nil, err
 			}
@@ -1689,10 +1792,12 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	// restarts the coding agent, so it must not claim the sandbox or the
 	// repository was rebuilt.
 	var pre string
-	if row.NeedsPreamble || switched || row.ModelContextPending {
+	if row.NeedsPreamble || switched || row.ModelContextPending || row.ResumeContextPending {
 		header := soloModelPreambleHeader
 		if row.NeedsPreamble {
 			header = soloRestartPreambleHeader
+		} else if row.ResumeContextPending {
+			header = soloResumePreambleHeader
 		} else if switched && !row.ModelContextPending && row.CurrentReasoningEffort != row.AppliedReasoningEffort && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
 			header = soloReasoningPreambleHeader
 		}
@@ -1749,7 +1854,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Update("status", status)
 	}
 	if usedPreamble && status == "ok" {
-		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false})
+		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false})
 	}
 	// A switch that failed on an earlier turn leaves model_notice set. Once a
 	// later turn succeeds on the model that is already applied, the banner is
@@ -1776,6 +1881,7 @@ func recordSoloUsage(db *gorm.DB, sessionID string, sandboxID uint, usage *model
 }
 
 const (
+	soloResumePreambleHeader  = "（系统提示）沙箱已从停止状态恢复，仓库、工作区和未提交的改动都已保留。请结合下面的对话记录继续：\n\n"
 	soloRestartPreambleHeader = "（系统提示）此会话的沙箱已重新创建，之前的 CLI 会话与未提交的改动已丢失，仓库已重新克隆。以下是此前的对话记录，供你恢复上下文：\n\n"
 	// A model switch restarts only the coding agent. This header must not say
 	// the sandbox was recreated, the repository was cloned again, or uncommitted

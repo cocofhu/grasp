@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,20 @@ type GatewayClient struct {
 	baseURL string // e.g. http://127.0.0.1:8899
 	apiKey  string // Authorization: Bearer <key>; empty = no auth header
 	http    *http.Client
+}
+
+type GatewayHTTPError struct {
+	StatusCode int
+	message    string
+}
+
+func (e *GatewayHTTPError) Error() string { return e.message }
+
+// GatewayRecordMissing identifies a missing control-plane record. That alone
+// is not proof that a resident sandbox's data-bearing resource is absent.
+func GatewayRecordMissing(err error) bool {
+	var e *GatewayHTTPError
+	return errors.As(err, &e) && e.StatusCode == http.StatusNotFound
 }
 
 // NewGatewayClient builds a client for baseURL. A trailing slash is trimmed.
@@ -139,7 +154,8 @@ func (g *GatewayClient) do(ctx context.Context, method, path string, body any, o
 		return fmt.Errorf("read %s %s response: %w", method, path, err)
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("gateway %s %s: %d %s", method, path, resp.StatusCode, strings.TrimSpace(string(data)))
+		return &GatewayHTTPError{StatusCode: resp.StatusCode,
+			message: fmt.Sprintf("gateway %s %s: %d %s", method, path, resp.StatusCode, strings.TrimSpace(string(data)))}
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {
@@ -207,6 +223,19 @@ func (g *GatewayClient) Stop(ctx context.Context, id string) error {
 // Start (re)starts a stopped sandbox.
 func (g *GatewayClient) Start(ctx context.Context, id string) error {
 	return g.do(ctx, http.MethodPost, "/api/v1/sandboxes/"+id+"/start", nil, nil)
+}
+
+// GWStartOptions refreshes one stopped sandbox's bootstrap inputs without
+// creating a replacement. BootstrapScript migrates existing Docker containers;
+// RuntimeURL/Headers also let Kubernetes cold starts fetch a fresh bundle.
+type GWStartOptions struct {
+	BootstrapScript string `json:"bootstrapScript"`
+	RuntimeURL      string `json:"runtimeUrl"`
+	RuntimeHeaders  string `json:"runtimeHeaders"`
+}
+
+func (g *GatewayClient) StartPrepared(ctx context.Context, id string, opts GWStartOptions) error {
+	return g.do(ctx, http.MethodPost, "/api/v1/sandboxes/"+id+"/start", opts, nil)
 }
 
 // LiveStatus returns the gateway's live driver status ("running"/"stopped"/
