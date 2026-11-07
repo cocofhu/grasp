@@ -14,10 +14,18 @@ import (
 // reprimingManager is a fakeManager that also re-primes (counts the calls).
 type reprimingManager struct {
 	*fakeManager
-	mu       sync.Mutex
-	reprimes []sandbox.Spec
-	prevKeys [][]string
-	failNext bool
+	mu           sync.Mutex
+	reprimes     []sandbox.Spec
+	prevKeys     [][]string
+	failNext     bool
+	toolSwitches []sandbox.Spec
+}
+
+func (m *reprimingManager) SwitchTool(_ context.Context, _ *sandbox.Sandbox, spec sandbox.Spec, _ []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.toolSwitches = append(m.toolSwitches, spec)
+	return nil
 }
 
 func (m *reprimingManager) Reprime(_ context.Context, _ *sandbox.Sandbox, spec sandbox.Spec, prev []string) error {

@@ -20,15 +20,15 @@ import (
 // soloRouteOps keeps the workspace-preserving operation separate from session
 // selection. The Solo FIFO invokes it only before a new turn starts.
 type soloRouteOps interface {
-	Reprime(context.Context, *sandbox.Sandbox, sandbox.Spec, []string) error
+	SwitchTool(context.Context, *sandbox.Sandbox, sandbox.Spec, []string) error
 	Ready(context.Context, *sandbox.Sandbox) error
 	Connect(context.Context, *sandbox.Sandbox, []sandbox.MCPServerSpec) (*sandbox.ACPClient, error)
 }
 
 type liveSoloRouteOps struct{ manager *sandbox.Manager }
 
-func (o liveSoloRouteOps) Reprime(ctx context.Context, sb *sandbox.Sandbox, spec sandbox.Spec, keys []string) error {
-	return o.manager.Reprime(ctx, sb, spec, keys)
+func (o liveSoloRouteOps) SwitchTool(ctx context.Context, sb *sandbox.Sandbox, spec sandbox.Spec, keys []string) error {
+	return o.manager.SwitchTool(ctx, sb, spec, keys)
 }
 
 func (liveSoloRouteOps) Ready(ctx context.Context, sb *sandbox.Sandbox) error {
@@ -237,7 +237,7 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 	apply := func(applyCtx context.Context, target, old *preparedAgentContainer) (*sandbox.ACPClient, error) {
 		keys := append(sandbox.ReprimeEnvKeys(old.spec), runtime.ModelRoutingEnvKeys()...)
 		keys = append(keys, "AGENT_PROVIDER", "CONFIG_ROOT", "CODEX_HOME", runtime.EnvACPBridgeReasoningEffort)
-		if err := ops.Reprime(applyCtx, ls.sb, target.spec, keys); err != nil {
+		if err := ops.SwitchTool(applyCtx, ls.sb, target.spec, keys); err != nil {
 			return nil, err
 		}
 		if err := ops.Ready(applyCtx, ls.sb); err != nil {
