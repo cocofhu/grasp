@@ -64,8 +64,14 @@ type ParseResult struct {
 	// UsageIsSessionTotal is an authoritative cumulative native-session report,
 	// as returned by Codex exec resume. It must be differenced across turns.
 	UsageIsSessionTotal bool
-	UsagePartial        bool
-	StopReason          string
+	// SessionUsage is a separate canonical native-session total. Some CLIs
+	// report per-process model buckets alongside cumulative flat counters.
+	SessionUsage *provider.TokenUsage
+	// TracksSessionUsage also advances the baseline on partial turns whose
+	// native cumulative snapshot is unavailable.
+	TracksSessionUsage bool
+	UsagePartial       bool
+	StopReason         string
 }
 
 // Codec captures the per-CLI specifics: how to launch it and how to parse its
@@ -267,12 +273,14 @@ type engine struct {
 	cleanup      func()
 	displayModel string
 
-	mu            sync.Mutex
-	sessionID     string
-	cumUsage      map[string]provider.TokenUsage
-	usageSession  string
-	usageBaseline map[string]provider.TokenUsage
-	curCancel     context.CancelFunc
+	mu                sync.Mutex
+	sessionID         string
+	cumUsage          map[string]provider.TokenUsage
+	usageSession      string
+	usageBaseline     map[string]provider.TokenUsage
+	flatUsageSession  string
+	flatUsageBaseline provider.TokenUsage
+	curCancel         context.CancelFunc
 	// agentPID is the running CLI's pid (0 between turns), for the bridge's
 	// CPU / IO liveness sampling.
 	agentPID atomic.Int64
@@ -552,6 +560,8 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	turnUsage := map[string]provider.TokenUsage{}
 	var usagePartial bool
 	var usageIsSessionTotal bool
+	var tracksSessionUsage bool
+	var sessionUsage *provider.TokenUsage
 	var newSID, stop string
 	var diagnostics []Msg
 	var hasText bool
@@ -560,6 +570,11 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	var resultStop string
 	apply := func(pr ParseResult) {
 		bg.event()
+		tracksSessionUsage = tracksSessionUsage || pr.TracksSessionUsage
+		if pr.SessionUsage != nil {
+			copy := *pr.SessionUsage
+			sessionUsage = &copy
+		}
 		if pr.SessionID != "" && newSID == "" {
 			newSID = pr.SessionID
 			e.mu.Lock()
@@ -700,6 +715,15 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 		}
 		var uncertain bool
 		turnUsage, uncertain = e.sessionUsageDelta(sid, turnUsage)
+		usagePartial = usagePartial || uncertain
+	}
+	if tracksSessionUsage {
+		sid := newSID
+		if sid == "" {
+			sid = resumeID
+		}
+		var uncertain bool
+		turnUsage, uncertain = e.reconcileFlatSessionUsage(sid, sessionUsage, turnUsage)
 		usagePartial = usagePartial || uncertain
 	}
 	e.mergeCumulative(turnUsage)
@@ -1000,6 +1024,60 @@ func (e *engine) sessionUsageDelta(session string, current map[string]provider.T
 		return current, true
 	}
 	return delta, false
+}
+
+// Reconcile process-local model buckets against a native-session counter. The
+// baseline includes already reported partial turns, so a later cumulative
+// snapshot cannot ledger those failed/cancelled attempts a second time.
+func (e *engine) reconcileFlatSessionUsage(session string, current *provider.TokenUsage, usage map[string]provider.TokenUsage) (map[string]provider.TokenUsage, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	previous := provider.TokenUsage{}
+	if session != "" && session == e.flatUsageSession {
+		previous = e.flatUsageBaseline
+	}
+	known := sumUsage(usage)
+	var uncertain bool
+	if current != nil {
+		if current.InputTokens < previous.InputTokens || current.OutputTokens < previous.OutputTokens || current.CacheReadTokens < previous.CacheReadTokens || current.CacheWriteTokens < previous.CacheWriteTokens {
+			previous = provider.TokenUsage{}
+			uncertain = true
+		}
+		delta := provider.TokenUsage{
+			InputTokens:      current.InputTokens - previous.InputTokens,
+			OutputTokens:     current.OutputTokens - previous.OutputTokens,
+			CacheReadTokens:  current.CacheReadTokens - previous.CacheReadTokens,
+			CacheWriteTokens: current.CacheWriteTokens - previous.CacheWriteTokens,
+		}
+		missing := provider.TokenUsage{
+			InputTokens:      max(delta.InputTokens-known.InputTokens, 0),
+			OutputTokens:     max(delta.OutputTokens-known.OutputTokens, 0),
+			CacheReadTokens:  max(delta.CacheReadTokens-known.CacheReadTokens, 0),
+			CacheWriteTokens: max(delta.CacheWriteTokens-known.CacheWriteTokens, 0),
+		}
+		if missing != (provider.TokenUsage{}) {
+			uncertain = uncertain || len(usage) > 0
+			if usage == nil {
+				usage = map[string]provider.TokenUsage{}
+			}
+			usage["default"] = addUsage(usage["default"], missing)
+		}
+		uncertain = uncertain || known.InputTokens > delta.InputTokens || known.OutputTokens > delta.OutputTokens || known.CacheReadTokens > delta.CacheReadTokens || known.CacheWriteTokens > delta.CacheWriteTokens
+		if len(usage) == 0 {
+			usage = map[string]provider.TokenUsage{"default": {}}
+		}
+	}
+	e.flatUsageSession = session
+	e.flatUsageBaseline = addUsage(previous, sumUsage(usage))
+	return usage, uncertain
+}
+
+func sumUsage(usage map[string]provider.TokenUsage) provider.TokenUsage {
+	var total provider.TokenUsage
+	for _, bucket := range usage {
+		total = addUsage(total, bucket)
+	}
+	return total
 }
 
 func mergeUsage(a, b map[string]provider.TokenUsage) map[string]provider.TokenUsage {
