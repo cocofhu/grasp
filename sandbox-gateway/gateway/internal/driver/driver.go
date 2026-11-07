@@ -88,6 +88,20 @@ type ExitReporter interface {
 	LastExit(ctx context.Context, id string) (*ExitInfo, error)
 }
 
+// StartOptions repairs bootstrap inputs before restarting an existing sandbox.
+// No workspace or container is replaced by this operation.
+type StartOptions struct {
+	BootstrapScript string `json:"bootstrapScript"`
+	RuntimeURL      string `json:"runtimeUrl"`
+	RuntimeHeaders  string `json:"runtimeHeaders"`
+}
+
+// StartPreparer is implemented by cold-boot drivers. Snapshot-resume drivers
+// keep their running environment and do not need bootstrap repair.
+type StartPreparer interface {
+	PrepareStart(context.Context, string, StartOptions) error
+}
+
 // Driver provisions and exposes sandboxes. It is intentionally thin: lifecycle
 // plus endpoint exposure only. Data-plane operations (exec, files, terminal,
 // sessions, IDE, preview) are direct client-to-sandbox connections and are NOT

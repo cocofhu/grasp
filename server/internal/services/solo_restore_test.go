@@ -38,7 +38,8 @@ func (c *restoreChat) ChatWithTimeout(ctx context.Context, _ uint, text string, 
 		return nil, nil, ctx.Err()
 	case <-c.release:
 	}
-	onEvent(json.RawMessage(`{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"reply to ` + text + `"}}`))
+	event, _ := json.Marshal(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "reply to " + text}})
+	onEvent(event)
 	return nil, nil, nil
 }
 
@@ -68,7 +69,7 @@ func pendingTurnCount(t *testing.T, solo *SoloService, id string) (total int, st
 func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	acp, port := fakeACPServer(t)
 	defer acp.Close()
-	solo, sbx, _, db := newSoloFixture(t, port, 3)
+	solo, sbx, gateway, db := newSoloFixture(t, port, 3)
 	insertSoloModelConfig(t, db)
 	view, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA"})
 	if err != nil {
@@ -104,7 +105,27 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	after := newRestoreChat(false)
 	restarted.SetChatterForTest(after)
 	restarted.SetModelAlignerForTest(&recordAligner{})
+	if _, err := restarted.Send(id, "alice", "must not overwrite saved queue", nil); err == nil {
+		t.Fatal("new messages must not overwrite a queue awaiting startup restore")
+	}
+	session, err := restarted.Require(id, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resident, err := sbx.Get(session.SandboxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway.SetStatus(resident.Name, "stopped")
+	sbx.ReconcileOnStartup(context.Background(), nil)
+	gateway.FailStart = true
+	sbx.RecoverSoloSandboxes(context.Background())
 	restarted.RestoreQueuedTurns()
+	if total, _ := pendingTurnCount(t, restarted, id); total != 3 || len(after.seen()) != 0 {
+		t.Fatal("queued turns must stay persisted while recovery fails")
+	}
+	gateway.FailStart = false
+	sbx.RecoverSoloSandboxes(context.Background())
 
 	waitFor(t, "restored turns answered", func() bool {
 		msgs, _ := restarted.Messages(id, "alice")
@@ -118,6 +139,9 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	})
 	if got := after.seen(); len(got) != 2 || !strings.HasSuffix(got[0], "second") || !strings.HasSuffix(got[1], "third") {
 		t.Fatalf("restored prompts = %q, want second then third", got)
+	}
+	if got := after.seen()[0]; !strings.HasPrefix(got, soloResumePreambleHeader) || !strings.Contains(got, "first") || strings.Contains(got, "未提交的改动已丢失") {
+		t.Fatalf("recovered turn lost history or falsely reported data loss: %q", got)
 	}
 	msgs, _ := restarted.Messages(id, "alice")
 	var order []string
@@ -157,6 +181,7 @@ func TestSoloRestoreRunsATurnThatNeverReachedTheTranscript(t *testing.T) {
 	if err := solo.pending.Save(soloPendingSurface, row.ID, []chatsession.PendingTurn{{ID: "turn-unwritten", Started: true, Payload: payload}}); err != nil {
 		t.Fatal(err)
 	}
+	solo = NewSoloService(db, solo.sbx, solo.agents, solo.projects)
 	chat := newRestoreChat(true)
 	solo.SetChatterForTest(chat)
 	solo.RestoreQueuedTurns()
@@ -187,6 +212,7 @@ func TestSoloRestoreDropsTurnsOfEndedSessions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	solo = NewSoloService(db, solo.sbx, solo.agents, solo.projects)
 	solo.SetChatterForTest(newRestoreChat(false))
 	solo.RestoreQueuedTurns()
 	for _, id := range []string{"solo-closed", "solo-error", "solo-deleted"} {
@@ -196,5 +222,44 @@ func TestSoloRestoreDropsTurnsOfEndedSessions(t *testing.T) {
 		if total, _ := pendingTurnCount(t, solo, id); total != 0 {
 			t.Fatalf("%s: stored turns left = %d", id, total)
 		}
+	}
+}
+
+func TestSoloStartupRestoreDoesNotInterruptNewTurns(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, db := newSoloFixture(t, port, 3)
+	insertSoloModelConfig(t, db)
+	view, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "running sandbox", func() bool {
+		row, err := solo.Require(view.ID, "alice")
+		return err == nil && row.Status == models.SoloStatusRunning
+	})
+	chat := newRestoreChat(true)
+	solo.SetChatterForTest(chat)
+	solo.SetModelAlignerForTest(&recordAligner{})
+	if _, err := solo.Send(view.ID, "alice", "new after startup", nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-chat.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("new turn did not start")
+	}
+	solo.RestoreQueuedTurns()
+	messages, err := solo.Messages(view.ID, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, message := range messages {
+		if message.Role == "user" && message.Status == "stopped" || message.Role == "assistant" && message.Error == soloRestartStopped {
+			t.Fatal("startup restore interrupted a turn accepted by the new process")
+		}
+	}
+	if c := solo.lookup(view.ID); c != nil {
+		c.sess.Cancel(true)
 	}
 }

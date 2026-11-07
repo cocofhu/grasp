@@ -61,6 +61,12 @@ func (s *SandboxService) SetSoloSandboxDestroyHook(fn func(sandboxID uint)) {
 	s.mu.Unlock()
 }
 
+func (s *SandboxService) SetSoloSandboxRecoveredHook(fn func(sandboxID uint)) {
+	s.mu.Lock()
+	s.soloOnRecovered = fn
+	s.mu.Unlock()
+}
+
 func (s *SandboxService) invokeSoloDestroyHook(id uint) {
 	s.mu.Lock()
 	fn := s.soloOnDestroy
@@ -72,8 +78,11 @@ func (s *SandboxService) invokeSoloDestroyHook(id uint) {
 
 func (s *SandboxService) activeSoloSandboxCount() int {
 	var n int64
+	activeSessions := s.db.Model(&models.SoloSession{}).Select("sandbox_id").Where("status IN ?",
+		[]string{models.SoloStatusStarting, models.SoloStatusRunning})
 	s.db.Model(&models.Sandbox{}).
-		Where("status IN ? AND purpose = ?", []string{"running", "creating", "pulling"}, SandboxPurposeSolo).
+		Where("purpose = ? AND (status IN ? OR id IN (?))", SandboxPurposeSolo,
+			[]string{"running", "creating", "pulling"}, activeSessions).
 		Count(&n)
 	return int(n)
 }

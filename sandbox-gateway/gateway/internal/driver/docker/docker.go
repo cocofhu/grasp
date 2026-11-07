@@ -314,7 +314,10 @@ func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
 func (d *Driver) status(ctx context.Context, name string) (driver.Status, error) {
 	out, err := d.run(ctx, 10*time.Second, "inspect", "--format", "{{.State.Status}}", name)
 	if err != nil {
-		return driver.StatusNotFound, nil
+		if isNoSuchContainer(err) || strings.Contains(strings.ToLower(err.Error()), "no such object") {
+			return driver.StatusNotFound, nil
+		}
+		return "", fmt.Errorf("inspect sandbox status: %w", err)
 	}
 	return mapState(strings.TrimSpace(out)), nil
 }

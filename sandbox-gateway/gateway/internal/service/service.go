@@ -357,9 +357,30 @@ func (s *SandboxService) List(filter ListFilter) ([]models.Sandbox, error) {
 
 // Start resumes a stopped sandbox.
 func (s *SandboxService) Start(ctx context.Context, id string) error {
+	return s.StartPrepared(ctx, id, driver.StartOptions{})
+}
+
+// StartPrepared refreshes the expired first-boot inputs before a cold resume.
+func (s *SandboxService) StartPrepared(ctx context.Context, id string, opts driver.StartOptions) error {
 	sb, err := s.store.Get(context.Background(), id)
 	if err != nil {
 		return err
+	}
+	if opts.RuntimeURL != "" || opts.BootstrapScript != "" {
+		if sb.Env()["GRASP_RUNTIME_URL"] == "" {
+			return fmt.Errorf("sandbox does not use the runtime bootstrap")
+		}
+		if p, ok := s.drv.(driver.StartPreparer); ok {
+			if err := p.PrepareStart(ctx, id, opts); err != nil {
+				return err
+			}
+			env := sb.Env()
+			env["GRASP_RUNTIME_URL"], env["SANDBOX_INJECT_HEADERS"], env["SANDBOX_INJECT"] = opts.RuntimeURL, opts.RuntimeHeaders, ""
+			sb.SetEnv(env)
+			if err := s.store.Save(context.Background(), sb); err != nil {
+				return err
+			}
+		}
 	}
 	if err := s.drv.Start(ctx, id); err != nil {
 		return err

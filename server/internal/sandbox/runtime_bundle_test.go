@@ -29,6 +29,7 @@ func runtimeTgz(t *testing.T, manifest string) []byte {
 		}
 	}
 	add("./scripts/startup.sh", "#!/bin/bash\n")
+	add("./scripts/grasp-bootstrap.sh", "#!/bin/bash\n# fixture bootstrap\n")
 	if manifest != "" {
 		add("./MANIFEST", manifest)
 	}

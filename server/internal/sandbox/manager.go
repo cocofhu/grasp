@@ -735,14 +735,27 @@ func normalizeGWStatus(s string) string {
 
 // Status returns "running", "exited", "creating", "not_found", … for a sandbox.
 func (m *Manager) Status(ctx context.Context, id string) string {
-	if m.gw == nil || strings.TrimSpace(id) == "" {
-		return "not_found"
-	}
-	st, err := m.gw.LiveStatus(ctx, id)
+	st, err := m.ProbeStatus(ctx, id)
 	if err != nil {
 		return "not_found"
 	}
-	return normalizeGWStatus(st)
+	return st
+}
+
+// ProbeStatus preserves observation errors. Lifecycle decisions must use this
+// instead of Status: an unavailable gateway is not proof that data is gone.
+func (m *Manager) ProbeStatus(ctx context.Context, id string) (string, error) {
+	if m.gw == nil || strings.TrimSpace(id) == "" {
+		return "", fmt.Errorf("sandbox gateway or id is missing")
+	}
+	st, err := m.gw.LiveStatus(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(st) == "" {
+		return "", fmt.Errorf("gateway returned an empty sandbox status")
+	}
+	return normalizeGWStatus(st), nil
 }
 
 // managedLabelFilter is the gateway ?label= filter for approving sandboxes.

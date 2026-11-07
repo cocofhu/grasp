@@ -51,11 +51,15 @@ type SandboxService struct {
 	// maxSolo caps concurrently live resident Solo sandboxes.
 	maxSolo atomic.Int64
 	// soloOnDestroy tells the Solo service a purpose=solo sandbox is gone.
-	soloOnDestroy func(sandboxID uint)
+	soloOnDestroy   func(sandboxID uint)
+	soloOnRecovered func(sandboxID uint)
 	// maxRetention caps how far leases can push a run sandbox's deadline (ns).
 	maxRetention atomic.Int64
 
 	mu sync.Mutex
+	// Per-resident locks serialize recovery with explicit destruction without
+	// making one unavailable sandbox block every other session.
+	soloRecoveryLocks sync.Map
 	// leaseMu serializes lease read-modify-write so concurrent renewals
 	// (activity, manual, preview, retire) can't drop each other's lease.
 	leaseMu sync.Mutex

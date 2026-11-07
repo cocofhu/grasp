@@ -223,7 +223,15 @@ func (h *Handler) Get(c *gin.Context) {
 
 // Start handles POST /sandboxes/:id/start.
 func (h *Handler) Start(c *gin.Context) {
-	if err := h.svc.Start(c.Request.Context(), c.Param("id")); err != nil {
+	var opts driver.StartOptions
+	if c.Request.ContentLength != 0 {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 256<<10)
+		if err := c.ShouldBindJSON(&opts); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid start options"})
+			return
+		}
+	}
+	if err := h.svc.StartPrepared(c.Request.Context(), c.Param("id"), opts); err != nil {
 		h.notFoundOr500(c, err)
 		return
 	}
