@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +44,20 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 		if password == "" {
 			password = ls.sb.Password
 		}
+	}
+	// Gateway listeners are local to this Grasp process. Never trust a saved
+	// loopback port after restart, or fall back to it when the gateway is down.
+	if s.mgr != nil && s.mgr.Gateway() != nil && s.mgr.Gateway().UsesGatewayTransport(row.Name) {
+		addr, err := s.mgr.EndpointAddr(ctx, row.Name, "session")
+		if err != nil {
+			return "", 0, "", err
+		}
+		host, portString, err := net.SplitHostPort(addr)
+		if err != nil {
+			return "", 0, "", err
+		}
+		port, err := strconv.Atoi(portString)
+		return host, port, password, err
 	}
 	if host == "" || port == 0 {
 		if s.mgr.Status(ctx, row.Name) != "running" {
@@ -162,6 +178,9 @@ func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, erro
 		return "", fmt.Errorf("no code-server for this sandbox")
 	}
 	if s.mgr != nil && row.Name != "" {
+		if gw := s.mgr.Gateway(); gw != nil && gw.UsesGatewayTransport(row.Name) {
+			return s.mgr.EndpointAddr(ctx, row.Name, "ide")
+		}
 		if addr, eerr := s.mgr.EndpointAddr(ctx, row.Name, "ide"); eerr == nil && strings.TrimSpace(addr) != "" {
 			return addr, nil
 		}
@@ -288,6 +307,9 @@ func (s *SandboxService) GetView(ctx context.Context, id uint) (*SandboxView, er
 	v := s.view(ctx, row)
 	v.Endpoints = map[string]string{}
 	if gw := s.mgr.Gateway(); gw != nil {
+		if gw.UsesGatewayTransport(row.Name) {
+			v.EndpointTransport = "gateway"
+		}
 		if sb, err := gw.Get(ctx, row.Name); err != nil {
 			log.Debug().Err(err).Str("sandbox", row.Name).Msg("sandbox GetView: gateway Get failed; endpoints empty")
 		} else if sb != nil && sb.Endpoints != nil {

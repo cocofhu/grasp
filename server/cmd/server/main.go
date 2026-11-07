@@ -77,13 +77,26 @@ func main() {
 		log.Fatal().Err(err).Str("path", cfgPath).Msg("load config failed")
 	}
 	cfg := config.GetConfig()
-	if cfg.Sandbox.PrivateEndpoints {
+	sbxGateway, err := sandbox.NewConfiguredGatewayClient(cfg.Sandbox)
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid sandbox gateway configuration")
+	}
+	defer func() { _ = sbxGateway.Close() }()
+	if cfg.Sandbox.UsesGatewayTransport() {
+		log.Info().Msg("waiting for sandbox gateway transport readiness")
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
+		err := sbxGateway.WaitTransportReady(ctx)
+		cancel()
+		if err != nil {
+			log.Fatal().Err(err).Msg("sandbox gateway transport not ready; startup reconciliation skipped")
+		}
+	} else if cfg.Sandbox.PrivateEndpoints {
 		// E2B restores private endpoints before the gateway starts listening.
 		// Wait before opening the DB/engine: startup reconciliation must never
 		// mistake an unavailable gateway for destroyed provider guests.
 		log.Info().Msg("waiting for private sandbox gateway readiness")
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
-		err := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey).WaitReady(ctx, "e2b")
+		err := sbxGateway.WaitReady(ctx, "e2b")
 		cancel()
 		if err != nil {
 			log.Fatal().Err(err).Msg("private sandbox gateway not ready; startup reconciliation skipped")
@@ -225,6 +238,7 @@ func main() {
 		SandboxImages:        cfg.Sandbox.Images,
 		GatewayURL:           cfg.Sandbox.GatewayURL,
 		GatewayAPIKey:        cfg.Sandbox.GatewayAPIKey,
+		Gateway:              sbxGateway,
 		Env:                  cfg.Sandbox.Env,
 		ChatIdleTimeout:      cfg.ChatIdleTimeout(),
 		NodeHardCap:          cfg.AgentNodeHardCap(),
@@ -364,7 +378,6 @@ func main() {
 		return err
 	})
 	eng.SetAgents(agentSvc)
-	sbxGateway := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
 		Image:             cfg.Sandbox.Image,
 		WorkspaceDir:      "/root/workspace",
@@ -377,7 +390,8 @@ func main() {
 		SSHKeyFile:        sshKeyPath,
 		DataPlanePassword: sandboxToken,
 	})
-	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Msg("sandbox control plane: sandbox-gateway")
+	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Str("default_gateway", cfg.Sandbox.DefaultGateway).
+		Int("named_gateways", len(cfg.Sandbox.Gateways)).Msg("sandbox connections configured")
 	sbxSvc := services.NewSandboxService(db, sbxMgr, agentSvc, host, services.SandboxOptions{
 		ProfilesRoot:         cfg.Engine.ProfilesRoot,
 		MCPEndpoint:          cfg.Server.MCPAdvertise,

@@ -30,7 +30,7 @@ database:
 # to the host / LoadBalancer: session, codeServer, ssh, app.
 # cdp (9222) and novnc (6080) are Internal-only — no app-layer auth; Approving
 # dials them on the container/cluster network. Do not treat them as external
-# data-plane. Approving outside the cluster/Docker net is unsupported for CDP/VNC.
+# data-plane. Remote Grasp uses authenticated v2 gateway transport for CDP/VNC.
 # Docker: already-running containers keep old -p until TTL/Reinstall (breaking:
 # old host:9222 / host:6080 bookmarks become unreachable).
 # Kubernetes: inventory *-lb still listing 9222/6080 is healed on gateway
@@ -48,10 +48,17 @@ image:
     # Extra app ports (aligned with remote-dev sandbox LB expose list).
     app: [80, 443, 2222, 3000, 3306, 4200, 5000, 5173, 5432, 5500, 6379, 8000, 8080, 8443, 8888, 9090, 9200, 9229]
 
+# Optional environment aliases; E2B image identities must also be approved in
+# e2b.templates. This selects an environment image, not an Agent/coding tool.
+profiles: {}
+# profiles:
+#   universal:
+#     image: universal-sandbox:local
+
 # --- docker driver (local testing) ---
 docker:
-  # Host IP docker publishes sandbox ports on. MUST be client-reachable; keep
-  # 127.0.0.1 only when clients run on the same host.
+  # Legacy direct clients need a reachable host IP. Gateway transport only
+  # requires the gateway itself to reach these ports (loopback is supported).
   bindIP: "127.0.0.1"
   network: ""         # optional docker network
   namePrefix: "sbx-"  # container name prefix (list/reconcile filter)
@@ -93,7 +100,8 @@ orphanGC:
   minAgeSeconds: 600     # only delete workloads older than 10m; 0 = no age gate
 
 # Control-plane auth. Requests need `Authorization: Bearer <key>`.
-# Empty list disables auth (local testing only). This is the gateway API key,
+# Empty list disables v1 auth (local testing only); v2 transport stays disabled.
+# This is the gateway API key,
 # not Approving UI Session. Approving VNC WS (/sandbox-vnc)
 # requires a valid Session cookie whenever Approving Auth is injected
 # (always on outside local-demo; see server/config.example.yaml auth).

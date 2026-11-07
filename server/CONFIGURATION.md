@@ -33,7 +33,9 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_SANDBOX_IMAGE_OPENCODE` | `sandbox.images.opencode` | image | `Not set` | Public | Optional opencode-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
 | `GRASP_SANDBOX_GATEWAY_URL` | `sandbox.gateway_url` | URL | `http://127.0.0.1:8899` | Public | sandbox-gateway control-plane URL |
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | `sandbox.gateway_api_key` | string | `Not set` | Sensitive | Gateway bearer token |
-| `GRASP_SANDBOX_PRIVATE_ENDPOINTS` | `sandbox.private_endpoints` | boolean | `false` | Public | Use isolated Grasp preview origins for same-host private E2B endpoints; Docker/Kubernetes retain direct defaults |
+| `GRASP_SANDBOX_GATEWAY_TRANSPORT` | `sandbox.gateway_transport` | enum | `direct` | Public | Sandbox transport: direct or authenticated gateway; gateway requires an isolated preview origin |
+| `GRASP_SANDBOX_DEFAULT_GATEWAY` | `sandbox.default_gateway` | string | `Not set` | Public | Named gateway for new sandboxes; existing sandboxes retain their binding |
+| `GRASP_SANDBOX_PRIVATE_ENDPOINTS` | `sandbox.private_endpoints` | boolean | `false` | Public | Use isolated Grasp preview origins for private endpoints; gateway transport enables this automatically; legacy direct defaults remain compatible |
 | `GRASP_OPENCODE_CATALOG_URL` | `sandbox.opencode_catalog_url` | URL | `https://models.dev/api.json` | Public | OpenCode model catalog URL; point at a mirror when egress is restricted |
 | `GRASP_SANDBOX_ENV` | `sandbox.env` | key-value list | `Not set` | Sensitive | Generic environment injected into every sandbox |
 | `GRASP_AGENT_TIMEOUT_SEC` | `sandbox.agent_chat_timeout_seconds` | integer | `Not set` | Public | Deprecated and ignored: Agent turns no longer have a per-turn limit; set the node time limit on the canvas |

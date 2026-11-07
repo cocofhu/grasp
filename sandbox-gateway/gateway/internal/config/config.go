@@ -23,15 +23,22 @@ func (c *Config) FinalizeTimeout() time.Duration {
 // and then overlaid with SBGW_* environment variables (env wins). A gateway
 // instance runs exactly one driver (Driver): docker, kubernetes, or e2b.
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Driver   string         `yaml:"driver"` // "docker" | "kubernetes" | "e2b"
-	Database DBConfig       `yaml:"database"`
-	Image    ImageConfig    `yaml:"image"`
-	Docker   DockerConfig   `yaml:"docker"`
-	K8s      K8sConfig      `yaml:"kubernetes"`
-	E2B      E2BConfig      `yaml:"e2b"`
-	Auth     AuthConfig     `yaml:"auth"`
-	OrphanGC OrphanGCConfig `yaml:"orphanGC"`
+	Server   ServerConfig `yaml:"server"`
+	Driver   string       `yaml:"driver"` // "docker" | "kubernetes" | "e2b"
+	Database DBConfig     `yaml:"database"`
+	Image    ImageConfig  `yaml:"image"`
+	// Profiles map stable environment names to this driver's approved image
+	// identities. E2B resolves those identities to its prebuilt templates.
+	Profiles map[string]ProfileConfig `yaml:"profiles"`
+	Docker   DockerConfig             `yaml:"docker"`
+	K8s      K8sConfig                `yaml:"kubernetes"`
+	E2B      E2BConfig                `yaml:"e2b"`
+	Auth     AuthConfig               `yaml:"auth"`
+	OrphanGC OrphanGCConfig           `yaml:"orphanGC"`
+}
+
+type ProfileConfig struct {
+	Image string `yaml:"image" json:"image"`
 }
 
 // OrphanGCConfig controls periodic cleanup of driver workloads that have no
@@ -508,6 +515,11 @@ func (c *Config) validate() error {
 	}
 	if c.Image.Ref == "" {
 		return fmt.Errorf("image.ref is required")
+	}
+	for name, profile := range c.Profiles {
+		if strings.TrimSpace(name) == "" || strings.TrimSpace(profile.Image) == "" {
+			return fmt.Errorf("profiles require a non-empty name and image")
+		}
 	}
 	if c.Driver == "e2b" {
 		if err := c.validateE2B(); err != nil {

@@ -346,6 +346,11 @@ func (s *PreviewService) ProbeRegisteredPort(ctx context.Context, rec mcp.Previe
 	if base, ok := s.PreviewUpstream(ctx, rec.SandboxName, port); ok {
 		return base, probePreviewHTTP(ctx, base, want)
 	}
+	if s.mgr != nil && s.mgr.Gateway() != nil && s.mgr.Gateway().UsesGatewayTransport(rec.SandboxName) {
+		// A saved local port belongs to a previous Grasp process and may now
+		// point at another sandbox. Gateway transport must resolve by ID.
+		return "", false
+	}
 	// Older registrations only saved the injector address. Require its
 	// upstream marker before trusting that it still serves the registered app.
 	return rec.Host, want == 0 && rec.Host != "" && probePreviewHTTP(ctx, rec.Host, rec.Port)

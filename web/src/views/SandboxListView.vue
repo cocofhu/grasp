@@ -679,12 +679,12 @@ onBeforeUnmount(() => {
         </section>
 
         <section>
-          <h3 class="mb-1 text-[12px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.sandboxes.detail.sectionEndpoints') }}</h3>
+          <h3 class="mb-1 text-[12px] font-semibold uppercase tracking-wider text-txt3">{{ t(detailView.endpointTransport === 'gateway' ? 'pages.sandboxes.detail.sectionEndpointsGateway' : 'pages.sandboxes.detail.sectionEndpoints') }}</h3>
           <div
             data-testid="sandbox-endpoints-notice"
             class="rounded-lg mb-2.5 border border-[rgb(var(--c-info)/0.45)] bg-[rgb(var(--c-info)/0.14)] px-3 py-2 text-[12px] leading-snug text-txt"
           >{{ t('pages.sandboxes.detail.endpointsNotice') }}</div>
-          <p class="mb-2.5 text-[11px] leading-snug text-txt3">{{ t('pages.sandboxes.detail.sectionEndpointsHint') }}</p>
+          <p class="mb-2.5 text-[11px] leading-snug text-txt3">{{ t(detailView.endpointTransport === 'gateway' ? 'pages.sandboxes.detail.gatewayEndpointsHint' : 'pages.sandboxes.detail.sectionEndpointsHint') }}</p>
           <div
             v-if="!detailEndpointRows.length"
             class="rounded-lg border border-dashed border-line-strong bg-base px-3 py-4 text-center text-[12px] text-txt3"

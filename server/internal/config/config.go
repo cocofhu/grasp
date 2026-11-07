@@ -283,9 +283,14 @@ type SandboxConfig struct {
 	// GatewayAPIKey is the optional bearer token for the gateway (empty when
 	// the gateway runs with auth disabled).
 	GatewayAPIKey string `yaml:"gateway_api_key"`
-	// PrivateEndpoints exposes preview registrations through isolated Grasp
-	// origins rather than gateway endpoints. Enable for the E2B driver's
-	// same-host loopback transport; Docker/Kubernetes keep their direct defaults.
+	// GatewayTransport is direct (legacy) or gateway (authenticated TCP relay).
+	GatewayTransport string `yaml:"gateway_transport"`
+	// Gateways are stable, named connections. DefaultGateway affects creates
+	// only; existing opaque sandbox IDs retain their original connection.
+	Gateways       []GatewayConnectionConfig `yaml:"gateways"`
+	DefaultGateway string                    `yaml:"default_gateway"`
+	// PrivateEndpoints exposes previews through isolated Grasp origins. Gateway
+	// transport enables it for every driver; legacy same-host E2B can opt in.
 	PrivateEndpoints bool `yaml:"private_endpoints"`
 	// OpenCodeCatalogURL overrides where the OpenCode model catalog is read from
 	// (models.dev by default). Point it at a mirror when egress is restricted.
@@ -455,6 +460,9 @@ func parse(path string) (*Config, error) {
 	}
 	applyEnvOverrides(c)
 	setDefaults(c)
+	if err := c.Sandbox.ValidateGateways(); err != nil {
+		return nil, err
+	}
 	if err := rejectSandboxSecretEnv(c); err != nil {
 		return nil, err
 	}
@@ -528,6 +536,12 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := env("GRASP_SANDBOX_GATEWAY_API_KEY"); v != "" {
 		c.Sandbox.GatewayAPIKey = v
+	}
+	if v := env("GRASP_SANDBOX_GATEWAY_TRANSPORT"); v != "" {
+		c.Sandbox.GatewayTransport = v
+	}
+	if v := env("GRASP_SANDBOX_DEFAULT_GATEWAY"); v != "" {
+		c.Sandbox.DefaultGateway = v
 	}
 	if v := env("GRASP_SANDBOX_PRIVATE_ENDPOINTS"); v != "" {
 		c.Sandbox.PrivateEndpoints, _ = strconv.ParseBool(v)
@@ -653,6 +667,17 @@ func setDefaults(c *Config) {
 	}
 	if c.Sandbox.GatewayURL == "" {
 		c.Sandbox.GatewayURL = "http://127.0.0.1:8899"
+	}
+	if c.Sandbox.GatewayTransport == "" {
+		c.Sandbox.GatewayTransport = "direct"
+	}
+	for i := range c.Sandbox.Gateways {
+		if c.Sandbox.Gateways[i].Transport == "" {
+			c.Sandbox.Gateways[i].Transport = "gateway"
+		}
+	}
+	if c.Sandbox.UsesGatewayTransport() {
+		c.Sandbox.PrivateEndpoints = true
 	}
 	mergeAcpEnv(c)
 	if c.Sandbox.ChatIdleTimeoutSeconds == 0 {

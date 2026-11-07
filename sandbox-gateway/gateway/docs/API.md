@@ -1,10 +1,10 @@
 # Sandbox Gateway API
 
-The gateway is a thin control plane. It creates, exposes, and destroys sandboxes
+The gateway manages lifecycle and optional authenticated TCP transport. It creates, exposes, and destroys sandboxes
 (instances of the Phase 1 universal image) and returns addresses for each port.
 
 **Public data-plane** (may be published to host / LoadBalancer): session (`8765`),
-code-server (`8744`), SSH (`22`), and extra app ports. Clients connect directly;
+code-server (`8744`), SSH (`22`), and extra app ports. Legacy clients connect directly;
 each service has its own auth (session/IDE password, `ROOT_PASSWORD` / `SSH_KEY`).
 
 **Internal-only** (container network / ClusterIP, **not** published to host or
@@ -13,7 +13,7 @@ external LB): Chromium CDP (`9222`) and noVNC/websockify (`6080`). These have
 and VNC WS proxy. Users must **not** reach them directly — use Grasp
 `/sandbox-vnc/:sandboxId/ws`, one desktop per sandbox
 (Session required when platform Auth is injected). Grasp running outside
-the cluster or Docker network is not supported for CDP/VNC.
+the cluster or Docker network uses the optional v2 transport below for CDP/VNC.
 
 Docker `-p` on already-running containers is not rewritten automatically; rely
 on TTL or Reinstall. Kubernetes inventory `*-lb` Services that still publish
@@ -28,9 +28,78 @@ breaking change.
 - Data-plane contract for `session` (`8765`) is WSP/1, documented in
   [`../../sandbox/docs/PROTOCOL.md`](../../sandbox/docs/PROTOCOL.md).
 
-A gateway instance runs one driver: `docker` (local testing) or `kubernetes`
-(production, MetalLB LoadBalancer). The API surface is identical for both; only
-the returned endpoint addresses differ (Docker host IP vs. LB IP).
+A gateway instance runs one driver: `docker`, `kubernetes` or `e2b`.
+The lifecycle and transport API is shared; endpoint and resource semantics
+are resolved by the configured driver.
+
+## Authenticated TCP transport (v2)
+
+These routes require an explicitly configured API key. An empty/blank
+`auth.apiKeys` list returns `503` on v2, while retaining legacy v1 behavior.
+
+```
+GET /api/v2/info
+Authorization: Bearer <gateway-key>
+```
+
+Example discovery response:
+
+```json
+{
+  "version": 2,
+  "driver": "docker",
+  "transport": "grasp-tcp-v1",
+  "ports": {"session": 8765, "ide": 8744, "ssh": 22, "cdp": 9222, "novnc": 6080},
+  "profiles": {"universal": {"image": "universal-sandbox:local"}},
+  "capabilities": {"stopMode": "cold", "diskMode": "unlimited"}
+}
+```
+
+`stopMode` is `cold` for Docker/Kubernetes and `pause` for E2B. `diskMode` is
+`unlimited` for Docker (no gateway-enforced quota), `pvc` for Kubernetes and
+`template-minimum-free` for E2B. These describe provider operations, not a
+change to Grasp's existing Stop/retention UI behavior.
+
+```
+GET /api/v2/sandboxes/{nativeSandboxID}/connect/{guestPort}
+Authorization: Bearer <gateway-key>
+Upgrade: websocket
+Sec-WebSocket-Protocol: grasp-tcp-v1
+```
+
+The authenticated server sends only the gateway-native sandbox ID and an
+integer guest port (1–65535). The service verifies its record, checks the live
+driver state and resolves current driver endpoints. Unknown sandboxes/ports
+return `404`; unavailable provider endpoints return `502` before upgrade.
+There is no arbitrary host/URL parameter. Query strings and browser `Origin`
+headers are rejected. A missing/wrong subprotocol returns `400`.
+
+After upgrade, binary WebSocket messages carry ordered TCP bytes. Each message
+must be no larger than 64 KiB; gateway messages are at most 32 KiB. Text `eof` means TCP
+`CloseWrite`; the opposite direction continues until its own EOF, preserving
+output after stdin closes. Other text/data after EOF violates the protocol.
+Ping/Pong keeps long-lived channels alive; close or cancellation tears down
+both streams. TLS termination/reverse proxies must support WebSocket upgrades
+and long-lived connections. No application-specific exec/files endpoints or
+browser tokens are introduced.
+
+Grasp adapts this transport to process-local loopback listeners shared by its
+existing SSH/HTTP/WS clients. They are recreated after restart, never used as
+stable persisted addresses. Browser users continue through Grasp session/IDE/
+terminal/preview routes; gateway keys never enter browser URLs or cookies.
+
+## Environment profiles
+
+Gateway YAML `profiles.<name>.image` optionally maps a stable environment name
+to a provider image identity. `POST /api/v1/sandboxes` accepts `"profile":
+"universal"` instead of an image. The resolved image is returned in the usual
+sandbox DTO. Unknown/empty profiles and an explicitly conflicting image
+return `400`. With no profile, legacy image selection is unchanged.
+
+For E2B the image must be approved in `e2b.templates`; the driver retains its
+exact CPU/memory/minimum-free-space checks. Docker/Kubernetes use the mapped
+OCI image and existing resource policy. `provider`/`AGENT_PROVIDER` continue
+selecting the Agent CLI independently of the environment profile.
 
 ## Health
 

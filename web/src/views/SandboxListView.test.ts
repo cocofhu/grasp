@@ -178,6 +178,20 @@ describe('SandboxListView detail endpoints (g3)', () => {
     expect(notice).toMatch(/session\/ide/i)
     wrapper.unmount()
   })
+
+  it('explains server-local gateway addresses while retaining the Grasp entry points', async () => {
+    apiMocks.getSandbox.mockResolvedValue({ ...DETAIL, endpointTransport: 'gateway', endpoints: { session: '127.0.0.1:41000', ide: '127.0.0.1:41001', ssh: '127.0.0.1:41002' } })
+    const { wrapper } = mountList('zh-CN')
+    await flushPromises()
+    await wrapper.findAll('button').filter((b) => b.text().includes('详情'))[0]!.trigger('click')
+    await flushPromises()
+    const text = wrapper.get('[data-testid="sandbox-detail-modal"]').text()
+    expect(text).toContain('服务端连接端点')
+    expect(text).toContain('仅供 Grasp 服务端')
+    expect(text).toContain('打开预览')
+    expect(text).not.toContain('运维可直连')
+    wrapper.unmount()
+  })
 })
 
 describe('SandboxListView loading small-fix lock', () => {

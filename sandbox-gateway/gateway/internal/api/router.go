@@ -10,10 +10,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// NewRouter wires the control-plane routes. Data-plane operations (exec, files,
-// terminal, sessions, IDE, preview) are NOT served here; clients connect
-// directly to the sandbox endpoints returned by these APIs.
+// NewRouter keeps the v1 control plane compatible and offers an authenticated,
+// sandbox-scoped TCP transport for clients outside the provider network.
 func NewRouter(h *Handler, cfg *config.Config) *gin.Engine {
+	h.profiles = cfg.Profiles
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(requestLogger(), recoverLogger())
@@ -38,6 +38,10 @@ func NewRouter(h *Handler, cfg *config.Config) *gin.Engine {
 		v1.GET("/sandboxes/:id/logs", h.Logs)
 		v1.GET("/sandboxes/:id/exit", h.LastExit)
 	}
+	v2 := r.Group("/api/v2")
+	v2.Use(requireTransportAuth(cfg.Auth.APIKeys), APIKeyAuth(cfg.Auth.APIKeys))
+	v2.GET("/info", gatewayInfo(cfg))
+	v2.GET("/sandboxes/:id/connect/:port", h.Connect)
 	return r
 }
 

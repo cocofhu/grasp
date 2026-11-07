@@ -43,6 +43,12 @@ sandbox:
   image: ""
   # 可选：只覆盖某一个 acpBackend 的镜像。
   images: {}
+  # 旧配置默认 direct，保持兼容。gateway 通道要求网关 API key 和独立预览域名。
+  gateway_transport: direct
+  # 命名网关用于新增后端；默认网关只影响新沙箱，已有沙箱保留原绑定。
+  # 网关连接/默认值修改后重启 Grasp。完整示例见根目录 GATEWAY.md。
+  gateways: []
+  default_gateway: ""
   # 通用环境变量透传(厂商无关):逐条注入沙箱容器。
   # 默认 SKIP_INNER_DOCKER=0(启用 DinD);设为 "1" 则不启动内层 dockerd。
   env: {}

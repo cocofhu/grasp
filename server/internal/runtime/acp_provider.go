@@ -310,7 +310,10 @@ type reactSession struct {
 func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecProvider {
 	backend = NormalizeBackend(string(backend))
 	image := resolveProviderImage(opts, backend)
-	gw := sandbox.NewGatewayClient(opts.GatewayURL, opts.GatewayAPIKey)
+	gw := opts.Gateway
+	if gw == nil {
+		gw = sandbox.NewGatewayClient(opts.GatewayURL, opts.GatewayAPIKey)
+	}
 	mgr := sandbox.NewManager(gw, sandbox.ManagerOptions{
 		Image:             image,
 		WorkspaceDir:      "/root/workspace",

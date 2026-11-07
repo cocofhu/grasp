@@ -2178,6 +2178,8 @@
         "sectionProxy": "平台代理 URL",
         "sectionProxyHint": "用户可访问的反代与 WS。VNC 仍展示平台路径，不是直连 :6080。",
         "sectionEndpoints": "直连 Endpoints",
+        "sectionEndpointsGateway": "服务端连接端点",
+        "gatewayEndpointsHint": "这些本地地址仅供 Grasp 服务端连接沙箱。请使用上方 Grasp 入口打开会话、IDE 和终端。",
         "sectionEndpointsHint": "运维可直连已鉴权服务（session / ide / ssh）。数字端口键已过滤。直连需另行鉴权，请勿当浏览器可打开链接。",
         "endpointsNotice": "CDP / noVNC 不提供直连。两者无应用层鉴权，仅允许经平台代理 /sandbox-vnc/:sandboxId/ws（每个沙箱一个桌面，应用端口是桌面里的页面；启用平台 Auth 时须 Session；仅校验登录有效，不校验沙箱/跑步归属）。session / ide 各自密码鉴权；ssh 使用 ROOT_PASSWORD 或 SSH_KEY。",
         "endpointsEmpty": "暂无可用直连 endpoints（gateway 不可达或未返回命名端口）",

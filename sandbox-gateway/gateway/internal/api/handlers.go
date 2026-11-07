@@ -20,8 +20,9 @@ import (
 
 // Handler holds dependencies for the control-plane HTTP handlers.
 type Handler struct {
-	svc   *service.SandboxService
-	ports config.PortsConfig
+	svc      *service.SandboxService
+	ports    config.PortsConfig
+	profiles map[string]config.ProfileConfig
 }
 
 // NewHandler builds a Handler.
@@ -31,7 +32,8 @@ func NewHandler(svc *service.SandboxService, ports config.PortsConfig) *Handler 
 
 // createRequest is the POST /sandboxes body.
 type createRequest struct {
-	Image string `json:"image"`
+	Profile string `json:"profile"`
+	Image   string `json:"image"`
 	// Provider selects the agent CLI (e.g. "cursor", "claude_code", "opencode").
 	// The published image is one universal-sandbox; the gateway injects
 	// AGENT_PROVIDER. Ignored when Image is set explicitly.
@@ -123,6 +125,18 @@ func (h *Handler) Create(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if req.Profile != "" {
+		profile, ok := h.profiles[req.Profile]
+		if !ok || strings.TrimSpace(profile.Image) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unknown sandbox environment profile"})
+			return
+		}
+		if req.Image != "" && req.Image != profile.Image {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "image conflicts with sandbox environment profile"})
+			return
+		}
+		req.Image = profile.Image
 	}
 	var cfg *driver.ConfigInject
 	if req.Config != nil {

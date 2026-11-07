@@ -29,6 +29,24 @@ func TestDefault(t *testing.T) {
 	}
 }
 
+func TestEnvironmentProfilesValidateBeforeStartup(t *testing.T) {
+	for _, profiles := range []map[string]ProfileConfig{
+		{"": {Image: "approved-image"}},
+		{"universal": {Image: " "}},
+	} {
+		cfg := Default()
+		cfg.Profiles = profiles
+		if err := cfg.validate(); err == nil {
+			t.Fatal("invalid environment profile accepted")
+		}
+	}
+	cfg := Default()
+	cfg.Profiles = map[string]ProfileConfig{"universal": {Image: "approved-image"}}
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPortsConfigAll(t *testing.T) {
 	p := PortsConfig{
 		Session: 8765, CodeServer: 8744, SSH: 22, CDP: 9222, NoVNC: 6080,
