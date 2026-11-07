@@ -18,6 +18,9 @@ import (
 // records the trace). Splitting dispatch from transport keeps every tool's
 // in/out observable in one place.
 func (h *Host) runTool(runID, token, name string, args map[string]any) (string, bool) {
+	if isFileTool(name) {
+		return h.runFileTool(runID, token, name, args)
+	}
 	solo := strings.HasPrefix(runID, models.SoloArtifactRunPrefix)
 	if solo && workflowOnlyTool(name) {
 		return "unknown tool: " + name, true

@@ -52,7 +52,7 @@ type ChatMessage struct {
 	ID       string `gorm:"primaryKey" json:"id"`
 	ThreadID string `gorm:"index" json:"threadId"`
 	Role     string `json:"role"` // user | assistant | system
-	Content  string `json:"content"`
+	Content  string `gorm:"serializer:filetext" json:"content"`
 	// Status is the turn outcome for this message. Empty is treated as "ok".
 	// user messages may be "failed" when the assistant side never produced a valid reply.
 	Status string `json:"status,omitempty"` // ok | failed
@@ -62,8 +62,8 @@ type ChatMessage struct {
 	// Source tags how the turn was produced (user chat vs cron vs channel).
 	Source string `json:"source,omitempty"` // user | cron | channel | ""
 	// Images are optional base64 attachments the user sent with this turn.
-	Images          []PromptImage      `gorm:"serializer:json" json:"images,omitempty"`
-	Citations       []ProgressCitation `gorm:"serializer:json" json:"citations,omitempty"`
+	Images          []PromptImage      `gorm:"serializer:filejson" json:"images,omitempty"`
+	Citations       []ProgressCitation `gorm:"serializer:filejson" json:"citations,omitempty"`
 	AttachedContext *AttachedContext   `gorm:"serializer:json" json:"attachedContext,omitempty"`
 	// Usage is the assistant turn's token accounting from prompt_done (components
 	// summed across model buckets). nil / absent = not reported; non-nil
@@ -100,7 +100,7 @@ type ChatTurnDraft struct {
 	ID          string `gorm:"primaryKey" json:"id"`
 	ThreadID    string `gorm:"size:191;uniqueIndex" json:"threadId"`
 	UserMsgID   string `gorm:"index" json:"userMsgId"`
-	PartialText string `json:"partialText"`
+	PartialText string `gorm:"serializer:filetext" json:"partialText"`
 	// ChunkIndex is the number of agent_message_chunk texts accumulated so far.
 	ChunkIndex int `json:"chunkIndex"`
 	// EventSeq is the last buffered turn-event sequence (for WS catch-up).

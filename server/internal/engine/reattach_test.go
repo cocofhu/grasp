@@ -37,9 +37,7 @@ func bareEngine(t *testing.T) (*Engine, *gorm.DB) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = database.Close(db)
 	})
 	arts := services.NewArtifactService(db)
 	host := mcp.NewHost(arts)

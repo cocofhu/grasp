@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/platformmcp"
 	"github.com/cocofhu/grasp/internal/services"
@@ -18,6 +19,9 @@ func setupPmMCPHost(t *testing.T) (*gorm.DB, *services.PmService, *Host, models.
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:pmmcp_more_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.Attach(db, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {

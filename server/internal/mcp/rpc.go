@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -117,6 +118,10 @@ func (h *Host) callTool(runID, token string, req rpcRequest) (int, []byte) {
 	}
 	text, isErr := h.runTool(runID, token, p.Name, args)
 	args = redactToolArgs(p.Name, args)
+	loggedResult := text
+	if !isErr && p.Name == "read_artifact" {
+		loggedResult = fmt.Sprintf("[artifact body omitted: %d bytes]", len(text))
+	}
 	if isErr {
 		// Tool failures are surfaced to the agent in the result text and recorded
 		// on the node trace below, but were invisible server-side; log them so
@@ -129,14 +134,14 @@ func (h *Host) callTool(runID, token string, req rpcRequest) (int, []byte) {
 		At:      time.Now().Format(time.RFC3339),
 		Tool:    p.Name,
 		Args:    truncJSON(args, 2000),
-		Result:  trunc(text, 2000),
+		Result:  trunc(loggedResult, 2000),
 		IsError: isErr,
 	})
 	h.mu.RLock()
 	auditFn := h.auditHook
 	h.mu.RUnlock()
 	if auditFn != nil {
-		auditFn(runID, h.ActiveNode(runID), p.Name, args, text, isErr)
+		auditFn(runID, h.ActiveNode(runID), p.Name, args, loggedResult, isErr)
 	}
 	return h.ok(req, toolResult(text, isErr))
 }

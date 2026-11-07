@@ -115,9 +115,7 @@ func newHarness(t *testing.T, providers ...runtime.ExecProvider) *harness {
 	eng.SetShareRevoker(gateShareSvc)
 	t.Cleanup(func() {
 		eng.Close()
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = database.Close(db)
 	})
 	cfg := &config.Config{
 		Auth: config.AuthConfig{

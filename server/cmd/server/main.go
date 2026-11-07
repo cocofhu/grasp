@@ -112,16 +112,18 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 
-	db, err := database.Open(cfg.Database)
+	db, err := database.OpenWithFiles(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("open database failed")
 	}
+	defer func() { _ = database.Close(db) }()
 	ledgerRecorder, err := tokenledger.Start(db, filepath.Join(cfg.Storage.BlobsRoot, "token-ledger"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("open token ledger journal failed")
 	}
 
 	artifactSvc := services.NewArtifactService(db)
+	artifactSvc.SetFileSizeLimit(cfg.Storage.MaxFileBytes)
 	host := mcp.NewHost(artifactSvc)
 	// Outcome validation chain is DefaultThenRPC (see mcp.ChainedOutcomeValidator).
 	// NewHost installs DefaultOutcomeValidator; wire business RPC later via
@@ -401,6 +403,7 @@ func main() {
 	// gateway owns image lifecycle now, so there is no local image pre-pull.
 	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
+	go migrateFilePayloads(sweeperCtx, db)
 	go sbxSvc.RunSweeper(sweeperCtx)
 	codexLoginMgr.Start(sweeperCtx)
 
@@ -528,6 +531,25 @@ func main() {
 
 	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
 	soloSvc.SetBlobStore(blobStore)
+	fileDelivery := services.NewArtifactDeliveryService(db, artifactSvc, previewSvc)
+	fileDelivery.CurrentTurn = func(runID, nodeID string) (services.ArtifactTurn, error) {
+		if strings.HasPrefix(runID, models.SoloArtifactRunPrefix) {
+			return soloSvc.CurrentArtifactTurn(runID, nodeID)
+		}
+		turn, err := eng.CurrentArtifactTurn(runID, nodeID)
+		if row, ok := previewSvc.PreviewSandbox(runID, nodeID); ok {
+			turn.SandboxID = row.ID
+		}
+		return turn, err
+	}
+	fileDelivery.Published = func(runID, nodeID string, turn services.ArtifactTurn, file models.ArtifactAttachment) {
+		if turn.SessionID != "" {
+			soloSvc.ArtifactDelivered(runID, nodeID, turn, file)
+		} else {
+			eng.ArtifactDelivered(runID, nodeID, turn, file)
+		}
+	}
+	host.SetArtifactFiles(fileDelivery)
 	eng.SetReferencePinner(soloSvc)
 
 	frameAncestors, _ := cfg.Server.FrameAncestorOrigins()

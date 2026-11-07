@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -79,8 +80,11 @@ func TestSoloResourcesUseCurrentOwnedSandbox(t *testing.T) {
 	if pin() {
 		t.Fatal("a superseded sandbox must not pin an artifact")
 	}
+	if _, err := hn.h.Arts.SaveFile(context.Background(), runID, "solo", "retained.txt", row.ID, strings.NewReader("retained file")); err != nil {
+		t.Fatal(err)
+	}
 	res = hn.do(http.MethodGet, path, nil)
-	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "solo-next") || strings.Contains(res.Body.String(), "demo.html") {
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "solo-next") || strings.Contains(res.Body.String(), "demo.html") || !strings.Contains(res.Body.String(), "retained.txt") {
 		t.Fatalf("resources after replacement: %d %s", res.Code, res.Body)
 	}
 

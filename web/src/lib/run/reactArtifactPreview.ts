@@ -102,6 +102,8 @@ export type ArtifactVersionMeta = {
   nodeId: string
   sizeBytes: number
   createdAt: string
+  kind?: Artifact['kind']
+  mimeType?: string
 }
 
 export type ArtifactVersionChoice = {

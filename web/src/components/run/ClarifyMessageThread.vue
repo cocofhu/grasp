@@ -34,6 +34,7 @@ import Icon from '../ui/Icon.vue'
 import LlmSystemRow from './llm/LlmSystemRow.vue'
 import { notesAfterVisit, notesBesideTurn } from '@/lib/run/llmTranscriptThread'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
+import ArtifactFileAttachments from '@/components/chat/ArtifactFileAttachments.vue'
 
 type ChoiceRows = { q: string; answers: string[] }[] | null
 type FormRows = { label: string; value: string }[] | null
@@ -757,6 +758,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                 :metadata="turn"
                 message-test-id="clarify-agent-message"
               />
+              <ArtifactFileAttachments :files="turn.files" />
               <ClarifyThinkingRow
                 v-if="turn.streaming && !waitingTurn(turn)"
                 variant="status"

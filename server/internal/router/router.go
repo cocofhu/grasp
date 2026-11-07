@@ -268,6 +268,9 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/artifacts/:id/versions", h.ArtifactVersions)
 		api.GET("/artifacts/:id/versions/:rev/content", h.ArtifactVersionContent)
 		api.GET("/artifacts/:id/download", h.DownloadArtifact)
+		api.HEAD("/artifacts/:id/download", h.DownloadArtifact)
+		api.GET("/artifacts/:id/raw", h.ArtifactRaw)
+		api.HEAD("/artifacts/:id/raw", h.ArtifactRaw)
 		api.DELETE("/artifacts/:id", h.DeleteArtifact)
 		api.GET("/blobs/:id", h.GetBlob)
 

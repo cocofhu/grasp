@@ -3,11 +3,13 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 
@@ -30,10 +32,22 @@ func escapeLikePattern(s string) string {
 
 // ArtifactService persists run products and implements mcp.Store so the
 // artifact-store MCP writes land in the platform product store.
-type ArtifactService struct{ db *gorm.DB }
+type ArtifactService struct {
+	db           *gorm.DB
+	maxFileBytes int64
+}
 
 // NewArtifactService builds the service.
-func NewArtifactService(db *gorm.DB) *ArtifactService { return &ArtifactService{db: db} }
+func NewArtifactService(db *gorm.DB) *ArtifactService {
+	return &ArtifactService{db: db, maxFileBytes: MaxArtifactFileBytes}
+}
+
+// SetFileSizeLimit is called during startup, before serving imports.
+func (s *ArtifactService) SetFileSizeLimit(bytes int64) {
+	if bytes > 0 {
+		s.maxFileBytes = bytes
+	}
+}
 
 var (
 	_ mcp.Store      = (*ArtifactService)(nil)
@@ -42,6 +56,20 @@ var (
 
 // Save persists (or replaces) an artifact within a run namespace.
 func (s *ArtifactService) Save(runID, nodeID, name, kind, content string) (string, error) {
+	var id string
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockArtifactNamespace(tx, runID); err != nil {
+			return err
+		}
+		writer := &ArtifactService{db: tx, maxFileBytes: s.maxFileBytes}
+		var err error
+		id, err = writer.save(runID, nodeID, name, kind, content)
+		return err
+	})
+	return id, err
+}
+
+func (s *ArtifactService) save(runID, nodeID, name, kind, content string) (string, error) {
 	now := time.Now()
 	// Replace an existing same-named artifact within the run (idempotent writes).
 	var existing models.Artifact
@@ -51,19 +79,25 @@ func (s *ArtifactService) Save(runID, nodeID, name, kind, content string) (strin
 		}
 		// Content-identical re-saves (finalizeVisual / liftProduct) bump the
 		// timestamp for ETag banners but must not create a version row.
-		if existing.Content != content {
+		if existing.Content != content || existing.Kind != kind {
 			ver := models.ArtifactVersion{
 				ArtifactID: existing.ID, RunID: existing.RunID, NodeID: existing.NodeID,
 				Revision: existing.Revision, Kind: existing.Kind,
 				SizeBytes: existing.SizeBytes, Content: existing.Content,
+				MimeType: existing.MimeType, SHA256: existing.SHA256,
 				CreatedAt: existing.UpdatedAt,
 			}
-			if err := s.db.Create(&ver).Error; err != nil {
+			if existing.PathRef != "" {
+				ver.Content = existing.PathRef
+			}
+			if err := s.db.WithContext(filestore.WithReferences(context.Background())).Create(&ver).Error; err != nil {
 				return "", err
 			}
 			existing.Revision++
 		}
 		existing.Content = content
+		existing.SHA256 = ""
+		existing.MimeType = ""
 		existing.Kind = kind
 		existing.NodeID = nodeID
 		existing.SizeBytes = len(content)
@@ -187,6 +221,7 @@ func (s *ArtifactService) allQuery(f ArtifactFilter) *gorm.DB {
 	query := s.db.Table("artifacts").
 		Select(`artifacts.id, artifacts.run_id, artifacts.node_id, artifacts.workflow_id, artifacts.workflow_name,
 			artifacts.name, artifacts.kind, artifacts.size_bytes, artifacts.created_at, artifacts.updated_at, artifacts.revision,
+			artifacts.mime_type, artifacts.sha256, artifacts.session_id, artifacts.private_file,
 			runs.title as run_title`).
 		Joins("LEFT JOIN runs ON runs.id = artifacts.run_id")
 	if f.Session {
@@ -203,6 +238,14 @@ func (s *ArtifactService) allQuery(f ArtifactFilter) *gorm.DB {
 		)
 	}
 	return query
+}
+
+// BySession retains imported files across sandbox generations. The caller
+// must first authorize the stable Solo session, including stopped sessions.
+func (s *ArtifactService) BySession(id string) []models.Artifact {
+	var rows []models.Artifact
+	s.allQuery(ArtifactFilter{}).Where("artifacts.session_id = ?", id).Order("artifacts.created_at").Scan(&rows)
+	return rows
 }
 
 // AllPage returns a page of artifacts plus total count.

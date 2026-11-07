@@ -12,6 +12,7 @@ import (
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -842,6 +843,8 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		agentMsg.Text = "(已中断)"
 	}
 	sealReplyOutcome(&agentMsg, t.Err)
+	agentMsg.Files = services.ArtifactTurnFiles(e.db, s.runID, s.producerID, item.ID)
+	agentMsg.Outcome = models.ReplyOutcome(agentMsg)
 	conv.Messages = append(conv.Messages, agentMsg)
 	e.rememberTurnRoute(&conv, &req, t)
 	e.recordFeedback(e.clarifyFeedbackEvent(s, item, conv.Iteration, answered, humanMsg, agentMsg, interrupted))
@@ -997,6 +1000,8 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		agentMsg.Text = "(已中断)"
 	}
 	sealReplyOutcome(&agentMsg, t.Err)
+	agentMsg.Files = services.ArtifactTurnFiles(e.db, s.runID, s.producerID, item.ID)
+	agentMsg.Outcome = models.ReplyOutcome(agentMsg)
 	conv.Messages = append(conv.Messages, agentMsg)
 	e.rememberTurnRoute(&conv, &req, t)
 	logDB(e.db.Save(&conv), s.runID, "save review agent turn")

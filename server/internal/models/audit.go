@@ -20,7 +20,7 @@ type AuditEvent struct {
 	NodeID    string         `gorm:"index" json:"nodeId"`
 	Outcome   string         `json:"outcome"` // ok | fail
 	Summary   string         `json:"summary"`
-	Payload   map[string]any `gorm:"serializer:json" json:"payload"`
+	Payload   map[string]any `gorm:"serializer:filejson" json:"payload"`
 	CreatedAt time.Time      `json:"createdAt"`
 }
 

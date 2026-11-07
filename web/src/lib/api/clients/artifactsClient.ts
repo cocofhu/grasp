@@ -61,7 +61,8 @@ export const artifactsClient = {
         runId?: string
         nodeId: string
         revision: number
-        kind?: string
+        kind?: Artifact['kind']
+        mimeType?: string
         sizeBytes: number
         createdAt: string
       }>
@@ -71,7 +72,8 @@ export const artifactsClient = {
       artifactId: string
       revision: number
       nodeId: string
-      kind?: string
+      kind?: Artifact['kind']
+      mimeType?: string
       sizeBytes: number
       createdAt: string
       content: string
@@ -79,7 +81,8 @@ export const artifactsClient = {
       `/artifacts/${id}/versions/${rev}/content`,
       opts?.signal ? { signal: opts.signal } : undefined,
     ),
-  artifactDownloadUrl: (id: string) => `${origin()}/api/artifacts/${id}/download`,
+  artifactDownloadUrl: (id: string, revision?: number) => `${origin()}/api/artifacts/${encodeURIComponent(id)}/download${revision ? `?revision=${revision}` : ''}`,
+  artifactRawUrl: (id: string, revision?: number) => `${origin()}/api/artifacts/${encodeURIComponent(id)}/raw${revision ? `?revision=${revision}` : ''}`,
   /** Session pack download for one Run's artifacts (platform Artifacts page). */
   packRunArtifactsUrl: (runId: string) => `${origin()}/api/runs/${encodeURIComponent(runId)}/artifacts/pack`,
   packRunArtifacts: async (runId: string): Promise<{ blob: Blob; filename: string }> => {

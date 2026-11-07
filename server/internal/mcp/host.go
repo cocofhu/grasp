@@ -89,9 +89,10 @@ type Host struct {
 	// activeReview marks runs whose currently-executing node is in the post-run
 	// ReAct review phase. While set, ask_question is permitted for the node
 	// (beyond the react clarify node) so a review can raise follow-up choices.
-	activeReview map[string]bool
-	reviewSrc    ReviewPhaseSource
-	store        Store
+	activeReview  map[string]bool
+	reviewSrc     ReviewPhaseSource
+	store         Store
+	artifactFiles ArtifactFiles
 	// pending holds structured questions raised via the ask_question tool,
 	// keyed runID -> nodeID. The engine drains them (TakePendingQuestions)
 	// right after the react turn returns and persists them on the agent
@@ -640,6 +641,14 @@ func (h *Host) artifactWriterNode(runID, token, name string) string {
 func (h *Host) ReadArtifact(runID, token, name string) (string, error) {
 	if !h.authorize(runID, token) {
 		return "", ErrUnauthorized
+	}
+	if records, ok := h.store.(interface {
+		GetRecord(string, string) (models.Artifact, bool)
+	}); ok {
+		if a, found := records.GetRecord(runID, name); found && (a.Kind == "image" || a.Kind == "video" || a.Kind == "audio" || a.Kind == "pdf" || a.Kind == "file") {
+			encoded, err := json.Marshal(models.ArtifactAttachment{ArtifactID: a.ID, Revision: a.Revision, Name: a.Name, Kind: a.Kind, MimeType: a.MimeType, SizeBytes: a.SizeBytes})
+			return string(encoded), err
+		}
 	}
 	content, ok := h.store.Get(runID, name)
 	if !ok {

@@ -21,6 +21,29 @@ func TestOpenFileAndMigrate(t *testing.T) {
 	}
 }
 
+func TestConfiguredPayloadRootSurvivesDatabaseReopen(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.DatabaseConfig{Driver: "sqlite", Path: filepath.Join(dir, "grasp.db")}
+	root := filepath.Join(dir, "persistent", "payloads")
+	db, err := OpenWithFiles(cfg, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Create(&models.Artifact{ID: "restart", Kind: "markdown", Content: "persistent report"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	_ = Close(db)
+	db, err = OpenWithFiles(cfg, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = Close(db) })
+	var artifact models.Artifact
+	if err = db.First(&artifact, "id = ?", "restart").Error; err != nil || artifact.Content != "persistent report" {
+		t.Fatalf("reopen=%+v err=%v", artifact, err)
+	}
+}
+
 func TestOpenSQLiteTestClonesMigratedSchema(t *testing.T) {
 	db, err := OpenSQLiteTest(filepath.Join(t.TempDir(), "clone.db"))
 	if err != nil {

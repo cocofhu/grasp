@@ -150,6 +150,9 @@ func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (Dial
 	}
 	if observe {
 		e.buildObserved(entry, &st, sr)
+		if sr.HasFileDeliveries {
+			e.attachDialogueFiles(&st)
+		}
 		return st, true
 	}
 
@@ -211,6 +214,9 @@ func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (Dial
 	}
 	appendQueuedTurns(&st, view.Pending)
 	st.Busy = platformBusy
+	if conv != nil && conv.HasFileDeliveries {
+		e.attachDialogueFiles(&st)
+	}
 
 	if conv != nil && !conv.Done {
 		e.attachOrphan(entry, &st, runID, nodeID, platformBusy, agentIdx)

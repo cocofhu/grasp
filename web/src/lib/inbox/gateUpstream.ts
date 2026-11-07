@@ -39,7 +39,7 @@ const BODY_ARTIFACT_REF =
   /\{\{\s*artifact\s*\(\s*["']([^"']+)["']\s*\)\s*\}\}|artifact\s*\(\s*["']([^"']+)["']\s*\)/g
 
 export function isReadonlyArtifactKind(kind: string | undefined): boolean {
-  return (kind || '').toLowerCase() === 'image'
+  return ['image', 'video', 'audio', 'pdf', 'file'].includes((kind || '').toLowerCase())
 }
 
 export function inferArtifactKind(name: string): GatePrimaryProductRef['kind'] {

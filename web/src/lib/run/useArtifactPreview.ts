@@ -145,7 +145,7 @@ const currentChipLabel = computed(() => {
 async function selectVersion(choice: ArtifactVersionChoice) {
   if (!choice.available) return
   const a = props.artifact
-  if (a && !choice.latest) {
+  if (a && !choice.latest && !['video', 'audio', 'pdf', 'file'].includes(versions.resolveVersionedArtifact(a, choice).kind)) {
     try {
       await versions.ensureVersionContent(a.id, choice.revision)
     } catch {
@@ -286,7 +286,8 @@ async function loadImageDownload(a: Artifact) {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
       blob = new Blob([bytes], { type: a.kind === 'image' ? 'image/png' : 'application/octet-stream' })
     } else {
-      const res = await fetch(api.artifactDownloadUrl(a.id), { credentials: 'include' })
+      const url = viewingHistorical.value ? api.artifactDownloadUrl(a.id, selectedChoice.value!.revision) : api.artifactDownloadUrl(a.id)
+      const res = await fetch(url, { credentials: 'include' })
       if (!res.ok) throw new Error(String(res.status))
       blob = await res.blob()
     }
@@ -312,6 +313,7 @@ function handleImageLoadError() {
 }
 
 async function loadContent(a: Artifact, opts?: { force?: boolean; silent?: boolean }) {
+  if (['video', 'audio', 'pdf', 'file'].includes(a.kind)) { loading.value = false; loadErr.value = ''; return }
   if (!opts?.force && contentCache.value[a.id] !== undefined) return
   if (typeof a.content === 'string') {
     contentCache.value[a.id] = a.content
@@ -374,7 +376,7 @@ function download() {
     URL.revokeObjectURL(url)
     return
   }
-  window.open(api.artifactDownloadUrl(a.id), '_blank')
+  window.open(viewingHistorical.value ? api.artifactDownloadUrl(a.id, selectedChoice.value!.revision) : api.artifactDownloadUrl(a.id), '_blank')
 }
 
 function resolveExportRoot(): HTMLElement | null {

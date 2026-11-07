@@ -268,7 +268,7 @@ func conversationMessage(row models.SoloMessage) mcp.ConversationHistoryMessage 
 	for i := range images {
 		images[i].Data = ""
 	}
-	return mcp.ConversationHistoryMessage{ID: row.ID, Role: row.Role, Content: soloHistoryContent(row), Status: row.Status,
+	return mcp.ConversationHistoryMessage{ID: row.ID, Role: row.Role, Content: soloHistoryContent(row), Status: row.Status, Files: row.Files,
 		Error: row.Error, Images: images, CreatedAt: row.CreatedAt, ToolResults: conversationTools(row.Events)}
 }
 

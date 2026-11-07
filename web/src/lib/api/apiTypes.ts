@@ -1,6 +1,7 @@
 import type {
   AcpEvent,
   Artifact,
+  ArtifactAttachment,
   ClarifyImage,
   ChatExecution,
   McpCall,
@@ -872,6 +873,8 @@ export interface ReferenceSearchResult<T> {
 }
 
 export interface SoloMessage {
+  files?: ArtifactAttachment[]
+  turnId?: string
   id: string
   sessionId: string
   role: 'user' | 'assistant' | 'system'

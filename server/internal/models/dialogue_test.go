@@ -14,6 +14,7 @@ func TestReplyOutcome(t *testing.T) {
 		{"human", ReactMessage{Role: "human"}, ""},
 		{"blank", ReactMessage{Role: "agent", Text: "  "}, OutcomeEmpty},
 		{"text", ReactMessage{Role: "agent", Text: "好的"}, OutcomeOK},
+		{"file-only reply", ReactMessage{Role: "agent", Files: []ArtifactAttachment{{ArtifactID: "file", Revision: 1}}}, OutcomeOK},
 		{"questions", ReactMessage{Role: "agent", Questions: []ReactQuestion{{ID: "q"}}}, OutcomeOK},
 		{"handoff", ReactMessage{Role: "agent", Handoff: true}, OutcomeOK},
 		{"interrupted", ReactMessage{Role: "agent", Interrupted: true}, OutcomeInterrupted},

@@ -14,6 +14,6 @@ type ChatPendingTurn struct {
 	// Started marks the active turn. Its human message may already be in the
 	// transcript, so a restart settles it instead of running it again.
 	Started   bool
-	Payload   []byte
+	Payload   []byte `gorm:"serializer:filebytes;type:text"`
 	CreatedAt time.Time
 }

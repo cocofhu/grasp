@@ -195,9 +195,7 @@ func (h *Handlers) V1DownloadArtifact(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	body, mime := decodeArtifactDownloadBody(a)
-	c.Header("Content-Disposition", "attachment; filename="+a.Name)
-	c.Data(http.StatusOK, mime, body)
+	h.serveArtifactFile(c, true)
 }
 
 func (h *Handlers) V1CancelRun(c *gin.Context) {

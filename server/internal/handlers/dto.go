@@ -151,6 +151,7 @@ func artifactMetaDTO(a models.Artifact) gin.H {
 		"id": a.ID, "name": a.Name, "kind": a.Kind, "nodeId": a.NodeID,
 		"runId": a.RunID, "workflowId": a.WorkflowID, "workflowName": a.WorkflowName, "sizeBytes": a.SizeBytes,
 		"createdAt": a.CreatedAt, "revision": rev,
+		"mimeType": a.MimeType, "sha256": a.SHA256,
 	}
 	if !a.UpdatedAt.IsZero() {
 		out["updatedAt"] = a.UpdatedAt
@@ -303,6 +304,9 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 		}
 		if s.TakenOverAt != nil {
 			nr["takenOverAt"] = s.TakenOverAt
+		}
+		if len(s.Files) > 0 {
+			nr["files"] = s.Files
 		}
 		// Nullable usage: omit when nil so clients treat missing as "—" (not 0).
 		if s.Usage != nil {

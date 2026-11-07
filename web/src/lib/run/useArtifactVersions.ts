@@ -66,11 +66,14 @@ export function useArtifactVersions() {
   ): Artifact {
     if (!choice || choice.latest || !choice.available) return artifact
     const html = historicalContent(artifact.id, choice.revision)
-    if (html === undefined) return artifact
+    const meta = archivedById.value[artifact.id]?.find(row => row.revision === choice.revision)
     return {
       ...artifact,
-      content: html,
-      sizeBytes: html.length,
+      revision: choice.revision,
+      kind: meta?.kind || artifact.kind,
+      mimeType: meta?.mimeType || artifact.mimeType,
+      content: html ?? '',
+      sizeBytes: meta?.sizeBytes ?? html?.length ?? artifact.sizeBytes,
     }
   }
 

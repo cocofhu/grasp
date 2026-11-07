@@ -637,6 +637,9 @@ func (h *Host) callWorkflowRead(name string, args map[string]any) (any, bool) {
 		if !ok {
 			return map[string]any{"error": "artifact not found"}, true
 		}
+		if art.Kind == "image" || art.Kind == "video" || art.Kind == "audio" || art.Kind == "pdf" || art.Kind == "file" {
+			return map[string]any{"artifactId": art.ID, "runId": art.RunID, "name": art.Name, "kind": art.Kind, "revision": art.Revision, "mimeType": art.MimeType, "sizeBytes": art.SizeBytes}, false
+		}
 		total := len(art.Content)
 		if offset > total {
 			offset = total

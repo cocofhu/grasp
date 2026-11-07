@@ -700,7 +700,7 @@ func TestExecOutputLeftoverFromArtifactStoreFullText(t *testing.T) {
 		// ledger + image must not appear
 		{"output", mcp.NodeOutcomeArtifactName, "json", `{"status":"success"}`},
 		{"gate", mcp.FeedbackIndexArtifactName, "json", `{"rounds":[]}`},
-		{"shot", "shot.png", "image", "not-a-real-png-binary"},
+		{"shot", "shot.png", "image", "aW1hZ2UtZml4dHVyZQ=="},
 	} {
 		if _, err := eng.store.Save(c.run.ID, a.node, a.name, a.kind, a.body); err != nil {
 			t.Fatalf("save %s: %v", a.name, err)
@@ -741,7 +741,7 @@ func TestExecOutputLeftoverFromArtifactStoreFullText(t *testing.T) {
 		"node_complete.json",
 		"feedback_index.json",
 		"shot.png",
-		"not-a-real-png-binary",
+		"aW1hZ2UtZml4dHVyZQ==",
 	} {
 		if strings.Contains(body, banned) {
 			t.Fatalf("body must not contain %q:\n%s", banned, body)
@@ -784,7 +784,7 @@ func TestExecOutputLeftoverExtraArtifactsAndMissingSkipped(t *testing.T) {
 		{"research1", mcp.ResearchArtifactName, "json", leftoverFixtureResearch},
 		{"output", mcp.NodeOutcomeArtifactName, "json", `{"status":"success"}`},
 		{"gate", "feedback.clarify.approve.i1.json", "json", `{"summary":"feedback round"}`},
-		{"shot", "ui.webp", "image", "WEBPBINARY"},
+		{"shot", "ui.webp", "image", "aW1hZ2UtZml4dHVyZQ=="},
 		{"notes", "notes.md", "markdown", "# 自由笔记\n\n自由正文应保留\n"},
 	} {
 		if _, err := eng.store.Save(c.run.ID, a.node, a.name, a.kind, a.body); err != nil {
@@ -818,7 +818,7 @@ func TestExecOutputLeftoverExtraArtifactsAndMissingSkipped(t *testing.T) {
 		"node_complete.json",
 		"feedback.clarify",
 		"ui.webp",
-		"WEBPBINARY",
+		"aW1hZ2UtZml4dHVyZQ==",
 	} {
 		if strings.Contains(body, banned) {
 			t.Fatalf("body must not contain %q:\n%s", banned, body)

@@ -1,5 +1,14 @@
 {
   "pages": {
+    "artifactFiles": {
+      "loading": "正在读取文件…",
+      "unavailable": "文件暂时无法预览，可能已删除或当前格式不受支持。",
+      "retry": "重试",
+      "download": "下载原文件",
+      "preview": "预览",
+      "downloadOnly": "此格式暂不支持预览，请下载原文件查看。",
+      "truncated": "预览仅显示前 2 MB，下载可获取完整内容。"
+    },
     "dashboard": {
       "title": "从一句话开始一次开发前澄清",
       "subtitle": "选择 Grasp 工作流，第一句话会成为 Run 标题",

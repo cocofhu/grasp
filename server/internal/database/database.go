@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 
 	"github.com/rs/zerolog/log"
@@ -32,6 +33,35 @@ func Open(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	default:
 		return OpenSQLite(cfg.Path)
 	}
+}
+
+// Close fences file publications before releasing the database. Background
+// jobs may still settle after admission stops; they must not recreate storage
+// directories after the caller has closed and removed the database workspace.
+func Close(db *gorm.DB) error {
+	if store, err := filestore.FromDB(db); err == nil {
+		store.Close()
+	}
+	conn, err := db.DB()
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
+// OpenWithFiles binds payload storage before any application writes. All
+// replicas must use the same persistent root as the database they share.
+func OpenWithFiles(cfg config.DatabaseConfig, root string) (*gorm.DB, error) {
+	db, err := Open(cfg)
+	if err != nil {
+		return nil, err
+	}
+	// Rebind the initial SQLite default before querying payload-bearing rows.
+	if err = filestore.Rebind(db, root); err != nil {
+		_ = Close(db)
+		return nil, err
+	}
+	return db, nil
 }
 
 // OpenSQLite opens (or creates) the SQLite database at path. WAL + a busy
@@ -105,7 +135,8 @@ var (
 )
 
 // OpenSQLiteTest opens a migrated SQLite DB at path by cloning a process-wide
-// schema template. Unit tests that open a fresh DB per case should prefer this
+// schema template. Call Close before cleaning up its storage directory. Unit
+// tests that open a fresh DB per case should prefer this
 // over OpenSQLite: AutoMigrate of the full model set is multi-second on cold
 // disks and routinely pushes engine/handlers packages near the default 10m
 // go-test timeout when every case pays that cost.
@@ -176,6 +207,16 @@ func openSQLiteConn(path string) (*gorm.DB, error) {
 	// Serialize writes: SQLite allows only one writer; a single connection
 	// avoids "database is locked" stalls under concurrent runs.
 	sqlDB.SetMaxOpenConns(1)
+	root := filepath.Join(filepath.Dir(strings.Split(path, "?")[0]), "payloads")
+	if path == ":memory:" || strings.HasPrefix(path, "file:") {
+		root, err = os.MkdirTemp("", "grasp-payloads-*")
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err = filestore.Attach(db, root); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -197,6 +238,9 @@ func openMySQL(dsn string) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(20)
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(time.Hour)
+	if err = filestore.Attach(db, "data/payloads"); err != nil {
+		return nil, err
+	}
 	return finalize(db)
 }
 
