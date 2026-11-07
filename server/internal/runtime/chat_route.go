@@ -14,6 +14,12 @@ import (
 
 const visitModelSwitchFailed = "model_switch_failed"
 
+// User-selected routes update only the tool, while shared workflow node
+// handoffs may still prepare repositories through sandboxReprimer.
+type sandboxToolSwitcher interface {
+	SwitchTool(context.Context, *sandbox.Sandbox, sandbox.Spec, []string) error
+}
+
 // routeBackend keeps the node Agent's tool and binding unless this turn's
 // choice names a different bound group. Same-group model changes stay out of
 // the sandbox fingerprint and are applied with POST /api/model.
@@ -107,7 +113,7 @@ func (c *acpProvider) restoreDefaultRoute(ctx context.Context, req NodeReq, sess
 	if sess.sb.Image != "" && want.Image != "" && sess.sb.Image != want.Image && !sess.sb.IsLocal() {
 		return fmt.Errorf("default model group requires a different sandbox image")
 	}
-	if err := c.reprimeSession(ctx, req, sess, want); err != nil {
+	if err := c.switchSessionTool(ctx, req, sess, want); err != nil {
 		return err
 	}
 	sess.routeConfigurationID = ""
@@ -138,7 +144,7 @@ func (c *acpProvider) applyChatRoute(ctx context.Context, req NodeReq, sess *rea
 		if sess.sb.Image != "" && want.Image != "" && sess.sb.Image != want.Image && !sess.sb.IsLocal() {
 			return fmt.Errorf("model group requires a different sandbox image")
 		}
-		if err := c.reprimeSession(ctx, req, sess, want); err != nil {
+		if err := c.switchSessionTool(ctx, req, sess, want); err != nil {
 			return err
 		}
 		if wantID == defaultID {
@@ -211,10 +217,10 @@ func chatSettingsMatch(cur sandbox.ChatModelSettings, model, effort string) bool
 	return strings.TrimSpace(cur.Selected) == strings.TrimSpace(model) && gotEffort == strings.TrimSpace(effort)
 }
 
-func (c *acpProvider) reprimeSession(ctx context.Context, req NodeReq, sess *reactSession, want sandbox.Spec) error {
-	reprime, ok := c.mgr.(sandboxReprimer)
+func (c *acpProvider) switchSessionTool(ctx context.Context, req NodeReq, sess *reactSession, want sandbox.Spec) error {
+	switcher, ok := c.mgr.(sandboxToolSwitcher)
 	if !ok || sess == nil || sess.sb == nil {
-		return fmt.Errorf("sandbox cannot be re-primed")
+		return fmt.Errorf("sandbox cannot switch tools in place")
 	}
 	if want.ConfigHome != "" && want.ConfigHome != sess.home {
 		defer removeHome(want.ConfigHome)
@@ -231,7 +237,7 @@ func (c *acpProvider) reprimeSession(ctx context.Context, req NodeReq, sess *rea
 		chat = sess.acp.ChatID()
 		sess.acp.Close()
 	}
-	if err := reprime.Reprime(ctx, sess.sb, want, prev); err != nil {
+	if err := switcher.SwitchTool(ctx, sess.sb, want, prev); err != nil {
 		return err
 	}
 	if err := sandbox.WaitForACPReady(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, reprimeReadyWait); err != nil {

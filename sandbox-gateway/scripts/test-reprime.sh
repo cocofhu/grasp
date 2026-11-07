@@ -172,6 +172,97 @@ fi
 ! grep -q 'catalog-.*-token' "$TMP/empty-fill" || die "empty selection leaked previous token"
 echo "OK: explicit empty selection removes previous workflow node permissions"
 
+# A user tool switch never initializes Git or repos, including a workspace
+# left without its configured repo after an initial HTTPS clone failure.
+mkdir -p "$H/workspace/plain" "$H/workspace/dirty" "$H/.ssh" "$H/.config/gh" "$H/.sandbox"
+printf 'generated output\n' >"$H/workspace/plain/output.txt"
+git -C "$H/workspace/dirty" init -q
+printf 'original\n' >"$H/workspace/dirty/tracked.txt"
+git -C "$H/workspace/dirty" add tracked.txt
+git -C "$H/workspace/dirty" -c user.name=test -c user.email=test@example.com commit -qm initial
+git -C "$H/workspace/dirty" worktree add -q --detach "$H/workspace/linked" HEAD
+printf 'unfinished edit\n' >"$H/workspace/dirty/tracked.txt"
+printf 'linked edit\n' >"$H/workspace/linked/tracked.txt"
+printf 'existing SSH identity\n' >"$H/.ssh/id_rsa"
+printf 'existing CLI login\n' >"$H/.config/gh/hosts.yml"
+printf '[]\n' >"$H/.sandbox/repos.json"
+repos='absent|https://unreachable.invalid/missing.git|,plain|https://unreachable.invalid/plain.git|,dirty|https://unreachable.invalid/dirty.git|,linked|https://unreachable.invalid/linked.git|'
+printf 'declare -x GIT_REPOS="%s"\n' "$repos" >>"$RUN/env"
+printf 'declare -x CURSOR_API_KEY="previous-tool-secret"\n' >>"$RUN/env"
+printf 'CURSOR_API_KEY\n' >>"$RUN/reprime-keys"
+
+workspace_snapshot() {
+  (cd "$H" && find workspace .ssh .grasp .gitconfig .config .sandbox -type f -print0 | sort -z | xargs -0 sha256sum)
+}
+workspace_snapshot >"$TMP/workspace.before"
+mkdir -p "$TMP/no-git"
+cat >"$TMP/no-git/git" <<EOF
+#!/bin/bash
+echo "unexpected git invocation" >>"$TMP/git.log"
+exit 99
+EOF
+chmod +x "$TMP/no-git/git"
+cat >"$TMP/services.sh" <<EOF
+#!/bin/bash
+echo "\$*" >>"$TMP/services.log"
+if [ "\$*" = 'restart backend' ] && [ -f "$TMP/fail-backend" ]; then
+  rm -f "$TMP/fail-backend"
+  exit 1
+fi
+EOF
+for operation in inherited explicit failure rollback; do
+  rm -rf "$TMP/bundle"
+  mkdir -p "$TMP/bundle/config"
+  provider=codex
+  [ "$operation" != rollback ] || provider=cursor
+  {
+    echo "AGENT_PROVIDER=$(b64 "$provider")"
+    echo "CONFIG_ROOT=$(b64 "$H/.$provider")"
+    echo "CURRENT_TOOL_SECRET=$(b64 "next-$operation")"
+    # First exercise inherited GIT_REPOS, then an explicit incoming clone list.
+    [ "$operation" = inherited ] || echo "GIT_REPOS=$(b64 "$repos")"
+  } >"$TMP/bundle/env"
+  printf 'new tool config\n' >"$TMP/bundle/config/settings.json"
+  tar -C "$TMP/bundle" -czf "$TMP/tool.tgz" .
+  [ "$operation" != failure ] || touch "$TMP/fail-backend"
+  rc=0
+  HOME="$H" GRASP_REPRIME_HOME="$H" GRASP_RUNTIME_RUN_DIR="$RUN" \
+    GRASP_REPRIME_STARTUP="$TMP/no-startup.sh" GRASP_REPRIME_SERVICES="$TMP/services.sh" \
+    PATH="$TMP/no-git:$PATH" bash "$REPRIME" --tool-only <"$TMP/tool.tgz" >"$TMP/tool.log" 2>&1 || rc=$?
+  if [ "$operation" = failure ]; then
+    [ "$rc" = 1 ] || die "tool failure exit=$rc"
+  else
+    [ "$rc" = 0 ] || { cat "$TMP/tool.log"; die "tool switch $operation exited $rc"; }
+  fi
+  workspace_snapshot >"$TMP/workspace.after"
+  cmp -s "$TMP/workspace.before" "$TMP/workspace.after" || die "tool $operation changed workspace/Git/SSH state"
+  [ ! -e "$H/workspace/absent" ] || die "tool switch created a missing repo"
+  [ ! -e "$TMP/git.log" ] || die "tool switch invoked git"
+  [ -f "$H/.$provider/settings.json" ] || die "tool config not installed"
+  ! grep -q previous-tool-secret "$RUN/env" || die "previous tool secret survived"
+done
+echo "OK: tool switch, backend failure and rollback retain files and Git/SSH state without Git or startup"
+
+# Shared workflow node handoffs still prepare a new repo and report failure.
+rm -rf "$TMP/bundle"
+mkdir -p "$TMP/bundle"
+{
+  echo "AGENT_PROVIDER=$(b64 cursor)"
+  echo "GIT_REPOS=$(b64 "added|$H/workspace/dirty|")"
+} >"$TMP/bundle/env"
+tar -C "$TMP/bundle" -czf "$TMP/added.tgz" .
+HOME="$H" GRASP_REPRIME_HOME="$H" GRASP_RUNTIME_RUN_DIR="$RUN" \
+  GRASP_REPRIME_SERVICES="$TMP/services.sh" bash "$REPRIME" <"$TMP/added.tgz" >"$TMP/added.log" 2>&1 || { cat "$TMP/added.log"; die "shared node did not clone its repo"; }
+[ -d "$H/workspace/added/.git" ] || die "shared node's new repo missing"
+echo "GIT_REPOS=$(b64 "unavailable|$TMP/not-a-repository|")" >"$TMP/bundle/env"
+tar -C "$TMP/bundle" -czf "$TMP/unavailable.tgz" .
+rc=0
+HOME="$H" GRASP_REPRIME_HOME="$H" GRASP_RUNTIME_RUN_DIR="$RUN" \
+  GRASP_REPRIME_SERVICES="$TMP/services.sh" bash "$REPRIME" <"$TMP/unavailable.tgz" >"$TMP/unavailable.log" 2>&1 || rc=$?
+[ "$rc" = 1 ] || die "shared node ignored clone failure (exit=$rc)"
+grep -q 'clone unavailable failed' "$TMP/unavailable.log" || die "missing shared-node clone failure detail"
+echo "OK: shared workflow still clones required repos and fails on unavailable repos"
+
 # Bad bundles are refused before anything changes.
 cp "$RUN/env" "$TMP/env.before"
 if echo junk | bash "$REPRIME" >/dev/null 2>&1; then die "junk bundle accepted"; fi

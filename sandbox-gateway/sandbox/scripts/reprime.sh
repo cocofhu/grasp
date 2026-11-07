@@ -2,10 +2,12 @@
 # Re-prime a running sandbox for the next node of a shared-sandbox run: swap the
 # agent env, config home and Git/SSH credentials of the previous node for the
 # next node's, then restart backend (and preview-inject) so they pick it up.
-# Grasp calls it over SSH with a tar.gz on stdin; only used when a workflow runs
-# in sandbox mode "shared" (off by default). startup.sh is not involved.
+# Grasp calls it over SSH with a tar.gz on stdin for shared workflow node
+# handoffs or, with --tool-only, user tool switches. startup.sh is not run.
 #
-# Usage: reprime.sh < bundle.tgz
+# Usage: reprime.sh [--tool-only] < bundle.tgz
+# --tool-only updates a user's tool without reinitializing Git/SSH credentials
+# or preparing repositories. Shared workflow node handoffs omit the flag.
 # Bundle:
 #   env      required. NAME=base64(value) lines: the Grasp spec env of the next node.
 #   unset    optional. One env name per line: Grasp spec env of the previous node.
@@ -25,7 +27,13 @@ STARTUP="${GRASP_REPRIME_STARTUP:-$SCRIPT_DIR/startup.sh}"
 SERVICES="${GRASP_REPRIME_SERVICES:-$SCRIPT_DIR/services.sh}"
 HOME_DIR="${GRASP_REPRIME_HOME:-/root}"
 
-[ $# -eq 0 ] || { echo "usage: reprime.sh < bundle.tgz" >&2; exit 2; }
+reprime_tool_only=0
+if [ "${1:-}" = "--tool-only" ]; then
+  reprime_tool_only=1
+  shift
+fi
+readonly reprime_tool_only
+[ $# -eq 0 ] || { echo "usage: reprime.sh [--tool-only] < bundle.tgz" >&2; exit 2; }
 
 umask 077
 STAGE="$(mktemp -d)"
@@ -67,19 +75,21 @@ done
 case "$OLD_CONFIG_ROOT" in
   "$HOME_DIR"/.?*) rm -rf "$OLD_CONFIG_ROOT" ;;
 esac
-rm -rf "$HOME_DIR/.git-credentials" "$HOME_DIR/.grasp/repo-credentials" "$HOME_DIR/.grasp/git-credentials" \
-  "$HOME_DIR/.ssh/id_rsa" "$HOME_DIR/.ssh/known_hosts" "$HOME_DIR/.ssh/grasp_repos_config" \
-  "$HOME_DIR/.config/gh/hosts.yml" "$HOME_DIR/.config/glab-cli/config.yml"
-rm -f "$HOME_DIR"/.ssh/grasp-repo-*
-if [ -f "$HOME_DIR/.gitconfig" ]; then
-  git config --global --remove-section credential 2>/dev/null || true
-  git config --global --unset-all core.sshCommand 2>/dev/null || true
-  git config --global --get-regexp '^credential\..*\.helper$' 2>/dev/null | awk '{print $1}' | sort -u |
-    while IFS= read -r k; do git config --global --unset-all "$k" 2>/dev/null || true; done
-  git config --global --get-regexp '^url\..*grasp-repo-.*\.insteadof$' 2>/dev/null | awk '{print $1}' | sort -u |
-    while IFS= read -r k; do git config --global --unset-all "$k" 2>/dev/null || true; done
-  git config --global --unset-all user.email 2>/dev/null || true
-  git config --global --unset-all user.name 2>/dev/null || true
+if [ "$reprime_tool_only" = 0 ]; then
+  rm -rf "$HOME_DIR/.git-credentials" "$HOME_DIR/.grasp/repo-credentials" "$HOME_DIR/.grasp/git-credentials" \
+    "$HOME_DIR/.ssh/id_rsa" "$HOME_DIR/.ssh/known_hosts" "$HOME_DIR/.ssh/grasp_repos_config" \
+    "$HOME_DIR/.config/gh/hosts.yml" "$HOME_DIR/.config/glab-cli/config.yml"
+  rm -f "$HOME_DIR"/.ssh/grasp-repo-*
+  if [ -f "$HOME_DIR/.gitconfig" ]; then
+    git config --global --remove-section credential 2>/dev/null || true
+    git config --global --unset-all core.sshCommand 2>/dev/null || true
+    git config --global --get-regexp '^credential\..*\.helper$' 2>/dev/null | awk '{print $1}' | sort -u |
+      while IFS= read -r k; do git config --global --unset-all "$k" 2>/dev/null || true; done
+    git config --global --get-regexp '^url\..*grasp-repo-.*\.insteadof$' 2>/dev/null | awk '{print $1}' | sort -u |
+      while IFS= read -r k; do git config --global --unset-all "$k" 2>/dev/null || true; done
+    git config --global --unset-all user.email 2>/dev/null || true
+    git config --global --unset-all user.name 2>/dev/null || true
+  fi
 fi
 
 # --- next node ---------------------------------------------------------------
@@ -119,78 +129,82 @@ if [ -d "$STAGE/config" ]; then
   cp -a "$STAGE/config/." "$CONFIG_ROOT/"
 fi
 
-# The Git/SSH credential helpers are startup.sh's own: pull their definitions
-# out of it rather than keeping a second copy in sync.
-if [ ! -r "$STARTUP" ]; then
-  echo "reprime: ${STARTUP} not found" >&2
-  exit 1
-fi
-FUNCS="repo_scheme repo_host url_host prepare_git_credentials_file glab_auth_login gh_auth_login
-setup_https_credentials setup_ssh_credentials setup_bare_gitlab_credentials setup_bare_github_credentials
-setup_repo_credentials configure_git_credentials configure_git_catalog repo_name_from_url
-apply_ssh_file_inject"
-# shellcheck disable=SC2086
-defs="$(awk -v want="$(echo $FUNCS)" '
-  BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) keep[w[i]] = 1 }
-  !inside && match($0, /^[a-z_]+\(\) \{$/) {
-    name = substr($0, 1, index($0, "(") - 1)
-    if (name in keep) { inside = 1; found[name] = 1 }
-  }
-  inside { print }
-  inside && /^}$/ { inside = 0 }
-  END { for (k in keep) if (!(k in found)) { print "missing " k > "/dev/stderr"; exit 1 } }
-' "$STARTUP")" || { echo "reprime: credential helpers missing from startup.sh" >&2; exit 1; }
-# startup's image home is fixed; the same definitions also support the isolated
-# re-prime home used by smoke tests and callers overriding GRASP_REPRIME_HOME.
-defs="${defs//\/root/\$HOME_DIR}"
-eval "$defs"
-# startup.sh's helpers read optional env without defaults.
-set +u
-_GIT_CATALOG_CONFIGURED=0
-GIT_CREDENTIAL_HOME="$HOME_DIR"
-GIT_REPOS="${GIT_REPOS:-}"
-GITLAB_TOKEN="${GITLAB_TOKEN:-}"
-GITHUB_TOKEN="${GITHUB_TOKEN:-}"
-GITLAB_URL="${GITLAB_URL:-}"
-GITHUB_URL="${GITHUB_URL:-}"
-GIT_SSH_PRIVATE_KEY="${GIT_SSH_PRIVATE_KEY:-}"
-GIT_SSH_KNOWN_HOSTS="${GIT_SSH_KNOWN_HOSTS:-}"
-
-if [ -d "$STAGE/ssh" ]; then
-  if [ ! -f "$STAGE/ssh/git/manifest.json" ]; then
-    apply_ssh_file_inject "$STAGE/ssh"
+# Tool switches retain the sandbox's existing Git identity and repository
+# state, even when GIT_REPOS survives in the env or arrives in the new bundle.
+if [ "$reprime_tool_only" = 0 ]; then
+  # The Git/SSH credential helpers are startup.sh's own: pull their definitions
+  # out of it rather than keeping a second copy in sync.
+  if [ ! -r "$STARTUP" ]; then
+    echo "reprime: ${STARTUP} not found" >&2
+    exit 1
   fi
-  configure_git_catalog "$STAGE/ssh/git" || { echo "reprime: git catalog failed" >&2; exit 1; }
-fi
-configure_git_credentials || { echo "reprime: git credentials failed" >&2; exit 1; }
-git config --global user.email "${GIT_USER_EMAIL:-sandbox@localhost}"
-git config --global user.name "${GIT_USER_NAME:-sandbox}"
+  FUNCS="repo_scheme repo_host url_host prepare_git_credentials_file glab_auth_login gh_auth_login
+  setup_https_credentials setup_ssh_credentials setup_bare_gitlab_credentials setup_bare_github_credentials
+  setup_repo_credentials configure_git_credentials configure_git_catalog repo_name_from_url
+  apply_ssh_file_inject"
+  # shellcheck disable=SC2086
+  defs="$(awk -v want="$(echo $FUNCS)" '
+    BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) keep[w[i]] = 1 }
+    !inside && match($0, /^[a-z_]+\(\) \{$/) {
+      name = substr($0, 1, index($0, "(") - 1)
+      if (name in keep) { inside = 1; found[name] = 1 }
+    }
+    inside { print }
+    inside && /^}$/ { inside = 0 }
+    END { for (k in keep) if (!(k in found)) { print "missing " k > "/dev/stderr"; exit 1 } }
+  ' "$STARTUP")" || { echo "reprime: credential helpers missing from startup.sh" >&2; exit 1; }
+  # startup's image home is fixed; the same definitions also support the isolated
+  # re-prime home used by smoke tests and callers overriding GRASP_REPRIME_HOME.
+  defs="${defs//\/root/\$HOME_DIR}"
+  eval "$defs"
+  # startup.sh's helpers read optional env without defaults.
+  set +u
+  _GIT_CATALOG_CONFIGURED=0
+  GIT_CREDENTIAL_HOME="$HOME_DIR"
+  GIT_REPOS="${GIT_REPOS:-}"
+  GITLAB_TOKEN="${GITLAB_TOKEN:-}"
+  GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+  GITLAB_URL="${GITLAB_URL:-}"
+  GITHUB_URL="${GITHUB_URL:-}"
+  GIT_SSH_PRIVATE_KEY="${GIT_SSH_PRIVATE_KEY:-}"
+  GIT_SSH_KNOWN_HOSTS="${GIT_SSH_KNOWN_HOSTS:-}"
 
-# Clone repos the previous nodes did not have. Existing ones are left alone:
-# the shared workspace is the point of this mode.
-if [ -n "$GIT_REPOS" ]; then
-  IFS=',' read -ra _entries <<<"$GIT_REPOS"
-  for _entry in "${_entries[@]}"; do
-    [ -n "$_entry" ] || continue
-    IFS='|' read -r _name _url _branch <<<"$_entry"
-    [ -n "$_url" ] || continue
-    [ -n "$_name" ] || _name=$(repo_name_from_url "$_url")
-    case "$_name" in ''|*/*|*\\*|.|..) continue ;; esac
-    _dest="$WORKSPACE_DIR/$_name"
-    [ -d "$_dest/.git" ] && continue
-    echo "reprime: cloning ${_name}"
-    rm -rf "$_dest"
-    mkdir -p "$_dest"
-    if ! git clone "$_url" "$_dest"; then
+  if [ -d "$STAGE/ssh" ]; then
+    if [ ! -f "$STAGE/ssh/git/manifest.json" ]; then
+      apply_ssh_file_inject "$STAGE/ssh"
+    fi
+    configure_git_catalog "$STAGE/ssh/git" || { echo "reprime: git catalog failed" >&2; exit 1; }
+  fi
+  configure_git_credentials || { echo "reprime: git credentials failed" >&2; exit 1; }
+  git config --global user.email "${GIT_USER_EMAIL:-sandbox@localhost}"
+  git config --global user.name "${GIT_USER_NAME:-sandbox}"
+
+  # Clone repos the previous nodes did not have. Existing ones are left alone:
+  # the shared workspace is the point of this mode.
+  if [ -n "$GIT_REPOS" ]; then
+    IFS=',' read -ra _entries <<<"$GIT_REPOS"
+    for _entry in "${_entries[@]}"; do
+      [ -n "$_entry" ] || continue
+      IFS='|' read -r _name _url _branch <<<"$_entry"
+      [ -n "$_url" ] || continue
+      [ -n "$_name" ] || _name=$(repo_name_from_url "$_url")
+      case "$_name" in ''|*/*|*\\*|.|..) continue ;; esac
+      _dest="$WORKSPACE_DIR/$_name"
+      [ -d "$_dest/.git" ] && continue
+      echo "reprime: cloning ${_name}"
       rm -rf "$_dest"
-      echo "reprime: clone ${_name} failed" >&2
-      exit 1
-    fi
-    if [ -n "$_branch" ]; then
-      git -C "$_dest" fetch origin "$_branch" 2>/dev/null || true
-      git -C "$_dest" checkout "$_branch" 2>/dev/null || true
-    fi
-  done
+      mkdir -p "$_dest"
+      if ! git clone "$_url" "$_dest"; then
+        rm -rf "$_dest"
+        echo "reprime: clone ${_name} failed" >&2
+        exit 1
+      fi
+      if [ -n "$_branch" ]; then
+        git -C "$_dest" fetch origin "$_branch" 2>/dev/null || true
+        git -C "$_dest" checkout "$_branch" 2>/dev/null || true
+      fi
+    done
+  fi
 fi
 
 # --- persist + restart -------------------------------------------------------

@@ -67,6 +67,17 @@ func ReprimeEnvKeys(spec Spec) []string {
 // credentials are applied, and the backend is restarted. The workspace and
 // cloned repos are kept. Callers reconnect ACP afterwards.
 func (m *Manager) Reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys []string) error {
+	return m.reprime(ctx, sb, spec, prevKeys, false)
+}
+
+// SwitchTool updates the running tool's configuration and backend process in
+// place. Unlike a shared workflow node handoff, a user's tool switch must not
+// initialize repositories or change the sandbox's Git/SSH configuration.
+func (m *Manager) SwitchTool(ctx context.Context, sb *Sandbox, spec Spec, prevKeys []string) error {
+	return m.reprime(ctx, sb, spec, prevKeys, true)
+}
+
+func (m *Manager) reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys []string, toolOnly bool) error {
 	if sb == nil {
 		return fmt.Errorf("reprime: no sandbox")
 	}
@@ -77,7 +88,11 @@ func (m *Manager) Reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys 
 	if err != nil {
 		return fmt.Errorf("reprime: %w", err)
 	}
-	cmd, err := newSafeCmd("bash", runtimeReprime)
+	args := []string{"bash", runtimeReprime}
+	if toolOnly {
+		args = append(args, "--tool-only")
+	}
+	cmd, err := newSafeCmd(args...)
 	if err != nil {
 		return err
 	}
@@ -88,7 +103,7 @@ func (m *Manager) Reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys 
 	if spec.ConfigRoot != "" {
 		sb.ConfigRoot = spec.ConfigRoot
 	}
-	log.Info().Str("sandbox", sb.ID).Str("provider", spec.Env["AGENT_PROVIDER"]).
+	log.Info().Str("sandbox", sb.ID).Str("provider", spec.Env["AGENT_PROVIDER"]).Bool("tool_only", toolOnly).
 		Msg("sandbox re-primed for next node")
 	return nil
 }

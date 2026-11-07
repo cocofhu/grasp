@@ -28,7 +28,7 @@ type fakeSoloRouteRuntime struct {
 	connects    int
 }
 
-func (f *fakeSoloRouteRuntime) Reprime(_ context.Context, sb *sandbox.Sandbox, spec sandbox.Spec, previous []string) error {
+func (f *fakeSoloRouteRuntime) SwitchTool(_ context.Context, sb *sandbox.Sandbox, spec sandbox.Spec, previous []string) error {
 	f.specs = append(f.specs, spec)
 	f.previous = append(f.previous, slices.Clone(previous))
 	f.containers = append(f.containers, sb)
@@ -284,8 +284,8 @@ type worktreeSoloRouteOps struct {
 	manager *sandbox.Manager
 }
 
-func (o worktreeSoloRouteOps) Reprime(ctx context.Context, sb *sandbox.Sandbox, spec sandbox.Spec, keys []string) error {
-	return o.manager.Reprime(ctx, sb, spec, keys)
+func (o worktreeSoloRouteOps) SwitchTool(ctx context.Context, sb *sandbox.Sandbox, spec sandbox.Spec, keys []string) error {
+	return o.manager.SwitchTool(ctx, sb, spec, keys)
 }
 
 func TestSoloRouteSwitchUsesSameLocalWorktreeAndPersistsNewPort(t *testing.T) {

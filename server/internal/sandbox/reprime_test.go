@@ -137,6 +137,15 @@ func TestSpecFingerprint(t *testing.T) {
 }
 
 func TestReprimeRunsScriptWithBundle(t *testing.T) {
+	for _, toolOnly := range []bool{false, true} {
+		t.Run(map[bool]string{false: "shared-node", true: "tool-switch"}[toolOnly], func(t *testing.T) {
+			testReprimeRunsScriptWithBundle(t, toolOnly)
+		})
+	}
+}
+
+func testReprimeRunsScriptWithBundle(t *testing.T, toolOnly bool) {
+	t.Helper()
 	var gotCmd string
 	var gotStdin []byte
 	restore := SetExecHook(func(_ context.Context, _ string, _ int, cmd string, stdin io.Reader) ([]byte, error) {
@@ -148,11 +157,18 @@ func TestReprimeRunsScriptWithBundle(t *testing.T) {
 	m := &Manager{}
 	sb := &Sandbox{ID: "sb", ConfigRoot: "/root/.cursor"}
 	spec := Spec{Env: map[string]string{"AGENT_PROVIDER": "claude_code"}, ConfigRoot: "/root/.claude"}
-	if err := m.Reprime(context.Background(), sb, spec, nil); err != nil {
+	apply := m.Reprime
+	if toolOnly {
+		apply = m.SwitchTool
+	}
+	if err := apply(context.Background(), sb, spec, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotCmd, runtimeReprime) {
 		t.Fatalf("cmd = %q", gotCmd)
+	}
+	if strings.Contains(gotCmd, "--tool-only") != toolOnly {
+		t.Fatalf("incorrect operation: %q", gotCmd)
 	}
 	if untarReprime(t, gotStdin)["env"] == "" {
 		t.Fatal("bundle not sent on stdin")
@@ -160,7 +176,7 @@ func TestReprimeRunsScriptWithBundle(t *testing.T) {
 	if sb.ConfigRoot != "/root/.claude" {
 		t.Fatalf("ConfigRoot = %q", sb.ConfigRoot)
 	}
-	if err := m.Reprime(context.Background(), nil, spec, nil); err == nil {
+	if err := apply(context.Background(), nil, spec, nil); err == nil {
 		t.Fatal("nil sandbox accepted")
 	}
 }

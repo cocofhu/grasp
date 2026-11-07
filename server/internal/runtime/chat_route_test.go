@@ -83,6 +83,36 @@ func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 	}
 }
 
+func TestVisitToolSwitchPreservesSandboxAndSkipsNodeInitialization(t *testing.T) {
+	h := newSharedHarness(t, nil)
+	req := h.req("n1", models.SandboxModeShared)
+	req.KeepAliveForReview = true
+	h.run(t, req)
+	h.p.mu.Lock()
+	sess := h.p.sessions[reactKey(req)]
+	h.p.mu.Unlock()
+	if sess == nil || sess.sb == nil {
+		t.Fatal("missing parked visit session")
+	}
+	container, workspace := sess.sb, sess.sb.WorkspaceDir
+	for i := 0; i < 2; i++ {
+		want, err := h.p.spec(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A user switch must work even when the node's configured repo is
+		// missing/unreachable; only the shared-node path may prepare it.
+		want.Env["GIT_REPOS"] = "missing|https://unreachable.invalid/team/repo.git|"
+		if err := h.p.switchSessionTool(context.Background(), req, sess, want); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if h.mgr.createCount() != 1 || h.mgr.reprimeCount() != 0 || len(h.mgr.toolSwitches) != 2 || sess.sb != container || sess.sb.WorkspaceDir != workspace {
+		t.Fatalf("user switch initialized a sandbox: creates=%d reprimes=%d switches=%d", h.mgr.createCount(), h.mgr.reprimeCount(), len(h.mgr.toolSwitches))
+	}
+	h.p.RetireSession(req.RunID, req.NodeID)
+}
+
 func TestResetLiveChatModelUsesTheSessionChat(t *testing.T) {
 	selected := "aux"
 	var chats []string
