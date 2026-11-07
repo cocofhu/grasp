@@ -47,7 +47,8 @@ type ChatResult struct {
 	// Usage is the turn's token accounting from prompt_done.usage (components
 	// summed across model buckets). nil = capabilities omitted usage / not
 	// reported; non-nil (incl. all zeros) = explicitly reported for this turn.
-	Usage *models.TokenUsage `json:"usage,omitempty"`
+	Usage        *models.TokenUsage `json:"usage,omitempty"`
+	UsagePartial bool               `json:"usagePartial,omitempty"`
 	// UsageByModel is the per-model breakdown after weak-key merge / optional
 	// ACP_BRIDGE_MODEL backfill. Non-nil whenever Usage is non-nil.
 	UsageByModel models.TokenUsageByModel `json:"usageByModel,omitempty"`
@@ -98,6 +99,7 @@ type ChatResult struct {
 	ImageCount int       `json:"-"`
 	StartedAt  time.Time `json:"-"`
 	EndedAt    time.Time `json:"-"`
+	doneSeen   bool
 }
 
 // ChatSegment is one agent row already closed by a same-turn continuation.

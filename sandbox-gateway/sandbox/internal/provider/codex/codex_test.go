@@ -45,7 +45,7 @@ func TestParseSessionAndUsageAndComplete(t *testing.T) {
 		t.Fatalf("sid=%q", sid)
 	}
 	u := c.ParseLine([]byte(`{"msg":{"type":"token_count","info":{"input_tokens":10,"output_tokens":4,"cached_input_tokens":2}}}`)).Usage
-	if u["default"].InputTokens != 10 || u["default"].OutputTokens != 4 || u["default"].CacheReadTokens != 2 {
+	if u["default"].InputTokens != 8 || u["default"].OutputTokens != 4 || u["default"].CacheReadTokens != 2 {
 		t.Fatalf("usage=%+v", u)
 	}
 	if stop := c.ParseLine([]byte(`{"msg":{"type":"task_complete"}}`)).StopReason; stop != "end_turn" {
@@ -124,7 +124,7 @@ func TestParseThreadEvents(t *testing.T) {
 		t.Fatalf("patch=%+v", patch.Msgs)
 	}
 	usage := c.ParseLine([]byte(`{"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122,"reasoning_output_tokens":0}}`))
-	if usage.StopReason != "end_turn" || usage.Usage["default"].InputTokens != 24763 || usage.Usage["default"].CacheReadTokens != 24448 || usage.Usage["default"].OutputTokens != 122 {
+	if usage.StopReason != "end_turn" || !usage.UsageIsTotal || usage.Usage["default"].InputTokens != 315 || usage.Usage["default"].CacheReadTokens != 24448 || usage.Usage["default"].OutputTokens != 122 {
 		t.Fatalf("usage=%+v stop=%s", usage.Usage, usage.StopReason)
 	}
 	fail := c.ParseLine([]byte(`{"type":"turn.failed","error":{"message":"failed to refresh token"}}`))

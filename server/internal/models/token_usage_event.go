@@ -31,6 +31,7 @@ const (
 // write time and survive workflow deletion.
 type TokenUsageEvent struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
+	ReportID     string    `gorm:"index;size:64" json:"-"`
 	CreatedAt    time.Time `gorm:"index" json:"createdAt"`
 	Source       string    `gorm:"index;size:16" json:"source"`
 	Phase        string    `gorm:"size:32" json:"phase,omitempty"`
@@ -51,6 +52,28 @@ type TokenUsageEvent struct {
 	OutputTokens     int64 `json:"outputTokens"`
 	CacheReadTokens  int64 `json:"cacheReadTokens"`
 	CacheWriteTokens int64 `json:"cacheWriteTokens"`
+}
+
+// TokenUsageReport receipts identify actual model turns independently of model
+// buckets. A receipt without reported usage tracks an unavailable measurement,
+// rather than inventing a zero-token event. Receipt and buckets commit together.
+type TokenUsageReport struct {
+	// Committed distinguishes a new transactional receipt from an existing
+	// one even when a driver counts matched rows on ON CONFLICT/duplicate key.
+	Committed  bool      `gorm:"not null;default:false" json:"-"`
+	ID         string    `gorm:"primaryKey;size:64" json:"id"`
+	CreatedAt  time.Time `gorm:"index" json:"createdAt"`
+	Source     string    `gorm:"index;size:16" json:"source"`
+	Phase      string    `gorm:"size:32" json:"phase"`
+	Status     string    `gorm:"size:16" json:"status"`
+	RunID      string    `gorm:"index" json:"runId,omitempty"`
+	WorkflowID string    `gorm:"index" json:"workflowId,omitempty"`
+	NodeID     string    `json:"nodeId,omitempty"`
+	NodeType   string    `json:"nodeType,omitempty"`
+	ThreadID   string    `gorm:"index" json:"threadId,omitempty"`
+	Reported   bool      `gorm:"index" json:"reported"`
+	Partial    bool      `json:"partial"`
+	Total      int64     `json:"total"`
 }
 
 // Total returns the four-component sum.

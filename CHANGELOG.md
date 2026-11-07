@@ -4,6 +4,12 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复 CodeBuddy 用量快照延迟造成的漏计：以原生会话累计量核对每轮消耗，扣除已入账的历史和失败轮次，并从输入总量中扣除缓存；缺少模型归属的部分明确标记为未完整核验。
+
+- 修复 Token 计量的故障恢复：日志目录仍不可写时，也会在 SQL 恢复后将内存中的待处理用量写入账本。
+
+- 修复 Token 计量与汇总：状态栏、工作区和统计页统一纳入 Solo / Studio；校正缓存与恢复会话的重复计数，保留重试和中断时已报告的消耗，并通过持久化重放避免数据库短暂故障造成丢失或重复。未完整上报、待入库和无法核验的历史记录会明确提示；执行中计数包含启动中与运行中的 Solo 会话。
+
 - Mobile workflow conversations use the existing chat interface directly, including deep links and reloads, and keep the chat mounted when resizing. The old pending-card page and return-to-list navigation are removed. Approval sharing remains available through the conversation menu and preview toolbar.
 
 - 移动端表单控件在窄屏保持至少 16px，避免 iOS Safari 聚焦输入框时触发整页自动放大；新增 Chromium/WebKit 的全路由缩放与溢出回归验证。

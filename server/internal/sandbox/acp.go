@@ -604,6 +604,7 @@ func (c *ACPClient) Cancel() error {
 func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) bool {
 	var envelope struct {
 		Op   string          `json:"op"`
+		OpID string          `json:"opId"`
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
@@ -615,11 +616,14 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 	}
 
 	var ev struct {
-		Type       string          `json:"type"`
-		Update     json.RawMessage `json:"update"`
-		Usage      json.RawMessage `json:"usage"`
-		Text       string          `json:"text"`
-		StopReason string          `json:"stopReason"`
+		Type         string          `json:"type"`
+		OpID         string          `json:"opId"`
+		ReportedAt   time.Time       `json:"reportedAt"`
+		Update       json.RawMessage `json:"update"`
+		Usage        json.RawMessage `json:"usage"`
+		UsagePartial bool            `json:"usagePartial"`
+		Text         string          `json:"text"`
+		StopReason   string          `json:"stopReason"`
 	}
 	if err := json.Unmarshal(envelope.Data, &ev); err != nil {
 		c.lg.Warn().Err(err).Msg("malformed event data")
@@ -627,6 +631,12 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 	}
 
 	if result != nil {
+		if result.OpID == "" {
+			result.OpID = envelope.OpID
+			if result.OpID == "" {
+				result.OpID = ev.OpID
+			}
+		}
 		dup := make(json.RawMessage, len(envelope.Data))
 		copy(dup, envelope.Data)
 		result.RawEvents = append(result.RawEvents, dup)
@@ -642,6 +652,12 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 		// Per-turn usage only — never session CumulativeUsage (cross-node reuse
 		// would otherwise bleed prior nodes into this turn).
 		if result != nil {
+			if result.doneSeen {
+				return true
+			}
+			result.doneSeen = true
+			result.UsagePartial = ev.UsagePartial
+			result.EndedAt = ev.ReportedAt
 			if u, byModel := parsePromptDoneUsage(ev.Usage, c.bridgeModel); u != nil {
 				result.Usage = models.AddTokenUsage(result.Usage, u)
 				result.UsageByModel = models.AddTokenUsageByModel(result.UsageByModel, byModel)

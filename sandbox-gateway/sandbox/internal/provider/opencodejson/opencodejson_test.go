@@ -36,6 +36,14 @@ func TestArgsPositionalPrompt(t *testing.T) {
 	}
 }
 
+func TestNativeTitleDoesNotSpendUnreportedTokens(t *testing.T) {
+	c := &codec{c: Config{AgentName: provider.OpenCode, Bin: "opencode", BaseArgs: []string{"run", "--format", "json"}}}
+	args := c.Args(provider.OpenOptions{}, "hello", "")
+	if !has(args, "--title") || !has(args, "Grasp") || args[len(args)-1] != "hello" {
+		t.Fatalf("unaccounted title generation was enabled: %v", args)
+	}
+}
+
 func TestParseTextAndSession(t *testing.T) {
 	c := &codec{}
 	pr := c.ParseLine([]byte(`{"type":"text","sessionID":"S1","part":{"type":"text","text":"hello"}}`))

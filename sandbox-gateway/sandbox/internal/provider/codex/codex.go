@@ -122,6 +122,34 @@ type tokenCnt struct {
 	OutputTokens      int64 `json:"output_tokens"`
 	CachedInputTokens int64 `json:"cached_input_tokens"`
 	TotalTokens       int64 `json:"total_tokens"`
+	reported          bool
+}
+
+func (u *tokenCnt) UnmarshalJSON(raw []byte) error {
+	type wire tokenCnt
+	var value wire
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	*u = tokenCnt(value)
+	u.reported, _ = usagePresence(raw)
+	return nil
+}
+
+func usagePresence(raw []byte) (reported, complete bool) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return false, false
+	}
+	seen := map[string]bool{}
+	for _, key := range []string{"input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens"} {
+		var n int64
+		if value, ok := fields[key]; ok && string(value) != "null" && json.Unmarshal(value, &n) == nil {
+			seen[key] = true
+			reported = true
+		}
+	}
+	return reported, seen["input_tokens"] && seen["output_tokens"]
 }
 
 func (codec) ParseLine(line []byte) oneshot.ParseResult {
@@ -195,12 +223,14 @@ func parseLegacyLine(line []byte) oneshot.ParseResult {
 		}
 		res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindToolResult, ToolCallID: m.CallID, Text: out})
 	case "token_count":
-		if m.Info != nil {
+		if m.Info != nil && m.Info.reported {
 			res.Usage = map[string]provider.TokenUsage{"default": {
-				InputTokens:     m.Info.InputTokens,
+				InputTokens:     max(m.Info.InputTokens-m.Info.CachedInputTokens, 0),
 				OutputTokens:    m.Info.OutputTokens,
 				CacheReadTokens: m.Info.CachedInputTokens,
 			}}
+			res.UsageIsTotal = true
+			res.UsagePartial = true // legacy token_count has no reliable turn boundary
 		}
 	case "error":
 		res.StopReason = "failed"
@@ -290,6 +320,19 @@ type threadUsage struct {
 	CachedInputTokens     int64 `json:"cached_input_tokens"`
 	OutputTokens          int64 `json:"output_tokens"`
 	CacheWriteInputTokens int64 `json:"cache_write_input_tokens"`
+	reported              bool
+	complete              bool
+}
+
+func (u *threadUsage) UnmarshalJSON(raw []byte) error {
+	type wire threadUsage
+	var value wire
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	*u = threadUsage(value)
+	u.reported, u.complete = usagePresence(raw)
+	return nil
 }
 
 type threadErr struct {
@@ -325,20 +368,24 @@ func parseThreadLine(line []byte) oneshot.ParseResult {
 	switch ev.Type {
 	case "thread.started":
 		res.SessionID = ev.ThreadID
-	case "turn.completed":
+	case "turn.completed", "turn.failed":
 		res.StopReason = "end_turn"
-		if ev.Usage != nil {
+		if ev.Type == "turn.failed" {
+			res.StopReason = "failed"
+			if msg := firstNonEmpty(errMessage(ev.Error), ev.Message); msg != "" {
+				res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(msg)})
+			}
+		}
+		if ev.Usage != nil && ev.Usage.reported {
 			res.Usage = map[string]provider.TokenUsage{"default": {
-				InputTokens:      ev.Usage.InputTokens,
+				InputTokens:      max(ev.Usage.InputTokens-ev.Usage.CachedInputTokens-ev.Usage.CacheWriteInputTokens, 0),
 				OutputTokens:     ev.Usage.OutputTokens,
 				CacheReadTokens:  ev.Usage.CachedInputTokens,
 				CacheWriteTokens: ev.Usage.CacheWriteInputTokens,
 			}}
-		}
-	case "turn.failed":
-		res.StopReason = "failed"
-		if msg := firstNonEmpty(errMessage(ev.Error), ev.Message); msg != "" {
-			res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(msg)})
+			res.UsageIsTotal = true
+			res.UsageIsSessionTotal = true
+			res.UsagePartial = !ev.Usage.complete || ev.Type == "turn.failed"
 		}
 	case "error":
 		res.StopReason = "failed"

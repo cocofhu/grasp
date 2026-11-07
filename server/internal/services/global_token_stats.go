@@ -148,6 +148,7 @@ type GlobalTokenStatsRange struct {
 
 // GlobalTokenStatsResult is GET /api/stats/token payload.
 type GlobalTokenStatsResult struct {
+	Accounting     TokenAccountingStatus         `json:"accounting"`
 	Window         string                        `json:"window"`
 	BucketWidth    string                        `json:"bucketWidth"`
 	Timezone       string                        `json:"timezone"`
@@ -286,6 +287,10 @@ func (s *WorkspaceService) GlobalTokenStats(ctx context.Context, q GlobalTokenSt
 		}
 	}
 	filterOptions := buildFilterOptions(modelSeen, wfSeen, nodeTypeSeen)
+	accounting, err := loadTokenAccountingStatus(ctx, s.db, q, curWin)
+	if err != nil {
+		return GlobalTokenStatsResult{}, err
+	}
 
 	rangeOut := GlobalTokenStatsRange{End: curWin.end}
 	if curWin.hasStart {
@@ -293,6 +298,7 @@ func (s *WorkspaceService) GlobalTokenStats(ctx context.Context, q GlobalTokenSt
 		rangeOut.Start = &st
 	}
 	base := GlobalTokenStatsResult{
+		Accounting:     accounting,
 		Window:         window,
 		BucketWidth:    bucketWidth,
 		Timezone:       tzLabel,

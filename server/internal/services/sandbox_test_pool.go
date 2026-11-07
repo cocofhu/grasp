@@ -416,7 +416,26 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 	}
 	defer cancel()
 	result, err := s.codexLiveTurn(chatCtx, id, func() (*sandbox.ChatResult, error) {
-		return ls.acp.ChatStream(chatCtx, text, images, onEvent)
+		result, err := ls.acp.ChatStream(chatCtx, text, images, onEvent)
+		if result != nil && result.OpID != "" {
+			source := models.TokenLedgerSourceStudio
+			switch row.Purpose {
+			case SandboxPurposeSolo:
+				source = models.TokenLedgerSourceSolo
+			case SandboxPurposeAgent:
+				source = models.TokenLedgerSourcePM
+			}
+			tokenledger.Record(s.db, tokenledger.Entry{
+				ID: result.OpID, At: result.EndedAt, Source: source, Phase: models.TokenLedgerPhaseChat,
+				Partial: result.StopReason == "" || result.UsagePartial,
+				Status:  result.UsageStatus(err), ThreadID: row.ThreadID, SandboxID: id,
+				Usage: result.Usage, ByModel: result.UsageByModel,
+			})
+			if result.Usage != nil {
+				result.Usage.LedgerRecorded = true
+			}
+		}
+		return result, err
 	})
 	_ = row
 	if result == nil {

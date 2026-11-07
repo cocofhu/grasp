@@ -2,6 +2,7 @@ package streamjson
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -61,5 +62,61 @@ func TestTerminalUsageTotalsReplaceStreamedSamples(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCodeBuddySessionTotalsKeepMissingRequestsAndPartialTurns(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "turn")
+	if err := os.WriteFile(state, []byte("0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	phases := []struct {
+		streamed, models, sessionCalls, want int
+		failed, partial                      bool
+	}{
+		{6, 6, 7, 7, false, true},
+		{5, 5, 12, 5, false, false},
+		{1, 0, 0, 1, true, true},
+		{3, 3, 16, 3, false, false},
+		{0, 0, 16, 0, false, false}, // an explicitly reported zero stays present
+	}
+	script := "#!/bin/sh\nset -eu\nstep=$(cat '" + state + "')\nprintf '%s\n' \"$((step+1))\" > '" + state + "'\ncase \"$step\" in\n"
+	assistant := `{"type":"assistant","session_id":"native-session","message":{"model":"gpt-5","content":[],"usage":{"input_tokens":128,"output_tokens":32,"cache_read_input_tokens":24}}}`
+	for i, phase := range phases {
+		script += fmt.Sprintf("%d)\n", i)
+		for range phase.streamed {
+			script += "printf '%s\n' '" + assistant + "'\n"
+		}
+		if phase.failed {
+			script += "exit 7\n"
+		} else {
+			terminal := fmt.Sprintf(`{"type":"result","subtype":"success","session_id":"native-session","usage":{"input_tokens":%d,"output_tokens":%d,"cache_read_input_tokens":%d},"modelUsage":{"route:gpt-5":{"inputTokens":%d,"outputTokens":%d,"cacheReadInputTokens":%d}}}`, phase.sessionCalls*128, phase.sessionCalls*32, phase.sessionCalls*24, phase.models*104, phase.models*32, phase.models*24)
+			script += "printf '%s\n' '" + terminal + "'\n"
+		}
+		script += ";;\n"
+	}
+	script += "esac\n"
+	binary := filepath.Join(root, "codebuddy")
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	session, err := New(Config{AgentName: provider.CodeBuddy, Bin: binary, ResumeFlag: "--resume"}).Open(context.Background(), context.Background(), provider.OpenOptions{Cwd: root}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	for i, phase := range phases {
+		result, err := session.Prompt(context.Background(), "continue", nil)
+		var total provider.TokenUsage
+		for _, bucket := range result.Usage {
+			total.InputTokens += bucket.InputTokens
+			total.OutputTokens += bucket.OutputTokens
+			total.CacheReadTokens += bucket.CacheReadTokens
+		}
+		want := provider.TokenUsage{InputTokens: int64(phase.want * 104), OutputTokens: int64(phase.want * 32), CacheReadTokens: int64(phase.want * 24)}
+		if (err != nil) != phase.failed || total != want || result.UsagePartial != phase.partial {
+			t.Fatalf("turn %d: usage=%+v partial=%v err=%v; want=%+v partial=%v failed=%v", i, result.Usage, result.UsagePartial, err, want, phase.partial, phase.failed)
+		}
 	}
 }

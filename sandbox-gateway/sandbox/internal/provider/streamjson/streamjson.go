@@ -289,6 +289,8 @@ type wireUsage struct {
 	OutputTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	TotalTokens         int64
+	reported            bool
 }
 
 func (u *wireUsage) UnmarshalJSON(b []byte) error {
@@ -313,6 +315,7 @@ func (u *wireUsage) UnmarshalJSON(b []byte) error {
 			}
 			var n int64
 			if json.Unmarshal(v, &n) == nil {
+				u.reported = true
 				return n
 			}
 		}
@@ -322,6 +325,9 @@ func (u *wireUsage) UnmarshalJSON(b []byte) error {
 	u.OutputTokens = pick("output_tokens", "outputTokens")
 	u.CacheReadTokens = pick("cache_read_input_tokens", "cacheReadTokens", "cache_read_tokens", "cacheReadInputTokens")
 	u.CacheCreationTokens = pick("cache_creation_input_tokens", "cacheWriteTokens", "cache_creation_tokens", "cacheCreationInputTokens")
+	reported := u.reported
+	u.TotalTokens = pick("total_tokens", "totalTokens")
+	u.reported = reported
 	return nil
 }
 
@@ -350,9 +356,10 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 	}
 	var res oneshot.ParseResult
 	res.SessionID = ev.SessionID
+	res.TracksSessionUsage = d.c.AgentName == provider.CodeBuddy
 
-	addUsage := func(u *wireUsage, model string) {
-		if u == nil || (u.InputTokens == 0 && u.OutputTokens == 0 && u.CacheReadTokens == 0 && u.CacheCreationTokens == 0) {
+	addUsage := func(u *wireUsage, model string, inclusiveInput bool) {
+		if u == nil || !u.reported {
 			return
 		}
 		if model == "" {
@@ -366,6 +373,14 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 			OutputTokens:     u.OutputTokens,
 			CacheReadTokens:  u.CacheReadTokens,
 			CacheWriteTokens: u.CacheCreationTokens,
+		}
+		// CodeBuddy's assistant/flat counters include cached input; its
+		// modelUsage counters are already disjoint. Qwen exposes inclusive
+		// input via total_tokens == input_tokens + output_tokens.
+		if inclusiveInput || u.TotalTokens > 0 && u.TotalTokens == u.InputTokens+u.OutputTokens {
+			value := res.Usage[model]
+			value.InputTokens = max(value.InputTokens-value.CacheReadTokens-value.CacheWriteTokens, 0)
+			res.Usage[model] = value
 		}
 	}
 
@@ -399,7 +414,8 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 				})
 			}
 		}
-		addUsage(ev.Message.Usage, ev.Message.Model)
+		addUsage(ev.Message.Usage, ev.Message.Model, d.c.AgentName == provider.CodeBuddy)
+		res.UsagePartial = len(res.Usage) > 0
 	case "user":
 		if ev.Message == nil {
 			break
@@ -412,15 +428,23 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 			}
 		}
 	case "result":
+		if d.c.AgentName == provider.CodeBuddy && ev.Usage != nil && ev.Usage.reported {
+			res.SessionUsage = &provider.TokenUsage{
+				InputTokens:      max(ev.Usage.InputTokens-ev.Usage.CacheReadTokens-ev.Usage.CacheCreationTokens, 0),
+				OutputTokens:     ev.Usage.OutputTokens,
+				CacheReadTokens:  ev.Usage.CacheReadTokens,
+				CacheWriteTokens: ev.Usage.CacheCreationTokens,
+			}
+		}
 		// Prefer per-model breakdown when Claude Code emits modelUsage; fall
 		// back to the flat usage object (often the only field older CLIs send).
 		if len(ev.ModelUsage) > 0 {
 			for model, u := range ev.ModelUsage {
 				uu := u
-				addUsage(&uu, model)
+				addUsage(&uu, model, false)
 			}
-		} else {
-			addUsage(ev.Usage, ev.Model)
+		} else if !res.TracksSessionUsage {
+			addUsage(ev.Usage, ev.Model, d.c.AgentName == provider.CodeBuddy)
 		}
 		// Native result totals already include the preceding assistant samples.
 		// Preserve those samples only when the terminal event reports no total.

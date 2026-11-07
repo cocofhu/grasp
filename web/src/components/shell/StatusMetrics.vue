@@ -88,13 +88,15 @@ const cumulative = computed(() => metrics.value?.cumulativeTokens ?? null)
 const today = computed(() => metrics.value?.todayTokens ?? null)
 const running = computed(() => metrics.value?.runningCount ?? 0)
 const queued = computed(() => metrics.value?.queuedCount ?? 0)
+const accountingIncomplete = computed(() => metrics.value?.accounting?.incomplete ?? false)
+const accountingHint = computed(() => accountingIncomplete.value ? t('shell.statusMetrics.accountingIncomplete') : undefined)
 
 function todayAria(): string {
-  return `${t('shell.statusMetrics.today')}: ${fmtFull(today.value)} · ${t('shell.statusMetrics.openStats')}`
+  return `${t('shell.statusMetrics.today')}: ${fmtFull(today.value)} · ${t('shell.statusMetrics.openStats')}${accountingHint.value ? ` · ${accountingHint.value}` : ''}`
 }
 
 function statsAria(label: string): string {
-  return `${label} · ${t('shell.statusMetrics.openStats')}`
+  return `${label} · ${t('shell.statusMetrics.openStats')}${accountingHint.value ? ` · ${accountingHint.value}` : ''}`
 }
 
 function runsAria(label: string): string {
@@ -102,7 +104,7 @@ function runsAria(label: string): string {
 }
 
 function tokenZoneAria(): string {
-  return `${t('shell.statusMetrics.tokens')}: ${fmtFull(cumulative.value)} · ${t('shell.statusMetrics.today')}: ${fmtFull(today.value)} · ${t('shell.statusMetrics.openStats')}`
+  return `${t('shell.statusMetrics.tokens')}: ${fmtFull(cumulative.value)} · ${t('shell.statusMetrics.today')}: ${fmtFull(today.value)} · ${t('shell.statusMetrics.openStats')}${accountingHint.value ? ` · ${accountingHint.value}` : ''}`
 }
 
 function runZoneAria(): string {
@@ -152,6 +154,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
     data-testid="status-metrics"
     :aria-label="t('shell.statusMetrics.aria')"
     :data-stale="stale ? 'true' : 'false'"
+    :data-incomplete="accountingIncomplete ? 'true' : 'false'"
   >
     <!-- Desktop ≥md (or variant=full): four icon+value items -->
     <template v-if="!useCompact">
@@ -159,6 +162,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         type="button"
         class="sm-item relative inline-flex items-center gap-1.5 border-0 bg-transparent px-1.5 py-1 text-inherit hover:bg-elevated hover:text-txt focus-visible:bg-elevated focus-visible:text-txt focus-visible:outline-none"
         data-testid="status-metrics-tokens"
+        :title="accountingHint"
         :aria-label="statsAria(t('shell.statusMetrics.tokens'))"
         @click="goToStats"
         @keydown="onActivateKey"
@@ -182,6 +186,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         type="button"
         class="sm-item relative inline-flex items-center gap-1.5 border-0 bg-transparent px-1.5 py-1 text-inherit hover:bg-elevated hover:text-txt focus-visible:bg-elevated focus-visible:text-txt focus-visible:outline-none"
         data-testid="status-metrics-today"
+        :title="accountingHint"
         :aria-label="todayAria()"
         @click="goToStats"
         @keydown="onActivateKey"
@@ -261,6 +266,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         type="button"
         class="sm-item sm-zone relative inline-flex shrink-0 items-baseline gap-1.5 rounded-md border-0 bg-transparent px-2 py-1.5 text-inherit hover:bg-surface hover:text-txt focus-visible:bg-surface focus-visible:text-txt focus-visible:outline-none"
         data-testid="status-metrics-compact-token"
+        :title="accountingHint"
         :aria-label="tokenZoneAria()"
         @click="goToStats"
         @keydown="onActivateKey"
@@ -270,7 +276,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         <span
           class="sm-val text-xs font-semibold leading-none"
           :class="cumulative == null ? 'text-txt3' : 'text-txt'"
-        >{{ fmtCompactTokenCount(cumulative) }}</span>
+        >{{ fmtCompactTokenCount(cumulative) }}<span v-if="accountingIncomplete" aria-hidden="true">*</span></span>
         <span class="sm-lab font-sans text-[11px] leading-none text-txt3">{{ t('shell.statusMetrics.cardTokenTitle') }}</span>
         <span
           v-if="!usePortaledCompactTip"
@@ -364,6 +370,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         :style="compactTipStyle ?? undefined"
       >
         <template v-if="activeCompactZone === 'token'">
+          <p v-if="accountingIncomplete" class="mb-2 max-w-64 whitespace-normal text-xs text-txt2">{{ accountingHint }}</p>
           <div class="sm-kpi-title">
             <Icon name="token" :size="14" class="sm-kpi-ico" :interactive="false" aria-hidden="true" />
             {{ t('shell.statusMetrics.cardTokenTitle') }}

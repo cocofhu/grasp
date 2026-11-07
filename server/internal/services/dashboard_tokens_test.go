@@ -76,6 +76,20 @@ func TestWorkspaceTokenBreakdownMatchesDashboard(t *testing.T) {
 		t.Fatalf("dashboard pmTokens=%v want 15", st.PMTokens)
 	}
 
+	seedLedger(t, db,
+		models.TokenUsageEvent{Source: models.TokenLedgerSourceSolo,
+			InputTokens: 10, OutputTokens: 20, CacheReadTokens: 30, CacheWriteTokens: 40},
+		models.TokenUsageEvent{Source: models.TokenLedgerSourceStudio, InputTokens: 2000},
+	)
+	platform = s.TokenBreakdown()
+	if platform.Total == nil || *platform.Total != 2243 || platform.Workflow == nil || *platform.Workflow != 128 || platform.PM == nil || *platform.PM != 15 {
+		t.Fatalf("all-source breakdown=%+v want total=2243 workflow=128 pm=15", platform)
+	}
+	st = dash.Compute()
+	if st.TotalTokens == nil || *st.TotalTokens != 2243 || st.WorkflowTokens == nil || *st.WorkflowTokens != 128 || st.PMTokens == nil || *st.PMTokens != 15 {
+		t.Fatalf("all-source dashboard=%+v want total=2243 workflow=128 pm=15", st)
+	}
+
 	// All reported zeros → 0 (not null).
 	db2, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "platform_zero.db"))
 	if err != nil {

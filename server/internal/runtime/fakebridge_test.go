@@ -36,6 +36,7 @@ type turnAction struct {
 	failed    bool
 	// stopReason overrides the prompt_done stopReason (e.g. "stuck").
 	stopReason string
+	usage      *models.TokenUsage
 	// heartbeat sends one {op:liveness} frame before the reply.
 	heartbeat bool
 	// ackCancel (with stall) answers a later {op:cancel} with the stalled
@@ -216,19 +217,16 @@ func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction, opID string
 			"type": "error_text", "text": act.errorText,
 		}})
 	}
+	done := promptDoneFrame()
 	if act.failed {
-		write(map[string]any{"op": "event", "data": map[string]any{
-			"type": "prompt_done", "stopReason": "failed",
-		}})
-		return true
+		done["data"].(map[string]any)["stopReason"] = "failed"
+	} else if act.stopReason != "" {
+		done["data"].(map[string]any)["stopReason"] = act.stopReason
 	}
-	if act.stopReason != "" {
-		write(map[string]any{"op": "event", "data": map[string]any{
-			"type": "prompt_done", "stopReason": act.stopReason,
-		}})
-		return true
+	if act.usage != nil {
+		done["data"].(map[string]any)["usage"] = map[string]any{"m": act.usage}
 	}
-	write(promptDoneFrame())
+	write(done)
 	return true
 }
 

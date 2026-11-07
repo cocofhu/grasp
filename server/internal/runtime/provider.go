@@ -19,6 +19,9 @@ import (
 
 // Options configures the execution providers (mainly the sandbox backend).
 type Options struct {
+	// RecordUsage receives each actual turn before result aggregation or retry.
+	// Implementations must use the operation id to make replay idempotent.
+	RecordUsage  func(NodeReq, *sandbox.ChatResult, error)
 	ModelBinding func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
 	// SandboxImage, when non-empty, forces one image for every acpBackend.
 	SandboxImage string
@@ -130,6 +133,7 @@ type SharedLayoutView struct {
 
 // NodeReq is the resolved request to execute one agent/react node.
 type NodeReq struct {
+	UsagePhase   string // defaults to production; reply/wrap-up methods set interactive
 	RunID        string
 	WorkflowID   string
 	WorkflowName string

@@ -12,7 +12,7 @@ import {pathToFileURL} from 'node:url'
 
 const MAX_BODY = 4_000_000
 const MAX_REPORT = 10_000
-const TOKEN_USAGE = {input: 128, output: 32}
+const TOKEN_USAGE = {input: 128, output: 32, cacheRead: 24, cacheWrite: 8}
 const markerPattern = /\[GRASP_MOCK run=([\w.-]+) turn=([\w.-]+)\]/g
 const hash = (text) => createHash('sha256').update(text).digest('hex')
 const identifier = (value) => String(value ?? '').split(/[?#]/)[0].replace(/\/\/[^/@]*@/g, '//').slice(0, 180)
@@ -325,7 +325,8 @@ function decide(normalized, state) {
 }
 
 function usageChat() {
-  return {prompt_tokens: TOKEN_USAGE.input, completion_tokens: TOKEN_USAGE.output, total_tokens: TOKEN_USAGE.input + TOKEN_USAGE.output}
+  return {prompt_tokens: TOKEN_USAGE.input, completion_tokens: TOKEN_USAGE.output, total_tokens: TOKEN_USAGE.input + TOKEN_USAGE.output,
+    prompt_tokens_details: {cached_tokens: TOKEN_USAGE.cacheRead}, prompt_cache_hit_tokens: TOKEN_USAGE.cacheRead, prompt_cache_miss_tokens: TOKEN_USAGE.input - TOKEN_USAGE.cacheRead}
 }
 
 function sse(res) {
@@ -353,7 +354,7 @@ function responseBody(body, choice, id) {
   const output = choice.call
     ? [{id: `fc_mock_${id}`, type: 'function_call', status: 'completed', call_id: choice.call.id, name: choice.call.wireName || choice.call.name, ...(choice.call.namespace ? {namespace: choice.call.namespace} : {}), arguments: JSON.stringify(choice.call.arguments)}]
     : [{id: `msg_mock_${id}`, type: 'message', status: 'completed', role: 'assistant', content: [{type: 'output_text', text: choice.text, annotations: [], logprobs: []}]}]
-  return {id: `resp_mock_${id}`, object: 'response', created_at: 1, status: 'completed', error: null, incomplete_details: null, model: body.model || 'mock-agent', output, parallel_tool_calls: false, tool_choice: 'auto', tools: body.tools || [], usage: {input_tokens: TOKEN_USAGE.input, input_tokens_details: {cached_tokens: 0}, output_tokens: TOKEN_USAGE.output, output_tokens_details: {reasoning_tokens: 0}, total_tokens: TOKEN_USAGE.input + TOKEN_USAGE.output}}
+  return {id: `resp_mock_${id}`, object: 'response', created_at: 1, status: 'completed', error: null, incomplete_details: null, model: body.model || 'mock-agent', output, parallel_tool_calls: false, tool_choice: 'auto', tools: body.tools || [], usage: {input_tokens: TOKEN_USAGE.input, input_tokens_details: {cached_tokens: TOKEN_USAGE.cacheRead}, output_tokens: TOKEN_USAGE.output, output_tokens_details: {reasoning_tokens: 0}, total_tokens: TOKEN_USAGE.input + TOKEN_USAGE.output}}
 }
 
 function respondResponses(res, body, choice, id) {
@@ -385,7 +386,7 @@ function respondMessages(res, body, choice, id) {
   const content = choice.call
     ? [{type: 'tool_use', id: choice.call.id, name: choice.call.name, input: choice.call.arguments}]
     : [{type: 'text', text: choice.text}]
-  const usage = {input_tokens: TOKEN_USAGE.input, output_tokens: TOKEN_USAGE.output, cache_creation_input_tokens: 0, cache_read_input_tokens: 0}
+  const usage = {input_tokens: TOKEN_USAGE.input, output_tokens: TOKEN_USAGE.output, cache_creation_input_tokens: TOKEN_USAGE.cacheWrite, cache_read_input_tokens: TOKEN_USAGE.cacheRead}
   const message = {id: `msg_mock_${id}`, type: 'message', role: 'assistant', model: body.model || 'mock-agent', content, stop_reason: choice.call ? 'tool_use' : 'end_turn', stop_sequence: null, usage}
   if (!body.stream) return json(res, 200, message)
   const send = sse(res)
@@ -406,6 +407,10 @@ function recordRequest(body, protocol, normalized, decision, sequence) {
     if (value !== undefined) reasoning[key] = scalar(value)
   }
   return {sequence, protocol, model: identifier(body.model), stream: Boolean(body.stream), reasoning,
+    // Canonical disjoint buckets provide independent accounting evidence for
+    // the native CLI matrix, including cache hits and Anthropic cache writes.
+    usage: {inputTokens: protocol === 'messages' ? TOKEN_USAGE.input : TOKEN_USAGE.input - TOKEN_USAGE.cacheRead,
+      outputTokens: TOKEN_USAGE.output, cacheReadTokens: TOKEN_USAGE.cacheRead, cacheWriteTokens: protocol === 'messages' ? TOKEN_USAGE.cacheWrite : 0},
     run: decision.run, turn: decision.turn, auxiliary: Boolean(decision.auxiliary), completed: Boolean(decision.completed), failure: decision.failure,
     assertions: decision.assertions, availableTools: normalized.tools.map((tool) => identifier(tool.name)),
     // Schema shapes aid native-CLI adapter failures without retaining tool

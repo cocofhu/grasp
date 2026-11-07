@@ -1,11 +1,39 @@
 package sandbox
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
+
+// UsageStatus describes the actual turn, including failures with no reply text.
+func (r *ChatResult) UsageStatus(err error) string {
+	if errors.Is(err, context.Canceled) || r.StopReason == "cancelled" {
+		return models.TokenLedgerStatusCancelled
+	}
+	if err != nil || r.Failed || r.Interrupted || strings.TrimSpace(r.ErrorText) != "" {
+		return models.TokenLedgerStatusFailed
+	}
+	return models.TokenLedgerStatusOK
+}
+
+// MergeAttemptUsage keeps the final attempt's content and outcome, while
+// retaining consumption from earlier attempts (including an empty final error).
+func MergeAttemptUsage(previous, current *ChatResult) *ChatResult {
+	if previous == nil || previous.Usage == nil || current != nil && previous.OpID != "" && previous.OpID == current.OpID {
+		return current
+	}
+	if current == nil {
+		current = &ChatResult{}
+	}
+	current.Usage = models.AddTokenUsage(models.CloneTokenUsage(previous.Usage), current.Usage)
+	current.UsageByModel = models.AddTokenUsageByModel(models.CloneTokenUsageByModel(previous.UsageByModel), current.UsageByModel)
+	current.UsagePartial = current.UsagePartial || previous.UsagePartial
+	return current
+}
 
 // parsePromptDoneUsage parses prompt_done.usage (map[modelID]TokenUsage),
 // optionally backfills weak keys (default/unknown/empty) onto bridgeModel when
@@ -28,6 +56,9 @@ func parsePromptDoneUsage(raw json.RawMessage, bridgeModel string) (*models.Toke
 	total := &models.TokenUsage{}
 
 	for key, u := range byModel {
+		if !u.Valid() {
+			return nil, nil
+		}
 		modelKey, source, filled := resolveModelBucket(key, bridge)
 		existing, ok := out[modelKey]
 		if !ok {
@@ -46,6 +77,9 @@ func parsePromptDoneUsage(raw json.RawMessage, bridgeModel string) (*models.Toke
 		total.OutputTokens += u.OutputTokens
 		total.CacheReadTokens += u.CacheReadTokens
 		total.CacheWriteTokens += u.CacheWriteTokens
+	}
+	if !total.Valid() {
+		return nil, nil
 	}
 	return total, out
 }

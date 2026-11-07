@@ -22,8 +22,9 @@ func writeUsageCache(t *testing.T, home, sessionID string, seq int64, totals usa
 			"tokenUsage": map[string]any{
 				"ver": 2,
 				"seq": seq,
-				"val": map[string]any{"totals": totals},
+				"val": map[string]any{"totals": totals, "last": map[string]any{"turn": seq}},
 			},
+			"turnBoundary": map[string]any{"ver": 2, "seq": seq, "val": map[string]any{"openTurnStartSeq": nil, "lastTurn": seq}},
 			// 真实缓存混有字符串/null 的投影行，不能让它们破坏 tokenUsage 解析。
 			"title":       map[string]any{"ver": 1, "seq": seq, "val": "fixture title"},
 			"workingDir":  map[string]any{"ver": 1, "seq": seq, "val": "/workspace"},
@@ -111,6 +112,56 @@ func TestUsageTrackerNoChangeAndReset(t *testing.T) {
 	writeUsageCache(t, home, "session-3", 6, usageTotals{25, 4, 6, 0})
 	if got := tracker.promptDone(); got["m"] != (provider.TokenUsage{InputTokens: 15, OutputTokens: 2, CacheReadTokens: 3}) {
 		t.Fatalf("usage after reset = %+v", got)
+	}
+}
+
+func TestUsageTrackerExplicitZeroWithSettledTurn(t *testing.T) {
+	home := t.TempDir()
+	writeUsageCache(t, home, "zero", 10, usageTotals{})
+	tracker := newUsageTracker(home, "zero", "m")
+	tracker.begin()
+	writeUsageCache(t, home, "zero", 11, usageTotals{})
+	usage := tracker.promptDone()
+	if len(usage) != 1 || usage["m"] != (provider.TokenUsage{}) {
+		t.Fatalf("explicit zero=%+v", usage)
+	}
+}
+
+func TestUsageTrackerWaitsPastInitialAndIntermediateCheckpoints(t *testing.T) {
+	home := t.TempDir()
+	tracker := newUsageTracker(home, "async", "m")
+	tracker.begin() // the initial cache write has not landed yet
+	writeUsageCache(t, home, "async", 0, usageTotals{})
+	waits := 0
+	tracker.sleep = func(time.Duration) {
+		waits++
+		if waits == 1 {
+			writeUsageCache(t, home, "async", 1, usageTotals{10, 2, 3, 0})
+			path := filepath.Join(home, usageCacheDir, "async.json")
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var file map[string]any
+			if err := json.Unmarshal(raw, &file); err != nil {
+				t.Fatal(err)
+			}
+			rows := file["record"].(map[string]any)["rows"].(map[string]any)
+			rows["turnBoundary"].(map[string]any)["val"].(map[string]any)["openTurnStartSeq"] = 1
+			raw, err = json.Marshal(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if waits == 3 {
+			writeUsageCache(t, home, "async", 2, usageTotals{30, 5, 7, 0})
+		}
+	}
+	if got := tracker.promptDone(); got["m"] != (provider.TokenUsage{InputTokens: 30, OutputTokens: 5, CacheReadTokens: 7}) || waits != 3 {
+		t.Fatalf("a stale checkpoint closed usage early: got=%+v waits=%d", got, waits)
 	}
 }
 

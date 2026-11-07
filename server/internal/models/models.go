@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 	"unicode"
@@ -303,11 +304,27 @@ type TokenUsage struct {
 	OutputTokens     int64 `json:"outputTokens"`
 	CacheReadTokens  int64 `json:"cacheReadTokens"`
 	CacheWriteTokens int64 `json:"cacheWriteTokens"`
+	// LedgerRecorded marks live usage already submitted per ACP operation.
+	// It is process-local: persisted totals keep their existing JSON shape.
+	LedgerRecorded bool `json:"-"`
 }
 
 // Total returns input+output+cacheRead+cacheWrite.
 func (u TokenUsage) Total() int64 {
 	return u.InputTokens + u.OutputTokens + u.CacheReadTokens + u.CacheWriteTokens
+}
+
+// Valid rejects invalid measurements rather than turning them into apparent
+// zero usage or allowing negative/overflowed counters to corrupt totals.
+func (u TokenUsage) Valid() bool {
+	var sum int64
+	for _, value := range []int64{u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens} {
+		if value < 0 || value > math.MaxInt64-sum {
+			return false
+		}
+		sum += value
+	}
+	return true
 }
 
 // AddTokenUsage returns dst+src component-wise. nil sources are ignored; the
@@ -324,6 +341,7 @@ func AddTokenUsage(dst, src *TokenUsage) *TokenUsage {
 	dst.OutputTokens += src.OutputTokens
 	dst.CacheReadTokens += src.CacheReadTokens
 	dst.CacheWriteTokens += src.CacheWriteTokens
+	dst.LedgerRecorded = dst.LedgerRecorded && src.LedgerRecorded
 	return dst
 }
 
@@ -1133,6 +1151,7 @@ func AllModels() []any {
 		&WorkspaceMcpApiKey{},
 		&LiveSession{},
 		&TokenUsageEvent{},
+		&TokenUsageReport{},
 		&Project{}, &SoloSession{}, &SoloMessage{},
 		&ChatPendingTurn{},
 	}

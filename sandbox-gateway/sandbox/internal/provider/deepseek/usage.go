@@ -20,7 +20,7 @@ import (
 const (
 	usageCacheDir           = "storages/session_projcache/sessions"
 	usageCacheRetryDelay    = 20 * time.Millisecond
-	usageCacheRetryAttempts = 5
+	usageCacheRetryAttempts = 50
 )
 
 // usageTotals 与 DSH tokenUsage 投影的累计字段一一对应。
@@ -31,12 +31,12 @@ type usageTotals struct {
 	CacheWriteTokens    int64 `json:"cacheWriteTokens"`
 }
 
-func (u usageTotals) zero() bool { return u == usageTotals{} }
-
 type usageSnapshot struct {
-	known  bool
-	seq    int64
-	totals usageTotals
+	known    bool
+	turn     int64
+	settled  bool
+	reported bool
+	totals   usageTotals
 }
 
 // usageTracker 按会话维护投影缓存的读取基线与本轮结果。
@@ -106,7 +106,7 @@ func (t *usageTracker) promptDone() map[string]provider.TokenUsage {
 	}
 	delta, ok := subtractUsage(after.totals, before.totals)
 	t.before = after
-	if !ok || delta.zero() {
+	if !ok || !after.reported {
 		return nil
 	}
 	key := t.model
@@ -139,16 +139,17 @@ func (t *usageTracker) turnUsage() map[string]provider.TokenUsage {
 	return out
 }
 
-// readAfterPrompt 读取本轮结束后的投影。turn/end 触发的缓存写入是异步的，
-// 因此短暂重试等待累计序号推进；没有模型调用的回合会等满上限后按无用量处理。
+// readAfterPrompt waits for the current turn/end checkpoint. Projection seq
+// also advances for unrelated events: the initial zero checkpoint or a
+// mid-turn checkpoint must never be mistaken for a final usage report.
 func (t *usageTracker) readAfterPrompt() usageSnapshot {
 	for attempt := 0; ; attempt++ {
 		snap := t.read()
-		if snap.known && (snap.seq != t.before.seq || snap.totals != t.before.totals) {
+		if snap.known && snap.settled && snap.turn > t.before.turn {
 			return snap
 		}
 		if attempt >= usageCacheRetryAttempts {
-			return snap
+			return usageSnapshot{}
 		}
 		if t.sleep != nil {
 			t.sleep(usageCacheRetryDelay)
@@ -180,6 +181,18 @@ type usageCacheRow struct {
 	Seq int64 `json:"seq"`
 	Val *struct {
 		Totals usageTotals `json:"totals"`
+		Last   *struct {
+			Turn int64 `json:"turn"`
+		} `json:"last"`
+	} `json:"val"`
+}
+
+type usageTurnBoundary struct {
+	Ver int   `json:"ver"`
+	Seq int64 `json:"seq"`
+	Val *struct {
+		OpenTurnStartSeq *int64 `json:"openTurnStartSeq"`
+		LastTurn         int64  `json:"lastTurn"`
 	} `json:"val"`
 }
 
@@ -211,7 +224,19 @@ func readUsageSnapshot(path string) (usageSnapshot, error) {
 		totals.CacheReadTokens < 0 || totals.CacheWriteTokens < 0 {
 		return usageSnapshot{}, nil
 	}
-	return usageSnapshot{known: true, seq: row.Seq, totals: totals}, nil
+	var boundary usageTurnBoundary
+	if rawBoundary := file.Record.Rows["turnBoundary"]; len(rawBoundary) > 0 {
+		if err := json.Unmarshal(rawBoundary, &boundary); err != nil {
+			return usageSnapshot{}, err
+		}
+	}
+	snap := usageSnapshot{known: true, totals: totals}
+	if boundary.Ver == 2 && boundary.Val != nil && boundary.Seq == row.Seq {
+		snap.turn = boundary.Val.LastTurn
+		snap.settled = boundary.Val.OpenTurnStartSeq == nil
+		snap.reported = row.Val.Last != nil && row.Val.Last.Turn == snap.turn
+	}
+	return snap, nil
 }
 
 // subtractUsage 对四桶做差分；任一分量为负说明缓存被重建或回退，本轮放弃上报。

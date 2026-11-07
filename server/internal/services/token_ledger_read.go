@@ -10,6 +10,7 @@ import (
 )
 
 const ledgerReadBatch = 2000
+const ledgerTotalSQL = "input_tokens + output_tokens + cache_read_tokens + cache_write_tokens"
 
 // ledgerRowFilter narrows the SQL scan of token_usage_events.
 type ledgerRowFilter struct {

@@ -3,8 +3,6 @@ package services
 import (
 	"context"
 	"path/filepath"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,7 +47,6 @@ func TestPlatformStatus_emptyNullAndTrueZero(t *testing.T) {
 	mustCreate(&models.Run{ID: "r-q", Status: "queued", CreatedAt: now.UTC()})
 	mustCreate(&models.Run{ID: "r-wh", Status: "waiting_human", StartedAt: now.UTC(), CreatedAt: now.UTC()})
 
-	dash.ClearPlatformStatusCacheForTest()
 	syncTokenLedger(t, db)
 	got, err = dash.PlatformStatus(context.Background(), PlatformStatusQuery{
 		UTCOffsetMinutes: intPtr(8 * 60),
@@ -136,6 +133,125 @@ func TestPlatformStatus_todayTokensSum(t *testing.T) {
 	}
 }
 
+func TestPlatformStatus_allLedgerSources(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		sources []string
+		units   int64
+	}{
+		{name: "solo_only", sources: []string{models.TokenLedgerSourceSolo}, units: 1},
+		{name: "studio_only", sources: []string{models.TokenLedgerSourceStudio}, units: 1},
+		{name: "all_sources", sources: []string{
+			models.TokenLedgerSourceWorkflow, models.TokenLedgerSourcePM,
+			models.TokenLedgerSourceSolo, models.TokenLedgerSourceStudio,
+		}, units: 1},
+		{name: "solo_reported_zero", sources: []string{models.TokenLedgerSourceSolo}},
+		{name: "studio_reported_zero", sources: []string{models.TokenLedgerSourceStudio}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "platform_sources.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			workspace := NewWorkspaceService(db)
+			dash := NewDashboardService(db, workspace)
+			loc := time.FixedZone("UTC+8", 8*3600)
+			now := time.Date(2026, 8, 12, 0, 30, 0, 0, loc)
+			midnight := truncateLocalDay(now)
+			for _, source := range tc.sources {
+				seedLedger(t, db,
+					models.TokenUsageEvent{
+						CreatedAt: midnight.Add(-time.Second).UTC(), Source: source,
+						Status: models.TokenLedgerStatusCancelled, InputTokens: 5 * tc.units,
+					},
+					models.TokenUsageEvent{
+						CreatedAt: now.Add(-time.Minute).UTC(), Source: source,
+						Status:      models.TokenLedgerStatusFailed,
+						InputTokens: 10 * tc.units, OutputTokens: 20 * tc.units,
+						CacheReadTokens: 30 * tc.units, CacheWriteTokens: 40 * tc.units,
+					},
+				)
+			}
+			got, err := dash.PlatformStatus(context.Background(), PlatformStatusQuery{
+				UTCOffsetMinutes: intPtr(8 * 60), Now: now.UTC(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantTotal := int64(len(tc.sources)) * 105 * tc.units
+			wantToday := int64(len(tc.sources)) * 100 * tc.units
+			if got.CumulativeTokens == nil || *got.CumulativeTokens != wantTotal {
+				t.Fatalf("cumulative=%v want %d", got.CumulativeTokens, wantTotal)
+			}
+			if got.TodayTokens == nil || *got.TodayTokens != wantToday {
+				t.Fatalf("today=%v want %d", got.TodayTokens, wantToday)
+			}
+			if len(tc.sources) == 1 {
+				breakdown := workspace.TokenBreakdown()
+				if breakdown.Workflow != nil || breakdown.PM != nil {
+					t.Fatalf("Solo/Studio usage must not enter workflow or PM subtotals: %+v", breakdown)
+				}
+			}
+			global, err := workspace.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
+				Window: TokenStatsWindowAll, UTCOffsetMinutes: intPtr(8 * 60), Now: now.UTC(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if *got.CumulativeTokens != global.KPI.Total {
+				t.Fatalf("platform total=%d global total=%d", *got.CumulativeTokens, global.KPI.Total)
+			}
+		})
+	}
+}
+
+func TestPlatformStatus_activeSoloCountsStayFresh(t *testing.T) {
+	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "platform_solo.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions := []models.SoloSession{
+		{ID: "solo-starting", Status: models.SoloStatusStarting},
+		{ID: "solo-running-a", Status: models.SoloStatusRunning},
+		{ID: "solo-running-b", Status: models.SoloStatusRunning},
+		{ID: "solo-closed", Status: models.SoloStatusClosed},
+		{ID: "solo-error", Status: models.SoloStatusError},
+	}
+	if err := db.Create(&sessions).Error; err != nil {
+		t.Fatal(err)
+	}
+	dash := NewDashboardService(db, NewWorkspaceService(db))
+	q := PlatformStatusQuery{Timezone: "UTC", Now: time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)}
+	assertCounts := func(running, queued int64) {
+		t.Helper()
+		got, err := dash.PlatformStatus(context.Background(), q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.RunningCount != running || got.QueuedCount != queued {
+			t.Fatalf("running/queued=%d/%d want %d/%d", got.RunningCount, got.QueuedCount, running, queued)
+		}
+	}
+	assertCounts(3, 0)
+	runs := []models.Run{
+		{ID: "run-running", Status: "running"},
+		{ID: "run-queued", Status: "queued"},
+		{ID: "run-waiting", Status: "waiting_human"},
+		{ID: "run-completed", Status: "completed"},
+	}
+	if err := db.Create(&runs).Error; err != nil {
+		t.Fatal(err)
+	}
+	assertCounts(4, 1)
+	if err := db.Model(&models.SoloSession{}).Where("id = ?", "solo-starting").Update("status", models.SoloStatusClosed).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.SoloSession{}).Where("id = ?", "solo-running-a").Update("status", models.SoloStatusError).Error; err != nil {
+		t.Fatal(err)
+	}
+	assertCounts(2, 1)
+}
+
 func TestPlatformStatus_crossDayTodayReset(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "platform_status_day.db"))
 	if err != nil {
@@ -183,7 +299,7 @@ func TestPlatformStatus_crossDayTodayReset(t *testing.T) {
 	}
 }
 
-func TestPlatformStatus_cacheHitSkipsRescan(t *testing.T) {
+func TestPlatformStatus_readsNewUsageWithoutCache(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "platform_status_cache.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +336,7 @@ func TestPlatformStatus_cacheHitSkipsRescan(t *testing.T) {
 		t.Fatalf("first today=%v", first.TodayTokens)
 	}
 
-	// Add more usage in same bucket; cache should still return 10 until TTL.
+	// A later report must update cumulative and today together on the next poll.
 	ts2 := time.Date(2026, 8, 12, 14, 6, 30, 0, loc).UTC()
 	mustCreate(&models.Run{ID: "run2", WorkflowID: "wf1", Status: "completed", StartedAt: ts2, CreatedAt: ts2})
 	mustCreate(&models.StateRun{
@@ -232,68 +348,10 @@ func TestPlatformStatus_cacheHitSkipsRescan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.TodayTokens == nil || *second.TodayTokens != 10 {
-		t.Fatalf("cache miss? today=%v want stale 10", second.TodayTokens)
+	if second.TodayTokens == nil || *second.TodayTokens != 100 || second.CumulativeTokens == nil || *second.CumulativeTokens != 100 {
+		t.Fatalf("stale totals: cumulative=%v today=%v want 100", second.CumulativeTokens, second.TodayTokens)
 	}
 
-	// After TTL, recompute.
-	dash.ClearPlatformStatusCacheForTest()
-	syncTokenLedger(t, db)
-	third, err := dash.PlatformStatus(context.Background(), q)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if third.TodayTokens == nil || *third.TodayTokens != 100 {
-		t.Fatalf("after clear today=%v want 100", third.TodayTokens)
-	}
-}
-
-func TestPlatformStatus_singleflightMerges(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "platform_status_sf.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspace := NewWorkspaceService(db)
-	dash := NewDashboardService(db, workspace)
-	now := time.Date(2026, 8, 12, 14, 7, 0, 0, time.UTC)
-
-	var started int32
-	var release sync.WaitGroup
-	release.Add(1)
-	orig := dash.loadPlatformUsageHook
-	dash.loadPlatformUsageHook = func() {
-		atomic.AddInt32(&started, 1)
-		release.Wait()
-	}
-	defer func() { dash.loadPlatformUsageHook = orig }()
-
-	q := PlatformStatusQuery{Timezone: "UTC", Now: now}
-	var wg sync.WaitGroup
-	const n = 8
-	wg.Add(n)
-	errs := make([]error, n)
-	for i := 0; i < n; i++ {
-		go func(i int) {
-			defer wg.Done()
-			_, errs[i] = dash.PlatformStatus(context.Background(), q)
-		}(i)
-	}
-	// Wait until the singleflight leader enters the hook (avoid fixed-sleep flake).
-	deadline := time.Now().Add(2 * time.Second)
-	for atomic.LoadInt32(&started) == 0 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if got := atomic.LoadInt32(&started); got != 1 {
-		release.Done()
-		t.Fatalf("expected 1 in-flight compute, got %d", got)
-	}
-	release.Done()
-	wg.Wait()
-	for i, e := range errs {
-		if e != nil {
-			t.Fatalf("goroutine %d: %v", i, e)
-		}
-	}
 }
 
 func intPtr(v int) *int { return &v }

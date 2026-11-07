@@ -18,6 +18,7 @@ const reviewDirtyFileCap = 80
 // branches. No-op when the node may not commit, no session is parked, or the
 // tree is clean and already pushed. Never fails the node.
 func (c *acpProvider) CheckGit(ctx context.Context, req NodeReq) (out ReactTurn) {
+	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	if req.Caps == nil || (!req.Caps.CommitsCode() && !(req.Caps.Clarify() && req.LiveEdits)) {
 		// Agents that never commit keep review demos and Live trials in this
 		// node's sandbox; downstream clones fresh.
@@ -54,11 +55,11 @@ func (c *acpProvider) CheckGit(ctx context.Context, req NodeReq) (out ReactTurn)
 			chatCtx, cancel := c.turnCtx(ctx, req)
 			res, err := c.streamChat(chatCtx, sess.acp, req, prompt, nil)
 			cancel()
+			absorbChat(&usage, &usageByModel, &events, res)
 			if err != nil {
 				log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
 					Msg("git check commit chat failed")
 			} else {
-				absorbChat(&usage, &usageByModel, &events, res)
 				narration = res.Narration
 				c.host.TakePendingQuestions(req.RunID, req.NodeID)
 				// Commits change what the handoff describes.
@@ -82,6 +83,7 @@ func (c *acpProvider) CheckGit(ctx context.Context, req NodeReq) (out ReactTurn)
 // (and its audit artifact) is cleared first so it cannot be adopted again.
 // No-op without a connected parked session.
 func (c *acpProvider) EnsureHandoff(ctx context.Context, req NodeReq) (out ReactTurn) {
+	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	c.mu.Lock()
 	sess := c.sessions[reactKey(req)]
 	c.mu.Unlock()

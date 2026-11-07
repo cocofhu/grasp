@@ -40,6 +40,8 @@
       }
     },
     "tokenAnalytics": {
+      "sourceSolo": "Solo",
+      "accountingIncomplete": "部分回合的用量缺失、尚未同步或来自未核验的历史记录，当前统计值可能与实际消耗存在差异。",
       "title": "用量统计",
       "subtitle": "分析工作流、助手与 Agent Studio 的 Token 用量、模型分布和预估费用。",
       "analysisRange": "分析范围",

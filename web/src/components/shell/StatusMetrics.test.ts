@@ -61,6 +61,20 @@ async function mountMetrics(props?: { variant?: 'auto' | 'full' | 'compact' }) {
 }
 
 describe('StatusMetrics', () => {
+  it('marks incomplete recorded usage and explains the missing measurement', async () => {
+    platformStatus.mockResolvedValue({
+      cumulativeTokens: 50, todayTokens: 50, runningCount: 1, queuedCount: 0,
+      asOf: '2026-08-12T06:07:00Z',
+      accounting: { incomplete: true, incompleteTurns: 1, pendingReports: 0 },
+    })
+    const { w } = await mountMetrics({ variant: 'compact' })
+    await flushPromises()
+    expect(w.get('[data-testid="status-metrics"]').attributes('data-incomplete')).toBe('true')
+    const tokens = w.get('[data-testid="status-metrics-compact-token"]')
+    expect(tokens.text()).toContain('50*')
+    expect(tokens.attributes('aria-label')).toContain('部分回合的用量缺失')
+    w.unmount()
+  })
   beforeEach(() => {
     vi.useFakeTimers()
     isMobile.value = false
