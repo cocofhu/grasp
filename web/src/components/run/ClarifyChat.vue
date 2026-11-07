@@ -48,6 +48,9 @@ export type ClarifyFollowProcess = {
 </script>
 
 <script setup lang="ts">
+import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
+import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import Icon from '../ui/Icon.vue'
 import ChatTurnAttachments from './ChatTurnAttachments.vue'
 import ChatUserMessage from './ChatUserMessage.vue'
@@ -1871,7 +1874,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       </ComposerShell>
     </div>
     <!-- Hot path: shrink-0 so confirm-flow stays inside fixed-height sidebar (plan g1.1). -->
-    <div v-else class="shrink-0 border-t border-line p-3" data-testid="clarify-hot-actions">
+    <AttachmentDropZone v-else class="shrink-0 border-t border-line p-3" data-testid="clarify-hot-actions" :disabled="composerInputLocked" @files="addFiles">
       <!-- pending-send queue panel (Demo / AgentChatTester): clarify + review -->
       <PendingSendQueuePanel
         :items="queued"
@@ -1918,7 +1921,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       <div v-if="attachments.length" class="mb-2 flex flex-wrap gap-1.5">
         <div v-for="(im, ii) in attachments" :key="ii" class="relative">
           <ChatImageThumb
-            v-if="isImageAttachment(im)"
+            v-if="isImageAttachment(im) && im.readState !== 'reading'"
             mode="previewable"
             size="sm"
             thumb-class="rounded-md"
@@ -1928,18 +1931,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             test-id="clarify-draft-image-thumb"
             @preview="openImagePreview(attachments, ii)"
           />
-          <div
-            v-else
-            class="chat-file-chip rounded-lg flex h-14 max-w-[160px] items-center gap-1.5 border border-line bg-elevated px-2"
-            :title="attachmentDisplayName(im, ii)"
-            data-testid="clarify-pending-file-chip"
-          >
-            <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-            <span class="min-w-0 truncate text-[11px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
-          </div>
+          <ChatFileAttachment v-else :attachment="im" compact data-testid="clarify-pending-file-chip" />
+          <ChatAttachmentDetails v-if="isImageAttachment(im) && im.readState !== 'reading'" :attachment="im" :index="ii" />
           <button
             class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full pending-attach-remove"
             @click.stop="removeAttachment(ii)"
+            :aria-label="translate('common.attachments.remove', { name: attachmentDisplayName(im, ii) })"
           ><Icon name="close" :size="9" /></button>
         </div>
       </div>
@@ -2052,7 +2049,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         </template>
       </ComposerShell>
       </div>
-    </div>
+    </AttachmentDropZone>
     <!-- Confirm error sits below the composer; shrink-0 keeps it from being clipped (plan g1.2). -->
     <div
       v-if="confirmError && !done"

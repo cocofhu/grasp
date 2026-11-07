@@ -333,6 +333,17 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			if w := hn.doEmbed(http.MethodGet, path+"/images/"+guestID+"/0", nil, mainHeaders); w.Code != http.StatusOK || w.Body.String() != "guest notes" {
 				t.Fatalf("visitor attachment: %d %s", w.Code, w.Body)
 			}
+			rangeHeaders := make(map[string]string)
+			for key, value := range mainHeaders {
+				rangeHeaders[key] = value
+			}
+			rangeHeaders["Range"] = "bytes=6-10"
+			if w := hn.doEmbed(http.MethodGet, path+"/images/"+guestID+"/0", nil, rangeHeaders); w.Code != http.StatusPartialContent || w.Body.String() != "notes" {
+				t.Fatalf("visitor attachment range: %d %s", w.Code, w.Body)
+			}
+			if w := hn.doEmbed(http.MethodGet, path+"/images/"+ownerID+"/0", nil, rangeHeaders); w.Code != http.StatusNotFound {
+				t.Fatalf("owner attachment exposed through range: %d", w.Code)
+			}
 			if w := hn.doEmbed(http.MethodGet, path+"/images/"+ownerID+"/0", nil, mainHeaders); w.Code != http.StatusNotFound {
 				t.Fatalf("owner attachment exposed: %d", w.Code)
 			}

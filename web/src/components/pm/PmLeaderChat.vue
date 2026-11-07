@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
+import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import { computed, ref, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -70,6 +73,7 @@ const {
   attachments,
   fileInput,
   attachNotice,
+  addFiles,
   onPickFiles,
   onPaste,
   removeAttachment,
@@ -475,7 +479,7 @@ function showConversationHistory() { workspace.value?.close() }
               <div v-if="m.images?.length" class="mb-1.5 flex flex-wrap justify-end gap-1.5">
                 <template v-for="(im, ii) in m.images" :key="ii">
                   <ChatImageThumb
-                    v-if="isImageAttachment(im)"
+                    v-if="isImageAttachment(im) && im.readState !== 'reading'"
                     mode="previewable"
                     size="md"
                     :src="imgSrc(im)"
@@ -484,15 +488,7 @@ function showConversationHistory() { workspace.value?.close() }
                     test-id="pm-history-image-thumb"
                     @preview="openChatImagePreview(imgSrc(im), attachmentDisplayName(im, ii))"
                   />
-                  <div
-                    v-else
-                    class="chat-file-chip rounded-lg flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
-                    data-testid="pm-history-file-chip"
-                    :title="attachmentDisplayName(im, ii)"
-                  >
-                    <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-                    <span class="min-w-0 truncate text-[12px] text-txt">{{ attachmentDisplayName(im, ii) }}</span>
-                  </div>
+                  <ChatFileAttachment v-else :attachment="im" data-testid="pm-history-file-chip" />
                 </template>
               </div>
               <ChatUserMessage
@@ -682,7 +678,7 @@ function showConversationHistory() { workspace.value?.close() }
         <span>{{ t(enabled ? 'pages.workspace.pm.threadUnavailableHint' : 'pages.workspace.pm.pausedComposerHint') }}</span>
         <AppButton v-if="turnBusy" size="sm" icon="close" data-testid="pm-paused-stop" @click="stop">{{ t('pages.workspace.pm.stop') }}</AppButton>
       </div>
-      <div v-else class="pm-composer-zone mx-auto w-full max-w-[760px] shrink-0" :class="showEmptyHint ? 'pm-composer-zone-welcome scroll-area' : ''" data-testid="pm-composer-zone">
+      <AttachmentDropZone v-else class="pm-composer-zone mx-auto w-full max-w-[760px] shrink-0" :class="showEmptyHint ? 'pm-composer-zone-welcome scroll-area' : ''" data-testid="pm-composer-zone" :disabled="busy" @files="addFiles">
         <div v-if="showEmptyHint" class="mb-5" data-testid="pm-welcome-state">
           <h2 class="text-2xl font-semibold tracking-tight text-txt">{{ t('pages.workspace.pm.welcomeTitle') }}</h2>
           <p class="mt-2 text-[13px] leading-6 text-txt2">{{ t('pages.workspace.pm.emptyHint') }}</p>
@@ -690,7 +686,7 @@ function showConversationHistory() { workspace.value?.close() }
         <div v-if="attachments.length" class="mb-2 flex flex-wrap gap-1.5">
           <div v-for="(im, ii) in attachments" :key="ii" class="relative">
             <ChatImageThumb
-              v-if="isImageAttachment(im)"
+              v-if="isImageAttachment(im) && im.readState !== 'reading'"
               mode="previewable"
               size="sm"
               :src="imgSrc(im)"
@@ -699,20 +695,14 @@ function showConversationHistory() { workspace.value?.close() }
               test-id="pm-draft-image-thumb"
               @preview="openChatImagePreview(imgSrc(im), attachmentDisplayName(im, ii))"
             />
-            <div
-              v-else
-              class="chat-file-chip rounded-lg flex h-14 max-w-[160px] items-center gap-1.5 border border-line bg-elevated px-2"
-              data-testid="pm-pending-file-chip"
-              :title="attachmentDisplayName(im, ii)"
-            >
-              <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-              <span class="min-w-0 truncate text-[11px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
-            </div>
+            <ChatFileAttachment v-else :attachment="im" compact data-testid="pm-pending-file-chip" />
+            <ChatAttachmentDetails v-if="isImageAttachment(im) && im.readState !== 'reading'" :attachment="im" :index="ii" />
             <button
               type="button"
               class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center pending-attach-remove"
               :disabled="busy"
               @click.stop="removeAttachment(ii)"
+              :aria-label="t('common.attachments.remove', { name: attachmentDisplayName(im, ii) })"
             >
               <Icon name="close" :size="9" />
             </button>
@@ -798,7 +788,7 @@ function showConversationHistory() { workspace.value?.close() }
         >
           {{ busyHint }}
         </p>
-      </div>
+      </AttachmentDropZone>
     </section>
     <template #panel>
       <ConversationArtifactBrowser :target="artifactTarget" />

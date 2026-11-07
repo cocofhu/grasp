@@ -3,6 +3,15 @@
 /* Loading rotates its inner group only, including when wrapped by AppSpinner. */
 .app-icon.app-spinner, .app-icon.animate-spin, .app-icon.icon-spinner { animation: none; }
 
+/* Attachment glyphs keep the page outline fixed. */
+/* icon: file-audio */
+.app-icon[data-icon="file-audio"][data-icon-motion="once"] .file-note{animation:iconMotion_fileAudio_note 1050ms ease-in-out 1}
+@keyframes iconMotion_fileAudio_note{0%,100%{transform:translateY(0)}40%{transform:translateY(-1px)}70%{transform:translateY(.4px)}}
+/* icon: file-video */
+.app-icon[data-icon="file-video"] .file-play{transform-box:fill-box;transform-origin:center}
+.app-icon[data-icon="file-video"][data-icon-motion="once"] .file-play{animation:iconMotion_fileVideo_play 1050ms ease-in-out 1}
+@keyframes iconMotion_fileVideo_play{0%,100%{transform:scale(1);opacity:1}40%{transform:scale(.8);opacity:.65}70%{transform:scale(1.08);opacity:1}}
+
 /* icon: copy */
 .app-icon[data-icon="copy"][data-icon-motion="once"] .front{animation:iconMotion_copy_copyFront 1050ms ease-in-out}
 .app-icon[data-icon="copy"][data-icon-motion="once"] .back{animation:iconMotion_copy_copyBack 1050ms ease-in-out}

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RestoreUnsent } from '@/lib/inbox/clarifyVisitEnded'
+import { attachmentsReading } from '@/lib/shared/attachments'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
@@ -207,7 +208,7 @@ const attachments = defineModel<ClarifyImage[]>('attachments', { default: () => 
 const annotations = defineModel<ReactAnnotation[]>('annotations', { default: () => [] })
 
 const canSubmitGate = computed(() => {
-  if (props.rejecting) return false
+  if (props.rejecting || attachmentsReading(attachments.value)) return false
   if (props.rejectAllowEmpty) return true
   return (
     draft.value.trim().length > 0 ||

@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   SITE_ATTACH_MAX_BYTES,
   attachmentByteLength,
+  attachmentKind,
+  attachmentMime,
+  attachmentSizeLabel,
+  attachmentDownloadUrl,
   attachmentDisplayName,
   filesFromClipboard,
   findOversizedAttachments,
@@ -14,6 +18,22 @@ import {
 } from './attachments'
 
 describe('attachments helpers', () => {
+  it('allows attachment transports and rejects executable download URLs', () => {
+    for (const src of ['/api/blobs/abc', 'blob:https://grasp.test/abc', 'data:audio/wav;base64,QQ==', 'https://grasp.test/file']) expect(attachmentDownloadUrl(src)).toBe(src)
+    for (const src of ['javascript:alert(1)', 'java\nscript:alert(1)', 'file:///private/file', 'https://[', '']) expect(attachmentDownloadUrl(src)).toBe('')
+  })
+  it('uses media MIME types first and falls back to filename for missing/generic MIME', () => {
+    expect(attachmentKind({ mimeType: 'AUDIO/MPEG; codecs=mp3', name: 'clip.mp4' })).toBe('audio')
+    expect(isImageAttachment({ mimeType: 'audio/mpeg', name: 'renamed.png' })).toBe(false)
+    expect(attachmentMime({ mimeType: '', name: 'clip.MP4' })).toBe('video/mp4')
+    expect(attachmentKind({ mimeType: 'application/octet-stream', name: 'voice.m4a' })).toBe('audio')
+    expect(attachmentKind({ mimeType: 'application/pdf', name: 'doc.pdf' })).toBe('file')
+    expect(attachmentKind({ mimeType: 'image/webp', name: 'shot.webp' })).toBe('image')
+    expect(attachmentSizeLabel({ mimeType: '', sizeBytes: 0 })).toBe('0 B')
+    expect(attachmentSizeLabel({ mimeType: '', sizeBytes: 1024 })).toBe('1.0 KiB')
+    expect(attachmentSizeLabel({ mimeType: '', sizeBytes: SITE_ATTACH_MAX_BYTES })).toBe('50.0 MiB')
+    expect(attachmentSizeLabel({ mimeType: '' })).toBe('')
+  })
   it('classifies image vs non-image and preserves display names', () => {
     expect(isImageAttachment({ mimeType: 'image/png', name: 'a.png' })).toBe(true)
     expect(isImageAttachment({ mimeType: 'application/pdf', name: 'doc.pdf' })).toBe(false)
@@ -45,6 +65,24 @@ describe('attachments helpers', () => {
 describe('readFilesAsAttachments / filesFromClipboard', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('reports read errors, aborts and synchronous failures without accepting them as finished files', () => {
+    class Reader {
+      onerror: (() => void) | null = null
+      onabort: (() => void) | null = null
+      readAsDataURL(file: File) {
+        if (file.name === 'throw') throw new Error('read failed')
+        if (file.name === 'abort') this.onabort?.()
+        else this.onerror?.()
+      }
+    }
+    vi.stubGlobal('FileReader', Reader)
+    const onError = vi.fn(), onRead = vi.fn(), onStart = vi.fn()
+    readFilesAsAttachments(['throw', 'abort', 'error'].map(name => new File(['x'], name)), { onStart, onError, onRead })
+    expect(onStart).toHaveBeenCalledTimes(3)
+    expect(onError.mock.calls.map(args => args[0])).toEqual(['throw', 'abort', 'error'])
+    expect(onRead).not.toHaveBeenCalled()
+  })
+
   it('size-gates, names, and reads accepted files as data URLs', () => {
     class Reader {
       result: string | null = null
@@ -64,9 +102,9 @@ describe('readFilesAsAttachments / filesFromClipboard', () => {
     )
     expect(res).toEqual({ rejected: ['big.bin'], accepted: 3 })
     expect(onRead.mock.calls.map((c) => c[0])).toEqual([
-      { data: 'QQ==', mimeType: 'image/png', url: 'data:image/png;base64,QQ==', name: 'a.png' },
-      { data: 'QQ==', mimeType: 'application/octet-stream', url: 'data:application/octet-stream;base64,QQ==', name: 'attachment-3' },
-      { data: 'no-comma', mimeType: 'application/octet-stream', url: 'no-comma', name: 'raw' },
+      { data: 'QQ==', mimeType: 'image/png', url: 'data:image/png;base64,QQ==', name: 'a.png', sizeBytes: 1 },
+      { data: 'QQ==', mimeType: 'application/octet-stream', url: 'data:application/octet-stream;base64,QQ==', name: 'attachment-3', sizeBytes: 1 },
+      { data: 'no-comma', mimeType: 'application/octet-stream', url: 'no-comma', name: 'raw', sizeBytes: 1 },
     ])
   })
 

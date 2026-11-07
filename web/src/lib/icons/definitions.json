@@ -1,4 +1,20 @@
 {
+  "file-audio": {
+    "body": "<path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z\"/><path d=\"M14 2v6h6\"/><g class=\"file-note\"><path d=\"M13 17v-6l4 1\"/><circle cx=\"11\" cy=\"17\" r=\"2\"/></g>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "纸张固定，音符轻轻浮动"
+  },
+  "file-video": {
+    "body": "<path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z\"/><path d=\"M14 2v6h6\"/><path class=\"file-play\" d=\"M10 11l6 4-6 4z\"/>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "纸张固定，播放图形轻轻缩放"
+  },
   "copy": {
     "body": "<rect class=\"front\" x=\"9\" y=\"9\" width=\"11\" height=\"11\" rx=\"2\"/><path class=\"back\" d=\"M5 15V5a2 2 0 0 1 2-2h10\"/>",
     "duration": 1050,

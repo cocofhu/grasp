@@ -28,7 +28,10 @@ test.describe('chat image preview surfaces (pm / feedback / para / tester / shar
     await expect(page.getByTestId('chat-image-surfaces-root')).toBeVisible({ timeout: 20_000 })
     const shot = (name: string) => page.screenshot({ path: path.join(shotDir, name), animations: 'disabled' })
 
-    const headerClose = () => page.locator('.fixed.inset-0.z-50 .h-14 button')
+    const closePreview = async () => {
+      await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+      await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(0)
+    }
     const backdrop = () => page.locator('.fixed.inset-0.z-50 > .absolute.inset-0')
 
     // --- PM history + draft (FR-f1/f2) ---
@@ -51,7 +54,7 @@ test.describe('chat image preview surfaces (pm / feedback / para / tester / shar
     await page.keyboard.press('Escape')
     await expect(pmImg).toBeVisible()
     await shot('02-pm-history-modal.png')
-    await headerClose().click()
+    await closePreview()
     await expect(pmImg).toHaveCount(0)
 
     await page.locator('[data-testid="surf-panel-pm"] input[type="file"]').setInputFiles(PNG_FILE)
@@ -83,19 +86,19 @@ test.describe('chat image preview surfaces (pm / feedback / para / tester / shar
     await expect(page.getByText('图片预览 · issue附图.png')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('preview-feedback-image-preview-img')).toBeVisible()
-    await headerClose().click()
+    await closePreview()
     await expect(page.getByTestId('preview-feedback-image-preview-img')).toHaveCount(0)
 
     await elemThumb.click()
     await expect(page.getByText('图片预览 · 元素截图.png')).toBeVisible()
-    await headerClose().click()
+    await closePreview()
     await expect(page.getByText('button.surf.active')).toBeVisible()
     await expect(elemThumb).toBeVisible()
     await expect(page.getByTestId('paragraph-draft-image-thumb')).toBeVisible()
 
     await page.getByTestId('paragraph-draft-image-thumb').click()
     await expect(page.getByText('图片预览 · 反馈草稿.png')).toBeVisible()
-    await headerClose().click()
+    await closePreview()
     await expect(page.getByTestId('paragraph-draft-image-thumb')).toBeVisible()
 
     // --- ParagraphInput gate composer (FR-f5) ---
@@ -111,7 +114,7 @@ test.describe('chat image preview surfaces (pm / feedback / para / tester / shar
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('paragraph-image-preview-img')).toBeVisible()
     await shot('05-paragraph-modal.png')
-    await headerClose().click()
+    await closePreview()
     await expect(paraThumb).toBeVisible()
 
     // --- Agent tester restored history (FR-f4 / g5.1) ---
@@ -125,7 +128,7 @@ test.describe('chat image preview surfaces (pm / feedback / para / tester / shar
     await expect(page.getByText(/图片预览/)).toBeVisible()
     await expect(page.getByTestId('tester-image-preview-img')).toBeVisible()
     await shot('06-tester-history-modal.png')
-    await headerClose().click()
+    await closePreview()
 
     await page.locator('[data-testid="surf-panel-tester"] input[type="file"]').setInputFiles(PNG_FILE)
     const testerDraft = page.getByTestId('tester-draft-image-thumb')
@@ -133,7 +136,7 @@ test.describe('chat image preview surfaces (pm / feedback / para / tester / shar
     await expect(testerDraft).not.toContainText('不可预览')
     await testerDraft.click()
     await expect(page.getByText('图片预览 · 待发截图.png')).toBeVisible()
-    await headerClose().click()
+    await closePreview()
     await expect(testerDraft).toBeVisible()
 
     // --- Shared sizes / locked / load-failed (FR-f6/f8) ---
@@ -164,6 +167,6 @@ test.describe('chat image preview surfaces (pm / feedback / para / tester / shar
     await expect(page.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
     await expect(page.getByText('图片预览 · 历史.md.png')).toBeVisible()
     await shot('08-shared-dialog-a11y.png')
-    await headerClose().click()
+    await closePreview()
   })
 })

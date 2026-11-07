@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { attachmentsReading } from '@/lib/shared/attachments'
 import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -339,6 +340,10 @@ function onTagKeydown(e: KeyboardEvent) {
 }
 
 async function startRun() {
+  if (Object.values(props.runImages).some(attachmentsReading)) {
+    startError.value = t('common.attachments.reading')
+    return
+  }
   const missing = props.fields.find((f) => {
     if (!f.required) return false
     if (f.type === 'paragraph') {

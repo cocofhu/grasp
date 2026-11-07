@@ -4,6 +4,7 @@ import { renderMarkdown } from '@/lib/shared/markdown'
 import { api, type PreviewIssue } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { isCompositeFilled, normalizeCompositeSubmit } from '@/lib/shared/compositeText'
+import { attachmentsReading } from '@/lib/shared/attachments'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { provideReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
 import { pushAnnotationUnique } from '@/lib/inbox/reviewQuote'
@@ -983,6 +984,7 @@ function buildFormPayload(): Record<string, any> {
 // action mandates the form (e.g. a "reject" action requiring a review comment).
 // F5: with ≥1 PreviewIssue, skip requireForm on fail/revise so empty comment is OK.
 function validate(id: string): string | null {
+  if (Object.values(formImages.value).some(attachmentsReading)) return t('common.attachments.reading')
   const action = props.gate.actions.find((a) => a.id === id)
   let requireAll = !!action?.requireForm
   if (
@@ -1315,6 +1317,7 @@ function removeReactSend(turn: GateReactTurn) {
 const canSubmitReact = computed(
   () =>
     !reactSending.value &&
+    !attachmentsReading(reactImages.value) &&
     (reactText.value.trim().length > 0 ||
       reactImages.value.length > 0 ||
       reactAnnotations.value.length > 0 ||
@@ -1701,6 +1704,10 @@ function annotationHistoryBody(anns: ReactAnnotation[]): string {
  * so the sidebar list updates immediately (push + issues-changed).
  */
 async function flushFeedbackDraft(): Promise<boolean> {
+  if (attachmentsReading(reactImages.value)) {
+    reactError.value = t('common.attachments.reading')
+    return false
+  }
   if (!props.run?.id || !usesPreviewIssues.value) return false
   const chat = feedbackChatRef.value
   if (chat) {
@@ -1828,6 +1835,10 @@ async function syncHotRejectHistory(anns: ReactAnnotation[]): Promise<boolean> {
  * still needs payload. On revise failure after history write, keep the draft.
  */
 async function sendHotReject(references: ReferenceInput[] = []) {
+  if (attachmentsReading(reactImages.value)) {
+    reactError.value = t('common.attachments.reading')
+    return
+  }
   if (!props.run?.id || reactSending.value) return
   const hasPayload =
     reactText.value.trim().length > 0 ||

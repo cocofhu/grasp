@@ -1,3 +1,4 @@
+import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { renderMarkdown } from '@/lib/shared/markdown'
@@ -33,17 +34,7 @@ import type {
   ReactFormField,
   ReactAnnotation,
 } from '@/lib/shared/types'
-import {
-  SITE_ATTACH_MAX_BYTES,
-  SITE_ATTACH_MAX_MIB,
-  attachmentDisplayName,
-  filesFromClipboard,
-  findOversizedAttachments,
-  formatSelectRejectMessage,
-  formatSendRejectMessage,
-  isImageAttachment,
-  readFilesAsAttachments,
-} from '@/lib/shared/attachments'
+import { isImageAttachment } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import {
@@ -360,7 +351,8 @@ watch(
  */
 const thoughtOpenOverride = ref<Record<number, boolean>>({})
 const scroller = ref<HTMLElement>()
-const fileInput = ref<HTMLInputElement | null>(null)
+const attachmentFiles = useImageAttachments({ attachments })
+const { fileInput, addFiles, onPickFiles, removeAttachment } = attachmentFiles
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const overflowScroll = ref(false)
 const composing = ref(false)
@@ -562,6 +554,7 @@ function imagePreviewLabel(images: ClarifyImage[], index: number): string {
 }
 
 const attachNotice = ref<string | null>(null)
+watch(attachmentFiles.notice, value => { attachNotice.value = value?.text || null }, { flush: 'sync' })
 /** A reply the server refused (e.g. clarify_visit_ended); its text is back in the composer. */
 const sendNotice = ref<string | null>(null)
 const queueNotice = ref<string | null>(null)
@@ -770,28 +763,8 @@ function releaseConfirmPending() {
   validating.value = false
 }
 
-function addFiles(files: ArrayLike<File> | null | undefined) {
-  if (!files) return
-  const { rejected } = readFilesAsAttachments(files, {
-    maxBytes: SITE_ATTACH_MAX_BYTES,
-    onRead: ({ data, mimeType, name }) => attachments.value.push({ data, mimeType, name }),
-  })
-  if (rejected.length) {
-    attachNotice.value = formatSelectRejectMessage(rejected, SITE_ATTACH_MAX_MIB)
-  } else {
-    attachNotice.value = null
-  }
-}
-function onPickFiles(e: Event) {
-  addFiles((e.target as HTMLInputElement).files)
-  if (fileInput.value) fileInput.value.value = ''
-}
 function onPaste(e: ClipboardEvent) {
-  const picked = filesFromClipboard(e)
-  if (picked.length) {
-    e.preventDefault()
-    addFiles(picked)
-  }
+  attachmentFiles.onPaste(e)
   nextTick(autoGrow)
 }
 
@@ -809,9 +782,6 @@ onMounted(() => {
   // Mount with historical turns: force enter stick (parent v-if remounts on leave/re-enter).
   void enterStickSequence()
 })
-function removeAttachment(i: number) {
-  attachments.value.splice(i, 1)
-}
 
 /** What this page sent, by clientMessageId, so a refused send can go back into the composer as typed. */
 type SentOrigin = { text: string; composerText?: string; images: ClarifyImage[]; annotations: ReactAnnotation[]; references?: MessageReference[] }
@@ -867,14 +837,7 @@ function prepareComposerSend(
   anns: ReactAnnotation[],
 ): { text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] } | null {
   if ((!text && imgs.length === 0 && anns.length === 0) || props.done || !props.active) return null
-  const over = findOversizedAttachments(imgs)
-  if (over.length) {
-    attachNotice.value = formatSendRejectMessage(
-      over.map((im, i) => attachmentDisplayName(im, i)),
-      SITE_ATTACH_MAX_MIB,
-    )
-    return null
-  }
+  if (attachmentFiles.blockSendIfOversized(imgs) || attachmentFiles.blockSendIfOversized(attachments.value)) return null
   let outText = text
   if (pendingInteractiveOpen.value) {
     outText = formatSkipReply(text)

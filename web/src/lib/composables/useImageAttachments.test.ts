@@ -2,8 +2,57 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useImageAttachments } from './useImageAttachments'
 import { SITE_ATTACH_MAX_BYTES } from '../shared/attachments'
+import { i18n } from '../shared/i18n'
+import common from '@/locales/zh-CN/common.json'
 
 describe('useImageAttachments', () => {
+  it('tracks pending files, preserves selection order and ignores completion after removal', () => {
+    i18n.global.setLocaleMessage('zh-CN', common)
+    const readers: Reader[] = []
+    class Reader {
+      result = 'data:text/plain;base64,QQ=='
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      readAsDataURL() { readers.push(this) }
+    }
+    vi.stubGlobal('FileReader', Reader)
+    const attach = useImageAttachments()
+    attach.addFiles([new File(['A'], 'first.txt'), new File(['B'], 'second.txt')])
+    expect(attach.attachments.value.map(im => im.readState)).toEqual(['reading', 'reading'])
+    expect(attach.blockSendIfOversized()).toBe(true)
+    readers[1]!.onload?.()
+    expect(attach.attachments.value.map(im => im.name)).toEqual(['first.txt', 'second.txt'])
+    expect(attach.blockSendIfOversized()).toBe(true)
+    readers[0]!.onload?.()
+    expect(attach.blockSendIfOversized()).toBe(false)
+    expect(attach.notice.value).toBeNull()
+    expect(attach.attachments.value[0]).toMatchObject({ sizeBytes: 1, data: 'QQ==' })
+    attach.addFiles([new File(['C'], 'removed.txt')])
+    attach.removeAttachment(2)
+    readers[2]!.onload?.()
+    expect(attach.attachments.value).toHaveLength(2)
+    attach.addFiles([new File(['D'], 'failed.txt')])
+    readers[3]!.onerror?.()
+    expect(attach.attachments.value).toHaveLength(2)
+    expect(attach.notice.value?.text).toContain('failed.txt')
+    expect(attach.blockSendIfOversized()).toBe(false)
+    // A dynamic draft ref can switch chats before the file finishes reading.
+    attach.clearAttachments()
+    attach.addFiles([new File(['E'], 'previous-chat.txt')])
+    const previousDraft = attach.attachments.value
+    attach.attachments.value = []
+    attach.addFiles([new File(['F'], 'current-chat.txt')])
+    expect(attach.blockSendIfOversized()).toBe(true)
+    readers[4]!.onload?.()
+    expect(attach.attachments.value[0]?.name).toBe('current-chat.txt')
+    expect(previousDraft[0]).toMatchObject({ name: 'previous-chat.txt', data: 'QQ==' })
+    expect(previousDraft[0]?.readState).toBeUndefined()
+    expect(attach.notice.value?.text).toContain('正在读取')
+    readers[5]!.onload?.()
+    expect(attach.blockSendIfOversized()).toBe(false)
+    expect(attach.notice.value).toBeNull()
+    vi.unstubAllGlobals()
+  })
   it('adds any file type with name and rejects oversized at select', async () => {
     const { attachments, addFiles, onPaste, removeAttachment, clearAttachments, takeAttachments, onPickFiles, fileInput, notice, blockSendIfOversized } =
       useImageAttachments()

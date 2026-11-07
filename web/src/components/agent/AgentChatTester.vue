@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
+import { useImageAttachments } from '@/lib/composables/useImageAttachments'
+import type { ClarifyImage } from '@/lib/shared/types'
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
+import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import { ref, reactive, nextTick, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
@@ -16,16 +21,9 @@ import { lastMessageText } from '@/lib/chat/messagePreview'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import {
-  SITE_ATTACH_MAX_BYTES,
-  SITE_ATTACH_MAX_MIB,
   attachmentDisplayName,
-  filesFromClipboard,
-  findOversizedAttachments,
-  formatSelectRejectMessage,
-  formatSendRejectMessage,
   inferImageMimeFromUrl,
   isImageAttachment,
-  readFilesAsAttachments,
 } from '@/lib/shared/attachments'
 import { chatImageSrc } from '@/lib/shared/compositeText'
 import { contentText, flattenUpdate, normalizeKind, unwrapFrame } from '@/lib/run/acpUnpack'
@@ -55,7 +53,7 @@ const { worktreeMode } = useExecutionMode()
 type Tool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
 /** Arrival order of the reply: text runs, or an index into Turn.tools. */
 type Step = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
-type ImageAtt = { data: string; mimeType: string; url: string; name?: string }
+type ImageAtt = ClarifyImage
 type QueueItem = { id: string; text: string; images: ImageAtt[] }
 type Turn = {
   id: string
@@ -88,7 +86,9 @@ const followBottom = ref(true)
 // when earlier pages are prepended, including repeated identical questions.
 const frameIds = new WeakMap<object, string>()
 const attachments = ref<ImageAtt[]>([])
-const fileInput = ref<HTMLInputElement | null>(null)
+const attachmentFiles = useImageAttachments({ attachments, retainUrl: true })
+const { fileInput, addFiles, onPickFiles, onPaste, removeAttachment } = attachmentFiles
+watch(attachmentFiles.notice, value => { if (value?.kind === 'error') errorMsg.value = value.text }, { flush: 'sync' })
 // Not-yet-started sends as last reported by the server (plus optimistic local
 // sends). Items live ONLY in the bottom queue panel — no conversation bubble is
 // created until the server starts the turn (turn_begin). This avoids showing
@@ -397,14 +397,7 @@ function send() {
   const text = input.value.trim()
   if ((!text && attachments.value.length === 0) || !canSend()) return
   const imgs = attachments.value.slice()
-  const over = findOversizedAttachments(imgs)
-  if (over.length) {
-    errorMsg.value = formatSendRejectMessage(
-      over.map((im, i) => attachmentDisplayName(im, i)),
-      SITE_ATTACH_MAX_MIB,
-    )
-    return
-  }
+  if (attachmentFiles.blockSendIfOversized(imgs)) return
   // Enqueue only — the bubble is created on turn_begin (see onFrame), so extra
   // sends show up in the bottom queue panel instead of as premature bubbles.
   const item: QueueItem = { id: newItemId(), text, images: imgs }
@@ -623,31 +616,6 @@ function onFrame(data: string) {
 }
 
 // --- file attachments (any type; 50 MiB select/send gate) -----------------
-function addFiles(files: ArrayLike<File> | null | undefined) {
-  if (!files) return
-  const { rejected } = readFilesAsAttachments(files, {
-    maxBytes: SITE_ATTACH_MAX_BYTES,
-    onRead: (att) => attachments.value.push(att),
-  })
-  if (rejected.length) {
-    errorMsg.value = formatSelectRejectMessage(rejected, SITE_ATTACH_MAX_MIB)
-  }
-}
-function onPickFiles(e: Event) {
-  addFiles((e.target as HTMLInputElement).files)
-  if (fileInput.value) fileInput.value.value = ''
-}
-function onPaste(e: ClipboardEvent) {
-  const picked = filesFromClipboard(e)
-  if (picked.length) {
-    e.preventDefault()
-    addFiles(picked)
-  }
-}
-function removeAttachment(i: number) {
-  attachments.value.splice(i, 1)
-}
-
 function historyFrameId(frame: object, opId: unknown): string {
   if (typeof opId === 'string' && opId) return `question:${opId}`
   let id = frameIds.get(frame)
@@ -1248,7 +1216,7 @@ onBeforeUnmount(() => {
           <div v-if="turn.images && turn.images.length" class="flex flex-wrap justify-end gap-1.5">
             <template v-for="(im, ii) in turn.images" :key="ii">
               <ChatImageThumb
-                v-if="isImageAttachment(im)"
+                v-if="isImageAttachment(im) && im.readState !== 'reading'"
                 mode="previewable"
                 size="md"
                 thumb-class="rounded-md"
@@ -1258,15 +1226,7 @@ onBeforeUnmount(() => {
                 test-id="tester-history-image-thumb"
                 @preview="openChatImagePreview(chatImageSrc(im), attachmentDisplayName(im, ii))"
               />
-              <div
-                v-else
-                class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
-                data-testid="tester-history-file-chip"
-                :title="attachmentDisplayName(im, ii)"
-              >
-                <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-                <span class="min-w-0 truncate text-[12px] text-txt">{{ attachmentDisplayName(im, ii) }}</span>
-              </div>
+              <ChatFileAttachment v-else :attachment="im" data-testid="tester-history-file-chip" />
             </template>
           </div>
           <ChatUserMessage v-if="turn.text" :text="turn.text" :created-at="turn.startedAt" />
@@ -1326,13 +1286,13 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- composer -->
-    <div v-if="status !== 'idle'" class="tester-bottom-region shrink-0 py-3">
+    <AttachmentDropZone v-if="status !== 'idle'" class="tester-bottom-region shrink-0 py-3" :disabled="status !== 'ready' && status !== 'thinking'" @files="addFiles">
       <div class="chat-thread tester-chat-column">
       <!-- pending attachments -->
       <div v-if="attachments.length" class="mb-2 flex flex-wrap gap-1.5">
         <div v-for="(im, ii) in attachments" :key="ii" class="relative">
           <ChatImageThumb
-            v-if="isImageAttachment(im)"
+            v-if="isImageAttachment(im) && im.readState !== 'reading'"
             mode="previewable"
             size="sm"
             thumb-class="rounded-md"
@@ -1342,18 +1302,12 @@ onBeforeUnmount(() => {
             test-id="tester-draft-image-thumb"
             @preview="openChatImagePreview(chatImageSrc(im), attachmentDisplayName(im, ii))"
           />
-          <div
-            v-else
-            class="chat-file-chip rounded-lg flex h-14 max-w-[160px] items-center gap-1.5 border border-line bg-elevated px-2"
-            data-testid="tester-pending-file-chip"
-            :title="attachmentDisplayName(im, ii)"
-          >
-            <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-            <span class="min-w-0 truncate text-[12px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
-          </div>
+          <ChatFileAttachment v-else :attachment="im" compact data-testid="tester-pending-file-chip" />
+          <ChatAttachmentDetails v-if="isImageAttachment(im) && im.readState !== 'reading'" :attachment="im" :index="ii" />
           <button
             class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full pending-attach-remove"
             @click.stop="removeAttachment(ii)"
+            :aria-label="t('common.attachments.remove', { name: attachmentDisplayName(im, ii) })"
           ><Icon name="close" :size="9" /></button>
         </div>
       </div>
@@ -1408,7 +1362,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       </div>
-    </div>
+    </AttachmentDropZone>
 
     <ChatImagePreviewModal
       :open="!!imagePreview"

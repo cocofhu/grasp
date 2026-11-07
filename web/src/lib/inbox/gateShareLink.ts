@@ -267,6 +267,7 @@ export function shareStatusLabel(
 export type PublicGatePreviewImage = {
   mimeType?: string
   name?: string
+  sizeBytes?: number
   /** Opaque dialogue-scoped index for GET /public/approvals/images/:index. */
   index: number
 }
@@ -598,6 +599,7 @@ export function mapPublicGateImages(
       mimeType: (im.mimeType || 'image/png').trim() || 'image/png',
       name: im.name?.trim() || undefined,
       url,
+      ...(im.sizeBytes !== undefined ? { sizeBytes: im.sizeBytes } : {}),
     })
   }
   return out

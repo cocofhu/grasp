@@ -24,6 +24,11 @@ type memBlob struct {
 	meta Meta
 }
 
+// Keep seeking available for HTTP range requests without copying the stored bytes.
+type memoryReader struct{ *bytes.Reader }
+
+func (*memoryReader) Close() error { return nil }
+
 // NewMemory returns an empty memory store.
 func NewMemory() *Memory {
 	return &Memory{data: map[string]memBlob{}}
@@ -64,7 +69,7 @@ func (m *Memory) Open(ctx context.Context, ref Ref) (io.ReadCloser, Meta, error)
 	if !ok {
 		return nil, Meta{}, fmt.Errorf("blob not found")
 	}
-	return io.NopCloser(bytes.NewReader(b.raw)), b.meta, nil
+	return &memoryReader{bytes.NewReader(b.raw)}, b.meta, nil
 }
 
 func (m *Memory) Delete(ctx context.Context, ref Ref) error {
