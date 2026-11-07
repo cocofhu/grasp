@@ -104,9 +104,13 @@ Unauthenticated Chromium CDP (`:9222`, socat) and noVNC/websockify (`:6080`,
 - **session / ide / ssh** may still be published. They use their own passwords
   or SSH keys (`ROOT_PASSWORD` / `SSH_KEY` / IDE password). Direct CDP/noVNC
   is not a substitute.
-- **Grasp** (and other in-cluster / Docker-network peers) may dial CDP and
-  noVNC on the container IP or ClusterIP DNS. Grasp running *outside* the
-  cluster or Docker network is **not** a supported topology for CDP/VNC control.
+- **Grasp** can dial private CDP/noVNC directly from the provider network, or
+  use the opt-in authenticated gateway TCP transport from outside that network.
+  Its local adapter binds loopback only. The gateway resolves the target from
+  a known sandbox and declared guest port; client-supplied hosts/URLs and
+  browser Origin requests are rejected. v2 transport requires explicit API-key
+  authentication even when legacy v1 auth is disabled. Gateway keys stay on
+  servers; browser session and preview-origin authorization remain unchanged.
 - **Residual risk**: pods on the same cluster / Docker network can still reach
   `:9222` / `:6080`. This change does not add NetworkPolicy.
 - **Docker inventory**: already-running containers keep their existing `-p`

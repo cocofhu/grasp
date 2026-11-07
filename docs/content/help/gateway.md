@@ -7,6 +7,8 @@ Grasp 通过 vendored 的 **sandbox-gateway** 控制平面调度通用沙箱镜�
 
 ## 直连与平台代理
 
+默认保持旧版直连。配置 `sandbox.gateway_transport: gateway` 后，Docker、Kubernetes、E2B 的 SSH、聊天、IDE 和浏览器连接均可经过带鉴权的网关，Grasp 不必与沙箱处于同一网络。浏览器继续使用原有 Grasp 入口。此模式要求网关 API key 和独立预览域名；命名网关的默认值仅影响新沙箱，已有沙箱保留原绑定。配置和迁移步骤见下方完整文档。
+
 - **可直连（已鉴权）**：`session`（会话密码）、`ide`（IDE 密码）、`ssh`（`ROOT_PASSWORD` 或 `SSH_KEY`）。
 - **不可直连**：CDP `:9222`、noVNC `:6080` 无应用层鉴权，不发布到宿主/LB，详情页不展示/不复制直连地址。
 - **用户入口**：仅平台代理 `/sandbox-vnc/:sandboxId/ws`，每个沙箱一个桌面，桌面上就是 Agent 操作的浏览器（启用平台 Auth 时须 Session；仅校验登录有效，不校验沙箱/跑步归属）。「打开预览」进入沙箱控台 noVNC，不直连 websockify。

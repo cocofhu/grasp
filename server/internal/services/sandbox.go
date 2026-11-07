@@ -156,7 +156,8 @@ type SandboxView struct {
 	// Endpoints are user-visible host:port addresses. GetView only returns
 	// session/ide/ssh; CDP/noVNC (9222/6080) are internal and never included.
 	// List leaves this nil so JSON omits the field.
-	Endpoints map[string]string `json:"endpoints,omitempty"`
+	Endpoints         map[string]string `json:"endpoints,omitempty"`
+	EndpointTransport string            `json:"endpointTransport,omitempty"`
 }
 
 // NewSandboxService builds the service.

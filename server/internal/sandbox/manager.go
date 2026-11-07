@@ -871,7 +871,7 @@ func (m *Manager) HostForPort(ctx context.Context, id string, port int) (string,
 	if err := m.gw.do(ctx, "GET", fmt.Sprintf("/api/v1/sandboxes/%s/hosts/%d", id, port), nil, &out); err != nil {
 		return "", err
 	}
-	return out.Address, nil
+	return m.gw.endpointForPort(ctx, id, port, out.Address)
 }
 
 // PublishPort asks the gateway to expose an extra public port (k8s Service mapping).
@@ -889,7 +889,7 @@ func (m *Manager) PublishPort(ctx context.Context, id string, port int) (string,
 	if err := m.gw.do(ctx, "POST", fmt.Sprintf("/api/v1/sandboxes/%s/ports", id), body, &out); err != nil {
 		return "", err
 	}
-	return out.Address, nil
+	return m.gw.endpointForPort(ctx, id, port, out.Address)
 }
 
 // EndpointAddr returns the gateway-published reachable "host:port" for a named

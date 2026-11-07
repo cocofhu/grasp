@@ -16,15 +16,19 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// GatewayClient is a thin REST client for the sandbox-gateway control plane
-// (https://.../api/v1/sandboxes). The gateway owns the container/pod lifecycle
-// and image; approving no longer talks to Docker directly. Data-plane traffic
-// (ACP WebSocket, SSH exec/files) goes straight to the addresses the gateway
-// reports in a sandbox's `endpoints` map — never through the gateway.
+// GatewayClient owns provider-neutral control and data connections. Legacy
+// clients use returned endpoints directly; configured gateway transport adapts
+// them to private local listeners backed by authenticated gateway TCP channels.
 type GatewayClient struct {
-	baseURL string // e.g. http://127.0.0.1:8899
-	apiKey  string // Authorization: Bearer <key>; empty = no auth header
-	http    *http.Client
+	baseURL        string // e.g. http://127.0.0.1:8899
+	apiKey         string // Authorization: Bearer <key>; empty = no auth header
+	http           *http.Client
+	id             string
+	profile        string
+	transport      string
+	gateways       map[string]*GatewayClient
+	defaultGateway string
+	bridge         *gatewayBridge
 }
 
 type GatewayHTTPError struct {
@@ -32,13 +36,17 @@ type GatewayHTTPError struct {
 	message    string
 }
 
+// ErrGatewayTransport identifies discovery/channel failures. A missing v2
+// route must never be mistaken for a missing data-bearing sandbox record.
+var ErrGatewayTransport = errors.New("sandbox gateway transport unavailable")
+
 func (e *GatewayHTTPError) Error() string { return e.message }
 
 // GatewayRecordMissing identifies a missing control-plane record. That alone
 // is not proof that a resident sandbox's data-bearing resource is absent.
 func GatewayRecordMissing(err error) bool {
 	var e *GatewayHTTPError
-	return errors.As(err, &e) && e.StatusCode == http.StatusNotFound
+	return !errors.Is(err, ErrGatewayTransport) && errors.As(err, &e) && e.StatusCode == http.StatusNotFound
 }
 
 // NewGatewayClient builds a client for baseURL. A trailing slash is trimmed.
@@ -104,6 +112,7 @@ func hostPortOf(addr string) (string, int) {
 
 // GWCreateRequest is the POST /api/v1/sandboxes body.
 type GWCreateRequest struct {
+	Profile      string            `json:"profile,omitempty"`
 	Image        string            `json:"image,omitempty"`
 	Env          map[string]string `json:"env,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
@@ -126,6 +135,14 @@ type GWConfigInject struct {
 }
 
 func (g *GatewayClient) do(ctx context.Context, method, path string, body any, out any) error {
+	client, routedPath, err := g.routePath(path)
+	if err != nil {
+		return err
+	}
+	return client.doDirect(ctx, method, routedPath, body, out)
+}
+
+func (g *GatewayClient) doDirect(ctx context.Context, method, path string, body any, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -168,20 +185,32 @@ func (g *GatewayClient) do(ctx context.Context, method, path string, body any, o
 // Create provisions a sandbox and returns the initial record (status usually
 // "creating"; poll WaitRunning for endpoints).
 func (g *GatewayClient) Create(ctx context.Context, req GWCreateRequest) (*GWSandbox, error) {
-	var sb GWSandbox
-	if err := g.do(ctx, http.MethodPost, "/api/v1/sandboxes", req, &sb); err != nil {
+	client := g
+	if g.defaultGateway != "" {
+		client = g.gateways[g.defaultGateway]
+	}
+	if err := client.prepareCreate(ctx, &req); err != nil {
 		return nil, err
 	}
-	return &sb, nil
+	var sb GWSandbox
+	if err := client.doDirect(ctx, http.MethodPost, "/api/v1/sandboxes", req, &sb); err != nil {
+		return nil, err
+	}
+	return client.adaptSandbox(ctx, &sb)
 }
 
 // Get returns one sandbox by gateway id.
 func (g *GatewayClient) Get(ctx context.Context, id string) (*GWSandbox, error) {
-	var sb GWSandbox
-	if err := g.do(ctx, http.MethodGet, "/api/v1/sandboxes/"+id, nil, &sb); err != nil {
+	client, nativeID, err := g.resolveID(id)
+	if err != nil {
 		return nil, err
 	}
-	return &sb, nil
+	var sb GWSandbox
+	if err := client.doDirect(ctx, http.MethodGet, "/api/v1/sandboxes/"+url.PathEscape(nativeID), nil, &sb); err != nil {
+		return nil, err
+	}
+	// Legacy bare IDs stay bare even when this URL is also a named connection.
+	return client.adaptSandboxID(ctx, &sb, id)
 }
 
 // List returns sandboxes the gateway knows about. Optional labelFilters are
@@ -201,18 +230,18 @@ func (g *GatewayClient) List(ctx context.Context, labelFilters ...string) ([]GWS
 			path += "?" + enc
 		}
 	}
-	var out struct {
-		Sandboxes []GWSandbox `json:"sandboxes"`
-	}
-	if err := g.do(ctx, http.MethodGet, path, nil, &out); err != nil {
-		return nil, err
-	}
-	return out.Sandboxes, nil
+	return g.listGateways(ctx, path)
 }
 
 // Destroy deletes a sandbox by gateway id.
 func (g *GatewayClient) Destroy(ctx context.Context, id string) error {
-	return g.do(ctx, http.MethodDelete, "/api/v1/sandboxes/"+id, nil, nil)
+	if err := g.do(ctx, http.MethodDelete, "/api/v1/sandboxes/"+id, nil, nil); err != nil {
+		return err
+	}
+	if client, nativeID, err := g.resolveID(id); err == nil && client.bridge != nil {
+		client.bridge.remove(nativeID)
+	}
+	return nil
 }
 
 // Stop stops (but retains) a sandbox by gateway id.

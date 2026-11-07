@@ -4,8 +4,9 @@ A thin control-plane service that manages the lifecycle of sandboxes (instances
 of the Phase 1 universal image in [`../sandbox`](../sandbox)) and returns the
 client-reachable address for each exposed port.
 
-The gateway does **not** proxy data-plane traffic. Public ports are direct
-client-to-sandbox connections; CDP/noVNC stay internal:
+Legacy v1 clients connect to the returned endpoints directly. Opt-in v2
+transport carries TCP through authenticated, sandbox-scoped WebSockets, so
+Grasp can run outside the gateway's provider network. CDP/noVNC stay internal:
 
 - session / agent bridge (WSP/1): `8765` — **public**, session auth
 - code-server (web IDE): `8744` — **public**, IDE password
@@ -15,10 +16,11 @@ client-to-sandbox connections; CDP/noVNC stay internal:
 
 Users reach noVNC via Grasp `/sandbox-vnc/:id/ws`, one desktop per sandbox
 (Session when Auth is on). Grasp
-outside the cluster or Docker network cannot dial CDP/noVNC.
+outside the cluster or Docker network uses gateway transport for CDP/noVNC.
 
 There is no gateway `exec`/`files`/`terminal` API: run commands and move files
-over SSH, and open the IDE/session against the returned **public** endpoints.
+over SSH, either directly or through the TCP channel. See the
+[Grasp connection and migration configuration](../../GATEWAY.md#gateway-transport-and-multiple-deployments).
 
 ## Drivers (one per deployment)
 
@@ -36,8 +38,12 @@ A gateway instance runs exactly one driver, selected by `driver` in the config:
   inventory `*-lb` after upgrade (not only Create/Reinstall). Until that
   reconcile finishes, a pre-existing LB may still expose 9222/6080.
 
-Docker and Kubernetes are deployed separately and never run together in one
-instance.
+- `e2b` — approved prebuilt templates with persistent private relay endpoints;
+  see the [E2B guide](../deploy/e2b/README.md).
+
+Docker, Kubernetes and E2B are separate deployments, one driver per instance.
+
+Legacy direct topology (v2 instead routes Grasp's data through the gateway):
 
 ```mermaid
 flowchart TB

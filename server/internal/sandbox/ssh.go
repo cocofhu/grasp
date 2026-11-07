@@ -15,8 +15,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// The gateway control plane does not proxy data-plane traffic (exec, files,
-// terminal). approving reaches each sandbox directly over SSH (the universal
+// SSH uses the manager's resolved endpoint, either a direct sandbox address or
+// a local listener backed by the authenticated gateway transport (the universal
 // image runs sshd on :22). The manager injects one shared public key via the
 // SSH_KEY env at create time and authenticates with the matching private key.
 // When that key is refused, the dial retries with that sandbox's own token.

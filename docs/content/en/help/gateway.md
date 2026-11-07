@@ -7,6 +7,8 @@ Grasp schedules the generic sandbox image through the vendored **sandbox-gateway
 
 ## Direct endpoints vs platform proxy
 
+Legacy direct mode remains the default. With `sandbox.gateway_transport: gateway`, Docker, Kubernetes and E2B SSH, chat, IDE and browser connections can use the authenticated gateway, so Grasp can run outside the sandbox network. Browser entry points stay unchanged. This requires a gateway API key and an isolated preview origin. The default named gateway affects new sandboxes only; existing sandboxes retain their connection. See the full configuration and migration guide below.
+
 - **Direct (already authenticated)**: `session` (session password), `ide` (IDE password), `ssh` (`ROOT_PASSWORD` or `SSH_KEY`).
 - **Not direct**: CDP `:9222` and noVNC `:6080` have no app-layer auth, are not published to the host/LB, and are not shown or copied on the sandbox detail page.
 - **User path**: platform proxy only — `/sandbox-vnc/:sandboxId/ws`, one desktop per sandbox showing the browser the Agent drives (Session required when platform Auth is enabled; validity only, no sandbox/run ownership check). “Open preview” opens sandbox console noVNC; it does not dial websockify.

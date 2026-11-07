@@ -24,9 +24,9 @@ const (
 	StatusError    = "error"    // provisioning or reconcile failed
 )
 
-// Sandbox is the persisted metadata for one sandbox instance. Data-plane
-// traffic never flows through the gateway; Endpoints holds the client-reachable
-// address for each exposed container port.
+// Sandbox is the persisted metadata for one sandbox instance. Endpoints holds
+// the address for each exposed container port. Legacy clients dial directly;
+// the authenticated gateway transport resolves live driver addresses itself.
 type Sandbox struct {
 	ID        string `gorm:"primaryKey" json:"id"`
 	Name      string `gorm:"index" json:"name"` // driver-native resource name (container/deployment)

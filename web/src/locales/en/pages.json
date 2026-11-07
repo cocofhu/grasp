@@ -2178,6 +2178,8 @@
         "sectionProxy": "Platform proxy URLs",
         "sectionProxyHint": "Proxied paths and WS for signed-in operators. VNC is the platform path, not a direct :6080.",
         "sectionEndpoints": "Direct endpoints",
+        "sectionEndpointsGateway": "Server connection endpoints",
+        "gatewayEndpointsHint": "These local addresses are for the Grasp server. Use the Grasp links above for sessions, the IDE and the terminal.",
         "sectionEndpointsHint": "Operators may reach authenticated services (session / ide / ssh). Numeric port keys are filtered. Direct access needs separate auth — do not open in the browser.",
         "endpointsNotice": "CDP / noVNC are not directly reachable. No app-layer auth. Use the platform proxy /sandbox-vnc/:sandboxId/ws only (one desktop per sandbox; app ports are pages on it) (Session required when Auth is enabled; validity only, no sandbox/run ownership check). session/ide use their own passwords; ssh uses ROOT_PASSWORD or SSH_KEY.",
         "endpointsEmpty": "No direct endpoints available (gateway unreachable or no named ports).",

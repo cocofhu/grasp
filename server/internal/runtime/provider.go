@@ -33,6 +33,9 @@ type Options struct {
 	// GatewayAPIKey is the optional bearer token for the gateway (empty when
 	// the gateway runs with auth disabled).
 	GatewayAPIKey string
+	// Gateway shares named routing and local transport listeners across all
+	// execution providers and the interactive sandbox service.
+	Gateway *sandbox.GatewayClient
 	// Env is the vendor-neutral set of environment variables injected into
 	// every sandbox (protocol config.env channel).
 	Env map[string]string

@@ -483,6 +483,7 @@ export interface SandboxView {
   password?: string
   /** Gateway host:port map; only present on getSandbox (GetView), not list. */
   endpoints?: Record<string, string>
+  endpointTransport?: 'gateway'
 }
 
 export interface DashboardStats {
