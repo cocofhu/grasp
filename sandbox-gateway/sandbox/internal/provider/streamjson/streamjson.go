@@ -79,10 +79,40 @@ func (d *codec) NewTurnParser(provider.OpenOptions) oneshot.LineParser {
 type turnParser struct {
 	codec   *codec
 	hasText bool
+	usage   map[string]provider.TokenUsage
+	seen    map[string]bool
 }
 
 func (p *turnParser) ParseLine(line []byte) oneshot.ParseResult {
 	result := p.codec.ParseLine(line)
+	if p.codec.c.AgentName == provider.CodeBuddy {
+		var event streamEvent
+		if json.Unmarshal(line, &event) == nil {
+			if event.Type == "assistant" && event.Message != nil {
+				id := event.Message.ID
+				if id == "" {
+					id = event.UUID
+				}
+				if id == "" || !p.seen[id] {
+					if p.seen == nil {
+						p.seen = map[string]bool{}
+						p.usage = map[string]provider.TokenUsage{}
+					}
+					p.seen[id] = true
+					for model, usage := range result.Usage {
+						previous := p.usage[model]
+						previous.InputTokens += usage.InputTokens
+						previous.OutputTokens += usage.OutputTokens
+						previous.CacheReadTokens += usage.CacheReadTokens
+						previous.CacheWriteTokens += usage.CacheWriteTokens
+						p.usage[model] = previous
+					}
+				}
+			} else if event.Type == "result" && len(event.ModelUsage) > 0 {
+				retainCodeBuddyUsage(&result, p.usage)
+			}
+		}
+	}
 	for _, message := range result.Msgs {
 		if message.Kind == oneshot.KindText && strings.TrimSpace(message.Text) != "" {
 			p.hasText = true
@@ -270,6 +300,7 @@ func (b contentBlock) resultID() string {
 }
 
 type message struct {
+	ID         string         `json:"id"`
 	Model      string         `json:"model"`
 	Content    []contentBlock `json:"content"`
 	StopReason string         `json:"stop_reason"`
@@ -333,6 +364,7 @@ func (u *wireUsage) UnmarshalJSON(b []byte) error {
 
 type streamEvent struct {
 	Type       string               `json:"type"`
+	UUID       string               `json:"uuid"`
 	Subtype    string               `json:"subtype"`
 	SessionID  string               `json:"session_id"`
 	Model      string               `json:"model"`
@@ -357,7 +389,7 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 	var res oneshot.ParseResult
 	res.SessionID = ev.SessionID
 
-	addUsage := func(u *wireUsage, model string) {
+	addUsage := func(u *wireUsage, model string, inclusiveInput bool) {
 		if u == nil || !u.reported {
 			return
 		}
@@ -373,9 +405,10 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 			CacheReadTokens:  u.CacheReadTokens,
 			CacheWriteTokens: u.CacheCreationTokens,
 		}
-		// Qwen's input_tokens includes cached input (its total_tokens is
-		// input_tokens + output_tokens). Keep our four buckets disjoint.
-		if u.TotalTokens > 0 && u.TotalTokens == u.InputTokens+u.OutputTokens {
+		// CodeBuddy's assistant/flat counters include cached input; its
+		// modelUsage counters are already disjoint. Qwen exposes inclusive
+		// input via total_tokens == input_tokens + output_tokens.
+		if inclusiveInput || u.TotalTokens > 0 && u.TotalTokens == u.InputTokens+u.OutputTokens {
 			value := res.Usage[model]
 			value.InputTokens = max(value.InputTokens-value.CacheReadTokens-value.CacheWriteTokens, 0)
 			res.Usage[model] = value
@@ -412,7 +445,7 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 				})
 			}
 		}
-		addUsage(ev.Message.Usage, ev.Message.Model)
+		addUsage(ev.Message.Usage, ev.Message.Model, d.c.AgentName == provider.CodeBuddy)
 		res.UsagePartial = len(res.Usage) > 0
 	case "user":
 		if ev.Message == nil {
@@ -431,10 +464,10 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		if len(ev.ModelUsage) > 0 {
 			for model, u := range ev.ModelUsage {
 				uu := u
-				addUsage(&uu, model)
+				addUsage(&uu, model, false)
 			}
 		} else {
-			addUsage(ev.Usage, ev.Model)
+			addUsage(ev.Usage, ev.Model, d.c.AgentName == provider.CodeBuddy)
 		}
 		// Native result totals already include the preceding assistant samples.
 		// Preserve those samples only when the terminal event reports no total.
@@ -456,6 +489,47 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		}
 	}
 	return res
+}
+
+// CodeBuddy's separately updated cost service can omit the final request from
+// result.modelUsage. Keep consumption already observed in this subprocess's
+// assistant messages; the flat result may include earlier resumed turns.
+func retainCodeBuddyUsage(res *oneshot.ParseResult, observed map[string]provider.TokenUsage) {
+	var covered, total provider.TokenUsage
+	for _, usage := range observed {
+		total.InputTokens += usage.InputTokens
+		total.OutputTokens += usage.OutputTokens
+		total.CacheReadTokens += usage.CacheReadTokens
+		total.CacheWriteTokens += usage.CacheWriteTokens
+	}
+	for _, usage := range res.Usage {
+		covered.InputTokens += usage.InputTokens
+		covered.OutputTokens += usage.OutputTokens
+		covered.CacheReadTokens += usage.CacheReadTokens
+		covered.CacheWriteTokens += usage.CacheWriteTokens
+	}
+	if covered == (provider.TokenUsage{}) {
+		return // oneshot already retains the original buckets for empty totals
+	}
+	missing := provider.TokenUsage{
+		InputTokens:      max(total.InputTokens-covered.InputTokens, 0),
+		OutputTokens:     max(total.OutputTokens-covered.OutputTokens, 0),
+		CacheReadTokens:  max(total.CacheReadTokens-covered.CacheReadTokens, 0),
+		CacheWriteTokens: max(total.CacheWriteTokens-covered.CacheWriteTokens, 0),
+	}
+	if missing == (provider.TokenUsage{}) {
+		return
+	}
+	if res.Usage == nil {
+		res.Usage = map[string]provider.TokenUsage{}
+	}
+	previous := res.Usage["default"]
+	missing.InputTokens += previous.InputTokens
+	missing.OutputTokens += previous.OutputTokens
+	missing.CacheReadTokens += previous.CacheReadTokens
+	missing.CacheWriteTokens += previous.CacheWriteTokens
+	res.Usage["default"] = missing
+	res.UsagePartial = true // total is retained; model attribution is incomplete
 }
 
 // extractText flattens a tool_result content payload (string or block array).
