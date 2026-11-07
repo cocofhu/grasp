@@ -341,25 +341,38 @@ func (c sshCreds) authorizeCurrentKey(ctx context.Context, cli *ssh.Client) erro
 // When execHook is installed (unit tests), dial is skipped — the hook answers
 // subsequent run/runInput immediately.
 func (c sshCreds) waitReady(ctx context.Context, maxWait time.Duration) error {
+	cli, err := c.dialReady(ctx, maxWait)
+	if cli != nil {
+		_ = cli.Close()
+	}
+	return err
+}
+
+// dialReady retains the successful readiness connection for callers that have
+// work to do immediately. Probing and then dialing again repeats SSH auth.
+func (c sshCreds) dialReady(ctx context.Context, maxWait time.Duration) (*ssh.Client, error) {
 	if execHook != nil {
-		return nil
+		return nil, nil
 	}
 	deadline := time.Now().Add(maxWait)
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		default:
 		}
 		cli, err := c.dial(ctx)
 		if err == nil {
-			_ = cli.Close()
-			return nil
+			return cli, nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("ssh not ready after %s: %w", maxWait, err)
+			return nil, fmt.Errorf("ssh not ready after %s: %w", maxWait, err)
 		}
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 
@@ -435,6 +448,12 @@ func (c sshCreds) run(ctx context.Context, timeout time.Duration, cmd safeCmd) (
 
 // runInput executes a validated safeCmd feeding stdin from r (used for file writes).
 func (c sshCreds) runInput(ctx context.Context, timeout time.Duration, cmd safeCmd, r io.Reader) ([]byte, error) {
+	return c.runInputOnClient(ctx, timeout, nil, cmd, r)
+}
+
+// runInputOnClient uses a caller-owned authenticated connection when supplied.
+// Each operation still gets its own bounded session and drains both streams.
+func (c sshCreds) runInputOnClient(ctx context.Context, timeout time.Duration, cli *ssh.Client, cmd safeCmd, r io.Reader) ([]byte, error) {
 	command, err := cmd.render()
 	if err != nil {
 		return nil, err
@@ -443,11 +462,13 @@ func (c sshCreds) runInput(ctx context.Context, timeout time.Duration, cmd safeC
 	if execHook != nil {
 		return execHook(ctx, c.host, c.port, command, r)
 	}
-	cli, err := c.dial(ctx)
-	if err != nil {
-		return nil, err
+	if cli == nil {
+		cli, err = c.dial(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = cli.Close() }()
 	}
-	defer func() { _ = cli.Close() }()
 
 	sess, err := cli.NewSession()
 	if err != nil {

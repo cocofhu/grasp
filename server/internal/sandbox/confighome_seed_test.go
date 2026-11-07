@@ -81,7 +81,7 @@ func TestManagerCreateSSHFallbackWhenNoInject(t *testing.T) {
 			}
 			return nil, context.DeadlineExceeded
 		}
-		if strings.Contains(command, "tar") && strings.Contains(command, "-C") && strings.Contains(command, "-xf") {
+		if strings.Contains(command, "tar") && strings.Contains(command, "'/root/.cursor'") && strings.Contains(command, "-xf") {
 			extractCmd = command
 			if stdin != nil {
 				extractTar, _ = io.ReadAll(stdin)
