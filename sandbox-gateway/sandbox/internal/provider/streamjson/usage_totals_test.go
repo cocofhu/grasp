@@ -2,6 +2,7 @@ package streamjson
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -59,6 +60,36 @@ func TestTerminalUsageTotalsReplaceStreamedSamples(t *testing.T) {
 				if !reflect.DeepEqual(session.CumulativeUsage(), cumulative) {
 					t.Fatalf("turn-local totals leaked across turns: got=%+v want=%+v", session.CumulativeUsage(), cumulative)
 				}
+			}
+		})
+	}
+}
+
+func TestCodeBuddyReconcilesStreamedUsageAndModelBreakdown(t *testing.T) {
+	c := &codec{c: Config{AgentName: provider.CodeBuddy}}
+	for _, test := range []struct {
+		name     string
+		line     string
+		want     map[string]provider.TokenUsage
+		partial  bool
+		observed int
+	}{
+		{"lagging model breakdown", `{"type":"result","subtype":"success","usage":{"input_tokens":896,"output_tokens":224,"cache_read_input_tokens":168},"modelUsage":{"custom-local:gpt-5":{"inputTokens":624,"outputTokens":192,"cacheReadInputTokens":144}}}`, map[string]provider.TokenUsage{"custom-local:gpt-5": {InputTokens: 624, OutputTokens: 192, CacheReadTokens: 144}, "default": {InputTokens: 104, OutputTokens: 32, CacheReadTokens: 24}}, true, 7},
+		{"complete model breakdown", `{"type":"result","subtype":"success","usage":{"input_tokens":128,"output_tokens":32,"cache_read_input_tokens":24},"modelUsage":{"custom-local:gpt-5":{"inputTokens":104,"outputTokens":32,"cacheReadInputTokens":24}}}`, map[string]provider.TokenUsage{"custom-local:gpt-5": {InputTokens: 104, OutputTokens: 32, CacheReadTokens: 24}}, false, 1},
+		{"resumed flat total cannot include earlier turns", `{"type":"result","subtype":"success","usage":{"input_tokens":896,"output_tokens":224,"cache_read_input_tokens":168},"modelUsage":{"custom-local:gpt-5":{"inputTokens":104,"outputTokens":32,"cacheReadInputTokens":24}}}`, map[string]provider.TokenUsage{"custom-local:gpt-5": {InputTokens: 104, OutputTokens: 32, CacheReadTokens: 24}}, false, 1},
+		{"flat total without model breakdown", `{"type":"result","subtype":"success","usage":{"input_tokens":128,"output_tokens":32,"cache_read_input_tokens":24}}`, map[string]provider.TokenUsage{"default": {InputTokens: 104, OutputTokens: 32, CacheReadTokens: 24}}, false, 0},
+		{"interrupted assistant sample", `{"type":"assistant","message":{"model":"gpt-5","content":[],"usage":{"input_tokens":128,"output_tokens":32,"cache_read_input_tokens":24}}}`, map[string]provider.TokenUsage{"gpt-5": {InputTokens: 104, OutputTokens: 32, CacheReadTokens: 24}}, true, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			parser := c.NewTurnParser(provider.OpenOptions{})
+			for i := range test.observed {
+				line := []byte(fmt.Sprintf(`{"type":"assistant","message":{"id":"m-%d","model":"gpt-5","content":[],"usage":{"input_tokens":128,"output_tokens":32,"cache_read_input_tokens":24}}}`, i))
+				parser.ParseLine(line)
+				parser.ParseLine(line) // replayed message IDs must not raise the floor
+			}
+			got := parser.ParseLine([]byte(test.line))
+			if !reflect.DeepEqual(got.Usage, test.want) || got.UsagePartial != test.partial {
+				t.Fatalf("usage=%+v partial=%v want=%+v partial=%v", got.Usage, got.UsagePartial, test.want, test.partial)
 			}
 		})
 	}
