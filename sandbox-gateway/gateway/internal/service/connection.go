@@ -13,11 +13,13 @@ func (s *SandboxService) ConnectionTarget(ctx context.Context, id string, port i
 	if _, err := s.store.Get(ctx, id); err != nil {
 		return "", err
 	}
-	handle, err := s.drv.Get(ctx, id)
+	// Get may reconcile provider resources (including Kubernetes Service ports).
+	// Opening a channel must preserve ports published after sandbox creation.
+	status, err := s.drv.Status(ctx, id)
 	if err != nil {
 		return "", err
 	}
-	if handle.Status != driver.StatusRunning {
+	if status != driver.StatusRunning {
 		return "", fmt.Errorf("sandbox is not running")
 	}
 	eps, err := s.drv.Endpoints(ctx, id)

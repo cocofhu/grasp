@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Kubernetes gateway connections preserve ports published after sandbox creation, so opening a preview channel no longer removes its Service port.
+
 - Grasp can route Docker, Kubernetes and E2B sandbox connections through an authenticated gateway, keeping chat, SSH/files, terminal, IDE and browser access on the existing Grasp entry points. Named gateways retain existing sandbox bindings when the default changes; optional environment profiles resolve provider images in the gateway. Legacy direct mode remains the default.
 
 - Solo 和工作流聊天切换工具或模型组时沿用现有沙箱，不再补克隆仓库或重写 Git/SSH 配置；仓库缺失或网络不可用不再阻断切换，失败回滚也保留工作区。
