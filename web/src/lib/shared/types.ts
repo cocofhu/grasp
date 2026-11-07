@@ -863,6 +863,8 @@ export interface ArtifactTree {
 }
 
 export interface ClarifyImage {
+  /** Composer-only: never send while a local file is still being read. */
+  readState?: 'reading'
   /** Base64 (no data: prefix) on upload; omitted after blob externalization. */
   data?: string
   /** blob:{id} reference after server-side externalization. */

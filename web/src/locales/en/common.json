@@ -1,5 +1,22 @@
 {
   "common": {
+    "attachments": {
+      "image": "Image",
+      "audio": "Audio",
+      "video": "Video",
+      "file": "File",
+      "dropHere": "Drop to add attachments",
+      "noDirectories": "Folders are not supported. Select the files inside instead.",
+      "reading": "Reading attachments, please wait…",
+      "readFailed": "Could not read {name}. Add it again. You can still send other content.",
+      "preview": "Preview attachment: {name}",
+      "download": "Download file",
+      "unavailable": "This attachment is unavailable. Please try again later.",
+      "tooLarge": "This file is too large to preview. Download it to view.",
+      "previewFailed": "Preview failed or this browser does not support the format. Download the file to view.",
+      "unsupported": "Preview is not available for this file. Download it to view.",
+      "remove": "Remove attachment: {name}"
+    },
     "status": {
       "all": "All statuses",
       "running": "Running",

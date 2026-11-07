@@ -97,6 +97,14 @@ func TestSoloEmbedBindsToCurrentOwnedSandbox(t *testing.T) {
 	if w := hn.doEmbed(http.MethodGet, path+"/messages/history"+attachmentPath, nil, bearerHeader(token)); w.Code != http.StatusOK || w.Body.String() != "attached content" {
 		t.Fatalf("authorized attachment: %d %s", w.Code, w.Body)
 	}
+	rangeHeaders := bearerHeader(token)
+	rangeHeaders["Range"] = "bytes=0-7"
+	if w := hn.doEmbed(http.MethodGet, path+"/messages/history"+attachmentPath, nil, rangeHeaders); w.Code != http.StatusPartialContent || w.Body.String() != "attached" {
+		t.Fatalf("authorized attachment range: %d %s", w.Code, w.Body)
+	}
+	if w := hn.doEmbed(http.MethodGet, path+"/messages/unrelated-history"+attachmentPath, nil, rangeHeaders); w.Code != http.StatusNotFound {
+		t.Fatalf("unrelated attachment range: %d", w.Code)
+	}
 	if w := hn.doEmbed(http.MethodGet, path+"/messages/unrelated-history"+attachmentPath, nil, bearerHeader(token)); w.Code != http.StatusNotFound {
 		t.Fatalf("unrelated attachment: %d", w.Code)
 	}

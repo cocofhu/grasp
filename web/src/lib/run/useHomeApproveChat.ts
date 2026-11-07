@@ -623,6 +623,8 @@ export function useHomeApproveChat() {
     attachments: attach.attachments,
     fileInput: attach.fileInput,
     attachNotice: attach.notice,
+    addFiles: attach.addFiles,
+    blockSendIfOversized: attach.blockSendIfOversized,
     onPickFiles: attach.onPickFiles,
     onPaste: attach.onPaste,
     removeAttachment: attach.removeAttachment,

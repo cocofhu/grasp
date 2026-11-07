@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
@@ -63,7 +64,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 </script>
 
 <template>
-  <div>
+  <AttachmentDropZone :disabled="disabled" @files="attach.addFiles">
     <p v-if="attach.notice.value" class="mb-2 text-[12px]" :class="attach.notice.value.kind === 'error' ? 'text-err' : 'text-ok'" role="status">
       {{ attach.notice.value.text }}
     </p>
@@ -142,5 +143,5 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
         </template>
       </ComposerShell>
     </div>
-  </div>
+  </AttachmentDropZone>
 </template>

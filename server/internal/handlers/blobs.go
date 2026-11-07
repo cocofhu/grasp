@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
 
@@ -18,6 +20,14 @@ import (
 // browsers can decode mislabeled history blobs. Storage bytes/meta are not rewritten.
 func (h *Handlers) GetBlob(c *gin.Context) {
 	h.serveBlob(c, c.Param("id"))
+}
+
+// Do not depend on the host's MIME database: some systems label .webm audio/webm.
+var attachmentMediaTypes = map[string]string{
+	".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".oga": "audio/ogg",
+	".m4a": "audio/mp4", ".aac": "audio/aac", ".flac": "audio/flac", ".opus": "audio/ogg",
+	".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".ogv": "video/ogg",
+	".mov": "video/quicktime", ".avi": "video/x-msvideo", ".mkv": "video/x-matroska",
 }
 
 func (h *Handlers) serveBlob(c *gin.Context, id string) {
@@ -37,6 +47,15 @@ func (h *Handlers) serveBlob(c *gin.Context, id string) {
 		return
 	}
 	defer func() { _ = rc.Close() }()
+	writeAttachmentContent(c, rc, meta)
+}
+
+// Called only after the route has checked its existing workspace/share scope.
+// Seekable stores stream byte ranges directly so media controls can seek.
+func writeAttachmentContent(c *gin.Context, rc io.Reader, meta blob.Meta) {
+	// Generic downloads may contain active documents; opening their URL must not run scripts.
+	c.Header("Content-Security-Policy", "sandbox; default-src 'none'")
+	c.Header("X-Content-Type-Options", "nosniff")
 
 	header := make([]byte, 512)
 	n, readErr := io.ReadFull(rc, header)
@@ -46,16 +65,29 @@ func (h *Handlers) serveBlob(c *gin.Context, id string) {
 	}
 	header = header[:n]
 
-	mime := blob.StripContentTypeParams(meta.MimeType)
+	mediaType := blob.StripContentTypeParams(meta.MimeType)
 	if sniffed := blob.SniffSupportedImageMIME(header); sniffed != "" {
-		mime = sniffed
+		mediaType = sniffed
 	}
-	if mime == "" {
-		mime = "application/octet-stream"
+	if mediaType == "" || mediaType == "application/octet-stream" {
+		if inferred := attachmentMediaTypes[strings.ToLower(filepath.Ext(meta.Name))]; inferred != "" {
+			mediaType = inferred
+		}
 	}
-	c.Header("Content-Type", mime)
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	c.Header("Content-Type", mediaType)
 	if name := strings.TrimSpace(meta.Name); name != "" {
-		c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%q", filepath.Base(name)))
+		c.Header("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": filepath.Base(name)}))
+	}
+	if seeker, ok := rc.(io.ReadSeeker); ok {
+		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "blob seek failed"})
+			return
+		}
+		http.ServeContent(c.Writer, c.Request, meta.Name, time.Time{}, seeker)
+		return
 	}
 	if meta.Size > 0 {
 		c.Header("Content-Length", fmt.Sprintf("%d", meta.Size))

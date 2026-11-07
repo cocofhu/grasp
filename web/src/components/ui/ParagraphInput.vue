@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
+import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
@@ -35,7 +38,7 @@ const { t } = useI18n()
 const text = defineModel<string>('text', { default: '' })
 const images = defineModel<ClarifyImage[]>('images', { default: () => [] })
 
-const { attachments, fileInput, notice, onPickFiles, onPaste, removeAttachment } = useImageAttachments()
+const { attachments, fileInput, notice, addFiles, onPickFiles, onPaste, removeAttachment } = useImageAttachments()
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -107,7 +110,7 @@ defineExpose({ pickFiles, textarea: textareaRef })
 </script>
 
 <template>
-  <div data-testid="paragraph-input-root" :data-text-only="textOnly ? '1' : '0'">
+  <AttachmentDropZone data-testid="paragraph-input-root" :data-text-only="textOnly ? '1' : '0'" :disabled="disabled || textOnly" @files="addFiles">
     <div
       v-if="!textOnly && notice?.kind === 'error'"
       class="mb-2 rounded-lg border border-err/40 bg-err/10 px-2.5 py-1.5 text-[12px] text-err"
@@ -119,7 +122,7 @@ defineExpose({ pickFiles, textarea: textareaRef })
     <div v-if="!textOnly && attachments.length" class="mb-2 flex flex-wrap gap-1.5">
       <div v-for="(im, ii) in attachments" :key="ii" class="relative">
         <ChatImageThumb
-          v-if="isImageAttachment(im)"
+          v-if="isImageAttachment(im) && im.readState !== 'reading'"
           mode="previewable"
           size="sm"
           thumb-class="rounded-md"
@@ -129,20 +132,14 @@ defineExpose({ pickFiles, textarea: textareaRef })
           test-id="paragraph-draft-image-thumb"
           @preview="openChatImagePreview(imgSrc(im), attachmentDisplayName(im, ii))"
         />
-        <div
-          v-else
-          class="flex h-14 max-w-[160px] items-center gap-1.5 rounded-md border border-line bg-elevated px-2"
-          data-testid="paragraph-pending-file-chip"
-          :title="attachmentDisplayName(im, ii)"
-        >
-          <span class="shrink-0 text-[9px] font-medium uppercase text-info">DOC</span>
-          <span class="min-w-0 truncate text-[11px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
-        </div>
+        <ChatFileAttachment v-else :attachment="im" compact data-testid="paragraph-pending-file-chip" />
+        <ChatAttachmentDetails v-if="isImageAttachment(im) && im.readState !== 'reading'" :attachment="im" :index="ii" />
         <button
           type="button"
           class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full pending-attach-remove"
           :disabled="disabled"
           @click.stop="removeAttachment(ii)"
+          :aria-label="t('common.attachments.remove', { name: attachmentDisplayName(im, ii) })"
         >
           <Icon name="close" :size="9" />
         </button>
@@ -187,7 +184,7 @@ defineExpose({ pickFiles, textarea: textareaRef })
       test-id-prefix="paragraph-image-preview"
       @close="closeChatImagePreview"
     />
-  </div>
+  </AttachmentDropZone>
 </template>
 
 <style scoped>

@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import ChatImagePreviewBody from '@/components/ui/ChatImagePreviewBody.vue'
+import Icon from '@/components/ui/Icon.vue'
+import { attachmentDownloadUrl } from '@/lib/shared/attachments'
 import {
   embedImageChannelName,
   parseEmbedImageFrameMessage,
@@ -12,6 +15,7 @@ import { applyPublicLocale, LOCALE_STORAGE_KEY, setLocale, type AppLocale } from
 import { setThemeOverride } from '@/lib/shared/theme'
 
 const route = useRoute()
+const { t } = useI18n()
 const runId = String(route.params.runId || '')
 const nodeId = String(route.params.nodeId || '')
 
@@ -114,7 +118,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-screen min-h-0 flex-col bg-base text-txt" data-testid="embed-image-root">
+  <div class="relative flex h-screen min-h-0 flex-col bg-base text-txt" data-testid="embed-image-root">
     <ChatImagePreviewBody
       v-if="shown && src"
       class="min-h-0 flex-1"
@@ -125,5 +129,8 @@ onUnmounted(() => {
       fit="frame"
       @missing="onBlobMissing"
     />
+    <a v-if="shown && attachmentDownloadUrl(src)" :href="attachmentDownloadUrl(src)" :download="label || 'image'" class="absolute bottom-3 right-3 inline-flex min-h-9 items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-txt hover:border-accent" data-testid="embed-image-download">
+      <Icon name="download" :size="16" />{{ t('common.attachments.download') }}
+    </a>
   </div>
 </template>

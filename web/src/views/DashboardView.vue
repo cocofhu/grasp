@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
+import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -75,6 +78,8 @@ const {
   attachments,
   fileInput,
   attachNotice,
+  blockSendIfOversized,
+  addFiles,
   onPickFiles,
   onPaste,
   removeAttachment,
@@ -125,6 +130,7 @@ const typingTick = ref(0)
 const cheerTick = ref(0)
 
 async function submitComposer() {
+  if (blockSendIfOversized()) return
   if (composerCanSend.value && !composerBusy.value) cheerTick.value++
   if (homeMode.value !== 'solo') {
     await send(mention.refs.value)
@@ -762,7 +768,7 @@ onBeforeUnmount(() => {
         <p class="home-hero-copy" data-testid="home-hero-copy">{{ heroCopy }}</p>
       </div>
 
-      <div class="home-composer-wrap w-full">
+      <AttachmentDropZone class="home-composer-wrap w-full" :disabled="composerBusy" @files="addFiles">
         <div class="mb-3 flex justify-center">
           <HomeModeSwitch v-model="homeMode" />
         </div>
@@ -789,7 +795,7 @@ onBeforeUnmount(() => {
         >
           <div v-for="(im, ii) in attachments" :key="ii" class="relative">
             <ChatImageThumb
-              v-if="isImageAttachment(im)"
+              v-if="isImageAttachment(im) && im.readState !== 'reading'"
               mode="previewable"
               size="sm"
               thumb-class="rounded"
@@ -799,22 +805,14 @@ onBeforeUnmount(() => {
               test-id="home-draft-image-thumb"
               @preview="openChatImagePreview(imgSrc(im), attachmentDisplayName(im, ii))"
             />
-            <div
-              v-else
-              class="flex h-9 max-w-[160px] items-center gap-1.5 rounded border border-line bg-elevated px-2.5"
-              :title="attachmentDisplayName(im, ii)"
-              data-testid="home-pending-file-chip"
-            >
-              <span class="shrink-0 text-[9px] font-semibold uppercase text-info">DOC</span>
-              <span class="min-w-0 truncate text-[11px] text-txt2">{{
-                attachmentDisplayName(im, ii)
-              }}</span>
-            </div>
+            <ChatFileAttachment v-else :attachment="im" compact data-testid="home-pending-file-chip" />
+            <ChatAttachmentDetails v-if="isImageAttachment(im) && im.readState !== 'reading'" :attachment="im" :index="ii" />
             <button
               type="button"
               class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded pending-attach-remove"
               data-testid="home-attach-remove"
               @click.stop="removeAttachment(ii)"
+              :aria-label="t('common.attachments.remove', { name: attachmentDisplayName(im, ii) })"
             >
               <Icon name="close" :size="9" />
             </button>
@@ -979,7 +977,7 @@ onBeforeUnmount(() => {
           </div>
         </form>
         </div>
-      </div>
+      </AttachmentDropZone>
 
       <Transition name="home-mode-tail" mode="out-in">
         <HomeSoloPanel

@@ -153,6 +153,32 @@ func TestSanitizeTurnsAndCatalogAlignForBothSendDirections(t *testing.T) {
 	}
 }
 
+func TestSanitizeMediaKeepsOpaqueIndexesAndMetadata(t *testing.T) {
+	images := []models.PromptImage{
+		{Ref: "blob:image111", MimeType: "image/png", Name: "shot.png", SizeBytes: 123},
+		{Ref: "blob:audio222", MimeType: "audio/mpeg", Name: "voice.mp3", SizeBytes: 456},
+		{Ref: "blob:video333", MimeType: "video/mp4", Name: "demo.mp4", SizeBytes: 789},
+		{Data: "c2VjcmV0", MimeType: "application/pdf", Name: "spec.pdf", SizeBytes: 6},
+	}
+	messages := []models.ReactMessage{{Role: "human", Images: images}}
+	turns, next := SanitizeTurnsFrom(messages, 0)
+	catalog := DialogueImageCatalog(messages, nil, nil)
+	if len(turns) != 1 || len(turns[0].Images) != len(images) || next != len(images) || len(catalog) != len(images) {
+		t.Fatalf("media stripped or indexes changed: %+v", turns)
+	}
+	for index, image := range turns[0].Images {
+		if image.Index != index || image.MimeType != images[index].MimeType || image.Name != images[index].Name || image.SizeBytes != images[index].SizeBytes {
+			t.Fatalf("media metadata: %+v", image)
+		}
+	}
+	raw, _ := json.Marshal(turns)
+	for _, secret := range []string{"blob:", "image111", "audio222", "video333", "c2VjcmV0", "/api/blobs"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("media metadata leaked %s", secret)
+		}
+	}
+}
+
 func TestSanitizeTurnsDropsIdentityAndCaps(t *testing.T) {
 	msgs := []models.ReactMessage{
 		{Role: "agent", Text: "请审阅 page.html，勿访问 http://10.1.2.3/api/runs/abc", At: "2026-08-01T00:00:00Z"},

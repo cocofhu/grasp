@@ -1161,7 +1161,7 @@ describe('useClarifyChat actions', () => {
     chat.addFiles([plain] as unknown as FileList)
     expect(chat.attachNotice.value).toBeNull()
     expect(models.attachments.value).toEqual([
-      { data: 'YWJj', mimeType: 'application/octet-stream', name: 'note' },
+      { data: 'YWJj', mimeType: 'application/octet-stream', name: 'note', sizeBytes: 3 },
     ])
     app.unmount()
   })

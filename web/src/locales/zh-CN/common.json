@@ -1,5 +1,22 @@
 {
   "common": {
+    "attachments": {
+      "image": "图片",
+      "audio": "音频",
+      "video": "视频",
+      "file": "文件",
+      "dropHere": "松开以添加附件",
+      "noDirectories": "暂不支持添加文件夹，请选择其中的文件。",
+      "reading": "正在读取附件，请稍候…",
+      "readFailed": "无法读取 {name}，请重新添加。其他内容仍可发送。",
+      "preview": "预览附件：{name}",
+      "download": "下载文件",
+      "unavailable": "附件暂不可用，请稍后重试。",
+      "tooLarge": "文件过大，无法在线预览，请下载后查看。",
+      "previewFailed": "预览失败或浏览器不支持此格式，请下载后查看。",
+      "unsupported": "此文件暂不支持在线预览，请下载后查看。",
+      "remove": "移除附件：{name}"
+    },
     "status": {
       "all": "全部状态",
       "running": "运行中",

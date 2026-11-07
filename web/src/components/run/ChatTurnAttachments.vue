@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 /**
  * History attachments on a conversation turn: image thumbs and filename chips.
  * ClarifyChat and the run LLM transcript both render them through this one
@@ -37,7 +38,7 @@ function labelOf(index: number): string {
     <template v-if="role === 'human'">
       <template v-for="(im, ii) in images" :key="ii">
         <ChatImageThumb
-          v-if="isImageAttachment(im)"
+          v-if="isImageAttachment(im) && im.readState !== 'reading'"
           mode="previewable"
           size="md"
           fit="contain"
@@ -47,21 +48,13 @@ function labelOf(index: number): string {
           test-id="clarify-history-image-thumb"
           @preview="emit('preview', ii)"
         />
-        <div
-          v-else
-          class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
-          data-testid="clarify-history-file-chip"
-          :title="labelOf(ii)"
-        >
-          <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-          <span class="min-w-0 truncate text-[12px] text-txt">{{ labelOf(ii) }}</span>
-        </div>
+        <ChatFileAttachment v-else :attachment="im" :label="labelOf(ii)" data-testid="clarify-history-file-chip" />
       </template>
     </template>
     <template v-else>
       <template v-for="(im, ii) in images" :key="ii">
         <ChatImageThumb
-          v-if="isImageAttachment(im)"
+          v-if="isImageAttachment(im) && im.readState !== 'reading'"
           mode="locked"
           size="md"
           thumb-class="rounded-md"
@@ -69,14 +62,7 @@ function labelOf(index: number): string {
           :label="labelOf(ii)"
           test-id="clarify-agent-image-thumb"
         />
-        <div
-          v-else
-          class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
-          data-testid="clarify-agent-file-chip"
-        >
-          <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-          <span class="min-w-0 truncate text-[12px] text-txt">{{ labelOf(ii) }}</span>
-        </div>
+        <ChatFileAttachment v-else :attachment="im" :label="labelOf(ii)" data-testid="clarify-agent-file-chip" />
       </template>
     </template>
   </div>

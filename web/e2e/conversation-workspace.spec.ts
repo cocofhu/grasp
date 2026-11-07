@@ -4,6 +4,7 @@ import type { PreviewChatQueueItem, PreviewChatRow } from '../src/lib/inbox/appP
 import type { Locator } from '@playwright/test'
 import { routeApi } from './helpers/apiRoute'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
+import { dropTextFile, waveFixture } from './helpers/attachmentFiles'
 import { createDialogueServer } from './helpers/dialogueServer'
 
 test('mobile workflow links reopen chat after refresh and preserve drafts when resizing', async ({ page }) => {
@@ -239,6 +240,10 @@ test('a direct Solo preview streams the reply to a message with a picked element
   await expect(drawer.getByTestId('solo-plus')).toBeVisible()
   await expectChatComposerInsets(drawer, 'solo-input')
   await drawer.getByTestId('solo-input').fill('Update this heading')
+  await dropTextFile(drawer.getByTestId('solo-input'), 'solo-notes.txt', 'Solo notes')
+  await expect(drawer.getByRole('button', { name: '预览附件：solo-notes.txt' })).toBeVisible()
+  await drawer.getByRole('button', { name: '移除附件：solo-notes.txt' }).click()
+  await expect(drawer.getByRole('button', { name: '预览附件：solo-notes.txt' })).toHaveCount(0)
   await drawer.getByTestId('solo-plus').click()
   await drawer.getByTestId('solo-plus-pick').click()
   await expect(toolbar.locator('[data-role="drawer"]')).toBeHidden()
@@ -405,7 +410,8 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       return route.fulfill({ json: { lane: 'github', items: [previewIssue] } })
     })
     const mainRows: PreviewChatRow[] = [{ id: 'main-history', role: 'user', text: 'Original main conversation' },
-      { id: 'main-image', role: 'user', text: 'Shared screenshot', images: [{ mimeType: 'image/png', name: 'Shared.png' }] }]
+      { id: 'main-image', role: 'user', text: 'Shared screenshot', images: [{ mimeType: 'image/png', name: 'Shared.png' }] },
+      { id: 'main-audio', role: 'user', text: 'Shared recording', images: [{ mimeType: 'audio/wav', name: 'voice.wav', sizeBytes: waveFixture().length }] }]
     let mainQueue: PreviewChatQueueItem[] = [{ id: 'queued-first', text: 'First waiting message', images: [{ mimeType: 'image/png' }] },
       { id: 'queued-second', text: 'Second waiting message' }]
     const queueSent = new WeakMap<WebSocketRoute, string>()
@@ -456,6 +462,14 @@ test('anonymous shares open the direct app and use its floating chat in both mod
       mainQueue = []
       publishMain()
       return route.fulfill({ json: { ok: true } })
+    })
+    await anonymous.route(url + '/images/main-audio/0', route => {
+      expect(route.request().headers()['x-gate-share-token']).toBe(mainSession)
+      return route.fulfill({ contentType: 'audio/wav', body: waveFixture() })
+    })
+    await anonymous.route(url + '/images/main-new/0', route => {
+      expect(route.request().headers()['x-gate-share-token']).toBe(mainSession)
+      return route.fulfill({ contentType: 'text/plain', body: 'Main notes' })
     })
     await anonymous.routeWebSocket('**/public/approvals/app/main-events', ws => {
       mainSockets.set(ws, undefined)
@@ -586,6 +600,13 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await picture.locator('body').press('Escape')
     await expect(imageModal).toBeHidden()
     await expect(mainToolbar.locator('[data-role="drawer"]')).toBeVisible()
+    await mainDrawer.getByRole('button', { name: '预览附件：voice.wav' }).click()
+    const audio = mainDrawer.locator('audio[data-testid="attachment-media-player"]')
+    await expect.poll(() => audio.evaluate((el: HTMLMediaElement) => el.readyState)).toBeGreaterThanOrEqual(1)
+    await expect(audio.locator('source')).toHaveAttribute('src', /^blob:/)
+    await expect(mainDrawer.getByTestId('attachment-download')).toHaveAttribute('download', 'voice.wav')
+    await mainDrawer.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+    await expect(mainDrawer.getByRole('dialog', { includeHidden: true })).toHaveCount(0)
     await main.setViewportSize({ width: 390, height: 820 })
     await choosePreviewModel(mainDrawer, 'model-b', 'Model B')
     await expect.poll(() => modelWrites).toEqual(['main:model-b'])
@@ -609,7 +630,7 @@ test('anonymous shares open the direct app and use its floating chat in both mod
     await mainDrawer.getByTestId('shared-app-chat-plus').click()
     await expect(mainDrawer.getByTestId('shared-app-chat-plus-upload')).toBeVisible()
     await expect(mainDrawer.getByTestId('shared-app-chat-plus-session')).toHaveCount(0)
-    await mainDrawer.locator('input[type="file"]').setInputFiles({ name: 'main-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Main notes') })
+    await dropTextFile(mainInput, 'main-notes.txt', 'Main notes')
     await expect(mainDrawer.getByText('main-notes.txt')).toBeVisible()
     await mainDrawer.getByTestId('shared-app-chat-send').click()
     await expect(mainDrawer.getByText('A message for the main conversation')).toBeVisible()
