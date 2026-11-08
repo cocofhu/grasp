@@ -1718,6 +1718,26 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 	}
 }
 
+// recordPreparationFailure leaves a reply even when the CLI never starts. The
+// transcript renders failures on assistant rows, including after a reload.
+func (c *soloChat) recordPreparationFailure(ctx context.Context, turnID string, started time.Time, err error) {
+	status := "failed"
+	if ctx.Err() != nil {
+		status = "stopped"
+	}
+	errText := truncErr(err)
+	c.svc.db.Model(&models.SoloMessage{}).Where("id = ?", turnID).
+		Updates(map[string]any{"status": status, "error": errText})
+	reply := models.SoloMessage{
+		ID: "reply:" + turnID, TurnID: turnID, SessionID: c.id, Role: "assistant",
+		Status: status, Error: errText, DurationMs: time.Since(started).Milliseconds(),
+	}
+	if perr := c.svc.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"status", "error", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
+		log.Warn().Err(perr).Str("session", c.id).Msg("solo preparation failure persist failed")
+	}
+}
+
 func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	s := c.svc
 	started := time.Now()
@@ -1741,20 +1761,14 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		err = ctx.Err()
 	}
 	if err != nil {
-		status := "failed"
-		if ctx.Err() != nil {
-			status = "stopped"
-		}
-		s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).
-			Updates(map[string]any{"status": status, "error": truncErr(err)})
+		c.recordPreparationFailure(ctx, q.ID, started, err)
 		return false, err
 	}
 	// Read again so a switch made while the sandbox was booting, or while an
 	// earlier turn was still generating, is the one this turn applies.
 	row, err := s.load(c.id)
 	if err != nil {
-		s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).
-			Updates(map[string]any{"status": "failed", "error": truncErr(err)})
+		c.recordPreparationFailure(ctx, q.ID, started, err)
 		return false, err
 	}
 	c.mu.Lock()
@@ -1765,7 +1779,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	noticeBefore := strings.TrimSpace(row.ModelNotice)
 	switched, alignErr := s.alignSessionModel(ctx, c, sandboxID, row)
 	if alignErr != nil {
-		s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Updates(map[string]any{"status": "failed", "error": truncErr(alignErr)})
+		c.recordPreparationFailure(ctx, q.ID, started, alignErr)
 		return ctx.Err() != nil, alignErr
 	}
 	execution := s.turnExecutionSnapshot(row, sandboxID, started)

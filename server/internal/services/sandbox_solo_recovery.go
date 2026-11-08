@@ -157,11 +157,14 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	return s.recordSoloRecovered(row, sb)
 }
 
-// RecoverSoloSandboxes retries only the residents not yet ready. Run once
-// before restoring queues, then periodically; failures never turn into TTLs.
+// RecoverSoloSandboxes retries residents whose recovery was deferred. Active
+// creation owns creating/pulling rows and has not necessarily adopted a gateway
+// id yet. Startup reconciliation marks interrupted creation for recovery.
+// Run once before restoring queues, then periodically; failures never become TTLs.
 func (s *SandboxService) RecoverSoloSandboxes(ctx context.Context) {
 	var rows []models.Sandbox
-	if err := s.db.Where("purpose = ? AND status <> ?", SandboxPurposeSolo, "running").Find(&rows).Error; err != nil {
+	if err := s.db.Where("purpose = ? AND status NOT IN ?", SandboxPurposeSolo,
+		[]string{"running", "creating", "pulling"}).Find(&rows).Error; err != nil {
 		return
 	}
 	var wg sync.WaitGroup
