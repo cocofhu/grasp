@@ -58,7 +58,13 @@ func (w *s3Wire) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 			return
 		}
 		_, _ = io.WriteString(response, "<ListBucketResult><IsTruncated>false</IsTruncated>")
-		for key, object := range w.objects {
+		keys := make([]string, 0, len(w.objects))
+		for key := range w.objects {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			object := w.objects[key]
 			if strings.HasPrefix(strings.TrimPrefix(key, "/bucket/"), query.Get("prefix")) {
 				_, _ = fmt.Fprintf(response, "<Contents><Key>%s</Key><Size>%d</Size></Contents>", strings.TrimPrefix(key, "/bucket/"), len(object.body))
 			}

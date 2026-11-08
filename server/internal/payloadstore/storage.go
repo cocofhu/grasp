@@ -130,27 +130,18 @@ func Open(ctx context.Context, db *gorm.DB, cfg *config.Config) (*Storage, error
 	switch location.Driver {
 	case "local":
 	case "s3":
-		options := cfg.Storage.S3
-		if options.PathStyle == nil && cfg.Storage.Driver == "cos" {
-			pathStyle := false
-			options.PathStyle = &pathStyle
-		}
-		objects, createErr := objectstore.NewS3(options)
-		if createErr != nil {
-			return nil, createErr
-		}
-		probe, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err = objects.Probe(probe)
-		cancel()
+		result.Objects, err = OpenObjects(ctx, cfg.Storage)
 		if err != nil {
 			return nil, err
 		}
-		result.Objects = objects
 	default:
 		return nil, errors.New("unsupported payload storage driver")
 	}
 	if err = bindLocation(db, location); err != nil {
 		return nil, err
+	}
+	if result.Objects != nil {
+		result.Objects = objectstore.FencePublications(result.Objects)
 	}
 	if err = files.SetObjectStore(result.Objects); err != nil {
 		return nil, err
@@ -160,4 +151,39 @@ func Open(ctx context.Context, db *gorm.DB, cfg *config.Config) (*Storage, error
 		return nil, err
 	}
 	return result, nil
+}
+
+// Close stops all file/attachment publications before runtime unregistration.
+// Read-only handles remain valid; no source objects are removed.
+func (s *Storage) Close() {
+	s.Files.Close()
+	if local, ok := s.Blobs.(*blob.LocalFS); ok {
+		local.Close()
+	}
+	if publications, ok := s.Objects.(*objectstore.Publications); ok {
+		publications.Close()
+	}
+}
+
+// OpenObjects validates a destination without changing its SQL location.
+func OpenObjects(ctx context.Context, cfg config.StorageConfig) (objectstore.Store, error) {
+	driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
+	if driver != "s3" && driver != "cos" {
+		return nil, errors.New("replica destination must use s3 or cos")
+	}
+	options := cfg.S3
+	if options.PathStyle == nil && driver == "cos" {
+		pathStyle := false
+		options.PathStyle = &pathStyle
+	}
+	objects, err := objectstore.NewS3(options)
+	if err != nil {
+		return nil, err
+	}
+	probe, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err = objects.Probe(probe); err != nil {
+		return nil, err
+	}
+	return objects, nil
 }

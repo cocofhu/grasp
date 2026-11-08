@@ -8,7 +8,7 @@ import "time"
 type WorkflowLaunch struct {
 	Key         string `gorm:"primaryKey;size:64"`
 	Fingerprint string
-	RunID       string `gorm:"uniqueIndex"`
+	RunID       string `gorm:"size:191;uniqueIndex"`
 	Source      string
 	ActorID     string
 	SoloID      string `gorm:"index"`

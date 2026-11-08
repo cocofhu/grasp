@@ -125,15 +125,18 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 
-	db, err := database.OpenWithFiles(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
+	runtimeDB, err := database.OpenRuntime(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("open database failed")
 	}
-	defer func() { _ = database.Close(db) }()
+	db := runtimeDB.DB
+	defer func() { _ = runtimeDB.Close() }()
+	log.Info().Str("storage_runtime_id", runtimeDB.ID).Msg("database runtime registered")
 	storage, err := payloadstore.Open(context.Background(), db, cfg)
 	if err != nil {
 		log.Fatal().Err(err).Msg("persistent payload storage init failed")
 	}
+	defer storage.Close()
 	ledgerRecorder, err := tokenledger.Start(db, filepath.Join(cfg.Storage.BlobsRoot, "token-ledger"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("open token ledger journal failed")
@@ -725,6 +728,10 @@ func main() {
 	// failures for work the next process is about to resume.
 	log.Info().Msg("exit")
 	ledgerRecorder.Close()
+	storage.Close()
+	if err := runtimeDB.Close(); err != nil {
+		log.Error().Err(err).Msg("database shutdown incomplete; storage maintenance presence retained")
+	}
 	os.Exit(0)
 }
 

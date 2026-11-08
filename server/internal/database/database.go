@@ -224,6 +224,14 @@ func openSQLiteConn(path string) (*gorm.DB, error) {
 // concurrent writers, so the FSM goroutines each get their own pooled
 // connection instead of being serialized behind a single one.
 func openMySQL(dsn string) (*gorm.DB, error) {
+	db, err := connectMySQL(dsn)
+	if err != nil {
+		return nil, err
+	}
+	return finalize(db)
+}
+
+func connectMySQL(dsn string) (*gorm.DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, fmt.Errorf("mysql driver selected but database.dsn is empty")
 	}
@@ -241,7 +249,7 @@ func openMySQL(dsn string) (*gorm.DB, error) {
 	if err = filestore.Attach(db, "data/payloads"); err != nil {
 		return nil, err
 	}
-	return finalize(db)
+	return db, nil
 }
 
 func gormConfig() *gorm.Config {

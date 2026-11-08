@@ -15,6 +15,7 @@ import (
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/payloadstore"
 )
 
 func main() {
@@ -31,13 +32,19 @@ func run(path string) error {
 		return err
 	}
 	cfg := config.GetConfig()
-	db, err := database.OpenWithFiles(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
+	runtimeDB, err := database.OpenRuntime(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
 	if err != nil {
 		return err
 	}
-	defer func() { _ = database.Close(db) }()
+	db := runtimeDB.DB
+	defer func() { _ = runtimeDB.Close() }()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+	storage, err := payloadstore.Open(ctx, db, cfg)
+	if err != nil {
+		return err
+	}
+	defer storage.Close()
 	report, err := filestore.Migrate(ctx, db, models.AllModels()...)
 	if encodeErr := json.NewEncoder(os.Stdout).Encode(report); encodeErr != nil {
 		return encodeErr
