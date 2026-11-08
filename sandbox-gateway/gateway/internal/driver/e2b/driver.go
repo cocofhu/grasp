@@ -182,27 +182,45 @@ func New(opts Options) (*Driver, error) {
 		_ = t.CloseAll()
 		return nil, err
 	}
-	// Restore before serving API traffic. The exact loopback ports are part of
-	// persisted Grasp records; changing them would break running sessions.
-	for _, e := range d.entries {
-		if e.record.Phase != "running" {
-			continue
+	if err = d.restoreEndpoints(); err != nil {
+		_ = t.CloseAll()
+		if d.lockFile != nil {
+			_ = d.lockFile.Close()
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), opts.BootTimeout)
-		_, err = d.refresh(ctx, &e.record)
-		cancel()
-		if err != nil {
-			_ = t.CloseAll()
-			if d.lockFile != nil {
-				_ = d.lockFile.Close()
-			}
-			return nil, fmt.Errorf("restore E2B endpoints: %w", err)
-		}
+		return nil, fmt.Errorf("restore E2B endpoints: %w", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	d.cancel = cancel
 	go d.maintain(ctx)
 	return d, nil
+}
+
+func (d *Driver) restoreEndpoints() error {
+	// Reserve every running and paused guest's saved bindings before provider
+	// HTTP connections can take them from the host's ephemeral port range.
+	for _, e := range d.entries {
+		r := &e.record
+		if r.Phase != "running" && r.Phase != "paused" {
+			continue
+		}
+		for port, local := range r.Ports {
+			if _, _, err := d.tunnels.reserveMapped(r.Provider.ID, port, r.Targets[port], local); err != nil {
+				return err
+			}
+		}
+	}
+	for _, e := range d.entries {
+		if e.record.Phase != "running" {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), d.opts.BootTimeout)
+		_, err := d.refresh(ctx, &e.record)
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (*Driver) Name() string { return "e2b" }
@@ -605,7 +623,7 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 				return nil, err
 			}
 		}
-		_ = d.tunnels.Close(r.Provider.ID)
+		d.tunnels.Suspend(r.Provider.ID)
 		return handle(r, nil, driver.StatusStopped), nil
 	}
 	if r.Phase == "creating" {
@@ -737,7 +755,7 @@ func (d *Driver) Stop(ctx context.Context, id string) error {
 		}
 	}
 	e.record.Phase = "paused"
-	_ = d.tunnels.Close(e.record.Provider.ID)
+	d.tunnels.Suspend(e.record.Provider.ID)
 	return d.save(&e.record)
 }
 func (d *Driver) Start(ctx context.Context, id string) error {

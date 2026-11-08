@@ -48,9 +48,14 @@ module tests or coverage.
 
 ```bash
 # from repo root; downloads pinned actionlint v1.7.12 and shellcheck v0.11.0
+python3 .github/scripts/test-ci-tool-downloads.py
 ./.github/scripts/actionlint.sh
 ./.github/scripts/shellcheck-error.sh
 ```
+
+The download regression tests run offline. Pinned tool downloads retry network
+failures up to three times, extract only after a complete download, and remove
+temporary files on failure. Lint failures are never retried.
 
 `actionlint` checks every file under `.github/workflows`. `shellcheck-error.sh`
 runs shellcheck `--severity=error` on repo-root `*.sh`, `server/scripts`,

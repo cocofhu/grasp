@@ -31,6 +31,7 @@ type lifecycleProvider struct {
 	server                                                                                                                      *httptest.Server
 	sandboxes                                                                                                                   map[string]*sandboxWire
 	files                                                                                                                       map[string][]byte
+	relayKeys                                                                                                                   map[string]string
 	env                                                                                                                         map[string]string
 	command                                                                                                                     string
 	created, deleted, connected, paused, renewed                                                                                int
@@ -45,11 +46,12 @@ type lifecycleProvider struct {
 	resourceMismatch                                                                                                            bool
 	partialCreate                                                                                                               bool
 	logs                                                                                                                        string
+	beforeRequest                                                                                                               func(*http.Request)
 }
 
 func newLifecycleProvider(t *testing.T) *lifecycleProvider {
 	t.Helper()
-	f := &lifecycleProvider{sandboxes: map[string]*sandboxWire{}, files: map[string][]byte{}, ready: true, capacity: 32 << 30, healthSeen: make(chan struct{}, 1)}
+	f := &lifecycleProvider{sandboxes: map[string]*sandboxWire{}, files: map[string][]byte{}, relayKeys: map[string]string{}, ready: true, capacity: 32 << 30, healthSeen: make(chan struct{}, 1)}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.server.Close)
 	return f
@@ -58,6 +60,9 @@ func newLifecycleProvider(t *testing.T) *lifecycleProvider {
 func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.beforeRequest != nil {
+		f.beforeRequest(r)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if r.URL.Path == "/sandboxes" && r.Method == http.MethodPost {
 		var request struct {
@@ -192,6 +197,11 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		path := r.URL.Query().Get("path")
 		f.files[path] = data
+		if strings.HasSuffix(path, "/relay.json") || strings.HasSuffix(path, "-relay.json") {
+			var config struct{ Secret string }
+			_ = json.Unmarshal(data, &config)
+			f.relayKeys[s.ID] = config.Secret
+		}
 		_ = json.NewEncoder(w).Encode([]map[string]string{{"path": path, "type": "file"}})
 		return
 	}
@@ -228,17 +238,7 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(403)
 		return
 	}
-	key := ""
-	for path, data := range f.files {
-		if strings.HasSuffix(path, "/relay.json") || strings.HasSuffix(path, "-relay.json") {
-			var config struct {
-				Secret string `json:"secret"`
-			}
-			_ = json.Unmarshal(data, &config)
-			key = config.Secret
-		}
-	}
-	if r.Header.Get("X-Grasp-Relay-Key") != key {
+	if r.Header.Get("X-Grasp-Relay-Key") != f.relayKeys[s.ID] {
 		w.WriteHeader(403)
 		return
 	}

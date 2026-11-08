@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- E2B 暂停期间保留原有本地端口并关闭转发连接；网关重启先预留全部持久化端口，再连接 provider，避免自身 HTTP 请求抢占端口而导致恢复偶发失败。
+
 - Solo 首条消息等待沙箱启动时，定时恢复不再把创建或拉取镜像中的沙箱误判为恢复失败；启动或模型准备阶段的失败会保留为聊天中的可见回复，刷新后仍能查看。
 
 - Sandbox startup reuses one authenticated SSH connection to install helper files and permissions. The optional MCP proxy releases inherited SSH pipes when daemonizing and does nothing without host mappings. Runtime startup rejects empty-password SSH probes even when an imported template enables them, avoiding PAM delays before public-key authentication while retaining password fallback.

@@ -23,10 +23,12 @@ if [[ ! -x "$bin" ]]; then
       ;;
   esac
   tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
   url="https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_${os}_${arch}.tar.gz"
-  curl -fsSL "$url" | tar -xz -C "$tmp" actionlint
+  "${ROOT}/.github/scripts/retry-network.sh" curl -fsSL --connect-timeout 15 --max-time 60 \
+    "$url" -o "${tmp}/actionlint.tar.gz"
+  tar -xzf "${tmp}/actionlint.tar.gz" -C "$tmp" actionlint
   install -m 755 "${tmp}/actionlint" "$bin"
-  rm -rf "$tmp"
 fi
 
 "$bin"
