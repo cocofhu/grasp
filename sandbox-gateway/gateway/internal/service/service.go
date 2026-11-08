@@ -606,7 +606,9 @@ func (s *SandboxService) PublishPort(ctx context.Context, id string, port int) (
 	return addr, nil
 }
 
-// SweepOrphans destroys driver workloads that have no matching store record.
+// SweepOrphans reports driver workloads with no matching store record and
+// returns the number retained for reconciliation. Lost bookkeeping is not
+// evidence that a disk is disposable; deletion requires an explicit decision.
 // Workloads younger than OrphanGCMinAge (when set and CreatedAt is known) are
 // skipped to avoid racing create/read-replica lag.
 func (s *SandboxService) SweepOrphans(ctx context.Context) (int, error) {
@@ -623,7 +625,7 @@ func (s *SandboxService) SweepOrphans(ctx context.Context) (int, error) {
 		known[records[i].ID] = struct{}{}
 	}
 
-	removed := 0
+	retained := 0
 	for _, h := range live {
 		if h == nil || h.ID == "" {
 			continue
@@ -639,21 +641,14 @@ func (s *SandboxService) SweepOrphans(ctx context.Context) (int, error) {
 				Msg("orphan gc: skip young workload")
 			continue
 		}
-		log.Info().
+		log.Warn().
 			Str("sandbox_id", h.ID).
 			Str("name", h.Name).
 			Str("driver", s.drv.Name()).
-			Msg("orphan gc: destroying workload with no store record")
-		bg, cancel := context.WithTimeout(ctx, destroyDriverTimeout)
-		err := s.drv.Destroy(bg, h.ID)
-		cancel()
-		if err != nil {
-			log.Warn().Err(err).Str("sandbox_id", h.ID).Msg("orphan gc: destroy failed")
-			continue
-		}
-		removed++
+			Msg("orphan gc: retaining untracked workload and files; explicit reconciliation required")
+		retained++
 	}
-	return removed, nil
+	return retained, nil
 }
 
 // RunOrphanGC periodically calls SweepOrphans until ctx is cancelled.
@@ -675,7 +670,7 @@ func (s *SandboxService) RunOrphanGC(ctx context.Context) {
 			log.Error().Err(err).Msg("orphan gc sweep failed")
 			return
 		}
-		log.Info().Int("removed", n).Msg("orphan gc sweep complete")
+		log.Info().Int("retained", n).Msg("orphan observation complete; no workloads deleted")
 	}
 
 	run()

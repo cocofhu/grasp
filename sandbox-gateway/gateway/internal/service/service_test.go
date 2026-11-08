@@ -412,7 +412,7 @@ func TestSweepOrphans(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 1 {
-		t.Fatalf("removed=%d want 1", n)
+		t.Fatalf("retained=%d want 1", n)
 	}
 	live, err := drv.List(context.Background())
 	if err != nil {
@@ -425,8 +425,8 @@ func TestSweepOrphans(t *testing.T) {
 	if !ids[sb.ID] {
 		t.Fatal("tracked sandbox must remain")
 	}
-	if ids["orphan-old"] {
-		t.Fatal("old orphan should be destroyed")
+	if !ids["orphan-old"] {
+		t.Fatal("lost store records must not authorize deletion of the only file copy")
 	}
 	if !ids["orphan-young"] {
 		t.Fatal("young orphan should be kept")
@@ -437,8 +437,8 @@ func TestSweepOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("second sweep removed=%d want 1", n)
+	if n != 2 {
+		t.Fatalf("second sweep retained=%d want 2", n)
 	}
 }
 

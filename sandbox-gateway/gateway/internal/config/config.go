@@ -41,8 +41,8 @@ type ProfileConfig struct {
 	Image string `yaml:"image" json:"image"`
 }
 
-// OrphanGCConfig controls periodic cleanup of driver workloads that have no
-// matching control-plane record (e.g. left behind after DB loss or failed DELETE).
+// OrphanGCConfig controls periodic observation of driver workloads without a
+// control-plane record. Their disks are retained for explicit reconciliation.
 type OrphanGCConfig struct {
 	Enabled bool `yaml:"enabled"`
 	// IntervalSeconds is the sweep period. Default 300 (5m) when enabled.
@@ -702,7 +702,7 @@ func (c *Config) OrphanGCInterval() time.Duration {
 	return time.Duration(c.OrphanGC.IntervalSeconds) * time.Second
 }
 
-// OrphanGCMinAge returns the minimum workload age before orphan deletion.
+// OrphanGCMinAge returns the minimum workload age before reporting an orphan.
 func (c *Config) OrphanGCMinAge() time.Duration {
 	return time.Duration(c.OrphanGC.MinAgeSeconds) * time.Second
 }
