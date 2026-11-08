@@ -1,6 +1,8 @@
 package sandbox
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
@@ -56,55 +58,67 @@ func (m *Manager) seedHelpers(ctx context.Context, sb *Sandbox) {
 	// running. If it is not ready in time we skip (degraded, not fatal).
 	rctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	if err := creds.waitReady(rctx, 25*time.Second); err != nil {
+	cli, err := creds.dialReady(rctx, 25*time.Second)
+	if err != nil {
 		log.Warn().Str("id", sb.ID).Err(err).Msg("seed helpers: ssh not ready; artifact-upload unavailable")
 		return
 	}
-	if err := seedExecutable(ctx, creds, artifactUploadPath, artifactUploadScript); err != nil {
-		log.Warn().Str("id", sb.ID).Err(err).Msg("seed helpers: install artifact-upload failed")
+	if cli != nil {
+		defer func() { _ = cli.Close() }()
+	}
+	// File data and permissions travel together. Reuse the authenticated
+	// readiness connection for extraction and the optional proxy, rather than
+	// authenticating again for every write and chmod.
+	payload, err := packSeedHelpers()
+	if err != nil {
+		log.Warn().Str("id", sb.ID).Err(err).Msg("seed helpers: pack failed")
 		return
 	}
-	// Best-effort: profile.d hook for interactive shells (login/profile).
-	// Container create env is authoritative for ACP; this only helps SSH/login
-	// and any tool that sources profile.d after seed. Public script is a no-op.
-	if err := seedFileMode(ctx, creds, mcpAdvertiseProfilePath, mcpAdvertiseProfileScript, "644"); err != nil {
-		log.Warn().Str("id", sb.ID).Err(err).Msg("seed helpers: install mcp_advertise profile.d failed")
+	tarCmd, err := newSafeCmd("tar", "-C", "/", "-xf", "-")
+	if err != nil {
+		log.Warn().Str("id", sb.ID).Err(err).Msg("seed helpers: invalid extract command")
+		return
 	}
-	// Best-effort: optional Host proxy (map empty in public tree → no-op).
-	if err := seedExecutable(ctx, creds, mcpSpaProxyPath, mcpSpaProxyScript); err != nil {
-		log.Warn().Str("id", sb.ID).Err(err).Msg("seed helpers: install mcp host proxy failed")
-	} else {
-		ensureCmd, err := newSafeCmd(mcpSpaProxyPath, "--ensure")
-		if err != nil {
-			log.Warn().Str("id", sb.ID).Err(err).Msg("seed helpers: invalid mcp host proxy path")
-			return
-		}
-		if out, err := creds.run(ctx, 15*time.Second, ensureCmd); err != nil {
-			log.Warn().Str("id", sb.ID).Err(err).Str("out", strings.TrimSpace(string(out))).
-				Msg("seed helpers: start mcp host proxy failed")
-		}
+	if out, err := creds.runInputOnClient(ctx, 20*time.Second, cli, tarCmd, bytes.NewReader(payload)); err != nil {
+		log.Warn().Str("id", sb.ID).Err(err).Str("out", strings.TrimSpace(string(out))).
+			Msg("seed helpers: install failed; will retry on reconnect")
+		return
+	}
+	ensureCmd, err := newSafeCmd(mcpSpaProxyPath, "--ensure")
+	if err != nil {
+		log.Warn().Str("id", sb.ID).Err(err).Msg("seed helpers: invalid mcp host proxy path")
+		return
+	}
+	if out, err := creds.runInputOnClient(ctx, 15*time.Second, cli, ensureCmd, nil); err != nil {
+		log.Warn().Str("id", sb.ID).Err(err).Str("out", strings.TrimSpace(string(out))).
+			Msg("seed helpers: start mcp host proxy failed")
 	}
 	log.Debug().Str("id", sb.ID).Msg("seeded artifact-upload CLI")
 }
 
-func seedExecutable(ctx context.Context, creds sshCreds, path, content string) error {
-	return seedFileMode(ctx, creds, path, content, "+x")
-}
-
-func seedFileMode(ctx context.Context, creds sshCreds, path, content, mode string) error {
-	teeCmd, err := newSafeCmd("tee", path)
-	if err != nil {
-		return err
+func packSeedHelpers() ([]byte, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, file := range []struct {
+		path, content string
+		mode          int64
+	}{
+		{artifactUploadPath, artifactUploadScript, 0o755},
+		{mcpAdvertiseProfilePath, mcpAdvertiseProfileScript, 0o644},
+		{mcpSpaProxyPath, mcpSpaProxyScript, 0o755},
+	} {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: strings.TrimPrefix(file.path, "/"), Mode: file.mode,
+			Size: int64(len(file.content)), Typeflag: tar.TypeReg,
+		}); err != nil {
+			return nil, fmt.Errorf("helper header %s: %w", file.path, err)
+		}
+		if _, err := tw.Write([]byte(file.content)); err != nil {
+			return nil, fmt.Errorf("helper content %s: %w", file.path, err)
+		}
 	}
-	if out, err := creds.runInput(ctx, 20*time.Second, teeCmd, strings.NewReader(content)); err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	if err := tw.Close(); err != nil {
+		return nil, err
 	}
-	chmodCmd, err := newSafeCmd("chmod", mode, path)
-	if err != nil {
-		return err
-	}
-	if out, err := creds.run(ctx, 10*time.Second, chmodCmd); err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
+	return buf.Bytes(), nil
 }

@@ -18,7 +18,7 @@ import (
 // This server uses real SSH channels, including the separate stderr stream and
 // stdin EOF. Returning a successful exit status must not erase stdout when the
 // stderr stream closes without producing any bytes.
-func startSSHOutputServer(t *testing.T, serve func(ssh.Channel, string, []byte) uint32) sshCreds {
+func startSSHOutputServer(t *testing.T, serve func(ssh.Channel, string, []byte) uint32, onConnect ...func()) sshCreds {
 	t.Helper()
 	signer, _ := mustSigner(t)
 	cfg := &ssh.ServerConfig{NoClientAuth: true}
@@ -45,31 +45,34 @@ func startSSHOutputServer(t *testing.T, serve func(ssh.Channel, string, []byte) 
 					return
 				}
 				defer server.Close()
+				for _, connected := range onConnect {
+					connected()
+				}
 				go ssh.DiscardRequests(requests)
-				incoming, ok := <-channels
-				if !ok {
-					return
-				}
-				channel, reqs, err := incoming.Accept()
-				if err != nil {
-					return
-				}
-				defer channel.Close()
-				for request := range reqs {
-					if request.Type != "exec" {
-						_ = request.Reply(false, nil)
-						continue
-					}
-					var payload struct{ Command string }
-					if ssh.Unmarshal(request.Payload, &payload) != nil {
-						_ = request.Reply(false, nil)
+				for incoming := range channels {
+					channel, reqs, err := incoming.Accept()
+					if err != nil {
 						return
 					}
-					_ = request.Reply(true, nil)
-					input, _ := io.ReadAll(channel)
-					code := serve(channel, payload.Command, input)
-					_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{code}))
-					return
+					func() {
+						defer channel.Close()
+						for request := range reqs {
+							if request.Type != "exec" {
+								_ = request.Reply(false, nil)
+								continue
+							}
+							var payload struct{ Command string }
+							if ssh.Unmarshal(request.Payload, &payload) != nil {
+								_ = request.Reply(false, nil)
+								return
+							}
+							_ = request.Reply(true, nil)
+							input, _ := io.ReadAll(channel)
+							code := serve(channel, payload.Command, input)
+							_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{code}))
+							return
+						}
+					}()
 				}
 			}()
 		}

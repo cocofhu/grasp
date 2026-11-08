@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Sandbox startup reuses one authenticated SSH connection to install helper files and permissions. The optional MCP proxy releases inherited SSH pipes when daemonizing and does nothing without host mappings. Runtime startup rejects empty-password SSH probes even when an imported template enables them, avoiding PAM delays before public-key authentication while retaining password fallback.
+
 - Kubernetes gateway connections preserve ports published after sandbox creation, so opening a preview channel no longer removes its Service port.
 
 - Grasp can route Docker, Kubernetes and E2B sandbox connections through an authenticated gateway, keeping chat, SSH/files, terminal, IDE and browser access on the existing Grasp entry points. Named gateways retain existing sandbox bindings when the default changes; optional environment profiles resolve provider images in the gateway. Legacy direct mode remains the default.

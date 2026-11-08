@@ -78,7 +78,11 @@ start_runtime_server "$bundle"
 token="$RUNTIME_TOKEN"
 name="grasp-runtime-e2e-$$"
 containers+=("$name")
+# Reproduce an imported E2B template's permissive SSH drop-in. Runtime startup
+# must override it before public-key / password data-plane connections begin.
+printf 'PermitRootLogin yes\nPermitEmptyPasswords yes\nPasswordAuthentication yes\n' >"$work/e2b-sshd.conf"
 docker run -d --privileged --name "$name" "${RUNTIME_DOCKER_ARGS[@]}" \
+  -v "$work/e2b-sshd.conf:/etc/ssh/sshd_config.d/00-e2b.conf:ro" \
   -e AGENT_PROVIDER=cursor -e ROOT_PASSWORD=ci-e2e -e PREVIEW_DIRECT=1 -e PREVIEW_PORT=3000 \
   -p 127.0.0.1::8765 -p 127.0.0.1::3000 "$image" >/dev/null
 wait_backend
@@ -88,6 +92,9 @@ for f in backend acp-bridge preview-inject preview-inject.sh vnc-preview.sh serv
   in_box test -e "/usr/local/bin/$f" || die "/usr/local/bin/$f 软链无法解析"
 done
 in_box test -e /usr/local/share/backend/web/index.html || die "/usr/local/share/backend 软链无法解析"
+in_box /usr/sbin/sshd -T >"$work/effective-sshd"
+grep -qx 'permitemptypasswords no' "$work/effective-sshd" || die "模板空密码认证没有被关闭"
+docker exec -i "$name" bash -s -- /opt/grasp-runtime/current/scripts/startup.sh --auth <"$here/test-sshd-policy.sh" || die "sshd policy regression failed"
 log "1. 正常启动：通过"
 
 in_box bash -c 'mkdir -p /tmp/e2e-site && printf "<!doctype html><html><head><title>e2e</title></head><body>hi</body></html>" >/tmp/e2e-site/index.html'

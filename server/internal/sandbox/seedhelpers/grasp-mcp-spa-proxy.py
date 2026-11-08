@@ -24,6 +24,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 _SPA_TO_API = {}
 _LISTEN = ("127.0.0.1", 80)
 _PID_FILE = "/var/run/grasp-mcp-spa-proxy.pid"
+_LOG_FILE = "/var/log/grasp-mcp-spa-proxy.log"
+_HOSTS_FILE = "/etc/hosts"
 _HOSTS_MARK = "# grasp-mcp-spa-proxy"
 
 
@@ -32,7 +34,7 @@ def eprint(*a):
 
 
 def ensure_hosts() -> None:
-    path = "/etc/hosts"
+    path = _HOSTS_FILE
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             cur = f.read()
@@ -171,6 +173,8 @@ def serve_forever():
 
 
 def ensure_daemon() -> int:
+    if not _SPA_TO_API:
+        return 0
     ensure_hosts()
     if already_running():
         eprint("grasp-mcp-spa-proxy: already running")
@@ -182,14 +186,18 @@ def ensure_daemon() -> int:
             time.sleep(0.1)
             if already_running():
                 return 0
-        # Bind may race; treat as best-effort success if fork succeeded.
-        return 0
+        eprint("grasp-mcp-spa-proxy: daemon did not become ready")
+        return 1
     os.setsid()
     if os.fork() > 0:
         os._exit(0)
-    sys.stdin = open("/dev/null", "r")
-    sys.stdout = open("/var/log/grasp-mcp-spa-proxy.log", "a", buffering=1)
-    sys.stderr = sys.stdout
+    # Reassigning sys.stdout leaves fd 1 (and sys.__stdout__) attached to the
+    # SSH channel. The daemon must release the actual inherited descriptors so
+    # its caller can receive EOF and finish without waiting for a timeout.
+    with open("/dev/null", "rb") as stdin, open(_LOG_FILE, "ab", buffering=0) as log:
+        os.dup2(stdin.fileno(), 0)
+        os.dup2(log.fileno(), 1)
+        os.dup2(log.fileno(), 2)
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     serve_forever()
     return 0

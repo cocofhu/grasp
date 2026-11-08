@@ -604,6 +604,26 @@ EOF
 # 加载开发工具 PATH（Go / Java / MongoDB 等），确保 code-server 及其子进程也可见
 [ -f /etc/profile.d/devtools-path.sh ] && . /etc/profile.d/devtools-path.sh
 
+# Grasp always sets a nonempty root password above. Imported environment
+# templates may enable empty passwords, which makes SSH's initial "none" probe
+# hit PAM's failed-password delay before a valid public key is even offered.
+configure_sshd_password_policy() {
+    local config="${1:-/etc/ssh/sshd_config}"
+    local directive='PermitEmptyPasswords no # Grasp-managed: root has a password'
+    local staged
+    [ "$(head -n 1 "$config")" = "$directive" ] && return 0
+    staged="$(mktemp "${config}.grasp.XXXXXX")" || return 1
+    # OpenSSH uses the first value, including values from Include files. Put
+    # this policy before any template Includes; keep all other auth settings.
+    if ! { printf '%s\n' "$directive"; cat "$config"; } >"$staged" ||
+       ! chmod --reference="$config" "$staged" ||
+       ! chown --reference="$config" "$staged" ||
+       ! mv -f -- "$staged" "$config"; then
+        rm -f -- "$staged"
+        return 1
+    fi
+}
+
 # 配置 SSH 免密登录（如果提供了 SSH_KEY），并启动 SSH 服务
 if [ -n "$SSH_KEY" ]; then
     echo "Configuring SSH key for passwordless login..."
@@ -614,7 +634,14 @@ if [ -n "$SSH_KEY" ]; then
     chown -R root:root /root/.ssh
     echo "SSH key configured successfully"
 fi
-service ssh start
+configure_sshd_password_policy
+# Some imported templates already have sshd running. Reload that daemon so the
+# policy also takes effect there; a start alone would keep its old settings.
+if service ssh status >/dev/null 2>&1; then
+    service ssh reload
+else
+    service ssh start
+fi
 
 # noVNC 预览栈（headed Chromium + CDP:9222 + websockify:6080）：仅当显式开启时启动，
 # 避免普通场景吃 headed Chromium 资源。
