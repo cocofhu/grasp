@@ -37,6 +37,8 @@ type localTunnel struct {
 	target   int
 	active   map[net.Conn]struct{}
 	closed   bool
+	enabled  bool
+	epoch    uint64
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
@@ -186,73 +188,97 @@ func (m *TunnelManager) Start(ctx context.Context, creds RelayCredentials, guest
 // StartMapped reserves a stable loopback endpoint for guestPort and forwards to
 // targetPort. The driver maps preview ingress 18080 to injector17980 explicitly;
 // direct app/CDP loopback targets keep their actual ports.
-func (m *TunnelManager) StartMapped(ctx context.Context, creds RelayCredentials, guestPort, targetPort, preferredLocalPort int) (string, error) {
-	if !validTunnelPort(guestPort) || !validTunnelPort(targetPort) || preferredLocalPort < 0 || preferredLocalPort > 65535 {
-		return "", errors.New("invalid E2B tunnel port")
+func (m *TunnelManager) StartMapped(ctx context.Context, creds RelayCredentials, guestPort, targetPort, preferredLocalPort int) (endpoint string, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	if err := m.UpdateCredentials(creds); err != nil {
 		return "", err
 	}
-
-	// Existing bindings already installed the target allowlist. Refreshing the
-	// private credentials must not create a provider round trip per page asset.
+	tunnel, created, err := m.reserveMapped(creds.SandboxID, guestPort, targetPort, preferredLocalPort)
+	if err != nil {
+		return "", err
+	}
 	m.mu.Lock()
-	existing := m.tunnels[creds.SandboxID][guestPort]
-	if existing != nil {
-		local := existing.listener.Addr().(*net.TCPAddr).Port
-		endpoint := existing.listener.Addr().String()
-		conflict := existing.target != targetPort || preferredLocalPort != 0 && preferredLocalPort != local
-		m.mu.Unlock()
-		if conflict {
-			return "", errors.New("existing E2B tunnel endpoint conflicts with requested mapping")
+	enabled, epoch := tunnel.enabled, tunnel.epoch
+	m.mu.Unlock()
+	defer func() {
+		if err != nil && created {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if m.tunnels[creds.SandboxID][guestPort] == tunnel && !tunnel.enabled && tunnel.epoch == epoch {
+				delete(m.tunnels[creds.SandboxID], guestPort)
+				tunnel.closed = true
+				tunnel.cancel()
+				_ = tunnel.listener.Close()
+			}
 		}
-		if err := ctx.Err(); err != nil {
+	}()
+
+	// Bind before making HTTP requests: an outbound connection can otherwise
+	// claim a persisted listener's port from the same ephemeral port range.
+	if !enabled {
+		if err := m.Control(ctx, creds, http.MethodPost, "/_bridge/ports", map[string]any{"ports": []int{targetPort}}, nil); err != nil {
 			return "", err
 		}
-		return endpoint, nil
-	}
-	m.mu.Unlock()
-	if err := m.Control(ctx, creds, http.MethodPost, "/_bridge/ports", map[string]any{"ports": []int{targetPort}}, nil); err != nil {
-		return "", err
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return "", errors.New("E2B tunnel manager is closed")
+	if m.closed || m.tunnels[creds.SandboxID][guestPort] != tunnel || tunnel.epoch != epoch {
+		return "", errors.New("E2B guest tunnels were closed during publication")
 	}
 	if _, ok := m.credentials[creds.SandboxID]; !ok {
 		return "", errors.New("E2B guest tunnels were closed during publication")
 	}
-	if existing := m.tunnels[creds.SandboxID][guestPort]; existing != nil {
+	if !tunnel.enabled {
+		tunnel.cancel()
+		tunnel.ctx, tunnel.cancel = context.WithCancel(context.Background())
+		tunnel.enabled = true
+	}
+	return tunnel.listener.Addr().String(), nil
+}
+
+// reserveMapped keeps a loopback binding without accepting guest traffic or
+// making provider requests. Restore reserves every saved port before any I/O.
+func (m *TunnelManager) reserveMapped(sandboxID string, guestPort, targetPort, preferredLocalPort int) (*localTunnel, bool, error) {
+	if !validTunnelPort(guestPort) || !validTunnelPort(targetPort) || preferredLocalPort < 0 || preferredLocalPort > 65535 {
+		return nil, false, errors.New("invalid E2B tunnel port")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return nil, false, errors.New("E2B tunnel manager is closed")
+	}
+	if existing := m.tunnels[sandboxID][guestPort]; existing != nil {
 		port := existing.listener.Addr().(*net.TCPAddr).Port
 		if existing.target != targetPort || preferredLocalPort != 0 && preferredLocalPort != port {
-			return "", errors.New("existing E2B tunnel endpoint conflicts with requested mapping")
+			return nil, false, errors.New("existing E2B tunnel endpoint conflicts with requested mapping")
 		}
-		return existing.listener.Addr().String(), nil
+		return existing, false, nil
 	}
 	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(preferredLocalPort)))
 	if err != nil {
-		return "", errors.New("cannot bind required E2B loopback endpoint")
+		return nil, false, errors.New("cannot bind required E2B loopback endpoint")
 	}
 	lifetime, cancel := context.WithCancel(context.Background())
 	tunnel := &localTunnel{listener: listener, port: guestPort, target: targetPort,
 		active: make(map[net.Conn]struct{}), ctx: lifetime, cancel: cancel}
-	if m.tunnels[creds.SandboxID] == nil {
-		m.tunnels[creds.SandboxID] = make(map[int]*localTunnel)
+	if m.tunnels[sandboxID] == nil {
+		m.tunnels[sandboxID] = make(map[int]*localTunnel)
 	}
-	m.tunnels[creds.SandboxID][guestPort] = tunnel
-	go m.accept(creds.SandboxID, tunnel)
-	return listener.Addr().String(), nil
+	m.tunnels[sandboxID][guestPort] = tunnel
+	go m.accept(sandboxID, tunnel)
+	return tunnel, true, nil
 }
 
 func (m *TunnelManager) Get(sandboxID string, guestPort int) (string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	tunnel := m.tunnels[sandboxID][guestPort]
-	if tunnel == nil {
+	if tunnel == nil || !tunnel.enabled {
 		return "", false
 	}
 	return tunnel.listener.Addr().String(), true
@@ -263,7 +289,9 @@ func (m *TunnelManager) List(sandboxID string) map[int]string {
 	defer m.mu.Unlock()
 	result := make(map[int]string)
 	for port, tunnel := range m.tunnels[sandboxID] {
-		result[port] = tunnel.listener.Addr().String()
+		if tunnel.enabled {
+			result[port] = tunnel.listener.Addr().String()
+		}
 	}
 	return result
 }
@@ -278,19 +306,21 @@ func (m *TunnelManager) accept(sandboxID string, tunnel *localTunnel) {
 			_ = tcp.SetNoDelay(true)
 		}
 		m.mu.Lock()
-		if tunnel.closed {
+		if tunnel.closed || !tunnel.enabled {
 			m.mu.Unlock()
 			_ = conn.Close()
 			continue
 		}
 		tunnel.active[conn] = struct{}{}
+		lifetime := tunnel.ctx
+		creds := m.credentials[sandboxID]
 		m.mu.Unlock()
-		go m.forward(sandboxID, tunnel, conn)
+		go m.forward(lifetime, creds, tunnel, conn)
 	}
 }
 
-func (m *TunnelManager) forward(sandboxID string, tunnel *localTunnel, client net.Conn) {
-	ctx, cancel := context.WithCancel(tunnel.ctx)
+func (m *TunnelManager) forward(lifetime context.Context, creds RelayCredentials, tunnel *localTunnel, client net.Conn) {
+	ctx, cancel := context.WithCancel(lifetime)
 	defer cancel()
 	defer func() {
 		_ = client.Close()
@@ -298,9 +328,6 @@ func (m *TunnelManager) forward(sandboxID string, tunnel *localTunnel, client ne
 		delete(tunnel.active, client)
 		m.mu.Unlock()
 	}()
-	m.mu.Lock()
-	creds := m.credentials[sandboxID]
-	m.mu.Unlock()
 	reader := bufio.NewReader(client)
 	var prefix []byte
 	if tunnel.port == 9222 {
@@ -370,7 +397,7 @@ func (m *TunnelManager) forward(sandboxID string, tunnel *localTunnel, client ne
 		_ = tcp.SetNoDelay(true)
 	}
 	m.mu.Lock()
-	if tunnel.closed {
+	if tunnel.closed || ctx.Err() != nil {
 		m.mu.Unlock()
 		return
 	}
@@ -447,6 +474,25 @@ func rewriteCDPURLs(value any, localAddress string) {
 		for _, entry := range object {
 			rewriteCDPURLs(entry, localAddress)
 		}
+	}
+}
+
+// Suspend rejects new traffic and closes active streams while retaining the
+// guest's stable loopback bindings. StartMapped republishes before re-enabling.
+func (m *TunnelManager) Suspend(sandboxID string) {
+	m.mu.Lock()
+	var connections []net.Conn
+	for _, tunnel := range m.tunnels[sandboxID] {
+		tunnel.enabled = false
+		tunnel.epoch++
+		tunnel.cancel()
+		for conn := range tunnel.active {
+			connections = append(connections, conn)
+		}
+	}
+	m.mu.Unlock()
+	for _, conn := range connections {
+		_ = conn.Close()
 	}
 }
 

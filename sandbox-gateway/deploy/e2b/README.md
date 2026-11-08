@@ -100,7 +100,7 @@ docker compose --env-file /absolute/private/grasp-e2b.env -f compose.e2b.yaml up
 
 gateway 恢复 guest、连接凭据和本地端口，Grasp 继续使用原有冷会话机制。`per_node` 模式下，server 重启后，等待人工输入的 workflow 可以仍为 `waiting_human`，原 guest 与预览注册也可以保留，但进程内的 Agent 热会话不会因此自动重连；下一次标准回复可能按原有冷恢复路径新建 guest。不能据此宣称 Agent 热会话无缝恢复或原工作区自动继承，跨重启的会话与工作区行为须单独验收。
 
-gateway 的显式 stop/start 对应 E2B 全内存 pause/resume；自动暂停和自动恢复未启用。运行中的 guest 由 gateway 定期续租，gateway 长时间不可用时仍受 provider lease 上限约束。**Grasp 当前“停止/删除沙箱”继续走 Destroy，不因选择 E2B 自动变成暂停**；现有 reconcile/TTL 语义也未改写。
+gateway 的显式 stop/start 对应 E2B 全内存 pause/resume；自动暂停和自动恢复未启用。暂停期间保留原有 loopback 端口，关闭现有转发连接并立即拒绝新连接；恢复成功后重新启用同一批端口。gateway 重启也会先预留所有运行中和暂停 guest 的持久化端口，再请求 provider，防止自身 HTTP 连接抢占端口。运行中的 guest 由 gateway 定期续租，gateway 长时间不可用时仍受 provider lease 上限约束。**Grasp 当前“停止/删除沙箱”继续走 Destroy，不因选择 E2B 自动变成暂停**；现有 reconcile/TTL 语义也未改写。
 
 续租只延长 provider 允许范围内的到期时间，不能突破 provider 对单次 guest 生命周期的硬上限；这与 Grasp 的空闲回收期限是两项独立策略。运维必须将目标 provider 的最长运行时长配置为足以覆盖预期的长任务和 Solo 会话，并在目标部署核对续租后实际返回的到期时间。续租请求成功不代表到期时间一定继续延后，本模式不承诺 guest 无限期运行。
 

@@ -1,0 +1,7 @@
+# 2026-11-08（E2B 暂停与重启保留本地端口）
+
+- 日期：2026-11-08
+- 范围：`sandbox-gateway/gateway/internal/driver/e2b/{driver.go,tunnel.go,driver_test.go,endpoint_reservation_test.go}`、`sandbox-gateway/deploy/e2b/README.md`、`CHANGELOG.md`。
+- 做了什么：暂停 guest 时保留原有 loopback listener，关闭现有流并拒绝新流；恢复发布成功后才重新启用 listener。网关启动先预留所有运行中和暂停 guest 的持久化端口，再请求 provider。新发布也先绑定端口，失败时释放新 reservation，恢复失败则保留已有 reservation。连接捕获所属生命周期的 context 与凭据，暂停使旧发布失效，防止迟到的请求重新开放端口。生命周期 HTTP fixture 按 guest 保存 relay key，支持多 guest 恢复回归。
+- 为什么：主干 `07f8bfce` 的 `go-race (gateway)` 在 `TestDriverLifecyclePrivateStateAndStableRestart` 恢复时无法绑定端口，导致 `ci-required` 连带失败。原实现暂停即释放随机端口，随后发出的 provider/relay HTTP 连接可能占用同一临时端口；重启也在请求 provider 后才恢复 listener。确定性回归确认修复前暂停端口可被占用，provider 请求也早于全部持久化端口的预留；不修改 CI 门槛或重试测试来掩盖失败。
+- 如何验证：Go 1.26.10 下 gateway 全量 `go test -race -count=1 -timeout 25m ./...`、`go vet ./...`、golangci-lint v2.12 通过；gateway 覆盖率门禁 91.5%（要求 ≥90%），E2B 包 92.9%。原失败用例与 6 项新增回归在 `-race -count=100 -timeout 5m` 下全部通过（92.757 秒），覆盖暂停端口与连接、运行中/暂停的多 guest 重启预留顺序、发布前绑定及失败清理、暂停与发布并发、恢复失败后重试。actionlint、error-level shellcheck、7 项 docs-publish transport 回归、docs build/audit 通过。
