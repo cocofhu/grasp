@@ -205,13 +205,23 @@ func TestSoloModelSwitchFailureRollsBack(t *testing.T) {
 	}
 	msgs, _ := solo.Messages(v.ID, "alice")
 	var kept bool
+	var failedUser, failedReply models.SoloMessage
 	for _, m := range msgs {
 		if m.Content == "keep me" {
 			kept = true
 		}
+		if m.Role == "user" && m.Content == "next" {
+			failedUser = m
+		}
+		if m.Role == "assistant" && m.Status == "failed" {
+			failedReply = m
+		}
 	}
 	if !kept {
 		t.Fatal("existing dialogue was dropped")
+	}
+	if failedUser.ID == "" || failedUser.Status != "failed" || failedReply.TurnID != failedUser.ID || failedReply.Error != "bridge refused" {
+		t.Fatalf("model preparation failure was not saved as a visible reply: user=%+v reply=%+v", failedUser, failedReply)
 	}
 }
 

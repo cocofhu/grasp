@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo 首条消息等待沙箱启动时，定时恢复不再把创建或拉取镜像中的沙箱误判为恢复失败；启动或模型准备阶段的失败会保留为聊天中的可见回复，刷新后仍能查看。
+
 - Sandbox startup reuses one authenticated SSH connection to install helper files and permissions. The optional MCP proxy releases inherited SSH pipes when daemonizing and does nothing without host mappings. Runtime startup rejects empty-password SSH probes even when an imported template enables them, avoiding PAM delays before public-key authentication while retaining password fallback.
 
 - Kubernetes gateway connections preserve ports published after sandbox creation, so opening a preview channel no longer removes its Service port.
