@@ -40,6 +40,8 @@ jobs:
           echo "server/ → ci-server; web/ → ci-web; sandbox-gateway/sandbox|scripts → ci-sandbox; sandbox-gateway/gateway → ci-gateway; docs/ → ci-docs."
       - name: Assert no Approving brand remnants
         run: node scripts/assert-no-approving-brand.mjs
+      - name: CI tool download regressions
+        run: python3 .github/scripts/test-ci-tool-downloads.py
       - name: actionlint
         run: ./.github/scripts/actionlint.sh
       - name: shellcheck (error)

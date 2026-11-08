@@ -27,10 +27,12 @@ if [[ ! -x "$bin" ]]; then
       ;;
   esac
   tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
   url="https://github.com/koalaman/shellcheck/releases/download/v${VERSION}/shellcheck-v${VERSION}.${asset}.tar.xz"
-  curl -fsSL "$url" | tar -xJ -C "$tmp"
+  "${ROOT}/.github/scripts/retry-network.sh" curl -fsSL --connect-timeout 15 --max-time 60 \
+    "$url" -o "${tmp}/shellcheck.tar.xz"
+  tar -xJf "${tmp}/shellcheck.tar.xz" -C "$tmp"
   install -m 755 "${tmp}/shellcheck-v${VERSION}/shellcheck" "$bin"
-  rm -rf "$tmp"
 fi
 
 files=()
