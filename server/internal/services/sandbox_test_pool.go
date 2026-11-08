@@ -384,6 +384,25 @@ func (s *SandboxService) recordStudioUsage(id uint, usage *models.TokenUsage, by
 // prompt_done (nil = not reported), including failed turns. Provider failures
 // are errors even when their transport completed with prompt_done.
 func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+	current, err := s.Get(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if current.Purpose == SandboxPurposeSolo {
+		operationCtx, release, err := s.acquireSandboxOperation(ctx, id, "turn")
+		if err != nil {
+			return nil, nil, err
+		}
+		defer release()
+		ctx = operationCtx
+		current, err = s.Get(id)
+		if err != nil {
+			return nil, nil, err
+		}
+		if current.DesiredState == "stopped" {
+			return nil, nil, soloErr(409, "environment_stopped", "环境已手动停止，请先恢复环境")
+		}
+	}
 	ls, row, err := s.ensureConnected(ctx, id)
 	if err != nil {
 		return nil, nil, err
@@ -610,7 +629,7 @@ func (s *SandboxService) Stop(ctx context.Context, id uint) error {
 
 // Destroy removes the container and deletes the DB record.
 func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
-	unlock, lockErr := s.lockSoloRecovery(ctx, id)
+	ctx, unlock, lockErr := s.acquireSandboxOperation(ctx, id)
 	if lockErr != nil {
 		return lockErr
 	}
@@ -624,7 +643,9 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	}
 	s.teardownLive(id)
 	s.archiveLog(ctx, row.Name)
-	_ = s.mgr.DestroyByName(ctx, row.Name)
+	if err := s.mgr.DestroyByName(ctx, row.Name); err != nil {
+		return err // an unconfirmed delete must retain its recovery attribution
+	}
 	if row.HomeDir != "" {
 		_ = os.RemoveAll(row.HomeDir)
 	}

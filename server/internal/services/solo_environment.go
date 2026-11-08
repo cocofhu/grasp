@@ -42,7 +42,7 @@ func (s *SoloService) StopEnvironment(ctx context.Context, id, user string) (*So
 func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint) error {
 	ctx, cancel := context.WithTimeout(ctx, soloRecoveryTimeout)
 	defer cancel()
-	unlock, err := s.lockSoloRecovery(ctx, id)
+	ctx, unlock, err := s.acquireSandboxOperation(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -120,11 +120,11 @@ func (s *SoloService) ResumeEnvironment(ctx context.Context, id, user string) (*
 	if row.SandboxID == 0 || s.sbx == nil {
 		return nil, soloErr(http.StatusConflict, "environment_missing", "环境已释放，请重新启动会话")
 	}
-	unlock, err := s.sbx.lockSoloRecovery(ctx, row.SandboxID)
+	operationCtx, unlock, err := s.sbx.acquireSandboxOperation(ctx, row.SandboxID)
 	if err != nil {
 		return nil, err
 	}
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(operationCtx).Transaction(func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
 		}

@@ -60,6 +60,9 @@ type SandboxService struct {
 	// Per-resident locks serialize recovery with explicit destruction without
 	// making one unavailable sandbox block every other session.
 	soloRecoveryLocks sync.Map
+	// Tests may shorten renewal; production uses one minute against a five
+	// minute database lease. Losing renewal cancels the protected operation.
+	operationRenewInterval time.Duration
 	// leaseMu serializes lease read-modify-write so concurrent renewals
 	// (activity, manual, preview, retire) can't drop each other's lease.
 	leaseMu sync.Mutex

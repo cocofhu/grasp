@@ -1513,21 +1513,32 @@ func (s *SoloService) RestoreQueuedTurns() {
 }
 
 func (s *SoloService) restoreSessionLocked(id string, stored []chatsession.PendingTurn) {
-	row, err := s.load(id)
-	if err != nil || row.Status == models.SoloStatusClosed || row.Status == models.SoloStatusError {
+	var row models.SoloSession
+	err := s.db.First(&row, "id = ?", id).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Warn().Err(err).Str("session", id).Msg("solo: queue restore deferred after storage failure")
+		return
+	}
+	if err != nil || row.Status == models.SoloStatusClosed {
 		delete(s.deferredRestores, id)
-		// Closing a session or losing its sandbox drops its queue as well.
+		// Only an explicitly closed or deleted conversation drops its queue.
 		log.Info().Str("session", id).Int("turns", len(stored)).Msg("solo: queued turns dropped with an ended session")
 		if err := s.pending.Clear(soloPendingSurface, id); err != nil {
 			log.Warn().Err(err).Str("session", id).Msg("solo: clear queued turns failed")
 		}
 		return
 	}
-	if row.Status == models.SoloStatusStopped {
+	if row.Status == models.SoloStatusStopped || row.Status == models.SoloStatusError {
+		if s.deferredRestores == nil {
+			s.deferredRestores = map[string]bool{}
+		}
+		s.deferredRestores[id] = true
 		return
 	}
 	if s.sbx != nil && row.SandboxID != 0 {
-		if sb, getErr := s.sbx.Get(row.SandboxID); getErr == nil && sb.Status != "running" {
+		sb, getErr := s.sbx.Get(row.SandboxID)
+		leased := getErr == nil && sb.OperationOwner != "" && sb.OperationExpiresAt != nil && sb.OperationExpiresAt.After(time.Now()) && sb.OperationKind != "lifecycle"
+		if getErr != nil || sb.Status != "running" || sb.DesiredState == "stopped" || leased {
 			if s.deferredRestores == nil {
 				s.deferredRestores = map[string]bool{}
 			}
@@ -1801,6 +1812,7 @@ func (c *soloChat) recordPreparationFailure(ctx context.Context, turnID string, 
 
 func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	s := c.svc
+	turnCtx := ctx
 	started := time.Now()
 	userMsg := models.SoloMessage{ID: q.ID, SessionID: c.id, Role: "user", Content: q.Text, Images: q.Images, Annotations: q.Annotations, PreviewShared: q.PreviewShared}
 	if len(q.References) > 0 {
@@ -1825,10 +1837,32 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		c.recordPreparationFailure(ctx, q.ID, started, err)
 		return false, err
 	}
+	if s.sbx != nil {
+		operationCtx, release, leaseErr := s.sbx.acquireSandboxOperation(ctx, sandboxID, "turn")
+		if leaseErr != nil {
+			c.recordPreparationFailure(ctx, q.ID, started, leaseErr)
+			return false, leaseErr
+		}
+		defer release()
+		ctx = operationCtx
+		environment, leaseErr := s.sbx.Get(sandboxID)
+		if leaseErr == nil && environment.DesiredState == "stopped" {
+			leaseErr = soloErr(409, "environment_stopped", "环境已手动停止，请先恢复环境")
+		}
+		if leaseErr != nil {
+			c.recordPreparationFailure(ctx, q.ID, started, leaseErr)
+			return false, leaseErr
+		}
+	}
 	// Read again so a switch made while the sandbox was booting, or while an
 	// earlier turn was still generating, is the one this turn applies.
 	row, err := s.load(c.id)
 	if err != nil {
+		c.recordPreparationFailure(ctx, q.ID, started, err)
+		return false, err
+	}
+	if row.SandboxID != sandboxID {
+		err := soloErr(409, "environment_changed", "工作区已切换，请在当前环境重试本轮")
 		c.recordPreparationFailure(ctx, q.ID, started, err)
 		return false, err
 	}
@@ -1841,7 +1875,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	switched, alignErr := s.alignSessionModel(ctx, c, sandboxID, row)
 	if alignErr != nil {
 		c.recordPreparationFailure(ctx, q.ID, started, alignErr)
-		return ctx.Err() != nil, alignErr
+		return turnCtx.Err() != nil, alignErr
 	}
 	execution := s.turnExecutionSnapshot(row, sandboxID, started)
 	c.mu.Lock()
@@ -1900,6 +1934,8 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 
 	status, ledger, errText := "ok", models.TokenLedgerStatusOK, ""
 	switch {
+	case err != nil && errors.Is(context.Cause(ctx), errSandboxOperationLost):
+		status, ledger, errText = "failed", models.TokenLedgerStatusFailed, errSandboxOperationLost.Error()
 	case err != nil && ctx.Err() != nil:
 		status, ledger, errText = "stopped", models.TokenLedgerStatusCancelled, "已停止"
 	case err != nil:
@@ -1911,37 +1947,50 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		Execution:  execution,
 		DurationMs: time.Since(started).Milliseconds(),
 	}
-	var deliveries []models.ArtifactDelivery
-	if perr := s.db.Where("session_id = ? AND turn_id = ?", c.id, q.ID).Order("created_at,id").Find(&deliveries).Error; perr != nil {
-		log.Warn().Err(perr).Msg("read delivered files")
-	}
-	for _, file := range deliveries {
-		reply.Files = append(reply.Files, file.ArtifactAttachment)
-	}
-	if text != "" || len(events) > 0 || err != nil || len(reply.Files) > 0 {
-		// Delivery owns the placeholder's files. A tool may finish between the
-		// delivery query above and this upsert; never overwrite its attachments.
-		if perr := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"content", "events", "status", "error", "usage", "usage_by_model", "execution", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
-			log.Warn().Err(perr).Str("session", c.id).Msg("solo reply persist failed")
+	publish := func(tx *gorm.DB) error {
+		var deliveries []models.ArtifactDelivery
+		if perr := tx.Where("session_id = ? AND turn_id = ?", c.id, q.ID).Order("created_at,id").Find(&deliveries).Error; perr != nil {
+			return perr
 		}
+		for _, file := range deliveries {
+			reply.Files = append(reply.Files, file.ArtifactAttachment)
+		}
+		if text != "" || len(events) > 0 || err != nil || len(reply.Files) > 0 {
+			// Delivery owns the placeholder's files. Never overwrite a file
+			// attachment concurrently delivered by a tool.
+			if perr := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"content", "events", "status", "error", "usage", "usage_by_model", "execution", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
+				return perr
+			}
+		}
+		if status != "ok" {
+			if perr := tx.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Update("status", status).Error; perr != nil {
+				return perr
+			}
+		}
+		if usedPreamble && status == "ok" {
+			if perr := tx.Model(&models.SoloSession{}).Where("id = ? AND workflow_context_version = ?", c.id, row.WorkflowContextVersion).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false}).Error; perr != nil {
+				return perr
+			}
+		}
+		if status == "ok" && alignErr == nil && noticeBefore != "" {
+			if perr := tx.Model(&models.SoloSession{}).Where("id = ? AND model_notice = ?", c.id, noticeBefore).Update("model_notice", "").Error; perr != nil {
+				return perr
+			}
+		}
+		return tx.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", time.Now()).Error
 	}
-	if status != "ok" {
-		s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Update("status", status)
+	var publicationErr error
+	if s.sbx != nil {
+		publicationErr = s.sbx.commitSandboxOperation(ctx, sandboxID, publish)
+	} else {
+		publicationErr = s.db.Transaction(publish)
 	}
-	if usedPreamble && status == "ok" {
-		s.db.Model(&models.SoloSession{}).Where("id = ? AND workflow_context_version = ?", c.id, row.WorkflowContextVersion).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false})
-	}
-	// A switch that failed on an earlier turn leaves model_notice set. Once a
-	// later turn succeeds on the model that is already applied, the banner is
-	// stale. A failure from this turn's own alignment is left in place.
-	if status == "ok" && alignErr == nil && noticeBefore != "" {
-		s.db.Model(&models.SoloSession{}).Where("id = ? AND model_notice = ?", c.id, noticeBefore).Update("model_notice", "")
-	}
-	now := time.Now()
-	s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", &now)
 	recordSoloUsage(s.db, c.id, sandboxID, usage, byModel, ledger)
+	if publicationErr != nil {
+		return turnCtx.Err() != nil, fmt.Errorf("保存本轮回复失败：%w", publicationErr)
+	}
 	if err != nil {
-		return ctx.Err() != nil, err
+		return turnCtx.Err() != nil, err
 	}
 	return false, nil
 }

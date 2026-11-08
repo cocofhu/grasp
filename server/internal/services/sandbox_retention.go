@@ -11,7 +11,7 @@ import (
 // stopRetainedSandbox has the same data-preserving boundary as Solo stop.
 // Use a database operation lease to serialize provider effects across replicas.
 func (s *SandboxService) stopRetainedSandbox(ctx context.Context, id uint) error {
-	unlock, err := s.lockSoloRecovery(ctx, id)
+	ctx, unlock, err := s.acquireSandboxOperation(ctx, id)
 	if err != nil {
 		return err
 	}

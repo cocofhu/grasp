@@ -101,6 +101,9 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	}
 
 	// A new service on the same database stands in for the next process.
+	// Its resource locks are process-local; the old process's persisted lease
+	// is expired below to model a crash rather than a second live owner.
+	sbx = NewSandboxService(db, sbx.mgr, sbx.skills, sbx.host, SandboxOptions{ModelBinding: sbx.modelBinding, ProfilesRoot: sbx.profilesRoot})
 	restarted := NewSoloService(db, sbx, solo.agents, solo.projects)
 	after := newRestoreChat(false)
 	restarted.SetChatterForTest(after)
@@ -117,6 +120,9 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	gateway.SetStatus(resident.Name, "stopped")
+	if err := db.Model(&models.Sandbox{}).Where("id = ?", resident.ID).Update("operation_expires_at", time.Now().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
 	sbx.ReconcileOnStartup(context.Background(), nil)
 	gateway.FailStart = true
 	sbx.RecoverSoloSandboxes(context.Background())
@@ -196,7 +202,7 @@ func TestSoloRestoreRunsATurnThatNeverReachedTheTranscript(t *testing.T) {
 	})
 }
 
-func TestSoloRestoreDropsTurnsOfEndedSessions(t *testing.T) {
+func TestSoloRestoreDropsOnlyClosedOrDeletedSessions(t *testing.T) {
 	solo, _, _, db := newSoloFixture(t, 0, 3)
 	for _, s := range []models.SoloSession{
 		{ID: "solo-closed", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusClosed},
@@ -219,9 +225,16 @@ func TestSoloRestoreDropsTurnsOfEndedSessions(t *testing.T) {
 		if solo.lookup(id) != nil {
 			t.Fatalf("%s: an ended session must not be reopened", id)
 		}
-		if total, _ := pendingTurnCount(t, solo, id); total != 0 {
-			t.Fatalf("%s: stored turns left = %d", id, total)
+		want := 0
+		if id == "solo-error" {
+			want = 1
 		}
+		if total, _ := pendingTurnCount(t, solo, id); total != want {
+			t.Fatalf("%s: stored turns left = %d, want %d", id, total, want)
+		}
+	}
+	if !solo.deferredRestores["solo-error"] {
+		t.Fatal("temporary failure must remain eligible for recovery")
 	}
 }
 

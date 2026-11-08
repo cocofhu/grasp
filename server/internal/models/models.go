@@ -992,6 +992,7 @@ type Sandbox struct {
 	// DesiredState is durable user intent. Empty is running for legacy rows.
 	DesiredState       string          `gorm:"index" json:"desiredState,omitempty"`
 	OperationOwner     string          `json:"-"`
+	OperationKind      string          `json:"-"`
 	OperationExpiresAt *time.Time      `json:"-"`
 	Generation         uint64          `gorm:"not null;default:0" json:"generation"`
 	Recovery           SandboxRecovery `gorm:"serializer:json" json:"recovery"`
