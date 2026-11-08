@@ -41,6 +41,20 @@ func TestRuntimeCloseFencesSQLBeforeUnregistering(t *testing.T) {
 	}
 }
 
+func TestRuntimeMemoryCloseDoesNotReconnectToAPhantomDatabase(t *testing.T) {
+	for _, path := range []string{":memory:", "file:grasp-runtime-close?mode=memory&cache=shared"} {
+		t.Run(path, func(t *testing.T) {
+			runtime, err := OpenRuntime(config.DatabaseConfig{Driver: "sqlite", Path: path}, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := runtime.Close(); err != nil {
+				t.Fatalf("ephemeral database shutdown must not query a newly created empty database: %v", err)
+			}
+		})
+	}
+}
+
 func TestSQLiteSnapshotIncludesWALAndRequiresMaintenance(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
