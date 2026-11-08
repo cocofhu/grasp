@@ -440,6 +440,9 @@ func TestSandboxStopDestroyCleanup(t *testing.T) {
 	if got.Status != "stopped" {
 		t.Fatalf("stopped status = %s", got.Status)
 	}
+	if !ds.fg.Has(r1.Name) || got.DesiredState != "stopped" || got.Recovery.Files != "retained" {
+		t.Fatal("stop must retain the provider resource, files and durable intent")
+	}
 
 	r2 := &models.Sandbox{Name: "grasp-sb-b", Purpose: "test", Status: "running", RunID: "rr"}
 	db.Create(r2)
@@ -468,41 +471,46 @@ func TestSandboxStopDestroyCleanup(t *testing.T) {
 // token of a run whose next node is executing in another sandbox; only the last
 // sandbox of a finished run releases it.
 func TestDestroyRunSandboxKeepsMCPWhileRunInProgress(t *testing.T) {
-	db := newTestDB(t)
-	ds := &dockerState{}
-	s := newSandboxService(t, db, ds)
-	ctx := context.Background()
+	for _, status := range []string{"running", "paused"} {
+		t.Run(status, func(t *testing.T) {
+			db := newTestDB(t)
+			ds := &dockerState{}
+			s := newSandboxService(t, db, ds)
+			ctx := context.Background()
 
-	if err := db.Create(&models.Run{ID: "run-live", Status: "running"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	token := s.host.RegisterRun("run-live")
-	upstream := &models.Sandbox{Name: "grasp-sb-impl", Purpose: "run", Status: "running", RunID: "run-live"}
-	current := &models.Sandbox{Name: "grasp-sb-test", Purpose: "run", Status: "running", RunID: "run-live"}
-	db.Create(upstream)
-	db.Create(current)
+			if err := db.Create(&models.Run{ID: "run-live", Status: status}).Error; err != nil {
+				t.Fatal(err)
+			}
+			token := s.host.RegisterRun("run-live")
+			upstream := &models.Sandbox{Name: "grasp-sb-impl", Purpose: "run", Status: "running", RunID: "run-live"}
+			current := &models.Sandbox{Name: "grasp-sb-test", Purpose: "run", Status: "running", RunID: "run-live"}
+			db.Create(upstream)
+			db.Create(current)
 
-	if err := s.Destroy(ctx, upstream.ID); err != nil {
-		t.Fatalf("destroy upstream: %v", err)
-	}
-	if !s.host.AuthorizeRun("run-live", token) {
-		t.Fatal("token revoked while the run is still in progress")
-	}
+			if err := s.Destroy(ctx, upstream.ID); err != nil {
+				t.Fatalf("destroy upstream: %v", err)
+			}
+			if !s.host.AuthorizeRun("run-live", token) {
+				t.Fatal("token revoked while the run is still in progress")
+			}
 
-	db.Model(&models.Run{}).Where("id = ?", "run-live").Update("status", "completed")
-	other := &models.Sandbox{Name: "grasp-sb-debug", Purpose: "run", Status: "running", RunID: "run-live"}
-	db.Create(other)
-	if err := s.Destroy(ctx, current.ID); err != nil {
-		t.Fatalf("destroy current: %v", err)
-	}
-	if !s.host.AuthorizeRun("run-live", token) {
-		t.Fatal("token revoked while another sandbox of the finished run is alive")
-	}
-	if err := s.Destroy(ctx, other.ID); err != nil {
-		t.Fatalf("destroy last: %v", err)
-	}
-	if s.host.AuthorizeRun("run-live", token) {
-		t.Fatal("last sandbox of a finished run must revoke the token")
+			db.Model(&models.Run{}).Where("id = ?", "run-live").Update("status", "completed")
+			other := &models.Sandbox{Name: "grasp-sb-debug", Purpose: "run", Status: "running", RunID: "run-live"}
+			db.Create(other)
+			if err := s.Destroy(ctx, current.ID); err != nil {
+				t.Fatalf("destroy current: %v", err)
+			}
+			if !s.host.AuthorizeRun("run-live", token) {
+				t.Fatal("token revoked while another sandbox of the finished run is alive")
+			}
+			if err := s.Destroy(ctx, other.ID); err != nil {
+				t.Fatalf("destroy last: %v", err)
+			}
+			if s.host.AuthorizeRun("run-live", token) {
+				t.Fatal("last sandbox of a finished run must revoke the token")
+			}
+
+		})
 	}
 }
 
@@ -552,7 +560,7 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	s := newSandboxService(t, db, ds)
 	ctx := context.Background()
 
-	// run-purpose rows: a gone one is dropped; a live one is kept and retired
+	// Run attribution survives missing resources; a live one is kept and retired
 	// with a deadline; an adopted one is kept in use with no deadline.
 	db.Create(&models.Sandbox{Name: "grasp-sb-run", Purpose: "run", Status: "running", RunID: "rid"})
 	db.Create(&models.Sandbox{Name: "grasp-sb-run-live", Purpose: "run", Status: "running", RunID: "rid3"})
@@ -590,18 +598,18 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	if live.ACPPort == 0 {
 		t.Fatal("live row should get refreshed port")
 	}
-	if err := db.Where("name = ?", "grasp-sb-run").First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
-		t.Fatal("run row should be gone")
+	if err := db.Where("name = ?", "grasp-sb-run").First(&models.Sandbox{}).Error; err != nil {
+		t.Fatal("missing Run resource must retain its recovery attribution")
 	}
 	if err := db.Where("name = ?", "grasp-sb-dead").First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
 		t.Fatal("dead row should be gone")
 	}
-	// g1.1/g1.2: recycled names are Destroy'd; g1.3: unmanaged orphans Destroy'd.
+	// Unknown resources can contain unique files and require reconciliation.
 	if ds.fg.Has("grasp-sb-run") {
 		t.Fatal("run gateway sandbox should be destroyed (g1.1)")
 	}
-	if ds.fg.Has("grasp-sb-orphan") {
-		t.Fatal("orphan gateway sandbox should be destroyed (g1.3)")
+	if !ds.fg.Has("grasp-sb-orphan") {
+		t.Fatal("untracked gateway sandbox must survive observation")
 	}
 	if !ds.fg.Has("grasp-sb-live") {
 		t.Fatal("live gateway sandbox must remain")

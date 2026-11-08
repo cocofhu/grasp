@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -24,6 +25,9 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 		return
 	}
 	tracked[row.Name], correlated[row.Name] = true, true
+	if row.OperationOwner != "" && row.OperationExpiresAt != nil && row.OperationExpiresAt.After(time.Now()) {
+		return // another replica is changing this environment; observation waits
+	}
 	s.db.Model(row).Update("destroy_at", nil)
 	if row.DesiredState == "stopped" {
 		// Observation must not wake manually stopped residents on restart.
@@ -52,11 +56,9 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 		}
 	}
 	if err == nil && status == "not_found" {
-		// This is a successful live-driver observation, not an HTTP 404 or a
-		// failed probe. The data-bearing resource is already absent.
-		s.destroyLocalSandbox(ctx, row)
-		delete(tracked, row.Name)
-		delete(correlated, row.Name)
+		// A missing workload can still have recoverable disks/configuration.
+		// Keep its identity and any local files; never turn a probe into delete.
+		_ = s.recordSoloResourceUnavailable(row)
 		return
 	}
 	if err == nil && status == "running" {
@@ -110,9 +112,27 @@ func (s *SandboxService) recordSoloRecovered(row *models.Sandbox, sb *sandbox.Sa
 
 func (s *SandboxService) recordSoloRecoveryFailure(id uint, err error) {
 	s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-		"status": "error", "error": "沙箱恢复暂未完成，工作区已保留，可重试：" + truncErr(err), "destroy_at": nil,
+		"status": "error", "error": "沙箱恢复暂未完成，未释放现有环境，可重试：" + truncErr(err), "destroy_at": nil,
 	})
 	log.Warn().Err(err).Uint("sandbox", id).Msg("solo recovery deferred; workspace retained")
+}
+
+func (s *SandboxService) recordSoloResourceUnavailable(row *models.Sandbox) error {
+	reason := "原环境未找到，聊天和环境关联已保留，等待恢复；未自动创建替代环境"
+	recovery, err := json.Marshal(models.SandboxRecovery{History: "retained", Files: "unavailable", NativeSession: "unavailable", Process: "unavailable", Reason: reason})
+	if err != nil {
+		return err
+	}
+	result := s.db.Model(&models.Sandbox{}).Where("id = ? AND generation = ?", row.ID, row.Generation).
+		Updates(map[string]any{"status": "error", "error": reason, "recovery": string(recovery), "destroy_at": nil})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("environment changed during observation")
+	}
+	return s.db.Model(&models.SoloSession{}).Where("sandbox_id = ? AND status <> ?", row.ID, models.SoloStatusClosed).
+		Updates(map[string]any{"status": models.SoloStatusError, "error": reason}).Error
 }
 
 // EnsureSoloRunning recovers the same sandbox, or leaves its data and binding
@@ -162,15 +182,17 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 		case "pending", "creating", "pulling":
 			sb, err = s.mgr.WaitForRunning(ctx, row.Name)
 		case "not_found":
-			s.destroyLocalSandbox(ctx, row)
-			return fmt.Errorf("沙箱已不存在，可重新启动会话")
+			if err := s.recordSoloResourceUnavailable(row); err != nil {
+				return err
+			}
+			return soloErr(409, "environment_unavailable", "原环境未找到，已保留关联，未自动创建替代环境")
 		default:
 			err = fmt.Errorf("sandbox status=%s", status)
 		}
 	}
 	if err != nil {
 		s.recordSoloRecoveryFailure(id, err)
-		return fmt.Errorf("沙箱恢复失败，工作区已保留，请重试：%w", err)
+		return fmt.Errorf("沙箱恢复失败，未释放现有环境，请重试：%w", err)
 	}
 	if s.soloSessionClosed(row) {
 		return fmt.Errorf("Solo 会话已关闭")

@@ -333,9 +333,14 @@ func (c *acpProvider) releaseSharedSandbox(sb *sandbox.Sandbox, acp *sandbox.ACP
 	return true
 }
 
-// dropSharedSandbox destroys a broken shared sandbox.
+// dropSharedSandbox detaches a broken shared sandbox, retaining its workspace
+// through the production registry before a replacement is provisioned.
 func (c *acpProvider) dropSharedSandbox(runID string, ss *sharedRunSandbox) {
 	if c.shared.take(runID, ss) == nil {
+		return
+	}
+	if r, ok := c.registry.(RunSandboxRetirer); ok {
+		r.RetireRunSandbox(ss.sb.Name)
 		return
 	}
 	c.deregisterRunSandbox(ss.sb.Name)
@@ -369,18 +374,20 @@ func (c *acpProvider) registerSharedRunSandbox(req NodeReq, sb *sandbox.Sandbox,
 		return
 	}
 	c.registry.RegisterRunSandbox(RunSandboxInfo{
-		Name:           sb.Name,
-		Profile:        models.AgentProfile(req.Config),
-		RunID:          req.RunID,
-		WorkflowID:     req.WorkflowID,
-		WorkflowName:   req.WorkflowName,
-		NodeID:         req.NodeID,
-		Host:           sb.Host,
-		ACPPort:        sb.Port,
-		CodeServerPort: sb.CodeServerPort,
-		RepoURL:        firstRepoURL(req),
-		HomeDir:        home,
-		Token:          req.Token,
-		Shared:         true,
+		Iteration:       req.Iteration,
+		CorrelationName: sb.CorrelationName,
+		Name:            sb.Name,
+		Profile:         models.AgentProfile(req.Config),
+		RunID:           req.RunID,
+		WorkflowID:      req.WorkflowID,
+		WorkflowName:    req.WorkflowName,
+		NodeID:          req.NodeID,
+		Host:            sb.Host,
+		ACPPort:         sb.Port,
+		CodeServerPort:  sb.CodeServerPort,
+		RepoURL:         firstRepoURL(req),
+		HomeDir:         home,
+		Token:           req.Token,
+		Shared:          true,
 	})
 }

@@ -10,3 +10,7 @@
 - 补充修复：附件输入归档改为返回新值，避免并发启动重试修改请求体和幂等指纹；带附件并发重试 5 轮 race 通过。聊天优先入口、私人 origin、删除 fallback、跨服务并发创建、结果上下文回流及旧详情深链已回归。文件快照/代码导入、自动节点邮箱、流式持久化与分页、完整恢复和最终分支集成验收仍未完成。
 
 - 本轮门禁：server 全量测试、lint/vet、配置文档检查与 core 90.7% 通过；web 6298 项单测（Lines 91.6%）、类型/lint/build、371 项 desktop/mobile Chromium/WebKit 浏览器回归通过。docs build/audit 与根目录三个 gate 通过。新增历史/附件/结果回流并发用例在 race 下重复 5 次通过。
+
+- 文件保护补充：Run 调试租约到期改为保留身份和磁盘的停机，provider 停机失败持久化错误并重试；启动观察保留停止/不可用 Run、未归属资源和 Solo 恢复关联。每次创建以独立 placeholder 记录，登记真实 gateway 身份时关联原 placeholder 和 iteration；运行失败重试也通过生产 registry 退休保留旧工作区。暂停 Run 继续持有 MCP 和直到结束的租约。历史上下文使用固定字段次序，避免大型产物挤掉原需求；完整原文仍可通过 get_history 读取。完整快照、接手、分页和邮箱继续作为未完成工作保留，不能以停机保护代替快照实现。
+
+- 文件保护回归：server 全量测试通过，lint 0 issues、vet/configdoc、core 90.7%、根 gate、docs build/audit 通过；新停机失败重试/丢失资源保留/每次尝试工作区/大型产物上下文用例通过，关键用例 race 重复 5 次通过。完整免费 Agent 矩阵（8 个工具、全部有序切换，付费调用 0）通过：5 个可配置工具运行原生 CLI，Cursor/Trae/Kimi Code 仅声明平台协议 fixture；不宣称这三种 vendor inference 已验证。

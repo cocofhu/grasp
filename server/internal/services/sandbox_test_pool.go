@@ -595,40 +595,29 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	return ls, &row, nil
 }
 
-// Stop removes the container but keeps the DB record (status=stopped).
+// Stop releases compute while retaining the writable workspace and identity.
+// Physical destruction is a separate, explicit operation.
 func (s *SandboxService) Stop(ctx context.Context, id uint) error {
 	row, err := s.Get(id)
 	if err != nil {
 		return err
 	}
 	if row.Purpose == SandboxPurposeSolo {
-		return fmt.Errorf("Solo 沙箱请通过关闭会话释放")
+		return fmt.Errorf("Solo 沙箱请通过会话的环境停止操作处理")
 	}
-	if s.isBusyRow(row) {
-		return fmt.Errorf("sandbox 正在执行任务,无法停止")
-	}
-	s.teardownLive(id)
-	s.archiveLog(ctx, row.Name)
-	_ = s.mgr.DestroyByName(ctx, row.Name)
-	return s.db.Model(&models.Sandbox{}).Where("id = ?", id).
-		Updates(map[string]any{"status": "stopped", "destroy_at": nil, "updated_at": time.Now()}).Error
+	return s.stopRetainedSandbox(ctx, id)
 }
 
 // Destroy removes the container and deletes the DB record.
 func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
+	unlock, lockErr := s.lockSoloRecovery(ctx, id)
+	if lockErr != nil {
+		return lockErr
+	}
+	defer unlock()
 	row, err := s.Get(id)
 	if err != nil {
 		return err
-	}
-	if row.Purpose == SandboxPurposeSolo {
-		unlock, lockErr := s.lockSoloRecovery(ctx, id)
-		if lockErr != nil {
-			return lockErr
-		}
-		defer unlock()
-		if row, err = s.Get(id); err != nil {
-			return err
-		}
 	}
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法销毁")
@@ -682,7 +671,7 @@ func (s *SandboxService) runStillActive(runID string) bool {
 		return false
 	}
 	switch run.Status {
-	case "queued", "running", "waiting_human":
+	case "queued", "running", "waiting_human", "paused":
 		return true
 	}
 	return false
@@ -745,7 +734,7 @@ func (s *SandboxService) ShutdownAllTestSandboxes(ctx context.Context, force boo
 	return destroyed
 }
 
-// RunSweeper periodically destroys idle sandboxes past their TTL deadline.
+// RunSweeper periodically releases idle compute past its retention deadline.
 func (s *SandboxService) RunSweeper(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -767,8 +756,8 @@ func (s *SandboxService) sweepOnce(ctx context.Context) {
 	s.sweepRows(ctx, rows)
 }
 
-// sweepRows destroys the due rows found by sweepOnce. Run sandboxes are
-// re-checked against their current leases first; rows is only a snapshot.
+// sweepRows rechecks current leases before releasing compute. A Run's expired
+// debug window never authorizes deletion of its only writable file copy.
 func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 	now := time.Now()
 	for i := range rows {
@@ -779,7 +768,16 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 		if s.isBusyRow(&rows[i]) {
 			continue
 		}
-		if rows[i].Purpose == "run" && !s.claimExpired(rows[i].ID, now) {
+		if rows[i].Purpose == "run" {
+			if !s.claimExpired(rows[i].ID, now) {
+				continue
+			}
+			if err := s.stopRetainedSandbox(ctx, rows[i].ID); err != nil {
+				// Retry an unavailable provider without deleting its disk or
+				// falsely declaring the environment stopped.
+				s.db.Model(&models.Sandbox{}).Where("id = ?", rows[i].ID).Update("destroy_at", now.Add(time.Minute))
+				log.Warn().Err(err).Str("name", rows[i].Name).Msg("expired Run compute stop deferred; workspace retained")
+			}
 			continue
 		}
 		if err := s.Destroy(ctx, rows[i].ID); err == nil {
@@ -796,10 +794,9 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 // sandbox-gateway orphanGC.minAge (10m default).
 const reconcileCreatingGrace = 10 * time.Minute
 
-// ReconcileOnStartup syncs DB rows with live gateway state after a restart and
-// drops orphan managed sandboxes not tracked in the DB. Dropping a local row
-// always Destroy()s the gateway instance first so sandbox_gateway.sandboxes
-// (and the workload it protects) cannot outlive the platform list.
+// ReconcileOnStartup syncs DB rows with live gateway state after a restart.
+// Unknown managed resources and Run workspaces are retained for recovery;
+// missing application bookkeeping never authorizes physical file deletion.
 //
 // adopted names run sandboxes the engine will reattach: they stay in use with
 // no destroy deadline. Run sandboxes are never Attach()ed here, because Attach
@@ -874,30 +871,33 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 		if corr := sb.Labels[corrKey]; corr != "" && protectedCorr[corr] {
 			continue
 		}
-		_ = s.mgr.DestroyByName(ctx, sb.ID)
-		log.Info().Str("name", sb.ID).Msg("destroyed orphan sandbox container")
+		// A lost application row does not prove the guest contains no user
+		// files. Keep the gateway identity/disk for operator reconciliation.
+		log.Warn().Str("name", sb.ID).Msg("untracked managed sandbox retained; explicit reconciliation required")
 	}
 }
 
-// reconcileRunSandbox keeps a live per-run node sandbox across a restart. An
-// adopted one is marked in use for the reattaching driver; any other keeps its
-// persisted leases (debug window, preview) or is retired like a finished node.
-// Missing or stopped containers are dropped.
+// reconcileRunSandbox keeps per-run node sandbox attribution across a restart.
+// An adopted one is marked in use for the reattaching driver; other running
+// resources keep their persisted leases or are retired like a finished node.
+// Stopped, missing and unavailable resources retain their SQL attribution so
+// history and recovery remain possible. Observation never starts or destroys.
 func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sandbox, adopted bool, tracked map[string]bool) {
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
-	if sandbox.GatewayRecordMissing(err) {
-		status, err = "not_found", nil
-	}
+	tracked[row.Name] = true
 	if err != nil {
-		tracked[row.Name] = true
 		log.Warn().Err(err).Str("name", row.Name).Msg("run sandbox status unavailable; retaining sandbox")
 		return
 	}
 	if status != "running" {
-		s.destroyLocalSandbox(ctx, row)
+		observed := "error"
+		reason := "环境当前不可用，保留工作区关联以供恢复"
+		if status == "stopped" || status == "exited" {
+			observed, reason = "stopped", ""
+		}
+		s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{"status": observed, "error": reason, "destroy_at": nil})
 		return
 	}
-	tracked[row.Name] = true
 	if adopted {
 		s.mu.Lock()
 		s.runActive[row.Name] = true

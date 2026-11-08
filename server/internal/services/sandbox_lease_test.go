@@ -70,8 +70,9 @@ func TestRetiredRunSandboxLeases(t *testing.T) {
 	ctx := context.Background()
 
 	name := "grasp-sb-lease"
+	ds.setStatus(name, "running")
 	info := runtimeInfo(name)
-	db.Create(&models.Run{ID: info.RunID, Status: "running", StartedAt: time.Now()})
+	db.Create(&models.Run{ID: info.RunID, Status: "paused", StartedAt: time.Now()})
 	s.RegisterRunSandbox(info)
 	if err := s.AddLeaseByName(name, models.SandboxLease{Kind: models.LeasePreview, Reason: "set_preview"}); err != nil {
 		t.Fatalf("preview lease: %v", err)
@@ -99,7 +100,7 @@ func TestRetiredRunSandboxLeases(t *testing.T) {
 		t.Fatalf("sweeper did not refresh destroy_at: %v", row.DestroyAt)
 	}
 
-	// Run ended long ago: every lease has lapsed and the sweeper reclaims it.
+	// Run ended long ago: compute expires, but its only file copy survives.
 	db.Model(&models.Run{}).Where("id = ?", info.RunID).
 		Updates(map[string]any{"status": "completed", "started_at": time.Now().Add(-3 * time.Hour), "duration_sec": 60})
 	s.SetTTLs(time.Minute, 0)
@@ -108,10 +109,12 @@ func TestRetiredRunSandboxLeases(t *testing.T) {
 		Leases:    []models.SandboxLease{{Kind: models.LeasePreview, CreatedAt: past}, {Kind: models.LeaseDebug, Until: &past, CreatedAt: past}},
 	})
 	s.sweepOnce(ctx)
-	var n int64
-	db.Model(&models.Sandbox{}).Where("name = ?", name).Count(&n)
-	if n != 0 {
-		t.Fatal("expired leases must let the sweeper destroy the sandbox")
+	row = models.Sandbox{}
+	if err := db.Where("name = ?", name).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != "stopped" || row.DestroyAt != nil || !ds.fg.Has(name) {
+		t.Fatalf("expired compute must retain files: %+v", row)
 	}
 }
 

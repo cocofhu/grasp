@@ -1017,6 +1017,7 @@ type Sandbox struct {
 	WorkflowID   string `json:"workflowId,omitempty"`
 	WorkflowName string `json:"workflowName,omitempty"`
 	NodeID       string `json:"nodeId,omitempty"`
+	Iteration    int    `json:"iteration,omitempty"`
 	ThreadID     string `json:"threadId,omitempty"`
 	// PreviewArtifact is the pinned artifact in this Solo sandbox's run namespace.
 	PreviewArtifact string `json:"-"`

@@ -122,7 +122,7 @@ func (s *SandboxService) runPhaseOf(runID string) runPhase {
 		return runPhase{}
 	}
 	switch run.Status {
-	case "queued", "running", "waiting_human":
+	case "queued", "running", "waiting_human", "paused":
 		return runPhase{active: true}
 	}
 	return runPhase{endedAt: run.StartedAt.Add(time.Duration(run.DurationSec) * time.Second)}

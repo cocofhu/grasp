@@ -140,6 +140,12 @@ func TestSoloMissingResourceAndOldDanglingReferences(t *testing.T) {
 		if err := db.First(&session, "id = ?", id).Error; err != nil {
 			t.Fatal(err)
 		}
+		if id == "resource-gone" {
+			if session.Status != models.SoloStatusError || session.SandboxID != row.ID || !strings.Contains(session.Error, "未找到") || !ds.fg.Has(row.Name) {
+				t.Fatalf("unavailable resource must retain attribution and provider bookkeeping: %+v", session)
+			}
+			continue
+		}
 		if session.Status != models.SoloStatusError || session.SandboxID != 0 || !strings.Contains(session.Error, "重新启动") {
 			t.Fatalf("missing sandbox left dangling: %+v", session)
 		}

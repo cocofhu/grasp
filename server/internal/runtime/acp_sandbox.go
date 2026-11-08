@@ -246,6 +246,7 @@ func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
 		return
 	}
 	b.BeginRunSandbox(RunSandboxInfo{
+		Iteration:    req.Iteration,
 		Name:         name,
 		Profile:      models.AgentProfile(req.Config),
 		RunID:        req.RunID,
@@ -266,18 +267,20 @@ func (c *acpProvider) registerRunSandbox(req NodeReq, sb *sandbox.Sandbox, home 
 	}
 	repo := firstRepoURL(req)
 	c.registry.RegisterRunSandbox(RunSandboxInfo{
-		Name:           sb.Name,
-		Profile:        models.AgentProfile(req.Config),
-		RunID:          req.RunID,
-		WorkflowID:     req.WorkflowID,
-		WorkflowName:   req.WorkflowName,
-		NodeID:         req.NodeID,
-		Host:           sb.Host,
-		ACPPort:        sb.Port,
-		CodeServerPort: sb.CodeServerPort,
-		RepoURL:        repo,
-		HomeDir:        home,
-		Token:          req.Token,
+		Iteration:       req.Iteration,
+		CorrelationName: sb.CorrelationName,
+		Name:            sb.Name,
+		Profile:         models.AgentProfile(req.Config),
+		RunID:           req.RunID,
+		WorkflowID:      req.WorkflowID,
+		WorkflowName:    req.WorkflowName,
+		NodeID:          req.NodeID,
+		Host:            sb.Host,
+		ACPPort:         sb.Port,
+		CodeServerPort:  sb.CodeServerPort,
+		RepoURL:         repo,
+		HomeDir:         home,
+		Token:           req.Token,
 	})
 }
 
@@ -319,12 +322,9 @@ func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClie
 	removeHome(home)
 }
 
-// discardSandbox tears down a broken sandbox between retries: close the ACP
-// session, drop its registry/live bookkeeping, destroy the container, and
-// remove its cursor-home. Unlike retireRunSandbox it does NOT keep the
-// container for debugging — a faulted sandbox has no value and would leak.
-// Best-effort snapshotEvents runs before destroy so ACP events are not lost
-// when the container is recycled.
+// discardSandbox closes a broken attempt between retries. A production
+// registry retains its independent workspace and retires its compute; a fault
+// does not prove the guest has no valuable files. snapshotEvents runs first.
 func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string, fallback []models.AcpEvent) []models.AcpEvent {
 	events := c.snapshotEvents(ctx, sb, fallback)
 	c.deregisterLive(req)
@@ -338,6 +338,13 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 	}
 	if sb == nil {
 		removeHome(home)
+		return events
+	}
+	// An interrupted attempt may contain uncommitted or non-Git user files.
+	// Retire it independently of its replacement instead of erasing the only
+	// copy while retrying. The production registry stops expired compute.
+	if r, ok := c.registry.(RunSandboxRetirer); ok {
+		r.RetireRunSandbox(sb.Name)
 		return events
 	}
 	c.deregisterRunSandbox(sb.Name)

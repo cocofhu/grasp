@@ -93,9 +93,19 @@ func freezeWorkflowHistory(tx *gorm.DB, session *models.SoloSession, runID strin
 	}
 	// Artifacts have no execution credentials; their content is needed for
 	// continuation even after the original sandbox has been released.
-	context, err := json.Marshal(map[string]any{"runId": run.ID, "workflow": run.WorkflowName,
-		"title": run.Title, "status": run.Status, "inputs": run.Inputs,
-		"firstMessage": run.FirstMessage, "segments": segments, "artifacts": results})
+	// Keep the original request ahead of potentially large artifact bodies.
+	// The model receives a bounded excerpt and can retrieve the full history.
+	// A map's alphabetical JSON order would put artifacts before the request.
+	context, err := json.Marshal(struct {
+		RunID        string                `json:"runId"`
+		Workflow     string                `json:"workflow"`
+		Title        string                `json:"title"`
+		Status       string                `json:"status"`
+		FirstMessage *models.CompositeText `json:"firstMessage"`
+		Inputs       map[string]any        `json:"inputs"`
+		Segments     []ChainSegment        `json:"segments"`
+		Artifacts    []WorkflowArtifactRef `json:"artifacts"`
+	}{run.ID, run.WorkflowName, run.Title, run.Status, run.FirstMessage, run.Inputs, segments, results})
 	if err != nil {
 		return err
 	}

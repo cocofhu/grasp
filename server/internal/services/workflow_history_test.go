@@ -22,6 +22,10 @@ func TestWorkflowHistoryPrivateOriginAndDeletedFallback(t *testing.T) {
 	if err := db.Create(&run).Error; err != nil {
 		t.Fatal(err)
 	}
+	largeArtifact := strings.Repeat("large result ", 10000)
+	if err := db.Create(&models.Artifact{ID: "large-result", RunID: run.ID, Name: "result", Content: largeArtifact}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&models.SoloMessage{ID: "private", SessionID: origin.ID, Role: "user", Content: "private Solo text"}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -50,6 +54,9 @@ func TestWorkflowHistoryPrivateOriginAndDeletedFallback(t *testing.T) {
 	}
 	if len(messages) != 1 || !strings.Contains(soloHistoryContent(messages[0]), "original requirement") || strings.Contains(soloHistoryContent(messages[0]), "private Solo text") || strings.Contains(soloHistoryContent(messages[0]), "never-copy-this-token") {
 		t.Fatalf("wrong continuation context: %+v", messages)
+	}
+	if !strings.Contains(soloHistoryContent(messages[0]), largeArtifact) {
+		t.Fatal("full artifact was omitted from retrievable history")
 	}
 	preamble, err := solo.contextPreambleChecked(view.ID, "none", "history")
 	if err != nil || !strings.Contains(preamble, "original requirement") {

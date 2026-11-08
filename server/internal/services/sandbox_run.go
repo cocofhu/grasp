@@ -24,8 +24,8 @@ var ErrSandboxAbsent = errors.New("not found")
 // node's live log as "starting" instead of a 404 during the cold-start window.
 // The row uses a placeholder name; RegisterRunSandbox later adopts the real
 // gateway id and flips it to "running", or UnregisterRunSandbox removes it on
-// failure. Implements runtime.RunSandboxBeginner. Keyed by run+node so a retry
-// replaces the previous placeholder row.
+// failure. Implements runtime.RunSandboxBeginner. Each provisioning attempt
+// has its own name, preserving prior retries and loop iterations.
 func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Name == "" {
 		return
@@ -40,6 +40,7 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 		"workflow_id":   info.WorkflowID,
 		"workflow_name": info.WorkflowName,
 		"node_id":       info.NodeID,
+		"iteration":     info.Iteration,
 		"home_dir":      info.HomeDir,
 		"error":         "",
 		"destroy_at":    nil,
@@ -51,7 +52,9 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Shared {
 		fields["shared"] = true
 	}
-	if err := s.db.Where(models.Sandbox{RunID: info.RunID, NodeID: info.NodeID, Purpose: "run"}).
+	// A retry or loop iteration owns a distinct resource. Never overwrite a
+	// retired attempt's row: it can be the only copy of uncommitted files.
+	if err := s.db.Where(models.Sandbox{Name: info.Name}).
 		Assign(fields).FirstOrCreate(&models.Sandbox{}).Error; err != nil {
 		log.Warn().Err(err).Str("name", info.Name).Msg("begin run sandbox failed")
 	}
@@ -84,6 +87,7 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		"workflow_id":      info.WorkflowID,
 		"workflow_name":    info.WorkflowName,
 		"node_id":          info.NodeID,
+		"iteration":        info.Iteration,
 		"home_dir":         info.HomeDir,
 		"error":            "",
 		"destroy_at":       nil,
@@ -100,9 +104,13 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	// swapping its placeholder name for the gateway id. Falls back to an upsert
 	// by name when no placeholder exists (registry without RunSandboxBeginner).
 	var existing models.Sandbox
-	err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ? AND status IN ?",
+	query := s.db.Where("run_id = ? AND node_id = ? AND purpose = ? AND status IN ?",
 		info.RunID, info.NodeID, "run", []string{"creating", "pulling"}).
-		Order("updated_at desc").First(&existing).Error
+		Where("iteration = ?", info.Iteration)
+	if info.CorrelationName != "" {
+		query = query.Where("name = ?", info.CorrelationName)
+	}
+	err := query.Order("updated_at desc").First(&existing).Error
 	if err == nil {
 		oldName := existing.Name
 		if uerr := s.db.Model(&models.Sandbox{}).Where("id = ?", existing.ID).

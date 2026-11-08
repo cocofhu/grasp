@@ -121,7 +121,8 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 	log.Info().Str("launch", launchID).Str("root", launch.Root).Str("kind", kind).
 		Msg("worktree launch (no sandbox container)")
 	return &Sandbox{
-		ID: name, Name: name, Host: "127.0.0.1", Port: port,
+		CorrelationName: name,
+		ID:              name, Name: name, Host: "127.0.0.1", Port: port,
 		WorkspaceDir: launch.Root, ConfigRoot: configRoot,
 		Password: strings.TrimSpace(env[BridgePasswordEnv]),
 		Blobs:    m.blobs, mgr: m, local: local,

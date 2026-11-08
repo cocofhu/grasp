@@ -142,6 +142,7 @@ type NodeReq struct {
 	WorkflowName string
 	Token        string // run-scoped MCP token, injected to the sandbox
 	NodeID       string
+	Iteration    int // exact node visit; zero only for legacy callers
 	NodeType     string
 	// Caps is the Agent's capability snapshot for this run (nil for non-Agent nodes).
 	Caps   *models.AgentCapabilities
@@ -414,16 +415,18 @@ type RunAborter interface {
 // RunSandboxInfo describes a per-run node sandbox so it can be recorded in the
 // platform sandbox store and shown in the sandbox UI while the node runs.
 type RunSandboxInfo struct {
-	Name           string
-	Profile        string
-	RunID          string
-	WorkflowID     string
-	WorkflowName   string
-	NodeID         string
-	Host           string
-	ACPPort        int
-	CodeServerPort int
-	RepoURL        string
+	CorrelationName string // original create placeholder, when gateway id differs
+	Iteration       int
+	Name            string
+	Profile         string
+	RunID           string
+	WorkflowID      string
+	WorkflowName    string
+	NodeID          string
+	Host            string
+	ACPPort         int
+	CodeServerPort  int
+	RepoURL         string
 	// HomeDir is the host cursor-home dir bind-mounted into the container; the
 	// store keeps it so it can be removed when the sandbox is finally destroyed.
 	HomeDir string

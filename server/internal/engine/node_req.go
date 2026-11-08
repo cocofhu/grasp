@@ -65,6 +65,7 @@ func (e *Engine) nodeReq(c *execCtx, node *models.Node) runtime.NodeReq {
 	req := runtime.NodeReq{RunID: c.run.ID, WorkflowID: c.run.WorkflowID, WorkflowName: c.run.WorkflowName,
 		Token: c.token, NodeID: node.ID, NodeType: node.Type, Config: cfg, Vars: c.vars,
 		Caps: node.Caps, PromptImages: promptImages, SandboxMode: c.run.SandboxMode}
+	req.Iteration = max(1, c.iter[node.ID])
 
 	req.KeepAliveForReview = node.Caps.ReviewEnabled() || e.hasDownstreamReactGate(c, node)
 	if node.Type == "agent" {

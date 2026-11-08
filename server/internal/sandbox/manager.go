@@ -271,16 +271,17 @@ func DecodeRepos(s string) []RepoSpec {
 // endpoint (8765) the gateway published; SSHHost/SSHPort at the sshd endpoint
 // (22) used for the data plane.
 type Sandbox struct {
-	ID             string // gateway sandbox id (authoritative handle)
-	Name           string // == ID (kept for API/DB compatibility)
-	Image          string // gateway-reported image of the existing container
-	Host           string // session endpoint host
-	Port           int    // session endpoint port (ACP bridge, 8765)
-	CodeServerPort int    // published code-server (ide) port (0 if none)
-	SSHHost        string // ssh endpoint host
-	SSHPort        int    // ssh endpoint port
-	WorkspaceDir   string // resolved WORKSPACE_DIR inside the sandbox
-	ConfigRoot     string // in-sandbox agent config root (e.g. /root/.cursor)
+	CorrelationName string // create request identity, independent of gateway id
+	ID              string // gateway sandbox id (authoritative handle)
+	Name            string // == ID (kept for API/DB compatibility)
+	Image           string // gateway-reported image of the existing container
+	Host            string // session endpoint host
+	Port            int    // session endpoint port (ACP bridge, 8765)
+	CodeServerPort  int    // published code-server (ide) port (0 if none)
+	SSHHost         string // ssh endpoint host
+	SSHPort         int    // ssh endpoint port
+	WorkspaceDir    string // resolved WORKSPACE_DIR inside the sandbox
+	ConfigRoot      string // in-sandbox agent config root (e.g. /root/.cursor)
 	// Password is the sandbox token the acp-bridge (8765) requires
 	// (ACP_BRIDGE_PASSWORD). ACP() attaches it so the platform's client logs in
 	// before dialing /ws.
@@ -360,7 +361,8 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 		workspaceDir = m.WorkspaceDir
 	}
 	return &Sandbox{
-		ID: sb.ID, Name: sb.ID, Image: sb.Image, Host: sh, Port: sp, CodeServerPort: ide,
+		CorrelationName: sb.Labels[cfNameLabel],
+		ID:              sb.ID, Name: sb.ID, Image: sb.Image, Host: sh, Port: sp, CodeServerPort: ide,
 		SSHHost: sshHost, SSHPort: sshPort, WorkspaceDir: workspaceDir, mgr: m, Blobs: m.blobs,
 	}
 }

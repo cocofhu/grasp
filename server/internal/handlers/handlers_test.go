@@ -886,6 +886,10 @@ func TestSandboxEndpoints(t *testing.T) {
 		t.Fatalf("eventlog no conn: %d", w.Code)
 	}
 
+	if w := h.do("POST", path+"/stop", nil); w.Code != 409 {
+		t.Fatalf("missing provider resource must not report a successful stop: %d", w.Code)
+	}
+	h.fg.SetStatus(row.Name, "stopped")
 	if w := h.do("POST", path+"/stop", nil); w.Code != 200 {
 		t.Fatalf("stop: %d %s", w.Code, w.Body)
 	}
