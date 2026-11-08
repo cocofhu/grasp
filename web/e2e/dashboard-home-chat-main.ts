@@ -36,6 +36,7 @@ async function bootstrap() {
           },
         }),
       },
+      { path: '/solo/:id', component: defineComponent({ setup() { const route = useRoute(); return () => h('div', { 'data-testid': 'solo-chat-page' }, String(route.params.id)) } }) },
       {
         path: '/runs/:id',
         component: {

@@ -4,14 +4,13 @@ import zhNav from '@/locales/zh-CN/nav.json'
 import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from './sidebarNav'
 
 describe('sidebarNav (plan g1.1)', () => {
-  it('workspace primary is exactly home / board / workflows / usage / settings', () => {
+  it('workspace primary is exactly Solo home / board / usage / settings', () => {
     expect(sidebarNavGroups).toHaveLength(1)
     expect(sidebarNavGroups[0].titleKey).toBeUndefined()
     const items = sidebarNavGroups[0].items
     expect(items.map((i) => i.to)).toEqual([
       '/dashboard',
       '/board',
-      '/workflows',
       '/stats',
       '/settings',
     ])
@@ -20,11 +19,7 @@ describe('sidebarNav (plan g1.1)', () => {
       icon: 'board',
       labelKey: 'nav.board',
     })
-    expect(items.find((i) => i.to === '/workflows')).toEqual({
-      to: '/workflows',
-      icon: 'workflow',
-      labelKey: 'nav.workflows',
-    })
+    expect(items.find((i) => i.to === '/workflows')).toBeUndefined()
     expect(items.find((i) => i.to === '/stats')).toEqual({
       to: '/stats',
       icon: 'chart',

@@ -170,11 +170,14 @@ type RunReference struct {
 // SoloMessage is one persisted turn of a Solo session. Agent turns keep the raw
 // ACP frames so the UI can replay thoughts and tool calls.
 type SoloMessage struct {
-	WorkflowRunID string               `gorm:"index" json:"workflowRunId,omitempty"`
-	TurnID        string               `gorm:"index" json:"turnId,omitempty"`
-	Files         []ArtifactAttachment `gorm:"serializer:json" json:"files,omitempty"`
-	ID            string               `gorm:"primaryKey" json:"id"`
-	SessionID     string               `gorm:"index" json:"sessionId"`
+	// WorkflowContext holds the immutable task context separately from the
+	// compact system notice displayed in chat. get_history returns its original.
+	WorkflowContext string               `gorm:"serializer:filetext" json:"-"`
+	WorkflowRunID   string               `gorm:"index" json:"workflowRunId,omitempty"`
+	TurnID          string               `gorm:"index" json:"turnId,omitempty"`
+	Files           []ArtifactAttachment `gorm:"serializer:json" json:"files,omitempty"`
+	ID              string               `gorm:"primaryKey" json:"id"`
+	SessionID       string               `gorm:"index" json:"sessionId"`
 	// Role: user | assistant | system (system marks restarts).
 	Role          string            `json:"role"`
 	Content       string            `gorm:"serializer:filetext" json:"content"`

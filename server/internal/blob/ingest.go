@@ -58,19 +58,21 @@ func IngestPromptImages(ctx context.Context, store Store, images []models.Prompt
 }
 
 // IngestCompositeInputs walks a launch inputs map and externalizes any
-// composite {text, images[]} values in place. Returns the same map.
+// composite {text, images[]} values into a new map. The caller's request stays
+// unchanged so concurrent retries retain the same idempotency fingerprint.
 func IngestCompositeInputs(ctx context.Context, store Store, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return inputs, nil
 	}
+	out := make(map[string]any, len(inputs))
 	for k, v := range inputs {
 		nv, err := ingestValue(ctx, store, v)
 		if err != nil {
 			return nil, fmt.Errorf("input %q: %w", k, err)
 		}
-		inputs[k] = nv
+		out[k] = nv
 	}
-	return inputs, nil
+	return out, nil
 }
 
 func ingestValue(ctx context.Context, store Store, v any) (any, error) {
@@ -79,7 +81,6 @@ func ingestValue(ctx context.Context, store Store, v any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		ct.Images = imgs
 		return map[string]any{
 			"text":   ct.Text,
 			"images": promptImagesToAny(imgs),

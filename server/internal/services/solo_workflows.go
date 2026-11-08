@@ -20,6 +20,7 @@ type WorkflowArtifactRef struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Version int    `json:"version"`
+	Content string `json:"content,omitempty"`
 }
 type WorkflowEventPayload struct {
 	RunID        string                `json:"runId"`
@@ -45,8 +46,12 @@ func EnqueueWorkflowEvent(tx *gorm.DB, runID, status string) error {
 		return err
 	}
 	payload := WorkflowEventPayload{RunID: runID, WorkflowName: run.WorkflowName, Title: run.Title, Status: status, Artifacts: []WorkflowArtifactRef{}}
-	if err := tx.Model(&models.Artifact{}).Select("id, name, revision AS version").Where("run_id = ?", runID).Order("id asc").Scan(&payload.Artifacts).Error; err != nil {
+	var artifacts []models.Artifact
+	if err := tx.Where("run_id = ?", runID).Order("id asc").Find(&artifacts).Error; err != nil {
 		return err
+	}
+	for _, artifact := range artifacts {
+		payload.Artifacts = append(payload.Artifacts, WorkflowArtifactRef{ID: artifact.ID, Name: artifact.Name, Version: artifact.Revision, Content: artifact.Content})
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -92,7 +97,7 @@ func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			message := models.SoloMessage{ID: "workflow-event-" + event.ID, SessionID: event.SoloID, Role: "system", Content: workflowEventText(payload), WorkflowRunID: event.RunID}
+			message := models.SoloMessage{ID: "workflow-event-" + event.ID, SessionID: event.SoloID, Role: "system", Content: workflowEventText(payload), WorkflowRunID: event.RunID, WorkflowContext: event.Payload}
 			created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&message)
 			if created.Error != nil {
 				return created.Error

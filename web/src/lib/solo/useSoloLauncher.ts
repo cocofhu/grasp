@@ -164,7 +164,7 @@ export function useSoloLauncher() {
   }
 
   /** Creates the session and opens it; the first message runs once the sandbox is up. */
-  async function start(text: string, images: ClarifyImage[] = [], title = '', references: MessageReference[] = []): Promise<SoloSession | null> {
+  async function start(text: string, images: ClarifyImage[] = [], title = '', references: MessageReference[] = [], continuationRunId = ''): Promise<SoloSession | null> {
     if (!canStart.value) {
       if (!agent.value) error.value = t('pages.solo.home.noAgent')
       return null
@@ -187,7 +187,8 @@ export function useSoloLauncher() {
       // The selector shows an empty effort as the highest level. Send that token
       // so creation does not inherit a lower model-group variant or the tool default.
       if (!reasoningEffort.value && listed.length) reasoningEffort.value = listed[listed.length - 1]!
-      const s = await api.createSoloSession({
+      const createSession = continuationRunId ? api.continueWorkflow.bind(null, continuationRunId) : api.createSoloSession
+      const s = await createSession({
         agentName: agentName.value,
         repos: soloCreateChoices(projectIds.value, branches.value),
         ...(initialModelId.value ? { initialModelId: parseModelRoute(initialModelId.value).modelId, ...(parseModelRoute(initialModelId.value).configurationId ? { initialConfigurationId: parseModelRoute(initialModelId.value).configurationId } : {}) } : {}),

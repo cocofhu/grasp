@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/base64"
 	"errors"
 	"sync"
 	"testing"
@@ -11,7 +12,10 @@ import (
 
 func TestWorkflowLaunchConcurrentRetryAndRestart(t *testing.T) {
 	e, db := setupEngine(t)
-	input := services.RunStart{WorkflowID: "clarify-to-design", Source: "web", ActorID: "alice", IdempotencyKey: "same-click", Inputs: map[string]any{"idea": "make it"}, Trigger: models.TriggerManual}
+	t.Cleanup(func() { e.Close(); waitDriversIdle(t, e) })
+	input := services.RunStart{WorkflowID: "clarify-to-design", Source: "web", ActorID: "alice", IdempotencyKey: "same-click", Inputs: map[string]any{"idea": &models.CompositeText{
+		Text: "make it", Images: []models.PromptImage{{Data: base64.StdEncoding.EncodeToString([]byte("launch-image")), MimeType: "image/png"}},
+	}}, Trigger: models.TriggerManual}
 	var wg sync.WaitGroup
 	ids := make(chan string, 8)
 	for range 8 {

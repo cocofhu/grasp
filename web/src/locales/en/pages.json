@@ -5036,7 +5036,10 @@
         "confirmCancel": "Confirm cancellation",
         "pause": "Pause scheduling",
         "resume": "Resume",
-        "pausePending": "Will pause after the current step"
+        "pausePending": "Will pause after the current step",
+        "continueChat": "Continue conversation",
+        "historyLoadFailed": "Unable to load conversation history",
+        "historyNewEnvironment": "Continue with the workflow conversation and results in a separate environment. Original workspace files require a separate restore."
       }
     },
     "projects": {

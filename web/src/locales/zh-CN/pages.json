@@ -5036,7 +5036,10 @@
         "confirmCancel": "确认取消",
         "pause": "暂停调度",
         "resume": "继续执行",
-        "pausePending": "等待当前步骤结束后暂停"
+        "pausePending": "等待当前步骤结束后暂停",
+        "continueChat": "继续对话",
+        "historyLoadFailed": "无法读取历史聊天",
+        "historyNewEnvironment": "续聊会保留原工作流的对话与产物，并启动独立环境。原工作区文件需另外恢复。"
       }
     },
     "projects": {

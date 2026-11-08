@@ -68,6 +68,10 @@ export const soloClient = {
     req<SoloSessionList>(`/solo/sessions${params?.status ? `?status=${params.status}` : ''}`),
   createSoloSession: (body: SoloCreateBody) =>
     req<SoloSession>('/solo/sessions', { method: 'POST', body: JSON.stringify(body) }),
+  workflowChat: (runId: string, signal?: AbortSignal) =>
+    req<{ soloId: string; title: string; status: string }>(`/runs/${enc(runId)}/chat`, { signal }),
+  continueWorkflow: (runId: string, body: SoloCreateBody) =>
+    req<SoloSession>(`/runs/${enc(runId)}/continue`, { method: 'POST', body: JSON.stringify(body) }),
   getSoloResources: (id: string, signal?: AbortSignal) =>
     req<SoloResources>(`/solo/sessions/${enc(id)}/resources`, { signal }),
   soloEmbedTicket: (id: string) =>

@@ -1,248 +1,115 @@
 <script setup lang="ts">
-import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
-import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
-import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
+import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
+import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import HomeParticleMeshBackground from '@/components/dashboard/HomeParticleMeshBackground.vue'
 import HomeYumeCharacter from '@/components/dashboard/HomeYumeCharacter.vue'
-import HomeWorkflowSelect from '@/components/dashboard/HomeWorkflowSelect.vue'
-import HomePrioritySelect from '@/components/dashboard/HomePrioritySelect.vue'
 import Icon from '@/components/ui/Icon.vue'
-import AppButton from '@/components/ui/AppButton.vue'
-import AppModal from '@/components/ui/AppModal.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
-import HomeCreateBaselineModal from '@/components/dashboard/HomeCreateBaselineModal.vue'
-import { api } from '@/lib/api/api'
-import { useToast } from '@/lib/composables/useToast'
-import { openRetryOnboarding } from '@/lib/pm/firstInstall'
-import { missingOnboardingNames, onboardingAgentsReady } from '@/lib/pm/onboardingWizard'
-import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
-import RunLaunchModal from '@/components/workflow/RunLaunchModal.vue'
-import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
-import { useHomeApproveChat } from '@/lib/run/useHomeApproveChat'
-import { useBrandSettings } from '@/lib/composables/useBrandSettings'
-import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
-import { imgSrc } from '@/lib/shared/compositeText'
-import type { Workflow } from '@/lib/shared/types'
-import HomeModeSwitch from '@/components/dashboard/HomeModeSwitch.vue'
 import SoloAgentSelect from '@/components/solo/SoloAgentSelect.vue'
 import SoloProjectSelect from '@/components/solo/SoloProjectSelect.vue'
 import SoloModelSelect from '@/components/solo/SoloModelSelect.vue'
 import HomeSoloPanel from '@/components/solo/HomeSoloPanel.vue'
 import ProjectDrawer from '@/components/solo/ProjectDrawer.vue'
 import SoloLimitModal from '@/components/solo/SoloLimitModal.vue'
-import { soloPrefs, type HomeMode } from '@/lib/solo/soloPrefs'
-import { useSoloLauncher } from '@/lib/solo/useSoloLauncher'
 import ReferencePicker from '@/components/solo/ReferencePicker.vue'
 import ReferenceChip from '@/components/solo/ReferenceChip.vue'
 import ReferencePlusMenu from '@/components/solo/ReferencePlusMenu.vue'
+import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
+import { useBrandSettings } from '@/lib/composables/useBrandSettings'
+import { useWorkflowFeature } from '@/lib/composables/useWorkflowFeature'
+import { useImageAttachments } from '@/lib/composables/useImageAttachments'
+import { useSoloLauncher } from '@/lib/solo/useSoloLauncher'
 import { useReferenceComposer } from '@/lib/solo/useReferenceComposer'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
+import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
+import { imgSrc } from '@/lib/shared/compositeText'
+import { clearHomeComposerDraft, loadHomeComposerDraft, saveHomeComposerDraft } from '@/lib/run/homeComposerDraft'
 import type { ReferenceScope, ReferenceTab } from '@/lib/solo/useReferenceSearch'
 
-const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
-
+const { t, tm } = useI18n()
 const router = useRouter()
-const { t, tm, locale } = useI18n()
-const toast = useToast()
-const {
-  homeWorkflows,
-  unpublishedHomeWorkflows,
-  selected,
-  selectedId,
-  launchPriority,
-  showLaunchModel,
-  launchModelId,
-  launchReasoningEffort,
-  launchModelChoices,
-  launchModelForModal,
-  selectLaunchModel,
-  selectLaunchEffort,
-  draft,
-  sending,
-  hidingWorkflowId,
-  canSend,
-  loading,
-  loadError,
-  launchOpen,
-  launchTarget,
-  launchTitle,
-  launchFirstMessage,
-  runFields,
-  runInputs,
-  runImages,
-  draftRestored,
-  attachments,
-  fileInput,
-  attachNotice,
-  blockSendIfOversized,
-  addFiles,
-  onPickFiles,
-  onPaste,
-  removeAttachment,
-  load,
-  reloadAfterCreate,
-  selectWorkflow,
-  selectPriority,
-  hideWorkflowFromHome,
-  send,
-  closeLaunch,
-  onLaunchStarted,
-} = useHomeApproveChat()
-
-// plan g1.1 — hero copy reads the brand「首页副标题」setting; blank/whitespace
-// (useBrandSettings trims to '') falls back to the locale default sentence.
-const { homeSubtitle } = useBrandSettings()
-const heroCopy = computed(() => homeSubtitle.value || t('pages.dashboard.heroSubtitle'))
-
-const homeMode = ref<HomeMode>(soloPrefs.homeMode())
 const solo = useSoloLauncher()
-const soloAgents = solo.agents
-const soloProjects = solo.projects
-const soloAgentName = solo.agentName
-const soloProjectIds = solo.projectIds
-const soloBranches = solo.branches
-const soloInitialModelId = solo.initialModelId
-const soloReasoningEffort = solo.reasoningEffort
-const soloModelChoices = solo.modelChoices
-const soloLimitOpen = solo.limitOpen
+const { agents: soloAgents, projects: soloProjects, agentName: soloAgentName, projectIds: soloProjectIds,
+  branches: soloBranches, initialModelId: soloInitialModelId, reasoningEffort: soloReasoningEffort,
+  modelChoices: soloModelChoices, limitOpen: soloLimitOpen } = solo
+const { homeSubtitle } = useBrandSettings()
+const { enabled: workflowsEnabled } = useWorkflowFeature()
+const heroCopy = computed(() => homeSubtitle.value || t('pages.dashboard.heroSubtitle'))
+const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
+const { attachments, fileInput, notice: attachNotice, blockSendIfOversized, addFiles, onPickFiles, onPaste, removeAttachment } = useImageAttachments()
+const draft = ref('')
 const projectDrawerOpen = ref(false)
-let soloLoaded = false
-
-function ensureSoloLoaded() {
-  if (soloLoaded) return
-  soloLoaded = true
-  void solo.load()
-}
-
-watch(homeMode, (m) => {
-  soloPrefs.setHomeMode(m)
-  if (m === 'solo') ensureSoloLoaded()
-  solo.error.value = ''
-})
-
-const composerBusy = computed(() => (homeMode.value === 'solo' ? solo.creating.value : sending.value))
-const composerCanSend = computed(() => (homeMode.value === 'solo' ? solo.canStart.value : canSend.value))
-const typingTick = ref(0)
-const cheerTick = ref(0)
-
-async function submitComposer() {
-  if (blockSendIfOversized()) return
-  if (composerCanSend.value && !composerBusy.value) cheerTick.value++
-  if (homeMode.value !== 'solo') {
-    await send(mention.refs.value)
-    return
-  }
-  const started = await solo.start(draft.value, attachments.value.map((im) => ({ ...im })), '', mention.refs.value)
-  if (started) {
-    mention.clear()
-    attachments.value = []
-  }
-}
-
-function onProjectSaved(p: Parameters<typeof solo.onProjectSaved>[0]) {
-  projectDrawerOpen.value = false
-  solo.onProjectSaved(p)
-}
-
+const composerBusy = solo.creating
+const composerCanSend = solo.canStart
 const composerFocused = ref(false)
 const composing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
-
-// @ references. Solo searches the picked agent and repositories; workflow
-// mode searches the selected workflow's default repos and clarify Agent.
-const soloMode = computed(() => homeMode.value === 'solo')
-const workflowId = computed(() => selected.value?.id || '')
-const mentionEnabled = computed(() => soloMode.value || !!workflowId.value)
-const mentionDefaultRepo = computed(() =>
-  soloMode.value ? githubRepoOf(soloProjects.value.find((p) => p.id === soloProjectIds.value[0])?.repoUrl) : '',
-)
+const typingTick = ref(0)
+const cheerTick = ref(0)
+const overflowScroll = ref(false)
+const mentionEnabled = computed(() => !!soloAgentName.value)
+const mentionDefaultRepo = computed(() => githubRepoOf(soloProjects.value.find(p => p.id === soloProjectIds.value[0])?.repoUrl))
+const mentionScope = computed<ReferenceScope>(() => ({ agent: soloAgentName.value, projects: soloProjectIds.value }))
 const mention = useReferenceComposer({ input: draft, textarea: textareaRef, composing, defaultRepo: mentionDefaultRepo, enabled: mentionEnabled })
 const mentionPicker = mention.picker
-const mentionScope = computed<ReferenceScope>(() =>
-  soloMode.value ? { agent: soloAgentName.value, projects: soloProjectIds.value } : { workflowId: workflowId.value },
-)
 const plusOpen = ref(false)
-// References are validated against the scope they were picked in, so a
-// switch keeps the text and drops the references.
-watch([homeMode, workflowId], () => {
+let draftLoaded = false
+let draftRevision = 0
+let draftTimer: ReturnType<typeof setTimeout> | null = null
+const submitting = ref(false)
+watch([draft, attachments], () => {
+  draftRevision++
+  if (!draftLoaded || submitting.value) return
+  if (draftTimer) clearTimeout(draftTimer)
+  draftTimer = setTimeout(() => void saveHomeComposerDraft(draft.value, attachments.value, ''), 400)
+}, { deep: true })
+
+async function submitComposer() {
+  if (blockSendIfOversized() || !composerCanSend.value || composerBusy.value || submitting.value) return
+  const command = /^\/workflow(?:\s+(.*))?$/.exec(draft.value.trim())
+  if (command && !workflowsEnabled.value) { solo.error.value = t('pages.solo.workflows.disabled'); return }
+  submitting.value = true
+  if (draftTimer) clearTimeout(draftTimer)
+  cheerTick.value++
+  const started = await solo.start(command ? '' : draft.value, attachments.value.map(image => ({ ...image })), '', mention.refs.value)
+  if (started) {
+    draft.value = ''
+    attachments.value = []
+    mention.clear()
+    await clearHomeComposerDraft()
+    if (command) void router.replace({ path: `/solo/${started.id}`, query: { workflow: command[1] || '1' } })
+  }
+  submitting.value = false
+}
+function onProjectSaved(project: Parameters<typeof solo.onProjectSaved>[0]) { projectDrawerOpen.value = false; solo.onProjectSaved(project) }
+function openFilePicker() { fileInput.value?.click() }
+function onPlus() { if (mentionEnabled.value) plusOpen.value = !plusOpen.value; else openFilePicker() }
+function plusPickFiles() { plusOpen.value = false; openFilePicker() }
+function plusReference(tab: ReferenceTab) { plusOpen.value = false; mention.open(tab) }
+function onComposerPaste(event: ClipboardEvent) { onPaste(event); mention.onPaste(event) }
+function onComposerKeyup(event: KeyboardEvent) { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) mention.updateTrigger() }
+function onComposerSubmit(event: Event) { event.preventDefault(); void submitComposer() }
+function onWindowPointerDown(event: PointerEvent) { if (!(event.target instanceof Element && event.target.closest('[data-home-plus]'))) plusOpen.value = false }
+watch([soloAgentName, () => soloProjectIds.value.join('|')], () => {
   mention.trigger.value = null
   if (mention.tokens.value.length) mention.set(draft.value, [])
   plusOpen.value = false
 })
-
-function onPlus() {
-  if (mentionEnabled.value) plusOpen.value = !plusOpen.value
-  else openFilePicker()
-}
-
-function plusPickFiles() {
-  plusOpen.value = false
-  openFilePicker()
-}
-
-function plusReference(tab: ReferenceTab) {
-  plusOpen.value = false
-  mention.open(tab)
-}
-
-function onComposerPaste(e: ClipboardEvent) {
-  onPaste(e)
-  mention.onPaste(e)
-}
-
-function onComposerKeyup(e: KeyboardEvent) {
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') mention.updateTrigger()
-}
-const homeContentEl = ref<HTMLDivElement | null>(null)
-const homeBrandBlockEl = ref<HTMLDivElement | null>(null)
-const homeModeTopInset = ref<number | null>(null)
-const overflowScroll = ref(false)
-const workflowCardsEl = ref<HTMLDivElement | null>(null)
-const workflowCanScrollPrev = ref(false)
-const workflowCanScrollNext = ref(false)
-const workflowFadeLeft = ref(false)
-const workflowFadeRight = ref(false)
-const workflowOverflows = ref(false)
-let workflowStripObserver: ResizeObserver | null = null
-/** First successful load reveal for the home workflow rail (plan g1 / g2.2). */
-const workflowRailRevealed = ref(false)
 const phVisible = ref('')
 const phCursor = ref(false)
 let phTimer: ReturnType<typeof setTimeout> | null = null
 let phHoldTimer: ReturnType<typeof setTimeout> | null = null
-const createBaselineOpen = ref(false)
-const onboardingGateOpen = ref(false)
-const onboardingGateMissing = ref<string[]>([])
-const workflowMenuOpen = ref(false)
-const workflowMenuX = ref(0)
-const workflowMenuY = ref(0)
-const workflowMenuTarget = ref<Workflow | null>(null)
-let longPressTimer: ReturnType<typeof setTimeout> | null = null
-let longPressStart: { x: number; y: number } | null = null
-let suppressNextCardClick = false
-
-const WORKFLOW_MENU_WIDTH = 168
-const WORKFLOW_MENU_HEIGHT = 70
-const WORKFLOW_MENU_MARGIN = 8
-const LONG_PRESS_MS = 500
-const LONG_PRESS_MOVE_PX = 10
-
 const placeholderLines = computed(() => {
-  const raw = tm(homeMode.value === 'solo' ? 'pages.solo.home.placeholders' : 'pages.dashboard.placeholders') as unknown
-  if (Array.isArray(raw) && raw.length > 0) {
-    const lines = raw.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
-    if (lines.length > 0) return lines
-  }
-  const single = String(t('pages.dashboard.placeholder')).trim()
-  return single ? [single] : []
+  const raw = tm('pages.solo.home.placeholders') as unknown
+  return Array.isArray(raw) ? raw.filter((line): line is string => typeof line === 'string' && !!line.trim()) : []
 })
-const placeholderPrimary = computed(() => placeholderLines.value[0] ?? '')
+const placeholderPrimary = computed(() => placeholderLines.value[0] || t('pages.dashboard.placeholder'))
 const showPhTypewriter = computed(() => !draft.value.trim() && !composerFocused.value)
-
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -343,414 +210,24 @@ function onComposerBlur() {
   mention.trigger.value = null
 }
 
-function goEditWorkflow(id: string) {
-  void router.push(`/workflows/${id}/edit`)
-}
 
-function uiOnboardingLang(): AppLocale {
-  return String(locale.value).toLowerCase().startsWith('en') ? 'en' : 'zh-CN'
-}
-
-function closeOnboardingGate() {
-  onboardingGateOpen.value = false
-}
-
-function finishOnboardingFromGate() {
-  onboardingGateOpen.value = false
-  openRetryOnboarding()
-}
-
-/** Home baseline create stops until one canonical quartet exists. */
-async function ensureOnboardingAgents(): Promise<boolean> {
-  try {
-    const agents = await api.listAgents()
-    const names = (agents || []).map((agent) => agent.name || '')
-    if (onboardingAgentsReady(names)) return true
-    onboardingGateMissing.value = missingOnboardingNames(names, uiOnboardingLang())
-    onboardingGateOpen.value = true
-    return false
-  } catch (cause: unknown) {
-    toast.error(cause instanceof Error ? cause.message : String(cause))
-    return false
-  }
-}
-
-async function openCreateBaseline(e?: Event) {
-  e?.preventDefault()
-  e?.stopPropagation()
-  closeWorkflowMenu()
-  clearLongPress()
-  if (!(await ensureOnboardingAgents())) return
-  createBaselineOpen.value = true
-}
-
-/** plan g2.1 — HomeWorkflowSelect create footer → same baseline modal as rail card */
-function onCreateFromSelect() {
-  openCreateBaseline()
-}
-
-async function onBaselineCreated(payload?: { id?: string }) {
-  createBaselineOpen.value = false
-  await reloadAfterCreate(payload?.id)
-}
-
-function closeWorkflowMenu() {
-  workflowMenuOpen.value = false
-  workflowMenuTarget.value = null
-}
-
-function positionWorkflowMenu(x: number, y: number) {
-  const maxX = Math.max(WORKFLOW_MENU_MARGIN, window.innerWidth - WORKFLOW_MENU_WIDTH - WORKFLOW_MENU_MARGIN)
-  const maxY = Math.max(WORKFLOW_MENU_MARGIN, window.innerHeight - WORKFLOW_MENU_HEIGHT - WORKFLOW_MENU_MARGIN)
-  workflowMenuX.value = Math.min(Math.max(WORKFLOW_MENU_MARGIN, x), maxX)
-  workflowMenuY.value = Math.min(Math.max(WORKFLOW_MENU_MARGIN, y), maxY)
-}
-
-function openWorkflowMenu(workflow: Workflow, x: number, y: number) {
-  workflowMenuTarget.value = workflow
-  positionWorkflowMenu(x, y)
-  workflowMenuOpen.value = true
-}
-
-function onWorkflowContextMenu(e: MouseEvent, workflow: Workflow) {
-  e.preventDefault()
-  e.stopPropagation()
-  clearLongPress()
-  openWorkflowMenu(workflow, e.clientX, e.clientY)
-}
-
-function onWorkflowMore(e: MouseEvent, workflow: Workflow) {
-  e.stopPropagation()
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  openWorkflowMenu(workflow, rect.right, rect.bottom + 4)
-}
-
-function clearLongPress() {
-  if (longPressTimer != null) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
-  }
-  longPressStart = null
-}
-
-function onWorkflowPointerDown(e: PointerEvent, workflow: Workflow) {
-  if (e.pointerType !== 'touch') return
-  clearLongPress()
-  longPressStart = { x: e.clientX, y: e.clientY }
-  longPressTimer = setTimeout(() => {
-    longPressTimer = null
-    suppressNextCardClick = true
-    openWorkflowMenu(workflow, e.clientX, e.clientY)
-  }, LONG_PRESS_MS)
-}
-
-function onWorkflowPointerMove(e: PointerEvent) {
-  if (!longPressStart) return
-  if (
-    Math.hypot(e.clientX - longPressStart.x, e.clientY - longPressStart.y)
-    > LONG_PRESS_MOVE_PX
-  ) {
-    clearLongPress()
-  }
-}
-
-function onWorkflowCardClick(id: string) {
-  clearLongPress()
-  if (suppressNextCardClick) {
-    suppressNextCardClick = false
-    return
-  }
-  selectWorkflow(id)
-}
-
-async function hideMenuWorkflow() {
-  const target = workflowMenuTarget.value
-  if (!target) return
-  closeWorkflowMenu()
-  await hideWorkflowFromHome(target)
-}
-
-function editMenuWorkflow() {
-  const target = workflowMenuTarget.value
-  if (!target) return
-  closeWorkflowMenu()
-  void router.push(`/workflows/${target.id}/edit`)
-}
-
-function onWindowPointerDown(e: PointerEvent) {
-  if (workflowMenuOpen.value) closeWorkflowMenu()
-  if (plusOpen.value && !(e.target as HTMLElement | null)?.closest?.('[data-home-plus]')) plusOpen.value = false
-}
-
-function onWindowKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') closeWorkflowMenu()
-}
-
-function onComposerSubmit(e: Event) {
-  e.preventDefault()
-  void submitComposer()
-}
-
-const WORKFLOW_SCROLL_EPS = 2
-/** plan g1.1 — keep past this threshold counts as a hold and scrolls to the rail end. */
-const WORKFLOW_NAV_HOLD_MS = 400
-
-let workflowNavHoldTimer: ReturnType<typeof setTimeout> | null = null
-let workflowNavGestureSeq = 0
-/** Direction of an in-flight scroll-to-edge; cleared once that end is reached. plan g1.2 */
-let workflowEdgeDir: number | null = null
-
-function workflowCardStep(): number {
-  const rail = workflowCardsEl.value
-  if (!rail) return 204
-  const card = rail.querySelector('.home-shell__card')
-  if (!card) return 204
-  const styles = getComputedStyle(rail)
-  const gap = parseFloat(styles.columnGap || styles.gap || '12') || 12
-  return card.getBoundingClientRect().width + gap
-}
-
-function syncWorkflowNav() {
-  const rail = workflowCardsEl.value
-  if (!rail) {
-    workflowCanScrollPrev.value = false
-    workflowCanScrollNext.value = false
-    workflowFadeLeft.value = false
-    workflowFadeRight.value = false
-    workflowOverflows.value = false
-    return
-  }
-  const max = Math.max(0, rail.scrollWidth - rail.clientWidth)
-  const left = rail.scrollLeft
-  const atStart = left <= WORKFLOW_SCROLL_EPS
-  const atEnd = left >= max - WORKFLOW_SCROLL_EPS
-  const overflow = max > WORKFLOW_SCROLL_EPS
-  workflowOverflows.value = overflow
-  workflowCanScrollPrev.value = overflow && !atStart
-  workflowCanScrollNext.value = overflow && !atEnd
-  workflowFadeLeft.value = overflow && !atStart
-  workflowFadeRight.value = overflow && !atEnd
-  if (workflowEdgeDir != null) {
-    if ((workflowEdgeDir < 0 && atStart) || (workflowEdgeDir > 0 && atEnd)) {
-      workflowEdgeDir = null
-    }
-  }
-}
-
-function scrollWorkflowByDir(dir: number) {
-  const rail = workflowCardsEl.value
-  if (!rail) return
-  const delta = workflowCardStep() * dir
-  if (prefersReducedMotion()) {
-    rail.classList.add('home-workflow-rail--instant')
-    rail.scrollLeft += delta
-    requestAnimationFrame(() => rail.classList.remove('home-workflow-rail--instant'))
-  } else {
-    rail.scrollBy({ left: delta, behavior: 'smooth' })
-  }
-}
-
-function clearWorkflowNavHold() {
-  if (workflowNavHoldTimer != null) {
-    clearTimeout(workflowNavHoldTimer)
-    workflowNavHoldTimer = null
-  }
-}
-
-/** plan g1.2 — assigning scrollLeft stops an in-flight smooth scroll at the current offset. */
-function stopWorkflowSmoothScroll() {
-  const rail = workflowCardsEl.value
-  workflowEdgeDir = null
-  if (!rail) return
-  const left = rail.scrollLeft
-  rail.classList.add('home-workflow-rail--instant')
-  rail.scrollLeft = left
-  requestAnimationFrame(() => rail.classList.remove('home-workflow-rail--instant'))
-}
-
-/** plan g1.2 — left end is 0; right end is scrollWidth − clientWidth. */
-function scrollWorkflowToEdge(dir: number) {
-  const rail = workflowCardsEl.value
-  if (!rail) return
-  const max = Math.max(0, rail.scrollWidth - rail.clientWidth)
-  const target = dir < 0 ? 0 : max
-  workflowEdgeDir = dir
-  if (prefersReducedMotion()) {
-    rail.classList.add('home-workflow-rail--instant')
-    rail.scrollLeft = target
-    requestAnimationFrame(() => rail.classList.remove('home-workflow-rail--instant'))
-  } else {
-    rail.scrollTo({ left: target, behavior: 'smooth' })
-  }
-}
-
-function onWorkflowNavPointerDown(e: PointerEvent, dir: number) {
-  if (e.button != null && e.button !== 0) return
-  const el = e.currentTarget as HTMLButtonElement | null
-  if (!el || el.disabled) return
-
-  if (workflowEdgeDir != null && workflowEdgeDir !== dir) {
-    stopWorkflowSmoothScroll()
-  }
-
-  clearWorkflowNavHold()
-  const token = String(++workflowNavGestureSeq)
-  el.dataset.workflowNavGesture = token
-  delete el.dataset.workflowNavBlockClick
-
-  if (typeof el.setPointerCapture === 'function' && Number.isFinite(e.pointerId)) {
-    try {
-      el.setPointerCapture(e.pointerId)
-    } catch {
-      /* pointer already released */
-    }
-  }
-
-  workflowNavHoldTimer = setTimeout(() => {
-    workflowNavHoldTimer = null
-    if (el.dataset.workflowNavGesture !== token) return
-    // plan g1.1 — swallow the click that follows this press so it does not step again
-    el.dataset.workflowNavBlockClick = token
-    scrollWorkflowToEdge(dir)
-  }, WORKFLOW_NAV_HOLD_MS)
-}
-
-function releaseWorkflowNavPointer(e: PointerEvent) {
-  const el = e.currentTarget as HTMLElement | null
-  clearWorkflowNavHold()
-  if (!el || !Number.isFinite(e.pointerId) || typeof el.releasePointerCapture !== 'function') return
-  try {
-    if (typeof el.hasPointerCapture === 'function' && !el.hasPointerCapture(e.pointerId)) return
-    el.releasePointerCapture(e.pointerId)
-  } catch {
-    /* already released */
-  }
-}
-
-function onWorkflowNavPointerUp(e: PointerEvent) {
-  releaseWorkflowNavPointer(e)
-}
-
-function onWorkflowNavPointerCancel(e: PointerEvent) {
-  releaseWorkflowNavPointer(e)
-}
-
-function onWorkflowNavClick(e: MouseEvent, dir: number) {
-  const el = e.currentTarget as HTMLButtonElement | null
-  if (!el || el.disabled) return
-  if (
-    el.dataset.workflowNavBlockClick
-    && el.dataset.workflowNavBlockClick === el.dataset.workflowNavGesture
-  ) {
-    delete el.dataset.workflowNavBlockClick
-    return
-  }
-  scrollWorkflowByDir(dir)
-}
-
-function onWorkflowWheel(e: WheelEvent) {
-  closeWorkflowMenu()
-  const rail = workflowCardsEl.value
-  if (!rail) return
-  if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && !e.shiftKey) return
-  const dx = e.shiftKey ? e.deltaY : e.deltaX
-  if (!dx) return
-  e.preventDefault()
-  rail.scrollLeft += dx
-}
-
-function bindWorkflowStripObserver() {
-  if (typeof ResizeObserver === 'undefined') return
-  workflowStripObserver?.disconnect()
-  workflowStripObserver = null
-  if (!workflowCardsEl.value) return
-  workflowStripObserver = new ResizeObserver(() => syncWorkflowNav())
-  workflowStripObserver.observe(workflowCardsEl.value)
-}
-
-function openFilePicker() {
-  fileInput.value?.click()
-}
-
-watch(draft, () => nextTick(autoGrow))
-watch(showPhTypewriter, () => runPlaceholderTypewriter(), { immediate: true })
-watch(placeholderLines, () => {
-  if (showPhTypewriter.value) runPlaceholderTypewriter()
-})
-
-watch(
-  () => homeWorkflows.value.length,
-  () => nextTick(() => {
-    syncWorkflowNav()
-    bindWorkflowStripObserver()
-  }),
-)
-
-// plan g1.2 — loading true→false with no error: reveal rail on that update (no post-success wait)
-watch(loading, (now, prev) => {
-  if (prev === true && now === false && !loadError.value) {
-    workflowRailRevealed.value = true
-  }
-})
-
-function onWorkflowEnterAnimationEnd(e: AnimationEvent) {
-  if (e.target !== e.currentTarget) return
-  syncWorkflowNav()
-}
-
-/** Keep the hero's top position stable while switching the mode-specific tail. */
-function lockHomeModeTopInset() {
-  const content = homeContentEl.value
-  const brand = homeBrandBlockEl.value
-  if (!content || !brand) return
-  const inset =
-    brand.getBoundingClientRect().top
-    - content.getBoundingClientRect().top
-    + content.scrollTop
-  if (Number.isFinite(inset) && inset >= 0) homeModeTopInset.value = inset
-}
-
-function onHomeResize() {
-  homeModeTopInset.value = null
-  syncWorkflowNav()
-}
-
-watch(homeMode, () => {
-  lockHomeModeTopInset()
-})
-
-// Attachments intentionally use the existing flexible inset budget so the first
-// thumbnail row can fit without introducing a page scrollbar.
-watch(
-  () => attachments.value.length,
-  () => {
-    homeModeTopInset.value = null
-  },
-)
-
-onMounted(() => {
-  if (homeMode.value === 'solo') ensureSoloLoaded()
-  nextTick(() => {
-    autoGrow()
-    syncWorkflowNav()
-    bindWorkflowStripObserver()
-  })
-  window.addEventListener('resize', onHomeResize)
+watch(draft, () => void nextTick(autoGrow))
+watch(showPhTypewriter, runPlaceholderTypewriter, { immediate: true })
+watch(placeholderLines, () => { if (showPhTypewriter.value) runPlaceholderTypewriter() })
+onMounted(async () => {
+  void solo.load()
+  const revision = draftRevision
+  const saved = await loadHomeComposerDraft()
+  if (revision === draftRevision && saved) { draft.value = saved.text; attachments.value = saved.attachments }
+  draftLoaded = true
+  void nextTick(autoGrow)
   window.addEventListener('pointerdown', onWindowPointerDown)
-  window.addEventListener('keydown', onWindowKeydown)
-  window.addEventListener('scroll', closeWorkflowMenu, true)
 })
-
 onBeforeUnmount(() => {
   clearPhTimers()
-  clearLongPress()
-  clearWorkflowNavHold()
-  workflowStripObserver?.disconnect()
-  workflowStripObserver = null
-  window.removeEventListener('resize', onHomeResize)
+  if (draftTimer) clearTimeout(draftTimer)
+  if (draftLoaded && !submitting.value) void saveHomeComposerDraft(draft.value, attachments.value, '')
   window.removeEventListener('pointerdown', onWindowPointerDown)
-  window.removeEventListener('keydown', onWindowKeydown)
-  window.removeEventListener('scroll', closeWorkflowMenu, true)
 })
 </script>
 
@@ -758,22 +235,16 @@ onBeforeUnmount(() => {
   <div data-testid="dashboard-view" class="home-shell relative flex h-full min-h-0 flex-col">
     <HomeParticleMeshBackground />
     <div
-      ref="homeContentEl"
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-start overflow-x-hidden overflow-y-auto px-4"
-      :class="{ 'home-shell__content--mode-locked': homeModeTopInset != null }"
-      :style="homeModeTopInset != null ? { '--home-mode-top-inset': `${homeModeTopInset}px` } : undefined"
     >
-      <div ref="homeBrandBlockEl" class="home-brand-block" data-testid="home-brand-block">
+      <div class="home-brand-block" data-testid="home-brand-block">
         <HomeYumeCharacter :attentive="composerFocused" :typing-tick="typingTick" :cheer-tick="cheerTick" />
         <p class="home-hero-copy" data-testid="home-hero-copy">{{ heroCopy }}</p>
       </div>
 
       <AttachmentDropZone class="home-composer-wrap w-full" :disabled="composerBusy" @files="addFiles">
-        <div class="mb-3 flex justify-center">
-          <HomeModeSwitch v-model="homeMode" />
-        </div>
         <p
-          v-if="homeMode === 'solo' && solo.error.value"
+          v-if="solo.error.value"
           class="mb-2 rounded border border-err/40 bg-err/10 px-3 py-1.5 text-[12px] text-err"
           data-testid="home-solo-error"
           role="alert"
@@ -913,32 +384,7 @@ onBeforeUnmount(() => {
             >
               <Icon name="plus" :size="16" />
             </button>
-            <Transition name="home-mode-controls" mode="out-in">
-              <div v-if="homeMode === 'workflow'" key="workflow" class="home-mode-controls flex min-w-0 flex-wrap items-center gap-2">
-                <label class="sr-only" for="home-workflow-select">{{ t('pages.dashboard.pickWorkflow') }}</label>
-                <HomeWorkflowSelect
-                  :workflows="homeWorkflows"
-                  :model-value="selectedId"
-                  :disabled="sending"
-                  @update:model-value="selectWorkflow"
-                  @create="onCreateFromSelect"
-                />
-                <SoloModelSelect
-                  v-if="showLaunchModel"
-                  :model-value="launchModelId"
-                  :reasoning-effort="launchReasoningEffort"
-                  :models="launchModelChoices"
-                  :disabled="sending"
-                  @update:model-value="selectLaunchModel"
-                  @update:reasoning-effort="selectLaunchEffort"
-                />
-                <HomePrioritySelect
-                  :model-value="launchPriority"
-                  :disabled="!homeWorkflows.length || sending"
-                  @update:model-value="selectPriority"
-                />
-              </div>
-              <div v-else key="solo" class="home-mode-controls flex min-w-0 flex-wrap items-center gap-2">
+              <div class="home-solo-controls flex min-w-0 flex-wrap items-center gap-2">
                 <SoloAgentSelect
                   v-model="soloAgentName"
                   :agents="soloAgents"
@@ -961,17 +407,17 @@ onBeforeUnmount(() => {
                   :disabled="solo.creating.value"
                 />
               </div>
-            </Transition>
+
             <div class="flex-1" />
             <button
               type="submit"
               class="home-composer__send flex h-8 w-8 shrink-0 items-center justify-center text-base disabled:opacity-[0.28]"
               data-testid="home-composer-send"
               :disabled="composerBusy || !composerCanSend"
-              :aria-label="homeMode === 'solo' ? t('pages.solo.home.start') : t('pages.dashboard.send')"
+              :aria-label="t('pages.solo.home.start')"
               :title="t('pages.dashboard.sendShortcut')"
             >
-              <Icon v-if="composerBusy && homeMode === 'solo'" name="spinner" :size="15" />
+              <Icon v-if="composerBusy" name="spinner" :size="15" />
               <Icon v-else name="arrow-up" :size="16" />
             </button>
           </div>
@@ -979,286 +425,11 @@ onBeforeUnmount(() => {
         </div>
       </AttachmentDropZone>
 
-      <Transition name="home-mode-tail" mode="out-in">
-        <HomeSoloPanel
-          v-if="homeMode === 'solo'"
-          key="solo"
-          :projects="soloProjects"
-          :project-ids="soloProjectIds"
-          @toggle-project="solo.toggleProject"
-          @new-project="projectDrawerOpen = true"
-        />
-
-        <div v-else key="workflow" class="home-mode-tail home-mode-tail--workflow w-full">
-          <div
-            v-if="loadError"
-            class="mt-6 flex w-full flex-wrap items-center justify-between gap-2 rounded border border-err/40 bg-err/10 px-3 py-2 text-[13px] text-err"
-            data-testid="dashboard-load-error"
-          >
-            <span>{{ t('pages.board.loadFailed') }}</span>
-            <button
-              type="button"
-              class="rounded-md border border-err/40 px-2.5 py-1 text-xs text-err hover:bg-err/10"
-              data-testid="dashboard-retry"
-              @click="load()"
-            >
-              {{ t('pages.board.retry') }}
-            </button>
-          </div>
-
-          <!-- plan g1: wait blank (no loading copy); reveal whole rail+add together on first success -->
-          <div
-            v-else-if="workflowRailRevealed"
-            class="home-workflow-enter home-workflow-enter--ready w-full"
-            data-testid="home-workflow-enter"
-            @animationend="onWorkflowEnterAnimationEnd"
-          >
-        <div
-          v-if="!homeWorkflows.length && unpublishedHomeWorkflows.length"
-          class="mt-10 text-center"
-          data-testid="home-workflows-empty"
-        >
-          <p class="text-sm text-txt3" data-testid="home-workflows-unpublished">
-            {{ t('pages.dashboard.unpublishedWorkflows', { name: unpublishedHomeWorkflows[0]!.name }) }}
-          </p>
-          <button
-            type="button"
-            class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
-            data-testid="home-go-publish"
-            @click="goEditWorkflow(unpublishedHomeWorkflows[0]!.id)"
-          >
-            {{ t('pages.dashboard.goPublish') }}
-          </button>
-        </div>
-
-        <div
-          class="home-workflow-rail-wrap w-full"
-          :class="{
-            'mt-10': homeWorkflows.length > 0 || !unpublishedHomeWorkflows.length,
-            'mt-4': homeWorkflows.length === 0 && unpublishedHomeWorkflows.length > 0,
-            'home-workflow-rail-wrap--has-left': workflowFadeLeft,
-            'home-workflow-rail-wrap--has-right': workflowFadeRight,
-          }"
-          data-testid="home-workflow-rail-wrap"
-        >
-          <button
-            type="button"
-            class="home-workflow-nav home-workflow-nav--prev"
-            data-testid="home-workflow-scroll-prev"
-            :disabled="!workflowCanScrollPrev"
-            :aria-label="t('pages.dashboard.scrollLeft')"
-            :title="t('pages.dashboard.scrollLeft')"
-            @pointerdown="onWorkflowNavPointerDown($event, -1)"
-            @pointerup="onWorkflowNavPointerUp"
-            @pointercancel="onWorkflowNavPointerCancel"
-            @click="onWorkflowNavClick($event, -1)"
-            @contextmenu.prevent
-          >
-            <Icon name="chevron-left" :size="16" />
-          </button>
-          <div class="home-workflow-fade home-workflow-fade--left" aria-hidden="true" />
-          <div class="home-workflow-fade home-workflow-fade--right" aria-hidden="true" />
-
-          <div
-            ref="workflowCardsEl"
-            class="home-workflow-rail flex w-full gap-3 pb-1"
-            :class="{ 'home-workflow-rail--overflow': workflowOverflows }"
-            data-testid="home-workflow-cards"
-            tabindex="0"
-            role="list"
-            @scroll.passive="syncWorkflowNav"
-            @wheel="onWorkflowWheel"
-          >
-            <div
-              v-for="(p, index) in homeWorkflows"
-              :key="p.id"
-              tabindex="0"
-              role="listitem"
-              class="home-shell__card w-48 shrink-0 overflow-hidden rounded-lg border border-line p-0 text-left"
-              :class="p.id === selected?.id ? 'home-shell__card--selected' : 'hover:border-line-strong'"
-              :data-testid="`home-workflow-card-${p.id}`"
-              @click="onWorkflowCardClick(p.id)"
-              @keydown.enter.space.prevent="selectWorkflow(p.id)"
-              @contextmenu="onWorkflowContextMenu($event, p)"
-              @pointerdown="onWorkflowPointerDown($event, p)"
-              @pointermove="onWorkflowPointerMove"
-              @pointerup="clearLongPress"
-              @pointercancel="clearLongPress"
-              @pointerleave="clearLongPress"
-            >
-              <button
-                type="button"
-                class="home-workflow-more absolute right-2 top-2 z-[1] flex h-7 w-7 items-center justify-center rounded-lg text-txt2"
-                :aria-label="t('pages.dashboard.workflowMenu.more')"
-                :title="t('pages.dashboard.workflowMenu.more')"
-                :data-testid="`home-workflow-more-${p.id}`"
-                @click="onWorkflowMore($event, p)"
-              >
-                <Icon name="more" :size="16" />
-              </button>
-              <div class="home-shell__card-top flex h-20 items-center justify-center">
-                <svg class="home-workflow-art" viewBox="0 0 218 84" aria-hidden="true" focusable="false">
-                  <path class="home-workflow-art__link" d="M54 42H87M131 42H164" />
-                  <path class="home-workflow-art__beam" d="M54 42H87M131 42H164" />
-                  <g class="home-workflow-art__node">
-                    <rect class="home-workflow-art__back" x="25" y="30" width="31" height="32" rx="6" />
-                    <rect class="home-workflow-art__paper" x="22" y="26" width="32" height="32" rx="6" />
-                    <path class="home-workflow-art__detail" d="M30 36h14M30 42h10M30 48h12" />
-                  </g>
-                  <g class="home-workflow-art__node home-workflow-art__node--middle">
-                    <rect class="home-workflow-art__back" x="90" y="25" width="43" height="42" rx="12" />
-                    <rect class="home-workflow-art__core" x="87" y="20" width="44" height="44" rx="12" />
-                  </g>
-                  <g class="home-workflow-art__node home-workflow-art__node--last">
-                    <rect class="home-workflow-art__back" x="167" y="30" width="31" height="32" rx="6" />
-                    <rect class="home-workflow-art__paper" x="164" y="26" width="32" height="32" rx="6" />
-                    <path class="home-workflow-art__detail" d="M172 36h14M172 42h10M172 48h12" />
-                  </g>
-                </svg>
-                <span class="home-workflow-art__mark" aria-hidden="true">
-                  <Icon :name="['server', 'artifact', 'workflow'][index % 3]" :size="14" />
-                </span>
-              </div>
-              <div class="px-3 py-2.5">
-                <div
-                  class="truncate text-[13px] font-medium text-txt"
-                  :title="p.name"
-                  data-testid="home-workflow-card-name"
-                >{{ p.name }}</div>
-                <div
-                  class="mt-0.5 line-clamp-2 text-[11px] text-txt3"
-                  :title="p.description || t('pages.dashboard.cardFallback')"
-                >
-                  {{ p.description || t('pages.dashboard.cardFallback') }}
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              role="listitem"
-              class="home-shell__card home-shell__card--add w-48 shrink-0"
-              data-testid="home-new-workflow"
-              @click="openCreateBaseline"
-              @contextmenu.prevent
-              @pointerdown.stop
-            >
-              <span class="home-shell__card-plus" aria-hidden="true">
-                <Icon name="plus" :size="16" />
-              </span>
-              <span class="home-shell__card-add-label">{{ t('pages.dashboard.create.addCard') }}</span>
-            </button>
-          </div>
-
-          <button
-            type="button"
-            class="home-workflow-nav home-workflow-nav--next"
-            data-testid="home-workflow-scroll-next"
-            :disabled="!workflowCanScrollNext"
-            :aria-label="t('pages.dashboard.scrollRight')"
-            :title="t('pages.dashboard.scrollRight')"
-            @pointerdown="onWorkflowNavPointerDown($event, 1)"
-            @pointerup="onWorkflowNavPointerUp"
-            @pointercancel="onWorkflowNavPointerCancel"
-            @click="onWorkflowNavClick($event, 1)"
-            @contextmenu.prevent
-          >
-            <Icon name="chevron-right" :size="16" />
-          </button>
-          </div>
-        </div>
-        </div>
-      </Transition>
+      <HomeSoloPanel :projects="soloProjects" :project-ids="soloProjectIds" @toggle-project="solo.toggleProject" @new-project="projectDrawerOpen = true" />
     </div>
-
     <ProjectDrawer :open="projectDrawerOpen" @close="projectDrawerOpen = false" @saved="onProjectSaved" />
     <SoloLimitModal :open="soloLimitOpen" @close="soloLimitOpen = false" />
-
-    <Teleport to="body">
-      <div
-        v-if="workflowMenuOpen && workflowMenuTarget"
-        class="home-workflow-menu fixed z-[9999] min-w-[168px] rounded-lg border border-line bg-elevated py-1 shadow-card"
-        role="menu"
-        data-testid="home-workflow-menu"
-        :style="{ left: workflowMenuX + 'px', top: workflowMenuY + 'px' }"
-        @pointerdown.stop
-        @click.stop
-      >
-        <button
-          type="button"
-          class="home-workflow-menu__item"
-          role="menuitem"
-          data-testid="home-workflow-menu-hide"
-          :disabled="hidingWorkflowId === workflowMenuTarget.id"
-          @click="hideMenuWorkflow"
-        >
-          <Icon name="eye-off" :size="14" aria-hidden="true" />
-          <span>{{ t('pages.dashboard.workflowMenu.hide') }}</span>
-        </button>
-        <button
-          type="button"
-          class="home-workflow-menu__item"
-          role="menuitem"
-          data-testid="home-workflow-menu-edit"
-          @click="editMenuWorkflow"
-        >
-          <Icon name="edit" :size="14" aria-hidden="true" />
-          <span>{{ t('pages.dashboard.workflowMenu.edit') }}</span>
-        </button>
-      </div>
-    </Teleport>
-
-    <HomeCreateBaselineModal
-      :open="createBaselineOpen"
-      @close="createBaselineOpen = false"
-      @created="onBaselineCreated"
-    />
-
-    <AppModal
-      :open="onboardingGateOpen"
-      :title="t('pages.workspace.newWorkflow.agentsRequiredTitle')"
-      :width="440"
-      close-on-esc
-      data-testid="home-onboarding-agents-gate"
-      @close="closeOnboardingGate"
-    >
-      <p class="text-[13px] leading-relaxed text-txt2" data-testid="home-onboarding-agents-gate-body">
-        {{ t('pages.workspace.newWorkflow.agentsRequired', { missing: onboardingGateMissing.join(t('pages.onboarding.team.listSep')) }) }}
-      </p>
-      <template #footer>
-        <AppButton variant="ghost" data-testid="home-onboarding-agents-gate-dismiss" @click="closeOnboardingGate">
-          {{ t('common.buttons.cancel') }}
-        </AppButton>
-        <AppButton variant="primary" data-testid="home-onboarding-agents-gate-open" @click="finishOnboardingFromGate">
-          {{ t('pages.workspace.newWorkflow.goOnboarding') }}
-        </AppButton>
-      </template>
-    </AppModal>
-
-    <RunLaunchModal
-      :open="launchOpen"
-      :workflow-id="launchTarget?.id || ''"
-      :workflow-name="launchTarget?.name || ''"
-      :fields="runFields"
-      :run-inputs="runInputs"
-      :run-images="runImages"
-      :draft-restored="draftRestored"
-      :run-title="launchTitle"
-      :first-message="launchFirstMessage"
-      :initial-priority="launchPriority"
-      :launch-model="launchModelForModal"
-      published-snapshot
-      @close="closeLaunch()"
-      @stayed="closeLaunch()"
-      @started="onLaunchStarted($event)"
-    />
-
-    <ChatImagePreviewModal
-      :open="!!imagePreview"
-      :src="imagePreview?.src || ''"
-      :label="imagePreview?.label || ''"
-      test-id-prefix="home-image-preview"
-      @close="closeChatImagePreview"
-    />
+    <ChatImagePreviewModal :open="!!imagePreview" :src="imagePreview?.src || ''" :label="imagePreview?.label || ''" test-id-prefix="home-image-preview" @close="closeChatImagePreview" />
   </div>
 </template>
 
@@ -1306,13 +477,6 @@ html.light .home-shell :deep(.home-particle-mesh__canvas) {
   width: 100%;
   flex: 0 1 120px;
   min-height: 48px;
-}
-
-/* Mode-specific controls and panels can have very different heights. Freeze
-   the current inset for that switch so the hero stays anchored in place. */
-.home-shell__content.home-shell__content--mode-locked::before {
-  flex: 0 0 var(--home-mode-top-inset);
-  min-height: var(--home-mode-top-inset);
 }
 
 /* brand: fill LOCKED — cropped yume + copy; no wordmark / logo-mark */
@@ -1375,39 +539,7 @@ html.light .home-composer__toolbar {
   background: rgb(var(--c-surface));
 }
 
-.home-mode-controls {
-  flex: 0 1 auto;
-}
-
-.home-mode-controls-enter-active,
-.home-mode-controls-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s var(--ease-out-expo);
-}
-
-.home-mode-controls-enter-from {
-  opacity: 0;
-  transform: translateY(4px);
-}
-
-.home-mode-controls-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-
-.home-mode-tail-enter-active,
-.home-mode-tail-leave-active {
-  transition: opacity 0.24s ease, transform 0.24s var(--ease-out-expo);
-}
-
-.home-mode-tail-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-.home-mode-tail-leave-to {
-  opacity: 0;
-  transform: translateY(-5px);
-}
+.home-solo-controls { flex: 0 1 auto; }
 
 .home-composer__input {
   min-height: 88px;
@@ -1478,466 +610,16 @@ html.light .home-composer__send:disabled {
   background: rgb(var(--c-line-strong));
 }
 
-/* Card role 12px; selected = accent inset border */
-.home-shell__card {
-  position: relative;
-  background: rgb(var(--c-surface));
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(var(--home-shadow));
-  transition: transform 0.3s var(--ease-out-expo), border-color 0.22s ease, box-shadow 0.3s ease;
-  cursor: pointer;
-  user-select: none;
-  -webkit-touch-callout: none;
-}
 
-.home-shell__card:not(.home-shell__card--add):hover {
-  transform: translateY(-2px);
-  border-color: rgb(var(--c-accent) / 0.28);
-  box-shadow: 0 3px 5px rgb(var(--home-shadow)), 0 9px 18px rgb(var(--home-shadow));
-}
-
-.home-shell__card:focus-visible {
-  outline: 2px solid rgb(var(--c-accent) / 0.5);
-  outline-offset: 2px;
-}
-
-.home-shell__card--selected,
-.home-shell__card.home-shell__card--selected:hover {
-  border-color: rgb(var(--c-accent) / 0.65);
-  box-shadow: 0 1px 0 rgb(var(--c-accent) / 0.75), 0 3px 8px rgb(var(--home-shadow));
-}
-
-.home-shell__card--add {
-  min-height: 148px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1.5px dashed rgb(var(--c-accent) / 0.45);
-  background: linear-gradient(180deg, rgb(var(--c-accent) / 0.08), rgb(var(--c-surface)));
-  cursor: pointer;
-  user-select: none;
-  transition:
-    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.2s ease;
-}
-.home-shell__card--add:hover {
-  border-color: rgb(var(--c-accent));
-  transform: translateY(-3px);
-  box-shadow: 0 12px 24px rgb(var(--c-txt) / 0.1);
-}
-.home-shell__card--add:active {
-  transform: translateY(0) scale(0.98);
-}
-.home-shell__card-plus {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: rgb(var(--c-accent));
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.home-shell__card-plus > svg {
-  display: block;
-}
-.home-shell__card--add:hover .home-shell__card-plus {
-  transform: rotate(90deg) scale(1.06);
-}
-.home-shell__card--add:active .home-shell__card-plus {
-  transform: rotate(90deg) scale(0.94);
-}
-.home-shell__card-add-label {
-  font-size: 12px;
-  color: rgb(var(--c-accent));
-  font-weight: 600;
-}
-
-.home-shell__card-top {
-  position: relative;
-  background: linear-gradient(155deg, rgb(var(--c-surface)), rgb(var(--c-elevated)));
-  border-bottom: 1px solid rgb(var(--c-line) / 0.55);
-}
-
-.home-shell__card--selected .home-shell__card-top {
-  background: linear-gradient(155deg, rgb(var(--c-surface)), rgb(var(--c-accent) / 0.055));
-}
-
-.home-workflow-more {
-  border: 1px solid rgb(var(--c-line) / 0.65);
-  border-radius: 50%;
-  background: rgb(var(--c-surface));
-  box-shadow: 0 1px 2px rgb(var(--home-shadow));
-  transition: background-color 0.18s ease, color 0.18s ease;
-}
-
-.home-workflow-more:hover,
-.home-workflow-more:focus-visible {
-  color: rgb(var(--c-txt));
-  background: rgb(var(--c-overlay));
-  outline: none;
-}
-
-.home-workflow-menu__item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  background: transparent;
-  padding: 7px 14px;
-  color: rgb(var(--c-txt2));
-  font-size: 12px;
-  text-align: left;
-}
-
-.home-workflow-menu__item:hover,
-.home-workflow-menu__item:focus-visible {
-  color: rgb(var(--c-txt));
-  background: rgb(var(--c-overlay));
-  outline: none;
-}
-
-.home-workflow-menu__item svg {
-  flex-shrink: 0;
-  color: rgb(var(--c-txt3));
-}
-
-html.light .home-shell__card-top {
-  background: rgb(var(--c-surface));
-}
-
-html.light .home-shell__card--selected .home-shell__card-top {
-  background: linear-gradient(155deg, rgb(var(--c-surface)), rgb(var(--c-accent) / 0.055));
-}
-
-.home-workflow-art {
-  width: 150px;
-  height: 58px;
-  overflow: visible;
-}
-
-.home-workflow-art__link,
-.home-workflow-art__beam {
-  fill: none;
-  stroke: rgb(var(--c-line));
-  stroke-width: 1.5;
-}
-
-.home-workflow-art__beam {
-  stroke: rgb(var(--c-accent));
-  stroke-dasharray: 24 110;
-  stroke-dashoffset: 30;
-  opacity: 0;
-}
-
-.home-workflow-art__back {
-  fill: rgb(var(--c-line));
-  opacity: 0.45;
-}
-
-.home-workflow-art__paper,
-.home-workflow-art__core {
-  fill: rgb(var(--c-surface));
-  stroke: rgb(var(--c-line));
-  stroke-width: 1;
-  filter: drop-shadow(0 2px 2px rgb(var(--home-shadow)));
-}
-
-.home-workflow-art__detail {
-  fill: none;
-  stroke: rgb(var(--c-txt3));
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  opacity: 0.4;
-}
-
-.home-workflow-art__mark {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  inset: 0;
-  color: rgb(var(--c-txt3));
-  pointer-events: none;
-}
-
-.home-shell__card--selected .home-workflow-art__core {
-  fill: rgb(var(--c-accent));
-  stroke: rgb(var(--c-accent) / 0.6);
-}
-
-.home-shell__card--selected .home-workflow-art__mark {
-  color: rgb(var(--c-surface));
-}
-
-.home-workflow-art__node,
-.home-workflow-art__mark {
-  transition: transform 0.45s var(--ease-out-expo), color 0.2s ease;
-}
-
-.home-shell__card:hover .home-workflow-art__node,
-.home-shell__card:focus-within .home-workflow-art__node {
-  transform: translateY(-2px);
-}
-
-.home-shell__card:hover .home-workflow-art__node--middle,
-.home-shell__card:focus-within .home-workflow-art__node--middle {
-  transform: translateY(-5px);
-  transition-delay: 0.07s;
-}
-
-.home-shell__card:hover .home-workflow-art__node--last,
-.home-shell__card:focus-within .home-workflow-art__node--last {
-  transition-delay: 0.14s;
-}
-
-.home-shell__card:hover .home-workflow-art__mark,
-.home-shell__card:focus-within .home-workflow-art__mark {
-  transform: translateY(-3px);
-  transition-delay: 0.07s;
-}
-
-.home-shell__card:hover .home-workflow-art__beam,
-.home-shell__card:focus-within .home-workflow-art__beam {
-  animation: home-workflow-beam 800ms ease-out 1;
-}
-
-@keyframes home-workflow-beam {
-  0% { stroke-dashoffset: 30; opacity: 0; }
-  15%, 80% { opacity: 0.6; }
-  100% { stroke-dashoffset: -115; opacity: 0; }
-}
-
-/* g2 — workflow rail: hidden scrollbar + edge arrows (aligned to page.html demo) */
-.home-workflow-rail-wrap {
-  position: relative;
-}
-
-/* plan g1.2 / g1.3 — whole-rail enter: 420ms opacity + translateY, no per-card delay */
-.home-workflow-enter {
-  opacity: 0;
-  transform: translateY(10px);
-  pointer-events: none;
-}
-
-.home-workflow-enter--ready {
-  animation: home-workflow-rail-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  pointer-events: auto;
-}
-
-@keyframes home-workflow-rail-enter {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.home-workflow-rail {
-  justify-content: center;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-behavior: smooth;
-  padding: 4px 2px 8px;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.home-workflow-rail--overflow {
-  justify-content: flex-start;
-}
-
-.home-workflow-rail::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
-  background: transparent;
-}
-
-.home-workflow-rail--instant {
-  scroll-behavior: auto;
-}
-
-.home-workflow-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(calc(-50% - 4px));
-  z-index: 2;
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 8px;
-  background: rgb(var(--c-surface));
-  box-shadow: inset 0 1px 0 rgb(var(--home-highlight)), 0 3px 10px rgb(var(--home-shadow));
-  backdrop-filter: blur(6px);
-  color: rgb(var(--c-txt2));
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  padding: 0;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-  transition:
-    opacity 0.2s ease,
-    color 0.15s ease,
-    border-color 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.home-workflow-nav:hover:not(:disabled) {
-  color: rgb(var(--c-txt));
-  border-color: rgb(var(--c-line-strong));
-  background: rgb(var(--c-surface));
-}
-
-.home-workflow-nav:disabled {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.home-workflow-nav--prev {
-  left: -6px;
-}
-
-.home-workflow-nav--next {
-  right: -6px;
-}
-
-.home-workflow-fade {
-  pointer-events: none;
-  position: absolute;
-  top: 0;
-  bottom: 8px;
-  width: 28px;
-  z-index: 1;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.home-workflow-fade--left {
-  left: 0;
-  background: linear-gradient(90deg, rgb(var(--c-surface)), transparent);
-}
-
-.home-workflow-fade--right {
-  right: 0;
-  background: linear-gradient(270deg, rgb(var(--c-surface)), transparent);
-}
-
-.home-workflow-rail-wrap--has-left .home-workflow-fade--left,
-.home-workflow-rail-wrap--has-right .home-workflow-fade--right {
-  opacity: 1;
-}
-
-@keyframes home-ph-caret {
-  0%,
-  49% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-
-/* g1.3 / g2.3 — prefers-reduced-motion */
+.home-composer-wrap { margin-top: 22px; }
+@keyframes home-ph-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .home-composer,
-  .home-composer__plus,
-  .home-mode-controls,
-  .home-mode-tail,
-  .home-shell__card,
-  .home-workflow-more,
-  .home-workflow-art__node,
-  .home-workflow-art__mark {
-    transition: none;
-  }
-
-  .home-shell__card:not(.home-shell__card--add):hover,
-  .home-shell__card:hover .home-workflow-art__node,
-  .home-shell__card:focus-within .home-workflow-art__node,
-  .home-shell__card:hover .home-workflow-art__mark,
-  .home-shell__card:focus-within .home-workflow-art__mark {
-    transform: none;
-  }
-
-  .home-shell__card:hover .home-workflow-art__beam,
-  .home-shell__card:focus-within .home-workflow-art__beam {
-    animation: none;
-  }
-
-  .home-composer__ph-cursor {
-    animation: none;
-    opacity: 1;
-  }
-
-  .home-mode-controls-enter-active,
-  .home-mode-controls-leave-active,
-  .home-mode-tail-enter-active,
-  .home-mode-tail-leave-active {
-    transition: none;
-  }
-
-  .home-workflow-rail {
-    scroll-behavior: auto;
-  }
-
-  .home-workflow-enter,
-  .home-workflow-enter--ready {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: none !important;
-    pointer-events: auto;
-  }
-
-  .home-shell__card--add,
-  .home-shell__card--add:hover,
-  .home-shell__card--add:active,
-  .home-shell__card--add:hover .home-shell__card-plus,
-  .home-shell__card--add:active .home-shell__card-plus {
-    transform: none;
-  }
-
-  /* Match :hover/:active:not(:disabled) so none wins over the 1px lift and press scale. */
-  .home-composer__send,
-  .home-composer__send:hover:not(:disabled),
-  .home-composer__send:active:not(:disabled) {
-    transform: none;
-    transition: none;
-  }
+  .home-composer, .home-composer__plus, .home-composer__send { transition: none; transform: none; }
+  .home-composer__ph-cursor { animation: none; }
+  .home-composer__send:hover:not(:disabled), .home-composer__send:active:not(:disabled) { transform: none; }
 }
-
-/* fill LOCKED: copy to composer 22px; yume 240x200 */
-.home-composer-wrap {
-  margin-top: 22px;
-}
-
-@media (max-width: 640px) {
-  .home-workflow-nav--prev {
-    left: 0;
-  }
-
-  .home-workflow-nav--next {
-    right: 0;
-  }
-}
-
 @media (max-width: 520px) {
-  .home-shell__content {
-    padding-bottom: 2.5rem;
-  }
-
-  .home-shell__content::before {
-    flex-basis: 4.25rem;
-    /* Covers the ~30px ear above the crop when float and jump both peak. */
-    min-height: 36px;
-  }
+  .home-shell__content { padding-bottom: 2.5rem; }
+  .home-shell__content::before { flex-basis: 4.25rem; min-height: 36px; }
 }
-
 </style>

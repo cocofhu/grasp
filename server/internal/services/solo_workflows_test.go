@@ -19,7 +19,7 @@ func TestWorkflowOutboxOfflineDeliveryIsPrivateAndIdempotent(t *testing.T) {
 	if err := db.Create(&run).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.Artifact{ID: "result", RunID: run.ID, Name: "result.md", Revision: 3}).Error; err != nil {
+	if err := db.Create(&models.Artifact{ID: "result", RunID: run.ID, Name: "result.md", Revision: 3, Content: "actual implementation result"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.SoloWorkflowLink{ID: "parent", SoloID: session.ID, RunID: run.ID, UserID: session.UserID, Kind: "parent"}).Error; err != nil {
@@ -50,6 +50,10 @@ func TestWorkflowOutboxOfflineDeliveryIsPrivateAndIdempotent(t *testing.T) {
 	}
 	if _, err := solo.Messages(session.ID, "mallory"); err == nil {
 		t.Fatal("private parent history leaked")
+	}
+	preamble, err := solo.contextPreambleChecked(session.ID, "none", "history")
+	if err != nil || !strings.Contains(preamble, "actual implementation result") {
+		t.Fatalf("result not supplied to continuing Solo: %q %v", preamble, err)
 	}
 	if err := db.First(&session, "id = ?", session.ID).Error; err != nil {
 		t.Fatal(err)

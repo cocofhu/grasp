@@ -12,7 +12,7 @@ import { useSoloLauncher } from '@/lib/solo/useSoloLauncher'
 import { soloPrefs } from '@/lib/solo/soloPrefs'
 import type { Project } from '@/lib/api/apiTypes'
 
-const props = defineProps<{ open: boolean; presetAgent?: string; presetProject?: string }>()
+const props = defineProps<{ open: boolean; presetAgent?: string; presetProject?: string; continuationRunId?: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 const { t } = useI18n()
 const launcher = useSoloLauncher()
@@ -62,7 +62,7 @@ function dismiss() {
 }
 
 async function submit() {
-  const s = await launcher.start(text.value, [], title.value)
+  const s = await launcher.start(text.value, [], title.value, [], props.continuationRunId || '')
   if (!s) return
   launched.value = true
   emit('close')
@@ -77,6 +77,7 @@ function onSaved(p: Project) {
 <template>
   <AppModal :open="open" :title="t('pages.solo.create.title')" :width="520" close-on-esc @close="dismiss">
     <form class="space-y-4" data-testid="solo-create-modal" @submit.prevent="submit">
+      <p v-if="continuationRunId" class="text-sm text-txt2">{{ t('pages.solo.workflows.historyNewEnvironment') }}</p>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <span class="label">{{ t('pages.solo.create.agent') }}</span>

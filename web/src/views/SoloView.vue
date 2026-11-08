@@ -15,6 +15,12 @@ const presetAgent = ref('')
 const presetProject = ref('')
 
 const sessionId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
+const workflowIntent = computed(() => typeof route.query.workflow === 'string' ? route.query.workflow : undefined)
+function workflowOpened() {
+  const query = { ...route.query }
+  delete query.workflow
+  void router.replace({ path: route.path, query })
+}
 
 // ?new=1&agent=x&project=y opens the dialog prefilled (Agent Studio, project list).
 watch(
@@ -55,7 +61,7 @@ onMounted(() => void store.refresh())
 <template>
   <div class="solo-view flex h-full min-h-0" data-testid="solo-view">
     <main class="solo-main min-h-0 min-w-0 flex-1">
-      <SoloSessionPane v-if="sessionId" :key="sessionId" :session-id="sessionId" @back="goHome" />
+      <SoloSessionPane v-if="sessionId" :key="sessionId" :session-id="sessionId" :workflow-intent="workflowIntent" @back="goHome" @workflow-opened="workflowOpened" />
     </main>
 
     <SoloCreateModal :open="createOpen" :preset-agent="presetAgent" :preset-project="presetProject" @close="createOpen = false" />

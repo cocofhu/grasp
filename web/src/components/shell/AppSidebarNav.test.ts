@@ -630,11 +630,10 @@ describe('AppSidebarNav', () => {
     expect(workspace.findAll('a.nav-item').map((l) => l.attributes('data-to'))).toEqual([
       '/dashboard',
       '/board',
-      '/workflows',
       '/stats',
       '/settings',
     ])
-    expect(workspace.find('[data-to="/workflows"]').text()).toContain('工作流')
+    expect(workspace.find('[data-to="/workflows"]').exists()).toBe(false)
     expect(workspace.find('[data-to="/stats"]').text()).toContain('用量统计')
     expect(wrapper.text()).not.toContain('配置')
     await wrapper.setProps({ rail: true })
@@ -732,7 +731,6 @@ describe('AppSidebarNav', () => {
     expect(links.map((link) => link.attributes('data-to'))).toEqual([
       '/dashboard',
       '/board',
-      '/workflows',
       '/stats',
       '/settings',
     ])
@@ -747,27 +745,13 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('keeps workspace chrome and highlights workflows on workflow routes', async () => {
+  it('opens workflow definitions in settings without a daily workflow entry', async () => {
     routeState.path = '/workflows'
-    const list = mountNav()
-    await flushPromises()
-    expect(list.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
-    expect(list.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
-    expect(list.find('[data-testid="nav-back-home"]').exists()).toBe(false)
-    expect(list.text()).not.toContain('返回工作区')
-    expect(list.find('[data-to="/workflows"]').classes()).toContain('active')
-    list.unmount()
-
-    routeState.path = '/workflows/abc'
-    routeState.query = { tab: 'agents' }
     const wrapper = mountNav()
     await flushPromises()
-    expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="nav-back-home"]').exists()).toBe(false)
-    const workflowsLink = wrapper.find('[data-to="/workflows"]')
-    expect(workflowsLink.classes()).toContain('active')
-    expect(wrapper.find('[data-to="/board"]').classes()).not.toContain('active')
+    expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(true)
+    expect(wrapper.find('[data-to="/workflows"]').classes()).toContain('active')
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -1370,7 +1354,7 @@ describe('AppSidebarNav', () => {
     expect(pendingRow.classes()).not.toContain('active')
     expect(getComputedStyle(board.element).fontWeight).toBe('600')
     expect(getComputedStyle(pendingTitle.element).fontWeight).toBe('400')
-    for (const to of ['/dashboard', '/board', '/workflows', '/stats', '/settings']) {
+    for (const to of ['/dashboard', '/board', '/stats', '/settings']) {
       expect(wrapper.get(`[data-to="${to}"]`).find('.nav-row-title').exists()).toBe(false)
     }
 
@@ -1764,7 +1748,7 @@ describe('AppSidebarNav', () => {
       { type: 'clarify', runId: 'run-b', nodeId: 'b', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第二条' },
       { type: 'clarify', runId: 'run-c', nodeId: 'c', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第三条' },
     ]
-    routeState.path = '/workflows'
+    routeState.path = '/board'
     await flushPromises()
     expect(again.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual([
       'run-c',

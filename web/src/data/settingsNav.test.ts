@@ -35,8 +35,8 @@ describe('workspace settings navigation', () => {
     expect(settingsNavItems.find((item) => item.to === '/sandboxes')?.groupKey).toBeUndefined()
   })
   it('keeps operational tools and full pages in workspace chrome', () => {
-    for (const path of ['/dashboard', '/board', '/requirements', '/assistant', '/workflows', '/runs', '/gates', '/stats']) expect(isSettingsChrome(path)).toBe(false)
-    for (const path of ['/settings', '/settings/credentials', '/agents', '/artifacts', '/notifications']) expect(isSettingsChrome(path)).toBe(true)
+    for (const path of ['/dashboard', '/board', '/requirements', '/assistant', '/runs', '/gates', '/stats']) expect(isSettingsChrome(path)).toBe(false)
+    for (const path of ['/settings', '/settings/credentials', '/agents', '/artifacts', '/notifications', '/workflows']) expect(isSettingsChrome(path)).toBe(true)
     expect(isSettingsChrome('/sandboxes/1/console', true)).toBe(false)
   })
   it('separates exact general settings, integrations, notification policy and messages', () => {

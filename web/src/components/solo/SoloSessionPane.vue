@@ -47,8 +47,8 @@ import type { SoloResources } from '@/lib/api/apiTypes'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
-const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient> }>()
-const emit = defineEmits<{ back: []; ready: [] }>()
+const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient>; workflowIntent?: string }>()
+const emit = defineEmits<{ back: []; ready: []; workflowOpened: [] }>()
 const { t, te, locale } = useI18n()
 const { worktreeMode } = useExecutionMode()
 const router = useRouter()
@@ -56,6 +56,11 @@ const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
 const workflowPanel = ref<InstanceType<typeof SoloWorkflowPanel> | null>(null)
 const { enabled: workflowsEnabled } = useWorkflowFeature()
+watch([() => props.workflowIntent, workflowPanel], async ([intent, panel]) => {
+  if (typeof intent !== 'string' || !panel || props.embedded) return
+  if (workflowsEnabled.value) await panel.openPicker(intent === '1' ? '' : intent)
+  emit('workflowOpened')
+})
 const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices

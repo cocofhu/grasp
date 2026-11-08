@@ -407,6 +407,10 @@ func truncRunes(s string, n int) string {
 // Create persists a session, opens its resident sandbox and queues the first
 // message (if any) to run once the sandbox is ready.
 func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInput) (*SoloSessionView, error) {
+	return s.create(ctx, user, in, "")
+}
+
+func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInput, continuationRun string) (*SoloSessionView, error) {
 	if s.sbx == nil || s.agents == nil {
 		return nil, errors.New("solo unavailable")
 	}
@@ -470,11 +474,46 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	if strings.TrimSpace(in.Title) == "" && strings.TrimSpace(in.Text) == "" && len(references) > 0 {
 		row.Title = truncRunes("@"+references[0].Title, 30)
 	}
-	if err := s.db.Create(row).Error; err != nil {
+	created := false
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if continuationRun != "" {
+			if err := LockWorkflowAdmission(tx); err != nil {
+				return err
+			}
+			previous, err := workflowChat(tx, continuationRun, user)
+			if err != nil {
+				return err
+			}
+			if previous != "" {
+				row.ID = previous
+				return nil
+			}
+		}
+		if err := tx.Create(row).Error; err != nil {
+			return err
+		}
+		if continuationRun != "" {
+			if err := freezeWorkflowHistory(tx, row, continuationRun); err != nil {
+				return err
+			}
+		}
+		created = true
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
+	if !created {
+		return s.Get(ctx, row.ID, user)
+	}
 	if err := s.openSandbox(ctx, row); err != nil {
-		s.db.Delete(&models.SoloSession{}, "id = ?", row.ID)
+		if continuationRun == "" {
+			s.db.Delete(&models.SoloSession{}, "id = ?", row.ID)
+		} else {
+			// Preserve the committed identity/history. A retry returns this chat;
+			// the user can restart its environment after fixing the failure.
+			s.db.Model(row).Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
+		}
 		var lim ErrSoloSandboxLimit
 		if errors.As(err, &lim) {
 			return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: err.Error()}
