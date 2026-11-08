@@ -27,6 +27,7 @@ type Project struct {
 const (
 	SoloStatusStarting = "starting"
 	SoloStatusRunning  = "running"
+	SoloStatusStopped  = "stopped"
 	SoloStatusClosed   = "closed"
 	SoloStatusError    = "error"
 )
@@ -49,10 +50,11 @@ type SessionRepo struct {
 // SoloSession is a direct CLI chat with one Agent in a resident sandbox. The
 // sandbox has no idle TTL; it lives until the user closes the session.
 type SoloSession struct {
-	ID        string `gorm:"primaryKey" json:"id"`
-	UserID    string `gorm:"index" json:"userId"`
-	Title     string `json:"title"`
-	AgentName string `gorm:"index" json:"agentName"`
+	WorkflowContextVersion uint64 `gorm:"not null;default:0" json:"-"`
+	ID                     string `gorm:"primaryKey" json:"id"`
+	UserID                 string `gorm:"index" json:"userId"`
+	Title                  string `json:"title"`
+	AgentName              string `gorm:"index" json:"agentName"`
 	// ProjectID is the single repository of a legacy session. New multi-repo
 	// sessions leave it empty; usage is the Repos list. A new single-repo
 	// session still fills it so older readers keep working.
@@ -168,10 +170,11 @@ type RunReference struct {
 // SoloMessage is one persisted turn of a Solo session. Agent turns keep the raw
 // ACP frames so the UI can replay thoughts and tool calls.
 type SoloMessage struct {
-	TurnID    string               `gorm:"index" json:"turnId,omitempty"`
-	Files     []ArtifactAttachment `gorm:"serializer:json" json:"files,omitempty"`
-	ID        string               `gorm:"primaryKey" json:"id"`
-	SessionID string               `gorm:"index" json:"sessionId"`
+	WorkflowRunID string               `gorm:"index" json:"workflowRunId,omitempty"`
+	TurnID        string               `gorm:"index" json:"turnId,omitempty"`
+	Files         []ArtifactAttachment `gorm:"serializer:json" json:"files,omitempty"`
+	ID            string               `gorm:"primaryKey" json:"id"`
+	SessionID     string               `gorm:"index" json:"sessionId"`
 	// Role: user | assistant | system (system marks restarts).
 	Role          string            `json:"role"`
 	Content       string            `gorm:"serializer:filetext" json:"content"`

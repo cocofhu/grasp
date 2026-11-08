@@ -41,6 +41,7 @@ func (e *Engine) dispatch() {
 // Priority DESC → hasRemainingHumanGate DESC → created_at ASC → id ASC order,
 // then returns (either at capacity or with the queue empty).
 func (e *Engine) drainQueue() {
+	e.parkWaitingPauses()
 	for {
 		// Hold the halt read lock from the halt check through the claim and
 		// the driver spawn. Once Halt returns, no queued run can be promoted
@@ -229,12 +230,15 @@ func (e *Engine) enqueueAdmission(runID, fromNodeID string, requireRunning bool)
 		if requireRunning && run.Status != "running" {
 			return nil // lost the race; the run already moved off "running"
 		}
+		if run.Status == "paused" {
+			return nil
+		}
 		cp := run.Checkpoints
 		if cp == nil {
 			cp = map[string]map[string]any{}
 		}
 		cp[admissionFromCheckpoint] = map[string]any{"node": fromNodeID}
-		q := tx.Model(&models.Run{}).Where("id = ?", runID)
+		q := tx.Model(&models.Run{}).Where("id = ? AND status = ?", runID, run.Status)
 		if requireRunning {
 			q = q.Where("status = ?", "running")
 		}
@@ -261,7 +265,7 @@ func (e *Engine) admitRunDirect(runID, fromNodeID string) bool {
 	if run.StartedAt.IsZero() {
 		updates["started_at"] = time.Now()
 	}
-	res := e.db.Model(&models.Run{}).Where("id = ? AND status <> ?", runID, "running").Updates(updates)
+	res := e.db.Model(&models.Run{}).Where("id = ? AND status NOT IN ?", runID, []string{"running", "paused"}).Updates(updates)
 	if res.Error != nil || res.RowsAffected == 0 {
 		return false
 	}

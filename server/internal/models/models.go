@@ -195,6 +195,13 @@ type WorkflowVersion struct {
 
 // Run is one workflow execution (FSM instance).
 type Run struct {
+	PauseRequested  bool           `gorm:"not null;default:false" json:"pauseRequested"`
+	PauseFromStatus string         `json:"-"`
+	ControlVersion  uint64         `gorm:"not null;default:0" json:"controlVersion"`
+	EventVersion    uint64         `gorm:"not null;default:0" json:"eventVersion"`
+	OriginSoloID    string         `gorm:"index" json:"originSoloId,omitempty"`
+	CreatedBy       string         `gorm:"index" json:"createdBy,omitempty"`
+	LaunchSource    string         `json:"launchSource,omitempty"`
 	ID              string         `gorm:"primaryKey" json:"id"`
 	WorkflowID      string         `gorm:"index" json:"workflowId"`
 	WorkflowName    string         `json:"workflowName"`
@@ -982,6 +989,12 @@ type PromptImage struct {
 //     so it shows in the sandbox UI; the runtime provider owns its lifecycle.
 //   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
 type Sandbox struct {
+	// DesiredState is durable user intent. Empty is running for legacy rows.
+	DesiredState       string          `gorm:"index" json:"desiredState,omitempty"`
+	OperationOwner     string          `json:"-"`
+	OperationExpiresAt *time.Time      `json:"-"`
+	Generation         uint64          `gorm:"not null;default:0" json:"generation"`
+	Recovery           SandboxRecovery `gorm:"serializer:json" json:"recovery"`
 	// Binding fingerprints retain only hashes, so reconnect can validate the
 	// exact applied authorization even after a control-plane restart.
 	ModelBindingFingerprint string `json:"-"`
@@ -1025,6 +1038,16 @@ type Sandbox struct {
 	DestroyAt *time.Time     `json:"destroyAt,omitempty"`
 	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
+}
+
+// Recovery describes what was retained, rather than promising process memory
+// on drivers that only retain disks. Unknown capabilities stay unknown.
+type SandboxRecovery struct {
+	History       string `json:"history"`
+	Files         string `json:"files"`
+	NativeSession string `json:"nativeSession"`
+	Process       string `json:"process"`
+	Reason        string `json:"reason,omitempty"`
 }
 
 // Sandbox lease kinds. Each kind holds at most one lease per sandbox; a new
@@ -1168,7 +1191,7 @@ func AllModels() []any {
 		&LiveSession{},
 		&TokenUsageEvent{},
 		&TokenUsageReport{},
-		&Project{}, &SoloSession{}, &SoloMessage{},
+		&Project{}, &SoloSession{}, &SoloMessage{}, &WorkflowLaunch{}, &SoloWorkflowLink{}, &WorkflowConversationEvent{},
 		&ChatPendingTurn{},
 	}
 }

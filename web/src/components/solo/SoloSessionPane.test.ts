@@ -110,6 +110,7 @@ function mountPane(messages: object = {}) {
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': messages } })],
       stubs: {
+        SoloWorkflowPanel: true,
         Icon: true,
         ReviewShell: { template: '<div><slot name="actions" /><slot name="stage" /><slot name="sidebar" /></div>' },
         ReactArtifactStage: true,

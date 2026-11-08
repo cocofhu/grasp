@@ -137,6 +137,9 @@ export const runsClient = {
     priority = 'normal',
     tags: string[] = [],
     opts?: {
+      soloSessionId?: string
+      idempotencyKey?: string
+      expectedWorkflowVersion?: number
       signal?: AbortSignal
       env?: { key: string; value: string; secret?: boolean }[]
       title?: string
@@ -151,9 +154,12 @@ export const runsClient = {
       launchModel?: { configurationId?: string; modelId?: string; reasoningEffort?: string } | null
     },
   ) =>
-    req<{ id: string; status: string; priority?: string }>(`/workflows/${workflowId}/runs`, {
+    req<{ id: string; status: string; priority?: string }>(opts?.soloSessionId ? `/solo/sessions/${encodeURIComponent(opts.soloSessionId)}/workflows/${encodeURIComponent(workflowId)}/runs` : `/workflows/${workflowId}/runs`, {
       method: 'POST',
+      ...(opts?.idempotencyKey ? { headers: { 'Idempotency-Key': opts.idempotencyKey } } : {}),
       body: JSON.stringify({
+        ...(opts?.soloSessionId ? { confirmed: true } : {}),
+        ...(opts?.expectedWorkflowVersion ? { expectedWorkflowVersion: opts.expectedWorkflowVersion } : {}),
         inputs,
         trigger,
         priority,

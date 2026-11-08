@@ -10,7 +10,7 @@ const error = ref('')
 let inflight: Promise<void> | null = null
 
 export function isSoloActive(s: Pick<SoloSession, 'status'>): boolean {
-  return s.status === 'starting' || s.status === 'running'
+  return s.status === 'starting' || s.status === 'running' || s.status === 'stopped'
 }
 
 /** Closed (cancelled) or failed sessions; the sidebar lists them under「历史执行」. */

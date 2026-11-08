@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/cocofhu/grasp/internal/objectstore"
 )
 
 const Prefix = "fileref:v1/"
@@ -29,17 +31,48 @@ const (
 )
 
 type Store struct {
-	Root   string
-	mu     sync.Mutex
-	closed bool
+	Root         string
+	mu           sync.Mutex
+	closed       bool
+	objects      objectstore.Store
+	closeContext context.Context
+	cancel       context.CancelFunc
+}
+
+// File preserves the seek/stat/name API of local files while allowing a remote
+// object's verified temporary download to be removed when the caller closes it.
+type File interface {
+	io.ReadSeekCloser
+	io.ReaderAt
+	Stat() (os.FileInfo, error)
+	Name() string
+}
+
+// SetObjectStore is configured during startup, before publishing this store to
+// workers. Existing local references remain readable; all new puts use objects.
+func (s *Store) SetObjectStore(objects objectstore.Store) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return ErrClosed
+	}
+	s.objects = objects
+	return nil
+}
+
+func objectKey(digest string) string {
+	return "payloads/sha256/" + digest[:2] + "/" + digest
 }
 
 var ErrClosed = errors.New("file payload store is closed")
 
-// Close prevents further namespace mutations, including a late import's
-// publication. It waits for any in-progress rename, not for a blocked source
-// reader. An already-open temporary file may finish copying but cannot publish.
+// Close cancels remote publications and fences further namespace mutations.
+// It does not wait for a blocked source reader. An already-open temporary file
+// may finish copying but cannot publish a SQL-reference-bearing object.
 func (s *Store) Close() {
+	if s.cancel != nil {
+		s.cancel()
+	}
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
@@ -78,7 +111,8 @@ func New(root string) (*Store, error) {
 	if err = syncDir(filepath.Dir(abs)); err != nil {
 		return nil, err
 	}
-	return &Store{Root: abs}, nil
+	closeContext, cancel := context.WithCancel(context.Background())
+	return &Store{Root: abs, closeContext: closeContext, cancel: cancel}, nil
 }
 
 func syncDir(path string) error {
@@ -175,6 +209,27 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 	if s.closed {
 		return "", 0, ErrClosed
 	}
+	if s.objects != nil {
+		body, openErr := os.Open(f.Name())
+		if openErr != nil {
+			return "", 0, openErr
+		}
+		defer func() { _ = body.Close() }()
+		publication, cancel := context.WithCancel(ctx)
+		defer cancel()
+		if s.closeContext != nil {
+			stop := context.AfterFunc(s.closeContext, cancel)
+			defer stop()
+		}
+		err = s.objects.Put(publication, objectKey(digest), body, objectstore.Info{
+			Size: size, ContentType: "application/octet-stream",
+			Metadata: map[string]string{"grasp-sha256": digest},
+		})
+		if err != nil {
+			return "", 0, err
+		}
+		return Prefix + encoding + "/" + digest, size, nil
+	}
 	if err = os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return "", 0, err
 	}
@@ -202,7 +257,7 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 	return Prefix + encoding + "/" + digest, size, nil
 }
 
-func (s *Store) Open(ctx context.Context, ref string) (*os.File, error) {
+func (s *Store) Open(ctx context.Context, ref string) (File, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -211,6 +266,19 @@ func (s *Store) Open(ctx context.Context, ref string) (*os.File, error) {
 		return nil, err
 	}
 	f, err := os.Open(s.path(digest))
+	if errors.Is(err, os.ErrNotExist) {
+		s.mu.Lock()
+		objects := s.objects
+		s.mu.Unlock()
+		if objects != nil {
+			body, info, remoteErr := objects.Open(ctx, objectKey(digest))
+			if remoteErr != nil {
+				return nil, remoteErr
+			}
+			defer func() { _ = body.Close() }()
+			return objectstore.DownloadVerified(ctx, body, info.Size, digest)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("file unavailable (%s): %w", digest, err)
 	}

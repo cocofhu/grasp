@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -123,7 +124,14 @@ func (e *Engine) StartRunFromPublishedWithFirstMessage(workflowID string, inputs
 	return e.startRun(def, snap.Graph, inputs, trigger, pri, tags, env, title, firstMessage, launch)
 }
 
-func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map[string]any, trigger string, priority int, tags []string, env []models.EnvEntry, titleOverride string, firstMessage *models.CompositeText, launch LaunchChoice) (*models.Run, error) {
+func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map[string]any, trigger string, priority int, tags []string, env []models.EnvEntry, titleOverride string, firstMessage *models.CompositeText, launch LaunchChoice, admissions ...services.RunStart) (*models.Run, error) {
+	if err := services.CheckWorkflowsEnabled(e.db); err != nil {
+		return nil, err
+	}
+	var admission services.RunStart
+	if len(admissions) > 0 {
+		admission = admissions[0]
+	}
 
 	if err := graph.Validate(); err != nil {
 		return nil, err
@@ -206,9 +214,23 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 	e.mu.Unlock()
 
 	now := time.Now()
+	var replayID string
 	if err := e.db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		replayID, err = reserveLaunch(tx, &run, admission)
+		if err != nil {
+			return err
+		}
 		if err := tx.Create(&run).Error; err != nil {
 			return err
+		}
+		if run.OriginSoloID != "" {
+			if err := tx.Create(&models.SoloWorkflowLink{ID: uuid.NewString(), SoloID: run.OriginSoloID, RunID: run.ID, UserID: run.CreatedBy, Kind: "parent"}).Error; err != nil {
+				return err
+			}
+			if err := services.EnqueueWorkflowEvent(tx, run.ID, "queued"); err != nil {
+				return err
+			}
 		}
 
 		for _, rv := range seeded {
@@ -223,6 +245,13 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		e.mu.Lock()
 		delete(e.tokens, runID)
 		e.mu.Unlock()
+		if errors.Is(err, errLaunchReplay) {
+			var existing models.Run
+			if readErr := e.db.First(&existing, "id = ?", replayID).Error; readErr != nil {
+				return nil, readErr
+			}
+			return &existing, nil
+		}
 		return nil, err
 	}
 

@@ -13,12 +13,13 @@ import (
 )
 
 type startRunBody struct {
-	Inputs   map[string]any    `json:"inputs"`
-	Trigger  string            `json:"trigger"`
-	Priority string            `json:"priority"` // high|normal|low; empty → normal
-	Tags     []string          `json:"tags"`
-	Env      []models.EnvEntry `json:"env"`   // optional run-scoped sandbox env snapshot
-	Title    string            `json:"title"` // optional; overrides computeRunTitle when non-blank
+	ExpectedWorkflowVersion int               `json:"expectedWorkflowVersion"`
+	Inputs                  map[string]any    `json:"inputs"`
+	Trigger                 string            `json:"trigger"`
+	Priority                string            `json:"priority"` // high|normal|low; empty → normal
+	Tags                    []string          `json:"tags"`
+	Env                     []models.EnvEntry `json:"env"`   // optional run-scoped sandbox env snapshot
+	Title                   string            `json:"title"` // optional; overrides computeRunTitle when non-blank
 	// FirstMessage is the opening chat message (text + attachments) for an
 	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once that node parks, so the caller can navigate away at once.
@@ -90,16 +91,21 @@ func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
 }
 
 func (h *Handlers) StartRun(c *gin.Context) {
+	user, ok := h.sessionUser(c)
+	if !ok {
+		return
+	}
 	var b startRunBody
 	if err := c.ShouldBindJSON(&b); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
 		return
 	}
-	trigger, err := models.ResolveTrigger(b.Trigger, models.TriggerManual)
+	_, err := models.ResolveTrigger(b.Trigger, models.TriggerManual)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	trigger := models.TriggerManual
 	tags, err := models.NormalizeRunTags(b.Tags)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -110,15 +116,13 @@ func (h *Handlers) StartRun(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var run *models.Run
-	if b.PublishedSnapshot {
-		run, err = h.Eng.StartRunFromPublishedWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, firstMessage, launch)
-	} else {
-		run, err = h.Eng.StartRunWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, firstMessage, launch)
-	}
+	run, err := h.admission().Start(services.RunStart{WorkflowID: c.Param("id"), Source: "web", ActorID: user,
+		ExpectedVersion: b.ExpectedWorkflowVersion,
+		IdempotencyKey:  c.GetHeader("Idempotency-Key"), Published: b.PublishedSnapshot, Inputs: b.Inputs, Trigger: trigger,
+		Priority: b.Priority, Tags: tags, Env: b.Env, Title: b.Title, FirstMessage: firstMessage,
+		ModelSet: launch.Set, ConfigurationID: launch.ConfigurationID, ModelID: launch.ModelID, ReasoningEffort: launch.ReasoningEffort})
 	if err != nil {
-		_ = c.Error(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeAdmissionErr(c, err)
 		return
 	}
 	if _, ok := h.WF.Get(c.Param("id")); ok {
@@ -148,6 +152,7 @@ func (h *Handlers) StartRun(c *gin.Context) {
 var validRunStatuses = map[string]bool{
 	"running":       true,
 	"waiting_human": true,
+	"paused":        true,
 	"queued":        true,
 	"completed":     true,
 	"failed":        true,

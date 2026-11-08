@@ -1,5 +1,6 @@
 import type { InboxItem } from '../../shared/types'
 import { req, rootWsUrl } from '../httpCore'
+import type { WorkflowFeature } from '@/lib/composables/useWorkflowFeature'
 import type {
   BrandSettings,
   ChannelConfig,
@@ -17,6 +18,7 @@ export type SettingsResponse = {
   items: SettingItem[]
   brand: BrandSettings
   execution_mode?: 'worktree' | 'sandbox'
+  workflows?: WorkflowFeature
 }
 
 export const settingsClient = {
@@ -53,7 +55,7 @@ export const settingsClient = {
   },
   // platform settings (scheduling params)
   getSettings: () => req<SettingsResponse>('/settings'),
-  updateSettings: (patch: Record<string, number | string>) =>
+  updateSettings: (patch: Record<string, number | string | boolean>) =>
     req<SettingsResponse>('/settings', {
       method: 'PUT',
       body: JSON.stringify(patch),

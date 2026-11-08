@@ -69,14 +69,17 @@ type SoloCreateInput struct {
 
 // SoloSandboxInfo is the sandbox state shown on a session.
 type SoloSandboxInfo struct {
-	ID              uint   `json:"id"`
-	Name            string `json:"name"`
-	Status          string `json:"status"`
-	ContainerStatus string `json:"containerStatus,omitempty"`
-	Connected       bool   `json:"connected"`
-	HasCodeServer   bool   `json:"hasCodeServer"`
-	Error           string `json:"error,omitempty"`
-	CreatedAt       string `json:"createdAt,omitempty"`
+	DesiredState    string                 `json:"desiredState,omitempty"`
+	Generation      uint64                 `json:"generation"`
+	Recovery        models.SandboxRecovery `json:"recovery"`
+	ID              uint                   `json:"id"`
+	Name            string                 `json:"name"`
+	Status          string                 `json:"status"`
+	ContainerStatus string                 `json:"containerStatus,omitempty"`
+	Connected       bool                   `json:"connected"`
+	HasCodeServer   bool                   `json:"hasCodeServer"`
+	Error           string                 `json:"error,omitempty"`
+	CreatedAt       string                 `json:"createdAt,omitempty"`
 }
 
 // SoloSessionView is the API shape of a session.
@@ -316,7 +319,7 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 				if choices := s.reasoningEfforts(agent, chatModelID(row)); choices != nil {
 					v.ReasoningEfforts = choices
 				}
-				if live {
+				if live && row.Status == models.SoloStatusRunning {
 					if choices := s.liveReasoningEfforts(ctx, row, agent, chatModelID(row)); choices != nil {
 						v.ReasoningEfforts = choices
 					}
@@ -339,6 +342,7 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 	}
 	v.ArtifactRunID = sb.RunID
 	info := &SoloSandboxInfo{
+		DesiredState: sb.DesiredState, Generation: sb.Generation, Recovery: sb.Recovery,
 		ID: sb.ID, Name: sb.Name, Status: sb.Status, Error: sb.Error,
 		HasCodeServer: sb.CodeServerPort > 0, CreatedAt: sb.CreatedAt.Format(time.RFC3339),
 	}
@@ -359,7 +363,7 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 func (s *SoloService) List(ctx context.Context, user, status string) ([]SoloSessionView, error) {
 	q := s.db.Where("user_id = ?", user)
 	if status == "active" {
-		q = q.Where("status IN ?", []string{models.SoloStatusStarting, models.SoloStatusRunning})
+		q = q.Where("status IN ?", []string{models.SoloStatusStarting, models.SoloStatusRunning, models.SoloStatusStopped})
 	}
 	var rows []models.SoloSession
 	if err := q.Order("updated_at desc").Limit(200).Find(&rows).Error; err != nil {
@@ -644,6 +648,11 @@ func (s *SoloService) Restart(ctx context.Context, id, user string) (*SoloSessio
 	}
 	if row.Status == models.SoloStatusStarting || row.Status == models.SoloStatusRunning {
 		return nil, soloErr(http.StatusConflict, "session_active", "会话仍在运行，无需重新启动")
+	}
+	if row.Status != models.SoloStatusClosed && row.SandboxID != 0 && s.sbx != nil {
+		if _, err := s.sbx.Get(row.SandboxID); err == nil {
+			return s.ResumeEnvironment(ctx, id, user)
+		}
 	}
 	if _, ok := s.agents.Get(row.AgentName); !ok {
 		return nil, soloErr(http.StatusBadRequest, "agent_not_found", "Agent %q 已不存在，无法重新启动", row.AgentName)
@@ -1387,6 +1396,14 @@ func (s *SoloService) SendPreview(id, user, text string, images []models.PromptI
 }
 
 func (s *SoloService) sendSoloTurn(row *models.SoloSession, turn *soloTurn, inputs []ReferenceInput) (int, error) {
+	if s.sbx != nil && row.SandboxID != 0 {
+		if environment, err := s.sbx.Get(row.SandboxID); err == nil && environment.DesiredState == "stopped" {
+			return 0, soloErr(http.StatusConflict, "environment_stopped", "环境已请求停止，请先恢复环境")
+		}
+	}
+	if row.Status == models.SoloStatusStopped {
+		return 0, soloErr(http.StatusConflict, "environment_stopped", "环境已停止，请先恢复环境")
+	}
 	if row.Status == models.SoloStatusClosed {
 		return 0, soloErr(http.StatusConflict, "session_closed", "会话已关闭，请先重新启动")
 	}
@@ -1465,6 +1482,9 @@ func (s *SoloService) restoreSessionLocked(id string, stored []chatsession.Pendi
 		if err := s.pending.Clear(soloPendingSurface, id); err != nil {
 			log.Warn().Err(err).Str("session", id).Msg("solo: clear queued turns failed")
 		}
+		return
+	}
+	if row.Status == models.SoloStatusStopped {
 		return
 	}
 	if s.sbx != nil && row.SandboxID != 0 {
@@ -1689,6 +1709,8 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 			return 0, nil, err
 		}
 		switch row.Status {
+		case models.SoloStatusStopped:
+			return 0, nil, soloErr(http.StatusConflict, "environment_stopped", "环境已停止，请先恢复环境")
 		case models.SoloStatusClosed:
 			return 0, nil, errors.New("会话已关闭")
 		case models.SoloStatusError:
@@ -1868,7 +1890,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Update("status", status)
 	}
 	if usedPreamble && status == "ok" {
-		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false})
+		s.db.Model(&models.SoloSession{}).Where("id = ? AND workflow_context_version = ?", c.id, row.WorkflowContextVersion).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false})
 	}
 	// A switch that failed on an earlier turn leaves model_notice set. Once a
 	// later turn succeeds on the model that is already applied, the banner is

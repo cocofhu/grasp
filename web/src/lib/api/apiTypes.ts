@@ -719,9 +719,12 @@ export interface ProjectInput {
   repoDirName?: string
 }
 
-export type SoloStatus = 'starting' | 'running' | 'closed' | 'error'
+export type SoloStatus = 'starting' | 'running' | 'stopped' | 'closed' | 'error'
 
 export interface SoloSandboxInfo {
+  desiredState?: string
+  generation?: number
+  recovery?: { history: string; files: string; nativeSession: string; process: string; reason?: string }
   id: number
   name: string
   /** pulling | creating | running | error | stopped */

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/auth"
-	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/browser"
 	"github.com/cocofhu/grasp/internal/channels"
 	"github.com/cocofhu/grasp/internal/channels/dingtalk"
@@ -41,6 +40,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
 	"github.com/cocofhu/grasp/internal/pagebridge"
+	"github.com/cocofhu/grasp/internal/payloadstore"
 	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/privatepreview"
 	"github.com/cocofhu/grasp/internal/router"
@@ -130,6 +130,10 @@ func main() {
 		log.Fatal().Err(err).Msg("open database failed")
 	}
 	defer func() { _ = database.Close(db) }()
+	storage, err := payloadstore.Open(context.Background(), db, cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("persistent payload storage init failed")
+	}
 	ledgerRecorder, err := tokenledger.Start(db, filepath.Join(cfg.Storage.BlobsRoot, "token-ledger"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("open token ledger journal failed")
@@ -167,10 +171,7 @@ func main() {
 		log.Warn().Err(err).Msg("sandbox runtime bundle unavailable; sandbox creation will fail until it exists")
 	}
 
-	blobStore, err := blob.NewFromConfig(cfg)
-	if err != nil {
-		log.Fatal().Err(err).Msg("blob store init failed")
-	}
+	blobStore := storage.Blobs
 
 	workspaceSvc := services.NewWorkspaceService(db)
 	auditSvc := services.NewAuditService(db)
@@ -423,6 +424,8 @@ func main() {
 	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
 	soloSvc.ReconcileSandboxReferences()
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
+	go storage.RunLegacyArchive(sweeperCtx)
+	go soloSvc.RunWorkflowEventDelivery(sweeperCtx)
 	go migrateFilePayloads(sweeperCtx, db)
 	go sbxSvc.RunSweeper(sweeperCtx)
 	codexLoginMgr.Start(sweeperCtx)

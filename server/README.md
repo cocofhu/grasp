@@ -2,6 +2,8 @@
 
 有限状态机(FSM)编排引擎 + 按 run 隔离的 artifact-store + 真实沙箱执行(cursor-agent)。
 
+聊天正文、附件、S3 / COS 和本地数据归档配置见 [持久化存储](STORAGE.md)。
+
 ## 执行后端(ExecProvider)
 
 支持七类 ACP 后端(`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex` / `deepseek_harness`),由 Agent 卡片

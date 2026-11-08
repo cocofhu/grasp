@@ -25,6 +25,8 @@ import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/Pe
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
+import SoloWorkflowPanel from './SoloWorkflowPanel.vue'
+import { useWorkflowFeature } from '@/lib/composables/useWorkflowFeature'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
@@ -52,6 +54,8 @@ const { worktreeMode } = useExecutionMode()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
+const workflowPanel = ref<InstanceType<typeof SoloWorkflowPanel> | null>(null)
+const { enabled: workflowsEnabled } = useWorkflowFeature()
 const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
@@ -132,6 +136,20 @@ const confirmDelete = ref(false)
 const moreOpen = ref(false)
 const limitOpen = ref(false)
 const closing = ref(false)
+const environmentBusy = ref(false)
+const stoppedEnvironment = computed(() => status.value === 'stopped')
+const environmentStopPending = computed(() => session.value?.sandbox?.desiredState === 'stopped' && !stoppedEnvironment.value)
+async function changeEnvironment(resume: boolean) {
+  environmentBusy.value = true
+  actionError.value = ''
+  try {
+    const value = await (resume ? api.resumeSoloEnvironment(props.sessionId) : api.stopSoloEnvironment(props.sessionId))
+    store.upsert(value)
+    await chat.load()
+  } catch (cause) {
+    actionError.value = soloErrorText(cause, t, te, locale.value)
+  } finally { environmentBusy.value = false }
+}
 const restarting = ref(false)
 const resources = ref<SoloResources>()
 
@@ -245,6 +263,13 @@ defineExpose({ addPick })
 
 async function send() {
   const text = input.value.trim()
+  const command = /^\/workflow(?:\s+(.*))?$/.exec(text)
+  if (command) {
+    if (!workflowsEnabled.value || props.embedded) { actionError.value = t('pages.solo.workflows.disabled'); return }
+    await workflowPanel.value?.openPicker(command[1] || '')
+    input.value = ''
+    return
+  }
   const images = attach.attachments.value.slice()
   const refs = mention.refs.value
   const selected = picks.value
@@ -394,6 +419,12 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </template>
 
       <template #sidebar>
+      <div v-if="!embedded && !worktreeMode && status !== 'closed'" class="flex shrink-0 items-center justify-end gap-2 border-b border-line px-4 py-2">
+        <span v-if="stoppedEnvironment" class="mr-auto text-xs text-txt3">{{ t('pages.solo.environment.stopped') }}</span>
+        <span v-else-if="environmentStopPending" class="mr-auto text-xs text-txt3">{{ t('pages.solo.environment.stopPending') }}</span>
+        <AppButton v-if="stoppedEnvironment" size="sm" variant="outline" icon="play" :loading="environmentBusy" @click="changeEnvironment(true)">{{ t('pages.solo.environment.resume') }}</AppButton>
+        <AppButton v-else size="sm" variant="ghost" icon="stop" :disabled="busy || queued.length > 0 || status === 'starting'" :loading="environmentBusy" :title="t('pages.solo.environment.retained')" data-testid="solo-stop-environment" @click="changeEnvironment(false)">{{ t(environmentStopPending ? 'pages.solo.environment.retryStop' : 'pages.solo.environment.stop') }}</AppButton>
+      </div>
       <div v-if="link === 'reconnecting'" class="solo-banner" role="status">
         <Icon name="spinner" :size="12" />{{ t('pages.solo.link.reconnecting') }}
       </div>
@@ -409,6 +440,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div ref="scroller" class="chat-pane-transcript scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="solo-transcript" @scroll.passive="onScroll">
         <div class="chat-pane-column space-y-6">
           <SoloStartupCard v-if="showStartup" :session="session" />
+          <SoloWorkflowPanel v-if="!embedded" ref="workflowPanel" :session-id="props.sessionId" @changed="chat.refreshSession()" />
 
           <div v-if="status === 'error'" class="solo-errcard" data-testid="solo-error-card">
             <div class="flex items-start gap-2">
@@ -520,12 +552,13 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </div>
 
       <!-- composer / closed bar -->
-      <div v-if="closed" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
+      <div v-if="closed || stoppedEnvironment" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
         <div class="chat-pane-column solo-closed">
           <Icon name="lock" :size="15" class="mt-0.5 shrink-0 text-txt3" />
-          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">{{ t('pages.solo.closedBar.text') }}</p>
-          <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting" @click="doRestart">{{ t('pages.solo.closedBar.restart') }}</AppButton>
+          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">{{ t(stoppedEnvironment ? 'pages.solo.environment.stopped' : 'pages.solo.closedBar.text') }}</p>
+          <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting || environmentBusy" @click="stoppedEnvironment ? changeEnvironment(true) : doRestart()">{{ t(stoppedEnvironment ? 'pages.solo.environment.resume' : 'pages.solo.closedBar.restart') }}</AppButton>
         </div>
+        <p v-if="actionError" class="chat-pane-column mt-2 text-xs text-err" role="alert">{{ actionError }}</p>
       </div>
       <div v-else class="chat-pane-composer shrink-0 py-3">
         <div class="chat-pane-column">
@@ -546,6 +579,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             @preview="openChatImagePreview"
           >
             <template #model>
+              <AppButton v-if="workflowsEnabled && !embedded" size="sm" variant="ghost" class="font-mono text-xs" data-testid="solo-workflow-menu" @click="workflowPanel?.openPicker()">/workflow</AppButton>
               <SoloModelSelect
                 class="min-w-0"
                 flat

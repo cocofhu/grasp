@@ -2130,6 +2130,12 @@
         "concurrency": "并发",
         "autoRefresh": "每 5 秒自动刷新",
         "note": "合计 = 测试占用 + running workflow · 不含 TTL 保活沙箱"
+      },
+      "workflows": {
+        "title": "工作流",
+        "description": "Solo 是统一入口，按需启用工作流管理。",
+        "enabled": "启用工作流",
+        "help": "关闭后不能新建工作流，现有任务仍可查看、审批、回复和取消。"
       }
     },
     "sandboxes": {
@@ -4778,7 +4784,8 @@
         "starting": "启动中",
         "running": "运行中",
         "closed": "已关闭",
-        "error": "异常"
+        "error": "异常",
+        "stopped": "已停止"
       },
       "phase": {
         "preparing": "等待沙箱就绪…",
@@ -5002,6 +5009,34 @@
           "session": "引用会话",
           "github": "引用 Issue / PR"
         }
+      },
+      "environment": {
+        "stop": "停止环境",
+        "resume": "恢复环境",
+        "stopped": "环境已停止，聊天和工作区已保留。",
+        "retained": "停止只关闭计算资源，文件会保留。",
+        "release": "释放环境",
+        "stopPending": "停止尚未确认，工作区已保留。",
+        "retryStop": "重试停止"
+      },
+      "workflows": {
+        "title": "工作流任务",
+        "choose": "选择工作流",
+        "search": "搜索已发布的工作流",
+        "launchHint": "选择后配置需求和代码来源，由你点击启动。每个工作流使用独立环境，Solo 可以继续聊天。",
+        "empty": "没有匹配的已发布工作流。",
+        "disabled": "工作流功能已关闭，已有任务仍可管理。",
+        "handle": "处理待办",
+        "conversation": "对话与干预",
+        "details": "执行详情",
+        "iteration": "第 {n} 轮",
+        "noPendingInput": "当前没有等待处理的对话。",
+        "cancelTitle": "取消工作流",
+        "cancelBody": "取消“{task}”的执行？其他工作流和 Solo 会继续运行。",
+        "confirmCancel": "确认取消",
+        "pause": "暂停调度",
+        "resume": "继续执行",
+        "pausePending": "等待当前步骤结束后暂停"
       }
     },
     "projects": {

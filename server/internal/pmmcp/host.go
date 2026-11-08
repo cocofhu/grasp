@@ -72,7 +72,7 @@ type Host struct {
 // engineOps covers the run operations exposed through pm-workflow-write
 // (narrow interface to avoid handler coupling).
 type engineOps interface {
-	StartRunWithPriority(workflowID string, inputs map[string]any, trigger, priority string, tags []string, env []models.EnvEntry) (*models.Run, error)
+	StartAdmittedRun(services.RunStart) (*models.Run, error)
 	ResumeGate(runID, nodeID, action string, form map[string]any) error
 	ReactReply(runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force bool) error
 	ReviewSessionState(runID, nodeID string) (waiting int, thinking bool)
@@ -764,10 +764,11 @@ func (h *Host) callWorkflowWrite(token, name string, args map[string]any) (any, 
 		if !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
-		trigger, err := models.ResolveTrigger(platformmcp.StrArg(args, "trigger"), models.TriggerPMMCP)
+		_, err := models.ResolveTrigger(platformmcp.StrArg(args, "trigger"), models.TriggerPMMCP)
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
+		trigger := models.TriggerPMMCP
 		priority := platformmcp.StrArg(args, "priority")
 		if priority == "" {
 			priority = "normal"
@@ -780,7 +781,12 @@ func (h *Host) callWorkflowWrite(token, name string, args map[string]any) (any, 
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
-		run, err := h.eng.StartRunWithPriority(w.ID, platformmcp.MapArg(args, "inputs"), trigger, priority, tags, env)
+		actorID := "system"
+		if sess, ok := h.SessionFor(token); ok && sess.UserID != "" {
+			actorID = sess.UserID
+		}
+		run, err := services.NewRunAdmission(h.runs.DB(), h.eng).Start(services.RunStart{WorkflowID: w.ID, Source: "pm", ActorID: actorID,
+			IdempotencyKey: platformmcp.StrArg(args, "idempotencyKey"), Inputs: platformmcp.MapArg(args, "inputs"), Trigger: trigger, Priority: priority, Tags: tags, Env: env})
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
@@ -1009,7 +1015,8 @@ func toolSchemas(mcpID string) []map[string]any {
 				"workflowId": map[string]any{"type": "string"},
 			}),
 			platformmcp.Tool("pm_start_run", "启动一次工作流 Run。", map[string]any{
-				"workflowId": map[string]any{"type": "string"},
+				"idempotencyKey": map[string]any{"type": "string", "description": "Stable request key for retries; do not reuse with different inputs"},
+				"workflowId":     map[string]any{"type": "string"},
 				"trigger": map[string]any{
 					"type":        "string",
 					"enum":        []string{models.TriggerManual, models.TriggerAPI, models.TriggerPMMCP},

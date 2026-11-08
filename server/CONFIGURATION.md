@@ -11,6 +11,8 @@ configured as workspace credentials, not in this platform config table.
 
 | Environment variable | YAML path | Type | Default | Property | Description |
 | --- | --- | --- | --- | --- | --- |
+| `GRASP_WORKFLOWS_ENABLED` | `features.workflows_enabled` | boolean | `true` | Public | Enable new workflow runs; existing runs remain manageable when disabled |
+| `GRASP_MAX_ACTIVE_WORKFLOWS` | `features.max_active_workflows` | integer | `1000` | Public | Maximum total active and queued workflow runs |
 | `GRASP_PORT` | `server.port` | integer | `8080` | Public | HTTP listen port |
 | `GRASP_DEPLOYMENT_MODE` | `server.deployment_mode` | string | `development` | Public | Deployment trust boundary; local-demo is loopback-only |
 | `GRASP_MCP_ADVERTISE` | `server.mcp_advertise` | URL | `derived` | Public | API base URL used by sandboxes for artifact-store MCP |
@@ -50,7 +52,15 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_AUTH_SESSION_TTL` | `auth.session_ttl` | duration | `168h` | Public | Session lifetime |
 | `GRASP_AUTH_USERS` | `auth.users` | YAML/JSON | `Not set` | Sensitive | Static user array; required explicitly outside local mode |
 | `GRASP_SECRETS_KEY` | `security.secrets_key` | string | `Not set` | Sensitive | Master AES key for encrypting credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate. When unset, non-production modes generate secrets.key next to the SQLite database |
-| `GRASP_STORAGE_DRIVER` | `storage.driver` | enum | `local` | Public | Attachment storage driver: local (cos reserved) |
+| `GRASP_STORAGE_DRIVER` | `storage.driver` | enum | `local` | Public | Payload and attachment storage driver: local / s3 / cos |
+| `GRASP_S3_ENDPOINT` | `storage.s3.endpoint` | URL | `Not set` | Public | S3-compatible object storage HTTP(S) origin |
+| `GRASP_S3_REGION` | `storage.s3.region` | string | `us-east-1` | Public | Object storage region; use the actual bucket region for COS |
+| `GRASP_S3_BUCKET` | `storage.s3.bucket` | string | `Not set` | Public | Existing private object storage bucket |
+| `GRASP_S3_PREFIX` | `storage.s3.prefix` | string | `Not set` | Public | Object prefix for this deployment; isolate independent deployments in a shared bucket |
+| `GRASP_S3_ACCESS_KEY_ID` | `storage.s3.access_key_id` | string | `Not set` | Sensitive | Object storage access key ID; inject through a Secret |
+| `GRASP_S3_SECRET_ACCESS_KEY` | `storage.s3.secret_access_key` | string | `Not set` | Sensitive | Object storage secret key; inject through a Secret |
+| `GRASP_S3_SESSION_TOKEN` | `storage.s3.session_token` | string | `Not set` | Sensitive | Optional object storage temporary session token |
+| `GRASP_S3_PATH_STYLE` | `storage.s3.path_style` | boolean | `Not set` | Public | Path-style addressing; defaults to true for s3 and false for cos |
 | `GRASP_MAX_FILE_BYTES` | `storage.max_file_bytes` | int | `134217728` | Public | Maximum bytes per Agent file import |
 | `GRASP_BLOBS_ROOT` | `storage.blobs_root` | path | `data/blobs` | Public | Local attachment blob root directory |
 | `GRASP_GITHUB_OAUTH_CLIENT_ID` | `github.oauth_client_id` | string | `Not set` | Public | Client ID of a GitHub OAuth App with Enable Device Flow checked; enables "Sign in with GitHub" for github.com workspace credentials (no client secret needed) |

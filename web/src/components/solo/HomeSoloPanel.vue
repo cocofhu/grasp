@@ -19,6 +19,7 @@ const { t } = useI18n()
 const store = useSoloSessions()
 
 const recent = computed(() => store.active.value.slice(0, 3))
+const computeCount = computed(() => store.active.value.filter(session => session.status === 'starting' || session.status === 'running').length)
 const cards = computed(() => props.projects.slice(0, 8))
 const selected = computed(() => (Array.isArray(props.projectIds) ? props.projectIds : []))
 
@@ -33,7 +34,7 @@ function repoMeta(session: (typeof recent.value)[number]) {
     <section v-if="recent.length" class="home-solo__section">
       <div class="home-solo__head">
         <span>{{ t('pages.solo.home.recent') }}</span>
-        <span class="home-solo__count">{{ store.active.value.length }}/{{ store.maxSandboxes.value }}</span>
+        <span class="home-solo__count">{{ computeCount }}/{{ store.maxSandboxes.value }}</span>
         <RouterLink to="/solo" class="home-solo__more">{{ t('pages.solo.home.viewAll') }}<Icon name="chevron-right" :size="12" /></RouterLink>
       </div>
       <div class="home-solo__list">

@@ -349,6 +349,17 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			e.requeueRun(runID, cur)
 			return
 		}
+		if re == nil {
+			parked, err := e.parkRunBoundary(c, cur)
+			if err != nil {
+				log.Error().Err(err).Str("run_id", runID).Msg("pause observation failed; retaining driver position")
+				e.requeueRun(runID, cur)
+				return
+			}
+			if parked {
+				return
+			}
+		}
 		node := c.graph.FindNode(cur)
 		if node == nil {
 			e.appendTrace(c, models.TraceEntry{NodeID: cur, Event: "exit", Detail: "node not found"})

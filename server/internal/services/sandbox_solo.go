@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/modelrouting"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // SandboxPurposeSolo marks resident Solo session sandboxes. They have no idle
@@ -77,14 +80,30 @@ func (s *SandboxService) invokeSoloDestroyHook(id uint) {
 }
 
 func (s *SandboxService) activeSoloSandboxCount() int {
-	var n int64
-	activeSessions := s.db.Model(&models.SoloSession{}).Select("sandbox_id").Where("status IN ?",
-		[]string{models.SoloStatusStarting, models.SoloStatusRunning})
-	s.db.Model(&models.Sandbox{}).
-		Where("purpose = ? AND (status IN ? OR id IN (?))", SandboxPurposeSolo,
-			[]string{"running", "creating", "pulling"}, activeSessions).
-		Count(&n)
+	n, _ := countSoloCompute(s.db, 0)
 	return int(n)
+}
+
+func countSoloCompute(db *gorm.DB, exclude uint) (int64, error) {
+	var n int64
+	activeSessions := db.Model(&models.SoloSession{}).Select("sandbox_id").Where("status IN ?",
+		[]string{models.SoloStatusStarting, models.SoloStatusRunning})
+	query := db.Model(&models.Sandbox{}).
+		Where("purpose = ? AND (status IN ? OR id IN (?))", SandboxPurposeSolo,
+			[]string{"running", "creating", "pulling"}, activeSessions)
+	if exclude != 0 {
+		query = query.Where("id <> ?", exclude)
+	}
+	err := query.Count(&n).Error
+	return n, err
+}
+
+func lockSoloCompute(tx *gorm.DB) error {
+	row := models.Setting{Key: "solo_compute_admission", Value: "1"}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+		return err
+	}
+	return tx.Model(&models.Setting{}).Where("key = ?", row.Key).Update("updated_at", time.Now().UTC()).Error
 }
 
 // SoloRepoSpecs converts a project into the sandbox clone list.
@@ -162,7 +181,19 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		Name: name, Profile: profile, Purpose: SandboxPurposeSolo, Status: "creating",
 		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstTestRepoURL(repos),
 	}
-	if err := s.db.Create(row).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockSoloCompute(tx); err != nil {
+			return err
+		}
+		count, err := countSoloCompute(tx, 0)
+		if err != nil {
+			return err
+		}
+		if count >= int64(s.MaxSoloSandboxes()) {
+			return ErrSoloSandboxLimit{Max: s.MaxSoloSandboxes()}
+		}
+		return tx.Create(row).Error
+	}); err != nil {
 		if s.host != nil {
 			s.host.UnregisterRun(runID)
 		}

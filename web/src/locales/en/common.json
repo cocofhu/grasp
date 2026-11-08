@@ -30,7 +30,8 @@
       "cancelling": "Cancelling",
       "skipped": "Skipped",
       "published": "Published",
-      "draft": "Draft"
+      "draft": "Draft",
+      "paused": "Paused"
     },
     "priority": {
       "label": "Priority",

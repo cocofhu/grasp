@@ -8,6 +8,8 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/rs/zerolog/log"
 )
@@ -23,6 +25,14 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 	}
 	tracked[row.Name], correlated[row.Name] = true, true
 	s.db.Model(row).Update("destroy_at", nil)
+	if row.DesiredState == "stopped" {
+		// Observation must not wake manually stopped residents on restart.
+		if status, err := s.mgr.ProbeStatus(ctx, row.Name); err == nil && (status == "stopped" || status == "exited") {
+			s.db.Model(row).Updates(map[string]any{"status": "stopped", "error": ""})
+			s.db.Model(&models.SoloSession{}).Where("sandbox_id = ? AND status <> ?", row.ID, models.SoloStatusClosed).Update("status", models.SoloStatusStopped)
+		}
+		return
+	}
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	if sandbox.GatewayRecordMissing(err) {
 		// A process can exit after Create but before adopting the gateway id.
@@ -72,11 +82,19 @@ func (s *SandboxService) soloSessionClosed(row *models.Sandbox) bool {
 }
 
 func (s *SandboxService) recordSoloRecovered(row *models.Sandbox, sb *sandbox.Sandbox) error {
-	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{
+	query := s.db.Model(&models.Sandbox{}).Where("id = ? AND (desired_state IS NULL OR desired_state <> ?)", row.ID, "stopped")
+	if row.OperationOwner != "" {
+		query = query.Where("operation_owner = ?", row.OperationOwner)
+	}
+	result := query.Updates(map[string]any{
 		"status": "running", "error": "", "destroy_at": nil,
 		"host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort,
-	}).Error; err != nil {
-		return err
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("environment intent changed during recovery")
 	}
 	if s.host != nil && row.RunID != "" {
 		s.host.RestoreRun(row.RunID, row.Token)
@@ -117,6 +135,9 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	}
 	if s.soloSessionClosed(row) {
 		return fmt.Errorf("Solo 会话已关闭")
+	}
+	if row.DesiredState == "stopped" {
+		return soloErr(409, "environment_stopped", "环境已手动停止，请先恢复环境")
 	}
 	s.mu.Lock()
 	live := s.live[id]
@@ -162,9 +183,20 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 // id yet. Startup reconciliation marks interrupted creation for recovery.
 // Run once before restoring queues, then periodically; failures never become TTLs.
 func (s *SandboxService) RecoverSoloSandboxes(ctx context.Context) {
+	// Finish an interrupted explicit stop as well as interrupted starts. This
+	// branch only stops existing compute; it never wakes a manually stopped guest.
+	var pendingStops []models.Sandbox
+	if err := s.db.Where("purpose = ? AND desired_state = ? AND status <> ?", SandboxPurposeSolo, "stopped", "stopped").Find(&pendingStops).Error; err == nil {
+		for _, row := range pendingStops {
+			if ctx.Err() != nil {
+				return
+			}
+			_ = s.stopSoloEnvironment(ctx, row.ID)
+		}
+	}
 	var rows []models.Sandbox
 	if err := s.db.Where("purpose = ? AND status NOT IN ?", SandboxPurposeSolo,
-		[]string{"running", "creating", "pulling"}).Find(&rows).Error; err != nil {
+		[]string{"running", "creating", "pulling"}).Where("desired_state IS NULL OR desired_state <> ?", "stopped").Find(&rows).Error; err != nil {
 		return
 	}
 	var wg sync.WaitGroup
@@ -182,7 +214,54 @@ func (s *SandboxService) lockSoloRecovery(ctx context.Context, id uint) (func(),
 	lock := value.(chan struct{})
 	select {
 	case lock <- struct{}{}:
-		return func() { <-lock }, nil
+		owner := uuid.NewString()
+		for {
+			now := time.Now().UTC()
+			expires := now.Add(5 * time.Minute)
+			result := s.db.WithContext(ctx).Model(&models.Sandbox{}).Where("id = ? AND (operation_owner = '' OR operation_owner IS NULL OR operation_expires_at < ?)", id, now).
+				Updates(map[string]any{"operation_owner": owner, "operation_expires_at": expires, "generation": gorm.Expr("COALESCE(generation, 0) + 1")})
+			if result.Error != nil {
+				<-lock
+				return nil, result.Error
+			}
+			if result.RowsAffected > 0 {
+				leaseCtx, cancel := context.WithCancel(context.Background())
+				done := make(chan struct{})
+				go func() {
+					defer close(done)
+					ticker := time.NewTicker(time.Minute)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-leaseCtx.Done():
+							return
+						case <-ticker.C:
+							_ = s.db.Model(&models.Sandbox{}).Where("id = ? AND operation_owner = ?", id, owner).Update("operation_expires_at", time.Now().UTC().Add(5*time.Minute)).Error
+						}
+					}
+				}()
+				return func() {
+					cancel()
+					<-done
+					_ = s.db.Model(&models.Sandbox{}).Where("id = ? AND operation_owner = ?", id, owner).Updates(map[string]any{"operation_owner": "", "operation_expires_at": nil}).Error
+					<-lock
+				}, nil
+			}
+			var count int64
+			if err := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Count(&count).Error; err != nil || count == 0 {
+				<-lock
+				if err != nil {
+					return nil, err
+				}
+				return nil, fmt.Errorf("sandbox not found")
+			}
+			select {
+			case <-ctx.Done():
+				<-lock
+				return nil, ctx.Err()
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

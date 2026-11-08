@@ -59,6 +59,9 @@ type resumeGateOpts struct {
 // ResumeGateAs is like ResumeGate but records the reviewer username on outputs
 // and audit. Empty reviewer → system + unattributable (no fabricated names).
 func (e *Engine) ResumeGateAs(runID, nodeID, action string, form map[string]any, reviewer string) error {
+	if err := e.checkRunNotPaused(runID); err != nil {
+		return err
+	}
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -68,6 +71,9 @@ func (e *Engine) ResumeGateAs(runID, nodeID, action string, form map[string]any,
 }
 
 func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]any, reviewer string, opts resumeGateOpts) error {
+	if err := e.checkRunNotPaused(runID); err != nil {
+		return err
+	}
 	c, err := e.loadCtx(runID)
 	if err != nil {
 		return err
@@ -368,6 +374,9 @@ func (e *Engine) ReactReplyRetryLastAs(owner, runID, nodeID string) error {
 }
 
 func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast, abortRunning bool, clientMessageID string, refs ...models.MessageReference) error {
+	if err := e.checkRunNotPaused(runID); err != nil {
+		return err
+	}
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}

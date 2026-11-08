@@ -81,6 +81,7 @@ function mountPane() {
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': pages } })],
       stubs: {
+        SoloWorkflowPanel: true,
         Icon: true,
         ReviewShell: { template: '<div><slot name="actions" /><slot name="sidebar" /></div>' },
         ReactArtifactStage: true,

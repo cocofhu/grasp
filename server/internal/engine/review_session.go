@@ -507,6 +507,9 @@ func lastRetryableHuman(msgs []models.ReactMessage) (text string, images []model
 }
 
 func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string, autoRetryOnResume bool, clientMessageID string, refs ...models.MessageReference) (waiting int, err error) {
+	if err := e.checkRunNotPaused(runID); err != nil {
+		return 0, err
+	}
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
 	}

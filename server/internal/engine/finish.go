@@ -158,7 +158,6 @@ func (e *Engine) finish(runID, status string) bool {
 		}
 	}
 
-	q := e.db.Model(&models.Run{}).Where("id = ?", runID)
 	if status == "waiting_human" {
 		// If this run already had gate/react pause rows and every one is
 		// resolved/done, a concurrent ResumeGate/ReactReply continued the
@@ -177,14 +176,35 @@ func (e *Engine) finish(runID, status string) bool {
 				return false
 			}
 		}
-		q = q.Where("status = ?", "running")
 	}
-	res := q.Updates(updates)
+	var res *gorm.DB
+	err := e.db.Transaction(func(tx *gorm.DB) error {
+		// Keep the guarded transition on the transaction's actual connection.
+		res = tx.Model(&models.Run{}).Where("id = ? AND status <> ? AND status NOT IN ?", runID, status, []string{"completed", "cancelled"})
+		if status == "waiting_human" {
+			res = res.Where("status = ?", "running")
+		}
+		res = res.Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil
+		}
+		return services.EnqueueWorkflowEvent(tx, runID, status)
+	})
+	if err != nil {
+		log.Error().Err(err).Str("run_id", runID).Msg("persist workflow transition and outbox failed")
+		return false
+	}
 	logDB(res, runID, "finish run")
 	if status == "waiting_human" && (res.Error != nil || res.RowsAffected == 0) {
 		return false
 	}
 	if res.Error != nil {
+		return false
+	}
+	if res.RowsAffected == 0 {
 		return false
 	}
 	if status == "completed" {

@@ -2130,6 +2130,12 @@
         "concurrency": "concurrency",
         "autoRefresh": "Auto-refresh every 5s",
         "note": "total = test + running workflows · excludes TTL keep-alive sandboxes"
+      },
+      "workflows": {
+        "title": "Workflows",
+        "description": "Use Solo as the main entry, with optional workflow management.",
+        "enabled": "Enable workflows",
+        "help": "Disabling prevents new runs. Existing tasks remain available for review, replies and cancellation."
       }
     },
     "sandboxes": {
@@ -4778,7 +4784,8 @@
         "starting": "Starting",
         "running": "Running",
         "closed": "Closed",
-        "error": "Error"
+        "error": "Error",
+        "stopped": "Stopped"
       },
       "phase": {
         "preparing": "Waiting for the sandbox…",
@@ -5002,6 +5009,34 @@
           "session": "Reference a session",
           "github": "Reference an issue / PR"
         }
+      },
+      "environment": {
+        "stop": "Stop environment",
+        "resume": "Resume environment",
+        "stopped": "Environment stopped. Chat and workspace are retained.",
+        "retained": "Stopping releases compute while retaining files.",
+        "release": "Release environment",
+        "stopPending": "Stop is not confirmed. Workspace retained.",
+        "retryStop": "Retry stop"
+      },
+      "workflows": {
+        "title": "Workflow tasks",
+        "choose": "Choose a workflow",
+        "search": "Search published workflows",
+        "launchHint": "Choose a workflow, configure the request and code source, then click Start. Each workflow has its own environment while Solo remains available.",
+        "empty": "No matching published workflows.",
+        "disabled": "Workflows are disabled. Existing tasks remain available.",
+        "handle": "Respond",
+        "conversation": "Conversation and controls",
+        "details": "Execution details",
+        "iteration": "Iteration {n}",
+        "noPendingInput": "No conversation is waiting for input.",
+        "cancelTitle": "Cancel workflow",
+        "cancelBody": "Cancel “{task}”? Solo and other workflows will continue.",
+        "confirmCancel": "Confirm cancellation",
+        "pause": "Pause scheduling",
+        "resume": "Resume",
+        "pausePending": "Will pause after the current step"
       }
     },
     "projects": {

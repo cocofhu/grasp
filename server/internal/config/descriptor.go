@@ -16,6 +16,8 @@ type OptionDescriptor struct {
 // Keep this list in the same change as applyEnvOverrides.
 func OptionDescriptors() []OptionDescriptor {
 	return []OptionDescriptor{
+		{Env: "GRASP_WORKFLOWS_ENABLED", YAML: "features.workflows_enabled", Type: "boolean", Default: "true", ZH: "允许新建工作流；关闭后现有任务仍可管理", EN: "Enable new workflow runs; existing runs remain manageable when disabled"},
+		{Env: "GRASP_MAX_ACTIVE_WORKFLOWS", YAML: "features.max_active_workflows", Type: "integer", Default: "1000", ZH: "运行中与排队工作流总数上限", EN: "Maximum total active and queued workflow runs"},
 		{Env: "GRASP_PORT", YAML: "server.port", Type: "integer", Default: "8080", ZH: "HTTP 监听端口", EN: "HTTP listen port"},
 		{Env: "GRASP_DEPLOYMENT_MODE", YAML: "server.deployment_mode", Type: "string", Default: "development", ZH: "部署信任边界；local-demo 仅限 loopback", EN: "Deployment trust boundary; local-demo is loopback-only"},
 		{Env: "GRASP_MCP_ADVERTISE", YAML: "server.mcp_advertise", Type: "URL", Default: "derived", ZH: "沙箱回连 artifact-store MCP 的 API 基址", EN: "API base URL used by sandboxes for artifact-store MCP"},
@@ -55,7 +57,15 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_AUTH_SESSION_TTL", YAML: "auth.session_ttl", Type: "duration", Default: "168h", ZH: "会话有效期", EN: "Session lifetime"},
 		{Env: "GRASP_AUTH_USERS", YAML: "auth.users", Type: "YAML/JSON", Sensitive: true, ZH: "静态账号数组；非本地部署必须显式配置", EN: "Static user array; required explicitly outside local mode"},
 		{Env: "GRASP_SECRETS_KEY", YAML: "security.secrets_key", Type: "string", Sensitive: true, ZH: "凭据加密主密钥（base64 32 字节）；视作固定盐、请勿轮换。未设置时非 production 模式在 SQLite 库旁自动生成 secrets.key", EN: "Master AES key for encrypting credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate. When unset, non-production modes generate secrets.key next to the SQLite database"},
-		{Env: "GRASP_STORAGE_DRIVER", YAML: "storage.driver", Type: "enum", Default: "local", ZH: "附件存储驱动：local（预留 cos）", EN: "Attachment storage driver: local (cos reserved)"},
+		{Env: "GRASP_STORAGE_DRIVER", YAML: "storage.driver", Type: "enum", Default: "local", ZH: "正文与附件存储驱动：local / s3 / cos", EN: "Payload and attachment storage driver: local / s3 / cos"},
+		{Env: "GRASP_S3_ENDPOINT", YAML: "storage.s3.endpoint", Type: "URL", ZH: "S3 兼容对象存储地址（HTTP(S) origin）", EN: "S3-compatible object storage HTTP(S) origin"},
+		{Env: "GRASP_S3_REGION", YAML: "storage.s3.region", Type: "string", Default: "us-east-1", ZH: "对象存储地域；COS 填实际 bucket 地域", EN: "Object storage region; use the actual bucket region for COS"},
+		{Env: "GRASP_S3_BUCKET", YAML: "storage.s3.bucket", Type: "string", ZH: "已创建的私有对象存储 bucket", EN: "Existing private object storage bucket"},
+		{Env: "GRASP_S3_PREFIX", YAML: "storage.s3.prefix", Type: "string", ZH: "当前部署的对象前缀；共享 bucket 时须隔离", EN: "Object prefix for this deployment; isolate independent deployments in a shared bucket"},
+		{Env: "GRASP_S3_ACCESS_KEY_ID", YAML: "storage.s3.access_key_id", Type: "string", Sensitive: true, ZH: "对象存储访问凭据 ID，建议通过 Secret 注入", EN: "Object storage access key ID; inject through a Secret"},
+		{Env: "GRASP_S3_SECRET_ACCESS_KEY", YAML: "storage.s3.secret_access_key", Type: "string", Sensitive: true, ZH: "对象存储访问密钥，通过 Secret 注入", EN: "Object storage secret key; inject through a Secret"},
+		{Env: "GRASP_S3_SESSION_TOKEN", YAML: "storage.s3.session_token", Type: "string", Sensitive: true, ZH: "对象存储临时会话令牌（可选）", EN: "Optional object storage temporary session token"},
+		{Env: "GRASP_S3_PATH_STYLE", YAML: "storage.s3.path_style", Type: "boolean", ZH: "路径式寻址；s3 默认 true，cos 默认 false", EN: "Path-style addressing; defaults to true for s3 and false for cos"},
 		{Env: "GRASP_MAX_FILE_BYTES", YAML: "storage.max_file_bytes", Type: "int", Default: "134217728", ZH: "Agent 单文件导入大小上限（字节）", EN: "Maximum bytes per Agent file import"},
 		{Env: "GRASP_BLOBS_ROOT", YAML: "storage.blobs_root", Type: "path", Default: "data/blobs", ZH: "本地附件 blob 根目录", EN: "Local attachment blob root directory"},
 		{Env: "GRASP_GITHUB_OAUTH_CLIENT_ID", YAML: "github.oauth_client_id", Type: "string", Default: "", ZH: "GitHub OAuth App 的 Client ID（需勾选 Enable Device Flow）；设置后工作区可用「用 GitHub 登录」添加 github.com 凭据，不需要 client secret", EN: "Client ID of a GitHub OAuth App with Enable Device Flow checked; enables \"Sign in with GitHub\" for github.com workspace credentials (no client secret needed)"},

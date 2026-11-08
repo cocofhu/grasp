@@ -137,7 +137,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const sessionOpen = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
-  const canSend = computed(() => sessionOpen.value && historyReady.value)
+  const canSend = computed(() => sessionOpen.value && historyReady.value && session.value?.sandbox?.desiredState !== 'stopped')
   // An explicit current model wins, including empty (primary). Old sessions
   // omit the flag and keep the opening model.
   const currentModelId = computed(() => {
@@ -714,6 +714,9 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         if (frame.modelNotice) showModelNotice(String(frame.modelNotice), String(frame.error || ''))
         break
       }
+      case 'history_changed':
+        void refetchMessages()
+        break
       case 'status': {
         const cur = session.value
         if (cur) {

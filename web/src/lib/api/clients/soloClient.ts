@@ -80,6 +80,8 @@ export const soloClient = {
     req<SoloSession>(`/solo/sessions/${enc(id)}/close`, { method: 'POST' }),
   restartSoloSession: (id: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}/restart`, { method: 'POST' }),
+  stopSoloEnvironment: (id: string) => req<SoloSession>(`/solo/sessions/${enc(id)}/environment/stop`, { method: 'POST' }),
+  resumeSoloEnvironment: (id: string) => req<SoloSession>(`/solo/sessions/${enc(id)}/environment/resume`, { method: 'POST' }),
   getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),
   /** Home workflow composer: the workflow's default repos and first clarify Agent. */
   searchWorkflowReferences: <T>(workflowId: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
