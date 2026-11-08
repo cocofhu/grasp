@@ -20,3 +20,6 @@
 
 - 整轮操作租约：模型准备、原生聊天与回复入库共享沙箱租约，嵌套调用复用同一上下文；续期失败或 owner/generation 改变时取消执行，最终回复与上下文标记在同一事务中检查所有权和有效期，旧实例不得覆盖后继状态。用户取消仍可在自身租约有效时保存停止结果。恢复队列只因明确关闭/删除会话清除，临时错误、数据库读失败和活动租约均保留；删除 provider 失败也保留 SQL 关联。直接网关发现优先 v2，仅 404 时兼容 v1，避免漏掉 E2B 原生暂停能力。跨服务整轮互斥、失去所有权、取消后保存与恢复队列回归通过；持久化 FIFO/流式日志仍待实施。
 - 租约回归：server 全量测试、lint 0 issues、vet/configdoc、core 90.7%、关键恢复/并发用例 race 重复 5 次及 docs build/audit 通过。原生免费 Agent 矩阵 8 工具 / 84 用例、付费调用 0 通过，平台 fixture 边界同前。最终事务使用 SELECT FOR UPDATE 校验，兼容 MySQL 的“无变化 UPDATE 不计 affected rows”；最终全量/关键 race 已重跑通过。
+
+- Kubernetes 实测修复：快速停止/启动仍可能连回旧 Pod，因为原 Stop 只修改 desired replicas。现在等待 deployment observed generation/零实际副本及目标非终态 Pod 退出，并让只读状态观察在收敛前保持 pending；读取失败、取消或后续启动覆盖意图时不返回停止成功。单测覆盖 controller lag、Pod 尚存、已完成/其他任务 Pod、取消、读取错误与 superseded。真实 E2B 已在专用测试 guest 验证两轮 RAM 随机值/PID/进程启动时间、5 个 dirty/untracked/多仓/非 Git 文件与 Git 状态保留；Kubernetes 修复的实际部署/复测仍待完成。
+- 停止确认门禁：gateway 全量测试、lint 0 issues、vet、91.4% 模块覆盖率、停止确认用例 race 重复 5 次及 docs build/audit 通过。严格 JSON 探针排除空响应/执行错误；修复前 Kubernetes 的真实快速启停仍观察到存活进程，不把该轮标为通过。
