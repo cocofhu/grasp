@@ -5039,7 +5039,27 @@
         "pausePending": "Will pause after the current step",
         "continueChat": "Continue conversation",
         "historyLoadFailed": "Unable to load conversation history",
-        "historyNewEnvironment": "Continue with the workflow conversation and results in a separate environment. Original workspace files require a separate restore."
+        "historyNewEnvironment": "Continue with the workflow conversation and results in a separate environment. Original workspace files require a separate restore.",
+        "instructions": {
+          "title": "Additional instructions",
+          "hint": "Sent to this node in order after its current chat turn. The workflow continues automatically.",
+          "older": "Load earlier instructions",
+          "stale": "The node execution changed. Your draft is retained; check the current target.",
+          "adopt": "Use current execution",
+          "closed": "This execution no longer accepts instructions. Continue in Solo after the workflow.",
+          "preparing": "This node is preparing or has no active instruction inbox.",
+          "placeholder": "Add instructions for this workflow node…",
+          "tooLong": "Instructions must be at most 16 KB.",
+          "send": "Submit to this execution",
+          "states": {
+            "queued": "Queued for this execution",
+            "dispatching": "Processing",
+            "applied": "Processed this execution",
+            "unknown": "Needs verification",
+            "expired": "Execution expired"
+          },
+          "attempt": "Attempt {n}"
+        }
       }
     },
     "projects": {

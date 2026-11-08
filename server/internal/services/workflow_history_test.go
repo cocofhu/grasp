@@ -22,6 +22,9 @@ func TestWorkflowHistoryPrivateOriginAndDeletedFallback(t *testing.T) {
 	if err := db.Create(&run).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&models.WorkflowInstruction{ID: "public-instruction", RunID: run.ID, NodeID: "work", Iteration: 1, Generation: "history-generation", ClientMessageID: "history-client", Text: "additional Run requirement", State: "applied"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	largeArtifact := strings.Repeat("large result ", 10000)
 	if err := db.Create(&models.Artifact{ID: "large-result", RunID: run.ID, Name: "result", Content: largeArtifact}).Error; err != nil {
 		t.Fatal(err)
@@ -59,7 +62,7 @@ func TestWorkflowHistoryPrivateOriginAndDeletedFallback(t *testing.T) {
 		t.Fatal("full artifact was omitted from retrievable history")
 	}
 	preamble, err := solo.contextPreambleChecked(view.ID, "none", "history")
-	if err != nil || !strings.Contains(preamble, "original requirement") {
+	if err != nil || !strings.Contains(preamble, "original requirement") || !strings.Contains(preamble, "additional Run requirement") {
 		t.Fatalf("model did not receive Run context: %q %v", preamble, err)
 	}
 	// A repeated action reuses the committed identity even if an Agent was

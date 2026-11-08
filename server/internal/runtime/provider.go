@@ -142,7 +142,8 @@ type NodeReq struct {
 	WorkflowName string
 	Token        string // run-scoped MCP token, injected to the sandbox
 	NodeID       string
-	Iteration    int // exact node visit; zero only for legacy callers
+	Iteration    int              // exact node visit; zero only for legacy callers
+	Instructions AutoInstructions // exact-generation supplements; nil outside auto execution
 	NodeType     string
 	// Caps is the Agent's capability snapshot for this run (nil for non-Agent nodes).
 	Caps   *models.AgentCapabilities

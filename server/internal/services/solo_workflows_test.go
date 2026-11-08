@@ -2,12 +2,63 @@ package services
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
 )
+
+func TestWorkflowTerminalStatusSealsInstructionsInTheSameTransaction(t *testing.T) {
+	db := newTestDB(t)
+	run := models.Run{ID: "terminal-instructions", Status: "running"}
+	if err := db.Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.WorkflowInstructionMailbox{ID: 1, RunID: run.ID, NodeID: "work", Iteration: 1, Generation: "terminal-generation", State: "open"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{"queued", "dispatching", "applied"} {
+		if err := db.Create(&models.WorkflowInstruction{ID: state, MailboxID: 1, RunID: run.ID, Generation: "terminal-generation", ClientMessageID: state, State: state, Text: state}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	aborted := errors.New("simulate transaction failure")
+	transition := func(rollback bool) error {
+		return db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&run).Update("status", "cancelled").Error; err != nil {
+				return err
+			}
+			if err := EnqueueWorkflowEvent(tx, run.ID, "cancelled"); err != nil {
+				return err
+			}
+			if rollback {
+				return aborted
+			}
+			return nil
+		})
+	}
+	if err := transition(true); !errors.Is(err, aborted) {
+		t.Fatal(err)
+	}
+	var box models.WorkflowInstructionMailbox
+	if err := db.First(&box, 1).Error; err != nil || box.State != "open" {
+		t.Fatalf("mailbox closure escaped the rolled-back transaction: %+v %v", box, err)
+	}
+	if err := transition(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&box, 1).Error; err != nil || box.State != "sealed" {
+		t.Fatalf("terminal run kept an open inbox: %+v %v", box, err)
+	}
+	for id, want := range map[string]string{"queued": "expired", "dispatching": "unknown", "applied": "applied"} {
+		var item models.WorkflowInstruction
+		if err := db.First(&item, "id = ?", id).Error; err != nil || item.State != want {
+			t.Fatalf("terminal receipt %s: %+v %v", id, item, err)
+		}
+	}
+}
 
 func TestWorkflowOutboxOfflineDeliveryIsPrivateAndIdempotent(t *testing.T) {
 	db := newTestDB(t)
@@ -17,6 +68,9 @@ func TestWorkflowOutboxOfflineDeliveryIsPrivateAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.WorkflowInstruction{ID: "delivered-instruction", RunID: run.ID, NodeID: "work", Iteration: 1, Generation: "delivery-generation", ClientMessageID: "delivery-client", Text: "explicit workflow supplement", State: "applied"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.Artifact{ID: "result", RunID: run.ID, Name: "result.md", Revision: 3, Content: "actual implementation result"}).Error; err != nil {
@@ -52,7 +106,7 @@ func TestWorkflowOutboxOfflineDeliveryIsPrivateAndIdempotent(t *testing.T) {
 		t.Fatal("private parent history leaked")
 	}
 	preamble, err := solo.contextPreambleChecked(session.ID, "none", "history")
-	if err != nil || !strings.Contains(preamble, "actual implementation result") {
+	if err != nil || !strings.Contains(preamble, "actual implementation result") || !strings.Contains(preamble, "explicit workflow supplement") {
 		t.Fatalf("result not supplied to continuing Solo: %q %v", preamble, err)
 	}
 	if err := db.First(&session, "id = ?", session.ID).Error; err != nil {

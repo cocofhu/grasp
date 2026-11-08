@@ -23,3 +23,8 @@
 
 - Kubernetes 实测修复：快速停止/启动仍可能连回旧 Pod，因为原 Stop 只修改 desired replicas。现在等待 deployment observed generation/零实际副本及目标非终态 Pod 退出，并让只读状态观察在收敛前保持 pending；读取失败、取消或后续启动覆盖意图时不返回停止成功。单测覆盖 controller lag、Pod 尚存、已完成/其他任务 Pod、取消、读取错误与 superseded。真实 E2B 已在专用测试 guest 验证两轮 RAM 随机值/PID/进程启动时间、5 个 dirty/untracked/多仓/非 Git 文件与 Git 状态保留；Kubernetes 修复的实际部署/复测仍待完成。
 - 停止确认门禁：gateway 全量测试、lint 0 issues、vet、91.4% 模块覆盖率、停止确认用例 race 重复 5 次及 docs build/audit 通过。严格 JSON 探针排除空响应/执行错误；修复前 Kubernetes 的真实快速启停仍观察到存活进程，不把该轮标为通过。
+
+- 实际 provider 验证：修复固定版本部署后，Docker/Kubernetes/E2B 各完成两次真实启停恢复。5 个 dirty/untracked/多仓/非 Git 文件哈希及两套 Git 状态一致，被动读取未唤醒停止环境；Docker/Kubernetes 的本地内存探针确认连接拒绝，E2B 的 RAM 随机值、PID、启动时间和 boot ID 一致。测试 guest 均独立、无业务仓库 push、付费推理调用 0；不将 provider 文件/进程验证当作完整产品续聊验收。
+- 自动节点补充要求：独立持久化邮箱绑定 StateRun、轮次与 UUID 执行代次；同一 SQL 行锁覆盖入队、领取与结算封口，客户端身份去重，原生回合结束后在同一 ACP 会话顺序执行。每次补充清除旧 node_complete 并重验产物/结果；不明派发不自动重发，重试尝试更新代次并将未发要求标记过期，旧 worker 不能关闭新邮箱。抽屉沿用现有样式，区分所有交付状态、保留草稿和提交身份，代次变化需明确选用新目标；分页保留跨代次历史，工作流关闭后仍可管理已有任务。结果 outbox 和独立历史续聊包括明确的 Run 补充要求，不读取私人原 Solo 正文；物理删除 Run 同时清理关联 SQL 邮箱。
+- 补充要求初步验证：并发幂等、入队/封口竞争、代次切换与不明派发保留、真实 ACP 协议下同一原生会话/旧结论清除和再次校验、断连及存储确认失败不重派、认证/伪造操作者/关闭开关/隐私边界已回归；关键数据库与协议用例 race 重复 5 次通过。7 项 UI 用例与 5 项人工启动/补充要求浏览器用例通过。完整模块门禁和分支集成仍待本轮验证，P4/P6/P7 不因此标为完成。
+- 补充要求门禁：最终 server 全量测试、lint 0 issues、vet/configdoc、core 90.7% 与关键用例 race 重复 5 次通过；web 6305 项单测 / 586 文件、Lines 91.6%、lint/types/build 和 373 项 desktop/mobile Chromium/WebKit 浏览器回归通过，浏览器截图已检查。免费 Agent 矩阵 8 工具 / 84 用例、付费调用 0 通过，专有平台的协议 fixture 边界同前；根 gate 和 docs build/audit 通过。新增终态事务原子封口/回滚、跨重试与节点轮次分页单测通过。docs 生成预览已保留到仓库外，避免 web brand gate 把生成的兼容 locale 注释作为源码扫描。当前分支的产品联合部署验收继续进行，完整总需求尚未完成。

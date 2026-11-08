@@ -39,6 +39,11 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 	defer unwatch()
 	for attempt := 1; ; attempt++ {
 		res, err := c.runAgentOnce(ctx, req, abortSnap)
+		if errors.Is(err, ErrInstructionDeliveryUncertain) {
+			res.Usage = models.AddTokenUsage(spent, res.Usage)
+			res.UsageByModel = models.AddTokenUsageByModel(spentByModel, res.UsageByModel)
+			return res, err
+		}
 		// Only the first attempt continues a reattached sandbox; retries
 		// start over in a fresh one.
 		req.ReattachSandbox = ""
@@ -51,6 +56,12 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 		}
 		spent = models.AddTokenUsage(spent, res.Usage)
 		spentByModel = models.AddTokenUsageByModel(spentByModel, res.UsageByModel)
+		if req.Instructions != nil {
+			if rotateErr := req.Instructions.RestartAttempt(ctx); rotateErr != nil {
+				res.Usage, res.UsageByModel = spent, spentByModel
+				return res, fmt.Errorf("补充要求执行代次更新失败：%w", rotateErr)
+			}
+		}
 		if stuck {
 			stuckRetries--
 			attempt--
@@ -203,28 +214,60 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 	}
 	out := map[string]any{"content": chatRes.Narration, "narration_summary": firstLine(chatRes.Narration)}
 
-	if req.Caps.TracksPlanProgress() {
-		if perr := c.ensurePlanComplete(ctx, req, acp, &turnEvents, &usage, &usageByModel); perr != nil {
-			events := c.snapshotEvents(ctx, sb, turnEvents)
-			return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Usage: usage, UsageByModel: usageByModel}, perr
+	var events []models.AcpEvent
+	var git *GitInfo
+	var instruction *AutoInstruction
+	for {
+		if req.Instructions != nil && instruction == nil {
+			instruction, err = req.Instructions.Next(ctx, false)
+			if err != nil {
+				return NodeResult{OutputMd: chatRes.Narration, Events: c.snapshotEvents(ctx, sb, turnEvents), Usage: usage, UsageByModel: usageByModel}, err
+			}
 		}
-	}
+		if instruction != nil {
+			next, instructionErr := c.applyAutoInstruction(ctx, req, acp, instruction)
+			absorbChat(&usage, &usageByModel, &turnEvents, next)
+			if instructionErr != nil {
+				return NodeResult{OutputMd: chatRes.Narration, Events: c.snapshotEvents(ctx, sb, turnEvents), Usage: usage, UsageByModel: usageByModel}, instructionErr
+			}
+			chatRes = next
+			instruction = nil
+			out["content"], out["narration_summary"] = chatRes.Narration, firstLine(chatRes.Narration)
+			continue
+		}
+		if req.Caps.TracksPlanProgress() {
+			if perr := c.ensurePlanComplete(ctx, req, acp, &turnEvents, &usage, &usageByModel); perr != nil {
+				events := c.snapshotEvents(ctx, sb, turnEvents)
+				return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Usage: usage, UsageByModel: usageByModel}, perr
+			}
+		}
 
-	if _, serr := c.ensureRequiredProducts(ctx, req, acp, &turnEvents, &usage, &usageByModel); serr != nil {
-		events := c.snapshotEvents(ctx, sb, turnEvents)
-		return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Usage: usage, UsageByModel: usageByModel}, serr
-	}
+		if _, serr := c.ensureRequiredProducts(ctx, req, acp, &turnEvents, &usage, &usageByModel); serr != nil {
+			events := c.snapshotEvents(ctx, sb, turnEvents)
+			return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Usage: usage, UsageByModel: usageByModel}, serr
+		}
 
-	events := c.snapshotEvents(ctx, sb, turnEvents)
+		events = c.snapshotEvents(ctx, sb, turnEvents)
 
-	if req.Caps.CommitsCode() {
-		c.ensurePushed(ctx, sb, req)
-	}
+		if req.Caps.CommitsCode() {
+			c.ensurePushed(ctx, sb, req)
+		}
 
-	git := c.captureChanges(ctx, sb, req, out)
+		git = c.captureChanges(ctx, sb, req, out)
 
-	if _, oerr := c.ensureOutcome(ctx, req, acp, &events, &usage, &usageByModel); oerr != nil {
-		return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Git: git, Usage: usage, UsageByModel: usageByModel}, oerr
+		if _, oerr := c.ensureOutcome(ctx, req, acp, &events, &usage, &usageByModel); oerr != nil {
+			return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Git: git, Usage: usage, UsageByModel: usageByModel}, oerr
+		}
+		if req.Instructions == nil {
+			break
+		}
+		instruction, err = req.Instructions.Next(ctx, true)
+		if err != nil {
+			return NodeResult{OutputMd: chatRes.Narration, Outputs: out, Events: events, Git: git, Usage: usage, UsageByModel: usageByModel}, err
+		}
+		if instruction == nil {
+			break
+		}
 	}
 
 	if req.KeepAliveForReview {

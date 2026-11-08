@@ -32,6 +32,8 @@ const inputs = ref<Record<string, string>>({})
 const images = ref<Record<string, ClarifyImage[]>>({})
 const selectedTask = ref<Task | null>(null)
 const selectedNode = ref('')
+const interactionDrafts = ref<Record<string, string>>({})
+const instructionRequests = ref<Record<string, { clientMessageId: string; text: string; generation: string; iteration: number; attempt?: number } | null>>({})
 const cancelling = ref('')
 const confirmCancel = ref<Task | null>(null)
 const matches = computed(() => choices.value.filter(workflow => workflow.name.toLowerCase().includes(query.value.toLowerCase())))
@@ -123,6 +125,6 @@ defineExpose({ openPicker, refresh })
       <div v-else class="max-h-[420px] space-y-2 overflow-y-auto"><button v-for="workflow in matches" :key="workflow.id" type="button" class="flex w-full items-center gap-3 rounded-lg border border-line px-3 py-3 text-left hover:border-accent/50" @click="select(workflow)"><Icon name="workflow" :size="16" class="text-accent" /><span class="min-w-0 flex-1"><strong class="block truncate text-sm">{{ workflow.publishedSnapshot?.name || workflow.name }}</strong><span class="block truncate text-xs text-txt3">{{ workflow.publishedSnapshot?.description || workflow.description }}</span></span><span class="text-xs text-txt3">v{{ workflow.publishedVersion }}</span></button><p v-if="!matches.length" class="p-5 text-center text-xs text-txt3">{{ t('pages.solo.workflows.empty') }}</p></div>
     </AppModal>
     <RunLaunchModal v-if="launch" :open="!!launch" :solo-session-id="props.sessionId" :workflow-id="launch.id" :workflow-name="launch.name" :workflow-version="launch.publishedVersion" :fields="fields" :run-inputs="inputs" :run-images="images" published-snapshot @close="launch = null" @started="onStarted" />
-    <AppDrawer :open="!!selectedTask" :title="selectedTask ? `${selectedTask.id} · ${selectedTask.title || selectedTask.workflowName}` : ''" :width="760" @close="selectedTask = null"><SoloWorkflowInteraction v-if="selectedTask" :key="`${selectedTask.id}:${selectedNode}`" :run-id="selectedTask.id" :node-id="selectedNode" /></AppDrawer>
+    <AppDrawer :open="!!selectedTask" :title="selectedTask ? `${selectedTask.id} · ${selectedTask.title || selectedTask.workflowName}` : ''" :width="760" @close="selectedTask = null"><SoloWorkflowInteraction v-if="selectedTask" :key="`${selectedTask.id}:${selectedNode}`" v-model:draft="interactionDrafts[`${selectedTask.id}:${selectedNode}`]" v-model:instruction-request="instructionRequests[`${selectedTask.id}:${selectedNode}`]" :run-id="selectedTask.id" :node-id="selectedNode" /></AppDrawer>
     <AppModal :open="!!confirmCancel" :title="t('pages.solo.workflows.cancelTitle')" :width="420" close-on-esc @close="confirmCancel = null"><p class="text-sm text-txt2">{{ t('pages.solo.workflows.cancelBody', { task: confirmCancel?.title || confirmCancel?.id }) }}</p><template #footer><AppButton variant="ghost" @click="confirmCancel = null">{{ t('common.buttons.back') }}</AppButton><AppButton variant="primary" :loading="!!cancelling" @click="cancelTask">{{ t('pages.solo.workflows.confirmCancel') }}</AppButton></template></AppModal>
 </template>

@@ -96,16 +96,21 @@ func freezeWorkflowHistory(tx *gorm.DB, session *models.SoloSession, runID strin
 	// Keep the original request ahead of potentially large artifact bodies.
 	// The model receives a bounded excerpt and can retrieve the full history.
 	// A map's alphabetical JSON order would put artifacts before the request.
+	var instructions []models.WorkflowInstruction
+	if err := tx.Where("run_id = ?", runID).Order("created_at,id").Find(&instructions).Error; err != nil {
+		return err
+	}
 	context, err := json.Marshal(struct {
-		RunID        string                `json:"runId"`
-		Workflow     string                `json:"workflow"`
-		Title        string                `json:"title"`
-		Status       string                `json:"status"`
-		FirstMessage *models.CompositeText `json:"firstMessage"`
-		Inputs       map[string]any        `json:"inputs"`
-		Segments     []ChainSegment        `json:"segments"`
-		Artifacts    []WorkflowArtifactRef `json:"artifacts"`
-	}{run.ID, run.WorkflowName, run.Title, run.Status, run.FirstMessage, run.Inputs, segments, results})
+		RunID        string                       `json:"runId"`
+		Workflow     string                       `json:"workflow"`
+		Title        string                       `json:"title"`
+		Status       string                       `json:"status"`
+		FirstMessage *models.CompositeText        `json:"firstMessage"`
+		Inputs       map[string]any               `json:"inputs"`
+		Instructions []models.WorkflowInstruction `json:"instructions,omitempty"`
+		Segments     []ChainSegment               `json:"segments"`
+		Artifacts    []WorkflowArtifactRef        `json:"artifacts"`
+	}{run.ID, run.WorkflowName, run.Title, run.Status, run.FirstMessage, run.Inputs, instructions, segments, results})
 	if err != nil {
 		return err
 	}

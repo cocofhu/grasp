@@ -63,3 +63,62 @@ test('disabled workflows retain existing cards and remove the new-launch command
   await expect(page.getByRole('button', { name: '继续执行', exact: true })).toBeVisible()
   expect(launches).toHaveLength(0)
 })
+
+test('manual node supplements stay in the current Solo and report their processing state', async ({ page }, testInfo) => {
+  const { launches } = await setup(page)
+  const submissions: Record<string, unknown>[] = []
+  let state = 'queued'
+  const target = { runId: 'run-1', nodeId: 'evaluate', iteration: 1, attempt: 1, generation: 'execution-a', state: 'open' }
+  await page.route('**/api/runs/run-1', route => route.fulfill({ json: { id: 'run-1', status: 'running', nodes: [{ id: 'evaluate', type: 'agent', label: '评估' }], currentNode: { id: 'evaluate', name: '评估', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' } } }))
+  await page.route('**/api/runs/run-1/nodes/evaluate/instructions**', route => {
+    if (route.request().method() === 'POST') {
+      submissions.push(route.request().postDataJSON())
+      return route.fulfill({ json: { ...submissions[0], id: 'instruction-1', sequence: 1, actorId: 'alice', state } })
+    }
+    return route.fulfill({ json: { target, items: submissions.length ? [{ ...submissions[0], id: 'instruction-1', sequence: 1, actorId: 'alice', state }] : [], hasMore: false } })
+  })
+  await page.getByTestId('resident-solo-draft').fill('继续我的 Solo 对话')
+  await (await openLaunch(page)).click()
+  await page.getByTestId('solo-workflow-run-1').getByRole('button', { name: '评估 · running' }).click()
+  const input = page.getByTestId('instruction-input')
+  await input.fill('补充边界与回滚分析')
+  expect(submissions).toHaveLength(0)
+  await page.getByTestId('instruction-send').click()
+  await expect(page.getByTestId('instruction-instruction-1')).toContainText('等待本轮处理')
+  expect(submissions).toHaveLength(1)
+  expect(submissions[0]).toMatchObject({ text: '补充边界与回滚分析', iteration: 1, generation: 'execution-a' })
+  state = 'applied'
+  await expect(page.getByTestId('instruction-instruction-1')).toContainText('本轮已处理')
+  await page.screenshot({ path: testInfo.outputPath('workflow-instructions.png'), fullPage: true })
+  await page.locator('.fixed.inset-0.z-40').getByRole('button').first().click()
+  await expect(page.getByTestId('resident-solo-draft')).toHaveValue('继续我的 Solo 对话')
+  expect(launches).toHaveLength(1)
+})
+
+test('an uncertain supplement preserves its draft and request identity across closing the task drawer', async ({ page }) => {
+  await setup(page)
+  const submissions: Record<string, unknown>[] = []
+  const target = { runId: 'run-1', nodeId: 'evaluate', iteration: 1, generation: 'execution-a', state: 'open' }
+  await page.route('**/api/runs/run-1', route => route.fulfill({ json: { id: 'run-1', status: 'running', nodes: [{ id: 'evaluate', type: 'agent', label: '评估' }], currentNode: { id: 'evaluate', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' } } }))
+  await page.route('**/api/runs/run-1/nodes/evaluate/instructions**', route => {
+    if (route.request().method() === 'POST') {
+      submissions.push(route.request().postDataJSON())
+      if (submissions.length === 1) return route.fulfill({ status: 500, json: { error: '请求结果尚未确认' } })
+      return route.fulfill({ json: { ...submissions[0], id: 'instruction-1', sequence: 1, actorId: 'alice', state: 'queued' } })
+    }
+    return route.fulfill({ json: { target, items: [], hasMore: false } })
+  })
+  await (await openLaunch(page)).click()
+  const node = page.getByTestId('solo-workflow-run-1').getByRole('button', { name: '评估 · running' })
+  await node.click()
+  await page.getByTestId('instruction-input').fill('保留我未发出的补充要求')
+  await page.getByTestId('instruction-send').click()
+  await expect(page.getByRole('alert').filter({ hasText: '请求结果尚未确认' })).toBeVisible()
+  await page.locator('.fixed.inset-0.z-40').getByRole('button').first().click()
+  await node.click()
+  await expect(page.getByTestId('instruction-input')).toHaveValue('保留我未发出的补充要求')
+  await page.getByTestId('instruction-send').click()
+  await expect(page.getByTestId('instruction-input')).toHaveValue('')
+  expect(submissions).toHaveLength(2)
+  expect(submissions[1]).toEqual(submissions[0])
+})

@@ -5039,7 +5039,27 @@
         "pausePending": "等待当前步骤结束后暂停",
         "continueChat": "继续对话",
         "historyLoadFailed": "无法读取历史聊天",
-        "historyNewEnvironment": "续聊会保留原工作流的对话与产物，并启动独立环境。原工作区文件需另外恢复。"
+        "historyNewEnvironment": "续聊会保留原工作流的对话与产物，并启动独立环境。原工作区文件需另外恢复。",
+        "instructions": {
+          "title": "补充要求",
+          "hint": "在当前聊天轮次结束后，按顺序交给此节点处理。工作流继续自动执行。",
+          "older": "查看更早的要求",
+          "stale": "节点执行已更新，草稿仍保留。请核对当前目标。",
+          "adopt": "使用当前执行目标",
+          "closed": "本轮已结束，不再接收新的要求。可回到 Solo 继续聊。",
+          "preparing": "当前节点尚未开放补充要求，或正在准备执行。",
+          "placeholder": "向当前工作流节点补充要求…",
+          "tooLong": "补充要求不能超过 16 KB。",
+          "send": "提交到本轮",
+          "states": {
+            "queued": "等待本轮处理",
+            "dispatching": "正在处理",
+            "applied": "本轮已处理",
+            "unknown": "处理结果待核对",
+            "expired": "本轮已过期"
+          },
+          "attempt": "第 {n} 次尝试"
+        }
       }
     },
     "projects": {

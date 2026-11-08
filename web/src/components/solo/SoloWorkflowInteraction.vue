@@ -8,18 +8,22 @@ import type { ReferenceInput } from '@/lib/api/apiTypes'
 import ClarifyChat from '@/components/run/ClarifyChat.vue'
 import RunGatePanel from '@/components/run/RunGatePanel.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import SoloWorkflowInstructions from './SoloWorkflowInstructions.vue'
 
 const props = defineProps<{ runId: string; nodeId?: string }>()
 const { t } = useI18n()
 const run = ref<Run | null>(null)
 const error = ref('')
-const draft = ref('')
+const draft = defineModel<string>('draft', { default: '' })
+const instructionRequest = defineModel<{ clientMessageId: string; text: string; generation: string; iteration: number; attempt?: number } | null>('instructionRequest', { default: null })
 const attachments = ref<ClarifyImage[]>([])
 const annotations = ref<ReactAnnotation[]>([])
 const conversation = computed(() => props.nodeId ? run.value?.clarifyByNode?.[props.nodeId] : run.value?.clarify)
 const nodeId = computed(() => props.nodeId || conversation.value?.nodeId || '')
 const label = computed(() => run.value?.nodes?.find(node => node.id === nodeId.value)?.label || nodeId.value)
 const active = computed(() => !!run.value && ['queued', 'running', 'waiting_human'].includes(run.value.status))
+const automatic = computed(() => run.value?.currentNode?.id === nodeId.value && run.value.currentNode.mode === 'auto')
+const showInstructions = computed(() => automatic.value || (!conversation.value && run.value?.nodes?.some(node => node.id === nodeId.value && node.type === 'agent')))
 let disposed = false
 let timer: ReturnType<typeof setInterval> | undefined
 let loading = false
@@ -49,9 +53,10 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer) })
 
 <template>
   <div class="flex min-h-[420px] flex-col">
-    <p class="border-b border-line px-4 py-2 text-xs text-txt3">{{ props.runId }}<template v-if="label"> · {{ label }} · {{ t('pages.solo.workflows.iteration', { n: conversation?.iteration || run?.gate?.iteration || 1 }) }}</template></p>
+    <p class="border-b border-line px-4 py-2 text-xs text-txt3">{{ props.runId }}<template v-if="label"> · {{ label }} · {{ t('pages.solo.workflows.iteration', { n: (automatic ? run?.currentNode?.iteration : conversation?.iteration) || run?.gate?.iteration || 1 }) }}</template></p>
     <p v-if="error" class="px-4 py-2 text-xs text-err" role="alert">{{ error }}</p>
     <RunGatePanel v-if="run?.gate && !props.nodeId" :gate="run.gate" :run="run" :submit-error="error" @resolve="(action, form) => act(() => api.resumeGate(props.runId, run!.gate!.nodeId, action, form))" />
+    <SoloWorkflowInstructions v-else-if="nodeId && showInstructions" :key="`${props.runId}:${nodeId}`" v-model:draft="draft" v-model:request="instructionRequest" :run-id="props.runId" :node-id="nodeId" :label="label || nodeId" />
     <ClarifyChat v-else-if="conversation && nodeId" :key="`${props.runId}:${nodeId}:${conversation.iteration}`" v-model:draft="draft" v-model:attachments="attachments" v-model:annotations="annotations" :run-id="props.runId" :node-id="nodeId" :iteration="conversation.iteration || 1" :done="conversation.done" :active="active" :node-label="label" :send-request="send" :confirm-error="error" :review-mode="!!conversation.takeover" annotate-enabled references-enabled @finish="act(() => api.reactReply(props.runId, nodeId, '', [], true))" @cancel="act(() => api.reactCancel(props.runId, nodeId))" @retry-last="act(() => api.reactReply(props.runId, nodeId, '', [], false, [], true))" @queue-remove="(id) => id && act(() => api.reactQueueRemove(props.runId, nodeId, id))" @queue-reorder="ids => act(() => api.reactQueueReorder(props.runId, nodeId, ids))" />
     <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-sm text-txt3"><span>{{ t('pages.solo.workflows.noPendingInput') }}</span><AppButton size="sm" variant="outline" @click="refresh">{{ t('common.buttons.refresh') }}</AppButton></div>
   </div>

@@ -23,11 +23,12 @@ type WorkflowArtifactRef struct {
 	Content string `json:"content,omitempty"`
 }
 type WorkflowEventPayload struct {
-	RunID        string                `json:"runId"`
-	WorkflowName string                `json:"workflowName"`
-	Title        string                `json:"title"`
-	Status       string                `json:"status"`
-	Artifacts    []WorkflowArtifactRef `json:"artifacts"`
+	RunID        string                       `json:"runId"`
+	WorkflowName string                       `json:"workflowName"`
+	Title        string                       `json:"title"`
+	Status       string                       `json:"status"`
+	Instructions []models.WorkflowInstruction `json:"instructions,omitempty"`
+	Artifacts    []WorkflowArtifactRef        `json:"artifacts"`
 }
 
 // EnqueueWorkflowEvent must be called inside the transaction that changes Run.
@@ -35,6 +36,11 @@ func EnqueueWorkflowEvent(tx *gorm.DB, runID, status string) error {
 	var run models.Run
 	if err := tx.Select("id", "origin_solo_id", "created_by", "workflow_name", "title").First(&run, "id = ?", runID).Error; err != nil {
 		return err
+	}
+	if workflowHistoryTerminal(status) {
+		if err := sealRunInstructions(tx, runID); err != nil {
+			return err
+		}
 	}
 	if run.OriginSoloID == "" {
 		return nil
@@ -46,6 +52,9 @@ func EnqueueWorkflowEvent(tx *gorm.DB, runID, status string) error {
 		return err
 	}
 	payload := WorkflowEventPayload{RunID: runID, WorkflowName: run.WorkflowName, Title: run.Title, Status: status, Artifacts: []WorkflowArtifactRef{}}
+	if err := tx.Where("run_id = ?", runID).Order("created_at,id").Find(&payload.Instructions).Error; err != nil {
+		return err
+	}
 	var artifacts []models.Artifact
 	if err := tx.Where("run_id = ?", runID).Order("id asc").Find(&artifacts).Error; err != nil {
 		return err
@@ -58,6 +67,27 @@ func EnqueueWorkflowEvent(tx *gorm.DB, runID, status string) error {
 		return err
 	}
 	return tx.Create(&models.WorkflowConversationEvent{ID: uuid.NewString(), RunID: runID, Version: run.EventVersion, SoloID: run.OriginSoloID, UserID: run.CreatedBy, Kind: status, Payload: string(data), Disposition: "pending"}).Error
+}
+
+// Terminal status, mailbox closure, delivery receipts and the frozen result
+// share the caller's transaction. A crash cannot leave an ended Run accepting
+// instructions, or a frozen "dispatching" receipt pretending work will resume.
+func sealRunInstructions(tx *gorm.DB, runID string) error {
+	var boxes []models.WorkflowInstructionMailbox
+	if err := tx.Select("id").Where("run_id = ?", runID).Order("id").Find(&boxes).Error; err != nil {
+		return err
+	}
+	for _, box := range boxes {
+		if err := tx.Model(&models.WorkflowInstructionMailbox{}).Where("id = ?", box.ID).Update("state", "sealed").Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Model(&models.WorkflowInstruction{}).Where("run_id = ? AND state = ?", runID, "queued").
+		Updates(map[string]any{"state": "expired", "error": "工作流已结束，此要求未派发，不会转移到其他节点"}).Error; err != nil {
+		return err
+	}
+	return tx.Model(&models.WorkflowInstruction{}).Where("run_id = ? AND state = ?", runID, "dispatching").
+		Updates(map[string]any{"state": "unknown", "error": "工作流已结束，处理结果未确认，请核对后决定是否重试"}).Error
 }
 
 func workflowEventText(payload WorkflowEventPayload) string {

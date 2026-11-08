@@ -243,6 +243,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/nodes/:nodeId/sandbox-log", h.NodeSandboxLog)
 		api.GET("/runs/:id/nodes/:nodeId/sandbox", h.RunNodeSandbox)
 		api.POST("/runs/:id/nodes/:nodeId/takeover", h.TakeoverNode)
+		api.GET("/runs/:id/nodes/:nodeId/instructions", h.WorkflowInstructionHistory)
+		api.POST("/runs/:id/nodes/:nodeId/instructions", h.SubmitWorkflowInstruction)
 		api.GET("/runs/:id/nodes/:nodeId/previews", h.ListNodePreviews)
 		api.POST("/runs/:id/nodes/:nodeId/embed-ticket", h.CreateEmbedTicket)
 		api.POST("/runs/:id/nodes/:nodeId/preview-share", h.ManageAppPreviewShare)

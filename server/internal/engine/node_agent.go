@@ -44,7 +44,7 @@ func (e *Engine) execAgent(c *execCtx, node *models.Node) nodeOutcome {
 	return oc
 }
 
-func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
+func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) (outcome nodeOutcome) {
 	req := e.nodeReq(c, node)
 	req.ResetToDefaultModel = true
 	req.ChatRoute = nil
@@ -58,6 +58,16 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 			e.settleAutoAgent(c.run.ID, node.ID, ar)
 		}
 	}()
+	queue, err := e.openInstructionQueue(ctx, ar.stateRunID, c.run.ID, node.ID, ar.iter)
+	if err != nil {
+		return nodeOutcome{status: "failed", err: err.Error(), outputMd: "补充要求通道准备失败：" + err.Error()}
+	}
+	req.Instructions = queue
+	defer func() {
+		if err := queue.close(ctx, "本轮自动执行已结束，未处理的要求不会移交给其他节点"); err != nil {
+			outcome = nodeOutcome{status: "failed", err: err.Error(), outputMd: "补充要求状态保存失败：" + err.Error(), events: outcome.events, usage: outcome.usage, usageByModel: outcome.usageByModel}
+		}
+	}()
 	res, err := e.provider.RunAgent(ctx, req)
 	settled = true
 	if e.settleAutoAgent(c.run.ID, node.ID, ar) {
@@ -69,7 +79,7 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 	}
 	if err != nil {
 		return nodeOutcome{status: "failed", err: err.Error(),
-			outputMd: "Agent 执行失败:" + err.Error(), retryable: true, events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
+			outputMd: "Agent 执行失败:" + err.Error(), retryable: !errors.Is(err, runtime.ErrInstructionDeliveryUncertain), events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
 	}
 	return nodeOutcome{status: "completed", result: &res,
 		events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
