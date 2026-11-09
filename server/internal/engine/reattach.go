@@ -52,15 +52,7 @@ func (e *Engine) reconcileInterrupted() {
 		if err := e.executionCheck(context.Background(), sr.RunID, executionlineage.Entity{Kind: executionlineage.EntityStateRun, ID: strconv.FormatUint(uint64(sr.ID), 10)}); err != nil {
 			continue
 		}
-		if e.workspaceCheckpoints != nil && sr.NodeType == "agent" {
-			if sr.WorkspaceCheckpointID == "" {
-				if err := e.parkUnknownWorkspaceVisit(sr); err != nil {
-					log.Warn().Err(err).Str("run_id", sr.RunID).Msg("interrupted provider outcome retained without replay")
-				}
-			}
-			handled[sr.RunID] = true
-			continue
-		}
+
 		var run models.Run
 		if e.db.First(&run, "id = ?", sr.RunID).Error != nil || run.Status != "running" || handled[sr.RunID] {
 			e.failStateRun(sr.ID, sr.RunID)
@@ -71,6 +63,17 @@ func (e *Engine) reconcileInterrupted() {
 			// Taken over just before the restart: never adopt or re-run in
 			// auto; park it as a manual session (cold sandbox).
 			e.reconcileManualVisit(&run, sr)
+			handled[sr.RunID] = true
+			continue
+		}
+		if e.workspaceCheckpoints != nil && sr.NodeType == "agent" {
+			if name, ok := e.exactReattachSandbox(&run, sr); ok {
+				e.reserveReattach(sr, name)
+			} else if sr.WorkspaceCheckpointID == "" {
+				if err := e.parkUnknownWorkspaceVisit(sr); err != nil {
+					log.Warn().Err(err).Str("run_id", sr.RunID).Msg("interrupted provider outcome retained without replay")
+				}
+			}
 			handled[sr.RunID] = true
 			continue
 		}

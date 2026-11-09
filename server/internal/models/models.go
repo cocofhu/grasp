@@ -370,20 +370,22 @@ func CloneTokenUsage(src *TokenUsage) *TokenUsage {
 // execution's output, events, and duration instead of overwriting them.
 // Iteration is the 1-based per-node execution index (1 = first visit).
 type StateRun struct {
-	Files                 []ArtifactAttachment `gorm:"-" json:"files,omitempty"`
-	HasFileDeliveries     bool                 `gorm:"->" json:"-"`
-	ID                    uint                 `gorm:"primaryKey" json:"-"`
-	RunID                 string               `gorm:"index" json:"runId"`
-	NodeID                string               `json:"nodeId"`
-	NodeType              string               `json:"nodeType"`
-	Iteration             int                  `json:"iteration"`
-	ProviderAttempt       int                  `json:"providerAttempt,omitempty"`
-	ProviderDispatchState string               `gorm:"size:32" json:"-"`
-	ProviderDispatchedAt  *time.Time           `json:"-"`
-	WorkspaceCheckpointID string               `gorm:"size:64" json:"workspaceCheckpointId,omitempty"`
-	Status                string               `json:"status"`
-	OutputMd              string               `gorm:"serializer:filetext" json:"outputMd"`
-	Outputs               map[string]any       `gorm:"serializer:filejson" json:"outputs"`
+	Files                    []ArtifactAttachment `gorm:"-" json:"files,omitempty"`
+	HasFileDeliveries        bool                 `gorm:"->" json:"-"`
+	ID                       uint                 `gorm:"primaryKey" json:"-"`
+	RunID                    string               `gorm:"index" json:"runId"`
+	NodeID                   string               `json:"nodeId"`
+	NodeType                 string               `json:"nodeType"`
+	Iteration                int                  `json:"iteration"`
+	ProviderAttempt          int                  `json:"providerAttempt,omitempty"`
+	ProviderOperationID      string               `gorm:"size:128" json:"-"`
+	ProviderOperationReceipt string               `json:"-"`
+	ProviderDispatchState    string               `gorm:"size:32" json:"-"`
+	ProviderDispatchedAt     *time.Time           `json:"-"`
+	WorkspaceCheckpointID    string               `gorm:"size:64" json:"workspaceCheckpointId,omitempty"`
+	Status                   string               `json:"status"`
+	OutputMd                 string               `gorm:"serializer:filetext" json:"outputMd"`
+	Outputs                  map[string]any       `gorm:"serializer:filejson" json:"outputs"`
 	// VarsSnapshot is the global-variable state captured when this execution
 	// finished (post-node), so the run timeline can show each card's variables
 	// at that moment for debugging.
