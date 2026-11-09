@@ -2,11 +2,13 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/modelrouting"
@@ -65,13 +67,23 @@ func TestSoloRouteSettingsNotifyViewersWithoutApplyingTheNextTurn(t *testing.T) 
 	expectSelection := func(group, model, backend, effort, pendingChange string, choices []string) {
 		t.Helper()
 		for _, viewer := range viewers {
-			select {
-			case event := <-viewer:
-				if event.Event != SoloEventModel || event.Payload["currentConfigurationId"] != group || event.Payload["currentModelId"] != model || event.Payload["currentModelSet"] != true || event.Payload["backend"] != backend || event.Payload["reasoningEffort"] != effort || event.Payload["modelNotice"] != "" || event.Payload["pendingChange"] != pendingChange || !reflect.DeepEqual(event.Payload["reasoningEfforts"], choices) {
-					t.Fatalf("incomplete settings notification: %#v", event)
+			deadline := time.After(3 * time.Second)
+			for {
+				select {
+				case event := <-viewer:
+					if event.Event == chatsession.EventQueueState {
+						continue
+					}
+					var actualChoices []string
+					data, _ := json.Marshal(event.Payload["reasoningEfforts"])
+					_ = json.Unmarshal(data, &actualChoices)
+					if event.Event != SoloEventModel || event.Payload["currentConfigurationId"] != group || event.Payload["currentModelId"] != model || event.Payload["currentModelSet"] != true || event.Payload["backend"] != backend || event.Payload["reasoningEffort"] != effort || event.Payload["modelNotice"] != "" || event.Payload["pendingChange"] != pendingChange || !reflect.DeepEqual(actualChoices, choices) {
+						t.Fatalf("incomplete settings notification: %#v", event)
+					}
+				case <-deadline:
+					t.Fatal("successful settings save did not notify every subscribed viewer")
 				}
-			default:
-				t.Fatal("successful settings save did not notify every subscribed viewer")
+				break
 			}
 		}
 	}

@@ -50,6 +50,8 @@ function queueItem(raw: any): SoloQueueItem {
  */
 export type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMessages' | 'sendSoloTurn' | 'cancelSoloTurn' | 'soloChatWsUrl'
   | 'setSoloSessionModel' | 'setSoloSessionReasoningEffort' | 'removeSoloQueued' | 'reorderSoloQueue'> & {
+  listSoloMessagePage?: typeof api.listSoloMessagePage
+  listSoloMessageEvents?: typeof api.listSoloMessageEvents
   soloChatProtocols?: string[]
 }
 
@@ -87,6 +89,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const actionError = ref('')
   const pendingConfirmation = ref<string[]>([])
   const retryingSend = ref(false)
+  const hasEarlier = ref(false)
+  const loadingEarlier = ref(false)
+  const earlierError = ref('')
+  const processPages = ref<Record<string, { next: number; hasMore: boolean; loading: boolean; error: string; legacyIncomplete: boolean }>>({})
+  const historyMessages = new Map<string, SoloMessage>()
+  let historyOrder: string[] = []
+  const processEvents = new Map<string, unknown[]>()
+  let beforeMessage: string | undefined
+  let earlierLoaded = false
 
   let ws: WebSocket | null = null
   let held: string[] | null = null
@@ -101,6 +112,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   let lastSeq = -1
   let ackedSeq = -1
   let streamGeneration: number | undefined
+  let journalVersion = 0
   let resyncs = 0
   let sessionGeneration = 0
   let settingsEpoch = 0
@@ -308,6 +320,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   function historyCoversLive(saved: SoloTurn | undefined, live: SoloTurn | undefined): boolean {
     if (!saved || saved.role !== 'agent') return false
     if (!live) return true
+    if (saved.historyMessageId && !live.streaming) return true
     if (!saved.text.trim().startsWith(live.text.trim())) return false
     if (live.error && !(saved.error || '').includes(live.error)) return false
     if (live.status && live.status !== saved.status) return false
@@ -321,9 +334,25 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       (!tool.output || (other.output || '').startsWith(tool.output))))
   }
 
-  function applyMessages(messages: SoloMessage[]) {
+  function applyMessages(messages: SoloMessage[], older = false) {
+    if (transport.listSoloMessagePage) {
+      // Preserve each server window's order, including legacy rows with equal
+      // timestamps. Re-sorting by IDs can move an answer before its question.
+      const incomingIds = new Set(messages.map(message => message.id))
+      const common = messages.find(message => historyMessages.has(message.id))
+      if (messages.length) {
+        if (common) {
+          const pivot = historyOrder.indexOf(common.id)
+          historyOrder = [...historyOrder.slice(0, pivot).filter(id => !incomingIds.has(id)), ...messages.map(message => message.id), ...historyOrder.slice(pivot).filter(id => !incomingIds.has(id))]
+        } else {
+          historyOrder = older ? [...messages.map(message => message.id), ...historyOrder] : [...historyOrder, ...messages.map(message => message.id)]
+        }
+      }
+      for (const message of messages) historyMessages.set(message.id, message)
+      messages = historyOrder.map(id => historyMessages.get(id)!)
+    }
     const clientIds = new Map(messages.map(message => [message.id, message.clientMessageId]))
-    const incoming = turnsFromMessages(messages, label, toolFallback())
+    const incoming = turnsFromMessages(messages.map(message => processEvents.has(message.id) ? { ...message, events: processEvents.get(message.id) } : message), label, toolFallback())
     // Messages are append-only. A shorter HTTP snapshot must not erase rows
     // already reconciled from an earlier response.
     if (incoming.length >= persistedHistory.length) persistedHistory = incoming
@@ -342,15 +371,26 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       missingQueuedIds.delete(id)
     }
 
+    const replyIndex = (key: string) => {
+      const explicit = history.findIndex(turn => turn.role === 'agent' && turn.replyTo === key)
+      if (explicit >= 0) return explicit
+      const user = history.findIndex(turn => turn.id === `u:${key}`)
+      const next = history[user + 1]
+      return user >= 0 && next?.role === 'agent' && !next.replyTo ? user + 1 : -1
+    }
     const mergePair = (key: string) => {
       const user = turns.value.find((turn) => turn.id === `u:${key}`)
       const agent = turns.value.find((turn) => turn.id === `live:${key}`)
       const index = history.findIndex((turn) => turn.id === `u:${key}`)
+      let savedIndex = replyIndex(key)
       if (index < 0) {
-        if (user) history.push(user)
-        if (agent) history.push(agent)
-      } else if (agent) {
-        const saved = history[index + 1]
+        if (user) {
+          if (savedIndex >= 0) { history.splice(savedIndex, 0, user); savedIndex++ }
+          else history.push(user)
+        }
+      }
+      if (agent) {
+        const saved = history[savedIndex]
         if (saved?.role === 'agent' && saved.files?.length) {
           const files = [...(agent.files ?? [])]
           for (const file of saved.files) {
@@ -358,19 +398,21 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
           }
           agent.files = files
         }
-        if (history[index + 1]?.role === 'agent') history.splice(index + 1, 1, agent)
-        else history.splice(index + 1, 0, agent)
+        if (savedIndex >= 0) history.splice(savedIndex, 1, agent)
+        else {
+          const userIndex = history.findIndex(turn => turn.id === `u:${key}`)
+          history.splice(userIndex >= 0 ? userIndex + 1 : history.length, 0, agent)
+        }
       }
     }
 
     const retained = new Set<string>()
     for (const send of [...openSends]) {
       const key = sendKey(send)
-      const index = history.findIndex((turn) => turn.id === `u:${key}`)
       const live = turns.value.find((turn) => turn.id === `live:${key}`)
       // Keep an active stream until its terminal/idle frame: history may be
       // persisted before the last output frames have reached this browser.
-      if (activeId.value !== key && index >= 0 && historyCoversLive(history[index + 1], live)) {
+      if (activeId.value !== key && historyCoversLive(history[replyIndex(key)], live)) {
         openSends.splice(openSends.indexOf(send), 1)
       } else {
         retained.add(key)
@@ -390,12 +432,67 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     schedulePoll()
   }
 
+  async function readHistory(id: string) {
+    if (!transport.listSoloMessagePage) return transport.listSoloMessages(id)
+    const epoch = chatEpoch
+    const page = await transport.listSoloMessagePage(id)
+    if (id === sessionId.value && epoch === chatEpoch && !earlierLoaded) {
+      beforeMessage = page.before
+      hasEarlier.value = page.hasMore
+    }
+    return page.items
+  }
+
+  async function loadEarlier() {
+    const id = sessionId.value
+    const epoch = chatEpoch
+    if (!transport.listSoloMessagePage || !beforeMessage || loadingEarlier.value) return
+    loadingEarlier.value = true
+    earlierError.value = ''
+    try {
+      const page = await transport.listSoloMessagePage(id, beforeMessage)
+      if (disposed || id !== sessionId.value || epoch !== chatEpoch) return
+      applyMessages(page.items, true)
+      earlierLoaded = true
+      beforeMessage = page.before
+      hasEarlier.value = page.hasMore
+    } catch (error: any) {
+      if (id === sessionId.value && epoch === chatEpoch) earlierError.value = String(error?.message || error)
+    } finally {
+      if (id === sessionId.value && epoch === chatEpoch) loadingEarlier.value = false
+    }
+  }
+
+  async function loadProcess(turn: SoloTurn) {
+    const id = sessionId.value
+    const epoch = chatEpoch
+    const messageId = turn.historyMessageId
+    if (!messageId || !transport.listSoloMessageEvents) return
+    const previous = processPages.value[messageId]
+    if (previous?.loading || previous?.hasMore === false) return
+    const state = { next: previous?.next ?? -1, hasMore: true, loading: true, error: '', legacyIncomplete: previous?.legacyIncomplete ?? false }
+    processPages.value[messageId] = state
+    try {
+      const page = await transport.listSoloMessageEvents(id, messageId, state.next)
+      if (disposed || id !== sessionId.value || epoch !== chatEpoch) return
+      if (!Number.isSafeInteger(page.next) || !Number.isSafeInteger(page.head) || page.next > page.head || page.hasMore && page.next <= state.next) throw new Error(t('pages.solo.chat.journalGap'))
+      const events = [...(processEvents.get(messageId) ?? []), ...page.items.filter(entry => entry.type === 'acp').map(entry => entry.data)]
+      const expected = historyMessages.get(messageId)?.eventLog?.count
+      if (!page.hasMore && expected !== undefined && events.length !== expected) throw new Error(t('pages.solo.chat.journalGap'))
+      processEvents.set(messageId, events)
+      processPages.value[messageId] = { next: page.next, hasMore: page.hasMore, loading: false, error: '', legacyIncomplete: !!page.legacyIncomplete }
+      applyMessages([])
+    } catch (error: any) {
+      if (id === sessionId.value && epoch === chatEpoch) processPages.value[messageId] = { ...state, loading: false, error: String(error?.message || error) }
+    }
+  }
+
   async function refetchMessages() {
     const id = sessionId.value
     const epoch = chatEpoch
     const seq = ++refetchSeq
     try {
-      const messages = await transport.listSoloMessages(id)
+      const messages = await readHistory(id)
       if (!disposed && epoch === chatEpoch && seq === refetchSeq && id === sessionId.value) applyMessages(messages)
     } catch {
       /* keep the current transcript */
@@ -536,7 +633,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const seenKinds = seenSeq.get(seq)
     if (seenKinds?.has(kind)) return 'dup'
     if (lastSeq >= 0 && seq > lastSeq + 1) {
-      if (resyncs >= 3) {
+      if (!journalVersion && resyncs >= 3) {
         seenSeq.set(seq, new Set([kind]))
         lastSeq = seq
         return 'ok'
@@ -556,7 +653,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   function requestResync() {
-    if (disposed || resyncs >= 3) return
+    if (disposed) return
+    if (resyncs >= 3 && journalVersion) {
+      loadError.value = t('pages.solo.chat.journalGap')
+      closeWs()
+      link.value = 'reconnecting'
+      schedulePoll()
+      return
+    }
+    if (resyncs >= 3) return
     resyncs += 1
     resubscribe()
   }
@@ -608,10 +713,18 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     if (!frame || typeof frame !== 'object') return
     // Subscribe 保证首帧是 queue_state 快照；之后的同名帧才是真实流事件。
     const subscriptionSnapshot = firstFrame && frame.type === 'session' && frame.event === 'queue_state'
+    const stateSnapshot = frame.type === 'session' && frame.event === 'queue_state' && frame.stateSnapshot === true
     if (subscriptionSnapshot) {
       sessionStateCursor.reset()
+      journalVersion = frame.journalVersion === 1 ? 1 : 0
+      if (journalVersion && frame.cursorReset) {
+        lastSeq = ackedSeq = -1
+        seenSeq.clear()
+        endActive()
+        void refetchMessages()
+      }
       if (Number.isSafeInteger(frame.sessionGeneration) && frame.sessionGeneration >= 0) {
-        if (streamGeneration !== undefined && streamGeneration !== frame.sessionGeneration) {
+        if (!journalVersion && streamGeneration !== undefined && streamGeneration !== frame.sessionGeneration) {
           // A recreated server stream starts its sequence at zero. Same-stream
           // reconnects retain their deduplication and replay acknowledgements.
           lastSeq = -1
@@ -622,15 +735,18 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         streamGeneration = frame.sessionGeneration
       }
     }
-    const seqState = noteSeq(frame, subscriptionSnapshot)
+    const seqState = stateSnapshot && !subscriptionSnapshot ? 'ok' : noteSeq(frame, subscriptionSnapshot)
     if (seqState === 'dup') return
     if (seqState === 'gap') {
       requestResync()
       return
     }
     const seq = frame.seq
-    if (!subscriptionSnapshot && typeof seq === 'number' && seq >= 0 && seq > ackedSeq) ackedSeq = seq
+    if (!subscriptionSnapshot && !stateSnapshot && typeof seq === 'number' && seq >= 0 && seq > ackedSeq) ackedSeq = seq
     if (frame.type === 'acp') {
+      // A reconnect may include the tail of an already completed turn before
+      // the current one. Its result is loaded from history under its own ID.
+      if (journalVersion && (!frame.userMsgId || frame.userMsgId !== activeId.value)) return
       const turn = activeTurn.value ?? adoptTurnForOutput()
       const send = openSends.find((row) => sendKey(row) === activeId.value)
       if (send) send.started = true
@@ -664,7 +780,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         orderOverlay.value = null
         busy.value = !!frame.busy
         patchSession({ busy: busy.value, waiting: queued.value.length })
-        if (subscriptionSnapshot) applyResumeSnapshot(frame)
+        if (subscriptionSnapshot || stateSnapshot) applyResumeSnapshot(frame)
         applyExecution(frame)
         if (frame.busy && frame.phase) phase.value = frame.phase
         if (!frame.busy && (activeId.value || openSends.length)) {
@@ -769,7 +885,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       // and also accept the subscribe snapshot below.
       void refreshSession()
       try {
-        const messages = await transport.listSoloMessages(id)
+        const messages = await readHistory(id)
         if (ws === sock) applyMessages(messages)
       } catch {
         /* live frames still render */
@@ -827,6 +943,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     knownServerIds.clear()
     missingQueuedIds.clear()
     persistedHistory = []
+    historyMessages.clear()
+    historyOrder = []
+    processEvents.clear()
+    processPages.value = {}
+    hasEarlier.value = false
+    loadingEarlier.value = false
+    earlierError.value = ''
+    beforeMessage = undefined
+    earlierLoaded = false
     historyReady.value = false
     busy.value = false
     phase.value = ''
@@ -834,6 +959,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     lastSeq = -1
     ackedSeq = -1
     streamGeneration = undefined
+    journalVersion = 0
     resyncs = 0
     seenSeq.clear()
     link.value = 'idle'
@@ -1150,6 +1276,12 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     pendingConfirmation,
     retryingSend,
     retryPendingSend,
+    hasEarlier,
+    loadingEarlier,
+    earlierError,
+    loadEarlier,
+    processPages,
+    loadProcess,
     status,
     closed,
     canSend,

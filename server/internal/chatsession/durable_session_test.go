@@ -43,6 +43,66 @@ func waitDurable(t *testing.T, label string, predicate func() bool) {
 	t.Fatal("timed out: " + label)
 }
 
+func TestDurableSessionRequiresCommittedPreparationFramesBeforeNativeDispatch(t *testing.T) {
+	for _, refused := range []string{EventQueueState, EventTurnBegin} {
+		t.Run(refused, func(t *testing.T) {
+			_, store, _, scope := durableFixture(t)
+			var calls atomic.Int32
+			cfg := durableTestConfig(func(context.Context, durableTestTurn) (bool, error) { calls.Add(1); return false, nil })
+			cfg.PublishExecution = func(ctx context.Context, event string, _ map[string]any) error {
+				if _, ok := CurrentExecution(ctx); !ok {
+					t.Error("preparation publication lost its owner")
+				}
+				if event == refused {
+					return errors.New("fixture publication refused")
+				}
+				return nil
+			}
+			session := NewDurableSession(store, scope, cfg)
+			receipt, err := session.EnqueueReceipt(durableTestTurn{ID: "refused", Text: "accepted intent"}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitDurable(t, "failed before dispatch", func() bool {
+				row, err := store.Receipt(context.Background(), scope, receipt.Turn.ID)
+				return err == nil && row.State == TurnFailed && row.DispatchedAt == nil
+			})
+			if calls.Load() != 0 {
+				t.Fatal("native work started before its preparation frames committed")
+			}
+		})
+	}
+}
+
+func TestDurableSessionTerminalNotificationFailureDoesNotReplaySavedWork(t *testing.T) {
+	_, store, _, scope := durableFixture(t)
+	var calls atomic.Int32
+	notified := make(chan struct{}, 1)
+	cfg := durableTestConfig(func(context.Context, durableTestTurn) (bool, error) { calls.Add(1); return false, nil })
+	cfg.PublishExecution = func(_ context.Context, event string, _ map[string]any) error {
+		if event == EventTurnDone {
+			notified <- struct{}{}
+			return errors.New("fixture terminal notification unavailable")
+		}
+		return nil
+	}
+	session := NewDurableSession(store, scope, cfg)
+	if _, err := session.Enqueue(durableTestTurn{ID: "saved", Text: "once"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-notified:
+	case <-time.After(5 * time.Second):
+		t.Fatal("terminal notification missing")
+	}
+	session.Wake()
+	waitDurable(t, "completed owner released", func() bool { return session.Idle() })
+	row, err := store.Receipt(context.Background(), scope, "saved")
+	if err != nil || row.State != TurnSucceeded || calls.Load() != 1 {
+		t.Fatalf("notification failure changed a saved result: %+v %v", row, err)
+	}
+}
+
 func TestDurableSessionTwoExecutorsUseOneOrderedNativeLane(t *testing.T) {
 	db, first, second, scope := durableFixture(t)
 	var inFlight, peak atomic.Int32

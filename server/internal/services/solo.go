@@ -27,9 +27,6 @@ const (
 	// soloPrepareTimeout bounds waiting for a cold sandbox (image pull + clone).
 	soloPrepareTimeout = 20 * time.Minute
 	soloQueueCapacity  = 16
-	soloStreamBuffer   = 4096
-	// soloMaxEvents caps persisted ACP frames per assistant message.
-	soloMaxEvents = 6000
 )
 
 // Solo stream events beyond the chatsession control frames.
@@ -142,10 +139,9 @@ type soloSettingsAligner interface {
 }
 
 type soloChat struct {
-	svc    *SoloService
-	id     string
-	sess   *chatsession.DurableSession[*soloTurn]
-	stream *chatsession.Stream
+	svc  *SoloService
+	id   string
+	sess *chatsession.DurableSession[*soloTurn]
 	// Serialize reading and publishing saved settings so concurrent viewers
 	// cannot receive an older selection after a newer one.
 	settingsMu sync.Mutex
@@ -155,7 +151,7 @@ type soloChat struct {
 	sandboxID uint
 	turnID    string
 	text      strings.Builder
-	events    []json.RawMessage
+	writer    *chatsession.JournalWriter
 	execution *models.ChatExecution
 }
 
@@ -759,6 +755,9 @@ func (s *SoloService) Delete(ctx context.Context, id, user string) error {
 		if err := tx.Where("surface = ? AND session_key = ?", soloPendingSurface, id).Delete(&models.ChatPendingTurn{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("queue_id = ?", soloQueueScope(id).ID()).Delete(&models.ChatEventChunk{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("queue_id = ?", soloQueueScope(id).ID()).Delete(&models.ChatQueueTurn{}).Error; err != nil {
 			return err
 		}
@@ -779,6 +778,17 @@ func (s *SoloService) Messages(id, user string) ([]models.SoloMessage, error) {
 	}
 	var rows []models.SoloMessage
 	err := s.db.Where("session_id = ?", id).Order("created_at asc").Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		if rows[i].EventLog != nil {
+			rows[i].Events, _, err = s.journalTurn(context.Background(), rows[i].TurnID, id, rows[i].EventLog.Through)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	return rows, err
 }
 
@@ -840,20 +850,20 @@ func (s *SoloService) PreviewTranscript(id, user string) ([]models.SoloMessage, 
 // history. Callers must authorize the session before subscribing and sanitize
 // its event timeline before sending it to public viewers.
 func (s *SoloService) PreviewLiveReply(id string) (*models.SoloMessage, bool) {
-	c := s.lookup(id)
-	if c == nil || c.sess.Ready() {
-		return nil, false
+	ctx := context.Background()
+	snapshot, err := s.durable.Snapshot(ctx, soloQueueScope(id))
+	if err != nil || snapshot.Active == nil {
+		return nil, err != nil
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.turnID == "" || len(c.events) == 0 {
+	events, execution, err := s.journalTurn(ctx, snapshot.Active.ID, id, int64(snapshot.Queue.NextEventSequence)-1)
+	if err != nil || len(events) == 0 {
 		return nil, true
 	}
-	events := make([]json.RawMessage, len(c.events))
-	for i, event := range c.events {
-		events[i] = append(json.RawMessage(nil), event...)
+	var text strings.Builder
+	for _, event := range events {
+		text.WriteString(extractPmAgentText(event))
 	}
-	return &models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.text.String(), Events: events, Execution: c.execution}, true
+	return &models.SoloMessage{ID: "live:" + snapshot.Active.ID, Role: "assistant", Content: text.String(), Events: events, Execution: execution}, true
 }
 
 // PreviewPending reads the authoritative FIFO without querying stored history.
@@ -947,9 +957,9 @@ func (s *SoloService) publishStatus(id string) {
 		return
 	}
 	c := s.acquire(id)
-	c.stream.Session(SoloEventStatus, map[string]any{
+	c.publish(SoloEventStatus, map[string]any{
 		"status": row.Status, "error": row.Error, "sandboxId": row.SandboxID,
-	}, chatsession.KeepNone)
+	})
 }
 
 // ActiveCount reports sessions with a running or queued turn (maintenance).
@@ -977,7 +987,7 @@ func (s *SoloService) acquire(id string) *soloChat {
 }
 
 func (s *SoloService) newChat(id string) *soloChat {
-	c := &soloChat{svc: s, id: id, stream: chatsession.NewStream(soloStreamBuffer)}
+	c := &soloChat{svc: s, id: id}
 	c.sess = chatsession.NewDurableSession(s.durable, soloQueueScope(id), chatsession.DurableConfig[*soloTurn]{
 		Config: chatsession.Config[*soloTurn]{
 			Capacity:  soloQueueCapacity,
@@ -995,7 +1005,7 @@ func (s *SoloService) newChat(id string) *soloChat {
 				c.turnID = q.ID
 				c.phase = SoloPhasePreparing
 				c.text.Reset()
-				c.events = nil
+				c.writer = nil
 				c.execution = nil
 				c.mu.Unlock()
 			},
@@ -1008,7 +1018,8 @@ func (s *SoloService) newChat(id string) *soloChat {
 				}
 			},
 		},
-		Decode: decodeSoloTurn, Intent: s.durableSoloIntent,
+		PublishExecution: c.publishExecution,
+		Decode:           decodeSoloTurn, Intent: s.durableSoloIntent,
 		Admit:   func(tx *gorm.DB) error { return s.soloQueueAdmission(tx, id) },
 		Ready:   func() (bool, error) { return s.soloQueueReady(id) },
 		Recover: func(row models.ChatQueueTurn) error { return s.recoverSoloReceipt(id, row) },
@@ -1097,10 +1108,7 @@ func (s *SoloService) SetCurrentModelRouteSettings(ctx context.Context, id, user
 	}).Error; err != nil {
 		return nil, err
 	}
-	c := s.lookup(row.ID)
-	if c == nil {
-		return s.Get(ctx, row.ID, user)
-	}
+	c := s.acquire(row.ID)
 	c.settingsMu.Lock()
 	defer c.settingsMu.Unlock()
 	view, err := s.Get(ctx, row.ID, user)
@@ -1115,11 +1123,11 @@ func (s *SoloService) SetCurrentModelRouteSettings(ctx context.Context, id, user
 	} else if view.CurrentReasoningEffort != view.AppliedReasoningEffort {
 		pendingChange = "effort"
 	}
-	c.stream.Session(SoloEventModel, map[string]any{
+	c.publish(SoloEventModel, map[string]any{
 		"currentConfigurationId": view.CurrentConfigurationID, "currentModelId": view.CurrentModelID, "currentModelSet": view.CurrentModelSet,
 		"reasoningEffort": view.CurrentReasoningEffort, "reasoningEfforts": view.ReasoningEfforts,
 		"backend": view.Backend, "modelNotice": view.ModelNotice, "pendingChange": pendingChange,
-	}, chatsession.KeepNone)
+	})
 	return view, nil
 }
 
@@ -1380,10 +1388,10 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 			"current_configuration_id": appliedConfiguration, "current_model_id": applied, "current_model_set": true, "current_reasoning_effort": appliedEffort, "model_notice": soloModelSwitchFailed,
 		})
 		if res.Error == nil && res.RowsAffected > 0 {
-			c.stream.Session(SoloEventModel, map[string]any{
+			c.publish(SoloEventModel, map[string]any{
 				"currentConfigurationId": appliedConfiguration, "currentModelId": applied, "currentModelSet": true, "reasoningEffort": appliedEffort,
 				"modelNotice": soloModelSwitchFailed, "error": "切换模型设置失败，已恢复原来的设置",
-			}, chatsession.KeepNone)
+			})
 		}
 		log.Warn().Err(err).Str("session", row.ID).Str("configuration", desiredConfiguration).Str("model", desired).Msg("solo model switch rolled back")
 		return false, err
@@ -1599,38 +1607,15 @@ func (s *SoloService) ReorderQueued(id, user string, ids []string) error {
 	return s.acquire(id).sess.Reorder(ids)
 }
 
-// Subscribe streams a session: queue_state snapshot, the active turn, then
-// live frames. The returned func unsubscribes.
-func (s *SoloService) Subscribe(id, user string, afterSeq int) (<-chan chatsession.Event, func(), error) {
-	if _, err := s.Require(id, user); err != nil {
-		return nil, nil, err
+func (c *soloChat) publish(event string, payload map[string]any) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := c.publishExecution(ctx, event, payload); err != nil {
+		log.Warn().Err(err).Str("session", c.id).Msg("conversation notification deferred; accepted queue remains durable")
 	}
-	c := s.acquire(id)
-	// KeepNone status/model frames are not replayed. Capture the row at subscribe
-	// time so the first queue_state is an authoritative session snapshot.
-	row, rowErr := s.load(id)
-	ch, unsub := c.stream.Subscribe(func() (map[string]any, bool) {
-		sn := c.sess.Snapshot()
-		qs := sn.QueueState()
-		c.mu.Lock()
-		if sn.Busy && c.phase != "" && sn.ActiveItem["id"] == c.turnID {
-			qs["phase"] = c.phase
-			qs["userMsgId"] = c.turnID
-			if c.execution != nil {
-				qs["execution"] = c.execution
-			}
-		}
-		c.mu.Unlock()
-		if rowErr == nil {
-			applySoloResumeSnapshot(qs, row)
-		}
-		return qs, sn.Busy
-	}, afterSeq)
-	return ch, unsub, nil
 }
 
-func (c *soloChat) publish(event string, payload map[string]any) {
-	keep := chatsession.KeepNone
+func (c *soloChat) enrichFrame(event string, payload map[string]any) {
 	switch event {
 	case chatsession.EventQueueState:
 		c.mu.Lock()
@@ -1643,8 +1628,6 @@ func (c *soloChat) publish(event string, payload map[string]any) {
 			}
 		}
 		c.mu.Unlock()
-	case chatsession.EventTurnBegin:
-		keep = chatsession.KeepBegin
 	case chatsession.EventTurnDone, chatsession.EventError:
 		c.mu.Lock()
 		payload["userMsgId"] = c.turnID
@@ -1654,31 +1637,18 @@ func (c *soloChat) publish(event string, payload map[string]any) {
 		c.phase = ""
 		c.sandboxID = 0
 		c.mu.Unlock()
-		keep = chatsession.KeepEnd
 	}
-	c.stream.Session(event, payload, keep)
 }
 
-func (c *soloChat) setPhase(phase string) {
+func (c *soloChat) setPhase(ctx context.Context, phase string) error {
 	c.mu.Lock()
 	if phase == "" || c.phase == phase {
 		c.mu.Unlock()
-		return
+		return nil
 	}
 	c.phase = phase
 	c.mu.Unlock()
-	c.stream.Session(SoloEventPhase, map[string]any{"phase": phase}, chatsession.KeepAppend)
-}
-
-func (c *soloChat) onAcp(raw json.RawMessage) {
-	delta := extractPmAgentText(raw)
-	c.mu.Lock()
-	c.text.WriteString(delta)
-	if len(c.events) < soloMaxEvents {
-		c.events = append(c.events, append(json.RawMessage(nil), raw...))
-	}
-	c.mu.Unlock()
-	c.stream.Acp(raw)
+	return c.emit(ctx, SoloEventPhase, map[string]any{"phase": phase})
 }
 
 // waitSandbox blocks until the session's sandbox is running.
@@ -1823,7 +1793,9 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	c.mu.Lock()
 	c.sandboxID = sandboxID
 	c.mu.Unlock()
-	c.setPhase(SoloPhaseRunning)
+	if err := c.setPhase(ctx, SoloPhaseRunning); err != nil {
+		return false, err
+	}
 
 	noticeBefore := strings.TrimSpace(row.ModelNotice)
 	switched, alignErr := s.alignSessionModel(ctx, c, sandboxID, row)
@@ -1836,7 +1808,9 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	c.execution = execution
 	c.mu.Unlock()
 	if execution != nil {
-		c.stream.Session(SoloEventExecution, map[string]any{"userMsgId": q.ID, "execution": execution}, chatsession.KeepAppend)
+		if err := c.emit(ctx, SoloEventExecution, map[string]any{"userMsgId": q.ID, "execution": execution}); err != nil {
+			return false, err
+		}
 	}
 
 	prompt := q.Text
@@ -1855,8 +1829,11 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	// restarts the coding agent, so it must not claim the sandbox or the
 	// repository was rebuilt.
 	var pre string
-	if row.NeedsPreamble || switched || row.ModelContextPending || row.ResumeContextPending {
+	if row.NeedsPreamble || switched || row.ModelContextPending || row.ConversationContextPending || row.ResumeContextPending {
 		header := soloModelPreambleHeader
+		if row.ConversationContextPending && !switched && !row.ModelContextPending {
+			header = soloContextPreambleHeader
+		}
 		if row.NeedsPreamble {
 			header = soloRestartPreambleHeader
 		} else if row.ResumeContextPending {
@@ -1874,25 +1851,61 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		prompt = pre + "\n\n用户本轮消息：\n" + prompt
 	}
 
+	nativeCtx, stopNative := context.WithCancelCause(ctx)
+	defer stopNative(context.Canceled)
+	writer := chatsession.NewJournalWriter(ctx, func(writeCtx context.Context, entries []chatsession.JournalEntry) (chatsession.JournalRange, error) {
+		written, err := c.appendJournal(writeCtx, sandboxID, q.ID, entries, false)
+		if err == nil {
+			c.mu.Lock()
+			if c.turnID == q.ID {
+				for _, entry := range entries {
+					c.text.WriteString(extractPmAgentText(entry.Data))
+				}
+			}
+			c.mu.Unlock()
+		}
+		return written, err
+	}, func(err error) { stopNative(err) })
+	c.mu.Lock()
+	c.writer = writer
+	c.mu.Unlock()
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		defer cancel()
+		_ = writer.Close(flushCtx)
+	}()
 	var usage *models.TokenUsage
 	var byModel models.TokenUsageByModel
 	if err == nil {
 		err = chatsession.DispatchExecution(ctx)
 	}
 	if err == nil {
-		usage, byModel, err = s.chat.ChatWithTimeout(ctx, sandboxID, prompt, q.Images, 0, func(raw json.RawMessage) {
-			c.onAcpForTurn(ctx, q.ID, raw)
+		usage, byModel, err = s.chat.ChatWithTimeout(nativeCtx, sandboxID, prompt, q.Images, 0, func(raw json.RawMessage) {
+			c.onAcpForTurn(nativeCtx, q.ID, raw)
 		})
 	}
 
+	flushCtx, flushCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	journalErr := writer.Close(flushCtx)
+	flushCancel()
+	written := writer.Written()
+	var eventLog *models.ChatEventLog
+	if written.Count > 0 {
+		eventLog = &models.ChatEventLog{Version: chatsession.JournalVersion, From: int64(written.First), Through: int64(written.Last), Count: written.Count}
+		if owner, ok := chatsession.CurrentExecution(ctx); ok {
+			eventLog.Generation = owner.Lease.Generation
+		}
+	}
 	c.mu.Lock()
 	text := strings.TrimSpace(c.text.String())
-	events := c.events
-	c.events = nil
+	c.writer = nil
 	c.mu.Unlock()
 
 	status, ledger, errText := "ok", models.TokenLedgerStatusOK, ""
 	switch {
+	case journalErr != nil:
+		status, ledger, errText = "unknown", models.TokenLedgerStatusFailed, "执行记录保存中断，请核对工作区和已执行操作后继续"
+		err = journalErr
 	case err != nil && errors.Is(context.Cause(ctx), errSandboxOperationLost):
 		status, ledger, errText = "failed", models.TokenLedgerStatusFailed, errSandboxOperationLost.Error()
 	case err != nil && (ctx.Err() != nil || errors.Is(err, context.Canceled)):
@@ -1901,7 +1914,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		status, ledger, errText = "failed", models.TokenLedgerStatusFailed, truncErr(err)
 	}
 	reply := models.SoloMessage{
-		ID: "reply:" + q.ID, TurnID: q.ID, SessionID: c.id, Role: "assistant", Content: text, Events: events,
+		ID: "reply:" + q.ID, TurnID: q.ID, SessionID: c.id, Role: "assistant", Content: text, EventLog: eventLog,
 		Status: status, Error: errText, Usage: usage, UsageByModel: byModel,
 		Execution:  execution,
 		DurationMs: time.Since(started).Milliseconds(),
@@ -1925,10 +1938,10 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		for _, file := range deliveries {
 			reply.Files = append(reply.Files, file.ArtifactAttachment)
 		}
-		if text != "" || len(events) > 0 || err != nil || len(reply.Files) > 0 {
+		{
 			// Delivery owns the placeholder's files. Never overwrite a file
 			// attachment concurrently delivered by a tool.
-			if perr := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"content", "events", "status", "error", "usage", "usage_by_model", "execution", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
+			if perr := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"content", "events", "event_log", "status", "error", "usage", "usage_by_model", "execution", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
 				return perr
 			}
 		}
@@ -1938,7 +1951,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 			}
 		}
 		if usedPreamble && status == "ok" {
-			if perr := tx.Model(&models.SoloSession{}).Where("id = ? AND workflow_context_version = ?", c.id, row.WorkflowContextVersion).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false}).Error; perr != nil {
+			if perr := tx.Model(&models.SoloSession{}).Where("id = ? AND workflow_context_version = ?", c.id, row.WorkflowContextVersion).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "conversation_context_pending": false, "resume_context_pending": false}).Error; perr != nil {
 				return perr
 			}
 		}
@@ -1950,8 +1963,15 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		if err := tx.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", time.Now()).Error; err != nil {
 			return err
 		}
+		if status == "unknown" {
+			if err := tx.Model(&models.SoloSession{}).Where("id = ?", c.id).Updates(map[string]any{"conversation_context_pending": true, "workflow_context_version": gorm.Expr("workflow_context_version + 1")}).Error; err != nil {
+				return err
+			}
+		}
 		state := chatsession.TurnSucceeded
-		if status == "failed" {
+		if status == "unknown" {
+			state = chatsession.TurnUnknown
+		} else if status == "failed" {
 			state = chatsession.TurnFailed
 		} else if status == "stopped" {
 			state = chatsession.TurnCancelled
@@ -1984,6 +2004,7 @@ func recordSoloUsage(db *gorm.DB, sessionID string, sandboxID uint, usage *model
 }
 
 const (
+	soloContextPreambleHeader = "（系统提示）平台对话记录有更新。请结合下面的已保存记录和当前工作区继续；对执行结果待核对的操作，请先检查实际状态，避免重复执行：\n\n"
 	soloResumePreambleHeader  = "（系统提示）沙箱已从停止状态恢复，仓库、工作区和未提交的改动都已保留。请结合下面的对话记录继续：\n\n"
 	soloRestartPreambleHeader = "（系统提示）此会话的沙箱已重新创建，之前的 CLI 会话与未提交的改动已丢失，仓库已重新克隆。以下是此前的对话记录，供你恢复上下文：\n\n"
 	// A model switch restarts only the coding agent. This header must not say

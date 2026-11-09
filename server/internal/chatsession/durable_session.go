@@ -23,6 +23,9 @@ type DurableConfig[T any] struct {
 	Admit   func(*gorm.DB) error
 	Ready   func() (bool, error)
 	Recover func(models.ChatQueueTurn) error
+	// PublishExecution must commit a frame before native execution can proceed.
+	// Publish remains the notification hook for already accepted queue edits.
+	PublishExecution func(context.Context, string, map[string]any) error
 	// Settle handles failures before the surface could publish its result.
 	// It must call FinishExecution in the same transaction as the notice.
 	Settle func(context.Context, models.ChatQueueTurn, T, string, error) error
@@ -189,14 +192,18 @@ func (s *DurableSession[T]) run() {
 		if s.cfg.BeforeTurn != nil {
 			err = guardTurn(func() { s.cfg.BeforeTurn(item, ctx.Done()) })
 		}
-		s.publish(EventQueueState, nil)
+		if publishErr := s.publishExecution(ctx, EventQueueState, nil); err == nil {
+			err = publishErr
+		}
 		begin := map[string]any{"item": s.cfg.View(item).Frame()}
 		if s.cfg.TurnBeginExtra != nil {
 			for key, value := range s.cfg.TurnBeginExtra(item) {
 				begin[key] = value
 			}
 		}
-		s.publish(EventTurnBegin, begin)
+		if publishErr := s.publishExecution(ctx, EventTurnBegin, begin); err == nil {
+			err = publishErr
+		}
 		interrupted := false
 		if err == nil {
 			var executeErr error
@@ -253,7 +260,9 @@ func (s *DurableSession[T]) run() {
 			}
 		}
 		if snapshot, snapErr := s.store.Snapshot(context.Background(), s.scope); snapErr == nil && snapshot.Queue.Generation == lease.Generation {
-			s.publish(event, terminal)
+			if err := s.publishExecution(context.WithoutCancel(ctx), event, terminal); err != nil {
+				log.Warn().Err(err).Str("turn", row.ID).Msg("conversation result saved; stream notification deferred")
+			}
 		}
 	}
 }
@@ -371,9 +380,30 @@ func (s *DurableSession[T]) Snapshot() Snapshot {
 }
 
 func (s *DurableSession[T]) publish(event string, extra map[string]any) {
+	payload, err := s.framePayload(extra)
+	if err == nil && s.cfg.Publish != nil {
+		s.cfg.Publish(event, payload)
+	}
+}
+
+func (s *DurableSession[T]) publishExecution(ctx context.Context, event string, extra map[string]any) error {
+	payload, err := s.framePayload(extra)
+	if err != nil {
+		return err
+	}
+	if s.cfg.PublishExecution != nil {
+		return s.cfg.PublishExecution(ctx, event, payload)
+	}
+	if s.cfg.Publish != nil {
+		s.cfg.Publish(event, payload)
+	}
+	return nil
+}
+
+func (s *DurableSession[T]) framePayload(extra map[string]any) (map[string]any, error) {
 	snapshot, err := s.SnapshotChecked()
 	if err != nil {
-		return
+		return nil, err
 	}
 	payload := snapshot.QueueState()
 	for key, value := range s.cfg.FrameExtra {
@@ -382,7 +412,7 @@ func (s *DurableSession[T]) publish(event string, extra map[string]any) {
 	for key, value := range extra {
 		payload[key] = value
 	}
-	s.cfg.Publish(event, payload)
+	return payload, nil
 }
 
 func (s *DurableSession[T]) PublishQueueState() { s.publish(EventQueueState, nil) }

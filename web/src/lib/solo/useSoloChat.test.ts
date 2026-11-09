@@ -21,10 +21,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return { ...actual, api: { ...actual.api, ...mocks } }
+  return { ...actual, api: { ...actual.api, ...mocks, listSoloMessagePage: undefined, listSoloMessageEvents: undefined } }
 })
 
-import { useSoloChat } from './useSoloChat'
+import { useSoloChat, type SoloChatTransport } from './useSoloChat'
 import { modelRouteValue } from '@/lib/agent/modelBindings'
 
 class FakeSocket {
@@ -68,13 +68,13 @@ const session = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-function mountChat() {
+function mountChat(transport?: SoloChatTransport) {
   let chat!: ReturnType<typeof useSoloChat>
   const id = ref('s1')
   const app = createApp(
     defineComponent({
       setup() {
-        chat = useSoloChat(id)
+        chat = useSoloChat(id, transport)
         return () => null
       },
     }),
@@ -98,6 +98,120 @@ describe('useSoloChat', () => {
     mocks.listSoloMessages.mockResolvedValue([])
   })
   afterEach(() => vi.unstubAllGlobals())
+
+  it('keeps loaded older pages and the complete reply while lazily paging execution details', async () => {
+    const saved = { id: 'answer', sessionId: 's1', turnId: 'question', role: 'assistant' as const, content: 'complete answer', createdAt: '2026-11-09T00:00:01Z', eventLog: { version: 1, from: 101, through: 104, count: 4, generation: 9 } }
+    const question = { id: 'question', sessionId: 's1', role: 'user' as const, content: 'question', createdAt: '2026-11-09T00:00:01Z' }
+    const older = { id: 'older', sessionId: 's1', role: 'system' as const, content: 'earlier context', createdAt: '2026-11-08T00:00:00Z' }
+    const listPage = vi.fn().mockResolvedValue({ items: [question, saved], before: 'older-token', hasMore: true })
+    const listEvents = vi.fn()
+      .mockResolvedValueOnce({ items: [{ seq: 101, type: 'acp', data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: 'read-1', title: 'read_file', status: 'completed' } } }, { seq: 102, type: 'acp', data: acp('partial').data }], next: 102, head: 104, hasMore: true })
+      .mockRejectedValueOnce(new Error('temporary storage error'))
+      .mockResolvedValueOnce({ items: [{ seq: 103, type: 'acp', data: { type: 'session_update', update: { sessionUpdate: 'agent_thought_chunk', content: { text: 'checked files' } } } }, { seq: 104, type: 'acp', data: acp('remainder').data }], next: 104, head: 104, hasMore: false })
+    const { chat, app } = mountChat({ ...mocks, listSoloMessagePage: listPage, listSoloMessageEvents: listEvents })
+    try {
+      await flushPromises()
+      const socket = FakeSocket.all[0]!
+      socket.open()
+      await flushPromises()
+      expect(mocks.listSoloMessages).not.toHaveBeenCalled()
+      expect(listEvents).not.toHaveBeenCalled()
+      expect(chat.hasEarlier.value).toBe(true)
+      listPage.mockResolvedValueOnce({ items: [older], hasMore: false })
+      await chat.loadEarlier()
+      expect(listPage).toHaveBeenLastCalledWith('s1', 'older-token')
+      expect(chat.turns.value.map(turn => turn.id)).toEqual(['s:older', 'u:question', 'a:answer'])
+      const turn = chat.turns.value.find(row => row.id === 'a:answer')!
+      await chat.loadProcess(turn)
+      expect(chat.turns.value.find(row => row.id === 'a:answer')?.text).toBe('complete answer')
+      expect(chat.turns.value.find(row => row.id === 'a:answer')?.tools).toHaveLength(1)
+      await chat.loadProcess(turn)
+      expect(chat.processPages.value.answer?.error).toBe('temporary storage error')
+      expect(chat.processPages.value.answer?.next).toBe(102)
+      await chat.loadProcess(turn)
+      expect(listEvents.mock.calls.map(call => call[2])).toEqual([-1, 102, 102])
+      expect(chat.processPages.value.answer?.hasMore).toBe(false)
+      expect(chat.turns.value.find(row => row.id === 'a:answer')?.text).toBe('complete answer')
+      socket.emit({ type: 'session', event: 'history_changed' })
+      await flushPromises()
+      expect(chat.turns.value[0]?.id).toBe('s:older')
+      expect(chat.hasEarlier.value).toBe(false)
+    } finally { app.unmount() }
+  })
+
+  it('retains the durable cursor across executor generations and targets ACP by turn', async () => {
+    vi.useFakeTimers()
+    const { chat, app } = mountChat()
+    try {
+      await flushPromises()
+      const first = FakeSocket.all[0]!
+      first.open()
+      await flushPromises()
+      const item = { id: 'old', text: 'old', images: [] }
+      first.emit({ type: 'session', event: 'queue_state', seq: 99, journalVersion: 1, stateSnapshot: true, sessionGeneration: 9, revision: 1, busy: true, activeItem: item, items: [] })
+      first.emit({ ...acp('old output'), seq: 100, userMsgId: 'old', sessionGeneration: 9 })
+      first.onclose?.()
+      await vi.advanceTimersByTimeAsync(1500)
+      const next = FakeSocket.all.at(-1)!
+      expect(next).not.toBe(first)
+      expect(mocks.soloChatWsUrl).toHaveBeenLastCalledWith('s1', 100)
+      next.open()
+      await flushPromises()
+      next.emit({ type: 'session', event: 'queue_state', seq: 100, journalVersion: 1, stateSnapshot: true, sessionGeneration: 10, revision: 2, busy: true, activeItem: { ...item, id: 'new' }, items: [] })
+      next.emit({ ...acp('new output'), seq: 101, userMsgId: 'new', sessionGeneration: 10 })
+      next.emit({ ...acp('old tail'), seq: 102, userMsgId: 'old', sessionGeneration: 9 })
+      expect(chat.turns.value.find(turn => turn.id === 'live:new')?.text).toBe('new output')
+      next.onclose?.()
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(mocks.soloChatWsUrl).toHaveBeenLastCalledWith('s1', 102)
+    } finally { app.unmount(); vi.useRealTimers() }
+  })
+
+  it('settles one reply when a workflow result arrived between the question and answer', async () => {
+    const listPage = vi.fn().mockResolvedValue({ items: [], hasMore: false })
+    const { chat, app } = mountChat({ ...mocks, listSoloMessagePage: listPage })
+    try {
+      await flushPromises()
+      const socket = FakeSocket.all[0]!
+      socket.open()
+      await flushPromises()
+      socket.emit({ type: 'session', event: 'queue_state', busy: false, items: [] })
+      mocks.sendSoloTurn.mockResolvedValue({ waiting: 0, turnId: 'pending-user', state: 'executing' })
+      await chat.send('continue independently')
+      socket.emit({ type: 'session', event: 'turn_begin', seq: 1, item: { id: 'pending-user', text: 'continue independently', images: [] } })
+      socket.emit({ ...acp('completed answer'), seq: 2 })
+      const user = { id: 'pending-user', sessionId: 's1', role: 'user', content: 'continue independently', createdAt: '2026-11-09T00:00:00Z' }
+      const result = { id: 'workflow-result', sessionId: 's1', role: 'system', content: '工作流已完成', createdAt: '2026-11-09T00:00:01Z' }
+      listPage.mockResolvedValue({ items: [user, result], hasMore: false })
+      socket.emit({ type: 'session', event: 'history_changed', seq: 3 })
+      await flushPromises()
+      listPage.mockResolvedValue({ items: [user, result, { id: 'answer', turnId: user.id, sessionId: 's1', role: 'assistant', content: 'completed answer', status: 'ok', createdAt: '2026-11-09T00:00:02Z', eventLog: { version: 1, from: 2, through: 2, count: 1, generation: 1 } }], hasMore: false })
+      socket.emit({ type: 'session', event: 'turn_done', seq: 4, userMsgId: user.id })
+      await flushPromises()
+      expect(chat.turns.value.map(turn => turn.id)).toEqual(['u:pending-user', 's:workflow-result', 'a:answer'])
+      expect(chat.turns.value.filter(turn => turn.role === 'agent')).toHaveLength(1)
+    } finally { app.unmount() }
+  })
+
+  it('never skips a persistent journal gap after repeated reconnect attempts', async () => {
+    vi.useFakeTimers()
+    const { chat, app } = mountChat()
+    try {
+      await flushPromises()
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const socket = FakeSocket.all.at(-1)!
+        socket.open()
+        await flushPromises()
+        socket.emit({ type: 'session', event: 'queue_state', seq: attempt ? 100 : 99, journalVersion: 1, stateSnapshot: true, sessionGeneration: 9, revision: 1, busy: true, activeItem: { id: 'active', text: 'task', images: [] }, items: [] })
+        if (!attempt) socket.emit({ ...acp('saved prefix'), seq: 100, userMsgId: 'active' })
+        socket.emit({ ...acp('must not skip missing event'), seq: 102, userMsgId: 'active' })
+        if (attempt < 3) await vi.advanceTimersByTimeAsync(1500)
+      }
+      expect(chat.loadError.value).toContain('存在缺口')
+      expect(chat.turns.value.find(turn => turn.id === 'live:active')?.text).toBe('saved prefix')
+      expect(mocks.soloChatWsUrl).toHaveBeenLastCalledWith('s1', 100)
+    } finally { app.unmount(); vi.useRealTimers() }
+  })
 
   it('deduplicates file delivery, rejects another turn and retains files after reload', async () => {
     const file = { artifactId: 'artifact-1', revision: 2, name: 'report.pdf', kind: 'pdf', sizeBytes: 100 }

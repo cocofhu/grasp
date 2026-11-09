@@ -301,13 +301,6 @@ func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) e
 		if err := tx.Model(&models.SoloMessage{}).Where("session_id = ? AND (id = ? OR turn_id = ?)", id, "reply:"+turn.ID, turn.ID).Where("role = ?", "assistant").Count(&replyCount).Error; err != nil {
 			return err
 		}
-		if replyCount > 0 {
-			var reply models.SoloMessage
-			if err := tx.Select("id").Where("session_id = ? AND (id = ? OR turn_id = ?) AND role = ?", id, "reply:"+turn.ID, turn.ID, "assistant").First(&reply).Error; err != nil {
-				return err
-			}
-			return tx.Model(&current).Update("result_id", reply.ID).Error
-		}
 		if q, err := decodeSoloTurn(turn); err == nil {
 			message := models.SoloMessage{ID: q.ID, ClientMessageID: turn.ClientMessageID, SessionID: id, Role: "user", Content: q.Text,
 				Images: q.Images, Annotations: q.Annotations, References: q.References, PreviewShared: q.PreviewShared}
@@ -317,6 +310,21 @@ func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) e
 		}
 		notice := models.SoloMessage{ID: "reply:" + turn.ID, TurnID: turn.ID, SessionID: id, Role: "assistant",
 			Status: "unknown", Error: "执行结果待核对：" + soloRestartStopped + "，请核对工作区和已执行操作后继续"}
+		if replyCount > 0 {
+			// Artifact delivery may have created a placeholder before the
+			// executor disappeared. Preserve its body/files and mark its result
+			// honestly instead of treating that placeholder as completion.
+			var existing models.SoloMessage
+			if err := tx.Select("id").Where("session_id = ? AND (id = ? OR turn_id = ?) AND role = ?", id, "reply:"+turn.ID, turn.ID, "assistant").First(&existing).Error; err != nil {
+				return err
+			}
+			notice.ID = existing.ID
+		}
+		var err error
+		notice.EventLog, err = s.journalPointer(tx, id, turn.ID, current.ExecutionEpoch)
+		if err != nil {
+			return err
+		}
 		if current.State == chatsession.TurnCancelled {
 			notice.Status = "stopped"
 			notice.Error = "已取消本轮，未派发到 Agent"
@@ -324,8 +332,13 @@ func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) e
 		if err := tx.Model(&models.SoloMessage{}).Where("id = ? AND session_id = ?", turn.ID, id).Update("status", "stopped").Error; err != nil {
 			return err
 		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&notice).Error; err != nil {
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"status", "error", "event_log", "turn_id"})}).Create(&notice).Error; err != nil {
 			return err
+		}
+		if current.State == chatsession.TurnUnknown {
+			if err := tx.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{"conversation_context_pending": true, "workflow_context_version": gorm.Expr("workflow_context_version + 1")}).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Model(&current).Update("result_id", notice.ID).Error
 	})
@@ -352,11 +365,19 @@ func (s *SoloService) settleSoloReceipt(ctx context.Context, id string, row mode
 			message = truncErr(failure)
 		}
 		reply := models.SoloMessage{ID: "reply:" + row.ID, TurnID: row.ID, SessionID: id, Role: "assistant", Status: "failed", Error: message}
+		var err error
+		reply.EventLog, err = s.journalPointer(tx, id, row.ID, row.ExecutionEpoch)
+		if err != nil {
+			return err
+		}
 		if state == chatsession.TurnUnknown {
 			reply.Status = "unknown"
 			reply.Error = "执行结果待核对，请核对工作区和已执行操作后继续"
+			if err := tx.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{"conversation_context_pending": true, "workflow_context_version": gorm.Expr("workflow_context_version + 1")}).Error; err != nil {
+				return err
+			}
 		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&reply).Error; err != nil {
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"status", "error", "event_log", "turn_id"})}).Create(&reply).Error; err != nil {
 			return err
 		}
 		return chatsession.FinishExecution(ctx, tx, state, reason, reply.ID)
@@ -414,15 +435,10 @@ func (s *SoloService) SendWithClientMessageID(id, user, clientID, text string, i
 
 func (c *soloChat) onAcpForTurn(ctx context.Context, turnID string, raw json.RawMessage) {
 	c.mu.Lock()
-	current := c.turnID == turnID
+	writer, current := c.writer, c.turnID == turnID
 	c.mu.Unlock()
-	if !current {
+	if !current || writer == nil {
 		return
 	}
-	check, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	if err := chatsession.CheckExecution(check); err != nil {
-		return
-	}
-	c.onAcp(raw)
+	_ = writer.Add(ctx, chatsession.JournalEntry{Type: chatsession.FrameAcp, Data: raw})
 }

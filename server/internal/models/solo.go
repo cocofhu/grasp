@@ -88,6 +88,9 @@ type SoloSession struct {
 	// ModelContextPending survives a cancelled switch after the coding tool was
 	// restarted, so the next turn still receives the existing task history.
 	ModelContextPending bool `json:"-"`
+	// ConversationContextPending syncs workflow results or an uncertain native
+	// execution without claiming that a model or environment was replaced.
+	ConversationContextPending bool `json:"-"`
 	// ResumeContextPending restores dialogue context after a cold start while
 	// accurately retaining the workspace and uncommitted changes.
 	ResumeContextPending bool `json:"-"`
@@ -186,6 +189,8 @@ type SoloMessage struct {
 	Annotations   []ReactAnnotation `gorm:"serializer:filejson" json:"annotations,omitempty"`
 	PreviewShared bool              `json:"-"`
 	Events        []json.RawMessage `gorm:"serializer:filejson" json:"events,omitempty"`
+	EventLog      *ChatEventLog     `gorm:"serializer:json" json:"eventLog,omitempty"`
+	LegacyEvents  bool              `gorm:"-" json:"legacyEvents,omitempty"`
 	// References are the contexts the user explicitly picked for this turn.
 	// They are the only authority read_reference accepts.
 	References []MessageReference `gorm:"column:message_references;serializer:json" json:"references,omitempty"`
@@ -200,4 +205,14 @@ type SoloMessage struct {
 	Execution  *ChatExecution `gorm:"serializer:json" json:"execution,omitempty"`
 	DurationMs int64          `json:"durationMs,omitempty"`
 	CreatedAt  time.Time      `json:"createdAt"`
+}
+
+// ChatEventLog points into the immutable conversation journal. The range may
+// contain interleaved control frames; Count counts this turn's ACP frames.
+type ChatEventLog struct {
+	Version    int    `json:"version"`
+	From       int64  `json:"from"`
+	Through    int64  `json:"through"`
+	Count      int    `json:"count"`
+	Generation uint64 `json:"generation"`
 }

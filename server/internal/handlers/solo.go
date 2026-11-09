@@ -10,17 +10,31 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
 const soloEmbedUserKey = "solo_embed_user"
 
 func writeSoloErr(c *gin.Context, err error) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "message_not_found"})
+		return
+	}
+	if errors.Is(err, chatsession.ErrJournalCursor) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_cursor"})
+		return
+	}
+	if errors.Is(err, chatsession.ErrJournalGap) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "history_unavailable"})
+		return
+	}
 	var se *services.SoloError
 	if errors.As(err, &se) {
 		body := gin.H{"error": se.Msg, "code": se.Code}
@@ -310,12 +324,44 @@ func (h *Handlers) ListSoloMessages(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if c.Query("limit") != "" || c.Query("before") != "" {
+		limit, err := strconv.Atoi(c.DefaultQuery("limit", "50"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_page"})
+			return
+		}
+		page, err := h.Solo.MessagePage(c.Request.Context(), c.Param("id"), user, c.Query("before"), limit)
+		if err != nil {
+			writeSoloErr(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, page)
+		return
+	}
 	rows, err := h.Solo.Messages(c.Param("id"), user)
 	if err != nil {
 		writeSoloErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, rows)
+}
+
+func (h *Handlers) ListSoloMessageEvents(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	after, err := strconv.ParseInt(c.DefaultQuery("after", "-1"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_cursor"})
+		return
+	}
+	page, err := h.Solo.MessageEvents(c.Request.Context(), c.Param("id"), user, c.Param("messageId"), after)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, page)
 }
 
 // GetSoloEnv handles GET /api/solo/sessions/:id/env.

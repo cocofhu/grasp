@@ -136,6 +136,14 @@ function transcriptImageSrc(image: ClarifyImage) {
 }
 
 const { scroller, followBottom, onScroll, scrollDown } = useChatTailScroll()
+async function loadEarlier() {
+  const top = scroller.value?.scrollTop || 0
+  const height = scroller.value?.scrollHeight || 0
+  followBottom.value = false
+  await chat.loadEarlier()
+  await nextTick()
+  if (scroller.value) scroller.value.scrollTop = top + scroller.value.scrollHeight - height
+}
 const confirmClose = ref(false)
 const confirmDelete = ref(false)
 const moreOpen = ref(false)
@@ -473,6 +481,10 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             </div>
           </div>
 
+          <div v-if="chat.hasEarlier.value" class="flex justify-center py-2">
+            <AppButton size="sm" variant="ghost" icon="history" :loading="chat.loadingEarlier.value" data-testid="solo-load-earlier" @click="loadEarlier">{{ t('pages.solo.chat.loadEarlier') }}</AppButton>
+          </div>
+          <p v-if="chat.earlierError.value" class="text-xs text-err" role="alert">{{ chat.earlierError.value }}</p>
           <template v-for="turn in turns" :key="turn.id">
             <div v-if="turn.role === 'system'" class="solo-system">
               <span>{{ turn.text }}</span>
@@ -513,6 +525,17 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 quiet-thought
                 message-test-id="solo-agent-message"
               />
+              <div v-if="turn.historyMessageId && turn.processAvailable" class="space-y-1">
+                <AppButton
+                  v-if="chat.processPages.value[turn.historyMessageId]?.hasMore !== false"
+                  size="sm" variant="ghost" icon="list"
+                  :loading="chat.processPages.value[turn.historyMessageId]?.loading"
+                  data-testid="solo-load-process"
+                  @click="chat.loadProcess(turn)"
+                >{{ t(chat.processPages.value[turn.historyMessageId]?.next !== undefined && chat.processPages.value[turn.historyMessageId]!.next >= 0 ? 'pages.solo.chat.loadMoreProcess' : 'pages.solo.chat.loadProcess') }}</AppButton>
+                <p v-if="chat.processPages.value[turn.historyMessageId]?.error" class="text-xs text-err" role="alert">{{ chat.processPages.value[turn.historyMessageId]!.error }}</p>
+                <p v-if="chat.processPages.value[turn.historyMessageId]?.legacyIncomplete" class="chat-meta">{{ t('pages.solo.chat.legacyIncomplete') }}</p>
+              </div>
               <ArtifactFileAttachments :files="turn.files" />
               <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
                 <div class="chat-meta mb-1">{{ t('pages.solo.chat.plan') }}</div>

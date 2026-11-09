@@ -112,7 +112,7 @@ func TestWorkflowOutboxOfflineDeliveryIsPrivateAndIdempotent(t *testing.T) {
 	if err := db.First(&session, "id = ?", session.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if session.Status != models.SoloStatusStopped || session.SandboxID != 0 || session.WorkflowContextVersion != 1 || !session.ModelContextPending {
+	if session.Status != models.SoloStatusStopped || session.SandboxID != 0 || session.WorkflowContextVersion != 1 || !session.ConversationContextPending {
 		t.Fatalf("delivery woke or lost context: %+v", session)
 	}
 	// A stale worker replay cannot duplicate a message or bump its context again.

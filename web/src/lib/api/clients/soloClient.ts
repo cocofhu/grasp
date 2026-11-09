@@ -8,6 +8,8 @@ import type {
   SoloCreateBody,
   SoloEnvEntry,
   SoloMessage,
+  SoloMessagePage,
+  SoloMessageEventPage,
   SoloResources,
   SoloSession,
   SoloSessionList,
@@ -37,6 +39,13 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
     setSoloSessionReasoningEffort: (id: string, reasoningEffort: string) =>
       req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
     listSoloMessages: (id: string) => req<SoloMessage[]>(`${path(id)}/messages`),
+    listSoloMessagePage: async (id: string, before?: string): Promise<SoloMessagePage> => {
+      const result = await req<SoloMessagePage | SoloMessage[]>(`${path(id)}/messages?limit=50${before ? `&before=${enc(before)}` : ''}`)
+      // Migration release: an older application replica ignores pagination.
+      // Remove this reader together with the unpaged route in the next minor.
+      return Array.isArray(result) ? { items: result, hasMore: false } : result
+    },
+    listSoloMessageEvents: (id: string, messageId: string, after = -1) => req<SoloMessageEventPage>(`${path(id)}/messages/${enc(messageId)}/events?after=${after}`),
     sendSoloTurn: (id: string, body: { text: string; clientMessageId?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: ReferenceInput[] }) =>
       req<{ waiting: number; turnId?: string; clientMessageId?: string; state?: string }>(`${path(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
     searchSoloReferences: <T>(id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>

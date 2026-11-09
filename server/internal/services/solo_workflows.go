@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/cocofhu/grasp/internal/chatsession"
 	"strings"
 	"time"
 
@@ -134,7 +133,7 @@ func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
 			}
 			now := time.Now().UTC()
 			if created.RowsAffected > 0 {
-				if err := tx.Model(&models.SoloSession{}).Where("id = ?", event.SoloID).Updates(map[string]any{"updated_at": now, "model_context_pending": true, "workflow_context_version": gorm.Expr("workflow_context_version + 1")}).Error; err != nil {
+				if err := tx.Model(&models.SoloSession{}).Where("id = ?", event.SoloID).Updates(map[string]any{"updated_at": now, "conversation_context_pending": true, "workflow_context_version": gorm.Expr("workflow_context_version + 1")}).Error; err != nil {
 					return err
 				}
 			}
@@ -145,7 +144,7 @@ func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
 		}
 		s.publishStatus(event.SoloID)
 		if chat := s.lookup(event.SoloID); chat != nil {
-			chat.stream.Session("history_changed", map[string]any{"eventId": event.ID}, chatsession.KeepAppend)
+			chat.publish("history_changed", map[string]any{"eventId": event.ID})
 		}
 	}
 	return nil

@@ -889,6 +889,8 @@ export interface SoloMessage {
   references?: MessageReference[]
   /** Raw ACP frames of an assistant turn, replayed into the timeline. */
   events?: unknown[]
+  eventLog?: { version: number; from: number; through: number; count: number; generation: number }
+  legacyEvents?: boolean
   status?: '' | 'ok' | 'failed' | 'stopped' | 'unknown'
   error?: string
   usage?: TokenUsage
@@ -896,6 +898,20 @@ export interface SoloMessage {
   durationMs?: number
   execution?: ChatExecution
   createdAt: string
+}
+
+export interface SoloMessagePage {
+  items: SoloMessage[]
+  before?: string
+  hasMore: boolean
+}
+
+export interface SoloMessageEventPage {
+  items: { seq: number; type: string; data?: unknown; turnId?: string; generation: number }[]
+  next: number
+  head: number
+  hasMore: boolean
+  legacyIncomplete?: boolean
 }
 
 export type SoloEnvSource = 'platform' | 'agent' | 'project' | 'credential' | 'system'

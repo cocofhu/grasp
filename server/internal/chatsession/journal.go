@@ -88,6 +88,21 @@ type JournalRange struct {
 // check under the same queue lock, including after native execution finishes.
 func (s *DurableStore) AppendJournal(ctx context.Context, scope QueueScope, owner *QueueLease, turnID string, entries []JournalEntry, validate func(*gorm.DB) error) (JournalRange, error) {
 	var result JournalRange
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		result, err = s.AppendJournalTx(ctx, tx, scope, owner, turnID, entries, validate)
+		return err
+	})
+	if err != nil {
+		return JournalRange{}, err
+	}
+	return result, nil
+}
+
+// AppendJournalTx composes event publication with the caller's existing
+// lifecycle/permission transaction. The caller must commit before publishing.
+func (s *DurableStore) AppendJournalTx(ctx context.Context, tx *gorm.DB, scope QueueScope, owner *QueueLease, turnID string, entries []JournalEntry, validate func(*gorm.DB) error) (JournalRange, error) {
+	var result JournalRange
 	if len(entries) == 0 || len(entries) > JournalBatchEvents || len(turnID) > 191 {
 		return result, errors.New("invalid conversation event batch")
 	}
@@ -96,60 +111,65 @@ func (s *DurableStore) AppendJournal(ctx context.Context, scope QueueScope, owne
 			return result, errors.New("invalid conversation event")
 		}
 	}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		queue, err := s.lock(tx, scope)
-		if err != nil {
-			return err
-		}
-		if owner != nil {
-			if owner.Scope != scope {
-				return ErrQueueOwnerLost
-			}
-			if execution, ok := CurrentExecution(ctx); ok {
-				if execution.Lease.Scope != owner.Scope || execution.Lease.Owner != owner.Owner || execution.Lease.Generation != owner.Generation || execution.TurnID != turnID {
-					return ErrQueueOwnerLost
-				}
-				if err := execution.checkOwner(); err != nil {
-					return err
-				}
-			}
-			if err := s.Fence(tx, *owner, turnID); err != nil {
-				return err
-			}
-		}
-		if validate != nil {
-			if err := validate(tx); err != nil {
-				return err
-			}
-		}
-		if queue.NextEventSequence > journalSafeSequence-uint64(len(entries)) {
-			return errors.New("conversation event sequence exhausted")
-		}
-		persisted := make([]JournalEntry, len(entries))
-		for i, entry := range entries {
-			if entry.At.IsZero() {
-				entry.At = s.now()
-			}
-			entry.Seq, entry.Generation, entry.TurnID = queue.NextEventSequence+uint64(i), queue.Generation, turnID
-			entry.Data, entry.Payload = append(json.RawMessage(nil), entry.Data...), maps.Clone(entry.Payload)
-			persisted[i] = entry
-		}
-		result = JournalRange{First: queue.NextEventSequence, Last: queue.NextEventSequence + uint64(len(entries)) - 1, Count: len(entries)}
-		body, err := json.Marshal(journalEnvelope{JournalVersion, queue.ID, result.First, result.Last, persisted})
-		if err != nil {
-			return err
-		}
-		if len(body) > JournalChunkBytes {
-			return errors.New("conversation event batch exceeds storage bound")
-		}
-		chunk := models.ChatEventChunk{ID: uuid.NewString(), QueueID: queue.ID, FirstSequence: result.First,
-			LastSequence: result.Last, TurnID: turnID, ExecutionEpoch: queue.Generation, Count: len(entries), Bytes: len(body), Payload: body}
-		if err := tx.Create(&chunk).Error; err != nil {
-			return err
-		}
-		return tx.Model(queue).Update("next_event_sequence", result.Last+1).Error
-	})
+	queue, err := s.lock(tx, scope)
 	if err != nil {
+		return JournalRange{}, err
+	}
+	if owner != nil {
+		if owner.Scope != scope {
+			return JournalRange{}, ErrQueueOwnerLost
+		}
+		if execution, ok := CurrentExecution(ctx); ok {
+			if execution.Lease.Scope != owner.Scope || execution.Lease.Owner != owner.Owner || execution.Lease.Generation != owner.Generation || execution.TurnID != turnID {
+				return JournalRange{}, ErrQueueOwnerLost
+			}
+			if err := execution.checkOwner(); err != nil {
+				return JournalRange{}, err
+			}
+		}
+		if err := s.Fence(tx, *owner, turnID); err != nil {
+			return JournalRange{}, err
+		}
+	}
+	if validate != nil {
+		if err := validate(tx); err != nil {
+			return JournalRange{}, err
+		}
+	}
+	if queue.NextEventSequence > journalSafeSequence-uint64(len(entries)) {
+		return JournalRange{}, errors.New("conversation event sequence exhausted")
+	}
+	persisted := make([]JournalEntry, len(entries))
+	for i, entry := range entries {
+		if entry.At.IsZero() {
+			entry.At = s.now()
+		}
+		entry.Seq, entry.Generation, entry.TurnID = queue.NextEventSequence+uint64(i), queue.Generation, turnID
+		entry.Data, entry.Payload = append(json.RawMessage(nil), entry.Data...), maps.Clone(entry.Payload)
+		persisted[i] = entry
+	}
+	result = JournalRange{First: queue.NextEventSequence, Last: queue.NextEventSequence + uint64(len(entries)) - 1, Count: len(entries)}
+	body, err := json.Marshal(journalEnvelope{JournalVersion, queue.ID, result.First, result.Last, persisted})
+	if err != nil {
+		return JournalRange{}, err
+	}
+	if len(body) > JournalChunkBytes {
+		return JournalRange{}, errors.New("conversation event batch exceeds storage bound")
+	}
+	chunk := models.ChatEventChunk{ID: uuid.NewString(), QueueID: queue.ID, FirstSequence: result.First,
+		LastSequence: result.Last, TurnID: turnID, ExecutionEpoch: queue.Generation, Count: len(entries), Bytes: len(body), Payload: body}
+	for _, entry := range entries {
+		if entry.Type == FrameAcp {
+			chunk.AcpCount++
+		}
+	}
+	if len(entries) == 1 && entries[0].Type == FrameSession {
+		chunk.ControlEvent = entries[0].Event
+	}
+	if err := tx.Create(&chunk).Error; err != nil {
+		return JournalRange{}, err
+	}
+	if err := tx.Model(queue).Update("next_event_sequence", result.Last+1).Error; err != nil {
 		return JournalRange{}, err
 	}
 	return result, nil

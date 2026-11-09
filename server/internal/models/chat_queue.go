@@ -64,6 +64,8 @@ type ChatEventChunk struct {
 	TurnID         string `gorm:"size:191;index:idx_chat_event_turn,priority:2"`
 	ExecutionEpoch uint64
 	Count          int
+	AcpCount       int
+	ControlEvent   string `gorm:"size:64"`
 	Bytes          int
 	Payload        []byte `gorm:"serializer:filebytes;type:text"`
 	CreatedAt      time.Time

@@ -54,6 +54,12 @@ vi.mock('@/lib/api/api', () => ({
 vi.mock('@/lib/solo/useSoloSessions', () => ({ useSoloSessions: () => ({ upsert: vi.fn(), remove: vi.fn() }) }))
 vi.mock('@/lib/solo/useSoloChat', () => ({
   useSoloChat: () => ({
+    hasEarlier: ref(false),
+    loadingEarlier: ref(false),
+    earlierError: ref(''),
+    processPages: ref({}),
+    loadEarlier: vi.fn(),
+    loadProcess: vi.fn(),
     session: box.session,
     turns: box.turns,
     queued: ref([]),

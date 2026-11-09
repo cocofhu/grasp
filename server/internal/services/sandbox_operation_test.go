@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -98,6 +99,14 @@ func TestSandboxOperationSerializesReplicasAndReentersScopedResources(t *testing
 	}
 }
 
+// This low-level operation-lock test deliberately bypasses queue ownership.
+// Native output journaling is exercised by the admitted-turn tests instead.
+type operationOnlyChat struct{ pmChatter }
+
+func (c *operationOnlyChat) ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+	return c.pmChatter.ChatWithTimeout(ctx, id, text, images, timeout, func(json.RawMessage) {})
+}
+
 func TestSoloTurnOwnsEnvironmentUntilReplyIsPersisted(t *testing.T) {
 	acp, port := fakeACPServer(t)
 	defer acp.Close()
@@ -112,12 +121,12 @@ func TestSoloTurnOwnsEnvironmentUntilReplyIsPersisted(t *testing.T) {
 		return err == nil && row.Status == models.SoloStatusRunning
 	})
 	first := newRestoreChat(true)
-	solo.SetChatterForTest(first)
+	solo.SetChatterForTest(&operationOnlyChat{first})
 	solo.SetModelAlignerForTest(&recordAligner{})
 	otherSB := NewSandboxService(db, sbx.mgr, sbx.skills, sbx.host, SandboxOptions{ModelBinding: sbx.modelBinding})
 	other := NewSoloService(db, otherSB, solo.agents, solo.projects)
 	second := newRestoreChat(false)
-	other.SetChatterForTest(second)
+	other.SetChatterForTest(&operationOnlyChat{second})
 	other.SetModelAlignerForTest(&recordAligner{})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
