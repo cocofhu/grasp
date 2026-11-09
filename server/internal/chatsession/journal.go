@@ -111,30 +111,9 @@ func (s *DurableStore) AppendJournalTx(ctx context.Context, tx *gorm.DB, scope Q
 			return result, errors.New("invalid conversation event")
 		}
 	}
-	queue, err := s.lock(tx, scope)
+	queue, err := s.lockJournalTx(ctx, tx, scope, owner, turnID, validate)
 	if err != nil {
 		return JournalRange{}, err
-	}
-	if owner != nil {
-		if owner.Scope != scope {
-			return JournalRange{}, ErrQueueOwnerLost
-		}
-		if execution, ok := CurrentExecution(ctx); ok {
-			if execution.Lease.Scope != owner.Scope || execution.Lease.Owner != owner.Owner || execution.Lease.Generation != owner.Generation || execution.TurnID != turnID {
-				return JournalRange{}, ErrQueueOwnerLost
-			}
-			if err := execution.checkOwner(); err != nil {
-				return JournalRange{}, err
-			}
-		}
-		if err := s.Fence(tx, *owner, turnID); err != nil {
-			return JournalRange{}, err
-		}
-	}
-	if validate != nil {
-		if err := validate(tx); err != nil {
-			return JournalRange{}, err
-		}
 	}
 	if queue.NextEventSequence > journalSafeSequence-uint64(len(entries)) {
 		return JournalRange{}, errors.New("conversation event sequence exhausted")
@@ -175,6 +154,43 @@ func (s *DurableStore) AppendJournalTx(ctx context.Context, tx *gorm.DB, scope Q
 	return result, nil
 }
 
+// FenceJournalTx acquires the conversation lock before a caller takes a lower
+// level sandbox lock. It performs SQL/ownership validation without body I/O;
+// AppendJournalTx may safely re-enter it in the same transaction.
+func (s *DurableStore) FenceJournalTx(ctx context.Context, tx *gorm.DB, scope QueueScope, owner *QueueLease, turnID string, validate func(*gorm.DB) error) error {
+	_, err := s.lockJournalTx(ctx, tx, scope, owner, turnID, validate)
+	return err
+}
+
+func (s *DurableStore) lockJournalTx(ctx context.Context, tx *gorm.DB, scope QueueScope, owner *QueueLease, turnID string, validate func(*gorm.DB) error) (*models.ChatQueue, error) {
+	queue, err := s.lock(tx, scope)
+	if err != nil {
+		return nil, err
+	}
+	if owner != nil {
+		if owner.Scope != scope {
+			return nil, ErrQueueOwnerLost
+		}
+		if execution, ok := CurrentExecution(ctx); ok {
+			if execution.Lease.Scope != owner.Scope || execution.Lease.Owner != owner.Owner || execution.Lease.Generation != owner.Generation || execution.TurnID != turnID {
+				return nil, ErrQueueOwnerLost
+			}
+			if err := execution.checkOwner(); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.Fence(tx, *owner, turnID); err != nil {
+			return nil, err
+		}
+	}
+	if validate != nil {
+		if err := validate(tx); err != nil {
+			return nil, err
+		}
+	}
+	return queue, nil
+}
+
 type JournalQuery struct {
 	After   int64
 	Through *int64
@@ -205,6 +221,13 @@ func validateJournalChunk(row models.ChatEventChunk) ([]JournalEntry, error) {
 		}
 	}
 	return envelope.Entries, nil
+}
+
+// DecodeJournalChunk validates an already loaded immutable body without SQL
+// or object storage I/O. Readers may capture indexes under a short transaction,
+// then release that transaction before loading and decoding the body.
+func DecodeJournalChunk(row models.ChatEventChunk) ([]JournalEntry, error) {
+	return validateJournalChunk(row)
 }
 
 // JournalPage reads one bounded ordered window. Missing/corrupt chunks fail the

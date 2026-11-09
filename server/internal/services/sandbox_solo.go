@@ -44,6 +44,8 @@ type SoloSandboxOpts struct {
 	OnEnv                  func(sources map[string]string)
 	OnReady                func(sandboxID uint)
 	OnFail                 func(sandboxID uint, err error)
+	// Bind commits the parent session association before any provider request.
+	Bind func(*gorm.DB, *models.Sandbox) error
 }
 
 // MaxSoloSandboxes returns the resident Solo sandbox cap.
@@ -85,6 +87,10 @@ func (s *SandboxService) activeSoloSandboxCount() int {
 }
 
 func countSoloCompute(db *gorm.DB, exclude uint) (int64, error) {
+	return countSoloComputeReserved(db, exclude, "")
+}
+
+func countSoloComputeReserved(db *gorm.DB, exclude uint, reservedSession string) (int64, error) {
 	var n int64
 	activeSessions := db.Model(&models.SoloSession{}).Select("sandbox_id").Where("status IN ?",
 		[]string{models.SoloStatusStarting, models.SoloStatusRunning})
@@ -94,8 +100,18 @@ func countSoloCompute(db *gorm.DB, exclude uint) (int64, error) {
 	if exclude != 0 {
 		query = query.Where("id <> ?", exclude)
 	}
-	err := query.Count(&n).Error
-	return n, err
+	if err := query.Count(&n).Error; err != nil {
+		return 0, err
+	}
+	var pending int64
+	reservations := db.Model(&models.SoloSession{}).Where("status = ? AND sandbox_id = 0 AND EXISTS (SELECT 1 FROM solo_creations c WHERE c.session_id = solo_sessions.id)", models.SoloStatusStarting)
+	if reservedSession != "" {
+		reservations = reservations.Where("id <> ?", reservedSession)
+	}
+	if err := reservations.Count(&pending).Error; err != nil {
+		return 0, err
+	}
+	return n + pending, nil
 }
 
 func lockSoloCompute(tx *gorm.DB) error {
@@ -152,9 +168,6 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	if err != nil {
 		return nil, err
 	}
-	if maxN := s.MaxSoloSandboxes(); s.activeSoloSandboxCount() >= maxN {
-		return nil, ErrSoloSandboxLimit{Max: maxN}
-	}
 
 	snapshots := opts.Repos
 	if len(snapshots) == 0 && opts.Project != nil {
@@ -181,23 +194,51 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		Name: name, Profile: profile, Purpose: SandboxPurposeSolo, Status: "creating",
 		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstTestRepoURL(repos),
 	}
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	created := false
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
 		}
-		count, err := countSoloCompute(tx, 0)
+		if opts.Bind != nil {
+			var parent models.SoloSession
+			if err := tx.Select("id", "sandbox_id", "status").First(&parent, "id = ?", sessionID).Error; err != nil {
+				return err
+			}
+			if parent.Status != models.SoloStatusStarting {
+				return soloErr(409, "session_changed", "会话状态已变化，请重新加载")
+			}
+			if parent.SandboxID != 0 {
+				return tx.First(row, "id = ? AND thread_id = ? AND purpose = ?", parent.SandboxID, sessionID, SandboxPurposeSolo).Error
+			}
+		}
+		count, err := countSoloComputeReserved(tx, 0, sessionID)
 		if err != nil {
 			return err
 		}
 		if count >= int64(s.MaxSoloSandboxes()) {
 			return ErrSoloSandboxLimit{Max: s.MaxSoloSandboxes()}
 		}
-		return tx.Create(row).Error
+		if err := tx.Create(row).Error; err != nil {
+			return err
+		}
+		if opts.Bind != nil {
+			if err := opts.Bind(tx, row); err != nil {
+				return err
+			}
+		}
+		created = true
+		return nil
 	}); err != nil {
 		if s.host != nil {
 			s.host.UnregisterRun(runID)
 		}
 		return nil, err
+	}
+	if !created {
+		if s.host != nil {
+			s.host.UnregisterRun(runID)
+		}
+		return row, nil
 	}
 	extra := agentContainerExtra{Repos: repos, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort}
 	id := row.ID

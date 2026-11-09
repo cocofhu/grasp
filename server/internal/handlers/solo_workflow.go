@@ -78,15 +78,15 @@ func (h *Handlers) LaunchSoloWorkflow(c *gin.Context) {
 		writeAdmissionErr(c, err)
 		return
 	}
-	message, ok := h.firstMessage(c, c.Param("workflowId"), body.FirstMessage)
-	if !ok {
-		return
-	}
 	choice := launchChoiceFromBody(body.startRunBody)
 	run, err := h.admission().Start(services.RunStart{WorkflowID: c.Param("workflowId"), Source: "solo", ActorID: user, SoloID: c.Param("id"), Confirmed: body.Confirmed,
 		IdempotencyKey: c.GetHeader("Idempotency-Key"), Published: true, Inputs: body.Inputs, Trigger: models.TriggerManual, Priority: body.Priority, Tags: tags, Env: body.Env, Title: body.Title,
-		ExpectedVersion: body.ExpectedWorkflowVersion,
-		FirstMessage:    message, ModelSet: choice.Set, ConfigurationID: choice.ConfigurationID, ModelID: choice.ModelID, ReasoningEffort: choice.ReasoningEffort})
+		ExpectedVersion:   body.ExpectedWorkflowVersion,
+		FirstMessageInput: body.FirstMessage,
+		PrepareFirstMessage: func() (*models.CompositeText, error) {
+			return h.firstMessage(c.Request.Context(), user, c.Param("workflowId"), body.FirstMessage)
+		},
+		ModelSet: choice.Set, ConfigurationID: choice.ConfigurationID, ModelID: choice.ModelID, ReasoningEffort: choice.ReasoningEffort})
 	if err != nil {
 		writeAdmissionErr(c, err)
 		return

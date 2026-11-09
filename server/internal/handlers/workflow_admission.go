@@ -9,6 +9,11 @@ import (
 )
 
 func writeAdmissionErr(c *gin.Context, err error) {
+	var solo *services.SoloError
+	if errors.As(err, &solo) {
+		writeSoloErr(c, err)
+		return
+	}
 	var admission *services.AdmissionError
 	if errors.As(err, &admission) {
 		c.JSON(admission.Status, gin.H{"error": admission.Message, "code": admission.Code})

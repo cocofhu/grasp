@@ -251,23 +251,30 @@ func TestSoloDurableFirstMessageFailureIsNotReportedAsAccepted(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	view, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA", Text: "must retain the draft"})
+	input := SoloCreateInput{ClientRequestID: "first-message-atomic", AgentName: "agentA", Text: "must retain the draft"}
+	view, err := solo.Create(context.Background(), "alice", input)
 	var failure *SoloError
-	if view != nil || !errors.As(err, &failure) || failure.Status != 503 || failure.Code != "message_not_confirmed" {
+	if view != nil || !errors.As(err, &failure) || failure.Status != 503 || failure.Code != "creation_not_confirmed" {
 		t.Fatalf("first message was falsely accepted: %+v %v", view, err)
+	}
+	for _, model := range []any{&models.SoloSession{}, &models.SoloCreation{}, &models.Sandbox{}, &models.ChatQueueTurn{}} {
+		var count int64
+		if err := db.Model(model).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("failed acceptance left partial state: %T count=%d err=%v", model, count, err)
+		}
 	}
 	if err := db.Callback().Create().Remove("test:first_admission_failure"); err != nil {
 		t.Fatal(err)
 	}
-	var row models.SoloSession
-	if err := db.First(&row).Error; err != nil {
-		t.Fatal("created identity was lost after failed first-message admission")
+	view, err = solo.Create(context.Background(), "alice", input)
+	if err != nil || view.ClientRequestID != input.ClientRequestID || view.InitialTurnID == "" {
+		t.Fatalf("same creation could not be retried: %+v %v", view, err)
 	}
-	waitFor(t, "failed admission's environment finishes startup", func() bool {
-		current, err := solo.Require(row.ID, "alice")
+	waitFor(t, "retried admission's environment finishes startup", func() bool {
+		current, err := solo.Require(view.ID, "alice")
 		return err == nil && current.Status == models.SoloStatusRunning
 	})
-	if _, err := solo.Close(context.Background(), row.ID, "alice"); err != nil {
+	if _, err := solo.Close(context.Background(), view.ID, "alice"); err != nil {
 		t.Fatal(err)
 	}
 }

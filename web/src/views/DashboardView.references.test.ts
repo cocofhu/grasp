@@ -44,18 +44,22 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import DashboardView from './DashboardView.vue'
+import { useAuth } from '@/lib/composables/useAuth'
+import type { SoloCreateBody } from '@/lib/api/apiTypes'
 
-function mountDashboard() {
-  return mount(DashboardView, {
+async function mountDashboard() {
+  const wrapper = mount(DashboardView, {
     attachTo: document.body,
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { ...common, ...pages } } })],
       stubs: { RunLaunchModal: true, AppModal: true, Teleport: false, HomeParticleMeshBackground: true, HomeYumeCharacter: true },
     },
   })
+  await vi.waitFor(() => expect(wrapper.get('[data-testid="home-composer-send"]').attributes('disabled')).toBeUndefined())
+  return wrapper
 }
 
-async function typeAt(w: ReturnType<typeof mountDashboard>, value: string) {
+async function typeAt(w: Awaited<ReturnType<typeof mountDashboard>>, value: string) {
   const ta = w.get('[data-testid="home-composer-input"]')
   await ta.setValue(value)
   ;(ta.element as HTMLTextAreaElement).setSelectionRange(value.length, value.length)
@@ -65,13 +69,14 @@ async function typeAt(w: ReturnType<typeof mountDashboard>, value: string) {
 }
 
 beforeEach(() => {
+  useAuth().clearUser()
   localStorage.clear()
   localStorage.setItem('grasp.home.mode', 'solo')
   localStorage.setItem('grasp.home.lastSoloAgent', 'Solo')
   localStorage.setItem('grasp.home.lastSoloProjects', JSON.stringify(['p1']))
   Element.prototype.scrollIntoView = vi.fn()
   mocks.createSoloSession.mockReset()
-  mocks.createSoloSession.mockResolvedValue({ id: 'new', agentName: 'Solo', status: 'starting', title: '', createdAt: '', updatedAt: '' })
+  mocks.createSoloSession.mockImplementation(async (body: SoloCreateBody) => ({ id: 'new', userId: 'anonymous', clientRequestId: body.clientRequestId, initialTurnId: 'first-new', agentName: 'Solo', status: 'starting', title: '', createdAt: '', updatedAt: '' }))
   mocks.listWorkflows.mockReset()
   mocks.listWorkflows.mockResolvedValue([])
   mocks.startRun.mockReset()
@@ -93,7 +98,7 @@ afterEach(() => {
 
 describe('home Solo composer @ references', () => {
   it('searches with the picked agent and projects and starts the session with the references', async () => {
-    const w = mountDashboard()
+    const w = await mountDashboard()
     await flushPromises()
     await typeAt(w, '参考 @登')
     expect(w.find('[data-testid="solo-reference-picker"]').exists()).toBe(true)
@@ -107,12 +112,12 @@ describe('home Solo composer @ references', () => {
 
     await w.get('[data-testid="home-composer"]').trigger('submit')
     await flushPromises()
-    expect(mocks.createSoloSession).toHaveBeenCalledWith(expect.objectContaining({ agentName: 'Solo', text: '参考 @登录重构', references: [{ kind: 'solo', target: 's2' }] }))
-    expect((ta.element as HTMLTextAreaElement).value).toBe('')
+    await vi.waitFor(() => expect(mocks.createSoloSession).toHaveBeenCalledWith(expect.objectContaining({ agentName: 'Solo', text: '参考 @登录重构', references: [{ kind: 'solo', target: 's2' }] })))
+    await vi.waitFor(() => expect((ta.element as HTMLTextAreaElement).value).toBe(''))
   })
 
   it('opens the picker once an IME composition that typed @ ends', async () => {
-    const w = mountDashboard()
+    const w = await mountDashboard()
     await flushPromises()
     const ta = w.get('[data-testid="home-composer-input"]')
     await ta.trigger('compositionstart')
@@ -130,7 +135,7 @@ describe('home Solo composer @ references', () => {
   })
 
   it('opens right after Chinese text and keeps the prefix when picking', async () => {
-    const w = mountDashboard()
+    const w = await mountDashboard()
     await flushPromises()
     await typeAt(w, '打完@')
     expect(w.find('[data-testid="solo-reference-picker"]').exists()).toBe(true)
@@ -143,11 +148,11 @@ describe('home Solo composer @ references', () => {
 
     await w.get('[data-testid="home-composer"]').trigger('submit')
     await flushPromises()
-    expect(mocks.createSoloSession).toHaveBeenCalledWith(expect.objectContaining({ text: '打完 @登录重构', references: [{ kind: 'solo', target: 's2' }] }))
+    await vi.waitFor(() => expect(mocks.createSoloSession).toHaveBeenCalledWith(expect.objectContaining({ text: '打完 @登录重构', references: [{ kind: 'solo', target: 's2' }] })))
   })
 
   it('offers references from the + menu and turns pasted links into #n for the picked repo', async () => {
-    const w = mountDashboard()
+    const w = await mountDashboard()
     await flushPromises()
     await w.get('[data-testid="home-composer-plus"]').trigger('click')
     await w.get('[data-testid="home-plus-github"]').trigger('click')
@@ -167,7 +172,7 @@ describe('home Solo composer @ references', () => {
 
     await w.get('[data-testid="home-composer"]').trigger('submit')
     await flushPromises()
-    expect(mocks.createSoloSession).toHaveBeenCalledWith(expect.objectContaining({ references: [{ kind: 'github_issue', target: 'acme/web#3' }, { kind: 'github_pr', target: 'acme/web#9' }] }))
+    await vi.waitFor(() => expect(mocks.createSoloSession).toHaveBeenCalledWith(expect.objectContaining({ references: [{ kind: 'github_issue', target: 'acme/web#3' }, { kind: 'github_pr', target: 'acme/web#9' }] })))
   })
 
 })

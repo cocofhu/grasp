@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/leasewatch"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -18,11 +19,14 @@ import (
 // Readiness is passive: stopped environments keep accepted work without waking.
 type DurableConfig[T any] struct {
 	Config[T]
-	Decode  func(models.ChatQueueTurn) (T, error)
-	Intent  func(T) (QueueIntent, error)
-	Admit   func(*gorm.DB) error
-	Ready   func() (bool, error)
-	Recover func(models.ChatQueueTurn) error
+	Decode func(models.ChatQueueTurn) (T, error)
+	// DecodeMetadata reconstructs a display-only value from an inline preview.
+	// Native execution always uses Decode with the full immutable payload.
+	DecodeMetadata func(models.ChatQueueTurn) (T, error)
+	Intent         func(T) (QueueIntent, error)
+	Admit          func(*gorm.DB) error
+	Ready          func() (bool, error)
+	Recover        func(models.ChatQueueTurn) error
 	// PublishExecution must commit a frame before native execution can proceed.
 	// Publish remains the notification hook for already accepted queue edits.
 	PublishExecution func(context.Context, string, map[string]any) error
@@ -38,11 +42,17 @@ type DurableSession[T any] struct {
 	scope QueueScope
 	cfg   DurableConfig[T]
 
-	mu        sync.Mutex
-	pumping   bool
-	wakeAgain bool
-	cancelled bool
-	last      Snapshot
+	mu          sync.Mutex
+	pumping     bool
+	wakeAgain   bool
+	cancelled   bool
+	last        Snapshot
+	cancelWatch *durableCancelWatch
+}
+
+type durableCancelWatch struct {
+	turnID string
+	wake   chan struct{}
 }
 
 func NewDurableSession[T any](store *DurableStore, scope QueueScope, cfg DurableConfig[T]) *DurableSession[T] {
@@ -119,10 +129,8 @@ func (s *DurableSession[T]) run() {
 	// Renew only while this worker is executing. A process crash leaves the
 	// durable lease and dispatch marker for conservative takeover.
 	leaseCtx, lose := context.WithCancelCause(context.Background())
-	stopRenew := make(chan struct{})
 	renewed := make(chan struct{})
 	defer func() {
-		close(stopRenew)
 		lose(context.Canceled)
 		<-renewed
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -131,23 +139,9 @@ func (s *DurableSession[T]) run() {
 	}()
 	go func() {
 		defer close(renewed)
-		interval := s.store.leaseTTL / 3
-		if interval < time.Millisecond {
-			interval = time.Millisecond
-		}
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stopRenew:
-				return
-			case <-ticker.C:
-				if err := s.store.Renew(leaseCtx, lease); err != nil {
-					lose(fmt.Errorf("%w: %v", ErrQueueOwnerLost, err))
-					return
-				}
-			}
-		}
+		err := leasewatch.Maintain(leaseCtx, lease.ExpiresAt, max(s.store.leaseTTL/3, time.Millisecond), ErrQueueOwnerLost,
+			func(ctx context.Context) (time.Time, error) { return s.store.RenewUntil(ctx, lease) })
+		lose(err)
 	}()
 	if recovered != nil && terminalState(recovered.State) && s.cfg.Recover != nil {
 		if err := s.cfg.Recover(*recovered); err != nil {
@@ -181,13 +175,15 @@ func (s *DurableSession[T]) run() {
 			s.PublishQueueState()
 			continue
 		}
+		watcher := &durableCancelWatch{turnID: row.ID, wake: make(chan struct{}, 1)}
 		s.mu.Lock()
 		s.cancelled = false
+		s.cancelWatch = watcher
 		s.mu.Unlock()
 		stopped := make(chan struct{})
 		watched := make(chan struct{})
 		watchCtx, stopWatch := context.WithCancel(ctx)
-		go func() { defer close(watched); s.watchCancel(watchCtx, lease, row.ID, cancel, stopped) }()
+		go func() { defer close(watched); s.watchCancel(watchCtx, lease, watcher, cancel, stopped) }()
 		err = nil
 		if s.cfg.BeforeTurn != nil {
 			err = guardTurn(func() { s.cfg.BeforeTurn(item, ctx.Done()) })
@@ -214,6 +210,11 @@ func (s *DurableSession[T]) run() {
 		close(stopped)
 		stopWatch()
 		<-watched // a late native Cancel must never affect the next turn
+		s.mu.Lock()
+		if s.cancelWatch == watcher {
+			s.cancelWatch = nil
+		}
+		s.mu.Unlock()
 		if s.cfg.AfterTurn != nil {
 			if afterErr := guardTurn(func() { s.cfg.AfterTurn(item) }); err == nil {
 				err = afterErr
@@ -259,7 +260,7 @@ func (s *DurableSession[T]) run() {
 				}
 			}
 		}
-		if snapshot, snapErr := s.store.Snapshot(context.Background(), s.scope); snapErr == nil && snapshot.Queue.Generation == lease.Generation {
+		if snapshot, snapErr := s.store.SnapshotMetadata(context.Background(), s.scope); snapErr == nil && snapshot.Queue.Generation == lease.Generation {
 			if err := s.publishExecution(context.WithoutCancel(ctx), event, terminal); err != nil {
 				log.Warn().Err(err).Str("turn", row.ID).Msg("conversation result saved; stream notification deferred")
 			}
@@ -292,8 +293,10 @@ func (s *DurableSession[T]) settle(ctx context.Context, row models.ChatQueueTurn
 	})
 }
 
-func (s *DurableSession[T]) watchCancel(ctx context.Context, lease QueueLease, turnID string, cancel context.CancelCauseFunc, done <-chan struct{}) {
-	ticker := time.NewTicker(100 * time.Millisecond)
+func (s *DurableSession[T]) watchCancel(ctx context.Context, lease QueueLease, watcher *durableCancelWatch, cancel context.CancelCauseFunc, done <-chan struct{}) {
+	// Same-replica requests wake this watcher after their SQL commit. A low
+	// frequency read remains the authority for other replicas and close/retire.
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -301,33 +304,51 @@ func (s *DurableSession[T]) watchCancel(ctx context.Context, lease QueueLease, t
 			return
 		case <-ctx.Done():
 			return
+		case <-watcher.wake:
 		case <-ticker.C:
-			requested, err := s.store.Cancellation(ctx, lease, turnID)
-			if ctx.Err() != nil {
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		requested, err := s.store.Cancellation(ctx, lease, watcher.turnID)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			if !errors.Is(err, ErrQueueOwnerLost) && !errors.Is(err, ErrQueueChanged) {
+				// A failed read says nothing about ownership. The independent
+				// lease watcher still enforces the last acknowledged expiry.
+				continue
+			}
+			if receipt, readErr := s.store.Receipt(ctx, s.scope, watcher.turnID); readErr == nil && terminalState(receipt.State) {
 				return
 			}
-			if err != nil {
-				if receipt, readErr := s.store.Receipt(ctx, s.scope, turnID); readErr == nil && terminalState(receipt.State) {
-					return
-				}
-				cancel(ErrQueueOwnerLost)
-				return
-			}
-			if requested {
-				s.mu.Lock()
+			cancel(ErrQueueOwnerLost)
+			return
+		}
+		if requested {
+			s.mu.Lock()
+			current := s.cancelWatch == watcher
+			if current {
 				s.cancelled = true
-				s.mu.Unlock()
-				cancel(context.Canceled)
-				if s.cfg.CancelTurn != nil {
-					s.cfg.CancelTurn()
-				}
+			}
+			s.mu.Unlock()
+			if !current {
 				return
 			}
+			cancel(context.Canceled)
+			if s.cfg.CancelTurn != nil {
+				s.cfg.CancelTurn()
+			}
+			return
 		}
 	}
 }
 
 func (s *DurableSession[T]) decodedSnapshot() (DurableSnapshot, []T, T, bool, error) {
+	if s.cfg.DecodeMetadata != nil {
+		return s.decodedMetadataSnapshot()
+	}
 	var zero T
 	snapshot, err := s.store.Snapshot(context.Background(), s.scope)
 	if err != nil {
@@ -418,8 +439,20 @@ func (s *DurableSession[T]) framePayload(extra map[string]any) (map[string]any, 
 func (s *DurableSession[T]) PublishQueueState() { s.publish(EventQueueState, nil) }
 
 func (s *DurableSession[T]) CancelChecked(activeID string, clear bool) (bool, error) {
+	s.mu.Lock()
+	watcher := s.cancelWatch
+	s.mu.Unlock()
 	matched, err := s.store.Cancel(context.Background(), s.scope, activeID, clear)
 	if err == nil && matched {
+		s.mu.Lock()
+		// A slow request must never wake a watcher belonging to a newer turn.
+		if watcher != nil && s.cancelWatch == watcher && (activeID == "" || watcher.turnID == activeID) {
+			select {
+			case watcher.wake <- struct{}{}:
+			default:
+			}
+		}
+		s.mu.Unlock()
 		s.PublishQueueState()
 	}
 	return matched, err

@@ -748,6 +748,9 @@ export interface SessionRepo {
 
 export interface SoloSession {
   id: string
+  /** Echoes the durable creation receipt, only on creation/lookup responses. */
+  clientRequestId?: string
+  initialTurnId?: string
   userId: string
   title: string
   agentName: string
@@ -808,6 +811,7 @@ export interface SoloRepoChoice {
 }
 
 export interface SoloCreateBody {
+  clientRequestId?: string
   agentName: string
   projectId?: string
   branch?: string

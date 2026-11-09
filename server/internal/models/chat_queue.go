@@ -43,14 +43,17 @@ type ChatQueueTurn struct {
 	Position        uint64
 	State           string `gorm:"size:32;index:idx_chat_turn_order,priority:2"`
 	Payload         []byte `gorm:"serializer:filebytes;type:text"`
-	ExecutionEpoch  uint64
-	DispatchedAt    *time.Time
-	StartedAt       *time.Time
-	FinishedAt      *time.Time
-	Reason          string `gorm:"size:64"`
-	ResultID        string `gorm:"size:191"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// Display is a bounded, inline JSON preview. Queue status reads must not
+	// fetch every immutable native-execution payload from object storage.
+	Display        string `gorm:"type:text"`
+	ExecutionEpoch uint64
+	DispatchedAt   *time.Time
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+	Reason         string `gorm:"size:64"`
+	ResultID       string `gorm:"size:191"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // ChatEventChunk is an immutable, bounded batch. SQL owns its ordered range;

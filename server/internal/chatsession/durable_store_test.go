@@ -139,6 +139,11 @@ func TestDurableQueueUnavailableDatabaseFailsClosed(t *testing.T) {
 		"admission":         func() error { _, err := store.Admit(ctx, scope, queueIntent("retry", "two"), 0, nil); return err },
 		"deduplication":     func() error { _, err := store.Existing(ctx, scope, "owner", "one", row.Turn.Fingerprint); return err },
 		"snapshot":          func() error { _, err := store.Snapshot(ctx, scope); return err },
+		"snapshot metadata": func() error { _, err := store.SnapshotMetadata(ctx, scope); return err },
+		"read body":         func() error { _, err := store.ReadTurn(ctx, scope, row.Turn.ID); return err },
+		"backfill preview": func() error {
+			return store.BackfillDisplay(ctx, scope, row.Turn.ID, row.Turn.Fingerprint, []byte(`{}`))
+		},
 		"acquisition":       func() error { _, _, err := store.Acquire(ctx, scope, uuid.NewString()); return err },
 		"renewal":           func() error { return store.Renew(ctx, lease) },
 		"claim":             func() error { _, err := store.Claim(ctx, lease); return err },

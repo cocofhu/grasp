@@ -51,6 +51,7 @@ const (
 // list starts an empty workspace. When Repos is omitted, ProjectID and Branch
 // are read as a one-item list.
 type SoloCreateInput struct {
+	ClientRequestID        string               `json:"clientRequestId,omitempty"`
 	AgentName              string               `json:"agentName"`
 	ProjectID              string               `json:"projectId"`
 	Branch                 string               `json:"branch"`
@@ -82,9 +83,11 @@ type SoloSandboxInfo struct {
 // SoloSessionView is the API shape of a session.
 type SoloSessionView struct {
 	models.SoloSession
-	Busy    bool             `json:"busy"`
-	Waiting int              `json:"waiting"`
-	Sandbox *SoloSandboxInfo `json:"sandbox,omitempty"`
+	ClientRequestID string           `json:"clientRequestId,omitempty"`
+	InitialTurnID   string           `json:"initialTurnId,omitempty"`
+	Busy            bool             `json:"busy"`
+	Waiting         int              `json:"waiting"`
+	Sandbox         *SoloSandboxInfo `json:"sandbox,omitempty"`
 	// ArtifactRunID is the run-scoped namespace used by the Agent's artifact
 	// MCP. It is exposed so Solo can render the same artifact drawer as a
 	// workflow conversation.
@@ -120,6 +123,7 @@ type SoloService struct {
 	// deferredRestores holds persisted queues until their resident is ready.
 	deferredRestores map[string]bool
 	restoreEnabled   bool
+	queueProbes      map[string]soloQueueProbe // guarded by restoreMu
 
 	mu     sync.Mutex
 	chats  map[string]*soloChat
@@ -414,6 +418,19 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 }
 
 func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInput, continuationRun string) (*SoloSessionView, error) {
+	if in.ClientRequestID == "" {
+		in.ClientRequestID = uuid.NewString()
+	}
+	if err := validateSoloCreationID(in.ClientRequestID); err != nil {
+		return nil, err
+	}
+	fingerprint, err := soloCreationFingerprint(in, continuationRun)
+	if err != nil {
+		return nil, err
+	}
+	if previous, found, err := s.findSoloCreation(ctx, user, in.ClientRequestID, fingerprint); err != nil || found {
+		return previous, err
+	}
 	if s.sbx == nil || s.agents == nil {
 		return nil, errors.New("solo unavailable")
 	}
@@ -428,9 +445,6 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 	snaps, projects, err := s.resolveSessionRepos(in)
 	if err != nil {
 		return nil, err
-	}
-	if s.sbx.activeSoloSandboxCount() >= s.sbx.MaxSoloSandboxes() {
-		return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: ErrSoloSandboxLimit{Max: s.sbx.MaxSoloSandboxes()}.Error()}
 	}
 	effective := agent
 	if s.sbx != nil {
@@ -450,6 +464,9 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 		effort = s.configuredOpenCodeEffort(effective, initialModel)
 	}
 	if err := s.validateReasoningEffort(effective, initialModel, effort); err != nil {
+		return nil, err
+	}
+	if _, _, err := s.sbx.currentBindingFingerprints(effective); err != nil {
 		return nil, err
 	}
 
@@ -477,8 +494,38 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 	if strings.TrimSpace(in.Title) == "" && strings.TrimSpace(in.Text) == "" && len(references) > 0 {
 		row.Title = truncRunes("@"+references[0].Title, 30)
 	}
+	if continuationRun != "" && strings.TrimSpace(in.Title) == "" {
+		var run models.Run
+		if err := s.db.Select("title").First(&run, "id = ?", continuationRun).Error; err != nil {
+			return nil, err
+		}
+		if run.Title != "" {
+			row.Title = run.Title
+		}
+	}
+	initial, err := s.initialSoloTurn(ctx, row, in, references)
+	if err != nil {
+		return nil, err
+	}
+	receipt := models.SoloCreation{ID: soloCreationKey(user, in.ClientRequestID), UserID: user, Fingerprint: fingerprint, SessionID: row.ID}
+	if initial != nil {
+		receipt.InitialTurnID = initial.ID
+	}
 	created := false
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockSoloCompute(tx); err != nil {
+			return err
+		}
+		var previousRequest models.SoloCreation
+		if err := tx.First(&previousRequest, "id = ?", receipt.ID).Error; err == nil {
+			if previousRequest.UserID != user || previousRequest.Fingerprint != fingerprint {
+				return soloErr(409, "creation_identity_conflict", "同一创建标识不能用于不同内容")
+			}
+			receipt = previousRequest
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
 		if continuationRun != "" {
 			if err := LockWorkflowAdmission(tx); err != nil {
 				return err
@@ -488,9 +535,16 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 				return err
 			}
 			if previous != "" {
-				row.ID = previous
-				return nil
+				receipt.SessionID, receipt.InitialTurnID = previous, ""
+				return tx.Create(&receipt).Error
 			}
+		}
+		count, err := countSoloCompute(tx, 0)
+		if err != nil {
+			return err
+		}
+		if count >= int64(s.sbx.MaxSoloSandboxes()) {
+			return soloErr(409, "solo_limit", "%s", ErrSoloSandboxLimit{Max: s.sbx.MaxSoloSandboxes()}.Error())
 		}
 		if err := tx.Create(row).Error; err != nil {
 			return err
@@ -500,39 +554,45 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 				return err
 			}
 		}
+		if err := s.admitInitialSoloTurn(ctx, tx, row, initial); err != nil {
+			return err
+		}
+		if err := tx.Create(&receipt).Error; err != nil {
+			return err
+		}
 		created = true
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		var typed *SoloError
+		if errors.As(err, &typed) {
+			return nil, err
+		}
+		return nil, soloErr(503, "creation_not_confirmed", "会话创建尚未确认，请使用原请求重试")
 	}
 	if !created {
-		return s.Get(ctx, row.ID, user)
+		view, _, err := s.findSoloCreation(ctx, user, in.ClientRequestID, fingerprint)
+		return view, err
 	}
 	if err := s.openSandbox(ctx, row); err != nil {
-		if continuationRun == "" {
-			s.db.Delete(&models.SoloSession{}, "id = ?", row.ID)
-		} else {
-			// Preserve the committed identity/history. A retry returns this chat;
-			// the user can restart its environment after fixing the failure.
-			s.db.Model(row).Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
-		}
-		var lim ErrSoloSandboxLimit
-		if errors.As(err, &lim) {
-			return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: err.Error()}
-		}
-		return nil, err
+		// Acceptance already committed. Keep the original receipt and first
+		// message; a provider/configuration failure must not create a new chat
+		// when the client retries its unconfirmed request.
+		s.db.Model(&models.SoloSession{}).Where("id = ? AND status = ? AND sandbox_id = 0", row.ID, models.SoloStatusStarting).Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
 	}
 	for _, p := range projects {
 		s.projects.Touch(p.ID)
 	}
-	if strings.TrimSpace(in.Text) != "" || len(in.Images) > 0 || len(references) > 0 {
-		if _, err := s.enqueueTurn(row.ID, &soloTurn{Text: in.Text, Images: in.Images, References: references}); err != nil {
-			log.Warn().Err(err).Str("session", row.ID).Msg("solo first message enqueue failed")
-			return nil, soloErr(http.StatusServiceUnavailable, "message_not_confirmed", "会话已创建，但首条消息尚未确认接收，请打开会话 %s 后重试", row.ID)
-		}
+	if initial != nil {
+		chat := s.acquire(row.ID)
+		chat.sess.PublishQueueState()
+		chat.sess.Wake()
 	}
-	return s.Get(ctx, row.ID, user)
+	view, err := s.Get(ctx, row.ID, user)
+	if view != nil {
+		view.ClientRequestID, view.InitialTurnID = in.ClientRequestID, receipt.InitialTurnID
+	}
+	return view, err
 }
 
 func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) error {
@@ -542,6 +602,16 @@ func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) 
 		Profile: row.AgentName, SessionID: sid, Repos: effectiveSessionRepos(row), InitialModelID: model,
 		InitialConfigurationID: chatConfigurationID(row),
 		ReasoningEffort:        row.CurrentReasoningEffort,
+		Bind: func(tx *gorm.DB, sandbox *models.Sandbox) error {
+			result := tx.Model(&models.SoloSession{}).Where("id = ? AND status = ? AND sandbox_id = 0", sid, models.SoloStatusStarting).Updates(map[string]any{"sandbox_id": sandbox.ID, "error": ""})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return soloErr(409, "session_changed", "会话状态已变化，请重新加载")
+			}
+			return nil
+		},
 		OnEnv: func(sources map[string]string) {
 			s.db.Model(&models.SoloSession{ID: sid}).Select("EnvSources").
 				Updates(&models.SoloSession{EnvSources: sources})
@@ -568,10 +638,6 @@ func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) 
 		return err
 	}
 	row.SandboxID = sb.ID
-	if err := s.db.Model(&models.SoloSession{}).Where("id = ?", sid).
-		Updates(map[string]any{"sandbox_id": sb.ID, "status": models.SoloStatusStarting, "error": ""}).Error; err != nil {
-		return err
-	}
 	// The new container is born on this model. Later switches compare against it.
 	return s.rememberAppliedRoute(sid, chatConfigurationID(row), model, row.CurrentReasoningEffort)
 }
@@ -714,7 +780,7 @@ func (s *SoloService) Restart(ctx context.Context, id, user string) (*SoloSessio
 		}
 		return tx.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{
 			"restarts": row.Restarts + 1, "needs_preamble": msgCount > 0, "closed_at": nil,
-			"last_active_at": &now, "sandbox_id": 0,
+			"last_active_at": &now, "sandbox_id": 0, "status": models.SoloStatusStarting, "error": "",
 		}).Error
 	}); err != nil {
 		return nil, err
@@ -1020,9 +1086,10 @@ func (s *SoloService) newChat(id string) *soloChat {
 		},
 		PublishExecution: c.publishExecution,
 		Decode:           decodeSoloTurn, Intent: s.durableSoloIntent,
-		Admit:   func(tx *gorm.DB) error { return s.soloQueueAdmission(tx, id) },
-		Ready:   func() (bool, error) { return s.soloQueueReady(id) },
-		Recover: func(row models.ChatQueueTurn) error { return s.recoverSoloReceipt(id, row) },
+		DecodeMetadata: decodeSoloMetadata,
+		Admit:          func(tx *gorm.DB) error { return s.soloQueueAdmission(tx, id) },
+		Ready:          func() (bool, error) { return s.soloQueueReady(id) },
+		Recover:        func(row models.ChatQueueTurn) error { return s.recoverSoloReceipt(id, row) },
 		Settle: func(ctx context.Context, row models.ChatQueueTurn, turn *soloTurn, state string, err error) error {
 			return s.settleSoloReceipt(ctx, id, row, turn, state, err)
 		},
@@ -1980,7 +2047,9 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	}
 	var publicationErr error
 	if s.sbx != nil {
-		publicationErr = s.sbx.commitSandboxOperation(ctx, sandboxID, publish)
+		publicationErr = s.sbx.commitSandboxOperationPrepared(ctx, sandboxID, func(tx *gorm.DB) error {
+			return chatsession.FenceExecution(ctx, tx)
+		}, publish)
 	} else {
 		publicationErr = s.db.Transaction(publish)
 	}

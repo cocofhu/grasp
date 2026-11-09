@@ -7,6 +7,7 @@ import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import { useAuth } from '../src/lib/composables/useAuth'
 import ToastHost from '../src/components/ui/ToastHost.vue'
 import DashboardView from '../src/views/DashboardView.vue'
+import SoloCreateModal from '../src/components/solo/SoloCreateModal.vue'
 import { takeHomeApproveHandoff } from '../src/lib/run/homeApproveHandoff'
 
 installIdleScrollbar()
@@ -20,6 +21,7 @@ async function bootstrap() {
     history: createMemoryHistory(),
     routes: [
       { path: '/dashboard', component: DashboardView },
+      { path: '/create', component: defineComponent({ setup: () => () => h(SoloCreateModal, { open: true }) }) },
       {
         path: '/runs/:runId/nodes/:nodeId',
         component: defineComponent({
@@ -56,7 +58,7 @@ async function bootstrap() {
     ],
   })
 
-  await router.push('/dashboard')
+  await router.push(new URLSearchParams(window.location.search).has('create') ? '/create' : '/dashboard')
 
   const Root = defineComponent({
     setup() {

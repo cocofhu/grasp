@@ -61,7 +61,7 @@ watch([() => props.workflowIntent, workflowPanel], async ([intent, panel]) => {
   if (workflowsEnabled.value) await panel.openPicker(intent === '1' ? '' : intent)
   emit('workflowOpened')
 })
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, stopLocalRetry, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -592,6 +592,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         <div class="chat-pane-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
           <AppButton v-if="pendingConfirmation?.length" size="sm" variant="outline" icon="refresh" class="mb-2" :loading="retryingSend" data-testid="solo-retry-unconfirmed" @click="retryPendingSend">{{ t('pages.solo.retryUnconfirmed') }}</AppButton>
+          <AppButton v-if="pendingConfirmation?.length" size="sm" variant="ghost" class="mb-2 ml-2" :disabled="retryingSend" :title="t('pages.solo.stopLocalRetryHint')" data-testid="solo-stop-local-retry" @click="stopLocalRetry">{{ t('pages.solo.stopLocalRetry') }}</AppButton>
           <p v-if="selectionInvalid && canSend" class="mb-2 text-[12px] text-warn" role="status" data-testid="solo-model-invalid-notice">{{ t('pages.solo.modelSelect.unavailableSelection') }}</p>
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
           <ChatComposer

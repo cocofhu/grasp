@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
@@ -23,6 +24,10 @@ import (
 const soloEmbedUserKey = "solo_embed_user"
 
 func writeSoloErr(c *gin.Context, err error) {
+	if errors.Is(err, blob.ErrInvalidPromptImage) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_attachment", "error": "附件内容或引用无效，请修改后重新发送"})
+		return
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "message_not_found"})
 		return
@@ -178,6 +183,39 @@ func (h *Handlers) CreateSoloSession(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, v)
+}
+
+// Dedicated command route prevents a rolling upgrade from silently routing a
+// new idempotent creation request through an older server's legacy endpoint.
+func (h *Handlers) CreateSoloCreation(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	var in services.SoloCreateInput
+	if err := c.ShouldBindJSON(&in); err != nil || in.ClientRequestID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "创建请求必须包含稳定标识", "code": "invalid_creation_identity"})
+		return
+	}
+	view, err := h.Solo.Create(c.Request.Context(), user, in)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+func (h *Handlers) ResolveSoloCreation(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	view, err := h.Solo.ResolveCreation(c.Request.Context(), user, c.Param("requestId"))
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, view)
 }
 
 // GetSoloSession handles GET /api/solo/sessions/:id.
@@ -423,6 +461,11 @@ func referenceQuery(c *gin.Context) services.ReferenceSearchQuery {
 }
 
 // StartSoloTurn handles POST /api/solo/sessions/:id/turns.
+func (h *Handlers) StartSoloTurnRequest(c *gin.Context) {
+	c.Set("solo_require_client_identity", true)
+	h.StartSoloTurn(c)
+}
+
 func (h *Handlers) StartSoloTurn(c *gin.Context) {
 	user, ok := h.soloReady(c)
 	if !ok {
@@ -439,8 +482,16 @@ func (h *Handlers) StartSoloTurn(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if c.GetBool("solo_require_client_identity") && body.ClientMessageID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_client_message_id", "error": "消息必须包含稳定标识"})
+		return
+	}
 	receipt, err := h.Solo.SendWithClientMessageID(c.Param("id"), user, body.ClientMessageID, body.Text, body.Images, body.References, body.Annotations...)
 	if err != nil {
+		if errors.Is(err, blob.ErrInvalidPromptImage) {
+			writeSoloErr(c, err)
+			return
+		}
 		var se *services.SoloError
 		if errors.As(err, &se) {
 			writeSoloErr(c, err)

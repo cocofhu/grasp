@@ -9,6 +9,7 @@ import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './acpTurn'
 import { soloErrorText } from './soloErrors'
 import { useSoloSessions } from './useSoloSessions'
+import { newSoloRequestID, readSoloOutbox, removeSoloOutbox, saveSoloOutbox, soloOutboxScope, type SoloMessageOutbox, type SoloTurnRequest } from './soloOutbox'
 
 export type SoloQueueItem = { id: string; clientMessageId?: string; text: string; images: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: MessageReference[]; local?: boolean }
 export type SoloPhase = '' | 'preparing' | 'running'
@@ -133,7 +134,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     references: MessageReference[]
     annotations: ReactAnnotation[]
     started: boolean
-    request?: Parameters<SoloChatTransport['sendSoloTurn']>[1]
+    request?: SoloTurnRequest
+    outboxScope?: string
   }
   // The local identity survives HTTP, queue acknowledgement and turn_begin.
   // A server identity can be assigned once; repeated text is never a turn id.
@@ -142,6 +144,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const missingQueuedIds = new Set<string>()
   let persistedHistory: SoloTurn[] = []
   let chatEpoch = 0
+  const outboxReady = ref(false)
 
   const reconnect = createWsReconnectController({
     connect: () => openWs(),
@@ -153,7 +156,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const sessionOpen = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
-  const canSend = computed(() => sessionOpen.value && historyReady.value && !pendingConfirmation.value.length && session.value?.sandbox?.desiredState !== 'stopped')
+  const canSend = computed(() => sessionOpen.value && historyReady.value && outboxReady.value && !pendingConfirmation.value.length && session.value?.sandbox?.desiredState !== 'stopped')
   // An explicit current model wins, including empty (primary). Old sessions
   // omit the flag and keep the opening model.
   const currentModelId = computed(() => {
@@ -268,6 +271,12 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
 
   /** Bind the first unacknowledged matching send, once, including image-only sends. */
   function confirmLocalSend(send: LocalSend) {
+    if (send.outboxScope) {
+      const scope = send.outboxScope
+      // Removal failure keeps the same identity available for reconciliation
+      // after reload. It never authorizes a fresh request or automatic replay.
+      void removeSoloOutbox(scope, send.localId).then(() => { send.outboxScope = undefined }).catch(() => {})
+    }
     pendingConfirmation.value = pendingConfirmation.value.filter(id => id !== send.localId)
     if (!pendingConfirmation.value.length && actionError.value === t('pages.solo.sendUnconfirmed')) actionError.value = ''
   }
@@ -279,10 +288,11 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       confirmLocalSend(bound)
       return bound
     }
-    if (knownServerIds.has(item.id)) return undefined
+    const exact = item.clientMessageId ? openSends.find(row => !row.serverId && row.localId === item.clientMessageId) : undefined
+    if (knownServerIds.has(item.id) && !exact) return undefined
     const send = item.clientMessageId
       ? openSends.find(row => !row.serverId && row.localId === item.clientMessageId)
-      : openSends.find((row) => !row.serverId && samePayload(row, item))
+      : openSends.find((row) => !row.serverId && !row.outboxScope && samePayload(row, item))
     knownServerIds.add(item.id)
     if (!send) return undefined
     const old = send.localId
@@ -293,7 +303,9 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       if (row.id === `live:${old}`) row.id = `live:${item.id}`
     }
     if (activeId.value === old) activeId.value = item.id
-    queued.value = queued.value.filter((row) => row.id !== old)
+    // HTTP acceptance can precede queue_state. Keep an accepted request
+    // visible under its server identity until that authoritative snapshot.
+    queued.value = queued.value.map(row => row.id === old ? { ...row, id: item.id, clientMessageId: send.localId, local: false } : row)
     return send
   }
 
@@ -968,12 +980,30 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     loadError.value = ''
     actionError.value = ''
     session.value = null
+    outboxReady.value = false
     if (!id) return
     loading.value = true
     try {
       const v = await transport.getSoloSession(id)
       if (id !== sessionId.value || generation !== sessionGeneration || disposed) return
       setSession(v)
+      try {
+        const scope = soloOutboxScope(v.userId, 'message', v.id)
+        const saved = await readSoloOutbox(scope)
+        if (id !== sessionId.value || generation !== sessionGeneration || disposed) return
+        for (const record of saved) {
+          if (record.kind !== 'message' || record.request.clientMessageId !== record.id) continue
+          const request = record.request
+          const references: MessageReference[] = (request.references || []).map((reference, index) => ({ ...reference, id: `${record.id}:${index}`, title: reference.target, createdAt: record.createdAt }))
+          const send: LocalSend = { localId: record.id, text: request.text, images: request.images || [], references, annotations: request.annotations || [], started: false, request, outboxScope: scope }
+          displayLocalSend(send, record.createdAt, true)
+          pendingConfirmation.value.push(send.localId)
+        }
+        outboxReady.value = true
+        if (pendingConfirmation.value.length) actionError.value = t('pages.solo.outboxRestored')
+      } catch {
+        actionError.value = t('pages.solo.outboxUnavailable')
+      }
       if (v.modelNotice) showModelNotice(v.modelNotice)
       openWs()
     } catch (e: any) {
@@ -983,39 +1013,25 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
   }
 
-  function newLocalId() {
-    if (globalThis.crypto?.randomUUID) return `local-${globalThis.crypto.randomUUID()}`
-    if (globalThis.crypto?.getRandomValues) return `local-${Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')}`
-    return `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  }
-
-  async function send(text: string, images: ClarifyImage[] = [], references: MessageReference[] = [], annotations: ReactAnnotation[] = []) {
-    const id = sessionId.value
-    const epoch = chatEpoch
-    if (!id || disposed || !canSend.value || (!text.trim() && !images.length && !references.length && !annotations.length)) return false
-    actionError.value = ''
-    const body = text.trim()
-    const refs = references.length ? references : undefined
-    const local: SoloQueueItem = { id: newLocalId(), text: body, images, references: refs, annotations, local: true }
-    const send: LocalSend = { localId: local.id, text: body, images, references, annotations, started: false }
+  function displayLocalSend(send: LocalSend, started: string, queuedOnly = false) {
+    const local: SoloQueueItem = { id: send.localId, clientMessageId: send.localId, text: send.text, images: send.images, references: send.references, annotations: send.annotations, local: true }
     openSends.push(send)
-    const started = new Date().toISOString()
     // A send behind a running turn stays in the queue until its turn_begin,
     // matching the persisted transcript a reload shows.
-    if (!activeId.value) {
+    if (!activeId.value && !queuedOnly) {
       turns.value = [
         ...turns.value,
         {
           id: `u:${local.id}`,
           role: 'user',
-          text: body,
+          text: send.text,
           tools: [],
           steps: [],
           plan: [],
           streaming: false,
-          images: images.length ? images : undefined,
-          references: refs,
-          annotations,
+          images: send.images.length ? send.images : undefined,
+          references: send.references,
+          annotations: send.annotations,
           createdAt: started,
         },
         emptyAgentTurn(`live:${local.id}`, true, started),
@@ -1025,16 +1041,41 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
     queued.value = [...queued.value, local]
     patchSession({ waiting: queued.value.length, busy: true })
-    send.request = {
-        text: body, images, clientMessageId: send.localId,
-        ...(refs ? { references: refs.map(({ kind, target }) => ({ kind, target })) } : {}),
+  }
+
+  async function send(text: string, images: ClarifyImage[] = [], references: MessageReference[] = [], annotations: ReactAnnotation[] = []) {
+    const id = sessionId.value
+    const epoch = chatEpoch
+    if (!id || !session.value || disposed || !canSend.value || (!text.trim() && !images.length && !references.length && !annotations.length)) return false
+    actionError.value = ''
+    const body = text.trim()
+    const scope = soloOutboxScope(session.value.userId, 'message', session.value.id)
+    const localId = newSoloRequestID()
+    const request: SoloTurnRequest = JSON.parse(JSON.stringify({
+        text: body, images, clientMessageId: localId,
+        ...(references.length ? { references: references.map(({ kind, target }) => ({ kind, target })) } : {}),
         ...(annotations.length ? { annotations } : {}),
-      }
+      }))
+    const record: SoloMessageOutbox = { scope, id: localId, kind: 'message', request, createdAt: new Date().toISOString() }
+    const send: LocalSend = { localId, text: body, images: request.images || [], references: JSON.parse(JSON.stringify(references)), annotations: request.annotations || [], started: false, request, outboxScope: scope }
+    displayLocalSend(send, record.createdAt)
     try {
-      const receipt = await transport.sendSoloTurn(id, send.request)
+      await saveSoloOutbox(record)
+    } catch {
+      if (!disposed && epoch === chatEpoch) {
+        forgetSend(send)
+        patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 || !!activeId.value })
+        actionError.value = t('pages.solo.outboxUnavailable')
+      }
+      return false
+    }
+    if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
+    try {
+      const receipt = await transport.sendSoloTurn(id, request)
       if (!disposed && epoch === chatEpoch && id === sessionId.value && receipt.turnId && receipt.clientMessageId === send.localId) {
         adoptLocalSend({ id: receipt.turnId, clientMessageId: receipt.clientMessageId, text: body, images, annotations, references })
       }
+      if (!send.serverId) throw new Error(t('pages.solo.invalidReceipt'))
       return !disposed && epoch === chatEpoch && id === sessionId.value
     } catch (e: any) {
       if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
@@ -1046,6 +1087,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         actionError.value = t('pages.solo.sendUnconfirmed')
         return false
       }
+      try { await removeSoloOutbox(scope, send.localId) } catch { /* preserve the original identity if local storage is unavailable */ }
       forgetSend(send)
       patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 || !!activeId.value })
       actionError.value = String(e?.message || e)
@@ -1054,7 +1096,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   async function retryPendingSend() {
-    if (retryingSend.value || !sessionId.value) return false
+    if (retryingSend.value || !sessionId.value || !sessionOpen.value || session.value?.sandbox?.desiredState === 'stopped') return false
     const id = sessionId.value, epoch = chatEpoch
     retryingSend.value = true
     try {
@@ -1066,6 +1108,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         if (receipt.turnId && receipt.clientMessageId === send.localId) {
           adoptLocalSend({ id: receipt.turnId, clientMessageId: receipt.clientMessageId, text: send.text, images: send.images, annotations: send.annotations, references: send.references })
         }
+        if (!send.serverId) throw new Error(t('pages.solo.invalidReceipt'))
       }
       if (!pendingConfirmation.value.length) actionError.value = ''
       return !pendingConfirmation.value.length
@@ -1075,6 +1118,23 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     } finally {
       retryingSend.value = false
     }
+  }
+
+  async function stopLocalRetry() {
+    if (retryingSend.value) return
+    for (const key of [...pendingConfirmation.value]) {
+      const send = openSends.find(row => row.localId === key)
+      if (!send?.outboxScope) continue
+      try { await removeSoloOutbox(send.outboxScope, send.localId) } catch {
+        actionError.value = t('pages.solo.outboxUnavailable')
+        return
+      }
+      // An acknowledgement can arrive while IndexedDB commits the removal.
+      // Stopping local retries never removes an already accepted server item.
+      if (send.serverId) continue
+      forgetSend(send)
+    }
+    actionError.value = ''
   }
 
   async function saveModelSetting(kind: 'model' | 'effort', value: string): Promise<boolean> {
@@ -1276,6 +1336,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     loadError,
     actionError,
     pendingConfirmation,
+    stopLocalRetry,
     retryingSend,
     retryPendingSend,
     hasEarlier,

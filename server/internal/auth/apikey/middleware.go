@@ -13,6 +13,8 @@ import (
 // ContextKey is the Gin context key for the workflow ID bound to the API key.
 const ContextKey = "api_key_workflow_id"
 
+const principalContextKey = "api_key_principal"
+
 // Middleware validates Authorization: Bearer {key} and injects workflow_id.
 // Auth failures always return 401 without leaking whether the key exists.
 func Middleware(svc *services.APIKeyService) gin.HandlerFunc {
@@ -24,15 +26,24 @@ func Middleware(svc *services.APIKeyService) gin.HandlerFunc {
 			return
 		}
 		token := strings.TrimSpace(raw[7:])
-		wfID, ok := svc.ValidateBearer(token)
+		principal, ok := svc.AuthenticateBearer(token)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			c.Abort()
 			return
 		}
-		c.Set(ContextKey, wfID)
+		c.Set(ContextKey, principal.WorkflowID)
+		c.Set(principalContextKey, principal)
 		c.Next()
 	}
+}
+
+// KeyID is the database identity established by Middleware, never a token or
+// a client-supplied caller label.
+func KeyID(c *gin.Context) (string, bool) {
+	v, ok := c.Get(principalContextKey)
+	principal, typed := v.(services.APIKeyPrincipal)
+	return principal.KeyID, ok && typed && principal.KeyID != ""
 }
 
 // WorkflowID returns the workflow ID from context (set by Middleware).

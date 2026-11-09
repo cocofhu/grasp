@@ -42,6 +42,69 @@ func decodeSoloTurn(row models.ChatQueueTurn) (*soloTurn, error) {
 	return &turn, nil
 }
 
+func decodeSoloMetadata(row models.ChatQueueTurn) (*soloTurn, error) {
+	var item chatsession.ItemView
+	if err := json.Unmarshal([]byte(row.Display), &item); err != nil {
+		return nil, err
+	}
+	if item.ID != row.ID || item.ClientMessageID != row.ClientMessageID {
+		return nil, errors.New("queued message preview identity disagrees with accepted intent")
+	}
+	return &soloTurn{ID: row.ID, ActorID: row.ActorID, ClientMessageID: row.ClientMessageID, Fingerprint: row.Fingerprint,
+		Text: item.Text, Images: item.Images, Annotations: item.Annotations, References: item.References}, nil
+}
+
+func soloQueueDisplay(turn *soloTurn) ([]byte, error) {
+	view := soloTurnView(turn)
+	view.Text = truncRunes(view.Text, 1024)
+	view.Images = append([]models.PromptImage(nil), view.Images...)
+	if len(view.Images) > 16 {
+		view.Images = view.Images[:16]
+	}
+	for i := range view.Images {
+		view.Images[i].Data = ""
+		view.Images[i].Name = truncRunes(view.Images[i].Name, 128)
+		view.Images[i].MimeType = truncRunes(view.Images[i].MimeType, 128)
+		if len(view.Images[i].Ref) > 256 {
+			view.Images[i].Ref = "" // The full accepted attachment remains in Payload.
+		}
+	}
+	view.Annotations = append([]models.ReactAnnotation(nil), view.Annotations...)
+	if len(view.Annotations) > 16 {
+		view.Annotations = view.Annotations[:16]
+	}
+	for i := range view.Annotations {
+		pick := view.Annotations[i]
+		view.Annotations[i] = models.ReactAnnotation{Selector: truncRunes(pick.Selector, 128), URL: truncRunes(pick.URL, 256), Label: truncRunes(pick.Label, 120), Note: truncRunes(pick.Note, 120)}
+	}
+	view.References = append([]models.MessageReference(nil), view.References...)
+	if len(view.References) > 16 {
+		view.References = view.References[:16]
+	}
+	for i := range view.References {
+		ref := view.References[i]
+		view.References[i] = models.MessageReference{ID: ref.ID, Kind: ref.Kind, Target: truncRunes(ref.Target, 256), Title: truncRunes(ref.Title, 120), URL: truncRunes(ref.URL, 256), State: ref.State}
+	}
+	for {
+		body, err := json.Marshal(view)
+		if err != nil || len(body) <= 65535 {
+			return body, err
+		}
+		// Escaped Unicode/HTML and legacy metadata can exceed the byte budget
+		// even with per-field rune limits. This affects previews only.
+		switch {
+		case len(view.References) > 0:
+			view.References = view.References[:len(view.References)-1]
+		case len(view.Annotations) > 0:
+			view.Annotations = view.Annotations[:len(view.Annotations)-1]
+		case len(view.Images) > 0:
+			view.Images = view.Images[:len(view.Images)-1]
+		default:
+			return nil, errors.New("queued message preview identity is too large")
+		}
+	}
+}
+
 func (s *SoloService) durableSoloIntent(turn *soloTurn) (chatsession.QueueIntent, error) {
 	if turn == nil {
 		return chatsession.QueueIntent{}, errors.New("message intent required")
@@ -50,8 +113,12 @@ func (s *SoloService) durableSoloIntent(turn *soloTurn) (chatsession.QueueIntent
 	if err != nil {
 		return chatsession.QueueIntent{}, err
 	}
+	display, err := soloQueueDisplay(turn)
+	if err != nil {
+		return chatsession.QueueIntent{}, err
+	}
 	return chatsession.QueueIntent{ID: turn.ID, ActorID: turn.ActorID, ClientMessageID: turn.ClientMessageID,
-		Fingerprint: turn.Fingerprint, Payload: body}, nil
+		Fingerprint: turn.Fingerprint, Payload: body, Display: display}, nil
 }
 
 func soloIntentFingerprint(turn *soloTurn, refs []ReferenceInput) (string, error) {
@@ -116,6 +183,11 @@ func (s *SoloService) soloQueueReady(id string) (bool, error) {
 	if row.Status != models.SoloStatusRunning && row.Status != models.SoloStatusStarting {
 		return false, nil
 	}
+	if s.sbx != nil && row.SandboxID == 0 {
+		// First-message admission commits before provisioning. A different
+		// replica may observe that intent while no environment is bound yet.
+		return false, nil
+	}
 	if row.SandboxID != 0 && s.sbx != nil {
 		sb, err := s.sbx.Get(row.SandboxID)
 		if err != nil {
@@ -135,6 +207,15 @@ func (s *SoloService) RestoreQueuedTurns() {
 	s.restoreMu.Lock()
 	defer s.restoreMu.Unlock()
 	s.restoreEnabled = true
+	// An explicit startup/recovery request also retries environments whose
+	// passive discovery was backed off. It never resumes stopped compute.
+	s.queueProbes = nil
+	s.maintainSoloQueuesLocked()
+	s.wakeSoloQueuesLocked()
+}
+
+func (s *SoloService) maintainSoloQueuesLocked() {
+	s.restoreUnboundSoloCreations()
 	if err := s.importSoloQueuesLocked(); err != nil {
 		log.Error().Err(err).Msg("Solo queue migration deferred; legacy requests retained")
 	}
@@ -142,7 +223,6 @@ func (s *SoloService) RestoreQueuedTurns() {
 		log.Warn().Err(err).Msg("closed Solo queue recovery deferred")
 	}
 	s.recoverSoloNoticesLocked()
-	s.wakeSoloQueuesLocked()
 }
 
 // Notice publication can fail after takeover has durably classified a turn as
@@ -215,10 +295,10 @@ func (s *SoloService) classifyLegacySoloTurn(tx *gorm.DB, id, status string, old
 	if err := tx.Model(&models.SoloMessage{}).Where("id = ? AND session_id = ? AND role = ?", old.ID, id, "user").Count(&human).Error; err != nil {
 		return "", "", err
 	}
-	// The old Solo executor committed this exact human ID before any native
-	// call. Its absence proves this accepted turn did not reach dispatch.
+	// Legacy started flags lack a durable dispatch fence. An absent transcript
+	// row is not permission to repeat an external effect after a migration.
 	if human == 0 {
-		return chatsession.TurnQueued, "legacy_preparing", nil
+		return chatsession.TurnUnknown, "legacy_interrupted", nil
 	}
 	var reply models.SoloMessage
 	err := tx.Omit("content", "events", "images").Where("session_id = ? AND role = ? AND (id = ? OR turn_id = ?)", id, "assistant", "reply:"+old.ID, old.ID).First(&reply).Error
@@ -240,15 +320,55 @@ func (s *SoloService) classifyLegacySoloTurn(tx *gorm.DB, id, status string, old
 }
 
 func (s *SoloService) wakeSoloQueuesLocked() {
+	s.wakeSoloQueuesAtLocked(time.Now())
+}
+
+type soloQueueProbe struct {
+	Next  time.Time
+	Delay time.Duration
+}
+
+const (
+	soloQueueDiscoveryInterval   = time.Second
+	soloQueueMaintenanceInterval = 30 * time.Second
+	soloQueueMaxProbeDelay       = 30 * time.Second
+)
+
+func (s *SoloService) wakeSoloQueuesAtLocked(now time.Time) {
 	scopes, err := s.durable.ReadyScopes(context.Background(), soloPendingSurface)
 	if err != nil {
 		log.Warn().Err(err).Msg("Solo durable queue discovery deferred")
 		return
 	}
+	if s.queueProbes == nil {
+		s.queueProbes = map[string]soloQueueProbe{}
+	}
+	candidates := make(map[string]bool, len(scopes))
 	for _, scope := range scopes {
+		candidates[scope.Key] = true
+		probe := s.queueProbes[scope.Key]
+		if probe.Next.After(now) {
+			continue
+		}
 		ready, err := s.soloQueueReady(scope.Key)
 		if err == nil && ready {
+			delete(s.queueProbes, scope.Key)
 			s.acquire(scope.Key).sess.Wake()
+			continue
+		}
+		probe.Delay *= 2
+		if probe.Delay < 2*soloQueueDiscoveryInterval {
+			probe.Delay = 2 * soloQueueDiscoveryInterval
+		}
+		if probe.Delay > soloQueueMaxProbeDelay {
+			probe.Delay = soloQueueMaxProbeDelay
+		}
+		probe.Next = now.Add(probe.Delay)
+		s.queueProbes[scope.Key] = probe
+	}
+	for id := range s.queueProbes {
+		if !candidates[id] {
+			delete(s.queueProbes, id)
 		}
 	}
 }
@@ -257,24 +377,47 @@ func (s *SoloService) wakeSoloQueuesLocked() {
 // whose accepting process exited before starting a worker. Reads never resume
 // a manually stopped environment.
 func (s *SoloService) RunQueuedTurns(ctx context.Context) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	discovery := time.NewTicker(soloQueueDiscoveryInterval)
+	maintenance := time.NewTicker(soloQueueMaintenanceInterval)
+	defer discovery.Stop()
+	defer maintenance.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			s.RestoreQueuedTurns()
+		case now := <-discovery.C:
+			s.pollSoloQueues(now, false)
+		case now := <-maintenance.C:
+			s.pollSoloQueues(now, true)
 		}
 	}
 }
 
-func (s *SoloService) retryDeferredRestores(_ uint) {
+func (s *SoloService) pollSoloQueues(now time.Time, maintenance bool) {
+	s.restoreMu.Lock()
+	defer s.restoreMu.Unlock()
+	if maintenance || !s.restoreEnabled {
+		s.restoreEnabled = true
+		s.maintainSoloQueuesLocked()
+	}
+	s.wakeSoloQueuesAtLocked(now)
+}
+
+func (s *SoloService) retryDeferredRestores(sandboxID uint) {
 	s.restoreMu.Lock()
 	defer s.restoreMu.Unlock()
 	if s.restoreEnabled {
-		if err := s.importSoloQueuesLocked(); err != nil {
+		if len(s.deferredRestores) > 0 {
+			if err := s.importSoloQueuesLocked(); err != nil {
+				return
+			}
+		}
+		var ids []string
+		if err := s.db.Model(&models.SoloSession{}).Where("sandbox_id = ?", sandboxID).Pluck("id", &ids).Error; err != nil {
 			return
+		}
+		for _, id := range ids {
+			delete(s.queueProbes, id)
 		}
 		s.wakeSoloQueuesLocked()
 	}

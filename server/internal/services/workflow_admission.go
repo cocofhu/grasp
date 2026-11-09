@@ -103,31 +103,79 @@ func (s *SettingsService) SetWorkflowFeature(enabled bool) error {
 	})
 }
 
+// RunFirstMessage is the caller's opening message before references are
+// resolved or attachment bodies are moved into object storage.
+type RunFirstMessage struct {
+	Text       string               `json:"text"`
+	Images     []models.PromptImage `json:"images,omitempty"`
+	References []ReferenceInput     `json:"references,omitempty"`
+}
+
 // RunStart is created by authenticated server adapters, never decoded from a
 // client body. Trigger remains a display label and grants no authority.
 type RunStart struct {
-	WorkflowID                                string
-	Source                                    string // web | api | pm | solo
-	ActorID                                   string
-	SoloID                                    string
-	IdempotencyKey                            string
-	Confirmed                                 bool
-	Published                                 bool
-	ExpectedVersion                           int
-	Inputs                                    map[string]any
-	Trigger, Priority, Title                  string
-	Tags                                      []string
-	Env                                       []models.EnvEntry
-	FirstMessage                              *models.CompositeText
+	WorkflowID               string
+	Source                   string // web | api | pm | solo
+	ActorID                  string
+	SoloID                   string
+	IdempotencyKey           string
+	Confirmed                bool
+	Published                bool
+	ExpectedVersion          int
+	Inputs                   map[string]any
+	Trigger, Priority, Title string
+	Tags                     []string
+	Env                      []models.EnvEntry
+	FirstMessage             *models.CompositeText
+	FirstMessageInput        *RunFirstMessage
+	// PrepareFirstMessage resolves references only after an existing launch
+	// receipt was checked. Replaying a receipt must not depend on mutable
+	// external metadata or on a target that has since been deleted.
+	PrepareFirstMessage                       func() (*models.CompositeText, error)
 	ModelSet                                  bool
 	ConfigurationID, ModelID, ReasoningEffort string
+	intentFingerprint                         string
 }
 
 func (r RunStart) Identity() (key, fingerprint string, err error) {
 	if r.IdempotencyKey == "" {
 		return "", "", nil
 	}
-	data, err := json.Marshal(r)
+	if r.intentFingerprint != "" {
+		hash := sha256.Sum256([]byte(r.Source + "\x00" + r.ActorID + "\x00" + r.SoloID + "\x00" + r.IdempotencyKey))
+		return hex.EncodeToString(hash[:]), r.intentFingerprint, nil
+	}
+	// Keep this whitelist separate from the execution envelope. In particular,
+	// resolved reference IDs, timestamps, access and titles are not user intent.
+	// New server-only fields in RunStart must never silently change this hash.
+	message := r.FirstMessageInput
+	if message == nil && r.FirstMessage != nil {
+		message = &RunFirstMessage{Text: r.FirstMessage.Text, Images: r.FirstMessage.Images}
+		for _, ref := range r.FirstMessage.References {
+			message.References = append(message.References, ReferenceInput{Kind: ref.Kind, Target: ref.Target})
+		}
+	}
+	if message != nil {
+		normalized := &RunFirstMessage{Text: message.Text, Images: message.Images}
+		for _, ref := range message.References {
+			normalized.References = append(normalized.References, ReferenceInput{Kind: strings.TrimSpace(ref.Kind), Target: strings.TrimSpace(ref.Target)})
+		}
+		message = normalized
+	}
+	data, err := json.Marshal(struct {
+		WorkflowID                                string
+		Confirmed, Published                      bool
+		ExpectedVersion                           int
+		Inputs                                    map[string]any
+		Trigger, Priority, Title                  string
+		Tags                                      []string
+		Env                                       []models.EnvEntry
+		FirstMessage                              *RunFirstMessage
+		ModelSet                                  bool
+		ConfigurationID, ModelID, ReasoningEffort string
+	}{r.WorkflowID, r.Confirmed, r.Published, r.ExpectedVersion, r.Inputs,
+		r.Trigger, r.Priority, r.Title, r.Tags, r.Env, message, r.ModelSet,
+		r.ConfigurationID, r.ModelID, r.ReasoningEffort})
 	if err != nil {
 		return "", "", err
 	}
@@ -172,9 +220,6 @@ func (s *RunAdmission) Start(input RunStart) (*models.Run, error) {
 	if len(input.IdempotencyKey) > 128 || strings.IndexFunc(input.IdempotencyKey, unicode.IsControl) >= 0 {
 		return nil, admissionError("invalid_idempotency_key", "启动标识长度或格式无效", http.StatusBadRequest)
 	}
-	if err := CheckWorkflowsEnabled(s.db); err != nil {
-		return nil, err
-	}
 	key, fingerprint, err := input.Identity()
 	if err != nil {
 		return nil, err
@@ -196,6 +241,20 @@ func (s *RunAdmission) Start(input RunStart) (*models.Run, error) {
 			return &run, nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+	// A receipt acknowledges work accepted before the feature was disabled;
+	// returning it does not launch new work. Authorization and intent matching
+	// above still apply, and the engine repeats the feature check transactionally
+	// for genuinely new launches.
+	if err := CheckWorkflowsEnabled(s.db); err != nil {
+		return nil, err
+	}
+	input.intentFingerprint = fingerprint
+	if input.PrepareFirstMessage != nil {
+		input.FirstMessage, err = input.PrepareFirstMessage()
+		if err != nil {
 			return nil, err
 		}
 	}

@@ -45,11 +45,26 @@ func (s *SoloService) WorkflowChat(runID, user string) (string, error) {
 }
 
 func (s *SoloService) ContinueWorkflow(ctx context.Context, runID, user string, in SoloCreateInput) (*SoloSessionView, error) {
+	if in.ClientRequestID != "" {
+		if err := validateSoloCreationID(in.ClientRequestID); err != nil {
+			return nil, err
+		}
+		fingerprint, err := soloCreationFingerprint(in, runID)
+		if err != nil {
+			return nil, err
+		}
+		if previous, found, err := s.findSoloCreation(ctx, user, in.ClientRequestID, fingerprint); err != nil || found {
+			return previous, err
+		}
+	}
 	previous, err := s.WorkflowChat(runID, user)
 	if err != nil {
 		return nil, err
 	}
 	if previous != "" {
+		if in.ClientRequestID != "" {
+			return s.recordExistingSoloCreation(ctx, user, in, runID, previous)
+		}
 		return s.Get(ctx, previous, user)
 	}
 	var run models.Run
@@ -58,9 +73,6 @@ func (s *SoloService) ContinueWorkflow(ctx context.Context, runID, user string, 
 	}
 	if !workflowHistoryTerminal(run.Status) {
 		return nil, soloErr(http.StatusConflict, "workflow_still_running", "工作流仍在执行，请先在任务卡中处理")
-	}
-	if in.Title == "" {
-		in.Title = run.Title
 	}
 	return s.create(ctx, user, in, runID)
 }

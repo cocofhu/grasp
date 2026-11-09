@@ -74,6 +74,12 @@ func TestMiddlewareAndWorkflowID(t *testing.T) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "no workflow"})
 			return
 		}
+		keyID, ok := apikey.KeyID(c)
+		if !ok || keyID != res.Key.ID {
+			t.Errorf("middleware key identity: %q %v", keyID, ok)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "no key identity"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"workflow_id": wfID})
 	})
 
@@ -91,5 +97,13 @@ func TestMiddlewareAndWorkflowID(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	if _, ok := apikey.WorkflowID(c); ok {
 		t.Fatal("WorkflowID should be false without middleware")
+	}
+	if _, ok := apikey.KeyID(c); ok {
+		t.Fatal("KeyID should be false without middleware")
+	}
+	c.Set(apikey.ContextKey, "wf-1")
+	c.Set("api_key_principal", "client-supplied")
+	if _, ok := apikey.KeyID(c); ok {
+		t.Fatal("a workflow label or untyped caller label must not establish a key identity")
 	}
 }

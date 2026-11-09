@@ -4766,6 +4766,21 @@
     },
     "solo": {
       "title": "Solo chats",
+      "outboxUnavailable": "The browser cannot save pending messages. Restore storage access and try again.",
+      "outboxRestored": "A pending message was restored with its original request. Check the records before retrying.",
+      "stopLocalRetry": "Stop local retries",
+      "stopLocalRetryHint": "Only removes this device's retry record. It does not cancel work already accepted by the server.",
+      "invalidReceipt": "The server has not confirmed the original request. Check its status before retrying.",
+      "creationRecovery": {
+        "title": "A chat creation request needs confirmation",
+        "hint": "Your opening message and launch settings are saved on this device. Check whether the chat exists, then open it or retry the original request.",
+        "repositories": "{n} repositories",
+        "defaultModel": "Follow the Agent's default model",
+        "attachments": "{images} attachments · {references} references",
+        "open": "Open the existing chat",
+        "retry": "Retry original request",
+        "check": "Check status"
+      },
       "capacity": "{n} / {max} sandboxes running",
       "newSession": "New session",
       "filterActive": "Running",

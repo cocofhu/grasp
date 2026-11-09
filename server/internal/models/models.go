@@ -1193,7 +1193,7 @@ func AllModels() []any {
 		&LiveSession{},
 		&TokenUsageEvent{},
 		&TokenUsageReport{},
-		&Project{}, &SoloSession{}, &SoloMessage{}, &WorkflowLaunch{}, &SoloWorkflowLink{}, &WorkflowConversationEvent{},
+		&Project{}, &SoloSession{}, &SoloCreation{}, &SoloMessage{}, &WorkflowLaunch{}, &SoloWorkflowLink{}, &WorkflowConversationEvent{},
 		&ChatPendingTurn{},
 		&ChatQueue{}, &ChatQueueEpoch{}, &ChatQueueTurn{}, &ChatEventChunk{},
 		&WorkflowInstructionMailbox{}, &WorkflowInstruction{},

@@ -187,29 +187,42 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	}
 }
 
-func TestSoloRestoreRunsATurnThatNeverReachedTheTranscript(t *testing.T) {
-	solo, _, _, db := newSoloFixture(t, 0, 3)
-	row := models.SoloSession{ID: "solo-restore-1", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning}
-	if err := db.Create(&row).Error; err != nil {
+func TestSoloRestoreDoesNotReplayStartedLegacyTurnWithoutTranscript(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, db := newSoloFixture(t, port, 3)
+	view, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA"})
+	if err != nil {
 		t.Fatal(err)
 	}
+	waitFor(t, "restore fixture environment ready", func() bool {
+		row, err := solo.Require(view.ID, "alice")
+		return err == nil && row.Status == models.SoloStatusRunning
+	})
 	payload, _ := json.Marshal(&soloTurn{ID: "turn-unwritten", Text: "never written"})
-	if err := solo.pending.Save(soloPendingSurface, row.ID, []chatsession.PendingTurn{{ID: "turn-unwritten", Started: true, Payload: payload}}); err != nil {
+	if err := solo.pending.Save(soloPendingSurface, view.ID, []chatsession.PendingTurn{{ID: "turn-unwritten", Started: true, Payload: payload}}); err != nil {
 		t.Fatal(err)
 	}
 	solo = NewSoloService(db, solo.sbx, solo.agents, solo.projects)
-	chat := newRestoreChat(true)
+	chat := newRestoreChat(false)
 	solo.SetChatterForTest(chat)
+	solo.SetModelAlignerForTest(&recordAligner{})
 	solo.RestoreQueuedTurns()
-	c := solo.lookup(row.ID)
-	if c == nil {
-		t.Fatal("restore did not reopen the session")
+	solo.RestoreQueuedTurns()
+	receipt, err := solo.durable.Receipt(context.Background(), soloQueueScope(view.ID), "turn-unwritten")
+	if err != nil || receipt.State != chatsession.TurnUnknown || receipt.ResultID == "" {
+		t.Fatalf("started legacy work was made replayable: %+v %v", receipt, err)
 	}
-	defer c.sess.Cancel(true)
-	waitFor(t, "unwritten turn runs", func() bool {
-		var user models.SoloMessage
-		return db.First(&user, "id = ?", "turn-unwritten").Error == nil && user.Content == "never written"
-	})
+	var user, notice models.SoloMessage
+	if err := db.First(&user, "id = ?", "turn-unwritten").Error; err != nil || user.Content != "never written" {
+		t.Fatalf("recovery lost the original accepted intent: %+v %v", user, err)
+	}
+	if err := db.First(&notice, "id = ?", receipt.ResultID).Error; err != nil || notice.Status != "unknown" || !strings.Contains(notice.Error, "执行结果待核对") {
+		t.Fatalf("recovery hid the uncertain outcome: %+v %v", notice, err)
+	}
+	if len(chat.seen()) != 0 {
+		t.Fatalf("recovery repeated native work without dispatch proof: %q", chat.seen())
+	}
 }
 
 func TestSoloRestoreRetainsFailedAndOrphanedIntent(t *testing.T) {

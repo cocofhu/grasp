@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -21,36 +24,40 @@ func (c *soloChat) appendJournal(ctx context.Context, sandboxID uint, turnID str
 	if owned && !settled {
 		owner = &execution.Lease
 	}
-	persist := func(tx *gorm.DB) error {
-		var err error
-		written, err = c.svc.durable.AppendJournalTx(ctx, tx, soloQueueScope(c.id), owner, turnID, entries, func(tx *gorm.DB) error {
-			var parent models.SoloSession
-			if err := tx.Select("id", "sandbox_id").First(&parent, "id = ?", c.id).Error; err != nil {
+	validate := func(tx *gorm.DB) error {
+		var parent models.SoloSession
+		if err := tx.Select("id", "sandbox_id").First(&parent, "id = ?", c.id).Error; err != nil {
+			return err
+		}
+		if sandboxID != 0 && parent.SandboxID != sandboxID {
+			return errSandboxOperationLost
+		}
+		if settled && owned {
+			var receipt models.ChatQueueTurn
+			if err := tx.Select("state", "execution_epoch").First(&receipt, "id = ? AND queue_id = ?", turnID, execution.Lease.Scope.ID()).Error; err != nil {
 				return err
 			}
-			if sandboxID != 0 && parent.SandboxID != sandboxID {
-				return errSandboxOperationLost
+			var queue models.ChatQueue
+			if err := tx.Select("generation", "owner", "owner_expires_at").First(&queue, "id = ?", execution.Lease.Scope.ID()).Error; err != nil {
+				return err
 			}
-			if settled && owned {
-				var receipt models.ChatQueueTurn
-				if err := tx.Select("state", "execution_epoch").First(&receipt, "id = ? AND queue_id = ?", turnID, execution.Lease.Scope.ID()).Error; err != nil {
-					return err
-				}
-				var queue models.ChatQueue
-				if err := tx.Select("generation", "owner", "owner_expires_at").First(&queue, "id = ?", execution.Lease.Scope.ID()).Error; err != nil {
-					return err
-				}
-				if receipt.ExecutionEpoch != execution.Lease.Generation || receipt.State == chatsession.TurnExecuting || receipt.State == chatsession.TurnQueued || queue.Generation != execution.Lease.Generation || queue.Owner != execution.Lease.Owner || queue.OwnerExpiresAt == nil || !queue.OwnerExpiresAt.After(time.Now()) {
-					return chatsession.ErrQueueOwnerLost
-				}
+			if receipt.ExecutionEpoch != execution.Lease.Generation || receipt.State == chatsession.TurnExecuting || receipt.State == chatsession.TurnQueued || queue.Generation != execution.Lease.Generation || queue.Owner != execution.Lease.Owner || queue.OwnerExpiresAt == nil || !queue.OwnerExpiresAt.After(time.Now()) {
+				return chatsession.ErrQueueOwnerLost
 			}
-			return nil
-		})
+		}
+		return nil
+	}
+	prepare := func(tx *gorm.DB) error {
+		return c.svc.durable.FenceJournalTx(ctx, tx, soloQueueScope(c.id), owner, turnID, validate)
+	}
+	persist := func(tx *gorm.DB) error {
+		var err error
+		written, err = c.svc.durable.AppendJournalTx(ctx, tx, soloQueueScope(c.id), owner, turnID, entries, validate)
 		return err
 	}
 	var err error
 	if sandboxID != 0 && c.svc.sbx != nil {
-		err = c.svc.sbx.commitSandboxOperation(ctx, sandboxID, persist)
+		err = c.svc.sbx.commitSandboxOperationPrepared(ctx, sandboxID, prepare, persist)
 	} else {
 		err = c.svc.db.WithContext(ctx).Transaction(persist)
 	}
@@ -120,36 +127,160 @@ func (s *SoloService) journalTurn(ctx context.Context, turnID, sessionID string,
 }
 
 type soloJournalView struct {
-	state    map[string]any
-	head     int64
-	first    int64
-	revision uint64
-	updated  time.Time
+	state           map[string]any
+	head            int64
+	first           int64
+	revision        uint64
+	generation      uint64
+	activeEpoch     uint64
+	controlsThrough int64
+	updated         time.Time
 }
 
 func (s *SoloService) journalView(ctx context.Context, id, user string, previous ...soloJournalView) (soloJournalView, error) {
-	result := soloJournalView{head: -1, first: -1}
+	// Legacy previews are backfilled without holding a queue lock. A bounded
+	// retry captures one fresh, authoritative SQL snapshot after that backfill.
+	for range 3 {
+		result, legacy, chunks, err := s.journalViewMetadata(ctx, id, user, previous...)
+		if err != nil {
+			return soloJournalView{}, err
+		}
+		if len(legacy) > 0 {
+			for _, row := range legacy {
+				query := s.db.WithContext(ctx).Table("chat_queue_turns").Where("id = ? AND queue_id = ? AND fingerprint = ?", row.ID, row.QueueID, row.Fingerprint)
+				row.Payload, err = s.readJournalViewBody(ctx, query, 0)
+				if err != nil {
+					return soloJournalView{}, err
+				}
+				turn, err := decodeSoloTurn(row)
+				if err != nil {
+					return soloJournalView{}, err
+				}
+				display, err := soloQueueDisplay(turn)
+				if err != nil {
+					return soloJournalView{}, err
+				}
+				if err := s.durable.BackfillDisplay(ctx, soloQueueScope(id), row.ID, row.Fingerprint, display); err != nil {
+					return soloJournalView{}, err
+				}
+			}
+			continue
+		}
+		for _, chunk := range chunks {
+			if chunk.Count != 1 || chunk.AcpCount != 0 || chunk.Bytes < 1 || chunk.Bytes > chatsession.JournalChunkBytes || chunk.FirstSequence != chunk.LastSequence {
+				return soloJournalView{}, chatsession.ErrJournalGap
+			}
+			// Match the immutable index captured with this header. A new owner
+			// or later head must not change which generation this view describes.
+			query := s.db.WithContext(ctx).Table("chat_event_chunks").Where("id = ? AND queue_id = ? AND turn_id = ? AND execution_epoch = ? AND first_sequence = ? AND last_sequence = ? AND count = ? AND acp_count = ? AND bytes = ? AND control_event = ?",
+				chunk.ID, chunk.QueueID, chunk.TurnID, chunk.ExecutionEpoch, chunk.FirstSequence, chunk.LastSequence, chunk.Count, chunk.AcpCount, chunk.Bytes, chunk.ControlEvent)
+			chunk.Payload, err = s.readJournalViewBody(ctx, query, chatsession.JournalChunkBytes)
+			if err != nil {
+				return soloJournalView{}, err
+			}
+			entries, err := chatsession.DecodeJournalChunk(chunk)
+			if err != nil {
+				return soloJournalView{}, err
+			}
+			if len(entries) != 1 || entries[0].Type != chatsession.FrameSession || entries[0].Event != chunk.ControlEvent {
+				return soloJournalView{}, chatsession.ErrJournalGap
+			}
+			entry := entries[0]
+			if entry.Event == SoloEventPhase {
+				result.state["phase"] = entry.Payload["phase"]
+			}
+			if entry.Event == SoloEventExecution {
+				result.state["execution"] = entry.Payload["execution"]
+			}
+			result.controlsThrough = int64(chunk.LastSequence)
+		}
+		return result, nil
+	}
+	return soloJournalView{}, chatsession.ErrQueueChanged
+}
+
+// readJournalViewBody loads the raw SQL cell into a type with no serializer.
+// The cursor and connection are released before any object GET; a model query
+// would otherwise perform that GET from inside its GORM Scan callback.
+func (s *SoloService) readJournalViewBody(ctx context.Context, query *gorm.DB, limit int64) ([]byte, error) {
+	var cell struct{ Payload string }
+	if err := query.Select("payload").Take(&cell).Error; err != nil {
+		return nil, err
+	}
+	if !filestore.IsRef(cell.Payload) {
+		if strings.HasPrefix(cell.Payload, filestore.Prefix) {
+			return nil, chatsession.ErrJournalGap
+		}
+		if limit > 0 && int64(len(cell.Payload)) > limit {
+			return nil, chatsession.ErrJournalGap
+		}
+		return []byte(cell.Payload), nil
+	}
+	files, err := filestore.FromDB(s.db)
+	if err != nil {
+		return nil, err
+	}
+	body, err := files.Open(ctx, cell.Payload)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = body.Close() }()
+	var reader io.Reader = body
+	if limit > 0 {
+		reader = io.LimitReader(body, limit+1)
+	}
+	raw, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	if limit > 0 && int64(len(raw)) > limit {
+		return nil, chatsession.ErrJournalGap
+	}
+	return raw, nil
+}
+
+func (s *SoloService) journalViewMetadata(ctx context.Context, id, user string, previous ...soloJournalView) (soloJournalView, []models.ChatQueueTurn, []models.ChatEventChunk, error) {
+	result := soloJournalView{head: -1, first: -1, controlsThrough: -1}
+	var legacy []models.ChatQueueTurn
+	var chunks []models.ChatEventChunk
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row models.SoloSession
 		if err := tx.First(&row, "id = ? AND user_id = ?", id, user).Error; err != nil {
 			return err
 		}
-		snapshot, err := chatsession.NewDurableStore(tx).Snapshot(ctx, soloQueueScope(id))
+		snapshot, err := chatsession.NewDurableStore(tx).SnapshotMetadata(ctx, soloQueueScope(id))
 		if err != nil {
 			return err
 		}
+		for _, pending := range snapshot.Pending {
+			if pending.Display == "" {
+				legacy = append(legacy, pending)
+			}
+		}
+		if snapshot.Active != nil && snapshot.Active.Display == "" {
+			legacy = append(legacy, *snapshot.Active)
+		}
+		if len(legacy) > 0 {
+			return nil
+		}
 		sn := chatsession.Snapshot{SessionGeneration: snapshot.Queue.Generation, Revision: snapshot.Queue.Revision, Busy: snapshot.Active != nil, Waiting: len(snapshot.Pending), Items: []map[string]any{}}
 		for _, pending := range snapshot.Pending {
-			turn, err := decodeSoloTurn(pending)
+			turn, err := decodeSoloMetadata(pending)
 			if err != nil {
 				return err
 			}
 			sn.Items = append(sn.Items, soloTurnView(turn).Frame())
 		}
+		if snapshot.Queue.NextEventSequence > 1<<53-1 {
+			return chatsession.ErrJournalGap
+		}
 		result.head = int64(snapshot.Queue.NextEventSequence) - 1
 		result.first = result.head
 		if snapshot.Active != nil {
-			turn, err := decodeSoloTurn(*snapshot.Active)
+			if snapshot.Active.ExecutionEpoch != snapshot.Queue.Generation {
+				return chatsession.ErrQueueChanged
+			}
+			turn, err := decodeSoloMetadata(*snapshot.Active)
 			if err != nil {
 				return err
 			}
@@ -157,48 +288,41 @@ func (s *SoloService) journalView(ctx context.Context, id, user string, previous
 		}
 		result.state = sn.QueueState()
 		applySoloResumeSnapshot(result.state, &row)
-		result.revision, result.updated = snapshot.Queue.Revision, row.UpdatedAt
+		result.revision, result.updated, result.generation = snapshot.Queue.Revision, row.UpdatedAt, snapshot.Queue.Generation
 		if snapshot.Active == nil {
 			return nil
 		}
 		result.state["userMsgId"] = snapshot.Active.ID
 		result.state["phase"] = SoloPhasePreparing
-		if len(previous) > 0 && previous[0].state["userMsgId"] == snapshot.Active.ID && previous[0].state["execution"] != nil {
+		result.activeEpoch = snapshot.Active.ExecutionEpoch
+		if len(previous) > 0 && previous[0].state["userMsgId"] == snapshot.Active.ID && previous[0].generation == result.generation && previous[0].activeEpoch == result.activeEpoch && previous[0].head <= result.head {
 			result.first = previous[0].first
 			result.state["phase"], result.state["execution"] = previous[0].state["phase"], previous[0].state["execution"]
-			return nil // Immutable metadata is cached only for this subscription.
-		}
-		var first models.ChatEventChunk
-		if err := tx.Select("first_sequence").Where("queue_id = ? AND turn_id = ? AND execution_epoch = ?", snapshot.Queue.ID, snapshot.Active.ID, snapshot.Active.ExecutionEpoch).Order("first_sequence").First(&first).Error; err == nil {
-			result.first = int64(first.FirstSequence) - 1
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		// Read only the two indexed control bodies; repeated head polls never
-		// retrieve native output from object storage.
-		var chunks []models.ChatEventChunk
-		if err := tx.Where("queue_id = ? AND turn_id = ? AND execution_epoch = ? AND control_event IN ?", snapshot.Queue.ID, snapshot.Active.ID, snapshot.Active.ExecutionEpoch, []string{SoloEventPhase, SoloEventExecution}).Order("first_sequence").Find(&chunks).Error; err != nil {
-			return err
-		}
-		for _, chunk := range chunks {
-			// Use the journal decoder to retain body/range validation.
-			through := int64(chunk.LastSequence)
-			page, err := chatsession.NewDurableStore(tx).JournalPage(ctx, soloQueueScope(id), chatsession.JournalQuery{After: int64(chunk.FirstSequence) - 1, Through: &through, Limit: chatsession.JournalBatchEvents})
-			if err != nil {
+			result.controlsThrough = previous[0].controlsThrough
+		} else {
+			var first models.ChatEventChunk
+			if err := tx.Select("first_sequence").Where("queue_id = ? AND turn_id = ? AND execution_epoch = ?", snapshot.Queue.ID, snapshot.Active.ID, snapshot.Active.ExecutionEpoch).Order("first_sequence").First(&first).Error; err == nil {
+				result.first = int64(first.FirstSequence) - 1
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
-			for _, entry := range page.Items {
-				if entry.Event == SoloEventPhase {
-					result.state["phase"] = entry.Payload["phase"]
-				}
-				if entry.Event == SoloEventExecution {
-					result.state["execution"] = entry.Payload["execution"]
-				}
-			}
+		}
+		// Capture indexes only. Native bodies and the two immutable control
+		// bodies are loaded after releasing the transaction, at most once per
+		// subscription/epoch. Newly committed control metadata is still seen.
+		if result.head < 0 {
+			return nil
+		}
+		query := tx.Omit("payload").Where("queue_id = ? AND turn_id = ? AND execution_epoch = ? AND control_event IN ? AND last_sequence <= ?", snapshot.Queue.ID, snapshot.Active.ID, snapshot.Active.ExecutionEpoch, []string{SoloEventPhase, SoloEventExecution}, uint64(result.head))
+		if result.controlsThrough >= 0 {
+			query = query.Where("last_sequence > ?", uint64(result.controlsThrough))
+		}
+		if err := query.Order("first_sequence").Find(&chunks).Error; err != nil {
+			return err
 		}
 		return nil
 	})
-	return result, err
+	return result, legacy, chunks, err
 }
 
 func (s *SoloService) journalPointer(tx *gorm.DB, id, turnID string, epoch uint64) (*models.ChatEventLog, error) {

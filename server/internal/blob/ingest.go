@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
+
+// ErrInvalidPromptImage identifies deterministic client input failures. Store
+// outages keep their original error and must never be labelled a bad upload.
+var ErrInvalidPromptImage = errors.New("invalid attachment input")
 
 // IngestPromptImages externalizes any image with inline Data into store,
 // clears Data, and fills Ref / SizeBytes. Images that already have Ref are
@@ -23,7 +28,7 @@ func IngestPromptImages(ctx context.Context, store Store, images []models.Prompt
 		out[i] = im
 		if ref := strings.TrimSpace(im.Ref); ref != "" {
 			if _, err := ParseRef(ref); err != nil {
-				return nil, fmt.Errorf("image[%d]: %w", i, err)
+				return nil, fmt.Errorf("%w: image[%d]: %w", ErrInvalidPromptImage, i, err)
 			}
 			out[i].Ref = ref
 			out[i].Data = ""
@@ -31,14 +36,14 @@ func IngestPromptImages(ctx context.Context, store Store, images []models.Prompt
 		}
 		data := strings.TrimSpace(im.Data)
 		if data == "" {
-			return nil, fmt.Errorf("image[%d]: missing data and ref", i)
-		}
-		if store == nil {
-			return nil, fmt.Errorf("image[%d]: blob store not configured", i)
+			return nil, fmt.Errorf("%w: image[%d]: missing data and ref", ErrInvalidPromptImage, i)
 		}
 		raw, err := base64.StdEncoding.DecodeString(data)
 		if err != nil {
-			return nil, fmt.Errorf("image[%d]: decode base64: %w", i, err)
+			return nil, fmt.Errorf("%w: image[%d]: decode base64: %w", ErrInvalidPromptImage, i, err)
+		}
+		if store == nil {
+			return nil, fmt.Errorf("image[%d]: blob store not configured", i)
 		}
 		ref, err := store.Put(ctx, bytes.NewReader(raw), Meta{
 			MimeType: im.MimeType,

@@ -4,12 +4,89 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
 )
+
+func TestSandboxOperationRetriesTransientRenewalUntilAcknowledgedExpiry(t *testing.T) {
+	for _, recoverDatabase := range []bool{true, false} {
+		t.Run(map[bool]string{true: "recovers", false: "expires"}[recoverDatabase], func(t *testing.T) {
+			db := newTestDB(t)
+			s := newSandboxService(t, db, &dockerState{})
+			s.operationRenewInterval = 5 * time.Millisecond
+			row := models.Sandbox{Name: "transient-operation"}
+			if err := db.Create(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			var attempts atomic.Int32
+			var deadline time.Time
+			renewed := make(chan struct{}, 1)
+			if err := db.Callback().Update().Before("grasp-file-payloads-maps").Register("test:transient_operation_renewal", func(tx *gorm.DB) {
+				if tx.Statement.Table != "sandboxes" {
+					return
+				}
+				values, ok := tx.Statement.Dest.(map[string]any)
+				if !ok {
+					return
+				}
+				if owner, ok := values["operation_owner"].(string); ok && owner != "" {
+					deadline = time.Now().Add(150 * time.Millisecond)
+					values["operation_expires_at"] = deadline
+					return
+				}
+				if _, ok := values["operation_expires_at"]; !ok || len(values) != 1 {
+					return
+				}
+				attempt := attempts.Add(1)
+				if !recoverDatabase || attempt < 3 {
+					_ = tx.AddError(errors.New("temporary database failover"))
+					return
+				}
+				select {
+				case renewed <- struct{}{}:
+				default:
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Callback().Update().Remove("test:transient_operation_renewal") })
+			ctx, release, err := s.acquireSandboxOperation(context.Background(), row.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer release()
+			if !recoverDatabase {
+				select {
+				case <-ctx.Done():
+					if time.Now().Before(deadline) || !errors.Is(context.Cause(ctx), errSandboxOperationLost) || attempts.Load() < 2 {
+						t.Fatalf("transient error cancelled before the known expiry: %v", context.Cause(ctx))
+					}
+				case <-time.After(time.Second):
+					var persisted models.Sandbox
+					_ = db.First(&persisted, row.ID).Error
+					t.Fatalf("work survived its last acknowledged lease: deadline=%v stored=%v renewals=%d", deadline, persisted.OperationExpiresAt, attempts.Load())
+				}
+				return
+			}
+			select {
+			case <-renewed:
+			case <-ctx.Done():
+				t.Fatalf("a recoverable renewal failure cancelled the worker: %v", context.Cause(ctx))
+			case <-time.After(time.Second):
+				t.Fatal("transient renewal was not retried")
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatalf("successful renewal did not extend the local deadline: %v", context.Cause(ctx))
+			case <-time.After(time.Until(deadline) + 20*time.Millisecond):
+			}
+		})
+	}
+}
 
 func TestSandboxOperationLosingFenceCancelsWorkWithoutClearingSuccessor(t *testing.T) {
 	db := newTestDB(t)
@@ -207,5 +284,36 @@ func TestSandboxOperationPublicationFencesStaleWorkersAndKeepsUserCancellation(t
 	}
 	if err := db.First(&row, row.ID).Error; err != nil || row.Error != "successor state" {
 		t.Fatalf("stale worker changed successor: %s, %v", row.Error, err)
+	}
+}
+
+func TestSandboxOperationPublicationCannotCommitAfterItsCheckedExpiry(t *testing.T) {
+	db := newTestDB(t)
+	s := newSandboxService(t, db, &dockerState{})
+	row := models.Sandbox{Name: "publication-expiry", Error: "original"}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx, release, err := s.acquireSandboxOperation(context.Background(), row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	expiresAt := time.Now().Add(80 * time.Millisecond)
+	if err := db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("operation_expires_at", expiresAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	err = s.commitSandboxOperation(ctx, row.ID, func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("error", "late result").Error; err != nil {
+			return err
+		}
+		time.Sleep(time.Until(expiresAt) + 10*time.Millisecond)
+		return nil
+	})
+	if !errors.Is(err, errSandboxOperationLost) {
+		t.Fatalf("publication crossing its lease expiry committed: %v", err)
+	}
+	if err := db.First(&row, row.ID).Error; err != nil || row.Error != "original" {
+		t.Fatalf("expired result was not rolled back: %+v %v", row, err)
 	}
 }

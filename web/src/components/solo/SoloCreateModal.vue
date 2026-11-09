@@ -8,6 +8,7 @@ import SoloModelSelect from './SoloModelSelect.vue'
 import SoloProjectSelect from './SoloProjectSelect.vue'
 import ProjectDrawer from './ProjectDrawer.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
+import SoloCreationRecovery from './SoloCreationRecovery.vue'
 import { useSoloLauncher } from '@/lib/solo/useSoloLauncher'
 import { soloPrefs } from '@/lib/solo/soloPrefs'
 import type { Project } from '@/lib/api/apiTypes'
@@ -68,6 +69,13 @@ async function submit() {
   emit('close')
 }
 
+async function recover() {
+  const session = await launcher.retryPendingCreation()
+  if (!session) return
+  launched.value = true
+  emit('close')
+}
+
 function onSaved(p: Project) {
   drawerOpen.value = false
   launcher.onProjectSaved(p)
@@ -77,6 +85,11 @@ function onSaved(p: Project) {
 <template>
   <AppModal :open="open" :title="t('pages.solo.create.title')" :width="520" close-on-esc @close="dismiss">
     <form class="space-y-4" data-testid="solo-create-modal" @submit.prevent="submit">
+      <SoloCreationRecovery
+        :request="launcher.pendingCreation.value" :busy="creating || launcher.recovering.value" :projects="projects"
+        :resolved="!!launcher.recoveredSession.value" :checked="launcher.recoveryChecked.value"
+        @check="launcher.checkPendingCreation" @retry="recover" @stop="launcher.stopCreationRetry"
+      />
       <p v-if="continuationRunId" class="text-sm text-txt2">{{ t('pages.solo.workflows.historyNewEnvironment') }}</p>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -121,7 +134,7 @@ function onSaved(p: Project) {
     </form>
     <template #footer>
       <AppButton variant="ghost" @click="dismiss">{{ t('common.buttons.cancel') }}</AppButton>
-      <AppButton variant="primary" icon="play" :loading="creating" :disabled="!agentName" data-testid="solo-create-submit" @click="submit">
+      <AppButton variant="primary" icon="play" :loading="creating" :disabled="!launcher.canStart.value" data-testid="solo-create-submit" @click="submit">
         {{ t('pages.solo.create.submit') }}
       </AppButton>
     </template>

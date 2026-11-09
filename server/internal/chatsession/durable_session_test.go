@@ -219,6 +219,185 @@ func TestDurableSessionTargetedCancelIsJoinedBeforeNextNativeTurn(t *testing.T) 
 	}
 }
 
+func TestDurableSessionLocalCancellationWakesOnlyAfterCommit(t *testing.T) {
+	db, store, _, scope := durableFixture(t)
+	started, cancelled := make(chan struct{}), make(chan struct{}, 1)
+	var refuse atomic.Bool
+	if err := db.Callback().Update().Before("gorm:update").Register("test:reject_local_cancel", func(tx *gorm.DB) {
+		if values, ok := tx.Statement.Dest.(map[string]any); ok && tx.Statement.Table == "chat_queues" && values["cancel_requested"] == true && refuse.Load() {
+			_ = tx.AddError(errors.New("cancel intent did not commit"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Callback().Update().Remove("test:reject_local_cancel") })
+	cfg := durableTestConfig(func(ctx context.Context, _ durableTestTurn) (bool, error) {
+		if err := DispatchExecution(ctx); err != nil {
+			return false, err
+		}
+		close(started)
+		<-ctx.Done()
+		return true, ctx.Err()
+	})
+	var session *DurableSession[durableTestTurn]
+	cfg.CancelTurn = func() {
+		unlocked := make(chan struct{})
+		go func() { session.mu.Lock(); session.mu.Unlock(); close(unlocked) }()
+		select {
+		case <-unlocked:
+		case <-time.After(250 * time.Millisecond):
+			t.Error("native cancellation ran while holding the session mutex")
+		}
+		var row models.ChatQueue
+		if err := db.First(&row, "id = ?", scope.ID()).Error; err != nil || !row.CancelRequested {
+			t.Errorf("native cancellation preceded its SQL commit: %+v %v", row, err)
+		}
+		cancelled <- struct{}{}
+	}
+	session = NewDurableSession(store, scope, cfg)
+	if _, err := session.Enqueue(durableTestTurn{"local-cancel", "cancel me"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	refuse.Store(true)
+	if _, err := session.CancelChecked("local-cancel", false); err == nil {
+		t.Fatal("failed cancellation commit was acknowledged")
+	}
+	select {
+	case <-cancelled:
+		t.Fatal("failed cancellation intent reached native execution")
+	case <-time.After(30 * time.Millisecond):
+	}
+	refuse.Store(false)
+	if matched, err := session.CancelChecked("local-cancel", false); err != nil || !matched {
+		t.Fatalf("local cancellation was not committed: %v %v", matched, err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("same-replica cancellation waited for the one-second fallback")
+	}
+	waitDurable(t, "local cancelled turn settled", session.Idle)
+}
+
+func TestDurableSessionRemoteCancellationUsesOneSecondAuthorityRead(t *testing.T) {
+	db, store, remote, scope := durableFixture(t)
+	started, cancelled := make(chan struct{}), make(chan struct{}, 1)
+	var active atomic.Bool
+	var reads atomic.Int32
+	if err := db.Callback().Query().Before("gorm:query").Register("test:count_cancel_poll", func(tx *gorm.DB) {
+		if active.Load() && tx.Statement.Table == "chat_queues" {
+			reads.Add(1)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Callback().Query().Remove("test:count_cancel_poll") })
+	cfg := durableTestConfig(func(ctx context.Context, _ durableTestTurn) (bool, error) {
+		if err := DispatchExecution(ctx); err != nil {
+			return false, err
+		}
+		active.Store(true)
+		close(started)
+		<-ctx.Done()
+		active.Store(false)
+		return true, ctx.Err()
+	})
+	cfg.CancelTurn = func() { cancelled <- struct{}{} }
+	session := NewDurableSession(store, scope, cfg)
+	if _, err := session.Enqueue(durableTestTurn{"remote-cancel", "wait for another replica"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	time.Sleep(250 * time.Millisecond)
+	if count := reads.Load(); count != 0 {
+		t.Fatalf("active native execution still polls cancellation faster than one second: %d reads", count)
+	}
+	if matched, err := remote.Cancel(context.Background(), scope, "remote-cancel", false); err != nil || !matched {
+		t.Fatalf("remote cancellation was not accepted: %v %v", matched, err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(1300 * time.Millisecond):
+		t.Fatal("the one-second cross-replica fallback did not observe cancellation")
+	}
+	if count := reads.Load(); count != 1 {
+		t.Fatalf("a remote cancellation should need one authority read: %d", count)
+	}
+	waitDurable(t, "remote cancelled turn settled", session.Idle)
+}
+
+func TestDurableSessionLocalCancelJoinsNativeStopBeforeNextTurnAndRejectsOldTarget(t *testing.T) {
+	db, store, _, scope := durableFixture(t)
+	started := make(chan string, 2)
+	cancelStarted, releaseCancel, releaseSecond := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var cancels atomic.Int32
+	cfg := durableTestConfig(func(ctx context.Context, turn durableTestTurn) (bool, error) {
+		if err := DispatchExecution(ctx); err != nil {
+			return false, err
+		}
+		started <- turn.ID
+		if turn.ID == "first" {
+			<-ctx.Done()
+			return true, ctx.Err()
+		}
+		select {
+		case <-ctx.Done():
+			return true, ctx.Err()
+		case <-releaseSecond:
+			return false, db.Transaction(func(tx *gorm.DB) error { return FinishExecution(ctx, tx, TurnSucceeded, "", "") })
+		}
+	})
+	cfg.CancelTurn = func() {
+		if cancels.Add(1) == 1 {
+			close(cancelStarted)
+			<-releaseCancel
+		}
+	}
+	session := NewDurableSession(store, scope, cfg)
+	if _, err := session.Enqueue(durableTestTurn{"first", "stop this one"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if _, err := session.Enqueue(durableTestTurn{"second", "retain this one"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if matched, err := session.CancelChecked("first", false); err != nil || !matched {
+		t.Fatalf("local stop was not accepted: %v %v", matched, err)
+	}
+	select {
+	case <-cancelStarted:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("local watcher was not signalled")
+	}
+	select {
+	case next := <-started:
+		t.Fatalf("next turn started before native stop returned: %s", next)
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(releaseCancel)
+	select {
+	case next := <-started:
+		if next != "second" {
+			t.Fatalf("wrong next turn: %s", next)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("retained queued turn did not start after native stop joined")
+	}
+	if matched, err := session.CancelChecked("first", false); err != nil || matched {
+		t.Fatalf("old cancellation targeted the new turn: %v %v", matched, err)
+	}
+	if cancels.Load() != 1 {
+		t.Fatal("an old cancellation invoked native stop for the next turn")
+	}
+	close(releaseSecond)
+	waitDurable(t, "next turn retained after old cancellation", session.Idle)
+	row, err := store.Receipt(context.Background(), scope, "second")
+	if err != nil || row.State != TurnSucceeded {
+		t.Fatalf("old cancellation changed the next receipt: %+v %v", row, err)
+	}
+}
+
 func TestDurableSessionPassiveViewAndUnreadableRequestNeverDispatch(t *testing.T) {
 	_, store, _, scope := durableFixture(t)
 	var calls atomic.Int32
@@ -394,6 +573,79 @@ func TestDurableSessionRenewalLossCancelsAndFencesLateResult(t *testing.T) {
 	}
 	if claimed, err := other.Claim(context.Background(), lease); err != nil || claimed != nil {
 		t.Fatalf("replayed uncertain external effect: %+v %v", claimed, err)
+	}
+}
+
+func TestDurableSessionTransientRenewalAndCancelReadFailuresDoNotAbortNativeWork(t *testing.T) {
+	db, store, _, scope := durableFixture(t)
+	store.leaseTTL = 900 * time.Millisecond
+	var active atomic.Bool
+	var renewals, failedReads atomic.Int32
+	if err := db.Callback().Update().Before("gorm:update").Register("test:transient_durable_renewal", func(tx *gorm.DB) {
+		if tx.Statement.Table != "chat_queues" || !active.Load() {
+			return
+		}
+		if values, ok := tx.Statement.Dest.(map[string]any); ok && len(values) == 1 {
+			if _, ok := values["owner_expires_at"]; ok && renewals.Add(1) == 1 {
+				_ = tx.AddError(errors.New("transient renewal connection failure"))
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Callback().Query().Before("gorm:query").Register("test:transient_cancellation_read", func(tx *gorm.DB) {
+		if tx.Statement.Table == "chat_queues" && active.Load() && failedReads.Add(1) == 1 {
+			_ = tx.AddError(errors.New("transient cancellation read failure"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = db.Callback().Update().Remove("test:transient_durable_renewal")
+		_ = db.Callback().Query().Remove("test:transient_cancellation_read")
+	})
+	started, release, exited := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	cfg := durableTestConfig(func(ctx context.Context, _ durableTestTurn) (bool, error) {
+		if err := DispatchExecution(ctx); err != nil {
+			return false, err
+		}
+		active.Store(true)
+		close(started)
+		select {
+		case <-ctx.Done():
+			exited <- context.Cause(ctx)
+			return false, context.Cause(ctx)
+		case <-release:
+			active.Store(false)
+			exited <- nil
+			return false, db.Transaction(func(tx *gorm.DB) error { return FinishExecution(ctx, tx, TurnSucceeded, "", "") })
+		}
+	})
+	session := NewDurableSession(store, scope, cfg)
+	if _, err := session.Enqueue(durableTestTurn{"transient", "keep native execution alive"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("native work did not start")
+	}
+	select {
+	case err := <-exited:
+		t.Fatalf("a transient database error aborted native work: %v", err)
+	case <-time.After(2100 * time.Millisecond):
+	}
+	if renewals.Load() < 2 || failedReads.Load() < 2 {
+		t.Fatal("test did not exercise renewal retry and failed cancellation reads")
+	}
+	close(release)
+	if err := <-exited; err != nil {
+		t.Fatal(err)
+	}
+	waitDurable(t, "transient failures recovered", session.Idle)
+	row, err := store.Receipt(context.Background(), scope, "transient")
+	if err != nil || row.State != TurnSucceeded {
+		t.Fatalf("recoverable outage lost the completed receipt: %+v %v", row, err)
 	}
 }
 

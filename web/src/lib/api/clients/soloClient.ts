@@ -47,7 +47,7 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
     },
     listSoloMessageEvents: (id: string, messageId: string, after = -1) => req<SoloMessageEventPage>(`${path(id)}/messages/${enc(messageId)}/events?after=${after}`),
     sendSoloTurn: (id: string, body: { text: string; clientMessageId?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: ReferenceInput[] }) =>
-      req<{ waiting: number; turnId?: string; clientMessageId?: string; state?: string }>(`${path(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
+      req<{ waiting: number; turnId?: string; clientMessageId?: string; state?: string }>(`${path(id)}/${body.clientMessageId ? 'turn-requests' : 'turns'}`, { method: 'POST', body: JSON.stringify(body) }),
     searchSoloReferences: <T>(id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
       req<ReferenceSearchResult<T>>(`${path(id)}/references/search?${referenceQuery(params)}`, { signal }),
     cancelSoloTurn: (id: string) =>
@@ -80,7 +80,8 @@ export const soloClient = {
   listSoloSessions: (params?: { status?: 'active' }) =>
     req<SoloSessionList>(`/solo/sessions${params?.status ? `?status=${params.status}` : ''}`),
   createSoloSession: (body: SoloCreateBody) =>
-    req<SoloSession>('/solo/sessions', { method: 'POST', body: JSON.stringify(body) }),
+    req<SoloSession>('/solo/creation-requests', { method: 'POST', body: JSON.stringify(body) }),
+  resolveSoloCreation: (requestId: string) => req<SoloSession>(`/solo/creation-requests/${enc(requestId)}`),
   workflowChat: (runId: string, signal?: AbortSignal) =>
     req<{ soloId: string; title: string; status: string }>(`/runs/${enc(runId)}/chat`, { signal }),
   continueWorkflow: (runId: string, body: SoloCreateBody) =>

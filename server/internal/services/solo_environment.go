@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
 )
@@ -24,13 +25,28 @@ func (s *SoloService) StopEnvironment(ctx context.Context, id, user string) (*So
 	if row.Status == models.SoloStatusStarting {
 		return nil, soloErr(http.StatusConflict, "environment_starting", "环境正在启动，请就绪后再停止")
 	}
-	if c := s.lookup(id); c != nil {
-		snapshot := c.sess.Snapshot()
-		if snapshot.Busy || snapshot.Waiting > 0 {
-			return nil, soloErr(http.StatusConflict, "session_busy", "请先停止当前轮次并处理待发送消息")
+	if err := s.sbx.stopSoloEnvironment(ctx, row.SandboxID, func(tx *gorm.DB) error {
+		// Admit and Claim take this same queue lock before inspecting the
+		// environment. Commit the stop intent under it so either an accepted
+		// message blocks stopping or a later message sees desired=stopped.
+		if err := s.durable.GuardIdle(tx, soloQueueScope(id)); err != nil {
+			if errors.Is(err, chatsession.ErrQueueBusy) {
+				return soloErr(http.StatusConflict, "session_busy", "请先停止当前轮次并处理待发送消息")
+			}
+			if errors.Is(err, chatsession.ErrQueueRetired) {
+				return soloErr(http.StatusConflict, "session_closed", "会话已关闭，请重新加载")
+			}
+			return err
 		}
-	}
-	if err := s.sbx.stopSoloEnvironment(ctx, row.SandboxID); err != nil {
+		var current models.SoloSession
+		if err := tx.Select("id", "sandbox_id", "status").First(&current, "id = ?", id).Error; err != nil {
+			return err
+		}
+		if current.SandboxID != row.SandboxID || current.Status == models.SoloStatusStarting || current.Status == models.SoloStatusClosed {
+			return soloErr(http.StatusConflict, "session_changed", "会话状态已变化，请重新加载")
+		}
+		return nil
+	}); err != nil {
 		s.publishStatus(id)
 		return nil, err
 	}
@@ -39,7 +55,7 @@ func (s *SoloService) StopEnvironment(ctx context.Context, id, user string) (*So
 	return s.Get(ctx, id, user)
 }
 
-func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint) error {
+func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint, prepare ...func(*gorm.DB) error) error {
 	ctx, cancel := context.WithTimeout(ctx, soloRecoveryTimeout)
 	defer cancel()
 	ctx, unlock, err := s.acquireSandboxOperation(ctx, id)
@@ -73,18 +89,24 @@ func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint) error
 	if err != nil {
 		return err
 	}
-	if err := s.db.Model(&models.Sandbox{}).Where("id = ? AND operation_owner = ?", id, row.OperationOwner).
-		Updates(map[string]any{"desired_state": "stopped", "destroy_at": nil, "recovery": string(recoveryJSON)}).Error; err != nil {
+	var admit func(*gorm.DB) error
+	if len(prepare) != 0 {
+		admit = prepare[0]
+	}
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+	if err := s.commitSandboxOperationPrepared(ctx, id, admit, func(tx *gorm.DB) error {
+		return s.updateSandboxOperation(ctx, tx, id, map[string]any{"desired_state": "stopped", "destroy_at": nil, "recovery": string(recoveryJSON)})
+	}); err != nil {
 		return err
 	}
 	if err := s.mgr.Gateway().Stop(ctx, row.Name); err != nil {
-		s.recordSoloStopFailure(id, err)
-		return err
+		return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
 	}
 	observed, err := s.mgr.ProbeStatus(ctx, row.Name)
 	if err != nil {
-		s.recordSoloStopFailure(id, err)
-		return err
+		return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
 	}
 	if observed != "stopped" && observed != "exited" {
 		return soloErr(http.StatusConflict, "environment_stop_pending", "已请求停止，正在等待环境确认")
@@ -96,17 +118,32 @@ func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint) error
 			return err
 		}
 	}
-	s.teardownLive(id)
-	if err := s.db.Model(&models.Sandbox{}).Where("id = ? AND operation_owner = ?", id, row.OperationOwner).
-		Updates(map[string]any{"status": "stopped", "error": "", "destroy_at": nil, "recovery": string(recoveryJSON)}).Error; err != nil {
+	if err := s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
+		if err := s.updateSandboxOperation(ctx, tx, id, map[string]any{"status": "stopped", "error": "", "destroy_at": nil, "recovery": string(recoveryJSON)}); err != nil {
+			return err
+		}
+		// Close retires the session before it tears down its environment. A
+		// stop finishing later must leave that closed state authoritative.
+		result := tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND status <> ?", row.ThreadID, id, models.SoloStatusClosed).
+			Updates(map[string]any{"status": models.SoloStatusStopped, "error": ""})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return soloErr(http.StatusConflict, "session_changed", "会话状态已改变，请刷新后查看环境状态")
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
-	return s.db.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ?", row.ThreadID, id).
-		Updates(map[string]any{"status": models.SoloStatusStopped, "error": ""}).Error
+	s.teardownLive(id)
+	return nil
 }
 
-func (s *SandboxService) recordSoloStopFailure(id uint, err error) {
-	_ = s.db.Model(&models.Sandbox{}).Where("id = ? AND desired_state = ?", id, "stopped").Updates(map[string]any{"status": "error", "error": "环境停止尚未确认，工作区已保留，可重试：" + truncErr(err), "destroy_at": nil}).Error
+func (s *SandboxService) recordSoloStopFailure(ctx context.Context, id uint, failure error) error {
+	return s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
+		return s.updateSandboxOperation(ctx, tx, id, map[string]any{"status": "error", "error": "环境停止尚未确认，工作区已保留，可重试：" + truncErr(failure), "destroy_at": nil})
+	})
 }
 
 func (s *SoloService) ResumeEnvironment(ctx context.Context, id, user string) (*SoloSessionView, error) {
@@ -124,7 +161,7 @@ func (s *SoloService) ResumeEnvironment(ctx context.Context, id, user string) (*
 	if err != nil {
 		return nil, err
 	}
-	err = s.db.WithContext(operationCtx).Transaction(func(tx *gorm.DB) error {
+	err = s.sbx.commitSandboxOperationPrepared(operationCtx, row.SandboxID, func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
 		}
@@ -135,10 +172,20 @@ func (s *SoloService) ResumeEnvironment(ctx context.Context, id, user string) (*
 		if count >= int64(s.sbx.MaxSoloSandboxes()) {
 			return &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: ErrSoloSandboxLimit{Max: s.sbx.MaxSoloSandboxes()}.Error()}
 		}
-		if err := tx.Model(&models.Sandbox{}).Where("id = ?", row.SandboxID).Updates(map[string]any{"desired_state": "running", "destroy_at": nil}).Error; err != nil {
+		return nil
+	}, func(tx *gorm.DB) error {
+		if err := s.sbx.updateSandboxOperation(operationCtx, tx, row.SandboxID, map[string]any{"desired_state": "running", "destroy_at": nil}); err != nil {
 			return err
 		}
-		return tx.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{"status": models.SoloStatusStarting, "closed_at": nil, "error": "", "last_active_at": time.Now().UTC()}).Error
+		result := tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND status <> ?", id, row.SandboxID, models.SoloStatusClosed).
+			Updates(map[string]any{"status": models.SoloStatusStarting, "closed_at": nil, "error": "", "last_active_at": time.Now().UTC()})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return soloErr(http.StatusConflict, "session_changed", "会话状态已改变，请刷新后查看环境状态")
+		}
+		return nil
 	})
 	unlock()
 	if err != nil {

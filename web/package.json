@@ -54,6 +54,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^9.39.5",
     "eslint-plugin-vue": "^10.10.0",
+    "fake-indexeddb": "6.2.8",
     "happy-dom": "^21.0.4",
     "playwright": "^1.61.1",
     "postcss": "^8.4.49",

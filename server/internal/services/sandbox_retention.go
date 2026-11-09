@@ -3,9 +3,11 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"gorm.io/gorm"
 )
 
 // stopRetainedSandbox has the same data-preserving boundary as Solo stop.
@@ -34,18 +36,17 @@ func (s *SandboxService) stopRetainedSandbox(ctx context.Context, id uint) error
 	if err != nil {
 		return err
 	}
-	if err := s.db.Model(&models.Sandbox{}).Where("id = ? AND operation_owner = ?", id, row.OperationOwner).
-		Updates(map[string]any{"desired_state": "stopped", "recovery": string(encoded)}).Error; err != nil {
+	if err := s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
+		return s.updateSandboxOperation(ctx, tx, id, map[string]any{"desired_state": "stopped", "recovery": string(encoded)})
+	}); err != nil {
 		return err
 	}
 	if err := s.mgr.Gateway().Stop(ctx, row.Name); err != nil {
-		s.recordSoloStopFailure(id, err)
-		return err
+		return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
 	}
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	if err != nil {
-		s.recordSoloStopFailure(id, err)
-		return err
+		return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
 	}
 	if status != "stopped" && status != "exited" {
 		return fmt.Errorf("已请求停止，等待环境确认（%s）", status)
@@ -57,7 +58,11 @@ func (s *SandboxService) stopRetainedSandbox(ctx context.Context, id uint) error
 			return err
 		}
 	}
+	if err := s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
+		return s.updateSandboxOperation(ctx, tx, id, map[string]any{"status": "stopped", "error": "", "destroy_at": nil, "recovery": string(encoded)})
+	}); err != nil {
+		return err
+	}
 	s.teardownLive(id)
-	return s.db.Model(&models.Sandbox{}).Where("id = ? AND operation_owner = ?", id, row.OperationOwner).
-		Updates(map[string]any{"status": "stopped", "error": "", "destroy_at": nil, "recovery": string(encoded)}).Error
+	return nil
 }

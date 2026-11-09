@@ -42,7 +42,7 @@ test('Solo pages saved messages and execution details without replacing the comp
       return route.fulfill({ json: { items: [event(103, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '已核对现有工作区和未提交改动。' } }), event(104, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '剩余片段' } })], next: 104, head: 104, hasMore: false } })
     }
     if (path.endsWith('/messages')) return route.fulfill({ json: url.searchParams.has('before') ? { items: [{ id: 'earlier', sessionId: session.id, role: 'system', content: '更早的会话记录', createdAt: '2026-11-08T00:00:00Z' }], hasMore: false } : { items: latestMessages, before: 'older-token', hasMore: true } })
-    if (path.endsWith('/turns') && route.request().method() === 'POST') {
+    if (path.endsWith('/turn-requests') && route.request().method() === 'POST') {
       submitted = route.request().postDataJSON()
       return route.fulfill({ json: { waiting: 0, turnId: 'next-question', clientMessageId: submitted!.clientMessageId, state: 'executing' } })
     }
@@ -91,7 +91,7 @@ test('Solo pages saved messages and execution details without replacing the comp
   await expect(page.getByTestId('solo-agent-message').last()).toHaveText('第二轮完整回复，工作流结果也已保留。')
 })
 
-test('Solo retries an unconfirmed send with the exact original identity and shows one human message', async ({ page }, testInfo) => {
+test('Solo restores an unconfirmed send after reload with the exact original identity and shows one human message', async ({ page }, testInfo) => {
   const service = connection('durable-service', 'openai-chat-completions', 'durable-model')
   const state = await setup(page, [service])
   state.configurations.push({ id: 'durable-config', name: '测试模型', backend: 'opencode', binding: { kind: 'connection', connectionId: service.id, modelId: 'durable-model' }, state: 'active', revision: 1 })
@@ -103,7 +103,7 @@ test('Solo retries an unconfirmed send with the exact original identity and show
     if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
     if (path.endsWith('/messages') || path.endsWith('/env')) return route.fulfill({ json: [] })
     if (path.endsWith('/workflows')) return route.fulfill({ json: { items: [], workflows: { enabled: false, locked: false, source: 'db' } } })
-    if (path.endsWith('/turns') && route.request().method() === 'POST') {
+    if (path.endsWith('/turn-requests') && route.request().method() === 'POST') {
       requests.push(route.request().postDataJSON())
       if (requests.length === 1) return route.fulfill({ status: 503, json: { code: 'message_not_confirmed', error: '消息接收结果尚未确认' } })
       return route.fulfill({ json: { waiting: 1, turnId: 'accepted-turn', clientMessageId: requests[0]!.clientMessageId, state: 'queued' } })
@@ -123,6 +123,10 @@ test('Solo retries an unconfirmed send with the exact original identity and show
   await page.screenshot({ path: testInfo.outputPath('solo-message-unconfirmed.png'), fullPage: true })
   expect(requests).toHaveLength(1)
   expect(requests[0]!.clientMessageId).toBeTruthy()
+  await page.reload()
+  await expect(retry).toBeVisible()
+  await expect(page.getByTestId('solo-input')).toBeDisabled()
+  expect(requests).toHaveLength(1)
   await retry.click()
   await expect(retry).toHaveCount(0)
   await expect(page.getByTestId('solo-input')).toBeEnabled()
@@ -959,19 +963,19 @@ test('Solo uses real model names and sends exact model IDs and advertised effort
   const state = await setup(page, [service])
   state.configurations.push({ id: 'kimi-config', name: 'TokenHub', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: service.id, modelId: primary, auxiliaryModelIds: [auxiliary] }, state: 'active', revision: 1 })
   state.agents.push({ name: 'Solo', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' }, gitBindings: { items: [] }, files: [], mcp: [], env: {}, layout: {} })
-  const session = { id: 'solo-named-model', title: 'A Solo task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-10-26T00:00:00Z', updatedAt: '2026-10-26T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialModelId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', reasoningEfforts: ['low', 'high'] }
+  const session = { id: 'solo-named-model', title: 'A Solo task', agentName: 'Solo', userId: 'workspace-config-test', status: 'running', createdAt: '2026-10-26T00:00:00Z', updatedAt: '2026-10-26T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialModelId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', reasoningEfforts: ['low', 'high'] }
   let createBody: Record<string, unknown> | undefined
   const modelWrites: Record<string, unknown>[] = []
   await routeApi(page, '**/api/projects', route => route.fulfill({ json: [] }))
+  await routeApi(page, '**/api/solo/creation-requests', async route => {
+    createBody = route.request().postDataJSON()
+    session.initialModelId = String(createBody?.initialModelId || '')
+    session.reasoningEffort = String(createBody?.reasoningEffort || '')
+    return route.fulfill({ json: { ...session, clientRequestId: createBody?.clientRequestId, initialTurnId: 'initial-model-turn' } })
+  })
   await routeApi(page, '**/api/solo/sessions**', async route => {
     const pathname = new URL(route.request().url()).pathname
     if (pathname === '/api/solo/sessions') {
-      if (route.request().method() === 'POST') {
-        createBody = route.request().postDataJSON()
-        session.initialModelId = String(createBody?.initialModelId || '')
-        session.reasoningEffort = String(createBody?.reasoningEffort || '')
-        return route.fulfill({ json: session })
-      }
       return route.fulfill({ json: { sessions: createBody ? [session] : [], maxSandboxes: 8 } })
     }
     if (pathname.endsWith('/messages') || pathname.endsWith('/env')) return route.fulfill({ json: [] })

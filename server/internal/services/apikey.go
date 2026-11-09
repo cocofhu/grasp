@@ -83,18 +83,33 @@ func (s *APIKeyService) Revoke(workflowID, keyID string) bool {
 // ValidateBearer checks a plaintext API key and returns the bound workflow ID.
 // Invalid, revoked, or missing keys all return ok=false (caller returns 401).
 func (s *APIKeyService) ValidateBearer(plain string) (workflowID string, ok bool) {
+	principal, ok := s.AuthenticateBearer(plain)
+	return principal.WorkflowID, ok
+}
+
+// APIKeyPrincipal contains only the non-secret identity of an authenticated
+// key. Individual integrations retain separate idempotency namespaces even
+// when they can start the same workflow.
+type APIKeyPrincipal struct {
+	KeyID      string
+	WorkflowID string
+}
+
+func (s *APIKeyService) AuthenticateBearer(plain string) (APIKeyPrincipal, bool) {
 	plain = strings.TrimSpace(plain)
 	if plain == "" || !strings.HasPrefix(plain, "cf_wf_") {
-		return "", false
+		return APIKeyPrincipal{}, false
 	}
 	var keys []models.WorkflowAPIKey
-	s.db.Where("revoked_at IS NULL").Find(&keys)
+	if err := s.db.Where("revoked_at IS NULL").Find(&keys).Error; err != nil {
+		return APIKeyPrincipal{}, false
+	}
 	for _, k := range keys {
 		if bcrypt.CompareHashAndPassword([]byte(k.KeyHash), []byte(plain)) == nil {
-			return k.WorkflowID, true
+			return APIKeyPrincipal{KeyID: k.ID, WorkflowID: k.WorkflowID}, true
 		}
 	}
-	return "", false
+	return APIKeyPrincipal{}, false
 }
 
 func generateAPIKeyPlaintext() (string, error) {

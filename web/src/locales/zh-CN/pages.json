@@ -4766,6 +4766,21 @@
     },
     "solo": {
       "title": "Solo 对话",
+      "outboxUnavailable": "浏览器无法保存待确认消息，请恢复存储权限后重试。",
+      "outboxRestored": "有待确认消息，已恢复原请求；可核对记录后重试。",
+      "stopLocalRetry": "停止本地重试",
+      "stopLocalRetryHint": "仅移除本机待重试记录，不会撤回服务端已受理任务。",
+      "invalidReceipt": "服务器尚未确认原请求，请稍后核对后重试。",
+      "creationRecovery": {
+        "title": "有一条待确认的会话创建请求",
+        "hint": "首条消息和启动配置已保存在本机。先核对是否已创建，再打开会话或重试原请求。",
+        "repositories": "{n} 个仓库",
+        "defaultModel": "跟随 Agent 默认模型",
+        "attachments": "{images} 个附件 · {references} 个引用",
+        "open": "打开已创建的会话",
+        "retry": "重试原请求",
+        "check": "核对状态"
+      },
       "capacity": "运行中 {n} / {max} 个沙箱",
       "newSession": "新建会话",
       "filterActive": "运行中",

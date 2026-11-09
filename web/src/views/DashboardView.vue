@@ -16,6 +16,7 @@ import SoloModelSelect from '@/components/solo/SoloModelSelect.vue'
 import HomeSoloPanel from '@/components/solo/HomeSoloPanel.vue'
 import ProjectDrawer from '@/components/solo/ProjectDrawer.vue'
 import SoloLimitModal from '@/components/solo/SoloLimitModal.vue'
+import SoloCreationRecovery from '@/components/solo/SoloCreationRecovery.vue'
 import ReferencePicker from '@/components/solo/ReferencePicker.vue'
 import ReferenceChip from '@/components/solo/ReferenceChip.vue'
 import ReferencePlusMenu from '@/components/solo/ReferencePlusMenu.vue'
@@ -85,6 +86,24 @@ async function submitComposer() {
     if (command) void router.replace({ path: `/solo/${started.id}`, query: { workflow: command[1] || '1' } })
   }
   submitting.value = false
+}
+
+async function recoverSoloCreation() {
+  const request = solo.pendingCreation.value?.request
+  if (!request) return
+  const started = await solo.retryPendingCreation()
+  if (!started) return
+  // Keep a separately edited draft. Clear only the composer that produced
+  // this exact opening message, so returning home cannot submit it again.
+  const refs = mention.refs.value.map(({ kind, target }) => ({ kind, target }))
+  if (draft.value.trim() === (request.text || '') &&
+      JSON.stringify(attachments.value) === JSON.stringify(request.images || []) &&
+      JSON.stringify(refs) === JSON.stringify(request.references || [])) {
+    draft.value = ''
+    attachments.value = []
+    mention.clear()
+    await clearHomeComposerDraft()
+  }
 }
 function onProjectSaved(project: Parameters<typeof solo.onProjectSaved>[0]) { projectDrawerOpen.value = false; solo.onProjectSaved(project) }
 function openFilePicker() { fileInput.value?.click() }
@@ -243,6 +262,11 @@ onBeforeUnmount(() => {
       </div>
 
       <AttachmentDropZone class="home-composer-wrap w-full" :disabled="composerBusy" @files="addFiles">
+        <SoloCreationRecovery
+          :request="solo.pendingCreation.value" :busy="composerBusy || solo.recovering.value" :projects="soloProjects"
+          :resolved="!!solo.recoveredSession.value" :checked="solo.recoveryChecked.value"
+          @check="solo.checkPendingCreation" @retry="recoverSoloCreation" @stop="solo.stopCreationRetry"
+        />
         <p
           v-if="solo.error.value"
           class="mb-2 rounded border border-err/40 bg-err/10 px-3 py-1.5 text-[12px] text-err"

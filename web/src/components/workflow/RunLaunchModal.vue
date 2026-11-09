@@ -393,7 +393,7 @@ async function startRun() {
     if (props.beforeStart) await props.beforeStart()
     const res = await api.startRun(props.workflowId, inputs, 'manual', priority.value, tags.value, {
       idempotencyKey: requestKey.value,
-	  ...(props.workflowVersion ? { expectedWorkflowVersion: props.workflowVersion } : {}),
+      ...(props.workflowVersion ? { expectedWorkflowVersion: props.workflowVersion } : {}),
       ...(props.soloSessionId ? { soloSessionId: props.soloSessionId } : {}),
       signal: startAbort.signal,
       env: envEntries.length ? envEntries : undefined,
