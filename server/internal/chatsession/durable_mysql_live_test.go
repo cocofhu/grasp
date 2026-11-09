@@ -99,6 +99,12 @@ func TestMySQLLiveDurableQueueReplicas(t *testing.T) {
 	if err := a.Dispatch(ctx, lease, id); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := a.AppendJournal(ctx, scope, &lease, id, []JournalEntry{journalEntry("native MySQL journal frame")}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if page, err := b.JournalPage(ctx, scope, JournalQuery{After: -1}); err != nil || len(page.Items) != 1 || page.Items[0].TurnID != id || page.Items[0].At.IsZero() {
+		t.Fatalf("native journal cursor/body did not survive another connection: %+v %v", page, err)
+	}
 	if err := db.Model(&models.ChatQueue{}).Where("id = ?", scope.ID()).Update("owner_expires_at", time.Now().Add(-time.Second)).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -108,6 +114,9 @@ func TestMySQLLiveDurableQueueReplicas(t *testing.T) {
 	}
 	if err := db.Transaction(func(tx *gorm.DB) error { return a.Finish(tx, lease, id, TurnSucceeded, "", "late") }); !errors.Is(err, ErrQueueOwnerLost) {
 		t.Fatalf("old MySQL owner published after takeover: %v", err)
+	}
+	if _, err := a.AppendJournal(ctx, scope, &lease, id, []JournalEntry{journalEntry("late old-owner frame")}, nil); !errors.Is(err, ErrQueueOwnerLost) {
+		t.Fatalf("old MySQL executor appended after takeover: %v", err)
 	}
 	if turn, err := b.Claim(ctx, next); err != nil || turn == nil || turn.ID == id {
 		t.Fatalf("uncertain native action was replayed: %+v %v", turn, err)

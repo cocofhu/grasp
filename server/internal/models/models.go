@@ -1195,7 +1195,7 @@ func AllModels() []any {
 		&TokenUsageReport{},
 		&Project{}, &SoloSession{}, &SoloMessage{}, &WorkflowLaunch{}, &SoloWorkflowLink{}, &WorkflowConversationEvent{},
 		&ChatPendingTurn{},
-		&ChatQueue{}, &ChatQueueEpoch{}, &ChatQueueTurn{},
+		&ChatQueue{}, &ChatQueueEpoch{}, &ChatQueueTurn{}, &ChatEventChunk{},
 		&WorkflowInstructionMailbox{}, &WorkflowInstruction{},
 	}
 }

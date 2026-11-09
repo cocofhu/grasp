@@ -5,19 +5,20 @@ import "time"
 // ChatQueue is the durable authority for one conversation's ordered commands.
 // A renewable owner may execute a single turn; viewers do not own execution.
 type ChatQueue struct {
-	ID              string `gorm:"primaryKey;size:64"`
-	Surface         string `gorm:"size:64;uniqueIndex:idx_chat_queue_scope,priority:1"`
-	SessionKey      string `gorm:"size:191;uniqueIndex:idx_chat_queue_scope,priority:2"`
-	Revision        uint64
-	Generation      uint64
-	NextSequence    uint64
-	Owner           string `gorm:"size:36"`
-	OwnerExpiresAt  *time.Time
-	ActiveTurnID    string `gorm:"size:191"`
-	CancelRequested bool
-	Retired         bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                string `gorm:"primaryKey;size:64"`
+	Surface           string `gorm:"size:64;uniqueIndex:idx_chat_queue_scope,priority:1"`
+	SessionKey        string `gorm:"size:191;uniqueIndex:idx_chat_queue_scope,priority:2"`
+	Revision          uint64
+	Generation        uint64
+	NextSequence      uint64
+	NextEventSequence uint64
+	Owner             string `gorm:"size:36"`
+	OwnerExpiresAt    *time.Time
+	ActiveTurnID      string `gorm:"size:191"`
+	CancelRequested   bool
+	Retired           bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // ChatQueueEpoch allocates monotonic, globally comparable generations. It has
@@ -50,4 +51,20 @@ type ChatQueueTurn struct {
 	ResultID        string `gorm:"size:191"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+}
+
+// ChatEventChunk is an immutable, bounded batch. SQL owns its ordered range;
+// the common payload backend owns the body. Appending never rewrites a prior
+// chunk or an entire conversation's transcript.
+type ChatEventChunk struct {
+	ID             string `gorm:"primaryKey;size:36"`
+	QueueID        string `gorm:"size:64;uniqueIndex:idx_chat_event_range,priority:1;index:idx_chat_event_turn,priority:1;index:idx_chat_event_cursor,priority:1"`
+	FirstSequence  uint64 `gorm:"uniqueIndex:idx_chat_event_range,priority:2"`
+	LastSequence   uint64 `gorm:"index:idx_chat_event_cursor,priority:2"`
+	TurnID         string `gorm:"size:191;index:idx_chat_event_turn,priority:2"`
+	ExecutionEpoch uint64
+	Count          int
+	Bytes          int
+	Payload        []byte `gorm:"serializer:filebytes;type:text"`
+	CreatedAt      time.Time
 }
