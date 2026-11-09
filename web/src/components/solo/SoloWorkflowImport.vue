@@ -7,7 +7,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 type Source = { nodeId: string; iteration: number; attempt: number; shared: boolean; available: boolean; state: string; createdAt: string }
 type Repository = { path: string; commit: string; head: string; supported: boolean; dirty: boolean; untracked: boolean; files: number; bytes: number; reason?: string }
 type Inventory = { version: number; repositories: Repository[]; workingChanges: boolean; nonGit: boolean; ignoredFiles: boolean }
-type Preview = { id: string; source: { runId: string; nodeId: string; iteration: number; attempt: number }; state: string; repositories: Repository[]; directory?: string; destination?: string; paths: string[]; error?: string; createdAt: string }
+type Preview = { id: string; source: { runId: string; nodeId: string; iteration: number; attempt: number }; state: string; repositories: Repository[]; directory?: string; destination?: string; paths: string[]; error?: string; createdAt: string; expiresAt?: string }
 export type WorkspaceImportDraft = { sourceKey: string; inventory: Inventory | null; selections: Record<string, { checked: boolean; commit: string }>; preview: Preview | null; previewRequestId: string; confirmRequestId: string; uncertain: boolean }
 const emptyDraft = (): WorkspaceImportDraft => ({ sourceKey: '', inventory: null, selections: {}, preview: null, previewRequestId: '', confirmRequestId: '', uncertain: false })
 const props = defineProps<{ sessionId: string; runId: string; nodes?: { id: string; label: string }[] }>()
@@ -71,17 +71,31 @@ async function confirm() {
   const receipt = state.value.preview
   if (!receipt || receipt.state !== 'prepared' || uncertain.value || busy.value) return
   if (!state.value.confirmRequestId) state.value.confirmRequestId = nonce()
+  const confirmation = state.value.confirmRequestId
   busy.value = true; error.value = ''
   // Preserve this before sending: closing the drawer or a lost response cannot
   // turn an uncertain write into a new automatic filesystem operation.
   state.value.uncertain = true
   try {
-    const result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}/confirm`, { method: 'POST', body: JSON.stringify({ confirmed: true, clientRequestId: state.value.confirmRequestId }) })
+    const result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}/confirm`, { method: 'POST', body: JSON.stringify({ confirmed: true, clientRequestId: confirmation }) })
     if (disposed) return
     state.value.preview = result; state.value.uncertain = result.state !== 'applied'
     remember(result)
     if (result.state === 'applied') emit('changed')
-  } catch (cause) { failed(cause) } finally { busy.value = false }
+  } catch (cause) {
+    const rejection = cause as { status?: number; code?: string; params?: Record<string, unknown> } | null
+    // Error codes alone are ambiguous: target-unavailable can also occur
+    // after admission. Only the server's exact pre-admission proof permits a
+    // retry, using the original nonce even if another request has since won.
+    if (!disposed && rejection && typeof rejection.status === 'number' && rejection.status >= 400 && rejection.status < 500
+      && rejection.params?.confirmationAccepted === false
+      && rejection.params.importId === receipt.id && rejection.params.clientRequestId === confirmation
+      && state.value.preview?.id === receipt.id && state.value.confirmRequestId === confirmation) {
+      state.value.uncertain = false
+      if (rejection.code === 'workspace_import_expired') { state.value.preview.state = 'expired'; remember(state.value.preview) }
+    }
+    failed(cause)
+  } finally { busy.value = false }
 }
 async function adopt(receipt: Preview) {
   if (busy.value) return
@@ -137,6 +151,7 @@ onBeforeUnmount(() => { disposed = true })
         <summary class="cursor-pointer text-txt2">{{ t('pages.solo.workspaceImport.details') }}</summary>
         <p class="mt-2">{{ t('pages.solo.workspaceImport.exclusions') }}</p>
         <p class="mt-1">{{ t('pages.solo.workspaceImport.limits') }}</p>
+        <p class="mt-1">{{ t('pages.solo.workspaceImport.retention') }}</p>
       </details>
     </div>
     <p v-if="error" class="text-xs text-err" role="alert">{{ error }}</p>
@@ -165,7 +180,9 @@ onBeforeUnmount(() => { disposed = true })
       <div v-for="repo in state.preview.repositories" :key="repo.path" class="space-y-1 text-xs"><strong class="font-mono text-txt">{{ repo.path }}</strong><p class="break-all font-mono text-txt3">{{ repo.commit }}</p><p class="text-txt3">{{ t('pages.solo.workspaceImport.files', { count: repo.files, size: (repo.bytes / 1024).toFixed(1) }) }}</p><p v-if="repo.dirty || repo.untracked" class="text-warn">{{ t('pages.solo.workspaceImport.dirtyExcluded') }}</p></div>
       <template v-if="state.preview.state === 'applied'"><p class="text-xs text-txt2">{{ t('pages.solo.workspaceImport.result') }}</p><code v-for="path in state.preview.paths" :key="path" class="block break-all rounded bg-elevated p-2 text-xs text-txt" data-testid="code-import-result-path">{{ path }}</code></template>
       <p v-else-if="uncertain" class="text-xs leading-5 text-txt3">{{ t('pages.solo.workspaceImport.unknownHint') }}</p>
+      <p v-else-if="state.preview.state === 'expired'" class="text-xs leading-5 text-txt3">{{ t('pages.solo.workspaceImport.expiredHint') }}</p>
       <p v-else class="text-xs leading-5 text-txt3">{{ t('pages.solo.workspaceImport.confirmHint') }}</p>
+      <p v-if="state.preview.state === 'prepared' && state.preview.expiresAt" class="text-xs text-txt3">{{ t('pages.solo.workspaceImport.expiresAt', { time: date(state.preview.expiresAt) }) }}</p>
       <div v-if="state.preview.state !== 'applied' && state.preview.destination" class="space-y-2"><p class="text-xs text-txt3">{{ t('pages.solo.workspaceImport.destination') }}</p><code class="block break-all rounded bg-elevated p-2 text-xs text-txt" data-testid="code-import-destination">{{ state.preview.destination }}</code></div>
       <div class="flex flex-wrap gap-2"><AppButton v-if="state.preview.state === 'prepared' && !uncertain" variant="primary" :loading="busy" data-testid="code-import-confirm" @click="confirm">{{ t('pages.solo.workspaceImport.confirm') }}</AppButton><AppButton v-if="uncertain" :loading="busy" data-testid="code-import-reconcile" @click="reconcile">{{ t('pages.solo.workspaceImport.reconcile') }}</AppButton><AppButton variant="ghost" :disabled="busy" data-testid="code-import-restart" @click="restart">{{ t('pages.solo.workspaceImport.newPreview') }}</AppButton></div>
     </div>

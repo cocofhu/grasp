@@ -54,6 +54,43 @@ func (s *WorkspaceImportService) guardIdle(tx *gorm.DB, id string) error {
 	return nil
 }
 
+// This proof is emitted only before the applying transition, for a known
+// rejection. A SQL/transport failure cannot prove whether admission committed.
+// The client must keep this exact confirmation nonce even after rejection.
+func workspaceImportNotAccepted(err error, id, nonce string) error {
+	var typed *SoloError
+	if !errors.As(err, &typed) || typed.Status < 400 || typed.Status >= 500 {
+		return err
+	}
+	copy := *typed
+	copy.Params = make(map[string]any, len(typed.Params)+3)
+	for key, value := range typed.Params {
+		copy.Params[key] = value
+	}
+	copy.Params["importId"] = id
+	copy.Params["clientRequestId"] = nonce
+	copy.Params["confirmationAccepted"] = false
+	return &copy
+}
+
+func (s *WorkspaceImportService) rejectedBeforeAdmission(ctx context.Context, row models.WorkspaceImport, nonce string, rejected error) error {
+	var typed *SoloError
+	if !errors.As(rejected, &typed) || typed.Status < 400 || typed.Status >= 500 || ctx.Err() != nil {
+		return rejected
+	}
+	// Revalidate both the physical owner and the original receipt. A prior
+	// prepared read, or merely this HTTP handler not reaching dispatch, cannot
+	// prove that a competing confirmation has not already been accepted.
+	err := s.sandbox.commitSandboxOperation(ctx, row.TargetSandboxID, func(tx *gorm.DB) error {
+		var current models.WorkspaceImport
+		return tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND solo_id = ? AND actor_id = ? AND target_sandbox_id = ? AND fingerprint = ? AND confirm_nonce = '' AND state IN ?", row.ID, row.SoloID, row.ActorID, row.TargetSandboxID, row.Fingerprint, []string{"prepared", "expired"}).Take(&current).Error
+	})
+	if err != nil {
+		return rejected
+	}
+	return workspaceImportNotAccepted(rejected, row.ID, nonce)
+}
+
 // Confirm can dispatch only prepared -> applying. A crash or uncertain transport
 // never turns applying back into prepared; reconciliation reads the runtime's
 // completion receipt and never replays a filesystem operation.
@@ -71,11 +108,11 @@ func (s *WorkspaceImportService) Confirm(ctx context.Context, soloID, user, id s
 	if row.State == "applied" {
 		return importView(row)
 	}
+	if row.State == "expired" && row.ConfirmNonce == "" {
+		return nil, workspaceImportNotAccepted(workspaceImportError(http.StatusGone, "workspace_import_expired", "导入预览已过期，请新建预览；未执行导入"), id, in.ClientRequestID)
+	}
 	if row.State != "prepared" {
 		return nil, workspaceImportError(http.StatusConflict, "workspace_import_reconcile_required", "上次导入结果尚未确认，请先核对结果；不会自动重复导入")
-	}
-	if err := s.target(s.db.WithContext(ctx), row); err != nil {
-		return nil, err
 	}
 	ctx, release, err := s.sandbox.acquireSandboxOperation(ctx, row.TargetSandboxID, "code_import")
 	if err != nil {
@@ -92,18 +129,21 @@ func (s *WorkspaceImportService) Confirm(ctx context.Context, soloID, user, id s
 	if row.State == "applied" {
 		return importView(row)
 	}
+	if row.State == "expired" && row.ConfirmNonce == "" {
+		return nil, workspaceImportNotAccepted(workspaceImportError(http.StatusGone, "workspace_import_expired", "导入预览已过期，请新建预览；未执行导入"), id, in.ClientRequestID)
+	}
 	if row.State != "prepared" {
 		return nil, workspaceImportError(http.StatusConflict, "workspace_import_reconcile_required", "上次导入结果尚未确认，请先核对结果")
 	}
 	if err := s.target(s.db.WithContext(ctx), row); err != nil {
-		return nil, err
+		return nil, s.rejectedBeforeAdmission(ctx, row, in.ClientRequestID, err)
 	}
 	capability, err := s.runtime.Inventory(ctx, row.TargetSandboxID)
 	if err != nil {
-		return nil, workspaceRuntimeError(err)
+		return nil, s.rejectedBeforeAdmission(ctx, row, in.ClientRequestID, workspaceRuntimeError(err))
 	}
 	if capability.Version != sandbox.WorkspaceCodeVersion || !capability.RenewableLease {
-		return nil, workspaceImportError(http.StatusUnprocessableEntity, "workspace_import_unsupported", "Solo 环境尚不支持提交导入，请更新运行时后重试")
+		return nil, s.rejectedBeforeAdmission(ctx, row, in.ClientRequestID, workspaceImportError(http.StatusUnprocessableEntity, "workspace_import_unsupported", "Solo 环境尚不支持提交导入，请更新运行时后重试"))
 	}
 	// Open and validate object bytes outside SQL, before accepting dispatch. A
 	// missing archive cannot produce an accepted import that can never execute.
@@ -118,7 +158,7 @@ func (s *WorkspaceImportService) Confirm(ctx context.Context, soloID, user, id s
 	defer func() { _ = archive.Close() }()
 	manifest, digest, err := inspectCodeArchive(ctx, archive)
 	if err != nil || digest != row.ArchiveSHA256 || stringJSON(manifest.Repositories) != row.Repositories {
-		return nil, workspaceRuntimeError(workspacearchive.ErrUnsafe)
+		return nil, s.rejectedBeforeAdmission(ctx, row, in.ClientRequestID, workspaceRuntimeError(workspacearchive.ErrUnsafe))
 	}
 	// Preparing this small result before the TX keeps object writes out of the
 	// queue/sandbox lock order, including on remote S3-compatible storage.
@@ -126,11 +166,18 @@ func (s *WorkspaceImportService) Confirm(ctx context.Context, soloID, user, id s
 	if err != nil {
 		return nil, err
 	}
-	err = s.sandbox.commitSandboxOperationPrepared(ctx, row.TargetSandboxID, func(tx *gorm.DB) error { return s.guardIdle(tx, soloID) }, func(tx *gorm.DB) error {
+	var rejected error
+	err = s.sandbox.commitSandboxOperationPrepared(ctx, row.TargetSandboxID, func(tx *gorm.DB) error {
+		rejected = s.guardIdle(tx, soloID)
+		return rejected
+	}, func(tx *gorm.DB) error {
 		if err := s.target(tx, row); err != nil {
+			rejected = err
 			return err
 		}
-		result := tx.Model(&models.WorkspaceImport{}).Where("id = ? AND state = ? AND (confirm_nonce = '' OR confirm_nonce = ?)", id, "prepared", in.ClientRequestID).Updates(map[string]any{"state": "applying", "confirm_nonce": in.ClientRequestID, "error": ""})
+		result := tx.Model(&models.WorkspaceImport{}).Where("id = ? AND state = ? AND (confirm_nonce = '' OR confirm_nonce = ?)", id, "prepared", in.ClientRequestID).
+			Where("expires_at IS NULL OR expires_at = ? OR expires_at > ?", time.Time{}, time.Now().UTC()).
+			Updates(map[string]any{"state": "applying", "confirm_nonce": in.ClientRequestID, "error": ""})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -140,6 +187,9 @@ func (s *WorkspaceImportService) Confirm(ctx context.Context, soloID, user, id s
 		return nil
 	})
 	if err != nil {
+		if rejected != nil && errors.Is(err, rejected) {
+			return nil, s.rejectedBeforeAdmission(ctx, row, in.ClientRequestID, err)
+		}
 		return nil, err
 	}
 	row.State, row.ConfirmNonce = "applying", in.ClientRequestID
@@ -241,7 +291,7 @@ func (s *WorkspaceImportService) Reconcile(ctx context.Context, soloID, user, id
 	if err != nil {
 		return nil, err
 	}
-	if row.State == "applied" || row.State == "prepared" {
+	if row.State == "applied" || row.State == "prepared" || row.State == "expired" {
 		return importView(row)
 	}
 	if err := s.target(s.db.WithContext(ctx), row); err != nil {
@@ -256,7 +306,7 @@ func (s *WorkspaceImportService) Reconcile(ctx context.Context, soloID, user, id
 	if err != nil {
 		return nil, err
 	}
-	if row.State == "applied" || row.State == "prepared" {
+	if row.State == "applied" || row.State == "prepared" || row.State == "expired" {
 		return importView(row)
 	}
 	if err := s.target(s.db.WithContext(ctx), row); err != nil {

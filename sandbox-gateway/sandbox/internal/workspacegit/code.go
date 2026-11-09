@@ -203,6 +203,28 @@ func command(ctx context.Context, dir string, stdout io.Writer, args ...string) 
 	return commandInput(ctx, dir, stdout, nil, args...)
 }
 
+// Git ownership exceptions are private to an already validated, open source
+// directory. Git requires its canonical pathname in safe.directory; /proc FD
+// spellings alone are not accepted. The working directory remains the pinned
+// FD, so a subsequent pathname replacement cannot redirect this command.
+// A rename racing the pathname check may fail closed, never trust its neighbor.
+func sourceCommand(ctx context.Context, dir *os.File, stdout io.Writer, stdin io.Reader, args ...string) ([]byte, error) {
+	root := handlePath(dir)
+	name, err := os.Readlink(root)
+	if err != nil || !filepath.IsAbs(name) || strings.Contains(name, "*") {
+		return nil, unsupportedRepository("repository_unsafe_metadata")
+	}
+	opened, err := dir.Stat()
+	if err != nil {
+		return nil, err
+	}
+	current, err := os.Stat(name)
+	if err != nil || !os.SameFile(opened, current) {
+		return nil, unsupportedRepository("repository_unsafe_metadata")
+	}
+	return commandInput(ctx, root, stdout, stdin, append([]string{"-c", "safe.directory=" + name}, args...)...)
+}
+
 func commandInput(ctx context.Context, dir string, stdout io.Writer, stdin io.Reader, args ...string) ([]byte, error) {
 	base := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.attributesFile=/dev/null", "-c", "core.excludesFile=/dev/null", "-c", "submodule.recurse=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "protocol.allow=never", "-c", "protocol.file.allow=always", "-c", "pack.threads=1", "-c", "uploadpack.packObjectsHook="}
 	cmd := workspacejob.NewSupervisedCommand(ctx, append([]string{"git"}, append(base, args...)...)...)
@@ -256,11 +278,10 @@ func (s *Service) inspect(ctx context.Context, repoPath, selected string) (Repos
 		return Repository{}, err
 	}
 	defer func() { _ = dir.Close() }()
-	root := handlePath(dir)
 	// Status may invoke a repository's custom clean/process filter while
 	// checking files. Such repositories require a snapshot path; a read-only
 	// preview must not execute arbitrary filter programs or refresh their index.
-	filters, filterErr := command(ctx, root, nil, "config", "--no-includes", "--local", "--null", "--get-regexp", `^(filter\..*\.(clean|smudge|process)|core\.worktree|extensions\.worktreeconfig|include\..*|includeif\..*)$`)
+	filters, filterErr := sourceCommand(ctx, dir, nil, nil, "config", "--no-includes", "--local", "--null", "--get-regexp", `^(filter\..*\.(clean|smudge|process)|core\.worktree|extensions\.worktreeconfig|include\..*|includeif\..*)$`)
 	if filterErr != nil {
 		var exit *exec.ExitError
 		if !errors.As(filterErr, &exit) || exit.ExitCode() != 1 {
@@ -278,7 +299,7 @@ func (s *Service) inspect(ctx context.Context, repoPath, selected string) (Repos
 		}
 		return Repository{}, unsupportedRepository(reason)
 	}
-	head, err := command(ctx, root, nil, "rev-parse", "--verify", "HEAD^{commit}")
+	head, err := sourceCommand(ctx, dir, nil, nil, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
 		return Repository{}, err
 	}
@@ -288,15 +309,15 @@ func (s *Service) inspect(ctx context.Context, repoPath, selected string) (Repos
 	if !commitPattern.MatchString(selected) {
 		return Repository{}, ErrUnsafe
 	}
-	commit, err := command(ctx, root, nil, "rev-parse", "--verify", selected+"^{commit}")
+	commit, err := sourceCommand(ctx, dir, nil, nil, "rev-parse", "--verify", selected+"^{commit}")
 	if err != nil || strings.TrimSpace(string(commit)) != selected {
 		return Repository{}, ErrUnsupported
 	}
-	files, total, err := validateTree(ctx, root, selected)
+	files, total, err := validateSourceTree(ctx, dir, selected)
 	if err != nil {
 		return Repository{}, err
 	}
-	status, err := command(ctx, root, nil, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
+	status, err := sourceCommand(ctx, dir, nil, nil, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
 	if err != nil {
 		return Repository{}, err
 	}
@@ -314,7 +335,19 @@ func (s *Service) inspect(ctx context.Context, repoPath, selected string) (Repos
 	return Repository{Path: repoPath, Commit: selected, Head: strings.TrimSpace(string(head)), Dirty: dirty, Untracked: untracked, Files: files, Bytes: total, Supported: true}, nil
 }
 func validateTree(ctx context.Context, root, commit string) (int, int64, error) {
-	data, err := command(ctx, root, nil, "ls-tree", "-rlz", "--full-tree", commit)
+	return validateTreeWith(ctx, commit, func(stdout io.Writer, stdin io.Reader, args ...string) ([]byte, error) {
+		return commandInput(ctx, root, stdout, stdin, args...)
+	})
+}
+
+func validateSourceTree(ctx context.Context, dir *os.File, commit string) (int, int64, error) {
+	return validateTreeWith(ctx, commit, func(stdout io.Writer, stdin io.Reader, args ...string) ([]byte, error) {
+		return sourceCommand(ctx, dir, stdout, stdin, args...)
+	})
+}
+
+func validateTreeWith(ctx context.Context, commit string, run func(io.Writer, io.Reader, ...string) ([]byte, error)) (int, int64, error) {
+	data, err := run(nil, nil, "ls-tree", "-rlz", "--full-tree", commit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -377,7 +410,7 @@ func validateTree(ctx context.Context, root, commit string) (int, int64, error) 
 		// One bounded batch handles the complete tree. Starting one process per
 		// small blob made valid repositories approach the lease deadline.
 		limit := MaxTotalBytes + int64(MaxEntries)*128
-		_, err := commandInput(ctx, root, &boundedWriter{writer: &output, remaining: limit}, strings.NewReader(query.String()), "cat-file", "--batch")
+		_, err := run(&boundedWriter{writer: &output, remaining: limit}, strings.NewReader(query.String()), "cat-file", "--batch")
 		if err != nil {
 			return 0, 0, err
 		}

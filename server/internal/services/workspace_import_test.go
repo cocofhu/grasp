@@ -307,6 +307,12 @@ func TestWorkspaceImportRejectsBusyChangedTargetAndUnconfirmedWrites(t *testing.
 			}
 			_, err = s.Confirm(ctx, "solo-import", "alice", preview.ID, confirm)
 			importCode(t, err, want)
+			if test == "busy" {
+				var rejected *SoloError
+				if !errors.As(err, &rejected) || rejected.Params["confirmationAccepted"] != false || rejected.Params["importId"] != preview.ID || rejected.Params["clientRequestId"] != confirm.ClientRequestID {
+					t.Fatalf("known queue rejection did not return exact pre-admission proof: %#v", rejected)
+				}
+			}
 			if runtime.imports != 0 {
 				t.Fatal("provider changed files after rejected confirmation")
 			}
