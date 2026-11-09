@@ -53,7 +53,8 @@ func TestSandboxOperationRetriesTransientRenewalUntilAcknowledgedExpiry(t *testi
 			}); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = db.Callback().Update().Remove("test:transient_operation_renewal") })
+			// This callback belongs to this test's private DB. Keep the callback
+			// registry immutable while the final renewal is exiting after release.
 			ctx, release, err := s.acquireSandboxOperation(context.Background(), row.ID)
 			if err != nil {
 				t.Fatal(err)
