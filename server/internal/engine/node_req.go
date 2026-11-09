@@ -66,6 +66,15 @@ func (e *Engine) nodeReq(c *execCtx, node *models.Node) runtime.NodeReq {
 		Token: c.token, NodeID: node.ID, NodeType: node.Type, Config: cfg, Vars: c.vars,
 		Caps: node.Caps, PromptImages: promptImages, SandboxMode: c.run.SandboxMode}
 	req.Iteration = max(1, c.iter[node.ID])
+	req.RunAttempt = c.run.Attempt
+	// Resolve only the exact visit/attempt owned by this execution context.
+	// Duplicated or missing historical rows cannot safely identify a source.
+	var visits []struct{ ID uint }
+	if err := e.db.Model(&models.StateRun{}).Select("id").
+		Where("run_id = ? AND node_id = ? AND iteration = ? AND attempt = ?",
+			c.run.ID, node.ID, req.Iteration, req.RunAttempt).Limit(2).Find(&visits).Error; err == nil && len(visits) == 1 {
+		req.StateRunID = visits[0].ID
+	}
 
 	req.KeepAliveForReview = node.Caps.ReviewEnabled() || e.hasDownstreamReactGate(c, node)
 	if node.Type == "agent" {

@@ -41,10 +41,11 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 		"workflow_name": info.WorkflowName,
 		"node_id":       info.NodeID,
 		"iteration":     info.Iteration,
-		"home_dir":      info.HomeDir,
-		"error":         "",
-		"destroy_at":    nil,
-		"updated_at":    time.Now(),
+		"state_run_id":  info.StateRunID, "run_attempt": info.RunAttempt, "provider_attempt": info.ProviderAttempt,
+		"home_dir":   info.HomeDir,
+		"error":      "",
+		"destroy_at": nil,
+		"updated_at": time.Now(),
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
@@ -88,10 +89,11 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		"workflow_name":    info.WorkflowName,
 		"node_id":          info.NodeID,
 		"iteration":        info.Iteration,
-		"home_dir":         info.HomeDir,
-		"error":            "",
-		"destroy_at":       nil,
-		"updated_at":       time.Now(),
+		"state_run_id":     info.StateRunID, "run_attempt": info.RunAttempt, "provider_attempt": info.ProviderAttempt,
+		"home_dir":   info.HomeDir,
+		"error":      "",
+		"destroy_at": nil,
+		"updated_at": time.Now(),
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
@@ -99,7 +101,7 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Shared {
 		fields["shared"] = true
 	}
-	s.markVisitSandboxReady(info.RunID, info.NodeID, fields["updated_at"].(time.Time))
+	s.markVisitSandboxReady(info, fields["updated_at"].(time.Time))
 	// Adopt the pre-registered creating/pulling placeholder row (by run+node) in place,
 	// swapping its placeholder name for the gateway id. Falls back to an upsert
 	// by name when no placeholder exists (registry without RunSandboxBeginner).
@@ -109,6 +111,10 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		Where("iteration = ?", info.Iteration)
 	if info.CorrelationName != "" {
 		query = query.Where("name = ?", info.CorrelationName)
+	}
+	if info.StateRunID != 0 {
+		query = query.Where("state_run_id = ? AND run_attempt = ? AND provider_attempt = ?",
+			info.StateRunID, info.RunAttempt, info.ProviderAttempt)
 	}
 	err := query.Order("updated_at desc").First(&existing).Error
 	if err == nil {
@@ -136,18 +142,24 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 
 // markVisitSandboxReady stamps the node's active visit with the first time its
 // sandbox came up, so the boot steps stay readable after the sandbox is gone.
-func (s *SandboxService) markVisitSandboxReady(runID, nodeID string, at time.Time) {
-	if runID == "" || nodeID == "" {
+func (s *SandboxService) markVisitSandboxReady(info runtime.RunSandboxInfo, at time.Time) {
+	if info.RunID == "" || info.NodeID == "" {
 		return
 	}
 	var sr models.StateRun
-	if err := s.db.Select("id").Where("run_id = ? AND node_id = ? AND status IN ?", runID, nodeID,
-		[]string{"running", "waiting_human"}).Order("id desc").First(&sr).Error; err != nil {
+	query := s.db.Select("id").Where("run_id = ? AND node_id = ? AND status IN ?", info.RunID, info.NodeID,
+		[]string{"running", "waiting_human"})
+	if info.StateRunID != 0 {
+		query = query.Where("id = ? AND iteration = ? AND attempt = ?", info.StateRunID, info.Iteration, info.RunAttempt)
+	} else if info.Iteration != 0 {
+		query = query.Where("iteration = ?", info.Iteration)
+	}
+	if err := query.Order("id desc").First(&sr).Error; err != nil {
 		return
 	}
 	if err := s.db.Model(&models.StateRun{}).Where("id = ? AND sandbox_ready_at IS NULL", sr.ID).
 		Update("sandbox_ready_at", at).Error; err != nil {
-		log.Warn().Err(err).Str("run", runID).Str("node", nodeID).Msg("stamp sandbox ready failed")
+		log.Warn().Err(err).Str("run", info.RunID).Str("node", info.NodeID).Msg("stamp sandbox ready failed")
 	}
 }
 

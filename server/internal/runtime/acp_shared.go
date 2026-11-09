@@ -374,6 +374,7 @@ func (c *acpProvider) registerSharedRunSandbox(req NodeReq, sb *sandbox.Sandbox,
 		return
 	}
 	c.registry.RegisterRunSandbox(RunSandboxInfo{
+		StateRunID: req.StateRunID, RunAttempt: req.RunAttempt, ProviderAttempt: req.ProviderAttempt,
 		Iteration:       req.Iteration,
 		CorrelationName: sb.CorrelationName,
 		Name:            sb.Name,

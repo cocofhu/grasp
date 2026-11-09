@@ -1019,7 +1019,12 @@ type Sandbox struct {
 	WorkflowName string `json:"workflowName,omitempty"`
 	NodeID       string `json:"nodeId,omitempty"`
 	Iteration    int    `json:"iteration,omitempty"`
-	ThreadID     string `json:"threadId,omitempty"`
+	// Exact execution provenance is private metadata for workspace capture.
+	// Legacy rows retain zero rather than guessing the latest node/attempt.
+	StateRunID      uint   `gorm:"index" json:"-"`
+	RunAttempt      int    `json:"-"`
+	ProviderAttempt int    `json:"-"`
+	ThreadID        string `json:"threadId,omitempty"`
 	// PreviewArtifact is the pinned artifact in this Solo sandbox's run namespace.
 	PreviewArtifact string `json:"-"`
 	// Shared marks a run sandbox that serves every node of its run (sandbox

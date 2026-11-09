@@ -142,9 +142,15 @@ type NodeReq struct {
 	WorkflowName string
 	Token        string // run-scoped MCP token, injected to the sandbox
 	NodeID       string
-	Iteration    int              // exact node visit; zero only for legacy callers
-	Instructions AutoInstructions // exact-generation supplements; nil outside auto execution
-	NodeType     string
+	Iteration    int // exact node visit; zero only for legacy callers
+	// StateRunID and RunAttempt identify the persisted visit that requested
+	// this resource. Zero StateRunID means attribution is unavailable; callers
+	// must not infer it from the run's most recent node.
+	StateRunID      uint
+	RunAttempt      int
+	ProviderAttempt int              // zero until a durable provider-attempt allocator supplies it
+	Instructions    AutoInstructions // exact-generation supplements; nil outside auto execution
+	NodeType        string
 	// Caps is the Agent's capability snapshot for this run (nil for non-Agent nodes).
 	Caps   *models.AgentCapabilities
 	Config map[string]any
@@ -418,6 +424,9 @@ type RunAborter interface {
 type RunSandboxInfo struct {
 	CorrelationName string // original create placeholder, when gateway id differs
 	Iteration       int
+	StateRunID      uint
+	RunAttempt      int
+	ProviderAttempt int
 	Name            string
 	Profile         string
 	RunID           string

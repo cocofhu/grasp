@@ -246,6 +246,7 @@ func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
 		return
 	}
 	b.BeginRunSandbox(RunSandboxInfo{
+		StateRunID: req.StateRunID, RunAttempt: req.RunAttempt, ProviderAttempt: req.ProviderAttempt,
 		Iteration:    req.Iteration,
 		Name:         name,
 		Profile:      models.AgentProfile(req.Config),
@@ -267,6 +268,7 @@ func (c *acpProvider) registerRunSandbox(req NodeReq, sb *sandbox.Sandbox, home 
 	}
 	repo := firstRepoURL(req)
 	c.registry.RegisterRunSandbox(RunSandboxInfo{
+		StateRunID: req.StateRunID, RunAttempt: req.RunAttempt, ProviderAttempt: req.ProviderAttempt,
 		Iteration:       req.Iteration,
 		CorrelationName: sb.CorrelationName,
 		Name:            sb.Name,
