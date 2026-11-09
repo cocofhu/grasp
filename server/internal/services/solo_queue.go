@@ -168,7 +168,7 @@ func (s *SoloService) soloQueueReady(id string) (bool, error) {
 		return false, nil
 	}
 	var notices []models.ChatQueueTurn
-	if err := s.db.Where("queue_id = ? AND (state = ? OR (state = ? AND started_at IS NOT NULL)) AND result_id = ?", soloQueueScope(id).ID(), chatsession.TurnUnknown, chatsession.TurnCancelled, "").Find(&notices).Error; err != nil {
+	if err := s.db.Omit("payload").Where("queue_id = ? AND (state = ? OR (state = ? AND started_at IS NOT NULL)) AND result_id = ?", soloQueueScope(id).ID(), chatsession.TurnUnknown, chatsession.TurnCancelled, "").Find(&notices).Error; err != nil {
 		return false, err
 	}
 	for _, notice := range notices {
@@ -230,7 +230,7 @@ func (s *SoloService) maintainSoloQueuesLocked() {
 // an otherwise empty conversation receives its interruption notice on retry.
 func (s *SoloService) recoverSoloNoticesLocked() {
 	var turns []models.ChatQueueTurn
-	err := s.db.Joins("JOIN chat_queues q ON q.id = chat_queue_turns.queue_id").
+	err := s.db.Omit("payload").Joins("JOIN chat_queues q ON q.id = chat_queue_turns.queue_id").
 		Where("q.surface = ? AND (chat_queue_turns.state = ? OR (chat_queue_turns.state = ? AND chat_queue_turns.started_at IS NOT NULL)) AND chat_queue_turns.result_id = ?", soloPendingSurface, chatsession.TurnUnknown, chatsession.TurnCancelled, "").
 		Order("chat_queue_turns.created_at, chat_queue_turns.id").Limit(100).Find(&turns).Error
 	if err != nil {
@@ -301,7 +301,7 @@ func (s *SoloService) classifyLegacySoloTurn(tx *gorm.DB, id, status string, old
 		return chatsession.TurnUnknown, "legacy_interrupted", nil
 	}
 	var reply models.SoloMessage
-	err := tx.Omit("content", "events", "images").Where("session_id = ? AND role = ? AND (id = ? OR turn_id = ?)", id, "assistant", "reply:"+old.ID, old.ID).First(&reply).Error
+	err := tx.Select("id", "status").Where("session_id = ? AND role = ? AND (id = ? OR turn_id = ?)", id, "assistant", "reply:"+old.ID, old.ID).First(&reply).Error
 	if err == nil {
 		state := chatsession.TurnSucceeded
 		if reply.Status == "stopped" {
@@ -424,6 +424,13 @@ func (s *SoloService) retryDeferredRestores(sandboxID uint) {
 }
 
 func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) error {
+	if len(turn.Payload) == 0 {
+		var err error
+		turn, err = s.durable.ReadTurn(context.Background(), soloQueueScope(id), turn.ID)
+		if err != nil {
+			return err
+		}
+	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		// The owning conversation's close/delete uses this same row lock.
 		if err := tx.Model(&models.ChatQueue{}).Where("id = ?", soloQueueScope(id).ID()).UpdateColumn("revision", gorm.Expr("revision + 1")).Error; err != nil {

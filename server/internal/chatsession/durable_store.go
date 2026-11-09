@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -28,14 +29,15 @@ const (
 )
 
 var (
-	ErrQueueOwnerLost      = errors.New("conversation execution ownership lost")
-	ErrQueueOwned          = errors.New("conversation is being executed by another owner")
-	ErrQueueRetired        = errors.New("conversation queue is closed")
-	ErrClientConflict      = errors.New("client message identity was reused for different content")
-	ErrQueueChanged        = errors.New("conversation queue changed; refresh and retry")
-	ErrQueueFull           = errors.New("消息队列已满，请稍候")
-	ErrQueueBusy           = errors.New("conversation has active or accepted work")
-	ErrPreparationDeferred = errors.New("conversation environment is not ready; accepted message retained")
+	ErrQueueOwnerLost       = errors.New("conversation execution ownership lost")
+	ErrQueueOwned           = errors.New("conversation is being executed by another owner")
+	ErrQueueRetired         = errors.New("conversation queue is closed")
+	ErrClientConflict       = errors.New("client message identity was reused for different content")
+	ErrQueueChanged         = errors.New("conversation queue changed; refresh and retry")
+	ErrQueueFull            = errors.New("消息队列已满，请稍候")
+	ErrQueueBusy            = errors.New("conversation has active or accepted work")
+	ErrPayloadInTransaction = errors.New("conversation payload I/O requires an outer transaction-free storage handle")
+	ErrPreparationDeferred  = errors.New("conversation environment is not ready; accepted message retained")
 )
 
 type DurableStore struct {
@@ -72,6 +74,47 @@ type QueueIntent struct {
 	Fingerprint     string
 	Payload         []byte
 	Display         []byte
+}
+
+// PreparedIntent cannot be constructed from an inbound reference. PrepareIntent
+// freezes its content and completes storage publication before SQL admission.
+type PreparedIntent struct {
+	scope  QueueScope
+	intent QueueIntent
+	body   filestore.Prepared
+}
+
+func (s *DurableStore) outsidePayloadTransaction() error {
+	if _, inside := s.db.Statement.ConnPool.(gorm.TxCommitter); inside {
+		return ErrPayloadInTransaction
+	}
+	return nil
+}
+
+func (s *DurableStore) PrepareIntent(ctx context.Context, scope QueueScope, intent QueueIntent) (PreparedIntent, error) {
+	if err := s.outsidePayloadTransaction(); err != nil {
+		return PreparedIntent{}, err
+	}
+	if err := scope.validate(); err != nil {
+		return PreparedIntent{}, err
+	}
+	if err := validateIntent(intent); err != nil {
+		return PreparedIntent{}, err
+	}
+	files, err := filestore.FromDB(s.db)
+	if err != nil {
+		return PreparedIntent{}, err
+	}
+	// The caller no longer owns mutable payload/display buffers after this
+	// boundary. A prepared receipt cannot later acquire different bytes.
+	payload := append([]byte(nil), intent.Payload...)
+	intent.Payload = nil
+	intent.Display = append([]byte(nil), intent.Display...)
+	body, err := files.Prepare(ctx, bytes.NewReader(payload), filestore.Bytes)
+	if err != nil {
+		return PreparedIntent{}, err
+	}
+	return PreparedIntent{scope: scope, intent: intent, body: body}, nil
 }
 
 type QueueReceipt struct {
@@ -184,13 +227,62 @@ func validateIntent(intent QueueIntent) error {
 // message. A duplicate returns its existing receipt, including terminal ones.
 func (s *DurableStore) Admit(ctx context.Context, scope QueueScope, intent QueueIntent, capacity int, validate func(*gorm.DB) error) (QueueReceipt, error) {
 	var receipt QueueReceipt
+	if err := s.outsidePayloadTransaction(); err != nil {
+		return receipt, err
+	}
 	if err := validateIntent(intent); err != nil {
 		return receipt, err
 	}
+	// Already committed receipts need no upload, including after close and
+	// after a lost acknowledgement. The authoritative check repeats below.
+	if previous, err := s.Existing(ctx, scope, intent.ActorID, intent.ClientMessageID, intent.Fingerprint); err != nil {
+		return receipt, err
+	} else if previous != nil {
+		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var lookupErr error
+			receipt, lookupErr = s.admitPreparedTx(tx, scope, intent, "", capacity, validate)
+			return lookupErr
+		})
+		return receipt, err
+	}
+	prepared, err := s.PrepareIntent(ctx, scope, intent)
+	if err != nil {
+		return receipt, err
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var admitErr error
+		receipt, admitErr = s.AdmitPreparedTx(tx, scope, prepared, capacity, validate)
+		return admitErr
+	})
+	return receipt, err
+}
+
+// AdmitPreparedTx performs only SQL. Callers with a surrounding creation or
+// lifecycle transaction must prepare before entering that outer transaction.
+func (s *DurableStore) AdmitPreparedTx(tx *gorm.DB, scope QueueScope, prepared PreparedIntent, capacity int, validate func(*gorm.DB) error) (QueueReceipt, error) {
+	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
+		return QueueReceipt{}, errors.New("prepared conversation admission requires an SQL transaction")
+	}
+	if prepared.scope != scope || prepared.body.Size() < 1 {
+		return QueueReceipt{}, errors.New("conversation intent was not prepared for this scope")
+	}
+	files, err := filestore.FromDB(tx)
+	if err != nil {
+		return QueueReceipt{}, err
+	}
+	ref, err := files.PreparedRef(prepared.body)
+	if err != nil {
+		return QueueReceipt{}, err
+	}
+	return s.admitPreparedTx(tx, scope, prepared.intent, ref, capacity, validate)
+}
+
+func (s *DurableStore) admitPreparedTx(tx *gorm.DB, scope QueueScope, intent QueueIntent, rawRef string, capacity int, validate func(*gorm.DB) error) (QueueReceipt, error) {
+	var receipt QueueReceipt
 	if capacity <= 0 {
 		capacity = DefaultCapacity
 	}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := func() error {
 		queue, err := s.lock(tx, scope)
 		if err != nil {
 			return err
@@ -205,6 +297,9 @@ func (s *DurableStore) Admit(ctx context.Context, scope QueueScope, intent Queue
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		} else {
+			if rawRef == "" {
+				return ErrQueueChanged
+			}
 			if validate != nil {
 				if err := validate(tx); err != nil {
 					return err
@@ -223,8 +318,8 @@ func (s *DurableStore) Admit(ctx context.Context, scope QueueScope, intent Queue
 			queue.NextSequence++
 			receipt.Turn = models.ChatQueueTurn{ID: intent.ID, QueueID: queue.ID, ActorID: intent.ActorID,
 				ClientMessageID: intent.ClientMessageID, ClientKey: clientKey(intent.ActorID, intent.ClientMessageID), Fingerprint: intent.Fingerprint, Sequence: queue.NextSequence,
-				Position: queue.NextSequence, State: TurnQueued, Payload: append([]byte(nil), intent.Payload...), Display: string(intent.Display)}
-			if err := tx.Create(&receipt.Turn).Error; err != nil {
+				Position: queue.NextSequence, State: TurnQueued, Display: string(intent.Display)}
+			if err := s.insertQueueTurn(tx, &receipt.Turn, rawRef); err != nil {
 				return err
 			}
 			if err := tx.Model(queue).Update("next_sequence", queue.NextSequence).Error; err != nil {
@@ -237,8 +332,24 @@ func (s *DurableStore) Admit(ctx context.Context, scope QueueScope, intent Queue
 		}
 		receipt.Waiting, receipt.Generation, receipt.Revision = int(waiting), queue.Generation, queue.Revision
 		return nil
-	})
+	}()
 	return receipt, err
+}
+
+func (s *DurableStore) insertQueueTurn(tx *gorm.DB, turn *models.ChatQueueTurn, rawRef string) error {
+	if turn.CreatedAt.IsZero() {
+		turn.CreatedAt = s.now()
+	}
+	turn.UpdatedAt = s.now()
+	// A table/map insert has no payload serializer. Keep the existing column
+	// and fileref format so legacy readers and the reference catalogue work.
+	values := map[string]any{"id": turn.ID, "queue_id": turn.QueueID, "actor_id": turn.ActorID,
+		"client_message_id": turn.ClientMessageID, "client_key": turn.ClientKey, "fingerprint": turn.Fingerprint,
+		"sequence": turn.Sequence, "position": turn.Position, "state": turn.State, "payload": rawRef,
+		"display": turn.Display, "execution_epoch": turn.ExecutionEpoch, "dispatched_at": turn.DispatchedAt,
+		"started_at": turn.StartedAt, "finished_at": turn.FinishedAt, "reason": turn.Reason,
+		"result_id": turn.ResultID, "created_at": turn.CreatedAt, "updated_at": turn.UpdatedAt}
+	return tx.Table("chat_queue_turns").Create(&values).Error
 }
 
 // Existing supports deduplication before attachment ingestion creates new blob
@@ -270,6 +381,11 @@ func (s *DurableStore) SnapshotMetadata(ctx context.Context, scope QueueScope) (
 
 func (s *DurableStore) snapshot(ctx context.Context, scope QueueScope, metadataOnly bool) (DurableSnapshot, error) {
 	var result DurableSnapshot
+	if !metadataOnly {
+		if err := s.outsidePayloadTransaction(); err != nil {
+			return result, err
+		}
+	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).First(&result.Queue, "id = ?", scope.ID()).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -279,10 +395,7 @@ func (s *DurableStore) snapshot(ctx context.Context, scope QueueScope, metadataO
 			return err
 		}
 		var turns []models.ChatQueueTurn
-		query := tx.Where("queue_id = ? AND state IN ?", scope.ID(), []string{TurnQueued, TurnExecuting}).Order("position, sequence, id")
-		if metadataOnly {
-			query = query.Omit("payload")
-		}
+		query := tx.Omit("payload").Where("queue_id = ? AND state IN ?", scope.ID(), []string{TurnQueued, TurnExecuting}).Order("position, sequence, id")
 		if err := query.Find(&turns).Error; err != nil {
 			return err
 		}
@@ -302,6 +415,16 @@ func (s *DurableStore) snapshot(ctx context.Context, scope QueueScope, metadataO
 		}
 		return nil
 	})
+	if err == nil && !metadataOnly {
+		for i := range result.Pending {
+			if err = s.loadTurnBody(ctx, scope, &result.Pending[i]); err != nil {
+				return DurableSnapshot{}, err
+			}
+		}
+		if result.Active != nil {
+			err = s.loadTurnBody(ctx, scope, result.Active)
+		}
+	}
 	return result, err
 }
 
@@ -319,8 +442,41 @@ func validateQueueDisplay(display []byte) error {
 // transaction. Legacy preview backfill must not hold an SQL lock during S3 I/O.
 func (s *DurableStore) ReadTurn(ctx context.Context, scope QueueScope, id string) (models.ChatQueueTurn, error) {
 	var row models.ChatQueueTurn
-	err := s.db.WithContext(ctx).First(&row, "id = ? AND queue_id = ?", id, scope.ID()).Error
+	if err := s.outsidePayloadTransaction(); err != nil {
+		return row, err
+	}
+	err := s.db.WithContext(ctx).Omit("payload").First(&row, "id = ? AND queue_id = ?", id, scope.ID()).Error
+	if err == nil {
+		err = s.loadTurnBody(ctx, scope, &row)
+	}
 	return row, err
+}
+
+func rawQueueBody(query *gorm.DB) (string, error) {
+	var cell struct{ Payload string }
+	// A raw destination has no serializer. Take returns after its SQL cursor
+	// has closed; object I/O only begins in the caller afterwards.
+	err := query.Select("payload").Take(&cell).Error
+	return cell.Payload, err
+}
+
+func (s *DurableStore) loadTurnBody(ctx context.Context, scope QueueScope, row *models.ChatQueueTurn) error {
+	if err := s.outsidePayloadTransaction(); err != nil {
+		return err
+	}
+	if row.QueueID != scope.ID() {
+		return ErrQueueChanged
+	}
+	raw, err := rawQueueBody(s.db.WithContext(ctx).Table("chat_queue_turns").Where("id = ? AND queue_id = ? AND fingerprint = ?", row.ID, row.QueueID, row.Fingerprint))
+	if err != nil {
+		return err
+	}
+	files, err := filestore.FromDB(s.db)
+	if err != nil {
+		return err
+	}
+	row.Payload, err = files.Load(ctx, raw, filestore.Bytes)
+	return err
 }
 
 // BackfillDisplay only fills an absent preview for the same immutable receipt.
@@ -421,7 +577,8 @@ func (s *DurableStore) recoverActive(tx *gorm.DB, queue *models.ChatQueue) (*mod
 		}
 		return nil, nil
 	}
-	if err := tx.First(&active, "id = ? AND queue_id = ?", active.ID, queue.ID).Error; err != nil {
+	var hasPayload int64
+	if err := tx.Table("chat_queue_turns").Where("id = ? AND queue_id = ? AND payload IS NOT NULL AND payload <> ''", active.ID, queue.ID).Count(&hasPayload).Error; err != nil {
 		return nil, err
 	}
 	state, reason := TurnQueued, ""
@@ -431,7 +588,7 @@ func (s *DurableStore) recoverActive(tx *gorm.DB, queue *models.ChatQueue) (*mod
 		state, reason, finished = TurnUnknown, "executor_lost", &now
 	} else if queue.CancelRequested || queue.Retired {
 		state, reason, finished = TurnCancelled, "cancelled_before_dispatch", &now
-	} else if len(active.Payload) == 0 {
+	} else if hasPayload == 0 {
 		state, reason, finished = TurnUnknown, "accepted_payload_missing", &now
 	}
 	updates := map[string]any{"state": state, "reason": reason, "finished_at": finished}
@@ -503,6 +660,9 @@ func (s *DurableStore) RenewUntil(ctx context.Context, lease QueueLease) (time.T
 
 func (s *DurableStore) Claim(ctx context.Context, lease QueueLease) (*models.ChatQueueTurn, error) {
 	var turn *models.ChatQueueTurn
+	if err := s.outsidePayloadTransaction(); err != nil {
+		return nil, err
+	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		queue, err := s.lock(tx, lease.Scope)
 		if err != nil {
@@ -517,7 +677,7 @@ func (s *DurableStore) Claim(ctx context.Context, lease QueueLease) (*models.Cha
 		var row models.ChatQueueTurn
 		for {
 			row = models.ChatQueueTurn{}
-			err = tx.Where("queue_id = ? AND state = ?", queue.ID, TurnQueued).Order("position, sequence, id").First(&row).Error
+			err = tx.Omit("payload").Where("queue_id = ? AND state = ?", queue.ID, TurnQueued).Order("position, sequence, id").First(&row).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
@@ -547,6 +707,24 @@ func (s *DurableStore) Claim(ctx context.Context, lease QueueLease) (*models.Cha
 		turn = &row
 		return nil
 	})
+	if err == nil && turn != nil {
+		err = s.loadTurnBody(ctx, lease.Scope, turn)
+		if err == nil {
+			var cancelled bool
+			cancelled, err = s.Cancellation(ctx, lease, turn.ID)
+			if err == nil && cancelled {
+				err = context.Canceled
+			}
+		}
+		if err != nil {
+			// No dispatch has happened. Return the preparation only while the
+			// same fence still owns it; concurrent cancellation/close wins.
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			_ = s.DeferPreparation(cleanup, lease, turn.ID)
+			cancel()
+			return nil, err
+		}
+	}
 	return turn, err
 }
 
@@ -819,32 +997,68 @@ func (s *DurableStore) GuardIdle(tx *gorm.DB, scope QueueScope) error {
 // Source rows are removed only in the transaction that creates every receipt.
 func (s *DurableStore) ImportLegacy(ctx context.Context, scope QueueScope, actor string, classify ...func(*gorm.DB, models.ChatPendingTurn) (string, string, error)) ([]models.ChatQueueTurn, error) {
 	var imported []models.ChatQueueTurn
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.outsidePayloadTransaction(); err != nil {
+		return nil, err
+	}
+	if err := scope.validate(); err != nil {
+		return nil, err
+	}
+	files, err := filestore.FromDB(s.db)
+	if err != nil {
+		return nil, err
+	}
+	sources, err := legacyQueueSources(s.db.WithContext(ctx), scope, false)
+	if err != nil || len(sources) == 0 {
+		return nil, err
+	}
+	rows := make([]models.ChatPendingTurn, 0, len(sources))
+	prepared := make(map[string]filestore.Prepared, len(sources))
+	for _, source := range sources {
+		if source.ID == "" || len(source.ID) > 191 || strings.ContainsAny(source.ID, "\x00\r\n") {
+			return nil, fmt.Errorf("legacy conversation receipt %s requires repair; source retained", source.ID)
+		}
+		body, err := files.Load(ctx, source.Payload, filestore.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		publication, err := files.Prepare(ctx, bytes.NewReader(body), filestore.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		prepared[source.ID] = publication
+		rows = append(rows, models.ChatPendingTurn{ID: source.ID, Surface: source.Surface, SessionKey: source.SessionKey,
+			Position: source.Position, Started: source.Started, Payload: body, CreatedAt: source.CreatedAt})
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		queue, err := s.lock(tx, scope)
 		if err != nil {
 			return err
 		}
-		var rows []models.ChatPendingTurn
-		if err := tx.Where("surface = ? AND session_key = ?", scope.Surface, scope.Key).Order("position, created_at, id").Find(&rows).Error; err != nil {
+		current, err := legacyQueueSources(tx, scope, true)
+		if err != nil {
 			return err
+		}
+		if !sameLegacyQueueSources(sources, current) {
+			return ErrQueueChanged
 		}
 		for _, row := range rows {
 			identity := sha256.Sum256([]byte(row.ID))
 			clientID := "legacy:" + hex.EncodeToString(identity[:])
 			hash := sha256.Sum256(row.Payload)
 			var previous models.ChatQueueTurn
-			err := tx.First(&previous, "id = ?", row.ID).Error
+			err := tx.Omit("payload").First(&previous, "id = ?", row.ID).Error
 			if err == nil {
-				if previous.QueueID != queue.ID || previous.ActorID != actor || !bytes.Equal(previous.Payload, row.Payload) {
+				raw, err := rawQueueBody(tx.Table("chat_queue_turns").Where("id = ? AND queue_id = ?", previous.ID, previous.QueueID))
+				if err != nil {
+					return err
+				}
+				if previous.ID != row.ID || previous.QueueID != queue.ID || previous.ActorID != actor || !sameLegacyQueueBody(raw, row.Payload) {
 					return errors.New("legacy conversation receipt conflicts with existing data")
 				}
 				continue
 			}
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
-			}
-			if row.ID == "" || len(row.ID) > 191 || strings.ContainsAny(row.ID, "\x00\r\n") {
-				return fmt.Errorf("legacy conversation receipt %s requires repair; source retained", row.ID)
 			}
 			queue.NextSequence++
 			turn := models.ChatQueueTurn{ID: row.ID, QueueID: queue.ID, ActorID: actor, ClientMessageID: clientID,
@@ -875,7 +1089,11 @@ func (s *DurableStore) ImportLegacy(ctx context.Context, scope QueueScope, actor
 				now := s.now()
 				turn.State, turn.Reason, turn.FinishedAt = TurnUnknown, "legacy_interrupted", &now
 			}
-			if err := tx.Create(&turn).Error; err != nil {
+			ref, err := files.PreparedRef(prepared[row.ID])
+			if err != nil {
+				return err
+			}
+			if err := s.insertQueueTurn(tx, &turn, ref); err != nil {
 				return err
 			}
 			imported = append(imported, turn)
@@ -886,6 +1104,48 @@ func (s *DurableStore) ImportLegacy(ctx context.Context, scope QueueScope, actor
 		return tx.Where("surface = ? AND session_key = ?", scope.Surface, scope.Key).Delete(&models.ChatPendingTurn{}).Error
 	})
 	return imported, err
+}
+
+type legacyQueueSource struct {
+	ID         string
+	Surface    string
+	SessionKey string
+	Position   int
+	Started    bool
+	Payload    string
+	CreatedAt  time.Time
+}
+
+func legacyQueueSources(db *gorm.DB, scope QueueScope, lock bool) ([]legacyQueueSource, error) {
+	var rows []legacyQueueSource
+	query := db.Table("chat_pending_turns").Where("surface = ? AND session_key = ?", scope.Surface, scope.Key).Order("position, created_at, id")
+	if lock {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	err := query.Find(&rows).Error
+	return rows, err
+}
+
+func sameLegacyQueueSources(before, after []legacyQueueSource) bool {
+	if len(before) != len(after) {
+		return false
+	}
+	for i, row := range before {
+		other := after[i]
+		if row.ID != other.ID || row.Surface != other.Surface || row.SessionKey != other.SessionKey || row.Position != other.Position || row.Started != other.Started || row.Payload != other.Payload || !row.CreatedAt.Equal(other.CreatedAt) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameLegacyQueueBody(raw string, body []byte) bool {
+	if filestore.IsRef(raw) {
+		encoding, digest, err := filestore.Parse(raw)
+		hash := sha256.Sum256(body)
+		return err == nil && encoding == filestore.Bytes && digest == hex.EncodeToString(hash[:])
+	}
+	return !strings.HasPrefix(raw, filestore.Prefix) && bytes.Equal([]byte(raw), body)
 }
 
 func (s *DurableStore) Reopen(tx *gorm.DB, scope QueueScope) error {

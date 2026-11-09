@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -10,9 +11,103 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/objectstore"
 	"gorm.io/gorm"
 )
+
+type creationPayloadObjects struct {
+	*journalViewObjects
+	beforePut func(context.Context) error
+}
+
+func (s *creationPayloadObjects) Put(ctx context.Context, key string, body io.ReadSeeker, info objectstore.Info) error {
+	if err := s.beforePut(ctx); err != nil {
+		return err
+	}
+	return s.journalViewObjects.Put(ctx, key, body, info)
+}
+
+func TestSoloCreationPreparesFirstBodyBeforeOuterSQLTransaction(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, db := newSoloFixture(t, port, 1)
+	insertSoloModelConfig(t, db)
+	started, release := make(chan struct{}), make(chan struct{})
+	var unblock sync.Once
+	t.Cleanup(func() { unblock.Do(func() { close(release) }) })
+	objects := &creationPayloadObjects{journalViewObjects: &journalViewObjects{objects: map[string]journalViewObject{}}}
+	objects.beforePut = func(ctx context.Context) error {
+		close(started)
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	files, err := filestore.FromDB(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := files.SetObjectStore(objects); err != nil {
+		t.Fatal(err)
+	}
+	// Fail after successful publication so no provisioner/native process is
+	// launched. Every SQL admission row must roll back together.
+	if err := db.Callback().Create().Before("gorm:create").Register("test:creation-prepared-failure", func(tx *gorm.DB) {
+		if tx.Statement.Table == "chat_queue_turns" {
+			_ = tx.AddError(errors.New("injected creation SQL failure"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := solo.Create(context.Background(), "alice", SoloCreateInput{ClientRequestID: "blocked-first-body", AgentName: "agentA", Text: "durable initial input"})
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("first-body publication did not start")
+	}
+	probe, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	// A synchronous write on the only SQLite connection proves that even
+	// Creation's outer compute/workflow-admission TX has not started yet.
+	if err := db.WithContext(probe).Create(&models.Setting{Key: "creation-upload-probe", Value: "connection free"}).Error; err != nil {
+		t.Fatalf("first-body upload held the outer creation transaction: %v", err)
+	}
+	for _, model := range []any{&models.SoloSession{}, &models.SoloCreation{}, &models.Sandbox{}, &models.ChatQueueTurn{}} {
+		var count int64
+		if err := db.WithContext(probe).Model(model).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("creation published SQL before its body: %T count=%d %v", model, count, err)
+		}
+	}
+	unblock.Do(func() { close(release) })
+	select {
+	case err := <-done:
+		var failure *SoloError
+		if !errors.As(err, &failure) || failure.Status != 503 || failure.Code != "creation_not_confirmed" {
+			t.Fatalf("failed SQL falsely accepted prepared creation: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("creation failed to finish after publication")
+	}
+	for _, model := range []any{&models.SoloSession{}, &models.SoloCreation{}, &models.Sandbox{}, &models.ChatQueueTurn{}} {
+		var count int64
+		if err := db.Model(model).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("failed receipt leaked creation state: %T count=%d %v", model, count, err)
+		}
+	}
+	objects.mu.Lock()
+	defer objects.mu.Unlock()
+	if len(objects.objects) != 1 {
+		t.Fatalf("failed SQL did not preserve exactly one prepared orphan: %d", len(objects.objects))
+	}
+}
 
 func TestSoloCreationParallelRetriesRetainIdentityAndFirstCommand(t *testing.T) {
 	acp, port := fakeACPServer(t)
@@ -163,12 +258,16 @@ func TestSoloCreationRestoresOnlyAcceptedUnboundIntents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	prepared, err := solo.prepareInitialSoloTurn(context.Background(), &row, turn)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fingerprint, _ := soloCreationFingerprint(input, "")
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
-		if err := solo.admitInitialSoloTurn(context.Background(), tx, &row, turn); err != nil {
+		if err := solo.admitInitialSoloTurn(context.Background(), tx, &row, prepared); err != nil {
 			return err
 		}
 		return tx.Create(&models.SoloCreation{ID: soloCreationKey("alice", input.ClientRequestID), UserID: "alice", Fingerprint: fingerprint, SessionID: row.ID, InitialTurnID: turn.ID}).Error

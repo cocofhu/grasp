@@ -149,17 +149,25 @@ func (s *SoloService) initialSoloTurn(ctx context.Context, row *models.SoloSessi
 	return turn, nil
 }
 
-func (s *SoloService) admitInitialSoloTurn(ctx context.Context, tx *gorm.DB, row *models.SoloSession, turn *soloTurn) error {
+func (s *SoloService) prepareInitialSoloTurn(ctx context.Context, row *models.SoloSession, turn *soloTurn) (*chatsession.PreparedIntent, error) {
 	if turn == nil {
-		return nil
+		return nil, nil
 	}
 	intent, err := s.durableSoloIntent(turn)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// Nested GORM transactions use the outer transaction/savepoint. No worker
-	// is notified until both the session and this accepted intent commit.
-	_, err = chatsession.NewDurableStore(tx).Admit(ctx, soloQueueScope(row.ID), intent, soloQueueCapacity, func(tx *gorm.DB) error { return s.soloQueueAdmission(tx, row.ID) })
+	prepared, err := s.durable.PrepareIntent(ctx, soloQueueScope(row.ID), intent)
+	return &prepared, err
+}
+
+func (s *SoloService) admitInitialSoloTurn(_ context.Context, tx *gorm.DB, row *models.SoloSession, prepared *chatsession.PreparedIntent) error {
+	if prepared == nil {
+		return nil
+	}
+	// The most outer creation transaction commits the session and this receipt
+	// together. Publication already completed before that transaction began.
+	_, err := s.durable.AdmitPreparedTx(tx, soloQueueScope(row.ID), *prepared, soloQueueCapacity, func(tx *gorm.DB) error { return s.soloQueueAdmission(tx, row.ID) })
 	return err
 }
 

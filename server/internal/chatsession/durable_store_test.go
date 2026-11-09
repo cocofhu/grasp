@@ -492,8 +492,12 @@ func TestDurableQueueExpiredDispatchBecomesUnknownAndStaleOwnerCannotPublish(t *
 		t.Fatalf("expired owner revived its lease: %v", err)
 	}
 	successor, recovered, err := b.Acquire(ctx, scope, uuid.NewString())
-	if err != nil || recovered == nil || recovered.ID != first.Turn.ID || recovered.State != TurnUnknown || string(recovered.Payload) != "external action" {
+	if err != nil || recovered == nil || recovered.ID != first.Turn.ID || recovered.State != TurnUnknown || len(recovered.Payload) != 0 {
 		t.Fatalf("uncertain dispatch was replayed or discarded: %+v %v", recovered, err)
+	}
+	retained, err := b.ReadTurn(ctx, scope, recovered.ID)
+	if err != nil || string(retained.Payload) != "external action" {
+		t.Fatalf("unknown receipt lost its accepted body: %+v %v", retained, err)
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&models.Setting{Key: "stale-result", Value: "must rollback"}).Error; err != nil {

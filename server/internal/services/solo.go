@@ -507,6 +507,10 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 	if err != nil {
 		return nil, err
 	}
+	preparedInitial, err := s.prepareInitialSoloTurn(ctx, row, initial)
+	if err != nil {
+		return nil, err
+	}
 	receipt := models.SoloCreation{ID: soloCreationKey(user, in.ClientRequestID), UserID: user, Fingerprint: fingerprint, SessionID: row.ID}
 	if initial != nil {
 		receipt.InitialTurnID = initial.ID
@@ -554,7 +558,7 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 				return err
 			}
 		}
-		if err := s.admitInitialSoloTurn(ctx, tx, row, initial); err != nil {
+		if err := s.admitInitialSoloTurn(ctx, tx, row, preparedInitial); err != nil {
 			return err
 		}
 		if err := tx.Create(&receipt).Error; err != nil {
