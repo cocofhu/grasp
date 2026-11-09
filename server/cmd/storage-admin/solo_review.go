@@ -84,16 +84,36 @@ type soloReviewGateway struct {
 	configuration string
 }
 
-func (p *soloReviewGateway) Observe(ctx context.Context, id string) (executionlineage.SoloReviewObservation, error) {
-	var result executionlineage.SoloReviewObservation
+func (p *soloReviewGateway) coldCapabilities(ctx context.Context, id string) (*sandbox.GatewayInfo, error) {
 	info, err := p.client.InfoFor(ctx, id)
 	if err != nil {
-		return result, errors.New("original gateway capabilities are unavailable")
+		return nil, errors.New("original gateway capabilities are unavailable")
 	}
-	// Pause would retain old credentials in RAM. This review admits only a
-	// cold-stop provider; it never unpauses or claims experimental RAM support.
-	if info.Driver != "docker" && info.Driver != "kubernetes" {
-		return result, errors.New("offline Solo review requires a supported cold-stop provider; paused environments remain quarantined")
+	// A Docker persistent root can retain old CLI authorization, while pause
+	// retains old RAM. This migration supports only the fresh private process
+	// root and strict prestart configuration proof implemented by Kubernetes.
+	if info == nil || info.Driver != "kubernetes" || !info.Capabilities.ColdConfiguration {
+		return nil, errors.New("offline Solo review requires Kubernetes cold configuration support; the original environment remains unchanged")
+	}
+	return info, nil
+}
+
+type soloReviewTarget struct {
+	SandboxID                        uint
+	ProviderID, SoloID, Owner, Agent string
+}
+
+func readSoloReviewTarget(ctx context.Context, db *gorm.DB, id uint) (soloReviewTarget, error) {
+	var target soloReviewTarget
+	err := db.WithContext(ctx).Table("sandboxes AS b").Select("b.id AS sandbox_id, b.name AS provider_id, s.id AS solo_id, s.user_id AS owner, b.profile AS agent").Joins("JOIN solo_sessions AS s ON s.sandbox_id = b.id AND s.id = b.thread_id AND s.agent_name = b.profile").Where("b.id = ? AND b.purpose = 'solo' AND b.name <> '' AND s.id <> '' AND s.user_id <> ''", id).Take(&target).Error
+	return target, err
+}
+
+func (p *soloReviewGateway) Observe(ctx context.Context, id string) (executionlineage.SoloReviewObservation, error) {
+	var result executionlineage.SoloReviewObservation
+	info, err := p.coldCapabilities(ctx, id)
+	if err != nil {
+		return result, err
 	}
 	before, err := p.client.Get(ctx, id)
 	if err != nil || before == nil || before.ID != id || before.Name == "" {
@@ -203,18 +223,31 @@ func reviewSoloEnvironment(ctx context.Context, opts options, cfg *config.Config
 			return err
 		}
 	}
+	client, err := sandbox.NewConfiguredGatewayClient(cfg.Sandbox)
+	if err != nil {
+		return errors.New("original gateway configuration is unavailable")
+	}
+	defer func() { _ = client.Close() }()
+	provider := &soloReviewGateway{client: client, configuration: state.ConfigurationSHA256}
+	target, err := readSoloReviewTarget(ctx, db, state.SandboxID)
+	if err != nil {
+		return errors.New("original Solo environment binding is unavailable")
+	}
+	// Do not stop an unsupported provider, or leave SQL maintenance behind
+	// merely because an optional cold-start protocol cannot be performed.
+	if _, err := provider.coldCapabilities(ctx, target.ProviderID); err != nil {
+		return err
+	}
 	if err := storageguard.Enter(ctx, db, state.ID, stoppedRuntimes(opts)); err != nil {
 		return err
 	}
 	failure := func(err error) error {
 		return fmt.Errorf("%w; Solo review maintenance %s remains active; resume the original workdir", err, state.ID)
 	}
-	client, err := sandbox.NewConfiguredGatewayClient(cfg.Sandbox)
-	if err != nil {
-		return failure(errors.New("original gateway configuration is unavailable"))
+	current, err := readSoloReviewTarget(ctx, db, state.SandboxID)
+	if err != nil || current != target {
+		return failure(errors.New("original Solo environment binding changed during capability preflight"))
 	}
-	defer func() { _ = client.Close() }()
-	provider := &soloReviewGateway{client: client, configuration: state.ConfigurationSHA256}
 	authorize := newSoloReviewAuthorization(db, cfg)
 	var receipt executionlineage.SoloEnvironmentReview
 	if opts.finalize {

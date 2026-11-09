@@ -28,10 +28,14 @@ import (
 )
 
 type reviewGatewayFixture struct {
-	mu               sync.Mutex
-	status, driver   string
-	stops, forbidden int
-	loseStop         bool
+	mu                     sync.Mutex
+	status, driver         string
+	stops, forbidden       int
+	loseStop               bool
+	cold                   bool
+	infoCalls              int
+	dropColdAfterPreflight bool
+	afterFirstInfo         func()
 }
 
 func (f *reviewGatewayFixture) serve(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +44,11 @@ func (f *reviewGatewayFixture) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v2/info":
-		_ = json.NewEncoder(w).Encode(map[string]any{"version": 2, "driver": f.driver, "capabilities": map[string]string{"stopMode": "stop", "diskMode": "retained"}})
+		f.infoCalls++
+		if f.infoCalls == 1 && f.afterFirstInfo != nil {
+			f.afterFirstInfo()
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"version": 2, "driver": f.driver, "capabilities": map[string]any{"stopMode": "stop", "diskMode": "retained", "coldConfiguration": f.cold && (!f.dropColdAfterPreflight || f.infoCalls == 1)}})
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sandboxes/original-provider":
 		_ = json.NewEncoder(w).Encode(sandbox.GWSandbox{ID: "original-provider", Name: "original-native-workload", Namespace: "owned-test", Image: "existing-image", Status: f.status, Labels: map[string]string{"owner": "original-owner"}})
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sandboxes/original-provider/status":
@@ -91,7 +99,7 @@ func offlineReviewCLI(t *testing.T) (options, *config.Config, *gorm.DB, models.S
 	if err := db.Create(&models.SoloSession{ID: row.ThreadID, UserID: "original-owner", AgentName: row.Profile, SandboxID: row.ID, Status: models.SoloStatusRunning, InitialConfigurationID: "original-config", CurrentConfigurationID: "original-config", AppliedConfigurationID: "original-config"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	f := &reviewGatewayFixture{status: "running", driver: "kubernetes"}
+	f := &reviewGatewayFixture{status: "running", driver: "kubernetes", cold: true}
 	upstream := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(upstream.Close)
 	cfg.Sandbox.GatewayURL = upstream.URL
@@ -171,35 +179,105 @@ func mustReviewAuthority(t *testing.T, opts options, db *gorm.DB) *executionline
 	return a
 }
 
-func TestOfflineSoloReviewCLILostStopAndUnsupportedPauseRetainMaintenance(t *testing.T) {
-	for _, pause := range []bool{false, true} {
-		t.Run(fmt.Sprint(pause), func(t *testing.T) {
-			opts, _, db, _, provider := offlineReviewCLI(t)
-			provider.loseStop = !pause
-			if pause {
-				provider.driver = "e2b"
+func TestOfflineSoloReviewCLILostStopRetainsMaintenanceAndOnlyObserves(t *testing.T) {
+	opts, _, db, _, provider := offlineReviewCLI(t)
+	provider.mu.Lock()
+	provider.loseStop = true
+	provider.mu.Unlock()
+	if err := run(t.Context(), opts, io.Discard); err == nil {
+		t.Fatal("unconfirmed stop completed")
+	}
+	var control storageguard.Control
+	if err := db.First(&control, "name = 'primary'").Error; err != nil || control.Owner == "" {
+		t.Fatal("failed review cleared maintenance", err)
+	}
+	opts.resume = true
+	if err := run(t.Context(), opts, io.Discard); err != nil {
+		t.Fatal("lost stop response was not reconciled", err)
+	}
+	if provider.stops != 1 {
+		t.Fatal("reconciliation repeated stop", provider.stops)
+	}
+}
+
+func TestOfflineSoloReviewUnsupportedPreflightLeavesSQLAndProviderUnchanged(t *testing.T) {
+	for _, kind := range []string{"docker", "e2b", "kubernetes_without_capability"} {
+		t.Run(kind, func(t *testing.T) {
+			opts, _, db, row, provider := offlineReviewCLI(t)
+			var before storageguard.Control
+			if err := db.First(&before, "name = 'primary'").Error; err != nil {
+				t.Fatal(err)
 			}
+			provider.mu.Lock()
+			if kind == "kubernetes_without_capability" {
+				provider.cold = false
+			} else {
+				provider.driver = kind
+			}
+			provider.mu.Unlock()
 			if err := run(t.Context(), opts, io.Discard); err == nil {
-				t.Fatal("unconfirmed stop completed")
+				t.Fatal("unsupported legacy provider was accepted")
 			}
-			var control storageguard.Control
-			if err := db.First(&control, "name = 'primary'").Error; err != nil || control.Owner == "" {
-				t.Fatal("failed review cleared maintenance", err)
+			var after storageguard.Control
+			if err := db.First(&after, "name = 'primary'").Error; err != nil || after != before {
+				t.Fatal("unsupported preflight entered or changed SQL maintenance", err)
 			}
-			if pause {
-				if provider.stops != 0 || provider.forbidden != 0 {
-					t.Fatal("pause-only provider was unpaused or altered", provider)
+			if provider.stops != 0 || provider.forbidden != 0 || provider.infoCalls != 1 {
+				t.Fatal("unsupported preflight dispatched or probed a guest", provider)
+			}
+			var original models.Sandbox
+			if err := db.First(&original, row.ID).Error; err != nil || original.Name != row.Name || original.Status != "running" || original.AuthorizationFingerprint != "" {
+				t.Fatal("unsupported preflight changed the original binding", err)
+			}
+			if db.Migrator().HasTable(&executionlineage.SoloEnvironmentReview{}) {
+				var count int64
+				if err := db.Model(&executionlineage.SoloEnvironmentReview{}).Count(&count).Error; err != nil || count != 0 {
+					t.Fatal("unsupported preflight created a dispatched SQL review receipt", err)
 				}
-				return
-			}
-			opts.resume = true
-			if err := run(t.Context(), opts, io.Discard); err != nil {
-				t.Fatal("lost stop response was not reconciled", err)
-			}
-			if provider.stops != 1 {
-				t.Fatal("reconciliation repeated stop", provider.stops)
 			}
 		})
+	}
+}
+
+func TestOfflineSoloReviewBindingChangeDuringPreflightNeverStopsReplacement(t *testing.T) {
+	opts, _, db, row, provider := offlineReviewCLI(t)
+	provider.mu.Lock()
+	provider.afterFirstInfo = func() {
+		if err := db.Table("sandboxes").Where("id = ?", row.ID).Update("name", "different-native-resource").Error; err != nil {
+			t.Error(err)
+		}
+	}
+	provider.mu.Unlock()
+	if err := run(t.Context(), opts, io.Discard); err == nil {
+		t.Fatal("changed original binding was admitted")
+	}
+	if provider.stops != 0 || provider.forbidden != 0 || provider.infoCalls != 1 {
+		t.Fatal("replacement binding was observed or stopped", provider)
+	}
+	var control storageguard.Control
+	if err := db.First(&control, "name = 'primary'").Error; err != nil || control.Owner == "" {
+		t.Fatal("post-admission identity failure cleared maintenance", err)
+	}
+	var pending int64
+	if err := db.Table("execution_quarantines").Where("entity_kind = 'sandbox' AND entity_id = ? AND review_state = 'pending'", fmt.Sprint(row.ID)).Count(&pending).Error; err != nil || pending != 1 {
+		t.Fatal("changed source cleared original quarantine", err)
+	}
+}
+
+func TestOfflineSoloReviewRechecksCapabilityBeforeStop(t *testing.T) {
+	opts, _, db, _, provider := offlineReviewCLI(t)
+	provider.mu.Lock()
+	provider.dropColdAfterPreflight = true
+	provider.mu.Unlock()
+	if err := run(t.Context(), opts, io.Discard); err == nil {
+		t.Fatal("changed capability was accepted after maintenance admission")
+	}
+	var control storageguard.Control
+	if err := db.First(&control, "name = 'primary'").Error; err != nil || control.Owner == "" {
+		t.Fatal("admitted failure did not preserve maintenance", err)
+	}
+	if provider.stops != 0 || provider.forbidden != 0 || provider.infoCalls < 2 {
+		t.Fatal("capability was not rechecked before Stop", provider)
 	}
 }
 
