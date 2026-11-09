@@ -25,16 +25,20 @@ func newWorkspaceOperations(getenv func(string) string, authenticated bool) (*wo
 	lineage := strings.TrimSpace(getenv("GRASP_EXECUTION_LINEAGE"))
 	control := strings.TrimSpace(getenv("GRASP_WORKSPACE_CONTROL_ROOT"))
 	restore := strings.TrimSpace(getenv("GRASP_WORKSPACE_RESTORE_ROOT"))
-	if lineage == "" && control == "" && restore == "" {
+	rawLimits := strings.TrimSpace(getenv("GRASP_WORKSPACE_FILE_LIMITS"))
+	if lineage == "" && control == "" && restore == "" && rawLimits == "" {
 		return nil, nil
 	}
 	resource := strings.TrimSpace(getenv("GRASP_SANDBOX_RESOURCE_ID"))
 	workspace := strings.TrimSpace(getenv("WORKSPACE_DIR"))
-	limits, err := workspaceRuntimeLimits(getenv("GRASP_WORKSPACE_FILE_LIMITS"))
+	limits, err := workspaceRuntimeLimits(rawLimits)
 	if err != nil {
 		return nil, err
 	}
-	if authenticated && workspaceRuntimeID.MatchString(lineage) && resource == "" && control == "" && restore == "" && filepath.IsAbs(workspace) && getenv("GRASP_WORKSPACE_FILE_LIMITS") != "" {
+	// The gateway may already know the real resource ID before the platform
+	// configures its private roots. Keep that identity for configure's fence;
+	// its presence alone is not proof that configuration has completed.
+	if authenticated && workspaceRuntimeID.MatchString(lineage) && (resource == "" || workspaceRuntimeID.MatchString(resource)) && control == "" && restore == "" && filepath.IsAbs(workspace) && rawLimits != "" {
 		return nil, errWorkspaceStandby
 	}
 	if !authenticated || lineage == "" || resource == "" || !filepath.IsAbs(workspace) || !filepath.IsAbs(control) || !filepath.IsAbs(restore) {

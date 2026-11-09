@@ -15,10 +15,13 @@ FROM node:24-bookworm-slim AS web-builder
 # which walks its parent as the project root. WORKDIR /web would put that parent
 # at /, and the guard would scan the whole image (OOM).
 WORKDIR /src/web
-# .npmrc 把 registry 指向 registry.npmmirror.com(见 web/.npmrc):国内网络直连
-# registry.npmjs.org 拉大包(monaco-editor)易 ECONNRESET,换镜像源规避。
+# 构建优先从官方源按 lockfile / integrity 安装，网络不通时使用 .npmrc
+# 的镜像源。两条路径均限制超时与重试间隔，避免持续故障阻塞发布。
 COPY web/package*.json web/.npmrc ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --registry=https://registry.npmjs.org \
+      --fetch-retries=2 --fetch-retry-maxtimeout=30000 --fetch-timeout=120000 || \
+    npm ci --no-audit --no-fund \
+      --fetch-retries=2 --fetch-retry-maxtimeout=30000 --fetch-timeout=120000
 COPY web/ ./
 COPY scripts/assert-no-approving-brand.mjs /src/scripts/assert-no-approving-brand.mjs
 # Sibling of /src/web, matching the frontend import of the Go effort catalog.

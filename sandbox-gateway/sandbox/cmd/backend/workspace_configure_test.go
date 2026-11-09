@@ -74,6 +74,7 @@ func TestWorkspaceConfigurePersistsQuotedPlatformTupleAndDoesNotRepeatRestart(t 
 }
 func TestWorkspaceConfigureUnknownACKOnlyObservesOriginalReceipt(t *testing.T) {
 	c, cfg, env, calls, ready := configureFixture(t)
+	env["GRASP_SANDBOX_RESOURCE_ID"] = cfg.Resource
 	c.restart = func(context.Context) error { *calls++; return errors.New("lost SSH acknowledgement") }
 	if err := c.configure(t.Context(), configBody(cfg)); !errors.Is(err, workspacebinding.ErrUnknown) {
 		t.Fatal(err)
@@ -88,30 +89,97 @@ func TestWorkspaceConfigureUnknownACKOnlyObservesOriginalReceipt(t *testing.T) {
 	}
 }
 func TestWorkspaceConfigureNewStoppedProcessRebuildsEnvWithoutChangingPersistentHead(t *testing.T) {
-	c, cfg, env, calls, ready := configureFixture(t)
-	if err := c.configure(t.Context(), configBody(cfg)); err != nil {
+	for _, resource := range []string{"", "resource-original"} {
+		t.Run("resource="+resource, func(t *testing.T) {
+			c, cfg, env, calls, ready := configureFixture(t)
+			env["GRASP_SANDBOX_RESOURCE_ID"] = resource
+			if err := c.configure(t.Context(), configBody(cfg)); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(cfg.ControlRoot, "configuration.json")
+			data, _ := os.ReadFile(path)
+			var receipt runtimeWorkspaceConfigurationReceipt
+			_ = json.Unmarshal(data, &receipt)
+			receipt.Incarnation = "previous-pod-process"
+			data, _ = json.Marshal(receipt)
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(cfg.ControlRoot, "retained-marker")
+			if err := os.WriteFile(marker, []byte("persistent Return and journal bytes"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			*ready = false
+			if err := c.configure(t.Context(), configBody(cfg)); err != nil || *calls != 2 {
+				t.Fatal("new standby could not rebuild ephemeral env", err, *calls)
+			}
+			if got, err := os.ReadFile(marker); err != nil || string(got) != "persistent Return and journal bytes" {
+				t.Fatal("startup changed retained control bytes", err)
+			}
+		})
+	}
+}
+
+func TestWorkspaceGatewayStandbyConfigurationCannotChangeExpectedResource(t *testing.T) {
+	c, cfg, env, calls, _ := configureFixture(t)
+	env["GRASP_SANDBOX_RESOURCE_ID"] = cfg.Resource
+	limits, _ := json.Marshal(cfg.Limits)
+	env["GRASP_WORKSPACE_FILE_LIMITS"] = string(limits)
+	controller, err := newWorkspaceOperations(c.getenv, true)
+	if controller != nil || !errors.Is(err, errWorkspaceStandby) {
+		t.Fatal("gateway startup did not enter blocked standby", err)
+	}
+	originalEnv, err := os.ReadFile(filepath.Join(c.runDir, "env"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(cfg.ControlRoot, "configuration.json")
-	data, _ := os.ReadFile(path)
-	var receipt runtimeWorkspaceConfigurationReceipt
-	_ = json.Unmarshal(data, &receipt)
-	receipt.Incarnation = "previous-pod-process"
-	data, _ = json.Marshal(receipt)
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		t.Fatal(err)
+	foreign := cfg
+	foreign.Resource = "resource-foreign"
+	foreign.ControlRoot = filepath.Join(filepath.Dir(filepath.Dir(cfg.ControlRoot)), foreign.Resource, "control")
+	foreign.RestoreRoot = filepath.Join(filepath.Dir(foreign.ControlRoot), "restores")
+	if err := c.configure(t.Context(), configBody(foreign)); !errors.Is(err, workspacebinding.ErrConflict) || *calls != 0 {
+		t.Fatal("foreign configuration changed the expected gateway identity", err, *calls)
 	}
-	marker := filepath.Join(cfg.ControlRoot, "retained-marker")
-	if err := os.WriteFile(marker, []byte("persistent Return and journal bytes"), 0600); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(filepath.Dir(foreign.ControlRoot)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("foreign configuration created private runtime files", err)
 	}
-	*ready = false
-	delete(env, "GRASP_SANDBOX_RESOURCE_ID")
-	if err := c.configure(t.Context(), configBody(cfg)); err != nil || *calls != 2 {
-		t.Fatal("new standby could not rebuild ephemeral env", err, *calls)
+	if got, err := os.ReadFile(filepath.Join(c.runDir, "env")); err != nil || !bytes.Equal(got, originalEnv) {
+		t.Fatal("foreign configuration changed startup environment", err)
 	}
-	if got, err := os.ReadFile(marker); err != nil || string(got) != "persistent Return and journal bytes" {
-		t.Fatal("startup changed retained control bytes", err)
+	if err := c.configure(t.Context(), configBody(cfg)); err != nil || *calls != 1 {
+		t.Fatal("matching gateway configuration could not complete", err, *calls)
+	}
+}
+
+func TestWorkspaceConfigurePartialRootsDoNotAuthorizeAnotherRestart(t *testing.T) {
+	for _, key := range []string{"GRASP_WORKSPACE_CONTROL_ROOT", "GRASP_WORKSPACE_RESTORE_ROOT"} {
+		t.Run(key, func(t *testing.T) {
+			c, cfg, env, calls, ready := configureFixture(t)
+			env["GRASP_SANDBOX_RESOURCE_ID"] = cfg.Resource
+			if err := c.configure(t.Context(), configBody(cfg)); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(cfg.ControlRoot, "configuration.json")
+			data, _ := os.ReadFile(path)
+			var receipt runtimeWorkspaceConfigurationReceipt
+			_ = json.Unmarshal(data, &receipt)
+			receipt.Incarnation = "previous-pod-process"
+			data, _ = json.Marshal(receipt)
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			*ready = false
+			env[key] = cfg.ControlRoot
+			if key == "GRASP_WORKSPACE_RESTORE_ROOT" {
+				env[key] = cfg.RestoreRoot
+			}
+			if err := c.configure(t.Context(), configBody(cfg)); !errors.Is(err, workspacebinding.ErrUnknown) || *calls != 1 {
+				t.Fatal("partial configured environment replayed backend restart", err, *calls)
+			}
+			if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, data) {
+				t.Fatal("unknown configuration rewrote its original receipt", err)
+			}
+		})
 	}
 }
 func TestWorkspaceConfigureRejectsChangedTupleAndUnsafeRootsBeforeRestart(t *testing.T) {
