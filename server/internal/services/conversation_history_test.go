@@ -155,7 +155,7 @@ func TestContextPreambleKeepsMidConversationUserCorrections(t *testing.T) {
 	}
 	solo := &SoloService{db: db}
 	pre, err := solo.contextPreambleChecked(sb.ThreadID, "", "handoff\n")
-	if err != nil || !strings.Contains(pre, "改用 React，取消支付功能") || !strings.Contains(pre, "较新的更正优先") || !strings.Contains(pre, "较早的 18 条对话正文") {
+	if err != nil || !strings.Contains(pre, "改用 React，取消支付功能") || !strings.Contains(pre, "较新的更正优先") || !strings.Contains(pre, "correction-00") || !strings.Contains(pre, "correction-29") || strings.Contains(pre, "条对话正文未逐字附上") {
 		t.Fatalf("middle correction disappeared: %s %v", pre, err)
 	}
 	page, err := svc.ReadConversationHistory(sb.RunID, mcp.ConversationHistoryRequest{View: "summary", Limit: 2})
