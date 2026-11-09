@@ -52,8 +52,8 @@ add a separate `Unreleased` bullet in `CHANGELOG.md`.
 
 Always-on branch-protection job: `.github/workflows/ci.yml` (`gate`). It runs
 the brand-text assert, pinned `actionlint` v1.7.12, error-level `shellcheck`,
-and offline docs-publish transport regressions. It does **not** run module lint,
-module tests or coverage. Module suites are path-filtered.
+and offline CI-tool download / docs-publish transport regressions. It does
+**not** run module lint, module tests or coverage. Module suites are path-filtered.
 
 ---
 
@@ -66,6 +66,7 @@ Copy from CI. Cross-tree changes: run each matching suite. `ROOT` = repo root.
 No path filter. From the repo root:
 
 ```bash
+python3 .github/scripts/test-ci-tool-downloads.py  # offline retries / cache / failures
 ./.github/scripts/actionlint.sh          # actionlint v1.7.12, all .github/workflows
 ./.github/scripts/shellcheck-error.sh    # shellcheck v0.11.0, --severity=error
 python3 .github/scripts/test-publish-pages.py  # local Git; no deploy key or network

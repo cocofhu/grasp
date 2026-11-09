@@ -68,6 +68,8 @@ All notable public-release changes are documented here.
 
 - Solo 可通过手动 `/workflow` 启动配置管理独立工作流，并接收持久化的任务结果；设置可关闭新工作流。环境启停保留工作区，单任务暂停等待安全边界；聊天正文和附件可使用 S3 / COS，并支持保留原引用的旧本地数据归档。
 
+- E2B 暂停期间保留原有本地端口并关闭转发连接；网关重启先预留全部持久化端口，再连接 provider，避免自身 HTTP 请求抢占端口而导致恢复偶发失败。
+
 - Solo 首条消息等待沙箱启动时，定时恢复不再把创建或拉取镜像中的沙箱误判为恢复失败；启动或模型准备阶段的失败会保留为聊天中的可见回复，刷新后仍能查看。
 
 - Sandbox startup reuses one authenticated SSH connection to install helper files and permissions. The optional MCP proxy releases inherited SSH pipes when daemonizing and does nothing without host mappings. Runtime startup rejects empty-password SSH probes even when an imported template enables them, avoiding PAM delays before public-key authentication while retaining password fallback.
