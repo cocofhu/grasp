@@ -272,8 +272,28 @@ class CleanupContracts(unittest.TestCase):
         binary = str((self.test.data/'runtime/bin/backend').resolve())
         own = {'pid': 111, 'group': 111, 'uid': os.getuid(), 'start': '1', 'exe': binary, 'cwd': str(self.marker.parent)}
         identities = {111: own, 112: {**own, 'exe': '/other/backend'}, 113: {**own, 'cwd': str(self.test.data/'other-launches')}, 114: {**own, 'uid': os.getuid()+1}}
-        with mock.patch.object(runner.Path, 'iterdir', return_value=[Path('/proc')/str(pid) for pid in identities]), mock.patch.object(runner, 'process_identity', side_effect=identities.get):
+        with mock.patch.object(runner.Path, 'iterdir', return_value=[Path('/proc')/str(pid) for pid in identities]), mock.patch.object(runner, 'process_identity', side_effect=lambda pid, **kwargs: identities.get(pid)):
             self.assertEqual(runner.owned_backend_processes(self.test.data, self.test.args.runtime), [own])
+
+    def test_unrelated_same_user_process_is_excluded_before_protected_links(self):
+        root, proc, stat = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+        root.__truediv__.return_value = proc
+        proc.stat.return_value.st_uid = os.getuid()
+        proc.__truediv__.return_value = stat
+        stat.read_text.return_value = '12345 (browser helper) S 1 12345 ' + '0 ' * 20
+        with mock.patch.object(runner, 'Path', return_value=root), mock.patch.object(runner.os, 'readlink', side_effect=PermissionError) as readlink:
+            self.assertIsNone(runner.process_identity(12345, executable_name='backend'))
+        readlink.assert_not_called()
+
+    def test_matching_backend_with_unreadable_identity_is_not_reported_exited(self):
+        root, proc, stat = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+        root.__truediv__.return_value = proc
+        proc.stat.return_value.st_uid = os.getuid()
+        proc.__truediv__.return_value = stat
+        stat.read_text.return_value = '12345 (backend) S 1 12345 ' + '0 ' * 20
+        with mock.patch.object(runner, 'Path', return_value=root), mock.patch.object(runner.os, 'readlink', side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                runner.process_identity(12345, executable_name='backend')
 
     def test_fixture_backend_exit_does_not_turn_pending_into_provider_stop_proof(self):
         self.responses(self.http_error())
