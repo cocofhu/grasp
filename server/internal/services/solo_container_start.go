@@ -168,6 +168,14 @@ func (s *SandboxService) startSoloContainer(id uint, name, profile, threadID, ru
 			return
 		}
 		receiptName = sb.Name
+		if sb.IsLocal() {
+			// Readiness may fail after a real local process started. Retain its
+			// private stop receipt as well as SQL identity, so Close can stop
+			// that exact launch without guessing from a directory or new PID.
+			s.mu.Lock()
+			s.live[id] = &liveSandbox{sb: sb, home: home, prepared: prepared, soloRouteAgent: &agent, modelBindingFingerprint: prepared.modelFingerprint, gitBindingsFingerprint: gitBindingsFingerprint(spec.GitCredentials)}
+			s.mu.Unlock()
+		}
 		if changed {
 			fail(fmt.Errorf("当前授权已变化，原环境身份已保留，停止状态待确认"))
 			return
