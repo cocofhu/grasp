@@ -32,6 +32,7 @@ import (
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/formatguard"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
@@ -55,6 +56,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 const (
@@ -236,9 +238,29 @@ func main() {
 		}
 		return row.Token
 	}
+	var workspaceServices productionWorkspaceServices
 	provider := runtime.NewProvider(host, runtime.Options{
 		CheckExecution: func(ctx context.Context, req runtime.NodeReq) error {
-			return checkNativeExecution(ctx, db, executionController, req)
+			if err := checkNativeExecution(ctx, db, executionController, req); err != nil {
+				return err
+			}
+			if req.Operation.Authorization != "" {
+				if workspaceServices.Authorization == nil {
+					return services.ErrWorkspaceJobAuthority
+				}
+				_, err := workspaceServices.Authorization.NativeAuthorization(ctx, req)
+				if errors.Is(err, services.ErrWorkspaceJobAuthority) || errors.Is(err, services.ErrWorkspaceJobConflict) || errors.Is(err, services.ErrWorkspaceJobUnsupported) || errors.Is(err, gorm.ErrRecordNotFound) {
+					return errors.Join(executionlineage.ErrConflict, err)
+				}
+				return err
+			}
+			return nil
+		},
+		NativeAuthorization: func(ctx context.Context, req runtime.NodeReq) (string, error) {
+			if workspaceServices.Authorization == nil {
+				return "", services.ErrWorkspaceJobAuthority
+			}
+			return workspaceServices.Authorization.NativeAuthorization(ctx, req)
 		},
 		RecordUsage: func(req runtime.NodeReq, result *sandbox.ChatResult, err error) {
 			phase := req.UsagePhase
@@ -305,7 +327,6 @@ func main() {
 		PublicAdvertise: cfg.Server.PublicAdvertise,
 		CodexLogins:     codexLogins,
 	})
-	var workspaceServices productionWorkspaceServices
 	workflowCheckpoints, err := newProductionWorkflowCheckpoints(db, executionController, workspaceLimits, &workspaceServices)
 	if err != nil {
 		log.Fatal().Err(err).Msg("workflow workspace checkpoint initialization failed")

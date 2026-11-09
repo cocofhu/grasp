@@ -9,6 +9,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -99,13 +100,15 @@ func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint,
 	live := s.live[id]
 	local := live != nil && live.sb != nil && live.sb.IsLocal()
 	s.mu.Unlock()
-	if local || s.mgr == nil || s.mgr.Gateway() == nil {
+	if !local && (s.mgr == nil || s.mgr.Gateway() == nil) {
 		return soloErr(http.StatusConflict, "environment_stop_unsupported", "本地进程环境暂不支持保留环境停机")
 	}
-	recovery := models.SandboxRecovery{History: "retained", Files: "retained", NativeSession: "unverified", Process: "restarted", Reason: "冷启动会重新启动服务，并使用已保存的聊天上下文"}
-	if info, err := s.mgr.Gateway().InfoFor(ctx, row.Name); err == nil && info.Driver == "e2b" && info.Capabilities.StopMode == "pause" {
-		recovery.Process = "pause_requested"
-		recovery.Reason = "E2B 原生暂停；连接恢复后验证运行状态"
+	recovery := models.SandboxRecovery{History: "retained", Files: "unverified", NativeSession: "unverified", Process: "stop_requested", Reason: "停止请求待确认，文件可用性尚未验证"}
+	if !local {
+		if info, err := s.mgr.Gateway().InfoFor(ctx, row.Name); err == nil && info.Driver == "e2b" && info.Capabilities.StopMode == "pause" {
+			recovery.Process = "pause_requested"
+			recovery.Reason = "E2B 原生暂停；连接恢复后验证运行状态"
+		}
 	}
 	recoveryJSON, err := json.Marshal(recovery)
 	if err != nil {
@@ -152,22 +155,34 @@ func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint,
 	}); err != nil {
 		return err
 	}
-	if err := s.mgr.Gateway().Stop(ctx, row.Name); err != nil {
-		return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
-	}
-	observed, err := s.mgr.ProbeStatus(ctx, row.Name)
-	if err != nil {
-		return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
+	observed := "stopped"
+	if local {
+		if err := live.sb.StopLocal(ctx); err != nil {
+			return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
+		}
+	} else {
+		if err := s.mgr.Gateway().Stop(ctx, row.Name); err != nil {
+			return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
+		}
+		observed, err = s.mgr.ProbeStatus(ctx, row.Name)
+		if err != nil {
+			return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
+		}
 	}
 	if observed != "stopped" && observed != "exited" {
 		return soloErr(http.StatusConflict, "environment_stop_pending", "已请求停止，正在等待环境确认")
 	}
 	if recovery.Process == "pause_requested" {
 		recovery.Process = "paused"
-		recoveryJSON, err = json.Marshal(recovery)
-		if err != nil {
-			return err
-		}
+		recovery.Reason = "E2B 原生暂停已确认；恢复后验证连接状态"
+	} else {
+		recovery.Process = "restarted"
+		recovery.Reason = "环境停止已确认；冷启动会重新启动服务，并使用已保存的聊天上下文"
+	}
+	recovery.Files = "retained"
+	recoveryJSON, err = json.Marshal(recovery)
+	if err != nil {
+		return err
 	}
 	if err := s.commitSandboxOperationPrepared(ctx, id, guard, func(tx *gorm.DB) error {
 		if err := s.updateSandboxOperation(ctx, tx, id, map[string]any{"status": "stopped", "error": "", "destroy_at": nil, "recovery": string(recoveryJSON)}); err != nil {
@@ -189,7 +204,20 @@ func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint,
 	}); err != nil {
 		return err
 	}
-	s.teardownLive(id)
+	if local {
+		// Keep the proved original local handle and its root/home for retry
+		// and explicit resume. teardownLive calls Destroy/Release for locals.
+		s.mu.Lock()
+		acp := live.acp
+		live.acp = nil
+		s.mu.Unlock()
+		if acp != nil {
+			acp.Close()
+		}
+		s.codexLogins.Unregister(liveCodexKey(id))
+	} else {
+		s.teardownLive(id)
+	}
 	if closing && s.host != nil && row.RunID != "" {
 		s.host.UnregisterRun(row.RunID)
 	}
@@ -197,8 +225,20 @@ func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint,
 }
 
 func (s *SandboxService) recordSoloStopFailure(ctx context.Context, id uint, failure error) error {
-	return s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
-		return s.updateSandboxOperation(ctx, tx, id, map[string]any{"status": "error", "error": "环境停止尚未确认，工作区已保留，可重试：" + truncErr(failure), "destroy_at": nil})
+	reason := "环境停止尚未确认，聊天和原环境关联已保留；文件可用性待核对：" + truncErr(failure)
+	recovery := models.SandboxRecovery{History: "retained", Files: "unverified", NativeSession: "unverified", Process: "unverified", Reason: reason}
+	if sandbox.GatewayRecordMissing(failure) {
+		reason = "原环境记录未找到，聊天和原关联已保留；文件不可确认，未自动创建替代环境"
+		recovery.Files, recovery.NativeSession, recovery.Process, recovery.Reason = "unavailable", "unavailable", "unavailable", reason
+	}
+	body, err := json.Marshal(recovery)
+	if err != nil {
+		return err
+	}
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return s.commitSandboxOperation(cleanup, id, func(tx *gorm.DB) error {
+		return s.updateSandboxOperation(cleanup, tx, id, map[string]any{"status": "error", "error": reason, "recovery": string(body), "destroy_at": nil})
 	})
 }
 
@@ -216,6 +256,21 @@ func (s *SoloService) ResumeEnvironment(ctx context.Context, id, user string) (*
 	operationCtx, unlock, err := s.sbx.acquireSandboxOperation(ctx, row.SandboxID)
 	if err != nil {
 		return nil, err
+	}
+	s.sbx.mu.Lock()
+	local := s.sbx.live[row.SandboxID]
+	isLocal := local != nil && local.sb != nil && local.sb.IsLocal()
+	s.sbx.mu.Unlock()
+	if isLocal {
+		var current models.Sandbox
+		err = s.db.WithContext(operationCtx).Select("status", "desired_state").First(&current, row.SandboxID).Error
+		if err == nil && current.DesiredState == "stopped" && current.Status != "stopped" {
+			err = soloErr(http.StatusConflict, "environment_stop_pending", "原本地运行进程停止尚未确认，请先核对原停止请求")
+		}
+		if err != nil {
+			unlock()
+			return nil, err
+		}
 	}
 	err = s.sbx.commitSandboxOperationPrepared(operationCtx, row.SandboxID, func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {

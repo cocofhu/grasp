@@ -195,6 +195,9 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	if row.DesiredState == "stopped" {
 		return soloErr(409, "environment_stopped", "环境已手动停止，请先恢复环境")
 	}
+	if handled, err := s.resumeReviewedSoloEnvironment(ctx, row); handled {
+		return err
+	}
 	grant, err := s.soloRecoveryAuthorization(ctx, row)
 	if err != nil {
 		return s.blockSoloRecoveryAuthorization(ctx, row, grant, err)
@@ -204,7 +207,7 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	local := live != nil && live.sb != nil && live.sb.IsLocal()
 	s.mu.Unlock()
 	if local {
-		return nil // worktree processes have no gateway resource to resume
+		return s.resumeLocalSolo(ctx, row, live, grant)
 	}
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	var sb *sandbox.Sandbox

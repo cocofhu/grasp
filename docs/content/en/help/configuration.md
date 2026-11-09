@@ -62,17 +62,18 @@ Each reply keeps its execution snapshot; later model changes do not relabel old 
 
 ## Local object storage and COS / S3
 
-The Solo-continuation migration release and source stack can store message bodies, attachments and workspace archives in private object storage. The published 3.2.0 images currently shown in `.env.example` predate this capability; use the source stack to evaluate this branch and the migration image when upgrading.
+The Solo-continuation migration release and source stack can store message bodies, attachments and workspace archives in private object storage. Use the source stack to evaluate this branch and the migration image when upgrading.
 
 Without COS, add this to the root `.env`:
 
 ```dotenv
 GRASP_STORAGE_DRIVER=s3
+GRASP_LOCAL_OBJECTSTORE=1
 GRASP_S3_BUCKET=grasp
 GRASP_S3_PREFIX=application
 ```
 
-Leave `GRASP_S3_ENDPOINT`, access credentials and session token empty. For a fresh installation, first run `./start.sh init-execution --offline`, or `./start.sh dev init-execution --offline` for source. It proves the app is stopped, prepares SeaweedFS with its retained local identity, then initializes independent execution control. Start the app with `./start.sh -d` (migration image) or `./start.sh dev -d` (source). Existing databases must follow `server/UPGRADING.md`; ordinary startup and restart never initialize authority.
+Leave `GRASP_S3_ENDPOINT`, access credentials and session token empty. Explicitly set `GRASP_LOCAL_OBJECTSTORE=1`; a missing S3 endpoint alone is rejected before any local store is provisioned. For a fresh installation, first run `./start.sh init-execution --offline`, or `./start.sh dev init-execution --offline` for source. It proves the app is stopped, prepares SeaweedFS with its retained local identity, then initializes independent execution control. Start the app with `./start.sh -d` (migration image) or `./start.sh dev -d` (source). Existing databases must follow `server/UPGRADING.md`; ordinary startup and restart never initialize authority.
 
 The script creates a private bucket and generates an application identity scoped to that bucket before starting Grasp. S3 binds only to `http://127.0.0.1:8333`; change its port with `GRASP_LOCAL_OBJECTSTORE_PORT`. Admin, Filer and Master ports are not published to the host. Payload credentials never implicitly configure independent execution control.
 

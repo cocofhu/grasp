@@ -34,7 +34,7 @@ func (s *SandboxService) findReusable(ctx context.Context, profile string) *mode
 	var rows []models.Sandbox
 	if err := s.db.
 		Where("purpose = ? AND profile = ? AND repo_url = ? AND status IN ?",
-			"test", profile, "", []string{"running", "creating", "pulling"}).
+			"test", profile, "", []string{"running", "creating", "pulling", "error"}).
 		Order("created_at desc").Find(&rows).Error; err != nil {
 		return nil
 	}
@@ -46,6 +46,11 @@ func (s *SandboxService) findReusable(ctx context.Context, profile string) *mode
 	}
 	for i := range rows {
 		if rows[i].Status == "creating" || rows[i].Status == "pulling" {
+			return &rows[i]
+		}
+	}
+	for i := range rows {
+		if rows[i].Status == "error" {
 			return &rows[i]
 		}
 	}
@@ -89,6 +94,9 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 			s.mu.Unlock()
 			if bindingErr != nil {
 				return nil, bindingErr
+			}
+			if row.Status == "error" {
+				return row, nil
 			}
 			at := time.Now().Add(s.TTL())
 			s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{"destroy_at": &at, "updated_at": time.Now()})
@@ -165,31 +173,32 @@ func firstTestRepoURL(repos []sandbox.RepoSpec) string {
 
 // startContainer performs the slow part of Open in the background: build the
 // cursor home, launch the container, wait for ACP, connect, then flip the DB
-// record to running. Any failure flips it to "error" (with a short TTL so the
-// idle sweeper reclaims the dead row). Runs on a detached context since the
+// record to running. A failure retains the original handle and files with an
+// error receipt and no deletion deadline. Runs on a detached context since the
 // originating HTTP request has already returned.
 func (s *SandboxService) startContainer(id uint, name, profile, runID, token string, repos []sandbox.RepoSpec, agent Agent, sharedWorkDir string) {
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	if err := s.executionCheck(ctx, id); err != nil {
+	ctx, identity, release, err := s.beginSandboxStartup(ctx, id, name)
+	if err != nil {
 		return
 	}
+	defer release()
+	var created *sandbox.Sandbox
+	var retainedHome string
 
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("test sandbox start failed")
 		s.unregisterTestScheduler(token)
 		s.host.UnregisterRun(runID)
-		at := time.Now().Add(2 * time.Minute)
-		_ = s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
-			return tx.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-				"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
-			}).Error
-		})
+		if retainErr := s.retainSandboxStartupFailure(ctx, identity, created, retainedHome, err); retainErr != nil {
+			log.Warn().Err(retainErr).Uint("id", id).Msg("sandbox failure attribution retained by its current owner")
+		}
 	}
 	// This runs detached from the originating request; a panic here would leave
 	// the row stuck in "creating" forever. Recover and route through fail() so
-	// the idle sweeper can reclaim it.
+	// the original workspace and recovery attribution remain available.
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error().Str("name", name).Uint("id", id).Interface("panic", r).
@@ -263,9 +272,9 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		fail(fmt.Errorf("build cursor home: %w", err))
 		return
 	}
+	retainedHome = home
 	codexCredentialID, codexVersion, err := s.installCodexLogin(backend, home, codexLogin, env)
 	if err != nil {
-		_ = os.RemoveAll(home)
 		fail(err)
 		return
 	}
@@ -301,19 +310,21 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		WorkspaceDir:          agent.Layout.WorkspaceDir,
 	}
 	if err := s.executionCheck(ctx, id); err != nil {
-		_ = os.RemoveAll(home)
 		return
 	}
+	retainedHome = home
 	sb, err := s.mgr.Create(ctx, spec)
+	created = sb
 	if err != nil {
-		_ = os.RemoveAll(home)
 		fail(fmt.Errorf("create sandbox: %w", err))
 		return
 	}
 
+	if err := s.adoptSandboxStartupHandle(ctx, &identity, sb, home); err != nil {
+		fail(err)
+		return
+	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
-		sb.Destroy(context.Background())
-		_ = os.RemoveAll(home)
 		fail(fmt.Errorf("acp not ready: %w", err))
 		return
 	}
@@ -322,8 +333,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		WithBridgeModel(env["ACP_BRIDGE_MODEL"])
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
-		sb.Destroy(context.Background())
-		_ = os.RemoveAll(home)
 		fail(fmt.Errorf("acp connect: %w", err))
 		return
 	}
@@ -332,28 +341,16 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	// The gateway assigns the authoritative sandbox id; adopt it as the row's
 	// Name (the pre-allocated placeholder was only a correlation label) so all
 	// later control-plane calls (Status/Attach/Destroy) address the real id.
-	var res *gorm.DB
-	publicationErr := s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
-		res = tx.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-			"model_binding_fingerprint": modelFingerprint,
-			"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
-			"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
-			"code_server_port": sb.CodeServerPort, "error": "",
-			"destroy_at": &destroyAt, "updated_at": time.Now(),
-		})
-		return res.Error
+	publicationErr := s.publishSandboxStartup(ctx, identity, map[string]any{
+		"model_binding_fingerprint": modelFingerprint,
+		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
+		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
+		"code_server_port": sb.CodeServerPort, "error": "",
+		"destroy_at": &destroyAt, "updated_at": time.Now(),
 	})
-	// Row gone (user destroyed it mid-launch) or update failed: tear everything
-	// down instead of leaking an orphan container.
-	if publicationErr != nil || res.RowsAffected == 0 {
+	if publicationErr != nil {
 		acp.Close()
-		if err := s.executionCheck(ctx, id); err != nil {
-			return // New external lineage owns reconciliation of this resource.
-		}
-		sb.Destroy(context.Background())
-		_ = os.RemoveAll(home)
-		s.unregisterTestScheduler(token)
-		s.host.UnregisterRun(runID)
+		fail(publicationErr)
 		return
 	}
 	s.mu.Lock()
@@ -833,6 +830,14 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 		if s.isBusyRow(&rows[i]) {
 			continue
 		}
+		failedStartup := rows[i].Status == "error" || rows[i].Status == "creating" || rows[i].Status == "pulling"
+		// A previously accepted Run stop retries only the same provider Stop;
+		// its error receipt does not turn into startup deletion permission.
+		retryingRunStop := rows[i].Purpose == "run" && rows[i].DesiredState == "stopped"
+		if failedStartup && !retryingRunStop {
+			_ = s.retainSandboxObservation(ctx, &rows[i], rows[i].Status, rows[i].Error)
+			continue
+		}
 		if rows[i].Purpose == "run" {
 			if !s.claimExpired(rows[i].ID, now) {
 				continue
@@ -847,7 +852,7 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 			}
 			continue
 		}
-		if err := s.Destroy(ctx, rows[i].ID); err == nil {
+		if err := s.sweepNonresidentCandidate(ctx, rows[i]); err == nil {
 			s.forgetTouch(rows[i].ID)
 			log.Info().Str("name", rows[i].Name).Str("purpose", rows[i].Purpose).
 				Int("leases", len(rows[i].Leases)).Msg("sandbox swept (lease expired)")
@@ -905,9 +910,10 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 			protectedCorr[row.Name] = true
 			continue
 		}
+		tracked[row.Name], protectedCorr[row.Name] = true, true
 		status, err := s.mgr.ProbeStatus(ctx, row.Name)
 		if sandbox.GatewayRecordMissing(err) {
-			status, err = "not_found", nil // retain the existing non-resident cleanup policy
+			status, err = "not_found", nil
 		}
 		if err != nil {
 			tracked[row.Name], protectedCorr[row.Name] = true, true
@@ -916,24 +922,18 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 		}
 		switch status {
 		case "running":
-			tracked[row.Name] = true
-			if s.executionCheck(ctx, row.ID) != nil {
+			if row.Status != "running" {
+				_ = s.retainSandboxObservation(ctx, row, "error", "先前启动未确认，原环境已保留，请手动核对状态")
 				continue
 			}
-			if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
-				upd := map[string]any{"status": "running", "host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort}
-				if row.DestroyAt == nil && row.Purpose != SandboxPurposeSolo {
-					at := time.Now().Add(s.TTL())
-					upd["destroy_at"] = &at
-				}
-				_ = s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
-					return tx.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(upd).Error
-				})
-			}
+			tracked[row.Name] = true
+			_ = s.reconcileNonresidentRunning(ctx, *row)
 		default:
-			// Non-running (creating past grace / error / stopped / not_found):
-			// Destroy gateway first, then drop the list row (g1.1).
-			s.destroyLocalSandbox(ctx, row)
+			observed, reason := "error", "环境当前不可用，已保留原工作区关联，请手动核对状态"
+			if status == "stopped" || status == "exited" {
+				observed, reason = "stopped", ""
+			}
+			_ = s.retainSandboxObservation(ctx, row, observed, reason)
 		}
 	}
 	// Recycle managed gateway sandboxes with no surviving local Name (g1.3).
@@ -942,6 +942,26 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 		return
 	}
 	corrKey := sandbox.CorrelationNameKey()
+	correlated := map[string][]string{}
+	for i := range managed {
+		if corr := managed[i].Labels[corrKey]; corr != "" {
+			correlated[corr] = append(correlated[corr], managed[i].ID)
+		}
+	}
+	for i := range rows {
+		row := &rows[i]
+		if row.Purpose == "run" || row.Purpose == SandboxPurposeSolo || row.Status == "running" {
+			continue
+		}
+		if (row.Status == "creating" || row.Status == "pulling") && time.Since(row.CreatedAt) < reconcileCreatingGrace {
+			continue
+		}
+		if matches := correlated[row.Name]; len(matches) == 1 {
+			if s.retainCorrelatedStartupHandle(ctx, row, matches[0]) == nil {
+				tracked[matches[0]] = true
+			}
+		}
+	}
 	for i := range managed {
 		sb := &managed[i]
 		if tracked[sb.ID] {
@@ -993,47 +1013,6 @@ func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sa
 	}
 }
 
-// destroyLocalSandbox tears down the gateway instance (by Name and by
-// grasp.name correlation) then deletes the local list row.
-func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sandbox) {
-	ctx, release, err := s.acquireSandboxOperation(ctx, row.ID, "startup_cleanup")
-	if err != nil {
-		return
-	}
-	defer release()
-	if row.Purpose == SandboxPurposeSolo {
-		_ = s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
-			return tx.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("destroy_at", nil).Error
-		})
-		return
-	}
-	s.archiveLog(ctx, row.Name)
-	if s.executionCheck(ctx, row.ID) != nil {
-		return
-	}
-	_ = s.mgr.DestroyByName(ctx, row.Name)
-	// Placeholder Name cannot address the real gateway id; also destroy by
-	// correlation label so leaked control-plane rows are not left behind.
-	s.mgr.DestroyByCorrelationName(ctx, row.Name)
-	if row.HomeDir != "" {
-		_ = os.RemoveAll(row.HomeDir)
-	}
-	switch row.Purpose {
-	case "test":
-		if row.RunID != "" {
-			s.host.UnregisterRun(row.RunID)
-		}
-	case SandboxPurposeSolo:
-		if s.host != nil && row.RunID != "" {
-			s.host.UnregisterRun(row.RunID)
-		}
-		defer s.invokeSoloDestroyHook(row.ID)
-	default:
-		s.releaseRunMCP(row.RunID, row.ID)
-	}
-	_ = s.commitSandboxOperation(ctx, row.ID, func(tx *gorm.DB) error { return tx.Delete(&models.Sandbox{}, row.ID).Error })
-}
-
 func (s *SandboxService) isBusyRow(row *models.Sandbox) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1065,7 +1044,7 @@ func (s *SandboxService) teardownLive(id uint) {
 func (s *SandboxService) activeCount() int {
 	var n int64
 	s.db.Model(&models.Sandbox{}).
-		Where("status IN ? AND purpose = ?", []string{"running", "creating"}, "test").
+		Where("status IN ? AND purpose = ?", []string{"running", "creating", "pulling", "error"}, "test").
 		Count(&n)
 	return int(n)
 }

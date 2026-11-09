@@ -52,12 +52,12 @@ set +a
 : "${GRASP_GATEWAY_PORT:=8899}"
 : "${GRASP_SANDBOX_GATEWAY_URL:=http://127.0.0.1:${GRASP_GATEWAY_PORT}}"
 : "${GRASP_DEPLOYMENT_MODE:=local-demo}"
-: "${GRASP_IMAGE:=ghcr.io/cocofhu/grasp:3.2.0}"
-: "${SANDBOX_GATEWAY_IMAGE:=ghcr.io/cocofhu/sandbox-gateway:3.2.0}"
+: "${GRASP_IMAGE:=ghcr.io/cocofhu/grasp:3.3.0}"
+: "${SANDBOX_GATEWAY_IMAGE:=ghcr.io/cocofhu/sandbox-gateway:3.3.0}"
 : "${SANDBOX_GATEWAY_API_KEY:=grasp-local-demo}"
 
 # One published sandbox image (coding CLIs inside; runtime AGENT_PROVIDER picks).
-: "${SANDBOX_IMAGE:=ghcr.io/cocofhu/universal-sandbox:3.2.0}"
+: "${SANDBOX_IMAGE:=ghcr.io/cocofhu/universal-sandbox:3.3.0}"
 # Release compose must pin Grasp to GHCR; empty would fall through to
 # universal-sandbox:local inside the container.
 if [[ -z "${GRASP_SANDBOX_IMAGE:-}" ]]; then
@@ -177,6 +177,7 @@ ensure_compose_images_if_missing() {
 
 up_release() {
   local detach="${1:-}"
+  validate_local_objectstore_selection
   mkdir -p .localdata/gateway .localdata/db .localdata/app-data
   prepare_local_objectstore "$HOST_REPO_DIR/.localdata/objectstore"
   # On-demand: only Grasp + Gateway when missing. Sandbox runtimes are
@@ -236,6 +237,7 @@ build_dev_runtime() {
 }
 
 up_dev() {
+  validate_local_objectstore_selection
   local detach="${1:-}"
   if [[ ! -f server/config.yaml ]]; then
     cp server/config.example.yaml server/config.yaml
@@ -292,6 +294,7 @@ case "$cmd" in
     "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" --profile local-storage down --remove-orphans || true
     ;;
   restart)
+    validate_local_objectstore_selection
     "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" --profile local-storage down --remove-orphans || true
     up_release 1
     ;;

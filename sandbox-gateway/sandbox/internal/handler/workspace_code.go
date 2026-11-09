@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -20,16 +19,17 @@ type WorkspaceCode struct {
 	service    *workspacegit.Service
 	fenceMu    sync.Mutex
 	generation uint64
-	active     context.CancelFunc
+	active     *workspaceCodeOperation
+	lane       chan struct{}
 	binding    *workspacebinding.Manager
 }
 
 func NewWorkspaceCode(root string) *WorkspaceCode {
-	return &WorkspaceCode{service: &workspacegit.Service{Root: root}}
+	return &WorkspaceCode{service: &workspacegit.Service{Root: root}, lane: make(chan struct{}, 1)}
 }
 
 func NewBoundWorkspaceCode(binding *workspacebinding.Manager) *WorkspaceCode {
-	return &WorkspaceCode{binding: binding}
+	return &WorkspaceCode{binding: binding, lane: make(chan struct{}, 1)}
 }
 
 func (h *WorkspaceCode) current(c *gin.Context) (*workspacegit.Service, func(), bool) {
@@ -44,31 +44,6 @@ func (h *WorkspaceCode) current(c *gin.Context) (*workspacegit.Service, func(), 
 	return &workspacegit.Service{Root: view.Path}, release, true
 }
 
-// The bridge accepts only a live acknowledged server lease. The absolute
-// deadline bounds subprocesses even if a disconnected server can no longer
-// cancel its HTTP request. A newer generation cancels an earlier request before
-// it is allowed to touch the isolated import directory.
-func (h *WorkspaceCode) operation(c *gin.Context) (context.Context, context.CancelFunc, bool) {
-	generation, err := strconv.ParseUint(c.GetHeader("X-Grasp-Operation-Generation"), 10, 64)
-	expires, dateErr := time.Parse(time.RFC3339Nano, c.GetHeader("X-Grasp-Operation-Expires-At"))
-	now := time.Now()
-	if err != nil || dateErr != nil || generation == 0 || !expires.After(now) || expires.After(now.Add(time.Minute)) {
-		c.JSON(http.StatusConflict, gin.H{"code": "workspace_operation_expired", "error": "workspace_operation_expired"})
-		return nil, nil, false
-	}
-	h.fenceMu.Lock()
-	defer h.fenceMu.Unlock()
-	if generation <= h.generation {
-		c.JSON(http.StatusConflict, gin.H{"code": "workspace_operation_superseded", "error": "workspace_operation_superseded"})
-		return nil, nil, false
-	}
-	if h.active != nil {
-		h.active()
-	}
-	ctx, cancel := context.WithDeadline(c.Request.Context(), expires)
-	h.generation, h.active = generation, cancel
-	return ctx, cancel, true
-}
 func codeError(c *gin.Context, err error) {
 	status, code := http.StatusBadGateway, "workspace_transfer_failed"
 	switch {

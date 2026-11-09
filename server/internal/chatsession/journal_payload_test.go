@@ -384,14 +384,21 @@ func TestJournalCASRetriesRespectEarlierDeadlineAndRejectTransactionHandles(t *t
 	objects := queuePayloadBackend(t, store)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
 	defer cancel()
+	callerDeadline, _ := ctx.Deadline()
 	var attempts atomic.Int32
 	started := time.Now()
 	_, err := store.AppendJournalWith(ctx, scope, nil, "", []JournalEntry{{Type: FrameSession, Event: "conflict"}},
-		func(context.Context, PreparedJournal) (JournalRange, error) {
+		func(attemptCtx context.Context, _ PreparedJournal) (JournalRange, error) {
+			if deadline, ok := attemptCtx.Deadline(); !ok || !deadline.Equal(callerDeadline) {
+				t.Error("CAS publication replaced its caller's earlier deadline")
+			}
 			attempts.Add(1)
 			return JournalRange{}, ErrJournalPrepareConflict
 		})
-	if !errors.Is(err, context.DeadlineExceeded) || attempts.Load() < 2 || time.Since(started) > time.Second {
+	// Exact retry progress is proved by TestJournalCASRollsBackOuterTransactionAndFreezesRetryBytes.
+	// An expiring caller cannot promise a minimum number of SQL/object attempts
+	// before its deadline when the scheduler or storage is busy.
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > time.Second {
 		t.Fatalf("CAS retry exceeded its caller deadline: attempts=%d elapsed=%s %v", attempts.Load(), time.Since(started), err)
 	}
 	if head, err := store.JournalHead(context.Background(), scope); err != nil || head != -1 {

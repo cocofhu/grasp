@@ -21,6 +21,7 @@ const (
 	WorkspaceCodeMaxTotalBytes   int64 = 128 << 20
 	WorkspaceCodeMaxFileBytes    int64 = 32 << 20
 	WorkspaceCodeDirectory             = ".grasp-code-imports"
+	WorkspaceCodeMaxDuration           = 30 * time.Minute
 )
 
 type WorkspaceCodeSelection struct {
@@ -42,6 +43,7 @@ type WorkspaceCodeRepository struct {
 
 type WorkspaceCodeInventory struct {
 	Version        int                       `json:"version"`
+	RenewableLease bool                      `json:"renewableLease"`
 	Repositories   []WorkspaceCodeRepository `json:"repositories"`
 	WorkingChanges bool                      `json:"workingChanges"`
 	NonGit         bool                      `json:"nonGit"`
@@ -74,6 +76,10 @@ type WorkspaceCodeFence struct {
 }
 
 func workspaceCodeRequest(ctx context.Context, host string, port int, password, path, digest string, source io.Reader, fence WorkspaceCodeFence) (*http.Response, error) {
+	return workspaceCodeMethodRequest(ctx, http.MethodPost, host, port, password, path, digest, source, fence)
+}
+
+func workspaceCodeMethodRequest(ctx context.Context, method, host string, port int, password, path, digest string, source io.Reader, fence WorkspaceCodeFence) (*http.Response, error) {
 	if fence.Generation == 0 || !fence.ExpiresAt.After(time.Now()) {
 		return nil, &WorkspaceCodeError{Status: http.StatusConflict, Code: "workspace_operation_expired"}
 	}
@@ -84,7 +90,7 @@ func workspaceCodeRequest(ctx context.Context, host string, port int, password, 
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://%s:%d%s", host, port, path), source)
+	req, err := http.NewRequestWithContext(ctx, method, fmt.Sprintf("http://%s:%d%s", host, port, path), source)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +106,29 @@ func workspaceCodeRequest(ctx context.Context, host string, port int, password, 
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}
-	return (&http.Client{Timeout: 2 * time.Minute}).Do(req)
+	return (&http.Client{Timeout: WorkspaceCodeMaxDuration}).Do(req)
+}
+
+func RenewWorkspaceCode(ctx context.Context, host string, port int, password string, fence WorkspaceCodeFence) error {
+	resp, err := workspaceCodeMethodRequest(ctx, http.MethodPatch, host, port, password, "/api/workspace/code/fence", "", nil, fence)
+	if err != nil {
+		return err
+	}
+	if err := workspaceCodeResponse(resp); err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var acknowledged struct {
+		Generation uint64    `json:"generation"`
+		ExpiresAt  time.Time `json:"expiresAt"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<10)).Decode(&acknowledged); err != nil {
+		return err
+	}
+	if acknowledged.Generation != fence.Generation || !acknowledged.ExpiresAt.Equal(fence.ExpiresAt) || !acknowledged.ExpiresAt.After(time.Now()) {
+		return &WorkspaceCodeError{Status: http.StatusConflict, Code: "workspace_operation_superseded"}
+	}
+	return nil
 }
 
 func (e *WorkspaceCodeError) Error() string {

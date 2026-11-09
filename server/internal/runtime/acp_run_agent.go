@@ -22,6 +22,9 @@ import (
 func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, error) {
 	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
 	if executionErr != nil {
+		if req.AttachOnly {
+			executionErr = errors.Join(ErrProviderDispatchUnknown, executionErr)
+		}
 		return NodeResult{}, executionErr
 	}
 	defer stopExecution()
@@ -44,8 +47,8 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 	defer unwatch()
 	var dispatched bool
 	if before := req.BeforeProviderDispatch; before != nil {
-		req.BeforeProviderDispatch = func(ctx context.Context, attempt int) error {
-			if err := before(ctx, attempt); err != nil {
+		req.BeforeProviderDispatch = func(ctx context.Context, operation sandbox.OperationIdentity) error {
+			if err := before(ctx, operation); err != nil {
 				return err
 			}
 			dispatched = true
@@ -60,7 +63,25 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 		if prepareErr != nil {
 			return NodeResult{Usage: spent, UsageByModel: spentByModel}, prepareErr
 		}
+		if req.Operation.ID != "" && c.opts.NativeAuthorization != nil {
+			req.Operation.Authorization, prepareErr = c.opts.NativeAuthorization(ctx, req)
+			if prepareErr != nil {
+				if req.AttachOnly {
+					prepareErr = errors.Join(ErrProviderDispatchUnknown, prepareErr)
+				}
+				return NodeResult{}, prepareErr
+			}
+		}
 		res, err := c.runAgentOnce(ctx, req, abortSnap)
+		if req.AttachOnly {
+			if err == nil && c.abortedSince(req.RunID, abortSnap) {
+				err = context.Canceled
+			}
+			if err != nil {
+				err = errors.Join(ErrProviderDispatchUnknown, err)
+			}
+			return res, err
+		}
 		if dispatched && err != nil && (isRetryableSandboxErr(err) || errors.Is(err, sandbox.ErrAgentStuck) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			err = errors.Join(ErrProviderDispatchUnknown, err)
 		}
@@ -72,7 +93,12 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 		// Only the first attempt continues a reattached sandbox; retries
 		// start over in a fresh one.
 		req.ReattachSandbox = ""
-		aborted := err != nil && c.abortedSince(req.RunID, abortSnap)
+		aborted := c.abortedSince(req.RunID, abortSnap)
+		if aborted && err == nil {
+			// The bridge may finish immediately after the cancel request. Its
+			// prompt_done is not permission to publish success for a cancelled run.
+			err = context.Canceled
+		}
 		stuck := errors.Is(err, sandbox.ErrAgentStuck) && stuckRetries > 0 && ctx.Err() == nil && !aborted
 		if !stuck && (err == nil || aborted || !isRetryableSandboxErr(err) || attempt >= n || ctx.Err() != nil) {
 			res.Usage = models.AddTokenUsage(spent, res.Usage)
@@ -103,9 +129,9 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 }
 
 // runAgentOnce is a single sandbox attempt of an agent node. It owns its
-// sandbox lifecycle: on success or a non-retryable outcome it retires the
-// sandbox (kept for the debug TTL); on a retryable fault it discards (destroys)
-// the broken sandbox so the caller can retry cleanly.
+// sandbox lifecycle: successful, failed and cancelled turns retire the
+// original workspace through the production registry. Retryable faults close
+// the broken connection while preserving that attempt's files independently.
 // abortSnap is RunAgent's watchRunAborts snapshot.
 func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap uint64) (res NodeResult, err error) {
 	reattach := req.ReattachSandbox != ""
@@ -139,7 +165,18 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 	parked := false
 	var turnEvents []models.AcpEvent
 	defer func() {
+		if err == nil && req.Operation.Authorization != "" && c.opts.CheckExecution != nil {
+			if checkErr := c.opts.CheckExecution(ctx, req); checkErr != nil {
+				err = errors.Join(ErrProviderDispatchUnknown, checkErr)
+			}
+		}
 		if parked {
+			return
+		}
+		if req.AttachOnly && err != nil {
+			// An unconfirmed attachment grants no right to cancel/retire a
+			// different native operation or release this retained workspace.
+			acp.Close()
 			return
 		}
 		err = c.settleCodexLogin(req, err, res.Events)
@@ -197,7 +234,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		return NodeResult{}, ErrNodeTakenOver
 	}
 
-	if req.ResetToDefaultModel {
+	if req.ResetToDefaultModel && !req.AttachOnly {
 		if err := c.resetLiveChatModel(ctx, sb, acp); err != nil {
 			return NodeResult{}, fmt.Errorf("reset chat model: %w", err)
 		}
@@ -210,18 +247,40 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 	var usageByModel models.TokenUsageByModel
 
 	if reattach {
-		chatRes, err = c.reattachTurn(chatCtx, sb, acp)
+		if req.AttachOnly {
+			chatRes, err = acp.ReattachOperation(chatCtx)
+		} else {
+			chatRes, err = c.reattachTurn(chatCtx, sb, acp)
+		}
 		c.recordChatUsage(req, chatRes, err)
 	}
 	if reattach && req.BeforeProviderDispatch != nil && err == nil && chatRes == nil {
 		return NodeResult{}, ErrProviderDispatchUnknown
 	}
-	if !reattach || (err == nil && chatRes == nil) {
+	if req.AttachOnly && err == nil && chatRes == nil {
+		return NodeResult{}, ErrProviderDispatchUnknown
+	}
+	if !reattach || (!req.AttachOnly && err == nil && chatRes == nil) {
 		if req.BeforeProviderDispatch != nil {
-			if dispatchErr := req.BeforeProviderDispatch(chatCtx, req.ProviderAttempt); dispatchErr != nil {
+			if c.opts.NativeAuthorization != nil {
+				if refreshErr := acp.RefreshOperationSession(chatCtx); refreshErr != nil {
+					return NodeResult{}, refreshErr
+				}
+			}
+			req.Operation.Resource = sb.Name
+			req.Operation.SessionID = acp.NativeSessionID()
+			req.Operation.Workspace, req.Operation.WorkspaceFingerprint = acp.WorkspaceIdentity()
+			if c.opts.NativeAuthorization != nil {
+				req.Operation.Authorization, err = c.opts.NativeAuthorization(chatCtx, req)
+				if err != nil {
+					return NodeResult{}, err
+				}
+			}
+			if dispatchErr := req.BeforeProviderDispatch(chatCtx, req.Operation); dispatchErr != nil {
 				return NodeResult{}, dispatchErr
 			}
 		}
+		req.nativeOperationID = req.Operation.ID
 		chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded), req.PromptImages)
 	}
 	if err != nil {
@@ -247,6 +306,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		events := c.snapshotEvents(snapCtx, sb, turnEvents)
 		return NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}, fmt.Errorf("agent chat: %w", err)
 	}
+	req.nativeOperationID = ""
 	absorbChat(&usage, &usageByModel, &turnEvents, chatRes)
 	if lerr := c.codexTurnLoginErr(chatRes, req); lerr != nil {
 		events := c.snapshotEvents(ctx, sb, turnEvents)
@@ -635,14 +695,10 @@ func mrBranches(req NodeReq) (source, target string) {
 	return source, target
 }
 
-// AbortRun tears down live react sessions and in-flight agent ACP connections
-// for a run. Called on cancel/fail so Cancel-during-agent unblocks RunAgent
-// (and react sandboxes are not left busy forever).
-//
-// When a preview-capable Agent node already has a healthy keepalive registration, the
-// sandbox is retired (ACP closed, container kept) instead of Destroy'd so the
-// setsid-detached preview survives Cancel of the production turn. Full Run /
-// gate / sandbox reclaim still Destroy via the normal lifecycle.
+// AbortRun revokes live sessions and in-flight driving connections, then
+// retires their workspaces through the same path used when a node finishes.
+// The registry retains the original files and stops compute through its normal
+// retention/confirmation policy. Cancel/fail never authorizes deleting a disk.
 func (c *acpProvider) AbortRun(runID string) {
 	c.dropRunTranscript(runID)
 	prefix := runID + "|"
@@ -650,15 +706,16 @@ func (c *acpProvider) AbortRun(runID string) {
 	c.mu.Lock()
 	c.recordAbortLocked(runID)
 	var sessionKeys []string
-	for k := range c.sessions {
+	var sessionACPs []*sandbox.ACPClient
+	for k, session := range c.sessions {
 		if strings.HasPrefix(k, prefix) {
 			sessionKeys = append(sessionKeys, k)
+			sessionACPs = append(sessionACPs, session.acp)
 		}
 	}
 	var agentKeys []string
 	var agentACPs []*sandbox.ACPClient
 	var agentSBs []*sandbox.Sandbox
-	var agentKeepPreview []bool
 	for k, acp := range c.inflightACP {
 		if !strings.HasPrefix(k, prefix) {
 			continue
@@ -670,17 +727,6 @@ func (c *acpProvider) AbortRun(runID string) {
 		agentKeys = append(agentKeys, k)
 		agentACPs = append(agentACPs, acp)
 		agentSBs = append(agentSBs, c.live[k])
-		nodeID := k
-		if i := strings.IndexByte(k, '|'); i >= 0 {
-			nodeID = k[i+1:]
-		}
-
-		keep := false
-		if c.host != nil {
-			pids := c.host.ListPreviewKeepalivePIDs(runID, nodeID)
-			keep = c.host.HasHealthyPreviewPorts(runID, nodeID) || len(pids) > 0
-		}
-		agentKeepPreview = append(agentKeepPreview, keep)
 	}
 	for _, k := range agentKeys {
 		delete(c.inflightACP, k)
@@ -694,28 +740,22 @@ func (c *acpProvider) AbortRun(runID string) {
 		}
 	}
 	c.mu.Unlock()
-	for _, k := range sessionKeys {
+	for i, k := range sessionKeys {
+		if sessionACPs[i] != nil {
+			_ = sessionACPs[i].Cancel()
+		}
 		c.closeSession(k)
 	}
 	for i, acp := range agentACPs {
-		sb := agentSBs[i]
-		if agentKeepPreview[i] && sb != nil {
-
-			home := ""
-			c.retireRunSandbox(sb, acp, home)
-			continue
-		}
-		if c.releaseSharedSandbox(sb, acp) {
-			continue
-		}
+		// Request native cancellation while the driving link still exists.
+		// This fire-and-forget message is not a confirmed compute stop.
 		if acp != nil {
-			acp.Close()
+			_ = acp.Cancel()
 		}
-		if sb != nil {
-
-			c.deregisterRunSandbox(sb.Name)
-			sb.Destroy(context.Background())
-		}
+		// Production always supplies RunSandboxRetirer. Retiring also keeps
+		// detached previews and any uncommitted/non-Git files in the same
+		// environment; a closed ACP connection is not a stop receipt.
+		c.retireRunSandbox(agentSBs[i], acp, "")
 	}
 	c.retireSharedRunSandbox(runID)
 }

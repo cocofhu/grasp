@@ -1,11 +1,23 @@
 #!/usr/bin/env bash
-# Sourced by start.sh. An empty S3 endpoint explicitly selects the bundled,
-# private SeaweedFS service; an external endpoint never falls back to it.
+# Sourced by start.sh. Bundled SeaweedFS requires an explicit local-storage
+# selection; a missing cloud endpoint never selects a new store by itself.
 
 export GRASP_LOCAL_OBJECTSTORE_IMAGE="${GRASP_LOCAL_OBJECTSTORE_IMAGE:-chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0}"
 
 local_objectstore_requested() {
   [[ "${GRASP_STORAGE_DRIVER:-}" == s3 && -z "${GRASP_S3_ENDPOINT:-}" ]]
+}
+
+validate_local_objectstore_selection() {
+  if [[ "${GRASP_LOCAL_OBJECTSTORE:-}" == 1 && -n "${GRASP_S3_ENDPOINT:-}" ]]; then
+    echo "error: GRASP_LOCAL_OBJECTSTORE=1 requires an empty GRASP_S3_ENDPOINT; choose local storage or an external endpoint" >&2
+    return 1
+  fi
+  local_objectstore_requested || return 0
+  if [[ "${GRASP_LOCAL_OBJECTSTORE:-}" != 1 ]]; then
+    echo "error: S3 requires GRASP_S3_ENDPOINT; set GRASP_LOCAL_OBJECTSTORE=1 explicitly to use bundled SeaweedFS" >&2
+    return 1
+  fi
 }
 
 local_objectstore_profile() {
@@ -22,12 +34,13 @@ local_objectstore_owner() {
 
 prepare_local_objectstore() {
   GRASP_LOCAL_OBJECTSTORE_ENABLED=0
+  validate_local_objectstore_selection || return 1
   local_objectstore_requested || return 0
 
   # Partial cloud credentials are an error, never permission to provision a
   # different storage location. Local credentials are generated and kept here.
   if [[ -n "${GRASP_S3_ACCESS_KEY_ID:-}${GRASP_S3_SECRET_ACCESS_KEY:-}${GRASP_S3_SESSION_TOKEN:-}" ]]; then
-    echo "error: S3 credentials require GRASP_S3_ENDPOINT; leave both empty for bundled storage" >&2
+    echo "error: S3 credentials require GRASP_S3_ENDPOINT; bundled storage generates its own identity" >&2
     return 1
   fi
   local bucket="${GRASP_S3_BUCKET:-grasp}"

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/filestore"
+	"github.com/cocofhu/grasp/internal/leasewatch"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/workspacearchive"
@@ -45,7 +46,16 @@ func (b workspaceCodeBridge) Export(ctx context.Context, id uint, selected []san
 	if err != nil {
 		return nil, err
 	}
-	return sandbox.ExportWorkspaceCode(ctx, host, port, password, selected, fence)
+	if err := requireCodeLeaseCapability(ctx, host, port, password); err != nil {
+		return nil, err
+	}
+	leaseCtx, stop := b.maintainCodeLease(ctx, id, host, port, password, fence)
+	body, err := sandbox.ExportWorkspaceCode(leaseCtx, host, port, password, selected, fence)
+	if err != nil {
+		stop()
+		return nil, err
+	}
+	return &workspaceCodeBody{ReadCloser: body, stop: stop}, nil
 }
 func (b workspaceCodeBridge) Import(ctx context.Context, id uint, importID, digest string, source io.Reader) (sandbox.WorkspaceCodeReceipt, error) {
 	fence, err := b.fence(ctx, id)
@@ -56,7 +66,80 @@ func (b workspaceCodeBridge) Import(ctx context.Context, id uint, importID, dige
 	if err != nil {
 		return sandbox.WorkspaceCodeReceipt{}, err
 	}
-	return sandbox.ImportWorkspaceCode(ctx, host, port, password, importID, digest, source, fence)
+	if err := requireCodeLeaseCapability(ctx, host, port, password); err != nil {
+		return sandbox.WorkspaceCodeReceipt{}, err
+	}
+	leaseCtx, stop := b.maintainCodeLease(ctx, id, host, port, password, fence)
+	defer stop()
+	return sandbox.ImportWorkspaceCode(leaseCtx, host, port, password, importID, digest, source, fence)
+}
+
+func requireCodeLeaseCapability(ctx context.Context, host string, port int, password string) error {
+	capability, err := sandbox.InspectWorkspaceCode(ctx, host, port, password)
+	if err != nil {
+		return err
+	}
+	if capability.Version != sandbox.WorkspaceCodeVersion || !capability.RenewableLease {
+		return &sandbox.WorkspaceCodeError{Status: http.StatusUnprocessableEntity, Code: "workspace_import_unsupported"}
+	}
+	return nil
+}
+
+type workspaceCodeBody struct {
+	io.ReadCloser
+	stop func()
+}
+
+func (b *workspaceCodeBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil {
+		b.stop()
+	}
+	return n, err
+}
+
+func (b *workspaceCodeBody) Close() error {
+	b.stop()
+	return b.ReadCloser.Close()
+}
+
+// Runtime renewal only forwards a newer, already committed SQL lease after a
+// fresh access check. It never extends the SQL lease or creates a new import.
+func (b workspaceCodeBridge) maintainCodeLease(ctx context.Context, id uint, host string, port int, password string, initial sandbox.WorkspaceCodeFence) (context.Context, func()) {
+	leaseCtx, cancel := context.WithCancelCause(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		acknowledged := initial.ExpiresAt
+		err := leasewatch.Maintain(leaseCtx, acknowledged, sandboxOperationLeaseTTL/3, errSandboxOperationLost, func(check context.Context) (time.Time, error) {
+			access, row, release, err := b.sandbox.beginSandboxAccess(check, id)
+			if err != nil {
+				return time.Time{}, errors.Join(errSandboxOperationLost, err)
+			}
+			defer release()
+			if row.Status != "running" || row.Token != password || row.DesiredState == "stopped" {
+				return time.Time{}, errSandboxOperationLost
+			}
+			fence, err := b.fence(access, id)
+			if err != nil || fence.Generation != initial.Generation {
+				return time.Time{}, errors.Join(errSandboxOperationLost, err)
+			}
+			if !fence.ExpiresAt.After(acknowledged) {
+				return time.Time{}, errors.New("waiting for the committed physical lease renewal")
+			}
+			if err := sandbox.RenewWorkspaceCode(access, host, port, password, fence); err != nil {
+				var remote *sandbox.WorkspaceCodeError
+				if errors.As(err, &remote) && remote.Status >= 400 && remote.Status < 500 {
+					return time.Time{}, errors.Join(errSandboxOperationLost, err)
+				}
+				return time.Time{}, err
+			}
+			acknowledged = fence.ExpiresAt
+			return acknowledged, nil
+		})
+		cancel(err)
+	}()
+	return leaseCtx, func() { cancel(context.Canceled); <-done }
 }
 
 func (b workspaceCodeBridge) fence(ctx context.Context, id uint) (sandbox.WorkspaceCodeFence, error) {

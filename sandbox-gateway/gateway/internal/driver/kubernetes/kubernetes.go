@@ -662,6 +662,9 @@ func (d *Driver) scale(ctx context.Context, id string, replicas int32) error {
 	if err != nil {
 		return err
 	}
+	if replicas > 0 && coldPending(dep) {
+		return driver.ErrColdStartUnknown
+	}
 	dep.Spec.Replicas = &replicas
 	_, err = d.cs.AppsV1().Deployments(d.opts.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
 	return err

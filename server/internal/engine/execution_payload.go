@@ -73,7 +73,7 @@ func (e *Engine) prepareExecutionRow(ctx context.Context, row any, create bool, 
 	}
 	now := time.Now()
 	for _, field := range statement.Schema.Fields {
-		if !result.newRow && result.table == "state_runs" && (field.DBName == "workspace_checkpoint_id" || field.DBName == "provider_attempt" || field.DBName == "provider_dispatch_state" || field.DBName == "provider_dispatched_at") {
+		if !result.newRow && result.table == "state_runs" && (field.DBName == "workspace_checkpoint_id" || field.DBName == "provider_attempt" || field.DBName == "provider_dispatch_state" || field.DBName == "provider_dispatched_at" || field.DBName == "provider_operation_id" || field.DBName == "provider_operation_receipt") {
 			continue
 		}
 		if field.DBName == "" || !wanted(field) || (!result.newRow && (!field.Updatable || field.PrimaryKey || field.AutoCreateTime > 0)) ||

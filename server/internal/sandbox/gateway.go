@@ -196,7 +196,13 @@ func (g *GatewayClient) Create(ctx context.Context, req GWCreateRequest) (*GWSan
 	if err := client.doDirect(ctx, http.MethodPost, "/api/v1/sandboxes", req, &sb); err != nil {
 		return nil, err
 	}
-	return client.adaptSandbox(ctx, &sb)
+	adapted, err := client.adaptSandbox(ctx, &sb)
+	if err != nil {
+		// POST already returned the original provider identity. A local
+		// endpoint/discovery failure cannot discard that creation receipt.
+		return &sb, err
+	}
+	return adapted, nil
 }
 
 // Get returns one sandbox by gateway id.
@@ -258,9 +264,10 @@ func (g *GatewayClient) Start(ctx context.Context, id string) error {
 // creating a replacement. BootstrapScript migrates existing Docker containers;
 // RuntimeURL/Headers also let Kubernetes cold starts fetch a fresh bundle.
 type GWStartOptions struct {
-	BootstrapScript string `json:"bootstrapScript"`
-	RuntimeURL      string `json:"runtimeUrl"`
-	RuntimeHeaders  string `json:"runtimeHeaders"`
+	BootstrapScript string             `json:"bootstrapScript"`
+	RuntimeURL      string             `json:"runtimeUrl"`
+	RuntimeHeaders  string             `json:"runtimeHeaders"`
+	ColdConfig      *GWColdStartConfig `json:"coldConfig,omitempty"`
 }
 
 func (g *GatewayClient) StartPrepared(ctx context.Context, id string, opts GWStartOptions) error {

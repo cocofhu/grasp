@@ -65,7 +65,7 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 			return
 		}
 
-		if p := bridge.Session(); p != nil {
+		if p := bridge.Session(); p != nil && c.Query("attachOnly") != "1" {
 			if err := bridge.WriteJSONWS(conn, bridge.ConnectedPayload(p)); err != nil {
 				log.Printf("ws cid=%s: 同步 connected 失败: %v", cid, err)
 			} else {
@@ -93,6 +93,35 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 				continue
 			}
 			switch msg.Op {
+			case "operation_session":
+				reply, err := bridge.OperationSession()
+				if err != nil {
+					writeWSError(bridge, conn, err.Error())
+					continue
+				}
+				if err := bridge.WriteJSONWS(conn, reply); err != nil {
+					return
+				}
+			case "attach_operation":
+				var request struct {
+					ID          string `json:"opId"`
+					Session     string `json:"sessionId"`
+					Workspace   string `json:"cwd"`
+					Fingerprint string `json:"workspaceFingerprint"`
+				}
+				if json.Unmarshal(payload, &request) != nil {
+					writeWSError(bridge, conn, service.ErrOperationUnconfirmed.Error())
+					continue
+				}
+				reply, attachErr := bridge.AttachOperation(request.ID, request.Session, request.Workspace, request.Fingerprint)
+				if attachErr != nil {
+					writeWSError(bridge, conn, attachErr.Error())
+					continue
+				}
+				if err := bridge.WriteJSONWS(conn, reply); err != nil {
+					return
+				}
+				bridge.BroadcastQueueState()
 			case "connect":
 				if err := handleConnect(cid, conn, bridge, payload); err != nil {
 					log.Printf("ws cid=%s: connect 失败: %v", cid, err)

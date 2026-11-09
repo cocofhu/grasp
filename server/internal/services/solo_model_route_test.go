@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -245,6 +246,18 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 	solo, _, _, db := newSoloFixture(t, port, 3)
 	insertSoloModelConfig(t, db)
 	ctx := context.Background()
+	// GORM's callback registry is not safe to recompile while the durable
+	// worker queries. Register before starting the session; switch only the
+	// injected failure, leaving the private fixture's registry immutable.
+	var failHistory atomic.Bool
+	const callback = "fail-history-handoff-query"
+	if err := db.Callback().Query().Before("gorm:query").Register(callback, func(tx *gorm.DB) {
+		if failHistory.Load() && tx.Statement.Table == "solo_messages" {
+			tx.AddError(errors.New("history temporarily unavailable"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
 	view, err := solo.Create(ctx, "alice", SoloCreateInput{AgentName: "agentA"})
 	if err != nil {
 		t.Fatal(err)
@@ -260,15 +273,7 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 	if _, err := solo.SetCurrentModel(ctx, view.ID, "alice", "aux"); err != nil {
 		t.Fatal(err)
 	}
-	const callback = "fail-history-handoff-query"
-	if err := db.Callback().Query().Before("gorm:query").Register(callback, func(tx *gorm.DB) {
-		if tx.Statement.Table == "solo_messages" {
-			tx.AddError(errors.New("history temporarily unavailable"))
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Callback().Query().Remove(callback) })
+	failHistory.Store(true)
 	if _, err := solo.Send(view.ID, "alice", "continue after switching", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -283,9 +288,7 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 	if !row.ModelContextPending {
 		t.Fatal("failed handoff dropped the context retry marker")
 	}
-	if err := db.Callback().Query().Remove(callback); err != nil {
-		t.Fatal(err)
-	}
+	failHistory.Store(false)
 	if _, err := solo.Send(view.ID, "alice", "retry with context", nil); err != nil {
 		t.Fatal(err)
 	}

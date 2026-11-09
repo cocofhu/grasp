@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,6 +95,9 @@ func TestCodeTransferPreservesSourcesAndDirtyTargetAndImportsUnpushedCommits(t *
 	if got := nativeGit(t, imported, "rev-parse", "HEAD"); got != sha {
 		t.Fatalf("selected commit changed: %s", got)
 	}
+	if got := nativeGit(t, imported, "symbolic-ref", "--short", "HEAD"); got != "import/"+sha[:12] {
+		t.Fatalf("imported code is not on its own named branch: %s", got)
+	}
 	if got := nativeGit(t, imported, "show", old+":tracked.txt"); got != "original" {
 		t.Fatal("unpublished history did not transfer")
 	}
@@ -123,6 +127,55 @@ func TestCodeTransferPreservesSourcesAndDirtyTargetAndImportsUnpushedCommits(t *
 	}
 	if got, _ := os.ReadFile(filepath.Join(imported, "tracked.txt")); string(got) != "edits after import" {
 		t.Fatal("retry overwrote later edits")
+	}
+}
+
+func TestValidateTreeInspectsManySmallFilesInOneNativeBatch(t *testing.T) {
+	root := t.TempDir()
+	repo := fixtureRepo(t, root, "repo")
+	for i := 0; i < 1200; i++ {
+		if err := os.WriteFile(filepath.Join(repo, fmt.Sprintf("small-%04d.txt", i)), []byte(fmt.Sprintf("content %d", i)), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("small-0001.txt", filepath.Join(repo, "safe-link")); err != nil {
+		t.Fatal(err)
+	}
+	nativeGit(t, repo, "add", ".")
+	nativeGit(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-qm", "many small files")
+	commit := nativeGit(t, repo, "rev-parse", "HEAD")
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin, trace := t.TempDir(), filepath.Join(t.TempDir(), "git-invocations")
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$GRASP_TEST_GIT_TRACE\"\nexec \"$GRASP_TEST_REAL_GIT\" \"$@\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GRASP_TEST_REAL_GIT", realGit)
+	t.Setenv("GRASP_TEST_GIT_TRACE", trace)
+	count, _, err := validateTree(t.Context(), repo, commit)
+	if err != nil || count != 1202 {
+		t.Fatalf("valid small-file tree rejected: %d %v", count, err)
+	}
+	data, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(data), "cat-file --batch\n") != 1 || strings.Contains(string(data), "cat-file blob ") {
+		t.Fatal("tree validation spawned per-object Git processes")
+	}
+	if err := os.Remove(filepath.Join(repo, "safe-link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../outside", filepath.Join(repo, "safe-link")); err != nil {
+		t.Fatal(err)
+	}
+	nativeGit(t, repo, "add", ".")
+	nativeGit(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-qm", "escaping link")
+	if _, _, err := validateTree(t.Context(), repo, nativeGit(t, repo, "rev-parse", "HEAD")); !errors.Is(err, ErrUnsafe) {
+		t.Fatalf("batch accepted escaping symlink: %v", err)
 	}
 }
 
