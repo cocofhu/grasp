@@ -5083,7 +5083,43 @@
         }
       },
       "sendUnconfirmed": "Delivery is unconfirmed. Retry this message to check its receipt.",
-      "retryUnconfirmed": "Retry unconfirmed send"
+      "retryUnconfirmed": "Retry unconfirmed send",
+      "workspaceImport": {
+        "open": "Import code",
+        "title": "Import workflow code",
+        "intro": "Choose an execution, repositories and commits. Review the preview, then confirm the import into Solo.",
+        "boundaries": "Import committed Git code and history, including unpushed commits, into a new directory. The source and current Solo workspace are preserved.",
+        "limits": "Up to 64 MiB per repository including history, 128 MiB total, and 32 MiB per file. Each transfer can run for up to 45 seconds; check the result after a timeout.",
+        "source": "Source execution",
+        "chooseSource": "Choose an execution",
+        "sourceLabel": "{node} · iteration {iteration} · environment {attempt}",
+        "shared": "currently retained shared workspace",
+        "unavailable": "environment is not running",
+        "noSources": "No source workspace is retained. Opening this page never starts an environment.",
+        "readRepositories": "Read repositories",
+        "noRepositories": "No Git repository is available for this import method.",
+        "repositoryUnsupported": "This repository does not support import through Git commits.",
+        "commit": "Full Git commit SHA",
+        "dirtyExcluded": "The source has working changes or untracked files. This import includes only the selected commit; other files remain at the source.",
+        "preview": "Preview import",
+        "confirm": "Confirm import into a new directory",
+        "confirmHint": "Only these frozen commits will be imported. Your Solo repositories and working changes remain intact. Stop the active Solo turn and handle pending messages before confirming.",
+        "unknownHint": "The previous result is unconfirmed. Check the existing receipt first; no filesystem operation is replayed automatically. Without a complete receipt, all files are retained. Inspect the isolated directory before creating a new preview.",
+        "reconcile": "Check import result",
+        "newPreview": "New preview",
+        "destination": "Isolated directory, relative to the Solo workspace. Inspect retained files here when the result is unknown:",
+        "result": "Code was imported at these workspace-relative paths. The result is also in Solo chat; reference these paths to continue:",
+        "files": "{count} files · {size} KiB",
+        "previous": "Saved previews and import results",
+        "states": {
+          "prepared": "Awaiting confirmation",
+          "applying": "Import in progress; check result",
+          "unknown": "Result unconfirmed",
+          "applied": "Imported into a new directory"
+        },
+        "details": "Import scope and limits",
+        "exclusions": "This method excludes working changes, untracked and ignored files, non-Git directories and native session data. Git LFS, submodules, external worktrees and custom filters are unsupported. It never commits, pushes or switches branches in the original repository."
+      }
     },
     "projects": {
       "title": "Repositories",

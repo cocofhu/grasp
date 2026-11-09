@@ -45,12 +45,19 @@ func VerifyReferences(ctx context.Context, db *gorm.DB, destination objectstore.
 		}
 		columns := []string{}
 		serializers := map[string]string{}
-		for _, field := range stmt.Schema.Fields {
-			serializer := field.TagSettings["SERIALIZER"]
-			if serializer != "" && field.DBName != "" && field.Readable {
-				columns = append(columns, field.DBName)
-				serializers[field.DBName] = serializer
+		descriptors := map[string]filestore.PayloadField{}
+		fields, err := filestore.PayloadFields(stmt.Schema)
+		if err != nil {
+			return report, err
+		}
+		for _, field := range fields {
+			// New explicit roots may not exist in a pre-upgrade SQL snapshot.
+			// Its verified database bytes cannot reference an absent column.
+			if field.Explicit && !db.Migrator().HasColumn(stmt.Schema.Table, field.Column) {
+				continue
 			}
+			columns = append(columns, field.Column)
+			serializers[field.Column], descriptors[field.Column] = field.Serializer, field
 		}
 		if len(columns) == 0 {
 			continue
@@ -80,22 +87,29 @@ func VerifyReferences(ctx context.Context, db *gorm.DB, destination objectstore.
 			after = row[pk]
 			for _, column := range columns[:len(columns)-1] {
 				serializer := serializers[column]
+				descriptor := descriptors[column]
 				raw, err := storedBytes(row[column])
 				if err != nil {
 					return report, err
 				}
-				if len(raw) == 0 || string(raw) == "null" {
+				if len(raw) == 0 || !descriptor.Explicit && string(raw) == "null" {
 					continue
 				}
 				if err := cellHash.Encode([]string{stmt.Schema.Table, fmt.Sprint(after), column, string(raw)}); err != nil {
 					return report, err
 				}
 				report.Cells++
-				if strings.HasPrefix(string(raw), filestore.Prefix) && strings.HasPrefix(serializer, "file") {
+				if descriptor.Explicit && !filestore.IsRef(string(raw)) {
+					return report, fmt.Errorf("explicit payload requires a prepared reference in %s.%s", stmt.Schema.Table, column)
+				}
+				if strings.HasPrefix(string(raw), filestore.Prefix) && (strings.HasPrefix(serializer, "file") || descriptor.Explicit) {
 					ref := string(raw)
 					encoding, digest, err := filestore.Parse(ref)
 					if err != nil {
 						return report, fmt.Errorf("invalid reference in %s.%s", stmt.Schema.Table, column)
+					}
+					if descriptor.Explicit && encoding != descriptor.Encoding {
+						return report, fmt.Errorf("payload encoding disagrees with %s.%s", stmt.Schema.Table, column)
 					}
 					if seenPayloads[ref] {
 						continue

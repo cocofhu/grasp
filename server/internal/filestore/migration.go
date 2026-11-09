@@ -42,18 +42,22 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 		pk := stmt.Schema.PrimaryFields[0].DBName
 		columns := []string{pk}
 		encodings := map[string]string{}
-		for _, field := range stmt.Schema.Fields {
-			switch field.TagSettings["SERIALIZER"] {
-			case "filetext":
-				encodings[field.DBName] = Text
-			case "filejson":
-				encodings[field.DBName] = JSON
-			case "filebytes":
-				encodings[field.DBName] = Bytes
-			default:
+		explicit := map[string]bool{}
+		fields, err := PayloadFields(stmt.Schema)
+		if err != nil {
+			return report, err
+		}
+		for _, field := range fields {
+			if field.Encoding == "" {
 				continue
 			}
-			columns = append(columns, field.DBName)
+			// A frozen pre-upgrade SQL backup cannot contain this newly
+			// introduced raw-ref column. Do not invent it while verifying it.
+			if field.Explicit && !db.Migrator().HasColumn(stmt.Schema.Table, field.Column) {
+				continue
+			}
+			encodings[field.Column], explicit[field.Column] = field.Encoding, field.Explicit
+			columns = append(columns, field.Column)
 		}
 		if len(encodings) == 0 {
 			continue
@@ -91,11 +95,21 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 						continue
 					}
 					if IsRef(raw) {
-						if e = store.Verify(ctx, raw); e != nil {
+						actual, _, _ := Parse(raw)
+						if explicit[column] && actual != encoding {
+							e = fmt.Errorf("stored payload encoding disagrees with its owner")
+						} else {
+							e = store.Verify(ctx, raw)
+						}
+						if e != nil {
 							report.Failures = append(report.Failures, fmt.Sprintf("%s/%v/%s: %v", table, after, column, e))
 						} else {
 							report.Verified++
 						}
+						continue
+					}
+					if explicit[column] {
+						report.Failures = append(report.Failures, fmt.Sprintf("%s/%v/%s: explicit payload requires a prepared reference", table, after, column))
 						continue
 					}
 					if strings.HasPrefix(raw, Prefix) {

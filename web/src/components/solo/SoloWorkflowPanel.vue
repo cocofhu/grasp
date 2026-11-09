@@ -9,6 +9,7 @@ import { useWorkflowFeature, setWorkflowFeature, type WorkflowFeature } from '@/
 import { seedAskLaunchFields } from '@/lib/run/useWorkflowAskInputs'
 import RunLaunchModal, { type InputField } from '@/components/workflow/RunLaunchModal.vue'
 import SoloWorkflowInteraction from './SoloWorkflowInteraction.vue'
+import SoloWorkflowImport, { type WorkspaceImportDraft } from './SoloWorkflowImport.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppDrawer from '@/components/ui/AppDrawer.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -32,6 +33,8 @@ const inputs = ref<Record<string, string>>({})
 const images = ref<Record<string, ClarifyImage[]>>({})
 const selectedTask = ref<Task | null>(null)
 const selectedNode = ref('')
+const importTask = ref<Task | null>(null)
+const importDrafts = ref<Record<string, WorkspaceImportDraft | null>>({})
 const interactionDrafts = ref<Record<string, string>>({})
 const instructionRequests = ref<Record<string, { clientMessageId: string; text: string; generation: string; iteration: number; attempt?: number } | null>>({})
 const cancelling = ref('')
@@ -113,6 +116,7 @@ defineExpose({ openPicker, refresh })
         <AppButton v-if="!terminal(task.status)" size="sm" variant="ghost" @click="control(task, task.status === 'paused' || !!task.pauseRequested)">{{ t(task.status === 'paused' || task.pauseRequested ? 'pages.solo.workflows.resume' : 'pages.solo.workflows.pause') }}</AppButton>
         <AppButton v-if="task.status === 'waiting_human'" size="sm" variant="primary" @click="interact(task)">{{ t('pages.solo.workflows.handle') }}</AppButton>
         <AppButton size="sm" variant="ghost" @click="interact(task)">{{ t('pages.solo.workflows.conversation') }}</AppButton>
+        <AppButton v-if="terminal(task.status)" size="sm" variant="ghost" data-testid="workflow-import-code" @click="importTask = task">{{ t('pages.solo.workspaceImport.open') }}</AppButton>
         <RouterLink :to="`/runs/${encodeURIComponent(task.id)}?view=details`" class="text-xs text-txt3 hover:text-accent">{{ t('pages.solo.workflows.details') }}</RouterLink>
         <AppButton v-if="!terminal(task.status)" size="sm" variant="ghost" :loading="cancelling === task.id" @click="confirmCancel = task">{{ t('common.buttons.cancel') }}</AppButton>
       </div>
@@ -126,5 +130,6 @@ defineExpose({ openPicker, refresh })
     </AppModal>
     <RunLaunchModal v-if="launch" :open="!!launch" :solo-session-id="props.sessionId" :workflow-id="launch.id" :workflow-name="launch.name" :workflow-version="launch.publishedVersion" :fields="fields" :run-inputs="inputs" :run-images="images" published-snapshot @close="launch = null" @started="onStarted" />
     <AppDrawer :open="!!selectedTask" :title="selectedTask ? `${selectedTask.id} · ${selectedTask.title || selectedTask.workflowName}` : ''" :width="760" @close="selectedTask = null"><SoloWorkflowInteraction v-if="selectedTask" :key="`${selectedTask.id}:${selectedNode}`" v-model:draft="interactionDrafts[`${selectedTask.id}:${selectedNode}`]" v-model:instruction-request="instructionRequests[`${selectedTask.id}:${selectedNode}`]" :run-id="selectedTask.id" :node-id="selectedNode" /></AppDrawer>
+    <AppDrawer :open="!!importTask" :title="t('pages.solo.workspaceImport.title')" :width="620" @close="importTask = null"><SoloWorkflowImport v-if="importTask" :key="`${props.sessionId}:${importTask.id}`" v-model:draft="importDrafts[importTask.id]" :session-id="props.sessionId" :run-id="importTask.id" :nodes="importTask.nodes" @changed="emit('changed')" /></AppDrawer>
     <AppModal :open="!!confirmCancel" :title="t('pages.solo.workflows.cancelTitle')" :width="420" close-on-esc @close="confirmCancel = null"><p class="text-sm text-txt2">{{ t('pages.solo.workflows.cancelBody', { task: confirmCancel?.title || confirmCancel?.id }) }}</p><template #footer><AppButton variant="ghost" @click="confirmCancel = null">{{ t('common.buttons.back') }}</AppButton><AppButton variant="primary" :loading="!!cancelling" @click="cancelTask">{{ t('pages.solo.workflows.confirmCancel') }}</AppButton></template></AppModal>
 </template>

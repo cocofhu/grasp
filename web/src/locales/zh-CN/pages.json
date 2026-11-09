@@ -5083,7 +5083,43 @@
         }
       },
       "sendUnconfirmed": "发送结果尚未确认，请重试这条消息",
-      "retryUnconfirmed": "重试待确认消息"
+      "retryUnconfirmed": "重试待确认消息",
+      "workspaceImport": {
+        "open": "导入代码",
+        "title": "导入工作流代码",
+        "intro": "选择工作流的执行轮次、仓库和提交，先生成预览，再由你确认导入 Solo。",
+        "boundaries": "导入已提交的 Git 代码及历史（包括未推送提交），进入新的独立目录。来源与当前 Solo 工作区均保留。",
+        "limits": "每个仓库连同历史最大 64 MiB，总计 128 MiB，单文件最大 32 MiB。单次传输最长 45 秒；超时请先核对结果。",
+        "source": "来源执行轮次",
+        "chooseSource": "选择执行轮次",
+        "sourceLabel": "{node} · 第 {iteration} 轮 · 环境 {attempt}",
+        "shared": "共享工作区当前保留版本",
+        "unavailable": "环境未运行",
+        "noSources": "没有保留的来源工作区。查看此页不会自动启动环境。",
+        "readRepositories": "读取仓库",
+        "noRepositories": "当前来源没有可通过此方式导入的 Git 仓库。",
+        "repositoryUnsupported": "当前仓库不支持通过 Git 提交方式导入。",
+        "commit": "完整 Git 提交 SHA",
+        "dirtyExcluded": "来源包含未提交或未跟踪文件；此次仅导入所选提交，这些文件保留在来源。",
+        "preview": "生成导入预览",
+        "confirm": "确认导入独立目录",
+        "confirmHint": "确认后只导入以上冻结的提交。Solo 当前仓库和未提交文件均保留；请先停止 Solo 正在执行的轮次并处理待发送消息。",
+        "unknownHint": "上次操作结果尚未确认。先核对已有导入收据，不会自动再次写入。没有完整收据时保留所有文件，可检查隔离目录后新建预览。",
+        "reconcile": "核对导入结果",
+        "newPreview": "新建预览",
+        "destination": "独立导入目录（相对 Solo 工作区；结果未知时可在此检查已保留文件）：",
+        "result": "代码已导入下列工作区相对路径，结果也已加入 Solo 聊天，可引用这些路径继续处理：",
+        "files": "{count} 个文件 · {size} KiB",
+        "previous": "已保存的预览和导入结果",
+        "states": {
+          "prepared": "待确认导入",
+          "applying": "导入中，需核对结果",
+          "unknown": "结果待核对",
+          "applied": "已导入独立目录"
+        },
+        "details": "导入范围与限制",
+        "exclusions": "此方式不包含未提交改动、未跟踪及忽略文件、非 Git 目录或原生会话数据；不支持 Git LFS、子模块、外部 worktree 及自定义过滤器。不会自动提交、推送或切换原仓库的分支。"
+      }
     },
     "projects": {
       "title": "仓库",

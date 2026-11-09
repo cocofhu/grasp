@@ -67,6 +67,19 @@ func New(deps *Dependencies) *gin.Engine {
 	r.POST("/api/model", handler.ModelPOST(deps.Chats))
 	r.GET("/api/qq/config", handler.QQConfig(deps.QQBot))
 	r.POST("/api/qq/config", handler.QQConfigUpdate(deps.QQBot))
+	// Code transfer is control-plane only and disabled on an unauthenticated
+	// standalone bridge. It never accepts a caller-selected host root.
+	if deps.Auth != nil && deps.Auth.Enabled() {
+		root := os.Getenv("WORKSPACE_DIR")
+		if root == "" {
+			root, _ = os.Getwd()
+		}
+		code := handler.NewWorkspaceCode(root)
+		r.GET("/api/workspace/code", code.Inventory)
+		r.POST("/api/workspace/code/export", code.Export)
+		r.POST("/api/workspace/code/imports/:importId", code.Import)
+		r.GET("/api/workspace/code/imports/:importId", code.Receipt)
+	}
 
 	// SPA 回退：未知 GET 仍回 index
 	r.NoRoute(func(c *gin.Context) {
