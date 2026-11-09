@@ -150,18 +150,19 @@ func initializeEmptyCore(ctx context.Context, db *gorm.DB) error {
 	if runs != states {
 		return errors.New("incomplete core schema requires operator repair before execution initialization")
 	}
-	tables, err := db.Migrator().GetTables()
+	fresh, err := database.CaptureFreshOrigin(ctx, db)
 	if err != nil {
 		return err
 	}
-	for _, table := range tables {
-		if table != "payload_storage_control" && table != "payload_storage_runtimes" && table != "sqlite_sequence" {
-			return errors.New("nonempty SQL without core tables cannot be treated as a new installation")
-		}
+	if !fresh.Empty() {
+		return errors.New("nonempty SQL without core tables cannot be treated as a new installation")
 	}
 	// No application rows exist. The normal server migration/seeding remains
 	// responsible for the rest of the schema after the offline barrier ends.
-	return db.WithContext(ctx).AutoMigrate(&models.Run{}, &models.StateRun{})
+	if err := db.WithContext(ctx).AutoMigrate(&models.Run{}, &models.StateRun{}); err != nil {
+		return err
+	}
+	return database.SealFreshOrigin(ctx, db, fresh, "execution-init")
 }
 
 func readExecutionTicket(ctx context.Context, authority *executionlineage.Authority, dir string) (executionlineage.Ticket, error) {

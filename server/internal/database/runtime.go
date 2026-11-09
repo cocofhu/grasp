@@ -55,6 +55,11 @@ func OpenRuntime(cfg config.DatabaseConfig, root string) (*RuntimeDB, error) {
 	if err != nil {
 		return nil, err
 	}
+	fresh, err := CaptureFreshOrigin(context.Background(), db)
+	if err != nil {
+		_ = Close(db)
+		return nil, err
+	}
 	runtime := &RuntimeDB{DB: db, cfg: cfg}
 	// In-memory SQLite is private to this process and has no offline SQL
 	// snapshot to migrate. Its last connection destroys the registry too; a
@@ -72,6 +77,12 @@ func OpenRuntime(cfg config.DatabaseConfig, root string) (*RuntimeDB, error) {
 	if _, err = finalize(db); err != nil {
 		_ = runtime.Close()
 		return nil, err
+	}
+	if fresh.Empty() {
+		if err := SealFreshOrigin(context.Background(), db, fresh, "runtime"); err != nil {
+			_ = runtime.Close()
+			return nil, err
+		}
 	}
 	return runtime, nil
 }
