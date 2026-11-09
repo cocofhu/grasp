@@ -1203,6 +1203,7 @@ func AllModels() []any {
 		&ChatQueue{}, &ChatQueueEpoch{}, &ChatQueueTurn{}, &ChatEventChunk{},
 		&WorkflowInstructionMailbox{}, &WorkflowInstruction{},
 		&WorkspaceImport{},
+		&WorkflowEventSource{},
 	}
 }
 

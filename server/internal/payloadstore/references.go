@@ -43,6 +43,13 @@ func VerifyReferences(ctx context.Context, db *gorm.DB, destination objectstore.
 		if err := stmt.Parse(model); err != nil {
 			return report, err
 		}
+		skip, err := filestore.SkipMissingPayloadTable(ctx, db, stmt.Schema.Table)
+		if err != nil {
+			return report, err
+		}
+		if skip {
+			continue
+		}
 		columns := []string{}
 		serializers := map[string]string{}
 		descriptors := map[string]filestore.PayloadField{}
@@ -54,6 +61,9 @@ func VerifyReferences(ctx context.Context, db *gorm.DB, destination objectstore.
 			// New explicit roots may not exist in a pre-upgrade SQL snapshot.
 			// Its verified database bytes cannot reference an absent column.
 			if field.Explicit && !db.Migrator().HasColumn(stmt.Schema.Table, field.Column) {
+				if filestore.OptionalPayloadTable(stmt.Schema.Table) {
+					return report, fmt.Errorf("existing payload table %s is missing column %s", stmt.Schema.Table, field.Column)
+				}
 				continue
 			}
 			columns = append(columns, field.Column)
@@ -90,7 +100,7 @@ func VerifyReferences(ctx context.Context, db *gorm.DB, destination objectstore.
 				descriptor := descriptors[column]
 				raw, err := storedBytes(row[column])
 				if err != nil {
-					return report, err
+					return report, fmt.Errorf("stored payload %s.%s: %w", stmt.Schema.Table, column, err)
 				}
 				if len(raw) == 0 || !descriptor.Explicit && string(raw) == "null" {
 					continue
@@ -140,7 +150,7 @@ func VerifyReferences(ctx context.Context, db *gorm.DB, destination objectstore.
 					continue
 				}
 				if !json.Valid(raw) {
-					if serializer == "filebytes" {
+					if serializer == "filebytes" || descriptor.Explicit && descriptor.Encoding == filestore.Bytes {
 						continue
 					}
 					return report, fmt.Errorf("invalid stored JSON in %s.%s", stmt.Schema.Table, column)
@@ -167,8 +177,15 @@ func storedBytes(value any) ([]byte, error) {
 		return v, nil
 	case string:
 		return []byte(v), nil
+	case *any:
+		// GORM's map scan retains this wrapper for SQLite LONGTEXT columns.
+		// Unwrap the driver value, still rejecting every non-byte SQL type.
+		if v == nil {
+			return nil, nil
+		}
+		return storedBytes(*v)
 	default:
-		return nil, errors.New("unexpected serialized SQL value")
+		return nil, fmt.Errorf("unexpected serialized SQL value (%T)", value)
 	}
 }
 

@@ -8,9 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,44 +27,6 @@ type WorkflowEventPayload struct {
 	Status       string                       `json:"status"`
 	Instructions []models.WorkflowInstruction `json:"instructions,omitempty"`
 	Artifacts    []WorkflowArtifactRef        `json:"artifacts"`
-}
-
-// EnqueueWorkflowEvent must be called inside the transaction that changes Run.
-func EnqueueWorkflowEvent(tx *gorm.DB, runID, status string) error {
-	var run models.Run
-	if err := tx.Select("id", "origin_solo_id", "created_by", "workflow_name", "title").First(&run, "id = ?", runID).Error; err != nil {
-		return err
-	}
-	if workflowHistoryTerminal(status) {
-		if err := sealRunInstructions(tx, runID); err != nil {
-			return err
-		}
-	}
-	if run.OriginSoloID == "" {
-		return nil
-	}
-	if err := tx.Model(&models.Run{}).Where("id = ?", runID).Update("event_version", gorm.Expr("COALESCE(event_version, 0) + 1")).Error; err != nil {
-		return err
-	}
-	if err := tx.Select("event_version").First(&run, "id = ?", runID).Error; err != nil {
-		return err
-	}
-	payload := WorkflowEventPayload{RunID: runID, WorkflowName: run.WorkflowName, Title: run.Title, Status: status, Artifacts: []WorkflowArtifactRef{}}
-	if err := tx.Where("run_id = ?", runID).Order("created_at,id").Find(&payload.Instructions).Error; err != nil {
-		return err
-	}
-	var artifacts []models.Artifact
-	if err := tx.Where("run_id = ?", runID).Order("id asc").Find(&artifacts).Error; err != nil {
-		return err
-	}
-	for _, artifact := range artifacts {
-		payload.Artifacts = append(payload.Artifacts, WorkflowArtifactRef{ID: artifact.ID, Name: artifact.Name, Version: artifact.Revision, Content: artifact.Content})
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	return tx.Create(&models.WorkflowConversationEvent{ID: uuid.NewString(), RunID: runID, Version: run.EventVersion, SoloID: run.OriginSoloID, UserID: run.CreatedBy, Kind: status, Payload: string(data), Disposition: "pending"}).Error
 }
 
 // Terminal status, mailbox closure, delivery receipts and the frozen result
@@ -109,19 +69,15 @@ func workflowEventText(payload WorkflowEventPayload) string {
 }
 
 func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
-	var events []struct {
-		ID, RunID, SoloID, UserID, Payload, Disposition string
-		Version                                         uint64
-	}
-	if err := s.db.WithContext(ctx).Table("workflow_conversation_events").Where("disposition = ?", "pending").Order("created_at asc, run_id asc, version asc").Limit(100).Find(&events).Error; err != nil {
+	if err := messageOutsideTransaction(s.db); err != nil {
 		return err
 	}
-	files, err := filestore.FromDB(s.db)
-	if err != nil {
+	var events []workflowEventRecord
+	if err := s.db.WithContext(ctx).Where("disposition = ?", "pending").Order("created_at asc, run_id asc, version asc").Limit(100).Find(&events).Error; err != nil {
 		return err
 	}
 	for _, event := range events {
-		body, err := files.Load(ctx, event.Payload, filestore.Text)
+		event, body, err := preparePendingWorkflowEvent(ctx, s.db, event)
 		if err != nil {
 			return err
 		}
@@ -143,6 +99,16 @@ func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			var current workflowEventRecord
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", event.ID).Error; err != nil {
+				return err
+			}
+			if current.Disposition != "pending" {
+				return nil
+			}
+			if current.RunID != event.RunID || current.Version != event.Version || current.SoloID != event.SoloID || current.UserID != event.UserID || current.Kind != event.Kind || current.Payload != event.Payload || current.SourceVersion != event.SourceVersion || current.SourceCount != event.SourceCount || current.SourceFingerprint != event.SourceFingerprint {
+				return errors.New("workflow event changed before message publication")
+			}
 			created, err := insertPreparedSoloMessageTx(tx, message)
 			if err != nil {
 				return err
@@ -153,7 +119,14 @@ func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
 					return err
 				}
 			}
-			return tx.Model(&models.WorkflowConversationEvent{}).Where("id = ? AND disposition = ?", event.ID, "pending").Updates(map[string]any{"disposition": "delivered", "delivered_at": now}).Error
+			result := tx.Model(&workflowEventRecord{}).Where("id = ? AND disposition = ?", event.ID, "pending").Updates(map[string]any{"disposition": "delivered", "delivered_at": now})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errors.New("workflow delivery lost its pending receipt")
+			}
+			return nil
 		})
 		if err != nil {
 			return err

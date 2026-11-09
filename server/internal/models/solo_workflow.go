@@ -16,14 +16,20 @@ type SoloWorkflowLink struct {
 // WorkflowConversationEvent is the durable outbox. It is committed with the
 // status transition and delivered idempotently to a persisted Solo message.
 type WorkflowConversationEvent struct {
-	ID          string `gorm:"primaryKey"`
-	RunID       string `gorm:"uniqueIndex:idx_workflow_event;index"`
-	Version     uint64 `gorm:"uniqueIndex:idx_workflow_event"`
-	SoloID      string `gorm:"index"`
-	UserID      string
-	Kind        string
-	Payload     string `gorm:"serializer:filetext"`
-	Disposition string `gorm:"index"`
-	DeliveredAt *time.Time
-	CreatedAt   time.Time
+	ID      string `gorm:"primaryKey"`
+	RunID   string `gorm:"uniqueIndex:idx_workflow_event;index"`
+	Version uint64 `gorm:"uniqueIndex:idx_workflow_event"`
+	SoloID  string `gorm:"index"`
+	UserID  string
+	Kind    string
+	Payload string `gorm:"serializer:filetext"`
+	// Version zero is an already-frozen legacy Payload (inline or fileref).
+	// Version one has SQL-owned immutable source rows; workers materialize the
+	// same Payload column outside the Run transition transaction.
+	SourceVersion     int
+	SourceCount       int
+	SourceFingerprint string
+	Disposition       string `gorm:"index"`
+	DeliveredAt       *time.Time
+	CreatedAt         time.Time
 }

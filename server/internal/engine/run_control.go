@@ -1,20 +1,26 @@
 package engine
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
+var errRunBoundaryChanged = errors.New("workflow pause boundary changed while preparing its checkpoint")
+
 func (e *Engine) PauseRun(runID string, version uint64) error {
 	err := e.db.Transaction(func(tx *gorm.DB) error {
 		var run models.Run
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&run, "id = ?", runID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status", "pause_requested", "control_version").First(&run, "id = ?", runID).Error; err != nil {
 			return err
 		}
 		if version != run.ControlVersion {
@@ -55,7 +61,7 @@ func (e *Engine) PauseRun(runID string, version uint64) error {
 func (e *Engine) ResumePausedRun(runID string, version uint64) error {
 	err := e.db.Transaction(func(tx *gorm.DB) error {
 		var run models.Run
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&run, "id = ?", runID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status", "pause_requested", "pause_from_status", "control_version").First(&run, "id = ?", runID).Error; err != nil {
 			return err
 		}
 		if version != run.ControlVersion {
@@ -100,7 +106,7 @@ func (e *Engine) publishRunControl(runID string) {
 // saved. Their current FIFO drains before this observer acknowledges the pause.
 func (e *Engine) parkWaitingPauses() {
 	var runs []models.Run
-	if e.db.Where("status = ? AND pause_requested = ?", "waiting_human", true).Limit(128).Find(&runs).Error != nil {
+	if e.db.Select("id").Where("status = ? AND pause_requested = ?", "waiting_human", true).Limit(128).Find(&runs).Error != nil {
 		return
 	}
 	for _, run := range runs {
@@ -138,8 +144,13 @@ func (e *Engine) parkWaitingPauses() {
 // Called by the sole driver before entering the next node. The immutable next
 // position and acknowledgement are persisted together; no global Halt is used.
 func (e *Engine) parkRunBoundary(c *execCtx, next string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, inside := e.db.Statement.ConnPool.(gorm.TxCommitter); inside {
+		return false, errors.New("checkpoint preparation requires an outer transaction-free storage handle")
+	}
 	var intent models.Run
-	if err := e.db.Select("status", "pause_requested").First(&intent, "id = ?", c.run.ID).Error; err != nil {
+	if err := e.db.WithContext(ctx).Select("status", "pause_requested", "attempt", "control_version").First(&intent, "id = ?", c.run.ID).Error; err != nil {
 		return false, err
 	}
 	if intent.Status == "paused" {
@@ -148,11 +159,40 @@ func (e *Engine) parkRunBoundary(c *execCtx, next string) (bool, error) {
 	if !intent.PauseRequested {
 		return false, nil
 	}
+	if intent.Attempt != c.run.Attempt {
+		return false, errRunBoundaryChanged
+	}
 	e.setAdmissionTarget(c, next)
+	// Marshal a private immutable byte snapshot before publication. Preparing
+	// the checkpoint must never hold the Run row or an outer SQL transaction.
+	checkpoint, err := json.Marshal(c.run.Checkpoints)
+	if err != nil {
+		return false, err
+	}
+	files, err := filestore.FromDB(e.db)
+	if err != nil {
+		return false, err
+	}
+	prepared, err := files.Prepare(ctx, bytes.NewReader(checkpoint), filestore.JSON)
+	if err != nil {
+		deadline, _ := ctx.Deadline()
+		return false, &runBoundaryFailure{cause: err, attempt: intent.Attempt, control: intent.ControlVersion, checkpoint: checkpoint, deadline: deadline}
+	}
 	parked := false
-	err := e.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&models.Run{}).Where("id = ? AND status = ? AND pause_requested = ?", c.run.ID, "running", true).
-			Select("Status", "Checkpoints", "PauseRequested", "PauseFromStatus").Updates(&models.Run{Status: "paused", Checkpoints: c.run.Checkpoints, PauseFromStatus: "queued"})
+	err = e.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if !e.isExecOwner(c.run.ID, c.execGen) {
+			return errRunBoundaryChanged
+		}
+		store, err := filestore.FromDB(tx)
+		if err != nil {
+			return err
+		}
+		ref, err := store.PreparedRef(prepared)
+		if err != nil {
+			return err
+		}
+		result := tx.Table("runs").Where("id = ? AND status = ? AND pause_requested = ? AND attempt = ? AND control_version = ?", c.run.ID, "running", true, intent.Attempt, intent.ControlVersion).
+			Updates(map[string]any{"status": "paused", "checkpoints": ref, "pause_requested": false, "pause_from_status": "queued"})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -160,8 +200,15 @@ func (e *Engine) parkRunBoundary(c *execCtx, next string) (bool, error) {
 		if parked {
 			return services.EnqueueWorkflowEvent(tx, c.run.ID, "paused")
 		}
-		return nil
+		return errRunBoundaryChanged
 	})
+	if errors.Is(err, errRunBoundaryChanged) && e.boundaryPauseWasWithdrawn(ctx, c, next, intent) {
+		return false, nil // the same live driver may continue after a proven withdrawal
+	}
+	if err != nil && !errors.Is(err, errRunBoundaryChanged) {
+		deadline, _ := ctx.Deadline()
+		err = &runBoundaryFailure{cause: err, attempt: intent.Attempt, control: intent.ControlVersion, checkpoint: checkpoint, deadline: deadline}
+	}
 	if parked && err == nil {
 		e.publishRunControl(c.run.ID)
 	}

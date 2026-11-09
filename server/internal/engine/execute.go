@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"sync"
@@ -352,13 +353,20 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 		if re == nil {
 			parked, err := e.parkRunBoundary(c, cur)
 			if err != nil {
+				if errors.Is(err, errRunBoundaryChanged) {
+					log.Info().Str("run_id", runID).Msg("pause boundary yielded to a newer execution or control decision")
+					return
+				}
 				log.Error().Err(err).Str("run_id", runID).Msg("pause observation failed; retaining driver position")
-				e.requeueRun(runID, cur)
+				e.requeueFailedRunBoundary(c, cur, err)
 				return
 			}
 			if parked {
 				return
 			}
+		}
+		if !e.isExecOwner(runID, gen) {
+			return // checkpoint preparation may have outlived this driver's claim
 		}
 		node := c.graph.FindNode(cur)
 		if node == nil {

@@ -39,6 +39,13 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 			continue
 		}
 		table := stmt.Schema.Table
+		skip, err := SkipMissingPayloadTable(ctx, db, table)
+		if err != nil {
+			return report, err
+		}
+		if skip {
+			continue
+		}
 		pk := stmt.Schema.PrimaryFields[0].DBName
 		columns := []string{pk}
 		encodings := map[string]string{}
@@ -54,6 +61,9 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 			// A frozen pre-upgrade SQL backup cannot contain this newly
 			// introduced raw-ref column. Do not invent it while verifying it.
 			if field.Explicit && !db.Migrator().HasColumn(stmt.Schema.Table, field.Column) {
+				if OptionalPayloadTable(table) {
+					return report, fmt.Errorf("existing payload table %s is missing column %s", table, field.Column)
+				}
 				continue
 			}
 			encodings[field.Column], explicit[field.Column] = field.Encoding, field.Explicit
@@ -91,7 +101,7 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 						report.Failures = append(report.Failures, fmt.Sprintf("%s/%v/%s: %v", table, after, column, e))
 						continue
 					}
-					if raw == "" || (encoding == JSON && raw == "null") {
+					if raw == "" || (encoding == JSON && raw == "null" && !explicit[column]) {
 						continue
 					}
 					if IsRef(raw) {
