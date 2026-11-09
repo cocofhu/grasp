@@ -238,7 +238,7 @@ func TestS3RejectsInvalidConfigurationAndKeysBeforeNetwork(t *testing.T) {
 		}
 	}
 	store, wire := fixture(t)
-	for _, key := range []string{"", "../private", "a/../private", "/private", "a\\private", "a\nprivate"} {
+	for _, key := range []string{"", "../private", "a/../private", "/private", "//outside/private", "/\\outside/private", "a\\private", "a\nprivate"} {
 		if err := store.Put(context.Background(), key, strings.NewReader("body"), Info{Size: 4}); err == nil {
 			t.Fatalf("invalid key accepted: %q", key)
 		}

@@ -77,7 +77,7 @@ func validKey(key string, empty bool) bool {
 	if key == "" {
 		return empty
 	}
-	if strings.HasPrefix(key, "/") || strings.Contains(key, "\\") || strings.IndexFunc(key, unicode.IsControl) >= 0 {
+	if path.IsAbs(key) || strings.Contains(key, "\\") || strings.IndexFunc(key, unicode.IsControl) >= 0 {
 		return false
 	}
 	return path.Clean(key) == key && key != "." && key != ".." && !strings.HasPrefix(key, "../")

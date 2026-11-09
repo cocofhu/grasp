@@ -89,7 +89,7 @@ func (m *Manager) reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys 
 	if sb.local != nil {
 		return m.reprimeWorktree(ctx, sb, spec)
 	}
-	env := make(map[string]string, len(spec.Env)+1)
+	env := make(map[string]string)
 	for k, v := range spec.Env {
 		env[k] = v
 	}
