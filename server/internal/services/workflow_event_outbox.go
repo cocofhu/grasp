@@ -24,6 +24,9 @@ type workflowEventRecord struct {
 	Version                                               uint64
 	SourceVersion, SourceCount                            int
 	SourceFingerprint                                     string
+	Attempts                                              int
+	NextAttemptAt                                         *time.Time
+	LastError                                             string
 	DeliveredAt                                           *time.Time
 	CreatedAt                                             time.Time
 }

@@ -73,70 +73,102 @@ func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
 		return err
 	}
 	var events []workflowEventRecord
-	if err := s.db.WithContext(ctx).Where("disposition = ?", "pending").Order("created_at asc, run_id asc, version asc").Limit(100).Find(&events).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("disposition = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)", "pending", time.Now().UTC()).
+		Order("created_at asc, run_id asc, version asc").Limit(100).Find(&events).Error; err != nil {
 		return err
 	}
+	var metadataFailures []error
 	for _, event := range events {
-		event, body, err := preparePendingWorkflowEvent(ctx, s.db, event)
+		if err := ctx.Err(); err != nil {
+			return errors.Join(append(metadataFailures, err)...)
+		}
+		stage := "recipient_lookup"
+		exists, err := s.workflowEventRecipient(ctx, event)
+		if err == nil && !exists {
+			continue // Orphans never materialize objects, even missing ones.
+		}
+		var delivered bool
+		if err == nil {
+			stage, delivered, err = s.deliverWorkflowEvent(ctx, event)
+		}
 		if err != nil {
-			return err
+			if ctx.Err() != nil {
+				return errors.Join(append(metadataFailures, ctx.Err())...)
+			}
+			// A single bad immutable result is retried independently. Its raw
+			// object/error contents never become another user's request error.
+			if persistErr := s.deferWorkflowEvent(ctx, event, stage); persistErr != nil {
+				metadataFailures = append(metadataFailures, persistErr)
+			}
+			continue
 		}
-		var payload WorkflowEventPayload
-		if err := json.Unmarshal(body, &payload); err != nil {
-			return err
-		}
-		message, err := prepareSoloMessage(ctx, s.db, models.SoloMessage{ID: "workflow-event-" + event.ID, SessionID: event.SoloID, Role: "system",
-			Content: workflowEventText(payload), WorkflowRunID: event.RunID, WorkflowContext: string(body)})
-		if err != nil {
-			return err
-		}
-		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			var session models.SoloSession
-			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND user_id = ?", event.SoloID, event.UserID).First(&session).Error
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return tx.Model(&models.WorkflowConversationEvent{}).Where("id = ? AND disposition = ?", event.ID, "pending").Update("disposition", "orphaned").Error
+		if delivered {
+			s.publishStatus(event.SoloID)
+			if chat := s.lookup(event.SoloID); chat != nil {
+				chat.publish("history_changed", map[string]any{"eventId": event.ID})
 			}
-			if err != nil {
-				return err
-			}
-			var current workflowEventRecord
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", event.ID).Error; err != nil {
-				return err
-			}
-			if current.Disposition != "pending" {
-				return nil
-			}
-			if current.RunID != event.RunID || current.Version != event.Version || current.SoloID != event.SoloID || current.UserID != event.UserID || current.Kind != event.Kind || current.Payload != event.Payload || current.SourceVersion != event.SourceVersion || current.SourceCount != event.SourceCount || current.SourceFingerprint != event.SourceFingerprint {
-				return errors.New("workflow event changed before message publication")
-			}
-			created, err := insertPreparedSoloMessageTx(tx, message)
-			if err != nil {
-				return err
-			}
-			now := time.Now().UTC()
-			if created {
-				if err := tx.Model(&models.SoloSession{}).Where("id = ?", event.SoloID).Updates(map[string]any{"updated_at": now, "conversation_context_pending": true, "workflow_context_version": gorm.Expr("workflow_context_version + 1")}).Error; err != nil {
-					return err
-				}
-			}
-			result := tx.Model(&workflowEventRecord{}).Where("id = ? AND disposition = ?", event.ID, "pending").Updates(map[string]any{"disposition": "delivered", "delivered_at": now})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected != 1 {
-				return errors.New("workflow delivery lost its pending receipt")
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-		s.publishStatus(event.SoloID)
-		if chat := s.lookup(event.SoloID); chat != nil {
-			chat.publish("history_changed", map[string]any{"eventId": event.ID})
 		}
 	}
-	return nil
+	return errors.Join(metadataFailures...)
+}
+
+func (s *SoloService) deliverWorkflowEvent(ctx context.Context, event workflowEventRecord) (string, bool, error) {
+	event, body, err := preparePendingWorkflowEvent(ctx, s.db, event)
+	if err != nil {
+		return "prepare_payload", false, err
+	}
+	var payload WorkflowEventPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "decode_payload", false, err
+	}
+	message, err := prepareSoloMessage(ctx, s.db, models.SoloMessage{ID: "workflow-event-" + event.ID, SessionID: event.SoloID, Role: "system",
+		Content: workflowEventText(payload), WorkflowRunID: event.RunID, WorkflowContext: string(body)})
+	if err != nil {
+		return "prepare_message", false, err
+	}
+	delivered := false
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var session models.SoloSession
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND user_id = ?", event.SoloID, event.UserID).First(&session).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Model(&workflowEventRecord{}).Where("id = ? AND disposition = ?", event.ID, "pending").
+				Updates(map[string]any{"disposition": "orphaned", "next_attempt_at": nil, "last_error": ""}).Error
+		}
+		if err != nil {
+			return err
+		}
+		var current workflowEventRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", event.ID).Error; err != nil {
+			return err
+		}
+		if current.Disposition != "pending" {
+			return nil
+		}
+		if current.RunID != event.RunID || current.Version != event.Version || current.SoloID != event.SoloID || current.UserID != event.UserID || current.Kind != event.Kind || current.Payload != event.Payload || current.SourceVersion != event.SourceVersion || current.SourceCount != event.SourceCount || current.SourceFingerprint != event.SourceFingerprint {
+			return errors.New("workflow event changed before message publication")
+		}
+		created, err := insertPreparedSoloMessageTx(tx, message)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		if created {
+			if err := tx.Model(&models.SoloSession{}).Where("id = ?", event.SoloID).Updates(map[string]any{"updated_at": now, "conversation_context_pending": true, "workflow_context_version": gorm.Expr("workflow_context_version + 1")}).Error; err != nil {
+				return err
+			}
+		}
+		result := tx.Model(&workflowEventRecord{}).Where("id = ? AND disposition = ?", event.ID, "pending").
+			Updates(map[string]any{"disposition": "delivered", "delivered_at": now, "next_attempt_at": nil, "last_error": ""})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("workflow delivery lost its pending receipt")
+		}
+		delivered = true
+		return nil
+	})
+	return "publish_message", delivered && err == nil, err
 }
 
 func (s *SoloService) RunWorkflowEventDelivery(ctx context.Context) {

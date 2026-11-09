@@ -229,10 +229,10 @@ func TestWorkflowManifestCorruptionOrMissingBodyKeepsPendingReceipt(t *testing.T
 					t.Fatal(err)
 				}
 			}
-			if err := NewSoloService(db, nil, nil, nil).DeliverWorkflowEvents(context.Background()); err == nil {
-				t.Fatal("invalid/missing immutable source was treated as delivered")
+			if err := NewSoloService(db, nil, nil, nil).DeliverWorkflowEvents(context.Background()); err != nil {
+				t.Fatalf("one invalid result escaped its retry isolation: %v", err)
 			}
-			if err := db.First(&event, "id = ?", event.ID).Error; err != nil || event.Disposition != "pending" || event.Payload != "" {
+			if err := db.First(&event, "id = ?", event.ID).Error; err != nil || event.Disposition != "pending" || event.Payload != "" || event.Attempts != 1 || event.NextAttemptAt == nil || event.LastError != "prepare_payload" {
 				t.Fatalf("failed materialization cleared its receipt: %+v %v", event, err)
 			}
 			var count int64
@@ -315,8 +315,8 @@ func TestWorkflowManifestPublicationAndDeliverySQLFailuresAreRetryable(t *testin
 				t.Cleanup(func() { _ = db.Callback().Create().Remove(callback) })
 			}
 			solo := NewSoloService(db, nil, nil, nil)
-			if err := solo.DeliverWorkflowEvents(context.Background()); !errors.Is(err, injected) {
-				t.Fatalf("SQL failure was not preserved: %v", err)
+			if err := solo.DeliverWorkflowEvents(context.Background()); phase == "payload-ref" && !errors.Is(err, injected) || phase != "payload-ref" && err != nil {
+				t.Fatalf("SQL failure was neither isolated nor reported as failed retry metadata: %v", err)
 			}
 			if err := db.First(&event, "id = ?", event.ID).Error; err != nil || event.Disposition != "pending" {
 				t.Fatalf("SQL failure cleared the pending event: %+v %v", event, err)
@@ -325,6 +325,13 @@ func TestWorkflowManifestPublicationAndDeliverySQLFailuresAreRetryable(t *testin
 				t.Fatalf("SQL failure advanced conversation context: %+v %v", session, err)
 			}
 			fail.Store(false)
+			if event.NextAttemptAt != nil {
+				// Advance the durable schedule, without sleeping or silently
+				// bypassing backoff in production just to satisfy an old test.
+				if err := db.Model(&workflowEventRecord{}).Where("id = ?", event.ID).UpdateColumn("next_attempt_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := solo.DeliverWorkflowEvents(context.Background()); err != nil {
 				t.Fatal(err)
 			}

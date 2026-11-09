@@ -29,7 +29,12 @@ type WorkflowConversationEvent struct {
 	SourceVersion     int
 	SourceCount       int
 	SourceFingerprint string
-	Disposition       string `gorm:"index"`
-	DeliveredAt       *time.Time
-	CreatedAt         time.Time
+	Disposition       string `gorm:"index;index:idx_workflow_event_due,priority:1"`
+	// Retry metadata is independent of the immutable captured result. Failed
+	// items stay pending and retryable without blocking another user's event.
+	Attempts      int        `gorm:"not null;default:0"`
+	NextAttemptAt *time.Time `gorm:"index:idx_workflow_event_due,priority:2"`
+	LastError     string     `gorm:"size:191"`
+	DeliveredAt   *time.Time
+	CreatedAt     time.Time
 }
