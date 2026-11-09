@@ -5084,7 +5084,54 @@
         }
       },
       "sendUnconfirmed": "Delivery is unconfirmed. Retry this message to check its receipt.",
-      "retryUnconfirmed": "Retry unconfirmed send"
+      "retryUnconfirmed": "Retry unconfirmed send",
+      "workspaceImport": {
+        "open": "Import code",
+        "title": "Import workflow code",
+        "intro": "Choose an execution, repositories and commits. Review the preview, then confirm the import into Solo.",
+        "boundaries": "Import committed Git code and history, including unpushed commits, into a new directory. The source and current Solo workspace are preserved.",
+        "limits": "Up to 64 MiB per repository including the complete history of the selected commit, 128 MiB total, and 32 MiB per file. Compressed bundle size is checked when generating the preview. Each transfer can run for up to 45 seconds; check the result after a timeout.",
+        "source": "Source execution",
+        "chooseSource": "Choose an execution",
+        "sourceLabel": "{node} · iteration {iteration} · environment {attempt}",
+        "shared": "currently retained shared workspace",
+        "unavailable": "environment is not running",
+        "noSources": "No source workspace is retained. Opening this page never starts an environment.",
+        "readRepositories": "Read repositories",
+        "noRepositories": "No Git repository is available for this import method.",
+        "repositoryUnsupported": "This repository does not support import through Git commits.",
+        "reasons": {
+          "repository_submodules": "This repository includes submodules that cannot be transferred together yet. Keep the source workspace.",
+          "repository_lfs": "Some files use Git LFS. This method cannot yet guarantee that their contents are included.",
+          "repository_shallow": "This repository retains only part of its Git history. Complete history cannot be imported with this method.",
+          "repository_external_objects": "This repository depends on Git data stored elsewhere and cannot be imported independently.",
+          "repository_external_worktree": "This workspace shares Git data with another location and cannot be imported independently.",
+          "repository_custom_configuration": "This repository uses custom file conversion or external Git configuration. Its files cannot yet be reproduced safely.",
+          "repository_rewritten_history": "This repository uses a custom history mapping. Complete original history cannot be guaranteed.",
+          "repository_unsafe_metadata": "This repository has paths or Git data requiring additional checks and cannot be imported safely yet.",
+          "repository_limit": "The selected commit exceeds the file count or size limits and cannot be imported in full."
+        },
+        "commit": "Full Git commit SHA",
+        "dirtyExcluded": "The source has working changes or untracked files. This import includes only the selected commit; other files remain at the source.",
+        "preview": "Preview import",
+        "confirm": "Confirm import into a new directory",
+        "confirmHint": "Only these frozen commits will be imported. Your Solo repositories and working changes remain intact. Stop the active Solo turn and handle pending messages before confirming.",
+        "unknownHint": "The previous result is unconfirmed. Check the existing receipt first; no filesystem operation is replayed automatically. Without a complete receipt, all files are retained. Inspect the isolated directory before creating a new preview.",
+        "reconcile": "Check import result",
+        "newPreview": "New preview",
+        "destination": "Isolated directory, relative to the Solo workspace. Inspect retained files here when the result is unknown:",
+        "result": "Code was imported at these workspace-relative paths. The result is also in Solo chat; reference these paths to continue:",
+        "files": "{count} files · {size} KiB",
+        "previous": "Saved previews and import results",
+        "states": {
+          "prepared": "Awaiting confirmation",
+          "applying": "Import in progress; check result",
+          "unknown": "Result unconfirmed",
+          "applied": "Imported into a new directory"
+        },
+        "details": "Import scope and limits",
+        "exclusions": "This method excludes working changes, untracked and ignored files, non-Git directories and native session data. Git LFS, submodules, incomplete Git history, external Git data, custom file conversion and external configuration are unsupported. The source must still be retained and running; opening this page never resumes it. It never commits, pushes or switches branches in the original repository."
+      }
     },
     "projects": {
       "title": "Repositories",
