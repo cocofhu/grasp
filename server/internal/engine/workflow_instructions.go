@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/google/uuid"
@@ -147,47 +148,87 @@ func (q *instructionQueue) close(ctx context.Context, reason string) error {
 }
 
 func (q *instructionQueue) Next(ctx context.Context, sealIfEmpty bool) (*runtime.AutoInstruction, error) {
-	var message *runtime.AutoInstruction
-	err := q.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		box, err := lockInstructionMailbox(tx, q.mailboxID)
+	if err := instructionOutsideTransaction(q.db); err != nil {
+		return nil, err
+	}
+	generation := q.generation
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		// Finish the cursor before loading the immutable candidate body. A slow
+		// object backend must not hold the mailbox or a SQL connection.
+		candidate, err := queuedInstruction(q.db.WithContext(ctx), q.mailboxID, generation)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if box.Generation != q.generation {
-			return instructionError("instruction_not_current", "执行代次已更新，停止向旧会话派发补充要求")
-		}
-		if box.State != "open" {
-			return nil
-		}
-		var run models.Run
-		if err := tx.Select("status").First(&run, "id = ?", box.RunID).Error; err != nil {
-			return err
-		}
-		var visit models.StateRun
-		if err := tx.Select("id", "status", "mode").Where("run_id = ? AND node_id = ?", box.RunID, box.NodeID).Order("iteration desc,id desc").First(&visit).Error; err != nil {
-			return err
-		}
-		if run.Status != "running" || visit.ID != box.ID || visit.Status != "running" || visit.IsManual() {
-			return instructionError("instruction_not_current", "本轮已停止或切换，未处理的补充要求不会继续派发")
-		}
-		var item models.WorkflowInstruction
-		err = tx.Where("mailbox_id = ? AND generation = ? AND state = ?", box.ID, box.Generation, "queued").Order("sequence,id").First(&item).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			if sealIfEmpty {
-				return tx.Model(&models.WorkflowInstructionMailbox{}).Where("id = ?", box.ID).Update("state", "sealed").Error
+		var text string
+		if candidate != nil {
+			text, err = loadInstructionText(ctx, q.db, candidate.Text)
+			if err != nil {
+				return nil, err // leave the accepted receipt queued, never guess its text
 			}
+		}
+		var message *runtime.AutoInstruction
+		changed := false
+		err = q.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			box, err := lockInstructionMailbox(tx, q.mailboxID)
+			if err != nil {
+				return err
+			}
+			if box.Generation != generation {
+				return instructionError("instruction_not_current", "执行代次已更新，停止向旧会话派发补充要求")
+			}
+			if box.State != "open" {
+				return nil
+			}
+			var run models.Run
+			if err := tx.Select("id", "status").First(&run, "id = ?", box.RunID).Error; err != nil {
+				return err
+			}
+			var visit models.StateRun
+			if err := tx.Select("id", "status", "mode", "iteration").Where("run_id = ? AND node_id = ?", box.RunID, box.NodeID).Order("iteration desc,id desc").First(&visit).Error; err != nil {
+				return err
+			}
+			if run.Status != "running" || visit.ID != box.ID || visit.Iteration != box.Iteration || visit.Status != "running" || visit.IsManual() {
+				return instructionError("instruction_not_current", "本轮已停止或切换，未处理的补充要求不会继续派发")
+			}
+			head, err := queuedInstruction(tx, box.ID, generation)
+			if err != nil {
+				return err
+			}
+			if head == nil {
+				if sealIfEmpty {
+					return tx.Model(&models.WorkflowInstructionMailbox{}).Where("id = ?", box.ID).Update("state", "sealed").Error
+				}
+				return nil
+			}
+			if head.RunID != box.RunID || head.NodeID != box.NodeID || head.Iteration != box.Iteration || max(1, head.Attempt) != max(1, box.Attempt) {
+				return errors.New("queued instruction does not belong to the current execution")
+			}
+			// Admission, a competing claimant, or a source repair can change the
+			// head while GET is in flight. Retry only after releasing this TX.
+			if candidate == nil || head.ID != candidate.ID || head.Text != candidate.Text || head.Sequence != candidate.Sequence {
+				changed = true
+				return nil
+			}
+			result := tx.Model(&models.WorkflowInstruction{}).Where("id = ? AND mailbox_id = ? AND generation = ? AND state = ?", head.ID, box.ID, generation, "queued").Update("state", "dispatching")
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errors.New("instruction dispatch lost its queued receipt")
+			}
+			message = &runtime.AutoInstruction{ID: head.ID, Text: text}
 			return nil
-		}
+		})
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if err := tx.Model(&models.WorkflowInstruction{}).Where("id = ? AND state = ?", item.ID, "queued").Update("state", "dispatching").Error; err != nil {
-			return err
+		if !changed {
+			return message, nil
 		}
-		message = &runtime.AutoInstruction{ID: item.ID, Text: item.Text}
-		return nil
-	})
-	return message, err
+	}
 }
 
 func (q *instructionQueue) Complete(ctx context.Context, id, state, reason string) error {
@@ -238,8 +279,11 @@ func (q *instructionQueue) RestartAttempt(ctx context.Context) error {
 
 func (e *Engine) EnqueueInstruction(ctx context.Context, runID, nodeID, actor string, input InstructionInput) (*models.WorkflowInstruction, error) {
 	input.Text = strings.TrimSpace(input.Text)
-	if actor == "" || input.Iteration < 1 || input.Generation == "" || len(input.Generation) > 36 || strings.TrimSpace(input.ClientMessageID) == "" || len(input.ClientMessageID) > 128 || input.Text == "" || !utf8.ValidString(input.Text) || len(input.Text) > 16<<10 {
+	if actor == "" || input.Iteration < 1 || input.Generation == "" || len(input.Generation) > 36 || strings.TrimSpace(input.ClientMessageID) == "" || len(input.ClientMessageID) > 128 || input.Text == "" || !utf8.ValidString(input.Text) || len(input.Text) > maxInstructionTextBytes {
 		return nil, instructionError("invalid_instruction", "请选择当前执行轮次并填写 16 KB 以内的补充要求")
+	}
+	if err := instructionOutsideTransaction(e.db); err != nil {
+		return nil, err
 	}
 	var target models.WorkflowInstructionMailbox
 	if err := e.db.WithContext(ctx).Where("run_id = ? AND node_id = ?", runID, nodeID).Order("id desc").First(&target).Error; err != nil {
@@ -248,21 +292,44 @@ func (e *Engine) EnqueueInstruction(ctx context.Context, runID, nodeID, actor st
 		}
 		return nil, err
 	}
-	var item models.WorkflowInstruction
-	err := e.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	findReceipt := func(db *gorm.DB, mailboxID uint) (*instructionRecord, error) {
+		var row instructionRecord
+		err := db.Where("mailbox_id = ? AND generation = ? AND client_message_id = ?", mailboxID, input.Generation, input.ClientMessageID).First(&row).Error
+		if err != nil {
+			return nil, err
+		}
+		return &row, nil
+	}
+	// Lost acknowledgements remain readable after sealing or changing attempt,
+	// even when the payload backend is unavailable. No upload is needed again.
+	if receipt, err := findReceipt(e.db.WithContext(ctx), target.ID); err == nil {
+		return instructionReceipt(*receipt, actor, input)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if target.Generation != input.Generation || target.Iteration != input.Iteration {
+		return nil, instructionError("instruction_not_current", "节点执行轮次已更新，草稿已保留，请核对目标后重试")
+	}
+	if target.State != "open" {
+		return nil, instructionError("instruction_closed", "本轮正在结束，未接收此补充要求；可在工作流结束后续聊")
+	}
+	prepared, err := prepareInstructionText(ctx, e.db, input.Text)
+	if err != nil {
+		return nil, err
+	}
+	var item *models.WorkflowInstruction
+	err = e.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		box, err := lockInstructionMailbox(tx, target.ID)
 		if err != nil {
 			return err
 		}
-		err = tx.Where("mailbox_id = ? AND generation = ? AND client_message_id = ?", box.ID, input.Generation, input.ClientMessageID).First(&item).Error
-		if err == nil {
-			if item.ActorID != actor || item.Text != input.Text || item.Iteration != input.Iteration {
-				return instructionError("instruction_idempotency_conflict", "该消息身份已用于其他补充要求")
-			}
-			return nil
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		receipt, receiptErr := findReceipt(tx, box.ID)
+		if receiptErr == nil {
+			item, err = instructionReceipt(*receipt, actor, input)
 			return err
+		}
+		if !errors.Is(receiptErr, gorm.ErrRecordNotFound) {
+			return receiptErr
 		}
 		if box.Generation != input.Generation || box.Iteration != input.Iteration {
 			return instructionError("instruction_not_current", "节点执行轮次已更新，草稿已保留，请核对目标后重试")
@@ -271,15 +338,15 @@ func (e *Engine) EnqueueInstruction(ctx context.Context, runID, nodeID, actor st
 			return instructionError("instruction_closed", "本轮正在结束，未接收此补充要求；可在工作流结束后续聊")
 		}
 		var run models.Run
-		if err := tx.First(&run, "id = ?", runID).Error; err != nil {
+		if err := tx.Select("id", "status", "graph").First(&run, "id = ?", runID).Error; err != nil {
 			return err
 		}
 		var visit models.StateRun
-		if err := tx.Where("run_id = ? AND node_id = ?", runID, nodeID).Order("iteration desc,id desc").First(&visit).Error; err != nil {
+		if err := tx.Select("id", "status", "mode", "iteration").Where("run_id = ? AND node_id = ?", runID, nodeID).Order("iteration desc,id desc").First(&visit).Error; err != nil {
 			return err
 		}
 		node := run.Graph.FindNode(nodeID)
-		if run.Status != "running" || visit.ID != box.ID || visit.Status != "running" || visit.IsManual() || node == nil || node.Type != "agent" || node.Caps == nil || node.Caps.Clarify() {
+		if run.Status != "running" || visit.ID != box.ID || visit.Iteration != box.Iteration || visit.Status != "running" || visit.IsManual() || node == nil || node.Type != "agent" || node.Caps == nil || node.Caps.Clarify() {
 			return instructionError("instruction_not_current", "当前目标不是正在自动执行的节点")
 		}
 		var pending int64
@@ -293,18 +360,34 @@ func (e *Engine) EnqueueInstruction(ctx context.Context, runID, nodeID, actor st
 		if err := tx.Model(&models.WorkflowInstructionMailbox{}).Where("id = ?", box.ID).Update("next_sequence", sequence).Error; err != nil {
 			return err
 		}
-		item = models.WorkflowInstruction{ID: uuid.NewString(), MailboxID: box.ID, RunID: runID, NodeID: nodeID, Iteration: box.Iteration, Attempt: max(1, box.Attempt), Generation: box.Generation, ClientMessageID: input.ClientMessageID, ActorID: actor, Text: input.Text, State: "queued", Sequence: sequence}
-		return tx.Create(&item).Error
+		files, err := filestore.FromDB(tx)
+		if err != nil {
+			return err
+		}
+		ref, err := files.PreparedRef(prepared.body)
+		if err != nil {
+			return err
+		}
+		row := instructionRecord{ID: uuid.NewString(), MailboxID: box.ID, RunID: runID, NodeID: nodeID, Iteration: box.Iteration, Attempt: max(1, box.Attempt), Generation: box.Generation, ClientMessageID: input.ClientMessageID, ActorID: actor, Text: ref, State: "queued", Sequence: sequence}
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
+		message := row.message(input.Text)
+		item = &message
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &item, nil
+	return item, nil
 }
 
 // InstructionHistory pages the node's history, optionally selecting an exact
 // generation. Accepted receipts survive closed visits without waking a guest.
 func (e *Engine) InstructionHistory(ctx context.Context, runID, nodeID, generation string, before uint64) (*models.WorkflowInstructionMailbox, []models.WorkflowInstruction, bool, error) {
+	if err := instructionOutsideTransaction(e.db); err != nil {
+		return nil, nil, false, err
+	}
 	var box models.WorkflowInstructionMailbox
 	if err := e.db.WithContext(ctx).Where("run_id = ? AND node_id = ?", runID, nodeID).Order("id desc").First(&box).Error; err != nil {
 		return nil, nil, false, err
@@ -316,16 +399,21 @@ func (e *Engine) InstructionHistory(ctx context.Context, runID, nodeID, generati
 	if before > 0 {
 		query = query.Where("sequence < ?", before)
 	}
-	var items []models.WorkflowInstruction
-	if err := query.Order("sequence desc,id desc").Limit(51).Find(&items).Error; err != nil {
+	var rows []instructionRecord
+	if err := query.Order("sequence desc,id desc").Limit(51).Find(&rows).Error; err != nil {
 		return nil, nil, false, err
 	}
-	more := len(items) > 50
+	more := len(rows) > 50
 	if more {
-		items = items[:50]
+		rows = rows[:50]
 	}
-	for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
-		items[i], items[j] = items[j], items[i]
+	items := make([]models.WorkflowInstruction, len(rows))
+	for i, row := range rows {
+		text, err := loadInstructionText(ctx, e.db, row.Text)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		items[len(items)-1-i] = row.message(text)
 	}
 	return &box, items, more, nil
 }
