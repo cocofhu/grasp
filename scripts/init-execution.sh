@@ -33,6 +33,18 @@ while IFS= read -r container; do
   esac
 done <<<"$containers"
 
+# Bundled payload storage is prepared only after the stopped-writer check.
+# Control storage keeps its own explicit configuration and persistent mount.
+# shellcheck source=scripts/local-objectstore.sh
+source scripts/local-objectstore.sh
+if local_objectstore_requested; then
+  COMPOSE=("${compose[@]}")
+  objectstore_root="$PWD/.localdata/objectstore"
+  [[ "$mode" == release ]] || objectstore_root="$PWD/.devdata/objectstore"
+  prepare_local_objectstore "$objectstore_root"
+  start_local_objectstore "$compose_file"
+fi
+
 if [[ "$mode" == dev ]]; then
   if [[ ! -f server/config.yaml ]]; then
     cp server/config.example.yaml server/config.yaml

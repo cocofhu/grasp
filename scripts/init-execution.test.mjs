@@ -149,7 +149,7 @@ function shellFixture() {
   const dir = fs.mkdtempSync(path.join(root, 'shell-'));
   fs.mkdirSync(path.join(dir, 'scripts'));
   fs.mkdirSync(path.join(dir, 'server'));
-  for (const rel of ['start.sh', 'release-smoke.sh', '.env.example', 'scripts/ensure-secrets-key.sh', 'scripts/init-execution.sh', 'scripts/init-execution.mjs']) {
+  for (const rel of ['start.sh', 'release-smoke.sh', '.env.example', 'scripts/ensure-secrets-key.sh', 'scripts/init-execution.sh', 'scripts/init-execution.mjs', 'scripts/local-objectstore.sh']) {
     fs.copyFileSync(path.join(repo, rel), path.join(dir, rel));
   }
   fs.writeFileSync(path.join(dir, 'server', 'config.example.yaml'), '{}\n');
@@ -158,9 +158,9 @@ function shellFixture() {
   fs.writeFileSync(path.join(bin, 'docker'), `#!/usr/bin/env node
 import fs from 'node:fs';
 const args=process.argv.slice(2);fs.appendFileSync(process.env.TEST_DOCKER_LOG,JSON.stringify(args)+'\\n');
-if(args[0]==='inspect')console.log(process.env.TEST_STATE||'false exited');
+if(args[0]==='inspect')console.log(args.some(x=>x.includes('.State.Health'))?'healthy':process.env.TEST_STATE||'false exited');
 if(args.includes('ps')&&process.env.TEST_PS_FAIL)process.exit(1);
-if(args.includes('ps')&&process.env.TEST_CONTAINER)console.log(process.env.TEST_CONTAINER);
+if(args.includes('ps')){const id=args.includes('objectstore')?process.env.TEST_OBJECTSTORE_CONTAINER:process.env.TEST_CONTAINER;if(id)console.log(id);}
 `, { mode: 0o755 });
   // .mjs is needed so the fake CLI is independent of the host Node defaults.
   fs.renameSync(path.join(bin, 'docker'), path.join(bin, 'docker.mjs'));
@@ -195,6 +195,35 @@ test('ordinary up/restart do not initialize and missing offline never runs admin
     const result = spawnSync('bash', ['start.sh', ...args], { cwd: f.dir, env: f.env, encoding: 'utf8' });
     assert.equal(result.status === 0, args[0] !== 'init-execution', result.stderr);
     assert.equal(f.commands().some(args => args.includes('/opt/grasp-init-execution.mjs')), false);
+  }
+});
+
+test('bundled storage is ready before explicit fresh init, with stopped writers and retained credentials', () => {
+  for (const mode of ['release', 'dev']) {
+    const f = shellFixture();
+    const args = mode === 'dev' ? ['dev', 'init-execution', '--offline'] : ['init-execution', '--offline'];
+    const env = { ...f.env, GRASP_STORAGE_DRIVER: 's3', GRASP_S3_ENDPOINT: '',
+      GRASP_S3_ACCESS_KEY_ID: '', GRASP_S3_SECRET_ACCESS_KEY: '', GRASP_S3_SESSION_TOKEN: '',
+      TEST_OBJECTSTORE_CONTAINER: 'b'.repeat(64) };
+    const result = spawnSync('bash', ['start.sh', ...args], { cwd: f.dir, env, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const commands = f.commands();
+    const stopped = commands.findIndex(command => command.includes('ps') && !command.includes('objectstore'));
+    const storage = commands.findIndex(command => command.includes('up') && command.includes('objectstore'));
+    const init = commands.findIndex(command => command.includes('/opt/grasp-init-execution.mjs'));
+    assert.ok(stopped >= 0 && storage > stopped && init > storage);
+    const identity = path.join(f.dir, mode === 'dev' ? '.devdata' : '.localdata', 'objectstore', 'client.env');
+    const bytes = fs.readFileSync(identity);
+    assert.equal(fs.statSync(identity).mode & 0o077, 0);
+    assert.equal(spawnSync('bash', ['start.sh', ...args], { cwd: f.dir, env, encoding: 'utf8' }).status, 0);
+    assert.deepEqual(fs.readFileSync(identity), bytes);
+
+    const busy = shellFixture();
+    const refused = spawnSync('bash', ['start.sh', ...args], { cwd: busy.dir,
+      env: { ...env, ...busy.env, TEST_CONTAINER: 'a'.repeat(64), TEST_STATE: 'true running' }, encoding: 'utf8' });
+    assert.notEqual(refused.status, 0);
+    assert.equal(busy.commands().some(command => command.includes('up') || command.includes('run')), false);
+    assert.equal(fs.existsSync(path.join(busy.dir, mode === 'dev' ? '.devdata' : '.localdata', 'objectstore')), false);
   }
 });
 
