@@ -63,6 +63,12 @@ const (
 
 func main() {
 	logging.Setup()
+	// Capture termination before startup can expose readiness. Recovery may
+	// still be running when the first signal arrives; keep it buffered for the
+	// existing drain path once all shutdown dependencies have been initialized.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(quit)
 
 	// Config: single YAML file (CONFIG_PATH, default "config.yaml"); on K8s
 	// it is typically mounted from a ConfigMap at deploy time.
@@ -692,8 +698,6 @@ func main() {
 	// Put back dialogue turns that were still queued when it exited.
 	eng.RestoreQueuedTurns()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-quit
 	log.Info().Str("signal", sig.String()).Msg("signal received")
 
