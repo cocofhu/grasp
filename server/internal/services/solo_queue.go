@@ -179,6 +179,9 @@ func (s *SoloService) soloQueueReady(id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if soloCleanupPending(row.LifecycleAction) {
+		return false, nil
+	}
 	if row.Status != models.SoloStatusRunning && row.Status != models.SoloStatusStarting {
 		return false, nil
 	}

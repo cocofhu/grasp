@@ -156,7 +156,7 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	if got := after.seen(); len(got) != 3 || !strings.HasSuffix(got[0], "second") || !strings.HasSuffix(got[1], "third") || !strings.HasSuffix(got[2], "fourth") {
 		t.Fatalf("restored prompts = %q, want second then third then fourth", got)
 	}
-	if got := after.seen()[0]; !strings.HasPrefix(got, soloResumePreambleHeader) || !strings.Contains(got, "first") || strings.Contains(got, "未提交的改动已丢失") {
+	if got := after.seen()[0]; !strings.HasPrefix(got, soloContextPreambleHeader) || !strings.Contains(got, "first") || strings.Contains(got, "未提交的改动已丢失") || strings.Contains(got, soloModelPreambleHeader) {
 		t.Fatalf("recovered turn lost history or falsely reported data loss: %q", got)
 	}
 	msgs, _ := restarted.Messages(id, "alice")

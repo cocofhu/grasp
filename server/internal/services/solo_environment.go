@@ -10,6 +10,7 @@ import (
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // StopEnvironment stops compute, retaining the session, artifacts, gateway
@@ -39,10 +40,10 @@ func (s *SoloService) StopEnvironment(ctx context.Context, id, user string) (*So
 			return err
 		}
 		var current models.SoloSession
-		if err := tx.Select("id", "sandbox_id", "status").First(&current, "id = ?", id).Error; err != nil {
+		if err := tx.Select("id", "sandbox_id", "status", "lifecycle_epoch", "lifecycle_attempt_id", "lifecycle_action").First(&current, "id = ?", id).Error; err != nil {
 			return err
 		}
-		if current.SandboxID != row.SandboxID || current.Status == models.SoloStatusStarting || current.Status == models.SoloStatusClosed {
+		if current.SandboxID != row.SandboxID || current.LifecycleEpoch != row.LifecycleEpoch || current.LifecycleAttemptID != row.LifecycleAttemptID || current.LifecycleAction != "" || current.Status == models.SoloStatusStarting || current.Status == models.SoloStatusClosed {
 			return soloErr(http.StatusConflict, "session_changed", "会话状态已变化，请重新加载")
 		}
 		return nil
@@ -56,6 +57,16 @@ func (s *SoloService) StopEnvironment(ctx context.Context, id, user string) (*So
 }
 
 func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint, prepare ...func(*gorm.DB) error) error {
+	return s.stopSoloEnvironmentIntent(ctx, id, false, prepare...)
+}
+
+// retrySoloStop may advance only a persisted stop intent. A stale background
+// scan must not turn a later successful reopen into a new stop request.
+func (s *SandboxService) retrySoloStop(ctx context.Context, id uint) error {
+	return s.stopSoloEnvironmentIntent(ctx, id, true)
+}
+
+func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint, requireStoppedIntent bool, prepare ...func(*gorm.DB) error) error {
 	ctx, cancel := context.WithTimeout(ctx, soloRecoveryTimeout)
 	defer cancel()
 	ctx, unlock, err := s.acquireSandboxOperation(ctx, id)
@@ -69,6 +80,17 @@ func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint, prepa
 	}
 	if row.Purpose != SandboxPurposeSolo {
 		return errors.New("not a Solo environment")
+	}
+	if requireStoppedIntent && row.DesiredState != "stopped" {
+		return soloLifecycleChanged()
+	}
+	var parent models.SoloSession
+	if err := s.db.WithContext(ctx).Select("id", "user_id", "sandbox_id", "status", "lifecycle_epoch", "lifecycle_attempt_id", "lifecycle_action").First(&parent, "id = ? AND sandbox_id = ?", row.ThreadID, id).Error; err != nil {
+		return soloLifecycleChanged()
+	}
+	closing := parent.Status == models.SoloStatusClosed && parent.LifecycleAction == soloCloseCleanup
+	if !closing && (parent.Status == models.SoloStatusClosed || parent.LifecycleAction != "") {
+		return soloLifecycleChanged()
 	}
 	if s.isBusyRow(row) {
 		return soloErr(http.StatusConflict, "session_busy", "环境仍在执行任务")
@@ -89,14 +111,43 @@ func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint, prepa
 	if err != nil {
 		return err
 	}
-	var admit func(*gorm.DB) error
-	if len(prepare) != 0 {
-		admit = prepare[0]
+	// Keep compute -> native queue -> parent -> sandbox ordering for both
+	// intent and confirmation. Closing already retired the queue; touching that
+	// same queue again cannot cancel a successor because its parent CAS rolls
+	// back this entire transaction first.
+	guard := func(tx *gorm.DB) error {
+		if err := lockSoloCompute(tx); err != nil {
+			return err
+		}
+		queue := chatsession.NewDurableStore(s.db)
+		if closing {
+			if err := queue.Retire(tx, soloQueueScope(parent.ID)); err != nil {
+				return err
+			}
+			if len(prepare) != 0 && prepare[0] != nil {
+				if err := prepare[0](tx); err != nil {
+					return err
+				}
+			}
+		} else if len(prepare) != 0 && prepare[0] != nil {
+			if err := prepare[0](tx); err != nil {
+				return err
+			}
+		} else if err := queue.GuardIdle(tx, soloQueueScope(parent.ID)); err != nil {
+			return err
+		}
+		var current models.SoloSession
+		err := soloLifecycleQuery(tx, &parent).Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+			Where("status = ? AND lifecycle_action = ?", parent.Status, parent.LifecycleAction).Take(&current).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return soloLifecycleChanged()
+		}
+		return err
 	}
 	if ctx.Err() != nil {
 		return context.Cause(ctx)
 	}
-	if err := s.commitSandboxOperationPrepared(ctx, id, admit, func(tx *gorm.DB) error {
+	if err := s.commitSandboxOperationPrepared(ctx, id, guard, func(tx *gorm.DB) error {
 		return s.updateSandboxOperation(ctx, tx, id, map[string]any{"desired_state": "stopped", "destroy_at": nil, "recovery": string(recoveryJSON)})
 	}); err != nil {
 		return err
@@ -118,14 +169,16 @@ func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint, prepa
 			return err
 		}
 	}
-	if err := s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
+	if err := s.commitSandboxOperationPrepared(ctx, id, guard, func(tx *gorm.DB) error {
 		if err := s.updateSandboxOperation(ctx, tx, id, map[string]any{"status": "stopped", "error": "", "destroy_at": nil, "recovery": string(recoveryJSON)}); err != nil {
 			return err
 		}
-		// Close retires the session before it tears down its environment. A
-		// stop finishing later must leave that closed state authoritative.
-		result := tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND status <> ?", row.ThreadID, id, models.SoloStatusClosed).
-			Updates(map[string]any{"status": models.SoloStatusStopped, "error": ""})
+		status := models.SoloStatusStopped
+		if closing {
+			status = models.SoloStatusClosed
+		}
+		result := soloLifecycleQuery(tx, &parent).Where("status = ? AND lifecycle_action = ?", parent.Status, parent.LifecycleAction).
+			Updates(map[string]any{"status": status, "lifecycle_action": "", "error": ""})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -137,6 +190,9 @@ func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint, prepa
 		return err
 	}
 	s.teardownLive(id)
+	if closing && s.host != nil && row.RunID != "" {
+		s.host.UnregisterRun(row.RunID)
+	}
 	return nil
 }
 
@@ -177,7 +233,7 @@ func (s *SoloService) ResumeEnvironment(ctx context.Context, id, user string) (*
 		if err := s.sbx.updateSandboxOperation(operationCtx, tx, row.SandboxID, map[string]any{"desired_state": "running", "destroy_at": nil}); err != nil {
 			return err
 		}
-		result := tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND status <> ?", id, row.SandboxID, models.SoloStatusClosed).
+		result := soloLifecycleQuery(tx, row).Where("status <> ? AND lifecycle_action = ''", models.SoloStatusClosed).
 			Updates(map[string]any{"status": models.SoloStatusStarting, "closed_at": nil, "error": "", "last_active_at": time.Now().UTC()})
 		if result.Error != nil {
 			return result.Error

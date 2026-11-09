@@ -178,14 +178,15 @@ func (s *SoloService) restoreUnboundSoloCreations() {
 	if s.sbx == nil || s.agents == nil {
 		return
 	}
+	s.restoreSoloRestartIntents()
 	var rows []models.SoloSession
-	if err := s.db.Where("status = ? AND sandbox_id = 0 AND EXISTS (SELECT 1 FROM solo_creations c WHERE c.session_id = solo_sessions.id)", models.SoloStatusStarting).Order("created_at,id").Limit(16).Find(&rows).Error; err != nil {
+	if err := s.db.Where("status = ? AND lifecycle_action = '' AND sandbox_id = 0 AND EXISTS (SELECT 1 FROM solo_creations c WHERE c.session_id = solo_sessions.id)", models.SoloStatusStarting).Order("created_at,id").Limit(16).Find(&rows).Error; err != nil {
 		log.Warn().Err(err).Msg("Solo creation recovery deferred")
 		return
 	}
 	for i := range rows {
 		if err := s.openSandbox(context.Background(), &rows[i]); err != nil {
-			s.db.Model(&models.SoloSession{}).Where("id = ? AND status = ? AND sandbox_id = 0", rows[i].ID, models.SoloStatusStarting).Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
+			soloLifecycleQuery(s.db, &rows[i]).Where("status = ? AND lifecycle_action = ''", models.SoloStatusStarting).Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
 		}
 	}
 }

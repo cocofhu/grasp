@@ -585,7 +585,7 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 		// Acceptance already committed. Keep the original receipt and first
 		// message; a provider/configuration failure must not create a new chat
 		// when the client retries its unconfirmed request.
-		s.db.Model(&models.SoloSession{}).Where("id = ? AND status = ? AND sandbox_id = 0", row.ID, models.SoloStatusStarting).Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
+		soloLifecycleQuery(s.db, row).Where("status = ? AND sandbox_id = 0 AND lifecycle_action = ''", models.SoloStatusStarting).Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
 	}
 	for _, p := range projects {
 		s.projects.Touch(p.ID)
@@ -604,13 +604,37 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 
 func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) error {
 	sid := row.ID
-	model := chatModelID(row)
+	model, configuration, effort := chatModelID(row), chatConfigurationID(row), row.CurrentReasoningEffort
+	epoch, attempt, action := row.LifecycleEpoch, row.LifecycleAttemptID, row.LifecycleAction
+	current := func(tx *gorm.DB, id uint) *gorm.DB {
+		return tx.Model(&models.SoloSession{}).Where("id = ? AND lifecycle_epoch = ? AND lifecycle_attempt_id = ? AND sandbox_id = ?", sid, epoch, attempt, id)
+	}
 	sb, err := s.sbx.OpenSoloSandbox(ctx, SoloSandboxOpts{
 		Profile: row.AgentName, SessionID: sid, Repos: effectiveSessionRepos(row), InitialModelID: model,
-		InitialConfigurationID: chatConfigurationID(row),
-		ReasoningEffort:        row.CurrentReasoningEffort,
+		InitialConfigurationID: configuration,
+		ReasoningEffort:        effort,
+		Admit: func(tx *gorm.DB) error {
+			var count int64
+			if err := tx.Model(&models.SoloSession{}).Where("id = ? AND lifecycle_epoch = ? AND lifecycle_attempt_id = ? AND lifecycle_action = ? AND status = ?", sid, epoch, attempt, action, models.SoloStatusStarting).Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 1 {
+				return soloLifecycleChanged()
+			}
+			return nil
+		},
+		Current: func(tx *gorm.DB, sandboxID uint) error {
+			var count int64
+			if err := current(tx, sandboxID).Where("status IN ? AND lifecycle_action = ''", []string{models.SoloStatusStarting, models.SoloStatusRunning}).Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 1 {
+				return soloLifecycleChanged()
+			}
+			return nil
+		},
 		Bind: func(tx *gorm.DB, sandbox *models.Sandbox) error {
-			result := tx.Model(&models.SoloSession{}).Where("id = ? AND status = ? AND sandbox_id = 0", sid, models.SoloStatusStarting).Updates(map[string]any{"sandbox_id": sandbox.ID, "error": ""})
+			result := current(tx, 0).Where("status = ? AND lifecycle_action = ?", models.SoloStatusStarting, action).Updates(map[string]any{"sandbox_id": sandbox.ID, "error": "", "lifecycle_action": ""})
 			if result.Error != nil {
 				return result.Error
 			}
@@ -619,21 +643,33 @@ func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) 
 			}
 			return nil
 		},
-		OnEnv: func(sources map[string]string) {
-			s.db.Model(&models.SoloSession{ID: sid}).Select("EnvSources").
-				Updates(&models.SoloSession{EnvSources: sources})
+		OnEnvForSandbox: func(sandboxID uint, sources map[string]string) {
+			current(s.db, sandboxID).Where("status = ? AND lifecycle_action = ''", models.SoloStatusStarting).
+				Select("EnvSources").Updates(&models.SoloSession{EnvSources: sources})
 		},
-		OnReady: func(sandboxID uint) {
-			res := s.db.Model(&models.SoloSession{}).
-				Where("id = ? AND sandbox_id = ? AND status = ?", sid, sandboxID, models.SoloStatusStarting).
-				Updates(map[string]any{"status": models.SoloStatusRunning, "error": ""})
-			if res.RowsAffected > 0 {
-				s.publishStatus(sid)
+		PublishReady: func(tx *gorm.DB, sandboxID uint) error {
+			if err := lockSoloCompute(tx); err != nil {
+				return err
 			}
+			if err := s.durable.GuardOpen(tx, soloQueueScope(sid)); err != nil {
+				return err
+			}
+			res := current(tx, sandboxID).Where("status = ? AND lifecycle_action = ''", models.SoloStatusStarting).
+				Updates(map[string]any{"status": models.SoloStatusRunning, "error": "",
+					"applied_configuration_id": configuration, "applied_model_id": model, "applied_model_set": true,
+					"applied_reasoning_effort": effort, "model_notice": ""})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected != 1 {
+				return soloLifecycleChanged()
+			}
+			return nil
 		},
+		OnReady: func(uint) { s.publishStatus(sid) },
 		OnFail: func(sandboxID uint, err error) {
-			res := s.db.Model(&models.SoloSession{}).
-				Where("id = ? AND sandbox_id = ? AND status IN ?", sid, sandboxID,
+			res := current(s.db, sandboxID).
+				Where("status IN ? AND lifecycle_action = ''",
 					[]string{models.SoloStatusStarting, models.SoloStatusRunning}).
 				Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
 			if res.RowsAffected > 0 {
@@ -645,37 +681,70 @@ func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) 
 		return err
 	}
 	row.SandboxID = sb.ID
-	// The new container is born on this model. Later switches compare against it.
-	return s.rememberAppliedRoute(sid, chatConfigurationID(row), model, row.CurrentReasoningEffort)
+	return nil
 }
 
 func (s *SoloService) onSandboxRecovered(sandboxID uint) {
 	var rows []models.SoloSession
-	s.db.Where("sandbox_id = ? AND status = ?", sandboxID, models.SoloStatusStarting).Find(&rows)
+	// The recovery service publishes running atomically with its captured
+	// parent grant and physical lease. A callback carries only a sandbox ID,
+	// so it cannot authorize a state change for a newer epoch on the same ID.
+	s.db.Where("sandbox_id = ? AND status = ? AND lifecycle_action = ''", sandboxID, models.SoloStatusRunning).Find(&rows)
 	for _, row := range rows {
-		result := s.db.Model(&models.SoloSession{}).Where("id = ? AND status = ?", row.ID, models.SoloStatusStarting).
-			Updates(map[string]any{"status": models.SoloStatusRunning, "error": ""})
-		if result.Error == nil && result.RowsAffected > 0 {
-			s.publishStatus(row.ID)
-		}
+		s.publishStatus(row.ID)
 	}
 	s.retryDeferredRestores(sandboxID)
 }
 
-// onSandboxGone marks sessions whose sandbox was destroyed outside Close.
+// onSandboxGone observes a missing bookkeeping row. The legacy callback has
+// no provider deletion/incarnation proof, so it retains the unknown binding;
+// future explicit release must carry its own loss-aware operation receipt.
 func (s *SoloService) onSandboxGone(sandboxID uint) {
 	var rows []models.SoloSession
-	s.db.Where("sandbox_id = ? AND status IN ?", sandboxID,
+	s.db.Where("sandbox_id = ? AND lifecycle_action = '' AND status IN ?", sandboxID,
 		[]string{models.SoloStatusStarting, models.SoloStatusRunning}).Find(&rows)
 	for _, r := range rows {
-		result := s.db.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND status IN ?", r.ID, sandboxID,
-			[]string{models.SoloStatusStarting, models.SoloStatusRunning}).
-			Updates(map[string]any{"status": models.SoloStatusError, "sandbox_id": 0, "error": "沙箱已被销毁，可重新启动会话"})
-		if result.Error != nil || result.RowsAffected == 0 {
+		var activeID string
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			if err := lockSoloCompute(tx); err != nil {
+				return err
+			}
+			// An old hook may arrive after the same retained sandbox reopened.
+			// Its ID alone proves no destroyed incarnation. Only actual absence
+			// of that persistent sandbox row permits repairing a dangling bind.
+			var existing int64
+			if err := tx.Model(&models.Sandbox{}).Where("id = ?", sandboxID).Count(&existing).Error; err != nil {
+				return err
+			}
+			if existing != 0 {
+				return soloLifecycleChanged()
+			}
+			if err := s.durable.Retire(tx, soloQueueScope(r.ID)); err != nil {
+				return err
+			}
+			result := soloLifecycleQuery(tx, &r).Where("lifecycle_action = '' AND status IN ?", []string{models.SoloStatusStarting, models.SoloStatusRunning}).
+				Updates(map[string]any{"status": models.SoloStatusError, "error": "原环境记录未找到，聊天和环境关联已保留，请核对后恢复"})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return soloLifecycleChanged()
+			}
+			var queue models.ChatQueue
+			if err := tx.Select("active_turn_id").First(&queue, "id = ?", soloQueueScope(r.ID).ID()).Error; err != nil {
+				return err
+			}
+			activeID = queue.ActiveTurnID
+			return nil
+		})
+		if err != nil {
 			continue
 		}
-		if c := s.lookup(r.ID); c != nil {
-			_, _ = c.sess.CancelChecked("", false)
+		if c := s.lookup(r.ID); c != nil && activeID != "" {
+			// Retire already cancelled this epoch's queue atomically. Waking a
+			// native watcher afterward must target its exact old turn, never a
+			// replacement that started while this callback was delayed.
+			_, _ = c.sess.CancelChecked(activeID, false)
 		}
 		s.publishStatus(r.ID)
 	}
@@ -709,139 +778,6 @@ func (s *SoloService) Rename(id, user, title string) (*models.SoloSession, error
 		return nil, err
 	}
 	return row, nil
-}
-
-func (s *SoloService) destroySandbox(ctx context.Context, sandboxID uint) {
-	if sandboxID == 0 || s.sbx == nil {
-		return
-	}
-	if _, err := s.sbx.Get(sandboxID); err != nil {
-		return
-	}
-	s.sbx.Cancel(sandboxID)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		err := s.sbx.Destroy(ctx, sandboxID)
-		if err == nil || time.Now().After(deadline) {
-			if err != nil {
-				log.Warn().Err(err).Uint("sandbox", sandboxID).Msg("solo sandbox destroy failed")
-			}
-			return
-		}
-		time.Sleep(300 * time.Millisecond)
-	}
-}
-
-// Close stops turns, destroys the sandbox and keeps the history read-only.
-func (s *SoloService) Close(ctx context.Context, id, user string) (*SoloSessionView, error) {
-	row, err := s.Require(id, user)
-	if err != nil {
-		return nil, err
-	}
-	if row.Status == models.SoloStatusClosed {
-		return s.Get(ctx, id, user)
-	}
-	now := time.Now()
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := s.durable.Retire(tx, soloQueueScope(id)); err != nil {
-			return err
-		}
-		return tx.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{"status": models.SoloStatusClosed, "closed_at": &now, "error": ""}).Error
-	}); err != nil {
-		return nil, err
-	}
-	s.destroySandbox(ctx, row.SandboxID)
-	s.appendSystem(id, "会话已关闭，沙箱已释放")
-	s.publishStatus(id)
-	return s.Get(ctx, id, user)
-}
-
-// Restart opens a fresh sandbox for a closed or failed session. The next turn
-// carries a summary of the history because the CLI session is gone.
-func (s *SoloService) Restart(ctx context.Context, id, user string) (*SoloSessionView, error) {
-	row, err := s.Require(id, user)
-	if err != nil {
-		return nil, err
-	}
-	if row.Status == models.SoloStatusStarting || row.Status == models.SoloStatusRunning {
-		return nil, soloErr(http.StatusConflict, "session_active", "会话仍在运行，无需重新启动")
-	}
-	if row.Status != models.SoloStatusClosed && row.SandboxID != 0 && s.sbx != nil {
-		if _, err := s.sbx.Get(row.SandboxID); err == nil {
-			return s.ResumeEnvironment(ctx, id, user)
-		}
-	}
-	if _, ok := s.agents.Get(row.AgentName); !ok {
-		return nil, soloErr(http.StatusBadRequest, "agent_not_found", "Agent %q 已不存在，无法重新启动", row.AgentName)
-	}
-	if s.sbx.activeSoloSandboxCount() >= s.sbx.MaxSoloSandboxes() {
-		return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: ErrSoloSandboxLimit{Max: s.sbx.MaxSoloSandboxes()}.Error()}
-	}
-	s.destroySandbox(ctx, row.SandboxID)
-	var msgCount int64
-	s.db.Model(&models.SoloMessage{}).Where("session_id = ? AND role <> ?", id, "system").Count(&msgCount)
-	now := time.Now()
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := s.durable.Reopen(tx, soloQueueScope(id)); err != nil {
-			return err
-		}
-		return tx.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{
-			"restarts": row.Restarts + 1, "needs_preamble": msgCount > 0, "closed_at": nil,
-			"last_active_at": &now, "sandbox_id": 0, "status": models.SoloStatusStarting, "error": "",
-		}).Error
-	}); err != nil {
-		return nil, err
-	}
-	row.Restarts++
-	if err := s.openSandbox(ctx, row); err != nil {
-		s.db.Model(&models.SoloSession{}).Where("id = ?", id).
-			Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
-		s.publishStatus(id)
-		var lim ErrSoloSandboxLimit
-		if errors.As(err, &lim) {
-			return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: err.Error()}
-		}
-		return nil, err
-	}
-	s.appendSystem(id, "已在新沙箱中重新启动")
-	s.publishStatus(id)
-	return s.Get(ctx, id, user)
-}
-
-// Delete removes a closed or failed session and its history.
-func (s *SoloService) Delete(ctx context.Context, id, user string) error {
-	row, err := s.Require(id, user)
-	if err != nil {
-		return err
-	}
-	if row.Status == models.SoloStatusStarting || row.Status == models.SoloStatusRunning {
-		return soloErr(http.StatusConflict, "session_active", "请先关闭会话再删除")
-	}
-	s.destroySandbox(ctx, row.SandboxID)
-	s.mu.Lock()
-	delete(s.chats, id)
-	s.mu.Unlock()
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := s.durable.Retire(tx, soloQueueScope(id)); err != nil {
-			return err
-		}
-		if err := tx.Where("surface = ? AND session_key = ?", soloPendingSurface, id).Delete(&models.ChatPendingTurn{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("queue_id = ?", soloQueueScope(id).ID()).Delete(&models.ChatEventChunk{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("queue_id = ?", soloQueueScope(id).ID()).Delete(&models.ChatQueueTurn{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("id = ?", soloQueueScope(id).ID()).Delete(&models.ChatQueue{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Delete(&models.SoloMessage{}, "session_id = ?", id).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&models.SoloSession{}, "id = ?", id).Error
-	})
 }
 
 // Messages returns the persisted history in order.
@@ -1367,10 +1303,36 @@ func (s *SoloService) validateSessionReasoningEffort(ctx context.Context, row *m
 	return s.validateReasoningEffort(agent, model, effort)
 }
 
-func (s *SoloService) rememberAppliedRoute(id, configuration, model, effort string) error {
-	return s.db.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{
-		"applied_configuration_id": configuration, "applied_model_id": model, "applied_model_set": true, "applied_reasoning_effort": effort, "model_notice": "",
-	}).Error
+func (s *SoloService) rememberAppliedRoute(ctx context.Context, expected *models.SoloSession, configuration, model, effort string) error {
+	// The caller owns the captured lifecycle. Loading a fresh session here
+	// would turn a delayed old native result into authority over a new reopen.
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := s.requireSoloLifecycle(tx, expected); err != nil {
+			return err
+		}
+		result := soloLifecycleQuery(tx, expected).Where("lifecycle_action = '' AND status <> ?", models.SoloStatusClosed).Updates(map[string]any{
+			"applied_configuration_id": configuration, "applied_model_id": model, "applied_model_set": true, "applied_reasoning_effort": effort, "model_notice": "",
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return soloLifecycleChanged()
+		}
+		return nil
+	})
+}
+
+func (s *SoloService) markSoloModelContext(ctx context.Context, expected *models.SoloSession) error {
+	result := soloLifecycleQuery(s.db.WithContext(ctx), expected).Where("lifecycle_action = '' AND status <> ?", models.SoloStatusClosed).
+		Update("model_context_pending", true)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return soloLifecycleChanged()
+	}
+	return nil
 }
 
 // chatModelID is the model the next turn should use. An old row that never
@@ -1437,7 +1399,7 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 		}
 		// Mark before the mutation: the bridge may restart its CLI and then lose
 		// the response. A retry must still supply the task's existing context.
-		if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("model_context_pending", true).Error; err != nil {
+		if err := s.markSoloModelContext(ctx, row); err != nil {
 			return false, err
 		}
 		var modelChanged bool
@@ -1466,7 +1428,7 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 				return false, fmt.Errorf("切换失败且恢复原执行环境失败: %w", errors.Join(err, rollbackErr))
 			}
 		}
-		res := s.db.Model(&models.SoloSession{}).Where("id = ? AND current_model_id = ? AND current_model_set = ? AND COALESCE(current_reasoning_effort, '') = ? AND COALESCE(current_configuration_id, '') = ?", row.ID, row.CurrentModelID, row.CurrentModelSet, row.CurrentReasoningEffort, row.CurrentConfigurationID).Updates(map[string]any{
+		res := soloLifecycleQuery(s.db, row).Where("lifecycle_action = '' AND status <> ? AND current_model_id = ? AND current_model_set = ? AND COALESCE(current_reasoning_effort, '') = ? AND COALESCE(current_configuration_id, '') = ?", models.SoloStatusClosed, row.CurrentModelID, row.CurrentModelSet, row.CurrentReasoningEffort, row.CurrentConfigurationID).Updates(map[string]any{
 			"current_configuration_id": appliedConfiguration, "current_model_id": applied, "current_model_set": true, "current_reasoning_effort": appliedEffort, "model_notice": soloModelSwitchFailed,
 		})
 		if res.Error == nil && res.RowsAffected > 0 {
@@ -1480,14 +1442,14 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 	}
 	changed = changed || row.ModelContextPending || desired != applied || desiredEffort != appliedEffort || desiredConfiguration != appliedConfiguration
 	if changed {
-		if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("model_context_pending", true).Error; err != nil {
+		if err := s.markSoloModelContext(ctx, row); err != nil {
 			return false, err
 		}
 	}
 	if err := s.persistResolvedEffort(row, storedEffort, desiredEffort); err != nil {
 		return false, err
 	}
-	if err := s.rememberAppliedRoute(row.ID, desiredConfiguration, desired, desiredEffort); err != nil {
+	if err := s.rememberAppliedRoute(ctx, row, desiredConfiguration, desired, desiredEffort); err != nil {
 		return false, err
 	}
 	return changed, nil
@@ -1519,7 +1481,7 @@ func (s *SoloService) persistResolvedEffort(row *models.SoloSession, stored, res
 	if row == nil || resolved == stored {
 		return nil
 	}
-	res := s.db.Model(&models.SoloSession{}).Where("id = ? AND COALESCE(current_reasoning_effort, '') = ?", row.ID, stored).Update("current_reasoning_effort", resolved)
+	res := soloLifecycleQuery(s.db, row).Where("lifecycle_action = '' AND status <> ? AND COALESCE(current_reasoning_effort, '') = ?", models.SoloStatusClosed, stored).Update("current_reasoning_effort", resolved)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -1754,7 +1716,11 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 		}
 		if row.SandboxID != 0 {
 			if row.Status == models.SoloStatusRunning && s.modelAlign == nil {
-				if err := s.sbx.EnsureSoloRunning(ctx, row.SandboxID); err != nil {
+				agent, err := s.sessionAgent(row)
+				if err != nil {
+					return 0, nil, err
+				}
+				if err := s.sbx.EnsureSoloTurnRunning(ctx, row, agent); err != nil {
 					return 0, nil, err
 				}
 			}
@@ -2057,7 +2023,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 			}
 		}
 		if usedPreamble && status == "ok" {
-			if perr := tx.Model(&models.SoloSession{}).Where("id = ? AND workflow_context_version = ?", c.id, row.WorkflowContextVersion).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "conversation_context_pending": false, "resume_context_pending": false}).Error; perr != nil {
+			if perr := soloLifecycleQuery(tx, row).Where("lifecycle_action = '' AND status <> ? AND workflow_context_version = ?", models.SoloStatusClosed, row.WorkflowContextVersion).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "conversation_context_pending": false, "resume_context_pending": false}).Error; perr != nil {
 				return perr
 			}
 		}

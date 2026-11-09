@@ -638,6 +638,9 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if err != nil {
 		return err
 	}
+	if row.Purpose == SandboxPurposeSolo {
+		return soloErr(409, "environment_retained", "Solo 工作区仍保留在原环境中，需要单独确认释放后才能删除")
+	}
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法销毁")
 	}
@@ -934,6 +937,10 @@ func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sa
 // destroyLocalSandbox tears down the gateway instance (by Name and by
 // grasp.name correlation) then deletes the local list row.
 func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sandbox) {
+	if row.Purpose == SandboxPurposeSolo {
+		s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("destroy_at", nil)
+		return
+	}
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
 	// Placeholder Name cannot address the real gateway id; also destroy by

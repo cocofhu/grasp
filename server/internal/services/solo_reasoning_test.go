@@ -53,7 +53,7 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	solo, _, _, _ := newSoloFixture(t, 0, 3)
+	solo, _, gateway, _ := newSoloFixture(t, port, 3)
 	connection := models.ModelConnection{ID: "dsh-live", State: "active", Models: []modelrouting.Model{{ID: "kimi"}}}
 	if err := solo.db.Create(&connection).Error; err != nil {
 		t.Fatal(err)
@@ -72,6 +72,7 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 	if err := solo.db.Create(&sandboxRow).Error; err != nil {
 		t.Fatal(err)
 	}
+	gateway.SetStatus(sandboxRow.Name, "running")
 	row := models.SoloSession{ID: "live-reasoning", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning, SandboxID: sandboxRow.ID, CurrentModelSet: true, AppliedModelSet: true,
 		InitialConfigurationID: configuration.ID, CurrentConfigurationID: configuration.ID, AppliedConfigurationID: configuration.ID}
 	if err := solo.db.Create(&row).Error; err != nil {
@@ -195,6 +196,9 @@ func TestSoloTargetDSHGroupDoesNotBorrowAnotherRoutesLiveEfforts(t *testing.T) {
 
 func prepareSoloEfforts(t *testing.T, solo *SoloService) {
 	t.Helper()
+	if err := solo.db.Create(&models.Credential{ID: "fixture", Name: "Synthetic reasoning model", Purpose: "model_api", Issuer: "custom", SecretKind: "api_key", SecretRevision: 1, Type: "ai", Enabled: true}).Error; err != nil {
+		t.Fatal(err)
+	}
 	connection := modelrouting.Connection{ID: "effort-connection", State: "active", ProviderID: "fixture", Protocol: modelrouting.ProtocolResponses, Models: []modelrouting.Model{
 		{ID: "primary", ReasoningEfforts: []string{"low", "high"}},
 		{ID: "aux", ReasoningEfforts: []string{"high", "ultra"}},

@@ -23,6 +23,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // dockerState wraps a fake sandbox-gateway so the service tests can drive
@@ -51,6 +52,14 @@ func (d *dockerState) setStatus(name, status string) {
 
 func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxService {
 	t.Helper()
+	for _, value := range []any{
+		&models.Credential{ID: "fixture-key", Name: "Synthetic model", Purpose: "model_api", Issuer: "custom", SecretKind: "api_key", SecretRevision: 1, Type: "ai", Enabled: true},
+		&models.ModelConfiguration{ID: "sandbox-fixture", Name: "Fixture", Backend: "cursor", State: "active", Binding: modelrouting.Binding{Kind: "platform", CredentialID: "fixture-key", ModelID: "fixture-model"}},
+	} {
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	fg := sandboxtest.New(t)
 	fg.ACPPort = ds.acpPort
 	fg.FailCreate = ds.failRun
@@ -89,6 +98,10 @@ func sandboxTestAppliedBindings(t *testing.T, s *SandboxService, row *models.San
 		t.Fatal(err)
 	}
 	row.ModelBindingFingerprint, row.GitBindingsFingerprint = model, git
+	row.AuthorizationFingerprint, err = s.currentAuthorizationFingerprint(context.Background(), s.effectiveAgent(agent))
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func sandboxTestModelResolver(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {

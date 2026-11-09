@@ -27,10 +27,11 @@ func (s *SandboxService) acpHostPort(ctx context.Context, id uint) (string, int,
 // acpConnection keeps the bridge secret with its resolved address. The persisted
 // token survives platform restarts, when there is no in-memory ACP connection.
 func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, int, string, error) {
-	row, err := s.Get(id)
+	ctx, row, release, err := s.beginSandboxAccess(ctx, id)
 	if err != nil {
 		return "", 0, "", err
 	}
+	defer release()
 	s.mu.Lock()
 	ls := s.live[id]
 	switching := ls != nil && ls.switching
@@ -63,7 +64,13 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 		if s.mgr.Status(ctx, row.Name) != "running" {
 			return "", 0, "", fmt.Errorf("sandbox container 不在运行")
 		}
-		sb, aerr := s.mgr.Attach(ctx, row.Name)
+		var sb *sandbox.Sandbox
+		var aerr error
+		if row.Purpose == SandboxPurposeSolo {
+			sb, aerr = s.mgr.AttachNoEnsure(ctx, row.Name)
+		} else {
+			sb, aerr = s.mgr.Attach(ctx, row.Name)
+		}
 		if aerr != nil {
 			return "", 0, "", fmt.Errorf("attach: %w", aerr)
 		}
@@ -82,6 +89,11 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 var ErrChatModelUnknown = errors.New("chat model unknown")
 
 func (s *SandboxService) ChatModelSettings(ctx context.Context, id uint) (sandbox.ChatModelSettings, error) {
+	ctx, _, release, accessErr := s.beginSandboxAccess(ctx, id)
+	if accessErr != nil {
+		return sandbox.ChatModelSettings{}, accessErr
+	}
+	defer release()
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return sandbox.ChatModelSettings{}, err
@@ -94,6 +106,11 @@ func (s *SandboxService) ChatModelSettings(ctx context.Context, id uint) (sandbo
 // POST /api/model, which restarts that agent, so callers must wait until the
 // current turn has finished. A failed read does not restart it either.
 func (s *SandboxService) AlignChatModel(ctx context.Context, id uint, model string) (bool, error) {
+	ctx, _, release, accessErr := s.beginSandboxAccess(ctx, id)
+	if accessErr != nil {
+		return false, accessErr
+	}
+	defer release()
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return false, err
@@ -116,6 +133,11 @@ func (s *SandboxService) AlignChatModel(ctx context.Context, id uint, model stri
 // Older bundles continue to support model-only switches; they cannot silently
 // accept a requested reasoning effort that they do not expose.
 func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, effort string) (bool, error) {
+	ctx, _, release, accessErr := s.beginSandboxAccess(ctx, id)
+	if accessErr != nil {
+		return false, accessErr
+	}
+	defer release()
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return false, err
@@ -149,9 +171,14 @@ func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, 
 // ACPUpstream returns the reachable "host:port" for the sandbox ACP bridge
 // (session endpoint). Aligns iframe reverse-proxy dialing with chat/events.
 func (s *SandboxService) ACPUpstream(ctx context.Context, id uint) (string, error) {
+	ctx, row, release, err := s.beginSandboxAccess(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	// Prefer the gateway-published session endpoint when available so K8s
 	// ClusterIP/node hosts win over a stale DB host.
-	if row, err := s.Get(id); err == nil && s.mgr != nil && row.Name != "" {
+	if s.mgr != nil && row.Name != "" {
 		if addr, eerr := s.mgr.EndpointAddr(ctx, row.Name, "session"); eerr == nil && strings.TrimSpace(addr) != "" {
 			return addr, nil
 		}
@@ -170,10 +197,11 @@ func (s *SandboxService) ACPUpstream(ctx context.Context, id uint) (string, erro
 // (ide endpoint). Never hard-codes 127.0.0.1; Docker gateways that publish
 // loopback endpoints still resolve to 127.0.0.1:<port> naturally.
 func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, error) {
-	row, err := s.Get(id)
+	ctx, row, release, err := s.beginSandboxAccess(ctx, id)
 	if err != nil {
 		return "", err
 	}
+	defer release()
 	if row.CodeServerPort == 0 {
 		return "", fmt.Errorf("no code-server for this sandbox")
 	}
@@ -188,7 +216,14 @@ func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, erro
 			return addr, nil
 		}
 		if s.mgr.Status(ctx, row.Name) == "running" {
-			if sb, aerr := s.mgr.Attach(ctx, row.Name); aerr == nil && sb != nil && sb.CodeServerPort > 0 {
+			var sb *sandbox.Sandbox
+			var aerr error
+			if row.Purpose == SandboxPurposeSolo {
+				sb, aerr = s.mgr.AttachNoEnsure(ctx, row.Name)
+			} else {
+				sb, aerr = s.mgr.Attach(ctx, row.Name)
+			}
+			if aerr == nil && sb != nil && sb.CodeServerPort > 0 {
 				host := sb.Host
 				if host == "" {
 					host = sb.SSHHost
@@ -212,6 +247,11 @@ func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, erro
 // AcpEvent timeline. Works the same way for every sandbox — interactive test
 // sandboxes here and per-run node sandboxes in the engine.
 func (s *SandboxService) Events(ctx context.Context, id uint) ([]models.AcpEvent, error) {
+	ctx, _, release, accessErr := s.beginSandboxAccess(ctx, id)
+	if accessErr != nil {
+		return nil, accessErr
+	}
+	defer release()
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return nil, err
@@ -227,6 +267,11 @@ func (s *SandboxService) Events(ctx context.Context, id uint) ([]models.AcpEvent
 // rebuild the interactive chat transcript (with the original user prompts) when
 // reopening a reused sandbox. Returns the frames as raw JSON messages.
 func (s *SandboxService) EventLog(ctx context.Context, id uint) ([]json.RawMessage, error) {
+	ctx, _, release, accessErr := s.beginSandboxAccess(ctx, id)
+	if accessErr != nil {
+		return nil, accessErr
+	}
+	defer release()
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return nil, err
@@ -240,6 +285,11 @@ func (s *SandboxService) EventLog(ctx context.Context, id uint) ([]json.RawMessa
 
 // EventLogPage returns one page of raw event frames with cursor metadata.
 func (s *SandboxService) EventLogPage(ctx context.Context, id uint, cursor string, limit int) (*sandbox.EventLogPageResult, error) {
+	ctx, _, release, accessErr := s.beginSandboxAccess(ctx, id)
+	if accessErr != nil {
+		return nil, accessErr
+	}
+	defer release()
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return nil, err
@@ -249,10 +299,11 @@ func (s *SandboxService) EventLogPage(ctx context.Context, id uint, cursor strin
 
 // OpenTerminal attaches an interactive PTY shell to a sandbox over SSH.
 func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (sandbox.Terminal, error) {
-	row, err := s.Get(id)
+	ctx, row, release, err := s.beginSandboxAccess(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if execution.Worktree() {
 		dir, err := execution.ShellDir(row.RunID)
 		if err != nil {
@@ -306,6 +357,9 @@ func (s *SandboxService) GetView(ctx context.Context, id uint) (*SandboxView, er
 	}
 	v := s.view(ctx, row)
 	v.Endpoints = map[string]string{}
+	if !s.soloMetadataAccessAllowed(ctx, row) {
+		return &v, nil
+	}
 	if gw := s.mgr.Gateway(); gw != nil {
 		if gw.UsesGatewayTransport(row.Name) {
 			v.EndpointTransport = "gateway"
@@ -426,6 +480,9 @@ func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox
 		HasCodeServer:   row.CodeServerPort > 0,
 		HasACP:          row.ACPPort > 0,
 		Password:        row.Token,
+	}
+	if !s.soloMetadataAccessAllowed(ctx, row) {
+		v.Password, v.Connected, v.HasACP, v.HasCodeServer = "", false, false, false
 	}
 	s.applyGatewayLifecycle(ctx, row, &v)
 	return v

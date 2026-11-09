@@ -4932,22 +4932,22 @@
         "plan": "Plan"
       },
       "closedBar": {
-        "text": "Session closed and sandbox released. Restarting creates a new sandbox and clones the repository again; earlier messages are sent to the Agent as context.",
-        "restart": "Restart"
+        "text": "Session closed. Chat and workspace are retained. Continue by resuming the original environment after checking current authorization.",
+        "restart": "Resume session"
       },
       "close": {
         "title": "Close Solo session",
-        "body": "Closing destroys the sandbox. Uncommitted or unpushed changes in it are lost.",
+        "body": "Closing stops current compute and retains the chat, original environment and workspace files.",
         "busy": "The Agent is working; closing interrupts the current task.",
         "pushFirst": "Have the Agent commit and push first",
-        "pushFirstHint": "Sends a message asking the Agent to push its changes; close afterwards",
+        "pushFirstHint": "Optionally commit and push first; closing also retains uncommitted files",
         "pushPrompt": "Please commit all current changes and push them to a remote branch, then tell me the branch name and a summary of the commits.",
-        "confirm": "Close and release sandbox"
+        "confirm": "Close and keep workspace"
       },
       "delete": {
         "title": "Delete session",
-        "body": "This deletes the session and all its messages. It cannot be undone.",
-        "bodyActive": "This closes the sandbox, then deletes the session and all its messages. It cannot be undone.",
+        "body": "Deleting this session and all messages cannot be undone. Release any retained workspace separately first.",
+        "bodyActive": "Close the session to stop compute first. A retained workspace requires a separate release; deleting chat does not confirm file loss.",
         "confirm": "Delete"
       },
       "env": {
@@ -4990,7 +4990,8 @@
         "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
         "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
-        "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level."
+        "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level.",
+        "environment_authorization_blocked": "Current authorization could not be verified. Recovery was blocked; chat, workspace and the original environment are retained."
       },
       "reference": {
         "pickerLabel": "Reference a session or GitHub issue/PR",

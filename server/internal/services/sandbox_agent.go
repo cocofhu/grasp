@@ -14,6 +14,7 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // SandboxPurposeAgent marks thread-bound agent session sandboxes.
@@ -168,8 +169,13 @@ type agentContainerExtra struct {
 	OnEnv func(sources map[string]string)
 	// OnFail runs after the row is marked as error.
 	OnFail func(err error)
-	// OnReady runs after the row is marked as running.
+	// PublishReady composes the resident parent's metadata publication with
+	// the final sandbox SQL transaction, before the physical row lock.
+	PublishReady func(*gorm.DB) error
+	// OnReady notifies after the running state has committed.
 	OnReady func()
+	// Current validates the exact resident parent epoch/attempt/binding.
+	Current func(*gorm.DB) error
 	// InitialChatModel selects only the sandbox's first chat. Empty follows the primary model.
 	InitialChatModel           string
 	InitialChatReasoningEffort *string
@@ -228,6 +234,10 @@ func (s *SandboxService) OpenAgentSandboxFresh(ctx context.Context, profile, thr
 }
 
 func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, runID, sharedToken string, platformSpecs []sandbox.MCPServerSpec, agent Agent, extra agentContainerExtra) {
+	if extra.Resident {
+		s.startSoloContainer(id, name, profile, threadID, runID, sharedToken, platformSpecs, agent, extra)
+		return
+	}
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()

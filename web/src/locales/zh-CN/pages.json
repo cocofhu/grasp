@@ -4932,22 +4932,22 @@
         "plan": "计划"
       },
       "closedBar": {
-        "text": "会话已关闭，沙箱已释放。重新启动会创建新沙箱并重新克隆仓库，之前的对话会作为上下文发给 Agent。",
-        "restart": "重新启动"
+        "text": "会话已关闭，聊天和工作区仍保留。继续时恢复原环境；授权有变化时会先核验。",
+        "restart": "恢复会话"
       },
       "close": {
         "title": "关闭 Solo 会话",
-        "body": "关闭后沙箱会被销毁，沙箱里未提交或未推送的改动将丢失。",
+        "body": "关闭会话会停止当前计算，保留聊天记录、原环境和工作区文件。",
         "busy": "Agent 正在执行，关闭会中断当前任务。",
         "pushFirst": "先让 Agent 提交并推送",
-        "pushFirstHint": "发一条消息让 Agent 把改动推到远端，完成后再关闭",
+        "pushFirstHint": "可先提交并推送代码；关闭仍会保留未提交文件",
         "pushPrompt": "请提交当前所有改动并推送到远端分支，完成后告诉我分支名和提交摘要。",
-        "confirm": "关闭并释放沙箱"
+        "confirm": "关闭并保留工作区"
       },
       "delete": {
         "title": "删除会话",
-        "body": "会删除这个会话和全部消息记录，此操作不可撤销。",
-        "bodyActive": "会先关闭沙箱，再删除这个会话和全部消息记录，此操作不可撤销。",
+        "body": "删除会话和全部消息后无法恢复。仍有关联工作区时，需要先单独释放环境。",
+        "bodyActive": "请先关闭会话以停止计算。关联工作区需要单独释放，删除聊天不会代替文件释放确认。",
         "confirm": "删除"
       },
       "env": {
@@ -4990,7 +4990,8 @@
         "branch_invalid_repo": "分支名不能包含空格、{'|'} 或 ,（{repo}）",
         "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
-        "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。"
+        "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。",
+        "environment_authorization_blocked": "当前授权未通过核验，已阻止恢复；聊天、工作区和原环境关联均已保留。"
       },
       "reference": {
         "pickerLabel": "引用会话或 GitHub Issue/PR",

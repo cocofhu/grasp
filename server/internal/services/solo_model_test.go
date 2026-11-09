@@ -140,6 +140,7 @@ func TestSoloModelSwitchWaitsForTurnBoundary(t *testing.T) {
 		}
 	}
 	row, _ := solo.Require(v.ID, "alice")
+	retainedSandbox := row.SandboxID
 	if row.InitialModelID != "aux" || row.CurrentModelID != "aux2" || row.AppliedModelID != "aux2" {
 		t.Fatalf("persisted models: initial=%q current=%q applied=%q", row.InitialModelID, row.CurrentModelID, row.AppliedModelID)
 	}
@@ -156,7 +157,7 @@ func TestSoloModelSwitchWaitsForTurnBoundary(t *testing.T) {
 	}
 	waitFor(t, "restart uses current model", func() bool {
 		row, err := solo.Require(v.ID, "alice")
-		return err == nil && row.Status == models.SoloStatusRunning && fg.LastCreateEnv()[runtime.EnvInitialChatModel] == "aux2"
+		return err == nil && row.Status == models.SoloStatusRunning && row.SandboxID == retainedSandbox && row.AppliedModelID == "aux2"
 	})
 	row, _ = solo.Require(v.ID, "alice")
 	if row.InitialModelID != "aux" {

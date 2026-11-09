@@ -998,17 +998,18 @@ type Sandbox struct {
 	Recovery           SandboxRecovery `gorm:"serializer:json" json:"recovery"`
 	// Binding fingerprints retain only hashes, so reconnect can validate the
 	// exact applied authorization even after a control-plane restart.
-	ModelBindingFingerprint string `json:"-"`
-	GitBindingsFingerprint  string `json:"-"`
-	ID                      uint   `gorm:"primaryKey" json:"id"`
-	Name                    string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
-	Profile                 string `json:"profile"`                          // bound Agent name
-	Purpose                 string `json:"purpose"`                          // "test" | "run" | "agent" | "solo"
-	Status                  string `json:"status"`                           // pulling|creating|running|stopped|error
-	Host                    string `json:"-"`
-	ACPPort                 int    `json:"-"`
-	CodeServerPort          int    `json:"-"`
-	RepoURL                 string `json:"repoUrl,omitempty"`
+	ModelBindingFingerprint  string `json:"-"`
+	GitBindingsFingerprint   string `json:"-"`
+	AuthorizationFingerprint string `json:"-"`
+	ID                       uint   `gorm:"primaryKey" json:"id"`
+	Name                     string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
+	Profile                  string `json:"profile"`                          // bound Agent name
+	Purpose                  string `json:"purpose"`                          // "test" | "run" | "agent" | "solo"
+	Status                   string `json:"status"`                           // pulling|creating|running|stopped|error
+	Host                     string `json:"-"`
+	ACPPort                  int    `json:"-"`
+	CodeServerPort           int    `json:"-"`
+	RepoURL                  string `json:"repoUrl,omitempty"`
 	// Origin attribution (populated for purpose="run"): which run/workflow/node
 	// produced this sandbox. RunID for test sandboxes is a synthetic id used by
 	// the artifact-store MCP. For purpose="agent", RunID is a synthetic

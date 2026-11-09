@@ -180,38 +180,41 @@ func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
 	for _, purpose := range []string{"test", SandboxPurposeAgent, SandboxPurposeSolo} {
 		for _, change := range []string{"model", "git", "missing model"} {
 			t.Run(purpose+"/"+change, func(t *testing.T) {
-				s, row, connections, configurations, _, connection, configuration := boundSandboxFixture(t, purpose, true)
-				shared := NewSharedAgentService(t.TempDir())
-				resolve := func(binding *modelrouting.Binding) (string, error) {
-					cfg, err := configurations.Get(binding.ConfigurationID)
-					if err != nil {
-						return "", err
+				var shared *SharedAgentService
+				var defaults SharedAgentConfig
+				s, row, _, configurations, _, connection, _ := boundSandboxFixture(t, purpose, true, func(s *SandboxService, connections *ModelConnectionService, configurations *ModelConfigurationService, connection modelrouting.Connection, configuration modelrouting.Configuration) {
+					shared = NewSharedAgentService(t.TempDir())
+					resolve := func(binding *modelrouting.Binding) (string, error) {
+						cfg, err := configurations.Get(binding.ConfigurationID)
+						if err != nil {
+							return "", err
+						}
+						_, err = connections.Resolve(cfg.Backend, *binding)
+						return cfg.Backend, err
 					}
-					_, err = connections.Resolve(cfg.Backend, *binding)
-					return cfg.Backend, err
-				}
-				shared.SetBindingResolvers(resolve, func(bindings *models.GitBindings) error {
-					_, err := runtime.ResolveGitBindings(bindings, serviceGitValue)
-					return err
+					shared.SetBindingResolvers(resolve, func(bindings *models.GitBindings) error {
+						_, err := runtime.ResolveGitBindings(bindings, serviceGitValue)
+						return err
+					})
+					defaults = SharedAgentConfig{ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}, GitBindings: serviceGitSelection("gh", "gl")}
+					if err := shared.Save(defaults); err != nil {
+						t.Fatal(err)
+					}
+					s.SetSharedAgent(shared)
+					s.skills.SetSharedAgent(shared)
+					agent, _ := s.skills.Get("agentA")
+					localModel, err := configurations.Create(modelrouting.Configuration{Name: "Local CLI", Backend: "codebuddy", Binding: modelrouting.Binding{Kind: "connection", ConnectionID: connection.ID, ModelID: connection.Models[0].ID}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					agent.AcpBackend = "codebuddy"
+					agent.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: localModel.ID}
+					agent.Layout.ConfigRoot = DefaultConfigRootForBackend("codebuddy")
+					agent.InheritModel, agent.InheritGit = true, true
+					if err := s.skills.Save(agent); err != nil {
+						t.Fatal(err)
+					}
 				})
-				defaults := SharedAgentConfig{ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}, GitBindings: serviceGitSelection("gh", "gl")}
-				if err := shared.Save(defaults); err != nil {
-					t.Fatal(err)
-				}
-				s.SetSharedAgent(shared)
-				s.skills.SetSharedAgent(shared)
-				agent, _ := s.skills.Get(row.Profile)
-				localModel, err := configurations.Create(modelrouting.Configuration{Name: "Local CLI", Backend: "codebuddy", Binding: modelrouting.Binding{Kind: "connection", ConnectionID: connection.ID, ModelID: connection.Models[0].ID}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				agent.AcpBackend = "codebuddy"
-				agent.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: localModel.ID}
-				agent.Layout.ConfigRoot = DefaultConfigRootForBackend("codebuddy")
-				agent.InheritModel, agent.InheritGit = true, true
-				if err := s.skills.Save(agent); err != nil {
-					t.Fatal(err)
-				}
 				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "unchanged defaults", nil, 0, nil); err != nil {
 					t.Fatalf("unchanged defaults blocked: %v", err)
 				}

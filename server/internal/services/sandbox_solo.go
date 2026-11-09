@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/config"
-	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
@@ -19,7 +18,7 @@ import (
 )
 
 // SandboxPurposeSolo marks resident Solo session sandboxes. They have no idle
-// TTL and are only destroyed when the user closes the session.
+// TTL. Closing stops compute while retaining the writable workspace.
 const SandboxPurposeSolo = "solo"
 
 // ErrSoloSandboxLimit is returned when the resident Solo sandbox cap is reached.
@@ -42,8 +41,18 @@ type SoloSandboxOpts struct {
 	InitialConfigurationID string
 	ReasoningEffort        string
 	OnEnv                  func(sources map[string]string)
+	OnEnvForSandbox        func(sandboxID uint, sources map[string]string)
 	OnReady                func(sandboxID uint)
 	OnFail                 func(sandboxID uint, err error)
+	// PublishReady is metadata SQL only. It takes compute -> queue -> parent
+	// before the final physical sandbox proof/running update in that same TX.
+	PublishReady func(*gorm.DB, uint) error
+	// Admit revalidates the exact parent lifecycle before reusing or binding a
+	// row. It runs inside the compute transaction, before any provider request.
+	Admit func(*gorm.DB) error
+	// Current is the same parent epoch/attempt/binding fence for asynchronous
+	// creation and its final publication. It performs metadata SQL only.
+	Current func(*gorm.DB, uint) error
 	// Bind commits the parent session association before any provider request.
 	Bind func(*gorm.DB, *models.Sandbox) error
 }
@@ -58,7 +67,7 @@ func (s *SandboxService) SetMaxSoloSandboxes(n int) {
 	}
 }
 
-// SetSoloSandboxDestroyHook registers a callback for purpose=solo teardown,
+// SetSoloSandboxDestroyHook registers a callback for confirmed purpose=solo teardown,
 // so sessions whose sandbox was removed elsewhere stop showing as running.
 func (s *SandboxService) SetSoloSandboxDestroyHook(fn func(sandboxID uint)) {
 	s.mu.Lock()
@@ -93,7 +102,8 @@ func countSoloCompute(db *gorm.DB, exclude uint) (int64, error) {
 func countSoloComputeReserved(db *gorm.DB, exclude uint, reservedSession string) (int64, error) {
 	var n int64
 	activeSessions := db.Model(&models.SoloSession{}).Select("sandbox_id").Where("status IN ?",
-		[]string{models.SoloStatusStarting, models.SoloStatusRunning})
+		[]string{models.SoloStatusStarting, models.SoloStatusRunning, models.SoloStatusError}).
+		Or("lifecycle_action IN ?", []string{soloRestartCleanup, soloCloseCleanup, soloDeleteCleanup})
 	query := db.Model(&models.Sandbox{}).
 		Where("purpose = ? AND (status IN ? OR id IN (?))", SandboxPurposeSolo,
 			[]string{"running", "creating", "pulling"}, activeSessions)
@@ -104,14 +114,25 @@ func countSoloComputeReserved(db *gorm.DB, exclude uint, reservedSession string)
 		return 0, err
 	}
 	var pending int64
-	reservations := db.Model(&models.SoloSession{}).Where("status = ? AND sandbox_id = 0 AND EXISTS (SELECT 1 FROM solo_creations c WHERE c.session_id = solo_sessions.id)", models.SoloStatusStarting)
+	reservations := db.Model(&models.SoloSession{}).Where("status = ? AND sandbox_id = 0 AND (lifecycle_action = ? OR EXISTS (SELECT 1 FROM solo_creations c WHERE c.session_id = solo_sessions.id))", models.SoloStatusStarting, soloRestartCreate)
 	if reservedSession != "" {
 		reservations = reservations.Where("id <> ?", reservedSession)
 	}
 	if err := reservations.Count(&pending).Error; err != nil {
 		return 0, err
 	}
-	return n + pending, nil
+	// A missing application row is not proof that its provider workload died.
+	// Keep unknown associations occupied until explicit reconciliation confirms
+	// their state; losing metadata must not authorize extra compute allocation.
+	var unknown int64
+	orphans := db.Model(&models.SoloSession{}).Where("sandbox_id <> 0 AND NOT EXISTS (SELECT 1 FROM sandboxes b WHERE b.id = solo_sessions.sandbox_id)")
+	if exclude != 0 {
+		orphans = orphans.Where("sandbox_id <> ?", exclude)
+	}
+	if err := orphans.Distinct("sandbox_id").Count(&unknown).Error; err != nil {
+		return 0, err
+	}
+	return n + pending + unknown, nil
 }
 
 func lockSoloCompute(tx *gorm.DB) error {
@@ -155,14 +176,9 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
 	agent = s.effectiveAgent(agent)
-	if selected := strings.TrimSpace(opts.InitialConfigurationID); selected != "" {
-		var err error
-		agent, err = selectSoloConfiguration(s.db, agent, selected)
-		if err != nil {
-			return nil, err
-		}
-	} else if agent.ModelBinding != nil {
-		agent.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: agent.ModelBinding.ConfigurationID}
+	agent, err := selectSoloConfiguration(s.db, agent, strings.TrimSpace(opts.InitialConfigurationID))
+	if err != nil {
+		return nil, err
 	}
 	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
 	if err != nil {
@@ -198,6 +214,11 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
+		}
+		if opts.Admit != nil {
+			if err := opts.Admit(tx); err != nil {
+				return err
+			}
 		}
 		if opts.Bind != nil {
 			var parent models.SoloSession
@@ -242,6 +263,15 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	}
 	extra := agentContainerExtra{Repos: repos, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort}
 	id := row.ID
+	if opts.OnEnvForSandbox != nil {
+		extra.OnEnv = func(sources map[string]string) { opts.OnEnvForSandbox(id, sources) }
+	}
+	if opts.Current != nil {
+		extra.Current = func(tx *gorm.DB) error { return opts.Current(tx, id) }
+	}
+	if opts.PublishReady != nil {
+		extra.PublishReady = func(tx *gorm.DB) error { return opts.PublishReady(tx, id) }
+	}
 	if opts.OnReady != nil {
 		extra.OnReady = func() { opts.OnReady(id) }
 	}

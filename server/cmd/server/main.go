@@ -457,6 +457,9 @@ func main() {
 		return row, ok
 	}))
 	wireArtifactMCPPersistence(host, db, runSvc, previewSvc)
+	host.SetCurrentAuthorization(func(runID string) bool {
+		return !strings.HasPrefix(runID, models.SoloArtifactRunPrefix) || sbxSvc.CurrentSoloMCPAuthorization(runID)
+	})
 	host.SetSoloArtifactPreviewHook(previewSvc.PinSoloArtifact)
 	previewSvc.SetBrowser(browserSvc)
 	previewSvc.SetSandboxLeases(sbxSvc)

@@ -48,13 +48,20 @@ type SessionRepo struct {
 }
 
 // SoloSession is a direct CLI chat with one Agent in a resident sandbox. The
-// sandbox has no idle TTL; it lives until the user closes the session.
+// sandbox has no idle TTL. Closing stops compute and retains its writable files.
 type SoloSession struct {
 	WorkflowContextVersion uint64 `gorm:"not null;default:0" json:"-"`
-	ID                     string `gorm:"primaryKey" json:"id"`
-	UserID                 string `gorm:"index" json:"userId"`
-	Title                  string `json:"title"`
-	AgentName              string `gorm:"index" json:"agentName"`
+	// Lifecycle fields are a persistent operation receipt, independent of the
+	// native chat queue. They fence late create/recovery callbacks and reserve
+	// accepted restarts that have not acquired a new sandbox row yet.
+	LifecycleEpoch           uint64 `gorm:"not null;default:0" json:"-"`
+	LifecycleAttemptID       string `gorm:"size:64;not null;default:''" json:"-"`
+	LifecycleAction          string `gorm:"size:32;not null;default:'';index" json:"-"`
+	LifecycleSourceSandboxID uint   `json:"-"`
+	ID                       string `gorm:"primaryKey" json:"id"`
+	UserID                   string `gorm:"index" json:"userId"`
+	Title                    string `json:"title"`
+	AgentName                string `gorm:"index" json:"agentName"`
 	// ProjectID is the single repository of a legacy session. New multi-repo
 	// sessions leave it empty; usage is the Repos list. A new single-repo
 	// session still fills it so older readers keep working.

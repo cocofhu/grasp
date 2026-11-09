@@ -72,6 +72,7 @@ func TestSoloRecoveryRetriesSameSandbox(t *testing.T) {
 	svc := newSandboxService(t, db, ds)
 	solo := NewSoloService(db, svc, svc.skills, NewProjectService(db))
 	row := models.Sandbox{Name: "stopped-resident", Purpose: SandboxPurposeSolo, Profile: "agentA", Status: "running", ThreadID: "session", Token: "token", RunID: "original-artifacts"}
+	sandboxTestAppliedBindings(t, svc, &row)
 	if err := db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -109,8 +110,9 @@ func TestSoloRecoveryRetriesSameSandbox(t *testing.T) {
 	if _, err := solo.Close(context.Background(), session.ID, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	if ds.fg.Has(row.Name) {
-		t.Fatal("explicit Close must release the container")
+	kept, err := svc.Get(row.ID)
+	if err != nil || !ds.fg.Has(row.Name) || kept.Status != "stopped" || kept.DesiredState != "stopped" {
+		t.Fatalf("Close must stop compute while retaining the original workspace: %+v %v", kept, err)
 	}
 }
 
@@ -146,8 +148,8 @@ func TestSoloMissingResourceAndOldDanglingReferences(t *testing.T) {
 			}
 			continue
 		}
-		if session.Status != models.SoloStatusError || session.SandboxID != 0 || !strings.Contains(session.Error, "重新启动") {
-			t.Fatalf("missing sandbox left dangling: %+v", session)
+		if session.Status != models.SoloStatusError || session.SandboxID != 999 || !strings.Contains(session.Error, "保留") {
+			t.Fatalf("missing sandbox lost its retained attribution: %+v", session)
 		}
 	}
 	var closed models.SoloSession
@@ -173,8 +175,11 @@ func TestSoloCorrelatedCreatingSandboxIsProtected(t *testing.T) {
 	}
 	svc.RecoverSoloSandboxes(context.Background())
 	adopted, err := svc.Get(row.ID)
-	if err != nil || adopted.Name != "actual-gateway-id" || adopted.Status != "running" {
-		t.Fatalf("interrupted create did not adopt and resume its original resource: %+v %v", adopted, err)
+	if err != nil || adopted.Name != "actual-gateway-id" || adopted.Status != "error" || !ds.fg.Has("actual-gateway-id") {
+		t.Fatalf("interrupted create did not retain its original resource: %+v %v", adopted, err)
+	}
+	if state, err := svc.mgr.ProbeStatus(context.Background(), adopted.Name); err != nil || (state != "stopped" && state != "exited") {
+		t.Fatalf("unknown applied authorization must not start the correlated resource: %s %v", state, err)
 	}
 }
 
@@ -200,11 +205,12 @@ func TestSoloStartingSessionRecoversAndClosedSessionDoesNotRestart(t *testing.T)
 	svc := newSandboxService(t, db, ds)
 	NewSoloService(db, svc, svc.skills, NewProjectService(db))
 	for _, status := range []string{models.SoloStatusStarting, models.SoloStatusClosed} {
-		row := models.Sandbox{Name: status, Purpose: SandboxPurposeSolo, Status: "running", ThreadID: status}
+		row := models.Sandbox{Name: status, Purpose: SandboxPurposeSolo, Profile: "agentA", Status: "running", ThreadID: status}
+		sandboxTestAppliedBindings(t, svc, &row)
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Create(&models.SoloSession{ID: status, Status: status, SandboxID: row.ID}).Error; err != nil {
+		if err := db.Create(&models.SoloSession{ID: status, AgentName: "agentA", Status: status, SandboxID: row.ID}).Error; err != nil {
 			t.Fatal(err)
 		}
 		ds.setStatus(row.Name, "stopped")
@@ -216,8 +222,8 @@ func TestSoloStartingSessionRecoversAndClosedSessionDoesNotRestart(t *testing.T)
 	if starting.Status != models.SoloStatusRunning || !ds.fg.Has(models.SoloStatusStarting) {
 		t.Fatal("interrupted creation did not recover")
 	}
-	if ds.fg.Has(models.SoloStatusClosed) {
-		t.Fatal("closed session was restarted")
+	if state, err := svc.mgr.ProbeStatus(context.Background(), models.SoloStatusClosed); err != nil || (state != "stopped" && state != "exited") {
+		t.Fatalf("closed session must retain its stopped environment: %s %v", state, err)
 	}
 }
 
@@ -226,11 +232,12 @@ func TestSoloCloseDuringRecoveryDoesNotResurrectSession(t *testing.T) {
 	ds := &dockerState{}
 	svc := newSandboxService(t, db, ds)
 	solo := NewSoloService(db, svc, svc.skills, NewProjectService(db))
-	row := models.Sandbox{Name: "closing-resident", Purpose: SandboxPurposeSolo, Status: "error", ThreadID: "closing"}
+	row := models.Sandbox{Name: "closing-resident", Purpose: SandboxPurposeSolo, Profile: "agentA", Status: "error", ThreadID: "closing"}
+	sandboxTestAppliedBindings(t, svc, &row)
 	if err := db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.SoloSession{ID: "closing", UserID: "alice", Status: models.SoloStatusRunning, SandboxID: row.ID}).Error; err != nil {
+	if err := db.Create(&models.SoloSession{ID: "closing", AgentName: "agentA", UserID: "alice", Status: models.SoloStatusRunning, SandboxID: row.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
 	ds.setStatus(row.Name, "stopped")
@@ -265,8 +272,8 @@ func TestSoloCloseDuringRecoveryDoesNotResurrectSession(t *testing.T) {
 		row, err := solo.Require("closing", "alice")
 		return err == nil && row.Status == models.SoloStatusClosed
 	})
-	// Finishing recovery releases its lock; Close must then remove the original
-	// container without ever publishing the session as running again.
+	// Finishing recovery releases its lock; Close must stop and retain the
+	// original container without publishing the session as running again.
 	unblock()
 	select {
 	case err := <-recovered:
@@ -285,7 +292,10 @@ func TestSoloCloseDuringRecoveryDoesNotResurrectSession(t *testing.T) {
 		t.Fatal("close did not finish")
 	}
 	final, err := solo.Require("closing", "alice")
-	if err != nil || final.Status != models.SoloStatusClosed || ds.fg.Has(row.Name) {
+	if err != nil || final.Status != models.SoloStatusClosed || final.SandboxID != row.ID || !ds.fg.Has(row.Name) {
 		t.Fatalf("closed session resurrected: %+v %v", final, err)
+	}
+	if state, err := svc.mgr.ProbeStatus(context.Background(), row.Name); err != nil || (state != "stopped" && state != "exited") {
+		t.Fatalf("close did not confirm the retained environment stopped: %s %v", state, err)
 	}
 }

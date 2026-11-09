@@ -968,6 +968,23 @@ func (s *DurableStore) ReadyScopes(ctx context.Context, surface string) ([]Queue
 	return out, nil
 }
 
+// GuardOpen serializes initial environment publication with admission and
+// retirement. Queued or active work is allowed: this only locks queue metadata,
+// and never reads, decodes or loads a turn's accepted payload.
+func (s *DurableStore) GuardOpen(tx *gorm.DB, scope QueueScope) error {
+	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
+		return errors.New("conversation publication guard requires an SQL transaction")
+	}
+	queue, err := s.lock(tx, scope)
+	if err != nil {
+		return err
+	}
+	if queue.Retired {
+		return ErrQueueRetired
+	}
+	return nil
+}
+
 // GuardIdle composes with an environment stop transaction. Its queue lock is
 // shared by Admit and Claim: accepted work wins over Stop, and a committed
 // stopped environment is visible to the later Admit validation callback.

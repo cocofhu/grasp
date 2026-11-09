@@ -201,7 +201,12 @@ func TestSoloCreationParallelRetriesRetainIdentityAndFirstCommand(t *testing.T) 
 	if !errors.As(err, &failure) || failure.Code != "creation_identity_conflict" {
 		t.Fatalf("identity accepted changed content: %v", err)
 	}
-	if err := solo.Delete(context.Background(), sessionID, "alice"); err != nil {
+	if err := solo.Delete(context.Background(), sessionID, "alice"); !errors.As(err, &failure) || failure.Code != "environment_retained" {
+		t.Fatalf("retained workspace was deleted: %v", err)
+	}
+	// A historical parent may already be absent (for example a pre-upgrade
+	// deletion). Its durable creation receipt still forbids recreating it.
+	if err := db.Delete(&models.SoloSession{}, "id = ?", sessionID).Error; err != nil {
 		t.Fatal(err)
 	}
 	_, err = other.Create(context.Background(), "alice", input)

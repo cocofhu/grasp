@@ -88,6 +88,68 @@ def assert_reasoning_requests(requests, effort, backend):
         raise AssertionError('reasoning strength did not reach every main model request for '+backend+'/'+effort)
 
 
+def process_identity(pid):
+    """Read ownership metadata only; command lines and environments contain keys."""
+    proc = Path('/proc')/str(pid)
+    try:
+        uid = proc.stat().st_uid
+        if uid != os.getuid():
+            return None
+        fields = (proc/'stat').read_text().rsplit(')', 1)[1].split()
+        if fields[0] == 'Z':
+            return None
+        return {'pid': pid, 'uid': uid, 'group': int(fields[2]),
+                'start': fields[19], 'exe': os.readlink(proc/'exe'),
+                'cwd': os.readlink(proc/'cwd').removesuffix(' (deleted)')}
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+
+
+def owned_backend_processes(data, runtime):
+    """Only the exact backend in this run's private worktrees may be signalled."""
+    binary, worktrees = str((Path(runtime)/'bin/backend').resolve()), (data/'launches').resolve()
+    owned = []
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit():
+            continue
+        identity = process_identity(int(proc.name))
+        if not identity or identity['uid'] != os.getuid() or identity['exe'] != binary:
+            continue
+        if not Path(identity['cwd']).is_relative_to(worktrees):
+            continue
+        if identity['group'] != identity['pid']:
+            raise AssertionError('owned local backend is not its process group leader')
+        owned.append(identity)
+    return owned
+
+
+def signal_owned_backend(identity, sig):
+    # A process may exit between discovery and signalling. Never grant a reused
+    # PID permission merely because it has the same executable or workspace.
+    current = process_identity(identity['pid'])
+    if current is None:
+        return
+    if current != identity:
+        raise AssertionError('owned local backend process identity changed before cleanup')
+    try:
+        os.killpg(identity['group'], sig)
+    except ProcessLookupError:
+        pass
+
+
+def process_group_alive(group):
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            fields = (proc/'stat').read_text().rsplit(')', 1)[1].split()
+            if int(fields[2]) == group and fields[0] != 'Z':
+                return True
+        except (FileNotFoundError, ProcessLookupError):
+            pass
+    return False
+
+
 class E2E:
     def __init__(self, args):
         self.args = args
@@ -103,6 +165,9 @@ class E2E:
         self.run = 'switch-'+secrets.token_hex(6)
         self.nonce = 'task-'+secrets.token_hex(12)
         self.marker = 'checkpoint.txt'
+        # Filled by close after verifying the retained local worktree.
+        self.cleanup = []
+        self.fixture_cleanup = []
 
     def request(self, path, body=None, method=None, base=None):
         data = None if body is None else json.dumps(body).encode()
@@ -115,6 +180,11 @@ class E2E:
             # Endpoints and all credentials in this isolated suite are
             # synthetic. Keep the server's stable error code for diagnosis.
             detail = error.read(1500).decode(errors='replace')
+            try:
+                parsed = json.loads(detail)
+                error.grasp_response = parsed if isinstance(parsed, dict) else {}
+            except ValueError:
+                error.grasp_response = {}
             error.msg = str(error.msg)+' '+path+' '+detail
             raise
 
@@ -395,20 +465,76 @@ sys.exit(child.wait())
             raise AssertionError(f'native token accounting mismatch for {step["backend"]}/{step["id"]}: upstream={upstream}, recorded={recorded}')
 
     def save_report(self, error=None):
-        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
+        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'cleanup': self.cleanup, 'fixtureCleanup': self.fixture_cleanup, 'temporaryDataRetained': str(self.data) if self.data.exists() else None, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
         (self.output/'report.json').write_text(json.dumps(report, indent=2))
         if error:
             # Test prompts, commands and credentials are synthetic. Keep the
             # failing CLI's native event evidence, never its environment/config.
             (self.output/'failure-messages.json').write_text(json.dumps(self.last_messages[-4:], indent=2))
 
+    def workspace_markers(self):
+        root = (self.data/'launches').resolve()
+        markers = {}
+        for path in root.rglob(self.marker):
+            if path.is_symlink() or not path.resolve().is_relative_to(root):
+                raise AssertionError('native workspace marker escaped the owned worktree')
+            markers[path] = path.read_bytes()
+        return markers
+
+    def close_session(self, session):
+        path = '/api/solo/sessions/'+session
+        before = self.request(path)
+        markers = self.workspace_markers()
+        if before.get('id') != session or type(before.get('sandboxId')) is not int or before['sandboxId'] <= 0 or not markers:
+            raise AssertionError('missing original session, environment or native workspace marker before close')
+        stop_confirmed = True
+        try:
+            self.request(path+'/close', {})
+        except urllib.error.HTTPError as error:
+            response = getattr(error, 'grasp_response', None)
+            if error.code != 409 or not isinstance(response, dict) or response.get('code') != 'environment_stop_pending':
+                raise
+            # Local keep-root shutdown is not implemented. Accepted closed
+            # intent plus retained files is useful evidence, never a stop proof.
+            stop_confirmed = False
+        result = self.request(path)
+        if result.get('id') != session or result.get('status') != 'closed' or result.get('sandboxId') != before['sandboxId']:
+            raise AssertionError('close did not retain the closed session and original environment')
+        if self.workspace_markers() != markers:
+            raise AssertionError('close changed the retained native workspace')
+        sandbox = result.get('sandbox') or {}
+        if stop_confirmed and (sandbox.get('id') != before['sandboxId'] or sandbox.get('status') != 'stopped' or sandbox.get('desiredState') != 'stopped'):
+            raise AssertionError('successful close did not confirm the original environment stopped')
+        self.cleanup.append({'sessionId': session, 'sandboxId': before['sandboxId'],
+                             'status': 'closed_workspace_retained' if stop_confirmed else 'closed_stop_pending_workspace_retained',
+                             'workspacePreserved': True, 'providerStopConfirmed': stop_confirmed})
+
+    def close_backends(self):
+        # The local provider deliberately launches backend in its own process
+        # group, outside the test server's group. Reclaim only this fixture's
+        # processes AFTER proving Close preserved its files and binding.
+        for identity in owned_backend_processes(self.data, self.args.runtime):
+            signal_owned_backend(identity, signal.SIGTERM)
+            deadline = time.monotonic()+8
+            while process_identity(identity['pid']) is not None and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if process_identity(identity['pid']) is not None:
+                signal_owned_backend(identity, signal.SIGKILL)
+                deadline = time.monotonic()+8
+                while process_identity(identity['pid']) is not None and time.monotonic() < deadline:
+                    time.sleep(0.05)
+            if process_identity(identity['pid']) is not None or process_group_alive(identity['group']):
+                raise AssertionError('owned local backend group did not exit after fixture cleanup')
+            self.fixture_cleanup.append({'kind': 'owned_local_backend_group', 'pid': identity['pid'],
+                                         'processGroup': identity['group'], 'exited': True})
+        if owned_backend_processes(self.data, self.args.runtime):
+            raise AssertionError('owned local backend remained after fixture cleanup')
+
     def close(self):
         errors = []
         for session in self.sessions:
             try:
-                result = self.request('/api/solo/sessions/'+session+'/close', {})
-                if result.get('status') != 'closed':
-                    errors.append('session did not close: '+session)
+                self.close_session(session)
             except Exception as error:
                 errors.append('session cleanup failed: '+str(error))
         for proc in reversed(self.processes):
@@ -425,9 +551,13 @@ sys.exit(child.wait())
                     except ProcessLookupError:
                         pass
                     proc.wait()
+        try:
+            self.close_backends()
+        except Exception as error:
+            errors.append('fixture backend cleanup failed: '+str(error))
         for handle in self.handles:
             handle.close()
-        if not self.args.keep_data:
+        if not self.args.keep_data and not errors:
             shutil.rmtree(self.data)
         if errors:
             raise AssertionError('; '.join(errors))
