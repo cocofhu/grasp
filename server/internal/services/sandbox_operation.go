@@ -155,6 +155,16 @@ func (s *SandboxService) commitSandboxOperation(ctx context.Context, id uint, pu
 	return s.commitSandboxOperationPrepared(ctx, id, nil, publish)
 }
 
+// publicationContext lets user cancellation save a final stopped result, while
+// preserving an earlier persistence deadline across nested publication fences.
+func publicationContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	deadline := time.Now().Add(timeout)
+	if original, ok := ctx.Deadline(); ok && original.Before(deadline) {
+		deadline = original
+	}
+	return context.WithDeadline(context.WithoutCancel(ctx), deadline)
+}
+
 // prepare takes any higher-level admission lock before the sandbox row lock.
 // This keeps stop and new-message admission in the same lock order.
 func (s *SandboxService) commitSandboxOperationPrepared(ctx context.Context, id uint, prepare, publish func(*gorm.DB) error) error {
@@ -168,8 +178,11 @@ func (s *SandboxService) commitSandboxOperationPrepared(ctx context.Context, id 
 	if operation == nil {
 		return errSandboxOperationLost
 	}
-	persistence, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	persistence, cancel := publicationContext(ctx, 5*time.Second)
 	defer cancel()
+	if err := persistence.Err(); err != nil {
+		return err
+	}
 	return s.db.WithContext(persistence).Transaction(func(tx *gorm.DB) error {
 		if prepare != nil {
 			if err := prepare(tx); err != nil {
@@ -191,8 +204,11 @@ func (s *SandboxService) commitSandboxOperationPrepared(ctx context.Context, id 
 		if err := publish(tx); err != nil {
 			return err
 		}
-		// Serializing a payload may involve object storage. A slow write must
-		// not commit after the lease checked at the start has already expired.
+		if err := persistence.Err(); err != nil {
+			return err
+		}
+		// Contention or a slow SQL callback must not commit after the lease
+		// checked at the start has already expired.
 		if !row.OperationExpiresAt.After(time.Now()) {
 			return errSandboxOperationLost
 		}

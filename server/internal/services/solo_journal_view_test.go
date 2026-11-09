@@ -232,6 +232,31 @@ func TestSoloJournalViewRetainsCapturedHeaderAcrossConcurrentEpochChange(t *test
 	}
 }
 
+func TestSoloJournalViewLoadsExactControlRefsCapturedWithItsHeader(t *testing.T) {
+	solo, objects, lease, id := journalViewFixture(t)
+	appendViewControl(t, solo, lease, SoloEventPhase, map[string]any{"phase": SoloPhaseRunning})
+	appendViewControl(t, solo, lease, SoloEventExecution, map[string]any{"execution": map[string]any{"modelId": "captured-reference"}})
+	var changed atomic.Bool
+	objects.onGet = func() error {
+		if !changed.CompareAndSwap(false, true) {
+			return nil
+		}
+		// Both refs were captured before this first GET. Re-reading the
+		// second raw cell here would mix a later edit into the old header.
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		return solo.db.WithContext(ctx).Table("chat_event_chunks").Where("queue_id = ? AND control_event = ?", lease.Scope.ID(), SoloEventExecution).
+			Update("payload", filestore.Prefix+"invalid").Error
+	}
+	view, err := solo.journalView(context.Background(), id, "alice")
+	if err != nil || view.head != 1 || view.state["execution"].(map[string]any)["modelId"] != "captured-reference" {
+		t.Fatalf("control hydration changed the captured raw reference: %+v %v", view, err)
+	}
+	if _, err := solo.journalView(context.Background(), id, "alice"); !errors.Is(err, chatsession.ErrJournalGap) {
+		t.Fatalf("a fresh snapshot hid the invalid control reference: %v", err)
+	}
+}
+
 func TestSoloJournalViewRejectsCorruptControlIndexesAndReferences(t *testing.T) {
 	for _, corruption := range []string{"wrong_control", "wrong_bytes", "invalid_reference", "unbounded_index"} {
 		t.Run(corruption, func(t *testing.T) {
@@ -280,9 +305,13 @@ func TestSoloJournalPublicationLocksQueueBeforeSandbox(t *testing.T) {
 	}
 	defer release()
 	var queueLocked, sandboxChecked atomic.Bool
+	var fenceMu sync.Mutex
+	var queueTransaction gorm.ConnPool
 	if err := db.Callback().Update().After("gorm:update").Register("test:journal_queue_lock", func(tx *gorm.DB) {
 		if tx.Statement.Table == "chat_queues" && tx.Error == nil {
-			queueLocked.Store(true)
+			fenceMu.Lock()
+			queueTransaction = tx.Statement.ConnPool
+			fenceMu.Unlock()
 		}
 	}); err != nil {
 		t.Fatal(err)
@@ -294,7 +323,11 @@ func TestSoloJournalPublicationLocksQueueBeforeSandbox(t *testing.T) {
 		lock, ok := tx.Statement.Clauses["FOR"].Expression.(clause.Locking)
 		if ok && lock.Strength == "UPDATE" {
 			sandboxChecked.Store(true)
-			if !queueLocked.Load() {
+			fenceMu.Lock()
+			matched := queueTransaction == tx.Statement.ConnPool
+			fenceMu.Unlock()
+			queueLocked.Store(matched)
+			if !matched {
 				_ = tx.AddError(errors.New("sandbox publication lock taken before the conversation lock"))
 			}
 		}

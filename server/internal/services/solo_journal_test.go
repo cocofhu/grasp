@@ -190,11 +190,10 @@ func TestSoloJournalStorageFailureCancelsNativeAndKeepsCommittedPrefix(t *testin
 	solo, _, _, db := newSoloFixture(t, port, 3)
 	var chunks atomic.Int32
 	if err := db.Callback().Create().Before("gorm:create").Register("journal-disk-failure", func(tx *gorm.DB) {
-		if tx.Statement.Schema == nil || tx.Statement.Schema.Name != "ChatEventChunk" {
+		if tx.Statement.Table != "chat_event_chunks" {
 			return
 		}
-		chunk, ok := tx.Statement.Dest.(*models.ChatEventChunk)
-		if ok && chunk.AcpCount > 0 && chunks.Add(1) > 1 {
+		if tx.Statement.ReflectValue.FieldByName("AcpCount").Int() > 0 && chunks.Add(1) > 1 {
 			tx.AddError(errors.New("fixture object write failed"))
 		}
 	}); err != nil {

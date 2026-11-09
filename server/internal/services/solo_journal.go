@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
@@ -18,7 +16,6 @@ import (
 // appendJournal publishes nothing until both the immutable body and its SQL
 // index commit. Native output also holds the sandbox operation fence.
 func (c *soloChat) appendJournal(ctx context.Context, sandboxID uint, turnID string, entries []chatsession.JournalEntry, settled bool) (chatsession.JournalRange, error) {
-	var written chatsession.JournalRange
 	execution, owned := chatsession.CurrentExecution(ctx)
 	var owner *chatsession.QueueLease
 	if owned && !settled {
@@ -47,21 +44,32 @@ func (c *soloChat) appendJournal(ctx context.Context, sandboxID uint, turnID str
 		}
 		return nil
 	}
-	prepare := func(tx *gorm.DB) error {
-		return c.svc.durable.FenceJournalTx(ctx, tx, soloQueueScope(c.id), owner, turnID, validate)
-	}
-	persist := func(tx *gorm.DB) error {
-		var err error
-		written, err = c.svc.durable.AppendJournalTx(ctx, tx, soloQueueScope(c.id), owner, turnID, entries, validate)
-		return err
-	}
-	var err error
-	if sandboxID != 0 && c.svc.sbx != nil {
-		err = c.svc.sbx.commitSandboxOperationPrepared(ctx, sandboxID, prepare, persist)
-	} else {
-		err = c.svc.db.WithContext(ctx).Transaction(persist)
-	}
-	return written, err
+	persistence, cancel := publicationContext(ctx, 10*time.Second)
+	defer cancel()
+	return c.svc.durable.AppendJournalWith(persistence, soloQueueScope(c.id), owner, turnID, entries,
+		func(attempt context.Context, prepared chatsession.PreparedJournal) (chatsession.JournalRange, error) {
+			var written chatsession.JournalRange
+			fence := func(tx *gorm.DB) error {
+				if err := attempt.Err(); err != nil {
+					return err
+				}
+				return c.svc.durable.FenceJournalTx(attempt, tx.WithContext(attempt), soloQueueScope(c.id), owner, turnID, validate)
+			}
+			persist := func(tx *gorm.DB) error {
+				var err error
+				written, err = c.svc.durable.AppendPreparedJournalTx(attempt, tx.WithContext(attempt), prepared, validate)
+				return err
+			}
+			var err error
+			if sandboxID != 0 && c.svc.sbx != nil {
+				err = c.svc.sbx.commitSandboxOperationPrepared(attempt, sandboxID, fence, persist)
+			} else {
+				err = c.svc.db.WithContext(attempt).Transaction(persist)
+			}
+			// The entire Queue -> Sandbox transaction has finished here. Only
+			// AppendJournalWith may prepare again after a head CAS conflict.
+			return written, err
+		})
 }
 
 func (c *soloChat) emit(ctx context.Context, event string, payload map[string]any) error {
@@ -148,7 +156,7 @@ func (s *SoloService) journalView(ctx context.Context, id, user string, previous
 		if len(legacy) > 0 {
 			for _, row := range legacy {
 				query := s.db.WithContext(ctx).Table("chat_queue_turns").Where("id = ? AND queue_id = ? AND fingerprint = ?", row.ID, row.QueueID, row.Fingerprint)
-				row.Payload, err = s.readJournalViewBody(ctx, query, 0)
+				row.Payload, err = s.readJournalViewBody(ctx, query)
 				if err != nil {
 					return soloJournalView{}, err
 				}
@@ -170,15 +178,9 @@ func (s *SoloService) journalView(ctx context.Context, id, user string, previous
 			if chunk.Count != 1 || chunk.AcpCount != 0 || chunk.Bytes < 1 || chunk.Bytes > chatsession.JournalChunkBytes || chunk.FirstSequence != chunk.LastSequence {
 				return soloJournalView{}, chatsession.ErrJournalGap
 			}
-			// Match the immutable index captured with this header. A new owner
-			// or later head must not change which generation this view describes.
-			query := s.db.WithContext(ctx).Table("chat_event_chunks").Where("id = ? AND queue_id = ? AND turn_id = ? AND execution_epoch = ? AND first_sequence = ? AND last_sequence = ? AND count = ? AND acp_count = ? AND bytes = ? AND control_event = ?",
-				chunk.ID, chunk.QueueID, chunk.TurnID, chunk.ExecutionEpoch, chunk.FirstSequence, chunk.LastSequence, chunk.Count, chunk.AcpCount, chunk.Bytes, chunk.ControlEvent)
-			chunk.Payload, err = s.readJournalViewBody(ctx, query, chatsession.JournalChunkBytes)
-			if err != nil {
-				return soloJournalView{}, err
-			}
-			entries, err := chatsession.DecodeJournalChunk(chunk)
+			// The exact immutable reference was captured with this header. A
+			// new owner or later body edit cannot change the captured view.
+			entries, err := s.durable.LoadJournalChunk(ctx, chunk)
 			if err != nil {
 				return soloJournalView{}, err
 			}
@@ -202,47 +204,25 @@ func (s *SoloService) journalView(ctx context.Context, id, user string, previous
 // readJournalViewBody loads the raw SQL cell into a type with no serializer.
 // The cursor and connection are released before any object GET; a model query
 // would otherwise perform that GET from inside its GORM Scan callback.
-func (s *SoloService) readJournalViewBody(ctx context.Context, query *gorm.DB, limit int64) ([]byte, error) {
+func (s *SoloService) readJournalViewBody(ctx context.Context, query *gorm.DB) ([]byte, error) {
+	if _, inside := query.Statement.ConnPool.(gorm.TxCommitter); inside {
+		return nil, chatsession.ErrPayloadInTransaction
+	}
 	var cell struct{ Payload string }
 	if err := query.Select("payload").Take(&cell).Error; err != nil {
 		return nil, err
-	}
-	if !filestore.IsRef(cell.Payload) {
-		if strings.HasPrefix(cell.Payload, filestore.Prefix) {
-			return nil, chatsession.ErrJournalGap
-		}
-		if limit > 0 && int64(len(cell.Payload)) > limit {
-			return nil, chatsession.ErrJournalGap
-		}
-		return []byte(cell.Payload), nil
 	}
 	files, err := filestore.FromDB(s.db)
 	if err != nil {
 		return nil, err
 	}
-	body, err := files.Open(ctx, cell.Payload)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = body.Close() }()
-	var reader io.Reader = body
-	if limit > 0 {
-		reader = io.LimitReader(body, limit+1)
-	}
-	raw, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
-	}
-	if limit > 0 && int64(len(raw)) > limit {
-		return nil, chatsession.ErrJournalGap
-	}
-	return raw, nil
+	return files.Load(ctx, cell.Payload, filestore.Bytes)
 }
 
-func (s *SoloService) journalViewMetadata(ctx context.Context, id, user string, previous ...soloJournalView) (soloJournalView, []models.ChatQueueTurn, []models.ChatEventChunk, error) {
+func (s *SoloService) journalViewMetadata(ctx context.Context, id, user string, previous ...soloJournalView) (soloJournalView, []models.ChatQueueTurn, []chatsession.JournalChunkRecord, error) {
 	result := soloJournalView{head: -1, first: -1, controlsThrough: -1}
 	var legacy []models.ChatQueueTurn
-	var chunks []models.ChatEventChunk
+	var chunks []chatsession.JournalChunkRecord
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row models.SoloSession
 		if err := tx.First(&row, "id = ? AND user_id = ?", id, user).Error; err != nil {
@@ -313,7 +293,7 @@ func (s *SoloService) journalViewMetadata(ctx context.Context, id, user string, 
 		if result.head < 0 {
 			return nil
 		}
-		query := tx.Omit("payload").Where("queue_id = ? AND turn_id = ? AND execution_epoch = ? AND control_event IN ? AND last_sequence <= ?", snapshot.Queue.ID, snapshot.Active.ID, snapshot.Active.ExecutionEpoch, []string{SoloEventPhase, SoloEventExecution}, uint64(result.head))
+		query := tx.Table("chat_event_chunks").Where("queue_id = ? AND turn_id = ? AND execution_epoch = ? AND control_event IN ? AND last_sequence <= ?", snapshot.Queue.ID, snapshot.Active.ID, snapshot.Active.ExecutionEpoch, []string{SoloEventPhase, SoloEventExecution}, uint64(result.head))
 		if result.controlsThrough >= 0 {
 			query = query.Where("last_sequence > ?", uint64(result.controlsThrough))
 		}
