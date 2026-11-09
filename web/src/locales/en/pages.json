@@ -4788,6 +4788,7 @@
         "stopped": "Stopped"
       },
       "phase": {
+        "confirming": "Waiting for message confirmation…",
         "preparing": "Waiting for the sandbox…",
         "running": "Agent is working"
       },
@@ -5060,7 +5061,9 @@
           },
           "attempt": "Attempt {n}"
         }
-      }
+      },
+      "sendUnconfirmed": "Delivery is unconfirmed. Retry this message to check its receipt.",
+      "retryUnconfirmed": "Retry unconfirmed send"
     },
     "projects": {
       "title": "Repositories",

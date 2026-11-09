@@ -302,7 +302,7 @@ describe('useSoloChat', () => {
     await flushPromises()
     FakeSocket.all[0]!.open()
     await flushPromises()
-    mocks.sendSoloTurn.mockRejectedValueOnce(new Error('排队已满'))
+    mocks.sendSoloTurn.mockRejectedValueOnce(Object.assign(new Error('排队已满'), { status: 429 }))
     const pending = chat.send('hello')
     expect(chat.queued.value).toHaveLength(1)
     expect(chat.queued.value[0]!.local).toBe(true)
@@ -313,13 +313,65 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('retries an unconfirmed send using its original identity and payload', async () => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+    mocks.sendSoloTurn.mockRejectedValueOnce(new TypeError('network disconnected'))
+    expect(await chat.send('one side effect')).toBe(false)
+    const request = mocks.sendSoloTurn.mock.calls.at(-1)![1]
+    expect(request.clientMessageId).toBeTruthy()
+    expect(chat.pendingConfirmation.value).toEqual([request.clientMessageId])
+    expect(chat.canSend.value).toBe(false)
+    mocks.sendSoloTurn.mockResolvedValueOnce({ waiting: 1, turnId: 'accepted-on-server', clientMessageId: request.clientMessageId, state: 'queued' })
+    expect(await chat.retryPendingSend()).toBe(true)
+    expect(mocks.sendSoloTurn.mock.calls.at(-1)![1]).toEqual(request)
+    expect(chat.pendingConfirmation.value).toEqual([])
+    expect(chat.turns.value.some(turn => turn.id === 'u:accepted-on-server')).toBe(true)
+    app.unmount()
+  })
+
+  it('clears the unconfirmed notice when the socket confirms durable acceptance', async () => {
+    mocks.sendSoloTurn.mockRejectedValueOnce(new TypeError('connection lost'))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const socket = FakeSocket.all[0]!
+    socket.open()
+    await flushPromises()
+    expect(await chat.send('confirmed by another replica')).toBe(false)
+    const request = mocks.sendSoloTurn.mock.calls[0]![1]
+    socket.emit({ type: 'session', event: 'queue_state', busy: false, items: [{ id: 'server-id', clientMessageId: request.clientMessageId, text: request.text, images: [] }] })
+    expect(chat.pendingConfirmation.value).toEqual([])
+    expect(chat.actionError.value).toBe('')
+    expect(chat.canSend.value).toBe(true)
+    app.unmount()
+  })
+
+  it('uses client identities to distinguish identical queued texts', async () => {
+    const { chat, app, ws } = await openChat()
+    mocks.sendSoloTurn.mockResolvedValue({ waiting: 2 })
+    await chat.send('same text')
+    await chat.send('same text')
+    const first = mocks.sendSoloTurn.mock.calls.at(-2)![1].clientMessageId
+    const second = mocks.sendSoloTurn.mock.calls.at(-1)![1].clientMessageId
+    expect(first).not.toBe(second)
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, items: [
+      { id: 'second-server-id', clientMessageId: second, text: 'same text', images: [] },
+      { id: 'first-server-id', clientMessageId: first, text: 'same text', images: [] },
+    ] })
+    expect(chat.queued.value.map(item => item.id)).toEqual(['second-server-id', 'first-server-id'])
+    expect(chat.turns.value.filter(turn => turn.role === 'user').map(turn => turn.id)).toContain('u:first-server-id')
+    app.unmount()
+  })
+
   it('shows an accepted message before turn_begin and keeps it when history is short', async () => {
     const { chat, app } = mountChat()
     await flushPromises()
     const ws = FakeSocket.all[0]!
     ws.open()
     await flushPromises()
-    mocks.sendSoloTurn.mockResolvedValue(undefined)
+    mocks.sendSoloTurn.mockResolvedValue({ waiting: 1 })
     const pending = chat.send('你好')
     expect(chat.turns.value.some((turn) => turn.role === 'user' && turn.text === '你好')).toBe(true)
     expect(await pending).toBe(true)
@@ -428,7 +480,7 @@ describe('useSoloChat', () => {
 
   it('sends reference-only messages and carries references through queue and opening frames', async () => {
     const { chat, app, ws } = await openChat()
-    mocks.sendSoloTurn.mockResolvedValue(undefined)
+    mocks.sendSoloTurn.mockResolvedValue({ waiting: 1 })
     const ref = { kind: 'github_pr' as const, target: 'acme/web#7', title: 'Fix' }
     expect(await chat.send('', [], [ref])).toBe(true)
     expect(mocks.sendSoloTurn).toHaveBeenLastCalledWith('s1', expect.objectContaining({ references: [{ kind: 'github_pr', target: 'acme/web#7' }] }))

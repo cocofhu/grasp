@@ -37,8 +37,8 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
     setSoloSessionReasoningEffort: (id: string, reasoningEffort: string) =>
       req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
     listSoloMessages: (id: string) => req<SoloMessage[]>(`${path(id)}/messages`),
-    sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: ReferenceInput[] }) =>
-      req<{ waiting: number }>(`${path(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
+    sendSoloTurn: (id: string, body: { text: string; clientMessageId?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: ReferenceInput[] }) =>
+      req<{ waiting: number; turnId?: string; clientMessageId?: string; state?: string }>(`${path(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
     searchSoloReferences: <T>(id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
       req<ReferenceSearchResult<T>>(`${path(id)}/references/search?${referenceQuery(params)}`, { signal }),
     cancelSoloTurn: (id: string) =>

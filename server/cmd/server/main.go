@@ -692,6 +692,7 @@ func main() {
 		}
 		sbxSvc.RunSoloRecovery(sweeperCtx)
 	}()
+	go soloSvc.RunQueuedTurns(sweeperCtx)
 	// Every provider hook is wired now; continue agent nodes whose sandboxes
 	// survived the previous process.
 	eng.ResumeInterrupted()

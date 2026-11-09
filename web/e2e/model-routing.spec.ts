@@ -16,6 +16,47 @@ const caps = [
 type ConfigurationRow = { id: string; name: string; backend: string; binding: { kind: string; connectionId?: string; credentialId?: string; modelId?: string; auxiliaryModelIds?: string[] }; state: string; revision: number }
 const connection = (id: string, protocol: string, modelId: string) => ({ id, name: id, providerId: 'same-vendor', protocol, baseUrl: `https://${id}.example/v1`, credentialId: key.id, auth: { scheme: 'bearer' }, models: [{ id: modelId, name: modelId, source: 'manual' }], state: 'active', revision: 1 })
 
+test('Solo retries an unconfirmed send with the exact original identity and shows one human message', async ({ page }, testInfo) => {
+  const service = connection('durable-service', 'openai-chat-completions', 'durable-model')
+  const state = await setup(page, [service])
+  state.configurations.push({ id: 'durable-config', name: '测试模型', backend: 'opencode', binding: { kind: 'connection', connectionId: service.id, modelId: 'durable-model' }, state: 'active', revision: 1 })
+  state.agents.push({ name: 'Solo', acpBackend: 'opencode', modelBinding: { kind: 'configuration', configurationId: 'durable-config' }, gitBindings: { items: [] }, files: [], mcp: [], env: {}, layout: {} })
+  const session = { id: 'solo-durable', title: '续聊确认', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-11-09T00:00:00Z', updatedAt: '2026-11-09T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialConfigurationId: 'durable-config', initialModelId: 'durable-model' }
+  const requests: Record<string, unknown>[] = []
+  await routeApi(page, '**/api/solo/sessions**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
+    if (path.endsWith('/messages') || path.endsWith('/env')) return route.fulfill({ json: [] })
+    if (path.endsWith('/workflows')) return route.fulfill({ json: { items: [], workflows: { enabled: false, locked: false, source: 'db' } } })
+    if (path.endsWith('/turns') && route.request().method() === 'POST') {
+      requests.push(route.request().postDataJSON())
+      if (requests.length === 1) return route.fulfill({ status: 503, json: { code: 'message_not_confirmed', error: '消息接收结果尚未确认' } })
+      return route.fulfill({ json: { waiting: 1, turnId: 'accepted-turn', clientMessageId: requests[0]!.clientMessageId, state: 'queued' } })
+    }
+    return route.fulfill({ json: session })
+  })
+  await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/workspace-config.html?view=/solo/solo-durable')
+  await expect(page.getByTestId('solo-session-pane')).toBeVisible()
+  await page.getByTestId('solo-input').fill('继续检查并保留现有改动')
+  await page.getByTestId('solo-send').click()
+  const retry = page.getByTestId('solo-retry-unconfirmed')
+  await expect(retry).toBeVisible()
+  await expect(page.getByTestId('solo-input')).toBeDisabled()
+  await expect(page.getByTestId('solo-input')).toHaveValue('')
+  await page.screenshot({ path: testInfo.outputPath('solo-message-unconfirmed.png'), fullPage: true })
+  expect(requests).toHaveLength(1)
+  expect(requests[0]!.clientMessageId).toBeTruthy()
+  await retry.click()
+  await expect(retry).toHaveCount(0)
+  await expect(page.getByTestId('solo-input')).toBeEnabled()
+  await expect(page.getByTestId('solo-input')).toHaveValue('')
+  expect(requests).toHaveLength(2)
+  expect(requests[1]).toEqual(requests[0])
+  await expect(page.getByTestId('solo-session-pane').getByText('继续检查并保留现有改动', { exact: true })).toHaveCount(1)
+})
+
 async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]) {
   await installWorkspaceApiDefaults(page)
   const credentials: Record<string, unknown>[] = [key]

@@ -383,26 +383,27 @@ func (h *Handlers) StartSoloTurn(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Text        string                    `json:"text"`
-		Images      []models.PromptImage      `json:"images"`
-		Annotations []models.ReactAnnotation  `json:"annotations"`
-		References  []services.ReferenceInput `json:"references"`
+		ClientMessageID string                    `json:"clientMessageId"`
+		Text            string                    `json:"text"`
+		Images          []models.PromptImage      `json:"images"`
+		Annotations     []models.ReactAnnotation  `json:"annotations"`
+		References      []services.ReferenceInput `json:"references"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	waiting, err := h.Solo.SendWithReferences(c.Param("id"), user, body.Text, body.Images, body.References, body.Annotations...)
+	receipt, err := h.Solo.SendWithClientMessageID(c.Param("id"), user, body.ClientMessageID, body.Text, body.Images, body.References, body.Annotations...)
 	if err != nil {
 		var se *services.SoloError
 		if errors.As(err, &se) {
 			writeSoloErr(c, err)
 			return
 		}
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "message_not_confirmed", "error": "消息尚未确认接收，请使用原消息身份重试"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"waiting": waiting})
+	c.JSON(http.StatusOK, receipt)
 }
 
 // CancelSoloTurn handles POST /api/solo/sessions/:id/turns/cancel.

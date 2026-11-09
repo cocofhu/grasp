@@ -123,7 +123,11 @@ func TestSoloTurnOwnsEnvironmentUntilReplyIsPersisted(t *testing.T) {
 	defer cancel()
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := solo.acquire(view.ID).execute(ctx, &soloTurn{ID: "lease-first", Text: "first"})
+		chat := solo.acquire(view.ID)
+		chat.mu.Lock()
+		chat.turnID = "lease-first"
+		chat.mu.Unlock()
+		_, err := chat.execute(ctx, &soloTurn{ID: "lease-first", Text: "first"})
 		firstDone <- err
 	}()
 	select {
@@ -133,7 +137,11 @@ func TestSoloTurnOwnsEnvironmentUntilReplyIsPersisted(t *testing.T) {
 	}
 	secondDone := make(chan error, 1)
 	go func() {
-		_, err := other.acquire(view.ID).execute(ctx, &soloTurn{ID: "lease-second", Text: "second"})
+		chat := other.acquire(view.ID)
+		chat.mu.Lock()
+		chat.turnID = "lease-second"
+		chat.mu.Unlock()
+		_, err := chat.execute(ctx, &soloTurn{ID: "lease-second", Text: "second"})
 		secondDone <- err
 	}()
 	select {

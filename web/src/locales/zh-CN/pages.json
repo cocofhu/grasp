@@ -4788,6 +4788,7 @@
         "stopped": "已停止"
       },
       "phase": {
+        "confirming": "等待接收确认…",
         "preparing": "等待沙箱就绪…",
         "running": "Agent 正在处理"
       },
@@ -5060,7 +5061,9 @@
           },
           "attempt": "第 {n} 次尝试"
         }
-      }
+      },
+      "sendUnconfirmed": "发送结果尚未确认，请重试这条消息",
+      "retryUnconfirmed": "重试待确认消息"
     },
     "projects": {
       "title": "仓库",

@@ -61,7 +61,7 @@ watch([() => props.workflowIntent, workflowPanel], async ([intent, panel]) => {
   if (workflowsEnabled.value) await panel.openPicker(intent === '1' ? '' : intent)
   emit('workflowOpened')
 })
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -286,7 +286,7 @@ async function send() {
   followBottom.value = true
   picks.value = []
   const ok = await chat.send(text, images, refs, selected)
-  if (!ok) {
+  if (!ok && !pendingConfirmation?.value.length) {
     restore()
     attach.attachments.value = images
     picks.value = [...selected, ...picks.value].slice(0, 8)
@@ -527,7 +527,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 data-testid="solo-agent-activity"
                 role="status"
               >
-                <ThinkingBusyCue :label="phase === 'preparing' && !turn.steps.length ? t('pages.solo.phase.preparing') : t('pages.solo.phase.running')" />
+                <ThinkingBusyCue :label="pendingConfirmation?.includes(turn.id.replace(/^live:/, '')) ? t('pages.solo.phase.confirming') : phase === 'preparing' && !turn.steps.length ? t('pages.solo.phase.preparing') : t('pages.solo.phase.running')" />
               </div>
               <div v-if="turn.status === 'stopped' && !turn.streaming" class="chat-meta">{{ t('pages.solo.chat.stopped') }}</div>
               <div v-else-if="turn.error || turn.status === 'failed'" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error || t('pages.solo.chat.turnFailed') }}</div>
@@ -568,6 +568,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div v-else class="chat-pane-composer shrink-0 py-3">
         <div class="chat-pane-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
+          <AppButton v-if="pendingConfirmation?.length" size="sm" variant="outline" icon="refresh" class="mb-2" :loading="retryingSend" data-testid="solo-retry-unconfirmed" @click="retryPendingSend">{{ t('pages.solo.retryUnconfirmed') }}</AppButton>
           <p v-if="selectionInvalid && canSend" class="mb-2 text-[12px] text-warn" role="status" data-testid="solo-model-invalid-notice">{{ t('pages.solo.modelSelect.unavailableSelection') }}</p>
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
           <ChatComposer

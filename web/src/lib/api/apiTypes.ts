@@ -877,6 +877,7 @@ export interface ReferenceSearchResult<T> {
 }
 
 export interface SoloMessage {
+  clientMessageId?: string
   files?: ArtifactAttachment[]
   turnId?: string
   id: string
@@ -888,7 +889,7 @@ export interface SoloMessage {
   references?: MessageReference[]
   /** Raw ACP frames of an assistant turn, replayed into the timeline. */
   events?: unknown[]
-  status?: '' | 'ok' | 'failed' | 'stopped'
+  status?: '' | 'ok' | 'failed' | 'stopped' | 'unknown'
   error?: string
   usage?: TokenUsage
   usageByModel?: TokenUsageByModel

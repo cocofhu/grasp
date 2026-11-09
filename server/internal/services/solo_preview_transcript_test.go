@@ -46,7 +46,11 @@ func TestSoloPreviewTranscriptKeepsLiveProcessBeforeTextAndQueue(t *testing.T) {
 		t.Fatal("snapshot mutated the active turn")
 	}
 	var queries atomic.Int32
-	if err := db.Callback().Query().After("gorm:query").Register("preview-live-query-count", func(*gorm.DB) { queries.Add(1) }); err != nil {
+	if err := db.Callback().Query().After("gorm:query").Register("preview-live-query-count", func(tx *gorm.DB) {
+		if tx.Statement.Table == "solo_messages" {
+			queries.Add(1)
+		}
+	}); err != nil {
 		t.Fatal(err)
 	}
 	live, active := solo.PreviewLiveReply(view.ID)

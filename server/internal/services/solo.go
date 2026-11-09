@@ -118,6 +118,7 @@ type SoloService struct {
 	// switch without calling the bridge. Nil uses the sandbox service.
 	modelAlign soloModelAligner
 	pending    *chatsession.PendingStore
+	durable    *chatsession.DurableStore
 	restoreMu  sync.Mutex
 	// deferredRestores holds persisted queues until their resident is ready.
 	deferredRestores map[string]bool
@@ -143,7 +144,7 @@ type soloSettingsAligner interface {
 type soloChat struct {
 	svc    *SoloService
 	id     string
-	sess   *chatsession.Session[*soloTurn]
+	sess   *chatsession.DurableSession[*soloTurn]
 	stream *chatsession.Stream
 	// Serialize reading and publishing saved settings so concurrent viewers
 	// cannot receive an older selection after a newer one.
@@ -159,11 +160,14 @@ type soloChat struct {
 }
 
 type soloTurn struct {
-	ID            string
-	Text          string
-	Images        []models.PromptImage
-	Annotations   []models.ReactAnnotation `json:",omitempty"`
-	PreviewShared bool                     `json:",omitempty"`
+	ID              string
+	ActorID         string `json:"-"`
+	ClientMessageID string `json:",omitempty"`
+	Fingerprint     string `json:"-"`
+	Text            string
+	Images          []models.PromptImage
+	Annotations     []models.ReactAnnotation `json:",omitempty"`
+	PreviewShared   bool                     `json:",omitempty"`
 	// References were validated at send time; Solo anchors are pinned when
 	// the turn begins.
 	References []models.MessageReference `json:",omitempty"`
@@ -173,10 +177,11 @@ type soloTurn struct {
 // persistence.
 func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, projects *ProjectService) *SoloService {
 	s := &SoloService{db: db, sbx: sbx, agents: agents, projects: projects, chats: map[string]*soloChat{},
-		pending: chatsession.NewPendingStore(db)}
+		pending: chatsession.NewPendingStore(db), durable: chatsession.NewDurableStore(db)}
 	// Protect saved queues before HTTP accepts messages. They must not be
 	// overwritten by a newly opened in-memory FIFO while residents recover.
-	if _, keys, err := s.pending.Load(soloPendingSurface); err == nil {
+	var keys []string
+	if err := db.Model(&models.ChatPendingTurn{}).Where("surface = ?", soloPendingSurface).Distinct().Pluck("session_key", &keys).Error; err == nil {
 		s.deferredRestores = map[string]bool{}
 		for _, id := range keys {
 			s.deferredRestores[id] = true
@@ -329,9 +334,11 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 			}
 		}
 	}
-	if c := s.lookup(row.ID); c != nil {
-		sn := c.sess.Snapshot()
+	if sn, err := s.durable.Metadata(ctx, soloQueueScope(row.ID)); err == nil {
 		v.Busy, v.Waiting = sn.Busy, sn.Waiting
+	} else {
+		v.Busy = true // an unavailable queue cannot be reported idle
+		log.Warn().Err(err).Str("session", row.ID).Msg("Solo queue metadata unavailable")
 	}
 	if row.SandboxID == 0 || s.sbx == nil {
 		return v
@@ -526,6 +533,7 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 	if strings.TrimSpace(in.Text) != "" || len(in.Images) > 0 || len(references) > 0 {
 		if _, err := s.enqueueTurn(row.ID, &soloTurn{Text: in.Text, Images: in.Images, References: references}); err != nil {
 			log.Warn().Err(err).Str("session", row.ID).Msg("solo first message enqueue failed")
+			return nil, soloErr(http.StatusServiceUnavailable, "message_not_confirmed", "会话已创建，但首条消息尚未确认接收，请打开会话 %s 后重试", row.ID)
 		}
 	}
 	return s.Get(ctx, row.ID, user)
@@ -598,9 +606,8 @@ func (s *SoloService) onSandboxGone(sandboxID uint) {
 			continue
 		}
 		if c := s.lookup(r.ID); c != nil {
-			c.sess.Cancel(true)
+			_, _ = c.sess.CancelChecked("", false)
 		}
-		s.clearDeferredQueue(r.ID)
 		s.publishStatus(r.ID)
 	}
 }
@@ -666,12 +673,14 @@ func (s *SoloService) Close(ctx context.Context, id, user string) (*SoloSessionV
 		return s.Get(ctx, id, user)
 	}
 	now := time.Now()
-	s.db.Model(&models.SoloSession{}).Where("id = ?", id).
-		Updates(map[string]any{"status": models.SoloStatusClosed, "closed_at": &now, "error": ""})
-	if c := s.lookup(id); c != nil {
-		c.sess.Cancel(true)
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.durable.Retire(tx, soloQueueScope(id)); err != nil {
+			return err
+		}
+		return tx.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{"status": models.SoloStatusClosed, "closed_at": &now, "error": ""}).Error
+	}); err != nil {
+		return nil, err
 	}
-	s.clearDeferredQueue(id)
 	s.destroySandbox(ctx, row.SandboxID)
 	s.appendSystem(id, "会话已关闭，沙箱已释放")
 	s.publishStatus(id)
@@ -703,10 +712,17 @@ func (s *SoloService) Restart(ctx context.Context, id, user string) (*SoloSessio
 	var msgCount int64
 	s.db.Model(&models.SoloMessage{}).Where("session_id = ? AND role <> ?", id, "system").Count(&msgCount)
 	now := time.Now()
-	s.db.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{
-		"restarts": row.Restarts + 1, "needs_preamble": msgCount > 0, "closed_at": nil,
-		"last_active_at": &now, "sandbox_id": 0,
-	})
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.durable.Reopen(tx, soloQueueScope(id)); err != nil {
+			return err
+		}
+		return tx.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{
+			"restarts": row.Restarts + 1, "needs_preamble": msgCount > 0, "closed_at": nil,
+			"last_active_at": &now, "sandbox_id": 0,
+		}).Error
+	}); err != nil {
+		return nil, err
+	}
 	row.Restarts++
 	if err := s.openSandbox(ctx, row); err != nil {
 		s.db.Model(&models.SoloSession{}).Where("id = ?", id).
@@ -737,6 +753,18 @@ func (s *SoloService) Delete(ctx context.Context, id, user string) error {
 	delete(s.chats, id)
 	s.mu.Unlock()
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.durable.Retire(tx, soloQueueScope(id)); err != nil {
+			return err
+		}
+		if err := tx.Where("surface = ? AND session_key = ?", soloPendingSurface, id).Delete(&models.ChatPendingTurn{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("queue_id = ?", soloQueueScope(id).ID()).Delete(&models.ChatQueueTurn{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id = ?", soloQueueScope(id).ID()).Delete(&models.ChatQueue{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Delete(&models.SoloMessage{}, "session_id = ?", id).Error; err != nil {
 			return err
 		}
@@ -926,15 +954,9 @@ func (s *SoloService) publishStatus(id string) {
 
 // ActiveCount reports sessions with a running or queued turn (maintenance).
 func (s *SoloService) ActiveCount() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	n := 0
-	for _, c := range s.chats {
-		if !c.sess.Ready() {
-			n++
-		}
-	}
-	return n
+	var count int64
+	s.db.Model(&models.ChatQueue{}).Where("surface = ? AND (active_turn_id != '' OR EXISTS (SELECT 1 FROM chat_queue_turns t WHERE t.queue_id = chat_queues.id AND t.state = ?))", soloPendingSurface, chatsession.TurnQueued).Count(&count)
+	return int(count)
 }
 
 func (s *SoloService) lookup(id string) *soloChat {
@@ -956,34 +978,42 @@ func (s *SoloService) acquire(id string) *soloChat {
 
 func (s *SoloService) newChat(id string) *soloChat {
 	c := &soloChat{svc: s, id: id, stream: chatsession.NewStream(soloStreamBuffer)}
-	c.sess = chatsession.New(chatsession.Config[*soloTurn]{
-		Capacity:  soloQueueCapacity,
-		FullError: "Solo 会话排队已满，请稍候",
-		View: func(q *soloTurn) chatsession.ItemView {
-			return chatsession.ItemView{ID: q.ID, Text: q.Text, Images: q.Images, Annotations: q.Annotations, References: q.References}
+	c.sess = chatsession.NewDurableSession(s.durable, soloQueueScope(id), chatsession.DurableConfig[*soloTurn]{
+		Config: chatsession.Config[*soloTurn]{
+			Capacity:  soloQueueCapacity,
+			FullError: "Solo 会话排队已满，请稍候",
+			View: func(q *soloTurn) chatsession.ItemView {
+				return soloTurnView(q)
+			},
+			Execute: c.execute,
+			Publish: c.publish,
+			TurnBeginExtra: func(q *soloTurn) map[string]any {
+				return map[string]any{"userMsgId": q.ID}
+			},
+			BeforeTurn: func(q *soloTurn, _ <-chan struct{}) {
+				c.mu.Lock()
+				c.turnID = q.ID
+				c.phase = SoloPhasePreparing
+				c.text.Reset()
+				c.events = nil
+				c.execution = nil
+				c.mu.Unlock()
+			},
+			CancelTurn: func() {
+				c.mu.Lock()
+				sid := c.sandboxID
+				c.mu.Unlock()
+				if s.chat != nil && sid != 0 {
+					s.chat.Cancel(sid)
+				}
+			},
 		},
-		Execute: c.execute,
-		Publish: c.publish,
-		Persist: chatsession.Persister(s.pending, soloPendingSurface, id, func(q *soloTurn) string { return q.ID }),
-		TurnBeginExtra: func(q *soloTurn) map[string]any {
-			return map[string]any{"userMsgId": q.ID}
-		},
-		BeforeTurn: func(q *soloTurn, _ <-chan struct{}) {
-			c.mu.Lock()
-			c.turnID = q.ID
-			c.phase = SoloPhasePreparing
-			c.text.Reset()
-			c.events = nil
-			c.execution = nil
-			c.mu.Unlock()
-		},
-		CancelTurn: func() {
-			c.mu.Lock()
-			sid := c.sandboxID
-			c.mu.Unlock()
-			if s.chat != nil && sid != 0 {
-				s.chat.Cancel(sid)
-			}
+		Decode: decodeSoloTurn, Intent: s.durableSoloIntent,
+		Admit:   func(tx *gorm.DB) error { return s.soloQueueAdmission(tx, id) },
+		Ready:   func() (bool, error) { return s.soloQueueReady(id) },
+		Recover: func(row models.ChatQueueTurn) error { return s.recoverSoloReceipt(id, row) },
+		Settle: func(ctx context.Context, row models.ChatQueueTurn, turn *soloTurn, state string, err error) error {
+			return s.settleSoloReceipt(ctx, id, row, turn, state, err)
 		},
 	})
 	return c
@@ -1435,6 +1465,20 @@ func (s *SoloService) SendPreview(id, user, text string, images []models.PromptI
 }
 
 func (s *SoloService) sendSoloTurn(row *models.SoloSession, turn *soloTurn, inputs []ReferenceInput) (int, error) {
+	turn.Text = strings.TrimSpace(turn.Text)
+	turn.Annotations = models.NormalizePreviewPicks(turn.Annotations, 8)
+	turn.ActorID = row.UserID
+	if err := s.queueFingerprint(turn, inputs); err != nil {
+		return 0, err
+	}
+	previous, err := s.durable.Existing(context.Background(), soloQueueScope(row.ID), turn.ActorID, turn.ClientMessageID, turn.Fingerprint)
+	if err != nil {
+		return 0, err
+	}
+	if previous != nil {
+		turn.ID = previous.ID
+		return s.durable.Waiting(context.Background(), soloQueueScope(row.ID))
+	}
 	if s.sbx != nil && row.SandboxID != 0 {
 		if environment, err := s.sbx.Get(row.SandboxID); err == nil && environment.DesiredState == "stopped" {
 			return 0, soloErr(http.StatusConflict, "environment_stopped", "环境已请求停止，请先恢复环境")
@@ -1449,8 +1493,6 @@ func (s *SoloService) sendSoloTurn(row *models.SoloSession, turn *soloTurn, inpu
 	if row.Status == models.SoloStatusError {
 		return 0, soloErr(http.StatusConflict, "session_error", "沙箱不可用，请重新启动会话")
 	}
-	turn.Text = strings.TrimSpace(turn.Text)
-	turn.Annotations = models.NormalizePreviewPicks(turn.Annotations, 8)
 	if turn.Text == "" && len(turn.Images) == 0 && len(turn.References) == 0 && len(turn.Annotations) == 0 && len(inputs) == 0 {
 		return 0, soloErr(http.StatusBadRequest, "content_required", "消息不能为空")
 	}
@@ -1469,7 +1511,31 @@ func (s *SoloService) enqueueTurn(id string, turn *soloTurn) (int, error) {
 	s.restoreMu.Lock()
 	defer s.restoreMu.Unlock()
 	if s.deferredRestores[id] {
-		return 0, soloErr(http.StatusServiceUnavailable, "session_recovering", "工作区和消息队列正在恢复，请稍后重试")
+		if err := s.importSoloQueuesLocked(); err != nil {
+			if s.deferredRestores[id] {
+				return 0, soloErr(http.StatusServiceUnavailable, "session_recovering", "消息队列正在恢复，请稍后重试")
+			}
+		}
+	}
+	row, err := s.load(id)
+	if err != nil {
+		return 0, err
+	}
+	turn.ActorID = row.UserID
+	if turn.ID == "" {
+		turn.ID = uuid.NewString()
+	}
+	turn.Text = strings.TrimSpace(turn.Text)
+	if err := s.queueFingerprint(turn, nil); err != nil {
+		return 0, err
+	}
+	previous, err := s.durable.Existing(context.Background(), soloQueueScope(id), turn.ActorID, turn.ClientMessageID, turn.Fingerprint)
+	if err != nil {
+		return 0, err
+	}
+	if previous != nil {
+		turn.ID = previous.ID
+		return s.durable.Waiting(context.Background(), soloQueueScope(id))
 	}
 	images, err := blob.IngestPromptImages(context.Background(), s.blobs, turn.Images)
 	if err != nil {
@@ -1478,10 +1544,13 @@ func (s *SoloService) enqueueTurn(id string, turn *soloTurn) (int, error) {
 	if s.chat == nil {
 		return 0, errors.New("solo chat unavailable")
 	}
-	turn.ID = uuid.NewString()
-	turn.Text = strings.TrimSpace(turn.Text)
 	turn.Images = images
-	return s.acquire(id).sess.Enqueue(turn, nil)
+	receipt, err := s.acquire(id).sess.EnqueueReceipt(turn, nil)
+	if err != nil {
+		return 0, err
+	}
+	turn.ID = receipt.Turn.ID
+	return receipt.Waiting, nil
 }
 
 const (
@@ -1489,148 +1558,13 @@ const (
 	soloRestartStopped = "服务重启，本轮回复已中断"
 )
 
-// RestoreQueuedTurns puts the turns that were still unfinished when the
-// previous process exited back into their sessions, in order. Call it once at
-// startup, after the sandbox hooks are wired.
-func (s *SoloService) RestoreQueuedTurns() {
-	s.restoreMu.Lock()
-	defer s.restoreMu.Unlock()
-	if s.chat == nil {
-		return
-	}
-	sessions, keys, err := s.pending.Load(soloPendingSurface)
-	if err != nil {
-		log.Error().Err(err).Msg("solo: load queued turns failed")
-		return
-	}
-	for _, id := range keys {
-		if !s.deferredRestores[id] {
-			continue // accepted after this process started; already in its live FIFO
-		}
-		s.restoreSessionLocked(id, sessions[id])
-	}
-	s.restoreEnabled = true
-}
-
-func (s *SoloService) restoreSessionLocked(id string, stored []chatsession.PendingTurn) {
-	var row models.SoloSession
-	err := s.db.First(&row, "id = ?", id).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		log.Warn().Err(err).Str("session", id).Msg("solo: queue restore deferred after storage failure")
-		return
-	}
-	if err != nil || row.Status == models.SoloStatusClosed {
-		delete(s.deferredRestores, id)
-		// Only an explicitly closed or deleted conversation drops its queue.
-		log.Info().Str("session", id).Int("turns", len(stored)).Msg("solo: queued turns dropped with an ended session")
-		if err := s.pending.Clear(soloPendingSurface, id); err != nil {
-			log.Warn().Err(err).Str("session", id).Msg("solo: clear queued turns failed")
-		}
-		return
-	}
-	if row.Status == models.SoloStatusStopped || row.Status == models.SoloStatusError {
-		if s.deferredRestores == nil {
-			s.deferredRestores = map[string]bool{}
-		}
-		s.deferredRestores[id] = true
-		return
-	}
-	if s.sbx != nil && row.SandboxID != 0 {
-		sb, getErr := s.sbx.Get(row.SandboxID)
-		leased := getErr == nil && sb.OperationOwner != "" && sb.OperationExpiresAt != nil && sb.OperationExpiresAt.After(time.Now()) && sb.OperationKind != "lifecycle"
-		if getErr != nil || sb.Status != "running" || sb.DesiredState == "stopped" || leased {
-			if s.deferredRestores == nil {
-				s.deferredRestores = map[string]bool{}
-			}
-			s.deferredRestores[id] = true
-			return
-		}
-	}
-	delete(s.deferredRestores, id)
-	var turns []*soloTurn
-	for _, t := range stored {
-		var q soloTurn
-		if err := json.Unmarshal(t.Payload, &q); err != nil || q.ID == "" {
-			log.Warn().Err(err).Str("session", id).Str("turn", t.ID).Msg("solo: unreadable queued turn skipped")
-			continue
-		}
-		if t.Started && s.settleInterruptedTurn(id, q.ID) {
-			continue
-		}
-		turns = append(turns, &q)
-	}
-	if len(turns) == 0 {
-		if err := s.pending.Clear(soloPendingSurface, id); err != nil {
-			log.Warn().Err(err).Str("session", id).Msg("solo: clear queued turns failed")
-		}
-		return
-	}
-	s.acquire(id).sess.Restore(turns)
-	log.Info().Str("session", id).Int("turns", len(turns)).Msg("solo: queued turns restored")
-}
-
-func (s *SoloService) retryDeferredRestores(sandboxID uint) {
-	s.restoreMu.Lock()
-	defer s.restoreMu.Unlock()
-	if !s.restoreEnabled || len(s.deferredRestores) == 0 {
-		return
-	}
-	var sessions []models.SoloSession
-	s.db.Where("sandbox_id = ?", sandboxID).Find(&sessions)
-	for _, session := range sessions {
-		if !s.deferredRestores[session.ID] {
-			continue
-		}
-		stored, _, err := s.pending.Load(soloPendingSurface)
-		if err == nil {
-			s.restoreSessionLocked(session.ID, stored[session.ID])
-		}
-	}
-}
-
-func (s *SoloService) clearDeferredQueue(id string) {
-	s.restoreMu.Lock()
-	defer s.restoreMu.Unlock()
-	if s.deferredRestores[id] {
-		delete(s.deferredRestores, id)
-		if err := s.pending.Clear(soloPendingSurface, id); err != nil {
-			log.Warn().Err(err).Str("session", id).Msg("solo: clear deferred queue failed")
-		}
-	}
-}
-
-// settleInterruptedTurn closes a turn the restart cut off. It reports false
-// when the turn never reached the transcript, so it can simply run again.
-func (s *SoloService) settleInterruptedTurn(sessionID, turnID string) bool {
-	var user models.SoloMessage
-	if err := s.db.First(&user, "id = ? AND session_id = ?", turnID, sessionID).Error; err != nil {
-		return false
-	}
-	var replies int64
-	s.db.Model(&models.SoloMessage{}).
-		Where("session_id = ? AND role = ? AND created_at >= ?", sessionID, "assistant", user.CreatedAt).Count(&replies)
-	if replies > 0 || user.Status != "" {
-		return true
-	}
-	reply := models.SoloMessage{ID: uuid.NewString(), SessionID: sessionID, Role: "assistant",
-		Status: "stopped", Error: soloRestartStopped}
-	if err := s.db.Create(&reply).Error; err != nil {
-		log.Warn().Err(err).Str("session", sessionID).Msg("solo: record interrupted turn failed")
-	}
-	s.db.Model(&models.SoloMessage{}).Where("id = ?", turnID).Update("status", "stopped")
-	return true
-}
-
 // Cancel stops the active turn and drops queued ones.
 func (s *SoloService) Cancel(id, user string) error {
 	if _, err := s.Require(id, user); err != nil {
 		return err
 	}
-	if c := s.lookup(id); c != nil {
-		c.sess.Cancel(true)
-	}
-	s.clearDeferredQueue(id)
-	return nil
+	_, err := s.acquire(id).sess.CancelChecked("", true)
+	return err
 }
 
 // CancelPreviewTurn preserves Solo's clear-queue policy, but refuses stale
@@ -1639,7 +1573,11 @@ func (s *SoloService) CancelPreviewTurn(id, user, turnID string) error {
 	if _, err := s.Require(id, user); err != nil {
 		return err
 	}
-	if c := s.lookup(id); c != nil && c.sess.CancelActive(turnID, true) {
+	matched, err := s.acquire(id).sess.CancelChecked(turnID, true)
+	if err != nil {
+		return err
+	}
+	if turnID != "" && matched {
 		return nil
 	}
 	return soloErr(http.StatusConflict, "turn_changed", "当前回复已变化，请重试")
@@ -1650,11 +1588,7 @@ func (s *SoloService) RemoveQueued(id, user, turnID string) error {
 	if _, err := s.Require(id, user); err != nil {
 		return err
 	}
-	c := s.lookup(id)
-	if c == nil {
-		return soloErr(http.StatusNotFound, "turn_not_found", "排队消息不存在")
-	}
-	return c.sess.Remove(turnID)
+	return s.acquire(id).sess.Remove(turnID)
 }
 
 // ReorderQueued reorders pending turns.
@@ -1662,11 +1596,7 @@ func (s *SoloService) ReorderQueued(id, user string, ids []string) error {
 	if _, err := s.Require(id, user); err != nil {
 		return err
 	}
-	c := s.lookup(id)
-	if c == nil {
-		return nil
-	}
-	return c.sess.Reorder(ids)
+	return s.acquire(id).sess.Reorder(ids)
 }
 
 // Subscribe streams a session: queue_state snapshot, the active turn, then
@@ -1683,7 +1613,7 @@ func (s *SoloService) Subscribe(id, user string, afterSeq int) (<-chan chatsessi
 		sn := c.sess.Snapshot()
 		qs := sn.QueueState()
 		c.mu.Lock()
-		if sn.Busy && c.phase != "" {
+		if sn.Busy && c.phase != "" && sn.ActiveItem["id"] == c.turnID {
 			qs["phase"] = c.phase
 			qs["userMsgId"] = c.turnID
 			if c.execution != nil {
@@ -1704,7 +1634,8 @@ func (c *soloChat) publish(event string, payload map[string]any) {
 	switch event {
 	case chatsession.EventQueueState:
 		c.mu.Lock()
-		if busy, _ := payload["busy"].(bool); busy && c.phase != "" {
+		active, _ := payload["activeItem"].(map[string]any)
+		if busy, _ := payload["busy"].(bool); busy && c.phase != "" && active["id"] == c.turnID {
 			payload["phase"] = c.phase
 			payload["userMsgId"] = c.turnID
 			if c.execution != nil {
@@ -1798,14 +1729,29 @@ func (c *soloChat) recordPreparationFailure(ctx context.Context, turnID string, 
 		status = "stopped"
 	}
 	errText := truncErr(err)
-	c.svc.db.Model(&models.SoloMessage{}).Where("id = ?", turnID).
-		Updates(map[string]any{"status": status, "error": errText})
 	reply := models.SoloMessage{
 		ID: "reply:" + turnID, TurnID: turnID, SessionID: c.id, Role: "assistant",
 		Status: status, Error: errText, DurationMs: time.Since(started).Milliseconds(),
 	}
-	if perr := c.svc.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"status", "error", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
+	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if perr := c.svc.db.WithContext(pctx).Transaction(func(tx *gorm.DB) error {
+		if err := chatsession.FenceExecution(pctx, tx); err != nil {
+			return err
+		}
+		if err := tx.Model(&models.SoloMessage{}).Where("id = ?", turnID).Updates(map[string]any{"status": status, "error": errText}).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"status", "error", "duration_ms", "turn_id"})}).Create(&reply).Error; err != nil {
+			return err
+		}
+		state := chatsession.TurnFailed
+		if status == "stopped" {
+			state = chatsession.TurnCancelled
+		}
+		return chatsession.FinishExecution(pctx, tx, state, "preparation_failed", reply.ID)
+	}); perr != nil {
 		log.Warn().Err(perr).Str("session", c.id).Msg("solo preparation failure persist failed")
 	}
 }
@@ -1814,7 +1760,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	s := c.svc
 	turnCtx := ctx
 	started := time.Now()
-	userMsg := models.SoloMessage{ID: q.ID, SessionID: c.id, Role: "user", Content: q.Text, Images: q.Images, Annotations: q.Annotations, PreviewShared: q.PreviewShared}
+	userMsg := models.SoloMessage{ID: q.ID, ClientMessageID: q.ClientMessageID, SessionID: c.id, Role: "user", Content: q.Text, Images: q.Images, Annotations: q.Annotations, PreviewShared: q.PreviewShared}
 	if len(q.References) > 0 {
 		if row, err := s.load(c.id); err == nil {
 			userMsg.References = s.pinReferences(row, q.References)
@@ -1822,7 +1768,12 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 			userMsg.References = q.References
 		}
 	}
-	if err := s.db.Create(&userMsg).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := chatsession.FenceExecution(ctx, tx); err != nil {
+			return err
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&userMsg).Error
+	}); err != nil {
 		return false, err
 	}
 	s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", &started)
@@ -1834,6 +1785,9 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		err = ctx.Err()
 	}
 	if err != nil {
+		if _, durable := chatsession.CurrentExecution(ctx); durable && ctx.Err() == nil {
+			return false, fmt.Errorf("%w: %v", chatsession.ErrPreparationDeferred, err)
+		}
 		c.recordPreparationFailure(ctx, q.ID, started, err)
 		return false, err
 	}
@@ -1923,7 +1877,12 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	var usage *models.TokenUsage
 	var byModel models.TokenUsageByModel
 	if err == nil {
-		usage, byModel, err = s.chat.ChatWithTimeout(ctx, sandboxID, prompt, q.Images, 0, c.onAcp)
+		err = chatsession.DispatchExecution(ctx)
+	}
+	if err == nil {
+		usage, byModel, err = s.chat.ChatWithTimeout(ctx, sandboxID, prompt, q.Images, 0, func(raw json.RawMessage) {
+			c.onAcpForTurn(ctx, q.ID, raw)
+		})
 	}
 
 	c.mu.Lock()
@@ -1936,7 +1895,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	switch {
 	case err != nil && errors.Is(context.Cause(ctx), errSandboxOperationLost):
 		status, ledger, errText = "failed", models.TokenLedgerStatusFailed, errSandboxOperationLost.Error()
-	case err != nil && ctx.Err() != nil:
+	case err != nil && (ctx.Err() != nil || errors.Is(err, context.Canceled)):
 		status, ledger, errText = "stopped", models.TokenLedgerStatusCancelled, "已停止"
 	case err != nil:
 		status, ledger, errText = "failed", models.TokenLedgerStatusFailed, truncErr(err)
@@ -1948,6 +1907,17 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		DurationMs: time.Since(started).Milliseconds(),
 	}
 	publish := func(tx *gorm.DB) error {
+		if err := chatsession.FenceExecution(ctx, tx); err != nil {
+			return err
+		}
+		cancelled, cancelErr := chatsession.ExecutionCancellation(ctx, tx)
+		if cancelErr != nil {
+			return cancelErr
+		}
+		if cancelled && status == "ok" {
+			status, ledger, errText = "stopped", models.TokenLedgerStatusCancelled, "已停止"
+			reply.Status, reply.Error = status, errText
+		}
 		var deliveries []models.ArtifactDelivery
 		if perr := tx.Where("session_id = ? AND turn_id = ?", c.id, q.ID).Order("created_at,id").Find(&deliveries).Error; perr != nil {
 			return perr
@@ -1977,7 +1947,16 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 				return perr
 			}
 		}
-		return tx.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", time.Now()).Error
+		if err := tx.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", time.Now()).Error; err != nil {
+			return err
+		}
+		state := chatsession.TurnSucceeded
+		if status == "failed" {
+			state = chatsession.TurnFailed
+		} else if status == "stopped" {
+			state = chatsession.TurnCancelled
+		}
+		return chatsession.FinishExecution(ctx, tx, state, "", reply.ID)
 	}
 	var publicationErr error
 	if s.sbx != nil {

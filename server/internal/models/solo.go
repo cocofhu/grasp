@@ -170,6 +170,7 @@ type RunReference struct {
 // SoloMessage is one persisted turn of a Solo session. Agent turns keep the raw
 // ACP frames so the UI can replay thoughts and tool calls.
 type SoloMessage struct {
+	ClientMessageID string `gorm:"size:128" json:"clientMessageId,omitempty"`
 	// WorkflowContext holds the immutable task context separately from the
 	// compact system notice displayed in chat. get_history returns its original.
 	WorkflowContext string               `gorm:"serializer:filetext" json:"-"`
@@ -188,7 +189,8 @@ type SoloMessage struct {
 	// References are the contexts the user explicitly picked for this turn.
 	// They are the only authority read_reference accepts.
 	References []MessageReference `gorm:"column:message_references;serializer:json" json:"references,omitempty"`
-	// Status: ok | failed | stopped. Empty means ok.
+	// Status: ok | failed | stopped | unknown. Empty means ok. Unknown never
+	// claims a dispatched operation failed or succeeded after an executor loss.
 	Status       string            `json:"status,omitempty"`
 	Error        string            `json:"error,omitempty"`
 	Usage        *TokenUsage       `gorm:"serializer:json" json:"usage,omitempty"`
