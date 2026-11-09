@@ -78,3 +78,40 @@ func TestRunSandboxReadyAndSharedSourceUseExactVisit(t *testing.T) {
 		t.Fatal("mismatched run attempt stamped a visit")
 	}
 }
+
+func TestRunSandboxAdoptsOnlyExactlyCorrelatedLegacyPlaceholder(t *testing.T) {
+	for _, correlation := range []bool{true, false} {
+		t.Run(map[bool]string{true: "exact legacy correlation", false: "unknown legacy attempt"}[correlation], func(t *testing.T) {
+			db := newTestDB(t)
+			s := newSandboxService(t, db, &dockerState{})
+			old := runtimeInfo("legacy-placeholder")
+			old.RunID, old.NodeID, old.Iteration = "upgrade-run", "node", 2
+			s.BeginRunSandbox(old)
+			var before models.Sandbox
+			if err := db.Where("name = ?", old.Name).First(&before).Error; err != nil {
+				t.Fatal(err)
+			}
+			current := old
+			current.Name, current.StateRunID, current.RunAttempt = "original-physical-resource", 901, 3
+			if correlation {
+				current.CorrelationName = old.Name
+			}
+			s.RegisterRunSandbox(current)
+			var after models.Sandbox
+			if err := db.First(&after, before.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			var count int64
+			if err := db.Model(&models.Sandbox{}).Count(&count).Error; err != nil {
+				t.Fatal(err)
+			}
+			if correlation {
+				if count != 1 || after.Name != current.Name || after.Status != "running" || after.StateRunID != current.StateRunID || after.RunAttempt != current.RunAttempt {
+					t.Fatalf("rolling upgrade duplicated or lost the original placeholder: count=%d %+v", count, after)
+				}
+			} else if count != 2 || after.Name != old.Name || after.StateRunID != 0 || after.Status != "creating" {
+				t.Fatalf("uncorrelated legacy source was guessed: count=%d %+v", count, after)
+			}
+		})
+	}
+}

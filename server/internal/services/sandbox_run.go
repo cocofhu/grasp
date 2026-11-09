@@ -113,15 +113,27 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		query = query.Where("name = ?", info.CorrelationName)
 	}
 	if info.StateRunID != 0 {
-		query = query.Where("state_run_id = ? AND run_attempt = ? AND provider_attempt = ?",
-			info.StateRunID, info.RunAttempt, info.ProviderAttempt)
+		if info.CorrelationName != "" {
+			// A rolling upgrade can leave an unversioned placeholder from the
+			// old BeginRunSandbox. Only the exact correlation name authorizes
+			// adopting it and filling its missing provenance. Without that name,
+			// a zero source might belong to another attempt of this same visit.
+			query = query.Where("((state_run_id = ? AND run_attempt = ? AND provider_attempt = ?) OR (COALESCE(state_run_id, 0) = 0 AND COALESCE(run_attempt, 0) = 0 AND COALESCE(provider_attempt, 0) = 0))",
+				info.StateRunID, info.RunAttempt, info.ProviderAttempt)
+		} else {
+			query = query.Where("state_run_id = ? AND run_attempt = ? AND provider_attempt = ?",
+				info.StateRunID, info.RunAttempt, info.ProviderAttempt)
+		}
 	}
 	err := query.Order("updated_at desc").First(&existing).Error
 	if err == nil {
 		oldName := existing.Name
-		if uerr := s.db.Model(&models.Sandbox{}).Where("id = ?", existing.ID).
-			Updates(fields).Error; uerr != nil {
-			log.Warn().Err(uerr).Str("name", info.Name).Msg("adopt run sandbox failed")
+		result := s.db.Model(&models.Sandbox{}).Where("id = ? AND name = ? AND status IN ?", existing.ID, oldName, []string{"creating", "pulling"}).
+			Where("COALESCE(state_run_id, 0) = ? AND COALESCE(run_attempt, 0) = ? AND COALESCE(provider_attempt, 0) = ?", existing.StateRunID, existing.RunAttempt, existing.ProviderAttempt).
+			Updates(fields)
+		if result.Error != nil || result.RowsAffected != 1 {
+			log.Warn().Err(result.Error).Str("name", info.Name).Msg("run sandbox placeholder changed before adoption")
+			return
 		}
 		s.mu.Lock()
 		if oldName != "" && oldName != info.Name {
@@ -129,6 +141,10 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		}
 		s.runActive[info.Name] = true
 		s.mu.Unlock()
+		return
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Warn().Err(err).Str("name", info.Name).Msg("find run sandbox placeholder failed")
 		return
 	}
 	if err := s.db.Where(models.Sandbox{Name: info.Name}).
