@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,6 +24,10 @@ import (
 // containerPrefix labels approving-managed sandboxes so they can be listed and
 // reconciled apart from any other tenants sharing the gateway.
 const containerPrefix = "grasp-sb-"
+
+// ErrCreateOutcomeUnknown requires reconciliation of the original create,
+// never an automatic replacement after a potentially accepted provider call.
+var ErrCreateOutcomeUnknown = errors.New("original sandbox creation requires reconciliation")
 
 // managedByLabel/managedByValue tag every sandbox approving creates on the
 // gateway, so List/reconcile only ever touch our own sandboxes.
@@ -372,9 +377,10 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 	}
 }
 
-// Create provisions a sandbox via the gateway, waits until it is running with a
-// resolved session endpoint, and returns the handle. The caller should
-// WaitForACPReady before connecting the ACP client.
+// Create provisions a sandbox via the gateway and waits for its endpoint. Once
+// the provider assigned an identity, failures return that retained handle plus
+// the error. A timeout/cancellation is never permission to delete its disk.
+// The caller must preserve the handle and reconcile the original operation.
 func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	if execution.Worktree() {
 		return m.createWorktree(ctx, spec)
@@ -489,17 +495,27 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	}
 	created, err := m.gw.Create(ctx, req)
 	if err != nil {
-		m.deleteInjectBundles(bundleIDs)
-		return nil, fmt.Errorf("gateway create: %w", err)
+		if created != nil && created.ID != "" {
+			sb := m.sandboxFromGW(created, workspaceDir)
+			sb.ConfigRoot, sb.Password = configRoot, bridgePassword
+			return sb, fmt.Errorf("%w: gateway endpoint setup: %w", ErrCreateOutcomeUnknown, err)
+		}
+		return nil, fmt.Errorf("%w: gateway create: %w", ErrCreateOutcomeUnknown, err)
 	}
 	log.Info().Str("id", created.ID).Str("cf_name", spec.Name).
 		Int("repos", repoCount).Int("env_vars", len(env)).Msg("sandbox create (gateway)")
 
 	running, err := m.gw.WaitRunning(ctx, created.ID, m.createTimeout)
 	if err != nil {
-		_ = m.gw.Destroy(context.Background(), created.ID)
-		m.deleteInjectBundles(bundleIDs)
-		return nil, fmt.Errorf("sandbox not ready: %w", err)
+		observed := created
+		if running != nil && running.ID == created.ID {
+			observed = running
+		}
+		sb := m.sandboxFromGW(observed, workspaceDir)
+		sb.ConfigRoot, sb.Password = configRoot, bridgePassword
+		// Startup may still fetch its inject URLs after the observation fails.
+		// Keep them until their original TTL, just as on a successful create.
+		return sb, fmt.Errorf("%w: sandbox not ready; original resource retained: %w", ErrCreateOutcomeUnknown, err)
 	}
 	sb := m.sandboxFromGW(running, workspaceDir)
 	sb.ConfigRoot = configRoot
@@ -520,7 +536,7 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	}
 	m.EnsureHelpers(ctx, sb)
 	if err := m.ConfigureWorkspaceRuntime(ctx, sb); err != nil {
-		return sb, err
+		return sb, fmt.Errorf("%w: %w", ErrCreateOutcomeUnknown, err)
 	}
 	return sb, nil
 }

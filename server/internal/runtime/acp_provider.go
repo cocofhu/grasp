@@ -34,6 +34,8 @@ var errSandboxSetup = errors.New("sandbox setup failed")
 // container gets the same config and fails the same way.
 var errSandboxConfig = errors.New("sandbox setup failed")
 
+var errSandboxStartupUnconfirmed = errors.New("原环境启动结果待核对，未自动重建")
+
 // isRetryableSandboxErr reports whether err is a transient sandbox/ACP fault
 // worth retrying in a fresh container: setup failures, a connection that
 // dropped mid-turn, an idle (stuck) turn, or Cursor CLI transport/reachability
@@ -41,7 +43,7 @@ var errSandboxConfig = errors.New("sandbox setup failed")
 // (DeadlineExceeded), and contract misses are NOT retryable — re-running them
 // would just waste a sandbox and likely fail identically.
 func isRetryableSandboxErr(err error) bool {
-	if err == nil || errors.Is(err, ErrCodexLoginRejected) {
+	if err == nil || errors.Is(err, ErrCodexLoginRejected) || errors.Is(err, errSandboxStartupUnconfirmed) || errors.Is(err, sandbox.ErrCreateOutcomeUnknown) {
 		return false
 	}
 	return errors.Is(err, errSandboxSetup) ||

@@ -447,7 +447,10 @@ type RunSandboxInfo struct {
 	Host            string
 	ACPPort         int
 	CodeServerPort  int
-	RepoURL         string
+	// StartupError retains an incomplete setup's original resource/attempt.
+	// It must not be reported as ready or turn into automatic reprovisioning.
+	StartupError string
+	RepoURL      string
 	// HomeDir is the host cursor-home dir bind-mounted into the container; the
 	// store keeps it so it can be removed when the sandbox is finally destroyed.
 	HomeDir string

@@ -2,10 +2,12 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -38,6 +40,46 @@ func (s *SandboxService) soloStartAuthorization(ctx context.Context, profile str
 	return actual, nil
 }
 
+// retainSoloCreateResult records only the original creation receipt. It never
+// grants permission to execute. A changed business grant may stop that exact
+// resource, but the physical owner and external execution dataset still fence
+// this write, including after the caller's startup wait has expired.
+func (s *SandboxService) retainSoloCreateResult(ctx context.Context, id uint, originalName, profile, threadID string, agent Agent, authorization string, sb *sandbox.Sandbox) (bool, error) {
+	cleanup, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer done()
+	latest, grantErr := s.soloStartAuthorization(cleanup, profile, agent)
+	changed := grantErr != nil || latest != authorization
+	fields := map[string]any{"name": sb.Name, "host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort}
+	if changed {
+		fields["desired_state"] = "stopped"
+	}
+	if err := s.commitSandboxOperation(cleanup, id, func(tx *gorm.DB) error {
+		if err := guardSoloCreationIdentity(tx, id, originalName, profile, threadID); err != nil {
+			return err
+		}
+		return s.updateSandboxOperation(cleanup, tx, id, fields)
+	}); err != nil {
+		return changed, err
+	}
+	if changed && s.mgr.Gateway() != nil {
+		// Stop is best effort; the receipt remains unknown until the ordinary
+		// stop reconciler independently observes stopped. Never delete here.
+		_ = s.mgr.Gateway().Stop(cleanup, sb.Name)
+	}
+	return changed, nil
+}
+
+func guardSoloCreationIdentity(tx *gorm.DB, id uint, name, profile, threadID string) error {
+	var count int64
+	if err := tx.Model(&models.Sandbox{}).Where("id = ? AND name = ? AND profile = ? AND purpose = ? AND thread_id = ?", id, name, profile, SandboxPurposeSolo, threadID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return errSandboxOperationLost
+	}
+	return nil
+}
+
 // A resident create owns a renewable physical lease. Close can retire the
 // parent immediately, but an in-flight provider result must remain attributable.
 // A late result stops its own resource while retaining its files and binding;
@@ -50,6 +92,7 @@ func (s *SandboxService) startSoloContainer(id uint, name, profile, threadID, ru
 		return
 	}
 	defer release()
+	receiptName := name
 	current := func(tx *gorm.DB) error {
 		if extra.Current == nil {
 			return nil // Standalone resident callers have no parent chat.
@@ -70,8 +113,13 @@ func (s *SandboxService) startSoloContainer(id uint, name, profile, threadID, ru
 		revoke()
 		// Preserve resident files/association after unknown provider outcomes.
 		// An old failure cannot publish through a lost physical lease.
-		if err := s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
-			return s.updateSandboxOperation(ctx, tx, id, map[string]any{"status": "error", "error": truncErr(cause), "destroy_at": nil})
+		cleanup, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer done()
+		if err := s.commitSandboxOperation(cleanup, id, func(tx *gorm.DB) error {
+			if err := guardSoloCreationIdentity(tx, id, receiptName, profile, threadID); err != nil {
+				return err
+			}
+			return s.updateSandboxOperation(cleanup, tx, id, map[string]any{"status": "error", "error": truncErr(cause), "destroy_at": nil})
 		}); err != nil {
 			return // A lost physical owner cannot publish a parent failure either.
 		}
@@ -111,18 +159,25 @@ func (s *SandboxService) startSoloContainer(id uint, name, profile, threadID, ru
 		return
 	}
 	sb, err := s.mgr.Create(ctx, spec)
-	if err != nil {
-		_ = os.RemoveAll(home)
-		fail(fmt.Errorf("create sandbox: %w", err))
-		return
+	if sb != nil {
+		changed, retainErr := s.retainSoloCreateResult(ctx, id, name, profile, threadID, agent, authorization, sb)
+		if retainErr != nil {
+			// Keep the original correlation receipt if adoption lost its
+			// physical owner/dataset; never claim a successor's resource.
+			fail(fmt.Errorf("原环境创建结果待核对，绑定与工作区未删除"))
+			return
+		}
+		receiptName = sb.Name
+		if changed {
+			fail(fmt.Errorf("当前授权已变化，原环境身份已保留，停止状态待确认"))
+			return
+		}
 	}
-	// Adopt the actual provider identity even if Close changed the parent while
-	// Create was in flight. It stays attached to this old sandbox row, never to
-	// a successor's parent binding, so uncertain cleanup remains attributable.
-	if err := s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
-		return s.updateSandboxOperation(ctx, tx, id, map[string]any{"name": sb.Name, "host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort})
-	}); err != nil {
-		revoke()
+	if err != nil {
+		if sb == nil && !errors.Is(err, sandbox.ErrCreateOutcomeUnknown) {
+			_ = os.RemoveAll(home)
+		}
+		fail(fmt.Errorf("create sandbox: %w", err))
 		return
 	}
 	cleanupStale := func() {
@@ -161,16 +216,9 @@ func (s *SandboxService) startSoloContainer(id uint, name, profile, threadID, ru
 	latest, err = s.soloStartAuthorization(ctx, profile, agent)
 	if err != nil || latest != authorization {
 		acp.Close()
-		// Stop rather than delete: files and the exact applied association are
-		// retained. Recovery must reject this obsolete grant before unpausing.
-		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
-		if s.mgr.Gateway() != nil {
-			_ = s.mgr.Gateway().Stop(cleanup, sb.Name)
-		}
-		done()
-		_ = s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
-			return s.updateSandboxOperation(ctx, tx, id, map[string]any{"desired_state": "stopped"})
-		})
+		// Recheck the original lease/dataset before stopping even this exact
+		// known ID. A lost owner must not stop its successor's running guest.
+		_, _ = s.retainSoloCreateResult(ctx, id, receiptName, profile, threadID, agent, authorization, sb)
 		fail(fmt.Errorf("当前授权已变化，环境已保留且未恢复为运行状态"))
 		return
 	}
