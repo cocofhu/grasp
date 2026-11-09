@@ -140,13 +140,23 @@ func TestRestartReattach(t *testing.T) {
 		t.Errorf("work node output does not mention marker %s", marker)
 	}
 
-	// The run queued across the restart is admitted once A frees the slot.
-	// Its own model round-trip proves nothing more about the restart.
-	s.waitSandboxRunning(runB, 6*time.Minute)
-	if st := s.runStatus(runB); st != "running" {
-		t.Fatalf("run B status = %q after A finished, want running", st)
+	// Checkpoint sealing releases a node's slot, so B may run before A's
+	// output node and be sealing its own checkpoint when A completes.
+	// Prove that the queued run finishes once, rather than requiring one
+	// transient status or cancelling it before its result is checked.
+	b := s.waitRunDone(runB, 10*time.Minute)
+	if b.Status != "completed" {
+		t.Fatalf("queued run B finished %q, want completed", b.Status)
 	}
-	s.mustDo(http.MethodPost, "/api/runs/"+runB+"/cancel", nil, nil)
+	if n := len(b.NodeExecutions["work"]); n != 1 {
+		t.Errorf("queued work node ran %d times, want one visit", n)
+	}
+	if got := s.runSandboxes(runB); len(got) != 1 {
+		t.Errorf("queued run B sandboxes = %v, want exactly one", got)
+	}
+	if !strings.Contains(string(b.NodeRuns["work"]), marker+"-B") {
+		t.Errorf("queued work output does not mention marker %s-B", marker)
+	}
 }
 
 func newStack(t *testing.T) *stack {
