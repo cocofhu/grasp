@@ -264,9 +264,10 @@ func (g *GatewayClient) Start(ctx context.Context, id string) error {
 // creating a replacement. BootstrapScript migrates existing Docker containers;
 // RuntimeURL/Headers also let Kubernetes cold starts fetch a fresh bundle.
 type GWStartOptions struct {
-	BootstrapScript string `json:"bootstrapScript"`
-	RuntimeURL      string `json:"runtimeUrl"`
-	RuntimeHeaders  string `json:"runtimeHeaders"`
+	BootstrapScript string             `json:"bootstrapScript"`
+	RuntimeURL      string             `json:"runtimeUrl"`
+	RuntimeHeaders  string             `json:"runtimeHeaders"`
+	ColdConfig      *GWColdStartConfig `json:"coldConfig,omitempty"`
 }
 
 func (g *GatewayClient) StartPrepared(ctx context.Context, id string, opts GWStartOptions) error {
