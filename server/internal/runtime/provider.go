@@ -19,6 +19,9 @@ import (
 
 // Options configures the execution providers (mainly the sandbox backend).
 type Options struct {
+	// CheckExecution performs fresh independent-authority and SQL quarantine
+	// checks outside any transaction immediately before native execution.
+	CheckExecution func(context.Context, NodeReq) error
 	// RecordUsage receives each actual turn before result aggregation or retry.
 	// Implementations must use the operation id to make replay idempotent.
 	RecordUsage  func(NodeReq, *sandbox.ChatResult, error)

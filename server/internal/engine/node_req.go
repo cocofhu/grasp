@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -241,7 +242,7 @@ func (e *Engine) saveState(c *execCtx, node *models.Node, o nodeOutcome) {
 	if sr.StartedAt != nil {
 		sr.DurationSec = int(now.Sub(*sr.StartedAt).Seconds())
 	}
-	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "save state_run")
+	logDB(e.executionSave(context.Background(), c.run.ID, &sr, stateRunTakeoverCols...), c.run.ID, "save state_run")
 	e.touchActivity(c.run.ID, true)
 	e.dialogueNodeEvent(c.run.ID, node.ID)
 }
@@ -267,7 +268,7 @@ func (e *Engine) flushMcpCallsAt(runID, nodeID string, iteration int) {
 		return
 	}
 	sr.McpCalls = append(sr.McpCalls, calls...)
-	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), runID, "flush mcp calls")
+	logDB(e.executionSave(context.Background(), runID, &sr, stateRunTakeoverCols...), runID, "flush mcp calls")
 }
 
 // flushTokenUsage merges a react mid-turn token delta onto the latest StateRun
@@ -298,7 +299,7 @@ func (e *Engine) flushTokenUsageAt(runID, nodeID string, iteration int, delta *m
 	})
 	sr.Usage = models.AddTokenUsage(sr.Usage, delta)
 	sr.UsageByModel = models.AddTokenUsageByModel(sr.UsageByModel, byModel)
-	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), runID, "flush token usage")
+	logDB(e.executionSave(context.Background(), runID, &sr, stateRunTakeoverCols...), runID, "flush token usage")
 }
 
 // stateRunAt loads the node's StateRun for iteration, or the latest one when

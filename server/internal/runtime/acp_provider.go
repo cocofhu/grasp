@@ -179,6 +179,11 @@ type acpProvider struct {
 // incremental events to the sink when one is configured; otherwise it falls
 // back to a single blocking aggregation.
 func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, req NodeReq, prompt string, images []models.PromptImage) (*sandbox.ChatResult, error) {
+	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
+	if executionErr != nil {
+		return nil, executionErr
+	}
+	defer stopExecution()
 	if err := budgetErr(ctx); err != nil && ctx.Err() != nil {
 		return nil, err
 	}

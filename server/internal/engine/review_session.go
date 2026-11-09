@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"strings"
 	"time"
 
@@ -554,6 +555,9 @@ func (e *Engine) enqueueReviewItem(runID, producerID string, kind sessionKind, i
 }
 
 func (e *Engine) enqueueLaneItem(runID, producerID, lane, linkID string, kind sessionKind, item *reviewQueueItem) (waiting int, err error) {
+	if err := e.executionCheck(context.Background(), runID, executionlineage.Entity{Kind: executionlineage.EntityLegacyPending, ID: item.ID}); err != nil {
+		return 0, err
+	}
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
 	}
@@ -722,6 +726,9 @@ func (e *Engine) cancelLaneProviderTurn(runID, producerID, lane string) {
 // When item.RetryLast is set, the latest human is reused (trailing empty/failed
 // agent is dropped) and no new human row is inserted (plan g2.1).
 func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item *reviewQueueItem) (interrupted bool, err error) {
+	if err := e.executionCheck(ctx, s.runID, executionlineage.Entity{Kind: executionlineage.EntityLegacyPending, ID: item.ID}); err != nil {
+		return false, err
+	}
 	unlock := e.lockResume(s.runID + ":" + s.producerID)
 	defer unlock()
 
@@ -788,7 +795,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		conv.Messages[len(conv.Messages)-1].TurnID = item.ID
 		humanMsg = conv.Messages[len(conv.Messages)-1]
 		// Ensure Effective uses the persisted human (item already carries it).
-		logDB(e.db.Save(&conv), s.runID, "clarify retryLast drop failed agent")
+		logDB(e.executionSave(context.Background(), s.runID, &conv), s.runID, "clarify retryLast drop failed agent")
 		prompt = e.renderedReferences(humanMsg.References, prompt)
 	} else {
 		prompt = e.pinTurnReferences(s.runID, s.producerID, item)
@@ -799,7 +806,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 			PreviewShared: item.PreviewIteration > 0,
 		}
 		conv.Messages = append(conv.Messages, humanMsg)
-		logDB(e.db.Save(&conv), s.runID, "save clarify human turn (turn_begin)")
+		logDB(e.executionSave(context.Background(), s.runID, &conv), s.runID, "save clarify human turn (turn_begin)")
 	}
 	e.publishReact(s.runID, s.producerID)
 
@@ -853,7 +860,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	e.recordFeedback(e.clarifyFeedbackEvent(s, item, conv.Iteration, answered, humanMsg, agentMsg, interrupted))
 
 	if interrupted {
-		logDB(e.db.Save(&conv), s.runID, "save clarify agent turn (interrupted)")
+		logDB(e.executionSave(context.Background(), s.runID, &conv), s.runID, "save clarify agent turn (interrupted)")
 		// Pin to this visit: after a ResumeFrom the latest StateRun is the
 		// new visit's.
 		e.flushMcpCallsAt(s.runID, s.producerID, conv.Iteration)
@@ -870,7 +877,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	}
 
 	if !t.Done {
-		logDB(e.db.Save(&conv), s.runID, "save clarify conversation")
+		logDB(e.executionSave(context.Background(), s.runID, &conv), s.runID, "save clarify conversation")
 		e.flushMcpCalls(s.runID, s.producerID)
 		e.flushTokenUsage(s.runID, s.producerID, t.Usage, t.UsageByModel)
 		e.publishReact(s.runID, s.producerID)
@@ -878,7 +885,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	}
 
 	conv.Done = true
-	logDB(e.db.Save(&conv), s.runID, "finish clarify conversation")
+	logDB(e.executionSave(context.Background(), s.runID, &conv), s.runID, "finish clarify conversation")
 
 	outcome := nodeOutcome{status: "completed", result: &t.Result}
 	detail := "react 完成"
@@ -898,6 +905,9 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 // executeReviewTurn persists the human turn, runs ReviseInPlace, persists the
 // agent turn (marking interrupted on cancel), and refreshes outputs/gates.
 func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *reviewQueueItem) (interrupted bool, err error) {
+	if err := e.executionCheck(ctx, s.runID, executionlineage.Entity{Kind: executionlineage.EntityLegacyPending, ID: item.ID}); err != nil {
+		return false, err
+	}
 	// Serialize against force confirm on the same producer key.
 	unlock := e.lockResume(s.runID + ":" + s.producerID)
 	defer unlock()
@@ -930,7 +940,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 			conv = models.ReactConversation{RunID: s.runID, NodeID: s.producerID, Iteration: iter, Done: false,
 				Messages: []models.ReactMessage{{Role: "agent", Text: e.reviewSummaryMarkdown(c, producer),
 					At: time.Now().Format(time.RFC3339), GateNodeID: item.GateNodeID}}}
-			logDB(e.db.Create(&conv), s.runID, "seed gate-react producer conversation")
+			logDB(e.executionCreate(context.Background(), s.runID, &conv), s.runID, "seed gate-react producer conversation")
 		} else {
 			return false, errors.New("no react conversation")
 		}
@@ -954,7 +964,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		PreviewShared: item.PreviewIteration > 0,
 		GateNodeID:    gateTag,
 	})
-	logDB(e.db.Save(&conv), s.runID, "save review human turn (turn_begin)")
+	logDB(e.executionSave(context.Background(), s.runID, &conv), s.runID, "save review human turn (turn_begin)")
 
 	humanMsg := conv.Messages[len(conv.Messages)-1]
 
@@ -1007,7 +1017,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	agentMsg.Outcome = models.ReplyOutcome(agentMsg)
 	conv.Messages = append(conv.Messages, agentMsg)
 	e.rememberTurnRoute(&conv, &req, t)
-	logDB(e.db.Save(&conv), s.runID, "save review agent turn")
+	logDB(e.executionSave(context.Background(), s.runID, &conv), s.runID, "save review agent turn")
 
 	e.flushMcpCalls(s.runID, s.producerID)
 	if item.Live != nil {
@@ -1064,7 +1074,7 @@ func (e *Engine) refreshGateBodyAfterRevise(c *execCtx, gateNodeID string) {
 	}
 	if bt, _ := gateNode.Config["body_template"].(string); strings.TrimSpace(bt) != "" {
 		gate.BodyMd = e.interpolate(c2, bt)
-		logDB(e.db.Save(&gate), c.run.ID, "refresh gate body after gate-react revise")
+		logDB(e.executionSave(context.Background(), c.run.ID, &gate), c.run.ID, "refresh gate body after gate-react revise")
 	}
 }
 

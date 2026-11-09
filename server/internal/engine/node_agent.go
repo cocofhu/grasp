@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gorm.io/gorm"
 	"sort"
 	"strings"
 
@@ -265,7 +267,9 @@ func (e *Engine) setRunBranch(c *execCtx, git *runtime.GitInfo) {
 		return
 	}
 	c.run.Branch = git.Branch
-	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).UpdateColumn("branch", git.Branch), c.run.ID, "set run branch")
+	logDB(e.executionMutation(context.Background(), c.run.ID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Run{}).Where("id = ?", c.run.ID).UpdateColumn("branch", git.Branch)
+	}), c.run.ID, "set run branch")
 }
 
 // exportBranchVar publishes the per-repo working branches as vars.branches

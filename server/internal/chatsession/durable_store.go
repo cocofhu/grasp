@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
@@ -41,9 +42,10 @@ var (
 )
 
 type DurableStore struct {
-	db       *gorm.DB
-	leaseTTL time.Duration
-	now      func() time.Time
+	db        *gorm.DB
+	leaseTTL  time.Duration
+	now       func() time.Time
+	execution *executionlineage.Controller
 }
 
 func NewDurableStore(db *gorm.DB) *DurableStore {
@@ -238,7 +240,7 @@ func (s *DurableStore) Admit(ctx context.Context, scope QueueScope, intent Queue
 	if previous, err := s.Existing(ctx, scope, intent.ActorID, intent.ClientMessageID, intent.Fingerprint); err != nil {
 		return receipt, err
 	} else if previous != nil {
-		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err = s.executionTransaction(ctx, scope, previous.ID, func(tx *gorm.DB) error {
 			var lookupErr error
 			receipt, lookupErr = s.admitPreparedTx(tx, scope, intent, "", capacity, validate)
 			return lookupErr
@@ -249,7 +251,7 @@ func (s *DurableStore) Admit(ctx context.Context, scope QueueScope, intent Queue
 	if err != nil {
 		return receipt, err
 	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.executionTransaction(ctx, scope, intent.ID, func(tx *gorm.DB) error {
 		var admitErr error
 		receipt, admitErr = s.AdmitPreparedTx(tx, scope, prepared, capacity, validate)
 		return admitErr
@@ -266,6 +268,9 @@ func (s *DurableStore) AdmitPreparedTx(tx *gorm.DB, scope QueueScope, prepared P
 	if prepared.scope != scope || prepared.body.Size() < 1 {
 		return QueueReceipt{}, errors.New("conversation intent was not prepared for this scope")
 	}
+	if err := s.guardExecutionTx(tx, scope, prepared.intent.ID); err != nil {
+		return QueueReceipt{}, err
+	}
 	files, err := filestore.FromDB(tx)
 	if err != nil {
 		return QueueReceipt{}, err
@@ -279,6 +284,9 @@ func (s *DurableStore) AdmitPreparedTx(tx *gorm.DB, scope QueueScope, prepared P
 
 func (s *DurableStore) admitPreparedTx(tx *gorm.DB, scope QueueScope, intent QueueIntent, rawRef string, capacity int, validate func(*gorm.DB) error) (QueueReceipt, error) {
 	var receipt QueueReceipt
+	if err := s.guardExecutionTx(tx, scope, intent.ID); err != nil {
+		return receipt, err
+	}
 	if capacity <= 0 {
 		capacity = DefaultCapacity
 	}
@@ -507,7 +515,7 @@ func (s *DurableStore) Acquire(ctx context.Context, scope QueueScope, owner stri
 	if _, err := uuid.Parse(owner); err != nil {
 		return lease, nil, errors.New("invalid conversation executor identity")
 	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.executionTransaction(ctx, scope, "", func(tx *gorm.DB) error {
 		queue, err := s.lock(tx, scope)
 		if err != nil {
 			return err
@@ -609,11 +617,11 @@ func (s *DurableStore) recoverActive(tx *gorm.DB, queue *models.ChatQueue) (*mod
 // an execution lane. A running owner still gets time to cancel native work.
 func (s *DurableStore) ReconcileRetired(ctx context.Context, surface string) error {
 	var rows []models.ChatQueue
-	if err := s.db.WithContext(ctx).Where("surface = ? AND retired = ? AND (active_turn_id <> '' OR EXISTS (SELECT 1 FROM chat_queue_turns t WHERE t.queue_id = chat_queues.id AND t.state = ?)) AND (owner_expires_at IS NULL OR owner_expires_at <= ?)", surface, true, TurnExecuting, s.now()).Find(&rows).Error; err != nil {
+	if err := s.executableQueues(s.db.WithContext(ctx)).Where("surface = ? AND retired = ? AND (active_turn_id <> '' OR EXISTS (SELECT 1 FROM chat_queue_turns t WHERE t.queue_id = chat_queues.id AND t.state = ?)) AND (owner_expires_at IS NULL OR owner_expires_at <= ?)", surface, true, TurnExecuting, s.now()).Find(&rows).Error; err != nil {
 		return err
 	}
 	for _, row := range rows {
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.executionTransaction(ctx, QueueScope{row.Surface, row.SessionKey}, "", func(tx *gorm.DB) error {
 			queue, err := s.lock(tx, QueueScope{row.Surface, row.SessionKey})
 			if err != nil {
 				return err
@@ -646,14 +654,20 @@ func (s *DurableStore) Renew(ctx context.Context, lease QueueLease) error {
 func (s *DurableStore) RenewUntil(ctx context.Context, lease QueueLease) (time.Time, error) {
 	now := s.now()
 	expires := now.Add(s.leaseTTL)
-	result := s.db.WithContext(ctx).Model(&models.ChatQueue{}).
-		Where("id = ? AND owner = ? AND generation = ? AND owner_expires_at > ?", lease.Scope.ID(), lease.Owner, lease.Generation, now).
-		Update("owner_expires_at", expires)
-	if result.Error != nil {
-		return time.Time{}, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return time.Time{}, ErrQueueOwnerLost
+	err := s.executionTransaction(ctx, lease.Scope, "", func(tx *gorm.DB) error {
+		result := tx.Model(&models.ChatQueue{}).
+			Where("id = ? AND owner = ? AND generation = ? AND owner_expires_at > ?", lease.Scope.ID(), lease.Owner, lease.Generation, now).
+			Update("owner_expires_at", expires)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrQueueOwnerLost
+		}
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
 	}
 	return expires, nil
 }
@@ -663,7 +677,7 @@ func (s *DurableStore) Claim(ctx context.Context, lease QueueLease) (*models.Cha
 	if err := s.outsidePayloadTransaction(); err != nil {
 		return nil, err
 	}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.executionTransaction(ctx, lease.Scope, "", func(tx *gorm.DB) error {
 		queue, err := s.lock(tx, lease.Scope)
 		if err != nil {
 			return err
@@ -731,6 +745,9 @@ func (s *DurableStore) Claim(ctx context.Context, lease QueueLease) (*models.Cha
 // Fence must be called in the same transaction as user/assistant publication.
 // Even a late successful native result cannot overwrite a successor's state.
 func (s *DurableStore) Fence(tx *gorm.DB, lease QueueLease, turnID string) error {
+	if err := s.guardExecutionTx(tx, lease.Scope, turnID); err != nil {
+		return err
+	}
 	queue, err := s.lock(tx, lease.Scope)
 	if err != nil {
 		return err
@@ -749,7 +766,7 @@ func (s *DurableStore) Fence(tx *gorm.DB, lease QueueLease, turnID string) error
 }
 
 func (s *DurableStore) Dispatch(ctx context.Context, lease QueueLease, turnID string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.executionTransaction(ctx, lease.Scope, turnID, func(tx *gorm.DB) error {
 		if err := s.Fence(tx, lease, turnID); err != nil {
 			return err
 		}
@@ -779,10 +796,11 @@ func (s *DurableStore) Waiting(ctx context.Context, scope QueueScope) (int, erro
 // Abandon permits recovery only after this local executor has actually stopped.
 // Active dispatches remain recorded and are classified by the next owner.
 func (s *DurableStore) Abandon(ctx context.Context, lease QueueLease) error {
-	result := s.db.WithContext(ctx).Model(&models.ChatQueue{}).
-		Where("id = ? AND owner = ? AND generation = ?", lease.Scope.ID(), lease.Owner, lease.Generation).
-		Update("owner_expires_at", s.now())
-	return result.Error
+	return s.executionTransaction(ctx, lease.Scope, "", func(tx *gorm.DB) error {
+		return tx.Model(&models.ChatQueue{}).
+			Where("id = ? AND owner = ? AND generation = ?", lease.Scope.ID(), lease.Owner, lease.Generation).
+			Update("owner_expires_at", s.now()).Error
+	})
 }
 
 func terminalState(state string) bool {
@@ -807,7 +825,7 @@ func (s *DurableStore) Finish(tx *gorm.DB, lease QueueLease, turnID, state, reas
 // DeferPreparation returns only an undispatched command to the queue head,
 // ahead of reordered waiters. An explicit stop/close settles it as cancelled.
 func (s *DurableStore) DeferPreparation(ctx context.Context, lease QueueLease, turnID string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.executionTransaction(ctx, lease.Scope, turnID, func(tx *gorm.DB) error {
 		if err := s.Fence(tx, lease, turnID); err != nil {
 			return err
 		}
@@ -833,7 +851,7 @@ func (s *DurableStore) DeferPreparation(ctx context.Context, lease QueueLease, t
 }
 
 func (s *DurableStore) Release(ctx context.Context, lease QueueLease) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.executionTransaction(ctx, lease.Scope, "", func(tx *gorm.DB) error {
 		queue, err := s.lock(tx, lease.Scope)
 		if err != nil {
 			return err
@@ -847,7 +865,7 @@ func (s *DurableStore) Release(ctx context.Context, lease QueueLease) error {
 
 func (s *DurableStore) Cancel(ctx context.Context, scope QueueScope, activeID string, clear bool) (bool, error) {
 	matched := false
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.executionTransaction(ctx, scope, activeID, func(tx *gorm.DB) error {
 		queue, err := s.lock(tx, scope)
 		if err != nil {
 			return err
@@ -885,7 +903,7 @@ func (s *DurableStore) Cancellation(ctx context.Context, lease QueueLease, turnI
 }
 
 func (s *DurableStore) Remove(ctx context.Context, scope QueueScope, id string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.executionTransaction(ctx, scope, id, func(tx *gorm.DB) error {
 		queue, err := s.lock(tx, scope)
 		if err != nil {
 			return err
@@ -903,7 +921,7 @@ func (s *DurableStore) Remove(ctx context.Context, scope QueueScope, id string) 
 }
 
 func (s *DurableStore) Reorder(ctx context.Context, scope QueueScope, ids []string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.executionTransaction(ctx, scope, "", func(tx *gorm.DB) error {
 		queue, err := s.lock(tx, scope)
 		if err != nil {
 			return err
@@ -934,6 +952,9 @@ func (s *DurableStore) Reorder(ctx context.Context, scope QueueScope, ids []stri
 
 // Retire is composed with the owning session's explicit close transaction.
 func (s *DurableStore) Retire(tx *gorm.DB, scope QueueScope) error {
+	if err := s.guardExecutionTx(tx, scope, ""); err != nil {
+		return err
+	}
 	queue, err := s.lock(tx, scope)
 	if err != nil {
 		return err
@@ -956,7 +977,7 @@ func (s *DurableStore) Watermark(ctx context.Context) (uint64, error) {
 
 func (s *DurableStore) ReadyScopes(ctx context.Context, surface string) ([]QueueScope, error) {
 	var queues []models.ChatQueue
-	err := s.db.WithContext(ctx).Where("surface = ? AND retired = ? AND (owner = '' OR owner_expires_at IS NULL OR owner_expires_at <= ?) AND (active_turn_id != '' OR EXISTS (SELECT 1 FROM chat_queue_turns t WHERE t.queue_id = chat_queues.id AND t.state IN ?))", surface, false, s.now(), []string{TurnQueued, TurnExecuting}).
+	err := s.executableQueues(s.db.WithContext(ctx)).Where("surface = ? AND retired = ? AND (owner = '' OR owner_expires_at IS NULL OR owner_expires_at <= ?) AND (active_turn_id != '' OR EXISTS (SELECT 1 FROM chat_queue_turns t WHERE t.queue_id = chat_queues.id AND t.state IN ?))", surface, false, s.now(), []string{TurnQueued, TurnExecuting}).
 		Order("created_at, id").Find(&queues).Error
 	if err != nil {
 		return nil, err
@@ -975,6 +996,9 @@ func (s *DurableStore) GuardOpen(tx *gorm.DB, scope QueueScope) error {
 	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
 		return errors.New("conversation publication guard requires an SQL transaction")
 	}
+	if err := s.guardExecutionTx(tx, scope, ""); err != nil {
+		return err
+	}
 	queue, err := s.lock(tx, scope)
 	if err != nil {
 		return err
@@ -989,6 +1013,9 @@ func (s *DurableStore) GuardOpen(tx *gorm.DB, scope QueueScope) error {
 // shared by Admit and Claim: accepted work wins over Stop, and a committed
 // stopped environment is visible to the later Admit validation callback.
 func (s *DurableStore) GuardIdle(tx *gorm.DB, scope QueueScope) error {
+	if err := s.guardExecutionTx(tx, scope, ""); err != nil {
+		return err
+	}
 	queue, err := s.lock(tx, scope)
 	if err != nil {
 		return err
@@ -1028,6 +1055,18 @@ func (s *DurableStore) ImportLegacy(ctx context.Context, scope QueueScope, actor
 	if err != nil || len(sources) == 0 {
 		return nil, err
 	}
+	if s.execution != nil {
+		entities := queueExecutionEntities(scope, "")
+		for _, source := range sources {
+			entities = append(entities, executionlineage.Entity{Kind: executionlineage.EntityLegacyPending, ID: source.ID})
+		}
+		if err := s.execution.Check(ctx, entities...); err != nil {
+			if errors.Is(err, executionlineage.ErrQuarantined) {
+				return nil, nil // Retain old sources for explicit review; never hydrate/replay them.
+			}
+			return nil, err
+		}
+	}
 	rows := make([]models.ChatPendingTurn, 0, len(sources))
 	prepared := make(map[string]filestore.Prepared, len(sources))
 	for _, source := range sources {
@@ -1046,7 +1085,14 @@ func (s *DurableStore) ImportLegacy(ctx context.Context, scope QueueScope, actor
 		rows = append(rows, models.ChatPendingTurn{ID: source.ID, Surface: source.Surface, SessionKey: source.SessionKey,
 			Position: source.Position, Started: source.Started, Payload: body, CreatedAt: source.CreatedAt})
 	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.executionTransaction(ctx, scope, "", func(tx *gorm.DB) error {
+		if s.execution != nil {
+			for _, source := range sources {
+				if err := s.execution.GuardContextTx(tx.Statement.Context, tx, executionlineage.Entity{Kind: executionlineage.EntityLegacyPending, ID: source.ID}); err != nil {
+					return err
+				}
+			}
+		}
 		queue, err := s.lock(tx, scope)
 		if err != nil {
 			return err
@@ -1166,6 +1212,9 @@ func sameLegacyQueueBody(raw string, body []byte) bool {
 }
 
 func (s *DurableStore) Reopen(tx *gorm.DB, scope QueueScope) error {
+	if err := s.guardExecutionTx(tx, scope, ""); err != nil {
+		return err
+	}
 	queue, err := s.lock(tx, scope)
 	if err != nil {
 		return err

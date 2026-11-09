@@ -94,7 +94,7 @@ func (s *SoloService) recordExistingSoloCreation(ctx context.Context, user strin
 	if err != nil {
 		return nil, err
 	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.executionTransaction(ctx, sessionID, func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
 		}

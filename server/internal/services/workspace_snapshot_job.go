@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/google/uuid"
@@ -58,6 +59,7 @@ type WorkspaceJobInput struct {
 }
 type WorkspaceJobOptions struct {
 	Authority WorkspaceJobAuthority
+	execution *executionlineage.Controller
 	// Authorize must inspect metadata only when given a transaction. It is
 	// required both at admission and fenced dispatch/publication, not inferred
 	// from a Run's CreatedBy or a caller-supplied actor field.
@@ -240,9 +242,11 @@ func (s *WorkspaceSnapshotJobs) Admit(ctx context.Context, actor string, in Work
 			row = prior
 		}
 		if s.options.AdmittedTx != nil {
-			return s.options.AdmittedTx(ctx, tx, row)
+			if err := s.options.AdmittedTx(ctx, tx, row); err != nil {
+				return err
+			}
 		}
-		return nil
+		return s.guardExecutionPublication(tx, row)
 	})
 	return row, err
 }
@@ -302,7 +306,7 @@ func (s *WorkspaceSnapshotJobs) claim(ctx context.Context, id string, reconcile 
 		if updated.RowsAffected != 1 {
 			return ErrWorkspaceJobOwner
 		}
-		return nil
+		return s.guardExecutionPublication(tx, row)
 	})
 	if err != nil {
 		return row, workspaceJobLease{}, err
@@ -341,7 +345,7 @@ func (s *WorkspaceSnapshotJobs) renew(ctx context.Context, lease workspaceJobLea
 		if updated.RowsAffected != 1 {
 			return ErrWorkspaceJobOwner
 		}
-		return nil
+		return s.guardExecutionPublication(tx, row)
 	})
 	if err != nil {
 		return time.Time{}, err
@@ -381,7 +385,13 @@ func (s *WorkspaceSnapshotJobs) owned(ctx context.Context, lease workspaceJobLea
 func (s *WorkspaceSnapshotJobs) release(lease workspaceJobLease) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = s.db.WithContext(ctx).Model(&models.WorkspaceSnapshotJob{}).Where("id = ? AND owner = ? AND generation = ?", lease.id, lease.owner, lease.generation).Updates(map[string]any{"owner": "", "expires_at": nil}).Error
+	var row models.WorkspaceSnapshotJob
+	if s.db.WithContext(ctx).First(&row, "id = ? AND owner = ? AND generation = ?", lease.id, lease.owner, lease.generation).Error != nil {
+		return
+	}
+	_ = s.metadataTransaction(ctx, row, func(tx *gorm.DB) error {
+		return tx.Model(&models.WorkspaceSnapshotJob{}).Where("id = ? AND owner = ? AND generation = ? AND lineage = ?", lease.id, lease.owner, lease.generation, lease.lineage).Updates(map[string]any{"owner": "", "expires_at": nil}).Error
+	})
 }
 
 func (s *WorkspaceSnapshotJobs) publish(ctx context.Context, row models.WorkspaceSnapshotJob, lease workspaceJobLease, states []string, updates map[string]any) error {
@@ -424,7 +434,7 @@ func (s *WorkspaceSnapshotJobs) publishCompletion(ctx context.Context, row model
 				return errors.Join(ErrWorkspaceJobOwner, err)
 			}
 		}
-		return nil
+		return s.guardExecutionPublication(tx, row)
 	})
 }
 

@@ -55,12 +55,18 @@ func (m *Manager) renew(ctx context.Context, lease Lease) (time.Time, error) {
 	if !until.After(time.Now()) {
 		return time.Time{}, ErrOwnerLost
 	}
-	result := m.ownerQuery(m.db.WithContext(ctx), lease).Update("expires_at", until)
-	if result.Error != nil {
-		return time.Time{}, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return time.Time{}, ErrOwnerLost
+	err := m.publication(ctx, lease.data.identity, func(tx *gorm.DB) error {
+		result := m.ownerQuery(tx, lease).Update("expires_at", until)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrOwnerLost
+		}
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
 	}
 	return until, nil
 }
@@ -95,7 +101,9 @@ func (m *Manager) withLease(ctx context.Context, lease Lease, fn func(context.Co
 		// cannot make the failed generation eligible for an automatic replay.
 		recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 		defer cancel()
-		_ = m.ownerQuery(m.db.WithContext(recordCtx), lease).Updates(map[string]any{"state": StateUnknown, "error": "upload or verification did not complete"}).Error
+		_ = m.publication(recordCtx, lease.data.identity, func(tx *gorm.DB) error {
+			return m.ownerQuery(tx, lease).Updates(map[string]any{"state": StateUnknown, "error": "upload or verification did not complete"}).Error
+		})
 		return Verified{}, err
 	}
 	return verified, nil
@@ -113,14 +121,16 @@ func (m *Manager) recordPart(ctx context.Context, lease Lease, proof filestore.V
 	if ref != expected || proof.Size() != size {
 		return ErrConflict
 	}
-	result := m.ownerQuery(m.db.WithContext(ctx), lease).Where("("+column+" = '' OR "+column+" IS NULL OR "+column+" = ?)", ref).Updates(map[string]any{column: ref, verifiedColumn: time.Now().UTC()})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return ErrOwnerLost
-	}
-	return nil
+	return m.publication(ctx, lease.data.identity, func(tx *gorm.DB) error {
+		result := m.ownerQuery(tx, lease).Where("("+column+" = '' OR "+column+" IS NULL OR "+column+" = ?)", ref).Updates(map[string]any{column: ref, verifiedColumn: time.Now().UTC()})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrOwnerLost
+		}
+		return nil
+	})
 }
 
 func (m *Manager) verifyPart(ctx context.Context, lease Lease, row models.PayloadUploadHold, archive bool, limit int64) (filestore.Verified, error) {
@@ -170,12 +180,18 @@ func (m *Manager) finishVerified(ctx context.Context, lease Lease, archive, mani
 	if row.ArchiveRef == "" || row.ManifestRef == "" {
 		return Verified{}, ErrInvalid
 	}
-	result := m.ownerQuery(m.db.WithContext(ctx), lease).Where("archive_ref = ? AND manifest_ref = ?", archive.Ref(), manifest.Ref()).Update("state", StateVerified)
-	if result.Error != nil {
-		return Verified{}, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return Verified{}, ErrOwnerLost
+	err = m.publication(ctx, lease.data.identity, func(tx *gorm.DB) error {
+		result := m.ownerQuery(tx, lease).Where("archive_ref = ? AND manifest_ref = ?", archive.Ref(), manifest.Ref()).Update("state", StateVerified)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrOwnerLost
+		}
+		return nil
+	})
+	if err != nil {
+		return Verified{}, err
 	}
 	return Verified{lease: lease.data, archive: archive, manifest: manifest}, nil
 }
@@ -235,7 +251,7 @@ func (m *Manager) RecoverHold(ctx context.Context, id Identity, deadline time.Ti
 	}
 	var row models.PayloadUploadHold
 	var limits Limits
-	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := m.publication(ctx, id, func(tx *gorm.DB) error {
 		if err := m.options.Authorize(ctx, tx, id); err != nil {
 			return err
 		}

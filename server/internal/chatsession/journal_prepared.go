@@ -295,9 +295,9 @@ func (s *DurableStore) AppendJournalWith(ctx context.Context, scope QueueScope, 
 func (s *DurableStore) AppendJournal(ctx context.Context, scope QueueScope, owner *QueueLease, turnID string, entries []JournalEntry, validate func(*gorm.DB) error) (JournalRange, error) {
 	return s.AppendJournalWith(ctx, scope, owner, turnID, entries, func(ctx context.Context, prepared PreparedJournal) (JournalRange, error) {
 		var result JournalRange
-		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err := s.executionTransaction(ctx, scope, turnID, func(tx *gorm.DB) error {
 			var err error
-			result, err = s.AppendPreparedJournalTx(ctx, tx, prepared, validate)
+			result, err = s.AppendPreparedJournalTx(tx.Statement.Context, tx, prepared, validate)
 			return err
 		})
 		return result, err

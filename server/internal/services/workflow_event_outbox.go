@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
@@ -283,7 +284,7 @@ func materializeWorkflowSources(ctx context.Context, db *gorm.DB, event workflow
 
 // preparePendingWorkflowEvent resolves a legacy frozen body or materializes
 // immutable SQL sources. Every GET/PUT happens after all SQL cursors close.
-func preparePendingWorkflowEvent(ctx context.Context, db *gorm.DB, event workflowEventRecord) (workflowEventRecord, []byte, error) {
+func preparePendingWorkflowEvent(ctx context.Context, db *gorm.DB, event workflowEventRecord, execution ...*executionlineage.Controller) (workflowEventRecord, []byte, error) {
 	if err := messageOutsideTransaction(db); err != nil {
 		return event, nil, err
 	}
@@ -303,7 +304,7 @@ func preparePendingWorkflowEvent(ctx context.Context, db *gorm.DB, event workflo
 	if err != nil {
 		return event, nil, err
 	}
-	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	publish := func(tx *gorm.DB) error {
 		store, err := filestore.FromDB(tx)
 		if err != nil {
 			return err
@@ -332,7 +333,12 @@ func preparePendingWorkflowEvent(ctx context.Context, db *gorm.DB, event workflo
 		}
 		event = current
 		return nil
-	})
+	}
+	if len(execution) > 0 && execution[0] != nil {
+		err = execution[0].Transaction(ctx, db, workflowExecutionEntities(event), publish)
+	} else {
+		err = db.WithContext(ctx).Transaction(publish)
+	}
 	if err != nil {
 		return event, nil, fmt.Errorf("publish frozen workflow payload: %w", err)
 	}

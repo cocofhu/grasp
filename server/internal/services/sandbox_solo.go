@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
@@ -211,7 +212,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstTestRepoURL(repos),
 	}
 	created := false
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.executionCreateTransaction(ctx, []executionlineage.Entity{{Kind: executionlineage.EntitySolo, ID: sessionID}}, func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
 		}

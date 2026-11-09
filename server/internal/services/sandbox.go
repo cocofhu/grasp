@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
@@ -28,10 +29,11 @@ func randID() string { return uuid.NewString()[:8] }
 // Per-run workflow node sandboxes are NOT managed here — they remain ephemeral
 // inside the runtime provider.
 type SandboxService struct {
-	db     *gorm.DB
-	mgr    *sandbox.Manager
-	skills *AgentService
-	host   *mcp.Host
+	db        *gorm.DB
+	execution *executionlineage.Controller
+	mgr       *sandbox.Manager
+	skills    *AgentService
+	host      *mcp.Host
 	// shared provides workspace files, MCP servers and ordinary environment defaults.
 	shared *SharedAgentService
 
@@ -116,6 +118,7 @@ func resolveSandboxImage(backend string) string {
 
 // SandboxOptions configures the service.
 type SandboxOptions struct {
+	Execution    *executionlineage.Controller
 	ModelBinding func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
 	ProfilesRoot string
 	MCPEndpoint  string
@@ -176,6 +179,7 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 	}
 	s := &SandboxService{
 		db: db, mgr: mgr, skills: skills, host: host,
+		execution:            opts.Execution,
 		shared:               opts.SharedAgent,
 		profilesRoot:         opts.ProfilesRoot,
 		mcpEndpoint:          opts.MCPEndpoint,

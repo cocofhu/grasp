@@ -235,7 +235,7 @@ func (e *Engine) stepReopen(c *execCtx, node *models.Node, oc nodeOutcome, conv 
 	}
 	if conv != nil {
 		conv.Done = false
-		logDB(e.db.Save(conv), runID, "reopen dialogue after confirm check failure")
+		logDB(e.executionSave(context.Background(), runID, conv), runID, "reopen dialogue after confirm check failure")
 	}
 	e.clearPendingAuto(c)
 	e.host.SetActiveReview(runID, true)
@@ -321,7 +321,7 @@ func (e *Engine) recordFinishTurn(c *execCtx, node *models.Node, conv *models.Re
 		Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg)}
 	applyReplyMetadata(&message, t)
 	conv.Messages = append(conv.Messages, message)
-	logDB(e.db.Save(conv), c.run.ID, why)
+	logDB(e.executionSave(context.Background(), c.run.ID, conv), c.run.ID, why)
 	return t.Events
 }
 
@@ -343,6 +343,6 @@ func (e *Engine) writeBackHandoff(c *execCtx, node *models.Node, outputs map[str
 	}
 	sr.Outputs[models.OutputHandoff] = text
 	sr.Outputs[models.OutputHandoffSource] = firstNonEmptyStr(str(outputs[models.OutputHandoffSource]), models.HandoffSourceAgent)
-	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "write back refreshed handoff")
+	logDB(e.executionSave(context.Background(), c.run.ID, &sr, stateRunTakeoverCols...), c.run.ID, "write back refreshed handoff")
 	c.nodeOutputs[node.ID] = sr.Outputs
 }

@@ -67,6 +67,9 @@ func (e *Engine) RecentTurns(runID string) map[string][]models.AcpEvent {
 // in the sandbox (queried on demand via LiveNodeEvents) and the final snapshot
 // is persisted by saveState — this is purely the live push channel.
 func (e *Engine) publishAcp(runID, nodeID string, events []models.AcpEvent, busy bool) {
+	if err := e.executionCheck(context.Background(), runID); err != nil {
+		return
+	}
 	if isActivityEvent(events) {
 		e.touchActivity(runID, false)
 	}
@@ -99,7 +102,7 @@ func (e *Engine) startNodeRun(c *execCtx, node *models.Node) {
 	// Snapshot product revisions before the agent writes. A conclusion left by
 	// the previous execution of this node does not count as delivered here.
 	base := e.host.BeginArtifactVisit(c.run.ID, node.ID)
-	logDB(e.db.Create(&models.StateRun{
+	logDB(e.executionCreate(context.Background(), c.run.ID, &models.StateRun{
 		RunID: c.run.ID, NodeID: node.ID, NodeType: node.Type,
 		Iteration: c.iter[node.ID], Status: "running", StartedAt: &now, Attempt: c.run.Attempt,
 		VarsBefore: before, ArtifactBaseRev: base, ArtifactBaseSet: true,
@@ -160,6 +163,9 @@ func (e *Engine) lockResume(key string) func() {
 }
 
 func (e *Engine) loadCtx(runID string) (*execCtx, error) {
+	if err := e.executionCheck(context.Background(), runID); err != nil {
+		return nil, err
+	}
 	var run models.Run
 	if err := e.db.First(&run, "id = ?", runID).Error; err != nil {
 		return nil, err
@@ -307,6 +313,9 @@ func (e *Engine) execute(runID, fromNodeID string) {
 // first node continues re's in-flight StateRun in its still-running sandbox
 // instead of opening a new visit.
 func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
+	if err := e.executionCheck(context.Background(), runID); err != nil {
+		return
+	}
 
 	gen, ok := e.acquireExecuteSlot(runID)
 	if !ok {
@@ -339,6 +348,9 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 
 	cur := fromNodeID
 	for cur != "" {
+		if err := e.executionCheck(context.Background(), runID); err != nil {
+			return
+		}
 
 		if !e.isExecOwner(runID, gen) {
 			log.Info().Str("run_id", runID).Str("from", cur).
@@ -401,6 +413,9 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 		re = nil
 
 		outcome := e.executeNode(c, node)
+		if err := e.executionCheck(context.Background(), runID); err != nil {
+			return
+		}
 
 		if !e.isExecOwner(runID, gen) {
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "lost exec ownership; drop late outcome"})

@@ -64,8 +64,22 @@ func (s *WorkspaceSnapshotJobs) Run(ctx context.Context) error {
 // dispatched intent becomes unknown and requires an explicit read-only check.
 func (s *WorkspaceSnapshotJobs) expire(ctx context.Context, lineage string) {
 	now := time.Now().UTC()
-	_ = s.db.WithContext(ctx).Model(&models.WorkspaceSnapshotJob{}).Where("lineage = ? AND state IN ? AND dispatched_at IS NOT NULL AND (expires_at IS NULL OR expires_at <= ? OR deadline <= ?)", lineage, []string{"dispatching", "running"}, now, now).Updates(map[string]any{"state": "unknown", "error": "execution_owner_expired"}).Error
-	_ = s.db.WithContext(ctx).Model(&models.WorkspaceSnapshotJob{}).Where("lineage = ? AND state = ? AND dispatched_at IS NULL AND deadline <= ?", lineage, "queued", now).Updates(map[string]any{"state": "failed", "error": "job_deadline_expired"}).Error
+	var rows []models.WorkspaceSnapshotJob
+	if err := s.db.WithContext(ctx).Where("lineage = ? AND ((state IN ? AND dispatched_at IS NOT NULL AND (expires_at IS NULL OR expires_at <= ? OR deadline <= ?)) OR (state = ? AND dispatched_at IS NULL AND deadline <= ?))", lineage, []string{"dispatching", "running"}, now, now, "queued", now).Order("id").Limit(100).Find(&rows).Error; err != nil {
+		return
+	}
+	for _, row := range rows {
+		if ctx.Err() != nil {
+			return
+		}
+		_ = s.metadataTransaction(ctx, row, func(tx *gorm.DB) error {
+			query := tx.Model(&models.WorkspaceSnapshotJob{}).Where("id = ? AND lineage = ? AND state = ? AND generation = ?", row.ID, row.Lineage, row.State, row.Generation)
+			if row.DispatchedAt != nil {
+				return query.Where("dispatched_at IS NOT NULL AND (expires_at IS NULL OR expires_at <= ? OR deadline <= ?)", now, now).Updates(map[string]any{"state": "unknown", "error": "execution_owner_expired"}).Error
+			}
+			return query.Where("dispatched_at IS NULL AND deadline <= ?", now).Updates(map[string]any{"state": "failed", "error": "job_deadline_expired"}).Error
+		})
+	}
 }
 
 func (s *WorkspaceSnapshotJobs) RunOne(ctx context.Context, id string) error {

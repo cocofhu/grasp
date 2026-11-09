@@ -61,7 +61,7 @@ func (s *SoloService) requireSoloLifecycle(tx *gorm.DB, expected *models.SoloSes
 // resource association. A retained or uncertain disk can never take this path.
 func (s *SoloService) claimSoloRestart(ctx context.Context, expected *models.SoloSession) (*models.SoloSession, error) {
 	var claimed *models.SoloSession
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.executionTransaction(ctx, expected.ID, func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
 		}
@@ -232,7 +232,7 @@ func (s *SoloService) Restart(ctx context.Context, id, user string) (*SoloSessio
 
 func (s *SoloService) claimSoloRemoval(ctx context.Context, expected *models.SoloSession, action string) (*models.SoloSession, error) {
 	var claimed *models.SoloSession
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.executionTransaction(ctx, expected.ID, func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
 		}
@@ -285,10 +285,11 @@ func (s *SoloService) claimSoloRemoval(ctx context.Context, expected *models.Sol
 func (s *SoloService) recordSoloCloseFailure(row *models.SoloSession, cause error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	result := soloLifecycleQuery(s.db.WithContext(ctx), row).Where("status = ? AND lifecycle_action = ?", models.SoloStatusClosed, soloCloseCleanup).
-		Update("error", "环境停止尚未确认，聊天已关闭，工作区和环境关联已保留，请核对后重试")
-	if result.Error != nil {
-		return result.Error
+	if err := s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
+		return soloLifecycleQuery(tx, row).Where("status = ? AND lifecycle_action = ?", models.SoloStatusClosed, soloCloseCleanup).
+			Update("error", "环境停止尚未确认，聊天已关闭，工作区和环境关联已保留，请核对后重试").Error
+	}); err != nil {
+		return err
 	}
 	return soloErr(http.StatusConflict, "environment_stop_pending", "环境停止尚未确认，聊天已关闭，工作区和环境关联已保留，请核对后重试：%s", truncErr(cause))
 }
@@ -368,7 +369,7 @@ func (s *SoloService) Delete(ctx context.Context, id, user string) error {
 			return err
 		}
 	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
 		}

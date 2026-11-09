@@ -356,6 +356,11 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 }
 
 func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
+	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
+	if executionErr != nil {
+		return nil, nil, "", executionErr
+	}
+	defer stopExecution()
 	if req.SandboxMode == models.SandboxModeShared && c.shared != nil {
 		if sb, acp, home, handled, err := c.openSharedSandbox(ctx, req); handled {
 			return sb, acp, home, err

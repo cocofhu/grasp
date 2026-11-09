@@ -81,7 +81,7 @@ func (e *Engine) enterReview(c *execCtx, node *models.Node, completed nodeOutcom
 	summary := e.reviewSummaryMarkdown(c, node)
 	conv = models.ReactConversation{RunID: c.run.ID, NodeID: node.ID, Iteration: iter, Done: false,
 		Messages: []models.ReactMessage{{Role: "agent", Text: summary, At: time.Now().Format(time.RFC3339)}}}
-	logDB(e.db.Create(&conv), c.run.ID, "seed review conversation")
+	logDB(e.executionCreate(context.Background(), c.run.ID, &conv), c.run.ID, "seed review conversation")
 	e.host.SetActiveReview(c.run.ID, true)
 	log.Info().Str("run_id", c.run.ID).Str("node_id", node.ID).Msg("entered post-run ReAct review phase")
 	return nodeOutcome{status: "paused", outputMd: "等待人工复审(ReAct)…",
@@ -141,7 +141,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 	// checks so the item re-enters the inbox. The human turn is already
 	// persisted and the ready-gate enforced by ReactReply.
 	conv.Done = true
-	logDB(e.db.Save(conv), runID, "confirm leave pending (review force)")
+	logDB(e.executionSave(context.Background(), runID, conv), runID, "confirm leave pending (review force)")
 	// Same window as clarify force: the wrap-up has not finished, so record
 	// a unique automatic successor before this function routes.
 	e.notePendingAuto(c, node)
@@ -160,7 +160,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 			agentMsg = models.ReactMessage{}
 		} else if strings.TrimSpace(t.Msg) != "" {
 			conv.Messages = append(conv.Messages, agentMsg)
-			logDB(e.db.Save(conv), runID, "save review confirm finalize")
+			logDB(e.executionSave(context.Background(), runID, conv), runID, "save review confirm finalize")
 		}
 		e.flushMcpCalls(runID, nodeID)
 		e.flushTokenUsage(runID, nodeID, t.Usage, t.UsageByModel)
@@ -301,7 +301,7 @@ func (e *Engine) refreshProducerOutputs(c *execCtx, producer *models.Node) {
 		return
 	}
 	sr.Outputs = oc.outputs
-	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "refresh producer outputs after revise")
+	logDB(e.executionSave(context.Background(), c.run.ID, &sr, stateRunTakeoverCols...), c.run.ID, "refresh producer outputs after revise")
 }
 
 // refreshPendingGatesForProducer re-interpolates BodyMd for unresolved gates
@@ -329,7 +329,7 @@ func (e *Engine) refreshPendingGatesForProducer(c *execCtx, producerID string) {
 		}
 		if bt, _ := gateNode.Config["body_template"].(string); strings.TrimSpace(bt) != "" {
 			gate.BodyMd = e.interpolate(c2, bt)
-			logDB(e.db.Save(gate), c.run.ID, "refresh gate body after producer revise")
+			logDB(e.executionSave(context.Background(), c.run.ID, gate), c.run.ID, "refresh gate body after producer revise")
 		}
 		e.broker.Publish(c.run.ID, jsonMsg("artifact_edit", c.run.ID, gate.NodeID))
 	}

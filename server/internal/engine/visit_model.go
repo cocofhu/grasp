@@ -106,7 +106,7 @@ func (e *Engine) prepareVisitModel(ctx context.Context, req *runtime.NodeReq, co
 		return
 	}
 	e.noteChatRoute(conv, req, notice)
-	logDB(e.db.Save(conv), runID, "save visit model align")
+	logDB(e.executionSave(context.Background(), runID, conv), runID, "save visit model align")
 	if e.broker != nil {
 		e.publishReact(runID, nodeID)
 	}

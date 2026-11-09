@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/services"
@@ -133,6 +134,13 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		admission = admissions[0]
 	}
 
+	var launchParents []executionlineage.Entity
+	if admission.SoloID != "" {
+		launchParents = append(launchParents, executionlineage.Entity{Kind: executionlineage.EntitySolo, ID: admission.SoloID})
+	}
+	if err := e.executionCheck(context.Background(), "", launchParents...); err != nil {
+		return nil, err
+	}
 	if err := graph.Validate(); err != nil {
 		return nil, err
 	}
@@ -213,15 +221,43 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 	e.tokens[runID] = tok
 	e.mu.Unlock()
 
+	run.OriginSoloID, run.CreatedBy, run.LaunchSource = admission.SoloID, admission.ActorID, admission.Source
+	var preparedRun *executionRow
+	var preparedVariables []*executionRow
+	if e.execution != nil {
+		preparedRun, err = e.prepareExecutionRow(context.Background(), &run, true, nil, nil)
+		if err == nil {
+			for i := range seeded {
+				seeded[i].RunID = runID
+				var prepared *executionRow
+				prepared, err = e.prepareExecutionRow(context.Background(), &seeded[i], true, nil, nil)
+				if err != nil {
+					break
+				}
+				preparedVariables = append(preparedVariables, prepared)
+			}
+		}
+		if err != nil {
+			e.host.UnregisterRun(runID)
+			e.mu.Lock()
+			delete(e.tokens, runID)
+			e.mu.Unlock()
+			return nil, err
+		}
+	}
 	now := time.Now()
 	var replayID string
-	if err := e.db.Transaction(func(tx *gorm.DB) error {
+	if err := e.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error {
 		var err error
 		replayID, err = reserveLaunch(tx, &run, admission)
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&run).Error; err != nil {
+		if preparedRun != nil {
+			if err := preparedRun.write(tx, nil).Error; err != nil {
+				return err
+			}
+		} else if err := tx.Create(&run).Error; err != nil {
 			return err
 		}
 		if run.OriginSoloID != "" {
@@ -233,14 +269,20 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 			}
 		}
 
-		for _, rv := range seeded {
+		for i, rv := range seeded {
+			if preparedRun != nil {
+				if err := preparedVariables[i].write(tx, nil).Error; err != nil {
+					return err
+				}
+				continue
+			}
 			rv.RunID = runID
 			if err := tx.Create(&rv).Error; err != nil {
 				return err
 			}
 		}
 		return tx.Model(&models.WorkflowDef{}).Where("id = ?", def.ID).Update("last_run_at", now).Error
-	}); err != nil {
+	}, launchParents...); err != nil {
 		e.host.UnregisterRun(runID)
 		e.mu.Lock()
 		delete(e.tokens, runID)
@@ -285,7 +327,9 @@ func (e *Engine) UpdateRunPriority(runID, priorityLabel string) (*models.Run, er
 	default:
 		return nil, fmt.Errorf("cannot change priority of run in status %q", run.Status)
 	}
-	if err := e.db.Model(&models.Run{}).Where("id = ?", runID).Update("priority", pri).Error; err != nil {
+	if err := e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Run{}).Where("id = ?", runID).Update("priority", pri)
+	}).Error; err != nil {
 		return nil, err
 	}
 	run.Priority = pri
@@ -596,8 +640,10 @@ func (e *Engine) persistNodeReviewFlag(runID, nodeID string, want bool) {
 		return
 	}
 	n.Caps.Review = want
-	logDB(e.db.Model(&models.Run{}).Where("id = ?", runID).Select("graph").
-		Updates(&models.Run{Graph: run.Graph}), runID, "refresh review flag")
+	logDB(e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Run{}).Where("id = ?", runID).Select("graph").
+			Updates(&models.Run{Graph: run.Graph})
+	}), runID, "refresh review flag")
 }
 
 // runSandboxMode snapshots the workflow's choice onto a new run. Unless shared

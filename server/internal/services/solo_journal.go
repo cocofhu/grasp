@@ -53,18 +53,18 @@ func (c *soloChat) appendJournal(ctx context.Context, sandboxID uint, turnID str
 				if err := attempt.Err(); err != nil {
 					return err
 				}
-				return c.svc.durable.FenceJournalTx(attempt, tx.WithContext(attempt), soloQueueScope(c.id), owner, turnID, validate)
+				return c.svc.durable.FenceJournalTx(tx.Statement.Context, tx, soloQueueScope(c.id), owner, turnID, validate)
 			}
 			persist := func(tx *gorm.DB) error {
 				var err error
-				written, err = c.svc.durable.AppendPreparedJournalTx(attempt, tx.WithContext(attempt), prepared, validate)
+				written, err = c.svc.durable.AppendPreparedJournalTx(tx.Statement.Context, tx, prepared, validate)
 				return err
 			}
 			var err error
 			if sandboxID != 0 && c.svc.sbx != nil {
 				err = c.svc.sbx.commitSandboxOperationPrepared(attempt, sandboxID, fence, persist)
 			} else {
-				err = c.svc.db.WithContext(attempt).Transaction(persist)
+				err = c.svc.executionTransaction(attempt, c.id, persist)
 			}
 			// The entire Queue -> Sandbox transaction has finished here. Only
 			// AppendJournalWith may prepare again after a head CAS conflict.

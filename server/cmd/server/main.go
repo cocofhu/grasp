@@ -82,26 +82,6 @@ func main() {
 		log.Fatal().Err(err).Msg("invalid sandbox gateway configuration")
 	}
 	defer func() { _ = sbxGateway.Close() }()
-	if cfg.Sandbox.UsesGatewayTransport() {
-		log.Info().Msg("waiting for sandbox gateway transport readiness")
-		ctx, cancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
-		err := sbxGateway.WaitTransportReady(ctx)
-		cancel()
-		if err != nil {
-			log.Fatal().Err(err).Msg("sandbox gateway transport not ready; startup reconciliation skipped")
-		}
-	} else if cfg.Sandbox.PrivateEndpoints {
-		// E2B restores private endpoints before the gateway starts listening.
-		// Wait before opening the DB/engine: startup reconciliation must never
-		// mistake an unavailable gateway for destroyed provider guests.
-		log.Info().Msg("waiting for private sandbox gateway readiness")
-		ctx, cancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
-		err := sbxGateway.WaitReady(ctx, "e2b")
-		cancel()
-		if err != nil {
-			log.Fatal().Err(err).Msg("private sandbox gateway not ready; startup reconciliation skipped")
-		}
-	}
 
 	// At-rest secret encryption reads its key from the live config (security.
 	// secrets_key, with GRASP_SECRETS_KEY env override) so channel credentials
@@ -137,12 +117,26 @@ func main() {
 		log.Fatal().Err(err).Msg("persistent payload storage init failed")
 	}
 	defer storage.Close()
+	authorityCtx, authorityCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	executionController, executionStartupError := openExecutionController(authorityCtx, cfg, db)
+	authorityCancel()
+	if executionStartupError != nil {
+		log.Warn().Err(executionStartupError).Msg("execution disabled; history remains available; initialize independent execution control offline and restart")
+	} else {
+		gatewayCtx, gatewayCancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
+		err := awaitExecutionGateway(gatewayCtx, cfg, sbxGateway)
+		gatewayCancel()
+		if err != nil {
+			log.Fatal().Err(err).Msg("sandbox gateway not ready; startup reconciliation skipped")
+		}
+	}
 	ledgerRecorder, err := tokenledger.Start(db, filepath.Join(cfg.Storage.BlobsRoot, "token-ledger"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("open token ledger journal failed")
 	}
 
 	artifactSvc := services.NewArtifactService(db)
+	artifactSvc.SetExecutionController(executionController)
 	artifactSvc.SetFileSizeLimit(cfg.Storage.MaxFileBytes)
 	host := mcp.NewHost(artifactSvc)
 	// Outcome validation chain is DefaultThenRPC (see mcp.ChainedOutcomeValidator).
@@ -226,6 +220,9 @@ func main() {
 		return row.Token
 	}
 	provider := runtime.NewProvider(host, runtime.Options{
+		CheckExecution: func(ctx context.Context, req runtime.NodeReq) error {
+			return checkNativeExecution(ctx, db, executionController, req)
+		},
 		RecordUsage: func(req runtime.NodeReq, result *sandbox.ChatResult, err error) {
 			phase := req.UsagePhase
 			if phase == "" {
@@ -290,7 +287,7 @@ func main() {
 		PublicAdvertise: cfg.Server.PublicAdvertise,
 		CodexLogins:     codexLogins,
 	})
-	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
+	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns, executionController)
 	if err := eng.InitDialogueEpoch(); err != nil {
 		log.Fatal().Err(err).Msg("init dialogue epoch")
 	}
@@ -397,6 +394,7 @@ func main() {
 	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Str("default_gateway", cfg.Sandbox.DefaultGateway).
 		Int("named_gateways", len(cfg.Sandbox.Gateways)).Msg("sandbox connections configured")
 	sbxSvc := services.NewSandboxService(db, sbxMgr, agentSvc, host, services.SandboxOptions{
+		Execution:            executionController,
 		ProfilesRoot:         cfg.Engine.ProfilesRoot,
 		MCPEndpoint:          cfg.Server.MCPAdvertise,
 		Env:                  cfg.Sandbox.Env,
@@ -415,6 +413,7 @@ func main() {
 	// Register resident teardown before any startup reconciliation can report a
 	// missing sandbox. Older releases could leave active sessions dangling.
 	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
+	soloSvc.SetExecutionController(executionController)
 	soloSvc.SetBlobStore(blobStore)
 	eng.SetReferencePinner(soloSvc)
 	// Let the exec provider record per-run node sandboxes in the same store so
@@ -424,8 +423,10 @@ func main() {
 	}
 	// Reconcile DB ↔ gateway on boot and start the idle-TTL sweeper. The
 	// gateway owns image lifecycle now, so there is no local image pre-pull.
-	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
-	soloSvc.ReconcileSandboxReferences()
+	if executionStartupError == nil {
+		sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
+		soloSvc.ReconcileSandboxReferences()
+	}
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
 	go storage.RunLegacyArchive(sweeperCtx)
 	go soloSvc.RunWorkflowEventDelivery(sweeperCtx)
@@ -458,7 +459,12 @@ func main() {
 	}))
 	wireArtifactMCPPersistence(host, db, runSvc, previewSvc)
 	host.SetCurrentAuthorization(func(runID string) bool {
-		return !strings.HasPrefix(runID, models.SoloArtifactRunPrefix) || sbxSvc.CurrentSoloMCPAuthorization(runID)
+		if strings.HasPrefix(runID, models.SoloArtifactRunPrefix) && !sbxSvc.CurrentSoloMCPAuthorization(runID) {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return checkMCPExecution(ctx, db, executionController, runID) == nil
 	})
 	host.SetSoloArtifactPreviewHook(previewSvc.PinSoloArtifact)
 	previewSvc.SetBrowser(browserSvc)
@@ -487,6 +493,7 @@ func main() {
 	authSvc := auth.NewService(db, config.GetConfig)
 
 	pmSvc := services.NewPmService(db, agentSvc)
+	pmSvc.SetExecutionController(executionController)
 	pmSvc.SetBlobStore(blobStore)
 	pmProgress := services.NewPmProgress(pmSvc, runSvc, artifactSvc)
 	wfSvc := services.NewWorkflowService(db)

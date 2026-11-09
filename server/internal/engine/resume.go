@@ -107,7 +107,7 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 		}
 	}
 	gate.Resolved = true
-	logDB(e.db.Save(&gate), runID, "resolve gate")
+	logDB(e.executionSave(context.Background(), runID, &gate), runID, "resolve gate")
 
 	// Expose action, assign it to the configured global var,
 	// and leave through the edge whose sourceHandle is the action id.
@@ -141,7 +141,7 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 			// reviewer can retry instead of leaving "vars snapshotted / DB
 			// still open" half-success that falsely re-locks Pass.
 			gate.Resolved = false
-			logDB(e.db.Save(&gate), runID, "rollback gate after preview-issue lifecycle failure")
+			logDB(e.executionSave(context.Background(), runID, &gate), runID, "rollback gate after preview-issue lifecycle failure")
 			return lifeErr
 		}
 	}
@@ -496,7 +496,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		// gate; reviewReply still owns the review wrap-up below.
 		if force && e.confirmStillWaiting(runID, nodeID, c.run.Status) {
 			conv.Done = false
-			logDB(e.db.Save(&conv), runID, "reopen react for retry confirm")
+			logDB(e.executionSave(context.Background(), runID, &conv), runID, "reopen react for retry confirm")
 			// The previous confirm did not finish this visit. Do not keep
 			// reporting the successor it guessed.
 			e.clearPendingAuto(c)
@@ -515,7 +515,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		refs, prompt := e.pinSyncReferences(runID, nodeID, refs, renderReviewHuman(humanText, annotations))
 		conv.Messages = append(conv.Messages, models.ReactMessage{Role: "human", Text: humanText, At: now,
 			Images: images, Annotations: annotations, References: refs})
-		logDB(e.db.Save(&conv), runID, "save react human turn")
+		logDB(e.executionSave(context.Background(), runID, &conv), runID, "save react human turn")
 		return e.reviewReply(c, node, &conv, prompt, images, true)
 	}
 
@@ -530,13 +530,13 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	humanMsg := models.ReactMessage{Role: "human", Text: humanText, At: now,
 		Images: images, Annotations: annotations, References: refs}
 	conv.Messages = append(conv.Messages, humanMsg)
-	logDB(e.db.Save(&conv), runID, "save react human turn")
+	logDB(e.executionSave(context.Background(), runID, &conv), runID, "save react human turn")
 
 	// Leave the pending inbox immediately (mirrors ResumeGate resolving before
 	// slow work): refresh/reopen must not resurface this item while wrap-up runs.
 	// Roll back Done when the agent stays open (questions / unfinished).
 	conv.Done = true
-	logDB(e.db.Save(&conv), runID, "confirm leave pending (force)")
+	logDB(e.executionSave(context.Background(), runID, &conv), runID, "confirm leave pending (force)")
 	// The wrap-up reply has not returned, so the successor has no running
 	// visit yet. Record it now when the positive outlet is already one
 	// automatic agent; the list reads this before rememberHandoffTarget.
@@ -560,7 +560,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		if t.Err != nil {
 			why = "reopen react after force chat error"
 		}
-		logDB(e.db.Save(&conv), runID, why)
+		logDB(e.executionSave(context.Background(), runID, &conv), runID, why)
 		e.clearPendingAuto(c)
 		// Early Done made pauseStillPending false, so the opening driver's
 		// finish("waiting_human") may have been skipped and the run left
@@ -581,7 +581,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		return errors.New("仍有待确认问题或收尾未完成，无法确认并流转")
 	}
 
-	logDB(e.db.Save(&conv), runID, "finish react conversation")
+	logDB(e.executionSave(context.Background(), runID, &conv), runID, "finish react conversation")
 
 	// Force wrap-up stays on this synchronous path, so its confirm round is
 	// recorded here rather than in the FIFO pump.
@@ -623,8 +623,10 @@ func (e *Engine) rememberHandoffTarget(c *execCtx, target string) {
 		return
 	}
 	e.setAdmissionTarget(c, target)
-	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).
-		Select("Checkpoints").Updates(&models.Run{Checkpoints: c.run.Checkpoints}), c.run.ID, "remember handoff target")
+	logDB(e.executionMutation(context.Background(), c.run.ID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Run{}).Where("id = ?", c.run.ID).
+			Select("Checkpoints").Updates(&models.Run{Checkpoints: c.run.Checkpoints})
+	}), c.run.ID, "remember handoff target")
 }
 
 // confirmStillWaiting reports that a force confirm has not finished this
@@ -725,7 +727,9 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	// since mutated. Persisted to RunVariable so execute()'s fresh loadCtx picks
 	// it up. Skipped for nodes with no recorded entry snapshot.
 	if snap, ok := e.nodeStartVars(runID, nodeID); ok {
-		e.restoreVars(c, snap)
+		if err := e.restoreVars(c, snap); err != nil {
+			return err
+		}
 	}
 	// A cancelled/failed approve visit may have already delivered FirstMessage;
 	// release the latch so the fresh visit opened by this resume can claim again.
@@ -768,16 +772,32 @@ func (e *Engine) nodeStartVars(runID, nodeID string) (map[string]any, bool) {
 // so a resumed node re-runs against the exact state it had at that time. Values
 // created by later nodes (not in the snapshot) are dropped; existing rows keep
 // their declared Type and just have their value rewound.
-func (e *Engine) restoreVars(c *execCtx, snap map[string]any) {
-	c.vars = map[string]any{}
-	for k, v := range snap {
-		c.vars[k] = v
+func (e *Engine) restoreVars(c *execCtx, snap map[string]any) error {
+	ctx := context.Background()
+	var existing []models.RunVariable
+	if err := e.db.Select("id", "name", "type", "secret").Where("run_id = ?", c.run.ID).Find(&existing).Error; err != nil {
+		return err
 	}
-	err := e.db.Transaction(func(tx *gorm.DB) error {
-		names := make([]string, 0, len(snap))
-		for k := range snap {
-			names = append(names, k)
+	byName := map[string]models.RunVariable{}
+	for _, row := range existing {
+		byName[row.Name] = row
+	}
+	names := make([]string, 0, len(snap))
+	rows := make([]*executionRow, 0, len(snap))
+	for name, value := range snap {
+		row, ok := byName[name]
+		if !ok {
+			row = models.RunVariable{RunID: c.run.ID, Name: name, Type: inferType(value)}
 		}
+		row.RunID, row.Value = c.run.ID, value
+		prepared, err := e.prepareExecutionRow(ctx, &row, !ok, nil, nil)
+		if err != nil {
+			return err
+		}
+		rows = append(rows, prepared)
+		names = append(names, name)
+	}
+	err := e.executionTransaction(ctx, c.run.ID, func(tx *gorm.DB) error {
 		del := tx.Where("run_id = ?", c.run.ID)
 		if len(names) > 0 {
 			del = del.Where("name NOT IN ?", names)
@@ -785,22 +805,21 @@ func (e *Engine) restoreVars(c *execCtx, snap map[string]any) {
 		if err := del.Delete(&models.RunVariable{}).Error; err != nil {
 			return err
 		}
-		for k, v := range snap {
-			var rv models.RunVariable
-			if err := tx.Where("run_id = ? AND name = ?", c.run.ID, k).First(&rv).Error; err == nil {
-				rv.Value = v
-				if err := tx.Save(&rv).Error; err != nil {
-					return err
-				}
-			} else if err := tx.Create(&models.RunVariable{RunID: c.run.ID, Name: k, Type: inferType(v), Value: v}).Error; err != nil {
+		for _, row := range rows {
+			if err := row.write(tx, nil).Error; err != nil {
 				return err
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		log.Error().Str("run_id", c.run.ID).Err(err).Msg("restore vars-at-that-time failed")
+		return err
 	}
+	c.vars = map[string]any{}
+	for name, value := range snap {
+		c.vars[name] = value
+	}
+	return nil
 }
 
 // pickAutoResumeNode chooses the best node to resume when the caller omits

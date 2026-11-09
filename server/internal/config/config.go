@@ -38,8 +38,11 @@ type Config struct {
 	Auth     AuthConfig     `yaml:"auth"`
 	Security SecurityConfig `yaml:"security"`
 	Storage  StorageConfig  `yaml:"storage"`
-	Features FeatureConfig  `yaml:"features"`
-	GitHub   GitHubConfig   `yaml:"github"`
+	// ExecutionControl is an independent continuity authority. Nil keeps
+	// historical reads available while refusing execution until offline init.
+	ExecutionControl *StorageConfig `yaml:"execution_control"`
+	Features         FeatureConfig  `yaml:"features"`
+	GitHub           GitHubConfig   `yaml:"github"`
 	// CodexLogin tunes the platform renewal of workspace Codex ChatGPT logins.
 	CodexLogin CodexLoginConfig `yaml:"codex_login"`
 }
@@ -516,6 +519,7 @@ func rejectSandboxSecretEnv(c *Config) error {
 // applyEnvOverrides lets explicit env vars win over the file. Secrets such as
 // gateway_api_key are injected here from K8s Secret-backed env.
 func applyEnvOverrides(c *Config) {
+	applyExecutionControlEnv(c)
 	if v := env("GRASP_WORKFLOWS_ENABLED"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			c.Features.WorkflowsEnabled = &enabled

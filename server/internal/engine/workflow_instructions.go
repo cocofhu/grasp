@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"errors"
+	"github.com/cocofhu/grasp/internal/executionlineage"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -36,6 +38,8 @@ type InstructionInput struct {
 }
 
 type instructionQueue struct {
+	engine     *Engine
+	runID      string
 	db         *gorm.DB
 	mailboxID  uint
 	generation string
@@ -65,7 +69,7 @@ func (e *Engine) openInstructionQueue(ctx context.Context, stateRunID uint, runI
 		return nil, errors.New("自动节点执行记录尚未持久化")
 	}
 	generation := uuid.NewString()
-	err := e.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := e.executionTransaction(ctx, runID, func(tx *gorm.DB) error {
 		readRun := func() error {
 			var run models.Run
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status").First(&run, "id = ?", runID).Error; err != nil {
@@ -117,7 +121,7 @@ func (e *Engine) openInstructionQueue(ctx context.Context, stateRunID uint, runI
 	if err != nil {
 		return nil, err
 	}
-	return &instructionQueue{db: e.db, mailboxID: stateRunID, generation: generation}, nil
+	return &instructionQueue{engine: e, runID: runID, db: e.db, mailboxID: stateRunID, generation: generation}, nil
 }
 
 func retireInstructions(tx *gorm.DB, id uint, generation, reason string) error {
@@ -132,7 +136,7 @@ func retireInstructions(tx *gorm.DB, id uint, generation, reason string) error {
 func (q *instructionQueue) close(ctx context.Context, reason string) error {
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	return q.db.WithContext(cleanup).Transaction(func(tx *gorm.DB) error {
+	return q.transaction(cleanup, func(tx *gorm.DB) error {
 		box, err := lockInstructionMailbox(tx, q.mailboxID)
 		if err != nil {
 			return err
@@ -171,7 +175,7 @@ func (q *instructionQueue) Next(ctx context.Context, sealIfEmpty bool) (*runtime
 		}
 		var message *runtime.AutoInstruction
 		changed := false
-		err = q.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err = q.transaction(ctx, func(tx *gorm.DB) error {
 			box, err := lockInstructionMailbox(tx, q.mailboxID)
 			if err != nil {
 				return err
@@ -235,7 +239,7 @@ func (q *instructionQueue) Complete(ctx context.Context, id, state, reason strin
 	if state != "applied" && state != "unknown" {
 		return errors.New("invalid instruction acknowledgement")
 	}
-	return q.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return q.transaction(ctx, func(tx *gorm.DB) error {
 		box, err := lockInstructionMailbox(tx, q.mailboxID)
 		if err != nil {
 			return err
@@ -257,7 +261,7 @@ func (q *instructionQueue) Complete(ctx context.Context, id, state, reason strin
 
 func (q *instructionQueue) RestartAttempt(ctx context.Context) error {
 	generation := uuid.NewString()
-	err := q.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := q.transaction(ctx, func(tx *gorm.DB) error {
 		box, err := lockInstructionMailbox(tx, q.mailboxID)
 		if err != nil {
 			return err
@@ -318,7 +322,7 @@ func (e *Engine) EnqueueInstruction(ctx context.Context, runID, nodeID, actor st
 		return nil, err
 	}
 	var item *models.WorkflowInstruction
-	err = e.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = e.executionTransaction(ctx, runID, func(tx *gorm.DB) error {
 		box, err := lockInstructionMailbox(tx, target.ID)
 		if err != nil {
 			return err
@@ -419,3 +423,10 @@ func (e *Engine) InstructionHistory(ctx context.Context, runID, nodeID, generati
 }
 
 var _ runtime.AutoInstructions = (*instructionQueue)(nil)
+
+func (q *instructionQueue) transaction(ctx context.Context, body func(*gorm.DB) error) error {
+	if q.engine == nil {
+		return q.db.WithContext(ctx).Transaction(body)
+	}
+	return q.engine.executionTransaction(ctx, q.runID, body, executionlineage.Entity{Kind: executionlineage.EntityStateRun, ID: strconv.FormatUint(uint64(q.mailboxID), 10)})
+}

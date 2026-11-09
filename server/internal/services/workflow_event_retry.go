@@ -24,7 +24,7 @@ func (s *SoloService) workflowEventRecipient(ctx context.Context, event workflow
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
 	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.executionTransaction(ctx, event.SoloID, func(tx *gorm.DB) error {
 		// Preserve delivery's parent -> event order on locking databases, even
 		// when the earlier missing observation races with recipient restoration.
 		var current models.SoloSession
@@ -39,7 +39,7 @@ func (s *SoloService) workflowEventRecipient(ctx context.Context, event workflow
 			Where("id = ? AND solo_id = ? AND user_id = ? AND disposition = ?", event.ID, event.SoloID, event.UserID, "pending").
 			Where("NOT EXISTS (SELECT 1 FROM solo_sessions s WHERE s.id = workflow_conversation_events.solo_id AND s.user_id = workflow_conversation_events.user_id)").
 			Updates(map[string]any{"disposition": "orphaned", "next_attempt_at": nil, "last_error": ""}).Error
-	})
+	}, workflowExecutionEntities(event)...)
 	return false, err
 }
 
@@ -60,16 +60,18 @@ func workflowEventRetryDelay(attempt int) time.Duration {
 func (s *SoloService) deferWorkflowEvent(ctx context.Context, event workflowEventRecord, stage string) error {
 	attempt := event.Attempts + 1
 	next := time.Now().UTC().Add(workflowEventRetryDelay(attempt))
-	result := s.db.WithContext(ctx).Model(&workflowEventRecord{}).
-		Where("id = ? AND disposition = ? AND COALESCE(attempts, 0) = ? AND run_id = ? AND version = ? AND solo_id = ? AND user_id = ? AND kind = ? AND COALESCE(source_version, 0) = ? AND COALESCE(source_count, 0) = ? AND COALESCE(source_fingerprint, '') = ?",
-			event.ID, "pending", event.Attempts, event.RunID, event.Version, event.SoloID, event.UserID, event.Kind, event.SourceVersion, event.SourceCount, event.SourceFingerprint).
-		Updates(map[string]any{"attempts": attempt, "next_attempt_at": next, "last_error": stage})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 1 {
-		log.Warn().Str("event", event.ID).Str("stage", stage).Int("attempt", attempt).Time("next_attempt_at", next).
-			Msg("workflow result delivery deferred; other events continue")
-	}
-	return nil
+	return s.executionTransaction(ctx, event.SoloID, func(tx *gorm.DB) error {
+		result := tx.Model(&workflowEventRecord{}).
+			Where("id = ? AND disposition = ? AND COALESCE(attempts, 0) = ? AND run_id = ? AND version = ? AND solo_id = ? AND user_id = ? AND kind = ? AND COALESCE(source_version, 0) = ? AND COALESCE(source_count, 0) = ? AND COALESCE(source_fingerprint, '') = ?",
+				event.ID, "pending", event.Attempts, event.RunID, event.Version, event.SoloID, event.UserID, event.Kind, event.SourceVersion, event.SourceCount, event.SourceFingerprint).
+			Updates(map[string]any{"attempts": attempt, "next_attempt_at": next, "last_error": stage})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			log.Warn().Str("event", event.ID).Str("stage", stage).Int("attempt", attempt).Time("next_attempt_at", next).
+				Msg("workflow result delivery deferred; other events continue")
+		}
+		return nil
+	}, workflowExecutionEntities(event)...)
 }

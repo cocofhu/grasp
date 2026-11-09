@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 
 	"gorm.io/gorm"
@@ -93,9 +94,10 @@ func validPmFailKind(kind string) bool {
 
 // PmService manages PM Leader binding, memory, and chat persistence.
 type PmService struct {
-	blobs  blob.Store
-	db     *gorm.DB
-	skills *AgentService
+	blobs     blob.Store
+	db        *gorm.DB
+	execution *executionlineage.Controller
+	skills    *AgentService
 }
 
 // NewPmService builds the service.

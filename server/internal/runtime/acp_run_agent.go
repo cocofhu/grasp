@@ -20,6 +20,11 @@ import (
 // the engine's FSM handles them. Retries are logged/emitted but do not create a
 // separate execution record.
 func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, error) {
+	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
+	if executionErr != nil {
+		return NodeResult{}, executionErr
+	}
+	defer stopExecution()
 	c.resetNodeBudget(req)
 	key := reactKey(req)
 	c.stuckNotes.Delete(key)

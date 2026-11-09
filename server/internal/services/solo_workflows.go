@@ -73,7 +73,14 @@ func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
 		return err
 	}
 	var events []workflowEventRecord
-	if err := s.db.WithContext(ctx).Where("disposition = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)", "pending", time.Now().UTC()).
+	query := s.db.WithContext(ctx).Where("disposition = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)", "pending", time.Now().UTC())
+	if s.execution != nil {
+		if err := s.execution.Check(ctx); err != nil {
+			return err
+		}
+		query = query.Where("NOT EXISTS (SELECT 1 FROM execution_quarantines q WHERE q.review_state = 'pending' AND ((q.entity_kind = 'workflow_event' AND q.entity_id = workflow_conversation_events.id) OR (q.entity_kind = 'run' AND q.entity_id = workflow_conversation_events.run_id) OR (q.entity_kind = 'solo' AND q.entity_id = workflow_conversation_events.solo_id)))")
+	}
+	if err := query.
 		Order("created_at asc, run_id asc, version asc").Limit(100).Find(&events).Error; err != nil {
 		return err
 	}
@@ -113,7 +120,10 @@ func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
 }
 
 func (s *SoloService) deliverWorkflowEvent(ctx context.Context, event workflowEventRecord) (string, bool, error) {
-	event, body, err := preparePendingWorkflowEvent(ctx, s.db, event)
+	if err := s.executionCheck(ctx, event.SoloID, workflowExecutionEntities(event)...); err != nil {
+		return "execution_authority", false, err
+	}
+	event, body, err := preparePendingWorkflowEvent(ctx, s.db, event, s.execution)
 	if err != nil {
 		return "prepare_payload", false, err
 	}
@@ -127,7 +137,7 @@ func (s *SoloService) deliverWorkflowEvent(ctx context.Context, event workflowEv
 		return "prepare_message", false, err
 	}
 	delivered := false
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.executionTransaction(ctx, event.SoloID, func(tx *gorm.DB) error {
 		var session models.SoloSession
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND user_id = ?", event.SoloID, event.UserID).First(&session).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -167,7 +177,7 @@ func (s *SoloService) deliverWorkflowEvent(ctx context.Context, event workflowEv
 		}
 		delivered = true
 		return nil
-	})
+	}, workflowExecutionEntities(event)...)
 	return "publish_message", delivered && err == nil, err
 }
 

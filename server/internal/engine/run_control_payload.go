@@ -68,7 +68,7 @@ func (e *Engine) requeueFailedRunBoundary(c *execCtx, next string, failure error
 		return false
 	}
 	queued := false
-	err = e.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = e.executionTransaction(ctx, c.run.ID, func(tx *gorm.DB) error {
 		if !e.isExecOwner(c.run.ID, c.execGen) {
 			return errRunBoundaryChanged
 		}

@@ -59,6 +59,11 @@ func (c *acpProvider) defaultConfigurationID(req NodeReq) string {
 // AlignChatRoute applies req to the parked visit session. A missing session
 // reports aligned=false so the caller can try again after the sandbox exists.
 func (c *acpProvider) AlignChatRoute(ctx context.Context, req NodeReq) (string, bool, error) {
+	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
+	if executionErr != nil {
+		return "", false, executionErr
+	}
+	defer stopExecution()
 	if !req.ResetToDefaultModel && (req.ChatRoute == nil || !req.ChatRoute.Set) {
 		return "", false, nil
 	}

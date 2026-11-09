@@ -18,7 +18,7 @@ import (
 var errRunBoundaryChanged = errors.New("workflow pause boundary changed while preparing its checkpoint")
 
 func (e *Engine) PauseRun(runID string, version uint64) error {
-	err := e.db.Transaction(func(tx *gorm.DB) error {
+	err := e.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error {
 		var run models.Run
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status", "pause_requested", "control_version").First(&run, "id = ?", runID).Error; err != nil {
 			return err
@@ -59,7 +59,7 @@ func (e *Engine) PauseRun(runID string, version uint64) error {
 }
 
 func (e *Engine) ResumePausedRun(runID string, version uint64) error {
-	err := e.db.Transaction(func(tx *gorm.DB) error {
+	err := e.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error {
 		var run models.Run
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status", "pause_requested", "pause_from_status", "control_version").First(&run, "id = ?", runID).Error; err != nil {
 			return err
@@ -125,7 +125,7 @@ func (e *Engine) parkWaitingPauses() {
 		if busy {
 			continue
 		}
-		err := e.db.Transaction(func(tx *gorm.DB) error {
+		err := e.executionTransaction(context.Background(), run.ID, func(tx *gorm.DB) error {
 			result := tx.Model(&models.Run{}).Where("id = ? AND status = ? AND pause_requested = ?", run.ID, "waiting_human", true).Updates(map[string]any{"status": "paused", "pause_from_status": "waiting_human", "pause_requested": false})
 			if result.Error != nil {
 				return result.Error
@@ -179,7 +179,7 @@ func (e *Engine) parkRunBoundary(c *execCtx, next string) (bool, error) {
 		return false, &runBoundaryFailure{cause: err, attempt: intent.Attempt, control: intent.ControlVersion, checkpoint: checkpoint, deadline: deadline}
 	}
 	parked := false
-	err = e.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = e.executionTransaction(ctx, c.run.ID, func(tx *gorm.DB) error {
 		if !e.isExecOwner(c.run.ID, c.execGen) {
 			return errRunBoundaryChanged
 		}
@@ -216,6 +216,9 @@ func (e *Engine) parkRunBoundary(c *execCtx, next string) (bool, error) {
 }
 
 func (e *Engine) checkRunNotPaused(runID string) error {
+	if err := e.executionCheck(context.Background(), runID); err != nil {
+		return err
+	}
 	var run models.Run
 	if err := e.db.Select("status", "pause_requested").First(&run, "id = ?", runID).Error; err != nil {
 		return err

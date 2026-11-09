@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -428,6 +429,9 @@ func (s *SoloService) retryDeferredRestores(sandboxID uint) {
 func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if err := s.executionCheck(ctx, id, executionlineage.Entity{Kind: executionlineage.EntityChatTurn, ID: turn.ID}); err != nil {
+		return err
+	}
 	if len(turn.Payload) == 0 {
 		var err error
 		turn, err = s.durable.ReadTurn(ctx, soloQueueScope(id), turn.ID)
@@ -451,7 +455,7 @@ func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) e
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
 		// The owning conversation's close/delete uses this same row lock.
 		if err := tx.Model(&models.ChatQueue{}).Where("id = ?", soloQueueScope(id).ID()).UpdateColumn("revision", gorm.Expr("revision + 1")).Error; err != nil {
 			return err
@@ -538,7 +542,7 @@ func (s *SoloService) settleSoloReceipt(ctx context.Context, id string, row mode
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
 		if err := chatsession.FenceExecution(ctx, tx); err != nil {
 			return err
 		}

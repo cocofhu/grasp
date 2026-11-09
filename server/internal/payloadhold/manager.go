@@ -72,6 +72,9 @@ type Options struct {
 	MaxDuration           time.Duration
 	Authority             Authority
 	Authorize             func(context.Context, *gorm.DB, Identity) error
+	// PrepareAuthorization runs only before the outer metadata transaction.
+	// Production supplies a fresh private external execution proof here.
+	PrepareAuthorization func(context.Context) (context.Context, error)
 }
 
 type Manager struct {
@@ -258,7 +261,7 @@ func (m *Manager) BeginHold(ctx context.Context, id Identity, plan Plan) (Lease,
 	limitJSON, _ := json.Marshal(limits)
 	row := models.PayloadUploadHold{ID: HoldID(id), ScopeKind: id.ScopeKind, ScopeID: id.ScopeID, ActorID: id.ActorID, OperationID: id.OperationID, SnapshotID: id.SnapshotID, Lineage: id.Lineage, StorageFingerprint: m.options.StorageFingerprint, PlanSHA256: planHash(id, m.options.StorageFingerprint, a, b, limits), Limits: string(limitJSON), ArchiveSHA256: a.sha256, ArchiveBytes: a.size, ManifestSHA256: b.sha256, ManifestBytes: b.size, ReservedBytes: a.size + b.size, IntentDeadline: id.Deadline, Deadline: id.Deadline, State: StateUploading, Owner: uuid.NewString(), Generation: 1, ExpiresAt: minTime(now.Add(m.options.LeaseTTL), id.Deadline)}
 	var duplicate error
-	err = m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = m.publication(ctx, id, func(tx *gorm.DB) error {
 		// Authorizers that lock Sandbox/Job metadata run before quota/hold.
 		if err := m.options.Authorize(ctx, tx, id); err != nil {
 			return err

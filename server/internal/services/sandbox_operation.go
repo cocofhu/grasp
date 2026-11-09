@@ -42,6 +42,9 @@ func (s *SandboxService) acquireSandboxOperation(ctx context.Context, id uint, k
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
+	if err := s.executionCheck(ctx, id); err != nil {
+		return nil, nil, sandboxExecutionLeaseError(err)
+	}
 	parent, _ := ctx.Value(sandboxOperationKey{}).(*sandboxOperation)
 	for held := parent; held != nil; held = held.parent {
 		if held.service == s && held.id == id {
@@ -62,12 +65,16 @@ func (s *SandboxService) acquireSandboxOperation(ctx context.Context, id uint, k
 	}
 	for {
 		now := time.Now().UTC()
-		result := s.db.WithContext(ctx).Model(&models.Sandbox{}).
-			Where("id = ? AND (operation_owner = '' OR operation_owner IS NULL OR operation_expires_at < ?)", id, now).
-			Updates(map[string]any{"operation_owner": owner, "operation_kind": kind, "operation_expires_at": now.Add(sandboxOperationLeaseTTL), "generation": gorm.Expr("COALESCE(generation, 0) + 1")})
-		if result.Error != nil {
+		var result *gorm.DB
+		err := s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
+			result = tx.Model(&models.Sandbox{}).
+				Where("id = ? AND (operation_owner = '' OR operation_owner IS NULL OR operation_expires_at < ?)", id, now).
+				Updates(map[string]any{"operation_owner": owner, "operation_kind": kind, "operation_expires_at": now.Add(sandboxOperationLeaseTTL), "generation": gorm.Expr("COALESCE(generation, 0) + 1")})
+			return result.Error
+		})
+		if err != nil {
 			<-lock
-			return nil, nil, result.Error
+			return nil, nil, sandboxExecutionLeaseError(err)
 		}
 		if result.RowsAffected > 0 {
 			break
@@ -112,14 +119,20 @@ func (s *SandboxService) acquireSandboxOperation(ctx context.Context, id uint, k
 			func(ctx context.Context) (time.Time, error) {
 				now := time.Now().UTC()
 				expiresAt := now.Add(sandboxOperationLeaseTTL)
-				result := s.db.WithContext(ctx).Model(&models.Sandbox{}).
-					Where("id = ? AND operation_owner = ? AND generation = ? AND operation_expires_at > ?", id, owner, operation.generation, now).
-					Update("operation_expires_at", expiresAt)
-				if result.Error != nil {
-					return time.Time{}, result.Error
-				}
-				if result.RowsAffected != 1 {
-					return time.Time{}, errSandboxOperationLost
+				err := s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
+					result := tx.Model(&models.Sandbox{}).
+						Where("id = ? AND operation_owner = ? AND generation = ? AND operation_expires_at > ?", id, owner, operation.generation, now).
+						Update("operation_expires_at", expiresAt)
+					if result.Error != nil {
+						return result.Error
+					}
+					if result.RowsAffected != 1 {
+						return errSandboxOperationLost
+					}
+					return nil
+				})
+				if err != nil {
+					return time.Time{}, sandboxExecutionLeaseError(err)
 				}
 				return expiresAt, nil
 			})
@@ -139,11 +152,13 @@ func (s *SandboxService) acquireSandboxOperation(ctx context.Context, id uint, k
 func (s *SandboxService) releaseSandboxOperation(id uint, owner string, generation *uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	query := s.db.WithContext(ctx).Model(&models.Sandbox{}).Where("id = ? AND operation_owner = ?", id, owner)
-	if generation != nil {
-		query = query.Where("generation = ?", *generation)
-	}
-	_ = query.Updates(map[string]any{"operation_owner": "", "operation_kind": "", "operation_expires_at": nil}).Error
+	_ = s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
+		query := tx.Model(&models.Sandbox{}).Where("id = ? AND operation_owner = ?", id, owner)
+		if generation != nil {
+			query = query.Where("generation = ?", *generation)
+		}
+		return query.Updates(map[string]any{"operation_owner": "", "operation_kind": "", "operation_expires_at": nil}).Error
+	})
 }
 
 // commitSandboxOperation fences the final SQL publication on the same row used
@@ -183,7 +198,7 @@ func (s *SandboxService) commitSandboxOperationPrepared(ctx context.Context, id 
 	if err := persistence.Err(); err != nil {
 		return err
 	}
-	return s.db.WithContext(persistence).Transaction(func(tx *gorm.DB) error {
+	return s.executionTransaction(persistence, id, func(tx *gorm.DB) error {
 		if prepare != nil {
 			if err := prepare(tx); err != nil {
 				return err

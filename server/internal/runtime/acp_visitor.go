@@ -28,6 +28,11 @@ func visitorKey(runID, nodeID, lane string) string {
 // VisitorTurn runs one visitor turn on its own bridge chat. The chat shares
 // the parked session's sandbox (and so its workspace) but not its Agent context.
 func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelude, human string, images []models.PromptImage, onProgress func([]models.AcpEvent, bool)) (out ReactTurn) {
+	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
+	if executionErr != nil {
+		return ReactTurn{Err: executionErr}
+	}
+	defer stopExecution()
 	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	vl, err := c.openVisitorLane(ctx, req, lane)
 	if err != nil {

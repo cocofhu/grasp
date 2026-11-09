@@ -92,6 +92,9 @@ func (s *DurableStore) FenceJournalTx(ctx context.Context, tx *gorm.DB, scope Qu
 }
 
 func (s *DurableStore) lockJournalTx(ctx context.Context, tx *gorm.DB, scope QueueScope, owner *QueueLease, turnID string, validate func(*gorm.DB) error) (*models.ChatQueue, error) {
+	if err := s.guardExecutionTx(tx, scope, turnID); err != nil {
+		return nil, err
+	}
 	queue, err := s.lock(tx, scope)
 	if err != nil {
 		return nil, err

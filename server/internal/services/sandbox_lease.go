@@ -1,12 +1,14 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // A retired run sandbox lives as long as any of its leases (see
@@ -149,8 +151,12 @@ func (s *SandboxService) applyLease(row *models.Sandbox, l models.SandboxLease) 
 		cols = append(cols, "destroy_at")
 	}
 	// Struct (not map) updates so the leases JSON serializer applies.
-	return s.db.Model(&models.Sandbox{ID: row.ID}).Select(cols).
-		Updates(&models.Sandbox{Leases: row.Leases, DestroyAt: row.DestroyAt}).Error
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
+		return tx.Model(&models.Sandbox{ID: row.ID}).Select(cols).
+			Updates(&models.Sandbox{Leases: row.Leases, DestroyAt: row.DestroyAt}).Error
+	})
 }
 
 // AddLeaseByName attaches a lease to the run sandbox named name. Used by
@@ -256,23 +262,42 @@ func (s *SandboxService) TouchActivityByName(name string) {
 func (s *SandboxService) claimExpired(id uint, now time.Time) bool {
 	s.leaseMu.Lock()
 	defer s.leaseMu.Unlock()
-	var row models.Sandbox
-	if err := s.db.Where("id = ?", id).First(&row).Error; err != nil {
-		return false
-	}
-	if s.inUse(row.Name) {
-		return false
-	}
-	if len(row.Leases) == 0 {
-		return row.DestroyAt != nil && !row.DestroyAt.After(now)
-	}
-	dl := computeDeadline(row.Leases, now, s.RunTTL(), s.MaxRetention(), s.runPhaseOf(row.RunID))
-	if dl != nil && dl.After(now) {
-		_ = s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("destroy_at", dl).Error
-		return false
-	}
-	return s.db.Model(&models.Sandbox{ID: id}).Select("leases").
-		Updates(&models.Sandbox{Leases: []models.SandboxLease{}}).Error == nil
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	claimed := false
+	err := s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
+		var row models.Sandbox
+		if err := tx.Where("id = ?", id).First(&row).Error; err != nil {
+			return err
+		}
+		if s.inUse(row.Name) {
+			return nil
+		}
+		if len(row.Leases) == 0 {
+			claimed = row.DestroyAt != nil && !row.DestroyAt.After(now)
+			return nil
+		}
+		// runPhaseOf uses ordinary metadata; keep its read in this transaction
+		// so a sole SQL connection never waits on itself.
+		var run models.Run
+		if row.RunID != "" {
+			if err := tx.Select("status", "started_at", "duration_sec").Where("id = ?", row.RunID).Find(&run).Error; err != nil {
+				return err
+			}
+		}
+		phase := runPhase{endedAt: run.StartedAt.Add(time.Duration(run.DurationSec) * time.Second)}
+		switch run.Status {
+		case "queued", "running", "waiting_human", "paused":
+			phase.active = true
+		}
+		dl := computeDeadline(row.Leases, now, s.RunTTL(), s.MaxRetention(), phase)
+		if dl != nil && dl.After(now) {
+			return tx.Model(&models.Sandbox{}).Where("id = ?", id).Update("destroy_at", dl).Error
+		}
+		claimed = true
+		return tx.Model(&models.Sandbox{ID: id}).Select("leases").Updates(&models.Sandbox{Leases: []models.SandboxLease{}}).Error
+	})
+	return err == nil && claimed
 }
 
 func (s *SandboxService) forgetTouch(id uint) {

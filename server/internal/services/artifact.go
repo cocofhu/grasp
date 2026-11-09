@@ -9,11 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/filestore"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -34,6 +33,7 @@ func escapeLikePattern(s string) string {
 // artifact-store MCP writes land in the platform product store.
 type ArtifactService struct {
 	db           *gorm.DB
+	execution    *executionlineage.Controller
 	maxFileBytes int64
 }
 
@@ -56,69 +56,9 @@ var (
 
 // Save persists (or replaces) an artifact within a run namespace.
 func (s *ArtifactService) Save(runID, nodeID, name, kind, content string) (string, error) {
-	var id string
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := lockArtifactNamespace(tx, runID); err != nil {
-			return err
-		}
-		writer := &ArtifactService{db: tx, maxFileBytes: s.maxFileBytes}
-		var err error
-		id, err = writer.save(runID, nodeID, name, kind, content)
-		return err
-	})
-	return id, err
-}
-
-func (s *ArtifactService) save(runID, nodeID, name, kind, content string) (string, error) {
-	now := time.Now()
-	// Replace an existing same-named artifact within the run (idempotent writes).
-	var existing models.Artifact
-	if err := s.db.Where("run_id = ? AND name = ?", runID, name).First(&existing).Error; err == nil {
-		if existing.Revision < 1 {
-			existing.Revision = 1
-		}
-		// Content-identical re-saves (finalizeVisual / liftProduct) bump the
-		// timestamp for ETag banners but must not create a version row.
-		if existing.Content != content || existing.Kind != kind {
-			ver := models.ArtifactVersion{
-				ArtifactID: existing.ID, RunID: existing.RunID, NodeID: existing.NodeID,
-				Revision: existing.Revision, Kind: existing.Kind,
-				SizeBytes: existing.SizeBytes, Content: existing.Content,
-				MimeType: existing.MimeType, SHA256: existing.SHA256,
-				CreatedAt: existing.UpdatedAt,
-			}
-			if existing.PathRef != "" {
-				ver.Content = existing.PathRef
-			}
-			if err := s.db.WithContext(filestore.WithReferences(context.Background())).Create(&ver).Error; err != nil {
-				return "", err
-			}
-			existing.Revision++
-		}
-		existing.Content = content
-		existing.SHA256 = ""
-		existing.MimeType = ""
-		existing.Kind = kind
-		existing.NodeID = nodeID
-		existing.SizeBytes = len(content)
-		existing.UpdatedAt = now
-		if err := s.db.Save(&existing).Error; err != nil {
-			return "", err
-		}
-		return existing.ID, nil
-	}
-
-	var run models.Run
-	s.db.Select("workflow_id", "workflow_name").Limit(1).Find(&run, "id = ?", runID)
-	a := models.Artifact{
-		ID: "art-" + uuid.NewString()[:8], RunID: runID, NodeID: nodeID,
-		WorkflowID: run.WorkflowID, WorkflowName: run.WorkflowName, Name: name, Kind: kind,
-		SizeBytes: len(content), Content: content, CreatedAt: now, UpdatedAt: now, Revision: 1,
-	}
-	if err := s.db.Create(&a).Error; err != nil {
-		return "", err
-	}
-	return a.ID, nil
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.savePreparedArtifact(ctx, runID, nodeID, name, kind, content)
 }
 
 // GetRecord returns the full artifact row for a run+name lookup.
@@ -169,16 +109,18 @@ func (s *ArtifactService) Delete(runID, name string) error {
 		return nil
 	}
 	var existing models.Artifact
-	if err := s.db.Where("run_id = ? AND name = ?", runID, name).First(&existing).Error; err != nil {
+	if err := s.db.Omit("content").Where("run_id = ? AND name = ?", runID, name).First(&existing).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
 		return err
 	}
-	if err := s.deleteVersionsForArtifact(existing.ID); err != nil {
-		return err
-	}
-	return s.db.Delete(&existing).Error
+	return s.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error {
+		if err := tx.Where("artifact_id = ?", existing.ID).Delete(&models.ArtifactVersion{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&existing).Error
+	})
 }
 
 var _ mcp.ArtifactDeleter = (*ArtifactService)(nil)

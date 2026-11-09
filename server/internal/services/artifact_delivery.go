@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -37,6 +38,9 @@ type ArtifactDeliveryService struct {
 }
 
 func NewArtifactDeliveryService(db *gorm.DB, arts *ArtifactService, preview *PreviewService) *ArtifactDeliveryService {
+	if arts == nil {
+		arts = NewArtifactService(db)
+	}
 	s := &ArtifactDeliveryService{db: db, Arts: arts}
 	s.OpenSource = func(ctx context.Context, runID, nodeID, path string) (io.ReadCloser, string, error) {
 		if preview == nil || preview.mgr == nil {
@@ -45,6 +49,15 @@ func NewArtifactDeliveryService(db *gorm.DB, arts *ArtifactService, preview *Pre
 		row, ok := preview.PreviewSandbox(runID, nodeID)
 		if !ok || row.Status != "running" {
 			return nil, "", errors.New("authorized sandbox is not active")
+		}
+		if arts != nil && arts.execution != nil {
+			entities, err := arts.executionEntities(ctx, runID)
+			if err != nil {
+				return nil, "", err
+			}
+			if err := arts.execution.Check(ctx, entities...); err != nil {
+				return nil, "", err
+			}
 		}
 		sb, err := preview.mgr.AttachNoEnsure(ctx, row.Name)
 		if err != nil {
@@ -144,7 +157,15 @@ func (s *ArtifactDeliveryService) deliver(ctx context.Context, runID, nodeID str
 	key := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d", runID, nodeID, turn.TurnID, a.ArtifactID, a.Revision)))
 	row := models.ArtifactDelivery{ID: "delivery-" + hex.EncodeToString(key[:]), RunID: runID, NodeID: nodeID, TurnID: turn.TurnID, SessionID: turn.SessionID, StateRunID: turn.StateRunID, Iteration: turn.Iteration, ArtifactAttachment: a, CreatedAt: time.Now()}
 	inserted := false
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	entities := []executionlineage.Entity{}
+	if turn.TurnID != "" {
+		kind := executionlineage.EntityLegacyPending
+		if turn.SessionID != "" {
+			kind = executionlineage.EntityChatTurn
+		}
+		entities = append(entities, executionlineage.Entity{Kind: kind, ID: turn.TurnID})
+	}
+	err = s.Arts.executionTransaction(ctx, runID, func(tx *gorm.DB) error {
 		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
 		if result.Error != nil {
 			return result.Error
@@ -186,7 +207,7 @@ func (s *ArtifactDeliveryService) deliver(ctx context.Context, runID, nodeID str
 			}
 		}
 		return tx.Table("react_conversations").Where("run_id = ? AND node_id = ? AND iteration = ?", runID, nodeID, turn.Iteration).UpdateColumn("has_file_deliveries", true).Error
-	})
+	}, entities...)
 	if err != nil {
 		return a, err
 	}

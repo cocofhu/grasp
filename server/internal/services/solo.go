@@ -13,6 +13,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/chatsession"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/tokenledger"
@@ -118,6 +119,7 @@ type SoloService struct {
 	modelAlign soloModelAligner
 	pending    *chatsession.PendingStore
 	durable    *chatsession.DurableStore
+	execution  *executionlineage.Controller
 	restoreMu  sync.Mutex
 	// deferredRestores holds persisted queues until their resident is ready.
 	deferredRestores map[string]bool
@@ -519,7 +521,7 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 		receipt.InitialTurnID = initial.ID
 	}
 	created := false
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
 		}
@@ -705,7 +707,7 @@ func (s *SoloService) onSandboxGone(sandboxID uint) {
 		[]string{models.SoloStatusStarting, models.SoloStatusRunning}).Find(&rows)
 	for _, r := range rows {
 		var activeID string
-		err := s.db.Transaction(func(tx *gorm.DB) error {
+		err := s.executionTransaction(context.Background(), r.ID, func(tx *gorm.DB) error {
 			if err := lockSoloCompute(tx); err != nil {
 				return err
 			}
@@ -941,7 +943,7 @@ func (s *SoloService) appendSystem(id, text string) {
 	defer cancel()
 	prepared, err := prepareSoloMessage(ctx, s.db, msg)
 	if err == nil {
-		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err = s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
 			_, err := insertPreparedSoloMessageTx(tx, prepared)
 			return err
 		})
@@ -1306,7 +1308,7 @@ func (s *SoloService) validateSessionReasoningEffort(ctx context.Context, row *m
 func (s *SoloService) rememberAppliedRoute(ctx context.Context, expected *models.SoloSession, configuration, model, effort string) error {
 	// The caller owns the captured lifecycle. Loading a fresh session here
 	// would turn a delayed old native result into authority over a new reopen.
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.executionTransaction(ctx, expected.ID, func(tx *gorm.DB) error {
 		if _, err := s.requireSoloLifecycle(tx, expected); err != nil {
 			return err
 		}
@@ -1758,7 +1760,7 @@ func (c *soloChat) recordPreparationFailure(ctx context.Context, turnID string, 
 		log.Warn().Err(prepareErr).Str("session", c.id).Msg("solo preparation failure payload persist failed")
 		return
 	}
-	if perr := c.svc.db.WithContext(pctx).Transaction(func(tx *gorm.DB) error {
+	if perr := c.svc.executionTransaction(pctx, c.id, func(tx *gorm.DB) error {
 		if err := chatsession.FenceExecution(pctx, tx); err != nil {
 			return err
 		}
@@ -1796,7 +1798,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		userPrepareCancel()
 		return false, err
 	}
-	userErr := s.db.WithContext(userPrepareCtx).Transaction(func(tx *gorm.DB) error {
+	userErr := s.executionTransaction(userPrepareCtx, c.id, func(tx *gorm.DB) error {
 		if err := chatsession.FenceExecution(ctx, tx); err != nil {
 			return err
 		}
@@ -2056,7 +2058,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 			return chatsession.FenceExecution(ctx, tx)
 		}, publish)
 	} else {
-		publicationErr = s.db.Transaction(publish)
+		publicationErr = s.executionTransaction(ctx, c.id, publish)
 	}
 	recordSoloUsage(s.db, c.id, sandboxID, usage, byModel, ledger)
 	if publicationErr != nil {

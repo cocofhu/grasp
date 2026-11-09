@@ -78,6 +78,11 @@ type AgentSandboxOpenOpts struct {
 // and a live sandbox exists for the thread, it is returned instead of creating
 // a new one.
 func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandboxOpenOpts) (*models.Sandbox, bool, error) {
+	if s.execution != nil {
+		if err := s.execution.Check(ctx); err != nil {
+			return nil, false, err
+		}
+	}
 	profile := strings.TrimSpace(opts.Profile)
 	threadID := strings.TrimSpace(opts.ThreadID)
 	if profile == "" || threadID == "" {
@@ -145,7 +150,7 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 		Name: name, Profile: profile, Purpose: SandboxPurposeAgent, Status: "creating",
 		RunID: runID, Token: opts.SharedToken, ThreadID: threadID,
 	}
-	if err := s.db.Create(row).Error; err != nil {
+	if err := s.executionCreateTransaction(ctx, nil, func(tx *gorm.DB) error { return tx.Create(row).Error }); err != nil {
 		return nil, false, err
 	}
 	s.mu.Lock()
@@ -241,6 +246,9 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
+	if err := s.executionCheck(ctx, id); err != nil {
+		return // Preserve unverified legacy state; no native creation or callback.
+	}
 
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("agent sandbox start failed")
@@ -253,8 +261,10 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 			s.host.UnregisterRun(runID)
 		}
 		at := time.Now().Add(2 * time.Minute)
-		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-			"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
+		_ = s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
+			return tx.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
+				"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
+			}).Error
 		})
 		if extra.OnFail != nil {
 			extra.OnFail(err)
@@ -277,6 +287,9 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	home, modelFingerprint := spec.ConfigHome, prepared.modelFingerprint
 	configRoot, gitCredentials := spec.ConfigRoot, spec.GitCredentials
 
+	if err := s.executionCheck(ctx, id); err != nil {
+		return
+	}
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -303,15 +316,22 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		at := time.Now().Add(s.TTL())
 		destroyAt = &at
 	}
-	res := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-		"model_binding_fingerprint": modelFingerprint,
-		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
-		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
-		"code_server_port": sb.CodeServerPort, "error": "",
-		"destroy_at": destroyAt, "updated_at": time.Now(),
+	var res *gorm.DB
+	publicationErr := s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
+		res = tx.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
+			"model_binding_fingerprint": modelFingerprint,
+			"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
+			"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
+			"code_server_port": sb.CodeServerPort, "error": "",
+			"destroy_at": destroyAt, "updated_at": time.Now(),
+		})
+		return res.Error
 	})
-	if res.Error != nil || res.RowsAffected == 0 {
+	if publicationErr != nil || res.RowsAffected == 0 {
 		acp.Close()
+		if err := s.executionCheck(ctx, id); err != nil {
+			return
+		}
 		sb.Destroy(context.Background())
 		_ = os.RemoveAll(home)
 		if extra.Resident {

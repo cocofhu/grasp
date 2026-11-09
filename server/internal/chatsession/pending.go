@@ -1,6 +1,7 @@
 package chatsession
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -24,7 +26,8 @@ type PendingTurn struct {
 // restarted server can restore them. A nil store, or one without a database,
 // stores nothing.
 type PendingStore struct {
-	db *gorm.DB
+	db        *gorm.DB
+	execution *executionlineage.Controller
 }
 
 // NewPendingStore wraps db.
@@ -39,11 +42,24 @@ func (p *PendingStore) Save(surface, key string, turns []PendingTurn) error {
 	if !p.enabled() {
 		return nil
 	}
-	return p.db.Transaction(func(tx *gorm.DB) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	prepared, err := p.preparePending(ctx, turns)
+	if err != nil {
+		return err
+	}
+	return p.pendingTransaction(ctx, surface, key, turns, func(tx *gorm.DB) error {
 		var existing []models.ChatPendingTurn
 		if err := tx.Select("id", "created_at").Where("surface = ? AND session_key = ?", surface, key).
 			Find(&existing).Error; err != nil {
 			return err
+		}
+		if p.execution != nil {
+			for _, row := range existing {
+				if err := p.execution.GuardContextTx(tx.Statement.Context, tx, executionlineage.Entity{Kind: executionlineage.EntityLegacyPending, ID: row.ID}); err != nil {
+					return err
+				}
+			}
 		}
 		enqueued := make(map[string]time.Time, len(existing))
 		for _, row := range existing {
@@ -66,7 +82,12 @@ func (p *PendingStore) Save(surface, key string, turns []PendingTurn) error {
 			rows = append(rows, models.ChatPendingTurn{ID: t.ID, Surface: surface, SessionKey: key,
 				Position: i, Started: t.Started, Payload: t.Payload, CreatedAt: at})
 		}
-		return tx.Create(&rows).Error
+		for i, row := range rows {
+			if err := p.insertPreparedPending(tx, row, prepared[i]); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -81,8 +102,10 @@ func (p *PendingStore) Load(surface string) (map[string][]PendingTurn, []string,
 	if !p.enabled() {
 		return nil, nil, nil
 	}
-	var rows []models.ChatPendingTurn
-	if err := p.db.Where("surface = ?", surface).Order("session_key asc, position asc").Find(&rows).Error; err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	rows, err := p.loadPending(ctx, surface)
+	if err != nil {
 		return nil, nil, err
 	}
 	out := map[string][]PendingTurn{}

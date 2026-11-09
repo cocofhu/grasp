@@ -11,6 +11,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/chatsession"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/pagebridge"
@@ -22,11 +23,12 @@ import (
 
 // Engine orchestrates workflow runs.
 type Engine struct {
-	db       *gorm.DB
-	provider runtime.ExecProvider
-	host     *mcp.Host
-	store    mcp.Store
-	broker   *Broker
+	db        *gorm.DB
+	execution *executionlineage.Controller
+	provider  runtime.ExecProvider
+	host      *mcp.Host
+	store     mcp.Store
+	broker    *Broker
 	// sem bounds the number of runs actively executing (in the "running"
 	// state). Its capacity is the effective max_concurrent_runs and can be
 	// changed at runtime via SetMaxConcurrent (settings page).
@@ -173,7 +175,7 @@ func (e *Engine) SetReferencePinner(p ReferencePinner) { e.refs = p }
 func (e *Engine) SetPageHub(h *pagebridge.Hub) { e.pageHub = h }
 
 // New builds an engine.
-func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int) *Engine {
+func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int, execution ...*executionlineage.Controller) *Engine {
 	if maxRuns <= 0 {
 		maxRuns = 5
 	}
@@ -185,6 +187,10 @@ func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.S
 		execRuns: map[string]bool{}, execGen: map[string]uint64{},
 		adoptedSandboxes: map[string]bool{},
 		pendingTurns:     chatsession.NewPendingStore(db),
+	}
+	if len(execution) > 0 {
+		e.execution = execution[0]
+		e.pendingTurns.SetExecutionController(e.execution)
 	}
 
 	if sink, ok := provider.(interface {

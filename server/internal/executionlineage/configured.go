@@ -54,7 +54,12 @@ func OpenConfigured(ctx context.Context, control config.StorageConfig, payloads 
 	if driver != "s3" && driver != "cos" {
 		return nil, errors.New("execution control requires an explicit local, s3 or cos driver")
 	}
-	store, err := objectstore.NewS3(control.S3)
+	controlOptions := control.S3
+	if driver == "cos" && controlOptions.PathStyle == nil {
+		pathStyle := false
+		controlOptions.PathStyle = &pathStyle
+	}
+	store, err := objectstore.NewS3(controlOptions)
 	if err != nil {
 		return nil, err
 	}

@@ -17,7 +17,7 @@ func IsDeniedRunSandboxEnvKey(k string) bool {
 	if k == "" {
 		return false
 	}
-	if envauth.IsSecretEnvKey(k) {
+	if envauth.IsSecretEnvKey(k) || envauth.IsPlatformReservedEnvKey(k) {
 		return true
 	}
 	switch k {
