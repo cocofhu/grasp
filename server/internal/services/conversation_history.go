@@ -1,11 +1,13 @@
 package services
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
@@ -401,64 +403,150 @@ func (s *SoloService) contextPreamble(sessionID, exceptMsgID, header string) str
 }
 
 func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header string) (string, error) {
-	base := s.db.Model(&models.SoloMessage{}).Where("session_id = ? AND (role <> ? OR workflow_run_id <> '') AND id <> ?", sessionID, "system", exceptMsgID)
-	recent, err := readSoloMessages(base.Session(&gorm.Session{}).Order("created_at desc, id desc").Limit(12), soloMessageAll)
-	if err != nil {
-		return "", err
-	}
-	if len(recent) == 0 {
-		return "", nil
-	}
-	anchors, err := readSoloMessages(base.Session(&gorm.Session{}).Where("role = ?", "user").Order("created_at asc, id asc"), soloMessageChat|soloMessageWorkflowContext)
-	if err != nil {
-		return "", err
-	}
+	return s.contextPreambleWithContext(context.Background(), sessionID, exceptMsgID, header)
+}
+
+func (s *SoloService) contextPreambleWithContext(ctx context.Context, sessionID, exceptMsgID, header string) (string, error) {
+	const maxContextMessages = 64
+	base := s.db.WithContext(ctx).Model(&models.SoloMessage{}).Where("session_id = ? AND (role <> ? OR workflow_run_id <> '') AND id <> ?", sessionID, "system", exceptMsgID)
 	var total int64
 	if err := base.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return "", err
 	}
-	var b strings.Builder
-	b.WriteString(header)
-	b.WriteString("此前对话来自同一任务，请保留已有约束并遵守更新后的决定。需要补充历史时，调用 artifact-store 的 get_history(view=\"messages\")，按 next_cursor 向前读取。\n\n")
-	b.WriteString(renderUserInstructions(anchors, 12000, ownHistoryTool))
-	b.WriteString(renderReferenceIndex(anchors))
-	if total > int64(len(recent)) {
-		fmt.Fprintf(&b, "（较早的 %d 条对话正文未逐字附上；用户要求与更正已单独整理在上方，工具过程与完整原文通过 get_history 回查。）\n\n", total-int64(len(recent)))
+	if total == 0 {
+		return "", nil
 	}
+	userQuery := base.Session(&gorm.Session{}).Where("role = ?", "user")
+	var users int64
+	if err := userQuery.Session(&gorm.Session{}).Count(&users).Error; err != nil {
+		return "", err
+	}
+	anchors, err := readSoloMessages(userQuery.Order("created_at desc, id desc").Limit(maxContextMessages), soloMessageContent|soloMessageAnnotations|soloMessageWorkflowContext)
+	if err != nil {
+		return "", err
+	}
+	for i, j := 0, len(anchors)-1; i < j; i, j = i+1, j-1 {
+		anchors[i], anchors[j] = anchors[j], anchors[i]
+	}
+	var b strings.Builder
+	b.WriteString(contextByteExcerpt(header, 2000))
+	b.WriteString("此前对话来自同一任务，请保留已有约束并遵守更新后的决定。需要补充历史时，调用 artifact-store 的 get_history(view=\"messages\")，按 next_cursor 向前读取。\n\n")
+	if users > int64(len(anchors)) {
+		fmt.Fprintf(&b, "（较早的 %d 条用户要求未装入本次输入；涉及先前约束时请先通过 get_history 分页核对，不得推断已读取全部要求。）\n", users-int64(len(anchors)))
+	}
+	b.WriteString(renderContextUserInstructions(anchors, 12000))
+	b.WriteString(contextByteExcerpt(renderReferenceIndex(anchors), 4000))
 	// Keep complete recent turns when they fit. Very large individual messages
 	// are explicitly marked as excerpts with a stable ID for full retrieval.
-	budget := 32000 - len([]rune(b.String()))
+	// Load at most 64 messages in batches of 12, stopping at the byte budget.
+	// A fixed first page must not omit short older replies that still fit.
+	budget := 32000 - 512 - b.Len() // Reserve the exact omission boundary below.
 	var parts []string
-	for _, row := range recent {
-		if budget <= 500 {
-			b.WriteString("\n（部分近期对话未装入本次输入，请通过 get_history 读取完整记录。）\n")
+	var ids []string
+	var last *models.SoloMessage
+	loaded := 0
+	for budget > 500 && loaded < maxContextMessages {
+		query := base.Session(&gorm.Session{}).Order("created_at desc, id desc").Limit(min(12, maxContextMessages-loaded))
+		if last != nil {
+			query = query.Where("created_at < ? OR (created_at = ? AND id < ?)", last.CreatedAt, last.CreatedAt, last.ID)
+		}
+		// Process journals are independently paged by get_history. Do not load
+		// every imported event just to re-establish a short prompt context.
+		recent, err := readSoloMessages(query, soloMessageChat|soloMessageWorkflowContext)
+		if err != nil {
+			return "", err
+		}
+		if len(recent) == 0 {
 			break
 		}
-		var part strings.Builder
-		content := historyExcerpt(strings.TrimSpace(soloHistoryContent(row)), min(budget-200, 8000), ownHistoryTool)
-		role := "用户"
-		if row.Role == "assistant" {
-			role = "助手"
-		} else if row.WorkflowRunID != "" {
-			role = "工作流历史资料"
+		loaded += len(recent)
+		last = &recent[len(recent)-1]
+		for _, row := range recent {
+			if budget <= 500 {
+				break
+			}
+			var part strings.Builder
+			content := historyExcerpt(strings.TrimSpace(soloHistoryContent(row)), min(budget-200, 8000), ownHistoryTool)
+			role := "用户"
+			if row.Role == "assistant" {
+				role = "助手"
+			} else if row.WorkflowRunID != "" {
+				role = "工作流历史资料"
+			}
+			fmt.Fprintf(&part, "[%s] %s\n（历史消息 ID：%s）\n", role, content, row.ID)
+			for _, image := range row.Images {
+				fmt.Fprintf(&part, "附件：%s (%s，引用 %s)\n", image.Name, image.MimeType, image.Ref)
+			}
+			if row.Status == "failed" || row.Status == "stopped" {
+				fmt.Fprintf(&part, "本轮状态：%s %s\n", row.Status, row.Error)
+			}
+			if row.EventLog != nil {
+				part.WriteString("本轮另有已保存的执行过程，未全部装入此处上下文；不要据此推断工具尚未执行。\n")
+			}
+			part.WriteString("\n")
+			text := contextByteExcerpt(part.String(), budget)
+			parts = append(parts, text)
+			ids = append(ids, row.ID)
+			budget -= len(text)
 		}
-		fmt.Fprintf(&part, "[%s] %s\n（历史消息 ID：%s）\n", role, content, row.ID)
-		for _, image := range row.Images {
-			fmt.Fprintf(&part, "附件：%s (%s，引用 %s)\n", image.Name, image.MimeType, image.Ref)
-		}
-		if row.Status == "failed" || row.Status == "stopped" {
-			fmt.Fprintf(&part, "本轮状态：%s %s\n", row.Status, row.Error)
-		}
-		tools := conversationTools(row.Events)
-		for _, tool := range tools[max(0, len(tools)-3):] {
-			fmt.Fprintf(&part, "工具结果：%s [%s] %s\n", tool.Title, tool.Status, historyExcerpt(tool.Text, 1000, ownHistoryTool))
-		}
-		part.WriteString("\n")
-		parts = append(parts, part.String())
-		budget -= len([]rune(part.String()))
 	}
 	for i := len(parts) - 1; i >= 0; i-- {
 		b.WriteString(parts[i])
 	}
+	if omitted := total - int64(len(parts)); omitted > 0 {
+		boundary := ""
+		if len(ids) > 0 {
+			boundary = fmt.Sprintf("；本次正文范围为消息 %s 至 %s", ids[len(ids)-1], ids[0])
+		}
+		b.WriteString(contextByteExcerpt(fmt.Sprintf("\n（较早的 %d 条对话正文未逐字附上%s；完整原文和工具过程通过 get_history 分页回查。）\n", omitted, boundary), 512))
+	}
 	return b.String(), nil
+}
+
+// Pick newer decisions first using the same byte budget as the final prompt,
+// then restore chronological order. Truncating a rune-budgeted chronological
+// ledger from its beginning would silently discard the latest corrections.
+func renderContextUserInstructions(rows []models.SoloMessage, budget int) string {
+	const header = "用户要求与更正（按时间顺序，较新的更正优先）：\n"
+	remaining := budget - len(header) - 512
+	var parts []string
+	omitted := 0
+	for i := len(rows) - 1; i >= 0; i-- {
+		if remaining < 300 {
+			omitted = i + 1
+			break
+		}
+		prefix := fmt.Sprintf("[用户要求 · %s] ", rows[i].ID)
+		content := contextByteExcerpt(soloHistoryContent(rows[i]), min(6000, remaining-len(prefix)-2))
+		part := prefix + content + "\n\n"
+		parts = append(parts, part)
+		remaining -= len(part)
+	}
+	var b strings.Builder
+	b.WriteString(header)
+	if omitted > 0 {
+		b.WriteString(contextByteExcerpt(fmt.Sprintf("（较早的 %d 条用户消息未装入本次要求记录，范围 %s 至 %s；涉及先前约束时须先用 get_history 分页核对。）\n", omitted, rows[0].ID, rows[omitted-1].ID), 512))
+	}
+	for i := len(parts) - 1; i >= 0; i-- {
+		b.WriteString(parts[i])
+	}
+	return b.String()
+}
+
+func contextByteExcerpt(text string, budget int) string {
+	if budget <= 0 {
+		return ""
+	}
+	if len(text) <= budget {
+		return text
+	}
+	const notice = "\n（此处为摘录；完整原文通过 get_history 分页读取。）\n"
+	if budget < len(notice) {
+		return ""
+	}
+	end := max(0, budget-len(notice))
+	for end > 0 && !utf8.RuneStart(text[end]) {
+		end--
+	}
+	return text[:end] + notice
 }

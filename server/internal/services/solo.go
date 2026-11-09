@@ -155,6 +155,9 @@ type soloChat struct {
 	text      strings.Builder
 	writer    *chatsession.JournalWriter
 	execution *models.ChatExecution
+	// Context is remembered only after a successful fenced reply publication.
+	// A new application handle must establish its own native-context baseline.
+	conversation soloConversationIdentity
 }
 
 type soloTurn struct {
@@ -1847,6 +1850,18 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		c.recordPreparationFailure(ctx, q.ID, started, alignErr)
 		return turnCtx.Err() != nil, alignErr
 	}
+	var conversation soloConversationIdentity
+	contextChanged := false
+	if preparer, ok := s.chat.(soloConversationPreparer); ok {
+		conversation, err = preparer.prepareSoloConversation(ctx, sandboxID)
+		if err != nil {
+			c.recordPreparationFailure(ctx, q.ID, started, err)
+			return turnCtx.Err() != nil, err
+		}
+		c.mu.Lock()
+		contextChanged = c.conversation != conversation
+		c.mu.Unlock()
+	}
 	execution := s.turnExecutionSnapshot(row, sandboxID, started)
 	c.mu.Lock()
 	c.execution = execution
@@ -1873,9 +1888,9 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	// restarts the coding agent, so it must not claim the sandbox or the
 	// repository was rebuilt.
 	var pre string
-	if row.NeedsPreamble || switched || row.ModelContextPending || row.ConversationContextPending || row.ResumeContextPending {
+	if row.NeedsPreamble || switched || row.ModelContextPending || row.ConversationContextPending || row.ResumeContextPending || contextChanged {
 		header := soloModelPreambleHeader
-		if row.ConversationContextPending && !switched && !row.ModelContextPending {
+		if (row.ConversationContextPending || contextChanged) && !switched && !row.ModelContextPending {
 			header = soloContextPreambleHeader
 		}
 		if row.NeedsPreamble {
@@ -1885,7 +1900,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		} else if switched && !row.ModelContextPending && row.CurrentReasoningEffort != row.AppliedReasoningEffort && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
 			header = soloReasoningPreambleHeader
 		}
-		pre, err = s.contextPreambleChecked(c.id, q.ID, header)
+		pre, err = s.contextPreambleWithContext(ctx, c.id, q.ID, header)
 		if err != nil {
 			s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Updates(map[string]any{"status": "failed", "error": truncErr(err)})
 		}
@@ -2047,6 +2062,11 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	}
 	if err != nil {
 		return turnCtx.Err() != nil, err
+	}
+	if status == "ok" {
+		c.mu.Lock()
+		c.conversation = conversation
+		c.mu.Unlock()
 	}
 	return false, nil
 }

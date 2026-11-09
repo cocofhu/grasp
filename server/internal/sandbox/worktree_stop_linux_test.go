@@ -44,7 +44,8 @@ func TestWorktreeStopConfirmsOwnSessionAndRetainsRoot(t *testing.T) {
 	}
 	// Python exits after spawning a new process group. Its child is reparented
 	// while remaining in our private session; a backend-group kill misses it.
-	script := "#!/bin/sh\npython3 -c 'import os,subprocess; p=subprocess.Popen([\"sleep\",\"30\"],preexec_fn=os.setpgrp); open(\"independent.pid\",\"w\").write(str(p.pid))'\nwhile :; do sleep 30; done\n"
+	// Publish readiness only after the complete PID is written and closed.
+	script := "#!/bin/sh\npython3 -c 'import os,subprocess; p=subprocess.Popen([\"sleep\",\"30\"],preexec_fn=os.setpgrp); f=open(\"independent.pid.tmp\",\"w\"); f.write(str(p.pid)); f.close(); os.replace(\"independent.pid.tmp\",\"independent.pid\")'\nwhile :; do sleep 30; done\n"
 	if err := os.WriteFile(backend, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -78,8 +79,10 @@ func TestWorktreeStopConfirmsOwnSessionAndRetainsRoot(t *testing.T) {
 	var child int
 	for until := time.Now().Add(3 * time.Second); time.Now().Before(until); {
 		if body, err := os.ReadFile(filepath.Join(sb.WorkspaceDir, "independent.pid")); err == nil {
-			child, _ = strconv.Atoi(strings.TrimSpace(string(body)))
-			break
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(body))); err == nil && pid > 0 {
+				child = pid
+				break
+			}
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -131,9 +134,11 @@ func TestWorktreeStopTimeoutKeepsOriginalHandleAndRetriesOneStop(t *testing.T) {
 
 func TestLocalStopKnownDetachedWriterRemainsPendingUntilExplicitlyStopped(t *testing.T) {
 	dir := t.TempDir()
-	cmd := exec.Command("python3", "-c", `import subprocess,time
+	cmd := exec.Command("python3", "-c", `import os,subprocess,time
 p=subprocess.Popen(["sleep","30"],start_new_session=True)
-open("detached.pid","w").write(str(p.pid))
+with open("detached.pid.tmp","w") as ready:
+    ready.write(str(p.pid))
+os.replace("detached.pid.tmp","detached.pid")
 time.sleep(30)`)
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -155,8 +160,10 @@ time.sleep(30)`)
 	var child int
 	for until := time.Now().Add(3 * time.Second); time.Now().Before(until); {
 		if body, err := os.ReadFile(filepath.Join(dir, "detached.pid")); err == nil {
-			child, _ = strconv.Atoi(string(body))
-			break
+			if pid, err := strconv.Atoi(string(body)); err == nil && pid > 0 {
+				child = pid
+				break
+			}
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
