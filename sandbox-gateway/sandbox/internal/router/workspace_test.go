@@ -30,7 +30,7 @@ func TestWorkspaceCodeRoutesRequireAnExplicitWorkspaceRoot(t *testing.T) {
 				found++
 			}
 		}
-		if root == "" && found != 0 || root != "" && found != 4 {
+		if root == "" && found != 0 || root != "" && found != 5 {
 			t.Fatalf("workspace root %q registered %d code routes", root, found)
 		}
 	}

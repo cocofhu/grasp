@@ -102,7 +102,7 @@ func (s *WorkspaceImportService) Confirm(ctx context.Context, soloID, user, id s
 	if err != nil {
 		return nil, workspaceRuntimeError(err)
 	}
-	if capability.Version != sandbox.WorkspaceCodeVersion {
+	if capability.Version != sandbox.WorkspaceCodeVersion || !capability.RenewableLease {
 		return nil, workspaceImportError(http.StatusUnprocessableEntity, "workspace_import_unsupported", "Solo 环境尚不支持提交导入，请更新运行时后重试")
 	}
 	// Open and validate object bytes outside SQL, before accepting dispatch. A

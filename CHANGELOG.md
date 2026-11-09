@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Git 导入和导出支持在原执行代次内持续确认短租约，允许较长传输；租约过期或换代立即停止，后继导入等待原 HTTP 请求及 Git 进程组退出，旧运行时明确提示能力不足。
+
 - 工作流代码导入批量读取小文件对象，导入结果位于独立的 `import/<提交>` 分支；运行时未配置工作区时不开放代码导入接口。
 
 - 本地 SeaweedFS 必须通过 `GRASP_LOCAL_OBJECTSTORE=1` 显式启用；S3 未填写地址时拒绝创建本地存储，重启也会在停止已有服务前检查配置。

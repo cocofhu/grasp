@@ -84,6 +84,7 @@ func New(deps *Dependencies) *gin.Engine {
 				code = handler.NewBoundWorkspaceCode(deps.Workspace.Binding)
 			}
 			r.GET("/api/workspace/code", code.Inventory)
+			r.PATCH("/api/workspace/code/fence", code.Renew)
 			r.POST("/api/workspace/code/export", code.Export)
 			r.POST("/api/workspace/code/imports/:importId", code.Import)
 			r.GET("/api/workspace/code/imports/:importId", code.Receipt)

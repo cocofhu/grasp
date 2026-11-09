@@ -23,8 +23,9 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 	"unicode/utf8"
+
+	"backend/internal/workspacejob"
 )
 
 const (
@@ -63,6 +64,7 @@ type Repository struct {
 }
 type Inventory struct {
 	Version        int          `json:"version"`
+	RenewableLease bool         `json:"renewableLease"`
 	Repositories   []Repository `json:"repositories"`
 	WorkingChanges bool         `json:"workingChanges"`
 	NonGit         bool         `json:"nonGit"`
@@ -87,7 +89,7 @@ type Service struct {
 }
 
 func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
-	result := Inventory{Version: Version, Repositories: []Repository{}, MaxBundleBytes: MaxBundleBytes, MaxTotalBytes: MaxTotalBytes, MaxFileBytes: MaxFileBytes}
+	result := Inventory{Version: Version, RenewableLease: true, Repositories: []Repository{}, MaxBundleBytes: MaxBundleBytes, MaxTotalBytes: MaxTotalBytes, MaxFileBytes: MaxFileBytes}
 	root, err := os.OpenRoot(s.Root)
 	if err != nil {
 		return result, err
@@ -203,18 +205,7 @@ func command(ctx context.Context, dir string, stdout io.Writer, args ...string) 
 
 func commandInput(ctx context.Context, dir string, stdout io.Writer, stdin io.Reader, args ...string) ([]byte, error) {
 	base := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.attributesFile=/dev/null", "-c", "core.excludesFile=/dev/null", "-c", "submodule.recurse=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "protocol.allow=never", "-c", "protocol.file.allow=always", "-c", "pack.threads=1", "-c", "uploadpack.packObjectsHook="}
-	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
-	// Git delegates fetch/packing to children. Cancelling only its leader can
-	// leave helpers writing after a lease deadline; kill the whole group.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
-	cmd.Cancel = func() error {
-		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		if errors.Is(err, syscall.ESRCH) {
-			return os.ErrProcessDone
-		}
-		return err
-	}
-	cmd.WaitDelay = time.Second
+	cmd := workspacejob.NewSupervisedCommand(ctx, append([]string{"git"}, append(base, args...)...)...)
 	cmd.Dir = dir
 	cmd.Stdin = stdin
 	for _, env := range os.Environ() {
@@ -231,7 +222,15 @@ func commandInput(ctx context.Context, dir string, stdout io.Writer, stdin io.Re
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &boundedWriter{writer: &stderr, remaining: 16 << 10}
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if cmd.Process != nil {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		workspacejob.WaitProcessGroupExit(cmd.Process.Pid)
+	}
+	if ctx.Err() != nil {
+		return nil, context.Cause(ctx)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("git transfer operation failed: %w", err)
 	}
 	return output.Bytes(), nil

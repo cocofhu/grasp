@@ -117,3 +117,48 @@ func TestWorkspaceCodeClientReportsOldRuntimeWithoutFallback(t *testing.T) {
 		t.Fatalf("old runtime was not capability gated: %v", err)
 	}
 }
+
+func TestWorkspaceCodeRenewalRequiresTheExactAuthenticatedAcknowledgement(t *testing.T) {
+	fence := WorkspaceCodeFence{Generation: 23, ExpiresAt: time.Now().UTC().Add(30 * time.Second)}
+	for _, test := range []struct {
+		name       string
+		generation uint64
+		expiry     time.Time
+		status     int
+		wantOK     bool
+	}{
+		{"exact", fence.Generation, fence.ExpiresAt, http.StatusOK, true},
+		{"different generation", fence.Generation + 1, fence.ExpiresAt, http.StatusOK, false},
+		{"short acknowledgement", fence.Generation, fence.ExpiresAt.Add(-time.Second), http.StatusOK, false},
+		{"uncommitted extension", fence.Generation, fence.ExpiresAt.Add(time.Second), http.StatusOK, false},
+		{"expired acknowledgement", fence.Generation, time.Now().Add(-time.Second), http.StatusOK, false},
+		{"runtime rejected", fence.Generation, fence.ExpiresAt, http.StatusConflict, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var calls int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/login" {
+					http.SetCookie(w, &http.Cookie{Name: acpSessionCookieName, Value: "authorized"})
+					return
+				}
+				calls++
+				cookie, err := r.Cookie(acpSessionCookieName)
+				if err != nil || cookie.Value != "authorized" || r.Method != http.MethodPatch || r.URL.Path != "/api/workspace/code/fence" || r.Header.Get("X-Grasp-Operation-Generation") != "23" || r.Header.Get("X-Grasp-Operation-Expires-At") != fence.ExpiresAt.Format(time.RFC3339Nano) {
+					t.Error("renewal lost bridge authentication, generation or committed expiry")
+				}
+				w.WriteHeader(test.status)
+				_ = json.NewEncoder(w).Encode(map[string]any{"generation": test.generation, "expiresAt": test.expiry})
+			}))
+			defer server.Close()
+			host, portText, _ := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+			port, _ := strconv.Atoi(portText)
+			err := RenewWorkspaceCode(t.Context(), host, port, "private-token", fence)
+			if (err == nil) != test.wantOK || calls != 1 {
+				t.Fatalf("wrong renewal result or replay: %v, requests=%d", err, calls)
+			}
+			if err := RenewWorkspaceCode(t.Context(), host, port, "private-token", WorkspaceCodeFence{Generation: 23, ExpiresAt: time.Now().Add(-time.Second)}); err == nil || calls != 1 {
+				t.Fatal("expired lease reached the runtime")
+			}
+		})
+	}
+}

@@ -48,13 +48,31 @@ func TestWorkspaceCodePhysicalFenceRejectsMissingExpiredAndSupersededRequests(t 
 		t.Fatal("stale generation was allowed to write")
 	}
 	c, _ = codeRequest(6, time.Now().Add(30*time.Second))
-	_, newerCancel, ok := h.operation(c)
-	if !ok {
-		t.Fatal("successor was rejected")
+	type successor struct {
+		cancel context.CancelFunc
+		ok     bool
 	}
-	defer newerCancel()
-	if old.Err() != context.Canceled {
+	started := make(chan successor, 1)
+	go func() { _, release, ok := h.operation(c); started <- successor{release, ok} }()
+	select {
+	case <-old.Done():
+	case <-time.After(time.Second):
 		t.Fatal("superseded runtime request was not cancelled")
+	}
+	select {
+	case <-started:
+		t.Fatal("successor entered before the original operation exited")
+	case <-time.After(20 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case next := <-started:
+		if !next.ok {
+			t.Fatal("successor was rejected after the original exited")
+		}
+		defer next.cancel()
+	case <-time.After(time.Second):
+		t.Fatal("successor did not enter after physical release")
 	}
 }
 
@@ -68,11 +86,53 @@ func TestWorkspaceCodePhysicalFenceExpiresWithoutServerConnection(t *testing.T) 
 	defer cancel()
 	select {
 	case <-ctx.Done():
-		if ctx.Err() != context.DeadlineExceeded {
-			t.Fatal(ctx.Err())
+		if context.Cause(ctx) != context.DeadlineExceeded {
+			t.Fatal(context.Cause(ctx))
 		}
 	case <-time.After(time.Second):
 		t.Fatal("runtime survived acknowledged lease expiry")
+	}
+}
+
+func TestWorkspaceCodeRenewalExtendsOnlyTheLiveOriginalGeneration(t *testing.T) {
+	h := NewWorkspaceCode(t.TempDir())
+	initial := time.Now().Add(200 * time.Millisecond)
+	c, _ := codeRequest(7, initial)
+	ctx, release, ok := h.operation(c)
+	if !ok {
+		t.Fatal("original operation was rejected")
+	}
+	defer release()
+	for _, generation := range []uint64{6, 8} {
+		request, response := codeRequest(generation, time.Now().Add(time.Second))
+		h.Renew(request)
+		if response.Code != http.StatusConflict {
+			t.Fatal("different generation renewed the original operation")
+		}
+	}
+	next := time.Now().Add(600 * time.Millisecond)
+	request, response := codeRequest(7, next)
+	h.Renew(request)
+	if response.Code != http.StatusOK {
+		t.Fatal("current generation was not renewed")
+	}
+	select {
+	case <-ctx.Done():
+		t.Fatal("renewed operation stopped at its initial deadline")
+	case <-time.After(time.Until(initial) + 30*time.Millisecond):
+	}
+	select {
+	case <-ctx.Done():
+		if context.Cause(ctx) != context.DeadlineExceeded {
+			t.Fatal(context.Cause(ctx))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("operation survived its last acknowledged expiry")
+	}
+	request, response = codeRequest(7, time.Now().Add(time.Second))
+	h.Renew(request)
+	if response.Code != http.StatusConflict {
+		t.Fatal("expired operation was revived by renewal")
 	}
 }
 
