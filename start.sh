@@ -11,6 +11,8 @@
 #   ./start.sh pull        refresh compose images + the sandbox runtime
 #   ./start.sh dev         local source stack (build server/web/gateway)
 #   ./start.sh dev -d      local source stack, detached
+#   ./start.sh init-execution --offline      initialize a new stopped release stack
+#   ./start.sh dev init-execution --offline  same, for the source stack
 #   ./start.sh sandbox     build universal-sandbox:local (dev only)
 #   ./start.sh gateway     rebuild local sandbox-gateway image (dev only)
 #   ./start.sh runtime     rebuild the sandbox runtime bundle (dev only)
@@ -280,13 +282,20 @@ case "$cmd" in
     "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" down --remove-orphans || true
     up_release 1
     ;;
+  init-execution)
+    bash scripts/init-execution.sh release "$RELEASE_COMPOSE_FILE" "$@"
+    ;;
   dev)
     sub="${1:-up}"
     case "$sub" in
       -d|up-d|detach) up_dev 1 ;;
       up|"") up_dev 0 ;;
+      init-execution)
+        shift
+        bash scripts/init-execution.sh dev "$DEV_COMPOSE_FILE" "$@"
+        ;;
       *)
-        echo "usage: ./start.sh dev [-d]" >&2
+        echo "usage: ./start.sh dev [-d|init-execution --offline]" >&2
         exit 1
         ;;
     esac
@@ -316,7 +325,7 @@ case "$cmd" in
     ;;
   *)
     echo "unknown: $cmd" >&2
-    echo "usage: ./start.sh [up|-d|pull|logs|gw-logs|down|restart|dev|sandbox|gateway|runtime]" >&2
+    echo "usage: ./start.sh [up|-d|pull|logs|gw-logs|down|restart|init-execution --offline|dev|sandbox|gateway|runtime]" >&2
     exit 1
     ;;
 esac

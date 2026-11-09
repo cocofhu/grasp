@@ -190,15 +190,22 @@ func TestEnvironmentReleaseCrashMarkerAndExpiryAreNotReplayPermission(t *testing
 	}
 }
 func TestEnvironmentReleaseLongOperationRenewsWithoutExtendingOverallDeadline(t *testing.T) {
-	r, native, db := releaseServiceFixture(t, EnvironmentReleaseOptions{LeaseTTL: 100 * time.Millisecond, MaxDuration: time.Second})
+	r, native, db := releaseServiceFixture(t, EnvironmentReleaseOptions{LeaseTTL: 2 * time.Second, MaxDuration: 6 * time.Second})
 	view := confirmedRelease(t, r, "long-release")
-	ctx := context.Background()
+	var original models.EnvironmentRelease
+	if err := db.Take(&original, "id = ?", view.ID).Error; err != nil || original.ExpiresAt == nil {
+		t.Fatal("initial lease was not persisted", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	defer cancel()
 	started := make(chan struct{})
 	native.onDelete = func(work context.Context, guard func(context.Context) error) error {
 		close(started)
-		timer := time.NewTimer(350 * time.Millisecond)
+		// Keep native work blocked beyond the original lease, with enough
+		// renewal margin for the race detector and concurrent CI packages.
+		timer := time.NewTimer(2500 * time.Millisecond)
 		defer timer.Stop()
-		ticker := time.NewTicker(10 * time.Millisecond)
+		ticker := time.NewTicker(40 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
@@ -218,9 +225,15 @@ func TestEnvironmentReleaseLongOperationRenewsWithoutExtendingOverallDeadline(t 
 	}
 	done := make(chan error, 1)
 	go func() { done <- r.RunOne(ctx, view.ID) }()
-	<-started
+	select {
+	case <-started:
+	case err := <-done:
+		t.Fatal("native work did not start", err)
+	case <-ctx.Done():
+		t.Fatal("native work did not start", ctx.Err())
+	}
 	renewals := 0
-	loop := time.NewTicker(25 * time.Millisecond)
+	loop := time.NewTicker(100 * time.Millisecond)
 	defer loop.Stop()
 	for {
 		select {
@@ -232,13 +245,21 @@ func TestEnvironmentReleaseLongOperationRenewsWithoutExtendingOverallDeadline(t 
 				t.Fatalf("long task skipped lease renewals: %d", renewals)
 			}
 			var row models.EnvironmentRelease
-			_ = db.Take(&row, "id = ?", view.ID).Error
-			if row.Deadline.Sub(row.CreatedAt) > 2*time.Second {
+			if err := db.Take(&row, "id = ?", view.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if !row.Deadline.Equal(view.Deadline) {
 				t.Fatal("renewal changed original deadline")
+			}
+			if !time.Now().After(*original.ExpiresAt) || row.ExpiresAt == nil || !row.ExpiresAt.After(*original.ExpiresAt) {
+				t.Fatal("native work did not cross the original lease expiry with a renewed lease")
+			}
+			if row.State != "released" || native.deletes.Load() != 1 {
+				t.Fatal("long operation lost its original release receipt", row.State, native.deletes.Load())
 			}
 			return
 		case <-loop.C:
-			_, err := r.Renew(ctx, "environment-one", view.ID, EnvironmentReleaseRenew{Owner: "owner-original", Generation: 1, ExpiresAt: time.Now().UTC().Add(90 * time.Millisecond)})
+			renewed, err := r.Renew(ctx, "environment-one", view.ID, EnvironmentReleaseRenew{Owner: "owner-original", Generation: 1, ExpiresAt: time.Now().UTC().Add(1900 * time.Millisecond)})
 			if errors.Is(err, ErrReleaseOwner) {
 				var row models.EnvironmentRelease
 				_ = db.Take(&row, "id = ?", view.ID).Error
@@ -249,7 +270,12 @@ func TestEnvironmentReleaseLongOperationRenewsWithoutExtendingOverallDeadline(t 
 			if err != nil {
 				t.Fatal(err)
 			}
+			if !renewed.Deadline.Equal(view.Deadline) {
+				t.Fatal("renewal response changed original deadline")
+			}
 			renewals++
+		case <-ctx.Done():
+			t.Fatal("long operation did not finish", ctx.Err())
 		}
 	}
 }

@@ -226,7 +226,9 @@ func (c runtimeWorkspaceConfigurer) configure(ctx context.Context, input io.Read
 		}
 		// The same process/tuple is an uncertain original configuration. It
 		// may only be observed again; no second backend restart is issued.
-		if prior.Incarnation == incarnation || c.getenv("GRASP_SANDBOX_RESOURCE_ID") != "" {
+		// A new Pod can carry the gateway resource ID without its ephemeral
+		// configured roots; that ID alone does not identify the old process.
+		if prior.Incarnation == incarnation || c.getenv("GRASP_WORKSPACE_CONTROL_ROOT") != "" || c.getenv("GRASP_WORKSPACE_RESTORE_ROOT") != "" {
 			return workspacebinding.ErrUnknown
 		}
 	} else if !errors.Is(readErr, os.ErrNotExist) {
