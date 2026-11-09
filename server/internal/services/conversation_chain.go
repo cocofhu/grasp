@@ -163,6 +163,12 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 	if err := s.db.Where("run_id = ?", run.ID).Order("id asc").Find(&convs).Error; err != nil {
 		return nil, nil, err
 	}
+	return buildConversationChain(run, states, counts, convs, s.bootingSandboxes(run.ID), until, untilIter)
+}
+
+// buildConversationChain derives a chain solely from a captured snapshot.
+// History preparation can hydrate immutable sources after releasing SQL.
+func buildConversationChain(run models.Run, states []models.StateRun, counts map[uint]int, convs []models.ReactConversation, booting map[string]string, until string, untilIter int) ([]ChainSegment, []models.StateRun, error) {
 	convByVisit := make(map[visitKey]models.ReactConversation, len(convs))
 	for _, c := range convs {
 		it := c.Iteration
@@ -184,8 +190,6 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 		seen[k] = len(rows)
 		rows = append(rows, sr)
 	}
-
-	booting := s.bootingSandboxes(run.ID)
 
 	// Attribute gate turns over the whole chain, before any cut.
 	ownTurns, gateTurns := attributeGateTurns(run.Graph, rows, convByVisit)

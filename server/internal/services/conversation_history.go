@@ -128,14 +128,14 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 	var snapshot models.SoloMessage
 	switch {
 	case cursor.SnapshotID != "":
-		err = base.Session(&gorm.Session{}).Where("id = ?", cursor.SnapshotID).First(&snapshot).Error
+		err = base.Session(&gorm.Session{}).Select("id", "created_at").Where("id = ?", cursor.SnapshotID).First(&snapshot).Error
 	case scope.AnchorID != "":
-		err = base.Session(&gorm.Session{}).Where("id = ?", scope.AnchorID).First(&snapshot).Error
+		err = base.Session(&gorm.Session{}).Select("id", "created_at").Where("id = ?", scope.AnchorID).First(&snapshot).Error
 	case scope.RefID != "":
 		// A reference pinned while the target had no messages stays empty.
 		err = gorm.ErrRecordNotFound
 	default:
-		err = base.Session(&gorm.Session{}).Order("created_at desc, id desc").First(&snapshot).Error
+		err = base.Session(&gorm.Session{}).Select("id", "created_at").Order("created_at desc, id desc").First(&snapshot).Error
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) && req.Cursor == "" && scope.AnchorID == "" {
 		if req.View == "summary" {
@@ -151,13 +151,13 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 	query := base.Session(&gorm.Session{}).Where("created_at < ? OR (created_at = ? AND id <= ?)", snapshot.CreatedAt, snapshot.CreatedAt, snapshot.ID)
 	if cursor.BeforeID != "" {
 		var before models.SoloMessage
-		if err := base.Session(&gorm.Session{}).Where("id = ?", cursor.BeforeID).First(&before).Error; err != nil {
+		if err := base.Session(&gorm.Session{}).Select("id", "created_at").Where("id = ?", cursor.BeforeID).First(&before).Error; err != nil {
 			return page, errors.New("history cursor unavailable")
 		}
 		query = query.Where("created_at < ? OR (created_at = ? AND id < ?)", before.CreatedAt, before.CreatedAt, before.ID)
 	}
-	var rows []models.SoloMessage
-	if err := query.Order("created_at desc, id desc").Limit(req.Limit + 1).Find(&rows).Error; err != nil {
+	rows, err := readSoloMessages(query.Order("created_at desc, id desc").Limit(req.Limit+1), soloMessageAll)
+	if err != nil {
 		return page, err
 	}
 	page.HasMore = len(rows) > req.Limit
@@ -170,9 +170,9 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 		page.Messages = append(page.Messages, conversationMessage(rows[i]))
 	}
 	if req.View == "summary" {
-		var anchors []models.SoloMessage
-		if err := base.Session(&gorm.Session{}).Where("role = ? AND (created_at < ? OR (created_at = ? AND id <= ?))", "user", snapshot.CreatedAt, snapshot.CreatedAt, snapshot.ID).
-			Order("created_at asc, id asc").Find(&anchors).Error; err != nil {
+		anchors, err := readSoloMessages(base.Session(&gorm.Session{}).Where("role = ? AND (created_at < ? OR (created_at = ? AND id <= ?))", "user", snapshot.CreatedAt, snapshot.CreatedAt, snapshot.ID).
+			Order("created_at asc, id asc"), soloMessageChat|soloMessageWorkflowContext)
+		if err != nil {
 			return page, err
 		}
 		page.Summary = renderContextBrief(scope.Title, anchors, scope.readTool())
@@ -402,14 +402,15 @@ func (s *SoloService) contextPreamble(sessionID, exceptMsgID, header string) str
 
 func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header string) (string, error) {
 	base := s.db.Model(&models.SoloMessage{}).Where("session_id = ? AND (role <> ? OR workflow_run_id <> '') AND id <> ?", sessionID, "system", exceptMsgID)
-	var recent, anchors []models.SoloMessage
-	if err := base.Session(&gorm.Session{}).Order("created_at desc, id desc").Limit(12).Find(&recent).Error; err != nil {
+	recent, err := readSoloMessages(base.Session(&gorm.Session{}).Order("created_at desc, id desc").Limit(12), soloMessageAll)
+	if err != nil {
 		return "", err
 	}
 	if len(recent) == 0 {
 		return "", nil
 	}
-	if err := base.Session(&gorm.Session{}).Where("role = ?", "user").Order("created_at asc, id asc").Find(&anchors).Error; err != nil {
+	anchors, err := readSoloMessages(base.Session(&gorm.Session{}).Where("role = ?", "user").Order("created_at asc, id asc"), soloMessageChat|soloMessageWorkflowContext)
+	if err != nil {
 		return "", err
 	}
 	var total int64

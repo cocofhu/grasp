@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func soloQueueScope(id string) chatsession.QueueScope {
@@ -424,14 +423,32 @@ func (s *SoloService) retryDeferredRestores(sandboxID uint) {
 }
 
 func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	if len(turn.Payload) == 0 {
 		var err error
-		turn, err = s.durable.ReadTurn(context.Background(), soloQueueScope(id), turn.ID)
+		turn, err = s.durable.ReadTurn(ctx, soloQueueScope(id), turn.ID)
 		if err != nil {
 			return err
 		}
 	}
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	var preparedUser *preparedSoloMessage
+	if q, err := decodeSoloTurn(turn); err == nil {
+		message := models.SoloMessage{ID: q.ID, ClientMessageID: turn.ClientMessageID, SessionID: id, Role: "user", Content: q.Text,
+			Images: q.Images, Annotations: q.Annotations, References: q.References, PreviewShared: q.PreviewShared}
+		prepared, err := prepareSoloMessage(ctx, s.db, message)
+		if err != nil {
+			return err
+		}
+		preparedUser = &prepared
+	}
+	notice := models.SoloMessage{ID: "reply:" + turn.ID, TurnID: turn.ID, SessionID: id, Role: "assistant",
+		Status: "unknown", Error: "执行结果待核对：" + soloRestartStopped + "，请核对工作区和已执行操作后继续"}
+	preparedNotice, err := prepareSoloMessage(ctx, s.db, notice)
+	if err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// The owning conversation's close/delete uses this same row lock.
 		if err := tx.Model(&models.ChatQueue{}).Where("id = ?", soloQueueScope(id).ID()).UpdateColumn("revision", gorm.Expr("revision + 1")).Error; err != nil {
 			return err
@@ -451,15 +468,11 @@ func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) e
 		if err := tx.Model(&models.SoloMessage{}).Where("session_id = ? AND (id = ? OR turn_id = ?)", id, "reply:"+turn.ID, turn.ID).Where("role = ?", "assistant").Count(&replyCount).Error; err != nil {
 			return err
 		}
-		if q, err := decodeSoloTurn(turn); err == nil {
-			message := models.SoloMessage{ID: q.ID, ClientMessageID: turn.ClientMessageID, SessionID: id, Role: "user", Content: q.Text,
-				Images: q.Images, Annotations: q.Annotations, References: q.References, PreviewShared: q.PreviewShared}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&message).Error; err != nil {
+		if preparedUser != nil {
+			if _, err := insertPreparedSoloMessageTx(tx, *preparedUser); err != nil {
 				return err
 			}
 		}
-		notice := models.SoloMessage{ID: "reply:" + turn.ID, TurnID: turn.ID, SessionID: id, Role: "assistant",
-			Status: "unknown", Error: "执行结果待核对：" + soloRestartStopped + "，请核对工作区和已执行操作后继续"}
 		if replyCount > 0 {
 			// Artifact delivery may have created a placeholder before the
 			// executor disappeared. Preserve its body/files and mark its result
@@ -479,10 +492,15 @@ func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) e
 			notice.Status = "stopped"
 			notice.Error = "已取消本轮，未派发到 Agent"
 		}
+		preparedNotice.record.ID, preparedNotice.record.Status, preparedNotice.record.Error = notice.ID, notice.Status, notice.Error
+		preparedNotice.record.EventLog, err = messageJSON(notice.EventLog)
+		if err != nil {
+			return err
+		}
 		if err := tx.Model(&models.SoloMessage{}).Where("id = ? AND session_id = ?", turn.ID, id).Update("status", "stopped").Error; err != nil {
 			return err
 		}
-		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"status", "error", "event_log", "turn_id"})}).Create(&notice).Error; err != nil {
+		if _, err := insertPreparedSoloMessageTx(tx, preparedNotice, "status", "error", "event_log", "turn_id"); err != nil {
 			return err
 		}
 		if current.State == chatsession.TurnUnknown {
@@ -495,14 +513,34 @@ func (s *SoloService) recoverSoloReceipt(id string, turn models.ChatQueueTurn) e
 }
 
 func (s *SoloService) settleSoloReceipt(ctx context.Context, id string, row models.ChatQueueTurn, turn *soloTurn, state string, failure error) error {
+	var preparedUser *preparedSoloMessage
+	if turn != nil {
+		user := models.SoloMessage{ID: row.ID, ClientMessageID: row.ClientMessageID, SessionID: id, Role: "user", Content: turn.Text,
+			Images: turn.Images, Annotations: turn.Annotations, References: turn.References, PreviewShared: turn.PreviewShared}
+		prepared, err := prepareSoloMessage(ctx, s.db, user)
+		if err != nil {
+			return err
+		}
+		preparedUser = &prepared
+	}
+	message := "本轮执行未完成，请核对工作区后继续"
+	if failure != nil && state != chatsession.TurnUnknown {
+		message = truncErr(failure)
+	}
+	reply := models.SoloMessage{ID: "reply:" + row.ID, TurnID: row.ID, SessionID: id, Role: "assistant", Status: "failed", Error: message}
+	if state == chatsession.TurnUnknown {
+		reply.Status, reply.Error = "unknown", "执行结果待核对，请核对工作区和已执行操作后继续"
+	}
+	preparedReply, err := prepareSoloMessage(ctx, s.db, reply)
+	if err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := chatsession.FenceExecution(ctx, tx); err != nil {
 			return err
 		}
-		if turn != nil {
-			user := models.SoloMessage{ID: row.ID, ClientMessageID: row.ClientMessageID, SessionID: id, Role: "user", Content: turn.Text,
-				Images: turn.Images, Annotations: turn.Annotations, References: turn.References, PreviewShared: turn.PreviewShared}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&user).Error; err != nil {
+		if preparedUser != nil {
+			if _, err := insertPreparedSoloMessageTx(tx, *preparedUser); err != nil {
 				return err
 			}
 		}
@@ -510,11 +548,6 @@ func (s *SoloService) settleSoloReceipt(ctx context.Context, id string, row mode
 		if state == chatsession.TurnUnknown {
 			reason = "delivery_uncertain"
 		}
-		message := "本轮执行未完成，请核对工作区后继续"
-		if failure != nil && state != chatsession.TurnUnknown {
-			message = truncErr(failure)
-		}
-		reply := models.SoloMessage{ID: "reply:" + row.ID, TurnID: row.ID, SessionID: id, Role: "assistant", Status: "failed", Error: message}
 		var err error
 		reply.EventLog, err = s.journalPointer(tx, id, row.ID, row.ExecutionEpoch)
 		if err != nil {
@@ -527,7 +560,11 @@ func (s *SoloService) settleSoloReceipt(ctx context.Context, id string, row mode
 				return err
 			}
 		}
-		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"status", "error", "event_log", "turn_id"})}).Create(&reply).Error; err != nil {
+		preparedReply.record.EventLog, err = messageJSON(reply.EventLog)
+		if err != nil {
+			return err
+		}
+		if _, err := insertPreparedSoloMessageTx(tx, preparedReply, "status", "error", "event_log", "turn_id"); err != nil {
 			return err
 		}
 		return chatsession.FinishExecution(ctx, tx, state, reason, reply.ID)

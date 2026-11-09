@@ -2,12 +2,10 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -68,7 +66,7 @@ func (s *SoloService) ContinueWorkflow(ctx context.Context, runID, user string, 
 		return s.Get(ctx, previous, user)
 	}
 	var run models.Run
-	if err := s.db.First(&run, "id = ?", runID).Error; err != nil {
+	if err := s.db.Select("id", "status").First(&run, "id = ?", runID).Error; err != nil {
 		return nil, err
 	}
 	if !workflowHistoryTerminal(run.Status) {
@@ -79,61 +77,4 @@ func (s *SoloService) ContinueWorkflow(ctx context.Context, runID, user string, 
 
 func workflowHistoryTerminal(status string) bool {
 	return status == "completed" || status == "failed" || status == "cancelled"
-}
-
-// The history is a frozen, Run-authorized context, never a copy of private
-// origin-Solo messages. It excludes credentials and Run MCP tokens.
-func freezeWorkflowHistory(tx *gorm.DB, session *models.SoloSession, runID string) error {
-	var run models.Run
-	if err := tx.First(&run, "id = ?", runID).Error; err != nil {
-		return err
-	}
-	if !workflowHistoryTerminal(run.Status) {
-		return soloErr(http.StatusConflict, "workflow_still_running", "工作流状态已变化，请刷新后重试")
-	}
-	segments, _, err := NewRunService(tx).ConversationChain(run, "", 0)
-	if err != nil {
-		return err
-	}
-	var artifacts []models.Artifact
-	if err := tx.Where("run_id = ?", runID).Order("created_at asc, id asc").Find(&artifacts).Error; err != nil {
-		return err
-	}
-	results := make([]WorkflowArtifactRef, 0, len(artifacts))
-	for _, artifact := range artifacts {
-		results = append(results, WorkflowArtifactRef{ID: artifact.ID, Name: artifact.Name, Version: artifact.Revision, Content: artifact.Content})
-	}
-	// Artifacts have no execution credentials; their content is needed for
-	// continuation even after the original sandbox has been released.
-	// Keep the original request ahead of potentially large artifact bodies.
-	// The model receives a bounded excerpt and can retrieve the full history.
-	// A map's alphabetical JSON order would put artifacts before the request.
-	var instructions []models.WorkflowInstruction
-	if err := tx.Where("run_id = ?", runID).Order("created_at,id").Find(&instructions).Error; err != nil {
-		return err
-	}
-	context, err := json.Marshal(struct {
-		RunID        string                       `json:"runId"`
-		Workflow     string                       `json:"workflow"`
-		Title        string                       `json:"title"`
-		Status       string                       `json:"status"`
-		FirstMessage *models.CompositeText        `json:"firstMessage"`
-		Inputs       map[string]any               `json:"inputs"`
-		Instructions []models.WorkflowInstruction `json:"instructions,omitempty"`
-		Segments     []ChainSegment               `json:"segments"`
-		Artifacts    []WorkflowArtifactRef        `json:"artifacts"`
-	}{run.ID, run.WorkflowName, run.Title, run.Status, run.FirstMessage, run.Inputs, instructions, segments, results})
-	if err != nil {
-		return err
-	}
-	if err := tx.Create(&models.SoloWorkflowLink{ID: uuid.NewString(), SoloID: session.ID, RunID: runID, UserID: session.UserID, Kind: "reference"}).Error; err != nil {
-		return err
-	}
-	message := models.SoloMessage{ID: uuid.NewString(), SessionID: session.ID, Role: "system", WorkflowRunID: runID,
-		Content: "已关联历史工作流。当前是独立新环境，尚未恢复原工作区文件或进程。", WorkflowContext: string(context)}
-	if err := tx.Create(&message).Error; err != nil {
-		return err
-	}
-	session.ModelContextPending = true
-	return tx.Model(session).Update("model_context_pending", true).Error
 }

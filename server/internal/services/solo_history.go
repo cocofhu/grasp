@@ -48,8 +48,8 @@ func (s *SoloService) MessagePage(ctx context.Context, id, user, before string, 
 		}
 		query = query.Where("created_at < ? OR (created_at = ? AND id < ?)", cursor.At, cursor.At, cursor.ID)
 	}
-	var rows []models.SoloMessage
-	if err := query.Order("created_at DESC, id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
+	rows, err := readSoloMessages(query.Order("created_at DESC, id DESC").Limit(limit+1), soloMessageChat)
+	if err != nil {
 		return result, err
 	}
 	result.HasMore = len(rows) > limit
@@ -140,7 +140,8 @@ func (s *SoloService) MessageEvents(ctx context.Context, id, user, messageID str
 		}
 		return result, nil
 	}
-	if err := s.db.WithContext(ctx).Select("events").First(&message, "id = ? AND session_id = ?", messageID, id).Error; err != nil {
+	message, err := readSoloMessage(s.db.WithContext(ctx).Where("id = ? AND session_id = ?", messageID, id), soloMessageEvents)
+	if err != nil {
 		return result, err
 	}
 	result.Head = int64(len(message.Events)) - 1

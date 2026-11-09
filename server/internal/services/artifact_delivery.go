@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -153,17 +154,31 @@ func (s *ArtifactDeliveryService) deliver(ctx context.Context, runID, nodeID str
 			return nil
 		}
 		if turn.SessionID != "" {
-			var reply models.SoloMessage
 			id := "reply:" + turn.TurnID
-			findErr := tx.Where("id = ?", id).First(&reply).Error
-			if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
-				return findErr
+			placeholder := soloMessageSQL{ID: id, SessionID: turn.SessionID, Role: "assistant", TurnID: turn.TurnID, CreatedAt: time.Now()}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&placeholder).Error; err != nil {
+				return err
 			}
-			if errors.Is(findErr, gorm.ErrRecordNotFound) {
-				reply = models.SoloMessage{ID: id, SessionID: turn.SessionID, Role: "assistant", TurnID: turn.TurnID, CreatedAt: time.Now()}
+			// Serialize file edits on the same reply row as final publication.
+			// Never load or Save its content/structured bodies under this lock.
+			if err := tx.Model(&soloMessageSQL{}).Where("id = ? AND session_id = ?", id, turn.SessionID).UpdateColumn("turn_id", turn.TurnID).Error; err != nil {
+				return err
 			}
-			reply.Files = append(reply.Files, a)
-			return tx.Save(&reply).Error
+			var reply soloMessageSQL
+			if err := tx.Select("id", "files").First(&reply, "id = ? AND session_id = ?", id, turn.SessionID).Error; err != nil {
+				return err
+			}
+			var files []models.ArtifactAttachment
+			if reply.Files != nil && *reply.Files != "" {
+				if err := json.Unmarshal([]byte(*reply.Files), &files); err != nil {
+					return err
+				}
+			}
+			encoded, err := messageJSON(append(files, a))
+			if err != nil {
+				return err
+			}
+			return tx.Model(&soloMessageSQL{}).Where("id = ? AND session_id = ?", id, turn.SessionID).Update("files", encoded).Error
 		}
 		if turn.StateRunID != 0 {
 			if err := tx.Table("state_runs").Where("id = ?", turn.StateRunID).UpdateColumn("has_file_deliveries", true).Error; err != nil {

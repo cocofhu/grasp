@@ -166,7 +166,14 @@ func TestSoloDurableUnknownNoticeRetriesEvenWhenQueueIsEmpty(t *testing.T) {
 	}
 	failure := errors.New("notice storage unavailable")
 	if err := db.Callback().Create().Before("gorm:create").Register("test:notice_failure", func(tx *gorm.DB) {
-		if message, ok := tx.Statement.Dest.(*models.SoloMessage); ok && message.ID == "reply:"+turn.ID {
+		id := ""
+		switch message := tx.Statement.Dest.(type) {
+		case *models.SoloMessage:
+			id = message.ID
+		case *soloMessageSQL:
+			id = message.ID
+		}
+		if id == "reply:"+turn.ID {
 			_ = tx.AddError(failure)
 		}
 	}); err != nil {

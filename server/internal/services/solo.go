@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -511,6 +510,10 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 	if err != nil {
 		return nil, err
 	}
+	preparedHistory, err := prepareWorkflowHistory(ctx, s.db, row, continuationRun)
+	if err != nil {
+		return nil, err
+	}
 	receipt := models.SoloCreation{ID: soloCreationKey(user, in.ClientRequestID), UserID: user, Fingerprint: fingerprint, SessionID: row.ID}
 	if initial != nil {
 		receipt.InitialTurnID = initial.ID
@@ -554,7 +557,7 @@ func (s *SoloService) create(ctx context.Context, user string, in SoloCreateInpu
 			return err
 		}
 		if continuationRun != "" {
-			if err := freezeWorkflowHistory(tx, row, continuationRun); err != nil {
+			if err := commitWorkflowHistoryTx(tx, row, preparedHistory); err != nil {
 				return err
 			}
 		}
@@ -846,8 +849,7 @@ func (s *SoloService) Messages(id, user string) ([]models.SoloMessage, error) {
 	if _, err := s.Require(id, user); err != nil {
 		return nil, err
 	}
-	var rows []models.SoloMessage
-	err := s.db.Where("session_id = ?", id).Order("created_at asc").Find(&rows).Error
+	rows, err := readSoloMessages(s.db.Where("session_id = ?", id).Order("created_at asc"), soloMessageAll)
 	if err != nil {
 		return nil, err
 	}
@@ -865,8 +867,8 @@ func (s *SoloService) Messages(id, user string) ([]models.SoloMessage, error) {
 // MessageHasAttachment checks the attachment against the specific persisted
 // message in the caller's already authorized Solo session.
 func (s *SoloService) MessageHasAttachment(sessionID, messageID, ref string) bool {
-	var message models.SoloMessage
-	if s.db.Select("images").Where("session_id = ? AND id = ?", sessionID, messageID).First(&message).Error != nil {
+	message, err := readSoloMessage(s.db.Select("id", "images").Where("session_id = ? AND id = ?", sessionID, messageID), soloMessageImages)
+	if err != nil {
 		return false
 	}
 	for _, image := range message.Images {
@@ -879,8 +881,8 @@ func (s *SoloService) MessageHasAttachment(sessionID, messageID, ref string) boo
 
 // PreviewMessageAttachments reads attachments explicitly submitted to the shared chat.
 func (s *SoloService) PreviewMessageAttachments(sessionID, messageID string) []models.PromptImage {
-	var message models.SoloMessage
-	if s.db.Select("images").Where("session_id = ? AND id = ? AND preview_shared = ?", sessionID, messageID, true).First(&message).Error != nil {
+	message, err := readSoloMessage(s.db.Select("id", "images").Where("session_id = ? AND id = ? AND preview_shared = ?", sessionID, messageID, true), soloMessageImages)
+	if err != nil {
 		return nil
 	}
 	return message.Images
@@ -999,7 +1001,16 @@ func soloSourceRank(src string) int {
 
 func (s *SoloService) appendSystem(id, text string) {
 	msg := models.SoloMessage{ID: uuid.NewString(), SessionID: id, Role: "system", Content: text}
-	if err := s.db.Create(&msg).Error; err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	prepared, err := prepareSoloMessage(ctx, s.db, msg)
+	if err == nil {
+		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			_, err := insertPreparedSoloMessageTx(tx, prepared)
+			return err
+		})
+	}
+	if err != nil {
 		log.Warn().Err(err).Str("session", id).Msg("solo system message persist failed")
 	}
 }
@@ -1774,8 +1785,13 @@ func (c *soloChat) recordPreparationFailure(ctx context.Context, turnID string, 
 		ID: "reply:" + turnID, TurnID: turnID, SessionID: c.id, Role: "assistant",
 		Status: status, Error: errText, DurationMs: time.Since(started).Milliseconds(),
 	}
-	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	pctx, cancel := publicationContext(ctx, 10*time.Second)
 	defer cancel()
+	prepared, prepareErr := prepareSoloMessage(pctx, c.svc.db, reply)
+	if prepareErr != nil {
+		log.Warn().Err(prepareErr).Str("session", c.id).Msg("solo preparation failure payload persist failed")
+		return
+	}
 	if perr := c.svc.db.WithContext(pctx).Transaction(func(tx *gorm.DB) error {
 		if err := chatsession.FenceExecution(pctx, tx); err != nil {
 			return err
@@ -1783,8 +1799,7 @@ func (c *soloChat) recordPreparationFailure(ctx context.Context, turnID string, 
 		if err := tx.Model(&models.SoloMessage{}).Where("id = ?", turnID).Updates(map[string]any{"status": status, "error": errText}).Error; err != nil {
 			return err
 		}
-		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"status", "error", "duration_ms", "turn_id"})}).Create(&reply).Error; err != nil {
+		if _, err := insertPreparedSoloMessageTx(tx, prepared, "status", "error", "duration_ms", "turn_id"); err != nil {
 			return err
 		}
 		state := chatsession.TurnFailed
@@ -1809,13 +1824,22 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 			userMsg.References = q.References
 		}
 	}
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	userPrepareCtx, userPrepareCancel := publicationContext(ctx, 10*time.Second)
+	preparedUser, err := prepareSoloMessage(userPrepareCtx, s.db, userMsg)
+	if err != nil {
+		userPrepareCancel()
+		return false, err
+	}
+	userErr := s.db.WithContext(userPrepareCtx).Transaction(func(tx *gorm.DB) error {
 		if err := chatsession.FenceExecution(ctx, tx); err != nil {
 			return err
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&userMsg).Error
-	}); err != nil {
-		return false, err
+		_, err := insertPreparedSoloMessageTx(tx, preparedUser)
+		return err
+	})
+	userPrepareCancel()
+	if userErr != nil {
+		return false, userErr
 	}
 	s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", &started)
 
@@ -1990,6 +2014,12 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		Execution:  execution,
 		DurationMs: time.Since(started).Milliseconds(),
 	}
+	prepareCtx, prepareCancel := publicationContext(ctx, 10*time.Second)
+	preparedReply, prepareErr := prepareSoloMessage(prepareCtx, s.db, reply)
+	prepareCancel()
+	if prepareErr != nil {
+		return turnCtx.Err() != nil, fmt.Errorf("保存本轮回复正文失败：%w", prepareErr)
+	}
 	publish := func(tx *gorm.DB) error {
 		if err := chatsession.FenceExecution(ctx, tx); err != nil {
 			return err
@@ -2009,10 +2039,15 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		for _, file := range deliveries {
 			reply.Files = append(reply.Files, file.ArtifactAttachment)
 		}
+		preparedReply.record.Status, preparedReply.record.Error = reply.Status, reply.Error
+		preparedReply.record.Files, cancelErr = messageJSON(reply.Files)
+		if cancelErr != nil {
+			return cancelErr
+		}
 		{
 			// Delivery owns the placeholder's files. Never overwrite a file
 			// attachment concurrently delivered by a tool.
-			if perr := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"content", "events", "event_log", "status", "error", "usage", "usage_by_model", "execution", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
+			if _, perr := insertPreparedSoloMessageTx(tx, preparedReply, "content", "events", "event_log", "status", "error", "usage", "usage_by_model", "execution", "duration_ms", "turn_id"); perr != nil {
 				return perr
 			}
 		}

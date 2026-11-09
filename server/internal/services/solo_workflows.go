@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -108,31 +109,46 @@ func workflowEventText(payload WorkflowEventPayload) string {
 }
 
 func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
-	var events []models.WorkflowConversationEvent
-	if err := s.db.WithContext(ctx).Where("disposition = ?", "pending").Order("created_at asc, run_id asc, version asc").Limit(100).Find(&events).Error; err != nil {
+	var events []struct {
+		ID, RunID, SoloID, UserID, Payload, Disposition string
+		Version                                         uint64
+	}
+	if err := s.db.WithContext(ctx).Table("workflow_conversation_events").Where("disposition = ?", "pending").Order("created_at asc, run_id asc, version asc").Limit(100).Find(&events).Error; err != nil {
+		return err
+	}
+	files, err := filestore.FromDB(s.db)
+	if err != nil {
 		return err
 	}
 	for _, event := range events {
-		var payload WorkflowEventPayload
-		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+		body, err := files.Load(ctx, event.Payload, filestore.Text)
+		if err != nil {
 			return err
 		}
-		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var payload WorkflowEventPayload
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return err
+		}
+		message, err := prepareSoloMessage(ctx, s.db, models.SoloMessage{ID: "workflow-event-" + event.ID, SessionID: event.SoloID, Role: "system",
+			Content: workflowEventText(payload), WorkflowRunID: event.RunID, WorkflowContext: string(body)})
+		if err != nil {
+			return err
+		}
+		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var session models.SoloSession
-			err := tx.Select("id").Where("id = ? AND user_id = ?", event.SoloID, event.UserID).First(&session).Error
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND user_id = ?", event.SoloID, event.UserID).First(&session).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return tx.Model(&models.WorkflowConversationEvent{}).Where("id = ? AND disposition = ?", event.ID, "pending").Update("disposition", "orphaned").Error
 			}
 			if err != nil {
 				return err
 			}
-			message := models.SoloMessage{ID: "workflow-event-" + event.ID, SessionID: event.SoloID, Role: "system", Content: workflowEventText(payload), WorkflowRunID: event.RunID, WorkflowContext: event.Payload}
-			created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&message)
-			if created.Error != nil {
-				return created.Error
+			created, err := insertPreparedSoloMessageTx(tx, message)
+			if err != nil {
+				return err
 			}
 			now := time.Now().UTC()
-			if created.RowsAffected > 0 {
+			if created {
 				if err := tx.Model(&models.SoloSession{}).Where("id = ?", event.SoloID).Updates(map[string]any{"updated_at": now, "conversation_context_pending": true, "workflow_context_version": gorm.Expr("workflow_context_version + 1")}).Error; err != nil {
 					return err
 				}
