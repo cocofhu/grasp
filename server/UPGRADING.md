@@ -51,6 +51,31 @@ grasp-storage-admin --mode execution-status --config /private/application.yaml \
 
 初始化中断时使用原目录与原票据续办。激活完成但维护未解除也必须继续原操作；不能手动清除维护或另建目录绕过收据。
 
+## 逐个核对保留的旧 Solo 环境
+
+旧库中仍标记运行、启动中或停机中的沙箱会单独隔离。它们不是可以自动回放的用户请求；隔离保留原 Solo、提供方资源和文件关联。旧库没有新版完整授权证明时，也不能仅将隔离状态改为已核对就恢复旧进程。
+
+完成执行初始化后，继续保持应用和其他写入者停止。通过只读 SQL 核对 `execution_quarantines` 中 `entity_kind=sandbox`、`review_state=pending` 的原记录及其对应的 Solo、所有者和沙箱。对每个需要继续使用的原 Solo 环境单独执行，示例中的 `123` 必须替换为已核对的原沙箱 SQL 主键，每个环境使用独立新目录：
+
+```bash
+grasp-storage-admin --mode review-solo-environment --config /private/application.yaml \
+  --execution-control /private/independent-control.yaml \
+  --offline --sandbox-id 123 --workdir /private/upgrades/solo-review-123
+grasp-storage-admin --mode review-solo-environment --config /private/application.yaml \
+  --execution-control /private/independent-control.yaml \
+  --offline --sandbox-id 123 --workdir /private/upgrades/solo-review-123 --resume --finalize
+```
+
+第一步固定原操作 UUID、独立执行身份、Solo 绑定和原提供方资源，核验当前有效的 Agent、模型、Git 及其他凭据，然后只对这一原环境请求保盘停机。只有再次读到同一资源的正向停止证明，才原子保存停机收据、将这一条沙箱隔离标记为已核对，并将原 Solo 和沙箱标记为停止。原文件、历史、其他环境和旧请求的隔离记录不变。第一步成功仍保持维护；第二步在原目录重核并明确解除这一操作的维护。命令不会初始化、激活或轮换独立执行控制。
+
+原队列有待发送、已执行但结果不明的请求、其他父实体仍被隔离、正在切换工作区或已有环境释放操作时，核对会拒绝继续。不能通过此命令取消、重发或批量解除这些请求。若此前已经向尚未核对的 Solo 提交了新消息，应先在原聊天中明确取消该新消息，再停写进行环境核对。
+
+停止响应不明、身份改变或核验失败会保留隔离和维护。使用原目录 `--resume` 只查询原停止结果，不重复发起停止；不要换目录、清除隔离或删除原沙箱来绕过未知状态。已经完成的原 `--resume --finalize` 只返回收据，即使环境后来恢复，也不会再次停机。
+
+核对完成后启动配套新版本应用，在原 Solo 中明确点击“恢复环境”。恢复必须在**原环境启动前**完整写入当前受信任配置和授权；只有原目标、当前授权、执行身份及操作租约再次核验通过，才发布新的授权证明和运行状态。恢复沿用原工作区，不重新克隆或覆盖未提交、未跟踪及非 Git 文件，下一条新的手动消息继续使用原聊天历史。
+
+此路径要求提供方具备真实冷停机和启动前配置刷新能力。E2B 等仅能恢复旧内存的暂停环境保持隔离，命令会明确拒绝；不会先恢复旧 RAM 再补授权，也不会将缺少文件保留证明的销毁重建称为升级。此类环境须先取得提供方支持的文件备份和经确认的冷迁移路径，再进行环境迁移；本命令不提供这一能力。
+
 ## 进入清理版前验证实际主存储
 
 在迁移版完成历史转换、实际新消息读写及备份验证后，停止所有写入者，再升级清理版。清理版会在迁移 schema、登记进程或写入对象之前检查规范格式和物理存储证明；执行控制已激活不能代替这些检查。
