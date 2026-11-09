@@ -48,6 +48,7 @@ type FakeGateway struct {
 	FailLogs   bool // GET /sandboxes/:id/logs returns 500
 	FailStatus bool // GET /sandboxes/:id/status returns 503
 	FailStart  bool // POST /sandboxes/:id/start returns 500
+	FailStop   bool // POST /sandboxes/:id/stop returns 500 without stopping compute
 	// RequirePublishedPort makes host resolution return 404 for unmapped ports.
 	RequirePublishedPort bool
 
@@ -288,6 +289,10 @@ func (fg *FakeGateway) status(w http.ResponseWriter, id string) {
 }
 
 func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
+	if action == "stop" && fg.FailStop {
+		http.Error(w, "stop failed", http.StatusInternalServerError)
+		return
+	}
 	if action == "start" && fg.FailStart {
 		http.Error(w, "resume failed", http.StatusInternalServerError)
 		return

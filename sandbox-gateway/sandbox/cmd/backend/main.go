@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"backend/internal/auth"
 	"backend/internal/config"
@@ -19,6 +23,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--configure-workspace" {
+		if err := configureWorkspaceRuntime(os.Stdin); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "workspace runtime configuration unconfirmed")
+			os.Exit(1)
+		}
+		return
+	}
 	logging.Init("universal-sandbox")
 	log.SetFlags(0)
 	log.SetPrefix("")
@@ -78,19 +89,50 @@ func main() {
 		chats.Default().SetModel(initial)
 		zlog.Info().Str("model", initial).Msg("solo initial chat model")
 	}
-	chats.StartDefaultAgent()
+	workspace, err := newWorkspaceOperations(os.Getenv, authPassword != "")
+	standby := errors.Is(err, errWorkspaceStandby)
+	if err != nil && !standby {
+		zlog.Fatal().Err(err).Msg("workspace operations configuration failed")
+	}
+	if standby {
+		chats.BlockWorkspaceStartup()
+	}
+	if workspace != nil {
+		if err := chats.SetWorkspaceBinding(workspace.Binding); err != nil {
+			zlog.Fatal().Err(err).Msg("workspace Agent binding configuration failed")
+		}
+		if err := workspace.Binding.Install(context.Background(), chats.WorkspaceConsumer(), workspace.RootConsumer("capture"), workspace.RootConsumer("code")); err != nil {
+			zlog.Fatal().Err(err).Msg("workspace consumers configuration failed")
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := workspace.Close(ctx); err != nil {
+				zlog.Error().Err(err).Msg("workspace operations did not finish shutdown")
+			}
+		}()
+	}
+	// The durable head and every canonical consumer are installed before any
+	// CLI or bot can accept work. A pending native switch keeps them fenced.
+	if !standby {
+		chats.StartDefaultAgent()
+	}
 	qqService, err := qqbot.New(chats.Default(), qqbot.NewStore(*qqConfigPath))
 	if err != nil {
 		zlog.Fatal().Err(err).Str("qq_config", *qqConfigPath).Msg("qq bot init failed")
 	}
-	qqService.Start()
+	if !standby {
+		qqService.Start()
+	}
 
 	engine := router.New(&router.Dependencies{
-		WebRoot:       webRoot,
-		Chats:         chats,
-		QQBot:         qqService,
-		Auth:          auth.NewGuard(authPassword),
-		LoginHTMLPath: loginPath,
+		WebRoot:          webRoot,
+		Chats:            chats,
+		QQBot:            qqService,
+		Auth:             auth.NewGuard(authPassword),
+		LoginHTMLPath:    loginPath,
+		Workspace:        workspace,
+		WorkspaceStandby: standby,
 	})
 
 	zlog.Info().Str("listen", cfg.ListenAddr).Msg("acp-bridge listening")

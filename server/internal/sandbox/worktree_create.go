@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -26,13 +27,18 @@ const (
 // startWorktreeBackend launches the in-image ACP backend. Tests replace it.
 var startWorktreeBackend = realStartWorktreeBackend
 
+type localBackendStop func(context.Context) error
+
 // SetWorktreeBackendForTest replaces the local backend starter.
 func SetWorktreeBackendForTest(fn func(context.Context, map[string]string, string) (int, func(), error)) func() {
 	prev := startWorktreeBackend
 	if fn == nil {
 		startWorktreeBackend = realStartWorktreeBackend
 	} else {
-		startWorktreeBackend = fn
+		startWorktreeBackend = func(ctx context.Context, env map[string]string, root string) (int, localBackendStop, error) {
+			port, stop, err := fn(ctx, env, root)
+			return port, callbackBackendStop(stop), err
+		}
 	}
 	return func() { startWorktreeBackend = prev }
 }
@@ -88,6 +94,14 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 		env["CODEX_HOME"] = configRoot
 	}
 	env["WORKSPACE_DIR"] = launch.Root
+	name := strings.TrimSpace(spec.Name)
+	if name == "" {
+		name = NewContainerName()
+	}
+	if err := m.prepareWorkspaceRuntimeEnv(env, name, launch.Root); err != nil {
+		return nil, err
+	}
+	env["GRASP_SANDBOX_RESOURCE_ID"] = name
 	env[execution.EnvMode] = execution.ModeWorktree
 	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
 	if err != nil {
@@ -113,22 +127,19 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 		stop:        func() { execution.Release(launchID, endOnStop) },
 	}
 	execution.AddStop(launchID, local.shutdown)
-	name := strings.TrimSpace(spec.Name)
-	if name == "" {
-		name = NewContainerName()
-	}
 	failed = false
 	log.Info().Str("launch", launchID).Str("root", launch.Root).Str("kind", kind).
 		Msg("worktree launch (no sandbox container)")
 	return &Sandbox{
-		ID: name, Name: name, Host: "127.0.0.1", Port: port,
+		CorrelationName: name,
+		ID:              name, Name: name, Host: "127.0.0.1", Port: port,
 		WorkspaceDir: launch.Root, ConfigRoot: configRoot,
 		Password: strings.TrimSpace(env[BridgePasswordEnv]),
 		Blobs:    m.blobs, mgr: m, local: local,
 	}, nil
 }
 
-func realStartWorktreeBackend(ctx context.Context, env map[string]string, workspace string) (int, func(), error) {
+func realStartWorktreeBackend(ctx context.Context, env map[string]string, workspace string) (int, localBackendStop, error) {
 	bin := strings.TrimSpace(os.Getenv("GRASP_WORKTREE_BACKEND"))
 	if bin == "" {
 		bin = "/opt/grasp-runtime/current/bin/backend"
@@ -156,22 +167,16 @@ func realStartWorktreeBackend(ctx context.Context, env map[string]string, worksp
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = workspace
 	cmd.Env = envList(env)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// A private session keeps controlled CLI/job subgroups attributable even
+	// after their direct parent exits. The Stop proof is bound to this PID's
+	// original start identity, never inferred later from a workspace path.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return 0, nil, fmt.Errorf("启动本地执行后端: %w", err)
 	}
-	var once sync.Once
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }()
-	stop := func() {
-		once.Do(func() {
-			if cmd.Process != nil {
-				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-				_ = cmd.Process.Kill()
-				<-done
-			}
-		})
-	}
+	stop := newLocalProcessStop(cmd.Process.Pid, done)
 	return port, stop, nil
 }
 
@@ -209,51 +214,91 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 	} else {
 		delete(env, "CODEX_HOME")
 	}
-	env["WORKSPACE_DIR"] = sb.WorkspaceDir
+	env["WORKSPACE_DIR"] = sb.EffectiveWorkspaceDir()
+	// Tool switches cannot rebind the retained workspace-job journal or its
+	// external execution identity to values supplied by a new tool profile.
+	for _, key := range []string{"GRASP_EXECUTION_LINEAGE", "GRASP_WORKSPACE_CONTROL_ROOT", "GRASP_WORKSPACE_RESTORE_ROOT", "GRASP_WORKSPACE_FILE_LIMITS"} {
+		delete(env, key)
+	}
+	for _, item := range sb.local.env {
+		key, value, ok := strings.Cut(item, "=")
+		if ok && (key == "GRASP_EXECUTION_LINEAGE" || key == "GRASP_WORKSPACE_CONTROL_ROOT" || key == "GRASP_WORKSPACE_RESTORE_ROOT" || key == "GRASP_WORKSPACE_FILE_LIMITS") {
+			env[key] = value
+		}
+	}
+	env["GRASP_SANDBOX_RESOURCE_ID"] = sb.ID
 	env[execution.EnvMode] = execution.ModeWorktree
 	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
 	if err != nil {
 		return err
 	}
-	port, stop, err := startWorktreeBackend(ctx, env, sb.WorkspaceDir)
+	port, stop, err := startWorktreeBackend(ctx, env, sb.EffectiveWorkspaceDir())
 	if err != nil {
 		cleanupGit()
 		return err
 	}
 	stopSession := worktreeSessionStop(stop, cleanupGit)
 	local := sb.local
-	local.mu.Lock()
-	if local.closed {
+	retainCandidate := func(cause error) error {
+		// An ambiguous previous-stop result must not lose the newly started
+		// candidate's private receipt. Close must confirm both before freeing
+		// this environment's quota, even when its original caller expired.
+		local.mu.Lock()
+		local.pendingStops = append(local.pendingStops, stopSession)
+		local.backendGeneration++
+		local.backendStopped = false
 		local.mu.Unlock()
-		stopSession()
-		return fmt.Errorf("工作树会话已关闭")
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		return errors.Join(cause, stopSession(cleanup))
+	}
+	local.mu.Lock()
+	if local.closed || local.stopRequested && !local.backendStopped {
+		local.mu.Unlock()
+		return retainCandidate(fmt.Errorf("工作树会话已关闭"))
 	}
 	previousStop := local.backendStop
+	previousPending := append([]localBackendStop(nil), local.pendingStops...)
+	local.mu.Unlock()
+	if previousStop != nil {
+		if err := previousStop(ctx); err != nil {
+			return retainCandidate(err)
+		}
+	}
+	for _, pending := range previousPending {
+		if err := pending(ctx); err != nil {
+			return retainCandidate(err)
+		}
+	}
+	local.mu.Lock()
 	local.backendStop = stopSession
+	local.pendingStops = nil
+	local.backendGeneration++
+	local.stopRequested, local.backendStopped = false, false
 	local.env = envList(env)
 	local.configRoot, local.configHome = spec.ConfigRoot, configHome
 	sb.Host, sb.Port, sb.ConfigRoot = "127.0.0.1", port, configRoot
 	sb.Password = strings.TrimSpace(env[BridgePasswordEnv])
 	local.mu.Unlock()
-	if previousStop != nil {
-		previousStop()
-	}
 	return nil
 }
 
 // Each backend owns its selected private Git catalog. Re-prime retires that
 // backend and its catalog together while the launch keeps its worktree holder.
-func worktreeSessionStop(stop, cleanupGit func()) func() {
+func worktreeSessionStop(stop localBackendStop, cleanupGit func()) localBackendStop {
 	var once sync.Once
-	return func() {
-		once.Do(func() {
-			if stop != nil {
-				stop()
+	return func(ctx context.Context) error {
+		if stop != nil {
+			if err := stop(ctx); err != nil {
+				return err
 			}
+		}
+		once.Do(func() {
 			if cleanupGit != nil {
 				cleanupGit()
 			}
 		})
+		return nil
 	}
 }
 
@@ -321,14 +366,18 @@ func envList(overlay map[string]string) []string {
 
 // localExec is the in-process data plane for a worktree launch.
 type localExec struct {
-	mu          sync.Mutex
-	configRoot  string
-	configHome  string
-	env         []string
-	backendStop func()
-	closed      bool
-	once        sync.Once
-	stop        func()
+	mu                sync.Mutex
+	configRoot        string
+	configHome        string
+	env               []string
+	backendStop       localBackendStop
+	pendingStops      []localBackendStop
+	backendGeneration uint64
+	stopRequested     bool
+	backendStopped    bool
+	closed            bool
+	once              sync.Once
+	stop              func()
 }
 
 func (e *localExec) shutdown() {
@@ -339,10 +388,17 @@ func (e *localExec) shutdown() {
 		e.mu.Lock()
 		e.closed = true
 		stop := e.backendStop
-		e.backendStop = nil
+		pending := append([]localBackendStop(nil), e.pendingStops...)
 		e.mu.Unlock()
 		if stop != nil {
-			stop()
+			if err := stop(context.Background()); err != nil {
+				return // Missing stop proof is never permission to remove files.
+			}
+		}
+		for _, stop := range pending {
+			if err := stop(context.Background()); err != nil {
+				return
+			}
 		}
 		if e.stop != nil {
 			e.stop()
