@@ -21,6 +21,7 @@ type Observation struct {
 	Active            bool   `json:"active"`
 	SQLMatches        bool   `json:"sqlMatches"`
 	SQLDatasetPresent bool   `json:"sqlDatasetPresent"`
+	MaintenanceActive bool   `json:"maintenanceActive"`
 	NamespaceID       string `json:"namespaceId,omitempty"`
 	DatasetID         string `json:"datasetId,omitempty"`
 	Lineage           string `json:"lineage,omitempty"`
@@ -64,6 +65,16 @@ func observe(ctx context.Context, reader objectstore.ControlReader, db *gorm.DB,
 	if !present || !bindingMatches(binding, marker, marker.Revision) {
 		view.Status = "unbound"
 		return view, ErrUnbound
+	}
+	// Activation can succeed before an interrupted offline command removes
+	// maintenance. Such a database is still fenced against server startup.
+	var control struct{ Owner string }
+	if err := db.WithContext(ctx).Table("payload_storage_control").Select("owner").Where("name = ?", "primary").Take(&control).Error; err != nil {
+		return view, ErrUnavailable
+	}
+	if control.Owner != "" {
+		view.Status, view.MaintenanceActive, view.SQLMatches = "inactive", true, true
+		return view, ErrInactive
 	}
 	// A concurrent offline rotation cannot turn the earlier read into success.
 	after, _, err := readMarker(ctx, reader)

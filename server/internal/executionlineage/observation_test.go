@@ -15,6 +15,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/objectstore"
+	"github.com/cocofhu/grasp/internal/storageguard"
 )
 
 type changingObservationReader struct {
@@ -37,6 +38,9 @@ func (s *changingObservationReader) Open(context.Context, string) (io.ReadCloser
 func TestObservationRejectsConcurrentMarkerRotationAndStaleSQL(t *testing.T) {
 	db, authority, control, owner := authorityFixture(t)
 	_, permit := activateFixture(t, db, authority, control, owner)
+	if err := storageguard.Leave(context.Background(), db, owner); err != nil {
+		t.Fatal(err)
+	}
 	reader := &changingObservationReader{marker: permit.data.marker}
 	view, err := observe(context.Background(), reader, db, Observation{Version: 1, Status: "unavailable"})
 	if !errors.Is(err, ErrUnavailable) || view.Active || view.SQLMatches || reader.reads != 2 {

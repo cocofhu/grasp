@@ -59,7 +59,7 @@ go build -o grasp-storage-admin ./cmd/storage-admin
 
 命令读取普通服务配置及其环境覆盖，也可用 `--execution-control control-storage.yaml` 指定独立的私有 `storage:` YAML。它只读取控制对象和 SQL 元数据，不执行迁移、登记进程、创建目录、探测条件写或初始化。SQLite 连接禁止写入并读取已提交 WAL；不要使用忽略 WAL 的 immutable 打开方式。
 
-输出为版本化 JSON：`status` 为 `active`、`uninitialized`、`inactive`、`unbound` 或 `unavailable`，并包含 `active`、`sqlMatches`、`sqlDatasetPresent` 及已验证的命名空间身份。仅 `active` 且 SQL 完整匹配时退出码为 0，其余情况均非 0。控制标记缺失但 `sqlDatasetPresent=true` 时必须保留现有数据并检查控制存储，不能视为空安装重新初始化。S3 检查不会通过写探针证明 endpoint 别名分离，因此要求正文与控制的逻辑前缀不相交，即使 bucket 不同。
+输出为版本化 JSON：`status` 为 `active`、`uninitialized`、`inactive`、`unbound` 或 `unavailable`，并包含 `active`、`sqlMatches`、`sqlDatasetPresent`、`maintenanceActive` 及已验证的命名空间身份。仅 `active`、SQL 完整匹配且维护已解除时退出码为 0，其余情况均非 0。激活成功但离线命令尚未解除维护时返回 `inactive`，只允许用原私有目录和原票据显式完成收尾。控制标记缺失但 `sqlDatasetPresent=true` 时必须保留现有数据并检查控制存储，不能视为空安装重新初始化。S3 检查不会通过写探针证明 endpoint 别名分离，因此要求正文与控制的逻辑前缀不相交，即使 bucket 不同。
 
 新安装或明确采用旧历史时，先核实所有写入者停止，再运行一次显式初始化：
 

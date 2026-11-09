@@ -14,7 +14,10 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/executionlineage"
+	"github.com/cocofhu/grasp/internal/storageguard"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -184,5 +187,35 @@ func TestExecutionStatusActiveMarkerWithMissingSQLRefusesAndRejectsMutationFlags
 	}
 	if _, err := connectExecutionStatus(context.Background(), config.DatabaseConfig{Path: ":memory:"}); err == nil {
 		t.Fatal("transient database admitted as durable execution status")
+	}
+}
+
+func TestExecutionStatusInterruptedOfflineFinalizationIsInactiveWithoutClearingMaintenance(t *testing.T) {
+	opts, cfg := executionOptions(t)
+	if err := run(context.Background(), opts, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.ConnectWithFiles(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close(db) }()
+	owner := uuid.NewString()
+	if err := storageguard.Enter(context.Background(), db, owner, nil); err != nil {
+		t.Fatal(err)
+	}
+	view, err := statusResult(t, statusOptions(opts))
+	if !errors.Is(err, executionlineage.ErrInactive) || view.Status != "inactive" || view.Active || !view.SQLMatches || !view.SQLDatasetPresent || !view.MaintenanceActive {
+		t.Fatal("interrupted activation was declared ready", view, err)
+	}
+	if err := storageguard.Check(context.Background(), db, owner); err != nil {
+		t.Fatal("read-only status cleared maintenance", err)
+	}
+	if err := storageguard.Leave(context.Background(), db, owner); err != nil {
+		t.Fatal(err)
+	}
+	view, err = statusResult(t, statusOptions(opts))
+	if err != nil || !view.Active || view.MaintenanceActive {
+		t.Fatal("explicit finalization did not permit status", view, err)
 	}
 }
