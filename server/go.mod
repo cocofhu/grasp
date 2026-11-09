@@ -17,6 +17,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/larksuite/oapi-sdk-go/v3 v3.4.0
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/robfig/cron/v3 v3.0.1
@@ -70,7 +71,6 @@ require (
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
