@@ -118,6 +118,7 @@ func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint,
 	// intent and confirmation. Closing already retired the queue; touching that
 	// same queue again cannot cancel a successor because its parent CAS rolls
 	// back this entire transaction first.
+	var stoppedHead string
 	guard := func(tx *gorm.DB) error {
 		if err := lockSoloCompute(tx); err != nil {
 			return err
@@ -145,7 +146,20 @@ func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint,
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return soloLifecycleChanged()
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		// The provider observation belongs to this exact logical workspace.
+		// Lock its metadata after the parent and before the physical fence.
+		head, err := workspaceStoppedHeadIdentity(tx.Statement.Context, tx, id)
+		if err != nil {
+			return err
+		}
+		if stoppedHead != "" && stoppedHead != head {
+			return soloLifecycleChanged()
+		}
+		stoppedHead = head
+		return nil
 	}
 	if ctx.Err() != nil {
 		return context.Cause(ctx)
@@ -200,7 +214,10 @@ func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint,
 		if result.RowsAffected != 1 {
 			return soloErr(http.StatusConflict, "session_changed", "会话状态已改变，请刷新后查看环境状态")
 		}
-		return nil
+		// A confirmed stop ends every connection to this same environment,
+		// including disconnect receipts lost when an application exited.
+		// Publish this only with the parent/head and physical-operation fences.
+		return closeStoppedWorkspaceConsumersTx(tx.Statement.Context, tx, id)
 	}); err != nil {
 		return err
 	}
