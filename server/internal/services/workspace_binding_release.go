@@ -147,8 +147,5 @@ func (s *WorkspaceBindingService) ReleasedTx(ctx context.Context, tx *gorm.DB, r
 // The caller must first prove the exact physical environment has stopped.
 // Browser flags or an expired server connection lease are not such proof.
 func (s *WorkspaceBindingService) EnvironmentStoppedTx(ctx context.Context, tx *gorm.DB, sandboxID uint) error {
-	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
-		return ErrWorkspaceJobInvalid
-	}
-	return tx.WithContext(ctx).Model(&models.WorkspaceBindingUse{}).Where("sandbox_id = ? AND state <> ?", sandboxID, "closed").Update("state", "closed").Error
+	return closeStoppedWorkspaceConsumersTx(ctx, tx, sandboxID)
 }
