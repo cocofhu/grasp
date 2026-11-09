@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"backend/internal/workspacesnapshot"
 )
 
 func workspaceStartupFixture(t *testing.T) map[string]string {
@@ -20,6 +24,68 @@ func workspaceStartupFixture(t *testing.T) map[string]string {
 		"GRASP_SANDBOX_RESOURCE_ID":    "resource-original",
 		"GRASP_WORKSPACE_CONTROL_ROOT": filepath.Join(root, "private-control"),
 		"GRASP_WORKSPACE_RESTORE_ROOT": filepath.Join(root, "isolated-restores"),
+	}
+}
+
+func TestWorkspaceGatewayIdentityStartsAuthenticatedStandby(t *testing.T) {
+	for _, resource := range []string{"", "ebe8cbce-a0f"} {
+		t.Run("resource="+resource, func(t *testing.T) {
+			env := workspaceStartupFixture(t)
+			control, restore := env["GRASP_WORKSPACE_CONTROL_ROOT"], env["GRASP_WORKSPACE_RESTORE_ROOT"]
+			delete(env, "GRASP_WORKSPACE_CONTROL_ROOT")
+			delete(env, "GRASP_WORKSPACE_RESTORE_ROOT")
+			env["GRASP_SANDBOX_RESOURCE_ID"] = resource
+			limits, _ := json.Marshal(workspacesnapshot.DefaultLimits())
+			env["GRASP_WORKSPACE_FILE_LIMITS"] = string(limits)
+			controller, err := newWorkspaceOperations(func(key string) string { return env[key] }, true)
+			if controller != nil || !errors.Is(err, errWorkspaceStandby) {
+				t.Fatal("trusted pre-configuration startup did not enter blocked standby", err)
+			}
+			if env["GRASP_SANDBOX_RESOURCE_ID"] != resource {
+				t.Fatal("standby changed its expected gateway resource identity")
+			}
+			for _, root := range []string{control, restore} {
+				if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("standby initialized private roots before platform configuration", root, err)
+				}
+			}
+		})
+	}
+}
+
+func TestWorkspaceGatewayStandbyRejectsPartialOrUnauthenticatedConfiguration(t *testing.T) {
+	for _, bad := range []string{"authentication", "lineage", "invalid_lineage", "invalid_resource", "short_resource", "control", "restore", "limits", "invalid_limits", "workspace"} {
+		t.Run(bad, func(t *testing.T) {
+			env := workspaceStartupFixture(t)
+			delete(env, "GRASP_WORKSPACE_CONTROL_ROOT")
+			delete(env, "GRASP_WORKSPACE_RESTORE_ROOT")
+			limits, _ := json.Marshal(workspacesnapshot.DefaultLimits())
+			env["GRASP_WORKSPACE_FILE_LIMITS"] = string(limits)
+			switch bad {
+			case "lineage":
+				delete(env, "GRASP_EXECUTION_LINEAGE")
+			case "invalid_lineage":
+				env["GRASP_EXECUTION_LINEAGE"] = "foreign/lineage"
+			case "invalid_resource":
+				env["GRASP_SANDBOX_RESOURCE_ID"] = "foreign/resource"
+			case "short_resource":
+				env["GRASP_SANDBOX_RESOURCE_ID"] = "short"
+			case "control":
+				env["GRASP_WORKSPACE_CONTROL_ROOT"] = filepath.Join(t.TempDir(), "control")
+			case "restore":
+				env["GRASP_WORKSPACE_RESTORE_ROOT"] = filepath.Join(t.TempDir(), "restores")
+			case "limits":
+				delete(env, "GRASP_WORKSPACE_FILE_LIMITS")
+			case "invalid_limits":
+				env["GRASP_WORKSPACE_FILE_LIMITS"] = "{}"
+			case "workspace":
+				env["WORKSPACE_DIR"] = "relative-workspace"
+			}
+			controller, err := newWorkspaceOperations(func(key string) string { return env[key] }, bad != "authentication")
+			if controller != nil || err == nil || errors.Is(err, errWorkspaceStandby) {
+				t.Fatal("invalid startup was accepted as a configured or standby runtime", err)
+			}
+		})
 	}
 }
 
