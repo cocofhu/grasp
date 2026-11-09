@@ -22,7 +22,10 @@ const subscriberGrace = 3 * time.Second
 
 // Event is one frame of a chat stream.
 type Event struct {
-	Seq int
+	Seq        int
+	TurnID     string
+	Generation uint64
+	At         time.Time
 	// Type is FrameSession (control frame) or FrameAcp (raw ACP frame in Data).
 	Type    string
 	Event   string
@@ -33,6 +36,15 @@ type Event struct {
 // Frame renders the event for a WebSocket client.
 func (e Event) Frame() map[string]any {
 	out := map[string]any{"type": e.Type, "seq": e.Seq}
+	if e.TurnID != "" {
+		out["userMsgId"] = e.TurnID
+	}
+	if e.Generation != 0 {
+		out["sessionGeneration"] = e.Generation
+	}
+	if !e.At.IsZero() {
+		out["at"] = e.At
+	}
 	if e.Type == FrameAcp {
 		out["data"] = e.Data
 		return out

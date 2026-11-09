@@ -11,6 +11,8 @@ configured as workspace credentials, not in this platform config table.
 
 | Environment variable | YAML path | Type | Default | Property | Description |
 | --- | --- | --- | --- | --- | --- |
+| `GRASP_WORKFLOWS_ENABLED` | `features.workflows_enabled` | boolean | `true` | Public | Enable new workflow runs; existing runs remain manageable when disabled |
+| `GRASP_MAX_ACTIVE_WORKFLOWS` | `features.max_active_workflows` | integer | `1000` | Public | Maximum total active and queued workflow runs |
 | `GRASP_PORT` | `server.port` | integer | `8080` | Public | HTTP listen port |
 | `GRASP_DEPLOYMENT_MODE` | `server.deployment_mode` | string | `development` | Public | Deployment trust boundary; local-demo is loopback-only |
 | `GRASP_MCP_ADVERTISE` | `server.mcp_advertise` | URL | `derived` | Public | API base URL used by sandboxes for artifact-store MCP |
@@ -50,9 +52,40 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_AUTH_SESSION_TTL` | `auth.session_ttl` | duration | `168h` | Public | Session lifetime |
 | `GRASP_AUTH_USERS` | `auth.users` | YAML/JSON | `Not set` | Sensitive | Static user array; required explicitly outside local mode |
 | `GRASP_SECRETS_KEY` | `security.secrets_key` | string | `Not set` | Sensitive | Master AES key for encrypting credentials at rest (base64 32 bytes); treat as a fixed salt, do not rotate. When unset, non-production modes generate secrets.key next to the SQLite database |
-| `GRASP_STORAGE_DRIVER` | `storage.driver` | enum | `local` | Public | Attachment storage driver: local (cos reserved) |
+| `GRASP_STORAGE_DRIVER` | `storage.driver` | enum | `local` | Public | Payload and attachment storage driver: local / s3 / cos |
+| `GRASP_S3_ENDPOINT` | `storage.s3.endpoint` | URL | `Not set` | Public | S3-compatible object storage HTTP(S) origin |
+| `GRASP_S3_REGION` | `storage.s3.region` | string | `us-east-1` | Public | Object storage region; use the actual bucket region for COS |
+| `GRASP_S3_BUCKET` | `storage.s3.bucket` | string | `Not set` | Public | Existing private object storage bucket |
+| `GRASP_S3_PREFIX` | `storage.s3.prefix` | string | `Not set` | Public | Object prefix for this deployment; isolate independent deployments in a shared bucket |
+| `GRASP_S3_ACCESS_KEY_ID` | `storage.s3.access_key_id` | string | `Not set` | Sensitive | Object storage access key ID; inject through a Secret |
+| `GRASP_S3_SECRET_ACCESS_KEY` | `storage.s3.secret_access_key` | string | `Not set` | Sensitive | Object storage secret key; inject through a Secret |
+| `GRASP_S3_SESSION_TOKEN` | `storage.s3.session_token` | string | `Not set` | Sensitive | Optional object storage temporary session token |
+| `GRASP_S3_PATH_STYLE` | `storage.s3.path_style` | boolean | `Not set` | Public | Path-style addressing; defaults to true for s3 and false for cos |
 | `GRASP_MAX_FILE_BYTES` | `storage.max_file_bytes` | int | `134217728` | Public | Maximum bytes per Agent file import |
 | `GRASP_BLOBS_ROOT` | `storage.blobs_root` | path | `data/blobs` | Public | Local attachment blob root directory |
+| `GRASP_WORKSPACE_OPERATIONS_ENABLED` | `workspace_operations.enabled` | boolean | `true` | Public | Enable bounded file capture and isolated restore; requires verified runtime capabilities and execution authority; no process memory restore |
+| `GRASP_WORKSPACE_PRIVATE_ROOT` | `workspace_operations.private_root` | path | `/tmp/grasp-private-workspace` | Public | Private persistent sandbox root; control and restore directories are isolated per actual resource; Kubernetes must mount persistent storage here |
+| `GRASP_WORKSPACE_MAX_FILE_BYTES` | `workspace_operations.max_file_bytes` | int | `536870912` | Public | Maximum snapshot file and Git pack bytes |
+| `GRASP_WORKSPACE_MAX_UNCOMPRESSED_BYTES` | `workspace_operations.max_uncompressed_bytes` | int | `2147483648` | Public | Combined expanded workspace and Git data budget in bytes |
+| `GRASP_WORKSPACE_MAX_GIT_BYTES` | `workspace_operations.max_git_bytes` | int | `536870912` | Public | Git data budget within the combined expanded limit |
+| `GRASP_WORKSPACE_MAX_ARCHIVE_BYTES` | `workspace_operations.max_archive_bytes` | int | `3221225472` | Public | Maximum compressed snapshot archive bytes |
+| `GRASP_WORKSPACE_MAX_MANIFEST_BYTES` | `workspace_operations.max_manifest_bytes` | int | `67108864` | Public | Maximum snapshot manifest bytes |
+| `GRASP_WORKSPACE_MAX_SPOOL_BYTES` | `workspace_operations.max_spool_bytes` | int | `8589934592` | Public | Snapshot spool budget per runtime in bytes |
+| `GRASP_WORKSPACE_MAX_ENTRIES` | `workspace_operations.max_entries` | int | `100000` | Public | Maximum snapshot entries |
+| `GRASP_WORKSPACE_MAX_RESERVED_BYTES` | `workspace_operations.max_reserved_bytes` | int | `34359738368` | Public | Global durable server upload reservation bytes |
+| `GRASP_WORKSPACE_MAX_SCOPE_RESERVED_BYTES` | `workspace_operations.max_scope_reserved_bytes` | int | `8589934592` | Public | Durable upload reservation bytes per Solo/workflow scope |
+| `GRASP_WORKSPACE_MAX_DURATION` | `workspace_operations.max_duration` | duration | `30m` | Public | Maximum file capture or isolated restore operation duration |
+| `GRASP_WORKSPACE_MAX_WORKERS` | `workspace_operations.max_workers` | integer | `2` | Public | Concurrent workspace file jobs (1–64) |
+| `GRASP_EXECUTION_CONTROL_DRIVER` | `execution_control.driver` | enum | `Not set` | Public | Independent execution continuity store: local / s3 / cos; unset keeps history readable and execution disabled until explicit offline initialization |
+| `GRASP_EXECUTION_CONTROL_BLOBS_ROOT` | `execution_control.blobs_root` | path | `Not set` | Public | Independent persistent control directory, disjoint from SQL, payload and backup directories |
+| `GRASP_EXECUTION_CONTROL_S3_ENDPOINT` | `execution_control.s3.endpoint` | URL | `Not set` | Public | Independent control S3 HTTP(S) origin; real conditional writes are required |
+| `GRASP_EXECUTION_CONTROL_S3_REGION` | `execution_control.s3.region` | string | `us-east-1` | Public | Independent control object storage region |
+| `GRASP_EXECUTION_CONTROL_S3_BUCKET` | `execution_control.s3.bucket` | string | `Not set` | Public | Independent control bucket, or a bucket with strictly disjoint payload/control prefixes |
+| `GRASP_EXECUTION_CONTROL_S3_PREFIX` | `execution_control.s3.prefix` | string | `Not set` | Public | Control prefix must be disjoint from payload and replica roots; control data must not roll back with SQL |
+| `GRASP_EXECUTION_CONTROL_S3_ACCESS_KEY_ID` | `execution_control.s3.access_key_id` | string | `Not set` | Sensitive | Independent control access key ID; inject through a Secret |
+| `GRASP_EXECUTION_CONTROL_S3_SECRET_ACCESS_KEY` | `execution_control.s3.secret_access_key` | string | `Not set` | Sensitive | Independent control secret key; inject through a Secret |
+| `GRASP_EXECUTION_CONTROL_S3_SESSION_TOKEN` | `execution_control.s3.session_token` | string | `Not set` | Sensitive | Optional independent control temporary session token |
+| `GRASP_EXECUTION_CONTROL_S3_PATH_STYLE` | `execution_control.s3.path_style` | boolean | `Not set` | Public | Control path-style addressing; defaults to true for s3 and false for cos |
 | `GRASP_GITHUB_OAUTH_CLIENT_ID` | `github.oauth_client_id` | string | `Not set` | Public | Client ID of a GitHub OAuth App with Enable Device Flow checked; enables "Sign in with GitHub" for github.com workspace credentials (no client secret needed) |
 | `GRASP_CODEX_LOGIN_REFRESH_LEAD` | `codex_login.refresh_lead` | duration | `96h` | Public | How long before the access token expires the platform renews a Codex ChatGPT login |
 | `GRASP_CODEX_LOGIN_CHECK_INTERVAL` | `codex_login.check_interval` | duration | `10m` | Public | How often the platform checks whether Codex logins need renewal |
