@@ -5,11 +5,9 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 	"unicode/utf8"
 )
@@ -155,46 +153,5 @@ func (h *Handle) WriteFile(name string, source io.Reader, limit int64) error {
 // fixed supervisor also kills its group when its runtime parent disappears;
 // Git packing/fetch children cannot outlive a runtime crash or lease deadline.
 func (h *Handle) Command(dir string, stdout, stderr io.Writer, argv ...string) error {
-	if len(argv) == 0 || argv[0] == "" {
-		return ErrInvalid
-	}
-	if err := h.Check(); err != nil {
-		return err
-	}
-	const supervisor = `trap 'kill -KILL -$$' TERM HUP INT
-"$@" &
-child=$!
-wait "$child"
-status=$?
-trap - TERM HUP INT
-exit "$status"`
-	args := append([]string{"-c", supervisor, "grasp-workspace-operation"}, argv...)
-	cmd := exec.CommandContext(h.ctx, "/bin/sh", args...)
-	cmd.Dir, cmd.Stdout, cmd.Stderr = dir, stdout, stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
-	cmd.Cancel = func() error {
-		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		if errors.Is(err, syscall.ESRCH) {
-			return os.ErrProcessDone
-		}
-		return err
-	}
-	cmd.WaitDelay = time.Second
-	h.service.mu.Lock()
-	err := h.Check()
-	if err == nil {
-		err = cmd.Start()
-	}
-	h.service.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	err = cmd.Wait()
-	// A helper intentionally/backgrounded by the command is still part of
-	// this operation. Its group is cleaned before completion is published.
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	if fenceErr := h.Check(); fenceErr != nil {
-		return fenceErr
-	}
-	return err
+	return h.Run(Process{Dir: dir, Stdout: stdout, Stderr: stderr, Argv: argv})
 }

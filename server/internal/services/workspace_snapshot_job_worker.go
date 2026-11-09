@@ -10,6 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"gorm.io/gorm"
 )
 
 // Run belongs to the application's lifetime, never to an HTTP request. Only
@@ -151,6 +152,19 @@ func (s *WorkspaceSnapshotJobs) RunOne(ctx context.Context, id string) error {
 			stop(context.Canceled)
 			<-watched
 		}()
+		var completion WorkspaceJobCompletion
+		if processor := s.options.Processors[row.Kind]; processor != nil {
+			completion, err = processor.Process(watch, row, remote, func(ctx context.Context) (sandbox.WorkspaceJobRenew, error) {
+				return s.processorFence(ctx, row, lease, &ack)
+			})
+			if completion != nil {
+				defer func() { _ = completion.Close() }()
+			}
+			if err != nil || completion == nil {
+				_ = s.publish(work, row, lease, []string{"running"}, map[string]any{"state": "unknown", "error": "artifact_publication_unconfirmed"})
+				return errors.Join(ErrWorkspaceJobUnknown, err)
+			}
+		}
 		tick := time.NewTicker(s.options.PollInterval)
 		defer tick.Stop()
 		for {
@@ -160,7 +174,7 @@ func (s *WorkspaceSnapshotJobs) RunOne(ctx context.Context, id string) error {
 				return ErrWorkspaceJobUnknown
 			case receipt = <-completed:
 				terminal = true
-				return s.observed(work, row, lease, receipt, []string{"running"})
+				return s.observedCompletion(work, row, lease, receipt, []string{"running"}, completion)
 			case <-tick.C:
 				call, cancel := context.WithDeadline(watch, time.Unix(0, ack.Load()))
 				receipt, err := remote.Get(call, row.ID)
@@ -178,7 +192,7 @@ func (s *WorkspaceSnapshotJobs) RunOne(ctx context.Context, id string) error {
 				}
 				if workspaceJobTerminal(receipt.State) {
 					terminal = true
-					return s.observed(work, row, lease, receipt, []string{"running"})
+					return s.observedCompletion(work, row, lease, receipt, []string{"running"}, completion)
 				}
 			}
 		}
@@ -196,9 +210,17 @@ func (s *WorkspaceSnapshotJobs) observed(ctx context.Context, row models.Workspa
 	}
 	state := receipt.State
 	if state == "completed" {
+		if s.options.Processors[row.Kind] != nil {
+			return ErrWorkspaceJobUnknown // Artifact evidence is mandatory.
+		}
 		// This is a control-protocol execution receipt only. Phase B separately
 		// validates archive+manifest and publishes an actual ready snapshot.
 		state = "executed"
+	}
+	if receipt.State == "completed" && s.options.CompletedTx != nil {
+		return s.publishCompletion(ctx, row, lease, states, map[string]any{"state": state, "result": string(receipt.Result), "error": receipt.Error}, workspaceJobMetadataCompletion{commit: func(ctx context.Context, tx *gorm.DB) error {
+			return s.options.CompletedTx(ctx, tx, row, receipt)
+		}})
 	}
 	return s.publish(ctx, row, lease, states, map[string]any{"state": state, "result": string(receipt.Result), "error": receipt.Error})
 }
@@ -228,6 +250,19 @@ func (s *WorkspaceSnapshotJobs) Reconcile(ctx context.Context, actor, id string)
 		receipt, err := remote.Get(call, row.ID)
 		if err != nil {
 			return errors.Join(ErrWorkspaceJobUnknown, err)
+		}
+		if processor := s.options.Processors[row.Kind]; processor != nil && receipt.State == "completed" {
+			if validateRuntimeJob(row, receipt) != nil {
+				return ErrWorkspaceJobUnknown
+			}
+			completion, err := processor.Recover(work, row, receipt)
+			if completion != nil {
+				defer func() { _ = completion.Close() }()
+			}
+			if err != nil || completion == nil {
+				return errors.Join(ErrWorkspaceJobUnknown, err)
+			}
+			return s.observedCompletion(work, row, lease, receipt, []string{"unknown"}, completion)
 		}
 		return s.observed(work, row, lease, receipt, []string{"unknown"})
 	})

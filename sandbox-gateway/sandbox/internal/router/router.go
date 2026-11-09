@@ -18,6 +18,7 @@ import (
 	"backend/internal/handler"
 	"backend/internal/qqbot"
 	"backend/internal/service"
+	"backend/internal/workspacesnapshot"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,6 +30,7 @@ type Dependencies struct {
 	QQBot         *qqbot.Service
 	Auth          *auth.Guard // 非 nil 且 Enabled() 时启用口令与登录页
 	LoginHTMLPath string      // login.html 绝对路径（启用 Auth 时必填）
+	Workspace     *workspacesnapshot.Controller
 }
 
 // New 构建 Gin 引擎并注册路由。
@@ -79,6 +81,19 @@ func New(deps *Dependencies) *gin.Engine {
 		r.POST("/api/workspace/code/export", code.Export)
 		r.POST("/api/workspace/code/imports/:importId", code.Import)
 		r.GET("/api/workspace/code/imports/:importId", code.Receipt)
+		if deps.Workspace != nil {
+			jobs := &handler.WorkspaceJobs{Service: deps.Workspace.Jobs}
+			files := &handler.WorkspaceSnapshotTransport{Controller: deps.Workspace}
+			r.GET("/api/workspace/jobs/capabilities", jobs.Capabilities)
+			r.POST("/api/workspace/jobs", jobs.Create)
+			r.GET("/api/workspace/jobs/:jobId", jobs.Get)
+			r.PATCH("/api/workspace/jobs/:jobId/fence", jobs.Renew)
+			r.POST("/api/workspace/jobs/:jobId/cancel", jobs.Cancel)
+			r.GET("/api/workspace/files/capabilities", files.Capabilities)
+			r.GET("/api/workspace/jobs/:jobId/artifacts/:part", files.Read)
+			r.PUT("/api/workspace/jobs/:jobId/artifacts/:part", files.Write)
+			r.POST("/api/workspace/jobs/:jobId/finish", files.Finish)
+		}
 	}
 
 	// SPA 回退：未知 GET 仍回 index

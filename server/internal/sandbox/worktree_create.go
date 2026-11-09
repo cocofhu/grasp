@@ -88,6 +88,11 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 		env["CODEX_HOME"] = configRoot
 	}
 	env["WORKSPACE_DIR"] = launch.Root
+	name := strings.TrimSpace(spec.Name)
+	if name == "" {
+		name = NewContainerName()
+	}
+	env["GRASP_SANDBOX_RESOURCE_ID"] = name
 	env[execution.EnvMode] = execution.ModeWorktree
 	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
 	if err != nil {
@@ -113,10 +118,6 @@ func (m *Manager) createWorktree(ctx context.Context, spec Spec) (*Sandbox, erro
 		stop:        func() { execution.Release(launchID, endOnStop) },
 	}
 	execution.AddStop(launchID, local.shutdown)
-	name := strings.TrimSpace(spec.Name)
-	if name == "" {
-		name = NewContainerName()
-	}
 	failed = false
 	log.Info().Str("launch", launchID).Str("root", launch.Root).Str("kind", kind).
 		Msg("worktree launch (no sandbox container)")
@@ -211,6 +212,18 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 		delete(env, "CODEX_HOME")
 	}
 	env["WORKSPACE_DIR"] = sb.WorkspaceDir
+	// Tool switches cannot rebind the retained workspace-job journal or its
+	// external execution identity to values supplied by a new tool profile.
+	for _, key := range []string{"GRASP_EXECUTION_LINEAGE", "GRASP_WORKSPACE_CONTROL_ROOT", "GRASP_WORKSPACE_RESTORE_ROOT"} {
+		delete(env, key)
+	}
+	for _, item := range sb.local.env {
+		key, value, ok := strings.Cut(item, "=")
+		if ok && (key == "GRASP_EXECUTION_LINEAGE" || key == "GRASP_WORKSPACE_CONTROL_ROOT" || key == "GRASP_WORKSPACE_RESTORE_ROOT") {
+			env[key] = value
+		}
+	}
+	env["GRASP_SANDBOX_RESOURCE_ID"] = sb.ID
 	env[execution.EnvMode] = execution.ModeWorktree
 	cleanupGit, err := prepareWorktreeGit(ctx, spec, env)
 	if err != nil {

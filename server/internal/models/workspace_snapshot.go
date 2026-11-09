@@ -2,9 +2,9 @@ package models
 
 import "time"
 
-// WorkspaceSnapshot is metadata for a verified file capture. Phase A only
-// establishes jobs: it never writes a ready snapshot without real archive and
-// manifest publication and read-back verification.
+// WorkspaceSnapshot holds file-capture metadata. Ready requires semantic archive
+// and manifest validation, full object read-back and a generation-fenced atomic
+// storage pin, snapshot publication and job-final transaction.
 type WorkspaceSnapshot struct {
 	ID               string     `gorm:"primaryKey;size:64" json:"-"`
 	ScopeKind        string     `gorm:"index;size:32" json:"-"`
@@ -19,6 +19,7 @@ type WorkspaceSnapshot struct {
 	SourceSandboxID  uint       `gorm:"index" json:"-"`
 	SourceGeneration uint64     `json:"-"`
 	JobID            string     `gorm:"index;size:64" json:"-"`
+	PublicationJobID string     `gorm:"index;size:64" json:"-"`
 	Lineage          string     `gorm:"index;size:128" json:"-"`
 	State            string     `gorm:"index;size:32" json:"-"`
 	PolicyVersion    string     `gorm:"size:64" json:"-"`

@@ -54,14 +54,23 @@ type WorkspaceJobInput struct {
 	Kind            string
 	Body            json.RawMessage
 	Duration        time.Duration
+	NotAfter        time.Time `json:"notAfter,omitzero"`
 }
 type WorkspaceJobOptions struct {
 	Authority WorkspaceJobAuthority
 	// Authorize must inspect metadata only when given a transaction. It is
 	// required both at admission and fenced dispatch/publication, not inferred
 	// from a Run's CreatedBy or a caller-supplied actor field.
-	Authorize      func(context.Context, *gorm.DB, models.WorkspaceSnapshotJob) error
-	Validate       map[string]func(json.RawMessage) error
+	Authorize func(context.Context, *gorm.DB, models.WorkspaceSnapshotJob) error
+	// PrepareAuthorization performs external proof reads before the outermost
+	// SQL transaction. The resulting private context proof is consumed by pure
+	// SQL Authorize/Guard callbacks; it must never refresh inside that TX.
+	PrepareAuthorization func(context.Context) (context.Context, error)
+	Validate             map[string]func(json.RawMessage) error
+	Processors           map[string]WorkspaceJobProcessor
+	// These hooks inspect and write metadata only in the existing job TX.
+	AdmittedTx     func(context.Context, *gorm.DB, models.WorkspaceSnapshotJob) error
+	CompletedTx    func(context.Context, *gorm.DB, models.WorkspaceSnapshotJob, sandbox.WorkspaceJobReceipt) error
 	Remote         func(context.Context, uint) (WorkspaceJobRemote, error)
 	LeaseTTL       time.Duration
 	RenewInterval  time.Duration
@@ -102,6 +111,13 @@ func NewWorkspaceSnapshotJobs(db *gorm.DB, sbx *SandboxService, options Workspac
 		validators[kind] = validate
 	}
 	options.Validate = validators
+	processors := map[string]WorkspaceJobProcessor{}
+	for kind, processor := range options.Processors {
+		if processor != nil {
+			processors[kind] = processor
+		}
+	}
+	options.Processors = processors
 	s := &WorkspaceSnapshotJobs{db: db, sandbox: sbx, options: options}
 	if s.options.Remote == nil && sbx != nil {
 		s.options.Remote = func(ctx context.Context, id uint) (WorkspaceJobRemote, error) {
@@ -149,6 +165,13 @@ func (s *WorkspaceSnapshotJobs) verify(ctx context.Context, lineage string) erro
 	return nil
 }
 
+func (s *WorkspaceSnapshotJobs) prepareAuthorization(ctx context.Context) (context.Context, error) {
+	if s.options.PrepareAuthorization != nil {
+		return s.options.PrepareAuthorization(ctx)
+	}
+	return ctx, nil
+}
+
 func (s *WorkspaceSnapshotJobs) Admit(ctx context.Context, actor string, in WorkspaceJobInput) (models.WorkspaceSnapshotJob, error) {
 	var row models.WorkspaceSnapshotJob
 	if actor == "" || !workspaceJobID.MatchString(in.ClientRequestID) || in.ScopeID == "" || len(in.ScopeID) > 191 || (in.ScopeKind != "solo" && in.ScopeKind != "run") || in.SandboxID == 0 || in.Duration <= 0 || in.Duration > s.options.MaxDuration {
@@ -185,6 +208,16 @@ func (s *WorkspaceSnapshotJobs) Admit(ctx context.Context, actor string, in Work
 	}
 	fingerprint := sha256.Sum256(data)
 	row = models.WorkspaceSnapshotJob{ID: hex.EncodeToString(identity[:]), ActorID: actor, ScopeKind: in.ScopeKind, ScopeID: in.ScopeID, SandboxID: in.SandboxID, Kind: in.Kind, Body: string(body), Nonce: in.ClientRequestID, Lineage: lineage, Fingerprint: hex.EncodeToString(fingerprint[:]), State: "queued", Deadline: time.Now().UTC().Add(in.Duration)}
+	if !in.NotAfter.IsZero() {
+		if !in.NotAfter.After(time.Now()) || in.NotAfter.After(row.Deadline) {
+			return models.WorkspaceSnapshotJob{}, ErrWorkspaceJobInvalid
+		}
+		row.Deadline = in.NotAfter.UTC()
+	}
+	ctx, err = s.prepareAuthorization(ctx)
+	if err != nil {
+		return models.WorkspaceSnapshotJob{}, err
+	}
 	if err := s.options.Authorize(ctx, s.db.WithContext(ctx), row); err != nil {
 		return models.WorkspaceSnapshotJob{}, err
 	}
@@ -205,6 +238,9 @@ func (s *WorkspaceSnapshotJobs) Admit(ctx context.Context, actor string, in Work
 				return ErrWorkspaceJobConflict
 			}
 			row = prior
+		}
+		if s.options.AdmittedTx != nil {
+			return s.options.AdmittedTx(ctx, tx, row)
 		}
 		return nil
 	})
@@ -236,6 +272,10 @@ func (s *WorkspaceSnapshotJobs) claim(ctx context.Context, id string, reconcile 
 	if err := s.verify(ctx, row.Lineage); err != nil {
 		return row, workspaceJobLease{}, err
 	}
+	ctx, err := s.prepareAuthorization(ctx)
+	if err != nil {
+		return row, workspaceJobLease{}, err
+	}
 	if err := s.options.Authorize(ctx, s.db.WithContext(ctx), row); err != nil {
 		return row, workspaceJobLease{}, err
 	}
@@ -245,18 +285,27 @@ func (s *WorkspaceSnapshotJobs) claim(ctx context.Context, id string, reconcile 
 	if !reconcile && row.Deadline.Before(until) {
 		until = row.Deadline
 	}
-	query := s.db.WithContext(ctx).Model(&models.WorkspaceSnapshotJob{}).Where("id = ? AND lineage = ? AND (owner = '' OR owner IS NULL OR expires_at < ?)", id, row.Lineage, now)
-	if reconcile {
-		query = query.Where("state = ?", "unknown")
-	} else {
-		query = query.Where("state = ? AND dispatched_at IS NULL AND deadline > ?", "queued", now)
-	}
-	claimed := query.Updates(map[string]any{"owner": owner, "generation": gorm.Expr("generation + 1"), "expires_at": until})
-	if claimed.Error != nil {
-		return row, workspaceJobLease{}, claimed.Error
-	}
-	if claimed.RowsAffected != 1 {
-		return row, workspaceJobLease{}, ErrWorkspaceJobOwner
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.options.Authorize(ctx, tx, row); err != nil {
+			return err
+		}
+		claimed := tx.Model(&models.WorkspaceSnapshotJob{}).Where("id = ? AND lineage = ? AND (owner = '' OR owner IS NULL OR expires_at < ?)", id, row.Lineage, time.Now().UTC())
+		if reconcile {
+			claimed = claimed.Where("state = ?", "unknown")
+		} else {
+			claimed = claimed.Where("state = ? AND dispatched_at IS NULL AND deadline > ?", "queued", time.Now().UTC())
+		}
+		updated := claimed.Updates(map[string]any{"owner": owner, "generation": gorm.Expr("generation + 1"), "expires_at": until})
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return ErrWorkspaceJobOwner
+		}
+		return nil
+	})
+	if err != nil {
+		return row, workspaceJobLease{}, err
 	}
 	if err := s.db.WithContext(ctx).First(&row, "id = ? AND owner = ?", id, owner).Error; err != nil {
 		return row, workspaceJobLease{}, err
@@ -268,17 +317,34 @@ func (s *WorkspaceSnapshotJobs) renew(ctx context.Context, lease workspaceJobLea
 	if err := s.verify(ctx, lease.lineage); err != nil {
 		return time.Time{}, errors.Join(ErrWorkspaceJobOwner, err)
 	}
+	ctx, err := s.prepareAuthorization(ctx)
+	if err != nil {
+		return time.Time{}, errors.Join(ErrWorkspaceJobOwner, err)
+	}
 	now := time.Now().UTC()
 	until := now.Add(s.options.LeaseTTL)
 	if !deadline.IsZero() && deadline.Before(until) {
 		until = deadline
 	}
-	updated := s.db.WithContext(ctx).Model(&models.WorkspaceSnapshotJob{}).Where("id = ? AND owner = ? AND generation = ? AND lineage = ? AND expires_at > ?", lease.id, lease.owner, lease.generation, lease.lineage, now).Update("expires_at", until)
-	if updated.Error != nil {
-		return time.Time{}, updated.Error
-	}
-	if updated.RowsAffected != 1 {
-		return time.Time{}, ErrWorkspaceJobOwner
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row models.WorkspaceSnapshotJob
+		if err := tx.Take(&row, "id = ?", lease.id).Error; err != nil {
+			return err
+		}
+		if err := s.options.Authorize(ctx, tx, row); err != nil {
+			return err
+		}
+		updated := tx.Model(&models.WorkspaceSnapshotJob{}).Where("id = ? AND owner = ? AND generation = ? AND lineage = ? AND expires_at > ?", lease.id, lease.owner, lease.generation, lease.lineage, time.Now().UTC()).Update("expires_at", until)
+		if updated.Error != nil {
+			return updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return ErrWorkspaceJobOwner
+		}
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
 	}
 	return until, nil
 }
@@ -319,13 +385,28 @@ func (s *WorkspaceSnapshotJobs) release(lease workspaceJobLease) {
 }
 
 func (s *WorkspaceSnapshotJobs) publish(ctx context.Context, row models.WorkspaceSnapshotJob, lease workspaceJobLease, states []string, updates map[string]any) error {
+	return s.publishCompletion(ctx, row, lease, states, updates, nil)
+}
+
+func (s *WorkspaceSnapshotJobs) publishCompletion(ctx context.Context, row models.WorkspaceSnapshotJob, lease workspaceJobLease, states []string, updates map[string]any, completion WorkspaceJobCompletion) error {
 	if err := s.verify(ctx, row.Lineage); err != nil {
 		return err
 	}
-	return s.sandbox.commitSandboxOperation(ctx, row.SandboxID, func(tx *gorm.DB) error {
+	ctx, err := s.prepareAuthorization(ctx)
+	if err != nil {
+		return err
+	}
+	return s.sandbox.commitSandboxOperationPrepared(ctx, row.SandboxID, func(tx *gorm.DB) error {
 		if err := s.options.Authorize(ctx, tx, row); err != nil {
 			return err
 		}
+		if preparer, ok := completion.(interface {
+			PrepareTx(context.Context, *gorm.DB) error
+		}); ok {
+			return preparer.PrepareTx(ctx, tx)
+		}
+		return nil
+	}, func(tx *gorm.DB) error {
 		result := tx.Model(&models.WorkspaceSnapshotJob{}).Where("id = ? AND owner = ? AND generation = ? AND lineage = ? AND expires_at > ? AND state IN ?", row.ID, lease.owner, lease.generation, lease.lineage, time.Now().UTC(), states).Updates(updates)
 		if result.Error != nil {
 			return result.Error
@@ -333,12 +414,26 @@ func (s *WorkspaceSnapshotJobs) publish(ctx context.Context, row models.Workspac
 		if result.RowsAffected != 1 {
 			return ErrWorkspaceJobOwner
 		}
+		if completion != nil {
+			if err := completion.Commit(ctx, tx); err != nil {
+				return err
+			}
+			// Pure SQL publication must also finish before the job lease ends.
+			var current models.WorkspaceSnapshotJob
+			if err := tx.Select("id").Take(&current, "id = ? AND owner = ? AND generation = ? AND lineage = ? AND expires_at > ?", row.ID, lease.owner, lease.generation, lease.lineage, time.Now().UTC()).Error; err != nil {
+				return errors.Join(ErrWorkspaceJobOwner, err)
+			}
+		}
 		return nil
 	})
 }
 
 func (s *WorkspaceSnapshotJobs) controlFence(ctx context.Context, row models.WorkspaceSnapshotJob, lease workspaceJobLease) (sandbox.WorkspaceJobFence, error) {
 	if err := s.verify(ctx, row.Lineage); err != nil {
+		return sandbox.WorkspaceJobFence{}, errors.Join(ErrWorkspaceJobOwner, err)
+	}
+	ctx, err := s.prepareAuthorization(ctx)
+	if err != nil {
 		return sandbox.WorkspaceJobFence{}, errors.Join(ErrWorkspaceJobOwner, err)
 	}
 	if err := s.options.Authorize(ctx, s.db.WithContext(ctx), row); err != nil {
@@ -365,7 +460,7 @@ func (s *WorkspaceSnapshotJobs) controlFence(ctx context.Context, row models.Wor
 		return sandbox.WorkspaceJobFence{}, ErrWorkspaceJobOwner
 	}
 	var physical models.Sandbox
-	err := s.db.WithContext(ctx).Select("generation", "operation_expires_at").Where("id = ? AND operation_owner = ? AND generation = ? AND operation_expires_at > ?", row.SandboxID, held.owner, held.generation, time.Now().UTC()).First(&physical).Error
+	err = s.db.WithContext(ctx).Select("generation", "operation_expires_at").Where("id = ? AND operation_owner = ? AND generation = ? AND operation_expires_at > ?", row.SandboxID, held.owner, held.generation, time.Now().UTC()).First(&physical).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && physical.OperationExpiresAt == nil) {
 		return sandbox.WorkspaceJobFence{}, ErrWorkspaceJobOwner
 	}

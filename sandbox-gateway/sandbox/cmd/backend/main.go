@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"backend/internal/auth"
 	"backend/internal/config"
@@ -84,6 +86,19 @@ func main() {
 		zlog.Fatal().Err(err).Str("qq_config", *qqConfigPath).Msg("qq bot init failed")
 	}
 	qqService.Start()
+	workspace, err := newWorkspaceOperations(os.Getenv, authPassword != "")
+	if err != nil {
+		zlog.Fatal().Err(err).Msg("workspace operations configuration failed")
+	}
+	if workspace != nil {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := workspace.Close(ctx); err != nil {
+				zlog.Error().Err(err).Msg("workspace operations did not finish shutdown")
+			}
+		}()
+	}
 
 	engine := router.New(&router.Dependencies{
 		WebRoot:       webRoot,
@@ -91,6 +106,7 @@ func main() {
 		QQBot:         qqService,
 		Auth:          auth.NewGuard(authPassword),
 		LoginHTMLPath: loginPath,
+		Workspace:     workspace,
 	})
 
 	zlog.Info().Str("listen", cfg.ListenAddr).Msg("acp-bridge listening")

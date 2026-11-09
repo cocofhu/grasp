@@ -144,6 +144,9 @@ func (s *SandboxService) Create(_ context.Context, req CreateRequest) (*models.S
 	// pod recreate must re-seed the same config. Without this, injection would
 	// only survive the very first pod (Config lives in-memory on the request).
 	env := mergeEnv(req.Env, configInjectEnv(req.Config))
+	// Runtime jobs bind to this durable gateway resource, not to a caller's
+	// placeholder name or the driver's replaceable pod/container hostname.
+	env["GRASP_SANDBOX_RESOURCE_ID"] = id
 	// When a provider is requested, make the sandbox select it at runtime too:
 	// set AGENT_PROVIDER unless the caller already provided it via env.
 	if req.Provider != "" {
