@@ -4,6 +4,7 @@ package workspacegit
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -197,6 +198,10 @@ func (s *Service) repo(value string) (*os.File, error) {
 func handlePath(dir *os.File) string { return fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), dir.Fd()) }
 
 func command(ctx context.Context, dir string, stdout io.Writer, args ...string) ([]byte, error) {
+	return commandInput(ctx, dir, stdout, nil, args...)
+}
+
+func commandInput(ctx context.Context, dir string, stdout io.Writer, stdin io.Reader, args ...string) ([]byte, error) {
 	base := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.attributesFile=/dev/null", "-c", "core.excludesFile=/dev/null", "-c", "submodule.recurse=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "protocol.allow=never", "-c", "protocol.file.allow=always", "-c", "pack.threads=1", "-c", "uploadpack.packObjectsHook="}
 	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
 	// Git delegates fetch/packing to children. Cancelling only its leader can
@@ -211,6 +216,7 @@ func command(ctx context.Context, dir string, stdout io.Writer, args ...string) 
 	}
 	cmd.WaitDelay = time.Second
 	cmd.Dir = dir
+	cmd.Stdin = stdin
 	for _, env := range os.Environ() {
 		if !strings.HasPrefix(env, "GIT_") {
 			cmd.Env = append(cmd.Env, env)
@@ -315,6 +321,13 @@ func validateTree(ctx context.Context, root, commit string) (int, int64, error) 
 	}
 	count := 0
 	var total int64
+	type inspectedBlob struct {
+		name, object string
+		symlink      bool
+		size         int64
+	}
+	var inspect []inspectedBlob
+	var query strings.Builder
 	for _, entry := range bytes.Split(data, []byte{0}) {
 		if len(entry) == 0 {
 			continue
@@ -352,20 +365,52 @@ func validateTree(ctx context.Context, root, commit string) (int, int64, error) 
 		}
 		total += size
 		if mode == "120000" || size < 1024 {
-			blob, err := command(ctx, root, nil, "cat-file", "blob", object)
-			if err != nil {
+			if !commitPattern.MatchString(object) {
+				return 0, 0, ErrUnsafe
+			}
+			inspect = append(inspect, inspectedBlob{name: name, object: object, symlink: mode == "120000", size: size})
+			query.WriteString(object)
+			query.WriteByte('\n')
+		}
+	}
+	if len(inspect) != 0 {
+		var output bytes.Buffer
+		// One bounded batch handles the complete tree. Starting one process per
+		// small blob made valid repositories approach the lease deadline.
+		limit := MaxTotalBytes + int64(MaxEntries)*128
+		_, err := commandInput(ctx, root, &boundedWriter{writer: &output, remaining: limit}, strings.NewReader(query.String()), "cat-file", "--batch")
+		if err != nil {
+			return 0, 0, err
+		}
+		reader := bufio.NewReader(&output)
+		for _, entry := range inspect {
+			if err := ctx.Err(); err != nil {
 				return 0, 0, err
+			}
+			header, err := reader.ReadString('\n')
+			if err != nil || header != fmt.Sprintf("%s blob %d\n", entry.object, entry.size) {
+				return 0, 0, ErrUnsafe
+			}
+			blob := make([]byte, int(entry.size))
+			if _, err := io.ReadFull(reader, blob); err != nil {
+				return 0, 0, err
+			}
+			if end, err := reader.ReadByte(); err != nil || end != '\n' {
+				return 0, 0, ErrUnsafe
 			}
 			if bytes.HasPrefix(blob, []byte("version https://git-lfs.github.com/spec/v1")) {
 				return 0, 0, unsupportedRepository("repository_lfs")
 			}
-			if mode == "120000" {
+			if entry.symlink {
 				target := string(blob)
-				resolved := path.Clean(path.Join(path.Dir(name), target))
+				resolved := path.Clean(path.Join(path.Dir(entry.name), target))
 				if path.IsAbs(target) || strings.ContainsAny(target, "\\\x00") || resolved == ".." || strings.HasPrefix(resolved, "../") {
 					return 0, 0, ErrUnsafe
 				}
 			}
+		}
+		if _, err := reader.ReadByte(); !errors.Is(err, io.EOF) {
+			return 0, 0, ErrUnsafe
 		}
 	}
 	return count, total, nil
@@ -651,7 +696,7 @@ func (s *Service) Import(ctx context.Context, id, digest string, source io.Reade
 		if files != repo.Files || size != repo.Bytes {
 			return Receipt{}, ErrUnsafe
 		}
-		if _, err = command(ctx, repoPath, nil, "checkout", "--detach", repo.Commit); err != nil {
+		if _, err = command(ctx, repoPath, nil, "checkout", "-b", "import/"+repo.Commit[:12], repo.Commit); err != nil {
 			return Receipt{}, err
 		}
 	}

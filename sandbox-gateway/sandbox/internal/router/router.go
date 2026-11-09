@@ -78,17 +78,16 @@ func New(deps *Dependencies) *gin.Engine {
 	// standalone bridge. It never accepts a caller-selected host root.
 	if deps.Auth != nil && deps.Auth.Enabled() {
 		root := os.Getenv("WORKSPACE_DIR")
-		if root == "" {
-			root, _ = os.Getwd()
+		if root != "" {
+			code := handler.NewWorkspaceCode(root)
+			if deps.Workspace != nil && deps.Workspace.Binding != nil {
+				code = handler.NewBoundWorkspaceCode(deps.Workspace.Binding)
+			}
+			r.GET("/api/workspace/code", code.Inventory)
+			r.POST("/api/workspace/code/export", code.Export)
+			r.POST("/api/workspace/code/imports/:importId", code.Import)
+			r.GET("/api/workspace/code/imports/:importId", code.Receipt)
 		}
-		code := handler.NewWorkspaceCode(root)
-		if deps.Workspace != nil && deps.Workspace.Binding != nil {
-			code = handler.NewBoundWorkspaceCode(deps.Workspace.Binding)
-		}
-		r.GET("/api/workspace/code", code.Inventory)
-		r.POST("/api/workspace/code/export", code.Export)
-		r.POST("/api/workspace/code/imports/:importId", code.Import)
-		r.GET("/api/workspace/code/imports/:importId", code.Receipt)
 		if deps.Workspace != nil {
 			if deps.Workspace.Binding != nil {
 				binding := &handler.WorkspaceBinding{Manager: deps.Workspace.Binding}
