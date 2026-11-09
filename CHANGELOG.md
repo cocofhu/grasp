@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 本地 SeaweedFS 必须通过 `GRASP_LOCAL_OBJECTSTORE=1` 显式启用；S3 未填写地址时拒绝创建本地存储，重启也会在停止已有服务前检查配置。
+
 - 本地 SeaweedFS 在显式新安装初始化中先完成就绪检查，沿用原组件凭据；应用写入者未停止时拒绝准备或初始化。
 
 - 对话日志遇到短暂的 SQL 或对象存储故障时，在原总截止时间内重试同一冻结批次，并核对原提交收据，避免重复追加；永久故障仍停止执行并保留已保存部分。低流量输出每秒提交，达到批次阈值或显式刷新、结束时立即提交，聊天只显示已保存的内容。

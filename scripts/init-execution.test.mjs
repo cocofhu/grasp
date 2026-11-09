@@ -202,7 +202,7 @@ test('bundled storage is ready before explicit fresh init, with stopped writers 
   for (const mode of ['release', 'dev']) {
     const f = shellFixture();
     const args = mode === 'dev' ? ['dev', 'init-execution', '--offline'] : ['init-execution', '--offline'];
-    const env = { ...f.env, GRASP_STORAGE_DRIVER: 's3', GRASP_S3_ENDPOINT: '',
+    const env = { ...f.env, GRASP_STORAGE_DRIVER: 's3', GRASP_LOCAL_OBJECTSTORE: '1', GRASP_S3_ENDPOINT: '',
       GRASP_S3_ACCESS_KEY_ID: '', GRASP_S3_SECRET_ACCESS_KEY: '', GRASP_S3_SESSION_TOKEN: '',
       TEST_OBJECTSTORE_CONTAINER: 'b'.repeat(64) };
     const result = spawnSync('bash', ['start.sh', ...args], { cwd: f.dir, env, encoding: 'utf8' });
@@ -224,6 +224,20 @@ test('bundled storage is ready before explicit fresh init, with stopped writers 
     assert.notEqual(refused.status, 0);
     assert.equal(busy.commands().some(command => command.includes('up') || command.includes('run')), false);
     assert.equal(fs.existsSync(path.join(busy.dir, mode === 'dev' ? '.devdata' : '.localdata', 'objectstore')), false);
+  }
+});
+
+test('missing S3 endpoint cannot provision bundled storage or stop an installation without explicit selection', () => {
+  for (const args of [['init-execution', '--offline'], ['dev', 'init-execution', '--offline'], ['-d'], ['dev', '-d'], ['restart']]) {
+    const f = shellFixture();
+    const env = { ...f.env, GRASP_STORAGE_DRIVER: 's3', GRASP_LOCAL_OBJECTSTORE: '', GRASP_S3_ENDPOINT: '',
+      GRASP_S3_ACCESS_KEY_ID: '', GRASP_S3_SECRET_ACCESS_KEY: '', GRASP_S3_SESSION_TOKEN: '' };
+    const refused = spawnSync('bash', ['start.sh', ...args], { cwd: f.dir, env, encoding: 'utf8' });
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /GRASP_LOCAL_OBJECTSTORE=1/);
+    assert.equal(f.commands().some(command => command.some(arg => ['up', 'run', 'build', 'down', 'stop'].includes(arg))), false);
+    assert.equal(fs.existsSync(path.join(f.dir, '.localdata')), false);
+    assert.equal(fs.existsSync(path.join(f.dir, '.devdata')), false);
   }
 });
 

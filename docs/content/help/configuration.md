@@ -62,7 +62,7 @@ Solo、工作流、Agent 测试和 PM 使用同一套聊天展示。悬停消息
 
 ## 本地对象存储与 COS / S3
 
-Solo 续聊迁移版本和源码栈支持把正文、附件及工作区归档放到私有对象存储。当前 `.env.example` 中的已发布 3.2.0 镜像早于这项能力；评估本分支时使用源码栈，正式升级时使用迁移版本镜像。
+Solo 续聊迁移版本和源码栈支持把正文、附件及工作区归档放到私有对象存储。评估本分支时使用源码栈，正式升级时使用迁移版本镜像。
 
 已有 v3.2 数据需先停止全部写入者，使用迁移版本的 `grasp-storage-admin --mode upgrade` 完成原 SQL 备份、正文和历史日志转换及引用校验，再以原维护目录显式初始化独立执行控制。完整操作和恢复约束见仓库 `server/UPGRADING.md`；不要用普通重启代替版本迁移。
 
@@ -70,11 +70,12 @@ Solo 续聊迁移版本和源码栈支持把正文、附件及工作区归档放
 
 ```dotenv
 GRASP_STORAGE_DRIVER=s3
+GRASP_LOCAL_OBJECTSTORE=1
 GRASP_S3_BUCKET=grasp
 GRASP_S3_PREFIX=application
 ```
 
-保留 `GRASP_S3_ENDPOINT`、访问密钥和会话令牌为空。全新安装先执行 `./start.sh init-execution --offline`，源码栈使用 `./start.sh dev init-execution --offline`；命令先确认应用已停止，再准备 SeaweedFS 和原本地凭据，最后初始化独立执行控制。然后执行 `./start.sh -d`（迁移版本镜像）或 `./start.sh dev -d`（源码）。已有数据库按前述升级流程处理，普通启动和重启不自动初始化。
+保留 `GRASP_S3_ENDPOINT`、访问密钥和会话令牌为空；必须显式设置 `GRASP_LOCAL_OBJECTSTORE=1`，只缺少 S3 地址会报错，不会创建空白本地存储。全新安装先执行 `./start.sh init-execution --offline`，源码栈使用 `./start.sh dev init-execution --offline`；命令先确认应用已停止，再准备 SeaweedFS 和原本地凭据，最后初始化独立执行控制。然后执行 `./start.sh -d`（迁移版本镜像）或 `./start.sh dev -d`（源码）。已有数据库按前述升级流程处理，普通启动和重启不自动初始化。
 
 脚本自动创建私有 bucket，生成只允许该 bucket 的应用密钥，并在确认服务就绪后启动 Grasp。默认 S3 地址为 `http://127.0.0.1:8333`，仅绑定本机；端口可用 `GRASP_LOCAL_OBJECTSTORE_PORT` 修改。管理界面、Filer 和 Master 端口不发布到宿主。正文组件的凭据不会自动用作独立执行控制配置。
 

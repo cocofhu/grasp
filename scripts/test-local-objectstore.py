@@ -39,9 +39,10 @@ class LocalObjectStorageTests(unittest.TestCase):
         self.env = {
             key: value for key, value in os.environ.items()
             if not key.startswith(("GRASP_S3_", "GRASP_LOCAL_OBJECTSTORE_"))
-            and key not in ("GRASP_STORAGE_DRIVER", "COMPOSE_PROFILES")
+            and key not in ("GRASP_STORAGE_DRIVER", "GRASP_LOCAL_OBJECTSTORE", "COMPOSE_PROFILES")
         }
         self.env["GRASP_STORAGE_DRIVER"] = "s3"
+        self.env["GRASP_LOCAL_OBJECTSTORE"] = "1"
 
     def prepare(self, **overrides):
         return subprocess.run(
@@ -93,6 +94,17 @@ class LocalObjectStorageTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.path.exists())
             self.assertNotIn("synthetic-partial-cloud-credential", result.stderr + result.stdout)
+
+    def test_missing_endpoint_requires_explicit_local_selection_before_creating_storage(self):
+        for value in ("", "0", "true", "invalid"):
+            result = self.prepare(GRASP_LOCAL_OBJECTSTORE=value)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("GRASP_LOCAL_OBJECTSTORE=1", result.stderr)
+            self.assertFalse(self.path.exists())
+        del self.env["GRASP_LOCAL_OBJECTSTORE"]
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.path.exists())
 
     def test_cloud_endpoint_and_local_driver_leave_storage_untouched(self):
         self.successful(GRASP_S3_ENDPOINT="https://example.invalid", GRASP_S3_ACCESS_KEY_ID="external")

@@ -177,6 +177,7 @@ ensure_compose_images_if_missing() {
 
 up_release() {
   local detach="${1:-}"
+  validate_local_objectstore_selection
   mkdir -p .localdata/gateway .localdata/db .localdata/app-data
   prepare_local_objectstore "$HOST_REPO_DIR/.localdata/objectstore"
   # On-demand: only Grasp + Gateway when missing. Sandbox runtimes are
@@ -236,6 +237,7 @@ build_dev_runtime() {
 }
 
 up_dev() {
+  validate_local_objectstore_selection
   local detach="${1:-}"
   if [[ ! -f server/config.yaml ]]; then
     cp server/config.example.yaml server/config.yaml
@@ -292,6 +294,7 @@ case "$cmd" in
     "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" --profile local-storage down --remove-orphans || true
     ;;
   restart)
+    validate_local_objectstore_selection
     "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" --profile local-storage down --remove-orphans || true
     up_release 1
     ;;
