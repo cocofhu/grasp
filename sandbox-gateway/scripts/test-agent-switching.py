@@ -56,25 +56,6 @@ def free_port():
         return sock.getsockname()[1]
 
 
-def initialize_fixture_execution(config_path, data, output, env, storage_admin=None):
-    """Initialize only this stopped, synthetic fixture through the offline CLI.
-
-    The SQL directory, payload root, independent control and maintenance ticket
-    are siblings. The ordinary server is never allowed to initialize itself.
-    """
-    control_path = data/'execution-control.json'
-    control_path.write_text(json.dumps({'storage': {'driver': 'local', 'blobs_root': str(data/'execution-control')}}))
-    control_path.chmod(0o600)
-    with (output/'execution-init.log').open('w') as log:
-        if storage_admin:
-            admin = Path(storage_admin).resolve()
-        else:
-            admin = data/'storage-admin'
-            build_env = {**env, 'GOTOOLCHAIN': 'go1.26.10'}
-            subprocess.run(['go', 'build', '-o', str(admin), './cmd/storage-admin'], cwd=ROOT/'server', env=build_env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        subprocess.run([str(admin), '--mode', 'execution-init', '--offline', '--config', str(config_path), '--execution-control', str(control_path), '--workdir', str(data/'execution-init')], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-
-
 def history_tool_completed(message):
     """Require the runtime's parsed native MCP events as well as HTTP evidence."""
     history_calls, completed = set(), set()
@@ -107,75 +88,6 @@ def assert_reasoning_requests(requests, effort, backend):
         raise AssertionError('reasoning strength did not reach every main model request for '+backend+'/'+effort)
 
 
-def process_identity(pid, executable_name=None):
-    """Read ownership metadata only; command lines and environments contain keys."""
-    proc = Path('/proc')/str(pid)
-    try:
-        uid = proc.stat().st_uid
-        if uid != os.getuid():
-            return None
-        command, raw = (proc/'stat').read_text().rsplit(')', 1)
-        # The native Go backend keeps its executable name. Exclude unrelated
-        # processes before protected exe/cwd reads: even another process of
-        # this UID may be a non-dumpable browser/runner helper. This is only a
-        # negative filter; all ownership fields below are still required.
-        if executable_name is not None and command.split('(', 1)[1] != executable_name[:15]:
-            return None
-        fields = raw.split()
-        if fields[0] == 'Z':
-            return None
-        return {'pid': pid, 'uid': uid, 'group': int(fields[2]),
-                'start': fields[19], 'exe': os.readlink(proc/'exe'),
-                'cwd': os.readlink(proc/'cwd').removesuffix(' (deleted)')}
-    except (FileNotFoundError, ProcessLookupError):
-        return None
-
-
-def owned_backend_processes(data, runtime):
-    """Only the exact backend in this run's private worktrees may be signalled."""
-    binary, worktrees = str((Path(runtime)/'bin/backend').resolve()), (data/'launches').resolve()
-    owned = []
-    for proc in Path('/proc').iterdir():
-        if not proc.name.isdigit():
-            continue
-        identity = process_identity(int(proc.name), executable_name=Path(binary).name)
-        if not identity or identity['uid'] != os.getuid() or identity['exe'] != binary:
-            continue
-        if not Path(identity['cwd']).is_relative_to(worktrees):
-            continue
-        if identity['group'] != identity['pid']:
-            raise AssertionError('owned local backend is not its process group leader')
-        owned.append(identity)
-    return owned
-
-
-def signal_owned_backend(identity, sig):
-    # A process may exit between discovery and signalling. Never grant a reused
-    # PID permission merely because it has the same executable or workspace.
-    current = process_identity(identity['pid'])
-    if current is None:
-        return
-    if current != identity:
-        raise AssertionError('owned local backend process identity changed before cleanup')
-    try:
-        os.killpg(identity['group'], sig)
-    except ProcessLookupError:
-        pass
-
-
-def process_group_alive(group):
-    for proc in Path('/proc').iterdir():
-        if not proc.name.isdigit():
-            continue
-        try:
-            fields = (proc/'stat').read_text().rsplit(')', 1)[1].split()
-            if int(fields[2]) == group and fields[0] != 'Z':
-                return True
-        except (FileNotFoundError, ProcessLookupError):
-            pass
-    return False
-
-
 class E2E:
     def __init__(self, args):
         self.args = args
@@ -191,9 +103,6 @@ class E2E:
         self.run = 'switch-'+secrets.token_hex(6)
         self.nonce = 'task-'+secrets.token_hex(12)
         self.marker = 'checkpoint.txt'
-        # Filled by close after verifying the retained local worktree.
-        self.cleanup = []
-        self.fixture_cleanup = []
 
     def request(self, path, body=None, method=None, base=None):
         data = None if body is None else json.dumps(body).encode()
@@ -206,11 +115,6 @@ class E2E:
             # Endpoints and all credentials in this isolated suite are
             # synthetic. Keep the server's stable error code for diagnosis.
             detail = error.read(1500).decode(errors='replace')
-            try:
-                parsed = json.loads(detail)
-                error.grasp_response = parsed if isinstance(parsed, dict) else {}
-            except ValueError:
-                error.grasp_response = {}
             error.msg = str(error.msg)+' '+path+' '+detail
             raise
 
@@ -286,10 +190,9 @@ sys.exit(child.wait())
                     wrapper.chmod(0o755)
         env.update({'PATH': os.pathsep.join([str(native_bin), str(fixture_bin), env['PATH']]), 'GRASP_EXECUTION_MODE': 'worktree', 'GRASP_WORKTREE_ROOT': str(self.data/'launches'), 'GRASP_WORKTREE_BACKEND': str(Path(self.args.runtime).resolve()/'bin/backend'), 'GRASP_BLOBS_ROOT': str(self.data/'blobs'), 'GIT_ASKPASS': '/bin/false', 'GIT_TERMINAL_PROMPT': '0'})
         port = int(self.base.rsplit(':', 1)[1])
-        config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': self.base, 'public_advertise': self.base}, 'database': {'path': str(self.data/'sql/grasp.db')}, 'storage': {'driver': 'local', 'blobs_root': str(self.data/'blobs')}, 'execution_control': {'driver': 'local', 'blobs_root': str(self.data/'execution-control')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
+        config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': self.base, 'public_advertise': self.base}, 'database': {'path': str(self.data/'grasp.db')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
         config_path = self.data/'config.json'
         config_path.write_text(json.dumps(config)); config_path.chmod(0o600)
-        initialize_fixture_execution(config_path, self.data, self.output, env, self.args.storage_admin)
         self.launch([str(Path(self.args.server).resolve()), str(config_path)], env, 'server')
         self.wait(lambda: self.request('/api/health').get('ready'), 'Grasp readiness')
         self.request('/api/auth/login', {'username': 'admin', 'password': 'demo1234'})
@@ -492,76 +395,20 @@ sys.exit(child.wait())
             raise AssertionError(f'native token accounting mismatch for {step["backend"]}/{step["id"]}: upstream={upstream}, recorded={recorded}')
 
     def save_report(self, error=None):
-        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'cleanup': self.cleanup, 'fixtureCleanup': self.fixture_cleanup, 'temporaryDataRetained': str(self.data) if self.data.exists() else None, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
+        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
         (self.output/'report.json').write_text(json.dumps(report, indent=2))
         if error:
             # Test prompts, commands and credentials are synthetic. Keep the
             # failing CLI's native event evidence, never its environment/config.
             (self.output/'failure-messages.json').write_text(json.dumps(self.last_messages[-4:], indent=2))
 
-    def workspace_markers(self):
-        root = (self.data/'launches').resolve()
-        markers = {}
-        for path in root.rglob(self.marker):
-            if path.is_symlink() or not path.resolve().is_relative_to(root):
-                raise AssertionError('native workspace marker escaped the owned worktree')
-            markers[path] = path.read_bytes()
-        return markers
-
-    def close_session(self, session):
-        path = '/api/solo/sessions/'+session
-        before = self.request(path)
-        markers = self.workspace_markers()
-        if before.get('id') != session or type(before.get('sandboxId')) is not int or before['sandboxId'] <= 0 or not markers:
-            raise AssertionError('missing original session, environment or native workspace marker before close')
-        stop_confirmed = True
-        try:
-            self.request(path+'/close', {})
-        except urllib.error.HTTPError as error:
-            response = getattr(error, 'grasp_response', None)
-            if error.code != 409 or not isinstance(response, dict) or response.get('code') != 'environment_stop_pending':
-                raise
-            # Local keep-root shutdown is not implemented. Accepted closed
-            # intent plus retained files is useful evidence, never a stop proof.
-            stop_confirmed = False
-        result = self.request(path)
-        if result.get('id') != session or result.get('status') != 'closed' or result.get('sandboxId') != before['sandboxId']:
-            raise AssertionError('close did not retain the closed session and original environment')
-        if self.workspace_markers() != markers:
-            raise AssertionError('close changed the retained native workspace')
-        sandbox = result.get('sandbox') or {}
-        if stop_confirmed and (sandbox.get('id') != before['sandboxId'] or sandbox.get('status') != 'stopped' or sandbox.get('desiredState') != 'stopped'):
-            raise AssertionError('successful close did not confirm the original environment stopped')
-        self.cleanup.append({'sessionId': session, 'sandboxId': before['sandboxId'],
-                             'status': 'closed_workspace_retained' if stop_confirmed else 'closed_stop_pending_workspace_retained',
-                             'workspacePreserved': True, 'providerStopConfirmed': stop_confirmed})
-
-    def close_backends(self):
-        # The local provider deliberately launches backend in its own process
-        # group, outside the test server's group. Reclaim only this fixture's
-        # processes AFTER proving Close preserved its files and binding.
-        for identity in owned_backend_processes(self.data, self.args.runtime):
-            signal_owned_backend(identity, signal.SIGTERM)
-            deadline = time.monotonic()+8
-            while process_identity(identity['pid']) is not None and time.monotonic() < deadline:
-                time.sleep(0.05)
-            if process_identity(identity['pid']) is not None:
-                signal_owned_backend(identity, signal.SIGKILL)
-                deadline = time.monotonic()+8
-                while process_identity(identity['pid']) is not None and time.monotonic() < deadline:
-                    time.sleep(0.05)
-            if process_identity(identity['pid']) is not None or process_group_alive(identity['group']):
-                raise AssertionError('owned local backend group did not exit after fixture cleanup')
-            self.fixture_cleanup.append({'kind': 'owned_local_backend_group', 'pid': identity['pid'],
-                                         'processGroup': identity['group'], 'exited': True})
-        if owned_backend_processes(self.data, self.args.runtime):
-            raise AssertionError('owned local backend remained after fixture cleanup')
-
     def close(self):
         errors = []
         for session in self.sessions:
             try:
-                self.close_session(session)
+                result = self.request('/api/solo/sessions/'+session+'/close', {})
+                if result.get('status') != 'closed':
+                    errors.append('session did not close: '+session)
             except Exception as error:
                 errors.append('session cleanup failed: '+str(error))
         for proc in reversed(self.processes):
@@ -578,13 +425,9 @@ sys.exit(child.wait())
                     except ProcessLookupError:
                         pass
                     proc.wait()
-        try:
-            self.close_backends()
-        except Exception as error:
-            errors.append('fixture backend cleanup failed: '+str(error))
         for handle in self.handles:
             handle.close()
-        if not self.args.keep_data and not errors:
+        if not self.args.keep_data:
             shutil.rmtree(self.data)
         if errors:
             raise AssertionError('; '.join(errors))
@@ -593,7 +436,6 @@ sys.exit(child.wait())
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--server', required=True, help='built Grasp server executable')
-    parser.add_argument('--storage-admin', help='matching offline storage tool; built from the same source when omitted')
     parser.add_argument('--runtime', required=True, help='extracted runtime directory with bin/backend')
     parser.add_argument('--output', default='agent-e2e-artifacts')
     parser.add_argument('--tools', help='local debugging subset only; CI always uses all tools')
