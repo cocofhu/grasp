@@ -56,8 +56,12 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
       req<{ ok: boolean }>(`${path(id)}/queue/${enc(turnId)}`, { method: 'DELETE' }),
     reorderSoloQueue: (id: string, ids: string[]) =>
       req<{ ok: boolean }>(`${path(id)}/queue`, { method: 'PUT', body: JSON.stringify({ ids }) }),
-    soloChatWsUrl: (id: string, afterSeq?: number) =>
-      wsUrl(`${path(id)}/chat${afterSeq != null && afterSeq >= 0 ? `?after=${afterSeq}` : ''}`),
+    soloChatWsUrl: (id: string, afterSeq?: number, journalVersion?: number) => {
+      const query = new URLSearchParams()
+      if (afterSeq != null && afterSeq >= 0) query.set('after', String(afterSeq))
+      if (journalVersion !== undefined) query.set('journal', String(journalVersion))
+      return wsUrl(`${path(id)}/chat${query.size ? `?${query}` : ''}`)
+    },
   }
 }
 

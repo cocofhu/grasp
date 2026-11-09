@@ -540,11 +540,16 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 
 func (h *Handlers) serveSoloChat(c *gin.Context, user string, socketUpgrader websocket.Upgrader, expiresAt time.Time, sandboxID uint) {
 	id := c.Param("id")
+	journal := c.Query("journal")
+	if journal != "" && journal != "1" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_journal_protocol"})
+		return
+	}
 	after := -1
 	if v, err := strconv.Atoi(c.Query("after")); err == nil {
 		after = v
 	}
-	ch, unsub, err := h.Solo.Subscribe(id, user, after)
+	ch, unsub, err := h.Solo.Subscribe(id, user, after, journal == "")
 	if err != nil {
 		writeSoloErr(c, err)
 		return

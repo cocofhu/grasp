@@ -217,7 +217,7 @@ func (s *SoloService) journalPointer(tx *gorm.DB, id, turnID string, epoch uint6
 
 // Subscribe reads committed data on any application replica. A slow viewer is
 // disconnected with its last delivered cursor; no frame is silently dropped.
-func (s *SoloService) Subscribe(id, user string, afterSeq int) (<-chan chatsession.Event, func(), error) {
+func (s *SoloService) Subscribe(id, user string, afterSeq int, legacyCursor ...bool) (<-chan chatsession.Event, func(), error) {
 	if _, err := s.Require(id, user); err != nil {
 		return nil, nil, err
 	}
@@ -228,7 +228,9 @@ func (s *SoloService) Subscribe(id, user string, afterSeq int) (<-chan chatsessi
 		return nil, nil, err
 	}
 	cursor := int64(afterSeq)
-	reset := cursor > view.head || cursor < -1
+	// Migration release: a pre-journal client cursor describes a process-local
+	// stream, even if its numeric value happens to fit this persistent range.
+	reset := cursor > view.head || cursor < -1 || len(legacyCursor) > 0 && legacyCursor[0] && cursor >= 0
 	if cursor == -1 || reset {
 		cursor = view.first
 	}

@@ -867,7 +867,9 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const id = sessionId.value
     if (!id || disposed) return
     link.value = link.value === 'idle' ? 'connecting' : 'reconnecting'
-    const sock = new WebSocket(transport.soloChatWsUrl(id, ackedSeq >= 0 ? ackedSeq : undefined), transport.soloChatProtocols)
+    const cursor = ackedSeq >= 0 ? ackedSeq : undefined
+    const address = journalVersion ? transport.soloChatWsUrl(id, cursor, journalVersion) : transport.soloChatWsUrl(id, cursor)
+    const sock = new WebSocket(address, transport.soloChatProtocols)
     ws = sock
     held = []
     let firstFrame = true

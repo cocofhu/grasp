@@ -154,7 +154,7 @@ describe('useSoloChat', () => {
       await vi.advanceTimersByTimeAsync(1500)
       const next = FakeSocket.all.at(-1)!
       expect(next).not.toBe(first)
-      expect(mocks.soloChatWsUrl).toHaveBeenLastCalledWith('s1', 100)
+      expect(mocks.soloChatWsUrl).toHaveBeenLastCalledWith('s1', 100, 1)
       next.open()
       await flushPromises()
       next.emit({ type: 'session', event: 'queue_state', seq: 100, journalVersion: 1, stateSnapshot: true, sessionGeneration: 10, revision: 2, busy: true, activeItem: { ...item, id: 'new' }, items: [] })
@@ -163,7 +163,7 @@ describe('useSoloChat', () => {
       expect(chat.turns.value.find(turn => turn.id === 'live:new')?.text).toBe('new output')
       next.onclose?.()
       await vi.advanceTimersByTimeAsync(1500)
-      expect(mocks.soloChatWsUrl).toHaveBeenLastCalledWith('s1', 102)
+      expect(mocks.soloChatWsUrl).toHaveBeenLastCalledWith('s1', 102, 1)
     } finally { app.unmount(); vi.useRealTimers() }
   })
 
@@ -209,7 +209,7 @@ describe('useSoloChat', () => {
       }
       expect(chat.loadError.value).toContain('存在缺口')
       expect(chat.turns.value.find(turn => turn.id === 'live:active')?.text).toBe('saved prefix')
-      expect(mocks.soloChatWsUrl).toHaveBeenLastCalledWith('s1', 100)
+      expect(mocks.soloChatWsUrl).toHaveBeenLastCalledWith('s1', 100, 1)
     } finally { app.unmount(); vi.useRealTimers() }
   })
 

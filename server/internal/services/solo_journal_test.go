@@ -114,6 +114,15 @@ func TestSoloJournalReplaysOverSixThousandFramesAcrossReplicas(t *testing.T) {
 		t.Fatalf("reconnect cursor changed: %+v", head)
 	}
 	read(frames, native.count)
+	legacy, stopLegacy, err := peer.Subscribe(view.ID, "alice", last, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyHead := <-legacy
+	stopLegacy()
+	if legacyHead.Payload["cursorReset"] != true || legacyHead.Seq != snapshot.Seq {
+		t.Fatal("legacy process cursor was reused as a persistent journal offset")
+	}
 	if peer.lookup(view.ID) != nil {
 		t.Fatal("a passive cross-replica reader constructed an executor")
 	}
