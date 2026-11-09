@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/filestore"
+	"github.com/cocofhu/grasp/internal/objectstore"
 )
 
 type stagedPayloadReader struct {
@@ -23,7 +25,18 @@ func (r *stagedPayloadReader) Read(body []byte) (int, error) {
 	return r.reader.Read(body)
 }
 
-func TestPublicationWaitHonorsShorterPrepareAndOpenDeadlines(t *testing.T) {
+type parallelDeadlineBackend struct {
+	objectBackend
+	once sync.Once
+}
+
+func (b *parallelDeadlineBackend) Put(ctx context.Context, _ string, _ io.ReadSeeker, _ objectstore.Info) error {
+	b.once.Do(func() { close(b.started) })
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestParallelPublicationHonorsShorterPrepareAndOpenDeadlines(t *testing.T) {
 	for _, phase := range []string{"create_temp", "publish"} {
 		t.Run(phase, func(t *testing.T) {
 			store, err := filestore.New(t.TempDir())
@@ -31,7 +44,7 @@ func TestPublicationWaitHonorsShorterPrepareAndOpenDeadlines(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(store.Close)
-			backend := &objectBackend{started: make(chan struct{})}
+			backend := &parallelDeadlineBackend{objectBackend: objectBackend{started: make(chan struct{})}}
 			if err := store.SetObjectStore(backend); err != nil {
 				t.Fatal(err)
 			}
@@ -67,8 +80,8 @@ func TestPublicationWaitHonorsShorterPrepareAndOpenDeadlines(t *testing.T) {
 			}
 			readCtx, readCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 			defer readCancel()
-			if _, err := store.Load(readCtx, filestore.Prefix+filestore.Bytes+"/"+strings.Repeat("a", 64), filestore.Bytes); !errors.Is(err, context.DeadlineExceeded) {
-				t.Fatalf("object lookup waited beyond its caller's deadline: %v", err)
+			if _, err := store.Load(readCtx, filestore.Prefix+filestore.Bytes+"/"+strings.Repeat("a", 64), filestore.Bytes); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("object lookup was blocked by another upload: %v", err)
 			}
 			closed := make(chan struct{})
 			go func() { store.Close(); close(closed) }()

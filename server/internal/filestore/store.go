@@ -10,9 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/cocofhu/grasp/internal/objectstore"
 )
@@ -33,6 +36,8 @@ type Store struct {
 	Root         string
 	mu           contextMutex
 	closed       bool
+	closing      atomic.Bool
+	publications sync.WaitGroup
 	objects      objectstore.Store
 	closeContext context.Context
 	cancel       context.CancelFunc
@@ -52,7 +57,7 @@ type File interface {
 func (s *Store) SetObjectStore(objects objectstore.Store) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
+	if s.closed || s.closing.Load() {
 		return ErrClosed
 	}
 	s.objects = objects
@@ -69,12 +74,14 @@ var ErrClosed = errors.New("file payload store is closed")
 // It does not wait for a blocked source reader. An already-open temporary file
 // may finish copying but cannot publish a SQL-reference-bearing object.
 func (s *Store) Close() {
+	s.closing.Store(true)
 	if s.cancel != nil {
 		s.cancel()
 	}
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
+	s.publications.Wait()
 }
 
 func (s *Store) createTemp(ctx context.Context) (*os.File, error) {
@@ -82,7 +89,7 @@ func (s *Store) createTemp(ctx context.Context) (*os.File, error) {
 		return nil, err
 	}
 	defer s.mu.Unlock()
-	if s.closed {
+	if s.closed || s.closing.Load() {
 		return nil, ErrClosed
 	}
 	dir := filepath.Join(s.Root, "tmp")
@@ -171,7 +178,7 @@ func (s *Store) Put(ctx context.Context, r io.Reader, encoding string) (ref stri
 }
 
 func (s *Store) PutBounded(ctx context.Context, r io.Reader, encoding string, limit int64) (string, int64, error) {
-	if limit < 1 {
+	if limit < 1 || limit == math.MaxInt64 {
 		return "", 0, errors.New("invalid file size limit")
 	}
 	return s.put(ctx, &io.LimitedReader{R: r, N: limit + 1}, encoding, limit)
@@ -208,23 +215,23 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 	if err := s.mu.LockContext(ctx); err != nil {
 		return "", 0, err
 	}
-	defer s.mu.Unlock()
-	if s.closed {
+	if s.closed || s.closing.Load() {
+		s.mu.Unlock()
 		return "", 0, ErrClosed
 	}
 	if s.objects != nil {
+		objects := s.objects
+		// Register while holding the namespace lock, so Close can fence new
+		// registrations before joining all active network publications.
+		s.publications.Add(1)
+		s.mu.Unlock()
+		defer s.publications.Done()
 		body, openErr := os.Open(f.Name())
 		if openErr != nil {
 			return "", 0, openErr
 		}
 		defer func() { _ = body.Close() }()
-		publication, cancel := context.WithCancel(ctx)
-		defer cancel()
-		if s.closeContext != nil {
-			stop := context.AfterFunc(s.closeContext, cancel)
-			defer stop()
-		}
-		err = s.objects.Put(publication, objectKey(digest), body, objectstore.Info{
+		err = s.publishRemote(ctx, objects, objectKey(digest), body, objectstore.Info{
 			Size: size, ContentType: "application/octet-stream",
 			Metadata: map[string]string{"grasp-sha256": digest},
 		})
@@ -233,6 +240,7 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 		}
 		return Prefix + encoding + "/" + digest, size, nil
 	}
+	defer s.mu.Unlock()
 	if err = os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return "", 0, err
 	}
@@ -257,10 +265,49 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 	if closeErr != nil {
 		return "", 0, closeErr
 	}
+	if s.closing.Load() {
+		return "", 0, ErrClosed
+	}
 	return Prefix + encoding + "/" + digest, size, nil
 }
 
+// publishRemote performs no metadata locking while the object backend streams.
+// Its caller registered a publication before releasing the namespace lock.
+func (s *Store) publishRemote(ctx context.Context, objects objectstore.Store, key string, body io.ReadSeeker, info objectstore.Info) error {
+	publication, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if s.closeContext != nil {
+		stop := context.AfterFunc(s.closeContext, cancel)
+		defer stop()
+		if s.closeContext.Err() != nil {
+			cancel()
+		}
+	}
+	if err := publication.Err(); err != nil {
+		return err
+	}
+	if err := objects.Put(publication, key, body, info); err != nil {
+		return err
+	}
+	if s.closing.Load() {
+		return ErrClosed // a completed late object is an orphan, never a proof
+	}
+	return publication.Err()
+}
+
 func (s *Store) Open(ctx context.Context, ref string) (File, error) {
+	return s.open(ctx, ref, 0)
+}
+
+// OpenBounded checks the size before downloading or retaining a remote body.
+func (s *Store) OpenBounded(ctx context.Context, ref string, limit int64) (File, error) {
+	if limit < 1 || limit == math.MaxInt64 {
+		return nil, errors.New("invalid stored payload size limit")
+	}
+	return s.open(ctx, ref, limit)
+}
+
+func (s *Store) open(ctx context.Context, ref string, limit int64) (File, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -281,11 +328,24 @@ func (s *Store) Open(ctx context.Context, ref string) (File, error) {
 				return nil, remoteErr
 			}
 			defer func() { _ = body.Close() }()
+			if limit > 0 && info.Size > limit {
+				return nil, errors.New("stored payload exceeds size limit")
+			}
 			return objectstore.DownloadVerified(ctx, body, info.Size, digest)
 		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("file unavailable (%s): %w", digest, err)
+	}
+	if limit > 0 {
+		info, err := f.Stat()
+		if err != nil || info.Size() > limit {
+			_ = f.Close()
+			if err != nil {
+				return nil, err
+			}
+			return nil, errors.New("stored payload exceeds size limit")
+		}
 	}
 	return f, nil
 }

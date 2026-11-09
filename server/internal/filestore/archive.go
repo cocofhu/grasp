@@ -18,8 +18,27 @@ import (
 // retaining the source files. A partial run is safe to repeat after an outage.
 func (s *Store) ArchiveLocal(ctx context.Context) (objectstore.ArchiveReport, error) {
 	var report objectstore.ArchiveReport
-	if s.objects == nil {
+	if err := s.mu.LockContext(ctx); err != nil {
+		return report, err
+	}
+	if s.closed || s.closing.Load() {
+		s.mu.Unlock()
+		return report, ErrClosed
+	}
+	objects := s.objects
+	if objects == nil {
+		s.mu.Unlock()
 		return report, nil
+	}
+	s.publications.Add(1)
+	s.mu.Unlock()
+	defer s.publications.Done()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(s.closeContext, cancel)
+	defer stop()
+	if s.closeContext.Err() != nil {
+		cancel()
 	}
 	root := filepath.Join(s.Root, "sha256")
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -52,7 +71,7 @@ func (s *Store) ArchiveLocal(ctx context.Context) (objectstore.ArchiveReport, er
 			return errors.New("legacy payload is not regular")
 		}
 		hash := sha256.New()
-		size, err := io.Copy(hash, file)
+		size, err := io.Copy(hash, contextReader{ctx: ctx, r: file})
 		if err != nil {
 			return err
 		}
@@ -62,8 +81,11 @@ func (s *Store) ArchiveLocal(ctx context.Context) (objectstore.ArchiveReport, er
 		if _, err := file.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
-		if err := objectstore.ArchiveImmutable(ctx, s.objects, objectKey(digest), file, objectstore.Info{Size: size, ContentType: "application/octet-stream", Metadata: map[string]string{"grasp-sha256": digest}}, digest); err != nil {
+		if err := objectstore.ArchiveImmutable(ctx, objects, objectKey(digest), file, objectstore.Info{Size: size, ContentType: "application/octet-stream", Metadata: map[string]string{"grasp-sha256": digest}}, digest); err != nil {
 			return err
+		}
+		if s.closing.Load() {
+			return ErrClosed
 		}
 		report.Files++
 		report.Bytes += size

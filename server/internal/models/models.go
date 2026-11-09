@@ -1205,6 +1205,7 @@ func AllModels() []any {
 		&WorkspaceImport{},
 		&WorkflowEventSource{},
 		&WorkspaceSnapshot{}, &WorkspaceSnapshotJob{}, &WorkspaceRestore{},
+		&PayloadUploadHold{}, &PayloadUploadBudget{},
 	}
 }
 

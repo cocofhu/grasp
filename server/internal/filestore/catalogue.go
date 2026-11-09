@@ -22,14 +22,45 @@ type PayloadField struct {
 // after the first portable SQL snapshots. An absent table in that immutable
 // snapshot cannot own references. Existing tables/columns still fail closed.
 func OptionalPayloadTable(table string) bool {
-	return table == "workflow_event_sources"
+	return table == "workflow_event_sources" || table == "payload_upload_holds"
 }
 
 // SkipMissingPayloadTable accepts an absent new table only when the frozen SQL
 // contains no generation that owns its rows. A current manifest must fail
 // verification if its source table was lost, even after body materialization.
 func SkipMissingPayloadTable(ctx context.Context, db *gorm.DB, table string) (bool, error) {
-	if !OptionalPayloadTable(table) || db.Migrator().HasTable(table) {
+	if !OptionalPayloadTable(table) {
+		return false, nil
+	}
+	if table == "payload_upload_holds" {
+		hasHolds, hasBudgets := db.Migrator().HasTable(table), db.Migrator().HasTable("payload_upload_budgets")
+		if hasBudgets && !db.Migrator().HasColumn("payload_upload_budgets", "hold_count") {
+			return false, fmt.Errorf("existing upload reservation table is missing hold_count")
+		}
+		if hasHolds {
+			if !hasBudgets {
+				var owners int64
+				if err := db.WithContext(ctx).Table(table).Count(&owners).Error; err != nil {
+					return false, err
+				}
+				if owners > 0 {
+					return false, fmt.Errorf("upload holds require missing reservation table")
+				}
+			}
+			return false, nil
+		}
+		if hasBudgets {
+			var owners int64
+			if err := db.WithContext(ctx).Table("payload_upload_budgets").Where("COALESCE(hold_count, 0) <> 0").Count(&owners).Error; err != nil {
+				return false, err
+			}
+			if owners > 0 {
+				return false, fmt.Errorf("upload reservations require missing payload table %s", table)
+			}
+		}
+		return true, nil
+	}
+	if db.Migrator().HasTable(table) {
 		return false, nil
 	}
 	if db.Migrator().HasColumn("workflow_conversation_events", "source_version") {

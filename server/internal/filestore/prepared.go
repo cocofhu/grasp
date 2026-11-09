@@ -18,9 +18,65 @@ type Prepared struct {
 	size  int64
 }
 
+// Verified proves a full bounded read-back of a canonical stored reference.
+// Recovery can validate an earlier upload without fabricating a Put proof.
+type Verified struct {
+	store *Store
+	ref   string
+	size  int64
+}
+
+func (v Verified) Ref() string { return v.ref }
+func (v Verified) Size() int64 { return v.size }
+
+func (s *Store) VerifiedRef(v Verified) (string, error) {
+	if s.closing.Load() {
+		return "", ErrClosed
+	}
+	if v.store != s || !IsRef(v.ref) || v.size < 0 {
+		return "", errors.New("payload was not verified by this storage instance")
+	}
+	return v.ref, nil
+}
+
+func (s *Store) VerifyBounded(ctx context.Context, ref, encoding string, limit int64) (Verified, error) {
+	actual, digest, err := Parse(ref)
+	if err != nil || actual != encoding || limit < 1 || limit == math.MaxInt64 {
+		return Verified{}, errors.New("invalid bounded verification reference or limit")
+	}
+	body, err := s.OpenBounded(ctx, ref, limit)
+	if err != nil {
+		return Verified{}, err
+	}
+	defer func() { _ = body.Close() }()
+	h := sha256.New()
+	size, err := io.Copy(h, io.LimitReader(contextReader{ctx: ctx, r: body}, limit+1))
+	if err != nil {
+		return Verified{}, err
+	}
+	if size > limit || hex.EncodeToString(h.Sum(nil)) != digest {
+		return Verified{}, errors.New("stored payload size or checksum mismatch")
+	}
+	if err := ctx.Err(); err != nil {
+		return Verified{}, err
+	}
+	if s.closing.Load() {
+		return Verified{}, ErrClosed
+	}
+	return Verified{store: s, ref: ref, size: size}, nil
+}
+
 // Prepare publishes bytes before the caller opens its SQL transaction.
 func (s *Store) Prepare(ctx context.Context, body io.Reader, encoding string) (Prepared, error) {
 	ref, size, err := s.Put(ctx, body, encoding)
+	if err != nil {
+		return Prepared{}, err
+	}
+	return Prepared{store: s, ref: ref, size: size}, nil
+}
+
+func (s *Store) PrepareBounded(ctx context.Context, body io.Reader, encoding string, limit int64) (Prepared, error) {
+	ref, size, err := s.PutBounded(ctx, body, encoding, limit)
 	if err != nil {
 		return Prepared{}, err
 	}
@@ -33,6 +89,9 @@ func (p Prepared) Size() int64 { return p.size }
 // PreparedRef is a pure proof check: it never takes the publication mutex or
 // performs object I/O while its caller holds a database lock.
 func (s *Store) PreparedRef(p Prepared) (string, error) {
+	if s.closing.Load() {
+		return "", ErrClosed
+	}
 	if p.store != s || !IsRef(p.ref) || p.size < 0 {
 		return "", errors.New("payload was not prepared by this storage instance")
 	}
@@ -75,7 +134,12 @@ func (s *Store) load(ctx context.Context, raw, encoding string, limit int64) ([]
 	if actual != encoding {
 		return nil, errors.New("stored payload encoding disagrees with its owner")
 	}
-	body, err := s.Open(ctx, raw)
+	var body File
+	if limit > 0 {
+		body, err = s.OpenBounded(ctx, raw, limit)
+	} else {
+		body, err = s.Open(ctx, raw)
+	}
 	if err != nil {
 		return nil, err
 	}

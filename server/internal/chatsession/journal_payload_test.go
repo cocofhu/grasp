@@ -110,10 +110,14 @@ func TestJournalWaitingForAnotherUploadHonorsItsEarlierDeadline(t *testing.T) {
 	_, store, _, scope := durableFixture(t)
 	objects := queuePayloadBackend(t, store)
 	started, release := make(chan struct{}), make(chan struct{})
-	var unblock sync.Once
+	var unblock, notify sync.Once
+	var calls atomic.Int32
 	t.Cleanup(func() { unblock.Do(func() { close(release) }) })
 	objects.beforePut = func(ctx context.Context) error {
-		close(started)
+		if calls.Add(1) > 2 {
+			return nil
+		}
+		notify.Do(func() { close(started) })
 		select {
 		case <-release:
 			return nil
@@ -131,7 +135,7 @@ func TestJournalWaitingForAnotherUploadHonorsItsEarlierDeadline(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("first upload never acquired its publication gate")
+		t.Fatal("first upload never started")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
 	defer cancel()
@@ -139,8 +143,17 @@ func TestJournalWaitingForAnotherUploadHonorsItsEarlierDeadline(t *testing.T) {
 	if _, err := store.AppendJournal(ctx, scope, nil, "", []JournalEntry{{Type: FrameSession, Event: "expired-waiter"}}, nil); !errors.Is(err, context.DeadlineExceeded) || time.Since(begin) > time.Second {
 		t.Fatalf("journal deadline waited for another caller's PUT: %s %v", time.Since(begin), err)
 	}
-	if objects.puts.Load() != 1 {
-		t.Fatal("an expired waiter reached object storage")
+	if objects.puts.Load() != 2 {
+		t.Fatal("independent callers did not reach object storage concurrently")
+	}
+	if head, err := store.JournalHead(context.Background(), scope); err != nil || head != -1 {
+		t.Fatalf("uncommitted uploads reserved a sequence: %d %v", head, err)
+	}
+	// A third upload can publish without waiting for the slow first caller.
+	parallel, parallelCancel := context.WithTimeout(context.Background(), time.Second)
+	defer parallelCancel()
+	if span, err := store.AppendJournal(parallel, scope, nil, "", []JournalEntry{{Type: FrameSession, Event: "parallel-upload"}}, nil); err != nil || span.First != 0 {
+		t.Fatalf("slow upload blocked independent Journal publication: %+v %v", span, err)
 	}
 	unblock.Do(func() { close(release) })
 	select {
@@ -151,7 +164,7 @@ func TestJournalWaitingForAnotherUploadHonorsItsEarlierDeadline(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("first upload did not finish after its gate released")
 	}
-	if head, err := store.JournalHead(context.Background(), scope); err != nil || head != 0 {
+	if head, err := store.JournalHead(context.Background(), scope); err != nil || head != 1 {
 		t.Fatalf("timed-out waiter reserved or published a sequence: %d %v", head, err)
 	}
 }

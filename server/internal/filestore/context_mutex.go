@@ -5,8 +5,8 @@ import (
 	"sync"
 )
 
-// contextMutex retains exclusive publication/close ordering without making a
-// shorter request wait beyond its context for another object's upload.
+// contextMutex protects short namespace metadata operations. Remote object
+// streaming never holds this mutex; callers can cancel any metadata wait.
 type contextMutex struct {
 	once sync.Once
 	gate chan struct{}
