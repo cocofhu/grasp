@@ -108,6 +108,102 @@ class MatrixContracts(unittest.TestCase):
                 test.close()
 
 
+class PagedHistoryContracts(unittest.TestCase):
+    def reader(self, replies, turns=2):
+        test = runner.E2E.__new__(runner.E2E)
+        test.plan = [{} for _ in range(turns)]
+        test.request = mock.Mock(side_effect=replies)
+        return test
+
+    @staticmethod
+    def message(identity='m', **updates):
+        return {'id': identity, 'sessionId': 's', 'role': 'assistant', 'turnId': 'original-turn', 'eventLog': {'version': 1, 'from': 10, 'through': 12, 'count': 2, 'generation': 7}, **updates}
+
+    @staticmethod
+    def entry(seq, update, **changes):
+        return {'seq': seq, 'type': 'acp', 'turnId': 'original-turn', 'generation': 7,
+                'data': {'data': {'update': update}}, **changes}
+
+    def test_metadata_pages_are_complete_chronological_and_do_not_load_journals(self):
+        test = self.reader([
+            {'items': [self.message('m3'), self.message('m4')], 'hasMore': True, 'before': 'cursor/3'},
+            {'items': [self.message('m1'), self.message('m2')], 'hasMore': False},
+        ])
+        self.assertEqual([item['id'] for item in test.messages('s')], ['m1', 'm2', 'm3', 'm4'])
+        self.assertEqual(test.request.call_args_list, [mock.call('/api/solo/sessions/s/messages?limit=200'), mock.call('/api/solo/sessions/s/messages?limit=200&before=cursor%2F3')])
+        self.assertEqual(self.reader([{'items': [], 'hasMore': False}]).messages('s'), [])
+
+    def test_metadata_pages_reject_duplicates_nonprogress_malformed_and_out_of_scope(self):
+        cases = [
+            [{'items': [], 'hasMore': True, 'before': 'next'}],
+            [{'items': [self.message()], 'hasMore': True, 'before': ''}],
+            [{'items': [self.message()], 'hasMore': True, 'before': 'same'}, {'items': [self.message('new')], 'hasMore': True, 'before': 'same'}],
+            [{'items': [self.message()], 'hasMore': True, 'before': 'next'}, {'items': [self.message()], 'hasMore': False}],
+            [{'items': [self.message(sessionId='foreign')], 'hasMore': False}],
+            [{'items': [], 'hasMore': 'false'}],
+            [{'items': 'not a list', 'hasMore': False}],
+            [{'items': [self.message(str(i)) for i in range(5)], 'hasMore': False}],
+        ]
+        for replies in cases:
+            with self.subTest(replies=replies):
+                with self.assertRaises(AssertionError):
+                    self.reader(replies).messages('s')
+
+    def test_native_parser_still_checks_the_complete_original_tool_across_pages(self):
+        call = self.entry(10, {'sessionUpdate': 'tool_call', 'toolCallId': 'original', 'title': 'artifact-store/get_history'})
+        result = self.entry(12, {'sessionUpdate': 'tool_call_update', 'toolCallId': 'original', 'status': 'completed'})
+        test = self.reader([{'items': [call], 'next': 10, 'hasMore': True}, {'items': [], 'next': 11, 'hasMore': True}, {'items': [result], 'next': 12, 'hasMore': False}])
+        events = test.message_events('s', self.message('reply:original'))
+        self.assertTrue(runner.history_tool_completed({'events': events}))
+        self.assertEqual(len(events), 2)
+        self.assertEqual(test.request.call_args_list, [mock.call('/api/solo/sessions/s/messages/reply%3Aoriginal/events?after=-1'), mock.call('/api/solo/sessions/s/messages/reply%3Aoriginal/events?after=10'), mock.call('/api/solo/sessions/s/messages/reply%3Aoriginal/events?after=11')])
+
+    def test_native_range_generation_turn_and_count_cannot_be_silently_partial(self):
+        valid = self.entry(10, {})
+        for changes in [{'seq': 9}, {'seq': 13}, {'seq': True}, {'turnId': 'foreign'}, {'generation': 8}, {'generation': True}, {'data': 'malformed'}, {'type': 'session'}]:
+            with self.subTest(changes=changes):
+                with self.assertRaises(AssertionError):
+                    self.reader([{'items': [{**valid, **changes}], 'next': 12, 'hasMore': False}]).message_events('s', self.message())
+        for page in [
+            {'items': [valid], 'next': 12, 'hasMore': False},
+            {'items': [valid], 'next': 9, 'hasMore': True},
+            {'items': [valid], 'next': 13, 'hasMore': False},
+            {'items': [valid, valid], 'next': 12, 'hasMore': False},
+            {'items': [], 'next': 10, 'hasMore': 'false'},
+            {'items': [], 'next': True, 'hasMore': False},
+        ]:
+            with self.subTest(page=page):
+                with self.assertRaises(AssertionError):
+                    self.reader([page]).message_events('s', self.message())
+        for pointer in [None, {'version': 1, 'from': 10, 'through': 9, 'count': 2, 'generation': 7}, {'version': 1, 'from': 10, 'through': 12, 'count': 4, 'generation': 7}]:
+            with self.subTest(pointer=pointer):
+                test = self.reader([])
+                with self.assertRaises(AssertionError):
+                    test.message_events('s', self.message(eventLog=pointer))
+                test.request.assert_not_called()
+
+    def test_native_entry_cannot_return_before_the_requested_control_cursor(self):
+        test = self.reader([
+            {'items': [self.entry(10, {})], 'next': 11, 'hasMore': True},
+            {'items': [self.entry(11, {})], 'next': 12, 'hasMore': False},
+        ])
+        with self.assertRaisesRegex(AssertionError, 'escaped its message range'):
+            test.message_events('s', self.message())
+        self.assertEqual(test.request.call_args_list[-1], mock.call('/api/solo/sessions/s/messages/m/events?after=11'))
+
+    def test_http_read_limit_reports_oversize_instead_of_silently_cutting_json(self):
+        test = runner.E2E.__new__(runner.E2E)
+        test.base = 'http://localhost'
+        response = mock.MagicMock()
+        response.read.return_value = b'x'*8_000_001
+        test.client = mock.Mock()
+        test.client.open.return_value.__enter__ = mock.Mock(return_value=response)
+        test.client.open.return_value.__exit__ = mock.Mock(return_value=False)
+        with self.assertRaisesRegex(AssertionError, '8MB read limit'):
+            test.request('/oversized')
+        response.read.assert_called_once_with(8_000_001)
+
+
 class CleanupContracts(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
