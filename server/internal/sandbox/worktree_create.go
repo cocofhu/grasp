@@ -187,6 +187,19 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	local := sb.local
+	local.mu.Lock()
+	if local.reprimeGate == nil {
+		local.reprimeGate = make(chan struct{}, 1)
+	}
+	gate := local.reprimeGate
+	local.mu.Unlock()
+	select {
+	case gate <- struct{}{}:
+		defer func() { <-gate }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	env := make(map[string]string)
 	for key, value := range spec.Env {
 		if !worktreeGitEnvKey(key) {
@@ -220,7 +233,10 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 	for _, key := range []string{"GRASP_EXECUTION_LINEAGE", "GRASP_WORKSPACE_CONTROL_ROOT", "GRASP_WORKSPACE_RESTORE_ROOT", "GRASP_WORKSPACE_FILE_LIMITS"} {
 		delete(env, key)
 	}
-	for _, item := range sb.local.env {
+	local.mu.Lock()
+	previousEnv := append([]string(nil), local.env...)
+	local.mu.Unlock()
+	for _, item := range previousEnv {
 		key, value, ok := strings.Cut(item, "=")
 		if ok && (key == "GRASP_EXECUTION_LINEAGE" || key == "GRASP_WORKSPACE_CONTROL_ROOT" || key == "GRASP_WORKSPACE_RESTORE_ROOT" || key == "GRASP_WORKSPACE_FILE_LIMITS") {
 			env[key] = value
@@ -232,45 +248,64 @@ func (m *Manager) reprimeWorktree(ctx context.Context, sb *Sandbox, spec Spec) e
 	if err != nil {
 		return err
 	}
+	local.mu.Lock()
+	if local.closed || local.stopRequested && !local.backendStopped {
+		local.mu.Unlock()
+		cleanupGit()
+		return ErrLocalStopUnconfirmed
+	}
+	previousStop := local.backendStop
+	previousPending := append([]localBackendStop(nil), local.pendingStops...)
+	generation, stopRequested := local.backendGeneration, local.stopRequested
+	local.mu.Unlock()
+	// The old process owns the retained workspace journal's exclusive lock.
+	// Starting its replacement before confirmed exit makes that replacement
+	// fail immediately, and a close handle alone does not prove child exit.
+	if previousStop == nil {
+		cleanupGit()
+		return ErrLocalStopUnconfirmed
+	}
+	if err := previousStop(ctx); err != nil {
+		cleanupGit()
+		return errors.Join(ErrLocalStopUnconfirmed, err)
+	}
+	for _, pending := range previousPending {
+		if err := pending(ctx); err != nil {
+			cleanupGit()
+			return errors.Join(ErrLocalStopUnconfirmed, err)
+		}
+	}
+	local.mu.Lock()
+	if local.closed || local.backendGeneration != generation || local.stopRequested != stopRequested {
+		local.mu.Unlock()
+		cleanupGit()
+		return ErrLocalStopUnconfirmed
+	}
+	local.backendStopped = true
+	local.pendingStops = nil
+	local.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		cleanupGit()
+		return err
+	}
 	port, stop, err := startWorktreeBackend(ctx, env, sb.EffectiveWorkspaceDir())
 	if err != nil {
 		cleanupGit()
 		return err
 	}
 	stopSession := worktreeSessionStop(stop, cleanupGit)
-	local := sb.local
-	retainCandidate := func(cause error) error {
-		// An ambiguous previous-stop result must not lose the newly started
-		// candidate's private receipt. Close must confirm both before freeing
-		// this environment's quota, even when its original caller expired.
-		local.mu.Lock()
+	local.mu.Lock()
+	if local.closed || local.backendGeneration != generation || local.stopRequested != stopRequested {
+		// Close may win while the replacement is starting. Keep its exact stop
+		// receipt so unknown cleanup still occupies the original environment.
 		local.pendingStops = append(local.pendingStops, stopSession)
 		local.backendGeneration++
 		local.backendStopped = false
 		local.mu.Unlock()
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		return errors.Join(cause, stopSession(cleanup))
+		return errors.Join(ErrLocalStopUnconfirmed, stopSession(cleanup))
 	}
-	local.mu.Lock()
-	if local.closed || local.stopRequested && !local.backendStopped {
-		local.mu.Unlock()
-		return retainCandidate(fmt.Errorf("工作树会话已关闭"))
-	}
-	previousStop := local.backendStop
-	previousPending := append([]localBackendStop(nil), local.pendingStops...)
-	local.mu.Unlock()
-	if previousStop != nil {
-		if err := previousStop(ctx); err != nil {
-			return retainCandidate(err)
-		}
-	}
-	for _, pending := range previousPending {
-		if err := pending(ctx); err != nil {
-			return retainCandidate(err)
-		}
-	}
-	local.mu.Lock()
 	local.backendStop = stopSession
 	local.pendingStops = nil
 	local.backendGeneration++
@@ -371,6 +406,7 @@ type localExec struct {
 	configHome        string
 	env               []string
 	backendStop       localBackendStop
+	reprimeGate       chan struct{}
 	pendingStops      []localBackendStop
 	backendGeneration uint64
 	stopRequested     bool
