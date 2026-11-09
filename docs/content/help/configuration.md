@@ -72,6 +72,8 @@ GRASP_S3_PREFIX=application
 
 保留 `GRASP_S3_ENDPOINT`、访问密钥和会话令牌为空，再执行 `./start.sh dev -d`（源码）或 `./start.sh -d`（迁移版本镜像）。脚本自动启动 SeaweedFS，创建私有 bucket，生成只允许该 bucket 的应用密钥，并在确认服务就绪后启动 Grasp。默认 S3 地址为 `http://127.0.0.1:8333`，仅绑定本机；端口可用 `GRASP_LOCAL_OBJECTSTORE_PORT` 修改。管理界面、Filer 和 Master 端口不发布到宿主。
 
+SeaweedFS 以非 root 身份运行。普通用户启动时沿用宿主 UID/GID；root 启动时沿用已有数据的非 root 属主，新数据默认使用 `10001:10001`，并仅调整私有数据目录与 IAM 挂载的属主。客户端密钥保持宿主用户可读的 `0600`。可用 `GRASP_LOCAL_OBJECTSTORE_UID` / `GRASP_LOCAL_OBJECTSTORE_GID` 指定非 root 身份；普通用户需先确保挂载目录属于自己的 UID/GID。
+
 数据和凭据保存在 `.localdata/objectstore`，源码栈使用 `.devdata/objectstore`；`client.env` 与 `iam.json` 权限为 600。停止、重启和重新创建容器会沿用原数据及密钥。备份时保留整个目录，不能单独删除或重新生成密钥；更换已有 bucket 需要执行存储迁移。
 
 已有 COS / S3 时配置 `GRASP_S3_ENDPOINT`、bucket、地域、前缀和访问密钥，COS 使用 `GRASP_STORAGE_DRIVER=cos`，其他 S3 使用 `s3`。路径式寻址可通过 `GRASP_S3_PATH_STYLE` 指定。配置外部地址后不会启动本地存储，外部故障也不会自动改用空白本地存储。配置了访问密钥却没有地址会直接报错。

@@ -76,7 +76,7 @@ services:
   objectstore:
     image: ${GRASP_LOCAL_OBJECTSTORE_IMAGE:-chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0}
     profiles: [local-storage]
-    user: "${GRASP_LOCAL_OBJECTSTORE_UID:-0}:${GRASP_LOCAL_OBJECTSTORE_GID:-0}"
+    user: "${GRASP_LOCAL_OBJECTSTORE_UID:-10001}:${GRASP_LOCAL_OBJECTSTORE_GID:-10001}"
     entrypoint: [/usr/bin/weed]
     environment:
       GODEBUG: fips140=on

@@ -15,6 +15,11 @@ local_objectstore_profile() {
   esac
 }
 
+local_objectstore_owner() {
+  # GNU/Linux and BSD/macOS stat use different flags.
+  stat -c "$1" "$2" 2>/dev/null || stat -f "$3" "$2"
+}
+
 prepare_local_objectstore() {
   GRASP_LOCAL_OBJECTSTORE_ENABLED=0
   local_objectstore_requested || return 0
@@ -37,6 +42,10 @@ prepare_local_objectstore() {
   fi
 
   local dir="$1" saved="$1/client.env" temporary key value
+  if [[ -L "$dir" || -L "$dir/data" ]]; then
+    echo "error: local object-storage directories must not be symlinks" >&2
+    return 1
+  fi
   mkdir -p "$dir/data"
   chmod 700 "$dir"
   if [[ -L "$saved" || -L "$dir/iam.json" ]]; then
@@ -78,19 +87,53 @@ prepare_local_objectstore() {
     echo "error: local storage identity or bucket changed; restore its credentials or migrate storage explicitly" >&2
     return 1
   fi
+
+  local host_uid host_gid storage_uid storage_gid data_uid data_gid
+  host_uid="$(id -u)"
+  host_gid="$(id -g)"
+  data_uid="$(local_objectstore_owner %u "$dir/data" %u)"
+  data_gid="$(local_objectstore_owner %g "$dir/data" %g)"
+  storage_uid="${GRASP_LOCAL_OBJECTSTORE_UID:-$host_uid}"
+  storage_gid="${GRASP_LOCAL_OBJECTSTORE_GID:-$host_gid}"
+  if [[ "$host_uid" == 0 ]]; then
+    # Reuse a retained volume's non-root owner. A root launcher defaults a new
+    # store (or the former root-owned layout) to an unprivileged identity.
+    storage_uid="${GRASP_LOCAL_OBJECTSTORE_UID:-${data_uid}}"
+    storage_gid="${GRASP_LOCAL_OBJECTSTORE_GID:-${data_gid}}"
+    if [[ "$storage_uid" == 0 && -z "${GRASP_LOCAL_OBJECTSTORE_UID:-}" ]]; then storage_uid=10001; fi
+    if [[ "$storage_gid" == 0 && -z "${GRASP_LOCAL_OBJECTSTORE_GID:-}" ]]; then storage_gid=10001; fi
+  fi
+  if [[ ! "$storage_uid" =~ ^[0-9]{1,10}$ || ! "$storage_gid" =~ ^[0-9]{1,10}$ ]] ||
+     (( 10#$storage_uid < 1 || 10#$storage_uid > 2147483647 || 10#$storage_gid > 2147483647 )); then
+    echo "error: local object storage requires a non-root numeric UID and a numeric GID" >&2
+    return 1
+  fi
+  storage_uid="$((10#$storage_uid))"
+  storage_gid="$((10#$storage_gid))"
+  if [[ "$host_uid" == 0 ]]; then
+    if [[ "$data_uid:$data_gid" != "$storage_uid:$storage_gid" ]]; then
+      # Migrate only the private data mount; -h never follows an entry's
+      # symlink to a file outside it. Client credentials remain host-private.
+      chown -R -h "$storage_uid:$storage_gid" "$dir/data"
+    fi
+  elif [[ "$host_uid:$host_gid" != "$storage_uid:$storage_gid" || "$data_uid:$data_gid" != "$storage_uid:$storage_gid" ]]; then
+    echo "error: restore local object-storage mount ownership to the launcher UID/GID before starting" >&2
+    return 1
+  fi
   temporary="$(mktemp "$dir/.iam.XXXXXX")"
   chmod 600 "$temporary"
   # Values have been validated above. Only this bucket is granted, and the
   # server pre-creates it without handing an admin identity to Grasp.
   printf '{"identities":[{"name":"grasp-local-app","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Read:%s","Write:%s","List:%s"]}]}\n' \
     "$access" "$secret" "$bucket" "$bucket" "$bucket" > "$temporary"
+  if [[ "$host_uid" == 0 ]]; then
+    chown "$storage_uid:$storage_gid" "$temporary"
+  fi
   mv -f "$temporary" "$dir/iam.json"
 
   export GRASP_LOCAL_OBJECTSTORE_DIR="$dir"
   export GRASP_LOCAL_OBJECTSTORE_PORT="$((10#$port))"
-  # Run the binary as the host owner so private mode-600 bind mounts remain
-  # readable without making credentials accessible to another host user.
-  export GRASP_LOCAL_OBJECTSTORE_UID="$(id -u)" GRASP_LOCAL_OBJECTSTORE_GID="$(id -g)"
+  export GRASP_LOCAL_OBJECTSTORE_UID="$storage_uid" GRASP_LOCAL_OBJECTSTORE_GID="$storage_gid"
   export GRASP_S3_ENDPOINT="http://127.0.0.1:$((10#$port))"
   export GRASP_S3_BUCKET="$bucket" GRASP_S3_ACCESS_KEY_ID="$access" GRASP_S3_SECRET_ACCESS_KEY="$secret"
   export GRASP_S3_REGION="${GRASP_S3_REGION:-us-east-1}" GRASP_S3_PREFIX="${GRASP_S3_PREFIX:-application}"

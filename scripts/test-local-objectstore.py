@@ -19,7 +19,8 @@ prepare_local_objectstore "$2"
 python3 - <<'PY'
 import hashlib, json, os
 names = ['GRASP_S3_ENDPOINT', 'GRASP_S3_BUCKET', 'GRASP_S3_PREFIX',
-         'GRASP_S3_REGION', 'GRASP_S3_PATH_STYLE', 'COMPOSE_PROFILES']
+         'GRASP_S3_REGION', 'GRASP_S3_PATH_STYLE', 'COMPOSE_PROFILES',
+         'GRASP_LOCAL_OBJECTSTORE_UID', 'GRASP_LOCAL_OBJECTSTORE_GID']
 result = {key: os.environ.get(key) for key in names}
 access = os.environ.get('GRASP_S3_ACCESS_KEY_ID', '')
 secret = os.environ.get('GRASP_S3_SECRET_ACCESS_KEY', '')
@@ -62,6 +63,14 @@ class LocalObjectStorageTests(unittest.TestCase):
         self.assertEqual(first["credential_lengths"], [32, 64])
         self.assertEqual(first["COMPOSE_PROFILES"], "observability,local-storage")
         self.assertEqual(first["GRASP_S3_ENDPOINT"], "http://127.0.0.1:8333")
+        storage_uid = int(first["GRASP_LOCAL_OBJECTSTORE_UID"])
+        storage_gid = int(first["GRASP_LOCAL_OBJECTSTORE_GID"])
+        self.assertNotEqual(storage_uid, 0)
+        self.assertEqual(storage_uid, 10001 if os.getuid() == 0 else os.getuid())
+        self.assertEqual((self.path / "data").stat().st_uid, storage_uid)
+        self.assertEqual((self.path / "data").stat().st_gid, storage_gid)
+        self.assertEqual((self.path / "iam.json").stat().st_uid, storage_uid)
+        self.assertEqual((self.path / "client.env").stat().st_uid, os.getuid())
         for name in ("client.env", "iam.json"):
             self.assertEqual(stat.S_IMODE((self.path / name).stat().st_mode), 0o600)
         # A host may inherit setgid on directories; it grants no access.
@@ -124,6 +133,28 @@ class LocalObjectStorageTests(unittest.TestCase):
         self.assertFalse((self.path / "client.env").exists())
         self.assertTrue(previous_iam == (self.path / "iam.json").read_bytes())
 
+    def test_root_uid_and_invalid_runtime_identity_are_rejected(self):
+        for value in ("0", "-1", "nobody", "2147483648", "1000:1000"):
+            self.assertNotEqual(self.prepare(GRASP_LOCAL_OBJECTSTORE_UID=value).returncode, 0)
+
+    @unittest.skipUnless(os.getuid() == 0, "root is required to migrate an old root-owned data mount")
+    def test_root_owned_data_moves_to_nonroot_without_changing_identity_or_symlink_target(self):
+        first = self.successful()
+        data = self.path / "data"
+        retained = data / "retained-object"
+        retained.write_bytes(b"retained payload")
+        target = self.path.parent / "outside"
+        target.write_bytes(b"outside payload")
+        (data / "outside-link").symlink_to(target)
+        os.chown(data, 0, 0)
+        os.chown(retained, 0, 0)
+        second = self.successful()
+        self.assertEqual(first, second)
+        self.assertEqual(retained.read_bytes(), b"retained payload")
+        self.assertEqual(retained.stat().st_uid, 10001)
+        self.assertEqual(target.stat().st_uid, 0)
+        self.assertEqual(target.read_bytes(), b"outside payload")
+
     @unittest.skipUnless(subprocess.run(["sh", "-c", "command -v docker >/dev/null"], check=False).returncode == 0,
                          "Docker CLI is needed to validate Compose configuration")
     def test_release_and_source_compose_use_the_same_loopback_only_store(self):
@@ -136,6 +167,7 @@ class LocalObjectStorageTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             services = json.loads(result.stdout)["services"]
             definition = services["objectstore"]
+            self.assertEqual(definition["user"], "10001:10001")
             definitions.append(definition)
             self.assertEqual(definition["ports"][0]["host_ip"], "127.0.0.1")
             self.assertEqual(len(definition["ports"]), 1)

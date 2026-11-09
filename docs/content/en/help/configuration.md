@@ -72,6 +72,8 @@ GRASP_S3_PREFIX=application
 
 Leave `GRASP_S3_ENDPOINT`, access credentials and session token empty, then run `./start.sh dev -d` (source) or `./start.sh -d` (migration image). The script starts SeaweedFS, creates a private bucket and generates an application identity scoped to that bucket before starting Grasp. S3 binds only to `http://127.0.0.1:8333`; change its port with `GRASP_LOCAL_OBJECTSTORE_PORT`. Admin, Filer and Master ports are not published to the host.
 
+SeaweedFS runs as a non-root user. A non-root launcher uses its host UID/GID. A root launcher retains an existing non-root data owner, defaults new stores to `10001:10001`, and changes ownership only of the private data and IAM mounts. Client credentials stay host-private with mode `0600`. Set `GRASP_LOCAL_OBJECTSTORE_UID` / `GRASP_LOCAL_OBJECTSTORE_GID` to choose a non-root identity; a non-root launcher must own the mounts with its own UID/GID.
+
 Data and credentials live in `.localdata/objectstore`, or `.devdata/objectstore` for the source stack. `client.env` and `iam.json` have mode 600. Stops, restarts and container recreation retain the same data and identity. Include the entire directory in backups; do not delete or regenerate credentials separately. Changing an existing bucket requires a storage migration.
 
 For an existing COS / S3 service, configure `GRASP_S3_ENDPOINT`, bucket, region, prefix and credentials. Use `GRASP_STORAGE_DRIVER=cos` for COS and `s3` for other S3 services; `GRASP_S3_PATH_STYLE` controls addressing. An external endpoint disables bundled storage, and an outage never switches to an empty local store. Credentials without an endpoint are rejected.
