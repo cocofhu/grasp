@@ -45,7 +45,7 @@ func main() {
 	var opts options
 	flag.StringVar(&opts.config, "config", "config.yaml", "source server configuration")
 	flag.StringVar(&opts.target, "target-storage", "", "private YAML containing destination storage config (no env overrides)")
-	flag.StringVar(&opts.mode, "mode", "status", "status, copy, verify, execution-init, restore-begin, restore-finalize, or release")
+	flag.StringVar(&opts.mode, "mode", "status", "status, execution-status, copy, verify, execution-init, restore-begin, restore-finalize, or release")
 	flag.StringVar(&opts.executionControl, "execution-control", "", "private storage YAML for the independent execution control namespace")
 	flag.StringVar(&opts.workdir, "workdir", "", "private durable checkpoint and SQL backup directory")
 	flag.StringVar(&opts.stopped, "acknowledge-stopped", "", "comma-separated exact IDs of registered processes you have confirmed stopped")
@@ -74,6 +74,9 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 		return errors.New("could not load source configuration")
 	}
 	cfg := config.GetConfig()
+	if opts.mode == "execution-status" {
+		return executionStatus(ctx, opts, cfg, output)
+	}
 	if opts.mode == "execution-init" {
 		return initializeExecution(ctx, opts, cfg, output)
 	}
@@ -204,6 +207,11 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 func validateOptions(opts options) error {
 	switch opts.mode {
 	case "status":
+		return nil
+	case "execution-status":
+		if opts.target != "" || opts.offline || opts.resume || opts.activate || opts.stopped != "" {
+			return errors.New("execution-status is read-only and does not accept mutation or offline-attestation flags")
+		}
 		return nil
 	case "copy", "restore", "verify", "release", "execution-init", "restore-begin", "restore-finalize":
 	default:

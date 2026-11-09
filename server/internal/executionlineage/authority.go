@@ -87,11 +87,18 @@ func markerInfo(body []byte) objectstore.Info {
 }
 
 func (a *Authority) read(ctx context.Context) (Marker, objectstore.Info, error) {
+	if a == nil {
+		return Marker{}, objectstore.Info{}, ErrUnavailable
+	}
+	return readMarker(ctx, a.store)
+}
+
+func readMarker(ctx context.Context, store objectstore.ControlReader) (Marker, objectstore.Info, error) {
 	var marker Marker
-	if a == nil || a.store == nil {
+	if store == nil {
 		return marker, objectstore.Info{}, ErrUnavailable
 	}
-	body, info, err := a.store.Open(ctx, markerKey)
+	body, info, err := store.Open(ctx, markerKey)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return marker, info, ErrUninitialized

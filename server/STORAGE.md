@@ -47,6 +47,29 @@ cd server
 go build -o grasp-storage-admin ./cmd/storage-admin
 ```
 
+### 独立执行控制与部署检查
+
+正文和 SQL 备份不能授予恢复后的执行权限。`execution_control` 必须位于独立持久位置：本地目录不与 SQL、正文或备份目录互为父子；S3 / COS 使用独立的逻辑前缀，例如正文 `application/`、控制 `execution-control/`。控制标记不随 SQL / 正文备份回滚。部署时通过 `GRASP_EXECUTION_CONTROL_*` 注入配置和 Secret，不能使用正文存储的凭据默认值代替独立配置。
+
+部署前后可执行只读检查，无需停机：
+
+```bash
+./grasp-storage-admin --config source.yaml --mode execution-status
+```
+
+命令读取普通服务配置及其环境覆盖，也可用 `--execution-control control-storage.yaml` 指定独立的私有 `storage:` YAML。它只读取控制对象和 SQL 元数据，不执行迁移、登记进程、创建目录、探测条件写或初始化。SQLite 连接禁止写入并读取已提交 WAL；不要使用忽略 WAL 的 immutable 打开方式。
+
+输出为版本化 JSON：`status` 为 `active`、`uninitialized`、`inactive`、`unbound` 或 `unavailable`，并包含 `active`、`sqlMatches`、`sqlDatasetPresent` 及已验证的命名空间身份。仅 `active` 且 SQL 完整匹配时退出码为 0，其余情况均非 0。控制标记缺失但 `sqlDatasetPresent=true` 时必须保留现有数据并检查控制存储，不能视为空安装重新初始化。S3 检查不会通过写探针证明 endpoint 别名分离，因此要求正文与控制的逻辑前缀不相交，即使 bucket 不同。
+
+新安装或明确采用旧历史时，先核实所有写入者停止，再运行一次显式初始化：
+
+```bash
+./grasp-storage-admin --config source.yaml --mode execution-init --offline \
+  --execution-control control-storage.yaml --workdir /maintenance/execution-init
+```
+
+保留该私有目录中的原初始化身份和票据；中断后仅以同一目录核对续办。已有历史的待执行和结果不明操作会隔离，不自动重发。普通服务启动、滚动发布和 `execution-status` 都不会代替这一步。
+
 该工具用于停写期间的 SQL / 载荷复制，不是在线迁移或沙箱磁盘快照。先停止所有 Grasp 副本、迁移脚本和外部 SQL 写入者；Kubernetes 中关闭自动扩容/滚动发布，在维护 Pod 中挂载原 SQL / blobs 卷、配置与 Secret。先前未提供维护登记的旧版本也必须停止，不能只依赖登记列表判断。
 
 准备私有的 `target-storage.yaml`，结构为前文的 `storage:` 配置，包含目标 S3 / COS 的实际凭据及寻址方式。此文件不使用服务端的 `GRASP_S3_*` 覆盖，防止源环境变量把目标悄悄指回原 bucket。用 Secret 文件或权限为 `0600` 的临时文件提供；不要提交到 Git。目标前缀需独立，同一物理存储中父子前缀也不能互相复制；工具会探测不同 endpoint 别名指向同一重叠位置的情况。
@@ -86,14 +109,23 @@ MySQL 导出要求执行工具的环境有 **Oracle MySQL 8.4+ 的 `mysqldump`**
 
 ### 在隔离位置验证恢复
 
-先将 SQL 快照复制/原生导入到**新的隔离数据库**，保留备份本身；恢复外部主密钥、配置和所需目录。为恢复数据库准备 `restore-source.yaml`：数据库指向新位置，`storage` 保留备份中原位置身份。目标凭据由原 `target-storage.yaml` 提供。
+恢复前先停止所有写入者，使用当前 SQL 配置和同一独立控制位置执行 `restore-begin`，保留备份本身和原 `workdir`。该步骤先撤销原执行代次，再允许导入：
 
 ```bash
-./grasp-storage-admin --config restore-source.yaml --mode restore --offline \
+./grasp-storage-admin --config source.yaml --mode restore-begin --offline \
+  --execution-control control-storage.yaml \
   --target-storage target-storage.yaml --workdir /backup/grasp-20261108
 ```
 
-恢复命令检查 SQL 备份文件和完整清单，回读目标对象，核对恢复数据库的载荷引用集合，再激活目标。它不自动执行 SQL 导入、不覆盖当前数据库，也不执行沙箱进程恢复或凭据注入。SQL 中的权限/凭据记录是备份时的状态，切流前仍须按当前授权源核对已撤销的权限。新库的服务配置随后改为目标存储，空本地载荷目录也应能读取历史及附件；按业务权限验证原始聊天、历史产物和任务关联后再切流。`--mode verify --offline` 可在同样的已恢复数据库中仅核验，不切换位置。
+随后将 SQL 快照复制/原生导入到**新的隔离数据库**，恢复外部主密钥、配置和所需目录。为恢复数据库准备 `restore-source.yaml`：数据库指向新位置，`storage` 保留备份中原位置身份。目标凭据由原 `target-storage.yaml` 提供。使用原票据和同一控制位置完成恢复：
+
+```bash
+./grasp-storage-admin --config restore-source.yaml --mode restore-finalize --offline \
+  --execution-control control-storage.yaml \
+  --target-storage target-storage.yaml --workdir /backup/grasp-20261108
+```
+
+恢复命令检查 SQL 备份文件和完整清单，回读目标对象，核对恢复数据库的载荷引用集合，再以新执行代次激活目标。原 `restore` 是完成阶段的别名，也必须提供开始阶段的原票据。它不自动执行 SQL 导入、不覆盖当前数据库，也不执行沙箱进程恢复或凭据注入。SQL 中的权限/凭据记录是备份时的状态，切流前仍须按当前授权源核对已撤销的权限。新库的服务配置随后改为目标存储，空本地载荷目录也应能读取历史及附件；按业务权限验证原始聊天、历史产物和任务关联后再切流。`--mode verify --offline` 可在同样的已恢复数据库中仅核验，不切换位置。
 
 校验清单用于证明复制和引用完整，不是 GC 删除名单；当前不根据清单自动回收任何源数据。流式历史日志、工作区快照和最终 GC 的业务引用仍需各自纳入生命周期，不以这份副本清单代替。
 
