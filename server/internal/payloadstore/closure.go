@@ -87,7 +87,7 @@ func CheckPrimaryClosure(ctx context.Context, db *gorm.DB, cfg config.StorageCon
 			return err
 		}
 		for _, row := range rows {
-			if validPrimaryClosure(row) {
+			if validPrimaryClosure(row) && row.FinalizedAt != nil {
 				return nil
 			}
 		}
@@ -196,7 +196,8 @@ func BindEmptyPrimaryClosureTx(ctx context.Context, tx *gorm.DB, target Location
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	row := PrimaryClosure{ID: seal.OriginID, Protocol: PrimaryClosureProtocol,
-		PhysicalFingerprint: target.Fingerprint, ReferenceSHA256: stamp.SHA256, Cells: stamp.Cells, CompletedAt: time.Now().UTC().Truncate(time.Millisecond)}
+		PhysicalFingerprint: target.Fingerprint, ReferenceSHA256: stamp.SHA256, Cells: stamp.Cells, CompletedAt: now, FinalizedAt: &now}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
 }

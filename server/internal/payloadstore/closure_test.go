@@ -113,12 +113,15 @@ func TestPrimaryClosureActualS3RetainsOriginalReceiptAndExecution(t *testing.T) 
 	if err != nil || retry != row {
 		t.Fatal("credential rotation changed physical identity/original receipt", retry, err)
 	}
-	if err := CheckPrimaryClosure(ctx, db, rotated); err != nil {
-		t.Fatal(err)
+	if err := CheckPrimaryClosure(ctx, db, rotated); !errors.Is(err, ErrPrimaryClosure) {
+		t.Fatal("unfinalized verification was treated as startup eligibility", err)
 	}
 	final, err := FinalizePrimaryClosure(ctx, db, cfg, owner)
 	if err != nil || final.FinalizedAt == nil || !final.CompletedAt.Equal(row.CompletedAt) {
 		t.Fatal(final, err)
+	}
+	if err := CheckPrimaryClosure(ctx, db, rotated); err != nil {
+		t.Fatal(err)
 	}
 	var control storageguard.Control
 	if err := db.First(&control).Error; err != nil || control.Owner != "" {
