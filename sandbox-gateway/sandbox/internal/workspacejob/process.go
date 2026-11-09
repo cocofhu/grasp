@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -55,13 +57,60 @@ exit "$status"`
 		if cmd.Process != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			_ = cmd.Wait()
+			waitProcessGroupExit(cmd.Process.Pid)
 		}
 		return err
 	}
 	err := cmd.Wait()
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	waitProcessGroupExit(cmd.Process.Pid)
 	if fenceErr := h.Check(); fenceErr != nil {
 		return fenceErr
 	}
 	return err
+}
+
+// kill returning is an acknowledgement of delivery, not of child exit. Keep
+// the predecessor lane occupied until its whole group can no longer execute.
+// An unreadable process table is not a stop proof: Close may time out while
+// this supervisor keeps waiting, rather than admitting a concurrent writer.
+func waitProcessGroupExit(group int) {
+	for processGroupActive(group) {
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func processGroupActive(group int) bool {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return true
+	}
+	for _, entry := range entries {
+		if _, err := strconv.Atoi(entry.Name()); err != nil {
+			continue
+		}
+		data, err := os.ReadFile("/proc/" + entry.Name() + "/stat")
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return true
+		}
+		end := strings.LastIndexByte(string(data), ')')
+		if end < 0 {
+			return true
+		}
+		fields := strings.Fields(string(data)[end+1:])
+		if len(fields) < 3 {
+			return true
+		}
+		pidGroup, err := strconv.Atoi(fields[2])
+		if err != nil {
+			return true
+		}
+		if pidGroup == group && fields[0] != "Z" && fields[0] != "X" {
+			return true
+		}
+	}
+	return false
 }

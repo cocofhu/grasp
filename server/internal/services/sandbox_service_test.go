@@ -584,7 +584,7 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	// test running -> attached and kept.
 	db.Create(&models.Sandbox{Name: "grasp-sb-live", Purpose: "test", Status: "running"})
 	ds.setStatus("grasp-sb-live", "running")
-	// test gone -> dropped.
+	// A missing provider observation retains the original application row.
 	db.Create(&models.Sandbox{Name: "grasp-sb-dead", Purpose: "test", Status: "running", RunID: "rid2"})
 	// orphan sandbox present on the gateway but with no DB row.
 	ds.setStatus("grasp-sb-orphan", "running")
@@ -614,8 +614,8 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	if err := db.Where("name = ?", "grasp-sb-run").First(&models.Sandbox{}).Error; err != nil {
 		t.Fatal("missing Run resource must retain its recovery attribution")
 	}
-	if err := db.Where("name = ?", "grasp-sb-dead").First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
-		t.Fatal("dead row should be gone")
+	if err := db.Where("name = ?", "grasp-sb-dead").First(&models.Sandbox{}).Error; err != nil {
+		t.Fatal("missing provider observation must retain original attribution", err)
 	}
 	// Unknown resources can contain unique files and require reconciliation.
 	if ds.fg.Has("grasp-sb-run") {
@@ -629,11 +629,8 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	}
 }
 
-// TestSandboxReconcileDestroysNonRunningGateway covers g1.1+g1.2: a non-running
-// local row whose Name is the gateway id must Destroy the gateway instance
-// before the list row is deleted, and must not leave the id in tracked so the
-// orphan pass cannot skip it.
-func TestSandboxReconcileDestroysNonRunningGateway(t *testing.T) {
+// Non-running provider observations preserve both the original row and disk.
+func TestSandboxReconcileRetainsNonRunningGateway(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
@@ -650,11 +647,12 @@ func TestSandboxReconcileDestroysNonRunningGateway(t *testing.T) {
 	s.ReconcileOnStartup(ctx, nil)
 
 	for _, name := range []string{"gw-error", "gw-stopped", "gw-pm-dead"} {
-		if err := db.Where("name = ?", name).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
-			t.Fatalf("%s local row should be gone", name)
+		var retained models.Sandbox
+		if err := db.Where("name = ?", name).First(&retained).Error; err != nil || retained.DestroyAt != nil {
+			t.Fatalf("%s row/retention lost: %v", name, err)
 		}
-		if ds.fg.Has(name) {
-			t.Fatalf("%s gateway sandbox should be destroyed (g1.1/g1.2)", name)
+		if !ds.fg.Has(name) {
+			t.Fatalf("%s original provider disk was removed", name)
 		}
 	}
 }
@@ -687,8 +685,8 @@ func TestSandboxReconcileCreatingGrace(t *testing.T) {
 	}
 }
 
-// TestSandboxReconcileAbandonedCreating destroys stale creating rows and the
-// gateway sandbox still labeled with the placeholder Name.
+// A stale creating record is reconciled to a unique original provider ID,
+// preserving the row/files and requiring explicit recovery instead of replay.
 func TestSandboxReconcileAbandonedCreating(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
@@ -706,11 +704,12 @@ func TestSandboxReconcileAbandonedCreating(t *testing.T) {
 
 	s.ReconcileOnStartup(ctx, nil)
 
-	if err := db.Where("name = ?", placeholder).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
-		t.Fatal("abandoned creating row should be gone")
+	var retained models.Sandbox
+	if err := db.Where("name = ?", gwID).First(&retained).Error; err != nil || retained.Status != "error" || retained.DestroyAt != nil {
+		t.Fatalf("original correlated provider identity not retained: %+v %v", retained, err)
 	}
-	if ds.fg.Has(gwID) {
-		t.Fatal("correlated abandoned gateway sandbox should be destroyed")
+	if !ds.fg.Has(gwID) {
+		t.Fatal("correlated original gateway disk must survive")
 	}
 }
 

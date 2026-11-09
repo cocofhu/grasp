@@ -217,8 +217,8 @@ func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (sb *s
 			return nil, nil, "", true, err
 		}
 		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
-			Msg("shared sandbox unusable; replacing it")
-		c.dropSharedSandbox(req.RunID, ss)
+			Msg("shared sandbox setup unconfirmed; original workspace retained")
+		return nil, nil, "", true, fmt.Errorf("%w: %v", errSandboxStartupUnconfirmed, err)
 	}
 	sb, acp, home, spec, err := c.openNodeSandbox(ctx, req)
 	if err != nil {
@@ -331,21 +331,6 @@ func (c *acpProvider) releaseSharedSandbox(sb *sandbox.Sandbox, acp *sandbox.ACP
 		acp.Close()
 	}
 	return true
-}
-
-// dropSharedSandbox detaches a broken shared sandbox, retaining its workspace
-// through the production registry before a replacement is provisioned.
-func (c *acpProvider) dropSharedSandbox(runID string, ss *sharedRunSandbox) {
-	if c.shared.take(runID, ss) == nil {
-		return
-	}
-	if r, ok := c.registry.(RunSandboxRetirer); ok {
-		r.RetireRunSandbox(ss.sb.Name)
-		return
-	}
-	c.deregisterRunSandbox(ss.sb.Name)
-	ss.sb.Destroy(context.Background())
-	removeHome(ss.home)
 }
 
 // retireSharedRunSandbox keeps a finished run's shared sandbox for the debug

@@ -86,7 +86,7 @@ func (s *SandboxService) recordExactWorkflowSandbox(ctx context.Context, info ru
 				return err
 			}
 		}
-		if !begin {
+		if !begin && info.StartupError == "" {
 			return tx.Table("state_runs").Where("id = ? AND provider_attempt = ? AND sandbox_ready_at IS NULL", info.StateRunID, info.ProviderAttempt).Update("sandbox_ready_at", fields["updated_at"]).Error
 		}
 		return nil

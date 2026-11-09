@@ -107,14 +107,21 @@ def assert_reasoning_requests(requests, effort, backend):
         raise AssertionError('reasoning strength did not reach every main model request for '+backend+'/'+effort)
 
 
-def process_identity(pid):
+def process_identity(pid, executable_name=None):
     """Read ownership metadata only; command lines and environments contain keys."""
     proc = Path('/proc')/str(pid)
     try:
         uid = proc.stat().st_uid
         if uid != os.getuid():
             return None
-        fields = (proc/'stat').read_text().rsplit(')', 1)[1].split()
+        command, raw = (proc/'stat').read_text().rsplit(')', 1)
+        # The native Go backend keeps its executable name. Exclude unrelated
+        # processes before protected exe/cwd reads: even another process of
+        # this UID may be a non-dumpable browser/runner helper. This is only a
+        # negative filter; all ownership fields below are still required.
+        if executable_name is not None and command.split('(', 1)[1] != executable_name[:15]:
+            return None
+        fields = raw.split()
         if fields[0] == 'Z':
             return None
         return {'pid': pid, 'uid': uid, 'group': int(fields[2]),
@@ -131,7 +138,7 @@ def owned_backend_processes(data, runtime):
     for proc in Path('/proc').iterdir():
         if not proc.name.isdigit():
             continue
-        identity = process_identity(int(proc.name))
+        identity = process_identity(int(proc.name), executable_name=Path(binary).name)
         if not identity or identity['uid'] != os.getuid() or identity['exe'] != binary:
             continue
         if not Path(identity['cwd']).is_relative_to(worktrees):
