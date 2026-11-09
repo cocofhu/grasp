@@ -22,6 +22,9 @@ import (
 func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, error) {
 	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
 	if executionErr != nil {
+		if req.AttachOnly {
+			executionErr = errors.Join(ErrProviderDispatchUnknown, executionErr)
+		}
 		return NodeResult{}, executionErr
 	}
 	defer stopExecution()
@@ -44,8 +47,8 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 	defer unwatch()
 	var dispatched bool
 	if before := req.BeforeProviderDispatch; before != nil {
-		req.BeforeProviderDispatch = func(ctx context.Context, attempt int) error {
-			if err := before(ctx, attempt); err != nil {
+		req.BeforeProviderDispatch = func(ctx context.Context, operation sandbox.OperationIdentity) error {
+			if err := before(ctx, operation); err != nil {
 				return err
 			}
 			dispatched = true
@@ -60,7 +63,25 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 		if prepareErr != nil {
 			return NodeResult{Usage: spent, UsageByModel: spentByModel}, prepareErr
 		}
+		if req.Operation.ID != "" && c.opts.NativeAuthorization != nil {
+			req.Operation.Authorization, prepareErr = c.opts.NativeAuthorization(ctx, req)
+			if prepareErr != nil {
+				if req.AttachOnly {
+					prepareErr = errors.Join(ErrProviderDispatchUnknown, prepareErr)
+				}
+				return NodeResult{}, prepareErr
+			}
+		}
 		res, err := c.runAgentOnce(ctx, req, abortSnap)
+		if req.AttachOnly {
+			if err == nil && c.abortedSince(req.RunID, abortSnap) {
+				err = context.Canceled
+			}
+			if err != nil {
+				err = errors.Join(ErrProviderDispatchUnknown, err)
+			}
+			return res, err
+		}
 		if dispatched && err != nil && (isRetryableSandboxErr(err) || errors.Is(err, sandbox.ErrAgentStuck) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			err = errors.Join(ErrProviderDispatchUnknown, err)
 		}
@@ -144,7 +165,18 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 	parked := false
 	var turnEvents []models.AcpEvent
 	defer func() {
+		if err == nil && req.Operation.Authorization != "" && c.opts.CheckExecution != nil {
+			if checkErr := c.opts.CheckExecution(ctx, req); checkErr != nil {
+				err = errors.Join(ErrProviderDispatchUnknown, checkErr)
+			}
+		}
 		if parked {
+			return
+		}
+		if req.AttachOnly && err != nil {
+			// An unconfirmed attachment grants no right to cancel/retire a
+			// different native operation or release this retained workspace.
+			acp.Close()
 			return
 		}
 		err = c.settleCodexLogin(req, err, res.Events)
@@ -202,7 +234,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		return NodeResult{}, ErrNodeTakenOver
 	}
 
-	if req.ResetToDefaultModel {
+	if req.ResetToDefaultModel && !req.AttachOnly {
 		if err := c.resetLiveChatModel(ctx, sb, acp); err != nil {
 			return NodeResult{}, fmt.Errorf("reset chat model: %w", err)
 		}
@@ -215,18 +247,40 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 	var usageByModel models.TokenUsageByModel
 
 	if reattach {
-		chatRes, err = c.reattachTurn(chatCtx, sb, acp)
+		if req.AttachOnly {
+			chatRes, err = acp.ReattachOperation(chatCtx)
+		} else {
+			chatRes, err = c.reattachTurn(chatCtx, sb, acp)
+		}
 		c.recordChatUsage(req, chatRes, err)
 	}
 	if reattach && req.BeforeProviderDispatch != nil && err == nil && chatRes == nil {
 		return NodeResult{}, ErrProviderDispatchUnknown
 	}
-	if !reattach || (err == nil && chatRes == nil) {
+	if req.AttachOnly && err == nil && chatRes == nil {
+		return NodeResult{}, ErrProviderDispatchUnknown
+	}
+	if !reattach || (!req.AttachOnly && err == nil && chatRes == nil) {
 		if req.BeforeProviderDispatch != nil {
-			if dispatchErr := req.BeforeProviderDispatch(chatCtx, req.ProviderAttempt); dispatchErr != nil {
+			if c.opts.NativeAuthorization != nil {
+				if refreshErr := acp.RefreshOperationSession(chatCtx); refreshErr != nil {
+					return NodeResult{}, refreshErr
+				}
+			}
+			req.Operation.Resource = sb.Name
+			req.Operation.SessionID = acp.NativeSessionID()
+			req.Operation.Workspace, req.Operation.WorkspaceFingerprint = acp.WorkspaceIdentity()
+			if c.opts.NativeAuthorization != nil {
+				req.Operation.Authorization, err = c.opts.NativeAuthorization(chatCtx, req)
+				if err != nil {
+					return NodeResult{}, err
+				}
+			}
+			if dispatchErr := req.BeforeProviderDispatch(chatCtx, req.Operation); dispatchErr != nil {
 				return NodeResult{}, dispatchErr
 			}
 		}
+		req.nativeOperationID = req.Operation.ID
 		chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded), req.PromptImages)
 	}
 	if err != nil {
@@ -252,6 +306,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		events := c.snapshotEvents(snapCtx, sb, turnEvents)
 		return NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}, fmt.Errorf("agent chat: %w", err)
 	}
+	req.nativeOperationID = ""
 	absorbChat(&usage, &usageByModel, &turnEvents, chatRes)
 	if lerr := c.codexTurnLoginErr(chatRes, req); lerr != nil {
 		events := c.snapshotEvents(ctx, sb, turnEvents)

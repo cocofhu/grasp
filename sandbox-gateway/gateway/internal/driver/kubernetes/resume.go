@@ -15,6 +15,13 @@ func (d *Driver) PrepareStart(ctx context.Context, id string, opts driver.StartO
 	if opts.RuntimeURL == "" {
 		return fmt.Errorf("resume runtime URL is required")
 	}
+	dep, err := d.cs.AppsV1().Deployments(d.opts.Namespace).Get(ctx, d.resourceName(id), metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if coldPending(dep) {
+		return driver.ErrColdStartUnknown
+	}
 	secrets := d.cs.CoreV1().Secrets(d.opts.Namespace)
 	secret, err := secrets.Get(ctx, d.secretName(id), metav1.GetOptions{})
 	if err != nil {

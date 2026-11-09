@@ -106,8 +106,14 @@ class LocalObjectStorageTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.path.exists())
 
+    def test_explicit_local_selection_rejects_an_external_endpoint_before_writing(self):
+        result = self.prepare(GRASP_S3_ENDPOINT="https://example.invalid")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires an empty GRASP_S3_ENDPOINT", result.stderr)
+        self.assertFalse(self.path.exists())
+
     def test_cloud_endpoint_and_local_driver_leave_storage_untouched(self):
-        self.successful(GRASP_S3_ENDPOINT="https://example.invalid", GRASP_S3_ACCESS_KEY_ID="external")
+        self.successful(GRASP_LOCAL_OBJECTSTORE="0", GRASP_S3_ENDPOINT="https://example.invalid", GRASP_S3_ACCESS_KEY_ID="external")
         self.assertFalse(self.path.exists())
         self.successful(GRASP_STORAGE_DRIVER="local")
         self.assertFalse(self.path.exists())

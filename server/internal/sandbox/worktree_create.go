@@ -413,6 +413,14 @@ func (s *Sandbox) mapLocalPath(path string) string {
 	if s.local == nil {
 		return path
 	}
+	// A real worktree may live below the tool's virtual config prefix. Its
+	// files must stay in that directory rather than follow ConfigHome on a
+	// later model/tool switch.
+	if workspace := s.workspaceDir(); workspace != "" {
+		if relative, err := filepath.Rel(workspace, path); err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return path
+		}
+	}
 	s.local.mu.Lock()
 	root := strings.TrimRight(s.local.configRoot, "/")
 	home := s.local.configHome

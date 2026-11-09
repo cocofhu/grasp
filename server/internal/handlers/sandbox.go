@@ -549,6 +549,9 @@ func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel,
 		}
 		defer func() { _ = access.Close() }()
 		canonicalFolder = access.Folder
+		if redirectCanonicalIDEEntry(c, sandboxID, canonicalFolder) {
+			return
+		}
 	}
 	h.Sbx.TouchActivity(sandboxID)
 	idStr := strconv.FormatUint(uint64(sandboxID), 10)
@@ -673,6 +676,29 @@ func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel,
 	c.Request.Header.Del("Forwarded")
 	c.Request.Header.Del("X-Forwarded-Host")
 	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+// code-server selects the browser workspace from window.location. Updating
+// only the upstream query leaves the browser on an empty or stale workspace.
+// This runs only after the current authorized consumer grant was acquired.
+func redirectCanonicalIDEEntry(c *gin.Context, sandboxID uint, folder string) bool {
+	if folder == "" || c.Request.Method != http.MethodGet || isWebSocketUpgrade(c.Request) || (c.Param("path") != "" && c.Param("path") != "/") {
+		return false
+	}
+	entry := sandboxMountPrefix(sandboxID) + "/"
+	if c.Request.URL.Path != entry && c.Request.URL.Path != strings.TrimSuffix(entry, "/") {
+		return false
+	}
+	query := c.Request.URL.Query()
+	if values := query["folder"]; len(values) == 1 && values[0] == folder {
+		if _, present := query["workspace"]; !present {
+			return false
+		}
+	}
+	query.Set("folder", folder)
+	query.Del("workspace")
+	c.Redirect(http.StatusFound, entry+"?"+query.Encode())
+	return true
 }
 
 // sandboxProxyErrorHTML renders a console-dark friendly iframe error page that
