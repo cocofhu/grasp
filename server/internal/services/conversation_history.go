@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -425,18 +426,37 @@ func (s *SoloService) contextPreambleWithContext(ctx context.Context, sessionID,
 	if err := userQuery.Session(&gorm.Session{}).Count(&users).Error; err != nil {
 		return "", err
 	}
-	anchors, err := readSoloMessages(userQuery.Order("created_at desc, id desc").Limit(maxContextMessages), soloMessageContent|soloMessageAnnotations|soloMessageWorkflowContext)
+	// Preserve the task's opening constraints as well as recent decisions.
+	// Each query starts from the unmodified scope; their order/limit must not
+	// leak into one another. Small conversations overlap and are deduplicated.
+	fields := soloMessageContent | soloMessageAnnotations | soloMessageWorkflowContext
+	opening, err := readSoloMessages(userQuery.Session(&gorm.Session{}).Order("created_at asc, id asc").Limit(4), fields)
 	if err != nil {
 		return "", err
 	}
-	for i, j := 0, len(anchors)-1; i < j; i, j = i+1, j-1 {
-		anchors[i], anchors[j] = anchors[j], anchors[i]
+	recentAnchors, err := readSoloMessages(userQuery.Session(&gorm.Session{}).Order("created_at desc, id desc").Limit(maxContextMessages-len(opening)), fields)
+	if err != nil {
+		return "", err
 	}
+	var anchors []models.SoloMessage
+	seen := make(map[string]bool, maxContextMessages)
+	for _, row := range append(opening, recentAnchors...) {
+		if !seen[row.ID] {
+			seen[row.ID] = true
+			anchors = append(anchors, row)
+		}
+	}
+	sort.Slice(anchors, func(i, j int) bool {
+		if anchors[i].CreatedAt.Equal(anchors[j].CreatedAt) {
+			return anchors[i].ID < anchors[j].ID
+		}
+		return anchors[i].CreatedAt.Before(anchors[j].CreatedAt)
+	})
 	var b strings.Builder
 	b.WriteString(contextByteExcerpt(header, 2000))
 	b.WriteString("此前对话来自同一任务，请保留已有约束并遵守更新后的决定。需要补充历史时，调用 artifact-store 的 get_history(view=\"messages\")，按 next_cursor 向前读取。\n\n")
 	if users > int64(len(anchors)) {
-		fmt.Fprintf(&b, "（较早的 %d 条用户要求未装入本次输入；涉及先前约束时请先通过 get_history 分页核对，不得推断已读取全部要求。）\n", users-int64(len(anchors)))
+		b.WriteString(contextByteExcerpt(fmt.Sprintf("（用户要求记录省略了中间 %d 条；保留开场消息 %s 至 %s，以及近期消息 %s 至 %s。涉及遗漏范围时请先通过 get_history 分页核对，不得推断已读取全部要求。）\n", users-int64(len(anchors)), anchors[0].ID, anchors[len(opening)-1].ID, anchors[len(opening)].ID, anchors[len(anchors)-1].ID), 512))
 	}
 	b.WriteString(renderContextUserInstructions(anchors, 12000))
 	b.WriteString(contextByteExcerpt(renderReferenceIndex(anchors), 4000))
@@ -511,6 +531,22 @@ func (s *SoloService) contextPreambleWithContext(ctx context.Context, sessionID,
 // then restore chronological order. Truncating a rune-budgeted chronological
 // ledger from its beginning would silently discard the latest corrections.
 func renderContextUserInstructions(rows []models.SoloMessage, budget int) string {
+	if len(rows) < 2 {
+		// With one user message it is both the opening and latest requirement.
+		// Keep its existing larger excerpt instead of needlessly shrinking it.
+		return renderContextRecentInstructions(rows, budget)
+	}
+	const goalBudget = 2000
+	if budget <= goalBudget {
+		return renderContextRecentInstructions(rows, budget)
+	}
+	opening := fmt.Sprintf("任务起点（有界摘录；后续更正优先）：\n[用户要求 · %s] %s\n\n", rows[0].ID, soloHistoryContent(rows[0]))
+	// Reserve the independent opening budget before selecting newer decisions.
+	// A long recent correction must not evict the original purpose entirely.
+	return contextByteExcerpt(opening, goalBudget) + renderContextRecentInstructions(rows[1:], budget-goalBudget)
+}
+
+func renderContextRecentInstructions(rows []models.SoloMessage, budget int) string {
 	const header = "用户要求与更正（按时间顺序，较新的更正优先）：\n"
 	remaining := budget - len(header) - 512
 	var parts []string

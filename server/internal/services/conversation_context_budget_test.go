@@ -76,7 +76,7 @@ func TestContextPreambleByteBudgetAndUserLedgerAreBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pre) > 32000 || !utf8.ValidString(pre) || !strings.Contains(pre, "摘录") || !strings.Contains(pre, "get_history") || !strings.Contains(pre, "较早的 15 条用户要求") || strings.Contains(pre, "large-79") {
+	if len(pre) > 32000 || !utf8.ValidString(pre) || !strings.Contains(pre, "摘录") || !strings.Contains(pre, "get_history") || !strings.Contains(pre, "省略了中间 15 条") || strings.Contains(pre, "large-79") {
 		t.Fatalf("budget/disclosure/current-message boundary incorrect: bytes=%d valid=%v", len(pre), utf8.ValidString(pre))
 	}
 }
