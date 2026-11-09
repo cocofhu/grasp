@@ -5116,6 +5116,9 @@
         "preview": "Preview import",
         "confirm": "Confirm import into a new directory",
         "confirmHint": "Only these frozen commits will be imported. Your Solo repositories and working changes remain intact. Stop the active Solo turn and handle pending messages before confirming.",
+        "expiresAt": "Confirm this preview before {time}.",
+        "expiredHint": "This unconfirmed preview expired without importing files. Create a new preview to continue.",
+        "retention": "New unconfirmed previews expire after 24 hours. Opening the import panel or creating a preview retires a bounded number of expired archive references. This does not delete shared object data; physical garbage collection is disabled.",
         "unknownHint": "The previous result is unconfirmed. Check the existing receipt first; no filesystem operation is replayed automatically. Without a complete receipt, all files are retained. Inspect the isolated directory before creating a new preview.",
         "reconcile": "Check import result",
         "newPreview": "New preview",
@@ -5125,6 +5128,7 @@
         "previous": "Saved previews and import results",
         "states": {
           "prepared": "Awaiting confirmation",
+          "expired": "Preview expired",
           "applying": "Import in progress; check result",
           "unknown": "Result unconfirmed",
           "applied": "Imported into a new directory"

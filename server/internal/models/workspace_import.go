@@ -26,4 +26,7 @@ type WorkspaceImport struct {
 	Error            string    `json:"-"`
 	CreatedAt        time.Time `json:"-"`
 	UpdatedAt        time.Time `json:"-"`
+
+	// Legacy previews have no expiry; their age is not inferred retroactively.
+	ExpiresAt *time.Time `gorm:"index" json:"-"`
 }

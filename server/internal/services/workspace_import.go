@@ -218,6 +218,7 @@ type WorkspaceImportView struct {
 	Warnings     []string                          `json:"warnings"`
 	Error        string                            `json:"error,omitempty"`
 	CreatedAt    time.Time                         `json:"createdAt"`
+	ExpiresAt    *time.Time                        `json:"expiresAt,omitempty"`
 }
 
 var workspaceRequestID = regexp.MustCompile(`^[a-zA-Z0-9_-]{8,128}$`)
@@ -397,6 +398,9 @@ func (s *WorkspaceImportService) List(ctx context.Context, soloID, user, runID s
 	if _, _, err := s.authorize(s.db.WithContext(ctx), soloID, user, runID); err != nil {
 		return nil, err
 	}
+	if err := s.expirePrepared(ctx, soloID, user, runID, ""); err != nil {
+		return nil, err
+	}
 	var rows []models.WorkspaceImport
 	if err := s.db.WithContext(ctx).Where("solo_id = ? AND actor_id = ? AND run_id = ?", soloID, user, runID).Order("created_at DESC, id DESC").Limit(20).Find(&rows).Error; err != nil {
 		return nil, err
@@ -418,10 +422,19 @@ func (s *WorkspaceImportService) load(ctx context.Context, soloID, user, id stri
 		return row, workspaceImportError(http.StatusNotFound, "workspace_import_not_found", "导入预览不存在")
 	}
 	_, _, err := s.authorize(s.db.WithContext(ctx), soloID, user, row.RunID)
+	if err == nil && workspaceImportExpired(row, time.Now()) {
+		if err := s.expirePrepared(ctx, soloID, user, row.RunID, id); err != nil {
+			return row, err
+		}
+		err = s.db.WithContext(ctx).Where("id = ? AND solo_id = ? AND actor_id = ?", id, soloID, user).First(&row).Error
+	}
 	return row, err
 }
 
 func importView(row models.WorkspaceImport) (*WorkspaceImportView, error) {
+	if workspaceImportExpired(row, time.Now()) {
+		row.State, row.Error = "expired", "workspace_import_expired"
+	}
 	var repositories []sandbox.WorkspaceCodeRepository
 	if err := json.Unmarshal([]byte(row.Repositories), &repositories); err != nil {
 		return nil, err
@@ -442,7 +455,7 @@ func importView(row models.WorkspaceImport) (*WorkspaceImportView, error) {
 		State:  row.State, Repositories: repositories, Directory: row.Directory,
 		Destination: sandbox.WorkspaceCodeDirectory + "/" + row.ID, Paths: paths,
 		Capabilities: sandbox.WorkspaceCodeInventory{Version: sandbox.WorkspaceCodeVersion, Repositories: []sandbox.WorkspaceCodeRepository{}, MaxBundleBytes: sandbox.WorkspaceCodeMaxBundleBytes, MaxTotalBytes: sandbox.WorkspaceCodeMaxTotalBytes, MaxFileBytes: sandbox.WorkspaceCodeMaxFileBytes},
-		Warnings:     warnings, Error: row.Error, CreatedAt: row.CreatedAt,
+		Warnings:     warnings, Error: row.Error, CreatedAt: row.CreatedAt, ExpiresAt: row.ExpiresAt,
 	}, nil
 }
 
@@ -488,6 +501,9 @@ func (s *WorkspaceImportService) Preview(ctx context.Context, soloID, user strin
 	if session.Status == models.SoloStatusClosed || session.SandboxID == 0 {
 		return nil, workspaceImportError(http.StatusConflict, "environment_missing", "请先启动 Solo 环境后再创建导入预览")
 	}
+	if err := s.expirePrepared(ctx, soloID, user, in.RunID, ""); err != nil {
+		return nil, err
+	}
 	ctx, release, err := s.sandbox.acquireSandboxOperation(ctx, source.ID, "code_export")
 	if err != nil {
 		return nil, err
@@ -530,7 +546,8 @@ func (s *WorkspaceImportService) Preview(ctx context.Context, soloID, user strin
 	if err != nil || storedDigest != digest {
 		return nil, workspaceRuntimeError(workspacearchive.ErrUnsafe)
 	}
-	row := models.WorkspaceImport{ID: id, ActorID: user, SoloID: soloID, RunID: in.RunID, NodeID: in.NodeID, Iteration: in.Iteration, Attempt: in.Attempt, SourceSandboxID: source.ID, SourceGeneration: current.Generation, TargetSandboxID: session.SandboxID, Fingerprint: fingerprint, ArchiveRef: ref, ArchiveSHA256: digest, Repositories: stringJSON(manifest.Repositories), State: "prepared"}
+	expiresAt := time.Now().UTC().Add(workspaceImportPreviewTTL)
+	row := models.WorkspaceImport{ID: id, ActorID: user, SoloID: soloID, RunID: in.RunID, NodeID: in.NodeID, Iteration: in.Iteration, Attempt: in.Attempt, SourceSandboxID: source.ID, SourceGeneration: current.Generation, TargetSandboxID: session.SandboxID, Fingerprint: fingerprint, ArchiveRef: ref, ArchiveSHA256: digest, Repositories: stringJSON(manifest.Repositories), State: "prepared", ExpiresAt: &expiresAt}
 	if row.Attempt == 0 {
 		row.Attempt = 1
 	}

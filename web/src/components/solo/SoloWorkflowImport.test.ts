@@ -103,6 +103,91 @@ describe('workflow code import', () => {
     expect(writes().filter(([path]) => path.endsWith('/confirm'))).toHaveLength(0)
   })
 
+  it.each(['session_busy', 'workspace_target_unavailable'])('allows explicit retry with the original nonce after a proven rejection: %s', async code => {
+    const standard = mocks.req.getMockImplementation()!
+    const confirmations: Record<string, unknown>[] = []
+    mocks.req.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith('/confirm')) {
+        const body = JSON.parse(init!.body as string)
+        confirmations.push(body)
+        if (confirmations.length === 1) throw Object.assign(new Error('请处理环境后重试'), { status: 409, code, params: { confirmationAccepted: false, importId: current.id, clientRequestId: body.clientRequestId } })
+      }
+      return standard(path, init)
+    })
+    const wrapper = open()
+    await prepare(wrapper)
+    await wrapper.get('[data-testid="code-import-confirm"]').trigger('click')
+    await flushPromises()
+    expect(held(wrapper).uncertain).toBe(false)
+    expect(wrapper.find('[data-testid="code-import-reconcile"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('请处理环境后重试')
+    expect(confirmations).toHaveLength(1)
+    await wrapper.get('[data-testid="code-import-confirm"]').trigger('click')
+    await flushPromises()
+    expect(confirmations).toHaveLength(2)
+    expect(confirmations[1]).toEqual(confirmations[0])
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+  })
+
+  it.each(['code-only', 'wrong-import', 'wrong-nonce', 'server-error', 'lost-response'])('keeps acceptance uncertain without an exact pre-admission proof: %s', async kind => {
+    const standard = mocks.req.getMockImplementation()!
+    mocks.req.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith('/confirm')) {
+        const body = JSON.parse(init!.body as string)
+        const proof = { confirmationAccepted: false, importId: kind === 'wrong-import' ? 'different-import' : current.id, clientRequestId: kind === 'wrong-nonce' ? 'different-nonce' : body.clientRequestId }
+        const error = new Error('结果未确认')
+        if (kind !== 'lost-response') Object.assign(error, { status: kind === 'server-error' ? 500 : 409, code: 'workspace_target_unavailable', ...(kind === 'code-only' ? {} : { params: proof }) })
+        throw error
+      }
+      return standard(path, init)
+    })
+    const wrapper = open()
+    await prepare(wrapper)
+    await wrapper.get('[data-testid="code-import-confirm"]').trigger('click')
+    await flushPromises()
+    expect(held(wrapper).uncertain).toBe(true)
+    expect(held(wrapper).confirmRequestId).toBeTruthy()
+    expect(wrapper.find('[data-testid="code-import-confirm"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="code-import-reconcile"]').exists()).toBe(true)
+    expect(writes().filter(([path]) => path.endsWith('/confirm'))).toHaveLength(1)
+  })
+
+  it('shows an expired saved preview without enabling confirmation or provider reconciliation', async () => {
+    current = receipt('expired')
+    saved = [current]
+    const wrapper = open()
+    await flushPromises()
+    await wrapper.get('[data-testid="code-import-previous"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('预览已过期')
+    expect(wrapper.text()).toContain('未执行文件导入')
+    expect(wrapper.text()).toContain('物理垃圾回收目前关闭')
+    expect(wrapper.find('[data-testid="code-import-confirm"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="code-import-reconcile"]').exists()).toBe(false)
+    expect(writes()).toHaveLength(0)
+  })
+
+  it('turns an expired confirmation rejection into a terminal preview without replacing its nonce', async () => {
+    const standard = mocks.req.getMockImplementation()!
+    let confirmation = ''
+    mocks.req.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith('/confirm')) {
+        confirmation = JSON.parse(init!.body as string).clientRequestId
+        throw Object.assign(new Error('预览已过期'), { status: 410, code: 'workspace_import_expired', params: { confirmationAccepted: false, importId: current.id, clientRequestId: confirmation } })
+      }
+      return standard(path, init)
+    })
+    const wrapper = open()
+    await prepare(wrapper)
+    await wrapper.get('[data-testid="code-import-confirm"]').trigger('click')
+    await flushPromises()
+    expect(held(wrapper).preview?.state).toBe('expired')
+    expect(held(wrapper).confirmRequestId).toBe(confirmation)
+    expect(held(wrapper).uncertain).toBe(false)
+    expect(wrapper.find('[data-testid="code-import-confirm"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="code-import-reconcile"]').exists()).toBe(false)
+  })
+
   it('preserves repository and commit drafts when the drawer is closed before preview', async () => {
     const first = open()
     await flushPromises()
