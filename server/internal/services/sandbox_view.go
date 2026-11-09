@@ -330,7 +330,7 @@ func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (sandbox.Ter
 	}
 	var command []string
 	if path := canonicalWorkspacePath(ctx, id); path != "" {
-		command = []string{"bash", "-c", "cd -- \"$1\" && exec bash -i", "grasp-terminal", path}
+		command = []string{"env", "-C", path, "bash", "-i"}
 	}
 	return s.mgr.ExecPTYWithToken(ctx, row.Name, row.Token, command)
 }
