@@ -32,6 +32,7 @@ type options struct {
 	executionControl                       string
 	offline, resume, activate              bool
 	finalize                               bool
+	sandboxID                              uint
 }
 
 type checkpoint struct {
@@ -46,14 +47,15 @@ func main() {
 	var opts options
 	flag.StringVar(&opts.config, "config", "config.yaml", "source server configuration")
 	flag.StringVar(&opts.target, "target-storage", "", "private YAML containing destination storage config (no env overrides)")
-	flag.StringVar(&opts.mode, "mode", "status", "status, execution-status, upgrade, certify-primary, copy, verify, execution-init, restore-begin, restore-finalize, or release")
+	flag.StringVar(&opts.mode, "mode", "status", "status, execution-status, upgrade, certify-primary, review-solo-environment, copy, verify, execution-init, restore-begin, restore-finalize, or release")
 	flag.StringVar(&opts.executionControl, "execution-control", "", "private storage YAML for the independent execution control namespace")
 	flag.StringVar(&opts.workdir, "workdir", "", "private durable checkpoint and SQL backup directory")
 	flag.StringVar(&opts.stopped, "acknowledge-stopped", "", "comma-separated exact IDs of registered processes you have confirmed stopped")
 	flag.BoolVar(&opts.offline, "offline", false, "attest all servers, scripts and external SQL writers are stopped")
 	flag.BoolVar(&opts.resume, "resume", false, "resume the same interrupted copy or upgrade, rechecking original intent and bytes")
 	flag.BoolVar(&opts.activate, "switch", false, "activate the verified destination after copy")
-	flag.BoolVar(&opts.finalize, "finalize", false, "with certify-primary --resume, reverify and release only its original maintenance")
+	flag.BoolVar(&opts.finalize, "finalize", false, "with certify-primary or review-solo-environment --resume, reverify and release only its original maintenance")
+	flag.UintVar(&opts.sandboxID, "sandbox-id", 0, "exact original Solo sandbox SQL ID for source-specific offline review")
 	flag.Parse()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -100,6 +102,9 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 	}
 	if opts.mode == "certify-primary" {
 		return certifyPrimary(ctx, opts, cfg, db, output)
+	}
+	if opts.mode == "review-solo-environment" {
+		return reviewSoloEnvironment(ctx, opts, cfg, db, output)
 	}
 	if opts.mode == "restore-begin" || opts.mode == "restore-finalize" || opts.mode == "restore" {
 		return restoreExecution(ctx, opts, cfg, db, output)
@@ -213,8 +218,11 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 }
 
 func validateOptions(opts options) error {
-	if opts.finalize && opts.mode != "certify-primary" {
-		return errors.New("--finalize is only supported for certify-primary")
+	if opts.finalize && opts.mode != "certify-primary" && opts.mode != "review-solo-environment" {
+		return errors.New("--finalize is only supported for certify-primary or review-solo-environment")
+	}
+	if opts.sandboxID != 0 && opts.mode != "review-solo-environment" {
+		return errors.New("--sandbox-id is only supported for review-solo-environment")
 	}
 	switch opts.mode {
 	case "status":
@@ -232,6 +240,11 @@ func validateOptions(opts options) error {
 	case "certify-primary":
 		if !opts.offline || opts.workdir == "" || opts.target != "" || opts.activate || opts.executionControl != "" || opts.finalize && !opts.resume {
 			return errors.New("certify-primary requires --offline and its own --workdir; finalize requires --resume and never initializes execution")
+		}
+		return nil
+	case "review-solo-environment":
+		if !opts.offline || opts.workdir == "" || opts.sandboxID == 0 || opts.target != "" || opts.activate || opts.finalize && !opts.resume {
+			return errors.New("review-solo-environment requires --offline, its own --workdir and exact --sandbox-id; finalize requires --resume")
 		}
 		return nil
 	case "copy", "restore", "verify", "release", "execution-init", "restore-begin", "restore-finalize":

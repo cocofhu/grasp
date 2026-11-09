@@ -222,10 +222,14 @@ func (c *acpProvider) recordChatUsage(req NodeReq, res *sandbox.ChatResult, err 
 }
 
 func (c *acpProvider) runChat(ctx context.Context, acp *sandbox.ACPClient, req NodeReq, prompt string, images []models.PromptImage) (*sandbox.ChatResult, error) {
+	var progress func(*sandbox.ChatResult)
 	if c.emit == nil {
+		if req.nativeOperationID != "" {
+			return acp.ChatOperation(ctx, req.nativeOperationID, prompt, images, nil)
+		}
 		return acp.ChatStructured(ctx, prompt, images)
 	}
-	return acp.ChatStreamResult(ctx, prompt, images, func(r *sandbox.ChatResult) {
+	progress = func(r *sandbox.ChatResult) {
 
 		busy := true
 		if r.BusySet {
@@ -244,7 +248,11 @@ func (c *acpProvider) runChat(ctx context.Context, acp *sandbox.ACPClient, req N
 			c.timeline.replace(req.RunID, req.NodeID, events)
 		}
 		c.emit(req.RunID, req.NodeID, events, busy)
-	})
+	}
+	if req.nativeOperationID != "" {
+		return acp.ChatOperation(ctx, req.nativeOperationID, prompt, images, progress)
+	}
+	return acp.ChatStreamResult(ctx, prompt, images, progress)
 }
 
 // absorbChat folds one turn's prompt_done.usage into the StateRun-scoped

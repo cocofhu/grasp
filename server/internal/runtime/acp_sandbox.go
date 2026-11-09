@@ -465,6 +465,9 @@ func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.
 		WithExecution(c.executionForEnvironment(req, map[string]string{
 			EnvACPBridgeModel: strings.TrimSpace(model), EnvModelConfigurationID: strings.TrimSpace(group), EnvACPBridgeReasoningEffort: strings.TrimSpace(effort),
 		}))
+	if req.AttachOnly {
+		acp.WithAttachOperation(req.Operation)
+	}
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
 		return nil, nil, fmt.Errorf("%w: %w: reattach acp connect: %v", errSandboxStartupUnconfirmed, errSandboxSetup, err)

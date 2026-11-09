@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/tokenledger"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -71,14 +73,22 @@ func (e *Engine) nodeReq(c *execCtx, node *models.Node) runtime.NodeReq {
 	// Resolve only the exact visit/attempt owned by this execution context.
 	// Duplicated or missing historical rows cannot safely identify a source.
 	var visits []struct {
-		ID              uint
-		ProviderAttempt int
+		ID                                            uint
+		ProviderAttempt                               int
+		ProviderOperationID, ProviderOperationReceipt string
 	}
-	if err := e.db.Model(&models.StateRun{}).Select("id", "provider_attempt").
+	if err := e.db.Model(&models.StateRun{}).Select("id", "provider_attempt", "provider_operation_id", "provider_operation_receipt").
 		Where("run_id = ? AND node_id = ? AND iteration = ? AND attempt = ?",
 			c.run.ID, node.ID, req.Iteration, req.RunAttempt).Limit(2).Find(&visits).Error; err == nil && len(visits) == 1 {
 		req.StateRunID = visits[0].ID
 		req.ProviderAttempt = visits[0].ProviderAttempt
+		if c.reattachSandbox != "" && e.workspaceCheckpoints != nil {
+			req.AttachOnly = true
+			var operation sandbox.OperationIdentity
+			if json.Unmarshal([]byte(visits[0].ProviderOperationReceipt), &operation) == nil && operation.ID == visits[0].ProviderOperationID {
+				req.Operation, req.AttachOnly = operation, true
+			}
+		}
 	}
 	e.installProviderAttempt(c, &req)
 

@@ -16,6 +16,7 @@ type executionWatchKey struct{}
 type executionWatchScope struct {
 	provider  *acpProvider
 	run, node string
+	operation string
 	state     uint
 }
 
@@ -36,7 +37,7 @@ func (c *acpProvider) executionContextWithTiming(ctx context.Context, req NodeRe
 	if err != nil {
 		return ctx, func() {}, err
 	}
-	scope := executionWatchScope{provider: c, run: req.RunID, node: req.NodeID, state: req.StateRunID}
+	scope := executionWatchScope{provider: c, run: req.RunID, node: req.NodeID, state: req.StateRunID, operation: req.Operation.ID}
 	if previous, _ := ctx.Value(executionWatchKey{}).(executionWatchScope); previous == scope {
 		return ctx, func() {}, nil // The outer operation already owns its monitor.
 	}

@@ -214,14 +214,24 @@ func TestWorkspaceProviderAttemptDispatchedVisitNeverReplaysOnStartup(t *testing
 	e, c, node, state := workspaceCheckpointFixture(t, true)
 	req := e.nodeReq(c, node)
 	attempt, err := req.PrepareProviderAttempt(t.Context())
-	if err != nil || attempt != 1 {
+	if err != nil || attempt.Attempt != 1 {
 		t.Fatal(attempt, err)
+	}
+	attempt.Resource, attempt.SessionID, attempt.Workspace, attempt.Authorization = "original-resource", "native-session", "/workspace", "current-grant"
+	resource := models.Sandbox{Name: attempt.Resource, Purpose: "run", RunID: req.RunID, NodeID: req.NodeID, StateRunID: state.ID, Iteration: 1, RunAttempt: req.RunAttempt, ProviderAttempt: attempt.Attempt, Status: "running"}
+	if err := e.db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
 	}
 	if err := req.BeforeProviderDispatch(t.Context(), attempt); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := req.PrepareProviderAttempt(t.Context()); !errors.Is(err, runtime.ErrProviderDispatchUnknown) {
 		t.Fatal("dispatched operation repeated", err)
+	}
+	// This fixture represents a pre-receipt interrupted row. It cannot prove
+	// native operation identity and must remain unknown without replay.
+	if err := e.db.Table("state_runs").Where("id = ?", state.ID).Update("provider_operation_receipt", "").Error; err != nil {
+		t.Fatal(err)
 	}
 	e.reconcileInterrupted()
 	var after models.StateRun

@@ -22,6 +22,9 @@ type Options struct {
 	// CheckExecution performs fresh independent-authority and SQL quarantine
 	// checks outside any transaction immediately before native execution.
 	CheckExecution func(context.Context, NodeReq) error
+	// NativeAuthorization validates current scope/model/credential dependencies
+	// outside SQL and returns a nonsecret digest bound into the original receipt.
+	NativeAuthorization func(context.Context, NodeReq) (string, error)
 	// RecordUsage receives each actual turn before result aggregation or retry.
 	// Implementations must use the operation id to make replay idempotent.
 	RecordUsage  func(NodeReq, *sandbox.ChatResult, error)
@@ -157,9 +160,12 @@ type NodeReq struct {
 	ProviderAttempt int // exact durable attempt, zero only for legacy callers
 	// These server-owned callbacks run before native setup/prompt dispatch.
 	// They are never supplied by an HTTP body or serialized as a capability.
-	PrepareProviderAttempt  func(context.Context) (int, error)
-	BeforeProviderDispatch  func(context.Context, int) error
+	PrepareProviderAttempt  func(context.Context) (sandbox.OperationIdentity, error)
+	BeforeProviderDispatch  func(context.Context, sandbox.OperationIdentity) error
+	Operation               sandbox.OperationIdentity
+	AttachOnly              bool
 	providerAttemptPrepared bool
+	nativeOperationID       string
 	Instructions            AutoInstructions // exact-generation supplements; nil outside auto execution
 	NodeType                string
 	// Caps is the Agent's capability snapshot for this run (nil for non-Agent nodes).

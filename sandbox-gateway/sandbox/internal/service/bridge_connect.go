@@ -61,10 +61,15 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 	}
 	m := map[string]any{
 		"op":        "connected",
-		"sessionId": p.SessionID(),
-		"cwd":       p.CWD(),
-		"fsRoot":    p.FSRoot(),
-		"agent":     agentInfo,
+		"sessionId": p.SessionID(), "nativeSessionId": b.NativeSessionID(),
+		"cwd":    p.CWD(),
+		"fsRoot": p.FSRoot(),
+		"agent":  agentInfo,
+	}
+	if binding := b.bindingManager(); binding != nil {
+		if view, err := binding.Head(); err == nil {
+			m["workspaceFingerprint"] = view.Head.Reference.Fingerprint
+		}
 	}
 	curModel := b.EffectiveModel()
 	if curModel == "" {

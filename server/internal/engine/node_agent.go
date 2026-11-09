@@ -62,7 +62,7 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) (outcome nodeOutcom
 	}()
 	queue, err := e.openInstructionQueue(ctx, ar.stateRunID, c.run.ID, node.ID, ar.iter)
 	if err != nil {
-		return nodeOutcome{status: "failed", err: err.Error(), outputMd: "补充要求通道准备失败：" + err.Error()}
+		return nodeOutcome{status: "failed", err: err.Error(), outputMd: "补充要求通道准备失败：" + err.Error(), providerUnknown: req.AttachOnly}
 	}
 	req.Instructions = queue
 	defer func() {
