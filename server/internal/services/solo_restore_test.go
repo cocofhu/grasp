@@ -200,7 +200,7 @@ func TestSoloRestoreDoesNotReplayStartedLegacyTurnWithoutTranscript(t *testing.T
 		return err == nil && row.Status == models.SoloStatusRunning
 	})
 	payload, _ := json.Marshal(&soloTurn{ID: "turn-unwritten", Text: "never written"})
-	if err := solo.pending.Save(soloPendingSurface, view.ID, []chatsession.PendingTurn{{ID: "turn-unwritten", Started: true, Payload: payload}}); err != nil {
+	if err := chatsession.NewPendingStore(db).Save(soloPendingSurface, view.ID, []chatsession.PendingTurn{{ID: "turn-unwritten", Started: true, Payload: payload}}); err != nil {
 		t.Fatal(err)
 	}
 	solo = NewSoloService(db, solo.sbx, solo.agents, solo.projects)
@@ -209,16 +209,12 @@ func TestSoloRestoreDoesNotReplayStartedLegacyTurnWithoutTranscript(t *testing.T
 	solo.SetModelAlignerForTest(&recordAligner{})
 	solo.RestoreQueuedTurns()
 	solo.RestoreQueuedTurns()
-	receipt, err := solo.durable.Receipt(context.Background(), soloQueueScope(view.ID), "turn-unwritten")
-	if err != nil || receipt.State != chatsession.TurnUnknown || receipt.ResultID == "" {
-		t.Fatalf("started legacy work was made replayable: %+v %v", receipt, err)
+	if _, err := solo.durable.Receipt(context.Background(), soloQueueScope(view.ID), "turn-unwritten"); err == nil {
+		t.Fatal("startup imported retained legacy evidence into the executable queue")
 	}
-	var user, notice models.SoloMessage
-	if err := db.First(&user, "id = ?", "turn-unwritten").Error; err != nil || user.Content != "never written" {
-		t.Fatalf("recovery lost the original accepted intent: %+v %v", user, err)
-	}
-	if err := db.First(&notice, "id = ?", receipt.ResultID).Error; err != nil || notice.Status != "unknown" || !strings.Contains(notice.Error, "执行结果待核对") {
-		t.Fatalf("recovery hid the uncertain outcome: %+v %v", notice, err)
+	var original models.ChatPendingTurn
+	if err := db.First(&original, "id = ?", "turn-unwritten").Error; err != nil || !original.Started || string(original.Payload) != string(payload) {
+		t.Fatalf("startup altered retained evidence: %+v %v", original, err)
 	}
 	if len(chat.seen()) != 0 {
 		t.Fatalf("recovery repeated native work without dispatch proof: %q", chat.seen())
@@ -237,7 +233,7 @@ func TestSoloRestoreRetainsFailedAndOrphanedIntent(t *testing.T) {
 	}
 	for _, id := range []string{"solo-closed", "solo-error", "solo-deleted"} {
 		payload, _ := json.Marshal(&soloTurn{ID: id + "-q", Text: "queued"})
-		if err := solo.pending.Save(soloPendingSurface, id, []chatsession.PendingTurn{{ID: id + "-q", Payload: payload}}); err != nil {
+		if err := chatsession.NewPendingStore(db).Save(soloPendingSurface, id, []chatsession.PendingTurn{{ID: id + "-q", Payload: payload}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -248,10 +244,7 @@ func TestSoloRestoreRetainsFailedAndOrphanedIntent(t *testing.T) {
 		if solo.lookup(id) != nil {
 			t.Fatalf("%s: an ended session must not be reopened", id)
 		}
-		want := 0
-		if id == "solo-error" || id == "solo-deleted" {
-			want = 1
-		}
+		want := 1
 		if total, _ := pendingTurnCount(t, solo, id); total != want {
 			t.Fatalf("%s: stored turns left = %d, want %d", id, total, want)
 		}
@@ -260,14 +253,8 @@ func TestSoloRestoreRetainsFailedAndOrphanedIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
-	for _, scope := range ready {
-		if scope.Key == "solo-error" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("temporary failure must retain its durable waiting intent")
+	if len(ready) != 0 {
+		t.Fatal("legacy evidence was scheduled as new durable work")
 	}
 }
 

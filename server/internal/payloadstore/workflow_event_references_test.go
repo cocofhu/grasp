@@ -41,7 +41,7 @@ func TestUnmaterializedWorkflowSourcesRestoreFromDestinationAlone(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := bindLocation(db, sourceLocation); err != nil {
+	if err := seedPriorPrimary(db, sourceLocation); err != nil {
 		t.Fatal(err)
 	}
 	session := models.SoloSession{ID: "cold-manifest-parent", UserID: "alice", Status: models.SoloStatusStopped}

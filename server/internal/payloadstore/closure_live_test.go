@@ -51,7 +51,7 @@ func TestLivePrimaryClosureRejectsMissingAndCorruptRemoteDespiteLocalSource(t *t
 		t.Fatal(err)
 	}
 	location, _ := proposedLocation(cfg)
-	if err := bindLocation(db, location); err != nil {
+	if err := seedPriorPrimary(db, location); err != nil {
 		t.Fatal(err)
 	}
 	owner := uuid.NewString()

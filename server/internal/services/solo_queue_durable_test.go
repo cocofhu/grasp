@@ -151,7 +151,10 @@ func TestSoloDurableUnknownNoticeRetriesEvenWhenQueueIsEmpty(t *testing.T) {
 	}
 	turn := soloTurn{ID: "interrupted", Text: "original native action"}
 	payload, _ := json.Marshal(turn)
-	if err := solo.pending.Save(soloPendingSurface, row.ID, []chatsession.PendingTurn{{ID: turn.ID, Started: true, Payload: payload}}); err != nil {
+	if _, err := solo.durable.Admit(context.Background(), soloQueueScope(row.ID), chatsession.QueueIntent{ID: turn.ID, ActorID: "alice", ClientMessageID: "unknown-notice", Fingerprint: strings.Repeat("f", 64), Payload: payload}, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.ChatQueueTurn{}).Where("id = ?", turn.ID).Updates(map[string]any{"state": chatsession.TurnUnknown, "reason": "interrupted", "finished_at": time.Now().UTC()}).Error; err != nil {
 		t.Fatal(err)
 	}
 	// A workflow result after this human is not evidence that this native turn

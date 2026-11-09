@@ -10,11 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/historymigration"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
+	"github.com/cocofhu/grasp/internal/storageguard"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
@@ -124,6 +127,18 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 					ID: "visitor-upload", SessionID: sb.ThreadID, Role: "user", Content: "Visitor upload",
 					PreviewShared: true, Images: []models.PromptImage{guestFile},
 				}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if solo {
+				owner := uuid.NewString()
+				if err := storageguard.Enter(context.Background(), hn.db, owner, nil); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := historymigration.ImportSoloEvents(context.Background(), hn.db, owner); err != nil {
+					t.Fatal(err)
+				}
+				if err := storageguard.Leave(context.Background(), hn.db, owner); err != nil {
 					t.Fatal(err)
 				}
 			}

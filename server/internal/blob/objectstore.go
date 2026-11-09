@@ -14,8 +14,8 @@ import (
 )
 
 // Objects shares the platform object backend with payloads and snapshots.
-// Legacy files remain readable during migration; new uploads never fall back
-// to local storage when the remote backend is unavailable.
+// Reads and uploads use this configured primary. Retained local source files
+// are accessible to explicit archive tools, never a fallback for missing data.
 type Objects struct {
 	backend objectstore.Store
 	legacy  *LocalFS
@@ -61,9 +61,6 @@ func (s *Objects) Open(ctx context.Context, raw Ref) (io.ReadCloser, Meta, error
 		return nil, Meta{}, err
 	}
 	body, info, err := s.backend.Open(ctx, attachmentKey(ref))
-	if errors.Is(err, os.ErrNotExist) && s.legacy != nil {
-		return s.legacy.Open(ctx, ref)
-	}
 	if err != nil {
 		return nil, Meta{}, err
 	}

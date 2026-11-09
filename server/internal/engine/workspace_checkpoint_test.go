@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -167,7 +170,22 @@ func TestWorkspaceCheckpointSlowOutcomeUploadRetainsDiskBarrierAndNoSQLLock(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	objects := &checkpointBlockedObjects{entered: make(chan struct{}), release: make(chan struct{})}
+	// The configured primary must already contain the fixture's existing
+	// graph/StateRun bodies. Cleanup never falls back to retained local files.
+	primary := &instructionPayloadObjects{objects: map[string][]byte{}}
+	if err := filepath.WalkDir(filepath.Join(files.Root, "sha256"), func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err == nil {
+			primary.objects["payloads/sha256/"+entry.Name()[:2]+"/"+entry.Name()] = data
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	objects := &checkpointBlockedObjects{Store: primary, entered: make(chan struct{}), release: make(chan struct{})}
 	if err := files.SetObjectStore(objects); err != nil {
 		t.Fatal(err)
 	}

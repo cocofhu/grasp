@@ -1,5 +1,5 @@
-// Package payloadstore wires payloads, attachments and snapshots to a shared
-// object backend, preserving local reads while a deployment is migrated.
+// Package payloadstore wires payloads, attachments and snapshots to their
+// verified physical primary. Storage changes require an explicit offline copy.
 package payloadstore
 
 import (
@@ -71,47 +71,26 @@ func proposedLocation(cfg config.StorageConfig) (Location, error) {
 }
 
 func bindLocation(db *gorm.DB, target Location) error {
-	if err := db.AutoMigrate(&Location{}); err != nil {
+	if err := db.AutoMigrate(&Location{}, &PrimaryClosure{}); err != nil {
 		return err
 	}
-	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&target).Error; err != nil {
-		return err
-	}
-	var current Location
-	if err := db.First(&current, "name = ?", "primary").Error; err != nil {
-		return err
-	}
-	if current.Fingerprint == target.Fingerprint {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var current Location
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "name = ?", "primary").Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if target.Driver == "s3" {
+				return BindEmptyPrimaryClosureTx(tx.Statement.Context, tx, target)
+			}
+			return tx.Create(&target).Error
+		}
+		if err != nil {
+			return err
+		}
+		if current.Fingerprint != target.Fingerprint || current.Driver != target.Driver {
+			return errors.New("payload storage location changed: migrate and verify existing objects before switching storage")
+		}
 		return nil
-	}
-	// Local files remain readable from the same persistent root while an
-	// archive worker copies immutable bytes. Never remove these legacy files.
-	if current.Driver == "local" && target.Driver == "s3" && current.LocalRoot == target.LocalRoot {
-		return db.Transaction(func(tx *gorm.DB) error {
-			legacy := current
-			legacy.Name = "legacy-local-" + current.Fingerprint[:12]
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&legacy).Error; err != nil {
-				return err
-			}
-			result := tx.Model(&Location{}).Where("name = ? AND fingerprint = ?", "primary", current.Fingerprint).
-				Updates(map[string]any{"driver": target.Driver, "endpoint": target.Endpoint, "region": target.Region,
-					"bucket": target.Bucket, "prefix": target.Prefix, "local_root": target.LocalRoot, "fingerprint": target.Fingerprint})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected == 0 {
-				var latest Location
-				if err := tx.First(&latest, "name = ?", "primary").Error; err != nil {
-					return err
-				}
-				if latest.Fingerprint != target.Fingerprint {
-					return errors.New("payload storage location changed concurrently")
-				}
-			}
-			return nil
-		})
-	}
-	return errors.New("payload storage location changed: migrate and verify existing objects before switching storage")
+	})
 }
 
 func Open(ctx context.Context, db *gorm.DB, cfg *config.Config) (*Storage, error) {
@@ -127,20 +106,31 @@ func Open(ctx context.Context, db *gorm.DB, cfg *config.Config) (*Storage, error
 		return nil, err
 	}
 	result := &Storage{Files: files, Location: location}
+	var remote *objectstore.S3
 	switch location.Driver {
 	case "local":
 	case "s3":
-		result.Objects, err = OpenObjects(ctx, cfg.Storage)
+		remote, err = newObjects(cfg.Storage)
 		if err != nil {
 			return nil, err
 		}
+		result.Objects = remote
 	default:
 		return nil, errors.New("unsupported payload storage driver")
 	}
-	if err = bindLocation(db, location); err != nil {
+	if err = bindLocation(db.WithContext(ctx), location); err != nil {
+		return nil, err
+	}
+	if err = CheckPrimaryClosure(ctx, db, cfg.Storage); err != nil {
 		return nil, err
 	}
 	if result.Objects != nil {
+		probe, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err = remote.Probe(probe)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
 		result.Objects = objectstore.FencePublications(result.Objects)
 	}
 	if err = files.SetObjectStore(result.Objects); err != nil {
@@ -167,16 +157,7 @@ func (s *Storage) Close() {
 
 // OpenObjects validates a destination without changing its SQL location.
 func OpenObjects(ctx context.Context, cfg config.StorageConfig) (objectstore.Store, error) {
-	driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
-	if driver != "s3" && driver != "cos" {
-		return nil, errors.New("replica destination must use s3 or cos")
-	}
-	options := cfg.S3
-	if options.PathStyle == nil && driver == "cos" {
-		pathStyle := false
-		options.PathStyle = &pathStyle
-	}
-	objects, err := objectstore.NewS3(options)
+	objects, err := newObjects(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -186,4 +167,17 @@ func OpenObjects(ctx context.Context, cfg config.StorageConfig) (objectstore.Sto
 		return nil, err
 	}
 	return objects, nil
+}
+
+func newObjects(cfg config.StorageConfig) (*objectstore.S3, error) {
+	driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
+	if driver != "s3" && driver != "cos" {
+		return nil, errors.New("replica destination must use s3 or cos")
+	}
+	options := cfg.S3
+	if options.PathStyle == nil && driver == "cos" {
+		pathStyle := false
+		options.PathStyle = &pathStyle
+	}
+	return objectstore.NewS3(options)
 }

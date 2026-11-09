@@ -64,3 +64,26 @@ grasp-storage-admin --mode execution-status --config /private/application.yaml \
 | MySQL 8.4.13 | SeaweedFS S3 | 通过 |
 
 每个组合均逐项核对 6,000 条历史事件、原正文、图片与附件 SHA，验证原 SQL 备份在同目录重试中不被覆盖、原 UUID 的显式初始化及原票据续办。旧执行保留并隔离，未创建新的可执行轮次或调用模型。MySQL 验证使用原生客户端与服务，保留正常 JSON 统计字段，并校验含保留字列名的引用扫描与正文迁移；不以 SQLite 结果代替 MySQL 验证。
+
+## 清理版启动与远端存储校验
+
+清理版在登记运行实例、迁移 schema、创建正文目录和访问对象存储之前，只读核对来源与当前格式。v3.2 旧库必须先经过上面的迁移版流程；直接跳级会拒绝启动，不自动补迁移。迁移版的全新安装使用独立的真实空库来源凭据，之后合法新增的聊天和引用不要求重新制作旧库迁移收据。
+
+当前数据库必须只有规范正文引用或定义的空值，旧 Solo Events 必须已有绑定原消息及准确范围的历史日志，保留的旧 Solo 排队记录必须处于当前数据集的待核对隔离中。清理版不再读取旧 Events 数组、不导入旧 Solo 队列、不在后台规范化正文。原 Events 来源、未知执行身份、截断提示与非 Solo 的正式排队功能仍保留；离线历史转换工具仍受维护锁及全部运行实例停止的约束。
+
+远端 primary 还须有同一物理位置的已完成认证，或真正离线复制并激活的目标凭据。凭据绑定 endpoint、bucket 与 prefix；更换密钥不会改变物理身份。旧的空库来源标记和升级成功收据都不能替代远端对象验证。
+
+若迁移版已使用 S3 / COS，但尚无这样的凭据，停止全部写入者，保留当前配置与位置，在新的私有维护目录执行清理版工具：
+
+```bash
+grasp-storage-admin --mode certify-primary --config /private/application.yaml \
+  --offline --workdir /private/upgrades/primary-certification
+grasp-storage-admin --mode certify-primary --config /private/application.yaml \
+  --offline --workdir /private/upgrades/primary-certification --resume --finalize
+```
+
+第一步不使用本地回退，直接读取实际 primary，校验引用闭包中的全部对象字节与 SHA-256，成功仍保持维护。第二步在原目录、原 UUID 下重新验证，再原子完成凭据并解除该操作的维护；它不初始化或轮换执行控制。中断后在原目录使用 `--resume` 续办，不能换目录清除别人的维护。缺失或损坏对象时认证失败，需先恢复正确的远端字节。已有正常数据的迁移版全新部署同样需要这一步，不能只凭空库来源标记跳过。
+
+真正首次安装使用空 SQL 和空数据目录，按显式执行初始化流程操作。第一次绑定远端 primary 时，在同一 SQL 事务中复核真实空库来源及没有业务数据，再保存位置和空业务引用凭据，因此不需要先认证尚不存在的 primary。固定默认 Workspace 的 JSON 元数据仍计入真实引用摘要，不伪造零记录。已有 primary 或残留业务、待执行隔离、修改过的 Workspace 配置均不能走此入口。
+
+正常启动只检查已完成凭据、相同物理身份和当前 SQL 格式，不每次下载全部历史，也不要求当前全库摘要等于升级时摘要。后续写入仅使用 primary；运行时正文加载拒绝非空 inline 旧正文，远端读取失败也不再回退到本地。备份来源和已导入的历史来源引用仍保留，认证完成不等于允许删除它们。

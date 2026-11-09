@@ -116,15 +116,12 @@ type SoloService struct {
 	chat     pmChatter
 	// modelAlign overrides the sandbox when tests need to record or fail a
 	// switch without calling the bridge. Nil uses the sandbox service.
-	modelAlign soloModelAligner
-	pending    *chatsession.PendingStore
-	durable    *chatsession.DurableStore
-	execution  *executionlineage.Controller
-	restoreMu  sync.Mutex
-	// deferredRestores holds persisted queues until their resident is ready.
-	deferredRestores map[string]bool
-	restoreEnabled   bool
-	queueProbes      map[string]soloQueueProbe // guarded by restoreMu
+	modelAlign     soloModelAligner
+	durable        *chatsession.DurableStore
+	execution      *executionlineage.Controller
+	restoreMu      sync.Mutex
+	restoreEnabled bool
+	queueProbes    map[string]soloQueueProbe // guarded by restoreMu
 
 	mu     sync.Mutex
 	chats  map[string]*soloChat
@@ -178,16 +175,7 @@ type soloTurn struct {
 // persistence.
 func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, projects *ProjectService) *SoloService {
 	s := &SoloService{db: db, sbx: sbx, agents: agents, projects: projects, chats: map[string]*soloChat{},
-		pending: chatsession.NewPendingStore(db), durable: chatsession.NewDurableStore(db)}
-	// Protect saved queues before HTTP accepts messages. They must not be
-	// overwritten by a newly opened in-memory FIFO while residents recover.
-	var keys []string
-	if err := db.Model(&models.ChatPendingTurn{}).Where("surface = ?", soloPendingSurface).Distinct().Pluck("session_key", &keys).Error; err == nil {
-		s.deferredRestores = map[string]bool{}
-		for _, id := range keys {
-			s.deferredRestores[id] = true
-		}
-	}
+		durable: chatsession.NewDurableStore(db)}
 	if sbx != nil {
 		s.chat = sbx
 		sbx.SetSoloSandboxDestroyHook(s.onSandboxGone)
@@ -1564,13 +1552,6 @@ func (s *SoloService) sendSoloTurn(row *models.SoloSession, turn *soloTurn, inpu
 func (s *SoloService) enqueueTurn(id string, turn *soloTurn) (int, error) {
 	s.restoreMu.Lock()
 	defer s.restoreMu.Unlock()
-	if s.deferredRestores[id] {
-		if err := s.importSoloQueuesLocked(); err != nil {
-			if s.deferredRestores[id] {
-				return 0, soloErr(http.StatusServiceUnavailable, "session_recovering", "消息队列正在恢复，请稍后重试")
-			}
-		}
-	}
 	row, err := s.load(id)
 	if err != nil {
 		return 0, err

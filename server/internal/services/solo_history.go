@@ -57,23 +57,19 @@ func (s *SoloService) MessagePage(ctx context.Context, id, user, before string, 
 	if result.HasMore {
 		rows = rows[:limit]
 	}
-	ids := make([]string, 0, len(rows))
+	var withoutPointer []string
 	for _, row := range rows {
-		if row.Role == "assistant" && row.EventLog == nil {
-			ids = append(ids, row.ID)
+		if row.EventLog == nil {
+			withoutPointer = append(withoutPointer, row.ID)
 		}
 	}
-	if len(ids) > 0 {
-		var legacyIDs []string
-		if err := s.db.WithContext(ctx).Model(&models.SoloMessage{}).Where("session_id = ? AND id IN ? AND events IS NOT NULL AND events NOT IN ?", id, ids, []string{"", "null", "[]"}).Pluck("id", &legacyIDs).Error; err != nil {
+	if len(withoutPointer) > 0 {
+		var incomplete int64
+		if err := s.db.WithContext(ctx).Table("solo_messages").Where("session_id = ? AND id IN ? AND events IS NOT NULL AND events NOT IN ?", id, withoutPointer, []string{"", "null"}).Count(&incomplete).Error; err != nil {
 			return result, err
 		}
-		legacy := map[string]bool{}
-		for _, mid := range legacyIDs {
-			legacy[mid] = true
-		}
-		for i := range rows {
-			rows[i].LegacyEvents = legacy[rows[i].ID]
+		if incomplete != 0 {
+			return result, historymigration.ErrInvalidHistory
 		}
 	}
 	for i := len(rows) - 1; i >= 0; i-- {
@@ -96,8 +92,8 @@ type SoloMessageEventPage struct {
 }
 
 // MessageEvents authorizes the specific message before looking up any body.
-// New history is read in bounded journal pages; old inline history remains a
-// migration reader and honestly marks the former 6000-event truncation bound.
+// Imported history and new events use bounded journal pages. Imported sources
+// retain their honest warning at the former 6000-event truncation bound.
 func (s *SoloService) MessageEvents(ctx context.Context, id, user, messageID string, after int64) (SoloMessageEventPage, error) {
 	result := SoloMessageEventPage{JournalPage: chatsession.JournalPage{Items: []chatsession.JournalEntry{}, Next: after, Head: -1}}
 	if _, err := s.Require(id, user); err != nil {
@@ -146,28 +142,15 @@ func (s *SoloService) MessageEvents(ctx context.Context, id, user, messageID str
 		}
 		return result, nil
 	}
-	message, err := readSoloMessage(s.db.WithContext(ctx).Where("id = ? AND session_id = ?", messageID, id), soloMessageEvents)
-	if err != nil {
+	var source struct{ Events *string }
+	if err := s.db.WithContext(ctx).Table("solo_messages").Select("events").Where("id = ? AND session_id = ?", messageID, id).Take(&source).Error; err != nil {
 		return result, err
 	}
-	result.Head = int64(len(message.Events)) - 1
-	if after < -1 || after > result.Head {
+	if source.Events != nil && *source.Events != "" && *source.Events != "null" {
+		return result, historymigration.ErrInvalidHistory
+	}
+	if after != -1 {
 		return result, chatsession.ErrJournalCursor
 	}
-	through := after + 256
-	if through > result.Head {
-		through = result.Head
-	}
-	bytes := 0
-	for seq := after + 1; seq <= through; seq++ {
-		data := message.Events[seq]
-		if len(result.Items) > 0 && bytes+len(data) > chatsession.JournalPageBytes {
-			break
-		}
-		result.Items = append(result.Items, chatsession.JournalEntry{Seq: uint64(seq), Type: chatsession.FrameAcp, TurnID: message.TurnID, At: message.CreatedAt, Data: data})
-		result.Next, bytes = seq, bytes+len(data)
-	}
-	result.HasMore = result.Next < result.Head
-	result.LegacyIncomplete = len(message.Events) >= 6000
 	return result, nil
 }

@@ -8,7 +8,18 @@ import (
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/models"
+	"gorm.io/gorm"
 )
+
+// These fixtures represent a primary written by the migration release, before
+// cleanup startup required its physical closure. They must not use the new
+// first-install bootstrap to fabricate that provenance.
+func seedPriorPrimary(db *gorm.DB, target Location) error {
+	if err := db.AutoMigrate(&Location{}); err != nil {
+		return err
+	}
+	return db.Create(&target).Error
+}
 
 func TestLocalStorageBootstrapAndStableReferences(t *testing.T) {
 	dir := t.TempDir()
@@ -55,15 +66,11 @@ func TestStorageLocationCannotSilentlySwitchPhysicalData(t *testing.T) {
 	if err = bindLocation(db, local); err != nil {
 		t.Fatal(err)
 	}
-	if err = bindLocation(db, remote); err != nil {
-		t.Fatal(err)
+	if err = bindLocation(db, remote); err == nil {
+		t.Fatal("cleanup silently promoted a local primary without an offline replica")
 	}
-	if err = bindLocation(db, remote); err != nil {
-		t.Fatal(err)
-	}
-	var legacy Location
-	if err = db.First(&legacy, "name = ?", "legacy-local-"+local.Fingerprint[:12]).Error; err != nil || legacy.LocalRoot != root {
-		t.Fatalf("legacy source lost: %+v err=%v", legacy, err)
+	if err = bindLocation(db, local); err != nil {
+		t.Fatal("failed promotion changed the original primary", err)
 	}
 	changed := remote
 	changed.Bucket = "empty-other-bucket"
@@ -71,12 +78,13 @@ func TestStorageLocationCannotSilentlySwitchPhysicalData(t *testing.T) {
 	if err = bindLocation(db, changed); err == nil {
 		t.Fatal("new bucket silently replaced historical object location")
 	}
-	if err = bindLocation(db, local); err == nil {
-		t.Fatal("switching back to an incomplete local directory was allowed")
-	}
 	var current Location
-	if err = db.First(&current, "name = ?", "primary").Error; err != nil || current.Bucket != remote.Bucket {
+	if err = db.First(&current, "name = ?", "primary").Error; err != nil || current.Fingerprint != local.Fingerprint || current.Driver != "local" {
 		t.Fatalf("failed switch mutated primary: %+v err=%v", current, err)
+	}
+	var locations int64
+	if err = db.Model(&Location{}).Count(&locations).Error; err != nil || locations != 1 {
+		t.Fatalf("automatic promotion retained new catalogue entries: %d %v", locations, err)
 	}
 }
 

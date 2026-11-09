@@ -197,7 +197,6 @@ type SoloMessage struct {
 	PreviewShared bool              `json:"-"`
 	Events        []json.RawMessage `gorm:"serializer:filejson" json:"events,omitempty"`
 	EventLog      *ChatEventLog     `gorm:"serializer:json" json:"eventLog,omitempty"`
-	LegacyEvents  bool              `gorm:"-" json:"legacyEvents,omitempty"`
 	// References are the contexts the user explicitly picked for this turn.
 	// They are the only authority read_reference accepts.
 	References []MessageReference `gorm:"column:message_references;serializer:json" json:"references,omitempty"`

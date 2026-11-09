@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/filestore"
@@ -154,7 +155,7 @@ func importMessage(ctx context.Context, db *gorm.DB, files *filestore.Store, own
 	if err := db.WithContext(ctx).Table("solo_sessions").Where("id = ?", session).Count(&parents).Error; err != nil || parents != 1 {
 		return zero, errors.Join(ErrInvalidHistory, err)
 	}
-	data, err := files.LoadBounded(ctx, *source.Events, filestore.JSON, MaxSourceBytes)
+	data, err := loadOfflineSource(ctx, files, *source.Events)
 	if err != nil {
 		return zero, err
 	}
@@ -255,6 +256,22 @@ func importMessage(ctx context.Context, db *gorm.DB, files *filestore.Store, own
 		return zero, err
 	}
 	return plan, verifyPlan(ctx, db, files, source, plan)
+}
+
+// loadOfflineSource is the only inline legacy body reader. importMessage calls
+// it only after validating the held maintenance owner and stopped runtimes.
+// Runtime Load/serializer paths deliberately cannot decode these old cells.
+func loadOfflineSource(ctx context.Context, files *filestore.Store, raw string) ([]byte, error) {
+	if filestore.IsRef(raw) {
+		return files.LoadBounded(ctx, raw, filestore.JSON, MaxSourceBytes)
+	}
+	if strings.HasPrefix(raw, filestore.Prefix) || int64(len(raw)) > MaxSourceBytes {
+		return nil, ErrInvalidHistory
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return []byte(raw), nil
 }
 
 func verifyPlan(ctx context.Context, db *gorm.DB, files *filestore.Store, source sourceMessage, plan importPlan) error {

@@ -22,11 +22,24 @@ func frozenRetryEvent(t *testing.T, db *gorm.DB, id string, session models.SoloS
 	if err != nil {
 		t.Fatal(err)
 	}
-	event := workflowEventRecord{ID: id, RunID: "run-" + id, Version: 1, SoloID: session.ID, UserID: session.UserID, Kind: "completed", Payload: string(body), Disposition: "pending"}
+	event := workflowEventRecord{ID: id, RunID: "run-" + id, Version: 1, SoloID: session.ID, UserID: session.UserID, Kind: "completed", Payload: frozenRetryPayload(t, db, string(body)), Disposition: "pending"}
 	if err := db.Create(&event).Error; err != nil {
 		t.Fatal(err)
 	}
 	return event
+}
+
+func frozenRetryPayload(t *testing.T, db *gorm.DB, body string) string {
+	t.Helper()
+	files, err := filestore.FromDB(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := files.Prepare(t.Context(), strings.NewReader(body), filestore.Text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return prepared.Ref()
 }
 
 func dueWorkflowEvent(t *testing.T, db *gorm.DB, id string) {
@@ -58,7 +71,7 @@ func TestWorkflowDeliveryBadHeadDoesNotBlockOtherUsersAndRetriesAfterRestart(t *
 				repair = map[string]any{"payload": bad.Payload}
 				// These nullable source columns represent an older migrated v0
 				// row. Its retry CAS still has to match the decoded zero values.
-				if err := db.Model(&workflowEventRecord{}).Where("id = ?", bad.ID).Updates(map[string]any{"payload": "{private-other-user-result", "source_version": nil, "source_count": nil, "source_fingerprint": nil}).Error; err != nil {
+				if err := db.Model(&workflowEventRecord{}).Where("id = ?", bad.ID).Updates(map[string]any{"payload": frozenRetryPayload(t, db, "{private-other-user-result"), "source_version": nil, "source_count": nil, "source_fingerprint": nil}).Error; err != nil {
 					t.Fatal(err)
 				}
 				stage = "decode_payload"
@@ -305,12 +318,12 @@ func TestWorkflowDeliveryBackoffDoesNotFillGlobalBatchWithDeferredHeads(t *testi
 	var gets atomic.Int32
 	objects.onOpen = func(context.Context) error {
 		gets.Add(1)
-		return errors.New("deferred missing source must not be loaded")
+		return nil // A due canonical body requires one GET; deferred ones do not.
 	}
 	if err := NewSoloService(db, nil, nil, nil).DeliverWorkflowEvents(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.First(&healthy, "id = ?", healthy.ID).Error; err != nil || healthy.Disposition != "delivered" || gets.Load() != 0 {
+	if err := db.First(&healthy, "id = ?", healthy.ID).Error; err != nil || healthy.Disposition != "delivered" || gets.Load() != 1 {
 		t.Fatalf("deferred heads occupied the global batch or fetched missing objects: %+v GET=%d %v", healthy, gets.Load(), err)
 	}
 	var pending int64

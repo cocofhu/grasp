@@ -212,8 +212,8 @@ func (s *SoloService) soloQueueReady(id string) (bool, error) {
 	return true, nil
 }
 
-// RestoreQueuedTurns upgrades the old pending set once, then schedules durable
-// commands. It never copies a stale process's whole FIFO back over SQL.
+// RestoreQueuedTurns schedules accepted durable commands. Retained legacy
+// requests remain quarantined evidence and are never imported into this queue.
 func (s *SoloService) RestoreQueuedTurns() {
 	s.restoreMu.Lock()
 	defer s.restoreMu.Unlock()
@@ -227,9 +227,6 @@ func (s *SoloService) RestoreQueuedTurns() {
 
 func (s *SoloService) maintainSoloQueuesLocked() {
 	s.restoreUnboundSoloCreations()
-	if err := s.importSoloQueuesLocked(); err != nil {
-		log.Error().Err(err).Msg("Solo queue migration deferred; legacy requests retained")
-	}
 	if err := s.durable.ReconcileRetired(context.Background(), soloPendingSurface); err != nil {
 		log.Warn().Err(err).Msg("closed Solo queue recovery deferred")
 	}
@@ -257,77 +254,6 @@ func (s *SoloService) recoverSoloNoticesLocked() {
 			log.Warn().Err(err).Str("turn", turn.ID).Msg("Solo interruption notice remains pending")
 		}
 	}
-}
-
-func (s *SoloService) importSoloQueuesLocked() error {
-	var keys []string
-	if err := s.db.Model(&models.ChatPendingTurn{}).Where("surface = ?", soloPendingSurface).Distinct().Pluck("session_key", &keys).Error; err != nil {
-		return err
-	}
-	var failures []error
-	for _, id := range keys {
-		var row models.SoloSession
-		if err := s.db.Select("id", "user_id", "status").First(&row, "id = ?", id).Error; err != nil {
-			// Preserve orphaned requests for repair instead of dropping them.
-			failures = append(failures, err)
-			continue
-		}
-		imported, err := s.durable.ImportLegacy(context.Background(), soloQueueScope(id), row.UserID, func(tx *gorm.DB, old models.ChatPendingTurn) (string, string, error) {
-			return s.classifyLegacySoloTurn(tx, id, row.Status, old)
-		})
-		if err != nil {
-			failures = append(failures, err)
-			continue
-		}
-		delete(s.deferredRestores, id)
-		for _, turn := range imported {
-			if turn.State == chatsession.TurnUnknown {
-				if err := s.recoverSoloReceipt(id, turn); err != nil {
-					failures = append(failures, err)
-				}
-			}
-		}
-	}
-	return errors.Join(failures...)
-}
-
-func (s *SoloService) classifyLegacySoloTurn(tx *gorm.DB, id, status string, old models.ChatPendingTurn) (string, string, error) {
-	if status == models.SoloStatusClosed {
-		return chatsession.TurnCancelled, "session_closed", nil
-	}
-	var q soloTurn
-	if err := json.Unmarshal(old.Payload, &q); err != nil || q.ID != old.ID {
-		return chatsession.TurnUnknown, "legacy_payload_invalid", nil
-	}
-	if !old.Started {
-		return chatsession.TurnQueued, "", nil
-	}
-	var human int64
-	if err := tx.Model(&models.SoloMessage{}).Where("id = ? AND session_id = ? AND role = ?", old.ID, id, "user").Count(&human).Error; err != nil {
-		return "", "", err
-	}
-	// Legacy started flags lack a durable dispatch fence. An absent transcript
-	// row is not permission to repeat an external effect after a migration.
-	if human == 0 {
-		return chatsession.TurnUnknown, "legacy_interrupted", nil
-	}
-	var reply models.SoloMessage
-	err := tx.Select("id", "status").Where("session_id = ? AND role = ? AND (id = ? OR turn_id = ?)", id, "assistant", "reply:"+old.ID, old.ID).First(&reply).Error
-	if err == nil {
-		state := chatsession.TurnSucceeded
-		if reply.Status == "stopped" {
-			state = chatsession.TurnCancelled
-		} else if reply.Status == "failed" {
-			state = chatsession.TurnFailed
-		} else if reply.Status == "unknown" {
-			state = chatsession.TurnUnknown
-		}
-		return state, "legacy_completed", nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", "", err
-	}
-	return chatsession.TurnUnknown, "legacy_interrupted", nil
 }
 
 func (s *SoloService) wakeSoloQueuesLocked() {
@@ -418,11 +344,6 @@ func (s *SoloService) retryDeferredRestores(sandboxID uint) {
 	s.restoreMu.Lock()
 	defer s.restoreMu.Unlock()
 	if s.restoreEnabled {
-		if len(s.deferredRestores) > 0 {
-			if err := s.importSoloQueuesLocked(); err != nil {
-				return
-			}
-		}
 		var ids []string
 		if err := s.db.Model(&models.SoloSession{}).Where("sandbox_id = ?", sandboxID).Pluck("id", &ids).Error; err != nil {
 			return

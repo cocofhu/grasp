@@ -44,9 +44,8 @@ func TestPreparedPublicationIsStoreBoundAndReadsExactBytes(t *testing.T) {
 		t.Fatalf("body was interpreted as another reference: %q %v", got, err)
 	}
 	inline := "legacy\x00\xff bytes"
-	got, err = store.Load(context.Background(), inline, filestore.Bytes)
-	if err != nil || string(got) != inline {
-		t.Fatalf("legacy bytes changed: %q %v", got, err)
+	if _, err = store.Load(context.Background(), inline, filestore.Bytes); !errors.Is(err, filestore.ErrNonCanonicalPayload) {
+		t.Fatalf("runtime accepted unconverted bytes: %v", err)
 	}
 	if _, err := store.Load(context.Background(), ref, filestore.JSON); err == nil {
 		t.Fatal("wrong owner encoding accepted")
@@ -87,7 +86,7 @@ func TestPreparedFailedPublicationNeverProducesProof(t *testing.T) {
 	}
 }
 
-func TestPreparedBoundedLoadLimitsInlineAndReferencesAndVerifiesBytes(t *testing.T) {
+func TestPreparedBoundedLoadRejectsInlineAndLimitsVerifiedReferences(t *testing.T) {
 	store, err := filestore.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +98,10 @@ func TestPreparedBoundedLoadLimitsInlineAndReferencesAndVerifiesBytes(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, raw := range []string{body, prepared.Ref()} {
+	if _, err := store.LoadBounded(ctx, body, filestore.Bytes, 1024); !errors.Is(err, filestore.ErrNonCanonicalPayload) {
+		t.Fatalf("bounded runtime loader accepted inline bytes: %v", err)
+	}
+	for _, raw := range []string{prepared.Ref()} {
 		if _, err := store.LoadBounded(ctx, raw, filestore.Bytes, int64(len(body)-1)); err == nil {
 			t.Fatal("oversize body accepted")
 		}
@@ -122,5 +124,33 @@ func TestPreparedBoundedLoadLimitsInlineAndReferencesAndVerifiesBytes(t *testing
 	}
 	if _, err := store.LoadBounded(ctx, prepared.Ref(), filestore.JSON, 1024); err == nil {
 		t.Fatal("bounded read skipped owner encoding validation")
+	}
+}
+
+func TestRuntimeLoadAcceptsOnlyDefinedEmptyValuesWithoutObjectAccess(t *testing.T) {
+	store, err := filestore.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(store.Close)
+	if err := store.SetObjectStore(&objectBackend{err: errors.New("must not access storage")}); err != nil {
+		t.Fatal(err)
+	}
+	for _, encoding := range []string{filestore.Text, filestore.JSON, filestore.Bytes, filestore.Image, filestore.Binary} {
+		got, err := store.Load(t.Context(), "", encoding)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("empty %s=%q %v", encoding, got, err)
+		}
+		got, err = store.Load(t.Context(), "null", encoding)
+		if encoding == filestore.JSON {
+			if err != nil || string(got) != "null" {
+				t.Fatal(got, err)
+			}
+		} else if !errors.Is(err, filestore.ErrNonCanonicalPayload) {
+			t.Fatalf("literal null text/bytes accepted without a reference: %s %v", encoding, err)
+		}
+	}
+	if _, err := store.Load(t.Context(), "", "unknown"); err == nil {
+		t.Fatal("undefined owner accepted an empty payload")
 	}
 }

@@ -147,9 +147,12 @@ func TestObjectAttachmentFailuresNeverSilentlyWriteOrReadAnotherBackend(t *testi
 	}
 	_ = reader.Close()
 	backend.err = os.ErrNotExist
-	reader, _, err = store.Open(context.Background(), old)
+	if _, _, err = store.Open(context.Background(), old); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("missing primary attachment was hidden by a retained local copy", err)
+	}
+	reader, _, err = legacy.Open(context.Background(), old)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("local driver lost the retained original", err)
 	}
 	_ = reader.Close()
 	backend.err = nil

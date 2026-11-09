@@ -26,6 +26,8 @@ type Verified struct {
 	size  int64
 }
 
+var ErrNonCanonicalPayload = errors.New("stored payload requires a canonical reference; run the migration release offline")
+
 func (v Verified) Ref() string { return v.ref }
 func (v Verified) Size() int64 { return v.size }
 
@@ -99,14 +101,14 @@ func (s *Store) PreparedRef(p Prepared) (string, error) {
 }
 
 // Load resolves a raw SQL cell only after its cursor/transaction is released.
-// Inline legacy values remain byte-for-byte readable. A reference is resolved
-// once; literal reference-looking text inside its body remains ordinary data.
+// Only canonical references and defined empty values are accepted. A reference
+// is resolved once; reference-looking text inside its body remains literal.
 func (s *Store) Load(ctx context.Context, raw, encoding string) ([]byte, error) {
 	return s.load(ctx, raw, encoding, 0)
 }
 
-// LoadBounded applies the same explicit loading and checksum contract to both
-// legacy inline values and referenced bodies, while bounding retained bytes.
+// LoadBounded applies the same explicit loading and checksum contract while
+// bounding retained bytes. Old inline SQL bodies require offline conversion.
 func (s *Store) LoadBounded(ctx context.Context, raw, encoding string, limit int64) ([]byte, error) {
 	if limit < 1 || limit == math.MaxInt64 {
 		return nil, errors.New("invalid stored payload size limit")
@@ -118,12 +120,17 @@ func (s *Store) load(ctx context.Context, raw, encoding string, limit int64) ([]
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	switch encoding {
+	case Text, JSON, Image, Binary, Bytes:
+	default:
+		return nil, errors.New("invalid payload owner encoding")
+	}
 	if !IsRef(raw) {
 		if strings.HasPrefix(raw, Prefix) {
 			return nil, errors.New("invalid stored file reference")
 		}
-		if limit > 0 && int64(len(raw)) > limit {
-			return nil, errors.New("stored payload exceeds size limit")
+		if raw != "" && !(encoding == JSON && raw == "null") {
+			return nil, ErrNonCanonicalPayload
 		}
 		return []byte(raw), nil
 	}

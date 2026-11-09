@@ -178,44 +178,6 @@ func TestDurableQueueDeferredAndRecoveredPreparationPrecedesReorderedWaiters(t *
 	}
 }
 
-func TestDurableLegacyClassifierCannotMakeStartedOrEmptyWorkReplayable(t *testing.T) {
-	db, store, _, scope := durableFixture(t)
-	rows := []models.ChatPendingTurn{
-		{ID: "started", Surface: scope.Surface, SessionKey: scope.Key, Started: true, Payload: []byte("original effect")},
-		{ID: "empty", Surface: scope.Surface, SessionKey: scope.Key},
-		{ID: "completed", Surface: scope.Surface, SessionKey: scope.Key, Started: true, Payload: []byte("proven terminal")},
-		{ID: "unsent", Surface: scope.Surface, SessionKey: scope.Key, Payload: []byte("safe pending")},
-	}
-	if err := db.Create(&rows).Error; err != nil {
-		t.Fatal(err)
-	}
-	imported, err := store.ImportLegacy(context.Background(), scope, "owner", func(_ *gorm.DB, row models.ChatPendingTurn) (string, string, error) {
-		if row.ID == "completed" {
-			return TurnSucceeded, "committed_result", nil
-		}
-		return TurnQueued, "classifier_optimism", nil
-	})
-	if err != nil || len(imported) != 4 {
-		t.Fatalf("legacy import failed: %+v %v", imported, err)
-	}
-	for _, row := range imported {
-		want := TurnUnknown
-		if row.ID == "unsent" {
-			want = TurnQueued
-		} else if row.ID == "completed" {
-			want = TurnSucceeded
-		}
-		if row.State != want || (terminalState(want) && row.FinishedAt == nil) {
-			t.Fatalf("classifier defeated conservative import: %+v", row)
-		}
-	}
-	lease := acquireQueue(t, store, scope)
-	claimed, err := store.Claim(context.Background(), lease)
-	if err != nil || claimed == nil || claimed.ID != "unsent" {
-		t.Fatalf("legacy work with unknown effects replayed: %+v %v", claimed, err)
-	}
-}
-
 func TestDurableQueueRenewUntilReturnsOnlyCommittedDeadline(t *testing.T) {
 	db, store, _, scope := durableFixture(t)
 	ctx := context.Background()

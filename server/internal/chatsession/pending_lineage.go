@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/filestore"
@@ -108,7 +109,7 @@ func (p *PendingStore) loadPending(ctx context.Context, surface string) ([]model
 	if p.execution != nil {
 		query = query.Where("NOT EXISTS (SELECT 1 FROM execution_quarantines q WHERE q.entity_kind = 'legacy_pending' AND q.entity_id = chat_pending_turns.id AND q.review_state = 'pending')")
 	}
-	var sources []legacyQueueSource
+	var sources []pendingLineageSource
 	if err := query.Find(&sources).Error; err != nil {
 		return nil, err
 	}
@@ -140,4 +141,15 @@ func (p *PendingStore) loadPending(ctx context.Context, surface string) ([]model
 		rows = append(rows, models.ChatPendingTurn{ID: source.ID, Surface: source.Surface, SessionKey: source.SessionKey, Position: source.Position, Started: source.Started, Payload: payload, CreatedAt: source.CreatedAt})
 	}
 	return rows, nil
+}
+
+// Raw SQL projection for current generic pending-store authorization.
+type pendingLineageSource struct {
+	ID         string
+	Surface    string
+	SessionKey string
+	Position   int
+	Started    bool
+	Payload    string
+	CreatedAt  time.Time
 }
