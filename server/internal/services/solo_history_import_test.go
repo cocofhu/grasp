@@ -126,15 +126,19 @@ func TestSoloImportedCommonLoaderFeedsMCPAndPreambleWithoutOldBody(t *testing.T)
 		t.Fatal(err)
 	}
 	// Metadata source-hash identity remains. The old array body is unavailable,
-	// so a successful result proves both consumers read canonical chunks.
+	// so returning the original tool result must read canonical chunks.
 	page, err := history.ReadConversationHistory(sb.RunID, mcp.ConversationHistoryRequest{View: "messages", Limit: 10})
 	if err != nil || len(page.Messages) != 1 || len(page.Messages[0].ToolResults) != 1 || page.Messages[0].ToolResults[0].Text != "original tool result" {
 		t.Fatal("MCP still depends on original Events body", page, err)
 	}
+	const currentInput = "current explicit input must not repeat in saved context"
+	if err := db.Create(&models.SoloMessage{ID: "current-context-input", SessionID: sb.ThreadID, Role: "user", Content: currentInput}).Error; err != nil {
+		t.Fatal(err)
+	}
 	solo := &SoloService{db: db}
-	pre, err := solo.contextPreambleChecked(sb.ThreadID, "", "handoff")
-	if err != nil || !strings.Contains(pre, "original tool result") || !strings.Contains(pre, "original visible answer") {
-		t.Fatal("context still depends on original Events body", pre, err)
+	pre, err := solo.contextPreambleChecked(sb.ThreadID, "current-context-input", "handoff")
+	if err != nil || !strings.Contains(pre, "original visible answer") || !strings.Contains(pre, "已保存的执行过程") || !strings.Contains(pre, "get_history") || strings.Contains(pre, currentInput) || strings.Contains(pre, "original tool result") {
+		t.Fatal("bounded context lost original reply, execution disclosure or exact-input boundary", pre, err)
 	}
 	row, err := readSoloMessage(db.Where("id = ?", "imported-tools"), soloMessageAll)
 	if err != nil || len(row.Events) != 2 || row.Execution != nil || row.TurnID != "" {

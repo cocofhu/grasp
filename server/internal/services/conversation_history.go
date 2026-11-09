@@ -168,6 +168,10 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 		cursor.BeforeID = rows[len(rows)-1].ID
 		page.NextCursor = encodeConversationCursor(cursor)
 	}
+	if err := s.hydrateJournalTools(scope, rows); err != nil {
+		page.HasMore, page.NextCursor = false, ""
+		return page, err
+	}
 	for i := len(rows) - 1; i >= 0; i-- {
 		page.Messages = append(page.Messages, conversationMessage(rows[i]))
 	}
