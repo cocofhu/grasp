@@ -29,6 +29,7 @@ import (
 
 type options struct {
 	config, target, mode, workdir, stopped string
+	executionControl                       string
 	offline, resume, activate              bool
 }
 
@@ -44,7 +45,8 @@ func main() {
 	var opts options
 	flag.StringVar(&opts.config, "config", "config.yaml", "source server configuration")
 	flag.StringVar(&opts.target, "target-storage", "", "private YAML containing destination storage config (no env overrides)")
-	flag.StringVar(&opts.mode, "mode", "status", "status, copy, restore, verify, or release")
+	flag.StringVar(&opts.mode, "mode", "status", "status, copy, verify, execution-init, restore-begin, restore-finalize, or release")
+	flag.StringVar(&opts.executionControl, "execution-control", "", "private storage YAML for the independent execution control namespace")
 	flag.StringVar(&opts.workdir, "workdir", "", "private durable checkpoint and SQL backup directory")
 	flag.StringVar(&opts.stopped, "acknowledge-stopped", "", "comma-separated exact IDs of registered processes you have confirmed stopped")
 	flag.BoolVar(&opts.offline, "offline", false, "attest all servers, scripts and external SQL writers are stopped")
@@ -72,6 +74,9 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 		return errors.New("could not load source configuration")
 	}
 	cfg := config.GetConfig()
+	if opts.mode == "execution-init" {
+		return initializeExecution(ctx, opts, cfg, output)
+	}
 	if cfg.Database.Driver != "mysql" {
 		if cfg.Database.Path == ":memory:" || strings.HasPrefix(cfg.Database.Path, "file:") {
 			return errors.New("storage administration requires an existing persistent SQLite file")
@@ -85,6 +90,9 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 		return err
 	}
 	defer func() { _ = database.Close(db) }()
+	if opts.mode == "restore-begin" || opts.mode == "restore-finalize" || opts.mode == "restore" {
+		return restoreExecution(ctx, opts, cfg, db, output)
+	}
 	if opts.mode == "status" {
 		status, err := storageguard.Inspect(ctx, db)
 		if err != nil {
@@ -120,6 +128,9 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 		return errors.New("this replica work directory is already in use")
 	}
 	if opts.mode == "release" {
+		if err := checkExecutionRelease(ctx, opts, cfg, db); err != nil {
+			return err
+		}
 		return storageguard.Leave(ctx, db, state.Header.ID)
 	}
 	if opts.mode == "copy" && state.Phase == "complete" {
@@ -194,18 +205,21 @@ func validateOptions(opts options) error {
 	switch opts.mode {
 	case "status":
 		return nil
-	case "copy", "restore", "verify", "release":
+	case "copy", "restore", "verify", "release", "execution-init", "restore-begin", "restore-finalize":
 	default:
 		return errors.New("unknown storage administration mode")
 	}
 	if !opts.offline || opts.workdir == "" {
 		return errors.New("storage administration requires --offline and --workdir; stop all replicas and external writers first")
 	}
-	if opts.mode != "release" && opts.target == "" {
+	if opts.mode != "release" && opts.mode != "execution-init" && opts.target == "" {
 		return errors.New("--target-storage is required")
 	}
 	if opts.activate && opts.mode != "copy" {
 		return errors.New("--switch is only used with copy; restore activates its verified replica")
+	}
+	if (opts.mode == "execution-init" || opts.mode == "restore" || opts.mode == "restore-begin" || opts.mode == "restore-finalize") && opts.executionControl == "" {
+		return errors.New("execution initialization and restore require --execution-control; run restore-begin before importing SQL")
 	}
 	return nil
 }

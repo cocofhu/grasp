@@ -1207,6 +1207,7 @@ func AllModels() []any {
 		&WorkflowEventSource{},
 		&WorkspaceSnapshot{}, &WorkspaceSnapshotJob{}, &WorkspaceRestore{},
 		&PayloadUploadHold{}, &PayloadUploadBudget{},
+		&ExecutionDataset{}, &ExecutionQuarantine{},
 	}
 }
 
