@@ -9,10 +9,12 @@ import (
 	"path"
 	"reflect"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sandbox-gateway/internal/driver"
 )
 
@@ -140,14 +142,8 @@ func (d *Driver) StartConfigured(ctx context.Context, id string, opts driver.Sta
 		return nil, err
 	}
 	// Re-read all identities after publication, before allowing any process.
-	current, err := deps.Get(ctx, dep.Name, metav1.GetOptions{})
+	current, err := d.waitColdReservationStopped(ctx, id, reserved, string(encoded))
 	if err != nil {
-		return nil, err
-	}
-	if current.UID != reserved.UID || current.ResourceVersion != reserved.ResourceVersion || !reflect.DeepEqual(current.Spec, reserved.Spec) || current.Annotations[coldAnnotation] != string(encoded) {
-		return nil, driver.ErrColdStartConflict
-	}
-	if err := d.validateColdDeployment(ctx, id, current); err != nil {
 		return nil, err
 	}
 	confirmedSecret, err := secrets.Get(ctx, secret.Name, metav1.GetOptions{})
@@ -179,6 +175,30 @@ func (d *Driver) StartConfigured(ctx context.Context, id string, opts driver.Sta
 		return nil, err
 	}
 	return &proof.ColdStartReceipt, nil
+}
+
+// Updating a Deployment annotation advances its generation. The controller
+// then advances observedGeneration through a status write, which necessarily
+// changes resourceVersion. Require the frozen resource/generation/spec/intent semantics,
+// wait for an actual stopped observation, and use that fresh RV for final CAS.
+func (d *Driver) waitColdReservationStopped(ctx context.Context, id string, reserved *appsv1.Deployment, annotation string) (*appsv1.Deployment, error) {
+	var current *appsv1.Deployment
+	err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 5*time.Second, true, func(ctx context.Context) (bool, error) {
+		dep, err := d.cs.AppsV1().Deployments(d.opts.Namespace).Get(ctx, reserved.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if dep.UID != reserved.UID || dep.Generation != reserved.Generation || dep.DeletionTimestamp != nil || !d.releaseLabels(id, dep.Labels) || !reflect.DeepEqual(dep.Spec, reserved.Spec) || dep.Annotations[coldAnnotation] != annotation {
+			return false, driver.ErrColdStartConflict
+		}
+		stopped, err := d.observedStopped(ctx, id, dep)
+		if err != nil || !stopped {
+			return false, err
+		}
+		current = dep
+		return true, nil
+	})
+	return current, err
 }
 
 func (d *Driver) validateColdDeployment(ctx context.Context, id string, dep *appsv1.Deployment) error {

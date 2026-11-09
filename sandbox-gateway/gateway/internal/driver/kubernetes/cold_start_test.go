@@ -246,6 +246,7 @@ func TestK8sColdConfigurationConcurrentChangePreservesStoppedUnknownAndNeverRepl
 					obj, _ := cs.Tracker().Get(appsv1.SchemeGroupVersion.WithResource("deployments"), "sandboxes", "sbx-original")
 					dep := obj.(*appsv1.Deployment).DeepCopy()
 					dep.ResourceVersion = "99"
+					dep.Spec.Template.Spec.Containers[0].Image = "unreviewed-image"
 					_ = cs.Tracker().Update(appsv1.SchemeGroupVersion.WithResource("deployments"), dep, "sandboxes")
 				case "late-pod":
 					_ = cs.Tracker().Add(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "late-original-process", Namespace: "sandboxes", Labels: d.selector("original")}, Status: corev1.PodStatus{Phase: corev1.PodRunning}})
