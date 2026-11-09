@@ -15,7 +15,9 @@ import (
 	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/services"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/schema"
 )
 
@@ -71,6 +73,9 @@ func (e *Engine) prepareExecutionRow(ctx context.Context, row any, create bool, 
 	}
 	now := time.Now()
 	for _, field := range statement.Schema.Fields {
+		if !result.newRow && result.table == "state_runs" && (field.DBName == "workspace_checkpoint_id" || field.DBName == "provider_attempt" || field.DBName == "provider_dispatch_state" || field.DBName == "provider_dispatched_at") {
+			continue
+		}
 		if field.DBName == "" || !wanted(field) || (!result.newRow && (!field.Updatable || field.PrimaryKey || field.AutoCreateTime > 0)) ||
 			(result.newRow && (!field.Creatable || field.AutoIncrement && field.ReflectValueOf(ctx, value).IsZero())) {
 			continue
@@ -224,6 +229,24 @@ func (e *Engine) executionPublish(ctx context.Context, runID string, row any, cr
 			return result
 		}
 		err = e.executionTransaction(ctx, runID, func(tx *gorm.DB) error {
+			if e.workspaceCheckpoints != nil && prepared.table == "state_runs" && !prepared.newRow {
+				if _, err := e.checkpointRun(tx.Statement.Context, tx, runID, true); err != nil {
+					return err
+				}
+				var current struct{ WorkspaceCheckpointID string }
+				if err := tx.Table("state_runs").Clauses(clause.Locking{Strength: "UPDATE"}).Select("workspace_checkpoint_id").Where("id = ?", prepared.keyVal).Take(&current).Error; err != nil {
+					return err
+				}
+				if current.WorkspaceCheckpointID != "" {
+					var checkpoint struct{ RouteState string }
+					if err := tx.Table("workflow_visit_checkpoints").Select("route_state").Take(&checkpoint, "id = ?", current.WorkspaceCheckpointID).Error; err != nil {
+						return err
+					}
+					if checkpoint.RouteState != "applied" {
+						return services.ErrWorkflowCheckpointBlocked
+					}
+				}
+			}
 			result = prepared.write(tx, where)
 			return result.Error
 		}, extra...)

@@ -67,6 +67,9 @@ func (e *Engine) ResumePausedRun(runID string, version uint64) error {
 		if version != run.ControlVersion {
 			return &services.AdmissionError{Code: "control_conflict", Message: "任务状态已变化，请刷新后重试", Status: 409}
 		}
+		if err := e.workflowCheckpointPendingTx(tx, runID); err != nil {
+			return err
+		}
 		if run.Status != "paused" && !run.PauseRequested {
 			return fmt.Errorf("任务没有待恢复的暂停")
 		}

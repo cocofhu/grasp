@@ -22,7 +22,7 @@ type PayloadField struct {
 // after the first portable SQL snapshots. An absent table in that immutable
 // snapshot cannot own references. Existing tables/columns still fail closed.
 func OptionalPayloadTable(table string) bool {
-	return table == "workflow_event_sources" || table == "payload_upload_holds"
+	return table == "workflow_event_sources" || table == "payload_upload_holds" || table == "workflow_visit_checkpoints"
 }
 
 // SkipMissingPayloadTable accepts an absent new table only when the frozen SQL
@@ -31,6 +31,21 @@ func OptionalPayloadTable(table string) bool {
 func SkipMissingPayloadTable(ctx context.Context, db *gorm.DB, table string) (bool, error) {
 	if !OptionalPayloadTable(table) {
 		return false, nil
+	}
+	if table == "workflow_visit_checkpoints" {
+		if db.Migrator().HasTable(table) {
+			return false, nil
+		}
+		if db.Migrator().HasColumn("state_runs", "workspace_checkpoint_id") {
+			var owners int64
+			if err := db.WithContext(ctx).Table("state_runs").Where("COALESCE(workspace_checkpoint_id, '') <> ''").Count(&owners).Error; err != nil {
+				return false, err
+			}
+			if owners != 0 {
+				return false, fmt.Errorf("workflow visits require missing payload table %s", table)
+			}
+		}
+		return true, nil
 	}
 	if table == "payload_upload_holds" {
 		hasHolds, hasBudgets := db.Migrator().HasTable(table), db.Migrator().HasTable("payload_upload_budgets")

@@ -16,15 +16,17 @@ import (
 	"strings"
 	"syscall"
 
+	"backend/internal/workspacebinding"
 	"backend/internal/workspacejob"
 )
 
 const nofollow = syscall.O_NOFOLLOW | syscall.O_NONBLOCK
 
 type Engine struct {
-	config Config
-	root   *os.Root
-	policy string
+	config  Config
+	root    *os.Root
+	policy  string
+	binding *workspacebinding.Manager
 }
 
 func New(config Config) (*Engine, error) {
@@ -79,7 +81,18 @@ func New(config Config) (*Engine, error) {
 func (e *Engine) Close() error { return e.root.Close() }
 
 func (e *Engine) NewSpec(paths, ignored []string) (Spec, error) {
-	return normalizeSpec(Spec{PolicyVersion: PolicyVersion, PolicySHA256: e.policy, Limits: e.config.Limits, Paths: paths, IncludeIgnored: ignored}, e.config.PrivatePaths)
+	spec := Spec{PolicyVersion: PolicyVersion, PolicySHA256: e.policy, Limits: e.config.Limits, Paths: paths, IncludeIgnored: ignored}
+	if e.binding != nil {
+		view, err := e.binding.Head()
+		if err != nil {
+			return Spec{}, err
+		}
+		if !view.Ready {
+			return Spec{}, workspacebinding.ErrUnknown
+		}
+		spec.Binding = &view.Head.Reference
+	}
+	return normalizeSpec(spec, e.config.PrivatePaths)
 }
 
 func (e *Engine) decode(body json.RawMessage) (Spec, error) {
@@ -105,7 +118,31 @@ func (e *Engine) Validate(body json.RawMessage) error {
 }
 
 func (e *Engine) Executors() map[string]workspacejob.Executor {
-	return map[string]workspacejob.Executor{"capture_files": e.capture}
+	return map[string]workspacejob.Executor{"capture_files": e.captureCurrent}
+}
+
+func (e *Engine) captureCurrent(ctx context.Context, h *workspacejob.Handle, body json.RawMessage) (json.RawMessage, error) {
+	if e.binding == nil {
+		return e.capture(ctx, h, body)
+	}
+	spec, err := e.decode(body)
+	if err != nil {
+		return nil, err
+	}
+	view, release, err := e.binding.Acquire(spec.Binding, true)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	copy := *e
+	copy.binding = nil
+	copy.config.Root = view.Path
+	copy.root, err = os.OpenRoot(view.Path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = copy.root.Close() }()
+	return copy.capture(ctx, h, body)
 }
 
 func descriptor(f *os.File) string {

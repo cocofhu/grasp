@@ -23,12 +23,14 @@ import (
 
 // Engine orchestrates workflow runs.
 type Engine struct {
-	db        *gorm.DB
-	execution *executionlineage.Controller
-	provider  runtime.ExecProvider
-	host      *mcp.Host
-	store     mcp.Store
-	broker    *Broker
+	db                   *gorm.DB
+	execution            *executionlineage.Controller
+	workspaceCheckpoints *services.WorkflowWorkspaceCheckpoints
+	checkpointActive     atomic.Int64
+	provider             runtime.ExecProvider
+	host                 *mcp.Host
+	store                mcp.Store
+	broker               *Broker
 	// sem bounds the number of runs actively executing (in the "running"
 	// state). Its capacity is the effective max_concurrent_runs and can be
 	// changed at runtime via SetMaxConcurrent (settings page).
@@ -37,8 +39,9 @@ type Engine struct {
 	// size 1 so signals coalesce and senders never block.
 	wake chan struct{}
 	// stop closes to end the dispatcher goroutine (tests / process shutdown).
-	stop     chan struct{}
-	stopOnce sync.Once
+	stop      chan struct{}
+	stopOnce  sync.Once
+	startOnce sync.Once
 
 	// autoRetryMax caps how many times a node that fails with retryable=true
 	// (and has no explicit failure/rollback edge) is auto-retried from the
@@ -176,6 +179,26 @@ func (e *Engine) SetPageHub(h *pagebridge.Hub) { e.pageHub = h }
 
 // New builds an engine.
 func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int, execution ...*executionlineage.Controller) *Engine {
+	var controller *executionlineage.Controller
+	if len(execution) > 0 {
+		controller = execution[0]
+	}
+	e := newEngine(db, provider, host, store, maxRuns, controller, nil)
+	e.Start()
+	return e
+}
+
+// NewConfigured installs every execution/checkpoint dependency before any
+// recovery or dispatch. Production calls Start after its one capture pipeline,
+// registry and current-authorization callbacks are completely wired.
+func NewConfigured(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int, execution *executionlineage.Controller, checkpoints *services.WorkflowWorkspaceCheckpoints) (*Engine, error) {
+	if execution == nil || checkpoints == nil {
+		return nil, services.ErrWorkspaceJobAuthority
+	}
+	return newEngine(db, provider, host, store, maxRuns, execution, checkpoints), nil
+}
+
+func newEngine(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int, execution *executionlineage.Controller, checkpoints *services.WorkflowWorkspaceCheckpoints) *Engine {
 	if maxRuns <= 0 {
 		maxRuns = 5
 	}
@@ -188,8 +211,9 @@ func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.S
 		adoptedSandboxes: map[string]bool{},
 		pendingTurns:     chatsession.NewPendingStore(db),
 	}
-	if len(execution) > 0 {
-		e.execution = execution[0]
+	e.workspaceCheckpoints = checkpoints
+	if execution != nil {
+		e.execution = execution
 		e.pendingTurns.SetExecutionController(e.execution)
 	}
 
@@ -201,12 +225,16 @@ func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.S
 
 	host.SetAfterWriteArtifact(e.syncAfterPrimaryArtifactWrite)
 	host.SetArtifactPreviewHook(e.setReactPreviewArtifact)
-	// Reconcile before the dispatcher starts so adopted runs reserve their
-	// slots ahead of the queued backlog.
-	e.reconcileInterrupted()
-
-	go e.dispatch()
 	return e
+}
+
+func (e *Engine) Start() {
+	e.startOnce.Do(func() {
+		// Reconcile before dispatch so retained/checkpointed visits can never
+		// compete with a new execution of their already-dispatched Agent.
+		e.reconcileInterrupted()
+		go e.dispatch()
+	})
 }
 
 // SetMaxConcurrent changes the live cap on simultaneously executing runs and

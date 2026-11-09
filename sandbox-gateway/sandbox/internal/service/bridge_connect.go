@@ -114,6 +114,11 @@ func (b *Bridge) StartDefaultAgent() {
 // artifact-store 等 mcpServers——若仍复用空会话，ACP session/new 永远看不到工具。
 // 因此「空 → 非空」MCP 升级会重建会话。
 func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
+	cwd, fsRoot, release, err := b.canonicalWorkspace(cwd, fsRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
 
@@ -124,6 +129,10 @@ func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool
 
 	b.mu.Lock()
 	if sessionUsable(b.sess) {
+		if !b.workspaceSessionMatches(b.sess, cwd) {
+			b.mu.Unlock()
+			return nil, ErrWorkspaceChanged
+		}
 		if !mcpUpgradeNeeded(b.lastMCP, mcp) {
 			p := b.sess
 			b.mu.Unlock()
@@ -187,6 +196,11 @@ func mcpServerSummary(mcp json.RawMessage) (count int, names []string) {
 // Connect 启动或替换 Agent 会话（由 AGENT_PROVIDER 选定的 provider 负责拉起对应 transport）。
 func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
 	cwd, fsRoot, mcp = b.inheritFromDefault(cwd, fsRoot, mcp)
+	cwd, fsRoot, release, rootErr := b.canonicalWorkspace(cwd, fsRoot)
+	if rootErr != nil {
+		return nil, rootErr
+	}
+	defer release()
 	if cwd == "" {
 		wd, err := os.Getwd()
 		if err != nil {

@@ -5,15 +5,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Identity exposes operation metadata to trusted in-process executors. It is
 // not a browser DTO or an ownership capability.
 type Identity struct {
-	ID         string
-	Resource   string
-	Lineage    string
-	Generation uint64
+	ID         string    `json:"id"`
+	Kind       string    `json:"kind"`
+	Resource   string    `json:"resource"`
+	Lineage    string    `json:"lineage"`
+	SHA256     string    `json:"sha256"`
+	Generation uint64    `json:"generation"`
+	Deadline   time.Time `json:"deadline"`
 }
 
 // SeparateSource rejects capturing the control journal/staging tree through
@@ -41,7 +45,7 @@ func (h *Handle) SeparateSource(source string) error {
 }
 
 func (h *Handle) Identity() Identity {
-	return Identity{ID: h.id, Resource: h.service.config.Resource, Lineage: h.service.config.Lineage, Generation: h.generation}
+	return h.identity
 }
 
 // Guard confines an individual trusted filesystem operation to this live

@@ -267,7 +267,9 @@
       "useSessionModelCatalog.ts",
       "useSoloChat.ts",
       "useSoloLauncher.ts",
-      "useSoloSessions.ts"
+      "useSoloSessions.ts",
+      "useWorkspaceSnapshots.ts",
+      "workspaceRequestJournal.ts"
     ],
     "workflow": [
       "agentCapabilities.ts",
@@ -295,7 +297,7 @@
     "pm": 7,
     "run": 76,
     "shared": 39,
-    "solo": 16,
+    "solo": 18,
     "workflow": 3,
     "workspace": 7
   }

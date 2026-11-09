@@ -2,11 +2,8 @@ package services
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"slices"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/filestore"
@@ -152,6 +149,13 @@ func (p *WorkspaceSnapshotPipeline) admitted(ctx context.Context, tx *gorm.DB, r
 			return ErrWorkspaceJobInvalid
 		}
 		snapshot := models.WorkspaceSnapshot{ID: row.ID, JobID: row.ID, ActorID: row.ActorID, ScopeKind: row.ScopeKind, ScopeID: row.ScopeID, SourceSandboxID: row.SandboxID, RunID: source.RunID, StateRunID: source.StateRunID, NodeID: source.NodeID, Iteration: source.Iteration, RunAttempt: source.RunAttempt, ProviderAttempt: source.ProviderAttempt, Lineage: row.Lineage, State: "capturing", PolicyVersion: spec.PolicyVersion}
+		if spec.Binding != nil {
+			proof, ok := ctx.Value(workspaceCaptureAdmissionKey{}).(workspaceCaptureAdmission)
+			if !ok || proof.pipeline != p || proof.binding != *spec.Binding || !restoreDigest(proof.fingerprint) {
+				return ErrWorkspaceJobAuthority
+			}
+			snapshot.SourceBindingFingerprint = proof.fingerprint
+		}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&snapshot).Error; err != nil {
 			return err
 		}
@@ -213,7 +217,9 @@ func (p *WorkspaceSnapshotPipeline) publicationSource(ctx context.Context, tx *g
 	if capture.Kind != "capture_files" || capture.State != "executed" || capture.RuntimeSHA256 != body.SourceSHA256 || capture.RuntimeGeneration != snapshot.SourceGeneration || snapshot.SourceSandboxID != row.SandboxID || snapshot.ActorID != row.ActorID || snapshot.ScopeKind != row.ScopeKind || snapshot.ScopeID != row.ScopeID || snapshot.Lineage != row.Lineage || capture.Lineage != row.Lineage || workspacefiles.Decode([]byte(capture.Result), &receipt) != nil || receipt != body.Receipt || (snapshot.PublicationJobID != "" && snapshot.PublicationJobID != row.ID) {
 		return snapshot, capture, body, ErrWorkspaceJobConflict
 	}
-	if err := p.authorizeJob(ctx, tx, capture); err != nil {
+	// The capture is immutable evidence, not a second execution. The private
+	// current-grant proof belongs to this read_snapshot operation only.
+	if err := p.authorizeJob(ctx, tx, row); err != nil {
 		return snapshot, capture, body, err
 	}
 	return snapshot, capture, body, nil
@@ -238,24 +244,35 @@ func (p *WorkspaceSnapshotPipeline) Run(ctx context.Context) error {
 			<-done
 			return context.Cause(ctx)
 		case <-tick.C:
-			lineage, err := p.Jobs.options.Authority.Current(work)
-			if err != nil || p.Jobs.verify(work, lineage) != nil {
-				continue
-			}
-			var snapshots []models.WorkspaceSnapshot
-			if p.db.WithContext(work).Where("lineage = ? AND state = ? AND id > ?", lineage, "captured", cursor).Order("id").Limit(p.Jobs.options.MaxWorkers).Find(&snapshots).Error == nil {
-				if len(snapshots) == 0 {
-					cursor = ""
-				}
-				for _, snapshot := range snapshots {
-					// Failed authorization for an older source must not starve
-					// later captures. Discovery never replays an unknown job.
-					cursor = snapshot.ID
-					_ = p.QueuePublication(work, snapshot.ActorID, snapshot.ID)
-				}
-			}
+			cursor = p.discoverPublication(work, cursor)
 		}
 	}
+}
+
+func (p *WorkspaceSnapshotPipeline) discoverPublication(ctx context.Context, cursor string) string {
+	p.Jobs.operations.Add(1)
+	defer p.Jobs.operations.Add(-1)
+	if p.Jobs.paused.Load() {
+		return cursor
+	}
+	lineage, err := p.Jobs.options.Authority.Current(ctx)
+	if err != nil || p.Jobs.verify(ctx, lineage) != nil {
+		return cursor
+	}
+	var snapshots []models.WorkspaceSnapshot
+	if p.db.WithContext(ctx).Where("lineage = ? AND state = ? AND id > ?", lineage, "captured", cursor).Order("id").Limit(p.Jobs.options.MaxWorkers).Find(&snapshots).Error != nil {
+		return cursor
+	}
+	if len(snapshots) == 0 {
+		return ""
+	}
+	for _, snapshot := range snapshots {
+		// Failed authorization for an older source must not starve later
+		// captures. Discovery never replays a dispatched unknown operation.
+		cursor = snapshot.ID
+		_ = p.QueuePublication(ctx, snapshot.ActorID, snapshot.ID)
+	}
+	return cursor
 }
 
 func (p *WorkspaceSnapshotPipeline) QueuePublication(ctx context.Context, actor, id string) error {
@@ -281,52 +298,13 @@ func (p *WorkspaceSnapshotPipeline) QueuePublication(ctx context.Context, actor,
 
 type WorkspaceCaptureInput struct {
 	ClientRequestID, ScopeKind, ScopeID string
+	ExpectedBinding                     string
+	Binding                             *sandbox.WorkspaceBindingReference
 	SandboxID                           uint
 	Paths, IncludeIgnored               []string
 	Duration                            time.Duration
 }
 
 func (p *WorkspaceSnapshotPipeline) Capture(ctx context.Context, actor string, in WorkspaceCaptureInput) (models.WorkspaceSnapshotJob, error) {
-	probe := models.WorkspaceSnapshotJob{ActorID: actor, ScopeKind: in.ScopeKind, ScopeID: in.ScopeID, SandboxID: in.SandboxID, Kind: "capture_files"}
-	if err := p.authorize(ctx, p.db.WithContext(ctx), probe); err != nil {
-		return models.WorkspaceSnapshotJob{}, err
-	}
-	paths, ignored := slices.Clone(in.Paths), slices.Clone(in.IncludeIgnored)
-	slices.Sort(paths)
-	slices.Sort(ignored)
-	identity := sha256.Sum256([]byte(actor + "\x00" + in.ScopeKind + "\x00" + in.ScopeID + "\x00" + in.ClientRequestID))
-	var prior models.WorkspaceSnapshotJob
-	err := p.db.WithContext(ctx).Take(&prior, "id = ?", hex.EncodeToString(identity[:])).Error
-	if err == nil {
-		var frozen workspacefiles.Spec
-		if prior.Kind != "capture_files" || prior.SandboxID != in.SandboxID || workspacefiles.Decode([]byte(prior.Body), &frozen) != nil || !slices.Equal(frozen.Paths, paths) || !slices.Equal(frozen.IncludeIgnored, ignored) {
-			return models.WorkspaceSnapshotJob{}, ErrWorkspaceJobConflict
-		}
-		// An uncertain browser response reuses the frozen policy/body and does
-		// not require the provider to remain online or fetch a new policy.
-		return p.Jobs.Admit(ctx, actor, WorkspaceJobInput{ClientRequestID: in.ClientRequestID, ScopeKind: in.ScopeKind, ScopeID: in.ScopeID, SandboxID: in.SandboxID, Kind: "capture_files", Body: json.RawMessage(prior.Body), Duration: in.Duration})
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return models.WorkspaceSnapshotJob{}, err
-	}
-	remote, err := p.Jobs.options.Remote(ctx, in.SandboxID)
-	if err != nil {
-		return models.WorkspaceSnapshotJob{}, err
-	}
-	files, ok := remote.(WorkspaceFileRemote)
-	if !ok {
-		return models.WorkspaceSnapshotJob{}, ErrWorkspaceJobUnsupported
-	}
-	caps, err := files.FileCapabilities(ctx)
-	if err != nil {
-		return models.WorkspaceSnapshotJob{}, err
-	}
-	if caps.Version != 1 || !caps.Capture || !caps.Read || caps.PolicyVersion != workspacefiles.PolicyVersion || caps.Consistency != "verified_copy" || p.Jobs.verify(ctx, caps.Jobs.Lineage) != nil {
-		return models.WorkspaceSnapshotJob{}, ErrWorkspaceJobUnsupported
-	}
-	body, err := json.Marshal(workspacefiles.Spec{PolicyVersion: caps.PolicyVersion, PolicySHA256: caps.PolicySHA256, Limits: caps.Limits, Paths: paths, IncludeIgnored: ignored})
-	if err != nil {
-		return models.WorkspaceSnapshotJob{}, err
-	}
-	return p.Jobs.Admit(ctx, actor, WorkspaceJobInput{ClientRequestID: in.ClientRequestID, ScopeKind: in.ScopeKind, ScopeID: in.ScopeID, SandboxID: in.SandboxID, Kind: "capture_files", Body: body, Duration: in.Duration})
+	return p.capture(ctx, actor, in)
 }

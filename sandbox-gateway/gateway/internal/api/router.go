@@ -38,6 +38,13 @@ func NewRouter(h *Handler, cfg *config.Config) *gin.Engine {
 		v1.GET("/sandboxes/:id/logs", h.Logs)
 		v1.GET("/sandboxes/:id/exit", h.LastExit)
 	}
+	release := v1.Group("/sandboxes/:id/releases")
+	release.Use(requireTransportAuth(cfg.Auth.APIKeys))
+	release.GET("/capabilities", h.ReleaseCapabilities)
+	release.POST("", h.PreviewEnvironmentRelease)
+	release.POST("/:releaseId/confirm", h.ConfirmEnvironmentRelease)
+	release.PATCH("/:releaseId/fence", h.RenewEnvironmentRelease)
+	release.GET("/:releaseId", h.GetEnvironmentRelease)
 	v2 := r.Group("/api/v2")
 	v2.Use(requireTransportAuth(cfg.Auth.APIKeys), APIKeyAuth(cfg.Auth.APIKeys))
 	v2.GET("/info", gatewayInfo(cfg))

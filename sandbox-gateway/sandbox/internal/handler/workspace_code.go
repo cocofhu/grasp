@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"backend/internal/workspacebinding"
 	"backend/internal/workspacegit"
 	"github.com/gin-gonic/gin"
 )
@@ -20,10 +21,27 @@ type WorkspaceCode struct {
 	fenceMu    sync.Mutex
 	generation uint64
 	active     context.CancelFunc
+	binding    *workspacebinding.Manager
 }
 
 func NewWorkspaceCode(root string) *WorkspaceCode {
 	return &WorkspaceCode{service: &workspacegit.Service{Root: root}}
+}
+
+func NewBoundWorkspaceCode(binding *workspacebinding.Manager) *WorkspaceCode {
+	return &WorkspaceCode{binding: binding}
+}
+
+func (h *WorkspaceCode) current(c *gin.Context) (*workspacegit.Service, func(), bool) {
+	if h.binding == nil {
+		return h.service, func() {}, true
+	}
+	view, release, err := h.binding.Acquire(nil, false)
+	if err != nil {
+		bindingError(c, err)
+		return nil, nil, false
+	}
+	return &workspacegit.Service{Root: view.Path}, release, true
 }
 
 // The bridge accepts only a live acknowledged server lease. The absolute
@@ -68,9 +86,14 @@ func codeError(c *gin.Context, err error) {
 	c.JSON(status, gin.H{"code": code, "error": code})
 }
 func (h *WorkspaceCode) Inventory(c *gin.Context) {
+	service, release, ok := h.current(c)
+	if !ok {
+		return
+	}
+	defer release()
 	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Minute)
 	defer cancel()
-	value, err := h.service.Inventory(ctx)
+	value, err := service.Inventory(ctx)
 	if err != nil {
 		codeError(c, err)
 		return
@@ -78,6 +101,11 @@ func (h *WorkspaceCode) Inventory(c *gin.Context) {
 	c.JSON(http.StatusOK, value)
 }
 func (h *WorkspaceCode) Export(c *gin.Context) {
+	service, release, rootOK := h.current(c)
+	if !rootOK {
+		return
+	}
+	defer release()
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 	var body struct {
 		Repositories []workspacegit.Selection `json:"repositories"`
@@ -97,7 +125,7 @@ func (h *WorkspaceCode) Export(c *gin.Context) {
 		return
 	}
 	defer func() { _ = f.Close(); _ = os.Remove(f.Name()) }()
-	if _, err = h.service.Export(ctx, body.Repositories, f); err != nil {
+	if _, err = service.Export(ctx, body.Repositories, f); err != nil {
 		codeError(c, err)
 		return
 	}
@@ -113,13 +141,18 @@ func (h *WorkspaceCode) Export(c *gin.Context) {
 	c.DataFromReader(http.StatusOK, info.Size(), "application/gzip", f, nil)
 }
 func (h *WorkspaceCode) Import(c *gin.Context) {
+	service, release, rootOK := h.current(c)
+	if !rootOK {
+		return
+	}
+	defer release()
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, workspacegit.MaxTotalBytes+(1<<20))
 	ctx, cancel, ok := h.operation(c)
 	if !ok {
 		return
 	}
 	defer cancel()
-	value, err := h.service.Import(ctx, c.Param("importId"), c.GetHeader("X-Grasp-Archive-SHA256"), c.Request.Body)
+	value, err := service.Import(ctx, c.Param("importId"), c.GetHeader("X-Grasp-Archive-SHA256"), c.Request.Body)
 	if err != nil {
 		codeError(c, err)
 		return
@@ -127,7 +160,12 @@ func (h *WorkspaceCode) Import(c *gin.Context) {
 	c.JSON(http.StatusOK, value)
 }
 func (h *WorkspaceCode) Receipt(c *gin.Context) {
-	value, err := h.service.Receipt(c.Param("importId"))
+	service, release, ok := h.current(c)
+	if !ok {
+		return
+	}
+	defer release()
+	value, err := service.Receipt(c.Param("importId"))
 	if err != nil {
 		codeError(c, err)
 		return

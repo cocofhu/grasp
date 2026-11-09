@@ -28,35 +28,54 @@ func (s *WorkspaceSnapshotJobs) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return context.Cause(ctx)
 		}
-		lineage, err := s.options.Authority.Current(ctx)
-		if err == nil && s.verify(ctx, lineage) == nil {
-			s.expire(ctx, lineage)
-			var rows []models.WorkspaceSnapshotJob
-			if s.db.WithContext(ctx).Select("id").Where("lineage = ? AND state = ? AND dispatched_at IS NULL AND deadline > ? AND (owner = '' OR owner IS NULL OR expires_at < ?)", lineage, "queued", time.Now().UTC(), time.Now().UTC()).Order("created_at, id").Limit(s.options.MaxWorkers).Find(&rows).Error == nil {
-				for _, row := range rows {
-					select {
-					case slots <- struct{}{}:
-					default:
-						continue
-					}
-					if _, loaded := s.local.LoadOrStore(row.ID, struct{}{}); loaded {
-						<-slots
-						continue
-					}
-					wg.Add(1)
-					go func(id string) {
-						defer wg.Done()
-						defer func() { s.local.Delete(id); <-slots }()
-						_ = s.RunOne(ctx, id)
-					}(row.ID)
-				}
+		if s.paused.Load() {
+			select {
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			case <-ticker.C:
 			}
+			continue
 		}
+		s.scanQueued(ctx, slots, &wg)
 		select {
 		case <-ctx.Done():
 			return context.Cause(ctx)
 		case <-ticker.C:
 		}
+	}
+}
+
+func (s *WorkspaceSnapshotJobs) scanQueued(ctx context.Context, slots chan struct{}, wg *sync.WaitGroup) {
+	s.operations.Add(1)
+	defer s.operations.Add(-1)
+	if s.paused.Load() {
+		return
+	}
+	lineage, err := s.options.Authority.Current(ctx)
+	if err != nil || s.verify(ctx, lineage) != nil {
+		return
+	}
+	s.expire(ctx, lineage)
+	var rows []models.WorkspaceSnapshotJob
+	if s.db.WithContext(ctx).Select("id").Where("lineage = ? AND state = ? AND dispatched_at IS NULL AND deadline > ? AND (owner = '' OR owner IS NULL OR expires_at < ?)", lineage, "queued", time.Now().UTC(), time.Now().UTC()).Order("created_at, id").Limit(s.options.MaxWorkers).Find(&rows).Error != nil {
+		return
+	}
+	for _, row := range rows {
+		select {
+		case slots <- struct{}{}:
+		default:
+			continue
+		}
+		if _, loaded := s.local.LoadOrStore(row.ID, struct{}{}); loaded {
+			<-slots
+			continue
+		}
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			defer func() { s.local.Delete(id); <-slots }()
+			_ = s.RunOne(ctx, id)
+		}(row.ID)
 	}
 }
 
@@ -83,6 +102,11 @@ func (s *WorkspaceSnapshotJobs) expire(ctx context.Context, lineage string) {
 }
 
 func (s *WorkspaceSnapshotJobs) RunOne(ctx context.Context, id string) error {
+	s.operations.Add(1)
+	defer s.operations.Add(-1)
+	if s.paused.Load() {
+		return ErrWorkspaceJobOwner
+	}
 	row, lease, err := s.claim(ctx, id, false)
 	if err != nil {
 		return err
@@ -143,6 +167,16 @@ func (s *WorkspaceSnapshotJobs) RunOne(ctx context.Context, id string) error {
 		}
 		if workspaceJobTerminal(receipt.State) {
 			terminal = true
+			if processor := s.options.Processors[row.Kind]; processor != nil && receipt.State == "completed" {
+				completion, err := processor.Recover(work, row, receipt)
+				if completion != nil {
+					defer func() { _ = completion.Close() }()
+				}
+				if err != nil || completion == nil {
+					return errors.Join(ErrWorkspaceJobUnknown, err)
+				}
+				return s.observedCompletion(work, row, lease, receipt, []string{"dispatching"}, completion)
+			}
 			return s.observed(work, row, lease, receipt, []string{"dispatching"})
 		}
 		if receipt.State != "accepted" && receipt.State != "running" {
@@ -243,9 +277,14 @@ func (s *WorkspaceSnapshotJobs) observed(ctx context.Context, row models.Workspa
 // immutable runtime receipt; acquiring a new SQL lease never recreates or
 // renews the previous runtime operation.
 func (s *WorkspaceSnapshotJobs) Reconcile(ctx context.Context, actor, id string) (models.WorkspaceSnapshotJob, error) {
+	s.operations.Add(1)
+	defer s.operations.Add(-1)
 	row, err := s.Get(ctx, actor, id)
 	if err != nil || row.State == "executed" || row.State == "failed" || row.State == "cancelled" {
 		return row, err
+	}
+	if s.paused.Load() {
+		return row, ErrWorkspaceJobOwner
 	}
 	if row.State != "unknown" || row.DispatchedAt == nil || row.RuntimeSHA256 == "" {
 		return row, ErrWorkspaceJobUnknown
@@ -264,6 +303,16 @@ func (s *WorkspaceSnapshotJobs) Reconcile(ctx context.Context, actor, id string)
 		receipt, err := remote.Get(call, row.ID)
 		if err != nil {
 			return errors.Join(ErrWorkspaceJobUnknown, err)
+		}
+		if receipt.State == "unknown" {
+			if recovery, ok := s.options.Processors[row.Kind].(interface {
+				RecoverReceipt(context.Context, models.WorkspaceSnapshotJob, WorkspaceJobRemote, sandbox.WorkspaceJobReceipt) (sandbox.WorkspaceJobReceipt, error)
+			}); ok {
+				receipt, err = recovery.RecoverReceipt(work, row, remote, receipt)
+				if err != nil {
+					return errors.Join(ErrWorkspaceJobUnknown, err)
+				}
+			}
 		}
 		if processor := s.options.Processors[row.Kind]; processor != nil && receipt.State == "completed" {
 			if validateRuntimeJob(row, receipt) != nil {

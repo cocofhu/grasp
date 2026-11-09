@@ -75,6 +75,9 @@ type Options struct {
 	// PrepareAuthorization runs only before the outer metadata transaction.
 	// Production supplies a fresh private external execution proof here.
 	PrepareAuthorization func(context.Context) (context.Context, error)
+	// PrepareHoldAuthorization resolves the actual source job/current grant
+	// for this identity outside the outermost metadata transaction.
+	PrepareHoldAuthorization func(context.Context, Identity) (context.Context, error)
 }
 
 type Manager struct {
@@ -263,7 +266,7 @@ func (m *Manager) BeginHold(ctx context.Context, id Identity, plan Plan) (Lease,
 	var duplicate error
 	err = m.publication(ctx, id, func(tx *gorm.DB) error {
 		// Authorizers that lock Sandbox/Job metadata run before quota/hold.
-		if err := m.options.Authorize(ctx, tx, id); err != nil {
+		if err := m.options.Authorize(tx.Statement.Context, tx, id); err != nil {
 			return err
 		}
 		budget := models.PayloadUploadBudget{ID: m.options.StorageFingerprint}

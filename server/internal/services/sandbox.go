@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,11 +30,13 @@ func randID() string { return uuid.NewString()[:8] }
 // Per-run workflow node sandboxes are NOT managed here — they remain ephemeral
 // inside the runtime provider.
 type SandboxService struct {
-	db        *gorm.DB
-	execution *executionlineage.Controller
-	mgr       *sandbox.Manager
-	skills    *AgentService
-	host      *mcp.Host
+	workspaceBindings     atomic.Pointer[WorkspaceBindingService]
+	db                    *gorm.DB
+	execution             *executionlineage.Controller
+	workspaceReleaseGuard func(context.Context, *gorm.DB, uint) error
+	mgr                   *sandbox.Manager
+	skills                *AgentService
+	host                  *mcp.Host
 	// shared provides workspace files, MCP servers and ordinary environment defaults.
 	shared *SharedAgentService
 
@@ -118,10 +121,13 @@ func resolveSandboxImage(backend string) string {
 
 // SandboxOptions configures the service.
 type SandboxOptions struct {
-	Execution    *executionlineage.Controller
-	ModelBinding func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
-	ProfilesRoot string
-	MCPEndpoint  string
+	Execution *executionlineage.Controller
+	// WorkspaceReleaseGuard is installed by production composition before any
+	// worker starts. Legacy isolated fixtures without this component omit it.
+	WorkspaceReleaseGuard func(context.Context, *gorm.DB, uint) error
+	ModelBinding          func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
+	ProfilesRoot          string
+	MCPEndpoint           string
 	// Env is the vendor-neutral sandbox env (e.g. CURSOR_API_KEY for the
 	// reference image), injected into interactive test sandboxes.
 	Env map[string]string
@@ -179,18 +185,19 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 	}
 	s := &SandboxService{
 		db: db, mgr: mgr, skills: skills, host: host,
-		execution:            opts.Execution,
-		shared:               opts.SharedAgent,
-		profilesRoot:         opts.ProfilesRoot,
-		mcpEndpoint:          opts.MCPEndpoint,
-		env:                  opts.Env,
-		credentialReferences: opts.CredentialReferences,
-		modelBinding:         opts.ModelBinding,
-		selectedCredential:   opts.SelectedCredential,
-		gitCredential:        opts.GitCredential,
-		live:                 map[uint]*liveSandbox{},
-		runActive:            map[string]bool{},
-		lastTouch:            map[uint]time.Time{},
+		execution:             opts.Execution,
+		workspaceReleaseGuard: opts.WorkspaceReleaseGuard,
+		shared:                opts.SharedAgent,
+		profilesRoot:          opts.ProfilesRoot,
+		mcpEndpoint:           opts.MCPEndpoint,
+		env:                   opts.Env,
+		credentialReferences:  opts.CredentialReferences,
+		modelBinding:          opts.ModelBinding,
+		selectedCredential:    opts.SelectedCredential,
+		gitCredential:         opts.GitCredential,
+		live:                  map[uint]*liveSandbox{},
+		runActive:             map[string]bool{},
+		lastTouch:             map[uint]time.Time{},
 	}
 	if opts.MaxRetention <= 0 {
 		opts.MaxRetention = 24 * time.Hour

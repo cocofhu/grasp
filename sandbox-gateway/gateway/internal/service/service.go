@@ -63,9 +63,10 @@ type imageEnsurer interface {
 
 // SandboxService orchestrates the single configured driver and the store.
 type SandboxService struct {
-	drv   driver.Driver
-	store *store.Store
-	cfg   Config
+	drv      driver.Driver
+	store    *store.Store
+	cfg      Config
+	releases *EnvironmentReleases
 
 	// imagePullMu + imagePullWait dedupe concurrent pulls of the same image
 	// so multiple Creates share one docker pull (plan g2.2 / f9).
@@ -342,6 +343,10 @@ func (s *SandboxService) fail(id, msg string) {
 
 // persist writes sb and records any store error (logging-spec: never silence failures).
 func (s *SandboxService) persist(sb *models.Sandbox, msg string) {
+	if s.releases != nil {
+		logging.SaveErr(s.releases.persistSandbox(context.Background(), sb), msg, map[string]any{"sandbox_id": sb.ID, "status": sb.Status})
+		return
+	}
 	logging.SaveErr(s.store.Save(context.Background(), sb), msg, map[string]any{"sandbox_id": sb.ID, "status": sb.Status})
 }
 
@@ -365,6 +370,9 @@ func (s *SandboxService) Start(ctx context.Context, id string) error {
 
 // StartPrepared refreshes the expired first-boot inputs before a cold resume.
 func (s *SandboxService) StartPrepared(ctx context.Context, id string, opts driver.StartOptions) error {
+	if err := s.guardEnvironmentRelease(ctx, id); err != nil {
+		return err
+	}
 	sb, err := s.store.Get(context.Background(), id)
 	if err != nil {
 		return err
@@ -414,9 +422,12 @@ func (s *SandboxService) Stop(ctx context.Context, id string) error {
 // deleting the control-plane row (otherwise DELETE leaves stuck DB records when
 // docker rm fails, the request context is canceled, or k8s cleanup errors).
 // idOrName may be the sandbox id or the driver-native name (e.g. sbx-<id>).
-func (s *SandboxService) Destroy(_ context.Context, idOrName string) error {
+func (s *SandboxService) Destroy(ctx context.Context, idOrName string) error {
 	sb, err := s.lookup(context.Background(), idOrName)
 	if err != nil {
+		return err
+	}
+	if err := s.guardEnvironmentRelease(ctx, sb.ID); err != nil {
 		return err
 	}
 	bg, cancel := context.WithTimeout(context.Background(), destroyDriverTimeout)
@@ -443,6 +454,9 @@ func (s *SandboxService) lookup(ctx context.Context, idOrName string) (*models.S
 // (kubernetes) / anonymous volumes (docker); workspace wipe deletes them.
 // Host-mounted shared config (ConfigInject.HostPath / .cursor) is never removed.
 func (s *SandboxService) Reinstall(ctx context.Context, id string, preserveData bool) error {
+	if err := s.guardEnvironmentRelease(ctx, id); err != nil {
+		return err
+	}
 	sb, err := s.store.Get(context.Background(), id)
 	if err != nil {
 		return err

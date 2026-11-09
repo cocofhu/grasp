@@ -228,6 +228,7 @@ func (s *Service) Create(req CreateRequest) (Receipt, error) {
 	}
 	ctx, cancel := context.WithCancelCause(context.Background())
 	h := &Handle{service: s, id: spec.ID, generation: req.Fence.Generation, deadline: spec.Deadline, ctx: ctx, cancel: cancel, done: make(chan struct{}), changed: make(chan struct{}, 1)}
+	h.identity = Identity{ID: spec.ID, Kind: spec.Kind, Resource: spec.Resource, Lineage: spec.Lineage, SHA256: hash, Generation: req.Fence.Generation, Deadline: spec.Deadline}
 	h.until.Store(req.Fence.ExpiresAt.UnixNano())
 	s.jobs[spec.ID], s.live[spec.ID], s.active = row, h, h
 	go h.watch()

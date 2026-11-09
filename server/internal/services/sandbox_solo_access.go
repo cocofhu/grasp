@@ -57,6 +57,11 @@ func (s *SandboxService) beginSandboxAccess(ctx context.Context, id uint) (conte
 	if err := s.recheckSoloRecoveryGrant(ctx, row, grant); err != nil {
 		return fail(soloErr(409, "environment_authorization_blocked", "访问期间授权已变化，请重新加载"))
 	}
+	ctx = context.WithValue(ctx, workspaceAccessParentKey{}, workspaceAccessParent{id, grant.session.ID, grant.session.LifecycleEpoch, grant.session.LifecycleAttemptID})
+	ctx, err = s.canonicalSandboxAccess(ctx, row)
+	if err != nil {
+		return fail(err)
+	}
 	return ctx, row, release, nil
 }
 

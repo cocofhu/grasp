@@ -13,11 +13,12 @@ import (
 const PolicyVersion = "workspace-files-v1"
 
 type Spec struct {
-	PolicyVersion  string                      `json:"policyVersion"`
-	PolicySHA256   string                      `json:"policySha256"`
-	Limits         sandbox.WorkspaceFileLimits `json:"limits"`
-	Paths          []string                    `json:"paths"`
-	IncludeIgnored []string                    `json:"includeIgnored,omitempty"`
+	Binding        *sandbox.WorkspaceBindingReference `json:"binding,omitempty"`
+	PolicyVersion  string                             `json:"policyVersion"`
+	PolicySHA256   string                             `json:"policySha256"`
+	Limits         sandbox.WorkspaceFileLimits        `json:"limits"`
+	Paths          []string                           `json:"paths"`
+	IncludeIgnored []string                           `json:"includeIgnored,omitempty"`
 }
 type Artifact struct {
 	Name   string `json:"name"`
@@ -72,16 +73,17 @@ type Exclusion struct {
 	Reason string `json:"reason"`
 }
 type Manifest struct {
-	Version        int                         `json:"version"`
-	PolicyVersion  string                      `json:"policyVersion"`
-	Consistency    string                      `json:"consistency"`
-	Paths          []string                    `json:"paths"`
-	IncludeIgnored []string                    `json:"includeIgnored,omitempty"`
-	Limits         sandbox.WorkspaceFileLimits `json:"limits"`
-	PolicySHA256   string                      `json:"policySha256"`
-	Files          []workspacearchive.Entry    `json:"files"`
-	Repositories   []Repository                `json:"repositories"`
-	Excluded       []Exclusion                 `json:"excluded"`
-	Archive        workspacearchive.Manifest   `json:"archive"`
-	CreatedAt      time.Time                   `json:"createdAt"`
+	Binding        *sandbox.WorkspaceBindingReference `json:"binding,omitempty"`
+	Version        int                                `json:"version"`
+	PolicyVersion  string                             `json:"policyVersion"`
+	Consistency    string                             `json:"consistency"`
+	Paths          []string                           `json:"paths"`
+	IncludeIgnored []string                           `json:"includeIgnored,omitempty"`
+	Limits         sandbox.WorkspaceFileLimits        `json:"limits"`
+	PolicySHA256   string                             `json:"policySha256"`
+	Files          []workspacearchive.Entry           `json:"files"`
+	Repositories   []Repository                       `json:"repositories"`
+	Excluded       []Exclusion                        `json:"excluded"`
+	Archive        workspacearchive.Manifest          `json:"archive"`
+	CreatedAt      time.Time                          `json:"createdAt"`
 }

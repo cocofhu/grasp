@@ -121,6 +121,11 @@ func WithWorkspaceJobExecution(options WorkspaceJobOptions, execution *execution
 // before commit. It performs no external reads and cannot extend an expired
 // permit while waiting for a row lock.
 func (s *WorkspaceSnapshotJobs) guardExecutionPublication(tx *gorm.DB, row models.WorkspaceSnapshotJob) error {
+	if s.options.GuardJobPublication != nil {
+		if err := s.options.GuardJobPublication(tx.Statement.Context, tx, row); err != nil {
+			return err
+		}
+	}
 	if s.options.execution == nil {
 		return nil
 	}
@@ -139,7 +144,7 @@ func (s *WorkspaceSnapshotJobs) metadataTransaction(ctx context.Context, row mod
 	if err := s.verify(ctx, row.Lineage); err != nil {
 		return err
 	}
-	ctx, err := s.prepareAuthorization(ctx)
+	ctx, err := s.prepareJobAuthorization(ctx, row)
 	if err != nil {
 		return err
 	}

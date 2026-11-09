@@ -43,6 +43,7 @@ var reprimeSkipEnv = map[string]bool{
 	"GRASP_EXECUTION_LINEAGE":      true,
 	"GRASP_WORKSPACE_CONTROL_ROOT": true,
 	"GRASP_WORKSPACE_RESTORE_ROOT": true,
+	"GRASP_WORKSPACE_FILE_LIMITS":  true,
 }
 
 // Explicit bindings never inherit the legacy environment's Git identity.
@@ -88,6 +89,12 @@ func (m *Manager) reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys 
 	if sb.local != nil {
 		return m.reprimeWorktree(ctx, sb, spec)
 	}
+	env := make(map[string]string, len(spec.Env)+1)
+	for k, v := range spec.Env {
+		env[k] = v
+	}
+	env["WORKSPACE_DIR"] = sb.EffectiveWorkspaceDir()
+	spec.Env = env
 	bundle, err := packReprimeBundle(spec, prevKeys)
 	if err != nil {
 		return fmt.Errorf("reprime: %w", err)

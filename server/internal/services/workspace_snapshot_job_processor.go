@@ -61,6 +61,9 @@ func (s *WorkspaceSnapshotJobs) observedCompletion(ctx context.Context, row mode
 	if err := s.publishCompletion(ctx, row, lease, states, map[string]any{"state": "executed", "result": string(receipt.Result), "error": receipt.Error}, completion); err != nil {
 		return errors.Join(ErrWorkspaceJobUnknown, err)
 	}
+	if publisher, ok := completion.(interface{ Published(context.Context) error }); ok {
+		return publisher.Published(ctx)
+	}
 	return nil
 }
 

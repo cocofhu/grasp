@@ -67,7 +67,7 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) (outcome nodeOutcom
 	req.Instructions = queue
 	defer func() {
 		if err := queue.close(ctx, "本轮自动执行已结束，未处理的要求不会移交给其他节点"); err != nil {
-			outcome = nodeOutcome{status: "failed", err: err.Error(), outputMd: "补充要求状态保存失败：" + err.Error(), events: outcome.events, usage: outcome.usage, usageByModel: outcome.usageByModel}
+			outcome = nodeOutcome{status: "failed", err: err.Error(), outputMd: "补充要求状态保存失败：" + err.Error(), providerUnknown: outcome.providerUnknown, events: outcome.events, usage: outcome.usage, usageByModel: outcome.usageByModel}
 		}
 	}()
 	res, err := e.provider.RunAgent(ctx, req)
@@ -81,7 +81,7 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) (outcome nodeOutcom
 	}
 	if err != nil {
 		return nodeOutcome{status: "failed", err: err.Error(),
-			outputMd: "Agent 执行失败:" + err.Error(), retryable: !errors.Is(err, runtime.ErrInstructionDeliveryUncertain), events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
+			outputMd: "Agent 执行失败:" + err.Error(), retryable: !errors.Is(err, runtime.ErrInstructionDeliveryUncertain) && !errors.Is(err, runtime.ErrProviderDispatchUnknown), providerUnknown: errors.Is(err, runtime.ErrProviderDispatchUnknown), events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
 	}
 	return nodeOutcome{status: "completed", result: &res,
 		events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}

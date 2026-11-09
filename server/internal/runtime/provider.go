@@ -39,6 +39,9 @@ type Options struct {
 	// Gateway shares named routing and local transport listeners across all
 	// execution providers and the interactive sandbox service.
 	Gateway *sandbox.GatewayClient
+	// WorkspaceOperations carries the trusted fixed startup lineage and bounded
+	// file-copy policy. Agent profiles and restored SQL cannot override it.
+	WorkspaceOperations *sandbox.WorkspaceRuntimeConfig
 	// Env is the vendor-neutral set of environment variables injected into
 	// every sandbox (protocol config.env channel).
 	Env map[string]string
@@ -151,9 +154,14 @@ type NodeReq struct {
 	// must not infer it from the run's most recent node.
 	StateRunID      uint
 	RunAttempt      int
-	ProviderAttempt int              // zero until a durable provider-attempt allocator supplies it
-	Instructions    AutoInstructions // exact-generation supplements; nil outside auto execution
-	NodeType        string
+	ProviderAttempt int // exact durable attempt, zero only for legacy callers
+	// These server-owned callbacks run before native setup/prompt dispatch.
+	// They are never supplied by an HTTP body or serialized as a capability.
+	PrepareProviderAttempt  func(context.Context) (int, error)
+	BeforeProviderDispatch  func(context.Context, int) error
+	providerAttemptPrepared bool
+	Instructions            AutoInstructions // exact-generation supplements; nil outside auto execution
+	NodeType                string
 	// Caps is the Agent's capability snapshot for this run (nil for non-Agent nodes).
 	Caps   *models.AgentCapabilities
 	Config map[string]any

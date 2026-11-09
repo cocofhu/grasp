@@ -662,6 +662,11 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
+	if e.workspaceCheckpoints != nil {
+		if err := e.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error { return e.workflowCheckpointPendingTx(tx, runID) }); err != nil {
+			return err
+		}
+	}
 	// Serialize with any other resume of this run so a double click can't spawn
 	// two drivers; the second caller observes the already-running status below.
 	unlock := e.lockResume(runID + ":resume")
@@ -741,6 +746,10 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	// loadCtx already re-restored the MCP token from the persisted Run.McpToken
 	// (finish() unregistered it on failure), so in-sandbox artifact writes
 	// authorize again once the run is admitted.
+	if e.workspaceCheckpoints != nil {
+		delete(c.run.Checkpoints, workspaceAutoRetryCheckpoint)
+		e.saveRunCheckpoints(c.run)
+	}
 	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: "从失败位置继续"})
 	log.Info().Str("run_id", runID).Str("node_id", nodeID).Str("transition", "resume-from").Msg("run resumed from node")
 
@@ -886,6 +895,19 @@ func (e *Engine) Cancel(runID string) error {
 			ab.AbortRun(runID)
 		}
 		return nil
+	}
+	if e.workspaceCheckpoints != nil {
+		var active []models.StateRun
+		if err := e.db.Select("id", "run_id", "node_id", "node_type", "iteration", "attempt", "provider_attempt", "workspace_checkpoint_id").Where("run_id = ? AND node_type = ? AND status IN ?", runID, "agent", []string{"running", "waiting_human"}).Find(&active).Error; err != nil {
+			return err
+		}
+		for _, state := range active {
+			if state.WorkspaceCheckpointID == "" {
+				if err := e.parkUnknownWorkspaceVisit(state); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	e.finish(runID, "cancelled")
 	// Drop the in-memory driver claim immediately so ResumeFrom is not blocked

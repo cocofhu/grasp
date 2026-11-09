@@ -70,12 +70,17 @@ func (e *Engine) nodeReq(c *execCtx, node *models.Node) runtime.NodeReq {
 	req.RunAttempt = c.run.Attempt
 	// Resolve only the exact visit/attempt owned by this execution context.
 	// Duplicated or missing historical rows cannot safely identify a source.
-	var visits []struct{ ID uint }
-	if err := e.db.Model(&models.StateRun{}).Select("id").
+	var visits []struct {
+		ID              uint
+		ProviderAttempt int
+	}
+	if err := e.db.Model(&models.StateRun{}).Select("id", "provider_attempt").
 		Where("run_id = ? AND node_id = ? AND iteration = ? AND attempt = ?",
 			c.run.ID, node.ID, req.Iteration, req.RunAttempt).Limit(2).Find(&visits).Error; err == nil && len(visits) == 1 {
 		req.StateRunID = visits[0].ID
+		req.ProviderAttempt = visits[0].ProviderAttempt
 	}
+	e.installProviderAttempt(c, &req)
 
 	req.KeepAliveForReview = node.Caps.ReviewEnabled() || e.hasDownstreamReactGate(c, node)
 	if node.Type == "agent" {

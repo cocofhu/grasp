@@ -139,7 +139,7 @@ func soloIntentFingerprint(turn *soloTurn, refs []ReferenceInput) (string, error
 
 func (s *SoloService) soloQueueAdmission(tx *gorm.DB, id string) error {
 	var row models.SoloSession
-	if err := tx.Select("id", "user_id", "status", "sandbox_id").First(&row, "id = ?", id).Error; err != nil {
+	if err := workspaceCurrentRead(tx).Select("id", "user_id", "status", "sandbox_id").First(&row, "id = ?", id).Error; err != nil {
 		return err
 	}
 	if row.Status == models.SoloStatusClosed {
@@ -152,12 +152,20 @@ func (s *SoloService) soloQueueAdmission(tx *gorm.DB, id string) error {
 		return soloErr(409, "environment_stopped", "环境已停止，请先恢复环境")
 	}
 	if row.SandboxID != 0 && s.sbx != nil {
+		if s.sbx.workspaceBindings.Load() != nil {
+			if err := GuardWorkspaceBindingTx(tx, row.SandboxID); err != nil {
+				return err
+			}
+		}
 		var sb models.Sandbox
-		if err := tx.Select("id", "desired_state").First(&sb, "id = ?", row.SandboxID).Error; err != nil {
+		if err := workspaceCurrentRead(tx).Select("id", "desired_state").First(&sb, "id = ?", row.SandboxID).Error; err != nil {
 			return err
 		}
 		if sb.DesiredState == "stopped" {
 			return soloErr(409, "environment_stopped", "环境已请求停止，请先恢复环境")
+		}
+		if err := s.sbx.guardWorkspaceReleaseTx(tx.Statement.Context, tx, row.SandboxID); err != nil {
+			return err
 		}
 	}
 	return nil

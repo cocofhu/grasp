@@ -7,6 +7,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import AppDrawer from '@/components/ui/AppDrawer.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
@@ -26,6 +27,8 @@ import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
 import SoloWorkflowPanel from './SoloWorkflowPanel.vue'
+import SoloWorkspaceSnapshots from './SoloWorkspaceSnapshots.vue'
+import SoloEnvironmentRelease, { type EnvironmentReleaseDraft } from './SoloEnvironmentRelease.vue'
 import { useWorkflowFeature } from '@/lib/composables/useWorkflowFeature'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
@@ -165,6 +168,10 @@ async function changeEnvironment(resume: boolean) {
 }
 const restarting = ref(false)
 const resources = ref<SoloResources>()
+const workspaceSnapshotsOpen = ref(false)
+const environmentReleaseOpen = ref(false)
+const environmentReleaseDraft = ref<EnvironmentReleaseDraft | null>(null)
+const workspaceViewKey = ref(0)
 
 watch(session, (s) => { if (s && !props.embedded) store.upsert(s) })
 watch(canSend, (ready) => { if (ready) emit('ready') })
@@ -418,6 +425,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
     >
       <template #stage>
         <ReactArtifactStage
+          :key="`${props.sessionId}:${workspaceViewKey}`"
           :artifacts="resources?.artifacts || []"
           :preview-artifact="resources?.previewArtifact"
           :registered-previews="status === 'running' ? resources?.ports || [] : []"
@@ -432,11 +440,13 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </template>
 
       <template #sidebar>
-      <div v-if="!embedded && !worktreeMode && status !== 'closed'" class="flex shrink-0 items-center justify-end gap-2 border-b border-line px-4 py-2">
+      <div v-if="!embedded && !worktreeMode" class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-line px-4 py-2">
+		<AppButton size="sm" variant="ghost" icon="folder" data-testid="solo-workspace-history" @click="workspaceSnapshotsOpen = true">{{ t('workspaceSnapshots.title') }}</AppButton>
+		<AppButton v-if="status === 'closed' && sandboxId" size="sm" variant="ghost" data-testid="solo-release-environment" @click="environmentReleaseOpen = true">{{ t('workspaceRelease.title') }}</AppButton>
         <span v-if="stoppedEnvironment" class="mr-auto text-xs text-txt3">{{ t('pages.solo.environment.stopped') }}</span>
         <span v-else-if="environmentStopPending" class="mr-auto text-xs text-txt3">{{ t('pages.solo.environment.stopPending') }}</span>
         <AppButton v-if="stoppedEnvironment" size="sm" variant="outline" icon="play" :loading="environmentBusy" @click="changeEnvironment(true)">{{ t('pages.solo.environment.resume') }}</AppButton>
-        <AppButton v-else size="sm" variant="ghost" icon="stop" :disabled="busy || queued.length > 0 || status === 'starting'" :loading="environmentBusy" :title="t('pages.solo.environment.retained')" data-testid="solo-stop-environment" @click="changeEnvironment(false)">{{ t(environmentStopPending ? 'pages.solo.environment.retryStop' : 'pages.solo.environment.stop') }}</AppButton>
+        <AppButton v-else-if="status !== 'closed'" size="sm" variant="ghost" icon="stop" :disabled="busy || queued.length > 0 || status === 'starting'" :loading="environmentBusy" :title="t('pages.solo.environment.retained')" data-testid="solo-stop-environment" @click="changeEnvironment(false)">{{ t(environmentStopPending ? 'pages.solo.environment.retryStop' : 'pages.solo.environment.stop') }}</AppButton>
       </div>
       <div v-if="link === 'reconnecting'" class="solo-banner" role="status">
         <Icon name="spinner" :size="12" />{{ t('pages.solo.link.reconnecting') }}
@@ -453,7 +463,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div ref="scroller" class="chat-pane-transcript scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="solo-transcript" @scroll.passive="onScroll">
         <div class="chat-pane-column space-y-6">
           <SoloStartupCard v-if="showStartup" :session="session" />
-          <SoloWorkflowPanel v-if="!embedded" ref="workflowPanel" :session-id="props.sessionId" @changed="chat.refreshSession()" />
+          <SoloWorkflowPanel v-if="!embedded" ref="workflowPanel" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" />
 
           <div v-if="status === 'error'" class="solo-errcard" data-testid="solo-error-card">
             <div class="flex items-start gap-2">
@@ -642,6 +652,9 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           </ChatComposer>
         </div>
       </div>
+
+      <AppDrawer :open="workspaceSnapshotsOpen" :title="t('workspaceSnapshots.title')" :width="620" @close="workspaceSnapshotsOpen = false"><SoloWorkspaceSnapshots v-if="workspaceSnapshotsOpen" :key="props.sessionId" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" /></AppDrawer>
+      <AppDrawer :open="environmentReleaseOpen" :title="t('workspaceRelease.title')" :width="480" @close="environmentReleaseOpen = false"><SoloEnvironmentRelease v-if="environmentReleaseOpen" :key="props.sessionId" v-model:draft="environmentReleaseDraft" :session-id="props.sessionId" @changed="chat.load()" /></AppDrawer>
 
       <AppModal :open="confirmClose" :title="t('pages.solo.close.title')" :width="460" close-on-esc @close="confirmClose = false">
         <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-close-modal">

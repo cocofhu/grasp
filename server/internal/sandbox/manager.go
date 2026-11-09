@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
@@ -42,10 +43,11 @@ func NewContainerName() string {
 // terminal). It no longer talks to Docker directly — the gateway owns the
 // container/pod lifecycle and image.
 type Manager struct {
-	gw           *GatewayClient
-	Image        string // optional image override; empty = gateway default
-	WorkspaceDir string // default WORKSPACE_DIR inside the sandbox
-	SSHUser      string // ssh login user (default root)
+	workspaceOperations *WorkspaceRuntimeConfig
+	gw                  *GatewayClient
+	Image               string // optional image override; empty = gateway default
+	WorkspaceDir        string // default WORKSPACE_DIR inside the sandbox
+	SSHUser             string // ssh login user (default root)
 	// dataPlanePassword returns one sandbox's saved token, used only as that
 	// sandbox's SSH password after publickey is refused. It is not a
 	// process-wide password.
@@ -80,9 +82,10 @@ type Manager struct {
 
 // ManagerOptions configures a gateway-backed Manager.
 type ManagerOptions struct {
-	Image        string
-	WorkspaceDir string
-	SSHUser      string
+	WorkspaceOperations *WorkspaceRuntimeConfig
+	Image               string
+	WorkspaceDir        string
+	SSHUser             string
 	// SSHKeyFile is the persistent data-plane private key. Empty keeps an
 	// in-memory key (tests). The first non-empty path wins for the process.
 	SSHKeyFile string
@@ -281,6 +284,7 @@ type Sandbox struct {
 	SSHHost         string // ssh endpoint host
 	SSHPort         int    // ssh endpoint port
 	WorkspaceDir    string // resolved WORKSPACE_DIR inside the sandbox
+	activeWorkspace atomic.Pointer[activeWorkspaceRoot]
 	ConfigRoot      string // in-sandbox agent config root (e.g. /root/.cursor)
 	// Password is the sandbox token the acp-bridge (8765) requires
 	// (ACP_BRIDGE_PASSWORD). ACP() attaches it so the platform's client logs in
@@ -314,6 +318,7 @@ func NewManager(gw *GatewayClient, opts ManagerOptions) *Manager {
 		SetDataPlaneKeyFile(path)
 	}
 	return &Manager{
+		workspaceOperations:     copyWorkspaceRuntimeConfig(opts.WorkspaceOperations),
 		gw:                      gw,
 		Image:                   strings.TrimSpace(opts.Image),
 		WorkspaceDir:            ws,
@@ -392,6 +397,12 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 			continue
 		}
 		env[k] = v
+	}
+	// The platform layout is authoritative even when a tool profile supplies
+	// an environment variable with the same name.
+	env["WORKSPACE_DIR"] = workspaceDir
+	if err := m.prepareWorkspaceRuntimeEnv(env, "", ""); err != nil {
+		return nil, err
 	}
 	bridgePassword := strings.TrimSpace(env[BridgePasswordEnv])
 	if bridgePassword == "" {
@@ -508,6 +519,9 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		m.EnsureConfigHome(ctx, sb, spec.ConfigHome, configRoot)
 	}
 	m.EnsureHelpers(ctx, sb)
+	if err := m.ConfigureWorkspaceRuntime(ctx, sb); err != nil {
+		return sb, err
+	}
 	return sb, nil
 }
 
@@ -969,11 +983,29 @@ func (m *Manager) ExecScript(ctx context.Context, id string, timeout time.Durati
 // --- Sandbox data-plane (over SSH) -------------------------------------------
 
 func (s *Sandbox) workspaceDir() string {
+	if active := s.activeWorkspace.Load(); active != nil {
+		return active.path
+	}
 	if s.WorkspaceDir != "" {
 		return s.WorkspaceDir
 	}
 	if s.mgr != nil {
 		return s.mgr.WorkspaceDir
+	}
+	return ""
+}
+
+type activeWorkspaceRoot struct{ path, fingerprint string }
+
+// EffectiveWorkspaceDir is the only path accessor for live consumers. The
+// exported WorkspaceDir remains the trusted original layout used at creation.
+func (s *Sandbox) EffectiveWorkspaceDir() string { return s.workspaceDir() }
+func (s *Sandbox) SetActiveWorkspace(path, fingerprint string) {
+	s.activeWorkspace.Store(&activeWorkspaceRoot{path: path, fingerprint: fingerprint})
+}
+func (s *Sandbox) ActiveWorkspaceFingerprint() string {
+	if active := s.activeWorkspace.Load(); active != nil {
+		return active.fingerprint
 	}
 	return ""
 }

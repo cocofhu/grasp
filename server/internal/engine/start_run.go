@@ -222,6 +222,9 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 	e.mu.Unlock()
 
 	run.OriginSoloID, run.CreatedBy, run.LaunchSource = admission.SoloID, admission.ActorID, admission.Source
+	if e.workspaceCheckpoints != nil {
+		run.WorkspaceActorID = e.workspaceCheckpoints.LaunchActor(context.Background(), admission)
+	}
 	var preparedRun *executionRow
 	var preparedVariables []*executionRow
 	if e.execution != nil {

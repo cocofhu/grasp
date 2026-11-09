@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cocofhu/grasp/internal/payloadhold"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/workspacearchive"
 )
 
@@ -23,6 +24,13 @@ var (
 	ErrIntegrity  = errors.New("workspace capture manifest or archive does not match frozen intent")
 	digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
+
+func sameBinding(a, b *sandbox.WorkspaceBindingReference) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
 
 func Decode(data []byte, value any) error {
 	d := json.NewDecoder(bytes.NewReader(data))
@@ -100,6 +108,9 @@ func ValidateSpec(data json.RawMessage) error {
 	if Decode(data, &spec) != nil || spec.PolicyVersion != PolicyVersion || !digestPattern.MatchString(spec.PolicySHA256) || len(spec.Paths) < 1 || len(spec.Paths) > 64 || len(spec.IncludeIgnored) > 1024 {
 		return ErrIntegrity
 	}
+	if spec.Binding != nil && !sandbox.ValidWorkspaceBindingReference(*spec.Binding) {
+		return ErrIntegrity
+	}
 	l := spec.Limits
 	for _, value := range []int64{l.MaxFileBytes, l.MaxBytes, l.MaxGitBytes, l.MaxArchiveBytes, l.MaxManifestBytes, l.MaxSpoolBytes} {
 		if value < 1 || value > 1<<50 {
@@ -163,7 +174,7 @@ func Verify(ctx context.Context, plan payloadhold.Plan, expected Spec, receipt R
 		return Proof{}, err
 	}
 	var manifest Manifest
-	if Decode(data, &manifest) != nil || manifest.Version != 1 || manifest.PolicyVersion != PolicyVersion || manifest.PolicyVersion != expected.PolicyVersion || manifest.PolicySHA256 != expected.PolicySHA256 || manifest.Limits != expected.Limits || !slices.Equal(manifest.Paths, expected.Paths) || !slices.Equal(manifest.IncludeIgnored, expected.IncludeIgnored) || manifest.Consistency != receipt.Consistency {
+	if Decode(data, &manifest) != nil || manifest.Version != 1 || manifest.PolicyVersion != PolicyVersion || manifest.PolicyVersion != expected.PolicyVersion || manifest.PolicySHA256 != expected.PolicySHA256 || manifest.Limits != expected.Limits || !sameBinding(manifest.Binding, expected.Binding) || !slices.Equal(manifest.Paths, expected.Paths) || !slices.Equal(manifest.IncludeIgnored, expected.IncludeIgnored) || manifest.Consistency != receipt.Consistency {
 		return Proof{}, ErrIntegrity
 	}
 	if err := validateEntries(manifest, receipt, summary.Limits); err != nil {

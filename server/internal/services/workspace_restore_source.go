@@ -39,18 +39,19 @@ type workspaceRestoreSource struct {
 	Iteration, RunAttempt, ProviderAttempt                                                                 int
 	SourceGeneration                                                                                       uint64
 	ArchiveRef, ManifestRef, ArchiveSHA256, ManifestSHA256                                                 string
+	SourceBindingFingerprint                                                                               string
 	Bytes, Entries                                                                                         int64
 	VerifiedAt                                                                                             *time.Time
 	RetainUntil                                                                                            *time.Time
 }
 
 func (v workspaceRestoreSource) snapshot() models.WorkspaceSnapshot {
-	return models.WorkspaceSnapshot{ID: v.ID, ActorID: v.ActorID, ScopeKind: v.ScopeKind, ScopeID: v.ScopeID, RunID: v.RunID, StateRunID: v.StateRunID, NodeID: v.NodeID, Iteration: v.Iteration, RunAttempt: v.RunAttempt, ProviderAttempt: v.ProviderAttempt, SourceSandboxID: v.SourceSandboxID, SourceGeneration: v.SourceGeneration, JobID: v.JobID, PublicationJobID: v.PublicationJobID, Lineage: v.Lineage, State: v.State, PolicyVersion: v.PolicyVersion, ArchiveRef: v.ArchiveRef, ManifestRef: v.ManifestRef, ArchiveSHA256: v.ArchiveSHA256, ManifestSHA256: v.ManifestSHA256, Bytes: v.Bytes, Entries: v.Entries, VerifiedAt: v.VerifiedAt, RetainUntil: v.RetainUntil}
+	return models.WorkspaceSnapshot{ID: v.ID, ActorID: v.ActorID, ScopeKind: v.ScopeKind, ScopeID: v.ScopeID, RunID: v.RunID, StateRunID: v.StateRunID, NodeID: v.NodeID, Iteration: v.Iteration, RunAttempt: v.RunAttempt, ProviderAttempt: v.ProviderAttempt, SourceSandboxID: v.SourceSandboxID, SourceGeneration: v.SourceGeneration, SourceBindingFingerprint: v.SourceBindingFingerprint, JobID: v.JobID, PublicationJobID: v.PublicationJobID, Lineage: v.Lineage, State: v.State, PolicyVersion: v.PolicyVersion, ArchiveRef: v.ArchiveRef, ManifestRef: v.ManifestRef, ArchiveSHA256: v.ArchiveSHA256, ManifestSHA256: v.ManifestSHA256, Bytes: v.Bytes, Entries: v.Entries, VerifiedAt: v.VerifiedAt, RetainUntil: v.RetainUntil}
 }
 
 func (s *WorkspaceRestoreService) source(ctx context.Context, tx *gorm.DB, actor, id string) (models.WorkspaceSnapshot, string, string, string, error) {
 	var raw workspaceRestoreSource
-	query := tx.Table("workspace_snapshots").Select("id", "actor_id", "scope_kind", "scope_id", "run_id", "state_run_id", "node_id", "iteration", "run_attempt", "provider_attempt", "source_sandbox_id", "source_generation", "job_id", "publication_job_id", "lineage", "state", "policy_version", "archive_ref", "manifest_ref", "archive_sha256", "manifest_sha256", "bytes", "entries", "verified_at", "retain_until").Where("id = ? AND actor_id = ?", id, actor)
+	query := tx.Table("workspace_snapshots").Select("id", "actor_id", "scope_kind", "scope_id", "run_id", "state_run_id", "node_id", "iteration", "run_attempt", "provider_attempt", "source_sandbox_id", "source_generation", "source_binding_fingerprint", "job_id", "publication_job_id", "lineage", "state", "policy_version", "archive_ref", "manifest_ref", "archive_sha256", "manifest_sha256", "bytes", "entries", "verified_at", "retain_until").Where("id = ?", id)
 	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); inside {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
@@ -80,10 +81,10 @@ func (s *WorkspaceRestoreService) source(ctx context.Context, tx *gorm.DB, actor
 	var spec workspacefiles.Spec
 	var read workspacefiles.ReadSpec
 	var receipt workspacefiles.Receipt
-	if capture.ActorID != actor || capture.ScopeKind != raw.ScopeKind || capture.ScopeID != raw.ScopeID || capture.SandboxID != raw.SourceSandboxID || capture.Lineage != raw.Lineage || capture.Kind != "capture_files" || capture.State != "executed" || capture.RuntimeGeneration != raw.SourceGeneration || !restoreDigest(capture.RuntimeSHA256) || workspacefiles.ValidateSpec([]byte(capture.Body)) != nil || workspacefiles.Decode([]byte(capture.Body), &spec) != nil || workspacefiles.Decode([]byte(capture.Result), &receipt) != nil {
+	if capture.ActorID != raw.ActorID || capture.ScopeKind != raw.ScopeKind || capture.ScopeID != raw.ScopeID || capture.SandboxID != raw.SourceSandboxID || capture.Lineage != raw.Lineage || capture.Kind != "capture_files" || capture.State != "executed" || capture.RuntimeGeneration != raw.SourceGeneration || !restoreDigest(capture.RuntimeSHA256) || workspacefiles.ValidateSpec([]byte(capture.Body)) != nil || workspacefiles.Decode([]byte(capture.Body), &spec) != nil || workspacefiles.Decode([]byte(capture.Result), &receipt) != nil {
 		return snapshot, "", "", "", ErrWorkspaceJobConflict
 	}
-	if publication.Kind != "read_snapshot" || publication.State != "executed" || publication.ActorID != actor || publication.ScopeKind != raw.ScopeKind || publication.ScopeID != raw.ScopeID || publication.SandboxID != raw.SourceSandboxID || publication.Lineage != raw.Lineage || workspacefiles.Decode([]byte(publication.Body), &read) != nil || read.SourceJobID != capture.ID || read.SourceSHA256 != capture.RuntimeSHA256 || read.Receipt != receipt {
+	if publication.Kind != "read_snapshot" || publication.State != "executed" || publication.ActorID != raw.ActorID || publication.ScopeKind != raw.ScopeKind || publication.ScopeID != raw.ScopeID || publication.SandboxID != raw.SourceSandboxID || publication.Lineage != raw.Lineage || workspacefiles.Decode([]byte(publication.Body), &read) != nil || read.SourceJobID != capture.ID || read.SourceSHA256 != capture.RuntimeSHA256 || read.Receipt != receipt {
 		return snapshot, "", "", "", ErrWorkspaceJobConflict
 	}
 	native, _ := json.Marshal(workspaceRestoreSpec{receipt})

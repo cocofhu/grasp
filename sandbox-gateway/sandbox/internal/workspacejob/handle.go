@@ -17,6 +17,7 @@ type Handle struct {
 	id         string
 	generation uint64
 	deadline   time.Time
+	identity   Identity
 	ctx        context.Context
 	cancel     context.CancelCauseFunc
 	done       chan struct{}

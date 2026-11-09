@@ -91,6 +91,9 @@ func (e *Engine) finishNode(c *execCtx, node *models.Node, oc nodeOutcome, opts 
 	if kind == judgeCheckFail && held {
 		return finishResult{reopen: e.stepReopen(c, node, oc, opts.conv)}
 	}
+	if e.workspaceCheckpoints != nil && node.Type == "agent" {
+		return e.finishWorkspaceCheckpoint(c, node, oc, opts)
+	}
 	return e.stepRoute(c, node, oc, opts)
 }
 

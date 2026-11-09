@@ -124,7 +124,7 @@ func (c *acpProvider) openVisitorLane(ctx context.Context, req NodeReq, lane str
 		return nil, err
 	}
 	acp := sb.ACP().WithChat(chatID).
-		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
+		WithSession(sb.EffectiveWorkspaceDir(), c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(parked.acp.BridgeModel()).
 		WithExecution(parked.acp.Execution())

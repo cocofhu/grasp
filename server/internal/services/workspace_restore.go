@@ -25,6 +25,7 @@ type WorkspaceRestoreBinding struct {
 }
 
 type WorkspaceRestoreOptions struct {
+	AdmissionDisabled bool
 	CurrentBinding    func(context.Context, *gorm.DB, string, string) (WorkspaceRestoreBinding, error)
 	AuthorizeSnapshot func(context.Context, *gorm.DB, string, models.WorkspaceSnapshot) error
 	// Prepare obtains an external execution proof outside SQL. GuardTx consumes
@@ -186,6 +187,9 @@ func (s *WorkspaceRestoreService) Admit(ctx context.Context, actor string, in Wo
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return zero, err
+	}
+	if s.options.AdmissionDisabled {
+		return zero, ErrWorkspaceJobUnsupported
 	}
 	ctx, err = s.options.Prepare(ctx)
 	if err != nil {

@@ -14,6 +14,8 @@ const modules: Record<AppLocale, () => Promise<Record<string, unknown>[]>> = {
       import('../../locales/zh-CN/lang.json').then((m) => m.default),
       import('../../locales/zh-CN/shell.json').then((m) => m.default),
       import('../../locales/zh-CN/canvas.json').then((m) => m.default),
+      import('../../locales/zh-CN/workspaceSnapshots.json').then((m) => m.default),
+      import('../../locales/zh-CN/workspaceRelease.json').then((m) => m.default),
     ]),
   en: () =>
     Promise.all([
@@ -26,6 +28,8 @@ const modules: Record<AppLocale, () => Promise<Record<string, unknown>[]>> = {
       import('../../locales/en/lang.json').then((m) => m.default),
       import('../../locales/en/shell.json').then((m) => m.default),
       import('../../locales/en/canvas.json').then((m) => m.default),
+      import('../../locales/en/workspaceSnapshots.json').then((m) => m.default),
+      import('../../locales/en/workspaceRelease.json').then((m) => m.default),
     ]),
 }
 

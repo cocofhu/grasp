@@ -40,9 +40,10 @@ type Config struct {
 	Storage  StorageConfig  `yaml:"storage"`
 	// ExecutionControl is an independent continuity authority. Nil keeps
 	// historical reads available while refusing execution until offline init.
-	ExecutionControl *StorageConfig `yaml:"execution_control"`
-	Features         FeatureConfig  `yaml:"features"`
-	GitHub           GitHubConfig   `yaml:"github"`
+	ExecutionControl    *StorageConfig            `yaml:"execution_control"`
+	WorkspaceOperations WorkspaceOperationsConfig `yaml:"workspace_operations"`
+	Features            FeatureConfig             `yaml:"features"`
+	GitHub              GitHubConfig              `yaml:"github"`
 	// CodexLogin tunes the platform renewal of workspace Codex ChatGPT logins.
 	CodexLogin CodexLoginConfig `yaml:"codex_login"`
 }
@@ -520,6 +521,7 @@ func rejectSandboxSecretEnv(c *Config) error {
 // gateway_api_key are injected here from K8s Secret-backed env.
 func applyEnvOverrides(c *Config) {
 	applyExecutionControlEnv(c)
+	applyWorkspaceOperationsEnv(c)
 	if v := env("GRASP_WORKFLOWS_ENABLED"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			c.Features.WorkflowsEnabled = &enabled

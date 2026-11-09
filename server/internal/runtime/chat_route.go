@@ -253,7 +253,7 @@ func (c *acpProvider) switchSessionTool(ctx context.Context, req NodeReq, sess *
 	}
 	next := sess.sb.ACP().
 		WithChat(chat).
-		WithSession(sess.sb.WorkspaceDir, c.mcpServers(req)).
+		WithSession(sess.sb.EffectiveWorkspaceDir(), c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(want.Env[EnvACPBridgeModel]).
 		WithExecution(c.executionForEnvironment(req, want.Env))

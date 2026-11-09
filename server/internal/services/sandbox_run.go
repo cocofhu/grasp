@@ -53,6 +53,16 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Shared {
 		fields["shared"] = true
 	}
+	if info.ProviderAttempt > 0 && s.execution != nil {
+		if err := s.recordExactWorkflowSandbox(context.Background(), info, fields, true); err != nil {
+			log.Warn().Err(err).Str("name", info.Name).Msg("begin exact workflow workspace rejected")
+			return
+		}
+		s.mu.Lock()
+		s.runActive[info.Name] = true
+		s.mu.Unlock()
+		return
+	}
 	// A retry or loop iteration owns a distinct resource. Never overwrite a
 	// retired attempt's row: it can be the only copy of uncommitted files.
 	if err := s.db.Where(models.Sandbox{Name: info.Name}).
@@ -100,6 +110,17 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	}
 	if info.Shared {
 		fields["shared"] = true
+	}
+	if info.ProviderAttempt > 0 && s.execution != nil {
+		if err := s.recordExactWorkflowSandbox(context.Background(), info, fields, false); err != nil {
+			log.Warn().Err(err).Str("name", info.Name).Msg("register exact workflow workspace rejected")
+			return
+		}
+		s.mu.Lock()
+		delete(s.runActive, info.CorrelationName)
+		s.runActive[info.Name] = true
+		s.mu.Unlock()
+		return
 	}
 	s.markVisitSandboxReady(info, fields["updated_at"].(time.Time))
 	// Adopt the pre-registered creating/pulling placeholder row (by run+node) in place,

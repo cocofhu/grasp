@@ -15,6 +15,13 @@ func (m *Manager) publication(ctx context.Context, id Identity, body func(*gorm.
 	if err := m.verifyAuthority(ctx, id); err != nil {
 		return err
 	}
+	if m.options.PrepareHoldAuthorization != nil {
+		var err error
+		ctx, err = m.options.PrepareHoldAuthorization(ctx, id)
+		if err != nil {
+			return err
+		}
+	}
 	if m.options.PrepareAuthorization != nil {
 		var err error
 		ctx, err = m.options.PrepareAuthorization(ctx)

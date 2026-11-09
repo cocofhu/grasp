@@ -67,6 +67,9 @@ func (s *SandboxService) acquireSandboxOperation(ctx context.Context, id uint, k
 		now := time.Now().UTC()
 		var result *gorm.DB
 		err := s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
+			if err := s.guardWorkspaceReleaseTx(ctx, tx, id); err != nil {
+				return err
+			}
 			result = tx.Model(&models.Sandbox{}).
 				Where("id = ? AND (operation_owner = '' OR operation_owner IS NULL OR operation_expires_at < ?)", id, now).
 				Updates(map[string]any{"operation_owner": owner, "operation_kind": kind, "operation_expires_at": now.Add(sandboxOperationLeaseTTL), "generation": gorm.Expr("COALESCE(generation, 0) + 1")})

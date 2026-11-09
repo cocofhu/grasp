@@ -63,6 +63,19 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_S3_PATH_STYLE` | `storage.s3.path_style` | boolean | `Not set` | Public | Path-style addressing; defaults to true for s3 and false for cos |
 | `GRASP_MAX_FILE_BYTES` | `storage.max_file_bytes` | int | `134217728` | Public | Maximum bytes per Agent file import |
 | `GRASP_BLOBS_ROOT` | `storage.blobs_root` | path | `data/blobs` | Public | Local attachment blob root directory |
+| `GRASP_WORKSPACE_OPERATIONS_ENABLED` | `workspace_operations.enabled` | boolean | `true` | Public | Enable bounded file capture and isolated restore; requires verified runtime capabilities and execution authority; no process memory restore |
+| `GRASP_WORKSPACE_PRIVATE_ROOT` | `workspace_operations.private_root` | path | `/tmp/grasp-private-workspace` | Public | Private persistent sandbox root; control and restore directories are isolated per actual resource; Kubernetes must mount persistent storage here |
+| `GRASP_WORKSPACE_MAX_FILE_BYTES` | `workspace_operations.max_file_bytes` | int | `536870912` | Public | Maximum snapshot file and Git pack bytes |
+| `GRASP_WORKSPACE_MAX_UNCOMPRESSED_BYTES` | `workspace_operations.max_uncompressed_bytes` | int | `2147483648` | Public | Combined expanded workspace and Git data budget in bytes |
+| `GRASP_WORKSPACE_MAX_GIT_BYTES` | `workspace_operations.max_git_bytes` | int | `536870912` | Public | Git data budget within the combined expanded limit |
+| `GRASP_WORKSPACE_MAX_ARCHIVE_BYTES` | `workspace_operations.max_archive_bytes` | int | `3221225472` | Public | Maximum compressed snapshot archive bytes |
+| `GRASP_WORKSPACE_MAX_MANIFEST_BYTES` | `workspace_operations.max_manifest_bytes` | int | `67108864` | Public | Maximum snapshot manifest bytes |
+| `GRASP_WORKSPACE_MAX_SPOOL_BYTES` | `workspace_operations.max_spool_bytes` | int | `8589934592` | Public | Snapshot spool budget per runtime in bytes |
+| `GRASP_WORKSPACE_MAX_ENTRIES` | `workspace_operations.max_entries` | int | `100000` | Public | Maximum snapshot entries |
+| `GRASP_WORKSPACE_MAX_RESERVED_BYTES` | `workspace_operations.max_reserved_bytes` | int | `34359738368` | Public | Global durable server upload reservation bytes |
+| `GRASP_WORKSPACE_MAX_SCOPE_RESERVED_BYTES` | `workspace_operations.max_scope_reserved_bytes` | int | `8589934592` | Public | Durable upload reservation bytes per Solo/workflow scope |
+| `GRASP_WORKSPACE_MAX_DURATION` | `workspace_operations.max_duration` | duration | `30m` | Public | Maximum file capture or isolated restore operation duration |
+| `GRASP_WORKSPACE_MAX_WORKERS` | `workspace_operations.max_workers` | integer | `2` | Public | Concurrent workspace file jobs (1–64) |
 | `GRASP_EXECUTION_CONTROL_DRIVER` | `execution_control.driver` | enum | `Not set` | Public | Independent execution continuity store: local / s3 / cos; unset keeps history readable and execution disabled until explicit offline initialization |
 | `GRASP_EXECUTION_CONTROL_BLOBS_ROOT` | `execution_control.blobs_root` | path | `Not set` | Public | Independent persistent control directory, disjoint from SQL, payload and backup directories |
 | `GRASP_EXECUTION_CONTROL_S3_ENDPOINT` | `execution_control.s3.endpoint` | URL | `Not set` | Public | Independent control S3 HTTP(S) origin; real conditional writes are required |

@@ -42,9 +42,29 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 	// does not cancel ctx).
 	abortSnap, unwatch := c.watchRunAborts(req.RunID)
 	defer unwatch()
+	var dispatched bool
+	if before := req.BeforeProviderDispatch; before != nil {
+		req.BeforeProviderDispatch = func(ctx context.Context, attempt int) error {
+			if err := before(ctx, attempt); err != nil {
+				return err
+			}
+			dispatched = true
+			return nil
+		}
+	}
 	for attempt := 1; ; attempt++ {
+		dispatched = false
+		var prepareErr error
+		req.providerAttemptPrepared = false
+		req, prepareErr = prepareProviderAttempt(ctx, req)
+		if prepareErr != nil {
+			return NodeResult{Usage: spent, UsageByModel: spentByModel}, prepareErr
+		}
 		res, err := c.runAgentOnce(ctx, req, abortSnap)
-		if errors.Is(err, ErrInstructionDeliveryUncertain) {
+		if dispatched && err != nil && (isRetryableSandboxErr(err) || errors.Is(err, sandbox.ErrAgentStuck) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			err = errors.Join(ErrProviderDispatchUnknown, err)
+		}
+		if errors.Is(err, ErrInstructionDeliveryUncertain) || errors.Is(err, ErrProviderDispatchUnknown) {
 			res.Usage = models.AddTokenUsage(spent, res.Usage)
 			res.UsageByModel = models.AddTokenUsageByModel(spentByModel, res.UsageByModel)
 			return res, err
@@ -193,10 +213,25 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		chatRes, err = c.reattachTurn(chatCtx, sb, acp)
 		c.recordChatUsage(req, chatRes, err)
 	}
+	if reattach && req.BeforeProviderDispatch != nil && err == nil && chatRes == nil {
+		return NodeResult{}, ErrProviderDispatchUnknown
+	}
 	if !reattach || (err == nil && chatRes == nil) {
+		if req.BeforeProviderDispatch != nil {
+			if dispatchErr := req.BeforeProviderDispatch(chatCtx, req.ProviderAttempt); dispatchErr != nil {
+				return NodeResult{}, dispatchErr
+			}
+		}
 		chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded), req.PromptImages)
 	}
 	if err != nil {
+		if req.BeforeProviderDispatch != nil && !reattach && (isRetryableSandboxErr(err) || errors.Is(err, sandbox.ErrAgentStuck) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			// A write-ahead dispatch marker cannot prove a failed transport did
+			// not reach the Agent. Keep its workspace and stop transparent replay.
+			keepForDebug = true
+			absorbChat(&usage, &usageByModel, nil, chatRes)
+			return NodeResult{Events: c.snapshotEvents(ctx, sb, turnEvents), Usage: usage, UsageByModel: usageByModel}, errors.Join(ErrProviderDispatchUnknown, err)
+		}
 		if isRetryableSandboxErr(err) || errors.Is(err, sandbox.ErrAgentStuck) {
 			keepForDebug = false
 		}
@@ -299,7 +334,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 //
 // Returns {vcs:"none"} when nothing under the workspace is version-controlled.
 func (c *acpProvider) collectChanges(ctx context.Context, sb *sandbox.Sandbox, req NodeReq) *sandbox.Changes {
-	ws := sb.WorkspaceDir
+	ws := sb.EffectiveWorkspaceDir()
 	if ws == "" {
 		ws = "/root/workspace"
 	}

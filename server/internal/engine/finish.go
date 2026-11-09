@@ -215,6 +215,13 @@ func (e *Engine) finish(runID, status string) bool {
 	if res.RowsAffected == 0 {
 		return false
 	}
+	e.afterRunFinish(runID, status)
+	return true
+}
+
+// Terminal effects run only after the metadata transition/outbox commits,
+// including a transition published by a sealed workspace route.
+func (e *Engine) afterRunFinish(runID, status string) {
 	if status == "completed" {
 
 		e.fireCompletedRunNotify(runID)
@@ -268,7 +275,6 @@ func (e *Engine) finish(runID, status string) bool {
 	}
 	msg, _ := json.Marshal(map[string]any{"type": "status", "runId": runID, "status": status})
 	e.broker.Publish(runID, msg)
-	return true
 }
 
 // persistRunErrorArtifact writes run_error.json via the artifact store so empty

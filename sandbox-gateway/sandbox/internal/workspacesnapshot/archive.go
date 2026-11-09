@@ -66,7 +66,7 @@ func (e *Engine) capture(ctx context.Context, h *workspacejob.Handle, body json.
 		}
 		repositories = append(repositories, repo.value)
 	}
-	manifest := Manifest{Version: Version, PolicyVersion: PolicyVersion, PolicySHA256: e.policy, Consistency: "verified_copy", Paths: spec.Paths, IncludeIgnored: spec.IncludeIgnored, Limits: e.config.Limits, Files: walk.files, Repositories: repositories, Excluded: walk.excluded, Archive: archiveManifest, CreatedAt: time.Now().UTC()}
+	manifest := Manifest{Binding: spec.Binding, Version: Version, PolicyVersion: PolicyVersion, PolicySHA256: e.policy, Consistency: "verified_copy", Paths: spec.Paths, IncludeIgnored: spec.IncludeIgnored, Limits: e.config.Limits, Files: walk.files, Repositories: repositories, Excluded: walk.excluded, Archive: archiveManifest, CreatedAt: time.Now().UTC()}
 	data, err := json.Marshal(manifest)
 	if err != nil || int64(len(data)) > e.config.Limits.MaxManifestBytes {
 		return nil, ErrLimit

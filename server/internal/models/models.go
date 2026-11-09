@@ -195,21 +195,22 @@ type WorkflowVersion struct {
 
 // Run is one workflow execution (FSM instance).
 type Run struct {
-	PauseRequested  bool           `gorm:"not null;default:false" json:"pauseRequested"`
-	PauseFromStatus string         `json:"-"`
-	ControlVersion  uint64         `gorm:"not null;default:0" json:"controlVersion"`
-	EventVersion    uint64         `gorm:"not null;default:0" json:"eventVersion"`
-	OriginSoloID    string         `gorm:"index" json:"originSoloId,omitempty"`
-	CreatedBy       string         `gorm:"index" json:"createdBy,omitempty"`
-	LaunchSource    string         `json:"launchSource,omitempty"`
-	ID              string         `gorm:"primaryKey" json:"id"`
-	WorkflowID      string         `gorm:"index" json:"workflowId"`
-	WorkflowName    string         `json:"workflowName"`
-	WorkflowVersion int            `json:"workflowVersion"`
-	Status          string         `json:"status"` // queued|running|waiting_human|completed|failed|cancelled
-	Trigger         string         `json:"trigger"`
-	Inputs          map[string]any `gorm:"serializer:filejson" json:"inputs"`
-	Tags            []string       `gorm:"serializer:json" json:"tags"`
+	PauseRequested   bool           `gorm:"not null;default:false" json:"pauseRequested"`
+	PauseFromStatus  string         `json:"-"`
+	ControlVersion   uint64         `gorm:"not null;default:0" json:"controlVersion"`
+	EventVersion     uint64         `gorm:"not null;default:0" json:"eventVersion"`
+	OriginSoloID     string         `gorm:"index" json:"originSoloId,omitempty"`
+	CreatedBy        string         `gorm:"index" json:"createdBy,omitempty"`
+	WorkspaceActorID string         `gorm:"size:191" json:"-"`
+	LaunchSource     string         `json:"launchSource,omitempty"`
+	ID               string         `gorm:"primaryKey" json:"id"`
+	WorkflowID       string         `gorm:"index" json:"workflowId"`
+	WorkflowName     string         `json:"workflowName"`
+	WorkflowVersion  int            `json:"workflowVersion"`
+	Status           string         `json:"status"` // queued|running|waiting_human|completed|failed|cancelled
+	Trigger          string         `json:"trigger"`
+	Inputs           map[string]any `gorm:"serializer:filejson" json:"inputs"`
+	Tags             []string       `gorm:"serializer:json" json:"tags"`
 	// Priority is the admission weight: high=3, normal=2, low=1 (default 2).
 	// API/frontend expose string labels; claim sorts by Priority DESC then
 	// remaining-human_gate then FIFO (see engine.claimNextQueued). List UI order
@@ -369,16 +370,20 @@ func CloneTokenUsage(src *TokenUsage) *TokenUsage {
 // execution's output, events, and duration instead of overwriting them.
 // Iteration is the 1-based per-node execution index (1 = first visit).
 type StateRun struct {
-	Files             []ArtifactAttachment `gorm:"-" json:"files,omitempty"`
-	HasFileDeliveries bool                 `gorm:"->" json:"-"`
-	ID                uint                 `gorm:"primaryKey" json:"-"`
-	RunID             string               `gorm:"index" json:"runId"`
-	NodeID            string               `json:"nodeId"`
-	NodeType          string               `json:"nodeType"`
-	Iteration         int                  `json:"iteration"`
-	Status            string               `json:"status"`
-	OutputMd          string               `gorm:"serializer:filetext" json:"outputMd"`
-	Outputs           map[string]any       `gorm:"serializer:filejson" json:"outputs"`
+	Files                 []ArtifactAttachment `gorm:"-" json:"files,omitempty"`
+	HasFileDeliveries     bool                 `gorm:"->" json:"-"`
+	ID                    uint                 `gorm:"primaryKey" json:"-"`
+	RunID                 string               `gorm:"index" json:"runId"`
+	NodeID                string               `json:"nodeId"`
+	NodeType              string               `json:"nodeType"`
+	Iteration             int                  `json:"iteration"`
+	ProviderAttempt       int                  `json:"providerAttempt,omitempty"`
+	ProviderDispatchState string               `gorm:"size:32" json:"-"`
+	ProviderDispatchedAt  *time.Time           `json:"-"`
+	WorkspaceCheckpointID string               `gorm:"size:64" json:"workspaceCheckpointId,omitempty"`
+	Status                string               `json:"status"`
+	OutputMd              string               `gorm:"serializer:filetext" json:"outputMd"`
+	Outputs               map[string]any       `gorm:"serializer:filejson" json:"outputs"`
 	// VarsSnapshot is the global-variable state captured when this execution
 	// finished (post-node), so the run timeline can show each card's variables
 	// at that moment for debugging.
@@ -1125,16 +1130,18 @@ type Setting struct {
 
 // RunPreviewPort records a preview proxy registration for a preview-capable Agent node.
 type RunPreviewPort struct {
-	ID          uint   `gorm:"primaryKey" json:"id"`
-	RunID       string `gorm:"index:idx_preview_run_node_item,unique" json:"runId"`
-	NodeID      string `gorm:"index:idx_preview_run_node_item,unique" json:"nodeId"`
-	ItemKey     string `gorm:"index:idx_preview_run_node_item,unique" json:"-"`
-	Kind        string `gorm:"default:port" json:"kind"`
-	Port        int    `json:"port"`
-	ExternalURL string `json:"externalUrl,omitempty"`
-	Label       string `json:"label,omitempty"`
-	ProxyURL    string `json:"proxyUrl"`
-	SandboxName string `json:"-"`
+	WorkspaceBindingID          string `gorm:"size:64" json:"-"`
+	WorkspaceBindingFingerprint string `gorm:"size:64" json:"-"`
+	ID                          uint   `gorm:"primaryKey" json:"id"`
+	RunID                       string `gorm:"index:idx_preview_run_node_item,unique" json:"runId"`
+	NodeID                      string `gorm:"index:idx_preview_run_node_item,unique" json:"nodeId"`
+	ItemKey                     string `gorm:"index:idx_preview_run_node_item,unique" json:"-"`
+	Kind                        string `gorm:"default:port" json:"kind"`
+	Port                        int    `json:"port"`
+	ExternalURL                 string `json:"externalUrl,omitempty"`
+	Label                       string `json:"label,omitempty"`
+	ProxyURL                    string `json:"proxyUrl"`
+	SandboxName                 string `json:"-"`
 	// Host is the resolved upstream base the proxy dials, e.g.
 	// "http://172.17.0.5:9090". Persisting it decouples the proxy read-path from
 	// the co-located sandbox manager so the preview proxy can later be split into
@@ -1206,6 +1213,9 @@ func AllModels() []any {
 		&WorkspaceImport{},
 		&WorkflowEventSource{},
 		&WorkspaceSnapshot{}, &WorkspaceSnapshotJob{}, &WorkspaceRestore{},
+		&WorkspaceBindingHead{}, &WorkspaceBinding{}, &WorkspaceReturnPoint{}, &WorkspaceBindingOperation{}, &WorkspaceBindingUse{},
+		&WorkspaceRelease{},
+		&WorkflowVisitCheckpoint{},
 		&PayloadUploadHold{}, &PayloadUploadBudget{},
 		&ExecutionDataset{}, &ExecutionQuarantine{},
 	}

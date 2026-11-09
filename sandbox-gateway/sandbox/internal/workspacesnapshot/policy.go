@@ -1,6 +1,7 @@
 package workspacesnapshot
 
 import (
+	"backend/internal/workspacebinding"
 	"path"
 	"slices"
 	"strings"
@@ -56,6 +57,9 @@ func mandatory(name string, additional []string) string {
 }
 
 func normalizeSpec(spec Spec, private []string) (Spec, error) {
+	if spec.Binding != nil && !workspacebinding.ValidReference(*spec.Binding) {
+		return spec, ErrUnsafe
+	}
 	if spec.PolicyVersion != PolicyVersion || len(spec.Paths) == 0 || len(spec.Paths) > 64 || len(spec.IncludeIgnored) > 1024 {
 		return spec, ErrUnsafe
 	}

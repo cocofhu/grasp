@@ -1114,6 +1114,7 @@ for (const scenario of [
       if (pathname === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
       if (pathname.endsWith('/messages')) return route.fulfill({ json: history })
       if (pathname.endsWith('/env')) return route.fulfill({ json: [] })
+      if (pathname.endsWith('/workflows')) return route.fulfill({ json: { items: [], workflows: { enabled: true, locked: false, source: 'config' } } })
       return route.fulfill({ json: session })
     })
     await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => {

@@ -356,6 +356,11 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 }
 
 func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
+	var attemptErr error
+	req, attemptErr = prepareProviderAttempt(ctx, req)
+	if attemptErr != nil {
+		return nil, nil, "", attemptErr
+	}
 	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
 	if executionErr != nil {
 		return nil, nil, "", executionErr
@@ -398,7 +403,7 @@ func (c *acpProvider) openNodeSandbox(ctx context.Context, req NodeReq) (*sandbo
 		return nil, nil, "", spec, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
 	acp := sb.ACP().
-		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
+		WithSession(sb.EffectiveWorkspaceDir(), c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"]).
 		WithExecution(c.executionForEnvironment(req, spec.Env))
@@ -447,7 +452,7 @@ func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.
 	group, _ := sb.ExecScript(ctx, 10*time.Second, "bash", "printenv "+EnvModelConfigurationID+" || true")
 	effort, _ := sb.ExecScript(ctx, 10*time.Second, "bash", "printenv "+EnvACPBridgeReasoningEffort+" || true")
 	acp := sb.ACP().
-		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
+		WithSession(sb.EffectiveWorkspaceDir(), c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(strings.TrimSpace(model)).
 		WithExecution(c.executionForEnvironment(req, map[string]string{

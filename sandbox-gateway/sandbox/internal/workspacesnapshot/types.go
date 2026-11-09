@@ -7,6 +7,8 @@ import (
 	"errors"
 	"regexp"
 	"time"
+
+	"backend/internal/workspacebinding"
 )
 
 const (
@@ -45,11 +47,12 @@ func DefaultLimits() Limits {
 }
 
 type Spec struct {
-	PolicyVersion  string   `json:"policyVersion"`
-	PolicySHA256   string   `json:"policySha256"`
-	Limits         Limits   `json:"limits"`
-	Paths          []string `json:"paths"`
-	IncludeIgnored []string `json:"includeIgnored,omitempty"`
+	Binding        *workspacebinding.Reference `json:"binding,omitempty"`
+	PolicyVersion  string                      `json:"policyVersion"`
+	PolicySHA256   string                      `json:"policySha256"`
+	Limits         Limits                      `json:"limits"`
+	Paths          []string                    `json:"paths"`
+	IncludeIgnored []string                    `json:"includeIgnored,omitempty"`
 }
 
 type Entry struct {
@@ -101,18 +104,19 @@ type GitOperation struct {
 	Data []byte `json:"data"`
 }
 type Manifest struct {
-	Version        int             `json:"version"`
-	PolicyVersion  string          `json:"policyVersion"`
-	Consistency    string          `json:"consistency"`
-	Paths          []string        `json:"paths"`
-	IncludeIgnored []string        `json:"includeIgnored,omitempty"`
-	Limits         Limits          `json:"limits"`
-	PolicySHA256   string          `json:"policySha256"`
-	Files          []Entry         `json:"files"`
-	Repositories   []Repository    `json:"repositories"`
-	Excluded       []Exclusion     `json:"excluded"`
-	Archive        ArchiveManifest `json:"archive"`
-	CreatedAt      time.Time       `json:"createdAt"`
+	Binding        *workspacebinding.Reference `json:"binding,omitempty"`
+	Version        int                         `json:"version"`
+	PolicyVersion  string                      `json:"policyVersion"`
+	Consistency    string                      `json:"consistency"`
+	Paths          []string                    `json:"paths"`
+	IncludeIgnored []string                    `json:"includeIgnored,omitempty"`
+	Limits         Limits                      `json:"limits"`
+	PolicySHA256   string                      `json:"policySha256"`
+	Files          []Entry                     `json:"files"`
+	Repositories   []Repository                `json:"repositories"`
+	Excluded       []Exclusion                 `json:"excluded"`
+	Archive        ArchiveManifest             `json:"archive"`
+	CreatedAt      time.Time                   `json:"createdAt"`
 }
 type Artifact struct {
 	Name   string `json:"name"`

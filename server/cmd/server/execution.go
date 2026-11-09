@@ -11,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/services"
 	"gorm.io/gorm"
 )
 
@@ -55,7 +56,14 @@ func checkNativeExecution(ctx context.Context, db *gorm.DB, execution *execution
 	if req.StateRunID != 0 {
 		entities = append(entities, executionlineage.Entity{Kind: executionlineage.EntityStateRun, ID: strconv.FormatUint(uint64(req.StateRunID), 10)})
 	}
-	return execution.Check(ctx, entities...)
+	var resources []struct{ ID uint }
+	if err := db.WithContext(ctx).Table("sandboxes").Select("id").Where("purpose = ? AND run_id = ?", "run", req.RunID).Find(&resources).Error; err != nil {
+		return err
+	}
+	for _, row := range resources {
+		entities = append(entities, executionlineage.Entity{Kind: executionlineage.EntitySandbox, ID: strconv.FormatUint(uint64(row.ID), 10)})
+	}
+	return execution.Transaction(ctx, db, entities, func(tx *gorm.DB) error { return services.GuardWorkflowNativeTx(tx.Statement.Context, tx, req.RunID) })
 }
 
 func checkMCPExecution(ctx context.Context, db *gorm.DB, execution *executionlineage.Controller, runID string) error {

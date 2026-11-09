@@ -32,6 +32,13 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 		return "", 0, "", err
 	}
 	defer release()
+	return s.acpConnectionFromRow(ctx, row, true)
+}
+
+// Workspace metadata reads use allowAttach=false: discovering a canonical
+// head must never install a runtime, wake a guest or restart its process.
+func (s *SandboxService) acpConnectionFromRow(ctx context.Context, row *models.Sandbox, allowAttach bool) (string, int, string, error) {
+	id := row.ID
 	s.mu.Lock()
 	ls := s.live[id]
 	switching := ls != nil && ls.switching
@@ -61,6 +68,9 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 		return host, port, password, err
 	}
 	if host == "" || port == 0 {
+		if !allowAttach || s.mgr == nil {
+			return "", 0, "", ErrWorkspaceJobUnsupported
+		}
 		if s.mgr.Status(ctx, row.Name) != "running" {
 			return "", 0, "", fmt.Errorf("sandbox container 不在运行")
 		}
@@ -305,7 +315,11 @@ func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (sandbox.Ter
 	}
 	defer release()
 	if execution.Worktree() {
-		dir, err := execution.ShellDir(row.RunID)
+		dir := canonicalWorkspacePath(ctx, id)
+		var err error
+		if dir == "" {
+			dir, err = execution.ShellDir(row.RunID)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -314,7 +328,11 @@ func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (sandbox.Ter
 	if s.mgr.Status(ctx, row.Name) != "running" {
 		return nil, fmt.Errorf("container 不在运行")
 	}
-	return s.mgr.ExecPTYWithToken(ctx, row.Name, row.Token, nil)
+	var command []string
+	if path := canonicalWorkspacePath(ctx, id); path != "" {
+		command = []string{"bash", "-c", "cd -- \"$1\" && exec bash -i", "grasp-terminal", path}
+	}
+	return s.mgr.ExecPTYWithToken(ctx, row.Name, row.Token, command)
 }
 
 // List returns all interactive sandboxes with live-derived status.

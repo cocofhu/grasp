@@ -26,7 +26,7 @@ func Open(cfg config.DBConfig) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", cfg.Driver, err)
 	}
-	if err := db.AutoMigrate(&models.Sandbox{}); err != nil {
+	if err := db.AutoMigrate(&models.Sandbox{}, &models.EnvironmentRelease{}, &models.EnvironmentReleaseFence{}); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return db, nil

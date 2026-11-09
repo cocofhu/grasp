@@ -90,6 +90,12 @@ func (s *SandboxService) soloSessionClosed(row *models.Sandbox) bool {
 }
 
 func (s *SandboxService) recordSoloRecovered(ctx context.Context, row *models.Sandbox, sb *sandbox.Sandbox, grant soloRecoveryGrant) error {
+	// A recreated pod retains the PVC head but loses /run platform env. Rebuild
+	// the trusted tuple only through the native standby protocol before making
+	// this environment available; an already configured runtime is read-only.
+	if err := s.mgr.ConfigureWorkspaceRuntime(ctx, sb); err != nil {
+		return err
+	}
 	if err := s.recheckSoloRecoveryGrant(ctx, row, grant); err != nil {
 		return s.blockSoloRecoveryAuthorization(ctx, row, grant, err)
 	}

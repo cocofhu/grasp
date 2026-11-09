@@ -252,7 +252,7 @@ func (m *Manager) RecoverHold(ctx context.Context, id Identity, deadline time.Ti
 	var row models.PayloadUploadHold
 	var limits Limits
 	err := m.publication(ctx, id, func(tx *gorm.DB) error {
-		if err := m.options.Authorize(ctx, tx, id); err != nil {
+		if err := m.options.Authorize(tx.Statement.Context, tx, id); err != nil {
 			return err
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&row, "id = ?", HoldID(id)).Error; err != nil {

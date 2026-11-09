@@ -152,7 +152,7 @@ func (s *SandboxService) startSoloContainer(id uint, name, profile, threadID, ru
 		fail(fmt.Errorf("acp not ready: %w", err))
 		return
 	}
-	acp := sb.ACP().WithSession(sb.WorkspaceDir, mcpServersJSON(specs))
+	acp := sb.ACP().WithSession(sb.EffectiveWorkspaceDir(), mcpServersJSON(specs))
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
 		fail(fmt.Errorf("acp connect: %w", err))

@@ -173,6 +173,20 @@ func (e *Engine) loadCtx(runID string) (*execCtx, error) {
 	c := &execCtx{run: &run, graph: run.Graph,
 		vars: map[string]any{}, nodeOutputs: map[string]map[string]any{},
 		iter: map[string]int{}, autoRetries: map[string]int{}}
+	if e.workspaceCheckpoints != nil {
+		for id, value := range run.Checkpoints[workspaceAutoRetryCheckpoint] {
+			var count int
+			switch n := value.(type) {
+			case float64:
+				count = int(n)
+			case int:
+				count = n
+			}
+			if count > 0 {
+				c.autoRetries[id] = count
+			}
+		}
+	}
 	var vars []models.RunVariable
 	if err := e.db.Where("run_id = ?", runID).Find(&vars).Error; err != nil {
 		return nil, fmt.Errorf("load run variables: %w", err)
@@ -446,6 +460,16 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 		}
 
 		switch {
+		case outcome.providerUnknown && e.workspaceCheckpoints != nil:
+			var state models.StateRun
+			if err := e.db.Select("id", "run_id", "node_id", "iteration", "attempt", "provider_attempt", "workspace_checkpoint_id").Where("run_id = ? AND node_id = ? AND iteration = ? AND attempt = ?", runID, node.ID, c.iter[node.ID], c.run.Attempt).Take(&state).Error; err == nil {
+				if err := e.parkUnknownWorkspaceVisit(state); err != nil {
+					log.Error().Err(err).Str("run_id", runID).Msg("retain unknown provider outcome failed")
+				}
+			}
+			e.recordDroppedOutcomeUsage(c, node, outcome, models.TokenLedgerStatusFailed)
+			e.publishRunControl(runID)
+			return
 		case outcome.status == "paused":
 
 			e.saveState(c, node, outcome)
@@ -462,7 +486,7 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 				}
 			}
 			return
-		case outcome.status == "failed" && outcome.sandboxSetup:
+		case outcome.status == "failed" && outcome.sandboxSetup && e.workspaceCheckpoints == nil:
 			// The dialogue never opened: no execution to finish, the run fails.
 			ensureHandoff(c, node, &outcome)
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).Str("err", outcome.err).Msg("node failed")

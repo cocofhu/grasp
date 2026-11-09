@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"backend/internal/workspacebinding"
 	"backend/internal/workspacejob"
 )
 
@@ -33,6 +34,9 @@ type ControllerConfig struct {
 	Engine      Config
 	Jobs        workspacejob.Config
 	RestoreRoot string
+	// Binding is an authenticated startup option. Consumers are installed by
+	// router composition before any Agent is started, never by an HTTP request.
+	Binding *workspacebinding.Config
 }
 
 type FileCapabilities struct {
@@ -69,6 +73,7 @@ type Controller struct {
 	restore *os.Root
 	mu      sync.Mutex
 	live    map[string]*transfer
+	Binding *workspacebinding.Manager
 }
 
 func NewController(cfg ControllerConfig) (*Controller, error) {
@@ -90,11 +95,29 @@ func NewController(cfg ControllerConfig) (*Controller, error) {
 		return nil, err
 	}
 	c := &Controller{Engine: engine, restore: root, live: map[string]*transfer{}}
-	cfg.Jobs.Executors = map[string]workspacejob.Executor{"capture_files": engine.capture, "read_snapshot": c.read, "restore_files": c.receive}
+	if cfg.Binding != nil {
+		bindingCfg := *cfg.Binding
+		bindingCfg.ResolveRestore = c.resolveBindingRestore
+		c.Binding, err = workspacebinding.New(bindingCfg)
+		if err != nil {
+			_ = engine.Close()
+			_ = root.Close()
+			return nil, err
+		}
+		engine.binding = c.Binding
+	}
+	cfg.Jobs.Executors = map[string]workspacejob.Executor{"capture_files": engine.captureCurrent, "read_snapshot": c.read, "restore_files": c.receive}
+	if c.Binding != nil {
+		cfg.Jobs.Executors["activate_workspace"] = c.Binding.Execute
+		cfg.Jobs.Executors["return_workspace"] = c.Binding.Execute
+	}
 	c.Jobs, err = workspacejob.New(cfg.Jobs)
 	if err != nil {
 		_ = engine.Close()
 		_ = root.Close()
+		if c.Binding != nil {
+			_ = c.Binding.Close()
+		}
 		return nil, err
 	}
 	return c, nil
@@ -104,7 +127,29 @@ func (c *Controller) Close(ctx context.Context) error {
 	if err := c.Jobs.Close(ctx); err != nil {
 		return err // Keep roots open until every fenced executor has joined.
 	}
-	return errors.Join(c.Engine.Close(), c.restore.Close())
+	var bindingErr error
+	if c.Binding != nil {
+		bindingErr = c.Binding.Close()
+	}
+	return errors.Join(c.Engine.Close(), c.restore.Close(), bindingErr)
+}
+
+func (c *Controller) resolveBindingRestore(_ context.Context, id string) error {
+	if c.Jobs == nil {
+		return workspacebinding.ErrUninstalled
+	}
+	receipt, err := c.Jobs.Get(id)
+	if err != nil {
+		return err
+	}
+	if receipt.Kind != "restore_files" || receipt.State != "completed" {
+		return workspacebinding.ErrConflict
+	}
+	var result RestoreReceipt
+	if strictDecode(receipt.Result, &result) != nil || result.Version != Version || result.Directory != id || !hashPattern.MatchString(result.ArchiveSHA256) || !hashPattern.MatchString(result.ManifestSHA256) {
+		return workspacebinding.ErrConflict
+	}
+	return nil
 }
 
 func (c *Controller) Capabilities() FileCapabilities {

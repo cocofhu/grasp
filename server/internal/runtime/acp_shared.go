@@ -275,7 +275,7 @@ func (c *acpProvider) reuseSharedSandbox(ctx context.Context, req NodeReq, ss *s
 	}
 	c.syncSharedBranches(ctx, sb, req)
 	acp := sb.ACP().
-		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
+		WithSession(sb.EffectiveWorkspaceDir(), c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"]).
 		WithExecution(c.executionForEnvironment(req, spec.Env))

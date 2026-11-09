@@ -45,6 +45,7 @@ func (e *Engine) dispatch() {
 // Priority DESC → hasRemainingHumanGate DESC → created_at ASC → id ASC order,
 // then returns (either at capacity or with the queue empty).
 func (e *Engine) drainQueue() {
+	e.reconcileWorkspaceCheckpoints()
 	e.parkWaitingPauses()
 	for {
 		// Hold the halt read lock from the halt check through the claim and
@@ -119,7 +120,11 @@ func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool, noStartRu
 		updates["started_at"] = time.Now()
 	}
 	res := e.executionMutation(context.Background(), run.ID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "queued").Updates(updates)
+		query := db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "queued")
+		if e.workspaceCheckpoints != nil {
+			query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state <> 'applied')")
+		}
+		return query.Updates(updates)
 	})
 	if res.Error != nil {
 		log.Error().Str("run_id", run.ID).Err(res.Error).Msg("dispatcher: claim update failed (will retry)")
@@ -278,6 +283,9 @@ func (e *Engine) enqueueAdmission(runID, fromNodeID string, requireRunning bool)
 		if current != source {
 			return nil
 		}
+		if err := e.workflowCheckpointPendingTx(tx, runID); err != nil {
+			return err
+		}
 		ref, err := files.PreparedRef(prepared)
 		if err != nil {
 			return err
@@ -306,7 +314,11 @@ func (e *Engine) admitRunDirect(runID, fromNodeID string) bool {
 		updates["started_at"] = time.Now()
 	}
 	res := e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.Run{}).Where("id = ? AND status NOT IN ?", runID, []string{"running", "paused"}).Updates(updates)
+		query := db.Model(&models.Run{}).Where("id = ? AND status NOT IN ?", runID, []string{"running", "paused"})
+		if e.workspaceCheckpoints != nil {
+			query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state <> 'applied')")
+		}
+		return query.Updates(updates)
 	})
 	if res.Error != nil || res.RowsAffected == 0 {
 		return false

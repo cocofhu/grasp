@@ -24,7 +24,7 @@ func (e *Engine) validateManifest(data []byte, receipt Receipt) (Manifest, error
 	if hex.EncodeToString(hash[:]) != receipt.Manifest.SHA256 || strictDecode(data, &manifest) != nil || manifest.Version != Version || manifest.PolicyVersion != PolicyVersion || manifest.Consistency != "verified_copy" || !validLimits(manifest.Limits) || !hashPattern.MatchString(manifest.PolicySHA256) {
 		return manifest, ErrIntegrity
 	}
-	if _, err := normalizeSpec(Spec{PolicyVersion: manifest.PolicyVersion, Paths: manifest.Paths, IncludeIgnored: manifest.IncludeIgnored}, e.config.PrivatePaths); err != nil {
+	if _, err := normalizeSpec(Spec{Binding: manifest.Binding, PolicyVersion: manifest.PolicyVersion, Paths: manifest.Paths, IncludeIgnored: manifest.IncludeIgnored}, e.config.PrivatePaths); err != nil {
 		return manifest, err
 	}
 	if len(manifest.Files) > e.config.Limits.MaxEntries || len(manifest.Repositories) > e.config.Limits.MaxRepositories || len(manifest.Excluded) > e.config.Limits.MaxEntries {

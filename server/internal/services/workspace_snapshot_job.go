@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/executionlineage"
@@ -64,12 +65,21 @@ type WorkspaceJobOptions struct {
 	// required both at admission and fenced dispatch/publication, not inferred
 	// from a Run's CreatedBy or a caller-supplied actor field.
 	Authorize func(context.Context, *gorm.DB, models.WorkspaceSnapshotJob) error
+	// ReadScope is current metadata-only scope access for immutable receipts.
+	// It never supplies permission to execute a native workspace operation.
+	ReadScope func(context.Context, *gorm.DB, string, string, string) error
 	// PrepareAuthorization performs external proof reads before the outermost
 	// SQL transaction. The resulting private context proof is consumed by pure
 	// SQL Authorize/Guard callbacks; it must never refresh inside that TX.
 	PrepareAuthorization func(context.Context) (context.Context, error)
-	Validate             map[string]func(json.RawMessage) error
-	Processors           map[string]WorkspaceJobProcessor
+	// PrepareJobAuthorization resolves current selected grants and canonical
+	// source binding using this immutable job before any outer transaction.
+	PrepareJobAuthorization func(context.Context, models.WorkspaceSnapshotJob) (context.Context, error)
+	// GuardJobPublication consumes that proof once more before commit. It is
+	// metadata-only and must not resolve current credentials or read providers.
+	GuardJobPublication func(context.Context, *gorm.DB, models.WorkspaceSnapshotJob) error
+	Validate            map[string]func(json.RawMessage) error
+	Processors          map[string]WorkspaceJobProcessor
 	// These hooks inspect and write metadata only in the existing job TX.
 	AdmittedTx     func(context.Context, *gorm.DB, models.WorkspaceSnapshotJob) error
 	CompletedTx    func(context.Context, *gorm.DB, models.WorkspaceSnapshotJob, sandbox.WorkspaceJobReceipt) error
@@ -83,10 +93,12 @@ type WorkspaceJobOptions struct {
 }
 
 type WorkspaceSnapshotJobs struct {
-	db      *gorm.DB
-	sandbox *SandboxService
-	options WorkspaceJobOptions
-	local   sync.Map
+	db         *gorm.DB
+	sandbox    *SandboxService
+	options    WorkspaceJobOptions
+	local      sync.Map
+	paused     atomic.Bool
+	operations atomic.Int64
 }
 
 func NewWorkspaceSnapshotJobs(db *gorm.DB, sbx *SandboxService, options WorkspaceJobOptions) *WorkspaceSnapshotJobs {
@@ -123,7 +135,14 @@ func NewWorkspaceSnapshotJobs(db *gorm.DB, sbx *SandboxService, options Workspac
 	s := &WorkspaceSnapshotJobs{db: db, sandbox: sbx, options: options}
 	if s.options.Remote == nil && sbx != nil {
 		s.options.Remote = func(ctx context.Context, id uint) (WorkspaceJobRemote, error) {
-			host, port, password, err := sbx.acpConnection(ctx, id)
+			row, err := sbx.Get(id)
+			if err != nil {
+				return nil, err
+			}
+			// Typed authorization and the physical job lease precede transport.
+			// This read-only connection must cross only its own binding barrier,
+			// and must never wake or install a runtime for a file operation.
+			host, port, password, err := sbx.acpConnectionFromRow(ctx, row, false)
 			if err != nil {
 				return nil, err
 			}
@@ -174,6 +193,17 @@ func (s *WorkspaceSnapshotJobs) prepareAuthorization(ctx context.Context) (conte
 	return ctx, nil
 }
 
+func (s *WorkspaceSnapshotJobs) prepareJobAuthorization(ctx context.Context, row models.WorkspaceSnapshotJob) (context.Context, error) {
+	var err error
+	if s.options.PrepareJobAuthorization != nil {
+		ctx, err = s.options.PrepareJobAuthorization(ctx, row)
+		if err != nil {
+			return ctx, err
+		}
+	}
+	return s.prepareAuthorization(ctx)
+}
+
 func (s *WorkspaceSnapshotJobs) Admit(ctx context.Context, actor string, in WorkspaceJobInput) (models.WorkspaceSnapshotJob, error) {
 	var row models.WorkspaceSnapshotJob
 	if actor == "" || !workspaceJobID.MatchString(in.ClientRequestID) || in.ScopeID == "" || len(in.ScopeID) > 191 || (in.ScopeKind != "solo" && in.ScopeKind != "run") || in.SandboxID == 0 || in.Duration <= 0 || in.Duration > s.options.MaxDuration {
@@ -216,7 +246,7 @@ func (s *WorkspaceSnapshotJobs) Admit(ctx context.Context, actor string, in Work
 		}
 		row.Deadline = in.NotAfter.UTC()
 	}
-	ctx, err = s.prepareAuthorization(ctx)
+	ctx, err = s.prepareJobAuthorization(ctx, row)
 	if err != nil {
 		return models.WorkspaceSnapshotJob{}, err
 	}
@@ -256,6 +286,9 @@ func (s *WorkspaceSnapshotJobs) Get(ctx context.Context, actor, id string) (mode
 	if err := s.db.WithContext(ctx).First(&row, "id = ? AND actor_id = ?", id, actor).Error; err != nil {
 		return row, err
 	}
+	if s.options.ReadScope != nil {
+		return row, s.options.ReadScope(ctx, s.db.WithContext(ctx), actor, row.ScopeKind, row.ScopeID)
+	}
 	if s.options.Authorize == nil {
 		return row, ErrWorkspaceJobAuthority
 	}
@@ -276,7 +309,7 @@ func (s *WorkspaceSnapshotJobs) claim(ctx context.Context, id string, reconcile 
 	if err := s.verify(ctx, row.Lineage); err != nil {
 		return row, workspaceJobLease{}, err
 	}
-	ctx, err := s.prepareAuthorization(ctx)
+	ctx, err := s.prepareJobAuthorization(ctx, row)
 	if err != nil {
 		return row, workspaceJobLease{}, err
 	}
@@ -321,7 +354,11 @@ func (s *WorkspaceSnapshotJobs) renew(ctx context.Context, lease workspaceJobLea
 	if err := s.verify(ctx, lease.lineage); err != nil {
 		return time.Time{}, errors.Join(ErrWorkspaceJobOwner, err)
 	}
-	ctx, err := s.prepareAuthorization(ctx)
+	var row models.WorkspaceSnapshotJob
+	if err := s.db.WithContext(ctx).Take(&row, "id = ?", lease.id).Error; err != nil {
+		return time.Time{}, err
+	}
+	ctx, err := s.prepareJobAuthorization(ctx, row)
 	if err != nil {
 		return time.Time{}, errors.Join(ErrWorkspaceJobOwner, err)
 	}
@@ -331,10 +368,6 @@ func (s *WorkspaceSnapshotJobs) renew(ctx context.Context, lease workspaceJobLea
 		until = deadline
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row models.WorkspaceSnapshotJob
-		if err := tx.Take(&row, "id = ?", lease.id).Error; err != nil {
-			return err
-		}
 		if err := s.options.Authorize(ctx, tx, row); err != nil {
 			return err
 		}
@@ -402,7 +435,7 @@ func (s *WorkspaceSnapshotJobs) publishCompletion(ctx context.Context, row model
 	if err := s.verify(ctx, row.Lineage); err != nil {
 		return err
 	}
-	ctx, err := s.prepareAuthorization(ctx)
+	ctx, err := s.prepareJobAuthorization(ctx, row)
 	if err != nil {
 		return err
 	}
@@ -442,7 +475,7 @@ func (s *WorkspaceSnapshotJobs) controlFence(ctx context.Context, row models.Wor
 	if err := s.verify(ctx, row.Lineage); err != nil {
 		return sandbox.WorkspaceJobFence{}, errors.Join(ErrWorkspaceJobOwner, err)
 	}
-	ctx, err := s.prepareAuthorization(ctx)
+	ctx, err := s.prepareJobAuthorization(ctx, row)
 	if err != nil {
 		return sandbox.WorkspaceJobFence{}, errors.Join(ErrWorkspaceJobOwner, err)
 	}
