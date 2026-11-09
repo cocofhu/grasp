@@ -3,6 +3,7 @@ package filestore_test
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,5 +84,43 @@ func TestPreparedFailedPublicationNeverProducesProof(t *testing.T) {
 	}
 	if _, err := store.PreparedRef(prepared); err == nil {
 		t.Fatal("failed publication produced a valid proof")
+	}
+}
+
+func TestPreparedBoundedLoadLimitsInlineAndReferencesAndVerifiesBytes(t *testing.T) {
+	store, err := filestore.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(store.Close)
+	ctx := context.Background()
+	body := "exact bytes"
+	prepared, err := store.Prepare(ctx, strings.NewReader(body), filestore.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{body, prepared.Ref()} {
+		if _, err := store.LoadBounded(ctx, raw, filestore.Bytes, int64(len(body)-1)); err == nil {
+			t.Fatal("oversize body accepted")
+		}
+		got, err := store.LoadBounded(ctx, raw, filestore.Bytes, int64(len(body)))
+		if err != nil || string(got) != body {
+			t.Fatalf("exact boundary body changed: %q %v", got, err)
+		}
+		for _, limit := range []int64{-1, 0, math.MaxInt64} {
+			if _, err := store.LoadBounded(ctx, raw, filestore.Bytes, limit); err == nil {
+				t.Fatal("invalid size bound accepted")
+			}
+		}
+	}
+	_, digest, _ := filestore.Parse(prepared.Ref())
+	if err := os.WriteFile(filepath.Join(store.Root, "sha256", digest[:2], digest), []byte("wrong bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.LoadBounded(ctx, prepared.Ref(), filestore.Bytes, 1024); err == nil {
+		t.Fatal("bounded read skipped local checksum validation")
+	}
+	if _, err := store.LoadBounded(ctx, prepared.Ref(), filestore.JSON, 1024); err == nil {
+		t.Fatal("bounded read skipped owner encoding validation")
 	}
 }

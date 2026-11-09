@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/cocofhu/grasp/internal/objectstore"
 )
@@ -32,7 +31,7 @@ const (
 
 type Store struct {
 	Root         string
-	mu           sync.Mutex
+	mu           contextMutex
 	closed       bool
 	objects      objectstore.Store
 	closeContext context.Context
@@ -78,8 +77,10 @@ func (s *Store) Close() {
 	s.mu.Unlock()
 }
 
-func (s *Store) createTemp() (*os.File, error) {
-	s.mu.Lock()
+func (s *Store) createTemp(ctx context.Context) (*os.File, error) {
+	if err := s.mu.LockContext(ctx); err != nil {
+		return nil, err
+	}
 	defer s.mu.Unlock()
 	if s.closed {
 		return nil, ErrClosed
@@ -183,7 +184,7 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 	if err = ctx.Err(); err != nil {
 		return "", 0, err
 	}
-	f, err := s.createTemp()
+	f, err := s.createTemp(ctx)
 	if err != nil {
 		return "", 0, err
 	}
@@ -204,7 +205,9 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 	}
 	digest := hex.EncodeToString(h.Sum(nil))
 	dest := s.path(digest)
-	s.mu.Lock()
+	if err := s.mu.LockContext(ctx); err != nil {
+		return "", 0, err
+	}
 	defer s.mu.Unlock()
 	if s.closed {
 		return "", 0, ErrClosed
@@ -267,7 +270,9 @@ func (s *Store) Open(ctx context.Context, ref string) (File, error) {
 	}
 	f, err := os.Open(s.path(digest))
 	if errors.Is(err, os.ErrNotExist) {
-		s.mu.Lock()
+		if err := s.mu.LockContext(ctx); err != nil {
+			return nil, err
+		}
 		objects := s.objects
 		s.mu.Unlock()
 		if objects != nil {

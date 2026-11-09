@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"math"
 	"strings"
 )
 
@@ -42,12 +43,28 @@ func (s *Store) PreparedRef(p Prepared) (string, error) {
 // Inline legacy values remain byte-for-byte readable. A reference is resolved
 // once; literal reference-looking text inside its body remains ordinary data.
 func (s *Store) Load(ctx context.Context, raw, encoding string) ([]byte, error) {
+	return s.load(ctx, raw, encoding, 0)
+}
+
+// LoadBounded applies the same explicit loading and checksum contract to both
+// legacy inline values and referenced bodies, while bounding retained bytes.
+func (s *Store) LoadBounded(ctx context.Context, raw, encoding string, limit int64) ([]byte, error) {
+	if limit < 1 || limit == math.MaxInt64 {
+		return nil, errors.New("invalid stored payload size limit")
+	}
+	return s.load(ctx, raw, encoding, limit)
+}
+
+func (s *Store) load(ctx context.Context, raw, encoding string, limit int64) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if !IsRef(raw) {
 		if strings.HasPrefix(raw, Prefix) {
 			return nil, errors.New("invalid stored file reference")
+		}
+		if limit > 0 && int64(len(raw)) > limit {
+			return nil, errors.New("stored payload exceeds size limit")
 		}
 		return []byte(raw), nil
 	}
@@ -63,9 +80,16 @@ func (s *Store) Load(ctx context.Context, raw, encoding string) ([]byte, error) 
 		return nil, err
 	}
 	defer func() { _ = body.Close() }()
-	data, err := io.ReadAll(contextReader{ctx: ctx, r: body})
+	var reader io.Reader = contextReader{ctx: ctx, r: body}
+	if limit > 0 {
+		reader = io.LimitReader(reader, limit+1)
+	}
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, err
+	}
+	if limit > 0 && int64(len(data)) > limit {
+		return nil, errors.New("stored payload exceeds size limit")
 	}
 	hash := sha256.Sum256(data)
 	if hex.EncodeToString(hash[:]) != digest {
