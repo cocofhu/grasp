@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/storageguard"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -40,9 +43,9 @@ type RuntimeDB struct {
 	DB   *gorm.DB
 	ID   string
 	once sync.Once
+	done chan struct{}
 	err  error
 	cfg  config.DatabaseConfig
-	root string
 }
 
 func OpenRuntime(cfg config.DatabaseConfig, root string) (*RuntimeDB, error) {
@@ -52,7 +55,7 @@ func OpenRuntime(cfg config.DatabaseConfig, root string) (*RuntimeDB, error) {
 	if err != nil {
 		return nil, err
 	}
-	runtime := &RuntimeDB{DB: db, cfg: cfg, root: root}
+	runtime := &RuntimeDB{DB: db, cfg: cfg}
 	// In-memory SQLite is private to this process and has no offline SQL
 	// snapshot to migrate. Its last connection destroys the registry too; a
 	// reconnect would create an unrelated empty database, not release a lease.
@@ -73,28 +76,67 @@ func OpenRuntime(cfg config.DatabaseConfig, root string) (*RuntimeDB, error) {
 	return runtime, nil
 }
 
-// Close fences file publications and waits for SQL queries before removing the
-// presence using a separate connection. Background goroutines using the old DB
-// can no longer publish SQL references after storage maintenance is admitted.
+// Close fences publications and drains borrowed SQL transactions/cursors before
+// removing maintenance presence. A failure deliberately retains that presence.
 func (r *RuntimeDB) Close() error {
+	return r.CloseContext(context.Background())
+}
+
+// CloseContext is bounded by the caller's deadline and the default shutdown
+// timeout. Concurrent callers can stop waiting at their own earlier deadlines;
+// only the first caller runs shutdown, with no detached unregistration worker.
+func (r *RuntimeDB) CloseContext(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, shutdownTimeout)
+	defer cancel()
+	first := false
 	r.once.Do(func() {
-		if r.err = Close(r.DB); r.err != nil {
-			return // retain presence when shutdown cannot be confirmed
-		}
-		if r.ID == "" {
-			return
-		}
-		control, err := ConnectWithFiles(r.cfg, r.root)
-		if err != nil {
-			r.err = err
-			return
-		}
-		defer func() { _ = Close(control) }()
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		r.err = storageguard.Unregister(ctx, control, r.ID)
+		first = true
+		r.done = make(chan struct{})
 	})
+	if !first {
+		select {
+		case <-r.done:
+			return r.err
+		default:
+		}
+		select {
+		case <-r.done:
+			return r.err
+		case <-ctx.Done():
+			return fmt.Errorf("%w: waiting for runtime shutdown: %w", ErrDrainIncomplete, ctx.Err())
+		}
+	}
+	r.err = r.closeRuntime(ctx)
+	close(r.done)
 	return r.err
+}
+
+func (r *RuntimeDB) closeRuntime(ctx context.Context) error {
+	if err := CloseContext(ctx, r.DB); err != nil {
+		return err
+	}
+	if r.ID == "" {
+		return nil // Never reconnect an ephemeral SQLite registry.
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := uuid.Parse(r.ID); err != nil {
+		return fmt.Errorf("invalid runtime identity during shutdown: %w", err)
+	}
+	// This control connection needs only a fixed DELETE. Avoid GORM startup's
+	// version query/Ping with Background context or creating another file Store.
+	driver, dsn := "sqlite3", sqliteDSN(r.cfg.Path)
+	if r.cfg.Driver == "mysql" {
+		driver, dsn = "mysql", r.cfg.DSN
+	}
+	control, err := sql.Open(driver, dsn)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = control.Close() }()
+	_, err = control.ExecContext(ctx, "DELETE FROM payload_storage_runtimes WHERE id = ?", r.ID)
+	return err
 }
 
 func ephemeralSQLite(cfg config.DatabaseConfig) bool {

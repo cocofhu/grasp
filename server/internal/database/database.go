@@ -3,6 +3,8 @@
 package database
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,18 +37,48 @@ func Open(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	}
 }
 
-// Close fences file publications before releasing the database. Background
-// jobs may still settle after admission stops; they must not recreate storage
-// directories after the caller has closed and removed the database workspace.
+const shutdownTimeout = 10 * time.Second
+
+var ErrDrainIncomplete = errors.New("database shutdown did not drain borrowed SQL connections")
+
+// Close fences publications, refuses new SQL borrowing and bounds the wait for
+// existing transactions/cursors. sql.DB.Close alone does not drain old *sql.Tx.
 func Close(db *gorm.DB) error {
+	return CloseContext(context.Background(), db)
+}
+
+// CloseContext honors an earlier caller deadline and caps SQL draining at ten
+// seconds. On failure a RuntimeDB must keep its maintenance presence registered.
+// Publication cancellation/join still follows the Store's Close contract.
+func CloseContext(ctx context.Context, db *gorm.DB) error {
+	ctx, cancel := context.WithTimeout(ctx, shutdownTimeout)
+	defer cancel()
+	conn, err := db.DB()
+	if err != nil {
+		if store, storeErr := filestore.FromDB(db); storeErr == nil {
+			store.Close()
+		}
+		return err
+	}
+	closeErr := conn.Close() // Fences new borrowing; old Tx/Conn may still work.
 	if store, err := filestore.FromDB(db); err == nil {
 		store.Close()
 	}
-	conn, err := db.DB()
-	if err != nil {
-		return err
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		borrowed := conn.Stats().InUse
+		if err := ctx.Err(); err != nil {
+			return errors.Join(closeErr, fmt.Errorf("%w: %d still borrowed: %w", ErrDrainIncomplete, borrowed, err))
+		}
+		if borrowed == 0 {
+			return closeErr
+		}
+		select {
+		case <-ctx.Done():
+		case <-ticker.C:
+		}
 	}
-	return conn.Close()
 }
 
 // OpenWithFiles binds payload storage before any application writes. All
@@ -192,11 +224,7 @@ func closeGorm(db *gorm.DB) error {
 }
 
 func openSQLiteConn(path string) (*gorm.DB, error) {
-	dsn := path
-	if !strings.Contains(dsn, "?") {
-		dsn += "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on"
-	}
-	db, err := gorm.Open(sqlite.Open(dsn), gormConfig())
+	db, err := gorm.Open(sqlite.Open(sqliteDSN(path)), gormConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +246,14 @@ func openSQLiteConn(path string) (*gorm.DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+func sqliteDSN(path string) string {
+	dsn := path
+	if !strings.Contains(dsn, "?") {
+		dsn += "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on"
+	}
+	return dsn
 }
 
 // openMySQL opens the MySQL database at dsn. Unlike SQLite it supports genuine
