@@ -56,6 +56,7 @@ type stack struct {
 	client   *http.Client
 	dataRoot string
 	gateKey  string
+	image    string
 }
 
 func testPort(name, fallback string) string {
@@ -177,7 +178,7 @@ func newStack(t *testing.T) *stack {
 	_, _ = rand.Read(secret)
 	s := &stack{
 		t: t, root: root, api: "http://127.0.0.1:" + e2ePort, artifact: artifact,
-		dataRoot: dataRoot, gateKey: gateKey,
+		dataRoot: dataRoot, gateKey: gateKey, image: image,
 		env: append(os.Environ(),
 			"COMPOSE_PROJECT_NAME=grasp-e2e-"+randHex(6),
 			"GRASP_RESTART_DATA_ROOT="+dataRoot,
@@ -248,9 +249,14 @@ func (s *stack) down() {
 	}
 	cmd = exec.Command("docker", "compose", "-f", "compose.release.yaml", "-f", "server/e2e/compose.e2e.yaml", "down", "--volumes", "--remove-orphans", "-t", "5")
 	cmd.Dir, cmd.Env = s.root, s.env
-	_ = cmd.Run()
-	if err := os.RemoveAll(s.dataRoot); err != nil {
-		s.t.Logf("retained fixture data for diagnosis: %v", err)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		s.t.Errorf("retained fixture data because compose shutdown failed: %v\n%s", err, out)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := removeRestartFixtureData(ctx, s.dataRoot, s.root, s.image); err != nil {
+		s.t.Errorf("retained fixture data because owned cleanup failed: %v", err)
 	}
 }
 
