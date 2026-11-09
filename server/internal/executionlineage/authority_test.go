@@ -195,7 +195,6 @@ func TestExecutionQuarantineCoversEveryPendingSourceWithoutPayloadIO(t *testing.
 		{"workflow_conversation_events", map[string]any{"id": "event", "run_id": "run", "version": 1, "disposition": "pending", "payload": ref}},
 		{"workspace_snapshot_jobs", map[string]any{"id": "job", "state": "unknown", "body": "{}"}},
 		{"workspace_restores", map[string]any{"id": "restore", "state": "dispatching"}},
-		{"workspace_imports", map[string]any{"id": "import", "state": "pending"}},
 		{"payload_upload_holds", map[string]any{"id": "hold", "state": "unknown"}},
 		{"sandboxes", map[string]any{"id": 1, "name": "old-native-environment", "status": "running"}},
 	}

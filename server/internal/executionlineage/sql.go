@@ -60,7 +60,6 @@ var quarantineSpecs = []quarantineSpec{
 	{EntityWorkflowEvent, "workflow_conversation_events", "disposition", "disposition = 'pending'", false},
 	{EntityWorkspaceJob, "workspace_snapshot_jobs", "state", "state NOT IN ('completed','ready','failed','cancelled')", false},
 	{EntityRestore, "workspace_restores", "state", "state NOT IN ('restored','failed','cancelled')", false},
-	{EntityImport, "workspace_imports", "state", "state NOT IN ('applied','failed','expired')", false},
 	{EntityHold, "payload_upload_holds", "state", "state <> 'pinned'", false},
 	{EntitySandbox, "sandboxes", "status", "status IN ('pulling','creating','starting','running','stopping')", false},
 }
