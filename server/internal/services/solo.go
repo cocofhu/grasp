@@ -787,16 +787,22 @@ func (s *SoloService) Messages(id, user string) ([]models.SoloMessage, error) {
 	if _, err := s.Require(id, user); err != nil {
 		return nil, err
 	}
-	rows, err := readSoloMessages(s.db.Where("session_id = ?", id).Order("created_at asc"), soloMessageAll)
+	rows, err := readSoloMessages(s.db.Where("session_id = ?", id).Order("created_at asc"), soloMessageAll&^soloMessageEvents)
 	if err != nil {
 		return nil, err
 	}
 	for i := range rows {
-		if rows[i].EventLog != nil {
+		if rows[i].EventLog != nil && rows[i].EventLog.Legacy != nil {
+			rows[i].Events, err = readImportedMessageEvents(context.Background(), s.db, id, rows[i].ID, rows[i].EventLog)
+		} else if rows[i].EventLog != nil {
 			rows[i].Events, _, err = s.journalTurn(context.Background(), rows[i].TurnID, id, rows[i].EventLog.Through)
-			if err != nil {
-				return nil, err
-			}
+		} else {
+			var legacy models.SoloMessage
+			legacy, err = readSoloMessage(s.db.Where("id = ? AND session_id = ?", rows[i].ID, id), soloMessageEvents)
+			rows[i].Events = legacy.Events
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
 	return rows, err

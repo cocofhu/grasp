@@ -222,4 +222,18 @@ type ChatEventLog struct {
 	Through    int64  `json:"through"`
 	Count      int    `json:"count"`
 	Generation uint64 `json:"generation"`
+	// Legacy identifies a read-only import of the original Events cell. Its
+	// generation and turn remain unknown; it never grants execution authority.
+	Legacy *ChatLegacyEventOrigin `json:"legacy,omitempty"`
+}
+
+// ChatLegacyEventOrigin binds an imported range to its unchanged source body.
+// Reaching the former storage cap cannot prove the original process was saved
+// in full, even when the imported journal itself has no gaps.
+type ChatLegacyEventOrigin struct {
+	Format            string `json:"format"`
+	MessageID         string `json:"messageId"`
+	SHA256            string `json:"sha256"`
+	Count             int    `json:"count"`
+	PossiblyTruncated bool   `json:"possiblyTruncated"`
 }

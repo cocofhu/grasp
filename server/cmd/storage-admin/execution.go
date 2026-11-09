@@ -87,14 +87,22 @@ func initializeExecution(ctx context.Context, opts options, cfg *config.Config, 
 	file := filepath.Join(opts.workdir, "execution-initialization.json")
 	operation := initialization{Version: 1, ID: uuid.NewString()}
 	raw, err := os.ReadFile(file)
+	existingInitialization := err == nil
 	if err == nil {
 		if json.Unmarshal(raw, &operation) != nil || operation.Version != 1 || uuid.Validate(operation.ID) != nil {
 			return errors.New("invalid execution initialization checkpoint")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
-	} else if err := writeJSON(file, operation); err != nil {
+	}
+	operation, err = initializationAfterUpgrade(ctx, opts, cfg, operation, existingInitialization)
+	if err != nil {
 		return err
+	}
+	if !existingInitialization {
+		if err := writeJSON(file, operation); err != nil {
+			return err
+		}
 	}
 	authority, err := openExecutionControl(ctx, opts, cfg)
 	if err != nil {

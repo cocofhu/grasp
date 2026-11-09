@@ -21,7 +21,7 @@
 
 </div>
 
-This release requires a fresh install: an empty database and an empty data directory.
+New installations use an empty database and data directory. Existing v3.2 installations must follow the [stopped, verified migration procedure](server/UPGRADING.md) before starting this version with their original data.
 
 ## Why Grasp
 

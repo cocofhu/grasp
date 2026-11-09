@@ -75,6 +75,16 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 		if table == "artifacts" || table == "artifact_versions" {
 			columns = append(columns, "kind")
 		}
+		selected := append([]string(nil), columns...)
+		if db.Dialector.Name() == "sqlite" {
+			// GORM's map scan converts driver []byte to string for a TEXT
+			// column even when an older release actually stored a SQLite BLOB.
+			// Capture the storage class in the same SELECT so CAS can bind the
+			// original type and reject a concurrent type/value change.
+			for column := range encodings {
+				selected = append(selected, "typeof("+stmt.Quote(column)+") AS "+stmt.Quote("__payload_type_"+column))
+			}
+		}
 		var after any
 		for {
 			if err := ctx.Err(); err != nil {
@@ -82,7 +92,7 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 			}
 			// A legacy row may contain a large base64 body. Load one row at a
 			// time rather than multiplying peak memory by a fixed batch size.
-			q := db.WithContext(ctx).Table(table).Select(columns).Order(pk).Limit(1)
+			q := db.WithContext(ctx).Table(table).Select(selected).Order(pk).Limit(1)
 			if after != nil {
 				q = q.Where(pk+" > ?", after)
 			}
@@ -153,6 +163,21 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 						// A case-insensitive collation must not overwrite a concurrent
 						// edit which differs only by case or trailing spaces.
 						q = q.Where(clause.Expr{SQL: "BINARY ? = BINARY ?", Vars: []any{clause.Column{Name: column}, row[column]}})
+					} else if db.Dialector.Name() == "sqlite" {
+						storageClass := row["__payload_type_"+column]
+						if value, ok := storageClass.(*any); ok && value != nil {
+							storageClass = *value
+						}
+						storageType, e := rawString(storageClass)
+						if e != nil || (storageType != "text" && storageType != "blob") {
+							return report, fmt.Errorf("unexpected SQLite payload storage type in %s.%s", table, column)
+						}
+						var original any = raw
+						if storageType == "blob" {
+							original = []byte(raw)
+						}
+						q = q.Where(clause.Expr{SQL: "typeof(?) = ?", Vars: []any{clause.Column{Name: column}, storageType}}).
+							Where(clause.Eq{Column: clause.Column{Name: column}, Value: original})
 					} else {
 						q = q.Where(clause.Eq{Column: clause.Column{Name: column}, Value: row[column]})
 					}

@@ -243,6 +243,13 @@ func hydrateSoloMessage(ctx context.Context, db *gorm.DB, record soloMessageSQL,
 			*field.value = string(body)
 		}
 	}
+	if fields&soloMessageEvents != 0 && message.EventLog != nil && message.EventLog.Legacy != nil {
+		message.Events, err = readImportedMessageEvents(ctx, db, record.SessionID, record.ID, message.EventLog)
+		if err != nil {
+			return models.SoloMessage{}, err
+		}
+		fields &^= soloMessageEvents
+	}
 	for _, field := range []struct {
 		bit   soloMessageFields
 		raw   *string

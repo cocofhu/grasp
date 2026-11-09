@@ -45,12 +45,12 @@ func main() {
 	var opts options
 	flag.StringVar(&opts.config, "config", "config.yaml", "source server configuration")
 	flag.StringVar(&opts.target, "target-storage", "", "private YAML containing destination storage config (no env overrides)")
-	flag.StringVar(&opts.mode, "mode", "status", "status, execution-status, copy, verify, execution-init, restore-begin, restore-finalize, or release")
+	flag.StringVar(&opts.mode, "mode", "status", "status, execution-status, upgrade, copy, verify, execution-init, restore-begin, restore-finalize, or release")
 	flag.StringVar(&opts.executionControl, "execution-control", "", "private storage YAML for the independent execution control namespace")
 	flag.StringVar(&opts.workdir, "workdir", "", "private durable checkpoint and SQL backup directory")
 	flag.StringVar(&opts.stopped, "acknowledge-stopped", "", "comma-separated exact IDs of registered processes you have confirmed stopped")
 	flag.BoolVar(&opts.offline, "offline", false, "attest all servers, scripts and external SQL writers are stopped")
-	flag.BoolVar(&opts.resume, "resume", false, "resume the same interrupted copy, rechecking copied bytes")
+	flag.BoolVar(&opts.resume, "resume", false, "resume the same interrupted copy or upgrade, rechecking original intent and bytes")
 	flag.BoolVar(&opts.activate, "switch", false, "activate the verified destination after copy")
 	flag.Parse()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -93,6 +93,9 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 		return err
 	}
 	defer func() { _ = database.Close(db) }()
+	if opts.mode == "upgrade" {
+		return upgradeDatabase(ctx, opts, cfg, db, output)
+	}
 	if opts.mode == "restore-begin" || opts.mode == "restore-finalize" || opts.mode == "restore" {
 		return restoreExecution(ctx, opts, cfg, db, output)
 	}
@@ -211,6 +214,11 @@ func validateOptions(opts options) error {
 	case "execution-status":
 		if opts.target != "" || opts.offline || opts.resume || opts.activate || opts.stopped != "" {
 			return errors.New("execution-status is read-only and does not accept mutation or offline-attestation flags")
+		}
+		return nil
+	case "upgrade":
+		if !opts.offline || opts.workdir == "" || opts.target != "" || opts.activate || opts.executionControl != "" {
+			return errors.New("upgrade requires --offline and its own --workdir; configure current storage explicitly and do not switch or initialize execution")
 		}
 		return nil
 	case "copy", "restore", "verify", "release", "execution-init", "restore-begin", "restore-finalize":

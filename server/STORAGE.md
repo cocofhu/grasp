@@ -28,6 +28,8 @@ COS 配置 `driver: cos`，填写实际 bucket、地域及对应的 HTTPS S3 end
 
 ## 数据布局与升级
 
+v3.2 安装升级到 Solo 续聊迁移版时，先执行[离线版本升级](UPGRADING.md)。正文存储位置复制与版本升级是两个不同操作；普通启动、对象归档和 `execution-init` 不替代历史格式转换。
+
 - `payloads/sha256/<前两位>/<SHA256>`：内容寻址的长正文和序列化载荷，SQL 中保留稳定的 `fileref:v1/...` 引用。
 - `attachments/<ID>`：原始附件及经过编码的文件元数据，保留原有 `blob:<ID>`。
 - SQL 中的 `payload_storage_locations`：物理位置登记，包含 endpoint、bucket、前缀及旧本地目录，不包含密钥。

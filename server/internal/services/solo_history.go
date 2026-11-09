@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
+	"github.com/cocofhu/grasp/internal/historymigration"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -108,6 +109,11 @@ func (s *SoloService) MessageEvents(ctx context.Context, id, user, messageID str
 	}
 	if message.EventLog != nil {
 		pointer := message.EventLog
+		if pointer.Legacy != nil {
+			page, incomplete, err := historymigration.ReadSoloMessagePage(ctx, s.db, message.ID, id, after)
+			result.JournalPage, result.LegacyIncomplete = page, incomplete
+			return result, err
+		}
 		if pointer.Version != chatsession.JournalVersion || pointer.From < 0 || pointer.Through < pointer.From || pointer.Count < 1 {
 			return result, chatsession.ErrJournalGap
 		}
