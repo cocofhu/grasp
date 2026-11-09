@@ -75,7 +75,10 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 		if table == "artifacts" || table == "artifact_versions" {
 			columns = append(columns, "kind")
 		}
-		selected := append([]string(nil), columns...)
+		selected := make([]string, 0, len(columns))
+		for _, column := range columns {
+			selected = append(selected, stmt.Quote(column))
+		}
 		if db.Dialector.Name() == "sqlite" {
 			// GORM's map scan converts driver []byte to string for a TEXT
 			// column even when an older release actually stored a SQLite BLOB.
@@ -92,9 +95,10 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 			}
 			// A legacy row may contain a large base64 body. Load one row at a
 			// time rather than multiplying peak memory by a fixed batch size.
-			q := db.WithContext(ctx).Table(table).Select(selected).Order(pk).Limit(1)
+			q := db.WithContext(ctx).Table(table).Select(selected).
+				Order(clause.OrderByColumn{Column: clause.Column{Name: pk}}).Limit(1)
 			if after != nil {
-				q = q.Where(pk+" > ?", after)
+				q = q.Where(clause.Gt{Column: clause.Column{Name: pk}, Value: after})
 			}
 			var rows []map[string]any
 			if err := q.Find(&rows).Error; err != nil {

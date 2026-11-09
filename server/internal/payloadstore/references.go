@@ -15,6 +15,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/objectstore"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ReferenceReport struct {
@@ -80,11 +81,16 @@ func VerifyReferences(ctx context.Context, db *gorm.DB, destination objectstore.
 		}
 		pk := stmt.Schema.PrimaryFields[0].DBName
 		columns = append(columns, pk)
+		selected := make([]string, 0, len(columns))
+		for _, column := range columns {
+			selected = append(selected, stmt.Quote(column))
+		}
 		var after any
 		for {
-			q := db.WithContext(ctx).Table(stmt.Schema.Table).Select(columns).Order(pk).Limit(1)
+			q := db.WithContext(ctx).Table(stmt.Schema.Table).Select(selected).
+				Order(clause.OrderByColumn{Column: clause.Column{Name: pk}}).Limit(1)
 			if after != nil {
-				q = q.Where(pk+" > ?", after)
+				q = q.Where(clause.Gt{Column: clause.Column{Name: pk}, Value: after})
 			}
 			var rows []map[string]any
 			if err := q.Find(&rows).Error; err != nil {
