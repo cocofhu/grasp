@@ -47,7 +47,7 @@ func TestEmptyPrimaryBootstrapUsesGenuineOriginAndExactFixedSeedDigest(t *testin
 		t.Fatal(err)
 	}
 	var row PrimaryClosure
-	if err := db.First(&row).Error; err != nil || row.ReferenceSHA256 != empty.SHA256 || row.Cells != empty.Cells || row.Payloads != 0 || row.Attachments != 0 {
+	if err := db.First(&row).Error; err != nil || row.ReferenceSHA256 != empty.SHA256 || row.Cells != empty.Cells || row.Payloads != 0 || row.Attachments != 0 || row.FinalizedAt == nil || !row.FinalizedAt.Equal(row.CompletedAt) {
 		t.Fatal("seed JSON reference stamp was fabricated", row, empty, err)
 	}
 	if err := CheckPrimaryClosure(ctx, db, cfg); err != nil {
@@ -106,12 +106,15 @@ func TestPrimaryClosureStartupUsesOnlyMatchingValidHistoricalSQLProof(t *testing
 	}
 	valid := PrimaryClosure{ID: owner, Protocol: PrimaryClosureProtocol, PhysicalFingerprint: location.Fingerprint,
 		ReferenceSHA256: strings.Repeat("a", 64), Cells: 10, Payloads: 1, CompletedAt: time.Now().UTC()}
+	completed := valid.CompletedAt
+	valid.FinalizedAt = &completed
 	for _, mutate := range []func(*PrimaryClosure){
 		func(r *PrimaryClosure) { r.Protocol = "legacy" },
 		func(r *PrimaryClosure) { r.PhysicalFingerprint = strings.Repeat("b", 64) },
 		func(r *PrimaryClosure) { r.ReferenceSHA256 = "invalid" },
 		func(r *PrimaryClosure) { r.Cells = -1 },
 		func(r *PrimaryClosure) { r.CompletedAt = time.Time{} },
+		func(r *PrimaryClosure) { r.FinalizedAt = nil },
 		func(r *PrimaryClosure) { before := r.CompletedAt.Add(-time.Second); r.FinalizedAt = &before },
 	} {
 		bad := valid

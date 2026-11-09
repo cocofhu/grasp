@@ -48,11 +48,11 @@ func TestMySQLLivePrimaryClosureKeepsOriginalReceiptAcrossConnections(t *testing
 	if err != nil || !first.CompletedAt.Equal(second.CompletedAt) || first.ReferenceSHA256 != second.ReferenceSHA256 || first.Cells != second.Cells {
 		t.Fatal("MySQL precision changed the immutable receipt across restart", first, second, err)
 	}
-	if err := reopened.Transaction(func(tx *gorm.DB) error { return CheckPrimaryClosure(t.Context(), tx, storage) }, &sql.TxOptions{ReadOnly: true}); err != nil {
-		t.Fatal("startup proof changed metadata or used objects inside readonly SQL", err)
-	}
 	final, err := FinalizePrimaryClosure(t.Context(), reopened, storage, owner)
 	if err != nil || final.FinalizedAt == nil || !final.CompletedAt.Equal(first.CompletedAt) || mutations.Load() != 0 {
 		t.Fatal("native finalization changed the original result or used SQL cursor during GET", final, err, mutations.Load())
+	}
+	if err := reopened.Transaction(func(tx *gorm.DB) error { return CheckPrimaryClosure(t.Context(), tx, storage) }, &sql.TxOptions{ReadOnly: true}); err != nil {
+		t.Fatal("startup proof changed metadata or used objects inside readonly SQL", err)
 	}
 }
