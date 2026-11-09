@@ -549,7 +549,7 @@ func selectorEqual(a, b map[string]string) bool {
 	return true
 }
 
-func (d *Driver) ensureClusterIPService(ctx context.Context, id string, ports []int) error {
+func (d *Driver) ensureClusterIPService(ctx context.Context, id string, ports []int, retainPublished ...bool) error {
 	labels := d.selector(id)
 	wantPorts := servicePorts(ports)
 	svc := &corev1.Service{
@@ -570,6 +570,12 @@ func (d *Driver) ensureClusterIPService(ctx context.Context, id string, ports []
 	if getErr != nil {
 		return getErr
 	}
+	if len(retainPublished) > 0 && retainPublished[0] {
+		if !d.releaseLabels(id, existing.Spec.Selector) || !d.releaseLabels(id, existing.Labels) {
+			return fmt.Errorf("refuse to retain ports from an unrelated cluster service")
+		}
+		wantPorts = d.convergedServicePorts(existing.Spec.Ports, ports, false)
+	}
 	if samePortSet(existing.Spec.Ports, wantPorts) && selectorEqual(existing.Spec.Selector, labels) {
 		return nil
 	}
@@ -579,9 +585,12 @@ func (d *Driver) ensureClusterIPService(ctx context.Context, id string, ports []
 	return err
 }
 
-func (d *Driver) ensureLoadBalancer(ctx context.Context, id string, ports []int) error {
+func (d *Driver) ensureLoadBalancer(ctx context.Context, id string, ports []int, retainPublished ...bool) error {
 	labels := d.selector(id)
 	wantPorts := servicePorts(ports)
+	if len(retainPublished) > 0 && retainPublished[0] {
+		wantPorts = d.convergedServicePorts(nil, ports, true)
+	}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: d.lbName(id), Namespace: d.opts.Namespace, Labels: labels},
 		Spec: corev1.ServiceSpec{
@@ -601,6 +610,12 @@ func (d *Driver) ensureLoadBalancer(ctx context.Context, id string, ports []int)
 	if getErr != nil {
 		return getErr
 	}
+	if len(retainPublished) > 0 && retainPublished[0] {
+		if !d.releaseLabels(id, existing.Spec.Selector) || !d.releaseLabels(id, existing.Labels) {
+			return fmt.Errorf("refuse to retain ports from an unrelated load balancer")
+		}
+		wantPorts = d.convergedServicePorts(existing.Spec.Ports, ports, true)
+	}
 	if existing.Spec.Type == corev1.ServiceTypeLoadBalancer &&
 		samePortSet(existing.Spec.Ports, wantPorts) &&
 		selectorEqual(existing.Spec.Selector, labels) {
@@ -613,10 +628,9 @@ func (d *Driver) ensureLoadBalancer(ctx context.Context, id string, ports []int)
 	return err
 }
 
-// ConvergePublishSurface heals ClusterIP + LoadBalancer Spec.Ports from driver
-// Options (no Spec required). ReconcileOnStartup / Start / Get use this so
-// inventory *-lb drop unauthenticated 9222/6080 after upgrade. Empty Options
-// are a no-op so unit tests without Public/Internal do not wipe Services.
+// ConvergePublishSurface heals the configured surface while retaining apps
+// already published by this sandbox. Internal ports never survive on the LB.
+// Empty Options remain a no-op for callers without a configured surface.
 func (d *Driver) ConvergePublishSurface(ctx context.Context, id string) error {
 	if strings.TrimSpace(id) == "" {
 		return fmt.Errorf("empty sandbox id")
@@ -627,13 +641,21 @@ func (d *Driver) ConvergePublishSurface(ctx context.Context, id string) error {
 	if len(listen) == 0 {
 		return nil
 	}
-	if err := d.ensureClusterIPService(ctx, id, listen); err != nil {
+	preview, err := d.retainedPreviewPort(ctx, id)
+	if err != nil {
+		return err
+	}
+	if preview > 0 {
+		public = driver.AppendPort(public, preview)
+		listen = driver.AppendPort(listen, preview)
+	}
+	if err := d.ensureClusterIPService(ctx, id, listen, true); err != nil {
 		return fmt.Errorf("converge clusterip: %w", err)
 	}
 	if !d.opts.EnableLoadBalancer || len(public) == 0 {
 		return nil
 	}
-	if err := d.ensureLoadBalancer(ctx, id, public); err != nil {
+	if err := d.ensureLoadBalancer(ctx, id, public, true); err != nil {
 		return fmt.Errorf("converge loadbalancer: %w", err)
 	}
 	return nil
