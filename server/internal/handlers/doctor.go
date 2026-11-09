@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/subtle"
 	"net"
 	"net/http"
@@ -54,6 +55,10 @@ func (h *Handlers) startDoctorArtifactSession(c *gin.Context) {
 		runB:         "doctor-b-" + uuid.NewString(),
 		cleanupToken: uuid.NewString(),
 	}
+	if err := h.Arts.DiagnosticRuns(c.Request.Context(), true, session.runA, session.runB); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "diagnostic execution unavailable"})
+		return
+	}
 	tokenA := h.MCP.RegisterRun(session.runA)
 	tokenB := h.MCP.RegisterRun(session.runB)
 
@@ -91,15 +96,21 @@ func (h *Handlers) cleanupDoctorArtifactSession(id, cleanupToken string) error {
 		h.doctorMu.Unlock()
 		return os.ErrNotExist
 	}
+	h.doctorMu.Unlock()
+	h.MCP.UnregisterRun(session.runA)
+	h.MCP.UnregisterRun(session.runB)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := h.Arts.DiagnosticRuns(ctx, false, session.runA, session.runB); err != nil {
+		return err
+	}
+	h.doctorMu.Lock()
 	delete(h.doctorSessions, id)
 	h.doctorMu.Unlock()
-
 	if session.timer != nil {
 		session.timer.Stop()
 	}
-	h.MCP.UnregisterRun(session.runA)
-	h.MCP.UnregisterRun(session.runB)
-	return h.Arts.DeleteForRuns(session.runA, session.runB)
+	return nil
 }
 
 func validDoctorToken(header string) bool {
