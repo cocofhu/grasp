@@ -41,6 +41,15 @@ services:
       GRASP_DOCTOR_TOKEN: ${GRASP_DOCTOR_TOKEN:-}
       GRASP_DEPLOYMENT_MODE: ${GRASP_DEPLOYMENT_MODE:-local-demo}
       GRASP_AUTH_USERS: ${GRASP_AUTH_USERS:-}
+      GRASP_STORAGE_DRIVER: ${GRASP_STORAGE_DRIVER:-}
+      GRASP_S3_ENDPOINT: ${GRASP_S3_ENDPOINT:-}
+      GRASP_S3_REGION: ${GRASP_S3_REGION:-}
+      GRASP_S3_BUCKET: ${GRASP_S3_BUCKET:-}
+      GRASP_S3_PREFIX: ${GRASP_S3_PREFIX:-}
+      GRASP_S3_ACCESS_KEY_ID: ${GRASP_S3_ACCESS_KEY_ID:-}
+      GRASP_S3_SECRET_ACCESS_KEY: ${GRASP_S3_SECRET_ACCESS_KEY:-}
+      GRASP_S3_SESSION_TOKEN: ${GRASP_S3_SESSION_TOKEN:-}
+      GRASP_S3_PATH_STYLE: ${GRASP_S3_PATH_STYLE:-}
     volumes:
       - ./.localdata/db:/data
       # Agent profiles / org (WORKDIR-relative data/*). Keep separate from SQLite /data.
@@ -61,4 +70,38 @@ services:
       timeout: 5s
       retries: 24
       start_period: 10s
+    restart: unless-stopped
+
+  # Prepared and started by start.sh when driver=s3 and endpoint is empty.
+  objectstore:
+    image: ${GRASP_LOCAL_OBJECTSTORE_IMAGE:-chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0}
+    profiles: [local-storage]
+    user: "${GRASP_LOCAL_OBJECTSTORE_UID:-0}:${GRASP_LOCAL_OBJECTSTORE_GID:-0}"
+    entrypoint: [/usr/bin/weed]
+    environment:
+      GODEBUG: fips140=on
+    command:
+      - mini
+      - -dir=/data
+      - -ip=127.0.0.1
+      - -ip.bind=0.0.0.0
+      - -bucket=${GRASP_S3_BUCKET:-grasp}
+      - -s3.config=/etc/grasp-storage/iam.json
+      - -s3.autoCreateBucket=false
+      - -admin.ui=false
+      - -webdav=false
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
+      - -master.telemetry=false
+    ports:
+      - "127.0.0.1:${GRASP_LOCAL_OBJECTSTORE_PORT:-8333}:8333"
+    volumes:
+      - ${GRASP_LOCAL_OBJECTSTORE_DIR:-./.localdata/objectstore}/data:/data
+      - ${GRASP_LOCAL_OBJECTSTORE_DIR:-./.localdata/objectstore}/iam.json:/etc/grasp-storage/iam.json:ro
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:8888/buckets/${GRASP_S3_BUCKET:-grasp}/?limit=1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
     restart: unless-stopped

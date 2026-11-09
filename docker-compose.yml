@@ -41,6 +41,15 @@ services:
       # 渠道凭据 AES 主密钥(也可写在 server/config.yaml 的 security.secrets_key)。
       # .env 里设了就会覆盖 YAML;未设则走配置文件。
       GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:-}
+      GRASP_STORAGE_DRIVER: ${GRASP_STORAGE_DRIVER:-}
+      GRASP_S3_ENDPOINT: ${GRASP_S3_ENDPOINT:-}
+      GRASP_S3_REGION: ${GRASP_S3_REGION:-}
+      GRASP_S3_BUCKET: ${GRASP_S3_BUCKET:-}
+      GRASP_S3_PREFIX: ${GRASP_S3_PREFIX:-}
+      GRASP_S3_ACCESS_KEY_ID: ${GRASP_S3_ACCESS_KEY_ID:-}
+      GRASP_S3_SECRET_ACCESS_KEY: ${GRASP_S3_SECRET_ACCESS_KEY:-}
+      GRASP_S3_SESSION_TOKEN: ${GRASP_S3_SESSION_TOKEN:-}
+      GRASP_S3_PATH_STYLE: ${GRASP_S3_PATH_STYLE:-}
       # 可选:GitHub OAuth App 的 Client ID(勾选 Enable Device Flow),开启「用 GitHub 登录」。
       GRASP_GITHUB_OAUTH_CLIENT_ID: ${GRASP_GITHUB_OAUTH_CLIENT_ID:-}
       # 应用预览 noVNC 使用沙箱内置 VNC 栈(VNC_PREVIEW=1)，无需独立 browser 镜像。
@@ -117,6 +126,39 @@ services:
     depends_on:
       - server
       - gateway
+    restart: unless-stopped
+
+  objectstore:
+    image: ${GRASP_LOCAL_OBJECTSTORE_IMAGE:-chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0}
+    profiles: [local-storage]
+    user: "${GRASP_LOCAL_OBJECTSTORE_UID:-0}:${GRASP_LOCAL_OBJECTSTORE_GID:-0}"
+    entrypoint: [/usr/bin/weed]
+    environment:
+      GODEBUG: fips140=on
+    command:
+      - mini
+      - -dir=/data
+      - -ip=127.0.0.1
+      - -ip.bind=0.0.0.0
+      - -bucket=${GRASP_S3_BUCKET:-grasp}
+      - -s3.config=/etc/grasp-storage/iam.json
+      - -s3.autoCreateBucket=false
+      - -admin.ui=false
+      - -webdav=false
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
+      - -master.telemetry=false
+    ports:
+      - "127.0.0.1:${GRASP_LOCAL_OBJECTSTORE_PORT:-8333}:8333"
+    volumes:
+      - ${GRASP_LOCAL_OBJECTSTORE_DIR:-./.devdata/objectstore}/data:/data
+      - ${GRASP_LOCAL_OBJECTSTORE_DIR:-./.devdata/objectstore}/iam.json:/etc/grasp-storage/iam.json:ro
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:8888/buckets/${GRASP_S3_BUCKET:-grasp}/?limit=1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
     restart: unless-stopped
 
 volumes:
