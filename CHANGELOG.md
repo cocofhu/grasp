@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 本地对象存储开关与外部 S3 地址同时设置时明确报错，避免静默连接到另一处存储。
+
 - 本地 SeaweedFS 必须通过 `GRASP_LOCAL_OBJECTSTORE=1` 显式启用；S3 未填写地址时拒绝创建本地存储，重启也会在停止已有服务前检查配置。
 
 - 本地 SeaweedFS 在显式新安装初始化中先完成就绪检查，沿用原组件凭据；应用写入者未停止时拒绝准备或初始化。

@@ -9,6 +9,10 @@ local_objectstore_requested() {
 }
 
 validate_local_objectstore_selection() {
+  if [[ "${GRASP_LOCAL_OBJECTSTORE:-}" == 1 && -n "${GRASP_S3_ENDPOINT:-}" ]]; then
+    echo "error: GRASP_LOCAL_OBJECTSTORE=1 requires an empty GRASP_S3_ENDPOINT; choose local storage or an external endpoint" >&2
+    return 1
+  fi
   local_objectstore_requested || return 0
   if [[ "${GRASP_LOCAL_OBJECTSTORE:-}" != 1 ]]; then
     echo "error: S3 requires GRASP_S3_ENDPOINT; set GRASP_LOCAL_OBJECTSTORE=1 explicitly to use bundled SeaweedFS" >&2
@@ -30,8 +34,8 @@ local_objectstore_owner() {
 
 prepare_local_objectstore() {
   GRASP_LOCAL_OBJECTSTORE_ENABLED=0
-  local_objectstore_requested || return 0
   validate_local_objectstore_selection || return 1
+  local_objectstore_requested || return 0
 
   # Partial cloud credentials are an error, never permission to provision a
   # different storage location. Local credentials are generated and kept here.
