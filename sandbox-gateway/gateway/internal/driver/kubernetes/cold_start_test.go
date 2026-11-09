@@ -102,6 +102,20 @@ func coldNativeWrites(cs *fake.Clientset) int {
 	return n
 }
 
+func coldObserveReady(t *testing.T, cs *fake.Clientset) {
+	t.Helper()
+	resource := appsv1.SchemeGroupVersion.WithResource("deployments")
+	obj, err := cs.Tracker().Get(resource, "sandboxes", "sbx-original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dep := obj.(*appsv1.Deployment).DeepCopy()
+	dep.Status = appsv1.DeploymentStatus{ObservedGeneration: dep.Generation, Replicas: 1, ReadyReplicas: 1, AvailableReplicas: 1}
+	if err := cs.Tracker().Update(resource, dep, "sandboxes"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestK8sColdConfigurationPreservesResourceAndReplacesAllAuthorizationBeforeStart(t *testing.T) {
 	d, cs, opts := coldK8sFixture(t)
 	ctx := context.Background()
@@ -136,6 +150,11 @@ func TestK8sColdConfigurationPreservesResourceAndReplacesAllAuthorizationBeforeS
 	}
 	cs.ClearActions()
 	got, err := d.GetColdStart(ctx, "original", opts.ColdConfig.RequestID)
+	if err != nil || got.State != "unknown" || coldNativeWrites(cs) != 0 {
+		t.Fatalf("accepted but not running was represented as ready: %+v %v", got, err)
+	}
+	coldObserveReady(t, cs)
+	got, err = d.GetColdStart(ctx, "original", opts.ColdConfig.RequestID)
 	if err != nil || *got != *receipt || coldNativeWrites(cs) != 0 {
 		t.Fatalf("receipt lookup changed provider: %+v %v", got, err)
 	}
@@ -144,6 +163,18 @@ func TestK8sColdConfigurationPreservesResourceAndReplacesAllAuthorizationBeforeS
 	}
 	if coldNativeWrites(cs) != 0 {
 		t.Fatal("same native request was replayed")
+	}
+	obj, _ := cs.Tracker().Get(appsv1.SchemeGroupVersion.WithResource("deployments"), "sandboxes", "sbx-original")
+	stopped := obj.(*appsv1.Deployment).DeepCopy()
+	zero := int32(0)
+	stopped.Spec.Replicas = &zero
+	stopped.Status = appsv1.DeploymentStatus{ObservedGeneration: stopped.Generation}
+	if err := cs.Tracker().Update(appsv1.SchemeGroupVersion.WithResource("deployments"), stopped, "sandboxes"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = d.GetColdStart(ctx, "original", opts.ColdConfig.RequestID)
+	if err != nil || got.State != "unknown" || coldNativeWrites(cs) != 0 {
+		t.Fatalf("later stop caused replay or false running proof: %+v %v", got, err)
 	}
 }
 
@@ -223,6 +254,9 @@ func TestK8sColdConfigurationConcurrentChangePreservesStoppedUnknownAndNeverRepl
 			})
 			if _, err := d.StartConfigured(ctx, "original", opts); err == nil {
 				t.Fatal("injected provider ambiguity was hidden")
+			}
+			if fault == "start-ack-loss" {
+				coldObserveReady(t, cs)
 			}
 			cs.ClearActions()
 			got, err := d.GetColdStart(ctx, "original", opts.ColdConfig.RequestID)

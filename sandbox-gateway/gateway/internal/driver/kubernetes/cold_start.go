@@ -251,6 +251,11 @@ func (d *Driver) GetColdStart(ctx context.Context, id, request string) (*driver.
 		if hex.EncodeToString(sum[:]) != proof.CommandSHA256 || coldPodSpecSHA(dep.Spec.Template.Spec) != proof.PodSpecSHA256 || len(c.Env) != 0 || len(c.EnvFrom) != 1 || c.EnvFrom[0].SecretRef == nil || c.EnvFrom[0].SecretRef.Name != d.secretName(id) || c.EnvFrom[0].Prefix != "" || c.EnvFrom[0].ConfigMapRef != nil {
 			return nil, driver.ErrColdStartConflict
 		}
+		// The original accepted Start is never replayed. A pending or later
+		// stopped Deployment cannot be represented as a currently started one.
+		if deploymentStatus(dep) != driver.StatusRunning {
+			proof.State = "unknown"
+		}
 	}
 	return &proof.ColdStartReceipt, nil
 }
