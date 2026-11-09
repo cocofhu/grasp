@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
@@ -200,7 +201,9 @@ class E2E:
         req = urllib.request.Request((base or self.base)+path, data, {'Content-Type': 'application/json'}, method=method or ('POST' if body is not None else 'GET'))
         try:
             with self.client.open(req, timeout=20) as response:
-                raw = response.read(8_000_000)
+                raw = response.read(8_000_001)
+                if len(raw) > 8_000_000:
+                    raise AssertionError('fixture HTTP response exceeds the 8MB read limit')
                 return json.loads(raw) if raw else None
         except urllib.error.HTTPError as error:
             # Endpoints and all credentials in this isolated suite are
@@ -346,9 +349,76 @@ sys.exit(child.wait())
             step.update({'id': turn_id, 'reply': reply})
         self.request('/__mock/scenarios', {'id': self.run, 'turns': turns}, base=self.model)
 
+    def messages(self, session_id):
+        """Read the complete transcript metadata without copying all journals."""
+        pages, before, seen_cursors, seen_ids = [], '', set(), set()
+        # This isolated matrix creates one user and assistant per planned turn.
+        # Extra/duplicate records must fail instead of growing an unbounded read.
+        bound = 2*len(self.plan)
+        if bound < 1:
+            raise AssertionError('message read requires the complete matrix plan')
+        for _ in range(bound+1):
+            path = '/api/solo/sessions/'+session_id+'/messages?limit=200'
+            if before:
+                path += '&before='+urllib.parse.quote(before, safe='')
+            page = self.request(path)
+            if not isinstance(page, dict) or not isinstance(page.get('items'), list) or type(page.get('hasMore')) is not bool:
+                raise AssertionError('invalid message metadata page')
+            for message in page['items']:
+                if not isinstance(message, dict) or not isinstance(message.get('id'), str) or not message['id'] or message.get('sessionId') != session_id:
+                    raise AssertionError('message page escaped the original session')
+                if message['id'] in seen_ids:
+                    raise AssertionError('duplicate message in paged transcript')
+                seen_ids.add(message['id'])
+            if len(seen_ids) > bound:
+                raise AssertionError('transcript exceeds the matrix message bound')
+            pages.append(page['items'])
+            if not page['hasMore']:
+                return [message for chunk in reversed(pages) for message in chunk]
+            cursor = page.get('before')
+            if not page['items'] or not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+                raise AssertionError('message cursor did not progress')
+            seen_cursors.add(cursor)
+            before = cursor
+        raise AssertionError('message pagination did not terminate')
+
+    def message_events(self, session_id, message):
+        """Load only this completed reply's exact native event range."""
+        pointer = message.get('eventLog')
+        if not isinstance(pointer, dict) or pointer.get('version') != 1 or pointer.get('legacy') is not None:
+            raise AssertionError('completed matrix reply lacks a native journal pointer')
+        first, through, count, generation = (pointer.get(key) for key in ('from', 'through', 'count', 'generation'))
+        if any(type(value) is not int for value in (first, through, count, generation)) or first < 0 or through < first or count < 1 or count > through-first+1 or generation < 1 or not isinstance(message.get('turnId'), str) or not message['turnId'] or message.get('sessionId') != session_id:
+            raise AssertionError('invalid native message journal range')
+        events, after, last = [], -1, first-1
+        # Control-only pages still advance the cursor. The immutable sequence
+        # range bounds the number of reads even when they contain no ACP data.
+        for _ in range(through-first+2):
+            path = '/api/solo/sessions/'+session_id+'/messages/'+urllib.parse.quote(message['id'], safe='')+'/events?after='+str(after)
+            page = self.request(path)
+            if not isinstance(page, dict) or not isinstance(page.get('items'), list) or type(page.get('hasMore')) is not bool or type(page.get('next')) is not int:
+                raise AssertionError('invalid native journal page')
+            requested_after = first-1 if after == -1 else after
+            for entry in page['items']:
+                if not isinstance(entry, dict) or type(entry.get('seq')) is not int or entry['seq'] <= requested_after or entry['seq'] <= last or not first <= entry['seq'] <= through or entry.get('type') != 'acp' or entry.get('turnId') != message['turnId'] or type(entry.get('generation')) is not int or entry['generation'] != generation or not isinstance(entry.get('data'), dict):
+                    raise AssertionError('native journal entry escaped its message range')
+                events.append(entry['data'])
+                last = entry['seq']
+            if len(events) > count:
+                raise AssertionError('native journal exceeds the recorded event count')
+            next_cursor = page['next']
+            if next_cursor <= requested_after or next_cursor < last or next_cursor > through:
+                raise AssertionError('native journal cursor did not progress within its range')
+            if not page['hasMore']:
+                if next_cursor != through or len(events) != count:
+                    raise AssertionError('native journal ended before its complete recorded range')
+                return events
+            after = next_cursor
+        raise AssertionError('native journal pagination did not terminate')
+
     def completed(self, session_id, expected):
         state = self.request('/api/solo/sessions/'+session_id)
-        messages = self.request('/api/solo/sessions/'+session_id+'/messages')
+        messages = self.messages(session_id)
         self.last_messages = messages
         if state.get('status') == 'error':
             raise AssertionError(f'Grasp session failed: {state.get("error")}')
@@ -358,6 +428,7 @@ sys.exit(child.wait())
         assistants = [message for message in messages if message['role'] == 'assistant']
         if state.get('busy') or len(assistants) < expected:
             return None
+        assistants[-1]['events'] = self.message_events(session_id, assistants[-1])
         return state, assistants[-1]
 
     def resolved_effort(self, step):
@@ -444,7 +515,7 @@ sys.exit(child.wait())
             elif step['backend'] == 'kimi_code' and any(any(key in (request.get('reasoning') or {}) for key in ['thinking_effort', 'reasoning_effort', 'effort', 'output_effort']) for request in main_requests):
                 raise AssertionError('unsupported Kimi model received a reasoning strength')
         self.check_efforts(session_id)
-        persisted = [message for message in self.request('/api/solo/sessions/'+session_id+'/messages') if message['role'] == 'assistant']
+        persisted = [message for message in self.messages(session_id) if message['role'] == 'assistant']
         if len(persisted) != len(self.plan):
             raise AssertionError('assistant replies were dropped or duplicated')
         for message, step in zip(persisted, self.plan):
