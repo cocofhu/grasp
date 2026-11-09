@@ -5089,7 +5089,7 @@
         "title": "导入工作流代码",
         "intro": "选择工作流的执行轮次、仓库和提交，先生成预览，再由你确认导入 Solo。",
         "boundaries": "导入已提交的 Git 代码及历史（包括未推送提交），进入新的独立目录。来源与当前 Solo 工作区均保留。",
-        "limits": "每个仓库连同历史最大 64 MiB，总计 128 MiB，单文件最大 32 MiB。单次传输最长 45 秒；超时请先核对结果。",
+        "limits": "每个仓库连同所选提交的完整历史最大 64 MiB，总计 128 MiB，单文件最大 32 MiB。压缩包大小在生成预览时校验。单次传输最长 45 秒；超时请先核对结果。",
         "source": "来源执行轮次",
         "chooseSource": "选择执行轮次",
         "sourceLabel": "{node} · 第 {iteration} 轮 · 环境 {attempt}",
@@ -5099,6 +5099,17 @@
         "readRepositories": "读取仓库",
         "noRepositories": "当前来源没有可通过此方式导入的 Git 仓库。",
         "repositoryUnsupported": "当前仓库不支持通过 Git 提交方式导入。",
+        "reasons": {
+          "repository_submodules": "该仓库包含子模块，当前无法一并导入。请保留来源工作区。",
+          "repository_lfs": "该仓库通过 Git LFS 保存部分文件，当前无法保证文件完整，暂不支持此方式。",
+          "repository_shallow": "该仓库只保留了部分 Git 历史，当前无法完整导入所选提交的历史。",
+          "repository_external_objects": "该仓库依赖其他位置的 Git 数据，当前无法独立完整导入。",
+          "repository_external_worktree": "该工作区与其他位置共用 Git 数据，当前无法通过此方式独立导入。",
+          "repository_custom_configuration": "该仓库使用自定义文件转换或外部 Git 配置，当前无法安全还原相同文件。",
+          "repository_rewritten_history": "该仓库使用了自定义历史映射，当前无法保证原有 Git 历史完整。",
+          "repository_unsafe_metadata": "该仓库包含需要额外检查的路径或 Git 数据，当前无法安全导入。",
+          "repository_limit": "所选提交的文件数量或大小超过导入限额，当前无法完整导入。"
+        },
         "commit": "完整 Git 提交 SHA",
         "dirtyExcluded": "来源包含未提交或未跟踪文件；此次仅导入所选提交，这些文件保留在来源。",
         "preview": "生成导入预览",
@@ -5118,7 +5129,7 @@
           "applied": "已导入独立目录"
         },
         "details": "导入范围与限制",
-        "exclusions": "此方式不包含未提交改动、未跟踪及忽略文件、非 Git 目录或原生会话数据；不支持 Git LFS、子模块、外部 worktree 及自定义过滤器。不会自动提交、推送或切换原仓库的分支。"
+        "exclusions": "此方式不包含未提交改动、未跟踪及忽略文件、非 Git 目录或原生会话数据；不支持 Git LFS、子模块、不完整的 Git 历史、依赖外部 Git 数据的仓库及自定义文件转换或外部配置。来源环境须仍然保留且运行中，查看此页不会自动恢复环境。不会自动提交、推送或切换原仓库的分支。"
       }
     },
     "projects": {

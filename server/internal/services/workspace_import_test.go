@@ -28,6 +28,7 @@ type workspaceImportRuntime struct {
 	importError error
 	importHook  func()
 	receipt     sandbox.WorkspaceCodeReceipt
+	inventory   *sandbox.WorkspaceCodeInventory
 }
 
 func (r *workspaceImportRuntime) leased(ctx context.Context, id uint) {
@@ -46,7 +47,28 @@ func (r *workspaceImportRuntime) leased(ctx context.Context, id uint) {
 
 func (r *workspaceImportRuntime) Inventory(ctx context.Context, id uint) (sandbox.WorkspaceCodeInventory, error) {
 	r.leased(ctx, id)
+	if r.inventory != nil {
+		return *r.inventory, nil
+	}
 	return sandbox.WorkspaceCodeInventory{Version: 1, Repositories: []sandbox.WorkspaceCodeRepository{{Path: "repo", Commit: strings.Repeat("a", 40), Head: strings.Repeat("a", 40), Supported: true}}, WorkingChanges: true}, nil
+}
+
+func TestWorkspaceImportInventoryAllowsOnlySafeCapabilityReasons(t *testing.T) {
+	s, runtime, in := workspaceImportFixture(t)
+	for _, reason := range []string{"repository_submodules", "repository_lfs", "repository_shallow", "repository_external_objects", "repository_external_worktree", "repository_custom_configuration", "repository_rewritten_history", "repository_unsafe_metadata", "repository_limit", "git failed at /private/host with secret diagnostic"} {
+		runtime.inventory = &sandbox.WorkspaceCodeInventory{Version: 1, Repositories: []sandbox.WorkspaceCodeRepository{{Path: "repo", Reason: reason}}}
+		got, err := s.Inventory(context.Background(), "solo-import", "alice", in.WorkspaceImportSourceInput)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := reason
+		if strings.HasPrefix(reason, "git ") {
+			want = "repository_requires_snapshot"
+		}
+		if len(got.Repositories) != 1 || got.Repositories[0].Reason != want || got.Repositories[0].Supported {
+			t.Fatalf("unsafe or incorrect reason: %+v", got.Repositories)
+		}
+	}
 }
 
 func codeArchive(t *testing.T, repositories []sandbox.WorkspaceCodeRepository, extra string) []byte {

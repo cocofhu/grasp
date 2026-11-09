@@ -172,4 +172,27 @@ describe('workflow code import', () => {
     expect(wrapper.get('[data-testid="code-import-preview"]').attributes('disabled')).toBeDefined()
     expect(writes().filter(([path]) => path === base)).toHaveLength(0)
   })
+
+  it.each([
+    ['repository_lfs', '通过 Git LFS'],
+    ['repository_submodules', '包含子模块'],
+    ['repository_shallow', '只保留了部分 Git 历史'],
+    ['repository_custom_configuration', '自定义文件转换或外部 Git 配置'],
+    ['repository_limit', '超过导入限额'],
+    ['private runtime path /internal/secret', '当前仓库不支持通过 Git 提交方式导入'],
+  ])('explains unavailable repositories using safe localized reasons: %s', async (reason, message) => {
+    const standard = mocks.req.getMockImplementation()!
+    mocks.req.mockImplementation(async (path: string, init?: RequestInit) => path.endsWith('/inventory')
+      ? { version: 1, repositories: [{ ...repo, supported: false, reason }], workingChanges: false }
+      : standard(path, init))
+    const wrapper = open()
+    await flushPromises()
+    await wrapper.get('[data-testid="code-import-source"]').setValue(JSON.stringify([source.nodeId, 2, 1]))
+    await wrapper.get('[data-testid="code-import-inventory"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain(message)
+    expect(wrapper.text()).not.toContain('/internal/secret')
+    expect(wrapper.get('input[aria-label="app"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="code-import-preview"]').attributes('disabled')).toBeDefined()
+  })
 })

@@ -5089,7 +5089,7 @@
         "title": "Import workflow code",
         "intro": "Choose an execution, repositories and commits. Review the preview, then confirm the import into Solo.",
         "boundaries": "Import committed Git code and history, including unpushed commits, into a new directory. The source and current Solo workspace are preserved.",
-        "limits": "Up to 64 MiB per repository including history, 128 MiB total, and 32 MiB per file. Each transfer can run for up to 45 seconds; check the result after a timeout.",
+        "limits": "Up to 64 MiB per repository including the complete history of the selected commit, 128 MiB total, and 32 MiB per file. Compressed bundle size is checked when generating the preview. Each transfer can run for up to 45 seconds; check the result after a timeout.",
         "source": "Source execution",
         "chooseSource": "Choose an execution",
         "sourceLabel": "{node} · iteration {iteration} · environment {attempt}",
@@ -5099,6 +5099,17 @@
         "readRepositories": "Read repositories",
         "noRepositories": "No Git repository is available for this import method.",
         "repositoryUnsupported": "This repository does not support import through Git commits.",
+        "reasons": {
+          "repository_submodules": "This repository includes submodules that cannot be transferred together yet. Keep the source workspace.",
+          "repository_lfs": "Some files use Git LFS. This method cannot yet guarantee that their contents are included.",
+          "repository_shallow": "This repository retains only part of its Git history. Complete history cannot be imported with this method.",
+          "repository_external_objects": "This repository depends on Git data stored elsewhere and cannot be imported independently.",
+          "repository_external_worktree": "This workspace shares Git data with another location and cannot be imported independently.",
+          "repository_custom_configuration": "This repository uses custom file conversion or external Git configuration. Its files cannot yet be reproduced safely.",
+          "repository_rewritten_history": "This repository uses a custom history mapping. Complete original history cannot be guaranteed.",
+          "repository_unsafe_metadata": "This repository has paths or Git data requiring additional checks and cannot be imported safely yet.",
+          "repository_limit": "The selected commit exceeds the file count or size limits and cannot be imported in full."
+        },
         "commit": "Full Git commit SHA",
         "dirtyExcluded": "The source has working changes or untracked files. This import includes only the selected commit; other files remain at the source.",
         "preview": "Preview import",
@@ -5118,7 +5129,7 @@
           "applied": "Imported into a new directory"
         },
         "details": "Import scope and limits",
-        "exclusions": "This method excludes working changes, untracked and ignored files, non-Git directories and native session data. Git LFS, submodules, external worktrees and custom filters are unsupported. It never commits, pushes or switches branches in the original repository."
+        "exclusions": "This method excludes working changes, untracked and ignored files, non-Git directories and native session data. Git LFS, submodules, incomplete Git history, external Git data, custom file conversion and external configuration are unsupported. The source must still be retained and running; opening this page never resumes it. It never commits, pushes or switches branches in the original repository."
       }
     },
     "projects": {

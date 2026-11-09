@@ -164,7 +164,8 @@ func TestCodeTransferPreservesPartialImportAndRejectsWrongDigest(t *testing.T) {
 }
 
 func TestCodeTransferDisclosesLFSExternalMetadataAndFiltersAsUnsupported(t *testing.T) {
-	for _, test := range []string{"lfs", "metadata_link", "filter", "worktree", "include", "alternates"} {
+	reasons := map[string]string{"lfs": "repository_lfs", "metadata_link": "repository_unsafe_metadata", "filter": "repository_custom_configuration", "worktree": "repository_external_worktree", "include": "repository_custom_configuration", "alternates": "repository_external_objects", "shallow": "repository_shallow", "grafts": "repository_rewritten_history", "submodules": "repository_submodules"}
+	for test, reason := range reasons {
 		t.Run(test, func(t *testing.T) {
 			root := t.TempDir()
 			repo := fixtureRepo(t, root, "repo")
@@ -189,6 +190,17 @@ func TestCodeTransferDisclosesLFSExternalMetadataAndFiltersAsUnsupported(t *test
 				if err := os.WriteFile(filepath.Join(repo, ".git/objects/info/alternates"), []byte(t.TempDir()), 0600); err != nil {
 					t.Fatal(err)
 				}
+			case "shallow", "grafts":
+				name := ".git/shallow"
+				if test == "grafts" {
+					name = ".git/info/grafts"
+				}
+				if err := os.WriteFile(filepath.Join(repo, name), []byte(nativeGit(t, repo, "rev-parse", "HEAD")+"\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "submodules":
+				nativeGit(t, repo, "update-index", "--add", "--cacheinfo", "160000,"+nativeGit(t, repo, "rev-parse", "HEAD")+",nested")
+				nativeGit(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-qm", "synthetic submodule")
 			}
 			s := &Service{Root: root}
 			if _, err := s.inspect(context.Background(), "repo", ""); !errors.Is(err, ErrUnsupported) {
@@ -197,6 +209,9 @@ func TestCodeTransferDisclosesLFSExternalMetadataAndFiltersAsUnsupported(t *test
 			inventory, err := s.Inventory(context.Background())
 			if err != nil || len(inventory.Repositories) != 1 || inventory.Repositories[0].Supported {
 				t.Fatalf("capability inventory overclaimed: %+v %v", inventory, err)
+			}
+			if inventory.Repositories[0].Reason != reason {
+				t.Fatalf("missing safe capability reason: got %q want %q", inventory.Repositories[0].Reason, reason)
 			}
 		})
 	}
@@ -255,6 +270,19 @@ func TestCodeTransferRejectsOversizedBinaryWithoutTruncation(t *testing.T) {
 	if !errors.Is(err, ErrLimit) || archive.Len() != 0 {
 		t.Fatalf("oversized file was silently truncated or published: %d %v", archive.Len(), err)
 	}
+	inventory, err := (&Service{Root: root}).Inventory(context.Background())
+	if err != nil || len(inventory.Repositories) != 1 || inventory.Repositories[0].Reason != "repository_limit" {
+		t.Fatalf("oversized commit not explained during inventory: %+v %v", inventory, err)
+	}
+}
+
+func TestRepositoryCapabilityReasonNeverExposesHostErrors(t *testing.T) {
+	if got := repositoryReason(errors.New("git failed at /private/host with sensitive diagnostic")); got != "repository_requires_snapshot" {
+		t.Fatal(got)
+	}
+	if got := repositoryReason(ErrUnsafe); got != "repository_unsafe_metadata" {
+		t.Fatal(got)
+	}
 }
 
 func TestCodeTransferCancellationStopsGitHelperProcesses(t *testing.T) {
@@ -300,7 +328,7 @@ func TestCodeTransferCancellationStopsGitHelperProcesses(t *testing.T) {
 		if len(fields) < 3 || fields[2] != "Z" {
 			t.Fatalf("Git helper survived command cancellation: %s", data)
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ESRCH) {
 		t.Fatal(err)
 	}
 }

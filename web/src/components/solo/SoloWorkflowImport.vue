@@ -30,6 +30,10 @@ const selected = computed(() => Object.entries(state.value.selections).filter(([
 const valid = computed(() => selected.value.length > 0 && selected.value.every(repo => /^[0-9a-f]{40}$/.test(repo.commit)))
 const uncertain = computed(() => state.value.uncertain || ['applying', 'unknown'].includes(state.value.preview?.state || ''))
 const status = computed(() => uncertain.value ? 'unknown' : state.value.preview?.state || 'prepared')
+const repositoryReasons = new Set(['repository_submodules', 'repository_lfs', 'repository_shallow', 'repository_external_objects', 'repository_external_worktree', 'repository_custom_configuration', 'repository_rewritten_history', 'repository_unsafe_metadata', 'repository_limit'])
+function repositoryReason(repo: Repository) {
+  return repositoryReasons.has(repo.reason || '') ? t(`pages.solo.workspaceImport.reasons.${repo.reason}`) : t('pages.solo.workspaceImport.repositoryUnsupported')
+}
 function label(source: Pick<Source, 'nodeId' | 'iteration' | 'attempt'>) {
   const node = props.nodes?.find(node => node.id === source.nodeId)?.label || source.nodeId
   return t('pages.solo.workspaceImport.sourceLabel', { node, iteration: source.iteration, attempt: source.attempt })
@@ -149,7 +153,7 @@ onBeforeUnmount(() => { disposed = true })
         <p v-if="!state.inventory.repositories.length" class="text-xs text-txt3">{{ t('pages.solo.workspaceImport.noRepositories') }}</p>
         <div v-for="repo in state.inventory.repositories" :key="repo.path" class="rounded-lg border border-line p-3">
           <label class="flex items-center gap-2 text-sm text-txt"><input v-model="state.selections[repo.path]!.checked" type="checkbox" :disabled="!repo.supported || busy" :aria-label="repo.path" @change="editSelection" /><span class="font-mono">{{ repo.path }}</span></label>
-          <p v-if="!repo.supported" class="mt-2 text-xs text-txt3">{{ t('pages.solo.workspaceImport.repositoryUnsupported') }}</p>
+          <p v-if="!repo.supported" class="mt-2 text-xs text-txt3">{{ repositoryReason(repo) }}</p>
           <template v-else><label class="mt-3 block space-y-1 text-xs text-txt3"><span>{{ t('pages.solo.workspaceImport.commit') }}</span><input v-model="state.selections[repo.path]!.commit" class="input w-full font-mono text-xs" :disabled="busy" :aria-label="`${repo.path} ${t('pages.solo.workspaceImport.commit')}`" @input="editSelection" /></label><p v-if="repo.dirty || repo.untracked" class="mt-2 text-xs text-warn">{{ t('pages.solo.workspaceImport.dirtyExcluded') }}</p></template>
         </div>
         <AppButton variant="primary" :disabled="!valid || busy" :loading="busy" data-testid="code-import-preview" @click="preview">{{ t('pages.solo.workspaceImport.preview') }}</AppButton>

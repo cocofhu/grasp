@@ -289,7 +289,12 @@ func (s *WorkspaceImportService) Inventory(ctx context.Context, soloID, user str
 			return sandbox.WorkspaceCodeInventory{}, workspaceRuntimeError(workspacearchive.ErrUnsafe)
 		}
 		if result.Repositories[i].Reason != "" {
-			result.Repositories[i].Reason = "repository_requires_snapshot"
+			switch result.Repositories[i].Reason {
+			case "repository_submodules", "repository_lfs", "repository_shallow", "repository_external_objects", "repository_external_worktree", "repository_custom_configuration", "repository_rewritten_history", "repository_unsafe_metadata", "repository_limit":
+				// Only stable capability codes may leave the runtime boundary.
+			default:
+				result.Repositories[i].Reason = "repository_requires_snapshot"
+			}
 		}
 	}
 	return result, nil

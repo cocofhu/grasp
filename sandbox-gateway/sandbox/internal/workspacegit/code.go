@@ -95,7 +95,7 @@ func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
 	if _, err := root.Lstat(".git"); err == nil {
 		repo, err := s.inspect(ctx, ".", "")
 		if err != nil {
-			result.Repositories = append(result.Repositories, Repository{Path: ".", Reason: err.Error()})
+			result.Repositories = append(result.Repositories, Repository{Path: ".", Reason: repositoryReason(err)})
 		} else {
 			result.Repositories = append(result.Repositories, repo)
 		}
@@ -125,7 +125,7 @@ func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
 		}
 		repo, err := s.inspect(ctx, entry.Name(), "")
 		if err != nil {
-			result.Repositories = append(result.Repositories, Repository{Path: entry.Name(), Reason: err.Error()})
+			result.Repositories = append(result.Repositories, Repository{Path: entry.Name(), Reason: repositoryReason(err)})
 		} else {
 			result.Repositories = append(result.Repositories, repo)
 		}
@@ -156,11 +156,20 @@ func (s *Service) repo(value string) (*os.File, error) {
 	defer func() { _ = child.Close() }()
 	info, err := child.Lstat(".git")
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, ErrUnsupported
+		return nil, unsupportedRepository("repository_external_worktree")
 	}
 	for _, name := range []string{".git/commondir", ".git/objects/info/alternates", ".git/objects/info/http-alternates", ".git/info/grafts", ".git/shallow"} {
 		if _, err := child.Lstat(name); err == nil {
-			return nil, ErrUnsupported
+			reason := "repository_external_objects"
+			switch name {
+			case ".git/commondir":
+				reason = "repository_external_worktree"
+			case ".git/info/grafts":
+				reason = "repository_rewritten_history"
+			case ".git/shallow":
+				reason = "repository_shallow"
+			}
+			return nil, unsupportedRepository(reason)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
@@ -177,7 +186,7 @@ func (s *Service) repo(value string) (*os.File, error) {
 			return ErrLimit
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			return ErrUnsupported
+			return unsupportedRepository("repository_unsafe_metadata")
 		}
 		return nil
 	}); err != nil {
@@ -254,7 +263,15 @@ func (s *Service) inspect(ctx context.Context, repoPath, selected string) (Repos
 		}
 	}
 	if len(filters) != 0 {
-		return Repository{}, ErrUnsupported
+		reason := "repository_custom_configuration"
+		for _, setting := range bytes.Split(filters, []byte{0}) {
+			key := string(bytes.SplitN(setting, []byte{'\n'}, 2)[0])
+			if key == "core.worktree" || key == "extensions.worktreeconfig" {
+				reason = "repository_external_worktree"
+				break
+			}
+		}
+		return Repository{}, unsupportedRepository(reason)
 	}
 	head, err := command(ctx, root, nil, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
@@ -321,6 +338,9 @@ func validateTree(ctx context.Context, root, commit string) (int, int64, error) 
 		}
 		var mode, kind, object string
 		var size int64
+		if bytes.HasPrefix(parts[0], []byte("160000 ")) {
+			return 0, 0, unsupportedRepository("repository_submodules")
+		}
 		if _, err := fmt.Sscanf(string(parts[0]), "%s %s %s %d", &mode, &kind, &object, &size); err != nil {
 			return 0, 0, ErrUnsupported
 		}
@@ -337,7 +357,7 @@ func validateTree(ctx context.Context, root, commit string) (int, int64, error) 
 				return 0, 0, err
 			}
 			if bytes.HasPrefix(blob, []byte("version https://git-lfs.github.com/spec/v1")) {
-				return 0, 0, ErrUnsupported
+				return 0, 0, unsupportedRepository("repository_lfs")
 			}
 			if mode == "120000" {
 				target := string(blob)
