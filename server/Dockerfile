@@ -19,8 +19,10 @@ WORKDIR /src/web
 # 的镜像源。两条路径均限制超时与重试间隔，避免持续故障阻塞发布。
 COPY web/package*.json web/.npmrc ./
 RUN npm ci --no-audit --no-fund --registry=https://registry.npmjs.org \
+      --replace-registry-host=always \
       --fetch-retries=2 --fetch-retry-maxtimeout=30000 --fetch-timeout=120000 || \
     npm ci --no-audit --no-fund \
+      --replace-registry-host=always \
       --fetch-retries=2 --fetch-retry-maxtimeout=30000 --fetch-timeout=120000
 COPY web/ ./
 COPY scripts/assert-no-approving-brand.mjs /src/scripts/assert-no-approving-brand.mjs
