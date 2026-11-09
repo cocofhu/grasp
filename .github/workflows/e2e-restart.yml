@@ -75,10 +75,20 @@ jobs:
           tags: grasp:e2e
           cache-from: type=gha,scope=grasp-e2e
           cache-to: type=gha,mode=max,scope=grasp-e2e
+      - name: Build matching gateway image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./sandbox-gateway
+          file: ./sandbox-gateway/Dockerfile
+          load: true
+          tags: sandbox-gateway:e2e-restart
+          cache-from: type=gha,scope=gateway-e2e-restart
+          cache-to: type=gha,mode=max,scope=gateway-e2e-restart
       - name: Restart reattach e2e
         working-directory: server
         env:
           GRASP_IMAGE: grasp:e2e
+          SANDBOX_GATEWAY_IMAGE: sandbox-gateway:e2e-restart
           SANDBOX_IMAGE: universal-sandbox:e2e-restart
           GRASP_SANDBOX_IMAGE: universal-sandbox:e2e-restart
           GRASP_RESTART_MODEL_URL: http://127.0.0.1:19117

@@ -204,7 +204,7 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	local := live != nil && live.sb != nil && live.sb.IsLocal()
 	s.mu.Unlock()
 	if local {
-		return nil // worktree processes have no gateway resource to resume
+		return s.resumeLocalSolo(ctx, row, live, grant)
 	}
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	var sb *sandbox.Sandbox
