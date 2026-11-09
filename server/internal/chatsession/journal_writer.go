@@ -10,6 +10,7 @@ import (
 
 const journalWriterBytes = 2 * JournalChunkBytes
 const journalWriterTarget = 256 << 10
+const journalWriterFlushInterval = time.Second
 
 var ErrJournalClosed = errors.New("conversation event writer is closed")
 
@@ -174,7 +175,10 @@ func (w *JournalWriter) Written() JournalRange {
 
 func (w *JournalWriter) run() {
 	defer func() { w.cancel(); close(w.done) }()
-	ticker := time.NewTicker(100 * time.Millisecond)
+	// Low-volume output becomes visible within about one second. Size/count
+	// thresholds and explicit barriers still commit immediately; readers never
+	// see the uncommitted in-memory suffix.
+	ticker := time.NewTicker(journalWriterFlushInterval)
 	defer ticker.Stop()
 	pending := []JournalEntry{}
 	bytes := 0

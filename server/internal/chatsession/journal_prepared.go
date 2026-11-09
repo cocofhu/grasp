@@ -229,6 +229,32 @@ func (s *DurableStore) AppendPreparedJournalTx(ctx context.Context, tx *gorm.DB,
 		if batch.owner != nil && queue.Generation != batch.owner.Generation {
 			return JournalRange{}, ErrQueueOwnerLost
 		}
+		if queue.Generation != prepared.base.generation {
+			return JournalRange{}, ErrJournalPrepareConflict
+		}
+	}
+	// A failed COMMIT response does not prove rollback. Retry the exact same
+	// prepared chunk only after the current queue owner/Authority and caller's
+	// validate callback above have passed; never append it again at a new head.
+	var prior JournalChunkRecord
+	err = tx.Table("chat_event_chunks").Take(&prior, "id = ?", prepared.chunk.ID).Error
+	if err == nil {
+		expected := prepared.chunk
+		if prior.QueueID != expected.QueueID || prior.FirstSequence != expected.FirstSequence || prior.LastSequence != expected.LastSequence || prior.TurnID != expected.TurnID || prior.ExecutionEpoch != expected.ExecutionEpoch || prior.Count != expected.Count || prior.AcpCount != expected.AcpCount || prior.ControlEvent != expected.ControlEvent || prior.Bytes != expected.Bytes || prior.Payload != ref || queue.NextEventSequence <= expected.LastSequence {
+			return JournalRange{}, ErrJournalGap
+		}
+		if _, err := s.lockJournalTx(ctx, tx, batch.scope, batch.owner, batch.turnID, validate); err != nil {
+			return JournalRange{}, err
+		}
+		if err := ctx.Err(); err != nil {
+			return JournalRange{}, err
+		}
+		return JournalRange{First: prior.FirstSequence, Last: prior.LastSequence, Count: prior.Count}, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return JournalRange{}, err
+	}
+	if queue.NextEventSequence != prepared.base.next {
 		return JournalRange{}, ErrJournalPrepareConflict
 	}
 	chunk := prepared.chunk
@@ -267,24 +293,47 @@ func (s *DurableStore) AppendJournalWith(ctx context.Context, scope QueueScope, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, journalCommitTimeout)
 	defer cancel()
+	var prepared PreparedJournal
+	var havePrepared bool
+	transientFailures := 0
 	for attempt := 0; ; attempt++ {
-		prepared, err := s.prepareJournal(ctx, batch)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return JournalRange{}, err
 		}
-		written, err := commit(ctx, prepared)
-		if !errors.Is(err, ErrJournalPrepareConflict) {
-			if err != nil {
+		if !havePrepared {
+			prepared, err = s.prepareJournal(ctx, batch)
+			havePrepared = err == nil
+		}
+		if err == nil {
+			var written JournalRange
+			written, err = commit(ctx, prepared)
+			if err == nil {
+				return written, nil
+			}
+		}
+		conflict := errors.Is(err, ErrJournalPrepareConflict)
+		if !conflict {
+			transientFailures++
+			if !transientJournalError(err) || transientFailures >= journalTransientAttempts {
 				return JournalRange{}, err
 			}
-			return written, nil
 		}
-		timer := time.NewTimer(time.Duration(min(attempt+1, 10)) * time.Millisecond)
+		// Only a definite CAS rollback permits re-preparing at a different
+		// head. Transport/commit uncertainty keeps the same ID/ref/range.
+		if conflict {
+			havePrepared = false
+		}
+		delay := time.Duration(min(attempt+1, 10)) * time.Millisecond
+		if !conflict {
+			delay = time.Duration(1<<min(transientFailures-1, 4)) * 100 * time.Millisecond
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return JournalRange{}, ctx.Err()
+			return JournalRange{}, errors.Join(err, ctx.Err())
 		case <-timer.C:
+			err = nil
 		}
 	}
 }
