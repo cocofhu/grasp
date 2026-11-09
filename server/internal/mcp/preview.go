@@ -620,7 +620,10 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 // Host when that app was not published at sandbox creation time.
 func (h *Host) prepareDisplacedPreviews(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int) error {
 	for _, p := range h.ListPreviewPorts(runID, nodeID) {
-		if previewPortKind(p) != PreviewKindPort || p.Port == port || p.InjectorPort == 0 {
+		// A retired workspace's registration is already denied by the
+		// binding-aware proxy. It must neither block nor acquire a new host
+		// while switching the current workspace's injector.
+		if p.Stale || previewPortKind(p) != PreviewKindPort || p.Port == port || p.InjectorPort == 0 {
 			continue
 		}
 		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
@@ -696,7 +699,7 @@ func (h *Host) releaseDisplacedPreviews(ctx context.Context, ops PreviewSandboxO
 			// restart; the guest port is the durable injector identity.
 			sameUpstream = p.InjectorPort == injectorPort
 		}
-		if previewPortKind(p) != PreviewKindPort || p.Port == port || !sameUpstream {
+		if p.Stale || previewPortKind(p) != PreviewKindPort || p.Port == port || !sameUpstream {
 			continue
 		}
 		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
