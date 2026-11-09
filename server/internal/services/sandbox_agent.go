@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -102,7 +101,7 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 	if opts.Reuse {
 		var existing models.Sandbox
 		if err := s.db.Where("purpose = ? AND thread_id = ? AND status IN ?",
-			SandboxPurposeAgent, threadID, []string{"running", "creating", "pulling"}).
+			SandboxPurposeAgent, threadID, []string{"running", "creating", "pulling", "error"}).
 			Order("created_at desc").First(&existing).Error; err == nil {
 			if existing.Profile != profile {
 				return nil, false, fmt.Errorf("此会话的沙箱属于其他 Agent，请重新打开沙箱")
@@ -122,7 +121,9 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 					Uint("id", existing.ID).Msg("reusing agent sandbox for thread")
 				return &existing, true, nil
 			}
-			if existing.Status == "creating" || existing.Status == "pulling" {
+			if existing.Status == "creating" || existing.Status == "pulling" || existing.Status == "error" {
+				// An unconfirmed Create retains its original receipt. A later
+				// message must not silently allocate another workspace.
 				return &existing, true, nil
 			}
 		}
@@ -246,26 +247,25 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	if err := s.executionCheck(ctx, id); err != nil {
-		return // Preserve unverified legacy state; no native creation or callback.
+	ctx, identity, release, err := s.beginSandboxStartup(ctx, id, name)
+	if err != nil {
+		return
 	}
+	defer release()
+	var created *sandbox.Sandbox
+	var home string
 
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("agent sandbox start failed")
-		if !extra.Resident {
-			s.invokeAgentDestroyHook(threadID, sharedToken)
-		} else if s.host != nil && runID != "" {
-			// Solo owns a run-scoped artifact MCP token even though its sandbox
-			// is resident. Revoke it when startup fails so the token cannot
-			// outlive the failed session.
+		if s.host != nil && runID != "" {
+			// Revoke this failed operation's token without clearing the
+			// thread's retained sandbox binding through its destroy hook.
 			s.host.UnregisterRun(runID)
 		}
-		at := time.Now().Add(2 * time.Minute)
-		_ = s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
-			return tx.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-				"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
-			}).Error
-		})
+		if retainErr := s.retainSandboxStartupFailure(ctx, identity, created, home, err); retainErr != nil {
+			log.Warn().Err(retainErr).Uint("id", id).Msg("sandbox failure attribution retained by its current owner")
+			return
+		}
 		if extra.OnFail != nil {
 			extra.OnFail(err)
 		}
@@ -284,29 +284,30 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		return
 	}
 	spec, specs, backend := prepared.spec, prepared.specs, prepared.backend
-	home, modelFingerprint := spec.ConfigHome, prepared.modelFingerprint
+	home = spec.ConfigHome
+	modelFingerprint := prepared.modelFingerprint
 	configRoot, gitCredentials := spec.ConfigRoot, spec.GitCredentials
 
 	if err := s.executionCheck(ctx, id); err != nil {
 		return
 	}
 	sb, err := s.mgr.Create(ctx, spec)
+	created = sb
 	if err != nil {
-		_ = os.RemoveAll(home)
 		fail(fmt.Errorf("create sandbox: %w", err))
 		return
 	}
+	if err := s.adoptSandboxStartupHandle(ctx, &identity, sb, home); err != nil {
+		fail(err)
+		return
+	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
-		sb.Destroy(context.Background())
-		_ = os.RemoveAll(home)
 		fail(fmt.Errorf("acp not ready: %w", err))
 		return
 	}
 	acp := sb.ACP().WithSession(sb.WorkspaceDir, mcpServersJSON(specs))
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
-		sb.Destroy(context.Background())
-		_ = os.RemoveAll(home)
 		fail(fmt.Errorf("acp connect: %w", err))
 		return
 	}
@@ -316,34 +317,16 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		at := time.Now().Add(s.TTL())
 		destroyAt = &at
 	}
-	var res *gorm.DB
-	publicationErr := s.executionTransaction(ctx, id, func(tx *gorm.DB) error {
-		res = tx.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-			"model_binding_fingerprint": modelFingerprint,
-			"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
-			"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
-			"code_server_port": sb.CodeServerPort, "error": "",
-			"destroy_at": destroyAt, "updated_at": time.Now(),
-		})
-		return res.Error
+	publicationErr := s.publishSandboxStartup(ctx, identity, map[string]any{
+		"model_binding_fingerprint": modelFingerprint,
+		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
+		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
+		"code_server_port": sb.CodeServerPort, "error": "",
+		"destroy_at": destroyAt, "updated_at": time.Now(),
 	})
-	if publicationErr != nil || res.RowsAffected == 0 {
+	if publicationErr != nil {
 		acp.Close()
-		if err := s.executionCheck(ctx, id); err != nil {
-			return
-		}
-		sb.Destroy(context.Background())
-		_ = os.RemoveAll(home)
-		if extra.Resident {
-			if s.host != nil && runID != "" {
-				s.host.UnregisterRun(runID)
-			}
-			if extra.OnFail != nil {
-				extra.OnFail(fmt.Errorf("sandbox record removed during start"))
-			}
-		} else {
-			s.invokeAgentDestroyHook(threadID, sharedToken)
-		}
+		fail(publicationErr)
 		return
 	}
 	s.mu.Lock()
@@ -366,7 +349,7 @@ func (s *SandboxService) activeAgentSandboxCount() int {
 	var n int64
 	s.db.Model(&models.Sandbox{}).
 		Where("status IN ? AND purpose = ?",
-			[]string{"running", "creating", "pulling"}, SandboxPurposeAgent).
+			[]string{"running", "creating", "pulling", "error"}, SandboxPurposeAgent).
 		Count(&n)
 	return int(n)
 }

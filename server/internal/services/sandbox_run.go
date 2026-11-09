@@ -105,6 +105,9 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		"destroy_at": nil,
 		"updated_at": time.Now(),
 	}
+	if info.StartupError != "" {
+		fields["status"], fields["error"] = "error", truncErr(errors.New(info.StartupError))
+	}
 	if info.Token != "" {
 		fields["token"] = info.Token
 	}
@@ -118,11 +121,17 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		}
 		s.mu.Lock()
 		delete(s.runActive, info.CorrelationName)
-		s.runActive[info.Name] = true
+		if info.StartupError == "" {
+			s.runActive[info.Name] = true
+		} else {
+			delete(s.runActive, info.Name)
+		}
 		s.mu.Unlock()
 		return
 	}
-	s.markVisitSandboxReady(info, fields["updated_at"].(time.Time))
+	if info.StartupError == "" {
+		s.markVisitSandboxReady(info, fields["updated_at"].(time.Time))
+	}
 	// Adopt the pre-registered creating/pulling placeholder row (by run+node) in place,
 	// swapping its placeholder name for the gateway id. Falls back to an upsert
 	// by name when no placeholder exists (registry without RunSandboxBeginner).
@@ -160,7 +169,11 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		if oldName != "" && oldName != info.Name {
 			delete(s.runActive, oldName)
 		}
-		s.runActive[info.Name] = true
+		if info.StartupError == "" {
+			s.runActive[info.Name] = true
+		} else {
+			delete(s.runActive, info.Name)
+		}
 		s.mu.Unlock()
 		return
 	}
@@ -173,7 +186,11 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		log.Warn().Err(err).Str("name", info.Name).Msg("register run sandbox failed")
 	}
 	s.mu.Lock()
-	s.runActive[info.Name] = true
+	if info.StartupError == "" {
+		s.runActive[info.Name] = true
+	} else {
+		delete(s.runActive, info.Name)
+	}
 	s.mu.Unlock()
 }
 

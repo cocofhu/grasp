@@ -196,7 +196,13 @@ func (g *GatewayClient) Create(ctx context.Context, req GWCreateRequest) (*GWSan
 	if err := client.doDirect(ctx, http.MethodPost, "/api/v1/sandboxes", req, &sb); err != nil {
 		return nil, err
 	}
-	return client.adaptSandbox(ctx, &sb)
+	adapted, err := client.adaptSandbox(ctx, &sb)
+	if err != nil {
+		// POST already returned the original provider identity. A local
+		// endpoint/discovery failure cannot discard that creation receipt.
+		return &sb, err
+	}
+	return adapted, nil
 }
 
 // Get returns one sandbox by gateway id.

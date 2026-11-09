@@ -269,22 +269,19 @@ func TestRunAgentReattachSendsPromptWhenNoneSent(t *testing.T) {
 	}
 }
 
-func TestRunAgentReattachGoneFallsBackToFreshSandbox(t *testing.T) {
+func TestRunAgentReattachGoneKeepsOriginalReceiptWithoutFreshSandbox(t *testing.T) {
 	p, mgr, req := setupReattach(t, nil)
 	p.opts.SandboxRetryBackoff = time.Millisecond
 
-	res, err := p.RunAgent(context.Background(), req)
-	if err != nil {
-		t.Fatalf("RunAgent: %v", err)
+	_, err := p.RunAgent(context.Background(), req)
+	if !errors.Is(err, errSandboxStartupUnconfirmed) || isRetryableSandboxErr(err) {
+		t.Fatalf("unconfirmed original resource was retryable: %v", err)
 	}
-	if mgr.createCount() != 1 {
-		t.Errorf("created %d sandboxes, want 1 fresh retry", mgr.createCount())
+	if mgr.createCount() != 0 {
+		t.Errorf("created %d sandboxes, want no replacement", mgr.createCount())
 	}
 	if len(mgr.attached) != 1 || mgr.attached[0] != "sb-old" {
 		t.Errorf("attached = %v", mgr.attached)
-	}
-	if !strings.Contains(res.OutputMd, "fresh sandbox") {
-		t.Errorf("narration = %q", res.OutputMd)
 	}
 }
 

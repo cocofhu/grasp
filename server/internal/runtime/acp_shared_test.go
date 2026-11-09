@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -173,17 +174,22 @@ func TestSharedSandboxRetryKeepsContainer(t *testing.T) {
 	}
 }
 
-func TestSharedSandboxReprimeFailureReplacesContainer(t *testing.T) {
+func TestSharedSandboxReprimeFailureRetainsOriginalContainer(t *testing.T) {
 	h := newSharedHarness(t, nil)
 	h.run(t, h.req("n1", models.SandboxModeShared))
 	h.mgr.failNext = true
-	h.run(t, h.req("n2", models.SandboxModeShared))
-	if got := h.mgr.createCount(); got != 2 {
-		t.Fatalf("containers created = %d, want 2", got)
+	if _, err := h.p.RunAgent(t.Context(), h.req("n2", models.SandboxModeShared)); !errors.Is(err, errSandboxStartupUnconfirmed) {
+		t.Fatalf("unconfirmed re-prime must require original reconciliation: %v", err)
+	}
+	if got := h.mgr.createCount(); got != 1 {
+		t.Fatalf("containers created = %d, want original only", got)
 	}
 	ss := h.p.shared.get(h.runID)
-	if ss == nil || ss.sb.Name != "fake-sb-1" {
-		t.Fatalf("shared sandbox not replaced: %+v", ss)
+	if ss == nil || ss.sb.Name != "fake-sb-0" {
+		t.Fatalf("original shared sandbox lost: %+v", ss)
+	}
+	if h.reg.unregistered != 0 {
+		t.Fatal("failed re-prime forgot the original workspace")
 	}
 }
 
