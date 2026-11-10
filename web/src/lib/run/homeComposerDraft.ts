@@ -1,4 +1,5 @@
 import type { ClarifyImage } from '../shared/types'
+import { MAX_REFERENCES, type ReferenceToken } from '../solo/referenceTokens'
 import {
   HOME_DRAFT_ID,
   blobToBase64,
@@ -27,6 +28,7 @@ export interface HomeComposerDraft {
   pipelineId: string
   text: string
   attachments: HomeDraftAttachment[]
+  referenceTokens?: ReferenceToken[]
 }
 
 /** ok = full save; partial = text persisted, attachments only in memory; quota_exceeded / error. */
@@ -50,6 +52,27 @@ function normalizeAttachments(raw: unknown): HomeDraftAttachment[] {
   return out
 }
 
+/** Keep exact spans so restoring a draft does not depend on loaded repo choices. */
+function normalizeReferenceTokens(raw: unknown, text: string): ReferenceToken[] {
+  if (!Array.isArray(raw)) return []
+  const out: ReferenceToken[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const { ref, start, end } = item
+    if (!ref || !['solo', 'github_issue', 'github_pr'].includes(ref.kind) ||
+        typeof ref.target !== 'string' || !ref.target || typeof ref.title !== 'string' ||
+        !Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > text.length ||
+        text[start] !== '@' || out.some(token => start < token.end && end > token.start)) continue
+    out.push({ start, end, ref: {
+      kind: ref.kind, target: ref.target, title: ref.title,
+      ...(typeof ref.url === 'string' ? { url: ref.url } : {}),
+      ...(typeof ref.state === 'string' ? { state: ref.state } : {}),
+    } })
+    if (out.length === MAX_REFERENCES) break
+  }
+  return out.sort((a, b) => a.start - b.start)
+}
+
 function parseDraft(raw: string): HomeComposerDraft | null {
   try {
     const parsed = JSON.parse(raw) as Partial<HomeComposerDraft>
@@ -58,6 +81,7 @@ function parseDraft(raw: string): HomeComposerDraft | null {
     if (typeof parsed.pipelineId !== 'string') return null
     if (typeof parsed.savedAt !== 'number' || !Number.isFinite(parsed.savedAt)) return null
     const attachments = normalizeAttachments(parsed.attachments)
+    const referenceTokens = normalizeReferenceTokens(parsed.referenceTokens, parsed.text)
     return {
       schemaVersion:
         typeof parsed.schemaVersion === 'string' && parsed.schemaVersion
@@ -67,6 +91,7 @@ function parseDraft(raw: string): HomeComposerDraft | null {
       pipelineId: parsed.pipelineId,
       text: parsed.text,
       attachments,
+      ...(referenceTokens.length ? { referenceTokens } : {}),
     }
   } catch {
     return null
@@ -166,12 +191,14 @@ async function draftFromIdb(packed: {
   record: HomeDraftRecord
   attachments: DraftAttachmentRecord[]
 }): Promise<HomeComposerDraft> {
+  const referenceTokens = normalizeReferenceTokens(packed.record.referenceTokens, packed.record.text)
   return {
     schemaVersion: packed.record.schemaVersion || HOME_COMPOSER_DRAFT_SCHEMA,
     savedAt: packed.record.savedAt,
     pipelineId: packed.record.pipelineId,
     text: packed.record.text,
     attachments: await fromIdbAttachments(packed.attachments),
+    ...(referenceTokens.length ? { referenceTokens } : {}),
   }
 }
 
@@ -214,6 +241,7 @@ export async function saveHomeComposerDraft(
   text: string,
   attachments: ClarifyImage[],
   pipelineId: string,
+  referenceTokens: ReferenceToken[] = [],
 ): Promise<SaveHomeComposerDraftResult> {
   const persistable = toPersistableAttachments(attachments)
   if (isHomeComposerDraftEmpty(text, persistable as ClarifyImage[])) {
@@ -226,6 +254,7 @@ export async function saveHomeComposerDraft(
     pipelineId: pipelineId || '',
     text,
     attachments: persistable,
+    referenceTokens: normalizeReferenceTokens(referenceTokens, text),
   }
   const record: HomeDraftRecord = {
     id: HOME_DRAFT_ID,
@@ -233,6 +262,7 @@ export async function saveHomeComposerDraft(
     savedAt: payload.savedAt,
     pipelineId: payload.pipelineId,
     text: payload.text,
+    referenceTokens: payload.referenceTokens,
   }
   try {
     await getDraftIdb().putHome(record, toIdbAttachments(persistable))

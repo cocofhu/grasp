@@ -50,8 +50,7 @@
       "messagePreview.ts",
       "reviewSessionState.ts",
       "sessionQueue.ts",
-      "useChatComposerDraft.ts",
-      "useComposerCommands.ts"
+      "useChatComposerDraft.ts"
     ],
     "composables": [
       "useAuth.ts",
@@ -296,7 +295,7 @@
     "agent": 25,
     "api": 5,
     "artifacts": 1,
-    "chat": 13,
+    "chat": 12,
     "composables": 21,
     "icons": 2,
     "inbox": 44,

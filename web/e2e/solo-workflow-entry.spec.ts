@@ -9,7 +9,8 @@ async function setup(page: Page, enabled = true, initial: Task[] = []) {
     const request = route.request(); const path = new URL(request.url()).pathname
     if (!path.startsWith('/api/')) { await route.continue(); return }
     let response: unknown = {}
-    if (path === '/api/solo/sessions/solo-1/workflows') response = { items: tasks, workflows: { enabled, locked: false, source: 'db' } }
+    if (path.endsWith('/references/search')) response = { items: [] }
+    else if (path === '/api/solo/sessions/solo-1/workflows') response = { items: tasks, workflows: { enabled, locked: false, source: 'db' } }
     else if (path === '/api/workflows') response = [{ id: 'wf', name: '代码评估', publishedVersion: 3, publishedSnapshot: graph }]
     else if (path.endsWith('/workflows/wf/runs') && request.method() === 'POST') {
       launches.push({ body: request.postDataJSON(), key: request.headers()['idempotency-key'] })
@@ -25,10 +26,14 @@ async function setup(page: Page, enabled = true, initial: Task[] = []) {
 
 async function openLaunch(page: Page, selection: 'click' | 'Enter' | 'Tab' = 'click') {
   const input = page.getByTestId('resident-solo-input')
-  await input.fill('/wor')
-  await expect(page.getByTestId('resident-solo-command-menu')).toBeVisible()
-  if (selection === 'click') await page.getByTestId('resident-solo-command-workflow').click()
-  else await input.press(selection)
+  await input.fill('@wor')
+  await expect(page.getByTestId('solo-reference-picker')).toBeVisible()
+  if (selection === 'click') await page.getByTestId('solo-reference-workflow').click()
+  else {
+    if (selection === 'Tab') { await input.press('Tab'); await input.press('Shift+Tab') }
+    await input.press('ArrowDown')
+    await input.press('Enter')
+  }
   await expect(input).toHaveValue('')
   await page.getByRole('button', { name: /代码评估/ }).click()
   return page.getByRole('button', { name: '开始运行', exact: true })
@@ -36,9 +41,9 @@ async function openLaunch(page: Page, selection: 'click' | 'Enter' | 'Tab' = 'cl
 
 test('workflow selection is a draft until the human starts; Solo remains in place', async ({ page }, testInfo) => {
   const { launches } = await setup(page)
-  await page.getByTestId('resident-solo-input').fill('/')
-  await expect(page.getByTestId('resident-solo-command-menu')).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('solo-command-menu-desktop.png'), fullPage: true })
+  await page.getByTestId('resident-solo-input').fill('@')
+  await expect(page.getByTestId('solo-reference-workflow')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('solo-reference-workflow-desktop.png'), fullPage: true })
   const start = await openLaunch(page)
   expect(launches).toHaveLength(0)
   await start.click()
@@ -64,37 +69,37 @@ test('three independent workflow cards can coexist while Solo remains editable',
   await expect(page.getByTestId('resident-solo-input')).toHaveValue('我的 Solo 对话')
 })
 
-test('slash commands require focus, dismiss with Escape and leave body slashes and IME input alone', async ({ page }) => {
+test('@ workflow entry dismisses with Escape and leaves slashes and IME input alone', async ({ page }) => {
   const { launches } = await setup(page)
   const input = page.getByTestId('resident-solo-input')
-  const menu = page.getByTestId('resident-solo-command-menu')
+  const menu = page.getByTestId('solo-reference-picker')
   await expect(menu).toHaveCount(0)
   await expect(page.getByTestId('workflow-picker-open')).toHaveCount(0)
   await expect(page.getByTestId('solo-workflow-menu')).toHaveCount(0)
-  await input.fill('/')
+  await input.fill('@')
   await expect(menu).toBeVisible()
   await input.press('Escape')
   await expect(menu).toHaveCount(0)
-  await expect(input).toHaveValue('/')
+  await expect(input).toHaveValue('@')
   await input.press('ArrowLeft')
   await expect(menu).toHaveCount(0)
-  await input.fill('/work')
+  await input.fill('@work')
   await expect(menu).toBeVisible()
   await input.evaluate(element => (element as HTMLTextAreaElement).blur())
   await expect(menu).toHaveCount(0)
   await input.focus()
   await expect(menu).toBeVisible()
   await input.press('Shift+Enter')
-  await expect(input).toHaveValue('/work\n')
+  await expect(input).toHaveValue('@work\n')
   await expect(menu).toHaveCount(0)
-  await input.fill('/')
+  await input.fill('@')
   await input.dispatchEvent('compositionstart')
   await input.dispatchEvent('keydown', { key: 'Enter', isComposing: true, keyCode: 229 })
-  await expect(input).toHaveValue('/')
+  await expect(input).toHaveValue('@')
   await expect(menu).toHaveCount(0)
   await input.dispatchEvent('compositionend')
   await expect(menu).toBeVisible()
-  for (const text of ['/workspace/file', '查看 /workflow', '/unknown']) {
+  for (const text of ['/', '/wor', '/workspace/file', '查看 /workflow', '/unknown']) {
     await input.fill(text)
     await expect(menu).toHaveCount(0)
     await expect(input).toHaveValue(text)
@@ -103,12 +108,12 @@ test('slash commands require focus, dismiss with Escape and leave body slashes a
   expect(launches).toHaveLength(0)
 })
 
-test('the slash menu fits a 390px viewport and keyboard selection still requires an explicit start', async ({ page }, testInfo) => {
+test('the @ picker fits a 390px viewport and workflow selection still requires an explicit start', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const { launches } = await setup(page)
   const input = page.getByTestId('resident-solo-input')
-  await input.fill('/')
-  const menu = page.getByTestId('resident-solo-command-menu')
+  await input.fill('@')
+  const menu = page.getByTestId('solo-reference-picker')
   await expect(menu).toBeVisible()
   const box = await menu.boundingBox()
   expect(box).not.toBeNull()
@@ -116,7 +121,7 @@ test('the slash menu fits a 390px viewport and keyboard selection still requires
   expect(box!.y).toBeGreaterThanOrEqual(0)
   expect(box!.x + box!.width).toBeLessThanOrEqual(390)
   expect(box!.y + box!.height).toBeLessThanOrEqual(844)
-  await page.screenshot({ path: testInfo.outputPath('solo-command-menu-mobile.png'), fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath('solo-reference-workflow-mobile.png'), fullPage: true })
   await input.press('ArrowDown')
   await input.press('Enter')
   await page.getByRole('button', { name: /代码评估/ }).click()
@@ -124,13 +129,13 @@ test('the slash menu fits a 390px viewport and keyboard selection still requires
   expect(launches).toHaveLength(0)
 })
 
-test('disabled workflows retain existing cards and remove the new-launch command', async ({ page }) => {
+test('disabled workflows retain existing cards and remove workflow selection from @', async ({ page }) => {
   const { launches } = await setup(page, false, [{ id: 'existing', title: '已有任务', workflowName: '工作流', status: 'paused', controlVersion: 2, nodes: [] }])
   await expect(page.getByTestId('solo-workflow-existing')).toBeVisible()
   await expect(page.getByTestId('workflow-picker-open')).toHaveCount(0)
   await expect(page.getByTestId('solo-workflow-command')).toHaveCount(0)
-  await page.getByTestId('resident-solo-input').fill('/')
-  await expect(page.getByTestId('resident-solo-command-menu')).toHaveCount(0)
+  await page.getByTestId('resident-solo-input').fill('@')
+  await expect(page.getByTestId('solo-reference-workflow')).toHaveCount(0)
   await page.getByTestId('resident-solo-input').press('Tab')
   await expect(page.getByRole('button', { name: /代码评估/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '继续执行', exact: true })).toBeVisible()
