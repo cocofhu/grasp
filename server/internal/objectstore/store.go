@@ -1,6 +1,10 @@
 // Package objectstore supplies a common byte-storage contract for payloads,
 // attachments and workspace snapshots. Callers authorize the owning SQL record;
 // an object key is never a capability or a public download URL.
+//
+// This is the lowest storage layer (local disk, S3, replicas). filestore builds
+// content-addressed payload references on top of it, and payloadstore wires
+// both to the configured primary at startup.
 package objectstore
 
 import (

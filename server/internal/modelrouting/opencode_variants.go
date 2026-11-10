@@ -55,17 +55,6 @@ func OpenCodePlatformVariants(modelID string) []string {
 	return append([]string{}, entry.Variants...)
 }
 
-// OpenCodeCatalogVariant reports whether effort is one of the model's catalog variants.
-func OpenCodeCatalogVariant(modelID, effort string) bool {
-	effort = strings.TrimSpace(effort)
-	for _, item := range OpenCodePlatformVariants(modelID) {
-		if item == effort {
-			return true
-		}
-	}
-	return false
-}
-
 // ValidEffortToken accepts one OpenCode variant token. Blank is the default and
 // is not a token. Spaces, slashes and hashes are rejected.
 func ValidEffortToken(effort string) bool {
@@ -86,19 +75,4 @@ func SessionEffortChoices(catalog []string, saved string) []string {
 		}
 	}
 	return []string{}
-}
-
-// WithSavedEffort appends a saved custom variant when the catalog does not
-// already list it, so a session can select the value stored on the model group.
-func WithSavedEffort(efforts []string, saved string) []string {
-	saved = strings.TrimSpace(saved)
-	if !ValidEffortToken(saved) {
-		return efforts
-	}
-	for _, item := range efforts {
-		if item == saved {
-			return efforts
-		}
-	}
-	return append(append([]string{}, efforts...), saved)
 }
