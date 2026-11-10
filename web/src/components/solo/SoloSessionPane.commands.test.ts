@@ -5,6 +5,7 @@ import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import snapshots from '@/locales/zh-CN/workspaceSnapshots.json'
 import type { soloEmbedClient } from '@/lib/solo/soloEmbedClient'
 
 const mocks = vi.hoisted(() => ({ openPicker: vi.fn(), send: vi.fn(), startRun: vi.fn() }))
@@ -38,7 +39,7 @@ function render(embedded = false) {
     attachTo: document.body,
     props: { sessionId: 'solo-1', ...(embedded ? { embedded: {} as ReturnType<typeof soloEmbedClient> } : {}) },
     global: {
-      plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { ...common, ...pages } } })],
+      plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { ...common, ...pages, ...snapshots } } })],
       stubs: {
         SoloWorkflowPanel: defineComponent({ setup(_, { expose }) { expose({ openPicker: mocks.openPicker }); return () => h('div') } }),
         ReviewShell: { template: '<div><slot name="sidebar" /></div>' },
@@ -61,7 +62,31 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('SoloSessionPane workflow reference wiring', () => {
+describe('SoloSessionPane workspace and workflow wiring', () => {
+  it('opens snapshots from the sidebar intent without a persistent workspace toolbar', async () => {
+    const wrapper = render(); await flushPromises()
+    expect(wrapper.find('[data-testid="solo-workspace-history"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="solo-stop-environment"]').exists()).toBe(false)
+    await wrapper.setProps({ workspaceIntent: 'snapshots' })
+    const modal = wrapper.findComponent({ name: 'AppModal' })
+    expect(modal.props()).toMatchObject({ open: true, title: '快照', width: 560, trapFocus: true, closeOnEsc: true })
+    expect(wrapper.emitted('workspaceOpened')).toHaveLength(1)
+    await wrapper.setProps({ workspaceIntent: undefined })
+    modal.vm.$emit('close')
+    await flushPromises()
+    expect(modal.props('open')).toBe(false)
+    await wrapper.setProps({ workspaceIntent: 'snapshots' })
+    expect(modal.props('open')).toBe(true)
+    expect(mocks.send).not.toHaveBeenCalled()
+  })
+
+  it('ignores workspace intents in an embedded chat', async () => {
+    const wrapper = render(true)
+    await wrapper.setProps({ workspaceIntent: 'snapshots' })
+    expect(wrapper.findComponent({ name: 'AppModal' }).props('open')).toBe(false)
+    expect(wrapper.emitted('workspaceOpened')).toBeUndefined()
+  })
+
   it('selects the workflow action in the real @ picker and opens only configuration', async () => {
     const wrapper = render(); await flushPromises()
     const input = wrapper.get<HTMLTextAreaElement>('[data-testid="solo-input"]')

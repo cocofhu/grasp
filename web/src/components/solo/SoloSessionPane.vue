@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import AppDrawer from '@/components/ui/AppDrawer.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
@@ -51,8 +52,8 @@ import type { SoloResources } from '@/lib/api/apiTypes'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
-const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient>; workflowIntent?: string }>()
-const emit = defineEmits<{ back: []; ready: []; workflowOpened: [] }>()
+const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient>; workflowIntent?: string; workspaceIntent?: string }>()
+const emit = defineEmits<{ back: []; ready: []; workflowOpened: []; workspaceOpened: [] }>()
 const { t, te, locale } = useI18n()
 const { worktreeMode } = useExecutionMode()
 const store = useSoloSessions()
@@ -153,12 +154,12 @@ async function loadEarlier() {
 const limitOpen = ref(false)
 const environmentBusy = ref(false)
 const stoppedEnvironment = computed(() => status.value === 'stopped')
-const environmentStopPending = computed(() => session.value?.sandbox?.desiredState === 'stopped' && !stoppedEnvironment.value)
-async function changeEnvironment(resume: boolean) {
+async function resumeEnvironment() {
+  if (environmentBusy.value) return
   environmentBusy.value = true
   actionError.value = ''
   try {
-    const value = await (resume ? api.resumeSoloEnvironment(props.sessionId) : api.stopSoloEnvironment(props.sessionId))
+    const value = await api.resumeSoloEnvironment(props.sessionId)
     store.upsert(value)
     await chat.load()
   } catch (cause) {
@@ -192,6 +193,12 @@ const editTargets = computed(() => {
   return out
 })
 const sandboxId = computed(() => session.value?.sandboxId || session.value?.sandbox?.id || 0)
+watch([() => props.workspaceIntent, session], ([intent, current]) => {
+  if (!intent || !current || props.embedded || worktreeMode.value) return
+  if (intent === 'snapshots') workspaceSnapshotsOpen.value = true
+  else if (intent === 'release' && current.status === 'closed' && sandboxId.value) environmentReleaseOpen.value = true
+  emit('workspaceOpened')
+}, { immediate: true })
 const sandboxResource = computed(() => {
   const source = session.value?.sandbox
   const id = Number(source?.id || session.value?.sandboxId || 0)
@@ -409,14 +416,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </template>
 
       <template #sidebar>
-      <div v-if="!embedded && !worktreeMode" class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-line px-4 py-2">
-		<AppButton size="sm" variant="ghost" icon="folder" data-testid="solo-workspace-history" @click="workspaceSnapshotsOpen = true">{{ t('workspaceSnapshots.title') }}</AppButton>
-		<AppButton v-if="status === 'closed' && sandboxId" size="sm" variant="ghost" data-testid="solo-release-environment" @click="environmentReleaseOpen = true">{{ t('workspaceRelease.title') }}</AppButton>
-        <span v-if="stoppedEnvironment" class="mr-auto text-xs text-txt3">{{ t('pages.solo.environment.stopped') }}</span>
-        <span v-else-if="environmentStopPending" class="mr-auto text-xs text-txt3">{{ t('pages.solo.environment.stopPending') }}</span>
-        <AppButton v-if="stoppedEnvironment" size="sm" variant="outline" icon="play" :loading="environmentBusy" @click="changeEnvironment(true)">{{ t('pages.solo.environment.resume') }}</AppButton>
-        <AppButton v-else-if="status !== 'closed'" size="sm" variant="ghost" icon="stop" :disabled="busy || queued.length > 0 || status === 'starting'" :loading="environmentBusy" :title="t('pages.solo.environment.retained')" data-testid="solo-stop-environment" @click="changeEnvironment(false)">{{ t(environmentStopPending ? 'pages.solo.environment.retryStop' : 'pages.solo.environment.stop') }}</AppButton>
-      </div>
       <div v-if="link === 'reconnecting'" class="solo-banner" role="status">
         <Icon name="spinner" :size="12" />{{ t('pages.solo.link.reconnecting') }}
       </div>
@@ -570,7 +569,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         <div class="chat-pane-column solo-closed">
           <Icon name="lock" :size="15" class="mt-0.5 shrink-0 text-txt3" />
           <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">{{ t(stoppedEnvironment ? 'pages.solo.environment.stopped' : 'pages.solo.closedBar.text') }}</p>
-          <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting || environmentBusy" @click="stoppedEnvironment ? changeEnvironment(true) : doRestart()">{{ t(stoppedEnvironment ? 'pages.solo.environment.resume' : 'pages.solo.closedBar.restart') }}</AppButton>
+          <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting || environmentBusy" @click="stoppedEnvironment ? resumeEnvironment() : doRestart()">{{ t(stoppedEnvironment ? 'pages.solo.environment.resume' : 'pages.solo.closedBar.restart') }}</AppButton>
         </div>
         <p v-if="actionError" class="chat-pane-column mt-2 text-xs text-err" role="alert">{{ actionError }}</p>
       </div>
@@ -630,7 +629,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         </div>
       </div>
 
-      <AppDrawer :open="workspaceSnapshotsOpen" :title="t('workspaceSnapshots.title')" :width="620" @close="workspaceSnapshotsOpen = false"><SoloWorkspaceSnapshots v-if="workspaceSnapshotsOpen" :key="props.sessionId" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" /></AppDrawer>
+      <AppModal :open="workspaceSnapshotsOpen" :title="t('workspaceSnapshots.title')" :width="560" :close-label="t('common.buttons.close')" close-on-esc trap-focus @close="workspaceSnapshotsOpen = false"><SoloWorkspaceSnapshots v-if="workspaceSnapshotsOpen" :key="props.sessionId" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" /></AppModal>
       <AppDrawer :open="environmentReleaseOpen" :title="t('workspaceRelease.title')" :width="480" @close="environmentReleaseOpen = false"><SoloEnvironmentRelease v-if="environmentReleaseOpen" :key="props.sessionId" v-model:draft="environmentReleaseDraft" :session-id="props.sessionId" @changed="chat.load()" /></AppDrawer>
 
       <SoloLimitModal :open="limitOpen" @close="limitOpen = false" @freed="limitOpen = false; doRestart()" />
