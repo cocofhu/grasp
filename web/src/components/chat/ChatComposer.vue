@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AnnotationChip from '@/components/run/AnnotationChip.vue'
@@ -13,6 +13,8 @@ import type { ReferenceScope, ReferenceTab, ScopedReferenceSearch } from '@/lib/
 import type { ReactAnnotation } from '@/lib/shared/types'
 import ChatAttachments from './ChatAttachments.vue'
 import ChatComposerTextarea from './ChatComposerTextarea.vue'
+import ComposerCommandMenu from './ComposerCommandMenu.vue'
+import { useComposerCommands, type ComposerCommand } from '@/lib/chat/useComposerCommands'
 
 const props = withDefaults(defineProps<{
   draft: ChatComposerDraft
@@ -22,19 +24,32 @@ const props = withDefaults(defineProps<{
   scopedSearch?: ScopedReferenceSearch
   allowSolo?: boolean
   disabled?: boolean
+  commands?: ComposerCommand[]
   testPrefix: string
   pickTestId: string
 }>(), { allowSolo: true })
-const emit = defineEmits<{ send: []; 'remove-pick': [index: number]; preview: [src: string, label: string] }>()
+const emit = defineEmits<{ send: []; command: [id: string]; 'remove-pick': [index: number]; preview: [src: string, label: string] }>()
 const { t } = useI18n()
 const { attach, mention, input, composing, textareaComponent, defaultRepo } = props.draft
 const { fileInput } = attach
 const { picker, trigger, pickerTab, tokens } = mention
 const plusOpen = ref(false)
 const plus = ref<HTMLElement>()
+const commandMenuId = useId()
+const commands = useComposerCommands({
+  input, textarea: props.draft.textarea, composing,
+  commands: computed(() => props.commands || []), disabled: computed(() => props.disabled),
+  onSelect(command) { input.value = ''; emit('command', command.id) },
+})
+
+function updateTriggers() {
+  mention.updateTrigger()
+  commands.updateTrigger()
+}
 
 function onKeydown(event: KeyboardEvent) {
   if (mention.onKeydown(event)) return
+  if (commands.onKeydown(event)) return
   if (event.key !== 'Enter' || event.shiftKey || composing.value || event.isComposing || event.keyCode === 229) return
   event.preventDefault()
   if (!props.disabled) emit('send')
@@ -85,6 +100,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
     <div class="relative">
       <ComposerShell wrap-toolbar :show-footer="false">
         <template #input>
+          <ComposerCommandMenu
+            v-if="commands.open.value"
+            :id="commandMenuId"
+            :commands="commands.matches.value"
+            :selected="commands.selected.value"
+            :test-prefix="testPrefix"
+            @select="commands.select"
+          />
           <Transition name="ref-pop">
             <ReferencePicker
               v-if="trigger && !disabled"
@@ -107,13 +130,18 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
             :placeholder="placeholder"
             :aria-label="placeholder"
             :data-testid="`${testPrefix}-input`"
+            :aria-controls="commands.open.value ? commandMenuId : undefined"
+            :aria-expanded="props.commands?.length ? commands.open.value : undefined"
+            :aria-activedescendant="commands.open.value ? `${commandMenuId}-${commands.matches.value[commands.selected.value]?.id}` : undefined"
             @keydown="onKeydown"
-            @input="mention.updateTrigger"
-            @click="mention.updateTrigger"
-            @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && mention.updateTrigger()"
-            @blur="trigger = null"
+            @input="updateTriggers"
+            @click="updateTriggers"
+            @select="updateTriggers"
+            @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && updateTriggers()"
+            @focus="commands.focus"
+            @blur="trigger = null; commands.blur()"
             @compositionstart="composing = true"
-            @compositionend="composing = false; mention.updateTrigger()"
+            @compositionend="composing = false; updateTriggers()"
             @paste="onPaste"
           />
         </template>

@@ -102,7 +102,7 @@ defineExpose({ openPicker, refresh })
 
 <template>
   <section v-if="tasks.length || error" class="space-y-3" data-testid="solo-workflows">
-    <div class="flex items-center gap-2 text-xs text-txt3"><Icon name="workflow" :size="14" /><span>{{ t('pages.solo.workflows.title') }}</span><span v-if="tasks.length" class="rounded bg-elevated px-1.5">{{ tasks.length }}</span><AppButton v-if="enabled" size="sm" variant="ghost" class="ml-auto font-mono" data-testid="solo-workflow-command" @click="openPicker()">/workflow</AppButton></div>
+    <div class="flex items-center gap-2 text-xs text-txt3"><Icon name="workflow" :size="14" /><span>{{ t('pages.solo.workflows.title') }}</span><span v-if="tasks.length" class="rounded bg-elevated px-1.5">{{ tasks.length }}</span></div>
     <p v-if="error" class="text-xs text-err" role="alert">{{ error }}</p>
     <article v-for="task in tasks" :key="task.id" class="rounded-xl border border-line bg-surface px-4 py-3 shadow-sm" :data-testid="`solo-workflow-${task.id}`">
       <div class="flex min-w-0 items-center gap-2"><span class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] text-accent">{{ task.id }}</span><strong class="min-w-0 flex-1 truncate text-[13px] text-txt">{{ task.title || task.workflowName }}</strong><span class="shrink-0 text-xs" :class="task.status === 'failed' ? 'text-err' : task.status === 'completed' ? 'text-ok' : 'text-accent'">{{ t(`common.status.${task.status}`) }}</span></div>

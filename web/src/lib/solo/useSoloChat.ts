@@ -365,6 +365,9 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
     const clientIds = new Map(messages.map(message => [message.id, message.clientMessageId]))
     const incoming = turnsFromMessages(messages.map(message => processEvents.has(message.id) ? { ...message, events: processEvents.get(message.id) } : message), label, toolFallback())
+    for (const turn of incoming) {
+      if (turn.historyMessageId) turn.processComplete = processPages.value[turn.historyMessageId]?.hasMore === false
+    }
     // Messages are append-only. A shorter HTTP snapshot must not erase rows
     // already reconciled from an earlier response.
     if (incoming.length >= persistedHistory.length) persistedHistory = incoming
