@@ -181,6 +181,7 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 		s.chat = sbx
 		sbx.SetSoloSandboxDestroyHook(s.onSandboxGone)
 		sbx.SetSoloSandboxRecoveredHook(s.onSandboxRecovered)
+		sbx.SetSoloSandboxRecoveryFailedHook(s.onSandboxRecoveryFailed)
 	}
 	if err := s.pinLegacyConfigurationIDs(); err != nil {
 		log.Error().Err(err).Msg("pin existing Solo model group selections")
