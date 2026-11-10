@@ -362,6 +362,20 @@
     },
     "errors": {
       "secretsKeyMissing": "服务器尚未配置加密密钥，暂时无法保存凭据。请让管理员用启动脚本重新启动服务。"
+    },
+    "apiErrors": {
+      "agent_not_found": "Agent 不存在",
+      "instruction_not_persisted": "补充要求未能持久化，请保留草稿后重试",
+      "invalid_attachment": "附件内容或引用无效，请修改后重新发送",
+      "invalid_client_message_id": "消息必须包含稳定标识",
+      "invalid_creation_identity": "创建请求必须包含稳定标识",
+      "invalid_workspace_import": "导入内容无效",
+      "invalid_workspace_source": "工作区来源无效",
+      "message_not_confirmed": "消息尚未确认接收，请使用原消息身份重试",
+      "run_not_found": "工作流执行不存在",
+      "workflow_version_required": "请重新选择已发布的工作流",
+      "workspace_import_forbidden": "请在 Solo 会话中导入代码",
+      "workspace_import_unavailable": "工作区导入暂不可用"
     }
   }
 }

@@ -79,7 +79,8 @@ jobs:
   # when this workflow runs (path-filtered; non-web PRs do not trigger ci-web).
   web-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Setup alone varies from 10 to 16 minutes; the suite takes about 15.
+    timeout-minutes: 45
     permissions:
       contents: read
     defaults:

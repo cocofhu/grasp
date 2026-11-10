@@ -9,7 +9,7 @@ import (
 
 // Resolve observes the original nonce; a missing receipt does not submit it.
 func (s *WorkspaceRestoreService) Resolve(ctx context.Context, actor, soloID, nonce string) (row models.WorkspaceRestore, err error) {
-	if !snapshotCatalogCoordinate(actor, 191) || !snapshotCatalogCoordinate(soloID, 191) || !workspaceJobID.MatchString(nonce) {
+	if !snapshotCatalogCoordinate(actor, workspaceKeyMax) || !snapshotCatalogCoordinate(soloID, workspaceKeyMax) || !workspaceJobID.MatchString(nonce) {
 		return row, gorm.ErrRecordNotFound
 	}
 	receipt, err := s.Get(ctx, actor, workspaceRestoreIdentity(actor, soloID, nonce))
@@ -29,7 +29,7 @@ type WorkspaceRestoreHistoryPage struct {
 }
 
 func (s *WorkspaceRestoreService) List(ctx context.Context, actor, soloID, cursor string, limit int) (WorkspaceRestoreHistoryPage, error) {
-	if !snapshotCatalogCoordinate(actor, 191) || !snapshotCatalogCoordinate(soloID, 191) {
+	if !snapshotCatalogCoordinate(actor, workspaceKeyMax) || !snapshotCatalogCoordinate(soloID, workspaceKeyMax) {
 		return WorkspaceRestoreHistoryPage{}, gorm.ErrRecordNotFound
 	}
 	if limit == 0 {

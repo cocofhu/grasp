@@ -102,7 +102,7 @@ func workspaceCurrentRead(db *gorm.DB) *gorm.DB {
 }
 
 func (a *WorkspaceAuthorization) account(actor string) error {
-	if actor == "" || len(actor) > 191 || strings.ContainsRune(actor, 0) || !strings.HasPrefix(actor, "api-key:") && !a.options.AccountExists(actor) {
+	if !validWorkspaceKey(actor) || !strings.HasPrefix(actor, "api-key:") && !a.options.AccountExists(actor) {
 		return gorm.ErrRecordNotFound
 	}
 	return nil
@@ -120,7 +120,7 @@ func (a *WorkspaceAuthorization) readScope(ctx context.Context, db *gorm.DB, act
 	if err := a.account(actor); err != nil {
 		return nil, err
 	}
-	if db == nil || id == "" || len(id) > 191 || strings.ContainsRune(id, 0) {
+	if db == nil || !validWorkspaceKey(id) {
 		return nil, gorm.ErrRecordNotFound
 	}
 	query := workspaceCurrentRead(db.WithContext(ctx))

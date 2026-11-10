@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
+import { useVisiblePolling } from '@/lib/composables/useVisiblePolling'
 import { ingestDialogues, ingestDialogue } from '@/lib/chat/dialogueStore'
 import type { Run, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import type { ReferenceInput } from '@/lib/api/apiTypes'
@@ -25,7 +26,6 @@ const active = computed(() => !!run.value && ['queued', 'running', 'waiting_huma
 const automatic = computed(() => run.value?.currentNode?.id === nodeId.value && run.value.currentNode.mode === 'auto')
 const showInstructions = computed(() => automatic.value || (!conversation.value && run.value?.nodes?.some(node => node.id === nodeId.value && node.type === 'agent')))
 let disposed = false
-let timer: ReturnType<typeof setInterval> | undefined
 let loading = false
 async function refresh() {
   if (loading || disposed) return
@@ -47,8 +47,8 @@ async function send(text: string, images: ClarifyImage[], picks: ReactAnnotation
   try { await api.reactReply(props.runId, nodeId.value, text, images, false, picks, false, false, clientId, refs); await refresh(); return true }
   catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause); return false }
 }
-onMounted(() => { void refresh(); timer = setInterval(() => void refresh(), 1500) })
-onBeforeUnmount(() => { disposed = true; clearInterval(timer) })
+useVisiblePolling(() => refresh(), 1500)
+onBeforeUnmount(() => { disposed = true })
 </script>
 
 <template>

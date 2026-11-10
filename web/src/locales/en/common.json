@@ -362,6 +362,20 @@
     },
     "errors": {
       "secretsKeyMissing": "The server has no encryption key set, so credentials cannot be saved yet. Ask your admin to restart it with the startup script."
+    },
+    "apiErrors": {
+      "agent_not_found": "Agent not found.",
+      "instruction_not_persisted": "The instruction was not saved. Keep your draft and try again.",
+      "invalid_attachment": "An attachment or reference is invalid. Edit it and send again.",
+      "invalid_client_message_id": "The message is missing its stable identity.",
+      "invalid_creation_identity": "The create request is missing its stable identity.",
+      "invalid_workspace_import": "The import request is invalid.",
+      "invalid_workspace_source": "The workspace source is invalid.",
+      "message_not_confirmed": "The message has not been confirmed yet. Retry with the same message.",
+      "run_not_found": "This workflow run no longer exists.",
+      "workflow_version_required": "Select a published workflow again.",
+      "workspace_import_forbidden": "Import code from within a Solo session.",
+      "workspace_import_unavailable": "Workspace import is not available right now."
     }
   }
 }

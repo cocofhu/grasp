@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
@@ -58,13 +57,13 @@ func (h *Handlers) WorkspaceImportInventory(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, workspaceSelectionBody)
 	var in services.WorkspaceImportSourceInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_workspace_source", "error": "工作区来源无效"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), workspaceImportReadTimeout)
 	defer cancel()
 	result, err := s.Inventory(ctx, c.Param("id"), user, in)
 	if err != nil {
@@ -79,13 +78,13 @@ func (h *Handlers) PreviewWorkspaceImport(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, workspaceSelectionBody)
 	var in services.WorkspaceImportPreviewInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_workspace_import", "error": "导入预览内容无效"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), workspaceImportWriteTimeout)
 	defer cancel()
 	result, err := s.Preview(ctx, c.Param("id"), user, in)
 	if err != nil {
@@ -113,13 +112,13 @@ func (h *Handlers) ConfirmWorkspaceImport(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, workspaceControlBody)
 	var in services.WorkspaceImportConfirmInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_workspace_import", "error": "导入确认内容无效"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), workspaceImportWriteTimeout)
 	defer cancel()
 	result, err := s.Confirm(ctx, c.Param("id"), user, c.Param("importId"), in)
 	if err != nil {
@@ -134,7 +133,7 @@ func (h *Handlers) ReconcileWorkspaceImport(c *gin.Context) {
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), workspaceImportReadTimeout)
 	defer cancel()
 	result, err := s.Reconcile(ctx, c.Param("id"), user, c.Param("importId"))
 	if err != nil {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
@@ -61,7 +60,7 @@ func validateBindingSpec(body json.RawMessage) error {
 
 func (s *WorkspaceBindingService) Admit(ctx context.Context, actor string, in WorkspaceBindingInput) (result models.WorkspaceBindingOperation, resultErr error) {
 	var zero models.WorkspaceBindingOperation
-	if actor == "" || len(actor) > 191 || strings.ContainsRune(actor, 0) || !workspaceJobID.MatchString(in.ClientRequestID) || in.SoloID == "" || len(in.SoloID) > 191 || strings.ContainsRune(in.SoloID, 0) || !validDigest(in.ExpectedBinding) || !workspaceJobID.MatchString(in.ReturnSnapshotID) || bindingKind(in.Action) == "" || in.Duration <= 0 || in.Duration > 30*time.Minute {
+	if !validWorkspaceKey(actor) || !workspaceJobID.MatchString(in.ClientRequestID) || !validWorkspaceKey(in.SoloID) || !validDigest(in.ExpectedBinding) || !workspaceJobID.MatchString(in.ReturnSnapshotID) || bindingKind(in.Action) == "" || in.Duration <= 0 || in.Duration > 30*time.Minute {
 		return zero, ErrWorkspaceJobInvalid
 	}
 	if in.Action == "activate" && (!workspaceJobID.MatchString(in.RestoreID) || in.TargetBindingID != "") || in.Action == "return" && (!workspaceJobID.MatchString(in.TargetBindingID) || in.RestoreID != "") {

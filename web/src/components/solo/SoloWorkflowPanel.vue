@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
-import { req } from '@/lib/api/httpCore'
-import type { Workflow, Run, Gate, ClarifyImage } from '@/lib/shared/types'
-import { useWorkflowFeature, setWorkflowFeature, type WorkflowFeature } from '@/lib/composables/useWorkflowFeature'
+import { soloWorkflowClient, type SoloWorkflowTask as Task } from '@/lib/api/clients/soloWorkflowClient'
+import { useVisiblePolling } from '@/lib/composables/useVisiblePolling'
+import type { Workflow, ClarifyImage } from '@/lib/shared/types'
+import { useWorkflowFeature, setWorkflowFeature } from '@/lib/composables/useWorkflowFeature'
 import { seedAskLaunchFields } from '@/lib/run/useWorkflowAskInputs'
 import RunLaunchModal, { type InputField } from '@/components/workflow/RunLaunchModal.vue'
 import SoloWorkflowInteraction from './SoloWorkflowInteraction.vue'
@@ -16,8 +17,6 @@ import AppDrawer from '@/components/ui/AppDrawer.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
 
-type TaskNode = { id: string; label: string; type: string; status: string; iteration: number }
-type Task = Pick<Run, 'id' | 'title' | 'workflowName' | 'status' | 'pauseRequested' | 'controlVersion'> & { nodes: TaskNode[]; pendingGate?: Gate }
 const props = defineProps<{ sessionId: string; sandboxId?: number; busy?: boolean }>()
 const emit = defineEmits<{ changed: []; bindingChanged: [] }>()
 const { t } = useI18n()
@@ -42,14 +41,13 @@ const instructionRequests = ref<Record<string, { clientMessageId: string; text: 
 const cancelling = ref('')
 const confirmCancel = ref<Task | null>(null)
 const matches = computed(() => choices.value.filter(workflow => workflow.name.toLowerCase().includes(query.value.toLowerCase())))
-let timer: ReturnType<typeof setInterval> | undefined
 let disposed = false
 let loading = false
 async function refresh() {
   if (loading || disposed) return
   loading = true
   try {
-    const value = await req<{ items: Task[]; workflows: WorkflowFeature }>(`/solo/sessions/${encodeURIComponent(props.sessionId)}/workflows`)
+    const value = await soloWorkflowClient.listSessionWorkflows(props.sessionId)
     if (disposed) return
     tasks.value = value.items
     setWorkflowFeature(value.workflows)
@@ -82,7 +80,7 @@ function interact(task: Task, nodeId = '') { selectedTask.value = task; selected
 function onStarted() { void refresh(); emit('changed') }
 async function control(task: Task, resume: boolean) {
   try {
-    await req(`/runs/${encodeURIComponent(task.id)}/control/${resume ? 'resume' : 'pause'}`, { method: 'POST', body: JSON.stringify({ version: task.controlVersion || 0 }) })
+    await soloWorkflowClient.controlRun(task.id, resume, task.controlVersion || 0)
     await refresh()
   } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
 }
@@ -95,8 +93,8 @@ async function cancelTask() {
   finally { cancelling.value = '' }
 }
 function terminal(status: string) { return ['completed', 'failed', 'cancelled'].includes(status) }
-onMounted(() => { void refresh(); timer = setInterval(() => void refresh(), 2500) })
-onBeforeUnmount(() => { disposed = true; clearInterval(timer) })
+useVisiblePolling(() => refresh(), 2500)
+onBeforeUnmount(() => { disposed = true })
 defineExpose({ openPicker, refresh })
 </script>
 

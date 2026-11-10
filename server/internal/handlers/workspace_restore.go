@@ -74,7 +74,7 @@ func (h *Handlers) AdmitWorkspaceRestore(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, workspaceControlBody)
 	var input struct {
 		ClientRequestID string `json:"clientRequestId"`
 		SnapshotID      string `json:"snapshotId"`

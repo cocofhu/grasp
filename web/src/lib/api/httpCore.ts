@@ -145,6 +145,10 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       // non-JSON error body; keep the status line
     }
     if (extra.code === 'secrets_key_missing') msg = i18n.global.t('common.errors.secretsKeyMissing')
+    // Server copy is Chinese and often more specific; other locales use the code.
+    else if (extra.code && i18n.global.locale.value !== 'zh-CN' && i18n.global.te(`common.apiErrors.${extra.code}`)) {
+      msg = i18n.global.t(`common.apiErrors.${extra.code}`)
+    }
     throw Object.assign(new Error(msg), { status: res.status, ...extra })
   }
   apiState.online = true

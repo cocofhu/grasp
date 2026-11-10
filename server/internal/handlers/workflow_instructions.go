@@ -26,7 +26,7 @@ func writeInstructionError(c *gin.Context, err error) {
 		return
 	}
 	_ = c.Error(err)
-	c.JSON(http.StatusInternalServerError, gin.H{"error": "补充要求未能持久化，请保留草稿后重试"})
+	c.JSON(http.StatusInternalServerError, gin.H{"code": "instruction_not_persisted", "error": "补充要求未能持久化，请保留草稿后重试"})
 }
 
 // This cookie/session-authenticated route is deliberately absent from Solo's

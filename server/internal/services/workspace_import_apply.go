@@ -95,7 +95,7 @@ func (s *WorkspaceImportService) rejectedBeforeAdmission(ctx context.Context, ro
 // never turns applying back into prepared; reconciliation reads the runtime's
 // completion receipt and never replays a filesystem operation.
 func (s *WorkspaceImportService) Confirm(ctx context.Context, soloID, user, id string, in WorkspaceImportConfirmInput) (*WorkspaceImportView, error) {
-	if !in.Confirmed || !workspaceRequestID.MatchString(in.ClientRequestID) {
+	if !in.Confirmed || !workspaceJobID.MatchString(in.ClientRequestID) {
 		return nil, workspaceImportError(http.StatusBadRequest, "workspace_import_confirmation_required", "请先查看预览并明确确认导入")
 	}
 	row, err := s.load(ctx, soloID, user, id)

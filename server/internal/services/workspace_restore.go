@@ -174,7 +174,7 @@ func (s *WorkspaceRestoreService) Get(ctx context.Context, actor, id string) (mo
 
 func (s *WorkspaceRestoreService) Admit(ctx context.Context, actor string, in WorkspaceRestoreInput) (models.WorkspaceRestore, error) {
 	var zero models.WorkspaceRestore
-	if actor == "" || len(actor) > 191 || strings.ContainsRune(actor, 0) || !workspaceJobID.MatchString(in.ClientRequestID) || in.SoloID == "" || len(in.SoloID) > 191 || strings.ContainsRune(in.SoloID, 0) || !workspaceJobID.MatchString(in.SnapshotID) || in.ExpectedBinding == "" || len(in.ExpectedBinding) > 128 || strings.ContainsRune(in.ExpectedBinding, 0) || in.Duration <= 0 || in.Duration > s.Jobs.options.MaxDuration {
+	if !validWorkspaceKey(actor) || !workspaceJobID.MatchString(in.ClientRequestID) || !validWorkspaceKey(in.SoloID) || !workspaceJobID.MatchString(in.SnapshotID) || in.ExpectedBinding == "" || len(in.ExpectedBinding) > 128 || strings.ContainsRune(in.ExpectedBinding, 0) || in.Duration <= 0 || in.Duration > s.Jobs.options.MaxDuration {
 		return zero, ErrWorkspaceJobInvalid
 	}
 	id, fingerprint := workspaceRestoreIdentity(actor, in.SoloID, in.ClientRequestID), restoreInputFingerprint(in)
