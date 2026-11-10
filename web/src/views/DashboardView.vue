@@ -87,12 +87,20 @@ async function submitComposer() {
   submitting.value = true
   if (draftTimer) clearTimeout(draftTimer)
   cheerTick.value++
-  const started = await solo.start(command ? '' : draft.value, attachments.value.map(image => ({ ...image })), '', mention.refs.value)
+  // Attachments or references would start a model turn in the new Solo; a
+  // workflow command only opens configuration, so they stay in the home draft.
+  const started = command
+    ? await solo.start('')
+    : await solo.start(draft.value, attachments.value.map(image => ({ ...image })), '', mention.refs.value)
   if (started) {
     draft.value = ''
-    attachments.value = []
-    mention.clear()
-    await clearHomeComposerDraft()
+    if (command && attachments.value.length) {
+      await saveHomeComposerDraft('', attachments.value, '')
+    } else {
+      attachments.value = []
+      mention.clear()
+      await clearHomeComposerDraft()
+    }
     if (command) void router.replace({ path: `/solo/${started.id}`, query: { workflow: command[1] || '1' } })
   }
   submitting.value = false

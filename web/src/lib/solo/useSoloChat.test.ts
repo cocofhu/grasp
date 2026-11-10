@@ -163,6 +163,29 @@ describe('useSoloChat', () => {
     } finally { app.unmount() }
   })
 
+  it('drops the process fold once a complete journal has nothing to show besides the reply', async () => {
+    const saved = { id: 'answer', sessionId: 's1', turnId: 'question', role: 'assistant' as const, content: 'answer', createdAt: '2026-11-09T00:00:01Z', eventLog: { version: 1, from: 1, through: 2, count: 2, generation: 1 } }
+    const question = { id: 'question', sessionId: 's1', role: 'user' as const, content: 'question', createdAt: '2026-11-09T00:00:01Z' }
+    const listPage = vi.fn().mockResolvedValue({ items: [question, saved], hasMore: false })
+    const listEvents = vi.fn().mockResolvedValueOnce({ items: [
+      { seq: 1, type: 'acp', data: { type: 'session_update', update: { sessionUpdate: 'usage_update', used: 10 } } },
+      { seq: 2, type: 'acp', data: acp('answer\n').data },
+    ], next: 2, head: 2, hasMore: false })
+    const { chat, app } = mountChat({ ...mocks, listSoloMessagePage: listPage, listSoloMessageEvents: listEvents })
+    try {
+      await flushPromises()
+      FakeSocket.all[0]!.open()
+      await flushPromises()
+      const turn = chat.turns.value.find(row => row.id === 'a:answer')!
+      expect(turn.processAvailable).toBe(true)
+      await chat.loadProcess(turn)
+      const loaded = chat.turns.value.find(row => row.id === 'a:answer')!
+      expect(loaded.processComplete).toBe(true)
+      expect(loaded.processAvailable).toBe(false)
+      expect(partsOf(loaded).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['answer\n'])
+    } finally { app.unmount() }
+  })
+
   it('retains the durable cursor across executor generations and targets ACP by turn', async () => {
     vi.useFakeTimers()
     const { chat, app } = mountChat()

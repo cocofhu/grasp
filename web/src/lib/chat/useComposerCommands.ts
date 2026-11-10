@@ -61,8 +61,9 @@ export function useComposerCommands(options: {
 
   function onKeydown(event: KeyboardEvent): boolean {
     updateTrigger()
-    if (!open.value || options.composing.value || event.isComposing || event.keyCode === 229 ||
-      event.ctrlKey || event.metaKey || event.altKey) return false
+    if (!open.value || options.composing.value || event.isComposing || event.keyCode === 229 || event.altKey) return false
+    // Ctrl/⌘+Enter sends on home; with the menu open it must not send the bare prefix.
+    if ((event.ctrlKey || event.metaKey) && event.key !== 'Enter') return false
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       selected.value = (selected.value + (event.key === 'ArrowDown' ? 1 : -1) + matches.value.length) % matches.value.length
     } else if (event.key === 'Escape') dismiss()

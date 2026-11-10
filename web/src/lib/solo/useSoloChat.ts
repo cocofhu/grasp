@@ -6,7 +6,8 @@ import type { MessageReference, SoloMessage, SoloSession } from '@/lib/api/apiTy
 import type { ChatExecution, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
-import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './acpTurn'
+import { timelineFolds } from '@/lib/run/acpTools'
+import { applyAcp, emptyAgentTurn, partsOf, turnsFromMessages, type SoloTurn } from './acpTurn'
 import { soloErrorText } from './soloErrors'
 import { useSoloSessions } from './useSoloSessions'
 import { newSoloRequestID, readSoloOutbox, removeSoloOutbox, saveSoloOutbox, soloOutboxScope, type SoloMessageOutbox, type SoloTurnRequest } from './soloOutbox'
@@ -366,7 +367,11 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const clientIds = new Map(messages.map(message => [message.id, message.clientMessageId]))
     const incoming = turnsFromMessages(messages.map(message => processEvents.has(message.id) ? { ...message, events: processEvents.get(message.id) } : message), label, toolFallback())
     for (const turn of incoming) {
-      if (turn.historyMessageId) turn.processComplete = processPages.value[turn.historyMessageId]?.hasMore === false
+      if (!turn.historyMessageId) continue
+      const page = processPages.value[turn.historyMessageId]
+      turn.processComplete = page?.hasMore === false
+      // A journal of only unrendered events (plan, usage) leaves nothing to fold.
+      if (turn.processComplete && !page?.legacyIncomplete && !timelineFolds(partsOf(turn))) turn.processAvailable = false
     }
     // Messages are append-only. A shorter HTTP snapshot must not erase rows
     // already reconciled from an earlier response.
