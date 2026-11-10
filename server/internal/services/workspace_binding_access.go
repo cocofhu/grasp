@@ -101,7 +101,7 @@ func canonicalWorkspacePath(ctx context.Context, sandboxID uint) string {
 // WorkspaceFolder returns trusted internal proxy metadata, never a browser
 // selection. History/receipt handlers do not call this live-access method.
 func (s *SandboxService) WorkspaceFolder(ctx context.Context, id uint) (string, error) {
-	ctx, row, release, err := s.beginSandboxAccess(ctx, id)
+	ctx, row, release, err := s.beginSandboxConsumerAccess(ctx, id)
 	if err != nil {
 		return "", err
 	}

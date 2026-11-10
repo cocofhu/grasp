@@ -215,6 +215,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		workspaceImports.POST("/:importId/confirm", h.ConfirmWorkspaceImport)
 		workspaceImports.POST("/:importId/reconcile", h.ReconcileWorkspaceImport)
 		api.GET("/solo/sessions/:id/messages", h.ListSoloMessages)
+		api.POST("/solo/sessions/:id/diagnostics", h.SoloChatDiagnostics)
 		api.GET("/solo/sessions/:id/messages/:messageId/events", h.ListSoloMessageEvents)
 		api.GET("/solo/sessions/:id/resources", h.GetSoloResources)
 		api.POST("/solo/sessions/:id/embed-ticket", h.CreateSoloEmbedTicket)

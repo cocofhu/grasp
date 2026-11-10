@@ -9,6 +9,7 @@ import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './ac
 import { soloErrorText } from './soloErrors'
 import { createSoloModelSettings } from './soloModelSettings'
 import { createSoloQueueOrder } from './soloQueueOrder'
+import { soloHistoryTiming, type SoloChatDiagnostic } from './soloDiagnostics'
 import { useSoloSessions } from './useSoloSessions'
 import { newSoloRequestID, readSoloOutbox, removeSoloOutbox, saveSoloOutbox, soloOutboxScope, type SoloMessageOutbox, type SoloTurnRequest } from './soloOutbox'
 
@@ -51,6 +52,7 @@ export type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMes
   listSoloMessagePage?: typeof api.listSoloMessagePage
   listSoloMessageEvents?: typeof api.listSoloMessageEvents
   soloChatProtocols?: string[]
+  reportSoloDiagnostics?: typeof api.reportSoloDiagnostics
 }
 
 export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport = api) {
@@ -122,6 +124,32 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   let persistedHistory: SoloTurn[] = []
   let chatEpoch = 0
   const outboxReady = ref(false)
+  const diagnosticViewID = newSoloRequestID().slice('local-'.length)
+  let diagnosticConnection = 0
+  let diagnosticReceived = 0
+  let diagnosticFrameStart = 0
+  let diagnosticLastReceived = -1
+  let diagnosticHead = -1
+  let diagnosticRequest = 0
+  let diagnosticCaughtUp = false
+  let connectingTimer: ReturnType<typeof setTimeout> | undefined
+  const historyTimers = new Map<number, ReturnType<typeof setTimeout>>()
+
+  function diagnostic(event: SoloChatDiagnostic['event'], extra: Partial<SoloChatDiagnostic> = {}) {
+    if (!transport.reportSoloDiagnostics || !sessionId.value) return
+    // Do not include texts, native frames, attachment URLs, errors or tokens.
+    const row: SoloChatDiagnostic = {
+      viewId: diagnosticViewID, event, connection: diagnosticConnection,
+      received: diagnosticReceived, processed: frameCount - diagnosticFrameStart,
+      buffered: held?.length ?? 0, pendingHistory: historyTimers.size,
+      lastReceived: diagnosticLastReceived, acknowledged: ackedSeq, highWatermark: diagnosticHead,
+      historyReady: historyReady.value, busy: busy.value, serverBusy: !!session.value?.busy,
+      turns: turns.value.length, agentTurns: turns.value.filter(turn => turn.role === 'agent').length,
+      liveParts: activeTurn.value?.steps.length ?? 0, liveTextChars: activeTurn.value?.text.length ?? 0,
+      ...extra,
+    }
+    try { void transport.reportSoloDiagnostics(sessionId.value, row).catch(() => {}) } catch { /* diagnostics cannot affect the chat */ }
+  }
 
   const reconnect = createWsReconnectController({
     connect: () => openWs(),
@@ -435,14 +463,32 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   async function readHistory(id: string) {
-    if (!transport.listSoloMessagePage) return transport.listSoloMessages(id)
     const epoch = chatEpoch
-    const page = await transport.listSoloMessagePage(id)
-    if (id === sessionId.value && epoch === chatEpoch && !earlierLoaded) {
-      beforeMessage = page.before
-      hasEarlier.value = page.hasMore
+    const request = ++diagnosticRequest
+    const started = performance.now()
+    historyTimers.set(request, setTimeout(() => {
+      if (isCurrent(id, epoch)) diagnostic('history_slow', { request, elapsedMs: Math.round(performance.now() - started) })
+    }, 5000))
+    try {
+      let messages: SoloMessage[]
+      if (!transport.listSoloMessagePage) messages = await transport.listSoloMessages(id)
+      else {
+        const page = await transport.listSoloMessagePage(id)
+        if (id === sessionId.value && epoch === chatEpoch && !earlierLoaded) {
+          beforeMessage = page.before
+          hasEarlier.value = page.hasMore
+        }
+        messages = page.items
+      }
+      if (isCurrent(id, epoch)) diagnostic('history_done', { request, elapsedMs: Math.round(performance.now() - started), pendingHistory: historyTimers.size - 1, httpStatus: 200, ...soloHistoryTiming(id, started) })
+      return messages
+    } catch (error: any) {
+      if (isCurrent(id, epoch)) diagnostic('history_failed', { request, elapsedMs: Math.round(performance.now() - started), pendingHistory: historyTimers.size - 1, httpStatus: Number.isInteger(error?.status) && error.status >= 100 && error.status <= 599 ? error.status : 0 })
+      throw error
+    } finally {
+      clearTimeout(historyTimers.get(request))
+      historyTimers.delete(request)
     }
-    return page.items
   }
 
   async function loadEarlier() {
@@ -740,6 +786,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const seqState = stateSnapshot && !subscriptionSnapshot ? 'ok' : noteSeq(frame, subscriptionSnapshot)
     if (seqState === 'dup') return
     if (seqState === 'gap') {
+      diagnostic('sequence_gap')
       requestResync()
       return
     }
@@ -862,20 +909,43 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     closeWs(false)
     const id = sessionId.value
     if (!id || disposed) return
+    diagnosticConnection++
+    diagnosticReceived = 0
+    diagnosticFrameStart = frameCount
+    diagnosticLastReceived = diagnosticHead = -1
+    diagnosticCaughtUp = false
     link.value = link.value === 'idle' ? 'connecting' : 'reconnecting'
     const cursor = ackedSeq >= 0 ? ackedSeq : undefined
     const address = journalVersion ? transport.soloChatWsUrl(id, cursor, journalVersion) : transport.soloChatWsUrl(id, cursor)
-    const sock = new WebSocket(address, transport.soloChatProtocols)
+    let socketAddress = address
+    if (transport.reportSoloDiagnostics) {
+      try {
+        const traced = new URL(address)
+        traced.searchParams.set('view', diagnosticViewID)
+        traced.searchParams.set('connection', String(diagnosticConnection))
+        socketAddress = traced.toString()
+      } catch { /* preserve the transport's address */ }
+    }
+    const sock = new WebSocket(socketAddress, transport.soloChatProtocols)
     ws = sock
     held = []
+    diagnostic('ws_connecting')
+    connectingTimer = setTimeout(() => {
+      if (ws === sock && sock.readyState !== WebSocket.OPEN) diagnostic('ws_waiting', { elapsedMs: 5000 })
+    }, 5000)
     let firstFrame = true
     const receive = (raw: string) => {
       const first = firstFrame
       firstFrame = false
-      onFrame(raw, first)
+      try { onFrame(raw, first) } catch (error) { diagnostic('frame_failed'); throw error }
+      if (!diagnosticCaughtUp && diagnosticHead >= 0 && ackedSeq >= diagnosticHead) {
+        diagnosticCaughtUp = true
+        diagnostic('replay_caught_up')
+      }
     }
     sock.onopen = async () => {
       if (ws !== sock) return
+      clearTimeout(connectingTimer)
       reconnect.markOpened()
       link.value = 'open'
       schedulePoll()
@@ -892,14 +962,22 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       const pending = held ?? []
       held = null
       for (const raw of pending) receive(raw)
+      diagnostic('replay_drained')
     }
     sock.onmessage = (ev) => {
       if (ws !== sock) return
+      diagnosticReceived++
+      const metadata = parseFrame(ev.data)
+      if (Number.isSafeInteger(metadata?.seq)) diagnosticLastReceived = metadata.seq
+      if (metadata?.stateSnapshot === true && Number.isSafeInteger(metadata.highWatermark)) diagnosticHead = metadata.highWatermark
+      if (diagnosticReceived === 1) diagnostic('ws_snapshot')
       if (held) held.push(ev.data)
       else receive(ev.data)
     }
-    sock.onclose = () => {
+    sock.onclose = (event) => {
       if (ws !== sock) return
+      diagnostic('ws_closed', { closeCode: event?.code || 0 })
+      clearTimeout(connectingTimer)
       ws = null
       held = null
       if (disposed) return
@@ -911,6 +989,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   function closeWs(intentional = true) {
+    clearTimeout(connectingTimer)
     const sock = ws
     ws = null
     held = null
@@ -919,6 +998,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   async function load() {
+    for (const timer of historyTimers.values()) clearTimeout(timer)
+    historyTimers.clear()
     executions.clear()
     const id = sessionId.value
     chatEpoch++
@@ -1178,7 +1259,10 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   watch([busy, link], scheduleStallCheck)
 
   onBeforeUnmount(() => {
+    diagnostic('ws_closed')
     disposed = true
+    for (const timer of historyTimers.values()) clearTimeout(timer)
+    historyTimers.clear()
     if (pollTimer) clearTimeout(pollTimer)
     if (stallTimer) clearTimeout(stallTimer)
     closeWs()

@@ -207,7 +207,7 @@ func (s *SandboxService) ACPUpstream(ctx context.Context, id uint) (string, erro
 // (ide endpoint). Never hard-codes 127.0.0.1; Docker gateways that publish
 // loopback endpoints still resolve to 127.0.0.1:<port> naturally.
 func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, error) {
-	ctx, row, release, err := s.beginSandboxAccess(ctx, id)
+	ctx, row, release, err := s.beginSandboxConsumerAccess(ctx, id)
 	if err != nil {
 		return "", err
 	}
@@ -309,7 +309,7 @@ func (s *SandboxService) EventLogPage(ctx context.Context, id uint, cursor strin
 
 // OpenTerminal attaches an interactive PTY shell to a sandbox over SSH.
 func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (sandbox.Terminal, error) {
-	ctx, row, release, err := s.beginSandboxAccess(ctx, id)
+	ctx, row, release, err := s.beginSandboxConsumerAccess(ctx, id)
 	if err != nil {
 		return nil, err
 	}

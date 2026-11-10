@@ -111,6 +111,10 @@ func (m *Manager) LocalIdle(id uint) bool {
 // re-enter the same manager/resource without acquiring its own lease. Losing
 // ownership or renewal cancels the returned context.
 func (m *Manager) Acquire(ctx context.Context, id uint, kinds ...string) (context.Context, func(), error) {
+	return m.acquire(ctx, id, "", kinds...)
+}
+
+func (m *Manager) acquire(ctx context.Context, id uint, concurrentKind string, kinds ...string) (context.Context, func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -123,10 +127,12 @@ func (m *Manager) Acquire(ctx context.Context, id uint, kinds ...string) (contex
 	}
 	value, _ := m.locks.LoadOrStore(id, make(chan struct{}, 1))
 	lock := value.(chan struct{})
-	select {
-	case lock <- struct{}{}:
-	case <-ctx.Done():
-		return nil, nil, ctx.Err()
+	observed, err := m.lockAccess(ctx, id, lock, concurrentKind)
+	if err != nil {
+		return nil, nil, err
+	}
+	if observed != nil {
+		return observed, func() {}, nil
 	}
 	owner := uuid.NewString()
 	kind := "lifecycle"
@@ -151,6 +157,13 @@ func (m *Manager) Acquire(ctx context.Context, id uint, kinds ...string) (contex
 		}
 		if result.RowsAffected > 0 {
 			break
+		}
+		if concurrentKind != "" {
+			observed, err := m.observe(ctx, id, concurrentKind)
+			if err != nil || observed != nil {
+				<-lock
+				return observed, func() {}, err
+			}
 		}
 		var count int64
 		if err := m.db.WithContext(ctx).Model(&models.Sandbox{}).Where("id = ?", id).Count(&count).Error; err != nil || count == 0 {

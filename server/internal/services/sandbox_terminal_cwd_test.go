@@ -158,4 +158,38 @@ func TestOpenTerminalCanonicalDirectoryThroughRealSSHPTY(t *testing.T) {
 		t.Fatal("unsafe canonical path reached SSH exec")
 	default:
 	}
+
+	// Exercise the same real SSH/PTY boundary while a Solo inference lease is
+	// owned by a different request, rather than only checking a resolved URL.
+	row.Purpose, row.Profile, row.ThreadID = SandboxPurposeSolo, "agentA", "inference-terminal-solo"
+	sandboxTestAppliedBindings(t, service, row)
+	if err := db.Save(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.SoloSession{ID: row.ThreadID, UserID: "alice", AgentName: row.Profile, SandboxID: row.ID, Status: models.SoloStatusRunning}).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, release, err := service.acquireSandboxOperation(ctx, row.ID, sandboxOperationInference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	activeTerminal, err := service.OpenTerminal(ctx, row.ID)
+	if err != nil {
+		t.Fatal("inference blocked real SSH terminal", err)
+	}
+	defer activeTerminal.Close()
+	if _, err := io.WriteString(activeTerminal, "cat canonical-marker.txt; exit\n"); err != nil {
+		t.Fatal(err)
+	}
+	activeOutput := make(chan []byte, 1)
+	go func() { data, _ := io.ReadAll(activeTerminal); activeOutput <- data }()
+	select {
+	case data := <-activeOutput:
+		if !strings.Contains(string(data), "CANONICAL_DIRECTORY_PROOF") {
+			t.Fatal("active inference terminal lost canonical directory")
+		}
+	case <-ctx.Done():
+		t.Fatal("active inference terminal did not complete")
+	}
 }
