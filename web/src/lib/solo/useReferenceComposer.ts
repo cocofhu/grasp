@@ -86,6 +86,17 @@ export function useReferenceComposer(opts: {
     addToken(at.start, at.start + 1 + at.query.length, ref)
   }
 
+  /** Actions in the @ picker consume only the active query, retaining the draft. */
+  function consumeTrigger(): boolean {
+    updateTrigger()
+    const at = trigger.value
+    if (!at) return false
+    const text = input.value.slice(0, at.start) + input.value.slice(at.start + 1 + at.query.length)
+    trigger.value = null
+    set(text, applyEdit(tokens.value, input.value, text))
+    return true
+  }
+
   function drop(index: number) {
     const res = removeToken(input.value, tokens.value, index)
     set(res.text, res.tokens)
@@ -156,5 +167,5 @@ export function useReferenceComposer(opts: {
     return () => set(text, saved)
   }
 
-  return { tokens, trigger, pickerTab, picker, refs, targets, full, set, clear, load, updateTrigger, pick, drop, open, onPaste, onKeydown, snapshot }
+  return { tokens, trigger, pickerTab, picker, refs, targets, full, set, clear, load, updateTrigger, pick, consumeTrigger, drop, open, onPaste, onKeydown, snapshot }
 }

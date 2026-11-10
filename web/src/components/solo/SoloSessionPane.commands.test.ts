@@ -61,16 +61,17 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('SoloSessionPane command wiring', () => {
-  it('selects the workflow command in the real composer and opens only the picker', async () => {
+describe('SoloSessionPane workflow reference wiring', () => {
+  it('selects the workflow action in the real @ picker and opens only configuration', async () => {
     const wrapper = render(); await flushPromises()
     const input = wrapper.get<HTMLTextAreaElement>('[data-testid="solo-input"]')
     input.element.focus()
-    await input.setValue('/wor')
+    await input.setValue('@wor')
     input.element.setSelectionRange(4, 4)
     await input.trigger('input')
-    expect(wrapper.get('[data-testid="solo-command-workflow"]').text()).toContain('/workflow')
+    expect(wrapper.get('[data-testid="solo-reference-workflow"]').text()).toContain('选择工作流')
     expect(mocks.openPicker).not.toHaveBeenCalled()
+    await input.trigger('keydown', { key: 'ArrowDown' })
     await input.trigger('keydown', { key: 'Enter' }); await flushPromises()
     expect(mocks.openPicker).toHaveBeenCalledExactlyOnceWith()
     expect(input.element.value).toBe('')
@@ -79,15 +80,15 @@ describe('SoloSessionPane command wiring', () => {
     expect(wrapper.find('[data-testid="solo-workflow-menu"]').exists()).toBe(false)
   })
 
-  it.each(['disabled', 'embedded'])('does not offer commands in the %s caller', async mode => {
+  it.each(['disabled', 'embedded'])('does not offer workflow creation in the %s caller', async mode => {
     if (mode === 'disabled') setWorkflowFeature({ enabled: false, locked: false, source: 'db' })
     const wrapper = render(mode === 'embedded'); await flushPromises()
     const input = wrapper.get<HTMLTextAreaElement>('[data-testid="solo-input"]')
     input.element.focus()
-    await input.setValue('/')
+    await input.setValue('@')
     input.element.setSelectionRange(1, 1)
     await input.trigger('input')
-    expect(wrapper.find('[data-testid="solo-command-menu"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="solo-reference-workflow"]').exists()).toBe(false)
     await input.trigger('keydown', { key: 'Tab' })
     expect(mocks.openPicker).not.toHaveBeenCalled()
     expect(mocks.send).not.toHaveBeenCalled()
