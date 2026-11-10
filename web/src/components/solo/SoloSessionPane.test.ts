@@ -136,6 +136,16 @@ function turn(id: string, role: SoloTurn['role'], text: string): SoloTurn {
 }
 
 describe('SoloSessionPane', () => {
+  it('scopes agent Markdown images to the current Solo session', () => {
+    turns.value = [turn('reply:one', 'agent', '![Homepage](/tmp/full.png)')]
+    const wrapper = mountPane(pages)
+    try {
+      expect(wrapper.findComponent({ name: 'AgentTimeline' }).props('imageBase')).toBe('/api/solo/sessions/s1/images')
+    } finally {
+      wrapper.unmount()
+      turns.value = []
+    }
+  })
   it('passes only the current sandbox generation’s preview resources to the stage', async () => {
     const initial = sessionState.value
     let finishOld!: (value: SoloResources) => void

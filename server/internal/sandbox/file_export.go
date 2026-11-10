@@ -2,20 +2,28 @@ package sandbox
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // OpenArtifactFile exports a regular file from this sandbox. Local worktree
 // mode uses os.Root, which prevents symlink and parent traversal onto the host.
 func (s *Sandbox) OpenArtifactFile(ctx context.Context, name string) (io.ReadCloser, error) {
+	return s.OpenArtifactFileAtWorkspace(ctx, s.workspaceDir(), name)
+}
+
+// OpenArtifactFileAtWorkspace pins a trusted, server-resolved root for one
+// export without changing the sandbox's shared active workspace. workspace
+// must come from canonical workspace resolution, never from browser input.
+func (s *Sandbox) OpenArtifactFileAtWorkspace(ctx context.Context, workspace, name string) (io.ReadCloser, error) {
 	if strings.TrimSpace(name) == "" || strings.ContainsAny(name, "\x00\r\n") {
 		return nil, errors.New("invalid export path")
 	}
-	workspace := s.workspaceDir()
 	if workspace == "" {
 		return nil, errors.New("sandbox workspace is unavailable")
 	}
@@ -31,7 +39,7 @@ func (s *Sandbox) OpenArtifactFile(ctx context.Context, name string) (io.ReadClo
 				return nil, err
 			}
 		}
-		f, err := root.Open(name)
+		f, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -44,8 +52,11 @@ func (s *Sandbox) OpenArtifactFile(ctx context.Context, name string) (io.ReadClo
 	}
 	// The source process only opens paths inside the authorized guest, never
 	// paths on the server. Python is already part of the sandbox contract.
-	script := "import os,sys,stat,shutil; w=os.path.realpath(sys.argv[1]); n=sys.argv[2]; p=os.path.realpath(n if os.path.isabs(n) else os.path.join(w,n)); assert any(os.path.commonpath([p,r])==r for r in [w,'/tmp']), 'path outside export roots'; fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW); assert stat.S_ISREG(os.fstat(fd).st_mode), 'not a regular file'; shutil.copyfileobj(os.fdopen(fd,'rb'),sys.stdout.buffer,1048576)"
-	cmd, err := newSafeCmd("python3", "-c", script, workspace, name)
+	// Keep the fixed program on stdin. Only encoded data passes through the
+	// existing strict argv validator; paths with spaces or non-ASCII names
+	// never become shell syntax, and the validator needs no script exception.
+	script := "import base64,os,sys,stat,shutil; w=os.path.realpath(os.fsdecode(base64.b64decode(sys.argv[1],validate=True))); n=os.fsdecode(base64.b64decode(sys.argv[2],validate=True)); p=os.path.realpath(n if os.path.isabs(n) else os.path.join(w,n)); assert any(os.path.commonpath([p,r])==r for r in [w,'/tmp']), 'path outside export roots'; fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK); assert stat.S_ISREG(os.fstat(fd).st_mode), 'not a regular file'; shutil.copyfileobj(os.fdopen(fd,'rb'),sys.stdout.buffer,1048576)"
+	cmd, err := newSafeCmd("python3", "-", base64.StdEncoding.EncodeToString([]byte(workspace)), base64.StdEncoding.EncodeToString([]byte(name)))
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +74,7 @@ func (s *Sandbox) OpenArtifactFile(ctx context.Context, name string) (io.ReadClo
 		return nil, err
 	}
 	reader, writer := io.Pipe()
+	session.Stdin = strings.NewReader(script)
 	session.Stdout = writer
 	session.Stderr = io.Discard
 	cancel := context.AfterFunc(ctx, func() { _ = session.Close(); _ = client.Close() })

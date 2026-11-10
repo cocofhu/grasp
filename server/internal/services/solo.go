@@ -145,13 +145,14 @@ type soloChat struct {
 	// cannot receive an older selection after a newer one.
 	settingsMu sync.Mutex
 
-	mu        sync.Mutex
-	phase     string
-	sandboxID uint
-	turnID    string
-	text      strings.Builder
-	writer    *chatsession.JournalWriter
-	execution *models.ChatExecution
+	mu             sync.Mutex
+	phase          string
+	sandboxID      uint
+	turnID         string
+	text           strings.Builder
+	replyTextState soloReplyTextState
+	writer         *chatsession.JournalWriter
+	execution      *models.ChatExecution
 	// Context is remembered only after a successful fenced reply publication.
 	// A new application handle must establish its own native-context baseline.
 	conversation soloConversationIdentity
@@ -709,6 +710,7 @@ func (s *SoloService) newChat(id string) *soloChat {
 				c.turnID = q.ID
 				c.phase = SoloPhasePreparing
 				c.text.Reset()
+				c.replyTextState = soloReplyTextState{}
 				c.writer = nil
 				c.execution = nil
 				c.mu.Unlock()

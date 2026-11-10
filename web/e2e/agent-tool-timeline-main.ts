@@ -10,6 +10,7 @@ import type { AgentPart, Artifact } from '../src/lib/shared/types'
 
 initLocale()
 setTheme(new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light')
+const localImages = new URLSearchParams(location.search).has('localImages')
 
 /**
  * A finished review turn the way cursor reports it: thought, a shell call,
@@ -23,7 +24,7 @@ const parts: AgentPart[] = [
   { kind: 'thought', text: '依赖正常，开始整理计划。' },
   { kind: 'tool', title: 'set_plan', status: 'completed', summary: '', durationMs: 1_200 },
   { kind: 'tool', title: 'set_research', status: 'failed', output: 'set_research failed: 字段 findings 不能为空' },
-  { kind: 'message', text: '计划已写入，调研结论缺少 findings，下一轮补上。' },
+  { kind: 'message', text: localImages ? '已启动，截图如下。\n\n![Homepage](/tmp/full.png)\n\n![Sidebar close-up](/tmp/side.png)' : '计划已写入，调研结论缺少 findings，下一轮补上。' },
 ]
 
 const artifacts: Artifact[] = [
@@ -53,6 +54,7 @@ const App = defineComponent({
                 parts,
                 completed: true,
                 runId: 'run-e2e',
+                imageBase: localImages ? '/api/solo/sessions/image-session/images' : undefined,
                 startedAt: '2026-10-01T00:00:00Z',
                 endedAt: '2026-10-01T00:03:34Z',
               }),

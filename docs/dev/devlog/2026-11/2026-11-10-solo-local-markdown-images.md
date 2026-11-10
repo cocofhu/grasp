@@ -1,0 +1,7 @@
+# 2026-11-10 Solo 本地截图与回复段落显示
+
+- 日期：2026-11-10
+- 范围：`server/internal/handlers/solo_image*`、`server/internal/services/solo_image*`、`solo_reply_text*`、`solo*.go`、`pm_turn.go`、`workspace_binding_access.go`、`server/internal/sandbox/file_export*`、`server/internal/router/router.go`、`web/src/lib/shared/markdown*`、`web/src/lib/solo/acpTurn.ts`、`web/src/components/run/AgentTimeline*`、`web/src/components/solo/SoloSessionPane*`、`web/src/lib/api/clients/soloClient.ts`、对应前端单元与时间线浏览器回归、`CHANGELOG.md`。
+- 做了什么：Solo 主聊天将 Markdown 本地图片路径映射到当前会话的图片接口；完整正文、流式正文与折叠过程使用同一渲染规则，缓存包含会话来源。接口仅从当前已授权且运行中的环境导出受限路径，并在完整读取后重新核对会话、环境、授权、执行控制与工作区；复用共享访问保护，固定本次导出的工作区路径，只读核验不改写共享工作区。限制读取大小并按实际字节只接受 PNG/JPEG/GIF/WebP，不为读图启动环境，也不等待正在生成的轮次释放写入租约。远端文件导出将固定 Python 程序放在 stdin，路径以编码数据通过原参数白名单，修复原程序字符串被严格参数验证拒绝的问题，同时支持中文、空格等文件名；非阻塞打开后检查普通文件，拒绝 FIFO。新 Solo 回复在工具或思考隔开的消息段之间保留空行；工具状态更新按原调用身份处理，完整过程仍识别旧版直接拼接的已存正文，不重写历史记录。
+- 为什么：实际会话返回了 `![Homepage](/tmp/full.png)` 与 `![Sidebar close-up](/tmp/side.png)`，浏览器此前向平台 Web 根路径请求沙箱文件，得到无法解码为图片的响应；同时，保存正文时无分隔地合并各段进度说明，导致刷新后句子粘连。修复读取链路与保存边界，避免靠 CSS 或页面文本猜测掩盖来源问题。
+- 如何验证：使用线上会话只读确认原始正文、缺失附件以及两张图片的 `naturalWidth=0`；补充本地图片 URL/缓存隔离、流式与完成时间线、Solo 接入、权限/停机/撤权、读取中授权、归属、租约及工作区变化、大小和 MIME 限制，以及真实 SSH/Python 文件导出回归。前端 lint（无错误）、类型检查、6,470 项单元测试（601 个文件，行覆盖率 91.65%）及生产构建通过；后端 golangci-lint、`go vet`、配置文档检查、全量 Go 测试、核心覆盖率 90.2%、运行时专项与新增图片/段落回归的 `-race` 检查通过。CI 关键路径 Playwright 397 项全部通过，覆盖桌面、移动端 Chromium 与 WebKit；浏览器确认两张本地图片实际解码，并用原始 3211 像素宽图片分别验证 1440 与 390 像素视口内缩放、无横向溢出。既有真实 SSH 终端用例检查无绑定时仍保留调用方目录上下文。仓库 actionlint、shellcheck、CI 工具下载与文档发布离线回归、品牌检查通过；文档构建与高危依赖审计通过。

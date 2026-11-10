@@ -296,7 +296,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 			c.mu.Lock()
 			if c.turnID == q.ID {
 				for _, entry := range entries {
-					c.text.WriteString(extractPmAgentText(entry.Data))
+					appendSoloReplyText(&c.text, &c.replyTextState, entry.Data)
 				}
 			}
 			c.mu.Unlock()

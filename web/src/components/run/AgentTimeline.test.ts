@@ -28,6 +28,24 @@ const startedAt = '2026-10-20T00:00:00.000Z'
 const endedAt = '2026-10-20T00:03:34.000Z'
 
 describe('AgentTimeline', () => {
+  it('uses the same authorized image source while streaming, after completion and inside the process fold', async () => {
+    const imageBase = '/api/solo/sessions/s1/images'
+    const parts: AgentPart[] = [
+      { kind: 'message', text: '![Progress](/tmp/progress.png)' },
+      { kind: 'tool', title: 'Screenshot', status: 'completed' },
+      { kind: 'message', text: '![Homepage](/tmp/full.png)' },
+    ]
+    const w = mountTimeline({ parts, streaming: true, imageBase })
+    expect(w.findAll('img').map(image => image.attributes('src'))).toEqual([
+      `${imageBase}?path=%2Ftmp%2Fprogress.png`, `${imageBase}?path=%2Ftmp%2Ffull.png`,
+    ])
+    await w.setProps({ streaming: false, completed: true })
+    expect(w.get('img').attributes('src')).toBe(`${imageBase}?path=%2Ftmp%2Ffull.png`)
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+    expect(w.findAll('img').map(image => image.attributes('src'))).toEqual([
+      `${imageBase}?path=%2Ftmp%2Fprogress.png`, `${imageBase}?path=%2Ftmp%2Ffull.png`,
+    ])
+  })
   it('keeps the original elapsed fold for persisted process whose parts have not loaded', async () => {
     const w = mountTimeline({
       parts: [{ kind: 'message', text: '完整回复' }],

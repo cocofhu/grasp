@@ -124,6 +124,7 @@ export function applyAcp(envelope: any, turn: SoloTurn, label: ToolLabeler, tool
   const kind = normalizeKind(u.sessionUpdate || u.session_update || u.type || u.kind || '')
   if (kind === 'agent_message_chunk') {
     const s = contentText(u.content)
+    if (s && turn.text && turn.steps.at(-1)?.kind !== 'message') turn.text += '\n\n'
     turn.text += s
     addStep(turn, 'message', s)
   } else if (kind === 'agent_thought_chunk') {
@@ -154,8 +155,9 @@ export function partsOf(turn: SoloTurn): AgentPart[] {
   // message/tool arrival order. Earlier progress belongs in the process fold.
   // The server trims the saved reply; streamed chunks keep their whitespace.
   const saved = turn.historyContent.trim()
-  const recordedText = turn.steps.flatMap(step => step.kind === 'message' ? [step.text] : []).join('')
-  if (turn.processComplete && recordedText.trim() === saved) return parts
+  const messages = turn.steps.flatMap(step => step.kind === 'message' ? [step.text] : [])
+  // Older saved replies concatenated progress messages across tool calls.
+  if (turn.processComplete && [messages.join(''), messages.join('\n\n')].some(text => text.trim() === saved)) return parts
   // Partial pages must never replace the complete persisted reply. Keep their
   // progress, but render an exact copy of that reply only once, below the fold.
   return [...parts.filter(part => part.kind !== 'message' || part.text?.trim() !== saved), { kind: 'message', text: turn.historyContent }]
