@@ -123,6 +123,23 @@ describe('acpTurn', () => {
     turn!.processComplete = true
     expect(partsOf(turn!).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['先检查文件', '最终答案'])
   })
+
+  it('matches a trimmed saved reply against a journal with surrounding whitespace', () => {
+    const events = [chunk('agent_message_chunk', '\n先检查文件'),
+      { data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: 'read', title: 'read_file', status: 'completed' } } },
+      chunk('agent_message_chunk', '最终答案\n')]
+    const [complete] = turnsFromMessages([{
+      id: 'a', sessionId: 's', role: 'assistant', content: '先检查文件最终答案', createdAt: '',
+      eventLog: { version: 1, from: 1, through: 3, count: 3, generation: 1 }, events,
+    }], label, 'Tool')
+    complete!.processComplete = true
+    expect(partsOf(complete!).map(part => part.kind)).toEqual(['message', 'tool', 'message'])
+    const [single] = turnsFromMessages([{
+      id: 'b', sessionId: 's', role: 'assistant', content: '最终答案', createdAt: '', legacyEvents: true,
+      events: [chunk('agent_message_chunk', '最终答案\n')],
+    }], label, 'Tool')
+    expect(partsOf(single!).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['最终答案'])
+  })
 })
 
 describe('session repos', () => {

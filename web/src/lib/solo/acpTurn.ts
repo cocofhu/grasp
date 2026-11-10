@@ -152,11 +152,13 @@ export function partsOf(turn: SoloTurn): AgentPart[] {
   if (!turn.historyContent) return parts
   // Once the whole journal agrees with the saved reply, restore the original
   // message/tool arrival order. Earlier progress belongs in the process fold.
+  // The server trims the saved reply; streamed chunks keep their whitespace.
+  const saved = turn.historyContent.trim()
   const recordedText = turn.steps.flatMap(step => step.kind === 'message' ? [step.text] : []).join('')
-  if (turn.processComplete && recordedText === turn.historyContent) return parts
+  if (turn.processComplete && recordedText.trim() === saved) return parts
   // Partial pages must never replace the complete persisted reply. Keep their
   // progress, but render an exact copy of that reply only once, below the fold.
-  return [...parts.filter(part => part.kind !== 'message' || part.text !== turn.historyContent), { kind: 'message', text: turn.historyContent }]
+  return [...parts.filter(part => part.kind !== 'message' || part.text?.trim() !== saved), { kind: 'message', text: turn.historyContent }]
 }
 
 function addMs(iso: string, ms?: number): string | undefined {
