@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -31,6 +32,7 @@ import (
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/logging"
@@ -53,6 +55,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 const (
@@ -63,6 +66,12 @@ const (
 
 func main() {
 	logging.Setup()
+	// Capture termination before startup can expose readiness. Recovery may
+	// still be running when the first signal arrives; keep it buffered for the
+	// existing drain path once all shutdown dependencies have been initialized.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(quit)
 
 	// Config: single YAML file (CONFIG_PATH, default "config.yaml"); on K8s
 	// it is typically mounted from a ConfigMap at deploy time.
@@ -77,31 +86,15 @@ func main() {
 		log.Fatal().Err(err).Str("path", cfgPath).Msg("load config failed")
 	}
 	cfg := config.GetConfig()
+	workspaceLimits, err := cfg.WorkspaceOperations.Resolved()
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid workspace operation limits")
+	}
 	sbxGateway, err := sandbox.NewConfiguredGatewayClient(cfg.Sandbox)
 	if err != nil {
 		log.Fatal().Err(err).Msg("invalid sandbox gateway configuration")
 	}
 	defer func() { _ = sbxGateway.Close() }()
-	if cfg.Sandbox.UsesGatewayTransport() {
-		log.Info().Msg("waiting for sandbox gateway transport readiness")
-		ctx, cancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
-		err := sbxGateway.WaitTransportReady(ctx)
-		cancel()
-		if err != nil {
-			log.Fatal().Err(err).Msg("sandbox gateway transport not ready; startup reconciliation skipped")
-		}
-	} else if cfg.Sandbox.PrivateEndpoints {
-		// E2B restores private endpoints before the gateway starts listening.
-		// Wait before opening the DB/engine: startup reconciliation must never
-		// mistake an unavailable gateway for destroyed provider guests.
-		log.Info().Msg("waiting for private sandbox gateway readiness")
-		ctx, cancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
-		err := sbxGateway.WaitReady(ctx, "e2b")
-		cancel()
-		if err != nil {
-			log.Fatal().Err(err).Msg("private sandbox gateway not ready; startup reconciliation skipped")
-		}
-	}
 
 	// At-rest secret encryption reads its key from the live config (security.
 	// secrets_key, with GRASP_SECRETS_KEY env override) so channel credentials
@@ -131,20 +124,40 @@ func main() {
 	}
 	db := runtimeDB.DB
 	defer func() { _ = runtimeDB.Close() }()
-	if err := requireUninitializedFoundation(db); err != nil {
-		log.Fatal().Err(err).Msg("execution workers remain disabled")
-	}
+	log.Info().Str("storage_runtime_id", runtimeDB.ID).Msg("database runtime registered")
 	storage, err := payloadstore.Open(context.Background(), db, cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("payload storage init failed")
+		log.Fatal().Err(err).Msg("persistent payload storage init failed")
 	}
 	defer storage.Close()
+	authorityCtx, authorityCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	executionController, executionStartupError := openExecutionController(authorityCtx, cfg, db)
+	authorityCancel()
+	if executionStartupError != nil {
+		log.Warn().Err(executionStartupError).Msg("execution disabled; history remains available; initialize independent execution control offline and restart")
+	} else {
+		gatewayCtx, gatewayCancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
+		err := awaitExecutionGateway(gatewayCtx, cfg, sbxGateway)
+		gatewayCancel()
+		if err != nil {
+			log.Fatal().Err(err).Msg("sandbox gateway not ready; startup reconciliation skipped")
+		}
+	}
+	workspaceCtx, workspaceCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	workspaceRuntime, workspaceStartupError := workspaceRuntimeConfiguration(workspaceCtx, workspaceLimits, executionController)
+	workspaceCancel()
+	if workspaceStartupError != nil {
+		// Failure never adopts a new lineage or installs an unguarded worker.
+		// Historical snapshot metadata still uses ordinary read authorization.
+		log.Warn().Err(workspaceStartupError).Msg("workspace file operations unavailable; snapshot history remains readable")
+	}
 	ledgerRecorder, err := tokenledger.Start(db, filepath.Join(cfg.Storage.BlobsRoot, "token-ledger"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("open token ledger journal failed")
 	}
 
 	artifactSvc := services.NewArtifactService(db)
+	artifactSvc.SetExecutionController(executionController)
 	artifactSvc.SetFileSizeLimit(cfg.Storage.MaxFileBytes)
 	host := mcp.NewHost(artifactSvc)
 	// Outcome validation chain is DefaultThenRPC (see mcp.ChainedOutcomeValidator).
@@ -227,7 +240,30 @@ func main() {
 		}
 		return row.Token
 	}
+	var workspaceServices productionWorkspaceServices
 	provider := runtime.NewProvider(host, runtime.Options{
+		CheckExecution: func(ctx context.Context, req runtime.NodeReq) error {
+			if err := checkNativeExecution(ctx, db, executionController, req); err != nil {
+				return err
+			}
+			if req.Operation.Authorization != "" {
+				if workspaceServices.Authorization == nil {
+					return services.ErrWorkspaceJobAuthority
+				}
+				_, err := workspaceServices.Authorization.NativeAuthorization(ctx, req)
+				if errors.Is(err, services.ErrWorkspaceJobAuthority) || errors.Is(err, services.ErrWorkspaceJobConflict) || errors.Is(err, services.ErrWorkspaceJobUnsupported) || errors.Is(err, gorm.ErrRecordNotFound) {
+					return errors.Join(executionlineage.ErrConflict, err)
+				}
+				return err
+			}
+			return nil
+		},
+		NativeAuthorization: func(ctx context.Context, req runtime.NodeReq) (string, error) {
+			if workspaceServices.Authorization == nil {
+				return "", services.ErrWorkspaceJobAuthority
+			}
+			return workspaceServices.Authorization.NativeAuthorization(ctx, req)
+		},
 		RecordUsage: func(req runtime.NodeReq, result *sandbox.ChatResult, err error) {
 			phase := req.UsagePhase
 			if phase == "" {
@@ -245,6 +281,7 @@ func main() {
 		GatewayURL:           cfg.Sandbox.GatewayURL,
 		GatewayAPIKey:        cfg.Sandbox.GatewayAPIKey,
 		Gateway:              sbxGateway,
+		WorkspaceOperations:  workspaceRuntime,
 		Env:                  cfg.Sandbox.Env,
 		ChatIdleTimeout:      cfg.ChatIdleTimeout(),
 		NodeHardCap:          cfg.AgentNodeHardCap(),
@@ -292,7 +329,14 @@ func main() {
 		PublicAdvertise: cfg.Server.PublicAdvertise,
 		CodexLogins:     codexLogins,
 	})
-	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
+	workflowCheckpoints, err := newProductionWorkflowCheckpoints(db, executionController, workspaceLimits, &workspaceServices)
+	if err != nil {
+		log.Fatal().Err(err).Msg("workflow workspace checkpoint initialization failed")
+	}
+	eng, err := engine.NewConfigured(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns, executionController, workflowCheckpoints)
+	if err != nil {
+		log.Fatal().Err(err).Msg("workflow engine initialization failed")
+	}
 	if err := eng.InitDialogueEpoch(); err != nil {
 		log.Fatal().Err(err).Msg("init dialogue epoch")
 	}
@@ -385,50 +429,76 @@ func main() {
 	})
 	eng.SetAgents(agentSvc)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
-		Image:             cfg.Sandbox.Image,
-		WorkspaceDir:      "/root/workspace",
-		InstallHelpers:    true,
-		InjectStore:       injectStore,
-		InjectAdvertise:   cfg.Server.MCPAdvertise,
-		CreateTimeout:     cfg.SandboxCreateTimeout(),
-		Blobs:             blobStore,
-		Runtime:           runtimeBundle,
-		SSHKeyFile:        sshKeyPath,
-		DataPlanePassword: sandboxToken,
+		Image:               cfg.Sandbox.Image,
+		WorkspaceDir:        "/root/workspace",
+		InstallHelpers:      true,
+		InjectStore:         injectStore,
+		InjectAdvertise:     cfg.Server.MCPAdvertise,
+		CreateTimeout:       cfg.SandboxCreateTimeout(),
+		Blobs:               blobStore,
+		Runtime:             runtimeBundle,
+		SSHKeyFile:          sshKeyPath,
+		DataPlanePassword:   sandboxToken,
+		WorkspaceOperations: workspaceRuntime,
 	})
 	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Str("default_gateway", cfg.Sandbox.DefaultGateway).
 		Int("named_gateways", len(cfg.Sandbox.Gateways)).Msg("sandbox connections configured")
 	sbxSvc := services.NewSandboxService(db, sbxMgr, agentSvc, host, services.SandboxOptions{
-		ProfilesRoot:         cfg.Engine.ProfilesRoot,
-		MCPEndpoint:          cfg.Server.MCPAdvertise,
-		Env:                  cfg.Sandbox.Env,
-		TTL:                  cfg.TestSandboxTTL(),
-		RunTTL:               cfg.RunSandboxTTL(),
-		MaxRetention:         cfg.RunSandboxMaxRetention(),
-		Max:                  cfg.Sandbox.MaxTestSandboxes,
-		MaxSolo:              cfg.Sandbox.MaxSoloSandboxes,
-		SharedAgent:          sharedAgentSvc,
-		CredentialReferences: credentialSvc.ResolveReferences,
-		ModelBinding:         resolveModelBinding,
-		SelectedCredential:   credentialSvc.ResolveSelectedValue,
-		GitCredential:        credentialSvc.ResolveGitValue,
+		Execution:             executionController,
+		WorkspaceReleaseGuard: services.GuardWorkspaceReleaseTx,
+		ProfilesRoot:          cfg.Engine.ProfilesRoot,
+		MCPEndpoint:           cfg.Server.MCPAdvertise,
+		Env:                   cfg.Sandbox.Env,
+		TTL:                   cfg.TestSandboxTTL(),
+		RunTTL:                cfg.RunSandboxTTL(),
+		MaxRetention:          cfg.RunSandboxMaxRetention(),
+		Max:                   cfg.Sandbox.MaxTestSandboxes,
+		MaxSolo:               cfg.Sandbox.MaxSoloSandboxes,
+		SharedAgent:           sharedAgentSvc,
+		CredentialReferences:  credentialSvc.ResolveReferences,
+		ModelBinding:          resolveModelBinding,
+		SelectedCredential:    credentialSvc.ResolveSelectedValue,
+		GitCredential:         credentialSvc.ResolveGitValue,
 	})
 	sbxSvc.SetCodexLogins(codexLogins)
+	workspaceServices, err = newProductionWorkspaceServices(db, sbxSvc, storage, executionController, workspaceLimits, workspaceRuntime)
+	if err != nil {
+		log.Fatal().Err(err).Msg("workspace file services initialization failed")
+	}
 	// Register resident teardown before any startup reconciliation can report a
 	// missing sandbox. Older releases could leave active sessions dangling.
 	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
+	soloSvc.SetExecutionController(executionController)
 	soloSvc.SetBlobStore(blobStore)
+	if err := attachProductionWorkspaceOperations(db, soloSvc, sbxSvc, executionController, workspaceRuntime, &workspaceServices); err != nil {
+		log.Fatal().Err(err).Msg("workspace operation composition failed")
+	}
 	eng.SetReferencePinner(soloSvc)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
 		rr.SetSandboxRegistry(sbxSvc)
 	}
+	eng.Start()
 	// Reconcile DB ↔ gateway on boot and start the idle-TTL sweeper. The
 	// gateway owns image lifecycle now, so there is no local image pre-pull.
-	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
-	soloSvc.ReconcileSandboxReferences()
+	if executionStartupError == nil {
+		sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
+		soloSvc.ReconcileSandboxReferences()
+	}
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
+	var workspaceRun func(context.Context) error
+	if workspaceRuntime != nil {
+		workspaceRun = workspaceServices.Restore.Pipeline.Run
+	}
+	workspaceWorker := startWorkspaceWorker(sweeperCtx, workspaceRun)
+	var releaseRun func(context.Context) error
+	if workspaceServices.Releases != nil {
+		releaseRun = func(ctx context.Context) error { workspaceServices.Releases.Run(ctx); return nil }
+	}
+	workspaceReleaseWorker := startWorkspaceWorker(sweeperCtx, releaseRun)
+	go storage.RunLegacyArchive(sweeperCtx)
+	go soloSvc.RunWorkflowEventDelivery(sweeperCtx)
 	go migrateFilePayloads(sweeperCtx, db)
 	go sbxSvc.RunSweeper(sweeperCtx)
 	codexLoginMgr.Start(sweeperCtx)
@@ -457,6 +527,14 @@ func main() {
 		return row, ok
 	}))
 	wireArtifactMCPPersistence(host, db, runSvc, previewSvc)
+	host.SetCurrentAuthorization(func(runID string) bool {
+		if strings.HasPrefix(runID, models.SoloArtifactRunPrefix) && !sbxSvc.CurrentSoloMCPAuthorization(runID) {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return checkMCPExecution(ctx, db, executionController, runID) == nil
+	})
 	host.SetSoloArtifactPreviewHook(previewSvc.PinSoloArtifact)
 	previewSvc.SetBrowser(browserSvc)
 	previewSvc.SetSandboxLeases(sbxSvc)
@@ -484,6 +562,7 @@ func main() {
 	authSvc := auth.NewService(db, config.GetConfig)
 
 	pmSvc := services.NewPmService(db, agentSvc)
+	pmSvc.SetExecutionController(executionController)
 	pmSvc.SetBlobStore(blobStore)
 	pmProgress := services.NewPmProgress(pmSvc, runSvc, artifactSvc)
 	wfSvc := services.NewWorkflowService(db)
@@ -577,61 +656,69 @@ func main() {
 
 	frameAncestors, _ := cfg.Server.FrameAncestorOrigins()
 	h := &handlers.Handlers{
-		WF:                  wfSvc,
-		Workspace:           workspaceSvc,
-		Runs:                runSvc,
-		Arts:                artifactSvc,
-		APIKeys:             services.NewAPIKeyService(db),
-		Agents:              agentSvc,
-		SharedAgent:         sharedAgentSvc,
-		Dash:                services.NewDashboardService(db, workspaceSvc),
-		Sbx:                 sbxSvc,
-		SbxChats:            services.NewSandboxChats(sbxSvc),
-		Preview:             previewSvc,
-		Issues:              issueSvc,
-		RequirementDrafts:   requirementDraftSvc,
-		Notifications:       notificationSvc,
-		Eng:                 eng,
-		MCP:                 host,
-		Pm:                  pmSvc,
-		PmProgress:          pmProgress,
-		PmTurns:             pmTurns,
-		Solo:                soloSvc,
-		PMMCP:               pmMCP,
-		MemoryMCP:           memoryMCP,
-		ContextMCP:          contextMCP,
-		SchedulerMCP:        schedulerMCP,
-		Settings:            settingsSvc,
-		Shutdown:            coord,
-		Auth:                authSvc,
-		Channels:            channelSvc,
-		RunNotify:           runNotifySvc,
-		Browser:             browserSvc,
-		Audit:               auditSvc,
-		ExternalMcp:         externalMcpSvc,
-		McpKeys:             mcpKeySvc,
-		Credentials:         credentialSvc,
-		GitHubDevice:        services.NewGitHubDeviceFlowService(credentialSvc, func() string { return config.GetConfig().GitHubOAuthClientID() }),
-		CodexDevice:         services.NewCodexDeviceFlowService(credentialSvc, cfg.CodexAuthBaseURL()),
-		OpenCodeCatalog:     openCodeCatalog,
-		ModelConnections:    modelConnectionSvc,
-		ModelConfigurations: modelConfigurationSvc,
-		GateShare:           gateShareSvc,
-		GateShareNonces:     gateshare.NewNonceStore(db),
-		GateShareTickets:    gateShareTickets,
-		Embed:               embedStore,
-		PageBridge:          pageHub,
-		GateShareSessions:   gateShareSessions,
-		GateShareLimiter:    gateshare.NewIPLimiter(),
-		PublicAdvertise:     cfg.Server.PublicAdvertise,
-		PrivatePreviewBase:  privatePreviewBase,
-		FrameAncestors:      frameAncestors,
-		InjectBundles:       injectStore,
-		Blobs:               blobStore,
-		Onboarding:          services.NewOnboardingService(agentSvc, sharedAgentSvc, wfSvc, credentialSvc),
-		Team:                services.NewTeamService(workspaceSvc, agentSvc, pmSvc, sbxSvc),
+		WF:                   wfSvc,
+		Workspace:            workspaceSvc,
+		Runs:                 runSvc,
+		Arts:                 artifactSvc,
+		APIKeys:              services.NewAPIKeyService(db),
+		Agents:               agentSvc,
+		SharedAgent:          sharedAgentSvc,
+		Dash:                 services.NewDashboardService(db, workspaceSvc),
+		Sbx:                  sbxSvc,
+		SbxChats:             services.NewSandboxChats(sbxSvc),
+		Preview:              previewSvc,
+		Issues:               issueSvc,
+		RequirementDrafts:    requirementDraftSvc,
+		Notifications:        notificationSvc,
+		Eng:                  eng,
+		MCP:                  host,
+		Pm:                   pmSvc,
+		PmProgress:           pmProgress,
+		PmTurns:              pmTurns,
+		Solo:                 soloSvc,
+		WorkspaceSnapshots:   workspaceServices.Catalog,
+		WorkspaceRestore:     workspaceServices.Restore,
+		WorkspaceCapture:     workspaceServices.Capture,
+		WorkspaceBindings:    workspaceServices.Bindings,
+		WorkspaceCheckpoints: eng,
+		PMMCP:                pmMCP,
+		MemoryMCP:            memoryMCP,
+		ContextMCP:           contextMCP,
+		SchedulerMCP:         schedulerMCP,
+		Settings:             settingsSvc,
+		Shutdown:             coord,
+		Auth:                 authSvc,
+		Channels:             channelSvc,
+		RunNotify:            runNotifySvc,
+		Browser:              browserSvc,
+		Audit:                auditSvc,
+		ExternalMcp:          externalMcpSvc,
+		McpKeys:              mcpKeySvc,
+		Credentials:          credentialSvc,
+		GitHubDevice:         services.NewGitHubDeviceFlowService(credentialSvc, func() string { return config.GetConfig().GitHubOAuthClientID() }),
+		CodexDevice:          services.NewCodexDeviceFlowService(credentialSvc, cfg.CodexAuthBaseURL()),
+		OpenCodeCatalog:      openCodeCatalog,
+		ModelConnections:     modelConnectionSvc,
+		ModelConfigurations:  modelConfigurationSvc,
+		GateShare:            gateShareSvc,
+		GateShareNonces:      gateshare.NewNonceStore(db),
+		GateShareTickets:     gateShareTickets,
+		Embed:                embedStore,
+		PageBridge:           pageHub,
+		GateShareSessions:    gateShareSessions,
+		GateShareLimiter:     gateshare.NewIPLimiter(),
+		PublicAdvertise:      cfg.Server.PublicAdvertise,
+		PrivatePreviewBase:   privatePreviewBase,
+		FrameAncestors:       frameAncestors,
+		InjectBundles:        injectStore,
+		Blobs:                blobStore,
+		Onboarding:           services.NewOnboardingService(agentSvc, sharedAgentSvc, wfSvc, credentialSvc),
+		Team:                 services.NewTeamService(workspaceSvc, agentSvc, pmSvc, sbxSvc),
 	}
 	var maintenancePrepared atomic.Bool
+	if workspaceServices.Releases != nil {
+		h.WorkspaceReleases = workspaceServices.Releases
+	}
 	var maintenanceMu sync.Mutex
 	h.Maintenance = func(ctx context.Context, begin bool) (map[string]any, error) {
 		maintenanceMu.Lock()
@@ -642,9 +729,17 @@ func main() {
 			cronSched.Pause()
 			gateAutoSvc.BeginMaintenance()
 			channelMgr.BeginMaintenance()
+			workspaceServices.Restore.Jobs.Pause()
+			if workspaceServices.Releases != nil {
+				workspaceServices.Releases.Pause()
+			}
 		}
-		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "pmThreads": pmTurns.ActiveThreads(), "cronExecutions": cronSched.ActiveExecutions(), "automaticApprovals": gateAutoSvc.PendingMaintenance(), "channelPending": channelMgr.PendingMaintenance(), "soloTurns": soloSvc.ActiveCount()}
-		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && pmTurns.ActiveThreads() == 0 && soloSvc.ActiveCount() == 0 && cronSched.ActiveExecutions() == 0 && gateAutoSvc.PendingMaintenance() == 0 && channelMgr.PendingMaintenance() == 0
+		workspaceActive := workspaceServices.Restore.Jobs.ActiveOperations()
+		if workspaceServices.Releases != nil {
+			workspaceActive += workspaceServices.Releases.ActiveOperations()
+		}
+		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "pmThreads": pmTurns.ActiveThreads(), "cronExecutions": cronSched.ActiveExecutions(), "automaticApprovals": gateAutoSvc.PendingMaintenance(), "channelPending": channelMgr.PendingMaintenance(), "soloTurns": soloSvc.ActiveCount(), "workspaceOperations": workspaceActive}
+		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && pmTurns.ActiveThreads() == 0 && soloSvc.ActiveCount() == 0 && cronSched.ActiveExecutions() == 0 && gateAutoSvc.PendingMaintenance() == 0 && channelMgr.PendingMaintenance() == 0 && workspaceActive == 0
 		state["safeToStop"] = safe && maintenancePrepared.Load()
 		if begin && safe {
 			if err := sbxSvc.PrepareWorkspaceMaintenance(ctx); err != nil {
@@ -692,14 +787,13 @@ func main() {
 		}
 		sbxSvc.RunSoloRecovery(sweeperCtx)
 	}()
+	go soloSvc.RunQueuedTurns(sweeperCtx)
 	// Every provider hook is wired now; continue agent nodes whose sandboxes
 	// survived the previous process.
 	eng.ResumeInterrupted()
 	// Put back dialogue turns that were still queued when it exited.
 	eng.RestoreQueuedTurns()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-quit
 	log.Info().Str("signal", sig.String()).Msg("signal received")
 
@@ -709,6 +803,10 @@ func main() {
 	// Stop admitting new work. Queued runs stay queued and running drivers
 	// requeue at their next node boundary, so the next process picks both up.
 	eng.Halt()
+	workspaceServices.Restore.Jobs.Pause()
+	if workspaceServices.Releases != nil {
+		workspaceServices.Releases.Pause()
+	}
 
 	// Sandboxes and ACP connections are left alone on purpose: closing an ACP
 	// client makes the in-flight turn fail and discard its sandbox, while the
@@ -723,11 +821,26 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Warn().Err(err).Msg("http server shutdown")
 	}
+	// Native file workers wait through their last acknowledged remote lease
+	// after cancellation. Keep the SQL runtime presence if that join cannot be
+	// confirmed; a pool with no borrowed connection is insufficient evidence.
+	workspaceJoinCtx, workspaceJoinCancel := context.WithTimeout(context.Background(), 50*time.Second)
+	workspaceJoinResults := make(chan error, 2)
+	go func() { workspaceJoinResults <- workspaceWorker.stop(workspaceJoinCtx) }()
+	go func() { workspaceJoinResults <- workspaceReleaseWorker.stop(workspaceJoinCtx) }()
+	workspaceJoinError := errors.Join(<-workspaceJoinResults, <-workspaceJoinResults)
+	workspaceJoinCancel()
 
 	// Exit without unwinding: node goroutines must not get a chance to record
 	// failures for work the next process is about to resume.
 	log.Info().Msg("exit")
 	ledgerRecorder.Close()
+	storage.Close()
+	if workspaceJoinError != nil {
+		log.Error().Err(workspaceJoinError).Msg("workspace worker shutdown incomplete; storage maintenance presence retained")
+	} else if err := runtimeDB.Close(); err != nil {
+		log.Error().Err(err).Msg("database shutdown incomplete; storage maintenance presence retained")
+	}
 	os.Exit(0)
 }
 

@@ -25,6 +25,12 @@ describe('req error mapping', () => {
     await expect(req('/x', { method: 'POST', body: '{}' })).rejects.toThrow('bad name')
   })
 
+  it('preserves the message and receipt code from a non-maintenance 503 body', async () => {
+    respond(503, { error: '消息接收结果尚未确认', code: 'message_not_confirmed' })
+    const error = await req('/solo/sessions/s/turns', { method: 'POST', body: '{}' }).catch(error => error)
+    expect(error).toMatchObject({ status: 503, code: 'message_not_confirmed', message: '消息接收结果尚未确认' })
+  })
+
   it.each([true, false])('passes clarify_visit_ended autoRetryOnResume=%s through', async (autoRetryOnResume) => {
     respond(409, { error: '运行已结束，这条消息没有发送', code: 'clarify_visit_ended', autoRetryOnResume })
     const err = await req('/runs/r/nodes/n/reply', { method: 'POST', body: '{}' }).catch((e) => e)

@@ -22,9 +22,9 @@ func (e *Engine) persistVar(runID, name string, v any) {
 	var rv models.RunVariable
 	if err := e.db.Where("run_id = ? AND name = ?", runID, name).First(&rv).Error; err == nil {
 		rv.Value = v
-		logDB(e.db.Save(&rv), runID, "persist variable")
+		logDB(e.executionSave(context.Background(), runID, &rv), runID, "persist variable")
 	} else {
-		logDB(e.db.Create(&models.RunVariable{RunID: runID, Name: name, Type: inferType(v), Value: v}), runID, "create variable")
+		logDB(e.executionCreate(context.Background(), runID, &models.RunVariable{RunID: runID, Name: name, Type: inferType(v), Value: v}), runID, "create variable")
 	}
 }
 
@@ -42,8 +42,10 @@ func (e *Engine) appendTrace(c *execCtx, te models.TraceEntry) {
 		row.Checkpoints = c.run.Checkpoints
 		cols = append(cols, "Checkpoints")
 	}
-	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).
-		Select(cols).Updates(row), c.run.ID, "append trace")
+	logDB(e.executionMutation(context.Background(), c.run.ID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Run{}).Where("id = ?", c.run.ID).
+			Select(cols).Updates(row)
+	}), c.run.ID, "append trace")
 	msg, _ := json.Marshal(map[string]any{"type": "trace", "runId": c.run.ID, "entry": te})
 	e.broker.Publish(c.run.ID, msg)
 }
@@ -56,7 +58,9 @@ func (e *Engine) refreshProgress(c *execCtx) {
 		Distinct("node_id").Count(&done)
 	if total > 0 {
 		c.run.Progress = float64(done) / float64(total)
-		logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).Update("progress", c.run.Progress), c.run.ID, "refresh progress")
+		logDB(e.executionMutation(context.Background(), c.run.ID, func(db *gorm.DB) *gorm.DB {
+			return db.Model(&models.Run{}).Where("id = ?", c.run.ID).Update("progress", c.run.Progress)
+		}), c.run.ID, "refresh progress")
 	}
 }
 
@@ -76,9 +80,11 @@ func (e *Engine) finalizeActiveStateRuns(runID, status string) {
 	if status == "cancelled" {
 		errMsg = "run 已取消,节点未收尾"
 	}
-	logDB(e.db.Model(&models.StateRun{}).
-		Where("run_id = ? AND status IN ?", runID, []string{"running", "waiting_human"}).
-		Updates(map[string]any{"status": status, "error": errMsg}), runID, "finalize active state_runs")
+	logDB(e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.StateRun{}).
+			Where("run_id = ? AND status IN ?", runID, []string{"running", "waiting_human"}).
+			Updates(map[string]any{"status": status, "error": errMsg})
+	}), runID, "finalize active state_runs")
 }
 
 // supersedePendingGates resolves any still-open gate for a terminated run. When a
@@ -91,9 +97,11 @@ func (e *Engine) supersedePendingGates(runID, status string) {
 	if status != "failed" && status != "cancelled" {
 		return
 	}
-	logDB(e.db.Model(&models.Gate{}).
-		Where("run_id = ? AND resolved = ?", runID, false).
-		Update("resolved", true), runID, "supersede pending gates")
+	logDB(e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Gate{}).
+			Where("run_id = ? AND resolved = ?", runID, false).
+			Update("resolved", true)
+	}), runID, "supersede pending gates")
 }
 
 // runStatus returns the persisted run status, or "" when the row is missing.
@@ -158,7 +166,6 @@ func (e *Engine) finish(runID, status string) bool {
 		}
 	}
 
-	q := e.db.Model(&models.Run{}).Where("id = ?", runID)
 	if status == "waiting_human" {
 		// If this run already had gate/react pause rows and every one is
 		// resolved/done, a concurrent ResumeGate/ReactReply continued the
@@ -177,9 +184,27 @@ func (e *Engine) finish(runID, status string) bool {
 				return false
 			}
 		}
-		q = q.Where("status = ?", "running")
 	}
-	res := q.Updates(updates)
+	var res *gorm.DB
+	err := e.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error {
+		// Keep the guarded transition on the transaction's actual connection.
+		res = tx.Model(&models.Run{}).Where("id = ? AND status <> ? AND status NOT IN ?", runID, status, []string{"completed", "cancelled"})
+		if status == "waiting_human" {
+			res = res.Where("status = ?", "running")
+		}
+		res = res.Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil
+		}
+		return services.EnqueueWorkflowEvent(tx, runID, status)
+	})
+	if err != nil {
+		log.Error().Err(err).Str("run_id", runID).Msg("persist workflow transition and outbox failed")
+		return false
+	}
 	logDB(res, runID, "finish run")
 	if status == "waiting_human" && (res.Error != nil || res.RowsAffected == 0) {
 		return false
@@ -187,6 +212,16 @@ func (e *Engine) finish(runID, status string) bool {
 	if res.Error != nil {
 		return false
 	}
+	if res.RowsAffected == 0 {
+		return false
+	}
+	e.afterRunFinish(runID, status)
+	return true
+}
+
+// Terminal effects run only after the metadata transition/outbox commits,
+// including a transition published by a sealed workspace route.
+func (e *Engine) afterRunFinish(runID, status string) {
 	if status == "completed" {
 
 		e.fireCompletedRunNotify(runID)
@@ -240,7 +275,6 @@ func (e *Engine) finish(runID, status string) bool {
 	}
 	msg, _ := json.Marshal(map[string]any{"type": "status", "runId": runID, "status": status})
 	e.broker.Publish(runID, msg)
-	return true
 }
 
 // persistRunErrorArtifact writes run_error.json via the artifact store so empty

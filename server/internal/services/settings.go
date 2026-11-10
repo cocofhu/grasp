@@ -183,7 +183,20 @@ func (s *SettingsService) Update(patch map[string]int) ([]SettingItem, error) {
 
 // UpdateWithBrand validates the complete patch before writing, then persists
 // scheduling and brand values in one transaction.
-func (s *SettingsService) UpdateWithBrand(patch map[string]int, brand BrandPatch) ([]SettingItem, error) {
+func (s *SettingsService) UpdateWithBrand(patch map[string]int, brand BrandPatch, workflows ...*bool) ([]SettingItem, error) {
+	var workflow *bool
+	if len(workflows) > 0 {
+		workflow = workflows[0]
+	}
+	if workflow != nil {
+		feature, err := s.WorkflowFeature()
+		if err != nil {
+			return nil, err
+		}
+		if feature.Locked {
+			return nil, admissionError("workflow_setting_locked", "工作流开关由环境配置锁定", 409)
+		}
+	}
 	for _, k := range knobs() {
 		v, ok := patch[k.key]
 		if !ok {
@@ -200,6 +213,14 @@ func (s *SettingsService) UpdateWithBrand(patch map[string]int, brand BrandPatch
 		return nil, err
 	}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if workflow != nil {
+			if err := LockWorkflowAdmission(tx); err != nil {
+				return err
+			}
+			if err := setSetting(tx, KeyWorkflowsEnabled, strconv.FormatBool(*workflow)); err != nil {
+				return err
+			}
+		}
 		for _, k := range knobs() {
 			v, ok := patch[k.key]
 			if !ok || (k.envVar != "" && os.Getenv(k.envVar) != "") {

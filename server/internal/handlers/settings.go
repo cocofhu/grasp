@@ -10,6 +10,7 @@ import (
 )
 
 type updateSettingsBody struct {
+	WorkflowsEnabled  *bool   `json:"workflows_enabled"`
 	MaxConcurrentRuns *int    `json:"max_concurrent_runs"`
 	RunSandboxTTLMin  *int    `json:"run_sandbox_ttl_minutes"`
 	RunSandboxMaxRetH *int    `json:"run_sandbox_max_retention_hours"`
@@ -26,7 +27,12 @@ type updateSettingsBody struct {
 // GetSettings returns scheduling params and instance brand overrides to every
 // authenticated shell user.
 func (h *Handlers) GetSettings(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"items": h.Settings.Effective(), "brand": h.Settings.Brand(), "execution_mode": execution.Mode()})
+	feature, err := h.Settings.WorkflowFeature()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot read workflow settings"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": h.Settings.Effective(), "brand": h.Settings.Brand(), "execution_mode": execution.Mode(), "workflows": feature})
 }
 
 // UpdateSettings persists a patch of platform scheduling params and applies
@@ -37,7 +43,7 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
-	if (body.BrandProductName != nil || body.BrandHomeSubtitle != nil) && !h.requireAdmin(c) {
+	if (body.BrandProductName != nil || body.BrandHomeSubtitle != nil || body.WorkflowsEnabled != nil) && !h.requireAdmin(c) {
 		return
 	}
 	patch := map[string]int{}
@@ -58,12 +64,17 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 	}
 	items, err := h.Settings.UpdateWithBrand(patch, services.BrandPatch{
 		ProductName: body.BrandProductName, HomeSubtitle: body.BrandHomeSubtitle,
-	})
+	}, body.WorkflowsEnabled)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeAdmissionErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "brand": h.Settings.Brand(), "execution_mode": execution.Mode()})
+	feature, err := h.Settings.WorkflowFeature()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot read workflow settings"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "brand": h.Settings.Brand(), "execution_mode": execution.Mode(), "workflows": feature})
 }
 
 // requireAdmin writes 403 and returns false unless the session is an admin.

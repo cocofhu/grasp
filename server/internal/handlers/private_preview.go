@@ -48,6 +48,12 @@ func (h *Handlers) privatePreviewProxy(c *gin.Context) {
 		c.String(http.StatusGone, "preview expired")
 		return
 	}
+	closeConsumer, consumerErr := h.Preview.BeginPreviewConsumer(c.Request.Context(), *rec)
+	if consumerErr != nil {
+		workspaceBindingError(c, consumerErr)
+		return
+	}
+	defer func() { _ = closeConsumer() }()
 	if h.Sbx == nil || h.Sbx.Manager() == nil {
 		c.String(http.StatusServiceUnavailable, "preview unavailable")
 		return

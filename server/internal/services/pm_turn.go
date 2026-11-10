@@ -217,6 +217,9 @@ func (r *PmTurnRunner) Enqueue(threadID string, req PmTurnRequest) (int, error) 
 	if r.chat == nil || r.pm == nil {
 		return 0, errors.New("pm turn runner unavailable")
 	}
+	if err := r.pm.executionCheck(context.Background(), threadID); err != nil {
+		return 0, err
+	}
 	if req.Text == "" {
 		req.Text = req.Prompt
 	}
@@ -334,6 +337,9 @@ func (th *pmThread) fail(q *PmTurnRequest, failKind string) {
 
 func (th *pmThread) execute(ctx context.Context, q *PmTurnRequest) (bool, error) {
 	r := th.r
+	if err := r.pm.executionCheck(ctx, th.id); err != nil {
+		return false, err
+	}
 	sandboxID, prompt := q.SandboxID, q.Prompt
 	if q.Prepare != nil {
 		pctx, pcancel := context.WithTimeout(ctx, pmPrepareTimeout)

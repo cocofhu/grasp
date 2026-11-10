@@ -1172,13 +1172,15 @@ export interface NodeTakeoverResult {
 }
 
 export interface Run {
+  pauseRequested?: boolean
+  controlVersion?: number
   id: string
   workflowId: string
   workflowName: string
   // The published workflow version this run executed against (pinned at start).
   workflowVersion?: number
   title?: string
-  status: 'queued' | 'running' | 'waiting_human' | 'completed' | 'failed' | 'cancelled'
+  status: 'queued' | 'running' | 'waiting_human' | 'paused' | 'completed' | 'failed' | 'cancelled'
   trigger: string
   startedAt: string
   /** Set when the run was created / enqueued; used for queued rows in the list. */

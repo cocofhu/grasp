@@ -10,17 +10,36 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
 const soloEmbedUserKey = "solo_embed_user"
 
 func writeSoloErr(c *gin.Context, err error) {
+	if errors.Is(err, blob.ErrInvalidPromptImage) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_attachment", "error": "附件内容或引用无效，请修改后重新发送"})
+		return
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "message_not_found"})
+		return
+	}
+	if errors.Is(err, chatsession.ErrJournalCursor) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_cursor"})
+		return
+	}
+	if errors.Is(err, chatsession.ErrJournalGap) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "history_unavailable"})
+		return
+	}
 	var se *services.SoloError
 	if errors.As(err, &se) {
 		body := gin.H{"error": se.Msg, "code": se.Code}
@@ -164,6 +183,39 @@ func (h *Handlers) CreateSoloSession(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, v)
+}
+
+// Dedicated command route prevents a rolling upgrade from silently routing a
+// new idempotent creation request through an older server's legacy endpoint.
+func (h *Handlers) CreateSoloCreation(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	var in services.SoloCreateInput
+	if err := c.ShouldBindJSON(&in); err != nil || in.ClientRequestID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "创建请求必须包含稳定标识", "code": "invalid_creation_identity"})
+		return
+	}
+	view, err := h.Solo.Create(c.Request.Context(), user, in)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+func (h *Handlers) ResolveSoloCreation(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	view, err := h.Solo.ResolveCreation(c.Request.Context(), user, c.Param("requestId"))
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, view)
 }
 
 // GetSoloSession handles GET /api/solo/sessions/:id.
@@ -310,12 +362,44 @@ func (h *Handlers) ListSoloMessages(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if c.Query("limit") != "" || c.Query("before") != "" {
+		limit, err := strconv.Atoi(c.DefaultQuery("limit", "50"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_page"})
+			return
+		}
+		page, err := h.Solo.MessagePage(c.Request.Context(), c.Param("id"), user, c.Query("before"), limit)
+		if err != nil {
+			writeSoloErr(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, page)
+		return
+	}
 	rows, err := h.Solo.Messages(c.Param("id"), user)
 	if err != nil {
 		writeSoloErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, rows)
+}
+
+func (h *Handlers) ListSoloMessageEvents(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	after, err := strconv.ParseInt(c.DefaultQuery("after", "-1"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_cursor"})
+		return
+	}
+	page, err := h.Solo.MessageEvents(c.Request.Context(), c.Param("id"), user, c.Param("messageId"), after)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, page)
 }
 
 // GetSoloEnv handles GET /api/solo/sessions/:id/env.
@@ -377,32 +461,46 @@ func referenceQuery(c *gin.Context) services.ReferenceSearchQuery {
 }
 
 // StartSoloTurn handles POST /api/solo/sessions/:id/turns.
+func (h *Handlers) StartSoloTurnRequest(c *gin.Context) {
+	c.Set("solo_require_client_identity", true)
+	h.StartSoloTurn(c)
+}
+
 func (h *Handlers) StartSoloTurn(c *gin.Context) {
 	user, ok := h.soloReady(c)
 	if !ok {
 		return
 	}
 	var body struct {
-		Text        string                    `json:"text"`
-		Images      []models.PromptImage      `json:"images"`
-		Annotations []models.ReactAnnotation  `json:"annotations"`
-		References  []services.ReferenceInput `json:"references"`
+		ClientMessageID string                    `json:"clientMessageId"`
+		Text            string                    `json:"text"`
+		Images          []models.PromptImage      `json:"images"`
+		Annotations     []models.ReactAnnotation  `json:"annotations"`
+		References      []services.ReferenceInput `json:"references"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	waiting, err := h.Solo.SendWithReferences(c.Param("id"), user, body.Text, body.Images, body.References, body.Annotations...)
+	if c.GetBool("solo_require_client_identity") && body.ClientMessageID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_client_message_id", "error": "消息必须包含稳定标识"})
+		return
+	}
+	receipt, err := h.Solo.SendWithClientMessageID(c.Param("id"), user, body.ClientMessageID, body.Text, body.Images, body.References, body.Annotations...)
 	if err != nil {
+		if errors.Is(err, blob.ErrInvalidPromptImage) {
+			writeSoloErr(c, err)
+			return
+		}
 		var se *services.SoloError
 		if errors.As(err, &se) {
 			writeSoloErr(c, err)
 			return
 		}
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "message_not_confirmed", "error": "消息尚未确认接收，请使用原消息身份重试"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"waiting": waiting})
+	c.JSON(http.StatusOK, receipt)
 }
 
 // CancelSoloTurn handles POST /api/solo/sessions/:id/turns/cancel.
@@ -493,11 +591,16 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 
 func (h *Handlers) serveSoloChat(c *gin.Context, user string, socketUpgrader websocket.Upgrader, expiresAt time.Time, sandboxID uint) {
 	id := c.Param("id")
+	journal := c.Query("journal")
+	if journal != "" && journal != "1" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_journal_protocol"})
+		return
+	}
 	after := -1
 	if v, err := strconv.Atoi(c.Query("after")); err == nil {
 		after = v
 	}
-	ch, unsub, err := h.Solo.Subscribe(id, user, after)
+	ch, unsub, err := h.Solo.Subscribe(id, user, after, journal == "")
 	if err != nil {
 		writeSoloErr(c, err)
 		return

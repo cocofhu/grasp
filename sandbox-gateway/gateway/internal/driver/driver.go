@@ -91,9 +91,10 @@ type ExitReporter interface {
 // StartOptions repairs bootstrap inputs before restarting an existing sandbox.
 // No workspace or container is replaced by this operation.
 type StartOptions struct {
-	BootstrapScript string `json:"bootstrapScript"`
-	RuntimeURL      string `json:"runtimeUrl"`
-	RuntimeHeaders  string `json:"runtimeHeaders"`
+	BootstrapScript string           `json:"bootstrapScript"`
+	RuntimeURL      string           `json:"runtimeUrl"`
+	RuntimeHeaders  string           `json:"runtimeHeaders"`
+	ColdConfig      *ColdStartConfig `json:"coldConfig,omitempty"`
 }
 
 // StartPreparer is implemented by cold-boot drivers. Snapshot-resume drivers

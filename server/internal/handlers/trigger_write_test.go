@@ -34,14 +34,14 @@ func TestInternalStartRunTriggerDefaultsAndRejects(t *testing.T) {
 		t.Fatalf("default trigger = %q, want manual", run.Trigger)
 	}
 
-	// Explicit legal api takes precedence over source default
+	// A caller label cannot change the authenticated server source.
 	w = hn.do("POST", "/api/workflows/wf-trig/runs", map[string]any{"trigger": "api"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("explicit api: %d %s", w.Code, w.Body.String())
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &res)
 	run, _ = hn.h.Runs.Get(res["id"])
-	if run.Trigger != models.TriggerAPI {
+	if run.Trigger != models.TriggerManual {
 		t.Fatalf("explicit api = %q", run.Trigger)
 	}
 
@@ -95,7 +95,7 @@ func TestV1StartRunTriggerDefaultsExplicitAndRejects(t *testing.T) {
 		t.Fatalf("explicit manual: %d %s", w.Code, w.Body.String())
 	}
 	run, _ = hn.h.Runs.Get(runID)
-	if run.Trigger != models.TriggerManual {
+	if run.Trigger != models.TriggerAPI {
 		t.Fatalf("explicit manual = %q", run.Trigger)
 	}
 

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -402,51 +403,7 @@ func (s *PmService) UpsertDraft(threadID, userMsgID, partialText, status string,
 	if status == "" {
 		status = PmDraftStreaming
 	}
-	now := time.Now()
-	existing, err := s.GetDraft(threadID)
-	if err != nil {
-		return models.ChatTurnDraft{}, err
-	}
-	if existing == nil {
-		d := models.ChatTurnDraft{
-			ID:          "draft-" + uuid.NewString()[:12],
-			ThreadID:    threadID,
-			UserMsgID:   userMsgID,
-			PartialText: partialText,
-			ChunkIndex:  chunkIndex,
-			EventSeq:    eventSeq,
-			Status:      status,
-			SandboxID:   sandboxID,
-			CreatedAt:   now,
-			UpdatedAt:   now,
-		}
-		if err := s.db.Create(&d).Error; err != nil {
-			return models.ChatTurnDraft{}, err
-		}
-		return d, nil
-	}
-	updates := map[string]any{
-		"user_msg_id":  userMsgID,
-		"partial_text": partialText,
-		"chunk_index":  chunkIndex,
-		"event_seq":    eventSeq,
-		"status":       status,
-		"sandbox_id":   sandboxID,
-		"updated_at":   now,
-		"fail_kind":    "",
-	}
-	if err := s.db.Model(&models.ChatTurnDraft{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
-		return models.ChatTurnDraft{}, err
-	}
-	existing.UserMsgID = userMsgID
-	existing.PartialText = partialText
-	existing.ChunkIndex = chunkIndex
-	existing.EventSeq = eventSeq
-	existing.Status = status
-	existing.SandboxID = sandboxID
-	existing.FailKind = ""
-	existing.UpdatedAt = now
-	return *existing, nil
+	return s.upsertPreparedDraft(threadID, userMsgID, partialText, status, chunkIndex, eventSeq, sandboxID)
 }
 
 // FailDraft marks the draft failed (keeps partial for hydrate diagnostics).
@@ -454,17 +411,20 @@ func (s *PmService) FailDraft(threadID, failKind string) error {
 	if failKind == "" {
 		failKind = PmFailUnknown
 	}
-	return s.db.Model(&models.ChatTurnDraft{}).Where("thread_id = ?", threadID).
-		Updates(map[string]any{
+	return s.executionTransaction(context.Background(), threadID, func(tx *gorm.DB) error {
+		return tx.Model(&models.ChatTurnDraft{}).Where("thread_id = ?", threadID).Updates(map[string]any{
 			"status":     PmDraftFailed,
 			"fail_kind":  failKind,
 			"updated_at": time.Now(),
 		}).Error
+	})
 }
 
 // ClearDraft removes the thread draft after finalize or discard.
 func (s *PmService) ClearDraft(threadID string) error {
-	return s.db.Where("thread_id = ?", threadID).Delete(&models.ChatTurnDraft{}).Error
+	return s.executionTransaction(context.Background(), threadID, func(tx *gorm.DB) error {
+		return tx.Where("thread_id = ?", threadID).Delete(&models.ChatTurnDraft{}).Error
+	})
 }
 
 // HasAssistantAfter reports whether an assistant message exists after the given user message.

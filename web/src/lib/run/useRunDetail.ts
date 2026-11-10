@@ -1512,7 +1512,7 @@ function applyCanvasViewIntent() {
   if (queryParam('view') !== 'canvas') return
   viewMode.value = isMobile.value ? 'timeline' : 'canvas'
   const query = { ...route.query }
-  delete query.view
+  query.view = 'details'
   void router.replace({ path: route.path, query })
 }
 

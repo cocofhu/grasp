@@ -132,3 +132,16 @@ codex_login:
   refresh_lead: 96h
   check_interval: 10m
   auth_base_url: https://auth.openai.com
+
+# 管理员可在设置中覆盖开关；显式 GRASP_WORKFLOWS_ENABLED 锁定设置。
+# 关闭只阻止新建 Run，已有任务仍可管理。
+features:
+  workflows_enabled: true
+  max_active_workflows: 1000
+
+# 默认无需云账号。S3 / COS / 集群内 SeaweedFS 配置见 STORAGE.md。
+# 密钥使用 Secret 环境变量 GRASP_S3_ACCESS_KEY_ID / GRASP_S3_SECRET_ACCESS_KEY。
+storage:
+  driver: local
+  blobs_root: data/blobs
+  max_file_bytes: 134217728

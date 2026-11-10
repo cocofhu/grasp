@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"context"
 	"fmt"
+	"gorm.io/gorm"
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
@@ -83,7 +85,9 @@ func (e *Engine) doRollback(c *execCtx, ed models.Edge) (string, bool) {
 		c.run.Attempt--
 		return "", false
 	}
-	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).UpdateColumn("attempt", c.run.Attempt), c.run.ID, "rollback attempt")
+	logDB(e.executionMutation(context.Background(), c.run.ID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Run{}).Where("id = ?", c.run.ID).UpdateColumn("attempt", c.run.Attempt)
+	}), c.run.ID, "rollback attempt")
 
 	if snap, ok := c.run.Checkpoints[ed.Target]; ok {
 		for k, v := range snap {
@@ -113,6 +117,8 @@ func (e *Engine) snapshotCheckpoint(c *execCtx, nodeID string) {
 	}
 	c.run.Checkpoints[nodeID] = snap
 
-	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).
-		Select("Checkpoints").Updates(&models.Run{Checkpoints: c.run.Checkpoints}), c.run.ID, "snapshot checkpoint")
+	logDB(e.executionMutation(context.Background(), c.run.ID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Run{}).Where("id = ?", c.run.ID).
+			Select("Checkpoints").Updates(&models.Run{Checkpoints: c.run.Checkpoints})
+	}), c.run.ID, "snapshot checkpoint")
 }

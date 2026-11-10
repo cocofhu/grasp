@@ -3,13 +3,12 @@ import { isNodeConversationPath } from '@/lib/run/nodeConversation'
 export type SidebarNavItem = { to: string; icon: string; labelKey: string }
 export type SidebarNavGroup = { titleKey?: string; items: SidebarNavItem[] }
 
-/** Workspace primary nav: Home / Board / Workflows / Usage / Settings. Pending items live under the nav, not as a tab. */
+/** Solo is the main entry. Workflow definitions are managed in Settings. */
 export const sidebarNavGroups: SidebarNavGroup[] = [
   {
     items: [
       { to: '/dashboard', icon: 'dashboard', labelKey: 'nav.dashboard' },
       { to: '/board', icon: 'board', labelKey: 'nav.board' },
-      { to: '/workflows', icon: 'workflow', labelKey: 'nav.workflows' },
       { to: '/stats', icon: 'chart', labelKey: 'nav.stats' },
       { to: '/settings', icon: 'settings', labelKey: 'nav.settings' },
     ],

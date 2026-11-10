@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -95,6 +96,9 @@ func (e *Engine) ResumeGateExternal(share *gateshare.Service, token, action, com
 		return &ExternalResumeResult{Status: "used", Link: &lookup.Link, Gate: lookup.Gate}, gateshare.ErrActionConflict
 	}
 
+	if err := e.executionCheck(context.Background(), lookup.Link.RunID); err != nil {
+		return nil, err
+	}
 	consumed, usedLink, err := share.ConsumeCAS(lookup.Link.ID, action)
 	if err != nil {
 		return nil, err

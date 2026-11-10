@@ -140,6 +140,7 @@ func TestSoloModelSwitchWaitsForTurnBoundary(t *testing.T) {
 		}
 	}
 	row, _ := solo.Require(v.ID, "alice")
+	retainedSandbox := row.SandboxID
 	if row.InitialModelID != "aux" || row.CurrentModelID != "aux2" || row.AppliedModelID != "aux2" {
 		t.Fatalf("persisted models: initial=%q current=%q applied=%q", row.InitialModelID, row.CurrentModelID, row.AppliedModelID)
 	}
@@ -156,7 +157,7 @@ func TestSoloModelSwitchWaitsForTurnBoundary(t *testing.T) {
 	}
 	waitFor(t, "restart uses current model", func() bool {
 		row, err := solo.Require(v.ID, "alice")
-		return err == nil && row.Status == models.SoloStatusRunning && fg.LastCreateEnv()[runtime.EnvInitialChatModel] == "aux2"
+		return err == nil && row.Status == models.SoloStatusRunning && row.SandboxID == retainedSandbox && row.AppliedModelID == "aux2"
 	})
 	row, _ = solo.Require(v.ID, "alice")
 	if row.InitialModelID != "aux" {
@@ -380,23 +381,27 @@ func (r *recordAligner) snapshot() []string {
 }
 
 type gateChat struct {
-	mu      sync.Mutex
-	prompts []string
-	start   chan struct{}
-	goOn    chan struct{}
-	once    sync.Once
-	block   bool
+	initialEvents []json.RawMessage
+	mu            sync.Mutex
+	prompts       []string
+	start         chan struct{}
+	goOn          chan struct{}
+	once          sync.Once
+	block         bool
 }
 
 func newGateChat(block bool) *gateChat {
 	return &gateChat{start: make(chan struct{}), goOn: make(chan struct{}), block: block}
 }
 
-func (g *gateChat) ChatWithTimeout(ctx context.Context, _ uint, text string, _ []models.PromptImage, _ time.Duration, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+func (g *gateChat) ChatWithTimeout(ctx context.Context, _ uint, text string, _ []models.PromptImage, _ time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
 	g.mu.Lock()
 	first := len(g.prompts) == 0
 	g.prompts = append(g.prompts, text)
 	g.mu.Unlock()
+	for _, event := range g.initialEvents {
+		onEvent(event)
+	}
 	if first && g.block {
 		g.once.Do(func() { close(g.start) })
 		select {

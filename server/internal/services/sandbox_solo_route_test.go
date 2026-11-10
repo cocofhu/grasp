@@ -67,6 +67,10 @@ func soloRouteFixture(t *testing.T) (*SandboxService, *models.Sandbox, Agent, Ag
 		t.Fatal(err)
 	}
 	row := &models.Sandbox{Name: "same-container", Profile: agent.Name, ThreadID: "same-task", RunID: "same-artifacts", Token: "same-token", Purpose: SandboxPurposeSolo, Status: "running", ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint}
+	row.AuthorizationFingerprint, err = s.currentAuthorizationFingerprint(context.Background(), agent)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(row).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -341,5 +345,43 @@ func TestSoloRouteSwitchUsesSameLocalWorktreeAndPersistsNewPort(t *testing.T) {
 				t.Fatalf("lost task work: %q %v", body, err)
 			}
 		})
+	}
+}
+
+func TestDeniedLocalSoloAuthorizationRetainsTheActualWorktree(t *testing.T) {
+	backendPath, err := filepath.Abs(filepath.Join("..", "..", "..", "sandbox-gateway", "sandbox", "bin", "backend"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRASP_WORKTREE_BACKEND", backendPath)
+	t.Setenv(execution.EnvMode, execution.ModeWorktree)
+	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
+	execution.ResetForTest()
+	t.Cleanup(execution.ResetForTest)
+	t.Cleanup(execution.SetLookPathForTest(func(string) error { return nil }))
+	t.Cleanup(sandbox.SetWorktreeBackendForTest(func(context.Context, map[string]string, string) (int, func(), error) {
+		return 16001, func() {}, nil
+	}))
+	s, row, _, _, _ := soloRouteFixture(t)
+	local, err := s.mgr.Create(context.Background(), s.live[row.ID].prepared.spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.live[row.ID].sb = local
+	marker := filepath.Join(local.WorkspaceDir, "uncommitted.bin")
+	if err := os.WriteFile(marker, []byte("only remaining local copy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Model(row).Update("authorization_fingerprint", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureSoloRunning(context.Background(), row.ID); err == nil {
+		t.Fatal("unknown applied proof allowed local access")
+	}
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "only remaining local copy" {
+		t.Fatalf("authorization denial destroyed the retained local workspace: %q %v", data, err)
+	}
+	if live := s.live[row.ID]; live == nil || live.sb != local || live.acp != nil || s.activeSoloSandboxCount() != 1 {
+		t.Fatal("denial released the only local handle or compute reservation")
 	}
 }

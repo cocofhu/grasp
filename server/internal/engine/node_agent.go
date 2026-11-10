@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gorm.io/gorm"
 	"sort"
 	"strings"
 
@@ -44,7 +46,7 @@ func (e *Engine) execAgent(c *execCtx, node *models.Node) nodeOutcome {
 	return oc
 }
 
-func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
+func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) (outcome nodeOutcome) {
 	req := e.nodeReq(c, node)
 	req.ResetToDefaultModel = true
 	req.ChatRoute = nil
@@ -58,6 +60,16 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 			e.settleAutoAgent(c.run.ID, node.ID, ar)
 		}
 	}()
+	queue, err := e.openInstructionQueue(ctx, ar.stateRunID, c.run.ID, node.ID, ar.iter)
+	if err != nil {
+		return nodeOutcome{status: "failed", err: err.Error(), outputMd: "补充要求通道准备失败：" + err.Error(), providerUnknown: req.AttachOnly}
+	}
+	req.Instructions = queue
+	defer func() {
+		if err := queue.close(ctx, "本轮自动执行已结束，未处理的要求不会移交给其他节点"); err != nil {
+			outcome = nodeOutcome{status: "failed", err: err.Error(), outputMd: "补充要求状态保存失败：" + err.Error(), providerUnknown: outcome.providerUnknown, events: outcome.events, usage: outcome.usage, usageByModel: outcome.usageByModel}
+		}
+	}()
 	res, err := e.provider.RunAgent(ctx, req)
 	settled = true
 	if e.settleAutoAgent(c.run.ID, node.ID, ar) {
@@ -69,7 +81,7 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 	}
 	if err != nil {
 		return nodeOutcome{status: "failed", err: err.Error(),
-			outputMd: "Agent 执行失败:" + err.Error(), retryable: true, events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
+			outputMd: "Agent 执行失败:" + err.Error(), retryable: !errors.Is(err, runtime.ErrInstructionDeliveryUncertain) && !errors.Is(err, runtime.ErrProviderDispatchUnknown), providerUnknown: errors.Is(err, runtime.ErrProviderDispatchUnknown), events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
 	}
 	return nodeOutcome{status: "completed", result: &res,
 		events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
@@ -255,7 +267,9 @@ func (e *Engine) setRunBranch(c *execCtx, git *runtime.GitInfo) {
 		return
 	}
 	c.run.Branch = git.Branch
-	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).UpdateColumn("branch", git.Branch), c.run.ID, "set run branch")
+	logDB(e.executionMutation(context.Background(), c.run.ID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Run{}).Where("id = ?", c.run.ID).UpdateColumn("branch", git.Branch)
+	}), c.run.ID, "set run branch")
 }
 
 // exportBranchVar publishes the per-repo working branches as vars.branches

@@ -30,7 +30,8 @@
       "cancelling": "取消中",
       "skipped": "已跳过",
       "published": "已发布",
-      "draft": "草稿"
+      "draft": "草稿",
+      "paused": "已暂停"
     },
     "priority": {
       "label": "优先级",

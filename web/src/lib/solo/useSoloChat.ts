@@ -9,8 +9,9 @@ import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './acpTurn'
 import { soloErrorText } from './soloErrors'
 import { useSoloSessions } from './useSoloSessions'
+import { newSoloRequestID, readSoloOutbox, removeSoloOutbox, saveSoloOutbox, soloOutboxScope, type SoloMessageOutbox, type SoloTurnRequest } from './soloOutbox'
 
-export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: MessageReference[]; local?: boolean }
+export type SoloQueueItem = { id: string; clientMessageId?: string; text: string; images: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: MessageReference[]; local?: boolean }
 export type SoloPhase = '' | 'preparing' | 'running'
 export type SoloLink = 'idle' | 'connecting' | 'open' | 'reconnecting'
 
@@ -35,6 +36,7 @@ function listedEfforts(efforts?: string[]) {
 function queueItem(raw: any): SoloQueueItem {
   return {
     id: String(raw?.id ?? ''),
+    ...(typeof raw?.clientMessageId === 'string' ? { clientMessageId: raw.clientMessageId } : {}),
     text: String(raw?.text ?? ''),
     images: Array.isArray(raw?.images) ? raw.images : [],
     ...(Array.isArray(raw?.annotations) && raw.annotations.length ? { annotations: raw.annotations } : {}),
@@ -49,6 +51,8 @@ function queueItem(raw: any): SoloQueueItem {
  */
 export type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMessages' | 'sendSoloTurn' | 'cancelSoloTurn' | 'soloChatWsUrl'
   | 'setSoloSessionModel' | 'setSoloSessionReasoningEffort' | 'removeSoloQueued' | 'reorderSoloQueue'> & {
+  listSoloMessagePage?: typeof api.listSoloMessagePage
+  listSoloMessageEvents?: typeof api.listSoloMessageEvents
   soloChatProtocols?: string[]
 }
 
@@ -84,6 +88,17 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const historyReady = ref(false)
   const loadError = ref('')
   const actionError = ref('')
+  const pendingConfirmation = ref<string[]>([])
+  const retryingSend = ref(false)
+  const hasEarlier = ref(false)
+  const loadingEarlier = ref(false)
+  const earlierError = ref('')
+  const processPages = ref<Record<string, { next: number; hasMore: boolean; loading: boolean; error: string; legacyIncomplete: boolean }>>({})
+  const historyMessages = new Map<string, SoloMessage>()
+  let historyOrder: string[] = []
+  const processEvents = new Map<string, unknown[]>()
+  let beforeMessage: string | undefined
+  let earlierLoaded = false
 
   let ws: WebSocket | null = null
   let held: string[] | null = null
@@ -98,6 +113,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   let lastSeq = -1
   let ackedSeq = -1
   let streamGeneration: number | undefined
+  let journalVersion = 0
   let resyncs = 0
   let sessionGeneration = 0
   let settingsEpoch = 0
@@ -118,6 +134,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     references: MessageReference[]
     annotations: ReactAnnotation[]
     started: boolean
+    request?: SoloTurnRequest
+    outboxScope?: string
   }
   // The local identity survives HTTP, queue acknowledgement and turn_begin.
   // A server identity can be assigned once; repeated text is never a turn id.
@@ -126,6 +144,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const missingQueuedIds = new Set<string>()
   let persistedHistory: SoloTurn[] = []
   let chatEpoch = 0
+  const outboxReady = ref(false)
 
   const reconnect = createWsReconnectController({
     connect: () => openWs(),
@@ -137,7 +156,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const sessionOpen = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
-  const canSend = computed(() => sessionOpen.value && historyReady.value)
+  const canSend = computed(() => sessionOpen.value && historyReady.value && outboxReady.value && !pendingConfirmation.value.length && session.value?.sandbox?.desiredState !== 'stopped')
   // An explicit current model wins, including empty (primary). Old sessions
   // omit the flag and keep the opening model.
   const currentModelId = computed(() => {
@@ -251,26 +270,47 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   /** Bind the first unacknowledged matching send, once, including image-only sends. */
+  function confirmLocalSend(send: LocalSend) {
+    if (send.outboxScope) {
+      const scope = send.outboxScope
+      // Removal failure keeps the same identity available for reconciliation
+      // after reload. It never authorizes a fresh request or automatic replay.
+      void removeSoloOutbox(scope, send.localId).then(() => { send.outboxScope = undefined }).catch(() => {})
+    }
+    pendingConfirmation.value = pendingConfirmation.value.filter(id => id !== send.localId)
+    if (!pendingConfirmation.value.length && actionError.value === t('pages.solo.sendUnconfirmed')) actionError.value = ''
+  }
+
   function adoptLocalSend(item: SoloQueueItem): LocalSend | undefined {
     if (!item.id) return undefined
     const bound = openSends.find((send) => send.serverId === item.id || send.localId === item.id)
-    if (bound) return bound
-    if (knownServerIds.has(item.id)) return undefined
-    const send = openSends.find((row) => !row.serverId && samePayload(row, item))
+    if (bound) {
+      confirmLocalSend(bound)
+      return bound
+    }
+    const exact = item.clientMessageId ? openSends.find(row => !row.serverId && row.localId === item.clientMessageId) : undefined
+    if (knownServerIds.has(item.id) && !exact) return undefined
+    const send = item.clientMessageId
+      ? openSends.find(row => !row.serverId && row.localId === item.clientMessageId)
+      : openSends.find((row) => !row.serverId && !row.outboxScope && samePayload(row, item))
     knownServerIds.add(item.id)
     if (!send) return undefined
     const old = send.localId
     send.serverId = item.id
+    confirmLocalSend(send)
     for (const row of turns.value) {
       if (row.id === `u:${old}`) row.id = `u:${item.id}`
       if (row.id === `live:${old}`) row.id = `live:${item.id}`
     }
     if (activeId.value === old) activeId.value = item.id
-    queued.value = queued.value.filter((row) => row.id !== old)
+    // HTTP acceptance can precede queue_state. Keep an accepted request
+    // visible under its server identity until that authoritative snapshot.
+    queued.value = queued.value.map(row => row.id === old ? { ...row, id: item.id, clientMessageId: send.localId, local: false } : row)
     return send
   }
 
   function forgetSend(send: LocalSend) {
+    pendingConfirmation.value = pendingConfirmation.value.filter(id => id !== send.localId)
     const key = sendKey(send)
     const index = openSends.indexOf(send)
     if (index >= 0) openSends.splice(index, 1)
@@ -292,6 +332,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   function historyCoversLive(saved: SoloTurn | undefined, live: SoloTurn | undefined): boolean {
     if (!saved || saved.role !== 'agent') return false
     if (!live) return true
+    if (saved.historyMessageId && !live.streaming) return true
     if (!saved.text.trim().startsWith(live.text.trim())) return false
     if (live.error && !(saved.error || '').includes(live.error)) return false
     if (live.status && live.status !== saved.status) return false
@@ -305,15 +346,32 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       (!tool.output || (other.output || '').startsWith(tool.output))))
   }
 
-  function applyMessages(messages: SoloMessage[]) {
-    const incoming = turnsFromMessages(messages, label, toolFallback())
+  function applyMessages(messages: SoloMessage[], older = false) {
+    if (transport.listSoloMessagePage) {
+      // Preserve each server window's order, including legacy rows with equal
+      // timestamps. Re-sorting by IDs can move an answer before its question.
+      const incomingIds = new Set(messages.map(message => message.id))
+      const common = messages.find(message => historyMessages.has(message.id))
+      if (messages.length) {
+        if (common) {
+          const pivot = historyOrder.indexOf(common.id)
+          historyOrder = [...historyOrder.slice(0, pivot).filter(id => !incomingIds.has(id)), ...messages.map(message => message.id), ...historyOrder.slice(pivot).filter(id => !incomingIds.has(id))]
+        } else {
+          historyOrder = older ? [...messages.map(message => message.id), ...historyOrder] : [...historyOrder, ...messages.map(message => message.id)]
+        }
+      }
+      for (const message of messages) historyMessages.set(message.id, message)
+      messages = historyOrder.map(id => historyMessages.get(id)!)
+    }
+    const clientIds = new Map(messages.map(message => [message.id, message.clientMessageId]))
+    const incoming = turnsFromMessages(messages.map(message => processEvents.has(message.id) ? { ...message, events: processEvents.get(message.id) } : message), label, toolFallback())
     // Messages are append-only. A shorter HTTP snapshot must not erase rows
     // already reconciled from an earlier response.
     if (incoming.length >= persistedHistory.length) persistedHistory = incoming
     const history = persistedHistory.slice()
     for (const user of history) {
       if (user.role !== 'user') continue
-      const send = adoptLocalSend({ id: user.id.slice(2), text: user.text, images: user.images || [], annotations: user.annotations })
+      const send = adoptLocalSend({ id: user.id.slice(2), clientMessageId: clientIds.get(user.id.slice(2)), text: user.text, images: user.images || [], annotations: user.annotations })
       if (send) send.started = true
     }
     // A queue item can be removed in another viewer. Confirm its absence
@@ -325,15 +383,26 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       missingQueuedIds.delete(id)
     }
 
+    const replyIndex = (key: string) => {
+      const explicit = history.findIndex(turn => turn.role === 'agent' && turn.replyTo === key)
+      if (explicit >= 0) return explicit
+      const user = history.findIndex(turn => turn.id === `u:${key}`)
+      const next = history[user + 1]
+      return user >= 0 && next?.role === 'agent' && !next.replyTo ? user + 1 : -1
+    }
     const mergePair = (key: string) => {
       const user = turns.value.find((turn) => turn.id === `u:${key}`)
       const agent = turns.value.find((turn) => turn.id === `live:${key}`)
       const index = history.findIndex((turn) => turn.id === `u:${key}`)
+      let savedIndex = replyIndex(key)
       if (index < 0) {
-        if (user) history.push(user)
-        if (agent) history.push(agent)
-      } else if (agent) {
-        const saved = history[index + 1]
+        if (user) {
+          if (savedIndex >= 0) { history.splice(savedIndex, 0, user); savedIndex++ }
+          else history.push(user)
+        }
+      }
+      if (agent) {
+        const saved = history[savedIndex]
         if (saved?.role === 'agent' && saved.files?.length) {
           const files = [...(agent.files ?? [])]
           for (const file of saved.files) {
@@ -341,19 +410,21 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
           }
           agent.files = files
         }
-        if (history[index + 1]?.role === 'agent') history.splice(index + 1, 1, agent)
-        else history.splice(index + 1, 0, agent)
+        if (savedIndex >= 0) history.splice(savedIndex, 1, agent)
+        else {
+          const userIndex = history.findIndex(turn => turn.id === `u:${key}`)
+          history.splice(userIndex >= 0 ? userIndex + 1 : history.length, 0, agent)
+        }
       }
     }
 
     const retained = new Set<string>()
     for (const send of [...openSends]) {
       const key = sendKey(send)
-      const index = history.findIndex((turn) => turn.id === `u:${key}`)
       const live = turns.value.find((turn) => turn.id === `live:${key}`)
       // Keep an active stream until its terminal/idle frame: history may be
       // persisted before the last output frames have reached this browser.
-      if (activeId.value !== key && index >= 0 && historyCoversLive(history[index + 1], live)) {
+      if (activeId.value !== key && historyCoversLive(history[replyIndex(key)], live)) {
         openSends.splice(openSends.indexOf(send), 1)
       } else {
         retained.add(key)
@@ -373,12 +444,67 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     schedulePoll()
   }
 
+  async function readHistory(id: string) {
+    if (!transport.listSoloMessagePage) return transport.listSoloMessages(id)
+    const epoch = chatEpoch
+    const page = await transport.listSoloMessagePage(id)
+    if (id === sessionId.value && epoch === chatEpoch && !earlierLoaded) {
+      beforeMessage = page.before
+      hasEarlier.value = page.hasMore
+    }
+    return page.items
+  }
+
+  async function loadEarlier() {
+    const id = sessionId.value
+    const epoch = chatEpoch
+    if (!transport.listSoloMessagePage || !beforeMessage || loadingEarlier.value) return
+    loadingEarlier.value = true
+    earlierError.value = ''
+    try {
+      const page = await transport.listSoloMessagePage(id, beforeMessage)
+      if (disposed || id !== sessionId.value || epoch !== chatEpoch) return
+      applyMessages(page.items, true)
+      earlierLoaded = true
+      beforeMessage = page.before
+      hasEarlier.value = page.hasMore
+    } catch (error: any) {
+      if (id === sessionId.value && epoch === chatEpoch) earlierError.value = String(error?.message || error)
+    } finally {
+      if (id === sessionId.value && epoch === chatEpoch) loadingEarlier.value = false
+    }
+  }
+
+  async function loadProcess(turn: SoloTurn) {
+    const id = sessionId.value
+    const epoch = chatEpoch
+    const messageId = turn.historyMessageId
+    if (!messageId || !transport.listSoloMessageEvents) return
+    const previous = processPages.value[messageId]
+    if (previous?.loading || previous?.hasMore === false) return
+    const state = { next: previous?.next ?? -1, hasMore: true, loading: true, error: '', legacyIncomplete: previous?.legacyIncomplete ?? false }
+    processPages.value[messageId] = state
+    try {
+      const page = await transport.listSoloMessageEvents(id, messageId, state.next)
+      if (disposed || id !== sessionId.value || epoch !== chatEpoch) return
+      if (!Number.isSafeInteger(page.next) || !Number.isSafeInteger(page.head) || page.next > page.head || page.hasMore && page.next <= state.next) throw new Error(t('pages.solo.chat.journalGap'))
+      const events = [...(processEvents.get(messageId) ?? []), ...page.items.filter(entry => entry.type === 'acp').map(entry => entry.data)]
+      const expected = historyMessages.get(messageId)?.eventLog?.count
+      if (!page.hasMore && expected !== undefined && events.length !== expected) throw new Error(t('pages.solo.chat.journalGap'))
+      processEvents.set(messageId, events)
+      processPages.value[messageId] = { next: page.next, hasMore: page.hasMore, loading: false, error: '', legacyIncomplete: !!page.legacyIncomplete }
+      applyMessages([])
+    } catch (error: any) {
+      if (id === sessionId.value && epoch === chatEpoch) processPages.value[messageId] = { ...state, loading: false, error: String(error?.message || error) }
+    }
+  }
+
   async function refetchMessages() {
     const id = sessionId.value
     const epoch = chatEpoch
     const seq = ++refetchSeq
     try {
-      const messages = await transport.listSoloMessages(id)
+      const messages = await readHistory(id)
       if (!disposed && epoch === chatEpoch && seq === refetchSeq && id === sessionId.value) applyMessages(messages)
     } catch {
       /* keep the current transcript */
@@ -519,7 +645,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const seenKinds = seenSeq.get(seq)
     if (seenKinds?.has(kind)) return 'dup'
     if (lastSeq >= 0 && seq > lastSeq + 1) {
-      if (resyncs >= 3) {
+      if (!journalVersion && resyncs >= 3) {
         seenSeq.set(seq, new Set([kind]))
         lastSeq = seq
         return 'ok'
@@ -539,7 +665,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   function requestResync() {
-    if (disposed || resyncs >= 3) return
+    if (disposed) return
+    if (resyncs >= 3 && journalVersion) {
+      loadError.value = t('pages.solo.chat.journalGap')
+      closeWs()
+      link.value = 'reconnecting'
+      schedulePoll()
+      return
+    }
+    if (resyncs >= 3) return
     resyncs += 1
     resubscribe()
   }
@@ -591,10 +725,18 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     if (!frame || typeof frame !== 'object') return
     // Subscribe 保证首帧是 queue_state 快照；之后的同名帧才是真实流事件。
     const subscriptionSnapshot = firstFrame && frame.type === 'session' && frame.event === 'queue_state'
+    const stateSnapshot = frame.type === 'session' && frame.event === 'queue_state' && frame.stateSnapshot === true
     if (subscriptionSnapshot) {
       sessionStateCursor.reset()
+      journalVersion = frame.journalVersion === 1 ? 1 : 0
+      if (journalVersion && frame.cursorReset) {
+        lastSeq = ackedSeq = -1
+        seenSeq.clear()
+        endActive()
+        void refetchMessages()
+      }
       if (Number.isSafeInteger(frame.sessionGeneration) && frame.sessionGeneration >= 0) {
-        if (streamGeneration !== undefined && streamGeneration !== frame.sessionGeneration) {
+        if (!journalVersion && streamGeneration !== undefined && streamGeneration !== frame.sessionGeneration) {
           // A recreated server stream starts its sequence at zero. Same-stream
           // reconnects retain their deduplication and replay acknowledgements.
           lastSeq = -1
@@ -605,15 +747,18 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         streamGeneration = frame.sessionGeneration
       }
     }
-    const seqState = noteSeq(frame, subscriptionSnapshot)
+    const seqState = stateSnapshot && !subscriptionSnapshot ? 'ok' : noteSeq(frame, subscriptionSnapshot)
     if (seqState === 'dup') return
     if (seqState === 'gap') {
       requestResync()
       return
     }
     const seq = frame.seq
-    if (!subscriptionSnapshot && typeof seq === 'number' && seq >= 0 && seq > ackedSeq) ackedSeq = seq
+    if (!subscriptionSnapshot && !stateSnapshot && typeof seq === 'number' && seq >= 0 && seq > ackedSeq) ackedSeq = seq
     if (frame.type === 'acp') {
+      // A reconnect may include the tail of an already completed turn before
+      // the current one. Its result is loaded from history under its own ID.
+      if (journalVersion && (!frame.userMsgId || frame.userMsgId !== activeId.value)) return
       const turn = activeTurn.value ?? adoptTurnForOutput()
       const send = openSends.find((row) => sendKey(row) === activeId.value)
       if (send) send.started = true
@@ -647,7 +792,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         orderOverlay.value = null
         busy.value = !!frame.busy
         patchSession({ busy: busy.value, waiting: queued.value.length })
-        if (subscriptionSnapshot) applyResumeSnapshot(frame)
+        if (subscriptionSnapshot || stateSnapshot) applyResumeSnapshot(frame)
         applyExecution(frame)
         if (frame.busy && frame.phase) phase.value = frame.phase
         if (!frame.busy && (activeId.value || openSends.length)) {
@@ -714,6 +859,9 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         if (frame.modelNotice) showModelNotice(String(frame.modelNotice), String(frame.error || ''))
         break
       }
+      case 'history_changed':
+        void refetchMessages()
+        break
       case 'status': {
         const cur = session.value
         if (cur) {
@@ -731,7 +879,9 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const id = sessionId.value
     if (!id || disposed) return
     link.value = link.value === 'idle' ? 'connecting' : 'reconnecting'
-    const sock = new WebSocket(transport.soloChatWsUrl(id, ackedSeq >= 0 ? ackedSeq : undefined), transport.soloChatProtocols)
+    const cursor = ackedSeq >= 0 ? ackedSeq : undefined
+    const address = journalVersion ? transport.soloChatWsUrl(id, cursor, journalVersion) : transport.soloChatWsUrl(id, cursor)
+    const sock = new WebSocket(address, transport.soloChatProtocols)
     ws = sock
     held = []
     let firstFrame = true
@@ -749,7 +899,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       // and also accept the subscribe snapshot below.
       void refreshSession()
       try {
-        const messages = await transport.listSoloMessages(id)
+        const messages = await readHistory(id)
         if (ws === sock) applyMessages(messages)
       } catch {
         /* live frames still render */
@@ -803,9 +953,19 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     queued.value = []
     orderOverlay.value = null
     openSends.splice(0, openSends.length)
+    pendingConfirmation.value = []
     knownServerIds.clear()
     missingQueuedIds.clear()
     persistedHistory = []
+    historyMessages.clear()
+    historyOrder = []
+    processEvents.clear()
+    processPages.value = {}
+    hasEarlier.value = false
+    loadingEarlier.value = false
+    earlierError.value = ''
+    beforeMessage = undefined
+    earlierLoaded = false
     historyReady.value = false
     busy.value = false
     phase.value = ''
@@ -813,18 +973,37 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     lastSeq = -1
     ackedSeq = -1
     streamGeneration = undefined
+    journalVersion = 0
     resyncs = 0
     seenSeq.clear()
     link.value = 'idle'
     loadError.value = ''
     actionError.value = ''
     session.value = null
+    outboxReady.value = false
     if (!id) return
     loading.value = true
     try {
       const v = await transport.getSoloSession(id)
       if (id !== sessionId.value || generation !== sessionGeneration || disposed) return
       setSession(v)
+      try {
+        const scope = soloOutboxScope(v.userId, 'message', v.id)
+        const saved = await readSoloOutbox(scope)
+        if (id !== sessionId.value || generation !== sessionGeneration || disposed) return
+        for (const record of saved) {
+          if (record.kind !== 'message' || record.request.clientMessageId !== record.id) continue
+          const request = record.request
+          const references: MessageReference[] = (request.references || []).map((reference, index) => ({ ...reference, id: `${record.id}:${index}`, title: reference.target, createdAt: record.createdAt }))
+          const send: LocalSend = { localId: record.id, text: request.text, images: request.images || [], references, annotations: request.annotations || [], started: false, request, outboxScope: scope }
+          displayLocalSend(send, record.createdAt, true)
+          pendingConfirmation.value.push(send.localId)
+        }
+        outboxReady.value = true
+        if (pendingConfirmation.value.length) actionError.value = t('pages.solo.outboxRestored')
+      } catch {
+        actionError.value = t('pages.solo.outboxUnavailable')
+      }
       if (v.modelNotice) showModelNotice(v.modelNotice)
       openWs()
     } catch (e: any) {
@@ -834,37 +1013,25 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
   }
 
-  function newLocalId() {
-    return `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  }
-
-  async function send(text: string, images: ClarifyImage[] = [], references: MessageReference[] = [], annotations: ReactAnnotation[] = []) {
-    const id = sessionId.value
-    const epoch = chatEpoch
-    if (!id || disposed || !canSend.value || (!text.trim() && !images.length && !references.length && !annotations.length)) return false
-    actionError.value = ''
-    const body = text.trim()
-    const refs = references.length ? references : undefined
-    const local: SoloQueueItem = { id: newLocalId(), text: body, images, references: refs, annotations, local: true }
-    const send: LocalSend = { localId: local.id, text: body, images, references, annotations, started: false }
+  function displayLocalSend(send: LocalSend, started: string, queuedOnly = false) {
+    const local: SoloQueueItem = { id: send.localId, clientMessageId: send.localId, text: send.text, images: send.images, references: send.references, annotations: send.annotations, local: true }
     openSends.push(send)
-    const started = new Date().toISOString()
     // A send behind a running turn stays in the queue until its turn_begin,
     // matching the persisted transcript a reload shows.
-    if (!activeId.value) {
+    if (!activeId.value && !queuedOnly) {
       turns.value = [
         ...turns.value,
         {
           id: `u:${local.id}`,
           role: 'user',
-          text: body,
+          text: send.text,
           tools: [],
           steps: [],
           plan: [],
           streaming: false,
-          images: images.length ? images : undefined,
-          references: refs,
-          annotations,
+          images: send.images.length ? send.images : undefined,
+          references: send.references,
+          annotations: send.annotations,
           createdAt: started,
         },
         emptyAgentTurn(`live:${local.id}`, true, started),
@@ -874,23 +1041,100 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
     queued.value = [...queued.value, local]
     patchSession({ waiting: queued.value.length, busy: true })
-    try {
-      await transport.sendSoloTurn(id, {
-        text: body, images,
-        ...(refs ? { references: refs.map(({ kind, target }) => ({ kind, target })) } : {}),
+  }
+
+  async function send(text: string, images: ClarifyImage[] = [], references: MessageReference[] = [], annotations: ReactAnnotation[] = []) {
+    const id = sessionId.value
+    const epoch = chatEpoch
+    if (!id || !session.value || disposed || !canSend.value || (!text.trim() && !images.length && !references.length && !annotations.length)) return false
+    actionError.value = ''
+    const body = text.trim()
+    const scope = soloOutboxScope(session.value.userId, 'message', session.value.id)
+    const localId = newSoloRequestID()
+    const request: SoloTurnRequest = JSON.parse(JSON.stringify({
+        text: body, images, clientMessageId: localId,
+        ...(references.length ? { references: references.map(({ kind, target }) => ({ kind, target })) } : {}),
         ...(annotations.length ? { annotations } : {}),
-      })
+      }))
+    const record: SoloMessageOutbox = { scope, id: localId, kind: 'message', request, createdAt: new Date().toISOString() }
+    const send: LocalSend = { localId, text: body, images: request.images || [], references: JSON.parse(JSON.stringify(references)), annotations: request.annotations || [], started: false, request, outboxScope: scope }
+    displayLocalSend(send, record.createdAt)
+    try {
+      await saveSoloOutbox(record)
+    } catch {
+      if (!disposed && epoch === chatEpoch) {
+        forgetSend(send)
+        patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 || !!activeId.value })
+        actionError.value = t('pages.solo.outboxUnavailable')
+      }
+      return false
+    }
+    if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
+    try {
+      const receipt = await transport.sendSoloTurn(id, request)
+      if (!disposed && epoch === chatEpoch && id === sessionId.value && receipt.turnId && receipt.clientMessageId === send.localId) {
+        adoptLocalSend({ id: receipt.turnId, clientMessageId: receipt.clientMessageId, text: body, images, annotations, references })
+      }
+      if (!send.serverId) throw new Error(t('pages.solo.invalidReceipt'))
       return !disposed && epoch === chatEpoch && id === sessionId.value
     } catch (e: any) {
       if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
       // The socket can confirm acceptance before the HTTP connection fails.
       if (send.serverId) return true
       if (!openSends.includes(send)) return false
+      if (!e?.status || e.status >= 500) {
+        pendingConfirmation.value = [...new Set([...pendingConfirmation.value, send.localId])]
+        actionError.value = t('pages.solo.sendUnconfirmed')
+        return false
+      }
+      try { await removeSoloOutbox(scope, send.localId) } catch { /* preserve the original identity if local storage is unavailable */ }
       forgetSend(send)
       patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 || !!activeId.value })
       actionError.value = String(e?.message || e)
       return false
     }
+  }
+
+  async function retryPendingSend() {
+    if (retryingSend.value || !sessionId.value || !sessionOpen.value || session.value?.sandbox?.desiredState === 'stopped') return false
+    const id = sessionId.value, epoch = chatEpoch
+    retryingSend.value = true
+    try {
+      for (const key of [...pendingConfirmation.value]) {
+        const send = openSends.find(row => row.localId === key)
+        if (!send?.request) continue
+        const receipt = await transport.sendSoloTurn(id, send.request)
+        if (disposed || epoch !== chatEpoch || sessionId.value !== id) return false
+        if (receipt.turnId && receipt.clientMessageId === send.localId) {
+          adoptLocalSend({ id: receipt.turnId, clientMessageId: receipt.clientMessageId, text: send.text, images: send.images, annotations: send.annotations, references: send.references })
+        }
+        if (!send.serverId) throw new Error(t('pages.solo.invalidReceipt'))
+      }
+      if (!pendingConfirmation.value.length) actionError.value = ''
+      return !pendingConfirmation.value.length
+    } catch (e: any) {
+      if (!disposed && epoch === chatEpoch && sessionId.value === id) actionError.value = String(e?.message || e)
+      return false
+    } finally {
+      retryingSend.value = false
+    }
+  }
+
+  async function stopLocalRetry() {
+    if (retryingSend.value) return
+    for (const key of [...pendingConfirmation.value]) {
+      const send = openSends.find(row => row.localId === key)
+      if (!send?.outboxScope) continue
+      try { await removeSoloOutbox(send.outboxScope, send.localId) } catch {
+        actionError.value = t('pages.solo.outboxUnavailable')
+        return
+      }
+      // An acknowledgement can arrive while IndexedDB commits the removal.
+      // Stopping local retries never removes an already accepted server item.
+      if (send.serverId) continue
+      forgetSend(send)
+    }
+    actionError.value = ''
   }
 
   async function saveModelSetting(kind: 'model' | 'effort', value: string): Promise<boolean> {
@@ -1091,6 +1335,16 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     loading,
     loadError,
     actionError,
+    pendingConfirmation,
+    stopLocalRetry,
+    retryingSend,
+    retryPendingSend,
+    hasEarlier,
+    loadingEarlier,
+    earlierError,
+    loadEarlier,
+    processPages,
+    loadProcess,
     status,
     closed,
     canSend,

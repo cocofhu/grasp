@@ -74,6 +74,9 @@ func IsSecretEnvKey(k string) bool {
 func IsPlatformReservedEnvKey(k string) bool {
 	switch k {
 	case "GRASP_RUN_ID", "GRASP_NODE_ID", "CONFIG_ROOT", "AGENT_PROVIDER",
+		"GRASP_SANDBOX_RESOURCE_ID", "GRASP_EXECUTION_LINEAGE",
+		"GRASP_WORKSPACE_CONTROL_ROOT", "GRASP_WORKSPACE_RESTORE_ROOT",
+		"GRASP_WORKSPACE_FILE_LIMITS",
 		"ROOT_PASSWORD", "ACP_BRIDGE_PASSWORD":
 		return true
 	}

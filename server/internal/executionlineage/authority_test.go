@@ -191,6 +191,11 @@ func TestExecutionQuarantineCoversEveryPendingSourceWithoutPayloadIO(t *testing.
 		{"chat_turn_drafts", map[string]any{"id": "draft", "thread_id": "pm", "status": "streaming", "partial_text": ref}},
 		{"agent_cron_jobs", map[string]any{"id": "cron", "enabled": true}},
 		{"agent_cron_runs", map[string]any{"id": "cron-run", "job_id": "cron", "status": ""}},
+		{"workflow_instructions", map[string]any{"id": "instruction", "run_id": "run", "state": "dispatched", "text": ref}},
+		{"workflow_conversation_events", map[string]any{"id": "event", "run_id": "run", "version": 1, "disposition": "pending", "payload": ref}},
+		{"workspace_snapshot_jobs", map[string]any{"id": "job", "state": "unknown", "body": "{}"}},
+		{"workspace_restores", map[string]any{"id": "restore", "state": "dispatching"}},
+		{"payload_upload_holds", map[string]any{"id": "hold", "state": "unknown"}},
 		{"sandboxes", map[string]any{"id": 1, "name": "old-native-environment", "status": "running"}},
 	}
 	for _, row := range rows {
@@ -212,9 +217,6 @@ func TestExecutionQuarantineCoversEveryPendingSourceWithoutPayloadIO(t *testing.
 		t.Fatal(err)
 	}
 	for _, spec := range quarantineSpecs {
-		if !db.Migrator().HasTable(spec.table) {
-			continue // Later stack layers add their own source tables and fixtures.
-		}
 		var review models.ExecutionQuarantine
 		if err := db.Where("entity_kind = ?", string(spec.kind)).Take(&review).Error; err != nil {
 			t.Fatal("pending source escaped quarantine", spec.kind, err)

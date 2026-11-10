@@ -8,6 +8,10 @@ export type SoloTool = { id: string; title: string; status: string; summary?: st
 export type SoloStep = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
 
 export type SoloTurn = ChatMessageMetadata & {
+  replyTo?: string
+  historyMessageId?: string
+  processAvailable?: boolean
+  historyContent?: string
   files?: ArtifactAttachment[]
   id: string
   role: 'user' | 'agent' | 'system'
@@ -137,13 +141,15 @@ export function applyAcp(envelope: any, turn: SoloTurn, label: ToolLabeler, tool
 
 /** Timeline parts of a reply; tool steps read the live tool row. */
 export function partsOf(turn: SoloTurn): AgentPart[] {
-  return turn.steps.map((st) => {
+  const parts: AgentPart[] = turn.steps.filter(st => !turn.historyContent || st.kind !== 'message').map((st) => {
     if (st.kind !== 'tool') return { kind: st.kind, text: st.text }
     const tool = turn.tools[st.tool]
     return tool
       ? { kind: 'tool', title: tool.title, status: tool.status, summary: tool.summary, input: tool.input, output: tool.output }
       : { kind: 'tool', title: '' }
   })
+  if (turn.historyContent) parts.push({ kind: 'message', text: turn.historyContent })
+  return parts
 }
 
 function addMs(iso: string, ms?: number): string | undefined {
@@ -182,7 +188,18 @@ export function turnsFromMessages(messages: SoloMessage[], label: ToolLabeler, t
       turn.usage = m.usage
       turn.usageByModel = m.usageByModel
       turn.durationMs = m.durationMs
+      turn.replyTo = m.turnId || (m.id.startsWith('reply:') ? m.id.slice(6) : undefined)
+      if (m.eventLog || m.legacyEvents) {
+        turn.historyMessageId = m.id
+        turn.processAvailable = true
+        turn.historyContent = m.content
+      }
       for (const ev of m.events ?? []) applyAcp(ev, turn, label, toolFallback)
+      if (turn.historyContent) {
+        turn.text = m.content
+        turn.steps = turn.steps.filter(step => step.kind !== 'message')
+        if (m.content) turn.steps.push({ kind: 'message', text: m.content })
+      }
       if (!turn.steps.length && m.content) {
         turn.text = m.content
         turn.steps.push({ kind: 'message', text: m.content })

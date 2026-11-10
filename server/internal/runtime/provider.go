@@ -19,6 +19,12 @@ import (
 
 // Options configures the execution providers (mainly the sandbox backend).
 type Options struct {
+	// CheckExecution performs fresh independent-authority and SQL quarantine
+	// checks outside any transaction immediately before native execution.
+	CheckExecution func(context.Context, NodeReq) error
+	// NativeAuthorization validates current scope/model/credential dependencies
+	// outside SQL and returns a nonsecret digest bound into the original receipt.
+	NativeAuthorization func(context.Context, NodeReq) (string, error)
 	// RecordUsage receives each actual turn before result aggregation or retry.
 	// Implementations must use the operation id to make replay idempotent.
 	RecordUsage  func(NodeReq, *sandbox.ChatResult, error)
@@ -36,6 +42,9 @@ type Options struct {
 	// Gateway shares named routing and local transport listeners across all
 	// execution providers and the interactive sandbox service.
 	Gateway *sandbox.GatewayClient
+	// WorkspaceOperations carries the trusted fixed startup lineage and bounded
+	// file-copy policy. Agent profiles and restored SQL cannot override it.
+	WorkspaceOperations *sandbox.WorkspaceRuntimeConfig
 	// Env is the vendor-neutral set of environment variables injected into
 	// every sandbox (protocol config.env channel).
 	Env map[string]string
@@ -142,7 +151,23 @@ type NodeReq struct {
 	WorkflowName string
 	Token        string // run-scoped MCP token, injected to the sandbox
 	NodeID       string
-	NodeType     string
+	Iteration    int // exact node visit; zero only for legacy callers
+	// StateRunID and RunAttempt identify the persisted visit that requested
+	// this resource. Zero StateRunID means attribution is unavailable; callers
+	// must not infer it from the run's most recent node.
+	StateRunID      uint
+	RunAttempt      int
+	ProviderAttempt int // exact durable attempt, zero only for legacy callers
+	// These server-owned callbacks run before native setup/prompt dispatch.
+	// They are never supplied by an HTTP body or serialized as a capability.
+	PrepareProviderAttempt  func(context.Context) (sandbox.OperationIdentity, error)
+	BeforeProviderDispatch  func(context.Context, sandbox.OperationIdentity) error
+	Operation               sandbox.OperationIdentity
+	AttachOnly              bool
+	providerAttemptPrepared bool
+	nativeOperationID       string
+	Instructions            AutoInstructions // exact-generation supplements; nil outside auto execution
+	NodeType                string
 	// Caps is the Agent's capability snapshot for this run (nil for non-Agent nodes).
 	Caps   *models.AgentCapabilities
 	Config map[string]any
@@ -414,16 +439,24 @@ type RunAborter interface {
 // RunSandboxInfo describes a per-run node sandbox so it can be recorded in the
 // platform sandbox store and shown in the sandbox UI while the node runs.
 type RunSandboxInfo struct {
-	Name           string
-	Profile        string
-	RunID          string
-	WorkflowID     string
-	WorkflowName   string
-	NodeID         string
-	Host           string
-	ACPPort        int
-	CodeServerPort int
-	RepoURL        string
+	CorrelationName string // original create placeholder, when gateway id differs
+	Iteration       int
+	StateRunID      uint
+	RunAttempt      int
+	ProviderAttempt int
+	Name            string
+	Profile         string
+	RunID           string
+	WorkflowID      string
+	WorkflowName    string
+	NodeID          string
+	Host            string
+	ACPPort         int
+	CodeServerPort  int
+	// StartupError retains an incomplete setup's original resource/attempt.
+	// It must not be reported as ready or turn into automatic reprovisioning.
+	StartupError string
+	RepoURL      string
 	// HomeDir is the host cursor-home dir bind-mounted into the container; the
 	// store keeps it so it can be removed when the sandbox is finally destroyed.
 	HomeDir string

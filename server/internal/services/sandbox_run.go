@@ -24,8 +24,8 @@ var ErrSandboxAbsent = errors.New("not found")
 // node's live log as "starting" instead of a 404 during the cold-start window.
 // The row uses a placeholder name; RegisterRunSandbox later adopts the real
 // gateway id and flips it to "running", or UnregisterRunSandbox removes it on
-// failure. Implements runtime.RunSandboxBeginner. Keyed by run+node so a retry
-// replaces the previous placeholder row.
+// failure. Implements runtime.RunSandboxBeginner. Each provisioning attempt
+// has its own name, preserving prior retries and loop iterations.
 func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Name == "" {
 		return
@@ -40,10 +40,12 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 		"workflow_id":   info.WorkflowID,
 		"workflow_name": info.WorkflowName,
 		"node_id":       info.NodeID,
-		"home_dir":      info.HomeDir,
-		"error":         "",
-		"destroy_at":    nil,
-		"updated_at":    time.Now(),
+		"iteration":     info.Iteration,
+		"state_run_id":  info.StateRunID, "run_attempt": info.RunAttempt, "provider_attempt": info.ProviderAttempt,
+		"home_dir":   info.HomeDir,
+		"error":      "",
+		"destroy_at": nil,
+		"updated_at": time.Now(),
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
@@ -51,7 +53,19 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Shared {
 		fields["shared"] = true
 	}
-	if err := s.db.Where(models.Sandbox{RunID: info.RunID, NodeID: info.NodeID, Purpose: "run"}).
+	if info.ProviderAttempt > 0 && s.execution != nil {
+		if err := s.recordExactWorkflowSandbox(context.Background(), info, fields, true); err != nil {
+			log.Warn().Err(err).Str("name", info.Name).Msg("begin exact workflow workspace rejected")
+			return
+		}
+		s.mu.Lock()
+		s.runActive[info.Name] = true
+		s.mu.Unlock()
+		return
+	}
+	// A retry or loop iteration owns a distinct resource. Never overwrite a
+	// retired attempt's row: it can be the only copy of uncommitted files.
+	if err := s.db.Where(models.Sandbox{Name: info.Name}).
 		Assign(fields).FirstOrCreate(&models.Sandbox{}).Error; err != nil {
 		log.Warn().Err(err).Str("name", info.Name).Msg("begin run sandbox failed")
 	}
@@ -84,10 +98,15 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		"workflow_id":      info.WorkflowID,
 		"workflow_name":    info.WorkflowName,
 		"node_id":          info.NodeID,
-		"home_dir":         info.HomeDir,
-		"error":            "",
-		"destroy_at":       nil,
-		"updated_at":       time.Now(),
+		"iteration":        info.Iteration,
+		"state_run_id":     info.StateRunID, "run_attempt": info.RunAttempt, "provider_attempt": info.ProviderAttempt,
+		"home_dir":   info.HomeDir,
+		"error":      "",
+		"destroy_at": nil,
+		"updated_at": time.Now(),
+	}
+	if info.StartupError != "" {
+		fields["status"], fields["error"] = "error", truncErr(errors.New(info.StartupError))
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
@@ -95,26 +114,71 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Shared {
 		fields["shared"] = true
 	}
-	s.markVisitSandboxReady(info.RunID, info.NodeID, fields["updated_at"].(time.Time))
+	if info.ProviderAttempt > 0 && s.execution != nil {
+		if err := s.recordExactWorkflowSandbox(context.Background(), info, fields, false); err != nil {
+			log.Warn().Err(err).Str("name", info.Name).Msg("register exact workflow workspace rejected")
+			return
+		}
+		s.mu.Lock()
+		delete(s.runActive, info.CorrelationName)
+		if info.StartupError == "" {
+			s.runActive[info.Name] = true
+		} else {
+			delete(s.runActive, info.Name)
+		}
+		s.mu.Unlock()
+		return
+	}
+	if info.StartupError == "" {
+		s.markVisitSandboxReady(info, fields["updated_at"].(time.Time))
+	}
 	// Adopt the pre-registered creating/pulling placeholder row (by run+node) in place,
 	// swapping its placeholder name for the gateway id. Falls back to an upsert
 	// by name when no placeholder exists (registry without RunSandboxBeginner).
 	var existing models.Sandbox
-	err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ? AND status IN ?",
+	query := s.db.Where("run_id = ? AND node_id = ? AND purpose = ? AND status IN ?",
 		info.RunID, info.NodeID, "run", []string{"creating", "pulling"}).
-		Order("updated_at desc").First(&existing).Error
+		Where("iteration = ?", info.Iteration)
+	if info.CorrelationName != "" {
+		query = query.Where("name = ?", info.CorrelationName)
+	}
+	if info.StateRunID != 0 {
+		if info.CorrelationName != "" {
+			// A rolling upgrade can leave an unversioned placeholder from the
+			// old BeginRunSandbox. Only the exact correlation name authorizes
+			// adopting it and filling its missing provenance. Without that name,
+			// a zero source might belong to another attempt of this same visit.
+			query = query.Where("((state_run_id = ? AND run_attempt = ? AND provider_attempt = ?) OR (COALESCE(state_run_id, 0) = 0 AND COALESCE(run_attempt, 0) = 0 AND COALESCE(provider_attempt, 0) = 0))",
+				info.StateRunID, info.RunAttempt, info.ProviderAttempt)
+		} else {
+			query = query.Where("state_run_id = ? AND run_attempt = ? AND provider_attempt = ?",
+				info.StateRunID, info.RunAttempt, info.ProviderAttempt)
+		}
+	}
+	err := query.Order("updated_at desc").First(&existing).Error
 	if err == nil {
 		oldName := existing.Name
-		if uerr := s.db.Model(&models.Sandbox{}).Where("id = ?", existing.ID).
-			Updates(fields).Error; uerr != nil {
-			log.Warn().Err(uerr).Str("name", info.Name).Msg("adopt run sandbox failed")
+		result := s.db.Model(&models.Sandbox{}).Where("id = ? AND name = ? AND status IN ?", existing.ID, oldName, []string{"creating", "pulling"}).
+			Where("COALESCE(state_run_id, 0) = ? AND COALESCE(run_attempt, 0) = ? AND COALESCE(provider_attempt, 0) = ?", existing.StateRunID, existing.RunAttempt, existing.ProviderAttempt).
+			Updates(fields)
+		if result.Error != nil || result.RowsAffected != 1 {
+			log.Warn().Err(result.Error).Str("name", info.Name).Msg("run sandbox placeholder changed before adoption")
+			return
 		}
 		s.mu.Lock()
 		if oldName != "" && oldName != info.Name {
 			delete(s.runActive, oldName)
 		}
-		s.runActive[info.Name] = true
+		if info.StartupError == "" {
+			s.runActive[info.Name] = true
+		} else {
+			delete(s.runActive, info.Name)
+		}
 		s.mu.Unlock()
+		return
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Warn().Err(err).Str("name", info.Name).Msg("find run sandbox placeholder failed")
 		return
 	}
 	if err := s.db.Where(models.Sandbox{Name: info.Name}).
@@ -122,24 +186,34 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		log.Warn().Err(err).Str("name", info.Name).Msg("register run sandbox failed")
 	}
 	s.mu.Lock()
-	s.runActive[info.Name] = true
+	if info.StartupError == "" {
+		s.runActive[info.Name] = true
+	} else {
+		delete(s.runActive, info.Name)
+	}
 	s.mu.Unlock()
 }
 
 // markVisitSandboxReady stamps the node's active visit with the first time its
 // sandbox came up, so the boot steps stay readable after the sandbox is gone.
-func (s *SandboxService) markVisitSandboxReady(runID, nodeID string, at time.Time) {
-	if runID == "" || nodeID == "" {
+func (s *SandboxService) markVisitSandboxReady(info runtime.RunSandboxInfo, at time.Time) {
+	if info.RunID == "" || info.NodeID == "" {
 		return
 	}
 	var sr models.StateRun
-	if err := s.db.Select("id").Where("run_id = ? AND node_id = ? AND status IN ?", runID, nodeID,
-		[]string{"running", "waiting_human"}).Order("id desc").First(&sr).Error; err != nil {
+	query := s.db.Select("id").Where("run_id = ? AND node_id = ? AND status IN ?", info.RunID, info.NodeID,
+		[]string{"running", "waiting_human"})
+	if info.StateRunID != 0 {
+		query = query.Where("id = ? AND iteration = ? AND attempt = ?", info.StateRunID, info.Iteration, info.RunAttempt)
+	} else if info.Iteration != 0 {
+		query = query.Where("iteration = ?", info.Iteration)
+	}
+	if err := query.Order("id desc").First(&sr).Error; err != nil {
 		return
 	}
 	if err := s.db.Model(&models.StateRun{}).Where("id = ? AND sandbox_ready_at IS NULL", sr.ID).
 		Update("sandbox_ready_at", at).Error; err != nil {
-		log.Warn().Err(err).Str("run", runID).Str("node", nodeID).Msg("stamp sandbox ready failed")
+		log.Warn().Err(err).Str("run", info.RunID).Str("node", info.NodeID).Msg("stamp sandbox ready failed")
 	}
 }
 

@@ -200,19 +200,17 @@ func TestReattachedRunCompletedBeforeSlotRelease(t *testing.T) {
 	committed := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
-	if err := db.Callback().Update().After("gorm:commit_or_rollback_transaction").Register("test:park-after-finish", func(tx *gorm.DB) {
-		if tx.Statement.Table != "runs" {
-			return
-		}
-		if m, ok := tx.Statement.Dest.(map[string]any); ok && m["status"] == "completed" {
+	// The status and durable outbox now commit in an outer transaction. A GORM
+	// per-UPDATE callback is still inside that transaction, so observe the audit
+	// notification that finish emits after the actual commit instead.
+	e.SetAuditRecorder(func(record services.AuditRecord) {
+		if record.ResourceID == "r" && record.Action == models.AuditActionRunCompleted {
 			once.Do(func() {
 				close(committed)
 				<-release
 			})
 		}
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
 	now := time.Now()
 	db.Create(&models.Run{ID: "r", WorkflowID: "w", Status: "running", Graph: reattachGraph(), StartedAt: now, McpToken: "tok-r"})
 	db.Create(&models.StateRun{RunID: "r", NodeID: "input", NodeType: "input", Iteration: 1, Status: "completed", StartedAt: &now})

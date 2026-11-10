@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
@@ -116,6 +117,11 @@ func (s *GateAutoInvokeService) Enqueue(task GateAutoTask) {
 }
 
 func (s *GateAutoInvokeService) shouldEnqueue(task GateAutoTask) (bool, string) {
+	if s.pm != nil && s.pm.execution != nil {
+		if err := s.pm.execution.Check(context.Background(), executionlineage.Entity{Kind: executionlineage.EntityRun, ID: task.RunID}); err != nil {
+			return false, "execution authority unavailable or restored task needs review"
+		}
+	}
 	p, ok := s.effectiveWorkspace(task)
 	if !ok {
 		return false, "workspace_not_found"

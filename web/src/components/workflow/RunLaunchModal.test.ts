@@ -80,6 +80,21 @@ beforeEach(() => {
 })
 
 describe('RunLaunchModal', () => {
+  it('requires a user click for Solo, retries with one launch key and stays in the same chat', async () => {
+    apiMocks.startRun.mockRejectedValueOnce(new Error('connection interrupted')).mockResolvedValueOnce({ id: 'from-solo' })
+    const wrapper = mountModal(true, { soloSessionId: 'solo-one', workflowVersion: 1, publishedSnapshot: true, firstMessage: { text: 'fix the issue' } })
+    await flushPromises()
+    expect(apiMocks.startRun).not.toHaveBeenCalled()
+    await (wrapper.vm as any).startRun()
+    const key = apiMocks.startRun.mock.calls[0]?.[5]?.idempotencyKey
+    expect(key).toEqual(expect.any(String))
+    await (wrapper.vm as any).startRun()
+    expect(apiMocks.startRun.mock.calls[1]?.[5]).toEqual(expect.objectContaining({ soloSessionId: 'solo-one', expectedWorkflowVersion: 1, idempotencyKey: key, publishedSnapshot: true }))
+    expect(wrapper.emitted('started')?.[0]).toEqual(['from-solo'])
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(routerPush).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('shows form when open with workflow name', async () => {
     const wrapper = mountModal(true)
     await flushPromises()

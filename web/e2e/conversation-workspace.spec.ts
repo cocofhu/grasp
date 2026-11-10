@@ -75,6 +75,7 @@ const previewIssue = { kind: 'github_issue' as const, target: 'acme/web#12', tit
 
 async function choosePreviewModel(chat: FrameLocator, id: string, name: string) {
   const picker = chat.getByTestId('solo-model-select')
+  await expect(picker.getByRole('button', { name: 'Model A' })).toBeEnabled()
   await picker.getByRole('button', { name: 'Model A' }).click()
   await chat.getByTestId(`solo-model-option-${id}`).click()
   await expect(picker).toContainText(name)
@@ -106,7 +107,7 @@ async function openConversation(page: Page, width = 1440, theme = 'light') {
 
 test('Solo opens a registered app and the pinned HTML from its thumbnail', async ({ page }) => {
   await installWorkspaceApiDefaults(page)
-  const session = { id: 'preview-check', title: 'Solo preview', agentName: 'Demo', status: 'running', artifactRunId: 'solo-preview-check', sandboxId: 42 }
+  const session = { id: 'preview-check', userId: 'workspace-config-test', title: 'Solo preview', agentName: 'Demo', status: 'running', artifactRunId: 'solo-preview-check', sandboxId: 42 }
   const runId = session.artifactRunId
   const content = '<!doctype html><html><body><h1>Solo preview smoke</h1></body></html>'
   const artifact = { id: 'art-demo', runId, nodeId: 'solo', name: 'demo.html', kind: 'html', sizeBytes: content.length, revision: 1, createdAt: '2026-11-03T00:00:00Z' }
@@ -144,7 +145,7 @@ test('a direct Solo preview streams the reply to a message with a picked element
   await installWorkspaceApiDefaults(page)
   const grasp = new URL(baseURL!).origin
   const direct = grasp
-  const session = { id: 'solo-chat-check', title: 'Solo preview', agentName: 'Demo', status: 'running', artifactRunId: 'solo-preview-chat-check', sandboxId: 42 }
+  const session = { id: 'solo-chat-check', userId: 'workspace-config-test', title: 'Solo preview', agentName: 'Demo', status: 'running', artifactRunId: 'solo-preview-chat-check', sandboxId: 42 }
   const runId = session.artifactRunId
   const ticket = { ticket: 'solo-preview-ticket', runId, nodeId: 'solo', expiresAt: '2099-01-01T00:00:00Z' }
   const token = 'solo-preview-token'
@@ -195,7 +196,11 @@ test('a direct Solo preview streams the reply to a message with a picked element
       contentType: 'image/png',
       body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/7fkAAAAASUVORK5CYII=', 'base64'),
     })
-    if (path.endsWith('/turns')) return route.fulfill({ json: { waiting: 1 } })
+    if (path.endsWith('/turn-requests')) {
+      const body = route.request().postDataJSON()
+      expect(body.clientMessageId).toEqual(expect.stringMatching(/^local-/))
+      return route.fulfill({ json: { waiting: 1, turnId: 'submitted', clientMessageId: body.clientMessageId, state: 'queued' } })
+    }
     if (path.endsWith('/model-catalog')) return route.fulfill({ json: previewModelCatalog })
     if (path.endsWith('/model')) {
       const body = route.request().postDataJSON()
@@ -251,7 +256,7 @@ test('a direct Solo preview streams the reply to a message with a picked element
   await expect(drawer.getByTestId('solo-preview-pick')).toContainText('#feature')
   await expect(drawer.getByTestId('solo-input')).toHaveValue('Update this heading')
   await expect(drawer.getByTestId('solo-plus-menu')).toHaveCount(0)
-  const submitted = preview.waitForRequest(request => request.url().endsWith('/' + runId + '/turns'))
+  const submitted = preview.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/' + runId + '/turn-requests'))
   await drawer.getByTestId('solo-send').click()
   const body = (await submitted).postDataJSON()
   expect(body.text).toBe('Update this heading')
@@ -261,7 +266,7 @@ test('a direct Solo preview streams the reply to a message with a picked element
   await expect(transcript.getByText('Selected page elements:')).toHaveCount(0)
   const activity = transcript.getByTestId('solo-agent-activity')
   await expect(activity).toContainText('等待沙箱就绪')
-  const item = { id: 'submitted', text: body.text, images: [], annotations: body.annotations }
+  const item = { id: 'submitted', clientMessageId: body.clientMessageId, text: body.text, images: [], annotations: body.annotations }
   publish?.({ type: 'session', event: 'turn_begin', seq: 1, item, userMsgId: item.id })
   publish?.({ type: 'session', event: 'phase', seq: 2, phase: 'running' })
   await expect(activity).toContainText('Agent 正在处理')
@@ -280,7 +285,7 @@ test('a direct Solo preview streams the reply to a message with a picked element
   await expect(transcript.getByTestId('solo-agent-message')).toHaveText(reply)
   const createdAt = new Date().toISOString()
   savedTurn = [
-    { id: item.id, sessionId: session.id, role: 'user', content: item.text, annotations: item.annotations, createdAt },
+    { id: item.id, clientMessageId: item.clientMessageId, sessionId: session.id, role: 'user', content: item.text, annotations: item.annotations, createdAt },
     { id: 'reply', sessionId: session.id, role: 'assistant', content: reply, status: 'ok', createdAt },
   ]
   publish?.({ type: 'session', event: 'turn_done', seq: 4, userMsgId: item.id })

@@ -1,9 +1,9 @@
 package services
 
 import (
+	"context"
 	"errors"
 
-	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -19,19 +19,16 @@ func (s *SoloService) CurrentArtifactTurn(runID, nodeID string) (ArtifactTurn, e
 	if err := s.db.Where("id = ? AND sandbox_id = ? AND status = ?", sb.ThreadID, sb.ID, models.SoloStatusRunning).First(&session).Error; err != nil {
 		return ArtifactTurn{}, err
 	}
-	c := s.lookup(sb.ThreadID)
-	if c == nil {
-		return ArtifactTurn{}, errors.New("there is no active Solo turn")
+	v, err := s.durable.Snapshot(context.Background(), soloQueueScope(sb.ThreadID))
+	if err != nil {
+		return ArtifactTurn{}, err
 	}
-	v := c.sess.View()
-	if !v.HasActive || v.Active == nil {
+	if v.Active == nil {
 		return ArtifactTurn{}, errors.New("there is no active Solo turn")
 	}
 	return ArtifactTurn{SessionID: sb.ThreadID, TurnID: v.Active.ID, SandboxID: sb.ID}, nil
 }
 
 func (s *SoloService) ArtifactDelivered(_, _ string, turn ArtifactTurn, file models.ArtifactAttachment) {
-	if c := s.lookup(turn.SessionID); c != nil {
-		c.stream.Session("artifact", map[string]any{"userMsgId": turn.TurnID, "file": file}, chatsession.KeepAppend)
-	}
+	s.acquire(turn.SessionID).publish("artifact", map[string]any{"userMsgId": turn.TurnID, "file": file})
 }

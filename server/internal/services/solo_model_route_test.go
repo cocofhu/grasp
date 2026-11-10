@@ -2,11 +2,14 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/modelrouting"
@@ -65,13 +68,23 @@ func TestSoloRouteSettingsNotifyViewersWithoutApplyingTheNextTurn(t *testing.T) 
 	expectSelection := func(group, model, backend, effort, pendingChange string, choices []string) {
 		t.Helper()
 		for _, viewer := range viewers {
-			select {
-			case event := <-viewer:
-				if event.Event != SoloEventModel || event.Payload["currentConfigurationId"] != group || event.Payload["currentModelId"] != model || event.Payload["currentModelSet"] != true || event.Payload["backend"] != backend || event.Payload["reasoningEffort"] != effort || event.Payload["modelNotice"] != "" || event.Payload["pendingChange"] != pendingChange || !reflect.DeepEqual(event.Payload["reasoningEfforts"], choices) {
-					t.Fatalf("incomplete settings notification: %#v", event)
+			deadline := time.After(3 * time.Second)
+			for {
+				select {
+				case event := <-viewer:
+					if event.Event == chatsession.EventQueueState {
+						continue
+					}
+					var actualChoices []string
+					data, _ := json.Marshal(event.Payload["reasoningEfforts"])
+					_ = json.Unmarshal(data, &actualChoices)
+					if event.Event != SoloEventModel || event.Payload["currentConfigurationId"] != group || event.Payload["currentModelId"] != model || event.Payload["currentModelSet"] != true || event.Payload["backend"] != backend || event.Payload["reasoningEffort"] != effort || event.Payload["modelNotice"] != "" || event.Payload["pendingChange"] != pendingChange || !reflect.DeepEqual(actualChoices, choices) {
+						t.Fatalf("incomplete settings notification: %#v", event)
+					}
+				case <-deadline:
+					t.Fatal("successful settings save did not notify every subscribed viewer")
 				}
-			default:
-				t.Fatal("successful settings save did not notify every subscribed viewer")
+				break
 			}
 		}
 	}
@@ -233,6 +246,18 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 	solo, _, _, db := newSoloFixture(t, port, 3)
 	insertSoloModelConfig(t, db)
 	ctx := context.Background()
+	// GORM's callback registry is not safe to recompile while the durable
+	// worker queries. Register before starting the session; switch only the
+	// injected failure, leaving the private fixture's registry immutable.
+	var failHistory atomic.Bool
+	const callback = "fail-history-handoff-query"
+	if err := db.Callback().Query().Before("gorm:query").Register(callback, func(tx *gorm.DB) {
+		if failHistory.Load() && tx.Statement.Table == "solo_messages" {
+			tx.AddError(errors.New("history temporarily unavailable"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
 	view, err := solo.Create(ctx, "alice", SoloCreateInput{AgentName: "agentA"})
 	if err != nil {
 		t.Fatal(err)
@@ -248,15 +273,7 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 	if _, err := solo.SetCurrentModel(ctx, view.ID, "alice", "aux"); err != nil {
 		t.Fatal(err)
 	}
-	const callback = "fail-history-handoff-query"
-	if err := db.Callback().Query().Before("gorm:query").Register(callback, func(tx *gorm.DB) {
-		if tx.Statement.Table == "solo_messages" {
-			tx.AddError(errors.New("history temporarily unavailable"))
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Callback().Query().Remove(callback) })
+	failHistory.Store(true)
 	if _, err := solo.Send(view.ID, "alice", "continue after switching", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -271,9 +288,7 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 	if !row.ModelContextPending {
 		t.Fatal("failed handoff dropped the context retry marker")
 	}
-	if err := db.Callback().Query().Remove(callback); err != nil {
-		t.Fatal(err)
-	}
+	failHistory.Store(false)
 	if _, err := solo.Send(view.ID, "alice", "retry with context", nil); err != nil {
 		t.Fatal(err)
 	}

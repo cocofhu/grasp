@@ -217,8 +217,8 @@ func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (sb *s
 			return nil, nil, "", true, err
 		}
 		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
-			Msg("shared sandbox unusable; replacing it")
-		c.dropSharedSandbox(req.RunID, ss)
+			Msg("shared sandbox setup unconfirmed; original workspace retained")
+		return nil, nil, "", true, fmt.Errorf("%w: %v", errSandboxStartupUnconfirmed, err)
 	}
 	sb, acp, home, spec, err := c.openNodeSandbox(ctx, req)
 	if err != nil {
@@ -275,7 +275,7 @@ func (c *acpProvider) reuseSharedSandbox(ctx context.Context, req NodeReq, ss *s
 	}
 	c.syncSharedBranches(ctx, sb, req)
 	acp := sb.ACP().
-		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
+		WithSession(sb.EffectiveWorkspaceDir(), c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"]).
 		WithExecution(c.executionForEnvironment(req, spec.Env))
@@ -333,16 +333,6 @@ func (c *acpProvider) releaseSharedSandbox(sb *sandbox.Sandbox, acp *sandbox.ACP
 	return true
 }
 
-// dropSharedSandbox destroys a broken shared sandbox.
-func (c *acpProvider) dropSharedSandbox(runID string, ss *sharedRunSandbox) {
-	if c.shared.take(runID, ss) == nil {
-		return
-	}
-	c.deregisterRunSandbox(ss.sb.Name)
-	ss.sb.Destroy(context.Background())
-	removeHome(ss.home)
-}
-
 // retireSharedRunSandbox keeps a finished run's shared sandbox for the debug
 // TTL, like a per-node sandbox at the end of its node.
 func (c *acpProvider) retireSharedRunSandbox(runID string) {
@@ -369,18 +359,21 @@ func (c *acpProvider) registerSharedRunSandbox(req NodeReq, sb *sandbox.Sandbox,
 		return
 	}
 	c.registry.RegisterRunSandbox(RunSandboxInfo{
-		Name:           sb.Name,
-		Profile:        models.AgentProfile(req.Config),
-		RunID:          req.RunID,
-		WorkflowID:     req.WorkflowID,
-		WorkflowName:   req.WorkflowName,
-		NodeID:         req.NodeID,
-		Host:           sb.Host,
-		ACPPort:        sb.Port,
-		CodeServerPort: sb.CodeServerPort,
-		RepoURL:        firstRepoURL(req),
-		HomeDir:        home,
-		Token:          req.Token,
-		Shared:         true,
+		StateRunID: req.StateRunID, RunAttempt: req.RunAttempt, ProviderAttempt: req.ProviderAttempt,
+		Iteration:       req.Iteration,
+		CorrelationName: sb.CorrelationName,
+		Name:            sb.Name,
+		Profile:         models.AgentProfile(req.Config),
+		RunID:           req.RunID,
+		WorkflowID:      req.WorkflowID,
+		WorkflowName:    req.WorkflowName,
+		NodeID:          req.NodeID,
+		Host:            sb.Host,
+		ACPPort:         sb.Port,
+		CodeServerPort:  sb.CodeServerPort,
+		RepoURL:         firstRepoURL(req),
+		HomeDir:         home,
+		Token:           req.Token,
+		Shared:          true,
 	})
 }

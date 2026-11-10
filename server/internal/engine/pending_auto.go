@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"context"
+	"gorm.io/gorm"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -156,9 +158,13 @@ func (e *Engine) saveRunCheckpoints(run *models.Run) {
 	// Updates skips a nil or empty map, which would leave a cleared mark in
 	// the database. An empty object is the cleared value.
 	if len(run.Checkpoints) == 0 {
-		logDB(e.db.Model(&models.Run{}).Where("id = ?", run.ID).Update("checkpoints", "{}"), run.ID, "clear run checkpoints")
+		logDB(e.executionMutation(context.Background(), run.ID, func(db *gorm.DB) *gorm.DB {
+			return db.Model(&models.Run{}).Where("id = ?", run.ID).Update("checkpoints", "{}")
+		}), run.ID, "clear run checkpoints")
 		return
 	}
-	logDB(e.db.Model(&models.Run{}).Where("id = ?", run.ID).
-		Select("Checkpoints").Updates(&models.Run{Checkpoints: run.Checkpoints}), run.ID, "save run checkpoints")
+	logDB(e.executionMutation(context.Background(), run.ID, func(db *gorm.DB) *gorm.DB {
+		return db.Model(&models.Run{}).Where("id = ?", run.ID).
+			Select("Checkpoints").Updates(&models.Run{Checkpoints: run.Checkpoints})
+	}), run.ID, "save run checkpoints")
 }

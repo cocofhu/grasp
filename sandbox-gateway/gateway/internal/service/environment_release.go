@@ -171,6 +171,9 @@ func (r *EnvironmentReleases) Preview(ctx context.Context, resource string, in E
 	if err := r.lifecycleGuard(ctx, resource); err != nil {
 		return EnvironmentReleaseView{}, err
 	}
+	if err := r.sandbox.store.GuardColdStart(ctx, resource); err != nil {
+		return EnvironmentReleaseView{}, err
+	}
 	plan, err := r.native.PreviewEnvironmentRelease(ctx, resource)
 	if err != nil {
 		return EnvironmentReleaseView{}, err
@@ -245,6 +248,14 @@ func (r *EnvironmentReleases) Confirm(ctx context.Context, resource, id string, 
 		var sb models.Sandbox
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&sb, "id = ?", resource).Error; err != nil {
 			return err
+		}
+		var cold models.ColdStart
+		coldErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("resource = ?", resource).Take(&cold).Error
+		if coldErr != nil && !errors.Is(coldErr, gorm.ErrRecordNotFound) {
+			return coldErr
+		}
+		if coldErr == nil && cold.State != "started" {
+			return driver.ErrColdStartUnknown
 		}
 		if sb.Env()["GRASP_EXECUTION_LINEAGE"] != row.Lineage {
 			return ErrReleaseConflict

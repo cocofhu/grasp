@@ -4,11 +4,12 @@
 // control plane + sandbox containers) through Docker Compose and OpenCode.
 // CI runs the local model fixture. Set DEEPSEEK_API_KEY for a live model run.
 //
-// Build both images from the same checkout so the sandbox IMAGE_LEVEL satisfies
+// Build all images from the same checkout so the sandbox IMAGE_LEVEL satisfies
 // the runtime bundle shipped in the control plane image.
 //
 //	docker build -t universal-sandbox:e2e-restart sandbox-gateway/sandbox
 //	docker build -f server/Dockerfile -t grasp:e2e .
+//	docker build -f sandbox-gateway/Dockerfile -t sandbox-gateway:e2e-restart sandbox-gateway
 //	cd server
 //	DEEPSEEK_API_KEY=... SANDBOX_IMAGE=universal-sandbox:e2e-restart GRASP_SANDBOX_IMAGE=universal-sandbox:e2e-restart go test -tags e2ereal ./e2e -run TestRestartReattach -v -timeout 30m
 package e2e
@@ -22,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -33,10 +35,12 @@ import (
 	"time"
 )
 
+var (
+	e2ePort    = testPort("GRASP_RESTART_PORT", "18080")
+	e2eGateway = testPort("GRASP_RESTART_GATEWAY_PORT", "18899")
+)
+
 const (
-	e2eProject   = "grasp-e2e"
-	e2ePort      = "18080"
-	e2eGateway   = "18899"
 	sleepSeconds = 97
 	// Demo account from start.sh: admin / demo1234.
 	demoUsers    = `[{"username":"admin","password_hash":"$2a$10$EY.SdHq0p6drMz6U9JVrz.Kq0jNkg7TWmsVUFLtB1dL1yIelDkITi","is_admin":true}]`
@@ -50,6 +54,16 @@ type stack struct {
 	env      []string
 	artifact string
 	client   *http.Client
+	dataRoot string
+	gateKey  string
+	image    string
+}
+
+func testPort(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func TestRestartReattach(t *testing.T) {
@@ -126,13 +140,23 @@ func TestRestartReattach(t *testing.T) {
 		t.Errorf("work node output does not mention marker %s", marker)
 	}
 
-	// The run queued across the restart is admitted once A frees the slot.
-	// Its own model round-trip proves nothing more about the restart.
-	s.waitSandboxRunning(runB, 6*time.Minute)
-	if st := s.runStatus(runB); st != "running" {
-		t.Fatalf("run B status = %q after A finished, want running", st)
+	// Checkpoint sealing releases a node's slot, so B may run before A's
+	// output node and be sealing its own checkpoint when A completes.
+	// Prove that the queued run finishes once, rather than requiring one
+	// transient status or cancelling it before its result is checked.
+	b := s.waitRunDone(runB, 10*time.Minute)
+	if b.Status != "completed" {
+		t.Fatalf("queued run B finished %q, want completed", b.Status)
 	}
-	s.mustDo(http.MethodPost, "/api/runs/"+runB+"/cancel", nil, nil)
+	if n := len(b.NodeExecutions["work"]); n != 1 {
+		t.Errorf("queued work node ran %d times, want one visit", n)
+	}
+	if got := s.runSandboxes(runB); len(got) != 1 {
+		t.Errorf("queued run B sandboxes = %v, want exactly one", got)
+	}
+	if !strings.Contains(string(b.NodeRuns["work"]), marker+"-B") {
+		t.Errorf("queued work output does not mention marker %s-B", marker)
+	}
 }
 
 func newStack(t *testing.T) *stack {
@@ -142,6 +166,18 @@ func newStack(t *testing.T) *stack {
 		t.Fatal(err)
 	}
 	root := filepath.Clean(filepath.Join(wd, "..", ".."))
+	for _, port := range []string{e2ePort, e2eGateway} {
+		listener, err := net.Listen("tcp", ":"+port)
+		if err != nil {
+			t.Fatalf("restart fixture port %s already in use: %v", port, err)
+		}
+		_ = listener.Close()
+	}
+	dataRoot, err := os.MkdirTemp(root, ".localdata-e2e-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateKey := randHex(32)
 	image := os.Getenv("GRASP_IMAGE")
 	if image == "" {
 		image = "grasp:e2e"
@@ -152,14 +188,22 @@ func newStack(t *testing.T) *stack {
 	_, _ = rand.Read(secret)
 	s := &stack{
 		t: t, root: root, api: "http://127.0.0.1:" + e2ePort, artifact: artifact,
+		dataRoot: dataRoot, gateKey: gateKey, image: image,
 		env: append(os.Environ(),
-			"COMPOSE_PROJECT_NAME="+e2eProject,
+			"COMPOSE_PROJECT_NAME=grasp-e2e-"+randHex(6),
+			"GRASP_RESTART_DATA_ROOT="+dataRoot,
 			"GRASP_IMAGE="+image,
 			"GRASP_PORT="+e2ePort,
 			"GRASP_GATEWAY_PORT="+e2eGateway,
 			"GRASP_SECRETS_KEY="+base64.StdEncoding.EncodeToString(secret),
 			"GRASP_DOCTOR_TOKEN="+randHex(32),
 			"GRASP_AUTH_USERS="+demoUsers,
+			"SANDBOX_GATEWAY_API_KEY="+gateKey,
+			"GRASP_SANDBOX_GATEWAY_API_KEY="+gateKey,
+			"SBGW_API_KEYS="+gateKey,
+			"GRASP_STORAGE_DRIVER=local",
+			"GRASP_EXECUTION_CONTROL_DRIVER=local",
+			"GRASP_EXECUTION_CONTROL_BLOBS_ROOT=/execution-control",
 		),
 	}
 	jar, _ := cookiejar.New(nil)
@@ -183,6 +227,11 @@ func (s *stack) compose(args ...string) string {
 
 func (s *stack) up() {
 	s.t.Helper()
+	// This fixture owns a fresh SQL/payload/control/workdir set. Ordinary
+	// restart below deliberately reuses that identity and never initializes it.
+	s.compose("run", "--rm", "--no-deps", "--entrypoint", "node", "-v",
+		filepath.Join(s.root, "scripts", "init-execution.mjs")+":/opt/grasp-init-execution.mjs:ro",
+		"grasp", "/opt/grasp-init-execution.mjs", "--offline")
 	s.compose("up", "-d", "--wait")
 	s.login()
 }
@@ -200,30 +249,37 @@ func (s *stack) down() {
 	}
 	// The gateway knows every sandbox it created, including ones the control
 	// plane already let go of.
-	for _, id := range gatewaySandboxes() {
+	for _, id := range s.gatewaySandboxes() {
 		c := "sbx-" + id
 		if out, err := exec.Command("docker", "logs", "--timestamps", c).CombinedOutput(); err == nil {
 			_ = os.WriteFile(filepath.Join(s.artifact, "sandbox-"+id+".log"), out, 0o644)
 		}
-		gatewayDelete(id)
+		s.gatewayDelete(id)
 		_ = exec.Command("docker", "rm", "-f", c).Run()
 	}
 	cmd = exec.Command("docker", "compose", "-f", "compose.release.yaml", "-f", "server/e2e/compose.e2e.yaml", "down", "--volumes", "--remove-orphans", "-t", "5")
 	cmd.Dir, cmd.Env = s.root, s.env
-	_ = cmd.Run()
-	_ = os.RemoveAll(filepath.Join(s.root, ".localdata-e2e"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		s.t.Errorf("retained fixture data because compose shutdown failed: %v\n%s", err, out)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := removeRestartFixtureData(ctx, s.dataRoot, s.root, s.image); err != nil {
+		s.t.Errorf("retained fixture data because owned cleanup failed: %v", err)
+	}
 }
 
-const gatewayAPI = "http://127.0.0.1:" + e2eGateway + "/api/v1/sandboxes"
+func gatewayAPI() string { return "http://127.0.0.1:" + e2eGateway + "/api/v1/sandboxes" }
 
-func gatewayRequest(method, url string) (*http.Response, error) {
+func (s *stack) gatewayRequest(method, url string) (*http.Response, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer grasp-local-demo")
+	req.Header.Set("Authorization", "Bearer "+s.gateKey)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -234,8 +290,8 @@ func gatewayRequest(method, url string) (*http.Response, error) {
 	return resp, nil
 }
 
-func gatewaySandboxes() []string {
-	resp, err := gatewayRequest(http.MethodGet, gatewayAPI)
+func (s *stack) gatewaySandboxes() []string {
+	resp, err := s.gatewayRequest(http.MethodGet, gatewayAPI())
 	if err != nil {
 		return nil
 	}
@@ -254,8 +310,8 @@ func gatewaySandboxes() []string {
 	return ids
 }
 
-func gatewayDelete(id string) {
-	_, _ = gatewayRequest(http.MethodDelete, gatewayAPI+"/"+id)
+func (s *stack) gatewayDelete(id string) {
+	_, _ = s.gatewayRequest(http.MethodDelete, gatewayAPI()+"/"+id)
 }
 
 func (s *stack) do(method, path string, body, out any) (int, error) {

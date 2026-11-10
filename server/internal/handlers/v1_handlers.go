@@ -87,6 +87,11 @@ func (h *Handlers) V1StartRun(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	keyID, ok := apikey.KeyID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 	pathID := c.Param("id")
 	if pathID != wfID {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
@@ -102,14 +107,19 @@ func (h *Handlers) V1StartRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	run, err := h.Eng.StartRunFromPublished(wfID, b.Inputs, b.Trigger, tags, b.Env)
+	if _, err := models.ResolveTrigger(b.Trigger, models.TriggerAPI); err != nil {
+		writeAdmissionErr(c, err)
+		return
+	}
+	run, err := h.admission().Start(services.RunStart{WorkflowID: wfID, Source: "api", ActorID: "api-key:" + keyID,
+		IdempotencyKey: c.GetHeader("Idempotency-Key"), Published: true, Inputs: b.Inputs, Trigger: models.TriggerAPI, Tags: tags, Env: b.Env})
 	if err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "not published") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		writeAdmissionErr(c, err)
 		return
 	}
 	if h.WF != nil {

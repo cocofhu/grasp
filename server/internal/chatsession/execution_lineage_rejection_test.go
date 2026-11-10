@@ -1,6 +1,7 @@
 package chatsession
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -58,5 +59,27 @@ func TestQueueLineageOnlyDefinitiveRevocationCancelsAcknowledgedOwner(t *testing
 	}
 	if queueExecutionError(nil) != nil {
 		t.Fatal("successful renewal became a lost owner")
+	}
+}
+
+func TestPendingLineageRejectsUnknownScopeAndTransactionBoundBodyIO(t *testing.T) {
+	db, _, _, _ := durableFixture(t)
+	pending := NewPendingStore(db)
+	for _, scope := range []struct{ surface, key string }{{"unknown", "run|node"}, {"workflow.review", "missing-node"}, {"workflow.clarify", "|node"}, {"workflow.review", "run|"}, {"workflow.review", "missing-run|node"}} {
+		if _, err := pending.pendingEntities(db, scope.surface, scope.key, nil); err == nil {
+			t.Fatal("incomplete execution parent was inferred", scope)
+		}
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		inside := NewPendingStore(tx)
+		if _, err := inside.preparePending(context.Background(), []PendingTurn{{ID: "nested", Payload: []byte("never upload")}}); !errors.Is(err, ErrPayloadInTransaction) {
+			return errors.New("pending body preparation accepted a transaction-bound database")
+		}
+		if _, err := inside.loadPending(context.Background(), "workflow.review"); !errors.Is(err, ErrPayloadInTransaction) {
+			return errors.New("pending body loading accepted a transaction-bound database")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

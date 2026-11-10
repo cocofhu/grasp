@@ -719,9 +719,12 @@ export interface ProjectInput {
   repoDirName?: string
 }
 
-export type SoloStatus = 'starting' | 'running' | 'closed' | 'error'
+export type SoloStatus = 'starting' | 'running' | 'stopped' | 'closed' | 'error'
 
 export interface SoloSandboxInfo {
+  desiredState?: string
+  generation?: number
+  recovery?: { history: string; files: string; nativeSession: string; process: string; reason?: string }
   id: number
   name: string
   /** pulling | creating | running | error | stopped */
@@ -745,6 +748,9 @@ export interface SessionRepo {
 
 export interface SoloSession {
   id: string
+  /** Echoes the durable creation receipt, only on creation/lookup responses. */
+  clientRequestId?: string
+  initialTurnId?: string
   userId: string
   title: string
   agentName: string
@@ -805,6 +811,7 @@ export interface SoloRepoChoice {
 }
 
 export interface SoloCreateBody {
+  clientRequestId?: string
   agentName: string
   projectId?: string
   branch?: string
@@ -874,6 +881,7 @@ export interface ReferenceSearchResult<T> {
 }
 
 export interface SoloMessage {
+  clientMessageId?: string
   files?: ArtifactAttachment[]
   turnId?: string
   id: string
@@ -885,13 +893,29 @@ export interface SoloMessage {
   references?: MessageReference[]
   /** Raw ACP frames of an assistant turn, replayed into the timeline. */
   events?: unknown[]
-  status?: '' | 'ok' | 'failed' | 'stopped'
+  eventLog?: { version: number; from: number; through: number; count: number; generation: number }
+  legacyEvents?: boolean
+  status?: '' | 'ok' | 'failed' | 'stopped' | 'unknown'
   error?: string
   usage?: TokenUsage
   usageByModel?: TokenUsageByModel
   durationMs?: number
   execution?: ChatExecution
   createdAt: string
+}
+
+export interface SoloMessagePage {
+  items: SoloMessage[]
+  before?: string
+  hasMore: boolean
+}
+
+export interface SoloMessageEventPage {
+  items: { seq: number; type: string; data?: unknown; turnId?: string; generation: number }[]
+  next: number
+  head: number
+  hasMore: boolean
+  legacyIncomplete?: boolean
 }
 
 export type SoloEnvSource = 'platform' | 'agent' | 'project' | 'credential' | 'system'

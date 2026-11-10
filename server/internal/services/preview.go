@@ -60,6 +60,7 @@ func (s *PreviewService) UpsertPreviewPort(rec mcp.PreviewPort) error {
 		itemKey = mcp.PreviewItemKeyFor(rec)
 	}
 	row := models.RunPreviewPort{
+		WorkspaceBindingID: rec.WorkspaceBindingID, WorkspaceBindingFingerprint: rec.WorkspaceBindingFingerprint,
 		RunID: rec.RunID, NodeID: rec.NodeID, ItemKey: itemKey,
 		Kind: rec.Kind, Port: rec.Port, ExternalURL: rec.URL, Label: rec.Label,
 		ProxyURL: rec.ProxyURL, SandboxName: rec.SandboxName, Host: rec.Host, InjectorPort: rec.InjectorPort, Healthy: rec.Healthy,
@@ -72,16 +73,21 @@ func (s *PreviewService) UpsertPreviewPort(rec mcp.PreviewPort) error {
 			row.Kind = mcp.PreviewKindPort
 		}
 	}
-	var existing models.RunPreviewPort
-	err := s.db.Where("run_id = ? AND node_id = ? AND item_key = ?", rec.RunID, rec.NodeID, itemKey).First(&existing).Error
-	if err == nil {
-		row.ID = existing.ID
-		return s.db.Save(&row).Error
-	}
-	if err != gorm.ErrRecordNotFound {
-		return err
-	}
-	return s.db.Create(&row).Error
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.checkPreviewBindingTx(tx, rec); err != nil {
+			return err
+		}
+		var existing models.RunPreviewPort
+		err := tx.Where("run_id = ? AND node_id = ? AND item_key = ?", rec.RunID, rec.NodeID, itemKey).Take(&existing).Error
+		if err == nil {
+			row.ID = existing.ID
+			return tx.Save(&row).Error
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return tx.Create(&row).Error
+	})
 }
 
 func (s *PreviewService) ListPreviewPorts(runID, nodeID string) ([]mcp.PreviewPort, error) {
@@ -104,11 +110,17 @@ func (s *PreviewService) ListPreviewPorts(runID, nodeID string) ([]mcp.PreviewPo
 			itemKey = mcp.PreviewItemKeyFor(mcp.PreviewPort{Kind: kind, Port: r.Port, URL: r.ExternalURL})
 		}
 		out = append(out, mcp.PreviewPort{
+			WorkspaceBindingID: r.WorkspaceBindingID, WorkspaceBindingFingerprint: r.WorkspaceBindingFingerprint,
 			RunID: r.RunID, NodeID: r.NodeID, Kind: kind, ItemKey: itemKey,
 			Port: r.Port, URL: r.ExternalURL, Label: r.Label,
 			ProxyURL: r.ProxyURL, SandboxName: r.SandboxName, Host: r.Host, InjectorPort: r.InjectorPort, Healthy: r.Healthy,
 			KeepalivePID: r.KeepalivePID, RegisteredAt: r.RegisteredAt,
 		})
+	}
+	for i := range out {
+		if err := s.annotatePreviewBinding(&out[i]); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
@@ -119,10 +131,14 @@ func (s *PreviewService) GetPreviewPort(runID, nodeID string, port int) (*mcp.Pr
 		return nil, false
 	}
 	rec := mcp.PreviewPort{
+		WorkspaceBindingID: row.WorkspaceBindingID, WorkspaceBindingFingerprint: row.WorkspaceBindingFingerprint,
 		RunID: row.RunID, NodeID: row.NodeID, Kind: row.Kind, ItemKey: row.ItemKey,
 		Port: row.Port, URL: row.ExternalURL, Label: row.Label,
 		ProxyURL: row.ProxyURL, SandboxName: row.SandboxName, Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
 		KeepalivePID: row.KeepalivePID, RegisteredAt: row.RegisteredAt,
+	}
+	if err := s.annotatePreviewBinding(&rec); err != nil {
+		return nil, false
 	}
 	return &rec, true
 }
@@ -135,11 +151,16 @@ func (s *PreviewService) PrivatePreviewByURL(rawURL string) (*mcp.PreviewPort, b
 	if s.db == nil || s.db.Where("proxy_url = ? AND kind = ?", rawURL, mcp.PreviewKindPort).First(&row).Error != nil {
 		return nil, false
 	}
-	return &mcp.PreviewPort{
+	rec := &mcp.PreviewPort{
+		WorkspaceBindingID: row.WorkspaceBindingID, WorkspaceBindingFingerprint: row.WorkspaceBindingFingerprint,
 		RunID: row.RunID, NodeID: row.NodeID, Kind: row.Kind, ItemKey: row.ItemKey,
 		Port: row.Port, ProxyURL: row.ProxyURL, SandboxName: row.SandboxName,
 		Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
-	}, true
+	}
+	if err := s.annotatePreviewBinding(rec); err != nil {
+		return nil, false
+	}
+	return rec, true
 }
 
 func (s *PreviewService) UpdatePreviewHealth(runID, nodeID string, port int, healthy bool) error {
@@ -339,6 +360,9 @@ func probePreviewHTTP(ctx context.Context, base string, wantUpstream int) bool {
 
 // ProbeRegisteredPort checks the registered transport and resolves its current address.
 func (s *PreviewService) ProbeRegisteredPort(ctx context.Context, rec mcp.PreviewPort) (string, bool) {
+	if err := s.annotatePreviewBinding(&rec); err != nil || rec.Stale {
+		return "", false
+	}
 	port, want := rec.Port, 0
 	if rec.InjectorPort > 0 {
 		port, want = rec.InjectorPort, rec.Port

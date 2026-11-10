@@ -14,6 +14,12 @@ Grasp 通过 vendored 的 **sandbox-gateway** 控制平面调度通用沙箱镜�
 - **用户入口**：仅平台代理 `/sandbox-vnc/:sandboxId/ws`，每个沙箱一个桌面，桌面上就是 Agent 操作的浏览器（启用平台 Auth 时须 Session；仅校验登录有效，不校验沙箱/跑步归属）。「打开预览」进入沙箱控台 noVNC，不直连 websockify。
 - **存量窗口**：Docker 已运行容器的 `-p` 须 TTL/Reinstall 才收敛；K8s 存量 `*-lb` 在网关启动调和 / Start / Reinstall 完成前仍可能对外暴露 `:9222` / `:6080`。
 
+## 环境与文件保留
+
+工作流的调试保留期到期后只停止计算，保留环境身份和工作区。启动调和或网关扫描发现 Solo / 工作流环境缺失记录、停止或暂时不可用时，不以此自动删除唯一文件副本；未归属资源由管理员恢复控制面记录或核对后处理。物理释放是独立的删除操作。
+
+Kubernetes 的停止请求会等待控制器确认缩容和实际 Pod 退出，保留 PVC 后冷启动服务。等待期间不报告已经停止；观察失败或被后续启动请求取代时返回错误，可核对状态后重试。该方式不保存进程内存。
+
 ## 完整文档
 
 - [GATEWAY.md](https://github.com/cocofhu/approving/blob/main/GATEWAY.md)

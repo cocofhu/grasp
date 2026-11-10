@@ -28,8 +28,9 @@ type GatewayInfo struct {
 		Image string `json:"image"`
 	} `json:"profiles"`
 	Capabilities struct {
-		StopMode string `json:"stopMode"`
-		DiskMode string `json:"diskMode"`
+		StopMode          string `json:"stopMode"`
+		DiskMode          string `json:"diskMode"`
+		ColdConfiguration bool   `json:"coldConfiguration"`
 	} `json:"capabilities"`
 }
 

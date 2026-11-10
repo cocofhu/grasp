@@ -58,9 +58,17 @@ Solo, workflows, Agent tests and PM share the same chat presentation. Hover a me
 
 Each reply keeps its execution snapshot; later model changes do not relabel old replies. Missing historical fields remain unavailable rather than being inferred from the current selection. An unfinished reply shows only information already received.
 
+## COS / S3 payload storage
+
+The migration release and source stack support an existing private object store. Configure `GRASP_STORAGE_DRIVER=cos` for COS or `s3` for other S3 services, then explicitly set `GRASP_S3_ENDPOINT`, bucket, region, prefix and credentials. `GRASP_S3_PATH_STYLE` controls addressing. External storage outages never select a different or empty storage location.
+
+Once a storage location is registered, changing endpoint, bucket or prefix requires offline copy, reference verification and explicit switch. Changing environment variables does not migrate existing data. Retain legacy local files until archival and integrity checks complete.
+
 ## Database and attachment lifecycle
 
 In the release stack, SQLite (`./.localdata/db`) and app-data / default blobs (`./.localdata/app-data`, or a custom `GRASP_BLOBS_ROOT`) must be **backed up and cleaned as a pair**; do not migrate only the database. Otherwise composite images can keep orphan `blob:` refs (GET `/api/blobs/:id` → 404). Historical orphans only get a permanent UI placeholder; this delivery does not add an inspection console. See [Quick start](../guide/quick-start.md#database-and-attachments-share-one-lifecycle-backup--cleanup).
+
+With object storage, the backup set must include the corresponding bucket / prefix and credentials. The database, retained legacy files and objects must form one reference-verified backup set.
 
 ## Related
 

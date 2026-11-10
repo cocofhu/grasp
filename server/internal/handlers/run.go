@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -13,12 +14,13 @@ import (
 )
 
 type startRunBody struct {
-	Inputs   map[string]any    `json:"inputs"`
-	Trigger  string            `json:"trigger"`
-	Priority string            `json:"priority"` // high|normal|low; empty → normal
-	Tags     []string          `json:"tags"`
-	Env      []models.EnvEntry `json:"env"`   // optional run-scoped sandbox env snapshot
-	Title    string            `json:"title"` // optional; overrides computeRunTitle when non-blank
+	ExpectedWorkflowVersion int               `json:"expectedWorkflowVersion"`
+	Inputs                  map[string]any    `json:"inputs"`
+	Trigger                 string            `json:"trigger"`
+	Priority                string            `json:"priority"` // high|normal|low; empty → normal
+	Tags                    []string          `json:"tags"`
+	Env                     []models.EnvEntry `json:"env"`   // optional run-scoped sandbox env snapshot
+	Title                   string            `json:"title"` // optional; overrides computeRunTitle when non-blank
 	// FirstMessage is the opening chat message (text + attachments) for an
 	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once that node parks, so the caller can navigate away at once.
@@ -37,39 +39,32 @@ type startRunBody struct {
 
 // firstMessageBody is the opening message as a client sends it: references
 // are bare picks that the server validates and resolves.
-type firstMessageBody struct {
-	Text       string                    `json:"text"`
-	Images     []models.PromptImage      `json:"images,omitempty"`
-	References []services.ReferenceInput `json:"references,omitempty"`
-}
+type firstMessageBody = services.RunFirstMessage
 
 // firstMessage validates the opening message's @ picks against the workflow
-// scope. It writes the error response and reports false on failure, so an
-// invalid pick never creates a run.
-func (h *Handlers) firstMessage(c *gin.Context, workflowID string, b *firstMessageBody) (*models.CompositeText, bool) {
+// scope. It runs after receipt lookup, so an acknowledged launch can still be
+// recovered after an external reference changes or is deleted.
+func (h *Handlers) firstMessage(ctx context.Context, user, workflowID string, b *firstMessageBody) (*models.CompositeText, error) {
 	if b == nil {
-		return nil, true
+		return nil, nil
 	}
 	msg := &models.CompositeText{Text: b.Text, Images: b.Images}
 	if len(b.References) == 0 {
-		return msg, true
+		return msg, nil
 	}
-	user, ok := h.soloReady(c)
-	if !ok {
-		return nil, false
+	if h.Solo == nil {
+		return nil, &services.AdmissionError{Status: http.StatusServiceUnavailable, Code: "solo_unavailable", Message: "solo unavailable"}
 	}
 	scope, ok := h.workflowReferenceScope(user, workflowID)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "workflow not found"})
-		return nil, false
+		return nil, &services.AdmissionError{Status: http.StatusNotFound, Code: "workflow_not_found", Message: "workflow not found"}
 	}
-	refs, err := h.Solo.PrepareScopedReferences(c.Request.Context(), scope, b.References)
+	refs, err := h.Solo.PrepareScopedReferences(ctx, scope, b.References)
 	if err != nil {
-		writeSoloErr(c, err)
-		return nil, false
+		return nil, err
 	}
 	msg.References, msg.ReferenceUser = refs, user
-	return msg, true
+	return msg, nil
 }
 
 func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
@@ -90,35 +85,37 @@ func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
 }
 
 func (h *Handlers) StartRun(c *gin.Context) {
+	user, ok := h.sessionUser(c)
+	if !ok {
+		return
+	}
 	var b startRunBody
 	if err := c.ShouldBindJSON(&b); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
 		return
 	}
-	trigger, err := models.ResolveTrigger(b.Trigger, models.TriggerManual)
+	_, err := models.ResolveTrigger(b.Trigger, models.TriggerManual)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	trigger := models.TriggerManual
 	tags, err := models.NormalizeRunTags(b.Tags)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	launch := launchChoiceFromBody(b)
-	firstMessage, ok := h.firstMessage(c, c.Param("id"), b.FirstMessage)
-	if !ok {
-		return
-	}
-	var run *models.Run
-	if b.PublishedSnapshot {
-		run, err = h.Eng.StartRunFromPublishedWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, firstMessage, launch)
-	} else {
-		run, err = h.Eng.StartRunWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, firstMessage, launch)
-	}
+	run, err := h.admission().Start(services.RunStart{WorkflowID: c.Param("id"), Source: "web", ActorID: user,
+		ExpectedVersion: b.ExpectedWorkflowVersion,
+		IdempotencyKey:  c.GetHeader("Idempotency-Key"), Published: b.PublishedSnapshot, Inputs: b.Inputs, Trigger: trigger,
+		Priority: b.Priority, Tags: tags, Env: b.Env, Title: b.Title, FirstMessageInput: b.FirstMessage,
+		PrepareFirstMessage: func() (*models.CompositeText, error) {
+			return h.firstMessage(c.Request.Context(), user, c.Param("id"), b.FirstMessage)
+		},
+		ModelSet: launch.Set, ConfigurationID: launch.ConfigurationID, ModelID: launch.ModelID, ReasoningEffort: launch.ReasoningEffort})
 	if err != nil {
-		_ = c.Error(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeAdmissionErr(c, err)
 		return
 	}
 	if _, ok := h.WF.Get(c.Param("id")); ok {
@@ -148,6 +145,7 @@ func (h *Handlers) StartRun(c *gin.Context) {
 var validRunStatuses = map[string]bool{
 	"running":       true,
 	"waiting_human": true,
+	"paused":        true,
 	"queued":        true,
 	"completed":     true,
 	"failed":        true,

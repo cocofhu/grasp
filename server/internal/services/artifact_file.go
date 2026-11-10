@@ -63,6 +63,9 @@ func artifactFileKind(name, media string) string {
 // SaveFile imports bytes from an already-authorized sandbox. File paths never
 // come from the client when serving a download; only the owning record does.
 func (s *ArtifactService) SaveFile(ctx context.Context, runID, nodeID, name, sessionID string, reader io.Reader) (models.Artifact, error) {
+	if err := messageOutsideTransaction(s.db); err != nil {
+		return models.Artifact{}, err
+	}
 	name = strings.TrimSpace(name)
 	if name == "" || strings.ContainsAny(name, "/\\\x00\r\n") || strings.Contains(name, "..") {
 		return models.Artifact{}, errors.New("invalid artifact name")
@@ -97,17 +100,21 @@ func (s *ArtifactService) SaveFile(ctx context.Context, runID, nodeID, name, ses
 	if kind == "markdown" || kind == "text" || kind == "json" || kind == "html" || kind == "yaml" {
 		encoding = filestore.Text
 	}
-	ref, size, err := store.PutBounded(ctx, buffer, encoding, s.maxFileBytes)
+	prepared, err := store.PrepareBounded(ctx, buffer, encoding, s.maxFileBytes)
 	if err != nil {
 		return models.Artifact{}, err
 	}
+	ref, size := prepared.Ref(), prepared.Size()
 	_, digest, _ := filestore.Parse(ref)
 	var out models.Artifact
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.executionTransaction(ctx, runID, func(tx *gorm.DB) error {
+		if _, err := store.PreparedRef(prepared); err != nil {
+			return err
+		}
 		if err := lockArtifactNamespace(tx, runID); err != nil {
 			return err
 		}
-		var existing models.Artifact
+		var existing artifactSQL
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("run_id = ? AND name = ?", runID, name).First(&existing).Error
 		if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
 			return findErr
@@ -115,39 +122,37 @@ func (s *ArtifactService) SaveFile(ctx context.Context, runID, nodeID, name, ses
 		now := time.Now()
 		if findErr == nil {
 			previousDigest := existing.SHA256
-			if previousDigest == "" && filestore.IsRef(existing.PathRef) {
-				_, previousDigest, _ = filestore.Parse(existing.PathRef)
+			if previousDigest == "" && filestore.IsRef(existing.Content) {
+				_, previousDigest, _ = filestore.Parse(existing.Content)
 			}
 			if previousDigest == digest && existing.Kind == kind {
 				if err := tx.Model(&existing).UpdateColumns(map[string]any{"private_file": true, "session_id": sessionID}).Error; err != nil {
 					return err
 				}
-				out = existing
+				existing.PrivateFile, existing.SessionID = true, sessionID
+				out = existing.logical()
 				return nil
 			}
 			if existing.Revision < 1 {
 				existing.Revision = 1
 			}
-			version := models.ArtifactVersion{ArtifactID: existing.ID, RunID: runID, NodeID: existing.NodeID, Revision: existing.Revision, Kind: existing.Kind, SizeBytes: existing.SizeBytes, Content: existing.Content, MimeType: existing.MimeType, SHA256: previousDigest, CreatedAt: existing.UpdatedAt}
-			if existing.PathRef != "" {
-				version.Content = existing.PathRef
-			}
-			if err := tx.WithContext(filestore.WithReferences(ctx)).Create(&version).Error; err != nil {
+			existing.SHA256 = previousDigest
+			if err := archiveArtifactTx(tx, existing); err != nil {
 				return err
 			}
 			existing.Revision++
-			out = existing
 		} else {
 			var run models.Run
 			if err := tx.Select("workflow_id", "workflow_name").Where("id = ?", runID).Find(&run).Error; err != nil {
 				return err
 			}
-			out = models.Artifact{ID: "art-" + uuid.NewString(), RunID: runID, WorkflowID: run.WorkflowID, WorkflowName: run.WorkflowName, Name: name, Revision: 1, CreatedAt: now}
+			existing = artifactSQL{ID: "art-" + uuid.NewString(), RunID: runID, WorkflowID: run.WorkflowID, WorkflowName: run.WorkflowName, Name: name, Revision: 1, CreatedAt: now}
 		}
-		out.NodeID, out.Kind, out.Content, out.PathRef = nodeID, kind, ref, ref
-		out.MimeType, out.SHA256, out.SizeBytes, out.UpdatedAt, out.SessionID = media, digest, int(size), now, sessionID
-		out.PrivateFile = true
-		return tx.WithContext(filestore.WithReferences(ctx)).Save(&out).Error
+		existing.NodeID, existing.Kind, existing.Content = nodeID, kind, ref
+		existing.MimeType, existing.SHA256, existing.SizeBytes, existing.UpdatedAt, existing.SessionID = media, digest, int(size), now, sessionID
+		existing.PrivateFile = true
+		out = existing.logical()
+		return tx.Save(&existing).Error
 	})
 	out.Content = ""
 	return out, err

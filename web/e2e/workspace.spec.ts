@@ -133,14 +133,14 @@ test('an unavailable historical Agent keeps the conversation readable without a 
 })
 
 test('workspace sidebar keeps recent runs without a workflow directory', async ({ page }) => {
-  await page.goto('/workspace.html')
+  await page.goto('/workspace.html?view=/dashboard')
   const lists = page.getByTestId('app-desktop-sidebar').getByTestId('sidebar-workspace-lists')
   await expect(page.getByTestId('sidebar-workflows')).toHaveCount(0)
   await expect(lists.getByTestId('sidebar-workflow')).toHaveCount(0)
   await expect(lists.getByTestId('sidebar-workflow-run')).toHaveCount(0)
   await expect(lists.getByRole('button', { name: /新建工作流|置顶 / })).toHaveCount(0)
   await expect(lists.locator('input[type="search"]')).toHaveCount(0)
-  await expect(page.getByTestId('workflows-page').getByRole('searchbox')).toBeVisible()
+  await expect(page.getByTestId('nav-workspace-chrome')).toBeVisible()
   await expect(lists.getByRole('link', { name: '历史执行', exact: true })).toBeVisible()
   // Finished runs only. Waiting-human stays under 正在执行; the automatic agent run is 自动过程.
   await expect(lists.getByTestId('sidebar-recent-run')).toHaveCount(4)
@@ -155,7 +155,7 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
   await expect(automatic.getByTestId('nav-pending-row')).toContainText('优化工作流审批交互')
   const calls = await page.evaluate(() => (window as any).__workspaceFixture.calls)
   expect(calls.some((call: any) => call.path === '/api/workflows/catalog')).toBe(false)
-  expect(calls.some((call: any) => call.path === '/api/workflows' && call.method === 'GET')).toBe(true)
+  expect(calls.some((call: any) => call.path === '/api/runs' && call.method === 'GET')).toBe(true)
 })
 
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
@@ -175,7 +175,7 @@ test('settings lists workspace tools and independent configuration pages', async
 
 test('390px drawer shows recent runs without a workflow directory', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/workspace.html')
+  await page.goto('/workspace.html?view=/dashboard')
   const toggle = page.getByTestId('floating-nav-ball')
   if (await toggle.count()) await toggle.click()
   else await page.getByRole('button', { name: /打开导航|显示导航/ }).first().click()
@@ -261,7 +261,7 @@ for (const [lang, title] of [['zh-CN', '智能体'], ['en', 'Agents']]) test(`Ag
 })
 
 test('settings and workspace retain the same app rail while changing directory', async ({ page }) => {
-  await page.goto('/workspace.html')
+  await page.goto('/workspace.html?view=/dashboard')
   const rail = page.getByTestId('sidebar-app-rail')
   await expect(rail).toBeVisible()
   const railAppearance = () => rail.evaluate((nav) => {
@@ -285,17 +285,18 @@ test('settings and workspace retain the same app rail while changing directory',
   await expect.poll(railAppearance).toEqual(before)
   await settingsToggle.click()
   await expect(page.getByTestId('nav-workspace-chrome')).toBeVisible()
-  await expect(page.getByTestId('workflows-page')).toBeVisible()
+  await expect(page.getByTestId('dashboard-view')).toBeVisible()
   await expect(settingsToggle).toHaveAttribute('aria-label', '设置')
   await expect.poll(railAppearance).toEqual(before)
   await settingsToggle.click()
   await expect(page.getByTestId('sidebar-settings-title')).toBeVisible()
-  await rail.locator(':scope > a[href="/workflows"]').click()
+  await page.getByTestId('nav-settings-chrome').locator('a[href="/workflows"]').click()
   await expect(page.getByTestId('sidebar-workflows')).toHaveCount(0)
   await expect(page.getByTestId('workflows-page')).toBeVisible()
-  await expect(page.getByTestId('sidebar-recent')).toBeVisible()
-  await expect(page.getByTestId('sidebar-settings-title')).toHaveCount(0)
-  await expect(rail.locator('a[href="/workflows"]')).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTestId('sidebar-recent')).toHaveCount(0)
+  await expect(page.getByTestId('sidebar-settings-title')).toBeVisible()
+  await expect(rail.locator('a[href="/workflows"]')).toHaveCount(0)
+  await expect(settingsToggle).toHaveAttribute('aria-current', 'page')
   await expect.poll(railAppearance).toEqual(before)
 })
 

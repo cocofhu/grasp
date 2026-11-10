@@ -370,6 +370,12 @@ func (s *SandboxService) Start(ctx context.Context, id string) error {
 
 // StartPrepared refreshes the expired first-boot inputs before a cold resume.
 func (s *SandboxService) StartPrepared(ctx context.Context, id string, opts driver.StartOptions) error {
+	if opts.ColdConfig != nil {
+		return driver.ErrColdStartConflict
+	}
+	if err := s.store.GuardColdStart(ctx, id); err != nil {
+		return err
+	}
 	if err := s.guardEnvironmentRelease(ctx, id); err != nil {
 		return err
 	}
@@ -427,6 +433,9 @@ func (s *SandboxService) Destroy(ctx context.Context, idOrName string) error {
 	if err != nil {
 		return err
 	}
+	if err := s.store.GuardColdStart(ctx, sb.ID); err != nil {
+		return err
+	}
 	if err := s.guardEnvironmentRelease(ctx, sb.ID); err != nil {
 		return err
 	}
@@ -454,6 +463,9 @@ func (s *SandboxService) lookup(ctx context.Context, idOrName string) (*models.S
 // (kubernetes) / anonymous volumes (docker); workspace wipe deletes them.
 // Host-mounted shared config (ConfigInject.HostPath / .cursor) is never removed.
 func (s *SandboxService) Reinstall(ctx context.Context, id string, preserveData bool) error {
+	if err := s.store.GuardColdStart(ctx, id); err != nil {
+		return err
+	}
 	if err := s.guardEnvironmentRelease(ctx, id); err != nil {
 		return err
 	}

@@ -91,7 +91,7 @@ func (c *acpProvider) parkedWorkspace(runID, nodeID string) (*reactSession, stri
 	if sess == nil || sess.sb == nil {
 		return nil, "", false
 	}
-	ws := sess.sb.WorkspaceDir
+	ws := sess.sb.EffectiveWorkspaceDir()
 	if ws == "" {
 		ws = "/root/workspace"
 	}

@@ -11,7 +11,7 @@ const routerSrc = readFileSync(join(here, 'index.ts'), 'utf8')
 describe('Demo main-path three entries (g6.2)', () => {
   it('keeps Agent Studio, Run detail, and Gates inbox routes', () => {
     expect(routerSrc).toMatch(/path: '\/agents'[\s\S]*AgentStudioView/)
-    expect(routerSrc).toMatch(/path: '\/runs\/:id'[\s\S]*RunDetailView/)
+    expect(routerSrc).toMatch(/path: '\/runs\/:id'[\s\S]*RunView/)
     expect(routerSrc).toMatch(/path: '\/runs\/:runId\/nodes\/:nodeId'[\s\S]*GatesInboxView/)
   })
 })

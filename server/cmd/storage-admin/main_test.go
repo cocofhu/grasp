@@ -112,8 +112,9 @@ func TestLiveStorageAdminMigrationAndColdBackupRestore(t *testing.T) {
 	}
 	large := strings.Repeat("multipart\x00数据", 700000)
 	for _, row := range []any{
-		&models.SoloMessage{ID: "chat", SessionID: "owner", Content: "历史更正与中文", Images: []models.PromptImage{{Ref: ref.String()}}},
+		&models.SoloMessage{ID: "chat", SessionID: "owner", Content: "历史更正与中文", Images: []models.PromptImage{{Ref: ref.String()}}, WorkflowContext: "workflow-result-and-instructions"},
 		&models.ChatPendingTurn{ID: "queued", Payload: []byte(`{"images":[{"ref":"` + ref.String() + `"}]}`)},
+		&models.WorkflowInstruction{ID: "supplement", MailboxID: 1, Generation: "one", ClientMessageID: "manual", Text: "保留用户的补充要求"},
 		&models.Artifact{ID: "multipart", Kind: "text", Content: large},
 		&models.ArtifactVersion{ArtifactID: "multipart", Revision: 1, Content: "previous revision"},
 	} {
@@ -218,11 +219,15 @@ func TestLiveStorageAdminMigrationAndColdBackupRestore(t *testing.T) {
 	}
 	var message models.SoloMessage
 	var artifact models.Artifact
-	if err := cold.DB.First(&message, "id = ?", "chat").Error; err != nil || message.Content != "历史更正与中文" {
+	var supplement models.WorkflowInstruction
+	if err := cold.DB.First(&message, "id = ?", "chat").Error; err != nil || message.Content != "历史更正与中文" || message.WorkflowContext != "workflow-result-and-instructions" {
 		t.Fatalf("cold chat: %v", err)
 	}
 	if err := cold.DB.First(&artifact, "id = ?", "multipart").Error; err != nil || artifact.Content != large {
 		t.Fatalf("cold multipart: %v", err)
+	}
+	if err := cold.DB.First(&supplement, "id = ?", "supplement").Error; err != nil || supplement.Text != "保留用户的补充要求" {
+		t.Fatalf("cold supplement: %v", err)
 	}
 	read, meta, err := coldStorage.Blobs.Open(ctx, ref)
 	if err != nil {

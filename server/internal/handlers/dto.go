@@ -266,6 +266,7 @@ func (h *Handlers) latestVisitTask(r models.Run, states []models.StateRun, nodeI
 
 func runSummaryDTO(r models.Run, currentNodeLabel string) gin.H {
 	out := gin.H{
+		"pauseRequested": r.PauseRequested, "controlVersion": r.ControlVersion,
 		"id": r.ID, "workflowId": r.WorkflowID, "workflowName": r.WorkflowName,
 		"workflowVersion": r.WorkflowVersion,
 		"status":          r.Status, "trigger": r.Trigger, "startedAt": r.StartedAt,

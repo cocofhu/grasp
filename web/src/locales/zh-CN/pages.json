@@ -2130,6 +2130,12 @@
         "concurrency": "并发",
         "autoRefresh": "每 5 秒自动刷新",
         "note": "合计 = 测试占用 + running workflow · 不含 TTL 保活沙箱"
+      },
+      "workflows": {
+        "title": "工作流",
+        "description": "Solo 是统一入口，按需启用工作流管理。",
+        "enabled": "启用工作流",
+        "help": "关闭后不能新建工作流，现有任务仍可查看、审批、回复和取消。"
       }
     },
     "sandboxes": {
@@ -4760,6 +4766,21 @@
     },
     "solo": {
       "title": "Solo 对话",
+      "outboxUnavailable": "浏览器无法保存待确认消息，请恢复存储权限后重试。",
+      "outboxRestored": "有待确认消息，已恢复原请求；可核对记录后重试。",
+      "stopLocalRetry": "停止本地重试",
+      "stopLocalRetryHint": "仅移除本机待重试记录，不会撤回服务端已受理任务。",
+      "invalidReceipt": "服务器尚未确认原请求，请稍后核对后重试。",
+      "creationRecovery": {
+        "title": "有一条待确认的会话创建请求",
+        "hint": "首条消息和启动配置已保存在本机。先核对是否已创建，再打开会话或重试原请求。",
+        "repositories": "{n} 个仓库",
+        "defaultModel": "跟随 Agent 默认模型",
+        "attachments": "{images} 个附件 · {references} 个引用",
+        "open": "打开已创建的会话",
+        "retry": "重试原请求",
+        "check": "核对状态"
+      },
       "capacity": "运行中 {n} / {max} 个沙箱",
       "newSession": "新建会话",
       "filterActive": "运行中",
@@ -4778,9 +4799,11 @@
         "starting": "启动中",
         "running": "运行中",
         "closed": "已关闭",
-        "error": "异常"
+        "error": "异常",
+        "stopped": "已停止"
       },
       "phase": {
+        "confirming": "等待接收确认…",
         "preparing": "等待沙箱就绪…",
         "running": "Agent 正在处理"
       },
@@ -4895,6 +4918,11 @@
         "queue": "排队中 {n} 条",
         "removeQueued": "移出队列",
         "turnFailed": "本轮执行失败",
+        "journalGap": "聊天记录存在缺口，请刷新后重新加载；当前未跳过任何记录。",
+        "loadEarlier": "加载更早的消息",
+        "loadProcess": "查看执行过程",
+        "loadMoreProcess": "加载更多过程",
+        "legacyIncomplete": "此记录来自旧版本，执行过程可能不完整。",
         "stopped": "已停止",
         "generating": "正在生成…",
         "waitingSandbox": "沙箱就绪后开始执行",
@@ -4904,22 +4932,22 @@
         "plan": "计划"
       },
       "closedBar": {
-        "text": "会话已关闭，沙箱已释放。重新启动会创建新沙箱并重新克隆仓库，之前的对话会作为上下文发给 Agent。",
-        "restart": "重新启动"
+        "text": "会话已关闭，聊天和工作区仍保留。继续时恢复原环境；授权有变化时会先核验。",
+        "restart": "恢复会话"
       },
       "close": {
         "title": "关闭 Solo 会话",
-        "body": "关闭后沙箱会被销毁，沙箱里未提交或未推送的改动将丢失。",
+        "body": "关闭会话会停止当前计算，保留聊天记录、原环境和工作区文件。",
         "busy": "Agent 正在执行，关闭会中断当前任务。",
         "pushFirst": "先让 Agent 提交并推送",
-        "pushFirstHint": "发一条消息让 Agent 把改动推到远端，完成后再关闭",
+        "pushFirstHint": "可先提交并推送代码；关闭仍会保留未提交文件",
         "pushPrompt": "请提交当前所有改动并推送到远端分支，完成后告诉我分支名和提交摘要。",
-        "confirm": "关闭并释放沙箱"
+        "confirm": "关闭并保留工作区"
       },
       "delete": {
         "title": "删除会话",
-        "body": "会删除这个会话和全部消息记录，此操作不可撤销。",
-        "bodyActive": "会先关闭沙箱，再删除这个会话和全部消息记录，此操作不可撤销。",
+        "body": "删除会话和全部消息后无法恢复。仍有关联工作区时，需要先单独释放环境。",
+        "bodyActive": "请先关闭会话以停止计算。关联工作区需要单独释放，删除聊天不会代替文件释放确认。",
         "confirm": "删除"
       },
       "env": {
@@ -4962,7 +4990,8 @@
         "branch_invalid_repo": "分支名不能包含空格、{'|'} 或 ,（{repo}）",
         "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
-        "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。"
+        "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。",
+        "environment_authorization_blocked": "当前授权未通过核验，已阻止恢复；聊天、工作区和原环境关联均已保留。"
       },
       "reference": {
         "pickerLabel": "引用会话或 GitHub Issue/PR",
@@ -5002,7 +5031,60 @@
           "session": "引用会话",
           "github": "引用 Issue / PR"
         }
-      }
+      },
+      "environment": {
+        "stop": "停止环境",
+        "resume": "恢复环境",
+        "stopped": "环境已停止，聊天和工作区已保留。",
+        "retained": "停止只关闭计算资源，文件会保留。",
+        "release": "释放环境",
+        "stopPending": "停止尚未确认，工作区已保留。",
+        "retryStop": "重试停止"
+      },
+      "workflows": {
+        "title": "工作流任务",
+        "choose": "选择工作流",
+        "search": "搜索已发布的工作流",
+        "launchHint": "选择后配置需求和代码来源，由你点击启动。每个工作流使用独立环境，Solo 可以继续聊天。",
+        "empty": "没有匹配的已发布工作流。",
+        "disabled": "工作流功能已关闭，已有任务仍可管理。",
+        "handle": "处理待办",
+        "conversation": "对话与干预",
+        "details": "执行详情",
+        "iteration": "第 {n} 轮",
+        "noPendingInput": "当前没有等待处理的对话。",
+        "cancelTitle": "取消工作流",
+        "cancelBody": "取消“{task}”的执行？其他工作流和 Solo 会继续运行。",
+        "confirmCancel": "确认取消",
+        "pause": "暂停调度",
+        "resume": "继续执行",
+        "pausePending": "等待当前步骤结束后暂停",
+        "continueChat": "继续对话",
+        "historyLoadFailed": "无法读取历史聊天",
+        "historyNewEnvironment": "续聊会保留原工作流的对话与产物，并启动独立环境。原工作区文件需另外恢复。",
+        "instructions": {
+          "title": "补充要求",
+          "hint": "在当前聊天轮次结束后，按顺序交给此节点处理。工作流继续自动执行。",
+          "older": "查看更早的要求",
+          "stale": "节点执行已更新，草稿仍保留。请核对当前目标。",
+          "adopt": "使用当前执行目标",
+          "closed": "本轮已结束，不再接收新的要求。可回到 Solo 继续聊。",
+          "preparing": "当前节点尚未开放补充要求，或正在准备执行。",
+          "placeholder": "向当前工作流节点补充要求…",
+          "tooLong": "补充要求不能超过 16 KB。",
+          "send": "提交到本轮",
+          "states": {
+            "queued": "等待本轮处理",
+            "dispatching": "正在处理",
+            "applied": "本轮已处理",
+            "unknown": "处理结果待核对",
+            "expired": "本轮已过期"
+          },
+          "attempt": "第 {n} 次尝试"
+        }
+      },
+      "sendUnconfirmed": "发送结果尚未确认，请重试这条消息",
+      "retryUnconfirmed": "重试待确认消息"
     },
     "projects": {
       "title": "仓库",

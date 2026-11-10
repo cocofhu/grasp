@@ -402,6 +402,17 @@ func (h *Handlers) SandboxTerminal(c *gin.Context) {
 	if !ok {
 		return
 	}
+	access, accessErr := h.Sbx.BeginWorkspaceConsumer(c.Request.Context(), id, "terminal")
+	if accessErr != nil {
+		workspaceBindingError(c, accessErr)
+		return
+	}
+	consumerClosed := false
+	defer func() {
+		if !consumerClosed {
+			_ = access.Close()
+		}
+	}()
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Debug().Uint64("sandbox_id", uint64(id)).Err(err).Msg("sandbox websocket upgrade failed")
@@ -415,7 +426,12 @@ func (h *Handlers) SandboxTerminal(c *gin.Context) {
 		return
 	}
 	defer func() {
-		_ = term.Close()
+		if err := term.Close(); err == nil {
+			_ = access.Close()
+		}
+		// A failed close retains its durable blocker; a provider stop can
+		// later prove this exact environment no longer has the old process.
+		consumerClosed = true
 	}()
 	h.Sbx.TouchActivity(id)
 
@@ -524,6 +540,19 @@ func (h *Handlers) SandboxACPProxy(c *gin.Context) {
 // For IDE/ACP channels, password (sandbox Token) triggers upstream auto-login
 // before the reverse proxy runs (remote-dev SandboxProxy / VibeCodingProxy).
 func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel, dialAddr, password string) {
+	canonicalFolder := ""
+	if channel == "IDE" {
+		access, err := h.Sbx.BeginWorkspaceConsumer(c.Request.Context(), sandboxID, "ide")
+		if err != nil {
+			workspaceBindingError(c, err)
+			return
+		}
+		defer func() { _ = access.Close() }()
+		canonicalFolder = access.Folder
+		if redirectCanonicalIDEEntry(c, sandboxID, canonicalFolder) {
+			return
+		}
+	}
 	h.Sbx.TouchActivity(sandboxID)
 	idStr := strconv.FormatUint(uint64(sandboxID), 10)
 	acpMount := "/sandbox-bridge/" + idStr
@@ -606,7 +635,7 @@ func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel,
 		pr.SetURL(target)
 		pr.Out.Host = host
 		if channel == "IDE" {
-			mergeUpstreamQuery(pr.Out, clientQ)
+			mergeCanonicalUpstreamQuery(pr.Out, clientQ, canonicalFolder)
 		}
 		forwardCookiesToUpstream(pr.Out)
 		if ip, _, splitErr := net.SplitHostPort(pr.In.RemoteAddr); splitErr == nil {
@@ -647,6 +676,29 @@ func (h *Handlers) serveSandboxUpstream(c *gin.Context, sandboxID uint, channel,
 	c.Request.Header.Del("Forwarded")
 	c.Request.Header.Del("X-Forwarded-Host")
 	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+// code-server selects the browser workspace from window.location. Updating
+// only the upstream query leaves the browser on an empty or stale workspace.
+// This runs only after the current authorized consumer grant was acquired.
+func redirectCanonicalIDEEntry(c *gin.Context, sandboxID uint, folder string) bool {
+	if folder == "" || c.Request.Method != http.MethodGet || isWebSocketUpgrade(c.Request) || (c.Param("path") != "" && c.Param("path") != "/") {
+		return false
+	}
+	entry := sandboxMountPrefix(sandboxID) + "/"
+	if c.Request.URL.Path != entry && c.Request.URL.Path != strings.TrimSuffix(entry, "/") {
+		return false
+	}
+	query := c.Request.URL.Query()
+	if values := query["folder"]; len(values) == 1 && values[0] == folder {
+		if _, present := query["workspace"]; !present {
+			return false
+		}
+	}
+	query.Set("folder", folder)
+	query.Del("workspace")
+	c.Redirect(http.StatusFound, entry+"?"+query.Encode())
+	return true
 }
 
 // sandboxProxyErrorHTML renders a console-dark friendly iframe error page that

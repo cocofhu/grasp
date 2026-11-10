@@ -7,6 +7,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import AppDrawer from '@/components/ui/AppDrawer.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
@@ -25,6 +26,10 @@ import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/Pe
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
+import SoloWorkflowPanel from './SoloWorkflowPanel.vue'
+import SoloWorkspaceSnapshots from './SoloWorkspaceSnapshots.vue'
+import SoloEnvironmentRelease, { type EnvironmentReleaseDraft } from './SoloEnvironmentRelease.vue'
+import { useWorkflowFeature } from '@/lib/composables/useWorkflowFeature'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
@@ -45,14 +50,21 @@ import type { SoloResources } from '@/lib/api/apiTypes'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
-const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient> }>()
-const emit = defineEmits<{ back: []; ready: [] }>()
+const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient>; workflowIntent?: string }>()
+const emit = defineEmits<{ back: []; ready: []; workflowOpened: [] }>()
 const { t, te, locale } = useI18n()
 const { worktreeMode } = useExecutionMode()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const workflowPanel = ref<InstanceType<typeof SoloWorkflowPanel> | null>(null)
+const { enabled: workflowsEnabled } = useWorkflowFeature()
+watch([() => props.workflowIntent, workflowPanel], async ([intent, panel]) => {
+  if (typeof intent !== 'string' || !panel || props.embedded) return
+  if (workflowsEnabled.value) await panel.openPicker(intent === '1' ? '' : intent)
+  emit('workflowOpened')
+})
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, stopLocalRetry, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -127,13 +139,39 @@ function transcriptImageSrc(image: ClarifyImage) {
 }
 
 const { scroller, followBottom, onScroll, scrollDown } = useChatTailScroll()
+async function loadEarlier() {
+  const top = scroller.value?.scrollTop || 0
+  const height = scroller.value?.scrollHeight || 0
+  followBottom.value = false
+  await chat.loadEarlier()
+  await nextTick()
+  if (scroller.value) scroller.value.scrollTop = top + scroller.value.scrollHeight - height
+}
 const confirmClose = ref(false)
 const confirmDelete = ref(false)
 const moreOpen = ref(false)
 const limitOpen = ref(false)
 const closing = ref(false)
+const environmentBusy = ref(false)
+const stoppedEnvironment = computed(() => status.value === 'stopped')
+const environmentStopPending = computed(() => session.value?.sandbox?.desiredState === 'stopped' && !stoppedEnvironment.value)
+async function changeEnvironment(resume: boolean) {
+  environmentBusy.value = true
+  actionError.value = ''
+  try {
+    const value = await (resume ? api.resumeSoloEnvironment(props.sessionId) : api.stopSoloEnvironment(props.sessionId))
+    store.upsert(value)
+    await chat.load()
+  } catch (cause) {
+    actionError.value = soloErrorText(cause, t, te, locale.value)
+  } finally { environmentBusy.value = false }
+}
 const restarting = ref(false)
 const resources = ref<SoloResources>()
+const workspaceSnapshotsOpen = ref(false)
+const environmentReleaseOpen = ref(false)
+const environmentReleaseDraft = ref<EnvironmentReleaseDraft | null>(null)
+const workspaceViewKey = ref(0)
 
 watch(session, (s) => { if (s && !props.embedded) store.upsert(s) })
 watch(canSend, (ready) => { if (ready) emit('ready') })
@@ -245,6 +283,13 @@ defineExpose({ addPick })
 
 async function send() {
   const text = input.value.trim()
+  const command = /^\/workflow(?:\s+(.*))?$/.exec(text)
+  if (command) {
+    if (!workflowsEnabled.value || props.embedded) { actionError.value = t('pages.solo.workflows.disabled'); return }
+    await workflowPanel.value?.openPicker(command[1] || '')
+    input.value = ''
+    return
+  }
   const images = attach.attachments.value.slice()
   const refs = mention.refs.value
   const selected = picks.value
@@ -256,7 +301,7 @@ async function send() {
   followBottom.value = true
   picks.value = []
   const ok = await chat.send(text, images, refs, selected)
-  if (!ok) {
+  if (!ok && !pendingConfirmation?.value.length) {
     restore()
     attach.attachments.value = images
     picks.value = [...selected, ...picks.value].slice(0, 8)
@@ -380,6 +425,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
     >
       <template #stage>
         <ReactArtifactStage
+          :key="`${props.sessionId}:${workspaceViewKey}`"
           :artifacts="resources?.artifacts || []"
           :preview-artifact="resources?.previewArtifact"
           :registered-previews="status === 'running' ? resources?.ports || [] : []"
@@ -394,6 +440,14 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </template>
 
       <template #sidebar>
+      <div v-if="!embedded && !worktreeMode" class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-line px-4 py-2">
+		<AppButton size="sm" variant="ghost" icon="folder" data-testid="solo-workspace-history" @click="workspaceSnapshotsOpen = true">{{ t('workspaceSnapshots.title') }}</AppButton>
+		<AppButton v-if="status === 'closed' && sandboxId" size="sm" variant="ghost" data-testid="solo-release-environment" @click="environmentReleaseOpen = true">{{ t('workspaceRelease.title') }}</AppButton>
+        <span v-if="stoppedEnvironment" class="mr-auto text-xs text-txt3">{{ t('pages.solo.environment.stopped') }}</span>
+        <span v-else-if="environmentStopPending" class="mr-auto text-xs text-txt3">{{ t('pages.solo.environment.stopPending') }}</span>
+        <AppButton v-if="stoppedEnvironment" size="sm" variant="outline" icon="play" :loading="environmentBusy" @click="changeEnvironment(true)">{{ t('pages.solo.environment.resume') }}</AppButton>
+        <AppButton v-else-if="status !== 'closed'" size="sm" variant="ghost" icon="stop" :disabled="busy || queued.length > 0 || status === 'starting'" :loading="environmentBusy" :title="t('pages.solo.environment.retained')" data-testid="solo-stop-environment" @click="changeEnvironment(false)">{{ t(environmentStopPending ? 'pages.solo.environment.retryStop' : 'pages.solo.environment.stop') }}</AppButton>
+      </div>
       <div v-if="link === 'reconnecting'" class="solo-banner" role="status">
         <Icon name="spinner" :size="12" />{{ t('pages.solo.link.reconnecting') }}
       </div>
@@ -409,6 +463,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div ref="scroller" class="chat-pane-transcript scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="solo-transcript" @scroll.passive="onScroll">
         <div class="chat-pane-column space-y-6">
           <SoloStartupCard v-if="showStartup" :session="session" />
+          <SoloWorkflowPanel v-if="!embedded" ref="workflowPanel" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" />
 
           <div v-if="status === 'error'" class="solo-errcard" data-testid="solo-error-card">
             <div class="flex items-start gap-2">
@@ -436,6 +491,10 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             </div>
           </div>
 
+          <div v-if="chat.hasEarlier.value" class="flex justify-center py-2">
+            <AppButton size="sm" variant="ghost" icon="history" :loading="chat.loadingEarlier.value" data-testid="solo-load-earlier" @click="loadEarlier">{{ t('pages.solo.chat.loadEarlier') }}</AppButton>
+          </div>
+          <p v-if="chat.earlierError.value" class="text-xs text-err" role="alert">{{ chat.earlierError.value }}</p>
           <template v-for="turn in turns" :key="turn.id">
             <div v-if="turn.role === 'system'" class="solo-system">
               <span>{{ turn.text }}</span>
@@ -476,6 +535,17 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 quiet-thought
                 message-test-id="solo-agent-message"
               />
+              <div v-if="turn.historyMessageId && turn.processAvailable" class="space-y-1">
+                <AppButton
+                  v-if="chat.processPages.value[turn.historyMessageId]?.hasMore !== false"
+                  size="sm" variant="ghost" icon="list"
+                  :loading="chat.processPages.value[turn.historyMessageId]?.loading"
+                  data-testid="solo-load-process"
+                  @click="chat.loadProcess(turn)"
+                >{{ t(chat.processPages.value[turn.historyMessageId]?.next !== undefined && chat.processPages.value[turn.historyMessageId]!.next >= 0 ? 'pages.solo.chat.loadMoreProcess' : 'pages.solo.chat.loadProcess') }}</AppButton>
+                <p v-if="chat.processPages.value[turn.historyMessageId]?.error" class="text-xs text-err" role="alert">{{ chat.processPages.value[turn.historyMessageId]!.error }}</p>
+                <p v-if="chat.processPages.value[turn.historyMessageId]?.legacyIncomplete" class="chat-meta">{{ t('pages.solo.chat.legacyIncomplete') }}</p>
+              </div>
               <ArtifactFileAttachments :files="turn.files" />
               <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
                 <div class="chat-meta mb-1">{{ t('pages.solo.chat.plan') }}</div>
@@ -490,7 +560,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 data-testid="solo-agent-activity"
                 role="status"
               >
-                <ThinkingBusyCue :label="phase === 'preparing' && !turn.steps.length ? t('pages.solo.phase.preparing') : t('pages.solo.phase.running')" />
+                <ThinkingBusyCue :label="pendingConfirmation?.includes(turn.id.replace(/^live:/, '')) ? t('pages.solo.phase.confirming') : phase === 'preparing' && !turn.steps.length ? t('pages.solo.phase.preparing') : t('pages.solo.phase.running')" />
               </div>
               <div v-if="turn.status === 'stopped' && !turn.streaming" class="chat-meta">{{ t('pages.solo.chat.stopped') }}</div>
               <div v-else-if="turn.error || turn.status === 'failed'" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error || t('pages.solo.chat.turnFailed') }}</div>
@@ -520,16 +590,19 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </div>
 
       <!-- composer / closed bar -->
-      <div v-if="closed" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
+      <div v-if="closed || stoppedEnvironment" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
         <div class="chat-pane-column solo-closed">
           <Icon name="lock" :size="15" class="mt-0.5 shrink-0 text-txt3" />
-          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">{{ t('pages.solo.closedBar.text') }}</p>
-          <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting" @click="doRestart">{{ t('pages.solo.closedBar.restart') }}</AppButton>
+          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">{{ t(stoppedEnvironment ? 'pages.solo.environment.stopped' : 'pages.solo.closedBar.text') }}</p>
+          <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting || environmentBusy" @click="stoppedEnvironment ? changeEnvironment(true) : doRestart()">{{ t(stoppedEnvironment ? 'pages.solo.environment.resume' : 'pages.solo.closedBar.restart') }}</AppButton>
         </div>
+        <p v-if="actionError" class="chat-pane-column mt-2 text-xs text-err" role="alert">{{ actionError }}</p>
       </div>
       <div v-else class="chat-pane-composer shrink-0 py-3">
         <div class="chat-pane-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
+          <AppButton v-if="pendingConfirmation?.length" size="sm" variant="outline" icon="refresh" class="mb-2" :loading="retryingSend" data-testid="solo-retry-unconfirmed" @click="retryPendingSend">{{ t('pages.solo.retryUnconfirmed') }}</AppButton>
+          <AppButton v-if="pendingConfirmation?.length" size="sm" variant="ghost" class="mb-2 ml-2" :disabled="retryingSend" :title="t('pages.solo.stopLocalRetryHint')" data-testid="solo-stop-local-retry" @click="stopLocalRetry">{{ t('pages.solo.stopLocalRetry') }}</AppButton>
           <p v-if="selectionInvalid && canSend" class="mb-2 text-[12px] text-warn" role="status" data-testid="solo-model-invalid-notice">{{ t('pages.solo.modelSelect.unavailableSelection') }}</p>
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
           <ChatComposer
@@ -546,6 +619,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             @preview="openChatImagePreview"
           >
             <template #model>
+              <AppButton v-if="workflowsEnabled && !embedded" size="sm" variant="ghost" class="font-mono text-xs" data-testid="solo-workflow-menu" @click="workflowPanel?.openPicker()">/workflow</AppButton>
               <SoloModelSelect
                 class="min-w-0"
                 flat
@@ -578,6 +652,9 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           </ChatComposer>
         </div>
       </div>
+
+      <AppDrawer :open="workspaceSnapshotsOpen" :title="t('workspaceSnapshots.title')" :width="620" @close="workspaceSnapshotsOpen = false"><SoloWorkspaceSnapshots v-if="workspaceSnapshotsOpen" :key="props.sessionId" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" /></AppDrawer>
+      <AppDrawer :open="environmentReleaseOpen" :title="t('workspaceRelease.title')" :width="480" @close="environmentReleaseOpen = false"><SoloEnvironmentRelease v-if="environmentReleaseOpen" :key="props.sessionId" v-model:draft="environmentReleaseDraft" :session-id="props.sessionId" @changed="chat.load()" /></AppDrawer>
 
       <AppModal :open="confirmClose" :title="t('pages.solo.close.title')" :width="460" close-on-esc @close="confirmClose = false">
         <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-close-modal">

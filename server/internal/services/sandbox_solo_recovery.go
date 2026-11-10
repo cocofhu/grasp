@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 const soloRecoveryTimeout = 2 * time.Minute
@@ -18,11 +20,33 @@ const soloRecoveryTimeout = 2 * time.Minute
 // serving bootstrap/MCP, before the persisted message queues are restored.
 func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.Sandbox, tracked, correlated map[string]bool) {
 	if s.soloSessionClosed(row) {
-		s.destroyLocalSandbox(ctx, row)
+		// Closed chats can own the sole retained worktree. Observation never
+		// upgrades Close into permission to delete a disk or its attribution.
+		tracked[row.Name], correlated[row.Name] = true, true
+		_ = s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
+			return tx.Model(&models.Sandbox{}).Where("id = ? AND generation = ?", row.ID, row.Generation).Update("destroy_at", nil).Error
+		})
 		return
 	}
 	tracked[row.Name], correlated[row.Name] = true, true
-	s.db.Model(row).Update("destroy_at", nil)
+	if row.OperationOwner != "" && row.OperationExpiresAt != nil && row.OperationExpiresAt.After(time.Now()) {
+		return // another replica is changing this environment; observation waits
+	}
+	if s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error { return tx.Model(row).Update("destroy_at", nil).Error }) != nil {
+		return
+	}
+	if row.DesiredState == "stopped" {
+		// Observation must not wake manually stopped residents on restart.
+		if status, err := s.mgr.ProbeStatus(ctx, row.Name); err == nil && (status == "stopped" || status == "exited") {
+			_ = s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
+				if err := tx.Model(row).Updates(map[string]any{"status": "stopped", "error": ""}).Error; err != nil {
+					return err
+				}
+				return tx.Model(&models.SoloSession{}).Where("sandbox_id = ? AND status <> ?", row.ID, models.SoloStatusClosed).Update("status", models.SoloStatusStopped).Error
+			})
+		}
+		return
+	}
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	if sandbox.GatewayRecordMissing(err) {
 		// A process can exit after Create but before adopting the gateway id.
@@ -31,7 +55,7 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 		if listErr == nil {
 			for _, candidate := range managed {
 				if candidate.Labels[sandbox.CorrelationNameKey()] == row.Name {
-					if updateErr := s.db.Model(row).Update("name", candidate.ID).Error; updateErr == nil {
+					if updateErr := s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error { return tx.Model(row).Update("name", candidate.ID).Error }); updateErr == nil {
 						row.Name = candidate.ID
 						tracked[row.Name] = true
 						status, err = s.mgr.ProbeStatus(ctx, row.Name)
@@ -42,27 +66,21 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 		}
 	}
 	if err == nil && status == "not_found" {
-		// This is a successful live-driver observation, not an HTTP 404 or a
-		// failed probe. The data-bearing resource is already absent.
-		s.destroyLocalSandbox(ctx, row)
-		delete(tracked, row.Name)
-		delete(correlated, row.Name)
+		// A missing workload can still have recoverable disks/configuration.
+		// Keep its identity and any local files; never turn a probe into delete.
+		_ = s.recordSoloResourceUnavailable(row)
 		return
 	}
 	if err == nil && status == "running" {
-		var sb *sandbox.Sandbox
-		sb, err = s.mgr.AttachNoEnsure(ctx, row.Name)
+		err = s.attachAuthorizedSolo(ctx, row.ID)
 		if err == nil {
-			err = s.recordSoloRecovered(row, sb)
-			if err == nil {
-				return
-			}
+			return
 		}
 	}
 	if err == nil {
 		err = fmt.Errorf("sandbox status=%s; waiting for recovery", status)
 	}
-	s.recordSoloRecoveryFailure(row.ID, err)
+	s.recordSoloRecoveryFailure(row, err)
 }
 
 func (s *SandboxService) soloSessionClosed(row *models.Sandbox) bool {
@@ -71,15 +89,41 @@ func (s *SandboxService) soloSessionClosed(row *models.Sandbox) bool {
 		session.Status == models.SoloStatusClosed
 }
 
-func (s *SandboxService) recordSoloRecovered(row *models.Sandbox, sb *sandbox.Sandbox) error {
-	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"status": "running", "error": "", "destroy_at": nil,
-		"host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort,
-	}).Error; err != nil {
+func (s *SandboxService) recordSoloRecovered(ctx context.Context, row *models.Sandbox, sb *sandbox.Sandbox, grant soloRecoveryGrant) error {
+	// A recreated pod retains the PVC head but loses /run platform env. Rebuild
+	// the trusted tuple only through the native standby protocol before making
+	// this environment available; an already configured runtime is read-only.
+	if err := s.mgr.ConfigureWorkspaceRuntime(ctx, sb); err != nil {
+		return err
+	}
+	if err := s.recheckSoloRecoveryGrant(ctx, row, grant); err != nil {
+		return s.blockSoloRecoveryAuthorization(ctx, row, grant, err)
+	}
+	if err := s.commitSandboxOperationPrepared(ctx, row.ID, func(tx *gorm.DB) error {
+		return requireSoloRecoveryParent(tx, row, grant)
+	}, func(tx *gorm.DB) error {
+		if err := s.updateSandboxOperation(ctx, tx, row.ID, map[string]any{
+			"status": "running", "error": "", "destroy_at": nil,
+			"host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort,
+		}); err != nil {
+			return err
+		}
+		result := tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND lifecycle_epoch = ? AND lifecycle_attempt_id = ? AND lifecycle_action = '' AND status <> ?",
+			row.ThreadID, row.ID, grant.session.LifecycleEpoch, grant.session.LifecycleAttemptID, models.SoloStatusClosed).
+			Updates(map[string]any{"status": models.SoloStatusRunning, "error": ""})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("会话生命周期已改变，未发布旧恢复状态")
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	if s.host != nil && row.RunID != "" {
 		s.host.RestoreRun(row.RunID, row.Token)
+		s.host.SetActiveNode(row.RunID, "solo", grant.agent.Capabilities.Clone())
 	}
 	s.mu.Lock()
 	fn := s.soloOnRecovered
@@ -90,11 +134,41 @@ func (s *SandboxService) recordSoloRecovered(row *models.Sandbox, sb *sandbox.Sa
 	return nil
 }
 
-func (s *SandboxService) recordSoloRecoveryFailure(id uint, err error) {
-	s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-		"status": "error", "error": "沙箱恢复暂未完成，工作区已保留，可重试：" + truncErr(err), "destroy_at": nil,
+func (s *SandboxService) recordSoloRecoveryFailure(row *models.Sandbox, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
+		query := tx.Model(&models.Sandbox{}).Where("id = ? AND generation = ? AND (desired_state IS NULL OR desired_state <> ?)", row.ID, row.Generation, "stopped")
+		if row.OperationOwner != "" {
+			query = query.Where("operation_owner = ? AND operation_expires_at > ?", row.OperationOwner, time.Now().UTC())
+		}
+		return query.Updates(map[string]any{
+			"status": "error", "error": "沙箱恢复暂未完成，未释放现有环境，可重试：" + truncErr(err), "destroy_at": nil,
+		}).Error
 	})
-	log.Warn().Err(err).Uint("sandbox", id).Msg("solo recovery deferred; workspace retained")
+	log.Warn().Err(err).Uint("sandbox", row.ID).Msg("solo recovery deferred; workspace retained")
+}
+
+func (s *SandboxService) recordSoloResourceUnavailable(row *models.Sandbox) error {
+	reason := "原环境未找到，聊天和环境关联已保留，等待恢复；未自动创建替代环境"
+	recovery, err := json.Marshal(models.SandboxRecovery{History: "retained", Files: "unavailable", NativeSession: "unavailable", Process: "unavailable", Reason: reason})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
+		result := tx.Model(&models.Sandbox{}).Where("id = ? AND generation = ?", row.ID, row.Generation).
+			Updates(map[string]any{"status": "error", "error": reason, "recovery": string(recovery), "destroy_at": nil})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("environment changed during observation")
+		}
+		return tx.Model(&models.SoloSession{}).Where("sandbox_id = ? AND status <> ?", row.ID, models.SoloStatusClosed).
+			Updates(map[string]any{"status": models.SoloStatusError, "error": reason}).Error
+	})
 }
 
 // EnsureSoloRunning recovers the same sandbox, or leaves its data and binding
@@ -103,7 +177,7 @@ func (s *SandboxService) recordSoloRecoveryFailure(id uint, err error) {
 func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	ctx, cancel := context.WithTimeout(ctx, soloRecoveryTimeout)
 	defer cancel()
-	unlock, err := s.lockSoloRecovery(ctx, id)
+	ctx, unlock, err := s.acquireSandboxOperation(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -118,16 +192,32 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	if s.soloSessionClosed(row) {
 		return fmt.Errorf("Solo 会话已关闭")
 	}
+	if row.DesiredState == "stopped" {
+		return soloErr(409, "environment_stopped", "环境已手动停止，请先恢复环境")
+	}
+	if handled, err := s.resumeReviewedSoloEnvironment(ctx, row); handled {
+		return err
+	}
+	grant, err := s.soloRecoveryAuthorization(ctx, row)
+	if err != nil {
+		return s.blockSoloRecoveryAuthorization(ctx, row, grant, err)
+	}
 	s.mu.Lock()
 	live := s.live[id]
 	local := live != nil && live.sb != nil && live.sb.IsLocal()
 	s.mu.Unlock()
 	if local {
-		return nil // worktree processes have no gateway resource to resume
+		return s.resumeLocalSolo(ctx, row, live, grant)
 	}
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	var sb *sandbox.Sandbox
 	if err == nil {
+		if authErr := s.recheckSoloRecoveryGrant(ctx, row, grant); authErr != nil {
+			return s.blockSoloRecoveryAuthorization(ctx, row, grant, authErr)
+		}
+		if err := s.executionCheck(ctx, row.ID); err != nil {
+			return err
+		}
 		switch status {
 		case "running":
 			sb, err = s.mgr.AttachNoEnsure(ctx, row.Name)
@@ -136,25 +226,31 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 			// container later starts successfully. Its next turn still needs
 			// persisted dialogue context in that case.
 			s.teardownLive(id)
-			s.db.Model(&models.SoloSession{}).Where("sandbox_id = ?", id).Update("resume_context_pending", true)
+			if err := s.commitSandboxOperation(ctx, id, func(tx *gorm.DB) error {
+				return tx.Model(&models.SoloSession{}).Where("sandbox_id = ?", id).Update("resume_context_pending", true).Error
+			}); err != nil {
+				return err
+			}
 			sb, err = s.mgr.Resume(ctx, row.Name)
 		case "pending", "creating", "pulling":
 			sb, err = s.mgr.WaitForRunning(ctx, row.Name)
 		case "not_found":
-			s.destroyLocalSandbox(ctx, row)
-			return fmt.Errorf("沙箱已不存在，可重新启动会话")
+			if err := s.recordSoloResourceUnavailable(row); err != nil {
+				return err
+			}
+			return soloErr(409, "environment_unavailable", "原环境未找到，已保留关联，未自动创建替代环境")
 		default:
 			err = fmt.Errorf("sandbox status=%s", status)
 		}
 	}
 	if err != nil {
-		s.recordSoloRecoveryFailure(id, err)
-		return fmt.Errorf("沙箱恢复失败，工作区已保留，请重试：%w", err)
+		s.recordSoloRecoveryFailure(row, err)
+		return fmt.Errorf("沙箱恢复失败，未释放现有环境，请重试：%w", err)
 	}
 	if s.soloSessionClosed(row) {
 		return fmt.Errorf("Solo 会话已关闭")
 	}
-	return s.recordSoloRecovered(row, sb)
+	return s.recordSoloRecovered(ctx, row, sb, grant)
 }
 
 // RecoverSoloSandboxes retries residents whose recovery was deferred. Active
@@ -162,9 +258,20 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 // id yet. Startup reconciliation marks interrupted creation for recovery.
 // Run once before restoring queues, then periodically; failures never become TTLs.
 func (s *SandboxService) RecoverSoloSandboxes(ctx context.Context) {
+	// Finish an interrupted explicit stop as well as interrupted starts. This
+	// branch only stops existing compute; it never wakes a manually stopped guest.
+	var pendingStops []models.Sandbox
+	if err := s.db.Where("purpose = ? AND desired_state = ? AND status <> ?", SandboxPurposeSolo, "stopped", "stopped").Find(&pendingStops).Error; err == nil {
+		for _, row := range pendingStops {
+			if ctx.Err() != nil {
+				return
+			}
+			_ = s.retrySoloStop(ctx, row.ID)
+		}
+	}
 	var rows []models.Sandbox
 	if err := s.db.Where("purpose = ? AND status NOT IN ?", SandboxPurposeSolo,
-		[]string{"running", "creating", "pulling"}).Find(&rows).Error; err != nil {
+		[]string{"running", "creating", "pulling"}).Where("desired_state IS NULL OR desired_state <> ?", "stopped").Find(&rows).Error; err != nil {
 		return
 	}
 	var wg sync.WaitGroup
@@ -174,17 +281,6 @@ func (s *SandboxService) RecoverSoloSandboxes(ctx context.Context) {
 			return
 		}
 		wg.Go(func() { _ = s.EnsureSoloRunning(ctx, row.ID) })
-	}
-}
-
-func (s *SandboxService) lockSoloRecovery(ctx context.Context, id uint) (func(), error) {
-	value, _ := s.soloRecoveryLocks.LoadOrStore(id, make(chan struct{}, 1))
-	lock := value.(chan struct{})
-	select {
-	case lock <- struct{}{}:
-		return func() { <-lock }, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
 	}
 }
 

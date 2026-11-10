@@ -50,6 +50,9 @@ describe('workspace workflow management', () => {
     await wrapper.findAll('button').find((button) => button.text() === '运行')!.trigger('click')
     await flushPromises()
     expect(mocks.getWorkflow).toHaveBeenCalledWith('wf-one')
+    // Launch fields include an IndexedDB draft read. Wait for the dialog
+    // rather than assuming a single promise flush also completed its I/O.
+    await vi.waitFor(() => expect(wrapper.findComponent({ name: 'RunLaunchModal' }).exists()).toBe(true))
     const launch = wrapper.findComponent({ name: 'RunLaunchModal' })
     expect(launch.props('workflowId')).toBe('wf-one')
     expect(launch.props('fields')).toEqual([expect.objectContaining({ key: 'current', default: 'head value' })])

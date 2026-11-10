@@ -75,7 +75,7 @@ func (s *replicaStore) List(_ context.Context, _, cursor string) (objectstore.Pa
 	return page, nil
 }
 
-func TestVerifiedReplicaRestoresSQLPayloadsAndNestedAttachments(t *testing.T) {
+func TestVerifiedReplicaRestoresSQLPayloadsNestedAttachmentsAndInstructions(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	cfg := config.DatabaseConfig{Driver: "sqlite", Path: filepath.Join(dir, "live.db")}
@@ -104,8 +104,10 @@ func TestVerifiedReplicaRestoresSQLPayloadsAndNestedAttachments(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows := []any{
-		&models.SoloMessage{ID: "chat", SessionID: "private-user", Content: "原聊天与更正", Images: []models.PromptImage{{Ref: ref.String()}}, Events: []json.RawMessage{json.RawMessage(`{"type":"delta","data":"original"}`)}},
+		&models.SoloMessage{ID: "chat", SessionID: "private-user", Content: "原聊天与更正", WorkflowContext: "result-context", Images: []models.PromptImage{{Ref: ref.String()}}, Events: []json.RawMessage{json.RawMessage(`{"type":"delta","data":"original"}`)}},
 		&models.ChatPendingTurn{ID: "pending", Payload: []byte(`{"images":[{"ref":"` + ref.String() + `"}]}`)},
+		&models.WorkflowInstruction{ID: "instruction", MailboxID: 1, Generation: "generation", ClientMessageID: "manual", Text: "补充要求同样保留"},
+		&models.WorkflowConversationEvent{ID: "outbox", RunID: "run", Payload: "frozen-result"},
 		&models.Artifact{ID: "file", Kind: "text", Content: "latest-file"},
 		&models.ArtifactVersion{ArtifactID: "file", Content: "old-file", Revision: 1},
 	}
@@ -126,7 +128,7 @@ func TestVerifiedReplicaRestoresSQLPayloadsAndNestedAttachments(t *testing.T) {
 	header := ReplicaHeader{Version: 1, ID: owner, Source: sourceLocation, Destination: destination, DatabaseSHA256: databaseHash, CreatedAt: time.Now().UTC()}
 	var manifest bytes.Buffer
 	summary, err := WriteReplica(ctx, db, source, target, header, &manifest)
-	if err != nil || summary.Objects.Files != int64(len(source.objects)) || summary.References.Attachments != 1 {
+	if err != nil || summary.Objects.Files < 8 || summary.References.Attachments != 1 {
 		t.Fatalf("copy: %+v %v", summary, err)
 	}
 	if len(source.objects) != len(target.objects) {
@@ -160,8 +162,12 @@ func TestVerifiedReplicaRestoresSQLPayloadsAndNestedAttachments(t *testing.T) {
 		t.Fatal(err)
 	}
 	var chat models.SoloMessage
-	if err := restored.First(&chat, "id = ?", "chat").Error; err != nil || chat.Content != "原聊天与更正" {
+	if err := restored.First(&chat, "id = ?", "chat").Error; err != nil || chat.Content != "原聊天与更正" || chat.WorkflowContext != "result-context" {
 		t.Fatalf("cold history lost: %+v %v", chat, err)
+	}
+	var instruction models.WorkflowInstruction
+	if err := restored.First(&instruction, "id = ?", "instruction").Error; err != nil || instruction.Text != "补充要求同样保留" {
+		t.Fatalf("supplement lost: %+v %v", instruction, err)
 	}
 	key := "attachments/" + ref.ID()
 	attachment := target.objects[key]

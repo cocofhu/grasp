@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/subtle"
 	"net"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -15,10 +17,11 @@ import (
 const doctorSessionTTL = 5 * time.Minute
 
 type doctorArtifactSession struct {
-	runA         string
-	runB         string
-	cleanupToken string
-	timer        *time.Timer
+	runA          string
+	runB          string
+	cleanupToken  string
+	timer         *time.Timer
+	cleanupBundle func()
 }
 
 // DoctorArtifactSession provisions short-lived run credentials for the local
@@ -48,11 +51,36 @@ func (h *Handlers) DoctorArtifactSession(c *gin.Context) {
 }
 
 func (h *Handlers) startDoctorArtifactSession(c *gin.Context) {
+	withSandbox := c.Query("sandbox") == "true"
+	if value, present := c.GetQuery("sandbox"); present && value != "true" && value != "false" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid sandbox diagnostic option"})
+		return
+	}
 	id := uuid.NewString()
 	session := doctorArtifactSession{
 		runA:         "doctor-a-" + uuid.NewString(),
 		runB:         "doctor-b-" + uuid.NewString(),
 		cleanupToken: uuid.NewString(),
+	}
+	if err := h.Arts.DiagnosticRuns(c.Request.Context(), true, session.runA, session.runB); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "diagnostic execution unavailable"})
+		return
+	}
+	var bootstrap *sandbox.DoctorBootstrap
+	if withSandbox {
+		var manager *sandbox.Manager
+		if h.Sbx != nil {
+			manager = h.Sbx.Manager()
+		}
+		prepared, cleanup, err := manager.PrepareDoctorBootstrap(c.Request.Context())
+		if err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = h.Arts.DiagnosticRuns(ctx, false, session.runA, session.runB)
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "diagnostic sandbox bootstrap unavailable"})
+			return
+		}
+		bootstrap, session.cleanupBundle = &prepared, cleanup
 	}
 	tokenA := h.MCP.RegisterRun(session.runA)
 	tokenB := h.MCP.RegisterRun(session.runB)
@@ -74,14 +102,19 @@ func (h *Handlers) startDoctorArtifactSession(c *gin.Context) {
 	}
 	h.doctorMu.Unlock()
 
-	c.JSON(http.StatusCreated, gin.H{
+	response := gin.H{
 		"id":            id,
 		"run_a":         session.runA,
 		"token_a":       tokenA,
 		"run_b":         session.runB,
 		"token_b":       tokenB,
 		"cleanup_token": session.cleanupToken,
-	})
+	}
+	if bootstrap != nil {
+		response["bootstrap"] = bootstrap
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusCreated, response)
 }
 
 func (h *Handlers) cleanupDoctorArtifactSession(id, cleanupToken string) error {
@@ -91,15 +124,26 @@ func (h *Handlers) cleanupDoctorArtifactSession(id, cleanupToken string) error {
 		h.doctorMu.Unlock()
 		return os.ErrNotExist
 	}
-	delete(h.doctorSessions, id)
 	h.doctorMu.Unlock()
-
-	if session.timer != nil {
-		session.timer.Stop()
+	// Revoking disposable download credentials does not mutate SQL or need
+	// execution authority. Keep the session receipt if guarded SQL cleanup fails.
+	if session.cleanupBundle != nil {
+		session.cleanupBundle()
 	}
 	h.MCP.UnregisterRun(session.runA)
 	h.MCP.UnregisterRun(session.runB)
-	return h.Arts.DeleteForRuns(session.runA, session.runB)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := h.Arts.DiagnosticRuns(ctx, false, session.runA, session.runB); err != nil {
+		return err
+	}
+	h.doctorMu.Lock()
+	delete(h.doctorSessions, id)
+	h.doctorMu.Unlock()
+	if session.timer != nil {
+		session.timer.Stop()
+	}
+	return nil
 }
 
 func validDoctorToken(header string) bool {

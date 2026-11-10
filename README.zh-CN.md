@@ -21,7 +21,7 @@
 
 </div>
 
-当前版本需要全新安装：使用空数据库和空的数据目录。
+新安装使用空数据库和空的数据目录。已有 v3.2 数据须先按照[停写、校验的升级流程](server/UPGRADING.md)完成迁移，再启动本版本。
 
 ## 为什么做 Grasp
 
@@ -73,6 +73,9 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 ```bash
 git clone https://github.com/cocofhu/grasp.git
 cd grasp
+cp .env.example .env
+# 在 .env 选择配套迁移版镜像（v3.2.0 尚无执行初始化命令）。
+./start.sh init-execution --offline
 ./start.sh -d
 ```
 
@@ -84,12 +87,15 @@ cd grasp
 
 默认演示账号为 `admin` / `demo1234`（仅限本地试用，共享或生产环境请配置独立账号）。沙箱镜像会在首次创建沙箱时按需拉取，也可执行 `./start.sh pull` 提前拉取。
 
+初始化仅适用于尚无 SQL 文件的新安装。`--offline` 表示你已停止所有应用副本、脚本和其他写入者；命令会核对 Compose 应用状态，不会自动停止服务。已有 v3.2 数据须按照 [UPGRADING.md](server/UPGRADING.md) 迁移。初始化中断后沿用同一命令及原私有目录 `.localdata/execution-maintenance/fresh-install` 的收据；控制标记丢失或变化时拒绝重建，普通启动和重启不会自动初始化。
+
 ### 跑通第一个工作流
 
 1. 使用演示账号登录。首次进入工作区会打开安装向导。
 2. 在向导（或「设置 → 凭据」）中选择 `cursor`、`claude_code`、`codebuddy`、`trae`、`opencode` 或 `codex`，填入对应 API Key（Codex 粘贴 `~/.codex/auth.json` 登录文件，无需 API Key；Git 凭据可跳过）。完成后会自动创建默认团队并发布「默认工作流」（需求澄清 → 实现 → 测试评审）。
-3. 在首页输入需求直接启动，或打开画布调整节点与成功 / 失败 / 回滚连线后再运行。
-4. 流程停在人工门禁时，从收件箱查看澄清结果、预览页面或代码改动，确认后继续流转。
+3. 从首页开始 Solo 对话。输入 `/workflow` 选择已发布的工作流，并由你点击启动；工作流定义和画布位于设置中，Solo 不会自行启动工作流。
+4. 在当前 Solo 的任务卡片中管理独立工作流。打开节点可澄清、审批，或提交补充要求，排队到当前聊天轮次结束后处理；要求绑定所见节点、轮次与执行尝试，并保留等待、已处理、过期或结果待核对状态。结果自动回到 Solo，历史执行默认打开聊天，另可查看执行详情。
+5. 设置中关闭工作流后，使用纯 Solo 形态；已有任务仍可管理，API 和 PM 在内的所有新工作流启动均关闭。停止/恢复环境保留工作区；Docker/Kubernetes 重启服务，E2B 按原生暂停能力恢复。
 
 ### 常用命令
 
@@ -99,10 +105,13 @@ cd grasp
 ./start.sh restart     # 重启服务（后台）
 ./start.sh down        # 停止并移除容器
 ./start.sh pull        # 更新服务镜像并预拉沙箱镜像
+./start.sh dev init-execution --offline  # 仅首次：初始化已停止的空源码栈
 ./start.sh dev -d      # 启动源码开发栈（Go + Vite HMR）
 ```
 
 如需指定镜像版本或 digest，可在 `.env` 中覆盖，参考 [`.env.example`](.env.example)。
+
+执行控制目录 `.localdata/execution-control` 和原初始化收据目录 `.localdata/execution-maintenance` 分别持久挂载，与 SQL、正文目录分离；源码栈使用对应的 `.devdata` 目录。保留这些目录，控制标记不能随 SQL / 正文备份回滚。远端控制存储使用独立的 `GRASP_EXECUTION_CONTROL_*` 配置和凭据，不复用正文的 `GRASP_S3_*`。
 
 ### 导入角色包
 

@@ -54,6 +54,12 @@ vi.mock('@/lib/api/api', () => ({
 vi.mock('@/lib/solo/useSoloSessions', () => ({ useSoloSessions: () => ({ upsert: vi.fn(), remove: vi.fn() }) }))
 vi.mock('@/lib/solo/useSoloChat', () => ({
   useSoloChat: () => ({
+    hasEarlier: ref(false),
+    loadingEarlier: ref(false),
+    earlierError: ref(''),
+    processPages: ref({}),
+    loadEarlier: vi.fn(),
+    loadProcess: vi.fn(),
     session: box.session,
     turns: box.turns,
     queued: ref([]),
@@ -110,6 +116,7 @@ function mountPane(messages: object = {}) {
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': messages } })],
       stubs: {
+        SoloWorkflowPanel: true,
         Icon: true,
         ReviewShell: { template: '<div><slot name="actions" /><slot name="stage" /><slot name="sidebar" /></div>' },
         ReactArtifactStage: true,

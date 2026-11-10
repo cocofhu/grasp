@@ -318,6 +318,8 @@ func (s *RunService) Delete(id string) error {
 		}
 
 		for _, m := range []any{
+			&models.WorkflowInstruction{},
+			&models.WorkflowInstructionMailbox{},
 			&models.StateRun{},
 			&models.RunVariable{},
 			&models.Artifact{},

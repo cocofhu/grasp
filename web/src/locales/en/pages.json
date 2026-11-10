@@ -2130,6 +2130,12 @@
         "concurrency": "concurrency",
         "autoRefresh": "Auto-refresh every 5s",
         "note": "total = test + running workflows · excludes TTL keep-alive sandboxes"
+      },
+      "workflows": {
+        "title": "Workflows",
+        "description": "Use Solo as the main entry, with optional workflow management.",
+        "enabled": "Enable workflows",
+        "help": "Disabling prevents new runs. Existing tasks remain available for review, replies and cancellation."
       }
     },
     "sandboxes": {
@@ -4760,6 +4766,21 @@
     },
     "solo": {
       "title": "Solo chats",
+      "outboxUnavailable": "The browser cannot save pending messages. Restore storage access and try again.",
+      "outboxRestored": "A pending message was restored with its original request. Check the records before retrying.",
+      "stopLocalRetry": "Stop local retries",
+      "stopLocalRetryHint": "Only removes this device's retry record. It does not cancel work already accepted by the server.",
+      "invalidReceipt": "The server has not confirmed the original request. Check its status before retrying.",
+      "creationRecovery": {
+        "title": "A chat creation request needs confirmation",
+        "hint": "Your opening message and launch settings are saved on this device. Check whether the chat exists, then open it or retry the original request.",
+        "repositories": "{n} repositories",
+        "defaultModel": "Follow the Agent's default model",
+        "attachments": "{images} attachments · {references} references",
+        "open": "Open the existing chat",
+        "retry": "Retry original request",
+        "check": "Check status"
+      },
       "capacity": "{n} / {max} sandboxes running",
       "newSession": "New session",
       "filterActive": "Running",
@@ -4778,9 +4799,11 @@
         "starting": "Starting",
         "running": "Running",
         "closed": "Closed",
-        "error": "Error"
+        "error": "Error",
+        "stopped": "Stopped"
       },
       "phase": {
+        "confirming": "Waiting for message confirmation…",
         "preparing": "Waiting for the sandbox…",
         "running": "Agent is working"
       },
@@ -4895,6 +4918,11 @@
         "queue": "{n} queued",
         "removeQueued": "Remove from queue",
         "turnFailed": "This turn failed",
+        "journalGap": "Chat history contains a gap. Refresh to reload; no records have been skipped.",
+        "loadEarlier": "Load earlier messages",
+        "loadProcess": "View execution details",
+        "loadMoreProcess": "Load more details",
+        "legacyIncomplete": "This record is from an older version; execution details may be incomplete.",
         "stopped": "Stopped",
         "generating": "Generating…",
         "waitingSandbox": "Runs once the sandbox is ready",
@@ -4904,22 +4932,22 @@
         "plan": "Plan"
       },
       "closedBar": {
-        "text": "Session closed and sandbox released. Restarting creates a new sandbox and clones the repository again; earlier messages are sent to the Agent as context.",
-        "restart": "Restart"
+        "text": "Session closed. Chat and workspace are retained. Continue by resuming the original environment after checking current authorization.",
+        "restart": "Resume session"
       },
       "close": {
         "title": "Close Solo session",
-        "body": "Closing destroys the sandbox. Uncommitted or unpushed changes in it are lost.",
+        "body": "Closing stops current compute and retains the chat, original environment and workspace files.",
         "busy": "The Agent is working; closing interrupts the current task.",
         "pushFirst": "Have the Agent commit and push first",
-        "pushFirstHint": "Sends a message asking the Agent to push its changes; close afterwards",
+        "pushFirstHint": "Optionally commit and push first; closing also retains uncommitted files",
         "pushPrompt": "Please commit all current changes and push them to a remote branch, then tell me the branch name and a summary of the commits.",
-        "confirm": "Close and release sandbox"
+        "confirm": "Close and keep workspace"
       },
       "delete": {
         "title": "Delete session",
-        "body": "This deletes the session and all its messages. It cannot be undone.",
-        "bodyActive": "This closes the sandbox, then deletes the session and all its messages. It cannot be undone.",
+        "body": "Deleting this session and all messages cannot be undone. Release any retained workspace separately first.",
+        "bodyActive": "Close the session to stop compute first. A retained workspace requires a separate release; deleting chat does not confirm file loss.",
         "confirm": "Delete"
       },
       "env": {
@@ -4962,7 +4990,8 @@
         "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
         "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
-        "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level."
+        "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level.",
+        "environment_authorization_blocked": "Current authorization could not be verified. Recovery was blocked; chat, workspace and the original environment are retained."
       },
       "reference": {
         "pickerLabel": "Reference a session or GitHub issue/PR",
@@ -5002,7 +5031,60 @@
           "session": "Reference a session",
           "github": "Reference an issue / PR"
         }
-      }
+      },
+      "environment": {
+        "stop": "Stop environment",
+        "resume": "Resume environment",
+        "stopped": "Environment stopped. Chat and workspace are retained.",
+        "retained": "Stopping releases compute while retaining files.",
+        "release": "Release environment",
+        "stopPending": "Stop is not confirmed. Workspace retained.",
+        "retryStop": "Retry stop"
+      },
+      "workflows": {
+        "title": "Workflow tasks",
+        "choose": "Choose a workflow",
+        "search": "Search published workflows",
+        "launchHint": "Choose a workflow, configure the request and code source, then click Start. Each workflow has its own environment while Solo remains available.",
+        "empty": "No matching published workflows.",
+        "disabled": "Workflows are disabled. Existing tasks remain available.",
+        "handle": "Respond",
+        "conversation": "Conversation and controls",
+        "details": "Execution details",
+        "iteration": "Iteration {n}",
+        "noPendingInput": "No conversation is waiting for input.",
+        "cancelTitle": "Cancel workflow",
+        "cancelBody": "Cancel “{task}”? Solo and other workflows will continue.",
+        "confirmCancel": "Confirm cancellation",
+        "pause": "Pause scheduling",
+        "resume": "Resume",
+        "pausePending": "Will pause after the current step",
+        "continueChat": "Continue conversation",
+        "historyLoadFailed": "Unable to load conversation history",
+        "historyNewEnvironment": "Continue with the workflow conversation and results in a separate environment. Original workspace files require a separate restore.",
+        "instructions": {
+          "title": "Additional instructions",
+          "hint": "Sent to this node in order after its current chat turn. The workflow continues automatically.",
+          "older": "Load earlier instructions",
+          "stale": "The node execution changed. Your draft is retained; check the current target.",
+          "adopt": "Use current execution",
+          "closed": "This execution no longer accepts instructions. Continue in Solo after the workflow.",
+          "preparing": "This node is preparing or has no active instruction inbox.",
+          "placeholder": "Add instructions for this workflow node…",
+          "tooLong": "Instructions must be at most 16 KB.",
+          "send": "Submit to this execution",
+          "states": {
+            "queued": "Queued for this execution",
+            "dispatching": "Processing",
+            "applied": "Processed this execution",
+            "unknown": "Needs verification",
+            "expired": "Execution expired"
+          },
+          "attempt": "Attempt {n}"
+        }
+      },
+      "sendUnconfirmed": "Delivery is unconfirmed. Retry this message to check its receipt.",
+      "retryUnconfirmed": "Retry unconfirmed send"
     },
     "projects": {
       "title": "Repositories",

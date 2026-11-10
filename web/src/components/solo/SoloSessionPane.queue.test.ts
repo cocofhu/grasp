@@ -40,6 +40,12 @@ vi.mock('@/lib/solo/useSessionModelCatalog', () => ({
 vi.mock('@/lib/solo/useSoloSessions', () => ({ useSoloSessions: () => ({ upsert: vi.fn(), remove: vi.fn() }) }))
 vi.mock('@/lib/solo/useSoloChat', () => ({
   useSoloChat: () => ({
+    hasEarlier: ref(false),
+    loadingEarlier: ref(false),
+    earlierError: ref(''),
+    processPages: ref({}),
+    loadEarlier: vi.fn(),
+    loadProcess: vi.fn(),
     session: ref({
       id: 's1', title: 'Solo', agentName: 'Coder', status: 'running', artifactRunId: '', projectId: 'p1',
       repos: [{ position: 0, projectId: 'p1', name: 'web', repoUrl: 'https://github.com/acme/web.git', repoDirName: 'web', branch: 'main' }],
@@ -88,6 +94,7 @@ function mountPane() {
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': pages } })],
       stubs: {
+        SoloWorkflowPanel: true,
         Icon: true,
         ReviewShell: { template: '<div><slot name="actions" /><slot name="sidebar" /></div>' },
         ReactArtifactStage: true,

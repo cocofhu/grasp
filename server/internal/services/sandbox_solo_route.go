@@ -36,7 +36,7 @@ func (liveSoloRouteOps) Ready(ctx context.Context, sb *sandbox.Sandbox) error {
 }
 
 func (liveSoloRouteOps) Connect(ctx context.Context, sb *sandbox.Sandbox, specs []sandbox.MCPServerSpec) (*sandbox.ACPClient, error) {
-	acp := sb.ACP().WithSession(sb.WorkspaceDir, mcpServersJSON(specs))
+	acp := sb.ACP().WithSession(sb.EffectiveWorkspaceDir(), mcpServersJSON(specs))
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
 		return nil, err
@@ -87,8 +87,13 @@ func (s *SandboxService) routeImage(backend string) string {
 
 // AlignSoloModelRoute replaces only the running coding tool and its config.
 // It retains the sandbox, repository files, pending filesystem changes and MCP
-// namespace. It is deliberately separate from Solo.Restart, which reclones.
+// namespace. A cold resume must validate the previously applied grant first.
 func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent Agent) (bool, error) {
+	ctx, release, err := s.acquireSandboxOperation(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	var row models.Sandbox
 	if err := s.db.First(&row, id).Error; err != nil {
 		return false, fmt.Errorf("sandbox not found")
@@ -97,6 +102,10 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		return false, fmt.Errorf("只能切换运行中的 Solo 沙箱")
 	}
 	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	if err != nil {
+		return false, err
+	}
+	authorization, err := s.currentAuthorizationFingerprint(ctx, agent)
 	if err != nil {
 		return false, err
 	}
@@ -112,6 +121,9 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 	}
 	if modelFingerprint == row.ModelBindingFingerprint {
 		s.mu.Unlock()
+		if row.AuthorizationFingerprint != "" && row.AuthorizationFingerprint != authorization {
+			return false, fmt.Errorf("当前环境授权已变化，请保留工作区并重新核验环境")
+		}
 		return false, nil
 	}
 	if ls == nil {
@@ -150,7 +162,7 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		if s.mgr == nil {
 			return false, fmt.Errorf("sandbox manager unavailable")
 		}
-		attached, attachErr := s.mgr.Attach(ctx, row.Name)
+		attached, attachErr := s.mgr.AttachNoEnsure(ctx, row.Name)
 		err = attachErr
 		if err != nil {
 			return false, fmt.Errorf("attach: %w", err)
@@ -220,6 +232,10 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		}
 	}
 	previous = soloPreparedSettings(previous, appliedChatModelID(&session), session.AppliedReasoningEffort)
+	previousAuthorization, previousErr := s.currentAuthorizationFingerprint(ctx, previousAgent)
+	if previousErr != nil || row.AuthorizationFingerprint == "" || previousAuthorization != row.AuthorizationFingerprint {
+		rollbackAvailable = false
+	}
 	ops := s.soloRouteRuntime
 	if ops == nil {
 		ops = liveSoloRouteOps{s.mgr}
@@ -227,7 +243,12 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 	// Persist the handoff obligation before native-session state can be lost.
 	// A process exit between re-prime and reconnect must not skip history when
 	// the retained sandbox is attached on the next request.
-	if err := s.db.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ?", row.ThreadID, id).Update("model_context_pending", true).Error; err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := requireSoloRecoveryParent(tx, &row, soloRecoveryGrant{session: session}); err != nil {
+			return err
+		}
+		return tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ?", row.ThreadID, id).Update("model_context_pending", true).Error
+	}); err != nil {
 		_ = os.RemoveAll(prepared.spec.ConfigHome)
 		return false, fmt.Errorf("保存上下文交接状态失败: %w", err)
 	}
@@ -235,6 +256,17 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		ls.acp.Close()
 	}
 	apply := func(applyCtx context.Context, target, old *preparedAgentContainer) (*sandbox.ACPClient, error) {
+		if err := requireSoloRecoveryParent(s.db.WithContext(applyCtx), &row, soloRecoveryGrant{session: session}); err != nil {
+			return nil, err
+		}
+		selectedAgent, expected := agent, authorization
+		if target == previous {
+			selectedAgent, expected = previousAgent, previousAuthorization
+		}
+		current, grantErr := s.currentAuthorizationFingerprint(applyCtx, selectedAgent)
+		if grantErr != nil || current != expected {
+			return nil, fmt.Errorf("切换期间授权已变化，未应用旧凭据")
+		}
 		keys := append(sandbox.ReprimeEnvKeys(old.spec), runtime.ModelRoutingEnvKeys()...)
 		keys = append(keys, "AGENT_PROVIDER", "CONFIG_ROOT", "CODEX_HOME", runtime.EnvACPBridgeReasoningEffort)
 		if err := ops.SwitchTool(applyCtx, ls.sb, target.spec, keys); err != nil {
@@ -242,6 +274,10 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		}
 		if err := ops.Ready(applyCtx, ls.sb); err != nil {
 			return nil, err
+		}
+		current, grantErr = s.currentAuthorizationFingerprint(applyCtx, selectedAgent)
+		if grantErr != nil || current != expected {
+			return nil, fmt.Errorf("工具启动期间授权已变化，未连接旧授权会话")
 		}
 		acp, err := ops.Connect(applyCtx, ls.sb, target.specs)
 		if err != nil {
@@ -252,7 +288,7 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 	acp, err := apply(ctx, prepared, previous)
 	if err != nil {
 		if !rollbackAvailable {
-			s.invalidateSoloRoute(id, ls)
+			s.invalidateSoloRoute(ctx, id, ls)
 			_ = os.RemoveAll(prepared.spec.ConfigHome)
 			return false, fmt.Errorf("切换工具失败，原配置已失效；工作区已保留，请重新选择模型重试: %w", err)
 		}
@@ -267,20 +303,35 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		}
 		_ = os.RemoveAll(prepared.spec.ConfigHome)
 		if rollbackErr != nil {
-			s.invalidateSoloRoute(id, ls)
+			s.invalidateSoloRoute(ctx, id, ls)
 			return false, fmt.Errorf("切换工具失败，恢复原配置也失败: %w", err)
 		}
 		return false, fmt.Errorf("切换工具失败，已恢复原配置: %w", err)
 	}
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{"model_binding_fingerprint": modelFingerprint, "host": ls.sb.Host, "acp_port": ls.sb.Port}).Error; err != nil {
+	currentAuthorization, grantErr := s.currentAuthorizationFingerprint(ctx, agent)
+	if grantErr != nil || currentAuthorization != authorization {
+		acp.Close()
+		s.invalidateSoloRoute(ctx, id, ls)
+		_ = os.RemoveAll(prepared.spec.ConfigHome)
+		return false, s.blockSoloRecoveryAuthorization(ctx, &row, soloRecoveryGrant{session: session}, fmt.Errorf("工具连接期间授权已变化，未发布运行状态"))
+	}
+	if err := s.commitSandboxOperationPrepared(ctx, id, func(tx *gorm.DB) error {
+		return requireSoloRecoveryParent(tx, &row, soloRecoveryGrant{session: session})
+	}, func(tx *gorm.DB) error {
+		if err := s.updateSandboxOperation(ctx, tx, id, map[string]any{"model_binding_fingerprint": modelFingerprint, "authorization_fingerprint": authorization, "host": ls.sb.Host, "acp_port": ls.sb.Port}); err != nil {
 			return err
 		}
-		return tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ?", row.ThreadID, id).Update("model_context_pending", true).Error
+		return tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND lifecycle_epoch = ? AND lifecycle_attempt_id = ?", row.ThreadID, id, session.LifecycleEpoch, session.LifecycleAttemptID).
+			Updates(map[string]any{"model_context_pending": true, "applied_configuration_id": agent.ModelBinding.ConfigurationID}).Error
 	}); err != nil {
 		acp.Close()
+		if soloLifecycleObsolete(err) {
+			s.invalidateSoloRoute(ctx, id, ls)
+			_ = os.RemoveAll(prepared.spec.ConfigHome)
+			return false, err
+		}
 		if !rollbackAvailable {
-			s.invalidateSoloRoute(id, ls)
+			s.invalidateSoloRoute(ctx, id, ls)
 			_ = os.RemoveAll(prepared.spec.ConfigHome)
 			return false, fmt.Errorf("保存切换状态失败，原配置已失效；工作区已保留，请重试: %w", err)
 		}
@@ -295,7 +346,7 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		}
 		_ = os.RemoveAll(prepared.spec.ConfigHome)
 		if rollbackErr != nil {
-			s.invalidateSoloRoute(id, ls)
+			s.invalidateSoloRoute(ctx, id, ls)
 			return false, fmt.Errorf("保存切换状态失败，恢复原配置失败: %w", err)
 		}
 		return false, fmt.Errorf("保存切换状态失败，已恢复原配置: %w", err)
@@ -338,9 +389,13 @@ func soloPreparedSettings(prepared *preparedAgentContainer, model, effort string
 
 // An incomplete rollback leaves the actual tool uncertain. Force the next
 // attempt to re-apply a complete route rather than trusting its old fingerprint.
-func (s *SandboxService) invalidateSoloRoute(id uint, ls *liveSandbox) {
+func (s *SandboxService) invalidateSoloRoute(ctx context.Context, id uint, ls *liveSandbox) {
 	s.mu.Lock()
 	ls.modelBindingFingerprint = ""
 	s.mu.Unlock()
-	_ = s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("model_binding_fingerprint", "").Error
+	commitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	defer cancel()
+	_ = s.commitSandboxOperation(commitCtx, id, func(tx *gorm.DB) error {
+		return s.updateSandboxOperation(commitCtx, tx, id, map[string]any{"model_binding_fingerprint": "", "authorization_fingerprint": ""})
+	})
 }
