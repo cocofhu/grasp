@@ -105,6 +105,13 @@ func TestPmSearchMessagesAndFailDraft(t *testing.T) {
 
 func TestPmTurnRunnerStartCancelAndFinish(t *testing.T) {
 	db := setupPmDB(t)
+	// Match the production SQLite pool: a polling read must not make the
+	// asynchronous startup lease CAS fail with shared-cache SQLITE_LOCKED.
+	pool, poolErr := db.DB()
+	if poolErr != nil {
+		t.Fatal(poolErr)
+	}
+	pool.SetMaxOpenConns(1)
 	acp, port := fakeACPServer(t)
 	defer acp.Close()
 	ds := &dockerState{acpPort: port}
