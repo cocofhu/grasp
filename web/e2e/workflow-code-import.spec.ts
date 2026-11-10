@@ -51,7 +51,7 @@ async function preview(page: Page) {
 
 test('terminal workflow card imports explicitly into a new directory while Solo remains available', async ({ page }, testInfo) => {
   const { requests } = await setup(page)
-  await page.getByTestId('resident-solo-draft').fill('继续我的 Solo 工作，不覆盖未提交代码')
+  await page.getByTestId('resident-solo-input').fill('继续我的 Solo 工作，不覆盖未提交代码')
   await expect(page.getByTestId('solo-workflow-running-task').getByTestId('workflow-import-code')).toHaveCount(0)
   await preview(page)
   expect(requests.filter(request => request.path.endsWith('/confirm'))).toHaveLength(0)
@@ -78,7 +78,7 @@ test('terminal workflow card imports explicitly into a new directory while Solo 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: '/tmp/grasp-workspace-import-mobile.png', fullPage: true })
   await page.locator('.fixed.inset-0.z-40').getByRole('button').first().click()
-  await expect(page.getByTestId('resident-solo-draft')).toHaveValue('继续我的 Solo 工作，不覆盖未提交代码')
+  await expect(page.getByTestId('resident-solo-input')).toHaveValue('继续我的 Solo 工作，不覆盖未提交代码')
   expect(page.url()).toContain('solo-workflows.html')
 })
 

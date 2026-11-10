@@ -35,6 +35,7 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import { useSoloChat, type SoloChatTransport } from './useSoloChat'
+import { partsOf } from './acpTurn'
 import { modelRouteValue } from '@/lib/agent/modelBindings'
 import { readSoloOutbox, removeSoloOutbox, saveSoloOutbox, soloOutboxScope, type SoloTurnRequest } from './soloOutbox'
 
@@ -140,9 +141,12 @@ describe('useSoloChat', () => {
       expect(listPage).toHaveBeenLastCalledWith('s1', 'older-token')
       expect(chat.turns.value.map(turn => turn.id)).toEqual(['s:older', 'u:question', 'a:answer'])
       const turn = chat.turns.value.find(row => row.id === 'a:answer')!
+      expect(turn.processAvailable).toBe(true)
+      expect(turn.processComplete).toBe(false)
       await chat.loadProcess(turn)
       expect(chat.turns.value.find(row => row.id === 'a:answer')?.text).toBe('complete answer')
       expect(chat.turns.value.find(row => row.id === 'a:answer')?.tools).toHaveLength(1)
+      expect(partsOf(chat.turns.value.find(row => row.id === 'a:answer')!).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['partial', 'complete answer'])
       await chat.loadProcess(turn)
       expect(chat.processPages.value.answer?.error).toBe('temporary storage error')
       expect(chat.processPages.value.answer?.next).toBe(102)
@@ -150,10 +154,35 @@ describe('useSoloChat', () => {
       expect(listEvents.mock.calls.map(call => call[2])).toEqual([-1, 102, 102])
       expect(chat.processPages.value.answer?.hasMore).toBe(false)
       expect(chat.turns.value.find(row => row.id === 'a:answer')?.text).toBe('complete answer')
+      expect(chat.turns.value.find(row => row.id === 'a:answer')?.processComplete).toBe(true)
+      expect(partsOf(chat.turns.value.find(row => row.id === 'a:answer')!).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['partial', 'remainder', 'complete answer'])
       socket.emit({ type: 'session', event: 'history_changed' })
       await flushPromises()
       expect(chat.turns.value[0]?.id).toBe('s:older')
       expect(chat.hasEarlier.value).toBe(false)
+    } finally { app.unmount() }
+  })
+
+  it('drops the process fold once a complete journal has nothing to show besides the reply', async () => {
+    const saved = { id: 'answer', sessionId: 's1', turnId: 'question', role: 'assistant' as const, content: 'answer', createdAt: '2026-11-09T00:00:01Z', eventLog: { version: 1, from: 1, through: 2, count: 2, generation: 1 } }
+    const question = { id: 'question', sessionId: 's1', role: 'user' as const, content: 'question', createdAt: '2026-11-09T00:00:01Z' }
+    const listPage = vi.fn().mockResolvedValue({ items: [question, saved], hasMore: false })
+    const listEvents = vi.fn().mockResolvedValueOnce({ items: [
+      { seq: 1, type: 'acp', data: { type: 'session_update', update: { sessionUpdate: 'usage_update', used: 10 } } },
+      { seq: 2, type: 'acp', data: acp('answer\n').data },
+    ], next: 2, head: 2, hasMore: false })
+    const { chat, app } = mountChat({ ...mocks, listSoloMessagePage: listPage, listSoloMessageEvents: listEvents })
+    try {
+      await flushPromises()
+      FakeSocket.all[0]!.open()
+      await flushPromises()
+      const turn = chat.turns.value.find(row => row.id === 'a:answer')!
+      expect(turn.processAvailable).toBe(true)
+      await chat.loadProcess(turn)
+      const loaded = chat.turns.value.find(row => row.id === 'a:answer')!
+      expect(loaded.processComplete).toBe(true)
+      expect(loaded.processAvailable).toBe(false)
+      expect(partsOf(loaded).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['answer\n'])
     } finally { app.unmount() }
   })
 

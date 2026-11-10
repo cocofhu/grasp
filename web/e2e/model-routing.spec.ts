@@ -24,7 +24,7 @@ test('Solo pages saved messages and execution details without replacing the comp
   const session = { id: 'solo-history', title: '历史续聊', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-11-09T00:00:00Z', updatedAt: '2026-11-09T00:00:02Z', restarts: 0, busy: false, waiting: 0, repos: [], initialConfigurationId: 'history-config', initialModelId: 'history-model' }
   const messages = [
     { id: 'question', sessionId: session.id, role: 'user', content: '检查已有代码和工作区', createdAt: session.createdAt },
-    { id: 'answer', turnId: 'question', sessionId: session.id, role: 'assistant', content: '完整结论：现有改动已保留，可以继续处理后续需求。', status: 'ok', createdAt: session.updatedAt, eventLog: { version: 1, from: 101, through: 104, count: 4, generation: 9 } },
+    { id: 'answer', turnId: 'question', sessionId: session.id, role: 'assistant', content: '完整结论：现有改动已保留，可以继续处理后续需求。', status: 'ok', createdAt: session.updatedAt, durationMs: 49_000, eventLog: { version: 1, from: 101, through: 104, count: 4, generation: 9 } },
   ]
   const cursors: number[] = []
   let latestMessages: Record<string, unknown>[] = messages
@@ -56,14 +56,15 @@ test('Solo pages saved messages and execution details without replacing the comp
   })
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/workspace-config.html?view=/solo/solo-history')
-  const answer = page.getByTestId('solo-agent-message')
+  const answer = page.getByTestId('solo-agent-message').filter({ hasText: messages[1]!.content })
   await expect(answer).toContainText(messages[1]!.content)
+  await expect(page.getByTestId('agent-timeline-elapsed')).toHaveText('用时 49s')
+  await expect(page.getByTestId('solo-load-process')).toHaveCount(0)
   expect(cursors).toEqual([])
   await page.getByTestId('solo-load-earlier').click()
   await expect(page.getByText('更早的会话记录', { exact: true })).toHaveCount(1)
-  await page.getByTestId('solo-load-process').click()
+  await page.getByTestId('agent-timeline-elapsed').click()
   await expect(answer).toContainText(messages[1]!.content)
-  await page.getByTestId('agent-timeline-elapsed-process').click()
   await expect(page.getByText('检查 workspace.txt', { exact: true })).toBeVisible()
   await page.getByTestId('solo-load-process').click()
   await expect(page.getByRole('alert').filter({ hasText: '过程记录暂不可用' })).toBeVisible()
@@ -73,6 +74,9 @@ test('Solo pages saved messages and execution details without replacing the comp
   await expect(answer).toHaveCount(1)
   expect(cursors).toEqual([-1, 102, 102])
   await page.screenshot({ path: testInfo.outputPath('solo-history-paged.png'), fullPage: true })
+  await page.getByTestId('agent-timeline-elapsed').click()
+  await expect(page.getByTestId('agent-timeline-elapsed')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('solo-agent-message')).toHaveCount(1)
 
   await page.getByTestId('solo-input').fill('工作流继续运行，同时回答我的问题')
   await page.getByTestId('solo-send').click()
@@ -84,11 +88,14 @@ test('Solo pages saved messages and execution details without replacing the comp
   latestMessages = [...messages, question, result]
   socket!.send(JSON.stringify({ type: 'session', event: 'history_changed', seq: 203, sessionGeneration: 9, revision: 5 }))
   await expect(page.getByText(result.content, { exact: true })).toBeVisible()
-  latestMessages.push({ id: 'next-answer', turnId: question.id, sessionId: session.id, role: 'assistant', content: '第二轮完整回复，工作流结果也已保留。', status: 'ok', createdAt: '2026-11-09T00:00:05Z', eventLog: { version: 1, from: 202, through: 202, count: 1, generation: 9 } })
+  latestMessages.push({ id: 'next-answer', turnId: question.id, sessionId: session.id, role: 'assistant', content: '第二轮完整回复，工作流结果也已保留。', status: 'ok', createdAt: '2026-11-09T00:00:05Z', durationMs: 2_000, eventLog: { version: 1, from: 202, through: 202, count: 1, generation: 9 } })
   socket!.send(JSON.stringify({ type: 'session', event: 'turn_done', seq: 204, sessionGeneration: 9, revision: 6, userMsgId: question.id }))
   await expect(page.getByTestId('solo-agent-activity')).toHaveCount(0)
   await expect(page.getByTestId('solo-agent-message')).toHaveCount(2)
   await expect(page.getByTestId('solo-agent-message').last()).toHaveText('第二轮完整回复，工作流结果也已保留。')
+  await expect(page.getByTestId('agent-timeline-elapsed')).toHaveCount(2)
+  await expect(page.getByTestId('agent-timeline-elapsed').last()).toHaveText('用时 2s')
+  await expect(page.getByTestId('agent-timeline-elapsed').last()).toHaveAttribute('aria-expanded', 'false')
 })
 
 test('Solo restores an unconfirmed send after reload with the exact original identity and shows one human message', async ({ page }, testInfo) => {

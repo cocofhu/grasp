@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
+import ComposerCommandMenu from '@/components/chat/ComposerCommandMenu.vue'
+import { useComposerCommands } from '@/lib/chat/useComposerCommands'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import HomeParticleMeshBackground from '@/components/dashboard/HomeParticleMeshBackground.vue'
@@ -57,6 +59,14 @@ const mentionEnabled = computed(() => !!soloAgentName.value)
 const mentionDefaultRepo = computed(() => githubRepoOf(soloProjects.value.find(p => p.id === soloProjectIds.value[0])?.repoUrl))
 const mentionScope = computed<ReferenceScope>(() => ({ agent: soloAgentName.value, projects: soloProjectIds.value }))
 const mention = useReferenceComposer({ input: draft, textarea: textareaRef, composing, defaultRepo: mentionDefaultRepo, enabled: mentionEnabled })
+const commandMenuId = useId()
+const commands = useComposerCommands({
+  input: draft, textarea: textareaRef, composing, disabled: composerBusy,
+  commands: computed(() => workflowsEnabled.value ? [{
+    id: 'workflow', label: t('pages.solo.workflows.choose'), description: t('pages.solo.workflows.commandHint'),
+  }] : []),
+  onSelect(command) { draft.value = `/${command.id}`; void submitComposer() },
+})
 const mentionPicker = mention.picker
 const plusOpen = ref(false)
 let draftLoaded = false
@@ -77,12 +87,20 @@ async function submitComposer() {
   submitting.value = true
   if (draftTimer) clearTimeout(draftTimer)
   cheerTick.value++
-  const started = await solo.start(command ? '' : draft.value, attachments.value.map(image => ({ ...image })), '', mention.refs.value)
+  // Attachments or references would start a model turn in the new Solo; a
+  // workflow command only opens configuration, so they stay in the home draft.
+  const started = command
+    ? await solo.start('')
+    : await solo.start(draft.value, attachments.value.map(image => ({ ...image })), '', mention.refs.value)
   if (started) {
     draft.value = ''
-    attachments.value = []
-    mention.clear()
-    await clearHomeComposerDraft()
+    if (command && attachments.value.length) {
+      await saveHomeComposerDraft('', attachments.value, '')
+    } else {
+      attachments.value = []
+      mention.clear()
+      await clearHomeComposerDraft()
+    }
     if (command) void router.replace({ path: `/solo/${started.id}`, query: { workflow: command[1] || '1' } })
   }
   submitting.value = false
@@ -111,7 +129,8 @@ function onPlus() { if (mentionEnabled.value) plusOpen.value = !plusOpen.value; 
 function plusPickFiles() { plusOpen.value = false; openFilePicker() }
 function plusReference(tab: ReferenceTab) { plusOpen.value = false; mention.open(tab) }
 function onComposerPaste(event: ClipboardEvent) { onPaste(event); mention.onPaste(event) }
-function onComposerKeyup(event: KeyboardEvent) { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) mention.updateTrigger() }
+function updateComposerTriggers() { mention.updateTrigger(); commands.updateTrigger() }
+function onComposerKeyup(event: KeyboardEvent) { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) updateComposerTriggers() }
 function onComposerSubmit(event: Event) { event.preventDefault(); void submitComposer() }
 function onWindowPointerDown(event: PointerEvent) { if (!(event.target instanceof Element && event.target.closest('[data-home-plus]'))) plusOpen.value = false }
 watch([soloAgentName, () => soloProjectIds.value.join('|')], () => {
@@ -207,11 +226,12 @@ function autoGrow() {
 function onTextInput() {
   autoGrow()
   typingTick.value++
-  mention.updateTrigger()
+  updateComposerTriggers()
 }
 
 function onComposerKeydown(e: KeyboardEvent) {
   if (mention.onKeydown(e)) return
+  if (commands.onKeydown(e)) return
   // plan g1.1 — Ctrl/⌘+Enter sends; bare Enter / Shift+Enter insert newline
   if (e.key !== 'Enter') return
   if (composing.value || e.isComposing || e.keyCode === 229) return
@@ -222,11 +242,13 @@ function onComposerKeydown(e: KeyboardEvent) {
 
 function onComposerFocus() {
   composerFocused.value = true
+  commands.focus()
 }
 
 function onComposerBlur() {
   composerFocused.value = false
   mention.trigger.value = null
+  commands.blur()
 }
 
 
@@ -330,6 +352,15 @@ onBeforeUnmount(() => {
           />
         </TransitionGroup>
         <div class="relative w-full">
+        <ComposerCommandMenu
+          v-if="commands.open.value"
+          :id="commandMenuId"
+          :commands="commands.matches.value"
+          :selected="commands.selected.value"
+          test-prefix="home"
+          placement="down"
+          @select="commands.select"
+        />
         <Transition name="ref-pop">
           <ReferencePicker
             v-if="mentionEnabled && mention.trigger.value"
@@ -370,13 +401,17 @@ onBeforeUnmount(() => {
               data-testid="home-composer-input"
               rows="3"
               :disabled="composerBusy"
+              :aria-controls="commands.open.value ? commandMenuId : undefined"
+              :aria-expanded="workflowsEnabled ? commands.open.value : undefined"
+              :aria-activedescendant="commands.open.value ? `${commandMenuId}-${commands.matches.value[commands.selected.value]?.id}` : undefined"
               autocomplete="off"
               @input="onTextInput"
               @keydown="onComposerKeydown"
               @compositionstart="composing = true"
-              @compositionend="composing = false; mention.updateTrigger()"
+              @compositionend="composing = false; updateComposerTriggers()"
               @paste="onComposerPaste"
-              @click="mention.updateTrigger"
+              @click="updateComposerTriggers"
+              @select="updateComposerTriggers"
               @keyup="onComposerKeyup"
               @focus="onComposerFocus"
               @blur="onComposerBlur"

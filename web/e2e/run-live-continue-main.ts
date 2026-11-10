@@ -5,8 +5,9 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import RunLiveView from '../src/views/RunLiveView.vue'
+import RunView from '../src/views/RunView.vue'
 
-/** Real RunLiveView on /runs/:id/live (API and run WS mocked by the spec). */
+/** Real live and default Run routes (API and run WS mocked by the spec). */
 async function bootstrap() {
   await initLocale()
   await setLocale('zh-CN')
@@ -15,7 +16,7 @@ async function bootstrap() {
     history: createMemoryHistory(),
     routes: [
       { path: '/runs/:id/live', component: RunLiveView },
-      { path: '/runs/:id', component: stub },
+      { path: '/runs/:id', component: RunView },
       { path: '/runs/:runId/nodes/:nodeId', component: stub },
       { path: '/:rest(.*)*', component: stub },
     ],
@@ -34,7 +35,8 @@ async function bootstrap() {
       },
     })
   }
-  await router.push(`/runs/${q.get('run') || 'run-live-e2e'}/live?node=${q.get('node') || 'impl'}`)
+  const runId = q.get('run') || 'run-live-e2e'
+  await router.push(q.has('history') ? `/runs/${runId}` : `/runs/${runId}/live?node=${q.get('node') || 'impl'}`)
   ;(window as unknown as { __router: typeof router }).__router = router
   createApp({ render: () => h('div', { class: 'h-screen' }, h(RouterView)) })
     .use(createPinia())

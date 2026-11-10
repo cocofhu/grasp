@@ -16,6 +16,7 @@ import {
   activeSegment,
   chainBootPending,
   clipTask,
+  isRunTerminal,
   normalizeRunChain,
   priorSegments as chainPriorSegments,
   runChainFromRun,
@@ -65,7 +66,12 @@ export type LiveHandoff = { phase: 'pending' | 'done'; at: string; target?: stri
  * user's Stop, or the observed node itself being parked for a person, opens
  * the /gates chat.
  */
-export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat: Ref<LiveChatSurface | null>) {
+export function useRunLive(
+  runId: Ref<string>,
+  requestedNode: Ref<string>,
+  chat: Ref<LiveChatSurface | null>,
+  options: { history?: boolean } = {},
+) {
   const router = useRouter()
   const route = useRoute()
   const toast = useToast()
@@ -86,14 +92,16 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   const chatKind = ref<'clarify' | 'review'>('review')
   const nodeLabel = ref('')
   const chain = ref<RunChain | null>(null)
+  /** An already-ended Run opened inside the chat-first history route. */
+  const historyReady = ref(false)
   const handoff = ref<LiveHandoff | null>(null)
   const confirmError = ref<string | null>(null)
   /** Chats confirmed on this page stay expanded above, like /gates. */
   const opened = ref<string[]>([])
   const priorSegments = computed(() =>
-    chainPriorSegments(chain.value, nodeId.value, iteration.value).map((s: ChainSegment) => ({
+    (historyReady.value ? chain.value?.segments ?? [] : chainPriorSegments(chain.value, nodeId.value, iteration.value)).map((s: ChainSegment) => ({
       ...s,
-      open: opened.value.includes(`${s.nodeId}:${s.iteration}`),
+      open: (historyReady.value && s.kind !== 'auto') || opened.value.includes(`${s.nodeId}:${s.iteration}`),
     })),
   )
   const completedEvents = ref<AcpEvent[] | null>(null)
@@ -422,6 +430,34 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     return reviewState.requestRecovery((checkpoint, signal) => loadOnce(checkpoint, signal))
   }
 
+  /**
+   * /runs/:id now hosts chat history. An initially terminal Run has no live
+   * node to follow: render every persisted visit rather than routing back to
+   * this same address and disposing the still-mounted loading controller.
+   */
+  async function loadHistory(r: Run, id: string, signal: AbortSignal, gen: number, visit: number) {
+    if (r.id && r.id !== id) throw new Error('run_history_mismatch')
+    let saved: RunChain
+    try {
+      saved = normalizeRunChain(await api.runConversationChain(id, { signal }), r.nodes)
+    } catch (error: unknown) {
+      if ((error as { status?: number })?.status !== 404) throw error
+      saved = runChainFromRun(r)
+    }
+    if (signal.aborted || gen !== loadGen || !currentVisit(visit, id)) return
+    if (saved.runId && saved.runId !== id) throw new Error('run_history_mismatch')
+    seedChainBoots(saved)
+    run.value = r
+    chain.value = saved
+    historyReady.value = true
+    shown = true
+    endState.value = { kind: 'run', status: String(r.status) }
+    ended.value = true
+    stopping.value = false
+    loadError.value = false
+    stop()
+  }
+
   async function loadOnce(checkpoint: ReviewRecoveryCheckpoint, signal: AbortSignal) {
     if (ended.value || signal.aborted) return
     const gen = ++loadGen
@@ -440,7 +476,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       const r = await api.getRun(id, { signal })
       if (signal.aborted || gen !== loadGen || !currentVisit(visit, id)) return
       if (continuedChat && !reviewState.isCurrent(checkpoint, node)) return
-      applyRun(r, id, false, checkpoint)
+      if (options.history && !shown && isRunTerminal(r.status)) await loadHistory(r, id, signal, gen, visit)
+      else applyRun(r, id, false, checkpoint)
       if (continuedChat && mode.value === 'chat' && chatBusy) await seed(true, signal)
       else if (observingSeeded && mode.value === 'observe' && nodeId.value === node &&
         reviewState.isCurrent(checkpoint, node)) await seed(true, signal)
@@ -792,6 +829,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     chatKind.value = 'review'
     completedEvents.value = null
     chain.value = null
+    historyReady.value = false
     handoff.value = null
     confirmError.value = null
     opened.value = []
@@ -825,6 +863,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     stopping,
     ended,
     endState,
+    historyReady,
     task,
     mode,
     chatKind,

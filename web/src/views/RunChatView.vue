@@ -51,7 +51,7 @@ onBeforeUnmount(() => { generation++; request?.abort(); clearInterval(timer) })
     </p>
     <div v-else-if="chat" class="flex min-h-0 flex-1 flex-col">
       <SoloSessionPane v-if="chat.soloId" :key="chat.soloId" :session-id="chat.soloId" @back="router.push('/dashboard')" />
-      <RunLiveView v-else :key="runId" />
+      <RunLiveView v-else :key="runId" history />
     </div>
     <SoloCreateModal :open="createOpen" :continuation-run-id="runId" @close="createOpen = false; load()" />
   </div>
