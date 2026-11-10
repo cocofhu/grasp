@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { req } from '@/lib/api/httpCore'
+import { randomUuid } from '@/lib/shared/randomUuid'
 import AppButton from '@/components/ui/AppButton.vue'
 
 type Source = { nodeId: string; iteration: number; attempt: number; shared: boolean; available: boolean; state: string; createdAt: string }
@@ -13,7 +14,7 @@ const emptyDraft = (): WorkspaceImportDraft => ({ sourceKey: '', inventory: null
 const props = defineProps<{ sessionId: string; runId: string; nodes?: { id: string; label: string }[] }>()
 const draft = defineModel<WorkspaceImportDraft | null>('draft', { default: null })
 const emit = defineEmits<{ changed: [] }>()
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 // A bound model emits synchronously but its prop updates on the next render.
 // Keep an immediate reactive value so the first drawer render is never null.
 const state = ref<WorkspaceImportDraft>(draft.value || emptyDraft())
@@ -28,18 +29,19 @@ const sourceKey = (source: Pick<Source, 'nodeId' | 'iteration' | 'attempt'>) => 
 const selectedSource = computed(() => sources.value.find(source => sourceKey(source) === state.value.sourceKey))
 const selected = computed(() => Object.entries(state.value.selections).filter(([, value]) => value.checked).map(([path, value]) => ({ path, commit: value.commit.trim() })))
 const valid = computed(() => selected.value.length > 0 && selected.value.every(repo => /^[0-9a-f]{40}$/.test(repo.commit)))
-const uncertain = computed(() => state.value.uncertain || ['applying', 'unknown'].includes(state.value.preview?.state || ''))
+const unsettled = (state = '') => state === 'applying' || state === 'unknown'
+const uncertain = computed(() => state.value.uncertain || unsettled(state.value.preview?.state))
 const status = computed(() => uncertain.value ? 'unknown' : state.value.preview?.state || 'prepared')
-const repositoryReasons = new Set(['repository_submodules', 'repository_lfs', 'repository_shallow', 'repository_external_objects', 'repository_external_worktree', 'repository_custom_configuration', 'repository_rewritten_history', 'repository_unsafe_metadata', 'repository_limit'])
 function repositoryReason(repo: Repository) {
-  return repositoryReasons.has(repo.reason || '') ? t(`pages.solo.workspaceImport.reasons.${repo.reason}`) : t('pages.solo.workspaceImport.repositoryUnsupported')
+  const key = `pages.solo.workspaceImport.reasons.${repo.reason}`
+  return repo.reason && te(key) ? t(key) : t('pages.solo.workspaceImport.repositoryUnsupported')
 }
 function label(source: Pick<Source, 'nodeId' | 'iteration' | 'attempt'>) {
   const node = props.nodes?.find(node => node.id === source.nodeId)?.label || source.nodeId
   return t('pages.solo.workspaceImport.sourceLabel', { node, iteration: source.iteration, attempt: source.attempt })
 }
 function date(value: string) { return new Date(value).toLocaleString(locale.value) }
-function nonce() { return crypto.randomUUID() }
+const nonce = randomUuid
 function failed(cause: unknown) { if (!disposed) error.value = cause instanceof Error ? cause.message : String(cause) }
 function remember(receipt: Preview) { previous.value = [receipt, ...previous.value.filter(value => value.id !== receipt.id)].slice(0, 20) }
 function editSource() { state.value.inventory = null; state.value.selections = {}; state.value.previewRequestId = ''; error.value = '' }
@@ -104,7 +106,7 @@ async function adopt(receipt: Preview) {
     const result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}`)
     if (disposed) return
     const same = state.value.preview?.id === result.id
-    state.value.preview = result; state.value.uncertain = ['applying', 'unknown'].includes(result.state)
+    state.value.preview = result; state.value.uncertain = unsettled(result.state)
     remember(result)
     if (!same) state.value.confirmRequestId = ''
     if (result.state === 'applied') emit('changed')
@@ -118,9 +120,9 @@ async function reconcile() {
     // First read authoritative SQL. Only this explicit user action may then
     // ask the runtime for its completion receipt; it never retries Import.
     let result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}`)
-    if (['applying', 'unknown'].includes(result.state)) result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}/reconcile`, { method: 'POST' })
+    if (unsettled(result.state)) result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}/reconcile`, { method: 'POST' })
     if (disposed) return
-    state.value.preview = result; state.value.uncertain = ['applying', 'unknown'].includes(result.state)
+    state.value.preview = result; state.value.uncertain = unsettled(result.state)
     remember(result)
     if (result.state === 'applied') emit('changed')
   } catch (cause) { failed(cause) } finally { busy.value = false }
