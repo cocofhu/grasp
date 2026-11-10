@@ -4934,7 +4934,12 @@
         "title": "Close Solo session",
         "body": "Closing stops current compute and retains the chat, original environment and workspace files.",
         "busy": "The Agent is working; closing interrupts the current task.",
-        "confirm": "Close and keep workspace"
+        "confirm": "Close and keep workspace",
+        "closing": "Closing…",
+        "pending": "Closing “{title}”…",
+        "progress": "Closing the session and stopping compute. You can continue with other sessions.",
+        "success": "“{title}” closed. Workspace retained.",
+        "failed": "Could not close the session. Refresh to check its state before retrying."
       },
       "env": {
         "title": "Session environment",

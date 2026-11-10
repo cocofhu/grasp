@@ -119,6 +119,7 @@ const workspaceMocks = vi.hoisted(() => {
 vi.mock('@/lib/api/api', () => ({
   api: {
     updateRunTitle: (...args: unknown[]) => apiMocks.updateRunTitle(...args),
+    closeSoloSession: (...args: unknown[]) => apiMocks.closeSoloSession(...args),
     listRuns: (...args: unknown[]) => apiMocks.listRuns(...args),
     listSoloSessions: (...args: unknown[]) => apiMocks.listSoloSessions(...args),
     cancelRun: (...args: unknown[]) => apiMocks.cancelRun(...args),
@@ -437,6 +438,80 @@ describe('AppSidebarNav', () => {
     expect(routerMocks.replace).toHaveBeenLastCalledWith({ path: '/solo/solo-1', query: { panel: 'files', workspace: 'snapshots' } })
     await nextTick()
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('dismisses Solo close immediately, keeps other rows usable and finishes after the drawer unmounts', async () => {
+    const session = soloSession()
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [session, soloSession({ id: 'solo-2', title: '另一个会话' })], maxSandboxes: 5 })
+    let finish!: (session: SoloSession) => void
+    apiMocks.closeSoloSession.mockReturnValue(new Promise(resolve => { finish = resolve }))
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const row = wrapper.get('[data-kind="solo"][data-key="solo-1"]')
+    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-solo-close-confirm"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(apiMocks.closeSoloSession).toHaveBeenCalledExactlyOnceWith('solo-1')
+    expect(row.get('[data-testid="nav-solo-closing"]').text()).toBe('正在关闭…')
+    expect(useSoloSessions().sessions.value.find(s => s.id === session.id)?.status).toBe('running')
+    expect(useToast().toasts.value).toEqual([expect.objectContaining({ sticky: true, type: 'default', message: expect.stringContaining('正在关闭') })])
+
+    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect((document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).disabled).toBe(true)
+    expect((document.querySelector('[data-testid="nav-solo-menu-environment"]') as HTMLButtonElement).disabled).toBe(true)
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    expect(apiMocks.closeSoloSession).toHaveBeenCalledTimes(1)
+    await wrapper.get('[data-kind="solo"][data-key="solo-2"]').trigger('click')
+    expect(routerMocks.push).toHaveBeenLastCalledWith('/solo/solo-2')
+    wrapper.unmount()
+
+    finish({ ...session, status: 'closed' })
+    await flushPromises()
+    expect(useSoloSessions().closing.value.size).toBe(0)
+    expect(useSoloSessions().ended.value.some(s => s.id === session.id)).toBe(true)
+    expect(useToast().toasts.value).toEqual([expect.objectContaining({ type: 'success', message: expect.stringContaining('已关闭') })])
+  })
+
+  it('reconciles a failed Solo close without reopening the modal or reporting success', async () => {
+    const session = soloSession()
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [session], maxSandboxes: 5 })
+    let fail!: (cause: Error) => void
+    apiMocks.closeSoloSession.mockReturnValue(new Promise((_, reject) => { fail = reject }))
+    const wrapper = mountNav(true)
+    await flushPromises()
+    await wrapper.get('[data-kind="solo"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-solo-close-confirm"]') as HTMLButtonElement).click()
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [{ ...session, status: 'closed', error: '环境停止尚未确认' }], maxSandboxes: 5 })
+    fail(new Error('环境停止尚未确认'))
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(useSoloSessions().closing.value.size).toBe(0)
+    expect(useSoloSessions().sessions.value[0]?.status).toBe('closed')
+    expect(useToast().toasts.value).toEqual([expect.objectContaining({ type: 'error', message: '环境停止尚未确认' })])
+    expect(apiMocks.closeSoloSession).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it.each(['Escape', 'close', 'cancel'])('dismisses Solo close with %s without sending a request', async (action) => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession()], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await flushPromises()
+    await wrapper.get('[data-kind="solo"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    const dialog = document.querySelector('[role="dialog"]')!
+    if (action === 'Escape') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    else if (action === 'close') (dialog.querySelector('[aria-label="关闭"]') as HTMLButtonElement).click()
+    else ([...dialog.querySelectorAll('button')].find(button => button.textContent?.trim() === '取消') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(apiMocks.closeSoloSession).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
