@@ -242,6 +242,7 @@
       "previewPickUrl.ts",
       "previewTabKey.ts",
       "previewVncChannel.ts",
+      "randomUuid.ts",
       "refreshChrome.ts",
       "regionPolicy.ts",
       "routePending.ts",
@@ -298,7 +299,7 @@
     "inbox": 44,
     "pm": 7,
     "run": 76,
-    "shared": 39,
+    "shared": 40,
     "solo": 18,
     "workflow": 3,
     "workspace": 7

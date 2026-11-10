@@ -12,6 +12,8 @@ export type WsReconnectOptions = {
   baseDelayMs?: number
   /** Max delay ms (default 10000). */
   maxDelayMs?: number
+  /** Replaces the default jittered backoff; receives the 0-based attempt. */
+  delayFor?: (attempt: number) => number
   schedule?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>
   clearSchedule?: (id: ReturnType<typeof setTimeout>) => void
 }
@@ -25,6 +27,11 @@ export function createWsReconnectController(opts: WsReconnectOptions) {
   let attempt = 0
   let timer: ReturnType<typeof setTimeout> | undefined
   let intentionalClose = false
+
+  function jitteredDelay(n: number) {
+    const exp = Math.min(max, base * Math.pow(2, n))
+    return exp + Math.floor(Math.random() * Math.min(200, exp * 0.2))
+  }
 
   function clearTimer() {
     if (timer !== undefined) {
@@ -58,9 +65,7 @@ export function createWsReconnectController(opts: WsReconnectOptions) {
       }
       if (!opts.shouldReconnect()) return false
       clearTimer()
-      const exp = Math.min(max, base * Math.pow(2, attempt))
-      const jitter = Math.floor(Math.random() * Math.min(200, exp * 0.2))
-      const delay = exp + jitter
+      const delay = opts.delayFor ? opts.delayFor(attempt) : jitteredDelay(attempt)
       attempt += 1
       timer = schedule(() => {
         timer = undefined

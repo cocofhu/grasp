@@ -1,5 +1,8 @@
 // Package payloadstore wires payloads, attachments and snapshots to their
 // verified physical primary. Storage changes require an explicit offline copy.
+//
+// It is the composition layer: it selects the objectstore backend, attaches
+// filestore to it, and proves the SQL references and the primary agree.
 package payloadstore
 
 import (

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { req } from '@/lib/api/httpCore'
+import { randomUuid } from '@/lib/shared/randomUuid'
 import AppButton from '@/components/ui/AppButton.vue'
 
 type ReleaseReceipt = { id: string; state: string; wholeEnvironment: boolean; chatsRetained: boolean; snapshotsRetained: number; workspacesAffected: number; returnPointsRetained: number; lossConfirmationRequired: boolean; requiresReconciliation: boolean; blockers?: string[]; error?: string; createdAt: string }
@@ -21,7 +22,7 @@ const base = computed(() => `/solo/sessions/${encodeURIComponent(props.sessionId
 const needsCheck = computed(() => state.value.uncertain || ['confirmed', 'dispatching', 'unknown'].includes(state.value.receipt?.state || ''))
 const canConfirm = computed(() => state.value.receipt?.state === 'prepared' && !needsCheck.value && lossAccepted.value && !busy.value)
 let disposed = false
-const nonce = () => crypto.randomUUID()
+const nonce = randomUuid
 const status = (value: string) => t(`workspaceRelease.states.${['prepared', 'confirmed', 'dispatching', 'unknown', 'released'].includes(value) ? value : 'unknown'}`)
 function failed(cause: unknown) {
   const code = cause && typeof cause === 'object' && 'code' in cause ? String(cause.code) : ''

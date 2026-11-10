@@ -660,10 +660,6 @@
       "colSubtotal": "小计"
     },
     "workspace": {
-      "tokenTipTitle": "用量细节",
-      "tokenTipTotal": "合计",
-      "tokenTipWorkflow": "工作流",
-      "tokenTipPm": "工作区助手",
       "newWorkflow": {
         "scratch": "从零开始",
         "scratchDesc": "空白画布，自己拖节点搭建",
@@ -4865,9 +4861,6 @@
         "submit": "启动"
       },
       "home": {
-        "modeLabel": "首页模式",
-        "modeWorkflow": "工作流",
-        "modeSolo": "Solo",
         "placeholders": [
           "直接和 Agent 对话，比如：帮我看看登录接口为什么偶发 500",
           "让 Agent 在仓库里改个 bug 并推一个分支",

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { attachmentsReading } from '@/lib/shared/attachments'
+import { randomUuid } from '@/lib/shared/randomUuid'
 import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -86,8 +87,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const router = useRouter()
 const phase = ref<Phase>('form')
-const requestKey = ref(crypto.randomUUID())
-watch(() => props.open, (open) => { if (open) requestKey.value = crypto.randomUUID() })
+const requestKey = ref(randomUuid())
+watch(() => props.open, (open) => { if (open) requestKey.value = randomUuid() })
 const messageText = ref('')
 const messageImages = ref<ClarifyImage[]>([])
 /** The home composer passes its own first message; other entry points type it here. */
