@@ -4916,6 +4916,7 @@
         "loadEarlier": "Load earlier messages",
         "loadProcess": "View execution details",
         "loadMoreProcess": "Load more details",
+        "noAdditionalProcess": "No additional thinking or tool activity was recorded for this reply.",
         "legacyIncomplete": "This record is from an older version; execution details may be incomplete.",
         "stopped": "Stopped",
         "generating": "Generating…",
