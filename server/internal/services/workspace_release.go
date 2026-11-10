@@ -206,6 +206,13 @@ func (s *WorkspaceReleaseService) prepareScope(ctx context.Context, tx *gorm.DB,
 	if restores != 0 {
 		return scope, ErrWorkspaceReleaseBlocked
 	}
+	var imports int64
+	if err := tx.Model(&models.WorkspaceImport{}).Where("(target_sandbox_id = ? OR source_sandbox_id = ?) AND state IN ?", row.SandboxID, row.SandboxID, []string{"applying", "unknown"}).Count(&imports).Error; err != nil {
+		return scope, err
+	}
+	if imports != 0 {
+		return scope, ErrWorkspaceReleaseBlocked
+	}
 	var snapshots []models.WorkspaceSnapshot
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "archive_sha256", "manifest_sha256", "state", "verified_at", "actor_id", "scope_kind", "scope_id").Where("source_sandbox_id = ?", row.SandboxID).Order("id").Find(&snapshots).Error; err != nil {
 		return scope, err

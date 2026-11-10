@@ -103,6 +103,10 @@ func TestVerifiedReplicaRestoresSQLPayloadsNestedAttachmentsAndInstructions(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	archiveRef, _, err := files.Put(ctx, strings.NewReader("retained Git archive\x00\xff"), filestore.Binary)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rows := []any{
 		&models.SoloMessage{ID: "chat", SessionID: "private-user", Content: "原聊天与更正", WorkflowContext: "result-context", Images: []models.PromptImage{{Ref: ref.String()}}, Events: []json.RawMessage{json.RawMessage(`{"type":"delta","data":"original"}`)}},
 		&models.ChatPendingTurn{ID: "pending", Payload: []byte(`{"images":[{"ref":"` + ref.String() + `"}]}`)},
@@ -110,6 +114,7 @@ func TestVerifiedReplicaRestoresSQLPayloadsNestedAttachmentsAndInstructions(t *t
 		&models.WorkflowConversationEvent{ID: "outbox", RunID: "run", Payload: "frozen-result"},
 		&models.Artifact{ID: "file", Kind: "text", Content: "latest-file"},
 		&models.ArtifactVersion{ArtifactID: "file", Content: "old-file", Revision: 1},
+		&models.WorkspaceImport{ID: "code-import", ArchiveRef: archiveRef},
 	}
 	for _, row := range rows {
 		if err := db.Create(row).Error; err != nil {
@@ -168,6 +173,14 @@ func TestVerifiedReplicaRestoresSQLPayloadsNestedAttachmentsAndInstructions(t *t
 	var instruction models.WorkflowInstruction
 	if err := restored.First(&instruction, "id = ?", "instruction").Error; err != nil || instruction.Text != "补充要求同样保留" {
 		t.Fatalf("supplement lost: %+v %v", instruction, err)
+	}
+	var imported models.WorkspaceImport
+	if err := restored.First(&imported, "id = ?", "code-import").Error; err != nil || imported.ArchiveRef != archiveRef {
+		t.Fatalf("raw archive ownership lost in SQL restore: %+v %v", imported, err)
+	}
+	archive, err := coldFiles.Load(ctx, imported.ArchiveRef, filestore.Binary)
+	if err != nil || string(archive) != "retained Git archive\x00\xff" {
+		t.Fatalf("destination alone cannot restore archive body: %q %v", archive, err)
 	}
 	key := "attachments/" + ref.ID()
 	attachment := target.objects[key]

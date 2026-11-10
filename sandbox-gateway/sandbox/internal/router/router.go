@@ -74,9 +74,21 @@ func New(deps *Dependencies) *gin.Engine {
 	r.POST("/api/model", handler.ModelPOST(deps.Chats))
 	r.GET("/api/qq/config", handler.QQConfig(deps.QQBot))
 	r.POST("/api/qq/config", handler.QQConfigUpdate(deps.QQBot))
-	// Workspace operations are control-plane only and disabled on an
-	// unauthenticated standalone bridge.
+	// Code transfer is control-plane only and disabled on an unauthenticated
+	// standalone bridge. It never accepts a caller-selected host root.
 	if deps.Auth != nil && deps.Auth.Enabled() {
+		root := os.Getenv("WORKSPACE_DIR")
+		if root != "" {
+			code := handler.NewWorkspaceCode(root)
+			if deps.Workspace != nil && deps.Workspace.Binding != nil {
+				code = handler.NewBoundWorkspaceCode(deps.Workspace.Binding)
+			}
+			r.GET("/api/workspace/code", code.Inventory)
+			r.PATCH("/api/workspace/code/fence", code.Renew)
+			r.POST("/api/workspace/code/export", code.Export)
+			r.POST("/api/workspace/code/imports/:importId", code.Import)
+			r.GET("/api/workspace/code/imports/:importId", code.Receipt)
+		}
 		if deps.Workspace != nil {
 			if deps.Workspace.Binding != nil {
 				binding := &handler.WorkspaceBinding{Manager: deps.Workspace.Binding}

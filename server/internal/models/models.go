@@ -1212,6 +1212,7 @@ func AllModels() []any {
 		&ChatPendingTurn{},
 		&ChatQueue{}, &ChatQueueEpoch{}, &ChatQueueTurn{}, &ChatEventChunk{},
 		&WorkflowInstructionMailbox{}, &WorkflowInstruction{},
+		&WorkspaceImport{},
 		&WorkflowEventSource{},
 		&WorkspaceSnapshot{}, &WorkspaceSnapshotJob{}, &WorkspaceRestore{},
 		&WorkspaceBindingHead{}, &WorkspaceBinding{}, &WorkspaceReturnPoint{}, &WorkspaceBindingOperation{}, &WorkspaceBindingUse{},

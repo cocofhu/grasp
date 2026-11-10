@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,22 @@ import (
 	"backend/internal/workspacesnapshot"
 	"github.com/gin-gonic/gin"
 )
+
+func TestWorkspaceCodeRoutesRequireAnExplicitWorkspaceRoot(t *testing.T) {
+	deps := &Dependencies{WebRoot: t.TempDir(), Chats: service.NewChatManager(), Auth: auth.NewGuard("runtime-test-password")}
+	for _, root := range []string{"", t.TempDir()} {
+		t.Setenv("WORKSPACE_DIR", root)
+		found := 0
+		for _, route := range New(deps).Routes() {
+			if strings.HasPrefix(route.Path, "/api/workspace/code") {
+				found++
+			}
+		}
+		if root == "" && found != 0 || root != "" && found != 5 {
+			t.Fatalf("workspace root %q registered %d code routes", root, found)
+		}
+	}
+}
 
 func TestWorkspaceFilesAreAuthenticatedAndUseTheRealRuntimeController(t *testing.T) {
 	root := t.TempDir()
