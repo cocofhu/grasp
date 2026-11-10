@@ -27,11 +27,9 @@ import { isAutoProcessNode, keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_ST
 import {
   clearSidebarHandoff,
   consumeSidebarHandoff,
-  decideSidebarFlight,
   isSidebarConfirmWindowHeld,
   isSidebarRunDismissed,
   readSidebarHandoff,
-  SIDEBAR_FLIGHT_MS,
   sidebarHandoffEpoch,
   sidebarTrackedRunIds,
   type SidebarRunGroup,
@@ -52,6 +50,7 @@ import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { isSoloActive, useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { soloErrorText } from '@/lib/solo/soloErrors'
 import type { SoloSession } from '@/lib/api/apiTypes'
+import SidebarSectionHeading from './SidebarSectionHeading.vue'
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
 import { isSectionCollapsed, toggleSection } from '@/lib/shared/sidebarSections'
 import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
@@ -80,8 +79,8 @@ const { pins, pin: pinRow, unpin: unpinRow } = useSidebarPins()
 const { unreadCount } = useRunTerminalNotifications()
 const { isMobile } = useBreakpoint()
 const soloStore = useSoloSessions()
+const soloCollapsed = computed(() => isSectionCollapsed('solo'))
 const runningCollapsed = computed(() => isSectionCollapsed('running'))
-const autoCollapsed = computed(() => isSectionCollapsed('auto'))
 const queuedCollapsed = computed(() => isSectionCollapsed('queued'))
 const navRoot = ref<HTMLElement | null>(null)
 
@@ -108,7 +107,7 @@ const pendingItems = computed(() => {
 })
 const pendingRunIds = computed(() => new Set(pendingItems.value.map((it) => it.runId)))
 
-/** Unfinished runs (queued / running / waiting_human) for「正在执行」「自动过程」「排队中」. */
+/** Unfinished runs (queued / running / waiting_human) for「工作流」「排队中」. */
 const runningRuns = ref<Run[]>([])
 const runningById = computed(() => new Map(runningRuns.value.map((r) => [r.id, r])))
 /** A row is named after its run: the run's own title wins over whatever the pending item carries. */
@@ -155,8 +154,7 @@ async function loadRunningRuns(opts?: { follow?: boolean }) {
       dropCarriedRows(controller)
       return
     }
-    // Solo sessions are resident sandboxes, but active ones belong in the
-    // same「正在执行」section as workflow runs.
+    // Solo sessions are resident sandboxes; active ones fill「正在执行」.
     void soloStore.refresh()
     const result = await api.listRuns({
       page: 1,
@@ -189,7 +187,7 @@ async function loadRunningRuns(opts?: { follow?: boolean }) {
 
 /** Run order last shown; see keepRowOrder. */
 let shownRunOrder: string[] = []
-/** Group last painted for each run. A confirm window freezes a row that was in 正在执行. */
+/** Group last painted for each run. A confirm window freezes a row that was waiting on a person. */
 let paintedGroups = new Map<string, SidebarRunGroup>()
 const pendingRows = computed(() => {
   const rows = mergeRunRows(pendingItems.value, runningRuns.value, activeInboxKey.value)
@@ -241,9 +239,9 @@ const isRowPinned = (it: InboxItem) => runPins.value.some((p) => p.itemKey === i
 type RowGroup = 'running' | 'auto' | 'queued' | 'left'
 function rowGroup(runId: string): RowGroup {
   if (isSidebarRunDismissed(runId)) return 'left'
-  // This confirm's window is still up. Keep the row where it was painted in 正在执行,
-  // even when the handoff or the snapshot already says 自动过程. A row already
-  // painted in 自动过程 is not this handoff and must not be pulled back.
+  // This confirm's window is still up. Keep the row painted as waiting on a person,
+  // even when the handoff or the snapshot already says automatic. A row already
+  // painted as automatic is not this handoff and must not be pulled back.
   if (isSidebarConfirmWindowHeld(runId) && paintedGroups.get(runId) !== 'auto') return 'running'
   const run = runningById.value.get(runId)
   if (run?.status === 'queued') return 'queued'
@@ -259,14 +257,13 @@ function autoNodeName(it: InboxItem): string {
   if (rowGroup(it.runId) !== 'auto') return ''
   return sidebarAutoNodeName(runningById.value.get(it.runId), readSidebarHandoff(it.runId))
 }
-const humanPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'running'))
-const autoPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'auto'))
+const isWorkflowGroup = (group: RowGroup | undefined): group is SidebarRunGroup => group === 'running' || group === 'auto'
+const workflowPendingRows = computed(() => pendingRows.value.filter((it) => isWorkflowGroup(rowGroups.value.get(it.runId))))
 const queuedPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'queued'))
-const orderedHumanRows = computed(() => orderWithPins(humanPendingRows.value, (it) => it.runId, runPins.value))
-const orderedAutoRows = computed(() => orderWithPins(autoPendingRows.value, (it) => it.runId, runPins.value))
+const orderedWorkflowRows = computed(() => orderWithPins(workflowPendingRows.value, (it) => it.runId, runPins.value))
 const orderedQueuedRows = computed(() => orderWithPins(queuedPendingRows.value, (it) => it.runId, runPins.value))
 /**
- * Active Solo sandboxes share the same running section as workflow runs.
+ * Active Solo sandboxes sit in「正在执行」; every executing workflow run, waiting or automatic, sits in「工作流」.
  * Ordered by start time (newest first) so activity never reshuffles the rows.
  */
 const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
@@ -276,23 +273,17 @@ const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
   return diff || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }))
 const orderedSoloRows = computed(() => orderWithPins(soloRows.value, soloRowKey, soloPins.value))
-const runningSectionCount = computed(() => orderedHumanRows.value.length + orderedSoloRows.value.length)
+const soloSectionCount = computed(() => orderedSoloRows.value.length)
+const runningSectionCount = computed(() => orderedWorkflowRows.value.length)
 
 type SidebarSectionEntry =
   | { kind: 'run'; key: string; row: InboxItem }
   | { kind: 'solo'; key: string; session: SoloSession }
 const runEntry = (row: InboxItem): SidebarSectionEntry => ({ kind: 'run', key: row.runId, row })
 const soloEntry = (session: SoloSession): SidebarSectionEntry => ({ kind: 'solo', key: soloRowKey(session), session })
-/** One pin order across workflow and Solo rows, so a pinned row of either kind sits above every unpinned one. */
-const runningEntries = computed(() => orderWithPins(
-  [...humanPendingRows.value.map(runEntry), ...soloRows.value.map(soloEntry)],
-  (e) => e.key,
-  [...runPins.value, ...soloPins.value],
-))
-const autoSectionCount = computed(() => orderedAutoRows.value.length)
 const queuedSectionCount = computed(() => orderedQueuedRows.value.length)
 
-type RunSectionId = 'running' | 'auto' | 'queued'
+type RunSectionId = 'solo' | 'running' | 'queued'
 const runSections = computed(() => {
   const sections: Array<{
     id: RunSectionId
@@ -301,11 +292,25 @@ const runSections = computed(() => {
     toggleTestId: string
     rowsTestId: string
     labelKey: string
-    icon: 'run-live' | 'arrow-flow' | 'queue'
+    icon: 'run-live' | 'workflow' | 'queue'
     count: number
     collapsed: boolean
     entries: SidebarSectionEntry[]
   }> = []
+  if (soloSectionCount.value > 0) {
+    sections.push({
+      id: 'solo',
+      testId: 'nav-solo-running',
+      headingTestId: 'nav-solo-heading',
+      toggleTestId: 'nav-solo-toggle',
+      rowsTestId: 'nav-solo-rows',
+      labelKey: 'nav.runningRuns',
+      icon: 'run-live',
+      count: soloSectionCount.value,
+      collapsed: soloCollapsed.value,
+      entries: orderedSoloRows.value.map(soloEntry),
+    })
+  }
   if (runningSectionCount.value > 0) {
     sections.push({
       id: 'running',
@@ -313,25 +318,11 @@ const runSections = computed(() => {
       headingTestId: 'nav-running-heading',
       toggleTestId: 'nav-running-toggle',
       rowsTestId: 'nav-running-rows',
-      labelKey: 'nav.runningRuns',
-      icon: 'run-live',
+      labelKey: 'nav.workflows',
+      icon: 'workflow',
       count: runningSectionCount.value,
       collapsed: runningCollapsed.value,
-      entries: runningEntries.value,
-    })
-  }
-  if (autoSectionCount.value > 0) {
-    sections.push({
-      id: 'auto',
-      testId: 'nav-auto-process',
-      headingTestId: 'nav-auto-heading',
-      toggleTestId: 'nav-auto-toggle',
-      rowsTestId: 'nav-auto-rows',
-      labelKey: 'nav.autoProcess',
-      icon: 'arrow-flow',
-      count: autoSectionCount.value,
-      collapsed: autoCollapsed.value,
-      entries: orderedAutoRows.value.map(runEntry),
+      entries: orderedWorkflowRows.value.map(runEntry),
     })
   }
   if (queuedSectionCount.value > 0) {
@@ -981,9 +972,9 @@ function onPendingRow(it: InboxItem) {
     suppressPendingClick.value = false
     return
   }
-  // 「自动过程」always opens the live conversation, including a visit that has
+  // An automatic row always opens the live conversation, including a visit that has
   // not started and a confirmed handoff the snapshot has not caught up to.
-  // 「正在执行」still opens that node's own chat. Right-click stays on the menu.
+  // A row waiting on a person still opens that node's own chat. Right-click stays on the menu.
   const auto = rowGroup(it.runId) === 'auto'
   if (auto || isRunOnlyRow(it)) {
     const run = runningById.value.get(it.runId)
@@ -1032,9 +1023,6 @@ onBeforeUnmount(() => {
   window.clearTimeout(rowClickReleaseTimer)
   window.removeEventListener('pointerup', onRowPressEnd)
   window.removeEventListener('pointercancel', onRowPressEnd)
-  takeFlightMotion()
-  for (const timer of flightTimers.values()) window.clearTimeout(timer)
-  flightTimers.clear()
   document.removeEventListener('mousedown', onDocMouseDown)
   document.removeEventListener('keydown', onDocKeydown)
   document.removeEventListener('visibilitychange', onDocumentVisibility)
@@ -1069,132 +1057,6 @@ function prefersReducedMotion(): boolean {
   )
 }
 
-const rowRects = new Map<string, DOMRect>()
-const flights = ref<Record<string, { kind: 'in' | 'back'; landing: 'row' | 'heading' }>>({})
-const flightGhost = ref<{
-  runId: string
-  title: string
-  kind: 'in' | 'back'
-  landing: 'row' | 'heading'
-  style: Record<string, string>
-} | null>(null)
-const flightGhostEl = ref<HTMLElement | null>(null)
-const flightTimers = new Map<string, number>()
-/** Bumped to drop a move that was scheduled but not yet painted. */
-let flightMotion = 0
-const flightFrames: number[] = []
-
-function takeFlightMotion() {
-  flightMotion += 1
-  for (const id of flightFrames) cancelAnimationFrame(id)
-  flightFrames.length = 0
-  return flightMotion
-}
-
-function queueFlightFrame(motion: number, cb: () => void) {
-  const id = requestAnimationFrame(() => {
-    const at = flightFrames.indexOf(id)
-    if (at >= 0) flightFrames.splice(at, 1)
-    if (motion !== flightMotion) return
-    cb()
-  })
-  flightFrames.push(id)
-}
-
-function rowFlight(runId: string) {
-  return flights.value[runId]?.kind
-}
-function rowFlightLanding(runId: string) {
-  return flights.value[runId]?.landing
-}
-function rowFlightHidden(runId: string): boolean {
-  return flightGhost.value?.runId === runId && flights.value[runId]?.landing === 'row'
-}
-
-function captureRowRects() {
-  rowRects.clear()
-  const root = navRoot.value
-  if (!root) return
-  for (const el of root.querySelectorAll<HTMLElement>('[data-testid="nav-pending-row"]')) {
-    if (el.dataset.kind === 'solo') continue
-    const key = el.dataset.key
-    if (!key) continue
-    const rect = el.getBoundingClientRect()
-    if (rect.width > 0 && rect.height > 0) rowRects.set(key, rect)
-  }
-}
-
-function clearFlightVisual(runId: string) {
-  if (!(runId in flights.value) && flightGhost.value?.runId !== runId) return
-  const next = { ...flights.value }
-  delete next[runId]
-  flights.value = next
-  if (flightGhost.value?.runId === runId) flightGhost.value = null
-}
-
-function scheduleFlightClear(runId: string) {
-  const prev = flightTimers.get(runId)
-  if (prev) window.clearTimeout(prev)
-  flightTimers.set(runId, window.setTimeout(() => {
-    flightTimers.delete(runId)
-    clearFlightVisual(runId)
-  }, SIDEBAR_FLIGHT_MS))
-}
-
-function beginFlight(runId: string, kind: 'in' | 'back', landing: 'row' | 'heading') {
-  const motion = takeFlightMotion()
-  flights.value = { ...flights.value, [runId]: { kind, landing } }
-  scheduleFlightClear(runId)
-  const from = rowRects.get(runId)
-  const root = navRoot.value
-  if (!from || !root) return
-  const headingId = kind === 'in' ? 'nav-auto-heading' : 'nav-running-heading'
-  const target = landing === 'heading'
-    ? root.querySelector<HTMLElement>(`[data-testid="${headingId}"]`)
-    : root.querySelector<HTMLElement>(`[data-key="${runId}"]`)
-  const to = target?.getBoundingClientRect()
-  if (!to || to.width < 1 || to.height < 1) return
-  const dx = to.left - from.left
-  const dy = to.top - from.top
-  if (landing === 'row' && Math.abs(dx) < 1 && Math.abs(dy) < 1) return
-  const it = pendingRows.value.find((row) => row.runId === runId)
-  // Position only. Transform stays on the element so a later render cannot
-  // snap it to the destination before the origin has been painted.
-  flightGhost.value = {
-    runId,
-    title: it ? rowTitle(it) : '',
-    kind,
-    landing,
-    style: {
-      left: `${from.left}px`,
-      top: `${from.top}px`,
-      width: `${from.width}px`,
-      height: `${from.height}px`,
-    },
-  }
-  void nextTick(() => {
-    if (motion !== flightMotion) return
-    const el = flightGhostEl.value ?? document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
-    if (!el || flightGhost.value?.runId !== runId) return
-    // Commit the origin, then let that frame paint before writing the end
-    // transform. A nextTick write still lands before the first paint, so the
-    // transition has nothing to interpolate from.
-    el.style.transition = 'none'
-    el.style.transform = 'translate3d(0px, 0px, 0px)'
-    void el.offsetHeight
-    queueFlightFrame(motion, () => {
-      queueFlightFrame(motion, () => {
-        const live = flightGhostEl.value ?? document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
-        if (!live || flightGhost.value?.runId !== runId || motion !== flightMotion) return
-        live.style.transition = `transform ${SIDEBAR_FLIGHT_MS}ms var(--ease-out-expo)`
-        void live.offsetHeight
-        live.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`
-        scheduleFlightClear(runId)
-      })
-    })
-  })
-}
-
 function releaseHandoffIfHuman(runId: string, group: SidebarRunGroup) {
   if (group !== 'running') return
   const mark = readSidebarHandoff(runId)
@@ -1213,32 +1075,6 @@ function releaseHandoffIfHuman(runId: string, group: SidebarRunGroup) {
   clearSidebarHandoff(runId)
 }
 
-function cancelFlight(runId: string) {
-  const timer = flightTimers.get(runId)
-  if (timer) window.clearTimeout(timer)
-  flightTimers.delete(runId)
-  clearFlightVisual(runId)
-  takeFlightMotion()
-}
-
-/** Move a row when its visible group changes. A confirm window still on screen keeps that run in 正在执行. */
-function navIsShown(): boolean {
-  const root = navRoot.value
-  if (!root?.isConnected) return false
-  let el: HTMLElement | null = root
-  while (el) {
-    if (typeof window.getComputedStyle === 'function' && window.getComputedStyle(el).display === 'none') return false
-    el = el.parentElement
-  }
-  return true
-}
-
-function headingIsFlightTarget(id: RunSectionId): boolean {
-  return Object.values(flights.value).some((flight) =>
-    flight.landing === 'heading' && ((id === 'auto' && flight.kind === 'in') || (id === 'running' && flight.kind === 'back')),
-  )
-}
-
 function settleRunGroups() {
   const listed = new Set(pendingRows.value.map((it) => it.runId))
   for (const runId of sidebarTrackedRunIds()) {
@@ -1249,53 +1085,26 @@ function settleRunGroups() {
     if (mark?.confirmedAuto && !isSidebarRunDismissed(runId)) continue
     clearSidebarHandoff(runId)
   }
-  // Queued rows stay out of the painted groups, so moving in or out of 排队中 is a plain place.
   const next = new Map<string, SidebarRunGroup>()
-  for (const it of orderedHumanRows.value) next.set(it.runId, 'running')
-  for (const it of orderedAutoRows.value) next.set(it.runId, 'auto')
-  if (!navIsShown()) {
-    paintedGroups = next
-    return
+  for (const it of orderedWorkflowRows.value) {
+    const group = rowGroups.value.get(it.runId)
+    if (isWorkflowGroup(group)) next.set(it.runId, group)
   }
-  const reduced = prefersReducedMotion()
   for (const [runId, group] of next) {
-    const previous = paintedGroups.get(runId) ?? null
     releaseHandoffIfHuman(runId, group)
     const mark = readSidebarHandoff(runId)
-    const run = runningById.value.get(runId)
-    // A fly-in that has not finished is cancelled when the handoff is taken back.
-    // A finished automatic row that later waits still flies back.
-    const retractingFlyIn = previous === 'auto' && group === 'running' && flights.value[runId]?.kind === 'in'
-    if (retractingFlyIn) cancelFlight(runId)
-    const decision = decideSidebarFlight({
-      previous,
-      next: group,
-      handoffArmed: !!mark,
-      confirmedAuto: !!mark && (mark.confirmedAuto || isAutoProcessNode(run?.currentNode)),
-      reducedMotion: reduced,
-      targetCollapsed: isSectionCollapsed(group),
-      confirmWindowHeld: isSidebarConfirmWindowHeld(runId),
-    })
-    if (!retractingFlyIn && (decision.type === 'fly-in' || decision.type === 'fly-back')) {
-      beginFlight(runId, decision.type === 'fly-in' ? 'in' : 'back', decision.landing)
-    }
     // Keep the claim until the list itself shows the automatic node, so the row does not jump back.
-    if (group === 'auto' && mark && isAutoProcessNode(run?.currentNode)) consumeSidebarHandoff(runId)
-  }
-  for (const runId of paintedGroups.keys()) {
-    if (!next.has(runId) && flights.value[runId]) cancelFlight(runId)
+    if (group === 'auto' && mark && isAutoProcessNode(runningById.value.get(runId)?.currentNode)) consumeSidebarHandoff(runId)
   }
   paintedGroups = next
 }
 
 const placementKey = computed(() => {
   void sidebarHandoffEpoch.value
-  const human = orderedHumanRows.value.map((it) => it.runId).join('\n')
-  const auto = orderedAutoRows.value.map((it) => `${it.runId}\t${autoNodeName(it)}`).join('\n')
+  const workflow = orderedWorkflowRows.value.map((it) => `${it.runId}\t${rowGroups.value.get(it.runId)}\t${autoNodeName(it)}`).join('\n')
   const queued = orderedQueuedRows.value.map((it) => it.runId).join('\n')
-  return `${human}\u0000${auto}\u0000${queued}`
+  return `${workflow}\u0000${queued}`
 })
-watch(placementKey, () => { captureRowRects() }, { flush: 'pre' })
 watch(placementKey, () => { settleRunGroups() }, { flush: 'post', immediate: true })
 
 /** First paint (direct /agents etc.) must not play the push animation. */
@@ -1409,21 +1218,15 @@ const settingsItems = computed(() => (
     </div>
 
     <div v-for="section in runSections" :key="section.id" class="sidebar-run-section mb-3" :data-testid="section.testId">
-      <div class="sidebar-section-heading grasp-status-host px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3" :data-testid="section.headingTestId" :data-flight-target="headingIsFlightTarget(section.id) ? 'true' : undefined">
-        <button
-          type="button"
-          class="sidebar-section-label"
-          :data-testid="section.toggleTestId"
-          :aria-expanded="!section.collapsed"
-          :aria-label="t(section.collapsed ? 'nav.sectionExpand' : 'nav.sectionCollapse', { name: t(section.labelKey) })"
-          @click="toggleSection(section.id)"
-        >
-          <Icon :name="section.icon" :size="14" class="sidebar-section-icon" aria-hidden="true" />
-          <span>{{ t(section.labelKey) }}</span>
-          <Icon :interactive="false" name="chevron-down" :size="12" class="sidebar-section-chevron" :class="{ 'is-collapsed': section.collapsed }" aria-hidden="true" />
-        </button>
-        <span class="sidebar-section-count">{{ section.count }}</span>
-      </div>
+      <SidebarSectionHeading
+        :icon="section.icon"
+        :label="t(section.labelKey)"
+        :collapsed="section.collapsed"
+        :count="section.count"
+        :toggle-test-id="section.toggleTestId"
+        :data-testid="section.headingTestId"
+        @toggle="toggleSection(section.id)"
+      />
       <div v-show="!section.collapsed" class="sidebar-tree" :data-testid="section.rowsTestId">
       <div v-for="entry in section.entries" :key="entry.key" class="sidebar-tree-item">
         <template v-if="entry.kind === 'run'">
@@ -1483,14 +1286,12 @@ const settingsItems = computed(() => (
           v-hover-ink
           type="button"
           class="nav-item grasp-status-host mb-0.5 w-full min-w-0 text-start"
-          :class="{ active: isPendingActive(entry.row), 'sidebar-flight-source': rowFlightHidden(entry.row.runId) }"
+          :class="{ active: isPendingActive(entry.row) }"
           data-testid="nav-pending-row"
           :data-key="entry.row.runId"
           :data-node-id="entry.row.nodeId"
-          :data-section="section.id"
+          :data-group="rowGroups.get(entry.row.runId)"
           :data-motion="rowMotion(entry.row) || undefined"
-          :data-flight="rowFlight(entry.row.runId)"
-          :data-flight-landing="rowFlightLanding(entry.row.runId)"
           :title="pendingTooltip(entry.row)"
           :aria-current="isPendingActive(entry.row) ? 'true' : undefined"
           @click="onPendingRow(entry.row)"
@@ -1591,15 +1392,6 @@ const settingsItems = computed(() => (
 
   </nav>
   <Teleport to="body">
-    <div
-      v-if="flightGhost"
-      ref="flightGhostEl"
-      class="sidebar-flight-ghost"
-      data-testid="nav-flight-ghost"
-      :data-flight="flightGhost.kind"
-      :data-landing="flightGhost.landing"
-      :style="flightGhost.style"
-    >{{ flightGhost.title }}</div>
     <div
       v-if="menu && (menuItem || menuSolo)"
       ref="menuEl"
@@ -1835,64 +1627,6 @@ const settingsItems = computed(() => (
 .sidebar-workspace-nav .sidebar-run-section {
   margin-bottom: 24px;
 }
-.sidebar-workspace-nav .sidebar-section-heading {
-  display: flex;
-  height: 26px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-  padding: 0 10px;
-  color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3))));
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.sidebar-section-label {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  border-radius: 6px;
-  color: inherit;
-  font: inherit;
-  transition: color 160ms ease;
-}
-.sidebar-section-label:hover {
-  color: rgb(var(--c-txt));
-}
-.sidebar-section-icon {
-  flex: none;
-}
-.sidebar-section-chevron {
-  flex: none;
-  margin-left: -1px;
-  opacity: .7;
-  transition: transform 160ms ease, opacity 160ms ease;
-}
-.sidebar-section-label:hover .sidebar-section-chevron {
-  opacity: 1;
-}
-.sidebar-section-chevron.is-collapsed {
-  transform: rotate(-90deg);
-}
-@media (prefers-reduced-motion: reduce) {
-  .sidebar-section-chevron {
-    transition: none;
-  }
-}
-.sidebar-section-count {
-  display: inline-flex;
-  min-width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  color: rgb(var(--c-txt3));
-  background: rgb(var(--c-txt) / .04);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
 /* Buttons default to centered text. Pending titles start at the row edge.
    Weight stays 400 so the active nav rule (600) does not bold this title. */
 .nav-row-title {
@@ -1905,30 +1639,6 @@ const settingsItems = computed(() => (
   color: rgb(var(--c-txt3));
   font-size: 11px;
   font-weight: 400;
-}
-.sidebar-flight-source {
-  visibility: hidden;
-  pointer-events: none;
-}
-.sidebar-flight-ghost {
-  position: fixed;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  padding: 0 10px;
-  border-radius: 10px;
-  background: light-dark(#fff, rgb(var(--c-surface)));
-  color: rgb(var(--c-txt));
-  font-size: 13px;
-  font-weight: 400;
-  pointer-events: none;
-  box-shadow: 0 10px 28px rgb(0 0 0 / .14);
-}
-@media (prefers-reduced-motion: reduce) {
-  .sidebar-flight-ghost {
-    display: none;
-  }
 }
 .nav-row-title-skeleton {
   display: flex;

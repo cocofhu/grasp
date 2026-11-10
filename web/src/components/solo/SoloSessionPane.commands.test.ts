@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { flushPromises, mount } from '@vue/test-utils'
-import { computed, defineComponent, h, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
@@ -8,7 +8,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import snapshots from '@/locales/zh-CN/workspaceSnapshots.json'
 import type { soloEmbedClient } from '@/lib/solo/soloEmbedClient'
 
-const mocks = vi.hoisted(() => ({ openPicker: vi.fn(), send: vi.fn(), startRun: vi.fn() }))
+const mocks = vi.hoisted(() => ({ send: vi.fn(), startRun: vi.fn() }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }), RouterLink: { props: ['to'], template: '<a><slot /></a>' } }))
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
@@ -41,7 +41,7 @@ function render(embedded = false) {
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { ...common, ...pages, ...snapshots } } })],
       stubs: {
-        SoloWorkflowPanel: defineComponent({ setup(_, { expose }) { expose({ openPicker: mocks.openPicker }); return () => h('div') } }),
+        SoloWorkflowPanel: true,
         ReviewShell: { template: '<div><slot name="sidebar" /></div>' },
         Icon: true, ReactArtifactStage: true, AgentTimeline: true, SoloStartupCard: true, SoloLimitModal: true,
         AppModal: true, AppDrawer: true, ChatImagePreviewModal: true, SoloModelSelect: true, ChatMessageRail: true,
@@ -62,7 +62,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('SoloSessionPane workspace and workflow wiring', () => {
+describe('SoloSessionPane workspace wiring', () => {
   it('opens snapshots from the sidebar intent without a persistent workspace toolbar', async () => {
     const wrapper = render(); await flushPromises()
     expect(wrapper.find('[data-testid="solo-workspace-history"]').exists()).toBe(false)
@@ -87,36 +87,18 @@ describe('SoloSessionPane workspace and workflow wiring', () => {
     expect(wrapper.emitted('workspaceOpened')).toBeUndefined()
   })
 
-  it('selects the workflow action in the real @ picker and opens only configuration', async () => {
+  it('offers no workflow entry in @ and sends /workflow as a normal message', async () => {
     const wrapper = render(); await flushPromises()
     const input = wrapper.get<HTMLTextAreaElement>('[data-testid="solo-input"]')
     input.element.focus()
     await input.setValue('@wor')
     input.element.setSelectionRange(4, 4)
     await input.trigger('input')
-    expect(wrapper.get('[data-testid="solo-reference-workflow"]').text()).toContain('选择工作流')
-    expect(mocks.openPicker).not.toHaveBeenCalled()
-    await input.trigger('keydown', { key: 'ArrowDown' })
-    await input.trigger('keydown', { key: 'Enter' }); await flushPromises()
-    expect(mocks.openPicker).toHaveBeenCalledExactlyOnceWith()
-    expect(input.element.value).toBe('')
-    expect(mocks.send).not.toHaveBeenCalled()
-    expect(mocks.startRun).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="solo-workflow-menu"]').exists()).toBe(false)
-  })
-
-  it.each(['disabled', 'embedded'])('does not offer workflow creation in the %s caller', async mode => {
-    if (mode === 'disabled') setWorkflowFeature({ enabled: false, locked: false, source: 'db' })
-    const wrapper = render(mode === 'embedded'); await flushPromises()
-    const input = wrapper.get<HTMLTextAreaElement>('[data-testid="solo-input"]')
-    input.element.focus()
-    await input.setValue('@')
-    input.element.setSelectionRange(1, 1)
-    await input.trigger('input')
+    expect(wrapper.find('[data-testid="solo-reference-picker"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="solo-reference-workflow"]').exists()).toBe(false)
-    await input.trigger('keydown', { key: 'Tab' })
-    expect(mocks.openPicker).not.toHaveBeenCalled()
-    expect(mocks.send).not.toHaveBeenCalled()
+    await input.setValue('/workflow 修复 CI')
+    await input.trigger('keydown', { key: 'Enter' }); await flushPromises()
+    expect(mocks.send).toHaveBeenCalledWith('/workflow 修复 CI', [], [], [])
     expect(mocks.startRun).not.toHaveBeenCalled()
   })
 })

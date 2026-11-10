@@ -77,6 +77,8 @@ const props = withDefaults(
     artifacts: Artifact[]
     previewArtifact?: string | null
     runId?: string
+    /** Same drawer key as the hosting ReviewShell. Defaults to the run. */
+    drawerKey?: string
     run?: Run | null
     nodeId?: string
     /** Graph node (type + caps snapshot). Fallback: run.nodes lookup by nodeId. */
@@ -804,7 +806,7 @@ function onRemotePick(payload: AppPreviewPickPayload) {
 
 const showingGrid = computed(() => activeTab.value === REACT_STAGE_TAB_GRID)
 const activePreviewName = computed(() => previewTabName(activeTab.value))
-const drawer = computed(() => peekConversationDrawer(props.runId))
+const drawer = computed(() => peekConversationDrawer(props.drawerKey || props.runId))
 const splitActive = computed(() => !!drawer.value?.split && !props.hideAppPreview)
 const drawerMode = computed(() => (splitActive.value ? drawer.value?.mode ?? null : null))
 const showResourceCards = computed(() => showFixedCards.value && (!splitActive.value || drawerMode.value === 'resources'))

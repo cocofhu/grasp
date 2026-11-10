@@ -4868,6 +4868,9 @@
         ],
         "start": "开始 Solo 对话",
         "noAgent": "请先选择一个 Agent",
+        "modeLabel": "首页模式",
+        "modeWorkflow": "工作流",
+        "modeSolo": "Solo",
         "recent": "进行中的 Solo",
         "viewAll": "全部会话",
         "projects": "仓库",
@@ -5036,7 +5039,6 @@
       },
       "workflows": {
         "title": "工作流任务",
-        "commandHint": "选择并配置工作流，由你确认启动。",
         "choose": "选择工作流",
         "search": "搜索已发布的工作流",
         "launchHint": "选择后配置需求和代码来源，由你点击启动。每个工作流使用独立环境，Solo 可以继续聊天。",

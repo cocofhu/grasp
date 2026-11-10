@@ -4868,6 +4868,9 @@
         ],
         "start": "Start Solo chat",
         "noAgent": "Choose an Agent first",
+        "modeLabel": "Home mode",
+        "modeWorkflow": "Workflow",
+        "modeSolo": "Solo",
         "recent": "Running Solo sessions",
         "viewAll": "All sessions",
         "projects": "Repositories",
@@ -5036,7 +5039,6 @@
       },
       "workflows": {
         "title": "Workflow tasks",
-        "commandHint": "Choose and configure a workflow, then confirm to start.",
         "choose": "Choose a workflow",
         "search": "Search published workflows",
         "launchHint": "Choose a workflow, configure the request and code source, then click Start. Each workflow has its own environment while Solo remains available.",

@@ -30,7 +30,6 @@ import SoloModelSelect from './SoloModelSelect.vue'
 import SoloWorkflowPanel from './SoloWorkflowPanel.vue'
 import SoloWorkspaceSnapshots from './SoloWorkspaceSnapshots.vue'
 import SoloEnvironmentRelease, { type EnvironmentReleaseDraft } from './SoloEnvironmentRelease.vue'
-import { useWorkflowFeature } from '@/lib/composables/useWorkflowFeature'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
 import { soloImageBase } from '@/lib/api/clients/soloClient'
@@ -53,22 +52,12 @@ import type { SoloResources } from '@/lib/api/apiTypes'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
-const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient>; workflowIntent?: string; workspaceIntent?: string }>()
-const emit = defineEmits<{ back: []; ready: []; workflowOpened: []; workspaceOpened: [] }>()
+const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient>; workspaceIntent?: string }>()
+const emit = defineEmits<{ back: []; ready: []; workspaceOpened: [] }>()
 const { t, te, locale } = useI18n()
 const { worktreeMode } = useExecutionMode()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
-const workflowPanel = ref<InstanceType<typeof SoloWorkflowPanel> | null>(null)
-const { enabled: workflowsEnabled } = useWorkflowFeature()
-function openComposerWorkflow() {
-  if (workflowsEnabled.value && !props.embedded) void workflowPanel.value?.openPicker()
-}
-watch([() => props.workflowIntent, workflowPanel], async ([intent, panel]) => {
-  if (typeof intent !== 'string' || !panel || props.embedded) return
-  if (workflowsEnabled.value) await panel.openPicker(intent === '1' ? '' : intent)
-  emit('workflowOpened')
-})
 const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, stopLocalRetry, status, closing, stopPending, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
@@ -292,13 +281,6 @@ defineExpose({ addPick })
 
 async function send() {
   const text = input.value.trim()
-  const command = /^\/workflow(?:\s+(.*))?$/.exec(text)
-  if (command) {
-    if (!workflowsEnabled.value || props.embedded) { actionError.value = t('pages.solo.workflows.disabled'); return }
-    await workflowPanel.value?.openPicker(command[1] || '')
-    input.value = ''
-    return
-  }
   const images = attach.attachments.value.slice()
   const refs = mention.refs.value
   const selected = picks.value
@@ -398,6 +380,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       split-drawer
       remember-artifact-panel
       :panel-memory-key="`solo:${props.sessionId}`"
+      :drawer-key="`solo:${props.sessionId}`"
       class="solo-workspace min-h-0 min-w-0 flex-1"
     >
       <template #stage>
@@ -408,6 +391,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           :registered-previews="status === 'running' ? resources?.ports || [] : []"
           :solo-session-id="props.sessionId"
           :run-id="session.artifactRunId || ''"
+          :drawer-key="`solo:${props.sessionId}`"
           node-id="solo"
           :sandbox="sandboxResource"
           :sandbox-loading="sandboxResourceLoading"
@@ -432,7 +416,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div ref="scroller" class="chat-pane-transcript scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="solo-transcript" @scroll.passive="onScroll">
         <div class="chat-pane-column space-y-6">
           <SoloStartupCard v-if="showStartup" :session="session" />
-          <SoloWorkflowPanel v-if="!embedded" ref="workflowPanel" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" />
+          <SoloWorkflowPanel v-if="!embedded" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" />
 
           <div v-if="status === 'error'" class="solo-errcard" data-testid="solo-error-card">
             <div class="flex items-start gap-2">
@@ -589,11 +573,9 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             :scope="{ sessionId: props.sessionId }"
             :scoped-search="embedded?.searchSoloReferences"
             :disabled="!canSend"
-            :allow-workflow="workflowsEnabled && !embedded"
             test-prefix="solo"
             pick-test-id="solo-preview-pick"
             @send="send"
-            @workflow="openComposerWorkflow"
             @remove-pick="picks.splice($event, 1)"
             @preview="openChatImagePreview"
           >

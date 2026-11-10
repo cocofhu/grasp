@@ -3,10 +3,11 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import RunChatView from './RunChatView.vue'
 import RunDetailView from './RunDetailView.vue'
+import { isRunDetailsQuery } from '@/lib/run/runViewMode'
 
 const route = useRoute()
 // Keep existing node/artifact deep links and explicit details views working.
-const details = computed(() => ['details', 'canvas', 'timeline', 'stats', 'llm'].includes(String(route.query.view || '')) || !!route.query.node || !!route.query.tab)
+const details = computed(() => isRunDetailsQuery(route.query))
 </script>
 
 <template>

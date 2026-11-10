@@ -124,6 +124,7 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
               split-drawer
               remember-artifact-panel
             >
+              <template v-if="$slots.actions" #actions><slot name="actions" /></template>
               <template #stage>
                 <ReactArtifactStage
                   :editable="!historyReady"

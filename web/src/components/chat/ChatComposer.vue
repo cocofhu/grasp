@@ -22,20 +22,16 @@ const props = withDefaults(defineProps<{
   scopedSearch?: ScopedReferenceSearch
   allowSolo?: boolean
   disabled?: boolean
-  allowWorkflow?: boolean
   testPrefix: string
   pickTestId: string
 }>(), { allowSolo: true })
-const emit = defineEmits<{ send: []; workflow: []; 'remove-pick': [index: number]; preview: [src: string, label: string] }>()
+const emit = defineEmits<{ send: []; 'remove-pick': [index: number]; preview: [src: string, label: string] }>()
 const { t } = useI18n()
 const { attach, mention, input, composing, textareaComponent, defaultRepo } = props.draft
 const { fileInput } = attach
 const { picker, trigger, pickerTab, tokens } = mention
 const plusOpen = ref(false)
 const plus = ref<HTMLElement>()
-function openWorkflow() {
-  if (props.allowWorkflow && !props.disabled && mention.consumeTrigger()) emit('workflow')
-}
 
 function onKeydown(event: KeyboardEvent) {
   if (mention.onKeydown(event)) return
@@ -96,13 +92,11 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
               :scope="scope"
               :scoped-search="scopedSearch"
               :allow-solo="allowSolo"
-              :allow-workflow="allowWorkflow"
               :query="trigger.query"
               :taken="mention.targets.value"
               :full="mention.full.value"
               :initial-tab="pickerTab"
               @pick="mention.pick"
-              @workflow="openWorkflow"
             />
           </Transition>
           <input ref="fileInput" type="file" multiple class="hidden" @change="attach.onPickFiles" />

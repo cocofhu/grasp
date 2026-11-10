@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('home always starts a Solo and has no separate workflow launch entry', async ({ page }) => {
+test('the home Solo mode starts a Solo without a workflow launch', async ({ page }) => {
   let soloCreates = 0
   let workflowCreates = 0
   await page.addInitScript(() => { localStorage.setItem('grasp.home.mode', 'workflow'); localStorage.setItem('grasp.home.lastSoloAgent', 'Solo') })
@@ -16,7 +16,8 @@ test('home always starts a Solo and has no separate workflow launch entry', asyn
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) })
   })
   await page.goto('/dashboard-home-chat.html')
-  await expect(page.getByTestId('home-mode-switch')).toHaveCount(0)
+  await expect(page.getByTestId('home-mode-workflow')).toHaveAttribute('aria-selected', 'true')
+  await page.getByTestId('home-mode-solo').click()
   await expect(page.getByTestId('home-workflow-cards')).toHaveCount(0)
   await page.getByTestId('home-composer-input').fill('评估这段代码')
   expect(soloCreates).toBe(0)
@@ -27,51 +28,12 @@ test('home always starts a Solo and has no separate workflow launch entry', asyn
   expect(workflowCreates).toBe(0)
 })
 
-test('opening a workflow from @ retains the home draft references after returning', async ({ page }) => {
-  const creations: Record<string, unknown>[] = []
-  await page.addInitScript(() => localStorage.setItem('grasp.home.lastSoloAgent', 'Solo'))
-  await page.route('**/api/**', async route => {
-    const request = route.request()
-    const url = new URL(request.url())
-    const path = url.pathname
-    if (!path.startsWith('/api/')) return route.continue()
-    let response: unknown = { items: [] }
-    if (path === '/api/agents') response = [{ name: 'Solo', acpBackend: 'cursor' }]
-    else if (path === '/api/projects') response = []
-    else if (path.endsWith('/references/search') && url.searchParams.get('lane') === 'solo') {
-      response = { items: [{ kind: 'solo', target: 'history', title: '历史', status: 'closed' }] }
-    } else if (path === '/api/solo/creation-requests' && request.method() === 'POST') {
-      const body = request.postDataJSON()
-      creations.push(body)
-      response = { id: `solo-${creations.length}`, userId: 'home-preview', clientRequestId: body.clientRequestId, initialTurnId: `first-${creations.length}`, status: 'starting', agentName: 'Solo' }
-    } else if (path === '/api/solo/sessions') response = { items: [], maxSandboxes: 5 }
-    await route.fulfill({ json: response })
-  })
-  await page.goto('/dashboard-home-chat.html')
-  const input = page.getByTestId('home-composer-input')
-  await input.fill('参考 @hist')
-  await page.getByTestId('solo-reference-option-history').click()
-  await expect(input).toHaveValue('参考 @历史 ')
-  await input.fill('参考 @历史 @wor')
-  await page.getByTestId('solo-reference-workflow').click()
-  await expect(page.getByTestId('solo-chat-page')).toHaveText('solo-1')
-  expect(creations[0].text).toBeUndefined()
-  expect(creations[0].references).toBeUndefined()
-
-  await page.reload()
-  await expect(input).toHaveValue('参考 @历史 ')
-  await expect(page.getByTestId('solo-reference-chip')).toHaveCount(1)
-  await page.getByTestId('home-composer-send').click()
-  await expect(page.getByTestId('solo-chat-page')).toHaveText('solo-2')
-  expect(creations[1]).toMatchObject({ text: '参考 @历史', references: [{ kind: 'solo', target: 'history' }] })
-})
-
 for (const entry of ['home', 'modal'] as const) {
   test(`${entry} restores the first creation request after a real reload and retries its frozen nonce only on click`, async ({ page }, testInfo) => {
     const requests: Record<string, unknown>[] = []
     let legacyCreates = 0
     let receipt: object | undefined
-    await page.addInitScript(() => { localStorage.setItem('grasp.home.lastSoloAgent', 'Solo') })
+    await page.addInitScript(() => { localStorage.setItem('grasp.home.mode', 'solo'); localStorage.setItem('grasp.home.lastSoloAgent', 'Solo') })
     await page.route('**/api/**', async route => {
       const request = route.request()
       const path = new URL(request.url()).pathname
@@ -132,7 +94,7 @@ for (const entry of ['home', 'modal'] as const) {
 test('a lost first-create acknowledgement opens the accepted chat after reload without another POST', async ({ page }) => {
   let creates = 0
   let receipt: object | undefined
-  await page.addInitScript(() => { localStorage.setItem('grasp.home.lastSoloAgent', 'Solo') })
+  await page.addInitScript(() => { localStorage.setItem('grasp.home.mode', 'solo'); localStorage.setItem('grasp.home.lastSoloAgent', 'Solo') })
   await page.route('**/api/**', async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
