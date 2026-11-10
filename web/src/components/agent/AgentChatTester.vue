@@ -31,6 +31,7 @@ import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import type { AgentPart } from '@/lib/shared/types'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
+import { createWsReconnectController } from '@/lib/run/wsReconnect'
 
 // `attachId` attaches to an existing sandbox (skips the create flow) — used by
 // the sandbox console's ACP tab. `embedded` hides the internal header/controls
@@ -112,8 +113,6 @@ let activeItemId = ''
 let liveOutputItemId = ''
 let ws: WebSocket | null = null
 let wsSandboxId = 0
-let wsAttempt = 0
-let wsReconnectTimer: number | undefined
 // Frames that arrive before the reused sandbox's history is restored.
 let heldFrames: string[] | null = null
 const sessionStateCursor = createReviewStateCursor()
@@ -285,9 +284,18 @@ async function waitReady(id: number) {
   errorMsg.value = t('pages.agentChatTester.sandboxTimeout')
 }
 
+// The turn keeps running on the server while the socket is down; reconnecting
+// replays it, so a dropped connection only pauses the view.
+const reconnect = createWsReconnectController({
+  connect: () => openWs(wsSandboxId),
+  shouldReconnect: () => !disposed && !!wsSandboxId && !ws,
+  maxDelayMs: 15_000,
+})
+
 function openWs(id: number) {
   const reconcileCurrentSandbox = wsSandboxId === id && turns.value.length > 0
   closeWs()
+  reconnect.markConnecting()
   // A new subscription starts with its own authoritative queue head, including
   // after a server restart where process-local session generations restart.
   sessionStateCursor.reset()
@@ -297,7 +305,7 @@ function openWs(id: number) {
   heldFrames = []
   sock.onopen = () => {
     if (ws !== sock) return
-    wsAttempt = 0
+    reconnect.markOpened()
     status.value = 'ready'
     errorMsg.value = ''
     // Reused sandbox: rebuild the prior transcript so the context is visible,
@@ -315,7 +323,7 @@ function openWs(id: number) {
     if (ws !== sock) return
     ws = null
     if (status.value !== 'error') status.value = 'closed'
-    scheduleReconnect()
+    reconnect.onClose()
   }
   sock.onerror = () => {
     if (ws !== sock) return
@@ -329,27 +337,13 @@ function closeWs() {
   historyPageGen++
   restoring.value = false
   loadingEarlier.value = false
-  if (wsReconnectTimer !== undefined) {
-    clearTimeout(wsReconnectTimer)
-    wsReconnectTimer = undefined
-  }
+  reconnect.markIntentionalClose()
   const sock = ws
   ws = null
   heldFrames = null
   sock?.close()
 }
 
-// The turn keeps running on the server while the socket is down; reconnecting
-// replays it, so a dropped connection only pauses the view.
-function scheduleReconnect() {
-  if (disposed || !wsSandboxId || wsReconnectTimer !== undefined) return
-  const delay = Math.min(15_000, 1000 * 2 ** wsAttempt)
-  wsAttempt++
-  wsReconnectTimer = window.setTimeout(() => {
-    wsReconnectTimer = undefined
-    if (!disposed && wsSandboxId && !ws) openWs(wsSandboxId)
-  }, delay)
-}
 
 function flushHeldFrames() {
   const held = heldFrames ?? []
@@ -1008,7 +1002,7 @@ function onTranscriptScroll() {
 function reset() {
   closeWs()
   wsSandboxId = 0
-  wsAttempt = 0
+  reconnect.reset()
   sentItems.clear()
   activeItemId = ''
   sandbox.value = null

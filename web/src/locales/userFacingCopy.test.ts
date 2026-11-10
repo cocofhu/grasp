@@ -291,7 +291,6 @@ describe('user-facing copy remediation keys', () => {
   it('user-facing product naming uses 工作区助手 / Workspace assistant consistently', () => {
     const zhKeys = [
       'common.runTrigger.pmMcp',
-      'pages.workspace.tokenTipPm',
       'pages.board.tokenStats.pm',
       'pages.workspace.pm.enabledMcps',
       'pages.agentStudio.dialogs.renameCascadeHint',
@@ -310,7 +309,6 @@ describe('user-facing copy remediation keys', () => {
 
     const enKeys = [
       'common.runTrigger.pmMcp',
-      'pages.workspace.tokenTipPm',
       'pages.board.tokenStats.pm',
       'pages.workspace.pm.enabledMcps',
       'pages.workspace.pm.gateAutoVar',
@@ -331,19 +329,14 @@ describe('user-facing copy remediation keys', () => {
 
     expect(zh.global.t('common.runTrigger.pmMcp')).toBe('工作区助手 MCP')
     expect(en.global.t('common.runTrigger.pmMcp')).toBe('Workspace assistant MCP')
-    expect(zh.global.t('pages.workspace.tokenTipWorkflow')).toBe('工作流')
-    expect(en.global.t('pages.workspace.tokenTipWorkflow')).toBe('Workflow')
 
     // Token source visible copy: 工作流 / Workflow + 工作区助手 / Workspace assistant
     expect(zh.global.t('pages.board.tokenStats.workflow')).toBe('工作流')
-    expect(zh.global.t('pages.workspace.tokenTipWorkflow')).toBe('工作流')
     expect(zh.global.t('pages.board.tokenStats.pm')).toBe('工作区助手')
     expect(en.global.t('pages.board.tokenStats.workflow')).toBe('Workflow')
-    expect(en.global.t('pages.workspace.tokenTipWorkflow')).toBe('Workflow')
     expect(en.global.t('pages.board.tokenStats.pm')).toBe('Workspace assistant')
     // Do not verify Title Case with case-insensitive /workflow/ substring
     expect(en.global.t('pages.board.tokenStats.workflow')).not.toBe('workflow')
-    expect(en.global.t('pages.workspace.tokenTipWorkflow')).not.toBe('workflow')
 
     expect(zh.global.t('pages.appPreview.novnc.inspect')).toBe('取点标注')
     expect(zh.global.t('pages.appPreview.novnc.cancelInspect')).toBe('取消标注')
@@ -354,7 +347,6 @@ describe('user-facing copy remediation keys', () => {
 
     const tokenSourceNoPmKeys = [
       'pages.board.tokenStats.workflow',
-      'pages.workspace.tokenTipWorkflow',
       'pages.board.tokenStats.pm',
     ] as const
     for (const key of tokenSourceNoPmKeys) {

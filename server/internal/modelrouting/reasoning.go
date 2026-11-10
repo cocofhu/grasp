@@ -7,21 +7,6 @@ import (
 	"github.com/cocofhu/grasp/internal/clicatalog"
 )
 
-// TokenHub reports the TokenHub service, including the built-in hunyuan entry
-// and the international TokenHub host.
-func TokenHub(connection *Connection) bool {
-	entry := providerForConnection(connection)
-	if entry == nil {
-		return false
-	}
-	for _, id := range entry.IDs {
-		if id == "tokenhub" || id == "hunyuan" {
-			return true
-		}
-	}
-	return false
-}
-
 // FixedEffortBinding is an OpenCode connection whose levels come from the
 // documented provider catalog. Official OpenCode keys use the generated catalog.
 func FixedEffortBinding(backend string, connection *Connection) bool {
