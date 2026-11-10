@@ -5,13 +5,26 @@ import (
 	"fmt"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"gorm.io/gorm"
 )
+
+const sandboxOperationInference = "inference"
 
 // beginSandboxAccess fences interactive access to an already running Solo.
 // Reading a history page never calls this and never starts or updates a guest.
 // Callers keep release until their native request has finished. Long lived
 // proxy/terminal connections remain subject to the provider's stop operation.
 func (s *SandboxService) beginSandboxAccess(ctx context.Context, id uint) (context.Context, *models.Sandbox, func(), error) {
+	return s.beginSandboxAccessMode(ctx, id, false)
+}
+
+// Console connections can share a fully prepared inference operation. Model,
+// file and lifecycle mutations continue to require an exclusive lease.
+func (s *SandboxService) beginSandboxConsumerAccess(ctx context.Context, id uint) (context.Context, *models.Sandbox, func(), error) {
+	return s.beginSandboxAccessMode(ctx, id, true)
+}
+
+func (s *SandboxService) beginSandboxAccessMode(ctx context.Context, id uint, consumer bool) (context.Context, *models.Sandbox, func(), error) {
 	row, err := s.Get(id)
 	if err != nil {
 		return ctx, nil, func() {}, err
@@ -19,7 +32,12 @@ func (s *SandboxService) beginSandboxAccess(ctx context.Context, id uint) (conte
 	if row.Purpose != SandboxPurposeSolo {
 		return ctx, row, func() {}, nil
 	}
-	ctx, release, err := s.acquireSandboxOperation(ctx, id)
+	var release func()
+	if consumer {
+		ctx, release, err = s.operations().Access(ctx, id, sandboxOperationInference)
+	} else {
+		ctx, release, err = s.acquireSandboxOperation(ctx, id)
+	}
 	if err != nil {
 		return ctx, nil, func() {}, err
 	}
@@ -61,6 +79,13 @@ func (s *SandboxService) beginSandboxAccess(ctx context.Context, id uint) (conte
 	ctx, err = s.canonicalSandboxAccess(ctx, row)
 	if err != nil {
 		return fail(err)
+	}
+	if consumer {
+		if err := s.operations().CommitAccess(ctx, id, func(tx *gorm.DB) error {
+			return requireSoloRecoveryParent(tx, row, grant)
+		}, func(*gorm.DB) error { return nil }); err != nil {
+			return fail(err)
+		}
 	}
 	return ctx, row, release, nil
 }

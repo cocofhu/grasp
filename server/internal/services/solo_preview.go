@@ -75,8 +75,9 @@ func (s *SoloService) PreviewLiveReply(id string) (*models.SoloMessage, bool) {
 		return nil, true
 	}
 	var text strings.Builder
+	var textState soloReplyTextState
 	for _, event := range events {
-		text.WriteString(extractPmAgentText(event))
+		appendSoloReplyText(&text, &textState, event)
 	}
 	return &models.SoloMessage{ID: "live:" + snapshot.Active.ID, Role: "assistant", Content: text.String(), Events: events, Execution: execution}, true
 }

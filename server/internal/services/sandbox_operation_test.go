@@ -222,6 +222,9 @@ func TestSoloTurnOwnsEnvironmentUntilReplyIsPersisted(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("first turn did not reach native chat")
 	}
+	if environment, err := sbx.Get(view.SandboxID); err != nil || environment.OperationKind != sandboxOperationInference {
+		t.Fatal("native inference did not publish its prepared access phase", environment, err)
+	}
 	secondDone := make(chan error, 1)
 	go func() {
 		chat := other.acquire(view.ID)

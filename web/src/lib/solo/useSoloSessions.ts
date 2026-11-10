@@ -7,7 +7,10 @@ const maxSandboxes = ref(5)
 const loaded = ref(false)
 const loading = ref(false)
 const error = ref('')
+const closing = ref(new Set<string>())
+const closeRequests = new Map<string, Promise<SoloSession>>()
 let inflight: Promise<void> | null = null
+let closeGeneration = 0
 
 export function isSoloActive(s: Pick<SoloSession, 'status'>): boolean {
   return s.status === 'starting' || s.status === 'running' || s.status === 'stopped'
@@ -23,9 +26,12 @@ export function useSoloSessions() {
   async function refresh() {
     if (inflight) return inflight
     loading.value = true
+    const generation = closeGeneration
     inflight = (async () => {
       try {
         const r = await api.listSoloSessions()
+        // A list read started before close settled must not put its old row back.
+        if (generation !== closeGeneration) return
         sessions.value = r.sessions ?? []
         if (r.maxSandboxes > 0) maxSandboxes.value = r.maxSandboxes
         error.value = ''
@@ -51,8 +57,34 @@ export function useSoloSessions() {
     sessions.value = sessions.value.filter((x) => x.id !== id)
   }
 
+  /** Shared by desktop and drawer navigation; stopping compute can take seconds. */
+  function close(id: string): Promise<SoloSession> {
+    const pending = closeRequests.get(id)
+    if (pending) return pending
+    closing.value.add(id)
+    const request = (async () => {
+      try {
+        const saved = await api.closeSoloSession(id)
+        closeGeneration++
+        upsert(saved)
+        return saved
+      } catch (cause) {
+        // A failed response may still mean the chat closed, with stop pending.
+        // Re-read after any older list request; never replay the mutation.
+        closeGeneration++
+        void Promise.resolve(inflight).then(() => refresh())
+        throw cause
+      } finally {
+        closing.value.delete(id)
+        closeRequests.delete(id)
+      }
+    })()
+    closeRequests.set(id, request)
+    return request
+  }
+
   const active = computed(() => sessions.value.filter(isSoloActive))
   const ended = computed(() => sessions.value.filter(isSoloEnded))
 
-  return { sessions, active, ended, maxSandboxes, loaded, loading, error, refresh, upsert, remove }
+  return { sessions, active, ended, maxSandboxes, loaded, loading, error, closing, close, refresh, upsert, remove }
 }

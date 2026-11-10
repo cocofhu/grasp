@@ -29,6 +29,28 @@ type workspaceAccessProof struct {
 // runtimes may retain their original chat, but a published or uncertain
 // canonical head can never fall back to an independent cached directory.
 func (s *SandboxService) canonicalSandboxAccess(ctx context.Context, row *models.Sandbox) (context.Context, error) {
+	proof, err := s.canonicalSandboxProof(ctx, row)
+	if err != nil {
+		return ctx, err
+	}
+	if proof.sandboxID == 0 {
+		return ctx, nil
+	}
+	if proof.sandboxID == row.ID {
+		s.mu.Lock()
+		live := s.live[row.ID]
+		if live != nil && live.sb != nil {
+			live.sb.SetActiveWorkspace(proof.path, proof.reference.Fingerprint)
+		}
+		s.mu.Unlock()
+	}
+	return context.WithValue(ctx, workspaceAccessKey{}, proof), nil
+}
+
+// canonicalSandboxProof only inspects the current root. Buffered image reads
+// validate this proof again before serving bytes without changing the root
+// used by concurrent Agent, IDE or terminal requests.
+func (s *SandboxService) canonicalSandboxProof(ctx context.Context, row *models.Sandbox) (workspaceAccessProof, error) {
 	bindings := s.workspaceBindings.Load()
 	if bindings == nil {
 		// Disabling new file operations or losing startup execution authority
@@ -36,58 +58,52 @@ func (s *SandboxService) canonicalSandboxAccess(ctx context.Context, row *models
 		// history but deny live access instead of falling back to original cwd.
 		var count int64
 		if err := s.db.WithContext(ctx).Model(&models.WorkspaceBindingHead{}).Where("sandbox_id = ?", row.ID).Count(&count).Error; err != nil {
-			return ctx, err
+			return workspaceAccessProof{}, err
 		}
 		if count != 0 {
-			return ctx, soloErr(409, "workspace_unavailable", "当前工作区绑定暂不可核验，聊天和文件已保留")
+			return workspaceAccessProof{}, soloErr(409, "workspace_unavailable", "当前工作区绑定暂不可核验，聊天和文件已保留")
 		}
-		return ctx, nil
+		return workspaceAccessProof{}, nil
 	}
 	var head models.WorkspaceBindingHead
 	err := s.db.WithContext(ctx).Take(&head, "sandbox_id = ?", row.ID).Error
 	known := err == nil
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return ctx, err
+		return workspaceAccessProof{}, err
 	}
 	if known && (head.State != "ready" || head.PendingOperationID != "") {
-		return ctx, soloErr(409, "workspace_switch_pending", "工作区切换尚未确认，请核对原操作后继续")
+		return workspaceAccessProof{}, soloErr(409, "workspace_switch_pending", "工作区切换尚未确认，请核对原操作后继续")
 	}
 	remote, err := bindings.options.Remote(ctx, row.ID)
 	if err != nil {
-		return ctx, err
+		return workspaceAccessProof{}, err
 	}
 	caps, err := remote.WorkspaceBindingCapabilities(ctx)
 	if err != nil {
 		var unavailable *sandbox.WorkspaceJobError
 		if !known && errors.As(err, &unavailable) && (unavailable.Status == http.StatusNotFound || unavailable.Status == http.StatusNotImplemented) {
-			return ctx, nil
+			return workspaceAccessProof{}, nil
 		}
-		return ctx, err
+		return workspaceAccessProof{}, err
 	}
 	if caps.Version != 1 || caps.Resource != row.Name || caps.Lineage != bindings.options.ExpectedLineage || !caps.DurableHead || !caps.Activate || !caps.Return || caps.ProcessMemory {
-		return ctx, ErrWorkspaceJobUnsupported
+		return workspaceAccessProof{}, ErrWorkspaceJobUnsupported
 	}
 	view, err := remote.WorkspaceBindingHead(ctx)
 	if err != nil {
-		return ctx, err
+		return workspaceAccessProof{}, err
 	}
 	if !view.Ready || view.PendingOperationID != "" || !filepath.IsAbs(view.Path) || !validNativeBinding(view.Head, caps.Resource, caps.Lineage) {
-		return ctx, ErrWorkspaceJobUnknown
+		return workspaceAccessProof{}, ErrWorkspaceJobUnknown
 	}
 	if known {
 		if view.Head.Reference.ID != head.NativeID || view.Head.Reference.Revision != head.Revision || view.Head.Reference.Fingerprint != head.NativeFingerprint {
-			return ctx, ErrWorkspaceJobUnknown
+			return workspaceAccessProof{}, ErrWorkspaceJobUnknown
 		}
 	} else if view.Head.Reference.Revision != 1 || view.Head.Target.Kind != "original" {
-		return ctx, ErrWorkspaceJobUnknown
+		return workspaceAccessProof{}, ErrWorkspaceJobUnknown
 	}
-	s.mu.Lock()
-	live := s.live[row.ID]
-	if live != nil && live.sb != nil {
-		live.sb.SetActiveWorkspace(view.Path, view.Head.Reference.Fingerprint)
-	}
-	s.mu.Unlock()
-	return context.WithValue(ctx, workspaceAccessKey{}, workspaceAccessProof{row.ID, view.Path, view.Head.Reference}), nil
+	return workspaceAccessProof{row.ID, view.Path, view.Head.Reference}, nil
 }
 
 func canonicalWorkspacePath(ctx context.Context, sandboxID uint) string {
@@ -101,7 +117,7 @@ func canonicalWorkspacePath(ctx context.Context, sandboxID uint) string {
 // WorkspaceFolder returns trusted internal proxy metadata, never a browser
 // selection. History/receipt handlers do not call this live-access method.
 func (s *SandboxService) WorkspaceFolder(ctx context.Context, id uint) (string, error) {
-	ctx, row, release, err := s.beginSandboxAccess(ctx, id)
+	ctx, row, release, err := s.beginSandboxConsumerAccess(ctx, id)
 	if err != nil {
 		return "", err
 	}

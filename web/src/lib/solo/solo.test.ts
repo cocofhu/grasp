@@ -10,6 +10,32 @@ const label = () => ''
 const chunk = (kind: string, text: string) => ({ op: 'event', data: { type: 'session_update', update: { sessionUpdate: kind, content: { type: 'text', text } } } })
 
 describe('acpTurn', () => {
+  it('keeps tool updates inside the current message and starts a new run for an unseen tool update', () => {
+    const turn = emptyAgentTurn('live:updates', true)
+    const tool = (kind: string, id: string) => ({ data: { type: 'session_update', update: { sessionUpdate: kind, toolCallId: id, title: 'Screenshot' } } })
+    applyAcp(tool('tool_call', 'one'), turn, label, 'Tool')
+    applyAcp(chunk('agent_message_chunk', 'Server '), turn, label, 'Tool')
+    applyAcp(tool('tool_call', 'one'), turn, label, 'Tool')
+    applyAcp(chunk('agent_message_chunk', 'is up.'), turn, label, 'Tool')
+    applyAcp(tool('tool_call_update', 'two'), turn, label, 'Tool')
+    applyAcp(chunk('agent_message_chunk', 'Screenshot ready.'), turn, label, 'Tool')
+    expect(turn.text).toBe('Server is up.\n\nScreenshot ready.')
+    turn.historyContent = turn.text
+    turn.processComplete = true
+    expect(partsOf(turn).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['Server is up.', 'Screenshot ready.'])
+  })
+  it('separates progress messages across tools and recognizes the saved reply when its process finishes loading', () => {
+    const turn = emptyAgentTurn('live:1', true)
+    applyAcp(chunk('agent_message_chunk', 'Checking '), turn, label, 'Tool')
+    applyAcp(chunk('agent_message_chunk', 'the setup.'), turn, label, 'Tool')
+    applyAcp({ data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: 'screenshot', title: 'Screenshot' } } }, turn, label, 'Tool')
+    applyAcp(chunk('agent_message_chunk', '![Homepage](/tmp/full.png)'), turn, label, 'Tool')
+    expect(turn.text).toBe('Checking the setup.\n\n![Homepage](/tmp/full.png)')
+    turn.historyContent = turn.text
+    turn.processComplete = true
+    expect(partsOf(turn).map(part => part.kind)).toEqual(['message', 'tool', 'message'])
+    expect(partsOf(turn).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['Checking the setup.', '![Homepage](/tmp/full.png)'])
+  })
   it('folds message, thought and tool frames in arrival order', () => {
     const turn = emptyAgentTurn('live:1', true)
     applyAcp(chunk('agent_thought_chunk', 'think '), turn, label, 'Tool')

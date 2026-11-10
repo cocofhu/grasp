@@ -1,5 +1,6 @@
 import type { ClarifyImage, ReactAnnotation } from '../../shared/types'
-import { req, wsUrl } from '../httpCore'
+import { BASE, req, wsUrl } from '../httpCore'
+import type { SoloChatDiagnostic } from '@/lib/solo/soloDiagnostics'
 import type {
   Project,
   ProjectInput,
@@ -17,6 +18,8 @@ import type {
 import type { EmbedTicket } from '../../inbox/embedChat'
 
 const enc = encodeURIComponent
+
+export const soloImageBase = (id: string) => `${BASE}/solo/sessions/${enc(id)}/images`
 
 export type ReferenceSearchParams = { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }
 
@@ -67,6 +70,14 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
 
 export const soloClient = {
   ...createSoloChatClient(req, wsUrl, id => `/solo/sessions/${enc(id)}`),
+  // Diagnostics are best effort and never affect API health, shutdown toasts,
+  // history fetching or the replay cursor. Keep the bounded metadata on reload.
+  reportSoloDiagnostics: async (id: string, body: SoloChatDiagnostic): Promise<void> => {
+    await fetch(`${BASE}/solo/sessions/${enc(id)}/diagnostics`, {
+      method: 'POST', credentials: 'include', keepalive: true,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    })
+  },
   listProjects: () => req<Project[]>('/projects'),
   getProject: (id: string) =>
     req<{ project: Project; activeSessions: number }>(`/projects/${enc(id)}`),

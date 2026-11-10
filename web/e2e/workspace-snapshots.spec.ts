@@ -20,6 +20,10 @@ async function setup(page: Page, options: { lostCapture?: boolean; disabled?: bo
       if (path === '/api/solo/sessions') { await route.fulfill({ json: { sessions: [session], maxSandboxes: 5 } }); return }
       await route.fallback(); return
     }
+    // Chat telemetry is observational; record workspace mutations separately.
+    if (path === `${base}/diagnostics` && request.method() === 'POST') {
+      await route.fulfill({ status: 204 }); return
+    }
     const record = { path, method: request.method(), body: request.postData() ? request.postDataJSON() as Record<string, unknown> : undefined }
     calls.push(record)
     let body: unknown = {}, status = 200

@@ -454,9 +454,17 @@ func ExtractAgentMessageText(raw json.RawMessage) string {
 
 // extractPmAgentText pulls agent_message_chunk text from a raw ACP frame.
 func extractPmAgentText(raw json.RawMessage) string {
+	update, kind := agentSessionUpdate(raw)
+	if kind != "agent_message_chunk" {
+		return ""
+	}
+	return contentTextAny(update["content"])
+}
+
+func agentSessionUpdate(raw json.RawMessage) (map[string]any, string) {
 	var envelope map[string]any
 	if json.Unmarshal(raw, &envelope) != nil {
-		return ""
+		return nil, ""
 	}
 	ev := envelope
 	if op, _ := envelope["op"].(string); op == "event" {
@@ -470,11 +478,11 @@ func extractPmAgentText(raw json.RawMessage) string {
 	}
 	typ, _ := ev["type"].(string)
 	if typ != "session_update" {
-		return ""
+		return nil, ""
 	}
 	update, _ := ev["update"].(map[string]any)
 	if update == nil {
-		return ""
+		return nil, ""
 	}
 	kind := stringifyKind(update["sessionUpdate"])
 	if kind == "" {
@@ -483,10 +491,7 @@ func extractPmAgentText(raw json.RawMessage) string {
 	if kind == "" {
 		kind = stringifyKind(update["type"])
 	}
-	if normalizePmKind(kind) != "agent_message_chunk" {
-		return ""
-	}
-	return contentTextAny(update["content"])
+	return update, normalizePmKind(kind)
 }
 
 func stringifyKind(v any) string {

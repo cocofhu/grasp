@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
@@ -17,7 +18,9 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -362,6 +365,9 @@ func (h *Handlers) ListSoloMessages(c *gin.Context) {
 	if !ok {
 		return
 	}
+	count, hasMore := 0, false
+	finish := traceSoloHistory(c)
+	defer func() { finish(count, hasMore) }()
 	if c.Query("limit") != "" || c.Query("before") != "" {
 		limit, err := strconv.Atoi(c.DefaultQuery("limit", "50"))
 		if err != nil {
@@ -374,6 +380,7 @@ func (h *Handlers) ListSoloMessages(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, page)
+		count, hasMore = len(page.Items), page.HasMore
 		return
 	}
 	rows, err := h.Solo.Messages(c.Param("id"), user)
@@ -382,6 +389,7 @@ func (h *Handlers) ListSoloMessages(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, rows)
+	count = len(rows)
 }
 
 func (h *Handlers) ListSoloMessageEvents(c *gin.Context) {
@@ -591,6 +599,14 @@ func (h *Handlers) SoloChat(c *gin.Context) {
 
 func (h *Handlers) serveSoloChat(c *gin.Context, user string, socketUpgrader websocket.Upgrader, expiresAt time.Time, sandboxID uint) {
 	id := c.Param("id")
+	connectionID, started := uuid.NewString(), time.Now()
+	logger := log.With().Str("session", id).Str("connection_id", connectionID).Logger()
+	if view := c.Query("view"); soloDiagnosticViewID.MatchString(view) {
+		logger = logger.With().Str("view_id", view).Logger()
+	}
+	if connection, err := strconv.ParseUint(c.Query("connection"), 10, 32); err == nil {
+		logger = logger.With().Uint64("browser_connection", connection).Logger()
+	}
 	journal := c.Query("journal")
 	if journal != "" && journal != "1" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_journal_protocol"})
@@ -600,8 +616,10 @@ func (h *Handlers) serveSoloChat(c *gin.Context, user string, socketUpgrader web
 	if v, err := strconv.Atoi(c.Query("after")); err == nil {
 		after = v
 	}
+	logger.Info().Int("after", after).Msg("solo chat subscribe started")
 	ch, unsub, err := h.Solo.Subscribe(id, user, after, journal == "")
 	if err != nil {
+		logger.Warn().Err(err).Dur("elapsed", time.Since(started)).Msg("solo chat subscribe failed")
 		writeSoloErr(c, err)
 		return
 	}
@@ -609,6 +627,7 @@ func (h *Handlers) serveSoloChat(c *gin.Context, user string, socketUpgrader web
 
 	conn, err := socketUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		logger.Warn().Err(err).Msg("solo chat websocket upgrade failed")
 		return
 	}
 	defer func() { _ = conn.Close() }()
@@ -623,6 +642,9 @@ func (h *Handlers) serveSoloChat(c *gin.Context, user string, socketUpgrader web
 	})
 
 	writeDone := make(chan struct{})
+	var sent atomic.Uint64
+	var lastSent atomic.Int64
+	lastSent.Store(-1)
 	go func() {
 		defer close(writeDone)
 		ping := time.NewTicker(soloPingPeriod)
@@ -634,7 +656,18 @@ func (h *Handlers) serveSoloChat(c *gin.Context, user string, socketUpgrader web
 					return errors.New("Solo preview sandbox changed")
 				}
 			}
-			return writeChatJSON(conn, v)
+			if err := writeChatJSON(conn, v); err != nil {
+				logger.Warn().Err(err).Msg("solo chat websocket write failed")
+				return err
+			}
+			frame, _ := v.(map[string]any)
+			if sequence, ok := frame["seq"].(int); ok {
+				lastSent.Store(int64(sequence))
+			}
+			if sent.Add(1) == 1 {
+				logger.Info().Interface("cursor", frame["seq"]).Interface("head", frame["highWatermark"]).Interface("busy", frame["busy"]).Dur("elapsed", time.Since(started)).Msg("solo chat snapshot sent")
+			}
+			return nil
 		}, ping.C)
 	}()
 
@@ -659,4 +692,5 @@ func (h *Handlers) serveSoloChat(c *gin.Context, user string, socketUpgrader web
 	unsub()
 	_ = conn.Close()
 	<-writeDone
+	logger.Info().Uint64("frames_sent", sent.Load()).Int64("last_sent", lastSent.Load()).Dur("elapsed", time.Since(started)).Msg("solo chat connection closed")
 }

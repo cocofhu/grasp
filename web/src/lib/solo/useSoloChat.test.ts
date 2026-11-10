@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   sendSoloTurn: vi.fn(),
   cancelSoloTurn: vi.fn(),
   closeSoloSession: vi.fn(),
+  listSoloSessions: vi.fn(),
   renameSoloSession: vi.fn(),
   removeSoloQueued: vi.fn(),
   reorderSoloQueue: vi.fn(),
@@ -31,11 +32,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return { ...actual, api: { ...actual.api, ...mocks, listSoloMessagePage: undefined, listSoloMessageEvents: undefined } }
+  return { ...actual, api: { ...actual.api, ...mocks, listSoloMessagePage: undefined, listSoloMessageEvents: undefined, reportSoloDiagnostics: undefined } }
 })
 
 import { useSoloChat, type SoloChatTransport } from './useSoloChat'
 import { partsOf } from './acpTurn'
+import { useSoloSessions } from './useSoloSessions'
 import { modelRouteValue } from '@/lib/agent/modelBindings'
 import { readSoloOutbox, removeSoloOutbox, saveSoloOutbox, soloOutboxScope, type SoloTurnRequest } from './soloOutbox'
 
@@ -115,8 +117,162 @@ describe('useSoloChat', () => {
     )
     mocks.getSoloSession.mockResolvedValue(session())
     mocks.listSoloMessages.mockResolvedValue([])
+    mocks.listSoloSessions.mockResolvedValue({ sessions: [session()], maxSandboxes: 5 })
   })
   afterEach(() => vi.unstubAllGlobals())
+
+  it('keeps checking an unconfirmed close and stops polling after physical shutdown is confirmed', async () => {
+    vi.useFakeTimers()
+    const environment = { id: 7, desiredState: 'stopped', status: 'error' }
+    mocks.getSoloSession.mockResolvedValue(session({ status: 'closed', error: 'stop pending', sandbox: environment }))
+    const { chat, app } = mountChat()
+    try {
+      await flushPromises()
+      FakeSocket.all[0]!.open()
+      await flushPromises()
+      expect(chat.stopPending.value).toBe(true)
+      expect(chat.canSend.value).toBe(false)
+      mocks.getSoloSession.mockClear().mockResolvedValue(session({ status: 'closed', sandbox: { ...environment, status: 'stopped' } }))
+      await vi.advanceTimersByTimeAsync(2500)
+      await flushPromises()
+      expect(mocks.getSoloSession).toHaveBeenCalledExactlyOnceWith('s1')
+      expect(chat.stopPending.value).toBe(false)
+      expect(chat.closed.value).toBe(true)
+      await vi.advanceTimersByTimeAsync(7500)
+      expect(mocks.getSoloSession).toHaveBeenCalledTimes(1)
+    } finally { app.unmount(); vi.useRealTimers() }
+  })
+
+  it('reports a slow history request holding received replay without changing hydration or logging content', async () => {
+    vi.useFakeTimers()
+    const report = vi.fn().mockResolvedValue(undefined)
+    let release!: (messages: unknown[]) => void
+    const user = { id: 'active', sessionId: 's1', role: 'user', content: 'private prompt must not be logged', createdAt: '' }
+    mocks.getSoloSession.mockResolvedValue(session({ busy: true }))
+    mocks.listSoloMessages.mockImplementationOnce(() => new Promise(resolve => { release = resolve })).mockResolvedValue([user])
+    const { chat, app } = mountChat({ ...mocks, reportSoloDiagnostics: report })
+    try {
+      await flushPromises()
+      const socket = FakeSocket.all[0]!
+      socket.open()
+      socket.emit({ type: 'session', event: 'queue_state', seq: 0, journalVersion: 1, stateSnapshot: true, highWatermark: 1, busy: true, activeItem: { id: user.id, text: user.content, images: [] }, items: [] })
+      socket.emit({ ...acp('private streamed reply must not be logged'), seq: 1, userMsgId: user.id })
+      await vi.advanceTimersByTimeAsync(5001)
+      const slow = report.mock.calls.map(call => call[1]).find(row => row.event === 'history_slow')
+      expect(slow).toMatchObject({ received: 2, processed: 0, buffered: 2, pendingHistory: 1, highWatermark: 1, busy: false, serverBusy: true })
+      expect(chat.turns.value.map(turn => turn.role)).toEqual(['user'])
+      release([user])
+      await flushPromises()
+      expect(chat.turns.value.find(turn => turn.role === 'agent')?.text).toBe('private streamed reply must not be logged')
+      expect(report.mock.calls.map(call => call[1])).toContainEqual(expect.objectContaining({ event: 'replay_drained', received: 2, processed: 2, buffered: 0 }))
+      expect(report.mock.calls.map(call => call[1])).toContainEqual(expect.objectContaining({ event: 'replay_caught_up', liveParts: 1, liveTextChars: 41 }))
+      expect(JSON.stringify(report.mock.calls)).not.toContain('private prompt')
+      expect(JSON.stringify(report.mock.calls)).not.toContain('private streamed reply')
+    } finally { app.unmount(); vi.useRealTimers() }
+  })
+
+  it('keeps replay working when diagnostic uploads fail and records only history status and socket close code', async () => {
+    const report = vi.fn().mockRejectedValue(new Error('diagnostic upload unavailable'))
+    mocks.listSoloMessages.mockRejectedValueOnce(Object.assign(new Error('private upstream credentials must not be logged'), { status: 503 }))
+    const { chat, app } = mountChat({ ...mocks, reportSoloDiagnostics: report })
+    try {
+      await flushPromises()
+      const socket = FakeSocket.all[0]!
+      socket.open()
+      socket.emit({ type: 'session', event: 'queue_state', busy: true, activeItem: { id: 'active', text: 'private', images: [] }, items: [] })
+      socket.emit(acp('still streams'))
+      await flushPromises()
+      expect(chat.turns.value.find(turn => turn.role === 'agent')?.text).toBe('still streams')
+      expect(report.mock.calls.map(call => call[1])).toContainEqual(expect.objectContaining({ event: 'history_failed', httpStatus: 503 }))
+      socket.onclose?.()
+      expect(report.mock.calls.map(call => call[1])).toContainEqual(expect.objectContaining({ event: 'ws_closed' }))
+      expect(JSON.stringify(report.mock.calls)).not.toContain('private upstream credentials')
+    } finally { app.unmount() }
+  })
+
+  it('blocks sends during close and applies the result before a delayed older session read', async () => {
+    const { chat, app } = await mountChat()
+    await flushPromises()
+    const store = useSoloSessions()
+    let finishRead!: (value: unknown) => void
+    mocks.getSoloSession.mockReturnValueOnce(new Promise(resolve => { finishRead = resolve }))
+    const oldRead = chat.refreshSession()
+    let finishClose!: (value: unknown) => void
+    mocks.closeSoloSession.mockReturnValue(new Promise(resolve => { finishClose = resolve }))
+    const request = store.close('s1')
+    expect(chat.closing.value).toBe(true)
+    expect(chat.canSend.value).toBe(false)
+    expect(await chat.send('should not send')).toBe(false)
+    expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+    // The post-close reconciliation read must not overwrite its receipt either.
+    mocks.getSoloSession.mockReturnValueOnce(new Promise(() => {}))
+    finishClose(session({ status: 'closed' }))
+    await request
+    expect(chat.closing.value).toBe(false)
+    expect(chat.closed.value).toBe(true)
+    expect(chat.canSend.value).toBe(false)
+    finishRead(session())
+    await oldRead
+    expect(chat.closed.value).toBe(true)
+    expect(store.sessions.value.find(row => row.id === 's1')?.status).toBe('closed')
+    app.unmount()
+  })
+
+  it('finishes loading when close overlaps the initial session request', async () => {
+    let finishOld!: (value: unknown) => void
+    mocks.getSoloSession.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve })).mockResolvedValue(session({ status: 'closed' }))
+    const { chat, app } = await mountChat()
+    expect(chat.loading.value).toBe(true)
+    mocks.closeSoloSession.mockResolvedValue(session({ status: 'closed' }))
+    await useSoloSessions().close('s1')
+    await flushPromises()
+    expect(chat.loading.value).toBe(false)
+    expect(chat.closed.value).toBe(true)
+    finishOld(session())
+    await flushPromises()
+    expect(chat.loading.value).toBe(false)
+    expect(chat.closed.value).toBe(true)
+    app.unmount()
+  })
+
+  it('does not restore a closed session from a read that finishes after leaving the chat', async () => {
+    const { chat, app } = await mountChat()
+    await flushPromises()
+    const store = useSoloSessions()
+    let finishClose!: (value: unknown) => void
+    mocks.closeSoloSession.mockReturnValue(new Promise(resolve => { finishClose = resolve }))
+    const request = store.close('s1')
+    let finishRead!: (value: unknown) => void
+    mocks.getSoloSession.mockReturnValueOnce(new Promise(resolve => { finishRead = resolve }))
+    const oldRead = chat.refreshSession()
+    app.unmount()
+    finishClose(session({ status: 'closed' }))
+    await request
+    finishRead(session())
+    await oldRead
+    expect(store.sessions.value.find(row => row.id === 's1')?.status).toBe('closed')
+  })
+
+  it('clears a pending model change when close fails so reconciliation and later choices still work', async () => {
+    const { chat, app } = await mountChat()
+    await flushPromises()
+    let finishModel!: (value: unknown) => void
+    mocks.setSoloSessionModel.mockReturnValueOnce(new Promise(resolve => { finishModel = resolve }))
+    const changing = chat.setCurrentModel('before-close')
+    await flushPromises()
+    expect(chat.modelChangePending.value).toBe(true)
+    mocks.closeSoloSession.mockRejectedValue(new Error('close unavailable'))
+    await expect(useSoloSessions().close('s1')).rejects.toThrow('close unavailable')
+    await flushPromises()
+    expect(chat.modelChangePending.value).toBe(false)
+    expect(chat.currentModelId.value).toBe('')
+    finishModel(session({ currentModelId: 'before-close', currentModelSet: true }))
+    expect(await changing).toBe(false)
+    mocks.setSoloSessionModel.mockResolvedValue(session({ currentModelId: 'after-close', currentModelSet: true }))
+    expect(await chat.setCurrentModel('after-close')).toBe(true)
+    expect(chat.currentModelId.value).toBe('after-close')
+    app.unmount()
+  })
 
   it('keeps loaded older pages and the complete reply while lazily paging execution details', async () => {
     const saved = { id: 'answer', sessionId: 's1', turnId: 'question', role: 'assistant' as const, content: 'complete answer', createdAt: '2026-11-09T00:00:01Z', eventLog: { version: 1, from: 101, through: 104, count: 4, generation: 9 } }

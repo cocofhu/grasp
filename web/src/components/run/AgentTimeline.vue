@@ -44,6 +44,8 @@ const props = withDefaults(
     bare?: boolean
     /** Run whose artifact stage tool rows link to. */
     runId?: string
+    /** Authenticated endpoint for images stored in this reply's environment. */
+    imageBase?: string
     /** ISO when this reply started outputting. */
     startedAt?: string
     /** ISO when this reply stopped. */
@@ -181,7 +183,7 @@ function toggleProcessThought(index: number) {
 const liveBlocks = ref<string[]>([])
 const liveThought = ref('')
 const preview = createStreamMarkdownPreview<string[]>({
-  render: (src) => renderChatMarkdownBlocks(src, cache),
+  render: (src) => renderChatMarkdownBlocks(src, cache, props.imageBase),
   empty: [],
 })
 const unsubPreview = preview.subscribe((html) => {
@@ -281,14 +283,14 @@ function onToggle(index: number, last: boolean, e: Event) {
             </div>
           </details>
           <div v-else class="chat-prose md agent-elapsed-note min-w-0" :data-testid="messageTestId">
-            <span v-html="renderChatMarkdown(b.text)" />
+            <span v-html="renderChatMarkdown(b.text, imageBase)" />
           </div>
         </template>
         <slot name="process" />
       </div>
       <hr class="agent-elapsed-rule" data-testid="agent-timeline-rule" />
       <div v-if="tailBlock" class="chat-prose md min-w-0" :data-testid="messageTestId" :title="replyTime">
-        <span v-html="renderChatMarkdown(tailBlock.text)" />
+        <span v-html="renderChatMarkdown(tailBlock.text, imageBase)" />
       </div>
     </template>
     <template v-else>
@@ -321,7 +323,7 @@ function onToggle(index: number, last: boolean, e: Event) {
         >
           <StreamMarkdown v-if="streaming && b.last" :blocks="liveBlocks" /><span
             v-else
-            v-html="renderChatMarkdown(b.text)"
+            v-html="renderChatMarkdown(b.text, imageBase)"
           /><slot v-if="streaming && b.last" name="caret" />
         </div>
       </template>

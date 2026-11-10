@@ -93,6 +93,38 @@ describe('renderMarkdownBlocks', () => {
 describe('renderChatMarkdown', () => {
   const src = '说明如下：<script>关键步骤</script>\n\n**加粗**\n\n```js\nconst x = 1\n```'
 
+  it('routes local images through the owned Solo environment in complete and streamed replies', () => {
+    const imageBase = '/api/solo/sessions/s1/images'
+    const markdown = '![Homepage](/tmp/full.png)\n\n![Sidebar](<file:///tmp/side%20bar.png>)\n\n![Result](./screenshots/result.png)'
+    const complete = renderChatMarkdown(markdown, imageBase)
+    const streamed = renderChatMarkdownBlocks(markdown, new Map(), imageBase).join('')
+    for (const html of [complete, streamed]) {
+      expect(html).toContain('src="/api/solo/sessions/s1/images?path=%2Ftmp%2Ffull.png"')
+      expect(html).toContain('src="/api/solo/sessions/s1/images?path=%2Ftmp%2Fside%20bar.png"')
+      expect(html).toContain('src="/api/solo/sessions/s1/images?path=.%2Fscreenshots%2Fresult.png"')
+      expect(html).toContain('alt="Homepage"')
+    }
+  })
+
+  it('isolates the image cache between sessions and renderers without an environment', () => {
+    const markdown = '![Screenshot](/tmp/full.png)'
+    const cache = new Map<string, string>()
+    for (const imageBase of ['/api/solo/sessions/one/images', '/api/solo/sessions/two/images', undefined]) {
+      const complete = renderChatMarkdown(markdown, imageBase)
+      const streamed = renderChatMarkdownBlocks(markdown, cache, imageBase).join('')
+      expect(complete).toBe(streamed)
+      expect(complete).toContain(`src="${imageBase ? `${imageBase}?path=%2Ftmp%2Ffull.png` : '/tmp/full.png'}"`)
+    }
+  })
+
+  it('preserves remote images, stored attachments and unsafe scheme sanitization', () => {
+    const imageBase = '/api/solo/sessions/s1/images'
+    for (const href of ['https://example.com/a.png', '//example.com/a.png', '/api/artifacts/a/raw', '/public/approvals/image', 'data:image/png;base64,AAAA', 'blob:https://example.com/123']) {
+      expect(renderChatMarkdown(`![image](${href})`, imageBase)).toContain(`src="${href}"`)
+    }
+    expect(renderChatMarkdown('![image](javascript:alert%281%29)', imageBase)).not.toContain('?path=')
+  })
+
   it('escapes raw HTML but still renders emphasis and code', () => {
     const html = renderChatMarkdown(src)
     expect(html).toContain('关键步骤')

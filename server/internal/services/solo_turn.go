@@ -296,7 +296,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 			c.mu.Lock()
 			if c.turnID == q.ID {
 				for _, entry := range entries {
-					c.text.WriteString(extractPmAgentText(entry.Data))
+					appendSoloReplyText(&c.text, &c.replyTextState, entry.Data)
 				}
 			}
 			c.mu.Unlock()
@@ -313,6 +313,14 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	}()
 	var usage *models.TokenUsage
 	var byModel models.TokenUsageByModel
+	if err == nil && s.sbx != nil {
+		// Preparation may change the model/runtime/root and stays exclusive.
+		// Once stable, console admission can share this exact owner/generation
+		// while the turn retains its mutation and final-publication fence.
+		err = s.sbx.commitSandboxOperation(ctx, sandboxID, func(tx *gorm.DB) error {
+			return s.sbx.updateSandboxOperation(ctx, tx, sandboxID, map[string]any{"operation_kind": sandboxOperationInference})
+		})
+	}
 	if err == nil {
 		err = chatsession.DispatchExecution(ctx)
 	}

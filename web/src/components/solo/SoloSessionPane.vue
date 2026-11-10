@@ -32,6 +32,7 @@ import SoloWorkspaceSnapshots from './SoloWorkspaceSnapshots.vue'
 import SoloEnvironmentRelease, { type EnvironmentReleaseDraft } from './SoloEnvironmentRelease.vue'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
+import { soloImageBase } from '@/lib/api/clients/soloClient'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
 import { inlineReferences, referenceLabel } from '@/lib/solo/referenceTokens'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
@@ -57,7 +58,7 @@ const { t, te, locale } = useI18n()
 const { worktreeMode } = useExecutionMode()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, stopLocalRetry, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, stopLocalRetry, status, closing, stopPending, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -485,6 +486,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 :started-at="turn.startedAt"
                 :ended-at="turn.endedAt"
                 :metadata="turn"
+                :image-base="embedded ? undefined : soloImageBase(sessionId)"
                 quiet-thought
                 message-test-id="solo-agent-message"
                 @process-open="turn.historyMessageId && !chat.processPages.value[turn.historyMessageId] && chat.loadProcess(turn)"
@@ -549,11 +551,11 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </div>
 
       <!-- composer / closed bar -->
-      <div v-if="closed || stoppedEnvironment" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
+      <div v-if="closing || stopPending || closed || stoppedEnvironment" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
         <div class="chat-pane-column solo-closed">
-          <Icon name="lock" :size="15" class="mt-0.5 shrink-0 text-txt3" />
-          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">{{ t(stoppedEnvironment ? 'pages.solo.environment.stopped' : 'pages.solo.closedBar.text') }}</p>
-          <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting || environmentBusy" @click="stoppedEnvironment ? resumeEnvironment() : doRestart()">{{ t(stoppedEnvironment ? 'pages.solo.environment.resume' : 'pages.solo.closedBar.restart') }}</AppButton>
+          <Icon :name="closing || stopPending ? 'spinner' : 'lock'" :size="15" class="mt-0.5 shrink-0 text-txt3" />
+          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2" :role="closing || stopPending ? 'status' : undefined">{{ t(closing ? 'pages.solo.close.progress' : stopPending ? 'pages.solo.close.confirmingStop' : stoppedEnvironment ? 'pages.solo.environment.stopped' : 'pages.solo.closedBar.text') }}</p>
+          <AppButton v-if="!embedded && !closing && !stopPending" size="sm" variant="primary" icon="refresh" :loading="restarting || environmentBusy" @click="stoppedEnvironment ? resumeEnvironment() : doRestart()">{{ t(stoppedEnvironment ? 'pages.solo.environment.resume' : 'pages.solo.closedBar.restart') }}</AppButton>
         </div>
         <p v-if="actionError" class="chat-pane-column mt-2 text-xs text-err" role="alert">{{ actionError }}</p>
       </div>

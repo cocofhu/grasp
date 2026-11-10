@@ -346,6 +346,7 @@ func (s *SoloService) Subscribe(id, user string, afterSeq int, legacyCursor ...b
 			return true
 		case <-ctx.Done():
 		case <-timer.C:
+			log.Warn().Str("session", id).Int64("cursor", cursor).Int64("head", view.head).Msg("solo journal subscriber stalled")
 		}
 		return false
 	}
@@ -367,7 +368,7 @@ func (s *SoloService) Subscribe(id, user string, afterSeq int, legacyCursor ...b
 				page, err := s.durable.JournalPage(ctx, soloQueueScope(id), chatsession.JournalQuery{After: cursor})
 				if err != nil {
 					if ctx.Err() == nil {
-						log.Warn().Err(err).Str("session", id).Msg("conversation journal replay stopped without advancing cursor")
+						log.Warn().Err(err).Str("session", id).Int64("cursor", cursor).Int64("head", view.head).Msg("conversation journal replay stopped without advancing cursor")
 					}
 					return
 				}
@@ -389,7 +390,7 @@ func (s *SoloService) Subscribe(id, user string, afterSeq int, legacyCursor ...b
 			next, err := s.journalView(ctx, id, user, view)
 			if err != nil {
 				if ctx.Err() == nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-					log.Warn().Err(err).Str("session", id).Msg("conversation journal head unavailable")
+					log.Warn().Err(err).Str("session", id).Int64("cursor", cursor).Int64("head", view.head).Msg("conversation journal head unavailable")
 				}
 				return // Ownership/deletion is rechecked without waking a sandbox.
 			}
