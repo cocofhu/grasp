@@ -5,8 +5,7 @@ import type { MessageReference, SoloMessage, SoloSession } from '@/lib/api/apiTy
 import type { ChatExecution, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
-import { timelineFolds } from '@/lib/run/acpTools'
-import { applyAcp, emptyAgentTurn, partsOf, turnsFromMessages, type SoloTurn } from './acpTurn'
+import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './acpTurn'
 import { soloErrorText } from './soloErrors'
 import { createSoloModelSettings } from './soloModelSettings'
 import { createSoloQueueOrder } from './soloQueueOrder'
@@ -353,9 +352,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     for (const turn of incoming) {
       if (!turn.historyMessageId) continue
       const page = processPages.value[turn.historyMessageId]
+      // A reply-only journal still owns the elapsed fold the reader just opened.
       turn.processComplete = page?.hasMore === false
-      // A journal of only unrendered events (plan, usage) leaves nothing to fold.
-      if (turn.processComplete && !page?.legacyIncomplete && !timelineFolds(partsOf(turn))) turn.processAvailable = false
     }
     // Messages are append-only. A shorter HTTP snapshot must not erase rows
     // already reconciled from an earlier response.

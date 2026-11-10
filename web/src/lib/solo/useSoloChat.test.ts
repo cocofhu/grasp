@@ -163,8 +163,8 @@ describe('useSoloChat', () => {
     } finally { app.unmount() }
   })
 
-  it('drops the process fold once a complete journal has nothing to show besides the reply', async () => {
-    const saved = { id: 'answer', sessionId: 's1', turnId: 'question', role: 'assistant' as const, content: 'answer', createdAt: '2026-11-09T00:00:01Z', eventLog: { version: 1, from: 1, through: 2, count: 2, generation: 1 } }
+  it('keeps the elapsed fold once a complete journal has nothing to show besides the reply', async () => {
+    const saved = { id: 'answer', sessionId: 's1', turnId: 'question', role: 'assistant' as const, content: 'answer', durationMs: 47_000, createdAt: '2026-11-09T00:00:01Z', eventLog: { version: 1, from: 1, through: 2, count: 2, generation: 1 } }
     const question = { id: 'question', sessionId: 's1', role: 'user' as const, content: 'question', createdAt: '2026-11-09T00:00:01Z' }
     const listPage = vi.fn().mockResolvedValue({ items: [question, saved], hasMore: false })
     const listEvents = vi.fn().mockResolvedValueOnce({ items: [
@@ -181,8 +181,14 @@ describe('useSoloChat', () => {
       await chat.loadProcess(turn)
       const loaded = chat.turns.value.find(row => row.id === 'a:answer')!
       expect(loaded.processComplete).toBe(true)
-      expect(loaded.processAvailable).toBe(false)
+      expect(loaded.processAvailable).toBe(true)
+      expect(loaded.durationMs).toBe(47_000)
       expect(partsOf(loaded).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['answer\n'])
+      await chat.loadProcess(loaded)
+      expect(listEvents).toHaveBeenCalledTimes(1)
+      FakeSocket.all[0]!.emit({ type: 'session', event: 'history_changed' })
+      await flushPromises()
+      expect(chat.turns.value.find(row => row.id === 'a:answer')).toMatchObject({ processAvailable: true, processComplete: true, durationMs: 47_000 })
     } finally { app.unmount() }
   })
 

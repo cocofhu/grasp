@@ -67,6 +67,39 @@ describe('SoloSessionPane persisted process', () => {
     })
   })
 
+  it.each([false, true])('keeps the elapsed fold after loading a reply-only journal (legacy incomplete: %s)', async legacyIncomplete => {
+    const w = mountPane()
+    try {
+      await flushPromises()
+      const fold = () => w.get('[data-testid="agent-timeline-elapsed"]')
+      expect(w.find('[data-testid="solo-process-empty"]').exists()).toBe(false)
+      await fold().trigger('click')
+      expect(state.loadProcess).toHaveBeenCalledTimes(1)
+      state.turns.value = turnsFromMessages([{ ...saved, events: [
+        { data: { type: 'prompt_begin' } },
+        { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: saved.content } } } },
+        { data: { type: 'prompt_done' } },
+      ] }], () => '', '工具').map(turn => ({ ...turn, processComplete: true }))
+      state.pages.value['reply:q'] = { next: 3, hasMore: false, loading: false, error: '', legacyIncomplete }
+      await flushPromises()
+      expect(fold().text()).toBe('用时 42s')
+      expect(fold().attributes('aria-expanded')).toBe('true')
+      expect(w.findAll('[data-testid="solo-agent-message"]').map(row => row.text())).toEqual([saved.content])
+      expect(w.find('[data-testid="solo-load-process"]').exists()).toBe(false)
+      if (legacyIncomplete) {
+        expect(w.find('[data-testid="solo-process-empty"]').exists()).toBe(false)
+        expect(w.get('[data-testid="solo-process-status"]').text()).toContain('此记录来自旧版本')
+      } else {
+        expect(w.get('[data-testid="solo-process-empty"]').text()).toBe('本轮未记录额外的思考或工具调用过程。')
+      }
+      await fold().trigger('click')
+      expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
+      await fold().trigger('click')
+      expect(fold().attributes('aria-expanded')).toBe('true')
+      expect(state.loadProcess).toHaveBeenCalledTimes(1)
+    } finally { w.unmount() }
+  })
+
   it('uses the original elapsed fold for lazy history, retry and next page without a separate process button', async () => {
     const w = mountPane()
     try {

@@ -27,6 +27,7 @@ test('Solo pages saved messages and execution details without replacing the comp
     { id: 'answer', turnId: 'question', sessionId: session.id, role: 'assistant', content: '完整结论：现有改动已保留，可以继续处理后续需求。', status: 'ok', createdAt: session.updatedAt, durationMs: 49_000, eventLog: { version: 1, from: 101, through: 104, count: 4, generation: 9 } },
   ]
   const cursors: number[] = []
+  const replyOnlyCursors: number[] = []
   let latestMessages: Record<string, unknown>[] = messages
   let socket: WebSocketRoute | undefined
   let submitted: Record<string, unknown> | undefined
@@ -40,6 +41,10 @@ test('Solo pages saved messages and execution details without replacing the comp
       if (after === -1) return route.fulfill({ json: { items: [event(101, { sessionUpdate: 'tool_call', toolCallId: 'read-1', title: '检查 workspace.txt', status: 'completed' }), event(102, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '早期片段' } })], next: 102, head: 104, hasMore: true } })
       if (!failed) { failed = true; return route.fulfill({ status: 503, json: { error: '过程记录暂不可用，请重试' } }) }
       return route.fulfill({ json: { items: [event(103, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '已核对现有工作区和未提交改动。' } }), event(104, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '剩余片段' } })], next: 104, head: 104, hasMore: false } })
+    }
+    if (path.endsWith('/messages/next-answer/events')) {
+      replyOnlyCursors.push(Number(url.searchParams.get('after')))
+      return route.fulfill({ json: { items: [{ ...event(202, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '第二轮完整回复，工作流结果也已保留。' } }), turnId: 'next-question' }], next: 202, head: 202, hasMore: false } })
     }
     if (path.endsWith('/messages')) return route.fulfill({ json: url.searchParams.has('before') ? { items: [{ id: 'earlier', sessionId: session.id, role: 'system', content: '更早的会话记录', createdAt: '2026-11-08T00:00:00Z' }], hasMore: false } : { items: latestMessages, before: 'older-token', hasMore: true } })
     if (path.endsWith('/turn-requests') && route.request().method() === 'POST') {
@@ -96,6 +101,20 @@ test('Solo pages saved messages and execution details without replacing the comp
   await expect(page.getByTestId('agent-timeline-elapsed')).toHaveCount(2)
   await expect(page.getByTestId('agent-timeline-elapsed').last()).toHaveText('用时 2s')
   await expect(page.getByTestId('agent-timeline-elapsed').last()).toHaveAttribute('aria-expanded', 'false')
+  const replyOnlyFold = page.getByTestId('agent-timeline-elapsed').last()
+  await replyOnlyFold.click()
+  await expect(page.getByTestId('solo-process-empty')).toHaveText('本轮未记录额外的思考或工具调用过程。')
+  await expect(page.getByTestId('agent-timeline-elapsed')).toHaveCount(2)
+  await expect(replyOnlyFold).toHaveText('用时 2s')
+  await expect(replyOnlyFold).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('solo-agent-message').last()).toHaveText('第二轮完整回复，工作流结果也已保留。')
+  await expect(page.getByTestId('solo-agent-message')).toHaveCount(2)
+  await replyOnlyFold.click()
+  await expect(page.getByTestId('solo-process-empty')).toBeHidden()
+  await replyOnlyFold.click()
+  await expect(page.getByTestId('solo-process-empty')).toBeVisible()
+  expect(replyOnlyCursors).toEqual([-1])
+  await page.screenshot({ path: testInfo.outputPath('solo-reply-only-process.png'), fullPage: true })
 })
 
 test('Solo restores an unconfirmed send after reload with the exact original identity and shows one human message', async ({ page }, testInfo) => {
