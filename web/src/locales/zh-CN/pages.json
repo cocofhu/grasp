@@ -4916,6 +4916,7 @@
         "loadEarlier": "加载更早的消息",
         "loadProcess": "查看执行过程",
         "loadMoreProcess": "加载更多过程",
+        "noAdditionalProcess": "本轮未记录额外的思考或工具调用过程。",
         "legacyIncomplete": "此记录来自旧版本，执行过程可能不完整。",
         "stopped": "已停止",
         "generating": "正在生成…",

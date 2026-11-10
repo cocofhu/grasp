@@ -40,6 +40,7 @@ import { chatImageSrc } from '@/lib/shared/compositeText'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { partsOf } from '@/lib/solo/acpTurn'
+import { timelineFolds } from '@/lib/run/acpTools'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
 import { modelRouteValue } from '@/lib/agent/modelBindings'
 import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
@@ -520,6 +521,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                     >{{ t(chat.processPages.value[turn.historyMessageId]?.error ? 'common.loading.retry' : 'pages.solo.chat.loadMoreProcess') }}</AppButton>
                     <p v-if="chat.processPages.value[turn.historyMessageId]?.error" class="text-xs text-err" role="alert">{{ chat.processPages.value[turn.historyMessageId]!.error }}</p>
                     <p v-if="chat.processPages.value[turn.historyMessageId]?.legacyIncomplete" class="chat-meta">{{ t('pages.solo.chat.legacyIncomplete') }}</p>
+                    <p v-else-if="turn.processComplete && !timelineFolds(partsOf(turn))" class="chat-meta" data-testid="solo-process-empty">{{ t('pages.solo.chat.noAdditionalProcess') }}</p>
                   </div>
                 </template>
               </AgentTimeline>
