@@ -72,9 +72,13 @@ type Exclusion struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
 }
+
+// GitRef carries exactly one of OID (a direct ref) or Target (a symbolic ref
+// such as refs/remotes/origin/HEAD, which every ordinary clone creates).
 type GitRef struct {
-	Name string `json:"name"`
-	OID  string `json:"oid"`
+	Name   string `json:"name"`
+	OID    string `json:"oid,omitempty"`
+	Target string `json:"target,omitempty"`
 }
 type IndexEntry struct {
 	Path   string `json:"path"`

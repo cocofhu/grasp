@@ -61,6 +61,9 @@ export function decideLive(run: Run, requested: string): LiveDecision {
   }
   // Between nodes (the engine is routing): keep a requested visit, otherwise
   // wait on this page. An active run must not fall through to the canvas.
+  // The engine also pauses briefly between nodes while it saves the finished
+  // node's workspace, so a paused run is waited on, never treated as ended.
+  if (run.status === 'paused') return { kind: 'wait', nodeId: requested, label: '' }
   if (requested && (run.status === 'running' || run.status === 'queued')) return { kind: 'observe', nodeId: requested }
   if (run.status === 'running' || run.status === 'waiting_human') {
     return { kind: 'wait', nodeId: requested, label: '' }

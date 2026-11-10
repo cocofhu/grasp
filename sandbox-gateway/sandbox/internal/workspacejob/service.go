@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -365,6 +366,7 @@ func (s *Service) finish(h *Handle, result json.RawMessage, executionErr error) 
 		s.unknownLocked(row, "ownership_lost")
 		return
 	} else if executionErr != nil {
+		log.Printf("workspace job %s: 执行失败: %v", h.id, executionErr)
 		row.Receipt.State, row.Receipt.Error = "failed", "executor_failed"
 	} else {
 		if len(result) > 64<<10 || (len(result) > 0 && !json.Valid(result)) {

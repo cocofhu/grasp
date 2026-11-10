@@ -334,7 +334,7 @@ export function useRunLive(
     }
     preparing.value = null
     // Between nodes after a node was shown: stay and wait for the next one.
-    if (shown && !c && (r.status === 'running' || r.status === 'queued')) return
+    if (shown && !c && (r.status === 'running' || r.status === 'queued' || r.status === 'paused')) return
     if (d.kind === 'chat') {
       if (!shown) return goToChat(d.nodeId)
       if (d.nodeId === nodeId.value) {
@@ -350,7 +350,9 @@ export function useRunLive(
       return continueTo(d.nodeId, 'chat', c)
     }
     if (d.kind === 'detail') {
-      if (!shown) return leaveTo(runDetailPath(id))
+      // History mode is hosted on runDetailPath itself; leaving would be a
+      // no-op replace that disposes this page and leaves it loading forever.
+      if (!shown) return options.history ? applyWait({ nodeId: requestedNode.value, label: '' }, id) : leaveTo(runDetailPath(id))
       endState.value = { kind: 'run', status: String(r.status || '') }
       return finish()
     }

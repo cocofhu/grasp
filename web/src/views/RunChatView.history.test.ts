@@ -90,6 +90,19 @@ describe('terminal Run chat history with the real live host', () => {
     expect(sockets).not.toHaveBeenCalled()
   })
 
+  it.each(['paused', 'queued'])('keeps a %s run without a current node on its conversation instead of loading forever', async status => {
+    vi.stubGlobal('WebSocket', class { constructor() { sockets() } close() {} })
+    mocks.chat.mockResolvedValue({ soloId: '', title: 'old 历史任务', status })
+    mocks.getRun.mockResolvedValue({ id: 'old', status, nodes: [] })
+    mocks.chain.mockResolvedValue(savedChain('old', 'completed'))
+    const { wrapper, router } = await render()
+    expect(wrapper.text()).not.toContain('加载运行…')
+    expect(wrapper.text()).toContain('old 已确认需求')
+    expect(wrapper.find('[data-testid="clarify-done-note"]').exists()).toBe(false)
+    expect(router.currentRoute.value.fullPath).toBe('/runs/old')
+    expect(wrapper.find('[data-testid="canvas"]').exists()).toBe(false)
+  })
+
   it('shows the saved terminal status for a genuinely empty chain', async () => {
     mocks.chain.mockResolvedValue({ runId: 'old', status: 'completed', segments: [] })
     const { wrapper, router } = await render()

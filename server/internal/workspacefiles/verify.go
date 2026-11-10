@@ -91,6 +91,35 @@ func validRef(name string) bool {
 	}
 	return true
 }
+
+func validRefs(values []GitRef, format string) (map[string]GitRef, bool) {
+	refs := map[string]GitRef{}
+	for _, ref := range values {
+		direct := ref.Target == "" && validOID(ref.OID, format)
+		symbolic := ref.OID == "" && validRef(ref.Target) && ref.Target != ref.Name
+		if _, dup := refs[ref.Name]; !validRef(ref.Name) || !(direct || symbolic) || dup {
+			return nil, false
+		}
+		refs[ref.Name] = ref
+	}
+	return refs, true
+}
+
+// resolveRef follows symbolic refs the way Git does (bounded depth) and
+// returns "" for a dangling or cyclic chain.
+func resolveRef(refs map[string]GitRef, name string) string {
+	for range 5 {
+		ref, ok := refs[name]
+		if !ok {
+			return ""
+		}
+		if ref.Target == "" {
+			return ref.OID
+		}
+		name = ref.Target
+	}
+	return ""
+}
 func validOID(value, format string) bool {
 	length := 40
 	if format == "sha256" {
@@ -246,17 +275,14 @@ func validateEntries(m Manifest, r Receipt, limits payloadhold.Limits) error {
 			return ErrIntegrity
 		}
 		repos[repo.Path] = true
-		refs := map[string]string{}
-		for _, ref := range repo.Refs {
-			if !validRef(ref.Name) || !validOID(ref.OID, repo.ObjectFormat) || refs[ref.Name] != "" {
-				return ErrIntegrity
-			}
-			refs[ref.Name] = ref.OID
+		refs, ok := validRefs(repo.Refs, repo.ObjectFormat)
+		if !ok {
+			return ErrIntegrity
 		}
 		if repo.HEAD != "" && !validOID(repo.HEAD, repo.ObjectFormat) {
 			return ErrIntegrity
 		}
-		if repo.SymbolicHEAD != "" && (!validRef(repo.SymbolicHEAD) || !strings.HasPrefix(repo.SymbolicHEAD, "refs/heads/") || refs[repo.SymbolicHEAD] != repo.HEAD) {
+		if repo.SymbolicHEAD != "" && (!validRef(repo.SymbolicHEAD) || !strings.HasPrefix(repo.SymbolicHEAD, "refs/heads/") || resolveRef(refs, repo.SymbolicHEAD) != repo.HEAD) {
 			return ErrIntegrity
 		}
 		stages := map[string]int{}

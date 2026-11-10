@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/filestore"
@@ -66,6 +67,14 @@ func (e *Engine) ResumePausedRun(runID string, version uint64) error {
 		}
 		if version != run.ControlVersion {
 			return &services.AdmissionError{Code: "control_conflict", Message: "任务状态已变化，请刷新后重试", Status: 409}
+		}
+		// Resuming a run held by a definitely failed workspace capture retries
+		// the capture; the run stays paused until the checkpoint loop routes it.
+		if e.workspaceCheckpoints != nil && run.Status == "paused" && strings.HasPrefix(run.PauseFromStatus, workspaceCheckpointPause) {
+			retried, err := e.workspaceCheckpoints.RetryCaptureTx(tx, runID)
+			if err != nil || retried {
+				return err
+			}
 		}
 		if err := e.workflowCheckpointPendingTx(tx, runID); err != nil {
 			return err
