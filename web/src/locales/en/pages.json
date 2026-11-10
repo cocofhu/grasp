@@ -4933,16 +4933,7 @@
         "title": "Close Solo session",
         "body": "Closing stops current compute and retains the chat, original environment and workspace files.",
         "busy": "The Agent is working; closing interrupts the current task.",
-        "pushFirst": "Have the Agent commit and push first",
-        "pushFirstHint": "Optionally commit and push first; closing also retains uncommitted files",
-        "pushPrompt": "Please commit all current changes and push them to a remote branch, then tell me the branch name and a summary of the commits.",
         "confirm": "Close and keep workspace"
-      },
-      "delete": {
-        "title": "Delete session",
-        "body": "Deleting this session and all messages cannot be undone. Release any retained workspace separately first.",
-        "bodyActive": "Close the session to stop compute first. A retained workspace requires a separate release; deleting chat does not confirm file loss.",
-        "confirm": "Delete"
       },
       "env": {
         "title": "Session environment",

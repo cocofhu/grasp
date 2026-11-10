@@ -32,6 +32,7 @@ import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import type { AgentPart } from '@/lib/shared/types'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
+import { isPlainEnter } from '@/lib/chat/composerKeys'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 
 // `attachId` attaches to an existing sandbox (skips the create flow) — used by
@@ -385,6 +386,12 @@ const canSend = () =>
   !!ws && ws.readyState === WebSocket.OPEN && (status.value === 'ready' || status.value === 'thinking')
 
 const newItemId = randomUuid
+
+function onComposerKeydown(event: KeyboardEvent) {
+  if (!isPlainEnter(event)) return
+  event.preventDefault()
+  send()
+}
 
 function send() {
   const text = input.value.trim()
@@ -1313,7 +1320,7 @@ onBeforeUnmount(() => {
           :placeholder="t('pages.agentChatTester.inputPlaceholder')"
           class="chat-input tester-composer-input scroll-area max-h-40 min-h-[44px] min-w-0 flex-1 resize-none px-1 py-2 disabled:opacity-50"
           :aria-label="t('pages.agentChatTester.inputPlaceholder')"
-          @keydown.enter.exact.prevent="send"
+          @keydown="onComposerKeydown"
           @paste="onPaste"
         />
         <div class="chat-toolbar flex items-center justify-between gap-2">

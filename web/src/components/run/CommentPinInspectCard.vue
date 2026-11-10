@@ -2,6 +2,7 @@
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { InspectElementStyle } from '@/lib/shared/htmlPreviewSandbox'
+import { isPlainEnter } from '@/lib/chat/composerKeys'
 
 const props = defineProps<{
   open: boolean
@@ -164,7 +165,9 @@ function onSendChat() {
   emit('send-chat', body)
 }
 
-function onComposerEnter() {
+function onComposerKeydown(event: KeyboardEvent) {
+  if (!isPlainEnter(event)) return
+  event.preventDefault()
   if (canSubmit.value) onSave()
 }
 
@@ -257,7 +260,7 @@ defineExpose({ placeCardNear })
         rows="3"
         :placeholder="t('pages.gateApproval.commentPins.placeholder')"
         data-testid="comment-pin-input"
-        @keydown.enter.exact.prevent="onComposerEnter"
+        @keydown="onComposerKeydown"
       />
     </div>
     <div class="flex shrink-0 items-center justify-end gap-1.5 border-t border-line bg-elevated px-3 py-2.5">

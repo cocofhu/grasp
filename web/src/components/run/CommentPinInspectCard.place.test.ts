@@ -234,7 +234,7 @@ describe('CommentPinInspectCard', () => {
 
     vm.onSave()
     vm.onSendChat()
-    vm.onComposerEnter()
+    await w.get('[data-testid="comment-pin-input"]').trigger('keydown', { key: 'Enter' })
     expect(w.emitted('save')).toBeFalsy()
     expect(w.emitted('send-chat')).toBeFalsy()
 
@@ -254,8 +254,20 @@ describe('CommentPinInspectCard', () => {
     await flushPromises()
     const input = w.get('[data-testid="comment-pin-input"]')
     await input.setValue('回车提交')
-    await input.trigger('keydown.enter')
+    await input.trigger('keydown', { key: 'Enter' })
     expect(w.emitted('save')![0]).toEqual(['回车提交'])
+    w.unmount()
+  })
+
+  it('keeps the draft when Enter commits an IME candidate or carries a modifier', async () => {
+    const w = mountCard()
+    await flushPromises()
+    const input = w.get('[data-testid="comment-pin-input"]')
+    await input.setValue('输入法')
+    await input.trigger('keydown', { key: 'Enter', isComposing: true })
+    await input.trigger('keydown', { key: 'Enter', keyCode: 229 })
+    await input.trigger('keydown', { key: 'Enter', shiftKey: true })
+    expect(w.emitted('save')).toBeUndefined()
     w.unmount()
   })
 

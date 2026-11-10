@@ -291,9 +291,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
     const exact = item.clientMessageId ? openSends.find(row => !row.serverId && row.localId === item.clientMessageId) : undefined
     if (knownServerIds.has(item.id) && !exact) return undefined
-    const send = item.clientMessageId
-      ? openSends.find(row => !row.serverId && row.localId === item.clientMessageId)
-      : openSends.find((row) => !row.serverId && !row.outboxScope && samePayload(row, item))
+    const send = item.clientMessageId ? exact : openSends.find((row) => !row.serverId && !row.outboxScope && samePayload(row, item))
     knownServerIds.add(item.id)
     if (!send) return undefined
     const old = send.localId
@@ -1291,37 +1289,6 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
   }
 
-  async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
-    const epoch = chatEpoch
-    actionError.value = ''
-    try {
-      const result = await fn()
-      return !disposed && epoch === chatEpoch ? result : undefined
-    } catch (e: any) {
-      if (!disposed && epoch === chatEpoch) actionError.value = String(e?.message || e)
-      return undefined
-    }
-  }
-
-  async function close() {
-    const v = await run(() => api.closeSoloSession(sessionId.value))
-    if (v) {
-      setSession(v)
-      dropQueuedSends()
-      endActive()
-      queued.value = []
-      busy.value = false
-      await refetchMessages()
-    }
-    return !!v
-  }
-
-  async function rename(title: string) {
-    const v = await run(() => api.renameSoloSession(sessionId.value, title))
-    if (v && session.value) session.value = { ...session.value, title: v.title }
-    return !!v
-  }
-
   watch(sessionId, () => void load(), { immediate: true })
   watch([busy, link], scheduleStallCheck)
 
@@ -1368,8 +1335,6 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     removeQueued,
     takeQueued,
     reorderQueued,
-    close,
-    rename,
     refreshSession,
   }
 }

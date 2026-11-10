@@ -1,5 +1,6 @@
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import type { MessageReference } from '@/lib/api/apiTypes'
+import { isComposingKey } from '@/lib/chat/composerKeys'
 import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
 import type { ReferenceTab } from './useReferenceSearch'
 
@@ -113,7 +114,7 @@ export function useReferenceComposer(opts: {
 
   /** True when the key was handled here and the caller must ignore it. */
   function onKeydown(e: KeyboardEvent): boolean {
-    if (composing.value || e.isComposing || e.keyCode === 229) return false
+    if (isComposingKey(e, composing.value)) return false
     const p = picker.value
     if (trigger.value && p) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') p.move(e.key === 'ArrowDown' ? 1 : -1)

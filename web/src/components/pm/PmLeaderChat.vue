@@ -22,6 +22,7 @@ import ArtifactLoadingPane from '@/components/run/ArtifactLoadingPane.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
 import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import { usePmLeaderChat } from '@/lib/pm/usePmLeaderChat'
+import { isPlainEnter } from '@/lib/chat/composerKeys'
 import type { PmLeaderBinding } from '@/lib/shared/types'
 
 const props = defineProps<{
@@ -155,6 +156,12 @@ const {
   renderMarkdown,
   isImageAttachment
 } = usePmLeaderChat(props, emit)
+
+function onComposerKeydown(event: KeyboardEvent) {
+  if (!isPlainEnter(event)) return
+  event.preventDefault()
+  send()
+}
 
 // Keep old conversations readable even when sending is disabled or the default Agent is missing.
 const setupRequired = computed(() => !loading.value && !threadsLoadFailed.value && !threads.value.length && !canCreateThread.value)
@@ -723,7 +730,7 @@ function showConversationHistory() { workspace.value?.close() }
             :placeholder="t('pages.workspace.pm.inputPh')"
             :aria-label="t('pages.workspace.pm.inputPh')"
             :disabled="busy"
-            @keydown.enter.exact.prevent="send()"
+            @keydown="onComposerKeydown"
             @paste="onPaste"
           />
           <div class="chat-toolbar flex items-center justify-between gap-2">

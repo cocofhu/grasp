@@ -1900,10 +1900,9 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		} else if switched && !row.ModelContextPending && row.CurrentReasoningEffort != row.AppliedReasoningEffort && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
 			header = soloReasoningPreambleHeader
 		}
+		// A failure skips the model call; the fenced reply publication below
+		// records the failed status on this turn.
 		pre, err = s.contextPreambleWithContext(ctx, c.id, q.ID, header)
-		if err != nil {
-			s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Updates(map[string]any{"status": "failed", "error": truncErr(err)})
-		}
 		usedPreamble = true
 	}
 	if pre != "" {
@@ -1968,7 +1967,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	case err != nil && errors.Is(context.Cause(ctx), errSandboxOperationLost):
 		status, ledger, errText = "failed", models.TokenLedgerStatusFailed, errSandboxOperationLost.Error()
 	case err != nil && (ctx.Err() != nil || errors.Is(err, context.Canceled)):
-		status, ledger, errText = "stopped", models.TokenLedgerStatusCancelled, "已停止"
+		status, ledger, errText = "stopped", models.TokenLedgerStatusCancelled, soloTurnStoppedText
 	case err != nil:
 		status, ledger, errText = "failed", models.TokenLedgerStatusFailed, truncErr(err)
 	}
@@ -1993,7 +1992,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 			return cancelErr
 		}
 		if cancelled && status == "ok" {
-			status, ledger, errText = "stopped", models.TokenLedgerStatusCancelled, "已停止"
+			status, ledger, errText = "stopped", models.TokenLedgerStatusCancelled, soloTurnStoppedText
 			reply.Status, reply.Error = status, errText
 		}
 		var deliveries []models.ArtifactDelivery
@@ -2089,6 +2088,7 @@ const (
 	// work was lost.
 	soloModelPreambleHeader     = "（系统提示）编码模型已更换。仓库和工作区没有重建，已有改动都还在。请接着下面的对话继续：\n\n"
 	soloReasoningPreambleHeader = "（系统提示）推理强度已调整。仓库和工作区没有重建，已有改动都还在。请接着下面的对话继续：\n\n"
+	soloTurnStoppedText         = "已停止"
 )
 
 // buildPreamble summarizes persisted history for a restarted session.
