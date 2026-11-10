@@ -68,7 +68,7 @@ watch([() => props.workflowIntent, workflowPanel], async ([intent, panel]) => {
   if (workflowsEnabled.value) await panel.openPicker(intent === '1' ? '' : intent)
   emit('workflowOpened')
 })
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, stopLocalRetry, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, stopLocalRetry, status, closing, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -565,11 +565,11 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </div>
 
       <!-- composer / closed bar -->
-      <div v-if="closed || stoppedEnvironment" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
+      <div v-if="closing || closed || stoppedEnvironment" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
         <div class="chat-pane-column solo-closed">
           <Icon name="lock" :size="15" class="mt-0.5 shrink-0 text-txt3" />
-          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">{{ t(stoppedEnvironment ? 'pages.solo.environment.stopped' : 'pages.solo.closedBar.text') }}</p>
-          <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting || environmentBusy" @click="stoppedEnvironment ? resumeEnvironment() : doRestart()">{{ t(stoppedEnvironment ? 'pages.solo.environment.resume' : 'pages.solo.closedBar.restart') }}</AppButton>
+          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2" :role="closing ? 'status' : undefined">{{ t(closing ? 'pages.solo.close.progress' : stoppedEnvironment ? 'pages.solo.environment.stopped' : 'pages.solo.closedBar.text') }}</p>
+          <AppButton v-if="!embedded && !closing" size="sm" variant="primary" icon="refresh" :loading="restarting || environmentBusy" @click="stoppedEnvironment ? resumeEnvironment() : doRestart()">{{ t(stoppedEnvironment ? 'pages.solo.environment.resume' : 'pages.solo.closedBar.restart') }}</AppButton>
         </div>
         <p v-if="actionError" class="chat-pane-column mt-2 text-xs text-err" role="alert">{{ actionError }}</p>
       </div>

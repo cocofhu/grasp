@@ -360,6 +360,7 @@ function soloRowTitle(session: SoloSession): string {
 }
 
 function soloRowMotion(session: SoloSession): 'spin' | 'pulse' | null {
+  if (soloStore.closing.value.has(session.id)) return 'spin'
   if (session.status === 'starting') return 'spin'
   return session.busy ? 'pulse' : null
 }
@@ -409,11 +410,12 @@ const menuSolo = computed(() => {
   return soloStore.sessions.value.find((it) => soloRowKey(it) === key) ?? null
 })
 const menuSoloActive = computed(() => !!menuSolo.value && isSoloActive(menuSolo.value))
+const menuSoloClosing = computed(() => !!menuSolo.value && soloStore.closing.value.has(menuSolo.value.id))
 const menuSoloRelease = computed(() => menuSolo.value?.status === 'closed' && !!(menuSolo.value.sandboxId || menuSolo.value.sandbox?.id))
 const changingSoloEnvironments = ref(new Set<string>())
 const menuSoloEnvironmentDisabled = computed(() => {
   const session = menuSolo.value
-  return !session || changingSoloEnvironments.value.has(session.id) || (session.status !== 'stopped' && (session.busy || session.waiting > 0 || session.status === 'starting'))
+  return !session || menuSoloClosing.value || changingSoloEnvironments.value.has(session.id) || (session.status !== 'stopped' && (session.busy || session.waiting > 0 || session.status === 'starting'))
 })
 const menuSoloEnvironmentLabel = computed(() => {
   const session = menuSolo.value
@@ -477,7 +479,7 @@ function openSoloMenu(session: SoloSession, x: number, y: number) {
 
 function onMenuSoloWorkspace(panel: 'snapshots' | 'release') {
   const session = menuSolo.value
-  if (!session || worktreeMode.value || (panel === 'release' && !menuSoloRelease.value)) return
+  if (!session || worktreeMode.value || (panel === 'release' && (!menuSoloRelease.value || menuSoloClosing.value))) return
   closeMenu()
   const path = `/solo/${encodeURIComponent(session.id)}`
   const query = { ...(route.path === path ? route.query : {}), workspace: panel }
@@ -814,6 +816,7 @@ const cancelRunError = ref('')
 function onMenuCancel() {
   if (menuSolo.value) {
     const s = menuSolo.value
+    if (soloStore.closing.value.has(s.id) || changingSoloEnvironments.value.has(s.id)) return
     closeMenu()
     soloCloseTarget.value = s
     return
@@ -826,23 +829,21 @@ function onMenuCancel() {
 }
 
 function closeSoloConfirm() {
-  if (cancellingRun.value) return
   soloCloseTarget.value = null
 }
 
 async function confirmCloseSolo() {
   const target = soloCloseTarget.value
-  if (!target || cancellingRun.value) return
-  cancellingRun.value = true
+  if (!target || soloStore.closing.value.has(target.id)) return
+  soloCloseTarget.value = null
+  const notice = toast.showSticky(t('pages.solo.close.pending', { title: soloRowTitle(target) }))
   try {
-    const saved = await api.closeSoloSession(target.id)
-    soloStore.upsert(saved)
-    soloCloseTarget.value = null
-    toast.success(t('pages.solo.header.close'))
+    await soloStore.close(target.id)
+    toast.success(t('pages.solo.close.success', { title: soloRowTitle(target) }))
   } catch (e) {
-    toast.error(e instanceof Error ? e.message : t('nav.pendingRenameFailed'))
+    toast.error(soloErrorText(e, t, te, locale.value) || t('pages.solo.close.failed'))
   } finally {
-    cancellingRun.value = false
+    toast.dismiss(notice)
   }
 }
 
@@ -1575,6 +1576,7 @@ const settingsItems = computed(() => (
       >
         <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(entry.session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
         <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ soloRowTitle(entry.session) }}</span>
+        <span v-if="soloStore.closing.value.has(entry.session.id)" class="shrink-0 text-[11px] text-txt3" data-testid="nav-solo-closing">{{ t('pages.solo.close.closing') }}</span>
         <InboxMotionMark v-if="soloRowMotion(entry.session) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="soloRowMotion(entry.session) === 'pulse'" kind="pulse" />
       </button>
@@ -1652,7 +1654,7 @@ const settingsItems = computed(() => (
           <Icon :name="menuSolo.status === 'stopped' ? 'play' : 'stop'" :size="14" />
           <span>{{ menuSoloEnvironmentLabel }}</span>
         </button>
-        <button v-else-if="menuSoloRelease" type="button" role="menuitem" class="pending-row-menu__item" data-testid="nav-solo-menu-release" @click="onMenuSoloWorkspace('release')">
+        <button v-else-if="menuSoloRelease" type="button" role="menuitem" class="pending-row-menu__item" data-testid="nav-solo-menu-release" :disabled="menuSoloClosing" @click="onMenuSoloWorkspace('release')">
           <Icon name="trash" :size="14" />
           <span>{{ t('workspaceRelease.title') }}</span>
         </button>
@@ -1679,10 +1681,11 @@ const settingsItems = computed(() => (
         role="menuitem"
         class="pending-row-menu__item"
         data-testid="nav-pending-menu-cancel"
+        :disabled="!!menuSolo && (menuSoloClosing || changingSoloEnvironments.has(menuSolo.id))"
         @click="onMenuCancel"
       >
         <Icon name="close" :size="14" />
-        <span>{{ t('nav.pendingCancelRun') }}</span>
+        <span>{{ t(menuSoloClosing ? 'pages.solo.close.closing' : 'nav.pendingCancelRun') }}</span>
       </button>
     </div>
   </Teleport>
@@ -1730,6 +1733,9 @@ const settingsItems = computed(() => (
     :open="!!soloCloseTarget"
     :title="t('pages.solo.close.title')"
     :width="440"
+    :close-label="t('common.buttons.close')"
+    close-on-esc
+    trap-focus
     @close="closeSoloConfirm"
   >
     <div class="space-y-3 text-sm text-txt2">
@@ -1737,8 +1743,8 @@ const settingsItems = computed(() => (
       <p v-if="soloCloseTarget?.busy" class="text-[12px] text-warn">{{ t('pages.solo.close.busy') }}</p>
     </div>
     <template #footer>
-      <AppButton variant="ghost" :disabled="cancellingRun" @click="closeSoloConfirm">{{ t('common.buttons.cancel') }}</AppButton>
-      <AppButton variant="danger" icon="stop" :disabled="cancellingRun" @click="confirmCloseSolo">{{ t('pages.solo.close.confirm') }}</AppButton>
+      <AppButton variant="ghost" @click="closeSoloConfirm">{{ t('common.buttons.cancel') }}</AppButton>
+      <AppButton variant="danger" icon="stop" data-testid="nav-solo-close-confirm" @click="confirmCloseSolo">{{ t('pages.solo.close.confirm') }}</AppButton>
     </template>
   </AppModal>
 </template>

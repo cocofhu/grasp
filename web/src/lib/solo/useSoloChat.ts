@@ -157,11 +157,12 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   })
 
   const status = computed(() => session.value?.status ?? 'starting')
+  const closing = computed(() => !transport.soloChatProtocols && sessions.closing.value.has(sessionId.value))
   const closed = computed(() => status.value === 'closed')
   const sessionOpen = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
-  const canSend = computed(() => sessionOpen.value && historyReady.value && outboxReady.value && !pendingConfirmation.value.length && session.value?.sandbox?.desiredState !== 'stopped')
+  const canSend = computed(() => !closing.value && sessionOpen.value && historyReady.value && outboxReady.value && !pendingConfirmation.value.length && session.value?.sandbox?.desiredState !== 'stopped')
   // An explicit current model wins, including empty (primary). Old sessions
   // omit the flag and keep the opening model.
   const currentModelId = computed(() => {
@@ -251,12 +252,12 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
 
   async function refreshSession() {
     const id = sessionId.value
-    if (!id || settings.pending()) return
+    if (!id || disposed || settings.pending()) return
     const generation = sessionGeneration
     const sequence = settings.sequence()
     try {
       const row = await transport.getSoloSession(id)
-      if (generation === sessionGeneration && sequence === settings.sequence()) setSession(row)
+      if (!disposed && generation === sessionGeneration && sequence === settings.sequence()) setSession(row)
     } catch {
       schedulePoll()
     }
@@ -1256,6 +1257,22 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   watch(sessionId, () => void load(), { immediate: true })
+  watch(closing, (pending, wasPending) => {
+    // Fence reads issued before the close, including its final response.
+    settings.invalidate()
+    sessionGeneration++
+    if (!pending && wasPending) {
+      // Closing from the sidebar can race the page's initial session load.
+      // Replace that invalidated load so its spinner can still settle.
+      if (loading.value) {
+        void load()
+        return
+      }
+      const saved = sessions.sessions.value.find(row => row.id === sessionId.value)
+      if (saved) setSession(saved)
+      void refreshSession()
+    }
+  }, { flush: 'sync' })
   watch([busy, link], scheduleStallCheck)
 
   onBeforeUnmount(() => {
@@ -1290,6 +1307,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     processPages,
     loadProcess,
     status,
+    closing,
     closed,
     canSend,
     currentModelId,

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   sendSoloTurn: vi.fn(),
   cancelSoloTurn: vi.fn(),
   closeSoloSession: vi.fn(),
+  listSoloSessions: vi.fn(),
   renameSoloSession: vi.fn(),
   removeSoloQueued: vi.fn(),
   reorderSoloQueue: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock('@/lib/api/api', async () => {
 
 import { useSoloChat, type SoloChatTransport } from './useSoloChat'
 import { partsOf } from './acpTurn'
+import { useSoloSessions } from './useSoloSessions'
 import { modelRouteValue } from '@/lib/agent/modelBindings'
 import { readSoloOutbox, removeSoloOutbox, saveSoloOutbox, soloOutboxScope, type SoloTurnRequest } from './soloOutbox'
 
@@ -115,6 +117,7 @@ describe('useSoloChat', () => {
     )
     mocks.getSoloSession.mockResolvedValue(session())
     mocks.listSoloMessages.mockResolvedValue([])
+    mocks.listSoloSessions.mockResolvedValue({ sessions: [session()], maxSandboxes: 5 })
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -163,6 +166,90 @@ describe('useSoloChat', () => {
       expect(report.mock.calls.map(call => call[1])).toContainEqual(expect.objectContaining({ event: 'ws_closed' }))
       expect(JSON.stringify(report.mock.calls)).not.toContain('private upstream credentials')
     } finally { app.unmount() }
+  })
+
+  it('blocks sends during close and applies the result before a delayed older session read', async () => {
+    const { chat, app } = await mountChat()
+    await flushPromises()
+    const store = useSoloSessions()
+    let finishRead!: (value: unknown) => void
+    mocks.getSoloSession.mockReturnValueOnce(new Promise(resolve => { finishRead = resolve }))
+    const oldRead = chat.refreshSession()
+    let finishClose!: (value: unknown) => void
+    mocks.closeSoloSession.mockReturnValue(new Promise(resolve => { finishClose = resolve }))
+    const request = store.close('s1')
+    expect(chat.closing.value).toBe(true)
+    expect(chat.canSend.value).toBe(false)
+    expect(await chat.send('should not send')).toBe(false)
+    expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+    // The post-close reconciliation read must not overwrite its receipt either.
+    mocks.getSoloSession.mockReturnValueOnce(new Promise(() => {}))
+    finishClose(session({ status: 'closed' }))
+    await request
+    expect(chat.closing.value).toBe(false)
+    expect(chat.closed.value).toBe(true)
+    expect(chat.canSend.value).toBe(false)
+    finishRead(session())
+    await oldRead
+    expect(chat.closed.value).toBe(true)
+    expect(store.sessions.value.find(row => row.id === 's1')?.status).toBe('closed')
+    app.unmount()
+  })
+
+  it('finishes loading when close overlaps the initial session request', async () => {
+    let finishOld!: (value: unknown) => void
+    mocks.getSoloSession.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve })).mockResolvedValue(session({ status: 'closed' }))
+    const { chat, app } = await mountChat()
+    expect(chat.loading.value).toBe(true)
+    mocks.closeSoloSession.mockResolvedValue(session({ status: 'closed' }))
+    await useSoloSessions().close('s1')
+    await flushPromises()
+    expect(chat.loading.value).toBe(false)
+    expect(chat.closed.value).toBe(true)
+    finishOld(session())
+    await flushPromises()
+    expect(chat.loading.value).toBe(false)
+    expect(chat.closed.value).toBe(true)
+    app.unmount()
+  })
+
+  it('does not restore a closed session from a read that finishes after leaving the chat', async () => {
+    const { chat, app } = await mountChat()
+    await flushPromises()
+    const store = useSoloSessions()
+    let finishClose!: (value: unknown) => void
+    mocks.closeSoloSession.mockReturnValue(new Promise(resolve => { finishClose = resolve }))
+    const request = store.close('s1')
+    let finishRead!: (value: unknown) => void
+    mocks.getSoloSession.mockReturnValueOnce(new Promise(resolve => { finishRead = resolve }))
+    const oldRead = chat.refreshSession()
+    app.unmount()
+    finishClose(session({ status: 'closed' }))
+    await request
+    finishRead(session())
+    await oldRead
+    expect(store.sessions.value.find(row => row.id === 's1')?.status).toBe('closed')
+  })
+
+  it('clears a pending model change when close fails so reconciliation and later choices still work', async () => {
+    const { chat, app } = await mountChat()
+    await flushPromises()
+    let finishModel!: (value: unknown) => void
+    mocks.setSoloSessionModel.mockReturnValueOnce(new Promise(resolve => { finishModel = resolve }))
+    const changing = chat.setCurrentModel('before-close')
+    await flushPromises()
+    expect(chat.modelChangePending.value).toBe(true)
+    mocks.closeSoloSession.mockRejectedValue(new Error('close unavailable'))
+    await expect(useSoloSessions().close('s1')).rejects.toThrow('close unavailable')
+    await flushPromises()
+    expect(chat.modelChangePending.value).toBe(false)
+    expect(chat.currentModelId.value).toBe('')
+    finishModel(session({ currentModelId: 'before-close', currentModelSet: true }))
+    expect(await changing).toBe(false)
+    mocks.setSoloSessionModel.mockResolvedValue(session({ currentModelId: 'after-close', currentModelSet: true }))
+    expect(await chat.setCurrentModel('after-close')).toBe(true)
+    expect(chat.currentModelId.value).toBe('after-close')
+    app.unmount()
   })
 
   it('keeps loaded older pages and the complete reply while lazily paging execution details', async () => {
