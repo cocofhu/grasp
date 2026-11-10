@@ -84,6 +84,36 @@
       "snapshot_expired": "The file-save request expired. Check the original task.",
       "outcome_sealing_failed": "The node result could not be fully saved. Check the original task.",
       "provider_outcome_unconfirmed": "The node execution result is unconfirmed. Keep its workspace and check the original task."
+    },
+    "runSave": {
+      "savingTitle": "Saving workspace",
+      "savingBody": "“{node}” finished. Its workspace files are being saved; the run continues automatically afterwards.",
+      "failedTitle": "Workspace save failed",
+      "failedBody": "“{node}” finished, but its workspace files were not saved, so the run stopped here. The node result and sandbox are kept; retrying only saves again and does not re-run the node.",
+      "retry": "Retry save",
+      "reconcile": "Check save result",
+      "retrying": "Retrying…",
+      "retryFailed": "Retry did not succeed: {error}",
+      "noAction": "This case cannot be retried automatically. Cancel the run and start it again.",
+      "reasons": {
+        "snapshot_failed": "The save job failed.",
+        "snapshot_cancelled": "The save job was cancelled.",
+        "snapshot_expired": "The save job timed out.",
+        "snapshot_unknown": "The save result is unconfirmed; you can check it once.",
+        "binding_unavailable": "The node workspace is no longer available.",
+        "capture_admission_unconfirmed": "The save request was not confirmed.",
+        "provider_outcome_unconfirmed": "The node execution result is unconfirmed.",
+        "other": "The save did not complete."
+      },
+      "details": {
+        "git_unsupported": "Cause: the repository has Git metadata that cannot be saved safely.",
+        "workspace_limit": "Cause: the workspace files exceed the save limit.",
+        "workspace_changed": "Cause: workspace files kept changing during the save.",
+        "workspace_unsafe": "Cause: the workspace contains unsafe paths or links.",
+        "workspace_integrity": "Cause: the saved files failed verification.",
+        "job_deadline_expired": "Cause: the save job could not start in time.",
+        "execution_owner_expired": "Cause: the sandbox running the save stopped responding."
+      }
     }
   }
 }

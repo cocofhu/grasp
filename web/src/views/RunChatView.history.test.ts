@@ -5,6 +5,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { createI18n } from 'vue-i18n'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import workspaceSnapshots from '@/locales/zh-CN/workspaceSnapshots.json'
 import { REVIEW_RECOVERY_TIMEOUT_MS } from '@/lib/chat/reviewSessionState'
 
 const mocks = vi.hoisted(() => ({ chat: vi.fn(), getRun: vi.fn(), chain: vi.fn(), nodeEvents: vi.fn(), continueWorkflow: vi.fn() }))
@@ -39,7 +40,7 @@ async function render(path = '/runs/old') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/runs/:id', component: RunView }] })
   await router.push(path)
   const wrapper = mount(RunView, { global: {
-    plugins: [router, createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })],
+    plugins: [router, createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages, ...workspaceSnapshots } } })],
     // Keep RunChatView, RunLiveView, ReviewComposer and the history renderer
     // real: stubbing RunLiveView concealed the self-route loading regression.
     stubs: {
@@ -101,6 +102,19 @@ describe('terminal Run chat history with the real live host', () => {
     expect(wrapper.find('[data-testid="clarify-done-note"]').exists()).toBe(false)
     expect(router.currentRoute.value.fullPath).toBe('/runs/old')
     expect(wrapper.find('[data-testid="canvas"]').exists()).toBe(false)
+  })
+
+  it('explains a failed workspace save on the conversation instead of a bare pause', async () => {
+    vi.stubGlobal('WebSocket', class { constructor() { sockets() } close() {} })
+    mocks.chat.mockResolvedValue({ soloId: '', title: 'old 历史任务', status: 'paused' })
+    mocks.getRun.mockResolvedValue({ id: 'old', status: 'paused', nodes: [{ id: 'code', type: 'agent', label: '编码' }], workspaceSave: { checkpointId: 'cp', nodeId: 'code', state: 'failed', reason: 'snapshot_failed', detail: 'git_unsupported', action: 'retry' } })
+    mocks.chain.mockResolvedValue(savedChain('old', 'completed'))
+    const { wrapper } = await render()
+    const banner = wrapper.get('[data-testid="workspace-save-banner"]')
+    expect(banner.attributes('data-state')).toBe('failed')
+    expect(banner.text()).toContain('「编码」已完成')
+    expect(wrapper.find('[data-testid="workspace-save-retry"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('old 已确认需求')
   })
 
   it('shows the saved terminal status for a genuinely empty chain', async () => {

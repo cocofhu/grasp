@@ -84,6 +84,36 @@
       "snapshot_expired": "文件保存请求已到期，请核对原任务。",
       "outcome_sealing_failed": "节点结果未能完整保存，请核对原任务。",
       "provider_outcome_unconfirmed": "节点执行结果尚未确认，请保留当前工作区并核对原任务。"
+    },
+    "runSave": {
+      "savingTitle": "正在保存工作区",
+      "savingBody": "「{node}」已完成，正在保存它的工作区文件，保存后自动进入下一步。",
+      "failedTitle": "工作区保存失败",
+      "failedBody": "「{node}」已完成，但它的工作区文件没有保存成功，运行停在这一步。节点结果和沙箱都已保留，重试只会重新保存，不会重跑节点。",
+      "retry": "重试保存",
+      "reconcile": "核对保存结果",
+      "retrying": "正在重试…",
+      "retryFailed": "重试未成功：{error}",
+      "noAction": "这种情况无法自动重试，请取消运行后重新发起。",
+      "reasons": {
+        "snapshot_failed": "保存任务执行失败。",
+        "snapshot_cancelled": "保存任务被取消。",
+        "snapshot_expired": "保存任务超时。",
+        "snapshot_unknown": "保存结果尚未确认，可以核对一次。",
+        "binding_unavailable": "节点的工作区已不可用。",
+        "capture_admission_unconfirmed": "保存请求未被确认。",
+        "provider_outcome_unconfirmed": "节点的执行结果尚未确认。",
+        "other": "保存没有完成。"
+      },
+      "details": {
+        "git_unsupported": "原因：仓库里有无法安全保存的 Git 元数据。",
+        "workspace_limit": "原因：工作区文件超出了保存上限。",
+        "workspace_changed": "原因：保存过程中工作区文件仍在变化。",
+        "workspace_unsafe": "原因：工作区里有不安全的路径或链接。",
+        "workspace_integrity": "原因：保存的文件校验不一致。",
+        "job_deadline_expired": "原因：保存任务未能在期限内开始。",
+        "execution_owner_expired": "原因：执行保存的沙箱失去响应。"
+      }
     }
   }
 }

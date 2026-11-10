@@ -3,7 +3,7 @@ import type { WorkflowFeature } from '@/lib/composables/useWorkflowFeature'
 import { req } from '../httpCore'
 
 export type SoloWorkflowTaskNode = { id: string; label: string; type: string; status: string; iteration: number }
-export type SoloWorkflowTask = Pick<Run, 'id' | 'title' | 'workflowName' | 'status' | 'pauseRequested' | 'controlVersion'> & { nodes: SoloWorkflowTaskNode[]; pendingGate?: Gate }
+export type SoloWorkflowTask = Pick<Run, 'id' | 'title' | 'workflowName' | 'status' | 'pauseRequested' | 'controlVersion' | 'workspaceSave'> & { nodes: SoloWorkflowTaskNode[]; pendingGate?: Gate }
 
 export type WorkflowInstructionTarget = { runId: string; nodeId: string; iteration: number; attempt?: number; generation: string; state: string }
 export type WorkflowInstruction = { id: string; iteration: number; attempt?: number; generation: string; sequence: number; actorId: string; text: string; state: string; error?: string }

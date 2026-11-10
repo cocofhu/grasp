@@ -16,6 +16,8 @@ import AppModal from '@/components/ui/AppModal.vue'
 import AppDrawer from '@/components/ui/AppDrawer.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
+import WorkspaceSaveBanner from '@/components/run/WorkspaceSaveBanner.vue'
+import { runDisplayStatus } from '@/lib/run/workspaceSave'
 
 const props = defineProps<{ sessionId: string; sandboxId?: number; busy?: boolean }>()
 const emit = defineEmits<{ changed: []; bindingChanged: [] }>()
@@ -103,7 +105,8 @@ defineExpose({ openPicker, refresh })
     <div class="flex items-center gap-2 text-xs text-txt3"><Icon name="workflow" :size="14" /><span>{{ t('pages.solo.workflows.title') }}</span><span v-if="tasks.length" class="rounded bg-elevated px-1.5">{{ tasks.length }}</span></div>
     <p v-if="error" class="text-xs text-err" role="alert">{{ error }}</p>
     <article v-for="task in tasks" :key="task.id" class="rounded-xl border border-line bg-surface px-4 py-3 shadow-sm" :data-testid="`solo-workflow-${task.id}`">
-      <div class="flex min-w-0 items-center gap-2"><span class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] text-accent">{{ task.id }}</span><strong class="min-w-0 flex-1 truncate text-[13px] text-txt">{{ task.title || task.workflowName }}</strong><span class="shrink-0 text-xs" :class="task.status === 'failed' ? 'text-err' : task.status === 'completed' ? 'text-ok' : 'text-accent'">{{ t(`common.status.${task.status}`) }}</span></div>
+      <div class="flex min-w-0 items-center gap-2"><span class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] text-accent">{{ task.id }}</span><strong class="min-w-0 flex-1 truncate text-[13px] text-txt">{{ task.title || task.workflowName }}</strong><span class="shrink-0 text-xs" :class="['failed', 'save_failed'].includes(runDisplayStatus(task)) ? 'text-err' : task.status === 'completed' ? 'text-ok' : 'text-accent'" data-testid="solo-workflow-status">{{ t(`common.status.${runDisplayStatus(task)}`) }}</span></div>
+      <WorkspaceSaveBanner v-if="task.workspaceSave" class="mt-3" :run="task" :save="task.workspaceSave" :node-label="task.nodes.find(node => node.id === task.workspaceSave?.nodeId)?.label" @retried="refresh" />
       <div class="mt-4 flex overflow-x-auto pb-1">
         <div v-for="(node, index) in task.nodes" :key="node.id" class="relative flex min-w-[64px] flex-1 flex-col items-center gap-1.5">
           <span v-if="index" class="absolute right-1/2 top-2.5 h-px w-full bg-line" />
@@ -113,7 +116,7 @@ defineExpose({ openPicker, refresh })
       </div>
       <div class="mt-3 flex flex-wrap items-center justify-end gap-2">
         <span v-if="task.pauseRequested" class="mr-auto text-[11px] text-txt3">{{ t('pages.solo.workflows.pausePending') }}</span>
-        <AppButton v-if="!terminal(task.status)" size="sm" variant="ghost" @click="control(task, task.status === 'paused' || !!task.pauseRequested)">{{ t(task.status === 'paused' || task.pauseRequested ? 'pages.solo.workflows.resume' : 'pages.solo.workflows.pause') }}</AppButton>
+        <AppButton v-if="!terminal(task.status) && !task.workspaceSave" size="sm" variant="ghost" @click="control(task, task.status === 'paused' || !!task.pauseRequested)">{{ t(task.status === 'paused' || task.pauseRequested ? 'pages.solo.workflows.resume' : 'pages.solo.workflows.pause') }}</AppButton>
         <AppButton v-if="task.status === 'waiting_human'" size="sm" variant="primary" @click="interact(task)">{{ t('pages.solo.workflows.handle') }}</AppButton>
         <AppButton size="sm" variant="ghost" @click="interact(task)">{{ t('pages.solo.workflows.conversation') }}</AppButton>
         <AppButton v-if="terminal(task.status)" size="sm" variant="ghost" data-testid="workflow-import-code" @click="importTask = task">{{ t('pages.solo.workspaceImport.open') }}</AppButton>

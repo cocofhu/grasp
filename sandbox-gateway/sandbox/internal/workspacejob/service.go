@@ -367,7 +367,7 @@ func (s *Service) finish(h *Handle, result json.RawMessage, executionErr error) 
 		return
 	} else if executionErr != nil {
 		log.Printf("workspace job %s: 执行失败: %v", h.id, executionErr)
-		row.Receipt.State, row.Receipt.Error = "failed", "executor_failed"
+		row.Receipt.State, row.Receipt.Error = "failed", failureCode(executionErr)
 	} else {
 		if len(result) > 64<<10 || (len(result) > 0 && !json.Valid(result)) {
 			row.Receipt.State, row.Receipt.Error = "failed", "invalid_executor_result"

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import StatusPill from '@/components/ui/StatusPill.vue'
+import { runDisplayStatus } from '@/lib/run/workspaceSave'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import { fmtDuration } from '@/lib/shared/format'
 import { runBoardTitle, runIdShort } from '@/lib/run/runBoard'
@@ -39,7 +40,7 @@ const progressWidth = computed(() => `${Math.min(100, Math.max(0, props.run.prog
         {{ title }}
       </div>
       <div class="flex shrink-0 flex-col items-end gap-1">
-        <StatusPill :status="run.status" size="sm" />
+        <StatusPill :status="runDisplayStatus(run)" size="sm" />
         <PriorityBadge v-if="run.priority === 'high' || run.priority === 'low'" :priority="run.priority" />
       </div>
     </div>

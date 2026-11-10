@@ -4,7 +4,6 @@
 package workspacesnapshot
 
 import (
-	"errors"
 	"regexp"
 	"time"
 
@@ -18,14 +17,21 @@ const (
 	ManifestName  = "manifest.json"
 )
 
+// snapshotError carries a stable receipt code so the server can tell users
+// why a capture failed instead of only "executor_failed".
+type snapshotError struct{ code, message string }
+
+func (e *snapshotError) Error() string       { return e.message }
+func (e *snapshotError) ReceiptCode() string { return e.code }
+
 var (
-	ErrUnsafe         = errors.New("unsafe workspace snapshot path or metadata")
-	ErrLimit          = errors.New("workspace snapshot quota exceeded")
-	ErrChanged        = errors.New("workspace source changed during capture")
-	ErrGitUnsupported = errors.New("workspace Git metadata cannot be safely materialized")
-	ErrIntegrity      = errors.New("workspace snapshot differs from its verified manifest")
-	oidPattern        = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
-	hashPattern       = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	ErrUnsafe         error = &snapshotError{"workspace_unsafe", "unsafe workspace snapshot path or metadata"}
+	ErrLimit          error = &snapshotError{"workspace_limit", "workspace snapshot quota exceeded"}
+	ErrChanged        error = &snapshotError{"workspace_changed", "workspace source changed during capture"}
+	ErrGitUnsupported error = &snapshotError{"git_unsupported", "workspace Git metadata cannot be safely materialized"}
+	ErrIntegrity      error = &snapshotError{"workspace_integrity", "workspace snapshot differs from its verified manifest"}
+	oidPattern              = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+	hashPattern             = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // Limits are frozen in the admitted capture policy. They are independent of

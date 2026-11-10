@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import AppDrawer from '@/components/ui/AppDrawer.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
+import { runDisplayStatus } from '@/lib/run/workspaceSave'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import { fmtDuration, fmtTime } from '@/lib/shared/format'
 import { runBoardTitle, runIdShort, runProgressPercent } from '@/lib/run/runBoard'
@@ -34,7 +35,7 @@ function goDetail() {
     <div v-if="run" class="run-summary-body px-5 pb-2 pt-5">
       <h3 class="text-lg font-semibold leading-snug text-txt [overflow-wrap:anywhere]">{{ title }}</h3>
       <div class="mt-3 flex flex-wrap items-center gap-2">
-        <StatusPill :status="run.status" size="sm" />
+        <StatusPill :status="runDisplayStatus(run)" size="sm" />
         <PriorityBadge :priority="run.priority" />
       </div>
       <div class="mt-[22px]">

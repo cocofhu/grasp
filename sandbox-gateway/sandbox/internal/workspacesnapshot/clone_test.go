@@ -1,6 +1,8 @@
 package workspacesnapshot
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -92,5 +94,14 @@ func TestWorkspaceSnapshotManifestRefsRequireExactlyOneValidTarget(t *testing.T)
 	}
 	if validRefs([]GitRef{{Name: "refs/heads/main", OID: oid}, {Name: "refs/heads/main", Target: "refs/heads/other"}}, "sha1") {
 		t.Fatal("duplicate ref accepted")
+	}
+}
+
+func TestWorkspaceSnapshotErrorsCarryReceiptCodes(t *testing.T) {
+	for err, want := range map[error]string{ErrUnsafe: "workspace_unsafe", ErrLimit: "workspace_limit", ErrChanged: "workspace_changed", ErrGitUnsupported: "git_unsupported", ErrIntegrity: "workspace_integrity"} {
+		var coded interface{ ReceiptCode() string }
+		if !errors.As(fmt.Errorf("capture: %w", err), &coded) || coded.ReceiptCode() != want {
+			t.Fatal(err, want)
+		}
 	}
 }
