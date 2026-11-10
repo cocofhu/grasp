@@ -63,9 +63,10 @@ type imageEnsurer interface {
 
 // SandboxService orchestrates the single configured driver and the store.
 type SandboxService struct {
-	drv   driver.Driver
-	store *store.Store
-	cfg   Config
+	drv      driver.Driver
+	store    *store.Store
+	cfg      Config
+	releases *EnvironmentReleases
 
 	// imagePullMu + imagePullWait dedupe concurrent pulls of the same image
 	// so multiple Creates share one docker pull (plan g2.2 / f9).
@@ -144,6 +145,9 @@ func (s *SandboxService) Create(_ context.Context, req CreateRequest) (*models.S
 	// pod recreate must re-seed the same config. Without this, injection would
 	// only survive the very first pod (Config lives in-memory on the request).
 	env := mergeEnv(req.Env, configInjectEnv(req.Config))
+	// Runtime jobs bind to this durable gateway resource, not to a caller's
+	// placeholder name or the driver's replaceable pod/container hostname.
+	env["GRASP_SANDBOX_RESOURCE_ID"] = id
 	// When a provider is requested, make the sandbox select it at runtime too:
 	// set AGENT_PROVIDER unless the caller already provided it via env.
 	if req.Provider != "" {
@@ -339,6 +343,10 @@ func (s *SandboxService) fail(id, msg string) {
 
 // persist writes sb and records any store error (logging-spec: never silence failures).
 func (s *SandboxService) persist(sb *models.Sandbox, msg string) {
+	if s.releases != nil {
+		logging.SaveErr(s.releases.persistSandbox(context.Background(), sb), msg, map[string]any{"sandbox_id": sb.ID, "status": sb.Status})
+		return
+	}
 	logging.SaveErr(s.store.Save(context.Background(), sb), msg, map[string]any{"sandbox_id": sb.ID, "status": sb.Status})
 }
 
@@ -362,6 +370,9 @@ func (s *SandboxService) Start(ctx context.Context, id string) error {
 
 // StartPrepared refreshes the expired first-boot inputs before a cold resume.
 func (s *SandboxService) StartPrepared(ctx context.Context, id string, opts driver.StartOptions) error {
+	if err := s.guardEnvironmentRelease(ctx, id); err != nil {
+		return err
+	}
 	sb, err := s.store.Get(context.Background(), id)
 	if err != nil {
 		return err
@@ -411,9 +422,12 @@ func (s *SandboxService) Stop(ctx context.Context, id string) error {
 // deleting the control-plane row (otherwise DELETE leaves stuck DB records when
 // docker rm fails, the request context is canceled, or k8s cleanup errors).
 // idOrName may be the sandbox id or the driver-native name (e.g. sbx-<id>).
-func (s *SandboxService) Destroy(_ context.Context, idOrName string) error {
+func (s *SandboxService) Destroy(ctx context.Context, idOrName string) error {
 	sb, err := s.lookup(context.Background(), idOrName)
 	if err != nil {
+		return err
+	}
+	if err := s.guardEnvironmentRelease(ctx, sb.ID); err != nil {
 		return err
 	}
 	bg, cancel := context.WithTimeout(context.Background(), destroyDriverTimeout)
@@ -440,6 +454,9 @@ func (s *SandboxService) lookup(ctx context.Context, idOrName string) (*models.S
 // (kubernetes) / anonymous volumes (docker); workspace wipe deletes them.
 // Host-mounted shared config (ConfigInject.HostPath / .cursor) is never removed.
 func (s *SandboxService) Reinstall(ctx context.Context, id string, preserveData bool) error {
+	if err := s.guardEnvironmentRelease(ctx, id); err != nil {
+		return err
+	}
 	sb, err := s.store.Get(context.Background(), id)
 	if err != nil {
 		return err
@@ -606,7 +623,9 @@ func (s *SandboxService) PublishPort(ctx context.Context, id string, port int) (
 	return addr, nil
 }
 
-// SweepOrphans destroys driver workloads that have no matching store record.
+// SweepOrphans reports driver workloads with no matching store record and
+// returns the number retained for reconciliation. Lost bookkeeping is not
+// evidence that a disk is disposable; deletion requires an explicit decision.
 // Workloads younger than OrphanGCMinAge (when set and CreatedAt is known) are
 // skipped to avoid racing create/read-replica lag.
 func (s *SandboxService) SweepOrphans(ctx context.Context) (int, error) {
@@ -623,7 +642,7 @@ func (s *SandboxService) SweepOrphans(ctx context.Context) (int, error) {
 		known[records[i].ID] = struct{}{}
 	}
 
-	removed := 0
+	retained := 0
 	for _, h := range live {
 		if h == nil || h.ID == "" {
 			continue
@@ -639,21 +658,14 @@ func (s *SandboxService) SweepOrphans(ctx context.Context) (int, error) {
 				Msg("orphan gc: skip young workload")
 			continue
 		}
-		log.Info().
+		log.Warn().
 			Str("sandbox_id", h.ID).
 			Str("name", h.Name).
 			Str("driver", s.drv.Name()).
-			Msg("orphan gc: destroying workload with no store record")
-		bg, cancel := context.WithTimeout(ctx, destroyDriverTimeout)
-		err := s.drv.Destroy(bg, h.ID)
-		cancel()
-		if err != nil {
-			log.Warn().Err(err).Str("sandbox_id", h.ID).Msg("orphan gc: destroy failed")
-			continue
-		}
-		removed++
+			Msg("orphan gc: retaining untracked workload and files; explicit reconciliation required")
+		retained++
 	}
-	return removed, nil
+	return retained, nil
 }
 
 // RunOrphanGC periodically calls SweepOrphans until ctx is cancelled.
@@ -675,7 +687,7 @@ func (s *SandboxService) RunOrphanGC(ctx context.Context) {
 			log.Error().Err(err).Msg("orphan gc sweep failed")
 			return
 		}
-		log.Info().Int("removed", n).Msg("orphan gc sweep complete")
+		log.Info().Int("retained", n).Msg("orphan observation complete; no workloads deleted")
 	}
 
 	run()

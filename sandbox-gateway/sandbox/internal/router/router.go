@@ -18,17 +18,20 @@ import (
 	"backend/internal/handler"
 	"backend/internal/qqbot"
 	"backend/internal/service"
+	"backend/internal/workspacesnapshot"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Dependencies 注入路由依赖（前端从磁盘 webRoot 提供）。
 type Dependencies struct {
-	WebRoot       string // 含 index.html 与 static/ 的目录（绝对路径）
-	Chats         *service.ChatManager
-	QQBot         *qqbot.Service
-	Auth          *auth.Guard // 非 nil 且 Enabled() 时启用口令与登录页
-	LoginHTMLPath string      // login.html 绝对路径（启用 Auth 时必填）
+	WebRoot          string // 含 index.html 与 static/ 的目录（绝对路径）
+	Chats            *service.ChatManager
+	QQBot            *qqbot.Service
+	Auth             *auth.Guard // 非 nil 且 Enabled() 时启用口令与登录页
+	LoginHTMLPath    string      // login.html 绝对路径（启用 Auth 时必填）
+	Workspace        *workspacesnapshot.Controller
+	WorkspaceStandby bool
 }
 
 // New 构建 Gin 引擎并注册路由。
@@ -51,6 +54,10 @@ func New(deps *Dependencies) *gin.Engine {
 	}
 
 	staticDir := filepath.Join(deps.WebRoot, "static")
+	if deps.WorkspaceStandby {
+		r.NoRoute(func(c *gin.Context) { c.JSON(http.StatusLocked, gin.H{"code": "workspace_startup_pending"}) })
+		return r
+	}
 	r.Static("/assets", staticDir)
 
 	indexFile := handler.IndexPath(deps.WebRoot)
@@ -67,6 +74,30 @@ func New(deps *Dependencies) *gin.Engine {
 	r.POST("/api/model", handler.ModelPOST(deps.Chats))
 	r.GET("/api/qq/config", handler.QQConfig(deps.QQBot))
 	r.POST("/api/qq/config", handler.QQConfigUpdate(deps.QQBot))
+	// Workspace operations are control-plane only and disabled on an
+	// unauthenticated standalone bridge.
+	if deps.Auth != nil && deps.Auth.Enabled() {
+		if deps.Workspace != nil {
+			if deps.Workspace.Binding != nil {
+				binding := &handler.WorkspaceBinding{Manager: deps.Workspace.Binding}
+				r.GET("/api/workspace/binding/capabilities", binding.Capabilities)
+				r.GET("/api/workspace/binding/head", binding.Head)
+				r.GET("/api/workspace/binding/operations/:operationId", binding.Operation)
+				r.GET("/api/workspace/binding/ports/:port", binding.Port)
+			}
+			jobs := &handler.WorkspaceJobs{Service: deps.Workspace.Jobs}
+			files := &handler.WorkspaceSnapshotTransport{Controller: deps.Workspace}
+			r.GET("/api/workspace/jobs/capabilities", jobs.Capabilities)
+			r.POST("/api/workspace/jobs", jobs.Create)
+			r.GET("/api/workspace/jobs/:jobId", jobs.Get)
+			r.PATCH("/api/workspace/jobs/:jobId/fence", jobs.Renew)
+			r.POST("/api/workspace/jobs/:jobId/cancel", jobs.Cancel)
+			r.GET("/api/workspace/files/capabilities", files.Capabilities)
+			r.GET("/api/workspace/jobs/:jobId/artifacts/:part", files.Read)
+			r.PUT("/api/workspace/jobs/:jobId/artifacts/:part", files.Write)
+			r.POST("/api/workspace/jobs/:jobId/finish", files.Finish)
+		}
+	}
 
 	// SPA 回退：未知 GET 仍回 index
 	r.NoRoute(func(c *gin.Context) {

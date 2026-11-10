@@ -40,6 +40,9 @@ func TestWorktreeReprimeKeepsDirectoryAndStopsLatestBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { sb.Destroy(context.Background()) })
+	if environments[0]["GRASP_SANDBOX_RESOURCE_ID"] != sb.ID {
+		t.Fatal("runtime workspace jobs were not bound to the actual local resource")
+	}
 	workspace := sb.WorkspaceDir
 	if err := sb.WriteFile(context.Background(), "app/a.txt", []byte("uncommitted work")); err != nil {
 		t.Fatal(err)
@@ -58,6 +61,9 @@ func TestWorktreeReprimeKeepsDirectoryAndStopsLatestBackend(t *testing.T) {
 	}
 	if environments[1]["CONFIG_ROOT"] != nextHome || environments[1]["WORKSPACE_DIR"] != workspace || environments[1]["CODEX_HOME"] != "" {
 		t.Fatalf("target tool settings wrong: %+v", environments[1])
+	}
+	if environments[1]["GRASP_SANDBOX_RESOURCE_ID"] != sb.ID {
+		t.Fatal("tool switch changed the retained workspace job resource")
 	}
 	body, err := os.ReadFile(filepath.Join(workspace, "app", "a.txt"))
 	if err != nil || string(body) != "uncommitted work" {

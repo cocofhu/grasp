@@ -77,6 +77,9 @@ func main() {
 		OrphanGCMinAge:   cfg.OrphanGCMinAge(),
 	})
 
+	releases := service.NewEnvironmentReleases(db, svc, service.EnvironmentReleaseOptions{})
+	go releases.Run(context.Background())
+
 	// Reconcile persisted records against live driver state on startup.
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

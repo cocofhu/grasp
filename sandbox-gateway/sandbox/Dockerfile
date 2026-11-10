@@ -197,7 +197,13 @@ RUN curl -fsSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30
     rm /tmp/node.tar.xz && \
     node --version && npm --version
 
-RUN npm config set registry https://registry.npmmirror.com
+# npm package registry can be selected independently of the apt/binary mirrors.
+# Prefer the official registry: a mirror outage must not pin CI to that service.
+ARG NPM_REGISTRY=https://registry.npmjs.org
+RUN npm config set registry "${NPM_REGISTRY}" && \
+    npm config set fetch-retries 2 && \
+    npm config set fetch-retry-maxtimeout 30000 && \
+    npm config set fetch-timeout 120000
 RUN npm install -g yarn pnpm typescript ts-node
 
 # Playwright 浏览器 E2E + noVNC 预览栈：预装 Chromium + Playwright 系统依赖，落到共享目录

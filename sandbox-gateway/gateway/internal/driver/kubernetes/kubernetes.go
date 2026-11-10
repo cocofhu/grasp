@@ -649,7 +649,12 @@ func (d *Driver) Start(ctx context.Context, id string) error {
 	}
 	return nil
 }
-func (d *Driver) Stop(ctx context.Context, id string) error { return d.scale(ctx, id, 0) }
+func (d *Driver) Stop(ctx context.Context, id string) error {
+	if err := d.scale(ctx, id, 0); err != nil {
+		return err
+	}
+	return d.waitStopped(ctx, id)
+}
 
 func (d *Driver) scale(ctx context.Context, id string, replicas int32) error {
 	name := d.resourceName(id)
@@ -918,7 +923,17 @@ func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
 		}
 		return driver.StatusError, err
 	}
-	return deploymentStatus(dep), nil
+	status := deploymentStatus(dep)
+	if status == driver.StatusStopped {
+		stopped, err := d.observedStopped(ctx, id, dep)
+		if err != nil {
+			return driver.StatusError, err
+		}
+		if !stopped {
+			return driver.StatusPending, nil
+		}
+	}
+	return status, nil
 }
 
 func deploymentStatus(dep *appsv1.Deployment) driver.Status {

@@ -92,12 +92,12 @@ kubernetes:
   cpuRequestRatio: 0.25
   memoryRequestRatio: 0.25
 
-# Periodically destroy driver workloads with no matching DB record (orphans).
-# Safe defaults: age gate avoids racing in-flight creates / read-replica lag.
+# Periodically report driver workloads with no matching DB record (orphans).
+# Retain disks and workloads for explicit reconciliation; never delete on probe.
 orphanGC:
   enabled: false
   intervalSeconds: 300   # sweep every 5m
-  minAgeSeconds: 600     # only delete workloads older than 10m; 0 = no age gate
+  minAgeSeconds: 600     # report workloads older than 10m; 0 = no age gate
 
 # Control-plane auth. Requests need `Authorization: Bearer <key>`.
 # Empty list disables v1 auth (local testing only); v2 transport stays disabled.
