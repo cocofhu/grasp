@@ -1,6 +1,6 @@
 # Workspace 拆分为独立子包：接口设计
 
-状态：设计稿，第 0 阶段已完成（文件归位），后续阶段逐个 PR 推进。
+状态：第 0、1 阶段已完成（文件归位、租约下沉到 `internal/sandboxop`），后续阶段逐个 PR 推进。
 
 ## 现状（2026-11-10 测量）
 
@@ -75,7 +75,7 @@ type Guards interface {
 每阶段一个 PR；门槛：`go build ./...`、`go vet`、`go test -race ./internal/...`、restart-reattach e2e。
 
 0. **文件归位**（已完成）：非工作区功能改名移出 `workspace_` 前缀，核心边界在文件名上可见。
-1. **租约下沉**：`sandbox_operation.go` 移到 `internal/sandboxop`，导出 `Acquire` / `Commit` / `CommitPrepared` / `Update`、`ErrLost`、`Key`、`LeaseTTL`。它只依赖 sandbox 行模型和 execution lineage，风险最低。
+1. **租约下沉**（已完成）：`sandbox_operation.go` 移到 `internal/sandboxop`，导出 `Acquire` / `Commit` / `CommitPrepared` / `Update`、`ErrLost`、`Key`、`LeaseTTL`。它只依赖 sandbox 行模型和 execution lineage，风险最低。
 2. **定义端口**：在 services 内先引入上面三个接口，由 `SandboxService` / `SoloService` 实现，核心文件改为经接口调用（仍在同一个包里）。这一步可以逐个文件做，行为不变。
 3. **拆反向依赖**：`solo_queue.go` 对 authorization / binding 的直接调用改走 `Guards`；外部类型方法移成适配层。
 4. **移包**：核心 38 个文件整体移到 `internal/workspace`。此时只剩机械改名（导出必要标识符），由编译器保证完整。

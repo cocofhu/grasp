@@ -78,10 +78,9 @@ func (c *soloChat) emit(ctx context.Context, event string, payload map[string]an
 		turnID = execution.TurnID
 	}
 	var sandboxID uint
-	for operation, _ := ctx.Value(sandboxOperationKey{}).(*sandboxOperation); operation != nil; operation = operation.parent {
-		if operation.service == c.svc.sbx {
-			sandboxID = operation.id
-			break
+	if c.svc.sbx != nil {
+		if lease, ok := c.svc.sbx.operations().Current(ctx); ok {
+			sandboxID = lease.ID
 		}
 	}
 	_, err := c.appendJournal(ctx, sandboxID, turnID, []chatsession.JournalEntry{{Type: chatsession.FrameSession, Event: event, Payload: payload}}, event == chatsession.EventTurnDone || event == chatsession.EventError)

@@ -492,18 +492,12 @@ func (s *WorkspaceSnapshotJobs) controlFence(ctx context.Context, row models.Wor
 		}
 		return sandbox.WorkspaceJobFence{}, err
 	}
-	var held *sandboxOperation
-	for op, _ := ctx.Value(sandboxOperationKey{}).(*sandboxOperation); op != nil; op = op.parent {
-		if op.service == s.sandbox && op.id == row.SandboxID {
-			held = op
-			break
-		}
-	}
-	if held == nil || job.ExpiresAt == nil {
+	held, ok := s.sandbox.heldSandboxOperation(ctx, row.SandboxID)
+	if !ok || job.ExpiresAt == nil {
 		return sandbox.WorkspaceJobFence{}, ErrWorkspaceJobOwner
 	}
 	var physical models.Sandbox
-	err = s.db.WithContext(ctx).Select("generation", "operation_expires_at").Where("id = ? AND operation_owner = ? AND generation = ? AND operation_expires_at > ?", row.SandboxID, held.owner, held.generation, time.Now().UTC()).First(&physical).Error
+	err = s.db.WithContext(ctx).Select("generation", "operation_expires_at").Where("id = ? AND operation_owner = ? AND generation = ? AND operation_expires_at > ?", row.SandboxID, held.Owner, held.Generation, time.Now().UTC()).First(&physical).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && physical.OperationExpiresAt == nil) {
 		return sandbox.WorkspaceJobFence{}, ErrWorkspaceJobOwner
 	}
