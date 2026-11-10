@@ -4938,6 +4938,7 @@
         "closing": "正在关闭…",
         "pending": "正在关闭「{title}」…",
         "progress": "正在关闭会话并停止计算，你可以继续处理其他会话。",
+        "confirmingStop": "会话已关闭，环境仍在停止，正在核对状态。",
         "success": "「{title}」已关闭，工作区已保留",
         "failed": "关闭会话失败，请刷新核对后重试。"
       },
@@ -4982,7 +4983,8 @@
         "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
         "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。",
-        "environment_authorization_blocked": "当前授权未通过核验，已阻止恢复；聊天、工作区和原环境关联均已保留。"
+        "environment_authorization_blocked": "当前授权未通过核验，已阻止恢复；聊天、工作区和原环境关联均已保留。",
+        "environment_stop_pending": "环境停止尚未确认，聊天和工作区已保留，系统会继续核对停止状态。"
       },
       "reference": {
         "pickerLabel": "引用会话或 GitHub Issue/PR",

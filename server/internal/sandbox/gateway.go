@@ -31,6 +31,10 @@ type GatewayClient struct {
 	bridge         *gatewayBridge
 }
 
+// GatewayStopTimeout covers the driver's bounded process-exit confirmation
+// (up to two minutes for Kubernetes), with time for the control-plane request.
+const GatewayStopTimeout = 3 * time.Minute
+
 type GatewayHTTPError struct {
 	StatusCode int
 	message    string
@@ -143,6 +147,10 @@ func (g *GatewayClient) do(ctx context.Context, method, path string, body any, o
 }
 
 func (g *GatewayClient) doDirect(ctx context.Context, method, path string, body any, out any) error {
+	return g.doDirectWithClient(ctx, g.http, method, path, body, out)
+}
+
+func (g *GatewayClient) doDirectWithClient(ctx context.Context, client *http.Client, method, path string, body any, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -161,7 +169,7 @@ func (g *GatewayClient) doDirect(ctx context.Context, method, path string, body 
 	if g.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+g.apiKey)
 	}
-	resp, err := g.http.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
@@ -252,7 +260,17 @@ func (g *GatewayClient) Destroy(ctx context.Context, id string) error {
 
 // Stop stops (but retains) a sandbox by gateway id.
 func (g *GatewayClient) Stop(ctx context.Context, id string) error {
-	return g.do(ctx, http.MethodPost, "/api/v1/sandboxes/"+id+"/stop", nil, nil)
+	client, path, err := g.routePath("/api/v1/sandboxes/" + id + "/stop")
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, GatewayStopTimeout)
+	defer cancel()
+	// Preserve the selected gateway's transport, redirect policy and cookies;
+	// other requests keep their shorter timeout, including concurrent reads.
+	httpClient := *client.http
+	httpClient.Timeout = GatewayStopTimeout
+	return client.doDirectWithClient(ctx, &httpClient, http.MethodPost, path, nil, nil)
 }
 
 // Start (re)starts a stopped sandbox.

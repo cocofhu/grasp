@@ -6,6 +6,7 @@ async function setup(page: Page, stopPending = false) {
   const sessions = ['solo-1', 'solo-2'].map((id, index) => ({
     id, userId: 'workspace-config-test', title: index ? '另一个会话' : '关闭交互', agentName: 'Demo', status: 'running', error: '',
     busy: false, waiting: 0, restarts: 0, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z',
+    sandbox: { id: index + 7, desiredState: 'running', status: 'running', error: '' },
   }))
   let release!: () => void
   const stopped = new Promise<void>(resolve => { release = resolve })
@@ -20,8 +21,9 @@ async function setup(page: Page, stopPending = false) {
       await stopped
       session.status = 'closed'
       session.error = stopPending ? '环境停止尚未确认，聊天已关闭，工作区已保留' : ''
+      session.sandbox = { ...session.sandbox, desiredState: 'stopped', status: stopPending ? 'error' : 'stopped' }
       await route.fulfill(stopPending
-        ? { status: 409, json: { code: 'environment_stop_pending', error: session.error } }
+        ? { status: 409, json: { code: 'environment_stop_pending', error: `${session.error}: POST http://gateway.example.test/stop: context deadline exceeded` } }
         : { json: session })
     } else if (path.endsWith('/messages')) await route.fulfill({ json: [] })
     else if (path.endsWith('/resources')) await route.fulfill({ json: { runId: '', artifacts: [], ports: [] } })
@@ -30,7 +32,11 @@ async function setup(page: Page, stopPending = false) {
   await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))
   await page.goto('/workspace-config.html?view=/solo/solo-1')
   await expect(page.getByTestId('solo-session-pane')).toBeVisible()
-  return { release, calls }
+  const completeStop = () => {
+    sessions[0]!.error = ''
+    sessions[0]!.sandbox.status = 'stopped'
+  }
+  return { release, completeStop, calls }
 }
 
 async function confirmClose(page: Page) {
@@ -69,13 +75,19 @@ test('a slow close dismisses immediately and does not block other sessions or du
 })
 
 test('a pending stop reports the real outcome and updates the open chat without another confirmation', async ({ page }) => {
-  const { release, calls } = await setup(page, true)
+  const { release, completeStop, calls } = await setup(page, true)
   const dialog = await confirmClose(page)
   release()
   await expect(page.getByTestId('toast-host')).toContainText('环境停止尚未确认')
   await expect(page.getByTestId('toast-host')).not.toContainText('正在关闭')
   await expect(page.getByTestId('toast-host')).not.toContainText('已关闭，工作区已保留')
-  await expect(page.getByTestId('solo-closed-bar')).toContainText('会话已关闭')
+  await expect(page.getByTestId('toast-host')).not.toContainText('gateway.example.test')
+  await expect(page.getByTestId('toast-host')).not.toContainText('context deadline exceeded')
+  await expect(page.getByTestId('solo-closed-bar')).toContainText('正在核对状态')
+  await expect(page.getByRole('button', { name: '恢复会话', exact: true })).toHaveCount(0)
+  completeStop()
+  await expect(page.getByRole('button', { name: '恢复会话', exact: true })).toBeVisible()
+  await expect(page.getByTestId('solo-closed-bar')).not.toContainText('正在核对状态')
   await expect(dialog).toHaveCount(0)
   expect(calls).toEqual(['solo-1'])
 })

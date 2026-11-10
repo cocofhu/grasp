@@ -10,9 +10,12 @@ import (
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+const soloStopPendingMessage = "环境停止尚未确认，聊天和工作区已保留，系统会继续核对停止状态。"
 
 // StopEnvironment stops compute, retaining the session, artifacts, gateway
 // identity and writable workspace. Active turns must be stopped separately.
@@ -68,7 +71,7 @@ func (s *SandboxService) retrySoloStop(ctx context.Context, id uint) error {
 }
 
 func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint, requireStoppedIntent bool, prepare ...func(*gorm.DB) error) error {
-	ctx, cancel := context.WithTimeout(ctx, soloRecoveryTimeout)
+	ctx, cancel := context.WithTimeout(ctx, sandbox.GatewayStopTimeout)
 	defer cancel()
 	ctx, unlock, err := s.acquireSandboxOperation(ctx, id)
 	if err != nil {
@@ -172,15 +175,20 @@ func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint,
 	observed := "stopped"
 	if local {
 		if err := live.sb.StopLocal(ctx); err != nil {
-			return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
+			return s.unconfirmedSoloStop(ctx, id, err)
 		}
 	} else {
-		if err := s.mgr.Gateway().Stop(ctx, row.Name); err != nil {
-			return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
-		}
+		// A previous stop may have completed after its HTTP acknowledgement
+		// was lost. Confirm physical state before repeating the provider call.
 		observed, err = s.mgr.ProbeStatus(ctx, row.Name)
-		if err != nil {
-			return errors.Join(err, s.recordSoloStopFailure(ctx, id, err))
+		if err != nil || (observed != "stopped" && observed != "exited") {
+			if err := s.mgr.Gateway().Stop(ctx, row.Name); err != nil {
+				return s.unconfirmedSoloStop(ctx, id, err)
+			}
+			observed, err = s.mgr.ProbeStatus(ctx, row.Name)
+			if err != nil {
+				return s.unconfirmedSoloStop(ctx, id, err)
+			}
 		}
 	}
 	if observed != "stopped" && observed != "exited" {
@@ -241,8 +249,13 @@ func (s *SandboxService) stopSoloEnvironmentIntent(ctx context.Context, id uint,
 	return nil
 }
 
+func (s *SandboxService) unconfirmedSoloStop(ctx context.Context, id uint, failure error) error {
+	return errors.Join(soloErr(http.StatusConflict, "environment_stop_pending", soloStopPendingMessage), failure, s.recordSoloStopFailure(ctx, id, failure))
+}
+
 func (s *SandboxService) recordSoloStopFailure(ctx context.Context, id uint, failure error) error {
-	reason := "环境停止尚未确认，聊天和原环境关联已保留；文件可用性待核对：" + truncErr(failure)
+	log.Warn().Err(failure).Uint("sandbox_id", id).Msg("environment stop unconfirmed; retaining workspace and compute reservation")
+	reason := soloStopPendingMessage
 	recovery := models.SandboxRecovery{History: "retained", Files: "unverified", NativeSession: "unverified", Process: "unverified", Reason: reason}
 	if sandbox.GatewayRecordMissing(failure) {
 		reason = "原环境记录未找到，聊天和原关联已保留；文件不可确认，未自动创建替代环境"

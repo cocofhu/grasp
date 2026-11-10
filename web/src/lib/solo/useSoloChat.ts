@@ -159,6 +159,10 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const status = computed(() => session.value?.status ?? 'starting')
   const closing = computed(() => !transport.soloChatProtocols && sessions.closing.value.has(sessionId.value))
   const closed = computed(() => status.value === 'closed')
+  const stopPending = computed(() => {
+    const environment = session.value?.sandbox
+    return closed.value && environment?.desiredState === 'stopped' && environment.status !== 'stopped' && environment.status !== 'exited'
+  })
   const sessionOpen = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
@@ -233,7 +237,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     sessions.upsert(next)
   }
 
-  /** Polls while the sandbox boots, and again while a running session has no live socket. */
+  /** Polls boot/reconnect and accepted stops until the server confirms process exit. */
   function schedulePoll() {
     if (pollTimer) clearTimeout(pollTimer)
     pollTimer = undefined
@@ -241,10 +245,10 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const st = session.value?.status
     const boot = st === 'starting'
     const catchUp = st === 'running' && (link.value !== 'open' || !historyReady.value)
-    if (!boot && !catchUp) return
+    if (!boot && !catchUp && !stopPending.value) return
     pollTimer = setTimeout(() => {
       pollTimer = undefined
-      if (session.value?.status === 'starting') void refreshSession()
+      if (session.value?.status === 'starting' || stopPending.value) void refreshSession()
       else void refetchMessages()
       schedulePoll()
     }, SANDBOX_POLL_MS)
@@ -1274,6 +1278,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
   }, { flush: 'sync' })
   watch([busy, link], scheduleStallCheck)
+  watch(stopPending, schedulePoll)
 
   onBeforeUnmount(() => {
     diagnostic('ws_closed')
@@ -1308,6 +1313,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     loadProcess,
     status,
     closing,
+    stopPending,
     closed,
     canSend,
     currentModelId,

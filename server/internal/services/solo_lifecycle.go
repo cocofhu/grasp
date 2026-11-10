@@ -8,6 +8,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -283,24 +284,23 @@ func (s *SoloService) claimSoloRemoval(ctx context.Context, expected *models.Sol
 }
 
 func (s *SoloService) recordSoloCloseFailure(row *models.SoloSession, cause error) error {
+	log.Warn().Err(cause).Str("solo_id", row.ID).Uint("sandbox_id", row.SandboxID).Msg("solo close: environment stop unconfirmed")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
 		return soloLifecycleQuery(tx, row).Where("status = ? AND lifecycle_action = ?", models.SoloStatusClosed, soloCloseCleanup).
-			Update("error", "环境停止尚未确认，聊天已关闭，工作区和环境关联已保留，请核对后重试").Error
+			Update("error", soloStopPendingMessage).Error
 	}); err != nil {
 		return err
 	}
-	return soloErr(http.StatusConflict, "environment_stop_pending", "环境停止尚未确认，聊天已关闭，工作区和环境关联已保留，请核对后重试：%s", truncErr(cause))
+	return soloErr(http.StatusConflict, "environment_stop_pending", soloStopPendingMessage)
 }
 
 // stopClosedSolo carries the accepted Close receipt through a potentially
 // long physical-lease wait. Even cancelling ACP before this fence would let a
 // delayed old Close interrupt a new turn on the same retained resource.
 func (s *SoloService) stopClosedSolo(ctx context.Context, expected *models.SoloSession) error {
-	stop, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	return s.sbx.stopSoloEnvironment(stop, expected.SandboxID, func(tx *gorm.DB) error {
+	return s.sbx.stopSoloEnvironment(ctx, expected.SandboxID, func(tx *gorm.DB) error {
 		_, err := s.requireSoloLifecycle(tx, expected)
 		return err
 	})

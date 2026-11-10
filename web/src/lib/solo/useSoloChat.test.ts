@@ -121,6 +121,28 @@ describe('useSoloChat', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
+  it('keeps checking an unconfirmed close and stops polling after physical shutdown is confirmed', async () => {
+    vi.useFakeTimers()
+    const environment = { id: 7, desiredState: 'stopped', status: 'error' }
+    mocks.getSoloSession.mockResolvedValue(session({ status: 'closed', error: 'stop pending', sandbox: environment }))
+    const { chat, app } = mountChat()
+    try {
+      await flushPromises()
+      FakeSocket.all[0]!.open()
+      await flushPromises()
+      expect(chat.stopPending.value).toBe(true)
+      expect(chat.canSend.value).toBe(false)
+      mocks.getSoloSession.mockClear().mockResolvedValue(session({ status: 'closed', sandbox: { ...environment, status: 'stopped' } }))
+      await vi.advanceTimersByTimeAsync(2500)
+      await flushPromises()
+      expect(mocks.getSoloSession).toHaveBeenCalledExactlyOnceWith('s1')
+      expect(chat.stopPending.value).toBe(false)
+      expect(chat.closed.value).toBe(true)
+      await vi.advanceTimersByTimeAsync(7500)
+      expect(mocks.getSoloSession).toHaveBeenCalledTimes(1)
+    } finally { app.unmount(); vi.useRealTimers() }
+  })
+
   it('reports a slow history request holding received replay without changing hydration or logging content', async () => {
     vi.useFakeTimers()
     const report = vi.fn().mockResolvedValue(undefined)
