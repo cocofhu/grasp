@@ -56,8 +56,9 @@ type SandboxService struct {
 	// maxSolo caps concurrently live resident Solo sandboxes.
 	maxSolo atomic.Int64
 	// soloOnDestroy tells the Solo service a purpose=solo sandbox is gone.
-	soloOnDestroy   func(sandboxID uint)
-	soloOnRecovered func(sandboxID uint)
+	soloOnDestroy        func(sandboxID uint)
+	soloOnRecovered      func(sandboxID uint)
+	soloOnRecoveryFailed func(sandboxID uint)
 	// maxRetention caps how far leases can push a run sandbox's deadline (ns).
 	maxRetention atomic.Int64
 

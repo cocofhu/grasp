@@ -80,7 +80,7 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 	if err == nil {
 		err = fmt.Errorf("sandbox status=%s; waiting for recovery", status)
 	}
-	s.recordSoloRecoveryFailure(row, err)
+	s.recordSoloRecoveryFailure(row, err, false)
 }
 
 func (s *SandboxService) soloSessionClosed(row *models.Sandbox) bool {
@@ -94,6 +94,7 @@ func (s *SandboxService) recordSoloRecovered(ctx context.Context, row *models.Sa
 	// the trusted tuple only through the native standby protocol before making
 	// this environment available; an already configured runtime is read-only.
 	if err := s.mgr.RecoverWorkspaceRuntime(ctx, sb); err != nil {
+		s.recordSoloRecoveryFailure(row, err, true)
 		return err
 	}
 	if err := s.recheckSoloRecoveryGrant(ctx, row, grant); err != nil {
@@ -134,19 +135,44 @@ func (s *SandboxService) recordSoloRecovered(ctx context.Context, row *models.Sa
 	return nil
 }
 
-func (s *SandboxService) recordSoloRecoveryFailure(row *models.Sandbox, err error) {
+// soloRecoveryFailedText is the session-facing reason; provider details stay
+// on the sandbox row and in logs.
+const soloRecoveryFailedText = "环境恢复失败，聊天和工作区已保留，系统会自动重试；持续失败请查看沙箱日志"
+
+// visible marks the session too; boot observation passes false because it may
+// only see a transient pending status.
+func (s *SandboxService) recordSoloRecoveryFailure(row *models.Sandbox, err error, visible bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	marked := false
 	_ = s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
 		query := tx.Model(&models.Sandbox{}).Where("id = ? AND generation = ? AND (desired_state IS NULL OR desired_state <> ?)", row.ID, row.Generation, "stopped")
 		if row.OperationOwner != "" {
 			query = query.Where("operation_owner = ? AND operation_expires_at > ?", row.OperationOwner, time.Now().UTC())
 		}
-		return query.Updates(map[string]any{
+		result := query.Updates(map[string]any{
 			"status": "error", "error": "沙箱恢复暂未完成，未释放现有环境，可重试：" + truncErr(err), "destroy_at": nil,
-		}).Error
+		})
+		if result.Error != nil || result.RowsAffected == 0 || !visible {
+			return result.Error
+		}
+		// Recovery keeps retrying an error session; success publishes running.
+		session := tx.Model(&models.SoloSession{}).Where("sandbox_id = ? AND lifecycle_action = '' AND status IN ?", row.ID,
+			[]string{models.SoloStatusStarting, models.SoloStatusRunning}).
+			Updates(map[string]any{"status": models.SoloStatusError, "error": soloRecoveryFailedText})
+		marked = session.RowsAffected > 0
+		return session.Error
 	})
 	log.Warn().Err(err).Uint("sandbox", row.ID).Msg("solo recovery deferred; workspace retained")
+	if !marked {
+		return
+	}
+	s.mu.Lock()
+	fn := s.soloOnRecoveryFailed
+	s.mu.Unlock()
+	if fn != nil {
+		fn(row.ID)
+	}
 }
 
 func (s *SandboxService) recordSoloResourceUnavailable(row *models.Sandbox) error {
@@ -244,7 +270,7 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 		}
 	}
 	if err != nil {
-		s.recordSoloRecoveryFailure(row, err)
+		s.recordSoloRecoveryFailure(row, err, true)
 		return fmt.Errorf("沙箱恢复失败，未释放现有环境，请重试：%w", err)
 	}
 	if s.soloSessionClosed(row) {
