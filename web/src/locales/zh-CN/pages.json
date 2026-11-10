@@ -4912,6 +4912,7 @@
       },
       "chat": {
         "placeholder": "给 {agent} 发消息，Enter 发送，Shift+Enter 换行",
+        "commands": "聊天命令",
         "send": "发送",
         "stop": "停止",
         "attach": "添加附件",
@@ -5034,6 +5035,7 @@
       },
       "workflows": {
         "title": "工作流任务",
+        "commandHint": "选择并配置工作流，由你确认启动。",
         "choose": "选择工作流",
         "search": "搜索已发布的工作流",
         "launchHint": "选择后配置需求和代码来源，由你点击启动。每个工作流使用独立环境，Solo 可以继续聊天。",

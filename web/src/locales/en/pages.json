@@ -4912,6 +4912,7 @@
       },
       "chat": {
         "placeholder": "Message {agent}. Enter to send, Shift+Enter for a new line",
+        "commands": "Chat commands",
         "send": "Send",
         "stop": "Stop",
         "attach": "Attach files",
@@ -5034,6 +5035,7 @@
       },
       "workflows": {
         "title": "Workflow tasks",
+        "commandHint": "Choose and configure a workflow, then confirm to start.",
         "choose": "Choose a workflow",
         "search": "Search published workflows",
         "launchHint": "Choose a workflow, configure the request and code source, then click Start. Each workflow has its own environment while Solo remains available.",

@@ -11,6 +11,7 @@ export type SoloTurn = ChatMessageMetadata & {
   replyTo?: string
   historyMessageId?: string
   processAvailable?: boolean
+  processComplete?: boolean
   historyContent?: string
   files?: ArtifactAttachment[]
   id: string
@@ -141,15 +142,23 @@ export function applyAcp(envelope: any, turn: SoloTurn, label: ToolLabeler, tool
 
 /** Timeline parts of a reply; tool steps read the live tool row. */
 export function partsOf(turn: SoloTurn): AgentPart[] {
-  const parts: AgentPart[] = turn.steps.filter(st => !turn.historyContent || st.kind !== 'message').map((st) => {
+  const parts: AgentPart[] = turn.steps.map((st) => {
     if (st.kind !== 'tool') return { kind: st.kind, text: st.text }
     const tool = turn.tools[st.tool]
     return tool
       ? { kind: 'tool', title: tool.title, status: tool.status, summary: tool.summary, input: tool.input, output: tool.output }
       : { kind: 'tool', title: '' }
   })
-  if (turn.historyContent) parts.push({ kind: 'message', text: turn.historyContent })
-  return parts
+  if (!turn.historyContent) return parts
+  // Once the whole journal agrees with the saved reply, restore the original
+  // message/tool arrival order. Earlier progress belongs in the process fold.
+  // The server trims the saved reply; streamed chunks keep their whitespace.
+  const saved = turn.historyContent.trim()
+  const recordedText = turn.steps.flatMap(step => step.kind === 'message' ? [step.text] : []).join('')
+  if (turn.processComplete && recordedText.trim() === saved) return parts
+  // Partial pages must never replace the complete persisted reply. Keep their
+  // progress, but render an exact copy of that reply only once, below the fold.
+  return [...parts.filter(part => part.kind !== 'message' || part.text?.trim() !== saved), { kind: 'message', text: turn.historyContent }]
 }
 
 function addMs(iso: string, ms?: number): string | undefined {
@@ -191,14 +200,12 @@ export function turnsFromMessages(messages: SoloMessage[], label: ToolLabeler, t
       turn.replyTo = m.turnId || (m.id.startsWith('reply:') ? m.id.slice(6) : undefined)
       if (m.eventLog || m.legacyEvents) {
         turn.historyMessageId = m.id
-        turn.processAvailable = true
+        turn.processAvailable = !!m.legacyEvents || (m.eventLog?.count ?? 0) > 0
         turn.historyContent = m.content
       }
       for (const ev of m.events ?? []) applyAcp(ev, turn, label, toolFallback)
       if (turn.historyContent) {
         turn.text = m.content
-        turn.steps = turn.steps.filter(step => step.kind !== 'message')
-        if (m.content) turn.steps.push({ kind: 'message', text: m.content })
       }
       if (!turn.steps.length && m.content) {
         turn.text = m.content

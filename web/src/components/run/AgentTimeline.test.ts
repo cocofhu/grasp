@@ -28,6 +28,54 @@ const startedAt = '2026-10-20T00:00:00.000Z'
 const endedAt = '2026-10-20T00:03:34.000Z'
 
 describe('AgentTimeline', () => {
+  it('keeps the original elapsed fold for persisted process whose parts have not loaded', async () => {
+    const w = mountTimeline({
+      parts: [{ kind: 'message', text: '完整回复' }],
+      processAvailable: true,
+      completed: true,
+      // A durable reply placeholder was created at the start, not the end.
+      startedAt,
+      endedAt: startedAt,
+      metadata: { createdAt: startedAt, durationMs: 42_000 },
+    }, { process: '<p data-testid="lazy-process">按需加载过程</p>' })
+    const fold = () => w.get('[data-testid="agent-timeline-elapsed"]')
+    expect(fold().text()).toBe('用时 42s')
+    expect(fold().attributes('aria-expanded')).toBe('false')
+    expect(w.emitted('processOpen')).toBeUndefined()
+    expect(w.find('[data-testid="lazy-process"]').exists()).toBe(false)
+    expect(w.findAll('[data-testid="agent-timeline-message"]').map(m => m.text())).toEqual(['完整回复'])
+    await fold().trigger('click')
+    expect(w.emitted('processOpen')).toHaveLength(1)
+    expect(w.get('[data-testid="agent-timeline-work"] [data-testid="lazy-process"]').text()).toBe('按需加载过程')
+    await w.setProps({ parts: [{ kind: 'thought', text: '真实过程' }, { kind: 'message', text: '完整回复' }] })
+    expect(fold().attributes('aria-expanded')).toBe('true')
+    expect(w.emitted('processOpen')).toHaveLength(1)
+    expect(w.findAll('[data-testid="agent-timeline-message"]').map(m => m.text())).toEqual(['完整回复'])
+    await fold().trigger('click')
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
+    expect(w.emitted('processOpen')).toHaveLength(1)
+  })
+
+  it('does not fabricate elapsed time for an unloaded process, including recorded zero', () => {
+    const unknown = mountTimeline({ parts: [{ kind: 'message', text: 'reply' }], processAvailable: true })
+    expect(unknown.get('[data-testid="agent-timeline-elapsed"]').text()).toBe('本轮过程')
+    expect(unknown.find('[data-testid="agent-timeline-elapsed-time"]').exists()).toBe(false)
+    const zero = mountTimeline({ parts: [{ kind: 'message', text: 'reply' }], processAvailable: true, metadata: { durationMs: 0 } })
+    expect(zero.get('[data-testid="agent-timeline-elapsed"]').text()).toBe('用时 0s')
+    const invalid = mountTimeline({ parts: [{ kind: 'message', text: 'reply' }], processAvailable: true, metadata: { durationMs: -1 } })
+    expect(invalid.get('[data-testid="agent-timeline-elapsed"]').text()).toBe('本轮过程')
+  })
+
+  it('requests lazy process only when a completed fold opens, including expand-all', async () => {
+    const w = mountTimeline({ parts: [{ kind: 'message', text: 'live' }], processAvailable: true, streaming: true, expanded: true })
+    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
+    expect(w.emitted('processOpen')).toBeUndefined()
+    await w.setProps({ streaming: false })
+    expect(w.emitted('processOpen')).toHaveLength(1)
+    await w.setProps({ expanded: false })
+    expect(w.emitted('processOpen')).toHaveLength(1)
+  })
+
   it('renders steps in arrival order with consecutive tools folded', async () => {
     const w = mountTimeline({ completed: true, startedAt, endedAt })
     expect(order(w)).toEqual(['agent-timeline-elapsed', 'agent-timeline-rule', 'agent-timeline-message', 'chat-message-meta'])

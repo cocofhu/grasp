@@ -57,6 +57,12 @@ const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
 const workflowPanel = ref<InstanceType<typeof SoloWorkflowPanel> | null>(null)
 const { enabled: workflowsEnabled } = useWorkflowFeature()
+const composerCommands = computed(() => workflowsEnabled.value && !props.embedded ? [{
+  id: 'workflow', label: t('pages.solo.workflows.choose'), description: t('pages.solo.workflows.commandHint'),
+}] : [])
+function openComposerCommand(id: string) {
+  if (id === 'workflow' && workflowsEnabled.value && !props.embedded) void workflowPanel.value?.openPicker()
+}
 watch([() => props.workflowIntent, workflowPanel], async ([intent, panel]) => {
   if (typeof intent !== 'string' || !panel || props.embedded) return
   if (workflowsEnabled.value) await panel.openPicker(intent === '1' ? '' : intent)
@@ -493,23 +499,29 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 :streaming="turn.streaming"
                 :completed="!turn.streaming && !turnInterrupted(turn)"
                 :interrupted="turnInterrupted(turn)"
+                :process-available="turn.processAvailable"
                 :started-at="turn.startedAt"
                 :ended-at="turn.endedAt"
                 :metadata="turn"
                 quiet-thought
                 message-test-id="solo-agent-message"
-              />
-              <div v-if="turn.historyMessageId && turn.processAvailable" class="space-y-1">
-                <AppButton
-                  v-if="chat.processPages.value[turn.historyMessageId]?.hasMore !== false"
-                  size="sm" variant="ghost" icon="list"
-                  :loading="chat.processPages.value[turn.historyMessageId]?.loading"
-                  data-testid="solo-load-process"
-                  @click="chat.loadProcess(turn)"
-                >{{ t(chat.processPages.value[turn.historyMessageId]?.next !== undefined && chat.processPages.value[turn.historyMessageId]!.next >= 0 ? 'pages.solo.chat.loadMoreProcess' : 'pages.solo.chat.loadProcess') }}</AppButton>
-                <p v-if="chat.processPages.value[turn.historyMessageId]?.error" class="text-xs text-err" role="alert">{{ chat.processPages.value[turn.historyMessageId]!.error }}</p>
-                <p v-if="chat.processPages.value[turn.historyMessageId]?.legacyIncomplete" class="chat-meta">{{ t('pages.solo.chat.legacyIncomplete') }}</p>
-              </div>
+                @process-open="turn.historyMessageId && !chat.processPages.value[turn.historyMessageId] && chat.loadProcess(turn)"
+              >
+                <template v-if="turn.historyMessageId && turn.processAvailable" #process>
+                  <div class="space-y-1" data-testid="solo-process-status">
+                    <p v-if="chat.processPages.value[turn.historyMessageId]?.loading && (chat.processPages.value[turn.historyMessageId]?.next ?? -1) < 0" class="chat-meta" role="status">{{ t('common.loading.inProgress') }}</p>
+                    <AppButton
+                      v-if="chat.processPages.value[turn.historyMessageId]?.error || ((chat.processPages.value[turn.historyMessageId]?.next ?? -1) >= 0 && chat.processPages.value[turn.historyMessageId]?.hasMore !== false)"
+                      size="sm" variant="ghost"
+                      :loading="chat.processPages.value[turn.historyMessageId]?.loading"
+                      data-testid="solo-load-process"
+                      @click="chat.loadProcess(turn)"
+                    >{{ t(chat.processPages.value[turn.historyMessageId]?.error ? 'common.loading.retry' : 'pages.solo.chat.loadMoreProcess') }}</AppButton>
+                    <p v-if="chat.processPages.value[turn.historyMessageId]?.error" class="text-xs text-err" role="alert">{{ chat.processPages.value[turn.historyMessageId]!.error }}</p>
+                    <p v-if="chat.processPages.value[turn.historyMessageId]?.legacyIncomplete" class="chat-meta">{{ t('pages.solo.chat.legacyIncomplete') }}</p>
+                  </div>
+                </template>
+              </AgentTimeline>
               <ArtifactFileAttachments :files="turn.files" />
               <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
                 <div class="chat-meta mb-1">{{ t('pages.solo.chat.plan') }}</div>
@@ -576,14 +588,15 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             :scope="{ sessionId: props.sessionId }"
             :scoped-search="embedded?.searchSoloReferences"
             :disabled="!canSend"
+            :commands="composerCommands"
             test-prefix="solo"
             pick-test-id="solo-preview-pick"
             @send="send"
+            @command="openComposerCommand"
             @remove-pick="picks.splice($event, 1)"
             @preview="openChatImagePreview"
           >
             <template #model>
-              <AppButton v-if="workflowsEnabled && !embedded" size="sm" variant="ghost" class="font-mono text-xs" data-testid="solo-workflow-menu" @click="workflowPanel?.openPicker()">/workflow</AppButton>
               <SoloModelSelect
                 class="min-w-0"
                 flat

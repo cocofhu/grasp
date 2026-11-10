@@ -22,6 +22,7 @@ import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
  * the first User Message), streaming it if auto or as a chat you can answer
  * and 确认并流转 right here. A gate or the end of the run ends it in place.
  */
+const props = defineProps<{ history?: boolean }>()
 const route = useRoute()
 const { t } = useI18n()
 const runId = computed(() => String(route.params.id || ''))
@@ -39,6 +40,7 @@ const {
   stopping,
   ended,
   endState,
+  historyReady,
   task,
   mode,
   chatKind,
@@ -53,7 +55,7 @@ const {
   send,
   confirm,
   reload,
-} = useRunLive(runId, requestedNode, chatRef)
+} = useRunLive(runId, requestedNode, chatRef, { history: props.history })
 /**
  * Where the run is when the page ended in place, in the app's existing words:
  * a gate waiting 「X」人工审批 · 待审批 (the gate row title + the 待审批 label),
@@ -124,7 +126,7 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
             >
               <template #stage>
                 <ReactArtifactStage
-                  editable
+                  :editable="!historyReady"
                   :artifacts="run?.artifacts || []"
                   :run-id="runId"
                   :run="run || undefined"
@@ -144,7 +146,7 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
                   v-model:annotations="annotations"
                   :turns="turns"
                   :done="ended"
-                  :active="true"
+                  :active="!historyReady"
                   :can-pass="mode === 'chat'"
                   :observe="mode === 'observe'"
                   :stopping="stopping"

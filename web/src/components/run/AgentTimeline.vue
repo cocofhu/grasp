@@ -36,6 +36,8 @@ const props = withDefaults(
     hideThought?: boolean
     /** Parent "expand all": open the fold unless this page has pinned it. */
     expanded?: boolean
+    /** Persisted work exists even when its ordered parts are loaded on demand. */
+    processAvailable?: boolean
     /** data-testid of each message bubble. */
     messageTestId?: string
     /** Messages without their own bubble (the host already draws one). */
@@ -65,6 +67,7 @@ const props = withDefaults(
     interrupted: false,
     hideThought: false,
     expanded: false,
+    processAvailable: false,
     messageTestId: 'agent-timeline-message',
     bare: false,
     runId: undefined,
@@ -74,7 +77,7 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{ reveal: [] }>()
+const emit = defineEmits<{ reveal: []; processOpen: [] }>()
 
 const { t } = useI18n()
 const workId = `agent-elapsed-${useId().replace(/:/g, '')}`
@@ -92,9 +95,12 @@ const replyParts = computed<AgentPart[]>(() => props.parts.length ? props.parts 
 const blocks = computed(() => timelineBlocks(replyParts.value).filter((b) => !(props.hideThought && b.kind === 'thought')))
 
 const elapsedTime = computed(() => {
-  const sec = wallClockSec(props.startedAt, props.endedAt)
+  const ms = replyMetadata.value.durationMs
+  const sec = ms != null && Number.isFinite(ms) && ms >= 0
+    ? ms / 1000
+    : wallClockSec(replyMetadata.value.execution?.startedAt || replyMetadata.value.startedAt, replyMetadata.value.endedAt || replyMetadata.value.createdAt || replyMetadata.value.at)
   if (sec == null) return ''
-  const compact = fmtTurnElapsed(sec)
+  const compact = ms === 0 ? '0s' : fmtTurnElapsed(sec)
   return compact ? t('pages.clarify.turnElapsed', { time: compact }) : ''
 })
 const failedCount = computed(() => {
@@ -109,7 +115,7 @@ const failedCount = computed(() => {
  * A finished turn folds into the elapsed line (#843). Failed tool calls fold
  * too; the line says how many failed, and opening it shows them expanded.
  */
-const settled = computed(() => !props.streaming && timelineFolds(replyParts.value))
+const settled = computed(() => !props.streaming && (props.processAvailable || timelineFolds(replyParts.value)))
 const statusLabel = computed(() => {
   if (!settled.value) return ''
   if (props.interrupted) return t('pages.clarify.thoughtInterrupted')
@@ -161,6 +167,9 @@ watch(
   },
 )
 const processOpen = computed(() => (manualOpen.value === null ? props.expanded : manualOpen.value))
+watch([processOpen, settled, () => props.processAvailable], ([open, finished, available]) => {
+  if (open && finished && available) emit('processOpen')
+}, { immediate: true })
 function toggleProcess() {
   manualOpen.value = !processOpen.value
 }
@@ -254,7 +263,7 @@ function onToggle(index: number, last: boolean, e: Event) {
         <span v-if="failedLabel" class="agent-elapsed-failed" data-testid="agent-timeline-elapsed-failed">{{ failedLabel }}</span>
         <span v-if="statusLabel" class="agent-elapsed-status" data-testid="agent-timeline-elapsed-status">{{ statusLabel }}</span>
       </button>
-      <div v-if="processOpen && workBlocks.length" :id="workId" class="agent-elapsed-work" data-testid="agent-timeline-work">
+      <div v-if="processOpen && (workBlocks.length || $slots.process)" :id="workId" class="agent-elapsed-work" data-testid="agent-timeline-work">
         <template v-for="b in workBlocks" :key="b.key">
           <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :expanded="expanded" :run-id="runId" />
           <details
@@ -275,6 +284,7 @@ function onToggle(index: number, last: boolean, e: Event) {
             <span v-html="renderChatMarkdown(b.text)" />
           </div>
         </template>
+        <slot name="process" />
       </div>
       <hr class="agent-elapsed-rule" data-testid="agent-timeline-rule" />
       <div v-if="tailBlock" class="chat-prose md min-w-0" :data-testid="messageTestId" :title="replyTime">
