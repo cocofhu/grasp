@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { req } from '@/lib/api/httpCore'
+import { randomUuid } from '@/lib/shared/randomUuid'
 import AppButton from '@/components/ui/AppButton.vue'
 
 type Target = { runId: string; nodeId: string; iteration: number; attempt?: number; generation: string; state: string }
@@ -18,6 +19,7 @@ const error = ref('')
 const submitting = ref(false)
 const hasMore = ref(false)
 let loading = false
+let olderPending = false
 let loadedOlder = false
 let disposed = false
 let timer: ReturnType<typeof setInterval> | undefined
@@ -38,7 +40,11 @@ function adoptTarget() {
   void refresh()
 }
 async function refresh(older = false) {
-  if (loading || disposed) return
+  if (disposed) return
+  if (loading) {
+    if (older) olderPending = true
+    return
+  }
   loading = true
   const generation = selected.value?.generation || ''
   const before = older ? items.value[0]?.sequence || 0 : 0
@@ -56,14 +62,20 @@ async function refresh(older = false) {
     if (older) loadedOlder = true
   } catch (cause) {
     if (!disposed) error.value = cause instanceof Error ? cause.message : String(cause)
-  } finally { loading = false }
+  } finally {
+    loading = false
+    if (olderPending && !disposed) {
+      olderPending = false
+      void refresh(true)
+    }
+  }
 }
 async function submit() {
   if (!canSend.value || !selected.value) return
   const text = draft.value.trim()
   const snapshot = { ...selected.value }
   const submission = !request.value || request.value.text !== text || request.value.generation !== snapshot.generation
-    ? { clientMessageId: crypto.randomUUID(), text, generation: snapshot.generation, iteration: snapshot.iteration, attempt: snapshot.attempt || 1 }
+    ? { clientMessageId: randomUuid(), text, generation: snapshot.generation, iteration: snapshot.iteration, attempt: snapshot.attempt || 1 }
     : { ...request.value }
   request.value = submission
   submitting.value = true
@@ -81,7 +93,10 @@ async function submit() {
     if (!disposed) void refresh()
   }
 }
-onMounted(() => { void refresh(); timer = setInterval(() => void refresh(), 1500) })
+onMounted(() => {
+  void refresh()
+  timer = setInterval(() => { if (document.visibilityState !== 'hidden') void refresh() }, 1500)
+})
 onBeforeUnmount(() => { disposed = true; clearInterval(timer) })
 </script>
 

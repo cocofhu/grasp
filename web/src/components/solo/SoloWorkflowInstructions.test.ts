@@ -28,6 +28,29 @@ beforeEach(() => {
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount(); vi.useRealTimers() })
 
 describe('workflow additional instructions', () => {
+  it('loads older history requested while a poll is in flight', async () => {
+    history = { target: target(), items: [item('recent', 5)], hasMore: true }
+    const wrapper = open()
+    await flushPromises()
+    let release!: () => void
+    mocks.req.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve(structuredClone(history)) }))
+    await vi.advanceTimersByTimeAsync(1500)
+    await wrapper.get('[data-testid="instruction-older"]').trigger('click')
+    release()
+    await flushPromises()
+    expect(mocks.req.mock.calls.map(([path]) => String(path)).some((path) => path.endsWith('?before=5'))).toBe(true)
+  })
+
+  it('does not poll while the tab is hidden', async () => {
+    open()
+    await flushPromises()
+    const calls = mocks.req.mock.calls.length
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    await vi.advanceTimersByTimeAsync(4500)
+    expect(mocks.req.mock.calls.length).toBe(calls)
+    visibility.mockRestore()
+  })
+
   it('requires a user click and pins the displayed iteration and generation', async () => {
     const wrapper = open()
     await flushPromises()
