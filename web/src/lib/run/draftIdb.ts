@@ -2,6 +2,7 @@
  * IndexedDB persistence for home / run drafts (plan g1.1).
  * Attachments stored as Blob; injectable backend for unit tests.
  */
+import type { ReferenceToken } from '../solo/referenceTokens'
 
 export const DRAFT_IDB_NAME = 'grasp-drafts'
 export const DRAFT_IDB_VERSION = 1
@@ -18,6 +19,7 @@ export interface HomeDraftRecord {
   savedAt: number
   pipelineId: string
   text: string
+  referenceTokens?: ReferenceToken[]
 }
 
 export interface RunDraftRecord {

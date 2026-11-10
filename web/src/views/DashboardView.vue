@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
-import ComposerCommandMenu from '@/components/chat/ComposerCommandMenu.vue'
-import { useComposerCommands } from '@/lib/chat/useComposerCommands'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import HomeParticleMeshBackground from '@/components/dashboard/HomeParticleMeshBackground.vue'
@@ -59,49 +57,44 @@ const mentionEnabled = computed(() => !!soloAgentName.value)
 const mentionDefaultRepo = computed(() => githubRepoOf(soloProjects.value.find(p => p.id === soloProjectIds.value[0])?.repoUrl))
 const mentionScope = computed<ReferenceScope>(() => ({ agent: soloAgentName.value, projects: soloProjectIds.value }))
 const mention = useReferenceComposer({ input: draft, textarea: textareaRef, composing, defaultRepo: mentionDefaultRepo, enabled: mentionEnabled })
-const commandMenuId = useId()
-const commands = useComposerCommands({
-  input: draft, textarea: textareaRef, composing, disabled: composerBusy,
-  commands: computed(() => workflowsEnabled.value ? [{
-    id: 'workflow', label: t('pages.solo.workflows.choose'), description: t('pages.solo.workflows.commandHint'),
-  }] : []),
-  onSelect(command) { draft.value = `/${command.id}`; void submitComposer() },
-})
 const mentionPicker = mention.picker
 const plusOpen = ref(false)
 let draftLoaded = false
 let draftRevision = 0
 let draftTimer: ReturnType<typeof setTimeout> | null = null
 const submitting = ref(false)
-watch([draft, attachments], () => {
+watch([draft, attachments, mention.tokens], () => {
   draftRevision++
   if (!draftLoaded || submitting.value) return
   if (draftTimer) clearTimeout(draftTimer)
-  draftTimer = setTimeout(() => void saveHomeComposerDraft(draft.value, attachments.value, ''), 400)
+  draftTimer = setTimeout(() => void saveHomeComposerDraft(draft.value, attachments.value, '', mention.tokens.value), 400)
 }, { deep: true })
 
-async function submitComposer() {
+async function submitComposer(workflowPrompt?: string) {
   if (blockSendIfOversized() || !composerCanSend.value || composerBusy.value || submitting.value) return
   const command = /^\/workflow(?:\s+(.*))?$/.exec(draft.value.trim())
-  if (command && !workflowsEnabled.value) { solo.error.value = t('pages.solo.workflows.disabled'); return }
+  const workflow = workflowPrompt !== undefined || !!command
+  const workflowIntent = workflowPrompt ?? command?.[1] ?? ''
+  if (workflow && !workflowsEnabled.value) { solo.error.value = t('pages.solo.workflows.disabled'); return }
   submitting.value = true
   if (draftTimer) clearTimeout(draftTimer)
   cheerTick.value++
   // Attachments or references would start a model turn in the new Solo; a
-  // workflow command only opens configuration, so they stay in the home draft.
-  const started = command
+  // workflow action only opens configuration, so they stay in the home draft.
+  const started = workflow
     ? await solo.start('')
     : await solo.start(draft.value, attachments.value.map(image => ({ ...image })), '', mention.refs.value)
   if (started) {
-    draft.value = ''
-    if (command && attachments.value.length) {
-      await saveHomeComposerDraft('', attachments.value, '')
+    if (workflow) {
+      if (workflowPrompt === undefined) { draft.value = ''; mention.clear() }
+      await saveHomeComposerDraft(draft.value, attachments.value, '', mention.tokens.value)
     } else {
+      draft.value = ''
       attachments.value = []
       mention.clear()
       await clearHomeComposerDraft()
     }
-    if (command) void router.replace({ path: `/solo/${started.id}`, query: { workflow: command[1] || '1' } })
+    if (workflow) void router.replace({ path: `/solo/${started.id}`, query: { workflow: workflowIntent || '1' } })
   }
   submitting.value = false
 }
@@ -129,7 +122,11 @@ function onPlus() { if (mentionEnabled.value) plusOpen.value = !plusOpen.value; 
 function plusPickFiles() { plusOpen.value = false; openFilePicker() }
 function plusReference(tab: ReferenceTab) { plusOpen.value = false; mention.open(tab) }
 function onComposerPaste(event: ClipboardEvent) { onPaste(event); mention.onPaste(event) }
-function updateComposerTriggers() { mention.updateTrigger(); commands.updateTrigger() }
+function updateComposerTriggers() { mention.updateTrigger() }
+function openComposerWorkflow() {
+  if (!workflowsEnabled.value || composerBusy.value || !composerCanSend.value || submitting.value) return
+  if (mention.consumeTrigger()) void submitComposer('')
+}
 function onComposerKeyup(event: KeyboardEvent) { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) updateComposerTriggers() }
 function onComposerSubmit(event: Event) { event.preventDefault(); void submitComposer() }
 function onWindowPointerDown(event: PointerEvent) { if (!(event.target instanceof Element && event.target.closest('[data-home-plus]'))) plusOpen.value = false }
@@ -231,7 +228,6 @@ function onTextInput() {
 
 function onComposerKeydown(e: KeyboardEvent) {
   if (mention.onKeydown(e)) return
-  if (commands.onKeydown(e)) return
   // plan g1.1 — Ctrl/⌘+Enter sends; bare Enter / Shift+Enter insert newline
   if (e.key !== 'Enter') return
   if (composing.value || e.isComposing || e.keyCode === 229) return
@@ -242,13 +238,12 @@ function onComposerKeydown(e: KeyboardEvent) {
 
 function onComposerFocus() {
   composerFocused.value = true
-  commands.focus()
+  mention.updateTrigger()
 }
 
 function onComposerBlur() {
   composerFocused.value = false
   mention.trigger.value = null
-  commands.blur()
 }
 
 
@@ -259,7 +254,10 @@ onMounted(async () => {
   void solo.load()
   const revision = draftRevision
   const saved = await loadHomeComposerDraft()
-  if (revision === draftRevision && saved) { draft.value = saved.text; attachments.value = saved.attachments }
+  if (revision === draftRevision && saved) {
+    mention.set(saved.text, saved.referenceTokens || [])
+    attachments.value = saved.attachments
+  }
   draftLoaded = true
   void nextTick(autoGrow)
   window.addEventListener('pointerdown', onWindowPointerDown)
@@ -267,7 +265,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearPhTimers()
   if (draftTimer) clearTimeout(draftTimer)
-  if (draftLoaded && !submitting.value) void saveHomeComposerDraft(draft.value, attachments.value, '')
+  if (draftLoaded && !submitting.value) void saveHomeComposerDraft(draft.value, attachments.value, '', mention.tokens.value)
   window.removeEventListener('pointerdown', onWindowPointerDown)
 })
 </script>
@@ -352,26 +350,19 @@ onBeforeUnmount(() => {
           />
         </TransitionGroup>
         <div class="relative w-full">
-        <ComposerCommandMenu
-          v-if="commands.open.value"
-          :id="commandMenuId"
-          :commands="commands.matches.value"
-          :selected="commands.selected.value"
-          test-prefix="home"
-          placement="down"
-          @select="commands.select"
-        />
         <Transition name="ref-pop">
           <ReferencePicker
-            v-if="mentionEnabled && mention.trigger.value"
+            v-if="mentionEnabled && mention.trigger.value && !composerBusy && !composing"
             ref="mentionPicker"
             placement="down"
             :scope="mentionScope"
+            :allow-workflow="workflowsEnabled"
             :query="mention.trigger.value.query"
             :taken="mention.targets.value"
             :full="mention.full.value"
             :initial-tab="mention.pickerTab.value"
             @pick="mention.pick"
+            @workflow="openComposerWorkflow"
           />
         </Transition>
         <div class="contents" data-home-plus>
@@ -401,9 +392,6 @@ onBeforeUnmount(() => {
               data-testid="home-composer-input"
               rows="3"
               :disabled="composerBusy"
-              :aria-controls="commands.open.value ? commandMenuId : undefined"
-              :aria-expanded="workflowsEnabled ? commands.open.value : undefined"
-              :aria-activedescendant="commands.open.value ? `${commandMenuId}-${commands.matches.value[commands.selected.value]?.id}` : undefined"
               autocomplete="off"
               @input="onTextInput"
               @keydown="onComposerKeydown"

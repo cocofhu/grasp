@@ -58,11 +58,8 @@ const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
 const workflowPanel = ref<InstanceType<typeof SoloWorkflowPanel> | null>(null)
 const { enabled: workflowsEnabled } = useWorkflowFeature()
-const composerCommands = computed(() => workflowsEnabled.value && !props.embedded ? [{
-  id: 'workflow', label: t('pages.solo.workflows.choose'), description: t('pages.solo.workflows.commandHint'),
-}] : [])
-function openComposerCommand(id: string) {
-  if (id === 'workflow' && workflowsEnabled.value && !props.embedded) void workflowPanel.value?.openPicker()
+function openComposerWorkflow() {
+  if (workflowsEnabled.value && !props.embedded) void workflowPanel.value?.openPicker()
 }
 watch([() => props.workflowIntent, workflowPanel], async ([intent, panel]) => {
   if (typeof intent !== 'string' || !panel || props.embedded) return
@@ -589,11 +586,11 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             :scope="{ sessionId: props.sessionId }"
             :scoped-search="embedded?.searchSoloReferences"
             :disabled="!canSend"
-            :commands="composerCommands"
+            :allow-workflow="workflowsEnabled && !embedded"
             test-prefix="solo"
             pick-test-id="solo-preview-pick"
             @send="send"
-            @command="openComposerCommand"
+            @workflow="openComposerWorkflow"
             @remove-pick="picks.splice($event, 1)"
             @preview="openChatImagePreview"
           >

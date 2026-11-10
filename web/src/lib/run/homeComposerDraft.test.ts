@@ -66,6 +66,22 @@ describe('homeComposerDraft', () => {
     expect(await loadHomeComposerDraft()).toBeNull()
   })
 
+  it.each([false, true])('keeps reference spans and metadata with localStorage fallback=%s', async fallback => {
+    if (fallback) __setDraftIdbBackendForTests({ ...backend, putHome: async () => { throw new Error('idb unavailable') } })
+    const token = { start: 3, end: 6, ref: { kind: 'github_pr' as const, target: 'acme/web#3', title: 'Fix', url: 'https://github.com/acme/web/pull/3', state: 'open' } }
+    await saveHomeComposerDraft('参考 @#3', [], '', [token])
+    expect((await loadHomeComposerDraft())?.referenceTokens).toEqual([token])
+  })
+
+  it('ignores corrupt or overlapping saved reference spans while retaining valid ones', async () => {
+    const token = { start: 3, end: 6, ref: { kind: 'solo', target: 's1', title: '历史' } }
+    store[HOME_COMPOSER_DRAFT_KEY] = JSON.stringify({
+      schemaVersion: '1', savedAt: 1, pipelineId: '', text: '参考 @历史', attachments: [],
+      referenceTokens: [null, {}, { ...token, start: -1 }, { ...token, end: 99 }, token, token],
+    })
+    expect((await loadHomeComposerDraft())?.referenceTokens).toEqual([token])
+  })
+
   it('keeps draft when only attachments remain', async () => {
     await saveHomeComposerDraft('', [{ data: btoa('x'), mimeType: 'image/png' }], 'wf-ap')
     expect((await loadHomeComposerDraft())?.attachments).toHaveLength(1)
