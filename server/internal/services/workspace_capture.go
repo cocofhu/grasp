@@ -27,7 +27,7 @@ func captureRequestID(actor, kind, scope, nonce string) string {
 }
 
 func validateCaptureInput(actor string, in WorkspaceCaptureInput) error {
-	if !snapshotCatalogCoordinate(actor, 191) || !snapshotCatalogCoordinate(in.ScopeID, 191) || (in.ScopeKind != "solo" && in.ScopeKind != "run") || !workspaceJobID.MatchString(in.ClientRequestID) || in.SandboxID == 0 || in.Duration <= 0 {
+	if !snapshotCatalogCoordinate(actor, workspaceKeyMax) || !snapshotCatalogCoordinate(in.ScopeID, workspaceKeyMax) || (in.ScopeKind != "solo" && in.ScopeKind != "run") || !workspaceJobID.MatchString(in.ClientRequestID) || in.SandboxID == 0 || in.Duration <= 0 {
 		return ErrWorkspaceJobInvalid
 	}
 	if in.ExpectedBinding == "" && in.Binding == nil {

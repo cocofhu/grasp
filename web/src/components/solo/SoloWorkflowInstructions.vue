@@ -1,20 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { req } from '@/lib/api/httpCore'
+import { soloWorkflowClient as client, type WorkflowInstruction as Instruction, type WorkflowInstructionRequest, type WorkflowInstructionTarget as Target } from '@/lib/api/clients/soloWorkflowClient'
+import { useVisiblePolling } from '@/lib/composables/useVisiblePolling'
 import { randomUuid } from '@/lib/shared/randomUuid'
 import AppButton from '@/components/ui/AppButton.vue'
 
-type Target = { runId: string; nodeId: string; iteration: number; attempt?: number; generation: string; state: string }
-type Instruction = { id: string; iteration: number; attempt?: number; generation: string; sequence: number; actorId: string; text: string; state: string; error?: string }
-type History = { target: Target | null; items: Instruction[]; hasMore: boolean }
 const props = defineProps<{ runId: string; nodeId: string; label: string }>()
 const { t } = useI18n()
 const target = ref<Target | null>(null)
 const selected = ref<Target | null>(null)
 const items = ref<Instruction[]>([])
 const draft = defineModel<string>('draft', { default: '' })
-const request = defineModel<{ clientMessageId: string; text: string; generation: string; iteration: number; attempt?: number } | null>('request', { default: null })
+const request = defineModel<WorkflowInstructionRequest | null>('request', { default: null })
 const error = ref('')
 const submitting = ref(false)
 const hasMore = ref(false)
@@ -22,8 +20,6 @@ let loading = false
 let olderPending = false
 let loadedOlder = false
 let disposed = false
-let timer: ReturnType<typeof setInterval> | undefined
-const path = computed(() => `/runs/${encodeURIComponent(props.runId)}/nodes/${encodeURIComponent(props.nodeId)}/instructions`)
 const stale = computed(() => !!selected.value && !!target.value && selected.value.generation !== target.value.generation)
 const oversized = computed(() => new TextEncoder().encode(draft.value.trim()).length > 16 * 1024)
 const canSend = computed(() => target.value?.state === 'open' && !!selected.value && !stale.value && !!draft.value.trim() && !oversized.value && !submitting.value)
@@ -48,9 +44,8 @@ async function refresh(older = false) {
   loading = true
   const generation = selected.value?.generation || ''
   const before = older ? items.value[0]?.sequence || 0 : 0
-  const query = new URLSearchParams({ before: String(before) })
   try {
-    const value = await req<History>(`${path.value}?${query}`)
+    const value = await client.instructionHistory(props.runId, props.nodeId, before)
     if (disposed || generation !== (selected.value?.generation || '')) return
     target.value = value.target
     if (!selected.value && value.target) selected.value = { ...value.target, generation: request.value?.generation || value.target.generation, iteration: request.value?.iteration || value.target.iteration, attempt: request.value?.attempt || value.target.attempt }
@@ -81,7 +76,7 @@ async function submit() {
   submitting.value = true
   error.value = ''
   try {
-    const item = await req<Instruction>(path.value, { method: 'POST', body: JSON.stringify(submission) })
+    const item = await client.sendInstruction(props.runId, props.nodeId, submission)
     if (disposed) return
     merge([item])
     if (draft.value.trim() === text) draft.value = ''
@@ -93,11 +88,8 @@ async function submit() {
     if (!disposed) void refresh()
   }
 }
-onMounted(() => {
-  void refresh()
-  timer = setInterval(() => { if (document.visibilityState !== 'hidden') void refresh() }, 1500)
-})
-onBeforeUnmount(() => { disposed = true; clearInterval(timer) })
+useVisiblePolling(() => refresh(), 1500)
+onBeforeUnmount(() => { disposed = true })
 </script>
 
 <template>

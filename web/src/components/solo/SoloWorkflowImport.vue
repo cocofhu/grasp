@@ -1,14 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { req } from '@/lib/api/httpCore'
+import { soloWorkflowClient as client, type WorkspaceImportInventory as Inventory, type WorkspaceImportReceipt as Preview, type WorkspaceImportRepository as Repository, type WorkspaceImportSource as Source, type WorkspaceImportSourceRef } from '@/lib/api/clients/soloWorkflowClient'
 import { randomUuid } from '@/lib/shared/randomUuid'
 import AppButton from '@/components/ui/AppButton.vue'
 
-type Source = { nodeId: string; iteration: number; attempt: number; shared: boolean; available: boolean; state: string; createdAt: string }
-type Repository = { path: string; commit: string; head: string; supported: boolean; dirty: boolean; untracked: boolean; files: number; bytes: number; reason?: string }
-type Inventory = { version: number; repositories: Repository[]; workingChanges: boolean; nonGit: boolean; ignoredFiles: boolean }
-type Preview = { id: string; source: { runId: string; nodeId: string; iteration: number; attempt: number }; state: string; repositories: Repository[]; directory?: string; destination?: string; paths: string[]; error?: string; createdAt: string; expiresAt?: string }
 export type WorkspaceImportDraft = { sourceKey: string; inventory: Inventory | null; selections: Record<string, { checked: boolean; commit: string }>; preview: Preview | null; previewRequestId: string; confirmRequestId: string; uncertain: boolean }
 const emptyDraft = (): WorkspaceImportDraft => ({ sourceKey: '', inventory: null, selections: {}, preview: null, previewRequestId: '', confirmRequestId: '', uncertain: false })
 const props = defineProps<{ sessionId: string; runId: string; nodes?: { id: string; label: string }[] }>()
@@ -24,8 +20,7 @@ const previous = ref<Preview[]>([])
 const busy = ref(false)
 const error = ref('')
 let disposed = false
-const base = computed(() => `/solo/sessions/${encodeURIComponent(props.sessionId)}/workspace-imports`)
-const sourceKey = (source: Pick<Source, 'nodeId' | 'iteration' | 'attempt'>) => JSON.stringify([source.nodeId, source.iteration, source.attempt])
+const sourceKey = (source: WorkspaceImportSourceRef) => JSON.stringify([source.nodeId, source.iteration, source.attempt])
 const selectedSource = computed(() => sources.value.find(source => sourceKey(source) === state.value.sourceKey))
 const selected = computed(() => Object.entries(state.value.selections).filter(([, value]) => value.checked).map(([path, value]) => ({ path, commit: value.commit.trim() })))
 const valid = computed(() => selected.value.length > 0 && selected.value.every(repo => /^[0-9a-f]{40}$/.test(repo.commit)))
@@ -36,7 +31,7 @@ function repositoryReason(repo: Repository) {
   const key = `pages.solo.workspaceImport.reasons.${repo.reason}`
   return repo.reason && te(key) ? t(key) : t('pages.solo.workspaceImport.repositoryUnsupported')
 }
-function label(source: Pick<Source, 'nodeId' | 'iteration' | 'attempt'>) {
+function label(source: WorkspaceImportSourceRef) {
   const node = props.nodes?.find(node => node.id === source.nodeId)?.label || source.nodeId
   return t('pages.solo.workspaceImport.sourceLabel', { node, iteration: source.iteration, attempt: source.attempt })
 }
@@ -51,7 +46,7 @@ async function inventory() {
   busy.value = true; error.value = ''
   const source = selectedSource.value
   try {
-    const result = await req<Inventory>(`${base.value}/inventory`, { method: 'POST', body: JSON.stringify({ runId: props.runId, nodeId: source.nodeId, iteration: source.iteration, attempt: source.attempt }) })
+    const result = await client.importInventory(props.sessionId, props.runId, source)
     if (disposed) return
     state.value.inventory = result
     state.value.selections = Object.fromEntries(result.repositories.map(repo => [repo.path, { checked: repo.supported, commit: repo.commit }]))
@@ -63,7 +58,7 @@ async function preview() {
   if (!state.value.previewRequestId) state.value.previewRequestId = nonce()
   const source = selectedSource.value
   try {
-    const result = await req<Preview>(base.value, { method: 'POST', body: JSON.stringify({ runId: props.runId, nodeId: source.nodeId, iteration: source.iteration, attempt: source.attempt, repositories: selected.value, clientRequestId: state.value.previewRequestId }) })
+    const result = await client.previewImport(props.sessionId, props.runId, source, selected.value, state.value.previewRequestId)
     if (disposed) return
     state.value.preview = result; state.value.confirmRequestId = ''; state.value.uncertain = false
     remember(result)
@@ -79,7 +74,7 @@ async function confirm() {
   // turn an uncertain write into a new automatic filesystem operation.
   state.value.uncertain = true
   try {
-    const result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}/confirm`, { method: 'POST', body: JSON.stringify({ confirmed: true, clientRequestId: confirmation }) })
+    const result = await client.confirmImport(props.sessionId, receipt.id, confirmation)
     if (disposed) return
     state.value.preview = result; state.value.uncertain = result.state !== 'applied'
     remember(result)
@@ -103,7 +98,7 @@ async function adopt(receipt: Preview) {
   if (busy.value) return
   busy.value = true; error.value = ''
   try {
-    const result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}`)
+    const result = await client.getImport(props.sessionId, receipt.id)
     if (disposed) return
     const same = state.value.preview?.id === result.id
     state.value.preview = result; state.value.uncertain = unsettled(result.state)
@@ -119,8 +114,8 @@ async function reconcile() {
   try {
     // First read authoritative SQL. Only this explicit user action may then
     // ask the runtime for its completion receipt; it never retries Import.
-    let result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}`)
-    if (unsettled(result.state)) result = await req<Preview>(`${base.value}/${encodeURIComponent(receipt.id)}/reconcile`, { method: 'POST' })
+    let result = await client.getImport(props.sessionId, receipt.id)
+    if (unsettled(result.state)) result = await client.reconcileImport(props.sessionId, receipt.id)
     if (disposed) return
     state.value.preview = result; state.value.uncertain = unsettled(result.state)
     remember(result)
@@ -131,8 +126,8 @@ function restart() { state.value = emptyDraft(); draft.value = state.value; erro
 onMounted(async () => {
   const saved = state.value.preview
   const results = await Promise.allSettled([
-    req<Source[]>(`${base.value}/sources?runId=${encodeURIComponent(props.runId)}`),
-    req<Preview[]>(`${base.value}?runId=${encodeURIComponent(props.runId)}`),
+    client.importSources(props.sessionId, props.runId),
+    client.listImports(props.sessionId, props.runId),
   ])
   if (disposed) return
   if (results[0].status === 'fulfilled') sources.value = results[0].value

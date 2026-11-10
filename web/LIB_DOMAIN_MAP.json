@@ -71,6 +71,7 @@
       "useTagFilter.ts",
       "useTestScreenshotLoad.ts",
       "useToast.ts",
+      "useVisiblePolling.ts",
       "useWorkflowFeature.ts",
       "useWorkflowFilter.ts",
       "useWorkspaceContext.ts"
@@ -294,7 +295,7 @@
     "api": 5,
     "artifacts": 1,
     "chat": 13,
-    "composables": 20,
+    "composables": 21,
     "icons": 2,
     "inbox": 44,
     "pm": 7,

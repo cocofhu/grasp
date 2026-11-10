@@ -131,7 +131,7 @@ func (h *WorkspaceBindingHandlers) Admit(c *gin.Context) {
 		ReturnSnapshotID string `json:"returnSnapshotId"`
 		DurationMillis   int64  `json:"durationMillis,omitempty"`
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, workspaceSelectionBody)
 	d := json.NewDecoder(c.Request.Body)
 	d.DisallowUnknownFields()
 	var extra any

@@ -72,7 +72,7 @@ func workspaceReleaseError(c *gin.Context, err error) {
 	c.JSON(status, response)
 }
 func decodeWorkspaceRelease(c *gin.Context, input any) bool {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8192)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, workspaceControlBody)
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(input)

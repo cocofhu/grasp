@@ -53,7 +53,7 @@ func (h *Handlers) admitWorkspaceCapture(c *gin.Context, kind string) {
 	if !ok {
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 72<<10)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, workspaceSnapshotBody)
 	var input struct {
 		ClientRequestID string   `json:"clientRequestId"`
 		SandboxID       uint     `json:"sandboxId"`

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ArtifactFileAttachments from '@/components/chat/ArtifactFileAttachments.vue'
+import { startVisiblePolling } from '@/lib/composables/useVisiblePolling'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 import { computed, nextTick, onBeforeUnmount, ref, shallowReactive, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -256,10 +257,10 @@ watch(
       }
     }
     void refresh()
-    const timer = currentStatus === 'closed' ? undefined : window.setInterval(refresh, 2500)
+    const stop = currentStatus === 'closed' ? undefined : startVisiblePolling(refresh, 2500)
     onCleanup(() => {
       controller.abort()
-      window.clearInterval(timer)
+      stop?.()
     })
   },
   { immediate: true },

@@ -86,7 +86,7 @@ func (s *WorkspaceSnapshotCatalog) scope(ctx context.Context, actor, kind, id st
 	if s == nil || s.db == nil || s.authorize == nil {
 		return ErrWorkspaceJobAuthority
 	}
-	if !snapshotCatalogCoordinate(actor, 191) || (kind != "solo" && kind != "run") || !snapshotCatalogCoordinate(id, 191) {
+	if !snapshotCatalogCoordinate(actor, workspaceKeyMax) || (kind != "solo" && kind != "run") || !snapshotCatalogCoordinate(id, workspaceKeyMax) {
 		return gorm.ErrRecordNotFound
 	}
 	return s.authorize(ctx, s.db.WithContext(ctx), actor, kind, id)

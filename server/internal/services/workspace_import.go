@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/filestore"
@@ -221,8 +220,6 @@ type WorkspaceImportView struct {
 	ExpiresAt    *time.Time                        `json:"expiresAt,omitempty"`
 }
 
-var workspaceRequestID = regexp.MustCompile(`^[a-zA-Z0-9_-]{8,128}$`)
-
 func workspaceImportError(status int, code, message string) error {
 	return soloErr(status, code, "%s", message)
 }
@@ -312,7 +309,7 @@ func (s *WorkspaceImportService) source(ctx context.Context, soloID, user string
 	if err != nil {
 		return session, models.Sandbox{}, err
 	}
-	if in.NodeID == "" || len(in.NodeID) > 191 || in.Iteration < 0 || in.Attempt < 0 {
+	if in.NodeID == "" || len(in.NodeID) > workspaceKeyMax || in.Iteration < 0 || in.Attempt < 0 {
 		return session, models.Sandbox{}, workspaceImportError(http.StatusBadRequest, "invalid_workspace_source", "请选择工作流节点和执行轮次")
 	}
 	var count int64
@@ -467,7 +464,7 @@ func importRepoName(path string, index int) string {
 }
 
 func (s *WorkspaceImportService) Preview(ctx context.Context, soloID, user string, in WorkspaceImportPreviewInput) (*WorkspaceImportView, error) {
-	if !workspaceRequestID.MatchString(in.ClientRequestID) || len(in.Repositories) < 1 || len(in.Repositories) > sandbox.WorkspaceCodeMaxRepositories {
+	if !workspaceJobID.MatchString(in.ClientRequestID) || len(in.Repositories) < 1 || len(in.Repositories) > sandbox.WorkspaceCodeMaxRepositories {
 		return nil, workspaceImportError(http.StatusBadRequest, "invalid_workspace_import", "请选择仓库和完整提交，并提供有效请求标识")
 	}
 	seen := map[string]bool{}

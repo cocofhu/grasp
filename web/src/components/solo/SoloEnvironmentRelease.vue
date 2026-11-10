@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { req } from '@/lib/api/httpCore'
+import { soloWorkflowClient as client, type EnvironmentReleaseReceipt as ReleaseReceipt } from '@/lib/api/clients/soloWorkflowClient'
 import { randomUuid } from '@/lib/shared/randomUuid'
 import AppButton from '@/components/ui/AppButton.vue'
 
-type ReleaseReceipt = { id: string; state: string; wholeEnvironment: boolean; chatsRetained: boolean; snapshotsRetained: number; workspacesAffected: number; returnPointsRetained: number; lossConfirmationRequired: boolean; requiresReconciliation: boolean; blockers?: string[]; error?: string; createdAt: string }
 export type EnvironmentReleaseDraft = { sessionId: string; previewRequestId: string; confirmRequestId: string; receipt: ReleaseReceipt | null; uncertain: boolean }
 const props = defineProps<{ sessionId: string }>()
 const draft = defineModel<EnvironmentReleaseDraft | null>('draft', { default: null })
@@ -18,7 +17,6 @@ const lossAccepted = ref(false)
 const busy = ref(false)
 const error = ref('')
 const previous = ref<ReleaseReceipt[]>([])
-const base = computed(() => `/solo/sessions/${encodeURIComponent(props.sessionId)}/environment-releases`)
 const needsCheck = computed(() => state.value.uncertain || ['confirmed', 'dispatching', 'unknown'].includes(state.value.receipt?.state || ''))
 const canConfirm = computed(() => state.value.receipt?.state === 'prepared' && !needsCheck.value && lossAccepted.value && !busy.value)
 let disposed = false
@@ -44,7 +42,7 @@ async function preview() {
   busy.value = true; error.value = ''
   if (!state.value.previewRequestId) state.value.previewRequestId = nonce()
   try {
-    const receipt = await req<ReleaseReceipt>(base.value, { method: 'POST', body: JSON.stringify({ clientRequestId: state.value.previewRequestId }) })
+    const receipt = await client.previewRelease(props.sessionId, state.value.previewRequestId)
     if (disposed) return
     accept(receipt); lossAccepted.value = false
   } catch (cause) { if (!disposed) failed(cause) } finally { busy.value = false }
@@ -58,7 +56,7 @@ async function confirm() {
   // must lead to reading the original intent, never another automatic write.
   state.value.uncertain = true
   try {
-    const result = await req<ReleaseReceipt>(`${base.value}/${encodeURIComponent(receipt.id)}/confirm`, { method: 'POST', body: JSON.stringify({ clientRequestId: state.value.confirmRequestId, confirmed: true, lossAccepted: true }) })
+    const result = await client.confirmRelease(props.sessionId, receipt.id, state.value.confirmRequestId)
     accept(result, true)
   } catch (cause) { if (!disposed) failed(cause) } finally { busy.value = false }
 }
@@ -66,11 +64,11 @@ async function check(receipt = state.value.receipt) {
   if (!receipt || busy.value) return
   busy.value = true; error.value = ''
   try {
-    let result = await req<ReleaseReceipt>(`${base.value}/${encodeURIComponent(receipt.id)}`)
+    let result = await client.getRelease(props.sessionId, receipt.id)
     // Only this explicit click may inspect the physical completion receipt.
     // The reconcile endpoint performs GETs; it cannot repeat native deletion.
     if (result.requiresReconciliation && ['dispatching', 'unknown'].includes(result.state)) {
-      result = await req<ReleaseReceipt>(`${base.value}/${encodeURIComponent(receipt.id)}/reconcile`, { method: 'POST' })
+      result = await client.reconcileRelease(props.sessionId, receipt.id)
     }
     const same = state.value.receipt?.id === result.id
     if (!same) { state.value.confirmRequestId = ''; lossAccepted.value = false }
@@ -81,14 +79,14 @@ function restart() { if (busy.value || needsCheck.value) return; state.value = e
 const date = (value: string) => new Date(value).toLocaleString(locale.value)
 onMounted(async () => {
   try {
-    const result = await req<{ items: ReleaseReceipt[] }>(base.value)
+    const result = await client.listReleases(props.sessionId)
     if (disposed) return
     previous.value = result.items
     const saved = state.value.receipt
     if (saved) {
       // A remount may only read SQL metadata. Reconciliation always needs a
       // fresh explicit click, even if the retained draft is uncertain.
-      const current = await req<ReleaseReceipt>(`${base.value}/${encodeURIComponent(saved.id)}`)
+      const current = await client.getRelease(props.sessionId, saved.id)
       accept(current, true)
     } else {
       const pending = result.items.find(item => ['confirmed', 'dispatching', 'unknown'].includes(item.state))

@@ -206,7 +206,7 @@ func (s *WorkspaceSnapshotJobs) prepareJobAuthorization(ctx context.Context, row
 
 func (s *WorkspaceSnapshotJobs) Admit(ctx context.Context, actor string, in WorkspaceJobInput) (models.WorkspaceSnapshotJob, error) {
 	var row models.WorkspaceSnapshotJob
-	if actor == "" || !workspaceJobID.MatchString(in.ClientRequestID) || in.ScopeID == "" || len(in.ScopeID) > 191 || (in.ScopeKind != "solo" && in.ScopeKind != "run") || in.SandboxID == 0 || in.Duration <= 0 || in.Duration > s.options.MaxDuration {
+	if actor == "" || !workspaceJobID.MatchString(in.ClientRequestID) || in.ScopeID == "" || len(in.ScopeID) > workspaceKeyMax || (in.ScopeKind != "solo" && in.ScopeKind != "run") || in.SandboxID == 0 || in.Duration <= 0 || in.Duration > s.options.MaxDuration {
 		return row, ErrWorkspaceJobInvalid
 	}
 	validator := s.options.Validate[in.Kind]
