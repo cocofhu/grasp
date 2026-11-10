@@ -5035,7 +5035,9 @@
         "retained": "Stopping releases compute while retaining files.",
         "release": "Release environment",
         "stopPending": "Stop is not confirmed. Workspace retained.",
-        "retryStop": "Retry stop"
+        "retryStop": "Retry stop",
+        "stopping": "Stopping…",
+        "resuming": "Resuming…"
       },
       "workflows": {
         "title": "Workflow tasks",

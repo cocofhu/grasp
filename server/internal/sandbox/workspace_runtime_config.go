@@ -84,6 +84,22 @@ type workspaceRuntimeWire struct {
 	Limits      WorkspaceFileLimits `json:"limits"`
 }
 
+// RecoverWorkspaceRuntime is ConfigureWorkspaceRuntime for an attached
+// resident. Recovery attaches without the async bundle update, so a runtime
+// fix could otherwise never reach a guest whose old runtime blocks its head.
+// Only a newly installed backend is observed again; it is still read-only.
+func (m *Manager) RecoverWorkspaceRuntime(ctx context.Context, sb *Sandbox) error {
+	err := m.ConfigureWorkspaceRuntime(ctx, sb)
+	if err == nil {
+		return nil
+	}
+	restarted, refreshErr := m.refreshRuntime(ctx, sb)
+	if !restarted {
+		return errors.Join(err, refreshErr)
+	}
+	return m.ConfigureWorkspaceRuntime(ctx, sb)
+}
+
 // ConfigureWorkspaceRuntime is also called after a provider Stop→Start, before
 // P1 publishes a recovered binding. A new pod initially serves authenticated
 // standby; its /run env is rebuilt from this fixed platform tuple and the head

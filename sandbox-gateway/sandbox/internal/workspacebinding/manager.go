@@ -95,7 +95,43 @@ func New(cfg Config) (*Manager, error) {
 	if err := m.validate(); err != nil {
 		return fail(err)
 	}
+	if err := m.rebaseDevices(); err != nil {
+		return fail(err)
+	}
 	return m, nil
+}
+
+// rebaseDevices runs only at startup. Network block volumes (iSCSI, Ceph RBD)
+// receive a new device number on every attach while the filesystem and its
+// inodes are unchanged, so a Stop→Start must not read as a replaced root.
+// Within one process the full device+inode identity is still enforced.
+func (m *Manager) rebaseDevices() error {
+	next := cloneCheckpoint(m.state)
+	moved := map[uint64]uint64{}
+	for id, row := range next.Bindings {
+		name := m.config.OriginalRoot
+		if row.Head.Target.Kind == "restore" {
+			name = filepath.Join(m.config.RestoreRoot, row.Head.Target.ID)
+		}
+		_, device, inode, err := realDirectory(name, false)
+		if err != nil || inode != row.Inode || device == row.Device {
+			continue
+		}
+		if prior, ok := moved[row.Device]; ok && prior != device {
+			return ErrConflict
+		}
+		moved[row.Device] = device
+		row.Device = device
+		next.Bindings[id] = row
+	}
+	if len(moved) == 0 {
+		return nil
+	}
+	if err := m.write(m.root, next); err != nil {
+		return err
+	}
+	m.state = next
+	return nil
 }
 
 func (m *Manager) validate() error {
