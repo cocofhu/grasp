@@ -9,6 +9,7 @@ on:
       - "sandbox-gateway/sandbox/**"
       - "sandbox-gateway/scripts/mock-agent-model.mjs"
       - "compose.release.yaml"
+      - "compose.objectstore.yaml"
       - ".github/workflows/e2e-restart.yml"
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - "sandbox-gateway/sandbox/**"
       - "sandbox-gateway/scripts/mock-agent-model.mjs"
       - "compose.release.yaml"
+      - "compose.objectstore.yaml"
       - ".github/workflows/e2e-restart.yml"
   workflow_dispatch:
 
