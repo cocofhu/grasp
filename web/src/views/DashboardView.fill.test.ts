@@ -25,12 +25,12 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/home-shell__content[^>]*overflow-y-auto/)
   })
 
-  it('uses Solo as the only composer and retains repository/session shortcuts', () => {
-    expect(src).toContain('data-testid="home-composer"')
+  it('shares one composer between the workflow and Solo modes', () => {
+    expect(src.match(/data-testid="home-composer"/g)).toHaveLength(1)
+    expect(src).toContain('<HomeModeSwitch v-model="homeMode" />')
     expect(src).toContain('HomeSoloPanel')
-    expect(src).not.toContain('HomeModeSwitch')
-    expect(src).not.toContain('HomeCreateBaselineModal')
-    expect(src).not.toContain('home-workflow-cards')
+    expect(src).toContain('HomeWorkflowRail')
+    expect(src).toContain('useHomeApproveChat({ draft, attach })')
   })
 
   // plan g1.1 — no purple stage atmosphere; particle mesh background instead

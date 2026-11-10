@@ -19,13 +19,6 @@ export const iconMotionHostSelector = [
   '[role="menuitem"]', '[role="option"]', '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
-/**
- * The history title keeps a link and a sibling toggle. The nearer link would
- * otherwise own the clock, so this one heading is the hover host. Every other
- * page still uses the nearest control.
- */
-const historyTitleHostSelector = '[data-icon-motion-span="history-title"]'
-
 const disabledSelector = '[disabled], [aria-disabled="true"], [inert]'
 const busySelector = '[aria-busy="true"], [data-busy="true"]'
 const draggingSelector = '.vue-flow__node.dragging, [data-icon-dragging="true"]'
@@ -56,7 +49,7 @@ export function useIconMotion(
   const interactive = () => options.interactive?.() !== false
   const closestHost = (target: EventTarget | null) => {
     if (!(target instanceof Element)) return null
-    return target.closest(historyTitleHostSelector) ?? target.closest(iconMotionHostSelector)
+    return target.closest(iconMotionHostSelector)
   }
 
   function clearTimer() {

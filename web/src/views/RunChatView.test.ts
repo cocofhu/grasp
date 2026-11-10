@@ -18,7 +18,7 @@ async function render(path = '/runs/old') {
     plugins: [router, createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })],
     stubs: {
       SoloSessionPane: { props: ['sessionId'], template: '<div data-testid="owned-solo">{{ sessionId }}</div>' },
-      RunLiveView: { template: '<div data-testid="run-history">工作流对话记录</div>' },
+      RunLiveView: { template: '<div><div data-testid="run-history">工作流对话记录</div><slot name="actions" /></div>' },
       RunDetailView: { template: '<div data-testid="run-canvas">执行详情</div>' },
       SoloCreateModal: { props: ['open', 'continuationRunId'], template: '<div v-if="open" data-testid="continue-config">{{ continuationRunId }}</div>' },
     },
@@ -65,6 +65,6 @@ describe('chat-first Run history', () => {
     await router.push('/runs/new'); await flushPromises()
     finish({ soloId: 'private-old', title: 'Old', status: 'completed' }); await flushPromises()
     expect(wrapper.find('[data-testid="owned-solo"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="run-chat-details"]').attributes('href')).toContain('/runs/new?view=details')
+    expect(wrapper.find('[data-testid="run-history"]').exists()).toBe(true)
   })
 })

@@ -12,7 +12,6 @@ const props = withDefaults(defineProps<{
   scope: ReferenceScope
   scopedSearch?: typeof api.searchSoloReferences
   allowSolo?: boolean
-  allowWorkflow?: boolean
   query: string
   /** Targets already picked in this message; hidden from the list. */
   taken: string[]
@@ -21,7 +20,7 @@ const props = withDefaults(defineProps<{
   /** Opens above the composer by default; the home composer opens below. */
   placement?: 'up' | 'down'
 }>(), { allowSolo: true })
-const emit = defineEmits<{ pick: [ref: MessageReference]; workflow: [] }>()
+const emit = defineEmits<{ pick: [ref: MessageReference] }>()
 const { t } = useI18n()
 
 const tab = ref<ReferenceTab>(props.initialTab || 'all')
@@ -46,7 +45,6 @@ const still = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-r
 type Option =
   | { type: 'item'; key: string; ref: MessageReference; icon: string; tone: string; title: string; subtitle: string }
   | { type: 'action'; key: string; label: string; run: () => void }
-  | { type: 'workflow'; key: string }
 type Section = { key: string; title: string; options: Option[]; loading: boolean; first: boolean; note: string; error: boolean }
 /** One keyed row of the list. Keys stay stable across replies so rows are reused, not rebuilt. */
 type Row =
@@ -82,13 +80,7 @@ function laneNote(lane: { loading: boolean; settled: boolean; error: string; hin
 }
 
 const sections = computed<Section[]>(() => {
-  const workflow: Section[] = []
-  const query = props.query.trim().toLocaleLowerCase()
-  if (props.allowWorkflow && tab.value === 'all' &&
-      ['workflow', t('pages.solo.workflows.choose'), t('pages.solo.workflows.title')].some(label => label.toLocaleLowerCase().includes(query))) {
-    workflow.push({ key: 'workflow', title: t('pages.solo.workflows.title'), options: [{ type: 'workflow', key: 'workflow' }], loading: false, first: false, note: '', error: false })
-  }
-  if (props.full) return workflow
+  if (props.full) return []
   const taken = new Set(props.taken)
   const soloItems = search.solo.items.filter((item) => !taken.has(item.target)).map(soloOption)
   const ghItems = search.github.items.filter((item) => !taken.has(item.target))
@@ -118,7 +110,7 @@ const sections = computed<Section[]>(() => {
     const pr = out.find((s) => s.key === 'pr')
     if (issue && pr && !pr.options.length && pr.note === issue.note) out.splice(out.indexOf(pr), 1)
   }
-  return [...out, ...workflow]
+  return out
 })
 
 const options = computed(() => sections.value.flatMap((s) => s.options))
@@ -195,10 +187,6 @@ function move(delta: number) {
 function choose(index: number) {
   const option = options.value[index]
   if (!option) return
-  if (option.type === 'workflow') {
-    emit('workflow')
-    return
-  }
   if (option.type === 'action') {
     option.run()
     return
@@ -332,7 +320,7 @@ defineExpose({ move, confirm, cycleTab, setTab })
     class="ref-picker"
     :class="{ 'ref-picker--down': placement === 'down', 'ref-picker--still': still }"
     role="listbox"
-    :aria-label="allowWorkflow ? `${t('pages.solo.workflows.choose')} · ${t('pages.solo.reference.pickerLabel')}` : t('pages.solo.reference.pickerLabel')"
+    :aria-label="t('pages.solo.reference.pickerLabel')"
     data-testid="solo-reference-picker"
     @mousedown.prevent
   >
@@ -415,22 +403,6 @@ defineExpose({ move, confirm, cycleTab, setTab })
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-[12.5px] text-txt">{{ row.option.title }}</span>
                 <span class="block truncate text-[11px] text-txt3">{{ row.option.subtitle }}</span>
-              </span>
-            </div>
-            <div
-              v-else-if="row.type === 'option' && row.option.type === 'workflow'"
-              class="ref-picker__opt"
-              role="option"
-              :aria-selected="row.index === sel"
-              :data-ref-index="row.index"
-              data-testid="solo-reference-workflow"
-              @mousemove="sel = row.index"
-              @click="choose(row.index)"
-            >
-              <span class="ref-picker__icon"><Icon name="workflow" :size="15" /></span>
-              <span class="min-w-0 flex-1">
-                <span class="block text-[12.5px] text-txt">{{ t('pages.solo.workflows.choose') }}</span>
-                <span class="block text-[11px] text-txt3">{{ t('pages.solo.workflows.commandHint') }}</span>
               </span>
             </div>
             <div

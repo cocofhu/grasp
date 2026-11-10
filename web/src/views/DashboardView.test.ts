@@ -12,7 +12,7 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push: mocks.push, replace: mo
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
   return { ...actual, api: { ...actual.api,
-    listAgents: vi.fn(async () => [{ name: 'Solo', acpBackend: 'cursor' }]),
+    listAgents: vi.fn(async () => [{ name: 'Solo', acpBackend: 'cursor' }, { name: 'clarifier', capabilities: { interaction: 'clarify', tools: ['ask_question'] } }]),
     listProjects: vi.fn(async () => []),
     listSoloSessions: vi.fn(async () => ({ items: [], maxSandboxes: 5 })),
     listModelConfigurations: vi.fn(async () => ({ items: [] })),
@@ -32,12 +32,16 @@ import { useAuth } from '@/lib/composables/useAuth'
 import type { SoloCreateBody } from '@/lib/api/apiTypes'
 
 const mounted: ReturnType<typeof mount>[] = []
-async function render(locale = 'zh-CN') {
+function mountHome(locale = 'zh-CN') {
   const wrapper = mount(DashboardView, { attachTo: document.body, global: {
     plugins: [createI18n({ legacy: false, locale, missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { ...common, ...pages }, en: { ...enCommon, ...enPages } } })],
     stubs: { HomeParticleMeshBackground: true, HomeYumeCharacter: true, SoloLimitModal: true, ProjectDrawer: true },
   } })
   mounted.push(wrapper)
+  return wrapper
+}
+async function render(locale = 'zh-CN') {
+  const wrapper = mountHome(locale)
   await vi.waitFor(() => expect(wrapper.get('[data-testid="home-composer-send"]').attributes('disabled')).toBeUndefined())
   return wrapper
 }
@@ -46,13 +50,14 @@ beforeEach(() => {
   vi.clearAllMocks()
   useAuth().clearUser()
   localStorage.clear()
-  localStorage.setItem('grasp.home.mode', 'workflow') // old preference must not restore the removed entry
+  localStorage.setItem('grasp.home.mode', 'solo')
   localStorage.setItem('grasp.home.lastSoloAgent', 'Solo')
   __setDraftIdbBackendForTests(createMemoryDraftIdb())
   setBrandSettings(null)
   setWorkflowFeature({ enabled: true, locked: false, source: 'config' })
   mocks.create.mockImplementation(async (body: SoloCreateBody) => ({ id: 'solo-new', userId: 'anonymous', clientRequestId: body.clientRequestId, initialTurnId: 'first-new', agentName: 'Solo', status: 'starting', createdAt: '', updatedAt: '' }))
   mocks.resolve.mockRejectedValue({ status: 404, code: 'creation_not_found' })
+  mocks.listWorkflows.mockResolvedValue([])
 })
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
@@ -63,13 +68,12 @@ afterEach(() => {
 })
 
 describe('Solo home entry', () => {
-  it('ignores the legacy workflow mode and shows only Solo controls', async () => {
+  it('shows the Solo controls when Solo is the remembered home mode', async () => {
     const wrapper = await render(); await flushPromises()
-    expect(wrapper.find('[data-testid="home-mode-switch"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-mode-solo"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.find('[data-testid="home-workflow-cards"]').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'SoloAgentSelect' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'SoloProjectSelect' }).exists()).toBe(true)
-    expect(mocks.listWorkflows).not.toHaveBeenCalled()
     expect(mocks.create).not.toHaveBeenCalled()
     expect(mocks.startRun).not.toHaveBeenCalled()
   })
@@ -118,84 +122,20 @@ describe('Solo home entry', () => {
     await input.trigger('compositionend'); await input.trigger('keydown', { key: 'Enter', metaKey: true }); await flushPromises()
     await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1))
   })
-  it('opens /workflow configuration without launching a Run or sending it to the model', async () => {
-    const wrapper = await render(); await flushPromises()
-    await wrapper.get('textarea').setValue('/workflow 修复 CI')
-    await wrapper.get('[data-testid="home-composer"]').trigger('submit'); await flushPromises()
-    await vi.waitFor(() => expect(mocks.create).toHaveBeenCalled())
-    expect(mocks.create.mock.calls[0]?.[0].text).toBeUndefined()
-    await vi.waitFor(() => expect(mocks.replace).toHaveBeenCalledWith({ path: '/solo/solo-new', query: { workflow: '修复 CI' } }))
-    expect(mocks.startRun).not.toHaveBeenCalled()
-  })
-  it.each(['Enter', 'click'])('selects workflow configuration from @ with %s and creates an empty Solo', async selection => {
+  it('offers no workflow entry in @ and sends /workflow to Solo as plain text', async () => {
     const wrapper = await render(); await flushPromises()
     const input = wrapper.get<HTMLTextAreaElement>('[data-testid="home-composer-input"]')
-    expect(wrapper.find('[data-testid="home-command-menu"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="solo-workflow-menu"]').exists()).toBe(false)
     input.element.focus()
     await input.setValue('@wor')
     input.element.setSelectionRange(4, 4)
     await input.trigger('input')
-    const option = wrapper.get('[data-testid="solo-reference-workflow"]')
-    expect(option.text()).toContain('选择工作流')
-    expect(mocks.create).not.toHaveBeenCalled()
-    expect(mocks.listWorkflows).not.toHaveBeenCalled()
-    if (selection === 'click') await option.trigger('click')
-    else {
-      await input.trigger('keydown', { key: 'ArrowDown' })
-      await input.trigger('keydown', { key: 'Enter' })
-    }
-    await flushPromises()
-    await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1))
-    expect(mocks.create.mock.calls[0]?.[0]).toMatchObject({ agentName: 'Solo' })
-    expect(mocks.create.mock.calls[0]?.[0].text).toBeUndefined()
-    await vi.waitFor(() => expect(mocks.replace).toHaveBeenCalledWith({ path: '/solo/solo-new', query: { workflow: '1' } }))
+    expect(wrapper.find('[data-testid="solo-reference-picker"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="solo-reference-workflow"]').exists()).toBe(false)
+    await input.setValue('/workflow 修复 CI')
+    await wrapper.get('[data-testid="home-composer"]').trigger('submit'); await flushPromises()
+    await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ text: '/workflow 修复 CI' })))
+    expect(mocks.replace).not.toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ workflow: expect.anything() }) }))
     expect(mocks.startRun).not.toHaveBeenCalled()
-    expect(mocks.listWorkflows).not.toHaveBeenCalled()
-  })
-  it('keeps surrounding home draft text when opening workflow configuration from @', async () => {
-    const wrapper = await render(); await flushPromises()
-    const input = wrapper.get<HTMLTextAreaElement>('[data-testid="home-composer-input"]')
-    input.element.focus()
-    await input.setValue('稍后继续 @')
-    input.element.setSelectionRange(input.element.value.length, input.element.value.length)
-    await input.trigger('input')
-    const option = wrapper.get('[data-testid="solo-reference-workflow"]')
-    await option.trigger('pointerdown')
-    await option.trigger('click'); await flushPromises()
-    await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1))
-    expect(mocks.create.mock.calls[0]?.[0].text).toBeUndefined()
-    expect(mocks.startRun).not.toHaveBeenCalled()
-    expect(input.element.value).toBe('稍后继续 ')
-    expect(await loadHomeComposerDraft()).toMatchObject({ text: '稍后继续 ' })
-  })
-  it('restores picked references after opening workflow configuration and returning home', async () => {
-    const wrapper = await render(); await flushPromises()
-    const input = wrapper.get<HTMLTextAreaElement>('[data-testid="home-composer-input"]')
-    input.element.focus()
-    await input.setValue('参考 @hist')
-    input.element.setSelectionRange(input.element.value.length, input.element.value.length)
-    await input.trigger('input')
-    wrapper.getComponent({ name: 'ReferencePicker' }).vm.$emit('pick', { kind: 'solo', target: 'previous', title: '历史' })
-    await flushPromises()
-    await input.setValue(`${input.element.value}@wor`)
-    input.element.setSelectionRange(input.element.value.length, input.element.value.length)
-    await input.trigger('input')
-    await wrapper.get('[data-testid="solo-reference-workflow"]').trigger('click')
-    await vi.waitFor(() => expect(mocks.replace).toHaveBeenCalled())
-    expect(mocks.create.mock.calls[0]?.[0].text).toBeUndefined()
-    expect(mocks.create.mock.calls[0]?.[0].references).toBeUndefined()
-    wrapper.unmount()
-
-    const returned = await render(); await flushPromises()
-    expect((returned.get('textarea').element as HTMLTextAreaElement).value).toBe('参考 @历史 ')
-    expect(returned.findAll('[data-testid="solo-reference-chip"]')).toHaveLength(1)
-    expect(document.activeElement).not.toBe(returned.get('textarea').element)
-    mocks.create.mockClear()
-    await returned.get('[data-testid="home-composer"]').trigger('submit')
-    await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-      text: '参考 @历史', references: [{ kind: 'solo', target: 'previous' }],
-    })))
   })
   it('dismisses the @ picker without creating a Solo and keeps slashes, Shift+Enter and IME as text', async () => {
     const wrapper = await render(); await flushPromises()
@@ -223,22 +163,6 @@ describe('Solo home entry', () => {
     expect(mocks.create).not.toHaveBeenCalled()
     expect(mocks.startRun).not.toHaveBeenCalled()
   })
-  it('rejects the slash entry when workflows are disabled without creating compute', async () => {
-    setWorkflowFeature({ enabled: false, locked: false, source: 'db' })
-    const wrapper = await render(); await flushPromises()
-    const input = wrapper.get<HTMLTextAreaElement>('textarea')
-    input.element.focus()
-    await input.setValue('@')
-    await input.trigger('input')
-    expect(wrapper.find('[data-testid="solo-reference-workflow"]').exists()).toBe(false)
-    await input.setValue('/workflow')
-    await input.trigger('input')
-    expect(wrapper.find('[data-testid="home-command-menu"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="home-composer"]').trigger('submit'); await flushPromises()
-    expect(mocks.create).not.toHaveBeenCalled()
-    expect(mocks.startRun).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="home-solo-error"]').text()).toContain('已关闭')
-  })
   it('restores a saved draft without launching anything', async () => {
     await saveHomeComposerDraft('待续的草稿', [], 'legacy-workflow')
     const wrapper = await render(); await flushPromises()
@@ -253,31 +177,61 @@ describe('Solo home entry', () => {
     await wrapper.get('[data-testid="home-composer"]').trigger('submit'); await flushPromises()
     await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ images: [expect.objectContaining({ name: 'draft.png', data: 'eA==' })] })))
   })
-  it('keeps attachments in the home draft instead of sending them into the Solo created from @', async () => {
-    await saveHomeComposerDraft('', [{ name: 'draft.png', mimeType: 'image/png', data: 'eA==' }], '')
-    const wrapper = await render(); await flushPromises()
-    const input = wrapper.get<HTMLTextAreaElement>('[data-testid="home-composer-input"]')
-    input.element.focus()
-    await input.setValue('@')
-    input.element.setSelectionRange(1, 1)
-    await input.trigger('input')
-    await wrapper.get('[data-testid="solo-reference-workflow"]').trigger('click'); await flushPromises()
-    await vi.waitFor(() => expect(mocks.replace).toHaveBeenCalledWith({ path: '/solo/solo-new', query: { workflow: '1' } }))
-    const body = mocks.create.mock.calls[0]?.[0] as SoloCreateBody
-    expect(body.text).toBeUndefined()
-    expect(body.images ?? []).toEqual([])
-    expect(await loadHomeComposerDraft()).toMatchObject({ text: '', attachments: [expect.objectContaining({ name: 'draft.png' })] })
+})
+
+const clarifyWorkflow = {
+  id: 'wf-ap', name: '需求澄清', description: '开发前澄清 + 计划', status: 'published', version: 1, updatedAt: '', needsRepo: false, showOnHome: true,
+  nodes: [
+    { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
+    { id: 'ap', type: 'agent', label: '澄清', position: { x: 0, y: 0 }, config: { agent_profile: 'clarifier' } },
+    { id: 'out', type: 'output', label: '结束', position: { x: 0, y: 0 }, config: {} },
+  ],
+  edges: [{ id: 'e1', source: 'in', target: 'ap' }, { id: 'e2', source: 'ap', target: 'out' }],
+}
+
+describe('Workflow home mode', () => {
+  beforeEach(() => {
+    localStorage.setItem('grasp.home.mode', 'workflow')
+    mocks.listWorkflows.mockResolvedValue([clarifyWorkflow])
+    mocks.startRun.mockResolvedValue({ id: 'run-1', status: 'queued' })
   })
-  it.each([{ ctrlKey: true }, { metaKey: true }])('selects the highlighted workflow action on %o+Enter without sending a prompt', async modifier => {
-    const wrapper = await render(); await flushPromises()
-    const input = wrapper.get<HTMLTextAreaElement>('[data-testid="home-composer-input"]')
-    input.element.focus()
-    await input.setValue('@w')
-    input.element.setSelectionRange(2, 2)
-    await input.trigger('input')
-    await input.trigger('keydown', { key: 'ArrowDown' })
-    await input.trigger('keydown', { key: 'Enter', ...modifier }); await flushPromises()
-    await vi.waitFor(() => expect(mocks.replace).toHaveBeenCalledWith({ path: '/solo/solo-new', query: { workflow: '1' } }))
-    expect(mocks.create.mock.calls[0]?.[0].text).toBeUndefined()
+
+  it('restores the workflow rail and starts a Run from the shared composer', async () => {
+    const wrapper = mountHome(); await flushPromises()
+    expect(wrapper.get('[data-testid="home-mode-workflow"]').attributes('aria-selected')).toBe('true')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="home-workflow-card-wf-ap"]').exists()).toBe(true))
+    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').classes()).toContain('home-shell__card--selected')
+    expect(wrapper.findComponent({ name: 'HomeWorkflowSelect' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'SoloAgentSelect' }).exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="home-composer"]')).toHaveLength(1)
+
+    await wrapper.get('[data-testid="home-composer-input"]').setValue('修复登录接口')
+    await wrapper.get('[data-testid="home-composer"]').trigger('submit'); await flushPromises()
+    await vi.waitFor(() => expect(mocks.startRun).toHaveBeenCalledTimes(1))
+    expect(mocks.startRun.mock.calls[0]?.[0]).toBe('wf-ap')
+    expect(mocks.startRun.mock.calls[0]?.[5]).toMatchObject({ firstMessage: { text: '修复登录接口' }, publishedSnapshot: true })
+    expect(mocks.create).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(mocks.push).toHaveBeenCalled())
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('')
+    expect(await loadHomeComposerDraft()).toBeNull()
+  })
+
+  it('keeps the draft when switching to Solo and remembers the mode', async () => {
+    const wrapper = mountHome(); await flushPromises()
+    await wrapper.get('[data-testid="home-composer-input"]').setValue('先写一半')
+    await wrapper.get('[data-testid="home-mode-solo"]').trigger('click'); await flushPromises()
+    expect(localStorage.getItem('grasp.home.mode')).toBe('solo')
+    await vi.waitFor(() => expect(wrapper.findComponent({ name: 'SoloAgentSelect' }).exists()).toBe(true))
+    expect(wrapper.find('[data-testid="home-workflow-cards"]').exists()).toBe(false)
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('先写一半')
+  })
+
+  it('hides the switch and stays on Solo when workflows are disabled', async () => {
+    setWorkflowFeature({ enabled: false, locked: true, source: 'config' })
+    const wrapper = mountHome(); await flushPromises()
+    expect(wrapper.find('[data-testid="home-mode-switch"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-workflow-cards"]').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'SoloAgentSelect' }).exists()).toBe(true)
   })
 })
+

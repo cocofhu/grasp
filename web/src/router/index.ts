@@ -3,6 +3,7 @@ import { updateDocumentTitle } from '@/lib/shared/locale'
 import { installAuthGuard } from '@/lib/shared/authGuard'
 import { installRoutePendingGuards } from '@/lib/shared/routePending'
 import { hideSandboxPath, loadBrandSettings } from '@/lib/composables/useBrandSettings'
+import { isRunDetailsQuery } from '@/lib/run/runViewMode'
 import LoginView from '@/views/LoginView.vue'
 
 const routes: RouteRecordRaw[] = [
@@ -105,6 +106,10 @@ export function createAppRouter(history: RouterHistory = createWebHistory()) {
   installRoutePendingGuards(instance)
   installAuthGuard(instance)
   installWorktreeGuard(instance)
+  // The Run chat uses the same padded page as Solo; only execution details fill the shell.
+  instance.beforeEach((to) => {
+    if (to.name === 'run-detail') to.meta.full = isRunDetailsQuery(to.query)
+  })
   instance.afterEach((to) => updateDocumentTitle(to.meta.titleKey as string | undefined))
   return instance
 }

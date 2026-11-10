@@ -674,7 +674,7 @@ test('Agent defaults distinguish the default configuration from the configuratio
   // A group created after the defaults were saved must be inherited too.
   state.configurations.push({ id: 'team-later', name: 'Team later model', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: later.id, modelId: later.models[0]!.id }, state: 'active', revision: 1 })
   await page.goto('/workspace-config.html?view=/dashboard')
-  await expect(page.getByRole('tab', { name: 'Solo', exact: true })).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Solo', exact: true }).click()
   const trigger = page.getByTestId('solo-model-select-trigger')
   await trigger.click()
   const option = (id: string, modelId: string) => page.getByTestId(`solo-model-option-@group:${JSON.stringify([id, modelId])}`)
