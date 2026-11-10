@@ -26,7 +26,13 @@ import {
 const SIDEBAR_HISTORY_RUN_LIMIT = 20
 
 const props = defineProps<{ runTitles?: Record<string, string> }>()
-const emit = defineEmits<{ (e: 'navigate'): void }>()
+const emit = defineEmits<{
+  (e: 'navigate'): void
+  (e: 'solo-contextmenu', event: MouseEvent, session: SoloSession): void
+  (e: 'solo-menu-keydown', event: KeyboardEvent, session: SoloSession): void
+  (e: 'solo-pointerdown', event: PointerEvent, session: SoloSession): void
+  (e: 'solo-click', event: MouseEvent): void
+}>()
 const { t } = useI18n()
 const route = useRoute()
 const context = useWorkspaceContext()
@@ -49,6 +55,11 @@ const soloPath = (session: SoloSession) => `/solo/${encodeURIComponent(session.i
 const soloActive = (session: SoloSession) => route.path === soloPath(session)
 const soloSignature = (list: SoloSession[]) => list.map((s) => [s.id, soloTitle(s), s.status, s.closedAt, s.lastActiveAt, s.updatedAt].join('\u0001')).join('\u0002')
 const entries = computed(() => historyEntries(runs.value, solos.value, SIDEBAR_HISTORY_RUN_LIMIT))
+
+function onSoloClick(event: MouseEvent) {
+  emit('solo-click', event)
+  if (!event.defaultPrevented) emit('navigate')
+}
 
 async function loadRuns() {
   runsRequest?.abort()
@@ -119,7 +130,7 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
       <p v-else-if="!entries.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
       <div v-else class="sidebar-tree">
         <RecentReorderList ref="recentListEl">
-          <div v-for="entry in entries" :key="entry.key" class="sidebar-tree-item"><RouterLink v-hover-ink v-if="entry.kind === 'solo'" :to="soloPath(entry.session)" class="workspace-recent-row" :class="{ 'is-active': soloActive(entry.session) }" :aria-current="soloActive(entry.session) ? 'page' : undefined" :title="soloTitle(entry.session)" data-testid="sidebar-recent-solo" :data-solo-id="entry.session.id" :data-status="entry.session.status" @click="emit('navigate')"><span class="workspace-list-title">{{ soloTitle(entry.session) }}</span><Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink><RouterLink v-hover-ink v-else :to="recentRunTarget(entry.run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(entry.run, route) }" :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined" :title="runTitle(entry.run)" data-testid="sidebar-recent-run" :data-run-id="entry.run.id" :data-status="entry.run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(entry.run) }}</span><Icon v-if="entry.run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="entry.run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
+          <div v-for="entry in entries" :key="entry.key" class="sidebar-tree-item"><RouterLink v-hover-ink v-if="entry.kind === 'solo'" :to="soloPath(entry.session)" class="workspace-recent-row" :class="{ 'is-active': soloActive(entry.session) }" :aria-current="soloActive(entry.session) ? 'page' : undefined" :title="soloTitle(entry.session)" data-testid="sidebar-recent-solo" :data-solo-id="entry.session.id" :data-status="entry.session.status" @contextmenu="emit('solo-contextmenu', $event, entry.session)" @keydown="emit('solo-menu-keydown', $event, entry.session)" @pointerdown="emit('solo-pointerdown', $event, entry.session)" @click.capture="onSoloClick($event)"><span class="workspace-list-title">{{ soloTitle(entry.session) }}</span><Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink><RouterLink v-hover-ink v-else :to="recentRunTarget(entry.run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(entry.run, route) }" :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined" :title="runTitle(entry.run)" data-testid="sidebar-recent-run" :data-run-id="entry.run.id" :data-status="entry.run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(entry.run) }}</span><Icon v-if="entry.run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="entry.run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
         </RecentReorderList>
       </div>
       </div>

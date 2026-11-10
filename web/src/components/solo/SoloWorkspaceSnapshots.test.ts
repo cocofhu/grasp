@@ -100,7 +100,7 @@ describe('Solo workspace snapshots', () => {
     await vi.waitFor(() => expect(wrapper!.find('[data-testid="workspace-retry-original"]').exists()).toBe(true))
     const original = JSON.parse(JSON.stringify(api.capture!.mock.calls[0]![1]))
     api.currentBinding!.mockResolvedValue({ ...head(), fingerprint: 'changed-binding' })
-    await wrapper!.findAll('button').find(button => button.text() === '刷新')!.trigger('click')
+    await wrapper!.get('[data-testid="workspace-refresh"]').trigger('click')
     await flushPromises()
     expect(api.capture).toHaveBeenCalledTimes(1)
     await wrapper!.get('[data-testid="workspace-retry-original"]').trigger('click')

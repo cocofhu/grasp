@@ -7,6 +7,9 @@ import { nextTick, reactive } from 'vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import nav from '@/locales/zh-CN/nav.json'
+import workspaceSnapshots from '@/locales/zh-CN/workspaceSnapshots.json'
+import workspaceRelease from '@/locales/zh-CN/workspaceRelease.json'
+import type { SoloSession } from '@/lib/api/apiTypes'
 import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 
 const routeState = reactive({ path: '/dashboard', query: {} as Record<string, unknown>, meta: {} as Record<string, unknown> })
@@ -97,6 +100,8 @@ const apiMocks = vi.hoisted(() => ({
   updateRunTitle: vi.fn(),
   renameSoloSession: vi.fn(),
   closeSoloSession: vi.fn(),
+  stopSoloEnvironment: vi.fn(),
+  resumeSoloEnvironment: vi.fn(),
   listRuns: vi.fn(),
   listSoloSessions: vi.fn(),
   cancelRun: vi.fn(),
@@ -117,6 +122,8 @@ vi.mock('@/lib/api/api', () => ({
     listRuns: (...args: unknown[]) => apiMocks.listRuns(...args),
     listSoloSessions: (...args: unknown[]) => apiMocks.listSoloSessions(...args),
     cancelRun: (...args: unknown[]) => apiMocks.cancelRun(...args),
+    stopSoloEnvironment: (...args: unknown[]) => apiMocks.stopSoloEnvironment(...args),
+    resumeSoloEnvironment: (...args: unknown[]) => apiMocks.resumeSoloEnvironment(...args),
   },
 }))
 
@@ -233,6 +240,8 @@ beforeEach(() => {
   apiMocks.updateRunTitle.mockReset()
   apiMocks.renameSoloSession.mockReset()
   apiMocks.closeSoloSession.mockReset()
+  apiMocks.stopSoloEnvironment.mockReset()
+  apiMocks.resumeSoloEnvironment.mockReset()
   apiMocks.listRuns.mockReset()
   apiMocks.listSoloSessions.mockReset()
   apiMocks.cancelRun.mockReset()
@@ -263,7 +272,7 @@ function mountNav(attachOrOptions: boolean | { realIcon?: boolean } = false) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages, ...nav } },
+    messages: { 'zh-CN': { ...common, ...pages, ...nav, ...workspaceSnapshots, ...workspaceRelease } },
   })
   return mount(AppSidebarNav, {
     attachTo: attach ? document.body : undefined,
@@ -273,6 +282,10 @@ function mountNav(attachOrOptions: boolean | { realIcon?: boolean } = false) {
       directives: { 'hover-ink': vHoverInk },
     },
   })
+}
+
+function soloSession(patch: Partial<SoloSession> = {}): SoloSession {
+  return { id: 'solo-1', userId: 'u', title: 'Solo', agentName: 'Coder', status: 'running', restarts: 0, busy: false, waiting: 0, createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z', ...patch }
 }
 
 describe('AppSidebarNav', () => {
@@ -397,10 +410,138 @@ describe('AppSidebarNav', () => {
     expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map((el) => el.getAttribute('data-testid'))).toEqual([
       'nav-pending-menu-pin',
       'nav-pending-menu-rename',
+      'nav-solo-menu-snapshots',
+      'nav-solo-menu-environment',
       'nav-pending-menu-cancel',
     ])
+    expect(document.querySelector('[data-testid="nav-solo-menu-environment"]')?.hasAttribute('disabled')).toBe(true)
     wrapper.unmount()
     vi.useRealTimers()
+  })
+
+  it('opens snapshots for the selected Solo while preserving the open session’s query', async () => {
+    const session = soloSession()
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [session], maxSandboxes: 5 })
+    const wrapper = mountNav()
+    await flushPromises()
+    const row = wrapper.get('[data-kind="solo"][data-key="solo-1"]')
+    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    ;(document.querySelector('[data-testid="nav-solo-menu-snapshots"]') as HTMLButtonElement).click()
+    expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/solo/solo-1', query: { workspace: 'snapshots' } })
+    expect(apiMocks.stopSoloEnvironment).not.toHaveBeenCalled()
+    routeState.path = '/solo/solo-1'
+    routeState.query = { panel: 'files' }
+    await flushPromises()
+    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    ;(document.querySelector('[data-testid="nav-solo-menu-snapshots"]') as HTMLButtonElement).click()
+    expect(routerMocks.replace).toHaveBeenLastCalledWith({ path: '/solo/solo-1', query: { panel: 'files', workspace: 'snapshots' } })
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('stops and resumes the selected environment and prevents duplicate requests', async () => {
+    const session = soloSession()
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [session], maxSandboxes: 5 })
+    let stopped!: (session: SoloSession) => void
+    apiMocks.stopSoloEnvironment.mockReturnValue(new Promise(resolve => { stopped = resolve }))
+    apiMocks.resumeSoloEnvironment.mockResolvedValue(session)
+    const wrapper = mountNav()
+    await flushPromises()
+    const row = wrapper.get('[data-kind="solo"][data-key="solo-1"]')
+    const open = async () => { await row.trigger('contextmenu', { clientX: 20, clientY: 20 }); return document.querySelector('[data-testid="nav-solo-menu-environment"]') as HTMLButtonElement }
+    const stop = await open()
+    expect(stop.textContent).toContain('停止环境')
+    stop.click()
+    await flushPromises()
+    expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledExactlyOnceWith('solo-1')
+    const pending = await open()
+    expect(pending.disabled).toBe(true)
+    pending.click()
+    expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledTimes(1)
+    stopped({ ...session, status: 'stopped', waiting: 1 })
+    await flushPromises()
+    const resume = await open()
+    expect(resume.textContent).toContain('恢复环境')
+    expect(resume.disabled).toBe(false)
+    resume.click()
+    await flushPromises()
+    expect(apiMocks.resumeSoloEnvironment).toHaveBeenCalledExactlyOnceWith('solo-1')
+    expect(useSoloSessions().sessions.value.find(s => s.id === 'solo-1')?.status).toBe('running')
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each([{ status: 'starting' as const }, { busy: true }, { waiting: 1 }])('disables environment actions while the session is occupied: %j', async (patch) => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession(patch)], maxSandboxes: 5 })
+    const wrapper = mountNav()
+    await flushPromises()
+    await wrapper.get('[data-kind="solo"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    const button = document.querySelector('[data-testid="nav-solo-menu-environment"]') as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    button.click()
+    expect(apiMocks.stopSoloEnvironment).not.toHaveBeenCalled()
+    expect(apiMocks.resumeSoloEnvironment).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps snapshot and release actions available on closed Solo history rows', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status: 'closed', sandboxId: 7 })], maxSandboxes: 5 })
+    const wrapper = mountNav()
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const row = wrapper.get('[data-testid="sidebar-recent-solo"]')
+    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map(el => el.textContent?.trim())).toEqual(['快照', '释放环境'])
+    ;(document.querySelector('[data-testid="nav-solo-menu-release"]') as HTMLButtonElement).click()
+    expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/solo/solo-1', query: { workspace: 'release' } })
+    expect(apiMocks.closeSoloSession).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('opens the Solo menu with the keyboard and keeps the taller menu in the viewport', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession()], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const row = wrapper.get('[data-kind="solo"]')
+    await row.trigger('keydown', { key: 'F10', shiftKey: true })
+    await nextTick()
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('nav-pending-menu-pin')
+    await row.trigger('contextmenu', { clientX: window.innerWidth - 2, clientY: window.innerHeight - 2 })
+    const menu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
+    expect(Number.parseFloat(menu.style.top)).toBeLessThanOrEqual(window.innerHeight - 186)
+    wrapper.unmount()
+  })
+
+  it.each(['running', 'closed'] as const)('opens Solo actions with a long press without navigating on release: %s', async (status) => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status })], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const row = wrapper.get(status === 'running' ? '[data-kind="solo"]' : '[data-testid="sidebar-recent-solo"]')
+    await row.trigger('pointerdown', { pointerType: 'touch', clientX: 20, clientY: 20 })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(document.querySelector('[data-testid="nav-solo-menu-snapshots"]')).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(1500)
+    await row.trigger('pointerup', { pointerType: 'touch', clientX: 20, clientY: 20 })
+    await row.trigger('mousedown')
+    await row.trigger('click')
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('keeps touch scrolling on Solo rows from opening a menu', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession()], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const row = wrapper.get('[data-kind="solo"]')
+    await row.trigger('pointerdown', { pointerType: 'touch', clientX: 20, clientY: 20 })
+    await row.trigger('pointermove', { pointerType: 'touch', clientX: 20, clientY: 40 })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    wrapper.unmount()
   })
 
   it('orders Solo rows by start time, not by last activity', async () => {

@@ -49,7 +49,8 @@ import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { useRunTerminalNotifications } from '@/lib/run/useRunTerminalNotifications'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
-import { useSoloSessions } from '@/lib/solo/useSoloSessions'
+import { isSoloActive, useSoloSessions } from '@/lib/solo/useSoloSessions'
+import { soloErrorText } from '@/lib/solo/soloErrors'
 import type { SoloSession } from '@/lib/api/apiTypes'
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
 import { isSectionCollapsed, toggleSection } from '@/lib/shared/sidebarSections'
@@ -58,7 +59,7 @@ import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
 const props = defineProps<{ drawer?: boolean; rail?: boolean; workspaceLists?: boolean }>()
 const emit = defineEmits<{ (e: 'navigate'): void }>()
 
-const { t } = useI18n()
+const { t, te, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -368,6 +369,7 @@ function isSoloRowActive(session: SoloSession): boolean {
 }
 
 function onSoloRow(session: SoloSession) {
+  if (suppressPendingClick.value || editingKey.value) return
   void router.push(`/solo/${encodeURIComponent(session.id)}`)
   onNavigate()
 }
@@ -388,6 +390,7 @@ const renameInput = ref<HTMLInputElement | null>(null)
 const saving = ref(false)
 const editEpoch = ref(0)
 const suppressPendingClick = ref(false)
+let rowClickReleaseTimer: number | undefined
 type MenuTarget = { kind: 'run' | 'solo'; key: string; x: number; y: number }
 const menu = ref<MenuTarget | null>(null)
 const menuEl = ref<HTMLElement | null>(null)
@@ -403,7 +406,19 @@ const menuItem = computed(() => {
 const menuSolo = computed(() => {
   const key = menu.value?.key
   if (!key || menu.value?.kind !== 'solo') return null
-  return soloStore.active.value.find((it) => soloRowKey(it) === key) ?? null
+  return soloStore.sessions.value.find((it) => soloRowKey(it) === key) ?? null
+})
+const menuSoloActive = computed(() => !!menuSolo.value && isSoloActive(menuSolo.value))
+const menuSoloRelease = computed(() => menuSolo.value?.status === 'closed' && !!(menuSolo.value.sandboxId || menuSolo.value.sandbox?.id))
+const changingSoloEnvironments = ref(new Set<string>())
+const menuSoloEnvironmentDisabled = computed(() => {
+  const session = menuSolo.value
+  return !session || changingSoloEnvironments.value.has(session.id) || (session.status !== 'stopped' && (session.busy || session.waiting > 0 || session.status === 'starting'))
+})
+const menuSoloEnvironmentLabel = computed(() => {
+  const session = menuSolo.value
+  if (session?.status === 'stopped') return t('pages.solo.environment.resume')
+  return t(session?.sandbox?.desiredState === 'stopped' ? 'pages.solo.environment.retryStop' : 'pages.solo.environment.stop')
 })
 const menuPinned = computed(() => {
   if (menuSolo.value) return soloPins.value.some((p) => p.itemKey === soloRowKey(menuSolo.value!))
@@ -450,10 +465,40 @@ function openMenu(it: InboxItem, x: number, y: number) {
 function openSoloMenu(session: SoloSession, x: number, y: number) {
   if (editingKey.value) return
   const width = MENU_WIDTH
-  const height = MENU_CHROME + 3 * MENU_ROW_HEIGHT
+  const active = isSoloActive(session)
+  const environment = active || (session.status === 'closed' && !!(session.sandboxId || session.sandbox?.id))
+  const rows = (active ? 3 : 0) + (worktreeMode.value ? 0 : 1 + Number(environment))
+  const separators = active && !worktreeMode.value ? 2 : 0
+  const height = MENU_CHROME + rows * MENU_ROW_HEIGHT + separators * 9
   const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
   menu.value = { kind: 'solo', key: soloRowKey(session), x: left, y: top }
+}
+
+function onMenuSoloWorkspace(panel: 'snapshots' | 'release') {
+  const session = menuSolo.value
+  if (!session || worktreeMode.value || (panel === 'release' && !menuSoloRelease.value)) return
+  closeMenu()
+  const path = `/solo/${encodeURIComponent(session.id)}`
+  const query = { ...(route.path === path ? route.query : {}), workspace: panel }
+  if (route.path === path) void router.replace({ path, query })
+  else void router.push({ path, query })
+  onNavigate()
+}
+
+async function onMenuSoloEnvironment() {
+  const session = menuSolo.value
+  if (!session || !menuSoloActive.value || worktreeMode.value || menuSoloEnvironmentDisabled.value) return
+  changingSoloEnvironments.value.add(session.id)
+  closeMenu()
+  try {
+    const saved = await (session.status === 'stopped' ? api.resumeSoloEnvironment(session.id) : api.stopSoloEnvironment(session.id))
+    soloStore.upsert(saved)
+  } catch (cause) {
+    toast.error(soloErrorText(cause, t, te, locale.value))
+  } finally {
+    changingSoloEnvironments.value.delete(session.id)
+  }
 }
 
 const menuShareVisible = computed(
@@ -478,8 +523,6 @@ function clearRowPress() {
   if (!rowPress) return
   window.clearTimeout(rowPress.timer)
   window.removeEventListener('pointermove', onRowPressMove)
-  window.removeEventListener('pointerup', onRowPressEnd)
-  window.removeEventListener('pointercancel', onRowPressEnd)
   rowPress = null
 }
 
@@ -495,29 +538,47 @@ function onRowPressMove(event: PointerEvent) {
 
 function onRowPressEnd() {
   clearRowPress()
+  if (!suppressPendingClick.value) return
+  window.clearTimeout(rowClickReleaseTimer)
+  // Keep suppressing while the finger is held, then cover compatibility clicks.
+  rowClickReleaseTimer = window.setTimeout(() => { suppressPendingClick.value = false }, 400)
 }
 
-function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
+function startRowPress(event: PointerEvent, key: string, open: (x: number, y: number) => void) {
   if (event.pointerType === 'mouse' || editingKey.value) return
   clearRowPress()
-  const key = it.runId
   const timer = window.setTimeout(() => {
     if (!rowPress || rowPress.key !== key) return
     const x = rowPress.x
     const y = rowPress.y
+    window.clearTimeout(rowClickReleaseTimer)
     suppressPendingClick.value = true
-    window.setTimeout(() => {
-      suppressPendingClick.value = false
-    }, 400)
     clearRowPress()
-    const row = pendingRows.value.find((item) => item.runId === key)
-    if (!row || editingKey.value) return
-    openMenu(row, x, y)
+    if (!editingKey.value) open(x, y)
   }, LONG_PRESS_MS)
   rowPress = { key, x: event.clientX, y: event.clientY, timer }
   window.addEventListener('pointermove', onRowPressMove)
-  window.addEventListener('pointerup', onRowPressEnd)
-  window.addEventListener('pointercancel', onRowPressEnd)
+}
+
+function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
+  startRowPress(event, it.runId, (x, y) => {
+    const row = pendingRows.value.find(item => item.runId === it.runId)
+    if (row) openMenu(row, x, y)
+  })
+}
+
+function onSoloPointerDown(event: PointerEvent, session: SoloSession) {
+  if (worktreeMode.value && !isSoloActive(session)) return
+  startRowPress(event, soloRowKey(session), (x, y) => {
+    const row = soloStore.sessions.value.find(item => item.id === session.id)
+    if (row) openSoloMenu(row, x, y)
+  })
+}
+
+function onSoloHistoryClick(event: MouseEvent) {
+  if (!suppressPendingClick.value) return
+  event.preventDefault()
+  event.stopPropagation()
 }
 
 function onPendingContextMenu(event: MouseEvent, it: InboxItem) {
@@ -529,6 +590,7 @@ function onPendingContextMenu(event: MouseEvent, it: InboxItem) {
 }
 
 function onSoloContextMenu(event: MouseEvent, session: SoloSession) {
+  if (worktreeMode.value && !isSoloActive(session)) return
   event.preventDefault()
   event.stopPropagation()
   if (editingKey.value) return
@@ -536,10 +598,21 @@ function onSoloContextMenu(event: MouseEvent, session: SoloSession) {
   openSoloMenu(session, event.clientX, event.clientY)
 }
 
+function onSoloMenuKeydown(event: KeyboardEvent, session: SoloSession) {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+  if (worktreeMode.value && !isSoloActive(session)) return
+  event.preventDefault()
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  openSoloMenu(session, rect.left + 12, rect.bottom)
+  void nextTick(() => menuEl.value?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus())
+}
+
 function onDocMouseDown(event: MouseEvent) {
   if (!menu.value) return
   const target = event.target
   if (target instanceof Node && menuEl.value?.contains(target)) return
+  // Touch release can synthesize a mouse down on the row that opened the menu.
+  if (suppressPendingClick.value && target instanceof Element && target.closest('[data-testid="nav-pending-row"], [data-testid="sidebar-recent-solo"]')) return
   closeMenu()
 }
 
@@ -850,7 +923,7 @@ watch(pendingRows, (rows) => {
 })
 
 watch(soloRows, (rows) => {
-  if (menu.value?.kind === 'solo' && !rows.some((s) => soloRowKey(s) === menu.value?.key)) closeMenu()
+  if (menu.value?.kind === 'solo' && !soloStore.sessions.value.some((s) => soloRowKey(s) === menu.value?.key)) closeMenu()
   if (!editingKey.value?.startsWith('solo:')) return
   if (rows.some((s) => soloRowKey(s) === editingKey.value)) return
   editingKey.value = null
@@ -945,6 +1018,8 @@ onMounted(() => {
   document.addEventListener('mousedown', onDocMouseDown)
   document.addEventListener('keydown', onDocKeydown)
   document.addEventListener('visibilitychange', onDocumentVisibility)
+  window.addEventListener('pointerup', onRowPressEnd)
+  window.addEventListener('pointercancel', onRowPressEnd)
 })
 onBeforeUnmount(() => {
   navAlive = false
@@ -953,6 +1028,9 @@ onBeforeUnmount(() => {
   offRunActivity()
   runningRequest?.abort()
   clearRowPress()
+  window.clearTimeout(rowClickReleaseTimer)
+  window.removeEventListener('pointerup', onRowPressEnd)
+  window.removeEventListener('pointercancel', onRowPressEnd)
   takeFlightMotion()
   for (const timer of flightTimers.values()) window.clearTimeout(timer)
   flightTimers.clear()
@@ -1492,6 +1570,8 @@ const settingsItems = computed(() => (
         :aria-current="isSoloRowActive(entry.session) ? 'page' : undefined"
         @click="onSoloRow(entry.session)"
         @contextmenu="onSoloContextMenu($event, entry.session)"
+        @keydown="onSoloMenuKeydown($event, entry.session)"
+        @pointerdown="onSoloPointerDown($event, entry.session)"
       >
         <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(entry.session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
         <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ soloRowTitle(entry.session) }}</span>
@@ -1502,7 +1582,7 @@ const settingsItems = computed(() => (
       </div>
       </div>
     </div>
-    <SidebarWorkspaceLists v-if="workspaceLists" :run-titles="pendingRunTitles" @navigate="onNavigate" />
+    <SidebarWorkspaceLists v-if="workspaceLists" :run-titles="pendingRunTitles" @navigate="onNavigate" @solo-contextmenu="onSoloContextMenu" @solo-menu-keydown="onSoloMenuKeydown" @solo-pointerdown="onSoloPointerDown" @solo-click="onSoloHistoryClick" />
     </div>
     </Transition>
     </div>
@@ -1541,6 +1621,7 @@ const settingsItems = computed(() => (
         <span>{{ t('nav.pendingWorkflowView') }}</span>
       </button>
       <button
+        v-if="menuItem || menuSoloActive"
         type="button"
         role="menuitem"
         class="pending-row-menu__item"
@@ -1551,6 +1632,7 @@ const settingsItems = computed(() => (
         <span>{{ menuPinned ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
       </button>
       <button
+        v-if="menuItem || menuSoloActive"
         type="button"
         role="menuitem"
         class="pending-row-menu__item"
@@ -1560,6 +1642,22 @@ const settingsItems = computed(() => (
         <Icon name="edit" :size="14" />
         <span>{{ t('nav.pendingRename') }}</span>
       </button>
+      <template v-if="menuSolo && !worktreeMode">
+        <div v-if="menuSoloActive" class="pending-row-menu__separator" role="separator" />
+        <button type="button" role="menuitem" class="pending-row-menu__item" data-testid="nav-solo-menu-snapshots" @click="onMenuSoloWorkspace('snapshots')">
+          <Icon name="history" :size="14" />
+          <span>{{ t('workspaceSnapshots.title') }}</span>
+        </button>
+        <button v-if="menuSoloActive" type="button" role="menuitem" class="pending-row-menu__item" data-testid="nav-solo-menu-environment" :disabled="menuSoloEnvironmentDisabled" @click="onMenuSoloEnvironment">
+          <Icon :name="menuSolo.status === 'stopped' ? 'play' : 'stop'" :size="14" />
+          <span>{{ menuSoloEnvironmentLabel }}</span>
+        </button>
+        <button v-else-if="menuSoloRelease" type="button" role="menuitem" class="pending-row-menu__item" data-testid="nav-solo-menu-release" @click="onMenuSoloWorkspace('release')">
+          <Icon name="trash" :size="14" />
+          <span>{{ t('workspaceRelease.title') }}</span>
+        </button>
+        <div v-if="menuSoloActive" class="pending-row-menu__separator" role="separator" />
+      </template>
       <button
         v-if="menuShareVisible && menuItem"
         type="button"
@@ -1576,6 +1674,7 @@ const settingsItems = computed(() => (
         <span>{{ menuShareLabel }}</span>
       </button>
       <button
+        v-if="menuItem || menuSoloActive"
         type="button"
         role="menuitem"
         class="pending-row-menu__item"
@@ -1908,6 +2007,8 @@ const settingsItems = computed(() => (
   white-space: nowrap;
   cursor: pointer;
 }
+
+.pending-row-menu__separator { height: 1px; margin: 4px 8px; background: rgb(var(--c-line)); }
 
 .pending-row-menu__item:hover,
 .pending-row-menu__item:focus-visible {
