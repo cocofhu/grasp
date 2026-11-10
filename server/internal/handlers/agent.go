@@ -153,7 +153,7 @@ func (h *Handlers) DeleteAgent(c *gin.Context) {
 	if h.Pm != nil {
 		if err := h.Pm.PurgeAgentEverywhere(name); err != nil {
 			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "清除 Agent 工作区数据失败：" + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "agent_data_clear_failed", "error": "清除 Agent 工作区数据失败：" + err.Error()})
 			return
 		}
 	}
@@ -219,7 +219,7 @@ func (h *Handlers) RenameAgent(c *gin.Context) {
 				return
 			}
 			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "重命名 Agent 数据失败：" + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "agent_data_rename_failed", "error": "重命名 Agent 数据失败：" + err.Error()})
 			return
 		}
 	}
@@ -242,7 +242,7 @@ func (h *Handlers) RenameAgent(c *gin.Context) {
 				}
 			}
 			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "重命名工作流引用失败：" + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "workflow_reference_rename_failed", "error": "重命名工作流引用失败：" + err.Error()})
 			return
 		}
 		updatedWorkflowCount = n
