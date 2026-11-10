@@ -9,7 +9,7 @@ have="$(cat "$stamp" 2>/dev/null || true)"
 
 if [ "$want" != "$have" ]; then
   echo "dependencies changed; running npm ci..."
-  npm ci --no-audit --no-fund
+  sh /usr/local/bin/grasp-npm-ci
   echo "$want" > "$stamp"
 fi
 
