@@ -2,6 +2,7 @@ import type { LiveCtx, LiveEvent } from '@/lib/inbox/liveVariants'
 import type { AgentPart, Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem, ReactForm, ReactQuestion } from '@/lib/shared/types'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
 import type { AgentInteraction, ReferenceInput } from '@/lib/api/apiTypes'
+import { localizedErrorText } from '@/lib/api/httpCore'
 
 export const GATE_SHARE_TTL_TIERS = ['1h', '8h', '24h', '72h', '7d'] as const
 export type GateShareTTLTier = (typeof GATE_SHARE_TTL_TIERS)[number]
@@ -121,6 +122,15 @@ export function isShareableInboxItem(item: InboxItem | null | undefined): boolea
 /** Clarify / Inbox review both mint ShareLinkKindReview links — never /gates. */
 export function inboxShareKind(item: InboxItem | null | undefined): 'human_gate' | 'review' {
   return isReviewInboxItem(item) || isClarifyInboxItem(item) ? 'review' : 'human_gate'
+}
+
+/** Public responses carry a machine code in `error` and Chinese copy in `message`. */
+export function publicShareErrorText(body: { error?: string; message?: string }, fallback: string): string {
+  return localizedErrorText(body.error, body.message || body.error || fallback)
+}
+
+function publicShareError(res: Response, body: { error?: string; message?: string }, status?: string) {
+  return Object.assign(new Error(publicShareErrorText(body, status || `${res.status}`)), { status: res.status, body })
 }
 
 const SHARE_API_ERROR_KEYS: Record<string, string> = {
@@ -651,10 +661,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicGatePreview & { error?: string; message?: string }>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -668,10 +675,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicGateUpstreamResult>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -699,10 +703,7 @@ export const publicGateApi = {
         return { ...body, status: 'sandbox_busy' }
       }
       if (!res.ok && res.status !== 409) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return { ...body, status: body.status || (res.status === 409 ? 'used' : body.status) }
     })
@@ -732,10 +733,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -760,7 +758,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult & { discarding?: number }>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), { status: res.status, body })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -774,10 +772,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -791,10 +786,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -808,10 +800,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicGateReplyResult>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -825,10 +814,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicGateArtifactsResult>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -847,10 +833,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicGateArtifactContentResult>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -875,10 +858,7 @@ export const publicGateApi = {
     }).then(async (res) => {
       const body = await readJson<PublicPreviewTicketResult>(res)
       if (!res.ok) {
-        throw Object.assign(new Error(body.message || body.error || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body)
       }
       return body
     })
@@ -894,10 +874,7 @@ export const publicGateApi = {
       const body = await readJson<EmbedTicket & { status?: string; error?: string; message?: string }>(res)
       // A spent or revoked link answers 200 with a status and no ticket.
       if (!res.ok || !body.ticket) {
-        throw Object.assign(new Error(body.message || body.error || body.status || `${res.status}`), {
-          status: res.status,
-          body,
-        })
+        throw publicShareError(res, body, body.status)
       }
       return body
     })

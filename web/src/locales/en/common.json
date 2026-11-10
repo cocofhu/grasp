@@ -361,6 +361,42 @@
     },
     "errors": {
       "secretsKeyMissing": "The server has no encryption key set, so credentials cannot be saved yet. Ask your admin to restart it with the startup script."
+    },
+    "apiErrors": {
+      "agent_data_clear_failed": "Could not clear the agent workspace data.",
+      "agent_data_rename_failed": "Could not rename the agent data.",
+      "agent_not_found": "Agent not found.",
+      "already_done": "This session has already ended.",
+      "audit_required": "Enter your name and comments before submitting.",
+      "csrf": "The request failed a security check. Refresh the page and try again.",
+      "empty_reply": "Add a revision note or an annotation before sending.",
+      "instruction_not_persisted": "The instruction was not saved. Keep your draft and try again.",
+      "invalid_attachment": "An attachment or reference is invalid. Edit it and send again.",
+      "invalid_client_message_id": "The message is missing its stable identity.",
+      "invalid_creation_identity": "The create request is missing its stable identity.",
+      "invalid_request_body": "The request body could not be read.",
+      "invalid_workspace_import": "The import request is invalid.",
+      "invalid_workspace_source": "The workspace source is invalid.",
+      "live_unsupported": "This link does not support Live variants.",
+      "message_not_confirmed": "The message has not been confirmed yet. Retry with the same message.",
+      "nonce": "The request failed a security check. Refresh the page and try again.",
+      "permission_denied": "This link does not allow this action.",
+      "port_not_registered": "The preview port is not registered.",
+      "rate_limited": "Too many requests. Try again shortly.",
+      "review_busy": "A review is in progress. Try again shortly.",
+      "review_session_unavailable": "The upstream review session is unavailable.",
+      "review_validation_failed": "Artifact validation failed. The link is still valid; try again later.",
+      "run_not_found": "This workflow run no longer exists.",
+      "run_read_failed": "Could not read the run record.",
+      "session_cold": "This session has ended.",
+      "unsupported": "This share link does not support this feature.",
+      "unsupported_action": "This review page only supports confirming.",
+      "visitor_required": "The visitor identity is missing. Refresh the page and try again.",
+      "visitors_full": "Too many visitors are chatting. Try again shortly.",
+      "workflow_reference_rename_failed": "Could not rename workflow references.",
+      "workflow_version_required": "Select a published workflow again.",
+      "workspace_import_forbidden": "Import code from within a Solo session.",
+      "workspace_import_unavailable": "Workspace import is not available right now."
     }
   }
 }

@@ -207,7 +207,7 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 	runs, total, err := h.Runs.ListPageByTags(statuses, wf, tags, pg.Page, pg.PageSize, sort, order)
 	if err != nil {
 		_ = c.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取运行记录失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "run_read_failed", "error": "读取运行记录失败: " + err.Error()})
 		return
 	}
 	current := h.runCurrentNodes(runs)

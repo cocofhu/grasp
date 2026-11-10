@@ -143,6 +143,7 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       // non-JSON error body; keep the status line
     }
     if (extra.code === 'secrets_key_missing') msg = i18n.global.t('common.errors.secretsKeyMissing')
+    else msg = localizedErrorText(extra.code, msg)
     throw Object.assign(new Error(msg), { status: res.status, ...extra })
   }
   apiState.online = true
@@ -150,6 +151,16 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   if (writesWorkflowCatalog(method, path)) invalidateWorkflowCatalog()
   if (isMutationMethod(method) && /^(?:\/workspace\/(?:model-configurations|model-connections|credentials)(?:\/|$)|\/workspace\/(?:shared-agent-config|bootstrap-onboarding)$|\/agents(?:$|\/[^/]+$|\/[^/]+\/rename$)|\/agent-teams\/bootstrap$)/.test(path)) invalidateModelCatalog()
   return result
+}
+
+/**
+ * Server error copy is Chinese and often more specific, so the Chinese UI keeps
+ * it; other locales show the translation for a known error code.
+ */
+export function localizedErrorText(code: string | undefined, serverText: string): string {
+  if (!code || i18n.global.locale.value === 'zh-CN') return serverText
+  const key = `common.apiErrors.${code}`
+  return i18n.global.te(key) ? i18n.global.t(key) : serverText
 }
 
 /** Successful writes that publish or change the workflow directory. */
