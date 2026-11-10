@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复 Agent 测试对话、PM 对话和评论钉输入框在输入法确认候选词时按回车会直接发送的问题，与其余聊天输入框一致。
+
 ## 3.4.0 — 2026-11-09
 
 - 清理版启动脚本与 Compose 默认使用 v3.4 镜像；已有 v3.2 数据须先完成 v3.3 迁移及必要的主存储核验。

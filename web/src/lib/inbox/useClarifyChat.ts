@@ -56,6 +56,7 @@ import {
   rejectOptimisticSend,
 } from '@/lib/chat/dialogueStore'
 import { render, type DialogueQueueRow, type DialogueRow, type DialogueVersion } from '@/lib/chat/dialogueState'
+import { isComposingKey } from '@/lib/chat/composerKeys'
 import {
   isSettled, isStopping, pruneQueueOverlay, retryAttemptRows, retryTakenOver, settleRows, visibleOrphan, visibleQueue,
   type QueueOverlay,
@@ -907,9 +908,7 @@ async function sendFromComposer(): Promise<boolean> {
 }
 
 function onComposerKeydown(e: KeyboardEvent) {
-  if (e.key !== 'Enter' || e.shiftKey) return
-  // IME: composition Enter / keyCode 229 must not send (prevents double-fire).
-  if (composing.value || e.isComposing || e.keyCode === 229) return
+  if (e.key !== 'Enter' || e.shiftKey || isComposingKey(e, composing.value)) return
   e.preventDefault()
   send()
 }

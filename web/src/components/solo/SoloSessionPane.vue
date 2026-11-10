@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import ArtifactFileAttachments from '@/components/chat/ArtifactFileAttachments.vue'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, toRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowReactive, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import AppModal from '@/components/ui/AppModal.vue'
 import AppDrawer from '@/components/ui/AppDrawer.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
@@ -54,7 +53,6 @@ const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof solo
 const emit = defineEmits<{ back: []; ready: []; workflowOpened: [] }>()
 const { t, te, locale } = useI18n()
 const { worktreeMode } = useExecutionMode()
-const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
 const workflowPanel = ref<InstanceType<typeof SoloWorkflowPanel> | null>(null)
@@ -147,11 +145,7 @@ async function loadEarlier() {
   await nextTick()
   if (scroller.value) scroller.value.scrollTop = top + scroller.value.scrollHeight - height
 }
-const confirmClose = ref(false)
-const confirmDelete = ref(false)
-const moreOpen = ref(false)
 const limitOpen = ref(false)
-const closing = ref(false)
 const environmentBusy = ref(false)
 const stoppedEnvironment = computed(() => status.value === 'stopped')
 const environmentStopPending = computed(() => session.value?.sandbox?.desiredState === 'stopped' && !stoppedEnvironment.value)
@@ -273,11 +267,13 @@ function asideReferences(turn: { text?: string; references?: MessageReference[] 
   if (!refs.length || !turn.text) return refs
   return inlineReferences(turn.text, refs, (r) => referenceLabel(r, defaultRepo.value)).rest
 }
+/** Preview elements one Solo message can carry. */
+const MAX_PICKS = 8
 const picks = ref<ReactAnnotation[]>([])
 const canSubmit = computed(() => !!input.value.trim() || !!attach.attachments.value.length || !!mention.refs.value.length || !!picks.value.length)
 
 function addPick(payload: AppPreviewPickPayload) {
-  appendPreviewPick(picks.value, payload, 8)
+  appendPreviewPick(picks.value, payload, MAX_PICKS)
 }
 defineExpose({ addPick })
 
@@ -304,7 +300,7 @@ async function send() {
   if (!ok && !pendingConfirmation?.value.length) {
     restore()
     attach.attachments.value = images
-    picks.value = [...selected, ...picks.value].slice(0, 8)
+    picks.value = [...selected, ...picks.value].slice(0, MAX_PICKS)
   }
   scrollDown(true)
 }
@@ -338,27 +334,13 @@ async function editQueued(index: number) {
     const itemMessage = readPreviewMessage(item.text, item.annotations)
     const draft = input.value.trim()
     const text = [itemMessage.text, draft].filter(Boolean).join('\n')
-    picks.value = [...itemMessage.annotations, ...picks.value].slice(0, 8)
+    picks.value = [...itemMessage.annotations, ...picks.value].slice(0, MAX_PICKS)
     mention.load(text, [...(item.references || []), ...mention.refs.value])
     attach.attachments.value = [...item.images, ...attach.attachments.value]
     void nextTick(() => textareaComponent.value?.resize())
   } finally {
     editingQueued = false
   }
-}
-
-async function doClose() {
-  closing.value = true
-  const ok = await chat.close()
-  closing.value = false
-  if (ok) confirmClose.value = false
-}
-
-async function pushThenStay() {
-  confirmClose.value = false
-  mention.clear()
-  await chat.send(t('pages.solo.close.pushPrompt'))
-  scrollDown(true)
 }
 
 async function doRestart() {
@@ -377,24 +359,6 @@ async function doRestart() {
     restarting.value = false
   }
 }
-
-async function doDelete() {
-  confirmDelete.value = false
-  try {
-    await api.deleteSoloSession(props.sessionId)
-    store.remove(props.sessionId)
-    void router.push('/dashboard')
-  } catch (e) {
-    actionError.value = soloErrorText(e, t, te, locale.value)
-  }
-}
-
-function onDocPointer(e: Event) {
-  const el = e.target as HTMLElement
-  if (moreOpen.value && !el.closest?.('[data-solo-more]')) moreOpen.value = false
-}
-onMounted(() => document.addEventListener('pointerdown', onDocPointer))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointer))
 
 function turnInterrupted(turn: { status?: string; error?: string; streaming: boolean }) {
   return !turn.streaming && (turn.status === 'stopped' || turn.status === 'failed' || !!turn.error)
@@ -656,42 +620,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <AppDrawer :open="workspaceSnapshotsOpen" :title="t('workspaceSnapshots.title')" :width="620" @close="workspaceSnapshotsOpen = false"><SoloWorkspaceSnapshots v-if="workspaceSnapshotsOpen" :key="props.sessionId" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" /></AppDrawer>
       <AppDrawer :open="environmentReleaseOpen" :title="t('workspaceRelease.title')" :width="480" @close="environmentReleaseOpen = false"><SoloEnvironmentRelease v-if="environmentReleaseOpen" :key="props.sessionId" v-model:draft="environmentReleaseDraft" :session-id="props.sessionId" @changed="chat.load()" /></AppDrawer>
 
-      <AppModal :open="confirmClose" :title="t('pages.solo.close.title')" :width="460" close-on-esc @close="confirmClose = false">
-        <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-close-modal">
-          <div class="flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">
-            <Icon name="alert" :size="14" class="mt-0.5 shrink-0" />
-            <span>{{ t('pages.solo.close.body') }}</span>
-          </div>
-          <p v-if="busy">{{ t('pages.solo.close.busy') }}</p>
-          <button
-            v-if="repos.length && status === 'running'"
-            type="button"
-            class="solo-push-hint"
-            data-testid="solo-close-push"
-            @click="pushThenStay"
-          >
-            <Icon name="git" :size="15" class="shrink-0 text-accent" />
-            <span class="min-w-0 flex-1 text-left">
-              <span class="block font-medium text-txt">{{ t('pages.solo.close.pushFirst') }}</span>
-              <span class="block text-[11.5px] text-txt3">{{ t('pages.solo.close.pushFirstHint') }}</span>
-            </span>
-            <Icon name="chevron-right" :size="14" class="shrink-0 text-txt3" />
-          </button>
-        </div>
-        <template #footer>
-          <AppButton variant="ghost" @click="confirmClose = false">{{ t('common.buttons.cancel') }}</AppButton>
-          <AppButton variant="danger" icon="stop" :loading="closing" data-testid="solo-close-confirm" @click="doClose">{{ t('pages.solo.close.confirm') }}</AppButton>
-        </template>
-      </AppModal>
-
-      <AppModal :open="confirmDelete" :title="t('pages.solo.delete.title')" :width="420" close-on-esc @close="confirmDelete = false">
-        <p class="text-[13px] text-txt2">{{ closed ? t('pages.solo.delete.body') : t('pages.solo.delete.bodyActive') }}</p>
-        <template #footer>
-          <AppButton variant="ghost" @click="confirmDelete = false">{{ t('common.buttons.cancel') }}</AppButton>
-          <AppButton variant="danger" icon="trash" data-testid="solo-delete-confirm" @click="doDelete">{{ t('pages.solo.delete.confirm') }}</AppButton>
-        </template>
-      </AppModal>
-
       <SoloLimitModal :open="limitOpen" @close="limitOpen = false" @freed="limitOpen = false; doRestart()" />
       <ChatImagePreviewModal :open="!!imagePreview" :src="imagePreview?.src || ''" :label="imagePreview?.label || ''" @close="closeChatImagePreview" />
       </template>
@@ -758,19 +686,5 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
   border: 1px dashed rgb(var(--c-line));
   border-radius: 12px;
   padding: 12px 14px;
-}
-.solo-push-hint {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 10px;
-  padding: 10px 12px;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-.solo-push-hint:hover {
-  border-color: rgb(var(--c-accent) / 0.4);
-  background: rgb(var(--c-accent) / 0.05);
 }
 </style>
