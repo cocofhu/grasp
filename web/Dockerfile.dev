@@ -9,7 +9,8 @@ WORKDIR /web
 # 不被源码 bind mount 覆盖(见 docker-compose.yml)。卷建好后不会再从镜像刷新,
 # 由 dev-entrypoint.sh 在启动时按锁文件哈希补装。
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci --no-audit --no-fund \
+COPY npm-ci.sh /usr/local/bin/grasp-npm-ci
+RUN sh /usr/local/bin/grasp-npm-ci \
   && cat package.json package-lock.json | sha256sum | cut -d' ' -f1 > node_modules/.grasp-deps-hash
 
 COPY dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
