@@ -225,8 +225,8 @@ func TestSandboxListGetView(t *testing.T) {
 	s := newSandboxService(t, db, ds)
 	ctx := context.Background()
 
-	if _, err := s.Get(999); err == nil {
-		t.Fatal("get missing should error")
+	if _, err := s.Get(999); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("get missing should preserve its error type: %v", err)
 	}
 	if _, err := s.GetView(ctx, 999); err == nil {
 		t.Fatal("getview missing should error")

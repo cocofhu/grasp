@@ -359,7 +359,7 @@ func (s *SandboxService) List(ctx context.Context) ([]SandboxView, error) {
 func (s *SandboxService) Get(id uint) (*models.Sandbox, error) {
 	var row models.Sandbox
 	if err := s.db.First(&row, id).Error; err != nil {
-		return nil, fmt.Errorf("not found")
+		return nil, fmt.Errorf("get sandbox %d: %w", id, err)
 	}
 	return &row, nil
 }
