@@ -1,4 +1,4 @@
-import { Marked, Renderer, marked } from 'marked'
+import { Marked, Renderer, marked, type MarkedOptions } from 'marked'
 import DOMPurify from 'dompurify'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -157,6 +157,18 @@ function escapeHtmlText(src: string): string {
  * markdown. Artifact preview and node output keep using renderMarkdown.
  */
 const chatMarked = new Marked({ breaks: true, gfm: true })
+
+type ChatMarkdownOptions = MarkedOptions & { imageBase?: string }
+
+/** A local Agent path belongs to its environment, not the Grasp web root. */
+function chatImageHref(href: string, imageBase?: string): string {
+  if (!imageBase || /^(?:https?:|data:|blob:|\/\/|\/api\/|\/public\/)/i.test(href)) return href
+  let path = href.replace(/^file:\/\//i, '').replace(/^sandbox:/i, '')
+  if (!path || /^[a-z][a-z\d+.-]*:/i.test(path) || /^[?#]/.test(path)) return href
+  try { path = decodeURIComponent(path) } catch { return href }
+  return `${imageBase}${imageBase.includes('?') ? '&' : '?'}path=${encodeURIComponent(path)}`
+}
+
 chatMarked.use({
   tokenizer: {
     url(src: string) {
@@ -169,6 +181,10 @@ chatMarked.use({
     },
     link(token) {
       return Renderer.prototype.link.call(this, token).replace(/^<a /, '<a target="_blank" rel="noopener noreferrer" ')
+    },
+    image(token) {
+      const href = chatImageHref(token.href, (this.options as ChatMarkdownOptions).imageBase)
+      return Renderer.prototype.image.call(this, { ...token, href })
     },
   },
   extensions: [
@@ -208,8 +224,8 @@ const CHAT_SANITIZE = { ADD_ATTR: ['target'] }
  * ReAct assistant markdown. Script, style, iframe, noscript and xmp keep
  * their inner text instead of being deleted with the tag.
  */
-export function renderChatMarkdown(src: string): string {
-  const key = src ?? ''
+export function renderChatMarkdown(src: string, imageBase?: string): string {
+  const key = `${imageBase ?? ''}\u0000${src ?? ''}`
   const hit = chatHtmlCache.get(key)
   if (hit !== undefined) {
     chatHtmlCache.delete(key)
@@ -217,7 +233,7 @@ export function renderChatMarkdown(src: string): string {
     return hit
   }
   parseCount += 1
-  const raw = chatMarked.parse(key, { async: false }) as string
+  const raw = chatMarked.parse(src ?? '', { async: false, imageBase } as ChatMarkdownOptions) as string
   const html = DOMPurify.sanitize(raw, CHAT_SANITIZE)
   chatHtmlCache.set(key, html)
   if (chatHtmlCache.size > CACHE_MAX) {
@@ -228,18 +244,18 @@ export function renderChatMarkdown(src: string): string {
 }
 
 /** Block renderer for ReAct assistant streams. Same escaping as renderChatMarkdown. */
-export function renderChatMarkdownBlocks(src: string, cache: MarkdownBlockCache): string[] {
+export function renderChatMarkdownBlocks(src: string, cache: MarkdownBlockCache, imageBase?: string): string[] {
   const tokens = chatMarked.lexer(src ?? '')
   const out: string[] = []
   const used = new Set<string>()
   for (const tok of tokens) {
     if (tok.type === 'space') continue
-    const key = `${tok.type}\u0000${tok.raw}`
+    const key = `${imageBase ?? ''}\u0000${tok.type}\u0000${tok.raw}`
     let html = cache.get(key)
     if (html === undefined) {
       parseCount += 1
       const list = Object.assign([tok], { links: tokens.links }) as unknown as Parameters<typeof chatMarked.parser>[0]
-      html = DOMPurify.sanitize(chatMarked.parser(list) as string, CHAT_SANITIZE)
+      html = DOMPurify.sanitize(chatMarked.parser(list, { ...chatMarked.defaults, imageBase } as ChatMarkdownOptions) as string, CHAT_SANITIZE)
       cache.set(key, html)
     }
     used.add(key)

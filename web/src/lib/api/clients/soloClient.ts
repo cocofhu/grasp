@@ -19,6 +19,8 @@ import type { EmbedTicket } from '../../inbox/embedChat'
 
 const enc = encodeURIComponent
 
+export const soloImageBase = (id: string) => `${BASE}/solo/sessions/${enc(id)}/images`
+
 export type ReferenceSearchParams = { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }
 
 export function referenceQuery(params: ReferenceSearchParams) {

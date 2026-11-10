@@ -33,6 +33,7 @@ import SoloEnvironmentRelease, { type EnvironmentReleaseDraft } from './SoloEnvi
 import { useWorkflowFeature } from '@/lib/composables/useWorkflowFeature'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
+import { soloImageBase } from '@/lib/api/clients/soloClient'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
 import { inlineReferences, referenceLabel } from '@/lib/solo/referenceTokens'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
@@ -501,6 +502,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 :started-at="turn.startedAt"
                 :ended-at="turn.endedAt"
                 :metadata="turn"
+                :image-base="embedded ? undefined : soloImageBase(sessionId)"
                 quiet-thought
                 message-test-id="solo-agent-message"
                 @process-open="turn.historyMessageId && !chat.processPages.value[turn.historyMessageId] && chat.loadProcess(turn)"
