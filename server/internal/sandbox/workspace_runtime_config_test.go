@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -74,6 +75,69 @@ func TestWorkspaceRuntimeEnvRejectsInvalidPlatformConfiguration(t *testing.T) {
 			manager := &Manager{workspaceOperations: cfg}
 			if err := manager.prepareWorkspaceRuntimeEnv(map[string]string{}, resource, ""); err == nil {
 				t.Fatal("bad platform tuple accepted", kind)
+			}
+		})
+	}
+}
+func TestRecoverWorkspaceRuntimeUpdatesAStaleBundleOnceBeforeObservingAgain(t *testing.T) {
+	limits := defaultWorkspaceRuntimeLimits()
+	head := WorkspaceBindingHead{Version: 1, Resource: "actual-provider-resource", Lineage: "fixed-startup-lineage", Reference: WorkspaceBindingReference{ID: "original-native-head", Revision: 1}, Target: WorkspaceBindingSelector{Kind: "original"}}
+	canonical, _ := json.Marshal(head)
+	hash := sha256.Sum256(canonical)
+	head.Reference.Fingerprint = hex.EncodeToString(hash[:])
+	for _, kind := range []string{"stale", "current"} {
+		t.Run(kind, func(t *testing.T) {
+			var fixed atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/login":
+					http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "synthetic-session"})
+				case "/api/workspace/binding/capabilities":
+					_ = json.NewEncoder(w).Encode(WorkspaceBindingCapabilities{Version: 1, Resource: head.Resource, Lineage: head.Lineage, Activate: true, Return: true, DurableHead: true, PortOwnership: true})
+				case "/api/workspace/binding/head":
+					if !fixed.Load() {
+						w.WriteHeader(409)
+						_ = json.NewEncoder(w).Encode(map[string]string{"code": "workspace_binding_changed"})
+						return
+					}
+					_ = json.NewEncoder(w).Encode(WorkspaceBindingView{Head: head, Path: "/persistent/original", Ready: true})
+				case "/api/workspace/files/capabilities":
+					_ = json.NewEncoder(w).Encode(WorkspaceFileCapabilities{Version: 1, Limits: limits})
+				default:
+					t.Error("unexpected request", r.Method, r.URL.Path)
+					w.WriteHeader(500)
+				}
+			}))
+			defer server.Close()
+			host, portText, _ := net.SplitHostPort(server.Listener.Addr().String())
+			port, _ := strconv.Atoi(portText)
+			manager, _, version := newRuntimeManager(t)
+			manager.workspaceOperations = copyWorkspaceRuntimeConfig(&WorkspaceRuntimeConfig{Lineage: head.Lineage, Limits: limits})
+			installed := "old"
+			if kind == "current" {
+				installed = version
+			}
+			ssh := &runtimeSSH{replies: map[string]func() ([]byte, error){
+				"version":         reply(installed+"\n", nil),
+				"restart backend": func() ([]byte, error) { fixed.Store(true); return nil, nil },
+			}}
+			installSSH(t, ssh)
+			sb := &Sandbox{ID: head.Resource, Host: host, Port: port, Password: "synthetic-test-password", SSHHost: "h"}
+			err := manager.RecoverWorkspaceRuntime(context.Background(), sb)
+			calls := joined(ssh.take())
+			if kind == "current" {
+				if err == nil || calls != "version" {
+					t.Fatal("current runtime was restarted or hid the failure", calls, err)
+				}
+				return
+			}
+			if err != nil || calls != "version,install-stdin,restart preview-inject,restart backend" || sb.ActiveWorkspaceFingerprint() != head.Reference.Fingerprint {
+				t.Fatal("stale runtime not healed", calls, err)
+			}
+			fixed.Store(false)
+			if err := manager.RecoverWorkspaceRuntime(context.Background(), sb); err == nil || len(ssh.take()) != 0 {
+				t.Fatal("updated runtime was pushed or restarted again", err)
 			}
 		})
 	}

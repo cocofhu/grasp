@@ -405,13 +405,12 @@ describe('AppSidebarNav', () => {
     expect(document.querySelector('[data-testid="nav-pending-menu-workflow"]')).toBeNull()
     expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeNull()
     expect(document.querySelector('[data-testid="nav-pending-menu-rename"]')).toBeTruthy()
-    expect(document.querySelector('[data-testid="nav-pending-menu-cancel"]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="nav-pending-menu-cancel"]')).toBeNull()
     expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map((el) => el.getAttribute('data-testid'))).toEqual([
       'nav-pending-menu-pin',
       'nav-pending-menu-rename',
       'nav-solo-menu-snapshots',
       'nav-solo-menu-environment',
-      'nav-pending-menu-cancel',
     ])
     expect(document.querySelector('[data-testid="nav-solo-menu-environment"]')?.hasAttribute('disabled')).toBe(true)
     wrapper.unmount()
@@ -439,80 +438,6 @@ describe('AppSidebarNav', () => {
     wrapper.unmount()
   })
 
-  it('dismisses Solo close immediately, keeps other rows usable and finishes after the drawer unmounts', async () => {
-    const session = soloSession()
-    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [session, soloSession({ id: 'solo-2', title: '另一个会话' })], maxSandboxes: 5 })
-    let finish!: (session: SoloSession) => void
-    apiMocks.closeSoloSession.mockReturnValue(new Promise(resolve => { finish = resolve }))
-    const wrapper = mountNav(true)
-    await flushPromises()
-    const row = wrapper.get('[data-kind="solo"][data-key="solo-1"]')
-    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
-    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
-    await nextTick()
-    ;(document.querySelector('[data-testid="nav-solo-close-confirm"]') as HTMLButtonElement).click()
-    await nextTick()
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
-    expect(apiMocks.closeSoloSession).toHaveBeenCalledExactlyOnceWith('solo-1')
-    expect(row.get('[data-testid="nav-solo-closing"]').text()).toBe('正在关闭…')
-    expect(useSoloSessions().sessions.value.find(s => s.id === session.id)?.status).toBe('running')
-    expect(useToast().toasts.value).toEqual([expect.objectContaining({ sticky: true, type: 'default', message: expect.stringContaining('正在关闭') })])
-
-    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
-    expect((document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).disabled).toBe(true)
-    expect((document.querySelector('[data-testid="nav-solo-menu-environment"]') as HTMLButtonElement).disabled).toBe(true)
-    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
-    expect(apiMocks.closeSoloSession).toHaveBeenCalledTimes(1)
-    await wrapper.get('[data-kind="solo"][data-key="solo-2"]').trigger('click')
-    expect(routerMocks.push).toHaveBeenLastCalledWith('/solo/solo-2')
-    wrapper.unmount()
-
-    finish({ ...session, status: 'closed' })
-    await flushPromises()
-    expect(useSoloSessions().closing.value.size).toBe(0)
-    expect(useSoloSessions().ended.value.some(s => s.id === session.id)).toBe(true)
-    expect(useToast().toasts.value).toEqual([expect.objectContaining({ type: 'success', message: expect.stringContaining('已关闭') })])
-  })
-
-  it('reconciles a failed Solo close without reopening the modal or reporting success', async () => {
-    const session = soloSession()
-    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [session], maxSandboxes: 5 })
-    let fail!: (cause: Error) => void
-    apiMocks.closeSoloSession.mockReturnValue(new Promise((_, reject) => { fail = reject }))
-    const wrapper = mountNav(true)
-    await flushPromises()
-    await wrapper.get('[data-kind="solo"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
-    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
-    await nextTick()
-    ;(document.querySelector('[data-testid="nav-solo-close-confirm"]') as HTMLButtonElement).click()
-    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [{ ...session, status: 'closed', error: '环境停止尚未确认' }], maxSandboxes: 5 })
-    fail(new Error('环境停止尚未确认'))
-    await flushPromises()
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
-    expect(useSoloSessions().closing.value.size).toBe(0)
-    expect(useSoloSessions().sessions.value[0]?.status).toBe('closed')
-    expect(useToast().toasts.value).toEqual([expect.objectContaining({ type: 'error', message: '环境停止尚未确认' })])
-    expect(apiMocks.closeSoloSession).toHaveBeenCalledTimes(1)
-    wrapper.unmount()
-  })
-
-  it.each(['Escape', 'close', 'cancel'])('dismisses Solo close with %s without sending a request', async (action) => {
-    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession()], maxSandboxes: 5 })
-    const wrapper = mountNav(true)
-    await flushPromises()
-    await wrapper.get('[data-kind="solo"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
-    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
-    await nextTick()
-    const dialog = document.querySelector('[role="dialog"]')!
-    if (action === 'Escape') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    else if (action === 'close') (dialog.querySelector('[aria-label="关闭"]') as HTMLButtonElement).click()
-    else ([...dialog.querySelectorAll('button')].find(button => button.textContent?.trim() === '取消') as HTMLButtonElement).click()
-    await nextTick()
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
-    expect(apiMocks.closeSoloSession).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
   it('stops and resumes the selected environment and prevents duplicate requests', async () => {
     const session = soloSession()
     apiMocks.listSoloSessions.mockResolvedValue({ sessions: [session], maxSandboxes: 5 })
@@ -528,12 +453,17 @@ describe('AppSidebarNav', () => {
     stop.click()
     await flushPromises()
     expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledExactlyOnceWith('solo-1')
+    expect(row.get('[data-testid="nav-solo-environment-phase"]').text()).toBe('正在停止…')
+    expect(row.attributes('data-motion')).toBe('spin')
     const pending = await open()
     expect(pending.disabled).toBe(true)
+    expect(pending.textContent).toContain('正在停止…')
+    expect(pending.getAttribute('aria-busy')).toBe('true')
     pending.click()
     expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledTimes(1)
     stopped({ ...session, status: 'stopped', waiting: 1 })
     await flushPromises()
+    expect(row.find('[data-testid="nav-solo-environment-phase"]').exists()).toBe(false)
     const resume = await open()
     expect(resume.textContent).toContain('恢复环境')
     expect(resume.disabled).toBe(false)
@@ -542,6 +472,19 @@ describe('AppSidebarNav', () => {
     expect(apiMocks.resumeSoloEnvironment).toHaveBeenCalledExactlyOnceWith('solo-1')
     expect(useSoloSessions().sessions.value.find(s => s.id === 'solo-1')?.status).toBe('running')
     expect(routerMocks.push).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each([
+    { patch: { status: 'running' as const, sandbox: { id: 7, name: 'sbx', status: 'running', desiredState: 'stopped' } }, phase: '正在停止…' },
+    { patch: { status: 'starting' as const, sandbox: { id: 7, name: 'sbx', status: 'stopped', desiredState: 'running' } }, phase: '正在恢复…' },
+  ])('shows the environment still converging on the server: $phase', async ({ patch, phase }) => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession(patch)], maxSandboxes: 5 })
+    const wrapper = mountNav()
+    await flushPromises()
+    const row = wrapper.get('[data-kind="solo"]')
+    expect(row.get('[data-testid="nav-solo-environment-phase"]').text()).toBe(phase)
+    expect(row.attributes('data-motion')).toBe('spin')
     wrapper.unmount()
   })
 
@@ -582,7 +525,7 @@ describe('AppSidebarNav', () => {
     expect(document.activeElement?.getAttribute('data-testid')).toBe('nav-pending-menu-pin')
     await row.trigger('contextmenu', { clientX: window.innerWidth - 2, clientY: window.innerHeight - 2 })
     const menu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
-    expect(Number.parseFloat(menu.style.top)).toBeLessThanOrEqual(window.innerHeight - 186)
+    expect(Number.parseFloat(menu.style.top)).toBeLessThanOrEqual(window.innerHeight - 145)
     wrapper.unmount()
   })
 

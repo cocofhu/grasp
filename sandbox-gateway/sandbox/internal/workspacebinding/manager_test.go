@@ -318,6 +318,71 @@ func TestWorkspaceBindingCommittedHeadAndReturnSurviveProcessRestart(t *testing.
 		t.Fatal("unrelated startup root rebound history", err)
 	}
 }
+func TestWorkspaceBindingRestartAcceptsRemountedVolumeButNotReplacedRoot(t *testing.T) {
+	f := newFixture(t)
+	req := f.request(t, "operation-remount", "activate_workspace", 1, Selector{Kind: "restore", ID: f.restoreID})
+	if row := f.run(t, req); row.State != "completed" {
+		t.Fatal(row)
+	}
+	active, _ := f.manager.Head()
+	reopen := func(mutate func(*checkpoint)) (*Manager, error) {
+		t.Helper()
+		if err := f.jobs.Close(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.manager.Close(); err != nil {
+			t.Fatal(err)
+		}
+		root, err := os.OpenRoot(f.cfg.ControlRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state, err := readCheckpoint(root)
+		if err == nil {
+			mutate(&state)
+			err = writeCheckpoint(root, state)
+		}
+		_ = root.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return New(f.cfg)
+	}
+	var err error
+	f.manager, err = reopen(func(s *checkpoint) {
+		for id, row := range s.Bindings {
+			row.Device += 7
+			s.Bindings[id] = row
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.install(t, nil)
+	if view, err := f.manager.Head(); err != nil || view != active {
+		t.Fatal("remounted volume rejected", view, err)
+	}
+	f.jobs, err = workspacejob.New(f.jobCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.manager, err = reopen(func(s *checkpoint) {
+		row := s.Bindings[s.HeadID]
+		row.Inode++
+		s.Bindings[s.HeadID] = row
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.install(t, nil)
+	if _, err := f.manager.Head(); !errors.Is(err, ErrConflict) {
+		t.Fatal("replaced root accepted after restart", err)
+	}
+	f.jobs, err = workspacejob.New(f.jobCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 func TestWorkspaceBindingRequiresCompleteConsumersAndConfinedRestoredTarget(t *testing.T) {
 	f := newFixture(t)
 	f.manager.mu.Lock()
