@@ -173,6 +173,16 @@ class LocalObjectStorageTests(unittest.TestCase):
         self.assertEqual(target.stat().st_uid, 0)
         self.assertEqual(target.read_bytes(), b"outside payload")
 
+    def test_default_image_comes_from_the_shared_compose_file(self):
+        result = subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", 'cd /; source "$1"; printf %s "$GRASP_LOCAL_OBJECTSTORE_IMAGE"', "test", str(SCRIPT)],
+            env=self.env, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        shared = (ROOT / "compose.objectstore.yaml").read_text()
+        self.assertIn("@sha256:", result.stdout)
+        self.assertIn("${GRASP_LOCAL_OBJECTSTORE_IMAGE:-" + result.stdout + "}", shared)
+
     @unittest.skipUnless(subprocess.run(["sh", "-c", "command -v docker >/dev/null"], check=False).returncode == 0,
                          "Docker CLI is needed to validate Compose configuration")
     def test_release_and_source_compose_use_the_same_loopback_only_store(self):

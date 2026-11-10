@@ -2,7 +2,10 @@
 # Sourced by start.sh. Bundled SeaweedFS requires an explicit local-storage
 # selection; a missing cloud endpoint never selects a new store by itself.
 
-export GRASP_LOCAL_OBJECTSTORE_IMAGE="${GRASP_LOCAL_OBJECTSTORE_IMAGE:-chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0}"
+local_objectstore_default_image() {
+  sed -n 's/^ *image: \${GRASP_LOCAL_OBJECTSTORE_IMAGE:-\(.*\)}$/\1/p' "$(dirname "${BASH_SOURCE[0]}")/../compose.objectstore.yaml"
+}
+export GRASP_LOCAL_OBJECTSTORE_IMAGE="${GRASP_LOCAL_OBJECTSTORE_IMAGE:-$(local_objectstore_default_image)}"
 
 local_objectstore_requested() {
   [[ "${GRASP_STORAGE_DRIVER:-}" == s3 && -z "${GRASP_S3_ENDPOINT:-}" ]]
