@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/filestore"
@@ -17,6 +19,12 @@ import (
 )
 
 func TestHoldSlowPutReleasesSQLAndRenewsBeyondOriginalLease(t *testing.T) {
+	// Only blocked goroutines advance the bubble's clock: a loaded CI runner
+	// must not consume this positive fixture's deliberately short owner lease.
+	synctest.Test(t, testHoldSlowPutReleasesSQLAndRenewsBeyondOriginalLease)
+}
+
+func testHoldSlowPutReleasesSQLAndRenewsBeyondOriginalLease(t *testing.T) {
 	db, m, objects, _ := holdFixture(t, func(o *Options) { o.LeaseTTL = 300 * time.Millisecond; o.RenewInterval = 40 * time.Millisecond })
 	ctx := context.Background()
 	readyID := holdIdentity("ready-first")
@@ -33,6 +41,15 @@ func TestHoldSlowPutReleasesSQLAndRenewsBeyondOriginalLease(t *testing.T) {
 	plan := holdPlan(t, m, "slow archive publication")
 	lease, err := m.BeginHold(ctx, id, plan)
 	if err != nil {
+		t.Fatal(err)
+	}
+	var renewals atomic.Int32
+	if err := db.Callback().Update().After("gorm:update").Register("test:slow-put-renewal", func(tx *gorm.DB) {
+		changes, ok := tx.Statement.Dest.(map[string]any)
+		if ok && tx.Statement.Table == "payload_upload_holds" && changes["expires_at"] != nil && tx.Error == nil && tx.RowsAffected == 1 {
+			renewals.Add(1)
+		}
+	}); err != nil {
 		t.Fatal(err)
 	}
 	started, release := make(chan struct{}), make(chan struct{})
@@ -58,22 +75,35 @@ func TestHoldSlowPutReleasesSQLAndRenewsBeyondOriginalLease(t *testing.T) {
 		t.Fatal("PUT never started")
 	}
 	probe, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
 	if _, err := m.Get(probe, id); err != nil {
+		cancel()
 		t.Fatalf("upload held the sole SQL connection: %v", err)
 	}
+	cancel()
+	probe, cancel = context.WithTimeout(ctx, time.Second)
 	if err := db.WithContext(probe).Transaction(func(tx *gorm.DB) error { _, err := m.CommitPinTx(tx, readyLease, readyProof); return err }); err != nil {
+		cancel()
 		t.Fatalf("blocked PUT held the final metadata publication: %v", err)
 	}
+	cancel()
 	// Wait past the acknowledged original expiry, while renewals use the same
 	// one-connection pool that the upload would otherwise occupy.
 	timer := time.NewTimer(time.Until(lease.data.expiresAt) + 80*time.Millisecond)
 	defer timer.Stop()
 	<-timer.C
+	probe, cancel = context.WithTimeout(ctx, time.Second)
 	row, err := m.Get(probe, id)
+	cancel()
 	if err != nil || !row.ExpiresAt.After(time.Now()) || !row.ExpiresAt.After(lease.data.expiresAt) {
 		t.Fatalf("network streaming prevented lease renewal: %+v %v", row, err)
 	}
+	if renewals.Load() < 5 || !row.Deadline.Equal(lease.data.deadline) || !row.IntentDeadline.Equal(id.Deadline) {
+		t.Fatalf("upload did not repeatedly renew the original bounded lease: renewals=%d deadline=%s original=%s", renewals.Load(), row.Deadline, lease.data.deadline)
+	}
+	if time.Now().Before(lease.data.expiresAt) || time.Until(row.ExpiresAt) < m.options.LeaseTTL/2 {
+		t.Fatalf("upload did not cross the original expiry with safe confirmed renewal time: now=%s original=%s live=%s", time.Now(), lease.data.expiresAt, row.ExpiresAt)
+	}
+	t.Logf("crossed original expiry with %d successful renewal updates, %s remaining, original overall deadline retained", renewals.Load(), time.Until(row.ExpiresAt))
 	select {
 	case err := <-done:
 		t.Fatalf("live renewed upload ended early: %v", err)
