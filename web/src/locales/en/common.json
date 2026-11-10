@@ -31,7 +31,9 @@
       "skipped": "Skipped",
       "published": "Published",
       "draft": "Draft",
-      "paused": "Paused"
+      "paused": "Paused",
+      "saving": "Saving workspace",
+      "save_failed": "Save failed"
     },
     "priority": {
       "label": "Priority",

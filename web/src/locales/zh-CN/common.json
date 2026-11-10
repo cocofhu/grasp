@@ -31,7 +31,9 @@
       "skipped": "已跳过",
       "published": "已发布",
       "draft": "草稿",
-      "paused": "已暂停"
+      "paused": "已暂停",
+      "saving": "保存工作区中",
+      "save_failed": "保存失败"
     },
     "priority": {
       "label": "优先级",

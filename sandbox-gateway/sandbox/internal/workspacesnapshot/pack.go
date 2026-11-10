@@ -21,7 +21,9 @@ func (e *Engine) pack(ctx context.Context, h *workspacejob.Handle, stage *os.Roo
 		oids[repo.value.HEAD] = true
 	}
 	for _, ref := range repo.value.Refs {
-		oids[ref.OID] = true
+		if ref.OID != "" {
+			oids[ref.OID] = true
+		}
 	}
 	for _, entry := range repo.value.Index {
 		if entry.Mode != "160000" {

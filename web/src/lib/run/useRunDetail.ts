@@ -586,8 +586,11 @@ let clock: number | undefined
 
 onMounted(async () => {
   await loadRun(true)
+  let ticks = 0
   clock = window.setInterval(() => {
     if (ACTIVE.includes(run.value.status)) nowMs.value = Date.now()
+    // A workspace save moves the run on without a socket frame; follow it.
+    if (run.value.workspaceSave?.state === 'saving' && ++ticks % 3 === 0 && !runLoading.value && !document.hidden) void loadRun(false, true)
   }, 1000)
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onFocusRefresh)

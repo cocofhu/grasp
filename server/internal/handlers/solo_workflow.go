@@ -42,6 +42,7 @@ func (h *Handlers) ListSoloWorkflows(c *gin.Context) {
 		}
 		cards = append(cards, card)
 	}
+	h.withWorkspaceSaves(cards, runs)
 	feature, err := services.WorkflowFeatureFor(h.Runs.DB())
 	if err != nil {
 		writeAdmissionErr(c, err)

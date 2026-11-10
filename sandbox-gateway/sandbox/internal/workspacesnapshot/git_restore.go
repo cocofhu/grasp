@@ -41,13 +41,22 @@ func (e *Engine) restoreGit(ctx context.Context, h *workspacejob.Handle, target,
 		return err
 	}
 	defer func() { _ = git.Close() }()
-	if len(repo.Refs) > 0 {
-		var refs strings.Builder
-		for _, ref := range repo.Refs {
+	var refs strings.Builder
+	for _, ref := range repo.Refs {
+		if ref.Target == "" {
 			fmt.Fprintf(&refs, "create %s %s\n", ref.Name, ref.OID)
 		}
+	}
+	if refs.Len() > 0 {
 		if _, err := e.git(ctx, h, descriptor(dir), strings.NewReader(refs.String()), nil, nil, "update-ref", "--stdin"); err != nil {
 			return err
+		}
+	}
+	for _, ref := range repo.Refs {
+		if ref.Target != "" {
+			if _, err := e.git(ctx, h, descriptor(dir), nil, nil, nil, "symbolic-ref", "--", ref.Name, ref.Target); err != nil {
+				return err
+			}
 		}
 	}
 	head := repo.HEAD + "\n"

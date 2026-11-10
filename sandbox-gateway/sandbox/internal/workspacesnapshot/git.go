@@ -114,6 +114,7 @@ func (e *Engine) repositoryPaths(name string, work *os.Root) (gitPath, commonPat
 
 func readRefs(root *os.Root, limit int) ([]GitRef, error) {
 	refs := map[string]string{}
+	symbolic := map[string]string{}
 	packed, err := readSmall(root, "packed-refs", 16<<20)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -139,16 +140,29 @@ func readRefs(root *os.Root, limit int) ([]GitRef, error) {
 			if entry.IsDir() {
 				return nil
 			}
-			if !validRef(name) || len(refs) >= limit {
+			if !validRef(name) {
 				return ErrGitUnsupported
+			}
+			if len(refs)+len(symbolic) >= limit {
+				return ErrLimit
 			}
 			data, err := readSmall(root, name, 4096)
-			if err != nil || !oidPattern.MatchString(strings.TrimSpace(string(data))) {
-				// Symbolic non-HEAD refs are deliberately unsupported until they
-				// have an explicit validated representation, never copied raw.
+			if err != nil {
+				return err
+			}
+			value := strings.TrimSpace(string(data))
+			if target, ok := strings.CutPrefix(value, "ref: "); ok {
+				if !validRef(target) || target == name {
+					return ErrGitUnsupported
+				}
+				delete(refs, name)
+				symbolic[name] = target
+				return nil
+			}
+			if !oidPattern.MatchString(value) {
 				return ErrGitUnsupported
 			}
-			refs[name] = strings.TrimSpace(string(data))
+			refs[name] = value
 			return nil
 		})
 		if err != nil {
@@ -157,12 +171,15 @@ func readRefs(root *os.Root, limit int) ([]GitRef, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if len(refs) > limit {
+	if len(refs)+len(symbolic) > limit {
 		return nil, ErrLimit
 	}
-	values := make([]GitRef, 0, len(refs))
+	values := make([]GitRef, 0, len(refs)+len(symbolic))
 	for name, oid := range refs {
 		values = append(values, GitRef{Name: name, OID: oid})
+	}
+	for name, target := range symbolic {
+		values = append(values, GitRef{Name: name, Target: target})
 	}
 	slices.SortFunc(values, func(a, b GitRef) int { return strings.Compare(a.Name, b.Name) })
 	return values, nil
@@ -179,17 +196,29 @@ func resolveHEAD(root *os.Root, refs []GitRef) (head, symbolic string, err error
 		if !validRef(symbolic) || !strings.HasPrefix(symbolic, "refs/heads/") {
 			return "", "", ErrGitUnsupported
 		}
-		for _, ref := range refs {
-			if ref.Name == symbolic {
-				return ref.OID, symbolic, nil
-			}
-		}
-		return "", symbolic, nil // an unborn branch is valid, with no commit
+		// An unborn branch (or one aliased to a missing ref) has no commit.
+		return resolveRef(refs, symbolic), symbolic, nil
 	}
 	if !oidPattern.MatchString(value) {
 		return "", "", ErrGitUnsupported
 	}
 	return value, "", nil
+}
+
+// resolveRef follows symbolic refs the way Git does (bounded depth) and
+// returns "" for a dangling or cyclic chain.
+func resolveRef(refs []GitRef, name string) string {
+	for range 5 {
+		i := slices.IndexFunc(refs, func(ref GitRef) bool { return ref.Name == name })
+		if i < 0 {
+			return ""
+		}
+		if refs[i].Target == "" {
+			return refs[i].OID
+		}
+		name = refs[i].Target
+	}
+	return ""
 }
 
 func (e *Engine) prepareRepository(ctx context.Context, h *workspacejob.Handle, stage *os.Root, name string, number int, expected *os.Root) (_ *liveRepository, retErr error) {

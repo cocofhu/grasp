@@ -8,6 +8,7 @@ import ReviewComposer from '@/components/run/ReviewComposer.vue'
 import ArtifactLoadingPane from '@/components/run/ArtifactLoadingPane.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import AppInlineError from '@/components/ui/AppInlineError.vue'
+import WorkspaceSaveBanner from '@/components/run/WorkspaceSaveBanner.vue'
 import { findGraphNode } from '@/lib/shared/clarifyInteractive'
 import { useRunLive, type LiveChatSurface } from '@/lib/run/useRunLive'
 import { useI18n } from 'vue-i18n'
@@ -112,6 +113,14 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
             <AppInlineError :title="t('pages.runLive.loadFailed')" :message="''" retry-testid="run-live-retry" @retry="reload" />
           </div>
           <div v-else class="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <WorkspaceSaveBanner
+              v-if="run?.workspaceSave"
+              class="m-3 mb-0 shrink-0"
+              :run="run"
+              :save="run.workspaceSave"
+              :node-label="findGraphNode(run.nodes, run.workspaceSave.nodeId)?.label"
+              @retried="reload"
+            />
             <ArtifactLoadingPane v-if="loading && !nodeId" message-key="pages.runLive.loading" />
             <ReviewShell
               v-else

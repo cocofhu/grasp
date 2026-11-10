@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import StatusPill from '@/components/ui/StatusPill.vue'
+import { runDisplayStatus } from '@/lib/run/workspaceSave'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import StatusFilter from '@/components/ui/StatusFilter.vue'
 import WorkflowFilter from '@/components/ui/WorkflowFilter.vue'
@@ -629,7 +630,7 @@ onUnmounted(() => {
                   :class="runTitle(r) ? 'mt-0.5' : 'text-[13px] font-medium'"
                 >#{{ runIdShort(r.id) }}</div>
               </div>
-              <StatusPill :status="r.status" size="sm" />
+              <StatusPill :status="runDisplayStatus(r)" size="sm" />
             </div>
             <div class="flex flex-wrap items-center gap-1.5">
               <PriorityBadge :priority="r.priority" />
@@ -797,7 +798,7 @@ onUnmounted(() => {
                 </td>
                 <td class="px-3 py-2.5">
                   <div class="flex items-center gap-2 whitespace-nowrap">
-                    <StatusPill :status="r.status" size="sm" />
+                    <StatusPill :status="runDisplayStatus(r)" size="sm" />
                     <template v-if="showProgress(r)">
                       <div class="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-elevated">
                         <div class="h-full rounded-full" :class="r.status === 'failed' ? 'bg-err' : r.status === 'cancelled' ? 'bg-txt3' : 'bg-accent'" :style="{ width: r.progress * 100 + '%' }" />

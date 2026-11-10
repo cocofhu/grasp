@@ -219,6 +219,7 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 		}
 		items = append(items, item)
 	}
+	h.withWorkspaceSaves(items, runs)
 	c.JSON(http.StatusOK, paginatedResponse(items, int(total), pg.Page, pg.PageSize))
 }
 

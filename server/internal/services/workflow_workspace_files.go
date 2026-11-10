@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -126,7 +128,10 @@ func (s *WorkflowWorkspaceCheckpoints) RequestCapture(ctx context.Context, row m
 	if duration <= 0 || duration > s.options.MaxDuration {
 		return ErrWorkspaceJobInvalid
 	}
-	nonce := "checkpoint-" + row.ID
+	nonce := row.CaptureNonce
+	if nonce == "" {
+		nonce = "checkpoint-" + row.ID
+	}
 	snapshotID := captureRequestID(row.ActorID, "run", row.RunID, nonce)
 	now := time.Now().UTC()
 	err = s.mutate(ctx, row, func(tx *gorm.DB) error {
@@ -171,6 +176,53 @@ func (s *WorkflowWorkspaceCheckpoints) RequestCapture(ctx context.Context, row m
 	return err
 }
 
+// retryableCapture is a capture whose job definitely ended without producing a
+// snapshot, so a fresh capture under a new request id cannot duplicate one.
+// Ambiguous (unknown) captures still require reconciling the original job.
+func retryableCapture(row models.WorkflowVisitCheckpoint) bool {
+	switch row.Reason {
+	case "snapshot_failed", "snapshot_cancelled", "snapshot_expired":
+		return row.RouteState == "sealed" && row.FileState == "blocked" && row.CaptureStartedAt != nil
+	}
+	return false
+}
+
+func nextCaptureNonce(row models.WorkflowVisitCheckpoint) string {
+	base := "checkpoint-" + row.ID
+	attempt := 1
+	if rest, ok := strings.CutPrefix(row.CaptureNonce, base+"-r"); ok {
+		if n, err := strconv.Atoi(rest); err == nil && n > 0 {
+			attempt = n
+		}
+	}
+	return base + "-r" + strconv.Itoa(attempt+1)
+}
+
+func rearmCaptureTx(tx *gorm.DB, row models.WorkflowVisitCheckpoint) (bool, error) {
+	result := tx.Model(&models.WorkflowVisitCheckpoint{}).
+		Where("id = ? AND route_state = ? AND file_state = ? AND capture_nonce = ?", row.ID, "sealed", "blocked", row.CaptureNonce).
+		Updates(map[string]any{"file_state": "pending", "reason": "", "snapshot_id": "", "binding_fingerprint": "", "capture_nonce": nextCaptureNonce(row), "capture_started_at": nil, "next_probe_at": nil})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// RetryCaptureTx re-arms the run's checkpoint when its capture definitely
+// failed, inside the caller's execution transaction. The engine's checkpoint
+// loop then captures again and routes the run on; false means nothing to retry.
+func (s *WorkflowWorkspaceCheckpoints) RetryCaptureTx(tx *gorm.DB, runID string) (bool, error) {
+	var row models.WorkflowVisitCheckpoint
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("run_id = ? AND route_state = ? AND file_state = ?", runID, "sealed", "blocked").Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil || !retryableCapture(row) {
+		return false, err
+	}
+	return rearmCaptureTx(tx, row)
+}
+
 // Reconcile is explicitly requested. Native uncertainty only goes through the
 // capture facade's GET of the exact original job; no new capture is submitted.
 func (s *WorkflowWorkspaceCheckpoints) Reconcile(ctx context.Context, actor, id string) (models.WorkflowVisitCheckpoint, error) {
@@ -183,6 +235,15 @@ func (s *WorkflowWorkspaceCheckpoints) Reconcile(ctx context.Context, actor, id 
 	}
 	if row.ActorID != actor || row.SnapshotID == "" || row.CaptureStartedAt == nil || s.options.Reconcile == nil {
 		return row, ErrWorkflowCheckpointBlocked
+	}
+	if retryableCapture(row) {
+		if err := s.mutate(ctx, row, func(tx *gorm.DB) error {
+			_, err := rearmCaptureTx(tx, row)
+			return err
+		}); err != nil {
+			return row, err
+		}
+		return s.Get(ctx, id)
 	}
 	if _, err := s.options.Reconcile(ctx, actor, "run", row.RunID, row.SnapshotID); err != nil {
 		return row, err

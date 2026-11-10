@@ -1,8 +1,10 @@
 package handlers
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/cocofhu/grasp/internal/models"
+	"github.com/gin-gonic/gin"
 )
 
 func (h *Handlers) PauseWorkflowRun(c *gin.Context)        { h.controlWorkflowRun(c, false) }
@@ -30,5 +32,7 @@ func (h *Handlers) controlWorkflowRun(c *gin.Context, resume bool) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
 		return
 	}
-	c.JSON(http.StatusOK, runSummaryDTO(run, ""))
+	out := []gin.H{runSummaryDTO(run, "")}
+	h.withWorkspaceSaves(out, []models.Run{run})
+	c.JSON(http.StatusOK, out[0])
 }
