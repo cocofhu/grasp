@@ -264,8 +264,10 @@
       "sessionRepos.ts",
       "soloEmbedClient.ts",
       "soloErrors.ts",
+      "soloModelSettings.ts",
       "soloOutbox.ts",
       "soloPrefs.ts",
+      "soloQueueOrder.ts",
       "useReferenceComposer.ts",
       "useReferenceSearch.ts",
       "useSessionModelCatalog.ts",
@@ -301,7 +303,7 @@
     "pm": 7,
     "run": 76,
     "shared": 40,
-    "solo": 18,
+    "solo": 20,
     "workflow": 3,
     "workspace": 7
   }

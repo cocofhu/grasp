@@ -1,4 +1,3 @@
-import { parseModelRoute } from '@/lib/agent/modelBindings'
 import { computed, onBeforeUnmount, ref, shallowRef, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
@@ -9,6 +8,8 @@ import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { timelineFolds } from '@/lib/run/acpTools'
 import { applyAcp, emptyAgentTurn, partsOf, turnsFromMessages, type SoloTurn } from './acpTurn'
 import { soloErrorText } from './soloErrors'
+import { createSoloModelSettings } from './soloModelSettings'
+import { createSoloQueueOrder } from './soloQueueOrder'
 import { useSoloSessions } from './useSoloSessions'
 import { newSoloRequestID, readSoloOutbox, removeSoloOutbox, saveSoloOutbox, soloOutboxScope, type SoloMessageOutbox, type SoloTurnRequest } from './soloOutbox'
 
@@ -28,10 +29,6 @@ function parseFrame(data: unknown): any {
   } catch {
     return null
   }
-}
-
-function listedEfforts(efforts?: string[]) {
-  return [...new Set((efforts || []).map(value => value.trim()).filter(Boolean))]
 }
 
 function queueItem(raw: any): SoloQueueItem {
@@ -69,18 +66,6 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const session = shallowRef<SoloSession | null>(null)
   const turns = ref<SoloTurn[]>([])
   const queued = ref<SoloQueueItem[]>([])
-  // A drag only reorders the display. queued stays the server order, which
-  // output arriving before turn_begin is attributed to, until queue_state.
-  const orderOverlay = ref<string[] | null>(null)
-  let overlaySeq = 0
-  const displayQueued = computed(() => {
-    const order = orderOverlay.value
-    if (!order) return queued.value
-    const rank = new Map(order.map((id, i) => [id, i]))
-    const server = queued.value.filter((item) => !item.local)
-    const ranked = server.filter((item) => rank.has(item.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
-    return [...ranked, ...server.filter((item) => !rank.has(item.id)), ...queued.value.filter((item) => item.local)]
-  })
   const busy = ref(false)
   const sessionStateCursor = createReviewStateCursor()
   const phase = ref<SoloPhase>('')
@@ -117,14 +102,6 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   let journalVersion = 0
   let resyncs = 0
   let sessionGeneration = 0
-  let settingsEpoch = 0
-  let settingSequence = 0
-  let pendingSettings = 0
-  let pendingModels = 0
-  let settingsQueue: Promise<void> = Promise.resolve()
-  type ModelSettings = Pick<SoloSession, 'currentModelId' | 'currentConfigurationId' | 'currentModelSet' | 'modelNotice' | 'reasoningEffort' | 'reasoningEfforts' | 'backend' | 'model'>
-  let confirmedSettings: ModelSettings | null = null
-  const modelChangePending = ref(false)
   // 真实帧按序号和事件类型去重；订阅快照不进入此表，避免吞掉同序号的开场帧。
   const seenSeq = new Map<number, Set<string>>()
   type LocalSend = {
@@ -170,23 +147,32 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const currentReasoningEffort = computed(() => session.value?.reasoningEffort || '')
   const activeTurn = computed(() => (activeId.value ? turns.value.find((x) => x.id === `live:${activeId.value}`) ?? null : null))
 
-  function modelSettings(row: SoloSession): ModelSettings {
-    return { currentConfigurationId: row.currentConfigurationId, backend: row.backend, model: row.model, currentModelId: row.currentModelId, currentModelSet: row.currentModelSet, modelNotice: row.modelNotice, reasoningEffort: row.reasoningEffort, reasoningEfforts: row.reasoningEfforts ? [...row.reasoningEfforts] : undefined }
-  }
+  const isCurrent = (id: string, epoch: number) => !disposed && epoch === chatEpoch && id === sessionId.value
+  const settings = createSoloModelSettings({
+    sessionId,
+    session,
+    sessionOpen,
+    actionError,
+    transport,
+    disposed: () => disposed,
+    sessionGeneration: () => sessionGeneration,
+    patchSession,
+    errorText: (error) => soloErrorText(error, t, te, locale.value),
+  })
+  const queueOrder = createSoloQueueOrder({ sessionId, queued, transport, isCurrent, epoch: () => chatEpoch })
+  const displayQueued = queueOrder.displayQueued
 
   function setSession(v: SoloSession) {
     // The embed transport is bound to the preview run ID by its bearer.
     if (!transport.soloChatProtocols && v.id !== sessionId.value) return
-    const preserveSelection = pendingSettings > 0 && session.value
-    const next = preserveSelection ? { ...v, ...modelSettings(session.value!) } : v
+    const next = settings.mergeFetched(v)
     session.value = next
-    if (!preserveSelection) confirmedSettings = modelSettings(v)
     sessions.upsert(next)
     schedulePoll()
   }
 
   function applyResumeSnapshot(frame: Record<string, any>) {
-    if (pendingSettings) return
+    if (settings.pending()) return
     const patch: Partial<SoloSession> = {}
     if (typeof frame.status === 'string' && frame.status) {
       patch.status = frame.status as SoloSession['status']
@@ -206,7 +192,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     // Invalidate getSoloSession calls that started before this subscribe snapshot.
     // Otherwise a slower row can setSession over the status and model just applied.
     sessionGeneration++
-    if (session.value) confirmedSettings = modelSettings(session.value)
+    if (session.value) settings.confirm(session.value)
     if (frame.modelNotice) showModelNotice(String(frame.modelNotice), typeof frame.error === 'string' ? frame.error : '')
     if (frame.status === 'closed' || frame.status === 'error') void refetchMessages()
   }
@@ -238,12 +224,12 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
 
   async function refreshSession() {
     const id = sessionId.value
-    if (!id || pendingSettings) return
+    if (!id || settings.pending()) return
     const generation = sessionGeneration
-    const sequence = settingSequence
+    const sequence = settings.sequence()
     try {
       const row = await transport.getSoloSession(id)
-      if (generation === sessionGeneration && sequence === settingSequence) setSession(row)
+      if (generation === sessionGeneration && sequence === settings.sequence()) setSession(row)
     } catch {
       schedulePoll()
     }
@@ -795,7 +781,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         }
         const locals = queued.value.filter((item) => item.local && openSends.some((send) => send.localId === item.id && !send.serverId))
         queued.value = [...serverItems, ...locals]
-        orderOverlay.value = null
+        queueOrder.clear()
         busy.value = !!frame.busy
         patchSession({ busy: busy.value, waiting: queued.value.length })
         if (subscriptionSnapshot || stateSnapshot) applyResumeSnapshot(frame)
@@ -844,14 +830,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       case 'model': {
         // Ordinary acknowledgements can arrive before a newer queued choice.
         // A runtime rollback is authoritative and invalidates older HTTP replies.
-        if (pendingSettings && !frame.modelNotice) break
-        if (frame.modelNotice) {
-          settingsEpoch++
-          settingSequence++
-          pendingSettings = 0
-          pendingModels = 0
-          modelChangePending.value = false
-        }
+        if (settings.pending() && !frame.modelNotice) break
+        if (frame.modelNotice) settings.invalidate()
         const patch: Partial<SoloSession> = { modelNotice: typeof frame.modelNotice === 'string' ? frame.modelNotice : '' }
         if (typeof frame.currentModelId === 'string') { patch.currentModelId = frame.currentModelId; patch.currentModelSet = true }
         if (typeof frame.currentConfigurationId === 'string') patch.currentConfigurationId = frame.currentConfigurationId
@@ -861,7 +841,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         patchSession(patch)
         // A saved choice from another tab supersedes metadata reads already in flight.
         sessionGeneration++
-        if (session.value) confirmedSettings = modelSettings(session.value)
+        if (session.value) settings.confirm(session.value)
         if (frame.modelNotice) showModelNotice(String(frame.modelNotice), String(frame.error || ''))
         break
       }
@@ -945,19 +925,13 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const id = sessionId.value
     chatEpoch++
     const generation = ++sessionGeneration
-    settingsEpoch++
-    settingSequence++
-    pendingSettings = 0
-    pendingModels = 0
-    confirmedSettings = null
-    modelChangePending.value = false
-    settingsQueue = Promise.resolve()
+    settings.reset()
     closeWs()
     reconnect.reset()
     sessionStateCursor.reset()
     turns.value = []
     queued.value = []
-    orderOverlay.value = null
+    queueOrder.clear()
     openSends.splice(0, openSends.length)
     pendingConfirmation.value = []
     knownServerIds.clear()
@@ -1075,7 +1049,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       }
       return false
     }
-    if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
+    if (!isCurrent(id, epoch)) return false
     try {
       const receipt = await transport.sendSoloTurn(id, request)
       if (!disposed && epoch === chatEpoch && id === sessionId.value && receipt.turnId && receipt.clientMessageId === send.localId) {
@@ -1084,7 +1058,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       if (!send.serverId) throw new Error(t('pages.solo.invalidReceipt'))
       return !disposed && epoch === chatEpoch && id === sessionId.value
     } catch (e: any) {
-      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
+      if (!isCurrent(id, epoch)) return false
       // The socket can confirm acceptance before the HTTP connection fails.
       if (send.serverId) return true
       if (!openSends.includes(send)) return false
@@ -1143,77 +1117,13 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     actionError.value = ''
   }
 
-  async function saveModelSetting(kind: 'model' | 'effort', value: string): Promise<boolean> {
-    const id = sessionId.value
-    const cur = session.value
-    if (!id || !cur || !sessionOpen.value || disposed) return false
-    const route = kind === 'model' ? parseModelRoute(value.trim()) : undefined
-    const next = route?.modelId ?? value.trim()
-    const configurationId = route?.configurationId
-    if (kind === 'model' ? cur.currentModelSet && (cur.currentModelId || '') === next && (configurationId === undefined || cur.currentConfigurationId === configurationId) : (cur.reasoningEffort || '') === next) return true
-    const generation = sessionGeneration
-    const epoch = settingsEpoch
-    const sequence = ++settingSequence
-    confirmedSettings ||= modelSettings(cur)
-    pendingSettings++
-    if (kind === 'model') { pendingModels++; modelChangePending.value = true }
-    actionError.value = ''
-    patchSession(kind === 'model' ? { currentModelId: next, ...(configurationId === undefined ? {} : { currentConfigurationId: configurationId }), currentModelSet: true, reasoningEffort: '', reasoningEfforts: [], modelNotice: '' } : { reasoningEffort: next, modelNotice: '' })
-    const isCurrentSession = () => !disposed && id === sessionId.value && generation === sessionGeneration && epoch === settingsEpoch
-    const latest = () => isCurrentSession() && sequence === settingSequence
-    const request = settingsQueue.then(async () => {
-      try {
-        if (!isCurrentSession()) return false
-        if (!sessionOpen.value) {
-          if (latest() && confirmedSettings) patchSession(confirmedSettings)
-          return false
-        }
-        let row = kind === 'model' ? configurationId === undefined ? await transport.setSoloSessionModel(id, next) : await transport.setSoloSessionModel(id, next, undefined, configurationId) : await transport.setSoloSessionReasoningEffort(id, next)
-        if (!isCurrentSession() || row.id !== id) return false
-        // A model switch clears an effort the new model does not offer. The
-        // selector shows that gap as the highest level, so persist that token.
-        if (kind === 'model' && latest() && !row.reasoningEffort?.trim()) {
-          const highest = listedEfforts(row.reasoningEfforts).at(-1)
-          if (highest) {
-            row = await transport.setSoloSessionReasoningEffort(id, highest)
-            if (!isCurrentSession() || row.id !== id) return false
-          }
-        }
-        confirmedSettings = modelSettings(row)
-        if (latest()) {
-          patchSession(modelSettings(row))
-        }
-        return true
-      } catch (error) {
-        if (latest()) {
-          if (confirmedSettings) patchSession(confirmedSettings)
-          actionError.value = soloErrorText(error, t, te, locale.value)
-        }
-        return false
-      } finally {
-        if (isCurrentSession()) {
-          pendingSettings = Math.max(0, pendingSettings - 1)
-          if (kind === 'model') pendingModels = Math.max(0, pendingModels - 1)
-          modelChangePending.value = pendingModels > 0
-        }
-      }
-    })
-    // Both controls share one queue, so an effort always follows earlier model
-    // changes and rapid slider updates reach the server in selection order.
-    settingsQueue = request.then(() => undefined)
-    return request
-  }
-
-  function setCurrentModel(modelId: string) { return saveModelSetting('model', modelId) }
-  function setCurrentReasoningEffort(effort: string) { return saveModelSetting('effort', effort) }
-
   async function cancel() {
     const id = sessionId.value
     const epoch = chatEpoch
     if (!id) return
     if (!transport.soloChatProtocols && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'cancel' }))
     else await transport.cancelSoloTurn(id).catch(() => undefined)
-    if (disposed || epoch !== chatEpoch || id !== sessionId.value) return
+    if (!isCurrent(id, epoch)) return
     dropQueuedSends()
     queued.value = []
     patchSession({ waiting: 0, busy: false })
@@ -1228,12 +1138,12 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     let ok = false
     try {
       await transport.removeSoloQueued(id, turnId)
-      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
+      if (!isCurrent(id, epoch)) return false
       const send = openSends.find((row) => sendKey(row) === turnId)
       if (send && !send.started) forgetSend(send)
       ok = true
     } catch {
-      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return false
+      if (!isCurrent(id, epoch)) return false
       const removed = before.find((row) => row.id === turnId)
       if (removed && activeId.value !== turnId && !queued.value.some((row) => row.id === turnId)) {
         const next = queued.value.slice()
@@ -1264,29 +1174,6 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       ...(target.references?.length ? { references: target.references.map((ref) => ({ ...ref })) } : {}),
     }
     return (await dropQueued(turnId)) ? copy : null
-  }
-
-  /** Indices are positions in displayQueued; unacknowledged local items never move. */
-  async function reorderQueued(fromIndex: number, toIndex: number) {
-    const id = sessionId.value
-    const epoch = chatEpoch
-    const shown = displayQueued.value
-    const moved = shown[fromIndex]
-    const target = shown[toIndex]
-    if (!id || fromIndex === toIndex || !moved || !target || moved.local || target.local) return
-    const ids = shown.filter((item) => !item.local).map((item) => item.id)
-    const to = ids.indexOf(target.id)
-    ids.splice(ids.indexOf(moved.id), 1)
-    ids.splice(to, 0, moved.id)
-    const seq = ++overlaySeq
-    orderOverlay.value = ids
-    try {
-      await transport.reorderSoloQueue(id, ids)
-    } catch {
-      // The server order stays authoritative; a newer queue_state may already be shown.
-      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return
-      if (seq === overlaySeq) orderOverlay.value = null
-    }
   }
 
   watch(sessionId, () => void load(), { immediate: true })
@@ -1326,15 +1213,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     currentModelId,
     currentConfigurationId,
     currentReasoningEffort,
-    modelChangePending,
+    modelChangePending: settings.modelChangePending,
     load,
     send,
-    setCurrentModel,
-    setCurrentReasoningEffort,
+    setCurrentModel: settings.setCurrentModel,
+    setCurrentReasoningEffort: settings.setCurrentReasoningEffort,
     cancel,
     removeQueued,
     takeQueued,
-    reorderQueued,
+    reorderQueued: queueOrder.reorderQueued,
     refreshSession,
   }
 }
