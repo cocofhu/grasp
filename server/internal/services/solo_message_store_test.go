@@ -207,6 +207,8 @@ func TestSoloMessageHistoryLoadsOnlyRequestedBodiesAfterCursorCloses(t *testing.
 	if err := db.Transaction(func(tx *gorm.DB) error { _, err := insertPreparedSoloMessageTx(tx, prepared); return err }); err != nil {
 		t.Fatal(err)
 	}
+	importSoloHistoryTest(t, db)
+	objects.gets.Store(0)
 	objects.onOpen = func(ctx context.Context) error {
 		probe, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
@@ -217,7 +219,7 @@ func TestSoloMessageHistoryLoadsOnlyRequestedBodiesAfterCursorCloses(t *testing.
 	if err != nil || len(page.Items) != 1 || page.Items[0].Content != original.Content || len(page.Items[0].Images) != 1 || objects.gets.Load() != 3 {
 		t.Fatalf("chat page loaded unexpected bodies or held a cursor: %+v gets=%d %v", page, objects.gets.Load(), err)
 	}
-	if page.Items[0].WorkflowContext != "" || len(page.Items[0].Events) != 0 || !page.Items[0].LegacyEvents {
+	if page.Items[0].WorkflowContext != "" || len(page.Items[0].Events) != 0 || (page.Items[0].EventLog == nil || page.Items[0].EventLog.Legacy == nil) {
 		t.Fatal("chat page included process/context bodies or lost process availability")
 	}
 	process, err := solo.MessageEvents(context.Background(), parent.ID, "alice", original.ID, -1)

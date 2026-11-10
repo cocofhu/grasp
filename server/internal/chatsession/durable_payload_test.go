@@ -317,12 +317,11 @@ func TestDurableQueuePayloadPreparationCannotHideInsideOuterTransaction(t *testi
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		bound := NewDurableStore(tx)
 		for name, operation := range map[string]func() error{
-			"prepare":   func() error { _, err := bound.PrepareIntent(ctx, scope, intent); return err },
-			"admit":     func() error { _, err := bound.Admit(ctx, scope, intent, 0, nil); return err },
-			"read":      func() error { _, err := bound.ReadTurn(ctx, scope, intent.ID); return err },
-			"snapshot":  func() error { _, err := bound.Snapshot(ctx, scope); return err },
-			"claim":     func() error { _, err := bound.Claim(ctx, QueueLease{Scope: scope}); return err },
-			"migration": func() error { _, err := bound.ImportLegacy(ctx, scope, "owner"); return err },
+			"prepare":  func() error { _, err := bound.PrepareIntent(ctx, scope, intent); return err },
+			"admit":    func() error { _, err := bound.Admit(ctx, scope, intent, 0, nil); return err },
+			"read":     func() error { _, err := bound.ReadTurn(ctx, scope, intent.ID); return err },
+			"snapshot": func() error { _, err := bound.Snapshot(ctx, scope); return err },
+			"claim":    func() error { _, err := bound.Claim(ctx, QueueLease{Scope: scope}); return err },
 		} {
 			if err := operation(); !errors.Is(err, ErrPayloadInTransaction) {
 				t.Fatalf("%s hid object I/O under outer TX: %v", name, err)
@@ -354,59 +353,5 @@ func TestDurableQueuePayloadPreparationCannotHideInsideOuterTransaction(t *testi
 		return nil
 	}); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestDurableQueueLegacyPreparationChecksSourceAgainAfterUpload(t *testing.T) {
-	db, store, remote, scope := durableFixture(t)
-	objects := queuePayloadBackend(t, store, remote)
-	ctx := context.Background()
-	for i, id := range []string{"legacy-one", "legacy-two"} {
-		if err := db.Table("chat_pending_turns").Create(map[string]any{"id": id, "surface": scope.Surface, "session_key": scope.Key,
-			"position": i, "payload": "raw body " + id, "started": false, "created_at": time.Now().UTC()}).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	started, release := make(chan struct{}), make(chan struct{})
-	var once, unblock sync.Once
-	t.Cleanup(func() { unblock.Do(func() { close(release) }) })
-	objects.beforePut = func(ctx context.Context) error {
-		var err error
-		once.Do(func() {
-			close(started)
-			select {
-			case <-release:
-			case <-ctx.Done():
-				err = ctx.Err()
-			}
-		})
-		return err
-	}
-	done := make(chan error, 1)
-	go func() { _, err := store.ImportLegacy(ctx, scope, "owner"); done <- err }()
-	select {
-	case <-started:
-	case <-time.After(3 * time.Second):
-		t.Fatal("legacy preparation did not begin")
-	}
-	probe, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	if err := db.WithContext(probe).Table("chat_pending_turns").Where("id = ?", "legacy-one").Update("started", true).Error; err != nil {
-		t.Fatalf("legacy upload held a SQL connection/lock: %v", err)
-	}
-	unblock.Do(func() { close(release) })
-	if err := <-done; !errors.Is(err, ErrQueueChanged) {
-		t.Fatalf("migration silently consumed a changed legacy source: %v", err)
-	}
-	var sources, receipts int64
-	if err := db.Table("chat_pending_turns").Count(&sources).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Table("chat_queue_turns").Count(&receipts).Error; err != nil || sources != 2 || receipts != 0 {
-		t.Fatalf("source CAS failure partially migrated: source=%d receipt=%d %v", sources, receipts, err)
-	}
-	imported, err := store.ImportLegacy(ctx, scope, "owner")
-	if err != nil || len(imported) != 2 || imported[0].State != TurnUnknown || imported[1].State != TurnQueued {
-		t.Fatalf("safe retry replayed started work or lost unstarted work: %+v %v", imported, err)
 	}
 }

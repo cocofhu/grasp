@@ -70,7 +70,7 @@ func closureFixture(t *testing.T, bodyMode string, databaseConfig ...config.Data
 	cfg := config.StorageConfig{Driver: "s3", BlobsRoot: filepath.Join(dir, "blobs"), S3: config.S3StorageConfig{
 		Endpoint: server.URL, Bucket: "private", Prefix: "current", AccessKeyID: "fixture-access", SecretAccessKey: "fixture-secret"}}
 	location, _ := proposedLocation(cfg)
-	if err := bindLocation(db, location); err != nil {
+	if err := seedPriorPrimary(db, location); err != nil {
 		t.Fatal(err)
 	}
 	files, _ := filestore.FromDB(db)

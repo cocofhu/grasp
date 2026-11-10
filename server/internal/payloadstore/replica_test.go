@@ -95,7 +95,7 @@ func TestVerifiedReplicaRestoresSQLPayloadsNestedAttachmentsAndInstructions(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := bindLocation(db, sourceLocation); err != nil {
+	if err := seedPriorPrimary(db, sourceLocation); err != nil {
 		t.Fatal(err)
 	}
 	blobs, _ := blob.NewObjects(source, nil, 1000)

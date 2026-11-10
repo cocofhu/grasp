@@ -33,6 +33,7 @@ import (
 	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/executionlineage"
+	"github.com/cocofhu/grasp/internal/formatguard"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/logging"
@@ -86,6 +87,9 @@ func main() {
 		log.Fatal().Err(err).Str("path", cfgPath).Msg("load config failed")
 	}
 	cfg := config.GetConfig()
+	if err := formatguard.CheckConfiguration(context.Background(), cfg); err != nil {
+		log.Fatal().Err(err).Msg("database format check failed")
+	}
 	workspaceLimits, err := cfg.WorkspaceOperations.Resolved()
 	if err != nil {
 		log.Fatal().Err(err).Msg("invalid workspace operation limits")
@@ -497,9 +501,7 @@ func main() {
 		releaseRun = func(ctx context.Context) error { workspaceServices.Releases.Run(ctx); return nil }
 	}
 	workspaceReleaseWorker := startWorkspaceWorker(sweeperCtx, releaseRun)
-	go storage.RunLegacyArchive(sweeperCtx)
 	go soloSvc.RunWorkflowEventDelivery(sweeperCtx)
-	go migrateFilePayloads(sweeperCtx, db)
 	go sbxSvc.RunSweeper(sweeperCtx)
 	codexLoginMgr.Start(sweeperCtx)
 

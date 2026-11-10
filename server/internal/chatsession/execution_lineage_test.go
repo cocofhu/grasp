@@ -116,7 +116,7 @@ func TestQueueLineageFencesClaimsRenewalDispatchAndPublicationWhileHistoryRemain
 	}
 }
 
-func TestQueueLineageNeverHydratesOrImportsQuarantinedLegacyIntents(t *testing.T) {
+func TestQueueLineageKeepsQuarantinedLegacyEvidenceSeparateFromNewIntents(t *testing.T) {
 	db, store, _, scope := durableFixture(t)
 	ctx := context.Background()
 	// A legacy payload can be unavailable. Offline adoption and startup must
@@ -126,9 +126,6 @@ func TestQueueLineageNeverHydratesOrImportsQuarantinedLegacyIntents(t *testing.T
 	}
 	controller, _, _ := queueController(t, db)
 	store.SetExecutionController(controller)
-	if imported, err := store.ImportLegacy(ctx, scope, "owner"); err != nil || len(imported) != 0 {
-		t.Fatal("quarantined legacy was hydrated or imported", err)
-	}
 	var old models.ChatPendingTurn
 	if err := db.Omit("payload").Take(&old, "id = ?", "old-legacy").Error; err != nil {
 		t.Fatal("quarantined legacy source was removed", err)

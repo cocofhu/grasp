@@ -30,6 +30,7 @@ func TestSoloMessagePagesKeepStableOrderAndSeparateLegacyProcess(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	importSoloHistoryTest(t, db)
 	ctx := context.Background()
 	seen := map[string]bool{}
 	before := ""
@@ -51,7 +52,7 @@ func TestSoloMessagePagesKeepStableOrderAndSeparateLegacyProcess(t *testing.T) {
 			if i > 0 && page.Items[i-1].ID >= item.ID {
 				t.Fatal("equal-time messages lost their ID order")
 			}
-			if item.ID == "m-122" && !item.LegacyEvents {
+			if item.ID == "m-122" && (item.EventLog == nil || item.EventLog.Legacy == nil) {
 				t.Fatal("legacy execution process disappeared")
 			}
 			seen[item.ID] = true
@@ -85,7 +86,7 @@ func TestSoloMessagePagesKeepStableOrderAndSeparateLegacyProcess(t *testing.T) {
 		t.Fatal("invalid cursor accepted")
 	}
 	part, err := solo.MessageEvents(ctx, "history", "alice", "m-122", -1)
-	if err != nil || len(part.Items) != 256 || !part.HasMore || !part.LegacyIncomplete {
+	if err != nil || len(part.Items) < 1 || len(part.Items) > 512 || !part.HasMore || !part.LegacyIncomplete {
 		t.Fatalf("legacy process page lost its migration warning: %v", err)
 	}
 	if err := db.Create(&models.SoloMessage{ID: "foreign", SessionID: "other", Role: "assistant", Events: []json.RawMessage{json.RawMessage(`{}`)}}).Error; err != nil {

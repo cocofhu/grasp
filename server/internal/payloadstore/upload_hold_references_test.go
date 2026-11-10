@@ -65,7 +65,7 @@ func TestUploadHoldOnlyRootsSurviveDestinationOnlyColdRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := bindLocation(db, sourceLocation); err != nil {
+	if err := seedPriorPrimary(db, sourceLocation); err != nil {
 		t.Fatal(err)
 	}
 	m, err := payloadhold.New(db, files, payloadhold.Options{StorageFingerprint: sourceLocation.Fingerprint, Authority: uploadHoldAuthority{}, Authorize: func(ctx context.Context, _ *gorm.DB, _ payloadhold.Identity) error { return ctx.Err() }})

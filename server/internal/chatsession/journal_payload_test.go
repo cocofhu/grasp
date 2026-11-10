@@ -315,7 +315,7 @@ func TestJournalPageLoadsCapturedRefsAfterReleasingCursorAndTransaction(t *testi
 	}
 }
 
-func TestJournalExplicitStorageKeepsV1BytesLegacyReadersAndBackupClosure(t *testing.T) {
+func TestJournalExplicitStorageKeepsV1BytesAndRequiresOfflineInlineConversion(t *testing.T) {
 	db, store, remote, scope := durableFixture(t)
 	objects := queuePayloadBackend(t, store, remote)
 	ctx := context.Background()
@@ -348,12 +348,16 @@ func TestJournalExplicitStorageKeepsV1BytesLegacyReadersAndBackupClosure(t *test
 	}
 	gets := objects.opens.Load()
 	page, err := remote.JournalPage(ctx, scope, JournalQuery{After: -1})
-	if err != nil || page.Next != 0 || len(page.Items) != 1 || objects.opens.Load() != gets {
-		t.Fatalf("inline legacy bytes require an object or changed cursor: %+v %v", page, err)
+	if !errors.Is(err, ErrJournalGap) || page.Next != -1 || len(page.Items) != 0 || objects.opens.Load() != gets {
+		t.Fatalf("runtime accepted unconverted bytes or advanced its cursor: %+v %v", page, err)
 	}
 	report, err = filestore.Migrate(ctx, db, &models.ChatEventChunk{})
 	if err != nil || report.Migrated != 1 || len(report.Failures) != 0 {
 		t.Fatalf("inline journal migration failed: %+v %v", report, err)
+	}
+	page, err = remote.JournalPage(ctx, scope, JournalQuery{After: -1})
+	if err != nil || page.Next != 0 || len(page.Items) != 1 || page.Items[0].At != at || page.Items[0].Event != entry.Event {
+		t.Fatalf("normalized history changed v1 bytes or cursor: %+v %v", page, err)
 	}
 	var row JournalChunkRecord
 	if err := db.Table("chat_event_chunks").Where("id = ?", legacy.ID).Take(&row).Error; err != nil {

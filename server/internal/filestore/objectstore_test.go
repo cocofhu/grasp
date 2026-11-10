@@ -177,9 +177,45 @@ func TestRemoteFailureCannotCommitSQLReferenceOrFallbackWrite(t *testing.T) {
 	if count != 0 {
 		t.Fatal("failed upload left an acknowledged row")
 	}
-	read, err := store.Read(context.Background(), legacyRef)
-	if err != nil || string(read) != "legacy" {
-		t.Fatalf("legacy history was lost: %q %v", read, err)
+	if _, err := store.Read(context.Background(), legacyRef); err == nil {
+		t.Fatal("remote failure was concealed by retained local history")
+	}
+}
+
+func TestRemoteReadNeverUsesRetainedLocalBytes(t *testing.T) {
+	ctx := context.Background()
+	store, err := filestore.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ref, _, err := store.Put(ctx, strings.NewReader("original"), filestore.Text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, digest, _ := filestore.Parse(ref)
+	path := filepath.Join(store.Root, "sha256", digest[:2], digest)
+	backend := &objectBackend{err: os.ErrNotExist}
+	if err := store.SetObjectStore(backend); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Read(ctx, ref); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("missing primary payload was hidden by a local copy", err)
+	}
+	if original, err := os.ReadFile(path); err != nil || string(original) != "original" {
+		t.Fatal("failed primary read altered the retained source", err)
+	}
+	backend.err, backend.key, backend.body = nil, "payloads/sha256/"+digest[:2]+"/"+digest, []byte("original")
+	backend.info = objectstore.Info{Size: int64(len(backend.body))}
+	if err := os.WriteFile(path, []byte("stale or corrupt local copy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := store.Read(ctx, ref); err != nil || string(data) != "original" {
+		t.Fatal("retained local bytes shadowed the verified primary", err)
+	}
+	backend.body[0] = 'X'
+	if _, err := store.Read(ctx, ref); err == nil {
+		t.Fatal("primary checksum failure was hidden by a local copy")
 	}
 }
 

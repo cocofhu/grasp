@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/filestore"
+	"github.com/cocofhu/grasp/internal/historymigration"
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -243,18 +244,21 @@ func hydrateSoloMessage(ctx context.Context, db *gorm.DB, record soloMessageSQL,
 			*field.value = string(body)
 		}
 	}
-	if fields&soloMessageEvents != 0 && message.EventLog != nil && message.EventLog.Legacy != nil {
-		message.Events, err = readImportedMessageEvents(ctx, db, record.SessionID, record.ID, message.EventLog)
-		if err != nil {
-			return models.SoloMessage{}, err
+	if fields&soloMessageEvents != 0 {
+		if message.EventLog != nil && message.EventLog.Legacy != nil {
+			message.Events, err = readImportedMessageEvents(ctx, db, record.SessionID, record.ID, message.EventLog)
+			if err != nil {
+				return models.SoloMessage{}, err
+			}
+		} else if message.EventLog == nil && record.Events != nil && *record.Events != "" && *record.Events != "null" {
+			return models.SoloMessage{}, historymigration.ErrInvalidHistory
 		}
-		fields &^= soloMessageEvents
 	}
 	for _, field := range []struct {
 		bit   soloMessageFields
 		raw   *string
 		value any
-	}{{soloMessageImages, record.Images, &message.Images}, {soloMessageAnnotations, record.Annotations, &message.Annotations}, {soloMessageEvents, record.Events, &message.Events}} {
+	}{{soloMessageImages, record.Images, &message.Images}, {soloMessageAnnotations, record.Annotations, &message.Annotations}} {
 		if fields&field.bit != 0 && field.raw != nil && *field.raw != "" {
 			body, err := files.Load(ctx, *field.raw, filestore.JSON)
 			if err != nil {

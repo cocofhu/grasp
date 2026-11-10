@@ -157,7 +157,6 @@ func TestDurableQueueUnavailableDatabaseFailsClosed(t *testing.T) {
 		"watermark":         func() error { _, err := store.Watermark(ctx); return err },
 		"defer":             func() error { return store.DeferPreparation(ctx, lease, row.Turn.ID) },
 		"release":           func() error { return store.Release(ctx, lease) },
-		"legacy migration":  func() error { _, err := store.ImportLegacy(ctx, scope, "owner"); return err },
 	}
 	for name, check := range checks {
 		t.Run(name, func(t *testing.T) {
@@ -313,50 +312,6 @@ func TestDurableQueueClosedCrashEventuallyReleasesItsOwner(t *testing.T) {
 				t.Fatal("retired recovery deleted command evidence")
 			}
 		})
-	}
-}
-
-func TestDurableQueueLegacyConflictOrClassificationFailurePreservesWholeSource(t *testing.T) {
-	db, store, _, scope := durableFixture(t)
-	ctx := context.Background()
-	legacy := []models.ChatPendingTurn{{ID: "legacy-one", Surface: scope.Surface, SessionKey: scope.Key, Position: 1, Payload: []byte("original one")}, {ID: "legacy-two", Surface: scope.Surface, SessionKey: scope.Key, Position: 2, Payload: []byte("original two")}}
-	if err := db.Create(&legacy).Error; err != nil {
-		t.Fatal(err)
-	}
-	failure := errors.New("transcript classification unavailable")
-	if _, err := store.ImportLegacy(ctx, scope, "owner", func(_ *gorm.DB, old models.ChatPendingTurn) (string, string, error) {
-		if old.ID == "legacy-two" {
-			return "", "", failure
-		}
-		return TurnQueued, "", nil
-	}); !errors.Is(err, failure) {
-		t.Fatalf("classification was not atomic: %v", err)
-	}
-	var originals, receipts int64
-	if err := db.Model(&models.ChatPendingTurn{}).Count(&originals).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&models.ChatQueueTurn{}).Count(&receipts).Error; err != nil {
-		t.Fatal(err)
-	}
-	if originals != 2 || receipts != 0 {
-		t.Fatalf("failed migration discarded intent: original=%d receipt=%d", originals, receipts)
-	}
-	intent := queueIntent("different existing receipt", "existing")
-	intent.ID = "legacy-one"
-	admitted, err := store.Admit(ctx, scope, intent, 0, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.ImportLegacy(ctx, scope, "owner"); err == nil {
-		t.Fatal("conflicting receipt replaced original bytes")
-	}
-	var retained models.ChatPendingTurn
-	if err := db.First(&retained, "id = ?", "legacy-one").Error; err != nil || string(retained.Payload) != "original one" {
-		t.Fatalf("source lost: %q %v", retained.Payload, err)
-	}
-	if got, err := store.Existing(ctx, scope, "owner", "existing", intent.Fingerprint); err != nil || got == nil || got.ID != admitted.Turn.ID {
-		t.Fatal("conflict changed preexisting receipt")
 	}
 }
 
@@ -582,49 +537,5 @@ func TestDurableQueuePreparationRecoveryReorderAndTargetedCancellation(t *testin
 		if err != nil || !receipt.Duplicate || receipt.Turn.State != TurnCancelled {
 			t.Fatal("cancelled intent was resubmitted by an acknowledgement retry")
 		}
-	}
-}
-
-func TestDurableLegacyImportPreservesBytesAndDoesNotReplayStartedWork(t *testing.T) {
-	ctx := context.Background()
-	db, store, _, scope := durableFixture(t)
-	created := time.Now().UTC().Add(-time.Hour)
-	for _, row := range []models.ChatPendingTurn{
-		{ID: "old-active", Surface: scope.Surface, SessionKey: scope.Key, Started: true, Payload: []byte(`{"original":"active"}`), CreatedAt: created},
-		{ID: "old-waiter", Surface: scope.Surface, SessionKey: scope.Key, Position: 1, Payload: []byte(`{"original":"queued"}`), CreatedAt: created},
-		{ID: "unreadable", Surface: scope.Surface, SessionKey: scope.Key, Position: 2, Payload: []byte{}},
-	} {
-		if err := db.Create(&row).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	imported, err := store.ImportLegacy(ctx, scope, "owner")
-	if err != nil || len(imported) != 3 || imported[0].State != TurnUnknown || imported[1].State != TurnQueued || imported[2].State != TurnUnknown || !imported[0].CreatedAt.Equal(created) {
-		t.Fatalf("legacy import lost intent or invented safe replay: %+v %v", imported, err)
-	}
-	var count int64
-	if err := db.Model(&models.ChatPendingTurn{}).Where("session_key = ?", scope.Key).Count(&count).Error; err != nil || count != 0 {
-		t.Fatal("successful import retained competing legacy queue authority")
-	}
-	if again, err := store.ImportLegacy(ctx, scope, "owner"); err != nil || len(again) != 0 {
-		t.Fatalf("resuming migration duplicated original turns: %+v %v", again, err)
-	}
-	lease := acquireQueue(t, store, scope)
-	active, err := store.Claim(ctx, lease)
-	if err != nil || active.ID != "old-waiter" || string(active.Payload) != `{"original":"queued"}` {
-		t.Fatalf("started legacy action was replayed: %+v %v", active, err)
-	}
-	if err := db.Transaction(func(tx *gorm.DB) error { return store.Retire(tx, scope) }); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Admit(ctx, scope, queueIntent("late", "late"), 0, nil); !errors.Is(err, ErrQueueRetired) {
-		t.Fatalf("closed session accepted new work: %v", err)
-	}
-	ready, err := store.ReadyScopes(ctx, scope.Surface)
-	if err != nil || len(ready) != 0 {
-		t.Fatal("retired queue was scheduled")
-	}
-	if cancelled, err := store.Cancellation(ctx, lease, active.ID); err != nil || !cancelled {
-		t.Fatal("close did not notify its active executor")
 	}
 }

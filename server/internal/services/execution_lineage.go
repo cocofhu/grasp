@@ -13,7 +13,6 @@ import (
 func (s *SoloService) SetExecutionController(c *executionlineage.Controller) {
 	s.execution = c
 	s.durable.SetExecutionController(c)
-	s.pending.SetExecutionController(c)
 }
 
 func (s *SoloService) executionEntities(id string) []executionlineage.Entity {

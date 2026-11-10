@@ -60,8 +60,8 @@ func TestSoloQueueDiscoveryBacksOffStoppedEnvironmentsAndSeparatesMaintenance(t 
 		t.Fatal("passive discovery woke stopped compute")
 	}
 	solo.pollSoloQueues(now.Add(122*time.Second), true)
-	if legacyScans.Load() != 1 || noticeJoins.Load() != 1 {
-		t.Fatalf("maintenance no longer retries legacy work and notices: legacy=%d notices=%d", legacyScans.Load(), noticeJoins.Load())
+	if legacyScans.Load() != 0 || noticeJoins.Load() != 1 {
+		t.Fatalf("maintenance scanned obsolete sources or lost durable notices: legacy=%d notices=%d", legacyScans.Load(), noticeJoins.Load())
 	}
 	if err := solo.durable.Remove(context.Background(), soloQueueScope("stopped"), "stopped-turn"); err != nil {
 		t.Fatal(err)

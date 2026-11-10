@@ -43,6 +43,9 @@ func TestSoloImportedProcessUsesOriginalMessageRangeAndWarning(t *testing.T) {
 	if err := storageguard.Enter(ctx, db, owner, nil); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := filestore.Migrate(ctx, db, &models.SoloMessage{}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := historymigration.ImportSoloEvents(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +98,9 @@ func TestSoloImportedCommonLoaderFeedsMCPAndPreambleWithoutOldBody(t *testing.T)
 	}
 	owner := uuid.NewString()
 	if err := storageguard.Enter(context.Background(), db, owner, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := filestore.Migrate(context.Background(), db, &models.SoloMessage{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := historymigration.ImportSoloEvents(context.Background(), db, owner); err != nil {

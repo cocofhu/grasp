@@ -53,7 +53,8 @@ type File interface {
 }
 
 // SetObjectStore is configured during startup, before publishing this store to
-// workers. Existing local references remain readable; all new puts use objects.
+// workers. A configured object backend owns every read and write; local copies
+// are available only to explicit archive tools or the supported local driver.
 func (s *Store) SetObjectStore(objects objectstore.Store) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -315,25 +316,23 @@ func (s *Store) open(ctx context.Context, ref string, limit int64) (File, error)
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Open(s.path(digest))
-	if errors.Is(err, os.ErrNotExist) {
-		if err := s.mu.LockContext(ctx); err != nil {
+	if err := s.mu.LockContext(ctx); err != nil {
+		return nil, err
+	}
+	objects := s.objects
+	s.mu.Unlock()
+	if objects != nil {
+		body, info, err := objects.Open(ctx, objectKey(digest))
+		if err != nil {
 			return nil, err
 		}
-		objects := s.objects
-		s.mu.Unlock()
-		if objects != nil {
-			body, info, remoteErr := objects.Open(ctx, objectKey(digest))
-			if remoteErr != nil {
-				return nil, remoteErr
-			}
-			defer func() { _ = body.Close() }()
-			if limit > 0 && info.Size > limit {
-				return nil, errors.New("stored payload exceeds size limit")
-			}
-			return objectstore.DownloadVerified(ctx, body, info.Size, digest)
+		defer func() { _ = body.Close() }()
+		if limit > 0 && info.Size > limit {
+			return nil, errors.New("stored payload exceeds size limit")
 		}
+		return objectstore.DownloadVerified(ctx, body, info.Size, digest)
 	}
+	f, err := os.Open(s.path(digest))
 	if err != nil {
 		return nil, fmt.Errorf("file unavailable (%s): %w", digest, err)
 	}

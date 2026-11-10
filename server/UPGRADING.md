@@ -97,6 +97,10 @@ grasp-storage-admin --mode certify-primary --config /private/application.yaml \
 
 清理版继续使用既有独立执行控制和原 SQL 收据，**不得再次执行 `execution-init`**。历史查询与新消息使当前引用集合正常增长，不要求其摘要始终等于历史迁移或认证收据。
 
+启动检查还要求当前正文仅含规范引用或定义的空值，旧 Solo Events 已有绑定原消息及准确范围的历史日志，保留的旧 Solo 排队记录已隔离到当前数据集。清理版移除运行时 inline 正文适配、旧 Events 数组读取、旧 Solo 队列导入和启动正文迁移/归档。原 Events 来源、截断提示、未知执行身份、正式 JSON 统计与非 Solo 排队继续保留；离线历史转换工具仍要求维护所有权及全部运行实例停止。
+
+真正空安装的首次远端绑定会在同一 SQL 事务中重新检查来源和没有业务数据。固定默认 Workspace 的 JSON 元数据也计入真实引用摘要，不伪造零记录；残留历史、隔离数据或修改过的 Workspace 配置均不能走空安装入口。
+
 ## 回滚与验证范围
 
 升级目录的 `upgrade.json` 和原 SQL 快照用于证明本次格式转换，**不是**副本恢复所需的 `checkpoint.json`。迁移版完成显式初始化后，保持停写，在新的独立目录执行 `copy --offline`，创建并核验真实 SQL / 对象副本及完整清单，见 [STORAGE.md](STORAGE.md#离线复制切换与恢复)。工作区、配置及主密钥仍需配套备份。
