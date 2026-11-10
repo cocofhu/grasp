@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复 Solo 执行任务时新开 IDE、终端被整轮任务锁阻塞的问题；准备、恢复和工作区切换继续受保护，IDE 临时不可访问时不再误报为未安装 code-server。
+
 - 首页和 Solo 聊天的“选择工作流”入口并入 `@` 选择器，选择后配置并确认启动；`/` 不再弹出工作流菜单，返回首页时保留草稿中的引用关联。
 - Solo 纯正文回复在加载过程记录后保留「用时」行，展开时明确提示未记录额外的思考或工具调用，避免点击后整行消失。
 

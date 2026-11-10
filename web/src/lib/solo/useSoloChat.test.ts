@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return { ...actual, api: { ...actual.api, ...mocks, listSoloMessagePage: undefined, listSoloMessageEvents: undefined } }
+  return { ...actual, api: { ...actual.api, ...mocks, listSoloMessagePage: undefined, listSoloMessageEvents: undefined, reportSoloDiagnostics: undefined } }
 })
 
 import { useSoloChat, type SoloChatTransport } from './useSoloChat'
@@ -117,6 +117,53 @@ describe('useSoloChat', () => {
     mocks.listSoloMessages.mockResolvedValue([])
   })
   afterEach(() => vi.unstubAllGlobals())
+
+  it('reports a slow history request holding received replay without changing hydration or logging content', async () => {
+    vi.useFakeTimers()
+    const report = vi.fn().mockResolvedValue(undefined)
+    let release!: (messages: unknown[]) => void
+    const user = { id: 'active', sessionId: 's1', role: 'user', content: 'private prompt must not be logged', createdAt: '' }
+    mocks.getSoloSession.mockResolvedValue(session({ busy: true }))
+    mocks.listSoloMessages.mockImplementationOnce(() => new Promise(resolve => { release = resolve })).mockResolvedValue([user])
+    const { chat, app } = mountChat({ ...mocks, reportSoloDiagnostics: report })
+    try {
+      await flushPromises()
+      const socket = FakeSocket.all[0]!
+      socket.open()
+      socket.emit({ type: 'session', event: 'queue_state', seq: 0, journalVersion: 1, stateSnapshot: true, highWatermark: 1, busy: true, activeItem: { id: user.id, text: user.content, images: [] }, items: [] })
+      socket.emit({ ...acp('private streamed reply must not be logged'), seq: 1, userMsgId: user.id })
+      await vi.advanceTimersByTimeAsync(5001)
+      const slow = report.mock.calls.map(call => call[1]).find(row => row.event === 'history_slow')
+      expect(slow).toMatchObject({ received: 2, processed: 0, buffered: 2, pendingHistory: 1, highWatermark: 1, busy: false, serverBusy: true })
+      expect(chat.turns.value.map(turn => turn.role)).toEqual(['user'])
+      release([user])
+      await flushPromises()
+      expect(chat.turns.value.find(turn => turn.role === 'agent')?.text).toBe('private streamed reply must not be logged')
+      expect(report.mock.calls.map(call => call[1])).toContainEqual(expect.objectContaining({ event: 'replay_drained', received: 2, processed: 2, buffered: 0 }))
+      expect(report.mock.calls.map(call => call[1])).toContainEqual(expect.objectContaining({ event: 'replay_caught_up', liveParts: 1, liveTextChars: 41 }))
+      expect(JSON.stringify(report.mock.calls)).not.toContain('private prompt')
+      expect(JSON.stringify(report.mock.calls)).not.toContain('private streamed reply')
+    } finally { app.unmount(); vi.useRealTimers() }
+  })
+
+  it('keeps replay working when diagnostic uploads fail and records only history status and socket close code', async () => {
+    const report = vi.fn().mockRejectedValue(new Error('diagnostic upload unavailable'))
+    mocks.listSoloMessages.mockRejectedValueOnce(Object.assign(new Error('private upstream credentials must not be logged'), { status: 503 }))
+    const { chat, app } = mountChat({ ...mocks, reportSoloDiagnostics: report })
+    try {
+      await flushPromises()
+      const socket = FakeSocket.all[0]!
+      socket.open()
+      socket.emit({ type: 'session', event: 'queue_state', busy: true, activeItem: { id: 'active', text: 'private', images: [] }, items: [] })
+      socket.emit(acp('still streams'))
+      await flushPromises()
+      expect(chat.turns.value.find(turn => turn.role === 'agent')?.text).toBe('still streams')
+      expect(report.mock.calls.map(call => call[1])).toContainEqual(expect.objectContaining({ event: 'history_failed', httpStatus: 503 }))
+      socket.onclose?.()
+      expect(report.mock.calls.map(call => call[1])).toContainEqual(expect.objectContaining({ event: 'ws_closed' }))
+      expect(JSON.stringify(report.mock.calls)).not.toContain('private upstream credentials')
+    } finally { app.unmount() }
+  })
 
   it('keeps loaded older pages and the complete reply while lazily paging execution details', async () => {
     const saved = { id: 'answer', sessionId: 's1', turnId: 'question', role: 'assistant' as const, content: 'complete answer', createdAt: '2026-11-09T00:00:01Z', eventLog: { version: 1, from: 101, through: 104, count: 4, generation: 9 } }

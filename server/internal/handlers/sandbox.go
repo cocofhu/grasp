@@ -493,15 +493,24 @@ func (h *Handlers) SandboxProxy(c *gin.Context) {
 		return
 	}
 	row, err := h.Sbx.Get(id)
-	if err != nil || row.CodeServerPort == 0 {
+	if errors.Is(err, gorm.ErrRecordNotFound) || err == nil && row.CodeServerPort == 0 {
 		c.String(http.StatusNotFound, "no code-server for this sandbox")
+		return
+	}
+	if err != nil {
+		_ = c.Error(err)
+		c.String(http.StatusServiceUnavailable, "sandbox IDE temporarily unavailable")
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	dialAddr, uerr := h.Sbx.IDEUpstream(ctx, id)
 	if uerr != nil || strings.TrimSpace(dialAddr) == "" {
-		c.String(http.StatusNotFound, "no code-server for this sandbox")
+		log.Warn().Err(uerr).Uint("sandbox_id", id).Uint64("generation", row.Generation).
+			Str("operation_kind", row.OperationKind).Bool("lease_active", row.OperationOwner != "").
+			Dur("elapsed", time.Since(started)).Msg("sandbox IDE access unavailable")
+		c.String(http.StatusServiceUnavailable, "sandbox IDE temporarily unavailable")
 		return
 	}
 	h.serveSandboxUpstream(c, id, "IDE", dialAddr, row.Token)

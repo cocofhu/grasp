@@ -30,7 +30,7 @@ func (s *SandboxService) BeginWorkspaceConsumer(ctx context.Context, id uint, ki
 	if kind != "ide" && kind != "terminal" && kind != "preview" {
 		return access, ErrWorkspaceJobInvalid
 	}
-	ctx, row, release, err := s.beginSandboxAccess(ctx, id)
+	ctx, row, release, err := s.beginSandboxConsumerAccess(ctx, id)
 	if err != nil {
 		return access, err
 	}
@@ -49,7 +49,7 @@ func (s *SandboxService) BeginWorkspaceConsumer(ctx context.Context, id uint, ki
 		}
 	}
 	use := models.WorkspaceBindingUse{ID: uuid.NewString(), SandboxID: id, Kind: kind, Owner: uuid.NewString(), State: "active"}
-	err = s.commitSandboxOperationPrepared(ctx, id, func(tx *gorm.DB) error {
+	err = s.operations().CommitAccess(ctx, id, func(tx *gorm.DB) error {
 		if row.Purpose == SandboxPurposeSolo {
 			current, err := bindings.parent(ctx, tx, parent.UserID, "solo", parent.ID, id)
 			if err != nil {
