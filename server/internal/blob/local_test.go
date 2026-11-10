@@ -108,4 +108,16 @@ func TestIngestCompositeInputs(t *testing.T) {
 	if got["plain"] != "ok" {
 		t.Fatalf("plain = %#v", got["plain"])
 	}
+	original := models.AsCompositeText(inputs["feature"])
+	if original.Images[0].Data != b64 || original.Images[0].Ref != "" {
+		t.Fatal("ingestion changed the original request")
+	}
+	// Typed CompositeText pointers must be immutable too, not only JSON maps.
+	typed := &models.CompositeText{Text: "keep", Images: []models.PromptImage{{Data: b64, MimeType: "image/png"}}}
+	if _, err := IngestCompositeInputs(ctx, store, map[string]any{"typed": typed}); err != nil {
+		t.Fatal(err)
+	}
+	if typed.Images[0].Data != b64 || typed.Images[0].Ref != "" {
+		t.Fatal("ingestion changed the typed original request")
+	}
 }

@@ -1170,6 +1170,8 @@ func AllModels() []any {
 		&TokenUsageReport{},
 		&Project{}, &SoloSession{}, &SoloMessage{},
 		&ChatPendingTurn{},
+		&ChatQueue{}, &ChatQueueEpoch{}, &ChatQueueTurn{}, &ChatEventChunk{},
+		&ExecutionDataset{}, &ExecutionQuarantine{},
 	}
 }
 

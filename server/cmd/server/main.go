@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/auth"
-	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/browser"
 	"github.com/cocofhu/grasp/internal/channels"
 	"github.com/cocofhu/grasp/internal/channels/dingtalk"
@@ -41,6 +40,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
 	"github.com/cocofhu/grasp/internal/pagebridge"
+	"github.com/cocofhu/grasp/internal/payloadstore"
 	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/privatepreview"
 	"github.com/cocofhu/grasp/internal/router"
@@ -125,11 +125,20 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 
-	db, err := database.OpenWithFiles(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
+	runtimeDB, err := database.OpenRuntime(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("open database failed")
 	}
-	defer func() { _ = database.Close(db) }()
+	db := runtimeDB.DB
+	defer func() { _ = runtimeDB.Close() }()
+	if err := requireUninitializedFoundation(db); err != nil {
+		log.Fatal().Err(err).Msg("execution workers remain disabled")
+	}
+	storage, err := payloadstore.Open(context.Background(), db, cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("payload storage init failed")
+	}
+	defer storage.Close()
 	ledgerRecorder, err := tokenledger.Start(db, filepath.Join(cfg.Storage.BlobsRoot, "token-ledger"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("open token ledger journal failed")
@@ -167,10 +176,7 @@ func main() {
 		log.Warn().Err(err).Msg("sandbox runtime bundle unavailable; sandbox creation will fail until it exists")
 	}
 
-	blobStore, err := blob.NewFromConfig(cfg)
-	if err != nil {
-		log.Fatal().Err(err).Msg("blob store init failed")
-	}
+	blobStore := storage.Blobs
 
 	workspaceSvc := services.NewWorkspaceService(db)
 	auditSvc := services.NewAuditService(db)

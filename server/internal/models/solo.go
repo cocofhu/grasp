@@ -27,6 +27,7 @@ type Project struct {
 const (
 	SoloStatusStarting = "starting"
 	SoloStatusRunning  = "running"
+	SoloStatusStopped  = "stopped"
 	SoloStatusClosed   = "closed"
 	SoloStatusError    = "error"
 )
@@ -179,6 +180,7 @@ type SoloMessage struct {
 	Annotations   []ReactAnnotation `gorm:"serializer:filejson" json:"annotations,omitempty"`
 	PreviewShared bool              `json:"-"`
 	Events        []json.RawMessage `gorm:"serializer:filejson" json:"events,omitempty"`
+	EventLog      *ChatEventLog     `gorm:"serializer:json" json:"eventLog,omitempty"`
 	// References are the contexts the user explicitly picked for this turn.
 	// They are the only authority read_reference accepts.
 	References []MessageReference `gorm:"column:message_references;serializer:json" json:"references,omitempty"`
@@ -192,4 +194,28 @@ type SoloMessage struct {
 	Execution  *ChatExecution `gorm:"serializer:json" json:"execution,omitempty"`
 	DurationMs int64          `json:"durationMs,omitempty"`
 	CreatedAt  time.Time      `json:"createdAt"`
+}
+
+// ChatEventLog points into the immutable conversation journal. The range may
+// contain interleaved control frames; Count counts this turn's ACP frames.
+type ChatEventLog struct {
+	Version    int    `json:"version"`
+	From       int64  `json:"from"`
+	Through    int64  `json:"through"`
+	Count      int    `json:"count"`
+	Generation uint64 `json:"generation"`
+	// Legacy identifies a read-only import of the original Events cell. Its
+	// generation and turn remain unknown; it never grants execution authority.
+	Legacy *ChatLegacyEventOrigin `json:"legacy,omitempty"`
+}
+
+// ChatLegacyEventOrigin binds an imported range to its unchanged source body.
+// Reaching the former storage cap cannot prove the original process was saved
+// in full, even when the imported journal itself has no gaps.
+type ChatLegacyEventOrigin struct {
+	Format            string `json:"format"`
+	MessageID         string `json:"messageId"`
+	SHA256            string `json:"sha256"`
+	Count             int    `json:"count"`
+	PossiblyTruncated bool   `json:"possiblyTruncated"`
 }

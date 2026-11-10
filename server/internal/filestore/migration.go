@@ -39,27 +39,54 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 			continue
 		}
 		table := stmt.Schema.Table
+		skip, err := SkipMissingPayloadTable(ctx, db, table)
+		if err != nil {
+			return report, err
+		}
+		if skip {
+			continue
+		}
 		pk := stmt.Schema.PrimaryFields[0].DBName
 		columns := []string{pk}
 		encodings := map[string]string{}
-		for _, field := range stmt.Schema.Fields {
-			switch field.TagSettings["SERIALIZER"] {
-			case "filetext":
-				encodings[field.DBName] = Text
-			case "filejson":
-				encodings[field.DBName] = JSON
-			case "filebytes":
-				encodings[field.DBName] = Bytes
-			default:
+		explicit := map[string]bool{}
+		fields, err := PayloadFields(stmt.Schema)
+		if err != nil {
+			return report, err
+		}
+		for _, field := range fields {
+			if field.Encoding == "" {
 				continue
 			}
-			columns = append(columns, field.DBName)
+			// A frozen pre-upgrade SQL backup cannot contain this newly
+			// introduced raw-ref column. Do not invent it while verifying it.
+			if field.Explicit && !db.Migrator().HasColumn(stmt.Schema.Table, field.Column) {
+				if OptionalPayloadTable(table) {
+					return report, fmt.Errorf("existing payload table %s is missing column %s", table, field.Column)
+				}
+				continue
+			}
+			encodings[field.Column], explicit[field.Column] = field.Encoding, field.Explicit
+			columns = append(columns, field.Column)
 		}
 		if len(encodings) == 0 {
 			continue
 		}
 		if table == "artifacts" || table == "artifact_versions" {
 			columns = append(columns, "kind")
+		}
+		selected := make([]string, 0, len(columns))
+		for _, column := range columns {
+			selected = append(selected, stmt.Quote(column))
+		}
+		if db.Dialector.Name() == "sqlite" {
+			// GORM's map scan converts driver []byte to string for a TEXT
+			// column even when an older release actually stored a SQLite BLOB.
+			// Capture the storage class in the same SELECT so CAS can bind the
+			// original type and reject a concurrent type/value change.
+			for column := range encodings {
+				selected = append(selected, "typeof("+stmt.Quote(column)+") AS "+stmt.Quote("__payload_type_"+column))
+			}
 		}
 		var after any
 		for {
@@ -68,9 +95,10 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 			}
 			// A legacy row may contain a large base64 body. Load one row at a
 			// time rather than multiplying peak memory by a fixed batch size.
-			q := db.WithContext(ctx).Table(table).Select(columns).Order(pk).Limit(1)
+			q := db.WithContext(ctx).Table(table).Select(selected).
+				Order(clause.OrderByColumn{Column: clause.Column{Name: pk}}).Limit(1)
 			if after != nil {
-				q = q.Where(pk+" > ?", after)
+				q = q.Where(clause.Gt{Column: clause.Column{Name: pk}, Value: after})
 			}
 			var rows []map[string]any
 			if err := q.Find(&rows).Error; err != nil {
@@ -87,15 +115,25 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 						report.Failures = append(report.Failures, fmt.Sprintf("%s/%v/%s: %v", table, after, column, e))
 						continue
 					}
-					if raw == "" || (encoding == JSON && raw == "null") {
+					if raw == "" || (encoding == JSON && raw == "null" && !explicit[column]) {
 						continue
 					}
 					if IsRef(raw) {
-						if e = store.Verify(ctx, raw); e != nil {
+						actual, _, _ := Parse(raw)
+						if explicit[column] && actual != encoding {
+							e = fmt.Errorf("stored payload encoding disagrees with its owner")
+						} else {
+							e = store.Verify(ctx, raw)
+						}
+						if e != nil {
 							report.Failures = append(report.Failures, fmt.Sprintf("%s/%v/%s: %v", table, after, column, e))
 						} else {
 							report.Verified++
 						}
+						continue
+					}
+					if explicit[column] {
+						report.Failures = append(report.Failures, fmt.Sprintf("%s/%v/%s: explicit payload requires a prepared reference", table, after, column))
 						continue
 					}
 					if strings.HasPrefix(raw, Prefix) {
@@ -129,6 +167,21 @@ func Migrate(ctx context.Context, db *gorm.DB, models ...any) (MigrationReport, 
 						// A case-insensitive collation must not overwrite a concurrent
 						// edit which differs only by case or trailing spaces.
 						q = q.Where(clause.Expr{SQL: "BINARY ? = BINARY ?", Vars: []any{clause.Column{Name: column}, row[column]}})
+					} else if db.Dialector.Name() == "sqlite" {
+						storageClass := row["__payload_type_"+column]
+						if value, ok := storageClass.(*any); ok && value != nil {
+							storageClass = *value
+						}
+						storageType, e := rawString(storageClass)
+						if e != nil || (storageType != "text" && storageType != "blob") {
+							return report, fmt.Errorf("unexpected SQLite payload storage type in %s.%s", table, column)
+						}
+						var original any = raw
+						if storageType == "blob" {
+							original = []byte(raw)
+						}
+						q = q.Where(clause.Expr{SQL: "typeof(?) = ?", Vars: []any{clause.Column{Name: column}, storageType}}).
+							Where(clause.Eq{Column: clause.Column{Name: column}, Value: original})
 					} else {
 						q = q.Where(clause.Eq{Column: clause.Column{Name: column}, Value: row[column]})
 					}
