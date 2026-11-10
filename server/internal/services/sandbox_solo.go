@@ -82,6 +82,12 @@ func (s *SandboxService) SetSoloSandboxRecoveredHook(fn func(sandboxID uint)) {
 	s.mu.Unlock()
 }
 
+func (s *SandboxService) SetSoloSandboxRecoveryFailedHook(fn func(sandboxID uint)) {
+	s.mu.Lock()
+	s.soloOnRecoveryFailed = fn
+	s.mu.Unlock()
+}
+
 func (s *SandboxService) invokeSoloDestroyHook(id uint) {
 	s.mu.Lock()
 	fn := s.soloOnDestroy

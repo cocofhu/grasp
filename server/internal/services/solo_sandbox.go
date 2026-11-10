@@ -101,6 +101,14 @@ func (s *SoloService) onSandboxRecovered(sandboxID uint) {
 	s.retryDeferredRestores(sandboxID)
 }
 
+func (s *SoloService) onSandboxRecoveryFailed(sandboxID uint) {
+	var rows []models.SoloSession
+	s.db.Where("sandbox_id = ? AND status = ? AND lifecycle_action = ''", sandboxID, models.SoloStatusError).Find(&rows)
+	for _, row := range rows {
+		s.publishStatus(row.ID)
+	}
+}
+
 // onSandboxGone observes a missing bookkeeping row. The legacy callback has
 // no provider deletion/incarnation proof, so it retains the unknown binding;
 // future explicit release must carry its own loss-aware operation receipt.
