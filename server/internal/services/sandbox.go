@@ -62,9 +62,8 @@ type SandboxService struct {
 	maxRetention atomic.Int64
 
 	mu sync.Mutex
-	// Per-resident locks serialize recovery with explicit destruction without
-	// making one unavailable sandbox block every other session.
-	soloRecoveryLocks sync.Map
+	// ops serializes recovery, destruction and data-plane mutations per sandbox.
+	ops sandboxOperations
 	// Tests may shorten renewal; production renews every 15 seconds against
 	// a 45-second lease, with transient retries bounded by its last expiry.
 	operationRenewInterval time.Duration

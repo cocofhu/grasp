@@ -15,6 +15,7 @@ import (
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/sandboxop"
 	"gorm.io/gorm"
 )
 
@@ -40,7 +41,7 @@ func (r *workspaceImportRuntime) leased(ctx context.Context, id uint) {
 	if row.OperationOwner == "" || row.Generation == 0 || row.OperationExpiresAt == nil || !row.OperationExpiresAt.After(time.Now()) {
 		r.t.Fatal("provider called without a physical operation lease")
 	}
-	if _, ok := ctx.Value(sandboxOperationKey{}).(*sandboxOperation); !ok {
+	if !sandboxop.InLease(ctx) {
 		r.t.Fatal("provider context lost operation fencing")
 	}
 }

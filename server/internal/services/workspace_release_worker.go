@@ -14,14 +14,8 @@ import (
 )
 
 func (s *WorkspaceReleaseService) providerFence(ctx context.Context, row models.WorkspaceRelease) (sandbox.EnvironmentReleaseRenew, error) {
-	var held *sandboxOperation
-	for op, _ := ctx.Value(sandboxOperationKey{}).(*sandboxOperation); op != nil; op = op.parent {
-		if op.service == s.sbx && op.id == row.SandboxID {
-			held = op
-			break
-		}
-	}
-	if held == nil {
+	held, ok := s.sbx.heldSandboxOperation(ctx, row.SandboxID)
+	if !ok {
 		return sandbox.EnvironmentReleaseRenew{}, errSandboxOperationLost
 	}
 	if err := ctx.Err(); err != nil {
@@ -32,14 +26,14 @@ func (s *WorkspaceReleaseService) providerFence(ctx context.Context, row models.
 		return sandbox.EnvironmentReleaseRenew{}, err
 	}
 	now := time.Now().UTC()
-	if source.OperationOwner != held.owner || source.Generation != held.generation || source.OperationExpiresAt == nil || !source.OperationExpiresAt.After(now) || !row.Deadline.After(now) {
+	if source.OperationOwner != held.Owner || source.Generation != held.Generation || source.OperationExpiresAt == nil || !source.OperationExpiresAt.After(now) || !row.Deadline.After(now) {
 		return sandbox.EnvironmentReleaseRenew{}, errSandboxOperationLost
 	}
 	until := *source.OperationExpiresAt
 	if row.Deadline.Before(until) {
 		until = row.Deadline
 	}
-	return sandbox.EnvironmentReleaseRenew{Owner: held.owner, Generation: held.generation, ExpiresAt: until}, nil
+	return sandbox.EnvironmentReleaseRenew{Owner: held.Owner, Generation: held.Generation, ExpiresAt: until}, nil
 }
 func (s *WorkspaceReleaseService) uncertain(ctx context.Context, row models.WorkspaceRelease, reason string) {
 	prepared, err := s.options.Prepare(ctx)

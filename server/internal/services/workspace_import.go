@@ -142,18 +142,16 @@ func (b workspaceCodeBridge) maintainCodeLease(ctx context.Context, id uint, hos
 }
 
 func (b workspaceCodeBridge) fence(ctx context.Context, id uint) (sandbox.WorkspaceCodeFence, error) {
-	for operation, _ := ctx.Value(sandboxOperationKey{}).(*sandboxOperation); operation != nil; operation = operation.parent {
-		if operation.service != b.sandbox || operation.id != id {
-			continue
-		}
-		var row models.Sandbox
-		err := b.sandbox.db.WithContext(ctx).Select("generation", "operation_expires_at").Where("id = ? AND operation_owner = ? AND generation = ? AND operation_expires_at > ?", id, operation.owner, operation.generation, time.Now().UTC()).First(&row).Error
-		if err != nil || row.OperationExpiresAt == nil {
-			return sandbox.WorkspaceCodeFence{}, errSandboxOperationLost
-		}
-		return sandbox.WorkspaceCodeFence{Generation: row.Generation, ExpiresAt: *row.OperationExpiresAt}, nil
+	operation, ok := b.sandbox.heldSandboxOperation(ctx, id)
+	if !ok {
+		return sandbox.WorkspaceCodeFence{}, errSandboxOperationLost
 	}
-	return sandbox.WorkspaceCodeFence{}, errSandboxOperationLost
+	var row models.Sandbox
+	err := b.sandbox.db.WithContext(ctx).Select("generation", "operation_expires_at").Where("id = ? AND operation_owner = ? AND generation = ? AND operation_expires_at > ?", id, operation.Owner, operation.Generation, time.Now().UTC()).First(&row).Error
+	if err != nil || row.OperationExpiresAt == nil {
+		return sandbox.WorkspaceCodeFence{}, errSandboxOperationLost
+	}
+	return sandbox.WorkspaceCodeFence{Generation: row.Generation, ExpiresAt: *row.OperationExpiresAt}, nil
 }
 func (b workspaceCodeBridge) Receipt(ctx context.Context, id uint, importID string) (sandbox.WorkspaceCodeReceipt, error) {
 	host, port, password, err := b.sandbox.acpConnection(ctx, id)

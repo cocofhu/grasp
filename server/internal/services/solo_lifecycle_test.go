@@ -676,8 +676,7 @@ func TestSoloLostCreateLeaseCannotStartProviderOrPublishParentFailure(t *testing
 			// The in-process operation map is released only once the old create
 			// goroutine has finished its failed proof/publication path.
 			waitFor(t, "stale create finished", func() bool {
-				value, ok := sbx.soloRecoveryLocks.Load(row.ID)
-				return ok && len(value.(chan struct{})) == 0
+				return sbx.operations().LocalIdle(row.ID)
 			})
 			var environment models.Sandbox
 			if err := db.First(&environment, row.ID).Error; err != nil || environment.OperationOwner != "winning-physical-owner" || environment.Status != "winner-state" || environment.Error != "keep winner" || callbacks.Load() != 0 {
