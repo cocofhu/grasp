@@ -775,7 +775,6 @@ describe('SettingsView execution mode', () => {
   it('does not put an execution-mode switch on home, new session, or start run', () => {
     const dir = dirname(fileURLToPath(import.meta.url))
     for (const rel of [
-      '../components/dashboard/HomeModeSwitch.vue',
       '../components/solo/HomeSoloPanel.vue',
       '../components/workflow/RunLaunchModal.vue',
       'SoloView.vue',

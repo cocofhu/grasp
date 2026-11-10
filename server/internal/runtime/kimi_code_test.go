@@ -33,14 +33,6 @@ func TestKimiCodeAuthAndSite(t *testing.T) {
 	if _, err := MergeAuthEnv(BackendKimiCode, map[string]string{envauth.EnvKimiCodeAPIKey: "sk-test-value", EnvKimiCodeRegion: "eu"}); err == nil || !strings.Contains(err.Error(), "未知的 Kimi Code 服务站点") {
 		t.Fatalf("unknown site: %v", err)
 	}
-	cn, err := KimiPlatformBaseURL("cn")
-	if err != nil || cn != "https://api.kimi.com/coding/v1" {
-		t.Fatal(cn, err)
-	}
-	intl, err := KimiPlatformBaseURL("")
-	if err != nil || intl != "https://api.kimi.ai/coding/v1" {
-		t.Fatal(intl, err)
-	}
 }
 
 func TestKimiCodeEmptyModelStaysEmpty(t *testing.T) {

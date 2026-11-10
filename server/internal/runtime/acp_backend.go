@@ -32,9 +32,6 @@ const (
 	EnvTraeRegion      = "GRASP_TRAE_REGION"
 	EnvKimiCodeRegion  = "GRASP_KIMI_CODE_REGION"
 
-	KimiCodeCNBaseURL   = "https://api.kimi.com/coding/v1"
-	KimiCodeIntlBaseURL = "https://api.kimi.ai/coding/v1"
-
 	EnvCodeBuddyInternet = "CODEBUDDY_INTERNET_ENVIRONMENT"
 	EnvCodeBuddyBaseURL  = "CODEBUDDY_BASE_URL"
 	EnvTraeCLIHost       = "TRAECLI_HOST"
@@ -380,19 +377,6 @@ func mergeRegionEnv(backend AcpBackend, env map[string]string) error {
 		return mergeKimiCodeRegion(env)
 	}
 	return nil
-}
-
-// KimiPlatformBaseURL is the Coding Plan root for a saved Kimi Code site.
-// Empty selects the international default. Unknown sites are refused.
-func KimiPlatformBaseURL(region string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(region)) {
-	case "", "intl", "international", "public", "global", "ai":
-		return KimiCodeIntlBaseURL, nil
-	case "cn", "china", "domestic", "internal":
-		return KimiCodeCNBaseURL, nil
-	default:
-		return "", fmt.Errorf("未知的 Kimi Code 服务站点")
-	}
 }
 
 func mergeKimiCodeRegion(env map[string]string) error {

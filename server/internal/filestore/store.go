@@ -1,6 +1,9 @@
 // Package filestore keeps persistent payload bytes outside SQL. References are
 // relative, content addressed keys; callers must authorize the owning record
 // before opening one. A reference is never an authorization credential.
+//
+// Bytes live in an objectstore backend; this package owns the reference format,
+// serialization and migration. payloadstore chooses and verifies the backend.
 package filestore
 
 import (

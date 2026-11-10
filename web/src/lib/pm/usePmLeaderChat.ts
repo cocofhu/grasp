@@ -21,6 +21,7 @@ import {
   type PmFailKind,
 } from '@/lib/pm/pmTurnState'
 import { extractAgentMessageDelta } from '@/lib/run/acpUnpack'
+import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import {
@@ -176,8 +177,6 @@ let ws: WebSocket | null = null
 const sessionStateCursor = createReviewStateCursor()
 /** Thread the socket should follow; '' disables reconnect. */
 let wsThreadId = ''
-let wsAttempt = 0
-let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
 /** Sandbox boot / turn phase from the server (preparing|pulling|creating|running). */
 const sandboxBootStatus = ref('')
@@ -665,17 +664,17 @@ async function removeThread(id: string) {
   }
 }
 
-function clearReconnectTimer() {
-  if (wsReconnectTimer) {
-    clearTimeout(wsReconnectTimer)
-    wsReconnectTimer = null
-  }
-}
+const reconnect = createWsReconnectController({
+  connect: () => openThreadWs(),
+  shouldReconnect: () =>
+    !!wsThreadId && !disposed && !ws && (typeof document === 'undefined' || document.visibilityState !== 'hidden'),
+  delayFor: pmWsReconnectDelayMs,
+})
 
 /** Close the thread socket and stop following it. */
 function closeWs() {
   wsThreadId = ''
-  clearReconnectTimer()
+  reconnect.reset()
   if (ws) {
     const socket = ws
     ws = null
@@ -695,12 +694,11 @@ function connectThreadWs(tid: string) {
   closeWs()
   if (!tid || disposed || isChannelThread(threads.value.find((x) => x.id === tid))) return
   wsThreadId = tid
-  wsAttempt = 0
   openThreadWs()
 }
 
 function openThreadWs() {
-  clearReconnectTimer()
+  reconnect.markConnecting()
   const tid = wsThreadId
   if (!tid || disposed) return
   idleHistoryReconciled = false
@@ -708,7 +706,7 @@ function openThreadWs() {
   try {
     socket = new WebSocket(api.pmThreadChatWsUrl(tid))
   } catch {
-    scheduleReconnect()
+    reconnect.onClose()
     return
   }
   ws = socket
@@ -723,30 +721,19 @@ function openThreadWs() {
     }
     if (firstFrame && msg?.type === 'session' && msg.event === 'queue_state') sessionStateCursor.reset()
     firstFrame = false
-    wsAttempt = 0
+    reconnect.markOpened()
     handleFrame(msg)
   }
   socket.onclose = () => {
     if (ws !== socket) return
     ws = null
-    scheduleReconnect()
+    reconnect.onClose()
   }
-}
-
-function scheduleReconnect() {
-  if (!wsThreadId || disposed || wsReconnectTimer) return
-  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-  const delay = pmWsReconnectDelayMs(wsAttempt)
-  wsAttempt += 1
-  wsReconnectTimer = setTimeout(() => {
-    wsReconnectTimer = null
-    openThreadWs()
-  }, delay)
 }
 
 function onVisibilityChange() {
   if (document.visibilityState !== 'visible' || !wsThreadId || ws) return
-  wsAttempt = 0
+  reconnect.reset()
   openThreadWs()
 }
 
