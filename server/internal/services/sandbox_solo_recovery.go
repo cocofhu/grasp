@@ -93,7 +93,7 @@ func (s *SandboxService) recordSoloRecovered(ctx context.Context, row *models.Sa
 	// A recreated pod retains the PVC head but loses /run platform env. Rebuild
 	// the trusted tuple only through the native standby protocol before making
 	// this environment available; an already configured runtime is read-only.
-	if err := s.mgr.ConfigureWorkspaceRuntime(ctx, sb); err != nil {
+	if err := s.mgr.RecoverWorkspaceRuntime(ctx, sb); err != nil {
 		return err
 	}
 	if err := s.recheckSoloRecoveryGrant(ctx, row, grant); err != nil {

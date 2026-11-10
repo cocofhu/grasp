@@ -5035,7 +5035,9 @@
         "retained": "停止只关闭计算资源，文件会保留。",
         "release": "释放环境",
         "stopPending": "停止尚未确认，工作区已保留。",
-        "retryStop": "重试停止"
+        "retryStop": "重试停止",
+        "stopping": "正在停止…",
+        "resuming": "正在恢复…"
       },
       "workflows": {
         "title": "工作流任务",
