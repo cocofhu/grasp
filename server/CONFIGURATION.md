@@ -52,6 +52,15 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_STORAGE_DRIVER` | `storage.driver` | enum | `local` | Public | Attachment storage driver: local (cos reserved) |
 | `GRASP_MAX_FILE_BYTES` | `storage.max_file_bytes` | int | `134217728` | Public | Maximum bytes per Agent file import |
 | `GRASP_BLOBS_ROOT` | `storage.blobs_root` | path | `data/blobs` | Public | Local attachment blob root directory |
+| `GRASP_SOLO_BACKUP_DIR` | `solo_backup.local_dir` | path | `data/solo-backups` | Public | Directory for stopped Solo workspace archives when S3 is not configured |
+| `GRASP_SOLO_BACKUP_MAX_BYTES` | `solo_backup.max_bytes` | int | `4294967296` | Public | Maximum bytes of one compressed Solo workspace archive; larger workspaces cannot stop |
+| `GRASP_SOLO_BACKUP_S3_ENDPOINT` | `solo_backup.s3.endpoint` | URL | `Not set` | Public | S3-compatible endpoint origin; empty uses the AWS endpoint for the region |
+| `GRASP_SOLO_BACKUP_S3_REGION` | `solo_backup.s3.region` | string | `us-east-1` | Public | S3 region |
+| `GRASP_SOLO_BACKUP_S3_BUCKET` | `solo_backup.s3.bucket` | string | `Not set` | Public | When set, Solo workspace archives go to this S3 bucket instead of the local directory |
+| `GRASP_SOLO_BACKUP_S3_PREFIX` | `solo_backup.s3.prefix` | string | `Not set` | Public | S3 object key prefix |
+| `GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID` | `solo_backup.s3.access_key_id` | string | `Not set` | Sensitive | S3 access key ID |
+| `GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` | `solo_backup.s3.secret_access_key` | string | `Not set` | Sensitive | S3 secret access key |
+| `GRASP_SOLO_BACKUP_S3_PATH_STYLE` | `solo_backup.s3.path_style` | boolean | `false` | Public | Use path-style bucket addressing (usually required by MinIO and other self-hosted servers) |
 | `GRASP_GITHUB_OAUTH_CLIENT_ID` | `github.oauth_client_id` | string | `Not set` | Public | Client ID of a GitHub OAuth App with Enable Device Flow checked; enables "Sign in with GitHub" for github.com workspace credentials (no client secret needed) |
 | `GRASP_CODEX_LOGIN_REFRESH_LEAD` | `codex_login.refresh_lead` | duration | `96h` | Public | How long before the access token expires the platform renews a Codex ChatGPT login |
 | `GRASP_CODEX_LOGIN_CHECK_INTERVAL` | `codex_login.check_interval` | duration | `10m` | Public | How often the platform checks whether Codex logins need renewal |

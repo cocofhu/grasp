@@ -40,7 +40,34 @@ type Config struct {
 	GitHub   GitHubConfig   `yaml:"github"`
 	// CodexLogin tunes the platform renewal of workspace Codex ChatGPT logins.
 	CodexLogin CodexLoginConfig `yaml:"codex_login"`
+	// SoloBackup stores workspace archives of stopped Solo sessions.
+	SoloBackup SoloBackupConfig `yaml:"solo_backup"`
 }
+
+// SoloBackupConfig selects where a stopped Solo workspace is archived. S3 is
+// used when a bucket is configured; otherwise archives stay under LocalDir.
+type SoloBackupConfig struct {
+	LocalDir string `yaml:"local_dir"`
+	// MaxBytes caps one compressed archive; a larger workspace cannot stop.
+	MaxBytes int64        `yaml:"max_bytes"`
+	S3       SoloBackupS3 `yaml:"s3"`
+}
+
+// SoloBackupS3 is an S3-compatible bucket (AWS, MinIO, COS, OSS...).
+type SoloBackupS3 struct {
+	// Endpoint is an HTTP(S) origin. Empty uses the AWS endpoint for Region.
+	Endpoint        string `yaml:"endpoint"`
+	Region          string `yaml:"region"`
+	Bucket          string `yaml:"bucket"`
+	Prefix          string `yaml:"prefix"`
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	// PathStyle addresses the bucket in the path; most self-hosted servers need it.
+	PathStyle bool `yaml:"path_style"`
+}
+
+// Enabled reports whether archives go to S3 instead of the local directory.
+func (s SoloBackupS3) Enabled() bool { return strings.TrimSpace(s.Bucket) != "" }
 
 // CodexLoginConfig controls how the platform renews Codex ChatGPT logins. The
 // platform is the only holder of the refresh token; sandboxes get copies
@@ -461,6 +488,9 @@ func parse(path string) (*Config, error) {
 	if err := rejectSandboxSecretEnv(c); err != nil {
 		return nil, err
 	}
+	if err := validateSoloBackup(c.SoloBackup); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -583,6 +613,7 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_BLOBS_ROOT"); v != "" {
 		c.Storage.BlobsRoot = v
 	}
+	applySoloBackupEnv(c)
 	if v := env("GRASP_MAX_FILE_BYTES"); v != "" {
 		c.Storage.MaxFileBytes, _ = strconv.ParseInt(v, 10, 64)
 	}
@@ -635,6 +666,12 @@ func setDefaults(c *Config) {
 	c.Storage.Driver = strings.ToLower(strings.TrimSpace(c.Storage.Driver))
 	if c.Storage.BlobsRoot == "" {
 		c.Storage.BlobsRoot = "data/blobs"
+	}
+	if c.SoloBackup.LocalDir == "" {
+		c.SoloBackup.LocalDir = "data/solo-backups"
+	}
+	if c.SoloBackup.MaxBytes <= 0 {
+		c.SoloBackup.MaxBytes = 4 << 30
 	}
 	if c.Storage.MaxFileBytes <= 0 {
 		c.Storage.MaxFileBytes = 128 << 20
@@ -849,6 +886,55 @@ func mergeEnvList(c *Config, list string) {
 }
 
 func env(key string) string { return os.Getenv(key) }
+
+func applySoloBackupEnv(c *Config) {
+	b := &c.SoloBackup
+	for key, dst := range map[string]*string{
+		"GRASP_SOLO_BACKUP_DIR":                  &b.LocalDir,
+		"GRASP_SOLO_BACKUP_S3_ENDPOINT":          &b.S3.Endpoint,
+		"GRASP_SOLO_BACKUP_S3_REGION":            &b.S3.Region,
+		"GRASP_SOLO_BACKUP_S3_BUCKET":            &b.S3.Bucket,
+		"GRASP_SOLO_BACKUP_S3_PREFIX":            &b.S3.Prefix,
+		"GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID":     &b.S3.AccessKeyID,
+		"GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY": &b.S3.SecretAccessKey,
+	} {
+		if v := env(key); v != "" {
+			*dst = v
+		}
+	}
+	if v := env("GRASP_SOLO_BACKUP_MAX_BYTES"); v != "" {
+		b.MaxBytes, _ = strconv.ParseInt(v, 10, 64)
+	}
+	if v := env("GRASP_SOLO_BACKUP_S3_PATH_STYLE"); v != "" {
+		b.S3.PathStyle, _ = strconv.ParseBool(v)
+	}
+}
+
+// validateSoloBackup fails startup on a half-configured bucket instead of
+// silently keeping archives on local disk.
+func validateSoloBackup(b SoloBackupConfig) error {
+	s := b.S3
+	if !s.Enabled() {
+		if s.Endpoint != "" || s.AccessKeyID != "" || s.SecretAccessKey != "" {
+			return fmt.Errorf("solo_backup.s3 requires bucket when endpoint or credentials are set")
+		}
+		return nil
+	}
+	if strings.ContainsAny(s.Bucket, "/\\\r\n") {
+		return fmt.Errorf("solo_backup.s3.bucket must be a bucket name")
+	}
+	if s.AccessKeyID == "" || s.SecretAccessKey == "" {
+		return fmt.Errorf("solo_backup.s3 requires access_key_id and secret_access_key")
+	}
+	if s.Endpoint != "" {
+		u, err := url.Parse(strings.TrimSpace(s.Endpoint))
+		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") ||
+			u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return fmt.Errorf("solo_backup.s3.endpoint must be an HTTP(S) origin")
+		}
+	}
+	return nil
+}
 
 func envInt(key string) int {
 	if v := env(key); v != "" {

@@ -290,6 +290,34 @@ func (h *Handlers) CloseSoloSession(c *gin.Context) {
 	c.JSON(http.StatusOK, v)
 }
 
+// StopSoloSession handles POST /api/solo/sessions/:id/stop.
+func (h *Handlers) StopSoloSession(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	v, err := h.Solo.Stop(c.Request.Context(), c.Param("id"), user)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, v)
+}
+
+// ResumeSoloSession handles POST /api/solo/sessions/:id/resume.
+func (h *Handlers) ResumeSoloSession(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	v, err := h.Solo.Resume(c.Request.Context(), c.Param("id"), user)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, v)
+}
+
 // RestartSoloSession handles POST /api/solo/sessions/:id/restart.
 func (h *Handlers) RestartSoloSession(c *gin.Context) {
 	user, ok := h.soloReady(c)

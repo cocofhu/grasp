@@ -170,6 +170,9 @@ type agentContainerExtra struct {
 	OnFail func(err error)
 	// OnReady runs after the row is marked as running.
 	OnReady func()
+	// Restore fills the workspace once SSH and ACP are ready, before the
+	// chat session opens. A failure destroys the new sandbox.
+	Restore func(ctx context.Context, sb *sandbox.Sandbox) error
 	// InitialChatModel selects only the sandbox's first chat. Empty follows the primary model.
 	InitialChatModel           string
 	InitialChatReasoningEffort *string
@@ -278,6 +281,14 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		_ = os.RemoveAll(home)
 		fail(fmt.Errorf("acp not ready: %w", err))
 		return
+	}
+	if extra.Restore != nil {
+		if err := extra.Restore(ctx, sb); err != nil {
+			sb.Destroy(context.Background())
+			_ = os.RemoveAll(home)
+			fail(fmt.Errorf("restore workspace: %w", err))
+			return
+		}
 	}
 	acp := sb.ACP().WithSession(sb.WorkspaceDir, mcpServersJSON(specs))
 	if err := acp.Connect(ctx); err != nil {

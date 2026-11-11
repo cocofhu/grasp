@@ -48,6 +48,7 @@ import (
 	"github.com/cocofhu/grasp/internal/schedulermcp"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/shutdown"
+	"github.com/cocofhu/grasp/internal/solobackup"
 	"github.com/cocofhu/grasp/internal/tokenledger"
 
 	"github.com/gin-gonic/gin"
@@ -417,6 +418,12 @@ func main() {
 	// missing sandbox. Older releases could leave active sessions dangling.
 	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
 	soloSvc.SetBlobStore(blobStore)
+	soloBackups, err := solobackup.New(cfg.SoloBackup)
+	if err != nil {
+		log.Fatal().Err(err).Msg("solo backup storage")
+	}
+	soloSvc.SetBackupStore(soloBackups)
+	log.Info().Str("store", soloBackups.Kind()).Msg("solo workspace backups")
 	eng.SetReferencePinner(soloSvc)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.

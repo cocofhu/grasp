@@ -23,6 +23,9 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 	}
 	tracked[row.Name], correlated[row.Name] = true, true
 	s.db.Model(row).Update("destroy_at", nil)
+	if s.soloSessionStopped(row) {
+		return // resumed only on request; a missing resource is restored from backup
+	}
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	if sandbox.GatewayRecordMissing(err) {
 		// A process can exit after Create but before adopting the gateway id.
@@ -117,6 +120,9 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	}
 	if s.soloSessionClosed(row) {
 		return fmt.Errorf("Solo 会话已关闭")
+	}
+	if s.soloSessionStopped(row) {
+		return fmt.Errorf("Solo 会话已停止，请先恢复")
 	}
 	s.mu.Lock()
 	live := s.live[id]

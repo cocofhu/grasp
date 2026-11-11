@@ -177,6 +177,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.DELETE("/solo/sessions/:id", h.DeleteSoloSession)
 		api.POST("/solo/sessions/:id/close", h.CloseSoloSession)
 		api.POST("/solo/sessions/:id/restart", h.RestartSoloSession)
+		api.POST("/solo/sessions/:id/stop", h.StopSoloSession)
+		api.POST("/solo/sessions/:id/resume", h.ResumeSoloSession)
 		api.GET("/solo/sessions/:id/messages", h.ListSoloMessages)
 		api.GET("/solo/sessions/:id/resources", h.GetSoloResources)
 		api.POST("/solo/sessions/:id/embed-ticket", h.CreateSoloEmbedTicket)

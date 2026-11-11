@@ -15,6 +15,8 @@ import (
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/solobackup"
 	"github.com/cocofhu/grasp/internal/tokenledger"
 
 	"github.com/google/uuid"
@@ -106,6 +108,7 @@ type SoloEnvEntry struct {
 // sandbox and a FIFO of chat turns per session.
 type SoloService struct {
 	blobs    blob.Store
+	backups  solobackup.Store
 	db       *gorm.DB
 	sbx      *SandboxService
 	agents   *AgentService
@@ -187,6 +190,10 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 	if err := s.pinLegacyConfigurationIDs(); err != nil {
 		log.Error().Err(err).Msg("pin existing Solo model group selections")
 	}
+	// A stop interrupted by the previous process never stopped its sandbox
+	// (or did so last, in which case recovery starts it again).
+	db.Model(&models.SoloSession{}).Where("status = ?", models.SoloStatusStopping).
+		Updates(map[string]any{"status": models.SoloStatusRunning, "error": "停止被服务重启中断，会话保持运行"})
 	return s
 }
 
@@ -359,7 +366,8 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 func (s *SoloService) List(ctx context.Context, user, status string) ([]SoloSessionView, error) {
 	q := s.db.Where("user_id = ?", user)
 	if status == "active" {
-		q = q.Where("status IN ?", []string{models.SoloStatusStarting, models.SoloStatusRunning})
+		q = q.Where("status IN ?", []string{models.SoloStatusStarting, models.SoloStatusRunning,
+			models.SoloStatusStopping, models.SoloStatusStopped})
 	}
 	var rows []models.SoloSession
 	if err := q.Order("updated_at desc").Limit(200).Find(&rows).Error; err != nil {
@@ -489,9 +497,17 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 }
 
 func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) error {
+	return s.openSandboxWith(ctx, row, nil)
+}
+
+// openSandboxWith opens a sandbox whose workspace comes from restore instead
+// of cloning. A failed restore returns the session to stopped, keeping its
+// archive for another attempt.
+func (s *SoloService) openSandboxWith(ctx context.Context, row *models.SoloSession, restore func(context.Context, *sandbox.Sandbox) error) error {
 	sid := row.ID
 	model := chatModelID(row)
 	sb, err := s.sbx.OpenSoloSandbox(ctx, SoloSandboxOpts{
+		Restore: restore,
 		Profile: row.AgentName, SessionID: sid, Repos: effectiveSessionRepos(row), InitialModelID: model,
 		InitialConfigurationID: chatConfigurationID(row),
 		ReasoningEffort:        row.CurrentReasoningEffort,
@@ -508,10 +524,15 @@ func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) 
 			}
 		},
 		OnFail: func(sandboxID uint, err error) {
+			updates := map[string]any{"status": models.SoloStatusError, "error": truncErr(err)}
+			if restore != nil {
+				updates = map[string]any{"status": models.SoloStatusStopped, "sandbox_id": 0,
+					"error": "恢复失败，工作区备份仍保留，可重试：" + truncErr(err)}
+			}
 			res := s.db.Model(&models.SoloSession{}).
 				Where("id = ? AND sandbox_id = ? AND status IN ?", sid, sandboxID,
 					[]string{models.SoloStatusStarting, models.SoloStatusRunning}).
-				Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
+				Updates(updates)
 			if res.RowsAffected > 0 {
 				s.publishStatus(sid)
 			}
@@ -630,6 +651,7 @@ func (s *SoloService) Close(ctx context.Context, id, user string) (*SoloSessionV
 	}
 	s.clearDeferredQueue(id)
 	s.destroySandbox(ctx, row.SandboxID)
+	s.discardBackup(ctx, row)
 	s.appendSystem(id, "会话已关闭，沙箱已释放")
 	s.publishStatus(id)
 	return s.Get(ctx, id, user)
@@ -642,7 +664,7 @@ func (s *SoloService) Restart(ctx context.Context, id, user string) (*SoloSessio
 	if err != nil {
 		return nil, err
 	}
-	if row.Status == models.SoloStatusStarting || row.Status == models.SoloStatusRunning {
+	if row.Status == models.SoloStatusStarting || row.Status == models.SoloStatusRunning || row.Status == models.SoloStatusStopping {
 		return nil, soloErr(http.StatusConflict, "session_active", "会话仍在运行，无需重新启动")
 	}
 	if _, ok := s.agents.Get(row.AgentName); !ok {
@@ -681,10 +703,11 @@ func (s *SoloService) Delete(ctx context.Context, id, user string) error {
 	if err != nil {
 		return err
 	}
-	if row.Status == models.SoloStatusStarting || row.Status == models.SoloStatusRunning {
+	if row.Status == models.SoloStatusStarting || row.Status == models.SoloStatusRunning || row.Status == models.SoloStatusStopping {
 		return soloErr(http.StatusConflict, "session_active", "请先关闭会话再删除")
 	}
 	s.destroySandbox(ctx, row.SandboxID)
+	s.discardBackup(ctx, row)
 	s.mu.Lock()
 	delete(s.chats, id)
 	s.mu.Unlock()
@@ -1393,6 +1416,9 @@ func (s *SoloService) sendSoloTurn(row *models.SoloSession, turn *soloTurn, inpu
 	if row.Status == models.SoloStatusError {
 		return 0, soloErr(http.StatusConflict, "session_error", "沙箱不可用，请重新启动会话")
 	}
+	if row.Status == models.SoloStatusStopped || row.Status == models.SoloStatusStopping {
+		return 0, soloErr(http.StatusConflict, "session_stopped", "会话已停止，请先恢复")
+	}
 	turn.Text = strings.TrimSpace(turn.Text)
 	turn.Annotations = models.NormalizePreviewPicks(turn.Annotations, 8)
 	if turn.Text == "" && len(turn.Images) == 0 && len(turn.References) == 0 && len(turn.Annotations) == 0 && len(inputs) == 0 {
@@ -1691,6 +1717,8 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 		switch row.Status {
 		case models.SoloStatusClosed:
 			return 0, nil, errors.New("会话已关闭")
+		case models.SoloStatusStopped, models.SoloStatusStopping:
+			return 0, nil, errors.New("会话已停止")
 		case models.SoloStatusError:
 			if row.Error != "" {
 				return 0, nil, errors.New(row.Error)

@@ -333,3 +333,18 @@ func (g *GatewayClient) WaitRunning(ctx context.Context, id string, timeout time
 		}
 	}
 }
+
+// Driver reports the driver of the gateway connection that owns id.
+func (g *GatewayClient) Driver(ctx context.Context, id string) (string, error) {
+	client, _, err := g.resolveID(id)
+	if err != nil {
+		return "", err
+	}
+	var health struct {
+		Driver string `json:"driver"`
+	}
+	if err := client.doDirect(ctx, http.MethodGet, "/healthz", nil, &health); err != nil {
+		return "", err
+	}
+	return health.Driver, nil
+}

@@ -48,6 +48,9 @@ type FakeGateway struct {
 	FailLogs   bool // GET /sandboxes/:id/logs returns 500
 	FailStatus bool // GET /sandboxes/:id/status returns 503
 	FailStart  bool // POST /sandboxes/:id/start returns 500
+	FailStop   bool // POST /sandboxes/:id/stop returns 500
+	// Driver is reported by GET /healthz (empty -> "docker").
+	Driver string
 	// RequirePublishedPort makes host resolution return 404 for unmapped ports.
 	RequirePublishedPort bool
 
@@ -184,6 +187,14 @@ func (fg *FakeGateway) handle(w http.ResponseWriter, r *http.Request) {
 	// parts: [] for collection, [id], [id, "status"], [id, "stop"|"start"],
 	// [id, "hosts", port].
 	switch {
+	case r.URL.Path == "/healthz" && r.Method == http.MethodGet:
+		fg.mu.Lock()
+		driver := fg.Driver
+		fg.mu.Unlock()
+		if driver == "" {
+			driver = "docker"
+		}
+		writeJSON(w, map[string]string{"status": "ok", "driver": driver})
 	case r.URL.Path == "/api/v1/sandboxes" && r.Method == http.MethodPost:
 		fg.create(w, r)
 	case r.URL.Path == "/api/v1/sandboxes" && r.Method == http.MethodGet:
@@ -290,6 +301,10 @@ func (fg *FakeGateway) status(w http.ResponseWriter, id string) {
 func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
 	if action == "start" && fg.FailStart {
 		http.Error(w, "resume failed", http.StatusInternalServerError)
+		return
+	}
+	if action == "stop" && fg.FailStop {
+		http.Error(w, "stop failed", http.StatusInternalServerError)
 		return
 	}
 	fg.mu.Lock()

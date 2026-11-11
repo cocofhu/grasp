@@ -29,6 +29,10 @@ const (
 	SoloStatusRunning  = "running"
 	SoloStatusClosed   = "closed"
 	SoloStatusError    = "error"
+	// Stopping archives the workspace, then stops the sandbox. Stopped holds
+	// no compute; Resume starts the same sandbox or restores the archive.
+	SoloStatusStopping = "stopping"
+	SoloStatusStopped  = "stopped"
 )
 
 // SoloArtifactRunPrefix reserves the run namespace used by resident Solo sandboxes.
@@ -106,8 +110,15 @@ type SoloSession struct {
 	NeedsPreamble bool       `json:"-"`
 	LastActiveAt  *time.Time `json:"lastActiveAt,omitempty"`
 	ClosedAt      *time.Time `json:"closedAt,omitempty"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	UpdatedAt     time.Time  `json:"updatedAt"`
+	// Backup* describe the workspace archive taken by the last stop. It is
+	// kept until the next stop replaces it or the session is closed.
+	BackupStore  string     `json:"-"`
+	BackupKey    string     `json:"-"`
+	BackupSHA256 string     `json:"-"`
+	BackupSize   int64      `json:"backupSize,omitempty"`
+	BackupAt     *time.Time `json:"backupAt,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
 }
 
 // Reference kinds a Solo user turn may attach.

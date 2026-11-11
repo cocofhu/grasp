@@ -41,6 +41,8 @@ type SoloSandboxOpts struct {
 	OnEnv                  func(sources map[string]string)
 	OnReady                func(sandboxID uint)
 	OnFail                 func(sandboxID uint, err error)
+	// Restore replaces the repository clone with a stopped workspace archive.
+	Restore func(ctx context.Context, sb *sandbox.Sandbox) error
 }
 
 // MaxSoloSandboxes returns the resident Solo sandbox cap.
@@ -142,6 +144,9 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		snapshots = []models.SessionRepo{sessionRepoFromProject(opts.Project, opts.Branch, 0)}
 	}
 	repos := SoloRepoSpecsList(snapshots)
+	if opts.Restore != nil {
+		repos = nil
+	}
 	runID := models.SoloArtifactRunPrefix + sanitizeID(sessionID) + "-" + randID()
 	token := uuid.NewString()
 	if s.host != nil {
@@ -168,7 +173,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		}
 		return nil, err
 	}
-	extra := agentContainerExtra{Repos: repos, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort}
+	extra := agentContainerExtra{Repos: repos, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort, Restore: opts.Restore}
 	id := row.ID
 	if opts.OnReady != nil {
 		extra.OnReady = func() { opts.OnReady(id) }
