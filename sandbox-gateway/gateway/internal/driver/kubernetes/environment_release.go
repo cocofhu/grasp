@@ -17,6 +17,14 @@ import (
 
 func (d *Driver) PreviewEnvironmentRelease(ctx context.Context, id string) (driver.EnvironmentReleasePlan, error) {
 	p := driver.EnvironmentReleasePlan{Version: driver.EnvironmentReleaseVersion, Resource: id, Namespace: d.opts.Namespace}
+	// The release plan names the live PVC, so an archived volume is restored
+	// first and the caller retries.
+	if err := d.requireVolume(ctx, id); err != nil {
+		if errors.Is(err, ErrVolumeRestoring) {
+			return p, errors.Join(driver.ErrEnvironmentReleasePending, err)
+		}
+		return p, err
+	}
 	dep, err := d.cs.AppsV1().Deployments(d.opts.Namespace).Get(ctx, d.resourceName(id), metav1.GetOptions{})
 	if err != nil {
 		return p, err

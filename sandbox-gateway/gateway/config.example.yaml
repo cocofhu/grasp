@@ -91,6 +91,24 @@ kubernetes:
   memoryRequestMB: 512
   cpuRequestRatio: 0.25
   memoryRequestRatio: 0.25
+  # Archive the whole data PVC of sandboxes stopped longer than afterSeconds
+  # to S3, then delete the PVC. Start restores it in the background first.
+  # Requires role-volume-archive.yaml (pods + pods/exec) and GNU tar in the
+  # helper image (defaults to the sandbox image).
+  volumeArchive:
+    enabled: false
+    afterSeconds: 1800        # >= 600
+    intervalSeconds: 60       # sweep period
+    timeoutSeconds: 7200      # one archive or restore; >= 300
+    helperImage: ""           # empty => the sandbox's own image
+    s3:
+      endpoint: "http://minio.minio.svc:9000"  # HTTP(S) origin
+      region: "us-east-1"
+      bucket: "sandbox-volumes"
+      prefix: "archives"
+      accessKeyID: ""         # or SBGW_K8S_VOLUME_ARCHIVE_S3_ACCESS_KEY_ID
+      secretAccessKey: ""     # or SBGW_K8S_VOLUME_ARCHIVE_S3_SECRET_ACCESS_KEY
+      pathStyle: true
 
 # Periodically report driver workloads with no matching DB record (orphans).
 # Retain disks and workloads for explicit reconciliation; never delete on probe.

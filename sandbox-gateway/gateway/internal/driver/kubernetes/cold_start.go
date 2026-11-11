@@ -73,6 +73,9 @@ func (d *Driver) StartConfigured(ctx context.Context, id string, opts driver.Sta
 	if err != nil {
 		return nil, err
 	}
+	if err := d.requireVolume(ctx, id); err != nil {
+		return nil, err
+	}
 	deps := d.cs.AppsV1().Deployments(d.opts.Namespace)
 	dep, err := deps.Get(ctx, d.resourceName(id), metav1.GetOptions{})
 	if err != nil {
@@ -245,6 +248,11 @@ func (d *Driver) GetColdStart(ctx context.Context, id, request string) (*driver.
 	if err != nil {
 		return nil, err
 	}
+	if a, err := readArchive(dep); err != nil {
+		return nil, err
+	} else if a != nil && a.State != archiveStateArchiving {
+		return nil, ErrVolumeRestoring
+	}
 	proof, err := coldProof(dep)
 	if err != nil || proof.RequestID != request || !d.releaseLabels(id, dep.Labels) {
 		return nil, driver.ErrColdStartConflict
@@ -299,7 +307,12 @@ func coldOriginalRoot(dep *appsv1.Deployment, secret *corev1.Secret) (string, er
 	return root, nil
 }
 
+// PreviewColdStart starts restoring an archived volume, since the cold start
+// that follows needs the original PVC.
 func (d *Driver) PreviewColdStart(ctx context.Context, id string) (*driver.ColdStartTarget, error) {
+	if err := d.requireVolume(ctx, id); err != nil {
+		return nil, err
+	}
 	dep, err := d.cs.AppsV1().Deployments(d.opts.Namespace).Get(ctx, d.resourceName(id), metav1.GetOptions{})
 	if err != nil {
 		return nil, err

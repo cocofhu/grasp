@@ -194,25 +194,65 @@ type E2BTemplateConfig struct {
 // K8sConfig configures the production Kubernetes driver and default/max
 // resource limits applied when creating sandboxes (per-request overrides).
 type K8sConfig struct {
-	InCluster          bool              `yaml:"inCluster"`
-	Kubeconfig         string            `yaml:"kubeconfig"`
-	Namespace          string            `yaml:"namespace"`  // shared namespace for sandboxes
-	NamePrefix         string            `yaml:"namePrefix"` // e.g. "sbx-"
-	StorageClass       string            `yaml:"storageClass"`
-	DataDiskGi         int64             `yaml:"dataDiskGi"`     // default PVC size (GiB)
-	MaxDataDiskGi      int64             `yaml:"maxDataDiskGi"`  // max PVC size per sandbox
-	PVCAnnotations     map[string]string `yaml:"pvcAnnotations"` // applied to new sandbox data PVCs
-	ImagePullSecret    string            `yaml:"imagePullSecret"`
-	ImagePullPolicy    string            `yaml:"imagePullPolicy"`    // default "Always"
-	EnableLoadBalancer bool              `yaml:"enableLoadBalancer"` // MetalLB LoadBalancer Service
-	CPUCores           float64           `yaml:"cpuCores"`           // default CPU limit (cores)
-	MaxCPUCores        float64           `yaml:"maxCPUCores"`        // max CPU limit per sandbox
-	MemoryMB           int64             `yaml:"memoryMB"`           // default memory limit (MiB)
-	MaxMemoryMB        int64             `yaml:"maxMemoryMB"`        // max memory limit per sandbox
-	CPURequestCores    float64           `yaml:"cpuRequestCores"`    // fixed CPU request; >0 preferred over ratio
-	MemoryRequestMB    int64             `yaml:"memoryRequestMB"`    // fixed memory request (MiB); >0 preferred over ratio
-	CPURequestRatio    float64           `yaml:"cpuRequestRatio"`    // request = limit × ratio when fixed is 0
-	MemoryRequestRatio float64           `yaml:"memoryRequestRatio"` // request = limit × ratio when fixed is 0
+	InCluster          bool                `yaml:"inCluster"`
+	Kubeconfig         string              `yaml:"kubeconfig"`
+	Namespace          string              `yaml:"namespace"`  // shared namespace for sandboxes
+	NamePrefix         string              `yaml:"namePrefix"` // e.g. "sbx-"
+	StorageClass       string              `yaml:"storageClass"`
+	DataDiskGi         int64               `yaml:"dataDiskGi"`     // default PVC size (GiB)
+	MaxDataDiskGi      int64               `yaml:"maxDataDiskGi"`  // max PVC size per sandbox
+	PVCAnnotations     map[string]string   `yaml:"pvcAnnotations"` // applied to new sandbox data PVCs
+	ImagePullSecret    string              `yaml:"imagePullSecret"`
+	ImagePullPolicy    string              `yaml:"imagePullPolicy"`    // default "Always"
+	EnableLoadBalancer bool                `yaml:"enableLoadBalancer"` // MetalLB LoadBalancer Service
+	CPUCores           float64             `yaml:"cpuCores"`           // default CPU limit (cores)
+	MaxCPUCores        float64             `yaml:"maxCPUCores"`        // max CPU limit per sandbox
+	MemoryMB           int64               `yaml:"memoryMB"`           // default memory limit (MiB)
+	MaxMemoryMB        int64               `yaml:"maxMemoryMB"`        // max memory limit per sandbox
+	CPURequestCores    float64             `yaml:"cpuRequestCores"`    // fixed CPU request; >0 preferred over ratio
+	MemoryRequestMB    int64               `yaml:"memoryRequestMB"`    // fixed memory request (MiB); >0 preferred over ratio
+	CPURequestRatio    float64             `yaml:"cpuRequestRatio"`    // request = limit × ratio when fixed is 0
+	MemoryRequestRatio float64             `yaml:"memoryRequestRatio"` // request = limit × ratio when fixed is 0
+	VolumeArchive      VolumeArchiveConfig `yaml:"volumeArchive"`
+}
+
+// VolumeArchiveConfig releases the data PVC of a sandbox that has stayed
+// stopped for AfterSeconds: the whole volume is archived to S3-compatible
+// storage, the PVC is deleted, and the next start restores it.
+type VolumeArchiveConfig struct {
+	Enabled         bool                  `yaml:"enabled"`
+	AfterSeconds    int                   `yaml:"afterSeconds"`    // stopped time before release (min 600)
+	IntervalSeconds int                   `yaml:"intervalSeconds"` // sweep period
+	TimeoutSeconds  int                   `yaml:"timeoutSeconds"`  // bound for one archive or restore
+	HelperImage     string                `yaml:"helperImage"`     // image with GNU tar; empty uses the sandbox image
+	S3              VolumeArchiveS3Config `yaml:"s3"`
+}
+
+// VolumeArchiveS3Config selects the bucket that holds volume archives.
+type VolumeArchiveS3Config struct {
+	Endpoint        string `yaml:"endpoint"`
+	Region          string `yaml:"region"`
+	Bucket          string `yaml:"bucket"`
+	Prefix          string `yaml:"prefix"`
+	AccessKeyID     string `yaml:"accessKeyID"`
+	SecretAccessKey string `yaml:"secretAccessKey"`
+	SessionToken    string `yaml:"sessionToken"`
+	PathStyle       *bool  `yaml:"pathStyle"` // default true
+}
+
+// VolumeArchiveAfter returns how long a sandbox stays stopped before release.
+func (c *Config) VolumeArchiveAfter() time.Duration {
+	return time.Duration(c.K8s.VolumeArchive.AfterSeconds) * time.Second
+}
+
+// VolumeArchiveInterval returns the archive sweep period.
+func (c *Config) VolumeArchiveInterval() time.Duration {
+	return time.Duration(c.K8s.VolumeArchive.IntervalSeconds) * time.Second
+}
+
+// VolumeArchiveTimeout bounds one archive or restore.
+func (c *Config) VolumeArchiveTimeout() time.Duration {
+	return time.Duration(c.K8s.VolumeArchive.TimeoutSeconds) * time.Second
 }
 
 // AuthConfig configures control-plane authentication.
@@ -463,6 +503,15 @@ func normalizeResourcePolicy(c *Config) {
 	if c.OrphanGC.MinAgeSeconds < 0 {
 		c.OrphanGC.MinAgeSeconds = 0
 	}
+	if c.K8s.VolumeArchive.AfterSeconds == 0 {
+		c.K8s.VolumeArchive.AfterSeconds = 1800
+	}
+	if c.K8s.VolumeArchive.IntervalSeconds <= 0 {
+		c.K8s.VolumeArchive.IntervalSeconds = 60
+	}
+	if c.K8s.VolumeArchive.TimeoutSeconds <= 0 {
+		c.K8s.VolumeArchive.TimeoutSeconds = 7200
+	}
 	if strings.TrimSpace(c.K8s.ImagePullPolicy) == "" {
 		c.K8s.ImagePullPolicy = "IfNotPresent"
 	}
@@ -526,6 +575,11 @@ func (c *Config) validate() error {
 			return err
 		}
 	}
+	if c.Driver == "kubernetes" && c.K8s.VolumeArchive.Enabled {
+		if err := c.validateVolumeArchive(); err != nil {
+			return err
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(c.Database.Driver)) {
 	case "", "sqlite", "mysql":
 	default:
@@ -583,6 +637,27 @@ func (c *Config) validateE2B() error {
 	}
 	if !defaultFound {
 		return fmt.Errorf("image.ref must match an explicit e2b.templates image")
+	}
+	return nil
+}
+
+func (c *Config) validateVolumeArchive() error {
+	a := c.K8s.VolumeArchive
+	// Below ten minutes a restored volume could be archived again before an
+	// environment release (10 minute confirmation window) completes.
+	if a.AfterSeconds < 600 {
+		return fmt.Errorf("kubernetes.volumeArchive.afterSeconds must be at least 600")
+	}
+	if a.TimeoutSeconds < 300 {
+		return fmt.Errorf("kubernetes.volumeArchive.timeoutSeconds must be at least 300")
+	}
+	u, err := url.Parse(strings.TrimSpace(a.S3.Endpoint))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return fmt.Errorf("kubernetes.volumeArchive.s3.endpoint must be an HTTP(S) origin")
+	}
+	if strings.TrimSpace(a.S3.Bucket) == "" || a.S3.AccessKeyID == "" || a.S3.SecretAccessKey == "" {
+		return fmt.Errorf("kubernetes.volumeArchive.s3 requires bucket, accessKeyID and secretAccessKey")
 	}
 	return nil
 }
@@ -681,6 +756,30 @@ func applyEnv(c *Config) {
 	}
 	if v := os.Getenv("SBGW_K8S_IMAGE_PULL_POLICY"); v != "" {
 		c.K8s.ImagePullPolicy = v
+	}
+	if v := os.Getenv("SBGW_K8S_VOLUME_ARCHIVE_ENABLED"); v != "" {
+		c.K8s.VolumeArchive.Enabled = parseBool(v, c.K8s.VolumeArchive.Enabled)
+	}
+	if v := os.Getenv("SBGW_K8S_VOLUME_ARCHIVE_AFTER_SEC"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.K8s.VolumeArchive.AfterSeconds = n
+		} else {
+			c.K8s.VolumeArchive.AfterSeconds = -1 // validateVolumeArchive rejects it.
+		}
+	}
+	s3 := &c.K8s.VolumeArchive.S3
+	for key, destination := range map[string]*string{
+		"SBGW_K8S_VOLUME_ARCHIVE_S3_ENDPOINT":          &s3.Endpoint,
+		"SBGW_K8S_VOLUME_ARCHIVE_S3_REGION":            &s3.Region,
+		"SBGW_K8S_VOLUME_ARCHIVE_S3_BUCKET":            &s3.Bucket,
+		"SBGW_K8S_VOLUME_ARCHIVE_S3_PREFIX":            &s3.Prefix,
+		"SBGW_K8S_VOLUME_ARCHIVE_S3_ACCESS_KEY_ID":     &s3.AccessKeyID,
+		"SBGW_K8S_VOLUME_ARCHIVE_S3_SECRET_ACCESS_KEY": &s3.SecretAccessKey,
+		"SBGW_K8S_VOLUME_ARCHIVE_S3_SESSION_TOKEN":     &s3.SessionToken,
+	} {
+		if value := os.Getenv(key); value != "" {
+			*destination = value
+		}
 	}
 	if v := os.Getenv("SBGW_ORPHAN_GC_ENABLED"); v != "" {
 		c.OrphanGC.Enabled = parseBool(v, c.OrphanGC.Enabled)
