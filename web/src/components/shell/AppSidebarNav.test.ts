@@ -275,15 +275,17 @@ afterEach(() => {
   resetBrandSettingsForTest()
 })
 
-function mountNav(attachOrOptions: boolean | { realIcon?: boolean } = false) {
+function mountNav(attachOrOptions: boolean | { realIcon?: boolean; workspaceLists?: boolean } = false) {
   const attach = attachOrOptions === true
   const realIcon = typeof attachOrOptions === 'object' && attachOrOptions.realIcon === true
+  const workspaceLists = typeof attachOrOptions === 'object' && attachOrOptions.workspaceLists === true
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages, ...nav, ...workspaceSnapshots, ...workspaceRelease } },
   })
   return mount(AppSidebarNav, {
+    props: { workspaceLists },
     attachTo: attach ? document.body : undefined,
     global: {
       plugins: [i18n],
@@ -3174,9 +3176,14 @@ describe('AppSidebarNav cancel run', () => {
     await flushPromises()
 
     expect(routeState.path).toBe('/dashboard')
-    expect(apiMocks.listRuns).toHaveBeenCalledTimes(1)
+    expect(apiMocks.listRuns).toHaveBeenCalledTimes(2)
     expect(apiMocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({
       status: 'queued,running,waiting_human',
+      sort: 'last_activity',
+      order: 'desc',
+    }))
+    expect(apiMocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'paused',
       sort: 'last_activity',
       order: 'desc',
     }))
@@ -3214,7 +3221,7 @@ describe('AppSidebarNav cancel run', () => {
     document.dispatchEvent(new Event('visibilitychange'))
     await flushPromises()
 
-    expect(apiMocks.listRuns.mock.calls.length).toBe(callsAfterMount + 1)
+    expect(apiMocks.listRuns.mock.calls.length).toBe(callsAfterMount + 2)
     expect(routeState.path).toBe('/dashboard')
     expect(wrapper.get('[data-key="run-back"]').text()).toContain('切回来了')
     expect(wrapper.get('[data-testid="nav-queued"]').text()).toContain('排队中')
@@ -3235,31 +3242,34 @@ describe('AppSidebarNav cancel run', () => {
 
     const wrapper = mountNav()
     await flushPromises()
-    expect(pending).toHaveLength(1)
+    expect(pending).toHaveLength(2)
     expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
 
     notifyRecentActivity()
     await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
     notifyRecentActivity()
     await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
-    expect(pending).toHaveLength(1)
+    expect(pending).toHaveLength(2)
     expect(pending[0].signal?.aborted).toBe(false)
+    expect(pending[1].signal?.aborted).toBe(false)
 
     pending[0].resolve(landed)
+    pending[1].resolve({ items: [], total: 0 })
     await flushPromises()
     expect(wrapper.get('[data-key="run-live"]').text()).toContain('登录还在跑')
-    expect(pending).toHaveLength(2)
+    expect(pending).toHaveLength(4)
     expect(pending[0].signal?.aborted).toBe(false)
 
     notifyRecentActivity()
     await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
     notifyRecentActivity()
     await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
-    expect(pending).toHaveLength(2)
-    expect(pending[1].signal?.aborted).toBe(false)
+    expect(pending).toHaveLength(4)
+    expect(pending[2].signal?.aborted).toBe(false)
     expect(wrapper.get('[data-key="run-live"]').text()).toContain('登录还在跑')
 
-    pending[1].reject(new Error('offline'))
+    pending[2].reject(new Error('offline'))
+    pending[3].reject(new Error('offline'))
     await flushPromises()
     expect(wrapper.get('[data-key="run-live"]').text()).toContain('登录还在跑')
     expect(wrapper.get('[data-testid="nav-pending-approvals"]').text()).toContain('工作流')
@@ -4070,5 +4080,107 @@ describe('automatic workflow rows', () => {
     ;(document.querySelector('[data-testid="nav-pending-cancel-dismiss"]') as HTMLButtonElement).click()
     wrapper.unmount()
     vi.useRealTimers()
+  })
+})
+
+describe('sidebar current view lists every live workflow', () => {
+  const base = (id: string, status: string, title = id) => ({
+    id,
+    workflowId: 'wf',
+    workflowName: '发布',
+    title,
+    status,
+    startedAt: 'T0',
+  })
+  const save = (id: string, state: 'saving' | 'failed', title: string) => ({
+    ...base(id, 'paused', title),
+    workspaceSave: { checkpointId: 'cp', nodeId: 'code', state },
+  })
+
+  function install(live: ReturnType<typeof base>[], paused: ReturnType<typeof base>[], history: ReturnType<typeof base>[] = []) {
+    apiMocks.listRuns.mockImplementation((params?: { status?: string; page?: number; pageSize?: number }) => {
+      const status = params?.status ?? ''
+      const page = params?.page ?? 1
+      const pageSize = params?.pageSize ?? 100
+      const pool = status === 'paused' ? paused : status.includes('completed') ? history : live
+      const start = (page - 1) * pageSize
+      const items = pool.slice(start, start + pageSize)
+      return Promise.resolve({ items, total: pool.length, hasMore: start + items.length < pool.length, page, pageSize })
+    })
+  }
+
+  it('draws 8 running workflows, and still draws all 51', async () => {
+    install(Array.from({ length: 8 }, (_, i) => base(`run-${i}`, 'running', `运行 ${i}`)), [])
+    const eight = mountNav()
+    await flushPromises()
+    expect(eight.get('[data-testid="nav-running-rows"]').findAll('[data-testid="nav-pending-row"]')).toHaveLength(8)
+    expect(eight.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('8')
+    eight.unmount()
+
+    install(Array.from({ length: 51 }, (_, i) => base(`run-${i}`, 'running', `运行 ${i}`)), [])
+    const many = mountNav()
+    await flushPromises()
+    const rows = many.get('[data-testid="nav-running-rows"]').findAll('[data-testid="nav-pending-row"]')
+    expect(rows).toHaveLength(51)
+    expect(rows[50].attributes('data-key')).toBe('run-50')
+    expect(apiMocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'queued,running,waiting_human',
+      page: 1,
+      pageSize: 100,
+    }))
+    many.unmount()
+  })
+
+  it('keeps a save in progress and a failed save, and drops a user pause', async () => {
+    const live = [
+      base('run', 'running', '还在跑'),
+      base('wait', 'waiting_human', '等人'),
+      base('queue', 'queued', '排队'),
+    ]
+    const paused = [
+      save('saving', 'saving', '正在保存'),
+      save('broken', 'failed', '保存坏了'),
+      base('hand', 'paused', '我暂停的'),
+    ]
+    install(live, paused)
+    const wrapper = mountNav()
+    await flushPromises()
+    const workflow = wrapper.get('[data-testid="nav-running-rows"]')
+    expect(workflow.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual(['run', 'wait', 'saving', 'broken'])
+    expect(workflow.get('[data-key="saving"]').text()).toContain('保存工作区中')
+    expect(workflow.get('[data-key="broken"]').text()).toContain('保存失败')
+    expect(workflow.get('[data-key="run"]').find('[data-testid="nav-run-save-status"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-queued-rows"]').findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual(['queue'])
+    expect(wrapper.find('[data-key="hand"]').exists()).toBe(false)
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(wrapper.get('[data-key="saving"]').text()).toContain('保存工作区中')
+    expect(wrapper.get('[data-key="broken"]').text()).toContain('保存失败')
+    wrapper.unmount()
+  })
+
+  it('moves a finished run from 工作流 to 历史执行', async () => {
+    const running = base('done-later', 'running', '马上完成')
+    const history: ReturnType<typeof base>[] = []
+    install([running, base('stay', 'running', '还在')], [], history)
+    const wrapper = mountNav({ workspaceLists: true })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="nav-running-rows"]').text()).toContain('马上完成')
+    expect(wrapper.find('[data-run-id="done-later"]').exists()).toBe(false)
+
+    history.push({ ...running, status: 'completed' })
+    install([base('stay', 'running', '还在')], [], history)
+    routeState.path = '/runs/done-later'
+    await flushPromises()
+    expect(wrapper.get('[data-testid="nav-running-rows"]').find('[data-key="done-later"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-running-rows"]').text()).toContain('还在')
+    const recent = wrapper.get('[data-run-id="done-later"]')
+    expect(recent.text()).toContain('马上完成')
+    expect(wrapper.get('[data-testid="sidebar-recent"]').text()).toContain('历史执行')
+    wrapper.unmount()
   })
 })
