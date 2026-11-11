@@ -23,9 +23,6 @@ func (e *Engine) executionEntities(ctx context.Context, runID string) ([]executi
 	if run.OriginSoloID != "" {
 		entities = append(entities, executionlineage.Entity{Kind: executionlineage.EntitySolo, ID: run.OriginSoloID})
 	}
-	if e.execution == nil || e.execution.LocalOnly() {
-		return entities, nil
-	}
 	// A terminal Run can still own an interrupted human/review visit. A new
 	// child or manual resume must not bypass the restored visit's quarantine.
 	var blocked struct{ ID uint }
@@ -42,7 +39,7 @@ func (e *Engine) executionEntities(ctx context.Context, runID string) ([]executi
 }
 
 func (e *Engine) executionTransaction(ctx context.Context, runID string, body func(*gorm.DB) error, extra ...executionlineage.Entity) error {
-	if e.execution == nil || e.execution.LocalOnly() {
+	if e.execution == nil {
 		return e.db.WithContext(ctx).Transaction(body)
 	}
 	entities, err := e.executionEntities(ctx, runID)
@@ -53,7 +50,7 @@ func (e *Engine) executionTransaction(ctx context.Context, runID string, body fu
 }
 
 func (e *Engine) executionCheck(ctx context.Context, runID string, extra ...executionlineage.Entity) error {
-	if e.execution == nil || e.execution.LocalOnly() {
+	if e.execution == nil {
 		return nil
 	}
 	entities, err := e.executionEntities(ctx, runID)
@@ -67,7 +64,7 @@ func (e *Engine) executableRuns(query *gorm.DB) *gorm.DB {
 	if e.workspaceCheckpoints != nil {
 		query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state <> 'applied')")
 	}
-	if e.execution == nil || e.execution.LocalOnly() {
+	if e.execution == nil {
 		return query
 	}
 	return query.Where("NOT EXISTS (SELECT 1 FROM execution_quarantines q WHERE q.entity_kind = 'run' AND q.entity_id = runs.id AND q.review_state = 'pending')").

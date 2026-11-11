@@ -74,7 +74,7 @@ func (s *SoloService) DeliverWorkflowEvents(ctx context.Context) error {
 	}
 	var events []workflowEventRecord
 	query := s.db.WithContext(ctx).Where("disposition = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)", "pending", time.Now().UTC())
-	if s.execution != nil && !s.execution.LocalOnly() {
+	if s.execution != nil {
 		if err := s.execution.Check(ctx); err != nil {
 			return err
 		}

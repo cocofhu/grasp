@@ -38,8 +38,8 @@ type Config struct {
 	Auth     AuthConfig     `yaml:"auth"`
 	Security SecurityConfig `yaml:"security"`
 	Storage  StorageConfig  `yaml:"storage"`
-	// ExecutionControl is an independent continuity authority. Nil keeps
-	// historical reads available while refusing execution until offline init.
+	// ExecutionControl is read only by grasp-storage-admin offline modes; the
+	// server binds execution to the SQL dataset and ignores this section.
 	ExecutionControl    *StorageConfig            `yaml:"execution_control"`
 	WorkspaceOperations WorkspaceOperationsConfig `yaml:"workspace_operations"`
 	Features            FeatureConfig             `yaml:"features"`

@@ -74,8 +74,6 @@ Requirements: a **Linux** host with Git, Docker, and Docker Compose (services us
 git clone https://github.com/cocofhu/grasp.git
 cd grasp
 cp .env.example .env
-# Select the matching migration-release images in .env (v3.2.0 predates initialization).
-./start.sh init-execution --offline
 ./start.sh -d
 ```
 
@@ -87,7 +85,7 @@ This pulls the published GHCR images without building locally. Once started:
 
 The default login is `admin` / `demo1234` (for local evaluation only; configure your own users for shared or production setups). The sandbox runtime image is pulled on first sandbox creation, or ahead of time with `./start.sh pull`.
 
-Initialize only a new installation with no SQL file. `--offline` confirms that all application replicas, scripts and other writers are stopped; the command checks the Compose application and refuses to stop it automatically. Existing v3.2 data must follow [UPGRADING.md](server/UPGRADING.md). An interrupted fresh initialization uses the same command and original private `.localdata/execution-maintenance/fresh-install` receipts. A missing or changed independent control marker is refused; ordinary startup/restart never creates a replacement.
+Existing v3.2 data must follow [UPGRADING.md](server/UPGRADING.md).
 
 ### Running your first workflow
 

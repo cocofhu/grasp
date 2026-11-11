@@ -74,8 +74,6 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 git clone https://github.com/cocofhu/grasp.git
 cd grasp
 cp .env.example .env
-# 在 .env 选择配套迁移版镜像（v3.2.0 尚无执行初始化命令）。
-./start.sh init-execution --offline
 ./start.sh -d
 ```
 
@@ -87,7 +85,7 @@ cp .env.example .env
 
 默认演示账号为 `admin` / `demo1234`（仅限本地试用，共享或生产环境请配置独立账号）。沙箱镜像会在首次创建沙箱时按需拉取，也可执行 `./start.sh pull` 提前拉取。
 
-初始化仅适用于尚无 SQL 文件的新安装。`--offline` 表示你已停止所有应用副本、脚本和其他写入者；命令会核对 Compose 应用状态，不会自动停止服务。已有 v3.2 数据须按照 [UPGRADING.md](server/UPGRADING.md) 迁移。初始化中断后沿用同一命令及原私有目录 `.localdata/execution-maintenance/fresh-install` 的收据；控制标记丢失或变化时拒绝重建，普通启动和重启不会自动初始化。
+已有 v3.2 数据须按照 [UPGRADING.md](server/UPGRADING.md) 迁移。
 
 ### 跑通第一个工作流
 

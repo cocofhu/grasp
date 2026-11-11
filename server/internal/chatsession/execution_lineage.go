@@ -53,7 +53,7 @@ func (s *DurableStore) executionTransaction(ctx context.Context, scope QueueScop
 }
 
 func (s *DurableStore) executableQueues(query *gorm.DB) *gorm.DB {
-	if s.execution == nil || s.execution.LocalOnly() {
+	if s.execution == nil {
 		return query
 	}
 	return query.Where("NOT EXISTS (SELECT 1 FROM execution_quarantines q WHERE q.review_state = 'pending' AND ((q.entity_kind = 'chat_queue' AND q.entity_id = chat_queues.id) OR (chat_queues.surface = 'solo' AND q.entity_kind = 'solo' AND q.entity_id = chat_queues.session_key)))")

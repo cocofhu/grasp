@@ -3,8 +3,11 @@ package executionlineage
 import (
 	"context"
 	"errors"
+	"time"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/storageguard"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -26,6 +29,7 @@ type Controller struct {
 	authority *Authority
 	startup   Marker
 	closed    error
+	local     bool
 }
 
 type permitContextKey struct{}
@@ -35,27 +39,37 @@ type contextualPermit struct {
 	permit     Permit
 }
 
-func NewLocalController(db *gorm.DB) *Controller {
-	return &Controller{
-		db: db,
-		startup: Marker{
-			Version:     1,
-			NamespaceID: "00000000-0000-4000-8000-000000000001",
-			DatasetID:   "00000000-0000-4000-8000-000000000001",
-			Lineage:     "00000000-0000-4000-8000-000000000001",
-			Revision:    2,
-			State:       Active,
-			OperationID: "00000000-0000-4000-8000-000000000001",
-		},
+// NewLocalController grants execution from the SQL binding alone. An existing
+// binding keeps its dataset and lineage, because workspace heads, snapshot
+// jobs and review receipts already persisted them; a fresh database gets a
+// new random binding. SQL quarantines and the maintenance lock still apply.
+func NewLocalController(ctx context.Context, db *gorm.DB) (*Controller, error) {
+	if db == nil {
+		return nil, ErrUnavailable
 	}
-}
-
-func (c *Controller) LocalOnly() bool {
-	return c != nil && c.closed == nil && c.authority == nil
-}
-
-func (c *Controller) localOnly() bool {
-	return c.LocalOnly()
+	if err := outsideSQLTransaction(db); err != nil {
+		return nil, err
+	}
+	fresh := models.ExecutionDataset{ID: "primary", NamespaceID: uuid.NewString(), DatasetID: uuid.NewString(), Lineage: uuid.NewString(), OperationID: uuid.NewString(), ControlRevision: 2, BoundAt: time.Now().UTC()}
+	if err := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&fresh).Error; err != nil {
+		return nil, err
+	}
+	var binding models.ExecutionDataset
+	if err := db.WithContext(ctx).Take(&binding, "id = ?", "primary").Error; err != nil {
+		return nil, err
+	}
+	if !validUUID(binding.NamespaceID) || !validUUID(binding.DatasetID) || !validUUID(binding.Lineage) || !validUUID(binding.OperationID) {
+		return nil, ErrUnbound
+	}
+	return &Controller{db: db, local: true, startup: Marker{
+		Version:     1,
+		NamespaceID: binding.NamespaceID,
+		DatasetID:   binding.DatasetID,
+		Lineage:     binding.Lineage,
+		Revision:    binding.ControlRevision,
+		State:       Active,
+		OperationID: binding.OperationID,
+	}}, nil
 }
 
 func NewController(ctx context.Context, db *gorm.DB, authority *Authority) (*Controller, error) {
@@ -91,7 +105,7 @@ func (c *Controller) DatasetID() string {
 // transaction. It cannot run with a transaction-bound Controller database.
 // There is no background cache or process-local generation authority.
 func (c *Controller) Prepare(ctx context.Context) (Permit, error) {
-	if c.localOnly() {
+	if c != nil && c.local {
 		return Permit{data: &permitData{marker: c.startup}}, nil
 	}
 	if c == nil || c.closed != nil || c.authority == nil {
@@ -156,16 +170,7 @@ func (c *Controller) CheckPrepared(ctx context.Context, db *gorm.DB, entities ..
 // maintenance SHARE lock prevents an offline transition from crossing an
 // already admitted SQL publication. Native calls occur after releasing SQL.
 func (c *Controller) GuardTx(tx *gorm.DB, permit Permit, entities ...Entity) error {
-	if c.localOnly() {
-		if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
-			return ErrTransaction
-		}
-		if permit.data == nil || permit.data.marker != c.startup {
-			return ErrUnavailable
-		}
-		return nil
-	}
-	if c == nil || c.closed != nil || c.authority == nil || permit.data == nil || permit.data.marker != c.startup {
+	if c == nil || c.closed != nil || c.authority == nil && !c.local || permit.data == nil || permit.data.marker != c.startup {
 		return ErrUnavailable
 	}
 	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
@@ -177,6 +182,9 @@ func (c *Controller) GuardTx(tx *gorm.DB, permit Permit, entities ...Entity) err
 	}
 	if maintenance.Owner != "" {
 		return ErrInactive
+	}
+	if c.local {
+		return localGuardTx(tx, entities)
 	}
 	if err := c.authority.GuardTx(tx, permit, "", ""); err != nil {
 		return err

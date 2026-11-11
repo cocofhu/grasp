@@ -71,9 +71,9 @@ GRASP_S3_BUCKET=grasp
 GRASP_S3_PREFIX=application
 ```
 
-Leave `GRASP_S3_ENDPOINT`, access credentials and session token empty. Explicitly set `GRASP_LOCAL_OBJECTSTORE=1`; a missing S3 endpoint alone is rejected before any local store is provisioned. For a fresh installation, first run `./start.sh init-execution --offline`, or `./start.sh dev init-execution --offline` for source. It proves the app is stopped, prepares SeaweedFS with its retained local identity, then initializes independent execution control. Start the app with `./start.sh -d` (migration image) or `./start.sh dev -d` (source). Existing databases must follow `server/UPGRADING.md`; ordinary startup and restart never initialize authority.
+Leave `GRASP_S3_ENDPOINT`, access credentials and session token empty. Explicitly set `GRASP_LOCAL_OBJECTSTORE=1`; a missing S3 endpoint alone is rejected before any local store is provisioned. `./start.sh -d` (migration image) or `./start.sh dev -d` (source) prepares SeaweedFS with its retained local identity before starting the app. Existing databases must follow `server/UPGRADING.md`.
 
-The script creates a private bucket and generates an application identity scoped to that bucket before starting Grasp. S3 binds only to `http://127.0.0.1:8333`; change its port with `GRASP_LOCAL_OBJECTSTORE_PORT`. Admin, Filer and Master ports are not published to the host. Payload credentials never implicitly configure independent execution control.
+The script creates a private bucket and generates an application identity scoped to that bucket before starting Grasp. S3 binds only to `http://127.0.0.1:8333`; change its port with `GRASP_LOCAL_OBJECTSTORE_PORT`. Admin, Filer and Master ports are not published to the host.
 
 SeaweedFS runs as a non-root user. A non-root launcher uses its host UID/GID. A root launcher retains an existing non-root data owner, defaults new stores to `10001:10001`, and changes ownership only of the private data and IAM mounts. Client credentials stay host-private with mode `0600`. Set `GRASP_LOCAL_OBJECTSTORE_UID` / `GRASP_LOCAL_OBJECTSTORE_GID` to choose a non-root identity; a non-root launcher must own the mounts with its own UID/GID.
 
