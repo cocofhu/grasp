@@ -353,7 +353,16 @@ function soloRowTitle(session: SoloSession): string {
 function soloRowMotion(session: SoloSession): 'spin' | 'pulse' | null {
   if (soloStore.closing.value.has(session.id) || soloEnvironmentPhase(session)) return 'spin'
   if (session.status === 'starting') return 'spin'
+  // A stopped environment keeps its place in 正在执行, but the row end is the
+  // stop mark even when the session is still flagged busy.
+  if (session.status === 'stopped') return null
   return session.busy ? 'pulse' : null
+}
+
+/** Stop square only after the environment has settled. Closing, stopping and resuming keep their phase mark. */
+function soloRowShowsStop(session: SoloSession): boolean {
+  if (soloStore.closing.value.has(session.id) || soloEnvironmentPhase(session)) return false
+  return session.status === 'stopped'
 }
 
 function isSoloRowActive(session: SoloSession): boolean {
@@ -1342,6 +1351,17 @@ const settingsItems = computed(() => (
         />
         <InboxMotionMark v-if="soloRowMotion(entry.session) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="soloRowMotion(entry.session) === 'pulse'" kind="pulse" />
+        <Icon
+          v-else-if="soloRowShowsStop(entry.session)"
+          name="stop"
+          :size="14"
+          class="shrink-0 text-txt2"
+          :title="t('pages.solo.status.stopped')"
+          :aria-label="t('pages.solo.status.stopped')"
+          role="img"
+          aria-hidden="false"
+          data-testid="nav-solo-stopped"
+        />
       </div>
       <button
         v-else
@@ -1367,6 +1387,17 @@ const settingsItems = computed(() => (
         <span v-else-if="soloEnvironmentPhase(entry.session)" class="shrink-0 text-[11px] text-txt3" role="status" data-testid="nav-solo-environment-phase">{{ t(`pages.solo.environment.${soloEnvironmentPhase(entry.session)}`) }}</span>
         <InboxMotionMark v-if="soloRowMotion(entry.session) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="soloRowMotion(entry.session) === 'pulse'" kind="pulse" />
+        <Icon
+          v-else-if="soloRowShowsStop(entry.session)"
+          name="stop"
+          :size="14"
+          class="shrink-0 text-txt2"
+          :title="t('pages.solo.status.stopped')"
+          :aria-label="t('pages.solo.status.stopped')"
+          role="img"
+          aria-hidden="false"
+          data-testid="nav-solo-stopped"
+        />
       </button>
         </template>
       </div>
