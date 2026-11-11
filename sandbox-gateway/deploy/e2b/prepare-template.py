@@ -126,6 +126,16 @@ print(json.dumps({'status':'passed','imageLevel':expected['level'],'bootstrapSHA
     return "python3 - <<'GRASP_TEMPLATE_VALIDATE'\n" + code + "GRASP_TEMPLATE_VALIDATE\n"
 
 
+def profile_line(name: str, value: str) -> str:
+    if name != "PATH":
+        return "export " + name + "=" + shlex.quote(value) + "\n"
+    # profile.d runs in name order: overwriting PATH here would drop entries that
+    # earlier fragments (agent-path.sh, devtools-path.sh) already added.
+    entries = " ".join(shlex.quote(p) for p in reversed(value.split(":")))
+    return ('for p in ' + entries + '; do case ":$PATH:" in *":$p:"*) ;; *) PATH="$p:$PATH" ;; esac; done\n'
+            "unset p\nexport PATH\n")
+
+
 def configure_template(template_class: Any, args: argparse.Namespace, plan: dict[str, Any]) -> Any:
     builder = template_class(file_context_path=args.repo_root.resolve())
     builder = builder.from_image(args.image).set_user("root").set_envs(BUILD_ENV)
@@ -134,7 +144,7 @@ def configure_template(template_class: Any, args: argparse.Namespace, plan: dict
     # SDK set_envs applies to build instructions. Persist only these public
     # environment defaults for login shells; the Go driver also exports them
     # for non-login bootstrap processes. The runtime bundle stays server-owned.
-    profile = "".join("export " + name + "=" + shlex.quote(value) + "\n" for name, value in BUILD_ENV.items())
+    profile = "".join(profile_line(name, value) for name, value in BUILD_ENV.items())
     command = (
         "set -eu\ninstall -d -m 755 /etc/profile.d\n"
         "printf %s " + shlex.quote(profile) + " > /etc/profile.d/grasp-e2b-env.sh\n"
