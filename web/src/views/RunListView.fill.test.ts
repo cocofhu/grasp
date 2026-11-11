@@ -105,16 +105,16 @@ describe('RunListView sticky table + pager pin (g3)', () => {
 
   it('Pagination shrink-0 still gates on total > PAGE_SIZE and binds page (g3.2)', () => {
     expect(src).toMatch(/const PAGE_SIZE = 20/)
-    const pagers = src.match(/<Pagination v-if="total > PAGE_SIZE" v-model:page="page"/g) || []
+    const pagers = src.match(/<Pagination v-if="!showingEntireCurrentView && total > PAGE_SIZE" v-model:page="page"/g) || []
     expect(pagers.length).toBe(2)
-    const shrinkPagers = src.match(/<Pagination v-if="total > PAGE_SIZE" v-model:page="page" class="shrink-0"/g) || []
+    const shrinkPagers = src.match(/<Pagination v-if="!showingEntireCurrentView && total > PAGE_SIZE" v-model:page="page" class="shrink-0"/g) || []
     expect(shrinkPagers.length).toBe(2)
   })
 
   it('mobile data list uses overflow-y-auto and pins pager (g3.3)', () => {
     const mobile = src.slice(src.indexOf('<!-- Mobile card list -->'), src.indexOf('<!-- Desktop table -->'))
     expect(mobile).toMatch(/min-h-0 flex-1 flex-col gap-2 overflow-y-auto/)
-    expect(mobile).toMatch(/<Pagination v-if="total > PAGE_SIZE" v-model:page="page" class="shrink-0"/)
+    expect(mobile).toMatch(/<Pagination v-if="!showingEntireCurrentView && total > PAGE_SIZE" v-model:page="page" class="shrink-0"/)
     expect(mobile).not.toMatch(/applySortClick/)
     expect(mobile).not.toMatch(/sort-icon/)
   })

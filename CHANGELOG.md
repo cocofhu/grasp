@@ -4,6 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复设置的 Solo 沙箱上限明明没用满，却提示「Solo 沙箱已达上限」、无法新建会话的问题：旧版本留下的已关闭会话在原环境记录被清理后，仍被当作占用计算名额；现在已确认关闭的会话不再占用，未确认停止的仍保留占用。
 - 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。
 - 移除 `./start.sh [dev] init-execution --offline` 离线初始化步骤与 `GRASP_EXECUTION_CONTROL_*` 外部控制目录依赖，`./start.sh -d` 与 `./start.sh dev -d` 启动即可直接创建 Solo 会话和运行工作流。
 - `./start.sh dev` / `sandbox` 构建本地沙箱镜像时，Docker CE 不再只依赖清华源：密钥或软件包 403 时依次回退阿里云、中科大和官方源；整次构建仍失败则自动用 `USE_CN_MIRROR=false` 再打一次。

@@ -110,6 +110,24 @@ describe('sidebar workspace lists without a workflow directory', () => {
     wrapper.unmount()
   })
 
+  it('shows a finished run and leaves an unfinished workspace save out of 历史执行', async () => {
+    mocks.listRuns.mockResolvedValue({
+      items: [
+        { id: 'done', title: '已经完成', workflowName: '工作流', status: 'completed' },
+        { id: 'saving', title: '还在保存', workflowName: '工作流', status: 'paused', workspaceSave: { checkpointId: 'cp', nodeId: 'n', state: 'saving' } },
+        { id: 'hand', title: '人工暂停', workflowName: '工作流', status: 'paused' },
+      ],
+      total: 3,
+    })
+    const { wrapper } = await setup()
+    expect(wrapper.findAll('[data-testid="sidebar-recent-run"]').map((row) => row.attributes('data-run-id'))).toEqual(['done'])
+    expect(wrapper.text()).toContain('已经完成')
+    expect(wrapper.text()).not.toContain('还在保存')
+    expect(wrapper.text()).not.toContain('人工暂停')
+    expect(mocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({ pageSize: 20, status: 'completed,failed,cancelled' }))
+    wrapper.unmount()
+  })
+
   it('renders all twenty finished runs when the page is exactly full', async () => {
     const items = Array.from({ length: 20 }, (_, index) => ({ id: `r${index}`, title: `运行 ${index}`, workflowName: '工作流' }))
     mocks.listRuns.mockResolvedValue({ items, total: items.length })
