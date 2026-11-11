@@ -71,7 +71,7 @@ def initialize_fixture_execution(config_path, data, output, env, storage_admin=N
             admin = Path(storage_admin).resolve()
         else:
             admin = data/'storage-admin'
-            build_env = {**env, 'GOTOOLCHAIN': 'go1.26.10'}
+            build_env = {**env, 'GOTOOLCHAIN': 'go1.26.11'}
             subprocess.run(['go', 'build', '-o', str(admin), './cmd/storage-admin'], cwd=ROOT/'server', env=build_env, stdout=log, stderr=subprocess.STDOUT, check=True)
         subprocess.run([str(admin), '--mode', 'execution-init', '--offline', '--config', str(config_path), '--execution-control', str(control_path), '--workdir', str(data/'execution-init')], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
 
