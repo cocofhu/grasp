@@ -79,6 +79,7 @@ const { pins, pin: pinRow, unpin: unpinRow } = useSidebarPins()
 const { unreadCount } = useRunTerminalNotifications()
 const { isMobile } = useBreakpoint()
 const soloStore = useSoloSessions()
+const changingSoloEnvironments = soloStore.environmentChanges
 const soloCollapsed = computed(() => isSectionCollapsed('solo'))
 const runningCollapsed = computed(() => isSectionCollapsed('running'))
 const queuedCollapsed = computed(() => isSectionCollapsed('queued'))
@@ -412,10 +413,10 @@ const menuSolo = computed(() => {
 const menuSoloActive = computed(() => !!menuSolo.value && isSoloActive(menuSolo.value))
 const menuSoloClosing = computed(() => !!menuSolo.value && soloStore.closing.value.has(menuSolo.value.id))
 const menuSoloRelease = computed(() => menuSolo.value?.status === 'closed' && !!(menuSolo.value.sandboxId || menuSolo.value.sandbox?.id))
-const changingSoloEnvironments = ref(new Map<string, 'stopping' | 'resuming'>())
 /** The local request, or the server still converging on the requested state. */
 function soloEnvironmentPhase(session: SoloSession): 'stopping' | 'resuming' | null {
-  const local = changingSoloEnvironments.value.get(session.id)
+  const local = soloStore.environmentChanges.value.get(session.id)
+  if (local === 'stopping' && (session.status === 'stopped' || session.status === 'closed')) return null
   if (local) return local
   const sandbox = session.sandbox
   if (!sandbox || session.status === 'closed') return null
@@ -426,11 +427,11 @@ function soloEnvironmentPhase(session: SoloSession): 'stopping' | 'resuming' | n
 }
 const menuSoloEnvironmentDisabled = computed(() => {
   const session = menuSolo.value
-  return !session || menuSoloClosing.value || changingSoloEnvironments.value.has(session.id) || (session.status !== 'stopped' && (session.busy || session.waiting > 0 || session.status === 'starting'))
+  return !session || menuSoloClosing.value || soloStore.environmentChanges.value.has(session.id) || (session.status !== 'stopped' && (session.busy || session.waiting > 0 || session.status === 'starting'))
 })
 const menuSoloEnvironmentLabel = computed(() => {
   const session = menuSolo.value
-  const local = session && changingSoloEnvironments.value.get(session.id)
+  const local = session && soloStore.environmentChanges.value.get(session.id)
   if (local) return t(`pages.solo.environment.${local}`)
   if (session?.status === 'stopped') return t('pages.solo.environment.resume')
   return t(session?.sandbox?.desiredState === 'stopped' ? 'pages.solo.environment.retryStop' : 'pages.solo.environment.stop')
@@ -504,15 +505,12 @@ function onMenuSoloWorkspace(panel: 'snapshots' | 'release') {
 async function onMenuSoloEnvironment() {
   const session = menuSolo.value
   if (!session || !menuSoloActive.value || worktreeMode.value || menuSoloEnvironmentDisabled.value) return
-  changingSoloEnvironments.value.set(session.id, session.status === 'stopped' ? 'resuming' : 'stopping')
+  const phase = session.status === 'stopped' ? 'resuming' : 'stopping'
   closeMenu()
   try {
-    const saved = await (session.status === 'stopped' ? api.resumeSoloEnvironment(session.id) : api.stopSoloEnvironment(session.id))
-    soloStore.upsert(saved)
+    await soloStore.changeEnvironment(session.id, phase, () => (phase === 'resuming' ? api.resumeSoloEnvironment(session.id) : api.stopSoloEnvironment(session.id)))
   } catch (cause) {
     toast.error(soloErrorText(cause, t, te, locale.value))
-  } finally {
-    changingSoloEnvironments.value.delete(session.id)
   }
 }
 
