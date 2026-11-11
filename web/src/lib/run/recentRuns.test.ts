@@ -203,13 +203,54 @@ describe('historyEntries merges finished runs with ended Solo sessions', () => {
     expect(keys(tie)).toEqual(['r', 'solo:s'])
   })
 
-  it('keeps the server run order and caps the merged list', () => {
+  it('keeps the server run order and every row inside each side quota', () => {
     const runs = Array.from({ length: 20 }, (_, i) => hr(`r${i}`))
     const solos = Array.from({ length: 5 }, (_, i) => hs(`s${i}`, { closedAt: `2026-11-03T0${i}:00:00Z` }))
     const out = historyEntries(runs, solos, 20)
-    expect(out).toHaveLength(20)
+    expect(out).toHaveLength(25)
     expect(keys(out).slice(0, 5)).toEqual(['solo:s4', 'solo:s3', 'solo:s2', 'solo:s1', 'solo:s0'])
-    expect(keys(out).slice(5)).toEqual(runs.slice(0, 15).map((r) => r.id))
+    expect(keys(out).slice(5)).toEqual(runs.map((r) => r.id))
     expect(historyEntries(runs, solos, 0)).toEqual([])
+  })
+
+  it('keeps every failed run when newer ended Solo sessions fill their own quota', () => {
+    const runs = Array.from({ length: 20 }, (_, i) => ({
+      ...hr(`r${i}`, { lastActivityAt: `2026-11-02T${String(19 - i).padStart(2, '0')}:00:00Z` }),
+      status: 'failed',
+      title: '同名记录',
+    })) as Run[]
+    const solos = Array.from({ length: 20 }, (_, i) => ({
+      ...hs(`s${String(i).padStart(2, '0')}`, { closedAt: `2026-11-03T${String(19 - i).padStart(2, '0')}:00:00Z` }),
+      status: 'error',
+      title: '同名记录',
+    })) as SoloSession[]
+    const out = historyEntries(runs, solos, 20)
+    expect(out).toHaveLength(40)
+    expect(out.filter((e) => e.kind === 'run').map((e) => e.key)).toEqual(runs.map((r) => r.id))
+    expect(out.filter((e) => e.kind === 'run').every((e) => e.kind === 'run' && e.run.status === 'failed')).toBe(true)
+    expect(keys(out).slice(0, 20)).toEqual(solos.map((s) => `solo:${s.id}`))
+    expect(out.filter((e) => e.kind === 'solo').every((e) => e.kind === 'solo' && e.session.status === 'error')).toBe(true)
+  })
+
+  it('shows only the other side, capped at twenty, when one side is empty', () => {
+    const runs = Array.from({ length: 25 }, (_, i) => hr(`r${String(i).padStart(2, '0')}`, { lastActivityAt: `2026-11-01T00:${String(59 - i).padStart(2, '0')}:00Z` }))
+    const solos = Array.from({ length: 25 }, (_, i) => hs(`s${String(i).padStart(2, '0')}`, { closedAt: `2026-11-04T00:${String(59 - i).padStart(2, '0')}:00Z` }))
+    expect(keys(historyEntries([], solos, 20))).toEqual(solos.slice(0, 20).map((s) => `solo:${s.id}`))
+    expect(keys(historyEntries(runs, [], 20))).toEqual(runs.slice(0, 20).map((r) => r.id))
+    expect(historyEntries([], [], 20)).toEqual([])
+  })
+
+  it('leaves finished runs and ended solos outside the recent twenty', () => {
+    const runs = Array.from({ length: 25 }, (_, i) => ({
+      ...hr(`r${String(i).padStart(2, '0')}`, { lastActivityAt: `2026-11-01T00:${String(59 - i).padStart(2, '0')}:00Z` }),
+      status: 'failed',
+    })) as Run[]
+    const solos = Array.from({ length: 25 }, (_, i) => hs(`s${String(i).padStart(2, '0')}`, { closedAt: `2026-11-04T00:${String(59 - i).padStart(2, '0')}:00Z` }))
+    const out = historyEntries(runs, solos, 20)
+    expect(out).toHaveLength(40)
+    expect(out.filter((e) => e.kind === 'run').map((e) => e.key)).toEqual(runs.slice(0, 20).map((r) => r.id))
+    expect(keys(out)).not.toContain('r20')
+    expect(keys(out)).not.toContain('solo:s20')
+    expect(out.filter((e) => e.kind === 'solo').map((e) => e.key)).toEqual(solos.slice(0, 20).map((s) => `solo:${s.id}`))
   })
 })
