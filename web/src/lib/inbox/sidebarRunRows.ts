@@ -4,6 +4,140 @@ import { isGated } from '@/lib/workflow/agentCapabilities'
 /** Run statuses listed under「正在执行」; everything else is history. */
 export const RUNNING_RUN_STATUSES = 'queued,running,waiting_human'
 export const HISTORY_RUN_STATUSES = 'completed,failed,cancelled'
+/**
+ * Largest page the run list accepts. Callers walk every page, so this cap
+ * cannot hide a run that is still going.
+ */
+export const RUN_LIST_PAGE_SIZE = 100
+/** Stop a broken total from paging forever (100 × 100). */
+const RUN_LIST_MAX_PAGES = 100
+
+type PauseShape = { status?: string; workspaceSave?: unknown }
+
+/** Paused only to save the workspace. A user pause has no workspaceSave. */
+export function isWorkspaceSavePause(run: PauseShape | null | undefined): boolean {
+  return !!run && run.status === 'paused' && !!run.workspaceSave
+}
+
+/** User pause. It is not part of the current view. */
+export function isManualPause(run: PauseShape | null | undefined): boolean {
+  return !!run && run.status === 'paused' && !run.workspaceSave
+}
+
+/**
+ * Still on screen in「工作流」and「进行中」: executing, or a workspace save
+ * that has not finished. A user pause is not this.
+ */
+export function isCurrentViewRun(run: PauseShape | null | undefined): boolean {
+  if (!run) return false
+  return run.status === 'running' || isWorkspaceSavePause(run)
+}
+
+/**
+ * Run-list「进行中」, including the older link that also named queued.
+ * Queued rows stay out of that table; the sidebar「排队中」section keeps them.
+ */
+export function isInProgressListQuery(status: string | undefined): boolean {
+  const parts = (status ?? '').split(',').map((part) => part.trim()).filter(Boolean).sort()
+  const key = parts.join(',')
+  return key === 'running' || key === 'queued,running'
+}
+
+export interface RunListPage<T> {
+  items?: T[]
+  total?: number
+  hasMore?: boolean
+}
+
+export interface RunListQuery {
+  status?: string
+  tag?: string
+  wf?: string
+  page?: number
+  pageSize?: number
+  sort?: string
+  order?: string
+  signal?: AbortSignal
+}
+
+/**
+ * Every item of one status query. A full page continues while the server
+ * still has more; a short page ends the walk.
+ */
+export async function listAllRunPages<T extends { id?: string }>(
+  fetchPage: (page: number, pageSize: number) => Promise<RunListPage<T>>,
+  pageSize = RUN_LIST_PAGE_SIZE,
+): Promise<T[]> {
+  const items: T[] = []
+  const seen = new Set<string>()
+  for (let page = 1; page <= RUN_LIST_MAX_PAGES; page++) {
+    const data = await fetchPage(page, pageSize)
+    if (!Array.isArray(data?.items)) throw new Error('Invalid run list')
+    let added = 0
+    for (const item of data.items) {
+      if (item?.id) {
+        if (seen.has(item.id)) continue
+        seen.add(item.id)
+      }
+      items.push(item)
+      added++
+    }
+    const total = typeof data.total === 'number' && Number.isFinite(data.total) ? data.total : items.length
+    if (added === 0 || items.length >= total || data.hasMore === false) break
+    if (data.items.length < pageSize && data.hasMore !== true) break
+  }
+  return items
+}
+
+function dedupeRuns(runs: Run[]): Run[] {
+  const seen = new Set<string>()
+  const out: Run[] = []
+  for (const run of runs) {
+    if (!run?.id || seen.has(run.id)) continue
+    seen.add(run.id)
+    out.push(run)
+  }
+  return out
+}
+
+type ListRuns = (params: RunListQuery) => Promise<RunListPage<Run>>
+
+/**
+ * Sidebar rows that are not finished: every running, waiting, and queued run,
+ * plus every workspace-save pause. User pauses are read on their own pages
+ * and then left out, so they cannot take a running run's place.
+ */
+export async function listSidebarLiveRuns(listRuns: ListRuns, opts: { signal?: AbortSignal } = {}): Promise<Run[]> {
+  const base = { sort: 'last_activity', order: 'desc' as const, signal: opts.signal }
+  const [live, paused] = await Promise.all([
+    listAllRunPages((page, pageSize) => listRuns({ ...base, status: RUNNING_RUN_STATUSES, page, pageSize })),
+    listAllRunPages((page, pageSize) => listRuns({ ...base, status: 'paused', page, pageSize })),
+  ])
+  const saves = paused.filter(isWorkspaceSavePause)
+  return dedupeRuns([...live, ...saves]).filter((run) => !isManualPause(run))
+}
+
+/**
+ * Run-list「进行中」: every running workflow and every unfinished workspace
+ * save. Queued and waiting runs are not part of this result.
+ */
+export async function listCurrentViewRuns(
+  listRuns: ListRuns,
+  query: Omit<RunListQuery, 'page' | 'pageSize' | 'status'> = {},
+  opts: { includeQueued?: boolean } = {},
+): Promise<Run[]> {
+  const [running, paused, queued] = await Promise.all([
+    listAllRunPages((page, pageSize) => listRuns({ ...query, status: 'running', page, pageSize })),
+    listAllRunPages((page, pageSize) => listRuns({ ...query, status: 'paused', page, pageSize })),
+    opts.includeQueued
+      ? listAllRunPages((page, pageSize) => listRuns({ ...query, status: 'queued', page, pageSize }))
+      : Promise.resolve([] as Run[]),
+  ])
+  const live = running.filter((run) => run.status === 'running')
+  const saves = paused.filter(isWorkspaceSavePause)
+  const waitingQueue = queued.filter((run) => run.status === 'queued')
+  return dedupeRuns([...live, ...saves, ...waitingQueue])
+}
 
 /**
  * 「自动过程」: the run is on an automatic agent that is running, stopping,

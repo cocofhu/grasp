@@ -11,7 +11,7 @@ import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { displayRunTitle } from '@/lib/run/runTitle'
 import type { Run } from '@/lib/shared/types'
 import type { SoloSession } from '@/lib/api/apiTypes'
-import { HISTORY_RUN_STATUSES } from '@/lib/inbox/sidebarRunRows'
+import { HISTORY_RUN_STATUSES, isManualPause, isWorkspaceSavePause } from '@/lib/inbox/sidebarRunRows'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import {
   RECENT_POLL_MS,
@@ -79,7 +79,7 @@ async function loadRuns() {
     })
     if (runsRequest !== controller) return
     if (!Array.isArray(result?.items)) throw new Error('Invalid run list')
-    applyRuns(result.items.slice(0, SIDEBAR_HISTORY_RUN_LIMIT))
+    applyRuns(result.items.filter((run) => !isWorkspaceSavePause(run) && !isManualPause(run)).slice(0, SIDEBAR_HISTORY_RUN_LIMIT))
     runsFailed.value = false
   } catch {
     if (runsRequest === controller) runsFailed.value = true

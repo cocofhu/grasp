@@ -23,7 +23,8 @@ import { orderWithPins, useSidebarPins } from '@/lib/inbox/sidebarPins'
 import { api } from '@/lib/api/api'
 import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
 import type { InboxItem, Run } from '@/lib/shared/types'
-import { isAutoProcessNode, keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES, sidebarAutoNodeName, sidebarLandedOnHuman, sidebarRunGroup } from '@/lib/inbox/sidebarRunRows'
+import { isAutoProcessNode, keepRowOrder, listSidebarLiveRuns, mergeRunRows, pinRunId, sidebarAutoNodeName, sidebarLandedOnHuman, sidebarRunGroup } from '@/lib/inbox/sidebarRunRows'
+import { runDisplayStatus } from '@/lib/run/workspaceSave'
 import {
   clearSidebarHandoff,
   consumeSidebarHandoff,
@@ -94,8 +95,17 @@ function pendingNodeLabel(it: InboxItem): string {
   return it.type === 'gate' ? it.title : it.label
 }
 
+function rowSaveLabel(it: InboxItem): string {
+  const run = runningById.value.get(it.runId)
+  if (!run) return ''
+  const display = runDisplayStatus(run)
+  if (display !== 'saving' && display !== 'save_failed') return ''
+  return t(`common.status.${display}`)
+}
 function pendingTooltip(it: InboxItem): string {
   const name = rowTitle(it)
+  const save = rowSaveLabel(it)
+  if (save) return name ? `${name} · ${save}` : save
   const node = pendingNodeLabel(it).trim()
   return node ? `${name} · ${node}` : name
 }
@@ -107,7 +117,7 @@ const pendingItems = computed(() => {
 })
 const pendingRunIds = computed(() => new Set(pendingItems.value.map((it) => it.runId)))
 
-/** Unfinished runs (queued / running / waiting_human) for「工作流」「排队中」. */
+/** Unfinished runs for「工作流」and「排队中」, including a workspace save that has not finished. */
 const runningRuns = ref<Run[]>([])
 const runningById = computed(() => new Map(runningRuns.value.map((r) => [r.id, r])))
 /** A row is named after its run: the run's own title wins over whatever the pending item carries. */
@@ -156,19 +166,15 @@ async function loadRunningRuns(opts?: { follow?: boolean }) {
     }
     // Solo sessions are resident sandboxes; active ones fill「正在执行」.
     void soloStore.refresh()
-    const result = await api.listRuns({
-      page: 1,
-      pageSize: 50,
-      status: RUNNING_RUN_STATUSES,
-      sort: 'last_activity',
-      order: 'desc',
-      signal: controller.signal,
-    })
-    if (runningRequest !== controller || !Array.isArray(result?.items)) {
+    const items = await listSidebarLiveRuns(
+      (params) => api.listRuns(params),
+      { signal: controller.signal },
+    )
+    if (runningRequest !== controller) {
       dropCarriedRows(controller)
       return
     }
-    runningRuns.value = result.items
+    runningRuns.value = items
     carriedRows.value = []
   } catch {
     // Keep the last unfinished list. Placeholders from a read that did not
@@ -1295,7 +1301,8 @@ const settingsItems = computed(() => (
           </span>
           <span v-if="rowTitle(entry.row)" class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(entry.row) }}</span>
           <span v-else class="nav-row-title-skeleton min-w-0 flex-1" data-testid="nav-pending-title-skeleton" aria-hidden="true"><span /></span>
-          <span v-if="autoNodeName(entry.row)" class="nav-auto-node-name min-w-0 truncate" data-testid="nav-auto-node-name">{{ autoNodeName(entry.row) }}</span>
+          <span v-if="rowSaveLabel(entry.row)" class="nav-run-save-status min-w-0 truncate" data-testid="nav-run-save-status">{{ rowSaveLabel(entry.row) }}</span>
+          <span v-else-if="autoNodeName(entry.row)" class="nav-auto-node-name min-w-0 truncate" data-testid="nav-auto-node-name">{{ autoNodeName(entry.row) }}</span>
           <InboxMotionMark v-if="rowMotion(entry.row) === 'spin'" kind="spin" />
           <InboxMotionMark v-else-if="rowMotion(entry.row) === 'pulse'" kind="pulse" />
           <template v-else>
@@ -1601,6 +1608,13 @@ const settingsItems = computed(() => (
   font-weight: 400;
 }
 .nav-auto-node-name {
+  flex: none;
+  max-width: 42%;
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  font-weight: 400;
+}
+.nav-run-save-status {
   flex: none;
   max-width: 42%;
   color: rgb(var(--c-txt3));
