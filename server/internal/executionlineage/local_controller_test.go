@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/storageguard"
+	"github.com/google/uuid"
 )
 
 func TestLocalControllerKeepsOneStableBindingAndStillFencesQuarantines(t *testing.T) {
@@ -50,6 +53,27 @@ func TestLocalControllerKeepsOneStableBindingAndStillFencesQuarantines(t *testin
 	}
 	if err := restarted.Check(ctx); !errors.Is(err, ErrInactive) {
 		t.Fatal("offline maintenance did not fence local execution", err)
+	}
+}
+
+func TestLocalControllerRefusesUpgradedHistoryWithoutExecutionInit(t *testing.T) {
+	ctx := context.Background()
+	db, _, _, owner := authorityFixture(t)
+	if err := storageguard.Leave(ctx, db, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&database.OfflineUpgradeReceipt{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&database.OfflineUpgradeReceipt{ID: uuid.NewString(), CompletedAt: time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewLocalController(ctx, db); !errors.Is(err, ErrUnbound) {
+		t.Fatal("upgraded history was granted a fresh binding without quarantine", err)
+	}
+	var count int64
+	if err := db.Model(&models.ExecutionDataset{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatal("refused startup still wrote a binding", count, err)
 	}
 }
 

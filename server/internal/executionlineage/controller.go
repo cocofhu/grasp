@@ -42,13 +42,28 @@ type contextualPermit struct {
 // NewLocalController grants execution from the SQL binding alone. An existing
 // binding keeps its dataset and lineage, because workspace heads, snapshot
 // jobs and review receipts already persisted them; a fresh database gets a
-// new random binding. SQL quarantines and the maintenance lock still apply.
+// new random binding. Upgraded history must first be bound by execution-init
+// so its legacy work is quarantined. SQL quarantines and the maintenance lock
+// still apply.
 func NewLocalController(ctx context.Context, db *gorm.DB) (*Controller, error) {
 	if db == nil {
 		return nil, ErrUnavailable
 	}
 	if err := outsideSQLTransaction(db); err != nil {
 		return nil, err
+	}
+	var bound int64
+	if err := db.WithContext(ctx).Model(&models.ExecutionDataset{}).Where("id = ?", "primary").Count(&bound).Error; err != nil {
+		return nil, err
+	}
+	if bound == 0 && db.Migrator().HasTable("offline_upgrade_receipts") {
+		var upgraded int64
+		if err := db.WithContext(ctx).Table("offline_upgrade_receipts").Count(&upgraded).Error; err != nil {
+			return nil, err
+		}
+		if upgraded != 0 {
+			return nil, errors.Join(ErrUnbound, errors.New("upgraded history has no execution binding; run grasp-storage-admin --mode execution-init in the original upgrade workdir before starting"))
+		}
 	}
 	fresh := models.ExecutionDataset{ID: "primary", NamespaceID: uuid.NewString(), DatasetID: uuid.NewString(), Lineage: uuid.NewString(), OperationID: uuid.NewString(), ControlRevision: 2, BoundAt: time.Now().UTC()}
 	if err := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&fresh).Error; err != nil {
