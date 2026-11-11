@@ -191,7 +191,7 @@ function canCancelRun(r: Run) {
 }
 
 function canDeleteRun(r: Run) {
-  return r.status === 'completed' || r.status === 'failed' || r.status === 'cancelled'
+  return r.status === 'completed' || r.status === 'failed' || r.status === 'cancelled' || runDisplayStatus(r) === 'save_failed'
 }
 
 /** Prefetch RunDetail chunk once so list → detail navigation feels snappy. */
@@ -227,6 +227,7 @@ function runListFingerprint(r: Run): string {
     r.createdAt ?? '',
     (r.tags || []).join(','),
     r.workspaceSave?.state ?? '',
+    r.workspaceSave?.nodeId ?? '',
   ].join('\0')
 }
 

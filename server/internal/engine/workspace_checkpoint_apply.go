@@ -158,7 +158,7 @@ func (e *Engine) workflowCheckpointPendingTx(tx *gorm.DB, runID string) error {
 		return nil
 	}
 	var row struct{ ID string }
-	err := tx.Table("workflow_visit_checkpoints").Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("run_id = ? AND route_state <> ?", runID, "applied").Take(&row).Error
+	err := tx.Table("workflow_visit_checkpoints").Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("run_id = ? AND "+services.WorkflowCheckpointOpenSQL("route_state"), runID).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	}

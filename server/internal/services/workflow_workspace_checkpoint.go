@@ -297,7 +297,7 @@ func guardWorkflowWorkspaceReuseTx(ctx context.Context, tx *gorm.DB, sandboxID u
 		return err
 	}
 	var checkpoints []struct{ ID string }
-	if err := tx.WithContext(ctx).Model(&models.WorkflowVisitCheckpoint{}).Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("sandbox_id = ? AND route_state <> ?", sandboxID, "applied").Find(&checkpoints).Error; err != nil {
+	if err := tx.WithContext(ctx).Model(&models.WorkflowVisitCheckpoint{}).Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("sandbox_id = ? AND "+WorkflowCheckpointOpenSQL("route_state"), sandboxID).Find(&checkpoints).Error; err != nil {
 		return err
 	}
 	for _, row := range checkpoints {

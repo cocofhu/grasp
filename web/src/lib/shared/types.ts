@@ -1182,6 +1182,8 @@ export interface RunWorkspaceSave {
   reason?: string
   detail?: string
   action?: 'retry' | 'reconcile'
+  /** False when the node result is not sealed. Failure retry stays disabled. */
+  outcomeSealed?: boolean
 }
 
 export interface Run {

@@ -24,6 +24,9 @@ type WorkspaceSave struct {
 	// Action is how a user moves a failed save on: "retry" captures again via
 	// run resume, "reconcile" re-reads an ambiguous receipt; empty means neither.
 	Action string `json:"action,omitempty"`
+	// OutcomeSealed is false when the node result is not sealed yet. Failure
+	// retry must stay disabled; delete is still allowed for a failed save.
+	OutcomeSealed bool `json:"outcomeSealed"`
 }
 
 // WorkspaceSaveCheckpointID reports the checkpoint a run is paused on, if any.
@@ -67,19 +70,72 @@ func WorkspaceSaves(db *gorm.DB, runs []models.Run) map[string]*WorkspaceSave {
 		}
 	}
 	for _, row := range rows {
-		save := &WorkspaceSave{CheckpointID: row.ID, NodeID: row.NodeID, State: "saving"}
-		switch row.FileState {
-		case "blocked", "unknown", "unavailable":
-			save.State, save.Reason, save.Action = "failed", row.Reason, saveAction(row)
-			save.Detail = details[row.SnapshotID]
-		default:
-			if row.RouteState == "unknown" {
-				save.State, save.Reason = "failed", row.Reason
+		save := &WorkspaceSave{CheckpointID: row.ID, NodeID: row.NodeID, State: "saving", OutcomeSealed: row.RouteState == "sealed"}
+		if CheckpointSaveFailed(row) {
+			save.State, save.Reason = "failed", row.Reason
+			switch row.FileState {
+			case "blocked", "unknown", "unavailable":
+				save.Action = saveAction(row)
+				save.Detail = details[row.SnapshotID]
 			}
 		}
 		out[row.RunID] = save
 	}
 	return out
+}
+
+// CheckpointSaveFailed reports the save state the run page shows as 保存失败.
+// A paused run on any other checkpoint state is still saving.
+func CheckpointSaveFailed(row models.WorkflowVisitCheckpoint) bool {
+	switch row.FileState {
+	case "blocked", "unknown", "unavailable":
+		return true
+	default:
+		return row.RouteState == "unknown"
+	}
+}
+
+// WorkspaceSaveFailed reports a paused run whose workspace save has already failed.
+func WorkspaceSaveFailed(db *gorm.DB, run models.Run) bool {
+	row, ok := loadWorkspaceSaveCheckpoint(db, run)
+	return ok && CheckpointSaveFailed(row)
+}
+
+// WorkspaceSaveInProgress reports a paused run still saving its workspace.
+func WorkspaceSaveInProgress(db *gorm.DB, run models.Run) bool {
+	row, ok := loadWorkspaceSaveCheckpoint(db, run)
+	return ok && !CheckpointSaveFailed(row)
+}
+
+func loadWorkspaceSaveCheckpoint(db *gorm.DB, run models.Run) (models.WorkflowVisitCheckpoint, bool) {
+	id := WorkspaceSaveCheckpointID(run)
+	if db == nil || id == "" {
+		return models.WorkflowVisitCheckpoint{}, false
+	}
+	var row models.WorkflowVisitCheckpoint
+	if err := db.Where("id = ?", id).Take(&row).Error; err != nil {
+		return models.WorkflowVisitCheckpoint{}, false
+	}
+	return row, true
+}
+
+// WorkflowCheckpointOpenSQL matches a checkpoint that still blocks admission.
+// Cancelled means the save was ended without counting as a successful apply,
+// so it must not keep the run from being deleted or continued.
+func WorkflowCheckpointOpenSQL(column string) string {
+	if column == "" {
+		column = "route_state"
+	}
+	return column + " NOT IN ('applied', 'cancelled')"
+}
+
+// EndOpenWorkspaceSavesTx stops every unfinished workspace save for a run.
+// The checkpoint stays cancelled rather than applied, so the save is not
+// recorded as successful and the capture loop will not schedule it again.
+func EndOpenWorkspaceSavesTx(tx *gorm.DB, runID string) error {
+	return tx.Model(&models.WorkflowVisitCheckpoint{}).
+		Where("run_id = ? AND "+WorkflowCheckpointOpenSQL("route_state"), runID).
+		Update("route_state", "cancelled").Error
 }
 
 func saveAction(row models.WorkflowVisitCheckpoint) string {

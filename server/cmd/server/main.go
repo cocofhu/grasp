@@ -467,6 +467,7 @@ func main() {
 		GitCredential:         credentialSvc.ResolveGitValue,
 	})
 	sbxSvc.SetCodexLogins(codexLogins)
+	runSvc.SetSandboxReleaser(sbxSvc)
 	workspaceServices, err = newProductionWorkspaceServices(db, sbxSvc, storage, executionController, workspaceLimits, workspaceRuntime)
 	if err != nil {
 		log.Fatal().Err(err).Msg("workspace file services initialization failed")

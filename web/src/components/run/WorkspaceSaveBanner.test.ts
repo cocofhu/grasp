@@ -34,6 +34,7 @@ describe('WorkspaceSaveBanner', () => {
     const wrapper = mountBanner(failed)
     expect(wrapper.get('[data-testid="workspace-save-banner"]').attributes('role')).toBe('alert')
     expect(wrapper.text()).toContain('工作区保存失败')
+    expect(wrapper.text()).toContain('重试保存只会重新保存')
     expect(wrapper.text()).toContain('无法安全保存的 Git 元数据')
     await wrapper.get('[data-testid="workspace-save-retry"]').trigger('click')
     await flushPromises()
@@ -51,8 +52,16 @@ describe('WorkspaceSaveBanner', () => {
   })
 
   it('says when no automatic retry exists', () => {
-    const wrapper = mountBanner({ ...failed, reason: 'provider_outcome_unconfirmed', detail: '', action: undefined })
+    const wrapper = mountBanner({ ...failed, reason: 'binding_unavailable', detail: '', action: undefined, outcomeSealed: true })
     expect(wrapper.find('[data-testid="workspace-save-retry"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('无法自动重试')
+    expect(wrapper.text()).toContain('失败重试')
+  })
+
+  it('does not point at failure retry when the node result is unsealed', () => {
+    const wrapper = mountBanner({ ...failed, reason: 'provider_outcome_unconfirmed', detail: '', action: undefined, outcomeSealed: false })
+    expect(wrapper.find('[data-testid="workspace-save-retry"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workspace-save-no-action"]').text()).toContain('尚未确认')
+    expect(wrapper.get('[data-testid="workspace-save-no-action"]').text()).not.toContain('失败重试')
   })
 })

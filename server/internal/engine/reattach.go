@@ -96,7 +96,7 @@ func (e *Engine) reconcileInterrupted() {
 				"error":  "控制面重启，节点重新进入",
 			})
 		}), sr.RunID, "reconcile state_run")
-		if e.enqueueAdmission(sr.RunID, sr.NodeID, true) {
+		if e.enqueueAdmission(sr.RunID, sr.NodeID, true, false) {
 			handled[sr.RunID] = true
 			log.Info().Str("run_id", sr.RunID).Str("node_id", sr.NodeID).
 				Msg("startup reconciliation: run requeued at interrupted node")
@@ -176,7 +176,7 @@ func (e *Engine) settlePendingHandoff(run *models.Run) bool {
 				Msg("startup reconciliation: transition target missing, run failed")
 			return true
 		}
-		if !e.enqueueAdmission(run.ID, target, run.Status == "running") {
+		if !e.enqueueAdmission(run.ID, target, run.Status == "running", false) {
 			return false
 		}
 		e.signalDispatch()

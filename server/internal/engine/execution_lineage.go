@@ -62,7 +62,7 @@ func (e *Engine) executionCheck(ctx context.Context, runID string, extra ...exec
 
 func (e *Engine) executableRuns(query *gorm.DB) *gorm.DB {
 	if e.workspaceCheckpoints != nil {
-		query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state <> 'applied')")
+		query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state NOT IN ('applied', 'cancelled'))")
 	}
 	if e.execution == nil {
 		return query

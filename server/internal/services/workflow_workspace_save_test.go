@@ -34,11 +34,11 @@ func TestWorkspaceSavesReportSavingAndFailedCheckpoints(t *testing.T) {
 	}
 	got := WorkspaceSaves(db, runs)
 	want := map[string]WorkspaceSave{
-		"run-saving":   {CheckpointID: "cp-saving", NodeID: "a", State: "saving"},
-		"run-failed":   {CheckpointID: "cp-failed", NodeID: "b", State: "failed", Reason: "snapshot_failed", Detail: "git_unsupported", Action: "retry"},
-		"run-unknown":  {CheckpointID: "cp-unknown", NodeID: "c", State: "failed", Reason: "snapshot_unknown", Action: "reconcile"},
-		"run-binding":  {CheckpointID: "cp-binding", NodeID: "d", State: "failed", Reason: "binding_unavailable"},
-		"run-provider": {CheckpointID: "cp-provider", NodeID: "e", State: "failed", Reason: "provider_outcome_unconfirmed"},
+		"run-saving":   {CheckpointID: "cp-saving", NodeID: "a", State: "saving", OutcomeSealed: true},
+		"run-failed":   {CheckpointID: "cp-failed", NodeID: "b", State: "failed", Reason: "snapshot_failed", Detail: "git_unsupported", Action: "retry", OutcomeSealed: true},
+		"run-unknown":  {CheckpointID: "cp-unknown", NodeID: "c", State: "failed", Reason: "snapshot_unknown", Action: "reconcile", OutcomeSealed: true},
+		"run-binding":  {CheckpointID: "cp-binding", NodeID: "d", State: "failed", Reason: "binding_unavailable", OutcomeSealed: true},
+		"run-provider": {CheckpointID: "cp-provider", NodeID: "e", State: "failed", Reason: "provider_outcome_unconfirmed", OutcomeSealed: false},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d saves: %+v", len(got), got)
