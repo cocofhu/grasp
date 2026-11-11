@@ -190,7 +190,9 @@ describe('RunLlmTranscript', () => {
     })
     await flushPromises()
     expect(w.text()).toContain('on it')
-    expect(w.get('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
+    expect(w.get('[data-testid="clarify-busy-status"]').text()).toContain('思考中')
+    expect(w.get('[data-testid="thinking-lamp"]').exists()).toBe(true)
+    expect(w.get('[data-testid="clarify-busy-status"]').text()).not.toContain('输出中')
   })
 
   it('labels an earlier conversation with its message count', async () => {

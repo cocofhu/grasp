@@ -848,7 +848,9 @@ describe('PublicGateApprovalView workbench', () => {
     expect((w.text().match(/改成绿的/g) || []).length).toBe(1)
     expect(w.text()).toContain('标题已改为绿色')
     expect(w.find('[data-testid="clarify-stream-caret"]').exists()).toBe(true)
-    expect(w.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
+    expect(w.find('[data-testid="clarify-busy-status"]').text()).toContain('思考中')
+    expect(w.find('[data-testid="thinking-lamp"]').exists()).toBe(true)
+    expect(w.find('[data-testid="clarify-busy-status"]').text()).not.toContain('输出中')
   })
 
   it('does not duplicate human when turns already completed the busy activeItem', async () => {
