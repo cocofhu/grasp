@@ -131,8 +131,10 @@ func countSoloComputeReserved(db *gorm.DB, exclude uint, reservedSession string)
 	// A missing application row is not proof that its provider workload died.
 	// Keep unknown associations occupied until explicit reconciliation confirms
 	// their state; losing metadata must not authorize extra compute allocation.
+	// A completed Close already confirmed its compute stopped, so its retained
+	// binding holds no quota, the same as a closed session with a stopped row.
 	var unknown int64
-	orphans := db.Model(&models.SoloSession{}).Where("sandbox_id <> 0 AND NOT EXISTS (SELECT 1 FROM sandboxes b WHERE b.id = solo_sessions.sandbox_id)")
+	orphans := db.Model(&models.SoloSession{}).Where("sandbox_id <> 0 AND NOT (status = ? AND lifecycle_action = '') AND NOT EXISTS (SELECT 1 FROM sandboxes b WHERE b.id = solo_sessions.sandbox_id)", models.SoloStatusClosed)
 	if exclude != 0 {
 		orphans = orphans.Where("sandbox_id <> ?", exclude)
 	}

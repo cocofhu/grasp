@@ -210,18 +210,20 @@ describe('RunListView status segments', () => {
       ;(wrapper.get('[data-testid="run-seg-active"]').element as HTMLElement).focus()
       expect(count()).toBe('…')
       expect(wrapper.get('[data-testid="run-seg-active"]').attributes('aria-pressed')).toBe('true')
-      expect(mocks.listRuns).toHaveBeenCalledTimes(2)
+      expect(mocks.listRuns).toHaveBeenCalledTimes(3)
 
       // Both filters can have the same rows and total: the new filter still needs its own count.
+      // 「进行中」reads running and paused separately, so both pages have to land.
       pending[0]!(initial)
+      pending[1]!(initial)
       await flushPromises()
       expect(count()).toBe('1')
 
       await wrapper.get('[data-testid="run-seg-failed"]').trigger('click')
       await flushPromises()
       expect(count()).toBe('…')
-      expect(mocks.listRuns).toHaveBeenCalledTimes(3)
-      pending[1]!({ items: [], total: 0 })
+      expect(mocks.listRuns).toHaveBeenCalledTimes(4)
+      pending[2]!({ items: [], total: 0 })
       await flushPromises()
       expect(count()).toBe('0')
       await wrapper.get('[data-testid="run-seg-failed"]').trigger('mouseenter')
@@ -233,8 +235,9 @@ describe('RunListView status segments', () => {
       await wrapper.get('[data-testid="run-seg-active"]').trigger('click')
       await flushPromises()
       expect(count()).toBe('1')
-      expect(mocks.listRuns).toHaveBeenCalledTimes(4)
-      pending[2]!(initial)
+      expect(mocks.listRuns).toHaveBeenCalledTimes(6)
+      pending[3]!(initial)
+      pending[4]!(initial)
       await flushPromises()
       expect(count()).toBe('1')
     } finally {
@@ -246,8 +249,9 @@ describe('RunListView status segments', () => {
     const { wrapper, router } = await setup()
     await wrapper.get('[data-testid="run-seg-active"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query.status).toBe('running,queued')
-    expect(mocks.listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'running,queued' }))
+    expect(router.currentRoute.value.query.status).toBe('running')
+    expect(mocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({ status: 'running' }))
+    expect(mocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({ status: 'paused' }))
     expect(wrapper.get('[data-testid="run-seg-active"]').attributes('aria-pressed')).toBe('true')
 
     await wrapper.get('[data-testid="run-seg-failed"]').trigger('click')

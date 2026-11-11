@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { InboxItem, Run } from '@/lib/shared/types'
 import type { WFEdge, WFNode } from '@/lib/shared/types'
-import { autoProcessNodeName, handoffProcessAuto, isAutoProcessNode, isAutoProcessRun, keepRowOrder, mergeRunRows, pinRunId, resolveHandoffProcessAuto, runRowFromRun, sidebarAutoNodeName, sidebarAutoTarget, sidebarRunGroup, uniqueAutoDestination } from './sidebarRunRows'
+import { autoProcessNodeName, handoffProcessAuto, isAutoProcessNode, isAutoProcessRun, isCurrentViewRun, isInProgressListQuery, isManualPause, isWorkspaceSavePause, keepRowOrder, listAllRunPages, listCurrentViewRuns, listSidebarLiveRuns, mergeRunRows, pinRunId, resolveHandoffProcessAuto, runRowFromRun, RUN_LIST_PAGE_SIZE, sidebarAutoNodeName, sidebarAutoTarget, sidebarRunGroup, uniqueAutoDestination } from './sidebarRunRows'
 
 const item = (runId: string, nodeId: string, runTitle = runId): InboxItem => ({
   type: 'clarify',
@@ -262,6 +262,106 @@ describe('handoffProcessAuto', () => {
       fromNodeId: 'ask',
       current: { id: 'gate', mode: 'manual' },
     })).toBe(false)
+  })
+})
+
+describe('current view membership', () => {
+  const save = { checkpointId: 'cp', nodeId: 'code', state: 'saving' as const }
+  const failed = { ...save, state: 'failed' as const }
+
+  it('counts a running workflow and an unfinished workspace save, and leaves a user pause out', () => {
+    expect(isCurrentViewRun({ status: 'running' })).toBe(true)
+    expect(isWorkspaceSavePause({ status: 'paused', workspaceSave: save })).toBe(true)
+    expect(isCurrentViewRun({ status: 'paused', workspaceSave: save })).toBe(true)
+    expect(isCurrentViewRun({ status: 'paused', workspaceSave: failed })).toBe(true)
+    expect(isManualPause({ status: 'paused' })).toBe(true)
+    expect(isCurrentViewRun({ status: 'paused' })).toBe(false)
+    expect(isCurrentViewRun({ status: 'queued' })).toBe(false)
+    expect(isCurrentViewRun({ status: 'waiting_human' })).toBe(false)
+    expect(isCurrentViewRun({ status: 'completed' })).toBe(false)
+    expect(isInProgressListQuery('running')).toBe(true)
+    expect(isInProgressListQuery('running,queued')).toBe(true)
+    expect(isInProgressListQuery('queued,running')).toBe(true)
+    expect(isInProgressListQuery('queued')).toBe(false)
+    expect(isInProgressListQuery('waiting_human')).toBe(false)
+    expect(isInProgressListQuery(undefined)).toBe(false)
+  })
+})
+
+describe('listAllRunPages', () => {
+  it('walks past the first page until every item is in hand', async () => {
+    const all = Array.from({ length: RUN_LIST_PAGE_SIZE + 8 }, (_, i) => ({ id: `r${i}` }))
+    const pages: number[] = []
+    const items = await listAllRunPages(async (page, pageSize) => {
+      pages.push(page)
+      const start = (page - 1) * pageSize
+      const slice = all.slice(start, start + pageSize)
+      return { items: slice, total: all.length, hasMore: start + slice.length < all.length }
+    })
+    expect(pages).toEqual([1, 2])
+    expect(items).toHaveLength(all.length)
+    expect(items.at(-1)?.id).toBe(`r${all.length - 1}`)
+  })
+})
+
+describe('listCurrentViewRuns', () => {
+  const run = (id: string, status: string, workspaceSave?: { state: 'saving' | 'failed' }) => ({
+    id,
+    status,
+    ...(workspaceSave ? { workspaceSave: { checkpointId: 'cp', nodeId: 'n', ...workspaceSave } } : {}),
+  })
+
+  it('returns every running workflow and unfinished save, and drops user pauses even when they fill a page', async () => {
+    const running = Array.from({ length: 51 }, (_, i) => run(`run-${i}`, 'running'))
+    const pauses = [
+      ...Array.from({ length: RUN_LIST_PAGE_SIZE }, (_, i) => run(`pause-${i}`, 'paused')),
+      run('saving', 'paused', { state: 'saving' }),
+      run('failed-save', 'paused', { state: 'failed' }),
+    ]
+    const calls: string[] = []
+    const items = await listCurrentViewRuns(async (params) => {
+      calls.push(`${params.status}:${params.page}`)
+      const pool = params.status === 'paused' ? pauses : running
+      const page = params.page ?? 1
+      const pageSize = params.pageSize ?? RUN_LIST_PAGE_SIZE
+      const start = (page - 1) * pageSize
+      const slice = pool.slice(start, start + pageSize)
+      return { items: slice, total: pool.length, hasMore: start + slice.length < pool.length }
+    })
+    expect(calls).toEqual(['running:1', 'paused:1', 'paused:2'])
+    expect(items.map((item) => item.id)).toEqual([...running.map((item) => item.id), 'saving', 'failed-save'])
+  })
+
+  it('keeps queued runs only when the older in-progress link still asks for them', async () => {
+    const queued = [run('q1', 'queued')]
+    const calls: string[] = []
+    const list = async (params: { status?: string }) => {
+      calls.push(params.status ?? '')
+      const items = params.status === 'queued' ? queued : params.status === 'running' ? [run('live', 'running')] : []
+      return { items, total: items.length, hasMore: false }
+    }
+    expect((await listCurrentViewRuns(list)).map((item) => item.id)).toEqual(['live'])
+    expect(calls).not.toContain('queued')
+    expect((await listCurrentViewRuns(list, {}, { includeQueued: true })).map((item) => item.id)).toEqual(['live', 'q1'])
+  })
+})
+
+describe('listSidebarLiveRuns', () => {
+  it('keeps waiting and queued with the live runs, and does not let a user pause hide a save', async () => {
+    const live = [
+      ...Array.from({ length: 8 }, (_, i) => ({ id: `run-${i}`, status: 'running' })),
+      { id: 'wait', status: 'waiting_human' },
+      { id: 'queue', status: 'queued' },
+    ]
+    const paused = [
+      { id: 'hand', status: 'paused' },
+      { id: 'saving', status: 'paused', workspaceSave: { checkpointId: 'cp', nodeId: 'n', state: 'saving' } },
+    ]
+    const items = await listSidebarLiveRuns(async (params) => {
+      const pool = params.status === 'paused' ? paused : live
+      return { items: pool, total: pool.length, hasMore: false }
+    })
+    expect(items.map((item) => item.id)).toEqual([...live.map((item) => item.id), 'saving'])
   })
 })
 
