@@ -11,9 +11,9 @@ export type CredentialKindId =
   | 'gitlab'
   | 'ssh_key'
 
-export type CredentialSecretKind = 'apiKey' | 'loginFile' | 'multiline'
+type CredentialSecretKind = 'apiKey' | 'loginFile' | 'multiline'
 
-export type CredentialKind = {
+type CredentialKind = {
   id: CredentialKindId
   type: 'ai' | 'git' | 'ssh'
   provider: string
@@ -110,19 +110,6 @@ export function backendKind(backend: string): CredentialKind | undefined {
       return kindById('kimi_code')
     case 'opencode':
       return kindById('opencode')
-    default:
-      return undefined
-  }
-}
-
-export function gitKind(gitType: string): CredentialKind | undefined {
-  switch (gitType) {
-    case 'github_https':
-      return kindById('github')
-    case 'gitlab_https':
-      return kindById('gitlab')
-    case 'ssh':
-      return kindById('ssh_key')
     default:
       return undefined
   }

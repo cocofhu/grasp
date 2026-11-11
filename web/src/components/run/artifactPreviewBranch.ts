@@ -2,7 +2,7 @@ import { inferArtifactKind } from '@/lib/inbox/gateUpstream'
 import { isJsonArtifact } from '@/lib/shared/highlightJson'
 import { isStructuredArtifactName } from './StructuredArtifactView.vue'
 
-export type ArtifactPreviewBranch =
+type ArtifactPreviewBranch =
   | { kind: 'html' }
   | { kind: 'structured'; doc: unknown }
   | { kind: 'json' }

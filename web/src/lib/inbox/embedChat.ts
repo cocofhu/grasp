@@ -72,7 +72,7 @@ export function embedDemoPath(runId: string, nodeId: string): string {
   return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/demo`
 }
 
-export type EmbedImageAction = 'open' | 'close'
+type EmbedImageAction = 'open' | 'close'
 
 /** Host-bound image-window request. Drops any picture address that may have been attached. */
 export function parseEmbedImageMessage(data: unknown): { action: EmbedImageAction; label: string } | null {

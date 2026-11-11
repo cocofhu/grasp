@@ -4,9 +4,9 @@
  * dialogue rails remain empty; stops on content, live incremental, or idle.
  */
 
-export type BusySeedRetryStopReason = 'content' | 'idle' | 'live' | 'aborted' | 'max_attempts'
+type BusySeedRetryStopReason = 'content' | 'idle' | 'live' | 'aborted' | 'max_attempts'
 
-export type BusySeedRetryOptions = {
+type BusySeedRetryOptions = {
   /** Authoritative busy (queue_state / reactSessions). */
   isBusy: () => boolean
   /** True once thought/message rails have visible content. */
@@ -106,5 +106,3 @@ export function createBusySeedRetryController() {
     },
   }
 }
-
-export type BusySeedRetryController = ReturnType<typeof createBusySeedRetryController>

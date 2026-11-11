@@ -1,6 +1,6 @@
 import { createExecutor, type PageCommand, type PageResult } from './executor'
 
-export type PageControlOptions = {
+type PageControlOptions = {
   styleNonce?: string
   /** Hides the preview-pick UI (bar, drawer) while the page is read. */
   hideOwnUi?: (hidden: boolean) => void

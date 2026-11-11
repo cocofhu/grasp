@@ -6,7 +6,7 @@ export type FrontmatterFields = {
   name?: string
 }
 
-export type ParsedFrontmatter = {
+type ParsedFrontmatter = {
   fm: FrontmatterFields | null
   body: string
 }

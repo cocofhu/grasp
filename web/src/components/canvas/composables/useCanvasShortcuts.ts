@@ -1,6 +1,6 @@
 import { getCurrentScope, onScopeDispose } from 'vue'
 
-export type CanvasAction =
+type CanvasAction =
   | 'undo'
   | 'redo'
   | 'copy'
@@ -20,7 +20,7 @@ export type CanvasAction =
   | 'navUp'
   | 'navDown'
 
-export interface ShortcutDef {
+interface ShortcutDef {
   action: CanvasAction
   /** i18n key under canvas.shortcuts.actions */
   labelKey: string
@@ -51,7 +51,7 @@ export function isMac(): boolean {
 }
 
 /** True when focus is in a text field, where plain keys must type instead of acting. */
-export function isTypingTarget(target: EventTarget | null): boolean {
+function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
   if (!el || typeof el.tagName !== 'string') return false
   if (el.isContentEditable) return true
@@ -97,7 +97,7 @@ export function resolveShortcut(e: KeyLike, mac = isMac()): CanvasAction | null 
   return null
 }
 
-export type ShortcutHandlers = Partial<Record<CanvasAction, (e: KeyboardEvent) => boolean | void>>
+type ShortcutHandlers = Partial<Record<CanvasAction, (e: KeyboardEvent) => boolean | void>>
 
 /**
  * Listens on window while `active()` holds. A handler that returns false lets the

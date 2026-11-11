@@ -3,7 +3,7 @@ import { computed, getCurrentScope, onScopeDispose, ref, watch } from 'vue'
 export const BACKUP_DELAY_MS = 800
 export const BACKUP_PREFIX = 'grasp.workflowDraft.'
 
-export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'error'
+type SaveStatus = 'saved' | 'dirty' | 'saving' | 'error'
 
 /** Unsaved editor state kept in localStorage so a crash or closed tab loses nothing. */
 export interface WorkflowBackup {
@@ -61,7 +61,7 @@ export function pendingBackup(id: string, serverSnapshot: string, _serverUpdated
   return b
 }
 
-export interface WorkflowSaveOptions {
+interface WorkflowSaveOptions {
   /** Serialized editable state; differs from the last saved value ⇒ dirty. */
   source: () => string
   /** Persists the current state. */

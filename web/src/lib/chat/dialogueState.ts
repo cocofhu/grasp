@@ -80,7 +80,7 @@ export function prefixDigest(rows: readonly Pick<DialogueRow, 'id' | 'rev'>[]): 
   return `${rows.length}:${h.toString(16).padStart(8, '0')}`
 }
 
-export type ApplyResult = {
+type ApplyResult = {
   state: DialogueState | null
   /** The frame could not be placed on the current state; refetch over REST. */
   resync: boolean

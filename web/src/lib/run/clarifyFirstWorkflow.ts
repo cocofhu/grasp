@@ -51,7 +51,7 @@ type HomeWorkflowPick = Pick<
  * A newer draft head is ignored once publishedSnapshot (or an equal version
  * pair) is present. Status published still means the head itself is that snapshot.
  */
-export function publishedHomeGraph(wf: HomeWorkflowPick): (GraphLike & Partial<Pick<PublishedWorkflowSnapshot, 'name' | 'description'>>) | null {
+function publishedHomeGraph(wf: HomeWorkflowPick): (GraphLike & Partial<Pick<PublishedWorkflowSnapshot, 'name' | 'description'>>) | null {
   const ver = wf.publishedVersion ?? 0
   const snap = wf.publishedSnapshot
   if (snap && (ver > 0 || (snap.version ?? 0) > 0)) return snap

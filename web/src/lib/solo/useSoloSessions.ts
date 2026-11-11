@@ -21,7 +21,7 @@ export function isSoloComputing(s: Pick<SoloSession, 'status'>): boolean {
 }
 
 /** Closed (cancelled) or failed sessions; the sidebar lists them under「历史执行」. */
-export function isSoloEnded(s: Pick<SoloSession, 'status'>): boolean {
+function isSoloEnded(s: Pick<SoloSession, 'status'>): boolean {
   return s.status === 'closed' || s.status === 'error'
 }
 

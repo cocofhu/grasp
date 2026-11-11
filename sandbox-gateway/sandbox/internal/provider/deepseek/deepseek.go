@@ -221,13 +221,6 @@ func reasoningOption(options []acp.ConfigOption, effort string) (id, current str
 	return "", "", fmt.Errorf("dsh: reasoning effort %q is not advertised by the selected model", effort)
 }
 
-// modelValue preserves the exact value advertised by ACP. Bare model IDs are
-// resolved only within DeepSeek's API-key provider, keeping account routes and
-// similarly named third-party models out of this backend's model selection.
-func modelValue(options []acp.ConfigOption, model string) (string, error) {
-	return modelValueForRoute(options, model, officialProvider, true)
-}
-
 func modelValueForRoute(options []acp.ConfigOption, model, providerRoute string, legacy bool) (string, error) {
 	for _, option := range options {
 		if option.ID != "model" {

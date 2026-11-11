@@ -73,7 +73,7 @@ export function highlightJson(src: string): string {
   return out
 }
 
-export type JsonParseState = {
+type JsonParseState = {
   ok: boolean
   html: string
 }

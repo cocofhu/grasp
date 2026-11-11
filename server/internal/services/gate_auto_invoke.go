@@ -331,13 +331,6 @@ func (s *GateAutoInvokeService) gateResolved(gateID uint) (bool, error) {
 	return gate.Resolved, nil
 }
 
-func (s *GateAutoInvokeService) resolveMainThread() (models.ChatThread, error) {
-	p, err := loadWorkspace(s.pm.db)
-	if err != nil {
-		return models.ChatThread{}, err
-	}
-	return s.resolveMainThreadAgent(p.PmLeaderAgent)
-}
 func (s *GateAutoInvokeService) resolveMainThreadAgent(agent string) (models.ChatThread, error) {
 	agent = strings.TrimSpace(agent)
 	threads, err := s.pm.ListThreadsForAgent(agent)

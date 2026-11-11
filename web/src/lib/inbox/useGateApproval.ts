@@ -65,7 +65,7 @@ export type GateApprovalProps = {
   shareLink?: GateShareInboxStatus | null
 }
 
-export type GateApprovalEmit = {
+type GateApprovalEmit = {
   (e: 'resolve', action: string, form: Record<string, any>): void
   (e: 'react-revised'): void
   (e: 'open-share'): void

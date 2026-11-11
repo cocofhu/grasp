@@ -370,14 +370,6 @@ func CodexTurnAuthRejected(err error, errorText string, failed bool) bool {
 	return CodexAuthRejected(err, events)
 }
 
-// RewriteCodexAuthError replaces a login failure with the re-paste message.
-func RewriteCodexAuthError(message string) string {
-	if IsCodexAuthRejectionText(message) {
-		return CodexLoginRepasteMessage
-	}
-	return message
-}
-
 var codexConnectionRuns sync.Map
 
 func codexLoginKey(req NodeReq) string {

@@ -33,20 +33,7 @@ func TestCoordinatorDefaultGrace(t *testing.T) {
 func TestCoordinatorBeginDrainingIdempotent(t *testing.T) {
 	c := New(30 * time.Second)
 	c.BeginDraining()
-	first := c.Deadline()
 	c.BeginDraining()
-	if !c.Deadline().Equal(first) {
-		t.Fatal("second BeginDraining should not reset deadline")
-	}
-}
-
-func TestCoordinatorDeadlineNotDraining(t *testing.T) {
-	c := New(120 * time.Second)
-	before := time.Now()
-	dl := c.Deadline()
-	if dl.Before(before.Add(119 * time.Second)) {
-		t.Fatalf("deadline too soon: %v", dl)
-	}
 }
 
 func TestCoordinatorGraceExpired(t *testing.T) {

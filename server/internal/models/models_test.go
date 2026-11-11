@@ -200,60 +200,6 @@ func TestEdgeKindOrDefault(t *testing.T) {
 	}
 }
 
-func TestSelectRecommendedOptions(t *testing.T) {
-	// Single-select: recommended option wins over position.
-	q := ReactQuestion{Options: []ReactOption{
-		{ID: "a", Label: "A"},
-		{ID: "b", Label: "B", Recommended: true},
-	}}
-	if opts, ok := SelectRecommendedOptions(q); !ok || len(opts) != 1 || opts[0].ID != "b" {
-		t.Fatalf("recommended pick = %+v ok=%v", opts, ok)
-	}
-	// No recommendation -> first option.
-	q2 := ReactQuestion{Options: []ReactOption{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}}
-	if opts, ok := SelectRecommendedOptions(q2); !ok || len(opts) != 1 || opts[0].ID != "a" {
-		t.Fatalf("fallback pick = %+v ok=%v", opts, ok)
-	}
-	// No options -> not ok.
-	if _, ok := SelectRecommendedOptions(ReactQuestion{}); ok {
-		t.Fatal("empty options should not be ok")
-	}
-	// Multi-select: collect every recommended option.
-	multi := ReactQuestion{
-		AllowMultiple: true,
-		Options: []ReactOption{
-			{ID: "a", Label: "A", Recommended: true},
-			{ID: "b", Label: "B"},
-			{ID: "c", Label: "C", Recommended: true},
-		},
-	}
-	got, ok := SelectRecommendedOptions(multi)
-	if !ok || len(got) != 2 || got[0].ID != "a" || got[1].ID != "c" {
-		t.Fatalf("multi recommended = %+v ok=%v", got, ok)
-	}
-	// Multi-select with no recommended -> first option only.
-	multiFallback := ReactQuestion{
-		AllowMultiple: true,
-		Options:       []ReactOption{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}},
-	}
-	got, ok = SelectRecommendedOptions(multiFallback)
-	if !ok || len(got) != 1 || got[0].ID != "a" {
-		t.Fatalf("multi fallback = %+v ok=%v", got, ok)
-	}
-	// Single-select still returns at most one recommended.
-	single := ReactQuestion{Options: []ReactOption{
-		{ID: "a", Label: "A", Recommended: true},
-		{ID: "b", Label: "B", Recommended: true},
-	}}
-	got, ok = SelectRecommendedOptions(single)
-	if !ok || len(got) != 1 || got[0].ID != "a" {
-		t.Fatalf("single clamp pick = %+v ok=%v", got, ok)
-	}
-	if _, ok := SelectRecommendedOptions(ReactQuestion{}); ok {
-		t.Fatal("empty options should not be ok")
-	}
-}
-
 func TestReactOptionDemoHtmlJSON(t *testing.T) {
 	opt := ReactOption{ID: "a", Label: "A", DemoHtml: "<!doctype html><html></html>"}
 	b, err := json.Marshal(opt)
@@ -284,72 +230,6 @@ func TestIsChoiceReply(t *testing.T) {
 	}
 	if IsChoiceReply("回答已跳过\n用户回复\n先按现有集群") {
 		t.Fatal("skip envelope must not be treated as choice")
-	}
-}
-
-func TestIsSkipReply(t *testing.T) {
-	if !IsSkipReply("回答已跳过\n用户回复\n先按现有集群，文档这次先不动") {
-		t.Fatal("zh skip envelope")
-	}
-	if !IsSkipReply("Answers skipped\nUser reply\nkeep the cluster") {
-		t.Fatal("en skip envelope")
-	}
-	if !IsSkipReply("回答已跳过\n用户回复\n") {
-		t.Fatal("empty body still skip")
-	}
-	if IsSkipReply("回答已跳过") {
-		t.Fatal("label alone without newline is not skip")
-	}
-	if IsSkipReply("我的选择:\n- q → a") {
-		t.Fatal("choice must not match skip")
-	}
-	if IsSkipReply("提到回答已跳过的自由文本") {
-		t.Fatal("mention in body is not skip")
-	}
-}
-
-func TestFormatChoiceReply(t *testing.T) {
-	qs := []ReactQuestion{
-		{Prompt: "登录方式?", Options: []ReactOption{{Label: "密码"}, {Label: "验证码", Recommended: true}}},
-		{Prompt: "有效期?", Options: []ReactOption{{Label: "5 分钟"}, {Label: "10 分钟"}}},
-	}
-	got := FormatChoiceReply(qs)
-	want := "我的选择:\n- 登录方式? → 验证码\n- 有效期? → 5 分钟"
-	if got != want {
-		t.Fatalf("FormatChoiceReply =\n%q\nwant\n%q", got, want)
-	}
-	// Multi-select joins recommended labels with "、".
-	multi := []ReactQuestion{{
-		Prompt:        "包含哪些?",
-		AllowMultiple: true,
-		Options: []ReactOption{
-			{Label: "A", Recommended: true},
-			{Label: "B"},
-			{Label: "C", Recommended: true},
-		},
-	}}
-	got = FormatChoiceReply(multi)
-	want = "我的选择:\n- 包含哪些? → A、C"
-	if got != want {
-		t.Fatalf("FormatChoiceReply multi =\n%q\nwant\n%q", got, want)
-	}
-	// Multi-select with no recommended falls back to first label only.
-	multiFallback := []ReactQuestion{{
-		Prompt:        "范围?",
-		AllowMultiple: true,
-		Options:       []ReactOption{{Label: "首项"}, {Label: "次项"}},
-	}}
-	got = FormatChoiceReply(multiFallback)
-	want = "我的选择:\n- 范围? → 首项"
-	if got != want {
-		t.Fatalf("FormatChoiceReply multi fallback =\n%q\nwant\n%q", got, want)
-	}
-	// No answerable questions -> empty string.
-	if FormatChoiceReply(nil) != "" {
-		t.Error("empty questions should format to empty string")
-	}
-	if FormatChoiceReply([]ReactQuestion{{Prompt: "q"}}) != "" {
-		t.Error("optionless question should format to empty string")
 	}
 }
 

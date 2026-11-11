@@ -75,13 +75,13 @@ export const INSPECT_CANCELED_TYPE = 'html-preview-inspect-canceled'
 /** Timeout before falling back to fixed inline height when no resize message arrives. */
 export const RESIZE_TIMEOUT_MS = 2500
 
-export interface ResizeMessage {
+interface ResizeMessage {
   type: typeof RESIZE_MESSAGE_TYPE
   id: string
   height: number
 }
 
-export interface InspectCommandMessage {
+interface InspectCommandMessage {
   type: typeof INSPECT_COMMAND_TYPE
   id: string
   enabled: boolean
@@ -96,7 +96,7 @@ export interface InspectElementStyle {
   lineHeight?: string
 }
 
-export interface InspectPickMessage {
+interface InspectPickMessage {
   type: typeof INSPECT_MESSAGE_TYPE
   id: string
   selector: string
@@ -110,7 +110,7 @@ export interface InspectPickMessage {
   style?: InspectElementStyle
 }
 
-export interface InspectCanceledMessage {
+interface InspectCanceledMessage {
   type: typeof INSPECT_CANCELED_TYPE
   id: string
 }

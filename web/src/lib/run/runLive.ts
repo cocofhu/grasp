@@ -8,7 +8,7 @@ import { enteringAutoNode, isObservableNode, recentCurrentNode } from './recentR
  * or run detail. iteration is absent while the engine routes between nodes
  * (the caller keeps the one it has).
  */
-export type LiveDecision =
+type LiveDecision =
   | { kind: 'observe'; nodeId: string; iteration?: number; stopping?: boolean; task?: string }
   | { kind: 'chat'; nodeId: string }
   | { kind: 'follow'; nodeId: string }
@@ -69,7 +69,7 @@ export function decideLive(run: Run, requested: string): LiveDecision {
 }
 
 /** takeover 409/404 codes the server sends in `error`. */
-export const TAKEOVER_ERROR_CODES = [
+const TAKEOVER_ERROR_CODES = [
   'not_auto_node',
   'node_not_current',
   'node_finishing',
@@ -78,7 +78,7 @@ export const TAKEOVER_ERROR_CODES = [
   'run_not_found',
   'node_not_found',
 ] as const
-export type TakeoverErrorCode = (typeof TAKEOVER_ERROR_CODES)[number]
+type TakeoverErrorCode = (typeof TAKEOVER_ERROR_CODES)[number]
 
 export function takeoverErrorCode(e: unknown): TakeoverErrorCode | null {
   const msg = e instanceof Error ? e.message : ''
@@ -86,7 +86,7 @@ export function takeoverErrorCode(e: unknown): TakeoverErrorCode | null {
 }
 
 /** 409 body `current` (the server's re-read view of the run). */
-export interface TakeoverConflictCurrent {
+interface TakeoverConflictCurrent {
   runStatus?: string
   nodeId?: string
   iteration?: number

@@ -5,7 +5,7 @@ import { clientTimezoneParams } from '@/components/token-analytics/tokenStatsSha
 /** Visible-tab poll interval for StatusMetrics (within 10–15s SLA). */
 export const PLATFORM_STATUS_POLL_MS = 12_000
 
-export type UsePlatformStatusMetrics = {
+type UsePlatformStatusMetrics = {
   metrics: Ref<PlatformStatusMetrics | null>
   stale: Ref<boolean>
   error: Ref<string | null>

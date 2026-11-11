@@ -63,7 +63,7 @@ export function sameParts(a: AgentPart[] | undefined, b: AgentPart[] | undefined
   return x.length === y.length && x.every((p, i) => partKey(p) === partKey(y[i]!))
 }
 
-export type TimelineBlock =
+type TimelineBlock =
   | { kind: 'tools'; tools: AgentTool[]; key: string; last: boolean }
   | { kind: 'thought' | 'message'; text: string; key: string; last: boolean; index: number }
 

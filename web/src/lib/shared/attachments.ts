@@ -4,9 +4,6 @@ import { i18n } from './i18n'
 /** Site / platform ACP single-file limit (clarified: 50 MiB). */
 export const SITE_ATTACH_MAX_BYTES = 50 * 1024 * 1024
 
-/** QQ inbound single-file limit (clarified: 20 MiB). Documented for parity. */
-const QQ_ATTACH_MAX_BYTES = 20 * 1024 * 1024
-
 export const SITE_ATTACH_MAX_MIB = 50
 
 /** True when a URL itself is an image data URL or http(s) image address. */
@@ -49,7 +46,7 @@ export function isImageAttachment(
   return isLikelyImageUrl('url' in im ? String(im.url || '') : '')
 }
 
-export type AttachmentKind = 'image' | 'audio' | 'video' | 'file'
+type AttachmentKind = 'image' | 'audio' | 'video' | 'file'
 
 const MEDIA_MIME: Record<string, string> = {
   mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg',
@@ -108,7 +105,7 @@ export function attachmentDisplayName(im: ClarifyImage, index = 0): string {
 }
 
 /** Prefer File.name; empty → distinguishable fallback. */
-export function fileAttachmentName(file: File, index = 0): string {
+function fileAttachmentName(file: File, index = 0): string {
   const named = (file.name || '').trim()
   if (named) return named
   return `attachment-${index + 1}`

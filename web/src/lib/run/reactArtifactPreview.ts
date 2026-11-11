@@ -23,7 +23,7 @@ const BOOKKEEPING_EXACT_NAMES = new Set([
 
 export const REACT_STAGE_TAB_GRID = 'grid'
 export const REACT_STAGE_TAB_NOVNC = 'novnc'
-export const PREVIEW_TAB_PREFIX = 'preview:'
+const PREVIEW_TAB_PREFIX = 'preview:'
 
 export type ReactStageRemoteKind = 'sandbox' | 'app' | 'public' | 'off'
 
@@ -62,11 +62,7 @@ export function isHistoricalStageArtifact(artifact: Partial<Pick<Artifact, 'id'>
   return parseHistoricalStageArtifact(artifact) != null
 }
 
-export function historicalStageArtifactName(baseName: string, iteration: number): string {
-  return `${baseName}#iter-${iteration}`
-}
-
-export function visualProductPageName(): string {
+function visualProductPageName(): string {
   return schemaByName('page')?.artifactName || 'page.html'
 }
 
@@ -75,7 +71,7 @@ export function visualNodePageName(nodeId: string): string {
   return `${String(nodeId || '').trim()}.page.html`
 }
 
-export function parseVisualNodePageName(name: string | null | undefined): string | null {
+function parseVisualNodePageName(name: string | null | undefined): string | null {
   const n = String(name || '')
   const suffix = '.page.html'
   if (!n.endsWith(suffix)) return null
@@ -228,11 +224,6 @@ export function resolveStageRemoteKind(opts: {
   return 'off'
 }
 
-export type ReactStageTab =
-  | typeof REACT_STAGE_TAB_GRID
-  | typeof REACT_STAGE_TAB_NOVNC
-  | string
-
 export function previewTabId(name: string): string {
   return PREVIEW_TAB_PREFIX + name
 }
@@ -275,8 +266,6 @@ export function nextTabAfterClose(
   return previewTabId(pick)
 }
 
-export type ArtifactKindKey = Artifact['kind']
-
 const KIND_I18N: Record<string, string> = {
   html: 'pages.reactArtifactStage.kindHtml',
   json: 'pages.reactArtifactStage.kindJson',
@@ -305,14 +294,14 @@ export function findArtifactByName(artifacts: Artifact[], name: string | null | 
 const VISUAL_LIVE_PAGE = visualProductPageName()
 
 /** HTML kind, or .html/.htm name (runtime.artifactKind). History cards excluded by name. */
-export function isHtmlStageArtifact(artifact: Pick<Artifact, 'kind' | 'name'> | null | undefined): boolean {
+function isHtmlStageArtifact(artifact: Pick<Artifact, 'kind' | 'name'> | null | undefined): boolean {
   if (!artifact) return false
   if (artifact.kind === 'html') return true
   const n = String(artifact.name || '').toLowerCase()
   return n.endsWith('.html') || n.endsWith('.htm')
 }
 
-export function isIterSnapshotName(name: string | null | undefined): boolean {
+function isIterSnapshotName(name: string | null | undefined): boolean {
   return String(name || '').includes('#iter-')
 }
 
@@ -516,7 +505,7 @@ export function buildArtifactFingerprintMap(
   return out
 }
 
-export type ArtifactFingerprintDiff = {
+type ArtifactFingerprintDiff = {
   created: string[]
   updated: string[]
 }
@@ -742,7 +731,7 @@ export function buildStageCardThumb(
 const FIXED_STAGE_PANEL_IDS = new Set(['ide', 'terminal', 'browser', 'log'])
 
 /** Keep only IDE / terminal / browser / log ids, in first-seen order. */
-export function normalizeFixedOpen(raw: unknown): string[] {
+function normalizeFixedOpen(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
   const out: string[] = []
   for (const item of raw) {
@@ -753,7 +742,7 @@ export function normalizeFixedOpen(raw: unknown): string[] {
   return out
 }
 
-export type StageOpenState = {
+type StageOpenState = {
   openNames: string[]
   activeTab: string
   novncOpen: boolean

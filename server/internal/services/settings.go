@@ -174,13 +174,6 @@ func (s *SettingsService) resolve(k knob, cfg *config.Config) (value int, source
 	return cfgVal, "config", false
 }
 
-// Update validates and persists the given patch (only keys present are
-// changed), skipping env-locked knobs, then applies the new effective values
-// to the running engine / sandbox service.
-func (s *SettingsService) Update(patch map[string]int) ([]SettingItem, error) {
-	return s.UpdateWithBrand(patch, BrandPatch{})
-}
-
 // UpdateWithBrand validates the complete patch before writing, then persists
 // scheduling and brand values in one transaction.
 func (s *SettingsService) UpdateWithBrand(patch map[string]int, brand BrandPatch) ([]SettingItem, error) {
@@ -290,11 +283,6 @@ func (s *SettingsService) dbInt(key string) (int, bool) {
 		return 0, false
 	}
 	return v, true
-}
-
-func (s *SettingsService) setInt(key string, v int) error {
-	// Key is the primary key, so Save upserts (update when present, else insert).
-	return setSetting(s.db, key, strconv.Itoa(v))
 }
 
 func (s *SettingsService) dbString(key string) string {

@@ -526,7 +526,4 @@ func TestIsChannelUserIDPrefixes(t *testing.T) {
 	if IsChannelUserID("cron:agent") || IsChannelUserID("alice") || IsChannelUserID("") {
 		t.Fatal("unexpected channel match")
 	}
-	if ChannelPeerID("wecom:c2c:zhangsan") != "zhangsan" {
-		t.Fatalf("peer=%q", ChannelPeerID("wecom:c2c:zhangsan"))
-	}
 }

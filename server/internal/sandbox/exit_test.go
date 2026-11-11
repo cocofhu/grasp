@@ -59,12 +59,9 @@ func TestExplainLoss(t *testing.T) {
 	}
 	fg.mu.Unlock()
 	got := sb.ExplainLoss(ctx, lost)
-	e, ok := AsExitError(got)
-	if !ok || !e.OOMKilled || !errors.Is(got, ErrConnClosed) || !strings.HasPrefix(got.Error(), "沙箱 OOM 被杀(8192MiB): agent chat") {
+	var ee *ExitError
+	if !errors.As(got, &ee) || !ee.Exit.OOMKilled || !errors.Is(got, ErrConnClosed) || !strings.HasPrefix(got.Error(), "沙箱 OOM 被杀(8192MiB): agent chat") {
 		t.Fatalf("got %v (calls=%d)", got, calls)
-	}
-	if _, ok := AsExitError(lost); ok {
-		t.Fatal("plain error carries no exit")
 	}
 
 	idle := fmt.Errorf("x: %w", ErrChatIdle)

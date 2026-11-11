@@ -1,8 +1,8 @@
 import { ref } from 'vue'
 
-export type ToastType = 'default' | 'success' | 'error' | 'warn'
+type ToastType = 'default' | 'success' | 'error' | 'warn'
 
-export interface ToastItem {
+interface ToastItem {
   id: number
   message: string
   type: ToastType
@@ -10,7 +10,7 @@ export interface ToastItem {
   action?: ToastAction
 }
 
-export interface ToastAction {
+interface ToastAction {
   label: string
   run: () => void
 }

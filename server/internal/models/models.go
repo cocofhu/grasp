@@ -883,35 +883,6 @@ type ReactOption struct {
 	DemoHtml string `json:"demoHtml,omitempty"`
 }
 
-// SelectRecommendedOptions resolves the auto-selected option set for a question.
-// When AllowMultiple is true, every recommended option is returned; when false,
-// at most the first recommended option is returned. With zero recommendations
-// the first option is the fallback. Returns false when the question has no
-// options at all.
-func SelectRecommendedOptions(q ReactQuestion) ([]ReactOption, bool) {
-	if len(q.Options) == 0 {
-		return nil, false
-	}
-	if q.AllowMultiple {
-		picked := make([]ReactOption, 0, len(q.Options))
-		for _, o := range q.Options {
-			if o.Recommended {
-				picked = append(picked, o)
-			}
-		}
-		if len(picked) == 0 {
-			return []ReactOption{q.Options[0]}, true
-		}
-		return picked, true
-	}
-	for _, o := range q.Options {
-		if o.Recommended {
-			return []ReactOption{o}, true
-		}
-	}
-	return []ReactOption{q.Options[0]}, true
-}
-
 // Choice-summary prefixes emitted by the clarify UI (zh-CN + en) and
 // FormatChoiceReply. Used to recognize a structured "我的选择" human turn.
 const (
@@ -931,37 +902,6 @@ const (
 // (not free-text). Prefix match is exact at the start — same as the UI.
 func IsChoiceReply(text string) bool {
 	return strings.HasPrefix(text, ChoiceReplyPrefixZH) || strings.HasPrefix(text, ChoiceReplyPrefixEN)
-}
-
-// IsSkipReply reports whether text is a composer skip envelope (not a choice
-// summary). Match requires the label followed by a newline so a free-text line
-// that merely mentions the phrase is not treated as skip.
-func IsSkipReply(text string) bool {
-	return strings.HasPrefix(text, SkipReplyPrefixZH+"\n") || strings.HasPrefix(text, SkipReplyPrefixEN+"\n")
-}
-
-// FormatChoiceReply builds the human reply text an auto-select would submit,
-// matching the UI's "我的选择:\n- 问题 → 选项" format so the transcript reads the
-// same whether the choice came from a human click or an automatic pick. Each
-// question resolves to its recommended option set (or the first as fallback);
-// multi-select labels are joined with "、", matching ClarifyChat.submitChoices.
-func FormatChoiceReply(questions []ReactQuestion) string {
-	lines := make([]string, 0, len(questions))
-	for _, q := range questions {
-		opts, ok := SelectRecommendedOptions(q)
-		if !ok {
-			continue
-		}
-		labels := make([]string, len(opts))
-		for i, o := range opts {
-			labels[i] = o.Label
-		}
-		lines = append(lines, "- "+q.Prompt+" → "+strings.Join(labels, "、"))
-	}
-	if len(lines) == 0 {
-		return ""
-	}
-	return "我的选择:\n" + strings.Join(lines, "\n")
 }
 
 // PromptImage is a chat/run attachment. New persistence uses Ref (blob:{id})

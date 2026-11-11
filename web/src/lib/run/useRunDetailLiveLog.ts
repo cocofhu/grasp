@@ -33,7 +33,7 @@ export type EventPageState = {
   live: boolean
 }
 
-export type SbxLogState = { content: string; live: boolean; found: boolean; error?: string }
+type SbxLogState = { content: string; live: boolean; found: boolean; error?: string }
 
 export function useRunDetailLiveLog(opts: {
   runId: ComputedRef<string>

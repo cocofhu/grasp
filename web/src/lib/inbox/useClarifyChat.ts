@@ -71,7 +71,7 @@ function cloneReactAnnotations(anns?: ReactAnnotation[] | null): ReactAnnotation
 function cloneClarifyImages(imgs?: ClarifyImage[] | null): ClarifyImage[] {
   return imgs?.length ? imgs.map((im) => ({ ...im })) : []
 }
-export type ClarifyChatProps = {
+type ClarifyChatProps = {
   runId: string
   nodeId: string
   iteration: number
@@ -100,7 +100,7 @@ export type ClarifyChatProps = {
   followTail?: { kind: 'waiting' | 'auto' | 'ended' | 'error' } | null
 }
 
-export type ClarifyChatEmit = {
+type ClarifyChatEmit = {
   (e: 'send', text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]): void
   (e: 'retry-last'): void
   (e: 'finish'): void
@@ -110,7 +110,7 @@ export type ClarifyChatEmit = {
   (e: 'queue-reorder', itemIds: string[]): void
 }
 
-export type ClarifyChatModels = {
+type ClarifyChatModels = {
   draft: Ref<string>
   attachments: Ref<ClarifyImage[]>
   annotations: Ref<ReactAnnotation[]>
@@ -119,15 +119,6 @@ export type ClarifyChatModels = {
     refs: Ref<MessageReference[]>
     load: (text: string, references: MessageReference[]) => void
   }
-}
-
-/** Optional `dropped` payload of a clarify_visit_ended error (HTTP 409 / WS). */
-export type ClarifyDroppedPayload = {
-  clientId?: string
-  text?: string
-  attachments?: ClarifyImage[]
-  images?: ClarifyImage[]
-  annotations?: ReactAnnotation[]
 }
 
 export function useClarifyChat(
@@ -154,7 +145,6 @@ function loadDraft(text: string, refs?: MessageReference[]) {
   if (mention && refs?.length) mention.load(text, refs)
   else draft.value = text
 }
-
 
 // active: whether the run is still in an interactive state (queued/running/
 // waiting_human). When false (completed/failed/cancelled) the chat input is
@@ -1800,7 +1790,6 @@ function retryLastFailed() {
   emit('retry-last')
   void scrollBottom()
 }
-
 
 const busyKey = () => `chat:${props.nodeId || ''}`
 watch(

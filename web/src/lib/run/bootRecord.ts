@@ -17,10 +17,10 @@
  */
 import { reactive } from 'vue'
 
-export type BootStepId = 'sandbox' | 'workspace' | 'agent'
-export type BootStepState = 'done' | 'running' | 'pending'
+type BootStepId = 'sandbox' | 'workspace' | 'agent'
+type BootStepState = 'done' | 'running' | 'pending'
 
-export interface BootRecord {
+interface BootRecord {
   /** Node entered (server clock, ms). */
   nodeStartedAt: number | null
   /** Last lifecycle status seen for this boot's sandbox row. */
@@ -31,14 +31,14 @@ export interface BootRecord {
   live: boolean
 }
 
-export interface BootStepView {
+interface BootStepView {
   id: BootStepId
   state: BootStepState
   /** Real elapsed seconds, or null when the backend does not expose both ends. */
   sec: number | null
 }
 
-export interface BootSandboxObservation {
+interface BootSandboxObservation {
   status?: string | null
   updatedAt?: string | null
 }

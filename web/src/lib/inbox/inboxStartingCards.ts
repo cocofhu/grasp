@@ -4,7 +4,7 @@ import { clipRunTitle } from '@/lib/run/runTitle'
 import type { ClarifyInboxItem, InboxItem, Run } from '@/lib/shared/types'
 
 /** The approval a just-started run is expected to park on. */
-export type IncomingApproval = { runId: string; nodeId: string }
+type IncomingApproval = { runId: string; nodeId: string }
 
 /**
  * The approval the inbox is waiting for, from `?run=&node=` or the pending home

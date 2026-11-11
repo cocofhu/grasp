@@ -109,68 +109,6 @@ func (s *Store) Models(ctx context.Context, providerID string) ([]Model, error) 
 	return nil, nil
 }
 
-// KnowsProvider reports whether the catalog lists the provider. The second
-// result is false when the catalog could not be read at all, which is a
-// different answer from "absent": a vendor absent from the catalog needs an
-// adapter written into opencode.json, while an unreadable catalog is no reason
-// to override a vendor OpenCode may well resolve on its own.
-func (s *Store) KnowsProvider(ctx context.Context, providerID string) (bool, bool) {
-	providers, _, err := s.Providers(ctx)
-	if err != nil {
-		return false, false
-	}
-	want := strings.TrimSpace(providerID)
-	for _, p := range providers {
-		if strings.EqualFold(p.ID, want) {
-			return true, true
-		}
-	}
-	return false, true
-}
-
-// KnowsModel reports whether the catalog lists the model under the provider.
-// The second result is false when the catalog could not be read.
-//
-// A vendor in the catalog can still be missing the model someone wants: a
-// gateway's published model list grows faster than the catalog snapshot, and
-// OpenCode refuses an id it cannot find there.
-func (s *Store) KnowsModel(ctx context.Context, providerID, modelID string) (bool, bool) {
-	providers, _, err := s.Providers(ctx)
-	if err != nil {
-		return false, false
-	}
-	want := strings.TrimSpace(providerID)
-	wantModel := strings.TrimSpace(modelID)
-	for _, p := range providers {
-		if !strings.EqualFold(p.ID, want) {
-			continue
-		}
-		for _, m := range p.Models {
-			if m.ID == wantModel {
-				return true, true
-			}
-		}
-		return false, true
-	}
-	return false, true
-}
-
-// KeyEnv reports the env var a provider's key belongs in, or "" when the
-// catalog is unavailable or does not know the provider.
-func (s *Store) KeyEnv(ctx context.Context, providerID string) string {
-	providers, _, err := s.Providers(ctx)
-	if err != nil {
-		return ""
-	}
-	want := strings.TrimSpace(providerID)
-	for _, p := range providers {
-		if strings.EqualFold(p.ID, want) {
-			return p.KeyEnv
-		}
-	}
-	return ""
-}
-
 func (s *Store) fresh() bool {
 	return len(s.providers) > 0 && time.Since(s.fetchedAt) < s.ttl
 }

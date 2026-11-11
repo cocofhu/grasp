@@ -92,25 +92,6 @@ func (s *SandboxService) activeSoloSandboxCount() int {
 // UsedSoloSandboxes returns the workspace-wide quota the next Solo admission sees.
 func (s *SandboxService) UsedSoloSandboxes() int { return s.activeSoloSandboxCount() }
 
-// SoloRepoSpecs converts a project into the sandbox clone list.
-func SoloRepoSpecs(p *models.Project, branch string) []sandbox.RepoSpec {
-	if p == nil || strings.TrimSpace(p.RepoURL) == "" {
-		return nil
-	}
-	name := strings.TrimSpace(p.RepoDirName)
-	if name == "" {
-		name = sandbox.RepoNameFromURL(p.RepoURL)
-	}
-	if name == "" {
-		name = "repo"
-	}
-	b := strings.TrimSpace(branch)
-	if b == "" {
-		b = strings.TrimSpace(p.DefaultBranch)
-	}
-	return []sandbox.RepoSpec{{Name: name, URL: strings.TrimSpace(p.RepoURL), Branch: b}}
-}
-
 // OpenSoloSandbox creates a resident sandbox for a Solo session. It returns
 // the "creating" row immediately; the container starts in the background and
 // OnReady / OnFail report the outcome.

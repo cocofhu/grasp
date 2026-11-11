@@ -9,12 +9,12 @@ import {
 import { useToast } from '@/lib/composables/useToast'
 import type { Workspace, WorkspaceNotifyPolicy } from '@/lib/shared/types'
 
-export interface UsePmChannelMultiProps {
+interface UsePmChannelMultiProps {
   workspace: Workspace
   pmLeaderAgent?: string
 }
 
-export type UsePmChannelMultiEmit = (event: 'workspace-updated', workspace: Workspace) => void
+type UsePmChannelMultiEmit = (event: 'workspace-updated', workspace: Workspace) => void
 
 export function usePmChannelMulti(props: UsePmChannelMultiProps, emit: UsePmChannelMultiEmit) {
 const { t } = useI18n()

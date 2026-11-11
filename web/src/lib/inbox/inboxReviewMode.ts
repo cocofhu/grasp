@@ -1,7 +1,7 @@
 import type { ClarifyTurn, InboxItem, Run } from '@/lib/shared/types'
 import { isClarifyNode } from '@/lib/shared/clarifyInteractive'
 
-export type InboxClarifySession = {
+type InboxClarifySession = {
   nodeId: string
   iteration?: number
   turns: ClarifyTurn[]

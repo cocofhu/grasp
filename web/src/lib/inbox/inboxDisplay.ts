@@ -48,7 +48,7 @@ export function inboxSecondaryLine(it: Pick<InboxItem, 'workflowName' | 'runId' 
 }
 
 /** i18n key for the list badge: gate / clarify / review / starting / replying. */
-export type InboxBadgeLabelKey =
+type InboxBadgeLabelKey =
   | 'pages.gatesInbox.gateType'
   | 'pages.gatesInbox.clarifyType'
   | 'pages.gatesInbox.reviewType'
@@ -56,9 +56,9 @@ export type InboxBadgeLabelKey =
   | 'pages.gatesInbox.replyingType'
 
 /** Visual tone for icon/badge chips (Demo: warn / review-green / clarify-cyan / amber). */
-export type InboxBadgeTone = 'gate' | 'review' | 'clarify' | 'replying'
+type InboxBadgeTone = 'gate' | 'review' | 'clarify' | 'replying'
 
-export type InboxStateItem = Pick<InboxItem, 'type'> & { kind?: string; state?: string }
+type InboxStateItem = Pick<InboxItem, 'type'> & { kind?: string; state?: string }
 
 /** True while the item's sandbox is still booting (no transcript, no reply yet). */
 export function isStartingInboxItem(
@@ -119,7 +119,7 @@ export function noteInboxStatePatch(key: string): void {
 }
 
 /** True when this row was written after the snapshot began. */
-export function inboxStatePatchIsNewer(key: string, snapshotEpoch: number | undefined): boolean {
+function inboxStatePatchIsNewer(key: string, snapshotEpoch: number | undefined): boolean {
   if (snapshotEpoch == null) return false
   const patched = inboxStatePatchedEpoch.get(key)
   return patched != null && patched > snapshotEpoch
@@ -195,32 +195,4 @@ export function keepNewerLocalInboxState<T extends InboxStateItem & { runId: str
     const state = prev.state === 'starting' || prev.state === 'replying' ? prev.state : undefined
     return withInboxLiveState(it, state)
   })
-}
-
-/** Icon tile classes by tone. */
-export function inboxIconToneClass(tone: InboxBadgeTone): string {
-  switch (tone) {
-    case 'gate':
-      return 'bg-warn/15 text-warn'
-    case 'review':
-      return 'bg-n-review/15 text-n-review'
-    case 'replying':
-      return 'bg-n-artifact/15 text-n-artifact'
-    default:
-      return 'bg-n-clarify/15 text-n-clarify'
-  }
-}
-
-/** Badge chip classes by tone. */
-export function inboxBadgeToneClass(tone: InboxBadgeTone): string {
-  switch (tone) {
-    case 'gate':
-      return 'border-warn/30 bg-warn/10 text-warn'
-    case 'review':
-      return 'border-n-review/30 bg-n-review/10 text-n-review'
-    case 'replying':
-      return 'border-n-artifact/35 bg-n-artifact/10 text-n-artifact'
-    default:
-      return 'border-n-clarify/30 bg-n-clarify/10 text-n-clarify'
-  }
 }

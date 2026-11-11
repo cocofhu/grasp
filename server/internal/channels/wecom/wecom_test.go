@@ -48,7 +48,7 @@ func TestClassifyWeComErrorRateLimit(t *testing.T) {
 		t.Fatalf("频率文案 should be rate limit: %v", err)
 	}
 	err = classifyWeComError(40014, "invalid secret")
-	if IsRateLimited(err) || IsUnspoken(err) {
+	if IsRateLimited(err) {
 		t.Fatalf("generic should not classify: %v", err)
 	}
 }
@@ -135,31 +135,6 @@ func TestInboundMapsSingleAndGroup(t *testing.T) {
 	}
 	if got[1].Scene != channels.SceneGroup || got[1].ConversationID != "wr_ops" {
 		t.Fatalf("group = %+v", got[1])
-	}
-}
-
-func TestSendUnspokenAndOffline(t *testing.T) {
-	a, err := New(channels.AdapterConfig{AppID: "bot", AppSecret: "sec"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ad := a.(*Adapter)
-	ad.SetSpokenCheckerForTest(func(scene channels.Scene, conversationID string) bool {
-		return false
-	})
-	err = ad.Send(context.Background(), channels.OutboundMessage{
-		Scene: channels.SceneC2C, ConversationID: "silent", Text: "hi",
-	})
-	if !IsUnspoken(err) {
-		t.Fatalf("want unspoken, got %v", err)
-	}
-
-	ad.SetSpokenCheckerForTest(func(scene channels.Scene, conversationID string) bool { return true })
-	err = ad.Send(context.Background(), channels.OutboundMessage{
-		Scene: channels.SceneC2C, ConversationID: "u1", Text: "hi",
-	})
-	if !errors.Is(err, ErrOffline) {
-		t.Fatalf("want offline, got %v", err)
 	}
 }
 

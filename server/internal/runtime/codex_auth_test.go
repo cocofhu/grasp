@@ -88,7 +88,7 @@ func TestMergeAuthEnvExistingBackendsUnchanged(t *testing.T) {
 		{BackendTrae, envauth.EnvTraeAPIKey, EnvTraeCLIToken},
 	}
 	for _, tc := range cases {
-		out, err := MergeAuthEnv(tc.backend, map[string]string{tc.credKey: "cred"})
+		out, err := mergeAuthEnv(tc.backend, map[string]string{tc.credKey: "cred"}, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -98,27 +98,6 @@ func TestMergeAuthEnvExistingBackendsUnchanged(t *testing.T) {
 		if _, ok := out["OPENAI_API_KEY"]; ok && tc.backend != BackendOpenCode {
 			t.Fatalf("%s unexpectedly set OPENAI_API_KEY", tc.backend)
 		}
-	}
-}
-
-func TestCodexAuthRejectedRewrite(t *testing.T) {
-	if !CodexAuthRejected(errors.New("failed to refresh token"), nil) {
-		t.Fatal("error text should reject")
-	}
-	if !CodexAuthRejected(nil, []models.AcpEvent{{
-		Kind: models.AcpKindTurnEnd, Status: "failed", Text: "invalid_grant",
-	}}) {
-		t.Fatal("failed turn should reject")
-	}
-	if got := RewriteCodexAuthError("could not refresh"); got != CodexLoginRepasteMessage {
-		t.Fatalf("rewrite=%q", got)
-	}
-	raw := "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses"
-	if !IsCodexAuthRejectionText(raw) || RewriteCodexAuthError(raw) != CodexLoginRepasteMessage {
-		t.Fatal("codex-cli 401 missing bearer should ask the user to paste the login file again")
-	}
-	if IsCodexAuthRejectionText("upstream returned 401 Unauthorized for the project API") {
-		t.Fatal("a generic 401 must not be treated as a Codex login failure")
 	}
 }
 

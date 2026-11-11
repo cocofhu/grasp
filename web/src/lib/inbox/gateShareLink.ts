@@ -274,7 +274,7 @@ export function shareStatusLabel(
   return t('pages.gatesInbox.share.stateNone')
 }
 
-export type PublicGatePreviewImage = {
+type PublicGatePreviewImage = {
   mimeType?: string
   name?: string
   sizeBytes?: number
@@ -397,7 +397,7 @@ export type PublicPreviewPort = {
   directUrl?: string
 }
 
-export type PublicPreviewTicketResult = {
+type PublicPreviewTicketResult = {
   status: string
   ticket?: string
   expiresAt?: string
@@ -409,7 +409,7 @@ export type PublicPreviewTicketResult = {
   message?: string
 }
 
-export type PublicGateUpstreamResult = {
+type PublicGateUpstreamResult = {
   status: string
   upstream?: PublicGatePreview['upstream'] | null
   error?: string
@@ -427,7 +427,7 @@ export type PublicGateDecideResult = {
   runningOpId?: string
 }
 
-export type PublicGateReplyResult = {
+type PublicGateReplyResult = {
   status: string
   error?: string
   message?: string
@@ -437,7 +437,7 @@ export type PublicGateReplyResult = {
   live?: unknown
 }
 
-export type PublicLiveSessionsResult = {
+type PublicLiveSessionsResult = {
   status: string
   enabled?: boolean
   sessions?: unknown[]
@@ -475,7 +475,7 @@ export type PublicGateArtifactsResult = {
   message?: string
 }
 
-export type PublicGateArtifactContentResult = {
+type PublicGateArtifactContentResult = {
   status?: string
   id?: string
   name?: string

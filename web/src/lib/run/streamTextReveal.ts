@@ -7,7 +7,7 @@
  * markdown coalesce — never bind absolute snapshots straight to the DOM.
  */
 
-export type StreamTextRevealOptions = {
+type StreamTextRevealOptions = {
   /** Called whenever revealed text changes (may lag target). */
   onReveal?: (revealed: string) => void
   /** Inject for tests; defaults to requestAnimationFrame. */
@@ -28,7 +28,7 @@ export type StreamTextRevealOptions = {
   sync?: boolean
 }
 
-export type StreamTextReveal = {
+type StreamTextReveal = {
   /** Absolute authoritative snapshot (ACP resume / chunk). */
   setTarget: (text: string) => void
   getTarget: () => string

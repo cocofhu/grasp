@@ -61,15 +61,6 @@ type ExitError struct {
 func (e *ExitError) Error() string { return e.Exit.Describe() + ": " + e.Err.Error() }
 func (e *ExitError) Unwrap() error { return e.Err }
 
-// AsExitError returns the container exit carried by err, if any.
-func AsExitError(err error) (*ExitInfo, bool) {
-	var ee *ExitError
-	if errors.As(err, &ee) {
-		return ee.Exit, true
-	}
-	return nil, false
-}
-
 var (
 	exitProbeTries = 5
 	exitProbeEvery = 2 * time.Second

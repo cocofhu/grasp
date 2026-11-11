@@ -7,7 +7,7 @@ export const MAX_TAG_RUNES = 32
 /** Launch-path only; filter path does not enforce this. */
 export const MAX_RUN_TAGS = 8
 
-export type RunTagValidationCode = 'empty' | 'too_long' | 'invalid'
+type RunTagValidationCode = 'empty' | 'too_long' | 'invalid'
 
 export function runeCount(value: string): number {
   return Array.from(value).length

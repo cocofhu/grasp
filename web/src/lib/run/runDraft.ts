@@ -8,7 +8,7 @@ import {
   type RunDraftRecord,
 } from './draftIdb'
 
-export interface RunDraftPayload {
+interface RunDraftPayload {
   workflowId: string
   savedAt: number
   inputs: Record<string, string>
@@ -16,7 +16,7 @@ export interface RunDraftPayload {
 }
 
 /** ok = full save; partial = fields persisted without images; quota_exceeded / error. */
-export type SaveRunDraftResult = 'ok' | 'partial' | 'quota_exceeded' | 'error'
+type SaveRunDraftResult = 'ok' | 'partial' | 'quota_exceeded' | 'error'
 
 /** localStorage text fallback used when IndexedDB writes fail. */
 const FALLBACK_PREFIX = 'run-draft:'

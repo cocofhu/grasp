@@ -32,7 +32,7 @@ export type ArtifactListScope =
   | { workflowId: string; session?: undefined }
   | { workflowId?: undefined; session: true }
 
-export type ListArtifactsParams = ArtifactListScope & {
+type ListArtifactsParams = ArtifactListScope & {
   page?: number
   pageSize?: number
   q?: string

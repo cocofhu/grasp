@@ -1,7 +1,7 @@
 import { inject, provide, type ComputedRef, type InjectionKey } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-export interface EditorFormContext {
+interface EditorFormContext {
   /** Form path the current server error points at (e.g. `goals[1].title`). */
   errorPath: ComputedRef<string | null>
   errorMessage: ComputedRef<string>

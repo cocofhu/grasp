@@ -7,15 +7,15 @@ export type DemoWindowEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 export const CLARIFY_DEMO_ESCAPE = 'grasp-clarify-demo-escape'
 
 /** Default inset from each viewport edge. */
-export const DEMO_WINDOW_MARGIN = 28
+const DEMO_WINDOW_MARGIN = 28
 /** Tighter inset when a 28px margin would leave less than DEMO_WINDOW_USEFUL on either axis. */
-export const DEMO_WINDOW_TIGHT_MARGIN = 8
+const DEMO_WINDOW_TIGHT_MARGIN = 8
 const DEMO_WINDOW_USEFUL = 160
-export const DEMO_WINDOW_MIN_W = 480
-export const DEMO_WINDOW_MIN_H = 320
+const DEMO_WINDOW_MIN_W = 480
+const DEMO_WINDOW_MIN_H = 320
 /** Default enlarge window caps. Smaller viewports shrink inside the margin. */
-export const DEMO_WINDOW_MAX_W = 720
-export const DEMO_WINDOW_MAX_H = 560
+const DEMO_WINDOW_MAX_W = 720
+const DEMO_WINDOW_MAX_H = 560
 
 function roundBox(box: DemoWindowBox): DemoWindowBox {
   return {
@@ -31,7 +31,7 @@ function viewportSize(viewport: { w: number; h: number }) {
 }
 
 /** Margin is 8 when width−56 or height−56 would be under 160; otherwise 28. */
-export function demoWindowMargin(viewport: { w: number; h: number }): number {
+function demoWindowMargin(viewport: { w: number; h: number }): number {
   const { w, h } = viewportSize(viewport)
   const usableW = w - DEMO_WINDOW_MARGIN * 2
   const usableH = h - DEMO_WINDOW_MARGIN * 2
@@ -78,7 +78,7 @@ export function moveDemoWindow(
 }
 
 /** Floor is 480×320, or the viewport itself when the viewport is smaller. */
-export function demoWindowMinSize(viewport: { w: number; h: number }): { w: number; h: number } {
+function demoWindowMinSize(viewport: { w: number; h: number }): { w: number; h: number } {
   const { w, h } = viewportSize(viewport)
   return { w: Math.min(DEMO_WINDOW_MIN_W, w), h: Math.min(DEMO_WINDOW_MIN_H, h) }
 }

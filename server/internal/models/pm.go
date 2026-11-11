@@ -1,7 +1,6 @@
 package models
 
 import (
-	"strings"
 	"time"
 )
 
@@ -194,16 +193,6 @@ const (
 // RegisteredChannelTypes returns channel types the platform can persist/start.
 func RegisteredChannelTypes() []string {
 	return []string{ChannelTypeQQ, ChannelTypeWeCom, ChannelTypeFeishu, ChannelTypeDingTalk}
-}
-
-// IsRegisteredChannelType reports whether typ is a known adapter type.
-func IsRegisteredChannelType(typ string) bool {
-	switch strings.TrimSpace(typ) {
-	case ChannelTypeQQ, ChannelTypeWeCom, ChannelTypeFeishu, ChannelTypeDingTalk:
-		return true
-	default:
-		return false
-	}
 }
 
 // AgentCronRun is one execution record for an AgentCronJob.

@@ -2,13 +2,13 @@ import { computed, ref } from 'vue'
 import { useAuth } from '@/lib/composables/useAuth'
 
 /** One pending row pinned in the current user's sidebar. */
-export type SidebarPinRecord = {
+type SidebarPinRecord = {
   itemKey: string
   /** Epoch ms. A larger value sorts earlier. */
   pinnedAt: number
 }
 
-export function sidebarPinsStorageKey(username: string): string {
+function sidebarPinsStorageKey(username: string): string {
   return `grasp.sidebarPendingPins.${username || 'anonymous'}`
 }
 

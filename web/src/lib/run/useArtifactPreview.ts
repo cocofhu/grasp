@@ -65,7 +65,7 @@ export type ArtifactPreviewEmit = {
   (e: 'edit-start', name: string): void
 }
 
-export interface ArtifactPreviewOptions {
+interface ArtifactPreviewOptions {
   /** True while the editor is open: annotation is off. */
   annotateSuspended?: () => boolean
 }

@@ -12,7 +12,7 @@ import type { LlmInflightPrompt, LlmTranscriptExecution, LlmTranscriptResponse }
 import { tokenUsageTotal } from '@/lib/run/tokenUsage'
 
 /** Where a Q came from: the node's first instruction, a human reply, or a platform follow-up. */
-export type LlmPromptSource = 'instruction' | 'human' | 'followup'
+type LlmPromptSource = 'instruction' | 'human' | 'followup'
 
 export interface LlmPrompt {
   text: string
@@ -52,7 +52,7 @@ export interface LlmTurn {
   live: boolean
 }
 
-export interface LlmNodeInfo {
+interface LlmNodeInfo {
   label: string
   type: string
 }
@@ -88,20 +88,11 @@ export type LlmTranscriptItem =
       edgeKind?: string
     }
 
-export interface BuildLlmTranscriptInput {
+interface BuildLlmTranscriptInput {
   run: Run
   transcript: LlmTranscriptResponse | null
   liveEvents?: Record<string, AcpEvent[] | undefined>
   nodeInfo: (nodeId: string) => LlmNodeInfo
-}
-
-/** Local wall-clock HH:MM:SS (24h), matching the run header's fmtTime style. */
-export function fmtClock(iso?: string): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 function ms(iso?: string): number {
@@ -259,7 +250,7 @@ function modelsOf(ex: LlmTranscriptExecution): string[] {
 }
 
 /** Executions from run detail (prompts are previews) until the transcript loads. */
-export function executionsFromRun(run: Run): LlmTranscriptExecution[] {
+function executionsFromRun(run: Run): LlmTranscriptExecution[] {
   const out: LlmTranscriptExecution[] = []
   const execs = run.nodeExecutions || {}
   const ids = new Set([...Object.keys(execs), ...Object.keys(run.nodeRuns || {})])
@@ -414,7 +405,7 @@ export function buildLlmTranscript(input: BuildLlmTranscriptInput): LlmTranscrip
   return sortable.map((s) => s.item)
 }
 
-export interface LlmTranscriptSummary {
+interface LlmTranscriptSummary {
   turns: number
   nodes: number
   totalTokens: number | null

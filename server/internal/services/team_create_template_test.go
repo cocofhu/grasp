@@ -99,19 +99,3 @@ func TestApplyCreateTemplate(t *testing.T) {
 		t.Fatal("expected unknown templateId error")
 	}
 }
-
-func TestTeamEmbedPackageNames(t *testing.T) {
-	got := TeamEmbedPackageNames()
-	want := []string{TeamPMEmbedName, "ClarifyAgent", "ImplementAgent", "TestReviewAgent", "DeliverAgent"}
-	if len(got) != len(want) {
-		t.Fatalf("packages = %v", got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("packages = %v, want %v", got, want)
-		}
-		if _, err := LoadTeamAgentTemplate(want[i]); err != nil {
-			t.Fatalf("load %s: %v", want[i], err)
-		}
-	}
-}

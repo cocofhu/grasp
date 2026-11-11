@@ -1,22 +1,20 @@
 import type { ClarifyImage, ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
 
 /** Choice prefixes the UI and models.FormatChoiceReply emit. Both are recognized in either locale. */
-export const CHOICE_PREFIX_ZH = '我的选择:'
-export const CHOICE_PREFIX_EN = 'My choices:'
+const CHOICE_PREFIX_ZH = '我的选择:'
+const CHOICE_PREFIX_EN = 'My choices:'
 /** zh-CN form-summary prefix, recognized regardless of the viewer's locale. */
-export const FORM_PREFIX_ZH = '我的填写:'
+const FORM_PREFIX_ZH = '我的填写:'
 /** Skip-envelope first line (zh / en) — not a choice reply. */
-export const SKIP_PREFIX_ZH = '回答已跳过'
-export const SKIP_USER_LABEL_ZH = '用户回复'
-export const SKIP_PREFIX_EN = 'Answers skipped'
-export const SKIP_USER_LABEL_EN = 'User reply'
+const SKIP_PREFIX_ZH = '回答已跳过'
+const SKIP_PREFIX_EN = 'Answers skipped'
 
 export interface ChoiceRow {
   q: string
   answers: string[]
 }
 
-export interface FormRow {
+interface FormRow {
   label: string
   value: string
 }

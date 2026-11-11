@@ -1,12 +1,12 @@
 import { onBeforeUnmount, onMounted, ref, unref, watch, type Ref } from 'vue'
 
-export interface ReviewTextSelectionCached {
+interface ReviewTextSelectionCached {
   quote: string
   jsonPath?: string
   label?: string
 }
 
-export interface UseReviewTextSelectionOptions {
+interface UseReviewTextSelectionOptions {
   /** When false, selection never shows the toolbar. */
   enabled: Ref<boolean> | boolean
   /** Stage root; selections outside this element are ignored. */

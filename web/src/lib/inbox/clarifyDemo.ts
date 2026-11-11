@@ -24,7 +24,7 @@ export function selectedDemoOption(
   return matched.find((o) => !!o.demoHtml?.trim()) ?? null
 }
 
-export interface ChoiceEcho {
+interface ChoiceEcho {
   prompt: string
   /** Hide the prompt when the only question already shows a preview card. */
   showPrompt: boolean

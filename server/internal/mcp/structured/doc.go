@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
 	"sort"
 	"strings"
 )
@@ -943,27 +942,6 @@ func (d *testResultDoc) ValidateScreenshotArtifacts(exists func(name string) boo
 		}
 	}
 	return nil
-}
-
-// GuessImageMIME infers an image MIME type from an artifact filename suffix.
-func GuessImageMIME(name string) string {
-	return guessImageMIME(name)
-}
-
-// guessImageMIME infers an image MIME type from an artifact filename suffix.
-func guessImageMIME(name string) string {
-	switch strings.ToLower(path.Ext(name)) {
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".webp":
-		return "image/webp"
-	case ".gif":
-		return "image/gif"
-	default:
-		return "image/png"
-	}
 }
 
 // TestFailedCount returns how many test cases failed in a stored

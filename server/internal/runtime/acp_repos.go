@@ -3,66 +3,12 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/textutil"
 )
-
-// gitBaseURL returns the scheme://host origin of an http(s) repo URL, used to
-// derive GITLAB_URL (the git credential host) from a GitLab repo_url. Returns ""
-// for non-http URLs (e.g. ssh git@host:…) or unparseable input. GitHub hosts are
-// skipped by spec() so a GitHub first-repo cannot become GITLAB_URL.
-func gitBaseURL(repo string) string {
-	u, err := url.Parse(strings.TrimSpace(repo))
-	if err != nil || u.Host == "" {
-		return ""
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return ""
-	}
-	return u.Scheme + "://" + u.Host
-}
-
-// gitRepoHost extracts the hostname from https, ssh://, or SCP-style repo URLs.
-func gitRepoHost(repo string) string {
-	repo = strings.TrimSpace(repo)
-	if u, err := url.Parse(repo); err == nil && u.Host != "" {
-		host := u.Host
-		if i := strings.Index(host, ":"); i >= 0 {
-			host = host[:i]
-		}
-		return host
-	}
-	if at := strings.Index(repo, "@"); at >= 0 {
-		rest := repo[at+1:]
-		if colon := strings.Index(rest, ":"); colon >= 0 {
-			return rest[:colon]
-		}
-		if slash := strings.Index(rest, "/"); slash >= 0 {
-			return rest[:slash]
-		}
-	}
-	return ""
-}
-
-// isGitLabRepo reports whether repo_url points at GitLab (gitlab.com or GITLAB_URL host).
-func isGitLabRepo(repo, gitlabURL string) bool {
-	host := gitRepoHost(repo)
-	if host == "" {
-		return false
-	}
-	if host == "gitlab.com" {
-		return true
-	}
-	glHost := gitRepoHost(gitlabURL)
-	if glHost == "" {
-		glHost = gitRepoHost("https://" + strings.TrimPrefix(strings.TrimPrefix(gitlabURL, "https://"), "http://"))
-	}
-	return glHost != "" && host == glHost
-}
 
 type repoEntry struct {
 	Name   string `json:"name"`
@@ -283,35 +229,6 @@ func firstRepoURL(req NodeReq) string {
 		return ""
 	}
 	return repos[0].URL
-}
-
-// nodeRepo resolves the single repository a node's git/glab commands operate
-// in: submit_mr pins config["repo"] (target repo name); otherwise a lone
-// configured repo is used. Returns the in-sandbox working directory (the repo's
-// flat subdir, or the workspace root when nothing resolves) and the repo's
-// clone URL (empty when it can't be determined).
-func (c *acpProvider) nodeRepo(req NodeReq) (dir, url string) {
-	repos := resolveRepos(req)
-	name := strings.TrimSpace(str2(req.Config["repo"]))
-	if name == "" && len(repos) == 1 {
-		name = repos[0].Name
-	}
-	for _, r := range repos {
-		if r.Name == name {
-			url = r.URL
-			break
-		}
-	}
-	return repoWorkspacePath(name), url
-}
-
-// nodeRepoURL is nodeRepo's URL, falling back to the first repo so GitLab host
-// derivation still works when the node didn't pin a specific repo.
-func (c *acpProvider) nodeRepoURL(req NodeReq) string {
-	if _, u := c.nodeRepo(req); u != "" {
-		return u
-	}
-	return firstRepoURL(req)
 }
 
 func str2(v any) string {

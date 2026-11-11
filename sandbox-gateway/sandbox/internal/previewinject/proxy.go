@@ -38,30 +38,8 @@ const flushInterval = 100 * time.Millisecond
 // graspSessionCookie must match auth.CookieName in the Grasp server.
 const graspSessionCookie = "cf_session"
 
-// NewHandler reverse-proxies to upstream and injects preview-pick.js into
-// text/html, allowing the preview resources in the app's CSP. Host is
-// preserved (Vite allowedHosts / HMR). WebSocket 101 and non-HTML bodies
-// are passed through. Location is not rewritten (direct preview has no
-// /preview prefix).
-//
-// Accept-Encoding is forced to identity so HTML can be rewritten. If the
-// upstream still sends gzip/deflate, the body is decoded. brotli/zstd are
-// left untouched (no rewrite) rather than corrupted.
-//
-// When upstream is unreachable the connection is closed without an HTTP
-// status. Grasp ProbeHTTPPort treats any HTTP response as healthy; a
-// 502 here would make set_preview succeed before the app is listening.
-func NewHandler(upstream *url.URL, scriptURL string) http.Handler {
-	return NewHandlerWithEmbed(upstream, scriptURL, EmbedLookup{})
-}
-
-// NewHandlerWithEmbed is NewHandler plus EmbedOriginPath for the chat drawer.
-func NewHandlerWithEmbed(upstream *url.URL, scriptURL string, embed EmbedLookup) http.Handler {
-	return NewSwitchableHandler(upstream, "", scriptURL, embed)
-}
-
-// NewSwitchableHandler is NewHandlerWithEmbed whose app port can be switched
-// at runtime: upstreamFile holds a port number (written by
+// NewSwitchableHandler proxies to upstream, serving EmbedOriginPath for the
+// chat drawer. Its app port can be switched at runtime: upstreamFile holds a port number (written by
 // `preview-inject.sh set-upstream`). Without a usable file the fixed upstream
 // serves. Every response names the port it came from in UpstreamHeader.
 func NewSwitchableHandler(upstream *url.URL, upstreamFile, scriptURL string, embed EmbedLookup) http.Handler {

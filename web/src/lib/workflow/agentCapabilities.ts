@@ -5,7 +5,7 @@
 import manifest from '@/data/nodeManifest.generated.json'
 import type { AgentCapabilities, GrantableTool, ProductWrite } from '@/lib/api/apiTypes'
 
-export type ProductSchema = {
+type ProductSchema = {
   name: string
   label: string
   artifactName: string
@@ -25,11 +25,7 @@ export function schemaByName(name: string): ProductSchema | undefined {
   return PRODUCT_SCHEMAS.find((s) => s.name === name)
 }
 
-export function schemaByArtifact(artifactName: string): ProductSchema | undefined {
-  return PRODUCT_SCHEMAS.find((s) => s.artifactName === artifactName)
-}
-
-export function isVerdictSchema(name: string): boolean {
+function isVerdictSchema(name: string): boolean {
   return !!schemaByName(name)?.verdict
 }
 
@@ -67,11 +63,11 @@ export function isGated(caps: Caps): boolean {
   return !!caps?.writes?.some((w) => isVerdictSchema(w.schema))
 }
 
-export function readsAll(caps: Caps): boolean {
+function readsAll(caps: Caps): boolean {
   return !!caps?.reads?.some((r) => r.trim() === READ_ALL)
 }
 
-export type DeclaredProduct = ProductSchema & { required: boolean }
+type DeclaredProduct = ProductSchema & { required: boolean }
 
 /** Products the Agent declares, in declaration order (unknown schemas skipped). */
 export function declaredProducts(caps: Caps): DeclaredProduct[] {
@@ -83,7 +79,7 @@ export function declaredProducts(caps: Caps): DeclaredProduct[] {
   return out
 }
 
-export type CapabilityIssueCode =
+type CapabilityIssueCode =
   | 'missing'
   | 'interaction'
   | 'tool'
@@ -93,7 +89,7 @@ export type CapabilityIssueCode =
   | 'unknownSchema'
   | 'duplicateSchema'
 
-export type CapabilityIssue = { code: CapabilityIssueCode; value?: string }
+type CapabilityIssue = { code: CapabilityIssueCode; value?: string }
 
 /** i18n key for a capability issue (params: { value }). */
 export function capabilityIssueKey(issue: CapabilityIssue): string {
@@ -138,7 +134,7 @@ export function normalizeCapabilities(caps: AgentCapabilities): AgentCapabilitie
   return out
 }
 
-export type CapabilitySummary = {
+type CapabilitySummary = {
   interaction: AgentCapabilities['interaction']
   review: boolean
   gated: boolean

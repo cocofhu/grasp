@@ -3,7 +3,7 @@
  * The checklist follows the boot record; this only decides whether it is on screen,
  * and whether this boot's handoff and agent replies wait for「连接 Agent」.
  */
-export interface BootDisplayInput {
+interface BootDisplayInput {
   /** Confirm window, including the done hold, is still painted. */
   windowVisible: boolean
   /**
@@ -24,7 +24,7 @@ export interface BootDisplayInput {
   live: boolean
 }
 
-export interface BootDisplay {
+interface BootDisplay {
   /** In-progress「正在启动 Agent」checklist. */
   showStarting: boolean
   /** Folded「环境已就绪」. */

@@ -3,7 +3,7 @@
  * Exponential backoff with jitter; intentional close skips reconnect.
  */
 
-export type WsReconnectOptions = {
+type WsReconnectOptions = {
   /** Build a new WebSocket for the current target. */
   connect: () => void
   /** Still want a live socket for this target? */
@@ -84,5 +84,3 @@ export function createWsReconnectController(opts: WsReconnectOptions) {
     },
   }
 }
-
-export type WsReconnectController = ReturnType<typeof createWsReconnectController>

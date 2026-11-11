@@ -11,7 +11,7 @@ export type ArtifactCitationMessage = {
   citations?: ArtifactCitationLike[]
 }
 
-export type ArtifactButtonLabels = {
+type ArtifactButtonLabels = {
   open: string
   close: string
   /** Receives the visible badge text, such as "2". */
@@ -28,7 +28,7 @@ export type CitationUnreadState = {
   messageIds: string[]
 }
 
-export type CitationUnreadEvent = {
+type CitationUnreadEvent = {
   threadId: string
   panelOpen: boolean
   /** True while the current thread page is being replaced. Existing rows must not count. */
@@ -63,12 +63,12 @@ export function runArtifactUnreadOnPanel(count: number, panelOpen: boolean): num
   return panelOpen ? 0 : count
 }
 
-export function artifactCitationKey(messageId: string, index: number, citation: ArtifactCitationLike): string | null {
+function artifactCitationKey(messageId: string, index: number, citation: ArtifactCitationLike): string | null {
   if (citation.type !== 'artifact') return null
   return `${messageId}:${index}:${citation.targetId ?? ''}`
 }
 
-export function collectArtifactCitationKeys(messages: ArtifactCitationMessage[]): string[] {
+function collectArtifactCitationKeys(messages: ArtifactCitationMessage[]): string[] {
   const keys: string[] = []
   for (const message of messages) {
     message.citations?.forEach((citation, index) => {
@@ -87,7 +87,7 @@ export function createCitationUnreadState(): CitationUnreadState {
  * Citations on messages that were prepended ahead of the previous window are history.
  * Everything else that was not seen yet is a new artifact reference.
  */
-export function diffArtifactCitationKeys(
+function diffArtifactCitationKeys(
   previousMessageIds: string[],
   messages: ArtifactCitationMessage[],
   seen: ReadonlySet<string>,

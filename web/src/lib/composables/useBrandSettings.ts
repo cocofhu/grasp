@@ -1,9 +1,9 @@
 import { computed, reactive } from 'vue'
 import { api, type BrandSettings } from '@/lib/api/api'
 
-export const DEFAULT_PRODUCT_NAME = 'Grasp'
+const DEFAULT_PRODUCT_NAME = 'Grasp'
 
-export type ExecutionMode = 'worktree' | 'sandbox'
+type ExecutionMode = 'worktree' | 'sandbox'
 
 const brand = reactive<BrandSettings>({
   product_name: '',
@@ -22,7 +22,7 @@ export function setExecutionMode(mode: string | null | undefined) {
   deployment.mode = mode === 'worktree' ? 'worktree' : 'sandbox'
 }
 
-export function executionMode(): ExecutionMode {
+function executionMode(): ExecutionMode {
   return deployment.mode
 }
 

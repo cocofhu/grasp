@@ -41,11 +41,6 @@ func isRateLimit(errcode int, errmsg string) bool {
 		strings.Contains(lower, "too many")
 }
 
-// IsUnspoken reports whether err is the local unspoken precheck.
-func IsUnspoken(err error) bool {
-	return errors.Is(err, ErrUnspoken)
-}
-
 // IsRateLimited reports whether err was classified as WeCom rate limiting.
 func IsRateLimited(err error) bool {
 	return errors.Is(err, ErrRateLimited)

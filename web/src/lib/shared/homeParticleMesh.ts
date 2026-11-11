@@ -1,6 +1,6 @@
 /** Canvas particle mesh background aligned to the clarified DEMO (no jQuery). */
 
-export type ParticleMeshConfig = {
+type ParticleMeshConfig = {
   maxParticles: number
   connectDistance: number
   mouseRadius: number

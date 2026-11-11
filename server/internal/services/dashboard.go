@@ -7,7 +7,7 @@ import (
 )
 
 // DashboardService computes summary statistics for the dashboard
-// and the lightweight platform-status payload for AppTopbar.
+// and the lightweight platform-status payload for the shell status metrics.
 type DashboardService struct {
 	db        *gorm.DB
 	workspace *WorkspaceService

@@ -12,16 +12,16 @@ import {
 /** localStorage text fallback used when IndexedDB writes fail. */
 export const HOME_COMPOSER_DRAFT_KEY = 'grasp.home.composerDraft'
 
-export const HOME_COMPOSER_DRAFT_SCHEMA = '1'
+const HOME_COMPOSER_DRAFT_SCHEMA = '1'
 
-export interface HomeDraftAttachment {
+interface HomeDraftAttachment {
   name?: string
   mimeType: string
   /** base64 payload without data URL prefix */
   data: string
 }
 
-export interface HomeComposerDraft {
+interface HomeComposerDraft {
   schemaVersion: string
   savedAt: number
   pipelineId: string
@@ -30,7 +30,7 @@ export interface HomeComposerDraft {
 }
 
 /** ok = full save; partial = text persisted, attachments only in memory; quota_exceeded / error. */
-export type SaveHomeComposerDraftResult = 'ok' | 'partial' | 'quota_exceeded' | 'error'
+type SaveHomeComposerDraftResult = 'ok' | 'partial' | 'quota_exceeded' | 'error'
 
 function isAttachment(v: unknown): v is HomeDraftAttachment {
   if (!v || typeof v !== 'object') return false
@@ -74,7 +74,7 @@ function parseDraft(raw: string): HomeComposerDraft | null {
 }
 
 /** True when there is nothing worth persisting (empty text + no attachments). */
-export function isHomeComposerDraftEmpty(text: string, attachments: ClarifyImage[]): boolean {
+function isHomeComposerDraftEmpty(text: string, attachments: ClarifyImage[]): boolean {
   return !text.trim() && attachments.length === 0
 }
 

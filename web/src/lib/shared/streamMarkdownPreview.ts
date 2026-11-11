@@ -5,7 +5,7 @@
  * pass `empty: []` and get the per-block HTML list instead.
  */
 
-export type StreamMarkdownPreviewOptions<T = string> = {
+type StreamMarkdownPreviewOptions<T = string> = {
   render: (src: string) => T
   /** Value published for empty text (defaults to ''). */
   empty?: T
@@ -14,7 +14,7 @@ export type StreamMarkdownPreviewOptions<T = string> = {
   cancel?: (id: number) => void
 }
 
-export type StreamMarkdownPreview<T = string> = {
+type StreamMarkdownPreview<T = string> = {
   /** Absolute replace (resume snapshot / clear). */
   setText: (text: string) => void
   /** Append a delta and schedule a coalesced render. */

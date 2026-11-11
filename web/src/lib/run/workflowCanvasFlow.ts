@@ -11,12 +11,6 @@ export type FlowNodeCacheEntry<T extends { id: string; selected?: boolean }> = {
   obj: T
 }
 
-export type FlowEdgeCacheEntry<T extends { id: string; selected?: boolean }> = {
-  fingerprint: string
-  selected: boolean
-  obj: T
-}
-
 /** Build a fingerprint string from structural fields (must exclude selected). */
 export function flowFingerprint(parts: unknown): string {
   return JSON.stringify(parts)

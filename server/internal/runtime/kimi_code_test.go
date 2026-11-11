@@ -15,22 +15,22 @@ func TestKimiCodeAuthAndSite(t *testing.T) {
 	if AuthConfigFileExists(t.TempDir(), BackendKimiCode) {
 		t.Fatal("settings.json must not satisfy Kimi Code auth")
 	}
-	_, err := MergeAuthEnv(BackendKimiCode, map[string]string{})
+	_, err := mergeAuthEnv(BackendKimiCode, map[string]string{}, true)
 	if err == nil || !strings.Contains(err.Error(), "订阅 API Key") || !strings.Contains(err.Error(), envauth.EnvKimiCodeAPIKey) {
 		t.Fatalf("missing key: %v", err)
 	}
-	out, err := MergeAuthEnv(BackendKimiCode, map[string]string{envauth.EnvKimiCodeAPIKey: "sk-test-value"})
+	out, err := mergeAuthEnv(BackendKimiCode, map[string]string{envauth.EnvKimiCodeAPIKey: "sk-test-value"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out["KIMI_CODE_API_KEY"] != "sk-test-value" || out[EnvKimiCodeRegion] != "intl" {
 		t.Fatalf("default site: %#v", out)
 	}
-	out, err = MergeAuthEnv(BackendKimiCode, map[string]string{envauth.EnvKimiCodeAPIKey: "sk-test-value", EnvKimiCodeRegion: "domestic"})
+	out, err = mergeAuthEnv(BackendKimiCode, map[string]string{envauth.EnvKimiCodeAPIKey: "sk-test-value", EnvKimiCodeRegion: "domestic"}, true)
 	if err != nil || out[EnvKimiCodeRegion] != "cn" {
 		t.Fatalf("cn site: %v %#v", err, out)
 	}
-	if _, err := MergeAuthEnv(BackendKimiCode, map[string]string{envauth.EnvKimiCodeAPIKey: "sk-test-value", EnvKimiCodeRegion: "eu"}); err == nil || !strings.Contains(err.Error(), "未知的 Kimi Code 服务站点") {
+	if _, err := mergeAuthEnv(BackendKimiCode, map[string]string{envauth.EnvKimiCodeAPIKey: "sk-test-value", EnvKimiCodeRegion: "eu"}, true); err == nil || !strings.Contains(err.Error(), "未知的 Kimi Code 服务站点") {
 		t.Fatalf("unknown site: %v", err)
 	}
 }

@@ -96,19 +96,19 @@ func TestMergeAuthEnv_CredentialKeyOnly(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.backend), func(t *testing.T) {
-			out, err := MergeAuthEnv(tc.backend, map[string]string{tc.credKey: "cred"})
+			out, err := mergeAuthEnv(tc.backend, map[string]string{tc.credKey: "cred"}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if out[tc.cliKey] != "cred" {
 				t.Fatalf("%s=%q want cred (env=%#v)", tc.cliKey, out[tc.cliKey], out)
 			}
-			if _, err := MergeAuthEnv(tc.backend, map[string]string{tc.cliKey: "cli"}); err == nil {
+			if _, err := mergeAuthEnv(tc.backend, map[string]string{tc.cliKey: "cli"}, true); err == nil {
 				t.Fatalf("%s alone must not satisfy auth", tc.cliKey)
 			}
 		})
 	}
-	if _, err := MergeAuthEnv(BackendTrae, map[string]string{"TRAE_API_KEY": "legacy"}); err == nil {
+	if _, err := mergeAuthEnv(BackendTrae, map[string]string{"TRAE_API_KEY": "legacy"}, true); err == nil {
 		t.Fatal("TRAE_API_KEY must not satisfy auth")
 	}
 }
@@ -116,7 +116,7 @@ func TestMergeAuthEnv_CredentialKeyOnly(t *testing.T) {
 func TestMergeAuthEnv_MissingKey(t *testing.T) {
 	for _, b := range []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode} {
 		t.Run(string(b), func(t *testing.T) {
-			_, err := MergeAuthEnv(b, map[string]string{})
+			_, err := mergeAuthEnv(b, map[string]string{}, true)
 			if err == nil {
 				t.Fatal("expected error when key missing")
 			}
@@ -128,11 +128,12 @@ func TestMergeAuthEnv_MissingKey(t *testing.T) {
 }
 
 func TestMergeAuthEnv_CursorNoRegionMutation(t *testing.T) {
-	out, err := MergeAuthEnv(BackendCursor, map[string]string{
+	out, err := mergeAuthEnv(BackendCursor, map[string]string{
 		"GRASP_CURSOR_API_KEY": "ck",
 		EnvCodeBuddyRegion:     "staging",
 		EnvTraeRegion:          "intl",
-	})
+	}, true)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,9 +150,10 @@ func TestMergeAuthEnv_CursorNoRegionMutation(t *testing.T) {
 
 func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	t.Run("default public", func(t *testing.T) {
-		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
+		out, err := mergeAuthEnv(BackendCodeBuddy, map[string]string{
 			"GRASP_CODEBUDDY_API_KEY": "ck_x",
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -164,10 +166,11 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	})
 	t.Run("internal via region alias", func(t *testing.T) {
 		for _, alias := range []string{"cn", "china", "internal"} {
-			out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
+			out, err := mergeAuthEnv(BackendCodeBuddy, map[string]string{
 				"GRASP_CODEBUDDY_API_KEY": "ck_x",
 				EnvCodeBuddyRegion:        alias,
-			})
+			}, true)
+
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -178,10 +181,11 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	})
 	t.Run("intl aliases map to public", func(t *testing.T) {
 		for _, alias := range []string{"public", "intl", "international"} {
-			out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
+			out, err := mergeAuthEnv(BackendCodeBuddy, map[string]string{
 				"GRASP_CODEBUDDY_API_KEY": "ck_x",
 				EnvCodeBuddyRegion:        alias,
-			})
+			}, true)
+
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -191,10 +195,11 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 		}
 	})
 	t.Run("ioa via region", func(t *testing.T) {
-		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
+		out, err := mergeAuthEnv(BackendCodeBuddy, map[string]string{
 			"GRASP_CODEBUDDY_API_KEY": "ck_x",
 			EnvCodeBuddyRegion:        "ioa",
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,10 +208,11 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 		}
 	})
 	t.Run("internet-only without region", func(t *testing.T) {
-		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
+		out, err := mergeAuthEnv(BackendCodeBuddy, map[string]string{
 			"GRASP_CODEBUDDY_API_KEY": "ck_x",
 			EnvCodeBuddyInternet:      "internal",
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -218,10 +224,11 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 		}
 	})
 	t.Run("unknown region passthrough", func(t *testing.T) {
-		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
+		out, err := mergeAuthEnv(BackendCodeBuddy, map[string]string{
 			"GRASP_CODEBUDDY_API_KEY": "ck_x",
 			EnvCodeBuddyRegion:        "custom-site",
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -230,10 +237,11 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 		}
 	})
 	t.Run("staging sets region for settings.json", func(t *testing.T) {
-		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
+		out, err := mergeAuthEnv(BackendCodeBuddy, map[string]string{
 			"GRASP_CODEBUDDY_API_KEY": "ck_x",
 			EnvCodeBuddyRegion:        "staging",
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -263,11 +271,12 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 	})
 	t.Run("staging keeps custom BASE_URL for settings endpoint", func(t *testing.T) {
 		custom := "https://staging.example.com"
-		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
+		out, err := mergeAuthEnv(BackendCodeBuddy, map[string]string{
 			"GRASP_CODEBUDDY_API_KEY": "ck_x",
 			EnvCodeBuddyRegion:        "staging",
 			EnvCodeBuddyBaseURL:       custom,
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -280,11 +289,12 @@ func TestMergeRegionEnv_CodeBuddy(t *testing.T) {
 		}
 	})
 	t.Run("explicit official vars win", func(t *testing.T) {
-		out, err := MergeAuthEnv(BackendCodeBuddy, map[string]string{
+		out, err := mergeAuthEnv(BackendCodeBuddy, map[string]string{
 			"GRASP_CODEBUDDY_API_KEY": "ck_x",
 			EnvCodeBuddyRegion:        "cn",
 			EnvCodeBuddyInternet:      "ioa",
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -318,9 +328,10 @@ func TestCodeBuddySettingsForEnv(t *testing.T) {
 
 func TestMergeRegionEnv_Trae(t *testing.T) {
 	t.Run("cn default no host", func(t *testing.T) {
-		out, err := MergeAuthEnv(BackendTrae, map[string]string{
+		out, err := mergeAuthEnv(BackendTrae, map[string]string{
 			"GRASP_TRAE_API_KEY": "trae-lt-x",
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -330,10 +341,11 @@ func TestMergeRegionEnv_Trae(t *testing.T) {
 	})
 	t.Run("cn aliases leave host unset", func(t *testing.T) {
 		for _, alias := range []string{"cn", "china", "internal"} {
-			out, err := MergeAuthEnv(BackendTrae, map[string]string{
+			out, err := mergeAuthEnv(BackendTrae, map[string]string{
 				"GRASP_TRAE_API_KEY": "trae-lt-x",
 				EnvTraeRegion:        alias,
-			})
+			}, true)
+
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -344,10 +356,11 @@ func TestMergeRegionEnv_Trae(t *testing.T) {
 	})
 	t.Run("intl sets host", func(t *testing.T) {
 		for _, alias := range []string{"intl", "international", "public", "ai"} {
-			out, err := MergeAuthEnv(BackendTrae, map[string]string{
+			out, err := mergeAuthEnv(BackendTrae, map[string]string{
 				"GRASP_TRAE_API_KEY": "trae-lt-x",
 				EnvTraeRegion:        alias,
-			})
+			}, true)
+
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -360,10 +373,11 @@ func TestMergeRegionEnv_Trae(t *testing.T) {
 		}
 	})
 	t.Run("unknown region no host mutation", func(t *testing.T) {
-		out, err := MergeAuthEnv(BackendTrae, map[string]string{
+		out, err := mergeAuthEnv(BackendTrae, map[string]string{
 			"GRASP_TRAE_API_KEY": "trae-lt-x",
 			EnvTraeRegion:        "corp-custom",
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -372,11 +386,12 @@ func TestMergeRegionEnv_Trae(t *testing.T) {
 		}
 	})
 	t.Run("explicit host wins", func(t *testing.T) {
-		out, err := MergeAuthEnv(BackendTrae, map[string]string{
+		out, err := mergeAuthEnv(BackendTrae, map[string]string{
 			"GRASP_TRAE_API_KEY": "trae-lt-x",
 			EnvTraeRegion:        "intl",
 			EnvTraeCLIHost:       "https://corp.example",
-		})
+		}, true)
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -586,32 +601,6 @@ func TestPrepareAuthEnv_NoSettingsEnvConfigured(t *testing.T) {
 	}
 	if out["CURSOR_API_KEY"] != "crsr-env" {
 		t.Fatalf("CURSOR_API_KEY=%q", out["CURSOR_API_KEY"])
-	}
-}
-
-func TestResolveSettingsWorkDir(t *testing.T) {
-	agentDir := t.TempDir()
-	sharedDir := t.TempDir()
-
-	if got := ResolveSettingsWorkDir(agentDir, ""); got != agentDir {
-		t.Fatalf("empty shared: got %q want %q", got, agentDir)
-	}
-	if got := ResolveSettingsWorkDir(agentDir, sharedDir); got != agentDir {
-		t.Fatalf("neither file: got %q want agent %q", got, agentDir)
-	}
-
-	writeSettingsJSON(sharedDir, `{}`)
-	if got := ResolveSettingsWorkDir(agentDir, sharedDir); got != sharedDir {
-		t.Fatalf("shared only: got %q want %q", got, sharedDir)
-	}
-
-	writeSettingsJSON(agentDir, `{}`)
-	if got := ResolveSettingsWorkDir(agentDir, sharedDir); got != agentDir {
-		t.Fatalf("agent overlay wins: got %q want %q", got, agentDir)
-	}
-
-	if got := ResolveSettingsWorkDir("", sharedDir); got != sharedDir {
-		t.Fatalf("empty agent with shared file: got %q want %q", got, sharedDir)
 	}
 }
 

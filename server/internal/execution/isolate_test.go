@@ -23,11 +23,11 @@ func TestPrepareSharesLaunchAndDeletesOnEnd(t *testing.T) {
 	feature := gitOut(t, repo, "rev-parse", "refs/heads/feature")
 	src := []Source{{Name: "app", URL: repo, Branch: "feature"}}
 
-	first, err := Prepare("run-a", src)
+	first, err := PrepareAuth("run-a", src, Auth{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Prepare("run-a", src)
+	second, err := PrepareAuth("run-a", src, Auth{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestPrepareSharesLaunchAndDeletesOnEnd(t *testing.T) {
 	if err := exec.Command("git", "-C", first.Repos[0].Path, "symbolic-ref", "-q", "HEAD").Run(); err == nil {
 		t.Fatal("worktree is still on a branch")
 	}
-	other, err := Prepare("run-b", src)
+	other, err := PrepareAuth("run-b", src, Auth{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestPrepareSharesLaunchAndDeletesOnEnd(t *testing.T) {
 		t.Fatal("source repo was damaged")
 	}
 	End("run-b")
-	if _, err := Prepare("run-a", src); err == nil {
+	if _, err := PrepareAuth("run-a", src, Auth{}); err == nil {
 		t.Fatal("ended launch was recreated")
 	}
 }
@@ -81,7 +81,7 @@ func TestPrepareFolderWhenNotGit(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "note.txt"), []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Prepare("solo-1", []Source{{Name: "notes", URL: src}})
+	got, err := PrepareAuth("solo-1", []Source{{Name: "notes", URL: src}}, Auth{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestParallelLaunchesDiffer(t *testing.T) {
 		wg.Add(1)
 		go func(i int, id string) {
 			defer wg.Done()
-			got, err := Prepare(id, nil)
+			got, err := PrepareAuth(id, nil, Auth{})
 			errs[i] = err
 			if err == nil {
 				roots[i] = got.Root
@@ -149,10 +149,11 @@ func TestPrepareRollsBackRegisteredWorktree(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := Prepare("multi", []Source{
+	_, err := PrepareAuth("multi", []Source{
 		{Name: "app", URL: repo, Branch: "main"},
 		{Name: "remote", URL: srv.URL + "/secret.git", Branch: "main"},
-	})
+	}, Auth{})
+
 	if err == nil {
 		t.Fatal("expected the second repository to fail")
 	}
@@ -258,7 +259,7 @@ func TestPrepareBranchWithSlash(t *testing.T) {
 	repo := initRepo(t)
 	gitRun(t, repo, "checkout", "-b", "topic/slash")
 	want := gitOut(t, repo, "rev-parse", "refs/heads/topic/slash")
-	got, err := Prepare("slash", []Source{{Name: "app", URL: repo, Branch: "topic/slash"}})
+	got, err := PrepareAuth("slash", []Source{{Name: "app", URL: repo, Branch: "topic/slash"}}, Auth{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +275,7 @@ func TestPrepareEmptyBranchUsesHEAD(t *testing.T) {
 	t.Cleanup(ResetForTest)
 	repo := initRepo(t)
 	want := gitOut(t, repo, "rev-parse", "HEAD")
-	got, err := Prepare("empty-branch", []Source{{Name: "app", URL: repo}})
+	got, err := PrepareAuth("empty-branch", []Source{{Name: "app", URL: repo}}, Auth{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +299,7 @@ func TestPrepareCopiesNamesWithTwoDots(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "sub", "a..b"), []byte("inner"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Prepare("dots", []Source{{Name: "notes", URL: src}})
+	got, err := PrepareAuth("dots", []Source{{Name: "notes", URL: src}}, Auth{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +328,7 @@ func TestPrepareRejectsLocalPathWithDotDot(t *testing.T) {
 	}
 	// Join would clean ".." away; the address must still contain the segment.
 	url := filepath.Join(base, "missing") + "/../sentinel"
-	if _, err := Prepare("dotdot", []Source{{Name: "app", URL: url}}); err == nil {
+	if _, err := PrepareAuth("dotdot", []Source{{Name: "app", URL: url}}, Auth{}); err == nil {
 		t.Fatal("expected local path with .. to fail")
 	}
 	body, err := os.ReadFile(filepath.Join(sentinel, "keep"))
@@ -352,7 +353,7 @@ func TestPrepareRejectsBadRemoteAndBranch(t *testing.T) {
 		{Name: "app", URL: repo, Branch: "-rf"},
 	}
 	for _, src := range cases {
-		if _, err := Prepare("bad", []Source{src}); err == nil {
+		if _, err := PrepareAuth("bad", []Source{src}, Auth{}); err == nil {
 			t.Fatalf("expected rejection for %+v", src)
 		}
 		if _, statErr := os.Stat(filepath.Join(os.Getenv("GRASP_WORKTREE_ROOT"), "bad")); !os.IsNotExist(statErr) {
@@ -424,7 +425,7 @@ func TestFailedPrepareDoesNotRemoveOutsideMirror(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sentinel, "keep"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Prepare("bad-mirror", []Source{{Name: "app", URL: "http://127.0.0.1:1/nope.git", Branch: "main"}})
+	_, err := PrepareAuth("bad-mirror", []Source{{Name: "app", URL: "http://127.0.0.1:1/nope.git", Branch: "main"}}, Auth{})
 	if err == nil {
 		t.Fatal("expected clone to fail")
 	}
@@ -450,10 +451,11 @@ func TestPrepareSeparateMirrorsPerName(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	cloneURL := "http://alice@" + strings.TrimPrefix(srv.URL, "http://") + "/repo.git"
-	got, err := Prepare("two", []Source{
+	got, err := PrepareAuth("two", []Source{
 		{Name: "alpha", URL: cloneURL, Branch: "feature"},
 		{Name: "beta", URL: cloneURL, Branch: "feature"},
-	})
+	}, Auth{})
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -512,11 +514,11 @@ func TestEndWithoutLaunchDoesNotStick(t *testing.T) {
 	ResetForTest()
 	t.Cleanup(ResetForTest)
 	End("sandbox-run")
-	if _, err := Prepare("sandbox-run", nil); err != nil {
+	if _, err := PrepareAuth("sandbox-run", nil, Auth{}); err != nil {
 		t.Fatal(err)
 	}
 	End("sandbox-run")
-	if _, err := Prepare("sandbox-run", nil); err == nil {
+	if _, err := PrepareAuth("sandbox-run", nil, Auth{}); err == nil {
 		t.Fatal("ended launch was recreated")
 	}
 }

@@ -15,7 +15,7 @@ export const ONBOARDING_WORKFLOW_NAMES: readonly string[] = ['默认工作流', 
 /** Built-in templates the wizard creates, in workflow order (server TeamEngineerTemplates). */
 export type OnboardingTemplateId = 'clarify' | 'implement' | 'test_review' | 'deliver'
 
-export const ONBOARDING_TEMPLATES: readonly { id: OnboardingTemplateId; label: string }[] = [
+const ONBOARDING_TEMPLATES: readonly { id: OnboardingTemplateId; label: string }[] = [
   { id: 'clarify', label: '需求澄清' },
   { id: 'implement', label: '实现' },
   { id: 'test_review', label: '测试评审' },
@@ -48,7 +48,7 @@ const MAX_AGENT_NAME_RUNES = 64
 export const ONBOARDING_AGENT_NAMES: readonly string[] = ONBOARDING_TEMPLATES.map((t) => t.label)
 
 /** Canonical English Agent names, in the same role order. */
-export const ONBOARDING_AGENT_NAMES_EN: readonly string[] = ONBOARDING_TEMPLATES.map((t) => ONBOARDING_ROLE_NAMES_EN[t.id])
+const ONBOARDING_AGENT_NAMES_EN: readonly string[] = ONBOARDING_TEMPLATES.map((t) => ONBOARDING_ROLE_NAMES_EN[t.id])
 
 /** True when the name is a Chinese or English canonical onboarding Agent. */
 export function isProtectedOnboardingAgentName(name: string): boolean {
@@ -82,7 +82,7 @@ export type OnboardingMode = 'firstInstall' | 'retry'
 
 export type OnboardingStepId = 'prefs' | 'credentials' | 'model' | 'git' | 'gitCredentials' | 'team' | 'workflow' | 'done'
 
-export type OnboardingStep = {
+type OnboardingStep = {
   id: OnboardingStepId
   labelKey: string
 }
@@ -231,8 +231,8 @@ export type OnboardingDraft = {
   browserMcp: boolean
   team: OnboardingTeamMember[]
 }
-export type OnboardingAgentChoice = { templateId: OnboardingTemplateId; name?: string; modelConfigurationId?: string }
-export type OnboardingBootstrapBody = {
+type OnboardingAgentChoice = { templateId: OnboardingTemplateId; name?: string; modelConfigurationId?: string }
+type OnboardingBootstrapBody = {
   modelConfigurationId: string
   gitBindings: AgentGitBindings
   language: AppLocale

@@ -14,7 +14,7 @@ export const RUN_TERMINAL_PANEL_LIMIT = 5
 /** Align with AppSidebarNav pending-gates peek interval. */
 const RUN_TERMINAL_POLL_MS = 15_000
 
-export type RunTerminalStatus = 'completed' | 'failed'
+type RunTerminalStatus = 'completed' | 'failed'
 
 /**
  * Notification projection of a terminal Run.
@@ -40,7 +40,7 @@ export type RunTerminalNotificationItem = RunTerminalNotification & {
   beforeBaseline: boolean
 }
 
-export type RunTerminalRefreshSource =
+type RunTerminalRefreshSource =
   | 'mount'
   | 'sidebar-poll'
   | 'visibility'

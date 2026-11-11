@@ -8,7 +8,7 @@
  * outside this module so stale tasks can still no-op after dequeue.
  */
 
-export type MermaidLike = {
+type MermaidLike = {
   initialize: (config: Record<string, unknown>) => void
   parse: (source: string) => Promise<unknown>
   render: (id: string, source: string) => Promise<{ svg: string }>

@@ -11,7 +11,7 @@ import { capabilityFlags, findAgent, nodeOutlets, normHandle, type CanvasAgent, 
 import { checkConnection } from './useConnectionRules'
 import { NODE_ICONS } from './paletteItems'
 
-export interface FlowNodeObj {
+interface FlowNodeObj {
   id: string
   type: string
   position: { x: number; y: number }
@@ -24,7 +24,7 @@ export interface FlowNodeObj {
   data: CanvasNodeData
 }
 
-export interface FlowEdgeObj {
+interface FlowEdgeObj {
   id: string
   source: string
   target: string

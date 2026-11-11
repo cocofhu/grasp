@@ -95,14 +95,6 @@ func Root() string {
 	return "/var/lib/grasp/launches"
 }
 
-// Prepare creates the launch directory on the first call and reuses it after that.
-// Git sources become a detached worktree at the selected branch HEAD. Anything
-// else becomes an independent folder. Parallel launch IDs never share a directory.
-// Remote clones done here are anonymous; pass credentials with PrepareAuth.
-func Prepare(id string, sources []Source) (Launch, error) {
-	return PrepareAuth(id, sources, Auth{})
-}
-
 // PrepareAuth is Prepare with the launch's already-resolved Git credentials.
 // Those credentials are used for clone and fetch and are not written to the
 // process-wide git config. A miss does not create a sandbox container.

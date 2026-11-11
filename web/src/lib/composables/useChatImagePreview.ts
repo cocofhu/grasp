@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type ChatImagePreviewState = { src: string; label: string }
+type ChatImagePreviewState = { src: string; label: string }
 
 /** Single-slot chat image preview state (no gallery). */
 export function useChatImagePreview() {

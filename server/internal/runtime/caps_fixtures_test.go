@@ -26,11 +26,6 @@ var (
 			{Schema: models.SchemaTestResult, Required: true}, {Schema: models.SchemaReview, Required: true},
 		},
 	}
-	testPreviewCaps = &models.AgentCapabilities{
-		Interaction: models.InteractionAuto, Review: true,
-		Tools: []string{models.ToolSetPreview},
-		Reads: []string{"*"},
-	}
 	testPlainCaps = &models.AgentCapabilities{Interaction: models.InteractionAuto, Reads: []string{"*"}}
 )
 

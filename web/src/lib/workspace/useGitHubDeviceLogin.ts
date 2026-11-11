@@ -3,14 +3,14 @@ import { api, type GitHubDeviceLoginPoll } from '@/lib/api/api'
 
 export type GitHubDeviceLoginState = 'idle' | 'starting' | 'waiting' | 'authorized' | 'denied' | 'expired' | 'error'
 
-export interface GitHubDeviceLoginFailure {
+interface GitHubDeviceLoginFailure {
   /** Server or GitHub error code; `unknown` when none was given. */
   code: string
   message?: string
   alias?: string
 }
 
-export interface GitHubDeviceLoginTarget {
+interface GitHubDeviceLoginTarget {
   name?: string
   credentialId?: string
 }
@@ -168,5 +168,3 @@ export function useGitHubDeviceLogin(options: { onAuthorized?: (result: GitHubDe
 
   return { state, userCode, verificationUri, totalSeconds, remainingSeconds, progress, failure, result, busy, start, cancel }
 }
-
-export type GitHubDeviceLogin = ReturnType<typeof useGitHubDeviceLogin>

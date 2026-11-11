@@ -1,6 +1,6 @@
 import type { AcpEvent } from '../shared/types'
 
-export type DialogueAcpApplyResult = 'applied' | 'buffer'
+type DialogueAcpApplyResult = 'applied' | 'buffer'
 
 /**
  * Deliver cumulative ACP to the gate's visual-edit stream. ClarifyChat draws

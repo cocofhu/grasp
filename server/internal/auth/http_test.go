@@ -369,19 +369,11 @@ func TestSessionCookieSecure(t *testing.T) {
 	}
 }
 
-func TestSessionTokenAndGetSession(t *testing.T) {
+func TestGetSession(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.Request.AddCookie(&http.Cookie{Name: auth.CookieName, Value: " abc "})
-	if auth.SessionToken(c) != "abc" {
-		t.Fatalf("token: %q", auth.SessionToken(c))
-	}
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	if auth.SessionToken(c) != "" {
-		t.Fatal("expected empty token")
-	}
 
 	sess := &models.Session{ID: "t", Username: "u"}
 	c.Set("auth_session", sess)

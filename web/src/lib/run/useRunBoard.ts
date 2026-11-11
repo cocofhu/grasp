@@ -17,9 +17,9 @@ export type BoardColumnKey =
   | 'waiting_human'
   | 'completed'
 
-export type BoardMode = 'dashboard' | 'full'
+type BoardMode = 'dashboard' | 'full'
 
-export interface BoardColumnState {
+interface BoardColumnState {
   key: BoardColumnKey
   items: Run[]
   total: number
@@ -30,7 +30,7 @@ export interface BoardColumnState {
   error?: string | null
 }
 
-export interface BoardColumnQuery {
+interface BoardColumnQuery {
   key: BoardColumnKey
   status: string
   pageSize: number
@@ -107,7 +107,7 @@ function moveWorkingToRunning(cols: Record<string, BoardColumnState>) {
   }
 }
 
-export interface UseRunBoardOptions {
+interface UseRunBoardOptions {
   mode: BoardMode
   /** Shared loading-layer timeout; does not change global api defaults. */
   timeoutMs?: number

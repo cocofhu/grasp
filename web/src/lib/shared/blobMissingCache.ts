@@ -4,7 +4,7 @@
  * Full page refresh clears; SPA nav / Run switch must not clear.
  */
 
-export type BlobAutoLoadDecision = 'proceed' | 'blocked_missing' | 'blocked_pending'
+type BlobAutoLoadDecision = 'proceed' | 'blocked_missing' | 'blocked_pending'
 
 type Listener = () => void
 
@@ -50,10 +50,6 @@ export function isKnownLoaded(blobId: string): boolean {
   return !!blobId && knownLoaded.has(blobId)
 }
 
-export function isAutoInflight(blobId: string): boolean {
-  return !!blobId && inflight.has(blobId)
-}
-
 export function hasAutoAttempted(blobId: string): boolean {
   return !!blobId && autoDone.has(blobId)
 }
@@ -66,14 +62,6 @@ export function markMissing(blobId: string): void {
   inflight.delete(blobId)
   autoDone.add(blobId)
   notify()
-}
-
-/** Remove from missing set without broadcasting (rarely needed; prefer beginManualRetry). */
-export function clearMissing(blobId: string): void {
-  if (!blobId) return
-  const changed = knownMissing.delete(blobId)
-  inflight.delete(blobId)
-  if (changed) notify()
 }
 
 /** Successful image load: record loaded, drop missing + inflight, broadcast for cross-surface sync. */

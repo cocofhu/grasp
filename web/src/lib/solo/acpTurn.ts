@@ -29,7 +29,7 @@ export type SoloTurn = ChatMessageMetadata & {
 }
 
 /** Localizes tool names; returns '' when the key is unknown. */
-export type ToolLabeler = (key: string) => string
+type ToolLabeler = (key: string) => string
 
 const SUMMARY_KEYS = ['command', 'cmd', 'file_path', 'filePath', 'path', 'target_file', 'url', 'uri', 'pattern', 'glob_pattern', 'query', 'search_term', 'name', 'description']
 const TOOL_DETAIL_MAX = 2000

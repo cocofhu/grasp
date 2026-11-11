@@ -1,9 +1,9 @@
 import { reactive } from 'vue'
 
 /** Which home the shared conversation drawer is showing. Null means closed. */
-export type ConversationDrawerMode = 'resources' | 'artifacts' | null
+type ConversationDrawerMode = 'resources' | 'artifacts' | null
 
-export interface ConversationDrawerEntry {
+interface ConversationDrawerEntry {
   /** Sandbox-stage hosts opt in; embed and gate approval leave this false. */
   split: boolean
   mode: ConversationDrawerMode
@@ -13,7 +13,7 @@ export interface ConversationDrawerEntry {
 
 const drawers = reactive(new Map<string, ConversationDrawerEntry>())
 
-export type RememberedPanelMode = Exclude<ConversationDrawerMode, null>
+type RememberedPanelMode = Exclude<ConversationDrawerMode, null>
 
 interface RememberedPanel { open: boolean; mode: RememberedPanelMode }
 /** Chats are oldest first. Stored as an array so numeric ids keep that order. */

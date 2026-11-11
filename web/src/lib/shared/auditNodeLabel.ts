@@ -17,7 +17,7 @@ const AUDIT_NODE_TYPES = Object.keys(AUDIT_STAGE_LABEL).sort((a, b) => b.length 
 
 export const AUDIT_SYSTEM_LABEL = '系统/未归属'
 
-export type AuditNodeName = {
+type AuditNodeName = {
   title: string
   type: string
   short: string

@@ -857,17 +857,6 @@ func (f *fakeProvider) AbortSessionTurn(runID, nodeID string) bool {
 	return true
 }
 
-func kindOf(name string) string {
-	switch {
-	case strings.HasSuffix(name, ".json"):
-		return "json"
-	case strings.HasSuffix(name, ".yaml"), strings.HasSuffix(name, ".yml"):
-		return "yaml"
-	default:
-		return "markdown"
-	}
-}
-
 func (f *fakeProvider) LiveMarkerSIDs(_ context.Context, _, _ string) ([]string, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

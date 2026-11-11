@@ -1931,12 +1931,3 @@ const (
 	soloModelPreambleHeader     = "（系统提示）编码模型已更换。仓库和工作区没有重建，已有改动都还在。请接着下面的对话继续：\n\n"
 	soloReasoningPreambleHeader = "（系统提示）推理强度已调整。仓库和工作区没有重建，已有改动都还在。请接着下面的对话继续：\n\n"
 )
-
-// buildPreamble summarizes persisted history for a restarted session.
-func (s *SoloService) buildPreamble(sessionID, exceptMsgID string) string {
-	return s.preamble(sessionID, exceptMsgID, soloRestartPreambleHeader)
-}
-
-func (s *SoloService) preamble(sessionID, exceptMsgID, header string) string {
-	return s.contextPreamble(sessionID, exceptMsgID, header)
-}

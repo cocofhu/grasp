@@ -1,6 +1,6 @@
 export type BackendId = 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'opencode' | 'codex' | 'deepseek_harness' | 'kimi_code'
-export type RegionSite = 'domestic' | 'international'
-export type RegionMode = 'strict' | 'preserve-special'
+type RegionSite = 'domestic' | 'international'
+type RegionMode = 'strict' | 'preserve-special'
 
 export type RegionOption = {
   id: string
@@ -117,7 +117,7 @@ export function switchBackendRegions(
   return next
 }
 
-export type NormalizedRegions = {
+type NormalizedRegions = {
   env: Record<string, string>
   region: string
   special: boolean
@@ -154,7 +154,7 @@ export function normalizeRegions(
   return { env: next, region: policy.defaultRegion, special: false }
 }
 
-export type RegionSummary = {
+type RegionSummary = {
   region: string
   site?: RegionSite
   labelKey?: string

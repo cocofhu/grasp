@@ -25,7 +25,7 @@ export function autoProcessNodeName(run: Run | null | undefined): string {
 }
 
 /** Automatic node this handoff already settled on, before the run list catches up. */
-export interface SidebarAutoClaim {
+interface SidebarAutoClaim {
   fromNodeId: string
   confirmedAuto: boolean
   autoNodeId?: string
@@ -88,7 +88,7 @@ export interface SidebarAutoTarget {
  * outlet, unless a verdict product chooses pass or fail from this confirm's
  * model output — then the outlet is not known yet.
  */
-export function positiveHandoffHandle(node: Pick<WFNode, 'type' | 'caps'> | null | undefined, action?: string): string | null {
+function positiveHandoffHandle(node: Pick<WFNode, 'type' | 'caps'> | null | undefined, action?: string): string | null {
   if (!node?.type) return null
   if (node.type === 'human_gate') return action ?? ''
   if (node.type !== 'agent') return null

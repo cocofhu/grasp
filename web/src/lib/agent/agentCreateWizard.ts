@@ -68,7 +68,7 @@ export type WizardDraft = {
   icon: AgentIcon | null
 }
 
-export type WizardStepDef = {
+type WizardStepDef = {
   id: WizardStepId
   labelKey: string
   skip: boolean
@@ -82,10 +82,10 @@ export const WIZARD_STEPS: WizardStepDef[] = [
   { id: 'review', labelKey: 'pages.agentStudio.wizard.steps.review', skip: false },
 ]
 
-export const DEFAULT_CONFIG_ROOT = '/root/.cursor'
-export const DEFAULT_WORKSPACE_DIR = '/root/workspace'
+const DEFAULT_CONFIG_ROOT = '/root/.cursor'
+const DEFAULT_WORKSPACE_DIR = '/root/workspace'
 
-export const GIT_ENV_KEYS = new Set([
+const GIT_ENV_KEYS = new Set([
   'GIT_REPOS',
   'GITHUB_TOKEN',
   'GITHUB_URL',
@@ -96,7 +96,7 @@ export const GIT_ENV_KEYS = new Set([
 ])
 
 /** Starting capabilities of a blank Agent: one autonomous run reading every product. */
-export function blankAgentCapabilities(): AgentCapabilities {
+function blankAgentCapabilities(): AgentCapabilities {
   return { interaction: 'auto', reads: ['*'] }
 }
 
@@ -176,11 +176,11 @@ export function kvToRec(kvs: WizardKV[]): Record<string, string> {
   return out
 }
 
-export function recToKV(rec: Record<string, string>): WizardKV[] {
+function recToKV(rec: Record<string, string>): WizardKV[] {
   return Object.entries(rec).map(([k, v]) => ({ k, v }))
 }
 
-export function normalizeWizardRegions(draft: WizardDraft): Record<string, string> {
+function normalizeWizardRegions(draft: WizardDraft): Record<string, string> {
   const normalized = normalizeRegions(kvToRec(draft.env), draft.acpBackend, 'strict').env
   draft.env = recToKV(normalized)
   return normalized
@@ -288,9 +288,9 @@ export function envConfiguredCount(draft: WizardDraft, gitOnly = false): number 
   }).length
 }
 
-export type ReviewChipKind = 'ok' | 'empty' | 'def'
+type ReviewChipKind = 'ok' | 'empty' | 'def'
 
-export type ReviewSummaryItem = {
+type ReviewSummaryItem = {
   key: string
   kind: ReviewChipKind
   labelKey: string
@@ -298,7 +298,7 @@ export type ReviewSummaryItem = {
 }
 
 /** Aliases resolved by the wizard. Ids are the fallback when a name is unknown. */
-export type WizardReviewNames = {
+type WizardReviewNames = {
   model?: string
   gitItems?: Record<string, string>
 }

@@ -364,7 +364,6 @@ export interface TokenAccountingStatus {
   legacyUnverified?: boolean
 }
 export type TokenLedgerStatus = 'ok' | 'failed' | 'cancelled'
-export type TokenStatsGranularity = 'hour' | 'day' | 'week'
 
 export interface GlobalTokenStats {
   accounting?: TokenAccountingStatus

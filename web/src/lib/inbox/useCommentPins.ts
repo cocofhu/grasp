@@ -29,7 +29,7 @@ export interface CommentPin {
   updatedAt: string
 }
 
-export interface CommentPinRoundState {
+interface CommentPinRoundState {
   pins: CommentPin[]
   nextSeq: number
   /** True after a successful PUT annotation-artifact for the current pin set. */
@@ -38,8 +38,7 @@ export interface CommentPinRoundState {
   committedFingerprint: string
 }
 
-export const ANNOTATION_HARD_SCOPE = '仅改标中区域；越界先问'
-export const PREVIEW_ANNOTATIONS_NAME = 'preview_annotations.json'
+const ANNOTATION_HARD_SCOPE = '仅改标中区域；越界先问'
 
 function pinKey(runId: string, gateNodeId: string, iteration: number): string {
   return `appr.commentPins:${runId}:${gateNodeId}:${iteration}`
@@ -118,7 +117,7 @@ function newId(seq: number): string {
   return `pin-${Date.now()}-${seq}-${Math.random().toString(36).slice(2, 7)}`
 }
 
-export type SaveCommentPinInput = {
+type SaveCommentPinInput = {
   selector: string
   comment: string
   currentText?: string
@@ -128,16 +127,7 @@ export type SaveCommentPinInput = {
   editingId?: string | null
 }
 
-/** True when the round's pin set matches the last successful artifact write. */
-export function isCommentPinsCommitted(
-  runId: string,
-  gateNodeId: string,
-  iteration: number,
-): boolean {
-  return getCommentPinRound(runId, gateNodeId, iteration).artifactCommitted
-}
-
-export type SaveCommentPinResult = {
+type SaveCommentPinResult = {
   pin: CommentPin
   /** True when this mutate cancelled a prior committed write (server must clear). */
   needsServerInvalidate: boolean
@@ -204,7 +194,7 @@ export function saveCommentPin(
   return { pin, needsServerInvalidate: wasCommitted }
 }
 
-export type DeleteCommentPinResult = {
+type DeleteCommentPinResult = {
   deleted: boolean
   /** True when this mutate cancelled a prior committed write (server must clear). */
   needsServerInvalidate: boolean

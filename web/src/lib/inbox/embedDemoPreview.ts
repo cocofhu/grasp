@@ -4,7 +4,7 @@ import { EMBED_DEMO_MESSAGE } from './embedChat'
 /** Provided by the embed chat so ClarifyChat opens the page-level window instead of AppModal. */
 export const EMBED_DEMO_PREVIEW_KEY: InjectionKey<EmbedDemoPreview> = Symbol('embedDemoPreview')
 
-export type EmbedDemoPreview = {
+type EmbedDemoPreview = {
   open: (html: string, label: string) => void
   close: () => void
 }
@@ -42,7 +42,7 @@ function clipLabel(label: string): string {
   return label.replace(/[\r\n\t]/g, ' ').trim().slice(0, 180)
 }
 
-export type EmbedDemoPreviewApi = EmbedDemoPreview & { dispose: () => void }
+type EmbedDemoPreviewApi = EmbedDemoPreview & { dispose: () => void }
 
 /**
  * Chat iframe side. `post` notifies the preview page to open or close the shell

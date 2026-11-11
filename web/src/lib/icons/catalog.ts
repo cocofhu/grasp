@@ -1,6 +1,6 @@
 import definitions from './definitions.json'
 
-export interface IconDefinition {
+interface IconDefinition {
   body: string
   duration: number
   viewBox: string
@@ -14,7 +14,7 @@ export const iconDefinitions = definitions satisfies Record<string, IconDefiniti
 export type IconName = keyof typeof iconDefinitions
 export const iconNames = Object.keys(iconDefinitions) as IconName[]
 
-export function isIconName(name: string): name is IconName {
+function isIconName(name: string): name is IconName {
   return Object.prototype.hasOwnProperty.call(iconDefinitions, name)
 }
 

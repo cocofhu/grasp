@@ -78,17 +78,9 @@ func TestCatalogExcludesModelsOpenCodeCannotResolveByDefault(t *testing.T) {
 		if models[i].ID != want {
 			t.Fatalf("models[%d].ID = %q, want %q", i, models[i].ID, want)
 		}
-		if known, readable := s.KnowsModel(ctx, "opencode-go", want); !known || !readable {
-			t.Fatalf("KnowsModel(%q) = %v, %v", want, known, readable)
-		}
 	}
 	if models[0].Name != "Gemini 4 Argon" {
 		t.Fatalf("active model display name lost: %+v", models[0])
-	}
-	for _, id := range []string{"gemini-4-argon-contributor", "next-alpha"} {
-		if known, readable := s.KnowsModel(ctx, "opencode-go", id); known || !readable {
-			t.Fatalf("excluded model %q must not be considered selectable: known=%v readable=%v", id, known, readable)
-		}
 	}
 }
 
@@ -106,12 +98,6 @@ func TestProviderMetadataSurvivesWhenAllModelsAreExcluded(t *testing.T) {
 	}
 	if len(providers) != 1 || providers[0].ID != "opencode-go" || len(providers[0].Models) != 0 {
 		t.Fatalf("provider should remain with no selectable models: %+v", providers)
-	}
-	if known, readable := s.KnowsProvider(ctx, "opencode-go"); !known || !readable {
-		t.Fatalf("KnowsProvider = %v, %v", known, readable)
-	}
-	if env := s.KeyEnv(ctx, "opencode-go"); env != "OPENCODE_API_KEY" {
-		t.Fatalf("provider key environment lost: %q", env)
 	}
 }
 
@@ -156,52 +142,6 @@ func TestErrorWhenNothingCached(t *testing.T) {
 	s, _ := serve(t, "", http.StatusInternalServerError)
 	if _, _, err := s.Providers(context.Background()); err == nil {
 		t.Fatal("want error when the first fetch fails")
-	}
-}
-
-func TestModelsAndKeyEnvLookup(t *testing.T) {
-	s, _ := serve(t, sample, http.StatusOK)
-	ctx := context.Background()
-	models, err := s.Models(ctx, "DeepSeek")
-	if err != nil {
-		t.Fatalf("Models: %v", err)
-	}
-	if len(models) != 2 {
-		t.Fatalf("lookup should be case-insensitive: %+v", models)
-	}
-	if env := s.KeyEnv(ctx, "anthropic"); env != "ANTHROPIC_API_KEY" {
-		t.Fatalf("KeyEnv = %q", env)
-	}
-	// A custom gateway is absent from the catalog: no models, no error.
-	unknown, err := s.Models(ctx, "my-gateway")
-	if err != nil || unknown != nil {
-		t.Fatalf("unknown provider: models=%+v err=%v", unknown, err)
-	}
-	if env := s.KeyEnv(ctx, "my-gateway"); env != "" {
-		t.Fatalf("KeyEnv for unknown provider = %q", env)
-	}
-	if known, readable := s.KnowsProvider(ctx, "DeepSeek"); !known || !readable {
-		t.Fatalf("KnowsProvider(deepseek) = %v, %v", known, readable)
-	}
-	if known, readable := s.KnowsProvider(ctx, "my-gateway"); known || !readable {
-		t.Fatalf("KnowsProvider(my-gateway) = %v, %v", known, readable)
-	}
-	if known, readable := s.KnowsModel(ctx, "deepseek", "deepseek-v4-pro"); !known || !readable {
-		t.Fatalf("KnowsModel(listed) = %v, %v", known, readable)
-	}
-	if known, readable := s.KnowsModel(ctx, "deepseek", "deepseek/r2"); known || !readable {
-		t.Fatalf("KnowsModel(unlisted) = %v, %v", known, readable)
-	}
-}
-
-func TestKnowsProviderAndModelReportUnreadableCatalog(t *testing.T) {
-	s, _ := serve(t, "", http.StatusInternalServerError)
-	ctx := context.Background()
-	if known, readable := s.KnowsProvider(ctx, "deepseek"); known || readable {
-		t.Fatalf("KnowsProvider = %v, %v", known, readable)
-	}
-	if known, readable := s.KnowsModel(ctx, "deepseek", "deepseek-v4-pro"); known || readable {
-		t.Fatalf("KnowsModel = %v, %v", known, readable)
 	}
 }
 

@@ -4,7 +4,7 @@ import { inject, provide, type InjectionKey } from 'vue'
 // structured-artifact cards) offer a hover "⤴ 标注" affordance that
 // stages a precise JSON-path (or DOM selector) chip onto the review composer,
 // without threading callbacks through every intermediate component.
-export interface ReviewAnnotateApi {
+interface ReviewAnnotateApi {
   // enabled gates whether descendant views render the ⤴ pick affordance.
   enabled: boolean
   // annotate stages one field/element/quote reference for the next review reply.

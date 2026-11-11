@@ -154,12 +154,6 @@ func mergeTurnEvents(prev, incoming []models.AcpEvent) []models.AcpEvent {
 	return append([]models.AcpEvent(nil), incoming...)
 }
 
-// pickLongerEvents is retained for tests / callers that only need length-based
-// merge; prefer mergeTurnEvents for timeline ingest.
-func pickLongerEvents(prev, incoming []models.AcpEvent) []models.AcpEvent {
-	return mergeTurnEvents(prev, incoming)
-}
-
 func eventRails(events []models.AcpEvent) (message, thought string) {
 	for _, ev := range events {
 		switch ev.Kind {
@@ -241,10 +235,6 @@ func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host s
 			wasBusy = now
 		}
 	}
-}
-
-func (s *acpTimelineStore) refreshFromSandbox(ctx context.Context, runID, nodeID, host string, port int, password string) {
-	s.refreshFromReader(ctx, runID, nodeID, sandbox.NewEventLogReader(host, port, password))
 }
 
 func (s *acpTimelineStore) refreshFromReader(ctx context.Context, runID, nodeID string, reader *sandbox.EventLogReader) {

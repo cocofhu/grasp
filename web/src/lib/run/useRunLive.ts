@@ -44,14 +44,14 @@ const REFRESH_DEBOUNCE_MS = 400
 
 /** What the live page shows for the node on screen. */
 /** Why the page ended in place: the run waits at a gate, or the run itself ended. */
-export type LiveEndState = { kind: 'gate'; label: string } | { kind: 'run'; status: string }
-export type LiveMode = 'observe' | 'chat'
+type LiveEndState = { kind: 'gate'; label: string } | { kind: 'run'; status: string }
+type LiveMode = 'observe' | 'chat'
 /**
  * Hand-off row after 确认并流转 on this page (same shape as ClarifyChat's).
  * targetAuto is the boot-gate three-state: true automatic, false already not
  * automatic, absent while the next process is still unknown.
  */
-export type LiveHandoff = { phase: 'pending' | 'done'; at: string; target?: string; targetAuto?: boolean }
+type LiveHandoff = { phase: 'pending' | 'done'; at: string; target?: string; targetAuto?: boolean }
 
 /**
  * Live view of a run: read-only stream of an auto node (nodeEvents seed + run

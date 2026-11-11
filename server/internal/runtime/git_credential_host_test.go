@@ -17,14 +17,8 @@ func TestGitCredentialHostConstrainsAgentScopeAndProject(t *testing.T) {
 			for _, scope := range []string{"", host, host + "/team/repo.git"} {
 				selection.Items[0].Scope = scope
 				rows, err := ResolveGitBindings(selection, resolve)
-				if err != nil || len(rows) != 1 || GitCredentialBaseURL(rows[0]) != host {
+				if err != nil || len(rows) != 1 {
 					t.Fatalf("host was not preserved for scope %q: %v", scope, err)
-				}
-				if _, ok := GitCredentialForRepo(rows, host+"/team/repo.git", sandbox.RepoCredentialGitLabHTTPS); !ok {
-					t.Fatal("selected token cannot reach its configured host")
-				}
-				if _, ok := GitCredentialForRepo(rows, "https://gitlab.com/team/repo.git", sandbox.RepoCredentialGitLabHTTPS); ok {
-					t.Fatal("self-hosted token was routed to the public host")
 				}
 			}
 			for _, scope := range []string{"https://other.example/team/repo", "https://gitlab.com", "git.internal", "https://git.internal:8444/team/repo"} {
@@ -84,11 +78,5 @@ func TestGitCredentialHostEditReprimesSharedWorkflowAndUpdatesAPIOrigin(t *testi
 	if h.mgr.createCount() != 1 || h.mgr.reprimeCount() != 1 || len(h.mgr.reprimes[0].GitCredentials) != 1 || h.mgr.reprimes[0].GitCredentials[0].Scope != host {
 		t.Fatal("host edit did not re-prime the existing shared sandbox catalog")
 	}
-	if h.p.gitLabURL(req) != host || h.p.gitToken(req) != "same-token" {
-		t.Fatal("GitLab API did not use the selected credential's host")
-	}
 	req.Vars = map[string]any{"repos": `[{"name":"repo","url":"https://gitlab.com/team/repo.git"}]`}
-	if h.p.gitLabURL(req) != "" || h.p.gitToken(req) != "" {
-		t.Fatal("GitLab API forwarded the self-hosted token to the public host")
-	}
 }

@@ -149,15 +149,6 @@ func (s *NotificationService) ListPage(username, filter string, page, pageSize i
 	}, nil
 }
 
-// List returns all terminal runs unpaged; handlers use ListPage.
-func (s *NotificationService) List(username string) ([]NotificationItemDTO, error) {
-	res, err := s.ListPage(username, "all", 1, 1<<31-1)
-	if err != nil {
-		return nil, err
-	}
-	return res.Items, nil
-}
-
 // MarkRead inserts an ignore row for (username, runID). Idempotent.
 func (s *NotificationService) MarkRead(username, runID string) error {
 	username, err := requireUsername(username)

@@ -42,7 +42,7 @@ export function contentText(v: unknown): string {
   return ''
 }
 
-export type AcpMessageDelta = {
+type AcpMessageDelta = {
   kind: string
   text: string
 }

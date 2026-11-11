@@ -27,12 +27,11 @@ import (
 // lane's chat was sent.
 type visitorFake struct {
 	*fakeProvider
-	vmu      sync.Mutex
-	prompts  map[string][]string // lane -> prompts
-	primed   map[string]bool
-	retired  []string
-	cancelOn map[string]bool
-	hold     chan struct{} // when set, visitor turns block until it closes
+	vmu     sync.Mutex
+	prompts map[string][]string // lane -> prompts
+	primed  map[string]bool
+	retired []string
+	hold    chan struct{} // when set, visitor turns block until it closes
 }
 
 var _ runtime.VisitorLaneProvider = (*visitorFake)(nil)

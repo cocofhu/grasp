@@ -5,7 +5,7 @@ import { newEdgeId, newNodeId, snap } from './graphOps'
 export const PASTE_OFFSET = 32
 const STORAGE_KEY = 'grasp.canvas.clipboard'
 
-export interface ClipboardPayload {
+interface ClipboardPayload {
   nodes: WFNode[]
   edges: WFEdge[]
 }

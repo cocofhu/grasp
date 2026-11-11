@@ -31,13 +31,13 @@ import {
 } from '@/lib/pm/cronDeliverTargets'
 import type { ChatMessage, ChatThread, ClarifyImage, PmChatThread, PmLeaderBinding } from '@/lib/shared/types'
 
-export interface UsePmLeaderChatProps {
+interface UsePmLeaderChatProps {
   binding: PmLeaderBinding | null
   restoreMobileChat?: boolean
   unknownModelDisplayName?: string | null
 }
 
-export type UsePmLeaderChatEmit = {
+type UsePmLeaderChatEmit = {
   (event: 'openSettings'): void
   (event: 'restoredMobileChat'): void
 }

@@ -34,7 +34,7 @@ function fetchLane(scope: ReferenceScope, params: SearchParams, signal: AbortSig
   if ('runId' in scope) return api.searchRunNodeReferences<any>(scope.runId, scope.nodeId, params, signal)
   return api.searchLaunchReferences<any>({ ...params, agent: scope.agent, projects: scope.projects }, signal)
 }
-export type LaneState<T> = {
+type LaneState<T> = {
   items: T[]
   loading: boolean
   paging: boolean

@@ -3,7 +3,7 @@ import type { LlmAnswer, LlmTranscriptItem, LlmTurn } from '@/lib/run/llmTranscr
 import { isObservableNode, recentCurrentNode } from '@/lib/run/recentRuns'
 import type { AgentPart, ClarifyTurn, Run } from '@/lib/shared/types'
 
-export interface LlmThreadCurrent {
+interface LlmThreadCurrent {
   nodeId: string
   iteration: number
   label: string
@@ -11,7 +11,7 @@ export interface LlmThreadCurrent {
   status: string
 }
 
-export interface LlmThreadModel {
+interface LlmThreadModel {
   priors: ClarifyPriorSegment[]
   currentTurns: ClarifyTurn[]
   current: LlmThreadCurrent | null
@@ -22,7 +22,7 @@ export interface LlmThreadModel {
 type NodeItem = Extract<LlmTranscriptItem, { type: 'node' }>
 type TraceItem = Extract<LlmTranscriptItem, { type: 'trace' }>
 
-export interface LlmSystemNote {
+interface LlmSystemNote {
   key: string
   event: string
   nodeLabel: string
@@ -220,7 +220,7 @@ function toSegment(group: ExecGroup): ClarifyPriorSegment {
  * clarify / review / takeover, waiting for the person or busy in a manual turn.
  * An auto node being watched is not that.
  */
-export function llmNodeConversational(run: Run, nodeId: string, iteration: number): boolean {
+function llmNodeConversational(run: Run, nodeId: string, iteration: number): boolean {
   const current = recentCurrentNode(run)
   if (!current || current.id !== nodeId) return false
   if ((current.iteration || 1) !== iteration) return false

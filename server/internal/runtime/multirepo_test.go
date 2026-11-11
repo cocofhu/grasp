@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -268,82 +267,6 @@ func TestFirstRepoURL(t *testing.T) {
 	}
 	if got := firstRepoURL(NodeReq{}); got != "" {
 		t.Errorf("no repos should yield empty, got %q", got)
-	}
-}
-
-func TestNodeRepo(t *testing.T) {
-	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{}).(*acpProvider)
-
-	reposVar := `[{"name":"web","url":"https://h/web.git"},{"name":"api","url":"https://h/api.git"}]`
-
-	// submit_mr pins config["repo"] -> that repo's dir + url.
-	dir, url := p.nodeRepo(NodeReq{
-		NodeType: "agent", Caps: testPlainCaps,
-		Config: map[string]any{"repo": "api"},
-		Vars:   map[string]any{"repos": reposVar},
-	})
-	if dir != "/root/workspace/api" || url != "https://h/api.git" {
-		t.Errorf("pinned repo: dir=%q url=%q", dir, url)
-	}
-
-	// No pin + a lone repo -> that repo.
-	dir2, url2 := p.nodeRepo(NodeReq{
-		Vars: map[string]any{"repos": `[{"name":"only","url":"https://h/only.git"}]`},
-	})
-	if dir2 != "/root/workspace/only" || url2 != "https://h/only.git" {
-		t.Errorf("lone repo: dir=%q url=%q", dir2, url2)
-	}
-
-	// No pin + multiple repos -> workspace root, empty url (ambiguous).
-	dir3, url3 := p.nodeRepo(NodeReq{Vars: map[string]any{"repos": reposVar}})
-	if dir3 != "/root/workspace" || url3 != "" {
-		t.Errorf("ambiguous: dir=%q url=%q", dir3, url3)
-	}
-
-	// nodeRepoURL falls back to the first repo when the node didn't pin one.
-	if got := p.nodeRepoURL(NodeReq{Vars: map[string]any{"repos": reposVar}}); got != "https://h/web.git" {
-		t.Errorf("nodeRepoURL fallback = %q", got)
-	}
-}
-
-func TestMRBranchesMultiRepo(t *testing.T) {
-	// Explicit source_branch always wins.
-	src, _ := mrBranches(NodeReq{Config: map[string]any{"source_branch": "explicit"}})
-	if src != "explicit" {
-		t.Errorf("explicit source = %q", src)
-	}
-
-	// Derive the source from branches[repo] using config["repo"].
-	src2, _ := mrBranches(NodeReq{
-		Config: map[string]any{"repo": "api"},
-		Vars: map[string]any{
-			"repos":    `[{"name":"web","url":"https://h/web.git"},{"name":"api","url":"https://h/api.git"}]`,
-			"branches": `{"api":"feat/api","web":"feat/web"}`,
-		},
-	})
-	if src2 != "feat/api" {
-		t.Errorf("derived source from branches[api] = %q", src2)
-	}
-
-	// A lone repo needs no explicit config["repo"].
-	src3, _ := mrBranches(NodeReq{
-		Vars: map[string]any{
-			"repos":    `[{"name":"only","url":"https://h/only.git"}]`,
-			"branches": `{"only":"feat/only"}`,
-		},
-	})
-	if src3 != "feat/only" {
-		t.Errorf("lone repo derived source = %q", src3)
-	}
-
-	// No branches map → source stays empty (vars.branch is no longer consulted).
-	src4, tgt4 := mrBranches(NodeReq{
-		Config: map[string]any{"target_branch": "release"},
-		Vars:   map[string]any{"branch": "legacy"},
-	})
-	if src4 != "" || tgt4 != "release" {
-		t.Errorf("no branches map: src=%q tgt=%q", src4, tgt4)
 	}
 }
 

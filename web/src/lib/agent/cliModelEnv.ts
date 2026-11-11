@@ -8,10 +8,10 @@ export const CLI_MODEL_ENV = OPENCODE_MODEL_ENV
 export const CLI_EFFORT_ENV = 'ACP_BRIDGE_REASONING_EFFORT'
 
 /** Every level Codex knows; each model accepts a subset (catalog `efforts`). */
-export const CLI_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
-export type CliEffort = (typeof CLI_EFFORTS)[number]
+const CLI_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
+type CliEffort = (typeof CLI_EFFORTS)[number]
 /** Offered when the model is auto or typed by hand, so its own levels are unknown. */
-export const CLI_COMMON_EFFORTS: readonly CliEffort[] = ['low', 'medium', 'high']
+const CLI_COMMON_EFFORTS: readonly CliEffort[] = ['low', 'medium', 'high']
 
 /** The levels to offer for a model: its catalog list, or the common set when unlisted. */
 export function cliEffortsFor(model: CliCatalogModel | undefined): string[] {

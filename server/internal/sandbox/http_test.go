@@ -15,69 +15,6 @@ func httpHostPort(t *testing.T, srv *httptest.Server) (string, int) {
 	return "127.0.0.1", addr.Port
 }
 
-func TestFetchCapabilities(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"protocol":"1.0","changes":{"endpoint":"/api/changes","vcs":"git"},"ide":{"codeServer":true,"port":8080}}`))
-	}))
-	defer srv.Close()
-	h, p := httpHostPort(t, srv)
-	caps, err := fetchCapabilities(context.Background(), h, p)
-	if err != nil {
-		t.Fatalf("FetchCapabilities: %v", err)
-	}
-	if !caps.supportsChanges() {
-		t.Error("expected SupportsChanges true")
-	}
-	var nilCaps *Capabilities
-	if nilCaps.supportsChanges() {
-		t.Error("nil caps must not support changes")
-	}
-}
-
-func TestFetchCapabilitiesErrors(t *testing.T) {
-	notFound := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer notFound.Close()
-	h, p := httpHostPort(t, notFound)
-	if _, err := fetchCapabilities(context.Background(), h, p); err == nil {
-		t.Error("expected 404 error")
-	}
-
-	badJSON := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{not json`))
-	}))
-	defer badJSON.Close()
-	h2, p2 := httpHostPort(t, badJSON)
-	if _, err := fetchCapabilities(context.Background(), h2, p2); err == nil {
-		t.Error("expected decode error")
-	}
-}
-
-func TestFetchChanges(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"vcs":"git","branch":"feat","pushed":true,"changedFiles":[{"path":"a.go","status":"M","added":3}]}`))
-	}))
-	defer srv.Close()
-	h, p := httpHostPort(t, srv)
-	ch, err := fetchChanges(context.Background(), h, p)
-	if err != nil {
-		t.Fatalf("FetchChanges: %v", err)
-	}
-	if ch.Branch != "feat" || !ch.Pushed || len(ch.ChangedFiles) != 1 {
-		t.Errorf("changes = %+v", ch)
-	}
-
-	nf := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer nf.Close()
-	h2, p2 := httpHostPort(t, nf)
-	if _, err := fetchChanges(context.Background(), h2, p2); err == nil {
-		t.Error("expected non-200 error")
-	}
-}
-
 // eventLogServer serves the ws connect handshake (with an embedded eventLog and
 // paging metadata) plus GET /api/events for older turns.
 func eventLogServer(t *testing.T, eventLog []map[string]any, totalTurns int, hasMore bool, pageStatus int) (string, int) {

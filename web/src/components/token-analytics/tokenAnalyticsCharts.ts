@@ -17,7 +17,7 @@ import {
   formatBucketLabel,
   type TokenPartKey,
 } from '@/components/token-analytics/tokenStatsShared'
-import { fmtCompactTokenCount, fmtTokenCount } from '@/lib/run/tokenUsage'
+import { fmtCompactTokenCount } from '@/lib/run/tokenUsage'
 import type {
   GlobalTokenStats,
   TokenStatsBucket,
@@ -30,12 +30,12 @@ import {
   type DrillTarget,
 } from './tokenAnalyticsShared'
 
-export type Translate = (key: string, params?: Record<string, unknown>) => string
+type Translate = (key: string, params?: Record<string, unknown>) => string
 
 export type TrendMode = 'total' | 'model' | 'cost'
 export type AreaMode = 'source' | 'comp' | 'status'
 
-export const BAR_MAX_WIDTH = 28
+const BAR_MAX_WIDTH = 28
 const BAR_TOP_RADIUS = 4
 /** Above this many buckets the trend gets a zoom slider. */
 const ZOOM_THRESHOLD = 24
@@ -426,7 +426,7 @@ export function weekHourHeatmapOption(weekHour: number[][] | undefined, t: Trans
   }
 }
 
-export interface DrillBreakdown {
+interface DrillBreakdown {
   id: string
   title: string
   rows: StackedBarRow[]

@@ -5,7 +5,7 @@ import type { NodeType, WFEdge, WFNode } from '@/lib/shared/types'
 import { capabilityIssueKey, validateCapabilities } from './agentCapabilities'
 import type { AgentCapsLookup } from './nodeOutlets'
 
-export const NODE_TYPES: NodeType[] = ['input', 'output', 'set_var', 'branch', 'agent', 'human_gate']
+const NODE_TYPES: NodeType[] = ['input', 'output', 'set_var', 'branch', 'agent', 'human_gate']
 
 export function isKnownNodeType(type: unknown): type is NodeType {
   return NODE_TYPES.includes(type as NodeType)
@@ -13,7 +13,7 @@ export function isKnownNodeType(type: unknown): type is NodeType {
 
 type Translate = (key: string, params?: Record<string, unknown>) => string
 
-export type GraphValidationOptions = {
+type GraphValidationOptions = {
   t: Translate
   /** Loaded Agents by name; when omitted, Agent capability checks are skipped. */
   agents?: AgentCapsLookup

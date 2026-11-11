@@ -176,18 +176,3 @@ func TestSlimNodeExecutionsKeepsPerExecutionJSON(t *testing.T) {
 		t.Fatal("iteration 2 must not inherit iteration 1 research_json")
 	}
 }
-
-func TestOmitLargeJSONSnapshots(t *testing.T) {
-	got := OmitLargeJSONSnapshots(map[string]any{
-		"page": "<html/>", "plan_json": `{}`, "plan": "md",
-	})
-	if _, ok := got["plan_json"]; ok {
-		t.Fatal("plan_json should be omitted")
-	}
-	if got["page"] != "<html/>" || got["plan"] != "md" {
-		t.Fatalf("got %+v", got)
-	}
-	if OmitLargeJSONSnapshots(nil) != nil {
-		t.Fatal("nil in → nil out")
-	}
-}

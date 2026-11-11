@@ -71,8 +71,8 @@ export function createClarifyChatAnchors(prefix: string) {
   }
 }
 
-export type ClarifyRailItem = { id: string; title: string; preview: string }
-export type ClarifyRailOptions = {
+type ClarifyRailItem = { id: string; title: string; preview: string }
+type ClarifyRailOptions = {
   /** Title for a reply with no text or files (choice / form answers). */
   fallbackTitle: string
   /** Bubble text as the host draws it; defaults to the user's prompt for generated Live text. */

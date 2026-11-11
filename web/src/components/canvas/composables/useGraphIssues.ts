@@ -4,7 +4,7 @@ import { isKnownNodeType } from '@/lib/workflow/graphValidation'
 import { isNodeOutlet } from '@/lib/workflow/nodeOutlets'
 import { agentLookup, findAgent, normHandle, type CanvasAgent, type Translate } from './outlets'
 
-export interface GraphIssue {
+interface GraphIssue {
   /** Node the issue is shown on; undefined = workflow-level. */
   nodeId?: string
   message: string

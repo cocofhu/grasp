@@ -59,13 +59,13 @@ export function suggestRename(name: string, existing: string[]): string {
   return candidate
 }
 
-export type ZipPeek =
+type ZipPeek =
   | { kind: 'workspace-bundle'; agentNames: string[] }
   | { kind: 'agent'; name?: string }
   | { kind: 'unknown'; error: string }
 
-export const WORKSPACE_BUNDLE_MANIFEST = 'workspace.json'
-export const WORKSPACE_BUNDLE_KIND = 'workspace-agents'
+const WORKSPACE_BUNDLE_MANIFEST = 'workspace.json'
+const WORKSPACE_BUNDLE_KIND = 'workspace-agents'
 
 /** Peek a ZIP: workspace.json (workspace Agent bundle) first, then root agent.json. */
 export async function peekZipPackage(file: File): Promise<ZipPeek> {
@@ -220,15 +220,4 @@ async function readZipTextEntry(data: Uint8Array, want: string): Promise<string 
   const raw = await readEntryData(data, entry)
   if (raw == null) return null
   return new TextDecoder().decode(raw)
-}
-
-/** Parse error body from a failed import response. */
-async function parseImportError(res: Response): Promise<string> {
-  try {
-    const body = (await res.json()) as { error?: string }
-    if (body?.error) return body.error
-  } catch {
-    // non-JSON
-  }
-  return `${res.status} import failed`
 }

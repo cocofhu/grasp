@@ -16,7 +16,7 @@ const MAX_CANVAS_AREA = 268_435_456
 
 export type StructuredExportFormat = 'png' | 'pdf'
 
-export type StructuredExportResult = {
+type StructuredExportResult = {
   filename: string
   incomplete: boolean
 }
@@ -142,7 +142,7 @@ function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   })
 }
 
-export type CanvasToPdfOptions = {
+type CanvasToPdfOptions = {
   /** CSS width of the export canvas (content + 2× outer padding). */
   exportCssWidth: number
   /** Theme background used to fill page margins (must match PNG padding). */
@@ -151,7 +151,7 @@ export type CanvasToPdfOptions = {
   outerPaddingPx?: number
 }
 
-export type PdfPageSlice = {
+type PdfPageSlice = {
   srcX: number
   srcY: number
   srcW: number
@@ -162,7 +162,7 @@ export type PdfPageSlice = {
   destH: number
 }
 
-export type PdfPageLayout = {
+type PdfPageLayout = {
   marginMm: number
   pageWidthMm: number
   pageHeightMm: number

@@ -45,30 +45,6 @@ func TestAcpTimelineStoreStopMarksNotLive(t *testing.T) {
 	}
 }
 
-func TestAcpTimelineIngestKeepsSnapshotOnRefreshFailure(t *testing.T) {
-	s := newAcpTimelineStore()
-	s.upsert("r", "n", []models.AcpEvent{{T: 1, Kind: "message", Text: "keep"}})
-	// Unreachable host — must not clear the prior snapshot.
-	s.refreshFromSandbox(context.Background(), "r", "n", "127.0.0.1", 1, "")
-	e, ok := s.get("r", "n")
-	if !ok || len(e.events) != 1 || e.events[0].Text != "keep" {
-		t.Fatalf("snapshot should survive refresh failure: %+v ok=%v", e.events, ok)
-	}
-}
-
-func TestPickLongerEvents(t *testing.T) {
-	prev := []models.AcpEvent{{T: 1, Kind: "message", Text: "a"}}
-	in := []models.AcpEvent{{T: 1, Kind: "message", Text: "a"}, {T: 2, Kind: "thought", Text: "b"}}
-	got := pickLongerEvents(prev, in)
-	if len(got) != 2 {
-		t.Fatalf("want longer incoming, got %d", len(got))
-	}
-	// Same-turn stale shorter must not shrink.
-	if got := pickLongerEvents(in, prev); len(got) != 2 {
-		t.Fatalf("shorter same-turn incoming must not shrink snapshot, got %d", len(got))
-	}
-}
-
 func TestMergeTurnEventsAllowsNewTurnToReplace(t *testing.T) {
 	prev := []models.AcpEvent{
 		{T: 0, Kind: "thought", Text: "turn1-thought"},

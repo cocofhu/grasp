@@ -31,16 +31,6 @@ func eventEnvelope(data any, opID string) map[string]any {
 	return m
 }
 
-// activeOpID 返回当前正在执行的回合 opId；空闲时为空。
-func (b *Bridge) activeOpID() string {
-	b.turnMu.Lock()
-	defer b.turnMu.Unlock()
-	if b.activeTurn == nil {
-		return ""
-	}
-	return b.activeTurn.opID
-}
-
 func (b *Bridge) BroadcastQueueState() {
 	m := b.queueSnapshot()
 	m["op"] = "queue_state"
@@ -442,12 +432,7 @@ func (b *Bridge) ChatWithOpID(text, opID, action string, images []PromptImage) e
 	return b.ChatWithLimits(text, opID, action, images, 0, 0)
 }
 
-// ChatWithDeadline 同 ChatWithOpID；maxDuration>0 时覆盖本回合的总时长上限。
-func (b *Bridge) ChatWithDeadline(text, opID, action string, images []PromptImage, maxDuration time.Duration) error {
-	return b.ChatWithLimits(text, opID, action, images, maxDuration, 0)
-}
-
-// ChatWithLimits 同 ChatWithDeadline；idleTimeout>0 时覆盖本回合的无动作时限。
+// ChatWithLimits 同 ChatWithOpID；maxDuration>0 时限制本回合总时长，idleTimeout>0 时覆盖本回合的无动作时限。
 func (b *Bridge) ChatWithLimits(text, opID, action string, images []PromptImage, maxDuration, idleTimeout time.Duration) error {
 	t := strings.TrimSpace(text)
 	if t == "" && len(images) == 0 {

@@ -15,14 +15,14 @@ export type DraftInsertCmd =
   | 'fence'
   | 'table'
 
-export type DraftInsertInput = {
+type DraftInsertInput = {
   value: string
   selectionStart: number
   selectionEnd: number
   cmd: DraftInsertCmd
 }
 
-export type DraftInsertResult = {
+type DraftInsertResult = {
   value: string
   selectionStart: number
   selectionEnd: number
@@ -31,7 +31,7 @@ export type DraftInsertResult = {
 const TABLE_TEMPLATE = '| 列 A | 列 B |\n| --- | --- |\n| 单元格 | 单元格 |'
 
 /** Demo find-bar scroll uses ~19px per line (12px / 1.6). */
-export const DRAFT_SRC_LINE_PX = 19
+const DRAFT_SRC_LINE_PX = 19
 
 export function insertDraftMarkdown(input: DraftInsertInput): DraftInsertResult {
   const start = Math.max(0, input.selectionStart)
@@ -118,13 +118,13 @@ export function insertDraftMarkdown(input: DraftInsertInput): DraftInsertResult 
   }
 }
 
-export type DraftFindInput = {
+type DraftFindInput = {
   value: string
   query: string
   from: number
 }
 
-export type DraftFindResult = {
+type DraftFindResult = {
   index: number
   end: number
   scrollTop: number

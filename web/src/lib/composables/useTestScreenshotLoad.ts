@@ -8,7 +8,7 @@ export type TestScreenshotInput = {
   caption?: string
 }
 
-export type TestScreenshotState =
+type TestScreenshotState =
   | { status: 'loading'; artifact: string; caption?: string }
   | { status: 'success'; src: string; caption?: string; blobUrl: string }
   | { status: 'error'; artifact: string; caption?: string }

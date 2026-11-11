@@ -432,30 +432,4 @@ func TestParseHelpers(t *testing.T) {
 	}
 }
 
-// TestParseQueueBusy pins the queue_state busy extraction: a present flag is
-// returned verbatim (ok=true), while a missing field or malformed frame yields
-// ok=false so callers ignore it instead of wrongly reading the session as idle.
-func TestParseQueueBusy(t *testing.T) {
-	cases := []struct {
-		name     string
-		raw      string
-		wantBusy bool
-		wantOK   bool
-	}{
-		{"busy true", `{"op":"queue_state","busy":true}`, true, true},
-		{"busy false", `{"op":"queue_state","busy":false}`, false, true},
-		{"missing field", `{"op":"queue_state","queue_length":0}`, false, false},
-		{"malformed", `{"op":"queue_state","busy":`, false, false},
-		{"wrong type", `{"op":"queue_state","busy":"yes"}`, false, false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			busy, ok := parseQueueBusy(json.RawMessage(c.raw))
-			if busy != c.wantBusy || ok != c.wantOK {
-				t.Fatalf("parseQueueBusy(%s) = (%v,%v), want (%v,%v)", c.raw, busy, ok, c.wantBusy, c.wantOK)
-			}
-		})
-	}
-}
-
 func contains(s, sub string) bool { return strings.Contains(s, sub) }

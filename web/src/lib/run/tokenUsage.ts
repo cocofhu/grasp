@@ -7,7 +7,7 @@ export const TOKEN_USAGE_UNKNOWN_MODEL = '未知/未分桶'
 export const TOKEN_USAGE_UNKNOWN_MODEL_DISPLAY = '未知模型'
 
 /** Max rune/char length for the workspace unknown-model display name (matches server). */
-export const UNKNOWN_MODEL_DISPLAY_NAME_MAX_LEN = 64
+const UNKNOWN_MODEL_DISPLAY_NAME_MAX_LEN = 64
 
 function isUnsetUnknownAlias(v: string): boolean {
   return !v || v === TOKEN_USAGE_UNKNOWN_MODEL || v === TOKEN_USAGE_UNKNOWN_MODEL_DISPLAY
@@ -127,7 +127,7 @@ export function fmtCompactTokenRate(totalTokens: number, wallSec: number): strin
   return precise == null ? '—' : `${precise}/s`
 }
 
-export type TimelineUsageSummary = {
+type TimelineUsageSummary = {
   /** null = no reported usage on any item (show — for total & rate). */
   totalTokens: number | null
   /** null = show — (no usage, or invalid wall denominator). */
@@ -223,7 +223,7 @@ export function totalTokensOrNull(usage: TokenUsage | null | undefined): number 
   return tokenUsageTotal(usage)
 }
 
-export type ModelUsageRow = {
+type ModelUsageRow = {
   modelKey: string
   inputTokens: number
   outputTokens: number

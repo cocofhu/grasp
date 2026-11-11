@@ -458,7 +458,7 @@ func TestSweepOrphansStopsOnCancel(t *testing.T) {
 
 func TestStartNotFound(t *testing.T) {
 	svc, _, _ := testService(t)
-	if err := svc.Start(context.Background(), "nope"); err == nil {
+	if err := svc.StartPrepared(context.Background(), "nope", driver.StartOptions{}); err == nil {
 		t.Fatal("expected error")
 	}
 	if err := svc.Stop(context.Background(), "nope"); err == nil {
@@ -476,7 +476,7 @@ func TestStartResume(t *testing.T) {
 	if err := svc.Stop(context.Background(), sb.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.Start(context.Background(), sb.ID); err != nil {
+	if err := svc.StartPrepared(context.Background(), sb.ID, driver.StartOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	waitSvcRunning(t, svc, sb.ID)
@@ -797,7 +797,7 @@ func TestDriverOpErrors(t *testing.T) {
 	waitSvcRunning(t, svc, sb.ID)
 
 	drv.startErr = errors.New("start boom")
-	if err := svc.Start(context.Background(), sb.ID); err == nil {
+	if err := svc.StartPrepared(context.Background(), sb.ID, driver.StartOptions{}); err == nil {
 		t.Fatal("start")
 	}
 	drv.startErr = nil

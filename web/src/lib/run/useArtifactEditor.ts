@@ -4,7 +4,7 @@ import { i18n } from '@/lib/shared/i18n'
 import type { Artifact, RunArtifactSaveResult } from '@/lib/shared/types'
 import { sameArtifactContent } from './artifactEdit'
 
-export interface ArtifactDraft {
+interface ArtifactDraft {
   name: string
   artifactId: string
   kind: Artifact['kind']
@@ -24,7 +24,7 @@ export interface ArtifactDraft {
   missing: boolean
 }
 
-export type ArtifactSaveOutcome =
+type ArtifactSaveOutcome =
   | { ok: true; result: RunArtifactSaveResult }
   | { ok: false; code: string }
 
@@ -276,5 +276,3 @@ export function useArtifactEditor(runIdSource: MaybeRefOrGetter<string | null | 
     clearSessionBusy,
   }
 }
-
-export type ArtifactEditorApi = ReturnType<typeof useArtifactEditor>

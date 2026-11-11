@@ -68,12 +68,7 @@ export function formatImageCountChip(n: number): string {
   return i18n.global.t('common.format.imageCountChip', { n })
 }
 
-/** Badge / tooltip label. */
-function formatImageCountBadge(n: number): string {
-  return i18n.global.t('common.format.imageCountBadge', { n })
-}
-
-export interface FormatVarOptions {
+interface FormatVarOptions {
   /** Show 是/否 instead of true/false. */
   localeBool?: boolean
 }

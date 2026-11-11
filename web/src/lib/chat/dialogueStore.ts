@@ -16,7 +16,7 @@ import {
   type OptimisticSend,
 } from './dialogueState'
 
-export type DialogueFetcher = (runId: string, nodeId: string) => Promise<DialogueState | null | undefined>
+type DialogueFetcher = (runId: string, nodeId: string) => Promise<DialogueState | null | undefined>
 
 const states = shallowReactive(new Map<string, DialogueState>())
 const optimistic = shallowReactive(new Map<string, OptimisticSend[]>())
@@ -82,10 +82,6 @@ function settleOptimistic(key: string) {
 
 export function getDialogue(key: string): DialogueState | null {
   return states.get(key) ?? null
-}
-
-export function hasDialogue(key: string): boolean {
-  return states.has(key)
 }
 
 /** This page's sends for key that the server state does not list yet. */

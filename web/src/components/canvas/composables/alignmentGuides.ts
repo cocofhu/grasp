@@ -1,11 +1,11 @@
 // Alignment guides shown while dragging: edges and centers of the dragged node
 // that line up (within a tolerance) with other nodes. Flow coordinates.
 
-export type GuideRect = { id: string; x: number; y: number; width: number; height: number }
+type GuideRect = { id: string; x: number; y: number; width: number; height: number }
 
 export type AlignmentGuides = { vertical: number[]; horizontal: number[] }
 
-export const GUIDE_TOLERANCE = 4
+const GUIDE_TOLERANCE = 4
 
 function xs(r: GuideRect): number[] {
   return [r.x, r.x + r.width / 2, r.x + r.width]

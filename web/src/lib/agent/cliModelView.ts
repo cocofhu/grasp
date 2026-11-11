@@ -67,7 +67,7 @@ const VENDOR_LOGOS: Record<string, string> = {
 export const TAG_ORDER: CliModelTag[] = ['vision', 'reasoning', 'fast']
 
 /** Full context bar; anything larger is drawn full. */
-export const CONTEXT_FULL_K = 1000
+const CONTEXT_FULL_K = 1000
 
 export function vendorLabel(vendor: string): string {
   return VENDOR_LABELS[vendor] || (vendor ? vendor.charAt(0).toUpperCase() + vendor.slice(1) : '')
@@ -126,7 +126,7 @@ export function launchCommand(backend: string, modelId: string): string {
   return modelId ? `${head} --model ${modelId}` : head
 }
 
-export function hasTag(m: CliCatalogModel | null | undefined, tag: CliModelTag): boolean {
+function hasTag(m: CliCatalogModel | null | undefined, tag: CliModelTag): boolean {
   return !!m?.tags?.includes(tag)
 }
 
@@ -159,7 +159,7 @@ export function searchScore(m: CliCatalogModel, query: string): number {
   return 0
 }
 
-export type Segment = { text: string; hit: boolean }
+type Segment = { text: string; hit: boolean }
 
 /** Splits text around the first case-insensitive occurrence of the query. */
 export function highlight(text: string, query: string): Segment[] {
@@ -174,10 +174,10 @@ export function highlight(text: string, query: string): Segment[] {
   return out
 }
 
-export type VendorChip = { id: string; count: number }
-export type ModelGroup = { vendor: string; models: CliCatalogModel[] }
+type VendorChip = { id: string; count: number }
+type ModelGroup = { vendor: string; models: CliCatalogModel[] }
 
-export type CliModelView = {
+type CliModelView = {
   /** Vendor chips, in first-seen order; empty when only one vendor is listed. */
   vendors: VendorChip[]
   /** Featured cards; only without a query. */

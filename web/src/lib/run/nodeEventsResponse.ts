@@ -1,5 +1,5 @@
 /** Shared shape for GET /runs/:id/nodes/:nodeId/events (paginated or not). */
-export type NodeEventsPayload = {
+type NodeEventsPayload = {
   events?: unknown[]
   live?: boolean
   /** True when live sandbox is registered but bridge read failed transiently. */

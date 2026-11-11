@@ -14,15 +14,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// registerLive records a node's sandbox so its event log can be read straight
-// from the container while the turn runs (survives a UI refresh). deregisterLive
-// drops it when the sandbox is torn down. acp may be nil for callers that only
-// need the event-log handle (react sessions already keep acp elsewhere).
-func (c *acpProvider) registerLive(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient) {
-	c.mu.Lock()
-	c.registerLiveLocked(req, sb, acp)
-}
-
 // runAbortWatch is one run's abort record while RunAgent calls are in flight.
 type runAbortWatch struct {
 	last     uint64 // abortSeq of the run's latest AbortRun (0 = none seen)

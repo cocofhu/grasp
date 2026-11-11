@@ -142,14 +142,6 @@ func (c *SandboxChats) Cancel(id uint) {
 	}
 }
 
-// Active reports a running or queued turn.
-func (c *SandboxChats) Active(id uint) bool {
-	c.mu.Lock()
-	sc := c.chats[id]
-	c.mu.Unlock()
-	return sc != nil && !sc.sess.Ready()
-}
-
 // Subscribe streams the sandbox chat: a queue_state snapshot, the active
 // turn's frames after afterSeq, then live frames until unsubscribe.
 func (c *SandboxChats) Subscribe(id uint, afterSeq int) (<-chan chatsession.Event, func()) {

@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type SidebarSection = 'running' | 'auto' | 'queued' | 'history'
+type SidebarSection = 'running' | 'auto' | 'queued' | 'history'
 
 const KNOWN_SECTIONS = new Set<SidebarSection>(['running', 'auto', 'queued', 'history'])
 

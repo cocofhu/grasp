@@ -5,7 +5,7 @@ import { kvToRec, type WizardKV, type WizardMCP } from '@/lib/agent/agentCreateW
 import { stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
 
 export type TeamWizardStepId = 'team' | 'model' | 'git' | 'mcp' | 'env' | 'review'
-export type TeamWizardStepDef = { id: TeamWizardStepId; labelKey: string; skip: boolean }
+type TeamWizardStepDef = { id: TeamWizardStepId; labelKey: string; skip: boolean }
 export const TEAM_WIZARD_STEPS: TeamWizardStepDef[] = [
   { id: 'team', labelKey: 'pages.agentStudio.teamWizard.steps.team', skip: false },
   { id: 'model', labelKey: 'pages.agentStudio.wizard.steps.apiKey', skip: false },
@@ -78,7 +78,7 @@ function mcpToApi(m: WizardMCP): MCPServer {
   }
 }
 
-export type TeamBootstrapPayload = {
+type TeamBootstrapPayload = {
   prefix: string; pmName: string; background: string; modelConfigurationId: string; modelConfigurationIds?: string[]; gitBindings: AgentGitBindings
   gitUrl?: string; mcp: MCPServer[]; env: Record<string, string>
 }
