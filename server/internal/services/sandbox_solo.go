@@ -89,6 +89,9 @@ func (s *SandboxService) activeSoloSandboxCount() int {
 	return int(n)
 }
 
+// UsedSoloSandboxes returns the workspace-wide quota the next Solo admission sees.
+func (s *SandboxService) UsedSoloSandboxes() int { return s.activeSoloSandboxCount() }
+
 // SoloRepoSpecs converts a project into the sandbox clone list.
 func SoloRepoSpecs(p *models.Project, branch string) []sandbox.RepoSpec {
 	if p == nil || strings.TrimSpace(p.RepoURL) == "" {

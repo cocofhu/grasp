@@ -4769,6 +4769,8 @@
       "closeSession": "关闭",
       "limitTitle": "Solo 沙箱已达上限",
       "limitHint": "最多同时运行 {max} 个 Solo 沙箱。关闭一个不再使用的会话后再试。",
+      "limitUsage": "已用 {used} / {max} 个 Solo 沙箱名额。停止或关闭一个不再使用的会话后再试。",
+      "limitOthers": "另有 {count} 个由其他成员的会话占用。",
       "limitFreed": "已有空位，可以重新启动了",
       "status": {
         "starting": "启动中",

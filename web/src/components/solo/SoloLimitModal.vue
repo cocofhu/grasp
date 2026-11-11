@@ -17,7 +17,12 @@ const store = useSoloSessions()
 const closing = ref('')
 const stopping = ref('')
 const error = ref('')
-const computing = computed(() => store.active.value.filter(isSoloComputing))
+// A failed session still holds quota while its environment binding remains.
+const holders = computed(() => [
+  ...store.active.value.filter(isSoloComputing),
+  ...store.ended.value.filter((s) => s.status === 'error' && !!s.sandboxId),
+])
+const others = computed(() => Math.max(0, store.usedSandboxes.value - holders.value.length))
 
 /** Stopping frees the quota once the backup finishes; the session stays resumable. */
 async function stopOne(id: string) {
@@ -49,9 +54,10 @@ async function closeOne(id: string) {
 <template>
   <AppModal :open="open" :title="t('pages.solo.limitTitle')" :width="460" close-on-esc @close="emit('close')">
     <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-limit-modal">
-      <p>{{ t('pages.solo.limitHint', { max: store.maxSandboxes.value }) }}</p>
-      <ul class="divide-y divide-line/70 rounded-lg border border-line">
-        <li v-for="s in computing" :key="s.id" class="flex items-center gap-3 px-3 py-2.5">
+      <p v-if="store.usedSandboxes.value > 0">{{ t('pages.solo.limitUsage', { used: store.usedSandboxes.value, max: store.maxSandboxes.value }) }}</p>
+      <p v-else>{{ t('pages.solo.limitHint', { max: store.maxSandboxes.value }) }}</p>
+      <ul v-if="holders.length || !others" class="divide-y divide-line/70 rounded-lg border border-line">
+        <li v-for="s in holders" :key="s.id" class="flex items-center gap-3 px-3 py-2.5">
           <SoloStatusDot :status="s.status" :busy="s.busy" />
           <div class="min-w-0 flex-1">
             <div class="truncate text-txt">{{ s.title || t('pages.solo.untitled') }}</div>
@@ -71,10 +77,11 @@ async function closeOne(id: string) {
             {{ t('pages.solo.closeSession') }}
           </AppButton>
         </li>
-        <li v-if="!computing.length" class="px-3 py-4 text-center text-txt3">
+        <li v-if="!holders.length && !others" class="px-3 py-4 text-center text-txt3">
           <Icon name="check" :size="14" class="mr-1 inline text-ok" />{{ t('pages.solo.limitFreed') }}
         </li>
       </ul>
+      <p v-if="others" class="text-[12px] text-txt3" data-testid="solo-limit-others">{{ t('pages.solo.limitOthers', { count: others }) }}</p>
       <p v-if="error" class="text-[12px] text-err">{{ error }}</p>
     </div>
     <template #footer>

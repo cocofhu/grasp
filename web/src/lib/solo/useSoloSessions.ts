@@ -4,6 +4,7 @@ import type { SoloSession } from '@/lib/api/apiTypes'
 
 const sessions = ref<SoloSession[]>([])
 const maxSandboxes = ref(5)
+const usedSandboxes = ref(0)
 const loaded = ref(false)
 const loading = ref(false)
 const error = ref('')
@@ -34,6 +35,7 @@ export function useSoloSessions() {
         const r = await api.listSoloSessions()
         sessions.value = r.sessions ?? []
         if (r.maxSandboxes > 0) maxSandboxes.value = r.maxSandboxes
+        usedSandboxes.value = r.usedSandboxes ?? 0
         error.value = ''
       } catch (e: any) {
         error.value = String(e?.message || e)
@@ -61,5 +63,5 @@ export function useSoloSessions() {
   const computing = computed(() => sessions.value.filter(isSoloComputing))
   const ended = computed(() => sessions.value.filter(isSoloEnded))
 
-  return { sessions, active, computing, ended, maxSandboxes, loaded, loading, error, refresh, upsert, remove }
+  return { sessions, active, computing, ended, maxSandboxes, usedSandboxes, loaded, loading, error, refresh, upsert, remove }
 }

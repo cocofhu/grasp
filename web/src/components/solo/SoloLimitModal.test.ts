@@ -36,6 +36,7 @@ describe('SoloLimitModal', () => {
     vi.clearAllMocks()
     const store = useSoloSessions()
     store.sessions.value = []
+    store.usedSandboxes.value = 0
   })
 
   it('counts stopped sessions as open but not as holding a sandbox', () => {
@@ -72,5 +73,21 @@ describe('SoloLimitModal', () => {
     await wrapper.get('[data-testid="solo-limit-stop-a"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('backup unavailable')
+  })
+
+  it('shows workspace-wide usage, failed sessions holding a sandbox and slots held by others', async () => {
+    const store = useSoloSessions()
+    store.upsert(row('mine', 'running'))
+    store.upsert(row('broken', 'error', { sandboxId: 7 }))
+    store.upsert(row('gone', 'error'))
+    store.usedSandboxes.value = 4
+    store.maxSandboxes.value = 4
+    const wrapper = mountModal()
+    await flushPromises()
+    expect(wrapper.text()).toContain('已用 4 / 4')
+    const titles = wrapper.findAll('li').map((li) => li.text())
+    expect(titles.some((t) => t.includes('broken'))).toBe(true)
+    expect(titles.some((t) => t.includes('gone'))).toBe(false)
+    expect(wrapper.get('[data-testid="solo-limit-others"]').text()).toContain('2')
   })
 })
