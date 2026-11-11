@@ -4838,6 +4838,9 @@
         "submit": "Start"
       },
       "home": {
+        "modeLabel": "Home mode",
+        "modeWorkflow": "Workflow",
+        "modeSolo": "Solo",
         "placeholders": [
           "Chat with an Agent, e.g. find out why the login API sometimes returns 500",
           "Ask the Agent to fix a bug in the repo and push a branch",
